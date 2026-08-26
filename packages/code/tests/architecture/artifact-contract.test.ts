@@ -23,6 +23,20 @@ test("the artifact contract accepts a provider adapter behind a generated chunk"
   ).not.toThrow();
 });
 
+test("the artifact contract accepts a Windows path for the generated provider chunk", () => {
+  expect(() =>
+    assertLazyProviderArtifact({
+      entrySource: lazyEntry,
+      javascriptChunks: [
+        {
+          ...providerChunk,
+          path: String.raw`D:\a\clarvis\clarvis\packages\code\dist\chunk-provider123.js`,
+        },
+      ],
+    }),
+  ).not.toThrow();
+});
+
 test("the artifact contract rejects a monolithic entrypoint", () => {
   expect(() =>
     assertLazyProviderArtifact({

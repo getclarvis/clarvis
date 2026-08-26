@@ -333,8 +333,9 @@ The generated chunk-name shape is pinned by the smoke's listing filter
 `/^chunk-[a-z0-9]+\.js$/`. The provider contract is deliberately graph-shaped rather than tied to
 one Bun rewrite: it finds the chunk containing `class AiSdkAdapter`, requires a generated dynamic
 import of that basename somewhere in the artifact, rejects any static import of it, and rejects the
-class marker in the entry (`packages/code/tooling/artifact/contract.ts`,
-`assertLazyProviderArtifact`).
+class marker in the entry. Bun reports output paths with host-native separators, so basename
+extraction accepts both `/` and `\` before matching the generated import specifier
+(`packages/code/tooling/artifact/contract.ts`, `assertLazyProviderArtifact`).
 
 The one copied asset is declared in `ASSETS` alongside the module that reads it back
 (`packages/code/tooling/artifact/build.ts`):
@@ -516,19 +517,21 @@ before tests because CI makes grep parity a hard contract. Production: `.github/
 (`jobs.linux`).
 
 **`windows`**, `windows-latest`, records the exact Bun runtime and installs ripgrep from a pinned
-release asset after checking its SHA-256 and executing it in the same step. Then it runs three
+release asset after checking its SHA-256 and executing it in the same step. Then it runs four
 package suites and one explicit test-file list:
 
-- `bun --filter @clarvis/paths test` (`:151`)
-- `bun --filter @clarvis/tools test` (`:152`)
-- `bun --filter @clarvis/plan test` (`:153`)
-- `bun test packages/code/tests/unit/{keyboard-profile,keyspec,active-actions}.test.ts` (`:154`)
+- `bun --filter @clarvis/paths test`
+- `bun --filter @clarvis/tools test`
+- `bun --filter @clarvis/plan test`
+- `bun --filter @clarvis/memory test`
+- `bun test packages/code/tests/unit/{keyboard-profile,keyspec,active-actions}.test.ts`
 
-The workflow gives, per package, why it is in this job: `paths` owns `which.ts`, "a `PATH`/`PATHEXT`
-resolver whose whole reason to exist is Windows"; `plan` because "`file-repository.ts`'s `fsyncDir`
-has a real win32 branch"; and `code` contributes "only its
-platform-independent keyboard-policy tests", while "`kernel`, `loop`, `trace`, `mcp-client` and
-`supervision` are deliberately absent".
+The retained scope is deliberate: `paths` owns the Windows `PATH`/`PATHEXT` resolver; `tools` owns
+PowerShell dispatch and Windows process behavior; `plan` has a real win32 directory-sync branch;
+`memory` exercises platform filesystem, symlink and child-process lifetime behavior; and `code`
+contributes only its platform-independent keyboard-policy tests. `kernel`, `loop`, `trace`,
+`mcp-client` and `supervision` remain deliberately absent. Production: `.github/workflows/ci.yml`
+(`jobs.windows.steps`).
 
 **`keyboard-macos`**, `macos-14`, records the Bun version/revision and runs exactly the same three
 keyboard test files. Production: `.github/workflows/ci.yml` (`jobs.keyboard-macos`).
@@ -743,11 +746,13 @@ Test: `packages/server/tests/architecture/docker-context.test.ts:20-25`.
 generated dynamic import; an artifact with zero JS chunks, the adapter class in the entry, no
 dynamic edge, or any static edge to the provider chunk is rejected with a message naming the
 condition. This remains valid when Bun moves the source dynamic import into an eagerly shared kernel
-chunk instead of spelling it directly in `index.js`.
+chunk instead of spelling it directly in `index.js`, and when Bun reports the chunk path with POSIX
+or Windows separators.
 Production: `packages/code/tooling/artifact/contract.ts` (`assertLazyProviderArtifact`). Enforced in
 the build by `packages/code/tooling/artifact/build.ts` (`assertLazyProviderChunk`) and again on disk
 by `packages/code/tooling/artifact/smoke.ts`.
-Test: `packages/code/tests/architecture/artifact-contract.test.ts` (lazy provider artifact cases).
+Test: `packages/code/tests/architecture/artifact-contract.test.ts` (lazy provider artifact and
+Windows-shaped chunk-path cases).
 
 **BUILD-4 (INV-259).** The ordinary developer/root artifact keeps its source maps **detached** under
 `dist/maps/`, and must still contain `index.js.map` there; a `.map` beside runtime JS, or a missing

@@ -1367,6 +1367,31 @@ Windows/macOS jobs.
 
 ---
 
+## The release artifact contract rejected Windows chunk paths
+
+**Fixed in this tree on 2026-08-26; native Windows rerun pending.** Manual release workflow run
+`32972288986` built, packaged, smoked, and installer-smoked `darwin-x64`, `darwin-arm64`,
+`linux-x64`, and `linux-arm64`. Both `windows-x64` and `windows-arm64` stopped earlier in
+`bun --filter @clarvis/code build:install` with `artifact has no dynamic import for the AiSdkAdapter
+chunk`; packaging and installer smoke therefore never ran on either Windows target. The manual
+dispatch could not publish and its publish job was skipped by design.
+
+The bundle still contained the adapter in a lazy chunk. The failure was in the assertion that
+verified that graph: `assertLazyProviderArtifact` extracted the generated chunk name with
+`providerChunk.path.split("/")`. Bun's Windows artifact path uses backslashes, so the assertion
+treated the complete path as the basename and searched the emitted JavaScript for an impossible
+dynamic-import specifier containing that absolute path. Both Windows architectures failed at the
+same assertion; the four slash-separated native jobs passed it.
+
+The contract now separates a generated chunk path on either slash before matching its basename.
+`packages/code/tests/architecture/artifact-contract.test.ts` pins the regression with a
+Windows-shaped absolute path while retaining the generated `./chunk-provider123.js` import. The
+targeted architecture test and local Linux `build:install` can verify the portable assertion and
+the ordinary artifact, but only a new native workflow run can close the Windows release evidence.
+Do not report either Windows archive as passing until that rerun completes.
+
+---
+
 ## Windows gaps, in detail
 
 The short form is in `AGENTS.md`. The reasoning behind each suppression predicate — and, for two of
@@ -1378,7 +1403,7 @@ the pid-liveness errno, the surfaces outside the job's four packages, and the tw
 guard and behaviour named here was verified present in the tree on that date. Two things around them
 have moved since the record was first written, and both change how the gaps can now be worked on:
 
-- **The restored Windows leg now has a recorded result, but not a green one.** CI was disabled on
+- **The restored Windows leg is green in its latest recorded run.** CI was disabled on
   2026-08-18 and push/pull-request triggers were restored on 2026-08-25. The public `main` run
   `32963947832` on 2026-08-26 exercised the retained
   `tools, paths, plan, memory, keyboard policy (windows)` job. Its first attempt failed in
@@ -1402,9 +1427,12 @@ have moved since the record was first written, and both change how the gaps can 
   returned `undefined` while sibling processes could still hold the temporary directory as their
   current directory. It now uses `Promise.allSettled` and chooses the first failure only after every
   child callback has settled. The existing non-repository integration case remains the regression:
-  its `finally` removes the workspace immediately after the capture returns. That correction still
-  needs a Windows run, as do the remaining keyboard-policy step and the earlier Bun finalizer
-  failure. The repeated successful paths steps do not establish that the finalizer failure is gone.
+  its `finally` removes the workspace immediately after the capture returns. Public run
+  `32970820273` verified the correction and completed the whole Windows job: Paths reported 222 pass
+  and 14 platform skips; Tools 1102 pass and 64 platform skips; Plan 288 pass and 3 platform skips;
+  Memory 630 pass, 1 platform skip and 0 failures; and the three keyboard-policy files 36 pass and 0
+  failures. The earlier Bun finalizer failure remains historical evidence of a rare runtime path:
+  three later successful Paths executions do not establish that it cannot recur.
 - **Two diagnostics were added to make these gaps diagnosable without a runner**, because "the
   windows job will settle it" was not a plan while the workflow was disabled. They remain useful
   even after trigger restoration and are described under the gaps they serve.

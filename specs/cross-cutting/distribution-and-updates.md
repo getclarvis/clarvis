@@ -246,10 +246,10 @@ version ownership remains in [Package architecture](package-architecture.md).
 1. The beta artifacts are not yet code-signed or notarized. Signing identities, protected secret
    storage, macOS notarization, Windows signing, and their renewal/revocation procedures need an
    owner decision before the installers can promise warning-free launches.
-2. The six-runner workflow is configured from GitHub's current hosted-runner labels, but only the
-   native Linux x64 archive has been built and PTY-smoked locally in this iteration. Platform support
-   becomes observed rather than configured only after the authorized workflow completes on each
-   runner.
+2. The six-runner workflow is configured from GitHub's current hosted-runner labels. Platform
+   support becomes observed rather than configured only after the corresponding native build,
+   artifact smoke, and installer smoke complete for the release. Dated run evidence belongs in
+   [`specs/known-issues.md`](../known-issues.md) and the launch record, not in this durable contract.
 3. The portable Linux assets target GNU/glibc; Alpine and other musl-only distributions are not
    configured targets for this beta. Production: `packages/code/tooling/release/package.ts`
    (`NATIVE_PACKAGES`) and `.github/workflows/release.yml` (Ubuntu Linux runners).

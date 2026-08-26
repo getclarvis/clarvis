@@ -420,7 +420,12 @@ gate's result.
   (`packages/code/tests/integration/doctor.test.ts:387-405`).
 - **`run_safety`**: with sandboxing enabled but not yet inspected (`sandboxInspection()` is `null`), the
   gate **passes** with a "checking sandbox host" detail rather than warning
-  (`packages/code/src/onboarding/doctor.ts:337-343`); only a completed inspection reporting unavailability warns, distinguishing
+  (`packages/code/src/onboarding/doctor.ts:337-343`). Cold command composition deliberately leaves
+  this inspection deferred; an explicit Doctor recheck or the Sandbox settings surface performs the
+  host probe (`packages/code/src/app/commands.tsx`, `inspectReadiness`;
+  `packages/code/src/views/config/SandboxConfigPanel.tsx`, `refreshInspection`; pinned by
+  `packages/code/tests/integration/app-commands.test.tsx`, "sandbox inspection is deferred until an
+  explicit Doctor recheck"). Only a completed inspection reporting unavailability warns, distinguishing
   `availability:"required"` (blocks runs) from optional (falls back to host)
   (`:344-358`).
 - **`workspace_trust`** is keyed on the trust verdict (`inert`/`trusted`/other), never solely on

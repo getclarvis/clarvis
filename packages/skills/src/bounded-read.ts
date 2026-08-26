@@ -14,6 +14,14 @@ interface BoundedReadOptions {
   logger: Logger;
 }
 
+type DescriptorReader = (
+  descriptor: number,
+  buffer: Buffer,
+  offset: number,
+  length: number,
+  position: number,
+) => number;
+
 function tooLarge(
   file: string,
   dimension: "bytes" | "characters",
@@ -37,12 +45,28 @@ export function readBoundedPrefix(file: string, options: BoundedReadOptions): st
   return readFromFile(file, options, options.maxBytes);
 }
 
-/** Read a complete UTF-8 regular file behind byte and character bounds. */
-export function readBoundedText(file: string, options: BoundedReadOptions): string {
-  return readFromFile(file, options);
+/**
+ * Read a complete UTF-8 regular file behind byte and character bounds.
+ *
+ * @param file - regular file to read.
+ * @param options - byte, character, diagnostic, and error bounds.
+ * @param reader - positional descriptor reader; injectable for a deterministic concurrent-growth
+ *   canary on hosts without procfs.
+ */
+export function readBoundedText(
+  file: string,
+  options: BoundedReadOptions,
+  reader: DescriptorReader = readSync,
+): string {
+  return readFromFile(file, options, undefined, reader);
 }
 
-function readFromFile(file: string, options: BoundedReadOptions, prefixBytes?: number): string {
+function readFromFile(
+  file: string,
+  options: BoundedReadOptions,
+  prefixBytes?: number,
+  reader: DescriptorReader = readSync,
+): string {
   let descriptor: number | undefined;
   try {
     descriptor = openSync(file, "r");
@@ -59,13 +83,13 @@ function readFromFile(file: string, options: BoundedReadOptions, prefixBytes?: n
     const buffer = Buffer.allocUnsafe(requested);
     let offset = 0;
     while (offset < requested) {
-      const count = readSync(descriptor, buffer, offset, requested - offset, offset);
+      const count = reader(descriptor, buffer, offset, requested - offset, offset);
       if (count === 0) break;
       offset += count;
     }
     if (prefixBytes === undefined) {
       const probe = Buffer.allocUnsafe(1);
-      if (readSync(descriptor, probe, 0, 1, offset) !== 0) {
+      if (reader(descriptor, probe, 0, 1, offset) !== 0) {
         throw new SkillError(
           options.code,
           `${options.label} '${file}' changed while it was being read`,

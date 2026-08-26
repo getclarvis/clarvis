@@ -765,6 +765,32 @@ test("createInteraction: returns keymap/renderer handles alongside the overlay-c
   t.renderer.destroy();
 });
 
+test("createInteraction: queued input is inert after the renderer destroys its keymap host", async () => {
+  const t = await openCoreRenderer({ width: 80, height: 24 });
+  const effects = fakeEffects();
+  const listenersBefore = new Set(t.renderer.keyInput.listeners("keypress"));
+  createInteraction(t.renderer, fakePlatform(), effects);
+  const queuedListener = t.renderer.keyInput
+    .listeners("keypress")
+    .find((listener) => !listenersBefore.has(listener));
+  expect(queuedListener).toBeDefined();
+
+  t.renderer.destroy();
+
+  expect(() =>
+    queuedListener!(
+      new KeyEvent({
+        name: "escape",
+        ctrl: false,
+        meta: false,
+        shift: false,
+        option: false,
+      } as ConstructorParameters<typeof KeyEvent>[0]),
+    ),
+  ).not.toThrow();
+  expect(effects.calls).toEqual([]);
+});
+
 test("createInteraction: app.escape clears a non-empty draft without cancelling the run", async () => {
   const t = await openCoreRenderer({ width: 80, height: 24 });
   const effects = fakeEffects({

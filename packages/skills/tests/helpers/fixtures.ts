@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, realpathSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { stringify as stringifyYaml } from "yaml";
@@ -12,11 +12,11 @@ import type { SkillRootInput } from "../../src/types.ts";
 export { makeInfo } from "./skill-fixtures.ts";
 
 export function makeHome(): string {
-  return mkdtempSync(path.join(tmpdir(), "clarvis-skills-home-"));
+  return realpathSync(mkdtempSync(path.join(tmpdir(), "clarvis-skills-home-")));
 }
 
 export function makeWorkspace(): string {
-  return mkdtempSync(path.join(tmpdir(), "clarvis-skills-ws-"));
+  return realpathSync(mkdtempSync(path.join(tmpdir(), "clarvis-skills-ws-")));
 }
 
 export function cleanup(dir: string): void {

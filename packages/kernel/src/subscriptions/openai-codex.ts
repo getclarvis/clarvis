@@ -20,6 +20,16 @@ import { SubscriptionError } from "./redaction.ts";
 
 const PRODUCT_USER_AGENT = `clarvis/${VERSION}`;
 
+/**
+ * Codex catalog compatibility revision used by the ChatGPT subscription adapter.
+ *
+ * @remarks This is intentionally independent from the Clarvis product version. The ChatGPT model
+ *   catalog compares `client_version` against each model's minimum Codex client revision; sending
+ *   Clarvis `0.0.1-beta` therefore yields an empty successful catalog. Revision `0.144.0` is the
+ *   first revision that exposes the current `gpt-5.6-*` family to eligible accounts.
+ */
+const OPENAI_CODEX_CLIENT_VERSION = "0.144.0";
+
 export interface OpenAICodexAdapterOptions {
   fetch?: typeof globalThis.fetch;
   now?: () => number;
@@ -159,7 +169,7 @@ export function createOpenAICodexAdapter(
       const origin = new URL(registration.transportOrigin).origin;
       const response = await fetchNoRedirect(
         fetcher,
-        `${origin}/backend-api/codex/models?client_version=${encodeURIComponent(VERSION)}`,
+        `${origin}/backend-api/codex/models?client_version=${encodeURIComponent(OPENAI_CODEX_CLIENT_VERSION)}`,
         {
           signal,
           headers: {

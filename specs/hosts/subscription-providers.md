@@ -179,12 +179,23 @@ messages/content. This adds metadata only when appending the assistant turn and 
 previous durable prefix.
 
 Every subscription HTTP request that carries a Clarvis user agent uses `clarvis/<root product
-version>`, and ChatGPT entitled-catalog discovery uses that same version as `client_version`.
-Neither adapter retains a release-local literal. Production: `VERSION` from `@clarvis/loop` in
-`packages/kernel/src/subscriptions/openai-codex.ts` (`PRODUCT_USER_AGENT`, catalog URL) and
-`packages/kernel/src/subscriptions/xai-grok.ts` (`PRODUCT_USER_AGENT`). Test:
-`packages/kernel/tests/unit/subscription-adapters.test.ts` (transport and Codex catalog identity
-assertions).
+version>`. ChatGPT entitled-catalog discovery separately uses the adapter-owned Codex compatibility
+revision `0.144.0` as `client_version`: the service treats this query as a minimum-client feature
+gate, while sending Clarvis's unrelated `0.0.1-beta` product version returns a successful empty
+catalog. Visible API-supported models are projected with their published reasoning levels; unrelated
+provider metadata does not suppress them or cross the protocol boundary. Production: `VERSION`,
+`PRODUCT_USER_AGENT`, and `OPENAI_CODEX_CLIENT_VERSION` in
+`packages/kernel/src/subscriptions/openai-codex.ts`, plus `PRODUCT_USER_AGENT` in
+`packages/kernel/src/subscriptions/xai-grok.ts`.
+
+The Grok subscription proxy has its own version gate. The XAI adapter keeps the current reviewed
+Grok Build compatibility revision (`1.0.6`) in `XAI_GROK_CLIENT_VERSION` and sends it on both the
+authenticated `/v1/models` catalog and `/v1/responses` inference paths. It does not substitute the
+Clarvis product version for that header. Test: “maps only visible API-supported Codex models and
+their reasoning facts”, “retains only Responses-backed Grok subscription models”, and “pins Grok
+subscription transport and derives its required headers after assembly” in
+`packages/kernel/tests/unit/subscription-adapters.test.ts` pin both independent version identities,
+the `gpt-5.6-sol`-shaped catalog entry, and the Grok catalog/inference header parity.
 
 Production: `AiSdkProviderOptions.resolveSubscription`, `AiSdkAdapter.resolveRegistryModel`,
 `buildCallTuning`, `buildCallResult`, `toModelMessages`, `LiveContext.appendAssistant`, and

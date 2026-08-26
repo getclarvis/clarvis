@@ -141,9 +141,9 @@ export interface AppCommandWiring {
   doctorDirty: Accessor<boolean>;
   recheck: () => void;
   /**
-   * The host's sandbox probe, or null while it is still in flight or failed.
-   * The header reads it so a configured-but-dead sandbox is visible in the chip
-   * rather than only in the doctor.
+   * The host's sandbox probe, or null until an explicit inspection completes.
+   * The header reads a completed probe so a configured-but-dead sandbox is
+   * visible in the chip rather than only in the doctor.
    */
   sandboxInspection: Accessor<SandboxInspection | null>;
   /** The agent a skill runs on, or `undefined` when it names none. */
@@ -1029,11 +1029,6 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       if (!disposed && request === sandboxRequest) setSandboxInspection(null);
     }
   };
-  detachObserved(
-    "sandbox_inspection",
-    () => refreshSandboxInspection(),
-    (e) => deps.notify(errorText(e), "warn"),
-  );
   const [subscriptionReadiness, setSubscriptionReadiness] = createSignal<
     Partial<Record<SubscriptionScheme, { state: SubscriptionState; entitled?: boolean }>>
   >({});

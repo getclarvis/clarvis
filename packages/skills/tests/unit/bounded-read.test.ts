@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "bun:test";
 import { readBoundedText } from "../../src/bounded-read.ts";
@@ -39,4 +39,21 @@ describe("bounded text reads", () => {
       );
     },
   );
+
+  it("detects deterministic growth after the bounded payload read on every host", () => {
+    const workspace = makeWorkspace();
+    try {
+      const file = path.join(workspace, "growing.txt");
+      writeFileSync(file, "seed");
+
+      expect(() =>
+        readBoundedText(file, OPTIONS, (descriptor, buffer, offset, length, position) => {
+          if (position === 4) return 1;
+          return readSync(descriptor, buffer, offset, length, position);
+        }),
+      ).toThrow(/changed while it was being read/);
+    } finally {
+      cleanup(workspace);
+    }
+  });
 });

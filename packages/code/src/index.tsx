@@ -475,7 +475,8 @@ async function runApp(
     { elapsed_ms: Math.round(process.uptime() * 1000), mode: mode.kind },
     "info",
   );
-  const markdownPreload = (async (): Promise<void> => {
+  const preloadMarkdown = async (): Promise<void> => {
+    const startedAt = performance.now();
     try {
       const treeSitter = getTreeSitterClient();
       await treeSitter.initialize();
@@ -483,11 +484,26 @@ async function runApp(
         treeSitter.preloadParser("markdown"),
         treeSitter.preloadParser("markdown_inline"),
       ]);
-      diagnosticEvent("markdown.preload.completed", { markdown, markdownInline }, "debug");
+      diagnosticEvent(
+        "markdown.preload.completed",
+        {
+          markdown,
+          markdownInline,
+          duration_ms: Math.round(performance.now() - startedAt),
+        },
+        "debug",
+      );
     } catch (error) {
-      diagnosticEvent("markdown.preload.failed", { error: errorText(error) }, "warn");
+      diagnosticEvent(
+        "markdown.preload.failed",
+        {
+          error: errorText(error),
+          duration_ms: Math.round(performance.now() - startedAt),
+        },
+        "warn",
+      );
     }
-  })();
+  };
   const attention = createAttention(renderer);
   const workspaceManager = await diagnosticAsync("boot.workspace-manager", () =>
     WorkspaceClientManager.create({
@@ -1294,17 +1310,18 @@ async function runApp(
     reconnect: reconnectBackend,
   };
 
-  await markdownPreload;
-  setMountedApp({
-    store,
-    activity,
-    shell,
-    run: runControls,
-    session: sessionControls,
-    fleet,
-    backend: backendConn,
+  await diagnosticAsync("boot.app-mount", async () => {
+    setMountedApp({
+      store,
+      activity,
+      shell,
+      run: runControls,
+      session: sessionControls,
+      fleet,
+      backend: backendConn,
+    });
+    await renderer.idle();
   });
-  await renderer.idle();
   diagnosticEvent("app.render.mounted", { mode: mode.kind }, "info");
   diagnosticEvent(
     "app.boot.painted",
@@ -1315,6 +1332,7 @@ async function runApp(
     },
     "info",
   );
+  const markdownPreload = preloadMarkdown();
 
   if (mode.kind === "resume" || mode.kind === "continue") {
     const summary = resolveResumeMeta(sessionStore, owner, workspaceRef().id, mode);
@@ -1323,6 +1341,7 @@ async function runApp(
       detachObserved(
         "resume_session",
         async () => {
+          await markdownPreload;
           const meta = await sessionStore.load(summary.id);
           if (meta === null) throw new Error("session not found");
           await runHost.loadSessionMeta(meta);

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createAgentTools, currentShellFlavor } from "../../src/index.ts";
 import { makeWorkspace, cleanup, write, resultText, posixShell } from "../helpers/fixtures.ts";
 import { expectedToolNames } from "../helpers/tool-surface.ts";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,7 +38,7 @@ describe("createAgentTools (library API)", () => {
   });
 
   it("lets native tools read scratch created by shell inside the run-owned temporary root", async () => {
-    const temporaryRoot = mkdtempSync(join(tmpdir(), "clarvis-run-owned-"));
+    const temporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-run-owned-")));
     try {
       const t = createAgentTools({
         workspaceRoot: root,
@@ -49,11 +49,11 @@ describe("createAgentTools (library API)", () => {
         command:
           currentShellFlavor() === "powershell"
             ? '$made = Join-Path $env:TEMP "shell-created"; [IO.Directory]::CreateDirectory($made) | Out-Null; [IO.File]::WriteAllText((Join-Path $made "a.txt"), "alpha"); [Console]::Out.Write($made)'
-            : 'made=$(mktemp -d) && printf alpha > "$made/a.txt" && printf %s "$made"',
+            : 'made=$(mktemp -d "$TMPDIR/clarvis.XXXXXX") && printf alpha > "$made/a.txt" && printf %s "$made"',
       });
       expect(made.isError).toBe(false);
       const created = JSON.parse(resultText(made.content)).stdout as string;
-      expect(created.startsWith(temporaryRoot)).toBe(true);
+      expect(realpathSync(created).startsWith(temporaryRoot)).toBe(true);
 
       const searched = await t.callTool("grep", { path: created, pattern: "alpha" });
       expect(searched.isError).toBe(false);
@@ -71,7 +71,7 @@ describe("createAgentTools (library API)", () => {
     "adopts an explicit mktemp directory created by this shell call, but not generic /tmp",
     async () => {
       const prefix = `clarvis-explicit-${process.pid}-${Date.now()}`;
-      const template = join(tmpdir(), `${prefix}-XXXXXX`);
+      const template = join(realpathSync(tmpdir()), `${prefix}-XXXXXX`);
       const record = join(root, "created-temp-path.txt");
       let created: string | undefined;
       try {

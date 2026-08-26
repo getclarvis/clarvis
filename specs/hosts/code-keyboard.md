@@ -835,6 +835,13 @@ Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES
 `packages/code/tests/integration/app-shell-render.test.tsx`, and
 `packages/code/tests/unit/layout.test.ts`.
 
+**INV-D14.** Input callbacks already queued while OpenTUI destroys the renderer are inert. The
+Clarvis-owned keymap host checks the renderer lifecycle immediately before forwarding press,
+release, or raw input, so a listener snapshot cannot dispatch into a destroyed keymap host.
+Production: `packages/code/src/keys/interaction.ts` (`createLifecycleSafeKeymap`). Test:
+`packages/code/tests/integration/interaction.test.ts` ("queued input is inert after the renderer
+destroys its keymap host").
+
 ## 6. Failure modes and degradation
 
 | Situation | Handling | Cite |
@@ -847,6 +854,7 @@ Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES
 | An action/view `run()` throws synchronously, or its returned promise rejects | Funnelled into `ui.commandFailed(name, error)` either way — never an unhandled rejection | `packages/code/src/keys/commands.ts:399-405`; test `packages/code/tests/unit/commands.test.ts:295-327` |
 | A duplicate command name, or a slash token another command already owns, is registered | Throws immediately (`register`/`registerAction` roll back the partially-inserted registry entry before rethrowing) | `packages/code/src/keys/commands.ts:357-373`; test `packages/code/tests/unit/commands.test.ts:225-251` |
 | A key event arrives with an empty `name` (observed as parser residue after Escape closes a view) | Recovered as `escape` if the raw wire bytes are exactly `U+001B`/`U+001B U+001B`; every other unnamed event is consumed before OpenTUI's strict resolver can throw on it | `packages/code/src/keys/interaction.ts:408-436`; test `packages/code/tests/integration/interaction.test.ts:479-522` |
+| A press, release, or raw-input callback was queued before renderer teardown and runs after the host is destroyed | The lifecycle-safe OpenTUI host drops it before keymap dispatch; teardown emits no `Cannot use a keymap after its host was destroyed` error | `packages/code/src/keys/interaction.ts` (`createLifecycleSafeKeymap`); test `packages/code/tests/integration/interaction.test.ts` ("queued input is inert after the renderer destroys its keymap host") |
 | The workspace runtime is being replaced (`effects.interactionBlocked?.()===true`) | Every key is consumed at max intercept priority — the whole built-in command set goes dark, not selectively | `packages/code/src/keys/interaction.ts:464-472`; test `packages/code/tests/integration/interaction.test.ts:552-571` |
 | A pending elicitation modal (`setModalContext("elicitation")`) | Every vital binding **except** `MODAL_LIVE_COMMANDS` (`run.cancel`, `app.suspend`, the four `transcript.scroll*`) is inert; those six stay live (read-only navigation and escape hatches only) | `packages/code/src/keys/interaction.ts` (`MODAL_LIVE_COMMANDS`, `buildVitalBindings`); test `packages/code/tests/integration/interaction.test.ts` ("a pending modal keeps scrolling, suspend and cancel, and withholds the rest") |
 | An overlay is on the stack | The 11 `overlay==none` commands in `DEFAULT_WHEN` go dark. On the `plan` overlay only, `plan.open` remains active: the same shortcut returns a direct-origin plan to the transcript and a history-origin detail to `/plans`. `app.escape`, `run.cancel` and `app.suspend` have no overlay gate, so the cancel binding still cancels the run or enters quit. | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`), `packages/code/src/views/overlays/PlanOverlay.tsx`; tests `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/integration/app-shell-render.test.tsx` |

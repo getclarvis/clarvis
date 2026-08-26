@@ -51,18 +51,31 @@ documentation disposition is complete.
 Pure typo or formatting edits do not require inventing a contract change, but they still must not make
 the README, spec, implementation, and tests disagree.
 
-## Never publish without immediate authorization
+## Publication authorization
 
-Do not run `git add`, `git commit`, `git push`, `git merge`, `git rebase`, create a tag, or open a pull
-request without the project owner's explicit authorization immediately before that specific action.
+Do not publish without the project owner's explicit authorization. A request for a publication
+outcome authorizes the normal, non-destructive prerequisite steps needed to reach that outcome for
+the current bounded change; do not ask for another confirmation between those steps.
 
-- Authorization for one action does not authorize the next one.
-- Before an authorized publication action, state exactly what will be published and to which
-  repository and branch.
-- Run authorized Git/GitHub publication commands outside the sandbox; a sandbox may not see the host
-  keyring and can falsely report broken authentication.
-- Never bypass the hook with `--no-verify`.
-- When in doubt, do not publish. Ask.
+- `Commit this` authorizes staging the scoped files and creating the commit.
+- `Push this` authorizes creating a branch and commit when needed, safely synchronizing with the
+  target branch, and pushing the scoped branch.
+- `Open a pull request` authorizes creating or switching to a branch, staging, committing, safely
+  synchronizing, pushing, opening or updating the pull request, and monitoring its checks.
+- `Merge the pull request` authorizes the normal non-destructive work needed to make that pull
+  request mergeable and then merging it when its required checks and reviews allow.
+- Fixes and retries that remain within the authorized change, including hook fixes, push retries,
+  pull-request metadata corrections, and CI reruns, do not require renewed authorization.
+
+Before starting an authorized publication workflow, state once what will be published, the target
+repository and branch, and the intended outcome. The authorization ends when that outcome is reached
+or when the scope or destination changes materially.
+
+Separate explicit authorization is still required to force-push or otherwise rewrite remote
+history, delete branches, tags, releases, or data, publish a tag or release, bypass a required check,
+or perform another destructive or materially broader action. Run authorized Git/GitHub publication
+commands outside the sandbox; a sandbox may not see the host keyring and can falsely report broken
+authentication. Never bypass the hook with `--no-verify`.
 
 Editing files and running builds, tests, typechecks, lint, and read-only Git commands are allowed.
 
@@ -260,4 +273,5 @@ Every final handoff states:
 - which documentation files changed, or `Docs reviewed; no change needed` with the reason;
 - the exact checks run and their result;
 - any remaining risk, known issue, or unverified platform;
-- that no commit or publication action was performed, unless separately and immediately authorized.
+- that no commit or publication action was performed, unless covered by a scoped publication
+  authorization.

@@ -57,7 +57,10 @@ For end users, the public installers in the repository root install a portable r
 portable archive includes the exact Bun runtime, the map-free split artifact, its package-owned
 assets, and the native OpenTUI closure for one of six targets: GNU/glibc Linux, macOS, or Windows on
 x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release targets for
-this beta. `release.json` declares the exact regular-file set checked by release smoke and self-update.
+this beta. Runtime dependency discovery accepts only installed bare package specifiers; relative,
+absolute, built-in, and module-internal `#` references retained by the generated artifact are not
+interpreted as package roots, while package subpaths resolve to their owning root. `release.json`
+declares the exact regular-file set checked by release smoke and self-update.
 Each archive also carries Clarvis's license; the Bun, models.dev, and Vercel AI SDK notices/license
 texts; Bun's source and relinking route; a generated runtime-package inventory; and the
 package-owned license files.
@@ -764,7 +767,7 @@ the build pays that once. Consequences worth knowing:
   splitting, detaching maps moved the 2026-08 idle 120x32
   Linux baseline from roughly 237 MB to 171 MB RSS.
 
-The unit suite imports `src/` by path, so it can never load a bundle and every
+The unit suite imports source and tooling modules by path, so it can never load a bundle and every
 bundling-only defect is invisible to it: 1017 tests passed green while a bundled
 `code` died on startup for want of the models.dev snapshot. `bun run smoke` is the
 step that covers it. The smoke fixture fabricates a clean `HOME`, asserts the shipped snapshot

@@ -97,9 +97,14 @@ discovers bare runtime package references retained by the split artifact, closes
 dependency graph, adds the one OpenTUI native package for the target, copies the static Bun,
 models.dev, and Vercel AI SDK license and notice set, removes every `.map`, writes the internal
 manifest, creates a gzip tar archive, and emits a sidecar SHA-256. Production:
-`packages/code/tooling/release/package.ts`. The release smoke re-extracts the archive, verifies the
-manifest, required notices/licenses, and zero-map rule, runs `--version` and `--help`, and on POSIX
-boots first paint under a real PTY using the packaged runtime. Test:
+`packages/code/tooling/release/package.ts` and
+`packages/code/tooling/release/runtime-package-discovery.ts`. Generated call specifiers contribute
+to that closure only when they name an installed bare package root; relative, absolute, built-in,
+and module-internal `#` references are ignored, package subpaths resolve to their owning root, and an
+invalid name reaching manifest resolution is rejected before any path is read. Test:
+`packages/code/tests/unit/runtime-package-discovery.test.ts`. The release smoke re-extracts the
+archive, verifies the manifest, required notices/licenses, and zero-map rule, runs `--version` and
+`--help`, and on POSIX boots first paint under a real PTY using the packaged runtime. Test:
 `packages/code/tooling/release/smoke.ts` and
 `packages/code/tooling/artifact/pty.ts`.
 
@@ -205,6 +210,16 @@ a tag ref. Production: `.github/workflows/release.yml` (`publish.if`) and
 external actions to complete commit SHAs, and disables checkout credential retention. Production:
 `.github/workflows/*.yml` and `tooling/checks/release-readiness.ts` (`workflowSecurityFailures`).
 Test: `tooling/tests/unit/release-readiness.test.ts` (workflow-security cases).
+
+**DIST-12.** Portable runtime discovery accepts only installed bare package roots from generated
+call specifiers. Path-like, built-in, and module-internal specifiers cannot become filesystem paths
+beneath `node_modules`; package subpaths resolve to their owning root, and manifest resolution
+rejects any invalid package name that reaches the closure.
+Production: `packages/code/tooling/release/runtime-package-discovery.ts`
+(`runtimePackageName`, `runtimePackageCandidates`, `assertRuntimePackageRoot`) and
+`packages/code/tooling/release/package.ts` (`packageManifest`, `discoveredRuntimePackages`). Test:
+`packages/code/tests/unit/runtime-package-discovery.test.ts` (package roots, rejected specifiers,
+and invalid closure entries).
 
 ## 6. Failure modes and degradation
 

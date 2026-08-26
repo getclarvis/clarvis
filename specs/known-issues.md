@@ -1367,9 +1367,10 @@ Windows/macOS jobs.
 
 ---
 
-## The release artifact contract rejected Windows chunk paths
+## Windows release packaging exposed host-specific artifact assumptions
 
-**Fixed in this tree on 2026-08-26; native Windows rerun pending.** Manual release workflow run
+**Both observed failures are fixed in this tree on 2026-08-26; another native Windows rerun is
+pending.** Manual release workflow run
 `32972288986` built, packaged, smoked, and installer-smoked `darwin-x64`, `darwin-arm64`,
 `linux-x64`, and `linux-arm64`. Both `windows-x64` and `windows-arm64` stopped earlier in
 `bun --filter @clarvis/code build:install` with `artifact has no dynamic import for the AiSdkAdapter
@@ -1385,10 +1386,21 @@ same assertion; the four slash-separated native jobs passed it.
 
 The contract now separates a generated chunk path on either slash before matching its basename.
 `packages/code/tests/architecture/artifact-contract.test.ts` pins the regression with a
-Windows-shaped absolute path while retaining the generated `./chunk-provider123.js` import. The
-targeted architecture test and local Linux `build:install` can verify the portable assertion and
-the ordinary artifact, but only a new native workflow run can close the Windows release evidence.
-Do not report either Windows archive as passing until that rerun completes.
+Windows-shaped absolute path while retaining the generated `./chunk-provider123.js` import. Manual
+rerun `32988189314` verified that correction on both Windows architectures: `build:install` passed.
+It then exposed a separate failure in `release:package`. Runtime dependency discovery passed a
+non-package generated call specifier into the closure, and `packageManifest` consequently tried to
+open `node_modules/package.json`. Both Windows jobs failed there; the other four targets again
+completed packaging, release smoke, installer smoke, and artifact upload. The emitted specifier was
+not present in the job log, so the narrower source token cannot be claimed from that run alone.
+
+Runtime call discovery now uses one pure package-name validator for ordinary calls and direct
+`createRequire(import.meta.url)(...)` calls, confirms every discovered package directory exists, and
+rejects any invalid name that reaches manifest resolution. The unit regression covers package
+subpaths plus relative, absolute Windows/POSIX, built-in, and internal specifiers. A local Linux
+package and smoke can verify the shared discovery and portable archive behavior, but only another
+native workflow run can close the Windows release evidence. Do not report either Windows archive as
+passing until that rerun completes.
 
 ---
 

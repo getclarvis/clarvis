@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "//": "Shared compiler options for the fourteen library packages that extend it (capability, hooks, llm, loop, mcp-client, memory, paths, plan, skills, supervision, tasks, tools, trace, workflows). Path-relative options (outDir/rootDir/include) and target/lib stay per package. Four packages are standalone and do NOT extend this base: protocol, kernel, code and server.",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rewriteRelativeImportExtensions": true,
+    "types": ["bun", "node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": true,
+    "skipLibCheck": true
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreExportsUsedInFile": {
+    "interface": true,
+    "type": true
+  },
+  "workspaces": {
+    ".": {
+      "entry": [
+        "tooling/checks/**/*.ts",
+        "tooling/test-runtime/**/*.ts",
+        "docs/.vitepress/config.ts",
+        "docs/.vitepress/theme/index.ts"
+      ],
+      "project": ["*.js", "tooling/**/*.{ts,js}", "docs/.vitepress/**/*.ts"]
+    },
+    "packages/code": {
+      "entry": ["tooling/**/*.ts", "tooling/**/*.tsx"],
+      "project": ["src/**/*.{ts,tsx}", "tests/**/*.{ts,tsx}", "tooling/**/*.{ts,tsx}"]
+    },
+    "packages/kernel": {
+      "entry": ["src/bin.ts", "tests/helpers/capability-executable-fixture.ts"]
+    },
+    "packages/protocol": {
+      "entry": ["tests/contract/public-contract.fixture.ts"]
+    },
+    "packages/tools": {
+      "ignoreBinaries": ["rg"]
+    }
+  }
+}

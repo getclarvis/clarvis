@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# local fleet config written by the app when cwd is the workspace (never commit)
+.clarvis/

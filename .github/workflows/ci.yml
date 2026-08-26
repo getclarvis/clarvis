@@ -1,0 +1,155 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The full graph, on the platform everything is developed against.
+  linux:
+    name: linux
+    runs-on: ubuntu-latest
+    # The full graph builds, typechecks, lints and tests in well under 15
+    # minutes; a job past this is hung, not slow. Without a bound it would hold
+    # a runner for the six-hour default before reporting anything at all.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          # Matches the pin in mise.toml and every package's engines field.
+          bun-version: 1.4.0
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      # ripgrep is not preinstalled on the ubuntu-latest image; @clarvis/tools'
+      # grep-parity suite (TEST-01) requires it whenever CI=true. The trailing
+      # `rg --version` is the assertion that it actually landed - see the Windows
+      # job for what a package manager reporting success over a no-op costs.
+      - run: sudo apt-get update && sudo apt-get install -y ripgrep && rg --version
+      # Root install only: one lockfile, and bunfig.toml's `linker = "hoisted"`
+      # keeps node_modules symlink-free.
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run typecheck
+      - run: bun run format:check
+      - run: bun run lint
+      # The server image installs from the workspace manifests before copying
+      # sources. Building it here is the smoke that keeps that manifest list and
+      # the repository-root Docker context honest.
+      - run: docker build --file packages/server/Dockerfile --tag clarvis-server:ci .
+      # Bun 1.4 carries the upstream Worker lifetime fix, but this stays wrapped
+      # until the GitHub-runner retirement canary in Known issues passes. A real
+      # test failure, a coverage threshold miss, and a cancellation are all
+      # passed straight through.
+      - run: bash tooling/ci/retry-code-coverage.sh
+      # The root build already produced the code bundle after the TypeScript
+      # library graph. Boots that artifact under a PTY and asserts first paint.
+      # It fabricates a clean HOME, which is load-bearing: `loadCatalogData` prefers
+      # `~/.clarvis/cache/models-dev.json` and only falls back to the shipped
+      # snapshot when that cache is absent, so a warm cache hides the failure.
+      - run: bun run smoke
+
+  # Scoped to @clarvis/tools, @clarvis/paths and @clarvis/plan, which is where
+  # the platform-specific code lives. All three resolve to source under Bun
+  # through their exports map, so this needs no prior build of their siblings.
+  #
+  # `paths` is here because it owns `which.ts` — a `PATH`/`PATHEXT` resolver
+  # whose whole reason to exist is Windows, and whose test asserts Windows
+  # behaviour from a POSIX host. It arrived from `@clarvis/tools`, which this job
+  # already covered; leaving it out would have silently dropped that coverage.
+  #
+  # `plan` is here because `file-repository.ts`'s `fsyncDir` has a real win32
+  # branch (a directory-handle fsync Windows will not do, so a failure there is
+  # swallowed rather than propagated) that was untested on either platform
+  # before it, plus mode-bit and symlink assertions that only hold with
+  # `modeBitsEnforced`/`canLinkDirectories` guarding them here the same way
+  # `packages/paths/tests/integration/ensure.test.ts` already does.
+  # `memory` owns a file-backed tree with Windows-relevant locking, bounded I/O,
+  # and path behavior. Mode-bit assertions and the file-symlink security case
+  # use named capability predicates so the rest of each test still runs.
+  #
+  # `code` contributes only its platform-independent keyboard-policy tests here;
+  # the renderer suite remains on Linux, where its PTY harness is supported.
+  # `kernel`, `loop`, `trace`, `mcp-client` and `supervision` are deliberately
+  # absent because they either have no Windows surface or require a broader job.
+  windows:
+    name: tools, paths, plan, memory, keyboard policy (windows)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      # ripgrep is not preinstalled on the windows-latest image; @clarvis/tools'
+      # grep-parity suite (TEST-01) requires it whenever CI=true.
+      #
+      # This was `choco install ripgrep -y --no-progress`, and it must not go
+      # back to being that. On 2026-08-04 community.chocolatey.org answered its
+      # package feed with a 504, choco printed `Chocolatey installed 0/0
+      # packages` - and exited 0. The step went green, the job went red three
+      # minutes later inside a `bun test` assertion, and the only visible symptom
+      # was TEST-01 failing as though @clarvis/tools were broken. An install step
+      # that can report success over a no-op moves the diagnosis to the wrong
+      # package.
+      #
+      # Fetching the pinned release instead depends only on github.com, which
+      # this job already cannot run without, verifies the bytes against the
+      # checksum published beside the asset, and proves the binary runs before
+      # any test is allowed to depend on it.
+      - name: install ripgrep
+        shell: pwsh
+        run: |
+          $version = "15.2.0"
+          $sha256 = "71b2fef860abe467217a538ff31de02f5258807c0129f771846f87bd029aafc5"
+          $name = "ripgrep-$version-x86_64-pc-windows-msvc"
+          $zip = Join-Path $env:RUNNER_TEMP "$name.zip"
+          $url = "https://github.com/BurntSushi/ripgrep/releases/download/$version/$name.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip -MaximumRetryCount 3 -RetryIntervalSec 5
+          $actual = (Get-FileHash -Path $zip -Algorithm SHA256).Hash
+          if ($actual -ne $sha256) { throw "ripgrep checksum mismatch: got $actual, want $sha256" }
+          Expand-Archive -Path $zip -DestinationPath $env:RUNNER_TEMP -Force
+          $dir = Join-Path $env:RUNNER_TEMP $name
+          # A GITHUB_PATH entry only reaches the *next* step, so this run has to
+          # name the executable outright to verify it.
+          & (Join-Path $dir "rg.exe") --version
+          $dir | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - run: bun install --frozen-lockfile
+      - run: bun --filter @clarvis/paths test
+      - run: bun --filter @clarvis/tools test
+      - run: bun --filter @clarvis/plan test
+      - run: bun --filter @clarvis/memory test
+      - run: bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts
+
+  # Modifier naming must be validated on a Darwin runtime too, even though the
+  # terminal-path policy itself is pure and never guesses the remote client OS.
+  keyboard-macos:
+    name: keyboard policy (macos)
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      - run: bun install --frozen-lockfile
+      - run: bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts

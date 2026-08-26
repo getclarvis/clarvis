@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "charts": {
+      "command": "atlas-mcp",
+      "args": ["--stdio"]
+    }
+  }
+}

@@ -1,0 +1,3 @@
+display-name: Ledger Reconciliation
+policy:
+  implicit-invocation: false

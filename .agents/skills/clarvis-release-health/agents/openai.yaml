@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clarvis Release Health"
+  short_description: "Run an evidence-based Clarvis release preflight"
+  default_prompt: "Use $clarvis-release-health to assess Clarvis release readiness without publishing anything."

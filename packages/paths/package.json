@@ -1,0 +1,42 @@
+{
+  "name": "@clarvis/paths",
+
+  "private": true,
+  "description": "The single owner of Clarvis's directory vocabulary: where a workspace and a user's global state live on disk.",
+  "license": "MIT",
+  "author": "getclarvis",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "test": "bun test tests/unit tests/component tests/contract tests/integration tests/architecture --timeout 60000",
+    "test:unit": "bun test tests/unit --timeout 60000",
+    "test:component": "bun test tests/component --timeout 60000",
+    "test:contract": "bun test tests/contract --timeout 60000",
+    "test:integration": "bun test tests/integration --timeout 60000",
+    "test:architecture": "bun test tests/architecture --timeout 60000",
+    "test:coverage": "bun test tests/unit tests/component tests/contract tests/integration --timeout 60000 --coverage && bun run test:architecture",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "name": "@clarvis/kernel",
+  "private": true,
+  "description": "In-process implementation of @clarvis/protocol over @clarvis/loop and the core for local or remote transports.",
+  "license": "MIT",
+  "author": "getclarvis",
+  "type": "module",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./bootstrap": {
+      "bun": "./src/bootstrap.ts",
+      "types": "./dist/bootstrap.d.ts",
+      "import": "./dist/bootstrap.js"
+    },
+    "./config": {
+      "bun": "./src/config.ts",
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
+    },
+    "./policy": {
+      "bun": "./src/policy.ts",
+      "types": "./dist/policy.d.ts",
+      "import": "./dist/policy.js"
+    },
+    "./local": {
+      "bun": "./src/local.ts",
+      "types": "./dist/local.d.ts",
+      "import": "./dist/local.js"
+    }
+  },
+  "bin": {
+    "clarvis-kernel": "dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "bun test tests/unit tests/component tests/contract tests/integration tests/architecture --timeout 60000",
+    "test:unit": "bun test tests/unit --timeout 60000",
+    "test:component": "bun test tests/component --timeout 60000",
+    "test:contract": "bun test tests/contract --timeout 60000",
+    "test:integration": "bun test tests/integration --timeout 60000",
+    "test:architecture": "bun test tests/architecture --timeout 60000",
+    "test:coverage": "bun test tests/unit tests/component tests/contract tests/integration --timeout 60000 --coverage && bun run test:architecture",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+  },
+  "dependencies": {
+    "@clarvis/capability": "workspace:*",
+    "@clarvis/loop": "workspace:*",
+    "@clarvis/memory": "workspace:*",
+    "@clarvis/paths": "workspace:*",
+    "@clarvis/plan": "workspace:*",
+    "@clarvis/protocol": "workspace:*",
+    "@clarvis/skills": "workspace:*",
+    "@clarvis/tasks": "workspace:*",
+    "@clarvis/tools": "workspace:*",
+    "@clarvis/trace": "workspace:*",
+    "@clarvis/workflows": "workspace:*",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@clarvis/mcp-client": "workspace:*"
+  }
+}

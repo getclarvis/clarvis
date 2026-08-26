@@ -1,0 +1,39 @@
+{
+  "name": "@clarvis/server",
+  "private": true,
+  "description": "MCP-over-Streamable-HTTP facade exposing the Clarvis loop as infrastructure for other applications.",
+  "license": "MIT",
+  "author": "getclarvis",
+  "type": "module",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "bin": {
+    "clarvis-server": "dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "bun test tests/unit tests/component tests/integration tests/architecture --timeout 60000",
+    "test:unit": "bun test tests/unit --timeout 60000",
+    "test:component": "bun test tests/component --timeout 60000",
+    "test:integration": "bun test tests/integration --timeout 60000",
+    "test:architecture": "bun test tests/architecture --timeout 60000",
+    "test:coverage": "bun test tests/unit tests/component tests/integration tests/architecture --timeout 60000 --coverage",
+    "start": "bun run src/bin.ts",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+  },
+  "dependencies": {
+    "@clarvis/capability": "workspace:*",
+    "@clarvis/kernel": "workspace:*",
+    "@clarvis/paths": "workspace:*",
+    "@clarvis/protocol": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "jose": "^6.2.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,1049 @@
+# Speaking MCP: transports, resilient sessions, pool and namespaced registry
+
+> Implemented at `packages/mcp-client/`. Every claim below is anchored to a file and line. Open
+> questions are collected in the final section.
+
+## 1. Purpose
+
+`@clarvis/mcp-client` is the package that knows *how* to talk to an MCP server. It builds the SDK
+client and one of three transports (`packages/mcp-client/src/client.ts:235`), wraps a live client in
+a self-healing session that reconnects, health-pings and trips a circuit breaker
+(`packages/mcp-client/src/resilient-session.ts:104`), pools shareable connections behind refcounted
+leases with an idle TTL (`packages/mcp-client/src/connection-manager.ts:469`), and projects each
+server's tools into collision-free wire names (`packages/mcp-client/src/registry.ts:148`).
+
+The package's own doc comment states the boundary it draws: "this package knows how to talk to an
+MCP server; the engine knows *when* to — the dispatch, the guards, the trace and the result envelope
+stay there. `buildRegistry` takes the host's reserved wire names as an argument rather than importing
+them, which is what keeps that line one-directional"
+(`packages/mcp-client/src/index.ts:12-16`). Its manifest confirms the direction: its only
+dependencies are `@clarvis/capability`, `@clarvis/paths` and `@modelcontextprotocol/sdk`
+(`packages/mcp-client/package.json:41-45`), and nothing named `loop` appears in them.
+
+Everything the model ever sees from an MCP server passes through a `ToolResult`
+(`packages/capability/src/run.ts:327`) produced here — including the failure vocabulary that tells a
+caller whether a call may safely be retried (`packages/mcp-client/src/tool-results.ts:37-50`).
+**Delegated elsewhere:** *when* the loop decides to call an MCP tool, and what reserved wire names it
+seeds into `buildRegistry`, belong to [loop-tool-dispatch-and-results](../engine/tool-dispatch.md); the user-facing half of
+elicitation belongs to [elicitation-and-user-interaction](../cross-cutting/elicitation.md); assembling `McpServerConfig` from settings
+and plugin manifests belongs to [kernel-config-and-agents](../hosts/kernel-config.md).
+
+## 2. Surface
+
+The package publishes exactly one entrypoint, `.`, mapped to `./src/index.ts` under the `bun`
+condition and `./dist/index.js` otherwise (`packages/mcp-client/package.json:12-19`). `src/index.ts`
+is a pure re-export list of 96 lines (`packages/mcp-client/src/index.ts:18-96`).
+
+### 2.1 Client and transport construction — `src/client.ts`
+
+| Symbol | Kind | Defined at | Signature / shape |
+|---|---|---|---|
+| `defaultMCPClientFactory` | const | `packages/mcp-client/src/client.ts:93` | `createMCPClientFactory(process.env)` |
+| `createMCPClientFactory` | fn | `packages/mcp-client/src/client.ts:143` | `(environment: RuntimeEnvironment, options?: MCPClientFactoryOptions) => MCPClientFactory` |
+| `buildTransport` | fn | `packages/mcp-client/src/client.ts:235` | `(server, environment = process.env, defaultCwd?, limits = {}) => BunStdioClientTransport \| StdioClientTransport \| StreamableHTTPClientTransport \| SSEClientTransport` |
+| `MCPClientFactory` | type | `packages/mcp-client/src/client.ts:71` | `(server: McpServerConfig, relay?: ElicitationRelay, opts?: MCPConnectOptions) => Promise<MCPClientHandle>` |
+| `MCPClientHandle` | type | `packages/mcp-client/src/client.ts:45` | `{ client: Client; close(): Promise<void>; protocolVersion?: string }` |
+| `MCPConnectOptions` | type | `packages/mcp-client/src/client.ts:61` | `{ signal?: AbortSignal; timeoutMs?: number }` |
+| `ElicitationRelay` | type | `packages/mcp-client/src/client.ts:37` | `{ handle(params: Record<string, unknown>, signal?: AbortSignal): Promise<ElicitationRelayResult> }` |
+| `ElicitationRelayResult` | type | `packages/mcp-client/src/client.ts:26` | `{ action: "accept" \| "decline" \| "cancel"; content?: Record<string, unknown> }` |
+| `RuntimeEnvironment` | type | `packages/mcp-client/src/client.ts:78` | `Readonly<Record<string, string \| undefined>>` |
+| `MCPClientFactoryOptions` | type | `packages/mcp-client/src/client.ts:98` | `defaultCwd`, `maxStdioFrameBytes`, `maxHttpResponseBytes`, `maxHttpSseEventBytes`, `onServerStderr`, `maxServerStderrBytes`, `logger` (`packages/mcp-client/src/client.ts:105-129`) |
+
+### 2.2 One connection — `src/connection.ts`
+
+| Symbol | Kind | Defined at | Value / shape |
+|---|---|---|---|
+| `openConnection` | fn | `packages/mcp-client/src/connection.ts:104` | `(OpenConnectionOptions) => Promise<OpenedConnection>` |
+| `OpenedConnection` | type | `packages/mcp-client/src/connection.ts:49` | `{ conn: MCPConnection; tools: NamespacedToolDescriptor[] }` |
+| `NamespacedToolDescriptor` | type | `packages/mcp-client/src/connection.ts:42` | `{ name; description?; inputSchema: Record<string, unknown>; kind?: ResourceToolKind }` |
+| `MCPConnectionFailedError` | class | `packages/mcp-client/src/connection.ts:54` | `code: "mcp_connection_failed"`, `mcpName`, `transport` |
+| `PoolScope` | type | `packages/mcp-client/src/connection.ts:66` | `{ workspace: string; owner: string }` |
+| `ConnectionEvent` | type | `packages/mcp-client/src/connection.ts:71` | `{ connection_id; scope; mcp_name; transport; state: "unavailable"\|"recovered"\|"closed"; cause?: "timeout"\|"transport"\|"reconnect_failed" }` |
+| `ConnectionEventSink` | type | `packages/mcp-client/src/connection.ts:80` | `(event: ConnectionEvent) => void` |
+| `UNAVAILABLE_REPROBE_COOLDOWN_MS` | const | `packages/mcp-client/src/connection.ts:30` | `30_000` |
+| `DEFAULT_TIMEOUT_STREAK_THRESHOLD` | const | `packages/mcp-client/src/connection.ts:31` | `3` |
+| `DEFAULT_HEALTH_PING_INTERVAL_MS` | const | `packages/mcp-client/src/connection.ts:32` | `30_000` |
+| `DEFAULT_MAX_TOOL_CATALOG_ENTRIES` | const | `packages/mcp-client/src/connection.ts:33` | `2_048` |
+| `DEFAULT_MAX_TOOL_CATALOG_BYTES` | const | `packages/mcp-client/src/connection.ts:34` | `8 * 1024 * 1024` |
+| `MAX_TOOL_CATALOG_PAGES` | const | `packages/mcp-client/src/connection.ts:35` | `50` |
+
+`OpenConnectionOptions` (`packages/mcp-client/src/connection.ts:82-102`) carries `server`, `scope`, `connectTimeoutMs`,
+`callTimeoutMs`, `factory`, plus optional `relay`, `signal`, `reprobeCooldownMs`,
+`timeoutStreakThreshold`, `healthPingIntervalMs`, `closeGraceMs`, `resourcesEnabled`, the four
+catalog bounds, `onEvent` and `logger`.
+
+### 2.3 The pool — `src/connection-manager.ts`
+
+| Symbol | Kind | Defined at | Value / shape |
+|---|---|---|---|
+| `createConnectionManager` | fn | `packages/mcp-client/src/connection-manager.ts:469` | `(ConnectionManagerOptions) => ConnectionManager` |
+| `ConnectionManager` | type | `packages/mcp-client/src/connection-manager.ts:58` | `{ acquire(opts: AcquireOptions): Promise<Lease>; closeAll(): Promise<void> }` |
+| `Lease` | type | `packages/mcp-client/src/connection-manager.ts:26` | `OpenedConnection & { release: () => Promise<void> }` |
+| `AcquireOptions` | type | `packages/mcp-client/src/connection-manager.ts:37` | `{ server; owner; relay?; signal?; poolSharing? }` |
+| `PoolSharing` | type | `packages/mcp-client/src/connection-manager.ts:73` | `"owner" \| "workspace"` |
+| `MCPConnectionLimitError` | class | `packages/mcp-client/src/connection-manager.ts:235` | `code: "mcp_connection_limit"`, `limit` |
+| `DEFAULT_MAX_MCP_CONNECTIONS` | const | `packages/mcp-client/src/connection-manager.ts:131` | `32` |
+| `DEFAULT_MAX_PARALLEL_MCP_CONNECTS` | const | `packages/mcp-client/src/connection-manager.ts:132` | `4` |
+| `DEFAULT_MAX_IDLE_MCP_CONNECTIONS` | const | `packages/mcp-client/src/connection-manager.ts:133` | `8` |
+
+`ConnectionManagerOptions` (`packages/mcp-client/src/connection-manager.ts:82-106`) requires `workspace`, `factory`,
+`connectTimeoutMs`, `callTimeoutMs`; optional are `idleTtlMs`, `poolSharing`, `resourcesEnabled`,
+`timeoutStreakThreshold`, `healthPingIntervalMs`, `onConnectionEvent`, `logger`, `maxConnections`,
+`maxParallelConnects`, `maxIdleConnections`, `closeGraceMs`, and the test seam
+`scheduleCloseTimeout`. The unexported `DEFAULT_IDLE_TTL_MS` is `60_000`
+(`packages/mcp-client/src/connection-manager.ts:130`).
+
+### 2.4 Registry, errors, transports, stderr
+
+| Symbol | Kind | Defined at | Value / shape |
+|---|---|---|---|
+| `toWireToolName` | fn | `packages/mcp-client/src/registry.ts:30` | `(fullName, used: Set<string>, onRename?) => string` |
+| `buildRegistry` | fn | `packages/mcp-client/src/registry.ts:148` | `(entries, reserved: readonly string[], options?: { logger }) => NamespacedRegistry` |
+| `poolToolNames` | fn | `packages/mcp-client/src/registry.ts:168` | `(entries) => string[]` of `mcpName.toolName` |
+| `selectTools` | fn | `packages/mcp-client/src/registry.ts:181` | `(entries, names?) => RegistryEntry[]` |
+| `RegistryEntry` | type | `packages/mcp-client/src/registry.ts:49` | `{ conn: MCPConnection; tools: NamespacedToolDescriptor[] }` |
+| `NamespacedRegistry` | type | re-exported at `packages/mcp-client/src/registry.ts:11` | defined in `packages/capability/src/run.ts:142` |
+| `isMcpRequestTimeout` | fn | `packages/mcp-client/src/errors.ts:11` | `(err: unknown) => boolean` |
+| `isMcpProtocolError` | fn | `packages/mcp-client/src/errors.ts:37` | `(err: unknown) => boolean` |
+| `mcpSpawnArgv` | fn | `packages/mcp-client/src/bun-stdio-client.ts:38` | `(command, args, platform = process.platform) => { argv: string[]; verbatim: boolean }` |
+| `BunStdioClientTransport` | class | `packages/mcp-client/src/bun-stdio-client.ts:138` | implements the SDK `Transport` |
+| `BunStdioClientParameters` | type | `packages/mcp-client/src/bun-stdio-client.ts:66` | `{ command; args?; cwd?; env?; onStderr?; onStderrEnd?; stderrWritable?; maxFrameBytes?; closeGraceMs?; terminateGraceMs?; logger? }` — spawn parameters for a `BunStdioClientTransport` (`:66-100`) |
+| `BunStderrWritable` | type | `packages/mcp-client/src/bun-stdio-client.ts:103` | `{ write; once("drain"\|"error"); off("drain"\|"error") }` — the minimal backpressure surface a parent stderr sink must expose (`:103-109`) |
+| `MCPStdioFrameLimitError` | class | `packages/mcp-client/src/bun-stdio-client.ts:117` | `code: "mcp_stdio_frame_too_large"`, `limit` |
+| `DEFAULT_MCP_STDIO_MAX_FRAME_BYTES` | const | `packages/mcp-client/src/bun-stdio-client.ts:112` | `16 * 1024 * 1024` |
+| `createMCPBoundedFetch` | fn | `packages/mcp-client/src/bounded-fetch.ts:66` | `(MCPBoundedFetchOptions) => FetchLike` |
+| `MCPBoundedFetchOptions` | type | `packages/mcp-client/src/bounded-fetch.ts:26` | `{ fetch?; headers?; maxResponseBytes?; maxSseEventBytes?; logger?; mcpName? }` — `mcpName` is "only needed when `logger` carries no `mcp` binding of its own" (`:26-41`) |
+| `MCPHttpResponseLimitError` | class | `packages/mcp-client/src/bounded-fetch.ts:11` | `code: "mcp_http_response_too_large"`, `limit: "response"\|"sse_event"`, `maxBytes` |
+| `DEFAULT_MCP_HTTP_MAX_RESPONSE_BYTES` | const | `packages/mcp-client/src/bounded-fetch.ts:6` | `16 * 1024 * 1024` |
+| `DEFAULT_MCP_HTTP_MAX_SSE_EVENT_BYTES` | const | `packages/mcp-client/src/bounded-fetch.ts:8` | `4 * 1024 * 1024` |
+| `MCPResourceCatalogLimitError` | class | `packages/mcp-client/src/resources.ts:10` | `code: "mcp_resource_catalog_too_large"`, `dimension`, `limit` |
+| `ResourceCatalogLimits` | type | `packages/mcp-client/src/resources.ts:21` | `{ maxEntries?; maxBytes?; logger? }` — `logger` "should already carry the connection's bindings" (`:21-31`) |
+| `DEFAULT_MAX_RESOURCE_CATALOG_ENTRIES` | const | `packages/mcp-client/src/resources.ts:7` | `5_000` |
+| `DEFAULT_MAX_RESOURCE_CATALOG_BYTES` | const | `packages/mcp-client/src/resources.ts:8` | `4 * 1024 * 1024` |
+| `MAX_RESOURCE_CATALOG_PAGES` | const | `packages/mcp-client/src/resources.ts:6` | `50` |
+| `BuildRegistryOptions` | type | `packages/mcp-client/src/registry.ts:157` | `{ logger? }` — where a wire-name rename is reported (`:157-161`) |
+| `createServerStderrForwarder` | fn | `packages/mcp-client/src/server-stderr.ts:52` | `(options) => ServerStderrForwarder` |
+| `drainStderrStream` | fn | `packages/mcp-client/src/server-stderr.ts:116` | `(stream, forwarder) => void` |
+| `DEFAULT_SERVER_STDERR_MAX_BYTES` | const | `packages/mcp-client/src/server-stderr.ts:5` | `64 * 1024` |
+| `DEFAULT_MCP_CLOSE_GRACE_MS` | const | `packages/mcp-client/src/resilient-session.ts:80` | `2_000` |
+| `MAX_MCP_CLOSE_GRACE_MS` | const | `packages/mcp-client/src/resilient-session.ts:82` | `30_000` |
+| `CLIENT_NAME` | const | `packages/mcp-client/src/version.ts`, `CLIENT_NAME` | `"@clarvis/mcp-client"` |
+| `VERSION` | const | `packages/mcp-client/src/version.ts` | Clarvis product version, statically imported from the root manifest |
+
+### 2.5 What is deliberately *not* exported
+
+`createResilientSession` and its option types (`packages/mcp-client/src/resilient-session.ts:104`),
+`resourceContentsToBlocks` (`packages/mcp-client/src/resources.ts:240`), `paginate` (`packages/mcp-client/src/resources.ts:193`),
+`loadResourceCatalog` (`packages/mcp-client/src/resources.ts:81`), and the whole of `tool-results.ts` (`abortedResult` …
+`interpretCallResult`, lines 3–76) are internal. The architecture test asserts three of these are
+absent from the facade and that the connection exports are re-exported *by identity*
+(`packages/mcp-client/tests/architecture/connection-facade.test.ts:13-20`).
+
+### 2.6 Model-facing tool descriptors this package synthesizes
+
+Two, and only for a server that advertises the `resources` capability
+(`packages/mcp-client/src/resources.ts:57-79`):
+
+| Tool name | `kind` | Input schema |
+|---|---|---|
+| `list_resources` | `resource_list` | `{ type: "object", properties: {}, additionalProperties: false }` (`packages/mcp-client/src/resources.ts:62`) |
+| `read_resource` | `resource_read` | `{ type: "object", properties: { uri: { type: "string", … } }, required: ["uri"], additionalProperties: false }` (`packages/mcp-client/src/resources.ts:69-76`) |
+
+They are appended only when the name is not already taken by a real tool of that server
+(`packages/mcp-client/src/resources.ts:151-156`), which a test pins by pre-seeding `read_resource`
+(`packages/mcp-client/tests/unit/resources.test.ts:18-31`).
+
+## 3. Data and formats
+
+Nothing in this package is persisted to disk. What it transmits and shapes:
+
+### 3.1 The `initialize` handshake identity
+
+The client is constructed as `{ name: CLIENT_NAME, version: VERSION }`
+(`packages/mcp-client/src/client.ts:151`), i.e. the wire-visible client name is
+`"@clarvis/mcp-client"` (`packages/mcp-client/src/version.ts`, `CLIENT_NAME`) and the version is read
+from the root product manifest (`packages/mcp-client/src/version.ts`, `VERSION`). Capabilities are
+`{ elicitation: {} }` when a relay was supplied and `{}` otherwise
+(`packages/mcp-client/src/client.ts`, `defaultMCPClientFactory`).
+`packages/mcp-client/tests/unit/version.test.ts` (`MCP client identity`) pins both identity fields to
+their owned sources.
+
+### 3.2 The stdio child's environment
+
+`{ ...getDefaultEnvironment(), ...customEnv }` — the SDK's fixed safe base with the server's own
+interpolated `env` block layered on top (`packages/mcp-client/src/client.ts:271`). The caller's `environment` is used for
+`${VAR}` lookup only, never handed to the child. Four tests pin the consequence: a server declaring
+no `env` sees none of the host's variables, a server declaring an unrelated `env` still sees none,
+an explicitly interpolated value does arrive, and the child's key set is identical whether the caller
+passed `process.env` or an injected map
+(`packages/mcp-client/tests/unit/mcp-transport-env.test.ts:33-63`).
+
+### 3.3 `${VAR}` interpolation
+
+Both `env` (`packages/mcp-client/src/client.ts:256`) and `headers` (`packages/mcp-client/src/client.ts:304`) go through
+`resolveStringMap(map, environment)` from `@clarvis/capability`
+(`packages/capability/src/env-interpolate.ts:91`). Resolution is all-or-nothing and throws
+`MissingEnvVarsError` naming the *distinct* unresolved variables
+(`packages/capability/src/env-interpolate.ts:78`, message at `:22`). Substitution is by
+`String.replace`, so `"Bearer ${TOKEN}"` resolves to `Bearer <value>`
+(`packages/capability/src/env-interpolate.ts:48`). An end-to-end test over a real HTTP listener
+asserts the resolved value reaches the wire and the literal `${` never does
+(`packages/mcp-client/tests/integration/remote-transport.test.ts:64-65`), and that an absent variable
+fails the connection before any request is made (`:72-80`).
+
+### 3.4 Wire tool names
+
+`toWireToolName` replaces every character outside `[A-Za-z0-9_-]` with `_` and then appends `_1`,
+`_2`, … until the name is unused (`packages/mcp-client/src/registry.ts:35-41`). The uniqueness set is
+pre-seeded with the caller's `reserved` list (`packages/mcp-client/src/registry.ts:76`). Concretely, with
+`reserved = ["submit_result","ask_user","load_skill","read_file"]`, a server named `load` exposing a
+tool `skill` is offered as `load_skill_1`
+(`packages/mcp-client/tests/unit/registry.test.ts:233-238`); with `reserved = []` the same input
+yields `load_skill` (`:240-246`).
+
+Each tool is indexed four ways — exact wire name, dotted `mcpName.toolName`, and the lowercased form
+of each, first-wins on lowercase collision (`packages/mcp-client/src/registry.ts:113-118`). `NamespacedTool`
+(`packages/capability/src/run.ts:365`) carries both `fullName` and `wireName`.
+
+### 3.5 `ConnectionEvent`
+
+`{ connection_id, scope: { workspace, owner }, mcp_name, transport, state, cause? }`
+(`packages/mcp-client/src/connection.ts:71-78`). `connection_id` is a `randomUUID()` allocated once per session
+(`packages/mcp-client/src/resilient-session.ts:122`) and also bound onto every log record from that session (`:123`).
+
+### 3.6 `ToolResult` failure vocabulary
+
+Produced entirely by `src/tool-results.ts` and pinned literally by
+`packages/mcp-client/tests/unit/tool-results.test.ts:51-105`:
+
+| Producer | `code` | `kind` | `outcome` | Message form |
+|---|---|---|---|---|
+| `abortedResult(label)` `:3` | `mcp_runtime_error` | `cancelled` | — | `Tool 'X' call aborted (run cancelled).` |
+| `abortedResult(label, true)` `:3` | `mcp_runtime_error` | `cancelled` | `unknown` | same |
+| `runtimeErrorResult` `:15` | `mcp_runtime_error` | `operational` | — | `Tool 'X' failed: <err>` |
+| `unavailableResult` `:26` | `mcp_unavailable` | `unavailable` | — | `MCP 'N' is unavailable.` |
+| `interruptedResult` `:37` | `mcp_runtime_error` | `operational` | `unknown` | `Tool 'X' failed in transit: <err>. The connection was restored, but the call may or may not have executed on the server — retry only if running it twice is safe.` |
+| `becameUnavailableResult` `:52` | `mcp_unavailable` | `unavailable` | `unknown` | `MCP 'N' became unavailable: <err>` |
+| `timeoutResult` `:64` | `mcp_timeout` | `timeout` | `unknown` | `Tool 'X' timed out after Nms (still connected).` |
+
+`interpretCallResult` (`packages/mcp-client/src/tool-results.ts:100`) maps a successful SDK result to `{ ok: true, data: raw }`
+and an `isError: true` result to `mcp_runtime_error` carrying the **first** entry of `content` that
+has a string `text`, falling back to `Tool 'X' returned an error.`
+(`packages/mcp-client/src/tool-results.ts:116-121`, `:92-101`).
+
+### 3.7 Resource read blocks
+
+`resourceContentsToBlocks` (`packages/mcp-client/src/resources.ts:240`) maps each content entry to a `text` or `image` block:
+
+| Entry | Result |
+|---|---|
+| string `text` | `{ type: "text", text: capText(text) }` (`:253`) |
+| `blob` with `image/*` mime and `≤ 2_000_000` decoded bytes | `{ type: "image", data, mimeType }` (`:256-257`) |
+| `blob` with `image/*` mime, larger | text: `image resource <mime>, N bytes exceeds the 2000000-byte inline cap — not inlined; uri=<uri>` (`:258-262`) |
+| any other `blob` | text: `binary resource <mime ?? application/octet-stream>, N bytes — not inlined; uri=<uri>` (`:263-267`) |
+| empty/absent `contents` | `Resource 'X' returned no content.` (`:244-245`) |
+| present but nothing readable | `Resource 'X' returned no readable content.` (`:270-272`) |
+
+`capText` truncates at 2 MiB on a UTF-8 character boundary by walking back over continuation bytes
+(`packages/mcp-client/src/resources.ts:275-281`), appending `\n\n[resource truncated at 2000000 bytes]`. Pinned for both
+ASCII and multibyte input (`packages/mcp-client/tests/unit/resources.test.ts:235-248`).
+`base64ByteLength` computes decoded size from padding without decoding (`packages/mcp-client/src/resources.ts:283-286`).
+
+### 3.7a `list_resources` output shape
+
+`catalogResult(catalog)` (`packages/mcp-client/src/resources.ts:158-169`) is the whole envelope
+`MCPConnection.listResources()` answers with (call site `packages/mcp-client/src/connection.ts:225-227`): `{ ok: true, data:
+{ content: [{ type: "text", text: JSON.stringify(catalog ?? { resources: [], resourceTemplates: [] },
+null, 2) }] } }`. There is no separate error shape — a disabled or never-probed catalog (`catalog ===
+null`) serializes as the empty pair rather than an error or an empty array, so a model reading this
+tool's result cannot distinguish "no resources" from "resources are off for this server."
+
+### 3.8 The pool key
+
+A JSON string (`packages/mcp-client/src/connection-manager.ts:428-440`) of, in order: `workspace`, `owner` (or `null` under
+`poolSharing: "workspace"`), `name`, `transport`, `command ?? null`, `args ?? []`,
+`sortKeys(env)`, `cwd ?? null`, `url ?? null`, `sortKeys(headers)`, `resources ?? null`. `sortKeys`
+(`:376-383`) makes env/header key order irrelevant — pinned at
+`packages/mcp-client/tests/component/connection-manager.test.ts:406-413`. The owner in the key is
+`ownerSegment(owner)` (`packages/mcp-client/src/connection-manager.ts:524`, `packages/paths/src/roots.ts:163`), so two owner
+ids that differ only by percent-encoding stay separate
+(`packages/mcp-client/tests/component/connection-manager.test.ts:647-655`).
+
+A compile-time drift lock, `PoolKeyCoversConfig` / `_poolKeyDriftLock`
+(`packages/mcp-client/src/connection-manager.ts:392-410`), fails to type-check if `McpServerConfig`
+(`packages/capability/src/api.ts:132`) grows a field not covered by the key plus `shared`. Its own
+comment states why a runtime test cannot cover it: "altering `transport`, `url` or `headers` makes
+the server unpoolable, so no slot is ever created and the assertion is vacuous"
+(`packages/mcp-client/src/connection-manager.ts:399-401`).
+
+Pool keys are never logged raw. `poolKeyHash` reports the first 12 hex characters of a SHA-256
+(`packages/mcp-client/src/connection-manager.ts:126-128`), and a test asserts the record matches `/^[0-9a-f]{12}$/` and does
+not contain the owner string (`packages/mcp-client/tests/component/observability-pool.test.ts:58-59`).
+
+### 3.9 Windows spawn argv
+
+`mcpSpawnArgv` (`packages/mcp-client/src/bun-stdio-client.ts:38`) returns `{ argv: [command, ...args], verbatim: false }`
+unchanged off Windows (`:43`). On Windows it resolves the command on `PATH`
+(`packages/paths/src/which.ts:68`) and, only if the resolved extension is `.cmd` or `.bat`
+(`packages/mcp-client/src/bun-stdio-client.ts:9`, `:45`), rewrites it to
+`[ComSpec ?? "cmd.exe", "/d", "/s", "/c", '"part" "part" …']` with `verbatim: true` (`:56-57`). A
+double quote anywhere in the command or arguments throws instead
+(`:49-55`). The exact produced line is pinned:
+`'"myserver.cmd" "--flag" "value"'`
+(`packages/mcp-client/tests/unit/mcp-spawn-argv.test.ts:58-63`).
+
+## 4. Behavior
+
+### 4.1 Building a client — `createMCPClientFactory`
+
+1. Bind a per-server logger with `{ mcp, transport }` (`packages/mcp-client/src/client.ts:149`).
+2. Construct the SDK `Client` with `CLIENT_NAME`/`VERSION`, advertising `elicitation` only if a relay
+   was passed (`packages/mcp-client/src/client.ts:150-153`).
+3. If a relay was passed, register a request handler on `ElicitRequestSchema` that forwards
+   `request.params` and `extra.signal` to `relay.handle` and casts the answer to `ElicitResult`
+   (`packages/mcp-client/src/client.ts:156-159`).
+4. Build the transport (`packages/mcp-client/src/client.ts:162-177`).
+5. Monkey-patch `transport.setProtocolVersion` to capture the negotiated version before delegating to
+   the SDK's own implementation (`packages/mcp-client/src/client.ts:179-183`). The doc comment states the reason: "The SDK
+   hands the negotiated version to the transport and exposes no getter for it, so a factory that wants
+   to report it has to observe `setProtocolVersion`" (`packages/mcp-client/src/client.ts:52-54`). A live stdio integration
+   test asserts the captured value matches `/^\d{4}-\d{2}-\d{2}$/`
+   (`packages/mcp-client/tests/integration/stdio-client.test.ts:52`).
+6. `client.connect(transport, { signal?, timeout? })` (`packages/mcp-client/src/client.ts:184-187`), then return the handle
+   whose `protocolVersion` is a getter over the captured variable (`packages/mcp-client/src/client.ts:193-195`).
+
+### 4.2 Building a transport — `buildTransport`
+
+| Branch | Condition | Result |
+|---|---|---|
+| stdio, no `command` | `packages/mcp-client/src/client.ts:253` | throws `server 'N': command is required for stdio transport` |
+| stdio under Bun | `typeof Bun !== "undefined"` (`packages/mcp-client/src/client.ts:277`) | `BunStdioClientTransport` with `onStderr`/`onStderrEnd` wired to the forwarder when a sink was given (`:278-291`) |
+| stdio elsewhere | `packages/mcp-client/src/client.ts:293` | SDK `StdioClientTransport` with `stderr: "pipe"` when a sink was given, then `drainStderrStream` (`:295-297`) |
+| http/sse, no `url` | `packages/mcp-client/src/client.ts:300` | throws `server 'N': url is required for <transport> transport` |
+| `http` | `packages/mcp-client/src/client.ts:321` | `StreamableHTTPClientTransport(url, { requestInit?, fetch })` |
+| `sse` | `packages/mcp-client/src/client.ts:322` | `SSEClientTransport(url, { requestInit?, fetch })` |
+
+Interpolated headers are placed **both** on `requestInit.headers` and inside the wrapping bounded
+fetch (`packages/mcp-client/src/client.ts:305-318`, merge at `packages/mcp-client/src/bounded-fetch.ts:94-95`); the doc comment says this is "so the
+credentials survive the SDK's own request construction" (`packages/mcp-client/src/client.ts:230-232`). The transport-type
+mapping, the two "required" errors, the `${VAR}` behaviours, and `defaultCwd` precedence
+(`server.cwd ?? defaultCwd`, `packages/mcp-client/src/client.ts:257`) are all pinned in
+`packages/mcp-client/tests/component/transport-builder.test.ts:15-119` and `:164-174`. When neither
+`cwd` is given, the key is absent from the spawn parameters entirely, preserving host inheritance
+(`packages/mcp-client/tests/component/transport-builder.test.ts:84-88`).
+
+### 4.3 Opening a connection — `openConnection`
+
+Order, from `packages/mcp-client/src/connection.ts:124`:
+
+1. Bind `{ workspace, owner, mcp, transport }` onto the logger (`:124-129`).
+2. Define a `connect` closure that increments an attempt counter and calls `observedConnect`
+   (`:131-137`); the same closure is later handed to the session as its reconnect function (`:192`),
+   so **a reconnect keeps the same relay and the same attempt numbering** — pinned by a test asserting
+   two `mcp.connect.begin` records with `attempt` 1 then 2
+   (`packages/mcp-client/tests/component/observability-connection.test.ts:120-141`).
+3. Connect once; any non-`MCPConnectionFailedError` throw is wrapped into one (`:140-145`), so a
+   factory throwing the bare string `"factory offline"` surfaces as
+   `{ code: "mcp_connection_failed", mcpName: "docs", transport: "stdio", message: "factory offline" }`
+   (`packages/mcp-client/tests/component/connection.test.ts:135-148`).
+4. Load the tool catalog. On failure the handle is closed best-effort and the error is rethrown as
+   `Failed to list tools on 'N': <err>` (`:157-169`) — the close is asserted to happen exactly once
+   (`packages/mcp-client/tests/component/connection.test.ts:150-163`).
+5. If `resourcesEnabled` **and** `server.resources !== false`, probe the resource catalog and append
+   the two synthetic descriptors (`:172-181`). Any throw here is caught and logged at `warn` as
+   `mcp.resources.probe_failed`; the connection survives without resource tools (`:182-187`).
+6. Create the resilient session (`:190-204`).
+7. Build the `MCPConnection` façade (`:206-237`): `status` delegates to the session, `callTool` runs
+   through `session.invoke` with `interpretCallResult`, `readResource` through `session.invoke` with
+   `resourceReadResult`, and `listResources` answers **synchronously from the catalog captured at open
+   time**, never touching the session (`:225-227`).
+
+`connectWithinBound` (`packages/mcp-client/src/connection.ts:405`) races the factory promise against a timeout and the
+caller's abort signal. Three details are load-bearing and each is tested:
+
+- If the caller's signal is already aborted, the factory is **not invoked at all**
+  (`:424-427`); its comment says "a dedicated session may discover transport loss just after its
+  owning run was cancelled; starting a reconnect here would create native work whose only possible
+  outcome is immediate disposal" (`:421-423`). Pinned at
+  `packages/mcp-client/tests/component/connection-manager.test.ts:173-195`, which asserts the second
+  factory call never happens.
+- A factory promise that settles *after* the race was lost has its handle closed
+  (`:433-451`), pinned twice — once for the timeout path and once for the caller-abort path
+  (`packages/mcp-client/tests/component/connection.test.ts:63-104`).
+- The signal handed to the factory is a **fresh** `AbortController`'s signal, not the caller's
+  (`:413`, `:428-431`); a test asserts `factoryOptions.signal !== signal`
+  (`packages/mcp-client/tests/component/connection.test.ts:131`).
+
+Timeout message: `Failed to connect to MCP 'N' within <ms>ms.` (`:476`); abort message:
+`Connection to MCP 'N' aborted (run cancelled).` (`:418`).
+
+### 4.4 Tool catalog pagination — `loadToolCatalog`
+
+`packages/mcp-client/src/connection.ts:260-316`. Up to `MAX_TOOL_CATALOG_PAGES = 50` iterations. Per tool: refuse if
+`tools.length >= maxEntries`; add `Buffer.byteLength(JSON.stringify(descriptor))` and refuse if the
+running total exceeds `maxBytes` (`:284-295`). A missing `inputSchema` defaults to
+`{ type: "object", properties: {} }` (`:290`) and a non-array `tools` field yields an empty page
+(`:276-282`) — both pinned (`packages/mcp-client/tests/component/connection.test.ts:177-204`). Pagination stops when
+`nextCursor` is absent, empty, or identical to the cursor just used (`:299`); exhausting 50 pages
+throws (`:315`). The programmatic bounds are clamped by `boundedCatalogLimit`
+(`packages/mcp-client/src/connection.ts:37-40`): a non-finite value falls back to the hard maximum, and a finite one is
+`min(hardMaximum, max(0, floor(value)))` — so **a caller can only lower a bound, never raise it**,
+pinned by passing `Infinity`/`NaN` and still failing at "2048-entry limit"
+(`packages/mcp-client/tests/component/connection.test.ts:165-173`).
+
+### 4.5 Resource catalog probe — `loadResourceCatalog`
+
+`packages/mcp-client/src/resources.ts:81`. Returns `null` immediately unless `getServerCapabilities()?.resources` is truthy
+(`:87`). Then paginates `resources/list` (`:98-104`) and `resources/templates/list` (`:113-123`) via
+the shared `paginate` (`:193`). The template listing is **optional**: any error other than a
+`MCPResourceCatalogLimitError` is swallowed into `resourceTemplates: []` with a `debug` record
+(`:124-134`), pinned at `packages/mcp-client/tests/unit/resources.test.ts:146-162`. The template
+pass's budget is the resource pass's remainder — `maxItems - resources.length` and
+`maxBytes - resourceBytes`, both floored at 0 (`:119-120`).
+
+`paginate` shares the page cap and cursor-termination rules with the tool catalog (`:208`, `:227`);
+its budgets are also hard-clamped by `boundedCatalogLimit` (`:198-204`, `:52-55`). Tests pin cursor
+following, repeated-cursor termination, the 50-page cap, both budget dimensions, and the hard clamp
+of `Infinity`/`NaN` (`packages/mcp-client/tests/unit/resources.test.ts:33-81`).
+
+### 4.6 The resilient session
+
+`createResilientSession` (`packages/mcp-client/src/resilient-session.ts:104`) holds `status`, a `generation` counter, two
+failure streaks, an in-flight count, a `lastActivityAt` stamp, and an armed health timer
+(`:107-122`). Its clock and timers come from an injectable `ResilientSessionRuntime` whose production
+implementation uses `setTimeout` + `unref` (`:63-77`).
+
+#### `invoke` — the per-call state machine
+
+`packages/mcp-client/src/resilient-session.ts:288-373`. Preconditions, in order (`:289-298`):
+
+| Condition | Result |
+|---|---|
+| caller signal already aborted | `abortedResult(label)` — the run function is never called |
+| session closed | `unavailableResult(mcpName)` |
+| a reconnect is in flight and it fails | `abortedResult` if aborted, else `unavailableResult` |
+| `status === "unavailable"` and still inside the cooldown | `unavailableResult` |
+| `status === "unavailable"` past the cooldown | attempt a `"reprobe"` reconnect; on failure, `unavailableResult` |
+| signal aborted after the reconnect/cooldown checks above but before dispatch (`:298`) | `abortedResult(label)` |
+
+The last row exists because the two awaits above it (`await reconnecting` at `:291`, `await
+ensureReconnected(...)` at `:295`) can let the caller's signal abort during the wait — a second,
+later abort re-check that the first five preconditions alone would miss.
+
+Then the call runs with `{ timeout: callTimeoutMs, signal? }` (`:308-311`). Outcomes:
+
+| Event | Next state | `McpCallOutcome` | Effect |
+|---|---|---|---|
+| success (`:312-316`) | `connected` | `"ok"` | both streaks reset, `lastActivityAt` stamped, `onResult(raw)` |
+| signal aborted after dispatch (`:322`) | unchanged | `"aborted"` | `abortedResult(label, true)` — `outcome: "unknown"` |
+| MCP `RequestTimeout`, streak `< threshold` (`:323-342`) | unchanged (`connected`) | `"timeout"` | `timeoutResult(label, callTimeoutMs)` |
+| MCP `RequestTimeout`, streak `>= threshold` (`:338-341`) | `unavailable` | `"timeout"` | `becameUnavailableResult`; the threshold crossing is warned exactly once (`:326-337`) |
+| MCP protocol error (`:344-347`) | unchanged (`connected`) | `"protocol"` | `runtimeErrorResult` — **no reconnect** |
+| transport error, first in this generation (`:348-358`) | reconnect attempted | `"transport"` | on success `interruptedResult` (`outcome: "unknown"`); on failure `becameUnavailableResult` |
+| transport error, `transportFailStreak >= 2` (`:352-355`) | `unavailable` | `"transport"` | `becameUnavailableResult` — circuit opens without another reconnect |
+
+`McpCallOutcome` (`packages/mcp-client/src/resilient-session.ts:57`) is the closed 5-member type `"ok" | "timeout" |
+"protocol" | "transport" | "aborted"` tagging the `mcp.call.done` record built in the `invoke`
+`finally` block (`:359-371`, §6.5). It is initialized to `"transport"` before dispatch (`:301`), which
+is why the two transport-error rows above never assign it explicitly — the declared default *is* the
+transport branch, reassigned only by the other four outcomes. None of the six preconditions in the
+table above reach this `finally` block at all, so a call rejected before dispatch produces no
+`mcp.call.done` record.
+
+`transportFailStreak` advances at most once per generation, guarded by `lastFailedGeneration`
+(`:348-351`). Every one of these transitions is pinned in
+`packages/mcp-client/tests/unit/resilient-session.test.ts:116-362`, including the two circuit
+breakers with their paired `recovered` event (`:159-191`, `:220-255`), streak reset on success
+(`:193-218`, `:257-276`), protocol errors reconnecting zero times (`:278-296`), and the two
+cancellation shapes (`:298-322`, `:341-356`).
+
+The interrupted-call comment states the contract the `outcome: "unknown"` flag exists for: "Once
+`run` has been invoked the request may already have reached the server. Cancellation is still
+reported as cancellation, but callers must reconcile mutations before issuing a new idempotency key"
+(`:318-321`).
+
+#### Reconnect
+
+`reconnectOnce` (`:184`) sets `status = "lost"`, closes the stale handle within the close grace,
+awaits `options.reconnect()`, and — if the session closed meanwhile — closes the fresh handle instead
+and returns `false` (`:193-198`). On success it swaps the handle, increments `generation`, resets the
+timeout streak and clears the cooldown (`:199-203`), and emits `recovered` only if an `unavailable`
+was emitted earlier (`:208-215`). On failure it marks unavailable with cause `reconnect_failed`
+(`:228`).
+
+`ensureReconnected` (`:233`) single-flights: a caller whose observed generation is stale simply reads
+the current status, and concurrent callers share one `reconnecting` promise (`:237-239`). Pinned by a
+test asserting two concurrent failing calls produce exactly one reconnect
+(`packages/mcp-client/tests/unit/resilient-session.test.ts:117-138`).
+
+#### Health ping
+
+`runHealthCheck` (`:242`) is skipped while another ping is running, after close, when not
+`connected`, when a call is in flight, or when there has been activity within the interval
+(`:243-244`). Otherwise it calls `client.ping` bounded by `connectTimeoutMs` (`:247-250`); success
+stamps activity and clears the timeout streak, failure triggers a `"health_ping_failed"` reconnect
+(`:253-264`). `armHealthCheck` (`:270`) re-arms itself through `.finally` and does nothing when the
+interval is `<= 0` or the session is closed (`:271-273`). Tests pin: an idle failed session is
+reconnected (`:366-382`), a failed reconnect marks unavailable with cause `reconnect_failed`
+(`:384-401`), `healthPingIntervalMs: 0` schedules nothing (`:403-411`), and a ping is skipped while a
+call is in flight (`:413-434`).
+
+#### Close
+
+`close` (`:374`) memoizes one promise, cancels the health timer, emits `closed` exactly once, awaits
+any pending reconnect and then the handle close — each within `awaitLifecycle`, which races the work
+against a grace timer and, on expiry, detaches the work rather than continuing to wait
+(`:127-152`). `normalizeMcpCloseGraceMs` (`:85-88`) turns a non-finite value into the 2 s default and
+clamps everything else to `[0, 30_000]` — pinned by passing `Infinity` and observing a 2 000 ms
+return (`packages/mcp-client/tests/unit/resilient-session.test.ts:519-536`).
+
+`emit` (`:154-164`) suppresses every state except `closed` once the session is closed, and swallows a
+throwing sink (`:163`). A test proves a background reconnect failing after close emits nothing
+(`packages/mcp-client/tests/unit/resilient-session.test.ts:554-579`).
+
+### 4.7 The pool — `acquire`
+
+`packages/mcp-client/src/connection-manager.ts:741`. Steps:
+
+1. Reject outright if closed (`:742`) — **before** opening anything. The comment records the prior
+   defect: "`poolable` used to include `!closed`, so an acquire on a torn-down manager took the
+   unpooled branch: it spawned a real subprocess, then closed it and threw"
+   (`packages/mcp-client/tests/component/connection-manager.test.ts:692-693`), and the test asserts zero connects after
+   `closeAll` (`:913-924`).
+2. `poolable = transport === "stdio" && shared === true` (`:744`). Anything else gets a dedicated
+   connection closed on release (`:745-751`, `makeFreshLease` at `:712`).
+3. Compute the pool key and warn once per **server name** if a relay was supplied (`:754-755`,
+   `warnRelayDropped` at `:541`). The key choice is documented: a per-slot flag would re-warn every
+   idle TTL, and the pool key "embeds the owner, which under the server's `header` and `allowlist`
+   modes is caller-supplied, so a client varying it per request would grow this set without limit"
+   (`:532-539`). Pinned at `packages/mcp-client/tests/component/connection-manager.test.ts:269-297` (exactly one warning
+   across two acquires).
+4. If a slot exists at refcount 0 whose connection is no longer `connected`, drop it, report
+   `evicted{reason:"unhealthy"}` and close it in the background (`:758-776`).
+5. If a slot exists, bump the refcount, cancel its idle timer, and await its shared `connPromise`
+   through `awaitAbortable` — which rejects on the caller's signal **without disturbing the shared
+   promise** other runs may be awaiting (`:778-791`, `:251-269`, comment `:243-246`).
+6. Otherwise create a slot at refcount 1 whose `connPromise` is `openFresh(o, undefined, true)` —
+   note the `undefined` signal, so a shared connect is not bound to one caller — and register a
+   post-settle handler that closes an abandoned connection (refcount fell to 0 while connecting) or
+   deletes the slot on rejection (`:794-825`).
+
+`makeSharedLease.release` (`:724-739`) decrements; at zero it closes rather than pools when the
+manager is closed, the slot has been replaced, or the connection is no longer `connected`; otherwise
+it arms the idle timer. `armIdle` (`:692`) stamps `idleSince`, schedules a `ttl` eviction, and then
+evicts oldest-first until at most `maxIdleConnections` zero-ref slots remain (`:697-703`).
+
+Every one of these behaviours is covered in `tests/component/connection-manager.test.ts`: warm reuse
+across sequential runs (`:299-310`), refcounted sharing (`:312-326`), single-flighted first connect
+(`:328-347`), close only after the last release (`:349-361`), no reuse without `shared` (`:363-372`),
+key discrimination by name/args/env-order/cwd/`resources` (`:374-414`, `:671-689`), an aborted lease
+never poisoning a healthy shared connection (`:416-448`), a failed shared connect leaving no slot
+(`:450-463`), unhealthy discard (`:465-486`), TTL eviction (`:488-514`), idempotent release
+(`:516-526`), and release-after-`closeAll` neither re-pooling nor double-closing (`:552-562`).
+
+### 4.8 Admission control
+
+Three independent bounds:
+
+| Bound | Mechanism | Behaviour on exhaustion |
+|---|---|---|
+| `maxConnections` (live + connecting) | `admittedConnections` counter checked at `openFresh` entry (`:566-578`) | `warn mcp.pool.limit`, then throw `MCPConnectionLimitError` |
+| `maxParallelConnects` (handshakes in flight) | `createPhysicalConnectGate` (`:293`) wrapping the factory | the acquire waits for a permit; a `debug mcp.pool.connect_queued` is sampled |
+| `maxIdleConnections` (zero-ref warm slots) | oldest-first eviction inside `armIdle` (`:700-703`) | `debug mcp.pool.evicted{reason:"max_idle"}` |
+
+Capacity is released only when `connection.close()` completes, via the wrapper installed by
+`manageConnectionClose` (`:219-233`), whose callbacks are nulled after first use "so a retained old
+lease cannot keep the manager's maps and counters reachable" (`:216-218`).
+
+Two quarantine rules exist because a factory may ignore its abort signal:
+
+- The **handshake permit** is held until the physical factory promise settles, not until the logical
+  wait ends (`:355-363`). Its comment: "If the logical connect timeout freed this permit, repeated
+  acquires could start one never-settling subprocess or HTTP handshake per timeout"
+  (`:287-290`). Pinned by six timed-out acquires producing exactly two physical attempts
+  (`packages/mcp-client/tests/component/connection-manager.test.ts:114-138`).
+- The **connection slot** stays reserved when a timed-out factory attempt has not settled; a
+  `warn mcp.connect.quarantined` is emitted and capacity is released when the attempt finally unwinds
+  (`:622-638`). Pinned at `packages/mcp-client/tests/component/connection-manager.test.ts:140-171`.
+
+All four numeric limits pass through `finiteIntegerAtLeast` (`:135-142`), so `NaN`/`Infinity` fall
+back to the defaults rather than disabling admission — pinned individually
+(`packages/mcp-client/tests/component/connection-manager.test.ts:801-911`).
+
+### 4.9 `closeAll`
+
+`closeAllInner` (`:858`) sets `closed`, aborts the shutdown controller (which is linked into every
+open connect via `linkedSignal`, `:144-168`), closes the physical gate, and then closes: every live
+dedicated connection, every handle captured mid-handshake by `withInitialHandleTracking`
+(`:182-207`), every pending open once it resolves, and every pooled slot — each exactly once via a
+`WeakSet` (`:862-880`). The whole set is awaited inside `awaitCloseGrace` (`:828-856`), which returns
+at the grace and detaches the remainder. Pinned: a never-settling open still lets `closeAll` return
+and later closes the connection (`packages/mcp-client/tests/component/connection-manager.test.ts:695-736`); a
+never-settling close likewise (`:775-799`); a shared connection still connecting is closed and its
+acquire rejects with "aborted" (`:564-579`).
+
+### 4.10 Bounded HTTP fetch
+
+`createMCPBoundedFetch` (`packages/mcp-client/src/bounded-fetch.ts:66`) returns a `FetchLike` that:
+
+1. Creates an upstream `AbortController` and combines it with the caller's signal via
+   `AbortSignal.any` (`:92-93`).
+2. Merges the configured headers over the request's own (`:94-95`).
+3. Classifies the response as an event stream by `content-type` containing `text/event-stream`
+   (`:98-99`).
+4. For a non-stream response with a declared `content-length` over the limit, refuses **before
+   reading a byte**: log at `error`, abort upstream, start-and-detach the body cancel, throw
+   (`:101-114`).
+5. Otherwise re-wraps the body in a `ReadableStream` whose `pull` counts bytes. Non-stream responses
+   are bounded by cumulative `maxResponseBytes` (`:139-140`); event streams are bounded per **event**,
+   where the counter resets on a blank line, i.e. two consecutive newlines (`:141-155`).
+
+The doc comment states the cancellation rule: "Cancellation is started and observed, but never
+awaited on the failure path: a broken transport's cancel algorithm must not defeat the byte limit
+itself" (`:63-65`). Two tests pin exactly that by making `cancel()` return a promise that never
+settles (`packages/mcp-client/tests/unit/bounded-fetch.test.ts:5-43`), and one pins that a long-lived
+SSE stream whose *total* exceeds the JSON cap is allowed as long as each event fits (`:68-79`).
+`boundedPositive` (`:42-46`) again only allows lowering a limit.
+
+### 4.11 `BunStdioClientTransport`
+
+`start` (`:160`) refuses a second start, computes argv via `mcpSpawnArgv`, spawns with all three
+streams piped and `windowsVerbatimArguments` only when the cmd-routing branch fired (`:164-175`), and
+arms two readers whose rejections are routed through `suppressSecondaryRejection(…, "transport.onerror")`
+(`:177-180`).
+
+`send` (`:191-196`) writes one outbound JSON-RPC message as a single newline-framed line —
+`` `${JSON.stringify(message)}\n` `` — to the child's stdin, then calls `stdin.flush()`. It throws a
+plain `Error("Not connected")` if `this.process?.stdin` is absent or is a numeric fd (`:192-193`),
+i.e. before `start` has run or after `close` has torn the process down.
+
+`readMessages` (`:207`) scans each chunk for `0x0a`, accumulating chunk slices into a frame and
+emitting on each newline. `appendFrameChunk` (`:225`) enforces `maxFrameBytes` **before** retaining
+the bytes, logging at `error` and throwing `MCPStdioFrameLimitError` (`:229-236`); it copies with
+`.slice()` rather than `.subarray()` because "`subarray` would keep the stream's whole backing chunk
+alive for a tiny trailing fragment" (`:237-238`). `emitFrame` (`:243`) concatenates, strips a
+trailing `\r`, decodes with a **fatal** UTF-8 decoder, and parses through `JSONRPCMessageSchema`
+(`:253-256`). Because framing is byte-level and decoding happens only on a complete frame, a 4-byte
+character split across two pipe chunks survives — pinned for stdout and, independently, for stderr
+(`packages/mcp-client/tests/unit/bun-stdio-decoder.test.ts:55-90`), including under interleaved
+concurrent reads proving the two decoders are independent (`:184-234`).
+
+`readStderr` (`:259`) decodes with a streaming decoder, routing to `onStderr` when given and to the
+parent stderr otherwise, flushes the decoder tail, and **always** calls `onStderrEnd` in a `finally`
+(`:274-276`) — pinned for both the clean and the faulted stream
+(`packages/mcp-client/tests/unit/bun-stdio-decoder.test.ts:92-129`). `writeStderr` (`:279`) honours backpressure by
+awaiting `drain`, registering the resolver in a set so teardown can release it
+(`:283-300`); a test proves the reader stops pulling until drain (`:131-163`) and another proves a
+permanently blocked writable cannot keep `close()` pending (`:165-182`).
+
+`closeInner` (`:314`) ends stdin, waits `closeGraceMs` (default 2 000, `:113`), escalates to
+`SIGTERM`, waits `terminateGraceMs` (default 500, `:114`), escalates to `SIGKILL`, then sets
+`discardStderr`, releases drain waiters, awaits both readers, clears the frame buffer and calls
+`finish` (`:317-344`). Once the child has exited, teardown does not wait for a slow stderr consumer:
+setting `discardStderr` and releasing every backpressure waiter means a stderr chunk still sitting in
+the pipe or awaiting `drain` is dropped rather than delivered, per the method's own comment, "any
+already-buffered pipe tail is discarded" (`:336-338`). `finish` (`:303`) fires `onclose` at most once
+and is also called from the `onExit` handler (`:171-174`), so `onclose` fires on the first of child
+exit or `close`.
+
+### 4.12 Server stderr forwarding
+
+`createServerStderrForwarder` (`packages/mcp-client/src/server-stderr.ts:52`) buffers until a `\n`, strips a trailing `\r`,
+drops empty lines, and releases a partial line of its own once it exceeds `MAX_PENDING_CHARS = 8 KiB`
+(`:72-85`, `:14`). Past `maxBytes` (default 64 KiB) it emits one
+`[further stderr suppressed after N characters]` line and drops everything after, including a later
+`flush` (`:60-69`, `:73`). All of this is pinned line-by-line in
+`packages/mcp-client/tests/unit/server-stderr.test.ts:33-118`.
+
+`drainStderrStream` (`:116`) adapts a Node stream, settling on the **first** of `end` or `close`
+because "a killed child emits only the second" (`:112-113`) — pinned at
+`packages/mcp-client/tests/unit/server-stderr.test.ts:181-198`, together with mid-character chunk splitting (`:154-162`)
+and the replacement character released for a dangling sequence at end (`:200-207`).
+
+### 4.13 Building the registry
+
+`makeRegistry` (`packages/mcp-client/src/registry.ts:66`) walks entries in order, assigns each tool a wire name from the
+seeded `used` set, warns on every rename with `reason: "reserved" | "collision"` decided by whether
+the *base* name was in the reserved set (`:82-95`), and builds the four indexes. `resolve` tries
+exact wire name → exact full name → lowercased either (`:124-128`). `allUnavailable` is `false` when
+there are no connections and otherwise requires **every** connection to be `unavailable` (`:129-132`)
+— the test comments on why: "One healthy server is enough for the pool to be usable — 'all' is the
+whole predicate, and an `.some` written here would strand a run whose other servers are fine"
+(`packages/mcp-client/tests/unit/registry.test.ts:99-101`).
+
+## 5. Invariants
+
+`INV-0xx` ids are the repository-wide catalog's; `MCP-xx` ids are local to this document and were
+derived directly from the code and tests during this pass.
+
+**INV-030 (owned).** The package's public facade (`packages/mcp-client/src/index.ts:42-51`)
+re-exports `openConnection`, `MCPConnectionFailedError`, `UNAVAILABLE_REPROBE_COOLDOWN_MS`,
+`DEFAULT_TIMEOUT_STREAK_THRESHOLD` and `DEFAULT_HEALTH_PING_INTERVAL_MS` **by identity** — the facade
+binding and the module binding are the same object — and does **not** expose
+`createResilientSession`, `resourceContentsToBlocks` or `interpretCallResult`.
+Pinned: `packages/mcp-client/tests/architecture/connection-facade.test.ts:13-20`.
+
+**INV-031 (owned).** The MCP elicitation relay accepts the exact `ElicitRequestSchema` /
+`ElicitResultSchema` shapes the SDK defines, forwarding the request's own `params` object and abort
+signal **unchanged** (by identity, not a copy or a projection).
+Production: `packages/mcp-client/src/client.ts:156-159` — `relay.handle(request.params, extra.signal)`.
+Pinned: `packages/mcp-client/tests/integration/sdk-elicitation-surface.test.ts:6-30`, which asserts
+`params === request.params` and `receivedSignal === signal`, and parses the relay's answer through
+`ElicitResultSchema`. Corroborated end-to-end against a live stdio server that initiates
+`elicitation/create` (`packages/mcp-client/tests/integration/stdio-client.test.ts:24-43`,
+fixture at `packages/mcp-client/tests/fixtures/mcp-server.ts:6-21`).
+
+**MCP-01.** `buildRegistry` takes `reserved` as a **required** positional parameter; a host cannot
+forget it by omission. Production: `packages/mcp-client/src/registry.ts:148-154`.
+Pinned: `packages/mcp-client/tests/unit/registry.test.ts:233-246` (a reserved name forces `_1`;
+an empty reserved list does not).
+
+**MCP-02.** A stdio child's environment is `getDefaultEnvironment()` plus the server's own
+interpolated `env`, and never the caller's environment — regardless of whether the caller passed
+`process.env` or an injected map. Production: `packages/mcp-client/src/client.ts:271`.
+Pinned: `packages/mcp-client/tests/unit/mcp-transport-env.test.ts:33-63` (four cases).
+
+**MCP-03.** An unresolved `${VAR}` in `env` or `headers` fails connection construction before any
+byte reaches the server; the literal `${…}` is never transmitted.
+Production: `packages/mcp-client/src/client.ts:256`, `:304` →
+`packages/capability/src/env-interpolate.ts:78`.
+Pinned: `packages/mcp-client/tests/component/transport-builder.test.ts:50-60`, `:109-119`, and over a
+real socket at `packages/mcp-client/tests/integration/remote-transport.test.ts:52-80`.
+
+**MCP-04.** An MCP protocol error (`InvalidRequest`, `MethodNotFound`, `InvalidParams`,
+`InternalError`, `ParseError`) is a per-call failure: it never reconnects, never advances a streak,
+and never changes `status`. Production: `packages/mcp-client/src/errors.ts:19-25`,
+`packages/mcp-client/src/resilient-session.ts:344-347`.
+Pinned: `packages/mcp-client/tests/unit/resilient-session.test.ts:278-296`;
+code classification at `packages/mcp-client/tests/unit/errors.test.ts:14-31`.
+
+**MCP-05.** A call that may have reached the server carries `outcome: "unknown"`, and one that
+provably did not carries none. Production: `packages/mcp-client/src/tool-results.ts:10`, `:47`,
+`:59`, `:71`; the two abort spellings at `packages/mcp-client/src/resilient-session.ts:289` (no
+outcome) and `:302-305` (outcome). Pinned:
+`packages/mcp-client/tests/unit/resilient-session.test.ts:316-322` (pre-dispatch abort has no
+outcome) and `:341-356` (post-dispatch abort does); shapes at
+`packages/mcp-client/tests/unit/tool-results.test.ts:60`, `:89-104`.
+
+**MCP-06.** A transport failure never replays the interrupted call on the fresh handle.
+Production: `packages/mcp-client/src/resilient-session.ts:356-358` returns `interruptedResult` rather
+than re-running `run`. Pinned:
+`packages/mcp-client/tests/unit/resilient-session.test.ts:140-157` (`freshCalls` is 0 after the
+reconnect) and `packages/mcp-client/tests/component/connection.test.ts:250-284`.
+
+**MCP-07.** Concurrent reconnects are single-flighted per generation.
+Production: `packages/mcp-client/src/resilient-session.ts:237-239`.
+Pinned: `packages/mcp-client/tests/unit/resilient-session.test.ts:117-138`.
+
+**MCP-08.** A programmatic catalog, response or frame bound may only *lower* the shipped ceiling; a
+non-finite value falls back to it. Production: `packages/mcp-client/src/connection.ts:37-40`,
+`packages/mcp-client/src/resources.ts:52-55`, `packages/mcp-client/src/bounded-fetch.ts:42-46`.
+Pinned: `packages/mcp-client/tests/component/connection.test.ts:165-173`,
+`packages/mcp-client/tests/unit/resources.test.ts:73-81`.
+
+**MCP-09.** A pooled (shared) connection is opened without the acquiring run's elicitation relay and
+therefore advertises no `elicitation` capability; the dropped relay is warned once per server name
+rather than silently disabling the pool. Production:
+`packages/mcp-client/src/connection-manager.ts:613` (`o.relay && !pooled`), `:541-549`.
+Pinned: `packages/mcp-client/tests/component/connection-manager.test.ts:269-297`,
+`packages/mcp-client/tests/component/observability-pool.test.ts:193-205`.
+
+**MCP-10.** The pool key carries the whole server config plus the scope, and under the default
+`poolSharing: "owner"` no subprocess is shared between owners or between workspaces.
+Production: `packages/mcp-client/src/connection-manager.ts:427-441`.
+Pinned: `packages/mcp-client/tests/component/connection-manager.test.ts:613-689` (owner default,
+`workspace` opt-in, two workspaces, encoding-distinct owners, `resources` on/off, differing `cwd`).
+A compile-time guard, not a test, covers a newly added `McpServerConfig` field
+(`packages/mcp-client/src/connection-manager.ts:405-410`).
+
+**MCP-11.** A caller's abort signal cancels only that caller's wait on a shared connect; it never
+poisons the shared connection or the promise other runs are awaiting.
+Production: `packages/mcp-client/src/connection-manager.ts:251-269`, `:795` (a pooled `openFresh`
+receives `undefined` as its signal).
+Pinned: `packages/mcp-client/tests/component/connection-manager.test.ts:416-448`.
+
+**MCP-12.** A handshake permit is released only when the physical factory promise settles, and a
+connection slot stays reserved while a timed-out attempt has not unwound.
+Production: `packages/mcp-client/src/connection-manager.ts:355-363`, `:622-638`.
+Pinned: `packages/mcp-client/tests/component/connection-manager.test.ts:114-138`, `:140-171`.
+
+**MCP-13.** After `closeAll`, every `acquire` — pooled or not — rejects **without** opening
+anything. Production: `packages/mcp-client/src/connection-manager.ts:742`.
+Pinned: `packages/mcp-client/tests/component/connection-manager.test.ts:913-924`.
+
+**MCP-14.** Every lease `release` and every `close` is idempotent.
+Production: `packages/mcp-client/src/connection-manager.ts:714-720`, `:725-737`;
+`packages/mcp-client/src/resilient-session.ts:375` (memoized `closePromise`);
+`packages/mcp-client/src/bun-stdio-client.ts:203`.
+Pinned: `packages/mcp-client/tests/component/connection-manager.test.ts:218-226`, `:516-526`;
+`packages/mcp-client/tests/unit/resilient-session.test.ts:538-552`.
+
+**MCP-15.** A shutdown grace is finite and bounded: a non-finite programmatic value becomes 2 000 ms
+and anything larger than 30 000 ms is clamped.
+Production: `packages/mcp-client/src/resilient-session.ts:85-88`.
+Pinned: `packages/mcp-client/tests/unit/resilient-session.test.ts:519-536` (the `Infinity` case);
+~~the upper clamp itself is **unpinned**~~ — **pinned 2026-08-22** by a direct
+`normalizeMcpCloseGraceMs` suite in the same file, covering the clamp, its inclusive boundary, the
+zero floor and the fractional truncation.
+
+**MCP-16.** A raw pool key is never logged; only a 12-hex-character SHA-256 prefix is.
+Production: `packages/mcp-client/src/connection-manager.ts:126-128`, `:666`.
+Pinned: `packages/mcp-client/tests/component/observability-pool.test.ts:58-59`.
+
+**MCP-17.** A `${VAR}` interpolation failure is reported by variable **name** only, never by value.
+Production: `packages/mcp-client/src/connection.ts:390-398` (`missing_env: err.missing`, plus a
+`sanitizeErrorMessage`d `reason`).
+Pinned: `packages/mcp-client/tests/component/observability-connection.test.ts:97-107`.
+
+**MCP-18.** Tool names are logged only when the logger is at `debug`.
+Production: `packages/mcp-client/src/connection.ts:307` (`levelEnabled(logger, "debug")`).
+Pinned: `packages/mcp-client/tests/component/observability-connection.test.ts:143-172`.
+
+**MCP-19.** The hot per-call record `mcp.call.done` is not even constructed above `debug`, and is
+sampled rather than written per call.
+Production: `packages/mcp-client/src/resilient-session.ts:124-125`, `:361`
+(`createSampler`, `packages/capability/src/log.ts:250`).
+Pinned: `packages/mcp-client/tests/unit/observability-session.test.ts:244-263`.
+
+**MCP-20.** On Windows, a command whose resolved extension is `.cmd`/`.bat` is routed through
+`cmd /d /s /c` with every part quoted and `verbatim: true`; a literal double quote in any part is
+refused rather than escaped. Production: `packages/mcp-client/src/bun-stdio-client.ts:45-57`.
+Pinned: `packages/mcp-client/tests/unit/mcp-spawn-argv.test.ts:42-63`.
+
+**MCP-21.** A newline-delimited JSON-RPC frame is refused **before** the transport retains more than
+its byte budget. Production: `packages/mcp-client/src/bun-stdio-client.ts:227-236`.
+Pinned: `packages/mcp-client/tests/unit/bun-stdio-decoder.test.ts:39-53`.
+
+**MCP-22.** An oversized HTTP body is refused without awaiting the stream's own `cancel`.
+Production: `packages/mcp-client/src/bounded-fetch.ts:105-113`, `:160-166` (both use
+`detachCancel`, `:48-59`). Pinned: `packages/mcp-client/tests/unit/bounded-fetch.test.ts:5-43`.
+
+**MCP-23.** A server's stderr is forwarded as whole attributed lines, bounded, with exactly one
+suppression notice. Production: `packages/mcp-client/src/server-stderr.ts:60-85`.
+Pinned: `packages/mcp-client/tests/unit/server-stderr.test.ts:89-104`.
+
+**MCP-24.** `allUnavailable()` is `false` for an empty registry and requires every connection to be
+`unavailable` otherwise. Production: `packages/mcp-client/src/registry.ts:129-132`.
+Pinned: `packages/mcp-client/tests/unit/registry.test.ts:89-110`.
+
+**MCP-25.** The connection façade's `listResources` never reaches the server: it answers from the
+catalog captured at open time. Production: `packages/mcp-client/src/connection.ts:225-227`.
+Pinned indirectly by `packages/mcp-client/tests/component/connection-resources.test.ts:109-122`
+(the fake client's `listResources` is called during open, and the result text carries the probed
+catalog); **no test asserts the absence of a second call**.
+
+## 6. Failure modes and degradation
+
+### 6.1 Error types
+
+| Error | Code | Thrown by | Effect |
+|---|---|---|---|
+| `MCPConnectionFailedError` | `mcp_connection_failed` | `packages/mcp-client/src/connection.ts:54`, raised at `:144`, `:164`, `:415`, `:473` | the connection is not opened; the caller decides |
+| `MCPConnectionLimitError` | `mcp_connection_limit` | `packages/mcp-client/src/connection-manager.ts:235`, raised at `:577` | acquire rejects |
+| `MCPStdioFrameLimitError` | `mcp_stdio_frame_too_large` | `packages/mcp-client/src/bun-stdio-client.ts:117`, raised at `:235` | surfaces on `transport.onerror`, then `close()` (`:219-222`) |
+| `MCPHttpResponseLimitError` | `mcp_http_response_too_large` | `packages/mcp-client/src/bounded-fetch.ts:11`, raised at `:102`, `:140`, `:151` | the fetch throws or the body stream errors |
+| `MCPResourceCatalogLimitError` | `mcp_resource_catalog_too_large` | `packages/mcp-client/src/resources.ts:10`, raised at `:190` | see §6.4 |
+| `MissingEnvVarsError` | — | `packages/capability/src/env-interpolate.ts:19` | transport construction throws; `missing_env` is logged |
+| plain `Error` (tool catalog limit) | — | `packages/mcp-client/src/connection.ts:255` | wrapped into `MCPConnectionFailedError` at `:164` |
+| plain `Error("connection manager closed")` | — | `packages/mcp-client/src/connection-manager.ts:317`, `:742`, `:749`, `:860` | acquire rejects |
+| plain `Error("Not connected")` | — | `packages/mcp-client/src/bun-stdio-client.ts:191-193` (`send()`) | the outbound write is never attempted |
+
+### 6.2 What degrades rather than failing
+
+| Situation | Handler | Degradation |
+|---|---|---|
+| resource capability probe throws | `packages/mcp-client/src/connection.ts:182-187` | `warn mcp.resources.probe_failed`; connection lives, no resource tools |
+| server's handshake capabilities don't advertise `resources` | `packages/mcp-client/src/resources.ts:87` | `loadResourceCatalog` returns `null` immediately, with **no** probe attempted and **no** log line at any level — a server that supports resources but omitted the capability flag gets zero resource tools with nothing recorded anywhere in this package |
+| `resources/templates/list` throws | `packages/mcp-client/src/resources.ts:124-134` | `debug mcp.resources.templates_failed`; `resourceTemplates: []` |
+| server reports no identity | `packages/mcp-client/src/connection.ts:337-347` | the identity fields are simply absent from `mcp.connect.ok` — read defensively "because {@link MCPClientFactory} is a substitution seam" (`:333-335`) |
+| a `ConnectionEvent` sink throws | `packages/mcp-client/src/resilient-session.ts:163` | swallowed |
+| a wire name is already taken | `packages/mcp-client/src/registry.ts:82-95` | the tool is offered under a suffixed name and warned: "a call by its original name will not reach this server" |
+| a server writes megabytes to stderr | `packages/mcp-client/src/server-stderr.ts:62-66` | one suppression line, rest dropped |
+| an unterminated stderr line grows past 8 KiB | `packages/mcp-client/src/server-stderr.ts:81-84` | released as a line of its own |
+| a stdout frame ends with a lone `\r` or is empty | `packages/mcp-client/src/bun-stdio-client.ts:253-254` | skipped, no message emitted |
+| lifecycle work (stale close, reconnect, handle close) never settles | `packages/mcp-client/src/resilient-session.ts:139-151` | returns at the grace and detaches the work |
+| manager teardown work never settles | `packages/mcp-client/src/connection-manager.ts:844-855` | same, via `scheduleCloseTimeout` |
+
+### 6.3 Retries and timeouts
+
+There is **no call-level retry** anywhere in this package. The only repetition is reconnection, and
+it is bounded three ways: single-flighted per generation (`packages/mcp-client/src/resilient-session.ts:237-239`), refused
+while `transportFailStreak >= 2` (`:352-355`), and gated behind the `reprobeCooldownMs` window once
+the circuit is open (`:293-296`). The four clocks are: `connectTimeoutMs` (handshake and health
+ping), `callTimeoutMs` (per tool/resource call), `reprobeCooldownMs` (default 30 s) and
+`healthPingIntervalMs` (default 30 s, disabled at `<= 0`).
+
+### 6.4 One prose/behaviour mismatch
+
+`resourceCatalogLimitReached` logs "the connection is refused and none of this server's resources are
+offered" (`packages/mcp-client/src/resources.ts:187-188`), but `openConnection` catches **every**
+throw from the resource probe, including `MCPResourceCatalogLimitError`, and continues
+(`packages/mcp-client/src/connection.ts:182-187`). Only the second half of that sentence is true on
+this path. The tool-catalog twin's message — "the connection is refused and none of this server's
+tools are offered" (`packages/mcp-client/src/connection.ts:252-254`) — *is* accurate, because that throw is rethrown as
+`MCPConnectionFailedError` (`:164`). No test covers the resource-limit path through `openConnection`.
+
+### 6.5 Diagnostic vocabulary emitted by this package
+
+| Event | Level | Site |
+|---|---|---|
+| `mcp.connect.begin` | debug | `packages/mcp-client/src/connection.ts:367` |
+| `mcp.connect.ok` | info | `packages/mcp-client/src/connection.ts:381` |
+| `mcp.connect.failed` | warn | `packages/mcp-client/src/connection.ts:393` |
+| `mcp.connect.quarantined` | warn | `packages/mcp-client/src/connection-manager.ts:627` |
+| `mcp.tools.listed` | info | `packages/mcp-client/src/connection.ts:302` |
+| `mcp.catalog.limit` | warn | `packages/mcp-client/src/connection.ts:251`, `packages/mcp-client/src/resources.ts:186` |
+| `mcp.resources.probe_failed` | warn | `packages/mcp-client/src/connection.ts:184` |
+| `mcp.resources.templates_failed` | debug | `packages/mcp-client/src/resources.ts:128` |
+| `mcp.reconnect.begin` / `.ok` / `.failed` | debug / info / warn | `packages/mcp-client/src/resilient-session.ts:189`, `:205`, `:220` |
+| `mcp.unavailable` | warn | `packages/mcp-client/src/resilient-session.ts:174` |
+| `mcp.recovered` | info | `packages/mcp-client/src/resilient-session.ts:211` |
+| `mcp.health.ping_failed` | debug | `packages/mcp-client/src/resilient-session.ts:255` |
+| `mcp.timeout_streak` | warn | `packages/mcp-client/src/resilient-session.ts:329` |
+| `mcp.call.done` | debug (sampled) | `packages/mcp-client/src/resilient-session.ts:364` |
+| `mcp.registry.renamed` | warn | `packages/mcp-client/src/registry.ts:85` |
+| `mcp.pool.connect_queued` | debug (sampled) | `packages/mcp-client/src/connection-manager.ts:345` |
+| `mcp.pool.relay_dropped` | warn | `packages/mcp-client/src/connection-manager.ts:545` |
+| `mcp.pool.limit` | warn | `packages/mcp-client/src/connection-manager.ts:569` |
+| `mcp.pool.evicted` | debug | `packages/mcp-client/src/connection-manager.ts:664` |
+| `mcp.transport.frame_limit` | error | `packages/mcp-client/src/bun-stdio-client.ts:231` |
+| `mcp.transport.response_limit` | error | `packages/mcp-client/src/bounded-fetch.ts:81` |
+
+`mcp.call.done`'s `outcome` field is the `McpCallOutcome` union — `"ok" | "timeout" | "protocol" |
+"transport" | "aborted"` (`packages/mcp-client/src/resilient-session.ts:57`) — set by the branch of `invoke` that produced the
+result; see the outcome column in §4.6.
+
+`mcp.pool.evicted`'s `reason` field (`reportEvicted`, `packages/mcp-client/src/connection-manager.ts:657-672`) is the closed
+set `"ttl" | "max_idle" | "unhealthy" | "abandoned"`:
+
+| `reason` | Triggering mechanism |
+|---|---|
+| `"ttl"` | `armIdle`'s idle timer fires after `idleTtlMs` with the slot still at refcount 0 (`:695`, `evict` at `:674`) |
+| `"max_idle"` | `armIdle` evicts the globally-oldest idle slots once more than `maxIdleConnections` remain at refcount 0 (`:700-703`) |
+| `"unhealthy"` | `acquire` finds a refcount-0 slot whose connection is no longer `connected` and discards it before reuse (`:758-776`) |
+| `"abandoned"` | a brand-new slot's `connPromise` settles after every waiter already released it (refcount back to 0) (`:800-813`) |
+
+`ReconnectTrigger` is a distinct field from `reason` on purpose: "Carried as `trigger` on the three
+`mcp.reconnect.*` records, which keeps `reason` free to mean what it means everywhere else in this
+package: the sanitized text of the failure being reported"
+(`packages/mcp-client/src/resilient-session.ts:50-52`).
+
+That sanitized `reason` text comes from `resilient-session.ts`'s own local `errorText` (`:59-61`),
+which runs every logged message through `sanitizeErrorMessage`. Two other, differently-scoped
+functions share the exact name `errorText` but are **not** sanitized: `packages/mcp-client/src/tool-results.ts:137-139`
+(`String(err)` / `err.message`, feeding `runtimeErrorResult`, `interruptedResult` and
+`becameUnavailableResult`, `packages/mcp-client/src/tool-results.ts:15-62`) and `packages/mcp-client/src/connection.ts:490-492` (same shape, used only
+to build the message of a thrown `MCPConnectionFailedError` at `:144` and `:164`, never for a log
+call). The consequence: a `ToolResult` error message that reaches the model is **not** passed through
+`sanitizeErrorMessage`, unlike every logged `reason` this document describes elsewhere.
+
+## 7. Coupling
+
+### 7.1 Outgoing (what this package depends on)
+
+| Dependency | Kind | Forced by |
+|---|---|---|
+| `@clarvis/capability` | runtime value + type | `NOOP_LOGGER`, `bind`, `resolveStringMap` at `packages/mcp-client/src/client.ts:10`; `MissingEnvVarsError`, `bestEffort`, `detachObserved`, `levelEnabled`, `sanitizeErrorMessage`, `unref` at `packages/mcp-client/src/connection.ts:9-18`; `createSampler` at `packages/mcp-client/src/resilient-session.ts:7` |
+| `@clarvis/paths` | runtime value | `ownerSegment` at `packages/mcp-client/src/connection-manager.ts:5`; `executableOnPath` at `packages/mcp-client/src/bun-stdio-client.ts:4` |
+| `@modelcontextprotocol/sdk` | runtime value + type | `Client` and the three transports at `packages/mcp-client/src/client.ts:1-9`; `ErrorCode` at `packages/mcp-client/src/errors.ts:1`; `JSONRPCMessageSchema` at `packages/mcp-client/src/bun-stdio-client.ts:2` |
+
+The type contracts it implements structurally, all owned by `@clarvis/capability`: `MCPConnection`
+(`packages/capability/src/run.ts:348`) built at `packages/mcp-client/src/connection.ts:206`; `ToolResult`
+(`packages/capability/src/run.ts:327`) produced throughout `tool-results.ts`; `NamespacedRegistry`
+(`packages/capability/src/run.ts:142`) built at `packages/mcp-client/src/registry.ts:122`; `McpServerConfig`
+(`packages/capability/src/api.ts:132`) consumed at `packages/mcp-client/src/client.ts:235`; `Logger`
+(`packages/capability/src/log.ts`) as the single diagnostic channel. This package has **no
+`zod`** dependency (`packages/mcp-client/package.json:41-45`) — the only schema work it performs is
+through the SDK's own schemas.
+
+### 7.2 Incoming (what depends on this package)
+
+| Consumer | Kind | Evidence |
+|---|---|---|
+| `@clarvis/loop` | production dependency | `packages/loop/package.json:82`; value imports at `packages/loop/src/runtime/open-tool-pool.ts:2` (`MCPConnectionFailedError`), `packages/loop/src/runtime/tools/mcp-registry.ts:4` (`buildRegistry`, `poolToolNames`, `selectTools`), and re-exports at `packages/loop/src/lib.ts:88-98` |
+| `@clarvis/kernel` | **dev**Dependency only | `packages/kernel/package.json:73-75`; no `src/` file in kernel imports it |
+
+The one-directional edge is enforced structurally rather than by a test *in this package*: `reserved`
+is a required parameter of `buildRegistry` (`packages/mcp-client/src/registry.ts:149`), and the
+engine binds its own vocabulary in its own module — `buildRegistryWith(entries, [...RESERVED_WIRE_NAMES, ...capabilityReserved])`
+(`packages/loop/src/runtime/tools/mcp-registry.ts:37`). That file's comment records the reason: "The
+MCP client takes the reserved set as an argument because it does not know the host's tool vocabulary
+— that is what removed its one import of `runtime/`" (`packages/loop/src/runtime/tools/mcp-registry.ts:21-24`).
+The half that proves the engine hands over the *right* set lives in the loop's own suite
+(`packages/loop/tests/unit/mcp-registry-reservation.test.ts`) — delegated to
+[loop-tool-dispatch-and-results](../engine/tool-dispatch.md).
+
+### 7.3 Build and test configuration
+
+The package extends the root `tsconfig.base.json` with `noEmit` for the typecheck project,
+`resolveJsonModule: true` (needed by `packages/mcp-client/src/version.ts:1`), and source-level `paths` for its two workspace
+dependencies (`packages/mcp-client/tsconfig.json:1-15`); `include` covers `src/**/*.ts` **and**
+`tests/**/*.ts` (`:14`). Its test script carries `--timeout 60000`
+(`packages/mcp-client/package.json:30`). Its coverage floors are `functions: 0.90, lines: 0.98`
+(`tooling/checks/coverage.ts:34`) — tied with `memory` and `server` for the lowest function floor in
+that table (`tooling/checks/coverage.ts:35`, `:39`), while its line floor of 0.98 is among the
+highest.
+
+## 8. Open questions
+
+**Behavioural gaps and unpinned rules**
+
+- ~~`MAX_MCP_CLOSE_GRACE_MS = 30_000` (`packages/mcp-client/src/resilient-session.ts:82`) is applied at
+  `:87` but **no test passes a value above it**; only the non-finite fallback is covered
+  (`packages/mcp-client/tests/unit/resilient-session.test.ts:519-536`). The upper clamp is unpinned.~~
+  **Resolved 2026-08-22.** The exported `normalizeMcpCloseGraceMs` is now tested directly rather than
+  only through a session, which reaches every branch — clamp, boundary, floor, truncation, fallback —
+  without constructing a shutdown for each.
+- `interpretCallResult` dereferences its argument without a null guard
+  (`packages/mcp-client/src/tool-results.ts:111`). A factory or transport returning `null` from
+  `callTool` would throw a `TypeError` *inside* `session.invoke`'s `onResult`, i.e. after the
+  `try` block's success path — outside the classified error handling. No test exercises it, and
+  whether the SDK can produce that value is undetermined.
+- `mcp.tools.listed` always reports `truncated: false` (`packages/mcp-client/src/connection.ts:306`);
+  the field is a constant, since every truncation path throws instead. Whether it is a placeholder
+  for a future non-fatal truncation, or dead, is not determinable.
+- `MCPConnection.listResources`/`readResource` are declared optional on the contract
+  (`packages/capability/src/run.ts:353-354`), but `openConnection` always defines them
+  (`packages/mcp-client/src/connection.ts:225-235`) even when resources are disabled — in which case `listResources` returns
+  an empty catalog and `read_resource` is not offered as a tool but the method still dispatches to
+  the server. Whether callers are expected to gate on `tools` rather than on method presence is not
+  stated anywhere in this package.
+- `MCPClientHandle.protocolVersion` is captured by replacing `transport.setProtocolVersion`
+  (`packages/mcp-client/src/client.ts:179-183`). Whether the SDK guarantees that method is called exactly once, or at all,
+  for every transport is outside this repository.
+
+**Uncorroborated prose**
+
+- Several doc comments narrate a prior defect (`packages/mcp-client/src/client.ts:99-104` on `defaultCwd`,
+  `packages/mcp-client/src/server-stderr.ts:39-44` on stderr reaching the host terminal,
+  `packages/mcp-client/src/bun-stdio-client.ts:19-23` on Windows `npx` shims, `packages/mcp-client/src/connection-manager.ts:453-460` on the dropped
+  relay). The *current* mechanism is verified in each case; the historical claims are not
+  checkable from the code and are quoted, never asserted.
+- The reason for `poolSharing`'s default being `owner` is stated as a security posture in the comment
+  (`packages/mcp-client/src/connection-manager.ts:66-72`) referring to a server's `header`/`allowlist` owner modes. Those
+  modes live outside this package and are not verified here.
+
+**Delegated to sibling documents**
+
+- *When* the loop decides to open a pool, acquire leases, dispatch an MCP tool call, and what it does
+  with a `ToolResult` (including `outcome: "unknown"`), plus the concrete `RESERVED_WIRE_NAMES` list
+  — [loop-tool-dispatch-and-results](../engine/tool-dispatch.md).
+- The user-facing side of elicitation: who implements `ElicitationRelay.handle`, how a prompt reaches
+  a human, and the timeout around it — [elicitation-and-user-interaction](../cross-cutting/elicitation.md).
+- How `McpServerConfig` values (including `shared`, `resources`, `env`, `headers`) are assembled from
+  `settings.json` and plugin manifests, and who chooses `poolSharing` — [kernel-config-and-agents](../hosts/kernel-config.md).
+
+**Not investigated**
+
+- ~~Whether any test outside `packages/mcp-client` pins the absence of a `@clarvis/loop` import
+  from this package.~~ **Corrected 2026-08-22.** One does, and this entry recorded its absence
+  wrongly: `packages/loop/tests/architecture/optional-package-boundary.test.ts` builds its package
+  set from the engine's own manifest rather than a hand-written list, so `@clarvis/mcp-client` — a
+  plain `dependencies` entry at `packages/loop/package.json:82` — is in scope
+  (`enginePackageDependencies`, `:77-88`). It then scans that package's `src` **and** `tests` trees
+  (`SCANNED_TREES`, `:100`) for any static, side-effect or dynamic `@clarvis/loop` specifier and
+  requires the offender list to be empty (`:152-155`), with a companion case asserting files were
+  actually read, so an empty result means something (`:157-161`).
+- Runtime behaviour on Windows: `mcpSpawnArgv`'s cmd-routing branch is only partially exercised on a
+  non-Windows host, and the test itself branches on whether a real `npx.cmd` resolved
+  (`packages/mcp-client/tests/unit/mcp-spawn-argv.test.ts:19-25`).

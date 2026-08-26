@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "types": ["bun", "node"],
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "paths": {
+      "@clarvis/capability": ["../capability/src/index.ts"],
+      "@clarvis/protocol": ["../protocol/src/index.ts"],
+      "@clarvis/kernel": ["../kernel/src/index.ts"],
+      "@clarvis/kernel/bootstrap": ["../kernel/src/bootstrap.ts"],
+      "@clarvis/kernel/config": ["../kernel/src/config.ts"],
+      "@clarvis/kernel/policy": ["../kernel/src/policy.ts"]
+    },
+    "lib": ["ESNext"]
+  },
+  "include": ["src", "tests"]
+}

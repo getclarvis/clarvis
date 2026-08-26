@@ -1,0 +1,10 @@
+{
+  "name": "atlas",
+  "version": "2.1.0",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Atlas Tools",
+    "shortDescription": "Charts and maps for a workspace."
+  },
+  "apps": [{ "id": "atlas-board", "kind": "connector" }]
+}

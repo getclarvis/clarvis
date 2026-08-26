@@ -1,0 +1,44 @@
+name: Usage question
+description: Ask for help using or configuring Clarvis.
+title: "[Question]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read the user guide and troubleshooting page, then share the smallest safe context. Provider account and billing questions belong with the provider.
+  - type: input
+    id: version
+    attributes:
+      label: Clarvis version
+      placeholder: clarvis 0.0.1-beta
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, architecture, terminal, and installation method.
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: attempted
+    attributes:
+      label: What have you tried?
+      description: Include relevant commands and sanitized output, including /doctor when applicable.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed secrets, credential files, private prompts, and proprietary source.
+          required: true
+        - label: This is not a suspected security vulnerability.
+          required: true

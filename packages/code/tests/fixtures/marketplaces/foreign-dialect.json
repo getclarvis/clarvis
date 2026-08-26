@@ -1,0 +1,63 @@
+{
+  "name": "example-catalog",
+  "owner": {
+    "name": "Example Collective",
+    "email": "catalog@example.invalid"
+  },
+  "metadata": {
+    "version": "2.1.0",
+    "updated": "2026-08-17"
+  },
+  "plugins": [
+    {
+      "name": "reviewkit",
+      "source": "https://example.invalid/reviewkit.git",
+      "category": "code-quality",
+      "strict": true,
+      "policy": {
+        "install": "prompt",
+        "capabilities": ["read", "write"]
+      },
+      "interface": {
+        "displayName": "Review Kit",
+        "shortDescription": "Structured review passes over a diff.",
+        "iconUrl": "https://example.invalid/reviewkit.png",
+        "brandColor": "#3355aa"
+      }
+    },
+    {
+      "name": "notekeeper",
+      "source": {
+        "source": "local",
+        "path": "./plugins/notekeeper"
+      },
+      "category": "writing",
+      "policy": {
+        "install": "never"
+      }
+    },
+    {
+      "name": "shipper",
+      "source": "./plugins/shipper",
+      "displayName": "Shipper",
+      "summary": "Release checklists.",
+      "screenshots": ["https://example.invalid/shipper-1.png"]
+    },
+    {
+      "name": "fetcher",
+      "source": {
+        "source": "registry",
+        "packageName": "fetcher"
+      },
+      "description": "Fetches things."
+    },
+    {
+      "name": "docs",
+      "source": "git@example.invalid:collective/docs.git",
+      "path": "plugins/docs",
+      "description": "Doc helpers.",
+      "homepage": "https://example.invalid/docs",
+      "starterPrompts": ["Summarize this module."]
+    }
+  ]
+}

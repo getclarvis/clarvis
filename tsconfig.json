@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "//": "Solution-style aggregator. Compiles nothing itself; `tsc -b` builds every package's emit config in topological order. `code` is Bun-only (runs from source, never emits) and is intentionally excluded.",
+  "files": [],
+  "references": [
+    { "path": "packages/capability/tsconfig.build.json" },
+    { "path": "packages/supervision/tsconfig.build.json" },
+    { "path": "packages/llm/tsconfig.build.json" },
+    { "path": "packages/paths/tsconfig.build.json" },
+    { "path": "packages/trace/tsconfig.build.json" },
+    { "path": "packages/mcp-client/tsconfig.build.json" },
+    { "path": "packages/tools/tsconfig.build.json" },
+    { "path": "packages/hooks/tsconfig.build.json" },
+    { "path": "packages/skills/tsconfig.build.json" },
+    { "path": "packages/memory/tsconfig.build.json" },
+    { "path": "packages/plan/tsconfig.build.json" },
+    { "path": "packages/tasks/tsconfig.build.json" },
+    { "path": "packages/protocol/tsconfig.build.json" },
+    { "path": "packages/loop/tsconfig.build.json" },
+    { "path": "packages/workflows/tsconfig.build.json" },
+    { "path": "packages/kernel/tsconfig.build.json" },
+    { "path": "packages/server/tsconfig.build.json" }
+  ]
+}

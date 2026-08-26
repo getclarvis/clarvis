@@ -1,0 +1,12 @@
+node_modules/
+dist/
+*.log
+.env*
+.DS_Store
+coverage/
+.clarvis/
+.clarvis-tmp-*
+
+# VitePress docs build output
+docs/.vitepress/dist/
+docs/.vitepress/cache/

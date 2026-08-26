@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.log
+.env*
+.DS_Store
+coverage/
+.clarvis/
+.clarvis-tmp-*
+tests/live/recordings/*
+!tests/live/recordings/.gitkeep

@@ -1,0 +1,72 @@
+export type {
+  AssignTaskInput,
+  AttachTaskArtifactInput,
+  CommentTaskInput,
+  CreateTaskInput,
+  CursorPage,
+  ListTaskContainersInput,
+  SearchTaskActorsInput,
+  SearchTasksInput,
+  TaskActor,
+  TaskActorPage,
+  TaskArtifact,
+  TaskClaim,
+  TaskContainerPage,
+  TaskContainerRef,
+  TaskDocument,
+  TaskMutationContext,
+  TaskNativeState,
+  TaskPage,
+  TaskProvider,
+  TaskProviderCapabilities,
+  TaskProviderResolution,
+  TaskProviderResolver,
+  TaskRef,
+  TaskStage,
+  TaskSummary,
+  TaskTransitionIntent,
+  TransitionTaskInput,
+} from "./provider.ts";
+export {
+  TASK_PROVIDER_ERROR_CODES,
+  TaskProviderError,
+  isTaskProviderError,
+} from "./provider-errors.ts";
+export type { TaskProviderErrorCode } from "./provider-errors.ts";
+export { taskProviderKey } from "./provider-key.ts";
+export type { TaskProviderKeyMaterial } from "./provider-key.ts";
+export { TASK_MCP_TOOLS, createMcpTaskProvider, probeMcpTaskCapabilities } from "./mcp-provider.ts";
+export type { McpTaskProviderOptions } from "./mcp-provider.ts";
+export type {
+  TaskServerBinding,
+  TaskServerFailure,
+  TaskServerPort,
+  TaskServerPortResolver,
+} from "./server-port.ts";
+export {
+  TASK_LIMITS,
+  assignTaskInputSchema,
+  attachTaskArtifactInputSchema,
+  commentTaskInputSchema,
+  createTaskInputSchema,
+  listTaskContainersInputSchema,
+  searchTaskActorsInputSchema,
+  searchTasksInputSchema,
+  taskActorPageSchema,
+  taskActorSchema,
+  taskArtifactSchema,
+  taskClaimSchema,
+  taskContainerPageSchema,
+  taskContainerRefSchema,
+  taskDocumentSchema,
+  taskIdentifierSchema,
+  taskMutationContextSchema,
+  taskNativeStateSchema,
+  taskPageSchema,
+  taskProviderCapabilitiesSchema,
+  taskRefSchema,
+  taskStageSchema,
+  taskSummarySchema,
+  taskTransitionIntentSchema,
+  transitionTaskInputSchema,
+} from "./schemas.ts";

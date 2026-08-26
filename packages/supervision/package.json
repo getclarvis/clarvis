@@ -1,0 +1,43 @@
+{
+  "name": "@clarvis/supervision",
+
+  "private": true,
+  "description": "The run-scoped registry a parent observes and controls its spawned children through — agent ids, the activity buffer, the event projection, the steer queue, background registration and the limits.",
+  "license": "MIT",
+  "author": "getclarvis",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "test": "bun test tests/unit tests/component --timeout 60000",
+    "test:unit": "bun test tests/unit --timeout 60000",
+    "test:component": "bun test tests/component --timeout 60000",
+    "test:coverage": "bun test tests/unit tests/component --timeout 60000 --coverage",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+  },
+  "dependencies": {
+    "@clarvis/capability": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}

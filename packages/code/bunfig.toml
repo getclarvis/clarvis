@@ -1,0 +1,21 @@
+# No global `preload` here on purpose. It applied to *every* Bun process started
+# from this directory - build, smoke, bench, typecheck - and cost each of them
+# ~250 ms before its first statement (`bun -e '0'`: 0.27s here against 0.02s from
+# the repo root). Only the scripts that execute .tsx source need the Solid JSX
+# transform, and they ask for it with `--preload` themselves.
+
+[test]
+# `@opentui/solid/preload` must stay first: it registers the Solid JSX transform
+# plugin every .tsx test is compiled with. The tree-sitter preload comes next,
+# ahead of anything that loads `src/`, so its no-worker stub is installed on
+# `TreeSitterClient.prototype` before any code can construct a client.
+preload = [
+  "@opentui/solid/preload",
+  "../../tooling/test-runtime/clarvis-home-preload.ts",
+  "./tests/helpers/ascii-preload.ts",
+  "./tests/helpers/tree-sitter-preload.ts",
+]
+coverageReporter = ["text", "lcov"]
+coverageDir = "coverage"
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["../**"]

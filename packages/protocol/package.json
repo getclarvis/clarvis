@@ -1,0 +1,34 @@
+{
+  "name": "@clarvis/protocol",
+  "private": true,
+  "description": "DRAFT — the transport-agnostic contract between a Clarvis kernel (loop as a server) and its UI clients. Wire DTOs + the KernelClient interface. Carries NO dependency on @clarvis/loop, so a UI (e.g. @clarvis/code) depends only on this and never imports the engine.",
+  "license": "MIT",
+  "author": "getclarvis",
+  "type": "module",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "bun -e \"await Bun.file('dist').exists() && await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "test": "bun run test:contract",
+    "test:contract": "tsc -p tsconfig.json",
+    "test:coverage": "bun run test:contract",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+  }
+}

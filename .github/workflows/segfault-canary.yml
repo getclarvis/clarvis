@@ -1,0 +1,98 @@
+name: segfault-canary
+
+# On-demand retirement canary for the historical Bun signal death in the
+# @clarvis/code suite (see specs/known-issues.md). One arm per dispatch;
+# ~30 iterations at a couple of minutes each, so a batch costs one to two hours
+# of billed runner time. Dispatching is therefore an explicit decision every
+# time — do NOT add a `schedule:` or `push:` trigger.
+on:
+  workflow_dispatch:
+    inputs:
+      bun-version:
+        description: Bun version to install
+        default: "1.4.0"
+        required: true
+      coverage:
+        description: Run with --coverage
+        type: boolean
+        default: true
+      iterations:
+        description: Sample size (>= 30; smaller batches cannot tell 20% from 50%)
+        default: "30"
+        required: true
+      jsc:
+        description: JSC option arm
+        type: choice
+        default: none
+        options: [none, no-concurrent-gc, single-marker, no-concurrent-jit]
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${{ inputs.bun-version }}
+      - name: record Bun runtime
+        run: bun --version && bun --revision
+      - run: bun install --frozen-lockfile
+      - name: measure
+        env:
+          ITERATIONS: ${{ inputs.iterations }}
+          WITH_COVERAGE: ${{ inputs.coverage }}
+          JSC_ARM: ${{ inputs.jsc }}
+        run: |
+          # `set +e` is load-bearing: GitHub runs `run:` blocks under `bash -e`,
+          # and `set -u` does not clear it. Without this the first crash — the
+          # very thing being measured — aborts the step, and every batch reports
+          # a sample size of one.
+          set +e
+          set -u
+          case "$JSC_ARM" in
+            no-concurrent-gc) export BUN_JSC_useConcurrentGC=false ;;
+            single-marker) export BUN_JSC_numberOfGCMarkers=1 ;;
+            no-concurrent-jit) export BUN_JSC_useConcurrentJIT=false ;;
+          esac
+          script="test"
+          if [ "$WITH_COVERAGE" = "true" ]; then script="test:coverage"; fi
+
+          crashes=0
+          declare -A exit_codes
+          : >/tmp/bun-report-urls.txt
+          for i in $(seq 1 "$ITERATIONS"); do
+            bun --filter @clarvis/code "$script" >/tmp/iter.log 2>&1
+            status=$?
+            exit_codes[$status]=$(( ${exit_codes[$status]:-0} + 1 ))
+            if [ "$status" -ge 128 ]; then
+              crashes=$((crashes + 1))
+              grep -oE 'https://bun\.report/[^" ]+' /tmp/iter.log >>/tmp/bun-report-urls.txt
+              grep -E 'workers_spawned|panic:' /tmp/iter.log | head -4
+              echo "iteration $i: CRASH (exit $status)"
+            elif [ "$status" -ne 0 ]; then
+              # A real test failure means the suite is broken, so the rate this
+              # job exists to measure would be meaningless. Stop and say so.
+              echo "iteration $i: real test failure (exit $status) -- batch invalid"
+              tail -60 /tmp/iter.log
+              exit "$status"
+            else
+              echo "iteration $i: pass"
+            fi
+          done
+
+          {
+            echo "## segfault-canary result"
+            echo "- bun ${{ inputs.bun-version }} | coverage=$WITH_COVERAGE | jsc=$JSC_ARM"
+            echo "- crashes: $crashes / $ITERATIONS"
+            printf -- "- exit codes:"
+            for k in "${!exit_codes[@]}"; do printf ' %s:%s' "$k" "${exit_codes[$k]}"; done
+            echo
+            echo "- bun.report URLs:"
+            sort -u /tmp/bun-report-urls.txt | sed 's/^/  - /'
+          } >>"$GITHUB_STEP_SUMMARY"

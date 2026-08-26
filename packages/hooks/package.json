@@ -1,0 +1,48 @@
+{
+  "name": "@clarvis/hooks",
+
+  "private": true,
+  "description": "Executes workspace shell hooks for Clarvis \u2014 match, spawn, bounded capture, verdict parse.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./capability": {
+      "bun": "./src/capability.ts",
+      "types": "./dist/capability.d.ts",
+      "import": "./dist/capability.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "test": "bun test --timeout 60000",
+    "test:unit": "bun test tests/unit --timeout 60000",
+    "test:component": "bun test tests/component --timeout 60000",
+    "test:integration": "bun test tests/integration --timeout 60000",
+    "test:coverage": "bun test --timeout 60000 --coverage",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+  },
+  "dependencies": {
+    "@clarvis/capability": "workspace:*",
+    "@clarvis/tools": "workspace:*"
+  }
+}

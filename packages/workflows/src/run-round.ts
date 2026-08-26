@@ -1,0 +1,1290 @@
+/**
+ * The `run_round` tool: execute a sequence of declared rounds, with the runtime
+ * deriving the fan-out, the barriers and the convergence.
+ *
+ * @remarks A round declares what it *consumes* (`over`), and the barrier follows
+ * from that: `each` flows one leader per item, `all` collapses the set into one
+ * leader and therefore has to wait for it. Nothing here takes a `parallel` or a
+ * `pipeline` argument, so neither can be chosen wrongly.
+ *
+ * When a round's items are themselves work items, the batch goes through
+ * {@link scheduleWorkItems} first, so the dependency order and the write-conflict
+ * rule apply inside a round exactly as they do for `run_work_items`.
+ */
+import type {
+  AgentBuildContext,
+  AgentRegistryPort,
+  ComputeClock,
+  HandlerVerdict,
+  Logger,
+  NamespacedTool,
+  ToolHandler,
+} from "@clarvis/capability";
+import {
+  levelEnabled,
+  NOOP_LOGGER,
+  parseTaskTitle,
+  sanitizeErrorMessage,
+  TASK_TITLE_MAX,
+} from "@clarvis/capability";
+import {
+  beginDispatch,
+  describeQueued,
+  type DispatchDeps,
+  type DispatchOutcome,
+  type DispatchSession,
+  type DispatchStatus,
+  type DispatchUnit,
+} from "./dispatch.ts";
+import { interpolate } from "./interpolate.ts";
+import { isBoundedWorkflowString, WORKFLOW_LIMITS } from "./limits.ts";
+import { faultFields, workflowLogger } from "./log.ts";
+import { reportScheduleDerived, reportScheduleRefused } from "./schedule-log.ts";
+import {
+  admitNew,
+  applyAccept,
+  nextRepeat,
+  parseAcceptRule,
+  parseSelector,
+  resolveSource,
+  selectItems,
+  whenSatisfied,
+  type AcceptRule,
+  type RepeatSpec,
+  type RoundType,
+  type Selector,
+  type WorkflowState,
+} from "./rounds.ts";
+import { scheduleWorkItems } from "./schedule.ts";
+import { WORKFLOW_RESULT_SCHEMAS } from "./schemas.ts";
+import type { LeaderProfileInfo } from "./tool.ts";
+import type { WorkflowCtx } from "./types.ts";
+import { toWorkItem, workItemBrief } from "./work-items.ts";
+
+/** The `run_round` wire/tool name. */
+export const RUN_ROUND_TOOL_NAME = "run_round";
+
+const RUN_ROUND_DESCRIPTION =
+  "Run a sequence of declared rounds. Each round says what it consumes — 'once', " +
+  "'each(<round>.<field>)' or 'all(<round>.<field>)' — and the runtime works out the fan-out and " +
+  "the waiting: 'each' starts one leader per item, 'all' hands the whole set to one leader. Later " +
+  "rounds read earlier rounds' structured results by name, so routing decisions (which findings " +
+  "need verification, which gaps remain) are made by the leader that had the context, not " +
+  "re-derived by you. Returns immediately; collect the leaders with await_agents or agent_poll.";
+
+/** A round as it arrives on the wire, with the compact selector/accept forms. */
+export interface RoundInput {
+  id: string;
+  type: RoundType;
+  profile?: string;
+  over: Selector;
+  title: string;
+  brief: string;
+  fanout: number;
+  accept?: AcceptRule;
+  when?: string;
+}
+
+/** A parsed `run_round` call, or a workflow document compiled into one. */
+export interface RoundCall {
+  rounds: readonly RoundInput[];
+  repeat?: RepeatSpec;
+  args: Record<string, unknown>;
+}
+
+/** How one round finished, as reported back through the batch summary. */
+interface RoundReport {
+  id: string;
+  skipped?: string;
+  leaders: number;
+  accepted?: number;
+  rejected?: number;
+}
+
+const ROUND_TYPES = new Set<RoundType>(["discovery", "findings", "verdict", "free"]);
+
+/**
+ * The shape a round id may take, matching `@clarvis/artifact`'s.
+ *
+ * @remarks Not cosmetic: a unit's key is `<round id>[<item index>]`, and
+ * {@link foldRound} recovers the index by finding the first bracketed number in
+ * it. An id like `pass[1]` would fold every outcome of the round onto item 1 —
+ * wrong `accept` tallies against the wrong items.
+ */
+const ROUND_ID = /^[A-Za-z0-9._-]+$/u;
+
+/**
+ * Build the `run_round` tool.
+ *
+ * @param profiles - the registered leader profiles, used for the per-round
+ *   `profile` enum.
+ */
+export function buildRunRoundTool(profiles?: readonly LeaderProfileInfo[]): NamespacedTool {
+  const round: Record<string, unknown> = {
+    id: {
+      type: "string",
+      minLength: 1,
+      maxLength: WORKFLOW_LIMITS.identifierChars,
+      description: "Unique within this call; later rounds read it by name.",
+    },
+    type: {
+      enum: [...ROUND_TYPES],
+      description:
+        "Selects the shipped result schema this round's leaders must return: discovery, findings " +
+        "or verdict. Use 'free' only when the result is not going to be aggregated.",
+    },
+    over: {
+      type: "string",
+      minLength: 1,
+      maxLength: WORKFLOW_LIMITS.pathChars,
+      description:
+        "What this round consumes: 'once' (one leader), 'each(<round>.<field>)' (one leader per " +
+        "item, optionally 'each(<round>.<field> where <field>)' or '… where <field> = <value>'), " +
+        "or 'all(<round>.<field>)' (the whole set to one leader). Prefer 'each' with a where over " +
+        "filtering the list yourself.",
+    },
+    title: {
+      type: "string",
+      minLength: 1,
+      maxLength: TASK_TITLE_MAX,
+      description:
+        "Short human-facing title for this round's leader. May interpolate the same fields as " +
+        "'brief'; the rendered title must stay on one line and within the title limit.",
+    },
+    brief: {
+      type: "string",
+      minLength: 1,
+      maxLength: WORKFLOW_LIMITS.textChars,
+      description:
+        "The leader's brief. May reference {{item}}, {{item.<field>}}, {{args.<key>}} and " +
+        "{{state.<round>.<field>}}. A placeholder that does not resolve is an error, not blank.",
+    },
+    fanout: {
+      type: "integer",
+      minimum: 1,
+      maximum: WORKFLOW_LIMITS.fanout,
+      description:
+        "OPTIONAL — run this many independent leaders per item, for adversarial verification. " +
+        "Pair with 'accept'.",
+    },
+    accept: {
+      type: "string",
+      minLength: 1,
+      maxLength: WORKFLOW_LIMITS.pathChars,
+      description:
+        "OPTIONAL — how to fold the replicas: 'all(<field>, <value>)', 'any(…)', 'majority(…)' " +
+        "or 'threshold(<field>, <value>, <count>)'. A replica that failed counts against the rule.",
+    },
+    when: {
+      type: "string",
+      minLength: 1,
+      maxLength: WORKFLOW_LIMITS.pathChars,
+      description:
+        "OPTIONAL — a '<round>.<field>' path; the round runs only if it resolves to a non-empty " +
+        "array.",
+    },
+  };
+  if (profiles !== undefined && profiles.length > 0) {
+    round.profile = {
+      type: "string",
+      minLength: 1,
+      maxLength: WORKFLOW_LIMITS.identifierChars,
+      enum: profiles.map((p) => p.name),
+      description:
+        "OPTIONAL — the profile this round's leaders run as. Available profiles — " +
+        profiles.map((p) => `${p.name}: ${p.description ?? "(no description)"}`).join("; "),
+    };
+  }
+  return {
+    fullName: RUN_ROUND_TOOL_NAME,
+    wireName: RUN_ROUND_TOOL_NAME,
+    mcpName: "",
+    toolName: RUN_ROUND_TOOL_NAME,
+    description: RUN_ROUND_DESCRIPTION,
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["rounds"],
+      properties: {
+        rounds: {
+          type: "array",
+          minItems: 1,
+          maxItems: WORKFLOW_LIMITS.rounds,
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["id", "type", "over", "title", "brief"],
+            properties: round,
+          },
+        },
+        repeat: {
+          type: "object",
+          additionalProperties: false,
+          required: ["rounds", "dedupe_by", "max_rounds"],
+          description:
+            "OPTIONAL — re-run these rounds until they stop producing anything new. Deduplication " +
+            "is against everything seen so far, not against what survived verification.",
+          properties: {
+            rounds: {
+              type: "array",
+              minItems: 1,
+              maxItems: WORKFLOW_LIMITS.repeatRounds,
+              items: { type: "string", minLength: 1, maxLength: WORKFLOW_LIMITS.identifierChars },
+            },
+            until: { enum: ["no_new", "budget"] },
+            dedupe_by: {
+              type: "array",
+              minItems: 1,
+              maxItems: WORKFLOW_LIMITS.repeatDedupeFields,
+              items: { type: "string", minLength: 1, maxLength: WORKFLOW_LIMITS.identifierChars },
+            },
+            dry_rounds: {
+              type: "integer",
+              minimum: 1,
+              maximum: WORKFLOW_LIMITS.repeatDryRounds,
+            },
+            max_rounds: {
+              type: "integer",
+              minimum: 1,
+              maximum: WORKFLOW_LIMITS.repeatMaxRounds,
+            },
+          },
+        },
+        args: {
+          type: "object",
+          maxProperties: WORKFLOW_LIMITS.args,
+          propertyNames: { maxLength: WORKFLOW_LIMITS.identifierChars },
+          description: "OPTIONAL — values the briefs may reference as {{args.<key>}}.",
+        },
+      },
+    },
+  };
+}
+
+/** Parse one wire round, or say what is wrong with it. */
+function parseRound(raw: unknown, index: number): { round: RoundInput } | { error: string } {
+  const at = `rounds[${String(index)}]`;
+  if (typeof raw !== "object" || raw === null) return { error: `${at} must be an object.` };
+  const record = raw as Record<string, unknown>;
+  if (
+    !isBoundedWorkflowString(record.id, WORKFLOW_LIMITS.identifierChars) ||
+    !ROUND_ID.test(record.id)
+  ) {
+    return {
+      error:
+        `${at}.id is required and must be a non-empty name of letters, digits, ` +
+        `'.', '_' or '-' up to ${String(WORKFLOW_LIMITS.identifierChars)} characters — it is ` +
+        "used to key this round's results and its leaders.",
+    };
+  }
+  if (typeof record.type !== "string" || !ROUND_TYPES.has(record.type as RoundType)) {
+    return { error: `${at}.type must be one of ${[...ROUND_TYPES].join(", ")}.` };
+  }
+  if (
+    !isBoundedWorkflowString(record.brief, WORKFLOW_LIMITS.textChars) ||
+    record.brief.length === 0
+  ) {
+    return {
+      error:
+        `${at}.brief is required and must be a non-empty string no longer than ` +
+        `${String(WORKFLOW_LIMITS.textChars)} characters.`,
+    };
+  }
+  if (!isBoundedWorkflowString(record.title, TASK_TITLE_MAX * 2) || record.title.length === 0) {
+    return { error: `${at}.title is required and must be a bounded non-empty string.` };
+  }
+  const title = parseTaskTitle(record.title);
+  if (!title.ok) return { error: `${at}.${title.message}` };
+  if (!isBoundedWorkflowString(record.over, WORKFLOW_LIMITS.pathChars)) {
+    return { error: `${at}.over is required and must be a string.` };
+  }
+  const over = parseSelector(record.over);
+  if (over === null) {
+    return {
+      error:
+        `${at}.over is not a selector: expected 'once', 'each(<round>.<field>)' ` +
+        `(optionally '… where <field>' or '… where <field> = <value>') or 'all(<round>.<field>)'.`,
+    };
+  }
+  let accept: AcceptRule | undefined;
+  if (record.accept !== undefined) {
+    if (!isBoundedWorkflowString(record.accept, WORKFLOW_LIMITS.pathChars)) {
+      return {
+        error: `${at}.accept must be a string no longer than ${String(WORKFLOW_LIMITS.pathChars)} characters.`,
+      };
+    }
+    const parsed = parseAcceptRule(record.accept);
+    if (parsed === null) {
+      return {
+        error:
+          `${at}.accept is not a rule: expected 'all(<field>, <value>)', 'any(…)', ` +
+          `'majority(…)' or 'threshold(<field>, <value>, <count>)'.`,
+      };
+    }
+    accept = parsed;
+  }
+  const fanout = record.fanout === undefined ? 1 : Number(record.fanout);
+  if (!Number.isInteger(fanout) || fanout < 1 || fanout > WORKFLOW_LIMITS.fanout) {
+    return {
+      error:
+        `${at}.fanout must be a positive integer no greater than ` +
+        `${String(WORKFLOW_LIMITS.fanout)}.`,
+    };
+  }
+  if (
+    record.profile !== undefined &&
+    (!isBoundedWorkflowString(record.profile, WORKFLOW_LIMITS.identifierChars) ||
+      record.profile.length === 0)
+  ) {
+    return {
+      error:
+        `${at}.profile must be a non-empty string no longer than ` +
+        `${String(WORKFLOW_LIMITS.identifierChars)} characters.`,
+    };
+  }
+  if (
+    record.when !== undefined &&
+    (!isBoundedWorkflowString(record.when, WORKFLOW_LIMITS.pathChars) || record.when.length === 0)
+  ) {
+    return {
+      error:
+        `${at}.when must be a non-empty string no longer than ` +
+        `${String(WORKFLOW_LIMITS.pathChars)} characters.`,
+    };
+  }
+  return {
+    round: {
+      id: record.id,
+      type: record.type as RoundType,
+      over,
+      title: title.title,
+      brief: record.brief,
+      fanout,
+      ...(typeof record.profile === "string" ? { profile: record.profile } : {}),
+      ...(accept === undefined ? {} : { accept }),
+      ...(typeof record.when === "string" ? { when: record.when } : {}),
+    },
+  };
+}
+
+/** Parse the `repeat` block, or say what is wrong with it. */
+function parseRepeat(
+  raw: unknown,
+  ids: ReadonlySet<string>,
+): { repeat: RepeatSpec } | { error: string } {
+  if (typeof raw !== "object" || raw === null) return { error: "'repeat' must be an object." };
+  const record = raw as Record<string, unknown>;
+  const rounds = Array.isArray(record.rounds) ? record.rounds : null;
+  const dedupeBy = Array.isArray(record.dedupe_by) ? record.dedupe_by : null;
+  if (
+    rounds === null ||
+    rounds.length === 0 ||
+    rounds.length > WORKFLOW_LIMITS.repeatRounds ||
+    !rounds.every((r) => isBoundedWorkflowString(r, WORKFLOW_LIMITS.identifierChars) && ids.has(r))
+  ) {
+    return {
+      error:
+        "'repeat.rounds' must name rounds declared in this call and contain no more than " +
+        `${String(WORKFLOW_LIMITS.repeatRounds)} entries.`,
+    };
+  }
+  if (
+    dedupeBy === null ||
+    dedupeBy.length === 0 ||
+    dedupeBy.length > WORKFLOW_LIMITS.repeatDedupeFields ||
+    !dedupeBy.every((f) => isBoundedWorkflowString(f, WORKFLOW_LIMITS.identifierChars))
+  ) {
+    return {
+      error:
+        "'repeat.dedupe_by' must be a non-empty bounded array of field names with no more than " +
+        `${String(WORKFLOW_LIMITS.repeatDedupeFields)} entries.`,
+    };
+  }
+  const maxRounds = Number(record.max_rounds);
+  if (
+    !Number.isInteger(maxRounds) ||
+    maxRounds < 1 ||
+    maxRounds > WORKFLOW_LIMITS.repeatMaxRounds
+  ) {
+    return {
+      error:
+        "'repeat.max_rounds' is required and must be a positive integer no greater than " +
+        `${String(WORKFLOW_LIMITS.repeatMaxRounds)} — it is the backstop.`,
+    };
+  }
+  const dryRounds = record.dry_rounds === undefined ? undefined : Number(record.dry_rounds);
+  if (
+    dryRounds !== undefined &&
+    (!Number.isInteger(dryRounds) || dryRounds < 1 || dryRounds > WORKFLOW_LIMITS.repeatDryRounds)
+  ) {
+    return {
+      error:
+        "'repeat.dry_rounds' must be a positive integer no greater than " +
+        `${String(WORKFLOW_LIMITS.repeatDryRounds)}.`,
+    };
+  }
+  return {
+    repeat: {
+      rounds: rounds as string[],
+      until: record.until === "budget" ? "budget" : "no_new",
+      dedupe_by: dedupeBy,
+      max_rounds: maxRounds,
+      ...(dryRounds === undefined ? {} : { dry_rounds: dryRounds }),
+    },
+  };
+}
+
+/** Bound the flat argument bag briefs can interpolate before retaining it. */
+function parseArgs(raw: unknown): { args: Record<string, unknown> } | { error: string } {
+  if (raw === undefined) return { args: {} };
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { error: "'args' must be an object when supplied." };
+  }
+  const args = raw as Record<string, unknown>;
+  const entries = Object.entries(args);
+  if (entries.length > WORKFLOW_LIMITS.args) {
+    return {
+      error: `'args' must contain no more than ${String(WORKFLOW_LIMITS.args)} properties.`,
+    };
+  }
+  for (const [name, value] of entries) {
+    if (name.length === 0 || name.length > WORKFLOW_LIMITS.identifierChars) {
+      return {
+        error:
+          "'args' property names must be non-empty and no longer than " +
+          `${String(WORKFLOW_LIMITS.identifierChars)} characters.`,
+      };
+    }
+    if (typeof value === "string" && value.length > WORKFLOW_LIMITS.textChars) {
+      return {
+        error:
+          `'args.${name}' must be no longer than ` +
+          `${String(WORKFLOW_LIMITS.textChars)} characters.`,
+      };
+    }
+  }
+  return { args };
+}
+
+/** Parse a whole `run_round` call. */
+function parseRoundCall(args: unknown): { call: RoundCall } | { error: string } {
+  if (typeof args !== "object" || args === null) {
+    return { error: "expected an object with a 'rounds' array." };
+  }
+  const record = args as Record<string, unknown>;
+  if (!Array.isArray(record.rounds) || record.rounds.length === 0) {
+    return { error: "'rounds' is required and must be a non-empty array." };
+  }
+  if (record.rounds.length > WORKFLOW_LIMITS.rounds) {
+    return {
+      error: `'rounds' must contain no more than ${String(WORKFLOW_LIMITS.rounds)} entries.`,
+    };
+  }
+  const rounds: RoundInput[] = [];
+  const ids = new Set<string>();
+  for (const [index, raw] of record.rounds.entries()) {
+    const parsed = parseRound(raw, index);
+    if ("error" in parsed) return parsed;
+    if (ids.has(parsed.round.id)) {
+      return { error: `two rounds share the id '${parsed.round.id}'; ids must be unique.` };
+    }
+    ids.add(parsed.round.id);
+    rounds.push(parsed.round);
+  }
+  let repeat: RepeatSpec | undefined;
+  if (record.repeat !== undefined) {
+    const parsed = parseRepeat(record.repeat, ids);
+    if ("error" in parsed) return parsed;
+    repeat = parsed.repeat;
+  }
+  const parsedArgs = parseArgs(record.args);
+  if ("error" in parsedArgs) return parsedArgs;
+  return {
+    call: {
+      rounds,
+      ...(repeat === undefined ? {} : { repeat }),
+      args: parsedArgs.args,
+    },
+  };
+}
+
+/** The shipped result schema a round's `type` binds its leaders to. */
+function schemaFor(type: RoundType): Record<string, unknown> | undefined {
+  return type === "free" ? undefined : WORKFLOW_RESULT_SCHEMAS[type];
+}
+
+/** One leader a round will start, before it is registered. */
+interface PlannedUnit extends DispatchUnit {
+  itemIndex: number;
+}
+
+/** A unit that must complete before another may start, and the item it came from. */
+interface Prerequisite {
+  key: string;
+  id: string;
+}
+
+/**
+ * A round's dispatch plan: its waves, plus the prerequisites the runtime must
+ * hold each unit against.
+ *
+ * @remarks `prereqs` is empty for every round except one consuming work items —
+ * there, wave *ordering* alone is not the contract: an item whose dependency
+ * failed must not be dispatched at all, which is what the shipped manager prompt
+ * promises and what `run_work_items` already did.
+ */
+interface PlannedRound {
+  waves: PlannedUnit[][];
+  prereqs: Map<string, Prerequisite[]>;
+}
+
+/**
+ * Work out the leaders one round will start.
+ *
+ * @param logger - reports the scheduling decision this round derived, which is
+ *   otherwise auditable from nothing.
+ * @remarks When every selected item parses as a work item the batch is scheduled
+ *   rather than fanned out flat, so `dependencies` and file conflicts hold inside
+ *   a round too. Otherwise the items are independent by construction and go
+ *   straight to the semaphore.
+ */
+function planRound(
+  round: RoundInput,
+  state: WorkflowState,
+  args: Record<string, unknown>,
+  pass = 0,
+  logger: Logger = NOOP_LOGGER,
+): PlannedRound | { error: string } {
+  if (round.over.kind !== "once") {
+    const source = resolveSource(state, round.over.source);
+    if (source !== null && source.length > WORKFLOW_LIMITS.workItems) {
+      return {
+        error:
+          `round '${round.id}': '${round.over.source}' contains ${String(source.length)} items; ` +
+          `the hard limit is ${String(WORKFLOW_LIMITS.workItems)}`,
+      };
+    }
+  }
+  const picked = selectItems(round.over, state);
+  if ("error" in picked) return { error: `round '${round.id}': ${picked.error}` };
+
+  const expectSchema = schemaFor(round.type);
+  const unitFor = (item: unknown, itemIndex: number, replica: number): PlannedUnit | string => {
+    const workItem = toWorkItem(item);
+    const renderedTitle = interpolate(round.title, { args, item, state: state.rounds });
+    if ("error" in renderedTitle) return `round '${round.id}' title: ${renderedTitle.error}`;
+    if (renderedTitle.text.length > TASK_TITLE_MAX * 2) {
+      return `round '${round.id}' title exceeds the bounded display-title size`;
+    }
+    const title = parseTaskTitle(renderedTitle.text);
+    if (!title.ok) return `round '${round.id}' title: ${title.message}`;
+    const rendered = interpolate(round.brief, { args, item, state: state.rounds });
+    if ("error" in rendered) return `round '${round.id}': ${rendered.error}`;
+    const brief = workItem === null ? rendered.text : workItemBrief(workItem, rendered.text);
+    if (brief.length > WORKFLOW_LIMITS.textChars) {
+      return (
+        `round '${round.id}' rendered brief exceeds the ` +
+        `${String(WORKFLOW_LIMITS.textChars)} character limit`
+      );
+    }
+    const suffix = round.fanout > 1 ? `#${String(replica + 1)}` : "";
+    return {
+      itemIndex,
+      key: `${round.id}[${String(itemIndex)}]${suffix}`,
+      title: title.title,
+      brief,
+      roundId: round.id,
+      pass,
+      replica,
+      replicaCount: round.fanout,
+      ...(round.profile !== undefined ? { profile: round.profile } : {}),
+      ...(expectSchema !== undefined ? { expectSchema } : {}),
+    };
+  };
+
+  const flat: PlannedUnit[] = [];
+  for (const [itemIndex, item] of picked.items.entries()) {
+    for (let replica = 0; replica < round.fanout; replica += 1) {
+      const unit = unitFor(item, itemIndex, replica);
+      if (typeof unit === "string") return { error: unit };
+      flat.push(unit);
+    }
+  }
+
+  const workItems = picked.items.map(toWorkItem);
+  if (round.over.kind === "each" && workItems.length > 0 && workItems.every((w) => w !== null)) {
+    const scoped = workItems.filter((w) => w !== null);
+    const schedule = scheduleWorkItems(scoped);
+    if (!schedule.ok) {
+      reportScheduleRefused(logger, schedule);
+      return { error: `round '${round.id}': ${schedule.code} — ${schedule.message}` };
+    }
+    reportScheduleDerived(logger, scoped, schedule.waves);
+    const byIndex = new Map<number, PlannedUnit[]>();
+    for (const unit of flat) {
+      byIndex.set(unit.itemIndex, [...(byIndex.get(unit.itemIndex) ?? []), unit]);
+    }
+    const unitsOf = (id: string): PlannedUnit[] =>
+      byIndex.get(workItems.findIndex((w) => w?.id === id)) ?? [];
+    const prereqs = new Map<string, Prerequisite[]>();
+    for (const item of workItems) {
+      if (item === null) continue;
+      const blockers = item.dependencies.flatMap((id) =>
+        unitsOf(id).map((unit): Prerequisite => ({ key: unit.key, id })),
+      );
+      if (blockers.length === 0) continue;
+      for (const unit of unitsOf(item.id)) prereqs.set(unit.key, blockers);
+    }
+    return {
+      waves: schedule.waves.map((wave) => wave.items.flatMap((item) => unitsOf(item.id))),
+      prereqs,
+    };
+  }
+  return { waves: flat.length === 0 ? [] : [flat], prereqs: new Map() };
+}
+
+/**
+ * Re-assert the hard bounds at the exported programmatic executor boundary.
+ *
+ * @remarks `run_round` already parses untrusted tool arguments, but
+ * `run_workflow` and embedders call {@link startRounds} with typed objects. Types
+ * are not a runtime admission control: this check must happen before selector
+ * filtering, interpolation or the `fanout` allocation loop.
+ */
+function roundCallBoundsError(call: RoundCall): string | null {
+  const rawRounds: unknown = call.rounds;
+  if (
+    !Array.isArray(rawRounds) ||
+    rawRounds.length === 0 ||
+    rawRounds.length > WORKFLOW_LIMITS.rounds
+  ) {
+    return `round sequences must contain 1-${String(WORKFLOW_LIMITS.rounds)} rounds`;
+  }
+  const rounds = rawRounds as readonly RoundInput[];
+  for (const [index, round] of rounds.entries()) {
+    const at = `rounds[${String(index)}]`;
+    if (!isBoundedWorkflowString(round.id, WORKFLOW_LIMITS.identifierChars)) {
+      return `${at}.id exceeds the workflow identifier limit`;
+    }
+    if (!isBoundedWorkflowString(round.brief, WORKFLOW_LIMITS.textChars)) {
+      return `${at}.brief exceeds the workflow text limit`;
+    }
+    if (!isBoundedWorkflowString(round.title, TASK_TITLE_MAX * 2)) {
+      return `${at}.title exceeds the bounded display-title size`;
+    }
+    const title = parseTaskTitle(round.title);
+    if (!title.ok) return `${at}.${title.message}`;
+    if (
+      !Number.isInteger(round.fanout) ||
+      round.fanout < 1 ||
+      round.fanout > WORKFLOW_LIMITS.fanout
+    ) {
+      return `${at}.fanout must be between 1 and ${String(WORKFLOW_LIMITS.fanout)}`;
+    }
+    if (
+      round.profile !== undefined &&
+      !isBoundedWorkflowString(round.profile, WORKFLOW_LIMITS.identifierChars)
+    ) {
+      return `${at}.profile exceeds the workflow identifier limit`;
+    }
+    if (
+      round.when !== undefined &&
+      !isBoundedWorkflowString(round.when, WORKFLOW_LIMITS.pathChars)
+    ) {
+      return `${at}.when exceeds the workflow selector limit`;
+    }
+    if (round.over.kind !== "once") {
+      if (!isBoundedWorkflowString(round.over.source, WORKFLOW_LIMITS.pathChars)) {
+        return `${at}.over exceeds the workflow selector limit`;
+      }
+      if (
+        round.over.kind === "each" &&
+        round.over.where !== undefined &&
+        (!isBoundedWorkflowString(round.over.where.field, WORKFLOW_LIMITS.identifierChars) ||
+          (typeof round.over.where.equals === "string" &&
+            round.over.where.equals.length > WORKFLOW_LIMITS.textChars))
+      ) {
+        return `${at}.over filter exceeds the workflow string limit`;
+      }
+    }
+    if (
+      round.accept !== undefined &&
+      (!isBoundedWorkflowString(round.accept.field, WORKFLOW_LIMITS.identifierChars) ||
+        !isBoundedWorkflowString(round.accept.value, WORKFLOW_LIMITS.textChars))
+    ) {
+      return `${at}.accept exceeds the workflow string limit`;
+    }
+  }
+  if (call.repeat !== undefined) {
+    if (
+      call.repeat.rounds.length === 0 ||
+      call.repeat.rounds.length > WORKFLOW_LIMITS.repeatRounds ||
+      call.repeat.rounds.some((id) => !isBoundedWorkflowString(id, WORKFLOW_LIMITS.identifierChars))
+    ) {
+      return `repeat.rounds must contain 1-${String(WORKFLOW_LIMITS.repeatRounds)} bounded ids`;
+    }
+    if (
+      call.repeat.dedupe_by.length === 0 ||
+      call.repeat.dedupe_by.length > WORKFLOW_LIMITS.repeatDedupeFields ||
+      call.repeat.dedupe_by.some(
+        (field) => !isBoundedWorkflowString(field, WORKFLOW_LIMITS.identifierChars),
+      )
+    ) {
+      return (
+        `repeat.dedupe_by must contain 1-${String(WORKFLOW_LIMITS.repeatDedupeFields)} ` +
+        "bounded fields"
+      );
+    }
+    if (
+      !Number.isInteger(call.repeat.max_rounds) ||
+      call.repeat.max_rounds < 1 ||
+      call.repeat.max_rounds > WORKFLOW_LIMITS.repeatMaxRounds
+    ) {
+      return `repeat.max_rounds must be between 1 and ${String(WORKFLOW_LIMITS.repeatMaxRounds)}`;
+    }
+    if (
+      call.repeat.dry_rounds !== undefined &&
+      (!Number.isInteger(call.repeat.dry_rounds) ||
+        call.repeat.dry_rounds < 1 ||
+        call.repeat.dry_rounds > WORKFLOW_LIMITS.repeatDryRounds)
+    ) {
+      return `repeat.dry_rounds must be between 1 and ${String(WORKFLOW_LIMITS.repeatDryRounds)}`;
+    }
+  }
+  const args = parseArgs(call.args);
+  return "error" in args ? args.error : null;
+}
+
+/**
+ * Fold one round's leader outcomes into the value later rounds read by name.
+ *
+ * @remarks Results from several leaders are merged field by field: array fields
+ *   concatenate, so `each(discover.work_items)` over a findings round makes
+ *   `review.findings` the whole list across every lens. A round carrying an
+ *   `accept` rule instead stores its decisions, so a later round can consume
+ *   `verify.accepted` directly.
+ */
+function foldRound(
+  round: RoundInput,
+  items: readonly unknown[],
+  outcomes: readonly DispatchOutcome[],
+): unknown {
+  const byItem = new Map<number, unknown[]>();
+  for (const outcome of outcomes) {
+    const index = Number(/\[(\d+)\]/u.exec(outcome.key)?.[1] ?? "0");
+    byItem.set(index, [...(byItem.get(index) ?? []), outcome.result]);
+  }
+  if (round.accept !== undefined) {
+    const rule = round.accept;
+    const decisions = [...byItem.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([index, replicas]) => ({
+        item: items[index],
+        ...applyAccept(rule, replicas),
+      }));
+    return {
+      decisions,
+      accepted: decisions.filter((d) => d.accepted).map((d) => d.item),
+      rejected: decisions.filter((d) => !d.accepted).map((d) => d.item),
+    };
+  }
+  const results = [...byItem.entries()].sort((a, b) => a[0] - b[0]).flatMap(([, r]) => r);
+  return mergeResults(results);
+}
+
+/** Merge several structured leader results into one, concatenating array fields. */
+function mergeResults(results: readonly unknown[]): unknown {
+  const objects = results.filter(
+    (r): r is Record<string, unknown> => typeof r === "object" && r !== null && !Array.isArray(r),
+  );
+  if (objects.length !== results.length || objects.length === 0) {
+    return results.length === 1 ? results[0] : results;
+  }
+  if (objects.length === 1) return objects[0];
+  const merged: Record<string, unknown> = {};
+  for (const key of new Set(objects.flatMap((o) => Object.keys(o)))) {
+    const present = objects.filter((o) => o[key] !== undefined).map((o) => o[key]);
+    merged[key] = present.every((v) => Array.isArray(v))
+      ? (present as unknown[][]).flat()
+      : present.length === 1
+        ? present[0]
+        : present;
+  }
+  return merged;
+}
+
+/**
+ * Collect the items a repeat pass produced, for novelty measurement.
+ *
+ * @remarks Every array-valued field of every round in the block contributes, and
+ *   an item carrying none of the `dedupe_by` fields is ignored — which is how a
+ *   `coverage_gaps: string[]` sits beside a `findings[]` without being counted as
+ *   a finding.
+ */
+function producedItems(state: WorkflowState, block: RepeatSpec): unknown[] {
+  const items: unknown[] = [];
+  for (const id of block.rounds) {
+    const value = state.rounds[id];
+    if (typeof value !== "object" || value === null) continue;
+    for (const field of Object.values(value as Record<string, unknown>)) {
+      if (!Array.isArray(field)) continue;
+      for (const entry of field) {
+        const hasKey = block.dedupe_by.some(
+          (name) =>
+            typeof entry === "object" &&
+            entry !== null &&
+            (entry as Record<string, unknown>)[name] !== undefined,
+        );
+        if (hasKey) items.push(entry);
+      }
+    }
+  }
+  return items;
+}
+
+/** Render the plan handed back the moment the rounds start. */
+function describePlan(
+  call: RoundCall,
+  first: RoundInput,
+  handles: ReadonlyMap<string, string>,
+  queued: number,
+) {
+  const shape = call.rounds
+    .map((r) => `${r.id} (${r.type}, ${describeSelector(r.over)}${fanoutNote(r)})`)
+    .join(" → ");
+  const repeat =
+    call.repeat === undefined
+      ? ""
+      : ` Then [${call.repeat.rounds.join(", ")}] repeat until dry, at most ` +
+        `${String(call.repeat.max_rounds)} passes.`;
+  return (
+    `running ${String(call.rounds.length)} round(s): ${shape}.${repeat} ` +
+    `Round '${first.id}' is running now: ${[...handles.values()].join(", ")}.` +
+    `${describeQueued(queued)} ` +
+    "Keep working, then collect them with await_agents (to wait) or agent_poll (to look). " +
+    "Do not finish until they have returned."
+  );
+}
+
+/** Render a selector back into its compact form, for the plan text. */
+function describeSelector(selector: Selector): string {
+  if (selector.kind === "once") return "once";
+  if (selector.kind === "all") return `all(${selector.source})`;
+  const where = selector.where;
+  if (where === undefined) return `each(${selector.source})`;
+  const value = where.equals === undefined ? "" : ` = ${String(where.equals)}`;
+  return `each(${selector.source} where ${where.field}${value})`;
+}
+
+/** The `×N` note a fan-out round carries in the plan text. */
+function fanoutNote(round: RoundInput): string {
+  return round.fanout > 1 ? ` ×${String(round.fanout)}` : "";
+}
+
+/** Render the tally the last child of the sequence carries back. */
+function describeSummary(reports: readonly RoundReport[]): string {
+  const parts = reports.map((report) => {
+    if (report.skipped !== undefined) return `${report.id}: skipped (${report.skipped})`;
+    const votes =
+      report.accepted === undefined
+        ? ""
+        : `, ${String(report.accepted)} accepted / ${String(report.rejected ?? 0)} rejected`;
+    return `${report.id}: ${String(report.leaders)} leader(s)${votes}`;
+  });
+  return `rounds finished — ${parts.join("; ")}`;
+}
+
+/**
+ * Build the `run_round` tool handler.
+ *
+ * @remarks The first round is planned and registered synchronously so the call
+ *   can refuse outright — an unresolvable selector or an unrenderable brief is a
+ *   mistake to report, not something to start and abandon halfway. Every later
+ *   round is registered by the driver through the same dispatch session, which is
+ *   what keeps the live-child count off zero across round boundaries.
+ */
+export function buildRunRoundHandler(
+  ctx: WorkflowCtx,
+  bc: AgentBuildContext,
+  clock: ComputeClock | undefined,
+  agents: AgentRegistryPort,
+): ToolHandler {
+  const deps: DispatchDeps = { ctx, bc, clock, agents };
+  return {
+    matches: (call) => call.name === RUN_ROUND_TOOL_NAME,
+    handle(call): Promise<HandlerVerdict> {
+      const parsed = parseRoundCall(call.arguments);
+      if ("error" in parsed) return Promise.resolve(verdict(parsed.error));
+      const started = startRounds(deps, parsed.call);
+      if ("error" in started) return Promise.resolve(verdict(started.error));
+      return Promise.resolve({
+        kind: "result",
+        text: `Tool '${RUN_ROUND_TOOL_NAME}' result: ${started.text}`,
+        progress: true,
+      });
+    },
+  };
+}
+
+/**
+ * Validate a round sequence, register its first round and hand the rest to a
+ * background driver.
+ *
+ * @returns the plan text to answer the tool call with, or the reason the sequence
+ *   cannot start.
+ * @remarks Shared by `run_round` and `run_workflow`: a workflow document is a
+ *   round sequence that was authored rather than composed in a turn, so there is
+ *   one executor and one set of guarantees behind both.
+ */
+export function startRounds(
+  deps: DispatchDeps,
+  call: RoundCall,
+): { text: string } | { error: string } {
+  const logger = workflowLogger(deps.ctx);
+  const boundsError = roundCallBoundsError(call);
+  if (boundsError !== null) return { error: boundsError };
+  const state: WorkflowState = { rounds: {} };
+  const first = call.rounds[0]!;
+  if (first.over.kind !== "once") {
+    return {
+      error:
+        `the first round '${first.id}' must be 'once': there is no earlier round for it to ` +
+        "consume. Scout with a discovery round, then have later rounds read it by name.",
+    };
+  }
+  if (first.when !== undefined && !whenSatisfied(state, first.when)) {
+    reportRoundSkipped(logger, first.id, 0, `'${first.when}' is empty`);
+    return {
+      error: `the first round '${first.id}' is guarded on '${first.when}', which is empty.`,
+    };
+  }
+  const planned = planRound(first, state, call.args, 0, logger);
+  if ("error" in planned) {
+    reportRoundSkipped(logger, first.id, 0, planned.error);
+    return { error: planned.error };
+  }
+  reportRoundPlanned(logger, first, 0, planned, selectedItems(first, state).length);
+  const [firstWave = [], ...laterWaves] = planned.waves;
+
+  const session = beginDispatch(deps, firstWave);
+  if (session === null) {
+    return {
+      error:
+        "not starting these rounds — too many child agents are already running. Wait with " +
+        "await_agents or end one with agent_stop, then try again.",
+    };
+  }
+  /**
+   * The round-1 handles and the queued tail, read before the driver starts.
+   *
+   * @remarks Both reads must happen here: the driver's first `run` takes the
+   * pending batch, so a later read reports an empty queue.
+   */
+  const handles = session.pendingHandles();
+  const queued = session.queuedCount();
+  const driver = runRounds(
+    session,
+    call,
+    state,
+    {
+      first,
+      firstItems: selectedItems(first, state),
+      laterWaves,
+      prereqs: planned.prereqs,
+    },
+    logger,
+  );
+  deps.agents.adopt(session.anchorId, driver);
+  return { text: describePlan(call, first, handles, queued) };
+}
+
+/**
+ * State what one round is about to cost, in leaders and in barriers.
+ *
+ * @param logger - the workflow-scoped logger.
+ * @param round - the round as authored or composed.
+ * @param pass - zero for the initial sequence, one-based for repeat passes.
+ * @param planned - what {@link planRound} derived.
+ * @param items - how many items the selector picked.
+ * @remarks `info` and once per round: a fan-out's shape is the first thing an
+ *   operator needs and the last thing the trace states, because the trace's
+ *   leader edges only show what actually started.
+ */
+function reportRoundPlanned(
+  logger: Logger,
+  round: RoundInput,
+  pass: number,
+  planned: PlannedRound,
+  items: number,
+): void {
+  logger.info(
+    {
+      event: "workflow.round_planned",
+      round_id: round.id,
+      pass,
+      selector: round.over.kind === "once" ? "once" : `${round.over.kind}(${round.over.source})`,
+      items,
+      fanout: round.fanout,
+      units: planned.waves.reduce((total, wave) => total + wave.length, 0),
+      waves: planned.waves.length,
+      prereq_units: planned.prereqs.size,
+    },
+    "a round resolved into its leaders and barriers; this is the whole fan-out it is about to pay for",
+  );
+}
+
+/**
+ * Say that a round never ran, and why.
+ *
+ * @param logger - the workflow-scoped logger.
+ * @param roundId - the round, or the synthetic `repeat` / `workflow` scope.
+ * @param pass - zero for the initial sequence, one-based for repeat passes.
+ * @param reason - the same sentence the summary string carries.
+ */
+function reportRoundSkipped(logger: Logger, roundId: string, pass: number, reason: string): void {
+  logger.warn(
+    {
+      event: "workflow.round_skipped",
+      round_id: roundId,
+      pass,
+      reason: sanitizeErrorMessage(reason),
+    },
+    "a round in this sequence never ran; the manager sees this only as one clause of the batch summary",
+  );
+}
+
+/**
+ * Report what a round's leaders actually folded into.
+ *
+ * @param logger - the workflow-scoped logger.
+ * @param round - the round being folded.
+ * @param folded - what {@link foldRound} produced.
+ * @param outcomes - the round's dispatch outcomes.
+ * @param decisions - the accept/reject split, when the round declared a rule.
+ * @remarks `result_shape` and `non_object_replicas` together catch the silent
+ *   degradation: {@link mergeResults} falls back to an array the moment one
+ *   leader answers with prose instead of the object its `expectSchema` asked
+ *   for, and every later round reading that field by name then sees something
+ *   of a different shape for a reason nothing states.
+ */
+function reportRoundFolded(
+  logger: Logger,
+  round: RoundInput,
+  folded: unknown,
+  outcomes: readonly DispatchOutcome[],
+  decisions: { accepted: unknown[]; rejected: unknown[] } | undefined,
+): void {
+  if (!levelEnabled(logger, "debug")) return;
+  logger.debug(
+    {
+      event: "workflow.round_folded",
+      round_id: round.id,
+      leaders: outcomes.length,
+      ...(decisions === undefined
+        ? {}
+        : { accepted: decisions.accepted.length, rejected: decisions.rejected.length }),
+      result_shape: shapeOf(folded),
+      non_object_replicas: outcomes.filter((outcome) => shapeOf(outcome.result) !== "object")
+        .length,
+    },
+    "a round's leaders were folded into one value; a shape other than 'object' means at least one replica did not answer the schema",
+  );
+}
+
+/** Classify a folded value without ever recording it. */
+function shapeOf(value: unknown): "object" | "array" | "scalar" {
+  if (Array.isArray(value)) return "array";
+  return typeof value === "object" && value !== null ? "object" : "scalar";
+}
+
+/** Re-resolve a round's items, for folding its outcomes back into the state. */
+function selectedItems(round: RoundInput, state: WorkflowState): readonly unknown[] {
+  const picked = selectItems(round.over, state);
+  return "items" in picked ? picked.items : [];
+}
+
+/**
+ * The driver task: finish the started round, then run the rest, then repeat.
+ *
+ * @remarks The summary is the only report the manager gets, and the held handle
+ *   is the only thing keeping the run from finishing on top of this driver. A
+ *   throw anywhere above must strand neither: `agents.adopt` swallows the
+ *   rejection, so an unsettled baton would block `await_agents` until teardown.
+ */
+async function runRounds(
+  session: DispatchSession,
+  call: RoundCall,
+  state: WorkflowState,
+  started: {
+    first: RoundInput;
+    firstItems: readonly unknown[];
+    laterWaves: PlannedUnit[][];
+    prereqs: ReadonlyMap<string, Prerequisite[]>;
+  },
+  logger: Logger,
+): Promise<void> {
+  const reports: RoundReport[] = [];
+  let budgetExhausted = false;
+  let cancelled = false;
+
+  /**
+   * Run a round's waves, holding each unit against the prerequisites its work
+   * item declared.
+   *
+   * @remarks Wave ordering alone is not the guarantee: an item whose dependency
+   *   failed must not be dispatched, or the shipped `implement` workflow would
+   *   build on top of a step that never landed.
+   */
+  const drain = async (
+    waves: PlannedUnit[][],
+    prereqs: ReadonlyMap<string, Prerequisite[]>,
+  ): Promise<DispatchOutcome[]> => {
+    const collected: DispatchOutcome[] = [];
+    const done = new Map<string, DispatchStatus>();
+    const gate = (unit: DispatchUnit): { blocked: string } | null => {
+      const blocker = (prereqs.get(unit.key) ?? []).find((p) => done.get(p.key) !== "completed");
+      return blocker === undefined ? null : { blocked: `'${blocker.id}' did not finish` };
+    };
+    const take = (outcomes: readonly DispatchOutcome[]): void => {
+      for (const outcome of outcomes) {
+        collected.push(outcome);
+        done.set(outcome.key, outcome.status);
+        if (outcome.status === "cancelled") cancelled = true;
+      }
+    };
+    for (const wave of waves) {
+      take(await session.run(gate));
+      if (cancelled) break;
+      session.advance(wave);
+    }
+    if (!cancelled) take(await session.run(gate));
+    return collected;
+  };
+
+  const finishRound = (
+    round: RoundInput,
+    items: readonly unknown[],
+    outcomes: readonly DispatchOutcome[],
+  ): void => {
+    if (outcomes.some((o) => o.status === "budget_exhausted")) budgetExhausted = true;
+    const folded = foldRound(round, items, outcomes);
+    state.rounds[round.id] = folded;
+    const decisions =
+      round.accept === undefined
+        ? undefined
+        : (folded as { accepted: unknown[]; rejected: unknown[] });
+    reportRoundFolded(logger, round, folded, outcomes, decisions);
+    reports.push({
+      id: round.id,
+      leaders: outcomes.length,
+      ...(decisions === undefined
+        ? {}
+        : { accepted: decisions.accepted.length, rejected: decisions.rejected.length }),
+    });
+  };
+
+  /**
+   * Run a sequence of rounds in order, folding each into the shared state.
+   *
+   * @remarks No cancellation check belongs beside the `session.advance` below:
+   * every `session.run` in this driver goes through `drain`'s `take`, so a
+   * cancelled outcome has already set `cancelled` and this loop's own guard
+   * caught it. `advance` refuses to register on a stopped dispatch regardless.
+   *
+   * Every `continue` here is a round that never ran, and the manager learns
+   * about it only as one clause of the summary string the last child carries
+   * back — so a planning failure in round 7 of 9 is a fragment of a sentence.
+   * Each one therefore also emits `workflow.round_skipped`.
+   */
+  const runFrom = async (rounds: readonly RoundInput[], pass: number): Promise<void> => {
+    for (const round of rounds) {
+      if (cancelled) break;
+      if (budgetExhausted) {
+        reportRoundSkipped(logger, round.id, pass, "the token budget was exhausted");
+        reports.push({ id: round.id, leaders: 0, skipped: "the token budget was exhausted" });
+        continue;
+      }
+      if (round.when !== undefined && !whenSatisfied(state, round.when)) {
+        reportRoundSkipped(logger, round.id, pass, `'${round.when}' is empty`);
+        reports.push({ id: round.id, leaders: 0, skipped: `'${round.when}' is empty` });
+        continue;
+      }
+      const planned = planRound(round, state, call.args, pass, logger);
+      if ("error" in planned) {
+        reportRoundSkipped(logger, round.id, pass, planned.error);
+        reports.push({ id: round.id, leaders: 0, skipped: planned.error });
+        continue;
+      }
+      const items = selectedItems(round, state);
+      reportRoundPlanned(logger, round, pass, planned, items.length);
+      const [head, ...rest] = planned.waves;
+      if (head === undefined) {
+        reportRoundSkipped(logger, round.id, pass, "it selected no items");
+        reports.push({ id: round.id, leaders: 0, skipped: "it selected no items" });
+        continue;
+      }
+      session.advance(head);
+      finishRound(round, items, await drain(rest, planned.prereqs));
+    }
+  };
+
+  try {
+    finishRound(
+      started.first,
+      started.firstItems,
+      await drain(started.laterWaves, started.prereqs),
+    );
+    if (!cancelled) await runFrom(call.rounds.slice(1), 0);
+
+    const block = call.repeat;
+    if (block !== undefined && !cancelled) {
+      const byId = new Map(call.rounds.map((r) => [r.id, r]));
+      let seen: ReadonlySet<string> = new Set(
+        admitNew(producedItems(state, block), block.dedupe_by, new Set()).seen,
+      );
+      let dryRounds = 0;
+      for (let pass = 0; ; pass += 1) {
+        const stop = nextRepeat(block, { roundsRun: pass, dryRounds, budgetExhausted });
+        if (stop.done) {
+          reportRoundSkipped(logger, "repeat", pass + 1, `stopped: ${stop.reason}`);
+          reports.push({ id: "repeat", leaders: 0, skipped: `stopped: ${stop.reason}` });
+          break;
+        }
+        await runFrom(
+          block.rounds.map((id) => byId.get(id)).filter((r) => r !== undefined),
+          pass + 1,
+        );
+        if (cancelled) break;
+        const admitted = admitNew(producedItems(state, block), block.dedupe_by, seen);
+        seen = admitted.seen;
+        dryRounds = admitted.fresh.length === 0 ? dryRounds + 1 : 0;
+      }
+    }
+    if (cancelled) {
+      reportRoundSkipped(logger, "workflow", 0, "stopped after cancellation");
+      reports.push({ id: "workflow", leaders: 0, skipped: "stopped after cancellation" });
+    }
+  } catch (err) {
+    logger.error(
+      {
+        event: "workflow.driver_faulted",
+        rounds_done: reports.length,
+        reports: reports.map((report) => `${report.id}:${String(report.leaders)}`).join(","),
+        ...faultFields(err),
+      },
+      "the round driver threw, so no further round runs; without this the throw reaches agents.adopt and is reduced to an agent id with no round",
+    );
+    throw err;
+  } finally {
+    session.end(describeSummary(reports));
+  }
+}
+
+/** A non-terminal, immediate textual verdict prefixed as a `run_round` result. */
+function verdict(text: string): HandlerVerdict {
+  return {
+    kind: "result",
+    text: `Tool '${RUN_ROUND_TOOL_NAME}' result: ${text}`,
+    progress: false,
+  };
+}

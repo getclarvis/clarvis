@@ -1,0 +1,80 @@
+{
+  "name": "@clarvis/skills",
+  "private": true,
+  "description": "Discover, parse, merge and serve SKILL.md-style skills from caller-supplied roots \u2014 a leaf library with progressive disclosure (catalog / body / resources).",
+  "license": "MIT",
+  "keywords": [
+    "llm",
+    "agent",
+    "ai-agent",
+    "coding-agent",
+    "skills",
+    "skills",
+    "skill",
+    "skill-md",
+    "progressive-disclosure",
+    "frontmatter",
+    "workspace",
+    "typescript"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./catalog": {
+      "bun": "./src/catalog/index.ts",
+      "types": "./dist/catalog/index.d.ts",
+      "import": "./dist/catalog/index.js"
+    },
+    "./capability": {
+      "bun": "./src/capability.ts",
+      "types": "./dist/capability.d.ts",
+      "import": "./dist/capability.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "test": "bun test --timeout 60000",
+    "test:unit": "bun test tests/unit --timeout 60000",
+    "test:component": "bun test tests/component --timeout 60000",
+    "test:integration": "bun test tests/integration --timeout 60000",
+    "test:coverage": "bun test --timeout 60000 --coverage",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+  },
+  "dependencies": {
+    "@clarvis/capability": "workspace:*",
+    "@clarvis/paths": "workspace:*",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "overrides": {
+    "esbuild": "^0.25.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getclarvis/clarvis.git",
+    "directory": "packages/skills"
+  },
+  "homepage": "https://github.com/getclarvis/clarvis#readme",
+  "bugs": {
+    "url": "https://github.com/getclarvis/clarvis/issues"
+  }
+}

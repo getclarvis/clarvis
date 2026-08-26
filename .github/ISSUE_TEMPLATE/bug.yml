@@ -1,0 +1,101 @@
+name: Bug report
+description: Report a reproducible Clarvis defect without including secrets or private source.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Clarvis. Search existing issues first. Suspected vulnerabilities must use private reporting, not this form.
+  - type: input
+    id: version
+    attributes:
+      label: Clarvis version
+      description: Paste the output of clarvis --version.
+      placeholder: clarvis 0.0.1-beta
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - Portable installer
+        - Downloaded release archive
+        - Source checkout
+        - bun link
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Operating system and architecture
+      placeholder: Ubuntu 26.04 x64, macOS Apple silicon, or Windows 11 arm64
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal environment
+      description: Include terminal/version, shell, multiplexer or SSH hop, and window size when relevant.
+      placeholder: Kitty 0.x, zsh, tmux 3.x, 160x48
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Interactive TUI
+        - Headless print mode
+        - Installation or PATH
+        - Self-update
+        - Provider or model setup
+        - Tools or approvals
+        - Sessions, memory, plans, tasks, or workflows
+        - MCP, plugins, hooks, or skills
+        - Contributor build or tests
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction
+      description: Give the smallest safe sequence and any minimal public fixture.
+      placeholder: |
+        1. Run ...
+        2. Select ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include exact error text or a sanitized screenshot when useful.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Never paste API keys, tokens, credential files, private prompts, or proprietary code. Inspect debug output before sharing.
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed secrets and private source from this report.
+          required: true
+        - label: This is not a suspected security vulnerability.
+          required: true
+        - label: I searched existing issues and read the troubleshooting guide.
+          required: true

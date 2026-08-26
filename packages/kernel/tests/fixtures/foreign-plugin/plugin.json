@@ -1,0 +1,14 @@
+{
+  "name": "atlas",
+  "version": "2.1.0",
+  "description": "Charts and maps, authored in another host's dialect.",
+  "author": { "name": "A. Author", "email": "author@example.invalid" },
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Atlas Tools",
+    "shortDescription": "Charts and maps for a workspace.",
+    "icon": "./assets/atlas.svg"
+  },
+  "apps": [{ "id": "atlas-board", "kind": "connector" }],
+  "license": "MIT"
+}

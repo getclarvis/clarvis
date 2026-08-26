@@ -1,0 +1,21 @@
+[install]
+linker = "hoisted"
+
+[test]
+# Bun resolves `bunfig.toml` from the *cwd*, and does not merge a package's with
+# this one. So `bun test packages/plan/tests/x.test.ts` run from the repository
+# root reads this file and never sees the per-package `preload` — which is how
+# 102 stray `~/.clarvis/state/workspaces/_tmp_clarvis-plan-*` directories got
+# written into a real `$HOME` during one afternoon of stress-running a suite by
+# path. Measured: a root-cwd run of one plan test file leaked 17 directories,
+# the same file via `bun --filter @clarvis/plan test` leaked none. Every bunfig
+# that can be the nearest one to a test run needs this line.
+preload = ["./tooling/test-runtime/clarvis-home-preload.ts"]
+coverageReporter = ["text", "lcov"]
+coverageDir = "coverage"
+coverageSkipTestFiles = true
+# The per-test timeout is NOT set here. Bun 1.3.14 parsed `[test] timeout` and
+# silently ignored it in probes from both this directory and a package directory.
+# Bun 1.4.0 repeated that result on 2026-08-22: a 5.25-second scratch test
+# timed out at the 5-second default with `timeout = 60000`, from both a root
+# and a package-local bunfig. Keep `--timeout 60000` on every package test script.

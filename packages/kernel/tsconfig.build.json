@@ -1,0 +1,55 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "paths": {
+      "@clarvis/protocol": ["../protocol/dist/index.d.ts"],
+      "@clarvis/plan": ["../plan/dist/index.d.ts"],
+      "@clarvis/tasks": ["../tasks/dist/index.d.ts"],
+      "@clarvis/tasks/capability": ["../tasks/dist/capability.d.ts"],
+      "@clarvis/tasks/settings": ["../tasks/dist/settings.d.ts"]
+    }
+  },
+  "references": [
+    {
+      "path": "../capability/tsconfig.build.json"
+    },
+    {
+      "path": "../paths/tsconfig.build.json"
+    },
+    {
+      "path": "../trace/tsconfig.build.json"
+    },
+    {
+      "path": "../protocol/tsconfig.build.json"
+    },
+    {
+      "path": "../memory/tsconfig.build.json"
+    },
+    {
+      "path": "../plan/tsconfig.build.json"
+    },
+    {
+      "path": "../loop/tsconfig.build.json"
+    },
+    {
+      "path": "../tools/tsconfig.build.json"
+    },
+    {
+      "path": "../workflows/tsconfig.build.json"
+    },
+    {
+      "path": "../tasks/tsconfig.build.json"
+    },
+    {
+      "path": "../skills/tsconfig.build.json"
+    }
+  ],
+  "include": ["src"]
+}

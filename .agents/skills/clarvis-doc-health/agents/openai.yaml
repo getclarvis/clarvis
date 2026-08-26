@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clarvis Doc Health"
+  short_description: "Audit Clarvis docs against source and tests"
+  default_prompt: "Use $clarvis-doc-health to audit Clarvis documentation for contradictions and stale claims."

@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    "jsx": "preserve",
+    "jsxImportSource": "@opentui/solid",
+
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "types": ["bun"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "paths": {
+      "@clarvis/kernel": ["../kernel/src/index.ts"],
+      "@clarvis/kernel/bootstrap": ["../kernel/src/bootstrap.ts"],
+      "@clarvis/kernel/config": ["../kernel/src/config.ts"],
+      "@clarvis/kernel/policy": ["../kernel/src/policy.ts"],
+      "@clarvis/kernel/local": ["../kernel/src/local.ts"],
+      "@clarvis/paths": ["../paths/src/index.ts"],
+      "@clarvis/protocol": ["../protocol/src/index.ts"],
+      "@clarvis/loop": ["../loop/src/lib.ts"],
+      "@clarvis/loop/capabilities/tools": ["../loop/src/capabilities-tools.ts"],
+      "@clarvis/memory": ["../memory/src/index.ts"],
+      "@clarvis/plan": ["../plan/src/index.ts"],
+      "@clarvis/memory/schemas": ["../memory/src/schemas.ts"],
+      "@clarvis/skills": ["../skills/src/index.ts"],
+      "@clarvis/skills/catalog": ["../skills/src/catalog/index.ts"],
+      "@clarvis/tools": ["../tools/src/index.ts"],
+      "@clarvis/tools/guard": ["../tools/src/guard/index.ts"]
+    }
+  },
+  "include": ["src", "tests", "tooling"]
+}

@@ -1,0 +1,60 @@
+{
+  "name": "@clarvis/workflows",
+
+  "private": true,
+  "description": "Agentic workflow layer over @clarvis/loop: a manager run whose run_leader tool spawns full, isolated leader runs (Manager \u2192 Leaders \u2192 Sub-agents).",
+  "license": "MIT",
+  "author": "getclarvis",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schemas": {
+      "bun": "./src/schemas.ts",
+      "types": "./dist/schemas.d.ts",
+      "import": "./dist/schemas.js"
+    },
+    "./package.json": "./package.json",
+    "./artifact": {
+      "bun": "./src/artifact.ts",
+      "types": "./dist/artifact.d.ts",
+      "import": "./dist/artifact.js"
+    }
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "prebuild": "bun run clean",
+    "build": "tsc -b tsconfig.build.json",
+    "test": "bun test tests/unit tests/component tests/contract tests/integration tests/architecture --timeout 60000 --isolate",
+    "test:unit": "bun test tests/unit --timeout 60000 --isolate",
+    "test:component": "bun test tests/component --timeout 60000 --isolate",
+    "test:contract": "bun test tests/contract --timeout 60000 --isolate",
+    "test:integration": "bun test tests/integration --timeout 60000 --isolate",
+    "test:architecture": "bun test tests/architecture --timeout 60000 --isolate",
+    "test:coverage": "bun test tests/unit tests/component tests/contract tests/integration tests/architecture --timeout 60000 --isolate --coverage",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@clarvis/capability": "workspace:*",
+    "@clarvis/loop": "workspace:*",
+    "@clarvis/supervision": "workspace:*",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  }
+}

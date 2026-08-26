@@ -1,0 +1,52 @@
+{
+  "name": "@clarvis/code",
+  "private": true,
+  "type": "module",
+  "description": "Flagship terminal UI for the clarvis loop \u2014 an in-process host over @clarvis/kernel via the @clarvis/protocol contract.",
+  "license": "MIT",
+  "author": "getclarvis",
+  "bin": {
+    "clarvis": "src/cli.ts"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "setup": "bun run tooling/setup.ts",
+    "start": "bun --preload @opentui/solid/preload run src/index.tsx",
+    "dev": "bun --preload @opentui/solid/preload --watch src/index.tsx",
+    "build": "bun run tooling/artifact/build.ts",
+    "build:install": "bun run tooling/artifact/build.ts --install",
+    "smoke": "bun run tooling/artifact/smoke.ts",
+    "release:package": "bun run tooling/release/package.ts",
+    "release:smoke": "bun run tooling/release/smoke.ts",
+    "release:install-smoke": "bun run tooling/release/installer-smoke.ts",
+    "link": "bun link",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"tooling/**/*.{ts,tsx}\"",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"tooling/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\" \"tests/**/*.{ts,tsx}\" \"tooling/**/*.{ts,tsx}\"",
+    "test": "bun test tests/unit tests/component tests/integration tests/architecture --timeout 60000",
+    "test:unit": "bun test tests/unit --timeout 60000",
+    "test:component": "bun test tests/component --timeout 60000",
+    "test:integration": "bun test tests/integration --timeout 60000",
+    "test:architecture": "bun test tests/architecture --timeout 60000",
+    "test:coverage": "bun test tests/unit tests/component tests/integration --timeout 60000 --coverage && bun run test:architecture",
+    "bench": "bun run tooling/benchmarks/first-paint.ts",
+    "bench:overlays": "bun --preload @opentui/solid/preload tooling/benchmarks/overlays.tsx"
+  },
+  "dependencies": {
+    "@clarvis/kernel": "workspace:*",
+    "@clarvis/paths": "workspace:*",
+    "@clarvis/protocol": "workspace:*",
+    "@opentui/core": "0.5.7",
+    "@opentui/keymap": "0.5.7",
+    "@opentui/solid": "0.5.7",
+    "solid-js": "1.9.12",
+    "web-tree-sitter": "0.25.10",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "eslint-plugin-unicorn": "^71.1.0"
+  }
+}

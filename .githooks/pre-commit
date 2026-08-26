@@ -1,0 +1,23 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+# The gate is one sequential chain, and its order is not arbitrary. Two links are
+# forced by data flow: `build` must precede `typecheck`, because cross-package
+# types resolve through each package's built `dist/*.d.ts` and a stale one
+# reports errors that do not exist; and `lint:intent` must precede nothing but
+# follow `build`, since `check:graph` reads manifests rather than output.
+#
+# The rest is ordered by cost against the chance of failing, cheapest and most
+# likely first: `format:check` is seconds and catches the most common oversight,
+# `typecheck` catches the next, ESLint and Knip are slower and rarer, and
+# `test:coverage` is the whole suite and goes last. A failure therefore arrives
+# as early as the check that found it allows, rather than after several minutes
+# of tests that a formatting slip would have invalidated anyway.
+#
+# The phases stay sequential deliberately: each workspace-wide phase already fans
+# out internally, so running them beside one another doubles that fan-out and can
+# exhaust a 16 GiB development host.
+exec bun run check:pre-commit

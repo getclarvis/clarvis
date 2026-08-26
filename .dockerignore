@@ -1,0 +1,9 @@
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/.clarvis
+**/keys.json
+.git
+.github
+docs

@@ -1,0 +1,100 @@
+{
+  "name": "@clarvis/loop",
+
+  "private": true,
+  "description": "Embeddable loop engine \u2014 run an LLM agent loop (any model, sub-agents, budgets, compaction) in-process.",
+  "license": "MIT",
+  "author": "getclarvis",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "agent",
+    "loop",
+    "subagent",
+    "multi-agent",
+    "llm",
+    "ai",
+    "orchestration",
+    "lead-subagent",
+    "tool-use",
+    "anthropic",
+    "openai",
+    "google"
+  ],
+  "type": "module",
+  "main": "dist/lib.js",
+  "module": "dist/lib.js",
+  "types": "dist/lib.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/lib.ts",
+      "types": "./dist/lib.d.ts",
+      "import": "./dist/lib.js"
+    },
+    "./capabilities/tools": {
+      "bun": "./src/capabilities-tools.ts",
+      "types": "./dist/capabilities-tools.d.ts",
+      "import": "./dist/capabilities-tools.js"
+    },
+    "./host": {
+      "bun": "./src/host.ts",
+      "types": "./dist/host.d.ts",
+      "import": "./dist/host.js"
+    },
+    "./workflows": {
+      "bun": "./src/workflows.ts",
+      "types": "./dist/workflows.d.ts",
+      "import": "./dist/workflows.js"
+    },
+    "./testing": {
+      "bun": "./src/testing/index.ts",
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "prebuild": "bun run clean",
+    "build": "tsc -b tsconfig.build.json",
+    "test": "bun test --timeout 60000",
+    "test:coverage": "bun test --timeout 60000 --coverage",
+    "test:unit": "bun test --timeout 60000 tests/unit",
+    "test:component": "bun test --timeout 60000 tests/component",
+    "test:contract": "bun test --timeout 60000 tests/contract",
+    "test:integration": "bun test --timeout 60000 tests/integration",
+    "test:architecture": "bun test --timeout 60000 tests/architecture",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@clarvis/capability": "workspace:*",
+    "@clarvis/llm": "workspace:*",
+    "@clarvis/mcp-client": "workspace:*",
+    "@clarvis/paths": "workspace:*",
+    "@clarvis/supervision": "workspace:*",
+    "@clarvis/trace": "workspace:*",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "pino": "^10.3.1",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "optionalDependencies": {
+    "@clarvis/hooks": "workspace:*",
+    "@clarvis/skills": "workspace:*",
+    "@clarvis/tools": "workspace:*"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  }
+}

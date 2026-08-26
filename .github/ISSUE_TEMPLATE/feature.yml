@@ -1,0 +1,59 @@
+name: Feature request
+description: Propose a user problem or product improvement for Clarvis.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Start with the user problem and observable outcome. Large architecture proposals are easier to evaluate after the product boundary is clear.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Who is blocked, in what workflow, and why are current Clarvis capabilities insufficient?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the user-visible behavior and how someone would know it works.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include existing commands, integrations, or workflows you tried.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Primary surface
+      options:
+        - Interactive TUI
+        - Headless CLI
+        - Installation or update
+        - Providers or models
+        - Tools or safety
+        - Agents or workflows
+        - Memory, plans, or tasks
+        - MCP, plugins, hooks, or skills
+        - Contributor experience
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Add sanitized mockups, terminal examples, constraints, or related projects. Do not include secrets or private source.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for the same request.
+          required: true
+        - label: I described a product outcome rather than requiring one internal implementation.
+          required: true

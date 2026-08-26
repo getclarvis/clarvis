@@ -1,0 +1,81 @@
+{
+  "name": "@clarvis/tools",
+
+  "private": true,
+  "description": "A minimal, opinionated set of coding tools for driving an LLM agent over a workspace \u2014 read/write/edit/patch/move, batch read, grep/glob/diff, project-wide regex replace, shell + background monitors \u2014 usable as a plain library.",
+  "license": "MIT",
+  "keywords": [
+    "llm",
+    "agent",
+    "ai-agent",
+    "coding-agent",
+    "tools",
+    "tool-use",
+    "coding-tools",
+    "filesystem",
+    "grep",
+    "ripgrep",
+    "apply-patch",
+    "diff",
+    "codemod",
+    "shell",
+    "workspace",
+    "typescript"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./guard": {
+      "bun": "./src/guard/index.ts",
+      "types": "./dist/guard/index.d.ts",
+      "import": "./dist/guard/index.js"
+    },
+    "./shell": {
+      "bun": "./src/shell-entry.ts",
+      "types": "./dist/shell-entry.d.ts",
+      "import": "./dist/shell-entry.js"
+    },
+    "./sandbox": {
+      "bun": "./src/sandbox-entry.ts",
+      "types": "./dist/sandbox-entry.d.ts",
+      "import": "./dist/sandbox-entry.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "test": "bun test --timeout 60000",
+    "test:unit": "bun test tests/unit --timeout 60000",
+    "test:component": "bun test tests/component --timeout 60000",
+    "test:contract": "bun test tests/contract --timeout 60000",
+    "test:integration": "bun test tests/integration --timeout 60000",
+    "test:architecture": "bun test tests/architecture --timeout 60000",
+    "test:coverage": "bun test --timeout 60000 --coverage",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+  },
+  "dependencies": {
+    "@clarvis/paths": "workspace:*",
+    "ajv": "^8.20.0",
+    "diff": "^9.0.0",
+    "ignore": "^7.0.5",
+    "picomatch": "^4.0.5"
+  }
+}

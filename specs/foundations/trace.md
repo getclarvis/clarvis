@@ -1,0 +1,1248 @@
+# Trace vocabulary, recording, on-disk store, journal and recovery
+
+> Implemented at `packages/capability/src/trace-*.ts` and `packages/trace/**`. Every claim below is
+> anchored to a file and line. Open questions are collected in the final section.
+
+## 1. Purpose
+
+Two packages split one concern. `@clarvis/capability` owns the **vocabulary** — which events exist,
+what payload each carries, and the two open/closed narrowing guards
+(`packages/capability/src/trace-kinds.ts:11`, `packages/capability/src/trace-events.ts:380`).
+`@clarvis/trace` owns the **implementation** — the recording handle, the wire mapper, the display
+caps, the on-disk JSON store, the crash journal and its recovery, and the retention sweeper
+(`packages/trace/src/index.ts:1-19`). `@clarvis/trace` declares only `@clarvis/capability` and
+`@clarvis/paths` as dependencies and no external package at all
+(`packages/trace/package.json:46-49`).
+
+The recording side is deliberately structural rather than adapted: `TraceHandle extends TracePort`
+(`packages/trace/src/trace-handle.ts:12`), and `TracePort` is the interface a capability records
+through (`packages/capability/src/ports.ts:98`). So a capability outside the engine records its own
+kinds — `TraceKind` is `BuiltinTraceKind | (string & {})`
+(`packages/capability/src/trace-kinds.ts:68`) — without the engine declaring them.
+
+The persistence side exists so a run survives its own process. Two independent durable paths run
+concurrently: the batch path (`buildRecord` → `mapTrace` → `TraceStore.insert`, driven from
+`packages/loop/src/runtime/execute-run.ts:422-435`) writes one JSON file at the end of a run, and the
+journal path (`RunJournal.append` per durable entry,
+`packages/loop/src/runtime/run-trace.ts:162-166`) writes a `.jsonl` line as each event is recorded.
+When the process dies before the batch path completes, `recoverOrphans` folds the journal into an
+`interrupted` record (`packages/trace/src/json-trace-store.ts:1019`,
+`packages/trace/src/journal-recovery.ts:380`).
+
+## 2. Surface
+
+### 2a. `@clarvis/capability` — vocabulary (entrypoints `.` and `./trace`)
+
+`packages/capability/src/trace.ts` re-exports `trace-kinds.ts` and `trace-projectors.ts` wholesale
+(`:9`, `:21`) and a named list from `trace-events.ts` (`:10-20`).
+
+| Symbol | Kind | Defined at | What it is |
+|---|---|---|---|
+| `BUILTIN_TRACE_KINDS` | const tuple, 37 entries | `packages/capability/src/trace-kinds.ts:11` | the runtime source of truth for engine-declared kinds |
+| `BuiltinTraceKind` | type | `packages/capability/src/trace-kinds.ts:57` | `(typeof BUILTIN_TRACE_KINDS)[number]` |
+| `TraceKind` | type | `packages/capability/src/trace-kinds.ts:68` | open union: builtin or `(string & {})` |
+| `TraceDetailMap` | interface | `packages/capability/src/trace-kinds.ts:629` | kind → detail type, one entry per builtin kind |
+| `TraceDetailFor<K>` | type | `packages/capability/src/trace-kinds.ts:672` | exact detail for a builtin kind, `unknown` otherwise |
+| `BuiltinTraceEntry` | type | `packages/capability/src/trace-kinds.ts:702` | `{ at, kind, detail }` mapped over `BuiltinTraceKind` |
+| `TraceEntry` | type | `packages/capability/src/trace-kinds.ts:718` | `BuiltinTraceEntry \| { at: number; kind: string; detail: unknown }` |
+| `isBuiltinTraceEntry` | fn | `packages/capability/src/trace-kinds.ts:731` | narrows a `TraceEntry` against the kind set |
+| `isBuiltinTraceKind` | fn | `packages/capability/src/trace-kinds.ts:741` | narrows a bare string |
+| `RecordingTrace` | interface | `packages/capability/src/trace-kinds.ts:750` | `{ entries: TraceEntry[] }` |
+| `BuiltinTraceEvent` | type | `packages/capability/src/trace-events.ts:29` | closed union of 31 flat, absolute-time wire events |
+| `BUILTIN_TRACE_EVENT_TYPES` | const tuple, 31 entries | `packages/capability/src/trace-events.ts:392` | the runtime list for `isBuiltinTraceEvent` |
+| `ContributedTraceEvent` | interface | `packages/capability/src/trace-events.ts:442` | `{ type: string; occurred_at: number; detail: unknown }` |
+| `PersistedContributedTraceEvent` | interface | `packages/capability/src/trace-events.ts:452` | `{ type: string; [field: string]: unknown }` |
+| `TraceEvent` | type | `packages/capability/src/trace-events.ts:466` | union of the three above |
+| `isBuiltinTraceEvent` | fn | `packages/capability/src/trace-events.ts:476` | narrows a `TraceEvent` |
+| `Trace` | interface | `packages/capability/src/trace-events.ts:352` | `{ events: TraceEvent[] }` |
+| `ExecutionRecovery` | interface | `packages/capability/src/trace-events.ts:489` | `{ skipped_lines, synthesized_tool_calls }` |
+| `ExecutionRecord` | interface | `packages/capability/src/trace-events.ts:502` | the full persisted record (§3a) |
+| `PersistedTraceProjection` | interface | `packages/capability/src/trace-projectors.ts:7` | `{ readonly type: string; [field: string]: unknown }` |
+| `PersistedTraceProjectorContext` | interface | `packages/capability/src/trace-projectors.ts:13` | `{ absoluteTime(offset: number): number }` |
+| `PersistedTraceProjector` | interface | `packages/capability/src/trace-projectors.ts:19` | `{ kind, project(entry, context) → TraceEvent \| PersistedTraceProjection \| null }` |
+| `PersistedTraceProjectorRegistry` | interface | `packages/capability/src/trace-projectors.ts:28` | `projectorFor(kind)` / `projectors()` |
+| `createPersistedTraceProjectorRegistry` | fn | `packages/capability/src/trace-projectors.ts:34` | builds a frozen registry with duplicate/builtin rejection |
+| `composePersistedTraceProjectors` | fn | `packages/capability/src/trace-projectors.ts:64` | copies a base registry and appends run-scoped projectors |
+
+`TracePort` itself (`packages/capability/src/ports.ts:98`) has exactly three members: `record<K>(kind,
+detail)` (`:109`), `signal<K>(kind, detail)` (`:117`), and `now(): number` (`:126`).
+
+`VisionAnalysisDetail` (`packages/capability/src/trace-kinds.ts:277`) is reachable through `./trace`'s `export *`
+(`packages/capability/src/trace.ts:9`) but is not in `index.ts`'s explicit type-export list, which
+never names it.
+
+Two detail shapes are published but **not** in `BUILTIN_TRACE_KINDS`: `PlanReviewDetail`
+(`packages/capability/src/trace-kinds.ts:391`) and `TaskNudgeDetail` (`packages/capability/src/trace-kinds.ts:410`). The doc comment at `:386-389`
+states the reason directly: "`plan_review` is a kind the planning capability records, not one the
+engine does. The shape stays published so the capability and any host that renders it agree on one
+definition rather than two." The kind-level exclusion is directly verifiable against the closed
+37-entry `BUILTIN_TRACE_KINDS` array (`packages/capability/src/trace-kinds.ts:11-49`), which contains neither string, but
+that exclusion has no test of its own. What
+`packages/capability/tests/unit/open-vocabularies.test.ts:99-103` actually pins is the sibling,
+downstream claim — that `BUILTIN_TRACE_EVENT_TYPES` (the *mapped*-event vocabulary; see its own row
+below) also excludes both `"plan_review"` and `"task_nudge"`.
+
+#### The 37 `BUILTIN_TRACE_KINDS`, paired with their `TraceDetailMap` entry
+
+The recording-side vocabulary, one row per entry of `BUILTIN_TRACE_KINDS` (`packages/capability/src/trace-kinds.ts:12-47`) and
+its paired detail type from `TraceDetailMap` (`:629-665`); `init`/`terminate` carry no structured
+payload. Field-level shapes for the kinds that matter to a downstream reader are documented at their
+point of use elsewhere in this spec (the cap table in §2d, the mapping table in §4c, the span table in
+§4o); this table exists so the vocabulary itself — which §1 claims this package owns — is enumerated
+once, in one place.
+
+| Kind | Detail type | Defined at |
+|---|---|---|
+| `init` | `unknown` | — |
+| `lead_iteration` | `LeadIterationDetail` | `:81` |
+| `lead_iteration_started` | `LeadIterationStartedDetail` | `:211` |
+| `subagent_iteration` | `SubagentIterationDetail` | `:98` |
+| `subagent_iteration_started` | `SubagentIterationStartedDetail` | `:200` |
+| `tool_call` | `ToolCallDetail` | `:122` |
+| `tool_call_started` | `ToolCallStartedDetail` | `:143` |
+| `tool_output_delta` | `ToolOutputDeltaDetail` | `:159` |
+| `tool_input_delta` | `ToolInputDeltaDetail` | `:188` |
+| `budget_check` | `BudgetCheckDetail` | `:247` |
+| `terminate` | `unknown` | — |
+| `delegation_created` | `DelegationCreatedDetail` | `:222` |
+| `delegation_completed` | `DelegationFinishedDetail` | `:236` |
+
+`LeadIterationDetail` and `SubagentIterationDetail` carry optional `response_phase` with the
+bounded values `commentary` or `final_answer`. `mapEntry` preserves it on the corresponding flat
+event, and `engineEventToProto` projects it to `iteration_completed`. Production:
+`recordIterationMetrics`, `mapEntry`, and `engineEventToProto`. Tests:
+`packages/trace/tests/unit/trace-mapper.test.ts`,
+`packages/kernel/tests/unit/map-events.test.ts`, and
+`packages/code/tests/unit/streaming-delta.test.ts`.
+| `delegation_failed` | `DelegationFinishedDetail` (shared with `delegation_completed`) | `:236` |
+| `compaction_started` | `CompactionStartedDetail` | `:266` |
+| `compaction` | `CompactionDetail` | `:294` |
+| `compaction_skipped` | `CompactionSkippedDetail` | `:324` |
+| `vision_analysis` | `VisionAnalysisDetail` | `:277` |
+| `cancellation` | `CancellationDetail` | `:256` |
+| `user_question` | `UserQuestionDetail` | `:340` |
+| `user_steering` | `UserSteeringDetail` | `:354` |
+
+| `soft_limit_check` | `SoftLimitCheckDetail` | `:371` |
+| `run_started` | `RunStartedDetail` | `:421` |
+| `run_ended` | `RunEndedDetail` | `:432` |
+| `delegation_started` | `DelegationStartedDetail` | `:442` |
+| `model_call_error` | `ModelCallErrorDetail` | `:453` |
+| `model_call_retry` | `ModelCallRetryDetail` | `:482` |
+| `convergence_warning` | `ConvergenceWarningDetail` | `:500` |
+| `guard_escalation` | `GuardEscalationDetail` | `:514` |
+| `elicitation_requested` | `ElicitationRequestedDetail` | `:567` |
+| `model_reasoning` | `ModelReasoningDetail` | `:526` |
+| `model_stream_delta` | `ModelStreamDeltaDetail` | `:542` |
+| `mcp_degraded` | `McpDegradedDetail` | `:558` |
+| `agent_registered` | `AgentRegisteredDetail` | `:584` |
+| `agent_stopped` | `AgentStoppedDetail` | `:594` |
+| `agent_steered` | `AgentSteeredDetail` | `:602` |
+| `agent_finish_nudge` | `AgentFinishNudgeDetail` | `:614` |
+
+`ToolCallDetail.guard?: CommandGuardReview` is the final, persisted command
+review attached only to the terminal call. `mapEntry` preserves it in the
+persisted `TraceEvent`; `tool_call_started` and live output deltas do not carry
+an interim verdict. Production: `ToolCallDetail`/`CommandGuardReview` in
+`packages/capability/src/trace-kinds.ts` and the `tool_call` arm in
+`packages/trace/src/trace-mapper.ts`. Test: the tool projection case in
+`packages/trace/tests/unit/trace-mapper.test.ts`.
+
+All line numbers above are relative to `packages/capability/src/trace-kinds.ts`. Six of these 37 kinds
+have no wire projection at all (§4c step 3, T-13): `init`, `terminate`, `agent_registered`,
+`agent_stopped`, `agent_steered`, `agent_finish_nudge`.
+
+#### The 31 `BUILTIN_TRACE_EVENT_TYPES`
+
+The mapped/persisted-side vocabulary — the runtime list `isBuiltinTraceEvent` tests against
+(`packages/capability/src/trace-events.ts`, `BUILTIN_TRACE_EVENT_TYPES`). Every name here except
+`init`/`terminate` and the four `agent_*`
+supervision kinds (which map to `null`, never becoming a wire event) corresponds to a same-named
+builtin kind above, so the two vocabularies are the same 31 names minus those six:
+
+`lead_iteration`, `delegation_created`, `subagent_iteration`, `tool_call`, `tool_call_started`,
+`tool_output_delta`, `tool_input_delta`, `subagent_iteration_started`, `lead_iteration_started`,
+`delegation_completed`, `delegation_failed`, `budget_check`, `compaction_started`, `compaction`, `compaction_skipped`,
+`vision_analysis`, `cancellation`, `user_question`, `user_steering`, `soft_limit_check`,
+`run_started`, `run_ended`, `delegation_started`, `model_call_error`, `guard_escalation`,
+`convergence_warning`, `model_call_retry`, `elicitation_requested`, `model_reasoning`,
+`model_stream_delta`, `mcp_degraded`.
+
+Each becomes one flat member of the `BuiltinTraceEvent` union (`packages/capability/src/trace-events.ts:29-352`), whose exact
+per-type field shape is what §4c's mapping table and §4o's span table describe branch-by-branch; it is
+not re-enumerated field-by-field here to avoid a second, driftable copy of the same 31 shapes.
+
+### 2b. `@clarvis/trace` — entrypoint `.` (`packages/trace/src/index.ts`)
+
+| Symbol | Signature / value | Defined at |
+|---|---|---|
+| `createTrace` | `(startedAt?: number, onRecord?: (entry, durable: boolean) => void) => TraceHandle & { seal(): void }` | `packages/trace/src/in-memory-trace.ts:41` |
+| `TraceHandle` | `TracePort` + `entries(): TraceEntry[]` + `trace: RecordingTrace` | `packages/trace/src/trace-handle.ts:12` |
+| `generateExecutionId` | `() => \`exec_${randomUUID()}\`` | `packages/trace/src/execution-id.ts:8` |
+| `mapEntry` | `(entry, wallStartedAt, projectors?) => TraceEvent \| null` | `packages/trace/src/trace-mapper.ts:55` |
+| `mapTrace` | `(entries, wallStartedAt, projectors?) => Trace` | `packages/trace/src/trace-mapper.ts:530` |
+| `buildRecord` | `(input: BuildRecordInput) => ExecutionRecord` | `packages/trace/src/record-builder.ts:36` |
+| `capDetail` | `<K extends TraceKind>(kind, detail) => TraceDetailFor<K>` | `packages/trace/src/cap-detail.ts:393` |
+| `truncate` / `truncateTail` | head-cap with marker / tail-cap without | `packages/trace/src/cap-detail.ts:105`, `:118` |
+| `deriveEventSpan` | `(event: TraceEvent) => EventSpan` | `packages/trace/src/event-span.ts:63` |
+| `iterationSpanId` | `(agent, subagentInstanceId, iteration) => string` | `packages/trace/src/event-span.ts:40` |
+| `createJsonTraceStore` | `(opts: JsonTraceStoreOptions) => JournalingTraceStore` | `packages/trace/src/json-trace-store.ts:378` |
+| `resolveTraceStore` | `(opts?) => { store, path }` | `packages/trace/src/trace-store-factory.ts:30` |
+| `createRunJournal` | `(opts: CreateRunJournalOptions) => RunJournal` | `packages/trace/src/journal.ts:130` |
+| `parseJournalChunks` | `(chunks: AsyncIterable<string>, limits) => Promise<JournalParseResult>` | `packages/trace/src/journal-recovery.ts:188` |
+| `repairUnsettledToolCalls` | `(events) => TraceEvent[]` | `packages/trace/src/journal-recovery.ts:254` |
+| `journalToRecord` | `(parsed: JournalParseSuccess) => ExecutionRecord` | `packages/trace/src/journal-recovery.ts:380` |
+| `writerStillRunning` | `(header) => boolean` | `packages/trace/src/journal-recovery.ts:69` |
+| `UNCOMPLETED_TOOL_RESULT` | `(name: string) => string` | `packages/trace/src/journal-recovery.ts:17` |
+| `TraceCleanup` | class with `start(intervalMs)`, `stop()`, `runOnce(): number` | `packages/trace/src/cleanup.ts:30` |
+| `parseStoredJson` | `<T>(json, label, id) => T`, throws `PersistenceError` | `packages/trace/src/trace-store.ts:15` |
+| `recordToSummary` | `(record) => StoredSummary` | `packages/trace/src/trace-store.ts:247` |
+| `sortDescPaginate` | `(items, limit, offset) => T[]` | `packages/trace/src/trace-store.ts:270` |
+
+Entrypoint `./testing` exports exactly one symbol, `createMemoryTraceStore()`
+(`packages/trace/src/testing.ts:21`); the exports map has three keys: `.`, `./testing`,
+`./package.json` (`packages/trace/package.json:12-24`).
+
+`generateExecutionId`'s shape is pinned tighter than `exec_${randomUUID()}` suggests:
+`packages/trace/tests/unit/execution-id.test.ts:6-9` asserts the id against
+`/^exec_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/` — a v4 UUID
+specifically (version nibble `4`, variant nibble in `[89ab]`), not merely "a UUID" — and
+`:12-15` asserts 64 calls in a row mint 64 distinct ids.
+
+### 2c. The `TraceStore` port (`packages/trace/src/trace-store.ts:72`)
+
+| Member | Signature | Required? | Line |
+|---|---|---|---|
+| `insert` | `(record: ExecutionRecord) => Promise<void>` | yes | `:87` |
+| `getById` | `(owner, id) => StoredExecution \| null` | yes | `:93` |
+| `list` | `(owner, limit, offset) => ListResult` | yes | `:99` |
+| `deleteById` | `(owner, id) => boolean` | yes | `:105` |
+| `deleteOwner` | `(owner) => number` | yes | `:118` |
+| `listAcrossOwners` | `(limit, offset, filter?: { owner? }) => ListResult` | optional | `:132` |
+| `existsForOwner` | `(owner, id) => boolean` | yes | `:134` |
+| `cleanup` | `(cutoffMs, batch, counters?, protectedExecutionIds?) => number` | yes | `TraceStore.cleanup` |
+| `openJournal` | `(opts: OpenJournalOptions) => RunJournal` | optional | `:171` |
+| `recoverOrphans` | `() => Promise<TraceRecoveryReport>` | optional | `:187` |
+
+`JournalingTraceStore = TraceStore & Required<Pick<TraceStore, "openJournal" | "recoverOrphans">>`
+(`:238`). `insert` is the only async member; the comment at `:80-86` states the reason: the
+filesystem implementation "serialized, then written, `fsync`ed, renamed and `fsync`ed again. Doing
+that synchronously stalled the event loop".
+
+There is deliberately **no cross-owner `getById`** — `:128-131`: "there is deliberately no
+cross-owner `getById`, because a trace holds the full conversation."
+
+### 2d. Display caps (`packages/trace/src/cap-detail.ts`)
+
+| Constant | Value | Line | Applies to |
+|---|---|---|---|
+| `TRUNCATED_SUFFIX` | `"...[truncated]"` | `:10` | marker appended by `truncate` |
+| `RESULT_MAX` | `5000` | `:13` | tool result, steering, errors, reasoning, stream text, delegation result; also every string of a *contributed* detail |
+| `MODEL_RESPONSE_MAX` | `2 * 1024 * 1024` | `:22` | `lead_iteration.response`, `subagent_iteration.response` |
+| `SUMMARY_MAX` | `500` | `:25` | `user_question.question`, `convergence_warning.message`, `elicitation_requested.question`, `mcp_degraded.servers[].reason` |
+| `DIFF_MAX` | `20000` | `:28` | `tool_call.diff` |
+| `LIVE_CHUNK_MAX` | `8192` | `:31` | `tool_output_delta.chunk` (tail-kept) |
+| `ARGS_MAX` | `10000` | `:43` | per-leaf string inside `arguments` |
+| `ARGS_TOTAL_MAX` | `64 * 1024` | `:46` | aggregate string+key budget for one argument projection |
+| `DETAIL_MAX_ENTRIES` | `4096` | `:49` | structural width ceiling |
+| `DETAIL_MAX_DEPTH` | `32` | `:50` | structural depth ceiling |
+| `DETAIL_TRUNCATED_KEY` | `"__clarvis_truncated__"` | `:51` | marker key set on a truncated object |
+
+`delegation_created.task` uses `DELEGATE_TASK_MAX_CHARS` (`32_768`,
+`packages/capability/src/delegate-task.ts:2`), applied through `truncateUnicodeTotal`
+(`packages/trace/src/cap-detail.ts:306`), which keeps prefix + marker inside one total ceiling (`packages/trace/src/cap-detail.ts:123-137`).
+
+### 2e. Store bounds (`packages/trace/src/json-trace-store.ts`)
+
+| Constant | Value | Line |
+|---|---|---|
+| `DEFAULT_MAX_TRACE_OWNER_INDEXES` | `32` | `:180` |
+| `DEFAULT_MAX_TRACE_OWNER_INDEX_ENTRIES` | `50_000` | `:181` |
+| `DEFAULT_MAX_TRACE_RECORD_BYTES` | `128 MiB` | `:183` |
+| `MAX_TRACE_RECORD_BYTES` | `256 MiB` (hard) | `:185` |
+| `MAX_TRACE_SUMMARY_BYTES` | `64 KiB` (hard **and** default) | `:187` |
+| `MAX_TRACE_LIST_LIMIT` | `200` | `:189` |
+| `MAX_TRACE_LIST_OFFSET` | `10_000` | `:191` |
+| `MAX_TRACE_RECOVERY_SCAN_ENTRIES` | `10_000` | `:194` |
+| `MAX_TRACE_RECOVERY_JOURNALS` | `100` | `:196` |
+| `MAX_TRACE_RECOVERY_TOTAL_BYTES` | `64 MiB` | `:198` |
+| `MAX_TRACE_RECOVERY_JOURNAL_BYTES` | `32 MiB` | `:200` |
+| `MAX_TRACE_RECOVERY_EVENTS` | `20_000` | `:202` |
+| `MAX_TRACE_CLEANUP_SCAN_ENTRIES` | `10_000` | `:204` |
+| `TMP_ORPHAN_GRACE_MS` (private) | `3_600_000` (1 h) | `:68` |
+| `DEFAULT_MAX_TRACE_CLEANUP_ENTRIES` | `10_000` | `packages/trace/src/cleanup.ts:7` |
+
+`JsonTraceStoreOptions` (`:140`) takes `dir` plus overrides for each cache/byte bound, a `logger`,
+and two named test seams: `beforeOwnerRemove` (`:144`) and `afterInsertWrite` (`:155`).
+
+There are **no `settings.json` keys and no CLI flags in this package** — its only configuration
+surface is `JsonTraceStoreOptions`, `ResolveTraceStoreOptions` (`packages/trace/src/trace-store-factory.ts:7`) and
+`TraceCleanupOptions` (`packages/trace/src/cleanup.ts:10`).
+
+`TraceFileTooLargeError` (`packages/trace/src/json-trace-store.ts:251-259`) is the concrete, module-private class behind
+every "oversized" row in the failure-modes table (§6): `class TraceFileTooLargeError extends
+PersistenceError`, constructed as `(kind: "record" | "summary", path: string, size: number, limit:
+number)` and attaching the structured detail `{ kind, path, actual_bytes: size, max_bytes: limit }` to
+the `PersistenceError` it extends. It is not exported from `index.ts` — a caller sees only a
+`PersistenceError` with that detail shape.
+
+## 3. Data and formats
+
+### 3a. `ExecutionRecord` — the unit a store inserts
+
+`packages/capability/src/trace-events.ts:502-536`:
+
+| Field | Type | Note |
+|---|---|---|
+| `id` | `string` | `exec_<uuidv4>` when minted here (`packages/trace/src/execution-id.ts:8`) |
+| `owner_key_name` | `string` | |
+| `status` | `ExecutionStatus` | one of six: `completed`, `budget_exhausted`, `error`, `cancelled`, `soft_limit_declined`, `interrupted` (`packages/capability/src/execution-status.ts:16-23`) |
+| `started_at`, `ended_at`, `elapsed_ms` | `number` | absolute Unix ms; `ended_at = started_at + elapsed_ms` (`packages/trace/src/record-builder.ts:54`) |
+| `request`, `response` | `RunRequest`, `RunResponse` | stored sanitized (`packages/trace/src/json-trace-store.ts:793-794`) |
+| `trace` | `Trace` | stored **verbatim** (`packages/trace/src/json-trace-store.ts:795`) — its events were sanitized at map time |
+| `total_input_tokens` … `total_cache_write_tokens` | `number` | summed from `response.usage.by_agent` (`packages/trace/src/record-builder.ts:42-47`) |
+| `final_context?` | `ContextSnapshotEntry[]` | omitted when absent (`packages/trace/src/record-builder.ts:63`) |
+| `capability_state?` | `Record<string, unknown>` | opaque to the engine (`packages/capability/src/trace-events.ts:517-526`) |
+| `recovery?` | `ExecutionRecovery` | present only on a damaged recovery (`packages/trace/src/journal-recovery.ts:416-418`) |
+
+`ExecutionStatus` has six members, and `interrupted` is documented at
+`packages/capability/src/execution-status.ts:11-12` as "never produced by a live run — only by
+`@clarvis/trace`'s `TraceStore.recoverOrphans`".
+
+### 3b. On-disk layout
+
+Rooted at `resolve(opts.dir)` (`packages/trace/src/json-trace-store.ts:380`); `resolveTraceStore` defaults it to
+`globalPaths().tracesDir` (`packages/trace/src/trace-store-factory.ts:32`).
+
+```
+<dir>/                                  mode 0700  (packages/trace/src/json-trace-store.ts:397)
+  .locks/                               mode 0700  (:405)
+    <ownerSeg>.<idSeg>.lock                        per-id insert lease (:380)
+    <ownerSeg>.delete-generation                   owner generation state (:382)
+    <ownerSeg>.delete-lease                        owner deletion lease (:384)
+    <ownerSeg>.<encoded recordName>.insert-generation   (:386)
+  <ownerSeg>/                           mode 0700  (:395, :401)
+    .seq                                mode 0600  token file (:575)
+    <started_at>.<idSeg>.json           mode 0600  the record
+    <started_at>.<idSeg>.summary                   the listing sidecar (:120)
+    <started_at>.<idSeg>.jsonl          mode 0600  the live/orphan journal (:968)
+    <started_at>.<idSeg>.jsonl.corrupt             quarantined bad header (packages/trace/src/journal.ts:24)
+    <started_at>.<idSeg>.jsonl.oversized           quarantined over a bound (packages/trace/src/journal.ts:27)
+    .clarvis-tmp-*                                 in-flight atomic writes (paths' TMP_PREFIX)
+```
+
+`<ownerSeg>` and `<idSeg>` are both `ownerSegment(value)` from `@clarvis/paths`
+(`packages/paths/src/roots.ts:163`): percent-encoding that also escapes `.` (`:139-143`), falling
+back to `h_<sha256hex>` past 200 encoded bytes (`:166-167`). Round-tripped for `".."`, for an owner
+with `/`, and for an over-long id at
+`packages/trace/tests/integration/json-trace-store.test.ts:443`, `:453`, `:459`. Layout and modes
+pinned at `:415-426`.
+
+Record filenames are matched by `FILE_RE = /^(\d+)\.(.+)\.json$/` (`packages/trace/src/json-trace-store.ts:54`). Two
+naming decisions follow from that regex being greedy, and both are documented as structural rather
+than guarded:
+
+- The sidecar suffix is `.summary`, **not** `.summary.json` (`:56-67`) — otherwise it would parse as
+  a record whose id segment is `<seg>.summary`. Pinned at
+  `packages/trace/tests/integration/json-trace-store.test.ts:741` ("is not counted as an execution by
+  list, the index, or deleteOwner").
+- A journal is `.jsonl`, which `FILE_RE` (anchored on `.json$`) cannot match (`:121-127`), so a
+  journal never enters the owner index, `list` or `getById`. Pinned at
+  `packages/trace/tests/integration/journal.test.ts:332`.
+
+`.seq` is likewise excluded by `FILE_RE` (`:66`).
+
+### 3c. The `.jsonl` journal format
+
+Line 1 is a `JournalHeader` (`packages/trace/src/journal.ts:38`):
+
+```json
+{"v":1,"id":"exec_…","owner_key_name":"alice","started_at":1700000000000,
+ "request":{…sanitized…},"writer":{"pid":4242,"host":"laptop"}}
+```
+
+`JOURNAL_VERSION = 1` (`:12`). `request` passes through `sanitizeDeep` (`:159`), which the doc
+comment at `:33-36` says makes a recovered record's request "byte-equivalent to the one a normal run
+would have persisted"; pinned at `packages/trace/tests/integration/journal.test.ts:76`. `writer`
+records pid+host (`:160`) so a peer can ask whether the writer is alive (`:51-60`).
+
+Every subsequent line is one `JSON.stringify(event)` of a **mapped** `TraceEvent` (`:171`) — the same
+object `mapEntry` produced, already rebased, capped and sanitized. A `null` mapping is skipped
+(`:169`). Header + one line per appended event pinned at
+`packages/trace/tests/integration/journal.test.ts:61`.
+
+### 3d. Owner generation state (`.delete-generation`)
+
+`OwnerGenerationState` (`packages/trace/src/json-trace-store.ts:109`) is `{ version: 1, state: "active" | "deleting",
+generation: string }`, written durably (`:451`). `readGenerationState` (`:429`) treats a missing file
+as `{ active, generation: "" }` (`:431`) and an unparsable/older payload as `{ active, generation:
+<raw> }` (`:448`). A record belongs to a generation when `generation === ""` **or** its
+`.insert-generation` sidecar holds that exact token (`:453-462`).
+
+### 3e. Result types
+
+`StoredSummary` (`packages/trace/src/trace-store.ts:35`) is nine scalars: `id`, `owner`, `status`, `started_at`,
+`elapsed_ms`, and the four token totals. `ListResult` is `{ items, total }` (`:57`).
+`TraceCleanupCounters` is `{ records, journals, leases, tmp }` (`:196`), whose fields sum to the
+returned total (`:193-194`; pinned at
+`packages/trace/tests/integration/observability.test.ts:480-483`). `TraceRecoveryReport` is
+`{ recovered, examined, quarantined, degraded, exhausted }` (`:216`); the comment at `:208-214`
+states why a bare count was insufficient — it "could not tell 'nothing to recover' from 'the budget
+blew halfway through the scan'".
+
+## 4. Behavior
+
+### 4a. Recording: `createTrace`
+
+`packages/trace/src/in-memory-trace.ts:41`. Per call:
+
+1. If `sealed`, return (`:49`, `:55`).
+2. Build `{ at: performance.now() - startedAt, kind, detail: capDetail(kind, detail) }` (`:47`, `:50`).
+3. `record` pushes to `trace.entries` **and** calls `onRecord(entry, true)` (`:51-52`).
+   `signal` only calls `onRecord(entry, false)` (`:57`).
+4. `seal()` flips the flag; both become no-ops (`:60-62`).
+
+Both paths cap first (`:50`, `:56`). The `durable` boolean is the only thing distinguishing the two
+at the sink, because the entries are structurally identical (`:22-26`); pinned at
+`packages/trace/tests/unit/in-memory-trace.test.ts:138`. Seal behaviour pinned at `:15` and `:157`.
+
+The engine's sink is `traceBridge` (`packages/loop/src/runtime/run-trace.ts:138`): poke the clock,
+feed the supervision registry with the *raw* entry, then map **once** and share the result between
+the journal and the host's `onEvent` (`:148-177`). `journal` is taken only when `durable` is true
+(`:162`), which is what keeps streaming deltas off disk.
+
+### 4b. Capping: `capDetail`
+
+`packages/trace/src/cap-detail.ts:393`. Two branches:
+
+- **Contributed kind** (`!isBuiltinTraceKind`): every reachable string is bounded at `RESULT_MAX`
+  through `capStrings` (`:361`). The doc at `:349-355` states the consequence of omitting it: "the
+  branch that carries a contributed detail through verbatim is precisely the one that skips every
+  bound above it." Pinned at `packages/trace/tests/unit/cap-detail.test.ts:386`.
+- **Builtin kind**: `capKinded` (`:232`) switches per kind; kinds with no free-text field fall
+  through `default` and are returned untouched (`:321-322`; pinned at `packages/trace/tests/unit/cap-detail.test.ts:91`).
+
+Every branch is written to return the *same object* when nothing changed (`:237`, `:249`, `:255`, …),
+so `capDetail` allocates nothing on the common path (`:111-113`; pinned at `packages/trace/tests/unit/cap-detail.test.ts:54`).
+It never mutates (`:336-338`; pinned at `packages/trace/tests/unit/cap-detail.test.ts:68`) — the comment states the reason: "A
+tool call's `arguments` is the very object the model's conversation holds; capping it in place would
+rewrite the run's input, not just its record."
+
+`capStrings` (`:114`) walks with three budgets at once — `remainingChars` from `ARGS_TOTAL_MAX`,
+`remainingEntries` from `DETAIL_MAX_ENTRIES`, depth against `DETAIL_MAX_DEPTH` — plus a `WeakSet`
+cycle guard (`:118`, `:156`). When anything was dropped it sets `DETAIL_TRUNCATED_KEY` on the object
+(`:221`) or pushes a marker into the array (`:183`). Depth/cycle pinned at `packages/trace/tests/unit/cap-detail.test.ts:185`,
+aggregate width at `:164`.
+
+### 4c. Mapping: `mapEntry`
+
+`packages/trace/src/trace-mapper.ts:55` → `mapEntryRaw` (`:91`) → `sanitizeDeep` (`:61`). Order of
+decisions inside `mapEntryRaw`:
+
+| Step | Condition | Result | Line |
+|---|---|---|---|
+| 1 | a projector is registered for `entry.kind` | that projector's return, including an explicit `null` | `:97-100` |
+| 2 | `!isBuiltinTraceEntry(entry)` | `{ type: kind, occurred_at: abs(at), detail: capDetail(kind, detail) }` | `:101-107` |
+| 3 | `init`, `terminate`, `agent_registered`, `agent_stopped`, `agent_steered`, `agent_finish_nudge` | `null` | `:506-512` |
+| 4 | any other builtin kind | the flat projection for that kind | `:108-505` |
+| 5 | anything else | `const exhaustive: never = entry` | `:513-516` |
+
+The `isBuiltinTraceEntry` gate before the switch is what keeps step 5 a real exhaustiveness check
+(`:77-84`): with an open `TraceEntry`, "the contributed arm — whose `kind` is `string` — would match
+every `case`". Projector precedence and the explicit-drop path pinned at
+`packages/trace/tests/unit/persisted-projectors.test.ts:13`, `:44`; the nested fallback at `:36`.
+
+Mechanics inside the builtin branches:
+
+- `abs(offset) = wallStartedAt + Math.round(offset)` (`:96`); rebasing pinned at
+  `packages/trace/tests/unit/trace-mapper.test.ts:39`.
+- `splitToolName` splits on the **first** `.`; a name with no dot yields `tool_name: ""` (`:7-11`).
+  Pinned at `packages/trace/tests/unit/trace-mapper.test.ts:261`.
+- `asObject` (`:26`) coerces a non-object `arguments`. `undefined` → `{}` (`:28`); anything else is
+  stringified and preserved under `malformed_arguments`, tail-capped at `ARGS_MAX` (`:31-35`). The
+  comment at `:18-24` states the failure this replaced: "the persisted trace asserted the model sent
+  no arguments when it had sent a payload that was cut in transit." Pinned at
+  `packages/trace/tests/unit/trace-mapper.test.ts:138`, `:178`, `:200`, `:222`.
+- Every builtin branch calls `capDetail` again (`:110`, `:126`, `:143`, …). The comment at `:85-87`
+  calls it "a defence-in-depth pass for an entry that reached persistence without going through
+  `createTrace`"; pinned by `packages/trace/tests/unit/trace-mapper.test.ts:919` ("bounds a legacy task that bypassed the
+  recording handle").
+- Optional fields are attached only when defined (`:157-159` and throughout), so an absent value
+  never becomes explicit `undefined` (`:88-89`). Pinned across
+  `packages/trace/tests/unit/trace-mapper-kinds.test.ts:23`, `:129`, `:161`.
+- `budget_check.tokens_remaining` is attached only when `Number.isFinite` (`:257`); pinned at
+  `packages/trace/tests/unit/trace-mapper.test.ts:356`.
+- `sanitizeDeep` is applied to the *whole event* after projection (`:61`), including a projector's
+  output — pinned at `packages/trace/tests/unit/persisted-projectors.test.ts:13` (an `api_key` field becomes `"[redacted]"`).
+
+`mapTrace` (`:531`) is the same, per entry, dropping `null`s (`:537-540`).
+
+### 4d. `buildRecord`
+
+`packages/trace/src/record-builder.ts:36`: sum `response.usage.by_agent` into four totals (`:42-47`),
+take `elapsed_ms` from `usage.elapsed_ms` (`:48`), derive `ended_at = wallStartedAt + elapsed_ms`
+(`:54`), include `final_context`/`capability_state` only when supplied (`:63-64`). Pinned at
+`packages/trace/tests/unit/record-builder.test.ts:74`, `:113`, `:148`, `:161`.
+
+### 4e. `insert` on the JSON store
+
+`packages/trace/src/json-trace-store.ts:1205`. A `phase` variable tracks progress and appears in the
+failure log (`:1186`, `:1244-1253`); the three phases are `generation | lease | write` (`:210`).
+
+1. `ensureLocksDir()` (`:1188`).
+2. `ensureActiveGeneration(owner, ownerSeg)` (`:1189`, defined `:662`) — see §4f.
+3. `phase = "lease"` (`:1190`); `ensureOwnerDir` (`:1191`), then a **pre-lease** `findEntry` conflict
+   check (`:1193`).
+4. `acquireLocalLease(lockPath, { staleMs: TMP_ORPHAN_GRACE_MS, waitMs: 0 })` (`:1196-1200`); `null` →
+   `executionIdConflict` (`:1201`). Non-waiting, so a concurrent inserter reads as a conflict; pinned
+   at `packages/trace/tests/integration/json-trace-store.test.ts:173`. A *stale* orphan lock with no
+   data file is reclaimed inline rather than becoming a permanent conflict (`staleMs` = 1 h), pinned
+   at `:189`.
+5. `lease.assertOwned()` (`:1203`), then the conflict check **again** under the lease (`:1205-1207`).
+6. `phase = "write"` (`:1208`); `insertLocked` (`:1209`, defined `:759`): build the stored projection
+   with `sanitizeDeep(request)` and `sanitizeDeep(response)` but `trace` verbatim (`:771-773`), reject
+   if the serialized UTF-8 exceeds `maxRecordBytes` (`:788-790`), `writeFileDurable` (`:791`), then
+   `writeSummarySidecar` (`:792`).
+7. `afterInsertWrite` seam (`:1228`), then `isActiveGeneration` check → `abortDeletedInsert` (`:1229`).
+8. If `generation !== ""`, durably write the `.insert-generation` sidecar (`:1230-1232`), then check
+   the generation **again** (`:1233`).
+9. Update the in-memory index (or mark it incomplete past `maxOwnerIndexEntries`) (`:1234-1238`) and
+   `bumpSeq` (`:1239`).
+10. `finally` → `lease.release()` (`:1241`). Lock removal after insert pinned at
+    `packages/trace/tests/integration/json-trace-store.test.ts:181`.
+
+`abortDeletedInsert` (`:1210`) unlinks the record, its sidecar and its generation sidecar, logs
+`trace.insert_aborted_deleted_owner`, and throws `PersistenceError` (`:1211-1226`).
+
+### 4f. Owner deletion as a two-phase generation swap
+
+`deleteOwner` (`:1296`) is synchronous — unlike `insert`, whose async signature exists precisely
+because the filesystem work behind it (serialize, write, `fsync`, rename, `fsync` again) is too
+costly for a sync call (§2c). `deleteOwner`'s own doc comment states why it stays sync anyway:
+"Filesystem stores keep this API synchronous by using a non-waiting owner-wide lease; a concurrent
+deletion may therefore raise a persistence error for the caller to retry"
+(`packages/trace/src/trace-store.ts:106-117`).
+
+| Step | Action | Line |
+|---|---|---|
+| 1 | `acquireLocalLeaseSync(delete-lease, { staleMs: 0 })`; `null` → `PersistenceError("deletion is in progress")` | `:1299-1300` |
+| 2 | read `previous` state, mint `nextGeneration = randomUUID()` | `:1303-1304` |
+| 3 | publish `{ state: "deleting", generation: next }` | `:1305-1309` |
+| 4 | count records belonging to `previous.generation` (only if `previous` was active) | `:1313-1319` |
+| 5 | `beforeOwnerRemove` seam, `rmSync(dir, recursive, force)` | `:1322-1323` |
+| 6 | drop the cached index, `purgeOwnerMachinery` (reclaim `.lock`s, unlink `.insert-generation`s under the owner prefix) | `:1324-1325`, `:639` |
+| 7 | publish `{ state: "active", generation: next }` | `:1326-1330` |
+| 8 | `finally` → release the lease | `:1333` |
+
+`ensureActiveGeneration` (`:662`) is the recovery half. If the state is `deleting`, it takes the same
+non-waiting lease; failing to take it means a live deleter, so `PersistenceError` (`:673`). Taking it
+is, per the comment at `:656-661`, "proof that this caller may finish that transaction": it re-reads,
+purges the directory and machinery, and publishes `active` with the *same* generation (`:678-689`).
+
+`replaceFinalContext` is the explicit mutation path for a settled continuation. It first completes
+or refuses any prior deletion generation, then holds the owner-wide deletion lease and the record
+lease while atomically replacing `final_context`, updating optional compaction usage totals, and
+refreshing the summary sidecar. It therefore cannot republish a record across `deleteOwner`.
+Production: `replaceFinalContext` in `packages/trace/src/json-trace-store.ts`. Test:
+`packages/trace/tests/integration/json-trace-store.test.ts` (`"atomically replaces final_context and
+charges compaction usage"`).
+
+`deleteById` takes those leases in the same owner-then-record order, so a settled-context rewrite
+and a record deletion cannot pass one another and recreate the deleted file.
+
+The state machine, by (state, event):
+
+| State | Event | Next state | Effect |
+|---|---|---|---|
+| `active(g)` | `insert` | `active(g)` | record written + `.insert-generation` = `g` (skipped when `g === ""`) |
+| `active(g)` | `deleteOwner` | `deleting(g')` → `active(g')` | directory removed, machinery purged, count returned |
+| `deleting(g')` | `insert`, deleter alive | `deleting(g')` | lease unavailable → `PersistenceError` (`:673`) |
+| `deleting(g')` | `insert`, deleter dead | `active(g')` | caller finishes the purge, then proceeds (`:678-689`) |
+| `deleting(g')` | `list` / `listOwner` | unchanged | `{ items: [], total: 0 }` (`:841`) |
+| `deleting(g')` | `ownerIndex` | unchanged | empty index (`:596`) |
+| `deleting(g')` | `recoverOrphans` | unchanged | owner skipped (`:1071`) |
+
+Pinned at `packages/trace/tests/integration/json-trace-store.test.ts:261`, `:290`, `:339`, `:379`.
+Lock-prefix disambiguation (an owner segment that is a prefix of another) pinned at `:251`, and rests
+on `ownerSegment` escaping `.` (`packages/paths/src/roots.ts:139-143`).
+
+The `:290` case is a materially stronger guarantee than the rest: `"rejects a cross-process insert
+while the new generation is still being deleted"` spawns a **real, separate OS process** via
+`Bun.spawn` (using the helper `packages/trace/tests/helpers/owner-delete-insert-worker.ts`, which
+opens its own `createJsonTraceStore` over the same directory and attempts an insert while this
+process's `deleteOwner` is mid-flight) and asserts that process's insert is rejected with
+`code: "persistence_failure"`. It proves the generation-swap protocol holds across process
+boundaries, not merely within one process's in-memory lease map.
+
+### 4g. Owner index and `.seq`
+
+`ownerIndex` (`:580`) keys a cache entry on `(seq, "state:generation")` (`:583-591`). `readSeq`
+(`:566`) reads a small named file; `bumpSeq` (`:574`) writes a fresh `randomUUID()`. The comment at
+`:549-564` states the measurement behind not using `mtime`: "a rapid insert-then-delete (or any two
+mutations close enough in time) collides on the identical reported `mtimeMs` far too often to trust".
+Cross-instance freshness pinned at `packages/trace/tests/integration/json-trace-store.test.ts:574`
+(sees another instance's insert) and `:585` (stops seeing another instance's delete).
+
+`findEntry` (`:612`) answers from the index; on a miss it falls back to a directory scan **only** when
+the index is incomplete (`:616`). Past `maxOwnerIndexEntries` the index is marked `complete = false`
+(`:600-603`, `:1236`) and lookups degrade to the scan; pinned at `packages/trace/tests/integration/json-trace-store.test.ts:477`.
+The LRU is bounded by `maxOwnerIndexes` (`cacheOwnerIndex`, `:537-546`).
+
+`cleanup` deletes files directly, never through `deleteById`, so it does not bump `.seq`; instead it
+clears **every** cached index when it deleted anything (`:1462`). The comment at `:341-354` gives the
+mechanism: `readdirSync(rootDir)` yields encoded segments that are "not cheaply invertible for a
+hashed segment", so a targeted invalidation could mis-target.
+
+### 4h. `list` / `listAcrossOwners`
+
+`listOwner` (`:834`): normalize the page (`:835`), refuse if the generation is not active (`:841`),
+then stream the directory keeping only the newest `limit + offset` rows in a worst-first heap
+(`retainNewest`, `:281`) while counting `total` over **every** matching entry (`:842-847`). Then
+`sortDescPaginate` and, per row, read the sidecar first and fall back to the bounded full record
+(`:848-874`). The fallback is described at `:802-808` as mandatory because "records written before
+sidecars existed have none". `listAcrossOwners` (`:1337`) delegates to `listOwner` when a `filter.owner`
+is given (`:1338`), otherwise walks every owner directory skipping `.locks` (`:1349-1350`).
+
+`sortDescPaginate` (`packages/trace/src/trace-store.ts:270`) sorts by `started_at` descending with a descending-`id`
+tiebreak (`:275-278`); pinned at `packages/trace/tests/integration/json-trace-store.test.ts:470`.
+
+`normalizeTracePage` (`:245`) **throws** `PersistenceError` for a non-safe-integer, negative, or
+over-cap limit/offset (`:246-256`); pinned at `packages/trace/tests/integration/json-trace-store.test.ts:501`.
+
+### 4i. Journal lifecycle
+
+`store.openJournal` (`:964`) owns the path (`:968`), registers the run in an in-process `liveJournals`
+set keyed `<ownerSeg>/<idSeg>` (`:969-970`), wraps `createRunJournal`, and releases the key on
+`discard()`/`close()` exactly once (`:976-994`).
+
+`createRunJournal` (`packages/trace/src/journal.ts:130`) opens with `openSync(path, "ax", 0o600)` (`:153`) — exclusive;
+the comment at `:116-118` says an `EEXIST` here "is a bug detector rather than a race guard" because
+the store already reserved the id. Refusal to reopen pinned at
+`packages/trace/tests/integration/journal.test.ts:154`; the `0600` mode at `:362`.
+
+Lines are `writeSync` and **deliberately not `fsync`ed** (`:121-128`): "The failure this guards
+against is *process* death … data handed to `write(2)` survives all three, because it sits in the
+kernel's page cache."
+
+Every method is infallible by contract (`:67-73`). `die()` (`:135`) closes the fd, marks the journal
+dead, and logs **once**; subsequent calls no-op (`:136-137`, `:169`). Pinned at
+`packages/trace/tests/integration/journal.test.ts:97` (unopenable path), `:116` (append after close is
+silent), `:135` (mid-run append failure disables and stays quiet).
+
+`discard()` (`:176`) closes and unlinks, swallowing errors. `close()` (`:192`) closes without
+unlinking. The loop calls `discard()` immediately after a successful `insert`
+(`packages/loop/src/runtime/execute-run.ts:434-435`) and `close()` in a `finally`
+(`packages/loop/src/runtime/execute-run.ts:498`).
+
+### 4j. Journal parsing
+
+`createJournalLineParser` (`packages/trace/src/journal-recovery.ts:134`) drives the package's one
+journal parser, `parseJournalChunks` (`:188`), which is streaming and always bounded — there is no
+whole-text, unbounded variant beside it. The three limits are `JournalParseLimits`'s fields —
+`maxChars`, `maxLineChars`, `maxEvents` (`packages/trace/src/journal-recovery.ts:48-51`) — and
+`recoverOrphans`'s call site does not tune them independently:
+`maxChars` and `maxLineChars` are **both** bound to the same constant,
+`MAX_TRACE_RECOVERY_JOURNAL_BYTES`, while only `maxEvents` gets its own,
+`MAX_TRACE_RECOVERY_EVENTS` (`packages/trace/src/json-trace-store.ts:1148-1151`). Per line (`:155`):
+
+| Input | Outcome | Line |
+|---|---|---|
+| blank/whitespace | ignored | `:146` |
+| first non-blank line, header parses | becomes the header | `:150` |
+| first non-blank line, header fails | terminal `{ ok:false, reason:"bad_header" }` | `:148` |
+| unparseable JSON, **trailing** | dropped silently | `:156` |
+| unparseable JSON, interior | `skipped += 1` | `:156` |
+| parses but not an object with a string `type` | `skipped += 1` | `:159-161` |
+| `events.length >= maxEvents` | terminal `{ ok:false, reason:"limit", limit:"events" }` | `:163-165` |
+| otherwise | pushed verbatim, unknown `type` included | `:167` |
+| no header at `finish()` | `{ ok:false, reason:"empty" }` | `:175` |
+
+`parseHeader` (`:88`) requires an object with numeric `v <= JOURNAL_VERSION` (`:97`), non-empty string
+`id` and `owner_key_name`, finite numeric `started_at`, and `request` **present and an object**
+(`:98-107`). The comment at `:101-106` states the rule: "Recovery must not reject a journal because a
+request shape changed under it, but every consumer reads `record.request.*`, so an absent one would be
+a dereference waiting to happen." `writer` is admitted only when both fields have the right primitive
+types (`:115-117`).
+
+Pinned at `packages/trace/tests/unit/journal-recovery.test.ts:31` (empty/bad header), `:40` (newer
+version refused), `:45` (trailing partial not counted as damage), `:55` (unknown event type kept),
+`:65`, `:75`, `:85` (chunked, not line-aligned), `:101` (all three bounds).
+
+`parseJournalChunks` accumulates parts and joins once per line (`:210`, `:227`), which the comment at
+`:183-186` says keeps memory "O(largest bounded line + bounded events)".
+
+### 4k. `journalToRecord`
+
+`packages/trace/src/journal-recovery.ts:380`:
+
+1. `repairUnsettledToolCalls(parsed.events)` (`:381`) — pair `tool_call_started` against `tool_call`
+   by `call_id`, and append a synthetic terminal `tool_call` for every unsettled one, with
+   `ended_at = started_at`, `result` and `error` both set to `UNCOMPLETED_TOOL_RESULT(name)`
+   (`:254-284`). A contributed event is skipped outright (`:258`). The comment at `:8-16` states the
+   reason: "a `tool_use` with no `tool_result` is a conversation shape providers reject."
+2. `synthesized = events.length - parsed.events.length` (`:382`).
+3. `sumUsage` (`:287`) rolls lead iterations per model and subagent iterations per model, counting
+   distinct `subagent_instance_id`s per model (`:335-341`), and attributes the whole
+   `subagents_spawned` count to the *first* lead row only (`:342-348`) — the comment says assigning it
+   to every row "would multiply it by the number of lead models a run happened to use".
+4. `lastAt` is the max over the first present of `ended_at | occurred_at | started_at | spawned_at`
+   (`:233-240`, `:297`); `elapsed_ms = max(0, lastAt - started_at)` (`:385`).
+5. Status is `interrupted` on both the response and the record (`:388`, `:405`).
+6. `recovery` is attached **only** when `skipped > 0 || synthesized > 0` (`:416-418`).
+7. **No `final_context`** is emitted. The comment at `:373-378`: "`continue_from` against a recovered
+   run still fails. Recovery restores the audit trail and the accounting; it does not restore
+   resumability."
+
+Pinned at `packages/trace/tests/unit/journal-recovery.test.ts:181`, `:203`, `:233`, `:251`, `:275`,
+`:290`, `:308`.
+
+### 4l. `recoverOrphans`
+
+`packages/trace/src/json-trace-store.ts:1019`. `staleCutoff = Date.now() - TMP_ORPHAN_GRACE_MS`
+(`:998`). A `scanBudget` of `maxRecoveryScanEntries` is threaded through both `readDirEntries` loops
+(`:1011`, `:1063`, `:1075`).
+
+Per owner directory (skipping `.locks` at `:1070` and any `deleting` owner at `:1071`), it first
+enumerates journals and current-generation record segments (`:1073-1087`), then per candidate journal:
+
+| Guard | Action | Line |
+|---|---|---|
+| a record with the same id segment exists | skip | `:1100` |
+| the journal is in this process's `liveJournals` | skip | `:1101` |
+| `stat` fails | skip | `:1109-1111` |
+| `mtimeMs >= staleCutoff` (younger than the 1 h grace) | skip | `:1112` |
+| `size > MAX_TRACE_RECOVERY_JOURNAL_BYTES` | quarantine `.jsonl.oversized`, **without reading** | `:1114-1117` |
+| `admittedBytes + size > MAX_TRACE_RECOVERY_TOTAL_BYTES` | `exhaust("total_bytes")`, break | `:1118-1121` |
+| stream read throws | skip | `:1131-1133` |
+| parsed **and** `writerStillRunning(header)` | skip | `:1134` |
+| parse failed, `reason === "limit"` | quarantine `.jsonl.oversized` | `:1135-1143` |
+| parse failed otherwise | quarantine `.jsonl.corrupt` | `:1135-1143` |
+| otherwise | `journalToRecord` → `store.insert`; on throw, skip | `:1145-1151` |
+| the inserted record carries `recovery` | `degraded += 1`, log `trace.journal_recovery_degraded` | `:1152-1165` |
+| success | `unlinkQuietly(path)` | `:1166` |
+
+The `examined` counter is incremented before the size checks (`:1113`), and `MAX_TRACE_RECOVERY_JOURNALS`
+bounds it from both loops (`:1065-1068`, `:1096-1099`). When `scanBudget` runs out mid-owner the owner
+is left entirely untouched (`:1088-1094`) — the inline comment says why: "The directory may have an
+unseen record matching a discovered journal … rather than making insertion's conflict check perform an
+unbounded fallback scan."
+
+Quarantine renames rather than deletes (`:1045`), and reports whether the rename itself succeeded
+(`:1043-1048`, `:1055-1059`). `JOURNAL_CORRUPT_SUFFIX`'s doc (`packages/trace/src/journal.ts:20-23`) states the rule: "a trace
+holds an entire conversation, so an unreadable journal is quarantined rather than deleted — tidying a
+directory is not a reason to destroy the only surviving copy of a run."
+
+`writerStillRunning` (`packages/trace/src/journal-recovery.ts:69`) returns `false` for a missing writer or a different
+host (`:71`), `false` for *our own pid* (`:79`, because "a journal this process still holds open is
+already excluded by the store's live set"), and otherwise `kill(pid, 0)` with `EPERM` counted as alive
+(`:81-85`). Pinned at `packages/trace/tests/integration/journal.test.ts:404` (live sibling skipped)
+and `:419` (dead writer recovered).
+
+Every pass ends by logging `trace.recovery_completed` with the report (`:1169-1179`); pinned at
+`packages/trace/tests/integration/observability.test.ts:294`.
+
+### 4m. `cleanup`
+
+`packages/trace/src/json-trace-store.ts:1416`. Two cutoffs, deliberately different:
+
+- `cutoffMs` — the caller's retention cutoff, applied to record `started_at` (`:920`) and to journal
+  `started_at` (`:936`).
+- `tmpOrphanCutoff = Date.now() - TMP_ORPHAN_GRACE_MS` (`:1396`), applied to `.lock` mtime (`:905`)
+  and tmp-file mtime (`:951`).
+
+`cleanupEntries` (`:891`) is a generator that yields **one value per examined entry**, `null` when the
+entry is not expired (`:897`, `:912`, `:929`, `:944`, `:956`). The comment at `:885-890` says this is
+load-bearing: the caller can
+stop after a fixed number of examined entries, and the generator "resumes at the same cursor on the
+next cleanup interval instead of rescanning an unbounded history synchronously from the beginning".
+The cursor is held in the store-scope `cleanupScan` (`:961`, `:1429-1439`); pinned at
+`packages/trace/tests/integration/json-trace-store.test.ts:555`.
+
+Expired candidates are retained in a newest-first heap bounded by `cleanupBatch` (`:1413-1428`), then
+sorted oldest-first before deletion (`:1440`) — so a bounded batch removes the oldest first; pinned by
+the conformance case at `packages/trace/tests/contract/trace-store-conformance.ts:151` and by
+`packages/trace/tests/integration/json-trace-store.test.ts:533`. A `leases` candidate goes through `reclaimLocalLeaseSync` with
+`staleMs: TMP_ORPHAN_GRACE_MS` (`:1449`), so a lock whose owner process is live is never reclaimed;
+pinned at `packages/trace/tests/integration/json-trace-store.test.ts:208`. A record's sidecar and generation sidecar are unlinked
+alongside it and do **not** count against the batch (`:1459-1460`); pinned at
+`packages/trace/tests/integration/json-trace-store.test.ts:763`.
+
+`normalizeCleanupBatch` (`:276`) clamps to `[1, 10_000]` and maps non-finite to `10_000`.
+
+**Journals age on the retention cutoff, not the orphan grace** (`:934-937`). `TraceStore.cleanup`'s doc at
+`:140-146` states the consequence of the alternative: sweeping on the grace "would delete precisely the
+set `recoverOrphans` exists to read — leaving the crash record silently unrecoverable for any operator
+who configured a TTL." That test carries an explicit `REGRESSION:` marker at
+`packages/trace/tests/integration/journal.test.ts:371-374` and is pinned at `:376` and `:387`.
+
+### 4n. `TraceCleanup`
+
+`packages/trace/src/cleanup.ts:30`. `start(intervalMs)` no-ops when `ttlDays === 0` or already running
+(`:42`), runs one sweep immediately (`:43`), then `setInterval` at `max(1, intervalMs)` (`:44-49`), and
+`unref`s the handle (`:50`). `runOnce` (`:72`) computes `cutoffMs = Date.now() - ttlDays * 86_400_000`
+(`:74`), clamps `batchSize` and `maxEntriesPerRun` into `[1, 10_000]` (`:75-83`), and loops at most
+`ceil(maxEntries / batch)` passes, stopping early on a short batch (`:88-97`). Hitting the pass cap
+logs a warning naming the backlog (`:98-108`); a non-empty sweep logs an info line with the counter
+split (`:109-120`); a throw is caught, logged, and the count so far returned (`:122-128`).
+
+Pinned at `packages/trace/tests/component/cleanup.test.ts:52`, `:74`, `:94`, `:106`, `:122`, `:131`,
+`:165`, `:180`, `:215`, `:236`, `:248`, `:274`.
+
+`protectedExecutionIds`, when supplied, is resolved once per `runOnce` as `{ ids, complete }`. An
+incomplete reference scan skips the whole destructive pass and warns; otherwise the ids are passed
+unchanged to each bounded store batch. The JSON store encodes each raw protected id with
+`ownerSegment` before comparing filename segments, while the in-memory store compares raw ids. The
+file kernel supplies execution ids referenced by valid persisted sessions across every owner;
+malformed or oversized individual session records are ignored, while the 10,000-file/256-MiB
+aggregate bounds and filesystem failures return `complete: false`.
+The product default is 30 days (`CLARVIS_TRACE_TTL_DAYS` in
+`packages/capability/src/env.ts`); `0` remains a complete opt-out. Production:
+`TraceCleanup.runOnce`, `JsonTraceStore.cleanup`, `referencedSessionExecutionIds` in
+`packages/kernel/src/sessions/session-service.ts`, and the `TraceCleanup` composition in
+`packages/kernel/src/file-kernel.ts`. Test: the protected-record case in
+`packages/trace/tests/component/cleanup.test.ts` (including incomplete-scan refusal), the cleanup cases in
+`packages/trace/tests/integration/json-trace-store.test.ts`, and the cross-owner scan case in
+`packages/kernel/tests/integration/session-service.test.ts`.
+
+### 4o. `deriveEventSpan`
+
+`packages/trace/src/event-span.ts:63`. Narrows with `isBuiltinTraceEvent` first (`:64`) — a contributed
+event gets `{ span_id: "run", phase: "point", kind: "event" }`. Then:
+
+| Event type(s) | span_id | phase | kind | Line |
+|---|---|---|---|---|
+| `run_started` / `run_ended` | `"run"` | start / end | `run` | `:66-69` |
+| `lead_iteration_started` / `lead_iteration` | `lead:<n>` | start / end | `iteration` | `:70-81` |
+| `subagent_iteration_started` / `subagent_iteration` | `<instanceId>:<n>` | start / end | `iteration` | `:82-93` |
+| `delegation_created` / `_started` / `_completed` / `_failed` | `delegation:<id>` | start / point / end / end | `subagent` | `:94-112` |
+| `tool_call_started` | `call_id` | start | `tool` | `:113` |
+| `tool_output_delta` / `tool_input_delta` | `call_id` | point | `tool` | `:115-117` |
+| `tool_call` | `call_id ?? "<agent>:<iteration_ref>:tool"` | end | `tool` | `:118-123` |
+| `model_reasoning` / `model_stream_delta` / `model_call_error` / `model_call_retry` | iteration span | point | `iteration` | `:124-132` |
+| `user_question` / `user_steering` | iteration span from `iteration_ref` | point | `iteration` | `:133-139` |
+| `compaction` / `compaction_skipped` / `cancellation` / `convergence_warning` / `guard_escalation` | `subagent:<id>` when scoped, else `"run"` | point | `subagent` / `event` | `:140-147` |
+| `elicitation_requested` / `budget_check` / `soft_limit_check` / `mcp_degraded` / `vision_analysis` | `"run"` | point | `event` | `:148-153` |
+
+`iterationSpanId` (`:40`) yields `<instanceId>:<n>` only when `agent === "subagent"` **and** the
+instance id is defined; everything else, including a subagent with no instance id, is `lead:<n>`
+(`:45-47`). Pinned at `packages/trace/tests/unit/event-span.test.ts:18`, and the whole table at `:27`
+through `:253`.
+
+## 5. Invariants
+
+Each rule names the production line it is about and the test that pins it.
+
+**T-1 (INV-023).** A record insert is scoped by `(owner, id)`: the same execution id under two
+different owners is legal, a duplicate under the same owner is rejected with `ConflictError`.
+Production: `packages/trace/src/json-trace-store.ts:1215` and `:1227` (the two `findEntry` conflict
+checks, before and under the lease) → `executionIdConflict`
+(`packages/capability/src/errors.ts:103`, whose `code` is `"execution_id_conflict"` at
+`packages/capability/src/errors.ts:51`); memory double at `packages/trace/src/testing.ts:36-42`.
+Pinned: `packages/trace/tests/contract/trace-store-conformance.ts:68` and `:75`, driven for both
+backends from `packages/trace/tests/contract/trace-store.test.ts:9` and `:11`.
+
+**T-2 (INV-024).** Listing is owner-scoped, and an owner that never stored anything yields an empty
+result rather than an error. Production: `packages/trace/src/json-trace-store.ts:856` (`listOwner`
+reads only `ownerDir(owner)`), and `readDirEntries` returns on `ENOENT`/`ENOTDIR`
+(`packages/trace/src/json-trace-store.ts:499-502`). Pinned:
+`packages/trace/tests/contract/trace-store-conformance.ts:58`, `:93`.
+
+**T-3 (INV-025).** An owner's records list newest-first, and `limit`/`offset` paging leaves `total`
+page-independent. Production: `packages/trace/src/trace-store.ts:270` (`sortDescPaginate`), and
+`total` is incremented over every matching entry before paging
+(`packages/trace/src/json-trace-store.ts:867`). Pinned:
+`packages/trace/tests/contract/trace-store-conformance.ts:101`, `:110`.
+
+**T-4 (INV-026).** A listing's rows never include `request`, `response` or `trace`. Production:
+`recordToSummary` projects exactly nine scalars (`packages/trace/src/trace-store.ts:247-259`), and
+the sidecar holds only that projection (`packages/trace/src/json-trace-store.ts:814`). Pinned:
+`packages/trace/tests/contract/trace-store-conformance.ts:117`.
+
+**T-5 (INV-027).** `deleteById` affects only the requesting owner's copy and reports whether a record
+existed. Production: `packages/trace/src/json-trace-store.ts:1299-1302` (`findEntry(owner, id)` first,
+`false` when absent). Pinned: `packages/trace/tests/contract/trace-store-conformance.ts:126`.
+
+**T-6 (INV-028).** A cleanup pass keyed on an age cutoff removes only records older than the cutoff,
+across every owner, and a bounded batch removes the oldest first. Production:
+`packages/trace/src/json-trace-store.ts:942` (`meta.startedAt < cutoffMs`) and `:1462` (`expired.sort`
+ascending before deletion). Pinned:
+`packages/trace/tests/contract/trace-store-conformance.ts:134`, `:151`.
+
+**T-7 (INV-029).** `deleteOwner` reports the count removed and leaves other owners untouched; an owner
+with nothing stored reports zero. Production: `packages/trace/src/json-trace-store.ts:1335-1341`
+(counts only entries of the previous generation in this owner's directory) and `:1323` (removes only
+`ownerDir(owner)`). Pinned: `packages/trace/tests/contract/trace-store-conformance.ts:165`, `:175`.
+
+**T-7a.** `listAcrossOwners` lists across every owner newest-first and, given an exact `owner` filter,
+returns only that owner's rows. Production: `packages/trace/src/json-trace-store.ts:1359-1360`
+(delegates to `listOwner` when `filter.owner` is given) and `packages/trace/src/trace-store.ts:270` (`sortDescPaginate`,
+shared with the single-owner path). Pinned:
+`packages/trace/tests/contract/trace-store-conformance.ts:179-194`.
+
+**T-8.** `BUILTIN_TRACE_KINDS` and `TraceDetailMap`'s keys are the same set, checked at compile time in
+both directions. Production: `packages/capability/src/trace-kinds.ts:688-693`. Pinned: the assignments
+themselves are the check (they fail `tsc`); the runtime half — no duplicates, every listed kind
+recognised — is at `packages/capability/tests/unit/trace-kinds.test.ts:12`, `:16`.
+
+**T-9.** `BUILTIN_TRACE_EVENT_TYPES` and `BuiltinTraceEvent["type"]` are the same set, checked at
+compile time in both directions. Production: `packages/capability/src/trace-events.ts:417-426`.
+Pinned (runtime half): `packages/capability/tests/unit/open-vocabularies.test.ts:94`, `:129`.
+
+**T-10.** Narrowing with `isBuiltinTraceEntry` before a `switch` is what keeps an exhaustiveness check
+honest over the open `TraceEntry`. Production: `packages/trace/src/trace-mapper.ts:101` guarding the
+`never` at `:514`. Pinned: `packages/capability/tests/unit/trace-kinds.test.ts:51` ("keeps an
+exhaustive switch honest: narrow first, and the residual is never").
+
+**T-11.** A projector may not be registered for an engine-owned kind, may not have an empty kind, and
+may not be registered twice; the registry and its snapshot are frozen. Production:
+`packages/capability/src/trace-projectors.ts:39-52`. Pinned:
+`packages/capability/tests/unit/trace-projectors.test.ts:17`, `:27`, `:34`.
+
+**T-12.** `composePersistedTraceProjectors` does not mutate the host registry. Production:
+`packages/capability/src/trace-projectors.ts:68` (spreads into a fresh registry). Pinned:
+`packages/capability/tests/unit/trace-projectors.test.ts:40`.
+
+**T-13.** Six builtin kinds have no wire projection and map to `null`: `init`, `terminate`,
+`agent_registered`, `agent_stopped`, `agent_steered`, `agent_finish_nudge`. Production:
+`packages/trace/src/trace-mapper.ts:506-512`. Pinned **partially**:
+`packages/trace/tests/unit/trace-mapper-kinds.test.ts:222` covers only the first five —
+`agent_finish_nudge` is **unpinned**.
+
+**T-14.** An entry whose kind no projector claims and the engine does not declare is persisted as a
+`ContributedTraceEvent` with the payload nested under `detail`, never dropped. Production:
+`packages/trace/src/trace-mapper.ts:101-107`. Pinned:
+`packages/trace/tests/unit/persisted-projectors.test.ts:36`,
+`packages/trace/tests/unit/trace-mapper.test.ts:248`.
+
+**T-15.** Every mapped event, including a capability projector's output, passes through `sanitizeDeep`.
+Production: `packages/trace/src/trace-mapper.ts:61`. Pinned:
+`packages/trace/tests/unit/persisted-projectors.test.ts:28` (an `api_key` becomes `"[redacted]"`), and
+`packages/trace/tests/unit/trace-mapper.test.ts:1004` (a bearer token in tool arguments is not
+persisted).
+
+**T-16.** `capDetail` never mutates its input and returns the input by reference when nothing was
+capped. Production: `packages/trace/src/cap-detail.ts:273`, `:285`, `:291`, `:296` (…and every other
+branch). Pinned: `packages/trace/tests/unit/cap-detail.test.ts:54`, `:68`, `:403`.
+
+**T-17.** `capDetail` is the only cap table; the mapper calls it rather than restating a bound.
+Production: `packages/trace/src/cap-detail.ts:375-378` (the stated rule) and
+`packages/trace/src/trace-mapper.ts:110` etc. (every branch calls it). Pinned indirectly:
+`packages/trace/tests/unit/trace-mapper.test.ts:919` shows the mapper capping an over-long
+`delegation_created.task` that never went through `createTrace`. The "only cap table" property itself
+is **unpinned** — no test fails if a second cap is introduced in the mapper.
+
+**T-18.** A contributed detail is string-capped at `RESULT_MAX` with depth, width and cycle bounds.
+Production: `packages/trace/src/cap-detail.ts:397`. Pinned:
+`packages/trace/tests/unit/cap-detail.test.ts:386`, `:185`, `:408`.
+
+**T-19.** A final model response is capped at `MODEL_RESPONSE_MAX`, not `RESULT_MAX`. Production:
+`packages/trace/src/cap-detail.ts:272`, `:277`. Pinned:
+`packages/trace/tests/unit/cap-detail.test.ts:98`,
+`packages/trace/tests/unit/in-memory-trace.test.ts:56`,
+`packages/trace/tests/unit/trace-mapper.test.ts:63`.
+
+**T-20.** `signal` entries never reach `trace.entries` and never reach the journal; only `record`
+entries do. Production: `packages/trace/src/in-memory-trace.ts:54-58` (no push) and
+`packages/loop/src/runtime/run-trace.ts:162` (`const journal = durable ? p.journal : undefined`).
+Pinned: `packages/trace/tests/unit/in-memory-trace.test.ts:107`, `:138`.
+
+**T-21.** After `seal()`, both `record` and `signal` are no-ops. Production:
+`packages/trace/src/in-memory-trace.ts:49`, `:55`, `:60-62`. Pinned:
+`packages/trace/tests/unit/in-memory-trace.test.ts:15`, `:157`.
+
+**T-22.** Non-object tool `arguments` is preserved under `malformed_arguments`, never erased to `{}`;
+only a genuinely absent payload becomes `{}`. Production: `packages/trace/src/trace-mapper.ts:26-36`.
+Pinned: `packages/trace/tests/unit/trace-mapper.test.ts:138`, `:178`, `:200`, `:222`.
+
+**T-23.** The journal is opened exclusively (`"ax"`) at mode `0600` and never reopened. Production:
+`packages/trace/src/journal.ts:153`. Pinned:
+`packages/trace/tests/integration/journal.test.ts:154`, `:362`.
+
+**T-24.** No journal method ever throws; a failure disables the journal and is logged exactly once.
+Production: `packages/trace/src/journal.ts:135-150`, `:169`. Pinned:
+`packages/trace/tests/integration/journal.test.ts:97`, `:116`, `:135`.
+
+**T-25.** A journal never enters the record namespace — not `list`, not `getById`, not the owner index,
+not `deleteOwner`'s count. Production: `FILE_RE` is anchored on `.json$`
+(`packages/trace/src/json-trace-store.ts:54`), so `.jsonl` cannot match (`:133-139`). Pinned:
+`packages/trace/tests/integration/journal.test.ts:332`.
+
+**T-26.** The summary sidecar likewise never enters the record namespace, because its name does not end
+in `.json`. Production: `packages/trace/src/json-trace-store.ts:56-67`, `:132`. Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:741`.
+
+**T-27.** The sidecar is written **after** the record's rename, is not `fsync`ed, and every write
+failure is swallowed. Production: `packages/trace/src/json-trace-store.ts:813-814` (order) and
+`:709-722` (swallow + debug log). Pinned:
+`packages/trace/tests/integration/observability.test.ts:219`, `:230`; the read-side fallback at
+`packages/trace/tests/integration/json-trace-store.test.ts:730`, `:777`, `:786`.
+
+**T-28.** `list` must be able to serve a row from the full record when no sidecar exists. Production:
+`packages/trace/src/json-trace-store.ts:874-896`. Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:718` (identical summary either way),
+`:730` (still lists with the sidecar removed).
+
+**T-29.** `cleanup` ages journals on the retention cutoff, never on the orphan grace. Production:
+`packages/trace/src/json-trace-store.ts:956-959`. Pinned:
+`packages/trace/tests/integration/journal.test.ts:376` (carries an explicit `REGRESSION:` note at
+`:371-374`) and `:387`.
+
+**T-30.** `recoverOrphans` skips a journal this process holds open, one younger than the orphan grace,
+one whose record already exists, and one whose writer process is provably alive on this host.
+Production: `packages/trace/src/json-trace-store.ts:1122`, `:1134`, `:1123`, `:1156`;
+`writerStillRunning` at `packages/trace/src/journal-recovery.ts:69-86`. Pinned:
+`packages/trace/tests/integration/journal.test.ts:216`, `:225`, `:234`, `:404`.
+
+**T-31 (INV-276).** An unrecoverable journal is renamed aside, never deleted — `.jsonl.corrupt` for a
+body that would not parse, `.jsonl.oversized` when a size or parse *limit* stopped it — and the host
+boots normally on top of it. Production:
+`packages/trace/src/json-trace-store.ts:1067` (`renameSync`, no `unlink` on the failure path), the two
+suffixes at `packages/trace/src/journal.ts:24`, `:27`, and the arms that choose between them at
+`packages/trace/src/json-trace-store.ts:1136-1139`, `:1157-1165`. Pinned:
+`packages/trace/tests/integration/journal.test.ts:247` (corrupt header), `:260` (oversized),
+`packages/trace/tests/integration/observability.test.ts:311`, `:326` (failed rename reported); and
+end-to-end through a real host boot at `packages/kernel/tests/integration/file-kernel.test.ts:631`,
+which asserts the `.jsonl` is gone, the `.jsonl.corrupt` sidecar exists, and the kernel still
+serves.
+
+**T-32.** A recovered record carries `status: "interrupted"` and **no `final_context`**. Production:
+`packages/trace/src/journal-recovery.ts:388`, `:405`, and the absence of a `final_context` key in the
+returned object (`:402-419`). Pinned:
+`packages/trace/tests/unit/journal-recovery.test.ts:181`.
+
+**T-33.** `recovery` is attached only when something was lost or synthesized, so an undamaged recovered
+record is indistinguishable from a normally persisted one. Production:
+`packages/trace/src/journal-recovery.ts:416-418`. Pinned:
+`packages/trace/tests/unit/journal-recovery.test.ts:275`, `:290`, `:308`;
+`packages/trace/tests/integration/journal.test.ts:188`;
+`packages/trace/tests/integration/observability.test.ts:392` ("stays quiet about a journal that
+recovered intact").
+
+**T-34.** A journal event whose `type` this build does not recognise is retained verbatim. Production:
+`packages/trace/src/journal-recovery.ts:159-167` (only `type: string` is required). Pinned:
+`packages/trace/tests/unit/journal-recovery.test.ts:55`.
+
+**T-35.** A trailing partial line is not counted as damage; an interior bad line is. Production:
+`packages/trace/src/journal-recovery.ts:156` (`if (!trailing) skipped += 1`). Pinned:
+`packages/trace/tests/unit/journal-recovery.test.ts:45`, `:75`.
+
+**T-36.** `request` is stored sanitized while `final_context` and `capability_state` are stored
+verbatim. Production: `packages/trace/src/json-trace-store.ts:793-794` versus `:800-804`. Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:76`, `:120`, `:155`.
+
+**T-37.** The persisted `trace` is not re-sanitized at insert; it was sanitized at map time.
+Production: `packages/trace/src/json-trace-store.ts:795` (`trace: record.trace`) against
+`packages/trace/src/trace-mapper.ts:61`. **Unpinned** as a stated rule — the redaction property is
+covered end-to-end at `packages/trace/tests/unit/trace-mapper.test.ts:1004`, but nothing fails if the
+insert path were to double-sanitize or stop sanitizing at map time.
+
+**T-38.** A stored record and a stored sidecar are size-checked by `stat` before their body is read.
+Production: `packages/trace/src/json-trace-store.ts:440-456` (`readBoundedUtf8`: `statSync` first,
+then a second `Buffer.byteLength` check after reading). Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:673` (sparse oversized record), `:786`
+(sparse oversized sidecar).
+
+**T-39.** An oversized serialized record is rejected **before** it is published. Production:
+`packages/trace/src/json-trace-store.ts:810-812` (throw before `writeFileDurable` at `:813`). Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:649`.
+
+**T-40.** An unreadable row is dropped from `items` while `total` still counts it, and the drop is
+logged. Production: `packages/trace/src/json-trace-store.ts:884-895` (`continue` after
+`logRecordUnreadable`). Pinned:
+`packages/trace/tests/integration/observability.test.ts:160`, `:180`, `:200`;
+`packages/trace/tests/integration/json-trace-store.test.ts:597`, `:609`, `:622`.
+
+**T-41.** Owner-index freshness is guarded by `.seq` content, not directory `mtime`. Production:
+`packages/trace/src/json-trace-store.ts:587-600`, consumed at `:605-614`. Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:574`, `:585`.
+
+**T-42.** A `deleting` owner is invisible to `list`, to the index, and to recovery; an insert into it
+either waits for a live deleter to finish (by failing) or completes a dead deleter's transaction.
+Production: `packages/trace/src/json-trace-store.ts:863`, `:618`, `:1093`, `:684-714`. Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:261`, `:290`, `:339`, `:379` — the `:290`
+case spawns a real second OS process (`packages/trace/tests/helpers/owner-delete-insert-worker.ts`)
+so the protocol is verified across process boundaries, not only in-process.
+
+**T-43.** `listAcrossOwners` works when detached from the store object. Production: `listOwner` is a
+free `const`, referenced rather than reached through `this`
+(`packages/trace/src/json-trace-store.ts:856`, `:1297`, `:1360`); the reason is stated at `:819-823`.
+Pinned: `packages/trace/tests/integration/json-trace-store.test.ts:634`.
+
+**T-44.** `list` refuses an out-of-range page rather than allocating for it. Production:
+`normalizeTracePage` throws `PersistenceError` (`packages/trace/src/json-trace-store.ts:267-278`).
+Pinned: `packages/trace/tests/integration/json-trace-store.test.ts:501`.
+
+**T-45.** `TraceCleanup` with `ttlDays: 0` is a total no-op and its timer never keeps the process
+alive. Production: `packages/trace/src/cleanup.ts:42`, `:75`, `:50` (`unref`). Pinned:
+`packages/trace/tests/component/cleanup.test.ts:122`; the `unref` call itself is **unpinned**.
+
+**T-46.** `resolveTraceStore` treats a blank or whitespace-only `dir` as absent and falls back to
+`globalPaths().tracesDir`. Production: `packages/trace/src/trace-store-factory.ts:31-32`. Pinned:
+`packages/trace/tests/integration/trace-store-factory.test.ts:26`, `:31`, `:36`.
+
+**T-47.** The memory double and the JSON store satisfy the *same* conformance suite, so a caller
+written against one works against the other. Production: `packages/trace/src/testing.ts:21` (and its
+`Promise.reject` rather than `throw`, `:16-20`). Pinned:
+`packages/trace/tests/contract/trace-store.test.ts:9`, `:11`.
+
+**T-48.** `deriveEventSpan` narrows before switching, and a contributed event gets a run-level `point`.
+Production: `packages/trace/src/event-span.ts:64`, guarding the `never` at `:155`. Pinned:
+`packages/trace/tests/unit/event-span.test.ts:253`.
+
+**T-49.** Every `src` module of `@clarvis/trace` must appear in LCOV except the one named as
+type-only. Production: floors `functions: 0.98 / lines: 0.97` at `tooling/checks/coverage.ts:44`;
+allowlist `src/trace-handle.ts` at `:151-154`.
+
+## 6. Failure modes and degradation
+
+| Situation | Behaviour | Handler |
+|---|---|---|
+| duplicate id for an owner | `ConflictError` (`code: "execution_id_conflict"`) rejected from `insert` | `packages/trace/src/json-trace-store.ts:1216`, `:1228`; `packages/capability/src/errors.ts:103` |
+| a concurrent inserter holds the id lock | same `ConflictError` — the lease is non-waiting (`waitMs: 0`) | `packages/trace/src/json-trace-store.ts:1219-1223` |
+| a *stale* orphan id lock (crash) | reclaimed inline via `staleMs: TMP_ORPHAN_GRACE_MS`, insert proceeds | `packages/trace/src/json-trace-store.ts:1220` |
+| serialized record over `maxRecordBytes` | `TraceFileTooLargeError extends PersistenceError` before any write | `packages/trace/src/json-trace-store.ts:251-260`, `:810` |
+| stored record body corrupt on `getById` | `PersistenceError` naming the id, thrown | `packages/trace/src/trace-store.ts:15-24`; `packages/trace/src/json-trace-store.ts:1290` |
+| stored record body corrupt on `list` | dropped from the page, `total` unchanged, `trace.record_unreadable` warn | `packages/trace/src/json-trace-store.ts:891-895` |
+| stored record oversized on `list` | same, `reason: "too_large"` | `packages/trace/src/json-trace-store.ts:884-887` |
+| record missing under the row (`ENOENT`) | silently skipped | `packages/trace/src/json-trace-store.ts:888` |
+| sidecar missing / corrupt / oversized | falls back to the full record; no log on read | `packages/trace/src/json-trace-store.ts:761-768` |
+| sidecar cannot be written | swallowed, `trace.sidecar_write_failed` at **debug** | `packages/trace/src/json-trace-store.ts:731-744` |
+| owner deletion racing an insert | `PersistenceError("… was deleted while execution … was being persisted")`, partial record rolled back | `packages/trace/src/json-trace-store.ts:1232-1248` |
+| owner deletion racing another deletion | `PersistenceError("… deletion is in progress.")` | `packages/trace/src/json-trace-store.ts:674-675`, `:696`, `:1322` |
+| owner index outgrows `maxOwnerIndexEntries` | marked incomplete, lookups fall back to a directory scan, `trace.owner_index_evicted` at debug | `packages/trace/src/json-trace-store.ts:622-625`, `:1256-1260`, `:551-557` |
+| more than `maxOwnerIndexes` owners | LRU eviction, same debug log | `packages/trace/src/json-trace-store.ts:559-568` |
+| any insert failure | `trace.insert_failed` **error** log carrying the `phase`, then re-thrown | `packages/trace/src/json-trace-store.ts:1265-1276` |
+| journal path unopenable | journal disabled, one warn, run continues without crash recovery | `packages/trace/src/journal.ts:146-149`, `:164` |
+| journal append fails mid-run | journal disabled, one warn, subsequent appends no-op | `packages/trace/src/journal.ts:172-174` |
+| journal header unparseable at recovery | renamed `.jsonl.corrupt`, `trace.journal_quarantined` warn | `packages/trace/src/json-trace-store.ts:1157-1165` |
+| journal exceeds a parse limit | renamed `.jsonl.oversized`, same warn with `reason: "limit"` | `packages/trace/src/json-trace-store.ts:1157-1165` |
+| journal file exceeds `MAX_TRACE_RECOVERY_JOURNAL_BYTES` | quarantined `.jsonl.oversized` **without reading the body** | `packages/trace/src/json-trace-store.ts:1136-1139` |
+| quarantine rename itself fails | counted anyway, warn says it "stays in place and is re-examined on every start" | `packages/trace/src/json-trace-store.ts:1065-1084` |
+| a recovery budget runs out | `exhausted: true`, `trace.recovery_budget_exhausted` warn naming which bound, remaining journals left on disk | `packages/trace/src/json-trace-store.ts:1035-1051` |
+| recovered record is incomplete | `recovery` on the record **and** `trace.journal_recovery_degraded` warn | `packages/trace/src/journal-recovery.ts:416`; `packages/trace/src/json-trace-store.ts:1174-1187` |
+| `insert` of a recovered record throws | that journal is skipped and left on disk | `packages/trace/src/json-trace-store.ts:1168-1173` |
+| `cleanup` throws inside `TraceCleanup` | caught, logged, count so far returned, retried next interval | `packages/trace/src/cleanup.ts:124-130` |
+| `cleanup` backlog exceeds the pass cap | warn naming `max_passes`/`max_entries`; backlog left for the next interval | `packages/trace/src/cleanup.ts:100-110` |
+| `list` limit/offset out of range | `PersistenceError`, thrown | `packages/trace/src/json-trace-store.ts:268-278` |
+| a directory disappears mid-scan | `readDirEntries` returns quietly on `ENOENT`/`ENOTDIR`, including Bun's deferred scandir error | `packages/trace/src/json-trace-store.ts:496-522` |
+
+Two degradations are worth naming as *policy* rather than mechanics, because the code states them:
+
+- **The journal is best effort and must never fail a run.** `RunJournal`'s contract at
+  `packages/trace/src/journal.ts:67-73`: "A run must never fail because its journal did — the journal
+  is a best-effort improvement over losing the run entirely, not a new way to lose it."
+- **Recovery restores the audit trail, not resumability.** `packages/trace/src/journal-recovery.ts:373-378`
+  and `packages/trace/src/trace-store.ts:183-186`.
+
+## 7. Coupling
+
+### Inbound (what `@clarvis/trace` depends on)
+
+| Edge | Kind | Forced by |
+|---|---|---|
+| `@clarvis/capability` — types (`TraceEntry`, `TraceEvent`, `ExecutionRecord`, `RunRequest`, `Logger`, …) | type-only, static | `packages/trace/src/trace-store.ts:1` |
+| `@clarvis/capability` — values (`sanitizeDeep`, `isBuiltinTraceKind`, `PersistenceError`, `ConflictError`, `executionIdConflict`, `levelEnabled`, `NOOP_LOGGER`, `unref`, `DELEGATE_TASK_MAX_CHARS`) | runtime, static | `packages/trace/src/json-trace-store.ts:17-22`, `packages/trace/src/cap-detail.ts:7`, `packages/trace/src/cleanup.ts:3`, `packages/trace/src/testing.ts:1-2` |
+| `@clarvis/capability` — values (`isBuiltinTraceEntry`, `isBuiltinTraceEvent`) | runtime, static | `packages/trace/src/trace-mapper.ts:1` (`isBuiltinTraceEntry`), `packages/trace/src/event-span.ts:2` (`isBuiltinTraceEvent`) |
+| `@clarvis/paths` — `ownerSegment`, `writeFileDurable(Sync)`, `acquireLocalLease(Sync)`, `reclaimLocalLeaseSync`, `isTmpFile`, `globalPaths` | runtime, static | `packages/trace/src/json-trace-store.ts:24-31`, `packages/trace/src/trace-store-factory.ts:2` |
+| Node builtins `node:fs`, `node:os`, `node:path`, `node:crypto` | runtime, static | `packages/trace/src/json-trace-store.ts:1-15`, `packages/trace/src/journal.ts:1-2`, `packages/trace/src/execution-id.ts:1` |
+
+`packages/trace/package.json:46-49` lists exactly two dependencies and no `devDependencies` of its
+own beyond the root toolchain — the "no external package at all" claim in `packages/trace/src/index.ts:17-18` is
+consistent with the manifest.
+
+### Outbound (what depends on `@clarvis/trace`)
+
+Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their package manifests).
+
+| Consumer | What it takes | Line |
+|---|---|---|
+| `loop` | `createTrace` + `TraceHandle` for the run's recorder | `packages/loop/src/runtime/orchestrator.ts:22-23`, `:343` |
+| `loop` | `mapEntry` in the live/journal bridge | `packages/loop/src/runtime/run-trace.ts:7`, `:164` |
+| `loop` | `generateExecutionId`, `mapTrace`, `buildRecord`, `TraceStore`, `RunJournal` in `executeRun` | `packages/loop/src/runtime/execute-run.ts:7-19` |
+| `loop` | `resolveTraceStore` in `buildExecuteRunDeps` | `packages/loop/src/runtime/build-run-deps.ts:11` |
+| `loop` | re-exports `TraceStore`, `TraceCleanup`, `generateExecutionId`, `ResolvedTraceStore` from `lib.ts`, and `deriveEventSpan`/`EventSpan` from `host.ts` | `packages/loop/src/lib.ts:26`, `:82-85`; `packages/loop/src/host.ts:62` |
+| `kernel` | `TraceCleanup` + `TraceStore` in file-kernel composition | `packages/kernel/src/file-kernel.ts:42` |
+| `kernel` | `MAX_TRACE_LIST_LIMIT` / `MAX_TRACE_LIST_OFFSET` for run pagination | `packages/kernel/src/runs/pagination.ts:1` |
+
+### What forces the direction
+
+- `@clarvis/trace` never imports `@clarvis/loop`. `packages/mcp-client/src/index.ts:12` describes this
+  as "the same one `@clarvis/trace` draws", and `packages/supervision/src/index.ts:13` names it too —
+  but **no test in `packages/trace`** was found to enforce it, unlike `@clarvis/capability`'s
+  self-import test (`packages/capability/tests/architecture/self-import.test.ts`). See §8.
+- The vocabulary/implementation split is forced by the *type* direction: `TracePort` lives in
+  `capability` (`packages/capability/src/ports.ts:98`) and `TraceHandle` merely `extends` it
+  (`packages/trace/src/trace-handle.ts:12`), so a capability records without knowing this package
+  exists.
+- `ExecutionRecord` lives in `capability`, not here
+  (`packages/capability/src/trace-events.ts:502`), so a capability's `onRunEnd` can name the type of
+  the record it receives without depending on the engine or on this package.
+- The projector registry lives in `capability` because `mapEntry` takes it as a parameter
+  (`packages/trace/src/trace-mapper.ts:58`) while capabilities produce it
+  (`packages/loop/src/runtime/run-trace.ts:36-44`).
+
+### Delegated to sibling documents
+
+- **Which events reach a client and with what durability** — [kernel-run-service-and-events](../hosts/kernel-runs.md). This
+  package produces `TraceEvent`s; the kernel decides which become protocol `RunEvent`s.
+- **Boot-time orchestration of `recoverOrphans` and `TraceCleanup.start`** —
+  [kernel-composition-and-lifecycle](../hosts/kernel-composition.md). `packages/kernel/src/file-kernel.ts:42` is the call site.
+- **The trace-vs-log rule and the logging vocabulary** — [observability-and-diagnostics](../cross-cutting/observability.md). The event
+  names this package emits (`trace.insert_failed`, `trace.record_unreadable`,
+  `trace.sidecar_write_failed`, `trace.owner_index_evicted`, `trace.journal_quarantined`,
+  `trace.journal_recovery_degraded`, `trace.recovery_budget_exhausted`, `trace.recovery_completed`,
+  `trace.insert_aborted_deleted_owner`) are listed here for completeness only.
+- **Atomic writes, leases and `ownerSegment`** — the `@clarvis/paths` document. This spec cites their
+  entry points but does not restate their semantics.
+
+## 8. Open questions
+
+- **`agent_finish_nudge` is unpinned.** `packages/trace/src/trace-mapper.ts:511` maps it to `null`,
+  but the parametrised test at `packages/trace/tests/unit/trace-mapper-kinds.test.ts:222` lists only
+  `init`, `terminate`, `agent_registered`, `agent_stopped`, `agent_steered`. Removing
+  `agent_finish_nudge` from that `case` list would not fail the suite — the compile-time
+  exhaustiveness guard at `:515` would then reject it only if it also lost every other branch, and it
+  would in fact fall into `default` and fail `tsc`. So the *compiler* catches deletion; nothing
+  catches it being moved into a projecting branch that mints a wire event.
+- ~~**"`capDetail` is the only cap table" has no test.** The rule is stated at
+  `packages/trace/src/cap-detail.ts:375-378`, but nothing fails if `trace-mapper.ts` grows a second,
+  differing bound — and the doc at `packages/trace/src/cap-detail.ts:97-103` explains precisely that double-capping at two
+  different maxima "leaves a mangled marker".~~ **Resolved 2026-08-22** in
+  `packages/trace/tests/architecture/package-boundary.test.ts`: exactly that — declaring a second
+  `RESULT_MAX` in `trace-mapper.ts` now fails. The discriminating detail is that only **character**
+  caps count. A record-size limit or a list page cap is a different kind of number — exceeding one is
+  refused or paged, never silently shortened — so a first attempt matching any `MAX` flagged the
+  store's byte and list bounds and had to be narrowed.
+- ~~**No architecture test enforces `@clarvis/trace` not importing `@clarvis/loop`.**~~ **Resolved
+  2026-08-22**: `packages/trace/tests/architecture/package-boundary.test.ts` now scans `src` **and**
+  `tests`, alongside the manifest check. Both trees, because a `devDependency` import from `src`
+  type-checks and bundles while the manifest still looks clean, and a test reaching for a fixture from
+  a package above is a cycle no build, install or consumer ever sees. Two things had to be right, both
+  found by the test failing: the scanning file must exclude itself, since its fixture necessarily
+  contains the forbidden import forms; and that fixture must build each specifier by concatenation,
+  because `@clarvis/loop` runs a mirror scan over its own dependencies and a literal
+  `from "@clarvis/…"` inside a string is indistinguishable from the real thing to a line matcher.
+  Adding the suite also exposed that `packages/trace/package.json` enumerated its test directories and
+  would never have run a new `tests/architecture` level — caught by **knip**, not by the suite.
+- **`MAX_CLEANUP_PASSES` is referenced but does not exist.** The TSDoc at
+  `packages/trace/src/cleanup.ts:66` says "Caps at {@link MAX_CLEANUP_PASSES} batches per call", but no
+  such symbol is defined; the real bound is the local `maxPasses` at `:84`. A stale doc link, not a
+  behavioural defect.
+- **`JournalHeader.v` accepts any number `<= JOURNAL_VERSION`.** `packages/trace/src/journal-recovery.ts:97`
+  rejects only a *newer* version. There is no reader for a hypothetical `v: 0`, and the code does not
+  say what an older version's line shape would be.
+- **`writeGenerationState` is not itself under the delete lease on the `ensureActiveGeneration` path's
+  first read.** `packages/trace/src/json-trace-store.ts:685-688` reads state before acquiring the
+  lease, and the correctness argument is stated in prose at `:657-660` rather than checked. Whether the
+  intervening window is closed by the subsequent re-read at `:681` is a claim traceable through the
+  source but unconfirmed as the intent.
+- **Rationale is absent almost everywhere it matters.** The doc comments quoted above give *stated*
+  reasons for the `.summary` suffix, the `.seq` guard, the journal's lack of `fsync`, the retention-vs-
+  grace split, and the `malformed_arguments` preservation. For the rest — the specific numeric values
+  of `RESULT_MAX`, `ARGS_MAX`, `DETAIL_MAX_ENTRIES`, `MAX_TRACE_RECOVERY_JOURNALS`, `TMP_ORPHAN_GRACE_MS`
+  — the code states the mechanism and not the derivation, and none is invented here.
+- **Windows.** `@clarvis/trace` is not in the Windows CI job: it runs `@clarvis/paths`,
+  `@clarvis/tools` and `@clarvis/plan` only
+  (`.github/workflows/ci.yml:152-155`). `process.kill(pid, 0)` (`packages/trace/src/journal-recovery.ts:81`) and the file-mode assertions
+  (`packages/trace/src/json-trace-store.ts:414-424`; `packages/trace/src/journal.ts:153`) are POSIX-shaped; whether they behave as specified
+  on Windows is unverified from this repository.

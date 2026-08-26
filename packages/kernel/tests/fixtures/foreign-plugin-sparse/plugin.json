@@ -1,0 +1,10 @@
+{
+  "interface": {
+    "displayName": "Atlas Tools",
+    "shortDescription": "Charts and maps for a workspace."
+  },
+  "apps": [{ "id": "atlas-board", "kind": "connector" }],
+  "mcpServers": {
+    "charts": { "command": "atlas-mcp", "args": ["--stdio"] }
+  }
+}

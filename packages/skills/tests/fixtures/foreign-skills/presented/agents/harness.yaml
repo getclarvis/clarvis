@@ -1,0 +1,9 @@
+display-name: Release Notes
+short-description: Turns a commit range into publishable notes.
+icon:
+  light: assets/icon-light.svg
+  dark: assets/icon-dark.svg
+color: "#3B82F6"
+default-prompt: Draft the notes for everything since the last tag.
+policy:
+  implicit-invocation: true

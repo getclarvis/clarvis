@@ -1,0 +1,53 @@
+{
+  "name": "@clarvis/capability",
+
+  "private": true,
+  "description": "The capability contract: the vocabulary and composition machinery a cross-cutting loop feature is written against. A dependency-free leaf, so a capability can live outside the engine.",
+  "license": "MIT",
+  "author": "getclarvis",
+  "type": "module",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./ports": {
+      "bun": "./src/ports.ts",
+      "types": "./dist/ports.d.ts",
+      "import": "./dist/ports.js"
+    },
+    "./trace": {
+      "bun": "./src/trace.ts",
+      "types": "./dist/trace.d.ts",
+      "import": "./dist/trace.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.build.json",
+    "clean": "bun -e \"await import('node:fs/promises').then(({rm}) => rm('dist', {recursive:true, force:true}))\"",
+    "test": "bun run test:unit && bun run test:integration && bun run test:architecture",
+    "test:unit": "bun test tests/unit --timeout 60000",
+    "test:integration": "bun test tests/integration --timeout 60000",
+    "test:architecture": "bun test tests/architecture --timeout 60000",
+    "test:coverage": "bun test tests/unit tests/integration --timeout 60000 --coverage && bun run test:architecture",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\""
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}

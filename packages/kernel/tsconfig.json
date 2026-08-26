@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "types": ["bun", "node"],
+    "target": "ESNext",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rewriteRelativeImportExtensions": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true,
+    "paths": {
+      "@clarvis/protocol": ["../protocol/src/index.ts"],
+      "@clarvis/loop": ["../loop/src/lib.ts"],
+      "@clarvis/loop/host": ["../loop/src/host.ts"],
+      "@clarvis/loop/capabilities/tools": ["../loop/src/capabilities-tools.ts"],
+      "@clarvis/loop/testing": ["../loop/src/testing/index.ts"],
+      "@clarvis/workflows": ["../workflows/src/index.ts"],
+      "@clarvis/memory": ["../memory/src/index.ts"],
+      "@clarvis/memory/schemas": ["../memory/src/schemas.ts"],
+      "@clarvis/memory/settings": ["../memory/src/settings.ts"],
+      "@clarvis/memory/capability": ["../memory/src/capability.ts"],
+      "@clarvis/mcp-client": ["../mcp-client/src/index.ts"],
+      "@clarvis/plan": ["../plan/src/index.ts"],
+      "@clarvis/skills": ["../skills/src/index.ts"],
+      "@clarvis/skills/catalog": ["../skills/src/catalog/index.ts"],
+      "@clarvis/tools": ["../tools/src/index.ts"],
+      "@clarvis/tools/guard": ["../tools/src/guard/index.ts"],
+      "@clarvis/tools/shell": ["../tools/src/shell/index.ts"],
+      "@clarvis/trace/testing": ["../trace/src/testing.ts"]
+    },
+    "lib": ["ESNext"]
+  },
+  "include": ["src", "tests"]
+}

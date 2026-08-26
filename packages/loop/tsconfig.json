@@ -1,0 +1,23 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext"],
+    "noEmit": true,
+    "paths": {
+      "@clarvis/capability": ["../capability/src/index.ts"],
+      "@clarvis/capability/ports": ["../capability/src/ports.ts"],
+      "@clarvis/capability/trace": ["../capability/src/trace.ts"],
+      "@clarvis/llm": ["../llm/src/index.ts"],
+      "@clarvis/llm/adapter": ["../llm/src/adapter.ts"],
+      "@clarvis/tools": ["../tools/src/index.ts"],
+      "@clarvis/tools/guard": ["../tools/src/guard/index.ts"],
+      "@clarvis/tools/shell": ["../tools/src/shell-entry.ts"],
+      "@clarvis/hooks": ["../hooks/src/index.ts"],
+      "@clarvis/skills": ["../skills/src/index.ts"],
+      "@clarvis/skills/catalog": ["../skills/src/catalog/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

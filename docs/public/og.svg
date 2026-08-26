@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none" role="img" aria-label="Clarvis, a terminal workspace for serious agentic work">
+  <defs>
+    <linearGradient id="og-bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0b0b16"/>
+      <stop offset="1" stop-color="#171433"/>
+    </linearGradient>
+    <linearGradient id="og-mark" x1="120" y1="200" x2="360" y2="440" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5b54e8"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+    <linearGradient id="og-name" x1="430" y1="250" x2="900" y2="320" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8b85f5"/>
+      <stop offset="1" stop-color="#c4b5fd"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#og-bg)"/>
+  <circle cx="1040" cy="120" r="320" fill="#5b54e8" opacity="0.10"/>
+
+  <g transform="translate(120 235) scale(3.33)">
+    <circle cx="24" cy="24" r="14" stroke="url(#og-mark)" stroke-width="3" opacity="0.5"/>
+    <g fill="url(#og-mark)">
+      <circle cx="23.6" cy="22.6" r="4.7"/>
+      <path d="M28 24 C28 27.6 25.4 30.9 21.4 31.4 C24 29.5 25.7 26.4 24.9 23.2 Z"/>
+    </g>
+    <circle cx="24" cy="10" r="3.6" fill="#6d66f0"/>
+    <circle cx="36.12" cy="31" r="3.6" fill="#8b85f5"/>
+    <circle cx="11.88" cy="31" r="3.6" fill="#a78bfa"/>
+  </g>
+
+  <text x="432" y="296" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="72" font-weight="800" fill="url(#og-name)">Clarvis</text>
+  <text x="436" y="352" font-family="Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif" font-size="27" font-weight="500" fill="#c7c9d9">A terminal workspace for serious agentic work</text>
+  <text x="436" y="400" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="26" font-weight="500" fill="#8b85f5">clarvis.dev</text>
+
+  <text x="120" y="560" font-family="Inter, system-ui, sans-serif" font-size="26" font-weight="500" fill="#7c7f96">Agents · workflows · skills · hooks · MCP · explicit safety</text>
+</svg>

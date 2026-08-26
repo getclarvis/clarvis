@@ -1,0 +1,34 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "paths": {
+      "@clarvis/protocol": ["../protocol/dist/index.d.ts"],
+      "@clarvis/kernel": ["../kernel/dist/index.d.ts"],
+      "@clarvis/kernel/bootstrap": ["../kernel/dist/bootstrap.d.ts"],
+      "@clarvis/kernel/config": ["../kernel/dist/config.d.ts"],
+      "@clarvis/kernel/policy": ["../kernel/dist/policy.d.ts"]
+    }
+  },
+  "references": [
+    {
+      "path": "../capability/tsconfig.build.json"
+    },
+    {
+      "path": "../paths/tsconfig.build.json"
+    },
+    {
+      "path": "../protocol/tsconfig.build.json"
+    },
+    {
+      "path": "../kernel/tsconfig.build.json"
+    }
+  ],
+  "include": ["src"]
+}

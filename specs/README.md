@@ -32,7 +32,7 @@ cannot be written as a requirement or checked against a line of source. That is 
 separate document.
 
 **The corpus carries no date of its own, so the table below is its timestamp.** These are the
-numbers the tree held when it was last refreshed (2026-08-25). If they no longer match, the tree has
+numbers the tree held when it was last refreshed (2026-08-26). If they no longer match, the tree has
 moved since the corpus was last checked against it, and the further it has drifted the more of the
 corpus's untested statements are worth re-checking. Regenerate them rather than trusting them:
 
@@ -44,7 +44,7 @@ find packages/<pkg>/tests -type f -name '*.test.ts*' | wc -l
 
 | Package | `src` lines | `src` files | test files |
 |---|---|---|---|
-| `code` | 51,378 | 237 | 231 |
+| `code` | 51,378 | 237 | 232 |
 | `kernel` | 26,707 | 110 | 83 |
 | `loop` | 20,614 | 137 | 233 |
 | `memory` | 13,612 | 65 | 59 |

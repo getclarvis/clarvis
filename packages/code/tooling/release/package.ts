@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { releaseAssetName, releaseTarget, type ReleaseTarget } from "../../src/update-contract.ts";
 import { manifestFiles } from "../../src/update/release-manifest.ts";
+import { assertRuntimePackageRoot, runtimePackageCandidates } from "./runtime-package-discovery.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const repositoryRoot = join(packageRoot, "..", "..");
@@ -49,6 +50,7 @@ function packageDirectory(name: string): string {
 }
 
 async function packageManifest(name: string): Promise<PackageManifest> {
+  assertRuntimePackageRoot(name);
   const path = join(packageDirectory(name), "package.json");
   const value: unknown = JSON.parse(await readFile(path, "utf8"));
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -78,41 +80,18 @@ async function runtimeClosure(target: ReleaseTarget): Promise<Map<string, Packag
   return closure;
 }
 
-function packageName(specifier: string): string {
-  const parts = specifier.split("/");
-  return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : (parts[0] ?? specifier);
-}
-
 async function discoveredRuntimePackages(): Promise<string[]> {
   const found = new Set<string>();
   const dist = join(packageRoot, "dist");
   for (const name of await readdir(dist)) {
     if (!name.endsWith(".js")) continue;
     const source = await readFile(join(dist, name), "utf8");
-    for (const match of source.matchAll(/\b[A-Za-z_$][\w$]*\(["'`]([^"'`]+)["'`]\)/g)) {
-      const specifier = match[1];
+    for (const candidate of runtimePackageCandidates(source)) {
       if (
-        specifier === undefined ||
-        specifier.length === 0 ||
-        specifier.startsWith(".") ||
-        specifier.startsWith("/") ||
-        specifier.startsWith("node:")
-      ) {
-        continue;
-      }
-      const candidate = packageName(specifier);
-      if (
-        candidate.length > 0 &&
         (await stat(packageDirectory(candidate)).catch(() => undefined))?.isDirectory() === true
       ) {
         found.add(candidate);
       }
-    }
-    for (const match of source.matchAll(
-      /createRequire\(import\.meta\.url\)\(["']([^"']+)["']\)/g,
-    )) {
-      const specifier = match[1];
-      if (specifier !== undefined) found.add(packageName(specifier));
     }
   }
   return [...found].sort();

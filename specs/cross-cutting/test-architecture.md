@@ -245,12 +245,12 @@ hidden `packages/a/tests/helpers/hidden.test.ts`
 (`tooling/tests/unit/source-policy.test.ts:38-41`). Windows-shaped paths are normalised
 (`tooling/tests/unit/source-policy.test.ts:79-86`).
 
-Actual population across the 18 workspaces (920 `*.test.*` files, counted by the first segment
+Actual population across the 18 workspaces (921 `*.test.*` files, counted by the first segment
 under `tests/`):
 
 | Level | Files |
 |---|---:|
-| `unit` | 407 |
+| `unit` | 408 |
 | `integration` | 344 |
 | `component` | 102 |
 | `architecture` | 51 |
@@ -790,7 +790,7 @@ only the owner-specific default").
    Rule: `tooling/lib/source-policy.ts:3-10` + `:64-74`; enforced at
    `tooling/checks/source-policy.ts:60-64`. Pinned by `tooling/tests/unit/source-policy.test.ts:31-51`
    (accepts `unit`/`integration`/`e2e`, rejects a flat file and one under `helpers/`).
-   Currently satisfied: 924 test files, 0 unclassified.
+   Currently satisfied: 921 test files, 0 unclassified.
 
 2. **INV-304 — `mock.module()` appears nowhere in `packages/*/{src,tests,tooling}` or root `tooling/`,
    with no allowlist and no baseline.** Rule: `tooling/checks/source-policy.ts:52-59`, matcher at

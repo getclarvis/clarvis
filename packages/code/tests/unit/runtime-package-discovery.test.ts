@@ -1,0 +1,61 @@
+import { expect, test } from "bun:test";
+import {
+  assertRuntimePackageRoot,
+  runtimePackageCandidates,
+  runtimePackageName,
+} from "../../tooling/release/runtime-package-discovery.ts";
+
+test("runtime package names retain only the package root", () => {
+  expect(runtimePackageName("ajv")).toBe("ajv");
+  expect(runtimePackageName("zod/v4/core")).toBe("zod");
+  expect(runtimePackageName("@opentui/core")).toBe("@opentui/core");
+  expect(runtimePackageName("@opentui/core/testing")).toBe("@opentui/core");
+});
+
+test("runtime package names reject paths, builtins, and internal imports", () => {
+  for (const specifier of [
+    "",
+    ".",
+    "..",
+    "./local.ts",
+    "../local.ts",
+    "/",
+    "/absolute/file.ts",
+    String.raw`C:\absolute\file.ts`,
+    String.raw`\\server\share\file.ts`,
+    "node:fs",
+    "bun:test",
+    "#internal",
+    "package#fragment",
+    "@scope",
+    "@/package",
+    "@scope/",
+    String.raw`@scope\package`,
+    String.raw`@scope/package\file.ts`,
+  ]) {
+    expect(runtimePackageName(specifier)).toBeUndefined();
+  }
+});
+
+test("runtime closure entries must already be exact package roots", () => {
+  expect(() => assertRuntimePackageRoot("ajv")).not.toThrow();
+  expect(() => assertRuntimePackageRoot("@opentui/core")).not.toThrow();
+  expect(() => assertRuntimePackageRoot("zod/v4")).toThrow(
+    'invalid runtime package name: "zod/v4"',
+  );
+  expect(() => assertRuntimePackageRoot("/")).toThrow('invalid runtime package name: "/"');
+});
+
+test("artifact discovery keeps packages and ignores path-like createRequire calls", () => {
+  const source = [
+    'const Ajv = createRequire(import.meta.url)("ajv")',
+    'const ignore = createRequire(import.meta.url)("ignore/subpath")',
+    'const zod = load("zod/v4")',
+    'const relative = createRequire(import.meta.url)(".")',
+    'const root = createRequire(import.meta.url)("/")',
+    String.raw`const drive = createRequire(import.meta.url)("C:\absolute\file.ts")`,
+    'const builtin = createRequire(import.meta.url)("node:fs")',
+  ].join("\n");
+
+  expect(runtimePackageCandidates(source)).toEqual(["ajv", "ignore", "zod"]);
+});

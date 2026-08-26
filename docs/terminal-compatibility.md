@@ -9,10 +9,11 @@ documents observed behavior separately from configured release targets.
 ## Baseline
 
 - Interactive mode requires a real PTY and enough rows and columns to render the interface.
-- GNU/glibc Linux, macOS, and Windows x64/arm64 archives are configured; a native release job must
-  pass before each target is considered observed. Alpine and other musl-only Linux distributions are
+- GNU/glibc Linux, macOS, and Windows x64/arm64 archives are available for `v0.0.1-beta`. All six
+  native package and install-smoke jobs passed. Alpine and other musl-only Linux distributions are
   not portable-release targets for this beta.
-- Linux x64 is the only portable target built and first-paint-smoked locally during beta preparation.
+- The Linux and macOS release jobs assert first paint under a real PTY. Windows release smoke asserts
+  the manifest and CLI fast paths; native Windows PTY first paint remains manually unverified.
 - `clarvis -p` is the text-oriented alternative for scripts, limited terminals, and assistive
   workflows that cannot use the full-screen interface.
 

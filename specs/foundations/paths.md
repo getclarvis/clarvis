@@ -679,8 +679,8 @@ record, so a crash mid-heartbeat cannot corrupt an otherwise-valid record. If `b
 reported with `phase: "renew"`, and `renew()` returns `false`; the heartbeat's next scheduled tick
 still fires (the timer itself is untouched), but every subsequent `owned()`/`renew()` call now
 returns `false` because `lost` never clears. Pinned by
-`packages/paths/tests/contract/local-lease.test.ts:681-699` ("a holder that loses its lease on a heartbeat says so, and names the
-phase", asserting `phase: "renew"`) and `:764-783` (the same loss under a throwing sink).
+`packages/paths/tests/contract/local-lease.test.ts` ("a holder that loses its lease on a heartbeat
+says so, and names the phase", asserting `phase: "renew"`) and its throwing-sink counterpart.
 
 If `heartbeatMs > 0`, `setInterval(requestHeartbeat, heartbeatMs)` (unref'd). `requestHeartbeat`
 coalesces overlapping ticks: if a renewal is already in flight, it just sets
@@ -688,7 +688,10 @@ coalesces overlapping ticks: if a renewal is already in flight, it just sets
 requested before it exits (`do { ...; await renew(); } while (heartbeatRequested &&
 !heartbeatStopped)`, `packages/paths/src/local-lease.ts:786-793`, the loop condition itself at `:790`). This guarantees at most one `renew()` in flight at a time regardless of
 tick rate, and `release()` awaits `heartbeatInFlight` before proceeding (`packages/paths/src/local-lease.ts:814`), so
-a release can never race a heartbeat write.
+a release can never race a heartbeat write. A caller must still invoke `release()` after ownership
+loss: it returns `false` without detaching the canonical path, but closes the held handle. The
+heartbeat-loss regression in `packages/paths/tests/contract/local-lease.test.ts` pins both the
+diagnostic and this cleanup path.
 
 ### 4.12 Synchronous acquire (`acquireLocalLeaseSync`, `packages/paths/src/local-lease.ts:1093-1101`)
 
@@ -830,6 +833,12 @@ removal itself succeeded — a removal failure never replaces or masks the origi
 Production: `packages/paths/src/atomic.ts:391-402,426-437`. Pinned by `packages/paths/tests/contract/atomic.test.ts:395-412` and `:414-429` (both
 `test.if(modeBitsEnforced)`).
 
+**PATHS-E.** An asynchronous lease that has already lost ownership still closes its held file handle
+when `release()` is called. It returns `false` and does not detach the canonical lease path.
+Production: `packages/paths/src/local-lease.ts` (`createLease`, `release`). Test:
+`packages/paths/tests/contract/local-lease.test.ts` ("a holder that loses its lease on a heartbeat
+says so, and names the phase").
+
 ## 6. Failure modes and degradation
 
 | Condition | Behavior | Cite |
@@ -843,7 +852,7 @@ Production: `packages/paths/src/atomic.ts:391-402,426-437`. Pinned by `packages/
 | `ensureWorkspaceSubdir` given a `dir` outside `<ws>/.clarvis` | throws a plain `Error` naming both paths | `packages/paths/src/ensure.ts:108-115` |
 | `acquireLocalLease` contended and unreclaimable | returns `null` after `waitMs` of retries — never throws | `packages/paths/src/local-lease.ts:1061-1084` |
 | `tryPublish`'s `afterPublish` callback or its post-publish recovery-intent recheck throws | the just-published lease is abandoned via `abandonPublishedLease(Sync)` and the original error is rethrown — `acquireLocalLease`/`acquireLocalLeaseSync` reject/throw rather than returning `null` | `packages/paths/src/local-lease.ts:984-994` (async), `:1035-1045` (sync) |
-| `owned()` or `renew()` finds it no longer holds the lease | sets `lost = true` and logs `paths.lease_lost` with `phase` naming where the loss was discovered — one of the three `LeaseLossPhase` values `"renew"` (a failed heartbeat, `packages/paths/src/local-lease.ts:764-776`), `"stat"` (the identity capture at the start of `release()` failed, `:820-823`), or `"release"` (`handle.close()` itself failed, `:826-829`); every subsequent `owned()`/`release()` call then returns `false` | `packages/paths/src/local-lease.ts:423,764-776,806-829` |
+| `owned()` or `renew()` finds it no longer holds the lease | sets `lost = true` and logs `paths.lease_lost` with `phase` naming where the loss was discovered — one of the three `LeaseLossPhase` values `"renew"` (a failed heartbeat, `packages/paths/src/local-lease.ts:764-776`), `"stat"` (the identity capture at the start of `release()` failed, `:820-823`), or `"release"` (`handle.close()` itself failed, `:826-829`); every subsequent `owned()`/`release()` call returns `false`, while `release()` still stops heartbeat work and closes the held handle | `packages/paths/src/local-lease.ts` (`createLease`, `release`); `packages/paths/tests/contract/local-lease.test.ts` (heartbeat-loss regression) |
 | A reclaim's rename-to-quarantine hits `ENOENT` (already gone) | treated as success (`return true`), not a refusal | `packages/paths/src/local-lease.ts:629,650,685,706` |
 | A reclaim's quarantine identity mismatches | restores (links) the quarantine back to its original path, refuses, logs `paths.lease_reclaim_refused` with the stage | `packages/paths/src/local-lease.ts:640-644` |
 | A lease reclaim decision is wrong (steals a lock from a still-alive holder due to clock skew or an unusual errno) | not detected or corrected anywhere in this package — the design note at `packages/paths/src/local-lease.ts:73-77` names this as "the single densest blind spot here: if the judgement is wrong, two holders both believe they own the path and nothing anywhere says so" | `packages/paths/src/local-lease.ts:73-77` |

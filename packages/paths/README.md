@@ -242,6 +242,11 @@ empty/partial record becomes reclaimable after the same grace rather than wedgin
 local-filesystem leases, not a distributed consensus protocol and must not be presented as
 NFS/multi-host coordination.
 
+Every acquired asynchronous lease must be released, including after `renew()`, `owned()` or
+`assertOwned()` reports ownership loss. In that state `release()` returns `false` because it cannot
+remove the canonical entry as its own, but it still stops heartbeat work and closes the held file
+handle. Leaving a lost lease unreleased delegates descriptor cleanup to runtime garbage collection.
+
 `acquireLocalLeaseSync` publishes and releases the same record synchronously, with no contention
 wait or heartbeat. It exists only for APIs whose whole filesystem transaction is synchronous; an
 asynchronous caller uses `acquireLocalLease` so it never blocks the event loop while waiting.

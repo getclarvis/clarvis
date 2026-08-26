@@ -1369,8 +1369,7 @@ Windows/macOS jobs.
 
 ## Windows release packaging exposed host-specific artifact assumptions
 
-**Both observed failures are fixed in this tree on 2026-08-26; another native Windows rerun is
-pending.** Manual release workflow run
+**Resolved for the published `v0.0.1-beta` artifacts on 2026-08-26.** Manual release workflow run
 `32972288986` built, packaged, smoked, and installer-smoked `darwin-x64`, `darwin-arm64`,
 `linux-x64`, and `linux-arm64`. Both `windows-x64` and `windows-arm64` stopped earlier in
 `bun --filter @clarvis/code build:install` with `artifact has no dynamic import for the AiSdkAdapter
@@ -1397,10 +1396,16 @@ not present in the job log, so the narrower source token cannot be claimed from 
 Runtime call discovery now uses one pure package-name validator for ordinary calls and direct
 `createRequire(import.meta.url)(...)` calls, confirms every discovered package directory exists, and
 rejects any invalid name that reaches manifest resolution. The unit regression covers package
-subpaths plus relative, absolute Windows/POSIX, built-in, and internal specifiers. A local Linux
-package and smoke can verify the shared discovery and portable archive behavior, but only another
-native workflow run can close the Windows release evidence. Do not report either Windows archive as
-passing until that rerun completes.
+subpaths plus relative, absolute Windows/POSIX, built-in, and internal specifiers.
+
+Official tag-triggered release run
+[`32998576908`](https://github.com/getclarvis/clarvis/actions/runs/32998576908) then ran from release
+commit `4aab234b7a70229949d042ce451a57a9e4eb2672`. All six native package jobs passed. In particular,
+both Windows architectures completed `build:install`, `release:package`, `release:smoke`, and
+`release:install-smoke`, and the publish job verified all six archive sidecars before publishing the
+release. This closes the packaging incident. It does not add a native Windows PTY first-paint claim:
+Windows release smoke covers the manifest and CLI fast paths, while real-PTY first paint remains in
+the POSIX release jobs.
 
 ---
 
@@ -1415,7 +1420,7 @@ the pid-liveness errno, the surfaces outside the job's four packages, and the tw
 guard and behaviour named here was verified present in the tree on that date. Two things around them
 have moved since the record was first written, and both change how the gaps can now be worked on:
 
-- **The restored Windows leg is green in its latest recorded run.** CI was disabled on
+- **The restored Windows leg exposed a test-owned file-handle leak; its native rerun is pending.** CI was disabled on
   2026-08-18 and push/pull-request triggers were restored on 2026-08-25. The public `main` run
   `32963947832` on 2026-08-26 exercised the retained
   `tools, paths, plan, memory, keyboard policy (windows)` job. Its first attempt failed in
@@ -1443,8 +1448,17 @@ have moved since the record was first written, and both change how the gaps can 
   `32970820273` verified the correction and completed the whole Windows job: Paths reported 222 pass
   and 14 platform skips; Tools 1102 pass and 64 platform skips; Plan 288 pass and 3 platform skips;
   Memory 630 pass, 1 platform skip and 0 failures; and the three keyboard-policy files 36 pass and 0
-  failures. The earlier Bun finalizer failure remains historical evidence of a rare runtime path:
-  three later successful Paths executions do not establish that it cannot recur.
+  failures. Main run
+  [`33012772530`](https://github.com/getclarvis/clarvis/actions/runs/33012772530) reproduced the
+  earlier finalizer signature after those three successful executions. The first error was a
+  `FileHandle` for a `clarvis-local-lease-*` temp path being closed during garbage collection; the
+  immediately following housekeeping test then failed while checking files it should preserve.
+  This was not a spill-age or housekeeping defect. The heartbeat-loss diagnostic test acquired an
+  asynchronous lease, deliberately made `renew()` mark it lost, and ended without calling
+  `release()`. Its fixture cleanup removed the directory but could not close the held descriptor.
+  The regression now releases the lease in `finally` and asserts the expected `false` result: a lost
+  lease cannot remove the canonical entry, but `release()` must still stop heartbeat work and close
+  its handle. A fresh Windows run remains the native verification for that correction.
 - **Two diagnostics were added to make these gaps diagnosable without a runner**, because "the
   windows job will settle it" was not a plan while the workflow was disabled. They remain useful
   even after trigger restoration and are described under the gaps they serve.

@@ -6,13 +6,17 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
 ## Release contract
 
 - Root `package.json` is the only product-version authority.
-- A release tag is exactly `v<version>`.
+- A release tag is exactly `v<version>`, annotated, and signed by the authorized releaser.
 - The release workflow builds glibc-based Linux, macOS, and Windows archives for x64 and arm64 on
   native runners.
 - A tag-triggered workflow uploads a complete draft release and makes it public in its final step.
   There is no human pause after the tagged workflow starts.
 - A manual workflow dispatch builds downloadable artifacts but cannot publish a release.
-- Published tags are immutable. Fixes use a new version; never move or reuse a release tag.
+- Active GitHub rulesets protect `main` and release tags. Published tag names are immutable by
+  project policy: fixes use a new version; never move or reuse a release tag.
+- GitHub immutable releases are enabled for future publications. The setting was enabled after
+  `v0.0.1-beta`, so that historical beta remains mutable in GitHub's API. Once GitHub marks a release
+  immutable, its tag, assets, and release notes cannot be changed.
 
 ## Prepare
 
@@ -30,6 +34,8 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
 6. Replace the changelog's unpublished entry with the final version/date. The workflow asks GitHub to
    generate release notes from the tagged history, so review the included commits and pull-request
    metadata before creating the tag.
+7. Confirm the `main` and `v*` rulesets are active, GitHub Actions requires full-SHA action pins, and
+   the repository reports immutable releases as enabled. Treat a missing policy as a release blocker.
 
 ## Validate without publishing
 
@@ -61,9 +67,10 @@ the six workflow artifacts and confirm:
 
 ## Publish
 
-Publication requires the owner's explicit authorization immediately before creating the version tag
-and again immediately before pushing it. State the exact tag, commit, repository, and branch before
-each action. Do not bypass hooks or force a tag.
+Publication requires the owner's explicit authorization for the exact release outcome before
+creating and pushing the signed, annotated version tag. State the exact tag, commit, repository, and
+branch before acting. A generic commit, push, or pull-request request does not authorize a tag or
+release. Do not bypass hooks or force a tag.
 
 After the authorized tag push, watch every native build and the final publish job. Because that job
 clears the draft flag automatically after checks, stop and investigate any failed or surprising job;

@@ -125,7 +125,7 @@ export interface LocalLease {
   owned(): Promise<boolean>;
   /** Fence a protected effect after a possible asynchronous delay. */
   assertOwned(): Promise<void>;
-  /** Stop heartbeats and remove only this holder's still-current lease. */
+  /** Stop heartbeats, close its handle, and remove only this holder's still-current lease. */
   release(): Promise<boolean>;
 }
 

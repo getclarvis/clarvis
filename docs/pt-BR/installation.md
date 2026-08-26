@@ -12,15 +12,18 @@ de pacotes, acesso de administrador ou checkout do código-fonte.
 
 ## Alvos de release compatíveis
 
-| Sistema operacional | Arquiteturas         | Alvo do arquivo                | Evidência atual                                                                           |
-| ------------------- | -------------------- | ------------------------------ | ----------------------------------------------------------------------------------------- |
-| Linux (glibc)       | x64, arm64           | `linux-x64`, `linux-arm64`     | Configurado; Linux x64 compilado e validado localmente até a primeira renderização em PTY |
-| macOS               | Intel, Apple silicon | `darwin-x64`, `darwin-arm64`   | Configurado; execução nativa da release ainda necessária                                  |
-| Windows             | x64, arm64           | `windows-x64`, `windows-arm64` | Configurado; execução nativa da release ainda necessária                                  |
+| Sistema operacional | Arquiteturas         | Alvo do arquivo                | Evidência da release `v0.0.1-beta`                                          |
+| ------------------- | -------------------- | ------------------------------ | --------------------------------------------------------------------------- |
+| Linux (glibc)       | x64, arm64           | `linux-x64`, `linux-arm64`     | Pacote e instalação nativos passaram; primeira renderização em PTY validada |
+| macOS               | Intel, Apple silicon | `darwin-x64`, `darwin-arm64`   | Pacote e instalação nativos passaram; primeira renderização em PTY validada |
+| Windows             | x64, arm64           | `windows-x64`, `windows-arm64` | Pacote e instalação nativos passaram; caminhos rápidos da CLI validados     |
 
-O job nativo correspondente no GitHub Actions precisa ser concluído antes que um alvo configurado
-seja descrito como testado para release. O Clarvis exige um terminal realmente interativo para a
-TUI. O modo headless está disponível com `clarvis -p`.
+O [workflow oficial da release `v0.0.1-beta`](https://github.com/getclarvis/clarvis/actions/runs/32998576908)
+concluiu os seis jobs nativos. No Linux e no macOS, o smoke de release inclui a primeira renderização
+em uma PTY real. No Windows, ele verifica o manifesto, `--version`, `--help`, instalação e
+reinstalação sem afirmar a primeira renderização em uma PTY nativa. Uma execução manual no Windows e
+a observação do SmartScreen continuam separadas dessa evidência automatizada. O modo headless está
+disponível com `clarvis -p`.
 
 ## Linux e macOS
 

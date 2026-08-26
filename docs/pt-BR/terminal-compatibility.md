@@ -10,11 +10,12 @@ observado separadamente dos alvos de release configurados.
 ## Linha de base
 
 - O modo interativo exige uma PTY real e linhas e colunas suficientes para renderizar a interface.
-- Os arquivos para Linux GNU/glibc, macOS e Windows em x64 e arm64 estão configurados. Um job nativo
-  de release precisa passar antes que cada alvo seja considerado observado. Alpine e outras
+- Os arquivos para Linux GNU/glibc, macOS e Windows em x64 e arm64 estão disponíveis na
+  `v0.0.1-beta`. Os seis jobs nativos de pacote e smoke de instalação passaram. Alpine e outras
   distribuições Linux exclusivas de musl não são alvos portáteis desta versão beta.
-- Linux x64 é o único alvo portátil compilado e validado localmente até a primeira renderização
-  durante a preparação da versão beta.
+- Os jobs de release no Linux e no macOS verificam a primeira renderização em uma PTY real. No
+  Windows, o smoke verifica o manifesto e os caminhos rápidos da CLI; a primeira renderização em uma
+  PTY nativa do Windows continua sem verificação manual.
 - `clarvis -p` é a alternativa orientada a texto para scripts, terminais limitados e fluxos
   assistivos que não podem usar a interface em tela cheia.
 

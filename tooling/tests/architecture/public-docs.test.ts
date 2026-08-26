@@ -107,6 +107,46 @@ describe("public documentation", () => {
     }
   });
 
+  test("keeps the first beta's native release evidence precise and aligned", () => {
+    const paths = [
+      "docs/installation.md",
+      "docs/terminal-compatibility.md",
+      "docs/pt-BR/installation.md",
+      "docs/pt-BR/terminal-compatibility.md",
+    ];
+    for (const path of paths) {
+      const source = read(path);
+      expect(source, path).toContain("v0.0.1-beta");
+      expect(source, path).not.toContain("native release run required");
+      expect(source, path).not.toContain("execução nativa da release ainda necessária");
+      expect(source, path).not.toContain("only portable target");
+      expect(source, path).not.toContain("único alvo portátil");
+    }
+
+    expect(read("docs/installation.md")).toContain(
+      "https://github.com/getclarvis/clarvis/actions/runs/32998576908",
+    );
+    expect(read("docs/pt-BR/installation.md")).toContain(
+      "https://github.com/getclarvis/clarvis/actions/runs/32998576908",
+    );
+    expect(read("docs/terminal-compatibility.md")).toContain(
+      "native Windows PTY first paint remains manually unverified",
+    );
+    expect(read("docs/pt-BR/terminal-compatibility.md")).toContain(
+      "PTY nativa do Windows continua sem verificação manual",
+    );
+  });
+
+  test("publishes the confidential conduct contact without prelaunch wording", () => {
+    const source = read("CODE_OF_CONDUCT.md");
+    expect(source).toContain("[hello@clarvis.dev](mailto:hello@clarvis.dev)");
+    expect(source).not.toContain("Before the public launch");
+  });
+
+  test("routes GitHub sponsorship to the owner-selected account", () => {
+    expect(read(".github/FUNDING.yml")).toBe("github: evandrocabf\n");
+  });
+
   test("keeps user guides free of repository-internal citations and the temporary remote", () => {
     const files = markdownFiles(docsRoot);
     expect(files.length).toBeGreaterThan(10);

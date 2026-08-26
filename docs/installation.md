@@ -12,15 +12,18 @@ administrator access, or a source checkout.
 
 ## Supported release targets
 
-| Operating system | Architectures        | Archive target                 | Current evidence                                           |
-| ---------------- | -------------------- | ------------------------------ | ---------------------------------------------------------- |
-| Linux (glibc)    | x64, arm64           | `linux-x64`, `linux-arm64`     | Configured; Linux x64 built and first-paint-smoked locally |
-| macOS            | Intel, Apple silicon | `darwin-x64`, `darwin-arm64`   | Configured; native release run required                    |
-| Windows          | x64, arm64           | `windows-x64`, `windows-arm64` | Configured; native release run required                    |
+| Operating system | Architectures        | Archive target                 | `v0.0.1-beta` release evidence                                   |
+| ---------------- | -------------------- | ------------------------------ | ---------------------------------------------------------------- |
+| Linux (glibc)    | x64, arm64           | `linux-x64`, `linux-arm64`     | Native package and install smoke passed; PTY first paint covered |
+| macOS            | Intel, Apple silicon | `darwin-x64`, `darwin-arm64`   | Native package and install smoke passed; PTY first paint covered |
+| Windows          | x64, arm64           | `windows-x64`, `windows-arm64` | Native package and install smoke passed; CLI fast paths covered  |
 
-The corresponding native GitHub Actions job must complete before a configured target is described
-as release-tested. Clarvis requires a real interactive terminal for the TUI; headless use is
-available with `clarvis -p`.
+The [official `v0.0.1-beta` release workflow](https://github.com/getclarvis/clarvis/actions/runs/32998576908)
+completed all six native target jobs. On Linux and macOS, release smoke includes first paint under a
+real PTY. On Windows, it verifies the manifest, `--version`, `--help`, installation, and
+reinstallation without asserting native PTY first paint. A manual Windows launch and SmartScreen
+observation remain separate from this automated evidence. Headless use is available with
+`clarvis -p`.
 
 ## Linux and macOS
 

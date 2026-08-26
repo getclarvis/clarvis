@@ -690,12 +690,18 @@ describe("lease diagnostics", () => {
       },
     });
     expect(lease).not.toBeNull();
-    expect(await lease?.renew()).toBe(false);
-    expect(sink.events("paths.lease_lost")[0]).toMatchObject({
-      path,
-      token: "renew-owner",
-      phase: "renew",
-    });
+    let released: boolean | undefined;
+    try {
+      expect(await lease?.renew()).toBe(false);
+      expect(sink.events("paths.lease_lost")[0]).toMatchObject({
+        path,
+        token: "renew-owner",
+        phase: "renew",
+      });
+    } finally {
+      released = await lease?.release();
+    }
+    expect(released).toBe(false);
   });
 
   test("a throwing sink cannot make a completed reclamation report contention", async () => {

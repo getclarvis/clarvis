@@ -748,7 +748,8 @@ the build pays that once. Consequences worth knowing:
   Plan, settings panels and domain hubs stay out of the startup entrypoint until their capability or
   route is first mounted. `lazyView` gives command views one Solid-owned loading boundary and cached
   module without duplicating lifecycle code. The build and artifact smoke reject an entrypoint that
-  absorbs representative lazy boundaries.
+  absorbs representative lazy boundaries, and derive generated chunk basenames from either POSIX or
+  Windows path separators so every native release job enforces the same graph contract.
 - **Local maps are detached; installed and portable maps are omitted.** Bun eagerly loads an external `.map`
   found beside its runtime `.js`; with this artifact that erased most of the splitting gain. The
   ordinary package/root build moves maps to `dist/maps/` for offline diagnostics and the smoke

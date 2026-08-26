@@ -29,10 +29,10 @@ export function assertLazyProviderArtifact(input: {
   if (providerChunk === undefined) {
     throw new Error("artifact has no lazy chunk containing AiSdkAdapter");
   }
-  const basename = providerChunk.path.split("/").at(-1);
-  if (basename === undefined) throw new Error("artifact provider chunk has no basename");
-  const dynamicImport = `await import("./${basename}")`;
-  const staticImport = `from "./${basename}"`;
+  const chunkBasename = providerChunk.path.split(/[\\/]/).at(-1);
+  if (chunkBasename === undefined) throw new Error("artifact provider chunk has no basename");
+  const dynamicImport = `await import("./${chunkBasename}")`;
+  const staticImport = `from "./${chunkBasename}"`;
   const sources = [input.entrySource, ...input.javascriptChunks.map((chunk) => chunk.source)];
   if (!sources.some((source) => source.includes(dynamicImport))) {
     throw new Error("artifact has no dynamic import for the AiSdkAdapter chunk");

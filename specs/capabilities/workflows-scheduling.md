@@ -320,42 +320,42 @@ Pinned: `packages/workflows/tests/component/capability.test.ts:51-64`, `:19-27`,
 
 ### 4.2 `run_leader` — one ad-hoc leader
 
-In `buildRunLeaderHandler.handle` (`packages/workflows/src/capability.ts:219`), synchronously:
+In `buildRunLeaderHandler.handle` (`packages/workflows/src/capability.ts`), synchronously:
 
-1. `parseLeaderSpec(call.arguments)` (`packages/workflows/src/capability.ts:220`) — see §4.7.
-2. `ctx.ledger.reserve(ctx.maxConcurrency)` (`packages/workflows/src/capability.ts:225`). `null` → `warn`
-   `workflow.budget_exhausted` and a non-terminal textual result telling the manager to synthesize
-   from what returned (`packages/workflows/src/capability.ts:226-242`).
-3. `runId = ctx.runDeps.generateExecutionId()` (`packages/workflows/src/capability.ts:244`).
-4. `registerBackgroundChild(agents, bc.trace, {kind:"leader", nativeId:runId, title, profile?})`
-   (`packages/workflows/src/capability.ts:245-250`). `null` (registry sealed or at its ceiling) → **release the
-   reservation** and answer "too many child agents are already running"
-   (`packages/workflows/src/capability.ts:251-259`; pinned `packages/workflows/tests/component/capability.test.ts:136-149`, which also asserts
-   `ledger.remaining()` is unchanged).
-5. A per-leader `WorkflowCtx` clone is built: bound logger, `signal = AbortSignal.any([ctx.signal,
+1. `parseLeaderSpec(call.arguments)` — see §4.7.
+2. `runId = ctx.runDeps.generateExecutionId()`.
+3. `registerBackgroundChild(agents, bc.trace, {kind:"leader", nativeId:runId, title, profile?})`.
+   `null` (registry sealed or at its ceiling) answers "too many child agents are already running";
+   no ledger reservation has been taken, pinned by
+   `packages/workflows/tests/component/capability.test.ts` (`refuses to spawn when the registry has
+   no room without reserving ledger headroom`).
+4. A per-leader `WorkflowCtx` clone is built: bound logger, `signal = AbortSignal.any([ctx.signal,
    controller.signal])`, a `steerForLeader` that returns this child's steer queue for its own id, and
-   an `onLeaderEvent` that ingests matching events into the handle *and* forwards outward
-   (`packages/workflows/src/capability.ts:264-273`).
-6. An async task is started and `agents.adopt(handle.id, task)` registers it
-   (`packages/workflows/src/capability.ts:275`, `:357`).
-7. The handler returns `{kind:"result", progress:true}` naming the agent id and the leader run id
-   (`packages/workflows/src/capability.ts:359-366`).
+   an `onLeaderEvent` that ingests matching events into the handle *and* forwards outward.
+5. An async task is started and `agents.adopt(handle.id, task)` registers it.
+6. The handler returns `{kind:"result", progress:true}` naming the agent id and the leader run id.
 
-Inside the task, in order: `semaphore.acquire(leaderCtx.signal)` (`packages/workflows/src/capability.ts:279`) → record
-`workflow_run_started` (`:281-287`) → `clock?.enterBackground()` (`:288`) → `runLeader`
-(`:289`) → `reportSettled` (`:290-296`) → record `workflow_run_completed` or `workflow_run_failed`
-(`:297-308`) → `handle.settled` with `completed` / `stopped` (cancelled) / `failed` (`:309-317`).
+Inside the task, in order: `semaphore.acquire(leaderCtx.signal)` →
+`ctx.ledger.reserve(ctx.maxConcurrency)` → record `workflow_run_started` →
+`clock?.enterBackground()` → `runLeader` → `reportSettled` → record `workflow_run_completed` or
+`workflow_run_failed` → `handle.settled` with `completed` / `stopped` (cancelled) / `failed`.
+`reserve === null` emits `workflow.budget_exhausted`, invokes `onBudgetExhausted`, settles the
+registered handle `failed`, and dispatches no model call. This ordering is pinned by
+`packages/workflows/tests/component/run-leader.test.ts` (`bounds concurrent leaders by the
+semaphore, sums usage, and records the tree edges` and `several admitted run_leader calls under a
+tight budget cannot collectively overrun it`).
 
-The semaphore `acquire` sits **inside** the adopted task, not in `handle`
-(`packages/workflows/src/capability.ts:279`), which is what lets a queued leader be stopped: an abort rejects the acquire,
-`acquired` stays false, and the child settles `stopped` with "cancelled while waiting for a
-concurrency slot" (`packages/workflows/src/capability.ts:319-325`).
+The semaphore `acquire` sits **inside** the adopted task, not in `handle`, which is what lets a queued
+leader be stopped: an abort rejects the acquire, `acquired` stays false, and the child settles
+`stopped` with "cancelled while waiting for a concurrency slot". Because reservation follows
+acquisition, that stopped queue entry held no token headroom.
 
 The `finally` releases four resources, each in its own nested `try`/`finally` so an earlier throw
-cannot skip a later release: compute region → ledger reservation → semaphore permit (only if
-acquired) → steer queue close (`packages/workflows/src/capability.ts:341-355`). Pinned by
-`packages/workflows/tests/component/run-leader.test.ts:427-460`, which faults the first `workflow_run_started` record
-and asserts the second leader still runs and the ledger records exactly the second's spend.
+cannot skip a later release: compute region → optional ledger reservation → semaphore permit (only
+if acquired) → steer queue close. Pinned by `packages/workflows/tests/component/run-leader.test.ts`
+(`a fault in the first leader trace releases every execution resource`), which faults the first
+`workflow_run_started` record and asserts the second leader still runs and the ledger records exactly
+the second's spend.
 
 ### 4.3 `runLeader` — one isolated `executeRun`
 
@@ -440,34 +440,37 @@ State table for one unit's slot, as `run` sees it:
 `workflow.dispatch_halted` with `queued_dropped`, and empties `pending`
 (`packages/workflows/src/dispatch.ts:372-383`).
 
-### 4.5 `runOne` — one unit's life (`packages/workflows/src/dispatch.ts:636`)
+### 4.5 `runOne` — one unit's life (`runOne` in `packages/workflows/src/dispatch.ts`)
 
 Order of refusals, each producing an outcome and settling the handle through `skip`:
 
 | Check | Outcome status | Line |
 |---|---|---|
-| entry never registered (`spawn === null`) | `unregistered` (no settle at all) | `packages/workflows/src/dispatch.ts:645` |
-| `gate(unit)` returned a blocker | `blocked`, text `'<key>' was not run: <reason>` | `packages/workflows/src/dispatch.ts:669-672` |
-| `budget.exhausted` already latched | `budget_exhausted` | `packages/workflows/src/dispatch.ts:674` |
-| `ledger.reserve` returned `null` | `budget_exhausted`, **latches** `budget.exhausted = true` + `warn` | `packages/workflows/src/dispatch.ts:675-688` |
-| `semaphore.acquire` rejected | `cancelled`, reservation released | `packages/workflows/src/dispatch.ts:702-709` |
-| signal aborted after the grant | `cancelled`, reservation + permit released | `packages/workflows/src/dispatch.ts:710-715` |
+| entry never registered (`spawn === null`) | `unregistered` (no settle at all) | `runOne` in `packages/workflows/src/dispatch.ts` |
+| `gate(unit)` returned a blocker | `blocked`, text `'<key>' was not run: <reason>` | `runOne` in `packages/workflows/src/dispatch.ts` |
+| `semaphore.acquire` rejected | `cancelled`; no reservation existed | `runOne` in `packages/workflows/src/dispatch.ts` |
+| signal aborted after the grant | `cancelled`, permit released | `runOne` in `packages/workflows/src/dispatch.ts` |
+| `budget.exhausted` already latched after admission | `budget_exhausted`, permit released | `runOne` in `packages/workflows/src/dispatch.ts` |
+| `ledger.reserve` returned `null` after admission | `budget_exhausted`, **latches** `budget.exhausted = true` + `warn`, permit released | `runOne` in `packages/workflows/src/dispatch.ts` |
 
-The latch is why a whole batch stops after one refusal rather than re-asking the ledger per unit —
-pinned by `packages/workflows/tests/component/work-items.test.ts:443-459`, which counts exactly **one** `reserve` call
-for two independent items under a zero ledger.
+The latch is why a whole batch stops after one admitted refusal rather than re-asking the ledger per
+unit — pinned by `packages/workflows/tests/component/work-items.test.ts` (`a sibling in the same wave
+is refused off the remembered flag, not by asking again`), which counts exactly **one** `reserve`
+call for two independent items under a zero ledger. Semaphore admission precedes every such
+reservation; the serial-headroom regression is
+`packages/workflows/tests/component/dispatch.test.ts` (`serial concurrency admits the queued tail
+against headroom released by each predecessor`).
 
-On the happy path: record `workflow_run_started` with the full unit coordinates (`round_id`, `pass`,
-`item_index`, `replica`, `replica_count`) (`packages/workflows/src/dispatch.ts:719-730`), enter the background compute
-region (`:731`), `runLeader` (`:732-742`), `reportSettled` (`:745-751`), record the terminal edge
-(`:752-761`), `finish(settleWith(...))` (`:762-768`), return the outcome carrying the leader's own
-`result` (`:769-773`).
+On the happy path, `runOne` records `workflow_run_started` with the full unit coordinates
+(`round_id`, `pass`, `item_index`, `replica`, `replica_count`), enters the background compute region,
+runs `runLeader`, reports settlement, records the terminal edge, settles the handle, and returns the
+outcome carrying the leader's own `result`.
 
 `runOne` never rejects: a throw (including from the trace sink) is caught, logged
 `workflow.leader_faulted`, the failure edge is recorded inside its own `try`/`catch` that logs
 `workflow.trace_sink_failed` if *that* also throws, and the unit settles `failed`
-(`packages/workflows/src/dispatch.ts:774-798`). The `finally` releases region, reservation and semaphore permit
-(`packages/workflows/src/dispatch.ts:799-803`).
+(`runOne` in `packages/workflows/src/dispatch.ts`). The `finally` releases region, reservation and
+semaphore permit.
 
 ### 4.6 `run_work_items` — derived waves
 
@@ -668,33 +671,35 @@ Every parse failure becomes a **non-terminal** `{kind:"result", progress:false}`
 `packages/workflows/src/run-round.ts:1284-1290`, `packages/workflows/src/run-workflow.ts:307-312`) — the manager is told what was wrong and keeps
 its turn.
 
-### 4.11 The ledger (`packages/workflows/src/ledger.ts:72`)
+### 4.11 The ledger (`createWorkflowLedger` in `packages/workflows/src/ledger.ts`)
 
-Three counters: `spent`, `reserved`, and `total` (`packages/workflows/src/ledger.ts:73-76`).
-`remaining() = total === null ? Infinity : max(0, total - spent - reserved)` (`packages/workflows/src/ledger.ts:75-76`).
+Three counters: `spent`, `reserved`, and `total`. `remaining() = total === null ? Infinity : max(0,
+total - spent - reserved)`.
 
 - `add(usage)` charges `sumOutputTokens(usage)` clamped to `remaining()` on a bounded ledger
-  (`packages/workflows/src/ledger.ts:120-123`, `:225-227`).
+  (`createWorkflowLedger` and `sumOutputTokens` in `packages/workflows/src/ledger.ts`).
 - `reserveOutput(n)` (the `OutputTokenBudget` port) grants `min(n, remaining())`, and `settle(used)`
-  converts `min(amount, used)` into spend exactly once (`packages/workflows/src/ledger.ts:81-116`).
+  converts `min(amount, used)` into spend exactly once (`directReservation` inside
+  `createWorkflowLedger`).
 - `reserve(maxConcurrent)` — the leader-level claim — takes
   `min(headroom, max(1, ceil(headroom / max(1,maxConcurrent))))` (`packages/workflows/src/ledger.ts`,
   `createWorkflowLedger`). The manager has an independent primary-session budget and consumes no
   share. Each leader reservation is itself a nested
-  budget: `reserveOutput` inside it draws down `amount - childSpent - childReserved`
-  (`packages/workflows/src/ledger.ts:181-204`), `reconcile(usage)` charges any gap the model calls did not settle
-  (`packages/workflows/src/ledger.ts:205-212`), and `release()` returns the *unused* part `amount - childSpent`
-  (`packages/workflows/src/ledger.ts:213-218`). A `released` reservation refuses further inner claims and further
-  reconciliation (`packages/workflows/src/ledger.ts:182`, `:206`).
+  budget: `reserveOutput` inside it draws down `amount - childSpent - childReserved`,
+  `reconcile(usage)` charges any gap the model calls did not settle, and `release()` returns the
+  *unused* part `amount - childSpent`. A `released` reservation refuses further inner claims and
+  further reconciliation (the bounded `reserve` branch in `createWorkflowLedger`).
 - Unbounded (`total === null`): `reserve` returns a zero-cost placeholder whose `remaining()` is
   `Infinity` but which still accumulates `childSpent` and folds it into `spent`
-  (`packages/workflows/src/ledger.ts:128-166`).
+  (the unbounded `reserve` branch in `createWorkflowLedger`).
 
-The point of `reserve` over a bare `remaining()` check is that a burst of `run_leader` calls
-dispatched in one manager turn would otherwise all read the same pre-spend snapshot
-(`packages/workflows/src/ledger.ts:33-40`); pinned by `packages/workflows/tests/unit/ledger.test.ts:105-121` and end-to-end by
-`packages/workflows/tests/component/run-leader.test.ts:341-378`, which fires 8 synchronous calls against a budget of 10
-and asserts some are admitted, some refused, and the counts sum to 8.
+The point of `reserve` over a bare `remaining()` check is that concurrent leaders would otherwise all
+read the same pre-spend snapshot. Reservation occurs synchronously after FIFO semaphore admission and
+before model dispatch, so the admitted set remains atomic while queued leaders preserve headroom for
+later use. This is pinned arithmetically by `packages/workflows/tests/unit/ledger.test.ts` (`many
+concurrent reservations under a tight budget can never collectively exceed it`) and end-to-end by
+`packages/workflows/tests/component/run-leader.test.ts` (`several admitted run_leader calls under a
+tight budget cannot collectively overrun it`).
 
 ### 4.12 Diagnostics vocabulary
 
@@ -739,11 +744,16 @@ identity, not a wrapper. Production: `packages/workflows/src/concurrency.ts:11`.
 `packages/workflows/tests/contract/concurrency.test.ts:7-9` (`toBe`).
 
 **INV-W4 (INV-176).** A workflow semaphore bounds concurrent leaders to its size and, on release,
-wakes the longest-waiting acquirer first. Production: `packages/capability/src/semaphore.ts:46-77`
-(FIFO `queue.shift()` at `:71`). Test:
-`packages/workflows/tests/contract/concurrency.test.ts:11-24`; end-to-end at
-`packages/workflows/tests/component/run-leader.test.ts:198-249` (`maxActive === 1` under
-`createSemaphore(1)`).
+wakes the longest-waiting acquirer first. A leader reserves ledger headroom only after that admission,
+so a queued serial successor can reuse its predecessor's released share. Production:
+`createSemaphore` in `packages/capability/src/semaphore.ts`, `runOne` in
+`packages/workflows/src/dispatch.ts`, and `buildRunLeaderHandler` in
+`packages/workflows/src/capability.ts`. Test: `packages/workflows/tests/contract/concurrency.test.ts`
+(`bounds leader fan-out and hands a released slot to the longest waiter`); end-to-end at
+`packages/workflows/tests/component/dispatch.test.ts` (`serial concurrency admits the queued tail
+against headroom released by each predecessor`) and
+`packages/workflows/tests/component/run-leader.test.ts` (`bounds concurrent leaders by the
+semaphore, sums usage, and records the tree edges`).
 
 **INV-W5 (INV-177).** A queued acquisition whose `AbortSignal` fires rejects with the abort's error
 instead of hanging. Production: `packages/capability/src/semaphore.ts:55-67`. Test:
@@ -771,9 +781,10 @@ synchronous fallback path. Production: `packages/workflows/src/capability.ts:141
 Test: `packages/workflows/tests/component/run-leader.test.ts:231-234` (asserts the verdict kind and
 the `ag_` handle in the text).
 
-**INV-W10.** A registry refusal after a ledger reservation releases that reservation. Production:
-`packages/workflows/src/capability.ts:251-259`. Test:
-`packages/workflows/tests/component/capability.test.ts:136-149` (`ledger.remaining()` back to 10).
+**INV-W10.** Registry refusal precedes ledger reservation, so a leader the registry cannot admit
+claims no headroom. Production: `buildRunLeaderHandler` in `packages/workflows/src/capability.ts`.
+Test: `packages/workflows/tests/component/capability.test.ts` (`refuses to spawn when the registry has
+no room for another live child`, with `ledger.remaining()` unchanged).
 
 **INV-W11.** The sum of live reservations plus settled spend can never exceed a bounded ledger's
 `total`, whatever the batch size. Production: `packages/workflows/src/ledger.ts:167-173`, `:75-76`.
@@ -816,10 +827,11 @@ Production: `packages/workflows/src/run-round.ts:1152`, `:1201`, `:1257`. Test:
 `packages/workflows/tests/component/run-round.test.ts:1107-1131` (exactly one call, one
 registration).
 
-**INV-W18.** One ledger refusal latches the whole batch: later units in the same batch are refused
-from the remembered flag without asking the ledger again. Production:
-`packages/workflows/src/dispatch.ts:674`, `:677`. Test:
-`packages/workflows/tests/component/work-items.test.ts:443-459` (exactly one `reserve` call).
+**INV-W18.** One post-admission ledger refusal latches the whole batch: later units acquire and
+release their FIFO permits but are refused from the remembered flag without asking the ledger again.
+Production: `runOne` in `packages/workflows/src/dispatch.ts`. Test:
+`packages/workflows/tests/component/work-items.test.ts` (`a sibling in the same wave is refused off
+the remembered flag, not by asking again`, exactly one `reserve` call).
 
 **INV-W19.** A work item whose dependency did not **complete** is not dispatched at all — wave
 ordering alone is not the guarantee. Production: `packages/workflows/src/work-items.ts:392-397`
@@ -925,8 +937,8 @@ answer built at `packages/workflows/src/run-round.ts:863`.
 | Situation | Handling | Cite |
 |---|---|---|
 | malformed tool arguments | non-terminal textual result naming the field; nothing registered, nothing spent | `packages/workflows/src/capability.ts:221-223`, `packages/workflows/src/work-items.ts:355`, `packages/workflows/src/run-round.ts:911`, `packages/workflows/src/run-workflow.ts:241` |
-| tree budget exhausted at `run_leader` | `warn` + "synthesize a result from the leaders that have already returned, or finish" | `packages/workflows/src/capability.ts:226-242` |
-| tree budget exhausted mid-batch | latch; this unit and every later one skipped `budget_exhausted`; later rounds reported `skipped (the token budget was exhausted)` | `packages/workflows/src/dispatch.ts:674-688`, `packages/workflows/src/run-round.ts:1202-1206` |
+| tree budget exhausted at `run_leader` | after semaphore admission: `warn`, `onBudgetExhausted`, registered handle settles `failed`, no model call | `buildRunLeaderHandler` in `packages/workflows/src/capability.ts`; test `packages/workflows/tests/component/capability.test.ts` (`settles an admitted leader failed when the tree budget is exhausted`) |
+| tree budget exhausted mid-batch | after semaphore admission: latch; this unit and every later one skipped `budget_exhausted`; later rounds reported `skipped (the token budget was exhausted)` | `runOne` in `packages/workflows/src/dispatch.ts`, `runRounds` in `packages/workflows/src/run-round.ts` |
 | registry sealed / at ceiling on the first batch | tool refuses outright with "too many child agents are already running" | `packages/workflows/src/dispatch.ts:205-216`, `packages/workflows/src/work-items.ts:371-378`, `packages/workflows/src/run-round.ts:969-976` |
 | registry full mid-batch, foreign children live | poll with exponential backoff (25 ms → 500 ms), **no deadline**; one `info` stall record after 5 s | `packages/workflows/src/dispatch.ts:539`, `:564-583` |
 | registry full mid-batch, only our own batons live | remaining units reported `unregistered` rather than waiting forever | `packages/workflows/src/dispatch.ts:538`, `:354-360`; test `packages/workflows/tests/component/dispatch.test.ts:150-161` |

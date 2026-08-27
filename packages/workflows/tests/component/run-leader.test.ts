@@ -219,11 +219,12 @@ describe("manager fan-out via the run_leader handler", () => {
       active -= 1;
       return completed("ok", 10);
     });
-    const ledger = createWorkflowLedger(null);
+    const ledger = createWorkflowLedger(100);
     const ctx = makeCtx({
       runDeps,
       semaphore: createSemaphore(1),
       ledger,
+      maxConcurrency: 1,
       assemble: leaderAssembler,
     });
     const { bc, records } = recordingBc();
@@ -245,6 +246,7 @@ describe("manager fan-out via the run_leader handler", () => {
     expect(maxActive).toBe(1);
     expect(runDeps.calls).toHaveLength(2);
     expect(ledger.spent()).toBe(20);
+    expect(ledger.remaining()).toBe(80);
     expect(t.registry.list().map((r) => r.status)).toEqual(["completed", "completed"]);
     const first = t.registry.list()[0]!;
     expect(t.registry.poll(first.id, {})!.result).toContain("completed");
@@ -343,11 +345,22 @@ describe("manager fan-out via the run_leader handler", () => {
     ).toMatchObject({ status: "cancelled" });
   });
 
-  test("several run_leader calls dispatched in one batch under a tight budget cannot collectively overrun it", async () => {
-    const runDeps = workflowRunDeps(() => Promise.resolve(completed("ok", 1)));
+  test("several admitted run_leader calls under a tight budget cannot collectively overrun it", async () => {
+    let active = 0;
+    let releaseFirstPair!: () => void;
+    const firstPairStarted = new Promise<void>((resolve) => {
+      releaseFirstPair = resolve;
+    });
+    const runDeps = workflowRunDeps(async () => {
+      active += 1;
+      if (active === 2) releaseFirstPair();
+      await firstPairStarted;
+      active -= 1;
+      return completed("ok", 10);
+    });
     const ledger = createWorkflowLedger(10);
     const ctx = makeCtx({
-      semaphore: createSemaphore(8),
+      semaphore: createSemaphore(2),
       runDeps,
       ledger,
       maxConcurrency: 2,
@@ -357,29 +370,23 @@ describe("manager fan-out via the run_leader handler", () => {
     const run = await createWorkflowsCapability(ctx).forRun(t.runCtx);
     const handler = run!.forAgent(scope())!.attach(recordingBc().bc).handlers![0]!;
 
-    // Dispatch a burst of calls SYNCHRONOUSLY (mirroring several run_leader tool
-    // calls in one manager turn, before any of them has actually spawned) — the
-    // original bug let every one of these pass the same pre-spend remaining()
-    // check.
     const verdicts = await Promise.all(
       Array.from({ length: 8 }, (_, i) =>
         handler.handle(runLeaderCall({ title: "leader", prompt: `p${i}` }), 0),
       ),
     );
-    // Every verdict is now a `result`; admitted and refused are told apart by
-    // their text, not their kind. The reservation is still taken eagerly inside
-    // `handle`, which is what keeps the burst atomic against the tree budget.
-    const admitted = verdicts.filter(
-      (v) => v.kind === "result" && v.text.includes("in the background"),
+    expect(verdicts.every((v) => v.kind === "result" && v.text.includes("in the background"))).toBe(
+      true,
     );
-    const refused = verdicts.filter(
-      (v) => v.kind === "result" && v.text.includes("budget exhausted"),
-    );
-    expect(admitted.length).toBeGreaterThan(0);
-    expect(refused.length).toBeGreaterThan(0); // budget of 10 cannot admit all 8
-    expect(admitted.length + refused.length).toBe(8);
-    expect(t.registry.list()).toHaveLength(admitted.length);
     await t.settle();
+
+    const statuses = t.registry.list().map((entry) => entry.status);
+    expect(statuses).toContain("completed");
+    expect(statuses).toContain("failed");
+    expect(runDeps.calls.length).toBeGreaterThan(0);
+    expect(runDeps.calls.length).toBeLessThan(8);
+    expect(ledger.spent()).toBe(10);
+    expect(ledger.remaining()).toBe(0);
   });
 
   test("forwards a matching leader's trace events to its handle and the outer onLeaderEvent", async () => {

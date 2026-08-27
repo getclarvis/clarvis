@@ -30,6 +30,7 @@ import type {
 import { bind, parseTaskTitle, TASK_TITLE_MAX } from "@clarvis/capability";
 import { AGENT_REGISTRY_PORT, registerBackgroundChild } from "@clarvis/supervision";
 import { reportSettled } from "./dispatch.ts";
+import type { WorkflowReservation } from "./ledger.ts";
 import { faultFields, outputTokensOf, withBoundLogger, workflowLogger } from "./log.ts";
 import { describeLeaderResult } from "./result-text.ts";
 import { isBoundedWorkflowString, WORKFLOW_LIMITS } from "./limits.ts";
@@ -198,13 +199,10 @@ function reportInactive(logger: Logger, scope: AgentScope): void {
  *   task, so a leader still queued for a slot no longer holds the dispatch
  *   either; it takes the leader's combined signal, so stopping a queued leader
  *   rejects the acquire rather than granting a permit nobody will release.
- *   Budget exhaustion and a malformed call still return a non-terminal textual
- *   result so the manager decides how to proceed. The budget gate calls
- *   {@link WorkflowCtx.ledger}'s `reserve` rather than only checking `remaining()`,
- *   which makes the gate atomic across a batch of `run_leader` calls dispatched in
- *   one manager turn: each reservation immediately claims its share of the
- *   headroom, so a later call in the same batch sees it — none of them can pass a
- *   stale, pre-spend snapshot the way a bare `remaining() <= 0` check would.
+ *   A malformed call still returns a non-terminal textual result so the manager
+ *   decides how to proceed. Budget admission happens inside the task immediately
+ *   after the semaphore grant: queued leaders hold no token headroom, while the
+ *   admitted set still reserves atomically before any model call can dispatch.
  */
 function buildRunLeaderHandler(
   ctx: WorkflowCtx,
@@ -221,26 +219,6 @@ function buildRunLeaderHandler(
         return Promise.resolve(verdict(`run_leader error: ${parsed.error}`));
       }
       const spec = parsed.spec;
-      const reservation = ctx.ledger.reserve(ctx.maxConcurrency);
-      if (reservation === null) {
-        ctx.onBudgetExhausted?.();
-        logger.warn(
-          {
-            event: "workflow.budget_exhausted",
-            total: ctx.ledger.total,
-            spent: ctx.ledger.spent(),
-            max_concurrency: ctx.maxConcurrency,
-          },
-          "the tree output-token ceiling left no headroom to reserve, so this leader is not spawned and the manager is told to synthesize what it has",
-        );
-        return Promise.resolve(
-          verdict(
-            "workflow token budget exhausted; not spawning this leader. Synthesize a result from " +
-              "the leaders that have already returned, or finish.",
-          ),
-        );
-      }
-
       const runId = ctx.runDeps.generateExecutionId();
       const spawned = registerBackgroundChild(agents, bc.trace, {
         kind: "leader",
@@ -249,7 +227,6 @@ function buildRunLeaderHandler(
         ...(spec.profile !== undefined ? { profile: spec.profile } : {}),
       });
       if (spawned === null) {
-        reservation.release();
         return Promise.resolve(
           verdict(
             "not spawning this leader — too many child agents are already running. Wait with " +
@@ -275,9 +252,28 @@ function buildRunLeaderHandler(
       const task = (async (): Promise<void> => {
         let region: ComputeRegion | undefined;
         let acquired = false;
+        let reservation: WorkflowReservation | null = null;
         try {
           await ctx.semaphore.acquire(leaderCtx.signal);
           acquired = true;
+          reservation = ctx.ledger.reserve(ctx.maxConcurrency);
+          if (reservation === null) {
+            ctx.onBudgetExhausted?.();
+            leaderLogger.warn(
+              {
+                event: "workflow.budget_exhausted",
+                total: ctx.ledger.total,
+                spent: ctx.ledger.spent(),
+                max_concurrency: ctx.maxConcurrency,
+              },
+              "the admitted leader found no token headroom, so it settles without dispatching a model call",
+            );
+            handle.settled({
+              status: "failed",
+              result: "workflow token budget exhausted before this leader could start",
+            });
+            return;
+          }
           recordWorkflowTrace(bc.trace, WORKFLOW_RUN_STARTED_TRACE_KIND, {
             run_id: runId,
             parent_run_id: ctx.managerRunId,
@@ -343,7 +339,7 @@ function buildRunLeaderHandler(
             region?.leave();
           } finally {
             try {
-              reservation.release();
+              reservation?.release();
             } finally {
               try {
                 if (acquired) ctx.semaphore.release();

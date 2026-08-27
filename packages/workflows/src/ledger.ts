@@ -32,13 +32,12 @@ export interface WorkflowReservation extends OutputTokenBudget {
  * against an optional ceiling.
  *
  * @remarks {@link WorkflowLedger.reserve} closes the gap between a leader being
- *   *approved to spawn* and its model calls actually settling: several
- *   `run_leader` calls dispatched in the same manager turn would otherwise all
- *   read the same pre-spend `remaining()` and could collectively spawn well past
- *   `total` before any of them completes. Reserving a fair share of the current
- *   headroom (divided across the run's concurrency cap) the moment a spawn is
- *   approved makes that check-and-decide step atomic: the sum of live
- *   reservations plus `spent()` can never exceed `total`.
+ *   admitted by the concurrency semaphore and its model calls actually settling:
+ *   concurrent leaders would otherwise all read the same pre-spend `remaining()`
+ *   and could collectively run past `total`. Reserving a fair share of the
+ *   current headroom before model dispatch makes that check-and-decide step
+ *   atomic, while leaders still queued for a semaphore permit hold no headroom:
+ *   the sum of live reservations plus `spent()` can never exceed `total`.
  */
 export interface WorkflowLedger extends OutputTokenBudget {
   /** Charge usage that was not already settled through a reservation. */
@@ -51,7 +50,7 @@ export interface WorkflowLedger extends OutputTokenBudget {
   /** The ceiling, or `null` when the tree is unbounded. */
   readonly total: number | null;
   /**
-   * Reserve a fair share of the current headroom for one about-to-spawn leader.
+   * Reserve a fair share of the current headroom for one semaphore-admitted leader.
    *
    * @param maxConcurrent - the run's leader-concurrency cap; the reservation is
    *   sized to `remaining() / maxConcurrent` (at least 1 token, capped at

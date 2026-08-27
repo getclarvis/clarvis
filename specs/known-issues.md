@@ -203,6 +203,15 @@ leaders. Production: `createWorkflowsCapability` and `createWorkflowLedger` in
 `packages/workflows/src`, `WorkflowCtx.onBudgetExhausted` across the leader dispatch paths, and
 `finalWorkflowStatus` in `packages/kernel/src/workflows/workflows-service.ts`.
 
+The follow-up FIFO boundary reserves only after semaphore admission. Leaders waiting for a permit
+hold no provisional headroom, so `max_concurrency: 1` remains a serial queue rather than becoming a
+one-leader workflow; concurrent admitted leaders still reserve before model dispatch. Production:
+`buildRunLeaderHandler` and `runOne` in `packages/workflows/src`. Tests:
+`packages/workflows/tests/component/dispatch.test.ts` (`serial concurrency admits the queued tail
+against headroom released by each predecessor`) and
+`packages/workflows/tests/component/run-leader.test.ts` (`bounds concurrent leaders by the
+semaphore, sums usage, and records the tree edges`).
+
 The regression is held at both boundaries: `packages/workflows/tests/component/capability.test.ts`
 asserts the manager has no workflow `outputBudget` while descendants do;
 `packages/workflows/tests/unit/ledger.test.ts` pins reservation division without a manager share;

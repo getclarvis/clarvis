@@ -32,7 +32,12 @@ import {
   agentToolsSettingsSpec,
   sandboxSettingsSpec,
 } from "./tools-settings.ts";
-import { HOOKS_PLUGIN_FIELDS, HOOKS_SETTINGS_FIELDS, hooksSettingsSpec } from "./hooks.ts";
+import {
+  HOOKS_PLUGIN_FIELDS,
+  HOOKS_REQUEST_PARAMS,
+  HOOKS_SETTINGS_FIELDS,
+  hooksSettingsSpec,
+} from "./hooks.ts";
 import { SKILLS_PLUGIN_FIELDS } from "./skills-settings.ts";
 import {
   AGENTS_REQUEST_PARAMS,
@@ -58,6 +63,7 @@ export const capabilitySettingsFields = {
 
 /** Per-run request params (spread into runRequestSchema and the slim tool). */
 export const capabilityRequestParamFields = {
+  ...HOOKS_REQUEST_PARAMS,
   ...AGENT_TOOLS_REQUEST_PARAMS,
   ...AGENTS_REQUEST_PARAMS,
 };

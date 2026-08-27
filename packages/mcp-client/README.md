@@ -16,6 +16,8 @@ specified in [`engine/tool-dispatch.md`](../../specs/engine/tool-dispatch.md).
 | `createConnectionManager`                       | the pool over connections, with idle TTL and owner scoping                      |
 | `buildRegistry`, `selectTools`, `poolToolNames` | the namespaced tool registry                                                    |
 | `interpolateEnv`                                | `${VAR}` expansion in a server's `env` and `headers`                            |
+| `createMCPAuthorizationCoordinator`             | browser OAuth, loopback callback, PKCE and per-resource serialization           |
+| `createMcpOAuthCredentialStore`                 | bounded, private persistence for registrations and tokens                       |
 | `CLIENT_NAME`, `VERSION`                        | MCP handshake identity using the root Clarvis product version                   |
 
 It depends on `@clarvis/capability` (the `MCPConnection` / `NamespacedRegistry`
@@ -40,6 +42,36 @@ before invocation is a definite local cancellation. Once the SDK call has been
 invoked, cancellation, timeout or loss of availability carries
 `outcome: "unknown"`: a mutating consumer must reconcile before choosing a new
 idempotency key.
+
+## Remote OAuth
+
+HTTP and SSE transports use the SDK's protected-resource discovery, dynamic client registration,
+PKCE, token exchange and refresh flow when a server requires OAuth. One coordinator owns a
+loopback-only callback listener and serializes authorization by the hash of `(workspace, owner,
+canonical resource URL)`, so overlapping runs do not race one credential record. The host supplies
+the browser opener; an intentionally headless host omits it and receives
+`MCPInteractiveAuthorizationUnavailableError` instead of waiting indefinitely.
+
+Every OAuth discovery, registration, token, browser, and redirect destination must use HTTPS,
+except for HTTP on a loopback host. Headers configured for the MCP resource are attached only to
+resource requests on that origin; OAuth exchanges do not inherit them, even when both services share
+an origin, and an SDK-defined authorization header always wins. The callback accepts only
+`GET /oauth/callback`, validates a 256-bit state with a timing-safe comparison, bounds callback
+fields, and never renders a code or state into its response.
+
+An authorization challenge may arrive during the handshake, catalog discovery, a tool/resource
+request, or a health probe. Clarvis completes the SDK-started browser flow and repeats only the
+refused request once; a later challenge receives a fresh state and verifier. The outer connection
+budget pauses while initial authorization or another flow for the same resource is pending, but
+cancellation and the five-minute human-authorization deadline remain live. Coordinator shutdown
+also waits for an in-progress callback-listener startup before closing it.
+
+`createMcpOAuthCredentialStore` persists SDK-validated client registrations and tokens in a
+versioned JSON document. The default file is `state/mcp-oauth.json` under the global Clarvis root;
+records are isolated by the same workspace/owner/resource hash, capped by count and bytes, written
+durably under a process-shared lease, and created as `0600` below a `0700` directory on POSIX. A
+malformed, oversized or symlinked store is refused and never replaced implicitly. Authorization
+URLs, state, codes, verifiers, tokens and client secrets do not enter logs.
 
 ## Resource bounds
 
@@ -83,34 +115,34 @@ The join key is `connection_id`, and run correlation is the loop's job at
 dispatch. `openConnection` binds `{ workspace, owner, mcp, transport }` and the
 session adds `connection_id`, so the events below list only what they add.
 
-| Level | `event` | Fields |
-| ----- | ------- | ------ |
-| debug | `mcp.connect.begin` | `connect_timeout_ms`, `attempt` |
-| info | `mcp.connect.ok` | `duration_ms`, `attempt`, `server_name`, `server_version`, `protocol_version` |
-| warn | `mcp.connect.failed` | `duration_ms`, `attempt`, `reason`, `missing_env` |
-| warn | `mcp.connect.quarantined` | `mcp`, `transport` |
-| info | `mcp.tools.listed` | `count`, `bytes`, `pages`, `truncated`, `names` (debug only) |
-| warn | `mcp.catalog.limit` | `kind` (`entries`/`bytes`/`pages`), `limit`, `observed` |
-| warn | `mcp.resources.probe_failed` | `reason` |
-| debug | `mcp.resources.templates_failed` | `reason` |
-| debug | `mcp.reconnect.begin` | `generation`, `trigger` |
-| info | `mcp.reconnect.ok` | `generation`, `duration_ms`, `trigger` |
-| warn | `mcp.reconnect.failed` | `generation`, `duration_ms`, `trigger`, `reason` |
-| warn | `mcp.unavailable` | `cause`, `cooldown_ms` |
-| info | `mcp.recovered` | — |
-| warn | `mcp.timeout_streak` | `streak`, `threshold`, `call_timeout_ms` |
-| debug | `mcp.health.ping_failed` | `reason` |
-| debug | `mcp.call.done` | `label`, `duration_ms`, `outcome` |
-| error | `mcp.transport.frame_limit` | `limit`, `observed` |
-| error | `mcp.transport.response_limit` | `mcp`, `kind` (`response`/`sse_event`), `limit` |
-| debug | `mcp.pool.evicted` | `mcp`, `key_hash`, `idle_ms`, `reason` |
-| warn | `mcp.pool.limit` | `mcp`, `limit`, `admitted` |
-| warn | `mcp.pool.relay_dropped` | `mcp` |
-| debug | `mcp.pool.connect_queued` | `mcp`, `active`, `max_parallel` |
-| warn | `mcp.registry.renamed` | `mcp`, `tool`, `full_name`, `wire_name`, `reason` |
+| Level | `event`                          | Fields                                                                        |
+| ----- | -------------------------------- | ----------------------------------------------------------------------------- |
+| debug | `mcp.connect.begin`              | `connect_timeout_ms`, `attempt`                                               |
+| info  | `mcp.connect.ok`                 | `duration_ms`, `attempt`, `server_name`, `server_version`, `protocol_version` |
+| warn  | `mcp.connect.failed`             | `duration_ms`, `attempt`, `reason`, `missing_env`                             |
+| warn  | `mcp.connect.quarantined`        | `mcp`, `transport`                                                            |
+| info  | `mcp.tools.listed`               | `count`, `bytes`, `pages`, `truncated`, `names` (debug only)                  |
+| warn  | `mcp.catalog.limit`              | `kind` (`entries`/`bytes`/`pages`), `limit`, `observed`                       |
+| warn  | `mcp.resources.probe_failed`     | `reason`                                                                      |
+| debug | `mcp.resources.templates_failed` | `reason`                                                                      |
+| debug | `mcp.reconnect.begin`            | `generation`, `trigger`                                                       |
+| info  | `mcp.reconnect.ok`               | `generation`, `duration_ms`, `trigger`                                        |
+| warn  | `mcp.reconnect.failed`           | `generation`, `duration_ms`, `trigger`, `reason`                              |
+| warn  | `mcp.unavailable`                | `cause`, `cooldown_ms`                                                        |
+| info  | `mcp.recovered`                  | —                                                                             |
+| warn  | `mcp.timeout_streak`             | `streak`, `threshold`, `call_timeout_ms`                                      |
+| debug | `mcp.health.ping_failed`         | `reason`                                                                      |
+| debug | `mcp.call.done`                  | `label`, `duration_ms`, `outcome`                                             |
+| error | `mcp.transport.frame_limit`      | `limit`, `observed`                                                           |
+| error | `mcp.transport.response_limit`   | `mcp`, `kind` (`response`/`sse_event`), `limit`                               |
+| debug | `mcp.pool.evicted`               | `mcp`, `key_hash`, `idle_ms`, `reason`                                        |
+| warn  | `mcp.pool.limit`                 | `mcp`, `limit`, `admitted`                                                    |
+| warn  | `mcp.pool.relay_dropped`         | `mcp`                                                                         |
+| debug | `mcp.pool.connect_queued`        | `mcp`, `active`, `max_parallel`                                               |
+| warn  | `mcp.registry.renamed`           | `mcp`, `tool`, `full_name`, `wire_name`, `reason`                             |
 
 `reason` is a sanitized failure message everywhere except the reconnect trio,
-where the failure is `reason` and *why the reconnect started* is `trigger`.
+where the failure is `reason` and _why the reconnect started_ is `trigger`.
 
 Two rules bound the cost, because the bindings object is built at the call site
 before any backend sees the level. `mcp.call.done` and `mcp.pool.connect_queued`
@@ -141,8 +173,9 @@ The suite is classified by the boundary each test exercises:
   concurrency contract, and transport construction with external effects
   replaced. Session and resource-policy matrices are not repeated here;
 - `tests/integration/` owns real stdio subprocess and loopback HTTP behavior,
-  plus one narrow MCP SDK elicitation compatibility canary and the real Clarvis
-  relay round-trip;
+  the complete OAuth discovery/registration/PKCE/callback/token/reconnect path,
+  private credential-store filesystem behavior, one narrow MCP SDK elicitation
+  compatibility canary and the real Clarvis relay round-trip;
 - `tests/architecture/` owns the package's public-versus-internal export
   boundary;
 - `tests/helpers/` and `tests/fixtures/` contain shared runner support and real

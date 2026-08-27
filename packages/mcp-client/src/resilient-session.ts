@@ -10,6 +10,7 @@ import {
   sanitizeErrorMessage,
   unref,
 } from "@clarvis/capability";
+import { runMCPRequest } from "./client.ts";
 import type { MCPClientHandle } from "./client.ts";
 import { isMcpProtocolError, isMcpRequestTimeout } from "./errors.ts";
 import {
@@ -244,10 +245,15 @@ export function createResilientSession(options: ResilientSessionOptions): Resili
     if (runtime.now() - lastActivityAt < options.healthPingIntervalMs) return;
     pinging = true;
     try {
-      await handle.client.ping({
-        timeout: options.connectTimeoutMs,
-        ...(options.signal ? { signal: options.signal } : {}),
-      });
+      await runMCPRequest(
+        handle,
+        () =>
+          handle.client.ping({
+            timeout: options.connectTimeoutMs,
+            ...(options.signal ? { signal: options.signal } : {}),
+          }),
+        options.signal,
+      );
       lastActivityAt = runtime.now();
       timeoutStreak = 0;
     } catch (error) {
@@ -305,10 +311,15 @@ export function createResilientSession(options: ResilientSessionOptions): Resili
       };
       inFlight += 1;
       try {
-        const raw = await run(handle, {
-          timeout: options.callTimeoutMs,
-          ...(signal ? { signal } : {}),
-        });
+        const raw = await runMCPRequest(
+          handle,
+          () =>
+            run(handle, {
+              timeout: options.callTimeoutMs,
+              ...(signal ? { signal } : {}),
+            }),
+          signal,
+        );
         transportFailStreak = 0;
         timeoutStreak = 0;
         lastActivityAt = runtime.now();

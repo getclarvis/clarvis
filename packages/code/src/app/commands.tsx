@@ -106,6 +106,8 @@ export interface AppCommandDeps {
   agents: ActiveAgentStore;
   agentFiles: AgentsStore;
   plugins: PluginService;
+  /** Overrides product-owned marketplace sources for an embedding or isolated test host. */
+  marketplaceDefaultUrls?: readonly string[];
   code: CodeConfigStore;
   memoryMode: MemoryModeStore;
   guard: GuardModeStore;
@@ -853,7 +855,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "marketplace.open",
     title: "Marketplace",
-    desc: "Browse plugins offered by your configured marketplaces",
+    desc: "Browse plugins from the official and added marketplaces",
     surface: "internal",
     group: "navigate",
     parent: "extensions",
@@ -872,6 +874,9 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         const market = createMarketplaceAdapter({
           urls: () => deps.settings.effective().marketplaces ?? [],
           installed: () => installedNames(),
+          ...(deps.marketplaceDefaultUrls !== undefined
+            ? { defaultUrls: deps.marketplaceDefaultUrls }
+            : {}),
         });
         const reload = (): void => {
           setLoading(true);
@@ -910,7 +915,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           },
           refresh: () => {
             market.refresh();
-            notify("re-reading your marketplaces");
+            notify("re-reading marketplaces");
             reload();
           },
           addSource: (url) => {

@@ -213,6 +213,7 @@ function baseDeps(
       reload: async () => {},
     } satisfies AgentsStore,
     plugins: fakePluginService(),
+    marketplaceDefaultUrls: [],
     code: fakeCode(),
     memoryMode: {
       configured: () => true,

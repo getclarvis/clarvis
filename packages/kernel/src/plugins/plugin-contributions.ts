@@ -254,7 +254,7 @@ export function createPluginContributions(opts: {
       skipped(name, installScope, "manifest", source.error);
       return undefined;
     }
-    const resolved = resolvePluginManifest(dir, source.raw, source.location);
+    const resolved = resolvePluginManifest(dir, source.raw, source.location, name);
     const { manifest } = resolved;
     if (manifest === undefined) {
       skipped(name, installScope, "manifest", resolved.error ?? "manifest did not resolve");

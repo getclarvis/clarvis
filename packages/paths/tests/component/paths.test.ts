@@ -63,6 +63,7 @@ describe("globalPaths", () => {
     expect(p.sessionsDir).toBe(join(p.state, "sessions"));
     expect(p.tracesDir).toBe(join(p.state, "traces"));
     expect(p.workflowRecordsDir).toBe(join(p.state, "workflows"));
+    expect(p.mcpOAuthFile).toBe(join(p.state, "mcp-oauth.json"));
     expect(p.workflowsDir).toBe(join(p.root, "workflows"));
     expect(p.codeConfigFile).toBe(join(p.state, "code.json"));
     expect(p.modelsCacheFile).toBe(join(p.cache, "models-dev.json"));

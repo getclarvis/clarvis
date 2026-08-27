@@ -2,19 +2,20 @@
 
 > Publish and browse curated plugin listings without treating a catalog as permission to run code.
 
-## Add a marketplace and install a plugin
+## Browse the official marketplace and install a plugin
 
-Type `/extensions/market`, then follow the complete activation sequence:
+Type `/extensions/market`. Clarvis loads the official
+[`getclarvis/marketplace`](https://github.com/getclarvis/marketplace) catalog automatically; you do
+not need to add its URL to settings. Then follow the complete activation sequence:
 
-1. Press `a` and enter the marketplace repository's Git URL.
-2. Select a listing and press Enter to install it.
-3. Clarvis opens the Plugins screen. Select the installed plugin and press `e` to enable it.
-4. If it contributes hooks, open `/extensions/hooks`, inspect each exact definition, and press `t`
+1. Select a listing and press Enter to install it.
+2. Clarvis opens the Plugins screen. Select the installed plugin and press `e` to enable it.
+3. If it contributes hooks, open `/extensions/hooks`, inspect each exact definition, and press `t`
    to approve the ones you accept.
 
-Press `r` in the marketplace browser to refetch configured catalogs. A listing is only a pointer to
-a source repository: appearing in a marketplace grants no trust, enables nothing, and approves no
-hook.
+Press `a` to add another marketplace by Git URL. Press `r` to refetch the official and added
+catalogs. A listing is only a pointer to a source repository: appearing in a marketplace installs
+nothing, grants no trust, enables nothing, and approves no hook.
 
 ::: warning Local TUI behavior
 Marketplace browsing runs Git on the machine that displays the TUI. Use this flow with the local
@@ -62,9 +63,15 @@ Like plugin manifests, marketplace documents are read tolerantly. Unknown fields
 presentation problems are reported as notes rather than silently becoming behavior. Listings with no
 usable `name` or `source` are dropped.
 
-## Configure a marketplace manually
+To contribute a plugin to the official catalog, follow the contribution process in
+[`getclarvis/marketplace`](https://github.com/getclarvis/marketplace/blob/main/CONTRIBUTING.md). The
+official repository records review metadata and the exact upstream revision inspected for each accepted entry.
+The plugin code stays in its upstream repository; `path` identifies a subdirectory only when needed.
 
-The TUI writes marketplace URLs to your global settings. You may instead edit
+## Configure an additional marketplace manually
+
+The official marketplace is built in and is not written to settings. The TUI writes URLs for
+additional marketplaces to your global settings. You may instead edit
 `~/.clarvis/settings.json`:
 
 ```json

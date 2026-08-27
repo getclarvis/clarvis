@@ -306,6 +306,9 @@ export function createHookRunner(deps: HookRunnerDeps): HookRunner {
             CLARVIS_HOOK_TIMEOUT_MS: String(timeoutMs),
             CLARVIS_WORKSPACE_ROOT: deps.workspaceRoot,
             ...(inv.candidate !== undefined ? { CLARVIS_HOOK_TOOL: inv.candidate.tool } : {}),
+            ...(inv.candidate?.aliases?.[0] === undefined
+              ? {}
+              : { CLARVIS_HOOK_TOOL_FULL_NAME: inv.candidate.aliases[0] }),
           },
           stdin: payload.text,
           timeoutMs,

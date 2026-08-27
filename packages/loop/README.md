@@ -87,6 +87,11 @@ try {
 }
 ```
 
+`buildExecuteRunDeps({ mcpAuthorization })` optionally creates the shared remote-MCP OAuth
+coordinator. The host owns the private store path and may supply a browser opener; the builder wires
+the coordinator into HTTP/SSE transports and closes its callback listener together with the
+connection manager in `dispose()`.
+
 `rawBody` is validated into a `RunRequest`; the exact provider, profile, budget
 and orchestration fields are defined by the exported API types. Hosts normally
 assemble this request from their own configuration surface.
@@ -133,6 +138,8 @@ Built-ins cover:
 - skills;
 - user elicitation;
 - lifecycle hooks;
+- exact user skill-command expansion observers, carried as host-derived request context and fired
+  before seed context rather than approximated from an ordinary prompt;
 - independent child spawning (`spawn_subagent`) and tracked task delegation (`delegate_task`);
 - agent supervision (`agent_list`, `agent_poll`, `agent_stop`, `agent_steer`,
   `await_agents`), over the run-scoped registry in `@clarvis/supervision`.
@@ -207,6 +214,8 @@ A host supplies or builds:
 - a workspace root;
 - trace persistence;
 - downstream MCP connections;
+- optional persistent browser authorization for remote MCP connections; the host owns both the
+  private store path and whether it can open a browser;
 - optional event, steering, explicit-compaction, elicitation and cancellation channels;
 - any additional capabilities.
 

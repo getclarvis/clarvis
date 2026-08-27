@@ -10,6 +10,7 @@ import {
   OBSERVER_HOOK_EVENTS,
   CONTEXT_HOOK_EVENTS,
   COMPACTION_HOOK_EVENTS,
+  PROMPT_HOOK_EVENTS,
   HOOKS_CAPABILITY_NAME,
   MAX_HOOK_COMMAND_CHARS,
   MAX_HOOK_MATCH_PATTERNS,
@@ -32,6 +33,7 @@ describe("hookSchema — event groups", () => {
       ...OBSERVER_HOOK_EVENTS,
       ...CONTEXT_HOOK_EVENTS,
       ...COMPACTION_HOOK_EVENTS,
+      ...PROMPT_HOOK_EVENTS,
     ]) {
       expect(hookSchema.safeParse({ ...base, event }).success).toBe(true);
     }
@@ -198,8 +200,14 @@ describe("the hooks vocabulary", () => {
     expect(HOOKS_CAPABILITY_NAME).toBe("hooks");
   });
 
-  it("partitions the events into three disjoint groups", () => {
-    const all = [...GATE_HOOK_EVENTS, ...OBSERVER_HOOK_EVENTS, ...CONTEXT_HOOK_EVENTS];
+  it("partitions the events into disjoint groups", () => {
+    const all = [
+      ...GATE_HOOK_EVENTS,
+      ...OBSERVER_HOOK_EVENTS,
+      ...CONTEXT_HOOK_EVENTS,
+      ...COMPACTION_HOOK_EVENTS,
+      ...PROMPT_HOOK_EVENTS,
+    ];
     expect(new Set(all).size).toBe(all.length);
   });
 
@@ -232,6 +240,7 @@ describe("the external dialect's tool names", () => {
     expect(EXTERNAL_TOOL_NAMES[normalizeToolName("Edit")]).toBe("edit_file");
     expect(EXTERNAL_TOOL_NAMES[normalizeToolName("MultiEdit")]).toBe("multi_edit");
     expect(EXTERNAL_TOOL_NAMES[normalizeToolName("Grep")]).toBe("grep");
+    expect(EXTERNAL_TOOL_NAMES[normalizeToolName("Skill")]).toBe("load_skill");
   });
 
   it("never lists a name in both directions at once", () => {

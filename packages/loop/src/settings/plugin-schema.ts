@@ -44,9 +44,11 @@ const authorField = z
  *   directive and then ignoring it is worse than not recognizing it, because
  *   only the second one is visible.
  *
- *   **`name` is the only required key**, for the same reason: it is the one
- *   field the loader cannot do without, since it must equal the plugin's
- *   directory name and namespaces everything the plugin contributes. `version`
+ *   **`name` is the only required key after host normalization.** A native Git
+ *   install uses it to choose the install directory. A reader of an already
+ *   installed foreign layout may instead supply a missing name from that
+ *   directory, and the directory remains the host-owned runtime namespace even
+ *   when foreign presentation metadata names the plugin differently. `version`
  *   and `description` are conveniences for the operator's panel, and refusing to
  *   install a working plugin over a missing one-line summary is the refusal this
  *   schema exists to stop. Both are still validated when present.
@@ -54,8 +56,8 @@ const authorField = z
 export const pluginManifestSchema = z
   .object({
     name: pluginNameField.describe(
-      "Plugin id. Must equal the plugin's directory name, and prefixes everything it " +
-        "contributes (<name>:<agent>, <name>:<server>).",
+      "Plugin id used to name a native install. An existing install's directory remains the " +
+        "host-owned namespace for its contributions (<name>:<agent>, <name>:<server>).",
     ),
     version: z
       .string()

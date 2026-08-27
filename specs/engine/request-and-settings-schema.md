@@ -112,6 +112,14 @@ static spread of every **built-in** capability's own request params (e.g. `guard
 agent-tools capability's settings spec, `packages/loop/src/runtime/capabilities/tools-settings.ts:154`,
 confirmed reached at `packages/loop/src/validation/request/provider-rules.ts:70`).
 
+The hooks capability contributes `hook_user_prompt_expansion?: { command_name: string }`. It is a
+reserved host context field used by the kernel when a user explicitly invokes a skill command;
+ordinary prompts and model-initiated `load_skill` calls omit it. The object is strict, its name is
+1–256 characters, and the field is part of the request schema only because the loop/hook capability
+boundary is a run request (`packages/loop/src/runtime/capabilities/hooks.ts:35-53`, registration at
+`:75-86`). It is structurally accepted at the wire boundary like every capability request param, so
+it is context, not an unforgeable security claim.
+
 `execution_id` and `continue_from` are both optional strings sharing one wire constraint, defined
 once in `packages/loop/src/types/execution-id.ts` and imported into `request-schema.ts` rather than
 duplicated: `EXECUTION_ID_PATTERN` (`packages/loop/src/types/execution-id.ts:5`) is
@@ -218,7 +226,7 @@ shape", `packages/loop/src/settings/settings-schema.ts:247`, as opposed to the r
 `default_vision_model?`, `default_reasoning_effort?`, `budget?` (every field optional, unlike the
 request's `budgetSchema` — see §4.4), `...capabilitySettingsFields` (built-in blocks: `hooks`,
 `guard`, `sandbox`, `agents` — owned by their respective packages;
-`packages/loop/src/runtime/capabilities/settings-specs.ts:53-57` spreads
+`packages/loop/src/runtime/capabilities/settings-specs.ts:58-62` spreads
 `HOOKS_SETTINGS_FIELDS`/`AGENT_TOOLS_SETTINGS_FIELDS`/`AGENTS_SETTINGS_FIELDS`, and
 `AGENT_TOOLS_SETTINGS_FIELDS` at `packages/loop/src/runtime/capabilities/tools-settings.ts:143-149`
 is what contributes both `guard` and `sandbox`), `marketplaces?`, `enabledPlugins?`.
@@ -585,6 +593,13 @@ built.
 Production: `packages/loop/src/validation/ajv.ts:38-47`. Test:
 `packages/loop/tests/architecture/eager-validator-boundary.test.ts:39` (walks the TypeScript AST and
 asserts every `require(...)` call is nested inside a function).
+
+**INV-RS-01.** The built-in request schema and the hand-authored `RunRequest` type both carry the
+same optional prompt-expansion context, while the kernel adds it only for a successfully resolved,
+user-invoked skill command.
+Production: `packages/loop/src/runtime/capabilities/hooks.ts:35-53`,
+`packages/capability/src/api.ts:435-443`, `packages/kernel/src/runs/settings-assembler.ts:382-389`,
+`:460-466`. Test: `packages/kernel/tests/component/settings-assembler.test.ts:540-579`.
 
 ### Further invariants derived directly from the code (not in the numbered catalog above)
 

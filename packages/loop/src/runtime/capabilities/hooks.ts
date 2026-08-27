@@ -32,6 +32,26 @@ export const HOOKS_SETTINGS_FIELDS = {
     ),
 };
 
+/** Host-derived context for the external skill-command expansion hook. */
+export const HOOKS_REQUEST_PARAMS = {
+  hook_user_prompt_expansion: z
+    .object({
+      command_name: z
+        .string()
+        .min(1)
+        .max(256)
+        .describe(
+          "The user-invoked skill command, optionally qualified by its plugin (plugin:skill).",
+        ),
+    })
+    .strict()
+    .optional()
+    .describe(
+      "Host-derived context for UserPromptExpansion hooks. Omitted for ordinary prompts and " +
+        "model-initiated skill loads.",
+    ),
+};
+
 /** Describe text shared by the plugin-manifest field and its settings spec:
  * plugin hooks run after every operator hook, so an operator always judges first. */
 const HOOKS_PLUGIN_DESCRIPTION =
@@ -62,4 +82,5 @@ export const hooksSettingsSpec: CapabilitySettingsSpec = {
   },
   pluginContributable: true,
   pluginDescription: HOOKS_PLUGIN_DESCRIPTION,
+  requestParams: HOOKS_REQUEST_PARAMS,
 };

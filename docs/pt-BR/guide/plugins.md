@@ -39,8 +39,10 @@ quality-kit/
     └── hooks.json
 ```
 
-Coloque `plugin.json` na raiz do plugin. O nome do diretório e o `name` do manifesto precisam ser
-iguais. Os nomes usam letras minúsculas, números, sublinhados e hifens:
+Coloque `plugin.json` na raiz do plugin. Os nomes usam letras minúsculas, números, sublinhados e
+hifens. Uma instalação Git usa o `name` do manifesto como diretório de instalação. Em um layout
+multi-host já instalado, o diretório é o namespace de runtime; o Clarvis pode derivar dele um `name`
+ausente no manifesto:
 
 ```json
 {
@@ -81,6 +83,26 @@ O único campo obrigatório do manifesto é `name`. Se estiver presente, `versio
 versionamento semântico. Você pode declarar hooks diretamente no manifesto, como acima. Quando o
 manifesto não declara hooks, o Clarvis também procura `hooks/hooks.json`. Os arquivos e diretórios
 relativos indicados por um manifesto precisam permanecer dentro do plugin.
+
+Para um plugin compatível com vários hosts, o Clarvis aceita um `plugin.json` na raiz e manifestos
+em diretórios com o formato `.<host>-plugin/plugin.json`. Quando existe,
+`.clarvis-plugin/plugin.json` é autoritativo. Caso contrário, o Clarvis seleciona o único manifesto
+legível que declara a superfície de contribuições compatíveis mais rica; ele nunca combina dois
+manifestos de hosts. Declare locais de skills em `skills` como um diretório relativo ou uma lista.
+Cada local pode ser uma coleção ou um diretório individual que contém `SKILL.md`. O Clarvis mantém no
+máximo quatro raízes efetivas de varredura; uma lista exaustiva de skills irmãs pode ser representada
+pelo diretório pai sem tornar visível uma irmã não declarada. Declare servidores MCP diretamente,
+indique um documento complementar em `mcpServers` ou omita essa chave e use `.mcp.json` ou `mcp.json`
+por convenção.
+
+Documentos de hooks compatíveis e organizados por evento podem estar envolvidos por um objeto
+`hooks`, ser referenciados por caminho ou ficar em `hooks/hooks.json`. O Clarvis traduz nomes de
+eventos, seletores de ferramentas, marcadores da raiz do plugin, timeouts e decisões compatíveis para
+as mesmas definições revisáveis usadas por um manifesto nativo. O que não puder ser traduzido é
+informado no navegador de plugins, sem ampliar silenciosamente um seletor. Se um comando traduzido
+começar com um executável relativo, como `./hooks/session-start.cmd`, o Clarvis ancora esse
+executável à raiz instalada do plugin. O hook continua recebendo o workspace como diretório de
+trabalho, portanto qualquer operação relativa ao projeto permanece explícita.
 
 `bootstrapSkill` nomeia uma skill deste plugin cujo corpo deve estar disponível antes de o modelo
 responder. A política de plano `review` solicita uma revisão de planejamento nessa skill quando tanto

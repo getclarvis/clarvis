@@ -17,7 +17,7 @@ four distinct jobs:
 2. **Request assembly** — reading merged `settings.json` plus the agent markdown records and producing
    the untyped body the engine validates, including the transitive `can_spawn` profile graph, the MCP
    servers those profiles reference, the budget, and the `plans`/`agents` params
-   (`packages/kernel/src/runs/settings-assembler.ts:324-455`).
+   (`packages/kernel/src/runs/settings-assembler.ts:336-474`).
 3. **Run-scoped machinery** — one `RunHandle` per run, owning the buffered event stream, the steering
    and compaction queues, cancellation, the elicitation bridge, the bounded memory-ingest close grace,
    and the drop report (`packages/kernel/src/runs/managed-run.ts:147-336`).
@@ -44,7 +44,7 @@ between them.
 | `RunRequestAssembler` | type | `(params: StartRunParams & { execution_id: string }) => unknown` | `packages/kernel/src/runs/run-service.ts:25` |
 | `createManagedRun` | value | `(spec: ManagedRunSpec) => RunHandle` | `packages/kernel/src/runs/managed-run.ts:147`, `packages/kernel/src/index.ts:52` |
 | `ManagedRunContext`, `ManagedRunSpec` | type | see §2.4 | `packages/kernel/src/runs/managed-run.ts:28`, `:44` |
-| `createSettingsRunAssembler` | value | `(store: ConfigStore, options?: SettingsAssemblerOptions) => RunRequestAssembler` | `packages/kernel/src/runs/settings-assembler.ts:324`, `packages/kernel/src/index.ts:54` |
+| `createSettingsRunAssembler` | value | `(store: ConfigStore, options?: SettingsAssemblerOptions) => RunRequestAssembler` | `packages/kernel/src/runs/settings-assembler.ts:336`, `packages/kernel/src/index.ts:54` |
 | `SettingsAssemblerOptions` | type | see §2.5 | `packages/kernel/src/runs/settings-assembler.ts:33` |
 
 ### 2.2 Exported from `@clarvis/kernel/policy`
@@ -149,26 +149,27 @@ counters").
 
 `createSettingsRunAssembler` returns an object literal typed `unknown` (`RunRequestAssembler`,
 `packages/kernel/src/runs/run-service.ts:25`), which the engine then validates. Its keys, in the order the code writes them
-(`packages/kernel/src/runs/settings-assembler.ts:403-453`):
+(`packages/kernel/src/runs/settings-assembler.ts:415-472`):
 
 | Key | Value | Line |
 |---|---|---|
-| `messages` | `protoMessagesToEngine(params.messages)` then, for a skill run, one appended `{ role: "user", content: skillRun.seed }` | `:404-407` |
-| `providers` | `merged.providers ?? []` | `:408` |
-| `servers` | one entry per distinct `<namespace>` prefix of any profile's tool names that exists in `merged.mcpServers` | `:387-397`, `:409` |
-| `profiles` | the transitive `can_spawn` closure, deduplicated | `:373-385`, `:410` |
-| `entry` | resolved agent name | `:411` |
-| `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed | `:343-351`, `:412-415` |
-| `vision_model` | `merged.default_vision_model`, only when a string | `:416-418` |
-| `execution_id`, `continue_from`, `prompt_cache_key`, `output_schema`, `guard_mode`, `guard_judge`, `memory`, `task` | straight passthrough, present only when the param is | `:419-433` |
-| `prompt_cache_ttl` | request value, else `"1h"` when `guardParksOnHuman(...)`, else absent | `:424-428` |
-| `plans` | request value, else settings block with the skill-mode override, else settings block, else absent | `:434-449` |
-| `agents` | present only when `merged.agents` is a non-null object | `:450-452` |
+| `messages` | `protoMessagesToEngine(params.messages)` then, for a skill run, one appended `{ role: "user", content: skillRun.seed }` | `:431-435` |
+| `providers` | `merged.providers ?? []` | `:436` |
+| `servers` | one entry per distinct `<namespace>` prefix of any profile's tool names that exists in `merged.mcpServers` | `:415-425`, `:437` |
+| `profiles` | the transitive `can_spawn` closure, deduplicated | `:400-413`, `:438` |
+| `entry` | resolved agent name | `:439` |
+| `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed | `:427-443` |
+| `vision_model` | `merged.default_vision_model`, only when a string | `:444-446` |
+| `execution_id`, `continue_from`, `prompt_cache_key`, `output_schema`, `guard_mode`, `guard_judge`, `memory`, `task` | straight passthrough, present only when the param is | `:447-459`, `:467-468` |
+| `prompt_cache_ttl` | request value, else `"1h"` when `guardParksOnHuman(...)`, else absent | `:452-456` |
+| `hook_user_prompt_expansion` | only for a resolved user-invoked skill; `{ command_name }` is bare for operator/workspace skills and `<plugin>:<skill>` for plugin skills | `:460-466` |
+| `plans` | request value, else settings block with the skill-mode override, else settings block, else absent | `:469-484` |
+| `agents` | present only when `merged.agents` is a non-null object | `:485-487` |
 
 Note what is **not** forwarded: the `skill` key itself never reaches the engine
-(`packages/kernel/src/runs/settings-assembler.ts:320-322`; pinned by `packages/kernel/tests/component/settings-assembler.test.ts:454-466`),
+(`packages/kernel/src/runs/settings-assembler.ts:332-334`; pinned by `packages/kernel/tests/component/settings-assembler.test.ts:455-467`),
 and a `plans` block's `provider` sub-object is stripped by projection
-(`plansBlockToParam`, `:126-142`; pinned at `packages/kernel/tests/component/settings-assembler.test.ts:81-99`).
+(`plansBlockToParam`, `:126-142`; pinned at `packages/kernel/tests/component/settings-assembler.test.ts:82-100`).
 
 An engine `AgentProfile` is built by `buildProfile` (`:231-298`) with required `name`, `model`,
 `tools`, `iteration_limit` and twelve conditionally spread optional fields (`grants`, `can_spawn`,
@@ -186,7 +187,7 @@ loudly, naming the server — is also why a bad entry is never dropped silently:
 surfaces much later as `profile '...' lists tool '...', which is not in the tool pool`, which points
 at the agent rather than at the typo" (`:194-197`). The test comment names it as a shipped defect: "P1 lived here …
 every run referencing `<server>.<tool>` died in `validateBody` with `unrecognized_keys`"
-(`packages/kernel/tests/component/settings-assembler.test.ts:577-580`), and the round trip is asserted at `:594-600`.
+(`packages/kernel/tests/component/settings-assembler.test.ts:605-608`), and the round trip is asserted at `:594-600`.
 
 ### 3.3 `RUN_EVENT_POLICY` — the per-event matrix
 
@@ -341,7 +342,7 @@ replaces `final_context`. A mechanical target performs no model call and persist
 replacement fits. Production: `createRunService` in `packages/kernel/src/runs/run-service.ts`.
 Test: `packages/kernel/tests/unit/run-service-lifecycle.test.ts`.
 
-### 4.2 Assembly (`packages/kernel/src/runs/settings-assembler.ts:352-453`)
+### 4.2 Assembly (`packages/kernel/src/runs/settings-assembler.ts:364-472`)
 
 Per call, in order:
 
@@ -361,11 +362,15 @@ Per call, in order:
    out of `messages`, or the run doubles the seed (`:82-87`).
 4. `skillPlansMode` is consulted only when both a `skill` param and a resolved skill exist
    (`:371-377`), and is passed the skill's root `source` for provenance.
+   The same resolved invocation produces `hook_user_prompt_expansion.command_name`: a plugin source
+   contributes its install identity as `<plugin>:<skill>`, while other sources keep the skill name
+   bare. No field is emitted for an ordinary prompt or a model-initiated `load_skill` call
+   (`hookCommandName`, `:216-223`; literal projection `:460-466`).
 5. Entry agent = `skillRun?.agent ?? params.agent ?? options.defaultAgent`; `invalid_request` when
    all three are absent (`:379-382`).
 6. `store.readEffectiveAgent(agentName)`; `not_found` when null (`:383-386`).
 7. Breadth-first walk over `can_spawn` with a `seen` set; a child that resolves to `null` is
-   **skipped, not fatal** (`:391-400`; pinned at `packages/kernel/tests/component/settings-assembler.test.ts:61-76`). Only the first
+   **skipped, not fatal** (`:391-400`; pinned at `packages/kernel/tests/component/settings-assembler.test.ts:62-77`). Only the first
    name is treated as the entry, and only that profile receives the context documents (`:397-398`).
 8. Server selection: every profile's tool names split on `"."`, first segment kept if non-empty, then
    looked up in `merged.mcpServers`; a missing key contributes nothing (`:403-413`).
@@ -381,7 +386,7 @@ docstring states the intent — "The user's `/model` and `/effort` defaults are 
 entry profile. A spawned child instead keeps an explicit model or effort from its own profile, falling
 back to those defaults only when it declares none. This distinction lets changing the current run
 model do what the user asked without flattening a heterogeneous sub-agent fleet" (`:223-227`) — and
-`packages/kernel/tests/component/settings-assembler.test.ts:210-231` pins both halves.
+`packages/kernel/tests/component/settings-assembler.test.ts:211-232` pins both halves.
 
 `plansBlockToParam` **materializes** `mode` and `retention`, and additionally carries an optional
 `pending_task_nudges` through when the block's value is a non-negative integer, dropping it otherwise
@@ -399,7 +404,7 @@ ten numeric fields, `AGENTS_FIELDS` (`:145-156`): `buffer_lines`, `buffer_bytes`
 `guardParksOnHuman(params.guard_mode, merged.guard, params.guard_judge !== undefined)`
 (`packages/kernel/src/guard/resolver.ts:80-87`) yields `"1h"`, and nothing is emitted when it is
 false (`:424-428`). The guard predicate returns true for mode `on` and for mode `auto` with no judge
-(`packages/kernel/src/guard/resolver.ts:86`). `packages/kernel/tests/component/settings-assembler.test.ts:535-574` pins all four cases, including that an
+(`packages/kernel/src/guard/resolver.ts:86`). `packages/kernel/tests/component/settings-assembler.test.ts:536-602` pins all four cases, including that an
 unconfigured host derives `"1h"` because the guard defaults to on.
 
 ### 4.3 Managed-run construction (`packages/kernel/src/runs/managed-run.ts:158-336`)
@@ -841,47 +846,53 @@ Production `packages/kernel/src/runs/map-result.ts:154`. Test `packages/kernel/t
 
 **INV-R31.** The `plans` settings block is materialized with defaults for `mode` and `retention`; the
 `agents` block is projected sparsely.
-Production `packages/kernel/src/runs/settings-assembler.ts:126-142` versus `:172-179`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:101-148` and `:167-185`.
+Production `packages/kernel/src/runs/settings-assembler.ts:138-154` versus `:172-179`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:102-149` and `:167-185`.
 
 **INV-R32.** An explicit per-run `plans` param beats a skill's Plans policy, which beats the settings
 block.
-Production `packages/kernel/src/runs/settings-assembler.ts:434-449` (the nested ternary order). Test
-`packages/kernel/tests/component/settings-assembler.test.ts:157-165`, `:377-413`.
+Production `packages/kernel/src/runs/settings-assembler.ts:446-468` (the nested ternary order). Test
+`packages/kernel/tests/component/settings-assembler.test.ts:158-166`, `:377-413`.
 
 **INV-R33.** A skill's declared `agent` overrides the request's `agent`; a skill naming none leaves it
 alone.
-Production `packages/kernel/src/runs/settings-assembler.ts:364` (`skillRun?.agent ?? params.agent ?? …`). Test
-`packages/kernel/tests/component/settings-assembler.test.ts:346-375`.
+Production `packages/kernel/src/runs/settings-assembler.ts:376` (`skillRun?.agent ?? params.agent ?? …`). Test
+`packages/kernel/tests/component/settings-assembler.test.ts:347-376`.
 
 **INV-R34.** The `skill` key is never forwarded to the engine.
-Production `packages/kernel/src/runs/settings-assembler.ts:403-453` — no `skill` key in the returned literal; the stated reason
-is at `:320-322`. Test `packages/kernel/tests/component/settings-assembler.test.ts:454-466`.
+Production `packages/kernel/src/runs/settings-assembler.ts:415-472` — no `skill` key in the returned literal; the stated reason
+is at `:320-322`. Test `packages/kernel/tests/component/settings-assembler.test.ts:455-467`.
+
+**INV-R34a.** Prompt-expansion hook context is emitted exactly for a successfully resolved
+user-invoked skill, and plugin provenance is represented by a generic qualified command name rather
+than by changing the skill seed or forwarding the kernel-only `skill` input.
+Production `packages/kernel/src/runs/settings-assembler.ts:216-223`, `:382-389`, `:460-466`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:540-579`.
 
 **INV-R35.** A malformed `mcpServers` entry fails the whole assembly by name; it is never dropped.
-Production `packages/kernel/src/runs/settings-assembler.ts:201-206`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:639-646`.
+Production `packages/kernel/src/runs/settings-assembler.ts:213-218`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:667-674`.
 
 **INV-R36.** A `can_spawn` target that resolves to no agent is skipped, not fatal.
-Production `packages/kernel/src/runs/settings-assembler.ts:381` (`if (rec === null) continue`). Test
-`packages/kernel/tests/component/settings-assembler.test.ts:57-72`.
+Production `packages/kernel/src/runs/settings-assembler.ts:393` (`if (rec === null) continue`). Test
+`packages/kernel/tests/component/settings-assembler.test.ts:58-73`.
 
 **INV-R37.** The entry profile takes the user's `default_model`/`default_reasoning_effort` first; a
 spawned child takes its own frontmatter first.
-Production `packages/kernel/src/runs/settings-assembler.ts:239-241`, `:259-261`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:210-246`.
+Production `packages/kernel/src/runs/settings-assembler.ts:251-253`, `:259-261`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:211-247`.
 
 **INV-R38.** `prompt_cache_ttl` defaults to `"1h"` exactly when the effective guard mode parks on a
 human, and an explicit request param always wins.
-Production `packages/kernel/src/runs/settings-assembler.ts:424-428`; predicate `packages/kernel/src/guard/resolver.ts:80-87`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:506-575`.
+Production `packages/kernel/src/runs/settings-assembler.ts:436-440`; predicate `packages/kernel/src/guard/resolver.ts:80-87`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:507-603`.
 
 **INV-R39.** `completeBudget` fills in exactly one field: a declared budget missing `on_exceed` gets
 the fallback's `on_exceed` (`{ ...declared, on_exceed: fallback.on_exceed }`). It never supplies a
 missing `total_token_limit` — a budget declared as `{ on_exceed: "stop" }` alone is returned
 unchanged, `total_token_limit` still absent.
-Production `packages/kernel/src/runs/settings-assembler.ts:343-351`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:257-304` (which additionally runs the assembled body
+Production `packages/kernel/src/runs/settings-assembler.ts:355-363`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:258-305` (which additionally runs the assembled body
 through the engine's own `validateBody` at `:276-282`) covers only the missing-`on_exceed` case; no
 test in this subsystem exercises a declared budget missing `total_token_limit`, so whether the
 resulting request validates in that case is not shown here — see §8.
@@ -896,9 +907,9 @@ Production `packages/kernel/src/runs/map-events.ts:57-58`. Test `packages/kernel
 **INV-R42.** Each configured scope contributes at most one context document to the entry profile's
 `base_prompt`: `CLARVIS.md` wins when present, otherwise `AGENTS.md` is the fallback; neither file is
 added to child profiles.
-Production `packages/kernel/src/runs/settings-assembler.ts:249-261,365-368,397-398` plus the selection
+Production `packages/kernel/src/runs/settings-assembler.ts:261-273,365-368,397-398` plus the selection
 order at `packages/kernel/src/config/file-config-store.ts:991-1003`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:78-115` covers absence, fallback, and
+`packages/kernel/tests/component/settings-assembler.test.ts:79-116` covers absence, fallback, and
 both candidates present without double injection.
 
 **INV-R43.** `compaction_started` crosses the live engine trace as a strict, non-droppable,
@@ -918,9 +929,9 @@ fallback attribution").
 |---|---|---|
 | duplicate `execution_id` for the owner | `packages/kernel/src/runs/run-service.ts:136-138` | `KernelException("conflict")` thrown from `start`; nothing launched |
 | engine's own in-flight id clash (`ConflictError`) | `packages/loop/src/runtime/execute-run.ts:130-138`, then `toKernelError`'s name match | surfaces inside `execute`, so it lands as a **failed result**; `toKernelError` maps a name containing `Conflict` to `conflict`, everything else to `internal` (`packages/kernel/src/core/errors.ts:57-64`) |
-| unknown agent, unknown skill, no default agent | `packages/kernel/src/runs/settings-assembler.ts:366,370,96` | `not_found` or `invalid_request` **as a failed `RunResult`**, because assembly runs inside `execute` |
-| malformed `mcpServers` entry | `packages/kernel/src/runs/settings-assembler.ts:201-206` | `invalid_request` naming the server key and the zod issue path |
-| agent resolves no model | `packages/kernel/src/runs/settings-assembler.ts:243-246` | `invalid_request`, `"agent '<n>' declares no model and no default_model is set"` |
+| unknown agent, unknown skill, no default agent | `packages/kernel/src/runs/settings-assembler.ts:378,370,96` | `not_found` or `invalid_request` **as a failed `RunResult`**, because assembly runs inside `execute` |
+| malformed `mcpServers` entry | `packages/kernel/src/runs/settings-assembler.ts:213-218` | `invalid_request` naming the server key and the zod issue path |
+| agent resolves no model | `packages/kernel/src/runs/settings-assembler.ts:255-258` | `invalid_request`, `"agent '<n>' declares no model and no default_model is set"` |
 | `execute` throws | `packages/kernel/src/runs/managed-run.ts:297-299` | `failedResult(executionId, toKernelError(error))` |
 | `settle` throws | `packages/kernel/src/runs/managed-run.ts:302-304` | previous result discarded, failed result returned |
 | kernel closing at start | `packages/kernel/src/runs/managed-run.ts:293-294` | `unavailable` / `"kernel is closing"` on `done` |
@@ -1006,8 +1017,8 @@ store owns the full schema" (`:17-18`).
   saturation; the only saturation assertions are at the raw-stream level
   (`packages/kernel/tests/unit/event-stream.test.ts:399-424`).
 - **Whether a budget missing `total_token_limit` (but not `on_exceed`) validates as a run request is
-  not shown by this subsystem.** `completeBudget` (`packages/kernel/src/runs/settings-assembler.ts:343-351`) never fills a
-  missing `total_token_limit` — only a missing `on_exceed` — and `packages/kernel/tests/component/settings-assembler.test.ts:287-297`
+  not shown by this subsystem.** `completeBudget` (`packages/kernel/src/runs/settings-assembler.ts:355-363`) never fills a
+  missing `total_token_limit` — only a missing `on_exceed` — and `packages/kernel/tests/component/settings-assembler.test.ts:288-298`
   shows exactly that: a settings budget of `{ on_exceed: "escalate" }` is assembled with no
   `total_token_limit` key at all. The engine's own request schema treats `total_token_limit` as
   optional (`packages/loop/src/validation/request/request-schema.ts:106-110`) but conditionally

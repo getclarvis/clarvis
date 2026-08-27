@@ -407,7 +407,7 @@ relabelling a completed run — `packages/code/tests/component/run-host.test.ts:
 handle with `cancelRequested = true`, clears `currentSink`/`currentHandle`/`workflowRunId`/
 `currentStatusExecId`/`heldIngest`, sets `runActive(false)` and resets the terminal title (`:443`–`:455`).
 It is what `App.tsx` supplies as the memory fuse's `forceStopRun`
-(`packages/code/src/index.tsx:1133`, consumed at `packages/code/src/views/App.tsx:209`).
+(`packages/code/src/index.tsx:1140`, consumed at `packages/code/src/views/App.tsx:209`).
 
 Unlike `runManaged`'s `finally`, `teardownRuns` does **not** await the handle's `closed` or `done`: the
 cancel is fire-and-forget — `void currentHandle.cancel().catch(() => undefined)` (`:444`–`:446`) — so a

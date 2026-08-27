@@ -124,12 +124,54 @@ describe("openConnection connection boundary", () => {
     expect(seen).toEqual({
       server: SERVER,
       relay,
-      factoryOptions: { timeoutMs: 321, signal: expect.any(AbortSignal) },
+      factoryOptions: {
+        timeoutMs: 321,
+        signal: expect.any(AbortSignal),
+        scope: SCOPE,
+        onAuthorizationWaitStart: expect.any(Function),
+        onAuthorizationWaitEnd: expect.any(Function),
+      },
       listParams: undefined,
       listOptions: { timeout: 321, signal },
     });
     expect((seen.factoryOptions as { signal: AbortSignal }).signal).not.toBe(signal);
     await opened.conn.close();
+  });
+
+  it("pauses only the connect deadline while interactive authorization is pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const authorization = deferred<boolean>();
+      const late = deferred<MCPClientHandle>();
+      let connectSignal: AbortSignal | undefined;
+      const opening = open(
+        async (_server, _relay, options) => {
+          connectSignal = options?.signal;
+          options?.onAuthorizationWaitStart?.();
+          try {
+            await authorization.promise;
+          } finally {
+            options?.onAuthorizationWaitEnd?.();
+          }
+          return late.promise;
+        },
+        { connectTimeoutMs: 20 },
+      );
+
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(connectSignal?.aborted).toBe(false);
+
+      authorization.resolve(true);
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(19);
+      expect(connectSignal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(opening).rejects.toThrow("within 20ms");
+      expect(connectSignal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("wraps factory failures with the MCP identity", async () => {

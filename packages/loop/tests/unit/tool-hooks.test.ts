@@ -168,6 +168,51 @@ describe("tool hooks", () => {
     expect(results[0]).toBe("ok\n\n[advisor] be careful");
   });
 
+  it("preserves a handler's canonical tool identity across before and after hooks", async () => {
+    const seen: Array<{ tool: string; toolFullName?: string }> = [];
+    const contribution: AgentLoopContribution = {
+      tools: [noopTool("remote_search")],
+      handlers: [
+        {
+          matches: (call) => call.name === "remote_search",
+          canonicalName: () => "remote.search",
+          handle: async () => ({ kind: "result", text: "ok", progress: true }),
+        },
+      ],
+      gates: [],
+      hooks: {},
+    };
+    const llm = new SnapshotLLM({
+      script: [
+        { toolCalls: [{ name: "remote_search", arguments: {} }] },
+        { toolCalls: [{ name: "submit_result", arguments: { name: "Ada" } }] },
+      ],
+    });
+    const hooks: LifecycleHook[] = [
+      {
+        beforeToolUse: async ({ tool, toolFullName }) => {
+          if (tool === "remote_search") {
+            seen.push({ tool, ...(toolFullName === undefined ? {} : { toolFullName }) });
+          }
+          return { kind: "pass" };
+        },
+        afterToolUse: async ({ tool, toolFullName }) => {
+          if (tool === "remote_search") {
+            seen.push({ tool, ...(toolFullName === undefined ? {} : { toolFullName }) });
+          }
+          return { kind: "pass" };
+        },
+      },
+    ];
+
+    const result = await runAgent(makeInput(llm, { hooks, buildContribution: () => contribution }));
+    expect(result.status).toBe("completed");
+    expect(seen).toEqual([
+      { tool: "remote_search", toolFullName: "remote.search" },
+      { tool: "remote_search", toolFullName: "remote.search" },
+    ]);
+  });
+
   it("PostToolUse advise modifies the result by appending an advisory message", async () => {
     const contribution: AgentLoopContribution = {
       tools: [noopTool("noop")],

@@ -137,10 +137,10 @@ a `z.undefined()` field that exists solely "so that trying it explains why" (`:1
 | `guard_judge` | `:164` | `.strict()` object (`:130`-`:140`): `prompt` (1..32768 chars, required), `model?` (min 1), `on_unsure?: "ask"\|"deny"`, default `"ask"` per its own `.describe()` (`:170`), `timeout_ms?` (positive int ≤ 120000) |
 
 Both reach the request schema through `capabilityRequestParamFields`
-(`packages/loop/src/runtime/capabilities/settings-specs.ts:60`-`:63`) and the spec's
+(`packages/loop/src/runtime/capabilities/settings-specs.ts:64-69`) and the spec's
 `requestParams` (`packages/loop/src/runtime/capabilities/tools-settings.ts:268`). The protocol mirrors them as `StartRunParams.guard_mode`
 / `guard_judge` (`packages/protocol/src/runs.ts:94`-`:95`, types at `:45` and `:48`); the
-capability vocabulary declares `GuardMode` at `packages/capability/src/api.ts:442` and
+capability vocabulary declares `GuardMode` at `packages/capability/src/api.ts:451` and
 `GuardJudgeConfig` at `:414`.
 
 ### 2.6 `@clarvis/code` surface
@@ -155,9 +155,9 @@ capability vocabulary declares `GuardMode` at `packages/capability/src/api.ts:44
 | `GuardJudgePrompt` | `packages/code/src/adapters/guard-judge-prompt.ts:31` | `{ prompt; source: "workspace"\|"global"\|"builtin" }` |
 | `loadGuardJudgePrompt` | `packages/code/src/adapters/guard-judge-prompt.ts:81` | workspace → global → builtin |
 
-The mode reaches a run through `judgePayloadFor` (`packages/code/src/index.tsx:618`-`:623`) and
+The mode reaches a run through `judgePayloadFor` (`packages/code/src/index.tsx:625-630`) and
 `toStartParams` (`packages/code/src/adapters/kernel-run-client.ts:129`-`:138`). The command
-`guard.cycle` is registered at `packages/code/src/app/commands.tsx:410`-`:416` and runs
+`guard.cycle` is registered at `packages/code/src/app/commands.tsx:412`-`:416` and runs
 `cycleGuardMode` (`packages/code/src/views/App.tsx:404`-`:409`).
 
 ---
@@ -310,7 +310,7 @@ The whole channel is gated by the environment default `CLARVIS_LOG_AUDIT` (`pack
 `boolFromEnv(true)`). `createAuditLogger(root, enabled)`
 (`packages/kernel/src/component-loggers.ts:102`-`:106`) returns `NOOP_LOGGER` whenever `enabled` is
 `false` or `root` is `undefined`/`silent`, and otherwise binds `{ component: "audit", audit: true }`
-pinned at `info` (`packages/kernel/src/component-loggers.ts:82`-`:106`); `packages/kernel/src/file-kernel.ts:347` is the
+pinned at `info` (`packages/kernel/src/component-loggers.ts:82`-`:106`); `packages/kernel/src/file-kernel.ts:349` is the
 production call site. So a host operator flipping `CLARVIS_LOG_AUDIT` off silently loses every event
 in the table above, with no trace of the omission. Pinned:
 `packages/kernel/tests/unit/guard-audit.test.ts:332` ("is silent when CLARVIS_LOG_AUDIT is off") and
@@ -704,8 +704,8 @@ calls even without a delta consumer"`).
 `guardParksOnHuman(param, guard, judgeConfigured)` returns `true` for mode `on`, and for mode `auto`
 with no judge configured (`packages/kernel/src/guard/resolver.ts:80`-`:87`). The run assembler uses
 it to derive `prompt_cache_ttl: "1h"` when the caller named none
-(`packages/kernel/src/runs/settings-assembler.ts:426`-`:428`), pinned across the whole truth table
-at `packages/kernel/tests/component/settings-assembler.test.ts:535`-`:574`. The reason is stated in
+(`packages/kernel/src/runs/settings-assembler.ts:449-456`), pinned across the whole truth table
+at `packages/kernel/tests/component/settings-assembler.test.ts:536`-`:574`. The reason is stated in
 the function's own docs: such runs "park repeatedly mid-conversation … the loop cannot derive this
 itself because guard mode is resolved from host settings it never sees"
 (`packages/kernel/src/guard/resolver.ts:75`-`:79`). The economics belong to [prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md).
@@ -716,7 +716,7 @@ itself because guard mode is resolved from host settings it never sees"
   derived default (`packages/code/src/adapters/guard-mode.ts:44`-`:49`,
   `packages/code/src/adapters/code-config.ts:203`-`:206`). `cycle()` walks `off → on → auto → off`
   (`packages/code/src/adapters/guard-mode.ts:8`, `:51`-`:54`; pinned at `packages/code/tests/unit/guard-mode.test.ts:54`).
-- **`Alt`-cycled** through the `guard.cycle` action (`packages/code/src/app/commands.tsx:410`),
+- **`Alt`-cycled** through the `guard.cycle` action (`packages/code/src/app/commands.tsx:412`),
   which notifies `guard: <mode> (this session)` and warns when `auto` will degrade
   (`packages/code/src/views/App.tsx:404`-`:409`, `:345`-`:353`).
 - **Run Controls** writes the block to `settings.json` and *pre-degrades*: choosing `auto` without a
@@ -733,8 +733,8 @@ itself because guard mode is resolved from host settings it never sees"
   unreadable file treated as absent (`packages/code/src/adapters/guard-judge-prompt.ts:81`-`:87`,
   `:39`-`:61`) and a >1 MiB file rejected without reading its body (`:37`, `:45`); pinned at
   `packages/code/tests/integration/guard-judge-prompt.test.ts:25`-`:61`. The prompt is sent only
-  when the mode is `auto` (`packages/code/src/index.tsx:633`-`:635`). `judgePayloadFor`
-  (`packages/code/src/index.tsx:630`-`:635`) is the only production call site that ever attaches `guard_judge` to a
+  when the mode is `auto` (`packages/code/src/index.tsx:625-630`). `judgePayloadFor`
+  (`packages/code/src/index.tsx:625-630`, called at `:990`) is the only production path that attaches `guard_judge` to a
   run request, and its return type is `{ guardJudge?: { prompt: string } }`
   (`packages/code/src/run-host.ts:81`) — it never sets `model`, `on_unsure` or `timeout_ms`, even
   though `toStartParams` forwards all three when present (`packages/code/src/adapters/kernel-run-client.ts:129`-`:136`)
@@ -929,7 +929,7 @@ broken.
     `CLARVIS_LOG_LEVEL` cannot silence the record of what a run was allowed to execute — but the
     whole channel is still gated by `CLARVIS_LOG_AUDIT` (default `true`), which `createAuditLogger`
     turns into a `NOOP_LOGGER`. `packages/kernel/src/guard/resolver.ts:39`-`:48`, `:227`; bound at
-    `packages/kernel/src/file-kernel.ts:770`-`:772`, `:347`;
+    `packages/kernel/src/file-kernel.ts:319-327`, `:663-667`;
     `packages/kernel/src/component-loggers.ts:82`-`:102`;
     `packages/capability/src/env.ts:198`. Pinned:
     `packages/kernel/tests/unit/guard-audit.test.ts:327`-`:354`, `:332`, `:337`.
@@ -1025,8 +1025,8 @@ broken.
 
 50. **A run whose guard parks on a human gets `prompt_cache_ttl: "1h"` unless the caller named a
     TTL.** `packages/kernel/src/guard/resolver.ts:80`-`:87`,
-    `packages/kernel/src/runs/settings-assembler.ts:426`-`:428`. Pinned:
-    `packages/kernel/tests/component/settings-assembler.test.ts:545`-`:574`.
+    `packages/kernel/src/runs/settings-assembler.ts:449-456`. Pinned:
+    `packages/kernel/tests/component/settings-assembler.test.ts:546`-`:574`.
 
 51. **The judge's `model` counts as a referenced provider for request validation**, even though the
     judge is not a profile. `packages/loop/src/validation/request/provider-rules.ts:69`-`:71`, with
@@ -1038,7 +1038,7 @@ broken.
     `packages/loop/tests/unit/settings-schema.test.ts:188`-`:195`.
 
 53. **`code` never sends a judge prompt for a mode other than `auto`.**
-    `packages/code/src/index.tsx:633`-`:635`. Unpinned.
+    `packages/code/src/index.tsx:625-630`. Unpinned.
 
 54. **`code`'s judge-prompt loader treats blank, unreadable and oversized files as absent, falling
     through to the next scope.** `packages/code/src/adapters/guard-judge-prompt.ts:56`, `:64`,
@@ -1142,7 +1142,7 @@ rules use `answerer: "policy"`; an unavailable review channel uses
 | `packages/kernel/src/guard/shell-guard.ts:10` → `packages/kernel/src/guard/glob.ts:10` | `@clarvis/capability`'s `globToRegExp` | one shared glob dialect with `@clarvis/hooks` |
 | `packages/kernel/src/guard/resolver.ts:11` | `@clarvis/loop/host`'s `defaultGuardMode` + `GuardConfig` | the settings shape is the engine's, not the kernel's |
 | `packages/kernel/src/guard/judge.ts:11` | `@clarvis/capability`'s `parseModelRef`, `resolveProvider` | judge model resolution reuses the shared provider registry |
-| `packages/kernel/src/file-kernel.ts:769`-`:773` | `createGuardResolver` | the only production construction site |
+| `packages/kernel/src/file-kernel.ts:663-667` | `createGuardResolver` | the only production construction site |
 | `packages/loop/src/runtime/capabilities/tools.ts:126` | `opts.resolveGuard` | the engine's single call into host guard policy |
 | `packages/loop/src/runtime/tools/builtin/index.ts:21`-`:29` | `@clarvis/tools/guard` values | re-export barrel under the tools capability subpath |
 | `packages/code/src/onboarding/seed-default-allowlist.ts:1`-`:4` | `@clarvis/kernel/local`'s two default lists | the seed is the analyzer's own list, not a copy |
@@ -1162,12 +1162,12 @@ rules use `answerer: "policy"`; an unavailable review channel uses
 ### Registration edges
 
 - `agentToolsSettingsSpec` is listed in `BUILTIN_SETTINGS_SPECS`
-  (`packages/loop/src/runtime/capabilities/settings-specs.ts:47`), which is what puts `guard` in the
+  (`packages/loop/src/runtime/capabilities/settings-specs.ts:52`), which is what puts `guard` in the
   settings schema, the merge strategy table and the plugin manifest surface, and `guard_mode`/
   `guard_judge` in the run request — enforced as a registry-wide property at
   `packages/loop/tests/unit/settings-specs.test.ts:15`-`:32`.
 - `GUARD_PLUGIN_FIELDS` is spread into `capabilityPluginFields`
-  (`packages/loop/src/runtime/capabilities/settings-specs.ts:73`), which is what makes a plugin's
+  (`packages/loop/src/runtime/capabilities/settings-specs.ts:79`), which is what makes a plugin's
   `guard` a *parse error* rather than a silently ignored key.
 
 ### Who depends on this

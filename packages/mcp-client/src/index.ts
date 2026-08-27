@@ -33,6 +33,26 @@ export type {
   MCPClientFactoryOptions,
 } from "./client.ts";
 export {
+  createMCPAuthorizationCoordinator,
+  DEFAULT_MCP_OAUTH_AUTHORIZATION_TIMEOUT_MS,
+  DEFAULT_MCP_OAUTH_CALLBACK_PORT,
+  MCPAuthorizationFailedError,
+  MCPInteractiveAuthorizationUnavailableError,
+} from "./oauth.ts";
+export type {
+  MCPAuthorizationCoordinator,
+  MCPAuthorizationOptions,
+  MCPAuthorizationSession,
+  OAuthFinishingTransport,
+} from "./oauth.ts";
+export {
+  createMcpOAuthCredentialStore,
+  MAX_MCP_OAUTH_RECORDS,
+  MAX_MCP_OAUTH_STORE_BYTES,
+  McpOAuthStoreError,
+} from "./oauth-store.ts";
+export type { McpOAuthCredentialStore, McpOAuthRecord } from "./oauth-store.ts";
+export {
   mcpSpawnArgv,
   BunStdioClientTransport,
   MCPStdioFrameLimitError,

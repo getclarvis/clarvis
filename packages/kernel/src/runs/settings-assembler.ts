@@ -105,6 +105,18 @@ function resolveSkillRun(
   };
 }
 
+/**
+ * Spell a user-invoked skill the way external prompt-expansion hooks identify it.
+ *
+ * @remarks Plugin provenance is preserved as `<plugin>:<skill>` so a hook can
+ * distinguish its own command from a same-named skill in another source. User
+ * and built-in skills remain bare because they have no plugin namespace.
+ */
+function hookCommandName(skill: { name: string }, source: string | undefined): string {
+  const plugin = source?.startsWith("plugin:") ? source.slice("plugin:".length) : undefined;
+  return plugin === undefined || plugin.length === 0 ? skill.name : `${plugin}:${skill.name}`;
+}
+
 /** Token limit of the fallback budget when the host configures none. */
 const FALLBACK_TOTAL_TOKEN_LIMIT = 160_000_000;
 
@@ -445,6 +457,13 @@ export function createSettingsRunAssembler(
       ...(params.output_schema !== undefined ? { output_schema: params.output_schema } : {}),
       ...(params.guard_mode !== undefined ? { guard_mode: params.guard_mode } : {}),
       ...(params.guard_judge !== undefined ? { guard_judge: params.guard_judge } : {}),
+      ...(params.skill !== undefined && skillRun !== undefined
+        ? {
+            hook_user_prompt_expansion: {
+              command_name: hookCommandName(params.skill, skillRun.source),
+            },
+          }
+        : {}),
       ...(params.memory !== undefined ? { memory: params.memory } : {}),
       ...(params.task !== undefined ? { task: params.task } : {}),
       ...(params.plans !== undefined

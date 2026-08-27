@@ -92,7 +92,7 @@ test("an empty catalog shows loading during the fetch and the empty hint only af
   await t.renderOnce();
   let frame = t.captureCharFrame();
   expect(frame).toContain("loading…");
-  expect(frame).not.toContain("No marketplace configured");
+  expect(frame).not.toContain("No marketplace plugins are available");
   t.renderer.destroy();
 
   const settled = mount({ loading: false });
@@ -102,7 +102,8 @@ test("an empty catalog shows loading during the fetch and the empty hint only af
   });
   await t.renderOnce();
   frame = t.captureCharFrame();
-  expect(frame).toContain("No marketplace configured");
+  expect(frame).toContain("No marketplace plugins are available");
+  expect(frame).toContain("official marketplace by default");
   expect(frame).not.toContain("loading…");
   t.renderer.destroy();
 });

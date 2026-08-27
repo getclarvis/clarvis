@@ -187,7 +187,7 @@ Each registration carries a `slash?` token, a `surface` (`"slash" \| "internal"`
 optional `parent`; the `/name` autocomplete provider (in `views/App.tsx`, outside this document)
 reads these fields back. Example
 dispositions actually registered by this file (name → slash/surface/group/parent), pinned by
-`packages/code/tests/integration/app-commands.test.tsx:448-593`:
+`packages/code/tests/integration/app-commands.test.tsx:449-594`:
 
 | name | slash | surface | group | parent |
 | --- | --- | --- | --- | --- |
@@ -213,7 +213,7 @@ stops before confirmation. Production:
 `packages/kernel/tests/integration/storage-service.test.ts`.
 
 `registerAppCommands` also builds `openWithReturn(childCmd, returnCmd, scope?)`
-(`packages/code/src/app/commands.tsx:226-234`) — the mechanism behind every `/hub <child>` deep link
+(`packages/code/src/app/commands.tsx:228-236`) — the mechanism behind every `/hub <child>` deep link
 (`hubRoute`, `:269-277`): it opens `childCmd`'s view with a synthetic `parent: {name: returnCmd,
 factory, scope}` route, so one Escape returns to the hub rather than to the root screen.
 
@@ -391,11 +391,11 @@ vs. `doc.spec_revision`, deliberately never sharing the label "revision" between
 — outside this document, in [hosts/code-bootstrap.md](code-bootstrap.md)) decides among `skill` (an agent name),
 `command` (a registered command), `unknown` (notify + block), or `chat` (fall through as `pass`) —
 see `packages/code/src/views/input/autocomplete.ts:119-132`. `collectArgs`, the one place a slash line's argument
-tail actually feeds a schema (an MCP prompt's declared `arguments`, `packages/code/src/app/commands.tsx:1268-1283`),
+tail actually feeds a schema (an MCP prompt's declared `arguments`, `packages/code/src/app/commands.tsx:1273-1288`),
 maps it positionally with `splitSlashArgs(raw, count)` (`packages/code/src/views/input/autocomplete.ts:72-85`): one
 whitespace-separated token per declared argument, and the last argument takes the entire remainder
 (so a trailing free-text argument keeps its spaces). A required argument left unfilled is reported
-with a warn notification naming it (`packages/code/src/app/commands.tsx:1276-1280`) rather than submitted with a gap.
+with a warn notification naming it (`packages/code/src/app/commands.tsx:1281-1285`) rather than submitted with a gap.
 Pinned: `packages/code/tests/unit/autocomplete.test.ts:124-135`.
 
 ### Composer sizing and history-recall gating (`views/InputDock.tsx`)
@@ -654,7 +654,7 @@ fallback when `!document()` — so the two views never double-render the same ta
 
 This function is called from `run-host.ts`'s `runBangCommand` ([hosts/code-run-host.md](code-run-host.md) document,
 `packages/code/src/run-host.ts:904-939`), which is itself the implementation behind `InputDock`'s `onBashCommand` prop
-(wired at `packages/code/src/index.tsx:1137` and `packages/code/src/views/App.tsx:120,1260` as `props.run.bang`). **No `KernelClient`
+(wired at `packages/code/src/index.tsx:1144` and `packages/code/src/views/App.tsx:120,1260` as `props.run.bang`). **No `KernelClient`
 call, no `GuardContext`, and no shell-command analysis happen anywhere on this path** — the command
 guard that gates an agent's own `shell` tool calls is entirely bypassed, by design (comment at
 `packages/code/src/adapters/local-shell.ts:76-84`), because the command is one the user typed and submitted
@@ -974,7 +974,7 @@ settled turn's persisted continuation; an empty session reports that there is no
 - `run-host.ts` ([hosts/code-run-host.md](code-run-host.md) document) is the concrete `runBash`/`bang` implementation
   behind `onBashCommand`, and the mention-image resolution step (`buildContent`/
   `appendMentionImages`) that runs on `InputDock`'s composed content before it reaches a run.
-- `index.tsx` wires `runHost.runBangCommand` to `props.run.bang` (`packages/code/src/index.tsx:1137`).
+- `index.tsx` wires `runHost.runBangCommand` to `props.run.bang` (`packages/code/src/index.tsx:1144`).
 - `views/ElicitBlock.tsx` ([cross-cutting/elicitation.md](../cross-cutting/elicitation.md) document) reuses `ChoiceRows` for rendering
   elicitation option lists — a one-way dependency out of this document's `views/overlays/*`.
 - `views/config/CatalogPicker.tsx` reuses `ListPicker<T>`.

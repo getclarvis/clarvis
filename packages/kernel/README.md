@@ -40,6 +40,11 @@ their package READMEs.
 global Clarvis configuration, resolves provider secrets, builds loop
 dependencies and returns an asynchronous kernel client.
 
+It also binds remote MCP OAuth persistence to the global `state/mcp-oauth.json` path. A local host
+may provide `openMcpAuthorizationUrl` to grant browser-opening authority; a remote or intentionally
+headless host omits it and fails explicitly if a server requires interactive authorization. The
+kernel never moves OAuth tokens through settings, requests or protocol DTOs.
+
 For the local Code host it also owns the complete subscription subsystem described in
 [`subscription-providers.md`](../../specs/hosts/subscription-providers.md): reviewed ChatGPT and Grok
 registration references, global `subscriptions.json`, bounded device attempts, rotation-safe
@@ -179,13 +184,27 @@ runner does not impose this policy; each Git-owning adapter applies it before in
 `GIT_CEILING_DIRECTORIES` is removed as well so a parent cannot stop discovery before the selected
 repository root.
 
-Plugin admission is all-or-nothing across every executable contribution. Manifests and declared or
-convention hook documents are descriptor-read before JSON parsing with a 2 MiB ceiling; install
-records are capped at 64 KiB. The shared plugin-agent limits add bounded depth, directory/entry/file
-counts, 256 KiB per file and 8 MiB aggregate source. An excessive manifest, agent tree, hooks
-document, install record or skill-directory fanout is surfaced as a plugin error and contributes no
-agents, hooks, MCP servers or capability executables. Install-root enumeration is also bounded and
-fails explicitly instead of returning a partial catalog.
+Plugin admission is all-or-nothing only for artifacts that define the plugin as a whole: its selected
+manifest, install record and bounded agent tree. A declared or conventional hooks/MCP companion that
+is absent, malformed, oversized or outside the plugin costs only that contribution and produces an
+operator-visible note. Manifests and companion documents are descriptor-read before JSON parsing
+with a 2 MiB ceiling; install records are capped at 64 KiB. The shared plugin-agent limits add bounded
+depth, directory/entry/file counts, 256 KiB per file and 8 MiB aggregate source. Install-root
+enumeration is also bounded and fails explicitly instead of returning a partial catalog.
+
+A Clarvis-specific dot-directory manifest is authoritative. Without one, the resolver scores the
+root and shape-matched host manifests by supported contribution directives, selects one document
+deterministically, and never merges manifests. Relative skill, hook and MCP paths resolve from that
+manifest's directory before the plugin root and remain confined to the install root. An absent
+`mcpServers` declaration falls through to `.mcp.json` and then `mcp.json`. When an event-keyed hook
+document from another host starts a command with `./` or `.\`, the dialect adapter anchors that
+executable to the plugin's install root; the hook process still runs with the workspace as its
+working directory.
+
+A manifest's `skills` locations may name collection directories or individual skill directories.
+Before enforcing the four-effective-root limit, the kernel collapses an exhaustive list of direct
+siblings to its parent collection only when no undeclared directory or symlink could become visible.
+The shared 24-root plugin budget remains unchanged.
 
 Plugins may also package a per-skill Plans mode. The kernel applies it only when the skill originates
 from the enabled plugin and that plugin is the selected Plans provider; explicit run parameters take

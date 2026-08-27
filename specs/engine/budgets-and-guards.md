@@ -262,9 +262,9 @@ added to or subtracted from `consumed()`; cache **reads** (`cached`) are subtrac
 |---|---|---|---|
 | `budget_check` | `{tokens_used, tokens_remaining}` | `packages/capability/src/trace-kinds.ts:247-249` | `runBudgetCheckpoint` (hard path, `packages/loop/src/runtime/budget/budget-checkpoint.ts:56-60`) and the pre-loop check (`packages/loop/src/runtime/loop/run-agent.ts:341-345`) |
 | `soft_limit_check` | `{agent, dimension, used, limit, outcome, new_checkpoint?, escalations}` | `packages/capability/src/trace-kinds.ts:371-378` | `evaluateSoftBudget` (`packages/loop/src/runtime/budget/soft-budget.ts:212-241`) |
-| `convergence_warning` | `{agent, subagent_instance_id?, code, message}` | `packages/capability/src/trace-kinds.ts:500-505` | the iteration driver after each soft-tier warning (`packages/loop/src/runtime/loop/loop.ts:1021-1028`) |
+| `convergence_warning` | `{agent, subagent_instance_id?, code, message}` | `packages/capability/src/trace-kinds.ts:500-505` | the iteration driver after each soft-tier warning (`packages/loop/src/runtime/loop/loop.ts:1046-1053`) |
 | `guard_escalation` | `{agent, subagent_instance_id?, code, outcome, escalations}` | `packages/capability/src/trace-kinds.ts:514-520` | `run-agent.ts`'s `onGuardTrip` (`packages/loop/src/runtime/loop/run-agent.ts:242-249`) |
-| `terminate` | `unknown` (observed `{reason: string}`) | `packages/capability/src/trace-kinds.ts:631` | multiple call sites, incl. `packages/loop/src/runtime/loop/run-agent.ts:349` and `:590` (no_progress), `packages/loop/src/runtime/loop/loop.ts:1047` (`trip.code`) |
+| `terminate` | `unknown` (observed `{reason: string}`) | `packages/capability/src/trace-kinds.ts:631` | multiple call sites, incl. `packages/loop/src/runtime/loop/run-agent.ts:349` and `:590` (no_progress), `packages/loop/src/runtime/loop/loop.ts:1072` (`trip.code`) |
 
 `outcome` on both `soft_limit_check` and `guard_escalation` is one of
 `"continued"|"declined"|"no_response"|"escalations_exhausted"` (`packages/capability/src/trace-kinds.ts:376,519`) — the two
@@ -328,28 +328,28 @@ that the sole `subagent` row present is the entry agent, not the pre-pass.
 ### 4.1 The per-iteration checkpoint order (`packages/loop/src/runtime/loop/loop.ts`)
 
 Within one iteration of `runAgentLoop`, after a model call and tool dispatch, the fixed order is
-(`packages/loop/src/runtime/loop/loop.ts:1001-1060`):
+(`packages/loop/src/runtime/loop/loop.ts:1026-1085`):
 
-1. Fast-accept a `submit_result` if the finalize gate already takes it (`packages/loop/src/runtime/loop/loop.ts:1001-1002`).
+1. Fast-accept a `submit_result` if the finalize gate already takes it (`packages/loop/src/runtime/loop/loop.ts:1026-1027`).
 2. Dispatch tool calls (`runDispatch`), which is where `guards.record(...)` is fed per call (delegated
    to [loop-tool-dispatch-and-results](tool-dispatch.md); call sites `packages/loop/src/runtime/tools/mcp-dispatch.ts:229`
    and `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:95,146`).
 3. `d.guards.takeSoft()` — any pending soft warnings from either guard are joined into **one**
    `[runtime: …]` note (both replace the same note kind, so a second warning does not erase the first —
-   comment, `packages/loop/src/runtime/loop/loop.ts:1009-1014`) and each is separately traced as `convergence_warning`
-   (`packages/loop/src/runtime/loop/loop.ts:1021-1028`).
+   comment, `packages/loop/src/runtime/loop/loop.ts:1034-1039`) and each is separately traced as `convergence_warning`
+   (`packages/loop/src/runtime/loop/loop.ts:1046-1053`).
 4. `d.guards.tripped()` — if either guard has tripped, `onGuardTrip` is offered the trip; a `"continue"`
    outcome (escalation accepted) falls through to the **next** step rather than looping immediately, so
-   the iteration still counts against progress and the budget checkpoint (comment, `packages/loop/src/runtime/loop/loop.ts:1031-1036`).
+   the iteration still counts against progress and the budget checkpoint (comment, `packages/loop/src/runtime/loop/loop.ts:1056-1061`).
    Any other outcome ends the loop with `d.results.guardTrip(trip)`, or with the escalation's own
-   cancellation result if the abort raced the prompt (`packages/loop/src/runtime/loop/loop.ts:1037-1048`).
+   cancellation result if the abort raced the prompt (`packages/loop/src/runtime/loop/loop.ts:1062-1073`).
 5. The no-progress tracker is bumped (`d.progress.bump`); a stuck run ends here
-   (`packages/loop/src/runtime/loop/loop.ts:1052-1055`).
-6. `checkpoint()` — the budget checkpoint runs last in the iteration (`packages/loop/src/runtime/loop/loop.ts:1059-1060`), via
+   (`packages/loop/src/runtime/loop/loop.ts:1077-1080`).
+6. `checkpoint()` — the budget checkpoint runs last in the iteration (`packages/loop/src/runtime/loop/loop.ts:1084-1085`), via
    `runBudgetCheckpoint` (`packages/loop/src/runtime/loop/run-agent.ts:261-274`).
 
 An `OutputBudgetExhaustedError` thrown from inside the model call is caught immediately around the model
-call itself (`packages/loop/src/runtime/loop/loop.ts:942-945`) and again around the whole iteration loop (`packages/loop/src/runtime/loop/loop.ts:1063`), both
+call itself (`packages/loop/src/runtime/loop/loop.ts:967-970`) and again around the whole iteration loop (`packages/loop/src/runtime/loop/loop.ts:1088`), both
 converting it to `d.results.budgetExhausted()` rather than letting it propagate as an ordinary thrown
 error.
 
@@ -512,7 +512,7 @@ permit remains held until the underlying invocation settles; `ExtensionAdmission
 releases permits only from the physical promise's fulfillment/rejection observer
 (`packages/capability/src/extension-admission.ts:156-169`). Controllers created by
 `buildExecuteRunDeps` close during that returned object's `dispose()`; caller-supplied controllers
-remain caller-owned (`packages/loop/src/runtime/build-run-deps.ts:570-574`). The fallback controller
+remain caller-owned (`packages/loop/src/runtime/build-run-deps.ts:583-594`). The fallback controller
 used when `runOrchestrator` is driven directly is memoized in a `WeakMap` and has no separate teardown
 path (`packages/loop/src/runtime/extension-admission.ts:201-227`).
 
@@ -576,7 +576,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
     dispatched tool call inside `runDispatch`'s per-call loop
     (`packages/loop/src/runtime/tools/mcp-dispatch.ts:229`, `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:95,146`),
     while `tripped()` is queried exactly once per *iteration*, after the whole batch of that
-    iteration's tool calls has been dispatched (`packages/loop/src/runtime/loop/loop.ts:1037`, reached from the single
+    iteration's tool calls has been dispatched (`packages/loop/src/runtime/loop/loop.ts:1062`, reached from the single
     `runDispatch` call at `:982`). A model turn that batches several tool calls can therefore make
     *both* underlying guards latch within one iteration — e.g. three identical failing calls first
     (tripping `doom`), then three consecutive identical successful calls (tripping `stag`) — before
@@ -711,7 +711,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
     unbounded**, because the checkpoint that would stop the tree runs only after dispatch (§4.1 step 6)
     — a concrete, test-pinned bound is `total <= cap + 2 * (max single-call usage)` for one lead plus
     one concurrently-spending sub-agent sharing a cap of 100 with calls sized up to 50 tokens.
-    Production: the checkpoint-after-dispatch ordering already cited at `packages/loop/src/runtime/loop/loop.ts:1001-1060`. Test:
+    Production: the checkpoint-after-dispatch ordering already cited at `packages/loop/src/runtime/loop/loop.ts:1026-1085`. Test:
     `packages/loop/tests/integration/shared-budget.test.ts:12-84` (`total > 100`, `total <= 100 + 2*50`).
 38. **Only `seedBlock` among a `RunCapability`'s admitted surfaces degrades gracefully on saturation
     (INV-25); `forAgent`, `systemSection`, `order` and `guardTripCodes` are never admission-gated at
@@ -730,7 +730,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
 | Hard token or iteration cap reached (no soft budget configured) | `checkLimits` returns terminal; the checkpoint reports `budgetStop("exhausted")` → `status: "budget_exhausted"`, firing `onBudgetExhausted` lifecycle observers first | `packages/loop/src/runtime/budget/budget.ts:110-118`, `packages/loop/src/runtime/loop/run-agent.ts:198-215`; test `budget-iteration-cap.test.ts`, `budget-token-cap.test.ts` |
 | Soft checkpoint crossed and the user declines / times out / gives no answer | `evaluateSoftBudget` returns `declined`; the checkpoint reports `budgetStop("declined")` → `status: "soft_limit_declined"` | `packages/loop/src/runtime/budget/budget-checkpoint.ts:52-55`, `packages/loop/src/runtime/loop/run-agent.ts:198-215` |
 | Soft or guard-escalation ask throws for a reason other than the signal aborting | Treated as `no_response` → `declined`, never left hanging | `packages/loop/src/runtime/budget/soft-budget.ts:217-224`, `packages/loop/src/runtime/guards/guard-escalation.ts:115-122` |
-| Guard trips with no escalation configured | Unconditionally terminal: `status: "error"`, `error.code` = the guard's own code (`tool_failure_loop`/`stagnation_detected`) | `packages/loop/src/runtime/loop/run-agent.ts:514` (no `onGuardTrip` wired), `packages/loop/src/runtime/loop/loop.ts:1047-1048`; test `packages/loop/tests/integration/guard-escalation.test.ts:85-99` |
+| Guard trips with no escalation configured | Unconditionally terminal: `status: "error"`, `error.code` = the guard's own code (`tool_failure_loop`/`stagnation_detected`) | `packages/loop/src/runtime/loop/run-agent.ts:514` (no `onGuardTrip` wired), `packages/loop/src/runtime/loop/loop.ts:1072-1073`; test `packages/loop/tests/integration/guard-escalation.test.ts:85-99` |
 | Guard trips, escalation configured, user declines | Same terminal outcome as above, but a `guard_escalation` trace entry records `outcome: "declined"` first | `packages/loop/tests/integration/guard-escalation.test.ts:124-134` |
 | Guard escalation cap spent | Further trips decline without ever asking again | `packages/loop/src/runtime/guards/guard-escalation.ts:110-113`; test `packages/loop/tests/integration/guard-escalation.test.ts:136-153` |
 | `ComputeClock` deadline fires | `runWithClockAndTimeout` returns `errorResponse(..., "timeout", ...)`; loop teardown is given `settleGraceMs` then detached (not awaited) if it does not cooperate, logging `run.teardown_detached` | `packages/loop/src/runtime/run-timeout.ts:103-120` |
@@ -767,7 +767,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
 
 - `packages/loop/src/runtime/loop/run-agent.ts` and `loop.ts` (owned by [loop-run-lifecycle](loop-run-lifecycle.md)) **must**
   call `checkpoint()` and consult `guards.tripped()`/`takeSoft()` in the fixed order documented in §4.1
-  — the ordering comment at `packages/loop/src/runtime/loop/loop.ts:1031-1036` states explicitly what breaks if a waived guard trip
+  — the ordering comment at `packages/loop/src/runtime/loop/loop.ts:1056-1061` states explicitly what breaks if a waived guard trip
   were made to `continue` immediately instead of falling through: "the iteration still counts against
   the no-progress tracker and still hits the budget checkpoint. Skipping both would make 'continue past
   the guard' quietly exempt that turn from two unrelated stop conditions."

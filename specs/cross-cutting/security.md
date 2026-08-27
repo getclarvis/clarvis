@@ -21,7 +21,7 @@ code and none of them a sandbox:
 3. **Environment filtering** — a hook subprocess's environment is built keep-list-first, then filtered
    against a per-run credential denylist derived from that run's own configuration
    (`packages/hooks/src/env.ts:175`); a stdio MCP child gets a fixed safe base plus only what its own
-   `env` block names (`packages/mcp-client/src/client.ts:271`); a shell/monitor command spawned by the
+   `env` block names (`packages/mcp-client/src/client.ts:382`); a shell/monitor command spawned by the
    toolset has the host's credential variables deleted from its environment
    (`packages/tools/src/sandbox.ts:349`); and a Clarvis-owned Git subprocess that selects a repository
    removes Git's repository-local environment before it starts
@@ -46,7 +46,7 @@ move, and an architecture test scans every tool string for remediation phrasing
 (`packages/tools/src/lib/paths.ts:160`, `packages/tools/tests/architecture/no-bypass-hints.test.ts:81`).
 Second, what a filter withholds is **counted, never named** — the hook filter returns per-rule counts
 and the log line says so explicitly (`packages/hooks/src/env.ts:148`,
-`packages/hooks/src/capability.ts:324`).
+`packages/hooks/src/capability.ts:367`).
 
 Delegated to siblings: server authentication and bind policy
 ([hosts/server-auth.md](../hosts/server-auth.md)), command approval and the guard judge
@@ -66,7 +66,7 @@ bounds, staging, and activation ([distribution-and-updates.md](distribution-and-
 | `sanitizeText` | `(text: string) => string` (`packages/capability/src/sanitize.ts:194`) | `TEXT_RULES` — unquoted key/value rule **and** the catch-all (`packages/capability/src/sanitize.ts:134`) |
 | `sanitizeDeep` | `<T>(value: T, redact?: (t: string) => string) => T` (`packages/capability/src/sanitize.ts:221`) | walks arrays/plain objects; defaults `redact` to `sanitizeToolPayload` (`packages/capability/src/sanitize.ts:223`) |
 
-Re-exported by `packages/capability/src/index.ts:127-131`. `@clarvis/kernel/policy` re-exports
+Re-exported by `packages/capability/src/index.ts:129-133`. `@clarvis/kernel/policy` re-exports
 `sanitizeText` and `sanitizeErrorMessage` **by identity** (`packages/kernel/src/policy.ts:38-39`) —
 `@clarvis/code` reaches the canonical rules only through that re-export
 (`packages/kernel/tests/component/public-entrypoints.test.ts:22`). `@clarvis/memory` re-exports
@@ -83,7 +83,7 @@ Re-exported by `packages/capability/src/index.ts:127-131`. `@clarvis/kernel/poli
 | `resolveStringMap` | `(map, env) => Record<string,string>` (`packages/capability/src/env-interpolate.ts:91`) | reads `NodeJS.ProcessEnv` |
 | `MissingEnvVarsError` | `class … { missing: string[] }` (`packages/capability/src/env-interpolate.ts:19`) | message names the variables, never a value |
 
-Exported at `packages/capability/src/index.ts:272-278`.
+Exported at `packages/capability/src/index.ts:274-280`.
 
 ### 2.3 Forbidden provider body keys
 
@@ -155,8 +155,8 @@ existing package boundary (`packages/kernel/src/local.ts:23`).
 | --- | --- | --- |
 | `filterHookEnv` | `(source, opts?: { denyExact?, add? }) => { env, denied: { exact, shape } }` | `packages/hooks/src/env.ts:175` |
 | `interpolatedNames` | `(template: string) => string[]` | `packages/hooks/src/env.ts:216` |
-| `runCredentialNames` | `(ctx: RunCapabilityContext, extra: readonly string[]) => string[]` | `packages/hooks/src/capability.ts:252` |
-| `WorkspaceHooksOptions.credentialNames` | `() => readonly string[]` | `packages/hooks/src/capability.ts:297` |
+| `runCredentialNames` | `(ctx: RunCapabilityContext, extra: readonly string[]) => string[]` | `packages/hooks/src/capability.ts:295` |
+| `WorkspaceHooksOptions.credentialNames` | `() => readonly string[]` | `packages/hooks/src/capability.ts:340` |
 
 Both `filterHookEnv` and `interpolatedNames` are on the package barrel
 (`packages/hooks/src/index.ts:14`).
@@ -198,6 +198,21 @@ Constants and helpers in `packages/kernel/src/transport/stdio.ts`: `MAX_ERROR_ME
 `toEnvelope` (`:372`). The parallel path for run events is
 `packages/kernel/src/runs/map-events.ts:82` (`terminalSafe` over `sanitizeText`) and `:192`
 (`boundedCapabilityDetail`).
+
+### 2.9 Remote MCP OAuth credentials — `@clarvis/mcp-client`
+
+| Symbol | Security role | Line |
+| --- | --- | --- |
+| `createMCPAuthorizationCoordinator` | loopback callback, random state, browser authority and same-key serialization | `packages/mcp-client/src/oauth.ts:187-210,212-301` |
+| `MCPAuthorizationOptions.openAuthorizationUrl` | explicit host capability; omitted by headless hosts | `packages/mcp-client/src/oauth.ts:44-54` |
+| `createMCPRemoteFetch` | resource-header isolation, OAuth destination validation and redirect control | `packages/mcp-client/src/remote-fetch.ts:35-118` |
+| `createMcpOAuthCredentialStore` | validates, lease-serializes and durably writes the private store | `packages/mcp-client/src/oauth-store.ts:199-247` |
+| `McpOAuthStoreError` | refuses corrupt, oversized, unreadable and unsafe paths without repair | `packages/mcp-client/src/oauth-store.ts:35-43` |
+
+The file kernel supplies `<global>/state/mcp-oauth.json` and passes a browser opener only when its
+host owns that authority (`packages/kernel/src/file-kernel.ts:640-677`). Tokens, codes, verifier,
+state and client secrets therefore never become settings, request parameters, protocol DTOs or
+diagnostic fields.
 
 ## 3. Data and formats
 
@@ -241,7 +256,7 @@ Worked examples taken from the tests:
 
 ### 3.2 `keys.json`
 
-Path: `globalPaths(dir).keysFile` = `<global>/keys.json` (`packages/paths/src/global.ts:112`).
+Path: `globalPaths(dir).keysFile` = `<global>/keys.json` (`packages/paths/src/global.ts:114`).
 Schema: `z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().min(1))`
 (`packages/kernel/src/secrets/secret-store.ts:7,10`). Serialized as
 `` `${JSON.stringify(values, null, 2)}\n` `` (`:105`) through `writeFileAtomicSync`, whose defaults are
@@ -263,7 +278,7 @@ missing file yields `{ values: {} }` (`:79`), bad JSON yields `{ values: {}, err
 ### 3.3 `workspace-trust.json`
 
 Path `globalPaths(globalDir).workspaceTrustFile` = `<global>/workspace-trust.json`
-(`packages/paths/src/global.ts:115`). Strict schema: a `workspaces` record from canonical workspace
+(`packages/paths/src/global.ts:117`). Strict schema: a `workspaces` record from canonical workspace
 path to a **non-empty array** of `{ fingerprint: /^sha256:[0-9a-f]{64}$/, approved_at: string }`
 (`packages/kernel/src/config/workspace-trust.ts:244-261`).
 
@@ -323,6 +338,16 @@ deletes only the `provider` sub-key for `memory`/`plans` (`:117-134`). A `memory
 where the preserved set is `outcome_unknown` (boolean) plus the string fields `task_code`,
 `memory_code`, `current_revision`, `expectedRevision`, `actualRevision`, each capped
 at 1024 chars (`:73-80`, `:83-106`, `:363`).
+
+### 3.6 `state/mcp-oauth.json`
+
+The strict version-1 document maps 64-hex SHA-256 keys to SDK-validated registration/token records;
+the raw workspace, owner and remote resource never appear as keys
+(`packages/mcp-client/src/oauth-store.ts:19-33,70-126`, key derivation at
+`packages/mcp-client/src/oauth.ts:161-170`). It is bounded to 1 MiB, 128 records and 512 KiB per
+record (`packages/mcp-client/src/oauth-store.ts:14-18,101,116-125,231-240`). On POSIX it is written
+`0600` below a `0700` directory (`:189-197,239-241`); malformed data is an error, not an empty
+fallback (`:169-180`).
 
 ## 4. Behavior
 
@@ -493,8 +518,8 @@ unanchored `private[_-]?key` and `access[_-]?key` — and thirteen credential-fa
 `DOCKER_`, `SSH_`, `GPG_`, `HF_`, `VAULT_`.
 
 The per-run `denyExact` is `runCredentialNames(ctx, credentialNames?.() ?? [])`
-(`packages/hooks/src/capability.ts:320-322`), assembled from four sources
-(`packages/hooks/src/capability.ts:252-267`):
+(`packages/hooks/src/capability.ts:363-365`), assembled from four sources
+(`packages/hooks/src/capability.ts:295-310`):
 
 | Source | Extraction | Line |
 | --- | --- | --- |
@@ -506,22 +531,22 @@ The per-run `denyExact` is `runCredentialNames(ctx, credentialNames?.() ?? [])`
 
 The `extra` half exists because a run's `servers` is narrowed to those some profile grants, while the
 inherited process environment still carries every key the host resolved (`:240-246`). The host supplies
-it as `hookCredentialNames: managedSecretNames` (`packages/kernel/src/file-kernel.ts:777`), a function
+it as `hookCredentialNames: managedSecretNames` (`packages/kernel/src/file-kernel.ts:785`), a function
 that unions only `keys.json` names with the explicit `opts.keySources` names
-(`packages/kernel/src/file-kernel.ts:426-436`) — **not** provider `api_key_env` or header refs, re-read
+(`packages/kernel/src/file-kernel.ts:428-438`) — **not** provider `api_key_env` or header refs, re-read
 per call. This is a distinct function from `loadSecretNames` (`:519-535`, described in §4.6), which the
 kernel wires as `resolveSecretNames` for the toolset's own `secretEnvNames` and *does* additionally union
 every provider's `api_key_env` and every provider/model header's interpolated names. The two lists are
 therefore built independently, from two different kernel functions, for the two different subprocess
 environments in §4.6 — not the same "whole-registry" computation reused twice.
 
-The filtered environment becomes the runner's `baseEnv` (`packages/hooks/src/capability.ts:324-337`,
+The filtered environment becomes the runner's `baseEnv` (`packages/hooks/src/capability.ts:367-380`,
 `packages/hooks/src/runner.ts:64`) and each hook spawn layers six `CLARVIS_HOOK_*` /
-`CLARVIS_WORKSPACE_ROOT` variables on top (`packages/hooks/src/runner.ts:301-309`).
+`CLARVIS_WORKSPACE_ROOT` variables on top (`packages/hooks/src/runner.ts:301-312`).
 
 Only the counts are logged: `hooks.env_filtered` with `denied_count`, `denied_by_exact`,
 `denied_by_shape` and the message *"the withheld variables are counted and never named, because the
-denylist is derived from exactly this run's credentials"* (`packages/hooks/src/capability.ts:324-332`).
+denylist is derived from exactly this run's credentials"* (`packages/hooks/src/capability.ts:367-375`).
 
 ### 4.6 Other subprocess environments use distinct policies
 
@@ -529,13 +554,13 @@ denylist is derived from exactly this run's credentials"* (`packages/hooks/src/c
 | --- | --- | --- |
 | Clarvis-owned Git selecting a repository | `withoutGitRepositoryEnvironment(inherited)` — preserve ordinary/transport inputs, remove Git's complete repository-local set and `GIT_CEILING_DIRECTORIES` before `cwd`, `-C`, or a clone destination selects the repository | helper `packages/paths/src/git-environment.ts`; plugin fetch `packages/kernel/src/adapters/git/plugin-fetcher.ts`; plugin metadata `packages/kernel/src/adapters/filesystem/plugin-repository.ts`; memory workspace probe `packages/memory/src/workspace-state.ts`; client clone `packages/code/src/adapters/plugin-install.ts`; guarded host fallback `packages/tools/src/tools/host-vcs.ts` |
 | `host_vcs` argv fallback | `withoutGitRepositoryEnvironment(process.env)`, then remove `secretEnvNames`, disable prompts, hooks, and Git external protocols; ordinary host environment and credential transport remain | `packages/tools/src/tools/host-vcs.ts` (`hostEnvironment`) |
-| stdio MCP child | `{ ...getDefaultEnvironment(), ...interpolated server.env }` — the caller's environment is **never** the base | `packages/mcp-client/src/client.ts:271`, rationale `:215-228` |
+| stdio MCP child | `{ ...getDefaultEnvironment(), ...interpolated server.env }` — the caller's environment is **never** the base | `packages/mcp-client/src/client.ts:382`, rationale `:324-337` |
 | `shell` / `monitor` command (unsandboxed) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted | `packages/tools/src/sandbox.ts:349-357`, applied `:397` |
 | capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts:76-84`, `:163` |
 
 `secretEnvNames` for the toolset comes from `resolveSecretNames(ctx)`
 (`packages/loop/src/runtime/capabilities/tools.ts:132`), which the file kernel binds to
-`loadSecretNames` (`packages/kernel/src/file-kernel.ts:775`).
+`loadSecretNames` (`packages/kernel/src/file-kernel.ts:783`).
 
 ### 4.7 Resolving secrets into the kernel environment
 
@@ -640,6 +665,30 @@ path): it builds `{ code: "internal", message: sanitizeErrorMessage(...) }` (`:3
 (`:540-541`). `:` is excluded deliberately, because a plugin-contributed agent is addressed
 `<plugin>:<agent>` and is owned by neither writable scope (`:55-58`).
 
+### 4.12 Authorizing a remote MCP server
+
+The SDK performs protected-resource discovery, client registration, PKCE and token exchange; Clarvis
+owns the surrounding trust boundaries. It canonicalizes the remote resource into an owner/workspace
+scoped hash, reuses only a registration whose loopback redirect still matches, and creates 32 random
+bytes of state (`packages/mcp-client/src/oauth.ts:161-170,303-343`). Every OAuth fetch target and
+redirect is validated before the request leaves the process, and only HTTPS or loopback HTTP is
+accepted (`packages/mcp-client/src/remote-fetch.ts:35-40,53-118`). Before invoking the host opener,
+the same rule is applied to the browser URL (`packages/mcp-client/src/oauth.ts:172-178,362-410`).
+
+Configured MCP resource headers are injected only into resource requests on the configured origin.
+They are withheld from SDK discovery, registration, and token exchanges even on a shared origin;
+request-defined SDK credentials take precedence, and a redirect cannot carry configured resource
+credentials across origins (`packages/mcp-client/src/remote-fetch.ts:53-114`). The callback listener
+binds `127.0.0.1`, accepts only the fixed GET path, bounds fields, compares state timing-safely and
+never reflects a code/state in HTML (`packages/mcp-client/src/oauth.ts:109-141,212-288`).
+
+The store read uses `O_NOFOLLOW`, verifies the final object is a regular file, rejects a parent whose
+real path differs, and wipes its read buffer (`packages/mcp-client/src/oauth-store.ts:135-186`). A
+mutation acquires a local lease, re-reads and validates under it, asserts ownership immediately before
+the durable replacement and refuses to overwrite malformed state (`:189-245`). This narrows final
+symlink and stable-parent attacks; it does not close the repository's existing parent-directory
+TOCTOU family between validation and rename, so the limitation in invariant 10 remains explicit.
+
 ## 5. Invariants
 
 1. **A confined tool path is compared canonically on both sides.** `assertWithinWorkspace` resolves the
@@ -736,20 +785,20 @@ path): it builds `{ code: "internal", message: sanitizeErrorMessage(...) }` (`:3
     `packages/hooks/src/env.ts:189-196`; pinned `packages/hooks/tests/unit/env.test.ts:110-113`.
 26. **The hook filter names nothing it withheld.** `FilteredHookEnv` carries only counts, and the log
     line emits only counts. Production `packages/hooks/src/env.ts:148-158`,
-    `packages/hooks/src/capability.ts:324-332`. **Unpinned** — no test asserts the absence of a name in
+    `packages/hooks/src/capability.ts:367-375`. **Unpinned** — no test asserts the absence of a name in
     the log fields.
 27. **The per-run denylist covers a provider's *model*-level headers.** They are reached through
     `Object.values(provider.models ?? {})`; a `for…of` over the record would iterate nothing and throw
-    nothing. Production `packages/hooks/src/capability.ts:260`, hazard stated at `:248-250`.
+    nothing. Production `packages/hooks/src/capability.ts:303`, hazard stated at `:248-250`.
     **Unpinned.**
 28. **A stdio MCP child never inherits the caller's environment.** Its base is
     `getDefaultEnvironment()`, and declaring `env` *adds* to it rather than switching the child from
     "inherit everything" to "inherit a filtered set". Production
-    `packages/mcp-client/src/client.ts:271`; pinned
+    `packages/mcp-client/src/client.ts:382`; pinned
     `packages/mcp-client/tests/unit/mcp-transport-env.test.ts:33-63`, including the property that the
     base does not depend on the identity of the caller's env object (`:56-63`).
 29. **A hook subprocess cannot read this run's provider credentials.** Production
-    `packages/hooks/src/capability.ts:320-322` composing `packages/hooks/src/env.ts:175`; pinned
+    `packages/hooks/src/capability.ts:363-365` composing `packages/hooks/src/env.ts:175`; pinned
     end-to-end against a real subprocess at
     `packages/hooks/tests/integration/real-subprocess.test.ts:139-160`, which asserts the child prints
     two empty values.
@@ -858,6 +907,29 @@ path): it builds `{ code: "internal", message: sanitizeErrorMessage(...) }` (`:3
     `packages/code/tests/integration/plugin-install.test.ts:49-86`, the injected kernel runner at
     `packages/kernel/tests/integration/local-observability.test.ts:102-135`, and the real workspace
     probe at `packages/memory/tests/integration/workspace-state.test.ts:11-49`.
+50. **Remote OAuth credentials are isolated by workspace, owner and canonical resource URL.** The
+    tuple is hashed and only the digest keys the private document. Production:
+    `packages/mcp-client/src/oauth.ts:161-170`; pinned
+    `packages/mcp-client/tests/integration/oauth.test.ts:56-67`.
+51. **No OAuth fetch, redirect or browser destination can downgrade to non-loopback plaintext, and
+    browser authorization cannot proceed without explicit host authority.** Production
+    `packages/mcp-client/src/remote-fetch.ts:35-40,53-118` and
+    `packages/mcp-client/src/oauth.ts:172-178,362-410`; pinned
+    `packages/mcp-client/tests/unit/remote-fetch.test.ts:98-192` and
+    `packages/mcp-client/tests/integration/oauth.test.ts:128-149`.
+52. **The OAuth callback accepts only a bounded code paired with the timing-safe matching random
+    state, and reflects neither.** Production `packages/mcp-client/src/oauth.ts:109-141,212-255`;
+    pinned `packages/mcp-client/tests/integration/oauth.test.ts:69-102`.
+53. **A corrupt, oversized or symlinked OAuth store is refused and never repaired by overwrite.**
+    Production `packages/mcp-client/src/oauth-store.ts:135-245`; pinned
+    `packages/mcp-client/tests/integration/oauth-store.test.ts:61-123`.
+54. **A configured MCP resource credential cannot enter an OAuth exchange or overwrite an
+    SDK-defined credential.** Resource headers are admitted only for resource requests on the
+    configured origin, while OAuth discovery, registration and token traffic stays header-isolated;
+    redirect hops are evaluated independently. Production:
+    `packages/mcp-client/src/remote-fetch.ts:53-114`, constructed without SDK `requestInit` headers at
+    `packages/mcp-client/src/client.ts:414-438`; pinned
+    `packages/mcp-client/tests/unit/remote-fetch.test.ts:7-95,141-167`.
 
 ## 6. Failure modes and degradation
 
@@ -913,8 +985,10 @@ real — a 64-hex project id and a full UUID both read as credentials, which is 
 | `@clarvis/llm` → `FORBIDDEN_PROVIDER_BODY_KEYS` | runtime, static | `packages/llm/src/openai-compatible-request.ts:17` |
 | `@clarvis/loop` validation → the same constant | runtime, static | `packages/loop/src/validation/request/provider-rules.ts:3` |
 | `@clarvis/trace` → `sanitizeDeep` | runtime, static | `packages/trace/src/json-trace-store.ts:32`, `packages/trace/src/journal.ts:6`, `packages/trace/src/trace-mapper.ts:4`, `packages/trace/src/testing.ts:2` |
-| loop tools capability → `resolveSecretNames` | runtime, injected | optional port on `AgentToolsCapabilityOptions` (`packages/loop/src/runtime/capabilities/tools.ts:80`, called `:132`), bound by the file kernel at `packages/kernel/src/file-kernel.ts:775` |
-| hooks capability → `credentialNames` | runtime, injected | optional callback (`packages/hooks/src/capability.ts:297`, called `:317`) |
+| loop tools capability → `resolveSecretNames` | runtime, injected | optional port on `AgentToolsCapabilityOptions` (`packages/loop/src/runtime/capabilities/tools.ts:80`, called `:132`), bound by the file kernel at `packages/kernel/src/file-kernel.ts:783` |
+| hooks capability → `credentialNames` | runtime, injected | optional callback (`packages/hooks/src/capability.ts:340`, called `:317`) |
+| `@clarvis/mcp-client` → `@clarvis/paths` | runtime, static | private modes, local lease and durable replacement for OAuth credentials (`packages/mcp-client/src/oauth-store.ts:12`) |
+| file kernel → MCP authorization | runtime, injected through loop | global store path and optional browser opener (`packages/kernel/src/file-kernel.ts:640-677`; `packages/loop/src/runtime/build-run-deps.ts:386-397`) |
 
 ### 7.2 Where redaction is actually applied
 
@@ -943,7 +1017,7 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
 `stripWorkspaceRiskFields` is consumed only by `createFileConfigStore`
 (`packages/kernel/src/config/file-config-store.ts:43-45`, applied once in `operatorLayers` at `:602`), which is what makes
 `file-kernel.ts` able to state that no hook filtering happens at the hook layer any more
-(`packages/kernel/src/file-kernel.ts:542-550`).
+(`packages/kernel/src/file-kernel.ts:544-552`).
 
 ## 8. Open questions
 
@@ -969,7 +1043,7 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
   capability executable receives every credential the kernel holds, and that whether that is intended
   is the owner's call (`packages/kernel/src/capability-executables/session-manager.ts:52`–`:71`).
   What has not changed is the behaviour or the absence of a test.
-  `packages/mcp-client/src/client.ts:215-228` argues at length for the MCP policy;
+  `packages/mcp-client/src/client.ts:324-337` argues at length for the MCP policy;
   `packages/kernel/src/capability-executables/session-manager.ts:76-84` carries no rationale and no
   test for its environment shape. This is a live divergence, not obviously a bug — a plans/memory
   provider may need credentials — but nothing in the code says which.

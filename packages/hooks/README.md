@@ -22,17 +22,17 @@ composition are specified in [`execution/hooks.md`](../../specs/execution/hooks.
 
 ## Entry points
 
-| Entry                       | Contents                                                                    |
-| --------------------------- | --------------------------------------------------------------------------- |
-| `@clarvis/hooks`            | `createHookRunner`, `filterHookEnv`, matching and parsing                   |
-| `@clarvis/hooks/capability` | the loop adapter: `createWorkspaceHooksCapability`, `compileWorkspaceHooks` |
+| Entry                       | Contents                                                                 |
+| --------------------------- | ------------------------------------------------------------------------ |
+| `@clarvis/hooks`            | `createHookRunner`, `filterHookEnv`, matching and parsing                |
+| `@clarvis/hooks/capability` | the loop adapter, including exact user skill-command expansion observers |
 
 `./capability` is a **separate entry on purpose**: nothing on `@clarvis/loop`'s eager configuration
 path may reach it. The engine's `runtime/capabilities/hooks.ts` holds only the _settings block_,
 which is what `settings-specs.ts` imports — keeping the two apart is what makes
 `builtins.hooks = false` genuinely not load this package.
 
-The hook _vocabulary_ itself (`hookSchema`, `HookConfig`, `HOOKS_CAPABILITY_NAME`, the three event
+The hook _vocabulary_ itself (`hookSchema`, `HookConfig`, `HOOKS_CAPABILITY_NAME`, the event
 groups, `HOOK_DEFAULT_TIMEOUT_MS`) lives in `@clarvis/capability`, because the settings block
 declares it and the adapter executes against it — so it belongs to neither package alone.
 
@@ -66,7 +66,7 @@ tier together.
     "hook_event_name": "PreToolUse",
     "cwd": "/abs",
     "session_id": "…",
-    "tool_name": "shell",
+    "tool_name": "Bash",
     "tool_input": { "command": "ls -la" }
   }
   ```
@@ -77,7 +77,11 @@ tier together.
   against; it falls back to our name for an event the dialect has no word for
   (`run_start`, `budget_exhausted`, …), whose fields likewise keep their Clarvis
   names. `tool_name` / `tool_input` / `tool_response` are the triple the dialect
-  documents identically for the two tool events. `session_id` appears only when the
+  documents identically for the two tool events. Built-ins use the compatible
+  external spellings, MCP tools use `mcp__<server>__<tool>`, and `load_skill`
+  carries `skill` beside its native `name` argument. `CLARVIS_HOOK_TOOL` retains
+  the Clarvis wire name and `CLARVIS_HOOK_TOOL_FULL_NAME` carries the stable dotted
+  MCP identity when one exists. `session_id` appears only when the
   host supplies one; `protocol` is a Clarvis extension the dialect has no
   counterpart for. On overflow every event field is dropped and
   `payload_truncated: true` is set, so a hook that filters on the event and the
@@ -175,16 +179,21 @@ arguments it was matched against.
   from `HOOK_DEFAULT_TIMEOUT_MS` so the two cannot drift: **5000 ms** for the tool events, which fire
   on every tool call in sequence inside the dispatch; **30000 ms** for `pre_finalize` /
   `pre_delegate_task`, which are O(1) per agent; **2000 ms** for `run_end`.
-- **`session_start` is a third event group**, not an observer. Its `{"kind":"context","text":"…"}`
+- **`session_start` is a dedicated context group**, not an observer. Its `{"kind":"context","text":"…"}`
   output is collected by the capability's `seedBlock()` into a pinned, non-evictable entry-context
   block that **survives compaction** rather than being re-injected after it. Its `seedMarker` is
   declared on the `Capability`, so a stale block is stripped from a continuation even on a later run
   with hooks configured away. The schema rejects `on_failure` there, and `buildSeedBlock` swallows
   every failure — a throw from `seedBlock` fails the run.
+- **`user_prompt_expansion` is an exact host-command observer.** It fires once from the seed phase
+  before a user-invoked skill run, with the qualified command name when the skill came from a plugin.
+  It does not approximate an ordinary prompt and does not fire for a model's later `load_skill` call;
+  its output and failures cannot block the run.
 - **The compiled `LifecycleHook` defines only the methods that have a spec.** Two engine behaviours
   read a method's mere _presence_ — `buildPreFinalizeGate`'s `fastAcceptOk` and the
   fast-accept-submit path — so an object carrying all eleven keys would switch both off for the whole
   run.
-- **Argument rewriting is a non-objective.** Other agent hosts do it — one mutates a call's
-  arguments in place, another ships a dedicated input-modifying hook; Clarvis does not. Policy has an owner (the guard), and mutation would destroy
-  the operator-before-plugin ordering guarantee the settings merge exists to provide.
+- **Argument rewriting is sequential and selection-stable.** Every matching hook is selected against
+  the model's original call. A successful `pre_tool_use` rewrite replaces the entire argument object
+  seen by later selected hooks; it never re-runs selection, so one hook cannot silence another. The
+  final replacement still passes the tool schema and command guard before dispatch.

@@ -121,35 +121,36 @@ chose it — is the first thing every other path in this package is derived from
 
 ### 2.4 Global paths (`packages/paths/src/global.ts`)
 
-`globalPaths(root?, opts?)` (`packages/paths/src/global.ts:101`) returns a `GlobalPaths` record
+`globalPaths(root?, opts?)` (`packages/paths/src/global.ts:105`) returns a `GlobalPaths` record
 (`packages/paths/src/global.ts:21`) rooted at `<global>`:
 
 | Field | Path | Line |
 |---|---|---|
-| `root` | `<global>` | `packages/paths/src/global.ts:107` |
-| `state` | `<global>/state` | `packages/paths/src/global.ts:103` |
-| `cache` | `<global>/cache` | `packages/paths/src/global.ts:104` |
-| `settingsFile` | `<global>/settings.json` | `packages/paths/src/global.ts:110` |
-| `agentsDir` | `<global>/agents` | `packages/paths/src/global.ts:105,111` |
-| `keysFile` | `<global>/keys.json` | `packages/paths/src/global.ts:112` |
-| `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts` (`GlobalPaths.subscriptionsFile`) |
-| `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts:113` |
-| `hookTrustFile` | `<global>/hook-trust.json` | `packages/paths/src/global.ts:114` |
-| `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts:115` |
-| `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts:116` |
-| `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts:117` |
-| `guardJudgeFile` | `<global>/guard-judge.md` | `packages/paths/src/global.ts:118` |
-| `memoryPolicyFile` | `<global>/memory-policy.md` | `packages/paths/src/global.ts:119` |
-| `authFile` | `<global>/auth.json` | `packages/paths/src/global.ts:120` |
-| `authKeyFile` | `<global>/auth-key.json` | `packages/paths/src/global.ts:121` |
-| `sessionsDir` | `<global>/state/sessions` | `packages/paths/src/global.ts:122` |
-| `tracesDir` | `<global>/state/traces` | `packages/paths/src/global.ts:123` |
-| `workflowRecordsDir` | `<global>/state/workflows` | `packages/paths/src/global.ts:124` |
-| `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts:125` |
-| `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts:126` |
-| `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts:127` |
-| `exportsDirForOwner(owner)` | `<global>/exports/<ownerSegment(owner)>` | `packages/paths/src/global.ts:128` |
-| `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/global.ts:129` |
+| `root` | `<global>` | `packages/paths/src/global.ts:111` |
+| `state` | `<global>/state` | `packages/paths/src/global.ts:107,112` |
+| `cache` | `<global>/cache` | `packages/paths/src/global.ts:108,113` |
+| `settingsFile` | `<global>/settings.json` | `packages/paths/src/global.ts:114` |
+| `agentsDir` | `<global>/agents` | `packages/paths/src/global.ts:109,115` |
+| `keysFile` | `<global>/keys.json` | `packages/paths/src/global.ts:116` |
+| `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts:117` |
+| `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts:118` |
+| `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts:119` |
+| `hookTrustFile` | `<global>/hook-trust.json` | `packages/paths/src/global.ts:120` |
+| `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts:121` |
+| `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts:122` |
+| `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts:123` |
+| `guardJudgeFile` | `<global>/guard-judge.md` | `packages/paths/src/global.ts:124` |
+| `memoryPolicyFile` | `<global>/memory-policy.md` | `packages/paths/src/global.ts:125` |
+| `authFile` | `<global>/auth.json` | `packages/paths/src/global.ts:126` |
+| `authKeyFile` | `<global>/auth-key.json` | `packages/paths/src/global.ts:127` |
+| `sessionsDir` | `<global>/state/sessions` | `packages/paths/src/global.ts:128` |
+| `tracesDir` | `<global>/state/traces` | `packages/paths/src/global.ts:129` |
+| `workflowRecordsDir` | `<global>/state/workflows` | `packages/paths/src/global.ts:130` |
+| `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts:131` |
+| `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts:132` |
+| `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts:133` |
+| `exportsDirForOwner(owner)` | `<global>/exports/<ownerSegment(owner)>` | `packages/paths/src/global.ts:134` |
+| `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/global.ts:135` |
 
 The module doc explains the placement: "Operator-owned configuration sits at the root, not under
 a `config/` subdirectory" — burying it "made the global tree disagree with the workspace one"
@@ -379,7 +380,8 @@ hand-edited file with the seeded template. Production: `ensureWorkspaceDir` and 
 operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `plugins/`,
 `hook-trust.json`, `workspace-trust.json`, `skills/`, `workflows/`, `guard-judge.md`,
 `memory-policy.md`, `auth.json`, `auth-key.json`), and generated state under `state/`
-(`sessions/`, `traces/`, `workflows/` [records], `code.json`) and `cache/` (`models-dev.json`)
+(`sessions/`, `traces/`, `workflows/` [records], `code.json`, private remote-MCP OAuth credentials)
+and `cache/` (`models-dev.json`)
 — see the table in §2.4.
 
 ### 3.3 Per-workspace machine state tree
@@ -838,6 +840,11 @@ when `release()` is called. It returns `false` and does not detach the canonical
 Production: `packages/paths/src/local-lease.ts` (`createLease`, `release`). Test:
 `packages/paths/tests/contract/local-lease.test.ts` ("a holder that loses its lease on a heartbeat
 says so, and names the phase").
+
+**PATHS-F.** Remote MCP registrations and tokens are machine state, not operator-authored settings:
+`globalPaths(root).mcpOAuthFile` is always `<global>/state/mcp-oauth.json`. Production:
+`packages/paths/src/global.ts:21-37,105-118`. Test:
+`packages/paths/tests/component/paths.test.ts:66`.
 
 ## 6. Failure modes and degradation
 

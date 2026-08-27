@@ -67,7 +67,7 @@ returns nothing); only the three constants re-exported through `packages/tasks/s
 
 | Field | Type | Meaning |
 |---|---|---|
-| `resolver` | `TaskProviderResolver?` | the settings-sensitive selector; the kernel constructs `TaskProviderFactory` at `packages/kernel/src/file-kernel.ts:741-748` and passes it at `:789` |
+| `resolver` | `TaskProviderResolver?` | the settings-sensitive selector; the kernel constructs `TaskProviderFactory` at `packages/kernel/src/file-kernel.ts:749-756` and passes it at `:789` |
 | `enabled` | `boolean?` | "Builtin gate. The capability remains registered when false." (`packages/tasks/src/capability.ts:255`) |
 | `logger` | `Logger?` | resolved once to `NOOP_LOGGER` and bound with the run's `execution_id` (`packages/tasks/src/capability.ts:1483`, `:1492`) |
 
@@ -796,7 +796,7 @@ array copies: `taskRefFromDto` (`:22`), `taskRefDto` (`:26`), `taskActorDto` (`:
 ### 4.13 Host composition
 
 `createFileKernel` computes `tasksEnabled = opts.builtins?.tasks !== false`
-(`packages/kernel/src/file-kernel.ts:690`), then, in order: builds the server port over the shared MCP
+(`packages/kernel/src/file-kernel.ts:698`), then, in order: builds the server port over the shared MCP
 `connections` (`:830-832`), builds the factory with the config store, that port, plugin contributions,
 the environment and the `tasks` component logger (`:835-842`), reports the capability (`:876`), and
 folds `createTasksCapability({ resolver: taskProviderFactory, enabled: tasksEnabled, logger:

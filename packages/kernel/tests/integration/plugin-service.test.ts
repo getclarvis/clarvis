@@ -136,6 +136,36 @@ describe("PluginService", () => {
     });
   });
 
+  it("list: serves every direct skill from an exhaustive grouped declaration", async () => {
+    const skills = [
+      "engineering/alpha",
+      "engineering/beta",
+      "engineering/gamma",
+      "productivity/delta",
+      "productivity/epsilon",
+      "productivity/zeta",
+    ];
+    const plugin = writePlugin(workspace, "grouped", {
+      name: "grouped",
+      skills: skills.map((skill) => `./skills/${skill}`),
+    });
+    for (const skill of skills) {
+      const dir = join(plugin, "skills", skill);
+      const name = skill.split("/").at(-1)!;
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "SKILL.md"), `---\nname: ${name}\ndescription: ${name}\n---\n`);
+    }
+
+    expect((await svc().list())[0]!.contributions.skills).toEqual([
+      "alpha",
+      "beta",
+      "delta",
+      "epsilon",
+      "gamma",
+      "zeta",
+    ]);
+  });
+
   it("projects every capability executable in sorted capability order", async () => {
     writePlugin(workspace, "services", {
       name: "services",

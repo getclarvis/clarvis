@@ -5,6 +5,10 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import {
+  UnauthorizedError,
+  type OAuthClientProvider,
+} from "@modelcontextprotocol/sdk/client/auth.js";
 import { ElicitRequestSchema, type ElicitResult } from "@modelcontextprotocol/sdk/types.js";
 import type { FetchLike, Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { NOOP_LOGGER, bind, resolveStringMap } from "@clarvis/capability";
@@ -12,16 +16,22 @@ import type { Logger, McpServerConfig } from "@clarvis/capability";
 import { CLIENT_NAME, VERSION } from "./version.ts";
 import { BunStdioClientTransport } from "./bun-stdio-client.ts";
 import { createMCPBoundedFetch } from "./bounded-fetch.ts";
+import { createMCPRemoteFetch } from "./remote-fetch.ts";
 import {
   createServerStderrForwarder,
   drainStderrStream,
   type ServerStderrSink,
 } from "./server-stderr.ts";
+import type {
+  MCPAuthorizationCoordinator,
+  MCPAuthorizationSession,
+  OAuthFinishingTransport,
+} from "./oauth.ts";
+import type { PoolScope } from "./connection.ts";
 
 /**
- * A host's answer to a server-initiated elicitation: whether the user
- * `accept`ed, `decline`d or `cancel`ed, and the collected `content` when
- * accepted. Shaped to the MCP `ElicitResult`.
+ * A host's answer to a server-initiated elicitation: the user's action and any
+ * collected `content`, shaped to the MCP `ElicitResult`.
  */
 export interface ElicitationRelayResult {
   action: "accept" | "decline" | "cancel";
@@ -56,11 +66,16 @@ export interface MCPClientHandle {
   protocolVersion?: string;
 }
 
-/** Connect-time tuning: an abort `signal` and a `timeoutMs` bound on the initial
- * handshake. */
+/** Connect-time tuning, identity, and human-authorization timeout controls. */
 export interface MCPConnectOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Owner/workspace boundary used to isolate persistent remote OAuth credentials. */
+  scope?: PoolScope;
+  /** Pauses the caller's connect budget while a person authorizes in a browser. */
+  onAuthorizationWaitStart?: () => void;
+  /** Resumes that budget after the browser wait, on success or failure. */
+  onAuthorizationWaitEnd?: () => void;
 }
 
 /**
@@ -127,6 +142,27 @@ export interface MCPClientFactoryOptions {
    *   host passes the one logger it already has.
    */
   logger?: Logger;
+  /** Persistent interactive authorization for remote HTTP/SSE servers. */
+  authorization?: MCPAuthorizationCoordinator;
+}
+
+interface BuiltClient {
+  client: Client;
+  transport: Transport;
+  handle: MCPClientHandle;
+}
+
+function finishingTransport(transport: Transport): OAuthFinishingTransport | undefined {
+  const candidate = transport as Transport & Partial<OAuthFinishingTransport>;
+  return typeof candidate.finishAuth === "function"
+    ? (candidate as OAuthFinishingTransport)
+    : undefined;
+}
+
+async function closeFailedClient(client: Client): Promise<void> {
+  try {
+    await client.close();
+  } catch {}
 }
 
 /**
@@ -147,53 +183,126 @@ export function createMCPClientFactory(
   const root = options?.logger ?? NOOP_LOGGER;
   return async (server, relay, opts) => {
     const logger = bind(root, { mcp: server.name, transport: server.transport });
-    const client = new Client(
-      { name: CLIENT_NAME, version: VERSION },
-      { capabilities: relay ? { elicitation: {} } : {} },
-    );
+    const buildClient = (authProvider?: OAuthClientProvider): BuiltClient => {
+      const client = new Client(
+        { name: CLIENT_NAME, version: VERSION },
+        { capabilities: relay ? { elicitation: {} } : {} },
+      );
 
-    if (relay) {
-      client.setRequestHandler(ElicitRequestSchema, async (request, extra) => {
-        const result = await relay.handle(request.params, extra.signal);
-        return result as unknown as ElicitResult;
+      if (relay) {
+        client.setRequestHandler(ElicitRequestSchema, async (request, extra) => {
+          const result = await relay.handle(request.params, extra.signal);
+          return result as unknown as ElicitResult;
+        });
+      }
+
+      const transport: Transport = buildTransport(server, environment, options?.defaultCwd, {
+        ...(options?.maxStdioFrameBytes !== undefined
+          ? { maxStdioFrameBytes: options.maxStdioFrameBytes }
+          : {}),
+        ...(options?.maxHttpResponseBytes !== undefined
+          ? { maxHttpResponseBytes: options.maxHttpResponseBytes }
+          : {}),
+        ...(options?.maxHttpSseEventBytes !== undefined
+          ? { maxHttpSseEventBytes: options.maxHttpSseEventBytes }
+          : {}),
+        ...(options?.onServerStderr !== undefined
+          ? { onServerStderr: options.onServerStderr }
+          : {}),
+        ...(options?.maxServerStderrBytes !== undefined
+          ? { maxServerStderrBytes: options.maxServerStderrBytes }
+          : {}),
+        ...(authProvider === undefined ? {} : { authProvider }),
+        logger,
       });
+      let protocolVersion: string | undefined;
+      const reported = transport.setProtocolVersion?.bind(transport);
+      transport.setProtocolVersion = (version: string): void => {
+        protocolVersion = version;
+        reported?.(version);
+      };
+      const handle: MCPClientHandle = {
+        client,
+        close: async () => {
+          await client.close();
+        },
+        get protocolVersion(): string | undefined {
+          return protocolVersion;
+        },
+      };
+      return { client, transport, handle };
+    };
+    const connectBuilt = async (built: BuiltClient): Promise<MCPClientHandle> => {
+      await built.client.connect(built.transport, {
+        ...(opts?.signal ? { signal: opts.signal } : {}),
+        ...(opts?.timeoutMs !== undefined ? { timeout: opts.timeoutMs } : {}),
+      });
+      return built.handle;
+    };
+    const connectOnce = async (
+      authProvider?: OAuthClientProvider,
+      boundary?: AuthorizationBoundary,
+    ): Promise<MCPClientHandle> => {
+      const built = buildClient(authProvider);
+      if (authorization !== undefined && boundary !== undefined) {
+        attachAuthorization(built, authorization, boundary);
+      }
+      try {
+        return await connectBuilt(built);
+      } catch (error) {
+        await closeFailedClient(built.client);
+        throw error;
+      }
+    };
+
+    const authorization = options?.authorization;
+    if (authorization === undefined || server.transport === "stdio" || server.url === undefined) {
+      return connectOnce();
+    }
+    if (opts?.scope === undefined) {
+      throw new Error(`server '${server.name}': remote OAuth requires a connection scope`);
     }
 
-    const transport: Transport = buildTransport(server, environment, options?.defaultCwd, {
-      ...(options?.maxStdioFrameBytes !== undefined
-        ? { maxStdioFrameBytes: options.maxStdioFrameBytes }
-        : {}),
-      ...(options?.maxHttpResponseBytes !== undefined
-        ? { maxHttpResponseBytes: options.maxHttpResponseBytes }
-        : {}),
-      ...(options?.maxHttpSseEventBytes !== undefined
-        ? { maxHttpSseEventBytes: options.maxHttpSseEventBytes }
-        : {}),
-      ...(options?.onServerStderr !== undefined ? { onServerStderr: options.onServerStderr } : {}),
-      ...(options?.maxServerStderrBytes !== undefined
-        ? { maxServerStderrBytes: options.maxServerStderrBytes }
-        : {}),
-      logger,
-    });
-    let protocolVersion: string | undefined;
-    const reported = transport.setProtocolVersion?.bind(transport);
-    transport.setProtocolVersion = (version: string): void => {
-      protocolVersion = version;
-      reported?.(version);
-    };
-    await client.connect(transport, {
-      ...(opts?.signal ? { signal: opts.signal } : {}),
-      ...(opts?.timeoutMs !== undefined ? { timeout: opts.timeoutMs } : {}),
-    });
-    return {
-      client,
-      close: async () => {
-        await client.close();
+    const key = authorization.key(opts.scope, server.url);
+    return authorization.runExclusive(
+      key,
+      opts.signal,
+      opts.onAuthorizationWaitStart,
+      opts.onAuthorizationWaitEnd,
+      async (): Promise<MCPClientHandle> => {
+        const session: MCPAuthorizationSession = await authorization.session(
+          opts.scope!,
+          server.url!,
+        );
+        const boundary: AuthorizationBoundary = [session, key, server.name];
+        const first = buildClient(session.provider);
+        attachAuthorization(first, authorization, boundary);
+        try {
+          return await connectBuilt(first);
+        } catch (error) {
+          if (!(error instanceof UnauthorizedError)) {
+            await closeFailedClient(first.client);
+            throw error;
+          }
+
+          const finisher = finishingTransport(first.transport);
+          if (finisher === undefined) {
+            await closeFailedClient(first.client);
+            throw new Error(`server '${server.name}': remote transport cannot finish OAuth`, {
+              cause: error,
+            });
+          }
+          opts.onAuthorizationWaitStart?.();
+          try {
+            await session.finishAuthorization(finisher, opts.signal);
+          } finally {
+            opts.onAuthorizationWaitEnd?.();
+            await closeFailedClient(first.client);
+          }
+          return connectOnce(session.provider, boundary);
+        }
       },
-      get protocolVersion(): string | undefined {
-        return protocolVersion;
-      },
-    };
+    );
   };
 }
 
@@ -227,9 +336,10 @@ export function createMCPClientFactory(
  * the user's shell must now name it in `env` (`"${MY_TOKEN}"` still interpolates
  * from `environment`, so the value need not be duplicated).
  *
- * For http/sse, interpolated `headers` are merged both into `requestInit` and a
- * wrapping `fetch`, so the credentials survive the SDK's own request
- * construction. `${VAR}` references in `env` and `headers` resolve against
+ * For http/sse, interpolated `headers` are injected by the wrapping `fetch`
+ * only for MCP resource requests on the configured origin. OAuth discovery,
+ * registration, and token requests do not inherit them, and an SDK-defined
+ * header always wins. `${VAR}` references in `env` and `headers` resolve against
  * `environment` and throw {@link MissingEnvVarsError} when unset.
  */
 export function buildTransport(
@@ -243,6 +353,7 @@ export function buildTransport(
     onServerStderr?: ServerStderrSink;
     maxServerStderrBytes?: number;
     logger?: Logger;
+    authProvider?: OAuthClientProvider;
   } = {},
 ):
   | BunStdioClientTransport
@@ -302,10 +413,15 @@ export function buildTransport(
   }
   const url = new URL(server.url);
   const headers = server.headers ? resolveStringMap(server.headers, environment) : undefined;
+  const remoteFetch = createMCPRemoteFetch({
+    resourceUrl: url,
+    authorization: limits.authProvider !== undefined,
+    ...(headers ? { headers } : {}),
+  });
   const boundedFetch: FetchLike = createMCPBoundedFetch({
     mcpName: server.name,
+    fetch: remoteFetch,
     ...(limits.logger !== undefined ? { logger: limits.logger } : {}),
-    ...(headers ? { headers } : {}),
     ...(limits.maxHttpResponseBytes !== undefined
       ? { maxResponseBytes: limits.maxHttpResponseBytes }
       : {}),
@@ -313,11 +429,90 @@ export function buildTransport(
       ? { maxSseEventBytes: limits.maxHttpSseEventBytes }
       : {}),
   });
-  const opts: { requestInit?: { headers: Record<string, string> }; fetch: FetchLike } = {
-    ...(headers ? { requestInit: { headers } } : {}),
+  const opts: { fetch: FetchLike; authProvider?: OAuthClientProvider } = {
     fetch: boundedFetch,
+    ...(limits.authProvider === undefined ? {} : { authProvider: limits.authProvider }),
   };
   return server.transport === "http"
     ? new StreamableHTTPClientTransport(url, opts)
     : new SSEClientTransport(url, opts);
+}
+
+type AuthorizationBoundary = readonly [
+  session: MCPAuthorizationSession,
+  key: string,
+  serverName: string,
+];
+type AuthorizedRequest = <T>(request: () => Promise<T>, signal?: AbortSignal) => Promise<T>;
+
+const authorizedRequests = new WeakMap<MCPClientHandle, AuthorizedRequest>();
+
+/** Run an SDK request through a production handle's late-authorization boundary. */
+export function runMCPRequest<T>(
+  handle: MCPClientHandle,
+  request: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  return authorizedRequests.get(handle)?.(request, signal) ?? request();
+}
+
+function authorizationAbort(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException("MCP OAuth authorization was cancelled.", "AbortError");
+}
+
+function waitForAuthorization(
+  promise: Promise<void>,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  if (signal === undefined) return promise;
+  if (signal.aborted) return Promise.reject(authorizationAbort(signal));
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = (): void => reject(authorizationAbort(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      () => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+function attachAuthorization(
+  built: BuiltClient,
+  authorization: MCPAuthorizationCoordinator,
+  [session, key, serverName]: AuthorizationBoundary,
+): void {
+  let finishing: Promise<void> | undefined;
+  authorizedRequests.set(
+    built.handle,
+    async <T>(request: () => Promise<T>, signal?: AbortSignal) => {
+      try {
+        return await request();
+      } catch (error) {
+        if (!(error instanceof UnauthorizedError)) throw error;
+        const finisher = finishingTransport(built.transport);
+        if (finisher === undefined) {
+          throw new Error(`server '${serverName}': remote transport cannot finish OAuth`, {
+            cause: error,
+          });
+        }
+        finishing ??= authorization
+          .runExclusive(key, signal, undefined, undefined, () =>
+            session.finishAuthorization(finisher, signal),
+          )
+          .finally(() => {
+            finishing = undefined;
+          });
+        await waitForAuthorization(finishing, signal);
+        return request();
+      }
+    },
+  );
 }

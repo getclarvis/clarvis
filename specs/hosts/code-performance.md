@@ -81,7 +81,7 @@ misreported as a header paint.
 | efficiency advisory | 512 MiB absolute RSS, 256 MiB growth from baseline and 64 MiB rise over 20 samples; records evidence but does not abort or collect | `packages/code/src/adapters/memory-pressure.ts` (`MEMORY_EFFICIENCY_*`, `publish`) |
 
 The fuse samples only the TUI process. It does not account for external MCP servers, shell children
-or other process trees (`packages/code/README.md:135-150`).
+or other process trees (`packages/code/README.md:143-158`).
 
 ### 2.3 Resident collection ceilings
 
@@ -124,12 +124,12 @@ Interactive `--debug` writes versioned, redacted JSONL. Performance-relevant eve
 
 | Event | Relevant details | Source |
 | --- | --- | --- |
-| `app.boot.begin` | mode and workspace | `packages/code/src/index.tsx:420-430` |
+| `app.boot.begin` | mode and workspace | `packages/code/src/index.tsx:426-436` |
 | `async.started` / `async.settled` | operation, duration, outcome and sampled count | `packages/code/src/core/diagnostic-events.ts:125-170` |
-| `markdown.preload.completed|failed` | parser preload outcome | `packages/code/src/index.tsx:439-452` |
+| `markdown.preload.completed|failed` | parser preload outcome | `packages/code/src/index.tsx:445-458` |
 | `app.boot.shell-painted` | process uptime after the minimal parser-free shell reaches renderer idle | `packages/code/src/index.tsx` (`app.boot.shell-painted`) |
-| `app.render.mounted` | mode | `packages/code/src/index.tsx:1284-1300` |
-| `app.boot.painted` | process uptime, mode and whether the catalog signal is still empty | `packages/code/src/index.tsx:1300-1308` |
+| `app.render.mounted` | mode | `packages/code/src/index.tsx:1291-1307` |
+| `app.boot.painted` | process uptime, mode and whether the catalog signal is still empty | `packages/code/src/index.tsx:1307-1315` |
 | `catalog.load.started` | the catalog-dependent surface that crossed the lazy boundary | `packages/code/src/index.tsx` (`ensureModelsCatalog`) |
 | `memory.sample` | phase, RSS, heap, external, array buffers and limit | `packages/code/src/adapters/memory-pressure.ts:169-182` |
 | `memory.phase` | previous phase, next phase, RSS and limit | `packages/code/src/adapters/memory-pressure.ts:183-188` |
@@ -198,7 +198,7 @@ cold route and explicit recheck.
 The distributable build enables splitting, keeps OpenTUI package-owned, keeps provider adapters
 behind generated dynamic chunks, and moves development source maps away from runtime JavaScript
 (`packages/code/tooling/artifact/build.ts:20-35`, `:110-135`). These choices reduced the recorded idle Linux
-baseline from roughly 237 MB to 171 MB (`packages/code/README.md:647-655`).
+baseline from roughly 237 MB to 171 MB (`packages/code/README.md:655-663`).
 
 The installed build goes further: `build:install` emits no source maps before the package is linked.
 This keeps offline diagnostic maps in developer/root builds without distributing them through the
@@ -481,7 +481,7 @@ tree.
 | RSS reaches configured limit | cancel, detach after grace if required, block new work and offer recovery | `packages/code/src/adapters/memory-pressure.ts:193-229` |
 | overlay soak child starves or grows past its process budget | parent watchdog kills it and fails with the case name and limit | `packages/code/tooling/benchmarks/overlays.tsx` (`runParent`) |
 | interactive event loop is starved outside the soak | in-process sampler may not run; host/process-tree monitoring is still required | `specs/known-issues.md` (reactive microtask starvation) |
-| external MCP/shell process grows | TUI self-RSS fuse does not observe it | `packages/code/README.md:141-143` |
+| external MCP/shell process grows | TUI self-RSS fuse does not observe it | `packages/code/README.md:149-151` |
 
 ## 7. Coupling
 
@@ -995,7 +995,7 @@ The reusable lifecycle and GC decisions were checked against upstream documentat
   leak workaround.
 
 The syntax-surface handoff was checked again against the upstream OpenTUI documentation and source
-through Context7 on 2026-08-25:
+through a version-aware documentation index on 2026-08-25:
 
 - [Markdown](https://github.com/anomalyco/opentui/blob/main/packages/web/src/content/docs/components/markdown.mdx)
   defines `streaming` for incremental content and `internalBlockMode="top-level"` for incremental

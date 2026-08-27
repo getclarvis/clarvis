@@ -69,7 +69,7 @@ async function refusal(command: string[], environment: Record<string, string>): 
     new Response(child.stderr).text(),
   ]);
   if (code === 0) throw new Error("installer command unexpectedly succeeded");
-  return stdout + stderr;
+  return normalizeInstallerOutput(stdout + stderr);
 }
 
 function withoutAnsiCsi(value: string): string {
@@ -89,12 +89,16 @@ function withoutAnsiCsi(value: string): string {
   return result;
 }
 
-/** Match semantic installer output even when PowerShell styles and wraps a long error. */
-export function installerOutputIncludes(output: string, expected: string): boolean {
+/** Normalize semantic installer output when PowerShell styles and wraps a long error. */
+export function normalizeInstallerOutput(output: string): string {
   return withoutAnsiCsi(output)
     .replace(/\r?\n\s*\|\s*/g, " ")
-    .replace(/\s+/g, " ")
-    .includes(expected);
+    .replace(/\s+/g, " ");
+}
+
+/** Match semantic installer output even when PowerShell styles and wraps a long error. */
+export function installerOutputIncludes(output: string, expected: string): boolean {
+  return normalizeInstallerOutput(output).includes(expected);
 }
 
 function assertVisibleProgress(output: string): void {

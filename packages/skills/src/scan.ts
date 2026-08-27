@@ -56,17 +56,17 @@ export interface SkillDirEntry {
 }
 
 /**
- * List the directories under {@link root} that contain a `SKILL.md`, sorted by
+ * List the skill at {@link root}, or the skill directories below it, sorted by
  * directory path for deterministic ordering.
  *
- * Descends through directories that hold no skill of their own, so a root that
- * groups its skills — `roles/architect/SKILL.md` — is read as well as one that
- * lists them flat. A directory that *does* hold a `SKILL.md` is a skill, and its
- * own subtree is never descended into: everything under it is that skill's
- * resources, and a `SKILL.md` bundled among them is an example, not a second
- * skill. Depth below the root is bounded by {@link MAX_SKILL_NESTING} and the
- * number of directories visited by {@link MAX_SKILL_GROUP_DIRECTORIES}.
- * Unreadable directories yield nothing rather than throwing.
+ * A root that holds `SKILL.md` is one directly named skill. Otherwise discovery
+ * descends through grouping directories, so `roles/architect/SKILL.md` is read
+ * as well as a flat layout. Once any directory is a skill, its subtree is never
+ * descended into: everything under it is that skill's resources, and a bundled
+ * `SKILL.md` is an example rather than a second skill. Depth below the root is
+ * bounded by {@link MAX_SKILL_NESTING} and the number of directories visited by
+ * {@link MAX_SKILL_GROUP_DIRECTORIES}. Unreadable directories yield nothing
+ * rather than throwing.
  *
  * @param root - the root directory to scan.
  * @param followSymlinks - when true, symlinked child dirs and symlinked skill
@@ -81,6 +81,9 @@ export function listSkillDirs(
   diagnostics: SkillDiagnostics = DEFAULT_DIAGNOSTICS,
   maximumSkills = MAX_SKILLS_PER_ROOT + 1,
 ): SkillDirEntry[] {
+  const rootFile = findSkillFile(root, followSymlinks, diagnostics);
+  if (rootFile !== undefined) return [{ dir: root, file: rootFile }];
+
   const out: SkillDirEntry[] = [];
   const pending: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }];
   let head = 0;

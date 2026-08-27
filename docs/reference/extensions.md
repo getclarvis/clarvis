@@ -134,18 +134,18 @@ Clarvis first uses `.clarvis-plugin/plugin.json` when it exists. Otherwise it ex
 manifest with the most supported contribution directives, and uses root-then-name order to break a
 tie. Manifests are never merged.
 
-| Field                   | Type                                            | Purpose                                                    |
-| ----------------------- | ----------------------------------------------- | ---------------------------------------------------------- |
-| `name`                  | Lowercase identifier                            | Plugin identity and namespace                              |
-| `version`               | Semantic version string                         | Optional display version                                   |
-| `description`           | Non-empty string                                | Optional summary                                           |
-| `author`                | String or `{ "name": "..." }`                   | Optional author display                                    |
-| `skills`                | Relative directory or directory array           | Up to four plugin skill roots                              |
-| `mcpServers`            | MCP server map or relative document path        | Plugin-provided servers                                    |
-| `hooks`                 | Hook array, document, or relative document path | Plugin-provided hooks                                      |
-| `bootstrapSkill`        | Skill name                                      | Injects one plugin-owned methodology skill before response |
-| `capabilityExecutables` | Capability-to-executable map                    | Optional persistent capability services                    |
-| `capabilityRunPolicies` | Plans skill-policy map                          | `off`, `on`, or `review` for plugin skill runs             |
+| Field                   | Type                                            | Purpose                                                      |
+| ----------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| `name`                  | Lowercase identifier                            | Plugin identity and namespace                                |
+| `version`               | Semantic version string                         | Optional display version                                     |
+| `description`           | Non-empty string                                | Optional summary                                             |
+| `author`                | String or `{ "name": "..." }`                   | Optional author display                                      |
+| `skills`                | Relative directory or directory array           | Collections or individual skills; up to four effective roots |
+| `mcpServers`            | MCP server map or relative document path        | Plugin-provided servers                                      |
+| `hooks`                 | Hook array, document, or relative document path | Plugin-provided hooks                                        |
+| `bootstrapSkill`        | Skill name                                      | Injects one plugin-owned methodology skill before response   |
+| `capabilityExecutables` | Capability-to-executable map                    | Optional persistent capability services                      |
+| `capabilityRunPolicies` | Plans skill-policy map                          | `off`, `on`, or `review` for plugin skill runs               |
 
 Relative paths resolve from the selected manifest's directory first and remain confined to the
 plugin root. Conventional contribution directories are `agents/` and `skills/`. If `mcpServers` is

@@ -33,6 +33,11 @@ Roots are merged in the order supplied. When two roots contain the same skill
 name, the last root wins and the losing definitions are recorded in the winner's
 `shadowed` metadata.
 
+A root may be either a collection of skill directories or one skill directory
+that directly contains `SKILL.md`. Discovery stops at the first skill boundary,
+so files below that directory remain resources rather than becoming nested
+skills.
+
 ## Usage
 
 ```ts

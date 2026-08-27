@@ -246,6 +246,36 @@ describe("foreign manifest fields", () => {
     expect(notes.join(" ")).toContain("only the first 4 of 6");
   });
 
+  it("compacts exhaustive direct-skill siblings before applying the root budget", () => {
+    const declared = [
+      "./skills/engineering/alpha",
+      "./skills/engineering/beta",
+      "./skills/engineering/gamma",
+      "./skills/productivity/delta",
+      "./skills/productivity/epsilon",
+      "./skills/productivity/zeta",
+    ];
+    for (const skill of declared) write(`${skill}/SKILL.md`, "skill");
+
+    expect(pluginSkillRoots(root, declared)).toEqual({
+      roots: [join(root, "skills", "engineering"), join(root, "skills", "productivity")],
+      notes: [],
+    });
+  });
+
+  it("does not compact a group when that would admit an undeclared sibling", () => {
+    const declared = ["alpha", "beta", "gamma", "delta", "epsilon"].map(
+      (skill) => `./skills/${skill}`,
+    );
+    for (const skill of [...declared, "./skills/private"]) write(`${skill}/SKILL.md`, "skill");
+
+    const { roots, notes } = pluginSkillRoots(root, declared);
+    expect(roots).toEqual(
+      ["alpha", "beta", "gamma", "delta"].map((skill) => join(root, "skills", skill)),
+    );
+    expect(notes.join(" ")).toContain("only the first 4 of 5 effective locations");
+  });
+
   it("de-duplicates two declarations that name the same directory", () => {
     expect(pluginSkillRoots(root, ["./mine", "mine/"]).roots).toEqual([join(root, "mine")]);
   });

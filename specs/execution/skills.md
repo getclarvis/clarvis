@@ -365,21 +365,30 @@ matters here is only that they arrive as `SkillRootInput[]` with `source: "plugi
 
 ### 4.3 Scanning one root (`listSkillDirs`)
 
-A breadth-first walk with an explicit queue (`packages/skills/src/scan.ts:85`–`:117`):
+Discovery first checks the root itself, then uses a breadth-first queue only for a collection root
+(`listSkillDirs` in `packages/skills/src/scan.ts`):
 
-| Step | Rule | Line |
+| Step | Rule | Evidence |
 | --- | --- | --- |
-| list a directory | streamed, at most `MAX_SKILL_DIRECTORY_ENTRIES`; on overflow the **whole directory** yields nothing | `:87`, `:430`–`:452` |
-| entry is a directory? | real dir always; symlink only when `followSymlinks` and its target is a dir | `:520`–`:529` |
-| probe budget | every probed child increments; past `MAX_SKILL_GROUP_DIRECTORIES` the scan warns and returns what it has | `:92`–`:101` |
-| directory holds a `SKILL.md`? | it is a skill; **never descended into** | `:102`–`:107` |
-| otherwise | queued at `depth+1`, only while `depth+1 < MAX_SKILL_NESTING` | `:108` |
-| early stop | returns as soon as `out.length >= maximumSkills` | `:105` |
-| ordering | final `sort` by `dir` path (a **path** sort, not a basename sort) | `:81` |
+| root holds a `SKILL.md`? | return the root as the only skill and do not inspect its resource subtree | `listSkillDirs` before queue construction |
+| list a directory | streamed, at most `MAX_SKILL_DIRECTORY_ENTRIES`; on overflow the **whole directory** yields nothing | `readDirectoryBounded` |
+| entry is a directory? | real dir always; symlink only when `followSymlinks` and its target is a dir | `isDirEntry` |
+| probe budget | every probed child increments; past `MAX_SKILL_GROUP_DIRECTORIES` the scan warns and returns what it has | `listSkillDirs` |
+| directory holds a `SKILL.md`? | it is a skill; **never descended into** | `findSkillFile` branch in `listSkillDirs` |
+| otherwise | queued at `depth+1`, only while `depth+1 < MAX_SKILL_NESTING` | traversal queue in `listSkillDirs` |
+| early stop | returns as soon as `out.length >= maximumSkills` | skill-admission branch in `listSkillDirs` |
+| ordering | final `sort` by `dir` path (a **path** sort, not a basename sort) | local `done` closure in `listSkillDirs` |
 
-Pinned: grouping descent (`packages/skills/tests/integration/scan.test.ts:29`), multi-level
-(`:41`), the nesting bound (`:46`), "a bundled example is not a second skill" (`:51`), the width
-bound (`:57`), the `maximumSkills` early stop (`:66`).
+**Direct-root invariant.** A configured root that directly contains `SKILL.md` is one skill, not a
+collection, and discovery never descends into its resources.
+
+- **Production:** `listSkillDirs` calls `findSkillFile` on the root before constructing the traversal
+  queue; the same function stops below every child directory that becomes a skill.
+- **Test:** `packages/skills/tests/integration/scan.test.ts`, cases "accepts a skill directory itself
+  as a root" and "never looks inside a skill, so a bundled example is not a second skill".
+
+The remaining traversal rules are pinned in `packages/skills/tests/integration/scan.test.ts` by the
+grouping, multi-level nesting, nesting-bound, width-bound and early-stop cases.
 
 ### 4.4 Building one skill (`buildResolvedSkill`)
 

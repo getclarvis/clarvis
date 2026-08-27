@@ -293,9 +293,9 @@ The docstring notes the aggregate agent ceiling is "deliberately lower than `fil
 (`:8-9`). `@clarvis/code`'s marketplace reader keeps a separate but equal 2 MiB ceiling
 (`packages/code/src/adapters/marketplace.ts:25`).
 
-Two further budgets live in the kernel: `MAX_PLUGIN_SKILL_ROOTS = 4` per plugin
-(`packages/kernel/src/plugins/plugin-manifest.ts:115`) and `PLUGIN_SKILL_ROOT_BUDGET =
-MAX_SKILL_ROOTS - 8` = 24 across all enabled plugins
+Two further budgets live in the kernel: `MAX_PLUGIN_SKILL_ROOTS = 4` effective roots per plugin
+(`MAX_PLUGIN_SKILL_ROOTS` in `packages/kernel/src/plugins/plugin-manifest.ts`) and
+`PLUGIN_SKILL_ROOT_BUDGET = MAX_SKILL_ROOTS - 8` = 24 across all enabled plugins
 (`packages/kernel/src/plugins/plugin-contributions.ts:154`, `MAX_SKILL_ROOTS = 32` at
 `packages/skills/src/limits.ts:2`). The docstring names the blast radius: `@clarvis/skills` refuses a
 scan above its ceiling and the engine turns that refusal into an *empty* skills provider, so
@@ -304,6 +304,12 @@ overspending "does not cost the last plugin its skills, it costs the workspace a
 roots `clarvisSkillRoots` actually returns (`.agents` and `.clarvis`, user and workspace scope each,
 `packages/skills/src/preset.ts:40-45`), so that adding a host root cannot silently narrow the plugin
 budget in the same release.
+
+An authored list may contain more than four locations. `compactSkillRoots` collapses direct-skill
+siblings to their parent only when the list exhausts every real child directory and the parent has
+no symlink; otherwise the authored paths remain separate. Compaction itself refuses more than
+`PLUGIN_RESOURCE_LIMITS.skillDirectoryEntries` candidates. The cap therefore applies to effective
+scan roots without widening the declared contribution surface.
 
 ### 3.4 `install-record.json`
 
@@ -428,23 +434,31 @@ Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:954-1016` (fo
 
 ### 4.4 `skills` → skill roots — `pluginSkillRoots`
 
-`packages/kernel/src/plugins/plugin-manifest.ts:162-219`.
+`pluginSkillRoots` and `compactSkillRoots` in
+`packages/kernel/src/plugins/plugin-manifest.ts`.
 
-| Declared value | Result | Line |
+| Declared value | Result | Evidence |
 |---|---|---|
-| absent | `[<dir>/skills]`, no notes | `:167-169` |
-| a string | treated as a one-element list | `:171` |
-| neither string nor array | fallback + "not a path or a list of paths" | `:172-178` |
-| a non-string / blank element | skipped + "is not a path" | `:183-187` |
-| ends in `.md` (case-insensitive) | skipped + "names a file" | `:188-193` |
-| escapes the plugin | skipped + "resolves outside the plugin" | `:195-199` |
-| duplicate of an earlier root | silently de-duplicated | `:200` |
-| more than 4 roots survive | truncated to 4 + "only the first 4 of N" | `:203-209` |
-| nothing survived | fallback + "nothing declared could be scanned" | `:211-218` |
+| absent | `[<dir>/skills]`, no notes | fallback branch in `pluginSkillRoots` |
+| a string | treated as a one-element list | declaration normalization in `pluginSkillRoots` |
+| neither string nor array | fallback + "not a path or a list of paths" | invalid-declaration branch |
+| a non-string / blank element | skipped + "is not a path" | element validation loop |
+| ends in `.md` (case-insensitive) | skipped + "names a file" | file-declaration branch |
+| escapes the plugin | skipped + "resolves outside the plugin" | `companionPath` result branch |
+| duplicate of an earlier root | silently de-duplicated | resolved-root insertion branch |
+| a location directly contains `SKILL.md` | accepted as one individual skill root | `pluginSkillRoots` + `listSkillDirs` |
+| exhaustive direct-skill siblings | compacted to their parent only when no undeclared directory or symlink can become visible | `compactSkillRoots` |
+| more than 4 effective roots survive | truncated to 4 + "only the first 4 of N" | `pluginSkillRoots` after compaction |
+| nothing survived | fallback + "nothing declared could be scanned" | final fallback branch |
 
-Every row is pinned in `packages/kernel/tests/integration/plugin-manifest.test.ts:143-208`. The default location produces
-**no note at all** (`:150-153`), and so does a location the manifest names that is not the default
-(`:143-148`).
+The scalar, invalid, confinement, duplicate, fallback and cap rows are pinned by their named cases
+under "foreign manifest fields" in
+`packages/kernel/tests/integration/plugin-manifest.test.ts`. Exact compaction is pinned by
+"compacts exhaustive direct-skill siblings before applying the root budget"; refusal to widen is
+pinned by "does not compact a group when that would admit an undeclared sibling". End-to-end plugin
+presentation is pinned by `packages/kernel/tests/integration/plugin-service.test.ts`, case "list:
+serves every direct skill from an exhaustive grouped declaration". The default and a usable custom
+location produce no note.
 
 ### 4.5 `mcpServers` — path inlining and per-entry sanitizing
 
@@ -987,11 +1001,16 @@ All of the following are derived directly from this document's own source and te
     (`packages/kernel/src/plugins/plugin-manifest.ts:167-178`, `:211-218`). Pinned:
     `packages/kernel/tests/integration/plugin-manifest.test.ts:184-250`.
 
-22. **A plugin contributes at most 4 skill roots, and all enabled plugins at most 24.**
-    `MAX_PLUGIN_SKILL_ROOTS` (`packages/kernel/src/plugins/plugin-manifest.ts:120`) and `PLUGIN_SKILL_ROOT_BUDGET`
-    (`packages/kernel/src/plugins/plugin-contributions.ts:154`). The per-plugin cap is pinned at
-    `packages/kernel/tests/integration/plugin-manifest.test.ts:207-213` ("caps how many locations one
-    plugin may contribute, and says it did"); the shared budget is **unpinned**.
+22. **A plugin contributes at most 4 effective skill roots, and all enabled plugins at most 24. A
+    direct-skill list may be compacted only when the parent scan is exactly equivalent to the
+    declarations.**
+    **Production:** `MAX_PLUGIN_SKILL_ROOTS`, `compactSkillRoots` and `isExactSiblingSkillGroup` in
+    `packages/kernel/src/plugins/plugin-manifest.ts`, plus `PLUGIN_SKILL_ROOT_BUDGET` in
+    `packages/kernel/src/plugins/plugin-contributions.ts`. **Test:** the plugin-manifest cases "caps
+    how many locations one plugin may contribute", "compacts exhaustive direct-skill siblings" and
+    "does not compact a group when that would admit an undeclared sibling"; the shared budget is
+    pinned by `packages/kernel/tests/integration/plugin-contributions.test.ts`, case "bounds plugin
+    skill roots and projects an optional bootstrap skill".
 
 23. **Presentation metadata is display data only and never widens what a plugin may do.**
     `PluginPresentation`'s docstring (`packages/kernel/src/plugins/plugin-manifest.ts:440-449`); the same statement is repeated on

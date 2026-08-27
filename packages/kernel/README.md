@@ -201,6 +201,11 @@ document from another host starts a command with `./` or `.\`, the dialect adapt
 executable to the plugin's install root; the hook process still runs with the workspace as its
 working directory.
 
+A manifest's `skills` locations may name collection directories or individual skill directories.
+Before enforcing the four-effective-root limit, the kernel collapses an exhaustive list of direct
+siblings to its parent collection only when no undeclared directory or symlink could become visible.
+The shared 24-root plugin budget remains unchanged.
+
 Plugins may also package a per-skill Plans mode. The kernel applies it only when the skill originates
 from the enabled plugin and that plugin is the selected Plans provider; explicit run parameters take
 precedence. This lets authoring skills run with Plans off and implementation skills enter review

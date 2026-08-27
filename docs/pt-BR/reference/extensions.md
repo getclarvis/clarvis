@@ -143,7 +143,7 @@ desempatar. Manifestos nunca são combinados.
 | `version`               | String de versão semântica                    | Versão opcional para exibição                              |
 | `description`           | String não vazia                              | Resumo opcional                                            |
 | `author`                | String ou `{ "name": "..." }`                 | Autor opcional para exibição                               |
-| `skills`                | Diretório relativo ou array de diretórios     | Até quatro raízes de skills do plugin                      |
+| `skills`                | Diretório relativo ou array de diretórios     | Coleções ou skills individuais; até quatro raízes efetivas |
 | `mcpServers`            | Mapa MCP ou caminho relativo para documento   | Servidores fornecidos pelo plugin                          |
 | `hooks`                 | Array, documento ou caminho relativo de hooks | Hooks fornecidos pelo plugin                               |
 | `bootstrapSkill`        | Nome de skill                                 | Injeta uma skill metodológica do plugin antes da resposta  |

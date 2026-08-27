@@ -105,23 +105,22 @@ const MCP_CONVENTION_FILES = [".mcp.json", "mcp.json"] as const;
 const DEFAULT_SKILLS_DIR = "skills";
 
 /**
- * How many skill roots one plugin may contribute.
+ * How many effective skill roots one plugin may contribute.
  *
  * @remarks
- * A budget rather than a layout opinion. Every root a plugin declares is a root
- * the whole run scans, and `@clarvis/skills` refuses a scan outright past its
- * own ceiling — a refusal the engine turns into an *empty* skills provider, so
- * one verbose manifest could otherwise delete every skill in the workspace, its
- * own and the operator's alike. That is the blast radius this file exists to
- * bound, so it is bounded here too; `skillRoots` bounds the sum across plugins
- * for the same reason. A plugin needing more than this many separate
- * directories is describing a layout, not a limit.
+ * A budget rather than a layout opinion. Every effective root is a root the
+ * whole run scans, and `@clarvis/skills` refuses a scan outright past its own
+ * ceiling — a refusal the engine turns into an *empty* skills provider, so one
+ * verbose manifest could otherwise delete every skill in the workspace, its own
+ * and the operator's alike. Exact sibling lists are compacted before this bound
+ * without admitting an undeclared directory; `skillRoots` bounds the sum across
+ * plugins for the same reason.
  */
 const MAX_PLUGIN_SKILL_ROOTS = 4;
 
 /** What one plugin's `skills` declaration resolved to. */
 export interface PluginSkillRoots {
-  /** Absolute directories to scan, in the order the manifest declares them. */
+  /** Absolute directories to scan, preserving first represented declaration order. */
   roots: string[];
   /** What was declared and could not be used. */
   notes: string[];
@@ -155,9 +154,11 @@ export interface PluginSkillRoots {
  * rather than followed; a declaration this host cannot act on at all leaves the
  * default in place, so a plugin is never left with nowhere to look.
  *
- * Nesting is not part of this: a root's immediate children are probed for a
- * `SKILL.md`, here as everywhere, so a plugin that buries skills a level deeper
- * without saying so still needs to say so.
+ * A location may name one skill directory directly or a collection above it.
+ * When a long list exhaustively names direct-skill siblings, the adapter can
+ * collapse those siblings to their parent before applying the effective-root
+ * budget. Any undeclared directory or symlink prevents that collapse, so
+ * compaction cannot widen the manifest's contribution surface.
  */
 export function pluginSkillRoots(
   dir: string,
@@ -200,15 +201,16 @@ export function pluginSkillRoots(
     if (!roots.includes(resolved)) roots.push(resolved);
   }
 
-  if (roots.length > MAX_PLUGIN_SKILL_ROOTS) {
+  const compacted = compactSkillRoots(roots);
+  if (compacted.length > MAX_PLUGIN_SKILL_ROOTS) {
     notes.push(
-      `skills: only the first ${String(MAX_PLUGIN_SKILL_ROOTS)} of ${String(roots.length)} ` +
-        "declared locations are scanned",
+      `skills: only the first ${String(MAX_PLUGIN_SKILL_ROOTS)} of ${String(compacted.length)} ` +
+        "effective locations are scanned",
     );
-    roots.length = MAX_PLUGIN_SKILL_ROOTS;
+    compacted.length = MAX_PLUGIN_SKILL_ROOTS;
   }
 
-  if (roots.length > 0) return { roots, notes };
+  if (compacted.length > 0) return { roots: compacted, notes };
   return {
     roots: fallback,
     notes: [
@@ -1017,4 +1019,133 @@ export function resolvePluginManifest(
     };
   }
   return { manifest: parsed.manifest, notes, ...shown };
+}
+
+/** Filename that turns a directory into one directly declared skill. */
+const SKILL_MANIFEST_FILE = "skill.md";
+
+/** Whether filesystem path identity follows Windows's case-insensitive convention. */
+const CASE_INSENSITIVE_PLUGIN_PATHS = process.platform === "win32";
+
+/** A stable comparison key for a resolved plugin path. */
+function pluginPathKey(path: string): string {
+  return CASE_INSENSITIVE_PLUGIN_PATHS ? path.toLowerCase() : path;
+}
+
+/**
+ * Whether a directory directly holds a regular `SKILL.md` under the same
+ * case-insensitive filename convention as `@clarvis/skills`.
+ */
+function isDirectSkillDirectory(dir: string): boolean {
+  let opened: ReturnType<typeof opendirSync>;
+  try {
+    opened = opendirSync(dir);
+  } catch {
+    return false;
+  }
+  let entries = 0;
+  let found = false;
+  try {
+    for (;;) {
+      const entry = opened.readSync();
+      if (entry === null) return found;
+      entries += 1;
+      if (entries > PLUGIN_RESOURCE_LIMITS.skillDirectoryEntries) return false;
+      if (entry.isFile() && entry.name.toLowerCase() === SKILL_MANIFEST_FILE) found = true;
+    }
+  } catch {
+    return false;
+  } finally {
+    try {
+      opened.closeSync();
+    } catch {
+      /* A completed/lazily failed read may already have closed the directory handle. */
+    }
+  }
+}
+
+/**
+ * Whether scanning `parent` is exactly equivalent to scanning its declared
+ * direct-skill children separately.
+ *
+ * @remarks Any undeclared directory or symlink refuses compaction. This is
+ * deliberately stricter than discovery: replacing many declarations with one
+ * root must not make another contribution visible merely because it is nearby.
+ */
+function isExactSiblingSkillGroup(parent: string, members: ReadonlySet<string>): boolean {
+  if (isDirectSkillDirectory(parent)) return false;
+  let opened: ReturnType<typeof opendirSync>;
+  try {
+    opened = opendirSync(parent);
+  } catch {
+    return false;
+  }
+  let entries = 0;
+  let directories = 0;
+  try {
+    for (;;) {
+      const entry = opened.readSync();
+      if (entry === null) return directories === members.size;
+      entries += 1;
+      if (entries > PLUGIN_RESOURCE_LIMITS.skillDirectoryEntries) return false;
+      if (entry.isSymbolicLink()) return false;
+      if (!entry.isDirectory()) continue;
+      const child = join(parent, entry.name);
+      directories += 1;
+      if (!members.has(pluginPathKey(child)) || !isDirectSkillDirectory(child)) return false;
+    }
+  } catch {
+    return false;
+  } finally {
+    try {
+      opened.closeSync();
+    } catch {
+      /* A completed/lazily failed read may already have closed the directory handle. */
+    }
+  }
+}
+
+/**
+ * Collapse exhaustive sibling lists into their parent scan root before applying
+ * the per-plugin root budget.
+ */
+function compactSkillRoots(roots: string[]): string[] {
+  if (
+    roots.length <= MAX_PLUGIN_SKILL_ROOTS ||
+    roots.length > PLUGIN_RESOURCE_LIMITS.skillDirectoryEntries
+  ) {
+    return roots;
+  }
+
+  const direct = new Map<string, boolean>();
+  const groups = new Map<string, { parent: string; roots: string[]; members: Set<string> }>();
+  for (const root of roots) {
+    const key = pluginPathKey(root);
+    const holdsSkill = direct.get(key) ?? isDirectSkillDirectory(root);
+    direct.set(key, holdsSkill);
+    if (!holdsSkill) continue;
+    const parent = dirname(root);
+    const parentKey = pluginPathKey(parent);
+    const group = groups.get(parentKey) ?? { parent, roots: [], members: new Set<string>() };
+    group.roots.push(root);
+    group.members.add(key);
+    groups.set(parentKey, group);
+  }
+
+  const replacements = new Map<string, string>();
+  for (const group of groups.values()) {
+    if (group.roots.length < 2 || !isExactSiblingSkillGroup(group.parent, group.members)) continue;
+    for (const root of group.roots) replacements.set(pluginPathKey(root), group.parent);
+  }
+
+  const compacted: string[] = [];
+  const seen = new Set<string>();
+  for (const root of roots) {
+    const effective = replacements.get(pluginPathKey(root)) ?? root;
+    const key = pluginPathKey(effective);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    compacted.push(effective);
+  }
+  return compacted;
 }

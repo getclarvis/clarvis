@@ -88,9 +88,12 @@ Para um plugin compatível com vários hosts, o Clarvis aceita um `plugin.json` 
 em diretórios com o formato `.<host>-plugin/plugin.json`. Quando existe,
 `.clarvis-plugin/plugin.json` é autoritativo. Caso contrário, o Clarvis seleciona o único manifesto
 legível que declara a superfície de contribuições compatíveis mais rica; ele nunca combina dois
-manifestos de hosts. Declare raízes de skills em `skills` como um diretório relativo ou uma lista de
-até quatro. Declare servidores MCP diretamente, indique um documento complementar em `mcpServers`
-ou omita essa chave e use `.mcp.json` ou `mcp.json` por convenção.
+manifestos de hosts. Declare locais de skills em `skills` como um diretório relativo ou uma lista.
+Cada local pode ser uma coleção ou um diretório individual que contém `SKILL.md`. O Clarvis mantém no
+máximo quatro raízes efetivas de varredura; uma lista exaustiva de skills irmãs pode ser representada
+pelo diretório pai sem tornar visível uma irmã não declarada. Declare servidores MCP diretamente,
+indique um documento complementar em `mcpServers` ou omita essa chave e use `.mcp.json` ou `mcp.json`
+por convenção.
 
 Documentos de hooks compatíveis e organizados por evento podem estar envolvidos por um objeto
 `hooks`, ser referenciados por caminho ou ficar em `hooks/hooks.json`. O Clarvis traduz nomes de

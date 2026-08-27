@@ -84,9 +84,12 @@ may declare hooks inline as above; when the manifest declares no hooks, Clarvis 
 For a multi-host plugin, Clarvis accepts a root `plugin.json` and manifests under directories shaped
 like `.<host>-plugin/plugin.json`. A `.clarvis-plugin/plugin.json` is authoritative when present.
 Otherwise Clarvis selects the single readable manifest that declares the richest supported
-contribution surface; it never merges two host manifests. Put skill roots in `skills` as one relative
-directory or a list of up to four. Put MCP servers inline, name a companion document with
-`mcpServers`, or omit that key and use `.mcp.json` or `mcp.json` by convention.
+contribution surface; it never merges two host manifests. Put skill locations in `skills` as one
+relative directory or a list. Each location may be a collection or an individual directory that
+contains `SKILL.md`. Clarvis keeps at most four effective scan roots; an exhaustive list of direct
+siblings can be represented by their parent without making an undeclared sibling visible. Put MCP
+servers inline, name a companion document with `mcpServers`, or omit that key and use `.mcp.json` or
+`mcp.json` by convention.
 
 Compatible event-keyed hook documents may be wrapped in a `hooks` object, referenced by path, or
 placed at `hooks/hooks.json`. Clarvis translates their event names, tool matchers, plugin-root

@@ -9,8 +9,10 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
 - A release tag is exactly `v<version>`, annotated, and signed by the authorized releaser.
 - The release workflow builds glibc-based Linux, macOS, and Windows archives for x64 and arm64 on
   native runners.
-- A tag-triggered workflow uploads a complete draft release and makes it public in its final step.
-  There is no human pause after the tagged workflow starts.
+- A tag-triggered workflow uploads a complete draft release and activates it in its final step.
+  There is no human pause after the tagged workflow starts. Public-repository runs attest the
+  archives and `SHA256SUMS` before release creation; private-repository runs omit that GitHub-only
+  attestation because it is unavailable without GitHub Enterprise Cloud.
 - A manual workflow dispatch builds downloadable artifacts but cannot publish a release.
 - Active GitHub rulesets protect `main` and release tags. Published tag names are immutable by
   project policy: fixes use a new version; never move or reuse a release tag.
@@ -23,8 +25,7 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
 1. Confirm the release version, intended audience, known limitations, and rollback owner.
 2. Ensure the working tree is clean and the release commit is already present on the intended
    `getclarvis/clarvis` branch.
-3. Review [CHANGELOG.md](CHANGELOG.md), [SECURITY.md](SECURITY.md), the
-   [OSS launch checklist](docs/oss-launch-checklist.md), and the open questions in
+3. Review [CHANGELOG.md](CHANGELOG.md), [SECURITY.md](SECURITY.md), and the open questions in
    [`specs/cross-cutting/distribution-and-updates.md`](specs/cross-cutting/distribution-and-updates.md).
 4. Verify the root version, installer defaults, and repository identity agree. Supply the intended
    `RELEASE_TAG` to `check:release` when validating tag identity before publication.
@@ -80,8 +81,8 @@ do not assemble a partial release manually under the same tag.
 
 Once GitHub reports the release as public:
 
-1. Confirm all archives, `SHA256SUMS`, installer scripts, license/notices, and attestations are
-   visible under the correct tag.
+1. Confirm all archives, `SHA256SUMS`, installer scripts, and license/notices are visible under the
+   correct tag. For a public-repository run, also confirm the attestations.
 2. Run each published installer from the tag URL on a clean supported platform.
 3. Verify `clarvis --version`, first-run setup, `clarvis --update`, and the documented removal path.
 4. Check README badges and links, the public changelog entry, private vulnerability reporting, issue

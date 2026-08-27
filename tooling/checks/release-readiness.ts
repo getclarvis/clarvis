@@ -12,6 +12,8 @@ interface ProductManifest {
 
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const ACTION_SHA = /^[0-9a-f]{40}$/;
+const PUBLIC_ATTESTATION_STEP =
+  /- name: [^\n]+\n\s+if: github\.event\.repository\.private == false\n\s+uses: actions\/attest@[0-9a-f]{40}/;
 
 interface WorkflowSource {
   path: string;
@@ -110,6 +112,9 @@ export function releaseReadinessFailures(input: {
     )
   ) {
     failures.push("release publish job must reject manual workflow dispatches");
+  }
+  if (!PUBLIC_ATTESTATION_STEP.test(input.releaseWorkflow)) {
+    failures.push("release attestation must run only when the repository is public");
   }
   failures.push(...workflowSecurityFailures(input.workflows));
   for (const workspace of input.workspaceLicenses) {

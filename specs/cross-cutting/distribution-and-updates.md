@@ -168,10 +168,14 @@ user state unchanged. Production: `packages/code/src/update/index.ts` and
 `packages/code/tests/unit/update-command.test.ts` (verified activation and preserved predecessor).
 
 The release workflow builds and smokes all six target archives independently. A tag build downloads
-the complete set, verifies every sidecar, assembles `SHA256SUMS`, attests the archives, creates a
-GitHub release as a draft, uploads every asset, and removes the draft flag only in the final step.
-Manual dispatch builds downloadable workflow artifacts but cannot publish because the publish job
-requires both a tag ref and the `push` event. Production: `.github/workflows/release.yml`. Release
+the complete set, verifies every sidecar, assembles `SHA256SUMS`, creates a GitHub release as a
+draft, uploads every asset, and removes the draft flag only in the final step. When the triggering
+repository is public, the workflow also attests the archives and `SHA256SUMS` before creating the
+draft. A private-repository event skips only that unavailable attestation step and keeps checksum,
+draft, upload, and activation ordering unchanged. Manual dispatch builds downloadable workflow
+artifacts but cannot publish because the publish job requires both a tag ref and the `push` event.
+Production: `.github/workflows/release.yml`. Test:
+`tooling/tests/unit/release-readiness.test.ts` (private-repository attestation guard). Release
 publication still requires a separately authorized tag and push; nothing in the local build or
 installer creates one.
 
@@ -217,8 +221,12 @@ and an existing owner is neither replaced nor removed;
 stale-launcher removal all refuse an existing owner.
 
 **DIST-8.** The release workflow cannot expose a partially uploaded release: publication starts as a
-draft and clearing `draft` is the final step after checks and attestation. Production:
-`.github/workflows/release.yml` (`publish` job). Test: `check:release` pins local identity; the remote
+draft and clearing `draft` is the final step after checks and any visibility-required attestation.
+The attestation action is guarded to public-repository events, so a private repository can publish
+its verified release set without invoking a GitHub capability that requires Enterprise Cloud there.
+Production: `.github/workflows/release.yml` (`publish` job) and
+`tooling/checks/release-readiness.ts` (`releaseReadinessFailures`). Test:
+`tooling/tests/unit/release-readiness.test.ts` (private-repository attestation guard); the remote
 draft transition is verifiable only in an authorized release run.
 
 **DIST-9.** Every portable archive carries the static Bun runtime, models.dev snapshot, and Vercel AI
@@ -290,6 +298,7 @@ external and enter the portable archive through the target-native runtime closur
 | macOS Gatekeeper or Windows SmartScreen | unsigned beta may require explicit user approval; no bypass is automated |
 | Missing third-party notice or license marker | native release smoke fails before publication |
 | Build-host checkout path in generated JavaScript | artifact build fails before packaging |
+| Private repository on a plan without artifact attestations | the attestation step is skipped; checksum verification, draft upload, and final activation still run |
 | Workflow dispatch without a tag | packages only; no release creation or remote mutation |
 
 Production: the root installers, `packages/code/src/update/**`, and

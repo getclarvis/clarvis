@@ -457,7 +457,7 @@ Production modules that carry this shape say so at the line, including
 
 | # | Phase | Internal fan-out | What it can catch |
 |---|---|---|---|
-| 1 | `format:check` | `--parallel` across workspaces, then root Prettier | package formatting plus root tooling, authored public docs and `.github/workflows/docs.yml` |
+| 1 | `format:check` | `--parallel` across workspaces, then root Prettier | package formatting plus root tooling and repository workflows |
 | 2 | `build` | `build:packages`, then `build:code` | library emit and `.d.ts` for the reference graph, then the TUI bundle |
 | 3 | `typecheck` | `--parallel` across workspaces, then `typecheck:tooling` | every package's `tsconfig.json`, all of which `include` `tests`, plus root tooling |
 | 4 | `lint:eslint` | `--parallel` across workspaces, then `lint:tooling` | package lint plus the root tooling ESLint project |
@@ -950,7 +950,7 @@ only the owner-specific default").
     **Unpinned.**
 
 24. **Repository checker tests are first-class classified suites.** Ten focused test files live under
-    `tooling/tests/unit/`; the public-documentation and stream-metrics test files live under
+    `tooling/tests/unit/`; the repository-metadata and stream-metrics test files live under
     `tooling/tests/architecture/`. `bun run test:tooling` executes both trees and the supported root
     `test` and `lint:intent` commands invoke that script (`package.json`, `scripts.test:tooling`,
     `scripts.test`, `scripts.lint:intent`).

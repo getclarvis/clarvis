@@ -14,8 +14,7 @@ configuration applied by a one-line per-package shim (`eslint.config.base.js:17`
 once from the root (`package.json`, `scripts.knip`), a locally-enforced pre-commit gate
 (`.githooks/pre-commit:7`),
 three GitHub Actions CI jobs split by platform (`.github/workflows/ci.yml`), a six-target portable
-release matrix delegated to [distribution and updates](distribution-and-updates.md), a SHA-pinned
-Pages workflow for the public VitePress documentation (`.github/workflows/docs.yml`), and a separate
+release matrix delegated to [distribution and updates](distribution-and-updates.md), and a separate
 bundling path for the one package that is never emitted by `tsc` — the terminal UI
 (`packages/code/tooling/artifact/build.ts`). The root `build` command composes those two paths sequentially,
 so its completion means every distributable exists rather than only the TypeScript libraries.
@@ -62,7 +61,6 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `build` | `build:packages && build:code` | `package.json` (`scripts.build`) |
 | `build:packages` | `tsc -b` | `package.json` (`scripts.build:packages`) |
 | `build:watch` | `tsc -b --watch` | `package.json` (`scripts.build:watch`) |
-| `docs:dev` / `docs:build` / `docs:preview` | author, build, or preview the VitePress site rooted at `docs/` | `package.json` (`scripts.docs:*`) |
 | `clean` | `tsc -b --clean && bun --workspaces clean` | `package.json` (`scripts.clean`) |
 | `test` | `test:tooling`, followed by 18 sequential `bun --filter @clarvis/<pkg> test` invocations, all `&&`-chained | `package.json` (`scripts.test`) |
 | `test:coverage` | `bun --workspaces --sequential --if-present test:coverage && bun run coverage:check` | `package.json` (`scripts.test:coverage`) |
@@ -74,7 +72,7 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `check:graph` | `bun run tooling/checks/package-graph.ts --check-doc` | `package.json` (`scripts.check:graph`) |
 | `check:specs` | `bun run tooling/checks/spec-hygiene.ts` | `package.json` (`scripts.check:specs`) |
 | `knip` | `knip` (root only; no package declares a `knip` script) | `package.json` (`scripts.knip`) |
-| `format` / `format:check` | workspace formatting plus root tooling, authored public docs and `.github/workflows/docs.yml` | `package.json` (`scripts.format*`) |
+| `format` / `format:check` | workspace formatting plus root tooling and repository workflows | `package.json` (`scripts.format*`) |
 | `check:pre-commit` | `format:check && build && typecheck && lint:eslint && lint:intent && knip && test:coverage` | `package.json` (`scripts.check:pre-commit`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
 | `build:<pkg>` × 18 | `bun --filter @clarvis/<pkg> build` | `package.json` (`scripts.build:<pkg>`) |
@@ -104,9 +102,9 @@ Production: `tooling/checks/spec-hygiene.ts` (`invalidCitations`, `failedCitatio
 `mise.toml:1-2` pins the toolchain to `bun = "1.4.0"` exactly.
 
 Root `devDependencies` hold the entire toolchain — `@eslint/js`, `@types/bun` (pinned `1.4.0`),
-`@types/node`, `eslint`, `globals`, `knip`, `prettier`, `typescript ^6.0.3`, `typescript-eslint`, and
-VitePress (`package.json`, `devDependencies`). No package re-declares them. `allowScripts` permits post-install scripts for
-two `esbuild` versions only (`package.json`, `allowScripts`).
+`@types/node`, `eslint`, `globals`, `knip`, `prettier`, `typescript ^6.0.3`, and `typescript-eslint`
+(`package.json`, `devDependencies`). No package re-declares them. `allowScripts` permits post-install
+scripts for `esbuild@0.28.1` only (`package.json`, `allowScripts`).
 
 ### 2.2 Per-package script contract
 
@@ -225,8 +223,8 @@ Prettier is one root `.prettierrc.json` — `semi: true`, `singleQuote: false`, 
 
 Knip runs once from the root (`package.json`, `scripts.knip`). `knip.json` sets
 `ignoreExportsUsedInFile` for `interface` and `type` (`:3-6`) and adds five workspace overrides. The
-root workspace's entries cover executable TypeScript checks, the Bun preload, and the VitePress
-configuration and theme; its project globs cover root tooling and `docs/.vitepress/**/*.ts`.
+root workspace's entries cover executable TypeScript checks and the Bun preload; its project globs
+cover root tooling.
 `packages/code` explicitly includes
 its `src`, tests, artifact builders and benchmarks,
 `packages/kernel` adds `src/bin.ts` and its Bun-native executable test fixture as entries,
@@ -691,40 +689,17 @@ reported through Bun's normal assertion failure, with no custom stderr or `proce
 owner-specific default" and "the two production stream metrics implementations stay
 token-identical").
 
-### 4.8 Public documentation build and deployment
+### 4.8 Public documentation ownership boundary
 
-`docs/.vitepress/config.ts` owns the public product identity, navigation, search, canonical site URL,
-and links to `getclarvis/clarvis`. The visible version is imported from the root product manifest so
-the documentation cannot declare an independent release version. Authored Markdown and public assets
-stay under `docs/`; VitePress writes cache and build output below `docs/.vitepress/`, and only those
-generated directories are ignored. Installation/update and terminal-compatibility pages are
-first-class navigation entries; the maintainer-only OSS launch checklist remains in the repository
-but is excluded from the public site build. English owns the root routes and Brazilian Portuguese
-mirrors the complete page tree below `/pt-BR/`. VitePress provides the corresponding-route language
-selector, localized navigation, interface labels, and local-search strings.
+The public product site is owned by the separate `getclarvis/docs` repository. This monorepo has no
+`docs/` site tree, VitePress dependency, `docs:*` scripts, Pages permission, or Pages deployment
+workflow. Root contributor documentation points public-site changes to that repository, while
+package READMEs and `specs/` remain local because they are part of the implementation contract.
 
-Every indexable page receives a self-referential canonical URL, page-specific description and
-social metadata, locale-correct JSON-LD, a Markdown `alternate`, language alternates for English,
-Brazilian Portuguese, and `x-default`, and a `describedby` link to its locale's agent index. After
-VitePress renders the site, the discovery builder emits the root `robots.txt`, locale-specific
-`llms.txt` and `llms-full.txt` files, and one clean Markdown alternative per public page. VitePress
-owns the root sitemap, language alternates, and last-modified timestamps. A documentation page
-without an H1 and opening blockquote summary, without its corresponding translation, or absent from
-its locale's curated `llms.txt` sections fails the build rather than silently shipping incomplete
-discovery metadata.
-
-The `Docs` workflow runs for relevant changes pushed to `main` and by manual dispatch. It checks out
-without retaining credentials, installs the root lockfile in frozen mode, records the pinned Bun
-runtime, builds the site, uploads only `docs/.vitepress/dist`, and deploys that artifact through the
-GitHub Pages environment. Every third-party action is pinned to a complete commit SHA.
-
-Production: `docs/.vitepress/config.ts` (`repo`, `site`, `productVersion`, discovery hooks, and the
-exported VitePress configuration); `docs/.vitepress/discovery.ts` (`discoverPublicDocs`,
-`renderLlmsTxt`, `renderMarkdownPage`, `assertDiscoveryArtifacts`, and
-`generateDiscoveryArtifacts`); root `package.json`
-(`scripts.docs:*` and `devDependencies.vitepress`);
-`.github/workflows/docs.yml` (`jobs.build` and `jobs.deploy`).
-Test: `tooling/tests/architecture/public-docs.test.ts` (`public documentation`).
+Production: root `README.md` and `AGENTS.md` (external site ownership); root `package.json`
+(`scripts`, `devDependencies`); `.github/workflows/` (workflow set).
+Test: `tooling/tests/architecture/repository-metadata.test.ts` (`keeps public-site ownership outside
+this monorepo`).
 
 ## 5. Invariants
 
@@ -994,48 +969,6 @@ Test: `tooling/tests/unit/package-architecture.test.ts` (product-version policy 
 `packages/mcp-client/tests/unit/version.test.ts`, `packages/server/tests/unit/version.test.ts`, and
 `packages/server/tests/architecture/product-version.test.ts`.
 
-**BUILD-33.** The public documentation uses the canonical `getclarvis/clarvis` product identity and
-derives its visible version from root `package.json`. All published TUI guide captures come from one
-120-column by 36-row viewport and therefore share the same rendered pixel dimensions. The Pages
-workflow uses a frozen install, does not retain checkout credentials, pins every third-party action
-to a complete commit SHA, and uploads only the VitePress output directory. Installation/update and
-terminal compatibility are linked from the public navigation, while the OSS launch checklist is
-maintainer-only and excluded from that build. The README, both installation guides, and the shared
-homepage component expose the same version-pinned one-line installer commands as the primary path;
-the detailed guides retain the download-and-review alternative.
-Production: `docs/.vitepress/config.ts` (`repo`, `site`, and `productVersion`),
-root `package.json` (`version`), `.github/workflows/docs.yml` (`jobs.build` and `jobs.deploy`), `README.md`,
-`docs/{installation.md,pt-BR/installation.md}`, `docs/.vitepress/theme/components/HomeInstall.vue`,
-and `docs/public/images/tui/`.
-Test: `tooling/tests/architecture/public-docs.test.ts` (`public documentation`, including `keeps the
-primary install commands short, versioned, and aligned`).
-
-**BUILD-34.** Every public documentation page has one canonical HTML URL and a page-specific
-Markdown alternative discoverable through `rel="alternate"`; every HTML page points to its locale's
-`llms.txt` through `rel="describedby"`. The Pages artifact also contains an allow-all crawler policy
-that names the canonical sitemap, curated English and Brazilian Portuguese agent indexes,
-locale-specific consolidated compatibility exports, and one Markdown mirror for every indexable
-page. New pages must provide an H1 and opening blockquote summary and be categorized in the matching
-agent index before the docs build succeeds.
-Production: `docs/.vitepress/config.ts` (`discoveryHead`, `transformPageData`, and `buildEnd`);
-`docs/.vitepress/discovery.ts` (`discoverPublicDocs`, `renderRobotsTxt`, `renderLlmsTxt`,
-`renderLlmsFullTxt`, `renderMarkdownPage`, `assertDiscoveryArtifacts`, and
-`generateDiscoveryArtifacts`).
-Test: `tooling/tests/architecture/public-docs.test.ts` (`publishes canonical crawler and agent
-discovery surfaces`).
-
-**BUILD-35.** Public documentation is complete in two locales: English at the site root and Brazilian
-Portuguese below `/pt-BR/`. Each content route exists in both trees, links within Portuguese content
-remain in that locale, the navigation and local-search interface use the active language, and every
-page publishes `en`, `pt-BR`, and English `x-default` alternatives. VitePress's sitemap groups the
-mirrored paths so crawlers receive the same language relationship.
-Production: `docs/.vitepress/config.ts` (`locales`, `englishThemeConfig`,
-`portugueseThemeConfig`, and `discoveryHead`); `docs/.vitepress/discovery.ts`
-(`discoverPublicDocs`, `translationAlternatesFor`, and locale-specific discovery renderers);
-`docs/pt-BR/` (the mirrored public page tree).
-Test: `tooling/tests/architecture/public-docs.test.ts` (`keeps the English and Brazilian Portuguese
-page trees complete and isolated` and `publishes canonical crawler and agent discovery surfaces`).
-
 **BUILD-36.** The crash-retirement canary remains an explicitly dispatched, read-only workflow. It
 grants only `contents: read`, pins checkout and setup-bun to complete commit SHAs, disables checkout
 credential persistence, and has no scheduled or push trigger.
@@ -1046,6 +979,14 @@ evidence. `workflowSecurityFailures` in `tooling/checks/release-readiness.ts`, e
 `tooling/tests/unit/release-readiness.test.ts`, scans every workflow and pins `contents: read`, full
 action SHAs, and disabled checkout credential persistence. The `workflow_dispatch`-only trigger with
 no schedule or push remains unpinned.
+
+**BUILD-37.** Public-site source and GitHub Pages deployment stay outside this monorepo. The root
+manifest carries no VitePress dependency or `docs:*` script, the workflow set carries no Pages
+permission or action, and contributor-facing repository documentation names `getclarvis/docs` as
+the owner. Production: root `package.json` (`scripts`, `devDependencies`), `.github/workflows/`,
+`README.md`, and `AGENTS.md`. Test:
+`tooling/tests/architecture/repository-metadata.test.ts` (`keeps public-site ownership outside this
+monorepo`).
 
 ## 6. Failure modes and degradation
 
@@ -1073,11 +1014,8 @@ no schedule or push remains unpinned.
 | Neither models-dev.json candidate exists | `bundlePath()` returns the source-tree path anyway "so the ensuing read reports the location a developer expects" | `packages/kernel/src/models/model-catalog.ts:190-200` |
 | `code`'s temp-home cleanup races a live child | `rmSync` failure swallowed; comment: "a live child may still hold a handle; the OS reaps the temp dir" | `tooling/test-runtime/clarvis-home-preload.ts:30-32` |
 | `chocolatey`-style install reporting success over a no-op | avoided by construction: the Windows ripgrep step verifies the SHA256 and runs the binary in the same step | `.github/workflows/ci.yml:122-137`, `:141-153` |
-| A public-doc link, Markdown transform, or VitePress configuration is invalid | `docs:build` fails before the Pages artifact is uploaded; the deploy job cannot run without the successful build job | `package.json` (`scripts.docs:build`); `.github/workflows/docs.yml` (`jobs.deploy.needs`) |
 | An explicit line citation to an existing repository file uses line zero, exceeds the target, or inverts a range | `check:specs` reports every invalid citation and exits nonzero; nonexistent illustrative targets are ignored | `tooling/checks/spec-hygiene.ts` (`failedCitations`); `tooling/lib/spec-hygiene.ts` (`resolveLineCitation`) |
-| A public page lacks a title or summary, or is missing from the agent index | the discovery builder throws before the Pages build completes, so no incomplete crawler artifact is deployed | `docs/.vitepress/discovery.ts` (`discoverPublicDocs`, `renderLlmsTxt`); `docs/.vitepress/config.ts` (`buildEnd`) |
-| A public route lacks its English or Brazilian Portuguese counterpart | discovery metadata generation throws with the missing locale and content route; the architecture test also reports the asymmetric tree | `docs/.vitepress/discovery.ts` (`translationAlternatesFor`); `tooling/tests/architecture/public-docs.test.ts` (`keeps the English and Brazilian Portuguese page trees complete and isolated`) |
-| Public-doc identity, guide coverage, screenshot dimensions, or workflow hardening drifts | the architecture test reports the specific missing identity, page, image reference, dimension, or workflow property | `tooling/tests/architecture/public-docs.test.ts` (`public documentation`) |
+| A Pages workflow, local `docs/` site, or VitePress dependency is reintroduced | the repository-metadata architecture test reports the duplicated ownership surface | `tooling/tests/architecture/repository-metadata.test.ts` (`keeps public-site ownership outside this monorepo`) |
 
 Degradation that is **silent by design**: a clone that has never run `bun run hooks:install` has no
 pre-commit gate at all, because `core.hooksPath` is a local git config value and nothing in the tree
@@ -1095,8 +1033,6 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 | `@clarvis/paths` | `packages/code/tooling/artifact/pty.ts:16` and `packages/code/tooling/artifact/smoke.ts:33` use `globalPaths` so the fixture layout cannot drift from the vocabulary; `tooling/test-runtime/clarvis-home-preload.ts:5` uses `HOME_ENV` | static value import |
 | `docker` | only the `linux` CI job's step 10 (`.github/workflows/ci.yml:66`) | external process |
 | `script(1)` or `tmux` | `packages/code/tooling/artifact/pty.ts:118`, `:181` | external process |
-| VitePress 1.6 | root devDependency and the three `docs:*` scripts | build-time |
-| GitHub Pages | `.github/workflows/docs.yml` publishes the built static site | hosted deployment |
 
 **What depends on this subsystem.**
 
@@ -1116,9 +1052,6 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 - `packages/kernel/src/models/model-catalog.ts:154-162` names
   `packages/code/tooling/artifact/build.ts` in its own TSDoc as the module whose `ASSETS` list must stay in
   step — a documentation-level coupling with no mechanical check.
-- The public site imports the root manifest for its visible product version, while the Pages
-  workflow depends on the same root lockfile and Bun pin as repository CI. Changing product identity,
-  version ownership, or dependency resolution therefore changes the documentation build contract.
 
 **Type-only vs runtime.** `@clarvis/protocol` is a `dependencies` entry of `kernel`, `server` and
 `code` but has an emitting `tsconfig.build.json` (`packages/protocol/tsconfig.build.json`) purely so
@@ -1147,8 +1080,8 @@ groups, `killTree` and monitor capture belong to **tools-shell-monitor-and-proce
    automated artifact boot contract through `bun run smoke`.
 
 2. **`packages/skills/package.json:69-80` alone carries `overrides` (`esbuild ^0.25.0`) and
-   `repository`/`homepage`/`bugs` metadata**, and the root `allowScripts` permits `esbuild@0.28.1` and
-   `esbuild@0.21.5` (`package.json`, `allowScripts`). Neither the reason for the skills-only override nor which
+   `repository`/`homepage`/`bugs` metadata**, and the root `allowScripts` permits `esbuild@0.28.1`
+   (`package.json`, `allowScripts`). Neither the reason for the skills-only override nor which
    dependency pulls esbuild in is derivable from the files in this document's scope.
 
 3. ~~**CI is disabled and the Windows/macOS legs are therefore unexercised.**~~ **Resolved in the

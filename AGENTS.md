@@ -24,6 +24,11 @@ The documentation has three distinct jobs:
 | `packages/<name>/README.md` | A package's purpose, public entries, usage, operational behavior, and local development commands                    |
 | `specs/**/*.md`             | The authoritative behavioral contract, formats, invariants, failure modes, and coupling, with source/test citations |
 
+The public product site, translated user guides, and GitHub Pages deployment are owned by the
+separate [`getclarvis/docs`](https://github.com/getclarvis/docs) repository. Do not add a `docs/`
+site tree, VitePress dependency, or Pages workflow to this monorepo. When a product change affects
+the public guides, record the external documentation disposition in the handoff.
+
 If these disagree, stop and resolve the disagreement in the same iteration. The specs are the stated
 contract; the code is the current implementation. Neither silently overrides the other.
 

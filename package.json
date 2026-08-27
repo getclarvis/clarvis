@@ -41,9 +41,6 @@
     "build": "bun run build:packages && bun run build:code",
     "build:packages": "tsc -b",
     "build:watch": "tsc -b --watch",
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs",
     "clean": "tsc -b --clean && bun --workspaces clean",
     "test": "bun run test:tooling && bun --filter @clarvis/capability test && bun --filter @clarvis/supervision test && bun --filter @clarvis/llm test && bun --filter @clarvis/paths test && bun --filter @clarvis/trace test && bun --filter @clarvis/mcp-client test && bun --filter @clarvis/protocol test && bun --filter @clarvis/skills test && bun --filter @clarvis/memory test && bun --filter @clarvis/plan test && bun --filter @clarvis/tasks test && bun --filter @clarvis/tools test && bun --filter @clarvis/hooks test && bun --filter @clarvis/loop test && bun --filter @clarvis/workflows test && bun --filter @clarvis/kernel test && bun --filter @clarvis/server test && bun --filter @clarvis/code test",
     "test:tooling": "bun test tooling/tests/unit tooling/tests/architecture --timeout 60000",
@@ -59,8 +56,8 @@
     "check:graph": "bun run tooling/checks/package-graph.ts --check-doc",
     "check:specs": "bun run tooling/checks/spec-hygiene.ts",
     "knip": "knip",
-    "format": "bun --workspaces format && prettier --write \"tooling/**/*.{ts,js}\" \"docs/**/*.{md,ts,css}\" \".github/workflows/docs.yml\"",
-    "format:check": "bun --workspaces --parallel format:check && prettier --check \"tooling/**/*.{ts,js}\" \"docs/**/*.{md,ts,css}\" \".github/workflows/docs.yml\"",
+    "format": "bun --workspaces format && prettier --write \"tooling/**/*.{ts,js}\" \".github/workflows/*.yml\"",
+    "format:check": "bun --workspaces --parallel format:check && prettier --check \"tooling/**/*.{ts,js}\" \".github/workflows/*.yml\"",
     "check:pre-commit": "bun run format:check && bun run build && bun run typecheck && bun run lint:eslint && bun run lint:intent && bun run knip && bun run test:coverage",
     "hooks:install": "git config core.hooksPath .githooks",
     "build:capability": "bun --filter @clarvis/capability build",
@@ -103,11 +100,9 @@
     "knip": "^6.27.0",
     "prettier": "^3.9.4",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.63.0",
-    "vitepress": "^1.6.4"
+    "typescript-eslint": "^8.63.0"
   },
   "allowScripts": {
-    "esbuild@0.28.1": true,
-    "esbuild@0.21.5": true
+    "esbuild@0.28.1": true
   }
 }

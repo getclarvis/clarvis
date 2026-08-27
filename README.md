@@ -12,7 +12,7 @@ repository in front of you.
 > the portable artifacts are not yet code-signed or notarized. Clarvis can read and change files and
 > run commands; review approval prompts and use source control.
 
-![Clarvis first-run setup with the responsive splash in a terminal](docs/assets/clarvis-setup.svg)
+![Clarvis first-run setup with the responsive splash in a terminal](.github/assets/clarvis-setup.svg)
 
 ## Why Clarvis
 
@@ -45,7 +45,7 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.ps1 | iex
 ```
 
-Prefer to inspect an installer before running it? The [installation guide](docs/installation.md)
+Prefer to inspect an installer before running it? The [installation guide](https://clarvis.dev/installation)
 keeps the download, review, and execute flow as an alternative.
 
 Verify the command:
@@ -63,7 +63,7 @@ managed launcher to the user `PATH`; an existing terminal may need to be reopene
 The release workflow is configured for glibc-based Linux, macOS, and Windows on x64 and arm64. The
 beta Linux archives do not target Alpine or other musl-only distributions. Platform claims remain
 beta-level until the corresponding native release job has completed. See
-[Installation](docs/installation.md) for prerequisites, manual verification, configured targets,
+[Installation](https://clarvis.dev/installation) for prerequisites, manual verification, configured targets,
 unsigned-binary warnings, PATH behavior, and removal.
 
 ## First run
@@ -122,7 +122,7 @@ Source checkouts and `bun link` installations deliberately refuse self-update.
 
 See the [public user guide](https://clarvis.dev/guide/daily-use) for sessions, headless mode,
 worktrees, configuration, extensions, data locations, and diagnostics. See
-[Terminal compatibility](docs/terminal-compatibility.md) for Unicode, color, keyboard profiles,
+[Terminal compatibility](https://clarvis.dev/terminal-compatibility) for Unicode, color, keyboard profiles,
 remote terminals, and current accessibility limits.
 
 ## Security model
@@ -155,12 +155,13 @@ served from the site root, and the complete Brazilian Portuguese edition is avai
 | Need                                  | Start here                                                                                      |
 | ------------------------------------- | ----------------------------------------------------------------------------------------------- |
 | Browse the public product guide       | [clarvis.dev](https://clarvis.dev)                                                              |
-| Install, update, verify, or remove    | [Installation](docs/installation.md)                                                            |
+| Install, update, verify, or remove    | [Installation](https://clarvis.dev/installation)                                                |
 | Learn the TUI and CLI                 | [Public user guide](https://clarvis.dev/guide/daily-use)                                        |
-| Terminal or accessibility behavior    | [Terminal compatibility](docs/terminal-compatibility.md)                                        |
+| Terminal or accessibility behavior    | [Terminal compatibility](https://clarvis.dev/terminal-compatibility)                            |
 | Diagnose a problem                    | [Troubleshooting](https://clarvis.dev/operations/troubleshooting) or [Support](SUPPORT.md)      |
 | Understand Clarvis                    | [How Clarvis works](https://clarvis.dev/explanation/how-clarvis-works)                          |
-| Contribute code or docs               | [Contributing](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md)                                      |
+| Contribute code                       | [Contributing](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md)                                      |
+| Contribute public documentation       | [`getclarvis/docs`](https://github.com/getclarvis/docs)                                         |
 | Inspect exact behavior and invariants | [Specification index](specs/README.md)                                                          |
 | Follow releases                       | [Changelog](CHANGELOG.md) and [GitHub Releases](https://github.com/getclarvis/clarvis/releases) |
 
@@ -173,13 +174,10 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md). It covers the clone/bootstrap flo
 the documentation contract, TUI validation in a real PTY, and pull-request expectations. Human and
 AI contributors should also read [AGENTS.md](AGENTS.md) before editing the monorepo.
 
-The public site is authored under [`docs/`](docs). Use `bun run docs:dev` for a local authoring
-server, `bun run docs:build` to validate and build it, and `bun run docs:preview` to serve the built
-output.
-
-The production build includes locale-aware canonical and search metadata, crawler policy, a
-multilingual sitemap, and separate English and Brazilian Portuguese Markdown discovery surfaces for
-agents.
+The public site source and its deployment workflow are owned by the separate
+[`getclarvis/docs`](https://github.com/getclarvis/docs) repository. This monorepo owns product
+implementation, package READMEs, specifications, release tooling, and contributor documentation; it
+does not build or deploy GitHub Pages.
 
 ## Packages
 

@@ -9,8 +9,6 @@ build/
 *.log
 .DS_Store
 coverage/
-/docs/.vitepress/cache/
-/docs/.vitepress/dist/
 .env
 .env.*
 !.env.example

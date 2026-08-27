@@ -14,6 +14,8 @@ agents.
 - Read the README of every package you may change, then use [`specs/README.md`](specs/README.md) to
   find the authoritative contract and [`specs/known-issues.md`](specs/known-issues.md) to avoid
   misdiagnosing a known environmental failure.
+- Public product guides and the site deployment live in
+  [`getclarvis/docs`](https://github.com/getclarvis/docs), not in this monorepo.
 
 ## Development setup
 

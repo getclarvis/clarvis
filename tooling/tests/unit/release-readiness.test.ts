@@ -33,8 +33,11 @@ function valid() {
     rootLicense: "MIT License",
     thirdPartyNotices: "## Vercel AI SDK",
     vercelAiSdkLicense: "Copyright 2023 Vercel, Inc.\nApache License, Version 2.0",
-    releaseWorkflow:
-      "cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE\nif: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')",
+    releaseWorkflow: `cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE
+if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+- name: attest release set when the repository is public
+  if: github.event.repository.private == false
+  uses: actions/attest@${PIN}`,
     workflows: [{ path: ".github/workflows/release.yml", source: secureWorkflow }],
     workspaceLicenses: [{ path: "packages/example/package.json", license: "MIT" }],
     tag: "v0.0.1-beta",
@@ -55,6 +58,7 @@ test("rejects an incomplete Vercel AI SDK license release set", () => {
     "Vercel AI SDK license must contain its Apache-2.0 grant",
     "release workflow must publish the Vercel AI SDK license",
     "release publish job must reject manual workflow dispatches",
+    "release attestation must run only when the repository is public",
   ]);
 });
 
@@ -64,6 +68,18 @@ test("rejects a publish job that a manual dispatch on a tag could reach", () => 
     "cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE\nif: startsWith(github.ref, 'refs/tags/')";
   expect(releaseReadinessFailures(input)).toEqual([
     "release publish job must reject manual workflow dispatches",
+    "release attestation must run only when the repository is public",
+  ]);
+});
+
+test("rejects an attestation step that can run for a private repository", () => {
+  const input = valid();
+  input.releaseWorkflow = input.releaseWorkflow.replace(
+    "  if: github.event.repository.private == false\n",
+    "",
+  );
+  expect(releaseReadinessFailures(input)).toEqual([
+    "release attestation must run only when the repository is public",
   ]);
 });
 

@@ -55,7 +55,7 @@ jobs:
           retention-days: 7
 
   publish:
-    name: publish draft, attest, then activate
+    name: publish verified release; attest when public
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: package
     runs-on: ubuntu-24.04
@@ -85,7 +85,9 @@ jobs:
           cp third-party/bun/LICENSE.md build/release/BUN-LICENSE.md
           cp third-party/models.dev/LICENSE build/release/MODELS-DEV-LICENSE
           cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE
-      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+      - name: attest release set when the repository is public
+        if: github.event.repository.private == false
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: |
             build/release/clarvis-*.tar.gz
@@ -100,7 +102,7 @@ jobs:
           if [[ "${GITHUB_REF_NAME#v}" == *-* ]]; then prerelease+=(--prerelease); fi
           gh release create "$GITHUB_REF_NAME" build/release/* \
             --verify-tag --draft --generate-notes "${prerelease[@]}"
-      - name: publish only after upload and attestation succeed
+      - name: activate only after upload and any required attestation succeed
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release edit "$GITHUB_REF_NAME" --draft=false

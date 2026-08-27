@@ -63,6 +63,20 @@ asking the operator a question.
 Resource support is on by default. When a server advertises resources, Clarvis adds
 `<server>.list_resources` and `<server>.read_resource`; set `resources: false` to suppress them.
 
+### Authorize a remote server
+
+When an HTTP or SSE server requests OAuth, the local interactive CLI and local `--print` mode open
+the authorization page in your default browser. Clarvis accepts only HTTPS authorization pages
+(plus HTTP on a loopback host), verifies a one-time state value, exchanges the callback with PKCE,
+and retries the connection. Time spent waiting for you does not consume the MCP connection timeout.
+
+Registrations and tokens are stored outside settings in
+`~/.clarvis/state/mcp-oauth.json`, isolated by workspace, owner, and canonical server URL. Clarvis
+creates that file with private permissions on platforms that support them and does not place its
+contents in prompts, traces, or logs. A remote/headless kernel has no browser authority and fails
+explicitly if interactive authorization is required; configure an explicit header-based credential
+for that host instead.
+
 ## Reference a server from an agent
 
 Tools use the name `<server>.<tool>`. For example, a `search` tool from `remote-docs` is

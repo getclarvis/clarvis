@@ -102,7 +102,7 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 (`packages/code/src/cli-args.ts:146`).
 
 `InteractiveMode` is the subset `runApp` accepts:
-`Extract<Mode, { kind: "run" | "resume" | "continue" }>` (`packages/code/src/index.tsx:418`).
+`Extract<Mode, { kind: "run" | "resume" | "continue" }>` (`packages/code/src/index.tsx:424`).
 
 ### 2.4 Exported functions
 
@@ -152,7 +152,7 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | `src/views/HeaderRows.tsx` | `HeaderRowsProps` / `HeaderRows` | `{ plan: Accessor<HeaderPlan> }` | 8, 15 |
 
 `src/index.tsx` exports **nothing**; it is a bootstrap module whose top level runs
-`detachObserved("code_main", main, …)` (`packages/code/src/index.tsx:1340-1343`).
+`detachObserved("code_main", main, …)` (`packages/code/src/index.tsx:1347-1350`).
 
 ### 2.5 The five control groups `index.tsx` hands `App`
 
@@ -162,13 +162,13 @@ do not implement runtime worktree switching:
 
 | Prop | Interface | Constructed at | Notable members |
 |---|---|---|---|
-| `store` | `TranscriptStore` | `packages/code/src/index.tsx:502-506` | `describeToolCall`, `fetchRun` |
-| `activity` | `ActivityStore` | `packages/code/src/index.tsx:507` | — |
+| `store` | `TranscriptStore` | `packages/code/src/index.tsx:509-513` | `describeToolCall`, `fetchRun` |
+| `activity` | `ActivityStore` | `packages/code/src/index.tsx:514` | — |
 | `shell` | `AppShell` (`packages/code/src/views/App.tsx`) | `packages/code/src/index.tsx` | renderer/platform/debug session, immutable workspace identity, branch/files, optional managed-worktree clean/remove controls, quit |
-| `run` | `AppRunControls` (`packages/code/src/views/App.tsx:111-139`) | `packages/code/src/index.tsx:1122-1143` | submit/compact/context inspection/cancel/local-command controls; `switching` is always false |
-| `session` | `AppSessionControls` (`packages/code/src/views/App.tsx:142-153`) | `packages/code/src/index.tsx:1144-1168` | current-workspace list/catalog/resume/delete/clear/export/status/cost |
-| `fleet` | `AppFleet` (`packages/code/src/views/App.tsx:156-171`) | `packages/code/src/index.tsx:1175-1206` | agents/settings/guard/memory/keys/catalog and refresh operations |
-| `backend` | `AppBackend` (`packages/code/src/views/App.tsx:174-187`) | `packages/code/src/index.tsx:1207-1236` | client/plans/models/provider auth/workflows/plugins/tasks/storage/run lookup/reconnect |
+| `run` | `AppRunControls` (`packages/code/src/views/App.tsx:111-139`) | `packages/code/src/index.tsx:1129-1150` | submit/compact/context inspection/cancel/local-command controls; `switching` is always false |
+| `session` | `AppSessionControls` (`packages/code/src/views/App.tsx:142-153`) | `packages/code/src/index.tsx:1151-1175` | current-workspace list/catalog/resume/delete/clear/export/status/cost |
+| `fleet` | `AppFleet` (`packages/code/src/views/App.tsx:156-171`) | `packages/code/src/index.tsx:1182-1213` | agents/settings/guard/memory/keys/catalog and refresh operations |
+| `backend` | `AppBackend` (`packages/code/src/views/App.tsx:174-187`) | `packages/code/src/index.tsx:1214-1243` | client/plans/models/provider auth/workflows/plugins/tasks/storage/run lookup/reconnect |
 
 ### 2.6 Environment variables read by this subsystem
 
@@ -178,10 +178,10 @@ do not implement runtime worktree switching:
 | `CLARVIS_INSTALL_ROOT` | `packages/code/src/update/installation.ts` (`managedInstallation`) | authenticates a versioned portable install for explicit self-update |
 | `CLARVIS_CODE_DEBUG` | `packages/code/src/cli-args.ts:147-148` | enables diagnostics unless in `{"", "0", "off", "false", "no"}` (`packages/code/src/cli-args.ts:111`); its value also doubles as a level (`packages/code/src/cli-args.ts:149`) |
 | `CLARVIS_CODE_DEBUG_LEVEL` | `packages/code/src/cli-args.ts:149` | level only; takes precedence over the level read out of `CLARVIS_CODE_DEBUG` |
-| `CLARVIS_OWNER` | `packages/code/src/index.tsx:138` | passed as `defaultOwner` to `WorkspaceClientManager.create` (`packages/code/src/index.tsx:180`, `packages/code/src/index.tsx:495`) |
-| `CLARVIS_AGENT_TOOLS_MAX_GRANT` | `packages/code/src/index.tsx:140` | defaulted (`??=`) to `"exec"` before anything else runs |
-| `CLARVIS_CODE_DEV` | `packages/code/src/index.tsx:450` | `dev` flag into `buildRendererConfig` and `createPlatform` |
-| `SSH_TTY` / `SSH_CONNECTION` | `packages/code/src/index.tsx:451-452` | sets `OPENTUI_FORCE_EXPLICIT_WIDTH ??= "true"` |
+| `CLARVIS_OWNER` | `packages/code/src/index.tsx:143` | passed as `defaultOwner` to `WorkspaceClientManager.create` (`packages/code/src/index.tsx:185`, `packages/code/src/index.tsx:501`) |
+| `CLARVIS_AGENT_TOOLS_MAX_GRANT` | `packages/code/src/index.tsx:145` | defaulted (`??=`) to `"exec"` before anything else runs |
+| `CLARVIS_CODE_DEV` | `packages/code/src/index.tsx:456` | `dev` flag into `buildRendererConfig` and `createPlatform` |
+| `SSH_TTY` / `SSH_CONNECTION` | `packages/code/src/index.tsx:457-458` | sets `OPENTUI_FORCE_EXPLICIT_WIDTH ??= "true"` |
 | `CLARVIS_TUI_RSS_LIMIT_MB` | `packages/code/src/views/App.tsx:206` | memory-fuse limit (owned by the memory-pressure adapter) |
 
 ## 3. Data and formats
@@ -228,7 +228,7 @@ The TSDoc states the reason for carrying the fix commands inline: "a missing bun
 the user as a module-resolution failure" (`packages/code/src/cli-entry.ts:33-35`). Every one of those
 four substrings is asserted in `packages/code/tests/unit/cli-entry.test.ts:21-29`.
 
-### 3.4 The non-TTY refusal (`packages/code/src/adapters/platform.ts:178-184`)
+### 3.4 The non-TTY refusal (`packages/code/src/adapters/platform.ts:201-207`)
 
 ```
 clarvis is an interactive TUI and needs a terminal.
@@ -237,11 +237,11 @@ Headless modes: clarvis --help | --list | --delete <id> | --refresh-models | -p 
 
 followed by `process.exit(2)`.
 
-### 3.5 `--list` row format (`packages/code/src/index.tsx:209-213`)
+### 3.5 `--list` row format (`packages/code/src/index.tsx:214-218`)
 
 `${workspaceLabel}${available ? "" : " (workspace unavailable)"}  ${formatSessionRow(meta, now)}`,
-sorted by `meta.updatedAt` descending (`packages/code/src/index.tsx:204`); the empty case writes `no sessions\n`
-(`packages/code/src/index.tsx:206`).
+sorted by `meta.updatedAt` descending (`packages/code/src/index.tsx:209`); the empty case writes `no sessions\n`
+(`packages/code/src/index.tsx:211`).
 
 `formatSessionRow` itself (`packages/code/src/views/session-row.ts:43-53`) joins six columns with
 two-space gutters and `.trimEnd()`s the result: `m.id`, `relTime(m.updatedAt, now)` padded to
@@ -266,14 +266,14 @@ string; `costCellText` (`:35-37`) renders `formatCostUsd(m.totals.costUsd)` only
 recorded, else the empty string — both are what "zero tokens and no cost leave their columns blank"
 pins (`packages/code/tests/unit/session-row.test.ts:43-50`).
 
-### 3.6 `--delete` summary (`packages/code/src/index.tsx:366-370`)
+### 3.6 `--delete` summary (`packages/code/src/index.tsx:372-376`)
 
 `session ${deleted|not found}; traces ${okTraces}/${total} deleted`.
 
-### 3.7 `--refresh-models` summary (`packages/code/src/index.tsx:380-386`)
+### 3.7 `--refresh-models` summary (`packages/code/src/index.tsx:386-392`)
 
 `models.dev refreshed — ${providers} providers / ${models} models`, where the em dash is
-`glyph("emDash")` and the model count sums `p.models.length` over providers (`packages/code/src/index.tsx:382-384`).
+`glyph("emDash")` and the model count sums `p.models.length` over providers (`packages/code/src/index.tsx:388-390`).
 
 ### 3.8 The splash banner (`packages/code/src/views/Splash.tsx:8-17`)
 
@@ -284,12 +284,12 @@ fallback threshold at `packages/code/src/views/Splash.tsx:26`.
 
 ### 3.9 Execution identifier for `--print`
 
-`"exec_" + crypto.randomUUID()` (`packages/code/src/index.tsx:284`).
+`"exec_" + crypto.randomUUID()` (`packages/code/src/index.tsx:290`).
 
 ### 3.10 Session export path
 
 `globalPaths().exportsDirForOwner(owner)`, created `mode: 0o700`, file `${meta?.id ?? "session"}.md`
-opened `"w", 0o600` (`packages/code/src/index.tsx:1083-1089`).
+opened `"w", 0o600` (`packages/code/src/index.tsx:1090-1096`).
 
 ### 3.11 The `FatalBoot` screen text (`packages/code/src/views/FatalBoot.tsx:37-51`)
 
@@ -332,7 +332,7 @@ joined row reads `Type / for commands · @ for workspace files · Shift+Tab for 
 Note what is **not** here: a usage error is not intercepted. `packages/code/src/cli.ts:14-16` states this is deliberate
 — "It is a human at a keyboard rather than a scripted call, so it can afford the slow path, and
 delegating keeps validation semantics owned in one place." A `usage-error` therefore falls through to
-step 5, loads the whole application, and is reported by `main()` at `packages/code/src/index.tsx:1315-1317`.
+step 5, loads the whole application, and is reported by `main()` at `packages/code/src/index.tsx:1322-1324`.
 
 `resolveEntry` is a three-line precedence (`packages/code/src/cli-entry.ts:37-49`):
 
@@ -409,7 +409,7 @@ command line is a usage error, because a person typed it and is there to read th
 
 ### 4.4 `index.tsx` — `main()` dispatch
 
-`packages/code/src/index.tsx:1305-1338`, wrapped by `detachObserved("code_main", …)` whose failure
+`packages/code/src/index.tsx:1312-1345`, wrapped by `detachObserved("code_main", …)` whose failure
 handler writes `clarvis failed: <text>` and sets `process.exitCode = 1` (`:1340-1343`) — note it
 sets the code rather than calling `process.exit`.
 
@@ -435,17 +435,19 @@ it must re-register the exit handler behind the platform's so renderer teardown 
 
 ### 4.5 The headless modes
 
-**`bootSilentSessionStore()`** (`packages/code/src/index.tsx:171-191`) is the shared prelude for `--list`, the
+**`bootSilentSessionStore()`** (`packages/code/src/index.tsx:176-196`) is the shared prelude for `--list`, the
 resume/continue preflight and `--delete`: it creates a `WorkspaceClientManager` over `workspace` +
 `globalRoot()`, with `logger: activeDiagnosticLogger() ?? createLogger("silent")`, opens a client and
 loads the owner's session store. Its TSDoc records that `runPrintMode` boots its **own** kernel
 instead "it needs `keySources` and `memory: true`, neither of which a silent listing/delete command
 has any use for" (`:167-169`).
 
-**`runPrintMode`** (`packages/code/src/index.tsx:242-365`):
+**`runPrintMode`** (`packages/code/src/index.tsx:247-371`):
 1. Builds `ClarvisDirs` from `globalPaths()`/`workspacePaths(workspace)`/`workspaceStatePaths(workspace)` (`:247-251`).
 2. Creates a `CodeConfigStore` inside a `createRoot` to get `keySources()` (`:252-255`).
-3. `createFileKernel({ workspaceRoot, globalDir, keySources, memory: true, logger })` (`:256-262`).
+3. `createFileKernel({ workspaceRoot, globalDir, keySources, memory: true, logger,
+   openMcpAuthorizationUrl: openPublicUrl })` (`:251-258`). `--print` is headless only in its output
+   and elicitation policy: a remote MCP OAuth challenge may still open the system browser.
 4. If `--agent` was not given, resolves one: `kernel.listAgents()` + `loadAgentFiles` + settings +
    `readEnvView()`, filters to runnable candidates via `agentReadiness`, prefers `code.agentDefault()`
    when it is present and runnable, else `automaticAgentFallback` (`:264-302`). Failure writes
@@ -477,7 +479,7 @@ the index pass finish, with its notices narrating the wait via `onNotice`" (`:74
 swallowed (`:98-100`) with the stated reason "A failed stream still settles the run's `done` with a
 terminal result."
 
-**`runListMode`** (`packages/code/src/index.tsx:193-216`), **`runDeleteMode`** (`:367-396`) and **`runRefreshMode`**
+**`runListMode`** (`packages/code/src/index.tsx:198-221`), **`runDeleteMode`** (`:367-396`) and **`runRefreshMode`**
 (`:404-422`) each boot, act, close and `process.exit` — none of them return.
 
 ### 4.6 `runApp` — the interactive boot sequence
@@ -503,7 +505,7 @@ terminal result."
 Two orderings the code annotates explicitly:
 
 - The exit handler for diagnostics is registered twice (steps 2 and 5). The comment at
-  `packages/code/src/index.tsx:415-418` states why: "Cover failures before the renderer/platform exists. Once the
+  `packages/code/src/index.tsx:421-424` states why: "Cover failures before the renderer/platform exists. Once the
   platform installs its own exit restoration below, move this handler behind it so renderer teardown
   remains visible before diagnostics.stop."
 - Markdown warm-up begins immediately after the usable application shell paints, so worker startup
@@ -518,9 +520,17 @@ Two orderings the code annotates explicitly:
   inspection is deferred until an explicit Doctor recheck").
 
 `debugSession` is built even when `--debug` was absent, with the stated reason: "a diagnostic channel
-you can only ask for before the failure you want it for is no channel" (`packages/code/src/index.tsx:452-455`).
+you can only ask for before the failure you want it for is no channel" (`packages/code/src/index.tsx:458-461`).
 
-**Step 10's `activate()` indirection.** `createWorkspaceAdapters` (`packages/code/src/index.tsx:831-916`) builds a
+Both code-host kernel paths supply the same browser opener: `runPrintMode` passes it directly and
+the interactive path passes it through `WorkspaceClientManager.create`
+(`packages/code/src/index.tsx:251-258`, `:495-510`). `openPublicUrl` accepts only HTTP(S), uses an
+argv-based platform launcher, and returns `false` on parse, protocol, spawn or exit failure
+(`packages/code/src/adapters/platform.ts:118-139`). That boolean lets the MCP client report an
+explicit interactive-authorization-unavailable error. Other Clarvis hosts do not gain a browser
+side effect merely because the file kernel supports the port; omission is the headless contract.
+
+**Step 10's `activate()` indirection.** `createWorkspaceAdapters` (`packages/code/src/index.tsx:838-923`) builds a
 `WorkspaceAdaptersSnapshot` whose `appearanceActive` signal starts `false` (`:884`), and two
 `createEffect`s — one setting the renderer's background color, one calling `applyAsciiMode` — both
 return immediately when `appearanceActive()` is false (`:889-899`). The same object exposes an
@@ -534,7 +544,7 @@ inert until the object is published. Unpinned: no test in `packages/code/tests/`
 ### 4.7 `loadFoundation` and the `BootPhase` ledger
 
 `BootPhase` is `"connect" | "keys" | "agents" | "settings" | "agent-files" | "sessions" | "profiles"`
-(`packages/code/src/index.tsx:393-397`). It is a mutable cursor set immediately before each step so the
+(`packages/code/src/index.tsx:399-403`). It is a mutable cursor set immediately before each step so the
 `catch` can name the step that threw:
 
 | Phase set at | Span | Work |
@@ -588,7 +598,7 @@ straight off the renderer" (`:10-11`).
 | renderer destroyed | — | `close(false)` — resolve without clearing | 94, 113 |
 
 `index.tsx`'s `retry` closure disposes the failed run client first, then re-runs `bootFoundation()`,
-re-reporting any failure before rethrowing so the screen sees it (`packages/code/src/index.tsx:782-789`); `quit`
+re-reporting any failure before rethrowing so the screen sees it (`packages/code/src/index.tsx:789-796`); `quit`
 destroys the renderer inside a `try`/empty-`catch`, releases the terminal and exits 1 (`:791-797`).
 
 `packages/code/tests/integration/fatal-boot-render.test.tsx:74-101` additionally pins that the root is
@@ -598,7 +608,7 @@ on screen and the renderer's `destroy` listener count is back to `rootsBefore + 
 ### 4.9 Launch-time worktree selection
 
 `--worktree [name]` is resolved before diagnostics, a kernel, a session store, or the TUI is created
-(`packages/code/src/index.tsx:1305-1313`). `bootstrapWorktree` then pins the process to the returned
+(`packages/code/src/index.tsx:1312-1320`). `bootstrapWorktree` then pins the process to the returned
 canonical checkout by replacing `workspace` and setting `CLARVIS_WORKSPACE_ROOT`; there is no
 in-process worktree switch or worktree-management hub.
 
@@ -638,7 +648,7 @@ pinned by `packages/code/tests/unit/cli-args.test.ts`.
 **Callback identity remains local, not a switching API.** `createWorkspaceCallbackTarget` is a
 one-slot box and `isActiveWorkspaceCallbackTarget` accepts only the same still-bound object
 (`packages/code/src/app/workspace-runtime.ts:1-30`). The run host binds it once and shutdown clears it
-(`packages/code/src/index.tsx:978-1006`), preventing a late callback after teardown.
+(`packages/code/src/index.tsx:985-1013`), preventing a late callback after teardown.
 
 ### 4.10 Layout breakpoints
 
@@ -743,7 +753,7 @@ the dirty-view/live-run gate: it runs only after that gate accepts the quit requ
 providers and agents feature commands into it (`:36-51`), then calls `registerAppCommands(deps)`
 (`:52`), and returns the app wiring with a `dispose` that is idempotent and disposes the app
 registration before the feature scope (`:53-62`). `registerAppCommands` itself opens its own scope and
-shadows the four registration methods so everything it registers lands there (`packages/code/src/app/commands.tsx:166-174`).
+shadows the four registration methods so everything it registers lands there (`packages/code/src/app/commands.tsx:168-176`).
 
 The render tree returned by `App` is, top to bottom: `KeymapProvider` →
 `HeaderRows` → a one-row top rule → the region box holding `OverlayRegion` with `TranscriptRegion` as
@@ -888,13 +898,13 @@ priorities (lines 92-107), and the floor-mode identity drop (line 109); the rend
 ### 4.14 Three `index.tsx` behaviors §2.5 names but does not narrate
 
 **`AppSessionControls.resumeCatalog` and `.delete`** are strictly current-workspace operations
-(`packages/code/src/index.tsx:1144-1168`). `catalog()` projects only
+(`packages/code/src/index.tsx:1151-1175`). `catalog()` projects only
 `listSessionsForWorkspace(sessionStore, workspaceRef().id)` and marks every row available.
 `resumeCatalog(item)` resumes `item.meta.id` directly. `delete(item)` loads from the one session
 store, clears the active session when ids match, and deletes the session and its runs through the
 current run client. No temporary client or cross-workspace branch exists.
 
-**`reconnectBackend`** (`packages/code/src/index.tsx:1009-1032`): refuses immediately, with no reconnect
+**`reconnectBackend`** (`packages/code/src/index.tsx:1016-1039`): refuses immediately, with no reconnect
 attempt, while a run is active (`"run in progress " + glyph("emDash") + " cancel it before reconnecting"`). Otherwise it sets
 connection state to `connecting`, calls `runClient.reconnect()`, then reloads keys, settings and agent
 files and re-lists profiles, sets connection to `ready` (with detail `"no profiles"` when the list is
@@ -903,7 +913,7 @@ empty), and returns `{ ok: true, message: "backend reconnected " + glyph("emDash
 `` { ok: false, message: `reconnect failed ${glyph("emDash")} restart clarvis (${errorText(e)})` } ``
 (`:1025-1030`).
 
-**`exportSession`/`writeExportChunk`** (`packages/code/src/index.tsx:1072-1101`): `writeExportChunk`
+**`exportSession`/`writeExportChunk`** (`packages/code/src/index.tsx:1079-1108`): `writeExportChunk`
 writes a chunk's UTF-8 bytes in a loop over `output.write(bytes, offset, …)`, advancing `offset` by
 `written.bytesWritten` each pass and throwing `new Error("export write made no progress")` the moment a
 write returns `bytesWritten <= 0` (`:1073-1080`). `exportSession` resolves the export directory, opens
@@ -1067,12 +1077,12 @@ Production: `packages/code/src/cli-mode.ts:96, 102`.
 Pinned: `packages/code/tests/unit/cli-mode.test.ts:171` and `:192`.
 
 **INV-CB-23.** `runApp` refuses a non-TTY with exit code 2 and a message naming every headless mode.
-Production: `packages/code/src/index.tsx:425` → `packages/code/src/adapters/platform.ts:178-184`.
+Production: `packages/code/src/index.tsx:431` → `packages/code/src/adapters/platform.ts:201-207`.
 Pinned: `packages/code/tests/integration/platform-lifecycle.test.ts:88-98` (and `:99-107` for stdin).
 
 **INV-CB-24.** Worktree selection completes before any host service boots, and the selected canonical
 checkout is the process workspace for every mode that accepts `--worktree`.
-Production: `packages/code/src/index.tsx:1305-1313`.
+Production: `packages/code/src/index.tsx:1312-1320`.
 Pinned: `packages/code/tests/unit/cli-args.test.ts` (mode propagation) and
 `packages/code/tests/integration/worktree-bootstrap.test.ts` (canonical create/reopen results).
 
@@ -1113,7 +1123,7 @@ Pinned: `packages/code/tests/unit/workspace-runtime.test.ts`.
 
 **INV-CB-28.** Interactive runtime switching is absent: the only advertised `switching` accessor is
 the constant false value used by the generic App shell.
-Production: `packages/code/src/index.tsx:1142`; `WorkspaceClientManager.open` rejects any id other
+Production: `packages/code/src/index.tsx:1149`; `WorkspaceClientManager.open` rejects any id other
 than its immutable current workspace (`packages/code/src/adapters/workspace-client-manager.ts`).
 Pinned: `packages/code/tests/component/workspace-client-manager.test.ts`.
 
@@ -1177,7 +1187,7 @@ Self-pinning: `tooling/checks/coverage.ts:450` reports allowlist entries that ar
 
 **INV-CB-40.** `CLARVIS_AGENT_TOOLS_MAX_GRANT` defaults to `"exec"` before any kernel is constructed,
 and only if unset.
-Production: `packages/code/src/index.tsx:137` (`??=`, at module top level, before `main()` runs at
+Production: `packages/code/src/index.tsx:142` (`??=`, at module top level, before `main()` runs at
 `:1305`).
 Unpinned.
 
@@ -1186,36 +1196,36 @@ Unpinned.
 | Situation | Handling | Exit / effect | Cite |
 |---|---|---|---|
 | No `dist/index.js` and no `CLARVIS_CODE_SOURCE` | full remedy text on stderr | exit 1 | `packages/code/src/cli.ts:43-46`, `packages/code/src/cli-entry.ts:40-49` |
-| Unknown flag / missing value / mode conflict / bad `--print` prompt or format | `usage-error` mode; **not** intercepted by `cli.ts`, so the whole app loads first | stderr `<message>\n<usage>`, exit 1 | `packages/code/src/cli.ts:14-16`, `packages/code/src/index.tsx:1315-1317` |
-| stdout or stdin is not a TTY in an interactive mode | guidance naming every headless mode | exit 2 | `packages/code/src/adapters/platform.ts:178-184` |
-| `--resume <id>` names no session | `session not found: <id> — run clarvis --list` | exit 1 | `packages/code/src/index.tsx:204-218` |
-| `--continue` with no session in this workspace | `no session to continue in this workspace — run clarvis --list` | exit 1 | `packages/code/src/index.tsx:204-218` |
-| `--delete <id>` names no session | `session not found: <id>` | exit 1 | `packages/code/src/index.tsx:346-354` |
-| `--delete` trace deletion fails per run | per-execution `try/catch` returning `false`; counted in the summary as `okTraces/total` | exit 0 regardless | `packages/code/src/index.tsx:355-370` |
-| `--refresh-models` throws | `refresh failed: <text>` | exit 1 | `packages/code/src/index.tsx:373-390` |
+| Unknown flag / missing value / mode conflict / bad `--print` prompt or format | `usage-error` mode; **not** intercepted by `cli.ts`, so the whole app loads first | stderr `<message>\n<usage>`, exit 1 | `packages/code/src/cli.ts:14-16`, `packages/code/src/index.tsx:1322-1324` |
+| stdout or stdin is not a TTY in an interactive mode | guidance naming every headless mode | exit 2 | `packages/code/src/adapters/platform.ts:201-207` |
+| `--resume <id>` names no session | `session not found: <id> — run clarvis --list` | exit 1 | `packages/code/src/index.tsx:209-223` |
+| `--continue` with no session in this workspace | `no session to continue in this workspace — run clarvis --list` | exit 1 | `packages/code/src/index.tsx:209-223` |
+| `--delete <id>` names no session | `session not found: <id>` | exit 1 | `packages/code/src/index.tsx:352-360` |
+| `--delete` trace deletion fails per run | per-execution `try/catch` returning `false`; counted in the summary as `okTraces/total` | exit 0 regardless | `packages/code/src/index.tsx:361-376` |
+| `--refresh-models` throws | `refresh failed: <text>` | exit 1 | `packages/code/src/index.tsx:379-396` |
 | `--update` is unmanaged, unsupported, concurrent, untrusted, or fails staging | one bounded `clarvis update failed: <reason>` line; active version unchanged | exit 1 | `packages/code/src/update/index.ts`, [distribution failure modes](../cross-cutting/distribution-and-updates.md#6-failure-modes-and-degradation) |
-| `--print` with no resolvable entry agent | `no interactive entry agent configured — pass --agent or set a default` | exit 1 | `packages/code/src/index.tsx:243-282` |
-| `--print` run does not complete | `run <status>: <error.message ?? ended_reason ?? status>` | exit 1 | `packages/code/src/index.tsx:327-338` |
-| `--print` throws anywhere | `print failed: <text>`; kernel close errors swallowed | exit 1 | `packages/code/src/index.tsx:339-342` |
-| `--print` receives an elicitation | auto-declined, one stderr line per request | run continues | `packages/code/src/index.tsx:285-297` |
+| `--print` with no resolvable entry agent | `no interactive entry agent configured — pass --agent or set a default` | exit 1 | `packages/code/src/index.tsx:248-288` |
+| `--print` run does not complete | `run <status>: <error.message ?? ended_reason ?? status>` | exit 1 | `packages/code/src/index.tsx:333-344` |
+| `--print` throws anywhere | `print failed: <text>`; kernel close errors swallowed | exit 1 | `packages/code/src/index.tsx:345-348` |
+| `--print` receives an elicitation | auto-declined, one stderr line per request | run continues | `packages/code/src/index.tsx:291-303` |
 | `--print` event stream throws mid-iteration | swallowed; `drained` still resolves | the run's `done` still settles | `packages/code/src/cli-mode.ts:98-100` |
 | Tree-sitter Markdown warm-up fails | `markdown.preload.failed` at `warn`; the already-usable shell continues unhighlighted | degrade | `packages/code/src/index.tsx` (`markdownPreload`) |
-| `loadFoundation` throws on boot | `boot.failed` with the phase, connection → `failed`, `runFatalBoot` retry screen | interactive retry; `q` exits 1 | `packages/code/src/index.tsx:768-800` |
+| `loadFoundation` throws on boot | `boot.failed` with the phase, connection → `failed`, `runFatalBoot` retry screen | interactive retry; `q` exits 1 | `packages/code/src/index.tsx` (`loadFoundation`, `bootFoundation`, `runFatalBoot`) |
 | A retry inside `runFatalBoot` throws | message replaced on the same screen, `busy` cleared, screen stays | retryable | `packages/code/src/views/FatalBoot.tsx:105-109` |
-| `boot.profiles` throws | reported, then **rethrown** — no fatal-boot screen, so it escapes to `detachObserved("code_main")` | `clarvis failed: …`, `process.exitCode = 1` | `packages/code/src/index.tsx:801-807`, `:1340-1343` |
+| `boot.profiles` throws | reported, then **rethrown** — no fatal-boot screen, so it escapes to `detachObserved("code_main")` | `clarvis failed: …`, `process.exitCode = 1` | `packages/code/src/index.tsx:808-814`, `:1340-1343` |
 | Models catalogue unavailable after a catalog surface requests it | `catalog.unavailable` at `warn` with `source: "kernel" \| "snapshot"`; `liveCatalog` answers empty on every accessor | picker empty, boot is unaffected | `packages/code/src/index.tsx` (`ensureModelsCatalog`, `liveCatalog`) |
-| Worktree branch lookup fails | `worktree.branch.unavailable` at `warn`; header branch stays `undefined` | degrade | `packages/code/src/index.tsx:808-814` |
-| Prompt-history persistence fails | `historyFailure` string pushed into the run status line | degrade | `packages/code/src/index.tsx:510-555, 990` |
-| Session store errors | routed to `setRunStatus` through `onError` | degrade | `packages/code/src/index.tsx:738-744` |
-| `reconnectBackend` while a run is active | refuses with an explanatory message, no reconnect attempted | `{ ok: false, message }` | `packages/code/src/index.tsx:1009-1014` |
-| `reconnectBackend` throws | connection → `failed`, `reconnect failed — restart clarvis (<text>)` | `{ ok: false }` | `packages/code/src/index.tsx:1025-1030` |
-| Session export fails | `export failed: <text>` returned as the status string | degrade | `packages/code/src/index.tsx:1083-1101` |
-| An export write makes no progress | `new Error("export write made no progress")` | caught by the above | `packages/code/src/index.tsx:1073-1080` |
-| `--worktree` is outside Git, names an invalid branch segment, collides with an unregistered path, or Git fails/times out/overflows | bootstrap rejects before any kernel/session/TUI starts | top-level `clarvis failed: <text>`, soft exit 1 | `packages/code/src/bootstrap/worktree.ts:42-85`, `:96-113`, `:145-205`; `packages/code/src/index.tsx:1307-1311` |
+| Worktree branch lookup fails | `worktree.branch.unavailable` at `warn`; header branch stays `undefined` | degrade | `packages/code/src/index.tsx:815-821` |
+| Prompt-history persistence fails | `historyFailure` string pushed into the run status line | degrade | `packages/code/src/index.tsx:517-562, 990` |
+| Session store errors | routed to `setRunStatus` through `onError` | degrade | `packages/code/src/index.tsx:745-751` |
+| `reconnectBackend` while a run is active | refuses with an explanatory message, no reconnect attempted | `{ ok: false, message }` | `packages/code/src/index.tsx:1016-1021` |
+| `reconnectBackend` throws | connection → `failed`, `reconnect failed — restart clarvis (<text>)` | `{ ok: false }` | `packages/code/src/index.tsx:1032-1037` |
+| Session export fails | `export failed: <text>` returned as the status string | degrade | `packages/code/src/index.tsx:1090-1108` |
+| An export write makes no progress | `new Error("export write made no progress")` | caught by the above | `packages/code/src/index.tsx:1080-1087` |
+| `--worktree` is outside Git, names an invalid branch segment, collides with an unregistered path, or Git fails/times out/overflows | bootstrap rejects before any kernel/session/TUI starts | top-level `clarvis failed: <text>`, soft exit 1 | `packages/code/src/bootstrap/worktree.ts:42-85`, `:96-113`, `:145-205`; `packages/code/src/index.tsx:1314-1318` |
 | Worktree ignore protection cannot be created or verified | bootstrap rejects before `git worktree add` or any kernel/session/TUI starts | top-level `clarvis failed: <text>`, soft exit 1 | `ensureWorktreeIgnore` in `packages/code/src/bootstrap/worktree.ts`; `seedFile` in `packages/paths/src/ensure.ts` |
 | Exit cleanup sees new pending changes or `git worktree remove` fails | checkout and branch are kept; `worktree.remove.failed` records the error before normal exit continues | normal exit | `removeWorktreeCheckout` in `packages/code/src/bootstrap/worktree.ts`; pre-shutdown removal in `packages/code/src/index.tsx` |
-| Resume of a named session fails at boot | `resume failed: <text>` into the status line | degrade | `packages/code/src/index.tsx:1273-1285` |
-| Any unhandled failure in `main` | `clarvis failed: <text>` on stderr; `process.exitCode = 1` (process still drains) | soft exit 1 | `packages/code/src/index.tsx:1340-1343` |
+| Resume of a named session fails at boot | `resume failed: <text>` into the status line | degrade | `packages/code/src/index.tsx:1280-1292` |
+| Any unhandled failure in `main` | `clarvis failed: <text>` on stderr; `process.exitCode = 1` (process still drains) | soft exit 1 | `packages/code/src/index.tsx:1347-1350` |
 | Any detached UI task fails | `task.failed` diagnostic with `{ operation, error, observed }`; the observer's own throw becomes `task.observer_failed` | never escapes | `packages/code/src/core/tasks.ts:22-45` |
 
 ## 7. Coupling
@@ -1252,10 +1262,10 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
 |---|---|---|
 | `src/index.tsx` | `helpText`, `parseMode`, `resolveDebugRequest`, `usageText`, `versionText`, `Mode`, `PrintFormat`, `DebugRequest` | `packages/code/src/index.tsx:25-34` |
 | `src/index.tsx` | `createPrintStream`, `drainPrintEvents`, `resolveResumeMeta` | `packages/code/src/index.tsx:35` |
-| `src/index.tsx` | `createWorkspaceCallbackTarget`, `isActiveWorkspaceCallbackTarget`, `WorkspaceCallbackTarget` | `packages/code/src/index.tsx:101-104` |
+| `src/index.tsx` | `createWorkspaceCallbackTarget`, `isActiveWorkspaceCallbackTarget`, `WorkspaceCallbackTarget` | `packages/code/src/index.tsx:106-109` |
 | `src/index.tsx` | `bootstrapWorktree`, `runBootstrapGit`, `worktreeIsClean`, `removeWorktreeCheckout`, `WorktreeBootstrapResult` | `packages/code/src/index.tsx` |
-| `src/index.tsx` | `runFatalBoot` | `packages/code/src/index.tsx:112` |
-| `src/index.tsx` | `App` + its five props interfaces | `packages/code/src/index.tsx:127-134` |
+| `src/index.tsx` | `runFatalBoot` | `packages/code/src/index.tsx:117` |
+| `src/index.tsx` | `App` + its five props interfaces | `packages/code/src/index.tsx:132-139` |
 | `views/App.tsx` | `createLayoutController`, `FLOOR_MIN_COLUMNS`, `FLOOR_MIN_ROWS` | `packages/code/src/views/App.tsx:68` |
 | `views/app/TranscriptRegion.tsx` | `Splash` | `packages/code/src/views/app/TranscriptRegion.tsx:16` |
 | `views/onboarding/RecoveryView.tsx` | `BrandBanner` | `packages/code/src/views/onboarding/RecoveryView.tsx:9` |
@@ -1274,7 +1284,7 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
   edge; the four boundary rules do not cover `app/`.
 - **`index.tsx` is the only place all layers meet.** It imports `adapters/`, `core/`, `theme/`,
   `features/`, `app/`, `views/`, `onboarding/` and `@clarvis/kernel/bootstrap` together
-  (`packages/code/src/index.tsx:1-134`). Nothing imports `index.tsx` except the bundler and `cli.ts`'s dynamic import.
+  (`packages/code/src/index.tsx:1-139`). Nothing imports `index.tsx` except the bundler and `cli.ts`'s dynamic import.
 - **`@clarvis/paths` is a `core/` violation but an `index.tsx` legality**: `packages/code/tests/architecture/architecture-boundary.test.ts:81`
   forbids `@clarvis/paths` under `core/` specifically, and `index.tsx` sits outside every constrained
   layer.
@@ -1306,7 +1316,7 @@ Its importers span every layer this document's boundary rules separate: `run-hos
 ## 8. Open questions
 
 1. ~~**`--continue`'s preflight is dead as written.**~~ **Resolved:** it was the `null`/`undefined`
-   slip, and the comparison is now `!== null` (`packages/code/src/index.tsx:224`), so a workspace with
+   slip, and the comparison is now `!== null` (`packages/code/src/index.tsx:229`), so a workspace with
    no session prints "no session to continue in this workspace" (`:232`) and exits 1 instead of
    booting the full TUI to land on `setRunStatus("session not found")`. `resolveResumeMeta`
    still returns `SessionMeta | null` (`packages/code/src/cli-mode.ts:30`, `:32`); the `resume` branch
@@ -1332,7 +1342,7 @@ Its importers span every layer this document's boundary rules separate: `run-hos
 4. **The exact `AppCommandDeps` contents and app command registrations** are out of scope
    here — `app/commands.tsx` is 1,394 lines and belongs to the [hosts/code-input-and-overlays.md](code-input-and-overlays.md) document.
    This spec covers only its two exported types, its scope-shadowing construction
-   (`packages/code/src/app/commands.tsx:166-174`) and the composition wrapper.
+   (`packages/code/src/app/commands.tsx:168-176`) and the composition wrapper.
 5. **Run streaming, `run-host.ts`, `kernel-run-client.ts`, `WorkspaceClientManager` and the transcript
    store** are named here only as the objects `index.tsx` assembles. Their contracts belong to
    [hosts/code-run-host.md](code-run-host.md).
@@ -1348,7 +1358,7 @@ Its importers span every layer this document's boundary rules separate: `run-hos
    gone. `agentReadiness` now takes a `ReadinessSettings` — `default_model` plus the provider names,
    which is all it ever read (`packages/code/src/adapters/agent-files.ts:186`-`:189`,
    `:210`-`:216`) — so `settingsView.merged` is passed as itself
-   (`packages/code/src/index.tsx:288`). The question the cast raised is therefore moot rather than
+   (`packages/code/src/index.tsx:294`). The question the cast raised is therefore moot rather than
    answered: nothing now asserts the whole `SettingsFile` shape, so nothing depends on whether the
    protocol's `merged` satisfies it.
 9. **`INV-247` (the ASCII-source rule) and `INV-253`–`INV-266`** are `@clarvis/code` invariants owned

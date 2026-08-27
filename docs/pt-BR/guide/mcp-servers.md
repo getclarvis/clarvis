@@ -65,6 +65,21 @@ O suporte a recursos fica ativado por padrão. Quando um servidor anuncia recurs
 adiciona `<server>.list_resources` e `<server>.read_resource`; defina `resources: false` para
 suprimi-los.
 
+### Autorize um servidor remoto
+
+Quando um servidor HTTP ou SSE solicita OAuth, a CLI local interativa e o modo local `--print` abrem
+a página de autorização no navegador padrão. O Clarvis aceita apenas páginas de autorização HTTPS
+(além de HTTP em um host de loopback), verifica um valor de estado descartável, troca o callback com
+PKCE e tenta a conexão novamente. O tempo de espera pela sua ação não consome o timeout da conexão
+MCP.
+
+Registros e tokens são armazenados fora das configurações em
+`~/.clarvis/state/mcp-oauth.json`, isolados por workspace, proprietário e URL canônica do servidor.
+O Clarvis cria esse arquivo com permissões privadas nas plataformas que oferecem esse recurso e não
+coloca seu conteúdo em prompts, traces nem logs. Um kernel remoto ou sem interface não tem autoridade
+para abrir o navegador e falha explicitamente quando a autorização interativa é necessária; nesse
+host, configure uma credencial explícita baseada em cabeçalho.
+
 ## Referencie um servidor a partir de um agente
 
 As ferramentas usam o nome `<server>.<tool>`. Por exemplo, uma ferramenta `search` de `remote-docs`

@@ -177,10 +177,10 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         idPrefix="market-"
         loading={deps.loading}
         empty={() => ({
-          text: "No marketplace configured, so there is nothing to browse.",
+          text: "No marketplace plugins are available to browse.",
           hint:
-            "A marketplace is a git repository listing plugins you can install. " +
-            "Add one by its git URL, or install a plugin directly from Plugins.",
+            "Clarvis includes the official marketplace by default. Refresh it, add another " +
+            "marketplace by Git URL, or install a plugin directly from Plugins.",
         })}
         row={(l, i) => (
           <SelectableRow selected={sel() === i()}>

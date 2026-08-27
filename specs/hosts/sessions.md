@@ -120,10 +120,10 @@ createSessionService(opts: {
 
 | Flag | Value | Cite (behavior) |
 |---|---|---|
-| `--resume` | `<session-id>` | `resumeSessionById` at `packages/code/src/run-host.ts:1257-1272`, wired at `packages/code/src/index.tsx:1156`; `assertSessionExists` at `packages/code/src/index.tsx:199-216` |
-| `--continue` | — | `assertSessionExists` calls `resolveResumeMeta` during boot preflight (`packages/code/src/index.tsx:199-216`); interactive resume resolves the same metadata at `packages/code/src/index.tsx:1265-1277` |
-| `--list` | — | `runListMode`, `packages/code/src/index.tsx:193-216` |
-| `--delete` | `<session-id>` | `runDeleteMode`, `packages/code/src/index.tsx:367-396` |
+| `--resume` | `<session-id>` | `resumeSessionById` at `packages/code/src/run-host.ts:1257-1272`, wired at `packages/code/src/index.tsx:1163`; `assertSessionExists` at `packages/code/src/index.tsx:204-221` |
+| `--continue` | — | `assertSessionExists` calls `resolveResumeMeta` during boot preflight (`packages/code/src/index.tsx:204-221`); interactive resume resolves the same metadata at `packages/code/src/index.tsx:1272-1284` |
+| `--list` | — | `runListMode`, `packages/code/src/index.tsx:198-221` |
+| `--delete` | `<session-id>` | `runDeleteMode`, `packages/code/src/index.tsx:373-402` |
 
 The CLI flag *parsing* and the `Mode` union are [hosts/code-run-host.md](code-run-host.md)'s territory; only
 the session-delete/resume cascade these modes call into is this document's.
@@ -141,7 +141,7 @@ For an owner-scoped `SessionService` built with `dir`/`owner`, files live under:
 
 `ownerDir = join(globalPaths(opts.dir).sessionsDir, ownerSegment(opts.owner))`
 (`packages/kernel/src/sessions/session-service.ts:344`); `globalPaths(...).sessionsDir` is `join(base, "state", "sessions")`
-(`packages/paths/src/global.ts:122`, with `state = join(base, "state")` at `packages/paths/src/global.ts:103`).
+(`packages/paths/src/global.ts:125`, with `state = join(base, "state")` at `packages/paths/src/global.ts:105`).
 `fileFor`/`summaryFor` append `${ownerSegment(id)}.json` / `.summary.json`
 (`packages/kernel/src/sessions/session-service.ts:347-353`). `ownerSegment` percent-encodes an arbitrary string into one safe
 path segment, or falls back to `h_<sha256hex>` past a 200-byte encoded length
@@ -819,7 +819,7 @@ recovered-context salvage when there is no result" (`packages/code/tests/compone
   the service is *handed* the scope it will enforce, it does not discover it.
   `packages/kernel/src/file-kernel.ts` does not build this per-owner service itself; it reaches
   `kernel.ts`'s builder only indirectly, through `createInProcessKernel` (imported at
-  `packages/kernel/src/file-kernel.ts:68`, called at `packages/kernel/src/file-kernel.ts:821`).
+  `packages/kernel/src/file-kernel.ts:68`, called at `packages/kernel/src/file-kernel.ts:829`).
 - **The transport layer (`packages/kernel/src/transport/operations.ts`) depends on the file-backed
   service's *widened* `listPage` shape**, not just the protocol `SessionService` interface, via the
   locally-cast `SignalAwareSessionListPage` type (`packages/kernel/src/transport/operations.ts:115-128`) — a structural,

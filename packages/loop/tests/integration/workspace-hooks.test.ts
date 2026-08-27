@@ -28,6 +28,7 @@ function context(over: Partial<RunCapabilityContext> = {}): RunCapabilityContext
     workspaceRoot: "/tmp",
     llm: {},
     emit: () => undefined,
+    requestParam: () => undefined,
     ...over,
   } as unknown as RunCapabilityContext;
 }
@@ -241,7 +242,7 @@ describe.skipIf(!posixShell)("workspace hooks end to end", () => {
         hook_event_name: "PreToolUse",
         cwd: workspace,
         session_id: "run_e2e",
-        tool_name: "shell",
+        tool_name: "Bash",
         tool_input: { command: "ls -la" },
       });
     } finally {

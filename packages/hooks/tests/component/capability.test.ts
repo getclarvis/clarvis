@@ -6,6 +6,7 @@ import {
   createHooksCapability,
   createWorkspaceHooksCapability,
   HOOKS_SEED_MARKER,
+  runUserPromptExpansionHooks,
 } from "../../src/capability.ts";
 import type { HookConfig } from "@clarvis/capability";
 import { HOOKS_CAPABILITY_NAME } from "@clarvis/capability";
@@ -55,6 +56,9 @@ describe("compileWorkspaceHooks", () => {
   it("returns undefined when nothing gate- or observer-shaped is configured", () => {
     expect(compileWorkspaceHooks([], passing())).toBeUndefined();
     expect(compileWorkspaceHooks([CONFIG({ event: "session_start" })], passing())).toBeUndefined();
+    expect(
+      compileWorkspaceHooks([CONFIG({ event: "user_prompt_expansion" })], passing()),
+    ).toBeUndefined();
   });
 
   it("defines only the methods that have a spec", () => {
@@ -406,6 +410,48 @@ describe("the payload a hook receives", () => {
     expect(data.tool_input).toEqual({ truncated: true });
   });
 
+  it("adds the external skill alias to load_skill without changing the candidate", async () => {
+    const recorded: Recorded[] = [];
+    const compiled = compileWorkspaceHooks([CONFIG({ event: "post_tool_use" })], passing(recorded));
+    await compiled?.afterToolUse?.({
+      tool: "load_skill",
+      arguments: { name: "ui-guidelines" },
+      result: { text: "loaded", progress: false },
+    });
+    expect(recorded[0]?.inv.data).toMatchObject({
+      tool_name: "Skill",
+      tool_input: { name: "ui-guidelines", skill: "ui-guidelines" },
+    });
+    expect(recorded[0]?.inv.candidate).toEqual({
+      tool: "load_skill",
+      arguments: { name: "ui-guidelines" },
+    });
+  });
+
+  it("emits external built-in and MCP tool names while matching their Clarvis identities", async () => {
+    const shell = await payloadFor("pre_tool_use", async (hook) =>
+      hook.beforeToolUse?.({ tool: "shell", arguments: { command: "pwd" } }),
+    );
+    const remote = await payloadFor("pre_tool_use", async (hook) =>
+      hook.beforeToolUse?.({
+        tool: "remote_search",
+        toolFullName: "remote.search",
+        arguments: { query: "docs" },
+      }),
+    );
+    expect(shell.tool_name).toBe("Bash");
+    expect(remote.tool_name).toBe("mcp__remote__search");
+
+    const pluginRemote = await payloadFor("pre_tool_use", async (hook) =>
+      hook.beforeToolUse?.({
+        tool: "quality_docs_search",
+        toolFullName: "quality-kit:docs.search",
+        arguments: { query: "example" },
+      }),
+    );
+    expect(pluginRemote.tool_name).toBe("mcp__docs__search");
+  });
+
   it("a submit-mode finalize carries its validated value", async () => {
     const data = await payloadFor("pre_finalize", async (h) =>
       h.preFinalize?.({
@@ -467,6 +513,21 @@ describe("the payload a hook receives", () => {
     await compiled?.preFinalize?.({ agent: "lead", mode: "text", text: "done" });
     expect(recorded[0]?.inv.candidate).toEqual({ tool: "shell", arguments: { command: "ls" } });
     expect(recorded[1]?.inv.candidate).toBeUndefined();
+  });
+
+  it("carries a canonical MCP alias without replacing the model-facing wire name", async () => {
+    const recorded: Recorded[] = [];
+    const compiled = compileWorkspaceHooks([CONFIG({ event: "pre_tool_use" })], passing(recorded));
+    await compiled?.beforeToolUse?.({
+      tool: "remote_search",
+      toolFullName: "remote.search",
+      arguments: { query: "docs" },
+    });
+    expect(recorded[0]?.inv.candidate).toEqual({
+      tool: "remote_search",
+      aliases: ["remote.search"],
+      arguments: { query: "docs" },
+    });
   });
 
   it("marks gates as gates and observers as not", async () => {
@@ -545,6 +606,73 @@ describe("createWorkspaceHooksCapability", () => {
     });
     const activation = await capability.forRun(context());
     expect(activation?.lifecycle).toBeUndefined();
+  });
+
+  it("omits lifecycle for a prompt-expansion-only block", async () => {
+    const capability = createWorkspaceHooksCapability({
+      resolveHooks: () => [CONFIG({ event: "user_prompt_expansion" })],
+      environment: {},
+    });
+    const activation = await capability.forRun(context());
+    expect(activation?.lifecycle).toBeUndefined();
+  });
+
+  it("fires user prompt expansion once with the external command payload", async () => {
+    const recorded: Recorded[] = [];
+    await runUserPromptExpansionHooks(
+      [CONFIG({ event: "user_prompt_expansion" })],
+      passing(recorded),
+      { commandName: "design:ui-guidelines" },
+      undefined,
+      undefined,
+    );
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.inv).toMatchObject({
+      event: "user_prompt_expansion",
+      externalEvent: "UserPromptExpansion",
+      data: { command_name: "design:ui-guidelines" },
+      gate: false,
+    });
+  });
+
+  it("does not fire user prompt expansion without a skill command", async () => {
+    const recorded: Recorded[] = [];
+    await runUserPromptExpansionHooks(
+      [CONFIG({ event: "user_prompt_expansion" })],
+      passing(recorded),
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(recorded).toEqual([]);
+  });
+
+  it("swallows and reports a prompt expansion runner that rejects", async () => {
+    const warnings: unknown[] = [];
+    const exploding: HookRunner = {
+      select: (hooks, inv) => hooks.filter((hook) => hook.event === inv.event),
+      run: () => Promise.reject(new Error("the prompt observer vanished")),
+      resolve: () => ({ kind: "pass" }),
+    };
+    const logger = {
+      warn: (fields: unknown) => {
+        warnings.push(fields);
+      },
+    } as unknown as Parameters<typeof runUserPromptExpansionHooks>[4];
+
+    await runUserPromptExpansionHooks(
+      [CONFIG({ event: "user_prompt_expansion" })],
+      exploding,
+      { commandName: "design:ui-guidelines" },
+      undefined,
+      logger,
+    );
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({
+      hook_event: "user_prompt_expansion",
+      err: expect.any(Error),
+    });
   });
 
   it("swallows a throwing context hook rather than failing the run", async () => {

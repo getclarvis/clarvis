@@ -38,8 +38,9 @@ quality-kit/
     └── hooks.json
 ```
 
-Put `plugin.json` at the plugin root. The directory name and manifest `name` must match. Names use
-lowercase letters, numbers, underscores, and hyphens:
+Put `plugin.json` at the plugin root. Names use lowercase letters, numbers, underscores, and hyphens.
+A Git install uses the manifest `name` as its install directory. For an already installed multi-host
+layout, the directory is the runtime namespace; Clarvis can derive a missing manifest name from it:
 
 ```json
 {
@@ -79,6 +80,19 @@ lowercase letters, numbers, underscores, and hyphens:
 The only required manifest field is `name`. If present, `version` must be semantic versioning. You
 may declare hooks inline as above; when the manifest declares no hooks, Clarvis also looks for
 `hooks/hooks.json`. Relative files and directories named by a manifest must remain inside the plugin.
+
+For a multi-host plugin, Clarvis accepts a root `plugin.json` and manifests under directories shaped
+like `.<host>-plugin/plugin.json`. A `.clarvis-plugin/plugin.json` is authoritative when present.
+Otherwise Clarvis selects the single readable manifest that declares the richest supported
+contribution surface; it never merges two host manifests. Put skill roots in `skills` as one relative
+directory or a list of up to four. Put MCP servers inline, name a companion document with
+`mcpServers`, or omit that key and use `.mcp.json` or `mcp.json` by convention.
+
+Compatible event-keyed hook documents may be wrapped in a `hooks` object, referenced by path, or
+placed at `hooks/hooks.json`. Clarvis translates their event names, tool matchers, plugin-root
+placeholders, timeouts, and supported verdicts into the same reviewed hook definitions used by a
+native manifest. Anything that cannot be translated is reported in the plugin browser instead of
+silently widening a matcher.
 
 `bootstrapSkill` names one skill from this plugin whose body should be available before the model
 responds. The `review` plan policy asks for planning review on that skill when both the skill and the

@@ -448,9 +448,9 @@ than a superscript glyph, since `SourceBadge` only special-cases `"shadow"`/`"wo
 
 `--ascii` is parsed as a bare boolean flag into `Mode.ascii` for `run`/`resume`/`continue`
 (`packages/code/src/cli-args.ts:85,249,269,271,279`). Outside this document's primary scope but load-bearing for its
-effect: `src/index.tsx` reads `mode.ascii` into `asciiFlag` (`packages/code/src/index.tsx:453`) and, in an effect keyed
+effect: `src/index.tsx` reads `mode.ascii` into `asciiFlag` (`packages/code/src/index.tsx:459`) and, in an effect keyed
 on `appearanceRevision`, calls `applyAsciiMode(asciiFlag || input.code.asciiEnabled())`
-(`packages/code/src/index.tsx:947`) — i.e. the CLI flag and the persisted `ui.ascii` setting OR together, so passing
+(`packages/code/src/index.tsx:954`) — i.e. the CLI flag and the persisted `ui.ascii` setting OR together, so passing
 `--ascii` once does not have to also flip the persisted setting to take effect for that run.
 
 ### `MemoryPressureBanner`'s phase → visual mapping (`packages/code/src/views/MemoryPressureBanner.tsx:11-56`)
@@ -644,7 +644,7 @@ its transitions are defined in `adapters/memory-pressure.ts`, outside this docum
 - `views/App.tsx` imports `bindSyntaxStyleRenderer` and mounts `MemoryPressureBanner`
   (`packages/code/src/views/App.tsx:77,84,202,1228`; delegated to [hosts/code-bootstrap.md](code-bootstrap.md)).
 - `src/index.tsx` calls `createTheme`, reads/writes `tokens.bg`, and drives `applyAsciiMode` from the
-  combined CLI-flag/persisted-setting value (`packages/code/src/index.tsx:459,942-953`; delegated to
+  combined CLI-flag/persisted-setting value (`packages/code/src/index.tsx:465,942-953`; delegated to
   [hosts/code-bootstrap.md](code-bootstrap.md)).
 - `ui/patterns/**` (delegated to [hosts/code-keyboard.md](code-keyboard.md)) supplies the layout/keybinding
   scaffolding `ThemeView.tsx` builds on (`registerLevel`, `LevelHost`, `bindLevelKeys` — imported at

@@ -4,9 +4,14 @@ import type { AgentSkills, SkillRootInput } from "@clarvis/skills";
 export type { SkillRootInput };
 import type { EnvConfig, ExtensionAdmissionController, HookConfig } from "@clarvis/capability";
 import { createCapabilityRegistry, createExtensionAdmissionController } from "@clarvis/capability";
-import { createMCPClientFactory, type RuntimeEnvironment } from "@clarvis/mcp-client";
-import { createConnectionManager } from "@clarvis/mcp-client";
-import type { ConnectionEventSink } from "@clarvis/mcp-client";
+import {
+  createConnectionManager,
+  createMCPAuthorizationCoordinator,
+  createMCPClientFactory,
+  type ConnectionEventSink,
+  type MCPAuthorizationOptions,
+  type RuntimeEnvironment,
+} from "@clarvis/mcp-client";
 import { setPathsLogger } from "@clarvis/paths";
 import { resolveTraceStore, type ResolvedTraceStore } from "@clarvis/trace";
 import {
@@ -147,6 +152,8 @@ export interface BuildRunDepsOptions {
    * These outlive any single run, so they ride this channel rather than a run's
    * trace — a host can render a live connection-health view from them. */
   onConnectionEvent?: ConnectionEventSink;
+  /** Persistent browser authorization for remote MCP servers. */
+  mcpAuthorization?: MCPAuthorizationOptions;
   /** Host-owned physical model-call gate. Inject one to share the cap across kernels. */
   modelCallAdmission?: HostModelCallAdmission;
   /** Host-owned physical capability/lifecycle gate shared across kernels. */
@@ -349,6 +356,7 @@ export async function buildExecuteRunDeps({
   builtins,
   capabilities: extraCapabilities,
   onConnectionEvent,
+  mcpAuthorization,
   modelCallAdmission: suppliedModelCallAdmission,
   extensionAdmission: suppliedExtensionAdmission,
   resolveSubscription,
@@ -376,11 +384,16 @@ export async function buildExecuteRunDeps({
   });
 
   const mcpLogger = forComponent("mcp");
+  const authorization =
+    mcpAuthorization === undefined
+      ? undefined
+      : createMCPAuthorizationCoordinator(mcpAuthorization);
   const connections = createConnectionManager({
     workspace: workspaceRoot,
     factory: createMCPClientFactory(environment, {
       defaultCwd: workspaceRoot,
       ...(mcpLogger === undefined ? {} : { logger: mcpLogger }),
+      ...(authorization === undefined ? {} : { authorization }),
       maxStdioFrameBytes: env.CLARVIS_MCP_STDIO_MAX_FRAME_BYTES,
       maxHttpResponseBytes: env.CLARVIS_MCP_HTTP_MAX_RESPONSE_BYTES,
       maxHttpSseEventBytes: env.CLARVIS_MCP_HTTP_MAX_SSE_EVENT_BYTES,
@@ -568,9 +581,16 @@ export async function buildExecuteRunDeps({
     modelCallAdmission,
     extensionAdmission,
     dispose: async () => {
-      await connections.closeAll();
+      const closed = await Promise.allSettled([
+        connections.closeAll(),
+        authorization?.close() ?? Promise.resolve(),
+      ]);
       if (suppliedModelCallAdmission === undefined) modelCallAdmission.close();
       if (suppliedExtensionAdmission === undefined) extensionAdmission.close();
+      const failure = closed.find(
+        (result): result is PromiseRejectedResult => result.status === "rejected",
+      );
+      if (failure !== undefined) throw failure.reason;
     },
   };
 }

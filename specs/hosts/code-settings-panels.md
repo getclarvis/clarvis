@@ -21,7 +21,7 @@ screen both hubs render (`packages/code/src/views/config/hub-menu.tsx:24`), over
 simultaneously the menu, the `/settings <child>` deep-link router table and the inline subcommand
 hints (`packages/code/src/views/config/SettingsHub.tsx:7`,
 `packages/code/src/views/config/ExtensionsHub.tsx:7`, consumed at
-`packages/code/src/app/commands.tsx:926` and `:1331`).
+`packages/code/src/app/commands.tsx:931` and `:1331`).
 
 The largest screen is Providers. It is a facade (`ProvidersPanel`) that owns lifecycle and shared
 state, and three private level modules that own the three drill depths: L0 the provider list, L1 one
@@ -487,10 +487,10 @@ calling `commit` (`:29`). Pinned at `packages/code/tests/unit/key-entry.test.ts:
 
 `HubMenu` registers one level whose `nav.activate` calls `deps.openChild(item.cmd)`
 (`packages/code/src/views/config/hub-menu.tsx:38`). The app wires `openChild` to `openWithReturn(cmd, "<hub>.open", preferredScope())`
-(`packages/code/src/app/commands.tsx:929`, `:1331`). `openWithReturn` opens the child with a `parent` route back to the
-hub (`packages/code/src/app/commands.tsx:226`). `hubRoute` turns `/settings <id>` into the same call and returns `false`
+(`packages/code/src/app/commands.tsx:934`, `:1331`). `openWithReturn` opens the child with a `parent` route back to the
+hub (`packages/code/src/app/commands.tsx:228`). `hubRoute` turns `/settings <id>` into the same call and returns `false`
 for an unknown id so the plain command falls through and opens the hub itself
-(`packages/code/src/app/commands.tsx:270`). `hubSubcommands` derives the inline choice hints from the same array
+(`packages/code/src/app/commands.tsx:272`). `hubSubcommands` derives the inline choice hints from the same array
 (`:262`) — so the item list is the single source for menu, router and hints.
 
 `providers.open` is deliberately an internal `settings` child (`slash: false`, `parent: "settings"`),
@@ -500,7 +500,7 @@ Production: `registerProvidersCommands` in `packages/code/src/features/providers
 one hierarchical slash route instead of duplicate aliases).
 
 `preferredScope()` is `read("workspace") !== undefined ? "workspace" : "global"`
-(`packages/code/src/app/commands.tsx:252`); its TSDoc states the mechanism it replaced ("This used to test whether
+(`packages/code/src/app/commands.tsx:254`); its TSDoc states the mechanism it replaced ("This used to test whether
 `<ws>/.clarvis` **existed**", `:240`).
 
 ### 4.5 Providers panel composition
@@ -857,8 +857,8 @@ limit, the effective cell shows `env.tokenDefault`; the kernel's real fallback i
 `createMcpCapabilities(deps)` (`packages/code/src/adapters/mcp-capabilities-bridge.ts:87`) holds one
 Solid signal, `nodes`, and two mutable maps: `registered` (per slash-command key → `{fingerprint,
 off}`) and `skillAgents` (per bare skill name → the agent it runs on, `:88`–`:90`). It is constructed
-once by `app/commands.tsx:1289` and fed to both `McpBrowser` (its `nodes`/`refresh` at
-`packages/code/src/app/commands.tsx:1313`–`:1314`) and the autocomplete layer's `skillAgent` lookup
+once by `packages/code/src/app/commands.tsx:1431-1437` and fed to both `McpBrowser` (its
+`nodes`/`refresh` at `:1453-1461`) and the autocomplete layer's `skillAgent` lookup
 (`:1385`, consumed at `packages/code/src/views/input/autocomplete.ts:126`).
 
 **`refreshOnce()`** (`:95`) reads `deps.client.connectionStatus()`; only when it is `"connected"` does
@@ -970,7 +970,7 @@ del (`:93`). Pinned at `packages/code/tests/integration/plugin-browser-render.te
 being typed — the inline comment at `:151` states that without it "every 'a' typed into a URL was
 eaten by [a] add marketplace". `summary()` (`:77`) prints one line for the whole catalog: the bare
 count when all listings are installable, `N listings ⟩ M installable from here` when some are, and a
-three-sentence explanation when none are. Pinned at `packages/code/tests/integration/marketplace-browser-render.test.tsx:110`, `:130`,
+three-sentence explanation when none are. Pinned at `packages/code/tests/integration/marketplace-browser-render.test.tsx:111`, `:130`,
 `:144`, `:163`, `:217`, `:235`.
 
 **HookBrowser** (`packages/code/src/views/config/HookBrowser.tsx:57`) — one level over plugin hooks with verbs `t` "approve exact
@@ -978,7 +978,7 @@ hook" (only while `approved === false`) and `x` "revoke" (only while `approved =
 `:72`). Beneath it, the operator's own `settings.json` hooks are listed read-only, per scope, with a
 `not running: workspace not approved` marker when `withheld` is set (`:133`). The `withheld` flag is
 computed by the caller from `settings.withheldWorkspaceFields().includes("hooks")`
-(`packages/code/src/app/commands.tsx:760`). Pinned at `packages/code/tests/integration/hook-browser-render.test.tsx:32`, `:53`, `:70`.
+(`packages/code/src/app/commands.tsx:762`). Pinned at `packages/code/tests/integration/hook-browser-render.test.tsx:32`, `:53`, `:70`.
 
 ### 4.16 Settings adapter
 
@@ -1257,12 +1257,12 @@ Production: `packages/code/src/views/config/PluginBrowser.tsx:175`. Test: `packa
 **INV-P37.** A marketplace listing this host cannot fetch from is never installed, whether by the
 `activate` verb or otherwise.
 Production: `packages/code/src/views/config/MarketplaceBrowser.tsx:132` (`!l.installed && l.installable`).
-Test: `packages/code/tests/integration/marketplace-browser-render.test.tsx:130`, `:144`, `:110`.
+Test: `packages/code/tests/integration/marketplace-browser-render.test.tsx:131`, `:144`, `:110`.
 
 **INV-P38.** The Settings and Extensions hub item arrays are the single source for the menu, the
 `/<hub> <child>` deep-link router and the inline subcommand hints.
-Production: `packages/code/src/views/config/SettingsHub.tsx:7` / `packages/code/src/views/config/ExtensionsHub.tsx:7`, consumed at `packages/code/src/app/commands.tsx:925`–`:926` and
-`:1327`–`:1328`.
+Production: `packages/code/src/views/config/SettingsHub.tsx:7` / `packages/code/src/views/config/ExtensionsHub.tsx:7`, consumed at `packages/code/src/app/commands.tsx:1006-1019` and
+`:1465-1478`.
 Test: `packages/code/tests/integration/settings-hub-render.test.tsx:24`, `:38`;
 `packages/code/tests/integration/extensions-hub-render.test.tsx:21`, `:37` — but see §8 on what these do *not* pin.
 
@@ -1414,7 +1414,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 - `adapters/mcp-capabilities-bridge.ts` imports `classifyCapability`/`reconcile` and their supporting
   types from `adapters/mcp-capabilities.ts` (`packages/code/src/adapters/mcp-capabilities-bridge.ts:5`–`:13`); the
   reverse never happens, so the pure reconciler has no knowledge of the live bridge built over it.
-  `McpBrowser` consumes only the bridge's `McpCapabilities.nodes`/`refresh` (`packages/code/src/app/commands.tsx:1313`–`:1314`), never
+  `McpBrowser` consumes only the bridge's `McpCapabilities.nodes`/`refresh` (`packages/code/src/app/commands.tsx:1453-1461`), never
   `reconcile` directly, and `McpClientCaps` is implemented in production by
   `adapters/kernel-capabilities-client.ts:13`; `index.tsx:1217` constructs it as `capabilities`, whose
   value `AppBackend.client`'s getter re-exposes (`views/App.tsx:166`, `index.tsx:1601`–`:1603`), which
@@ -1578,7 +1578,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 
 12. **`McpEffects.activeProfile` has no reader.** It is declared on the interface
     (`packages/code/src/adapters/mcp-capabilities-bridge.ts:32`) and implemented at the one production
-    construction site (`packages/code/src/app/commands.tsx:1258`, `() => deps.agents.active()`), but a
+    construction site (`packages/code/src/app/commands.tsx:1263`, `() => deps.agents.active()`), but a
     grep of `mcp-capabilities-bridge.ts` finds no call to `deps.effects.activeProfile` anywhere in
     `refreshOnce`, `syncPromptCommands` or either registered command handler, and no other module reads
     it off `mcpEffects` either. Whether it is a planned seam or a leftover from an earlier shape of the

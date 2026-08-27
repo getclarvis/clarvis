@@ -42,12 +42,12 @@ authority. Configure them globally; a workspace may only select a model already 
 `settings.json` is strict. Unknown top-level fields are rejected instead of being ignored. The
 extension-related fields are:
 
-| Field            | Shape                               | Purpose                                            |
-| ---------------- | ----------------------------------- | -------------------------------------------------- |
-| `hooks`          | Hook object array                   | Operator-authored lifecycle commands               |
-| `mcpServers`     | Map of server name to server object | Local and remote MCP connections                   |
-| `marketplaces`   | Git URL array                       | Marketplace catalogs shown by `/extensions/market` |
-| `enabledPlugins` | Plugin-name array                   | Enabled plugins, in ascending precedence order     |
+| Field            | Shape                               | Purpose                                           |
+| ---------------- | ----------------------------------- | ------------------------------------------------- |
+| `hooks`          | Hook object array                   | Operator-authored lifecycle commands              |
+| `mcpServers`     | Map of server name to server object | Local and remote MCP connections                  |
+| `marketplaces`   | Git URL array                       | Additional catalogs shown by `/extensions/market` |
+| `enabledPlugins` | Plugin-name array                   | Enabled plugins, in ascending precedence order    |
 
 ### MCP server object
 
@@ -63,6 +63,12 @@ extension-related fields are:
 | `resources` | Boolean                   | All           | Defaults on; `false` suppresses resource tools       |
 
 `stdio` forbids `url` and `headers`. Remote transports forbid `command`, `args`, `env`, and `shared`.
+
+Remote HTTP/SSE servers may request OAuth during connection. Local interactive and `--print` hosts
+open the authorization page, accept only HTTPS except for loopback HTTP, validate state, use PKCE,
+and retry after the callback. Credentials live in `~/.clarvis/state/mcp-oauth.json`, keyed by
+workspace, owner, and canonical server URL; they are not settings. A host without a browser opener
+reports that interactive authorization is unavailable.
 
 ### Hook object
 
@@ -83,10 +89,15 @@ Events:
 | Observer           | `run_start`, `run_end`, `subagent_complete`, `model_call_error`, `budget_exhausted`, `user_steer` | Output cannot block the run                |
 | Context            | `session_start`                                                                                   | May add pinned entry context               |
 | Compaction context | `pre_compact`                                                                                     | May add context to that summarization pass |
+| Prompt observer    | `user_prompt_expansion`                                                                           | Observes a user-invoked skill command      |
 
 Only `pre_tool_use` may replace pending tool arguments with a `rewrite` verdict. A single settings or
 plugin source may declare up to 64 hooks; a run uses at most 128 merged hooks, with operator hooks
 before plugin hooks.
+
+Compatible hook payloads spell built-in tools as external names such as `Bash`, `Read`, and `Skill`,
+and MCP tools as `mcp__<server>__<tool>`. `CLARVIS_HOOK_TOOL` retains the Clarvis wire name;
+`CLARVIS_HOOK_TOOL_FULL_NAME` carries the stable dotted MCP name when one exists.
 
 ## `SKILL.md`
 
@@ -110,8 +121,15 @@ the host and is never exposed as a skill resource.
 
 ## `plugin.json`
 
-`plugin.json` is tolerant: Clarvis reports unknown fields but does not act on them. Only `name` is
-required, and it must equal the plugin directory name.
+`plugin.json` is tolerant: Clarvis reports unknown fields but does not act on them. `name` is the only
+required field after normalization. A native Git install uses it as the directory name; an existing
+foreign layout may omit it, in which case Clarvis derives it from the install directory. That
+directory is always the host-owned runtime namespace.
+
+Clarvis first uses `.clarvis-plugin/plugin.json` when it exists. Otherwise it examines a root
+`plugin.json` plus directories shaped like `.<host>-plugin/plugin.json`, selects the single readable
+manifest with the most supported contribution directives, and uses root-then-name order to break a
+tie. Manifests are never merged.
 
 | Field                   | Type                                            | Purpose                                                    |
 | ----------------------- | ----------------------------------------------- | ---------------------------------------------------------- |
@@ -119,14 +137,18 @@ required, and it must equal the plugin directory name.
 | `version`               | Semantic version string                         | Optional display version                                   |
 | `description`           | Non-empty string                                | Optional summary                                           |
 | `author`                | String or `{ "name": "..." }`                   | Optional author display                                    |
-| `mcpServers`            | MCP server map                                  | Plugin-provided servers                                    |
+| `skills`                | Relative directory or directory array           | Up to four plugin skill roots                              |
+| `mcpServers`            | MCP server map or relative document path        | Plugin-provided servers                                    |
 | `hooks`                 | Hook array, document, or relative document path | Plugin-provided hooks                                      |
 | `bootstrapSkill`        | Skill name                                      | Injects one plugin-owned methodology skill before response |
 | `capabilityExecutables` | Capability-to-executable map                    | Optional persistent capability services                    |
 | `capabilityRunPolicies` | Plans skill-policy map                          | `off`, `on`, or `review` for plugin skill runs             |
 
-Conventional contribution directories are `agents/` and `skills/`. If the manifest contributes no
-hooks, Clarvis also reads `hooks/hooks.json`.
+Relative paths resolve from the selected manifest's directory first and remain confined to the
+plugin root. Conventional contribution directories are `agents/` and `skills/`. If `mcpServers` is
+absent, Clarvis tries `.mcp.json` and then `mcp.json`. If the manifest contributes no hooks, Clarvis
+also reads `hooks/hooks.json`. Compatible event-keyed hook documents may be inline, wrapped in a
+`hooks` object, or named by one or more relative paths.
 
 ### Capability executable declaration
 
@@ -155,6 +177,11 @@ hooks, Clarvis also reads `hooks/hooks.json`.
 the provider for that capability.
 
 ## `marketplace.json`
+
+A Clarvis installation includes `https://github.com/getclarvis/marketplace.git` as its official
+marketplace source. The source is available without a settings entry, but its catalog is fetched
+only for browsing and none of its plugins are installed, enabled, or approved automatically.
+`settings.json` may add other marketplace sources.
 
 A marketplace repository publishes `marketplace.json` at its root:
 

@@ -76,6 +76,17 @@ describe("compileMatch", () => {
     expect(matchesCandidate(compiled, call)).toBe(true);
     expect(matchesCandidate(compiled, call)).toBe(true);
   });
+
+  test("matches a canonical alias while preserving the wire name as primary", () => {
+    const call: ToolCandidate = {
+      tool: "remote_search",
+      aliases: ["remote.search"],
+      arguments: {},
+    };
+    expect(matchesCandidate(compileMatch({ tool: "remote.*" }), call)).toBe(true);
+    expect(matchesCandidate(compileMatch({ tool: "remote_search" }), call)).toBe(true);
+    expect(matchesCandidate(compileMatch({ tool: "other.*" }), call)).toBe(false);
+  });
 });
 
 describe("argText", () => {

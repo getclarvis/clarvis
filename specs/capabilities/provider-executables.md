@@ -585,7 +585,7 @@ document's scope — see §8.
 **Depended on by:**
 - `@clarvis/kernel`'s `file-kernel.ts` constructs exactly **one**
   `createCapabilityExecutableSessionManager` instance per kernel
-  (`packages/kernel/src/file-kernel.ts:421-423`) and passes it as `executablePort` to *both*
+  (`packages/kernel/src/file-kernel.ts:423-425`) and passes it as `executablePort` to *both*
   `createPlanningRuntime` (`:675-676`, via `packages/kernel/src/plans/planning-runtime.ts:44,60-61`)
   and `createMemoryFactory` (`:870-871`) — one subprocess pool serves both capabilities, keyed apart
   by the `capability` field in `CapabilityExecutableSessionInput` (§3e).
@@ -632,7 +632,7 @@ document's scope — see §8.
   something in `@clarvis/kernel` outside `capability-executables/`) performs that substitution is
   outside this document's scope.
 - **Whether a capability executable's declared `env` values are folded into the hooks subprocess
-  credential denylist.** `packages/kernel/src/file-kernel.ts:518-532` (`loadSecretNames`) derives the
+  credential denylist.** `packages/kernel/src/file-kernel.ts:520-534` (`loadSecretNames`) derives the
   denylist from `keys.json`, `providers[].api_key_env`, and provider/model `headers` only — it never
   reads `manifest.capabilityExecutables` or a workspace's `memory.provider`/`plans.provider` blocks.
   Given that a capability executable's `env` can itself carry a `${VAR}` reference to a real secret

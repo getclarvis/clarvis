@@ -15,7 +15,11 @@
  * not load `@clarvis/hooks` at all.
  */
 import { filterHookEnv, interpolatedNames } from "./env.ts";
-import { hookInvocationFor, type HookEvent } from "./event-serialization.ts";
+import {
+  hookInvocationFor,
+  type HookEvent,
+  type UserPromptExpansionHookContext,
+} from "./event-serialization.ts";
 import { createHookRunner, type HookRunner } from "./runner.ts";
 import type { HookSpec } from "./types.ts";
 import type { BeforeToolUseContext, HookVerdict, LifecycleHook } from "@clarvis/capability";
@@ -26,6 +30,7 @@ import {
   GATE_HOOK_EVENTS,
   HOOKS_CAPABILITY_NAME,
   NOOP_LOGGER,
+  PROMPT_HOOK_EVENTS,
   type CompactionContribution,
   type HookConfig,
   type OBSERVER_HOOK_EVENTS,
@@ -48,6 +53,7 @@ type GateEvent = (typeof GATE_HOOK_EVENTS)[number];
 type ObserverEvent = (typeof OBSERVER_HOOK_EVENTS)[number];
 type ContextEvent = (typeof CONTEXT_HOOK_EVENTS)[number];
 type CompactionEvent = (typeof COMPACTION_HOOK_EVENTS)[number];
+type PromptEvent = (typeof PROMPT_HOOK_EVENTS)[number];
 
 /**
  * Which `LifecycleHook` method each event drives.
@@ -78,6 +84,7 @@ const EVENT_METHOD: Record<GateEvent | ObserverEvent | CompactionEvent, keyof Li
 const GATE_EVENTS = new Set<string>(GATE_HOOK_EVENTS);
 const CONTEXT_EVENTS = new Set<string>(CONTEXT_HOOK_EVENTS);
 const COMPACTION_EVENTS = new Set<string>(COMPACTION_HOOK_EVENTS);
+const PROMPT_EVENTS = new Set<string>(PROMPT_HOOK_EVENTS);
 /** Groups specs by event, preserving the merged operator-then-plugin order. */
 function byEvent(hooks: readonly HookConfig[]): Map<HookEvent, HookConfig[]> {
   const out = new Map<HookEvent, HookConfig[]>();
@@ -172,7 +179,7 @@ export function compileWorkspaceHooks(
 
   const compiled: Partial<Record<keyof LifecycleHook, unknown>> = {};
   for (const [event, specs] of grouped) {
-    if (CONTEXT_EVENTS.has(event)) continue;
+    if (CONTEXT_EVENTS.has(event) || PROMPT_EVENTS.has(event)) continue;
     const method = EVENT_METHOD[event as GateEvent | ObserverEvent | CompactionEvent] as
       keyof LifecycleHook | undefined;
     if (method === undefined) continue;
@@ -182,6 +189,42 @@ export function compileWorkspaceHooks(
   }
 
   return Object.keys(compiled).length === 0 ? undefined : (compiled as LifecycleHook);
+}
+
+/**
+ * Run the exact user skill-command expansion observers once before seed context.
+ *
+ * @remarks Every failure is swallowed: this event is telemetry/observation,
+ * never a run gate, and a hook process disappearing must not make seedBlock
+ * fail the run. The real runner returns failures as values; the catch also
+ * preserves that invariant for structural host runners that reject.
+ */
+export async function runUserPromptExpansionHooks(
+  hooks: readonly HookConfig[],
+  runner: HookRunner,
+  context: UserPromptExpansionHookContext | undefined,
+  signal: AbortSignal | undefined,
+  logger: Logger | undefined,
+): Promise<void> {
+  if (context === undefined) return;
+  const specs = hooks.filter((hook) => PROMPT_EVENTS.has(hook.event));
+  if (specs.length === 0) return;
+
+  for (const event of PROMPT_HOOK_EVENTS as readonly PromptEvent[]) {
+    const inv = hookInvocationFor(event, context);
+    await Promise.all(
+      runner.select(specs, inv).map(async (spec) => {
+        try {
+          await runner.run(spec, inv, signal);
+        } catch (err) {
+          logger?.warn(
+            { hook_event: event, err },
+            "a user prompt expansion hook failed; the skill run continues",
+          );
+        }
+      }),
+    );
+  }
 }
 
 /**
@@ -338,10 +381,17 @@ export function createWorkspaceHooksCapability(opts: WorkspaceHooksOptions): Cap
       });
 
       const lifecycle = compileWorkspaceHooks(hooks, runner, ctx.signal);
+      const prompt = ctx.requestParam("hook_user_prompt_expansion") as
+        { command_name?: unknown } | undefined;
+      const promptContext =
+        typeof prompt?.command_name === "string" ? { commandName: prompt.command_name } : undefined;
       return {
         name: HOOKS_CAPABILITY_NAME,
         ...(lifecycle !== undefined ? { lifecycle: [lifecycle] } : {}),
-        seedBlock: async () => buildSeedBlock(hooks, runner, ctx.signal, ctx.logger),
+        seedBlock: async () => {
+          await runUserPromptExpansionHooks(hooks, runner, promptContext, ctx.signal, ctx.logger);
+          return buildSeedBlock(hooks, runner, ctx.signal, ctx.logger);
+        },
         forAgent: () => null,
       };
     },

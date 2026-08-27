@@ -23,15 +23,15 @@ precedence. `@clarvis/capability` owns two correspondence tables — hook event 
 (`EXTERNAL_HOOK_EVENT_NAMES`) and hook filter tool names (`EXTERNAL_TOOL_NAMES` /
 `EXTERNAL_TOOLS_WITHOUT_COUNTERPART`) — each with a single owner so the two directions (writing a
 foreign-legible payload, reading a foreign-authored document) can never drift apart
-(`packages/capability/src/hooks-config.ts:78-89`). `@clarvis/kernel`'s `hook-dialects.ts` uses those
+(`packages/capability/src/hooks-config.ts:89-100`). `@clarvis/kernel`'s `hook-dialects.ts` uses those
 tables to translate a plugin's hooks document, written in whatever ornament its host uses, into
 ordinary `HookConfig` entries. `@clarvis/skills`'s sidecar reader tolerates the same kind of
 ornamentation for a skill's own foreign-authored presentation metadata.
 
 The thread that ties all of it together is a single design rule, stated in the production code itself:
 an approximation that fires — or matches, or forwards — at the wrong moment is worse than an honest
-gap the operator can see (`packages/capability/src/hooks-config.ts:87-89`,
-`packages/capability/src/hooks-config.ts:120-123`). Every mechanism below chooses to drop, note, or
+gap the operator can see (`packages/capability/src/hooks-config.ts:98-100`,
+`packages/capability/src/hooks-config.ts:132-135`). Every mechanism below chooses to drop, note, or
 degrade rather than guess.
 
 ## 2. Surface
@@ -68,16 +68,17 @@ not on `.agents` specifically.
 
 ### 2.2 The hook-dialect correspondence tables (`@clarvis/capability`)
 
-All exported from `@clarvis/capability`'s root (`packages/capability/src/index.ts:71-89`):
+All exported from `@clarvis/capability`'s root (`packages/capability/src/index.ts:71-91`):
 
 | Symbol | File:line | Shape |
 | --- | --- | --- |
-| `EXTERNAL_HOOK_EVENT_NAMES` | `packages/capability/src/hooks-config.ts:90` | `Readonly<Record<string,string>>`, Clarvis event → foreign event, 8 entries |
-| `EXTERNAL_TOOL_NAMES` | `packages/capability/src/hooks-config.ts:125` | `Readonly<Record<string,string>>`, normalized foreign tool name → Clarvis wire name, 15 entries |
-| `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` | `packages/capability/src/hooks-config.ts:152` | `ReadonlySet<string>`, 5 normalized foreign names with no Clarvis tool |
-| `normalizeToolName(name)` | `packages/capability/src/hooks-config.ts:169` | `(string) => string` — strips everything but letters/digits, lower-cases |
+| `EXTERNAL_HOOK_EVENT_NAMES` | `packages/capability/src/hooks-config.ts:101` | `Readonly<Record<string,string>>`, Clarvis event → foreign event, 9 entries |
+| `EXTERNAL_TOOL_NAMES` | `packages/capability/src/hooks-config.ts:137` | `Readonly<Record<string,string>>`, normalized foreign tool name → Clarvis wire name, 16 entries |
+| `EXTERNAL_HOOK_TOOL_NAMES` | `packages/capability/src/hooks-config.ts:157` | `Readonly<Record<string,string>>`, Clarvis built-in wire name → preferred external stdin spelling |
+| `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` | `packages/capability/src/hooks-config.ts:180` | `ReadonlySet<string>`, 5 normalized foreign names with no Clarvis tool |
+| `normalizeToolName(name)` | `packages/capability/src/hooks-config.ts:197` | `(string) => string` — strips everything but letters/digits, lower-cases |
 
-`EXTERNAL_HOOK_EVENT_NAMES` (`packages/capability/src/hooks-config.ts:90-99`):
+`EXTERNAL_HOOK_EVENT_NAMES` (`packages/capability/src/hooks-config.ts:101-111`):
 
 | Clarvis event | Foreign spelling |
 | --- | --- |
@@ -89,14 +90,15 @@ All exported from `@clarvis/capability`'s root (`packages/capability/src/index.t
 | `subagent_complete` | `SubagentStop` |
 | `pre_finalize` | `Stop` |
 | `user_steer` | `UserPromptSubmit` |
+| `user_prompt_expansion` | `UserPromptExpansion` |
 
 `pre_delegate_task` (a `GATE_HOOK_EVENTS` member, `packages/capability/src/hooks-config.ts:30`) has no
 row: it is a Clarvis-only gate with no foreign counterpart, so it is absent from the table on purpose
-rather than mapped onto an approximation (`packages/capability/src/hooks-config.ts:87-88`).
+rather than mapped onto an approximation (`packages/capability/src/hooks-config.ts:98-99`).
 `Notification`, a real foreign event, is likewise absent in the other direction
 (`packages/kernel/src/plugins/hook-dialects.ts:48-50`).
 
-`EXTERNAL_TOOL_NAMES` (`packages/capability/src/hooks-config.ts:125-141`), keyed by
+`EXTERNAL_TOOL_NAMES` (`packages/capability/src/hooks-config.ts:137-169`), keyed by
 `normalizeToolName`:
 
 | Normalized foreign key | Clarvis tool |
@@ -111,8 +113,13 @@ rather than mapped onto an approximation (`packages/capability/src/hooks-config.
 | `grep` | `grep` |
 | `ls`, `listdir` | `list_dir` |
 | `task` | `delegate_task` |
+| `skill` | `load_skill` |
 
-`EXTERNAL_TOOLS_WITHOUT_COUNTERPART` (`packages/capability/src/hooks-config.ts:152-158`): `exitplanmode`,
+`EXTERNAL_HOOK_TOOL_NAMES` (`packages/capability/src/hooks-config.ts:157-169`) is the emission-side
+counterpart. It spells built-ins in the vocabulary an externally authored hook reads on stdin; MCP
+tools are derived from their stable dotted identity at runtime rather than listed in this finite map.
+
+`EXTERNAL_TOOLS_WITHOUT_COUNTERPART` (`packages/capability/src/hooks-config.ts:180-186`): `exitplanmode`,
 `todowrite`, `notebookedit`, `webfetch`, `websearch`.
 
 ### 2.3 The plugin hooks-document translator (`@clarvis/kernel`)
@@ -120,11 +127,11 @@ rather than mapped onto an approximation (`packages/capability/src/hooks-config.
 | Symbol | File:line | Signature |
 | --- | --- | --- |
 | `hooksDocumentSchema` | `packages/kernel/src/plugins/hook-dialects.ts:164` | Zod union: `{ hooks: EventMap } \| EventMap` |
-| `convertHooksDocument(document, pluginRoot)` | `packages/kernel/src/plugins/hook-dialects.ts:467` | `(HooksDocument, string) => { hooks: HookConfig[]; notes: string[] }` |
+| `convertHooksDocument(document, pluginRoot, options?)` | `packages/kernel/src/plugins/hook-dialects.ts:546` | `(HooksDocument, string, { pluginName?, pluginMcpServers? }?) => { hooks: HookConfig[]; notes: string[] }` |
 | `HooksConversion` | `packages/kernel/src/plugins/hook-dialects.ts:173` | `{ hooks: HookConfig[]; notes: string[] }` |
 
 Internal helpers with their own, independently useful contracts: `translateTimeout(seconds, event)`
-(`:94`), `translateToolName(part)` (`:368`), `translateMatcher(matcher)` (`:430`),
+(`:94`), `translateToolName(part, options)` (`:405`), `translateMatcher(matcher, options)` (`:495`),
 `substituteRoot(command, pluginRoot)` (`:259`), `normalizeEventName(name)` (`:66`).
 
 ### 2.4 Skill roots and the foreign sidecar (`@clarvis/skills`)
@@ -158,7 +165,7 @@ in §2.4/§6 is only as strong as this canonicalization.
 | --- | --- | --- |
 | `mcpServerSettingsSchema` | `packages/loop/src/settings/settings-schema.ts:197` | strict schema used for `settings.json`; rejects any key it does not recognize |
 | `mcpServerPluginSchema` | `packages/loop/src/settings/settings-schema.ts:221` | the same entry validated, but without `.strict()` — for a plugin manifest only, never `settings.json` |
-| `sanitizeMcpServers(document)` | `packages/kernel/src/plugins/plugin-manifest.ts:679` | applies `mcpServerPluginSchema` to each `mcpServers` entry individually, dropping only the unusable ones |
+| `sanitizeMcpServers(document)` | `packages/kernel/src/plugins/plugin-manifest.ts:798` | applies `mcpServerPluginSchema` to each `mcpServers` entry individually, dropping only the unusable ones |
 
 This is the same "foreign document, tolerant reading" pattern as §2.3's hooks translator, applied to a
 different key of the same manifest; behavior is in §4.6.
@@ -214,11 +221,11 @@ version, say — is read rather than refused for a key that says nothing to us."
 to" rule.
 
 `convertHooksDocument` output — a `HooksConversion` — pairs a `HookConfig[]` (Clarvis's own
-`hookSchema` shape, `packages/capability/src/hooks-config.ts:379`) with a flat `notes: string[]`, one
+`hookSchema` shape, `packages/capability/src/hooks-config.ts:410`) with a flat `notes: string[]`, one
 line per hook/filter that did not translate cleanly
 (`packages/kernel/src/plugins/hook-dialects.ts:172-178`).
 
-Example, from `packages/kernel/tests/integration/plugin-manifest.test.ts:482-493`: the foreign
+Example, from `packages/kernel/tests/integration/plugin-manifest.test.ts:593-615`: the foreign
 document
 
 ```jsonc
@@ -272,50 +279,62 @@ color: "#3b82f6", starterPrompt: "Draft the notes for everything since the last 
 
 ## 4. Behavior
 
-### 4.1 Building the tool-name reading for one matcher name (`translateToolName`, `packages/kernel/src/plugins/hook-dialects.ts:368-395`)
+### 4.1 Building the tool-name reading for one matcher name (`translateToolName`, `packages/kernel/src/plugins/hook-dialects.ts:405-458`)
 
-Four rules, tried in this order — the order is what keeps the rules from contradicting each other
-(doc comment at `:346-367`):
+Five rules are applied in order (`:372-403`):
 
-1. A name starting with `mcp__` is rewritten to this host's dotted `<server>.<tool>` MCP namespacing;
-   `mcp__.*` becomes `*.*`, `mcp__github__.*` becomes `github.*` (`:369-384`).
-2. Only when the name carries **no** pattern syntax at all (`PLAIN_TOOL_NAME`, `[A-Za-z0-9_-]+`) is it
+1. An external MCP spelling becomes Clarvis's stable dotted identity: catch-all `mcp__.*` becomes
+   `*.*`, and `mcp__<server>__<tool>` becomes `<server>.<tool>` (`:409-437`).
+2. A plugin-instance MCP spelling `mcp__plugin_.*<server>.*` keeps the stable server portion and is
+   force-qualified with the effective install identity supplied in `options.pluginName`
+   (`:412-418`). A matcher naming a server the selected manifest contributes is qualified the same
+   way; a matcher naming some other server remains unqualified (`:348-369`, `:420-445`). This prevents
+   two installed plugins contributing the same server name from sharing a hook namespace.
+3. Only when the name carries **no** pattern syntax at all (`PLAIN_TOOL_NAME`, `[A-Za-z0-9_-]+`) is it
    looked up in `EXTERNAL_TOOL_NAMES`/`EXTERNAL_TOOLS_WITHOUT_COUNTERPART` via `normalizeToolName`
-   (`:386-390`). This restriction matters: `Edit.*` is a valid regular expression in the source
-   dialect (matching several tools), but `normalizeToolName` would reduce it to the same key as `Edit`
-   — so the alias table is consulted only when there is no regex syntax to lose.
-3. A name already in this host's own `<server>.<tool>` shape passes through unchanged (`:392`).
-4. Anything else — regex syntax this host's glob cannot express — is `{ kind: "inexpressible" }`
-   (`:394`).
+   (`:449-453`). This restriction matters: a regular-expression family must not collapse into one
+   exact built-in name.
+4. A name already in this host's own `<server>.<tool>` shape passes through unchanged (`:455`).
+5. Anything else — syntax this host's glob cannot express — is `{ kind: "inexpressible" }` (`:457`).
 
-### 4.2 Building the filter for one matcher (`translateMatcher`, `packages/kernel/src/plugins/hook-dialects.ts:430-446`)
+The identity in step 2 is the host-owned install-directory name, not presentation metadata from the
+manifest. `resolvePluginManifest` receives that effective identity and passes it to the hooks
+conversion only after the MCP server map has been resolved
+(`packages/kernel/src/plugins/plugin-manifest.ts:930-945`, `:981-1015`). The integration tests pin both
+ordinary owned-server qualification and a manifest whose display name differs from its install name
+(`packages/kernel/tests/integration/plugin-manifest.test.ts:692-732`).
 
-1. Strip a leading `^`/trailing `$` from the **whole** matcher, then test it against `CATCH_ALL_MATCHER`
-   (`^(?:\*|\.\*)$`); a match yields `{ match: null, dropped: [] }` — no filter needed (`:431-432`).
-2. Otherwise split on `|`, and for each alternative: a bare catch-all inside the alternation refuses the
-   whole group (`{ refused: "inexpressible" }`, `:438`); an `inexpressible` reading from §4.1 refuses
-   the whole group too (`:440`); a `no_counterpart` reading is collected into `dropped` (`:441`); a
-   `tool` reading is de-duplicated into the accumulating `tool` list (`:442`).
-3. If every alternative was `no_counterpart`, the whole matcher refuses as `no_counterpart` (`:444`) —
-   a filter naming no tool at all is not a filter.
+### 4.2 Building the filter for one matcher (`translateMatcher`, `packages/kernel/src/plugins/hook-dialects.ts:495-521`)
 
-### 4.3 Converting a whole document (`convertHooksDocument`, `packages/kernel/src/plugins/hook-dialects.ts:467-535`)
+1. Strip a leading `^`/trailing `$` from the **whole** matcher, then test it against
+   `CATCH_ALL_MATCHER`; a match yields `{ match: null, dropped: [] }` — no filter needed (`:499-500`).
+2. Otherwise split on `|`. A bare catch-all inside an alternation refuses the whole group because
+   retaining it would widen the hook to every call (`:501-507`).
+3. Each inexpressible or no-counterpart alternative is recorded in `dropped`; every exact tool
+   alternative is de-duplicated into the filter (`:503-516`). If at least one exact alternative
+   survives, the group remains enforceable and the operator is told which branches were omitted
+   (`:517-520`, emission at `:589-595`).
+4. If **no** alternative survives, the group is refused as `inexpressible` or `no_counterpart` — an
+   empty filter is never widened to an unfiltered hook (`:517-519`).
+
+### 4.3 Converting a whole document (`convertHooksDocument`, `packages/kernel/src/plugins/hook-dialects.ts:546-622`)
 
 For each `(sourceEvent, groups)` entry of the document's event map:
 
 1. Normalize `sourceEvent` and look it up in `EVENTS_BY_NORMALIZED_NAME` (the inverse of
-   `EXTERNAL_HOOK_EVENT_NAMES`, `:52-76`). No match → push a note, skip the whole event (`:475-479`).
+   `EXTERNAL_HOOK_EVENT_NAMES`, `:52-76`). No match → push a note, skip the whole event (`:554-559`).
 2. If the resolved Clarvis event is in `OBSERVER_ONLY` (= `OBSERVER_HOOK_EVENTS`) but the source
    declared at least one real hook, push a note that the commands will run but can never block
-   anything (`:480-485`).
+   anything (`:560-572`).
 3. For each matcher group: run `translateMatcher` only if the event is tool-scoped (`pre_tool_use` /
-   `post_tool_use`); a refusal pushes a note and skips the **group** (`:488-501`); a partial `dropped`
-   list pushes a note but keeps the rest of the filter (`:503-508`); a non-empty matcher on a
-   non-tool-scoped event is noted and ignored (`:509-513`).
+   `post_tool_use`); a refusal pushes a note and skips the **group** (`:573-588`); a partial `dropped`
+   list pushes a note but keeps the rest of the filter (`:589-595`); a non-empty matcher on a
+   non-tool-scoped event is noted and ignored (`:596-600`).
 4. For each hook entry in the surviving group: an entry `type` other than `"command"`/`undefined` is
-   noted and skipped (`:515-518`); `async: true` is noted (Clarvis awaits every hook regardless,
-   `:519-521`); the timeout is converted and clamped via `translateTimeout` (`:522-523`); the command
-   has its plugin-root placeholder substituted (`:526`); the resulting `HookConfig` is pushed (`:524-529`).
+   noted and skipped (`:601-605`); `async: true` is noted (Clarvis awaits every hook regardless,
+   `:606-608`); the timeout is converted and clamped via `translateTimeout` (`:609-610`); the command
+   has its plugin-root placeholder substituted (`:613`); the resulting `HookConfig` is pushed
+   (`:611-616`).
 
 ### 4.4 Substituting the plugin-root placeholder (`substituteRoot`, `packages/kernel/src/plugins/hook-dialects.ts:259-308`)
 
@@ -351,28 +370,28 @@ Resolved at translation time into the literal path, not exported as an environme
 operator reviewing the hook definition reads the real path and that path becomes part of the hook's
 approval fingerprint (doc comment `:255-257`).
 
-### 4.5 Hooks source precedence: the manifest wins, but only if it says something (`resolveHooks`, `packages/kernel/src/plugins/plugin-manifest.ts:555-588`)
+### 4.5 Hooks source precedence: the manifest wins, but only if it says something (`resolveHooks`, `packages/kernel/src/plugins/plugin-manifest.ts:650-687`)
 
 A plugin's hooks come from exactly one of two sources — its manifest's own `hooks` key, or the
 `hooks/hooks.json` convention file — never merged (doc comment `:543-547`):
 
-1. `harvestDeclared` runs on whatever the manifest's `hooks` key holds (`:559`).
+1. `harvestDeclared` runs on whatever the manifest's `hooks` key holds (`:658`).
 2. **A declaration only counts when it yields at least one hook.** An empty array (`[]`) or an empty
    object (`{}`) is not "no hooks", it is "zero hooks harvested" — `harvestDeclared` returns `hooks: []`
    for both — so the `fromManifest.hooks.length > 0` check (`:562`) fails and the code falls through to
    the convention file at `:576` anyway, because a real plugin was found shipping exactly `"hooks": {}`
    while its actual commands lived in `hooks/hooks.json`; the naive reading ("the manifest declared
-   hooks, so stop looking") would have silently dropped every one of them (doc comment `:549-553`).
+   hooks, so stop looking") would have silently dropped every one of them (doc comment `:644-648`).
 3. If the manifest's own declaration did yield hooks, and the convention file also exists (and is not
    simply the file the declaration itself named), a note records that the convention file was not read
-   because the manifest's own hooks take precedence (`:564-573`).
+   because the manifest's own hooks take precedence (`:661-672`).
 4. If the manifest declared nothing usable, `harvestConvention` is tried; if it yields hooks and the
    manifest had named something anyway (even if empty), a note records that the convention file was read
-   because the manifest declared none (`:578-583`).
+   because the manifest declared none (`:675-682`).
 5. If neither source yields anything, the manifest's `hooks` key is deleted and no note beyond whatever
-   each harvest already pushed is added (`:586-587`).
+   each harvest already pushed is added (`:685-686`).
 
-Pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts:648-679` ("leaves an empty inline
+Pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts:830-878` ("leaves an empty inline
 object contributing nothing when there is nothing else", "falls through to the convention when the
 declaration names nothing", "treats an empty native array the same way an empty map is treated").
 
@@ -392,13 +411,46 @@ names existed" figure the `EXTERNAL_TOOL_NAMES` architecture test uses elsewhere
 keys are dropped, not carried forward, so nothing downstream can start treating a foreign key as a
 contract this host never agreed to (`:216-219`).
 
-`sanitizeMcpServers` (`packages/kernel/src/plugins/plugin-manifest.ts:679-702`) is what applies that
+When `mcpServers` is absent, the resolver also recognizes companion documents by convention. It tries
+`.mcp.json`, then `mcp.json`; a missing file advances silently, while a malformed first convention is
+noted and the second is still attempted (`packages/kernel/src/plugins/plugin-manifest.ts:763-778`). A
+string declaration names one companion directly; an inline object remains inline. Every relative
+companion path is tried beside the selected manifest first when that file exists there, then against
+the plugin root, while both readings remain confined to the plugin root
+(`packages/kernel/src/plugins/plugin-manifest.ts:347-375`). This composes foreign layouts without
+merging two server maps or making one bad convention hide the next. Tests:
+`packages/kernel/tests/integration/plugin-manifest.test.ts:260-360`, plus the combined skills/MCP/hooks
+layout at `:362-404`.
+
+`sanitizeMcpServers` (`packages/kernel/src/plugins/plugin-manifest.ts:798-821`) is what applies that
 schema **per record**: it parses every entry of the manifest's `mcpServers` map individually, keeps
 whichever ones validate, and pushes one note per entry that does not — the manifest schema's rule is
 unchanged, only the blast radius of one bad entry is, from "this plugin does not exist" to "this server
 is not contributed" (doc comment `:667-677`).
 
-### 4.7 Skill precedence merge (delegated mechanism, cited for context)
+### 4.7 Runtime tool identity and stdin projection
+
+Clarvis matches hooks against its own dispatch identity and emits the spelling the external process
+expects; neither representation replaces the other. A handler may supply `canonicalName(call)` and the
+loop carries it as `toolFullName` through both tool lifecycle contexts
+(`packages/capability/src/loop-contract.ts:94-104`,
+`packages/loop/src/runtime/loop/loop.ts:471-485`, `:526-594`). The hooks package then:
+
+- keeps the model-facing `tool` as the primary match candidate and adds the stable full name as an
+  alias (`packages/hooks/src/event-serialization.ts:213-220`);
+- emits built-in names through `EXTERNAL_HOOK_TOOL_NAMES`, adds the external `skill` alias alongside
+  the native `name` field for skill loads, and reconstructs `mcp__<server>__<tool>` from a dotted MCP
+  identity while removing the Clarvis-only plugin namespace from stdin
+  (`packages/hooks/src/event-serialization.ts:91-120`, `:137-151`);
+- fires `user_prompt_expansion` only when the host supplied the command that expanded into this run,
+  once during the hooks capability's seed phase; ordinary prompts and later model-initiated skill
+  loads have no such context (`packages/capability/src/hooks-config.ts:73-82`,
+  `packages/hooks/tests/component/capability.test.ts:620-647`).
+
+This is pinned together by `packages/hooks/tests/component/capability.test.ts:413-453` and
+`packages/loop/tests/unit/tool-hooks.test.ts:171-214`.
+
+### 4.8 Skill precedence merge (delegated mechanism, cited for context)
 
 `clarvisSkillRoots` (§3.1) hands its four roots, in ascending order, to `buildRegistry`
 (`packages/skills/src/registry.ts:121`), which scans and merges in one pass: the roots are folded **in
@@ -418,25 +470,24 @@ Catalog invariants carry `INV-nnn` and are owned here; only INV-189 is catalogue
 
 **INV-189** (owned by this document). Every foreign tool name in `EXTERNAL_TOOL_NAMES` maps onto a tool
 Clarvis actually dispatches (present in `@clarvis/tools`'s registry) or is explicitly allowlisted as a
-capability-owned name (`delegate_task`); no name in `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` is
+capability-owned name (`delegate_task` or `load_skill`); no name in `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` is
 contradicted by actually existing in the registry; and the capability allowlist contains no name that
 is *also* in the tool registry (keeping it non-redundant).
-Production: `packages/capability/src/hooks-config.ts:125-158`.
-Test: `packages/kernel/tests/architecture/external-tool-names.test.ts:19` (maps to a real tool),
-`:26` (no contradicted "without counterpart" claim), `:31` (allowlist stays non-redundant).
+Production: `packages/capability/src/hooks-config.ts:137-186`.
+Test: `packages/kernel/tests/architecture/external-tool-names.test.ts:24-41`.
 
 **AIN-01** (derived). `EXTERNAL_TOOL_NAMES` and `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` are disjoint sets
 — no key names both "here is the Clarvis tool" and "Clarvis has no such tool".
-Production: `packages/capability/src/hooks-config.ts:125-158`.
-Test: `packages/capability/tests/unit/hooks-config.test.ts:237-241` ("never lists a name in both
+Production: `packages/capability/src/hooks-config.ts:137-186`.
+Test: `packages/capability/tests/unit/hooks-config.test.ts:246-250` ("never lists a name in both
 directions at once").
 
 **AIN-02** (derived). `EXTERNAL_HOOK_EVENT_NAMES` is one-to-one: every foreign spelling it produces is
 distinct, so inverting it (as `hook-dialects.ts` does to build `EXTERNAL_HOOK_EVENTS`) loses no
 information and cannot make two Clarvis events collide onto one lookup key.
-Production: `packages/capability/src/hooks-config.ts:90-99`;
+Production: `packages/capability/src/hooks-config.ts:101-111`;
 inversion at `packages/kernel/src/plugins/hook-dialects.ts:52-54`.
-Test: `packages/kernel/tests/integration/plugin-manifest.test.ts:881-896` ("round-trips every event
+Test: `packages/kernel/tests/integration/plugin-manifest.test.ts:1038-1053` ("round-trips every event
 the shared correspondence names, in both directions"; "keeps the correspondence one-to-one, so
 inverting it loses nothing").
 
@@ -444,8 +495,8 @@ inverting it loses nothing").
 `EXTERNAL_TOOLS_WITHOUT_COUNTERPART`) is already in its own `normalizeToolName`-normalized form, so the
 lookup a real (differently-capitalized, differently-punctuated) foreign name normalizes to can never
 miss the table by construction.
-Production: `packages/capability/src/hooks-config.ts:125-171`.
-Test: `packages/capability/tests/unit/hooks-config.test.ts:220-227` ("keys every entry by its own
+Production: `packages/capability/src/hooks-config.ts:137-199`.
+Test: `packages/capability/tests/unit/hooks-config.test.ts:228-235` ("keys every entry by its own
 normalized form, so a lookup cannot miss").
 
 **AIN-04** (derived). `.agents` is read-only: nothing in `@clarvis/paths` (or, so far as this document's
@@ -473,12 +524,13 @@ name" scenario — the winner is the workspace `.clarvis` definition, with `clar
 `agents:workspace` and `agents:user` retained on its `shadowed` chain in that order.
 
 **AIN-06** (derived). A refused or unusable piece of a foreign hooks document never widens what a hook
-matches or which events it can act on: an inexpressible or no-counterpart matcher drops the whole group
-rather than falling back to no filter (`packages/kernel/src/plugins/hook-dialects.ts:416-429`,
-tested at `packages/kernel/tests/integration/plugin-manifest.test.ts:591-598`,
-`:600-610`), and a timeout past `MAX_HOOK_TIMEOUT_MS` is clamped down, never rounded up or dropped in a
-way that would emit an unbounded hook (`packages/kernel/src/plugins/hook-dialects.ts:94-107`, tested at
-`packages/kernel/tests/integration/plugin-manifest.test.ts:897-905`).
+matches or which events it can act on: an unrepresentable alternative is retained only as a note when
+another exact alternative survives; if nothing exact survives, the whole group is dropped rather than
+falling back to no filter (`packages/kernel/src/plugins/hook-dialects.ts:495-521`, tested at
+`packages/kernel/tests/integration/plugin-manifest.test.ts:734-790`, `:1047-1054`). A timeout past
+`MAX_HOOK_TIMEOUT_MS` is clamped down, never rounded up or emitted unbounded
+(`packages/kernel/src/plugins/hook-dialects.ts:94-107`, tested at
+`packages/kernel/tests/integration/plugin-manifest.test.ts:1095-1130`).
 
 **AIN-07** (derived). A malformed or unreadable skill sidecar degrades to "no sidecar" and never
 removes, suppresses, or otherwise changes the catalog status of the skill that carries it.
@@ -487,22 +539,42 @@ Test: `packages/skills/tests/integration/sidecar.test.ts:210-217` ("keeps a skil
 malformed fully present in the catalog"), `:219-221` ("reports the malformed sidecar as a warning"),
 `:223-225` ("keeps a malformed sidecar from failing even a strict scan").
 
+**AIN-08** (derived). A plugin-owned MCP matcher is qualified with the host-owned install identity,
+not a manifest's presentation name, and an unrelated server matcher remains unqualified. Production:
+`packages/kernel/src/plugins/hook-dialects.ts:348-369`, `:405-445` and
+`packages/kernel/src/plugins/plugin-manifest.ts:938-983`. Test:
+`packages/kernel/tests/integration/plugin-manifest.test.ts:692-732`.
+
+**AIN-09** (derived). The external tool spelling is an output projection, not the hook matcher's
+canonical identity: built-ins, skill loads and MCP tools can be emitted in the foreign stdin dialect
+while the same invocation is still matched by its Clarvis wire/full-name candidates. Production:
+`packages/hooks/src/event-serialization.ts:91-120`, `:137-151`, `:213-220`. Test:
+`packages/hooks/tests/component/capability.test.ts:413-453`.
+
+**AIN-10** (derived). `UserPromptExpansion` fires exactly once for a user-invoked skill expansion and
+does not stand in for ordinary prompt submission or a later `load_skill` tool call. Production:
+`packages/capability/src/hooks-config.ts:73-82` and the host request projection in
+`packages/kernel/src/runs/settings-assembler.ts:460-466`. Test:
+`packages/hooks/tests/component/capability.test.ts:620-647` and
+`packages/kernel/tests/component/settings-assembler.test.ts:540-579`.
+
 ## 6. Failure modes and degradation
 
 | Situation | What happens | Cited at |
 | --- | --- | --- |
-| Foreign hook event name has no Clarvis counterpart (`Notification`) | Whole event's commands are dropped; one note naming the event | `packages/kernel/src/plugins/hook-dialects.ts:474-479`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:823-830` |
-| Foreign event maps to a Clarvis event that is observer-only | Commands still run (installed, approved) but a note warns their verdict can never block | `packages/kernel/src/plugins/hook-dialects.ts:480-485`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:832-839` |
-| Matcher carries regex syntax this host's glob cannot express | Whole matcher group dropped, not guessed at, not widened | `packages/kernel/src/plugins/hook-dialects.ts:416-429`, `:491-500`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:849-857`, `:600-610` |
-| Matcher names only tools with no Clarvis counterpart | Whole group dropped as "no filter is not a filter" | `packages/kernel/src/plugins/hook-dialects.ts:444`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:591-598` |
-| Matcher names a mix of known and unknown tools | Known ones kept, unknown ones named in a note, rest of filter still applies | `packages/kernel/src/plugins/hook-dialects.ts:503-508`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:582-589` |
-| Filter set on a non-tool-scoped event | Filter ignored with a note; event still fires unfiltered | `packages/kernel/src/plugins/hook-dialects.ts:509-513` |
-| Hook entry of unsupported `type` | That single entry skipped with a note; siblings unaffected | `packages/kernel/src/plugins/hook-dialects.ts:515-518` |
-| `async: true` on an entry | Noted (Clarvis always awaits); entry still runs synchronously | `packages/kernel/src/plugins/hook-dialects.ts:519-521` |
-| Timeout exceeds `MAX_HOOK_TIMEOUT_MS` | Clamped to the ceiling with a note, never emitted unbounded (which the manifest schema would then refuse for the whole document) | `packages/kernel/src/plugins/hook-dialects.ts:94-107`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:897-905` |
+| Foreign hook event name has no Clarvis counterpart (`Notification`) | Whole event's commands are dropped; one note naming the event | `packages/kernel/src/plugins/hook-dialects.ts:554-559`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1021-1028` |
+| Foreign event maps to a Clarvis event that is observer-only | Commands still run (installed, approved) but a note warns their verdict can never block | `packages/kernel/src/plugins/hook-dialects.ts:567-572`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1030-1037` |
+| One matcher alternative carries syntax this host's glob cannot express | That branch is dropped with a note when an exact branch survives; the group is dropped only when none does | `packages/kernel/src/plugins/hook-dialects.ts:495-521`, `:578-595`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts:734-758`, `:1047-1054` |
+| Matcher names only tools with no Clarvis counterpart | Whole group dropped as "no filter is not a filter" | `packages/kernel/src/plugins/hook-dialects.ts:517-519`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:773-780` |
+| Matcher names a mix of known and unknown tools | Known ones kept, unknown ones named in a note, rest of filter still applies | `packages/kernel/src/plugins/hook-dialects.ts:503-520`, `:589-595`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:734-770` |
+| Filter set on a non-tool-scoped event | Filter ignored with a note; event still fires unfiltered | `packages/kernel/src/plugins/hook-dialects.ts:596-600` |
+| Hook entry of unsupported `type` | That single entry skipped with a note; siblings unaffected | `packages/kernel/src/plugins/hook-dialects.ts:601-605` |
+| `async: true` on an entry | Noted (Clarvis always awaits); entry still runs synchronously | `packages/kernel/src/plugins/hook-dialects.ts:606-608` |
+| Timeout exceeds `MAX_HOOK_TIMEOUT_MS` | Clamped to the ceiling with a note, never emitted unbounded (which the manifest schema would then refuse for the whole document) | `packages/kernel/src/plugins/hook-dialects.ts:94-107`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1054-1062` |
 | An MCP server entry in a plugin manifest carries keys this host gives no meaning to | Keys silently dropped, entry kept if otherwise valid (`mcpServerPluginSchema`, the tolerant counterpart of the strict `mcpServerSettingsSchema` used for `settings.json`) | `packages/loop/src/settings/settings-schema.ts:199-221` |
-| An MCP server entry is unusable even after that tolerance (e.g. a stdio server naming no command) | Only that entry dropped, with a note; rest of `mcpServers` and the whole plugin survive | `packages/kernel/src/plugins/plugin-manifest.ts:659-701` |
-| A declared/convention hooks document is missing, not JSON, over its byte ceiling, or not a recognizable hooks shape | Manifest keeps loading with no hooks from that source and a note; never an `error` | missing/unreadable/oversized: `packages/kernel/src/plugins/plugin-manifest.ts:445-469` (`harvestFile`), `:507-527` (`harvestConvention`); not JSON or unrecognized shape: `:412-423` (`harvestDocument`); tests `packages/kernel/tests/integration/plugin-manifest.test.ts:722-764` |
+| An MCP companion is missing or malformed | Missing convention advances to the next name; a malformed convention is noted and the next is still tried; a broken explicit companion withholds only MCP servers | `packages/kernel/src/plugins/plugin-manifest.ts:715-778`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts:260-360` |
+| An MCP server entry is unusable even after that tolerance (e.g. a stdio server naming no command) | Only that entry dropped, with a note; rest of `mcpServers` and the whole plugin survive | `packages/kernel/src/plugins/plugin-manifest.ts:780-821` |
+| A declared/convention hooks document is missing, not JSON, over its byte ceiling, or not a recognizable hooks shape | Manifest keeps loading with no hooks from that source and a note; never an `error` | `packages/kernel/src/plugins/plugin-manifest.ts:484-621`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts:906-982` |
 | A skill sidecar is unreadable, unparseable, or not a YAML mapping | Skill keeps its name/description/body; only `presentation`/`catalogSuppressed` are absent; a warning is logged | `packages/skills/src/sidecar.ts:280-335`; tests `packages/skills/tests/integration/sidecar.test.ts:203-247` |
 | A sidecar's resource escapes the skill directory (via symlink) | Skipped with a warning, same as any other escaping symlink | `packages/skills/src/scan.ts:174-181`; test `packages/skills/tests/integration/sidecar.test.ts:227-238` |
 | A symlink's target cannot be resolved at all — missing (`ENOENT`) versus any other `realpath` failure | Treated oppositely: a *missing* target is **not** counted as escaping (falls through to the separate dangling-link warning, so a symlinked ancestor like a symlinked temp dir does not make every dangling link look like an escape); every *other* resolution failure — e.g. a target that exists but is unreadable — **is** counted as escaping, because the later `stat` needs only search permission where `realpath` needs read on the target | `packages/skills/src/scan.ts:386-393` (`escapesRoot`), doc rule at `:363-385` |
@@ -512,7 +584,7 @@ malformed fully present in the catalog"), `:219-221` ("reports the malformed sid
 
 Every row above is a **degrade**, not a **fail**: nothing in this document's scope shows a foreign
 dialect document taking down anything wider than the one artifact it could not translate. This mirrors
-the same design language used for plugin manifests generally (`packages/kernel/src/plugins/plugin-manifest.ts:659-676`).
+the same design language used for plugin manifests generally (`packages/kernel/src/plugins/plugin-manifest.ts:778-795`).
 
 ## 7. Coupling
 
@@ -530,15 +602,15 @@ the same design language used for plugin manifests generally (`packages/kernel/s
   depending on the other — the structural reason given in the file's own header remark
   (`packages/capability/src/hooks-config.ts:5-14`).
 - **`@clarvis/hooks` reads `EXTERNAL_HOOK_EVENT_NAMES` forwards** to label the stdin payload sent to a
-  hook subprocess: `packages/hooks/src/event-serialization.ts:20`, `:188-190` attaches an `externalEvent`
-  field when a Clarvis event has a foreign spelling. The full stdin-payload contract this feeds into is
-  owned by the [execution/hooks.md](../execution/hooks.md) document.
+  hook subprocess and `EXTERNAL_HOOK_TOOL_NAMES` forwards for built-in tool spellings:
+  `packages/hooks/src/event-serialization.ts:1-25`, `:106-120`, `:224-237`. The full stdin-payload
+  contract this feeds into is owned by the [execution/hooks.md](../execution/hooks.md) document.
 - **`@clarvis/kernel`'s `hook-dialects.ts` reads the same table backwards**
   (`packages/kernel/src/plugins/hook-dialects.ts:28-36`, `:52-54`) to translate an installed plugin's
   document. Because both directions derive from the one table in `@clarvis/capability` rather than each
   hand-writing its own map, a table edit cannot leave the two readings out of sync — which is exactly
   what the doc comment on `EXTERNAL_HOOK_EVENT_NAMES` states is the reason it exists in one place
-  (`packages/capability/src/hooks-config.ts:78-83`).
+  (`packages/capability/src/hooks-config.ts:89-94`).
 - **`@clarvis/kernel` does not depend on `@clarvis/hooks`.** `hook-dialects.ts`'s own header remark
   states why: `@clarvis/hooks` is `optionalDependencies` of the loop, and the kernel must not gain a
   dependency that would make `builtins.hooks = false` stop meaning what it says
@@ -552,14 +624,14 @@ the same design language used for plugin manifests generally (`packages/kernel/s
   declares no `@clarvis/hooks` dependency, and a scan of `packages/kernel/src` finds the package name
   only in the comment remarks cited above, never in an `import`.
 - **`packages/kernel/src/plugins/plugin-manifest.ts` is the sole caller of `convertHooksDocument` and
-  `hooksDocumentSchema`** (`packages/kernel/src/plugins/plugin-manifest.ts:22`, `:413`, `:421`) — the
+  `hooksDocumentSchema`** (`packages/kernel/src/plugins/plugin-manifest.ts:22`, `:508`, `:519`) — the
   translator has exactly one production consumer, which is why every degradation rule in `hook-dialects.ts`
   is phrased in terms of "this hook/group/document", never "this plugin": the caller is the one that
   decides what a lost hook costs the rest of the manifest (deeper mechanics owned by
   [hosts/plugins.md](../hosts/plugins.md)).
 - **`@clarvis/tools`'s tool registry is what `EXTERNAL_TOOL_NAMES` is checked against**, one-way: the
   architecture test imports `tools` from `@clarvis/tools` to validate the table
-  (`packages/kernel/tests/architecture/external-tool-names.test.ts:3,17`), but neither
+  (`packages/kernel/tests/architecture/external-tool-names.test.ts:7,17`), but neither
   `@clarvis/capability` nor `@clarvis/kernel`'s production code imports `@clarvis/tools` for this
   purpose — the correspondence table is written by hand and only *checked* against the registry by a
   test, so a renamed tool would not fail until that architecture test runs (a compile-time-adjacent, not
@@ -574,25 +646,21 @@ the same design language used for plugin manifests generally (`packages/kernel/s
 
 - **Why `pre_delegate_task` has no foreign counterpart** is stated as a design choice
   ("Events with no counterpart on either side are absent on purpose",
-  `packages/capability/src/hooks-config.ts:87-88`) but the code does not say why no foreign host's
+  `packages/capability/src/hooks-config.ts:98-99`) but the code does not say why no foreign host's
   vocabulary was judged close enough to reuse — only that none was chosen.
   Similarly, why exactly these 5 names (`exitplanmode`, `todowrite`, `notebookedit`, `webfetch`,
   `websearch`) constitute the *complete* set of foreign tools with no counterpart — as opposed to a
   larger or smaller set — is not derivable from the code; it is asserted as a closed list with no
   visible derivation from an external catalog inside this repository (the "measured against a public
-  catalog of 196 plugins" figures at `packages/capability/src/hooks-config.ts:107` and
+  catalog of 196 plugins" figures at `packages/capability/src/hooks-config.ts:119` and
   `packages/loop/src/settings/settings-schema.ts:212-213` are cited *inside* the source's own doc
   comments as the origin of these numbers, but the catalog itself is not part of this repository and
   this document could not independently verify it).
-- **The full stdin payload shape a hook subprocess actually receives** (field names, whether
-  `externalEvent` becomes `hook_event_name` on the wire, foreign-field placement) is implemented in
-  `@clarvis/hooks`, which is delegated to the [execution/hooks.md](../execution/hooks.md) document; this document verified only the
-  one call site in `@clarvis/hooks` that reads `EXTERNAL_HOOK_EVENT_NAMES` forwards
-  (`packages/hooks/src/event-serialization.ts:188-190`) and did not trace it further.
 - **The plugin manifest's broader per-artifact degradation model** (agents, skills-root directives,
   install records, hook trust) is delegated to [hosts/plugins.md](../hosts/plugins.md); this document cites
-  `plugin-manifest.ts` only at the two points where it calls into the tables and translator this document
-  owns (`sanitizeMcpServers` at `:659-701`, `harvestDocument`/`convertHooksDocument` at `:405-421`).
+  `plugin-manifest.ts` only at the points where it composes the tables, translator, and MCP companion
+  tolerance this document owns (`resolveMcpServers` at `:763-778`, `sanitizeMcpServers` at `:780-821`,
+  and `harvestDocument`/`convertHooksDocument` at `:484-551`).
 - **The deeper skill-registry mechanics** — required-field defaulting beyond the one example shown,
   `allowed-tools` vs. `tools` precedence, `user-invocable`/`catalogSuppressed` as two independent gating
   axes, the full limits regime (`MAX_SKILL_NESTING`, `MAX_SKILL_GROUP_DIRECTORIES`, etc.) — are

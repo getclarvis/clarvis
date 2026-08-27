@@ -84,7 +84,12 @@ import { presentStatusLine, progressStatusText } from "./features/run/status-pre
 import { createAttention } from "./core/attention.ts";
 import { createSettingsAdapter, type SettingsAdapter } from "./adapters/settings.ts";
 import { plansState } from "./adapters/execution-safety.ts";
-import { assertInteractiveTTY, buildRendererConfig, createPlatform } from "./adapters/platform.ts";
+import {
+  assertInteractiveTTY,
+  buildRendererConfig,
+  createPlatform,
+  openPublicUrl,
+} from "./adapters/platform.ts";
 import { installTerminalGuard } from "./adapters/terminal-guard.ts";
 import { createFilePromptHistory } from "./adapters/file-prompt-history.ts";
 import { detachObserved } from "./core/tasks.ts";
@@ -246,6 +251,7 @@ async function runPrintMode(opts: {
     keySources: code.keySources(),
     memory: true,
     logger: activeDiagnosticLogger() ?? createLogger("silent"),
+    openMcpAuthorizationUrl: openPublicUrl,
   });
   try {
     let agent = opts.agent;
@@ -512,6 +518,7 @@ async function runApp(
       ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
       memory: true,
       logger: diagnostics?.logger ?? createLogger("silent"),
+      openMcpAuthorizationUrl: openPublicUrl,
       keySources: (() => {
         const targetDirs: ClarvisDirs = {
           global: globalPaths(),

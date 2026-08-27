@@ -229,9 +229,9 @@ interface WorkflowEdge {
 Disk layout, per owner: `<state-root>/workflows/<ownerSegment(owner)>/<ownerSegment(id)>.json` (the
 full record) and a sibling `<ownerSegment(id)>.summary.json` sidecar
 (`packages/kernel/src/workflows/workflow-store.ts:433,435-441`), under `globalPaths(dir).workflowRecordsDir`
-(`packages/paths/src/global.ts:71,124`) — distinct from the *authored* documents directory,
+(`packages/paths/src/global.ts:73,124`) — distinct from the *authored* documents directory,
 `globalPaths().workflowsDir` / `workspacePaths().workflowsDir`
-(`packages/paths/src/global.ts:50`, `packages/paths/src/workspace.ts:47,111`), which holds optional
+(`packages/paths/src/global.ts:52`, `packages/paths/src/workspace.ts:47,111`), which holds optional
 operator-authored overrides at `<ws>/.clarvis/workflows/` beside `agents/` and `skills/`. Built-in
 workflow definitions have no filesystem location.
 

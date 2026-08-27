@@ -6,11 +6,14 @@
 ## 1. Purpose
 
 `@clarvis/mcp-client` is the package that knows *how* to talk to an MCP server. It builds the SDK
-client and one of three transports (`packages/mcp-client/src/client.ts:235`), wraps a live client in
+client and one of three transports (`packages/mcp-client/src/client.ts:336`), wraps a live client in
 a self-healing session that reconnects, health-pings and trips a circuit breaker
 (`packages/mcp-client/src/resilient-session.ts:104`), pools shareable connections behind refcounted
 leases with an idle TTL (`packages/mcp-client/src/connection-manager.ts:469`), and projects each
-server's tools into collision-free wire names (`packages/mcp-client/src/registry.ts:148`).
+server's tools into collision-free wire names (`packages/mcp-client/src/registry.ts:148`). For
+remote HTTP/SSE servers it also coordinates SDK OAuth through an interactive browser callback and a
+private persistent credential store (`packages/mcp-client/src/oauth.ts:180-203`,
+`packages/mcp-client/src/oauth-store.ts:199-247`).
 
 The package's own doc comment states the boundary it draws: "this package knows how to talk to an
 MCP server; the engine knows *when* to — the dispatch, the guards, the trace and the result envelope
@@ -32,22 +35,22 @@ and plugin manifests belongs to [kernel-config-and-agents](../hosts/kernel-confi
 
 The package publishes exactly one entrypoint, `.`, mapped to `./src/index.ts` under the `bun`
 condition and `./dist/index.js` otherwise (`packages/mcp-client/package.json:12-19`). `src/index.ts`
-is a pure re-export list of 96 lines (`packages/mcp-client/src/index.ts:18-96`).
+is a pure re-export list (`packages/mcp-client/src/index.ts:18-116`).
 
 ### 2.1 Client and transport construction — `src/client.ts`
 
 | Symbol | Kind | Defined at | Signature / shape |
 |---|---|---|---|
-| `defaultMCPClientFactory` | const | `packages/mcp-client/src/client.ts:93` | `createMCPClientFactory(process.env)` |
-| `createMCPClientFactory` | fn | `packages/mcp-client/src/client.ts:143` | `(environment: RuntimeEnvironment, options?: MCPClientFactoryOptions) => MCPClientFactory` |
-| `buildTransport` | fn | `packages/mcp-client/src/client.ts:235` | `(server, environment = process.env, defaultCwd?, limits = {}) => BunStdioClientTransport \| StdioClientTransport \| StreamableHTTPClientTransport \| SSEClientTransport` |
-| `MCPClientFactory` | type | `packages/mcp-client/src/client.ts:71` | `(server: McpServerConfig, relay?: ElicitationRelay, opts?: MCPConnectOptions) => Promise<MCPClientHandle>` |
-| `MCPClientHandle` | type | `packages/mcp-client/src/client.ts:45` | `{ client: Client; close(): Promise<void>; protocolVersion?: string }` |
-| `MCPConnectOptions` | type | `packages/mcp-client/src/client.ts:61` | `{ signal?: AbortSignal; timeoutMs?: number }` |
-| `ElicitationRelay` | type | `packages/mcp-client/src/client.ts:37` | `{ handle(params: Record<string, unknown>, signal?: AbortSignal): Promise<ElicitationRelayResult> }` |
-| `ElicitationRelayResult` | type | `packages/mcp-client/src/client.ts:26` | `{ action: "accept" \| "decline" \| "cancel"; content?: Record<string, unknown> }` |
-| `RuntimeEnvironment` | type | `packages/mcp-client/src/client.ts:78` | `Readonly<Record<string, string \| undefined>>` |
-| `MCPClientFactoryOptions` | type | `packages/mcp-client/src/client.ts:98` | `defaultCwd`, `maxStdioFrameBytes`, `maxHttpResponseBytes`, `maxHttpSseEventBytes`, `onServerStderr`, `maxServerStderrBytes`, `logger` (`packages/mcp-client/src/client.ts:105-129`) |
+| `defaultMCPClientFactory` | const | `packages/mcp-client/src/client.ts:108` | `createMCPClientFactory(process.env)` |
+| `createMCPClientFactory` | fn | `packages/mcp-client/src/client.ts:179` | `(environment: RuntimeEnvironment, options?: MCPClientFactoryOptions) => MCPClientFactory` |
+| `buildTransport` | fn | `packages/mcp-client/src/client.ts:336` | `(server, environment = process.env, defaultCwd?, limits = {}) => BunStdioClientTransport \| StdioClientTransport \| StreamableHTTPClientTransport \| SSEClientTransport` |
+| `MCPClientFactory` | type | `packages/mcp-client/src/client.ts:86` | `(server: McpServerConfig, relay?: ElicitationRelay, opts?: MCPConnectOptions) => Promise<MCPClientHandle>` |
+| `MCPClientHandle` | type | `packages/mcp-client/src/client.ts:55` | `{ client: Client; close(): Promise<void>; protocolVersion?: string }` |
+| `MCPConnectOptions` | type | `packages/mcp-client/src/client.ts:70` | `{ signal?; timeoutMs?; scope?; onAuthorizationWaitStart?; onAuthorizationWaitEnd? }` |
+| `ElicitationRelay` | type | `packages/mcp-client/src/client.ts:47` | `{ handle(params: Record<string, unknown>, signal?: AbortSignal): Promise<ElicitationRelayResult> }` |
+| `ElicitationRelayResult` | type | `packages/mcp-client/src/client.ts:36` | `{ action: "accept" \| "decline" \| "cancel"; content?: Record<string, unknown> }` |
+| `RuntimeEnvironment` | type | `packages/mcp-client/src/client.ts:93` | `Readonly<Record<string, string \| undefined>>` |
+| `MCPClientFactoryOptions` | type | `packages/mcp-client/src/client.ts:113` | transport bounds/stdio defaults, `logger`, and optional `authorization` coordinator (`packages/mcp-client/src/client.ts:113-147`) |
 
 ### 2.2 One connection — `src/connection.ts`
 
@@ -130,7 +133,23 @@ catalog bounds, `onEvent` and `logger`.
 | `CLIENT_NAME` | const | `packages/mcp-client/src/version.ts`, `CLIENT_NAME` | `"@clarvis/mcp-client"` |
 | `VERSION` | const | `packages/mcp-client/src/version.ts` | Clarvis product version, statically imported from the root manifest |
 
-### 2.5 What is deliberately *not* exported
+### 2.5 OAuth coordination and credential storage
+
+The OAuth surface exported by `src/index.ts:35-54` is:
+
+| Symbol | Kind | Defined at | Purpose |
+|---|---|---|---|
+| `createMCPAuthorizationCoordinator` | fn | `packages/mcp-client/src/oauth.ts:187` | long-lived loopback callback, SDK provider sessions and per-key serialization |
+| `MCPAuthorizationCoordinator`, `MCPAuthorizationOptions`, `MCPAuthorizationSession`, `OAuthFinishingTransport` | interface/type | `packages/mcp-client/src/oauth.ts:44-80` | host options and the client-factory seam |
+| `MCPInteractiveAuthorizationUnavailableError` | class | `packages/mcp-client/src/oauth.ts:25-31` | an OAuth challenge needs a browser but the host cannot open one |
+| `MCPAuthorizationFailedError` | class | `packages/mcp-client/src/oauth.ts:35-41` | callback, state, URL, timeout or authorization failure |
+| `createMcpOAuthCredentialStore` | fn | `packages/mcp-client/src/oauth-store.ts:199-247` | bounded, validated, process-coordinated persistence |
+| `McpOAuthCredentialStore`, `McpOAuthRecord` | interface/type | `packages/mcp-client/src/oauth-store.ts:22-53` | store operations and one persisted record |
+| `McpOAuthStoreError` | class | `packages/mcp-client/src/oauth-store.ts:35-43` | corrupt, oversized, unsafe or unreadable store |
+| `DEFAULT_MCP_OAUTH_CALLBACK_PORT`, `DEFAULT_MCP_OAUTH_AUTHORIZATION_TIMEOUT_MS` | const | `packages/mcp-client/src/oauth.ts:15-18` | `53682` and five minutes |
+| `MAX_MCP_OAUTH_STORE_BYTES`, `MAX_MCP_OAUTH_RECORDS` | const | `packages/mcp-client/src/oauth-store.ts:14-17` | 1 MiB and 128 records |
+
+### 2.6 What is deliberately *not* exported
 
 `createResilientSession` and its option types (`packages/mcp-client/src/resilient-session.ts:104`),
 `resourceContentsToBlocks` (`packages/mcp-client/src/resources.ts:240`), `paginate` (`packages/mcp-client/src/resources.ts:193`),
@@ -139,7 +158,7 @@ catalog bounds, `onEvent` and `logger`.
 absent from the facade and that the connection exports are re-exported *by identity*
 (`packages/mcp-client/tests/architecture/connection-facade.test.ts:13-20`).
 
-### 2.6 Model-facing tool descriptors this package synthesizes
+### 2.7 Model-facing tool descriptors this package synthesizes
 
 Two, and only for a server that advertises the `resources` capability
 (`packages/mcp-client/src/resources.ts:57-79`):
@@ -155,12 +174,14 @@ They are appended only when the name is not already taken by a real tool of that
 
 ## 3. Data and formats
 
-Nothing in this package is persisted to disk. What it transmits and shapes:
+Most connection/session state is ephemeral. Remote OAuth is the deliberate exception: SDK-validated
+registrations and tokens are persisted in the private document described in §3.10. What the package
+transmits and shapes:
 
 ### 3.1 The `initialize` handshake identity
 
 The client is constructed as `{ name: CLIENT_NAME, version: VERSION }`
-(`packages/mcp-client/src/client.ts:151`), i.e. the wire-visible client name is
+(`packages/mcp-client/src/client.ts:187-190`), i.e. the wire-visible client name is
 `"@clarvis/mcp-client"` (`packages/mcp-client/src/version.ts`, `CLIENT_NAME`) and the version is read
 from the root product manifest (`packages/mcp-client/src/version.ts`, `VERSION`). Capabilities are
 `{ elicitation: {} }` when a relay was supplied and `{}` otherwise
@@ -171,7 +192,7 @@ their owned sources.
 ### 3.2 The stdio child's environment
 
 `{ ...getDefaultEnvironment(), ...customEnv }` — the SDK's fixed safe base with the server's own
-interpolated `env` block layered on top (`packages/mcp-client/src/client.ts:271`). The caller's `environment` is used for
+interpolated `env` block layered on top (`packages/mcp-client/src/client.ts:373`). The caller's `environment` is used for
 `${VAR}` lookup only, never handed to the child. Four tests pin the consequence: a server declaring
 no `env` sees none of the host's variables, a server declaring an unrelated `env` still sees none,
 an explicitly interpolated value does arrive, and the child's key set is identical whether the caller
@@ -180,7 +201,7 @@ passed `process.env` or an injected map
 
 ### 3.3 `${VAR}` interpolation
 
-Both `env` (`packages/mcp-client/src/client.ts:256`) and `headers` (`packages/mcp-client/src/client.ts:304`) go through
+Both `env` (`packages/mcp-client/src/client.ts:358`) and `headers` (`packages/mcp-client/src/client.ts:406`) go through
 `resolveStringMap(map, environment)` from `@clarvis/capability`
 (`packages/capability/src/env-interpolate.ts:91`). Resolution is all-or-nothing and throws
 `MissingEnvVarsError` naming the *distinct* unresolved variables
@@ -292,42 +313,66 @@ double quote anywhere in the command or arguments throws instead
 `'"myserver.cmd" "--flag" "value"'`
 (`packages/mcp-client/tests/unit/mcp-spawn-argv.test.ts:58-63`).
 
+### 3.10 OAuth credential document
+
+The store is strict JSON `{ "version": 1, "records": { "<64 lowercase hex>": record } }`
+(`packages/mcp-client/src/oauth-store.ts:19-33,104-126`). A record contains only
+`redirect_url?`, SDK `client_information?`, SDK `tokens?`, and integer `updated_at`; unknown fields,
+invalid SDK shapes and records larger than 512 KiB are refused
+(`packages/mcp-client/src/oauth-store.ts:70-102`). The map is capped at 128 newest records and the
+whole UTF-8 document at 1 MiB (`:116-125`, `:231-240`).
+
+The record key is SHA-256 over the workspace, owner and canonical resource URL separated by NUL
+bytes (`packages/mcp-client/src/oauth.ts:161-170`); none of those raw identities or the credentials
+appear as JSON keys. The callback URL, when stored, must be the exact loopback form
+`http://127.0.0.1:<port>/oauth/callback` (`packages/mcp-client/src/oauth-store.ts:19-20,59-68`).
+The default host path is `<global>/state/mcp-oauth.json`
+(`packages/paths/src/global.ts:25,118`).
+
 ## 4. Behavior
 
 ### 4.1 Building a client — `createMCPClientFactory`
 
-1. Bind a per-server logger with `{ mcp, transport }` (`packages/mcp-client/src/client.ts:149`).
-2. Construct the SDK `Client` with `CLIENT_NAME`/`VERSION`, advertising `elicitation` only if a relay
-   was passed (`packages/mcp-client/src/client.ts:150-153`).
+1. Bind a per-server logger with `{ mcp, transport }` (`packages/mcp-client/src/client.ts:185`).
+2. `buildClient(authProvider?)` constructs the SDK `Client` with `CLIENT_NAME`/`VERSION`,
+   advertising `elicitation` only if a relay was passed, builds the transport with the optional SDK
+   OAuth provider, and captures the negotiated protocol version
+   (`packages/mcp-client/src/client.ts:186-234`).
 3. If a relay was passed, register a request handler on `ElicitRequestSchema` that forwards
    `request.params` and `extra.signal` to `relay.handle` and casts the answer to `ElicitResult`
-   (`packages/mcp-client/src/client.ts:156-159`).
-4. Build the transport (`packages/mcp-client/src/client.ts:162-177`).
-5. Monkey-patch `transport.setProtocolVersion` to capture the negotiated version before delegating to
-   the SDK's own implementation (`packages/mcp-client/src/client.ts:179-183`). The doc comment states the reason: "The SDK
+   (`packages/mcp-client/src/client.ts:192-197`).
+4. Monkey-patch `transport.setProtocolVersion` to capture the negotiated version before delegating to
+   the SDK's own implementation (`packages/mcp-client/src/client.ts:218-223`). The doc comment states the reason: "The SDK
    hands the negotiated version to the transport and exposes no getter for it, so a factory that wants
-   to report it has to observe `setProtocolVersion`" (`packages/mcp-client/src/client.ts:52-54`). A live stdio integration
+   to report it has to observe `setProtocolVersion`" (`packages/mcp-client/src/client.ts:62-64`). A live stdio integration
    test asserts the captured value matches `/^\d{4}-\d{2}-\d{2}$/`
    (`packages/mcp-client/tests/integration/stdio-client.test.ts:52`).
-6. `client.connect(transport, { signal?, timeout? })` (`packages/mcp-client/src/client.ts:184-187`), then return the handle
-   whose `protocolVersion` is a getter over the captured variable (`packages/mcp-client/src/client.ts:193-195`).
+5. `connectBuilt` calls `client.connect` with the signal/deadline and closes a failed client
+   (`packages/mcp-client/src/client.ts:235-250`). Without configured authorization, or for stdio,
+   this is the entire path (`:252-255`).
+6. A remote OAuth-enabled path requires `opts.scope`, serializes work under its credential key,
+   creates one provider session, and tries the connection with stored credentials. Only an SDK
+   `UnauthorizedError` enters interactive authorization: the factory calls `finishAuth`, closes the
+   challenged client, then constructs and connects one fresh client with the saved token
+   (`packages/mcp-client/src/client.ts:256-298`). Other failures propagate without being reclassified
+   as OAuth.
 
 ### 4.2 Building a transport — `buildTransport`
 
 | Branch | Condition | Result |
 |---|---|---|
-| stdio, no `command` | `packages/mcp-client/src/client.ts:253` | throws `server 'N': command is required for stdio transport` |
-| stdio under Bun | `typeof Bun !== "undefined"` (`packages/mcp-client/src/client.ts:277`) | `BunStdioClientTransport` with `onStderr`/`onStderrEnd` wired to the forwarder when a sink was given (`:278-291`) |
-| stdio elsewhere | `packages/mcp-client/src/client.ts:293` | SDK `StdioClientTransport` with `stderr: "pipe"` when a sink was given, then `drainStderrStream` (`:295-297`) |
-| http/sse, no `url` | `packages/mcp-client/src/client.ts:300` | throws `server 'N': url is required for <transport> transport` |
-| `http` | `packages/mcp-client/src/client.ts:321` | `StreamableHTTPClientTransport(url, { requestInit?, fetch })` |
-| `sse` | `packages/mcp-client/src/client.ts:322` | `SSEClientTransport(url, { requestInit?, fetch })` |
+| stdio, no `command` | `packages/mcp-client/src/client.ts:355-356` | throws `server 'N': command is required for stdio transport` |
+| stdio under Bun | `typeof Bun !== "undefined"` (`packages/mcp-client/src/client.ts:379`) | `BunStdioClientTransport` with `onStderr`/`onStderrEnd` wired to the forwarder when a sink was given (`:379-393`) |
+| stdio elsewhere | `packages/mcp-client/src/client.ts:395-399` | SDK `StdioClientTransport` with `stderr: "pipe"` when a sink was given, then `drainStderrStream` |
+| http/sse, no `url` | `packages/mcp-client/src/client.ts:402-403` | throws `server 'N': url is required for <transport> transport` |
+| `http` | `packages/mcp-client/src/client.ts:427-428` | `StreamableHTTPClientTransport(url, { requestInit?, fetch })` |
+| `sse` | `packages/mcp-client/src/client.ts:427-429` | `SSEClientTransport(url, { requestInit?, fetch })` |
 
 Interpolated headers are placed **both** on `requestInit.headers` and inside the wrapping bounded
-fetch (`packages/mcp-client/src/client.ts:305-318`, merge at `packages/mcp-client/src/bounded-fetch.ts:94-95`); the doc comment says this is "so the
-credentials survive the SDK's own request construction" (`packages/mcp-client/src/client.ts:230-232`). The transport-type
+fetch (`packages/mcp-client/src/client.ts:405-429`, merge at `packages/mcp-client/src/bounded-fetch.ts:94-95`); the doc comment says this is "so the
+credentials survive the SDK's own request construction" (`packages/mcp-client/src/client.ts:331-334`). The transport-type
 mapping, the two "required" errors, the `${VAR}` behaviours, and `defaultCwd` precedence
-(`server.cwd ?? defaultCwd`, `packages/mcp-client/src/client.ts:257`) are all pinned in
+(`server.cwd ?? defaultCwd`, `packages/mcp-client/src/client.ts:359`) are all pinned in
 `packages/mcp-client/tests/component/transport-builder.test.ts:15-119` and `:164-174`. When neither
 `cwd` is given, the key is absent from the spawn parameters entirely, preserving host inheritance
 (`packages/mcp-client/tests/component/transport-builder.test.ts:84-88`).
@@ -345,10 +390,10 @@ Order, from `packages/mcp-client/src/connection.ts:124`:
 3. Connect once; any non-`MCPConnectionFailedError` throw is wrapped into one (`:140-145`), so a
    factory throwing the bare string `"factory offline"` surfaces as
    `{ code: "mcp_connection_failed", mcpName: "docs", transport: "stdio", message: "factory offline" }`
-   (`packages/mcp-client/tests/component/connection.test.ts:135-148`).
+   (`packages/mcp-client/tests/component/connection.test.ts:177-190`).
 4. Load the tool catalog. On failure the handle is closed best-effort and the error is rethrown as
    `Failed to list tools on 'N': <err>` (`:157-169`) — the close is asserted to happen exactly once
-   (`packages/mcp-client/tests/component/connection.test.ts:150-163`).
+   (`packages/mcp-client/tests/component/connection.test.ts:192-205`).
 5. If `resourcesEnabled` **and** `server.resources !== false`, probe the resource catalog and append
    the two synthetic descriptors (`:172-181`). Any throw here is caught and logged at `warn` as
    `mcp.resources.probe_failed`; the connection survives without resource tools (`:182-187`).
@@ -358,7 +403,7 @@ Order, from `packages/mcp-client/src/connection.ts:124`:
    `resourceReadResult`, and `listResources` answers **synchronously from the catalog captured at open
    time**, never touching the session (`:225-227`).
 
-`connectWithinBound` (`packages/mcp-client/src/connection.ts:405`) races the factory promise against a timeout and the
+`connectWithinBound` (`packages/mcp-client/src/connection.ts:407`) races the factory promise against a timeout and the
 caller's abort signal. Three details are load-bearing and each is tested:
 
 - If the caller's signal is already aborted, the factory is **not invoked at all**
@@ -372,7 +417,11 @@ caller's abort signal. Three details are load-bearing and each is tested:
   (`packages/mcp-client/tests/component/connection.test.ts:63-104`).
 - The signal handed to the factory is a **fresh** `AbortController`'s signal, not the caller's
   (`:413`, `:428-431`); a test asserts `factoryOptions.signal !== signal`
-  (`packages/mcp-client/tests/component/connection.test.ts:131`).
+  (`packages/mcp-client/tests/component/connection.test.ts:137`).
+- The connection deadline is paused, with nesting depth, while a person is authorizing or a second
+  same-key flow is queued; only elapsed machine-connect time is charged. Cancellation remains live
+  throughout (`packages/mcp-client/src/connection.ts:431-500`), pinned with a fake clock at
+  `packages/mcp-client/tests/component/connection.test.ts:141-175`.
 
 Timeout message: `Failed to connect to MCP 'N' within <ms>ms.` (`:476`); abort message:
 `Connection to MCP 'N' aborted (run cancelled).` (`:418`).
@@ -383,13 +432,13 @@ Timeout message: `Failed to connect to MCP 'N' within <ms>ms.` (`:476`); abort m
 `tools.length >= maxEntries`; add `Buffer.byteLength(JSON.stringify(descriptor))` and refuse if the
 running total exceeds `maxBytes` (`:284-295`). A missing `inputSchema` defaults to
 `{ type: "object", properties: {} }` (`:290`) and a non-array `tools` field yields an empty page
-(`:276-282`) — both pinned (`packages/mcp-client/tests/component/connection.test.ts:177-204`). Pagination stops when
+(`:276-282`) — both pinned (`packages/mcp-client/tests/component/connection.test.ts:219-246`). Pagination stops when
 `nextCursor` is absent, empty, or identical to the cursor just used (`:299`); exhausting 50 pages
 throws (`:315`). The programmatic bounds are clamped by `boundedCatalogLimit`
 (`packages/mcp-client/src/connection.ts:37-40`): a non-finite value falls back to the hard maximum, and a finite one is
 `min(hardMaximum, max(0, floor(value)))` — so **a caller can only lower a bound, never raise it**,
 pinned by passing `Infinity`/`NaN` and still failing at "2048-entry limit"
-(`packages/mcp-client/tests/component/connection.test.ts:165-173`).
+(`packages/mcp-client/tests/component/connection.test.ts:207-215`).
 
 ### 4.5 Resource catalog probe — `loadResourceCatalog`
 
@@ -671,12 +720,47 @@ there are no connections and otherwise requires **every** connection to be `unav
 whole predicate, and an `.some` written here would strand a run whose other servers are fine"
 (`packages/mcp-client/tests/unit/registry.test.ts:99-101`).
 
+### 4.14 Interactive remote OAuth and durable credentials
+
+`createMCPAuthorizationCoordinator` validates the callback port and a positive finite human timeout,
+then clamps that timeout to 30 minutes (`packages/mcp-client/src/oauth.ts:187-203`). Its listener
+binds only `127.0.0.1`, prefers port 53682 and falls back to an ephemeral port only when the preferred
+one is occupied (`:256-288`). The only accepted request is `GET /oauth/callback`; state and code have
+explicit bounds, state is compared timing-safely, and the HTML response never includes either value
+(`:102-139`, `:211-254`).
+
+One session implements the SDK's `OAuthClientProvider`: stored client registration/tokens are reused
+only when their redirect URL still matches, state is 32 random bytes, SDK client metadata requests
+authorization-code plus refresh-token grants, and changes are persisted through the credential
+store (`packages/mcp-client/src/oauth.ts:299-349`). Before browser opening, the authorization URL
+must be HTTPS or loopback HTTP; a missing, throwing or false-returning host opener fails explicitly
+(`:350-388`). `finishAuthorization` waits for the matching callback with cancellation and a separate
+human deadline, exchanges the code through the SDK transport, and always clears pending state and
+the in-memory verifier (`:414-441`).
+
+Same-key work is serialized by a promise tail; a queued run can cancel and announces its wait so the
+outer connection timer pauses (`packages/mcp-client/src/oauth.ts:449-482`). Closing the coordinator
+is idempotent, rejects all pending callbacks and closes the listener (`:478-489`). Tests cover key
+isolation, state rejection, credential reuse/invalidation, headless and insecure-URL failures,
+authorization refusal, and serialization (`packages/mcp-client/tests/integration/oauth.test.ts:40-202`).
+A real loopback MCP/OAuth fixture pins protected-resource discovery, dynamic registration, S256 PKCE,
+code exchange, reconnect and token reuse with only one browser opening
+(`packages/mcp-client/tests/integration/oauth-transport.test.ts:164-218`).
+
+The store validates before use and never repairs silently. It reads with `O_NOFOLLOW`, refuses a
+non-regular or oversized final file, wipes the read buffer, and rejects a parent whose real path is
+not its lexical path (`packages/mcp-client/src/oauth-store.ts:135-197`). Mutations take a shared local
+lease, re-read under the lease, bound and sort the records, assert lease ownership, write durably,
+and enforce `0700`/`0600` on POSIX (`:199-245`). Integration tests pin private modes, malformed-file
+non-overwrite, byte limits, final/parent symlink refusal and independent concurrent writers
+(`packages/mcp-client/tests/integration/oauth-store.test.ts:29-137`).
+
 ## 5. Invariants
 
 `INV-0xx` ids are the repository-wide catalog's; `MCP-xx` ids are local to this document and were
 derived directly from the code and tests during this pass.
 
-**INV-030 (owned).** The package's public facade (`packages/mcp-client/src/index.ts:42-51`)
+**INV-030 (owned).** The package's public facade (`packages/mcp-client/src/index.ts:63-86`)
 re-exports `openConnection`, `MCPConnectionFailedError`, `UNAVAILABLE_REPROBE_COOLDOWN_MS`,
 `DEFAULT_TIMEOUT_STREAK_THRESHOLD` and `DEFAULT_HEALTH_PING_INTERVAL_MS` **by identity** — the facade
 binding and the module binding are the same object — and does **not** expose
@@ -686,7 +770,7 @@ Pinned: `packages/mcp-client/tests/architecture/connection-facade.test.ts:13-20`
 **INV-031 (owned).** The MCP elicitation relay accepts the exact `ElicitRequestSchema` /
 `ElicitResultSchema` shapes the SDK defines, forwarding the request's own `params` object and abort
 signal **unchanged** (by identity, not a copy or a projection).
-Production: `packages/mcp-client/src/client.ts:156-159` — `relay.handle(request.params, extra.signal)`.
+Production: `packages/mcp-client/src/client.ts:192-197` — `relay.handle(request.params, extra.signal)`.
 Pinned: `packages/mcp-client/tests/integration/sdk-elicitation-surface.test.ts:6-30`, which asserts
 `params === request.params` and `receivedSignal === signal`, and parses the relay's answer through
 `ElicitResultSchema`. Corroborated end-to-end against a live stdio server that initiates
@@ -700,12 +784,12 @@ an empty reserved list does not).
 
 **MCP-02.** A stdio child's environment is `getDefaultEnvironment()` plus the server's own
 interpolated `env`, and never the caller's environment — regardless of whether the caller passed
-`process.env` or an injected map. Production: `packages/mcp-client/src/client.ts:271`.
+`process.env` or an injected map. Production: `packages/mcp-client/src/client.ts:373`.
 Pinned: `packages/mcp-client/tests/unit/mcp-transport-env.test.ts:33-63` (four cases).
 
 **MCP-03.** An unresolved `${VAR}` in `env` or `headers` fails connection construction before any
 byte reaches the server; the literal `${…}` is never transmitted.
-Production: `packages/mcp-client/src/client.ts:256`, `:304` →
+Production: `packages/mcp-client/src/client.ts:358`, `:406` →
 `packages/capability/src/env-interpolate.ts:78`.
 Pinned: `packages/mcp-client/tests/component/transport-builder.test.ts:50-60`, `:109-119`, and over a
 real socket at `packages/mcp-client/tests/integration/remote-transport.test.ts:52-80`.
@@ -729,7 +813,7 @@ outcome) and `:341-356` (post-dispatch abort does); shapes at
 Production: `packages/mcp-client/src/resilient-session.ts:356-358` returns `interruptedResult` rather
 than re-running `run`. Pinned:
 `packages/mcp-client/tests/unit/resilient-session.test.ts:140-157` (`freshCalls` is 0 after the
-reconnect) and `packages/mcp-client/tests/component/connection.test.ts:250-284`.
+reconnect) and `packages/mcp-client/tests/component/connection.test.ts:292-326`.
 
 **MCP-07.** Concurrent reconnects are single-flighted per generation.
 Production: `packages/mcp-client/src/resilient-session.ts:237-239`.
@@ -738,7 +822,7 @@ Pinned: `packages/mcp-client/tests/unit/resilient-session.test.ts:117-138`.
 **MCP-08.** A programmatic catalog, response or frame bound may only *lower* the shipped ceiling; a
 non-finite value falls back to it. Production: `packages/mcp-client/src/connection.ts:37-40`,
 `packages/mcp-client/src/resources.ts:52-55`, `packages/mcp-client/src/bounded-fetch.ts:42-46`.
-Pinned: `packages/mcp-client/tests/component/connection.test.ts:165-173`,
+Pinned: `packages/mcp-client/tests/component/connection.test.ts:207-215`,
 `packages/mcp-client/tests/unit/resources.test.ts:73-81`.
 
 **MCP-09.** A pooled (shared) connection is opened without the acquiring run's elicitation relay and
@@ -791,7 +875,7 @@ Production: `packages/mcp-client/src/connection-manager.ts:126-128`, `:666`.
 Pinned: `packages/mcp-client/tests/component/observability-pool.test.ts:58-59`.
 
 **MCP-17.** A `${VAR}` interpolation failure is reported by variable **name** only, never by value.
-Production: `packages/mcp-client/src/connection.ts:390-398` (`missing_env: err.missing`, plus a
+Production: `packages/mcp-client/src/connection.ts:392-400` (`missing_env: err.missing`, plus a
 `sanitizeErrorMessage`d `reason`).
 Pinned: `packages/mcp-client/tests/component/observability-connection.test.ts:97-107`.
 
@@ -832,6 +916,37 @@ Pinned indirectly by `packages/mcp-client/tests/component/connection-resources.t
 (the fake client's `listResources` is called during open, and the result text carries the probed
 catalog); **no test asserts the absence of a second call**.
 
+**MCP-26.** Persistent OAuth identity is isolated by the complete `(workspace, owner, canonical
+resource URL)` tuple and represented only by its SHA-256 digest. Production:
+`packages/mcp-client/src/oauth.ts:161-170`. Pinned:
+`packages/mcp-client/tests/integration/oauth.test.ts:56-67`.
+
+**MCP-27.** A callback code is accepted only at the loopback callback path with the matching random
+256-bit state; neither state nor code is reflected to the browser. Production:
+`packages/mcp-client/src/oauth.ts:102-139,211-254,310-312`. Pinned:
+`packages/mcp-client/tests/integration/oauth.test.ts:69-102`.
+
+**MCP-28.** An interactive authorization URL is HTTPS, except that HTTP is permitted on a loopback
+host, and a headless host fails explicitly instead of hanging. Production:
+`packages/mcp-client/src/oauth.ts:172-178,350-388`. Pinned:
+`packages/mcp-client/tests/integration/oauth.test.ts:128-149`.
+
+**MCP-29.** Only same-key OAuth work is serialized, and both same-key queue time and human browser
+time pause the connection deadline without pausing cancellation. Production:
+`packages/mcp-client/src/oauth.ts:449-482`, `packages/mcp-client/src/connection.ts:431-500`.
+Pinned: `packages/mcp-client/tests/integration/oauth.test.ts:167-202` and
+`packages/mcp-client/tests/component/connection.test.ts:141-175`.
+
+**MCP-30.** A malformed, oversized or symlinked credential store is refused and is never replaced
+implicitly. Mutations are lease-serialized and durable; POSIX mode is `0600` below a `0700`
+directory. Production: `packages/mcp-client/src/oauth-store.ts:135-197,199-245`. Pinned:
+`packages/mcp-client/tests/integration/oauth-store.test.ts:29-137`.
+
+**MCP-31.** Interactive OAuth is attempted only after the SDK reports `UnauthorizedError`; the
+challenged client is closed, the code is finished once, and one fresh client reconnects with the
+persisted token. Production: `packages/mcp-client/src/client.ts:252-298`. Pinned end to end:
+`packages/mcp-client/tests/integration/oauth-transport.test.ts:164-218`.
+
 ## 6. Failure modes and degradation
 
 ### 6.1 Error types
@@ -843,6 +958,9 @@ catalog); **no test asserts the absence of a second call**.
 | `MCPStdioFrameLimitError` | `mcp_stdio_frame_too_large` | `packages/mcp-client/src/bun-stdio-client.ts:117`, raised at `:235` | surfaces on `transport.onerror`, then `close()` (`:219-222`) |
 | `MCPHttpResponseLimitError` | `mcp_http_response_too_large` | `packages/mcp-client/src/bounded-fetch.ts:11`, raised at `:102`, `:140`, `:151` | the fetch throws or the body stream errors |
 | `MCPResourceCatalogLimitError` | `mcp_resource_catalog_too_large` | `packages/mcp-client/src/resources.ts:10`, raised at `:190` | see §6.4 |
+| `MCPInteractiveAuthorizationUnavailableError` | `mcp_oauth_interactive_unavailable` | `packages/mcp-client/src/oauth.ts:24-31`, raised at `:356-387` | remote connect rejects immediately; a headless host never waits for a callback |
+| `MCPAuthorizationFailedError` | `mcp_oauth_authorization_failed` | `packages/mcp-client/src/oauth.ts:34-42` and callback/session failure paths | authorization rejects; pending state is removed |
+| `McpOAuthStoreError` | `mcp_oauth_store_invalid` | `packages/mcp-client/src/oauth-store.ts:35-43`, raised by validation/read/write bounds | credentials are not used or overwritten; operator repair is required |
 | `MissingEnvVarsError` | — | `packages/capability/src/env-interpolate.ts:19` | transport construction throws; `missing_env` is logged |
 | plain `Error` (tool catalog limit) | — | `packages/mcp-client/src/connection.ts:255` | wrapped into `MCPConnectionFailedError` at `:164` |
 | plain `Error("connection manager closed")` | — | `packages/mcp-client/src/connection-manager.ts:317`, `:742`, `:749`, `:860` | acquire rejects |
@@ -855,7 +973,7 @@ catalog); **no test asserts the absence of a second call**.
 | resource capability probe throws | `packages/mcp-client/src/connection.ts:182-187` | `warn mcp.resources.probe_failed`; connection lives, no resource tools |
 | server's handshake capabilities don't advertise `resources` | `packages/mcp-client/src/resources.ts:87` | `loadResourceCatalog` returns `null` immediately, with **no** probe attempted and **no** log line at any level — a server that supports resources but omitted the capability flag gets zero resource tools with nothing recorded anywhere in this package |
 | `resources/templates/list` throws | `packages/mcp-client/src/resources.ts:124-134` | `debug mcp.resources.templates_failed`; `resourceTemplates: []` |
-| server reports no identity | `packages/mcp-client/src/connection.ts:337-347` | the identity fields are simply absent from `mcp.connect.ok` — read defensively "because {@link MCPClientFactory} is a substitution seam" (`:333-335`) |
+| server reports no identity | `packages/mcp-client/src/connection.ts:338-348` | the identity fields are simply absent from `mcp.connect.ok` — read defensively "because {@link MCPClientFactory} is a substitution seam" (`:333-335`) |
 | a `ConnectionEvent` sink throws | `packages/mcp-client/src/resilient-session.ts:163` | swallowed |
 | a wire name is already taken | `packages/mcp-client/src/registry.ts:82-95` | the tool is offered under a suffixed name and warned: "a call by its original name will not reach this server" |
 | a server writes megabytes to stderr | `packages/mcp-client/src/server-stderr.ts:62-66` | one suppression line, rest dropped |
@@ -866,12 +984,19 @@ catalog); **no test asserts the absence of a second call**.
 
 ### 6.3 Retries and timeouts
 
-There is **no call-level retry** anywhere in this package. The only repetition is reconnection, and
-it is bounded three ways: single-flighted per generation (`packages/mcp-client/src/resilient-session.ts:237-239`), refused
+There is **no tool-call retry** anywhere in this package. Session reconnection is bounded three ways:
+single-flighted per generation (`packages/mcp-client/src/resilient-session.ts:237-239`), refused
 while `transportFailStreak >= 2` (`:352-355`), and gated behind the `reprobeCooldownMs` window once
 the circuit is open (`:293-296`). The four clocks are: `connectTimeoutMs` (handshake and health
 ping), `callTimeoutMs` (per tool/resource call), `reprobeCooldownMs` (default 30 s) and
 `healthPingIntervalMs` (default 30 s, disabled at `<= 0`).
+
+OAuth adds one narrowly-scoped connection repetition: after the SDK's first remote handshake raises
+`UnauthorizedError`, Clarvis completes authorization and connects a newly constructed client once
+with the saved credentials (`packages/mcp-client/src/client.ts:271-295`). It never replays a tool
+call. The human authorization clock is five minutes by default, independently capped at 30 minutes
+(`packages/mcp-client/src/oauth.ts:15-22,195-203,421-445`); the outer connect clock is paused only
+for the browser/serialization waits (§4.3).
 
 ### 6.4 One prose/behaviour mismatch
 
@@ -887,9 +1012,9 @@ tools are offered" (`packages/mcp-client/src/connection.ts:252-254`) — *is* ac
 
 | Event | Level | Site |
 |---|---|---|
-| `mcp.connect.begin` | debug | `packages/mcp-client/src/connection.ts:367` |
-| `mcp.connect.ok` | info | `packages/mcp-client/src/connection.ts:381` |
-| `mcp.connect.failed` | warn | `packages/mcp-client/src/connection.ts:393` |
+| `mcp.connect.begin` | debug | `packages/mcp-client/src/connection.ts:368` |
+| `mcp.connect.ok` | info | `packages/mcp-client/src/connection.ts:383` |
+| `mcp.connect.failed` | warn | `packages/mcp-client/src/connection.ts:395` |
 | `mcp.connect.quarantined` | warn | `packages/mcp-client/src/connection-manager.ts:627` |
 | `mcp.tools.listed` | info | `packages/mcp-client/src/connection.ts:302` |
 | `mcp.catalog.limit` | warn | `packages/mcp-client/src/connection.ts:251`, `packages/mcp-client/src/resources.ts:186` |
@@ -932,7 +1057,7 @@ That sanitized `reason` text comes from `resilient-session.ts`'s own local `erro
 which runs every logged message through `sanitizeErrorMessage`. Two other, differently-scoped
 functions share the exact name `errorText` but are **not** sanitized: `packages/mcp-client/src/tool-results.ts:137-139`
 (`String(err)` / `err.message`, feeding `runtimeErrorResult`, `interruptedResult` and
-`becameUnavailableResult`, `packages/mcp-client/src/tool-results.ts:15-62`) and `packages/mcp-client/src/connection.ts:490-492` (same shape, used only
+`becameUnavailableResult`, `packages/mcp-client/src/tool-results.ts:15-62`) and `packages/mcp-client/src/connection.ts:531-533` (same shape, used only
 to build the message of a thrown `MCPConnectionFailedError` at `:144` and `:164`, never for a log
 call). The consequence: a `ToolResult` error message that reaches the model is **not** passed through
 `sanitizeErrorMessage`, unlike every logged `reason` this document describes elsewhere.
@@ -943,15 +1068,15 @@ call). The consequence: a `ToolResult` error message that reaches the model is *
 
 | Dependency | Kind | Forced by |
 |---|---|---|
-| `@clarvis/capability` | runtime value + type | `NOOP_LOGGER`, `bind`, `resolveStringMap` at `packages/mcp-client/src/client.ts:10`; `MissingEnvVarsError`, `bestEffort`, `detachObserved`, `levelEnabled`, `sanitizeErrorMessage`, `unref` at `packages/mcp-client/src/connection.ts:9-18`; `createSampler` at `packages/mcp-client/src/resilient-session.ts:7` |
-| `@clarvis/paths` | runtime value | `ownerSegment` at `packages/mcp-client/src/connection-manager.ts:5`; `executableOnPath` at `packages/mcp-client/src/bun-stdio-client.ts:4` |
-| `@modelcontextprotocol/sdk` | runtime value + type | `Client` and the three transports at `packages/mcp-client/src/client.ts:1-9`; `ErrorCode` at `packages/mcp-client/src/errors.ts:1`; `JSONRPCMessageSchema` at `packages/mcp-client/src/bun-stdio-client.ts:2` |
+| `@clarvis/capability` | runtime value + type | `NOOP_LOGGER`, `bind`, `resolveStringMap` at `packages/mcp-client/src/client.ts:14`; `MissingEnvVarsError`, `bestEffort`, `detachObserved`, `levelEnabled`, `sanitizeErrorMessage`, `unref` at `packages/mcp-client/src/connection.ts:9-18`; `createSampler` at `packages/mcp-client/src/resilient-session.ts:7` |
+| `@clarvis/paths` | runtime value | `ownerSegment` at `packages/mcp-client/src/connection-manager.ts:5`; `executableOnPath` at `packages/mcp-client/src/bun-stdio-client.ts:4`; local lease, durable write and private modes at `packages/mcp-client/src/oauth-store.ts:12` |
+| `@modelcontextprotocol/sdk` | runtime value + type | `Client`, `UnauthorizedError` and transports at `packages/mcp-client/src/client.ts:1-13`; OAuth provider/credential schemas at `packages/mcp-client/src/oauth.ts:6-7` and `packages/mcp-client/src/oauth-store.ts:5-11`; protocol errors and JSON-RPC schema in their focused modules |
 
 The type contracts it implements structurally, all owned by `@clarvis/capability`: `MCPConnection`
 (`packages/capability/src/run.ts:348`) built at `packages/mcp-client/src/connection.ts:206`; `ToolResult`
 (`packages/capability/src/run.ts:327`) produced throughout `tool-results.ts`; `NamespacedRegistry`
 (`packages/capability/src/run.ts:142`) built at `packages/mcp-client/src/registry.ts:122`; `McpServerConfig`
-(`packages/capability/src/api.ts:132`) consumed at `packages/mcp-client/src/client.ts:235`; `Logger`
+(`packages/capability/src/api.ts:132`) consumed at `packages/mcp-client/src/client.ts:336`; `Logger`
 (`packages/capability/src/log.ts`) as the single diagnostic channel. This package has **no
 `zod`** dependency (`packages/mcp-client/package.json:41-45`) — the only schema work it performs is
 through the SDK's own schemas.
@@ -960,7 +1085,7 @@ through the SDK's own schemas.
 
 | Consumer | Kind | Evidence |
 |---|---|---|
-| `@clarvis/loop` | production dependency | `packages/loop/package.json:82`; value imports at `packages/loop/src/runtime/open-tool-pool.ts:2` (`MCPConnectionFailedError`), `packages/loop/src/runtime/tools/mcp-registry.ts:4` (`buildRegistry`, `poolToolNames`, `selectTools`), and re-exports at `packages/loop/src/lib.ts:88-98` |
+| `@clarvis/loop` | production dependency | `packages/loop/package.json:82`; connection/registry consumers plus OAuth coordinator construction at `packages/loop/src/runtime/build-run-deps.ts:7-14,386-397` |
 | `@clarvis/kernel` | **dev**Dependency only | `packages/kernel/package.json:73-75`; no `src/` file in kernel imports it |
 
 The one-directional edge is enforced structurally rather than by a test *in this package*: `reserved`
@@ -1009,12 +1134,12 @@ highest.
   the server. Whether callers are expected to gate on `tools` rather than on method presence is not
   stated anywhere in this package.
 - `MCPClientHandle.protocolVersion` is captured by replacing `transport.setProtocolVersion`
-  (`packages/mcp-client/src/client.ts:179-183`). Whether the SDK guarantees that method is called exactly once, or at all,
+  (`packages/mcp-client/src/client.ts:218-223`). Whether the SDK guarantees that method is called exactly once, or at all,
   for every transport is outside this repository.
 
 **Uncorroborated prose**
 
-- Several doc comments narrate a prior defect (`packages/mcp-client/src/client.ts:99-104` on `defaultCwd`,
+- Several doc comments narrate a prior defect (`packages/mcp-client/src/client.ts:114-119` on `defaultCwd`,
   `packages/mcp-client/src/server-stderr.ts:39-44` on stderr reaching the host terminal,
   `packages/mcp-client/src/bun-stdio-client.ts:19-23` on Windows `npx` shims, `packages/mcp-client/src/connection-manager.ts:453-460` on the dropped
   relay). The *current* mechanism is verified in each case; the historical claims are not

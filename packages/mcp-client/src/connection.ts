@@ -131,7 +131,7 @@ export async function openConnection({
   const connect = (): Promise<MCPClientHandle> => {
     attempts += 1;
     return observedConnect(
-      { factory, server, relay, connectTimeoutMs, signal, logger: log },
+      { factory, server, relay, connectTimeoutMs, signal, scope, logger: log },
       attempts,
     );
   };
@@ -321,6 +321,7 @@ interface ConnectAttemptContext {
   relay: ElicitationRelay | undefined;
   connectTimeoutMs: number;
   signal: AbortSignal | undefined;
+  scope: PoolScope;
   logger: Logger;
 }
 
@@ -374,6 +375,7 @@ async function observedConnect(
       ctx.relay,
       ctx.connectTimeoutMs,
       ctx.signal,
+      ctx.scope,
       ctx.logger,
     );
     ctx.logger.info(
@@ -408,6 +410,7 @@ async function connectWithinBound(
   relay: ElicitationRelay | undefined,
   connectTimeoutMs: number,
   signal: AbortSignal | undefined,
+  scope: PoolScope,
   logger: Logger,
 ): Promise<MCPClientHandle> {
   const connectAbort = new AbortController();
@@ -425,16 +428,84 @@ async function connectWithinBound(
     connectAbort.abort(signal.reason);
     throw abortError();
   }
-  const handlePromise = factory(server, relay, {
-    signal: connectAbort.signal,
-    timeoutMs: connectTimeoutMs,
+  let abandoned = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let timerStartedAt = 0;
+  let remainingMs = Math.max(0, connectTimeoutMs);
+  let pauseDepth = 0;
+  let onAbort: (() => void) | undefined;
+  let rejectGuard!: (error: MCPConnectionFailedError) => void;
+  const timeoutError = (): MCPConnectionFailedError =>
+    new MCPConnectionFailedError(
+      server.name,
+      server.transport,
+      `Failed to connect to MCP '${server.name}' within ${connectTimeoutMs}ms.`,
+    );
+  const expire = (): void => {
+    if (abandoned) return;
+    abandoned = true;
+    timer = undefined;
+    connectAbort.abort();
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+    rejectGuard(timeoutError());
+  };
+  const armTimer = (): void => {
+    if (abandoned || pauseDepth > 0 || timer !== undefined) return;
+    if (remainingMs <= 0) {
+      queueMicrotask(expire);
+      return;
+    }
+    timerStartedAt = Date.now();
+    timer = setTimeout(expire, remainingMs);
+    unref(timer);
+  };
+  const pauseTimer = (): void => {
+    if (abandoned) return;
+    pauseDepth += 1;
+    if (pauseDepth !== 1 || timer === undefined) return;
+    clearTimeout(timer);
+    timer = undefined;
+    remainingMs = Math.max(0, remainingMs - (Date.now() - timerStartedAt));
+  };
+  const resumeTimer = (): void => {
+    if (abandoned || pauseDepth === 0) return;
+    pauseDepth -= 1;
+    if (pauseDepth === 0) armTimer();
+  };
+  const guard = new Promise<never>((_, reject) => {
+    rejectGuard = reject;
+    if (signal?.aborted) {
+      abandoned = true;
+      connectAbort.abort();
+      reject(abortError());
+      return;
+    }
+    onAbort = (): void => {
+      abandoned = true;
+      connectAbort.abort();
+      if (timer) clearTimeout(timer);
+      reject(abortError());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    armTimer();
   });
-  let settled = false;
+  let handlePromise: Promise<MCPClientHandle>;
+  try {
+    handlePromise = factory(server, relay, {
+      signal: connectAbort.signal,
+      timeoutMs: connectTimeoutMs,
+      scope,
+      onAuthorizationWaitStart: pauseTimer,
+      onAuthorizationWaitEnd: resumeTimer,
+    });
+  } catch (error) {
+    handlePromise = Promise.reject(error instanceof Error ? error : new Error(String(error)));
+  }
   detachObserved(
     () =>
       handlePromise.then(
         (lateHandle) => {
-          if (settled)
+          if (abandoned)
             detachObserved(() => lateHandle.close(), {
               operation: "mcp_late_connection_close",
               dedupeKey: `mcp_late_connection_close\0${server.name}`,
@@ -449,36 +520,6 @@ async function connectWithinBound(
       logger,
     },
   );
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let onAbort: (() => void) | undefined;
-  const guard = new Promise<never>((_, reject) => {
-    if (signal?.aborted) {
-      settled = true;
-      connectAbort.abort();
-      reject(abortError());
-      return;
-    }
-    onAbort = (): void => {
-      settled = true;
-      connectAbort.abort();
-      if (timer) clearTimeout(timer);
-      reject(abortError());
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    timer = setTimeout(() => {
-      settled = true;
-      connectAbort.abort();
-      if (onAbort) signal?.removeEventListener("abort", onAbort);
-      reject(
-        new MCPConnectionFailedError(
-          server.name,
-          server.transport,
-          `Failed to connect to MCP '${server.name}' within ${connectTimeoutMs}ms.`,
-        ),
-      );
-    }, connectTimeoutMs);
-    unref(timer);
-  });
   try {
     return await Promise.race([handlePromise, guard]);
   } finally {

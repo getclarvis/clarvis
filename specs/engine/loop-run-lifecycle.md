@@ -13,9 +13,9 @@ which owns a different question:
 | --- | --- | --- |
 | Run | `executeRun` — `packages/loop/src/runtime/execute-run.ts:274` | Validation, execution-id reservation, continuation load, journal, persistence, capability run-end |
 | Orchestration | `runOrchestrator` — `packages/loop/src/runtime/orchestrator.ts:182` | Capability activation, trace construction, seed, `run_started`/`run_ended`, MCP pool, clock/timeout |
-| Agent | `runAgent` → `runAgentLoop` — `packages/loop/src/runtime/loop/run-agent.ts:124`, `packages/loop/src/runtime/loop/loop.ts:829` | The iteration loop itself: compact, call model, classify, dispatch, guard, checkpoint |
+| Agent | `runAgent` → `runAgentLoop` — `packages/loop/src/runtime/loop/run-agent.ts:124`, `packages/loop/src/runtime/loop/loop.ts:854` | The iteration loop itself: compact, call model, classify, dispatch, guard, checkpoint |
 
-The loop layer is an unbounded `for (;;)` (`packages/loop/src/runtime/loop/loop.ts:845`) with no
+The loop layer is an unbounded `for (;;)` (`packages/loop/src/runtime/loop/loop.ts:870`) with no
 iteration counter of its own — every stop condition is delegated to an injected probe or factory
 (`LoopDerived.maybeCancelled`, `.checkpoint`, `.results`, `.finalize` —
 `packages/loop/src/runtime/loop/loop.ts:172-177`). `runAgentLoop` never constructs a terminal result:
@@ -513,7 +513,7 @@ fallback by construction.
 
 ### 4.7 `runAgentLoop` — one iteration, step by step
 
-`packages/loop/src/runtime/loop/loop.ts:829`. `core.onStart?.()` fires once before the loop (`:838`).
+`packages/loop/src/runtime/loop/loop.ts:854`. `core.onStart?.()` fires once before the loop (`:838`).
 
 | # | Step | Source | Early exit |
 | --- | --- | --- | --- |
@@ -570,7 +570,7 @@ an empty `toolCalls` array all read as `empty` (`:26-29`).
 
 ### 4.9 Empty / reasoning-only streak
 
-State machine over `emptyStreak` (`packages/loop/src/runtime/loop/loop.ts:842,975,988`):
+State machine over `emptyStreak` (`packages/loop/src/runtime/loop/loop.ts:867,975,988`):
 
 | state | event | next | effect |
 | --- | --- | --- | --- |
@@ -656,7 +656,7 @@ recovery call).
 
 ### 4.12 Tool dispatch within an iteration
 
-`runDispatch` (`packages/loop/src/runtime/loop/loop.ts:656-806`). Full mechanics of *what a tool
+`runDispatch` (`packages/loop/src/runtime/loop/loop.ts:679-831`). Full mechanics of *what a tool
 does* belong to [loop-tool-dispatch-and-results](tool-dispatch.md); what this document owns is the batch's control flow:
 
 1. pause the compute clock for the whole batch — this agent's own `computeRegion` if it has one,
@@ -760,7 +760,7 @@ non-emptiness without consuming (`:63-66`); `take()` pulls, hands the buffer ove
 pinned by `packages/loop/tests/unit/steer-inbox.test.ts:27-147`.
 
 `drainSteer` (`packages/loop/src/runtime/loop/run-agent.ts:460-490`) runs at the *top* of an
-iteration, after the preamble (`packages/loop/src/runtime/loop/loop.ts:864`). For each message it
+iteration, after the preamble (`packages/loop/src/runtime/loop/loop.ts:889`). For each message it
 appends a user entry, records a `user_steering` trace entry carrying `iteration_ref` and the
 flattened text, and fires `onUserSteer` observers; after the batch it calls `progress.reset()`
 (`:488`).
@@ -783,10 +783,10 @@ Cancellation is cooperative and observed at named probe points; there is no pree
 | `runAgent` entry, before any work | `packages/loop/src/runtime/loop/run-agent.ts:194-197` |
 | iteration preamble | `packages/loop/src/runtime/loop/loop-iteration.ts:42-44` |
 | after a model-call throw | `packages/loop/src/runtime/loop/model-call.ts:94-95` |
-| before each tool call in a batch | `packages/loop/src/runtime/loop/loop.ts:678-684` |
-| when a handler's promise loses to the abort | `packages/loop/src/runtime/loop/loop.ts:703-711` |
-| when a handler returns `kind: "cancelled"` | `packages/loop/src/runtime/loop/loop.ts:733-740` |
-| when the deferred join loses to the abort | `packages/loop/src/runtime/loop/loop.ts:777-782` |
+| before each tool call in a batch | `packages/loop/src/runtime/loop/loop.ts:701-707` |
+| when a handler's promise loses to the abort | `packages/loop/src/runtime/loop/loop.ts:726-734` |
+| when a handler returns `kind: "cancelled"` | `packages/loop/src/runtime/loop/loop.ts:756-763` |
+| when the deferred join loses to the abort | `packages/loop/src/runtime/loop/loop.ts:802-807` |
 | before every budget checkpoint | `packages/loop/src/runtime/loop/loop-shared.ts:119-126` |
 
 Every probe funnels through `maybeCancelled` → `checkCancelled`
@@ -816,20 +816,20 @@ Every way a run reaches its terminal `RunResponse`:
 | external cancellation wins the race | `packages/loop/src/runtime/run-timeout.ts:147` | `cancelled` |
 | thrown error escapes the loop | `packages/loop/src/runtime/run-timeout.ts:151` | mapped per §3.3 |
 | pre-loop budget check | `packages/loop/src/runtime/loop/run-agent.ts:339-346` | `budget_exhausted` |
-| iteration preamble: all tools unavailable | `packages/loop/src/runtime/loop/loop.ts:860` | `error` / `all_tools_unavailable` |
-| iteration preamble: cancelled | `packages/loop/src/runtime/loop/loop.ts:859` | `cancelled` |
-| output budget exhausted | `packages/loop/src/runtime/loop/loop.ts:949`, `:1071` | `budget_exhausted` |
-| model call cancelled | `packages/loop/src/runtime/loop/loop.ts:952` | `cancelled` |
-| empty-response streak | `packages/loop/src/runtime/loop/loop.ts:976` | `error` / `empty_response` |
-| no-progress streak | `packages/loop/src/runtime/loop/loop.ts:983`, `:1063` | `error` / `no_progress` |
+| iteration preamble: all tools unavailable | `packages/loop/src/runtime/loop/loop.ts:885` | `error` / `all_tools_unavailable` |
+| iteration preamble: cancelled | `packages/loop/src/runtime/loop/loop.ts:884` | `cancelled` |
+| output budget exhausted | `packages/loop/src/runtime/loop/loop.ts:974`, `:1071` | `budget_exhausted` |
+| model call cancelled | `packages/loop/src/runtime/loop/loop.ts:977` | `cancelled` |
+| empty-response streak | `packages/loop/src/runtime/loop/loop.ts:1001` | `error` / `empty_response` |
+| no-progress streak | `packages/loop/src/runtime/loop/loop.ts:1008`, `:1063` | `error` / `no_progress` |
 | finalize accepted (text or structured) | `packages/loop/src/runtime/loop/run-agent.ts:358-367` | `completed` |
 | finalize gate returned terminal | `packages/loop/src/runtime/loop/run-agent.ts:396-400`, `:613` | the gate's own result |
-| a tool handler returned terminal | `packages/loop/src/runtime/loop/loop.ts:1013` | the handler's result |
-| hard guard trip | `packages/loop/src/runtime/loop/loop.ts:1055-1056` | `error` / the guard's code |
-| budget checkpoint | `packages/loop/src/runtime/loop/loop.ts:984`, `:1067`; `packages/loop/src/runtime/loop/run-agent.ts:261-274` | `budget_exhausted` or `soft_limit_declined` |
+| a tool handler returned terminal | `packages/loop/src/runtime/loop/loop.ts:1038` | the handler's result |
+| hard guard trip | `packages/loop/src/runtime/loop/loop.ts:1080-1081` | `error` / the guard's code |
+| budget checkpoint | `packages/loop/src/runtime/loop/loop.ts:1009`, `:1067`; `packages/loop/src/runtime/loop/run-agent.ts:261-274` | `budget_exhausted` or `soft_limit_declined` |
 
 `completed`, `noProgress` and `emptyResponse` each record a `terminate` entry with a reason
-(`packages/loop/src/runtime/loop/run-agent.ts:360`, `:349`, `:547`), as does a non-escalated guard trip (`packages/loop/src/runtime/loop/loop.ts:1055`) and
+(`packages/loop/src/runtime/loop/run-agent.ts:360`, `:349`, `:547`), as does a non-escalated guard trip (`packages/loop/src/runtime/loop/loop.ts:1080`) and
 `all_tools_unavailable` (`packages/loop/src/runtime/loop/loop-iteration.ts:46`). `terminate` is not wire-visible
 (`packages/trace/src/trace-mapper.ts:507`).
 
@@ -936,25 +936,25 @@ Every way a run reaches its terminal `RunResponse`:
     `packages/loop/tests/integration/empty-response.test.ts:20-35`, `:67-83`, `:85-113`, `:115-140`.
 24. **The empty-response nudge is a *replaceable* runtime note: a second empty replaces the first
     rather than accumulating.** — `ctx.appendRuntimeNote("empty_response", …)` at
-    `packages/loop/src/runtime/loop/loop.ts:977-982`. Test:
+    `packages/loop/src/runtime/loop/loop.ts:1002-1007`. Test:
     `packages/loop/tests/unit/run-agent.test.ts:672-710`.
 25. **A reasoning-only completion's `reasoningParts` are appended to the context before the nudge, so
-    provider continuation state survives.** — `packages/loop/src/runtime/loop/loop.ts:971-974`. Test:
+    provider continuation state survives.** — `packages/loop/src/runtime/loop/loop.ts:996-999`. Test:
     `packages/loop/tests/integration/empty-response.test.ts:105-112`.
 26. **Both soft convergence warnings of one iteration are joined into a single runtime note.** —
-    `packages/loop/src/runtime/loop/loop.ts:1023-1037`, with the reason stated at `:1017-1022`.
+    `packages/loop/src/runtime/loop/loop.ts:1048-1062`, with the reason stated at `:1017-1022`.
     ~~**Unpinned** by any test naming this behaviour.~~ **Pinned 2026-08-22**:
     `packages/loop/tests/integration/convergence-warning-join.test.ts`. Making both guards warn in
     one iteration is the hard part and is not incidental — the stagnation guard ignores errors
     outright and any success clears the doom guard's counters, so it takes one batch holding a
     repeated *failing* call beside a repeatedly-identical *successful* one.
 27. **A waived guard trip does not skip the no-progress tracker or the budget checkpoint.** —
-    `packages/loop/src/runtime/loop/loop.ts:1045-1058` falls through to `:1060-1068`; reason stated at
+    `packages/loop/src/runtime/loop/loop.ts:1070-1083` falls through to `:1060-1068`; reason stated at
     `:1039-1044`. Related tests live in
     `packages/loop/tests/integration/guard-escalation.test.ts` (guard escalation is owned by
     [loop-budgets-clocks-and-guards](budgets-and-guards.md)).
 28. **An escalation that returns a result of its own does *not* record a `terminate` reason; only a
-    genuine guard termination does.** — `packages/loop/src/runtime/loop/loop.ts:1055`, reason stated
+    genuine guard termination does.** — `packages/loop/src/runtime/loop/loop.ts:1080`, reason stated
     at `:1049-1054`. ~~**Unpinned.**~~ **Pinned 2026-08-22**:
     `packages/loop/tests/component/guard-trip-terminate.test.ts`, with both controls — a declining
     escalation and no escalation at all both *do* record it.
@@ -970,28 +970,28 @@ Every way a run reaches its terminal `RunResponse`:
     iteration was silently forced. The third iteration is reached by having the forced call name a
     tool the registry does not carry.
 31. **A rewritten tool call is a new object; the assistant message already in context is never
-    mutated.** — `packages/loop/src/runtime/loop/loop.ts:692-702`. **Unpinned** at this line (the
+    mutated.** — `packages/loop/src/runtime/loop/loop.ts:715-725`. **Unpinned** at this line (the
     hook-dialect side is owned by [hooks-execution](../execution/hooks.md)).
 32. **Every tool call in a batch gets exactly one tool result appended, including calls the batch
-    never reached.** — `packages/loop/src/runtime/loop/loop.ts:786-800`. Tests:
+    never reached.** — `packages/loop/src/runtime/loop/loop.ts:811-825`. Tests:
     `packages/loop/tests/unit/run-agent.test.ts:320-332` (`assertNoOrphans`), `:334-368`, `:370-408`,
     `:632-641`.
 33. **A terminal verdict never fabricates a failure line for the call that produced it.** —
-    `packages/loop/src/runtime/loop/loop.ts:582-599`. Tests:
+    `packages/loop/src/runtime/loop/loop.ts:605-622`. Tests:
     `packages/loop/tests/unit/run-agent.test.ts:594-630`.
 34. **The compute clock is paused for the whole tool-dispatch batch and released in a `finally`,
     using this agent's own background region when it has one.** —
-    `packages/loop/src/runtime/loop/loop.ts:675`, `:775-784`; the rationale for the region is stated at
+    `packages/loop/src/runtime/loop/loop.ts:698`, `:775-784`; the rationale for the region is stated at
     `packages/loop/src/runtime/loop/loop.ts:126-134`. **Unpinned** at this line;
     `packages/capability/tests/unit/compute-clock.test.ts` owns the clock's own truth table.
 35. **`onTeardown` fires on every exit path from the iteration loop and is awaited.** —
-    `packages/loop/src/runtime/loop/loop.ts:1073-1075`. ~~**Unpinned.**~~ **Pinned 2026-08-22**:
+    `packages/loop/src/runtime/loop/loop.ts:1098-1100`. ~~**Unpinned.**~~ **Pinned 2026-08-22**:
     `packages/loop/tests/component/lifecycle-finalize-wiring.test.ts` — a completed run, a
     no-progress termination, and a provider throwing out of the loop, each asserting the count is
     exactly one, plus that an async teardown has settled before the run returns.
 36. **A steer is delivered exactly once, on the iteration after it was queued, and resets the
     no-progress streak.** — `packages/loop/src/runtime/loop/run-agent.ts:460-490` (drain at
-    `packages/loop/src/runtime/loop/loop.ts:864`, i.e. after the preamble). Tests:
+    `packages/loop/src/runtime/loop/loop.ts:889`, i.e. after the preamble). Tests:
     `packages/loop/tests/unit/steering.test.ts:122-165`, `:242-278`.
 37. **`probe()` does not consume; a throwing steer source is treated as empty.** —
     `packages/loop/src/runtime/loop/steer-inbox.ts:45-53,63-66`. Tests:
@@ -1033,7 +1033,7 @@ Every way a run reaches its terminal `RunResponse`:
 46. **`evict` is invoked on a `context_overflow` error and on nothing else**, which is what makes the
     compaction-reach watch's observation meaningful. —
     `packages/loop/src/runtime/loop/model-call.ts:96-101`, stated at `:41-44`; the observer is wired at
-    `packages/loop/src/runtime/loop/loop.ts:908-912`. **Unpinned** as a negative.
+    `packages/loop/src/runtime/loop/loop.ts:933-937`. **Unpinned** as a negative.
 47. **`compaction.unreachable` is reported at most once per agent loop, only when compaction is
     enabled, and only when the refused prompt was *smaller* than the compaction high-water mark.**
     `observeOverflow` returns immediately, without reporting, when `!config.enabled` — the same
@@ -1110,7 +1110,7 @@ Every way a run reaches its terminal `RunResponse`:
     `packages/loop/tests/unit/lifecycle-hooks.test.ts:102-113`, `:236`.
 65. **`beforeToolUse` fails closed (a throwing hook denies) and `afterToolUse` fails open (a throwing
     hook leaves the result unmodified).** —
-    `packages/loop/src/runtime/loop/loop.ts:519` (`onThrow: "deny"`) versus `:565` (`onThrow: "ignore"`). Test:
+    `packages/loop/src/runtime/loop/loop.ts:537` (`onThrow: "deny"`) versus `:565` (`onThrow: "ignore"`). Test:
     `packages/loop/tests/unit/lifecycle-hooks.test.ts:45-113` for the sweep semantics.
 66. **`collectCompactionContributions` always fails open.** —
     `packages/loop/src/runtime/loop/lifecycle-hooks.ts:328-338`, reason stated at `:257-263`. Test:
@@ -1135,7 +1135,7 @@ Every way a run reaches its terminal `RunResponse`:
     its behavioural consequence is invariant 33.
 71. **A hook-rewritten argument envelope contributes at most 2,000 rendered argument characters to
     the model's permanent context; the trace retains the untruncated executed arguments.** —
-    Production: `packages/loop/src/runtime/loop/loop.ts:445-485`. Test:
+    Production: `packages/loop/src/runtime/loop/loop.ts:445-502`. Test:
     `packages/loop/tests/unit/tool-hooks.test.ts` ("bounds rewritten arguments before appending them
     to the model context").
 
@@ -1160,11 +1160,11 @@ Every way a run reaches its terminal `RunResponse`:
 | Provider `context_overflow` | evict-and-retry up to 3×; then a legible diagnostic `ProviderError` | `packages/loop/src/runtime/loop/model-call.ts:96-115` |
 | Forced tool choice rejected as `client` | one silent retry without the forcing | `packages/loop/src/runtime/loop/model-call.ts:117-127` |
 | Provider transient failure | retried by the provider layer; each retry recorded as `model_call_retry` and pokes the clock | `packages/loop/src/runtime/loop/loop.ts:427-440` |
-| Any provider error reaching the loop | `model_call_error` recorded with `kind`/`status`/`retry_after_ms`/`usage_attributed`, message sanitized; `onModelCallError` observers fired | `packages/loop/src/runtime/loop/iteration-metrics.ts:314-336`, `packages/loop/src/runtime/loop/loop.ts:919-946` |
-| Output budget exhausted before or during a call | `OutputBudgetExhaustedError` → `budget_exhausted` | `packages/loop/src/runtime/loop/output-budget.ts:87,99`; caught at `packages/loop/src/runtime/loop/loop.ts:948-950`, `:1070-1072` |
-| Tool handler throws | converted to `Tool 'X' failed: msg`; `tool.handler_failed` warned; batch continues | `packages/loop/src/runtime/loop/loop.ts:713-721` |
-| Deferred handler rejects | same, via `tool.deferred_handler_failed` | `packages/loop/src/runtime/loop/loop.ts:742-765` |
-| Deferred still pending at cancellation | detached, but its later rejection is still observed | `packages/loop/src/runtime/loop/loop.ts:775-782`, `settleOrAbort` at `:613-635`. Test: `packages/loop/tests/unit/run-agent.test.ts:458-536` |
+| Any provider error reaching the loop | `model_call_error` recorded with `kind`/`status`/`retry_after_ms`/`usage_attributed`, message sanitized; `onModelCallError` observers fired | `packages/loop/src/runtime/loop/iteration-metrics.ts:314-336`, `packages/loop/src/runtime/loop/loop.ts:944-971` |
+| Output budget exhausted before or during a call | `OutputBudgetExhaustedError` → `budget_exhausted` | `packages/loop/src/runtime/loop/output-budget.ts:87,99`; caught at `packages/loop/src/runtime/loop/loop.ts:973-975`, `:1070-1072` |
+| Tool handler throws | converted to `Tool 'X' failed: msg`; `tool.handler_failed` warned; batch continues | `packages/loop/src/runtime/loop/loop.ts:736-744` |
+| Deferred handler rejects | same, via `tool.deferred_handler_failed` | `packages/loop/src/runtime/loop/loop.ts:765-790` |
+| Deferred still pending at cancellation | detached, but its later rejection is still observed | `packages/loop/src/runtime/loop/loop.ts:800-807`, `settleOrAbort` at `:613-635`. Test: `packages/loop/tests/unit/run-agent.test.ts:458-536` |
 | Steer source `drain()` throws | `steer.drain_failed` warned; treated as empty | `packages/loop/src/runtime/loop/steer-inbox.ts:45-53` |
 | Trace `ingest` throws | `trace.ingest_failed` warned; entry dropped from the registry only | `packages/loop/src/runtime/run-trace.ts:149-161` |
 | `onEvent` throws | `trace.emit_failed` warned; event dropped | `packages/loop/src/runtime/run-trace.ts:167-178` |

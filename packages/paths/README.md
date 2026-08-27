@@ -75,6 +75,7 @@ st.diagnosticsDir; //             ~/.clarvis/state/workspaces/ws_<sha256>/local/
 const g = globalPaths(); //     $CLARVIS_HOME ?? ~/.clarvis
 g.settingsFile; //              …/settings.json
 g.subscriptionsFile; //         …/subscriptions.json (renewable subscription credentials)
+g.mcpOAuthFile; //              …/state/mcp-oauth.json (remote MCP registrations and tokens)
 g.tracesDir; //                 …/state/traces
 ```
 
@@ -101,7 +102,7 @@ already use, so one workspace's generated data all lands under one name.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
 `keys.json`, `subscriptions.json`, plugins and their trust records, `guard-judge.md`, `auth.json` — and nests only what a
-user never edits: `state/` (sessions, traces, workflow records, the per-workspace machinery above),
+user never edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above),
 `cache/`, `exports/`. A `config/` layer was tried and removed: it made the global tree disagree with
 the workspace one, where `settings.json` and `agents/` have always sat at the root. This physical
 layout stays stable; operator inventory classifies it logically rather than moving files into a new

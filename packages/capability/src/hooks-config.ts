@@ -9,7 +9,7 @@
  * loads only when hooks are enabled) both read these values. A value the eager
  * half reaches must live in a package that is never optional, or configuring the
  * engine would require the optional feature package to be installed — and
- * `builtins.hooks = false` would stop meaning what it says. The eleven
+ * `builtins.hooks = false` would stop meaning what it says. The lifecycle
  * `*Context` types and {@link LifecycleHook} itself already live here for the
  * same reason.
  */
@@ -71,6 +71,17 @@ export const COMPACTION_HOOK_EVENTS = ["pre_compact"] as const;
 export const CONTEXT_HOOK_EVENTS = ["session_start"] as const;
 
 /**
+ * Host-command events that observe a user-invoked skill before its seeded run.
+ *
+ * @remarks This is deliberately not a loop lifecycle approximation. A
+ * `UserPromptExpansion` command has an exact host boundary — the `/skill`
+ * expansion that becomes a run — and fires once from the hooks capability's
+ * seed phase with that command name. It does not fire for an ordinary prompt or
+ * for a model's later `load_skill` call.
+ */
+export const PROMPT_HOOK_EVENTS = ["user_prompt_expansion"] as const;
+
+/**
  * How each Clarvis lifecycle event is spelled in the hooks dialect written
  * outside Clarvis.
  *
@@ -96,6 +107,7 @@ export const EXTERNAL_HOOK_EVENT_NAMES: Readonly<Record<string, string>> = {
   subagent_complete: "SubagentStop",
   pre_finalize: "Stop",
   user_steer: "UserPromptSubmit",
+  user_prompt_expansion: "UserPromptExpansion",
 };
 
 /**
@@ -138,6 +150,22 @@ export const EXTERNAL_TOOL_NAMES: Readonly<Record<string, string>> = {
   ls: "list_dir",
   listdir: "list_dir",
   task: "delegate_task",
+  skill: "load_skill",
+};
+
+/** Preferred external spelling emitted on a compatible hook's stdin. */
+export const EXTERNAL_HOOK_TOOL_NAMES: Readonly<Record<string, string>> = {
+  shell: "Bash",
+  read_file: "Read",
+  write_file: "Write",
+  edit_file: "Edit",
+  multi_edit: "MultiEdit",
+  apply_patch: "apply_patch",
+  glob: "Glob",
+  grep: "Grep",
+  list_dir: "LS",
+  delegate_task: "Task",
+  load_skill: "Skill",
 };
 
 /**
@@ -175,6 +203,7 @@ const HOOK_EVENTS = [
   ...OBSERVER_HOOK_EVENTS,
   ...CONTEXT_HOOK_EVENTS,
   ...COMPACTION_HOOK_EVENTS,
+  ...PROMPT_HOOK_EVENTS,
 ] as const;
 
 const TOOL_SCOPED_EVENTS = new Set<string>(["pre_tool_use", "post_tool_use"]);
@@ -242,6 +271,8 @@ export const hookSchema = z
           "Observer events (run_start, run_end, subagent_complete, model_call_error, " +
           "budget_exhausted, user_steer) are notify-only: the command runs, its output " +
           "is ignored, and it can never block the run. " +
+          "user_prompt_expansion fires once for a user-invoked skill command, before that " +
+          "skill's seeded run; its output is likewise ignored. " +
           'session_start fires once per run and its {"kind":"context","text":"..."} ' +
           "output is pinned into the agent's entry context, surviving compaction. " +
           'pre_compact fires before each compaction and its {"kind":"context","text":"..."} ' +

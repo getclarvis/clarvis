@@ -202,6 +202,11 @@ Plus `tool-arguments.ts`, `call-envelope.ts` (`openCallEnvelope`), `handler-base
 declares it and the loop adapter in `@clarvis/hooks/capability` executes against it, so it belongs
 to neither package alone.
 
+That shared hook vocabulary includes the exact user skill-command expansion event, compatible
+external event/tool names, and both identities for a projected tool call: its model-facing wire name
+plus an optional stable dotted full name. Keeping those values below the optional hooks package lets
+the engine expose them without loading hook runtime code on the eager settings path.
+
 ### `sanitize.ts` is one rule set with two behaviours
 
 `@clarvis/loop` and `@clarvis/memory` each carried a copy that had **silently diverged in output**.

@@ -78,7 +78,12 @@ function readManifest(plugin: StagedPlugin): ResolvedPluginManifest {
   if (plugin.manifestRaw === undefined) {
     return { error: "no readable plugin.json", notes: [] };
   }
-  return resolvePluginManifest(plugin.dir, plugin.manifestRaw, plugin.manifestLocation);
+  return resolvePluginManifest(
+    plugin.dir,
+    plugin.manifestRaw,
+    plugin.manifestLocation,
+    plugin.name,
+  );
 }
 
 /** True when an agent file's leniently-parsed frontmatter satisfies

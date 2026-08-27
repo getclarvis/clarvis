@@ -91,7 +91,7 @@ family, capability gating).
 | --- | --- | --- |
 | `default_vision_model` (settings.json) | `packages/loop/src/settings/settings-schema.ts:256-262` | optional `modelField`; merge strategy `lastWins` (`packages/loop/src/settings/settings-merge.ts:114`) |
 | `RunRequest.vision_model` | `packages/capability/src/api.ts:376-393` | optional model ref string; a model reference, not a profile name |
-| kernel assembly | `packages/kernel/src/runs/settings-assembler.ts:416-418` | `merged.default_vision_model` (a string) becomes `request.vision_model` |
+| kernel assembly | `packages/kernel/src/runs/settings-assembler.ts:428-430` | `merged.default_vision_model` (a string) becomes `request.vision_model` |
 | request validation | `packages/loop/src/validation/request/provider-rules.ts:118-136` (`requireResolvableModelProviders`) | `vision_model`'s provider token must resolve, exactly like every profile's `model` |
 | wire schema description | `packages/loop/src/validation/request/request-schema.ts:203-210` | user-facing text: "Omit to leave images as numbered placeholders for a model that cannot see." |
 

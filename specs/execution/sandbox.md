@@ -136,7 +136,7 @@ settings.json"` (`packages/loop/src/runtime/capabilities/tools-settings.ts:253`)
 `inspectSandbox(options?: { refresh?: boolean }): Promise<SandboxInspection>` —
 `packages/protocol/src/config.ts:421`. Wired to
 `createSandboxPolicyResolver(...).inspect(options)` at
-`packages/kernel/src/file-kernel.ts:845`.
+`packages/kernel/src/file-kernel.ts:853`.
 
 `SandboxInspection` shape (`packages/protocol/src/config.ts:160-177`):
 

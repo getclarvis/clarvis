@@ -19,6 +19,7 @@ interface RawBody {
   plans?: unknown;
   budget?: { on_exceed?: string; total_token_limit?: number };
   agents?: Record<string, number>;
+  hook_user_prompt_expansion?: { command_name: string };
 }
 
 async function assemblerWith(
@@ -548,6 +549,33 @@ describe("settings run assembler — skill runs", () => {
 
     expect(body).not.toHaveProperty("skill");
     expect(() => validateBody(body, ENV())).not.toThrow();
+  });
+
+  it("forwards only the exact user skill expansion context to hooks", async () => {
+    const assemble = await assembleWithSkills([skill({ source: "plugin:toolkit" })]);
+
+    const body = assemble({
+      agent: "coder",
+      messages: [],
+      skill: { name: "spec" },
+      execution_id: "e",
+    }) as RawBody;
+
+    expect(body.hook_user_prompt_expansion).toEqual({ command_name: "toolkit:spec" });
+    expect(validateBody(body, ENV()).request.hook_user_prompt_expansion).toEqual({
+      command_name: "toolkit:spec",
+    });
+  });
+
+  it("keeps non-plugin skill expansion names bare", async () => {
+    const assemble = await assembleWithSkills([skill({ source: "workspace" })]);
+    const body = assemble({
+      agent: "coder",
+      messages: [],
+      skill: { name: "spec" },
+      execution_id: "e",
+    }) as RawBody;
+    expect(body.hook_user_prompt_expansion).toEqual({ command_name: "spec" });
   });
 
   it("a request with no messages of its own still validates, because the skill seeds one", async () => {

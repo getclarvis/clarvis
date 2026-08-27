@@ -272,8 +272,8 @@ Both auth files live in the Clarvis global root and are named by `@clarvis/paths
 
 | File | Path | Line |
 |---|---|---|
-| enrolment table | `<global>/auth.json` | `packages/paths/src/global.ts:120` |
-| signing key | `<global>/auth-key.json` | `packages/paths/src/global.ts:121` |
+| enrolment table | `<global>/auth.json` | `packages/paths/src/global.ts:123` |
+| signing key | `<global>/auth-key.json` | `packages/paths/src/global.ts:124` |
 
 `createAuthLayer` resolves them with `globalPaths(opts.configDir).authFile` / `.authKeyFile`, and
 `authFile` may be overridden by `CLARVIS_SERVER_AUTH_FILE`

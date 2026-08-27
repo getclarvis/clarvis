@@ -19,6 +19,20 @@ configuration and secrets, builds planning/memory/task/workflow dependencies, co
 in-process kernel, recovers persisted runs, and installs workspace housekeeping. A construction
 failure unwinds already-created resources before rethrowing.
 
+The file host always supplies the loop's remote-MCP authorization coordinator with
+`globalPaths(globalDir).mcpOAuthFile`. `openMcpAuthorizationUrl` is the separate host-authority seam:
+a local UI may open a validated authorization URL, while an intentionally headless embedder omits the
+callback and receives an explicit interactive-authorization failure only when a remote server actually
+challenges. OAuth credentials never enter settings, run requests, protocol DTOs or model context.
+
+Production: `packages/kernel/src/file-kernel.ts:93-145`, `:656-677`;
+`packages/paths/src/global.ts:108-120`.
+
+Test of the composed coordinator/store behavior:
+`packages/mcp-client/tests/integration/oauth-transport.test.ts:164-218` and
+`packages/mcp-client/tests/integration/oauth-store.test.ts:29-137`. The Code host's browser authority
+is documented and tested in [code-bootstrap.md](code-bootstrap.md).
+
 The `builtins` switchboard names `tools`, `skills`, `hooks`, and `tasks`. Memory and planning have
 their own explicit options. Worktrees are not a runtime builtin: Code selects a checkout before this
 function runs.
@@ -88,9 +102,16 @@ Human-authored plans and memory remain in workspace/global content trees; machin
 `@clarvis/paths` global state roots. Run journals are recovered before the kernel reports ready.
 Workspace housekeeping sweeps temporary spill/monitor artifacts without deleting Git checkouts.
 
+Remote MCP OAuth is the deliberate credential exception to run-scoped state: its bounded,
+schema-validated document lives at `<global>/state/mcp-oauth.json`, is private to the local host, and is
+reused across runs. The loop owns the live callback coordinator and closes it with the run dependency
+lifecycle; the kernel owns the file location and browser-opening authority.
+
 Production: `packages/kernel/src/owner-scoped-file-stores.ts`;
 `packages/kernel/src/application/workspace-housekeeping.ts`;
-`packages/kernel/src/file-kernel.ts`.
+`packages/kernel/src/file-kernel.ts:656-677`;
+`packages/loop/src/runtime/build-run-deps.ts:386-427`, `:577-594`;
+`packages/paths/src/global.ts:108-120`.
 
 Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 
@@ -122,6 +143,8 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 | --- | --- |
 | Git discovery is unavailable | deterministic canonical-path identity fallback |
 | Config/plugin scope is invalid | rejected scope is reported; valid scopes continue |
+| A remote MCP server requires interactive OAuth and the host supplied no browser opener | explicit `MCPInteractiveAuthorizationUnavailableError`; the URL is not opened implicitly and no credential is moved through the protocol |
+| OAuth callback, state, authorization URL or persisted store is invalid | authorization fails with a bounded typed error; unrelated plugin contributions and local MCP transports remain available |
 | Orphan recovery fails | warning and degraded recovery count; kernel continues booting |
 | A lifecycle resource fails to close | remaining resources still close; aggregate failure returned |
 | Owner cache is exhausted | `resource_exhausted` |
@@ -131,4 +154,6 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 
 Kernel depends on the foundation/engine packages it composes and imports `@clarvis/protocol` as
 types. Code and Server consume the kernel entrypoints; neither imports the loop. There is no
-`@clarvis/worktrees` dependency.
+`@clarvis/worktrees` dependency. The loop constructs `@clarvis/mcp-client`'s authorization
+coordinator from the host options; Code supplies the operating-system browser opener, while Server and
+other headless hosts can omit it without changing the wire contract.

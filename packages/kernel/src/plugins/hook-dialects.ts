@@ -337,19 +337,56 @@ const CATCH_ALL_MATCHER = /^(?:\*|\.\*)$/;
 type ToolNameReading =
   { kind: "tool"; tool: string } | { kind: "no_counterpart" } | { kind: "inexpressible" };
 
+/** Plugin identity available while translating its external hook document. */
+export interface HooksConversionOptions {
+  /** Effective plugin namespace assigned from its install directory. */
+  pluginName?: string;
+  /** MCP server names that survived this plugin's manifest resolution. */
+  pluginMcpServers?: readonly string[];
+}
+
+function pluginMcpTool(
+  tool: string,
+  server: string,
+  options: HooksConversionOptions | undefined,
+  force = false,
+): string {
+  const pluginName = options?.pluginName;
+  if (pluginName === undefined) return tool;
+  const ownsServer = options?.pluginMcpServers?.some((name) => name === server) ?? false;
+  return force || ownsServer ? `${pluginName}:${tool}` : tool;
+}
+
+function pluginMcpPrefix(
+  tool: string,
+  serverPrefix: string,
+  options: HooksConversionOptions | undefined,
+): string {
+  const pluginName = options?.pluginName;
+  if (pluginName === undefined) return tool;
+  const ownsPrefix =
+    options?.pluginMcpServers?.some((name) => name.startsWith(serverPrefix)) ?? false;
+  return ownsPrefix ? `${pluginName}:${tool}` : tool;
+}
+
 /**
  * Translate one name out of a matcher into the tool pattern this host matches on.
  *
  * @param part - one alternative of the matcher, already stripped of anchors.
  * @returns the pattern to match on, or why it cannot become one.
  * @remarks
- * Four rules, in order, and the order is what keeps them honest.
+ * Five rules, in order, and the order is what keeps them honest.
  *
  * A name in the external MCP spelling is rewritten to the dotted
  * `<server>.<tool>` this host namespaces MCP tools as — and its wildcard forms
  * with it, which is a faithful translation rather than a widening: every MCP
  * tool here carries a dot and no builtin does, so `*.*` names the same set
  * `mcp__.*` does.
+ *
+ * A plugin-qualified MCP prefix of the form
+ * `mcp__plugin_.*<server>.*` becomes `<server>.*`. The source host inserts a
+ * plugin-instance segment that Clarvis does not have; the stable server segment
+ * still identifies exactly the same contributed server here.
  *
  * Then, and **only** for a name carrying no pattern syntax at all, the alias
  * table applies. That restriction is load-bearing: {@link normalizeToolName}
@@ -365,10 +402,21 @@ type ToolNameReading =
  * `.*` matches nothing at all), and dropping the syntax yields a filter that
  * fires on more than its author asked for.
  */
-function translateToolName(part: string): ToolNameReading {
+function translateToolName(
+  part: string,
+  options: HooksConversionOptions | undefined,
+): ToolNameReading {
   if (part.startsWith(EXTERNAL_MCP_PREFIX)) {
     const rest = part.slice(EXTERNAL_MCP_PREFIX.length);
     if (CATCH_ALL_MATCHER.test(rest)) return { kind: "tool", tool: "*.*" };
+    const pluginServerPattern = /^plugin_\.\*([A-Za-z0-9_-]+)\.\*$/.exec(rest);
+    if (pluginServerPattern !== null) {
+      const server = pluginServerPattern.at(1) ?? "";
+      return {
+        kind: "tool",
+        tool: pluginMcpTool(`${server}.*`, server, options, true),
+      };
+    }
     const cut = rest.indexOf(EXTERNAL_MCP_SEPARATOR);
     if (cut > 0) {
       const server = rest.slice(0, cut);
@@ -377,8 +425,23 @@ function translateToolName(part: string): ToolNameReading {
         PLAIN_TOOL_NAME.test(server) &&
         (CATCH_ALL_MATCHER.test(tool) || PLAIN_TOOL_NAME.test(tool))
       ) {
-        return { kind: "tool", tool: `${server}.${CATCH_ALL_MATCHER.test(tool) ? "*" : tool}` };
+        return {
+          kind: "tool",
+          tool: pluginMcpTool(
+            `${server}.${CATCH_ALL_MATCHER.test(tool) ? "*" : tool}`,
+            server,
+            options,
+          ),
+        };
       }
+    }
+    const prefixPattern = /^([A-Za-z0-9_-]+)\.\*$/.exec(rest);
+    if (prefixPattern !== null) {
+      const serverPrefix = prefixPattern.at(1) ?? "";
+      return {
+        kind: "tool",
+        tool: pluginMcpPrefix(`${serverPrefix}*`, serverPrefix, options),
+      };
     }
     return { kind: "inexpressible" };
   }
@@ -424,24 +487,36 @@ type MatcherRefusal = { refused: "inexpressible" | "no_counterpart" };
  *   means. Read per-alternative it would survive as the literal `.*`, and a glob
  *   treats `.` literally — a gate that installed, was approved, and matched
  *   nothing. A catch-all sitting *inside* an alternation is refused instead:
- *   honouring it would widen the group to every call, and dropping it would
- *   narrow the rule its author wrote, so neither guess is safe to make silently.
+ *   honouring it would widen the group to every call. An alternative carrying
+ *   syntax that cannot be represented is dropped only when another alternative
+ *   survives, with a note; refusing the whole group would silently discard even
+ *   the exact names this host can enforce.
  */
-function translateMatcher(matcher: string | undefined): MatcherReading | MatcherRefusal {
+function translateMatcher(
+  matcher: string | undefined,
+  options: HooksConversionOptions | undefined,
+): MatcherReading | MatcherRefusal {
   const raw = (matcher ?? "").trim().replace(/^\^/, "").replace(/\$$/, "");
   if (raw === "" || CATCH_ALL_MATCHER.test(raw)) return { match: null, dropped: [] };
   const parts = raw.split("|").map((p) => p.trim().replace(/^\^/, "").replace(/\$$/, ""));
 
   const tool: string[] = [];
   const dropped: string[] = [];
+  let sawInexpressible = false;
   for (const part of parts) {
     if (part === "" || CATCH_ALL_MATCHER.test(part)) return { refused: "inexpressible" };
-    const reading = translateToolName(part);
-    if (reading.kind === "inexpressible") return { refused: "inexpressible" };
+    const reading = translateToolName(part, options);
+    if (reading.kind === "inexpressible") {
+      dropped.push(part);
+      sawInexpressible = true;
+      continue;
+    }
     if (reading.kind === "no_counterpart") dropped.push(part);
     else if (!tool.includes(reading.tool)) tool.push(reading.tool);
   }
-  if (tool.length === 0) return { refused: "no_counterpart" };
+  if (tool.length === 0) {
+    return { refused: sawInexpressible ? "inexpressible" : "no_counterpart" };
+  }
   return { match: { tool }, dropped };
 }
 
@@ -458,15 +533,20 @@ function eventMapOf(document: z.infer<typeof hooksDocumentSchema>): HookEventMap
  *
  * @param document - the parsed document; see {@link hooksDocumentSchema}.
  * @param pluginRoot - absolute install directory, substituted into each command.
+ * @param options - effective plugin namespace and the MCP servers that survived
+ *   manifest resolution, used to preserve plugin-qualified tool identity.
  * @returns the translated {@link HookConfig}s plus a note per entry that was
  *   skipped or per behaviour that does not carry over.
  * @remarks Every hook it produces is an ordinary Clarvis hook: it goes through
  *   the same schema, the same operator-first merge order, and the same trust
- *   gate as one an operator wrote by hand.
+ *   gate as one an operator wrote by hand. An MCP matcher naming a server this
+ *   plugin contributes is qualified with the same `<plugin>:` prefix the kernel
+ *   assigns that server; a matcher for some other server stays unqualified.
  */
 export function convertHooksDocument(
   document: z.infer<typeof hooksDocumentSchema>,
   pluginRoot: string,
+  options?: HooksConversionOptions,
 ): HooksConversion {
   const hooks: HookConfig[] = [];
   const notes: string[] = [];
@@ -493,7 +573,7 @@ export function convertHooksDocument(
     for (const group of groups) {
       const toolScoped = TOOL_SCOPED.has(event);
       const reading: MatcherReading | MatcherRefusal = toolScoped
-        ? translateMatcher(group.matcher)
+        ? translateMatcher(group.matcher, options)
         : { match: null, dropped: [] };
       if ("refused" in reading) {
         notes.push(
@@ -510,7 +590,7 @@ export function convertHooksDocument(
       if (reading.dropped.length > 0) {
         notes.push(
           `hooks: ${sourceEvent} matcher dropped ${reading.dropped.map((d) => `'${d}'`).join(", ")} ` +
-            "— this host has no such tool; the rest of the filter still applies",
+            "— those alternatives cannot be represented here; the rest of the filter still applies",
         );
       }
       if (!toolScoped && (group.matcher ?? "").trim() !== "") {

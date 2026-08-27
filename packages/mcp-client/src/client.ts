@@ -5,6 +5,10 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import {
+  UnauthorizedError,
+  type OAuthClientProvider,
+} from "@modelcontextprotocol/sdk/client/auth.js";
 import { ElicitRequestSchema, type ElicitResult } from "@modelcontextprotocol/sdk/types.js";
 import type { FetchLike, Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { NOOP_LOGGER, bind, resolveStringMap } from "@clarvis/capability";
@@ -17,6 +21,12 @@ import {
   drainStderrStream,
   type ServerStderrSink,
 } from "./server-stderr.ts";
+import type {
+  MCPAuthorizationCoordinator,
+  MCPAuthorizationSession,
+  OAuthFinishingTransport,
+} from "./oauth.ts";
+import type { PoolScope } from "./connection.ts";
 
 /**
  * A host's answer to a server-initiated elicitation: whether the user
@@ -56,11 +66,16 @@ export interface MCPClientHandle {
   protocolVersion?: string;
 }
 
-/** Connect-time tuning: an abort `signal` and a `timeoutMs` bound on the initial
- * handshake. */
+/** Connect-time tuning, identity, and human-authorization timeout controls. */
 export interface MCPConnectOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
+  /** Owner/workspace boundary used to isolate persistent remote OAuth credentials. */
+  scope?: PoolScope;
+  /** Pauses the caller's connect budget while a person authorizes in a browser. */
+  onAuthorizationWaitStart?: () => void;
+  /** Resumes that budget after the browser wait, on success or failure. */
+  onAuthorizationWaitEnd?: () => void;
 }
 
 /**
@@ -127,6 +142,27 @@ export interface MCPClientFactoryOptions {
    *   host passes the one logger it already has.
    */
   logger?: Logger;
+  /** Persistent interactive authorization for remote HTTP/SSE servers. */
+  authorization?: MCPAuthorizationCoordinator;
+}
+
+interface BuiltClient {
+  client: Client;
+  transport: Transport;
+  handle: MCPClientHandle;
+}
+
+function finishingTransport(transport: Transport): OAuthFinishingTransport | undefined {
+  const candidate = transport as Transport & Partial<OAuthFinishingTransport>;
+  return typeof candidate.finishAuth === "function"
+    ? (candidate as OAuthFinishingTransport)
+    : undefined;
+}
+
+async function closeFailedClient(client: Client): Promise<void> {
+  try {
+    await client.close();
+  } catch {}
 }
 
 /**
@@ -147,53 +183,118 @@ export function createMCPClientFactory(
   const root = options?.logger ?? NOOP_LOGGER;
   return async (server, relay, opts) => {
     const logger = bind(root, { mcp: server.name, transport: server.transport });
-    const client = new Client(
-      { name: CLIENT_NAME, version: VERSION },
-      { capabilities: relay ? { elicitation: {} } : {} },
-    );
+    const buildClient = (authProvider?: OAuthClientProvider): BuiltClient => {
+      const client = new Client(
+        { name: CLIENT_NAME, version: VERSION },
+        { capabilities: relay ? { elicitation: {} } : {} },
+      );
 
-    if (relay) {
-      client.setRequestHandler(ElicitRequestSchema, async (request, extra) => {
-        const result = await relay.handle(request.params, extra.signal);
-        return result as unknown as ElicitResult;
+      if (relay) {
+        client.setRequestHandler(ElicitRequestSchema, async (request, extra) => {
+          const result = await relay.handle(request.params, extra.signal);
+          return result as unknown as ElicitResult;
+        });
+      }
+
+      const transport: Transport = buildTransport(server, environment, options?.defaultCwd, {
+        ...(options?.maxStdioFrameBytes !== undefined
+          ? { maxStdioFrameBytes: options.maxStdioFrameBytes }
+          : {}),
+        ...(options?.maxHttpResponseBytes !== undefined
+          ? { maxHttpResponseBytes: options.maxHttpResponseBytes }
+          : {}),
+        ...(options?.maxHttpSseEventBytes !== undefined
+          ? { maxHttpSseEventBytes: options.maxHttpSseEventBytes }
+          : {}),
+        ...(options?.onServerStderr !== undefined
+          ? { onServerStderr: options.onServerStderr }
+          : {}),
+        ...(options?.maxServerStderrBytes !== undefined
+          ? { maxServerStderrBytes: options.maxServerStderrBytes }
+          : {}),
+        ...(authProvider === undefined ? {} : { authProvider }),
+        logger,
       });
+      let protocolVersion: string | undefined;
+      const reported = transport.setProtocolVersion?.bind(transport);
+      transport.setProtocolVersion = (version: string): void => {
+        protocolVersion = version;
+        reported?.(version);
+      };
+      const handle: MCPClientHandle = {
+        client,
+        close: async () => {
+          await client.close();
+        },
+        get protocolVersion(): string | undefined {
+          return protocolVersion;
+        },
+      };
+      return { client, transport, handle };
+    };
+    const connectBuilt = async (built: BuiltClient): Promise<MCPClientHandle> => {
+      await built.client.connect(built.transport, {
+        ...(opts?.signal ? { signal: opts.signal } : {}),
+        ...(opts?.timeoutMs !== undefined ? { timeout: opts.timeoutMs } : {}),
+      });
+      return built.handle;
+    };
+    const connectOnce = async (authProvider?: OAuthClientProvider): Promise<MCPClientHandle> => {
+      const built = buildClient(authProvider);
+      try {
+        return await connectBuilt(built);
+      } catch (error) {
+        await closeFailedClient(built.client);
+        throw error;
+      }
+    };
+
+    const authorization = options?.authorization;
+    if (authorization === undefined || server.transport === "stdio" || server.url === undefined) {
+      return connectOnce();
+    }
+    if (opts?.scope === undefined) {
+      throw new Error(`server '${server.name}': remote OAuth requires a connection scope`);
     }
 
-    const transport: Transport = buildTransport(server, environment, options?.defaultCwd, {
-      ...(options?.maxStdioFrameBytes !== undefined
-        ? { maxStdioFrameBytes: options.maxStdioFrameBytes }
-        : {}),
-      ...(options?.maxHttpResponseBytes !== undefined
-        ? { maxHttpResponseBytes: options.maxHttpResponseBytes }
-        : {}),
-      ...(options?.maxHttpSseEventBytes !== undefined
-        ? { maxHttpSseEventBytes: options.maxHttpSseEventBytes }
-        : {}),
-      ...(options?.onServerStderr !== undefined ? { onServerStderr: options.onServerStderr } : {}),
-      ...(options?.maxServerStderrBytes !== undefined
-        ? { maxServerStderrBytes: options.maxServerStderrBytes }
-        : {}),
-      logger,
-    });
-    let protocolVersion: string | undefined;
-    const reported = transport.setProtocolVersion?.bind(transport);
-    transport.setProtocolVersion = (version: string): void => {
-      protocolVersion = version;
-      reported?.(version);
-    };
-    await client.connect(transport, {
-      ...(opts?.signal ? { signal: opts.signal } : {}),
-      ...(opts?.timeoutMs !== undefined ? { timeout: opts.timeoutMs } : {}),
-    });
-    return {
-      client,
-      close: async () => {
-        await client.close();
+    const key = authorization.key(opts.scope, server.url);
+    return authorization.runExclusive(
+      key,
+      opts.signal,
+      opts.onAuthorizationWaitStart,
+      opts.onAuthorizationWaitEnd,
+      async (): Promise<MCPClientHandle> => {
+        const session: MCPAuthorizationSession = await authorization.session(
+          opts.scope!,
+          server.url!,
+        );
+        const first = buildClient(session.provider);
+        try {
+          return await connectBuilt(first);
+        } catch (error) {
+          if (!(error instanceof UnauthorizedError)) {
+            await closeFailedClient(first.client);
+            throw error;
+          }
+
+          const finisher = finishingTransport(first.transport);
+          if (finisher === undefined) {
+            await closeFailedClient(first.client);
+            throw new Error(`server '${server.name}': remote transport cannot finish OAuth`, {
+              cause: error,
+            });
+          }
+          opts.onAuthorizationWaitStart?.();
+          try {
+            await session.finishAuthorization(finisher, opts.signal);
+          } finally {
+            opts.onAuthorizationWaitEnd?.();
+            await closeFailedClient(first.client);
+          }
+          return connectOnce(session.provider);
+        }
       },
-      get protocolVersion(): string | undefined {
-        return protocolVersion;
-      },
-    };
+    );
   };
 }
 
@@ -243,6 +344,7 @@ export function buildTransport(
     onServerStderr?: ServerStderrSink;
     maxServerStderrBytes?: number;
     logger?: Logger;
+    authProvider?: OAuthClientProvider;
   } = {},
 ):
   | BunStdioClientTransport
@@ -313,9 +415,14 @@ export function buildTransport(
       ? { maxSseEventBytes: limits.maxHttpSseEventBytes }
       : {}),
   });
-  const opts: { requestInit?: { headers: Record<string, string> }; fetch: FetchLike } = {
+  const opts: {
+    requestInit?: { headers: Record<string, string> };
+    fetch: FetchLike;
+    authProvider?: OAuthClientProvider;
+  } = {
     ...(headers ? { requestInit: { headers } } : {}),
     fetch: boundedFetch,
+    ...(limits.authProvider === undefined ? {} : { authProvider: limits.authProvider }),
   };
   return server.transport === "http"
     ? new StreamableHTTPClientTransport(url, opts)

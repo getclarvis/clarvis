@@ -514,7 +514,7 @@ the very first check (`packages/loop/tests/unit/agents-capability.test.ts:308-32
 (`packages/loop/src/runtime/capabilities/agents.ts:513`) — and pushes two run warnings when the report is non-empty: `"<n> child agent(s)
 abandoned when the run finished: …"` and `"<n> steer message(s) to child agent(s) were never
 delivered before the run finished."`. It runs in the loop's `finally`
-(`packages/loop/src/runtime/loop/loop.ts:1065-1066`) and is awaited.
+(`packages/loop/src/runtime/loop/loop.ts:1090-1091`) and is awaited.
 
 ### 4.7 The lead's own persona
 
@@ -686,7 +686,7 @@ The invariants below are derived directly from this document's own source and it
     `packages/loop/src/runtime/capabilities/agents.ts:414-416`. Test: `packages/loop/tests/unit/agents-capability.test.ts:297-306`.
 
 12. **Teardown is awaited and its report is surfaced as run warnings, never dropped.** Production:
-    `packages/loop/src/runtime/capabilities/agents.ts:489-503`; `packages/loop/src/runtime/loop/loop.ts:1065-1066`. Tests:
+    `packages/loop/src/runtime/capabilities/agents.ts:489-503`; `packages/loop/src/runtime/loop/loop.ts:1090-1091`. Tests:
     `packages/loop/tests/unit/agents-capability.test.ts:347-371`.
 
 13. **Consecutive background-child failures terminate the run rather than letting the lead spawn
@@ -940,7 +940,7 @@ The invariants below are derived directly from this document's own source and it
 
    The type system carries the same rule ahead of the runtime. `@clarvis/capability` now splits
    `GateVerdict` — `pass`/`deny`/`advise`, "a lifecycle hook's ruling where the action cannot be
-   rewritten" (`packages/capability/src/api.ts:467`-`:480`) — from `HookVerdict`, which is that plus
+   rewritten" (`packages/capability/src/api.ts:476`-`:480`) — from `HookVerdict`, which is that plus
    `rewrite` (`:482`-`:505`). `beforeToolUse` takes the wider type and `afterToolUse`, `preFinalize`
    and `preDelegateTask` take the narrower one (`:640`-`:643`), so a hook this compiler can see is a
    compile error rather than a verdict computed and then dropped; the runtime refusal covers the
@@ -952,7 +952,7 @@ The invariants below are derived directly from this document's own source and it
    profile, upstream of the spawn's own
    validation and of the command guard — and does it non-silently, which `preDelegateTask` could
    not: the replacement travels as a new call object so the assistant message already in context
-   keeps what the model sent (`packages/loop/src/runtime/loop/loop.ts:686`-`:696`), the model is told
+   keeps what the model sent (`packages/loop/src/runtime/loop/loop.ts:717-734`), the model is told
    through the `[advisor]` channel, and a dispatch that writes a tool-call record carries
    `arguments_original` beside the executed `arguments`
    (`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:38`-`:50`). All four are

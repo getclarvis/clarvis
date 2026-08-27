@@ -4,7 +4,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { agentsMarketplaceFile, WORKSPACE_ENV } from "@clarvis/paths";
 import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
-import { addMarketplaceSource, createMarketplaceAdapter } from "../../src/adapters/marketplace.ts";
+import {
+  addMarketplaceSource,
+  createMarketplaceAdapter,
+  OFFICIAL_MARKETPLACE_URL,
+} from "../../src/adapters/marketplace.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 
 const roots: string[] = [];
@@ -21,7 +25,7 @@ function adapter(deps: {
   installed: () => string[];
   agentsCatalogs?: () => string[];
 }): ReturnType<typeof createMarketplaceAdapter> {
-  return createMarketplaceAdapter({ agentsCatalogs: () => [], ...deps });
+  return createMarketplaceAdapter({ agentsCatalogs: () => [], defaultUrls: [], ...deps });
 }
 
 function runGit(repo: string, ...args: string[]): void {
@@ -64,6 +68,17 @@ const CATALOG = {
     { name: "docs", source: "https://github.com/o/docs", description: "Doc helpers." },
   ],
 };
+
+test("sources: includes the official marketplace first and only once", () => {
+  const added = "https://example.invalid/extra.git";
+  const a = createMarketplaceAdapter({
+    urls: () => [OFFICIAL_MARKETPLACE_URL, added],
+    installed: () => [],
+    agentsCatalogs: () => [],
+  });
+  expect(a.sources().map((source) => source.url)).toEqual([OFFICIAL_MARKETPLACE_URL, added]);
+  expect(a.listings()).toEqual([]);
+});
 
 test("listings: reads a marketplace over git and sorts by plugin name", async () => {
   const url = marketplaceRepo(CATALOG);
@@ -238,7 +253,11 @@ test("agents catalogs: discovery reads both scopes and skips the ones that are a
   process.env.HOME = home;
   process.env[WORKSPACE_ENV] = workspace;
   try {
-    const a = createMarketplaceAdapter({ urls: () => [], installed: () => [] });
+    const a = createMarketplaceAdapter({
+      urls: () => [],
+      installed: () => [],
+      defaultUrls: [],
+    });
     await a.load();
     expect(a.sources().map((s) => s.marketplace?.name)).toEqual(["workspace market"]);
     a.refresh();
@@ -412,6 +431,14 @@ describe("addMarketplaceSource", () => {
     const result = await addMarketplaceSource(s.adapter as never, "https://example.invalid/a.git");
     expect(result.added).toBe(false);
     expect(result.message).toContain("already configured");
+    expect(s.writes).toEqual([]);
+  });
+
+  it("does not persist the marketplace Clarvis already includes", async () => {
+    const s = settingsStub(undefined);
+    const result = await addMarketplaceSource(s.adapter as never, OFFICIAL_MARKETPLACE_URL);
+    expect(result.added).toBe(false);
+    expect(result.message).toContain("available by default");
     expect(s.writes).toEqual([]);
   });
 });

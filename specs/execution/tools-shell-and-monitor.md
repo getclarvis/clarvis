@@ -655,7 +655,7 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
 
 **What depends on this subsystem:**
 
-- `@clarvis/loop` (`packages/loop/src/runtime/build-run-deps.ts:493-512`) dynamically imports
+- `@clarvis/loop` (`packages/loop/src/runtime/build-run-deps.ts:506-525`) dynamically imports
   `@clarvis/tools` and calls `setWarnSink`, bridging the global `warn()` singleton's call sites —
   `bestEffort`'s failures in `lib/tasks.ts`, plus the two named in `lib/log.ts`'s own doc comment as
   the ones with no `RuntimeConfig` in scope: `serializeError` (`packages/tools/src/errors.ts`) and the
@@ -729,6 +729,6 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   into `@clarvis/code`.
 
 - **Whether any host other than `@clarvis/loop` installs a `WarnSink`** — this document's scope shows exactly
-  one call site (`packages/loop/src/runtime/build-run-deps.ts:494-512`); whether `@clarvis/server` or
+  one call site (`packages/loop/src/runtime/build-run-deps.ts:507-525`); whether `@clarvis/server` or
   a bare `createAgentTools` consumer does anything with the default `stderr` sink is not visible from
   this package's own source.

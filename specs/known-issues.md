@@ -945,7 +945,7 @@ The mitigation is deliberately layered:
   (`packages/kernel/src/runs/managed-run.ts:66`);
 - the TUI keeps a bounded viewport, hydrates large details on demand
   (`packages/code/src/adapters/store.ts:307`), disables production renderer console caching
-  (`packages/code/src/adapters/platform.ts:207`), and exposes a last-resort RSS fuse whose default
+  (`packages/code/src/adapters/platform.ts:230`), and exposes a last-resort RSS fuse whose default
   threshold is 2 GiB (`DEFAULT_TUI_RSS_LIMIT_BYTES`,
   `packages/code/src/adapters/memory-pressure.ts`);
 - interactive `--debug` writes bounded, redacted JSONL with lifecycle, memory, command, view and
@@ -1070,7 +1070,7 @@ so the achievable posture is a guard on the way in, never a guarantee.
 ### The foreign plugin-dialect tables rest on a census taken outside this tree
 
 `EXTERNAL_TOOL_NAMES` and `EXTERNAL_TOOLS_WITHOUT_COUNTERPART`
-(`packages/capability/src/hooks-config.ts:125`–`:141` and `:152`–`:158`) exist because a measurement
+(`packages/capability/src/hooks-config.ts:137-186`) exist because a measurement
 was taken over a public catalog of plugin manifests, and that catalog is not in this repository.
 `packages/kernel/src/plugins/hook-dialects.ts:11`–`:13` states that naming the hosts is deliberately
 avoided — "Naming the hosts would date the file and invite a class per vendor, when what varies
@@ -1079,32 +1079,29 @@ from the tree.
 
 *What breaks if the census is stale.* A foreign name that gains a Clarvis counterpart, or a sixth
 name that has none, changes what a filter matches. The failure is silent in the worst direction: the
-TSDoc at `:106`–`:112` records that of the thirty-nine names those filters used, five existed here,
+TSDoc at `:113-124` records that of the thirty-nine names those filters used, five existed here,
 and the other thirty-four "translated cleanly, installed, were approved, and then matched nothing".
 
-*What the repository does today, and what the gap report missed.*
-`packages/kernel/tests/architecture/external-tool-names.test.ts` does guard the tables — the report
-does not mention it — but only one of its two substantive assertions bites. The first (`:19`–`:24`)
-genuinely checks that every `EXTERNAL_TOOL_NAMES` target names a tool this host dispatches. The
-second (`:26`–`:29`) is near-vacuous: it compares the without-counterpart set, whose members are in
-`normalizeToolName` form (`hooks-config.ts:169`–`:171` strips every non-alphanumeric and lowercases),
-against raw registry names, which all carry underscores (`read_file`, `apply_patch`, `monitor_start`
-…). A host tool named `web_fetch` would be compared as `web_fetch` and never equal `webfetch`, so the
-assertion cannot fire in the one case it exists for.
+*The in-tree architecture defect is resolved; the external census provenance remains open.*
+`packages/kernel/tests/architecture/external-tool-names.test.ts:20-41` now normalizes every real
+registry name before comparing it with `EXTERNAL_TOOLS_WITHOUT_COUNTERPART`, so a future host tool
+whose separators differ from the census key does contradict the table and fail the test. The same
+suite also checks every mapped target against the built-in registry or the explicit capability-tool
+set, and proves that set has not become redundant. This closes the previously near-vacuous assertion;
+it does not make the public catalog that motivated the table reproducible inside this repository.
 
 *Correction on the census count.* The report says the 196-plugin figure is "cited four times" and
-names three sites, one of which — `packages/kernel/src/plugins/plugin-manifest.ts:137`–`:141` —
+names three sites, one of which — `packages/kernel/src/plugins/plugin-manifest.ts:140-145` —
 carries a **different** measurement (twenty plugins declaring a non-default skills location, holding
 316 skills, at `:138`) and no `196` anywhere. Four is the right count and the composition is wrong:
-the string appears at `packages/capability/src/hooks-config.ts:107`,
+the string appears at `packages/capability/src/hooks-config.ts:119`,
 `packages/loop/src/settings/settings-schema.ts:212`, `packages/skills/src/schema.ts:51` and
 `packages/code/src/views/config/MarketplaceBrowser.tsx:73`. The last two are named nowhere in the
 report.
 
-*What would settle it.* The catalog, or a published registry of the foreign dialect. Neither is here,
-so the checkable half — that every target names a tool this host has, and that no
-without-counterpart name does — is the most this tree can hold, and half of that check is currently
-asleep.
+*What would settle the remaining issue.* The catalog, or a published registry of the foreign dialect.
+Neither is here, so the architecture test can pin internal consistency but cannot prove that the
+hand-maintained vocabulary is exhaustive or current.
 
 ### The prompt-cache design turns on provider behaviour, and two of its numbers are in-tree after all
 
@@ -1164,11 +1161,11 @@ assistant-text-only shapes of the `"message"` arm are pinned nowhere.
 
 **`MCPClientHandle.protocolVersion` still depends on an SDK call guarantee, but exposes nothing.**
 The capture works by replacing `transport.setProtocolVersion`
-(`packages/mcp-client/src/client.ts:179`–`:183`), and whether the SDK calls that method exactly once,
-or at all, is outside this tree. The field is typed `string | undefined` (`:56`) and its one reader
-guards it (`packages/mcp-client/src/connection.ts:345`), so a version that never arrives degrades to
+(`packages/mcp-client/src/client.ts:218`–`:223`), and whether the SDK calls that method exactly once,
+or at all, is outside this tree. The field is typed `string | undefined` (`:66`) and its one reader
+guards it (`packages/mcp-client/src/connection.ts:346`), so a version that never arrives degrades to
 an absent diagnostic field rather than to anything worse. The half worth pinning is the *forwarding*,
-not the capture: `:180`–`:183` re-binds the original and calls through, which is what keeps
+not the capture: `:219`–`:223` re-binds the original and calls through, which is what keeps
 `mcp-protocol-version` on every post-handshake HTTP request. As of 2026-08-22 a test drives that
 against a real SDK client and a real HTTP server
 (`packages/mcp-client/tests/integration/protocol-version.test.ts`).
@@ -1203,7 +1200,7 @@ fail-closed by default, tested on every branch, and surfaced to the operator by 
 It is recorded here only so a later pass does not re-open it.
 
 **`git`, and a citation the report gets wrong.** It cites
-`packages/code/src/adapters/marketplace.ts:191`–`:205` as "spawns `git` directly through
+`packages/code/src/adapters/marketplace.ts:197`–`:205` as "spawns `git` directly through
 `Bun.spawn`". Those lines are TSDoc `@remarks`, not code, and that module contains no spawn at all:
 it imports `gitCloneAsync` at `:14` and calls it at `:211`, and the spawn is
 `packages/code/src/adapters/plugin-install.ts:112`. The substance is right and is already
@@ -1850,7 +1847,7 @@ below: the measurement as it was taken, then the state of its subject today.
   `packages/loop/src/lib.ts:44`. The direction of the edges is unchanged, so the package cycle is
   unchanged; only its width moved.
 - **The eager configuration path is clear — this obstacle is gone.**
-  `packages/loop/src/runtime/capabilities/settings-specs.ts:37-41` now imports
+  `packages/loop/src/runtime/capabilities/settings-specs.ts:42-46` now imports
   `AGENTS_REQUEST_PARAMS`, `AGENTS_SETTINGS_FIELDS` and `agentsSettingsSpec` from
   `@clarvis/supervision`, whose owner is `packages/supervision/src/settings.ts:146`, `:157` and
   `:169`. `BUILTIN_SETTINGS_SPECS` at `settings-specs.ts:44` names none of the delegation modules.
@@ -1909,7 +1906,7 @@ It read well as a lifetime split but made the global tree disagree with the work
 `<ws>/.clarvis/settings.json` and `<ws>/.clarvis/agents/` have always sat at the root.
 
 The two trees still agree, and neither carries a `config/` segment: `globalPaths`
-(`packages/paths/src/global.ts:101`) puts `settings.json` at `:110` and `agents/` at `:105`/`:111`
+(`packages/paths/src/global.ts:103`) puts `settings.json` at `:110` and `agents/` at `:105`/`:111`
 directly under the global root, exactly as `workspacePaths` (`packages/paths/src/workspace.ts:100`)
 puts them at `:108` and `:103`/`:109` directly under `<ws>/.clarvis`.
 

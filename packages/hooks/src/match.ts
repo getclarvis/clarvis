@@ -148,7 +148,11 @@ export function matchesCandidate(
 ): boolean {
   if (compiled === undefined) return true;
   if (compiled.broken || candidate === undefined) return false;
-  if (compiled.tool !== undefined && !compiled.tool.some((re) => re.test(candidate.tool))) {
+  const toolNames = [candidate.tool, ...(candidate.aliases ?? [])];
+  if (
+    compiled.tool !== undefined &&
+    !compiled.tool.some((re) => toolNames.some((name) => re.test(name)))
+  ) {
     return false;
   }
   for (const [key, re] of compiled.args ?? []) {

@@ -43,12 +43,12 @@ globalmente; o workspace pode apenas selecionar um modelo já habilitado nesse e
 `settings.json` é estrito. Campos desconhecidos de nível superior são rejeitados em vez de ignorados.
 Os campos relacionados a extensões são:
 
-| Campo            | Formato                                | Finalidade                                          |
-| ---------------- | -------------------------------------- | --------------------------------------------------- |
-| `hooks`          | Array de objetos de hook               | Comandos de ciclo de vida criados pelo operador     |
-| `mcpServers`     | Mapa do nome para o objeto do servidor | Conexões MCP locais e remotas                       |
-| `marketplaces`   | Array de URLs Git                      | Catálogos exibidos por `/extensions/market`         |
-| `enabledPlugins` | Array de nomes de plugins              | Plugins ativados, em ordem crescente de precedência |
+| Campo            | Formato                                | Finalidade                                             |
+| ---------------- | -------------------------------------- | ------------------------------------------------------ |
+| `hooks`          | Array de objetos de hook               | Comandos de ciclo de vida criados pelo operador        |
+| `mcpServers`     | Mapa do nome para o objeto do servidor | Conexões MCP locais e remotas                          |
+| `marketplaces`   | Array de URLs Git                      | Catálogos adicionais exibidos por `/extensions/market` |
+| `enabledPlugins` | Array de nomes de plugins              | Plugins ativados, em ordem crescente de precedência    |
 
 ### Objeto de servidor MCP
 
@@ -65,6 +65,13 @@ Os campos relacionados a extensões são:
 
 `stdio` proíbe `url` e `headers`. Transportes remotos proíbem `command`, `args`, `env` e `shared`.
 
+Servidores HTTP/SSE remotos podem solicitar OAuth durante a conexão. Hosts locais interativos e em
+modo `--print` abrem a página de autorização, aceitam apenas HTTPS com exceção de HTTP em loopback,
+validam o estado, usam PKCE e tentam novamente após o callback. As credenciais ficam em
+`~/.clarvis/state/mcp-oauth.json`, identificadas por workspace, proprietário e URL canônica do
+servidor; elas não fazem parte das configurações. Um host sem abridor de navegador informa que a
+autorização interativa está indisponível.
+
 ### Objeto de hook
 
 | Campo        | Tipo                       | Observações                                                                             |
@@ -78,16 +85,22 @@ Os campos relacionados a extensões são:
 
 Eventos:
 
-| Classe                  | Eventos                                                                                           | Efeito                                     |
-| ----------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| Controle                | `pre_tool_use`, `post_tool_use`, `pre_finalize`, `pre_delegate_task`                              | Pode permitir, orientar ou negar           |
-| Observador              | `run_start`, `run_end`, `subagent_complete`, `model_call_error`, `budget_exhausted`, `user_steer` | A saída não pode bloquear a execução       |
-| Contexto                | `session_start`                                                                                   | Pode adicionar contexto inicial fixado     |
-| Contexto de compactação | `pre_compact`                                                                                     | Pode adicionar contexto àquela sumarização |
+| Classe                  | Eventos                                                                                           | Efeito                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Controle                | `pre_tool_use`, `post_tool_use`, `pre_finalize`, `pre_delegate_task`                              | Pode permitir, orientar ou negar                  |
+| Observador              | `run_start`, `run_end`, `subagent_complete`, `model_call_error`, `budget_exhausted`, `user_steer` | A saída não pode bloquear a execução              |
+| Contexto                | `session_start`                                                                                   | Pode adicionar contexto inicial fixado            |
+| Contexto de compactação | `pre_compact`                                                                                     | Pode adicionar contexto àquela sumarização        |
+| Observador de prompt    | `user_prompt_expansion`                                                                           | Observa um comando de skill iniciado pelo usuário |
 
 Somente `pre_tool_use` pode substituir argumentos pendentes de ferramenta por um veredito `rewrite`.
 Uma única fonte de configurações ou plugin pode declarar até 64 hooks; uma execução usa no máximo
 128 hooks combinados, com hooks do operador antes dos hooks de plugins.
+
+Payloads de hooks compatíveis escrevem ferramentas integradas com nomes externos como `Bash`,
+`Read` e `Skill`, e ferramentas MCP como `mcp__<servidor>__<ferramenta>`. `CLARVIS_HOOK_TOOL`
+preserva o nome de wire do Clarvis; `CLARVIS_HOOK_TOOL_FULL_NAME` contém o nome MCP pontuado estável
+quando ele existe.
 
 ## `SKILL.md`
 
@@ -111,8 +124,15 @@ o host e nunca é exposto como recurso da skill.
 
 ## `plugin.json`
 
-`plugin.json` é tolerante: o Clarvis relata campos desconhecidos, mas não age sobre eles. Somente
-`name` é obrigatório e deve ser igual ao nome do diretório do plugin.
+`plugin.json` é tolerante: o Clarvis relata campos desconhecidos, mas não age sobre eles. `name` é o
+único campo obrigatório após a normalização. Uma instalação Git nativa o usa como nome do diretório;
+um layout estrangeiro já instalado pode omiti-lo, e então o Clarvis o deriva do diretório de
+instalação. Esse diretório é sempre o namespace de runtime controlado pelo host.
+
+O Clarvis usa primeiro `.clarvis-plugin/plugin.json` quando ele existe. Caso contrário, examina um
+`plugin.json` na raiz e diretórios com o formato `.<host>-plugin/plugin.json`, seleciona o único
+manifesto legível com mais diretivas de contribuição compatíveis e usa a ordem raiz-depois-nome para
+desempatar. Manifestos nunca são combinados.
 
 | Campo                   | Tipo                                          | Finalidade                                                 |
 | ----------------------- | --------------------------------------------- | ---------------------------------------------------------- |
@@ -120,14 +140,19 @@ o host e nunca é exposto como recurso da skill.
 | `version`               | String de versão semântica                    | Versão opcional para exibição                              |
 | `description`           | String não vazia                              | Resumo opcional                                            |
 | `author`                | String ou `{ "name": "..." }`                 | Autor opcional para exibição                               |
-| `mcpServers`            | Mapa de servidores MCP                        | Servidores fornecidos pelo plugin                          |
+| `skills`                | Diretório relativo ou array de diretórios     | Até quatro raízes de skills do plugin                      |
+| `mcpServers`            | Mapa MCP ou caminho relativo para documento   | Servidores fornecidos pelo plugin                          |
 | `hooks`                 | Array, documento ou caminho relativo de hooks | Hooks fornecidos pelo plugin                               |
 | `bootstrapSkill`        | Nome de skill                                 | Injeta uma skill metodológica do plugin antes da resposta  |
 | `capabilityExecutables` | Mapa de capacidade para executável            | Serviços persistentes opcionais de capacidade              |
 | `capabilityRunPolicies` | Mapa da política de skills de Plans           | `off`, `on` ou `review` para execuções de skills do plugin |
 
-Os diretórios convencionais de contribuições são `agents/` e `skills/`. Se o manifesto não contribuir
-com hooks, o Clarvis também lê `hooks/hooks.json`.
+Caminhos relativos são resolvidos primeiro a partir do diretório do manifesto selecionado e
+permanecem confinados à raiz do plugin. Os diretórios convencionais de contribuições são `agents/` e
+`skills/`. Se `mcpServers` estiver ausente, o Clarvis tenta `.mcp.json` e depois `mcp.json`. Se o
+manifesto não fornecer hooks, o Clarvis também lê `hooks/hooks.json`. Documentos de hooks compatíveis
+e organizados por evento podem estar inline, envolvidos por um objeto `hooks` ou ser indicados por
+um ou mais caminhos relativos.
 
 ### Declaração de executável de capacidade
 
@@ -156,6 +181,11 @@ milissegundos por padrão. Um serviço de capacidade permanece inerte até que o
 selecionado como provedor daquela capacidade.
 
 ## `marketplace.json`
+
+Uma instalação do Clarvis inclui `https://github.com/getclarvis/marketplace.git` como sua fonte de
+marketplace oficial. A fonte fica disponível sem uma entrada nas configurações, mas seu catálogo é
+buscado somente para navegação e nenhum plugin é instalado, habilitado ou aprovado automaticamente.
+O `settings.json` pode adicionar outras fontes de marketplace.
 
 Um repositório de marketplace publica `marketplace.json` em sua raiz:
 

@@ -104,7 +104,7 @@ tests. `packages/memory/tests/architecture/file-store-exports.test.ts:7` pins th
 
 Construction inputs that matter here: `runDeps` and `passRunDeps` are **thunks**
 (`packages/memory/src/factory.ts:47`, `:56`) — the host's deps object contains the memory capability built *from* this
-factory, so an eager value would be circular (`packages/kernel/src/file-kernel.ts:861-864`).
+factory, so an eager value would be circular (`packages/kernel/src/file-kernel.ts:869-872`).
 `loadPolicy` is a thunk for the same reason edits should take effect next pass (`packages/memory/src/factory.ts:63`).
 
 ### 2.4 `health(args)` — deterministic diagnostics
@@ -271,8 +271,8 @@ Each scope is independently truncated to `MEMORY_POLICY_MAX_CHARS` (4000), passe
 `readUtf8PrefixSync` bounded at `MEMORY_STORAGE_LIMITS.prefixBytes` (64 KiB)
 (`packages/memory/src/recording-policy.ts:111-113`, `packages/memory/src/storage-limits.ts:14`). The two files are
 `<global>/memory-policy.md` and `<ws>/.clarvis/memory-policy.md`
-(`packages/paths/src/global.ts:119`, `packages/paths/src/workspace.ts:114`), as wired in
-`packages/kernel/src/file-kernel.ts:865-868`.
+(`packages/paths/src/global.ts:122`, `packages/paths/src/workspace.ts:114`), as wired in
+`packages/kernel/src/file-kernel.ts:873-876`.
 
 ### 3.7 The isolated pass's request
 
@@ -1095,7 +1095,7 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 
 | Consumer | Edge | Source |
 | --- | --- | --- |
-| `@clarvis/kernel` (`file-kernel`) | constructs the factory, supplies `runDeps`/`passRunDeps`/`loadPolicy`/`storeFor`/`serverPort`/`pluginPort`/`executablePort` | `packages/kernel/src/file-kernel.ts:852-874` |
+| `@clarvis/kernel` (`file-kernel`) | constructs the factory, supplies `runDeps`/`passRunDeps`/`loadPolicy`/`storeFor`/`serverPort`/`pluginPort`/`executablePort` | `packages/kernel/src/file-kernel.ts:860-882` |
 | `@clarvis/kernel` (`kernel.ts`) | registers `memoryFactory.stop()` on the kernel lifecycle | `packages/kernel/src/kernel.ts:280` |
 | `@clarvis/kernel` (`memory-service`) | exposes `health`/`jobs`/`retryJob` over the protocol | `packages/kernel/src/memory/memory-service.ts:107,132,151` |
 | `@clarvis/kernel` (`managed-run`, `run-service`, `workflows-service`) | uses `ingestPendingAfter` / `DEFAULT_INGEST_CLOSE_GRACE_MS` to decide whether a run's stream may close | `packages/kernel/src/runs/managed-run.ts:207`, `packages/kernel/src/runs/run-service.ts:96`, `packages/kernel/src/workflows/workflows-service.ts:155` |

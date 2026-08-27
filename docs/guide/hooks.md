@@ -89,9 +89,18 @@ process.stdout.write(
 The hook command receives one JSON object on stdin. A tool event includes `tool_name` and
 `tool_input`; all events include `protocol`, `hook_event_name`, and `cwd`.
 
+For hook documents shared with another host, `hook_event_name` and `tool_name` use the compatible
+external spellings. Built-in tools therefore arrive with names such as `Bash`, `Read`, and `Skill`,
+while an MCP tool arrives as `mcp__<server>__<tool>`. A skill load also adds `skill` beside its native
+`name` input. Use `CLARVIS_HOOK_TOOL` for the Clarvis wire name and
+`CLARVIS_HOOK_TOOL_FULL_NAME` for an MCP tool's stable dotted name when your script needs Clarvis's
+own identity.
+
 Gate hooks may return `pass`, `deny`, or `advise`. A `pre_tool_use` hook may also return `rewrite`
 with a complete replacement `arguments` object. `session_start` and `pre_compact` hooks may return
-`context` text. Observer events run for notification only and cannot block the run.
+`context` text. Observer events run for notification only and cannot block the run. A
+`user_prompt_expansion` observer fires once before a user-invoked skill command starts; it does not
+fire for an ordinary prompt or a later model-initiated skill load.
 
 ::: warning Hooks run with your privileges
 Hook commands run from the workspace with normal filesystem and network access; they do not run in

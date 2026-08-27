@@ -358,7 +358,7 @@ removals from disk").
 The `.agents` half of this ordering is an interop rule — see
 [`specs/cross-cutting/agent-interop.md`](../cross-cutting/agent-interop.md).
 The engine prepends any host-supplied extra roots **before** these four, so plugin roots sit at the
-lowest precedence of all (`packages/loop/src/runtime/build-run-deps.ts:450-454`). Plugin root
+lowest precedence of all (`packages/loop/src/runtime/build-run-deps.ts:463-467`). Plugin root
 construction belongs to [`specs/hosts/plugins.md`](../hosts/plugins.md); what
 matters here is only that they arrive as `SkillRootInput[]` with `source: "plugin:<name>"`
 (`packages/kernel/src/plugins/plugin-contributions.ts:352`–`:355`).
@@ -798,7 +798,7 @@ to this document.
     Pinned: `packages/skills/tests/unit/parse.test.ts:127`, `:154`, `:160`.
 27. **The skills capability is inert without both the env flag and a provider**, and registration is
     unconditional so grant/reservation/effect metadata never changes.
-    `packages/skills/src/capability.ts:96`, `packages/loop/src/runtime/build-run-deps.ts:536-549`.
+    `packages/skills/src/capability.ts:96`, `packages/loop/src/runtime/build-run-deps.ts:549-562`.
     Pinned: `packages/skills/tests/component/capability.test.ts:95`,
     `packages/loop/tests/integration/skills-grant-gating.test.ts:105`, `:161`.
 28. **Neither the catalog section nor the `load_skill` tool reaches an agent without the
@@ -933,7 +933,7 @@ line that names the whole pass's outcome.
 | Situation | Outcome | Source |
 | --- | --- | --- |
 | `CLARVIS_SKILLS_ENABLED` false, or no provider | capability `forRun` returns `null`; the run has no section and no tool | `packages/skills/src/capability.ts:96` |
-| `builtins.skills = false` | package never loaded; `reportBuiltinDisabled` debug record | `packages/loop/src/runtime/build-run-deps.ts:369-371,440-448` |
+| `builtins.skills = false` | package never loaded; `reportBuiltinDisabled` debug record | `packages/loop/src/runtime/build-run-deps.ts:377-379,440-448` |
 | initial `createAgentSkills` throws | `skills.discovery_failed` (`scope: "initial"`), deps built without skills | `:464`–`:475` |
 | rescan throws (dynamic roots) | `skills.discovery_failed` (`scope: "rescan"`), last good scan served; if there was none, an empty provider whose resource methods throw `"skills are unavailable"` | `:209`–`:224` |
 | root provider throws | treated as no extra roots, `skills.roots_unavailable` debug | `:193`–`:205` |
@@ -944,7 +944,7 @@ line that names the whole pass's outcome.
 
 There are none in this subsystem. Every operation is synchronous filesystem work; `refresh()` is the
 only re-read and it is caller-driven (`packages/skills/src/index.ts:56`). `dynamicSkills`'s
-signature-based memo is a cache, not a retry (`packages/loop/src/runtime/build-run-deps.ts:207`–`:212`).
+signature-based memo is a cache, not a retry (`packages/loop/src/runtime/build-run-deps.ts:183-218`).
 
 ### 6.6 Silently tolerated
 
@@ -1009,7 +1009,7 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts:18` and ow
 
 `@clarvis/loop` has its own `normalizeTools` for **agent** frontmatter
 (`packages/loop/src/settings/agent-frontmatter.ts:10`), exported through `packages/loop/src/host.ts:11` and used by
-`packages/kernel/src/runs/settings-assembler.ts:252`. It is a different function from
+`packages/kernel/src/runs/settings-assembler.ts:264`. It is a different function from
 `packages/skills/src/parse.ts:279`; only the fence splitter was actually shared
 (`packages/capability/src/frontmatter-fence.ts:2`–`:12`).
 
@@ -1044,7 +1044,7 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts:18` and ow
 4. **`defaultWarnSink` writes directly to `process.stderr`** (`packages/skills/src/lib/log.ts:10`)
    and is the default for every entry point that takes diagnostics
    (`packages/skills/src/lib/log.ts:46`). The loop always overrides it with a logger-routing sink
-   (`packages/loop/src/runtime/build-run-deps.ts:454-458`), but `packages/kernel/src/plugins/plugin-service.ts:219`
+   (`packages/loop/src/runtime/build-run-deps.ts:467-471`), but `packages/kernel/src/plugins/plugin-service.ts:219`
    supplies its own and `createAgentSkills` called without one falls back to stderr. Whether the
    stderr default is intended to remain reachable is not determinable.
 5. **Why the first `.yaml`/`.yml` by sorted name wins when several harness sidecars exist is
@@ -1056,7 +1056,7 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts:18` and ow
    `@clarvis/code` question, not answered here.
 7. **Delegated to sibling documents, deliberately not re-derived here:** the `.agents` precedence
    rule as an interop contract; plugin skill-root construction, the plugin budget and manifest
-   parsing (`packages/kernel/src/plugins/plugin-manifest.ts:157`,
+   parsing (`packages/kernel/src/plugins/plugin-manifest.ts:162`,
    `packages/kernel/src/plugins/plugin-contributions.ts:315`); and skill-driven agent routing through
    `createAgentWorkflowPolicy.isManagerRun` and `resolveSkillRun`
    (`packages/kernel/src/runs/settings-assembler.ts:89`).

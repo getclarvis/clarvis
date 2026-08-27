@@ -141,6 +141,8 @@ export interface CreateFileKernelOptions {
    * a run's event stream. A host builds a readiness signal from them.
    */
   onConnectionEvent?: ConnectionEventSink;
+  /** Opens an MCP OAuth authorization URL; omitted by intentionally headless hosts. */
+  openMcpAuthorizationUrl?: (url: string) => Promise<boolean>;
   /**
    * Per-key resolution source: `env` forces the environment value, `keyfile`
    * forces the stored secret, `auto` (the default) prefers env then the keyfile.
@@ -667,6 +669,12 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     resolveSecretNames: loadSecretNames,
     resolveHooks: loadHooks,
     hookCredentialNames: managedSecretNames,
+    mcpAuthorization: {
+      storeFile: globalPaths(globalDir).mcpOAuthFile,
+      ...(opts.openMcpAuthorizationUrl === undefined
+        ? {}
+        : { openAuthorizationUrl: opts.openMcpAuthorizationUrl }),
+    },
     capabilities: [planning.capability],
     ...(subscriptionManager === undefined
       ? {}

@@ -214,8 +214,11 @@ is needed.
 3. `runCommand` builds the sandbox-resolved spec (`sandboxCommand`, delegated — see §7), spawns with
    `stdio: ["ignore", "pipe", "pipe"]` and `detached: ownProcessGroup()` (`:241-268`).
    When the host supplied a run-owned temporary root, the child receives it as `TMPDIR`, `TEMP`, and
-   `TMP`; `mktemp -d` on POSIX and `$env:TEMP`-relative creation on PowerShell therefore create
-   scratch that subsequent native tools in the same run may read or mutate. Production:
+   `TMP`. POSIX callers use an explicit run-rooted template such as
+   `mktemp -d "$TMPDIR/clarvis.XXXXXX"`, because macOS `/usr/bin/mktemp` may ignore a reassigned
+   `TMPDIR` when no template is supplied; PowerShell callers create relative to `$env:TEMP`.
+   Scratch created through either form may be read or mutated by subsequent native tools in the
+   same run. Production:
    `RuntimeConfig.temporaryRoots`, `createShell`, and `sandboxCommand`. Test:
    `packages/tools/tests/integration/api.test.ts` exercises the host shell's native form, searches
    the shell-created scratch with native `grep`, and keeps the generic system temp root refused.

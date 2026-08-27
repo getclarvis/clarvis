@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -26,7 +27,7 @@ function seedFile(file: string, content: string): void {
 }
 
 function seedWorkspace(): string {
-  const ws = mkdtempSync(join(tmpdir(), "clarvis-fk-"));
+  const ws = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-fk-")));
   mkdirSync(join(ws, ".clarvis", "agents"), { recursive: true });
   writeFileSync(
     join(ws, ".clarvis", "settings.json"),

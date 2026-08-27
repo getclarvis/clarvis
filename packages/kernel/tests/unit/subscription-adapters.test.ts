@@ -306,6 +306,7 @@ describe("subscription transport authority", () => {
     expect(request?.headers.get("x-grok-user-id")).toBe("account-safe");
     expect(request?.headers.get("x-grok-model-override")).toBe("grok-code");
     expect(request?.headers.get("x-xai-token-auth")).toBe("xai-grok-cli");
+    expect(request?.headers.get("x-grok-client-version")).toBe("1.0.6");
     expect(request?.headers.get("user-agent")).toBe(`clarvis/${VERSION}`);
     expect(request?.headers.get("x-grok-conv-id")).toMatch(/^[a-f0-9]{64}$/);
   });
@@ -340,6 +341,20 @@ describe("subscription transport authority", () => {
               context_window: 200_000,
             },
             { slug: "hidden", visibility: "hide", supported_in_api: true },
+            {
+              slug: "gpt-5.6-sol",
+              display_name: "GPT-5.6 Sol",
+              visibility: "list",
+              supported_in_api: true,
+              use_responses_lite: true,
+              supported_reasoning_levels: [
+                { effort: "low" },
+                { effort: "medium" },
+                { effort: "high" },
+                { effort: "xhigh" },
+                { effort: "max" },
+              ],
+            },
           ],
         });
       }),
@@ -354,16 +369,25 @@ describe("subscription transport authority", () => {
           capabilities: ["tool_calling", "vision"],
           reasoning_efforts: ["low", "high"],
         },
+        {
+          id: "gpt-5.6-sol",
+          capabilities: ["tool_calling"],
+          reasoning_efforts: ["low", "medium", "high", "xhigh", "max"],
+        },
       ],
     });
-    expect(request?.url).toContain(`client_version=${encodeURIComponent(VERSION)}`);
+    expect(request?.url).toContain("client_version=0.144.0");
+    expect(request?.url).not.toContain(encodeURIComponent(VERSION));
     expect(request?.headers.get("user-agent")).toBe(`clarvis/${VERSION}`);
   });
 
   it("retains only Responses-backed Grok subscription models", async () => {
+    let request: Request | undefined;
     const adapter = createXaiGrokAdapter({
-      fetch: fetchStub(async () =>
-        Response.json({
+      fetch: fetchStub(async (input, init) => {
+        request =
+          input instanceof Request ? new Request(input, init) : new Request(input.toString(), init);
+        return Response.json({
           data: [
             {
               model: "grok-code",
@@ -375,8 +399,8 @@ describe("subscription transport authority", () => {
             },
             { model: "grok-chat", api_backend: "chat_completions" },
           ],
-        }),
-      ),
+        });
+      }),
     });
     await expect(
       adapter.catalog(grokRegistration, account.access_token, account.account_id),
@@ -390,6 +414,9 @@ describe("subscription transport authority", () => {
         },
       ],
     });
+    expect(request?.url).toBe("https://cli-chat-proxy.grok.com/v1/models");
+    expect(request?.headers.get("x-grok-client-version")).toBe("1.0.6");
+    expect(request?.headers.get("user-agent")).toBe(`clarvis/${VERSION}`);
   });
 });
 

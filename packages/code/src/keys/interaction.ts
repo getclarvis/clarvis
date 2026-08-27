@@ -1,15 +1,18 @@
 import type { CliRenderer, KeyEvent, Renderable } from "@opentui/core";
 import { createSignal, type Accessor } from "solid-js";
-import { createDefaultOpenTuiKeymap } from "@opentui/keymap/opentui";
+import { createOpenTuiKeymapHost } from "@opentui/keymap/opentui";
 import {
   registerBackspacePopsPendingSequence,
   registerDeadBindingWarnings,
+  registerDefaultKeys,
+  registerEnabledFields,
   registerEscapeClearsPendingSequence,
+  registerMetadataFields,
   registerNeovimDisambiguation,
   registerUnresolvedCommandWarnings,
 } from "@opentui/keymap/addons";
 import { registerBaseLayoutFallback } from "@opentui/keymap/addons/opentui";
-import type { Binding, Command, Keymap } from "@opentui/keymap";
+import { Keymap, type Binding, type Command, type KeymapHost } from "@opentui/keymap";
 import type { Platform } from "../adapters/platform.ts";
 import { compactKey, LAYER } from "./keyspec.ts";
 import { registerWhenField, type ContextKey } from "./when-dsl.ts";
@@ -299,6 +302,55 @@ function command(
 }
 
 /**
+ * Build the default OpenTUI keymap with input delivery bounded by the renderer lifecycle.
+ *
+ * @remarks OpenTUI removes its global listeners when the renderer emits `destroy`, but the
+ *   key handler can already hold a snapshot of those listeners while native input is draining.
+ *   Such a callback observes `host.isDestroyed` and the keymap rejects it. Guarding at the host
+ *   boundary keeps residual press, release, and raw-input callbacks from entering a dead keymap.
+ */
+function createLifecycleSafeKeymap(renderer: CliRenderer): OpenTuiKeymap {
+  const base = createOpenTuiKeymapHost(renderer);
+  const host: KeymapHost<Renderable, KeyEvent> = {
+    get metadata() {
+      return base.metadata;
+    },
+    rootTarget: base.rootTarget,
+    get isDestroyed() {
+      return base.isDestroyed;
+    },
+    getFocusedTarget: () => base.getFocusedTarget(),
+    getParentTarget: (target) => base.getParentTarget(target),
+    isTargetDestroyed: (target) => base.isTargetDestroyed(target),
+    onKeyPress: (listener) =>
+      base.onKeyPress((event) => {
+        if (!base.isDestroyed) listener(event);
+      }),
+    onKeyRelease: (listener) =>
+      base.onKeyRelease((event) => {
+        if (!base.isDestroyed) listener(event);
+      }),
+    onFocusChange: (listener) => base.onFocusChange(listener),
+    onTargetDestroy: (target, listener) => base.onTargetDestroy(target, listener),
+    createCommandEvent: () => base.createCommandEvent(),
+    ...(base.onDestroy === undefined
+      ? {}
+      : { onDestroy: (listener: () => void) => base.onDestroy!(listener) }),
+    ...(base.onRawInput === undefined
+      ? {}
+      : {
+          onRawInput: (listener: (sequence: string) => boolean) =>
+            base.onRawInput!((sequence) => !base.isDestroyed && listener(sequence)),
+        }),
+  };
+  const keymap = new Keymap(host);
+  registerDefaultKeys(keymap);
+  registerEnabledFields(keymap);
+  registerMetadataFields(keymap);
+  return keymap;
+}
+
+/**
  * Wire the OpenTUI keymap, register its command set, and return the
  * {@link Interaction} handle the rest of `code` drives it through.
  *
@@ -316,7 +368,7 @@ export function createInteraction(
   effects: InteractionEffects,
   initialKeyboardConfig: KeyboardConfig = { version: 1, environments: {} },
 ): Interaction {
-  const keymap = createDefaultOpenTuiKeymap(renderer);
+  const keymap = createLifecycleSafeKeymap(renderer);
   /**
    * A terminal may deliver repeat packets while Ctrl+C is held. When a window
    * is open, keep repeats from turning one cancellation gesture into a later

@@ -162,6 +162,10 @@ Browser opening remains an explicit user action; copy/manual opening always rema
 A previously configured but damaged installation opens the branded Repair Clarvis screen instead.
 It presents the first run-blocking condition and one primary repair route; Doctor remains the manual
 full diagnostic available at `/doctor`, where optional recommendations are distinct from blockers.
+Cold boot does not probe host sandbox toolchains: that inspection may run several bounded
+`--version` subprocesses and is not needed to route setup or repair. An explicit Doctor recheck
+performs it for the header and readiness gates; opening Settings > Sandbox performs its own
+panel-local inspection.
 
 `/agent` separates the current session agent from persistent defaults. `Enter` changes only the
 current session. `S` first asks whether the selected agent should be the global default or a
@@ -248,7 +252,9 @@ clear the active composer input, close an editor/local detail, or return to the 
 at the root with nothing to clear it does nothing. Escape never enters a repeat timeout, cancels a
 run or quits. Ctrl+C is the exclusive keyboard route for cancellation and shutdown: it cancels an
 active run from any screen, otherwise enters the existing double-Ctrl+C quit gate without clearing
-the draft. Window-local layers never claim Ctrl+C.
+the draft. Window-local layers never claim Ctrl+C. Input callbacks already queued during renderer
+teardown are discarded at the keymap host boundary, so a final macOS terminal packet cannot dispatch
+through an OpenTUI host after it has been destroyed.
 
 The Workflows tree follows the same contextual-action contract. Rows show the persisted short task
 title rather than the first line of the full prompt. `Enter` opens the selected node's result; `T`
@@ -440,8 +446,8 @@ Beyond the `async.*`, `diagnostics.*` and `task.*` vocabulary above:
 | ----- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | info  | `app.boot.begin`, `app.boot.shell-painted`, `app.render.mounted`, `app.shutdown`       | `elapsed_ms`, `mode`, `workspace`, `reason`                    |
 | info  | `app.boot.painted`                                                                     | `elapsed_ms`, `mode`, `deferred_catalog`                       |
-| debug | `markdown.preload.completed`                                                           | `markdown`, `markdownInline`                                   |
-| warn  | `markdown.preload.failed`                                                              | `error`                                                        |
+| debug | `markdown.preload.completed`                                                           | `markdown`, `markdownInline`, `duration_ms`                    |
+| warn  | `markdown.preload.failed`                                                              | `error`, `duration_ms`                                         |
 | error | `boot.failed`                                                                          | `phase`, `error`, `attempt`                                    |
 | warn  | `catalog.unavailable`                                                                  | `reason`, `source` (`kernel` \| `snapshot`)                    |
 | info  | `catalog.load.started`                                                                 | `trigger`                                                      |
@@ -469,8 +475,10 @@ whatever the user typed, credentials included.
 
 The distributable build keeps `@opentui/core` external. OpenTUI therefore resolves its parser
 worker and grammar assets relative to its own package entry point instead of a rewritten bundled
-`import.meta.url`. Startup preloads the Markdown and Markdown-inline parsers through OpenTUI's
-public client API; the artifact smoke requires both to succeed before accepting first paint.
+`import.meta.url`. Startup warms the Markdown and Markdown-inline parsers through OpenTUI's public
+client API without holding the application shell behind that work. Session rehydration waits for
+the warm-up before publishing restored Markdown, and the artifact smoke still requires both parser
+assets to load successfully.
 
 `-p/--print` runs without a terminal: it starts the kernel silently, streams
 the lead agent's reply to stdout and exits 0 on success or 1 on failure —

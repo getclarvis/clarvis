@@ -5,6 +5,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -48,7 +49,7 @@ function repository(): { root: string; parent: string } {
   writeFileSync(join(root, "README.md"), "primary\n");
   git(root, ["add", "README.md"]);
   git(root, ["commit", "--quiet", "-m", "initial"]);
-  return { root, parent };
+  return { root: realpathSync(root), parent: realpathSync(parent) };
 }
 
 test("bootstrapWorktree creates and then reopens a deterministic Git-owned checkout", async () => {
@@ -138,7 +139,7 @@ test("bootstrapWorktree reopens a registered Clarvis branch at its existing loca
   }
   expect(reopened.created).toBe(false);
   expect(reopened.managedLocation).toBe(false);
-  expect(reopened.workspaceRoot).toBe(legacy);
+  expect(reopened.workspaceRoot).toBe(realpathSync(legacy));
   expect(existsSync(join(repo.root, ".clarvis"))).toBe(false);
   await removeWorktreeCheckout(reopened, { changeDirectory: () => {} });
   expect(existsSync(legacy)).toBe(false);

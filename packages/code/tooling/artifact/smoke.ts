@@ -154,8 +154,14 @@ async function main(): Promise<void> {
     home,
     workspace,
     markers: [{ name: "ready", text: READY_MARKER }],
-    afterMarkersReady: async () =>
-      (await readDiagnosticDetails<BootPaintedDetails>(home, "app.boot.painted")) !== null,
+    afterMarkersReady: async () => {
+      const painted = await readDiagnosticDetails<BootPaintedDetails>(home, "app.boot.painted");
+      const markdown = await readDiagnosticDetails<MarkdownPreloadDetails>(
+        home,
+        "markdown.preload.completed",
+      );
+      return painted !== null && markdown !== null;
+    },
     timeoutMs: TIMEOUT_MS,
     pollMs: 100,
   });

@@ -607,6 +607,7 @@ export async function resumeSession(
         resetIdx = index;
       }
     }
+    fetched.length = 0;
   };
 
   let cursor = turns.length - 1;

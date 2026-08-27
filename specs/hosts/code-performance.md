@@ -156,14 +156,13 @@ The launcher answers `--help` and `--version` before importing the application g
 the built artifact for every other mode (`packages/code/src/cli.ts:23-51`). Interactive boot then:
 
 1. opens diagnostics;
-2. creates the renderer, starts Markdown parser preload and mounts one Solid root containing the
-   parser-free `BootFrame`;
+2. creates the renderer and mounts one Solid root containing the parser-free `BootFrame`;
 3. waits for renderer idle and emits `app.boot.shell-painted`;
-4. connects and loads the workspace/kernel foundation in parallel with Markdown preload, without
-   calling the models service or subscription provider;
+4. connects and loads the workspace/kernel foundation without calling the models service or
+   subscription provider;
 5. constructs stores, the run host and lightweight command routing;
-6. after both Markdown parsers are ready, replaces `BootFrame` with `<App>` in the same root and
-   emits `app.boot.painted`
+6. replaces `BootFrame` with `<App>` in the same root, emits `app.boot.painted`, and only then starts
+   Markdown parser warm-up; restored session content awaits the warm-up
    (`packages/code/src/index.tsx`, `runApp`, `loadFoundation`; `packages/code/src/views/BootFrame.tsx`).
 
 The models.dev snapshot remains a required distributable asset because Providers, Model and Effort
@@ -176,7 +175,7 @@ smoke rejects any first paint that emits `catalog.load.started` or reports
 `packages/code/src/features/providers/commands.ts`; `packages/code/src/app/commands.tsx`,
 `setup.providers`; `packages/code/tooling/artifact/smoke.ts`).
 
-### 4.2 Subscription readiness on startup
+### 4.2 Subscription and sandbox readiness on startup
 
 App command construction performs no entitlement request. A locally configured subscription whose
 runtime readiness has not been inspected is a passing deferred state, with detail `subscription
@@ -185,6 +184,14 @@ revision. Doctor's explicit recheck and catalog-dependent provider/model actions
 inspection (`packages/code/src/app/commands.tsx`, `recheck`, `inspectReadiness`;
 `packages/code/src/onboarding/doctor.ts`, `credentialGate`). Tests pin both the cold route and the
 explicit recheck boundary in `packages/code/tests/integration/app-commands.test.tsx`.
+
+The same cold-start boundary applies to sandbox inspection. App command construction leaves
+`sandboxInspection` null and does not run host toolchain `--version` probes. Doctor's explicit
+recheck and the Sandbox settings surface own that inspection; the run-safety gate treats null as a
+passing deferred state (`packages/code/src/app/commands.tsx`, `refreshSandboxInspection`;
+`packages/code/src/views/config/SandboxConfigPanel.tsx`, `refreshInspection`;
+`packages/code/src/onboarding/doctor.ts`, `run_safety`). The integration test above pins both the
+cold route and explicit recheck.
 
 ### 4.3 Artifact loading and lazy boundaries
 
@@ -406,8 +413,9 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     pauses polling while inactive"), `packages/code/tests/unit/level-keys.test.ts`, and
     `packages/code/tests/unit/overlay-host.test.ts`.
 
-15. **PERF-15: first boot does not read the models.dev catalog or call subscription entitlement;
-    catalog and cold full-page modules load only when their owning routes mount.**
+15. **PERF-15: first boot does not read the models.dev catalog, call subscription entitlement or
+    probe sandbox toolchains; catalog and cold full-page modules load only when their owning routes
+    mount.**
     Production: `packages/code/src/index.tsx` (`ensureModelsCatalog`),
     `packages/code/src/views/config/lazy-view.tsx`, and
     `packages/code/src/app/commands.tsx` (dynamic route factories), plus
@@ -416,8 +424,9 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     `packages/code/tests/architecture/artifact-contract.test.ts`, and
     `packages/code/tooling/artifact/smoke.ts`.
 
-16. **PERF-16: one Solid root paints a parser-free shell before the usable application; aggregate
-    memory diagnostics are O(1) at their data sources and disabled when no diagnostic sink exists.**
+16. **PERF-16: one Solid root paints a parser-free shell before the usable application, and parser
+    warm-up does not hold that usable paint; aggregate memory diagnostics are O(1) at their data
+    sources and disabled when no diagnostic sink exists.**
     Production: `packages/code/src/index.tsx` (`appProps`, `app.boot.shell-painted`),
     `packages/code/src/views/BootFrame.tsx`, `packages/code/src/views/App.tsx` (`ledgerEnabled`), and
     `packages/kernel/src/core/event-stream.ts` (`stats`).
@@ -461,7 +470,7 @@ tree.
 | --- | --- | --- |
 | benchmark host is too busy | refuse unless forced; forced report is untrusted | `packages/code/tooling/benchmarks/first-paint.ts:331-360` |
 | PTY never reaches a marker | fail with bounded screen and stderr context | `packages/code/tooling/benchmarks/first-paint.ts:211-234` |
-| Markdown parser preload fails | emit a warning diagnostic and continue to renderer construction | `packages/code/src/index.tsx:439-455` |
+| Markdown parser warm-up fails | emit a warning diagnostic and keep the usable application shell | `packages/code/src/index.tsx` (`markdownPreload`) |
 | final Markdown or diff syntax work is still pending | keep the previous Markdown tree visible or the new diff transparent until `waitForSyntaxFrame` completes; reveal OpenTUI's fallback if readiness rejects, and do not pause the renderer | `packages/code/src/ui/patterns/stable-syntax.tsx` (`StableMarkdown`, `StableDiff`, `waitForSyntaxFrame`) |
 | on-demand catalog load fails | keep the live catalog empty and emit `catalog.unavailable`; the already-painted shell remains usable | `packages/code/src/index.tsx` (`ensureModelsCatalog`) |
 | subscription readiness has not been inspected | keep the local gate passing with `subscription check deferred`; explicit Doctor inspection can later report a real warning | `packages/code/src/onboarding/doctor.ts` (`credentialGate`) |
@@ -668,8 +677,8 @@ as a memory reduction or a zero slope. Production:
    artifact checks reject representative markers in the startup entry. Kernel bootstrap remains
    eager because it is the in-process host, not an optional route.
 8. **Paint a minimal shell before non-visual boot work.** **Implemented:** one Solid root first paints
-   `BootFrame`, while Markdown preload overlaps kernel foundation work; usable `<App>` waits for both
-   grammars.
+   `BootFrame`, then usable `<App>` before Markdown warm-up starts. Restored session Markdown waits
+   for both grammars.
 9. **Extend measurement coverage.** Add a configured-home fixture with a shell-only ready marker, a
    long manager-session soak, and a real-model multi-run process-tree sampler. **Partially
    implemented:** artifact smoke asserts the shell marker and catalog deferral; the controlled

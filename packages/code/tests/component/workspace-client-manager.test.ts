@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -56,7 +56,7 @@ describe("WorkspaceClientManager", () => {
       workspaceRoot: externalRoot,
       globalDir: join(workspaceRoot, "global"),
     });
-    expect(manager.current.path).toBe(externalRoot);
+    expect(manager.current.path).toBe(realpathSync(externalRoot));
     expect(manager.defaultOwner).toBe(ownerFromWorkspace(externalRoot));
     expect(manager.defaultOwner).not.toBe(ownerFromWorkspace(primaryRoot));
     await manager.close();

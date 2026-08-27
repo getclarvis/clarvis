@@ -117,9 +117,11 @@ A host may additionally pass existing `temporaryRoots`. These are narrow,
 host-owned scratch roots, not a general filesystem escape: every native tool
 and guarded path analysis admits exactly those roots, while unrelated `/tmp`
 paths remain refused. `shell` and `monitor_start` expose the first root as
-`TMPDIR`, `TEMP`, and `TMP`, so platform-native temporary-directory creation
-(`mktemp -d` on POSIX or `$env:TEMP` on PowerShell) produces work that a later
-`grep`, `read_file`, or mutation can access. For compatibility with POSIX agents
+`TMPDIR`, `TEMP`, and `TMP`. POSIX commands should root their template explicitly
+(`mktemp -d "$TMPDIR/clarvis.XXXXXX"`), because macOS `/usr/bin/mktemp` may ignore a
+reassigned `TMPDIR` when no template is supplied; PowerShell commands create beneath
+`$env:TEMP`. Either form produces work that a later `grep`, `read_file`, or mutation
+can access. For compatibility with POSIX agents
 that spell an absolute `mktemp -d /tmp/name-XXXXXX` template, `shell` snapshots
 that exact template and adopts only a new, non-symlink directory owned by the
 current user; it does not admit the parent temp directory or a pre-existing match.

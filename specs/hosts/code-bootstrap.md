@@ -489,7 +489,7 @@ terminal result."
 | 1 | `assertInteractiveTTY()` — exits 2 if either stream is not a TTY | 400 |
 | 2 | open/install optional diagnostics, print its path, register a provisional exit close, emit `app.boot.begin` | 402-420 |
 | 3 | for `resume`/`continue`, preflight the session in this selected workspace | 422-423 |
-| 4 | read dev/SSH settings, create the renderer and start Markdown parser preload | `runApp` |
+| 4 | read dev/SSH settings and create the renderer | `runApp` |
 | 5 | mount one Solid root with the parser-free `BootFrame`, wait for renderer idle and emit `app.boot.shell-painted` | `runApp`, `packages/code/src/views/BootFrame.tsx` |
 | 6 | create the process's single `WorkspaceClientManager` with memory and key sources | 466-487 |
 | 7 | establish immutable workspace identity; create stores, config, history, run client and capabilities | 488-686 |
@@ -497,8 +497,8 @@ terminal result."
 | 9 | list profiles, resolve the current Git branch asynchronously, mark connection ready | 801-819 |
 | 10 | create and publish workspace adapters; build/bind the run host and shutdown cleanup | 821-1007 |
 | 11 | create the Tasks controller and the five `App` control groups | 1009-1236 |
-| 12 | await parser preload, replace `BootFrame` with `<App>` inside the existing root, then emit mounted/painted diagnostics | `runApp` |
-| 13 | for `resume`/`continue`, resolve and load the selected workspace's session | 1273-1285 |
+| 12 | replace `BootFrame` with `<App>` inside the existing root and emit mounted/painted diagnostics | `runApp` |
+| 13 | start Markdown parser warm-up; for `resume`/`continue`, resolve the selected workspace's session, await warm-up and then load it | `runApp` |
 
 Two orderings the code annotates explicitly:
 
@@ -506,11 +506,16 @@ Two orderings the code annotates explicitly:
   `packages/code/src/index.tsx:415-418` states why: "Cover failures before the renderer/platform exists. Once the
   platform installs its own exit restoration below, move this handler behind it so renderer teardown
   remains visible before diagnostics.stop."
-- Markdown preload begins before the kernel foundation and may overlap it. `BootFrame` imports no
-  Markdown view, and `<App>` cannot replace it until both parsers settle, so no
-  `MarkdownRenderable` mounts before parser readiness. Production: `packages/code/src/index.tsx`
-  (`markdownPreload`, `appProps`, `app.boot.shell-painted`) and
-  `packages/code/src/views/BootFrame.tsx`. Test: `packages/code/tooling/artifact/smoke.ts`.
+- Markdown warm-up begins immediately after the usable application shell paints, so worker startup
+  cannot compete with that frame. Restored session content is not published until warm-up settles.
+  Production: `packages/code/src/index.tsx` (`preloadMarkdown`, `markdownPreload`, `appProps`,
+  `app.boot.painted`) and `packages/code/src/views/BootFrame.tsx`. Test:
+  `packages/code/tooling/artifact/smoke.ts`.
+- Application command composition performs no sandbox host inspection. The null probe is a passing
+  deferred readiness state; Doctor recheck and Settings > Sandbox are the explicit inspection
+  routes. Production: `packages/code/src/app/commands.tsx` (`refreshSandboxInspection`,
+  `inspectReadiness`). Test: `packages/code/tests/integration/app-commands.test.tsx` ("sandbox
+  inspection is deferred until an explicit Doctor recheck").
 
 `debugSession` is built even when `--debug` was absent, with the stated reason: "a diagnostic channel
 you can only ask for before the failure you want it for is no channel" (`packages/code/src/index.tsx:452-455`).
@@ -1194,7 +1199,7 @@ Unpinned.
 | `--print` throws anywhere | `print failed: <text>`; kernel close errors swallowed | exit 1 | `packages/code/src/index.tsx:339-342` |
 | `--print` receives an elicitation | auto-declined, one stderr line per request | run continues | `packages/code/src/index.tsx:285-297` |
 | `--print` event stream throws mid-iteration | swallowed; `drained` still resolves | the run's `done` still settles | `packages/code/src/cli-mode.ts:98-100` |
-| Tree-sitter markdown preload fails | `markdown.preload.failed` at `warn`; boot continues unhighlighted | degrade | `packages/code/src/index.tsx:429-442` |
+| Tree-sitter Markdown warm-up fails | `markdown.preload.failed` at `warn`; the already-usable shell continues unhighlighted | degrade | `packages/code/src/index.tsx` (`markdownPreload`) |
 | `loadFoundation` throws on boot | `boot.failed` with the phase, connection → `failed`, `runFatalBoot` retry screen | interactive retry; `q` exits 1 | `packages/code/src/index.tsx:768-800` |
 | A retry inside `runFatalBoot` throws | message replaced on the same screen, `busy` cleared, screen stays | retryable | `packages/code/src/views/FatalBoot.tsx:105-109` |
 | `boot.profiles` throws | reported, then **rethrown** — no fatal-boot screen, so it escapes to `detachObserved("code_main")` | `clarvis failed: …`, `process.exitCode = 1` | `packages/code/src/index.tsx:801-807`, `:1340-1343` |

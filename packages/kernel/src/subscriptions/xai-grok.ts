@@ -22,6 +22,9 @@ const DEVICE_SCOPE = "openid profile email offline_access grok-cli:access api:ac
 const DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code";
 const PRODUCT_USER_AGENT = `clarvis/${VERSION}`;
 
+/** Grok Build compatibility revision used by the xAI subscription proxy's version gate. */
+const XAI_GROK_CLIENT_VERSION = "1.0.6";
+
 export interface XaiGrokAdapterOptions {
   fetch?: typeof globalThis.fetch;
   now?: () => number;
@@ -187,6 +190,7 @@ export function createXaiGrokAdapter(
           authorization: `Bearer ${accessToken}`,
           "x-xai-token-auth": "xai-grok-cli",
           "x-userid": safeAccount,
+          "x-grok-client-version": XAI_GROK_CLIENT_VERSION,
           "user-agent": PRODUCT_USER_AGENT,
           accept: "application/json",
         },
@@ -249,7 +253,7 @@ export function createXaiGrokAdapter(
       headers.set("authorization", `Bearer ${record.access_token}`);
       headers.set("x-xai-token-auth", "xai-grok-cli");
       headers.set("x-authenticateresponse", "authenticate-response");
-      headers.set("x-grok-client-version", "1.0.6");
+      headers.set("x-grok-client-version", XAI_GROK_CLIENT_VERSION);
       headers.set("x-grok-client-identifier", "clarvis");
       headers.set("x-grok-model-override", requestModel(init));
       headers.set("x-grok-user-id", accountId);

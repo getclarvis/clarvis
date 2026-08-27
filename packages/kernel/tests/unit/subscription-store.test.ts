@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { chmod, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -8,7 +8,7 @@ import { createFileSubscriptionStore } from "../../src/subscriptions/store.ts";
 const roots: string[] = [];
 
 async function root(): Promise<string> {
-  const value = await mkdtemp(join(tmpdir(), "clarvis-subscriptions-"));
+  const value = await realpath(await mkdtemp(join(tmpdir(), "clarvis-subscriptions-")));
   roots.push(value);
   return value;
 }

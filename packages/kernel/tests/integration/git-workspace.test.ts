@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -46,7 +46,7 @@ describe("discoverGitWorkspace", () => {
   });
 
   it("falls back deterministically outside Git", async () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-non-git-workspace-"));
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-non-git-workspace-")));
     roots.push(root);
     const first = await discoverGitWorkspace(root);
     const second = await discoverGitWorkspace(root);

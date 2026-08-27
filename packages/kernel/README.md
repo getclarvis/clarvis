@@ -46,8 +46,10 @@ registration references, global `subscriptions.json`, bounded device attempts, r
 refresh, revocation, entitled catalogs, and token-opaque physical request authorities. The project
 owner explicitly enables both public-client references for the local product; that is a Clarvis
 product decision, not provider endorsement. Synthetic registrations exercise transport behavior in
-tests. Provider `user-agent` and ChatGPT `client_version` identity use the same root-owned product
-version as the rest of Clarvis. The remote transport always uses the unavailable implementation.
+tests. Provider `user-agent` identity uses the root-owned Clarvis product version. ChatGPT and Grok
+separately send adapter-owned compatibility revisions (`0.144.0` and `1.0.6`, respectively) in the
+catalog version fields their services gate; those values are not the Clarvis product version. The
+remote transport always uses the unavailable implementation.
 
 `createFileKernel` is the single-workspace entrypoint. It derives stable project and workspace
 identities directly from Git and owns that canonical workspace until close. There is no project-level

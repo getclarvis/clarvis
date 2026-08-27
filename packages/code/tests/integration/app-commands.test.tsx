@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+// Bun 1.4 omits this module's LCOV record when its first load is the command's lazy import.
+import "../../src/views/config/ProvidersPanel.tsx";
 import { createRoot } from "solid-js";
 import { openRender } from "../helpers/tracked-render.ts";
 import {
@@ -513,6 +515,27 @@ test("subscription entitlement is deferred until an explicit Doctor recheck", as
   await waitUntil(() => entitled === 1);
   expect(lists).toBe(1);
   expect(entitled).toBe(1);
+  mounted.dispose();
+});
+
+test("sandbox inspection is deferred until an explicit Doctor recheck", async () => {
+  let inspections = 0;
+  const mounted = harness({
+    settings: {
+      ...fakeSettings(),
+      inspectSandbox: async () => {
+        inspections += 1;
+        return null as never;
+      },
+    },
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(inspections).toBe(0);
+
+  mounted.recheck();
+  await waitUntil(() => inspections === 1);
+  expect(inspections).toBe(1);
   mounted.dispose();
 });
 

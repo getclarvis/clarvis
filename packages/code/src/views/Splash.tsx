@@ -16,6 +16,24 @@ export const BANNER = [
   ' "Y8888P"  888 "Y888888 888       Y88P   888  88888P\'',
 ];
 
+/** Smallest terminal that can keep the complete banner throughout first-run setup. */
+export const FIRST_RUN_SPLASH_MIN_COLUMNS = 76;
+
+/** Smallest terminal that leaves a useful catalog below the complete first-run banner. */
+export const FIRST_RUN_SPLASH_MIN_ROWS = 24;
+
+/**
+ * Whether first-run setup can keep the complete splash visible without crowding its pickers.
+ *
+ * @remarks The width accounts for the 85%-wide large floating card and its horizontal chrome. The
+ * height leaves room for the eight-row banner, card chrome, a filter and at least three catalog rows.
+ * One shared threshold keeps the splash from appearing on Welcome only to disappear at provider or
+ * model selection.
+ */
+export function firstRunSplashFits(width: number, height: number): boolean {
+  return width >= FIRST_RUN_SPLASH_MIN_COLUMNS && height >= FIRST_RUN_SPLASH_MIN_ROWS;
+}
+
 /** Shared Clarvis banner used by the idle splash and the first-run experience. */
 export function BrandBanner(props: { width: () => number }): JSX.Element {
   const stops = createMemo(() =>

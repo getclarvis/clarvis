@@ -2,6 +2,7 @@ import type { Accessor, JSX } from "solid-js";
 import { createSignal, For, Show } from "solid-js";
 import type { InputRenderable, KeyEvent, Renderable } from "@opentui/core";
 import type { Keymap } from "@opentui/keymap";
+import { useTerminalDimensions } from "@opentui/solid";
 import { tokens } from "../../theme/tokens.ts";
 import { labelRuns } from "../../core/fuzzy.ts";
 import { LAYER } from "../../ui/patterns/level-keys.ts";
@@ -9,6 +10,7 @@ import { ListPicker } from "../overlays/ListPicker.tsx";
 import type { PickerCell } from "../overlays/PickerRow.tsx";
 import { filterRows, MODEL_LABEL_WIDTH, type CatalogRow } from "./catalog-pick.ts";
 import { glyph, glyphColWidth } from "../../theme/glyphs.ts";
+import { BANNER, BrandBanner, firstRunSplashFits } from "../Splash.tsx";
 
 const ADDED_COL_WIDTH = glyphColWidth("success");
 
@@ -37,6 +39,8 @@ export interface CatalogPickerProps extends CatalogPickerSpec {
   keymap: Keymap<Renderable, KeyEvent>;
   active?: Accessor<boolean>;
   resetKey?: Accessor<unknown>;
+  /** Keeps the complete Clarvis splash above a first-run picker when it fits. */
+  firstRun?: boolean;
 }
 
 export interface CatalogPickerSurfaceProps {
@@ -44,6 +48,8 @@ export interface CatalogPickerSurfaceProps {
   /** Current activation data; null while a retained picker is hidden. */
   spec: Accessor<CatalogPickerSpec | null>;
   active?: Accessor<boolean>;
+  /** Keeps the complete Clarvis splash above a first-run picker when it fits. */
+  firstRun?: boolean;
 }
 
 /**
@@ -56,6 +62,7 @@ export interface CatalogPickerSurfaceProps {
  * length can override either.
  */
 export function CatalogPicker(props: CatalogPickerProps | CatalogPickerSurfaceProps): JSX.Element {
+  const dims = useTerminalDimensions();
   const [term, setTerm] = createSignal("");
   let inputEl: InputRenderable | undefined;
   let latest: CatalogPickerSpec | undefined;
@@ -68,6 +75,11 @@ export function CatalogPicker(props: CatalogPickerProps | CatalogPickerSurfacePr
   };
   const active = (): boolean => props.active?.() ?? true;
   const resetKey = "spec" in props ? props.spec : props.resetKey;
+  const showFirstRunSplash = (): boolean =>
+    props.firstRun === true && firstRunSplashFits(dims().width, dims().height);
+  const pickerContentWidth = (): number =>
+    Math.max(0, Math.min(Math.floor(dims().width * 0.85), 100) - 4);
+  const firstRunIntroRows = (): number => (showFirstRunSplash() ? BANNER.length + 1 : 0);
 
   const compact = (): boolean => current().compact ?? current().rows().length <= COMPACT_FILTER_MAX;
   const manualEnabled = (): boolean =>
@@ -153,6 +165,14 @@ export function CatalogPicker(props: CatalogPickerProps | CatalogPickerSurfacePr
             }
       }
       footerExtra={counterExtra()}
+      intro={
+        <Show when={showFirstRunSplash()}>
+          <box flexDirection="column" flexShrink={0} alignItems="center" paddingBottom={1}>
+            <BrandBanner width={pickerContentWidth} />
+          </box>
+        </Show>
+      }
+      introRows={firstRunIntroRows}
       idPrefix="cat-"
       initialIndex={initialIndex()}
       priority={LAYER.MODAL}

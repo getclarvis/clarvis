@@ -164,7 +164,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `ChoiceRow<T>` | `{value, label, description, tone?: "normal"\|"warn"}` | `packages/code/src/views/overlays/ChoiceRows.tsx:10-15` |
 | `ChoiceRows(props)` | Renders `ChoiceRow<T>[]` as `PickerRow`s with a radio marker | `packages/code/src/views/overlays/ChoiceRows.tsx:32-69` |
 | `FilterField(props)` | Auto-focused single-line filter input, reports term via `onTerm` | `packages/code/src/views/overlays/FilterField.tsx:14-48` |
-| `ListPicker<T>(props)` | Generic filterable/scrollable/windowed picker inside a `FloatFrame` | `packages/code/src/views/overlays/ListPicker.tsx:47-275` |
+| `ListPicker<T>(props)` | Generic filterable/scrollable/windowed picker inside a `FloatFrame`; an optional fixed `intro` declares its responsive `introRows` cost | `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`) |
 | `ListPickerVerb<T>` | shared `PanelVerbName` or one-off `{key,label,run,when?}` | `:33-35` |
 | `ProfilePicker(props)` | `ListPicker` of agent profiles + a nested default-scope `ListPicker` | `packages/code/src/views/overlays/ProfilePicker.tsx:53-186` |
 | `SafetyPresetPicker(props)` | Lazy retained `ListPicker` over the six canonical execution postures, with armed confirmation for direct-host choices | `packages/code/src/views/overlays/SafetyPresetPicker.tsx` (`SafetyPresetPicker`) |
@@ -521,19 +521,20 @@ label and detail are re-derived from `term` directly via `labelRuns`. The popup'
 ### `ListPicker<T>` (`views/overlays/ListPicker.tsx`)
 
 Filtering: `fuzzyFilter(props.items(), term, haystack)` when a `filter` prop and non-empty term are
-present (`:78-81`); the selection resets to `0` on every term change (`:83`). Row budget:
-`rowBudget(reservePreview)` subtracts the frame chrome, an optional filter row, and (when it still
-fits) a fixed 3-row preview pane from `floatMaxRows(terminalHeight)` (`:132-148`). The visible slice
-is `windowRows(rows(), selection, maxVisibleRows())` (`:166`) — only the windowed rows are ever
-mounted, which is the same "does not leak native memory per unrendered row" property documented at
-`:151-165`. The mouse wheel moves the *selection* rather than scrolling a box, because a windowed
-list has nothing to scroll (`onWheel`, `:184-190`). A caller's `verbs` bound to a key that a generic
+present; the selection resets to `0` on every term change. Row budget:
+`rowBudget(reservePreview)` subtracts the frame chrome, an optional responsive `introRows` cost, an
+optional filter row, and (when it still fits) a fixed 3-row preview pane from
+`floatMaxRows(terminalHeight)`. The visible slice is `windowRows(rows(), selection,
+maxVisibleRows())` — only the windowed rows are ever mounted, which is the same "does not leak native
+memory per unrendered row" property documented beside the `win` memo. The mouse wheel moves the
+*selection* rather than scrolling a box, because a windowed list has nothing to scroll (`onWheel`).
+A caller's `verbs` bound to a key that a generic
 row-traversal command would otherwise claim (e.g. `tab`) take precedence, because `registerLevel`
-folds `verbs` after `nav` in the same `LevelSpec` (`:102-124`, keybinding resolution order is owned
+folds `verbs` after `nav` in the same `LevelSpec` (`spec`, keybinding resolution order is owned
 by [hosts/code-keyboard.md](code-keyboard.md)).
 
-An optional `active` accessor (`:70-71`) gates both the picker's own key layer and its
-`FilterField`'s focus: while `active` reads `false`, the `createEffect` at `:192-197` tears down the
+An optional `active` accessor gates both the picker's own key layer and its
+`FilterField`'s focus: while `active` reads `false`, the registration effect tears down the
 layer (`off?.()`, no `registerLevel` call) instead of registering it, and `FilterField` blurs its
 input rather than stealing focus (`packages/code/src/views/overlays/FilterField.tsx:20-29`) — so a picker stacked
 *underneath* another one (e.g. `ProfilePicker`'s scope chooser over its agent list) claims no keys
@@ -736,13 +737,13 @@ settled turn's persisted continuation; an empty session reports that there is no
     grandchild that outlives the child does not wedge the call. `packages/code/src/adapters/local-shell.ts:125-136,
     180-186`. Pinned: `packages/code/tests/integration/local-shell.test.ts:119-139`.
 20. **`ListPicker` mounts only the windowed slice of items, never the whole list.**
-    `packages/code/src/views/overlays/ListPicker.tsx:166` (`windowRows`). Pinned:
+    `packages/code/src/views/overlays/ListPicker.tsx` (`win`, via `windowRows`). Pinned:
     `packages/code/tests/integration/list-picker-render.test.tsx:216-236` (120 items, far fewer than 30 rendered).
 21. **A windowed `ListPicker`'s mouse wheel moves the selection rather than scrolling a box.**
-    `packages/code/src/views/overlays/ListPicker.tsx:184-190`. Pinned:
+    `packages/code/src/views/overlays/ListPicker.tsx` (`onWheel`). Pinned:
     `packages/code/tests/integration/list-picker-render.test.tsx:253-279`.
 22. **A caller-supplied `verbs` binding on a key takes precedence over generic row-traversal on that
-    same key** (e.g. a picker-local `tab`). `packages/code/src/views/overlays/ListPicker.tsx:91-124` (verbs folded
+    same key** (e.g. a picker-local `tab`). `packages/code/src/views/overlays/ListPicker.tsx` (`spec`; verbs folded
     after `nav` in the same `LevelSpec`; ordering enforced by `registerLevel`, owned by
     [hosts/code-keyboard.md](code-keyboard.md)). Pinned:
     `packages/code/tests/integration/list-picker-render.test.tsx:93-103`.
@@ -890,6 +891,13 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/tests/integration/safety-preset-picker-render.test.tsx`,
     `packages/code/tests/integration/interaction.test.ts`, and
     `packages/code/tests/unit/safety-presets.test.ts`.
+46. **A fixed picker intro pays for its rows before list windowing.** A responsive intro reports zero
+    rows while hidden; when visible, its full row count is subtracted before filter, preview and list
+    space are allocated, so fixed branding cannot paint over the catalog or footer. Production:
+    `packages/code/src/views/overlays/ListPicker.tsx` (`intro`, `introRows`, `rowBudget`) and
+    `packages/code/src/views/config/CatalogPicker.tsx` (`firstRunIntroRows`). Test:
+    `packages/code/tests/integration/catalog-picker-render.test.tsx` (`first-run branding stays with
+    the picker only while the complete splash fits`).
 
 ## 6. Failure modes and degradation
 

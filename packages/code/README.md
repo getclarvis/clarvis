@@ -141,6 +141,10 @@ catalogue, selects `marshall`, and shows one Ready screen. No agent or workflow 
 any point; the default fleet and workflow catalogue are built into the kernel. Canceling either picker returns to setup with the
 staged choice unsaved. Opening `/settings/providers` later keeps the ordinary multi-provider and
 multi-model editor.
+The complete eight-row Clarvis splash stays visible from Welcome through both the provider and model
+pickers when the terminal is at least 76 columns by 24 rows. That shared threshold accounts for the
+narrower floating card and preserves at least three useful catalog rows. Below it, first-run setup
+omits the splash entirely and gives the space back to the picker.
 Manual model entry preserves provider-native ids, including tagged local-server ids such as
 `qwen2.5-coder:7b`; the resulting default reference keeps the provider name before the first `/`.
 The Providers module and the single-flight models catalogue are loaded concurrently only after a
@@ -166,7 +170,10 @@ For an older configured subscription model without that metadata, `/effort` load
 entitled catalog on demand instead of borrowing a same-named model from the public catalog. While
 that request is pending the panel says it is loading; it reports unpublished effort levels only
 after the request settles without metadata.
-Browser opening remains an explicit user action; copy/manual opening always remains available. See
+Browser opening remains an explicit user action; copy/manual opening always remains available. Copy
+and browser actions animate in place while their platform adapters are pending, then leave visible
+`✓ Copied to clipboard` or `✓ Browser opened` confirmations in the device-login picker before
+restoring the ordinary row. See
 [`subscription-providers.md`](../../specs/hosts/subscription-providers.md).
 
 A previously configured but damaged installation opens the branded Repair Clarvis screen instead.

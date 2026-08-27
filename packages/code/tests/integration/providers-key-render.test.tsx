@@ -769,6 +769,7 @@ test("first-run setup guides provider and model selection, saves the key, and se
   );
 
   let frame = await captureUntil(t, "Step 1 of 2");
+  expect(frame).toContain(".d8888b.");
   expect(frame).toContain("Set up Clarvis");
   expect(frame).toContain("Step 1 of 2");
   expect(frame).toContain("alpha");
@@ -776,6 +777,7 @@ test("first-run setup guides provider and model selection, saves the key, and se
   pressDowns(press, 2);
   press("return");
   frame = await captureUntil(t, "Step 2 of 2");
+  expect(frame).toContain(".d8888b.");
   expect(frame).toContain("Step 2 of 2");
   expect(frame).toContain("m1");
 
@@ -1267,22 +1269,84 @@ test("device login actions copy, open, and cancel only the public authorization 
   await Promise.resolve();
   expect(copied).toContain("SAFE-CODE");
   expect(notes).toContain("Login code copied");
+  const copiedCodeFrame = await captureUntil(t, "Copied to clipboard");
+  expect(copiedCodeFrame).toContain(glyph("success"));
 
   press("down");
   press("return");
   await Promise.resolve();
   expect(opened).toContain("https://auth.example.test/device");
+  const openedFrame = await captureUntil(t, "Browser opened");
+  expect(openedFrame).toContain(glyph("success"));
 
   press("down");
   press("return");
   await Promise.resolve();
   expect(copied).toContain("https://auth.example.test/device");
   expect(notes).toContain("Verification URL copied");
+  const copiedUrlFrame = await captureUntil(t, "Copied to clipboard");
+  expect(copiedUrlFrame).toContain("verification URL");
 
   press("down");
   press("return");
   await Promise.resolve();
   expect(cancelled).toEqual(["attempt-public"]);
+  t.renderer.destroy();
+});
+
+test("device login renders progress in place while clipboard and browser actions are pending", async () => {
+  const { host, deps, press } = mount(undefined, "none");
+  let finishCopy: ((ok: boolean) => void) | undefined;
+  let finishOpen: ((ok: boolean) => void) | undefined;
+  const providerAuth: ProviderAuthService = {
+    list: async () => [
+      { scheme: "openai-codex", state: "disconnected", authorization_available: true },
+    ],
+    startDevice: async () => ({
+      attempt_id: "attempt-public",
+      verification_url: "https://auth.example.test/device",
+      user_code: "SAFE-CODE",
+      expires_at: Date.now() + 60_000,
+      polling_interval_ms: 1_000,
+    }),
+    wait: () => new Promise(() => {}),
+    cancel: async () => {},
+    disconnect: async () => {},
+  };
+  const t = await openRender(
+    (() =>
+      ProvidersPanel(host, {
+        ...deps,
+        providerAuth,
+        copyText: () => new Promise<boolean>((resolve) => (finishCopy = resolve)),
+        openUrl: () => new Promise<boolean>((resolve) => (finishOpen = resolve)),
+      })) as never,
+    { width: 120, height: 34 },
+  );
+
+  await t.renderOnce();
+  press("a");
+  await captureUntil(t, "ChatGPT subscription");
+  press("return");
+  await captureUntil(t, "SAFE-CODE");
+  press("return");
+  const pending = await captureUntil(t, "Copying to clipboard");
+  expect(pending).not.toContain("Copied to clipboard");
+
+  finishCopy?.(true);
+  const copied = await captureUntil(t, "Copied to clipboard");
+  expect(copied).toContain(glyph("success"));
+  expect(copied).toContain("login code");
+
+  press("down");
+  press("return");
+  const opening = await captureUntil(t, "Opening browser");
+  expect(opening).not.toContain("Browser opened");
+
+  finishOpen?.(true);
+  const opened = await captureUntil(t, "Browser opened");
+  expect(opened).toContain(glyph("success"));
+  expect(opened).toContain("verification URL");
   t.renderer.destroy();
 });
 

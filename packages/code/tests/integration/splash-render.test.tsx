@@ -1,7 +1,13 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { BootFrame } from "../../src/views/BootFrame.tsx";
-import { BANNER, Splash } from "../../src/views/Splash.tsx";
+import {
+  BANNER,
+  FIRST_RUN_SPLASH_MIN_COLUMNS,
+  FIRST_RUN_SPLASH_MIN_ROWS,
+  firstRunSplashFits,
+  Splash,
+} from "../../src/views/Splash.tsx";
 
 async function frame(width: number, height = 24): Promise<string> {
   const t = await openRender(
@@ -36,6 +42,16 @@ test("under 60 cols the banner falls back to the one-line wordmark", async () =>
 test("the banner art is 8 rows and fits 60 cols", () => {
   expect(BANNER.length).toBe(8);
   for (const line of BANNER) expect(line.length).toBeLessThan(60);
+});
+
+test("first-run splash fit keeps one threshold across setup and catalog pickers", () => {
+  expect(firstRunSplashFits(FIRST_RUN_SPLASH_MIN_COLUMNS, FIRST_RUN_SPLASH_MIN_ROWS)).toBe(true);
+  expect(firstRunSplashFits(FIRST_RUN_SPLASH_MIN_COLUMNS - 1, FIRST_RUN_SPLASH_MIN_ROWS)).toBe(
+    false,
+  );
+  expect(firstRunSplashFits(FIRST_RUN_SPLASH_MIN_COLUMNS, FIRST_RUN_SPLASH_MIN_ROWS - 1)).toBe(
+    false,
+  );
 });
 
 test("the parser-free boot frame fills the terminal while startup modules load", async () => {

@@ -129,21 +129,29 @@ user code reach the active UI view.
 The Code provider flow remains guided: provider, device instructions, entitled model, save/default.
 Selecting either locally enabled subscription row starts its device request. The code and URL clear
 on completion, cancellation, or unmount. Browser opening is an explicit key action; copy/manual
-opening remains available. Existing subscription detail screens omit API key, base URL, arbitrary
+opening remains available. Copying the public code or URL keeps the device picker mounted and turns
+that action's own row into an animated `Copying to clipboard…` state while the platform adapter is
+pending. Success replaces it with `✓ Copied to clipboard` for 2.4 seconds before restoring the
+original row; failure restores it immediately and reports the clipboard error. Opening the browser
+uses the same in-place lifecycle: `Opening browser…`, then `✓ Browser opened`, or the existing error
+when the adapter fails. Existing subscription detail screens omit API key, base URL, arbitrary
 headers, and body, and expose connect/reauthenticate/disconnect through the safe service. A failed
 entitled catalog retains the connected account and offers manual model entry only under an explicit
 unverified-entitlement warning. Adding models from an existing subscription detail reloads that
 account's entitled catalog and returns to the same detail level when the picker closes; it never
 routes the configurable provider name through the public models.dev source-provider picker.
 
-Production: `DeviceAttemptManager`, `ProvidersPanel`, `createProviderDetailLevel`, and
+Production: `DeviceAttemptManager`, `showDevice` in `ProvidersPanel`, `createProviderDetailLevel`, and
 `Platform.openUrl`.
 
 Test: device and component coverage belongs to `@clarvis/kernel` and `@clarvis/code`. The retained
-component test "adding models to a connected subscription opens its entitled catalog" in
-`packages/code/tests/integration/providers-key-render.test.tsx` pins the existing-provider path. The
-retained real-PTY evidence selected no login action, so it proves only that both safe picker rows
-render and resize correctly. No live login, refresh, entitlement, inference, billing, or packaged-artifact
+component tests "device login actions copy, open, and cancel only the public authorization values"
+and "device login renders progress in place while clipboard and browser actions are pending" in
+`packages/code/tests/integration/providers-key-render.test.tsx` pin the visible success and pending
+states; "adding models to a connected subscription opens its entitled catalog" pins the
+existing-provider path. The retained real-PTY evidence selected no login action, so it proves only
+that both safe picker rows render and resize correctly. No live login, refresh, entitlement,
+inference, billing, or packaged-artifact
 canary is retained in this repository. Such canaries require provider-approved eligible accounts and
 may record only status and a one-way account hash. The no-secret picker transcript is retained in
 [`subscription-provider-picker-2026-08-22.txt`](../evidence/subscription-provider-picker-2026-08-22.txt).

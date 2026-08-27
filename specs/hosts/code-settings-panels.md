@@ -26,7 +26,7 @@ hints (`packages/code/src/views/config/SettingsHub.tsx:7`,
 The largest screen is Providers. It is a facade (`ProvidersPanel`) that owns lifecycle and shared
 state, and three private level modules that own the three drill depths: L0 the provider list, L1 one
 provider's credentials/request maps/models, L2 one model's limits, prompt cache and request maps
-(`packages/code/src/views/config/ProvidersPanel.tsx:308`). The editing itself is done by a headless
+(`ProvidersPanel` in `packages/code/src/views/config/ProvidersPanel.tsx`). The editing itself is done by a headless
 controller in `packages/code/src/features/providers/controller.ts:149`, which stages a draft, tracks
 dirtiness against a snapshot of what was loaded, validates through the settings adapter, and writes
 settings + secrets + key-source preferences on save. Underneath everything, `createSettingsAdapter`
@@ -49,11 +49,12 @@ It re-exports the toolkit a config screen imports and adds one component of its 
 | `SourceBadge`, `SelectableRow`, `EmptyHint`, `LoadingHint`, `ErrorBanner`, `FieldRow`, `ToggleRow`, `SectionHeader`, `StatusRow`, `SettingRow`, `DetailLines`, `Dash`, `DetailRow` | re-export | `../../ui/primitives/index.ts` (`packages/code/src/views/config/view-host.tsx:21`) |
 | `bindLevelKeys`, `SelectableList`, `ViewFrame` | re-export | `../../ui/patterns/index.ts` (`packages/code/src/views/config/view-host.tsx:37`) |
 | `LevelView` | type re-export | `ui/patterns/level-host.tsx` (`packages/code/src/views/config/view-host.tsx:39`) |
-| `LevelHost(props)` | component | `packages/code/src/views/config/view-host.tsx:47` |
+| `LevelHost(props)` | component | `packages/code/src/views/config/view-host.tsx` (`LevelHost`) |
 
-`LevelHost` binds the generic `packages/code/src/ui/patterns/level-host.tsx:31` pattern to the catalog picker: it passes
-a `renderPicker` that mounts `CatalogPicker` with the host's keymap and `active` accessor
-(`packages/code/src/views/config/view-host.tsx:56`).
+`LevelHost` binds the generic `packages/code/src/ui/patterns/level-host.tsx` (`LevelHost`) pattern to
+the catalog picker: it passes a `renderPicker` that mounts `CatalogPicker` with the host's keymap,
+`active` accessor and optional `firstRunPicker` branding flag
+(`packages/code/src/views/config/view-host.tsx`, `LevelHost`).
 
 ```ts
 function LevelHost(props: {
@@ -61,6 +62,7 @@ function LevelHost(props: {
   levels: LevelView[];
   editor?: FieldEditor;
   picker?: () => CatalogPickerSpec | null;
+  firstRunPicker?: boolean;
 }): JSX.Element
 ```
 
@@ -281,7 +283,7 @@ const next: SettingsFile = {
 ```
 
 `manageDefaultModel` is set only when `ProvidersPanel` is opened with `bootstrap: true`
-(`packages/code/src/views/config/ProvidersPanel.tsx:72`), so an ordinary provider save never co-writes `default_model`; the test
+(`ProvidersPanel` in `packages/code/src/views/config/ProvidersPanel.tsx`), so an ordinary provider save never co-writes `default_model`; the test
 pinning that is `packages/code/tests/unit/providers-controller.test.ts:326`, which asserts the written
 file is exactly `{ providers: [...] }`.
 
@@ -327,7 +329,8 @@ with Grok persisted shapes).
 `headers` / `body` are staged whole. An empty or `undefined` map deletes the key rather than leaving
 `{}` (`packages/code/src/features/providers/controller.ts:436`). For `headers` the editor's `unknown` values are cast to
 `Record<string, string>` at exactly one line (`packages/code/src/features/providers/controller.ts:440`), safe only because the map is
-opened with a `rejectValue` that refuses non-text (`packages/code/src/views/config/ProvidersPanel.tsx:255`).
+opened with a `rejectValue` that refuses non-text (`openMap` in
+`packages/code/src/views/config/ProvidersPanel.tsx`).
 
 ### 3.2 Suggestion tables for request maps
 
@@ -505,24 +508,33 @@ one hierarchical slash route instead of duplicate aliases).
 
 ### 4.5 Providers panel composition
 
-`ProvidersPanel` (`packages/code/src/views/config/ProvidersPanel.tsx:57`) in order:
+`ProvidersPanel` in `packages/code/src/views/config/ProvidersPanel.tsx`, in order:
 
-1. `bootstrap = deps.bootstrap === true` (`:54`); a field editor is created bound to the host's keymap and `active` (`:55`).
-2. The controller is constructed with `manageDefaultModel: bootstrap` and — only when there is **no** `onBootstrapComplete` — an `onReconnect` that dispatches `backend.reconnect` (`:56`–`:69`); the panel always owns it, and disposes it on cleanup (`:70`).
-3. Provider/model cursor and picker signals, subscription-status/device-attempt signals, and a
-   one-second unref'd device-code countdown timer are created beside a `createMapEditor` bound to the
-   same editor and level stack.
-4. `host.bindScope({ mode: "reload", load: ctrl.load })`, `host.onCancel(ctrl.clearPending)`, then an immediate `ctrl.load()` (`:84`–`:86`).
+1. `bootstrap = deps.bootstrap === true`; a field editor is created bound to the host's keymap and
+   `active` (the `bootstrap` and `editor` declarations).
+2. The controller is constructed with `manageDefaultModel: bootstrap` and — only when there is
+   **no** `onBootstrapComplete` — an `onReconnect` that dispatches `backend.reconnect`; the panel
+   always owns it and disposes it in `onCleanup` (the `ctrl` declaration and cleanup callback).
+3. Provider/model cursor and picker signals, subscription-status/device-attempt signals, a
+   device-action feedback signal, and one-second unref'd device-code countdown timer are created
+   beside a `createMapEditor` bound to the same editor and level stack. The shared spinner clock runs
+   only while a copy or browser action is pending.
+4. `host.bindScope({ mode: "reload", load: ctrl.load })`, `host.onCancel(ctrl.clearPending)`, then an
+   immediate `ctrl.load()` (the three host lifecycle registrations).
 5. The three level factories are built over one `ProvidersViewContext`, including the subscription
    rows/status/actions consumed by L0 and L1.
 6. `onMount` refreshes subscription status; in bootstrap mode with zero providers,
    `list.openAdd()` also fires immediately. Cleanup clears the countdown and cancels any active
-   bounded device attempt through `ProviderAuthService.cancel`.
-7. `host.onSave` runs `ctrl.save()` and, on a `"validation"` result, moves the cursor to the first issue via `jumpToIssue` (`:328`–`:332`).
-8. `bindLevelKeys` re-registers the level layer whenever depth changes, suspended while a picker is open (`:336`).
+   bounded device attempt through `ProviderAuthService.cancel`; it also invalidates pending platform
+   completions and clears the feedback timer.
+7. `host.onSave` runs `ctrl.save()` and, on a `"validation"` result, moves the cursor to the first
+   issue via `jumpToIssue` (the `host.onSave` handler).
+8. `bindLevelKeys` re-registers the level layer whenever depth changes, suspended while a picker is
+   open (the `bindLevelKeys` call).
+9. The rendered `LevelHost` receives `firstRunPicker={bootstrap}`. That flag reaches only this host's
+   `CatalogPicker`; ordinary Providers and every other settings picker remain unbranded.
 
-Level selection, `specFor(depth)` (`:330`) — **the map-editor check comes first, before any depth
-test**:
+Level selection in `specFor(depth)` — **the map-editor check comes first, before any depth test**:
 
 | Condition | Spec |
 |---|---|
@@ -531,17 +543,17 @@ test**:
 | depth 1 | `detail.spec()` |
 | otherwise | `model.spec()` |
 
-The rendered `levels` array (`:348`) mirrors it: index 0 list, index 1 detail, index 2 the map editor
+The rendered `levels` array passed to `LevelHost` mirrors it: index 0 list, index 1 detail, index 2 the map editor
 guarded by `when: () => maps.active()`, index 3 the model level guarded by
 `when: () => !maps.active() && host.level.depth() >= 2`. `packages/code/src/ui/patterns/level-host.tsx:39` selects the
 first level whose `when()` is true, else the one whose index equals the depth.
 
-`jumpToIssue` (`:316`–`:326`) has two branches. At depth 0 it does
-`providers().findIndex(p => p.name === issue.provider)` and moves `sel` to that provider's row
-(`:318`–`:321`). At depth 1, when `issue.provider === current()?.name`, it looks the issue's `field`
-up in `PROVIDER_ISSUE_DETAIL_FIELD` and takes the row from `PROVIDER_DETAIL_FIELDS.indexOf` of the
-label it names (`:323`–`:324`) — the row is **derived from** the pinned array, not a second copy of
-its head. An unmapped field moves nothing.
+`jumpToIssue` has two branches. At depth 0 it does
+`providers().findIndex(p => p.name === issue.provider)` and moves `sel` to that provider's row. At
+depth 1, when `issue.provider === current()?.name`, it looks the issue's `field` up in
+`PROVIDER_ISSUE_DETAIL_FIELD` and takes the row from `PROVIDER_DETAIL_FIELDS.indexOf` of the label it
+names — the row is **derived from** the pinned array, not a second copy of its head. An unmapped field
+moves nothing.
 
 ### 4.6 L0 — provider list (`list-level.tsx`)
 
@@ -673,7 +685,7 @@ When there is no catalog hit, the footer line names `PANEL_VERBS.add.key` rather
 
 ### 4.9 The map editor path
 
-`openMap(field, target)` (`packages/code/src/views/config/ProvidersPanel.tsx:233`) captures the provider index and model id at call
+`openMap(field, target)` in `packages/code/src/views/config/ProvidersPanel.tsx` captures the provider index and model id at call
 time, builds a reactive `read` and a `write` that routes to `ctrl.setProviderMap` or
 `ctrl.setModelMap`, and opens `maps` with different rules per field:
 
@@ -710,20 +722,31 @@ Production: `setup.providers` in `packages/code/src/app/commands.tsx` and
 `packages/code/tests/integration/app-commands.test.tsx` (lazy catalog request and first-run picker
 mount tests).
 
+Bootstrap passes `firstRunPicker` through the configuration `LevelHost`. `CatalogPicker` mounts the
+same complete eight-row Clarvis banner above every bootstrap picker only while
+`firstRunSplashFits` passes (76×24 or larger), and `ListPicker` subtracts those nine intro rows
+(banner plus separation) from its visible-row budget. Smaller terminals mount no intro and return all
+of those rows to the catalog. Production: `packages/code/src/views/config/ProvidersPanel.tsx`
+(`ProvidersPanel` return), `packages/code/src/views/config/view-host.tsx` (`LevelHost`),
+`packages/code/src/views/config/CatalogPicker.tsx` (`CatalogPicker`), and
+`packages/code/src/views/overlays/ListPicker.tsx` (`rowBudget`). Tests:
+`packages/code/tests/integration/providers-key-render.test.tsx` (provider and model steps) and
+`packages/code/tests/integration/catalog-picker-render.test.tsx` (large and small frames).
+
 | Step | Trigger | Effect |
 |---|---|---|
-| open | `onMount` with zero providers | `list.openAdd()` (`packages/code/src/views/config/ProvidersPanel.tsx:313`) |
+| open | `onMount` with zero providers | `list.openAdd()` (`ProvidersPanel` in `packages/code/src/views/config/ProvidersPanel.tsx`) |
 | 1 | pick a catalog provider | seed it, drill in, chain into `openModelPicker` (`packages/code/src/views/config/providers/list-level.tsx:94`) |
 | 1 subscription | pick ChatGPT or Grok | authenticate when needed, load that account's entitled catalog, create/reuse the provider for that scheme, then chain into `openModelPicker` |
 | 1' | pick manual entry | `addBlank()` with `manualBootstrapProvider = true` (`packages/code/src/views/config/providers/list-level.tsx:51`) |
-| 2 | pick a model, when `choosingFirstModel` | add from catalog, close the picker, `finishBootstrap` (`packages/code/src/views/config/ProvidersPanel.tsx:222`–`:228`) |
-| 2' | manual model id | `addBlankModel`, then `finishBootstrap` via the `onAdded` callback (`packages/code/src/views/config/ProvidersPanel.tsx:114`) |
+| 2 | pick a model, when `choosingFirstModel` | add from catalog, close the picker, `finishBootstrap` (`openModelPicker` in `packages/code/src/views/config/ProvidersPanel.tsx`) |
+| 2' | manual model id | `addBlankModel`, then `finishBootstrap` via the `onAdded` callback (`manualModelEntry` in `packages/code/src/views/config/ProvidersPanel.tsx`) |
 | finish | `finishBootstrap(provider, id)` | `setDefaultModel("<provider>/<id>")`; if `api_key_env` is unset and no value is already staged, prompt for the key and save afterwards; otherwise save now |
-| save | `saveBootstrap` | `ctrl.save()`; on `"ok"` notify `Setup complete — <ref> is ready`, call `onBootstrapComplete({ model, reconnectRequired })`, then `host.close()` (`packages/code/src/views/config/ProvidersPanel.tsx:156`) |
+| save | `saveBootstrap` | `ctrl.save()`; on `"ok"` notify `Setup complete — <ref> is ready`, call `onBootstrapComplete({ model, reconnectRequired })`, then `host.close()` (`saveBootstrap` in `packages/code/src/views/config/ProvidersPanel.tsx`) |
 | retry | **Ctrl+S** after a failed or cancelled save | recover the selected provider/model from the staged `default_model` and re-enter `finishBootstrap`, reusing a staged key instead of abandoning the onboarding completion callback |
 
-`reconnectRequired` is computed **before** the save, from `pendingKeys().size > 0 ||
-pendingSources().size > 0` (`:154`) — after a successful save both maps are empty. Pinned end-to-end
+`reconnectRequired` is computed **before** the save in `finishBootstrap`, from
+`pendingKeys().size > 0 || pendingSources().size > 0` — after a successful save both maps are empty. Pinned end-to-end
 at `packages/code/tests/integration/providers-key-render.test.tsx:746` (catalog path: writes `default_model: "alpha/m1"` plus the
 seeded model, `completed === [{ model: "alpha/m1", reconnectRequired: true }]`, `closed === [1]`,
 `host.dirty() === false`) and the manual-path test (tagged model id:
@@ -733,8 +756,8 @@ staged credential.
 
 While `choosingFirstModel`, closing the model picker does **not** fall back to the ordinary
 "'<name>' ready — N models" notice; it warns "Choose a model to finish setup"
-(`packages/code/src/views/config/ProvidersPanel.tsx:206`). Outside bootstrap the picker stays open across picks
-(`stayOpen: !choosingFirstModel`, `:184`) and toggles membership per pick (`:213`).
+(`openModelPicker` in `packages/code/src/views/config/ProvidersPanel.tsx`). Outside bootstrap the picker stays open across picks
+(`stayOpen: !choosingFirstModel`) and toggles membership in `onPick`.
 
 ### 4.10a Subscription authentication and entitled models
 
@@ -749,6 +772,11 @@ required, and the remaining service states. A connected row goes directly to
 The device picker is compact, stays open, and contains only four actions: copy the public user code,
 open the public verification URL, copy that URL, or cancel. The displayed countdown is derived from
 `expires_at`; the attempt id is retained only for polling/cancellation and is never rendered. Once
+one copy action starts, its row shows the shared animated spinner with `Copying to clipboard…`.
+Browser opening follows the same pattern with `Opening browser…`. Success changes that same row to
+`✓ Copied to clipboard` or `✓ Browser opened` for 2.4 seconds; a later device action supersedes the
+earlier feedback, and closing the attempt invalidates any late completion. A failure restores the
+ordinary row immediately and reports the adapter error. Once
 `wait(attempt_id)` settles, the active attempt and picker are cleared before any result handling.
 Only `state === "connected"` claims success and loads entitled models; `expired` asks the operator to
 start again, and every other non-connected result says the login did not complete. Closing the picker
@@ -830,7 +858,7 @@ each variant to a `Notice`:
 | `saved` | `scope`, `reconnecting` | `saved <scope> providers` (+ ` — reconnecting backend` when `reconnecting`) | `"success"` |
 
 Only the three named carry a tone; the rest default. `ProvidersPanel` funnels every event through it
-into `deps.notify` (`packages/code/src/views/config/ProvidersPanel.tsx:69`). Every variant's message text is pinned, plus an
+into `deps.notify` (the controller `emit` in `ProvidersPanel`). Every variant's message text is pinned, plus an
 exhaustiveness canary over the union, at `packages/code/tests/unit/providers-events.test.ts`.
 
 ### 4.13 DefaultsPanel
@@ -1029,7 +1057,7 @@ Test: `packages/code/tests/architecture/providers-panel-boundary.test.ts:9`.
 **INV-264 (owned).** The `ProvidersPanel.tsx` module namespace exposes exactly `["ProvidersPanel"]`;
 `createProviderListLevel` / `createProviderDetailLevel` / `createProviderModelLevel` exist and are
 callable from their own modules but are not re-exported through the facade.
-Production: `packages/code/src/views/config/ProvidersPanel.tsx:57` (the only `export function`).
+Production: `ProvidersPanel` in `packages/code/src/views/config/ProvidersPanel.tsx` (the only `export function`).
 Test: `packages/code/tests/component/providers-panel-surface.test.ts:9`–`:15`.
 
 **INV-265 (owned).** The provider screens' field order is a pinned contract:
@@ -1093,7 +1121,7 @@ Test: unpinned — no test asserts the enabled predicate.
 
 **INV-P5.** An ordinary (non-bootstrap) provider save never writes `default_model`.
 Production: `packages/code/src/features/providers/controller.ts:566` gated by `deps.manageDefaultModel`, itself `bootstrap`
-(`packages/code/src/views/config/ProvidersPanel.tsx:72`).
+(`ProvidersPanel` in `packages/code/src/views/config/ProvidersPanel.tsx`).
 Test: `packages/code/tests/unit/providers-controller.test.ts:326` asserts the written file is exactly
 `{ providers: [...] }` even with a `default_model` present in the scope.
 
@@ -1168,18 +1196,19 @@ Test: unpinned.
 **INV-P19.** Level key bindings are released whenever a field edit, a confirm, an inactive frame, or
 an explicitly suspended overlay is in effect.
 Production: `packages/code/src/ui/patterns/bind-level-keys.ts:26`–`:31`; providers pass `suspend: () => picker() !== null`
-(`packages/code/src/views/config/ProvidersPanel.tsx:343`) and marketplace passes `editor` (`packages/code/src/views/config/MarketplaceBrowser.tsx:153`).
+(the `bindLevelKeys` call in `packages/code/src/views/config/ProvidersPanel.tsx`) and marketplace passes `editor` (`packages/code/src/views/config/MarketplaceBrowser.tsx:153`).
 Test: unpinned for the specific `suspend` wiring; the marketplace rationale is stated inline at
 `packages/code/src/views/config/MarketplaceBrowser.tsx:151`.
 
 **INV-P20.** In `ProvidersPanel.specFor`, the map editor's spec wins over every depth-based spec.
-Production: `packages/code/src/views/config/ProvidersPanel.tsx:335`. Test: exercised indirectly by
+Production: `specFor` in `packages/code/src/views/config/ProvidersPanel.tsx`. Test: exercised indirectly by
 `packages/code/tests/integration/providers-key-render.test.tsx:1048` and `:1082`, which assert map-level verbs (`[a] add`,
 `[d] delete`) and map bodies at depths ≥ 2.
 
 **INV-P21.** A model referenced by `default_model` or by an agent profile cannot be removed; the
 refusal names the reason.
-Production: `packages/code/src/features/providers/controller.ts:379` (`modelRemovalBlocked`), presented at `packages/code/src/views/config/ProvidersPanel.tsx:135`.
+Production: `packages/code/src/features/providers/controller.ts:379` (`modelRemovalBlocked`), presented by
+`presentModelRemovalBlock` in `packages/code/src/views/config/ProvidersPanel.tsx`.
 Test: `packages/code/tests/unit/providers-controller.test.ts:260`; render-side
 `packages/code/tests/integration/providers-key-render.test.tsx:508`.
 
@@ -1332,6 +1361,15 @@ Production: `readEnvView` in `packages/code/src/adapters/agent-files.ts` and `De
 `packages/code/tests/unit/agent-files.test.ts` (`tokenDefault`) and
 `packages/code/tests/integration/defaults-panel-render.test.tsx` (effective token row).
 
+**INV-P47.** Copying a subscription's public device code or verification URL, or opening that URL in
+the browser, keeps the picker open and renders progress plus success on the activated row itself. A
+newer device action or a cleared attempt invalidates earlier feedback, so a late completion cannot
+repaint a different login.
+Production: `showDevice` and `clearDevice` in
+`packages/code/src/views/config/ProvidersPanel.tsx`. Test:
+`packages/code/tests/integration/providers-key-render.test.tsx` (pending and successful in-place
+clipboard/browser feedback).
+
 ---
 
 ## 6. Failure modes and degradation
@@ -1348,12 +1386,12 @@ Production: `readEnvView` in `packages/code/src/adapters/agent-files.ts` and `De
 | No catalog when adding models | fall straight through to manual model-id entry | `packages/code/src/views/config/providers/detail-level.tsx:158` |
 | Catalog has no entry matching the provider | offer a "No catalog match — pick a source provider" picker whose manual row still reaches manual entry | `packages/code/src/views/config/providers/detail-level.tsx:165` |
 | Model not in the catalog on L2 | the `f` verb is hidden (`when: () => fillHit() !== undefined`) and the body says so | `packages/code/src/views/config/providers/model-level.tsx:166`, `:142` |
-| Save blocked by validation | `save()` returns `"validation"`, emits `validation_failed` (tone `error`), writes nothing; the panel then moves the cursor to the first issue's field | `packages/code/src/features/providers/controller.ts:560`, `packages/code/src/views/config/ProvidersPanel.tsx:328` |
+| Save blocked by validation | `save()` returns `"validation"`, emits `validation_failed` (tone `error`), writes nothing; the panel then moves the cursor to the first issue's field | `packages/code/src/features/providers/controller.ts:560`, the `host.onSave` handler in `packages/code/src/views/config/ProvidersPanel.tsx` |
 | Secret store throws mid-save | `"key-error"`, notice `key save failed for <VAR>: <text>`, remaining keys and all sources are skipped, staged value retained | `packages/code/src/features/providers/controller.ts:581` |
 | Key-source write throws | `"source-error"`, notice `source save failed for <VAR>: <text>`, no reconnect | `packages/code/src/features/providers/controller.ts:595` |
 | Controller disposed mid-save | returns `"ok"` silently and stops before writing secrets or emitting | `packages/code/src/features/providers/controller.ts:569`,`:575`,`:587`,`:600` |
 | Bootstrap save rejects | `detachObserved`'s error arm notifies `Setup failed — <text>`; the panel stays open and **Ctrl+S** retries the staged provider/model through `finishBootstrap` | `saveBootstrap` and the save handler in `packages/code/src/views/config/ProvidersPanel.tsx` |
-| Bootstrap model picker closed with no model | notify "Choose a model to finish setup" (warn); setup does not complete | `packages/code/src/views/config/ProvidersPanel.tsx:206` |
+| Bootstrap model picker closed with no model | notify "Choose a model to finish setup" (warn); setup does not complete | `openModelPicker` in `packages/code/src/views/config/ProvidersPanel.tsx` |
 | Header/body key or value rejected | the map editor's `rejectKey`/`rejectValue` returns a sentence and the entry is not staged | `packages/code/src/features/providers/request-params.ts:162`, `:177`; render-side `packages/code/tests/integration/providers-key-render.test.tsx:1192` |
 | Blank API-key submission | notify "empty — key unchanged"; `commit` never runs | `packages/code/src/views/config/key-entry.ts:29` |
 | Non-finite / out-of-range number | notify and keep the editor open (no `clearLayer`, no `setEditing(null)`) | `packages/code/src/views/config/field-editor.tsx:269`–`:281` |
@@ -1393,7 +1431,8 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 
 ### 7.2 Internal edges
 
-- `ProvidersPanel` → the three level modules (`packages/code/src/views/config/ProvidersPanel.tsx:34`–`:40`), one-way: the level
+- `ProvidersPanel` → the three level modules (the level-factory imports in
+  `packages/code/src/views/config/ProvidersPanel.tsx`), one-way: the level
   modules import only `context.ts` back (`packages/code/src/views/config/providers/list-level.tsx:12`, `packages/code/src/views/config/providers/detail-level.tsx:15`,
   `packages/code/src/views/config/providers/model-level.tsx:10`), and `context.ts` imports no level.
 - Every config screen reaches the UI toolkit through `views/config/view-host.tsx`, which is the only
@@ -1498,7 +1537,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 4. ~~**`ProvidersPanel.jumpToIssue` keeps a second, hand-written row table.**~~ **Resolved:** the
    duplicate is gone and the unreachable entry with it. `jumpToIssue` maps the issue's `field` onto a
    `PROVIDER_DETAIL_FIELDS` **label** and derives the row with `indexOf`
-   (`packages/code/src/views/config/ProvidersPanel.tsx:323`-`:324`), so INV-265's pin on the array
+   (`jumpToIssue` in `packages/code/src/views/config/ProvidersPanel.tsx`), so INV-265's pin on the array
    now covers the jump too. The correspondence has one owner beside the array it indexes
    (`PROVIDER_ISSUE_DETAIL_FIELD`, `packages/code/src/views/config/providers/detail-level.tsx:38`-`:45`)
    and carries only the three fields `validateProviders` can actually issue
@@ -1519,10 +1558,11 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 
 6. ~~**`ProvidersDeps.controller` injection has no production caller.**~~ **Resolved by removal:** the
    escape hatch is gone. `ProvidersDeps` no longer carries a `controller` field
-   (`packages/code/src/views/config/ProvidersPanel.tsx:43`-`:54`), and the panel always constructs its own controller — which is
+   (`ProvidersDeps` and `ProvidersPanel` in `packages/code/src/views/config/ProvidersPanel.tsx`), and the panel always constructs its own controller — which is
    what `packages/code/src/features/providers/commands.ts` already relied on, never having passed one.
 
-7. **`ViewHost.bindScope`'s `mode: "retarget"` has no in-scope user.** `packages/code/src/views/config/ProvidersPanel.tsx:88` and
+7. **`ViewHost.bindScope`'s `mode: "retarget"` has no in-scope user.** The `host.bindScope` call in
+   `packages/code/src/views/config/ProvidersPanel.tsx` and
    `packages/code/src/views/config/DefaultsPanel.tsx:49` both bind `"reload"`. `"retarget"` is the default when `bindScope` is never
    called (`packages/code/src/views/config/create-view-host.ts:71`), and its dirty-preserving branch is pinned only by
    `packages/code/tests/unit/view-host-scope.test.ts:32`, which never calls `bindScope`. Which screens intend `"retarget"` is a
@@ -1539,11 +1579,12 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
    what the map editor's `[a] add` needs (`packages/code/src/ui/patterns/map-editor.tsx:511`–`:526`):
    add one key to a map, close, return to the map-editor level.
 
-   The panel's own `picker` signal (`ProvidersPanel.tsx:77`, `:177`–`:227`;
+   The panel's own `picker` signal (`picker` and `openModelPicker` in `ProvidersPanel.tsx`;
    `providers/list-level.tsx:65`–`:101`; `providers/detail-level.tsx:147`) exists because two of its
    three call sites need behaviour `FieldEditor`'s wrapper cannot express: (1) `openModelPicker` passes
-   `stayOpen: true` plus a live `counter`/`counterLabel` (`ProvidersPanel.tsx:184`–`:186`,
-   `CatalogPicker.tsx:24`–`:26`, `:104`–`:117`) for a persistent multi-select "add/remove" picker —
+   `stayOpen: true` plus a live `counter`/`counterLabel` (`openModelPicker` in `ProvidersPanel.tsx`,
+   `CatalogPickerSpec` and `counterExtra` in `CatalogPicker.tsx`) for a persistent multi-select
+   "add/remove" picker —
    `FieldEditor`'s spec has no `stayOpen`/`counter` fields at all, and its `onPick` always closes; (2)
    `list-level.tsx`'s add-provider picker chains **directly into a second, different picker**
    (`openModelPicker`) from inside its own `onPick`, and its "browse all providers" sentinel row
@@ -1551,7 +1592,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
    something `FieldEditor`'s always-close-after-one-pick contract cannot represent. `bindLevelKeys`
    (`packages/code/src/ui/patterns/bind-level-keys.ts:24`–`:28`) suppresses the underlying level's own
    key layer whenever *either* `editor.editing() !== null` *or* the panel's own `suspend: () => picker()
-   !== null` (`ProvidersPanel.tsx:339`) is true, and `LevelHost` mounts the two as independent optional
+   !== null` (the `bindLevelKeys` call in `ProvidersPanel.tsx`) is true, and `LevelHost` mounts the two as independent optional
    slots at different tree positions — `editor.editing()`'s `CatalogPicker` inside the active
    `ViewFrame` (`packages/code/src/ui/patterns/level-host.tsx:47`–`:52`), the panel's `picker`-driven
    one as a sibling outside it (`:53`–`:55`) — so in practice only one is ever reachable by keyboard at

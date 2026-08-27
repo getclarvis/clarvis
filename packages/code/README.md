@@ -774,11 +774,13 @@ the build pays that once. Consequences worth knowing:
 - **After editing `src/`, the global command keeps running the old bundle.** Use
   `bun run start` / `bun run dev` for the inner loop, rebuild with `bun run build` or
   `bun run build:code`, or set `CLARVIS_CODE_SOURCE=1` to force the sources.
-- **The bundle is package-local, not standalone by itself.** `tooling/artifact/build.ts` keeps `@opentui/core` and its
-  platform-native packages external, so the renderer retains ownership of its worker and grammar
-  assets. Checkout setup provides the ordinary package dependency graph. Public release packaging
-  assembles that same bundle with a pruned target-native dependency closure and an included Bun
-  runtime; application source does not address the resulting `node_modules` layout directly.
+- **The bundle is package-local, not standalone by itself.** `tooling/artifact/build.ts` keeps
+  `@opentui/core`, its platform-native packages, and `pino` external, so renderer and logging workers
+  remain relative to their owning package instead of embedding the build host's `node_modules` path.
+  The build rejects generated JavaScript containing the checkout root. Checkout setup provides the
+  ordinary package dependency graph. Public release packaging assembles that same bundle with a
+  pruned target-native dependency closure and an included Bun runtime; application source does not
+  address the resulting `node_modules` layout directly.
 - **The artifact is intentionally split.** Bun's `splitting: true` preserves the source graph's
   dynamic imports as sibling `chunk-*.js` files. The AI SDK adapter, provider implementations, Diff,
   Plan, settings panels and domain hubs stay out of the startup entrypoint until their capability or

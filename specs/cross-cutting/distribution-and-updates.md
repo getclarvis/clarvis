@@ -63,7 +63,7 @@ supplied by those packages remain in their copied package directories. Productio
 {
   "schema": 1,
   "repository": "getclarvis/clarvis",
-  "version": "0.0.1-beta",
+  "version": "0.0.2-beta",
   "target": "linux-x64",
   "files": [{ "path": "runtime/bun", "size": 80761952, "sha256": "..." }]
 }
@@ -83,7 +83,7 @@ A managed installation is:
 ├── current
 ├── update.lock
 └── versions/
-    ├── v0.0.1-beta/clarvis-payload...
+    ├── v0.0.2-beta/clarvis-payload...
     └── v<newer>/clarvis-payload...
 ```
 
@@ -102,10 +102,10 @@ dependency graph, adds the one OpenTUI native package for the target, copies the
 models.dev, and Vercel AI SDK license and notice set, removes every `.map`, writes the internal
 manifest, creates a gzip tar archive, and emits a sidecar SHA-256. Production:
 `packages/code/tooling/release/package.ts` and
-`packages/code/tooling/release/runtime-package-discovery.ts`. Generated call specifiers contribute
-to that closure only when they name an installed bare package root; relative, absolute, built-in,
-and module-internal `#` references are ignored, package subpaths resolve to their owning root, and an
-invalid name reaching manifest resolution is rejected before any path is read. Test:
+`packages/code/tooling/release/runtime-package-discovery.ts`. Generated static-import and call
+specifiers contribute to that closure only when they name an installed bare package root; relative,
+absolute, built-in, and module-internal `#` references are ignored, package subpaths resolve to their
+owning root, and an invalid name reaching manifest resolution is rejected before any path is read. Test:
 `packages/code/tests/unit/runtime-package-discovery.test.ts`. The release smoke re-extracts the
 archive, verifies the manifest, required notices/licenses, and zero-map rule, runs `--version` and
 `--help`, and on POSIX boots first paint under a real PTY using the packaged runtime. Test:
@@ -243,9 +243,9 @@ external actions to complete commit SHAs, and disables checkout credential reten
 Test: `tooling/tests/unit/release-readiness.test.ts` (workflow-security cases).
 
 **DIST-12.** Portable runtime discovery accepts only installed bare package roots from generated
-call specifiers. Path-like, built-in, and module-internal specifiers cannot become filesystem paths
-beneath `node_modules`; package subpaths resolve to their owning root, and manifest resolution
-rejects any invalid package name that reaches the closure.
+static-import and call specifiers. Path-like, built-in, and module-internal specifiers cannot become
+filesystem paths beneath `node_modules`; package subpaths resolve to their owning root, and manifest
+resolution rejects any invalid package name that reaches the closure.
 Production: `packages/code/tooling/release/runtime-package-discovery.ts`
 (`runtimePackageName`, `runtimePackageCandidates`, `assertRuntimePackageRoot`) and
 `packages/code/tooling/release/package.ts` (`packageManifest`, `discoveredRuntimePackages`). Test:
@@ -262,6 +262,14 @@ filesystem and Windows `PATH` mutation remain inside the shared operation lock. 
 legacy authentication, unauthenticated and linked-path refusal, cross-root ownership, cancellation,
 locked stale-launcher removal, missing-launcher Windows `PATH` cleanup, managed-file removal,
 preserved user/unknown-root state, and idempotence).
+
+**DIST-14.** Generated runtime JavaScript contains no literal or JavaScript-escaped build-host
+checkout root. Dependencies that resolve workers or assets relative to their package directory stay
+external and enter the portable archive through the target-native runtime closure. Production:
+`packages/code/tooling/artifact/build.ts` (`assertRelocatableBuild`, external package set) and
+`packages/code/tooling/artifact/contract.ts` (`assertRelocatableArtifact`). Test:
+`packages/code/tests/architecture/artifact-contract.test.ts` (POSIX and Windows build-root cases) and
+`packages/code/tooling/release/smoke.ts` (packaged runtime execution).
 
 ## 6. Failure modes and degradation
 
@@ -281,6 +289,7 @@ preserved user/unknown-root state, and idempotence).
 | Windows release smoke | manifest and fast paths run natively; real-PTY first paint remains covered by POSIX release jobs |
 | macOS Gatekeeper or Windows SmartScreen | unsigned beta may require explicit user approval; no bypass is automated |
 | Missing third-party notice or license marker | native release smoke fails before publication |
+| Build-host checkout path in generated JavaScript | artifact build fails before packaging |
 | Workflow dispatch without a tag | packages only; no release creation or remote mutation |
 
 Production: the root installers, `packages/code/src/update/**`, and

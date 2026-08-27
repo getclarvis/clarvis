@@ -5,12 +5,46 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+## [0.0.2-beta] - 2026-08-27
+
 ### Added
 
+- The official Clarvis marketplace is now the first built-in source, with explicit install and trust
+  boundaries plus compatibility for complete plugin, skill, hook, and MCP layouts from supported
+  host dialects.
+- Remote MCP servers can complete OAuth authorization, refresh, and late challenge flows while
+  keeping service credentials isolated from authorization requests and local callback state.
 - Portable installers now show numbered download, verification, staging, and activation progress and
   provide lock-serialized guarded uninstall modes that bind launcher ownership to the selected root,
   reject linked managed paths, stop on cancellation, clean managed Windows `PATH` entries, and
   preserve Clarvis user and workspace state.
+
+### Changed
+
+- First-run setup keeps the responsive Clarvis splash visible when the terminal has room and reports
+  pending and successful subscription clipboard and browser actions in place.
+- Built-in Lead profiles now allow 200 iterations, and workflow leaders use a separate bounded token
+  ledger so queued work can consume capacity released by earlier leaders.
+
+### Fixed
+
+- macOS startup now paints before deferred parser and recovery work, and queued keyboard events no
+  longer reach a renderer after teardown.
+- Subscription model catalogs use provider-specific compatibility revisions, expose published
+  reasoning efforts, and remain visibly loading until entitlement discovery settles.
+- Workflow leaders no longer inherit primary-run plans or memory, aggregate failure is preserved,
+  and dynamic workflow grants use an isolated memory-indexing pass instead of an invalid
+  continuation.
+- Portable JavaScript keeps package-relative logging workers external and rejects generated chunks
+  that embed the build host's absolute checkout path.
+
+### Security
+
+- Installer removal authenticates exact managed ownership, serializes against installs and updates,
+  rejects linked or ambiguous managed paths, and leaves credentials, sessions, workspace state,
+  unrelated launchers, and unknown files untouched.
+- MCP OAuth requires secure authorization endpoints and redirects, binds loopback callbacks to
+  PKCE/state, and keeps tokens out of settings, prompts, logs, plugin hooks, and resource headers.
 
 ## [0.0.1-beta] - 2026-08-26
 

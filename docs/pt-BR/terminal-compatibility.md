@@ -10,9 +10,10 @@ observado separadamente dos alvos de release configurados.
 ## Linha de base
 
 - O modo interativo exige uma PTY real e linhas e colunas suficientes para renderizar a interface.
-- Os arquivos para Linux GNU/glibc, macOS e Windows em x64 e arm64 estão disponíveis na
-  `v0.0.1-beta`. Os seis jobs nativos de pacote e smoke de instalação passaram. Alpine e outras
-  distribuições Linux exclusivas de musl não são alvos portáteis desta versão beta.
+- Os arquivos para Linux GNU/glibc, macOS e Windows em x64 e arm64 ficam disponíveis na
+  `v0.0.2-beta` depois que os seis jobs nativos de pacote e smoke de instalação passam pelo gate de
+  publicação. A mesma matriz passou pela primeira vez na `v0.0.1-beta`. Alpine e outras distribuições
+  Linux exclusivas de musl não são alvos portáteis desta versão beta.
 - Os jobs de release no Linux e no macOS verificam a primeira renderização em uma PTY real. No
   Windows, o smoke verifica o manifesto e os caminhos rápidos da CLI; a primeira renderização em uma
   PTY nativa do Windows continua sem verificação manual.
@@ -55,7 +56,7 @@ conservadora e `-p` quando o ambiente remoto não for adequado para uma interfac
 
 ## Leitores de tela e necessidades de movimento reduzido
 
-A primeira versão beta ainda não passou por uma auditoria de compatibilidade com leitores de tela.
+As versões beta ainda não passaram por uma auditoria de compatibilidade com leitores de tela.
 A atualização da tela inteira, as camadas de foco e as mudanças dinâmicas do transcript podem ser
 difíceis para algumas tecnologias assistivas. O modo headless com `clarvis -p --format text` ou
 `--format md` é a alternativa atual sem interface em tela cheia, mas não é apresentado como

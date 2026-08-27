@@ -9,9 +9,10 @@ documents observed behavior separately from configured release targets.
 ## Baseline
 
 - Interactive mode requires a real PTY and enough rows and columns to render the interface.
-- GNU/glibc Linux, macOS, and Windows x64/arm64 archives are available for `v0.0.1-beta`. All six
-  native package and install-smoke jobs passed. Alpine and other musl-only Linux distributions are
-  not portable-release targets for this beta.
+- GNU/glibc Linux, macOS, and Windows x64/arm64 archives are available for `v0.0.2-beta` after all six
+  native package and install-smoke jobs pass its publication gate. The same matrix first passed for
+  `v0.0.1-beta`. Alpine and other musl-only Linux distributions are not portable-release targets for
+  this beta.
 - The Linux and macOS release jobs assert first paint under a real PTY. Windows release smoke asserts
   the manifest and CLI fast paths; native Windows PTY first paint remains manually unverified.
 - `clarvis -p` is the text-oriented alternative for scripts, limited terminals, and assistive
@@ -53,7 +54,7 @@ not suitable for a full-screen UI.
 
 ## Screen readers and reduced-motion needs
 
-The first beta has not completed a screen-reader compatibility audit. Full-screen terminal repaint,
+The beta releases have not completed a screen-reader compatibility audit. Full-screen terminal repaint,
 focus layers, and dynamic transcript updates may be difficult for some assistive technologies.
 Headless `clarvis -p --format text` or `--format md` is the current non-curses alternative, but it is
 not presented as equivalent accessibility coverage.

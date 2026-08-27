@@ -6,24 +6,26 @@ Portable Clarvis releases are self-contained. They include the exact Bun runtime
 dependencies, so an end user does not need Bun, Node.js, a compiler, a package manager,
 administrator access, or a source checkout.
 
-> These commands work only after `v0.0.1-beta` and its assets appear on
+> These commands work only after `v0.0.2-beta` and its assets appear on
 > [GitHub Releases](https://github.com/getclarvis/clarvis/releases). Confirm the release exists before
 > running an installer.
 
 ## Supported release targets
 
-| Operating system | Architectures        | Archive target                 | `v0.0.1-beta` release evidence                                   |
-| ---------------- | -------------------- | ------------------------------ | ---------------------------------------------------------------- |
-| Linux (glibc)    | x64, arm64           | `linux-x64`, `linux-arm64`     | Native package and install smoke passed; PTY first paint covered |
-| macOS            | Intel, Apple silicon | `darwin-x64`, `darwin-arm64`   | Native package and install smoke passed; PTY first paint covered |
-| Windows          | x64, arm64           | `windows-x64`, `windows-arm64` | Native package and install smoke passed; CLI fast paths covered  |
+| Operating system | Architectures        | Archive target                 | `v0.0.2-beta` publication gate                               |
+| ---------------- | -------------------- | ------------------------------ | ------------------------------------------------------------ |
+| Linux (glibc)    | x64, arm64           | `linux-x64`, `linux-arm64`     | Native package/install smoke and PTY first paint required    |
+| macOS            | Intel, Apple silicon | `darwin-x64`, `darwin-arm64`   | Native package/install smoke and PTY first paint required    |
+| Windows          | x64, arm64           | `windows-x64`, `windows-arm64` | Native package/install/uninstall and CLI fast paths required |
 
-The [official `v0.0.1-beta` release workflow](https://github.com/getclarvis/clarvis/actions/runs/32998576908)
-completed all six native target jobs. On Linux and macOS, release smoke includes first paint under a
-real PTY. On Windows, it verifies the manifest, `--version`, `--help`, installation, and
-reinstallation without asserting native PTY first paint. A manual Windows launch and SmartScreen
-observation remain separate from this automated evidence. Headless use is available with
-`clarvis -p`.
+`v0.0.2-beta` is published only after the official release workflow completes all six native target
+jobs and verifies their complete asset set. The
+[first beta's workflow](https://github.com/getclarvis/clarvis/actions/runs/32998576908) is the
+historical baseline for that matrix. On Linux and macOS, release smoke includes first paint under a
+real PTY. On Windows, it verifies the manifest, `--version`, `--help`, installation,
+reinstallation, and guarded uninstall without asserting native PTY first paint. A manual Windows
+launch and SmartScreen observation remain separate from this automated evidence. Headless use is
+available with `clarvis -p`.
 
 ## Linux and macOS
 
@@ -34,7 +36,7 @@ these portable assets.
 Install from the versioned beta tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.1-beta/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.sh | sh
 ```
 
 If you prefer to inspect the installer before executing it, download it first (`less` is used here
@@ -45,7 +47,7 @@ only for review):
 set -e
 installer=$(mktemp "${TMPDIR:-/tmp}/clarvis-install.XXXXXX")
 trap 'rm -f "$installer"' 0 HUP INT TERM
-curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.1-beta/install.sh -o "$installer"
+curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.sh -o "$installer"
 less "$installer"
 sh "$installer"
 )
@@ -62,7 +64,7 @@ Windows requires PowerShell with `Invoke-RestMethod` (`irm`), `Invoke-Expression
 `Invoke-WebRequest`, `Get-FileHash`, and the system `tar.exe`.
 
 ```powershell
-irm https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.1-beta/install.ps1 | iex
+irm https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.ps1 | iex
 ```
 
 To inspect the PowerShell installer before executing it:
@@ -70,7 +72,7 @@ To inspect the PowerShell installer before executing it:
 ```powershell
 $installer = Join-Path ([System.IO.Path]::GetTempPath()) ("clarvis-install-" + [guid]::NewGuid() + ".ps1")
 try {
-  Invoke-WebRequest https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.1-beta/install.ps1 -OutFile $installer -ErrorAction Stop
+  Invoke-WebRequest https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.ps1 -OutFile $installer -ErrorAction Stop
   Get-Content $installer
   & $installer
 } finally {
@@ -93,11 +95,9 @@ For the detected operating system and architecture, the installer:
 5. refuses to replace an unrelated command or a POSIX launcher owned by another install root;
 6. activates the new version only after those checks succeed.
 
-The installer source on `main`, added after the published `v0.0.1-beta` tag, also prints the selected
-version, detected target, resolved destinations, and a numbered status line before each download,
-checksum, extraction, staged CLI smoke, and activation phase. That output becomes a versioned
-end-user surface only with a later release; the beta-tag command above still runs the original
-installer.
+The `v0.0.2-beta` installer prints the selected version, detected target, resolved destinations, and
+a numbered status line before each download, checksum, extraction, staged CLI smoke, and activation
+phase.
 
 Each archive also has an internal `release.json` manifest with the exact path, size, and SHA-256 of
 every payload file. Clarvis verifies that manifest again before an update is activated.
@@ -125,33 +125,43 @@ does not select prereleases.
 
 ## Unsigned beta binaries
 
-The first beta is not yet code-signed or notarized. macOS Gatekeeper or Windows SmartScreen may ask
-the user to confirm a downloaded application. Read the platform warning, confirm the release URL and
-SHA-256, and follow the operating system's normal approval UI. The Clarvis installers do not disable
-or bypass platform protections.
+The beta binaries are not yet code-signed or notarized. macOS Gatekeeper or Windows SmartScreen may
+ask the user to confirm a downloaded application. Read the platform warning, confirm the release URL
+and SHA-256, and follow the operating system's normal approval UI. The Clarvis installers do not
+disable or bypass platform protections.
 
 ## Remove Clarvis
 
-The published `v0.0.1-beta` installer has no automatic uninstall mode. A trusted checkout of the
-current repository source now supports guarded removal:
+The `v0.0.2-beta` installer supports guarded removal. Download the versioned script so you can inspect
+the exact code before executing the destructive mode.
 
 Linux or macOS:
 
 ```bash
-sh ./install.sh --uninstall
+(
+set -e
+installer=$(mktemp "${TMPDIR:-/tmp}/clarvis-uninstall.XXXXXX")
+trap 'rm -f "$installer"' 0 HUP INT TERM
+curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.sh -o "$installer"
+less "$installer"
+sh "$installer" --uninstall
+)
 ```
 
 Windows PowerShell:
 
 ```powershell
-& .\install.ps1 -Uninstall
+$installer = Join-Path ([System.IO.Path]::GetTempPath()) ("clarvis-uninstall-" + [guid]::NewGuid() + ".ps1")
+try {
+  Invoke-WebRequest https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.ps1 -OutFile $installer -ErrorAction Stop
+  Get-Content $installer
+  & $installer -Uninstall
+} finally {
+  Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
+}
 ```
 
-These commands are deliberately local: do not substitute the `v0.0.1-beta` URLs above, whose tagged
-scripts predate this option. A versioned remote uninstall command requires a later product version
-and release decision.
-
-The source uninstaller prints the resolved targets before changing them. It authenticates the
+The uninstaller prints the resolved targets before changing them. It authenticates the
 managed marker (or the complete legacy launcher/current/manifest layout), acquires the same exclusive
 lock as install and update, and refuses an unrelated or concurrently changing installation. A POSIX
 launcher is owned only when it names the selected install root. Linked managed directories and
@@ -162,8 +172,9 @@ the same lock, even if the launcher is already missing; set `CLARVIS_SKIP_PATH=1
 unchanged. Unknown files and unrelated launchers are preserved and reported. Running uninstall again
 is a successful no-op even when those preserved artifacts remain.
 
-Without a trusted checkout containing that mode, remove `v0.0.1-beta` manually. On Linux or macOS,
-remove only the marked launcher at
+The same guarded mode can authenticate and remove the complete legacy layout created by
+`v0.0.1-beta`. If you choose manual removal instead, on Linux or macOS remove only the marked
+launcher at
 `${CLARVIS_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}/clarvis` and the Clarvis directory at
 `${CLARVIS_INSTALL_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/clarvis}`. On Windows, remove the
 Clarvis directory beneath `%LOCALAPPDATA%` and remove its `bin` entry from the user `PATH`.
@@ -174,7 +185,7 @@ only after backing up anything needed and confirming that stored provider creden
 are no longer required.
 
 If installation paths were overridden, pass the same `CLARVIS_INSTALL_ROOT` and, on POSIX,
-`CLARVIS_BIN_DIR` values to the source uninstaller or resolve those paths before manual removal. The
+`CLARVIS_BIN_DIR` values to the versioned uninstaller or resolve those paths before manual removal. The
 variables are documented in
 [`install.sh`](https://github.com/getclarvis/clarvis/blob/main/install.sh) and
 [`install.ps1`](https://github.com/getclarvis/clarvis/blob/main/install.ps1).

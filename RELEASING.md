@@ -43,7 +43,7 @@ Use an up-to-date checkout and the exact Bun version pinned by `mise.toml`:
 
 ```bash
 bun install --frozen-lockfile
-RELEASE_TAG=v0.0.1-beta bun run check:release
+RELEASE_TAG=v0.0.2-beta bun run check:release
 bun run build
 bun run typecheck
 bun run lint

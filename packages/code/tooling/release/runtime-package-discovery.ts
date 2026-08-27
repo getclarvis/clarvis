@@ -46,7 +46,7 @@ export function assertRuntimePackageRoot(name: string): void {
 }
 
 /**
- * Find package roots referenced by calls retained in one generated artifact source.
+ * Find package roots referenced by static imports or calls in one generated artifact source.
  *
  * @remarks This is deliberately filesystem-independent. The packaging caller separately requires
  *   each candidate to exist under the installed root before adding it to the runtime closure.
@@ -62,6 +62,9 @@ export function runtimePackageCandidates(source: string): string[] {
     add(match[1]);
   }
   for (const match of source.matchAll(/createRequire\(import\.meta\.url\)\(["']([^"']+)["']\)/g)) {
+    add(match[1]);
+  }
+  for (const match of source.matchAll(/\b(?:from|import)\s*["']([^"']+)["']/g)) {
     add(match[1]);
   }
   return [...found].sort();

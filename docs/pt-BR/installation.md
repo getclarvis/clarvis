@@ -91,8 +91,15 @@ Para o sistema operacional e a arquitetura detectados, o instalador:
 2. exige uma única entrada exata de checksum e verifica os bytes baixados;
 3. extrai o conteúdo em um diretório de preparação privado;
 4. verifica se a CLI preparada informa a versão solicitada;
-5. recusa substituir um comando não relacionado no caminho do inicializador;
+5. recusa substituir um comando não relacionado ou um inicializador POSIX pertencente a outra raiz
+   de instalação;
 6. ativa a nova versão somente depois que todas as verificações passam.
+
+O código-fonte do instalador na `main`, adicionado depois da tag publicada `v0.0.1-beta`, também
+mostra a versão selecionada, o alvo detectado, os destinos resolvidos e uma linha de status numerada
+antes de cada etapa de download, checksum, extração, smoke da CLI preparada e ativação. Essa saída só
+se torna uma interface versionada para o usuário final em uma release posterior; o comando da tag
+beta acima ainda executa o instalador original.
 
 Cada arquivo compactado também contém um manifesto interno `release.json` com o caminho, o tamanho e o SHA-256
 exatos de cada item. O Clarvis verifica esse manifesto novamente antes de ativar uma atualização.
@@ -128,10 +135,40 @@ operacional. Os instaladores do Clarvis não desativam nem contornam as proteç�
 
 ## Remover o Clarvis
 
-A primeira versão beta não inclui um desinstalador automático. Antes de remover qualquer item,
-localize a raiz gerenciada e o inicializador e confirme que eles pertencem ao Clarvis.
+O instalador publicado em `v0.0.1-beta` não tem um modo de desinstalação automática. Um checkout
+confiável do código-fonte atual agora permite a remoção protegida:
 
-No Linux ou macOS, remova apenas o inicializador identificado em
+Linux ou macOS:
+
+```bash
+sh ./install.sh --uninstall
+```
+
+Windows PowerShell:
+
+```powershell
+& .\install.ps1 -Uninstall
+```
+
+Esses comandos são intencionalmente locais: não substitua pelos URLs de `v0.0.1-beta` acima, pois os
+scripts daquela tag são anteriores a essa opção. Um comando remoto versionado de desinstalação exige
+uma decisão posterior de versão e release do produto.
+
+O desinstalador no código-fonte mostra os alvos resolvidos antes de alterá-los. Ele autentica o
+marcador gerenciado (ou o layout legado completo com inicializador, `current` e manifesto), adquire o
+mesmo lock exclusivo da instalação e atualização e recusa uma instalação não relacionada ou em
+alteração concorrente. Um inicializador POSIX só é considerado gerenciado quando aponta para a raiz
+de instalação selecionada. Diretórios gerenciados vinculados e destinos de marcador/ativação que não
+sejam arquivos são recusados; um sinal de cancelamento encerra a operação depois de limpar o lock.
+Ele remove as releases gerenciadas, `current`, o marcador e o inicializador correspondente. No
+Windows, também remove do `PATH` do usuário a entrada `bin` gerenciada exata enquanto mantém o mesmo
+lock, mesmo se o inicializador já estiver ausente; defina `CLARVIS_SKIP_PATH=1` para manter o `PATH`
+inalterado. Arquivos desconhecidos e inicializadores não relacionados são preservados e informados.
+Executar a desinstalação novamente é uma operação bem-sucedida sem alterações, mesmo quando esses
+artefatos preservados permanecem.
+
+Sem um checkout confiável que contenha esse modo, remova `v0.0.1-beta` manualmente. No Linux ou macOS,
+remova apenas o inicializador identificado em
 `${CLARVIS_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}/clarvis` e o diretório do Clarvis em
 `${CLARVIS_INSTALL_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/clarvis}`. No Windows, remova o
 diretório do Clarvis dentro de `%LOCALAPPDATA%` e retire sua entrada `bin` do `PATH` do usuário.
@@ -141,7 +178,8 @@ padrão e ficam separadas do binário gerenciado. Remover o aplicativo não apag
 somente depois de fazer backup do necessário e confirmar que as credenciais de provedores e sessões
 armazenadas não são mais necessárias.
 
-Os caminhos de instalação podem ser substituídos pelas variáveis de operador documentadas em
+Se os caminhos de instalação foram substituídos, passe os mesmos valores de `CLARVIS_INSTALL_ROOT` e,
+no POSIX, `CLARVIS_BIN_DIR` para o desinstalador no código-fonte ou resolva esses caminhos antes da
+remoção manual. As variáveis estão documentadas em
 [`install.sh`](https://github.com/getclarvis/clarvis/blob/main/install.sh) e
-[`install.ps1`](https://github.com/getclarvis/clarvis/blob/main/install.ps1). Se você usou uma
-substituição, remova os caminhos resolvidos em vez dos padrões.
+[`install.ps1`](https://github.com/getclarvis/clarvis/blob/main/install.ps1).

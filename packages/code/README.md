@@ -66,7 +66,14 @@ texts; Bun's source and relinking route; a generated runtime-package inventory; 
 package-owned license files.
 The installer also verifies the release-level `SHA256SUMS`, confirms that the staged CLI reports the
 requested version, stores it under `versions/v<version>`, and writes `current` only after every
-earlier step succeeds.
+earlier step succeeds. Both root installers print the target, resolved destination, and numbered
+download, verification, staging, and activation phases. `install.sh --uninstall` and
+`install.ps1 -Uninstall` authenticate the installer-owned marker (or the complete legacy managed
+layout), share the updater's mutation lock through launcher and Windows `PATH` cleanup, and remove
+only managed application files. POSIX launcher ownership is bound to the selected install root;
+linked managed directories and non-file activation/marker destinations are refused. Cancellation
+stops the operation, repeated removal is a successful no-op, and Clarvis configuration,
+credentials, sessions, and workspace data remain untouched.
 
 `clarvis --update` is an explicit managed-install operation. It reads the bounded public GitHub
 release index, selects only a newer version allowed by the current channel, requires GitHub's

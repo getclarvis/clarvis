@@ -95,6 +95,10 @@ describe("the agent fleet Clarvis ships", () => {
 });
 
 describe("the shipped admiral agent", () => {
+  test("uses the full lead-session soft iteration allowance", () => {
+    expect(ADMIRAL.frontmatter.iteration_limit).toBe(200);
+  });
+
   test("carries the workflow grant, which is the only thing that routes a run as a workflow", () => {
     expect(ADMIRAL.frontmatter.grants).toContain("workflow");
   });
@@ -131,6 +135,10 @@ describe("the shipped admiral agent", () => {
 });
 
 describe("the shipped marshall agent", () => {
+  test("uses the full lead-session soft iteration allowance", () => {
+    expect(MARSHALL.frontmatter.iteration_limit).toBe(200);
+  });
+
   test("keeps the user informed during multi-step tool work without pausing before the tool", () => {
     expect(MARSHALL.body).toContain("begin with a one- or two-sentence visible update");
     expect(MARSHALL.body).toContain("call it immediately after the update");

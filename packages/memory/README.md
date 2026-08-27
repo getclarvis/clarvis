@@ -233,7 +233,11 @@ array and a rendered run digest. Always correct, and merely more expensive. It i
 what runs when the indexed run left no resumable `final_context`, declared MCP
 servers (whose tools are part of the cached array), or was answered by a
 different model than the one indexing it — a cache belongs to a model, so setting
-`memory.model` to something cheaper is choosing this path deliberately.
+`memory.model` to something cheaper is choosing this path deliberately. It also
+uses this path when a stored profile carries a grant the pass deps do not declare;
+workflow managers are the common case because their capability is injected only
+for the primary manager run. Retrying that continuation would fail validation
+before a model call, so the digest path preserves memory indexing instead.
 `IndexReport.continuation_blocker` reports which applied.
 
 The host composes the continuation's deps (`IndexerRuntime.passDeps`) and must
@@ -242,6 +246,9 @@ keeps a carried seed block only while its marker is still live, so a registered
 but inactive capability makes the block the continuation carried get dropped out
 of the middle of the transcript. A capability the run never registers is
 unrecognised instead, and its block survives in place.
+The ordinary memory capability is replaced, not duplicated, by the pass form
+whose `onRunEnd` is disabled; every other long-lived capability, including tasks,
+stays in registration order.
 
 ## The index queue
 
@@ -258,6 +265,12 @@ test move time by hand.
 each other's jobs. `stop()` closes every worker and prevents the factory from
 creating another one. Tool-server providers are likewise bound through
 `serverPort.forOwner(owner)` before their model-facing tools are built.
+
+Kernel construction does not call `start(owner)`. A host explicitly releases durable queue recovery
+after its first-paint or readiness boundary, so old index jobs cannot put model inference on the
+critical boot path. `poke(owner)` remains lazy: a newly completed primary run can enqueue and begin
+draining without waiting for a restart. Auxiliary workflow leader runs receive no memory capability
+and enqueue no jobs; their primary manager contributes the workflow's one durable job.
 
 Queue claims carry a `lease_owner`, an opaque fencing token and an expiry. While an index pass runs,
 the worker renews that exact claim at half its lease interval. Heartbeats and complete/fail/release

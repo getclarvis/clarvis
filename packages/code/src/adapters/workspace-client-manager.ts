@@ -23,6 +23,7 @@ export type WorkspaceClientOptions = CreateFileKernelOptions;
  */
 export class WorkspaceClientManager {
   private closed = false;
+  private memoryRecoveryStarted = false;
 
   private constructor(
     private kernel: Awaited<ReturnType<typeof createFileKernel>>,
@@ -51,11 +52,19 @@ export class WorkspaceClientManager {
     return { client, workspace: this.current, release: async () => {} };
   }
 
+  /** Release durable memory recovery only after the interactive shell is usable. */
+  startMemoryRecovery(): void {
+    if (this.closed || this.memoryRecoveryStarted) return;
+    this.memoryRecoveryStarted = true;
+    this.kernel.startMemoryRecovery();
+  }
+
   /** Rebuild the same workspace kernel during an explicit backend reconnect. */
   async invalidate(workspaceId: string): Promise<void> {
     if (workspaceId !== this.current.id) throw new Error("this process is pinned to one workspace");
     await this.kernel.close();
     this.kernel = await createFileKernel(this.options);
+    if (this.memoryRecoveryStarted) this.kernel.startMemoryRecovery();
   }
 
   async close(): Promise<void> {

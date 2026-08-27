@@ -15,7 +15,7 @@ function mount(
   catalogAvailable = true,
   kind: "openai-compatible" | "openai-codex" = "openai-compatible",
   persistEfforts = true,
-  entitledEfforts?: string[],
+  entitledEfforts?: string[] | Promise<string[]>,
 ) {
   const { keymap, press } = createFakeKeymap();
   const [version, setVersion] = createSignal(0);
@@ -82,13 +82,16 @@ function mount(
         ? {}
         : {
             modelsService: {
-              getEntitled: async () => ({
-                id: kind,
-                name: "Subscription",
-                kind,
-                needs_base_url: false,
-                models: [{ id: "small", reasoning_efforts: entitledEfforts }],
-              }),
+              getEntitled: async () => {
+                const reasoning_efforts = await entitledEfforts;
+                return {
+                  id: kind,
+                  name: "Subscription",
+                  kind,
+                  needs_base_url: false,
+                  models: [{ id: "small", reasoning_efforts }],
+                };
+              },
             },
           }),
       notify: (message) => notes.push(message),
@@ -161,5 +164,32 @@ test("/effort loads entitled levels for a legacy subscription model", async () =
   press("return");
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect(writes).toEqual([{ scope: "workspace", patch: { default_reasoning_effort: "high" } }]);
+  t.renderer.destroy();
+});
+
+test("/effort renders subscription loading instead of a false unpublished state", async () => {
+  let resolveEfforts!: (levels: string[]) => void;
+  const pending = new Promise<string[]>((resolve) => {
+    resolveEfforts = resolve;
+  });
+  const { view } = mount(
+    ["reasoning"],
+    ["low", "medium", "high"],
+    false,
+    "openai-codex",
+    false,
+    pending,
+  );
+  const t = await openRender(view as never, { width: 100, height: 20 });
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("Loading subscription effort levels");
+  expect(t.captureCharFrame()).not.toContain("not published");
+
+  resolveEfforts(["low", "medium", "high", "xhigh", "max"]);
+  await pending;
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("5 model-supported levels");
+  expect(t.captureCharFrame()).not.toContain("Loading subscription effort levels");
   t.renderer.destroy();
 });

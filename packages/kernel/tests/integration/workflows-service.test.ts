@@ -1080,7 +1080,7 @@ describe("WorkflowsService", () => {
       logger.records.some(({ message }) => message.includes("coalesced record save failed")),
     ).toBe(true);
     const terminal = backing.get(handle.execution_id)!;
-    expect(terminal.status).toBe("completed");
+    expect(terminal.status).toBe("failed");
     expect(terminal.edges[0]).toMatchObject({ kind: "manager", status: "completed" });
     expect(terminal.edges[1]).toMatchObject({ kind: "leader" });
     expect(terminal.edges[1]?.status).not.toBe("running");
@@ -1263,28 +1263,30 @@ Say what was found.
 });
 
 /** A {@link MemoryFactory} over a real file-backed wiki in `root`, with no
- * indexer model — enough to contribute the seven wiki tools. */
-function memoryFactoryOverTree(root: string): MemoryFactory {
+ * indexer model — enough to contribute the seven wiki tools and inspect jobs. */
+function memoryFactoryOverTree(root: string): {
+  factory: MemoryFactory;
+  memory: ReturnType<typeof createFileMemory>;
+} {
   const memory = createFileMemory({ root: join(root, "memory") });
   return {
-    forOwner: () => undefined,
-    forOwnerControlPlane: () => memory,
-    start: () => {},
-    poke: () => {},
-    stop: async () => {},
-    subscribeToRun: () => () => {},
+    memory,
+    factory: {
+      forOwner: () => undefined,
+      forOwnerControlPlane: () => memory,
+      start: () => {},
+      poke: () => {},
+      stop: async () => {},
+      subscribeToRun: () => () => {},
+    },
   };
 }
 
-describe("deps-level capabilities reach a workflow leader", () => {
-  // `run-leader.ts` calls `executeRun` with `deps: ctx.deps` and no `capabilities`
-  // argument, so a leader inherits exactly `deps.capabilities` and nothing else.
-  // That is why the kernel folds memory into the deps object rather than passing
-  // it per call site the way it passes `workflowsCap` — the opposite choice would
-  // strip `edit_memory` from every leader, with nothing failing.
-  it("offers the entry agent's memory write tools to a leader, not just to the manager", async () => {
+describe("workflow memory ownership", () => {
+  it("gives memory only to the primary manager and enqueues exactly its one job", async () => {
     const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-mem-"));
     const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-mem-global-"));
+    const memory = memoryFactoryOverTree(ws);
     const deps = buildDeps(
       ws,
       [],
@@ -1304,7 +1306,7 @@ describe("deps-level capabilities reach a workflow leader", () => {
         },
         { name: "leader", when: () => true, script: [{ text: "leader findings" }] },
       ],
-      [createMemoryCapability(memoryFactoryOverTree(ws))],
+      [createMemoryCapability(memory.factory)],
     );
     const kernel = createInProcessKernel({
       deps,
@@ -1326,15 +1328,17 @@ describe("deps-level capabilities reach a workflow leader", () => {
     expect((await handle.done).status).toBe("completed");
 
     const llm = deps.llm as MockLLM;
+    const managerCalls = llm.calls.filter(IS_MANAGER);
     const leaderCalls = llm.calls.filter((c) => !IS_MANAGER(c));
     expect(leaderCalls.length).toBeGreaterThan(0);
     const offered = (call: (typeof leaderCalls)[number]): string[] =>
       (call.tools ?? []).map((t) => t.wireName);
-    // Read tools reach every agent; the write half is the entry-agent gate, and a
-    // leader IS the entry agent of its own run.
-    expect(leaderCalls.some((c) => offered(c).includes("read_memory"))).toBe(true);
-    expect(leaderCalls.some((c) => offered(c).includes("write_memory"))).toBe(true);
-    expect(leaderCalls.some((c) => offered(c).includes("edit_memory"))).toBe(true);
+    expect(managerCalls.some((c) => offered(c).includes("read_memory"))).toBe(true);
+    expect(managerCalls.some((c) => offered(c).includes("write_memory"))).toBe(true);
+    expect(leaderCalls.every((c) => !offered(c).includes("read_memory"))).toBe(true);
+    expect(leaderCalls.every((c) => !offered(c).includes("write_memory"))).toBe(true);
+    expect(leaderCalls.every((c) => !offered(c).includes("edit_memory"))).toBe(true);
+    expect((await memory.memory.jobs()).map((job) => job.run_id)).toEqual([handle.execution_id]);
 
     await kernel.close();
     rmSync(ws, { recursive: true, force: true });

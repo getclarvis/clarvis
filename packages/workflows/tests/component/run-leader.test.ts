@@ -83,6 +83,7 @@ describe("runLeader", () => {
     const ledger = createWorkflowLedger(1);
     ledger.add(usage(1));
     let assembled = false;
+    let exhausted = false;
     const result = await runLeader(
       { title: "leader", prompt: "hello" },
       makeCtx({
@@ -91,6 +92,9 @@ describe("runLeader", () => {
         assemble: (spec) => {
           assembled = true;
           return leaderAssembler(spec);
+        },
+        onBudgetExhausted: () => {
+          exhausted = true;
         },
       }),
       "leader-fixed",
@@ -103,6 +107,7 @@ describe("runLeader", () => {
       usage: { iterations_used: 0, elapsed_ms: 0, by_agent: [] },
     });
     expect(assembled).toBe(false);
+    expect(exhausted).toBe(true);
     expect(runDeps.calls).toHaveLength(0);
   });
 

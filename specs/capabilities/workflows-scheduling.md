@@ -9,7 +9,7 @@
 (**leaders**). The manager never calls `executeRun` itself: it calls one of four model-facing tools,
 and the package registers each leader as a background child in the run's supervision registry, runs
 it through `runLeader` (`packages/workflows/src/run-leader.ts:52`), meters its output tokens against
-a tree-wide ledger (`packages/workflows/src/ledger.ts:72`), and bounds how many run at once with a
+a workflow-child ledger (`packages/workflows/src/ledger.ts:72`), and bounds how many run at once with a
 FIFO semaphore (`packages/workflows/src/concurrency.ts:11`).
 
 The four tools sit on a ladder of how much structure the caller supplies: `run_leader` starts one
@@ -138,7 +138,7 @@ when the workspace ships no workflow documents (`packages/workflows/src/run-work
 | Key | Schema | Default |
 |---|---|---|
 | `max_concurrency` | int, positive, `.max(WORKFLOWS_MAX_CONCURRENCY)` = 20 | 4 (`packages/workflows/src/settings.ts:83`) |
-| `budget_tokens` | int, positive, **nullable** (`null` = unbounded) | 262 144 (`packages/workflows/src/settings.ts:84`) |
+| `budget_tokens` | int, positive, **nullable** (`null` = unbounded) | 640 000 000 (`packages/workflows/src/settings.ts:84`): four 160-million-token shares at the default concurrency, intentionally larger in aggregate than the manager's primary session budget |
 
 There is **no per-run request param**: the spec declares no `requestParams`
 (`packages/workflows/src/settings.ts:120-125`), and the TSDoc states the capability is constructed by the host's workflow
@@ -300,16 +300,17 @@ falling back to the literal `"[unserializable result]"` if that throws (`package
    (`packages/workflows/src/capability.ts:142`). Absent → one `warn` (`event: "workflow.capability_inactive"`,
    `reason: "no_registry"`) and `null` (`packages/workflows/src/capability.ts:143-153`).
 4. `forAgent(scope)` computes `manager = scope.entry && scope.grants.includes(WORKFLOW_GRANT)`
-   (`packages/workflows/src/capability.ts:102`). It always returns a contribution object; `attach` returns
-   `{ outputBudget: ctx.ledger }` alone for a non-manager (`packages/workflows/src/capability.ts:107`) and
-   `{ tools, handlers, outputBudget, advertised: true }` for the manager (`packages/workflows/src/capability.ts:108-130`).
+   (`packages/workflows/src/capability.ts`). It always returns a contribution object; `attach` returns
+   `{ outputBudget: ctx.ledger }` alone for a non-manager and
+   `{ tools, handlers, advertised: true }` for the manager. The manager therefore remains on the
+   primary session budget while its children use the workflow ledger.
 5. `reportInactive` splits the refusal by reason: a **sub-agent** (`!scope.entry`) is a `debug` note
    (`packages/workflows/src/capability.ts:178-184`); an **entry** agent without the grant is a `warn`
    (`packages/workflows/src/capability.ts:185-188`).
 
 | (scope) | tools | outputBudget | log |
 |---|---|---|---|
-| entry + `workflow` grant | all contributed tools | `ctx.ledger` | none |
+| entry + `workflow` grant | all contributed tools | none (primary session budget) | none |
 | entry, no grant | none | `ctx.ledger` | `warn reason=no_grant` (`packages/workflows/src/capability.ts:185`) |
 | non-entry (sub-agent) | none | `ctx.ledger` | `debug reason=not_entry` (`packages/workflows/src/capability.ts:179`) |
 | run with no registry | capability is `null` | — | `warn reason=no_registry` (`packages/workflows/src/capability.ts:144`) |
@@ -677,8 +678,9 @@ Three counters: `spent`, `reserved`, and `total` (`packages/workflows/src/ledger
 - `reserveOutput(n)` (the `OutputTokenBudget` port) grants `min(n, remaining())`, and `settle(used)`
   converts `min(amount, used)` into spend exactly once (`packages/workflows/src/ledger.ts:81-116`).
 - `reserve(maxConcurrent)` — the leader-level claim — takes
-  `min(headroom, max(1, ceil(headroom / (max(1,maxConcurrent) + 1))))` (`packages/workflows/src/ledger.ts:167-173`). The
-  `+ 1` is the manager's own share (`packages/workflows/src/ledger.ts:55-59`). Each leader reservation is itself a nested
+  `min(headroom, max(1, ceil(headroom / max(1,maxConcurrent))))` (`packages/workflows/src/ledger.ts`,
+  `createWorkflowLedger`). The manager has an independent primary-session budget and consumes no
+  share. Each leader reservation is itself a nested
   budget: `reserveOutput` inside it draws down `amount - childSpent - childReserved`
   (`packages/workflows/src/ledger.ts:181-204`), `reconcile(usage)` charges any gap the model calls did not settle
   (`packages/workflows/src/ledger.ts:205-212`), and `release()` returns the *unused* part `amount - childSpent`
@@ -751,9 +753,10 @@ child settles `stopped`, not `failed` — is at `packages/workflows/src/capabili
 `packages/workflows/tests/component/work-items.test.ts:482-500`.
 
 **INV-W6.** Only an **entry** agent carrying the `workflow` grant is contributed the spawn tools;
-every other agent in the manager tree gets the tree budget and no tools. Production:
-`packages/workflows/src/capability.ts:102`, `:107`. Test:
-`packages/workflows/tests/component/capability.test.ts:51-64`.
+that manager gets no workflow `outputBudget`, while every other agent in its primary run gets the
+workflow-child ledger and no tools. Production: `createWorkflowsCapability` in
+`packages/workflows/src/capability.ts`. Test: `packages/workflows/tests/component/capability.test.ts`
+(`keeps the manager on its session budget while carrying the leader budget to descendants`).
 
 **INV-W7.** Every contributed spawn tool's `ToolEffect` is `spawn_run`, never `control`. Production:
 `packages/workflows/src/capability.ts:95-97`. Test:
@@ -1022,9 +1025,10 @@ leader profiles by the workflows service (`packages/kernel/src/workflows/workflo
   (`packages/workflows/src/interpolate.ts:64`) has a unit test (`packages/workflows/tests/unit/interpolate.test.ts:54`) but no `src/` caller
   inside this document's scope — its consumer is presumably `artifact.ts`'s load-time validation, which
   is not covered here.
-- **`WorkflowLedger.reserve` sizing rationale.** The `+ 1` manager share and the `ceil` are documented
-  at `packages/workflows/src/ledger.ts:55-59` and pinned numerically at `packages/workflows/tests/unit/ledger.test.ts:89-97`, but why 1 (rather
-  than a fraction) is the manager's share is not established by any code or test string.
+- **`WorkflowLedger.reserve` sizing rationale.** Division by `maxConcurrent` and `ceil` are
+  documented by `WorkflowLedger.reserve` and pinned numerically in
+  `packages/workflows/tests/unit/ledger.test.ts`; the separate manager budget is a topology rule,
+  not another provisional share in this arithmetic.
 - **`MANAGER_REGISTRY_HEADROOM = 4`.** `packages/workflows/src/settings.ts:41-56` enumerates three slot consumers and says
   "four covers the shapes a manager actually produces"; no test derives 4 from those three, so the
   constant is a judgement that cannot be verified mechanically.

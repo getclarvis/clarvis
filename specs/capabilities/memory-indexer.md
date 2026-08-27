@@ -107,6 +107,16 @@ Construction inputs that matter here: `runDeps` and `passRunDeps` are **thunks**
 factory, so an eager value would be circular (`packages/kernel/src/file-kernel.ts:861-864`).
 `loadPolicy` is a thunk for the same reason edits should take effect next pass (`packages/memory/src/factory.ts:63`).
 
+`MemoryFactory` does not start itself. Kernel construction caches owner services but performs no
+memory inference; the host calls `InProcessKernel.startMemoryRecovery()` after its own paint or
+readiness boundary. That idempotent call starts resident owners, and owners built afterwards start
+inside `buildOwner`. A normal primary run still calls `poke(owner)` after enqueue, so deferring old
+queue recovery does not make new learning wait for another boot. Production:
+`packages/kernel/src/kernel.ts` (`startMemoryRecovery`, `buildOwner`) and
+`packages/memory/src/capability.ts` (`onRunEnd`). Test:
+`packages/kernel/tests/integration/owner-isolation.test.ts` (`starts durable memory recovery only
+after the host releases boot`).
+
 ### 2.4 `health(args)` — deterministic diagnostics
 
 `HealthArgs` = `{ tx: Pick<MemoryTx,"list"|"read"|"readBounded">, now, config?, jobs?,
@@ -481,7 +491,7 @@ which case `note` is `"nothing-to-record"` (`packages/memory/src/indexer/run.ts:
 ```
 passDeps === undefined                        → isolated, blocker "no-pass-deps"      (packages/memory/src/indexer/run.ts:351)
 subject = traceStore.getById(owner, run_id)   (packages/memory/src/indexer/run.ts:329)
-continuationBlocker(subject, modelRef) === null && subject !== null
+continuationBlocker(subject, modelRef, knownGrants(passDeps)) === null && subject !== null
                                               → continuation, capability PREPENDED    (packages/memory/src/indexer/run.ts:331-347)
 otherwise                                     → isolated, blocker = that reason       (packages/memory/src/indexer/run.ts:349)
 ```
@@ -495,7 +505,17 @@ otherwise                                     → isolated, blocker = that reaso
 | 3 | `(request.servers ?? []).length > 0` | `mcp-servers-declared` |
 | 4 | `total_input_tokens >= 100_000` and `total_cached_tokens === 0` | `no-cache-observed` |
 | 5 | no profile named `request.entry` | `no-entry-profile` |
-| 6 | `entry.model !== modelRef` | `model-differs` |
+| 6 | any profile carries a grant absent from the pass deps' built-in, registry, and capability declarations | `undeclared-profile-grant` |
+| 7 | `entry.model !== modelRef` | `model-differs` |
+
+The grant check makes a dynamically injected workflow manager take the isolated
+digest path. Its primary run had a `workflow` capability that is deliberately not
+part of the reusable host deps; attempting to continue it with that grant intact
+would fail request validation before the model call. Production:
+`packages/memory/src/indexer/run.ts` (`knownGrants`) and
+`packages/memory/src/indexer/request.ts` (`continuationBlocker`). Test:
+`packages/memory/tests/integration/indexer-pass-plan.test.ts` ("falls back when a
+dynamic manager grant is absent from the pass deps").
 
 The 100 000-token floor is `CACHE_EVIDENCE_MIN_INPUT` (`packages/memory/src/indexer/request.ts:257`), and the tests carry
 the measured cases: 5 110 875 input with 0 cached blocks; 2 270 231 with 2 083 456 cached does not;
@@ -1107,13 +1127,17 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 `IndexerRuntime.passDeps` must differ from `deps` in exactly two ways, both assembled by the host: the
 workspace-hooks capability is **absent from the list** (not merely inactive), and the memory
 capability carries `enqueueOnRunEnd: false` (`packages/memory/src/types.ts:50-67`). The kernel does
-precisely that at `packages/kernel/src/memory/pass-deps.ts:36-41` — a `.filter(c => c.name !==
-HOOKS_CAPABILITY_NAME)` plus `createMemoryCapability(memoryFactory, { enqueueOnRunEnd: false })`.
+precisely that in `composeIndexPassDeps`: it filters both `HOOKS_CAPABILITY_NAME` and the ordinary
+`MEMORY_CAPABILITY_NAME`, preserves every other capability in registration order, then appends
+`createMemoryCapability(memoryFactory, { enqueueOnRunEnd: false })`. `file-kernel.ts` passes the
+fully composed ordinary deps — including tasks — rather than the earlier pre-memory/pre-tasks deps.
 The `absent vs inactive` distinction is stated as load-bearing for seed-block survival
 (`packages/memory/src/types.ts:55-62`; same reasoning restated at
 `packages/kernel/src/memory/pass-deps.ts:18-27`).
-`packages/kernel/tests/unit/index-pass-deps.test.ts:63-99` pins the hooks removal, memory
-registration, enqueue suppression, ordering, pass-through and non-mutation properties.
+Production: `packages/kernel/src/memory/pass-deps.ts` (`composeIndexPassDeps`) and
+`packages/kernel/src/file-kernel.ts` (`passDepsRef.current`). Test:
+`packages/kernel/tests/unit/index-pass-deps.test.ts` pins hooks removal, ordinary-memory
+replacement, enqueue suppression, ordering, pass-through and non-mutation.
 
 ---
 

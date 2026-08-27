@@ -675,6 +675,7 @@ async function runOne(
   const reservation = deps.ctx.ledger.reserve(deps.ctx.maxConcurrency);
   if (reservation === null) {
     budget.exhausted = true;
+    deps.ctx.onBudgetExhausted?.();
     logger.warn(
       {
         event: "workflow.budget_exhausted",

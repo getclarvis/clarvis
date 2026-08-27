@@ -1,5 +1,9 @@
 import { HOOKS_CAPABILITY_NAME } from "@clarvis/capability";
-import { createMemoryCapability, type MemoryFactory } from "@clarvis/memory/capability";
+import {
+  createMemoryCapability,
+  MEMORY_CAPABILITY_NAME,
+  type MemoryFactory,
+} from "@clarvis/memory/capability";
 import type { ExecuteRunDeps } from "@clarvis/loop";
 
 /**
@@ -8,8 +12,9 @@ import type { ExecuteRunDeps } from "@clarvis/loop";
  * @param deps - the run deps the host composed for ordinary runs.
  * @param memoryFactory - the same factory the host's own memory capability was
  *   built from, or `undefined` when the host runs without memory.
- * @returns `deps` with exactly two changes: no workspace-hooks capability, and a
- *   memory capability whose post-run enqueue is suppressed.
+ * @returns `deps` with exactly two changes: no workspace-hooks capability, and
+ *   the ordinary memory capability replaced by one whose post-run enqueue is
+ *   suppressed.
  * @remarks Capability composition is the host's job, and this is the host's one
  *   composition whose correctness is invisible at every other layer — which is
  *   why it is a named function rather than an expression inside the kernel's
@@ -26,7 +31,9 @@ import type { ExecuteRunDeps } from "@clarvis/loop";
  * `write_memory` calls.
  *
  * The memory capability keeps every wire surface and loses only its `onRunEnd`,
- * so a pass cannot enqueue itself and loop forever.
+ * so a pass cannot enqueue itself and loop forever. Replacement matters: the
+ * source deps already contain the ordinary memory capability, and appending the
+ * pass form beside it would leave the ordinary `onRunEnd` live.
  */
 export function composeIndexPassDeps(
   deps: ExecuteRunDeps,
@@ -35,7 +42,10 @@ export function composeIndexPassDeps(
   return {
     ...deps,
     capabilities: [
-      ...(deps.capabilities ?? []).filter((c) => c.name !== HOOKS_CAPABILITY_NAME),
+      ...(deps.capabilities ?? []).filter(
+        (capability) =>
+          capability.name !== HOOKS_CAPABILITY_NAME && capability.name !== MEMORY_CAPABILITY_NAME,
+      ),
       createMemoryCapability(memoryFactory, { enqueueOnRunEnd: false }),
     ],
   };

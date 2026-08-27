@@ -1,7 +1,8 @@
 /**
- * The tree-wide token budget for a workflow. The loop does not aggregate usage
- * across separate `executeRun`s, so this ledger is the single source of truth for
- * how much the whole fan-out has spent and how much it may still spend.
+ * The leader-wide token budget for a workflow. The loop does not aggregate usage
+ * across separate leader `executeRun`s, so this ledger is the single source of
+ * truth for how much the auxiliary fan-out has spent and may still spend. The
+ * manager remains on its primary run budget.
  */
 import type { OutputTokenBudget, OutputTokenReservation, Usage } from "@clarvis/capability";
 
@@ -27,7 +28,7 @@ export interface WorkflowReservation extends OutputTokenBudget {
 }
 
 /**
- * A running tally of output tokens spent across every leader in a workflow tree,
+ * A running tally of output tokens spent across every leader in a workflow,
  * against an optional ceiling.
  *
  * @remarks {@link WorkflowLedger.reserve} closes the gap between a leader being
@@ -53,10 +54,9 @@ export interface WorkflowLedger extends OutputTokenBudget {
    * Reserve a fair share of the current headroom for one about-to-spawn leader.
    *
    * @param maxConcurrent - the run's leader-concurrency cap; the reservation is
-   *   sized to `remaining() / (maxConcurrent + 1)` (at least 1 token, capped at
-   *   whatever headroom remains). The extra share belongs to the manager, so a
-   *   full wave of background leaders cannot provisionally starve its next
-   *   supervision turn.
+   *   sized to `remaining() / maxConcurrent` (at least 1 token, capped at
+   *   whatever headroom remains). The manager has an independent primary-run
+   *   budget and therefore takes no share from this ledger.
    * @returns the {@link WorkflowReservation}, or `null` when there is no headroom
    *   left to reserve (an unbounded ledger always succeeds).
    */
@@ -168,7 +168,7 @@ export function createWorkflowLedger(total: number | null): WorkflowLedger {
       if (headroom <= 0) return null;
       const amount = Math.min(
         headroom,
-        Math.max(1, Math.ceil(headroom / (Math.max(1, maxConcurrent) + 1))),
+        Math.max(1, Math.ceil(headroom / Math.max(1, maxConcurrent))),
       );
       reserved += amount;
       let childSpent = 0;

@@ -226,8 +226,8 @@ by `packages/kernel/tests/integration/workspace-trust.test.ts:52` (covers every 
 
 | Name | `grants` | `can_spawn` | `default_spawn` | `iteration_limit` | other |
 | --- | --- | --- | --- | --- | --- |
-| `marshall` | `edit_workspace, read_workspace, ask_user, run_commands, use_skills` (`packages/kernel/src/config/builtin-agents/marshall.ts`) | `coder, explorer, planner` | `coder` | 50 | — |
-| `admiral` | `workflow, read_workspace, edit_workspace, run_commands, ask_user, use_skills` (`packages/kernel/src/config/builtin-agents/admiral.ts:16-23`) | `coder, explorer, planner, marshall` (`:24`) | `coder` (`:25`) | 50 (`:26`) | `reasoning_effort: "high"` (`:27`) |
+| `marshall` | `edit_workspace, read_workspace, ask_user, run_commands, use_skills` (`packages/kernel/src/config/builtin-agents/marshall.ts`) | `coder, explorer, planner` | `coder` | 200 | — |
+| `admiral` | `workflow, read_workspace, edit_workspace, run_commands, ask_user, use_skills` (`packages/kernel/src/config/builtin-agents/admiral.ts:16-23`) | `coder, explorer, planner, marshall` (`:24`) | `coder` (`:25`) | 200 (`:26`) | `reasoning_effort: "high"` (`:27`) |
 | `coder` | `edit_workspace, run_commands, use_skills` (`packages/kernel/src/config/builtin-agents/coder.ts:16`) | — | — | 30 (`:17`) | — |
 | `explorer` | `read_workspace, use_skills` (`packages/kernel/src/config/builtin-agents/explorer.ts:16`) | — | — | 30 (`:17`) | — |
 | `planner` | `read_workspace, use_skills` (`packages/kernel/src/config/builtin-agents/planner.ts:16`) | — | — | 30 (`:17`) | — |
@@ -235,6 +235,11 @@ by `packages/kernel/tests/integration/workspace-trust.test.ts:52` (covers every 
 None declares `model` — pinned at `packages/kernel/tests/component/builtin-agents.test.ts:73` ("declares
 no model, so the fleet inherits the workspace's default"). Every one carries a string `description`
 (`:52`) and a non-empty body (`:49`).
+
+The two leaders' explicit 200-iteration values are pinned by
+`packages/kernel/tests/component/builtin-agents.test.ts` ("uses the full lead-session soft iteration
+allowance"); the three child profiles stay at 30 so increasing a primary lead session does not
+silently enlarge every delegated run.
 
 ## 4. Behavior
 

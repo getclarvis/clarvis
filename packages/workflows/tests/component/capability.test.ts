@@ -48,7 +48,7 @@ describe("workflows capability", () => {
     expect(await capability.forRun(RUN_CTX)).not.toBeNull();
   });
 
-  test("grants tools only to the manager while carrying the budget to descendants", async () => {
+  test("keeps the manager on its session budget while carrying the leader budget to descendants", async () => {
     const ctx = makeCtx();
     const run = await createWorkflowsCapability(ctx).forRun(RUN_CTX);
     expect(run).not.toBeNull();
@@ -56,7 +56,7 @@ describe("workflows capability", () => {
     const ungranted = run!.forAgent(scope({ grants: [] }))!.attach(recordingBc().bc);
     const child = run!.forAgent(scope({ entry: false }))!.attach(recordingBc().bc);
     expect(manager.tools?.map((tool) => tool.wireName)).toContain(RUN_LEADER_TOOL_NAME);
-    expect(manager.outputBudget).toBe(ctx.ledger);
+    expect(manager.outputBudget).toBeUndefined();
     expect(ungranted.tools).toBeUndefined();
     expect(child.tools).toBeUndefined();
     expect(ungranted.outputBudget).toBe(ctx.ledger);

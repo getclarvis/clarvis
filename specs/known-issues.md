@@ -190,90 +190,24 @@ inside that TSDoc.
 
 ## One in-flight model call reserves the whole workflow tree budget, so a concurrent leader spawn is refused
 
-**OPEN.** Re-verified against the tree on 2026-08-22 by reading the mechanism end to end;
-`git log 62b175a4..HEAD` touches none of `packages/loop/src/runtime/loop/output-budget.ts`,
-`packages/workflows/src/ledger.ts`, `packages/workflows/src/capability.ts` or
-`packages/workflows/src/dispatch.ts`, so the cause is unchanged. Discovered while fixing the
-reservation *charge* — that fix is now described in
-[budgets-and-guards §4.4](engine/budgets-and-guards.md), and its own measurement survives in the
-TSDoc at `packages/loop/src/runtime/loop/output-budget.ts:42-47`; it is a separate defect and the
-charge fix does not address it.
+**Resolved on 2026-08-27.** The manager/Admiral no longer contributes the workflow ledger as its
+`outputBudget`; it remains on the primary session budget. The dedicated workflow-child ledger now
+defaults to 640,000,000 output tokens (four primary-session-sized shares at default concurrency) and
+divides headroom across `max_concurrency` with no extra manager share. The provider adapter still
+safely reserves every retry attempt, but a manager call can
+no longer make workflow-child headroom transiently read as zero.
 
-`withOutputTokenBudget` reserves `maxOutputTokens x (maxRetries + 1)` for a call — deliberately, so
-that even if every configured attempt produces its maximum the tree ceiling still holds — clamped to
-whatever headroom remains. The formula is
-`min(positiveInteger(remaining), MAX_SAFE_INTEGER, desiredPerAttempt * configuredAttempts)` at
-`packages/loop/src/runtime/loop/output-budget.ts:89-95`, taken before the provider call at `:96-100`
-and held until the call settles or releases. With the shipped defaults that is
-`128,000 x 4 = 512,000` against a `workflows.budget_tokens` of `262,144`, so **the clamp is the whole
-budget**: while any one call is in flight, `WorkflowLedger.remaining()` is `0`. The two halves of
-"the shipped defaults" are `WORKFLOWS_DEFAULTS.budget_tokens = 262_144`
-(`packages/workflows/src/settings.ts:84`) and `CLARVIS_DEFAULT_MAX_RETRIES` defaulting to `3`
-(`packages/capability/src/env.ts:99`), with `maxOutputTokens` taken from the model catalog's
-`max_output_tokens` (`packages/loop/src/runtime/subagents/subagent-profiles.ts:204-206`).
-`createWorkflowLedger`'s direct reservation grants `min(wanted, remaining())` and adds it to
-`reserved` (`packages/workflows/src/ledger.ts:98-100`), and `remaining()` is
-`max(0, total - spent - reserved)` (`:75-76`) — a live hold and real spend are indistinguishable to
-every later caller.
+A genuine child-ledger refusal remains sticky for a batch, but now also marks the aggregate workflow
+failed. A manager completion therefore cannot persist a successful workflow over skipped or failed
+leaders. Production: `createWorkflowsCapability` and `createWorkflowLedger` in
+`packages/workflows/src`, `WorkflowCtx.onBudgetExhausted` across the leader dispatch paths, and
+`finalWorkflowStatus` in `packages/kernel/src/workflows/workflows-service.ts`.
 
-`run_leader` / `run_work_items` reserve through `WorkflowLedger.reserve()`, which returns `null` the
-moment `headroom <= 0` — before it ever computes a share
-(`packages/workflows/src/ledger.ts:167-172`) — and the handler then tells the model *"workflow token
-budget exhausted; not spawning this leader. Synthesize a result from the leaders that have already
-returned, or finish."* (`packages/workflows/src/capability.ts:225-242`, the message at `:238-239`).
-Under background spawn the scheduler starts leaders while the manager is mid-call, so this fires for
-a budget that is 99.8% unspent. Reproduced directly against the real ledger and decorator:
-
-```
-during manager call: remaining = 0        leader reserve() -> REFUSED
-after  manager call: remaining = 261744   leader reserve() -> ok
-```
-
-That trace was not re-executed for this entry, but it re-derives exactly from the code as it stands:
-262,144 headroom minus a 262,144 grant is 0, and settling 400 tokens of real output returns
-261,744.
-
-The `run_work_items` path is the same reservation with a **sticky** consequence. On `null` it sets
-`budget.exhausted = true` (`packages/workflows/src/dispatch.ts:675-689`), a latch allocated once per
-dispatch (`:234`) and checked ahead of every later unit (`:674`), so a single transient
-zero-headroom instant does not merely refuse one spawn — it skips the entire remainder of the batch
-unrun, with the log line saying so.
-
-The ledger already reasons about starvation in the other direction — `reserve()` takes only
-`headroom / (maxConcurrent + 1)` so that "a full wave of background leaders cannot provisionally
-starve its next supervision turn" (`packages/workflows/src/ledger.ts:52-63`) — but nothing bounds
-what a single direct reservation takes.
-
-**Do not fix this by shrinking the reservation to a fixed fraction.** The per-attempt provider cap is
-derived from the reservation (`perAttempt = min(desired, floor(amount / attempts))`,
-`packages/loop/src/runtime/loop/output-budget.ts:102-106`), so a manager capped at `headroom / 5`
-would silently have its own output truncated to ~13k tokens per call. The options that actually
-differ:
-
-1. **Apportion the manager a durable share**, as leaders get, held for the run rather than per call —
-   symmetric with `reserve()`, and it makes the per-call clamp a share of the manager's own share
-   rather than of the tree.
-2. **Reserve one attempt and extend on retry**, charging retried attempts as they are reported
-   (`accumulatedUsage` already carries them) — smaller reservations, at the cost of the guarantee
-   that a worst-case retry storm cannot exceed the ceiling.
-3. **Refuse the configuration instead of the spawn**: a `budget_tokens` that cannot cover one
-   manager call plus one leader is not a budget, and saying so at composition time is more useful
-   than an intermittent, mistargeted refusal at spawn time.
-
-All three are still unbuilt. Option 1 would show up as something other than `ctx.ledger` on the
-manager's `outputBudget`, and that is still the bare ledger
-(`packages/workflows/src/capability.ts:107,128`). Option 2 would show up as a reservation sized to
-one attempt, and `packages/loop/tests/unit/output-budget.test.ts:52-75` still pins the opposite
-("reserves every retry attempt, caps each one, and settles aggregate output"), so the all-attempts
-reservation is intended behaviour under test, not drift. Option 3 would show up as a check beside
-`createWorkflowLedger(settings.budget_tokens)`, and there is none
-(`packages/kernel/src/workflows/workflows-service.ts:229-231`).
-
-**No test holds this defect.** The `reserve` suite at
-`packages/workflows/tests/unit/ledger.test.ts:88-192` covers the fair-share division, the
-concurrent-reservation race and release semantics, but its one null case (`:185-189`) reaches
-exhaustion through `add()` — real spend — and never through a live direct reservation. A fix must
-add the in-flight-manager case, or the next repair here will look green while changing nothing.
+The regression is held at both boundaries: `packages/workflows/tests/component/capability.test.ts`
+asserts the manager has no workflow `outputBudget` while descendants do;
+`packages/workflows/tests/unit/ledger.test.ts` pins reservation division without a manager share;
+and `packages/kernel/tests/unit/workflows-service.test.ts` pins failed aggregate status for both
+leader failure and reservation refusal.
 
 ---
 

@@ -498,7 +498,7 @@ terminal result."
 | 10 | create and publish workspace adapters; build/bind the run host and shutdown cleanup | 821-1007 |
 | 11 | create the Tasks controller and the five `App` control groups | 1009-1236 |
 | 12 | replace `BootFrame` with `<App>` inside the existing root and emit mounted/painted diagnostics | `runApp` |
-| 13 | start Markdown parser warm-up; for `resume`/`continue`, resolve the selected workspace's session, await warm-up and then load it | `runApp` |
+| 13 | after `app.boot.painted`, release durable memory-queue recovery and start Markdown parser warm-up; for `resume`/`continue`, resolve the selected workspace's session, await warm-up and then load it | `runApp` |
 
 Two orderings the code annotates explicitly:
 
@@ -511,6 +511,11 @@ Two orderings the code annotates explicitly:
   Production: `packages/code/src/index.tsx` (`preloadMarkdown`, `markdownPreload`, `appProps`,
   `app.boot.painted`) and `packages/code/src/views/BootFrame.tsx`. Test:
   `packages/code/tooling/artifact/smoke.ts`.
+- Durable memory-queue recovery is released immediately after the same `app.boot.painted` boundary.
+  Kernel construction and the earlier shell/application paints do not start an index pass.
+  Production: `packages/code/src/index.tsx` (`app.boot.painted`, `startMemoryRecovery`) and
+  `packages/code/src/adapters/workspace-client-manager.ts` (`startMemoryRecovery`). Test:
+  `packages/code/tests/architecture/architecture-boundary.test.ts` (paint-before-recovery order).
 - Application command composition performs no sandbox host inspection. The null probe is a passing
   deferred readiness state; Doctor recheck and Settings > Sandbox are the explicit inspection
   routes. Production: `packages/code/src/app/commands.tsx` (`refreshSandboxInspection`,
@@ -1180,6 +1185,15 @@ and only if unset.
 Production: `packages/code/src/index.tsx:137` (`??=`, at module top level, before `main()` runs at
 `:1305`).
 Unpinned.
+
+**INV-CB-41.** Interactive durable memory recovery begins only after the usable application paint;
+reconnecting after that release starts recovery on the replacement kernel without moving work back
+onto the cold-boot path.
+Production: `packages/code/src/index.tsx` (`app.boot.painted`, `startMemoryRecovery`) and
+`packages/code/src/adapters/workspace-client-manager.ts` (`startMemoryRecovery`, `reconnect`).
+Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts` (paint-before-recovery
+order) and `packages/kernel/tests/integration/owner-isolation.test.ts` (idempotent release and later
+owner startup).
 
 ## 6. Failure modes and degradation
 

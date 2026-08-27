@@ -82,6 +82,7 @@ export function EffortView(host: ViewHost, deps: EffortViewDeps): JSX.Element {
   const [sel, setSel] = createSignal(0);
   const [saving, setSaving] = createSignal(false);
   const [entitled, setEntitled] = createSignal<EffortLevel[] | undefined>();
+  const [entitledLoading, setEntitledLoading] = createSignal(false);
   let entitledRequest = 0;
   host.bindScope({ mode: "retarget" });
 
@@ -129,16 +130,24 @@ export function EffortView(host: ViewHost, deps: EffortViewDeps): JSX.Element {
         const request = ++entitledRequest;
         setEntitled(undefined);
         const target = subscriptionTarget();
-        if (!target || deps.modelsService === undefined) return;
+        if (!target || deps.modelsService === undefined) {
+          setEntitledLoading(false);
+          return;
+        }
+        setEntitledLoading(true);
         detachObserved(
           "subscription_effort_catalog",
           async () => {
-            const provider = await deps.modelsService!.getEntitled(target.scheme);
-            if (request !== entitledRequest) return;
-            const efforts = provider.models.find(
-              (item) => item.id === target.modelId,
-            )?.reasoning_efforts;
-            setEntitled(efforts === undefined ? undefined : normalizeReasoningEfforts(efforts));
+            try {
+              const provider = await deps.modelsService!.getEntitled(target.scheme);
+              if (request !== entitledRequest) return;
+              const efforts = provider.models.find(
+                (item) => item.id === target.modelId,
+              )?.reasoning_efforts;
+              setEntitled(efforts === undefined ? undefined : normalizeReasoningEfforts(efforts));
+            } finally {
+              if (request === entitledRequest) setEntitledLoading(false);
+            }
           },
           (error) => {
             if (request === entitledRequest)
@@ -243,7 +252,9 @@ export function EffortView(host: ViewHost, deps: EffortViewDeps): JSX.Element {
         }
       />
       <StatusRow label="source" text={source()} />
-      {lacksReasoning() ? (
+      {entitledLoading() && available() === undefined ? (
+        <StatusRow label="support" text="Loading subscription effort levels…" />
+      ) : lacksReasoning() ? (
         <StatusRow label="support" text="Default model does not declare reasoning support" />
       ) : available() === undefined ? (
         <StatusRow label="support" text="Effort levels are not published for this model" />

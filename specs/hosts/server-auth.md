@@ -473,9 +473,9 @@ pins that `stopAccepting()` turns `/readyz` 503 while `/healthz` stays 200.
 12. `createFileKernel` runs with `builtins: { tasks: false }`, `planStoreFor` /
     `memoryStoreFor` from step 9, `onOwnerRetired: (owner) => stores.evictOwner(owner)`,
     `defaultOwner: env.CLARVIS_SERVER_OWNER` and `ownershipMode: "multi"`
-    (`packages/server/src/bin.ts:318-340`, the multi-owner fields at `:331-333`), `state.ready = true`,
-    the guard-allowlist warning fires, and `server.boot.ready` is logged
-    (`packages/server/src/bin.ts:341-346`).
+    (`packages/server/src/bin.ts`, the multi-owner fields in the composition call), `state.ready =
+    true`, the guard-allowlist warning fires, `server.boot.ready` is logged, and only then
+    `startMemoryRecovery()` releases durable memory-queue recovery.
 13. `SIGTERM`/`SIGINT` are wired to `beginShutdown` (`packages/server/src/bin.ts:393-394`).
 
 ### 4.2 The bind gate (`packages/server/src/bin.ts:143-170`)
@@ -1047,6 +1047,11 @@ construction in the suite passes one.
 full statement owned by [hosts/server-mcp.md](server-mcp.md) §5. Relevant to this document only
 because `bin.ts` (`packages/server/src/bin.ts:3-11`) is the one file that imports the kernel at all,
 and it is also this document's boot entrypoint.
+
+**S-60.** Durable memory-queue recovery begins only after `state.ready` and the
+`server.boot.ready` diagnostic are published, so background indexing cannot delay readiness.
+Production: `packages/server/src/bin.ts` (`server.boot.ready`, `startMemoryRecovery`).
+Test: `packages/server/tests/architecture/tool-surface.test.ts` (ready-before-recovery order).
 
 ---
 

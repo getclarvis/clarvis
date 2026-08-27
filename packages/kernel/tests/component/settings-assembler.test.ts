@@ -343,10 +343,10 @@ describe("settings run assembler — fallback budget", () => {
   const SOLO = { solo: { model: "openrouter/m" } };
   const START = { agent: "solo", messages: [{ role: "user" as const, content: "hi" }] };
 
-  it("falls back to escalate/40M when the host configures nothing", async () => {
+  it("falls back to escalate/160M when the host configures nothing", async () => {
     const assemble = await assemblerWith(SOLO);
     const body = assemble({ ...START, execution_id: "e" }) as RawBody;
-    expect(body.budget).toEqual({ on_exceed: "escalate", total_token_limit: 40_000_000 });
+    expect(body.budget).toEqual({ on_exceed: "escalate", total_token_limit: 160_000_000 });
   });
 
   it("applies the host's fallback, and the result validates as a hard-stop budget", async () => {

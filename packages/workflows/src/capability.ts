@@ -1,11 +1,11 @@
 /**
  * The `workflows` capability — the manager's half of the workflow topology.
  *
- * It contributes the tree-wide output budget to every agent in the manager run,
- * including its sub-agents and vision passes. Only an entry agent carrying the
- * `workflow` grant receives the workflow tools and their handlers. Leader runs
- * receive a separate budget-only capability, so the topology stays fixed at
- * Manager → Leaders → Sub-agents without a depth counter.
+ * It contributes the leader ledger to non-manager agents in the primary run,
+ * while the manager remains on that run's independent session budget. Only an
+ * entry agent carrying the `workflow` grant receives the workflow tools and their
+ * handlers. Leader runs receive a separate budget-only capability, so the
+ * topology stays fixed at Manager → Leaders → Sub-agents without a depth counter.
  *
  * @remarks Background is the *only* mode, and deliberately not a flag the model
  * can clear. Wide fan-out is a leader's normal case and where a blocked manager
@@ -63,8 +63,8 @@ export const WORKFLOW_GRANT_DECLARATION = {
  * Build the `workflows` {@link Capability} bound to one workflow's {@link WorkflowCtx}.
  *
  * @param ctx - the tree-wide context (deps, semaphore, ledger, assembler, signals).
- * @returns a capability that contributes the shared output budget to the manager
- *   tree and contributes workflow tools only to its granted entry agent.
+ * @returns a capability that contributes the shared output budget to child agents
+ *   and workflow tools only to its granted manager entry agent.
  * @remarks `forRun` returns `null` when the run has no supervision registry.
  * That is not a degradation path but a structural impossibility made explicit:
  * the loop mints a registry for exactly the runs that can spawn, and a manager
@@ -125,7 +125,6 @@ export function createWorkflowsCapability(ctx: WorkflowCtx): Capability {
                     ),
                   ]),
             ],
-            outputBudget: ctx.ledger,
             advertised: true,
           };
         },
@@ -224,6 +223,7 @@ function buildRunLeaderHandler(
       const spec = parsed.spec;
       const reservation = ctx.ledger.reserve(ctx.maxConcurrency);
       if (reservation === null) {
+        ctx.onBudgetExhausted?.();
         logger.warn(
           {
             event: "workflow.budget_exhausted",

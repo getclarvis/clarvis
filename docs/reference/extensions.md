@@ -64,11 +64,14 @@ extension-related fields are:
 
 `stdio` forbids `url` and `headers`. Remote transports forbid `command`, `args`, `env`, and `shared`.
 
-Remote HTTP/SSE servers may request OAuth during connection. Local interactive and `--print` hosts
-open the authorization page, accept only HTTPS except for loopback HTTP, validate state, use PKCE,
-and retry after the callback. Credentials live in `~/.clarvis/state/mcp-oauth.json`, keyed by
-workspace, owner, and canonical server URL; they are not settings. A host without a browser opener
-reports that interactive authorization is unavailable.
+Remote HTTP/SSE servers may request OAuth during connection, catalog discovery, or a later request.
+Local interactive and `--print` hosts open the authorization page, require HTTPS for every OAuth
+endpoint and redirect except loopback HTTP, validate state, use PKCE, and repeat the refused request
+once after the callback. Configured MCP headers apply only to resource requests on their configured
+origin; OAuth exchanges do not inherit them, even on that origin, and SDK-defined authorization
+headers take precedence. Credentials live in
+`~/.clarvis/state/mcp-oauth.json`, keyed by workspace, owner, and canonical server URL; they are not
+settings. A host without a browser opener reports that interactive authorization is unavailable.
 
 ### Hook object
 
@@ -148,7 +151,9 @@ Relative paths resolve from the selected manifest's directory first and remain c
 plugin root. Conventional contribution directories are `agents/` and `skills/`. If `mcpServers` is
 absent, Clarvis tries `.mcp.json` and then `mcp.json`. If the manifest contributes no hooks, Clarvis
 also reads `hooks/hooks.json`. Compatible event-keyed hook documents may be inline, wrapped in a
-`hooks` object, or named by one or more relative paths.
+`hooks` object, or named by one or more relative paths. In a translated event-keyed document, a
+leading command such as `./hooks/session-start.cmd` is anchored to the plugin root while the hook's
+working directory remains the workspace. Native Clarvis hook arrays are kept exactly as declared.
 
 ### Capability executable declaration
 

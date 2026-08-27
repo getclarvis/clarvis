@@ -52,11 +52,19 @@ canonical resource URL)`, so overlapping runs do not race one credential record.
 the browser opener; an intentionally headless host omits it and receives
 `MCPInteractiveAuthorizationUnavailableError` instead of waiting indefinitely.
 
-Authorization pages must use HTTPS, except for HTTP on a loopback host. The callback accepts only
+Every OAuth discovery, registration, token, browser, and redirect destination must use HTTPS,
+except for HTTP on a loopback host. Headers configured for the MCP resource are attached only to
+resource requests on that origin; OAuth exchanges do not inherit them, even when both services share
+an origin, and an SDK-defined authorization header always wins. The callback accepts only
 `GET /oauth/callback`, validates a 256-bit state with a timing-safe comparison, bounds callback
-fields, and never renders a code or state into its response. The outer connection budget pauses
-while authorization or another flow for the same resource is pending, but cancellation and the
-five-minute human-authorization deadline remain live.
+fields, and never renders a code or state into its response.
+
+An authorization challenge may arrive during the handshake, catalog discovery, a tool/resource
+request, or a health probe. Clarvis completes the SDK-started browser flow and repeats only the
+refused request once; a later challenge receives a fresh state and verifier. The outer connection
+budget pauses while initial authorization or another flow for the same resource is pending, but
+cancellation and the five-minute human-authorization deadline remain live. Coordinator shutdown
+also waits for an in-progress callback-listener startup before closing it.
 
 `createMcpOAuthCredentialStore` persists SDK-validated client registrations and tokens in a
 versioned JSON document. The default file is `state/mcp-oauth.json` under the global Clarvis root;

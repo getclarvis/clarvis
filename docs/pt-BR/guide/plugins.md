@@ -96,7 +96,10 @@ Documentos de hooks compatíveis e organizados por evento podem estar envolvidos
 `hooks`, ser referenciados por caminho ou ficar em `hooks/hooks.json`. O Clarvis traduz nomes de
 eventos, seletores de ferramentas, marcadores da raiz do plugin, timeouts e decisões compatíveis para
 as mesmas definições revisáveis usadas por um manifesto nativo. O que não puder ser traduzido é
-informado no navegador de plugins, sem ampliar silenciosamente um seletor.
+informado no navegador de plugins, sem ampliar silenciosamente um seletor. Se um comando traduzido
+começar com um executável relativo, como `./hooks/session-start.cmd`, o Clarvis ancora esse
+executável à raiz instalada do plugin. O hook continua recebendo o workspace como diretório de
+trabalho, portanto qualquer operação relativa ao projeto permanece explícita.
 
 `bootstrapSkill` nomeia uma skill deste plugin cujo corpo deve estar disponível antes de o modelo
 responder. A política de plano `review` solicita uma revisão de planejamento nessa skill quando tanto

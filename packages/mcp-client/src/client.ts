@@ -16,6 +16,7 @@ import type { Logger, McpServerConfig } from "@clarvis/capability";
 import { CLIENT_NAME, VERSION } from "./version.ts";
 import { BunStdioClientTransport } from "./bun-stdio-client.ts";
 import { createMCPBoundedFetch } from "./bounded-fetch.ts";
+import { createMCPRemoteFetch } from "./remote-fetch.ts";
 import {
   createServerStderrForwarder,
   drainStderrStream,
@@ -29,9 +30,8 @@ import type {
 import type { PoolScope } from "./connection.ts";
 
 /**
- * A host's answer to a server-initiated elicitation: whether the user
- * `accept`ed, `decline`d or `cancel`ed, and the collected `content` when
- * accepted. Shaped to the MCP `ElicitResult`.
+ * A host's answer to a server-initiated elicitation: the user's action and any
+ * collected `content`, shaped to the MCP `ElicitResult`.
  */
 export interface ElicitationRelayResult {
   action: "accept" | "decline" | "cancel";
@@ -239,8 +239,14 @@ export function createMCPClientFactory(
       });
       return built.handle;
     };
-    const connectOnce = async (authProvider?: OAuthClientProvider): Promise<MCPClientHandle> => {
+    const connectOnce = async (
+      authProvider?: OAuthClientProvider,
+      boundary?: AuthorizationBoundary,
+    ): Promise<MCPClientHandle> => {
       const built = buildClient(authProvider);
+      if (authorization !== undefined && boundary !== undefined) {
+        attachAuthorization(built, authorization, boundary);
+      }
       try {
         return await connectBuilt(built);
       } catch (error) {
@@ -268,7 +274,9 @@ export function createMCPClientFactory(
           opts.scope!,
           server.url!,
         );
+        const boundary: AuthorizationBoundary = [session, key, server.name];
         const first = buildClient(session.provider);
+        attachAuthorization(first, authorization, boundary);
         try {
           return await connectBuilt(first);
         } catch (error) {
@@ -291,7 +299,7 @@ export function createMCPClientFactory(
             opts.onAuthorizationWaitEnd?.();
             await closeFailedClient(first.client);
           }
-          return connectOnce(session.provider);
+          return connectOnce(session.provider, boundary);
         }
       },
     );
@@ -328,9 +336,10 @@ export function createMCPClientFactory(
  * the user's shell must now name it in `env` (`"${MY_TOKEN}"` still interpolates
  * from `environment`, so the value need not be duplicated).
  *
- * For http/sse, interpolated `headers` are merged both into `requestInit` and a
- * wrapping `fetch`, so the credentials survive the SDK's own request
- * construction. `${VAR}` references in `env` and `headers` resolve against
+ * For http/sse, interpolated `headers` are injected by the wrapping `fetch`
+ * only for MCP resource requests on the configured origin. OAuth discovery,
+ * registration, and token requests do not inherit them, and an SDK-defined
+ * header always wins. `${VAR}` references in `env` and `headers` resolve against
  * `environment` and throw {@link MissingEnvVarsError} when unset.
  */
 export function buildTransport(
@@ -404,10 +413,15 @@ export function buildTransport(
   }
   const url = new URL(server.url);
   const headers = server.headers ? resolveStringMap(server.headers, environment) : undefined;
+  const remoteFetch = createMCPRemoteFetch({
+    resourceUrl: url,
+    authorization: limits.authProvider !== undefined,
+    ...(headers ? { headers } : {}),
+  });
   const boundedFetch: FetchLike = createMCPBoundedFetch({
     mcpName: server.name,
+    fetch: remoteFetch,
     ...(limits.logger !== undefined ? { logger: limits.logger } : {}),
-    ...(headers ? { headers } : {}),
     ...(limits.maxHttpResponseBytes !== undefined
       ? { maxResponseBytes: limits.maxHttpResponseBytes }
       : {}),
@@ -415,16 +429,90 @@ export function buildTransport(
       ? { maxSseEventBytes: limits.maxHttpSseEventBytes }
       : {}),
   });
-  const opts: {
-    requestInit?: { headers: Record<string, string> };
-    fetch: FetchLike;
-    authProvider?: OAuthClientProvider;
-  } = {
-    ...(headers ? { requestInit: { headers } } : {}),
+  const opts: { fetch: FetchLike; authProvider?: OAuthClientProvider } = {
     fetch: boundedFetch,
     ...(limits.authProvider === undefined ? {} : { authProvider: limits.authProvider }),
   };
   return server.transport === "http"
     ? new StreamableHTTPClientTransport(url, opts)
     : new SSEClientTransport(url, opts);
+}
+
+type AuthorizationBoundary = readonly [
+  session: MCPAuthorizationSession,
+  key: string,
+  serverName: string,
+];
+type AuthorizedRequest = <T>(request: () => Promise<T>, signal?: AbortSignal) => Promise<T>;
+
+const authorizedRequests = new WeakMap<MCPClientHandle, AuthorizedRequest>();
+
+/** Run an SDK request through a production handle's late-authorization boundary. */
+export function runMCPRequest<T>(
+  handle: MCPClientHandle,
+  request: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  return authorizedRequests.get(handle)?.(request, signal) ?? request();
+}
+
+function authorizationAbort(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException("MCP OAuth authorization was cancelled.", "AbortError");
+}
+
+function waitForAuthorization(
+  promise: Promise<void>,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  if (signal === undefined) return promise;
+  if (signal.aborted) return Promise.reject(authorizationAbort(signal));
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = (): void => reject(authorizationAbort(signal));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      () => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+function attachAuthorization(
+  built: BuiltClient,
+  authorization: MCPAuthorizationCoordinator,
+  [session, key, serverName]: AuthorizationBoundary,
+): void {
+  let finishing: Promise<void> | undefined;
+  authorizedRequests.set(
+    built.handle,
+    async <T>(request: () => Promise<T>, signal?: AbortSignal) => {
+      try {
+        return await request();
+      } catch (error) {
+        if (!(error instanceof UnauthorizedError)) throw error;
+        const finisher = finishingTransport(built.transport);
+        if (finisher === undefined) {
+          throw new Error(`server '${serverName}': remote transport cannot finish OAuth`, {
+            cause: error,
+          });
+        }
+        finishing ??= authorization
+          .runExclusive(key, signal, undefined, undefined, () =>
+            session.finishAuthorization(finisher, signal),
+          )
+          .finally(() => {
+            finishing = undefined;
+          });
+        await waitForAuthorization(finishing, signal);
+        return request();
+      }
+    },
+  );
 }

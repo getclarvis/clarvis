@@ -29,7 +29,7 @@ Production: `packages/kernel/src/file-kernel.ts:93-145`, `:656-677`;
 `packages/paths/src/global.ts:108-120`.
 
 Test of the composed coordinator/store behavior:
-`packages/mcp-client/tests/integration/oauth-transport.test.ts:164-218` and
+`packages/mcp-client/tests/integration/oauth-transport.test.ts:197-251` and
 `packages/mcp-client/tests/integration/oauth-store.test.ts:29-137`. The Code host's browser authority
 is documented and tested in [code-bootstrap.md](code-bootstrap.md).
 

@@ -21,7 +21,7 @@ code and none of them a sandbox:
 3. **Environment filtering** — a hook subprocess's environment is built keep-list-first, then filtered
    against a per-run credential denylist derived from that run's own configuration
    (`packages/hooks/src/env.ts:175`); a stdio MCP child gets a fixed safe base plus only what its own
-   `env` block names (`packages/mcp-client/src/client.ts:373`); a shell/monitor command spawned by the
+   `env` block names (`packages/mcp-client/src/client.ts:382`); a shell/monitor command spawned by the
    toolset has the host's credential variables deleted from its environment
    (`packages/tools/src/sandbox.ts:349`); and a Clarvis-owned Git subprocess that selects a repository
    removes Git's repository-local environment before it starts
@@ -203,8 +203,9 @@ Constants and helpers in `packages/kernel/src/transport/stdio.ts`: `MAX_ERROR_ME
 
 | Symbol | Security role | Line |
 | --- | --- | --- |
-| `createMCPAuthorizationCoordinator` | loopback callback, random state, browser authority and same-key serialization | `packages/mcp-client/src/oauth.ts:180-203,211-297` |
+| `createMCPAuthorizationCoordinator` | loopback callback, random state, browser authority and same-key serialization | `packages/mcp-client/src/oauth.ts:187-210,212-301` |
 | `MCPAuthorizationOptions.openAuthorizationUrl` | explicit host capability; omitted by headless hosts | `packages/mcp-client/src/oauth.ts:44-54` |
+| `createMCPRemoteFetch` | resource-header isolation, OAuth destination validation and redirect control | `packages/mcp-client/src/remote-fetch.ts:35-118` |
 | `createMcpOAuthCredentialStore` | validates, lease-serializes and durably writes the private store | `packages/mcp-client/src/oauth-store.ts:199-247` |
 | `McpOAuthStoreError` | refuses corrupt, oversized, unreadable and unsafe paths without repair | `packages/mcp-client/src/oauth-store.ts:35-43` |
 
@@ -553,7 +554,7 @@ denylist is derived from exactly this run's credentials"* (`packages/hooks/src/c
 | --- | --- | --- |
 | Clarvis-owned Git selecting a repository | `withoutGitRepositoryEnvironment(inherited)` — preserve ordinary/transport inputs, remove Git's complete repository-local set and `GIT_CEILING_DIRECTORIES` before `cwd`, `-C`, or a clone destination selects the repository | helper `packages/paths/src/git-environment.ts`; plugin fetch `packages/kernel/src/adapters/git/plugin-fetcher.ts`; plugin metadata `packages/kernel/src/adapters/filesystem/plugin-repository.ts`; memory workspace probe `packages/memory/src/workspace-state.ts`; client clone `packages/code/src/adapters/plugin-install.ts`; guarded host fallback `packages/tools/src/tools/host-vcs.ts` |
 | `host_vcs` argv fallback | `withoutGitRepositoryEnvironment(process.env)`, then remove `secretEnvNames`, disable prompts, hooks, and Git external protocols; ordinary host environment and credential transport remain | `packages/tools/src/tools/host-vcs.ts` (`hostEnvironment`) |
-| stdio MCP child | `{ ...getDefaultEnvironment(), ...interpolated server.env }` — the caller's environment is **never** the base | `packages/mcp-client/src/client.ts:373`, rationale `:317-329` |
+| stdio MCP child | `{ ...getDefaultEnvironment(), ...interpolated server.env }` — the caller's environment is **never** the base | `packages/mcp-client/src/client.ts:382`, rationale `:324-337` |
 | `shell` / `monitor` command (unsandboxed) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted | `packages/tools/src/sandbox.ts:349-357`, applied `:397` |
 | capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts:76-84`, `:163` |
 
@@ -669,10 +670,17 @@ path): it builds `{ code: "internal", message: sanitizeErrorMessage(...) }` (`:3
 The SDK performs protected-resource discovery, client registration, PKCE and token exchange; Clarvis
 owns the surrounding trust boundaries. It canonicalizes the remote resource into an owner/workspace
 scoped hash, reuses only a registration whose loopback redirect still matches, and creates 32 random
-bytes of state (`packages/mcp-client/src/oauth.ts:161-170,299-331`). Before invoking the host opener,
-it accepts only HTTPS authorization URLs or loopback HTTP (`:172-178,350-383`). The callback listener
+bytes of state (`packages/mcp-client/src/oauth.ts:161-170,303-343`). Every OAuth fetch target and
+redirect is validated before the request leaves the process, and only HTTPS or loopback HTTP is
+accepted (`packages/mcp-client/src/remote-fetch.ts:35-40,53-118`). Before invoking the host opener,
+the same rule is applied to the browser URL (`packages/mcp-client/src/oauth.ts:172-178,362-410`).
+
+Configured MCP resource headers are injected only into resource requests on the configured origin.
+They are withheld from SDK discovery, registration, and token exchanges even on a shared origin;
+request-defined SDK credentials take precedence, and a redirect cannot carry configured resource
+credentials across origins (`packages/mcp-client/src/remote-fetch.ts:53-114`). The callback listener
 binds `127.0.0.1`, accepts only the fixed GET path, bounds fields, compares state timing-safely and
-never reflects a code/state in HTML (`:102-139,211-288`).
+never reflects a code/state in HTML (`packages/mcp-client/src/oauth.ts:109-141,212-288`).
 
 The store read uses `O_NOFOLLOW`, verifies the final object is a regular file, rejects a parent whose
 real path differs, and wipes its read buffer (`packages/mcp-client/src/oauth-store.ts:135-186`). A
@@ -786,7 +794,7 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 28. **A stdio MCP child never inherits the caller's environment.** Its base is
     `getDefaultEnvironment()`, and declaring `env` *adds* to it rather than switching the child from
     "inherit everything" to "inherit a filtered set". Production
-    `packages/mcp-client/src/client.ts:373`; pinned
+    `packages/mcp-client/src/client.ts:382`; pinned
     `packages/mcp-client/tests/unit/mcp-transport-env.test.ts:33-63`, including the property that the
     base does not depend on the identity of the caller's env object (`:56-63`).
 29. **A hook subprocess cannot read this run's provider credentials.** Production
@@ -903,15 +911,25 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     tuple is hashed and only the digest keys the private document. Production:
     `packages/mcp-client/src/oauth.ts:161-170`; pinned
     `packages/mcp-client/tests/integration/oauth.test.ts:56-67`.
-51. **A browser authorization cannot downgrade to non-loopback plaintext or proceed without explicit
-    host browser authority.** Production `packages/mcp-client/src/oauth.ts:172-178,350-388`; pinned
+51. **No OAuth fetch, redirect or browser destination can downgrade to non-loopback plaintext, and
+    browser authorization cannot proceed without explicit host authority.** Production
+    `packages/mcp-client/src/remote-fetch.ts:35-40,53-118` and
+    `packages/mcp-client/src/oauth.ts:172-178,362-410`; pinned
+    `packages/mcp-client/tests/unit/remote-fetch.test.ts:98-192` and
     `packages/mcp-client/tests/integration/oauth.test.ts:128-149`.
 52. **The OAuth callback accepts only a bounded code paired with the timing-safe matching random
-    state, and reflects neither.** Production `packages/mcp-client/src/oauth.ts:102-139,211-254`;
+    state, and reflects neither.** Production `packages/mcp-client/src/oauth.ts:109-141,212-255`;
     pinned `packages/mcp-client/tests/integration/oauth.test.ts:69-102`.
 53. **A corrupt, oversized or symlinked OAuth store is refused and never repaired by overwrite.**
     Production `packages/mcp-client/src/oauth-store.ts:135-245`; pinned
     `packages/mcp-client/tests/integration/oauth-store.test.ts:61-123`.
+54. **A configured MCP resource credential cannot enter an OAuth exchange or overwrite an
+    SDK-defined credential.** Resource headers are admitted only for resource requests on the
+    configured origin, while OAuth discovery, registration and token traffic stays header-isolated;
+    redirect hops are evaluated independently. Production:
+    `packages/mcp-client/src/remote-fetch.ts:53-114`, constructed without SDK `requestInit` headers at
+    `packages/mcp-client/src/client.ts:414-438`; pinned
+    `packages/mcp-client/tests/unit/remote-fetch.test.ts:7-95,141-167`.
 
 ## 6. Failure modes and degradation
 
@@ -1025,7 +1043,7 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
   capability executable receives every credential the kernel holds, and that whether that is intended
   is the owner's call (`packages/kernel/src/capability-executables/session-manager.ts:52`–`:71`).
   What has not changed is the behaviour or the absence of a test.
-  `packages/mcp-client/src/client.ts:317-329` argues at length for the MCP policy;
+  `packages/mcp-client/src/client.ts:324-337` argues at length for the MCP policy;
   `packages/kernel/src/capability-executables/session-manager.ts:76-84` carries no rationale and no
   test for its environment shape. This is a live divergence, not obviously a bug — a plans/memory
   provider may need credentials — but nothing in the code says which.

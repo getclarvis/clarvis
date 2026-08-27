@@ -200,4 +200,82 @@ describe("MCP OAuth authorization coordinator", () => {
     expect(order).toEqual(["first:start", "first:end", "second"]);
     expect(waits).toEqual(["start", "end"]);
   });
+
+  it("closes a callback listener even when shutdown races its startup", async () => {
+    const auth = await coordinator();
+    const session = auth.session(SCOPE, SERVER_URL);
+    const observed = session.catch((error: unknown) => error);
+
+    await auth.close();
+
+    expect(await observed).toBeInstanceOf(MCPAuthorizationFailedError);
+    await expect(auth.session(SCOPE, SERVER_URL)).rejects.toBeInstanceOf(
+      MCPAuthorizationFailedError,
+    );
+  });
+
+  it("starts a fresh state and verifier for a later challenge on the same connection", async () => {
+    const opened: string[] = [];
+    const auth = await coordinator(async (url) => {
+      opened.push(url);
+      return true;
+    });
+    const session = await auth.session(SCOPE, SERVER_URL);
+    const states: string[] = [];
+
+    for (const index of [1, 2]) {
+      const state = String(await session.provider.state?.());
+      states.push(state);
+      await session.provider.saveCodeVerifier(`verifier-${String(index)}`);
+      await session.provider.redirectToAuthorization(
+        new URL(`https://login.example.test/authorize?attempt=${String(index)}`),
+      );
+      const finishing = session.finishAuthorization({
+        finishAuth: async (code) => {
+          expect(code).toBe(`code-${String(index)}`);
+          expect(await session.provider.codeVerifier()).toBe(`verifier-${String(index)}`);
+        },
+      });
+      const callback = new URL(String(session.provider.redirectUrl));
+      callback.searchParams.set("state", state);
+      callback.searchParams.set("code", `code-${String(index)}`);
+      expect((await fetch(callback)).status).toBe(200);
+      await finishing;
+    }
+
+    expect(states[0]).not.toBe(states[1]);
+    expect(opened).toHaveLength(2);
+  });
+
+  it("pairs the opened authorization URL with its own verifier under concurrent starts", async () => {
+    const opened: string[] = [];
+    const auth = await coordinator(async (url) => {
+      opened.push(url);
+      return true;
+    });
+    const session = await auth.session(SCOPE, SERVER_URL);
+    const state = String(await session.provider.state?.());
+    await session.provider.saveCodeVerifier("first-verifier");
+    await session.provider.saveCodeVerifier("second-verifier");
+    const authorizationUrl = new URL("https://login.example.test/authorize");
+    authorizationUrl.searchParams.set("code_challenge", await pkceChallenge("first-verifier"));
+    await session.provider.redirectToAuthorization(authorizationUrl);
+    const finishing = session.finishAuthorization({
+      finishAuth: async () => {
+        expect(await session.provider.codeVerifier()).toBe("first-verifier");
+      },
+    });
+    const callback = new URL(String(session.provider.redirectUrl));
+    callback.searchParams.set("state", state);
+    callback.searchParams.set("code", "concurrent-code");
+
+    expect((await fetch(callback)).status).toBe(200);
+    await finishing;
+    expect(opened).toEqual([authorizationUrl.href]);
+  });
 });
+
+async function pkceChallenge(verifier: string): Promise<string> {
+  const encoded = new TextEncoder().encode(verifier);
+  return Buffer.from(await crypto.subtle.digest("SHA-256", encoded)).toString("base64url");
+}

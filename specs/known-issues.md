@@ -1163,7 +1163,7 @@ assistant-text-only shapes of the `"message"` arm are pinned nowhere.
 The capture works by replacing `transport.setProtocolVersion`
 (`packages/mcp-client/src/client.ts:218`–`:223`), and whether the SDK calls that method exactly once,
 or at all, is outside this tree. The field is typed `string | undefined` (`:66`) and its one reader
-guards it (`packages/mcp-client/src/connection.ts:346`), so a version that never arrives degrades to
+guards it (`packages/mcp-client/src/connection.ts:352`), so a version that never arrives degrades to
 an absent diagnostic field rather than to anything worse. The half worth pinning is the *forwarding*,
 not the capture: `:219`–`:223` re-binds the original and calls through, which is what keeps
 `mcp-protocol-version` on every post-handshake HTTP request. As of 2026-08-22 a test drives that

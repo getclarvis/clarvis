@@ -92,7 +92,9 @@ Compatible event-keyed hook documents may be wrapped in a `hooks` object, refere
 placed at `hooks/hooks.json`. Clarvis translates their event names, tool matchers, plugin-root
 placeholders, timeouts, and supported verdicts into the same reviewed hook definitions used by a
 native manifest. Anything that cannot be translated is reported in the plugin browser instead of
-silently widening a matcher.
+silently widening a matcher. If a translated command starts with a relative executable such as
+`./hooks/session-start.cmd`, Clarvis anchors that executable to the installed plugin root. The hook
+still receives the workspace as its working directory, so project-relative work remains explicit.
 
 `bootstrapSkill` names one skill from this plugin whose body should be available before the model
 responds. The `review` plan policy asks for planning review on that skill when both the skill and the

@@ -68,10 +68,16 @@ suprimi-los.
 ### Autorize um servidor remoto
 
 Quando um servidor HTTP ou SSE solicita OAuth, a CLI local interativa e o modo local `--print` abrem
-a página de autorização no navegador padrão. O Clarvis aceita apenas páginas de autorização HTTPS
-(além de HTTP em um host de loopback), verifica um valor de estado descartável, troca o callback com
-PKCE e tenta a conexão novamente. O tempo de espera pela sua ação não consome o timeout da conexão
-MCP.
+a página de autorização no navegador padrão. Um desafio pode chegar durante a conexão, durante a
+descoberta de ferramentas ou recursos, ou em uma solicitação posterior. O Clarvis aceita apenas
+endpoints e redirecionamentos OAuth HTTPS (além de HTTP em um host de loopback), verifica um valor
+de estado descartável, troca o callback com PKCE e repete uma vez a operação recusada. O tempo de
+espera pela sua ação durante a conexão não consome o timeout da conexão MCP.
+
+Cabeçalhos declarados no servidor MCP ficam restritos às solicitações do recurso na origem
+configurada. Solicitações OAuth de descoberta, registro e token não os herdam, mesmo quando o
+recurso e o servidor de autorização compartilham uma origem, e as credenciais criadas pelo fluxo
+OAuth têm precedência.
 
 Registros e tokens são armazenados fora das configurações em
 `~/.clarvis/state/mcp-oauth.json`, isolados por workspace, proprietário e URL canônica do servidor.

@@ -188,7 +188,10 @@ A Clarvis-specific dot-directory manifest is authoritative. Without one, the res
 root and shape-matched host manifests by supported contribution directives, selects one document
 deterministically, and never merges manifests. Relative skill, hook and MCP paths resolve from that
 manifest's directory before the plugin root and remain confined to the install root. An absent
-`mcpServers` declaration falls through to `.mcp.json` and then `mcp.json`.
+`mcpServers` declaration falls through to `.mcp.json` and then `mcp.json`. When an event-keyed hook
+document from another host starts a command with `./` or `.\`, the dialect adapter anchors that
+executable to the plugin's install root; the hook process still runs with the workspace as its
+working directory.
 
 Plugins may also package a per-skill Plans mode. The kernel applies it only when the skill originates
 from the enabled plugin and that plugin is the selected Plans provider; explicit run parameters take

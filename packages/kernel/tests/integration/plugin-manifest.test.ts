@@ -885,7 +885,7 @@ describe("hooks written in the external dialect", () => {
       });
       const { manifest, notes } = resolve();
       expect(manifest?.hooks).toEqual([
-        { event: "session_start", command: "./hooks/go session-start" },
+        { event: "session_start", command: `"${join(root, "hooks/go")}" session-start` },
       ]);
       expect(notes).toEqual([]);
     });
@@ -1285,5 +1285,26 @@ describe("a manifest that lives in a host dot-directory", () => {
   it("leaves a root manifest resolving from the root, as before", () => {
     const { roots } = pluginSkillRoots(dir, "skills", "plugin.json");
     expect(roots).toEqual([join(dir, "skills")]);
+  });
+});
+
+describe("borrowed relative hook commands", () => {
+  it("anchors a relative hook from the selected borrowed manifest to the plugin root", () => {
+    write(".alpha-plugin/plugin.json", { ...base, skills: "../skills" });
+    write(".beta-plugin/plugin.json", {
+      ...base,
+      skills: "../skills",
+      hooks: {
+        SessionStart: [{ hooks: [{ command: "./hooks/run-hook.cmd session-start" }] }],
+      },
+    });
+
+    expect(locationRead()).toBe(".beta-plugin/plugin.json");
+    expect(resolve().manifest?.hooks).toEqual([
+      {
+        event: "session_start",
+        command: `"${join(root, "hooks/run-hook.cmd")}" session-start`,
+      },
+    ]);
   });
 });

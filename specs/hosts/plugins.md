@@ -372,9 +372,9 @@ candidate, the error names every searched location (`:342-344`). The discovery s
 `manifestLocationEntries`; overflow returns an error instead of a partial list (`:56-95`).
 
 The selection contract is pinned at
-`packages/kernel/tests/integration/plugin-manifest.test.ts:61-129`: Clarvis-specific authority,
-richest-compatible selection, generic root identities not hiding contributed behavior,
-deterministic ties and non-matching dot-directories.
+`packages/kernel/tests/integration/plugin-manifest.test.ts:61-147,1291-1310`: Clarvis-specific
+authority, richest-compatible selection, generic root identities not hiding contributed behavior,
+deterministic ties, a relative hook from the selected candidate, and non-matching dot-directories.
 
 ### 4.2 Resolving a manifest — `resolvePluginManifest`
 
@@ -522,9 +522,10 @@ loadable (`harvestFile` / `harvestDocument`, `:484-551`).
    commands run but "a verdict of theirs cannot block anything" (`:560-572`).
 3. Per group: if the event is `pre_tool_use`/`post_tool_use` (`TOOL_SCOPED`, `:110`), translate the
    matcher; otherwise no filter, plus a note if a matcher was written anyway (`:573-600`).
-4. Per entry: skip a `type` other than `"command"` (`:515-517`); note an `async: true` request
-   (`:519-521`); convert `timeout` seconds → ms, clamped to `MAX_HOOK_TIMEOUT_MS`
-   (`translateTimeout`, `:94-107`); substitute the plugin root into the command (`:601-616`).
+4. Per entry: skip a `type` other than `"command"`; note an `async: true` request; convert `timeout`
+   seconds → ms, clamped to `MAX_HOOK_TIMEOUT_MS` (`translateTimeout`); substitute plugin-root
+   placeholders, then anchor a leading `./` or `.\` executable to the plugin install root
+   (`substituteRoot` / `resolveRelativeCommand`).
 
 `UserPromptExpansion` maps exactly to `user_prompt_expansion`, and the external tool name `Skill`
 maps exactly to `load_skill`; the regression is
@@ -604,6 +605,15 @@ spellings are pinned at `packages/kernel/tests/integration/plugin-manifest.test.
 Substitution happens at translation time, not by exporting a variable, "so the operator reviewing the
 definition reads the real path, and so the resolved path is part of that hook's fingerprint"
 (`:255-257`).
+
+A translated external command whose leading executable is explicitly relative (`./hooks/check` or
+`.\hooks\check.cmd`) is resolved against the plugin install root and quoted before it enters the
+ordinary Clarvis hook array (`packages/kernel/src/plugins/hook-dialects.ts:611-616,632-649`). Hook
+execution still keeps the workspace as its working directory (`packages/hooks/src/runner.ts:294-301`),
+so anchoring the plugin's own executable does not move project-relative behavior into the plugin
+checkout. A path that would leave the install root is not rewritten. Native Clarvis hook arrays
+bypass the dialect converter and remain byte-for-byte as declared. Pinned at
+`packages/kernel/tests/integration/plugin-manifest.test.ts:880-904,1291-1310`.
 
 ### 4.7 Presentation and supplied defaults
 
@@ -1276,6 +1286,11 @@ All of the following are derived directly from this document's own source and te
     alias, while serialization strips only the plugin segment and emits `mcp__<server>__<tool>`
     (`packages/hooks/src/event-serialization.ts:106-120`, `:213-220`). Pinned by
     `packages/hooks/tests/component/capability.test.ts:431-453`.
+
+81. **A leading relative executable in a translated external hook is anchored to the plugin root;
+    native Clarvis hook commands are not rewritten.** Production:
+    `packages/kernel/src/plugins/hook-dialects.ts:611-616,632-649`; test:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:880-904,1291-1310`.
 
 ## 6. Failure modes and degradation
 

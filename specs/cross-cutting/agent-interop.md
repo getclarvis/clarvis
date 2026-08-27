@@ -333,8 +333,8 @@ For each `(sourceEvent, groups)` entry of the document's event map:
 4. For each hook entry in the surviving group: an entry `type` other than `"command"`/`undefined` is
    noted and skipped (`:601-605`); `async: true` is noted (Clarvis awaits every hook regardless,
    `:606-608`); the timeout is converted and clamped via `translateTimeout` (`:609-610`); the command
-   has its plugin-root placeholder substituted (`:613`); the resulting `HookConfig` is pushed
-   (`:611-616`).
+   has its plugin-root placeholder substituted and its leading relative executable anchored
+   (`:611-616`); the resulting `HookConfig` is pushed.
 
 ### 4.4 Substituting the plugin-root placeholder (`substituteRoot`, `packages/kernel/src/plugins/hook-dialects.ts:259-308`)
 
@@ -369,6 +369,21 @@ everything else through unchanged:
 Resolved at translation time into the literal path, not exported as an environment variable, so an
 operator reviewing the hook definition reads the real path and that path becomes part of the hook's
 approval fingerprint (doc comment `:255-257`).
+
+#### 4.4.1 Anchoring a leading relative executable (`resolveRelativeCommand`, `packages/kernel/src/plugins/hook-dialects.ts:632-649`)
+
+After placeholder substitution, a translated command beginning with an explicitly relative
+executable (`./…`, `../…`, `.\…` or `..\…`, quoted or unquoted) is resolved against the plugin install
+root. A target still inside that root is emitted as a quoted absolute executable followed by the
+original arguments; a target that would leave the root is left unchanged (`:633-648`). The adapter is
+the only caller (`:613`), so native Clarvis hook arrays never cross this rewrite. That distinction
+matters because the ordinary hook runner intentionally executes every command with the workspace as
+its working directory (`packages/hooks/src/runner.ts:294-301`): the executable belongs to the plugin,
+while its project-relative behavior still belongs to the workspace.
+
+Pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts:880-904,1291-1310`: a bare
+relative executable and a relative executable from the selected borrowed manifest both become
+plugin-root paths, while a native Clarvis hook command remains unchanged.
 
 ### 4.5 Hooks source precedence: the manifest wins, but only if it says something (`resolveHooks`, `packages/kernel/src/plugins/plugin-manifest.ts:650-687`)
 
@@ -557,6 +572,13 @@ does not stand in for ordinary prompt submission or a later `load_skill` tool ca
 `packages/kernel/src/runs/settings-assembler.ts:460-466`. Test:
 `packages/hooks/tests/component/capability.test.ts:620-647` and
 `packages/kernel/tests/component/settings-assembler.test.ts:540-579`.
+
+**AIN-11** (derived). A leading relative executable in a translated foreign hook resolves from the
+plugin install root even though the subprocess keeps the workspace as its working directory; a native
+Clarvis hook command is never rewritten by this adapter. Production:
+`packages/kernel/src/plugins/hook-dialects.ts:611-616,632-649` and
+`packages/hooks/src/runner.ts:294-301`. Test:
+`packages/kernel/tests/integration/plugin-manifest.test.ts:880-904,1291-1310`.
 
 ## 6. Failure modes and degradation
 

@@ -168,8 +168,8 @@ function recordKey(scope: PoolScope, serverUrl: string): string {
     .update(resource)
     .digest("hex");
 }
-
-function authorizationUrlIsSecure(url: URL): boolean {
+/** Whether an OAuth network or browser destination uses HTTPS or loopback HTTP. */
+export function oauthUrlIsSecure(url: URL): boolean {
   if (url.protocol === "https:") return true;
   return (
     url.protocol === "http:" &&
@@ -206,6 +206,7 @@ export function createMCPAuthorizationCoordinator(
   let callbackServer: Server | undefined;
   let callbackUrl: string | undefined;
   let startPromise: Promise<string> | undefined;
+  let closePromise: Promise<void> | undefined;
   let closed = false;
 
   const handleCallback = (req: IncomingMessage, res: ServerResponse): void => {
@@ -287,13 +288,16 @@ export function createMCPAuthorizationCoordinator(
       callbackUrl = `http://127.0.0.1:${String(address.port)}/oauth/callback`;
       return callbackUrl;
     })();
+    let started: string;
     try {
-      return await startPromise;
+      started = await startPromise;
     } catch (error) {
       startPromise = undefined;
       callbackServer = undefined;
       throw error;
     }
+    if (closed) throw new MCPAuthorizationFailedError("MCP OAuth coordinator is closed.");
+    return started;
   };
 
   const makeSession = async (
@@ -303,13 +307,21 @@ export function createMCPAuthorizationCoordinator(
     const redirectUrl = await ensureServer();
     const key = recordKey(scope, serverUrl);
     const stored = await store.readRecord(key);
+    if (closed) throw new MCPAuthorizationFailedError("MCP OAuth coordinator is closed.");
     let clientInformation =
       stored?.redirect_url === redirectUrl ? stored.client_information : undefined;
     let tokens = stored?.tokens;
-    let codeVerifier: string | undefined;
-    const state = randomBytes(32).toString("base64url");
-    const callback = deferred<string>();
-    let redirected = false;
+    let flow: AuthorizationFlow | undefined;
+
+    const activeFlow = (): AuthorizationFlow => {
+      flow ??= {
+        state: randomBytes(32).toString("base64url"),
+        callback: deferred<string>(),
+        codeVerifiers: new Map(),
+        redirected: false,
+      };
+      return flow;
+    };
 
     const persist = async (change: Partial<McpOAuthRecord>): Promise<void> => {
       await store.mutateRecord(key, (current) => ({
@@ -333,7 +345,7 @@ export function createMCPAuthorizationCoordinator(
     const provider: OAuthClientProvider = {
       redirectUrl,
       clientMetadata,
-      state: () => state,
+      state: () => activeFlow().state,
       clientInformation: () => clientInformation,
       async saveClientInformation(value): Promise<void> {
         clientInformation = value;
@@ -348,56 +360,73 @@ export function createMCPAuthorizationCoordinator(
         });
       },
       async redirectToAuthorization(authorizationUrl): Promise<void> {
-        if (redirected) {
-          throw new MCPAuthorizationFailedError(
-            "The MCP server requested authorization repeatedly in one connection attempt.",
-          );
-        }
+        const current = activeFlow();
+        if (current.redirected) return;
         if (options.openAuthorizationUrl === undefined) {
           throw new MCPInteractiveAuthorizationUnavailableError();
         }
         if (
           authorizationUrl.href.length > MAX_CALLBACK_URL_CHARS ||
-          !authorizationUrlIsSecure(authorizationUrl)
+          !oauthUrlIsSecure(authorizationUrl)
         ) {
           throw new MCPAuthorizationFailedError(
             "The MCP authorization URL must use HTTPS or a loopback HTTP origin.",
           );
         }
-        redirected = true;
-        pending.set(state, {
-          state,
-          resolve: (code) => callback.resolve(code),
-          reject: (error) => callback.reject(error),
+        const challenge = authorizationUrl.searchParams.get("code_challenge");
+        const verifier =
+          challenge === null ? current.latestCodeVerifier : current.codeVerifiers.get(challenge);
+        if (verifier === undefined) {
+          throw new MCPAuthorizationFailedError(
+            "The MCP authorization request has no matching PKCE verifier.",
+          );
+        }
+        current.codeVerifier = verifier;
+        current.codeVerifiers.clear();
+        delete current.latestCodeVerifier;
+        current.redirected = true;
+        pending.set(current.state, {
+          state: current.state,
+          resolve: (code) => current.callback.resolve(code),
+          reject: (error) => current.callback.reject(error),
         });
         let opened: boolean;
         try {
           opened = await options.openAuthorizationUrl(authorizationUrl.href);
         } catch {
-          pending.delete(state);
+          pending.delete(current.state);
+          if (flow === current) flow = undefined;
           throw new MCPInteractiveAuthorizationUnavailableError(
             "Clarvis could not open the MCP authorization page in a browser.",
           );
         }
         if (!opened) {
-          pending.delete(state);
+          pending.delete(current.state);
+          if (flow === current) flow = undefined;
           throw new MCPInteractiveAuthorizationUnavailableError(
             "Clarvis could not open the MCP authorization page in a browser.",
           );
         }
       },
       saveCodeVerifier(value): void {
-        codeVerifier = value;
+        const current = activeFlow();
+        if (current.redirected) return;
+        current.latestCodeVerifier = value;
+        current.codeVerifiers.set(codeChallenge(value), value);
       },
       codeVerifier(): string {
-        if (codeVerifier === undefined) {
+        if (flow?.codeVerifier === undefined) {
           throw new MCPAuthorizationFailedError("The MCP OAuth verifier is unavailable.");
         }
-        return codeVerifier;
+        return flow.codeVerifier;
       },
       async invalidateCredentials(kind): Promise<void> {
         if (kind === "verifier") {
-          codeVerifier = undefined;
+          if (flow !== undefined) {
+            delete flow.codeVerifier;
+            delete flow.latestCodeVerifier;
+            flow.codeVerifiers.clear();
+          }
           return;
         }
         if (kind === "tokens" || kind === "all") tokens = undefined;
@@ -419,13 +448,14 @@ export function createMCPAuthorizationCoordinator(
       key,
       provider,
       async finishAuthorization(transport, signal): Promise<void> {
-        if (!redirected) {
+        const current = flow;
+        if (current === undefined || !current.redirected) {
           throw new MCPAuthorizationFailedError("The MCP server did not begin authorization.");
         }
         let timer: ReturnType<typeof setTimeout> | undefined;
         const timeout = new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
-            pending.delete(state);
+            pending.delete(current.state);
             reject(
               new MCPAuthorizationFailedError(
                 "MCP OAuth authorization did not finish before its timeout.",
@@ -435,12 +465,18 @@ export function createMCPAuthorizationCoordinator(
           timer.unref?.();
         });
         try {
-          const code = await waitAbortable(Promise.race([callback.promise, timeout]), signal);
+          const code = await waitAbortable(
+            Promise.race([current.callback.promise, timeout]),
+            signal,
+          );
           await transport.finishAuth(code);
         } finally {
           if (timer !== undefined) clearTimeout(timer);
-          pending.delete(state);
-          codeVerifier = undefined;
+          pending.delete(current.state);
+          delete current.codeVerifier;
+          delete current.latestCodeVerifier;
+          current.codeVerifiers.clear();
+          if (flow === current) flow = undefined;
         }
       },
     };
@@ -480,17 +516,38 @@ export function createMCPAuthorizationCoordinator(
         gate.resolve();
       }
     },
-    async close(): Promise<void> {
-      if (closed) return;
-      closed = true;
-      const error = new MCPAuthorizationFailedError("MCP OAuth authorization was cancelled.");
-      for (const entry of pending.values()) entry.reject(error);
-      pending.clear();
-      const server = callbackServer;
-      callbackServer = undefined;
-      callbackUrl = undefined;
-      if (server === undefined || !server.listening) return;
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+    close(): Promise<void> {
+      closePromise ??= (async (): Promise<void> => {
+        closed = true;
+        const error = new MCPAuthorizationFailedError("MCP OAuth authorization was cancelled.");
+        for (const entry of pending.values()) entry.reject(error);
+        pending.clear();
+        const starting = startPromise;
+        if (starting !== undefined) {
+          try {
+            await starting;
+          } catch {}
+        }
+        const server = callbackServer;
+        callbackServer = undefined;
+        callbackUrl = undefined;
+        if (server === undefined || !server.listening) return;
+        await new Promise<void>((resolve) => server.close(() => resolve()));
+      })();
+      return closePromise;
     },
   };
+}
+
+interface AuthorizationFlow {
+  state: string;
+  callback: ReturnType<typeof deferred<string>>;
+  codeVerifiers: Map<string, string>;
+  codeVerifier?: string;
+  latestCodeVerifier?: string;
+  redirected: boolean;
+}
+
+function codeChallenge(verifier: string): string {
+  return createHash("sha256").update(verifier).digest("base64url");
 }

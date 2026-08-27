@@ -16,6 +16,7 @@ import {
   sanitizeErrorMessage,
   unref,
 } from "@clarvis/capability";
+import { runMCPRequest } from "./client.ts";
 import type { ElicitationRelay, MCPClientFactory, MCPClientHandle } from "./client.ts";
 import {
   appendResourceDescriptors,
@@ -269,10 +270,15 @@ async function loadToolCatalog(
   let bytes = 0;
   let cursor: string | undefined;
   for (let pageNumber = 0; pageNumber < MAX_TOOL_CATALOG_PAGES; pageNumber += 1) {
-    const listed = await handle.client.listTools(cursor ? { cursor } : undefined, {
-      timeout,
-      ...(signal ? { signal } : {}),
-    });
+    const listed = await runMCPRequest(
+      handle,
+      () =>
+        handle.client.listTools(cursor ? { cursor } : undefined, {
+          timeout,
+          ...(signal ? { signal } : {}),
+        }),
+      signal,
+    );
     const page = Array.isArray((listed as { tools?: unknown }).tools)
       ? ((listed as { tools: unknown[] }).tools as Array<{
           name: string;

@@ -36,7 +36,11 @@ interface OAuthMcpFixture {
   close(): Promise<void>;
 }
 
-async function oauthMcpFixture(): Promise<OAuthMcpFixture> {
+type OAuthChallengePoint = "initialize" | "tools/list" | "tools/call";
+
+async function oauthMcpFixture(
+  challengeAt: OAuthChallengePoint = "initialize",
+): Promise<OAuthMcpFixture> {
   let origin = "";
   const fixture: OAuthMcpFixture = {
     url: "",
@@ -97,16 +101,6 @@ async function oauthMcpFixture(): Promise<OAuthMcpFixture> {
       res.writeHead(404).end();
       return;
     }
-    if (req.headers.authorization !== "Bearer test-access-token") {
-      res.writeHead(401, {
-        "www-authenticate":
-          `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource", ` +
-          'scope="mcp:tools"',
-      });
-      res.end();
-      return;
-    }
-    fixture.authenticatedMcpRequests += 1;
     if (req.method === "GET" || req.method === "DELETE") {
       res.writeHead(405).end();
       return;
@@ -116,6 +110,22 @@ async function oauthMcpFixture(): Promise<OAuthMcpFixture> {
       method?: string;
       params?: { protocolVersion?: string };
     };
+    const needsAuthorization =
+      challengeAt === "initialize" ||
+      challengeAt === message.method ||
+      (challengeAt === "tools/call" && message.method === "tools/call");
+    if (needsAuthorization && req.headers.authorization !== "Bearer test-access-token") {
+      res.writeHead(401, {
+        "www-authenticate":
+          `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource", ` +
+          'scope="mcp:tools"',
+      });
+      res.end();
+      return;
+    }
+    if (req.headers.authorization === "Bearer test-access-token") {
+      fixture.authenticatedMcpRequests += 1;
+    }
     if (message.id === undefined) {
       res.writeHead(202).end();
       return;
@@ -133,7 +143,30 @@ async function oauthMcpFixture(): Promise<OAuthMcpFixture> {
       return;
     }
     if (message.method === "tools/list") {
-      json(res, 200, { jsonrpc: "2.0", id: message.id, result: { tools: [] } });
+      json(res, 200, {
+        jsonrpc: "2.0",
+        id: message.id,
+        result: {
+          tools:
+            challengeAt === "tools/call"
+              ? [
+                  {
+                    name: "secure_echo",
+                    description: "Returns its input.",
+                    inputSchema: { type: "object", properties: {} },
+                  },
+                ]
+              : [],
+        },
+      });
+      return;
+    }
+    if (message.method === "tools/call") {
+      json(res, 200, {
+        jsonrpc: "2.0",
+        id: message.id,
+        result: { content: [{ type: "text", text: "authorized" }] },
+      });
       return;
     }
     json(res, 200, {
@@ -215,5 +248,84 @@ describe("remote MCP OAuth transport", () => {
     expect(fixture.registrations).toBe(1);
     expect(fixture.tokenExchanges).toBe(1);
     expect(fixture.authenticatedMcpRequests).toBeGreaterThanOrEqual(4);
+  });
+
+  it("finishes a challenge raised by tool catalog discovery", async () => {
+    const fixture = await oauthMcpFixture("tools/list");
+    cleanups.push(() => fixture.close());
+    const root = await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-catalog-"));
+    roots.push(root);
+    const stateDir = join(root, "state");
+    await mkdir(stateDir);
+    const authorization = createMCPAuthorizationCoordinator({
+      storeFile: join(stateDir, "mcp-oauth.json"),
+      callbackPort: 0,
+      openAuthorizationUrl: async (value) => {
+        const authorizationUrl = new URL(value);
+        const redirect = authorizationUrl.searchParams.get("redirect_uri");
+        const state = authorizationUrl.searchParams.get("state");
+        if (redirect === null || state === null) return false;
+        const callback = new URL(redirect);
+        callback.searchParams.set("state", state);
+        callback.searchParams.set("code", "approved-code");
+        return (await fetch(callback)).ok;
+      },
+    });
+    cleanups.push(() => authorization.close());
+
+    const opened = await openConnection({
+      scope: SCOPE,
+      server: { name: "oauth-catalog", transport: "http", url: fixture.url },
+      factory: createMCPClientFactory({}, { authorization }),
+      connectTimeoutMs: 2_000,
+      callTimeoutMs: 2_000,
+      resourcesEnabled: false,
+      healthPingIntervalMs: 0,
+    });
+
+    expect(opened.tools).toEqual([]);
+    expect(fixture.tokenExchanges).toBe(1);
+    await opened.conn.close();
+  });
+
+  it("finishes a challenge raised by a request after catalog discovery", async () => {
+    const fixture = await oauthMcpFixture("tools/call");
+    cleanups.push(() => fixture.close());
+    const root = await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-late-call-"));
+    roots.push(root);
+    const stateDir = join(root, "state");
+    await mkdir(stateDir);
+    const authorization = createMCPAuthorizationCoordinator({
+      storeFile: join(stateDir, "mcp-oauth.json"),
+      callbackPort: 0,
+      openAuthorizationUrl: async (value) => {
+        const authorizationUrl = new URL(value);
+        const redirect = authorizationUrl.searchParams.get("redirect_uri");
+        const state = authorizationUrl.searchParams.get("state");
+        if (redirect === null || state === null) return false;
+        const callback = new URL(redirect);
+        callback.searchParams.set("state", state);
+        callback.searchParams.set("code", "approved-code");
+        return (await fetch(callback)).ok;
+      },
+    });
+    cleanups.push(() => authorization.close());
+
+    const opened = await openConnection({
+      scope: SCOPE,
+      server: { name: "oauth-late-call", transport: "http", url: fixture.url },
+      factory: createMCPClientFactory({}, { authorization }),
+      connectTimeoutMs: 2_000,
+      callTimeoutMs: 2_000,
+      resourcesEnabled: false,
+      healthPingIntervalMs: 0,
+    });
+    expect(opened.tools.map((tool) => tool.name)).toEqual(["secure_echo"]);
+
+    const result = await opened.conn.callTool("secure_echo", {});
+
+    expect(result.ok).toBe(true);
+    expect(fixture.tokenExchanges).toBe(1);
+    await opened.conn.close();
   });
 });

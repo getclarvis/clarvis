@@ -1,5 +1,6 @@
 import type { Logger, ToolResult } from "@clarvis/capability";
 import { NOOP_LOGGER, sanitizeErrorMessage } from "@clarvis/capability";
+import { runMCPRequest } from "./client.ts";
 import type { MCPClientHandle } from "./client.ts";
 
 const MAX_RESOURCE_BYTES = 2_000_000;
@@ -97,9 +98,11 @@ export async function loadResourceCatalog(
   };
   const resources = await paginate(
     (cursor) =>
-      handle.client
-        .listResources(cursor ? { cursor } : undefined, opts())
-        .then((r) => ({ items: r.resources ?? [], nextCursor: r.nextCursor })),
+      runMCPRequest(
+        handle,
+        () => handle.client.listResources(cursor ? { cursor } : undefined, opts()),
+        signal,
+      ).then((r) => ({ items: r.resources ?? [], nextCursor: r.nextCursor })),
     pageLimits,
   );
   let templates: Awaited<
@@ -112,9 +115,11 @@ export async function loadResourceCatalog(
     );
     templates = await paginate(
       (cursor) =>
-        handle.client
-          .listResourceTemplates(cursor ? { cursor } : undefined, opts())
-          .then((r) => ({ items: r.resourceTemplates ?? [], nextCursor: r.nextCursor })),
+        runMCPRequest(
+          handle,
+          () => handle.client.listResourceTemplates(cursor ? { cursor } : undefined, opts()),
+          signal,
+        ).then((r) => ({ items: r.resourceTemplates ?? [], nextCursor: r.nextCursor })),
       {
         maxItems: Math.max(0, pageLimits.maxItems - resources.length),
         maxBytes: Math.max(0, pageLimits.maxBytes - resourceBytes),

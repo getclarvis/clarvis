@@ -19,11 +19,11 @@
  * look like the natural home, is an optional dependency the kernel does not have
  * and must not gain, or `builtins.hooks = false` would stop meaning what it
  * says. The kernel resolves the document to concrete commands and rewrites the
- * manifest before it is validated, so `PluginManifest["hooks"]` stays a plain
- * array, so the exact-definition fingerprint covers a hook that arrived from an
- * external file just as it covers an inline one. Editing that definition makes
- * only that hook return to review.
+ * manifest before validation, so `PluginManifest["hooks"]` stays a plain array,
+ * so the exact-definition fingerprint covers an inline or external hook. Editing
+ * that definition makes only that hook return to review.
  */
+import { resolve, sep } from "node:path";
 import { z } from "zod";
 import {
   EXTERNAL_HOOK_EVENT_NAMES,
@@ -610,7 +610,7 @@ export function convertHooksDocument(
         if (timeout.note !== undefined) notes.push(timeout.note);
         hooks.push({
           event: event as HookConfig["event"],
-          command: substituteRoot(entry.command, pluginRoot),
+          command: resolveRelativeCommand(substituteRoot(entry.command, pluginRoot), pluginRoot),
           ...(match !== null ? { match } : {}),
           ...(timeout.timeout_ms !== undefined ? { timeout_ms: timeout.timeout_ms } : {}),
         });
@@ -619,4 +619,31 @@ export function convertHooksDocument(
   }
 
   return { hooks, notes };
+}
+
+/**
+ * Anchor a borrowed hook's leading relative executable to its install root.
+ *
+ * @remarks Hook subprocesses keep the workspace as their working directory so
+ * hooks can inspect the project. A plugin-authored `./hooks/check` therefore has
+ * to become an absolute executable path during conversion; native Clarvis hook
+ * arrays never pass through this dialect adapter and remain untouched.
+ */
+function resolveRelativeCommand(command: string, pluginRoot: string): string {
+  const patterns = [
+    /^(\s*)"(\.{1,2}[\\/][^"]+)"/,
+    /^(\s*)'(\.{1,2}[\\/][^']+)'/,
+    /^(\s*)(\.{1,2}[\\/][^\s;&|<>]+)/,
+  ] as const;
+  for (const pattern of patterns) {
+    const match = pattern.exec(command);
+    if (match === null) continue;
+    const leading = match[1] ?? "";
+    const declared = match[2] ?? "";
+    const root = resolve(pluginRoot);
+    const target = resolve(root, declared.replaceAll(/[\\/]/g, sep));
+    if (target !== root && !target.startsWith(root + sep)) return command;
+    return `${leading}"${target}"${command.slice(match[0].length)}`;
+  }
+  return command;
 }

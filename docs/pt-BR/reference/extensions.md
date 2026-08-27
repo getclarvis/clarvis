@@ -65,12 +65,15 @@ Os campos relacionados a extensões são:
 
 `stdio` proíbe `url` e `headers`. Transportes remotos proíbem `command`, `args`, `env` e `shared`.
 
-Servidores HTTP/SSE remotos podem solicitar OAuth durante a conexão. Hosts locais interativos e em
-modo `--print` abrem a página de autorização, aceitam apenas HTTPS com exceção de HTTP em loopback,
-validam o estado, usam PKCE e tentam novamente após o callback. As credenciais ficam em
-`~/.clarvis/state/mcp-oauth.json`, identificadas por workspace, proprietário e URL canônica do
-servidor; elas não fazem parte das configurações. Um host sem abridor de navegador informa que a
-autorização interativa está indisponível.
+Servidores HTTP/SSE remotos podem solicitar OAuth durante a conexão, a descoberta de catálogo ou uma
+solicitação posterior. Hosts locais interativos e em modo `--print` abrem a página de autorização,
+exigem HTTPS em cada endpoint e redirecionamento OAuth com exceção de HTTP em loopback, validam o
+estado, usam PKCE e repetem uma vez a solicitação recusada após o callback. Cabeçalhos MCP
+configurados aplicam-se apenas às solicitações do recurso na origem configurada; trocas OAuth não os
+herdam, mesmo nessa origem, e cabeçalhos de autorização definidos pelo SDK têm precedência. As
+credenciais ficam em `~/.clarvis/state/mcp-oauth.json`, identificadas por workspace, proprietário e
+URL canônica do servidor; elas não fazem parte das configurações. Um host sem abridor de navegador
+informa que a autorização interativa está indisponível.
 
 ### Objeto de hook
 
@@ -152,7 +155,9 @@ permanecem confinados à raiz do plugin. Os diretórios convencionais de contrib
 `skills/`. Se `mcpServers` estiver ausente, o Clarvis tenta `.mcp.json` e depois `mcp.json`. Se o
 manifesto não fornecer hooks, o Clarvis também lê `hooks/hooks.json`. Documentos de hooks compatíveis
 e organizados por evento podem estar inline, envolvidos por um objeto `hooks` ou ser indicados por
-um ou mais caminhos relativos.
+um ou mais caminhos relativos. Em um documento organizado por evento e traduzido, um comando inicial
+como `./hooks/session-start.cmd` é ancorado à raiz do plugin, enquanto o diretório de trabalho do hook
+continua sendo o workspace. Arrays de hooks nativos do Clarvis permanecem exatamente como declarados.
 
 ### Declaração de executável de capacidade
 

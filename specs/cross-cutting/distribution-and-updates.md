@@ -9,14 +9,14 @@
 Clarvis is distributed as a product, not as eighteen independently versioned workspace packages.
 The portable-release path turns the map-free split Code artifact into a target-native archive that
 needs no user-installed Bun, Node.js, compiler, or package manager. The same contract owns initial
-installation, explicit self-update, release assembly, and the point at which a fully uploaded draft
-becomes visible. Production: root `package.json` (`version`, private workspaces),
+installation, explicit uninstall and self-update, release assembly, and the point at which a fully
+uploaded draft becomes visible. Production: root `package.json` (`version`, private workspaces),
 `packages/code/tooling/release/package.ts` (`main`), and `.github/workflows/release.yml`.
 
 This document does not make the package-local `bun run setup` path portable; that remains the
-developer-checkout path described by [Code bootstrap](../hosts/code-bootstrap.md). It also does not
-define user configuration or state retention. Release payloads and Clarvis state occupy separate
-roots, and an update never rewrites `.clarvis` or `.agents`. Production:
+developer-checkout path described by [Code bootstrap](../hosts/code-bootstrap.md). It does not define
+user-configuration formats or their own retention policy. Release payloads and Clarvis state occupy
+separate roots, and install, update, and uninstall never rewrite `.clarvis` or `.agents`. Production:
 `packages/code/src/update/installation.ts` (`ManagedInstallation`) and the root installers.
 
 ## 2. Surface
@@ -24,8 +24,8 @@ roots, and an update never rewrites `.clarvis` or `.agents`. Production:
 The user-facing surfaces are:
 
 - `install.sh` for GNU/glibc Linux and macOS, selecting `linux-{x64,arm64}` or
-  `darwin-{x64,arm64}`;
-- `install.ps1` for `windows-{x64,arm64}`;
+  `darwin-{x64,arm64}`, with `--uninstall` and `--help` modes;
+- `install.ps1` for `windows-{x64,arm64}`, with `-Uninstall` and `-Help` modes;
 - `clarvis --update`, a complete CLI mode answered before the application graph loads;
 - six `clarvis-v<version>-<target>.tar.gz` release assets plus `SHA256SUMS`, both installers,
   Clarvis's license, and standalone third-party notices/license texts;
@@ -79,6 +79,7 @@ A managed installation is:
 
 ```text
 <install-root>/
+├── .clarvis-managed-install
 ├── current
 ├── update.lock
 └── versions/
@@ -86,8 +87,11 @@ A managed installation is:
     └── v<newer>/clarvis-payload...
 ```
 
-`current` is one `v<version>` line. The stable launcher reads it on every invocation, exports
-`CLARVIS_INSTALL_ROOT`, and executes that version's included runtime and `cli.ts`. Production:
+`.clarvis-managed-install` is the installer's exact bounded ownership marker. `current` is one
+`v<version>` line. `update.lock` normally exists only while one installer, updater, or uninstaller
+owns the mutation lease; a file left by a crashed owner requires the reported manual recovery. The
+stable launcher reads `current` on every invocation, exports `CLARVIS_INSTALL_ROOT`, and executes
+that version's included runtime and `cli.ts`. Production:
 `install.sh`, `install.ps1`, and `packages/code/src/update/installation.ts`.
 
 ## 4. Behavior
@@ -108,18 +112,34 @@ archive, verifies the manifest, required notices/licenses, and zero-map rule, ru
 `packages/code/tooling/release/smoke.ts` and
 `packages/code/tooling/artifact/pty.ts`.
 
-Initial installation downloads the target archive and `SHA256SUMS` from the same versioned release
-directory, requires one exact checksum entry, verifies the bytes, extracts into a private temporary
-directory, and proves the staged CLI reports the requested version. An existing same-version payload
-must carry the same manifest. Before changing `current`, the installer refuses an unrelated command
-at the launcher path. Only then does it activate the version and atomically replace its own marked
-launcher. The stable launcher validates the `current` identifier before using it in a path. The
-POSIX installer accepts the script either as a file or on `/bin/sh`'s standard input, asks no
-interactive question, and invokes the staged Clarvis payload only through the application-free
+Initial installation prints its selected version, target, install root, launcher, and one numbered
+status line before each potentially slow or mutating phase. It downloads the target archive and
+`SHA256SUMS` from the same versioned release directory, requires one exact checksum entry, verifies
+the bytes, extracts into a private temporary directory, and proves the staged CLI reports the
+requested version. An existing same-version payload must carry the same manifest. Before changing
+`current`, the installer acquires `update.lock` and refuses an unrelated command at the launcher
+path. Only then does it store the ownership marker, activate the version, and atomically replace its
+own marked launcher. The stable launcher validates the `current` identifier before using it in a
+path. The POSIX installer accepts the script either as a file or on `/bin/sh`'s standard input, asks
+no interactive question, and invokes the staged Clarvis payload only through the application-free
 `--version` fast path before activation. Production: `install.sh`, `install.ps1`, and
-`packages/code/src/cli.ts`. Test:
-`packages/code/tooling/release/installer-smoke.ts` covers the POSIX standard-input entry,
-unmanaged-launcher refusal, a same-version reinstall, and the stable launcher.
+`packages/code/src/cli.ts`. Test: `packages/code/tooling/release/installer-smoke.ts` covers visible
+progress, the POSIX standard-input entry, unmanaged-launcher refusal, a same-version reinstall, the
+ownership marker, and the stable launcher.
+
+Uninstall is an explicit mode of the same versioned scripts. It prints the resolved install root and
+launcher before mutation, authenticates the exact ownership marker, and supports installations made
+before that marker existed only when the marked launcher, valid `current` tag, and active
+`release.json` are all present. It refuses symlink/reparse-point roots, invalid markers, unrelated
+launchers/roots, and an existing `update.lock`; after acquiring that shared lock it removes the
+installer-owned versions, activation file, marker, and marked launcher. Windows also removes only
+the exact managed `bin` entry from the user `PATH` unless `CLARVIS_SKIP_PATH=1`. Unknown root files
+and unrelated launchers remain in place and are reported. A missing installation is a successful
+no-op. User configuration, credentials, sessions, `.clarvis`, and `.agents` are outside this
+operation. Production: `install.sh` and `install.ps1`. Test:
+`packages/code/tooling/release/installer-smoke.ts` covers unauthenticated-root and active-lock
+refusal, legacy pre-marker authentication, removal, preserved user state, POSIX standard-input
+uninstall, and repeated uninstall.
 
 Self-update performs no network request until it has authenticated a managed current installation
 and acquired the exclusive `update.lock`. Because GitHub's `releases/latest` excludes prereleases,
@@ -180,10 +200,13 @@ regular-file manifest verification. Production: `downloadReleaseAsset` in
 `packages/code/tests/unit/release-manifest.test.ts`, and
 `packages/code/tests/unit/update-command.test.ts`.
 
-**DIST-7.** Exactly one updater may mutate an install root at a time. Production:
-`packages/code/src/update/installation.ts` (`withUpdateLock`). Test:
-`packages/code/tests/unit/update-command.test.ts` asserts normal completion removes the lock and an
-existing owner is neither replaced nor removed.
+**DIST-7.** Exactly one installer, updater, or uninstaller may mutate managed release state in an
+install root at a time; all three surfaces use the same exclusive `update.lock`. Production:
+`install.sh`, `install.ps1`, and `packages/code/src/update/installation.ts` (`withUpdateLock`). Test:
+`packages/code/tests/unit/update-command.test.ts` asserts normal update completion removes the lock
+and an existing owner is neither replaced nor removed;
+`packages/code/tooling/release/installer-smoke.ts` asserts install and uninstall both refuse an
+existing owner.
 
 **DIST-8.** The release workflow cannot expose a partially uploaded release: publication starts as a
 draft and clearing `draft` is the final step after checks and attestation. Production:
@@ -221,6 +244,14 @@ Production: `packages/code/tooling/release/runtime-package-discovery.ts`
 `packages/code/tests/unit/runtime-package-discovery.test.ts` (package roots, rejected specifiers,
 and invalid closure entries).
 
+**DIST-13.** Installer output identifies the selected target and resolved destination and announces
+every download, verification, staging, and activation phase. Uninstall removes only an authenticated
+managed installation and preserves Clarvis user/workspace state, unrelated launchers, and unknown
+root files. Production: `install.sh` and `install.ps1`. Test:
+`packages/code/tooling/release/installer-smoke.ts` (visible progress, ownership marker,
+legacy authentication, unauthenticated refusal, managed-file removal, preserved user/unknown-root
+state, and idempotence).
+
 ## 6. Failure modes and degradation
 
 | Failure | Result |
@@ -228,8 +259,11 @@ and invalid closure entries).
 | Unsupported OS/architecture | installer or updater exits without changing `current` |
 | Missing downloader, tar, or SHA-256 utility | POSIX installer names the missing prerequisite |
 | Checksum, size, URL, redirect, manifest, or candidate smoke mismatch | candidate is refused and staging is removed |
-| Concurrent update | exclusive lock fails with a recovery path for an actually crashed updater |
+| Concurrent install, update, or uninstall | shared exclusive lock fails with a recovery path for an actually crashed owner |
+| Unmanaged or ambiguously owned install root | uninstall refuses without removing files |
+| Symlinked or reparse-point install root or managed directory | install/uninstall refuses without traversing it |
 | Existing destination differs | no overwrite; current version remains active |
+| Unknown top-level files under an authenticated install root | managed files are removed; unknown files and the non-empty root remain and are reported |
 | Source checkout or `bun link` command | `--update` refuses and directs the operator to Git/setup |
 | No eligible newer release | exit 0 and report the current version is up to date |
 | Windows release smoke | manifest and fast paths run natively; real-PTY first paint remains covered by POSIX release jobs |

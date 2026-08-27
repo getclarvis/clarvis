@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
-/** Install the native archive from a local mirror and verify the stable launcher twice. */
+/** Install, reinstall and uninstall the native archive through the public installer contract. */
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { globalPaths } from "@clarvis/paths";
 
 import { releaseAssetName, releaseTarget } from "../../src/update-contract.ts";
 
@@ -14,7 +16,7 @@ async function run(
   command: string[],
   environment: Record<string, string>,
   stdin?: string,
-): Promise<void> {
+): Promise<string> {
   const child = Bun.spawn(command, {
     cwd: repositoryRoot,
     env: { ...process.env, ...environment },
@@ -38,6 +40,7 @@ async function run(
       `installer command failed (${String(code)}): ${command.join(" ")}\n${stdout}\n${stderr}`,
     );
   }
+  return stdout + stderr;
 }
 
 async function refusal(command: string[], environment: Record<string, string>): Promise<string> {
@@ -53,8 +56,23 @@ async function refusal(command: string[], environment: Record<string, string>): 
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
   ]);
-  if (code === 0) throw new Error("installer overwrote an unmanaged launcher");
+  if (code === 0) throw new Error("installer command unexpectedly succeeded");
   return stdout + stderr;
+}
+
+function assertVisibleProgress(output: string): void {
+  for (const expected of [
+    "Clarvis installer",
+    "[1/8] Detected the",
+    "Obtaining release checksums",
+    "Verifying the archive SHA-256 checksum",
+    "Testing staged Clarvis",
+    "Activating Clarvis",
+  ]) {
+    if (!output.includes(expected)) {
+      throw new Error(`installer output did not expose the ${expected} step`);
+    }
+  }
 }
 
 async function capture(command: string[], environment: Record<string, string>): Promise<string> {
@@ -92,12 +110,22 @@ async function main(): Promise<void> {
     CLARVIS_BIN_DIR: binDirectory,
     CLARVIS_SKIP_PATH: "1",
     HOME: join(temporary, "home"),
+    USERPROFILE: join(temporary, "home"),
   };
   try {
     const installer =
       process.platform === "win32"
         ? ["pwsh", "-NoProfile", "-File", join(repositoryRoot, "install.ps1")]
         : ["/bin/sh", join(repositoryRoot, "install.sh")];
+    const uninstaller =
+      process.platform === "win32" ? [...installer, "-Uninstall"] : [...installer, "--uninstall"];
+    const help = await run(
+      process.platform === "win32" ? [...installer, "-Help"] : [...installer, "--help"],
+      environment,
+    );
+    if (!help.includes("Usage:") || !help.toLowerCase().includes("uninstall")) {
+      throw new Error("installer help did not expose uninstall mode");
+    }
     const unmanagedLauncher =
       process.platform === "win32"
         ? join(installRoot, "bin", "clarvis.cmd")
@@ -111,11 +139,44 @@ async function main(): Promise<void> {
     ) {
       throw new Error("installer collision changed the active release or lacked a bounded error");
     }
+    const unsafeUninstall = await refusal(uninstaller, environment);
+    if (
+      !unsafeUninstall.includes("not an authenticated Clarvis installation") ||
+      (await stat(installRoot).catch(() => undefined)) === undefined
+    ) {
+      throw new Error("uninstaller removed an unauthenticated installation root");
+    }
     await rm(unmanagedLauncher);
+
+    const markerPath = join(installRoot, ".clarvis-managed-install");
+    await writeFile(markerPath, "not the Clarvis marker\n");
+    const invalidMarker = await refusal(uninstaller, environment);
+    if (!invalidMarker.includes("invalid managed marker")) {
+      throw new Error("uninstaller accepted an invalid ownership marker");
+    }
+    await rm(markerPath);
+
+    const lock = join(installRoot, "update.lock");
+    await writeFile(lock, "prior owner\n");
+    const lockedInstall = await refusal(installer, environment);
+    if (
+      !lockedInstall.includes("another Clarvis install, update, or uninstall is active") ||
+      (await stat(join(installRoot, "current")).catch(() => undefined)) !== undefined
+    ) {
+      throw new Error("installer ignored the shared update lock");
+    }
+    await rm(lock);
+
+    const userState = globalPaths(undefined, {
+      env: {},
+      home: join(temporary, "home"),
+    }).settingsFile;
+    await mkdir(dirname(userState), { recursive: true });
+    await writeFile(userState, '{"preserve":true}\n');
 
     if (process.platform === "win32") {
       for (let attempt = 0; attempt < 2; attempt++) {
-        await run(installer, environment);
+        assertVisibleProgress(await run(installer, environment));
       }
       const launcher = join(installRoot, "bin", "clarvis.cmd");
       const output = await capture(["cmd.exe", "/d", "/c", launcher, "--version"], environment);
@@ -123,12 +184,9 @@ async function main(): Promise<void> {
         throw new Error("Windows launcher drifted");
     } else {
       await chmod(join(repositoryRoot, "install.sh"), 0o755);
-      await run(
-        ["/bin/sh"],
-        environment,
-        await readFile(join(repositoryRoot, "install.sh"), "utf8"),
-      );
-      await run(installer, environment);
+      const source = await readFile(join(repositoryRoot, "install.sh"), "utf8");
+      assertVisibleProgress(await run(["/bin/sh"], environment, source));
+      assertVisibleProgress(await run(installer, environment));
       const launcher = join(binDirectory, "clarvis");
       const output = await capture([launcher, "--version"], environment);
       if (output !== `clarvis ${product.version}\n`) throw new Error("POSIX launcher drifted");
@@ -136,8 +194,61 @@ async function main(): Promise<void> {
     const current = await readFile(join(installRoot, "current"), "utf8");
     if (current !== `v${product.version}\n`)
       throw new Error("installer did not activate the release");
+    const marker = await readFile(markerPath, "utf8");
+    if (marker !== "managed by getclarvis/clarvis installer\n") {
+      throw new Error("installer did not write its ownership marker");
+    }
+    await rm(markerPath);
+    const unrelatedRootFile = join(installRoot, "operator-note.txt");
+    await writeFile(unrelatedRootFile, "keep me\n");
+
+    await writeFile(lock, "prior owner\n");
+    const lockedUninstall = await refusal(uninstaller, environment);
+    if (
+      !lockedUninstall.includes("another Clarvis install, update, or uninstall is active") ||
+      (await stat(installRoot).catch(() => undefined)) === undefined
+    ) {
+      throw new Error("uninstaller ignored the shared update lock");
+    }
+    await rm(lock);
+
+    const uninstallOutput =
+      process.platform === "win32"
+        ? await run(uninstaller, environment)
+        : await run(
+            ["/bin/sh", "-s", "--", "--uninstall"],
+            environment,
+            await readFile(join(repositoryRoot, "install.sh"), "utf8"),
+          );
+    if (
+      !uninstallOutput.includes("Clarvis uninstaller") ||
+      !uninstallOutput.includes("[3/3] Removing managed releases") ||
+      !uninstallOutput.includes(
+        "configuration, credentials, sessions, and project data were preserved",
+      )
+    ) {
+      throw new Error("uninstaller output did not expose removal and state-retention behavior");
+    }
+    if (
+      (await stat(join(installRoot, "versions")).catch(() => undefined)) !== undefined ||
+      (await stat(join(installRoot, "current")).catch(() => undefined)) !== undefined ||
+      (await stat(markerPath).catch(() => undefined)) !== undefined ||
+      (await stat(unmanagedLauncher).catch(() => undefined)) !== undefined
+    ) {
+      throw new Error("uninstaller left managed application files behind");
+    }
+    if ((await readFile(unrelatedRootFile, "utf8")) !== "keep me\n") {
+      throw new Error("uninstaller changed an unknown install-root file");
+    }
+    if ((await readFile(userState, "utf8")) !== '{"preserve":true}\n') {
+      throw new Error("uninstaller changed Clarvis user state");
+    }
+    const secondUninstall = await run(uninstaller, environment);
+    if (!secondUninstall.includes("nothing to remove")) {
+      throw new Error("repeated uninstall was not a clean no-op");
+    }
     process.stdout.write(
-      `installer smoke ok - ${target} installed and reinstalled ${product.version}\n`,
+      `installer smoke ok - ${target} installed, reinstalled, and uninstalled ${product.version}\n`,
     );
   } finally {
     await rm(temporary, { recursive: true, force: true });

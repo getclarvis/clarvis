@@ -5,6 +5,11 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Portable installers now show numbered download, verification, staging, and activation progress and
+  provide guarded uninstall modes that preserve Clarvis user and workspace state.
+
 ## [0.0.1-beta] - 2026-08-26
 
 ### Added

@@ -93,6 +93,12 @@ For the detected operating system and architecture, the installer:
 5. refuses to replace an unrelated command at the launcher path;
 6. activates the new version only after those checks succeed.
 
+The installer source on `main`, added after the published `v0.0.1-beta` tag, also prints the selected
+version, detected target, resolved destinations, and a numbered status line before each download,
+checksum, extraction, staged CLI smoke, and activation phase. That output becomes a versioned
+end-user surface only with a later release; the beta-tag command above still runs the original
+installer.
+
 Each archive also has an internal `release.json` manifest with the exact path, size, and SHA-256 of
 every payload file. Clarvis verifies that manifest again before an update is activated.
 
@@ -126,10 +132,35 @@ or bypass platform protections.
 
 ## Remove Clarvis
 
-There is no automatic uninstaller in the first beta. Before removing anything, locate the managed
-root and launcher and confirm they belong to Clarvis.
+The published `v0.0.1-beta` installer has no automatic uninstall mode. A trusted checkout of the
+current repository source now supports guarded removal:
 
-On Linux or macOS, remove only the marked launcher at
+Linux or macOS:
+
+```bash
+sh ./install.sh --uninstall
+```
+
+Windows PowerShell:
+
+```powershell
+& .\install.ps1 -Uninstall
+```
+
+These commands are deliberately local: do not substitute the `v0.0.1-beta` URLs above, whose tagged
+scripts predate this option. A versioned remote uninstall command requires a later product version
+and release decision.
+
+The source uninstaller prints the resolved targets before changing them. It authenticates the
+managed marker (or the complete legacy launcher/current/manifest layout), acquires the same exclusive
+lock as install and update, and refuses an unrelated or concurrently changing installation. It
+removes the managed releases, `current`, marker, and marked launcher. Windows also removes the exact
+managed `bin` entry from the user `PATH`; set `CLARVIS_SKIP_PATH=1` to leave `PATH` unchanged. Unknown
+files and unrelated launchers are preserved and reported. Running uninstall again is a successful
+no-op.
+
+Without a trusted checkout containing that mode, remove `v0.0.1-beta` manually. On Linux or macOS,
+remove only the marked launcher at
 `${CLARVIS_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}/clarvis` and the Clarvis directory at
 `${CLARVIS_INSTALL_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/clarvis}`. On Windows, remove the
 Clarvis directory beneath `%LOCALAPPDATA%` and remove its `bin` entry from the user `PATH`.
@@ -139,7 +170,8 @@ separate from the managed binary. Removal of the application does not delete tha
 only after backing up anything needed and confirming that stored provider credentials and sessions
 are no longer required.
 
-Installation paths can be overridden with the documented operator variables in
+If installation paths were overridden, pass the same `CLARVIS_INSTALL_ROOT` and, on POSIX,
+`CLARVIS_BIN_DIR` values to the source uninstaller or resolve those paths before manual removal. The
+variables are documented in
 [`install.sh`](https://github.com/getclarvis/clarvis/blob/main/install.sh) and
-[`install.ps1`](https://github.com/getclarvis/clarvis/blob/main/install.ps1). If an override was
-used, remove the resolved paths rather than the defaults.
+[`install.ps1`](https://github.com/getclarvis/clarvis/blob/main/install.ps1).

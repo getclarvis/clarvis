@@ -42,6 +42,7 @@ import type { CatalogPickerSpec } from "./CatalogPicker.tsx";
 import { promptForApiKey } from "./key-entry.ts";
 import { bindLevelKeys, createFieldEditor, LevelHost } from "./view-host.tsx";
 import type { ProvidersViewContext } from "./providers/context.ts";
+import { spinnerChar, useSpinnerClock } from "../spinner.ts";
 import { createProviderListLevel } from "./providers/list-level.tsx";
 import {
   createProviderDetailLevel,
@@ -100,7 +101,14 @@ export function ProvidersPanel(host: ViewHost, deps: ProvidersDeps): JSX.Element
   );
   const [activeDevice, setActiveDevice] = createSignal<DeviceAuthorization | null>(null);
   const [countdownNow, setCountdownNow] = createSignal(Date.now());
+  const [deviceActionFeedback, setDeviceActionFeedback] = createSignal<{
+    action: "copy_code" | "open_url" | "copy_url";
+    phase: "pending" | "succeeded";
+  } | null>(null);
   let activeAttemptId: string | undefined;
+  let deviceActionRequest = 0;
+  let deviceActionFeedbackTimer: ReturnType<typeof setTimeout> | undefined;
+  useSpinnerClock(() => deviceActionFeedback()?.phase === "pending");
   createEffect(() => {
     if (!host.active() || activeDevice() === null) return;
     setCountdownNow(Date.now());
@@ -208,6 +216,38 @@ export function ProvidersPanel(host: ViewHost, deps: ProvidersDeps): JSX.Element
   function clearDevice(): void {
     activeAttemptId = undefined;
     setActiveDevice(null);
+    deviceActionRequest += 1;
+    if (deviceActionFeedbackTimer !== undefined) clearTimeout(deviceActionFeedbackTimer);
+    deviceActionFeedbackTimer = undefined;
+    setDeviceActionFeedback(null);
+  }
+
+  function beginDeviceAction(action: "copy_code" | "open_url" | "copy_url"): number {
+    const request = ++deviceActionRequest;
+    if (deviceActionFeedbackTimer !== undefined) clearTimeout(deviceActionFeedbackTimer);
+    deviceActionFeedbackTimer = undefined;
+    setDeviceActionFeedback({ action, phase: "pending" });
+    return request;
+  }
+
+  function finishDeviceAction(
+    request: number,
+    action: "copy_code" | "open_url" | "copy_url",
+  ): void {
+    if (request !== deviceActionRequest) return;
+    setDeviceActionFeedback({ action, phase: "succeeded" });
+    deviceActionFeedbackTimer = setTimeout(() => {
+      if (request !== deviceActionRequest) return;
+      setDeviceActionFeedback(null);
+      deviceActionFeedbackTimer = undefined;
+    }, 2_400);
+    deviceActionFeedbackTimer.unref?.();
+  }
+
+  function failDeviceAction(request: number, error: unknown): void {
+    if (request !== deviceActionRequest) return;
+    setDeviceActionFeedback(null);
+    deps.notify(errorText(error), "error");
   }
 
   function cancelDevice(): void {
@@ -230,20 +270,43 @@ export function ProvidersPanel(host: ViewHost, deps: ProvidersDeps): JSX.Element
         const currentDevice = activeDevice();
         if (currentDevice === null) return [];
         const seconds = Math.max(0, Math.ceil((currentDevice.expires_at - countdownNow()) / 1_000));
+        const actionRow = (
+          action: "copy_code" | "open_url" | "copy_url",
+          idleLabel: string,
+          idleDetail: string,
+        ) => {
+          const feedback = deviceActionFeedback();
+          if (feedback?.action !== action)
+            return {
+              id: action,
+              label: idleLabel,
+              haystack:
+                action === "copy_code"
+                  ? "copy code"
+                  : action === "copy_url"
+                    ? "copy url"
+                    : "open url",
+              detail: idleDetail,
+            };
+          const copying = action === "copy_code" || action === "copy_url";
+          return {
+            id: action,
+            label:
+              feedback.phase === "pending"
+                ? `${spinnerChar()} ${copying ? "Copying to clipboard" : "Opening browser"}${glyph("ellipsis")}`
+                : `${glyph("success")} ${copying ? "Copied to clipboard" : "Browser opened"}`,
+            haystack: copying ? "copy clipboard" : "open browser url",
+            detail: action === "copy_code" ? "login code" : "verification URL",
+          };
+        };
         return [
-          {
-            id: "copy_code",
-            label: `Code: ${currentDevice.user_code}`,
-            haystack: "copy code",
-            detail: `${seconds}s remaining ${glyph("separator")} copy code`,
-          },
-          { id: "open_url", label: "Open verification URL", haystack: "open url" },
-          {
-            id: "copy_url",
-            label: `URL: ${currentDevice.verification_url}`,
-            haystack: "copy url",
-            detail: "copy URL",
-          },
+          actionRow(
+            "copy_code",
+            `Code: ${currentDevice.user_code}`,
+            `${seconds}s remaining ${glyph("separator")} copy code`,
+          ),
+          actionRow("open_url", "Open verification URL", "open browser"),
+          actionRow("copy_url", `URL: ${currentDevice.verification_url}`, "copy URL"),
           { id: "cancel", label: "Cancel login", haystack: "cancel" },
         ];
       },
@@ -262,12 +325,16 @@ export function ProvidersPanel(host: ViewHost, deps: ProvidersDeps): JSX.Element
             deps.notify("Browser opening is unavailable; copy and open the URL manually", "warn");
             return;
           }
+          const request = beginDeviceAction(action);
           detachObserved(
             "provider_subscription_open_url",
             async () => {
               if (!(await deps.openUrl!(value))) throw new Error("browser could not open the URL");
+              if (request !== deviceActionRequest) return;
+              finishDeviceAction(request, action);
+              deps.notify("Browser opened", "success");
             },
-            (error) => deps.notify(errorText(error), "error"),
+            (error) => failDeviceAction(request, error),
           );
           return;
         }
@@ -275,16 +342,20 @@ export function ProvidersPanel(host: ViewHost, deps: ProvidersDeps): JSX.Element
           deps.notify("Clipboard unavailable", "warn");
           return;
         }
+        if (action !== "copy_code" && action !== "copy_url") return;
+        const request = beginDeviceAction(action);
         detachObserved(
           "provider_subscription_copy",
           async () => {
             if (!(await deps.copyText!(value))) throw new Error("clipboard unavailable");
+            if (request !== deviceActionRequest) return;
+            finishDeviceAction(request, action);
             deps.notify(
               action === "copy_code" ? "Login code copied" : "Verification URL copied",
               "success",
             );
           },
-          (error) => deps.notify(errorText(error), "error"),
+          (error) => failDeviceAction(request, error),
         );
       },
     });
@@ -655,6 +726,7 @@ export function ProvidersPanel(host: ViewHost, deps: ProvidersDeps): JSX.Element
       host={host}
       editor={editor}
       picker={picker}
+      firstRunPicker={bootstrap}
       levels={[
         { title: list.title, body: list.body },
         { title: detail.title, body: detail.body },

@@ -1,10 +1,12 @@
 import type { Accessor, JSX } from "solid-js";
 import { Show } from "solid-js";
+import { useTerminalDimensions } from "@opentui/solid";
 import type { ViewHost } from "../../keys/commands.ts";
 import { tokens } from "../../theme/tokens.ts";
 import { glyph } from "../../theme/glyphs.ts";
 import { registerLevel, type LevelSpec } from "../../ui/patterns/level-keys.ts";
 import { bindLevelKeys, ViewFrame } from "../config/view-host.tsx";
+import { BrandBanner, firstRunSplashFits } from "../Splash.tsx";
 
 /** Visible phase of the first-run Clarvis setup. */
 export type SetupPhase = "welcome" | "preparing" | "ready" | "error";
@@ -27,6 +29,7 @@ export function SetupView(
     finish(): void;
   },
 ): JSX.Element {
+  const dims = useTerminalDimensions();
   const primary = (): { label: string; run: () => void } | undefined => {
     switch (deps.state().phase) {
       case "welcome":
@@ -70,6 +73,11 @@ export function SetupView(
       actionFilter={(action) => action.id !== "run.cancel"}
     >
       <box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center">
+        <Show when={firstRunSplashFits(dims().width, dims().height)}>
+          <box flexShrink={0} paddingBottom={2}>
+            <BrandBanner width={() => dims().width} />
+          </box>
+        </Show>
         <box flexDirection="column" alignItems="center">
           <Show when={deps.state().phase === "welcome"}>
             <text fg={tokens.accent}>Step 0 of 2</text>

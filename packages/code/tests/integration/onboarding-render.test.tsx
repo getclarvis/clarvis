@@ -40,6 +40,7 @@ test("guided setup renders every phase and exposes only the phase's valid primar
   });
 
   await rendered.renderOnce();
+  expect(rendered.captureCharFrame()).toContain(".d8888b.");
   expect(rendered.captureCharFrame()).toContain("Connect a provider and choose a model.");
   expect(rendered.captureCharFrame()).toContain("saves the provider and model before Ready");
   expect(rendered.captureCharFrame()).toContain("[↵] begin setup");
@@ -68,6 +69,32 @@ test("guided setup renders every phase and exposes only the phase's valid primar
   mounted.press("return");
   mounted.press("escape");
   expect(mounted.calls).toEqual(["begin", "retry", "finish"]);
+
+  rendered.renderer.destroy();
+  mounted.controls.dispose();
+});
+
+test("guided setup omits the splash when the whole first-run journey cannot fit it", async () => {
+  const [state] = createSignal<SetupState>({
+    phase: "welcome",
+    detail: "Choose a provider.",
+  });
+  const mounted = hostHarness();
+  const rendered = await openRender(
+    (() =>
+      SetupView(mounted.host, {
+        state,
+        begin: () => {},
+        retry: () => {},
+        finish: () => {},
+      })) as never,
+    { width: 75, height: 23 },
+  );
+
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+  expect(frame).not.toContain(".d8888b.");
+  expect(frame).toContain("Connect a provider and choose a model.");
 
   rendered.renderer.destroy();
   mounted.controls.dispose();

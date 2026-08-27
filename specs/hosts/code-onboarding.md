@@ -155,20 +155,22 @@ integration suite behind every claim there.
 
 These two functions are the visual layer immediately downstream of `startupRoute` (§4.1): one screen per
 non-`shell` route, each a thin `(host, deps) => JSX.Element` over `ViewFrame` with its own `LevelSpec`
-bound through `bindLevelKeys` (`packages/code/src/views/onboarding/SetupView.tsx:1-7`,
-`packages/code/src/views/onboarding/RecoveryView.tsx:1-9`) — the level-key machinery itself belongs to
+bound through `bindLevelKeys` (the import and call in each onboarding view) — the level-key machinery itself belongs to
 `code-keyboard-and-navigation` (`specs/hosts/code-keyboard.md`), not here.
 
-`SetupView` (`packages/code/src/views/onboarding/SetupView.tsx:21-97`) is driven entirely by two exported
+`SetupView` (`packages/code/src/views/onboarding/SetupView.tsx`, `SetupView`) is driven by two exported
 types: `SetupPhase = "welcome" | "preparing" | "ready" | "error"` and `SetupState { phase; detail;
-model?; agent? }` (`:10-18`). Its `deps` are three callbacks (`begin`, `retry`, `finish`) plus a
-`state: Accessor<SetupState>` — no state of its own. `primary()` (`:31-42`) maps phase to the one
+model?; agent? }`. Its `deps` are three callbacks (`begin`, `retry`, `finish`) plus a
+`state: Accessor<SetupState>` — no phase state of its own. `primary()` maps phase to the one
 enabled action: `welcome` → "begin setup" (`deps.begin`), `ready` → "start using Clarvis" (`deps.finish`),
-`error` → "retry" (`deps.retry`), `preparing` → `undefined` (no primary action while a seeder runs). The
-`LevelSpec` (`:42-59`) registers that single primary verb under `return` only when `primary()` is defined
-and has no local Escape or quit route. The body (`:69-94`) is four mutually exclusive `<Show>` blocks,
-one per phase, printing `deps.state().detail` in `preparing`/`error` and, in `ready`, `deps.state().agent
-?? "coder"` and `deps.state().model ?? "configured default"`.
+`error` → "retry" (`deps.retry`), `preparing` → `undefined` (no primary action while a seeder runs).
+The `LevelSpec` registers that single primary verb under `return` only when `primary()` is defined and
+has no local Escape or quit route. The body first mounts `BrandBanner` only when the shared
+`firstRunSplashFits` predicate passes, then renders four mutually exclusive `<Show>` blocks, one per
+phase, printing `deps.state().detail` in `preparing`/`error` and, in `ready`, `deps.state().agent ??
+"coder"` and `deps.state().model ?? "configured default"`. The predicate's 76×24 floor is deliberately
+derived for the narrower catalog picker, so the banner never appears here only to disappear in the
+next two steps.
 
 `RecoveryView` (`packages/code/src/views/onboarding/RecoveryView.tsx:19-66`) presents one blocking
 `StartupIssue { label; detail; hint? }` (`:12-16`) — always the *first* blocking gate, computed by its
@@ -182,8 +184,9 @@ Escape, `q`, or quit route. The body renders a fixed `BrandBanner`, a warning gl
 and `deps.issue()?.hint` (defaulting to `"Open the focused repair and return here."`).
 
 Both screens are pinned end-to-end by `packages/code/tests/integration/onboarding-render.test.tsx`: the
-`SetupView` test (`:25-75`) drives all four phases through one mounted instance and asserts each phase's
-rendered text and that `[↵]` is absent only in `preparing`; the `RecoveryView` test (`:76-120`) asserts
+`SetupView` tests drive all four phases through one mounted instance and assert the large branded
+frame, the small unbranded frame, each phase's rendered text, and that `[↵]` is absent only in
+`preparing`; the `RecoveryView` test asserts
 the blocked/cleared issue text, its two action bindings, inert `q`/Escape behavior, and that setting
 `ready()` true fires `onReady` without a keypress.
 
@@ -611,7 +614,7 @@ bindings").
 
 Neither screen polls or is told to close by its caller on a timer; each closes itself from a condition it
 alone observes. `SetupView` has no auto-close — `finish` fires only from the user pressing `return` in the
-`ready` phase (`packages/code/src/views/onboarding/SetupView.tsx:35-36`) — but `RecoveryView` does:
+`ready` phase (`packages/code/src/views/onboarding/SetupView.tsx`, `primary`) — but `RecoveryView` does:
 its `createEffect` (`packages/code/src/views/onboarding/RecoveryView.tsx:31-33`) re-runs on every change to
 `deps.ready()`, and the instant it reads `true` it schedules `deps.onReady()` on a microtask rather than
 calling it synchronously inside the effect. `commands.tsx` wires `ready` to `bootGate(report()) ===

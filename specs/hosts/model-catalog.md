@@ -108,7 +108,7 @@ exposed over the transport under operation key `models`
 | `resolveModelPrice(catalog, providers, modelRef)` | `packages/code/src/adapters/models-catalog.ts:171` | `resolveCatalogModel(...)?.cost` |
 | `ModelView(host, deps)` | `packages/code/src/views/config/ModelView.tsx:38` | the `/model` screen — picks `default_model` |
 | `EffortView(host, deps)` | `packages/code/src/views/config/EffortView.tsx:78` | the `/effort` screen — picks `default_reasoning_effort` |
-| `CatalogPicker(props)` | `packages/code/src/views/config/CatalogPicker.tsx:48` | generic filterable list picker over a `CatalogRow[]` |
+| `CatalogPicker(props)` | `packages/code/src/views/config/CatalogPicker.tsx` (`CatalogPicker`) | generic filterable list picker over a `CatalogRow[]`, with optional responsive first-run branding |
 | `catalog-pick.ts` | — | row builders: `providerRows`, `recommendedProviderRows`, `modelRows`, `configuredModelRows`, `configuredModelCapabilities`, `knownToLackReasoning`, `filterRows`, `catalogReady` |
 | `effort-levels.ts` | — | `EFFORT_LEVELS`, `normalizeReasoningEfforts`, `supportedReasoningEfforts`, `recommendedReasoningEffort` |
 | `pick-model.ts` | — | `modelPickerSpec(...)` — glue reused by `DefaultsPanel` (vision model), `AgentsPanel` (per-agent model override), `MemoryConfigPanel` (indexer model); full contract in §4.17 |
@@ -692,7 +692,7 @@ Test: `packages/code/tests/unit/effort-levels.test.ts:76-81`.
 
 **INV-MC-12.** `CatalogPicker` auto-compacts (hides the filter input) exactly when its row count is
 `<= 8` (`COMPACT_FILTER_MAX`), unless the caller forces `compact` explicitly.
-Production: `packages/code/src/views/config/CatalogPicker.tsx:15,52`.
+Production: `packages/code/src/views/config/CatalogPicker.tsx` (`CatalogPickerSpec`, `CatalogPicker`).
 Test: `packages/code/tests/integration/catalog-picker-render.test.tsx:34-69` (12-row list shows the
 filter; 2-row list does not).
 

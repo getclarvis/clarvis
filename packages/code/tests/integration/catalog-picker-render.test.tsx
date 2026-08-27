@@ -148,3 +148,43 @@ test("ascii mode fits the [ok] marker without truncating it", async () => {
   ));
   expect(out).toMatch(/\[ok\]\s+openai/);
 });
+
+test("first-run branding stays with the picker only while the complete splash fits", async () => {
+  const large = await openRender(
+    (() => (
+      <CatalogPicker
+        keymap={stubKeymap}
+        title="Set up Clarvis · Model"
+        rows={() => MANY_ROWS}
+        onPick={() => {}}
+        onClose={() => {}}
+        firstRun
+      />
+    )) as never,
+    { width: 100, height: 24 },
+  );
+  await large.renderOnce();
+  const branded = large.captureCharFrame();
+  expect(branded).toContain(".d8888b.");
+  expect(branded).toContain("provider-0");
+  large.renderer.destroy();
+
+  const small = await openRender(
+    (() => (
+      <CatalogPicker
+        keymap={stubKeymap}
+        title="Set up Clarvis · Model"
+        rows={() => MANY_ROWS}
+        onPick={() => {}}
+        onClose={() => {}}
+        firstRun
+      />
+    )) as never,
+    { width: 75, height: 23 },
+  );
+  await small.renderOnce();
+  const unbranded = small.captureCharFrame();
+  expect(unbranded).not.toContain(".d8888b.");
+  expect(unbranded).toContain("provider-0");
+  small.renderer.destroy();
+});

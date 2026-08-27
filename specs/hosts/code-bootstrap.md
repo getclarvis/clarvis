@@ -146,8 +146,10 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | | `App` | `(props: AppProps) => JSX.Element` | 213 |
 | `src/views/FatalBoot.tsx` | `runFatalBoot` | `({ renderer, error, retry, quit }) => Promise<void>` | 63-68 |
 | `src/views/Splash.tsx` | `BANNER` | `string[]`, 8 rows of ASCII art | 8-17 |
-| | `BrandBanner` | `({ width: () => number }) => JSX.Element` | 20 |
-| | `Splash` | `({ agent, model, width, rightInset? }) => JSX.Element` | 47-54 |
+| | `FIRST_RUN_SPLASH_MIN_COLUMNS` / `FIRST_RUN_SPLASH_MIN_ROWS` | `76` / `24` | named constants |
+| | `firstRunSplashFits` | `(width: number, height: number) => boolean` | `firstRunSplashFits` |
+| | `BrandBanner` | `({ width: () => number }) => JSX.Element` | `BrandBanner` |
+| | `Splash` | `({ agent, model, width, rightInset? }) => JSX.Element` | `Splash` |
 | `src/views/PageFrame.tsx` | `PageFrame` | `({ title, subtitle?, interaction, children }) => JSX.Element` | 16-21 |
 | `src/views/HeaderRows.tsx` | `HeaderRowsProps` / `HeaderRows` | `{ plan: Accessor<HeaderPlan> }` | 8, 15 |
 
@@ -275,12 +277,18 @@ pins (`packages/code/tests/unit/session-row.test.ts:43-50`).
 `models.dev refreshed — ${providers} providers / ${models} models`, where the em dash is
 `glyph("emDash")` and the model count sums `p.models.length` over providers (`packages/code/src/index.tsx:382-384`).
 
-### 3.8 The splash banner (`packages/code/src/views/Splash.tsx:8-17`)
+### 3.8 The splash banner (`packages/code/src/views/Splash.tsx`, `BANNER`)
 
 Eight literal rows of figlet-style ASCII spelling `Clarvis`, e.g. row 0 is
 `" .d8888b.  888                           d8b"`. `packages/code/tests/integration/splash-render.test.tsx:35-38`
-pins both facts about it: exactly 8 rows, and every row shorter than 60 columns — matching the 60-column
-fallback threshold at `packages/code/src/views/Splash.tsx:26`.
+pins both facts about it: exactly 8 rows, and every row shorter than 60 columns — matching the
+60-column fallback inside `BrandBanner`.
+
+First-run setup uses the stricter shared `firstRunSplashFits(width, height)` predicate: the complete
+banner is mounted only from 76 columns by 24 rows. The column floor accounts for the 85%-wide picker
+card and its horizontal chrome; the row floor leaves card chrome, a filter and at least three catalog
+rows after the banner. `packages/code/tests/integration/splash-render.test.tsx`
+(`first-run splash fit keeps one threshold across setup and catalog pickers`) pins both edges.
 
 ### 3.9 Execution identifier for `--print`
 
@@ -300,7 +308,7 @@ Four literal fragments, top to bottom on the screen:
 - `` "the kernel could not boot " + glyph("emDash") + " fix the cause above and retry; once the app starts, Doctor lists checks and fixes" `` (`:43-45`)
 - `` props.busy() ? "retrying" + glyph("ellipsis") : "[r] retry   [ctrl+c] quit" `` (`:50`)
 
-### 3.12 The `Splash` agent/model line and hint row (`packages/code/src/views/Splash.tsx:69-84`)
+### 3.12 The `Splash` agent/model line and hint row (`packages/code/src/views/Splash.tsx`, `Splash`)
 
 The idle screen's second block reads `"agent: "` + `props.agent()` then
 `` " " + glyph("separator") + " model: " `` + `props.model()` (`:69-74`); its third block joins three
@@ -810,6 +818,16 @@ only when the transcript is empty, no elicitation is pending and the draft is em
 (`packages/code/src/views/app/TranscriptRegion.tsx:244-253`), and `TranscriptRegion`'s root box clips for the same
 reason `PageFrame`'s does (`packages/code/src/views/app/TranscriptRegion.tsx:62-76`).
 
+The guided setup and its catalog pickers deliberately do not use that compact fallback. `SetupView`
+and bootstrap `CatalogPicker` both gate `BrandBanner` through `firstRunSplashFits`, so the same complete
+eight-row splash remains present throughout the first-run journey or is absent throughout when the
+terminal cannot fit it. Production: `packages/code/src/views/onboarding/SetupView.tsx` (`SetupView`),
+`packages/code/src/views/config/CatalogPicker.tsx` (`CatalogPicker`), and
+`packages/code/src/views/Splash.tsx` (`firstRunSplashFits`). Tests:
+`packages/code/tests/integration/onboarding-render.test.tsx`,
+`packages/code/tests/integration/catalog-picker-render.test.tsx`, and
+`packages/code/tests/integration/providers-key-render.test.tsx` (both bootstrap picker steps).
+
 `HeaderRows` (`packages/code/src/views/HeaderRows.tsx:15-68`) renders exactly one `height={1}` row: brand wordmark,
 workspace chip, optional identity chip, an `Index` over status chips, a `flexGrow` spacer, then
 optional exception and urgent chips. It is a pure projection of `HeaderPlan`, computed by
@@ -1161,7 +1179,7 @@ Pinned: `packages/code/tests/integration/page-frame-clip.test.tsx:32-42`.
 
 **INV-CB-36.** The splash falls back to a one-line wordmark below 60 columns, and the banner art is 8
 rows each under 60 columns wide.
-Production: `packages/code/src/views/Splash.tsx:8-17, 26`.
+Production: `packages/code/src/views/Splash.tsx` (`BANNER`, `BrandBanner`).
 Pinned: `packages/code/tests/integration/splash-render.test.tsx:29-38`.
 
 **INV-CB-37.** `HeaderRows` is one terminal row.
@@ -1272,7 +1290,8 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
 | `src/index.tsx` | `App` + its five props interfaces | `packages/code/src/index.tsx:127-134` |
 | `views/App.tsx` | `createLayoutController`, `FLOOR_MIN_COLUMNS`, `FLOOR_MIN_ROWS` | `packages/code/src/views/App.tsx:68` |
 | `views/app/TranscriptRegion.tsx` | `Splash` | `packages/code/src/views/app/TranscriptRegion.tsx:16` |
-| `views/onboarding/RecoveryView.tsx` | `BrandBanner` | `packages/code/src/views/onboarding/RecoveryView.tsx:9` |
+| `views/onboarding/{SetupView,RecoveryView}.tsx` | `BrandBanner`; Setup also uses `firstRunSplashFits` | the corresponding imports in each onboarding view |
+| `views/config/CatalogPicker.tsx` | `BANNER`, `BrandBanner`, `firstRunSplashFits` | the first-run picker intro |
 | `views/overlays/{DiffViewer,PlanOverlay,Help}.tsx` | `PageFrame` | `packages/code/src/views/overlays/DiffViewer.tsx:9`, `packages/code/src/views/overlays/PlanOverlay.tsx:25`, `packages/code/src/views/overlays/Help.tsx:12` |
 | `packages/code/tooling/artifact/build.ts` (via the `build` script) | `src/index.tsx` as the bundle entry | `packages/code/package.json:18` |
 

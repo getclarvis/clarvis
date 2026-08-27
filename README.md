@@ -12,7 +12,7 @@ repository in front of you.
 > the first artifacts are not yet code-signed or notarized. Clarvis can read and change files and
 > run commands; review approval prompts and use source control.
 
-![Clarvis first-run setup in a terminal](docs/assets/clarvis-setup.png)
+![Clarvis first-run setup with the responsive splash in a terminal](docs/assets/clarvis-setup.svg)
 
 ## Why Clarvis
 

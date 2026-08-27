@@ -379,7 +379,7 @@ removed overlay at 120x40 were **1.07 MiB/cycle before, 0.55-0.70 after**, again
 of 0.90-2.54 across four runs. The win remains relevant to current pickers and is proportional to how
 much of the list is off-screen.
 
-The fix is `packages/code/src/views/overlays/ListPicker.tsx:166` — `win` memoizes
+The fix is `packages/code/src/views/overlays/ListPicker.tsx` (`win`) — it memoizes
 `windowRows(rows(), clamp(sel()), maxVisibleRows())` over the shared implementation at
 `packages/code/src/views/input/autocomplete.ts:169` — budgeted by `maxVisibleRows` at `:148` against
 `floatMaxRows` (`packages/code/src/views/overlays/FloatFrame.tsx:24`), with the indicators at `:233`
@@ -390,7 +390,7 @@ and `:253` gated by `showOverflow` at `:178`. The TSDoc at `:151-165` cites this
 `:253` (the wheel keeps mouse parity).
 
 Mouse parity is kept rather than traded away: the container binds `onMouseScroll`
-(`packages/code/src/views/overlays/ListPicker.tsx:229` → `onWheel` at `:184`) and a wheel notch moves
+(`packages/code/src/views/overlays/ListPicker.tsx`, rendered `PickerRow` → `onWheel`) and a wheel notch moves
 the selection, so the window follows it. `@opentui/core`'s `ScrollBox` offers no virtualization
 option, which is why the list is windowed rather than virtualized inside one.
 

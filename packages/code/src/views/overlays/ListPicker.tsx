@@ -71,6 +71,10 @@ export function ListPicker<T>(props: {
   footerFg?: string;
   size?: "sm" | "lg";
   base?: string;
+  /** Optional fixed content above the filter/list, accounted for by {@link introRows}. */
+  intro?: JSX.Element;
+  /** Rows occupied by {@link intro}; zero while a responsive intro is hidden. */
+  introRows?: Accessor<number>;
   idPrefix?: string;
   initialIndex?: number;
   priority?: number;
@@ -155,6 +159,7 @@ export function ListPicker<T>(props: {
   const rowBudget = (reservePreview: boolean): number =>
     floatMaxRows(dims().height) -
     FLOAT_CHROME_ROWS -
+    (props.introRows?.() ?? 0) -
     (props.filter ? 2 : 0) -
     (reservePreview ? PREVIEW_ROWS : 0);
   /**
@@ -238,6 +243,7 @@ export function ListPicker<T>(props: {
       footerFg={props.footerFg}
       size={props.size ?? "lg"}
     >
+      {props.intro}
       <Show when={props.filter}>
         <FilterField onTerm={setTerm} onInput={props.filter?.onInput} active={props.active} />
       </Show>

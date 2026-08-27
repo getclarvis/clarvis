@@ -49,12 +49,19 @@ export function LevelHost(props: {
   levels: LevelView[];
   editor?: FieldEditor;
   picker?: () => CatalogPickerSpec | null;
+  /** Applies the responsive first-run splash only to this host's catalog picker. */
+  firstRunPicker?: boolean;
 }): JSX.Element {
   return (
     <UiLevelHost
       {...props}
       renderPicker={(picker, active) => (
-        <CatalogPicker keymap={props.host.interaction.keymap} active={active} spec={picker} />
+        <CatalogPicker
+          keymap={props.host.interaction.keymap}
+          active={active}
+          spec={picker}
+          firstRun={props.firstRunPicker}
+        />
       )}
     />
   );

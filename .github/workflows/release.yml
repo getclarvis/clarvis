@@ -87,7 +87,7 @@ jobs:
           set -euo pipefail
           test "$(find build/release -maxdepth 1 -name 'clarvis-*.tar.gz' -type f | wc -l)" -eq 6
           test "$(find build/release -maxdepth 1 -name 'clarvis-*.tar.gz.sha256' -type f | wc -l)" -eq 6
-          sed -n 'p' build/release/*.tar.gz.sha256 | sort -k2 > build/release/SHA256SUMS
+          sed -n 'p' build/release/*.tar.gz.sha256 | LC_ALL=C sort -k2 > build/release/SHA256SUMS
           (cd build/release && sha256sum --check SHA256SUMS)
           cp install.sh install.ps1 LICENSE THIRD_PARTY_NOTICES.md build/release/
           cp third-party/bun/LICENSE.md build/release/BUN-LICENSE.md

@@ -117,7 +117,7 @@ export async function releaseAssetSetFailures(directory: string, tag: string): P
     if (!actual.has(name)) failures.push(`release set is missing ${name}`);
   }
 
-  const checksumLines: string[] = [];
+  const checksumEntries: { name: string; line: string }[] = [];
   for (let index = 0; index < RELEASE_TARGETS.length; index += 1) {
     const target = RELEASE_TARGETS[index];
     const name = archiveNames[index];
@@ -125,7 +125,7 @@ export async function releaseAssetSetFailures(directory: string, tag: string): P
     const archivePath = join(directory, name);
     const sha256 = await digest(archivePath);
     const line = `${sha256}  ${name}\n`;
-    checksumLines.push(line);
+    checksumEntries.push({ name, line });
     const sidecarName = `${name}.sha256`;
     if (
       actual.has(sidecarName) &&
@@ -137,7 +137,10 @@ export async function releaseAssetSetFailures(directory: string, tag: string): P
   }
 
   if (actual.has("SHA256SUMS")) {
-    const aggregate = checksumLines.sort((left, right) => left.localeCompare(right)).join("");
+    const aggregate = checksumEntries
+      .sort((left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0))
+      .map(({ line }) => line)
+      .join("");
     if ((await readFile(join(directory, "SHA256SUMS"), "utf8")) !== aggregate) {
       failures.push("SHA256SUMS does not match the six verified archives");
     }

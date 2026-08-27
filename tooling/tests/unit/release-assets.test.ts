@@ -8,6 +8,12 @@ import { RELEASE_TARGETS, releaseAssetSetFailures } from "../../checks/release-a
 
 const version = "0.0.2-beta";
 
+function byChecksumAssetName(left: string, right: string): number {
+  const leftName = left.slice(left.indexOf("  ") + 2);
+  const rightName = right.slice(right.indexOf("  ") + 2);
+  return leftName < rightName ? -1 : leftName > rightName ? 1 : 0;
+}
+
 async function writeArchive(
   directory: string,
   target: (typeof RELEASE_TARGETS)[number],
@@ -73,10 +79,7 @@ async function writeReleaseSet(directory: string): Promise<void> {
       readFile(join(directory, `clarvis-v${version}-${target}.tar.gz.sha256`), "utf8"),
     ),
   );
-  await writeFile(
-    join(directory, "SHA256SUMS"),
-    sidecars.sort((left, right) => left.localeCompare(right)).join(""),
-  );
+  await writeFile(join(directory, "SHA256SUMS"), sidecars.sort(byChecksumAssetName).join(""));
 }
 
 test("accepts exactly six map-free archives and the allowlisted release assets", async () => {
@@ -99,10 +102,7 @@ test("rejects a source map inside an archive before publication", async () => {
         readFile(join(root, `clarvis-v${version}-${target}.tar.gz.sha256`), "utf8"),
       ),
     );
-    await writeFile(
-      join(root, "SHA256SUMS"),
-      sidecars.sort((left, right) => left.localeCompare(right)).join(""),
-    );
+    await writeFile(join(root, "SHA256SUMS"), sidecars.sort(byChecksumAssetName).join(""));
     expect(await releaseAssetSetFailures(root, `v${version}`)).toContainEqual(
       expect.stringContaining("contains source map runtime/debug.MAP"),
     );
@@ -121,10 +121,7 @@ test("rejects an inline source map inside an archive before publication", async 
         readFile(join(root, `clarvis-v${version}-${target}.tar.gz.sha256`), "utf8"),
       ),
     );
-    await writeFile(
-      join(root, "SHA256SUMS"),
-      sidecars.sort((left, right) => left.localeCompare(right)).join(""),
-    );
+    await writeFile(join(root, "SHA256SUMS"), sidecars.sort(byChecksumAssetName).join(""));
     expect(await releaseAssetSetFailures(root, `v${version}`)).toContainEqual(
       expect.stringContaining("contains inline source map runtime/debug.js"),
     );

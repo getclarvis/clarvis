@@ -91,7 +91,10 @@ function withoutAnsiCsi(value: string): string {
 
 /** Match semantic installer output even when PowerShell styles and wraps a long error. */
 export function installerOutputIncludes(output: string, expected: string): boolean {
-  return withoutAnsiCsi(output).replace(/\s+/g, " ").includes(expected);
+  return withoutAnsiCsi(output)
+    .replace(/\r?\n\s*\|\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .includes(expected);
 }
 
 function assertVisibleProgress(output: string): void {

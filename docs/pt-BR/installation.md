@@ -6,24 +6,26 @@ As releases portáteis do Clarvis são autocontidas. Elas incluem a versão exat
 dependências nativas do OpenTUI. O usuário final não precisa de Bun, Node.js, compilador, gerenciador
 de pacotes, acesso de administrador ou checkout do código-fonte.
 
-> Estes comandos só funcionam depois que `v0.0.1-beta` e seus artefatos aparecem nas
+> Estes comandos só funcionam depois que `v0.0.2-beta` e seus artefatos aparecem nas
 > [GitHub Releases](https://github.com/getclarvis/clarvis/releases). Confirme que a release existe
 > antes de executar um instalador.
 
 ## Alvos de release compatíveis
 
-| Sistema operacional | Arquiteturas         | Alvo do arquivo                | Evidência da release `v0.0.1-beta`                                          |
-| ------------------- | -------------------- | ------------------------------ | --------------------------------------------------------------------------- |
-| Linux (glibc)       | x64, arm64           | `linux-x64`, `linux-arm64`     | Pacote e instalação nativos passaram; primeira renderização em PTY validada |
-| macOS               | Intel, Apple silicon | `darwin-x64`, `darwin-arm64`   | Pacote e instalação nativos passaram; primeira renderização em PTY validada |
-| Windows             | x64, arm64           | `windows-x64`, `windows-arm64` | Pacote e instalação nativos passaram; caminhos rápidos da CLI validados     |
+| Sistema operacional | Arquiteturas         | Alvo do arquivo                | Gate de publicação da `v0.0.2-beta`                                    |
+| ------------------- | -------------------- | ------------------------------ | ---------------------------------------------------------------------- |
+| Linux (glibc)       | x64, arm64           | `linux-x64`, `linux-arm64`     | Pacote/instalação nativos e primeira renderização em PTY obrigatórios  |
+| macOS               | Intel, Apple silicon | `darwin-x64`, `darwin-arm64`   | Pacote/instalação nativos e primeira renderização em PTY obrigatórios  |
+| Windows             | x64, arm64           | `windows-x64`, `windows-arm64` | Pacote/instalação/desinstalação e caminhos rápidos da CLI obrigatórios |
 
-O [workflow oficial da release `v0.0.1-beta`](https://github.com/getclarvis/clarvis/actions/runs/32998576908)
-concluiu os seis jobs nativos. No Linux e no macOS, o smoke de release inclui a primeira renderização
-em uma PTY real. No Windows, ele verifica o manifesto, `--version`, `--help`, instalação e
-reinstalação sem afirmar a primeira renderização em uma PTY nativa. Uma execução manual no Windows e
-a observação do SmartScreen continuam separadas dessa evidência automatizada. O modo headless está
-disponível com `clarvis -p`.
+A `v0.0.2-beta` só é publicada depois que o workflow oficial de release conclui os seis jobs nativos
+e verifica o conjunto completo de artefatos. O
+[workflow da primeira beta](https://github.com/getclarvis/clarvis/actions/runs/32998576908) é a base
+histórica dessa matriz. No Linux e no macOS, o smoke de release inclui a primeira renderização em uma
+PTY real. No Windows, ele verifica o manifesto, `--version`, `--help`, instalação, reinstalação e
+desinstalação protegida sem afirmar a primeira renderização em uma PTY nativa. Uma execução manual no
+Windows e a observação do SmartScreen continuam separadas dessa evidência automatizada. O modo
+headless está disponível com `clarvis -p`.
 
 ## Linux e macOS
 
@@ -34,7 +36,7 @@ compatíveis com esses artefatos portáteis.
 Instale a partir da tag versionada da versão beta:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.1-beta/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.sh | sh
 ```
 
 Se preferir inspecionar o instalador antes de executá-lo, baixe-o primeiro (o `less` é usado aqui
@@ -45,7 +47,7 @@ somente para revisão):
 set -e
 installer=$(mktemp "${TMPDIR:-/tmp}/clarvis-install.XXXXXX")
 trap 'rm -f "$installer"' 0 HUP INT TERM
-curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.1-beta/install.sh -o "$installer"
+curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.sh -o "$installer"
 less "$installer"
 sh "$installer"
 )
@@ -63,7 +65,7 @@ O Windows exige PowerShell com `Invoke-RestMethod` (`irm`), `Invoke-Expression` 
 `Invoke-WebRequest`, `Get-FileHash` e o `tar.exe` do sistema.
 
 ```powershell
-irm https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.1-beta/install.ps1 | iex
+irm https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.ps1 | iex
 ```
 
 Para inspecionar o instalador do PowerShell antes de executá-lo:
@@ -71,7 +73,7 @@ Para inspecionar o instalador do PowerShell antes de executá-lo:
 ```powershell
 $installer = Join-Path ([System.IO.Path]::GetTempPath()) ("clarvis-install-" + [guid]::NewGuid() + ".ps1")
 try {
-  Invoke-WebRequest https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.1-beta/install.ps1 -OutFile $installer -ErrorAction Stop
+  Invoke-WebRequest https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.ps1 -OutFile $installer -ErrorAction Stop
   Get-Content $installer
   & $installer
 } finally {
@@ -95,11 +97,9 @@ Para o sistema operacional e a arquitetura detectados, o instalador:
    de instalação;
 6. ativa a nova versão somente depois que todas as verificações passam.
 
-O código-fonte do instalador na `main`, adicionado depois da tag publicada `v0.0.1-beta`, também
-mostra a versão selecionada, o alvo detectado, os destinos resolvidos e uma linha de status numerada
-antes de cada etapa de download, checksum, extração, smoke da CLI preparada e ativação. Essa saída só
-se torna uma interface versionada para o usuário final em uma release posterior; o comando da tag
-beta acima ainda executa o instalador original.
+O instalador da `v0.0.2-beta` mostra a versão selecionada, o alvo detectado, os destinos resolvidos e
+uma linha de status numerada antes de cada etapa de download, checksum, extração, smoke da CLI
+preparada e ativação.
 
 Cada arquivo compactado também contém um manifesto interno `release.json` com o caminho, o tamanho e o SHA-256
 exatos de cada item. O Clarvis verifica esse manifesto novamente antes de ativar uma atualização.
@@ -128,33 +128,43 @@ versão estável posterior. Uma instalação estável não seleciona versões de
 
 ## Binários beta sem assinatura
 
-A primeira versão beta ainda não tem assinatura de código nem notarização. O Gatekeeper do macOS ou
+Os binários beta ainda não têm assinatura de código nem notarização. O Gatekeeper do macOS ou
 o SmartScreen do Windows podem pedir confirmação para um aplicativo baixado. Leia o aviso da
 plataforma, confirme a URL da release e o SHA-256 e siga a interface normal de aprovação do sistema
 operacional. Os instaladores do Clarvis não desativam nem contornam as proteções da plataforma.
 
 ## Remover o Clarvis
 
-O instalador publicado em `v0.0.1-beta` não tem um modo de desinstalação automática. Um checkout
-confiável do código-fonte atual agora permite a remoção protegida:
+O instalador da `v0.0.2-beta` permite a remoção protegida. Baixe o script versionado para poder
+inspecionar o código exato antes de executar o modo destrutivo.
 
 Linux ou macOS:
 
 ```bash
-sh ./install.sh --uninstall
+(
+set -e
+installer=$(mktemp "${TMPDIR:-/tmp}/clarvis-uninstall.XXXXXX")
+trap 'rm -f "$installer"' 0 HUP INT TERM
+curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.sh -o "$installer"
+less "$installer"
+sh "$installer" --uninstall
+)
 ```
 
 Windows PowerShell:
 
 ```powershell
-& .\install.ps1 -Uninstall
+$installer = Join-Path ([System.IO.Path]::GetTempPath()) ("clarvis-uninstall-" + [guid]::NewGuid() + ".ps1")
+try {
+  Invoke-WebRequest https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.ps1 -OutFile $installer -ErrorAction Stop
+  Get-Content $installer
+  & $installer -Uninstall
+} finally {
+  Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
+}
 ```
 
-Esses comandos são intencionalmente locais: não substitua pelos URLs de `v0.0.1-beta` acima, pois os
-scripts daquela tag são anteriores a essa opção. Um comando remoto versionado de desinstalação exige
-uma decisão posterior de versão e release do produto.
-
-O desinstalador no código-fonte mostra os alvos resolvidos antes de alterá-los. Ele autentica o
+O desinstalador mostra os alvos resolvidos antes de alterá-los. Ele autentica o
 marcador gerenciado (ou o layout legado completo com inicializador, `current` e manifesto), adquire o
 mesmo lock exclusivo da instalação e atualização e recusa uma instalação não relacionada ou em
 alteração concorrente. Um inicializador POSIX só é considerado gerenciado quando aponta para a raiz
@@ -167,8 +177,9 @@ inalterado. Arquivos desconhecidos e inicializadores não relacionados são pres
 Executar a desinstalação novamente é uma operação bem-sucedida sem alterações, mesmo quando esses
 artefatos preservados permanecem.
 
-Sem um checkout confiável que contenha esse modo, remova `v0.0.1-beta` manualmente. No Linux ou macOS,
-remova apenas o inicializador identificado em
+O mesmo modo protegido pode autenticar e remover o layout legado completo criado pela
+`v0.0.1-beta`. Se preferir a remoção manual, no Linux ou macOS remova apenas o inicializador
+identificado em
 `${CLARVIS_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}/clarvis` e o diretório do Clarvis em
 `${CLARVIS_INSTALL_ROOT:-${XDG_DATA_HOME:-$HOME/.local/share}/clarvis}`. No Windows, remova o
 diretório do Clarvis dentro de `%LOCALAPPDATA%` e retire sua entrada `bin` do `PATH` do usuário.
@@ -179,7 +190,7 @@ somente depois de fazer backup do necessário e confirmar que as credenciais de 
 armazenadas não são mais necessárias.
 
 Se os caminhos de instalação foram substituídos, passe os mesmos valores de `CLARVIS_INSTALL_ROOT` e,
-no POSIX, `CLARVIS_BIN_DIR` para o desinstalador no código-fonte ou resolva esses caminhos antes da
+no POSIX, `CLARVIS_BIN_DIR` para o desinstalador versionado ou resolva esses caminhos antes da
 remoção manual. As variáveis estão documentadas em
 [`install.sh`](https://github.com/getclarvis/clarvis/blob/main/install.sh) e
 [`install.ps1`](https://github.com/getclarvis/clarvis/blob/main/install.ps1).

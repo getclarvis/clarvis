@@ -77,3 +77,18 @@ export function assertInstallArtifact(input: { artifactPaths: readonly string[] 
     throw new Error(`installed artifact must not contain source maps: ${sourceMap}`);
   }
 }
+
+/** Assert generated JavaScript is independent of the build host's checkout location. */
+export function assertRelocatableArtifact(input: {
+  buildRoot: string;
+  javascriptArtifacts: readonly { path: string; source: string }[];
+}): void {
+  const escapedRoot = input.buildRoot.replaceAll("\\", "\\\\");
+  const slashRoot = input.buildRoot.replaceAll("\\", "/");
+  const forbidden = new Set([input.buildRoot, escapedRoot, slashRoot]);
+  for (const artifact of input.javascriptArtifacts) {
+    if ([...forbidden].some((root) => root.length > 0 && artifact.source.includes(root))) {
+      throw new Error(`artifact embeds the build-host path: ${artifact.path}`);
+    }
+  }
+}

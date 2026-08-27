@@ -71,7 +71,7 @@ O diretório do workflow e o `name` do frontmatter devem ser iguais. A primeira 
 Selecione Admiral e peça:
 
 ```text
-Use o workflow release-review para o alvo 0.0.1-beta. Explique seu custo antes de executá-lo.
+Use o workflow release-review para o alvo 0.0.2-beta. Explique seu custo antes de executá-lo.
 ```
 
 Argumentos como `target` são obrigatórios quando declarados. `/workflow` permite navegar pelo

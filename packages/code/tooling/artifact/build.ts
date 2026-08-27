@@ -46,6 +46,7 @@ import {
   assertInstallArtifact,
   assertLazyProviderArtifact,
   assertLazySurfaceArtifact,
+  assertRelocatableArtifact,
 } from "./contract.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -95,6 +96,20 @@ async function assertLazyProviderChunk(outputs: readonly Bun.BuildArtifact[]): P
   });
 }
 
+/** Reject generated JavaScript tied to this checkout's absolute path. */
+async function assertRelocatableBuild(outputs: readonly Bun.BuildArtifact[]): Promise<void> {
+  const javascript = outputs.filter((output) => output.path.endsWith(".js"));
+  assertRelocatableArtifact({
+    buildRoot: repoRoot,
+    javascriptArtifacts: await Promise.all(
+      javascript.map(async (artifact) => ({
+        path: artifact.path,
+        source: await Bun.file(artifact.path).text(),
+      })),
+    ),
+  });
+}
+
 /** Move external maps away from runtime siblings so Bun does not load them eagerly. */
 async function detachSourceMaps(outputs: readonly Bun.BuildArtifact[]): Promise<number> {
   const maps = outputs.filter((output) => output.path.endsWith(".map"));
@@ -135,7 +150,10 @@ async function main(): Promise<void> {
     // Keep OpenTUI package-owned at runtime. Its parser worker and grammars are
     // resolved relative to its own entry point; bundling core rewrites that
     // import.meta.url and disconnects those assets from their owner.
-    external: ["@opentui/core", "@opentui/core-*"],
+    // Pino and thread-stream also resolve workers relative to their package
+    // directories. Bundling them materializes the build host's absolute
+    // node_modules path in generated __dirname values.
+    external: ["@opentui/core", "@opentui/core-*", "pino"],
     splitting: true,
     sourcemap: installBuild ? "none" : "external",
   });
@@ -146,6 +164,7 @@ async function main(): Promise<void> {
   }
 
   await assertLazyProviderChunk(result.outputs);
+  await assertRelocatableBuild(result.outputs);
   const sourceMaps = installBuild ? 0 : await detachSourceMaps(result.outputs);
   if (installBuild) {
     assertInstallArtifact({ artifactPaths: result.outputs.map((output) => output.path) });

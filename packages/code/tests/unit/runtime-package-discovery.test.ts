@@ -46,8 +46,13 @@ test("runtime closure entries must already be exact package roots", () => {
   expect(() => assertRuntimePackageRoot("/")).toThrow('invalid runtime package name: "/"');
 });
 
-test("artifact discovery keeps packages and ignores path-like createRequire calls", () => {
+test("artifact discovery keeps static and called packages while ignoring path-like specifiers", () => {
   const source = [
+    'import { pino } from "pino"',
+    'import "side-effect-package/register"',
+    'export { value } from "@scope/exported/subpath"',
+    'import local from "./local.ts"',
+    'export { readFile } from "node:fs"',
     'const Ajv = createRequire(import.meta.url)("ajv")',
     'const ignore = createRequire(import.meta.url)("ignore/subpath")',
     'const zod = load("zod/v4")',
@@ -57,5 +62,12 @@ test("artifact discovery keeps packages and ignores path-like createRequire call
     'const builtin = createRequire(import.meta.url)("node:fs")',
   ].join("\n");
 
-  expect(runtimePackageCandidates(source)).toEqual(["ajv", "ignore", "zod"]);
+  expect(runtimePackageCandidates(source)).toEqual([
+    "@scope/exported",
+    "ajv",
+    "ignore",
+    "pino",
+    "side-effect-package",
+    "zod",
+  ]);
 });

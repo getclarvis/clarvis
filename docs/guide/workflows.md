@@ -70,7 +70,7 @@ Brief paths are relative to the workflow directory.
 Select Admiral and ask:
 
 ```text
-Use the release-review workflow for target 0.0.1-beta. Explain its cost before running it.
+Use the release-review workflow for target 0.0.2-beta. Explain its cost before running it.
 ```
 
 Arguments such as `target` are required when declared. `/workflow` is the run-history and agent-tree

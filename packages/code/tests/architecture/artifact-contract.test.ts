@@ -4,6 +4,7 @@ import {
   assertInstallArtifact,
   assertLazyProviderArtifact,
   assertLazySurfaceArtifact,
+  assertRelocatableArtifact,
 } from "../../tooling/artifact/contract.ts";
 
 const lazyEntry = `async function load() {
@@ -120,4 +121,35 @@ test("the installed artifact contains no source maps", () => {
   expect(() => assertInstallArtifact({ artifactPaths: ["dist/maps/index.js.map"] })).toThrow(
     "installed artifact must not contain source maps",
   );
+});
+
+test("generated JavaScript contains no build-host checkout path", () => {
+  expect(() =>
+    assertRelocatableArtifact({
+      buildRoot: "/home/builder/clarvis",
+      javascriptArtifacts: [{ path: "dist/index.js", source: 'const root = "clarvis";' }],
+    }),
+  ).not.toThrow();
+  expect(() =>
+    assertRelocatableArtifact({
+      buildRoot: "/home/builder/clarvis",
+      javascriptArtifacts: [
+        {
+          path: "dist/chunk-pino.js",
+          source: 'var __dirname = "/home/builder/clarvis/node_modules/pino";',
+        },
+      ],
+    }),
+  ).toThrow("artifact embeds the build-host path: dist/chunk-pino.js");
+  expect(() =>
+    assertRelocatableArtifact({
+      buildRoot: String.raw`D:\a\clarvis\clarvis`,
+      javascriptArtifacts: [
+        {
+          path: String.raw`dist\chunk-pino.js`,
+          source: String.raw`var __dirname = "D:\\a\\clarvis\\clarvis\\node_modules\\pino";`,
+        },
+      ],
+    }),
+  ).toThrow(String.raw`artifact embeds the build-host path: dist\chunk-pino.js`);
 });

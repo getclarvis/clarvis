@@ -105,7 +105,7 @@ export-map entrypoint may match `compaction|live-context|live-entry`
 ### Model-facing surface
 
 This subsystem defines no tool the model calls directly. Its only end-user-triggerable entry point
-is the **`/compact`** slash command (`packages/code/src/app/commands.tsx:283-301`), which runs
+is the **`/compact`** slash command (`packages/code/src/app/commands.tsx:285-303`), which runs
 `deps.onCompactRun(request)` — wired in `packages/code/src/views/App.tsx:689-690` to
 `props.run.compact(request)`, the `RunHandle.compact(request?: string): Promise<void>` method
 declared on the protocol (`packages/protocol/src/runs.ts:707-712`). The kernel's
@@ -132,8 +132,8 @@ stored run request/profile and persists the replacement plus any summary usage
 | --- | --- | --- |
 | `CompactionRequest` | `{ request?: string }` | `packages/capability/src/api.ts:61` |
 | `CompactionSource` | `{ drain(): CompactionRequest[]; close?(): void }` | `packages/capability/src/api.ts:66` |
-| `CompactionContribution` | `{ source: string; text: string }` | `packages/capability/src/api.ts:577` |
-| `PreCompactContext` | `{ agent, subagentInstanceId?, estimatedTokens }` | `packages/capability/src/api.ts:556` |
+| `CompactionContribution` | `{ source: string; text: string }` | `packages/capability/src/api.ts:592` |
+| `PreCompactContext` | `{ agent, subagentInstanceId?, estimatedTokens }` | `packages/capability/src/api.ts:571` |
 | `CompactionStartedDetail` | live-only pass start `{ agent, subagent_instance_id?, mode }` | `packages/capability/src/trace-kinds.ts` (`CompactionStartedDetail`) |
 | `CompactionDetail` (= `CompactionEvent`) | trace payload for a completed pass | `packages/capability/src/trace-kinds.ts:294` |
 | `CompactionSkippedDetail` | trace payload for a skipped explicit request | `packages/capability/src/trace-kinds.ts:324` |
@@ -478,7 +478,7 @@ new array is shorter than the durable boundary) is reported as a `prefix_break` 
 
 | Step | Function | File:line |
 | --- | --- | --- |
-| User types `/compact [request]` | `run.compact` action | `packages/code/src/app/commands.tsx:283-301` |
+| User types `/compact [request]` | `run.compact` action | `packages/code/src/app/commands.tsx:285-303` |
 | TUI calls the run handle | `onCompactRun` → `props.run.compact` | `packages/code/src/views/App.tsx:689-690` |
 | Kernel pushes onto the queue | `RunHandle.compact` | `packages/kernel/src/runs/managed-run.ts:331-335` |
 | Queue accepts/rejects | `CompactionQueue.push` | `packages/kernel/src/runs/compaction-queue.ts:18-22` |
@@ -487,7 +487,7 @@ new array is shorter than the durable boundary) is reported as a `prefix_break` 
 | Contributions gathered if a request or scheduled need exists | `collectCompactionContributions` | `packages/loop/src/runtime/loop/lifecycle-hooks.ts:315-340` |
 | Policy applied | `attemptCompaction`/`runCompaction` | `packages/loop/src/runtime/context/llm-compaction.ts:394,480` |
 | Thunk's returned event recorded to trace | `runIterationPreamble` | `packages/loop/src/runtime/loop/loop-iteration.ts:49-50` |
-| A truncation event from `appendToolMessage` recorded separately | inline in the tool-dispatch loop, gated by `willTruncateToolResult`/`core.spillToolResult` | `packages/loop/src/runtime/loop/loop.ts:780-795` |
+| A truncation event from `appendToolMessage` recorded separately | inline in the tool-dispatch loop, gated by `willTruncateToolResult`/`core.spillToolResult` | `packages/loop/src/runtime/loop/loop.ts:805-820` |
 
 `buildCompactionThunk` (`packages/loop/src/runtime/loop/loop.ts:236-334`) is the orchestration point: it drains
 `core.compactionSource` (an optional `CompactionSource`, `packages/loop/src/runtime/loop/loop.ts:118`), determines whether a
@@ -580,14 +580,14 @@ overflowDiagnostic: (original) =>
   `exceeds the model context window (${core.compaction.windowTokens} tokens); ` +
   `eviction cannot recover. Provider error: ${original.message}`,
 ```
-(`packages/loop/src/runtime/loop/loop.ts:902-910`).
+(`packages/loop/src/runtime/loop/loop.ts:927-935`).
 
 On a `context_overflow` `ProviderError`, `callModelWithRecovery` calls `evict()` and retries, up to
 `MAX_OVERFLOW_RECOVERIES = 3` times per model call (`packages/loop/src/runtime/loop/loop-iteration.ts:7`, `packages/loop/src/runtime/loop/model-call.ts:96-107`),
 rebuilding the whole `LLMCallParams` — including a freshly recomputed `cacheBreakpoints()` — via
 `rebuild()` on every retry (`packages/loop/src/runtime/loop/model-call.ts:105`). `reachWatch.observeOverflow` and
 `ctx.forceEvictOldest()` are co-invoked from that one `evict` closure, over the same
-`ctx.estimateTokens()` reading (`packages/loop/src/runtime/loop/loop.ts:902-905`); a successful eviction is traced as an ordinary
+`ctx.estimateTokens()` reading (`packages/loop/src/runtime/loop/loop.ts:927-930`); a successful eviction is traced as an ordinary
 `"compaction"` event (`packages/loop/src/runtime/loop/model-call.ts:102-103`).
 
 If `evict()` returns `undefined` — no candidates left, or `!core.compaction.enabled` (§4.9) —
@@ -689,7 +689,7 @@ not shrink it").
 replace it — enforced by argument shape (`buildCompactionMessages` takes `prompt` and
 `contributions` as separate parameters with no path by which one assigns to the other) and by the
 message layout (base prompt always emitted first, whole).
-Production: `packages/loop/src/runtime/context/llm-compaction.ts:188-210`; type-level guarantee at `packages/capability/src/api.ts:577-587`.
+Production: `packages/loop/src/runtime/context/llm-compaction.ts:188-210`; type-level guarantee at `packages/capability/src/api.ts:592-602`.
 Test: `packages/loop/tests/unit/compaction-contributions.test.ts:29-49` ("the base prompt is never
 replaced").
 
@@ -746,7 +746,7 @@ below the automatic threshold and appends user text after hooks") and
 | A declared `context_window_tokens` is larger than what the provider actually accepts | `compaction.unreachable` warned once per agent loop, from a `context_overflow` observed *below* the high-water mark — a diagnosis only, never a clamp | `packages/loop/src/runtime/loop/compaction-reach.ts:46-70` (adjacent module; consumes `CompactionConfig` from this subsystem) |
 | `target_fraction` set equal to (or above) `context_fraction` | Guarded upstream, not here: `resolveSubagentProfiles` clamps `targetFraction` to stay `MIN_COMPACTION_HYSTERESIS` (0.2) below `fraction` | `packages/loop/src/runtime/subagents/subagent-profiles.ts:129-179` (out of this document's module list; see §7) |
 | `compact()`/`forceEvictOldest()` find nothing eligible | Returns `undefined`; caller treats as "nothing to do", never an error | `packages/loop/src/runtime/context/live-context.ts:329-331, 346-352` |
-| `forceEvictOldest()` returns `undefined` inside the mid-call overflow retry loop (nothing left to evict, or `!core.compaction.enabled`) | `callModelWithRecovery` throws a synthesized terminal `context_overflow` `ProviderError` naming `windowTokens`/`estimateTokens`, rather than retrying further (§4.16) | `packages/loop/src/runtime/loop/model-call.ts:108-115`, `packages/loop/src/runtime/loop/loop.ts:902-910` |
+| `forceEvictOldest()` returns `undefined` inside the mid-call overflow retry loop (nothing left to evict, or `!core.compaction.enabled`) | `callModelWithRecovery` throws a synthesized terminal `context_overflow` `ProviderError` naming `windowTokens`/`estimateTokens`, rather than retrying further (§4.16) | `packages/loop/src/runtime/loop/model-call.ts:108-115`, `packages/loop/src/runtime/loop/loop.ts:927-935` |
 | `/compact` pushed after the run has already settled | `CompactionQueue.push` returns `false` (the queue was `close()`d); `RunHandle.compact` throws `kernelError("not_found", "run '<id>' is no longer active")` rather than silently dropping the request. Two independent producers call `close()`: the run's settlement `finally` block, and the engine's own teardown | `packages/kernel/src/runs/managed-run.ts:317-335`; `packages/loop/src/runtime/loop/run-agent.ts:629-634` |
 | `RunService.compact` receives `mechanical_target_tokens` for an active run | `invalid_request`: mechanical context fitting requires a settled run | `packages/kernel/src/runs/run-service.ts:179-185`; transport duplicates the same live-handle guard at `packages/kernel/src/transport/server.ts:570-588` |
 | `mechanical_target_tokens` or `target_window_tokens` is not a positive safe integer | `invalid_request`; no context is read or replaced | `packages/kernel/src/runs/run-service.ts:172-178,264-270` |
@@ -798,7 +798,7 @@ never the ability to write one, so the context itself cannot fail on I/O).
   runtime edge: `d.ctx` (a `LiveContext`) is read and mutated on every iteration
   (`buildModelCall`, `packages/loop/src/runtime/loop/loop.ts:386-437`), and `buildCompactionThunk`'s returned closure is invoked
   from the iteration preamble (`compact: buildCompactionThunk(core, d)` — cited above as the call
-  site at `packages/loop/src/runtime/loop/loop.ts:850`).
+  site at `packages/loop/src/runtime/loop/loop.ts:875`).
 - `packages/loop/src/runtime/loop/model-call.ts` — `callModelWithRecovery`'s `evict`/`rebuild`
   hooks are `LiveContext.forceEvictOldest()`'s sole production caller and `buildModelCall`'s sole
   reason to be re-invoked mid-call (§4.16); it imports `CompactionEvent` (type-only) to trace what

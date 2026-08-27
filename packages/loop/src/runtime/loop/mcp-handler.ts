@@ -33,6 +33,7 @@ export function buildMcpHandler(deps: {
   const wireNames = deps.availableWireNames ?? deps.registry.tools.map((t) => t.wireName);
   return {
     matches: () => true,
+    canonicalName: (call) => deps.registry.resolve(call.name)?.fullName,
     async handle(call, iteration): Promise<HandlerVerdict> {
       const { resultText, errText, productive, images } = await executeMcpToolCall({
         call,

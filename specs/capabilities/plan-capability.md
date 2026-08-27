@@ -41,9 +41,9 @@ That claim is about grants, not about every path into `mode`: a trusted plugin c
 `capabilityRunPolicies.plans.skills[skill]` (`packages/capability/src/capability-run-policies.ts:9-14`)
 for a skill it packages, and when a run is entered through that skill *and* the operator has selected
 that same plugin as the Plans provider, the kernel folds the declared mode over the settings block's
-`mode` for that one run — `skillPlansMode` (`packages/kernel/src/file-kernel.ts:636-646`,
+`mode` for that one run — `skillPlansMode` (`packages/kernel/src/file-kernel.ts:638-648`,
 `packages/kernel/src/plugins/plugin-contributions.ts:429-431`) is read in the settings assembler
-(`packages/kernel/src/runs/settings-assembler.ts:356-362,436-445`) and only ever loses to an explicit
+(`packages/kernel/src/runs/settings-assembler.ts:368-374,436-445`) and only ever loses to an explicit
 `plans` param on the run request itself, never to the settings block. This bypasses `pluginContributable:
 false` on `plansSettingsSpec` (`packages/plan/src/settings.ts:90`) entirely, because it never goes
 through the settings merge that flag governs. The mechanism, its parsing and its precedence belong to
@@ -721,11 +721,11 @@ locator scoped to `PLANS_CAPABILITY_NAME` (`:660`–`667`), and the shared execu
 `() => planFactory.storeFor(scope.owner)` — the same factory the capability holds, so a run and the
 control plane read one provider store (`packages/plan/src/capability/index.ts:79`–`80`).
 
-`plansBlockToParam` (`packages/kernel/src/runs/settings-assembler.ts:127`–`141`) projects the
+`plansBlockToParam` (`packages/kernel/src/runs/settings-assembler.ts:139`–`141`) projects the
 settings block onto the request param. `retention` is always **materialized** —
 "an absent or malformed value becomes `PLANS_DEFAULTS.retention` rather than being dropped"
-(`packages/kernel/src/runs/settings-assembler.ts:119`–`121`) — and an unrecognized `mode` falls back to the default rather
-than disabling planning silently (`:123`–`124`).
+(`packages/kernel/src/runs/settings-assembler.ts:130-149`) — and an unrecognized `mode` falls back to the default rather
+than disabling planning silently (`:143-149`).
 
 ---
 
@@ -1172,7 +1172,7 @@ deliberately.
 
 **`PLAN_REVIEW_ELICIT_KIND` has one owner and one pinned duplicate.** The constant is declared in
 `@clarvis/capability` (`packages/capability/src/elicit.ts:68`, exported at
-`packages/capability/src/index.ts:250`) and read here (`packages/plan/src/capability/review-gate.ts:52`).
+`packages/capability/src/index.ts:252`) and read here (`packages/plan/src/capability/review-gate.ts:52`).
 `@clarvis/code` cannot import it — it depends on `@clarvis/kernel`, `@clarvis/protocol` and
 `@clarvis/paths` only — so it declares its own at
 `packages/code/src/adapters/elicit-types.ts:17` and uses that at

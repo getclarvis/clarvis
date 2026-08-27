@@ -142,10 +142,10 @@ lifecycle/settings capability is owned by [worktrees.md](../capabilities/worktre
 
 | Path | Owner | Cap |
 | --- | --- | --- |
-| `<globalDir>/settings.json` | `globalPaths().settingsFile` (`packages/paths/src/global.ts:110`) | 2 MiB (`packages/kernel/src/config/file-config-store.ts:209`) |
-| `<globalDir>/agents/<name>.md` | `globalPaths().agentFile` (`packages/paths/src/global.ts:129`) | 256 KiB each (`:170`) |
-| `<globalDir>/workspace-trust.json` | `globalPaths().workspaceTrustFile` (`packages/paths/src/global.ts:115`) | — |
-| `<globalDir>/CLARVIS.md` then `AGENTS.md` | `globalPaths().contextCandidates` (`packages/paths/src/global.ts:127`) | 2 MiB (`:174`) |
+| `<globalDir>/settings.json` | `globalPaths().settingsFile` (`packages/paths/src/global.ts:112`) | 2 MiB (`packages/kernel/src/config/file-config-store.ts:209`) |
+| `<globalDir>/agents/<name>.md` | `globalPaths().agentFile` (`packages/paths/src/global.ts:132`) | 256 KiB each (`:170`) |
+| `<globalDir>/workspace-trust.json` | `globalPaths().workspaceTrustFile` (`packages/paths/src/global.ts:117`) | — |
+| `<globalDir>/CLARVIS.md` then `AGENTS.md` | `globalPaths().contextCandidates` (`packages/paths/src/global.ts:130`) | 2 MiB (`:174`) |
 | `<ws>/.clarvis/settings.json` | `join(workspaceConfigDir, "settings.json")` (`packages/kernel/src/config/file-config-store.ts:353-358`) | 2 MiB |
 | `<ws>/.clarvis/agents/<name>.md` | `join(agentsDir, name + ".md")` (`packages/kernel/src/config/file-config-store.ts:365-369`) | 256 KiB each |
 | `<ws>/CLARVIS.md` then `AGENTS.md` | `CONTEXT_FILENAMES` (`packages/paths/src/constants.ts:82`) | 2 MiB |
@@ -357,7 +357,7 @@ cross-scope conflict" (`:533-537`). Tests at `packages/kernel/tests/contract/con
 | --- | --- | --- |
 | `listAgents()` (`packages/kernel/src/config/config-store.ts:104`) | one record per **shipped** name, already resolved through `resolveEffectiveAgent`, plus every non-builtin file record once per scope, plus plugin agents | `ConfigService.listAgents` (`packages/kernel/src/config/config-service.ts:476`), `createAgentWorkflowPolicy` (`packages/kernel/src/application/workflow-policy.ts:45`, `:49`) |
 | `readAgent(scope\|"builtin", name)` (`packages/kernel/src/config/config-store.ts:117`) | one **layer** verbatim, unresolved | `ConfigService.getAgent` (`packages/kernel/src/config/config-service.ts:490`), the cross-scope conflict check (`packages/kernel/src/config/config-service.ts:108`) |
-| `readEffectiveAgent(name)` (`packages/kernel/src/config/config-store.ts:124`) | what a run enters | `createSettingsRunAssembler` (`packages/kernel/src/runs/settings-assembler.ts:368`, `:380`) |
+| `readEffectiveAgent(name)` (`packages/kernel/src/config/config-store.ts:124`) | what a run enters | `createSettingsRunAssembler` (`packages/kernel/src/runs/settings-assembler.ts:380`, `:380`) |
 
 `readAgent` is "deliberately layer-precise rather than effective: an editor must open the bytes the
 user wrote, and the cross-scope conflict check must be able to ask whether a *file* exists"
@@ -498,7 +498,7 @@ resource bound and a first-match-wins candidate order, same as any other read on
 
 - **Candidates.** For `"global"`, `contextCandidates(scope)` is
   `globalPaths().contextCandidates` (`packages/kernel/src/config/file-config-store.ts:370-372`, sourced from
-  `packages/paths/src/global.ts:127`). For `"workspace"` it is `CONTEXT_FILENAMES.map(name =>
+  `packages/paths/src/global.ts:130`). For `"workspace"` it is `CONTEXT_FILENAMES.map(name =>
   join(opts.workspaceRoot, name))` when a `workspaceRoot` was supplied, else `undefined`
   (`packages/kernel/src/config/file-config-store.ts:373-376`). `CONTEXT_FILENAMES` is `["CLARVIS.md", "AGENTS.md"]`
   (`packages/paths/src/constants.ts:82`) — `CLARVIS.md` is tried first.
@@ -516,7 +516,7 @@ resource bound and a first-match-wins candidate order, same as any other read on
   through, otherwise `path` defaults to `""` when the store's record carried none.
 
 The selection is pinned across the config/run boundary by
-`packages/kernel/tests/component/settings-assembler.test.ts:78-115`: no file leaves the agent prompt
+`packages/kernel/tests/component/settings-assembler.test.ts:79-116`: no file leaves the agent prompt
 unchanged, `AGENTS.md` is used as the fallback, and seeding both candidates puts only `CLARVIS.md` in
 the assembled entry profile. The lower-level empty-scope and oversized-file cases remain covered by
 `packages/kernel/tests/integration/file-config-store.test.ts:72-73`, `:177`, and `:334-342`.

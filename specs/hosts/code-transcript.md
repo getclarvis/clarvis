@@ -1577,7 +1577,7 @@ Degradation that is **silent by design**: a tool whose result the parser cannot 
 | `views/**` → `theme/{tokens,glyphs,tone,syntax,surfaces}` | runtime | `packages/code/src/views/blocks.tsx:3`–`:7`, `packages/code/src/views/tools/registry.tsx:3`–`:5`, `packages/code/src/views/tools/mutation-gate.ts:3`, `packages/code/src/views/truncate.ts:1`, `packages/code/src/views/spinner.ts:2` |
 | `theme/glyphs.ts` → `core/marks.ts` | runtime | `packages/code/src/theme/glyphs.ts:2`; the theme wraps the core table in a Solid signal so an ascii toggle re-renders (`packages/code/src/theme/glyphs.ts:16`–`:21`) |
 | `views/tools/**` → `adapters/{tool-identity,tool-parsers}` | runtime | `packages/code/src/views/tools/registry.tsx:7`, `:23`; `packages/code/src/views/tools/mutation-gate.ts:1`, `:2`; `packages/code/src/views/tools/signature.ts:1` |
-| `adapters/store.ts` → `views/**` | **forbidden** | why `describeToolCall` is injected at the composition root instead of imported (`packages/code/src/adapters/store.ts:274`–`:276`, wired at `packages/code/src/index.tsx:149`) |
+| `adapters/store.ts` → `views/**` | **forbidden** | why `describeToolCall` is injected at the composition root instead of imported (`packages/code/src/adapters/store.ts:274`–`:276`, wired at `packages/code/src/index.tsx:154`) |
 
 ### 7.2 The store seam
 
@@ -1589,7 +1589,7 @@ document. Four concrete couplings matter here:
 2. **`rawToolArguments`** (`packages/code/src/adapters/store.ts:58`) unwraps Solid's `$RAW` before the display
    projector sees the arguments, because a store proxy exposes every field as an accessor and the
    projector deliberately refuses accessors (`packages/code/src/adapters/store.ts:48`–`:57`, and INV-T07 above).
-3. **`describeToolCall`** (`packages/code/src/adapters/store.ts:278`, implemented at `packages/code/src/index.tsx:149`) is the injection that
+3. **`describeToolCall`** (`packages/code/src/adapters/store.ts:278`, implemented at `packages/code/src/index.tsx:154`) is the injection that
    lets the store keep a resident `signature` and `mutation` on each tool node without importing
    `views/`. It is called on `tool_call` close (`packages/code/src/adapters/store.ts:1369`).
 4. **`defaultFolded`** (`packages/code/src/adapters/store.ts:1521`, backed by `foldDefaults`) supplies `BlockView`'s and
@@ -1607,7 +1607,7 @@ document. Four concrete couplings matter here:
 | `views/Sidebar.tsx`, `views/overlays/PlanOverlay.tsx` | `taskTone` (`packages/code/src/views/blocks.tsx:79`) |
 | `packages/code/src/views/app/TranscriptRegion.tsx` | `Sidebar` (the split column and drawer mounts), plus `rosterSummary` for the closed-surface focused-agent context row |
 | `packages/code/src/views/App.tsx:1237` | `PlanStrip`, mounted only when the secondary surface is not split (`:1231`–`:1234`) |
-| `packages/code/src/index.tsx:149` | `formatToolCall` + `mutationStats` composed into `describeToolCall` |
+| `packages/code/src/index.tsx:154` | `formatToolCall` + `mutationStats` composed into `describeToolCall` |
 | `src/run-host.ts`, `src/cli-mode.ts`, `src/features/run/status-presenter.ts` | `core/run-status.ts`'s `plainStatusLine`/`memoryNoticeStatus`/`progressStatus`/`liveRunStatus` |
 
 ### 7.4 Delegated

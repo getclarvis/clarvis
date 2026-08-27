@@ -15,6 +15,7 @@ import type {
 } from "@clarvis/capability";
 import {
   CONTEXT_HOOK_EVENTS,
+  EXTERNAL_HOOK_TOOL_NAMES,
   GATE_HOOK_EVENTS,
   HOOK_DEFAULT_TIMEOUT_MS,
   EXTERNAL_HOOK_EVENT_NAMES,
@@ -79,7 +80,44 @@ type HookContextByEvent = {
   budget_exhausted: BudgetExhaustedContext;
   user_steer: UserSteerContext;
   session_start: undefined;
+  user_prompt_expansion: UserPromptExpansionHookContext;
 };
+
+/** Context carried by a user-invoked skill-command expansion. */
+export interface UserPromptExpansionHookContext {
+  commandName: string;
+}
+
+/** Add the external skill alias without changing Clarvis's own tool candidate. */
+function externalToolInput(tool: string, value: unknown): unknown {
+  const bounded = clampValue(value);
+  if (
+    tool !== "load_skill" ||
+    typeof bounded !== "object" ||
+    bounded === null ||
+    Array.isArray(bounded)
+  ) {
+    return bounded;
+  }
+  const record = bounded as Record<string, unknown>;
+  return typeof record.name === "string" ? { ...record, skill: record.name } : record;
+}
+
+/** Spell a tool the way a compatible external hook reads it from stdin. */
+function externalHookToolName(context: BeforeToolUseContext): string {
+  const fullName = context.toolFullName;
+  let externalName: string | undefined;
+  if (fullName !== undefined) {
+    const separator = fullName.indexOf(".");
+    if (separator > 0 && separator < fullName.length - 1) {
+      const namespace = fullName.slice(0, separator);
+      const pluginSeparator = namespace.lastIndexOf(":");
+      const server = namespace.slice(pluginSeparator + 1);
+      externalName = `mcp__${server}__${fullName.slice(separator + 1)}`;
+    }
+  }
+  return externalName ?? EXTERNAL_HOOK_TOOL_NAMES[context.tool] ?? context.tool;
+}
 
 /**
  * Total serializer table over `HookConfig["event"]`: a new schema event cannot
@@ -98,12 +136,12 @@ type HookContextByEvent = {
  */
 const SERIALIZE = {
   pre_tool_use: (c: BeforeToolUseContext) => ({
-    tool_name: c.tool,
-    tool_input: clampValue(c.arguments),
+    tool_name: externalHookToolName(c),
+    tool_input: externalToolInput(c.tool, c.arguments),
   }),
   post_tool_use: (c: AfterToolUseContext) => ({
-    tool_name: c.tool,
-    tool_input: clampValue(c.arguments),
+    tool_name: externalHookToolName(c),
+    tool_input: externalToolInput(c.tool, c.arguments),
     tool_response: {
       text: clampText(c.result.text),
       progress: c.result.progress,
@@ -167,12 +205,19 @@ const SERIALIZE = {
     id: c.id,
   }),
   session_start: () => ({}),
+  user_prompt_expansion: (c: UserPromptExpansionHookContext) => ({
+    command_name: c.commandName,
+  }),
 } satisfies { [Event in HookEvent]: (context: HookContextByEvent[Event]) => unknown };
 
 function toolCandidate(event: HookEvent, context: unknown): HookInvocation["candidate"] {
   if (!TOOL_EVENTS.has(event)) return undefined;
   const candidate = context as BeforeToolUseContext;
-  return { tool: candidate.tool, arguments: candidate.arguments };
+  return {
+    tool: candidate.tool,
+    ...(candidate.toolFullName === undefined ? {} : { aliases: [candidate.toolFullName] }),
+    arguments: candidate.arguments,
+  };
 }
 
 /** Project one lifecycle fire point into the bounded hook subprocess envelope. */

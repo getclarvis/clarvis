@@ -28,7 +28,7 @@ body and one unterminated SSE event before an SDK parser can retain them. (e) A 
 
 The package has no `zod` dependency and defines no settings schema
 (`packages/llm/package.json:47-54`); it is configured entirely through function arguments handed to
-it by `@clarvis/loop`'s `buildRunDeps` (`packages/loop/src/runtime/build-run-deps.ts:412-433`).
+it by `@clarvis/loop`'s `buildRunDeps` (`packages/loop/src/runtime/build-run-deps.ts:425-446`).
 
 ---
 
@@ -122,7 +122,7 @@ citation is locatable by symbol, not only by line.
 | *(any name)* | `packages/llm/src/ai-sdk-adapter.ts:250` | `process.env[name]` is the **default** credential/header resolver when `AiSdkProviderConfig.resolveRegistryKey` is absent |
 
 There is no other environment read in `packages/llm/src`. The provider timeouts, retry budget and
-transport bounds arrive as arguments from the host (`packages/loop/src/runtime/build-run-deps.ts:412-433`).
+transport bounds arrive as arguments from the host (`packages/loop/src/runtime/build-run-deps.ts:425-446`).
 
 ---
 
@@ -701,7 +701,7 @@ against cycles.
 
 ### 4.16 Decorator composition, as the host wires it
 
-`packages/loop/src/runtime/build-run-deps.ts:412-433` builds, innermost first:
+`packages/loop/src/runtime/build-run-deps.ts:425-446` builds, innermost first:
 
 ```
 createAiSdkProvider(...)                       :391
@@ -1160,7 +1160,7 @@ break" the lazy-entry walk (`packages/llm/src/openai-compatible-request.ts:7-13`
 
 | Consumer | Edge | Forced by |
 |---|---|---|
-| `@clarvis/loop` | runtime, static, hard dependency | `packages/loop/package.json:81` (`workspace:*`), and the value imports at `packages/loop/src/runtime/build-run-deps.ts:12-20` and `packages/loop/src/runtime/execute-run.ts:4` |
+| `@clarvis/loop` | runtime, static, hard dependency | `packages/loop/package.json:81` (`workspace:*`), and the value imports at `packages/loop/src/runtime/build-run-deps.ts:17-25` and `packages/loop/src/runtime/execute-run.ts:4` |
 
 That is the only `@clarvis/*` package importing it. `packages/capability/src/env-interpolate.ts:6`,
 `packages/capability/src/env-ref.ts:4`, `packages/tasks/src/trace.ts:81` and
@@ -1190,7 +1190,7 @@ takes one value import, `contentToText`, at `:3`).
   settings, and `parseModelRef`/`resolveProvider` — belongs to
   [model-catalog-and-provider-resolution](../hosts/model-catalog.md). This package consumes the resolved value only.
 - **Where admission, retry budget and timeouts are wired into a run**, and the `CLARVIS_*` env
-  values that set them (`packages/loop/src/runtime/build-run-deps.ts:413-432`), belong to
+  values that set them (`packages/loop/src/runtime/build-run-deps.ts:426-445`), belong to
   [loop-budgets-clocks-and-guards](../engine/budgets-and-guards.md).
 
 ---

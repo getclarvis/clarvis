@@ -41,13 +41,13 @@ Every hub is registered as a *view* command. The name/title/surface/parent tuple
 | Command | Title | Slash | Surface | Parent | Registered at |
 |---|---|---|---|---|---|
 | `agents.open` | Agents | — | `internal` | `settings` | `packages/code/src/features/agents/commands.ts:22` |
-| `tasks.open` | Tasks | `/tasks` | `slash` | — | `packages/code/src/app/commands.tsx:199` |
-| `sessions.open` | Sessions | `/sessions` | `slash` | `sessions` | `packages/code/src/app/commands.tsx:420` |
-| `workflows.open` | Workflows | `/workflow` | `slash` | — | `packages/code/src/app/commands.tsx:449` |
-| `controls.open` | Run controls | — | `internal` | `settings` | `packages/code/src/app/commands.tsx:606` |
-| `memory.config` | Memory settings | — | `internal` | `settings` | `packages/code/src/app/commands.tsx:878` |
+| `tasks.open` | Tasks | `/tasks` | `slash` | — | `packages/code/src/app/commands.tsx:201` |
+| `sessions.open` | Sessions | `/sessions` | `slash` | `sessions` | `packages/code/src/app/commands.tsx:422` |
+| `workflows.open` | Workflows | `/workflow` | `slash` | — | `packages/code/src/app/commands.tsx:451` |
+| `controls.open` | Run controls | — | `internal` | `settings` | `packages/code/src/app/commands.tsx:608` |
+| `memory.config` | Memory settings | — | `internal` | `settings` | `packages/code/src/app/commands.tsx:883` |
 
-`tasks.open` alone carries `enabled: deps.tasks.available` (`packages/code/src/app/commands.tsx:206`);
+`tasks.open` alone carries `enabled: deps.tasks.available` (`packages/code/src/app/commands.tsx:208`);
 the other five are unconditionally registered.
 
 ### 2.2 View entry points
@@ -557,7 +557,7 @@ computation," not something specific to memory or an accidental one-off.
 Five rows, fixed order (`packages/code/src/views/config/RunControlsPanel.tsx:337`): Safety preset (0),
 Command review (1), Memory for this session (2), Planning mode (3), Plan history (4). `[b] sandbox
 details` is offered only on row 0 (`:342`), and the host wires it to `openWithReturn("sandbox.config",
-"controls.open", host.scope())` (`packages/code/src/app/commands.tsx:618`).
+"controls.open", host.scope())` (`packages/code/src/app/commands.tsx:620`).
 
 `host.bindScope({ mode: "retarget" })` is declared with an in-source note that "Every write here goes
 to `host.scope()`, so the toggle retargets rather than reloads"
@@ -969,7 +969,7 @@ edge to the kernel. `TasksController` is a structural `ReturnType<>` alias
 | `src/features/agents/commands.ts` | `AgentsPanel` | `packages/code/src/features/agents/commands.ts:7` |
 | `src/views/App.tsx` | `SessionCatalogItem` (type) | `packages/code/src/views/App.tsx:40` |
 | `src/views/App.tsx` | `runStripText` | `packages/code/src/views/App.tsx:1014` |
-| `src/index.tsx` | `progressStatusText`, `presentStatusLine` | `packages/code/src/index.tsx:645`, `:1023` |
+| `src/index.tsx` | `progressStatusText`, `presentStatusLine` | `packages/code/src/index.tsx:652`, `:1023` |
 | `src/views/overlays/ProfilePicker.tsx` | `deriveAgentShape`, `grantBadges` | `packages/code/src/views/overlays/ProfilePicker.tsx:5` |
 | `src/adapters/active-agent.ts` | `profileView`, `deriveAgentShape` | `packages/code/src/adapters/active-agent.ts:4` |
 | `src/features/providers/controller.ts` | `createDisposeGuard` | `packages/code/src/features/providers/controller.ts:20` |
@@ -1022,7 +1022,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
    view's mount/dispose lifecycle, not "session" in any looser sense. `nextShortId` and `shortIds`
    (`packages/code/src/views/config/WorkflowsHub.tsx:121`–`:122`) are closure state created exactly
    once, when `WorkflowsHub(host, deps)` runs as the `view` factory of the `"workflows.open"`
-   `registerView` call (`packages/code/src/app/commands.tsx:446`–`:463`); `backToList()`
+   `registerView` call (`packages/code/src/app/commands.tsx:448`–`:463`); `backToList()`
    (`:387`–`:390`) only clears the `detail`/`node` **signals**, never touching the counter, because
    navigating from a workflow's tree back to the list is internal `setDetail`/`setNode` state inside
    the same still-mounted instance (`openWorkflow`, `:214`–`:239`, sets `detail` without remounting).

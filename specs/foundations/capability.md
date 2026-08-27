@@ -244,7 +244,7 @@ three per-agent override blocks. `AgentProfile` (`:301-318`) is the full agent d
 `description?`, `model`, `base_prompt?`, `tools`, `grants?`, `can_spawn?`/`default_spawn?` (delegation),
 `iteration_limit?`/`stagnation_threshold?`/`call_timeout_ms?`, and the three override blocks above.
 
-**`RunRequest` (`:349-384`).** The complete input to one loop run:
+**`RunRequest` (`:400-444`).** The complete input to one loop run:
 
 | Field | Type | Note |
 |---|---|---|
@@ -265,6 +265,7 @@ three per-agent override blocks. `AgentProfile` (`:301-318`) is the full agent d
 | `agents?` | `AgentsParam` (`:395-407`) | see below |
 | `guard_mode?` | `GuardMode` (`:410`, `off \| on \| auto`) | — |
 | `guard_judge?` | `GuardJudgeConfig` (`:414-419`) | judge `prompt`, optional `model`/`on_unsure`/`timeout_ms` |
+| `hook_user_prompt_expansion?` | `{ command_name: string }` | host-derived context for the one user-invoked skill expansion that seeded the run; ordinary prompts and model-initiated skill loads omit it (`:435-443`) |
 
 `PromptCacheTtl`'s doc-comment states Anthropic bills a `5m` write at 1.25x base input and a `1h` write
 at 2x, a read at 0.1x either way (`:342-345`). A capability shipped in its own package takes its
@@ -281,35 +282,35 @@ exists follows from whether the run's entry agent can spawn at all: `buffer_line
 `BudgetConfig` (`:219-224`) models only `stop`/`escalate` outcomes for an exceeded budget; no reason for
 that closed pair over a richer policy is stated in the source.
 
-**`HandlerResult` and the hook vocabulary.** `HandlerResult` (`:428-433`) is `text`, `progress`
-(feeds stagnation detection), optional `taskId`, optional `images`. `HookVerdict` (`:453-457`) is
+**`HandlerResult` and the hook vocabulary.** `HandlerResult` (`:495-500`) is `text`, `progress`
+(feeds stagnation detection), optional `taskId`, optional `images`. `HookVerdict` (`:540`) is
 `pass | deny(message) | advise(message) | rewrite(arguments, message?)`; the doc-comment states
 `rewrite` is meaningful only for `beforeToolUse` and is safe because a rewrite happens *upstream* of
 both the tool's own schema validation and the command guard, and that the replacement is total, never a
-merge (`:435-451`). `LifecycleHook` (`:591-614`) bundles four gates returning a `HookVerdict`
+merge (`:517-539`). `LifecycleHook` (`:680-703`) bundles four gates returning a `HookVerdict`
 (`beforeToolUse`, `afterToolUse`, `preFinalize`, `preDelegateTask`) and seven `void`-returning observers
 (`onRunStart`, `onRunEnd`, `onSubagentComplete`, `onPreCompact`, `onModelCallError`,
 `onBudgetExhausted`, `onUserSteer`); all eleven are optional. Their contexts:
 
 | Context | Fields | Cite |
 |---|---|---|
-| `BeforeToolUseContext` | `tool`, `arguments` | `:460-463` |
-| `AfterToolUseContext` | `tool`, `arguments`, read-only `result: HandlerResult` | `:466-470` |
-| `PreFinalizeContext` | `agent`, `subagentInstanceId?`, `mode: "text" \| "submit"`, `text?`, `value?` | `:481-489` |
-| `PreDelegateTaskContext` | `title`, `task`, `profile`, `taskId?` | `:492-497` |
-| `RunStartContext` | `mode`, `entry`, `leadModel?`, `subagentModel?` | `:500-505` |
-| `RunEndContext` | `status`, `errorCode?`, `iterationsUsed`, `elapsedMs` | `:508-513` |
-| `SubagentCompleteContext` | `subagentInstanceId`, `status`, `result` | `:516-520` |
-| `PreCompactContext` | `agent`, `subagentInstanceId?`, `estimatedTokens` | `:523-527` |
-| `ModelCallErrorContext` | `agent`, `subagentInstanceId?`, `iteration`, `model`, `message` | `:559-565` |
-| `BudgetExhaustedContext` | `agent`, `reason: "exhausted" \| "declined"`, `tokensUsed`, `iterationsUsed` | `:568-573` |
-| `UserSteerContext` | `agent`, `subagentInstanceId?`, `iteration`, `message`, `id?` | `:576-582` |
+| `BeforeToolUseContext` | wire `tool`, optional stable `toolFullName`, `arguments` | `:543-549` |
+| `AfterToolUseContext` | wire `tool`, optional stable `toolFullName`, `arguments`, read-only `result: HandlerResult` | `:552-559` |
+| `PreFinalizeContext` | `agent`, `subagentInstanceId?`, `mode: "text" \| "submit"`, `text?`, `value?` | `:570-578` |
+| `PreDelegateTaskContext` | `title`, `task`, `profile`, `taskId?` | `:581-586` |
+| `RunStartContext` | `mode`, `entry`, `leadModel?`, `subagentModel?` | `:589-594` |
+| `RunEndContext` | `status`, `errorCode?`, `iterationsUsed`, `elapsedMs` | `:597-602` |
+| `SubagentCompleteContext` | `subagentInstanceId`, `status`, `result` | `:605-609` |
+| `PreCompactContext` | `agent`, `subagentInstanceId?`, `estimatedTokens` | `:612-616` |
+| `ModelCallErrorContext` | `agent`, `subagentInstanceId?`, `iteration`, `model`, `message` | `:648-654` |
+| `BudgetExhaustedContext` | `agent`, `reason: "exhausted" \| "declined"`, `tokensUsed`, `iterationsUsed` | `:657-662` |
+| `UserSteerContext` | `agent`, `subagentInstanceId?`, `iteration`, `message`, `id?` | `:665-671` |
 
-`onPreCompact` may additionally return `CompactionContribution[]` (`:544-556`): a `source` (attribution
+`onPreCompact` may additionally return `CompactionContribution[]` (`:633-645`): a `source` (attribution
 only, never shown to the summarizer — "workspace hooks all report `hook`") plus the request `text`,
 *added* to the profile's own compaction prompt, never able to replace it because the type carries no
-field through which "instead of" could be expressed (`:529-543`). A throw from `onPreCompact` is
-swallowed by the caller, since compaction fires because the context is already over budget (`:600-609`).
+field through which "instead of" could be expressed (`:618-632`). A throw from `onPreCompact` is
+swallowed by the caller, since compaction fires because the context is already over budget (`:689-699`).
 
 ### 2.8 The loop-time build context (`loop-contract.ts`)
 
@@ -348,8 +349,9 @@ contract: prefer a port over exposing an engine type" (`:41-44`).
 
 `HandlerVerdict` (`:88-92`) is a tool handler's ruling on one dispatched call: `{kind:"result", ...HandlerResult}`,
 `{kind:"deferred", run}` (a continuation to run, optionally under an abort signal), `{kind:"terminal",
-result: AgentResult}`, or `{kind:"cancelled"}`. `ToolHandler` (`:99-102`) is `matches(call)` +
-`handle(call, iteration)`. `FinalizeAttempt` (`:108`) is an agent's bid to finish (`mode: "text" |
+result: AgentResult}`, or `{kind:"cancelled"}`. `ToolHandler` (`:99-104`) is `matches(call)` plus an
+optional `canonicalName(call)` for a stable identity when the model-facing wire name is a projection,
+and `handle(call, iteration)`. `FinalizeAttempt` (`:110`) is an agent's bid to finish (`mode: "text" |
 "submit"`, optional `value`/`text`). `GateOutcome` (`:115-118`) is a finalize gate's ruling:
 `{kind:"pass"}`, `{kind:"nudge", note, unbounded?}` — an `unbounded` nudge is exempt from the nudge
 budget — or `{kind:"terminal", result: AgentResult}`. `FinalizeGate` (`:125-128`) is `check(attempt)`
@@ -1136,6 +1138,14 @@ preserved rather than defaulted to off): `packages/capability/tests/unit/provide
 own per-provider-kind handling of each of the four values is delegated to [llm-provider-layer](llm.md)
 (`specs/foundations/llm.md`).
 
+**INV-C52.** A projected tool may retain two identities without conflating them: `tool` is the
+model-facing wire name, while `toolFullName` is the optional stable dotted identity supplied by the
+claiming `ToolHandler.canonicalName`. When present, the same full identity reaches both the before- and
+after-tool hook contexts for that dispatch. Production (contract):
+`packages/capability/src/loop-contract.ts:94-104` and `packages/capability/src/api.ts:542-559`.
+Production (engine): `packages/loop/src/runtime/loop/loop.ts:471-485`, `:526-594`. Test:
+`packages/loop/tests/unit/tool-hooks.test.ts:171-214`.
+
 ## 6. Failure modes and degradation
 
 | Situation | Behaviour | Cite |
@@ -1256,7 +1266,7 @@ widening of the contract, preferring a port over exposing an engine type
   `dedupeKey` (`packages/capability/tests/unit/tasks.test.ts:47`, `:101`) or inside the `operation` string
   (`packages/capability/tests/unit/tasks.test.ts:60`, `:81`).
 - **`ports.ts` re-export surface vs. `index.ts`.** `trace.ts` does `export * from "./trace-kinds.ts"`
-  (`packages/capability/src/trace.ts:9`) while `index.ts` enumerates its type exports explicitly (`packages/capability/src/index.ts:309-362`), so at
+  (`packages/capability/src/trace.ts:9`) while `index.ts` enumerates its type exports explicitly (`packages/capability/src/index.ts:311-364`), so at
   least one type (`VisionAnalysisDetail`, declared at `packages/capability/src/trace-kinds.ts:277`
   and named nowhere in `index.ts`) is reachable through `./trace` but not through `.`. Whether that asymmetry is deliberate is not
   recorded in either file.

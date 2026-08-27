@@ -3,19 +3,21 @@
 > Publique e explore listagens selecionadas de plugins sem tratar um catálogo como permissão para
 > executar código.
 
-## Adicione um marketplace e instale um plugin
+## Explore o marketplace oficial e instale um plugin
 
-Digite `/extensions/market` e siga a sequência completa de ativação:
+Digite `/extensions/market`. O Clarvis carrega automaticamente o catálogo oficial
+[`getclarvis/marketplace`](https://github.com/getclarvis/marketplace); você não precisa adicionar a
+URL dele às configurações. Depois, siga a sequência completa de ativação:
 
-1. Pressione `a` e insira a URL Git do repositório do marketplace.
-2. Selecione uma listagem e pressione Enter para instalá-la.
-3. O Clarvis abre a tela Plugins. Selecione o plugin instalado e pressione `e` para habilitá-lo.
-4. Se ele fornecer hooks, abra `/extensions/hooks`, inspecione cada definição exata e pressione `t`
+1. Selecione uma listagem e pressione Enter para instalá-la.
+2. O Clarvis abre a tela Plugins. Selecione o plugin instalado e pressione `e` para habilitá-lo.
+3. Se ele fornecer hooks, abra `/extensions/hooks`, inspecione cada definição exata e pressione `t`
    para aprovar as que você aceitar.
 
-Pressione `r` no navegador de marketplaces para buscar novamente os catálogos configurados. Uma
-listagem é apenas um ponteiro para um repositório de origem: aparecer em um marketplace não concede
-confiança, não habilita nada e não aprova nenhum hook.
+Pressione `a` para adicionar outro marketplace por URL Git. Pressione `r` para buscar novamente os
+catálogos oficial e adicionados. Uma listagem é apenas um ponteiro para um repositório de origem:
+aparecer em um marketplace não instala nada, não concede confiança, não habilita nada e não aprova
+nenhum hook.
 
 ::: warning Comportamento da TUI local
 A navegação em marketplaces executa o Git na máquina que exibe a TUI. Use esse fluxo com a TUI local
@@ -63,9 +65,16 @@ Assim como os manifestos de plugins, os documentos de marketplace são lidos de 
 Campos desconhecidos e problemas de apresentação recuperáveis são relatados como observações, em vez
 de serem ignorados silenciosamente. Listagens sem um `name` ou `source` utilizável são descartadas.
 
-## Configure um marketplace manualmente
+Para contribuir com um plugin para o catálogo oficial, siga o processo de contribuição em
+[`getclarvis/marketplace`](https://github.com/getclarvis/marketplace/blob/main/CONTRIBUTING.md). O
+repositório oficial registra os metadados de revisão e a revisão upstream exata inspecionada para cada entrada
+aceita. O código do plugin permanece no repositório upstream; `path` identifica um subdiretório apenas
+quando necessário.
 
-A TUI grava as URLs de marketplaces nas suas configurações globais. Você também pode editar
+## Configure manualmente um marketplace adicional
+
+O marketplace oficial é integrado ao Clarvis e não é gravado nas configurações. A TUI grava as URLs
+dos marketplaces adicionais nas suas configurações globais. Você também pode editar
 `~/.clarvis/settings.json`:
 
 ```json

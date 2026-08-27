@@ -223,7 +223,7 @@ with `session_id === prompt_cache_key` on every turn and `headers["x-session-id"
    defaults `prompt_cache_ttl` to `"1h"` whenever `guardParksOnHuman(params.guard_mode, merged.guard,
    params.guard_judge !== undefined)` is true — i.e. the effective guard mode routes bash
    confirmations to a human — before the request ever reaches `runRequestSchema`/`executeRun`
-   (`packages/kernel/src/runs/settings-assembler.ts:421-427`, `guardParksOnHuman` at
+   (`packages/kernel/src/runs/settings-assembler.ts:433-439`, `guardParksOnHuman` at
    `packages/kernel/src/guard/resolver.ts:66-87`, whose own doc comment states "the loop cannot derive
    this itself because guard mode is resolved from host settings it never sees"). This is a second,
    independent TTL default, ahead of and separate from `humanParkLikely`'s.
@@ -244,7 +244,7 @@ affinity ACROSS a conversation's `continue_from` turns, pass your own stable val
 (`packages/loop/src/validation/request/request-schema.ts:28-46`). `@clarvis/code` supplies that stable
 value: it sets `promptCacheKey = sess.meta()?.id` — the session id, not a fresh execution id — on every
 turn it starts (`packages/code/src/run-host.ts:619,667,692,761,773,817,833`). Neither
-`@clarvis/kernel`'s `packages/kernel/src/runs/settings-assembler.ts:421-423` nor `packages/kernel/src/workflows/workflows-service.ts:354-356,470-472` derive or
+`@clarvis/kernel`'s `packages/kernel/src/runs/settings-assembler.ts:433-435` nor `packages/kernel/src/workflows/workflows-service.ts:354-356,470-472` derive or
 override `prompt_cache_key`; they only forward whatever the caller supplied.
 
 ### 4.2 Assembling one request (`buildRequestOptions`)
@@ -311,7 +311,7 @@ to the true end and is never inside the durable prefix. `removeAt`/`replace` rep
 ### 4.5 Runtime detection of a broken prefix (in-band, on every model call)
 
 `CachePrefixWatch` (`packages/loop/src/runtime/loop/iteration-metrics.ts:105-123`), one instance per
-agent loop (`packages/loop/src/runtime/loop/loop.ts:834`), folds each iteration's `cached_tokens`:
+agent loop (`packages/loop/src/runtime/loop/loop.ts:859`), folds each iteration's `cached_tokens`:
 
 | Prior `cached_tokens` | This iteration's `cached_tokens` | `observe()` returns | Effect |
 |---|---|---|---|
@@ -378,7 +378,7 @@ identical across every iteration of one run: the same `JSON.stringify(tools)`, t
 (not incidental Set/Map iteration order), and the same rendered system message content.
 Production: `packages/loop/src/runtime/entry-seed.ts:142-149` (system head built once per run from
 inputs that do not change turn to turn); the tool array is part of `LoopDerived`, computed once per
-`runAgentLoop` invocation (`packages/loop/src/runtime/loop/loop.ts:823`) and passed unchanged to every
+`runAgentLoop` invocation (`packages/loop/src/runtime/loop/loop.ts:848`) and passed unchanged to every
 `buildModelCall` (`:379-411`).
 Test: `packages/loop/tests/integration/prefix-invariants.test.ts:68` (tool definitions),
 `:77` (tool order), `:87` (system head).
@@ -551,7 +551,7 @@ top, which reject the run request before any call is made.
   explicit per-call override. It is not, however, the sole place a *default* for either field is
   computed: `@clarvis/kernel`'s `createSettingsRunAssembler` independently defaults
   `prompt_cache_ttl` to `"1h"` via `guardParksOnHuman` ahead of `executeRun`'s own `humanParkLikely`
-  fallback (`packages/kernel/src/runs/settings-assembler.ts:421-427`,
+  fallback (`packages/kernel/src/runs/settings-assembler.ts:433-439`,
   `packages/kernel/src/guard/resolver.ts:66-87`) — see §4.1 point 3.
 - **`@clarvis/code` is what actually achieves cross-turn session affinity**, by supplying
   `prompt_cache_key = sess.meta()?.id` on every `startRun` call

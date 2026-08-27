@@ -295,6 +295,24 @@ describe("run", () => {
     expect(h.calls[0]?.options.env.CLARVIS_HOOK_GATE).toBe("0");
   });
 
+  test("publishes a canonical full tool name beside its model-facing wire name", async () => {
+    const h = harness();
+    await runOnce(
+      h,
+      { event: "pre_tool_use", command: "x" },
+      invocation({
+        candidate: {
+          tool: "remote_search",
+          aliases: ["remote.search"],
+          arguments: {},
+        },
+      }),
+      (child) => child.finish(0),
+    );
+    expect(h.calls[0]?.options.env.CLARVIS_HOOK_TOOL).toBe("remote_search");
+    expect(h.calls[0]?.options.env.CLARVIS_HOOK_TOOL_FULL_NAME).toBe("remote.search");
+  });
+
   test("a spec timeout overrides the fire point's default", async () => {
     const h = harness();
     await runOnce(

@@ -23,6 +23,10 @@ plugins by name and source. Reading a listing grants nothing: the schema's own d
 validated URL into a staging directory, then an atomic `rename` into the global install root
 (`packages/kernel/src/adapters/git/plugin-fetcher.ts:135`,
 `packages/kernel/src/adapters/filesystem/plugin-repository.ts:196`).
+The TUI includes `https://github.com/getclarvis/marketplace.git` as its product-owned catalog source
+without writing it to settings (`OFFICIAL_MARKETPLACE_URL` and `DEFAULT_MARKETPLACE_URLS`,
+`packages/code/src/adapters/marketplace.ts:27-31`). This changes discovery only: every plugin in that
+catalog still passes through the same explicit install, enablement and hook-approval gates.
 
 The dominant design property throughout is **per-artifact degradation**: every way a plugin document
 can fail to be read resolves to a *note* attached to the plugin or listing, not to the loss of the
@@ -60,11 +64,11 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 
 | Symbol | Signature | Definition |
 |---|---|---|
-| `readPluginManifestSource` | `(dir) => PluginManifestSource \| { error }` | `packages/kernel/src/plugins/plugin-manifest.ts:240` |
-| `resolvePluginManifest` | `(dir, raw, manifestLocation?) => ResolvedPluginManifest` | `packages/kernel/src/plugins/plugin-manifest.ts:815` |
-| `pluginSkillRoots` | `(dir, declared, manifestLocation?) => { roots, notes }` | `packages/kernel/src/plugins/plugin-manifest.ts:157` |
+| `readPluginManifestSource` | `(dir) => PluginManifestSource \| { error }` | `packages/kernel/src/plugins/plugin-manifest.ts:302` |
+| `resolvePluginManifest` | `(dir, raw, manifestLocation?, effectivePluginName?) => ResolvedPluginManifest` | `packages/kernel/src/plugins/plugin-manifest.ts:938` |
+| `pluginSkillRoots` | `(dir, declared, manifestLocation?) => { roots, notes }` | `packages/kernel/src/plugins/plugin-manifest.ts:162` |
 | `hooksDocumentSchema` | zod union | `packages/kernel/src/plugins/hook-dialects.ts:164` |
-| `convertHooksDocument` | `(document, pluginRoot) => { hooks, notes }` | `packages/kernel/src/plugins/hook-dialects.ts:467` |
+| `convertHooksDocument` | `(document, pluginRoot, options?) => { hooks, notes }` | `packages/kernel/src/plugins/hook-dialects.ts:546` |
 | `hookFingerprint` | `(hook: unknown) => string` | `packages/kernel/src/plugins/hook-trust.ts:41` |
 | `pluginHookReviews` | `(globalDir, plugin, hooks?) => PluginHookReview[]` | `packages/kernel/src/plugins/hook-trust.ts:54` |
 | `writeHookApproval` | `(globalDir, plugin, fingerprint, approved) => void` | `packages/kernel/src/plugins/hook-trust.ts:73` |
@@ -120,7 +124,7 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 
 | Field | Type | Meaning |
 |---|---|---|
-| `name` | `string` | manifest/directory name |
+| `name` | `string` | host-owned install identity (the directory name) |
 | `scope` | `Scope` | `"global"` or `"workspace"` |
 | `dir` | `string` | absolute install directory |
 | `enabled` | `boolean` | enabled in the effective settings for this workspace |
@@ -206,7 +210,7 @@ an unapproved workspace's `settings.json` contributes neither.
 | Symbol | Line |
 |---|---|
 | `toPluginView`, `loadPlugins`, `createPluginsStore`, `PluginsStore` | `packages/code/src/adapters/plugins.ts:53, 105, 117, 93` |
-| `MarketplaceListing`, `MarketplaceSource`, `MarketplaceAdapter`, `createMarketplaceAdapter`, `addMarketplaceSource` | `packages/code/src/adapters/marketplace.ts:28, 34, 41, 230, 300` |
+| `OFFICIAL_MARKETPLACE_URL`, `MarketplaceListing`, `MarketplaceSource`, `MarketplaceAdapter`, `createMarketplaceAdapter`, `addMarketplaceSource` | `packages/code/src/adapters/marketplace.ts:28, 34, 40, 47, 252, 324` |
 | `validateGitUrl`, `gitCloneAsync` (client-side duplicates) | `packages/code/src/adapters/plugin-install.ts:73, 136` |
 | `PluginBrowser`, `MarketplaceBrowser`, `HookBrowser` | `packages/code/src/views/config/PluginBrowser.tsx` (`PluginBrowser`); `packages/code/src/views/config/MarketplaceBrowser.tsx` (`MarketplaceBrowser`); `packages/code/src/views/config/HookBrowser.tsx` (`HookBrowser`) |
 
@@ -229,11 +233,13 @@ copied only when defined, via a spread guard (`:60-66`).
 | `<global>/plugins/<name>/` | global install root | `packages/paths/src/global.ts:113` |
 | `<ws>/.clarvis/plugins/<name>/` | workspace install root | `packages/paths/src/workspace.ts:112` |
 | `<global>/hook-trust.json` | per-definition hook approvals | `packages/paths/src/global.ts:114` |
-| `<plugin>/plugin.json` | root manifest | `packages/kernel/src/plugins/plugin-manifest.ts:25` |
-| `<plugin>/.clarvis-plugin/plugin.json` | Clarvis's own dot-dir manifest | `:28` |
-| `<plugin>/.<host>-plugin/plugin.json` | another host's manifest, matched by regex `^\.[A-Za-z0-9_-]+-plugin$` | `:40` |
-| `<plugin>/hooks/hooks.json` | conventional hooks document | `:97` |
-| `<plugin>/skills/` | default skills root | `:100` |
+| `<plugin>/plugin.json` | root manifest candidate | `packages/kernel/src/plugins/plugin-manifest.ts:29` |
+| `<plugin>/.clarvis-plugin/plugin.json` | authoritative Clarvis manifest when present | `:32`, `:292-300` |
+| `<plugin>/.<host>-plugin/plugin.json` | another host's candidate, matched by regex `^\.[A-Za-z0-9_-]+-plugin$` | `:44` |
+| `<plugin>/.mcp.json` | first conventional MCP companion | `:102` |
+| `<plugin>/mcp.json` | fallback conventional MCP companion | `:102` |
+| `<plugin>/hooks/hooks.json` | conventional hooks document | `:99` |
+| `<plugin>/skills/` | default skills root | `:105` |
 | `<plugin>/agents/**/*.md` | agent surface | `packages/kernel/src/plugins/plugin-contributions.ts:262` |
 | `<plugin>/install-record.json` | install provenance sidecar, mode `0o600` | `packages/kernel/src/plugins/plugin-install-record.ts:5`, `packages/kernel/src/adapters/filesystem/plugin-repository.ts:36-39` |
 | `<root>/marketplace.json` | a source's own catalog | `packages/paths/src/constants.ts:27` |
@@ -287,9 +293,9 @@ The docstring notes the aggregate agent ceiling is "deliberately lower than `fil
 (`:8-9`). `@clarvis/code`'s marketplace reader keeps a separate but equal 2 MiB ceiling
 (`packages/code/src/adapters/marketplace.ts:25`).
 
-Two further budgets live in the kernel: `MAX_PLUGIN_SKILL_ROOTS = 4` per plugin
-(`packages/kernel/src/plugins/plugin-manifest.ts:115`) and `PLUGIN_SKILL_ROOT_BUDGET =
-MAX_SKILL_ROOTS - 8` = 24 across all enabled plugins
+Two further budgets live in the kernel: `MAX_PLUGIN_SKILL_ROOTS = 4` effective roots per plugin
+(`MAX_PLUGIN_SKILL_ROOTS` in `packages/kernel/src/plugins/plugin-manifest.ts`) and
+`PLUGIN_SKILL_ROOT_BUDGET = MAX_SKILL_ROOTS - 8` = 24 across all enabled plugins
 (`packages/kernel/src/plugins/plugin-contributions.ts:154`, `MAX_SKILL_ROOTS = 32` at
 `packages/skills/src/limits.ts:2`). The docstring names the blast radius: `@clarvis/skills` refuses a
 scan above its ceiling and the engine turns that refusal into an *empty* skills provider, so
@@ -298,6 +304,12 @@ overspending "does not cost the last plugin its skills, it costs the workspace a
 roots `clarvisSkillRoots` actually returns (`.agents` and `.clarvis`, user and workspace scope each,
 `packages/skills/src/preset.ts:40-45`), so that adding a host root cannot silently narrow the plugin
 budget in the same release.
+
+An authored list may contain more than four locations. `compactSkillRoots` collapses direct-skill
+siblings to their parent only when the list exhausts every real child directory and the parent has
+no symlink; otherwise the authored paths remain separate. Compaction itself refuses more than
+`PLUGIN_RESOURCE_LIMITS.skillDirectoryEntries` candidates. The cap therefore applies to effective
+scan roots without widening the declared contribution surface.
 
 ### 3.4 `install-record.json`
 
@@ -350,69 +362,71 @@ A real foreign-dialect catalog is committed at
 
 ### 4.1 Locating a manifest — `readPluginManifestSource`
 
-`packages/kernel/src/plugins/plugin-manifest.ts:240-266`. Search order:
+`packages/kernel/src/plugins/plugin-manifest.ts:302-345` implements a two-tier selection rule:
 
-1. `plugin.json` at the plugin root.
-2. `.clarvis-plugin/plugin.json`.
-3. Every directory matching `^\.[A-Za-z0-9_-]+-plugin$` **other than** `.clarvis-plugin`, sorted by
-   name, each probed at `<dir>/plugin.json` (`borrowedManifestLocations`, `:54-94`).
+1. If `.clarvis-plugin/plugin.json` is present and readable, it is authoritative because its author
+   explicitly targeted Clarvis (`:303-310`).
+2. Otherwise the root `plugin.json` and every name-sorted `.<host>-plugin/plugin.json` candidate are
+   read. The candidate with the greatest count of non-empty Clarvis-supported contribution keys is
+   selected: `skills`, `mcpServers`, `hooks`, `bootstrapSkill`, `capabilityExecutables` and
+   `capabilityRunPolicies` (`MANIFEST_CONTRIBUTION_KEYS` and `manifestContributionScore`, `:233-278`).
+   Root-then-sorted-host order breaks ties, and documents are never merged (`:314-340`).
 
-Each probe uses `readBoundedPluginText`. A location that is **missing** moves on; a location that
-exists and cannot be read returns `{ error }` immediately (`:249`, `:261`). The docstring says this
-"stops an unreadable root `plugin.json` from quietly resolving to a *different* host's manifest
-further down the list" (`:236-238`). With nothing found, the error names every location searched
-(`:263-265`).
+Every probe uses `readBoundedPluginText`. A missing location is ordinary; an unreadable candidate is
+fatal rather than becoming a way for another document to hide it (`:287-300`, `:317-328`). With no
+candidate, the error names every searched location (`:342-344`). The discovery scan is bounded at
+`manifestLocationEntries`; overflow returns an error instead of a partial list (`:56-95`).
 
-The discovery scan is bounded at `manifestLocationEntries` dirents; overflowing returns an error
-rather than a partial list (`:68-74`). A dot-directory that does not match the shape (`.github/`) is
-never probed — pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts:93-96`.
-
-Ordering evidence: root wins over a borrowed dir (`packages/kernel/tests/integration/plugin-manifest.test.ts:62-67`);
-`.clarvis-plugin` wins over `.alpha-plugin` (`:69-73`); two borrowed dirs resolve alphabetically
-(`:81-85`).
+The selection contract is pinned at
+`packages/kernel/tests/integration/plugin-manifest.test.ts:61-147,1291-1310`: Clarvis-specific
+authority, richest-compatible selection, generic root identities not hiding contributed behavior,
+deterministic ties, a relative hook from the selected candidate, and non-matching dot-directories.
 
 ### 4.2 Resolving a manifest — `resolvePluginManifest`
 
-`packages/kernel/src/plugins/plugin-manifest.ts:815-878`, in exactly this order:
+`packages/kernel/src/plugins/plugin-manifest.ts:938-1018`, in exactly this order:
 
 | # | Step | Function | Line |
 |---|---|---|---|
-| 0 | byte ceiling on the raw text | inline | `:820` |
-| 1 | `JSON.parse`; refuse a non-object | inline | `:826-834` |
-| 2 | compute `PluginDirs` (root + manifest's own directory) | `pluginDirsFor` | `:837`, def `:328` |
-| 3 | resolve `hooks` from exactly one source; rewrite the key | `resolveHooks` | `:839`, def `:555` |
-| 4 | inline an `mcpServers` named as a path | `resolveMcpServers` | `:841`, def `:618` |
-| 5 | drop unusable `mcpServers` entries | `sanitizeMcpServers` | `:842`, def `:679` |
-| 6 | take `interface` off and read display metadata | `resolvePresentation` | `:843`, def `:721` |
-| 7 | supply `name` from the directory, `description` from the short description | `supplyDefaults` | `:845`, def `:779` |
-| 8 | note suspected misspellings **first** | `suspectedManifestTypos` | `:848-851` |
-| 9 | note the `skills` declaration's own problems | `pluginSkillRoots(...).notes` | `:853` |
-| 10 | note remaining unknown keys, excluding `skills` and the misspelled ones | `unknownManifestKeys` | `:856-861` |
-| 11 | validate the rewritten document | `parsePluginManifest` | `:863` |
+| 0 | byte ceiling on the raw text | inline | `:944-948` |
+| 1 | `JSON.parse`; refuse a non-object | inline | `:950-958` |
+| 2 | compute `PluginDirs` (root + selected manifest directory) | `pluginDirsFor` | `:961`, def `:407-413` |
+| 3 | inline declared or conventional `mcpServers` | `resolveMcpServers` | `:963`, def `:763-778` |
+| 4 | drop unusable `mcpServers` entries | `sanitizeMcpServers` | `:964`, def `:798-820` |
+| 5 | derive the surviving server names and effective host-owned plugin identity | inline | `:965-977` |
+| 6 | resolve `hooks` from exactly one source, translating MCP matchers with that identity | `resolveHooks` | `:978-983`, def `:650-687` |
+| 7 | take `interface` off and read display metadata | `resolvePresentation` | `:984-985`, def `:840-864` |
+| 8 | supply `name` from the directory, `description` from the short description | `supplyDefaults` | `:986`, def `:898-922` |
+| 9 | note suspected misspellings | `suspectedManifestTypos` | `:989-992` |
+| 10 | note the `skills` declaration's own problems | `pluginSkillRoots(...).notes` | `:994` |
+| 11 | note remaining unknown keys, excluding `skills` and the misspelled ones | `unknownManifestKeys` | `:996-1002` |
+| 12 | validate the rewritten document | `parsePluginManifest` | `:1004-1018` |
 
 Note ordering is a stated contract: "Suspected misspellings come first. They are the only entries
 that describe a mistake rather than a difference" (`:385-387`); pinned at
 `packages/kernel/tests/integration/plugin-manifest.test.ts:128-134`, which asserts `notes[0]` is the "did you mean" line and that the
 misspelled key does **not** also appear in the foreign-key list.
 
-Steps 3–7 mutate the parsed document **in place** before step 11 validates it. That is what keeps
+Steps 3–8 mutate the parsed document **in place** before step 12 validates it. That is what keeps
 `PluginManifest["hooks"]` a plain array whatever dialect it arrived in
-(`packages/kernel/src/plugins/hook-dialects.ts:21-23`).
+(`packages/kernel/src/plugins/hook-dialects.ts:21-24`). Resolving MCP before hooks is also
+load-bearing: it lets a translated hook target the exact `<plugin>:<server>.<tool>` identity that
+the runtime dispatches, using the install identity supplied by the host rather than display data.
 
 ### 4.3 Path confinement — `companionPath` / `pluginDirs`
 
-`companionPath` (`packages/kernel/src/plugins/plugin-manifest.ts:287-296`) resolves a declared path
+`companionPath` (`packages/kernel/src/plugins/plugin-manifest.ts:366-375`) resolves a declared path
 against `dirs.base` first — but only if the result both stays inside `dirs.root` **and already
-exists** (`:293`) — otherwise against `dirs.root`. `confined` compares the *resolved* path against
-`root` or `root + sep` (`:289-290`), so `a/../../b` is refused on the same rule as `../b` and an
-absolute path never resolves against `dir` at all (`:277-280`).
+exists** (`:370-373`) — otherwise against `dirs.root`. `confined` compares the *resolved* path
+against `root` or `root + sep` (`:367-374`), so `a/../../b` is refused on the same rule as `../b` and
+an absolute path never escapes the root.
 
-`pluginDirsFor` (`:328-334`) sets `base` to the manifest's own directory, but falls back to `root`
+`pluginDirsFor` (`:407-413`) sets `base` to the manifest's own directory, but falls back to `root`
 if that directory is itself outside the root.
 
 Confinement is **lexical**, and the docstring says so: "A symlink *inside* the plugin that points
 outside it is still followed, which is the same open parent-directory weakness recorded for
-workspace-confined writes" (`:282-285`).
+workspace-confined writes" (`:361-364`).
 
 Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:954-1016` (four refusal cases + one accepted nested case),
 `:1051-1063` (a `.alpha-plugin` manifest's `../skills/` resolves to the plugin's `skills/` with **no**
@@ -420,39 +434,52 @@ Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:954-1016` (fo
 
 ### 4.4 `skills` → skill roots — `pluginSkillRoots`
 
-`packages/kernel/src/plugins/plugin-manifest.ts:157-214`.
+`pluginSkillRoots` and `compactSkillRoots` in
+`packages/kernel/src/plugins/plugin-manifest.ts`.
 
-| Declared value | Result | Line |
+| Declared value | Result | Evidence |
 |---|---|---|
-| absent | `[<dir>/skills]`, no notes | `:164` |
-| a string | treated as a one-element list | `:166` |
-| neither string nor array | fallback + "not a path or a list of paths" | `:167-174` |
-| a non-string / blank element | skipped + "is not a path" | `:179-182` |
-| ends in `.md` (case-insensitive) | skipped + "names a file" | `:183-189` |
-| escapes the plugin | skipped + "resolves outside the plugin" | `:191-194` |
-| duplicate of an earlier root | silently de-duplicated | `:195` |
-| more than 4 roots survive | truncated to 4 + "only the first 4 of N" | `:198-204` |
-| nothing survived | fallback + "nothing declared could be scanned" | `:206-213` |
+| absent | `[<dir>/skills]`, no notes | fallback branch in `pluginSkillRoots` |
+| a string | treated as a one-element list | declaration normalization in `pluginSkillRoots` |
+| neither string nor array | fallback + "not a path or a list of paths" | invalid-declaration branch |
+| a non-string / blank element | skipped + "is not a path" | element validation loop |
+| ends in `.md` (case-insensitive) | skipped + "names a file" | file-declaration branch |
+| escapes the plugin | skipped + "resolves outside the plugin" | `companionPath` result branch |
+| duplicate of an earlier root | silently de-duplicated | resolved-root insertion branch |
+| a location directly contains `SKILL.md` | accepted as one individual skill root | `pluginSkillRoots` + `listSkillDirs` |
+| exhaustive direct-skill siblings | compacted to their parent only when no undeclared directory or symlink can become visible | `compactSkillRoots` |
+| more than 4 effective roots survive | truncated to 4 + "only the first 4 of N" | `pluginSkillRoots` after compaction |
+| nothing survived | fallback + "nothing declared could be scanned" | final fallback branch |
 
-Every row is pinned in `packages/kernel/tests/integration/plugin-manifest.test.ts:143-208`. The default location produces
-**no note at all** (`:150-153`), and so does a location the manifest names that is not the default
-(`:143-148`).
+The scalar, invalid, confinement, duplicate, fallback and cap rows are pinned by their named cases
+under "foreign manifest fields" in
+`packages/kernel/tests/integration/plugin-manifest.test.ts`. Exact compaction is pinned by
+"compacts exhaustive direct-skill siblings before applying the root budget"; refusal to widen is
+pinned by "does not compact a group when that would admit an undeclared sibling". End-to-end plugin
+presentation is pinned by `packages/kernel/tests/integration/plugin-service.test.ts`, case "list:
+serves every direct skill from an exhaustive grouped declaration". The default and a usable custom
+location produce no note.
 
 ### 4.5 `mcpServers` — path inlining and per-entry sanitizing
 
-`resolveMcpServers` (`:618-659`) acts only when the value is a **string**. It deletes the key first
-(`:621`), then resolves the companion path, reads it under `manifestBytes`, parses it, requires a
-JSON object with its own `mcpServers` object, and — before writing it back — re-serializes the whole
-projected document and checks it against `manifestBytes` again (`:653-656`). The docstring explains
-that last guard: without it "a companion small enough to read can still push the document past it —
-and that failure refuses the *whole plugin*" (`:611-617`). Pinned:
-`packages/kernel/tests/integration/plugin-manifest.test.ts:1018-1033`.
+`resolveMcpServers` (`packages/kernel/src/plugins/plugin-manifest.ts:763-778`) accepts an inline map
+unchanged, inlines the document named by a string declaration, or — when the key is absent — probes
+`.mcp.json` and then `mcp.json`. A missing conventional file moves to the next name; a malformed one
+adds a note and still moves to the next (`:715-778`). Any selected companion is resolved beside the
+manifest first and then at the plugin root, read under `manifestBytes`, required to contain an
+`mcpServers` object and re-serialized with the manifest before it is accepted (`:728-760`). This
+prevents a small companion from making the final manifest exceed its resource ceiling.
 
-`sanitizeMcpServers` (`:679-702`) then validates each entry against `mcpServerPluginSchema`
-individually, keeps the ones that pass, notes each one that does not, and deletes the key entirely if
-nothing survives (`:698-700`). Its docstring names the blast radius it exists to bound: the schema
-"reports that per *record*, so one such entry used to fail the whole manifest and take the plugin's
-agents, hooks and skills with it" (`:670-673`). Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:445-471`.
+Declared paths and conventional discovery are pinned at
+`packages/kernel/tests/integration/plugin-manifest.test.ts:260-360`; the combined-layout regression
+at `:362-404` proves skills, conventional MCP servers and translated hooks survive together.
+
+`sanitizeMcpServers` (`packages/kernel/src/plugins/plugin-manifest.ts:798-820`) then validates each
+entry against `mcpServerPluginSchema` individually, keeps the ones that pass, notes each one that
+does not, and deletes the key entirely if nothing survives (`:802-820`). Its docstring names the
+blast radius it exists to bound: the schema "reports that per *record*, so one such entry used to
+fail the whole manifest and take the plugin's agents, hooks and skills with it" (`:786-796`). Pinned:
+`packages/kernel/tests/integration/plugin-manifest.test.ts:550-578`.
 
 `mcpServerPluginSchema` is the **tolerant** twin of `mcpServerSettingsSchema` — same base fields and
 same `refineMcpServer`, but without `.strict()`
@@ -464,51 +491,59 @@ differ is pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts:4
 
 ### 4.6 `hooks` — source selection and translation
 
-`resolveHooks` (`packages/kernel/src/plugins/plugin-manifest.ts:555-588`) runs `harvestDeclared`
+`resolveHooks` (`packages/kernel/src/plugins/plugin-manifest.ts:650-687`) runs `harvestDeclared`
 first, then `harvestConvention` only if the first yielded **zero** hooks.
 
 | `document.hooks` | Read as | Line |
 |---|---|---|
-| non-empty array of all strings | a list of files to read and concatenate | `:488-494` |
-| any other array | Clarvis's own hook array, left for the schema | `:495` |
-| a string | one named file | `:498` |
-| an object | an inline event map | `:500-502` |
-| anything else | nothing | `:503` |
+| non-empty array of all strings | a list of files to read and concatenate | `:579-588` |
+| any other array | Clarvis's own hook array, left for the schema | `:590` |
+| a string | one named file | `:593` |
+| an object | an inline event map | `:595-597` |
+| anything else | nothing | `:598` |
 
 State table for source selection:
 
 | `harvestDeclared` result | Convention file present? | Outcome | Note emitted | Line |
 |---|---|---|---|---|
-| ≥1 hook | yes, and not the file the manifest named | manifest wins | "`hooks/hooks.json` not read — the manifest declares its own hooks, which take precedence" | `:564-572` |
-| ≥1 hook | yes, and *is* the file the manifest named | manifest wins | none | `:566` via `isConventionPath` `:404` |
-| ≥1 hook | no | manifest wins | none | `:562-573` |
-| 0 hooks, key present | yields ≥1 | convention wins | "the manifest declares none, so `hooks/hooks.json` was read instead" | `:580-582` |
-| 0 hooks, key absent | yields ≥1 | convention wins | none | `:578-583` |
-| 0 hooks | 0 hooks | key deleted | any harvest notes | `:586` |
+| ≥1 hook | yes, and not the file the manifest named | manifest wins | "`hooks/hooks.json` not read — the manifest declares its own hooks, which take precedence" | `:661-672` |
+| ≥1 hook | yes, and *is* the file the manifest named | manifest wins | none | `:663-665` via `isConventionPath` |
+| ≥1 hook | no | manifest wins | none | `:661-672` |
+| 0 hooks, key present | yields ≥1 | convention wins | "the manifest declares none, so `hooks/hooks.json` was read instead" | `:675-682` |
+| 0 hooks, key absent | yields ≥1 | convention wins | none | `:675-682` |
+| 0 hooks | 0 hooks | key deleted | any harvest notes | `:685-686` |
 
 The "empty declaration falls through" rule is stated with its trigger: "a real plugin was found
-carrying exactly that (`"hooks": {}`) while its commands lived in the convention file" (`:550-552`).
-Pinned for both `{}` and `[]` at `packages/kernel/tests/integration/plugin-manifest.test.ts:655-694`.
+carrying exactly that (`"hooks": {}`) while its commands lived in the convention file" (`:644-648`).
+Pinned for both `{}` and `[]` at `packages/kernel/tests/integration/plugin-manifest.test.ts:821-860`.
 
 The convention file is looked for **beside the manifest first** when the manifest lives in a
-dot-directory (`conventionHooksPath`, `:349-355`), pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts:1065-1079`.
+dot-directory (`conventionHooksPath`, `:428-435`), pinned at
+`packages/kernel/tests/integration/plugin-manifest.test.ts:1261-1275`. A read, parse or conversion
+failure in either source returns only empty hooks plus notes, so the rest of the plugin remains
+loadable (`harvestFile` / `harvestDocument`, `:484-551`).
 
 #### 4.6.1 `convertHooksDocument`
 
-`packages/kernel/src/plugins/hook-dialects.ts:467-535`. Per event key:
+`packages/kernel/src/plugins/hook-dialects.ts:546-622`. Per event key:
 
 1. Normalize the event name (strip non-alphanumerics, lowercase — `:66-68`) and look it up in
    `EVENTS_BY_NORMALIZED_NAME` (`:71-76`), which is the **inversion** of
-   `EXTERNAL_HOOK_EVENT_NAMES` (`:52-54`). An unmapped name yields a note and no hooks (`:476-479`).
-   Four spellings of the same event are pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts:711-716`; the round trip
-   over every entry of the table at `:881-895`.
+   `EXTERNAL_HOOK_EVENT_NAMES` (`:52-54`). An unmapped name yields a note and no hooks (`:554-559`).
+   The round trip over every entry of the table is pinned at
+   `packages/kernel/tests/integration/plugin-manifest.test.ts:1078-1092`.
 2. If the target event is in `OBSERVER_HOOK_EVENTS` and any group carries commands, note that the
-   commands run but "a verdict of theirs cannot block anything" (`:480-485`).
+   commands run but "a verdict of theirs cannot block anything" (`:560-572`).
 3. Per group: if the event is `pre_tool_use`/`post_tool_use` (`TOOL_SCOPED`, `:110`), translate the
-   matcher; otherwise no filter, plus a note if a matcher was written anyway (`:509-513`).
-4. Per entry: skip a `type` other than `"command"` (`:515-517`); note an `async: true` request
-   (`:519-521`); convert `timeout` seconds → ms, clamped to `MAX_HOOK_TIMEOUT_MS`
-   (`translateTimeout`, `:94-107`); substitute the plugin root into the command (`:526`).
+   matcher; otherwise no filter, plus a note if a matcher was written anyway (`:573-600`).
+4. Per entry: skip a `type` other than `"command"`; note an `async: true` request; convert `timeout`
+   seconds → ms, clamped to `MAX_HOOK_TIMEOUT_MS` (`translateTimeout`); substitute plugin-root
+   placeholders, then anchor a leading `./` or `.\` executable to the plugin install root
+   (`substituteRoot` / `resolveRelativeCommand`).
+
+`UserPromptExpansion` maps exactly to `user_prompt_expansion`, and the external tool name `Skill`
+maps exactly to `load_skill`; the regression is
+`packages/kernel/tests/integration/plugin-manifest.test.ts:1004-1019`.
 
 `translateTimeout`'s docstring records the failure it fixes: an unbounded converted value produced a
 hook the manifest schema refused, and "because the whole `hooks` array is validated together that
@@ -517,31 +552,35 @@ where the second test asserts every surviving hook satisfies `hookSchema`.
 
 #### 4.6.2 Matcher translation
 
-`translateMatcher` (`packages/kernel/src/plugins/hook-dialects.ts:430-446`) strips `^`/`$` from the **whole** matcher first, then
-tests the catch-all (`:431-432`); the docstring says reading it per-alternative would leave `^.*$` as
-the literal `.*`, "a gate that installed, was approved, and matched nothing" (`:422-425`). Pinned at
-`packages/kernel/tests/integration/plugin-manifest.test.ts:612-620`.
+`translateMatcher` (`packages/kernel/src/plugins/hook-dialects.ts:495-521`) strips `^`/`$` from the
+**whole** matcher first, then tests the catch-all (`:499-500`). A catch-all alternative still refuses
+the group because keeping it would widen the filter (`:485-493`, `:507`). An inexpressible or
+counterpart-free alternative is dropped when another exact alternative survives; only a matcher
+with no survivors is refused (`:503-520`). Pinned at
+`packages/kernel/tests/integration/plugin-manifest.test.ts:734-749`, `:764-790`.
 
-`translateToolName` (`:368-395`), four rules in order:
+`translateToolName` (`:405-458`), in order:
 
 | Input shape | Result | Line |
 |---|---|---|
-| `mcp__<server>__<tool>` (plain both halves) | `<server>.<tool>` | `:372-381` |
-| `mcp__.*` or `mcp__*` | `*.*` | `:371` |
-| `mcp__<server>__.*` | `<server>.*` | `:378-380` |
-| any other `mcp__…` | `inexpressible` | `:383` |
-| plain `^[A-Za-z0-9_-]+$` in `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` | `no_counterpart` | `:388` |
-| plain name | `EXTERNAL_TOOL_NAMES[normalized] ?? part` | `:389` |
-| `<a>.<b>` (already namespaced) | passes through | `:392` |
-| anything else | `inexpressible` | `:394` |
+| `mcp__<server>__<tool>` (plain halves) | `<server>.<tool>`, or `<plugin>:<server>.<tool>` when this plugin owns the server | `:420-435` |
+| `mcp__.*` or `mcp__*` | `*.*` | `:409-411` |
+| `mcp__<server>__.*` | dotted server wildcard, qualified when plugin-owned | `:420-435` |
+| `mcp__plugin_.*<server>.*` | force-qualified `<plugin>:<server>.*` | `:412-418` |
+| `mcp__<server-prefix>.*` | `<server-prefix>*`, qualified when it identifies a plugin-owned server | `:438-445` |
+| any other `mcp__…` | `inexpressible` | `:446` |
+| plain `^[A-Za-z0-9_-]+$` in `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` | `no_counterpart` | `:449-452` |
+| plain name | `EXTERNAL_TOOL_NAMES[normalized] ?? part` | `:449-452` |
+| `<a>.<b>` (already namespaced) | passes through | `:455` |
+| anything else | `inexpressible` | `:457` |
 
 The alias table applies **only** to a name carrying no pattern syntax; the docstring explains that
 `normalizeToolName` strips every non-alphanumeric character, so without the restriction `Edit.*`
-would normalize to `edit` and "silently become the single exact name `edit_file`" (`:353-359`).
-Pinned as a table at `packages/kernel/tests/integration/plugin-manifest.test.ts:600-610`, which asserts six regex-bearing matchers are
-all refused.
+would normalize to `edit` and "silently become the single exact name `edit_file`" (`:391-403`).
+Plugin-owned namespace behavior, including the host-owned install identity, is pinned at
+`packages/kernel/tests/integration/plugin-manifest.test.ts:692-732`.
 
-Group-level outcomes (`:491-508`):
+Group-level outcomes (`:575-595`):
 
 | Reading | Effect |
 |---|---|
@@ -551,8 +590,7 @@ Group-level outcomes (`:491-508`):
 | `dropped: [...]` non-empty | hook emitted with the surviving names, plus a note naming the dropped ones |
 
 The rationale is in the docstring: keeping the hook without its filter "would *widen* what it fires
-on, which on a gate event turns a narrow rule into one that judges every call" (`:416-418`). Both
-outcomes pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts:582-598`.
+on, which on a gate event turns a narrow rule into one that judges every call" (`:479-483`).
 
 Deliberately **not** accepted: the `<server>.*` glob form, because in a regex dialect `Edit.*` is far
 likelier a prefix match than a namespaced glob (`:322-330`).
@@ -581,6 +619,15 @@ spellings are pinned at `packages/kernel/tests/integration/plugin-manifest.test.
 Substitution happens at translation time, not by exporting a variable, "so the operator reviewing the
 definition reads the real path, and so the resolved path is part of that hook's fingerprint"
 (`:255-257`).
+
+A translated external command whose leading executable is explicitly relative (`./hooks/check` or
+`.\hooks\check.cmd`) is resolved against the plugin install root and quoted before it enters the
+ordinary Clarvis hook array (`packages/kernel/src/plugins/hook-dialects.ts:611-616,632-649`). Hook
+execution still keeps the workspace as its working directory (`packages/hooks/src/runner.ts:294-301`),
+so anchoring the plugin's own executable does not move project-relative behavior into the plugin
+checkout. A path that would leave the install root is not rewritten. Native Clarvis hook arrays
+bypass the dialect converter and remain byte-for-byte as declared. Pinned at
+`packages/kernel/tests/integration/plugin-manifest.test.ts:880-904,1291-1310`.
 
 ### 4.7 Presentation and supplied defaults
 
@@ -629,8 +676,8 @@ all the same silent `undefined`" (`:165-168`). Five skip cases plus one silence 
   plugin does not fit. `installScope: "workspace"` maps to skills-scope `"workspace"`, `"global"` to
   `"user"` (`:349`); `source` is `plugin:<name>` (`:350`). Pinned:
   `packages/kernel/tests/integration/plugin-contributions.test.ts:55-68`, and end-to-end through the kernel at
-  `packages/kernel/tests/integration/plugin-skills-install.test.ts:92-101` which asserts
-  `provenance === { scope: "user", source: "plugin:superpowers" }`.
+  `packages/kernel/tests/integration/plugin-skills-install.test.ts:92-101`, which asserts that every
+  contributed skill retains global scope and `plugin:<install-name>` provenance.
 - **`skillBootstraps`** (`:355-361`) does **not** check that the roots exist; the interface docstring
   says a plugin with no skills root contributes no skills either, so the name cannot resolve and the
   loop reports the miss (`:52-55`).
@@ -766,33 +813,34 @@ capability executable in sorted capability order" — two capabilities declared 
 
 ### 4.13 Marketplace reading (`@clarvis/code`)
 
-`createMarketplaceAdapter` (`packages/code/src/adapters/marketplace.ts:230-284`):
+`createMarketplaceAdapter` (`packages/code/src/adapters/marketplace.ts:252-308`):
 
-- Sources are `[...deps.urls(), ...discovered]` (`:239`); `discovered` comes from
-  `discoverAgentsCatalogs` (`:215-218`), which reads `agentsMarketplaceFiles()` in
+- Sources are `[...defaults, ...deps.urls(), ...discovered]`, de-duplicated in first-seen order
+  (`:260-263`). `defaults` is the official catalog unless a test supplies an override; `discovered`
+  comes from `discoverAgentsCatalogs` (`:236-238`), which reads `agentsMarketplaceFiles()` in
   workspace-then-user order, de-duplicates and keeps only the ones that exist.
 - `read(id)` dispatches on `isAgentsMarketplaceFile(id)`: a local document is read in place, anything
-  else is cloned (`:241-242`).
-- `fetchMarketplace` (`:191-205`) validates the URL, `mkdtemp` in the OS temp dir, `gitCloneAsync`,
+  else is cloned (`:265-266`).
+- `fetchMarketplace` (`:212-226`) validates the URL, `mkdtemp` in the OS temp dir, `gitCloneAsync`,
   then takes the **first** existing document of `[<root>/marketplace.json,
-  <root>/.agents/plugins/marketplace.json]` (`documentsIn`, `:56-58`), and always removes the
+  <root>/.agents/plugins/marketplace.json]` (`documentsIn`, `:62-64`), and always removes the
   checkout in `finally`.
 - `load()` skips a source that already has a cached `marketplace`, but retries one that errored
-  (`:270`); `refresh()` clears both the cache and the discovered list (`:279-282`). Pinned at
-  `packages/code/tests/integration/marketplace.test.ts:142-156`.
+  (`:294`); `refresh()` clears both the cache and the discovered list (`:303-306`). Pinned at
+  `packages/code/tests/integration/marketplace.test.ts:166-180`.
 - `listings()` de-duplicates on `url \0 name`, so two marketplaces offering the same plugin name both
-  appear (`:254-256`, pinned `packages/code/tests/integration/marketplace.test.ts:158-183`), and sorts by name (`:264`).
+  appear (`:273-280`, pinned `packages/code/tests/integration/marketplace.test.ts:182-207`), and sorts by name (`:288`).
 
-`readMarketplace` (`:157-182`) applies the 2 MiB ceiling before reading, then
-`confineLocalSources(dirname(file), catalog)` (`:135-146`), which adds a note — never a gate — for a
+`readMarketplace` (`:163-188`) applies the 2 MiB ceiling before reading, then
+`confineLocalSources(dirname(file), catalog)` (`:141-152`), which adds a note — never a gate — for a
 non-installable listing whose `resolve(root, entry.source)` leaves `realpath(root)`.
 
-`staysInside` (`:97-108`) answers `true` only for `ENOENT`/`ENOTDIR`; every other `realpath` failure
+`staysInside` (`:103-114`) answers `true` only for `ENOENT`/`ENOTDIR`; every other `realpath` failure
 answers `false` **and** emits `marketplace.containment.unknown` at `warn`. The docstring names the
 attack it closes: the target comes from the marketplace document, "so its author could make the
 resolution fail cheaply (a symlink cycle, an overlong path) and thereby delete the containment note
 about their own listing… a note an untrusted party can suppress is not a note" (`:84-92`). Pinned at
-`packages/code/tests/integration/marketplace.test.ts:300-364`, including an `ELOOP` symlink cycle asserting exactly one diagnostic.
+`packages/code/tests/integration/marketplace.test.ts:328-392`, including an `ELOOP` symlink cycle asserting exactly one diagnostic.
 
 ### 4.14 Marketplace document reading (`readMarketplaceDocument`)
 
@@ -845,12 +893,15 @@ as an unbounded count" (`:125-128`). Pinned at `packages/code/tests/integration/
 
 All of the following are derived directly from this document's own source and tests.
 
-1. **A manifest's directory name is authoritative for the plugin's identity.** The name must equal
-   the install directory (`packages/loop/src/settings/plugin-schema.ts:47`), the directory is used to
-   supply a missing name (`packages/kernel/src/plugins/plugin-manifest.ts:786-791`), and an update
-   whose manifest names something else is refused
-   (`packages/kernel/src/plugins/plugin-service.ts:417-422`). Pinned:
-   `packages/kernel/tests/integration/plugin-manifest.test.ts:348-355`.
+1. **The install directory is the host-owned runtime identity.** A native Git install creates that
+   directory from the normalized manifest `name`; an already installed foreign layout uses its
+   directory name for namespaces even when presentation metadata differs, and may supply a missing
+   manifest name from that directory. A replacement update cannot rename the existing install.
+   Production: `packages/kernel/src/plugins/plugin-service.ts:386-399`, `:411-428`;
+   `packages/kernel/src/plugins/plugin-contributions.ts:243-275`;
+   `packages/kernel/src/plugins/plugin-manifest.ts:866-921`, `:938-983`. Test:
+   `packages/kernel/tests/integration/plugin-manifest.test.ts:711-732` and
+   `packages/kernel/tests/integration/plugin-service.test.ts:405-430`, `:448-458`.
 
 2. **`name` is the only required manifest key.** `packages/loop/src/settings/plugin-schema.ts:46-59`.
    Pinned: `packages/loop/tests/unit/plugin-schema.test.ts:37-40`
@@ -889,50 +940,57 @@ All of the following are derived directly from this document's own source and te
    `packages/loop/tests/unit/plugin-schema.test.ts:31-35` and, for marketplace listings,
    `packages/code/tests/integration/marketplace-schema.test.ts:74-86`.
 
-9. **Manifest search order is root → `.clarvis-plugin` → other `.<host>-plugin`, the last group
-   name-sorted.** `packages/kernel/src/plugins/plugin-manifest.ts:241`, `:251-253`, sort at `:92`.
-   Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:62-85`.
+9. **A Clarvis-specific manifest is authoritative; otherwise exactly one richest compatible
+   candidate wins deterministically.** `readPluginManifestSource` first probes
+   `.clarvis-plugin/plugin.json`, then scores root and name-sorted host candidates without merging
+   them (`packages/kernel/src/plugins/plugin-manifest.ts:233-345`). Pinned:
+   `packages/kernel/tests/integration/plugin-manifest.test.ts:61-119`.
 
-10. **A manifest location that exists but cannot be read stops the search.**
-    `packages/kernel/src/plugins/plugin-manifest.ts:249`, `:261`. Pinned:
-    `packages/kernel/tests/integration/plugin-manifest.test.ts:210-214` (`plugin.json` as a directory → "not a regular file").
+10. **A manifest candidate that exists but cannot be read stops selection.**
+    `packages/kernel/src/plugins/plugin-manifest.ts:287-310`, `:317-328`. Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:114-119`, `:253-257`.
 
 11. **Both readers of a manifest go through `resolvePluginManifest`.** The install/panel path
     (`packages/kernel/src/plugins/plugin-service.ts:81`) and the run path
-    (`packages/kernel/src/plugins/plugin-contributions.ts:256`). Unpinned as a structural rule; the
+    (`packages/kernel/src/plugins/plugin-contributions.ts:257`). Unpinned as a structural rule; the
     consequences are pinned separately in both suites.
 
 12. **Every path a manifest names is confined to the plugin root, decided on the *resolved* path.**
-    `companionPath` (`packages/kernel/src/plugins/plugin-manifest.ts:287-296`). Pinned:
-    `packages/kernel/tests/integration/plugin-manifest.test.ts:962-1004` (relative climb, climb through a subdirectory, absolute path,
+    `companionPath` (`packages/kernel/src/plugins/plugin-manifest.ts:366-375`). Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:1155-1201` (relative climb, climb through a subdirectory, absolute path,
     and an accepted nested path).
 
 13. **A relative path in a dot-directory manifest resolves from that directory first, and still
-    cannot escape the root.** `pluginDirsFor` (`:328-334`) + `companionPath`'s two-base attempt
-    (`:291-295`). Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:1051-1063` and `:1081-1085`.
+    cannot escape the root.** `pluginDirsFor` (`:407-413`) + `companionPath`'s two-base attempt
+    (`:370-374`). Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:1236-1288`.
 
 14. **No hooks source can cost a plugin anything but its hooks.** Every failure path in
     `harvestFile` / `harvestConvention` / `harvestDocument` returns `{ hooks: [], notes: [...] }`
-    (`packages/kernel/src/plugins/plugin-manifest.ts:445-527`). Pinned:
-    `packages/kernel/tests/integration/plugin-manifest.test.ts:724-807` — missing file, non-JSON, over the byte ceiling, wrong shape,
+    (`packages/kernel/src/plugins/plugin-manifest.ts:484-551`). Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:861-950` — missing file, non-JSON, over the byte ceiling, wrong shape,
     unusable convention file, all with `error` undefined.
 
 15. **One hooks source wins outright; two are never merged, and the loser is named.**
-    `resolveHooks` (`:555-588`). Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:655-694`.
+    `resolveHooks` (`:650-687`). Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:811-860`.
 
 16. **An empty `hooks` declaration (`{}` or `[]`) falls through to the convention file.**
-    `:562` tests `fromManifest.hooks.length > 0`. Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:666-679`.
+    `:661` tests `fromManifest.hooks.length > 0`. Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:848-860`.
 
-17. **A named `mcpServers` document that cannot be used costs only the servers.**
-    `resolveMcpServers` returns notes for every failure (`:618-659`). Pinned:
-    `packages/kernel/tests/integration/plugin-manifest.test.ts:242-291` and, for the run path, `packages/kernel/tests/integration/plugin-contributions.test.ts:152-165`
+17. **A declared or conventional `mcpServers` document that cannot be used costs only the
+    servers.** `inlineMcpServersDocument` returns notes for every non-absence failure
+    (`packages/kernel/src/plugins/plugin-manifest.ts:715-760`). Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:260-360` and, for the run path,
+    `packages/kernel/tests/integration/plugin-contributions.test.ts:152-165`
     which asserts the agents and skill roots survive.
 
 18. **A companion is never inlined if doing so pushes the manifest past `manifestBytes`.**
-    `:653-656`. Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:1019-1032`.
+    `packages/kernel/src/plugins/plugin-manifest.ts:755-758`. Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:1214-1230`.
 
 19. **An unusable MCP server entry is dropped alone; the key is removed only if nothing survives.**
-    `sanitizeMcpServers` (`:679-702`). Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:445-471`.
+    `sanitizeMcpServers` (`packages/kernel/src/plugins/plugin-manifest.ts:798-820`). Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:550-578`.
 
 20. **`mcpServerPluginSchema` is tolerant and `mcpServerSettingsSchema` is strict; the difference is
     load-bearing.** `packages/loop/src/settings/settings-schema.ts:197` vs `:221`. Pinned:
@@ -940,22 +998,27 @@ All of the following are derived directly from this document's own source and te
 
 21. **A `skills` declaration never leaves a plugin with nowhere to look.** Every failure path in
     `pluginSkillRoots` returns the `<dir>/skills` fallback
-    (`packages/kernel/src/plugins/plugin-manifest.ts:164`, `:169`, `:208`). Pinned:
-    `packages/kernel/tests/integration/plugin-manifest.test.ts:164-196`.
+    (`packages/kernel/src/plugins/plugin-manifest.ts:167-178`, `:211-218`). Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:184-250`.
 
-22. **A plugin contributes at most 4 skill roots, and all enabled plugins at most 24.**
-    `MAX_PLUGIN_SKILL_ROOTS` (`packages/kernel/src/plugins/plugin-manifest.ts:115`) and `PLUGIN_SKILL_ROOT_BUDGET`
-    (`packages/kernel/src/plugins/plugin-contributions.ts:154`). The per-plugin cap is pinned at
-    `packages/kernel/tests/integration/plugin-manifest.test.ts:207-213` ("caps how many locations one
-    plugin may contribute, and says it did"); the shared budget is **unpinned**.
+22. **A plugin contributes at most 4 effective skill roots, and all enabled plugins at most 24. A
+    direct-skill list may be compacted only when the parent scan is exactly equivalent to the
+    declarations.**
+    **Production:** `MAX_PLUGIN_SKILL_ROOTS`, `compactSkillRoots` and `isExactSiblingSkillGroup` in
+    `packages/kernel/src/plugins/plugin-manifest.ts`, plus `PLUGIN_SKILL_ROOT_BUDGET` in
+    `packages/kernel/src/plugins/plugin-contributions.ts`. **Test:** the plugin-manifest cases "caps
+    how many locations one plugin may contribute", "compacts exhaustive direct-skill siblings" and
+    "does not compact a group when that would admit an undeclared sibling"; the shared budget is
+    pinned by `packages/kernel/tests/integration/plugin-contributions.test.ts`, case "bounds plugin
+    skill roots and projects an optional bootstrap skill".
 
 23. **Presentation metadata is display data only and never widens what a plugin may do.**
-    `PluginPresentation`'s docstring (`packages/kernel/src/plugins/plugin-manifest.ts:360-363`); the same statement is repeated on
+    `PluginPresentation`'s docstring (`packages/kernel/src/plugins/plugin-manifest.ts:440-449`); the same statement is repeated on
     the wire DTO (`packages/protocol/src/plugins.ts:53-58`). Nothing in
     `plugin-contributions.ts` reads `presentation`. Unpinned as a negative.
 
 24. **Suspected misspellings are reported ahead of merely-foreign keys, and a key reported as a
-    misspelling is not also reported as foreign.** `packages/kernel/src/plugins/plugin-manifest.ts:848-858`. Pinned:
+    misspelling is not also reported as foreign.** `packages/kernel/src/plugins/plugin-manifest.ts:989-1002`. Pinned:
     `packages/kernel/tests/integration/plugin-manifest.test.ts:128-134`.
 
 25. **A short key gets a tighter typo budget than a long one.** `typoBudget` returns 1 for ≤4
@@ -963,26 +1026,28 @@ All of the following are derived directly from this document's own source and te
     `packages/loop/tests/unit/plugin-schema.test.ts:97-105`.
 
 26. **An external hook event with no Clarvis counterpart is reported, never approximated.**
-    `packages/kernel/src/plugins/hook-dialects.ts:476-479`; the event table is inverted from `EXTERNAL_HOOK_EVENT_NAMES` rather
-    than written out (`:52-54`). Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:823-830` (`Notification`) and
-    `:881-895` (every named event round-trips).
+    `packages/kernel/src/plugins/hook-dialects.ts:554-559`; the event table is inverted from `EXTERNAL_HOOK_EVENT_NAMES` rather
+    than written out (`:52-54`). Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:1021-1028` (`Notification`) and
+    `:1079-1092` (every named event round-trips).
 
 27. **The external-event correspondence is one-to-one, so inverting it loses nothing.** Pinned
-    directly: `packages/kernel/tests/integration/plugin-manifest.test.ts:892-895`.
+    directly: `packages/kernel/tests/integration/plugin-manifest.test.ts:1079-1092`.
 
 28. **A hook whose Clarvis event cannot act on its verdict is noted.** `OBSERVER_ONLY` check at
-    `packages/kernel/src/plugins/hook-dialects.ts:480-485`. Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:832-847`.
+    `packages/kernel/src/plugins/hook-dialects.ts:560-572`. Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:1030-1037`.
 
-29. **An untranslatable matcher drops the group; it never drops the filter and keeps the hook.**
-    `packages/kernel/src/plugins/hook-dialects.ts:491-501`. Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:591-610`, `:849-856`.
+29. **An entirely untranslatable matcher drops the group; a mixed matcher keeps its exact surviving
+    alternatives and reports the rest.** `packages/kernel/src/plugins/hook-dialects.ts:495-521`.
+    Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:734-790`.
 
 30. **A catch-all matcher means no filter; a catch-all inside an alternation is refused.**
-    `:431-432` versus `:438`. Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:612-620` and the `"Bash|.*"` row of
-    `:600-610`.
+    `packages/kernel/src/plugins/hook-dialects.ts:499-507`. Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:782-790`, `:791-799`.
 
 31. **The foreign tool-alias table applies only to a name carrying no pattern syntax.**
-    `packages/kernel/src/plugins/hook-dialects.ts:386-390` is reached only after the `mcp__` branch and gates on
-    `PLAIN_TOOL_NAME`. Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:600-610`.
+    `packages/kernel/src/plugins/hook-dialects.ts:409-452` gates the alias branch on
+    `PLAIN_TOOL_NAME`. Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:782-790`.
 
 32. **Every foreign tool name maps onto a tool this host actually dispatches.** Enforced across
     package boundaries: `packages/kernel/tests/architecture/external-tool-names.test.ts:19-29` checks
@@ -990,7 +1055,7 @@ All of the following are derived directly from this document's own source and te
     `EXTERNAL_TOOLS_WITHOUT_COUNTERPART` actually exists here.
 
 33. **A timeout past the ceiling is clamped, never emitted as a schema-invalid hook.**
-    `translateTimeout` (`packages/kernel/src/plugins/hook-dialects.ts:94-107`). Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:897-932`, the
+    `translateTimeout` (`packages/kernel/src/plugins/hook-dialects.ts:94-107`). Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:1095-1130`, the
     second of which asserts `hookSchema.safeParse` succeeds for every produced hook.
 
 34. **A plugin-root placeholder is expanded, not pattern-matched, and a suffix-collision is left
@@ -1008,7 +1073,8 @@ All of the following are derived directly from this document's own source and te
     approval; reordering the keys does not.
 
 37. **A hook that arrives from an external file is fingerprinted exactly as an inline one is.** Stated
-    at `packages/kernel/src/plugins/hook-dialects.ts:22-25`. Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:809-819`.
+    at `packages/kernel/src/plugins/hook-dialects.ts:22-25`. Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:991-1001`.
 
 38. **An unreadable `hook-trust.json` fails closed, and the two readers of it fail closed
     differently.** `readHookTrust` distinguishes missing from unreadable (`packages/kernel/src/plugins/hook-trust.ts:47-51`). On
@@ -1182,12 +1248,12 @@ All of the following are derived directly from this document's own source and te
     `packages/code/tests/integration/marketplace-schema.test.ts:147-156`.
 
 69. **A source's own `marketplace.json` outranks the `.agents` one it also publishes.** `documentsIn`
-    order (`packages/code/src/adapters/marketplace.ts:56-58`). Pinned:
-    `packages/code/tests/integration/marketplace.test.ts:259-278`.
+    order (`packages/code/src/adapters/marketplace.ts:62-64`). Pinned:
+    `packages/code/tests/integration/marketplace.test.ts:287-306`.
 
 70. **A local source whose containment cannot be decided is treated as escaping, and the failure is
-    logged.** `staysInside` (`packages/code/src/adapters/marketplace.ts:97-108`) + `reportContainmentUnknown` (`:118-124`).
-    Pinned: `packages/code/tests/integration/marketplace.test.ts:300-364`.
+    logged.** `staysInside` (`packages/code/src/adapters/marketplace.ts:103-114`) + `reportContainmentUnknown` (`:124-130`).
+    Pinned: `packages/code/tests/integration/marketplace.test.ts:328-392`.
 
 71. **The panel lists exactly the skills a run would serve, by running the same catalog scan.**
     `skillNamesOf` uses `createAgentSkills` over `pluginSkillRoots` (`packages/kernel/src/plugins/plugin-service.ts:204-241`).
@@ -1203,29 +1269,65 @@ All of the following are derived directly from this document's own source and te
     `packages/code/tests/component/plugins.test.ts:110-122`.
 
 74. **`load()` caches a success and retries an error; `refresh()` clears everything.**
-    `packages/code/src/adapters/marketplace.ts:266-282`. Pinned:
-    `packages/code/tests/integration/marketplace.test.ts:142-156`.
+    `packages/code/src/adapters/marketplace.ts:290-306`. Pinned:
+    `packages/code/tests/integration/marketplace.test.ts:166-180`.
 
-75. **`addMarketplaceSource` writes to the `global` scope only, and writes nothing for a duplicate.**
-    `packages/code/src/adapters/marketplace.ts:300-310`. Pinned:
-    `packages/code/tests/integration/marketplace.test.ts:380-407`.
+75. **`addMarketplaceSource` writes to the `global` scope only for a new additional URL, and writes
+    nothing for a duplicate.** `packages/code/src/adapters/marketplace.ts:324-336`. Pinned:
+    `packages/code/tests/integration/marketplace.test.ts:408-435`.
+
+76. **The official marketplace is a built-in first source, is de-duplicated against settings, and is
+    never persisted by the add action.** `OFFICIAL_MARKETPLACE_URL`, `DEFAULT_MARKETPLACE_URLS` and
+    `every` (`packages/code/src/adapters/marketplace.ts:27-31`, `:260-263`), plus the official-source
+    refusal in `addMarketplaceSource` (`:328-331`). Pinned:
+    `packages/code/tests/integration/marketplace.test.ts:72-80`, `:437-443`.
+
+77. **An absent `mcpServers` key discovers `.mcp.json` before `mcp.json`, and a malformed first
+    convention cannot hide a usable second one.** `MCP_CONVENTION_FILES` and `resolveMcpServers`
+    (`packages/kernel/src/plugins/plugin-manifest.ts:101-102`, `:763-778`). Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:272-295`.
+
+78. **A plugin-owned MCP hook matcher uses the same host-owned install namespace as runtime
+    dispatch.** Both manifest readers pass their install identity to `resolvePluginManifest`
+    (`packages/kernel/src/plugins/plugin-service.ts:74-86`,
+    `packages/kernel/src/plugins/plugin-contributions.ts:245-258`); MCP resolution precedes hook
+    conversion (`packages/kernel/src/plugins/plugin-manifest.ts:960-983`), and translation qualifies
+    only an owned server (`packages/kernel/src/plugins/hook-dialects.ts:340-370`, `:405-458`). Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:692-732`.
+
+79. **External `UserPromptExpansion` and `Skill` names map to exact Clarvis concepts, never an
+    approximation.** The shared correspondence owns the event/tool aliases, and conversion consumes
+    it (`packages/kernel/src/plugins/hook-dialects.ts:38-76`, `:449-452`). Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:1004-1019`.
+
+80. **A translated external MCP hook receives the external server/tool spelling on stdin without
+    leaking the Clarvis plugin namespace.** The runtime carries the canonical full name as a match
+    alias, while serialization strips only the plugin segment and emits `mcp__<server>__<tool>`
+    (`packages/hooks/src/event-serialization.ts:106-120`, `:213-220`). Pinned by
+    `packages/hooks/tests/component/capability.test.ts:431-453`.
+
+81. **A leading relative executable in a translated external hook is anchored to the plugin root;
+    native Clarvis hook commands are not rewritten.** Production:
+    `packages/kernel/src/plugins/hook-dialects.ts:611-616,632-649`; test:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts:880-904,1291-1310`.
 
 ## 6. Failure modes and degradation
 
 ### 6.1 Manifest resolution — what is fatal to the *plugin*
 
 Only four things set `ResolvedPluginManifest.error`
-(`packages/kernel/src/plugins/plugin-manifest.ts:815-877`):
+(`packages/kernel/src/plugins/plugin-manifest.ts:938-1018`):
 
 | Condition | Error text | Line |
 |---|---|---|
-| raw text over `manifestBytes` | "plugin manifest exceeds the …-byte resource limit" | `:820-825` |
-| not JSON | "invalid JSON: …" | `:829-830` |
-| JSON but not an object | "a plugin manifest must be a JSON object" | `:832-834` |
-| fails `pluginManifestSchema` | `<issue.path>: <issue.message>`, or the resource message | `:864-876` |
+| raw text over `manifestBytes` | "plugin manifest exceeds the …-byte resource limit" | `:944-948` |
+| not JSON | "invalid JSON: …" | `:950-955` |
+| JSON but not an object | "a plugin manifest must be a JSON object" | `:956-958` |
+| fails `pluginManifestSchema` | `<issue.path>: <issue.message>`, or the resource message | `:1004-1016` |
 
 Everything else — an absent hooks file, non-JSON hooks, an unrecognized hooks shape, a hooks path
-outside the plugin, an oversized hooks document, a missing/unusable/oversized `mcpServers` companion,
+outside the plugin, an oversized hooks document, a missing/unusable/oversized declared or
+conventional `mcpServers` companion,
 an unusable individual server entry, an unreadable presentation block, an unscannable `skills`
 location, unknown or misspelled keys — becomes a note. Each is pinned in
 `packages/kernel/tests/integration/plugin-manifest.test.ts` (§5 invariants 14, 17, 19, 21).
@@ -1261,7 +1363,7 @@ contributes no roots — but still contributes agents, hooks and MCP servers (`:
   `packages/kernel/tests/integration/plugin-service.test.ts:352-375`.
 - **There is no retry anywhere in this subsystem.** A failed clone, fetch or reset propagates.
   `MarketplaceAdapter.load()` retries a previously-errored source only on the next `load()` call,
-  which is a re-attempt rather than a retry policy (`packages/code/src/adapters/marketplace.ts:270`).
+  which is a re-attempt rather than a retry policy (`packages/code/src/adapters/marketplace.ts:294`).
 - **`ProcessRunner.run` settles exactly once**, guarded by a `settled` flag inside `finish()`
   (`packages/kernel/src/adapters/process/node-process-runner.ts:79-88`): whichever of `close`, `error`,
   abort or timeout fires first wins, and the timeout timer is cleared on any earlier settlement so a
@@ -1355,7 +1457,7 @@ must not import `@clarvis/hooks`, which the `hook-dialects.ts` docstring asserts
 `packages/kernel/src/plugins/plugin-service.ts:46-68` and
 `packages/code/src/adapters/plugin-install.ts:73-99`, each with its own copy of `LOCAL_PATH_RE`
 (`:38` and `:61`) carrying the same docstring. `@clarvis/code` uses its own copy in
-`fetchMarketplace` (`packages/code/src/adapters/marketplace.ts:14`, `:192`) because the marketplace
+`fetchMarketplace` (`packages/code/src/adapters/marketplace.ts:14`, `:212`) because the marketplace
 clone is a client-side seam that never goes through the kernel. Both copies are separately pinned
 (`packages/kernel/tests/integration/plugin-service.test.ts:227-243`, `packages/code/tests/integration/plugin-install.test.ts:13-45`), so the duplication is guarded by
 duplicated tests rather than by a drift lock.
@@ -1447,7 +1549,7 @@ duplicated tests rather than by a drift lock.
   on each call" (`:134-136`) but gives no cost model, and nothing measures it.
 
 - **`code`'s marketplace clone bypasses the kernel entirely**
-  (`packages/code/src/adapters/marketplace.ts:191-205` spawns git through `Bun.spawn`), while plugin
+  (`packages/code/src/adapters/marketplace.ts:212-226` spawns git through `Bun.spawn`), while plugin
   *installation* goes through `KernelClient.plugins.install`. The protocol docstring says the plugin
   service "must be server-side (a remote UI has no local git or fs)"
   (`packages/protocol/src/plugins.ts:4`); the marketplace has no such service, so a remote kernel

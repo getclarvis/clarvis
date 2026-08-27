@@ -432,6 +432,15 @@ export interface RunRequest {
   agents?: AgentsParam;
   guard_mode?: GuardMode;
   guard_judge?: GuardJudgeConfig;
+  /**
+   * Host-derived context for a user-invoked skill command.
+   *
+   * @remarks Read only by the hooks capability so an external
+   * `UserPromptExpansion` observer fires at the same boundary as the skill
+   * expansion that seeded this run. Ordinary prompts and model-initiated
+   * `load_skill` calls omit it.
+   */
+  hook_user_prompt_expansion?: { command_name: string };
 }
 
 /**
@@ -532,13 +541,19 @@ export type HookVerdict = GateVerdict | { kind: "rewrite"; arguments: unknown; m
 
 /** Context passed to a `beforeToolUse` hook: the `tool` about to run and its `arguments`. */
 export interface BeforeToolUseContext {
+  /** Model-facing wire name used to dispatch the call. */
   tool: string;
+  /** Stable dotted identity when the wire name is a projection of another tool namespace. */
+  toolFullName?: string;
   arguments: unknown;
 }
 
 /** Context passed to an `afterToolUse` hook: the `tool`, its `arguments`, and the produced (read-only) {@link HandlerResult}. */
 export interface AfterToolUseContext {
+  /** Model-facing wire name used to dispatch the call. */
   tool: string;
+  /** Stable dotted identity when the wire name is a projection of another tool namespace. */
+  toolFullName?: string;
   arguments: unknown;
   result: Readonly<HandlerResult>;
 }

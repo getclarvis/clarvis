@@ -98,6 +98,8 @@ export type HandlerVerdict =
  */
 export interface ToolHandler {
   matches(call: LLMToolCall): boolean;
+  /** Stable tool identity for lifecycle consumers when the wire name is projected. */
+  canonicalName?(call: LLMToolCall): string | undefined;
   handle(call: LLMToolCall, iteration: number): Promise<HandlerVerdict>;
 }
 

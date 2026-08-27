@@ -68,6 +68,10 @@ never touches the feature package directly.
 | `executeAgentToolCall` | `(args: AgentToolDispatchArgs) => Promise<AgentToolCallResult>` | `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:65` |
 | `AgentToolDispatchArgs` | `{ call, toolset, guards, trace, agent, subagentInstanceId?, iteration, signal? }` | `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:27-36` |
 
+`ToolHandler` may additionally expose `canonicalName(call)`. The model-facing wire name remains the
+call's `name`; the optional canonical identity exists only for lifecycle consumers that must retain a
+dotted MCP namespace after wire-name projection (`packages/capability/src/loop-contract.ts:94-104`).
+
 ### 2.4 Argument validation (`tool-arg-validator.ts`)
 
 | Symbol | Signature | Line |
@@ -221,7 +225,7 @@ throws inside the reporter itself (`:117-121`).
 | `submit_result` schema violation | `` submit_result rejected: <ajv.errorsText(...)> `` | `packages/loop/src/runtime/tools/result-contract.ts:169` |
 | Bad `output_schema` at compile time | `ValidationError("invalid_output_schema", "…")`, four distinct message templates (non-object, malformed, `$async`, non-object top-level `type`) | `packages/loop/src/runtime/tools/result-contract.ts:116-158` |
 | Non-`Error` thrown during compile | coalesced via `String(err)` into the same `ValidationError` | `packages/loop/src/runtime/tools/result-contract.ts:131-137` |
-| Final MCP-handler wrapping (outermost text delivered to the model) | success: `` Tool '<name>' result: <resultText> ``; failure: `` Tool '<name>' result (error): <errText> `` — wraps every `errText`/`resultText` shape above one layer out | `packages/loop/src/runtime/loop/mcp-handler.ts:51-54` |
+| Final MCP-handler wrapping (outermost text delivered to the model) | success: `` Tool '<name>' result: <resultText> ``; failure: `` Tool '<name>' result (error): <errText> `` — wraps every `errText`/`resultText` shape above one layer out | `packages/loop/src/runtime/loop/mcp-handler.ts:52-55` |
 
 ## 4. Behavior
 
@@ -333,14 +337,18 @@ covering `executeAgentToolCall` (`:64-191`) and `executeMcpToolCall` (`:193-304`
 
 ### 4.5 Building the two dispatch handlers and their ordering (context in `runtime/loop/run-agent.ts`)
 
-`buildMcpHandler` (`packages/loop/src/runtime/loop/mcp-handler.ts:24-62`) wraps `executeMcpToolCall` as a `ToolHandler` whose
+`buildMcpHandler` (`packages/loop/src/runtime/loop/mcp-handler.ts:24-63`) wraps `executeMcpToolCall` as a `ToolHandler` whose
 `matches` is unconditionally `true` (`:35`) — it is the catch-all. Two of its behaviors are named in
 §2.3's signature table but only spelled out here: it wraps `executeMcpToolCall`'s
 `resultText`/`errText` into the model-facing text shown in §3.6's final row — `` Tool '<name>' result:
 <resultText> `` on success, `` Tool '<name>' result (error): <errText> `` on failure (`:51-54`) — and
 `deps.progress` is the persona's own policy function mapping `{errText, productive}` to the
 `HandlerVerdict.progress` boolean (`:29`, `:58`); `deps.availableWireNames` defaults to
-`deps.registry.tools.map(t => t.wireName)` when the caller omits it (`:33`). The coding-tool equivalent,
+`deps.registry.tools.map(t => t.wireName)` when the caller omits it (`:33`). Its `canonicalName`
+resolves the call through the same registry and returns `fullName` (`:36`). The loop keeps the wire
+name as `tool`, adds a distinct `toolFullName` only when resolution succeeds and differs, and treats a
+throwing optional resolver as absent (`packages/loop/src/runtime/loop/loop.ts:471-485`). Both the
+before- and after-tool hook payloads use that same identity (`:526-543`, `:572-594`). The coding-tool equivalent,
 `buildAgentToolsHandler` (`packages/loop/src/runtime/capabilities/tools.ts:213-241`, owned by
 [loop-capability-composition](capability-composition.md)), instead matches only `toolset.names.has(call.name)`. The run's
 handler list is assembled as:
@@ -461,6 +469,7 @@ can reclassify `shell` as `read` (`:49-56`, pinned by `packages/loop/tests/unit/
 | INV-065 | `AGENT_TOOL_WIRE_NAMES` stays exactly in sync (as a set) with `AGENT_TOOL_NAMES`, the list `@clarvis/tools` actually registers. | `packages/loop/src/runtime/tools/wire-names.ts:53-77`, `packages/loop/src/runtime/tools/builtin/names.ts:4` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:12-16` |
 | INV-066 | `READ_ONLY_AGENT_TOOL_WIRE_NAMES` matches `READ_ONLY_TOOL_NAMES` exactly, and `READ_ONLY_TOOL_NAMES ∪ EDIT_TOOL_NAMES` equals `AGENT_TOOL_NAMES` with no overlap. | `packages/loop/src/runtime/tools/wire-names.ts:98-108`, `packages/loop/src/runtime/tools/builtin/names.ts:14-21` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:18-29` |
 | INV-067 | `shell` and `monitor_start` are never classified as read-only. | `packages/loop/src/runtime/tools/builtin/names.ts:16-47` (via `readOnlyTools` from `@clarvis/tools`) | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:30-33`, also `packages/loop/tests/unit/tool-effect.test.ts:35-44` |
+| INV-TD-01 | A handler's canonical identity is additive: lifecycle hooks retain the model-facing wire name as `tool` and receive a different resolved identity only as `toolFullName`, consistently before and after dispatch. | `packages/capability/src/loop-contract.ts:94-104`, `packages/loop/src/runtime/loop/loop.ts:471-485`, `:526-594` | `packages/loop/tests/unit/tool-hooks.test.ts:171-214` |
 
 Additional invariants derived directly from the code, carrying no INV number of their own:
 

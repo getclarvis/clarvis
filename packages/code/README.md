@@ -109,6 +109,14 @@ and manage plugins. Configuration follows one hierarchy: `/settings/providers`,
 workspace surface. The Hooks view reviews each exact plugin hook definition independently. Capability services
 display their effective argv and packaged per-skill Plans policy in the plugin/provider panels, and
 start only when selected.
+`/extensions/market` includes `https://github.com/getclarvis/marketplace.git` as a built-in source
+before any additional configured or discovered catalog. The built-in URL is not written to settings,
+and loading its listings does not install, enable, or approve a plugin. Installation remains an
+explicit action, followed by the existing enablement and per-hook approval gates.
+Interactive Code and local `--print` kernels also provide the operating-system browser opener used
+by remote MCP OAuth. The authorization coordinator still validates the destination and loopback
+callback; this adapter grants only the host action of opening the already validated URL. Remote
+kernel clients and server hosts do not inherit that local authority.
 After onboarding, `/model` is the only surface that changes `default_model`, and `/effort` is the
 only surface that changes its `default_reasoning_effort`. They write only their own setting in the
 selected global/workspace scope. Providers owns credentials and the available-model set, while

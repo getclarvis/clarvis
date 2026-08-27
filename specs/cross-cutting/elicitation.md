@@ -120,11 +120,11 @@ concern of **kernel-transport-and-wire**; this document stops at the DTO shapes 
 
 | Symbol | Location | Shape |
 |---|---|---|
-| `ElicitationRelayResult` | `packages/mcp-client/src/client.ts:26` | `{ action: "accept"\|"decline"\|"cancel", content? }` |
-| `ElicitationRelay` | `packages/mcp-client/src/client.ts:37` | `{ handle(params, signal?): Promise<ElicitationRelayResult> }` |
-| Capability advertisement | `packages/mcp-client/src/client.ts:152` | `capabilities: relay ? { elicitation: {} } : {}` — presence of a `relay` is what tells the external server Clarvis can answer |
-| Request handler | `packages/mcp-client/src/client.ts:156-158` | `client.setRequestHandler(ElicitRequestSchema, ...)` forwards `request.params` to `relay.handle` |
-| Pooled connections | `packages/mcp-client/src/client.ts:140` (doc) | opened **without** a relay — no single human to route to for a shared subprocess |
+| `ElicitationRelayResult` | `packages/mcp-client/src/client.ts:36` | `{ action: "accept"\|"decline"\|"cancel", content? }` |
+| `ElicitationRelay` | `packages/mcp-client/src/client.ts:47` | `{ handle(params, signal?): Promise<ElicitationRelayResult> }` |
+| Capability advertisement | `packages/mcp-client/src/client.ts:187-190` | `capabilities: relay ? { elicitation: {} } : {}` — presence of a `relay` is what tells the external server Clarvis can answer |
+| Request handler | `packages/mcp-client/src/client.ts:192-197` | `client.setRequestHandler(ElicitRequestSchema, ...)` forwards `request.params` to `relay.handle` |
+| Pooled connections | `packages/mcp-client/src/client.ts:176` (doc) | opened **without** a relay — no single human to route to for a shared subprocess |
 | `ConnectionManager`'s enforcement of that rule | `packages/mcp-client/src/connection-manager.ts:557-558,613` | `openFresh(o, signal, pooled)` opens with `...(o.relay && !pooled ? { relay: o.relay } : {})` — a `relay` handed to a poolable (stdio + `shared`) acquire is silently dropped, never reaching `createMCPClientFactory` |
 | `warnRelayDropped` | `packages/mcp-client/src/connection-manager.ts:527-549` | logs `mcp.pool.relay_dropped` once per **server name** (not per acquire, not per slot) the first time a dropped relay is observed for it |
 
@@ -619,7 +619,7 @@ role and answer channel all permit it").
 | Server elicitation controller is `dispose()`d with questions outstanding | `dispose()` (`packages/server/src/mcp/elicitation.ts:284-287`) | every pending question is force-auto-declined; `disposed` latches so any later `attach`-delivered question is auto-declined too (`:217-219`) |
 | Server's `relay` posture: `sendRequest` throws (client refuses, disconnects, or answer fails schema validation) | `catch` around `sendRequest` (`packages/server/src/mcp/elicitation.ts:251-253`) | falls back to `autoDecline(request.id)` — a relay failure degrades to a decline, not a stuck run |
 | `code`'s own `onElicit` callback throws | `reportElicitFailure` (`packages/code/src/adapters/kernel-run-client.ts:257-266`) | logs `elicit.handler.failed` (warn) and still answers `{action:"cancel"}` |
-| `code` invoked headlessly (`--prompt`, no interactive UI) | `handle.onElicit` registered at `packages/code/src/index.tsx:311-316` | every question is logged to stderr and auto-declined via `handle.respond({id, action:"decline"})` |
+| `code` invoked headlessly (`--prompt`, no interactive UI) | `handle.onElicit` registered at `packages/code/src/index.tsx:317-322` | every question is logged to stderr and auto-declined via `handle.respond({id, action:"decline"})` |
 | Elicitation disabled or no `elicit` supplied at all (`shape.userInputEnabled === false`) | `buildElicitRelay`'s `relayEnabled` guard (`packages/loop/src/runtime/elicit-relay.ts:71-77`) | `relay` is `undefined`; `serializedElicit` falls back to the raw (possibly `undefined`) `elicit` — callers that need one and find it absent are a capability-construction concern outside this document |
 | A run needs a human (`shape.userInputEnabled === true`) but no `elicit` callback was supplied at all | `packages/loop/src/runtime/execute-run.ts:303-309`, checked immediately after `deriveRunShape` | the run never starts: throws `ValidationError("elicitation_not_supported", ...)` — the only elicitation failure resolved at request validation rather than per-question (§4.10) |
 | `elicit_wait_ms` request param fails validation | `zodIssueToRequestErrorCode` (`packages/loop/src/validation/request/parsing.ts:42-44`) | `invalid_elicit_wait` request error code |
@@ -659,7 +659,7 @@ role and answer channel all permit it").
   `getClientCapabilities` wiring lives one layer up in `mcp/server.ts` (`packages/server/src/mcp/server.ts:124-159`), which is
   the only file that actually names `@modelcontextprotocol/sdk` for this concern.
 - `@clarvis/mcp-client`'s `client.ts` is the only place `ElicitRequestSchema`/`ElicitResult` from the
-  MCP SDK are named for elicitation (`packages/mcp-client/src/client.ts:8`) — `@clarvis/loop`'s `open-tool-pool.ts` threads an
+  MCP SDK are named for elicitation (`packages/mcp-client/src/client.ts:12`) — `@clarvis/loop`'s `open-tool-pool.ts` threads an
   `ElicitationRelay` through to it per connection (`packages/loop/src/runtime/open-tool-pool.ts:1,58,69`), never constructing the
   SDK types itself.
 - `code`'s `adapters/elicit-types.ts` is a deliberately independent local mirror of the protocol shapes
@@ -679,10 +679,10 @@ role and answer channel all permit it").
   policy (out of scope here; see **command-guard-and-approval**) rides this document's `Elicit`/`GuardElicit`
   adaptation to reach the human.
 - `code`'s `run-host.ts` and `index.tsx` hold the only production `ElicitSlot`
-  (`packages/code/src/index.tsx:527`), threading `elicit.ask` into the run callback
-  (`packages/code/src/index.tsx:610-622`), `elicit.cancelPending` into run teardown
+  (`packages/code/src/index.tsx:534`), threading `elicit.ask` into the run callback
+  (`packages/code/src/index.tsx:617-629`), `elicit.cancelPending` into run teardown
   (`packages/code/src/run-host.ts:596`), and `elicit.resolve` into the App surface
-  (`packages/code/src/index.tsx:1141`). Detailed overlay/keyboard rendering of the resulting block is
+  (`packages/code/src/index.tsx:1148`). Detailed overlay/keyboard rendering of the resulting block is
   **code-input-overlays-and-commands**' concern.
 
 ## 8. Open questions

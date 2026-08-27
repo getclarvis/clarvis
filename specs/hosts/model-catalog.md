@@ -112,7 +112,7 @@ exposed over the transport under operation key `models`
 | `catalog-pick.ts` | — | row builders: `providerRows`, `recommendedProviderRows`, `modelRows`, `configuredModelRows`, `configuredModelCapabilities`, `knownToLackReasoning`, `filterRows`, `catalogReady` |
 | `effort-levels.ts` | — | `EFFORT_LEVELS`, `normalizeReasoningEfforts`, `supportedReasoningEfforts`, `recommendedReasoningEffort` |
 | `pick-model.ts` | — | `modelPickerSpec(...)` — glue reused by `DefaultsPanel` (vision model), `AgentsPanel` (per-agent model override), `MemoryConfigPanel` (indexer model); full contract in §4.17 |
-| CLI `--refresh-models` | `packages/code/src/cli-args.ts:84`, `packages/code/src/index.tsx:398-416` | headless mode: `kernel.models.refresh()` then exits |
+| CLI `--refresh-models` | `packages/code/src/cli-args.ts:84`, `packages/code/src/index.tsx:404-422` | headless mode: `kernel.models.refresh()` then exits |
 
 ## 3. Data and formats
 
@@ -144,7 +144,7 @@ file). The first key in `providers` is `requesty` (the example block below), not
 }
 ```
 
-The comment at `packages/code/src/index.tsx:760-764` states the parse/projection cost as measured:
+The comment at `packages/code/src/index.tsx:767-771` states the parse/projection cost as measured:
 "~59 ms of parse and projection (166 providers, 5501 models)" — matching the file's actual counts
 exactly, confirming the comment is current.
 
@@ -165,7 +165,7 @@ a parse/re-serialize round trip rather than being stripped.
 ### 3.3 Refresh cache file
 
 Path: `globalPaths(configDir).modelsCacheFile` = `<configDir>/cache/models-dev.json`
-(`packages/paths/src/global.ts:126`). Written via `writeFileAtomicSync`
+(`packages/paths/src/global.ts:129`). Written via `writeFileAtomicSync`
 (`packages/kernel/src/models/model-catalog.ts:294`), same `CatalogData` shape as the bundle. `writeCatalogCache` also clears
 the in-process `bundleCache` memo (line 295) so a later bundle-only read is unaffected by a stale
 value, but a cache write is otherwise **independent of the bundle** — reading the bundle again after
@@ -331,7 +331,7 @@ non-entry: agentModel ?? merged.default_model ?? options.defaultModel
 `defaultReasoningEffort` field at all, so at this layer `reasoning_effort` resolution is only 2-tier
 (`merged.default_reasoning_effort` / agent frontmatter) against `model`'s 3-tier
 (`merged.default_model` / agentModel / `options.defaultModel`). A further tier exists one layer
-down, outside this assembler: the doc-comment at `packages/kernel/src/runs/settings-assembler.ts:228-229` states "When no
+down, outside this assembler: the doc-comment at `packages/kernel/src/runs/settings-assembler.ts:240-241` states "When no
 reasoning effort resolves, the loop's `CLARVIS_DEFAULT_REASONING_EFFORT` fallback remains last" —
 that env-backed default (`packages/capability/src/env.ts:98`) is read by
 `packages/loop/src/runtime/subagents/subagent-profiles.ts:211-212` as
@@ -346,9 +346,9 @@ handed off. This means:
   profile") and `:232-244` ("a spawned Sub-agent with no model or effort falls back to the user's
   defaults").
 - If no model resolves at all (neither settings, frontmatter, nor `options.defaultModel`), a
-  `kernel_error("invalid_request", ...)` is thrown naming the agent (`packages/kernel/src/runs/settings-assembler.ts:242-247`).
+  `kernel_error("invalid_request", ...)` is thrown naming the agent (`packages/kernel/src/runs/settings-assembler.ts:254-259`).
 - `reasoning_effort` may legitimately end up `undefined` — no fallback throws for it (the assignment
-  at `packages/kernel/src/runs/settings-assembler.ts:259-261` has no `if (undefined)` guard analogous to `model`'s at
+  at `packages/kernel/src/runs/settings-assembler.ts:271-273` has no `if (undefined)` guard analogous to `model`'s at
   lines 242-247; pinned by test `:248-253`).
 - `default_vision_model`, unlike `default_model`, has **no** per-agent override path: it is copied
   straight from `merged.default_vision_model` into the request's top-level `vision_model` field
@@ -429,7 +429,7 @@ floor function itself.
    (`reportCatalogUnavailable`, lines 735-737), never thrown — the picker simply renders empty.
 4. `--refresh-models` (headless CLI mode) constructs a throwaway `FileKernel`, calls
    `kernel.models.refresh()`, prints `"models.dev refreshed — N providers / M models"`, and exits 0
-   (or prints `"refresh failed: ..."` and exits 1) — `packages/code/src/index.tsx:398-416`.
+   (or prints `"refresh failed: ..."` and exits 1) — `packages/code/src/index.tsx:404-422`.
 
 ### 4.11 `/model` and `/effort` write coupling
 
@@ -631,14 +631,14 @@ kind on the same priced cost) and `:100-105` (`derivePromptCacheMode(undefined, 
 **INV-MC-3.** For the run's entry agent, `merged.default_model` (and `default_reasoning_effort`)
 wins over the agent's own frontmatter; for every other (spawned) agent, the agent's own frontmatter
 wins and the settings default is only the last resort.
-Production: `packages/kernel/src/runs/settings-assembler.ts:239-241, 259-261`.
-Test: `packages/kernel/tests/component/settings-assembler.test.ts:210-230` and `:232-244`.
+Production: `packages/kernel/src/runs/settings-assembler.ts:251-253, 259-261`.
+Test: `packages/kernel/tests/component/settings-assembler.test.ts:211-231` and `:232-244`.
 
 **INV-MC-4.** An agent that resolves no model at all (no frontmatter, no `default_model`, no
 `options.defaultModel`) fails run assembly with `invalid_request`, naming the agent; failing to
 resolve a `reasoning_effort` is not an error and yields `undefined`.
-Production: `packages/kernel/src/runs/settings-assembler.ts:242-247`.
-Test: `packages/kernel/tests/component/settings-assembler.test.ts:248-253` (the effort-unset half);
+Production: `packages/kernel/src/runs/settings-assembler.ts:254-259`.
+Test: `packages/kernel/tests/component/settings-assembler.test.ts:249-254` (the effort-unset half);
 no assertion for the model-missing throw path has been identified in that file — see §8.
 
 **INV-MC-5.** `resolveProvider`'s `headers`/`body` merge is shallow per top-level key: a model's
@@ -754,10 +754,10 @@ catalog case).
 | Cache or bundle file exceeds byte cap | Rejected before parse (`throw`), which `loadCatalogData`'s `try/catch` turns into the same "invalid, fall back to bundle" path | `packages/kernel/src/models/model-catalog.ts:172,180,234-241` |
 | `refreshModelsCatalog` fetch fails (non-2xx, empty body, oversized stream, network error) | The `Error` propagates out of `refreshModelsCatalog`/`createModelCatalogService.refresh()` uncaught — **no** cache write happens, existing cache/bundle is untouched | `packages/kernel/src/models/model-catalog.ts:663-704`; pinned `packages/kernel/tests/integration/model-catalog.test.ts:370-379` |
 | `resolveProvider` given an unknown token | Returns a typed `{ok:false, code:"unknown_provider", message}` rather than throwing; callers (e.g. `packages/loop/src/validation/request/provider-rules.ts:134-137`) turn it into a `ValidationError` | `packages/capability/src/provider-resolver.ts:111-115` |
-| No model resolves for an agent at run assembly | Kernel error `invalid_request`, naming the agent | `packages/kernel/src/runs/settings-assembler.ts:242-247` |
-| No reasoning effort resolves for an agent | Silently `undefined` — not an error | `packages/kernel/src/runs/settings-assembler.ts:257-261` |
+| No model resolves for an agent at run assembly | Kernel error `invalid_request`, naming the agent | `packages/kernel/src/runs/settings-assembler.ts:250-259` |
+| No reasoning effort resolves for an agent | Silently `undefined` — not an error | `packages/kernel/src/runs/settings-assembler.ts:279-299` |
 | TUI: authenticated subscription effort lookup is pending | Render a loading status and withhold the unpublished-level claim until the request settles | `packages/code/src/views/config/EffortView.tsx` (`entitledLoading`); pinned by `packages/code/tests/integration/effort-view-render.test.tsx` |
-| TUI: catalog fetch (`client.models.get()`) fails, or answers with zero providers | `diagnosticEvent("catalog.unavailable", ..., "warn")`; the picker just renders empty (`catalogReady` is `false`) | `packages/code/src/index.tsx:735-737,777-782`; `catalog-pick.ts:catalogReady` |
+| TUI: catalog fetch (`client.models.get()`) fails, or answers with zero providers | `diagnosticEvent("catalog.unavailable", ..., "warn")`; the picker just renders empty (`catalogReady` is `false`) | `packages/code/src/index.tsx:730-753`; `catalog-pick.ts:catalogReady` |
 | `configuredModelRows`/`configuredModelCapabilities` given a capability filter or a model the catalog never saw | Treated as "not known", never as "unsupported" — the model is still offered/its capabilities read as `undefined` | `packages/code/src/views/config/catalog-pick.ts:160-168` (doc-comment), `:198-201` |
 | `guard_judge` has no model (neither `cfg.model` nor `deps.defaultModel`) | Warns and degrades the judge to mode `"on"` (asks a human) rather than failing the run | `packages/kernel/src/guard/judge.ts:157-164` (outside this document's scope; cited only as a `parseModelRef`/`resolveProvider` consumer) |
 

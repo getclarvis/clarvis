@@ -19,7 +19,11 @@ import {
   unknownManifestKeys,
   type PluginManifest,
 } from "@clarvis/loop/host";
-import { hooksDocumentSchema, convertHooksDocument } from "./hook-dialects.ts";
+import {
+  hooksDocumentSchema,
+  convertHooksDocument,
+  type HooksConversionOptions,
+} from "./hook-dialects.ts";
 
 /** The file a manifest is named, wherever in the checkout it sits. */
 const MANIFEST_FILE = "plugin.json";
@@ -40,16 +44,14 @@ const CLARVIS_MANIFEST_DIR = ".clarvis-plugin";
 const HOST_MANIFEST_DIR = /^\.[A-Za-z0-9_-]+-plugin$/;
 
 /**
- * Manifest locations for one plugin directory, in the order they are searched.
+ * Borrowed manifest locations for one plugin directory.
  *
  * @param dir - the plugin's install directory.
- * @returns forward-slash relative paths: the checkout root first, then Clarvis's
- *   own dot-directory, then every other host's, name-sorted so the order is
- *   deterministic.
- * @remarks The root comes first because a plugin written for Clarvis puts its
- *   manifest there and pays nothing for the rest of the search. Ours is searched
- *   before the borrowed ones, which is what lets a plugin say something to this
- *   host that differs from what it says to another.
+ * @returns every other host's forward-slash relative manifest path, name-sorted
+ *   so scoring ties are deterministic.
+ * @remarks The root and Clarvis-specific locations are owned by
+ *   {@link readPluginManifestSource}; this directory walk discovers only
+ *   borrowed host dialects.
  */
 function borrowedManifestLocations(dir: string): { locations: string[] } | { error: string } {
   let opened: ReturnType<typeof opendirSync>;
@@ -96,27 +98,29 @@ function borrowedManifestLocations(dir: string): { locations: string[] } | { err
 /** The hooks document a plugin is read from when its manifest declares none. */
 const HOOKS_CONVENTION_FILE = "hooks/hooks.json";
 
+/** MCP companion documents, in ecosystem precedence order. */
+const MCP_CONVENTION_FILES = [".mcp.json", "mcp.json"] as const;
+
 /** Where a plugin's skills live when its manifest names no other place. */
 const DEFAULT_SKILLS_DIR = "skills";
 
 /**
- * How many skill roots one plugin may contribute.
+ * How many effective skill roots one plugin may contribute.
  *
  * @remarks
- * A budget rather than a layout opinion. Every root a plugin declares is a root
- * the whole run scans, and `@clarvis/skills` refuses a scan outright past its
- * own ceiling — a refusal the engine turns into an *empty* skills provider, so
- * one verbose manifest could otherwise delete every skill in the workspace, its
- * own and the operator's alike. That is the blast radius this file exists to
- * bound, so it is bounded here too; `skillRoots` bounds the sum across plugins
- * for the same reason. A plugin needing more than this many separate
- * directories is describing a layout, not a limit.
+ * A budget rather than a layout opinion. Every effective root is a root the
+ * whole run scans, and `@clarvis/skills` refuses a scan outright past its own
+ * ceiling — a refusal the engine turns into an *empty* skills provider, so one
+ * verbose manifest could otherwise delete every skill in the workspace, its own
+ * and the operator's alike. Exact sibling lists are compacted before this bound
+ * without admitting an undeclared directory; `skillRoots` bounds the sum across
+ * plugins for the same reason.
  */
 const MAX_PLUGIN_SKILL_ROOTS = 4;
 
 /** What one plugin's `skills` declaration resolved to. */
 export interface PluginSkillRoots {
-  /** Absolute directories to scan, in the order the manifest declares them. */
+  /** Absolute directories to scan, preserving first represented declaration order. */
   roots: string[];
   /** What was declared and could not be used. */
   notes: string[];
@@ -150,9 +154,11 @@ export interface PluginSkillRoots {
  * rather than followed; a declaration this host cannot act on at all leaves the
  * default in place, so a plugin is never left with nowhere to look.
  *
- * Nesting is not part of this: a root's immediate children are probed for a
- * `SKILL.md`, here as everywhere, so a plugin that buries skills a level deeper
- * without saying so still needs to say so.
+ * A location may name one skill directory directly or a collection above it.
+ * When a long list exhaustively names direct-skill siblings, the adapter can
+ * collapse those siblings to their parent before applying the effective-root
+ * budget. Any undeclared directory or symlink prevents that collapse, so
+ * compaction cannot widen the manifest's contribution surface.
  */
 export function pluginSkillRoots(
   dir: string,
@@ -195,15 +201,16 @@ export function pluginSkillRoots(
     if (!roots.includes(resolved)) roots.push(resolved);
   }
 
-  if (roots.length > MAX_PLUGIN_SKILL_ROOTS) {
+  const compacted = compactSkillRoots(roots);
+  if (compacted.length > MAX_PLUGIN_SKILL_ROOTS) {
     notes.push(
-      `skills: only the first ${String(MAX_PLUGIN_SKILL_ROOTS)} of ${String(roots.length)} ` +
-        "declared locations are scanned",
+      `skills: only the first ${String(MAX_PLUGIN_SKILL_ROOTS)} of ${String(compacted.length)} ` +
+        "effective locations are scanned",
     );
-    roots.length = MAX_PLUGIN_SKILL_ROOTS;
+    compacted.length = MAX_PLUGIN_SKILL_ROOTS;
   }
 
-  if (roots.length > 0) return { roots, notes };
+  if (compacted.length > 0) return { roots: compacted, notes };
   return {
     roots: fallback,
     notes: [
@@ -226,7 +233,55 @@ export interface PluginManifestSource {
 }
 
 /**
- * Read a plugin's manifest text from the first location that holds one.
+ * Directive keys whose presence makes one host manifest more useful to
+ * Clarvis than another.
+ *
+ * @remarks Identity and presentation fields deliberately do not count. A
+ * repository commonly repeats those in every host manifest while putting the
+ * executable contributions in only one. Counting identity would preserve the
+ * old alphabetical accident instead of selecting the document that actually
+ * describes what the plugin does here.
+ */
+const MANIFEST_CONTRIBUTION_KEYS = [
+  "skills",
+  "mcpServers",
+  "hooks",
+  "bootstrapSkill",
+  "capabilityExecutables",
+  "capabilityRunPolicies",
+] as const;
+
+/** Whether a directive carries anything rather than an empty placeholder. */
+function carriesContribution(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  return typeof value === "object" && value !== null && Object.keys(value).length > 0;
+}
+
+/**
+ * Rank a readable manifest by the Clarvis contributions it actually declares.
+ * Invalid/non-object JSON ranks below every usable document and is still
+ * returned when there is no usable alternative, so the ordinary resolver can
+ * report its precise error.
+ */
+function manifestContributionScore(raw: string): number {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return -1;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return -1;
+  const record = value as Record<string, unknown>;
+  return MANIFEST_CONTRIBUTION_KEYS.reduce(
+    (score, key) => score + (carriesContribution(record[key]) ? 1 : 0),
+    0,
+  );
+}
+
+/**
+ * Read the plugin manifest that declares the richest Clarvis-compatible
+ * contribution surface.
  *
  * @param dir - the plugin's install directory.
  * @returns the source, or `{ error }` naming every location searched and the
@@ -234,31 +289,57 @@ export interface PluginManifestSource {
  * @remarks A location that is missing is ordinary and moves on to the next.
  *   A location that exists but cannot be read is not: reporting it is what
  *   distinguishes "this plugin has no manifest" from "its manifest is there and
- *   unreadable", and stops an unreadable root `plugin.json` from quietly
- *   resolving to a *different* host's manifest further down the list.
+ *   unreadable".
+ *
+ *   `.clarvis-plugin/plugin.json` is authoritative whenever present: it is the
+ *   only location whose name explicitly says that its author targeted this
+ *   host. Otherwise every readable root/borrowed manifest is ranked by the
+ *   number of contribution directives Clarvis understands, with the historical
+ *   root-then-name order breaking ties. This is what stops a generic identity
+ *   manifest at the root, or an alphabetically earlier host manifest, from
+ *   hiding the `skills`, `mcpServers`, or `hooks` another manifest declares.
+ *   An unreadable candidate remains fatal rather than becoming a way to steer
+ *   selection silently.
  */
 export function readPluginManifestSource(dir: string): PluginManifestSource | { error: string } {
-  const locations = [MANIFEST_FILE, `${CLARVIS_MANIFEST_DIR}/${MANIFEST_FILE}`];
-  for (const location of locations) {
-    const read = readBoundedPluginText(
-      join(dir, location),
-      PLUGIN_RESOURCE_LIMITS.manifestBytes,
-      `plugin manifest '${location}'`,
-    );
-    if (read.ok) return { raw: read.text, location };
-    if (!read.missing) return { error: read.error };
-  }
+  const clarvisLocation = `${CLARVIS_MANIFEST_DIR}/${MANIFEST_FILE}`;
+  const clarvisRead = readBoundedPluginText(
+    join(dir, clarvisLocation),
+    PLUGIN_RESOURCE_LIMITS.manifestBytes,
+    `plugin manifest '${clarvisLocation}'`,
+  );
+  if (clarvisRead.ok) return { raw: clarvisRead.text, location: clarvisLocation };
+  if (!clarvisRead.missing) return { error: clarvisRead.error };
+
   const borrowed = borrowedManifestLocations(dir);
   if ("error" in borrowed) return borrowed;
-  locations.push(...borrowed.locations);
-  for (const location of borrowed.locations) {
+  const locations = [MANIFEST_FILE, clarvisLocation, ...borrowed.locations];
+  const candidateLocations = [MANIFEST_FILE, ...borrowed.locations];
+  const manifestCandidates: PluginManifestSource[] = [];
+  for (const location of candidateLocations) {
     const read = readBoundedPluginText(
       join(dir, location),
       PLUGIN_RESOURCE_LIMITS.manifestBytes,
       `plugin manifest '${location}'`,
     );
-    if (read.ok) return { raw: read.text, location };
+    if (read.ok) {
+      const source = { raw: read.text, location };
+      manifestCandidates.push(source);
+      continue;
+    }
     if (!read.missing) return { error: read.error };
+  }
+  let selected = manifestCandidates.at(0);
+  if (selected !== undefined) {
+    let selectedScore = manifestContributionScore(selected.raw);
+    for (const candidate of manifestCandidates.slice(1)) {
+      const score = manifestContributionScore(candidate.raw);
+      if (score > selectedScore) {
+        selected = candidate;
+        selectedScore = score;
+      }
+    }
+    return selected;
   }
   return {
     error: `no readable ${MANIFEST_FILE} (looked in ${locations.join(", ")})`,
@@ -400,16 +481,22 @@ interface HookHarvest {
 /** Nothing at all, from a source that was absent. */
 const NO_HOOKS: HookHarvest = { hooks: [], notes: [] };
 
-/** True when a declared path names the convention file itself. */
-function isConventionPath(declared: string): boolean {
-  return declared.replace(/^\.\//, "") === HOOKS_CONVENTION_FILE;
+/** True when a declared path resolves to the convention file itself. */
+function isConventionPath(dirs: PluginDirs, declared: string): boolean {
+  const resolved = companionPath(dirs, declared);
+  return resolved !== undefined && resolved === conventionHooksPath(dirs);
 }
 
 /**
  * Read a hooks document and translate it, given a document already parsed from
  * JSON.
  */
-function harvestDocument(dirs: PluginDirs, source: unknown, origin: string): HookHarvest {
+function harvestDocument(
+  dirs: PluginDirs,
+  source: unknown,
+  origin: string,
+  conversion: HooksConversionOptions,
+): HookHarvest {
   const parsed = hooksDocumentSchema.safeParse(source);
   if (!parsed.success) {
     const detail = parsed.error.issues[0]?.message ?? "invalid";
@@ -418,15 +505,16 @@ function harvestDocument(dirs: PluginDirs, source: unknown, origin: string): Hoo
       notes: [`hooks: ${origin} does not hold a recognizable hooks document (${detail})`],
     };
   }
-  const { hooks, notes } = convertHooksDocument(parsed.data, dirs.root);
+  const { hooks, notes } = convertHooksDocument(parsed.data, dirs.root, conversion);
   return { hooks, notes };
 }
 
 /**
  * Harvest one hooks document the manifest names by path.
  *
- * @param dir - the plugin's install directory.
+ * @param dirs - the plugin root and the selected manifest's path base.
  * @param declared - the path as the manifest writes it.
+ * @param conversion - effective plugin identity used by external MCP matchers.
  * @returns the hooks it yielded, or a note saying why it yielded none.
  * @remarks
  * A named file that cannot be used is a note rather than a failure, on the same
@@ -442,7 +530,11 @@ function harvestDocument(dirs: PluginDirs, source: unknown, origin: string): Hoo
  * hooks file its manifest named was absent from the bundle. Nothing runs either
  * way; the difference is only whether the rest of the plugin runs with it.
  */
-function harvestFile(dirs: PluginDirs, declared: string): HookHarvest {
+function harvestFile(
+  dirs: PluginDirs,
+  declared: string,
+  conversion: HooksConversionOptions,
+): HookHarvest {
   const withheld = "no hooks are contributed from it";
   const note = (reason: string): HookHarvest => ({
     hooks: [],
@@ -465,7 +557,7 @@ function harvestFile(dirs: PluginDirs, declared: string): HookHarvest {
   } catch (error) {
     return note(`is not valid JSON (${(error as Error).message})`);
   }
-  return harvestDocument(dirs, source, `hooks file '${declared}'`);
+  return harvestDocument(dirs, source, `hooks file '${declared}'`, conversion);
 }
 
 /**
@@ -473,8 +565,9 @@ function harvestFile(dirs: PluginDirs, declared: string): HookHarvest {
  * array, or the event map an external manifest carries inline — or from one or
  * several files it names.
  *
- * @param dir - the plugin's install directory.
+ * @param dirs - the plugin root and the selected manifest's path base.
  * @param declared - whatever the manifest's `hooks` key holds.
+ * @param conversion - effective plugin identity used by external MCP matchers.
  * @returns the hooks harvested, and a note for every source that yielded none.
  * @remarks
  * An array is read two ways, decided by what is in it. An array of **strings**
@@ -483,10 +576,14 @@ function harvestFile(dirs: PluginDirs, declared: string): HookHarvest {
  * definitions, left for the schema to validate. The two cannot be confused: a
  * hook definition is an object, and a path is not.
  */
-function harvestDeclared(dirs: PluginDirs, declared: unknown): HookHarvest {
+function harvestDeclared(
+  dirs: PluginDirs,
+  declared: unknown,
+  conversion: HooksConversionOptions,
+): HookHarvest {
   if (Array.isArray(declared)) {
     if (declared.length > 0 && declared.every((entry) => typeof entry === "string")) {
-      const harvested = declared.map((file) => harvestFile(dirs, file));
+      const harvested = declared.map((file) => harvestFile(dirs, file, conversion));
       return {
         hooks: harvested.flatMap((h) => h.hooks),
         notes: harvested.flatMap((h) => h.notes),
@@ -495,16 +592,16 @@ function harvestDeclared(dirs: PluginDirs, declared: unknown): HookHarvest {
     return { hooks: declared, notes: [] };
   }
 
-  if (typeof declared === "string") return harvestFile(dirs, declared);
+  if (typeof declared === "string") return harvestFile(dirs, declared, conversion);
 
   if (typeof declared === "object" && declared !== null) {
-    return harvestDocument(dirs, declared, "the manifest");
+    return harvestDocument(dirs, declared, "the manifest", conversion);
   }
   return NO_HOOKS;
 }
 
 /** Harvest the hooks of the `hooks/hooks.json` a plugin ships by convention. */
-function harvestConvention(dirs: PluginDirs): HookHarvest {
+function harvestConvention(dirs: PluginDirs, conversion: HooksConversionOptions): HookHarvest {
   const read = readBoundedPluginText(
     conventionHooksPath(dirs),
     PLUGIN_RESOURCE_LIMITS.hookDocumentBytes,
@@ -523,16 +620,16 @@ function harvestConvention(dirs: PluginDirs): HookHarvest {
       notes: [`hooks: ${HOOKS_CONVENTION_FILE} is not valid JSON (${(error as Error).message})`],
     };
   }
-  return harvestDocument(dirs, source, HOOKS_CONVENTION_FILE);
+  return harvestDocument(dirs, source, HOOKS_CONVENTION_FILE, conversion);
 }
 
 /**
  * Resolve a plugin's hooks from exactly one source and rewrite the manifest's
  * `hooks` key with the result.
  *
- * @param dir - the plugin's install directory, both the base for a relative
- *   hooks path and the value substituted for a plugin-root placeholder.
+ * @param dirs - the plugin root and the selected manifest's path base.
  * @param document - the JSON-parsed manifest, mutated in place.
+ * @param conversion - effective plugin identity used by external MCP matchers.
  * @returns notes for whatever did not translate, and for a source that lost.
  * @remarks
  * **No hooks source can cost a plugin anything but its hooks.** Every way of
@@ -552,18 +649,22 @@ function harvestConvention(dirs: PluginDirs): HookHarvest {
  * emptiness as "no hooks anywhere" silently dropped them. Whichever
  * source loses is named in a note, so the choice is never invisible.
  */
-function resolveHooks(dirs: PluginDirs, document: Record<string, unknown>): string[] {
+function resolveHooks(
+  dirs: PluginDirs,
+  document: Record<string, unknown>,
+  conversion: HooksConversionOptions,
+): string[] {
   const declared = document.hooks;
   const notes: string[] = [];
 
-  const fromManifest = harvestDeclared(dirs, declared);
+  const fromManifest = harvestDeclared(dirs, declared, conversion);
   notes.push(...fromManifest.notes);
 
   if (fromManifest.hooks.length > 0) {
     document.hooks = fromManifest.hooks;
     const shadowed =
       existsSync(conventionHooksPath(dirs)) &&
-      !(typeof declared === "string" && isConventionPath(declared));
+      !(typeof declared === "string" && isConventionPath(dirs, declared));
     if (shadowed) {
       notes.push(
         `hooks: ${HOOKS_CONVENTION_FILE} not read — the manifest declares its own hooks, ` +
@@ -573,7 +674,7 @@ function resolveHooks(dirs: PluginDirs, document: Record<string, unknown>): stri
     return notes;
   }
 
-  const fromConvention = harvestConvention(dirs);
+  const fromConvention = harvestConvention(dirs, conversion);
   notes.push(...fromConvention.notes);
   if (fromConvention.hooks.length > 0) {
     document.hooks = fromConvention.hooks;
@@ -604,26 +705,26 @@ function resolveHooks(dirs: PluginDirs, document: Record<string, unknown>): stri
  * what this key declares is one part of a plugin, so withholding it costs the
  * operator that part, while refusing the manifest costs them all of it — and
  * every other thing the plugin contributes with it. The plugin loads,
- * contributes no MCP servers, and says so. {@link harvestFile} now reads a named
- * hooks document on the same rule; the asymmetry this remark used to claim did
- * not survive being measured.
- */
-/**
- * @remarks The size guard before inlining is what keeps this resolver's promise.
+ * contributes no MCP servers, and says so. {@link harvestFile} reads a named
+ * hooks document on the same rule.
+ *
+ * The size guard before inlining is what keeps this resolver's promise.
  * The manifest is re-serialized and re-checked against the same ceiling after
  * every resolver has run, so a companion small enough to read can still push the
  * document past it — and that failure refuses the *whole plugin*, which is the one
  * outcome naming a servers document must never produce.
  */
-function resolveMcpServers(dirs: PluginDirs, document: Record<string, unknown>): string[] {
-  const declared = document[MCP_SERVERS_KEY];
-  if (typeof declared !== "string") return [];
-  delete document[MCP_SERVERS_KEY];
-
+function inlineMcpServersDocument(
+  dirs: PluginDirs,
+  document: Record<string, unknown>,
+  declared: string,
+  conventional: boolean,
+): { found: boolean; notes: string[] } {
   const withheld = "no MCP servers are contributed";
-  const note = (reason: string): string[] => [
-    `${MCP_SERVERS_KEY}: '${declared}' ${reason} — ${withheld}`,
-  ];
+  const note = (reason: string): { found: false; notes: string[] } => ({
+    found: false,
+    notes: [`${MCP_SERVERS_KEY}: '${declared}' ${reason} — ${withheld}`],
+  });
   if (declared.trim().length === 0) return note("names no document");
 
   const path = companionPath(dirs, declared);
@@ -634,7 +735,10 @@ function resolveMcpServers(dirs: PluginDirs, document: Record<string, unknown>):
     PLUGIN_RESOURCE_LIMITS.manifestBytes,
     `${MCP_SERVERS_KEY} document '${declared}'`,
   );
-  if (!read.ok) return [`${MCP_SERVERS_KEY}: ${read.error} — ${withheld}`];
+  if (!read.ok) {
+    if (conventional && read.missing) return { found: false, notes: [] };
+    return { found: false, notes: [`${MCP_SERVERS_KEY}: ${read.error} — ${withheld}`] };
+  }
 
   let source: unknown;
   try {
@@ -655,7 +759,24 @@ function resolveMcpServers(dirs: PluginDirs, document: Record<string, unknown>):
     return note("would not fit in the manifest once inlined");
   }
   document[MCP_SERVERS_KEY] = servers;
-  return [];
+  return { found: true, notes: [] };
+}
+
+function resolveMcpServers(dirs: PluginDirs, document: Record<string, unknown>): string[] {
+  const declared = document[MCP_SERVERS_KEY];
+  if (typeof declared === "string") {
+    delete document[MCP_SERVERS_KEY];
+    return inlineMcpServersDocument(dirs, document, declared, false).notes;
+  }
+  if (declared !== undefined) return [];
+
+  const notes: string[] = [];
+  for (const conventional of MCP_CONVENTION_FILES) {
+    const result = inlineMcpServersDocument(dirs, document, conventional, true);
+    notes.push(...result.notes);
+    if (result.found) return notes;
+  }
+  return notes;
 }
 
 /**
@@ -769,9 +890,10 @@ function derivableName(dir: string): string | undefined {
  * @returns one note per field supplied, so a reader can tell what the author
  *   wrote from what this host filled in.
  * @remarks
- * `name` is the one field the loader cannot do without, and it has to equal the
- * install directory's name anyway — so the directory is a better source for it
- * than a refusal. A description is only ever *moved*, never invented: the
+ * `name` is the one field the normalized manifest cannot do without. For an
+ * existing install, the directory is the host-owned runtime namespace and is
+ * therefore a safe source when a foreign manifest omits the field. A description
+ * is only ever *moved*, never invented: the
  * presentation block's own summary is the plugin author's sentence about their
  * own plugin, whereas a placeholder would be this host putting words in their
  * mouth. Nothing else is supplied, because nothing else is required.
@@ -808,14 +930,19 @@ function supplyDefaults(
  *
  * @param dir - the plugin's install directory.
  * @param raw - the manifest text, as read by {@link readPluginManifestSource}.
- * @returns the validated manifest, or `error` when the text is not JSON, points
- *   at an unusable hooks file, or fails the manifest schema; `notes` carries what
- *   was accepted but is not acted on, and what this host supplied for itself.
+ * @param effectivePluginName - host-owned install identity used to namespace
+ *   contributions; omitted only by standalone readers that have no install
+ *   record.
+ * @returns the validated manifest, or `error` when the text is not JSON or fails
+ *   the manifest schema; `notes` carries unusable individual contributions,
+ *   what was accepted but is not acted on, and what this host supplied for
+ *   itself.
  */
 export function resolvePluginManifest(
   dir: string,
   raw: string,
   manifestLocation?: string,
+  effectivePluginName?: string,
 ): ResolvedPluginManifest {
   if (Buffer.byteLength(raw, "utf8") > PLUGIN_RESOURCE_LIMITS.manifestBytes) {
     return {
@@ -836,10 +963,27 @@ export function resolvePluginManifest(
   const record = document as Record<string, unknown>;
   const dirs = pluginDirsFor(dir, manifestLocation);
   const notes: string[] = [];
-  notes.push(...resolveHooks(dirs, record));
-
   notes.push(...resolveMcpServers(dirs, record));
   notes.push(...sanitizeMcpServers(record));
+  const pluginMcpServers =
+    typeof record[MCP_SERVERS_KEY] === "object" &&
+    record[MCP_SERVERS_KEY] !== null &&
+    !Array.isArray(record[MCP_SERVERS_KEY])
+      ? Object.keys(record[MCP_SERVERS_KEY])
+      : [];
+  const declaredPluginName = displayText(record.name);
+  const pluginName =
+    effectivePluginName ??
+    (declaredPluginName !== undefined &&
+    parsePluginManifest(JSON.stringify({ name: declaredPluginName })).ok
+      ? declaredPluginName
+      : derivableName(dir));
+  notes.push(
+    ...resolveHooks(dirs, record, {
+      ...(pluginName === undefined ? {} : { pluginName }),
+      pluginMcpServers,
+    }),
+  );
   const { presentation, notes: presentationNotes } = resolvePresentation(record);
   notes.push(...presentationNotes);
   notes.push(...supplyDefaults(dir, record, presentation));
@@ -875,4 +1019,133 @@ export function resolvePluginManifest(
     };
   }
   return { manifest: parsed.manifest, notes, ...shown };
+}
+
+/** Filename that turns a directory into one directly declared skill. */
+const SKILL_MANIFEST_FILE = "skill.md";
+
+/** Whether filesystem path identity follows Windows's case-insensitive convention. */
+const CASE_INSENSITIVE_PLUGIN_PATHS = process.platform === "win32";
+
+/** A stable comparison key for a resolved plugin path. */
+function pluginPathKey(path: string): string {
+  return CASE_INSENSITIVE_PLUGIN_PATHS ? path.toLowerCase() : path;
+}
+
+/**
+ * Whether a directory directly holds a regular `SKILL.md` under the same
+ * case-insensitive filename convention as `@clarvis/skills`.
+ */
+function isDirectSkillDirectory(dir: string): boolean {
+  let opened: ReturnType<typeof opendirSync>;
+  try {
+    opened = opendirSync(dir);
+  } catch {
+    return false;
+  }
+  let entries = 0;
+  let found = false;
+  try {
+    for (;;) {
+      const entry = opened.readSync();
+      if (entry === null) return found;
+      entries += 1;
+      if (entries > PLUGIN_RESOURCE_LIMITS.skillDirectoryEntries) return false;
+      if (entry.isFile() && entry.name.toLowerCase() === SKILL_MANIFEST_FILE) found = true;
+    }
+  } catch {
+    return false;
+  } finally {
+    try {
+      opened.closeSync();
+    } catch {
+      /* A completed/lazily failed read may already have closed the directory handle. */
+    }
+  }
+}
+
+/**
+ * Whether scanning `parent` is exactly equivalent to scanning its declared
+ * direct-skill children separately.
+ *
+ * @remarks Any undeclared directory or symlink refuses compaction. This is
+ * deliberately stricter than discovery: replacing many declarations with one
+ * root must not make another contribution visible merely because it is nearby.
+ */
+function isExactSiblingSkillGroup(parent: string, members: ReadonlySet<string>): boolean {
+  if (isDirectSkillDirectory(parent)) return false;
+  let opened: ReturnType<typeof opendirSync>;
+  try {
+    opened = opendirSync(parent);
+  } catch {
+    return false;
+  }
+  let entries = 0;
+  let directories = 0;
+  try {
+    for (;;) {
+      const entry = opened.readSync();
+      if (entry === null) return directories === members.size;
+      entries += 1;
+      if (entries > PLUGIN_RESOURCE_LIMITS.skillDirectoryEntries) return false;
+      if (entry.isSymbolicLink()) return false;
+      if (!entry.isDirectory()) continue;
+      const child = join(parent, entry.name);
+      directories += 1;
+      if (!members.has(pluginPathKey(child)) || !isDirectSkillDirectory(child)) return false;
+    }
+  } catch {
+    return false;
+  } finally {
+    try {
+      opened.closeSync();
+    } catch {
+      /* A completed/lazily failed read may already have closed the directory handle. */
+    }
+  }
+}
+
+/**
+ * Collapse exhaustive sibling lists into their parent scan root before applying
+ * the per-plugin root budget.
+ */
+function compactSkillRoots(roots: string[]): string[] {
+  if (
+    roots.length <= MAX_PLUGIN_SKILL_ROOTS ||
+    roots.length > PLUGIN_RESOURCE_LIMITS.skillDirectoryEntries
+  ) {
+    return roots;
+  }
+
+  const direct = new Map<string, boolean>();
+  const groups = new Map<string, { parent: string; roots: string[]; members: Set<string> }>();
+  for (const root of roots) {
+    const key = pluginPathKey(root);
+    const holdsSkill = direct.get(key) ?? isDirectSkillDirectory(root);
+    direct.set(key, holdsSkill);
+    if (!holdsSkill) continue;
+    const parent = dirname(root);
+    const parentKey = pluginPathKey(parent);
+    const group = groups.get(parentKey) ?? { parent, roots: [], members: new Set<string>() };
+    group.roots.push(root);
+    group.members.add(key);
+    groups.set(parentKey, group);
+  }
+
+  const replacements = new Map<string, string>();
+  for (const group of groups.values()) {
+    if (group.roots.length < 2 || !isExactSiblingSkillGroup(group.parent, group.members)) continue;
+    for (const root of group.roots) replacements.set(pluginPathKey(root), group.parent);
+  }
+
+  const compacted: string[] = [];
+  const seen = new Set<string>();
+  for (const root of roots) {
+    const effective = replacements.get(pluginPathKey(root)) ?? root;
+    const key = pluginPathKey(effective);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    compacted.push(effective);
+  }
+  return compacted;
 }

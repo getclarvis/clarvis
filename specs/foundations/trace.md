@@ -1159,7 +1159,7 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
 | `loop` | `createTrace` + `TraceHandle` for the run's recorder | `packages/loop/src/runtime/orchestrator.ts:22-23`, `:343` |
 | `loop` | `mapEntry` in the live/journal bridge | `packages/loop/src/runtime/run-trace.ts:7`, `:164` |
 | `loop` | `generateExecutionId`, `mapTrace`, `buildRecord`, `TraceStore`, `RunJournal` in `executeRun` | `packages/loop/src/runtime/execute-run.ts:7-19` |
-| `loop` | `resolveTraceStore` in `buildExecuteRunDeps` | `packages/loop/src/runtime/build-run-deps.ts:11` |
+| `loop` | `resolveTraceStore` in `buildExecuteRunDeps` | `packages/loop/src/runtime/build-run-deps.ts:16` |
 | `loop` | re-exports `TraceStore`, `TraceCleanup`, `generateExecutionId`, `ResolvedTraceStore` from `lib.ts`, and `deriveEventSpan`/`EventSpan` from `host.ts` | `packages/loop/src/lib.ts:26`, `:82-85`; `packages/loop/src/host.ts:62` |
 | `kernel` | `TraceCleanup` + `TraceStore` in file-kernel composition | `packages/kernel/src/file-kernel.ts:42` |
 | `kernel` | `MAX_TRACE_LIST_LIMIT` / `MAX_TRACE_LIST_OFFSET` for run pagination | `packages/kernel/src/runs/pagination.ts:1` |

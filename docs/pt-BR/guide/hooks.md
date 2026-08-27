@@ -96,10 +96,19 @@ process.stdout.write(
 O comando do hook recebe um objeto JSON em stdin. Um evento de ferramenta inclui `tool_name` e
 `tool_input`; todos os eventos incluem `protocol`, `hook_event_name` e `cwd`.
 
+Para documentos de hooks compartilhados com outro host, `hook_event_name` e `tool_name` usam as
+grafias externas compatíveis. Assim, ferramentas integradas chegam com nomes como `Bash`, `Read` e
+`Skill`, enquanto uma ferramenta MCP chega como `mcp__<servidor>__<ferramenta>`. O carregamento de
+uma skill também adiciona `skill` ao lado do campo nativo `name`. Use `CLARVIS_HOOK_TOOL` para o nome
+de wire do Clarvis e `CLARVIS_HOOK_TOOL_FULL_NAME` para o nome pontuado estável de uma ferramenta MCP
+quando o script precisar da identidade própria do Clarvis.
+
 Hooks de controle podem retornar `pass`, `deny` ou `advise`. Um hook `pre_tool_use` também pode
 retornar `rewrite` com um objeto `arguments` substituto completo. Hooks `session_start` e
 `pre_compact` podem retornar texto em `context`. Eventos observadores são executados apenas para
-notificação e não podem bloquear a execução.
+notificação e não podem bloquear a execução. Um observador `user_prompt_expansion` é executado uma
+vez antes do início de um comando de skill invocado pelo usuário; ele não é executado para um prompt
+comum nem para um carregamento posterior de skill iniciado pelo modelo.
 
 ::: warning Hooks são executados com seus privilégios
 Os comandos de hooks são executados a partir do workspace com acesso normal ao sistema de arquivos e

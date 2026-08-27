@@ -26,6 +26,13 @@ describe("listSkillDirs", () => {
     expect(listSkillDirs(path.join(root, "missing"), true)).toEqual([]);
   });
 
+  it("accepts a skill directory itself as a root", () => {
+    const skill = writeSkill(root, "direct");
+    expect(listSkillDirs(skill, true)).toEqual([
+      { dir: skill, file: path.join(skill, "SKILL.md") },
+    ]);
+  });
+
   it("descends through a directory that groups skills instead of holding one", () => {
     writeSkill(path.join(root, "roles"), "architect");
     writeSkill(path.join(root, "roles"), "reviewer");

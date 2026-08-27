@@ -24,6 +24,12 @@ import { zodIssueSummary } from "./zod-summary.ts";
  */
 const MAX_MARKETPLACE_BYTES = 2 * 1024 * 1024;
 
+/** The official catalog included by the Clarvis TUI without a settings write. */
+export const OFFICIAL_MARKETPLACE_URL = "https://github.com/getclarvis/marketplace.git";
+
+/** Product-owned catalog sources that precede operator-added and discovered sources. */
+const DEFAULT_MARKETPLACE_URLS: readonly string[] = [OFFICIAL_MARKETPLACE_URL];
+
 /** One plugin entry from a fetched marketplace, tagged with its source and install state. */
 export interface MarketplaceListing extends MarketplaceEntry {
   marketplace: string;
@@ -234,7 +240,8 @@ function discoverAgentsCatalogs(): string[] {
 
 /**
  * Builds a {@link MarketplaceAdapter} over `deps.urls`/`deps.installed`, plus the
- * cross-runtime catalogs `deps.agentsCatalogs` discovers.
+ * official catalog and the cross-runtime catalogs `deps.agentsCatalogs`
+ * discovers.
  *
  * @remarks
  * `load()` fetches each source only once — a source that already has a
@@ -246,12 +253,14 @@ export function createMarketplaceAdapter(deps: {
   urls: () => string[];
   installed: () => string[];
   agentsCatalogs?: () => string[];
+  defaultUrls?: readonly string[];
 }): MarketplaceAdapter {
   const results = new Map<string, MarketplaceSource>();
   const discover = deps.agentsCatalogs ?? discoverAgentsCatalogs;
+  const defaults = deps.defaultUrls ?? DEFAULT_MARKETPLACE_URLS;
   let discovered: string[] = [];
 
-  const every = (): string[] => [...deps.urls(), ...discovered];
+  const every = (): string[] => [...new Set([...defaults, ...deps.urls(), ...discovered])];
 
   const read = async (id: string): Promise<Marketplace> =>
     isAgentsMarketplaceFile(id) ? readMarketplace(id) : fetchMarketplace(id);
@@ -317,6 +326,9 @@ export async function addMarketplaceSource(
   url: string,
 ): Promise<{ added: boolean; message: string }> {
   const current = settings.read("global")?.marketplaces ?? [];
+  if (url === OFFICIAL_MARKETPLACE_URL) {
+    return { added: false, message: "the official marketplace is already available by default" };
+  }
   if (current.includes(url)) {
     return { added: false, message: "that marketplace is already configured" };
   }

@@ -33,6 +33,8 @@ export interface GlobalPaths {
   keysFile: string;
   /** Renewable local-user subscription credentials, separate from API keys. */
   subscriptionsFile: string;
+  /** Private machine state for remote MCP OAuth registrations and tokens. */
+  mcpOAuthFile: string;
   /** Installed plugin directory. */
   pluginsDir: string;
   /** Per-definition approvals for unmanaged plugin hooks. */
@@ -113,6 +115,7 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     agentsDir,
     keysFile: join(base, "keys.json"),
     subscriptionsFile: join(base, "subscriptions.json"),
+    mcpOAuthFile: join(state, "mcp-oauth.json"),
     pluginsDir: join(base, "plugins"),
     hookTrustFile: join(base, "hook-trust.json"),
     workspaceTrustFile: join(base, "workspace-trust.json"),

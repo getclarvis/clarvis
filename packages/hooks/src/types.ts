@@ -50,6 +50,8 @@ export interface HookSpec {
 /** The tool call a tool-scoped hook's {@link HookMatch} is evaluated against. */
 export interface ToolCandidate {
   readonly tool: string;
+  /** Stable alternate identities, such as an MCP tool's dotted full name. */
+  readonly aliases?: readonly string[] | undefined;
   readonly arguments: unknown;
 }
 

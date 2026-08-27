@@ -468,6 +468,23 @@ function buildModelCall(
  */
 const REWRITE_NOTE_MAX_CHARS = 2_000;
 
+/** Describe a dispatched tool to lifecycle hooks without losing its wire name. */
+function hookToolIdentity(
+  handler: ToolHandler,
+  call: LLMToolCall,
+): { tool: string; toolFullName?: string } {
+  let toolFullName: string | undefined;
+  try {
+    toolFullName = handler.canonicalName?.(call);
+  } catch {
+    toolFullName = undefined;
+  }
+  return {
+    tool: call.name,
+    ...(toolFullName === undefined || toolFullName === call.name ? {} : { toolFullName }),
+  };
+}
+
 /**
  * Render the note telling the model its call was rewritten before it ran.
  *
@@ -509,6 +526,7 @@ function rewriteNote(args: unknown): string {
 async function applyBeforeHooks(
   core: LoopCore,
   call: LLMToolCall,
+  handler: ToolHandler,
 ): Promise<{
   denied: string | null;
   adviseMessages: string[];
@@ -520,7 +538,7 @@ async function applyBeforeHooks(
       h.beforeToolUse
         ? (): Promise<HookVerdict> | HookVerdict =>
             h.beforeToolUse!({
-              tool: call.name,
+              ...hookToolIdentity(handler, call),
               arguments: rewritten === undefined ? call.arguments : rewritten,
             })
         : undefined,
@@ -554,6 +572,7 @@ async function applyBeforeHooks(
 async function applyAfterHooks(
   core: LoopCore,
   call: LLMToolCall,
+  handler: ToolHandler,
   result: HandlerResult,
   adviseMessages: string[],
 ): Promise<HandlerResult> {
@@ -568,7 +587,11 @@ async function applyAfterHooks(
     (h) =>
       h.afterToolUse
         ? (): Promise<HookVerdict> | HookVerdict =>
-            h.afterToolUse!({ tool: call.name, arguments: call.arguments, result: afterResult })
+            h.afterToolUse!({
+              ...hookToolIdentity(handler, call),
+              arguments: call.arguments,
+              result: afterResult,
+            })
         : undefined,
     {
       onThrow: "ignore",
@@ -693,7 +716,7 @@ async function runDispatch(
       }
       const original = toolCalls[i]!;
       const handler = selectHandler(d.handlers, original)!;
-      const { denied, adviseMessages, rewritten } = await applyBeforeHooks(core, original);
+      const { denied, adviseMessages, rewritten } = await applyBeforeHooks(core, original, handler);
       if (denied !== null) {
         results[i] = `DENIED by a workspace hook: ${denied}`;
         continue;
@@ -731,7 +754,7 @@ async function runDispatch(
       }
       let v: HandlerVerdict = handled.value;
       if (v.kind === "result" && core.hooks) {
-        const final = await applyAfterHooks(core, call, v, adviseMessages);
+        const final = await applyAfterHooks(core, call, handler, v, adviseMessages);
         v = { kind: "result", ...final };
       }
       if (v.kind === "terminal") {
@@ -754,7 +777,9 @@ async function runDispatch(
           v
             .run(batchSignal())
             .then(async (r) => {
-              const final = core.hooks ? await applyAfterHooks(core, call, r, adviseMessages) : r;
+              const final = core.hooks
+                ? await applyAfterHooks(core, call, handler, r, adviseMessages)
+                : r;
               results[idx] = final.text;
               taskIds[idx] = final.taskId;
               images[idx] = final.images;

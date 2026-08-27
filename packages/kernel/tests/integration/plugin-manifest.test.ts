@@ -35,7 +35,7 @@ const base = { name: "demo", version: "1.0.0", description: "A demo plugin." };
 function resolve(): ReturnType<typeof resolvePluginManifest> {
   const source = readPluginManifestSource(root);
   if (!("raw" in source)) throw new Error(source.error);
-  return resolvePluginManifest(root, source.raw);
+  return resolvePluginManifest(root, source.raw, source.location);
 }
 
 /** The location a manifest was read from, or undefined when none was found. */
@@ -48,7 +48,7 @@ function locationRead(): string | undefined {
 function resolveIn(dir: string): ReturnType<typeof resolvePluginManifest> {
   const source = readPluginManifestSource(dir);
   if (!("raw" in source)) throw new Error(source.error);
-  return resolvePluginManifest(dir, source.raw);
+  return resolvePluginManifest(dir, source.raw, source.location);
 }
 
 /** Copy a committed fixture tree in as a plugin installed under `as`. */
@@ -82,6 +82,40 @@ describe("manifest location", () => {
     write(".beta-plugin/plugin.json", { ...base, description: "beta" });
     write(".alpha-plugin/plugin.json", { ...base, description: "alpha" });
     expect(locationRead()).toBe(".alpha-plugin/plugin.json");
+  });
+
+  it("selects the borrowed manifest that declares the richest compatible surface", () => {
+    write(".alpha-plugin/plugin.json", { ...base, skills: "../skills" });
+    write(".beta-plugin/plugin.json", {
+      ...base,
+      skills: "../skills",
+      mcpServers: "../.mcp.json",
+      hooks: "../hooks/hooks.json",
+    });
+    expect(locationRead()).toBe(".beta-plugin/plugin.json");
+  });
+
+  it("looks past a generic root identity manifest to a host manifest with contributions", () => {
+    write("plugin.json", { ...base, extensions: { "some.host": {} } });
+    write(".codex-plugin/plugin.json", {
+      ...base,
+      skills: "../skills",
+      mcpServers: "../.mcp.json",
+    });
+    expect(locationRead()).toBe(".codex-plugin/plugin.json");
+  });
+
+  it("treats the Clarvis-specific manifest as authoritative", () => {
+    write("plugin.json", { ...base, skills: "./skills", mcpServers: "./.mcp.json" });
+    write(".clarvis-plugin/plugin.json", { ...base, description: "explicitly for Clarvis" });
+    expect(locationRead()).toBe(".clarvis-plugin/plugin.json");
+  });
+
+  it("does not let an unusable root hide a readable Clarvis-specific manifest", () => {
+    write("plugin.json", base);
+    truncateSync(join(root, "plugin.json"), PLUGIN_RESOURCE_LIMITS.manifestBytes + 1);
+    write(".clarvis-plugin/plugin.json", { ...base, description: "explicitly for Clarvis" });
+    expect(locationRead()).toBe(".clarvis-plugin/plugin.json");
   });
 
   it("names every location it looked in when there is none", () => {
@@ -212,6 +246,36 @@ describe("foreign manifest fields", () => {
     expect(notes.join(" ")).toContain("only the first 4 of 6");
   });
 
+  it("compacts exhaustive direct-skill siblings before applying the root budget", () => {
+    const declared = [
+      "./skills/engineering/alpha",
+      "./skills/engineering/beta",
+      "./skills/engineering/gamma",
+      "./skills/productivity/delta",
+      "./skills/productivity/epsilon",
+      "./skills/productivity/zeta",
+    ];
+    for (const skill of declared) write(`${skill}/SKILL.md`, "skill");
+
+    expect(pluginSkillRoots(root, declared)).toEqual({
+      roots: [join(root, "skills", "engineering"), join(root, "skills", "productivity")],
+      notes: [],
+    });
+  });
+
+  it("does not compact a group when that would admit an undeclared sibling", () => {
+    const declared = ["alpha", "beta", "gamma", "delta", "epsilon"].map(
+      (skill) => `./skills/${skill}`,
+    );
+    for (const skill of [...declared, "./skills/private"]) write(`${skill}/SKILL.md`, "skill");
+
+    const { roots, notes } = pluginSkillRoots(root, declared);
+    expect(roots).toEqual(
+      ["alpha", "beta", "gamma", "delta"].map((skill) => join(root, "skills", skill)),
+    );
+    expect(notes.join(" ")).toContain("only the first 4 of 5 effective locations");
+  });
+
   it("de-duplicates two declarations that name the same directory", () => {
     expect(pluginSkillRoots(root, ["./mine", "mine/"]).roots).toEqual([join(root, "mine")]);
   });
@@ -233,6 +297,31 @@ describe("mcpServers named as a companion document", () => {
     expect(error).toBeUndefined();
     expect(manifest?.mcpServers?.charts?.command).toBe("atlas-mcp");
     expect(notes.join(" ")).not.toContain("mcpServers");
+  });
+
+  it("discovers .mcp.json by convention when the selected manifest names no document", () => {
+    write("plugin.json", base);
+    write(".mcp.json", companion);
+    const { manifest, error, notes } = resolve();
+    expect(error).toBeUndefined();
+    expect(manifest?.mcpServers?.charts?.command).toBe("atlas-mcp");
+    expect(notes.join(" ")).not.toContain("mcpServers");
+  });
+
+  it("falls back from an absent .mcp.json to mcp.json", () => {
+    write("plugin.json", base);
+    write("mcp.json", companion);
+    expect(resolve().manifest?.mcpServers?.charts?.command).toBe("atlas-mcp");
+  });
+
+  it("keeps a malformed conventional file proportional and tries the next convention", () => {
+    write("plugin.json", base);
+    write(".mcp.json", "{nope");
+    write("mcp.json", companion);
+    const { manifest, notes, error } = resolve();
+    expect(error).toBeUndefined();
+    expect(manifest?.mcpServers?.charts?.command).toBe("atlas-mcp");
+    expect(notes.join(" ")).toContain(".mcp.json");
   });
 
   it("resolves the path against the plugin root, not the manifest's own directory", () => {
@@ -297,6 +386,50 @@ describe("mcpServers named as a companion document", () => {
     const { error, notes } = resolve();
     expect(error).toBeUndefined();
     expect(notes.join(" ")).toContain("names no document");
+  });
+});
+
+describe("combined external plugin layout", () => {
+  it("keeps skills, conventional MCP servers, and translated hooks together", () => {
+    write("plugin.json", { ...base, extensions: { "generic.host": {} } });
+    write(".example-plugin/plugin.json", {
+      ...base,
+      skills: "../skills",
+      hooks: "../hooks/hooks.json",
+    });
+    write("skills/example/SKILL.md", "---\nname: example\ndescription: Example skill.\n---\n");
+    write(".mcp.json", {
+      mcpServers: { charts: { command: "atlas-mcp", args: ["--stdio"] } },
+    });
+    write("hooks/hooks.json", {
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "Bash|Skill|mcp__charts__render",
+            hooks: [{ type: "command", command: "guard" }],
+          },
+        ],
+      },
+    });
+
+    const source = readPluginManifestSource(root);
+    if (!("raw" in source)) throw new Error(source.error);
+    const { manifest, error, notes } = resolve();
+    expect(error).toBeUndefined();
+    expect(source.location).toBe(".example-plugin/plugin.json");
+    expect(pluginSkillRoots(root, "../skills", source.location)).toEqual({
+      roots: [join(root, "skills")],
+      notes: [],
+    });
+    expect(manifest?.mcpServers?.charts?.command).toBe("atlas-mcp");
+    expect(manifest?.hooks).toEqual([
+      {
+        event: "pre_tool_use",
+        command: "guard",
+        match: { tool: ["shell", "load_skill", "demo:charts.render"] },
+      },
+    ]);
+    expect(notes).toEqual([]);
   });
 });
 
@@ -581,7 +714,68 @@ describe("hooks written in the external dialect", () => {
     it("rewrites the foreign MCP spelling into the dotted one this host dispatches", () => {
       expect(match("mcp__github__create_issue")).toEqual({ tool: ["github.create_issue"] });
       expect(match("mcp__github__.*")).toEqual({ tool: ["github.*"] });
+      expect(match("mcp__github.*")).toEqual({ tool: ["github*"] });
+      expect(match("mcp__plugin_.*cloud-core.*")).toEqual({ tool: ["cloud-core.*"] });
       expect(match("mcp__.*")).toEqual({ tool: ["*.*"] });
+    });
+
+    it("qualifies a plugin-owned MCP matcher with the effective plugin namespace", () => {
+      const converted = convertHooksDocument(
+        {
+          PreToolUse: [
+            {
+              matcher: "mcp__docs__search|mcp__plugin_.*docs.*|mcp__outside__search",
+              hooks: [{ command: "guard" }],
+            },
+          ],
+        },
+        "/plugins/quality-kit",
+        { pluginName: "quality-kit", pluginMcpServers: ["docs"] },
+      );
+      expect(converted.hooks[0]?.match).toEqual({
+        tool: ["quality-kit:docs.search", "quality-kit:docs.*", "outside.search"],
+      });
+      expect(converted.notes).toEqual([]);
+    });
+
+    it("uses the host-owned install identity when it differs from manifest presentation", () => {
+      const dir = installFixture("foreign-plugin", "installed-name");
+      writeFileSync(
+        join(dir, "plugin.json"),
+        JSON.stringify({
+          ...base,
+          name: "display-name",
+          mcpServers: { docs: { command: "docs-server" } },
+          hooks: {
+            PreToolUse: [{ matcher: "mcp__docs__search", hooks: [{ command: "guard" }] }],
+          },
+        }),
+      );
+      const source = readPluginManifestSource(dir);
+      if (!("raw" in source)) throw new Error(source.error);
+
+      const resolved = resolvePluginManifest(dir, source.raw, source.location, "installed-name");
+
+      expect(resolved.manifest?.hooks?.[0]?.match).toEqual({
+        tool: ["installed-name:docs.search"],
+      });
+    });
+
+    it("keeps usable alternatives when one regular-expression branch cannot translate", () => {
+      const { hooks, notes } = convertHooksDocument(
+        {
+          PreToolUse: [
+            {
+              matcher: "use_service|mcp__cloud.*|Bash(?:guard)",
+              hooks: [{ command: "protect" }],
+            },
+          ],
+        },
+        "/opt/p",
+      );
+      expect(hooks[0]?.match).toEqual({ tool: ["use_service", "cloud*"] });
+      expect(notes.join(" ")).toContain("'Bash(?:guard)'");
+      expect(notes.join(" ")).toContain("rest of the filter still applies");
     });
 
     it("refuses a malformed foreign MCP name instead of widening its filter", () => {
@@ -721,7 +915,7 @@ describe("hooks written in the external dialect", () => {
       });
       const { manifest, notes } = resolve();
       expect(manifest?.hooks).toEqual([
-        { event: "session_start", command: "./hooks/go session-start" },
+        { event: "session_start", command: `"${join(root, "hooks/go")}" session-start` },
       ]);
       expect(notes).toEqual([]);
     });
@@ -838,6 +1032,22 @@ describe("hooks written in the external dialect", () => {
 });
 
 describe("convertHooksDocument", () => {
+  it("maps prompt expansion and Skill tool names without approximation", () => {
+    const expansion = convertHooksDocument(
+      { UserPromptExpansion: [{ hooks: [{ command: "feedback" }] }] },
+      "/plugins/design",
+    );
+    const skill = convertHooksDocument(
+      { PostToolUse: [{ matcher: "Skill", hooks: [{ command: "feedback" }] }] },
+      "/plugins/design",
+    );
+    expect(expansion.hooks).toEqual([{ event: "user_prompt_expansion", command: "feedback" }]);
+    expect(skill.hooks).toEqual([
+      { event: "post_tool_use", command: "feedback", match: { tool: ["load_skill"] } },
+    ]);
+    expect([...expansion.notes, ...skill.notes]).toEqual([]);
+  });
+
   it("reports an event with no Clarvis equivalent instead of guessing one", () => {
     const { hooks, notes } = convertHooksDocument(
       { Notification: [{ hooks: [{ command: "ping" }] }] },
@@ -1105,5 +1315,26 @@ describe("a manifest that lives in a host dot-directory", () => {
   it("leaves a root manifest resolving from the root, as before", () => {
     const { roots } = pluginSkillRoots(dir, "skills", "plugin.json");
     expect(roots).toEqual([join(dir, "skills")]);
+  });
+});
+
+describe("borrowed relative hook commands", () => {
+  it("anchors a relative hook from the selected borrowed manifest to the plugin root", () => {
+    write(".alpha-plugin/plugin.json", { ...base, skills: "../skills" });
+    write(".beta-plugin/plugin.json", {
+      ...base,
+      skills: "../skills",
+      hooks: {
+        SessionStart: [{ hooks: [{ command: "./hooks/run-hook.cmd session-start" }] }],
+      },
+    });
+
+    expect(locationRead()).toBe(".beta-plugin/plugin.json");
+    expect(resolve().manifest?.hooks).toEqual([
+      {
+        event: "session_start",
+        command: `"${join(root, "hooks/run-hook.cmd")}" session-start`,
+      },
+    ]);
   });
 });

@@ -72,9 +72,26 @@ async function refusal(command: string[], environment: Record<string, string>): 
   return stdout + stderr;
 }
 
-/** Match semantic installer output even when PowerShell wraps a long error across lines. */
+function withoutAnsiCsi(value: string): string {
+  let result = "";
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) !== 0x1b || value[index + 1] !== "[") {
+      result += value[index];
+      continue;
+    }
+    index += 2;
+    while (index < value.length) {
+      const codePoint = value.charCodeAt(index);
+      if (codePoint >= 0x40 && codePoint <= 0x7e) break;
+      index += 1;
+    }
+  }
+  return result;
+}
+
+/** Match semantic installer output even when PowerShell styles and wraps a long error. */
 export function installerOutputIncludes(output: string, expected: string): boolean {
-  return output.replace(/\s+/g, " ").includes(expected);
+  return withoutAnsiCsi(output).replace(/\s+/g, " ").includes(expected);
 }
 
 function assertVisibleProgress(output: string): void {

@@ -91,7 +91,8 @@ Para o sistema operacional e a arquitetura detectados, o instalador:
 2. exige uma única entrada exata de checksum e verifica os bytes baixados;
 3. extrai o conteúdo em um diretório de preparação privado;
 4. verifica se a CLI preparada informa a versão solicitada;
-5. recusa substituir um comando não relacionado no caminho do inicializador;
+5. recusa substituir um comando não relacionado ou um inicializador POSIX pertencente a outra raiz
+   de instalação;
 6. ativa a nova versão somente depois que todas as verificações passam.
 
 O código-fonte do instalador na `main`, adicionado depois da tag publicada `v0.0.1-beta`, também
@@ -156,11 +157,15 @@ uma decisão posterior de versão e release do produto.
 O desinstalador no código-fonte mostra os alvos resolvidos antes de alterá-los. Ele autentica o
 marcador gerenciado (ou o layout legado completo com inicializador, `current` e manifesto), adquire o
 mesmo lock exclusivo da instalação e atualização e recusa uma instalação não relacionada ou em
-alteração concorrente. Ele remove as releases gerenciadas, `current`, o marcador e o inicializador
-identificado. No Windows, também remove do `PATH` do usuário a entrada `bin` gerenciada exata; defina
-`CLARVIS_SKIP_PATH=1` para manter o `PATH` inalterado. Arquivos desconhecidos e inicializadores não
-relacionados são preservados e informados. Executar a desinstalação novamente é uma operação
-bem-sucedida sem alterações.
+alteração concorrente. Um inicializador POSIX só é considerado gerenciado quando aponta para a raiz
+de instalação selecionada. Diretórios gerenciados vinculados e destinos de marcador/ativação que não
+sejam arquivos são recusados; um sinal de cancelamento encerra a operação depois de limpar o lock.
+Ele remove as releases gerenciadas, `current`, o marcador e o inicializador correspondente. No
+Windows, também remove do `PATH` do usuário a entrada `bin` gerenciada exata enquanto mantém o mesmo
+lock, mesmo se o inicializador já estiver ausente; defina `CLARVIS_SKIP_PATH=1` para manter o `PATH`
+inalterado. Arquivos desconhecidos e inicializadores não relacionados são preservados e informados.
+Executar a desinstalação novamente é uma operação bem-sucedida sem alterações, mesmo quando esses
+artefatos preservados permanecem.
 
 Sem um checkout confiável que contenha esse modo, remova `v0.0.1-beta` manualmente. No Linux ou macOS,
 remova apenas o inicializador identificado em

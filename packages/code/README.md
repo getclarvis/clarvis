@@ -69,8 +69,11 @@ requested version, stores it under `versions/v<version>`, and writes `current` o
 earlier step succeeds. Both root installers print the target, resolved destination, and numbered
 download, verification, staging, and activation phases. `install.sh --uninstall` and
 `install.ps1 -Uninstall` authenticate the installer-owned marker (or the complete legacy managed
-layout), share the updater's mutation lock, remove only managed application files and launcher/PATH
-entries, and leave Clarvis configuration, credentials, sessions, and workspace data untouched.
+layout), share the updater's mutation lock through launcher and Windows `PATH` cleanup, and remove
+only managed application files. POSIX launcher ownership is bound to the selected install root;
+linked managed directories and non-file activation/marker destinations are refused. Cancellation
+stops the operation, repeated removal is a successful no-op, and Clarvis configuration,
+credentials, sessions, and workspace data remain untouched.
 
 `clarvis --update` is an explicit managed-install operation. It reads the bounded public GitHub
 release index, selects only a newer version allowed by the current channel, requires GitHub's

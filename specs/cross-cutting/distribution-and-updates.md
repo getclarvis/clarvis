@@ -118,28 +118,36 @@ status line before each potentially slow or mutating phase. It downloads the tar
 the bytes, extracts into a private temporary directory, and proves the staged CLI reports the
 requested version. An existing same-version payload must carry the same manifest. Before changing
 `current`, the installer acquires `update.lock` and refuses an unrelated command at the launcher
-path. Only then does it store the ownership marker, activate the version, and atomically replace its
-own marked launcher. The stable launcher validates the `current` identifier before using it in a
-path. The POSIX installer accepts the script either as a file or on `/bin/sh`'s standard input, asks
-no interactive question, and invokes the staged Clarvis payload only through the application-free
-`--version` fast path before activation. Production: `install.sh`, `install.ps1`, and
+path, including a POSIX launcher bound to another install root. Marker and activation destinations
+must be regular non-linked files when present and are revalidated immediately before replacement.
+Only then does the installer store the ownership marker, activate the version, and atomically
+replace its own marked launcher. The stable launcher validates the `current` identifier before using
+it in a path. The POSIX installer accepts the script either as a file or on `/bin/sh`'s standard
+input, asks no interactive question, and invokes the staged Clarvis payload only through the
+application-free `--version` fast path before activation. Production: `install.sh`, `install.ps1`, and
 `packages/code/src/cli.ts`. Test: `packages/code/tooling/release/installer-smoke.ts` covers visible
-progress, the POSIX standard-input entry, unmanaged-launcher refusal, a same-version reinstall, the
-ownership marker, and the stable launcher.
+progress, the POSIX standard-input entry, unmanaged and cross-root launcher refusal, linked and
+non-file marker refusal, a same-version reinstall, the ownership marker, and the stable launcher.
 
 Uninstall is an explicit mode of the same versioned scripts. It prints the resolved install root and
 launcher before mutation, authenticates the exact ownership marker, and supports installations made
 before that marker existed only when the marked launcher, valid `current` tag, and active
-`release.json` are all present. It refuses symlink/reparse-point roots, invalid markers, unrelated
-launchers/roots, and an existing `update.lock`; after acquiring that shared lock it removes the
-installer-owned versions, activation file, marker, and marked launcher. Windows also removes only
-the exact managed `bin` entry from the user `PATH` unless `CLARVIS_SKIP_PATH=1`. Unknown root files
-and unrelated launchers remain in place and are reported. A missing installation is a successful
-no-op. User configuration, credentials, sessions, `.clarvis`, and `.agents` are outside this
-operation. Production: `install.sh` and `install.ps1`. Test:
+`release.json` are all present. A POSIX launcher authenticates only the install root embedded in that
+launcher. It refuses symlink/reparse-point roots or managed directories, invalid markers, unrelated
+launchers/roots, and an existing `update.lock`; POSIX state is reclassified after acquiring the
+shared lock, including stale-launcher-only removal. Cancellation signals clean up the lock and
+terminate the POSIX operation. The uninstaller removes the installer-owned versions, activation
+file, marker, and matching launcher. Windows removes only the exact managed `bin` entry from the
+user `PATH` inside the same lock unless `CLARVIS_SKIP_PATH=1`, including when the launcher itself is
+already missing. Unknown root files and unrelated launchers remain in place and are reported. Once
+marker, activation, and versions artifacts are absent, repeated uninstall is a successful no-op even
+when those preserved files remain. User configuration, credentials, sessions, `.clarvis`, and `.agents`
+are outside this operation. Production: `install.sh` and `install.ps1`. Test:
 `packages/code/tooling/release/installer-smoke.ts` covers unauthenticated-root and active-lock
-refusal, legacy pre-marker authentication, removal, preserved user state, POSIX standard-input
-uninstall, and repeated uninstall.
+refusal, legacy pre-marker authentication, cross-root launcher ownership, linked managed-directory
+refusal, signal cancellation, locked stale-launcher removal, managed removal with a missing Windows
+launcher, preserved user state, POSIX standard-input uninstall, and repeated uninstall with
+preserved artifacts.
 
 Self-update performs no network request until it has authenticated a managed current installation
 and acquired the exclusive `update.lock`. Because GitHub's `releases/latest` excludes prereleases,
@@ -205,8 +213,8 @@ install root at a time; all three surfaces use the same exclusive `update.lock`.
 `install.sh`, `install.ps1`, and `packages/code/src/update/installation.ts` (`withUpdateLock`). Test:
 `packages/code/tests/unit/update-command.test.ts` asserts normal update completion removes the lock
 and an existing owner is neither replaced nor removed;
-`packages/code/tooling/release/installer-smoke.ts` asserts install and uninstall both refuse an
-existing owner.
+`packages/code/tooling/release/installer-smoke.ts` asserts install, ordinary uninstall, and
+stale-launcher removal all refuse an existing owner.
 
 **DIST-8.** The release workflow cannot expose a partially uploaded release: publication starts as a
 draft and clearing `draft` is the final step after checks and attestation. Production:
@@ -246,11 +254,14 @@ and invalid closure entries).
 
 **DIST-13.** Installer output identifies the selected target and resolved destination and announces
 every download, verification, staging, and activation phase. Uninstall removes only an authenticated
-managed installation and preserves Clarvis user/workspace state, unrelated launchers, and unknown
-root files. Production: `install.sh` and `install.ps1`. Test:
+managed installation, binds launcher ownership to the selected root, terminates on cancellation, and
+preserves Clarvis user/workspace state, unrelated launchers, and unknown root files. Managed
+filesystem and Windows `PATH` mutation remain inside the shared operation lock. Production:
+`install.sh` and `install.ps1`. Test:
 `packages/code/tooling/release/installer-smoke.ts` (visible progress, ownership marker,
-legacy authentication, unauthenticated refusal, managed-file removal, preserved user/unknown-root
-state, and idempotence).
+legacy authentication, unauthenticated and linked-path refusal, cross-root ownership, cancellation,
+locked stale-launcher removal, missing-launcher Windows `PATH` cleanup, managed-file removal,
+preserved user/unknown-root state, and idempotence).
 
 ## 6. Failure modes and degradation
 
@@ -262,6 +273,7 @@ state, and idempotence).
 | Concurrent install, update, or uninstall | shared exclusive lock fails with a recovery path for an actually crashed owner |
 | Unmanaged or ambiguously owned install root | uninstall refuses without removing files |
 | Symlinked or reparse-point install root or managed directory | install/uninstall refuses without traversing it |
+| POSIX uninstall receives HUP, INT, or TERM | lock cleanup runs and the operation exits without continuing as a success |
 | Existing destination differs | no overwrite; current version remains active |
 | Unknown top-level files under an authenticated install root | managed files are removed; unknown files and the non-empty root remain and are reported |
 | Source checkout or `bun link` command | `--update` refuses and directs the operator to Git/setup |

@@ -43,9 +43,22 @@ function Test-ManagedLauncher([string]$Path) {
     if (($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or $Item.Length -gt 8192) {
       return $false
     }
-    return (Get-Content -LiteralPath $Path -Raw -ErrorAction Stop).Contains($MarkerText)
+    $Lines = (Get-Content -LiteralPath $Path -Raw -ErrorAction Stop) -split "`r?`n"
+    return ($Lines -ccontains "rem $MarkerText")
   } catch {
     return $false
+  }
+}
+
+function Test-PathEntry([string]$Path) {
+  return ($null -ne (Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue))
+}
+
+function Assert-ReplaceableFile([string]$Path, [string]$Description) {
+  $Item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+  if ($null -eq $Item) { return }
+  if ($Item.PSIsContainer -or ($Item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+    Fail "$Path is not a regular $Description"
   }
 }
 
@@ -103,7 +116,7 @@ if ($Uninstall) {
   Write-Output "launcher: $Launcher"
   Write-Step "Checking that the installation is managed by Clarvis"
 
-  if (!(Test-Path -LiteralPath $InstallRoot)) {
+  if (!(Test-PathEntry $InstallRoot)) {
     Write-Output "Clarvis is not installed at $InstallRoot; nothing to remove."
     return
   }
@@ -116,7 +129,7 @@ if ($Uninstall) {
 
   $LauncherIsManaged = Test-ManagedLauncher $Launcher
   $MarkerIsManaged = $false
-  if (Test-Path -LiteralPath $Marker) {
+  if (Test-PathEntry $Marker) {
     $MarkerItem = Get-Item -LiteralPath $Marker -Force
     if ($MarkerItem.PSIsContainer -or ($MarkerItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
       Fail "$Marker is not a regular managed marker"
@@ -140,16 +153,24 @@ if ($Uninstall) {
       }
     }
   }
+  $LauncherOnlyIsManaged = $false
   if (!$MarkerIsManaged -and !$LegacyIsManaged) {
     $Versions = Join-Path $InstallRoot "versions"
-    if (!(Test-Path -LiteralPath $Marker) -and
-        !(Test-Path -LiteralPath $Current) -and
-        !(Test-Path -LiteralPath $Versions) -and
-        !(Test-Path -LiteralPath $Launcher)) {
-      Write-Output "No managed Clarvis installation remains at $InstallRoot; nothing to remove."
-      return
+    if (!(Test-PathEntry $Marker) -and
+        !(Test-PathEntry $Current) -and
+        !(Test-PathEntry $Versions)) {
+      if ($LauncherIsManaged) {
+        $LauncherOnlyIsManaged = $true
+      } else {
+        if (Test-PathEntry $Launcher) {
+          Write-Output "left unrelated launcher unchanged: $Launcher"
+        }
+        Write-Output "No managed Clarvis installation remains at $InstallRoot; nothing to remove."
+        return
+      }
+    } else {
+      Fail "$InstallRoot is not an authenticated Clarvis installation; no files were removed"
     }
-    Fail "$InstallRoot is not an authenticated Clarvis installation; no files were removed"
   }
 
   Write-Step "Acquiring the shared install and update lock"
@@ -158,30 +179,41 @@ if ($Uninstall) {
     $OperationLock = Open-OperationLock $InstallRoot
     Write-Step "Removing managed releases, launcher, and PATH entry"
 
-    if (Test-Path -LiteralPath $Bin) {
+    Assert-ReplaceableFile $Current "activation file"
+    if (Test-PathEntry $Bin) {
       $BinItem = Get-Item -LiteralPath $Bin -Force
-      if (($BinItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        Fail "$Bin is a reparse point; inspect it manually"
+      if (!$BinItem.PSIsContainer -or ($BinItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Fail "$Bin is not a regular managed directory; inspect it manually"
       }
     }
     $Versions = Join-Path $InstallRoot "versions"
-    if (Test-Path -LiteralPath $Versions) {
+    if (Test-PathEntry $Versions) {
       $VersionsItem = Get-Item -LiteralPath $Versions -Force
-      if (($VersionsItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        Fail "$Versions is a reparse point; inspect it manually"
+      if (!$VersionsItem.PSIsContainer -or ($VersionsItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+        Fail "$Versions is not a regular managed directory; inspect it manually"
       }
       Remove-Item -LiteralPath $Versions -Recurse -Force
     }
     Remove-Item -LiteralPath $Current -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $Marker -Force -ErrorAction SilentlyContinue
 
     if (Test-ManagedLauncher $Launcher) {
       Remove-Item -LiteralPath $Launcher -Force
-    } elseif (Test-Path -LiteralPath $Launcher) {
+    } elseif (Test-PathEntry $Launcher) {
       Write-Output "left unrelated launcher unchanged: $Launcher"
     }
     Remove-EmptyDirectory $Bin
 
+    if ($env:CLARVIS_SKIP_PATH -ne "1") {
+      $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+      $Entries = @($UserPath -split ";" | Where-Object { $_ })
+      $FilteredEntries = @($Entries | Where-Object { $_ -ine $Bin })
+      if ($FilteredEntries.Count -ne $Entries.Count) {
+        [Environment]::SetEnvironmentVariable("Path", ($FilteredEntries -join ";"), "User")
+        Write-Output "removed $Bin from the user PATH"
+      }
+    }
+
+    Remove-Item -LiteralPath $Marker -Force -ErrorAction SilentlyContinue
     Close-OperationLock $OperationLock
     $OperationLock = $null
   } finally {
@@ -189,21 +221,15 @@ if ($Uninstall) {
   }
 
   Remove-EmptyDirectory $InstallRoot
-  if (Test-Path -LiteralPath $InstallRoot) {
+  if (Test-PathEntry $InstallRoot) {
     Write-Output "kept $InstallRoot because it contains files not owned by the installer"
   }
 
-  if ($LauncherIsManaged -and $env:CLARVIS_SKIP_PATH -ne "1") {
-    $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    $Entries = @($UserPath -split ";" | Where-Object { $_ })
-    $FilteredEntries = @($Entries | Where-Object { $_ -ine $Bin })
-    if ($FilteredEntries.Count -ne $Entries.Count) {
-      [Environment]::SetEnvironmentVariable("Path", ($FilteredEntries -join ";"), "User")
-      Write-Output "removed $Bin from the user PATH"
-    }
+  if ($LauncherOnlyIsManaged) {
+    Write-Output "uninstalled the stale Clarvis launcher"
+  } else {
+    Write-Output "uninstalled Clarvis"
   }
-
-  Write-Output "uninstalled Clarvis"
   Write-Output "Clarvis configuration, credentials, sessions, and project data were preserved."
   return
 }
@@ -226,6 +252,19 @@ $BaseUrl = if ($env:CLARVIS_RELEASE_BASE_URL) {
   $env:CLARVIS_RELEASE_BASE_URL.TrimEnd("/")
 } else {
   "https://github.com/$Repository/releases/download/$Tag"
+}
+
+if (Test-PathEntry $InstallRoot) {
+  $RootItem = Get-Item -LiteralPath $InstallRoot -Force
+  if (!$RootItem.PSIsContainer) { Fail "$InstallRoot exists and is not a directory" }
+  if (($RootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+    Fail "$InstallRoot is a reparse point"
+  }
+}
+Assert-ReplaceableFile $Marker "managed marker"
+Assert-ReplaceableFile (Join-Path $InstallRoot "current") "activation file"
+if ((Test-PathEntry $Launcher) -and !(Test-ManagedLauncher $Launcher)) {
+  Fail "refusing to overwrite the unmanaged launcher at $Launcher"
 }
 
 $Progress.Total = 8
@@ -297,7 +336,7 @@ try {
     }
   }
   New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
-  if (Test-Path -LiteralPath $Bin) {
+  if (Test-PathEntry $Bin) {
     $BinItem = Get-Item -LiteralPath $Bin -Force
     if (!$BinItem.PSIsContainer -or ($BinItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
       Fail "$Bin is not a regular managed directory"
@@ -306,6 +345,8 @@ try {
     New-Item -ItemType Directory -Path $Bin | Out-Null
   }
   $OperationLock = Open-OperationLock $InstallRoot
+  Assert-ReplaceableFile $Marker "managed marker"
+  Assert-ReplaceableFile (Join-Path $InstallRoot "current") "activation file"
   if ((Get-Item -LiteralPath $Launcher -Force -ErrorAction SilentlyContinue) -and
       !(Test-ManagedLauncher $Launcher)) {
     Fail "refusing to overwrite the unmanaged launcher at $Launcher"
@@ -313,7 +354,7 @@ try {
 
   $Versions = Join-Path $InstallRoot "versions"
   $Destination = Join-Path $Versions $Tag
-  if (Test-Path -LiteralPath $Versions) {
+  if (Test-PathEntry $Versions) {
     $VersionsItem = Get-Item -LiteralPath $Versions -Force
     if (!$VersionsItem.PSIsContainer -or ($VersionsItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
       Fail "$Versions is not a regular managed directory"
@@ -321,7 +362,7 @@ try {
   } else {
     New-Item -ItemType Directory -Path $Versions | Out-Null
   }
-  if (Test-Path -LiteralPath $Destination) {
+  if (Test-PathEntry $Destination) {
     $DestinationItem = Get-Item -LiteralPath $Destination -Force
     if (!$DestinationItem.PSIsContainer -or
         ($DestinationItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
@@ -338,11 +379,13 @@ try {
 
   $MarkerTemporary = Join-Path $InstallRoot (".managed-" + [guid]::NewGuid())
   [System.IO.File]::WriteAllText($MarkerTemporary, "$MarkerText`n", $Utf8NoBom)
+  Assert-ReplaceableFile $Marker "managed marker"
   Move-Item -Force -Path $MarkerTemporary -Destination $Marker
   $MarkerTemporary = $null
 
   $CurrentTemporary = Join-Path $InstallRoot (".current-" + [guid]::NewGuid())
   [System.IO.File]::WriteAllText($CurrentTemporary, "$Tag`n", $Utf8NoBom)
+  Assert-ReplaceableFile (Join-Path $InstallRoot "current") "activation file"
   Move-Item -Force -Path $CurrentTemporary -Destination (Join-Path $InstallRoot "current")
   $CurrentTemporary = $null
 

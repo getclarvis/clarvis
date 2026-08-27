@@ -90,7 +90,7 @@ For the detected operating system and architecture, the installer:
 2. requires one exact checksum entry and verifies the downloaded bytes;
 3. extracts to a private staging directory;
 4. verifies that the staged CLI reports the requested version;
-5. refuses to replace an unrelated command at the launcher path;
+5. refuses to replace an unrelated command or a POSIX launcher owned by another install root;
 6. activates the new version only after those checks succeed.
 
 The installer source on `main`, added after the published `v0.0.1-beta` tag, also prints the selected
@@ -153,11 +153,14 @@ and release decision.
 
 The source uninstaller prints the resolved targets before changing them. It authenticates the
 managed marker (or the complete legacy launcher/current/manifest layout), acquires the same exclusive
-lock as install and update, and refuses an unrelated or concurrently changing installation. It
-removes the managed releases, `current`, marker, and marked launcher. Windows also removes the exact
-managed `bin` entry from the user `PATH`; set `CLARVIS_SKIP_PATH=1` to leave `PATH` unchanged. Unknown
-files and unrelated launchers are preserved and reported. Running uninstall again is a successful
-no-op.
+lock as install and update, and refuses an unrelated or concurrently changing installation. A POSIX
+launcher is owned only when it names the selected install root. Linked managed directories and
+non-file marker/activation destinations are refused, and a cancellation signal terminates the
+operation after lock cleanup. The uninstaller removes the managed releases, `current`, marker, and
+matching launcher. Windows removes the exact managed `bin` entry from the user `PATH` while holding
+the same lock, even if the launcher is already missing; set `CLARVIS_SKIP_PATH=1` to leave `PATH`
+unchanged. Unknown files and unrelated launchers are preserved and reported. Running uninstall again
+is a successful no-op even when those preserved artifacts remain.
 
 Without a trusted checkout containing that mode, remove `v0.0.1-beta` manually. On Linux or macOS,
 remove only the marked launcher at

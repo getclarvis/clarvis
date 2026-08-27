@@ -8,7 +8,9 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 ### Added
 
 - Portable installers now show numbered download, verification, staging, and activation progress and
-  provide guarded uninstall modes that preserve Clarvis user and workspace state.
+  provide lock-serialized guarded uninstall modes that bind launcher ownership to the selected root,
+  reject linked managed paths, stop on cancellation, clean managed Windows `PATH` entries, and
+  preserve Clarvis user and workspace state.
 
 ## [0.0.1-beta] - 2026-08-26
 

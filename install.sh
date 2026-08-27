@@ -61,7 +61,17 @@ cleanup() {
   fi
 }
 
-trap cleanup EXIT HUP INT TERM
+handle_signal() {
+  status=$1
+  trap - EXIT HUP INT TERM
+  cleanup
+  exit "$status"
+}
+
+trap cleanup EXIT
+trap 'handle_signal 129' HUP
+trap 'handle_signal 130' INT
+trap 'handle_signal 143' TERM
 
 acquire_operation_lock() {
   lock_path="$install_root/update.lock"
@@ -78,9 +88,77 @@ release_operation_lock() {
   operation_lock=
 }
 
+path_exists() {
+  [ -e "$1" ] || [ -L "$1" ]
+}
+
+shell_quoted() {
+  printf '%s' "$1" | sed "s/'/'\\\\''/g"
+}
+
 managed_launcher() {
-  [ -f "$1" ] && [ ! -L "$1" ] && [ "$(wc -c <"$1")" -le 8192 ] &&
-    grep -Fq "$marker_text" "$1" 2>/dev/null
+  candidate=$1
+  expected_root=$2
+  [ -f "$candidate" ] && [ ! -L "$candidate" ] && [ "$(wc -c <"$candidate")" -le 8192 ] &&
+    grep -Fqx "# $marker_text" "$candidate" 2>/dev/null || return 1
+  quoted_expected_root=$(shell_quoted "$expected_root")
+  grep -Fqx "CLARVIS_INSTALL_ROOT='$quoted_expected_root'" "$candidate" 2>/dev/null
+}
+
+validate_replaceable_file() {
+  candidate=$1
+  description=$2
+  if path_exists "$candidate"; then
+    [ ! -L "$candidate" ] && [ -f "$candidate" ] || fail "$candidate is not a regular $description"
+  fi
+}
+
+classify_uninstall_state() {
+  launcher_is_managed=0
+  if managed_launcher "$launcher" "$install_root"; then
+    launcher_is_managed=1
+  fi
+
+  marker_is_managed=0
+  if path_exists "$marker"; then
+    [ ! -L "$marker" ] && [ -f "$marker" ] || fail "$marker is not a regular managed marker"
+    [ "$(wc -c <"$marker")" -le 128 ] || fail "$marker is too large to be a managed marker"
+    [ "$(cat "$marker")" = "$marker_text" ] || fail "$install_root has an invalid managed marker"
+    marker_is_managed=1
+  fi
+
+  current="$install_root/current"
+  versions="$install_root/versions"
+  legacy_is_managed=0
+  if [ "$marker_is_managed" -eq 0 ] && [ "$launcher_is_managed" -eq 1 ] && [ -f "$current" ] && [ ! -L "$current" ]; then
+    [ "$(wc -c <"$current")" -le 128 ] || fail "$current is too large to authenticate a legacy installation"
+    current_tag=$(sed -n '1p' "$current")
+    release_manifest="$versions/$current_tag/release.json"
+    if printf '%s\n' "$current_tag" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$' &&
+      [ ! -L "$versions" ] && [ -d "$versions" ] &&
+      [ ! -L "$release_manifest" ] && [ -f "$release_manifest" ]; then
+      legacy_is_managed=1
+    fi
+  fi
+
+  if [ "$marker_is_managed" -eq 1 ] || [ "$legacy_is_managed" -eq 1 ]; then
+    uninstall_state=managed
+  elif ! path_exists "$marker" && ! path_exists "$current" && ! path_exists "$versions"; then
+    if [ "$launcher_is_managed" -eq 1 ]; then
+      uninstall_state=launcher_only
+    else
+      uninstall_state=empty
+    fi
+  else
+    uninstall_state=invalid
+  fi
+}
+
+report_uninstall_noop() {
+  if path_exists "$launcher" && [ "$launcher_is_managed" -eq 0 ]; then
+    printf 'left unrelated launcher unchanged: %s\n' "$launcher"
+  fi
+  printf 'No managed Clarvis installation remains at %s; nothing to remove.\n' "$install_root"
 }
 
 case $# in
@@ -105,71 +183,62 @@ if [ "$action" = uninstall ]; then
   printf 'launcher: %s\n' "$launcher"
   step 'Checking that the installation is managed by Clarvis'
 
-  launcher_is_managed=0
-  if managed_launcher "$launcher"; then
-    launcher_is_managed=1
+  if path_exists "$install_root"; then
+    [ ! -L "$install_root" ] || fail "$install_root is a symbolic link; inspect it manually"
+    [ -d "$install_root" ] || fail "$install_root exists and is not a directory"
   fi
-
-  if [ ! -e "$install_root" ] && [ ! -L "$install_root" ]; then
-    if [ "$launcher_is_managed" -eq 1 ]; then
-      step 'No release root remains; removing the stale managed launcher'
-      rm -f "$launcher"
-      step 'Finishing uninstall'
-      printf 'uninstalled the stale Clarvis launcher\n'
-      printf 'Clarvis configuration, credentials, sessions, and project data were preserved.\n'
-    else
-      printf 'Clarvis is not installed at %s; nothing to remove.\n' "$install_root"
-    fi
+  classify_uninstall_state
+  if [ "$uninstall_state" = empty ]; then
+    report_uninstall_noop
     exit 0
   fi
+  [ "$uninstall_state" != invalid ] ||
+    fail "$install_root is not an authenticated Clarvis installation; no files were removed"
 
+  if ! path_exists "$install_root"; then
+    mkdir -p "$install_root" || fail "could not create $install_root to acquire the uninstall lock"
+  fi
   [ ! -L "$install_root" ] || fail "$install_root is a symbolic link; inspect it manually"
   [ -d "$install_root" ] || fail "$install_root exists and is not a directory"
 
-  marker_is_managed=0
-  if [ -e "$marker" ] || [ -L "$marker" ]; then
-    [ ! -L "$marker" ] && [ -f "$marker" ] || fail "$marker is not a regular managed marker"
-    [ "$(wc -c <"$marker")" -le 128 ] || fail "$marker is too large to be a managed marker"
-    [ "$(cat "$marker")" = "$marker_text" ] || fail "$install_root has an invalid managed marker"
-    marker_is_managed=1
-  fi
-
-  legacy_is_managed=0
-  current="$install_root/current"
-  if [ "$marker_is_managed" -eq 0 ] && [ "$launcher_is_managed" -eq 1 ] && [ -f "$current" ] && [ ! -L "$current" ]; then
-    [ "$(wc -c <"$current")" -le 128 ] || fail "$current is too large to authenticate a legacy installation"
-    current_tag=$(sed -n '1p' "$current")
-    if printf '%s\n' "$current_tag" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$' &&
-      [ -f "$install_root/versions/$current_tag/release.json" ]; then
-      legacy_is_managed=1
-    fi
-  fi
-  if [ "$marker_is_managed" -eq 0 ] && [ "$legacy_is_managed" -eq 0 ] &&
-    [ ! -e "$marker" ] && [ ! -L "$marker" ] &&
-    [ ! -e "$current" ] && [ ! -L "$current" ] &&
-    [ ! -e "$install_root/versions" ] && [ ! -L "$install_root/versions" ] &&
-    [ ! -e "$launcher" ] && [ ! -L "$launcher" ]; then
-    printf 'No managed Clarvis installation remains at %s; nothing to remove.\n' "$install_root"
-    exit 0
-  fi
-  [ "$marker_is_managed" -eq 1 ] || [ "$legacy_is_managed" -eq 1 ] ||
-    fail "$install_root is not an authenticated Clarvis installation; no files were removed"
-
   step 'Acquiring the shared install and update lock'
   acquire_operation_lock
+  [ ! -L "$install_root" ] && [ -d "$install_root" ] ||
+    fail "$install_root changed while acquiring the uninstall lock"
+  classify_uninstall_state
+  if [ "$uninstall_state" = empty ]; then
+    release_operation_lock
+    rmdir "$install_root" 2>/dev/null || true
+    report_uninstall_noop
+    exit 0
+  fi
+  [ "$uninstall_state" != invalid ] ||
+    fail "$install_root is not an authenticated Clarvis installation; no files were removed"
+
   step 'Removing managed releases and launcher'
-  rm -rf "$install_root/versions"
-  rm -f "$install_root/current" "$marker"
+  removal_state=$uninstall_state
+  validate_replaceable_file "$current" 'activation file'
+  if path_exists "$versions"; then
+    [ ! -L "$versions" ] && [ -d "$versions" ] ||
+      fail "$versions is not a regular managed directory; inspect it manually"
+    rm -rf "$versions"
+  fi
+  rm -f "$current"
   if [ "$launcher_is_managed" -eq 1 ]; then
     rm -f "$launcher"
-  elif [ -e "$launcher" ] || [ -L "$launcher" ]; then
+  elif path_exists "$launcher"; then
     printf 'left unrelated launcher unchanged: %s\n' "$launcher"
   fi
+  rm -f "$marker"
   release_operation_lock
   if ! rmdir "$install_root" 2>/dev/null; then
     printf 'kept %s because it contains files not owned by the installer\n' "$install_root"
   fi
-  printf 'uninstalled Clarvis\n'
+  if [ "$removal_state" = launcher_only ]; then
+    printf 'uninstalled the stale Clarvis launcher\n'
+  else
+    printf 'uninstalled Clarvis\n'
+  fi
   printf 'Clarvis configuration, credentials, sessions, and project data were preserved.\n'
   exit 0
 fi
@@ -219,6 +288,16 @@ else
   fail "curl or wget is required"
 fi
 
+if path_exists "$install_root"; then
+  [ ! -L "$install_root" ] || fail "$install_root is a symbolic link"
+  [ -d "$install_root" ] || fail "$install_root exists and is not a directory"
+fi
+validate_replaceable_file "$marker" 'managed marker'
+validate_replaceable_file "$install_root/current" 'activation file'
+if path_exists "$launcher" && ! managed_launcher "$launcher" "$install_root"; then
+  fail "$launcher already exists and is unmanaged or belongs to a different install root"
+fi
+
 step_total=8
 printf 'Clarvis installer\n'
 printf 'version: %s\n' "$version"
@@ -266,8 +345,10 @@ step "Activating Clarvis $version"
 [ ! -L "$install_root" ] || fail "$install_root is a symbolic link"
 mkdir -p "$install_root" "$bin_dir"
 acquire_operation_lock
-if [ -e "$launcher" ] && ! managed_launcher "$launcher"; then
-  fail "$launcher already exists and is unmanaged"
+validate_replaceable_file "$marker" 'managed marker'
+validate_replaceable_file "$install_root/current" 'activation file'
+if path_exists "$launcher" && ! managed_launcher "$launcher" "$install_root"; then
+  fail "$launcher already exists and is unmanaged or belongs to a different install root"
 fi
 
 versions="$install_root/versions"
@@ -284,19 +365,21 @@ else
   mv "$payload" "$destination"
 fi
 
-marker_temporary="$install_root/.managed.$$"
+marker_temporary=$(mktemp "$install_root/.managed.XXXXXX")
 printf '%s\n' "$marker_text" >"$marker_temporary"
 chmod 600 "$marker_temporary"
+validate_replaceable_file "$marker" 'managed marker'
 mv -f "$marker_temporary" "$marker"
 marker_temporary=
 
-current_temporary="$install_root/.current.$$"
+current_temporary=$(mktemp "$install_root/.current.XXXXXX")
 printf '%s\n' "$tag" >"$current_temporary"
+validate_replaceable_file "$install_root/current" 'activation file'
 mv -f "$current_temporary" "$install_root/current"
 current_temporary=
 
-quoted_root=$(printf '%s' "$install_root" | sed "s/'/'\\\\''/g")
-launcher_temporary="$bin_dir/.clarvis.$$"
+quoted_root=$(shell_quoted "$install_root")
+launcher_temporary=$(mktemp "$bin_dir/.clarvis.XXXXXX")
 {
   printf '%s\n' '#!/bin/sh' '# managed by getclarvis/clarvis installer' 'set -eu'
   printf "CLARVIS_INSTALL_ROOT='%s'\n" "$quoted_root"

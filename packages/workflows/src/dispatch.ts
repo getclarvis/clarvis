@@ -46,6 +46,7 @@ import type {
 import { bind, createSampler, levelEnabled } from "@clarvis/capability";
 import { registerBackgroundChild } from "@clarvis/supervision";
 import type { BackgroundChildSpawn } from "@clarvis/supervision";
+import type { WorkflowReservation } from "./ledger.ts";
 import { faultFields, outputTokensOf, withBoundLogger, workflowLogger } from "./log.ts";
 import { describeLeaderResult } from "./result-text.ts";
 import {
@@ -670,24 +671,6 @@ async function runOne(
   if (blocked !== null && blocked !== undefined) {
     return skip("blocked", `'${unit.key}' was not run: ${blocked.blocked}`);
   }
-  const exhausted = `'${unit.key}' was not run: the token budget was exhausted`;
-  if (budget.exhausted) return skip("budget_exhausted", exhausted);
-  const reservation = deps.ctx.ledger.reserve(deps.ctx.maxConcurrency);
-  if (reservation === null) {
-    budget.exhausted = true;
-    logger.warn(
-      {
-        event: "workflow.budget_exhausted",
-        total: deps.ctx.ledger.total,
-        spent: deps.ctx.ledger.spent(),
-        at_unit: unit.key,
-        max_concurrency: deps.ctx.maxConcurrency,
-      },
-      "the tree output-token ceiling left no headroom to reserve, so this unit and every later one in the batch are skipped unrun",
-    );
-    return skip("budget_exhausted", exhausted);
-  }
-
   const unitCtx: WorkflowCtx = {
     ...deps.ctx,
     deps: withBoundLogger(deps.ctx.deps, correlation),
@@ -702,20 +685,37 @@ async function runOne(
   try {
     await deps.ctx.semaphore.acquire(unitCtx.signal);
   } catch {
-    reservation.release();
     finish(settleWith("stopped", `'${unit.key}' was cancelled while waiting for a slot`));
     return { key: unit.key, status: "cancelled", result: undefined };
   }
 
-  if (unitCtx.signal.aborted) {
-    reservation.release();
-    deps.ctx.semaphore.release();
-    finish(settleWith("stopped", `'${unit.key}' was cancelled before it started`));
-    return { key: unit.key, status: "cancelled", result: undefined };
-  }
-
+  let reservation: WorkflowReservation | null = null;
   let region: ComputeRegion | undefined;
   try {
+    if (unitCtx.signal.aborted) {
+      finish(settleWith("stopped", `'${unit.key}' was cancelled before it started`));
+      return { key: unit.key, status: "cancelled", result: undefined };
+    }
+
+    const exhausted = `'${unit.key}' was not run: the token budget was exhausted`;
+    if (budget.exhausted) return skip("budget_exhausted", exhausted);
+    reservation = deps.ctx.ledger.reserve(deps.ctx.maxConcurrency);
+    if (reservation === null) {
+      budget.exhausted = true;
+      deps.ctx.onBudgetExhausted?.();
+      logger.warn(
+        {
+          event: "workflow.budget_exhausted",
+          total: deps.ctx.ledger.total,
+          spent: deps.ctx.ledger.spent(),
+          at_unit: unit.key,
+          max_concurrency: deps.ctx.maxConcurrency,
+        },
+        "the admitted leader found no token headroom, so this unit and every later one in the batch are skipped unrun",
+      );
+      return skip("budget_exhausted", exhausted);
+    }
+
     recordWorkflowTrace(deps.bc.trace, WORKFLOW_RUN_STARTED_TRACE_KIND, {
       run_id: runId,
       parent_run_id: deps.ctx.managerRunId,
@@ -798,7 +798,7 @@ async function runOne(
     return { key: unit.key, status: "failed", result: undefined };
   } finally {
     region?.leave();
-    reservation.release();
+    reservation?.release();
     deps.ctx.semaphore.release();
   }
 }

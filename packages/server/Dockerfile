@@ -54,9 +54,9 @@ ENV NODE_ENV=production \
     # Headless: never park a run on an elicitation nobody will answer.
     CLARVIS_DEFAULT_ON_EXCEED=stop \
     CLARVIS_DEFAULT_ELICIT_WAIT_MS=60000 \
-    CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=2000000 \
+    CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=8000000 \
     CLARVIS_TOKEN_CEILING=10000000 \
-    CLARVIS_ITERATION_CEILING=60 \
+    CLARVIS_ITERATION_CEILING=200 \
     CLARVIS_TIMEOUT_CEILING_MS=600000
 
 COPY --from=build /app/node_modules      /app/node_modules

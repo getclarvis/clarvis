@@ -12,6 +12,7 @@ import {
   type RunRequest,
 } from "@clarvis/loop";
 import { globalPaths, workspacePaths } from "@clarvis/paths";
+import { MEMORY_CAPABILITY_NAME } from "@clarvis/memory/settings";
 import {
   createElicitMux,
   createWorkflowSemaphore,
@@ -138,6 +139,22 @@ interface RunRequestBody {
 }
 
 /**
+ * Build the engine deps for an auxiliary workflow run.
+ *
+ * @param deps - the primary run's engine dependencies.
+ * @returns a shallow copy whose capability list cannot activate execution memory.
+ * @remarks A workflow leader is a separate run, not a delegated agent inside the
+ *   primary run. It must neither read/write memory nor enqueue its own index job;
+ *   the manager remains the single memory-producing run for the workflow.
+ */
+function auxiliaryWorkflowRunDeps(deps: ExecuteRunDeps): ExecuteRunDeps {
+  const capabilities = (deps.capabilities ?? []).filter(
+    (capability) => capability.name !== MEMORY_CAPABILITY_NAME,
+  );
+  return { ...deps, capabilities };
+}
+
+/**
  * Kernel workflows surface over loop execution: {@link KernelWorkflowsService.runManagerWorkflow}
  * runs the manager with the `workflows` capability injected (so its `run_leader`
  * calls spawn isolated leader runs bounded by a shared semaphore + token ledger),
@@ -230,6 +247,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
     const budgetTokens = settings.budget_tokens;
     const semaphore = createWorkflowSemaphore(maxConcurrency);
     const ledger = createWorkflowLedger(budgetTokens);
+    let budgetExhausted = false;
 
     const startedAt = Date.now();
     const title = truncateWorkflowText(
@@ -346,11 +364,11 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
         execution_id: "",
         messages: [{ role: "user", content: spec.prompt }],
         plans: "off",
+        memory: "off",
         ...(leaderAgent !== undefined ? { agent: leaderAgent } : {}),
         ...(spec.expectSchema !== undefined ? { output_schema: spec.expectSchema } : {}),
         ...(params.guard_mode !== undefined ? { guard_mode: params.guard_mode } : {}),
         ...(params.guard_judge !== undefined ? { guard_judge: params.guard_judge } : {}),
-        ...(params.memory !== undefined ? { memory: params.memory } : {}),
         ...(params.task !== undefined ? { task: params.task } : {}),
         ...(params.prompt_cache_key !== undefined
           ? { prompt_cache_key: params.prompt_cache_key }
@@ -365,8 +383,11 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
     };
 
     function finalize(status: RunStatus): void {
-      record.status = status;
-      closeRunningEdges(record.edges, status, Date.now());
+      const endedAt = Date.now();
+      closeManagerEdge(record.edges, managerRunId, status, endedAt);
+      const aggregateStatus = finalWorkflowStatus(status, budgetExhausted, record.edges);
+      record.status = aggregateStatus;
+      closeRunningEdges(record.edges, aggregateStatus, endedAt);
       persist();
       saves.flush();
     }
@@ -391,12 +412,13 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
          * says below this point carries it, and a whole fan-out reads as one
          * tree rather than as unrelated runs.
          */
+        const auxiliaryDeps = auxiliaryWorkflowRunDeps(deps);
         const workflowDeps: ExecuteRunDeps =
-          deps.logger === undefined
-            ? deps
+          auxiliaryDeps.logger === undefined
+            ? auxiliaryDeps
             : {
-                ...deps,
-                logger: bind(deps.logger, {
+                ...auxiliaryDeps,
+                logger: bind(auxiliaryDeps.logger, {
                   component: "workflows",
                   workflow_id: managerRunId,
                 }),
@@ -454,6 +476,9 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           signal: context.signal,
           elicitForLeader: (runId: string) => mux.forLeader(runId),
           onLeaderEvent,
+          onBudgetExhausted: () => {
+            budgetExhausted = true;
+          },
           ...(cfg.leaderProfiles !== undefined ? { leaderProfiles: cfg.leaderProfiles() } : {}),
           workflowDefs: readWorkflowDefs(),
         };
@@ -601,12 +626,46 @@ export function reconcileRunningWorkflowRecord(
         : "failed";
   const repaired: WorkflowRecord = {
     ...record,
-    status,
+    status: "running",
     updated_at: evidence.ended_at,
     edges: record.edges.map((edge) => ({ ...edge })),
   };
-  closeRunningEdges(repaired.edges, status, evidence.ended_at);
+  closeManagerEdge(repaired.edges, repaired.root_run_id, status, evidence.ended_at);
+  const aggregateStatus = finalWorkflowStatus(status, false, repaired.edges);
+  repaired.status = aggregateStatus;
+  closeRunningEdges(repaired.edges, aggregateStatus, evidence.ended_at);
   return repaired;
+}
+
+/**
+ * Derive the aggregate workflow status from its primary run and auxiliary work.
+ *
+ * A completed manager cannot make a workflow successful when a leader failed,
+ * remained unfinished, or could not start because the leader ledger was empty.
+ */
+export function finalWorkflowStatus(
+  managerStatus: RunStatus,
+  budgetExhausted: boolean,
+  edges: readonly WorkflowEdge[],
+): RunStatus {
+  if (managerStatus !== "completed") return managerStatus;
+  if (budgetExhausted) return "failed";
+  return edges.some((edge) => edge.kind === "leader" && edge.status !== "completed")
+    ? "failed"
+    : "completed";
+}
+
+/** Close only the manager edge, preserving its own result when the aggregate fails. */
+function closeManagerEdge(
+  edges: WorkflowEdge[],
+  managerRunId: string,
+  status: RunStatus,
+  endedAt: number,
+): void {
+  const manager = edges.find((edge) => edge.kind === "manager" && edge.run_id === managerRunId);
+  if (manager?.status !== "running") return;
+  manager.status = status;
+  manager.ended_at = endedAt;
 }
 
 /**

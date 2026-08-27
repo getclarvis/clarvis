@@ -6,7 +6,7 @@ describe("env loader", () => {
     const env = loadEnv({});
     expect(env.CLARVIS_TIMEOUT_CEILING_MS).toBe(600000);
     expect(env.CLARVIS_DEFAULT_TIMEOUT_MS).toBe(300000);
-    expect(env.CLARVIS_ITERATION_CEILING).toBe(100);
+    expect(env.CLARVIS_ITERATION_CEILING).toBe(200);
     expect(env.CLARVIS_TOKEN_CEILING).toBe(200_000_000);
     expect(env.CLARVIS_MCP_CONNECT_TIMEOUT_MS).toBe(10000);
     expect(env.CLARVIS_LOG_LEVEL).toBe("info");
@@ -26,9 +26,10 @@ describe("env loader", () => {
     expect(loadEnv({ CLARVIS_TRACE_TTL_DAYS: "30" }).CLARVIS_TRACE_TTL_DAYS).toBe(30);
   });
 
-  it("defaults the fallback budget to the pre-existing escalate/40M pair", () => {
+  it("scales the default soft session budget with the 200-iteration allowance", () => {
     const env = loadEnv({});
-    expect(env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT).toBe(40_000_000);
+    expect(env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT).toBe(160_000_000);
+    expect(env.CLARVIS_DEFAULT_ITERATION_LIMIT).toBe(200);
     expect(env.CLARVIS_DEFAULT_ON_EXCEED).toBe("escalate");
     expect(loadEnv({ CLARVIS_DEFAULT_ON_EXCEED: "stop" }).CLARVIS_DEFAULT_ON_EXCEED).toBe("stop");
     expect(() => loadEnv({ CLARVIS_DEFAULT_ON_EXCEED: "ask" })).toThrow(
@@ -63,6 +64,7 @@ describe("env loader", () => {
     const env = loadEnv({
       CLARVIS_MCP_CONNECT_TIMEOUT_MS: "5000",
       CLARVIS_ITERATION_CEILING: "50",
+      CLARVIS_DEFAULT_ITERATION_LIMIT: "50",
     });
     expect(env.CLARVIS_MCP_CONNECT_TIMEOUT_MS).toBe(5000);
     expect(env.CLARVIS_ITERATION_CEILING).toBe(50);

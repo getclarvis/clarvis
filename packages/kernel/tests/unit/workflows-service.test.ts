@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   closeRunningEdges,
+  finalWorkflowStatus,
   freshLeaderProgress,
   isLeaderEntryIteration,
   reconcileRunningWorkflowRecord,
@@ -61,6 +62,29 @@ describe("closeRunningEdges", () => {
   });
 });
 
+describe("finalWorkflowStatus", () => {
+  const manager = { run_id: "mgr", kind: "manager", title: "root", status: "completed" } as const;
+
+  it("keeps the manager's own completion separate from failed auxiliary work", () => {
+    expect(
+      finalWorkflowStatus("completed", false, [
+        manager,
+        { run_id: "leader", kind: "leader", title: "child", status: "failed" },
+      ]),
+    ).toBe("failed");
+    expect(manager.status).toBe("completed");
+  });
+
+  it("fails a completed workflow when a leader reservation was refused", () => {
+    expect(finalWorkflowStatus("completed", true, [manager])).toBe("failed");
+  });
+
+  it("preserves non-completed manager outcomes", () => {
+    expect(finalWorkflowStatus("cancelled", false, [manager])).toBe("cancelled");
+    expect(finalWorkflowStatus("failed", false, [manager])).toBe("failed");
+  });
+});
+
 describe("reconcileRunningWorkflowRecord", () => {
   const runningRecord = (): WorkflowRecord => ({
     id: "manager",
@@ -99,10 +123,11 @@ describe("reconcileRunningWorkflowRecord", () => {
         ended_at: 50,
       });
       expect(repaired).not.toBe(original);
-      expect(repaired).toMatchObject({ status: workflowStatus, updated_at: 50 });
+      const aggregate = traceStatus === "completed" ? "failed" : workflowStatus;
+      expect(repaired).toMatchObject({ status: aggregate, updated_at: 50 });
       expect(repaired.edges[0]).toMatchObject({ status: workflowStatus, ended_at: 50 });
       expect(repaired.edges[1]).toMatchObject({ status: "completed", ended_at: 8 });
-      expect(repaired.edges[2]).toMatchObject({ status: workflowStatus, ended_at: 50 });
+      expect(repaired.edges[2]).toMatchObject({ status: aggregate, ended_at: 50 });
       expect(original.status).toBe("running");
       expect(original.edges[0]?.status).toBe("running");
     }

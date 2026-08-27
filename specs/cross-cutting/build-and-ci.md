@@ -376,8 +376,9 @@ own right: `NODE_ENV=production`, `CLARVIS_SERVER_HOST=0.0.0.0`,
 `CLARVIS_SERVER_ALLOW_PUBLIC_BIND=1`, `CLARVIS_SERVER_PORT=8080`, `CLARVIS_WORKSPACE_ROOT=/workspace`,
 `CLARVIS_HOME=/config`, `CLARVIS_LOG_LEVEL=info`, `CLARVIS_TRACE_TTL_DAYS=30`,
 `CLARVIS_DEFAULT_ON_EXCEED=stop`, `CLARVIS_DEFAULT_ELICIT_WAIT_MS=60000`,
-`CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=2000000`, `CLARVIS_TOKEN_CEILING=10000000`,
-`CLARVIS_ITERATION_CEILING=60`, `CLARVIS_TIMEOUT_CEILING_MS=600000`. Three of those values carry an
+`CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT=8000000`, `CLARVIS_TOKEN_CEILING=10000000`,
+`CLARVIS_ITERATION_CEILING=200`, `CLARVIS_TIMEOUT_CEILING_MS=600000`. The session-token budget is
+four times its prior value, matching the default iteration increase from 50 to 200. Three values carry an
 inline rationale comment: `CLARVIS_SERVER_ALLOW_PUBLIC_BIND=1` — "the isolation boundary here is the
 container network, not the bind address" (`:41-45`); `CLARVIS_TRACE_TTL_DAYS=30` matches the local
 product default while keeping the deployment policy explicit (`:51-52`); and

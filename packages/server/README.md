@@ -241,7 +241,9 @@ provider outage cannot turn into a restart loop.
 `GET /readyz` — readiness. `200` only when the kernel has constructed, every settings scope parsed,
 the default model resolves to a configured provider whose key is present in the environment, every
 required MCP server is not unavailable, and the process is not draining. Otherwise `503` naming each
-failing check.
+failing check. Durable memory-queue recovery begins only after readiness is published and therefore
+never delays the readiness transition; subsequent recovery work remains observable through the
+kernel's ordinary memory diagnostics.
 
 ## Shutdown
 

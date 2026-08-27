@@ -23,7 +23,7 @@ export const ADMIRAL: BuiltinAgent = {
     ],
     can_spawn: ["coder", "explorer", "planner", "marshall"],
     default_spawn: "coder",
-    iteration_limit: 50,
+    iteration_limit: 200,
     reasoning_effort: "high",
   },
   body: `<identity>

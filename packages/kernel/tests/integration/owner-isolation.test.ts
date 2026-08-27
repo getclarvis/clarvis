@@ -432,6 +432,7 @@ describe("owner isolation", () => {
         stopOwner: (owner) => (owner === stateOwner("alice") ? cleanup.promise : Promise.resolve()),
       },
     );
+    kernel.startMemoryRecovery();
     const alice = await kernel.acquireOwner("alice");
 
     alice.release();
@@ -459,6 +460,7 @@ describe("owner isolation", () => {
         stopOwner: (owner) => (owner === stateOwner("alice") ? cleanup.promise : Promise.resolve()),
       },
     );
+    kernel.startMemoryRecovery();
     const first = await kernel.acquireOwner("alice");
     first.release();
 
@@ -529,7 +531,7 @@ describe("owner isolation", () => {
     }
   });
 
-  it("starts durable memory recovery exactly once for every owner scope", () => {
+  it("starts durable memory recovery only after the host releases boot", async () => {
     const ws = mkdtempSync(join(tmpdir(), "clarvis-own-"));
     const { kernel, startedMemoryOwners } = makeKernel(ws);
     const defaultOwner = ownerFromWorkspace(ws);
@@ -538,11 +540,24 @@ describe("owner isolation", () => {
     kernel.forOwner("alice");
     kernel.forOwner("bob");
 
+    expect(startedMemoryOwners).toEqual([]);
+
+    kernel.startMemoryRecovery();
+    kernel.startMemoryRecovery();
     expect(startedMemoryOwners).toEqual([
       stateOwner(defaultOwner),
       stateOwner("alice"),
       stateOwner("bob"),
     ]);
+
+    kernel.forOwner("charlie");
+    expect(startedMemoryOwners).toEqual([
+      stateOwner(defaultOwner),
+      stateOwner("alice"),
+      stateOwner("bob"),
+      stateOwner("charlie"),
+    ]);
+    await kernel.close();
   });
 
   it("owns the memory factory lifecycle in lower-level composition", async () => {

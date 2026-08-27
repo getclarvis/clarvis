@@ -178,13 +178,16 @@ the workflow detail vocabulary.
 - **The topology is fixed structurally, with no depth counter**, at three independent points: only an
   _entry_ agent gets `run_leader`; only one carrying the `workflow` grant gets it; and a host injects
   the capability into the manager's `executeRun` only, never a leader's — whose request also has the
-  grant stripped and `plans` forced off.
+  grant stripped and both `plans` and `memory` forced off.
 - **`run_leader` is background-only, and there is no synchronous escape hatch.** A `deferred` verdict
   would be joined by `runDispatch`'s own `finally` before the manager's iteration could end, which is
   exactly the "manager goes dark for the length of its fan-out" defect. The absence of a synchronous
   path is deliberate: a model offered a working one keeps choosing it.
-- **The ledger reservation is taken eagerly, inside `handle`**, which is what makes a batch of
-  `run_leader` calls in one manager turn atomic against the tree budget.
+- **The semaphore admits a leader before the ledger reserves for it.** A leader waiting in the FIFO
+  queue holds no token headroom, so serial batches can reuse the unused share returned by each
+  predecessor. The admitted set still reserves before any model call, keeping concurrent dispatch
+  atomic against the leader budget. The manager/Admiral is deliberately absent from that ledger and
+  remains on the primary session budget.
 - **Every batched tool holds a baton across batch boundaries** (`src/dispatch.ts`, the one
   implementation both `run_work_items` and `run_round` run on). The loop's finish gate accepts a lone
   `submit_result` whenever `registry.liveCount() === 0`, so a driver that lets its live-child count
@@ -224,12 +227,21 @@ the workflow detail vocabulary.
 ## Settings
 
 The `workflows:` block is pure fan-out tuning — `max_concurrency` (default `4`, maximum `20`, the
-tree-wide cap on concurrently running leaders) and `budget_tokens` (default `262144`, with explicit
-`null` as the opt-out, an output-token ceiling summed across the whole tree). That ceiling covers the manager, its sub-agents, every leader and
-leader sub-agent, compaction, vision and billable retry attempts. Each model call takes a real
-reservation before dispatch and reconciles actual provider usage after settlement. Leader admission
-reserves only a fair share of current headroom and preserves one share for the manager, so a wave of
-concurrent spawns cannot pass the same stale budget check or provisionally starve supervision.
+leader-wide cap on concurrently running leaders) and `budget_tokens` (default `640000000`, with explicit
+`null` as the opt-out, an output-token ceiling summed across auxiliary leader runs). At the default
+concurrency this is four 160-million-token child shares, deliberately larger in aggregate than the
+manager's independent 160-million-token primary session budget. That ceiling
+covers the manager's in-process child agents plus every leader and leader sub-agent, including their
+compaction, vision and billable retry attempts. Only the manager/Admiral uses the independent primary
+session budget. Each leader model call takes a real
+reservation after semaphore admission and before model dispatch, then reconciles actual provider
+usage after settlement. Leader admission reserves a fair share of current headroom across
+`max_concurrency`, so concurrent leaders cannot pass the same stale budget check while queued leaders
+consume no provisional headroom.
+
+Workflow leaders are auxiliary runs: the kernel forces `memory: "off"` and removes the memory
+capability from their execution deps. The primary manager remains the workflow's single
+memory-producing run, so one workflow produces one index job rather than one per leader.
 
 **`max_concurrency` needs a matching supervision ceiling, and the host applies it.** A running leader
 holds a live-child slot in `@clarvis/supervision`'s registry for as long as it runs, so a
@@ -268,7 +280,7 @@ descriptor and bypass a TUI host's silencing.
 | info/warn    | `workflow.leader_settled`                                 | what the trace edge omits: output tokens and wall time                        |
 | error        | `workflow.leader_faulted`                                 | a leader fault, with the stack that exists nowhere else                       |
 | error        | `workflow.trace_sink_failed`                              | the durable record is missing an edge                                         |
-| warn         | `workflow.budget_exhausted`                               | the tree ceiling stopped a spawn, and at which unit                           |
+| warn         | `workflow.budget_exhausted`                               | the tree ceiling stopped an admitted leader before model dispatch             |
 | info         | `workflow.round_planned`                                  | a round's whole fan-out before it costs anything                              |
 | warn         | `workflow.round_skipped`                                  | a round that never ran, and why                                               |
 | debug        | `workflow.round_folded`                                   | the folded result's shape, and how many replicas missed it                    |

@@ -100,7 +100,7 @@ object rather than creating a second JSON document.
   },
   "workflows": {
     "max_concurrency": 4,
-    "budget_tokens": 262144
+    "budget_tokens": 640000000
   }
 }
 ```

@@ -23,6 +23,7 @@ describe("the workflows settings block", () => {
       max_concurrency: WORKFLOWS_DEFAULTS.max_concurrency,
       budget_tokens: WORKFLOWS_DEFAULTS.budget_tokens,
     });
+    expect(WORKFLOWS_DEFAULTS.budget_tokens).toBe(640_000_000);
   });
 });
 

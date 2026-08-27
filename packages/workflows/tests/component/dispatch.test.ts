@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { Usage } from "@clarvis/capability";
+import { createSemaphore, type Usage } from "@clarvis/capability";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
 import { createAgentRegistry, type AgentsLimits } from "@clarvis/supervision";
 import {
@@ -8,6 +8,7 @@ import {
   type DispatchDeps,
   type DispatchUnit,
 } from "../../src/dispatch.ts";
+import { createWorkflowLedger } from "../../src/ledger.ts";
 import { makeCtx, recordingBc, requestWithPrompt, workflowRunDeps } from "../helpers/workflow.ts";
 
 const LIMITS: AgentsLimits = {
@@ -169,6 +170,35 @@ describe("beginDispatch", () => {
     const outcomes = await dispatch.run();
     expect(outcomes.map((o) => o.key)).toEqual(keys);
     expect(outcomes.every((o) => o.status === "completed")).toBe(true);
+    dispatch.end("done");
+  });
+
+  test("serial concurrency admits the queued tail against headroom released by each predecessor", async () => {
+    const controller = new AbortController();
+    const runDeps = workflowRunDeps(completed);
+    const ledger = createWorkflowLedger(100);
+    const registry = createAgentRegistry({ limits: LIMITS });
+    const ctx = makeCtx({
+      signal: controller.signal,
+      runDeps,
+      assemble: (spec) => requestWithPrompt(spec.prompt),
+      semaphore: createSemaphore(1),
+      ledger,
+      maxConcurrency: 1,
+    });
+    const dispatch = beginDispatch(
+      { ctx, bc: recordingBc().bc, clock: undefined, agents: registry },
+      [unit("a"), unit("b")],
+    )!;
+
+    const outcomes = await dispatch.run();
+    expect(outcomes).toMatchObject([
+      { key: "a", status: "completed" },
+      { key: "b", status: "completed" },
+    ]);
+    expect(runDeps.calls).toHaveLength(2);
+    expect(ledger.spent()).toBe(2);
+    expect(ledger.remaining()).toBe(98);
     dispatch.end("done");
   });
 });

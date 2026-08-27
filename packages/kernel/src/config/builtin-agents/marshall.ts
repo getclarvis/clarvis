@@ -16,7 +16,7 @@ export const MARSHALL: BuiltinAgent = {
     grants: ["edit_workspace", "read_workspace", "ask_user", "run_commands", "use_skills"],
     can_spawn: ["coder", "explorer", "planner"],
     default_spawn: "coder",
-    iteration_limit: 50,
+    iteration_limit: 200,
   },
   body: `<identity>
 

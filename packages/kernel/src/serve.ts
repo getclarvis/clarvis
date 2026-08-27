@@ -113,6 +113,7 @@ export async function serveFileKernelOverStdio(opts: ServeStdioOptions): Promise
     },
     opts.logger,
   );
+  kernel.startMemoryRecovery();
   return {
     async close(): Promise<void> {
       pump.close();

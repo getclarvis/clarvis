@@ -163,7 +163,9 @@ rows visible for discovery but refuse activation and direct the operator to swit
 Entitled model setup retains the provider-published reasoning levels in the ordinary model entry, so
 `/effort` can configure a supported subscription effort after the picker closes or Clarvis restarts.
 For an older configured subscription model without that metadata, `/effort` loads the authenticated
-entitled catalog on demand instead of borrowing a same-named model from the public catalog.
+entitled catalog on demand instead of borrowing a same-named model from the public catalog. While
+that request is pending the panel says it is loading; it reports unpublished effort levels only
+after the request settles without metadata.
 Browser opening remains an explicit user action; copy/manual opening always remains available. See
 [`subscription-providers.md`](../../specs/hosts/subscription-providers.md).
 
@@ -173,7 +175,8 @@ full diagnostic available at `/doctor`, where optional recommendations are disti
 Cold boot does not probe host sandbox toolchains: that inspection may run several bounded
 `--version` subprocesses and is not needed to route setup or repair. An explicit Doctor recheck
 performs it for the header and readiness gates; opening Settings > Sandbox performs its own
-panel-local inspection.
+panel-local inspection. Durable memory-queue recovery is likewise released only after
+`app.boot.painted`, so stale indexing work cannot delay the first usable application frame.
 
 `/agent` separates the current session agent from persistent defaults. `Enter` changes only the
 current session. `S` first asks whether the selected agent should be the global default or a

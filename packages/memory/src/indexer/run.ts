@@ -45,6 +45,7 @@ import {
   type RunRequest,
 } from "@clarvis/capability";
 import { executeRun, generateExecutionId, type ExecuteRunDeps } from "@clarvis/loop";
+import { BUILTIN_GRANT_NAMES } from "@clarvis/loop/host";
 import type { MemoryJobPhase } from "../jobs.ts";
 import type { MemoryBudgets, MemoryMutationFence, MemoryStore, RunSnapshot } from "../types.ts";
 import type { IndexReport } from "../memory-contract.ts";
@@ -328,7 +329,7 @@ export function planPass(args: {
 
   if (passDeps !== undefined) {
     const subject = indexer.deps.traceStore.getById(indexer.owner, run.run_id);
-    const blocker = continuationBlocker(subject, indexer.modelRef);
+    const blocker = continuationBlocker(subject, indexer.modelRef, knownGrants(passDeps));
     if (blocker === null && subject !== null) {
       return {
         rawBody: buildIndexerContinuationRequest({
@@ -350,6 +351,17 @@ export function planPass(args: {
     return { ...isolatedPass(args), blocker };
   }
   return { ...isolatedPass(args), blocker: "no-pass-deps" };
+}
+
+/** Every grant the continuation deps can validate without changing their wire surface. */
+function knownGrants(deps: ExecuteRunDeps): ReadonlySet<string> {
+  return new Set([
+    ...BUILTIN_GRANT_NAMES,
+    ...(deps.capabilityRegistry?.grants() ?? []).map((grant) => grant.name),
+    ...(deps.capabilities ?? []).flatMap((capability) =>
+      (capability.grants ?? []).map((grant) => grant.name),
+    ),
+  ]);
 }
 
 /**

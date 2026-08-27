@@ -1,7 +1,8 @@
 /**
- * The tree-wide token budget for a workflow. The loop does not aggregate usage
- * across separate `executeRun`s, so this ledger is the single source of truth for
- * how much the whole fan-out has spent and how much it may still spend.
+ * The leader-wide token budget for a workflow. The loop does not aggregate usage
+ * across separate leader `executeRun`s, so this ledger is the single source of
+ * truth for how much the auxiliary fan-out has spent and may still spend. The
+ * manager remains on its primary run budget.
  */
 import type { OutputTokenBudget, OutputTokenReservation, Usage } from "@clarvis/capability";
 
@@ -27,17 +28,16 @@ export interface WorkflowReservation extends OutputTokenBudget {
 }
 
 /**
- * A running tally of output tokens spent across every leader in a workflow tree,
+ * A running tally of output tokens spent across every leader in a workflow,
  * against an optional ceiling.
  *
  * @remarks {@link WorkflowLedger.reserve} closes the gap between a leader being
- *   *approved to spawn* and its model calls actually settling: several
- *   `run_leader` calls dispatched in the same manager turn would otherwise all
- *   read the same pre-spend `remaining()` and could collectively spawn well past
- *   `total` before any of them completes. Reserving a fair share of the current
- *   headroom (divided across the run's concurrency cap) the moment a spawn is
- *   approved makes that check-and-decide step atomic: the sum of live
- *   reservations plus `spent()` can never exceed `total`.
+ *   admitted by the concurrency semaphore and its model calls actually settling:
+ *   concurrent leaders would otherwise all read the same pre-spend `remaining()`
+ *   and could collectively run past `total`. Reserving a fair share of the
+ *   current headroom before model dispatch makes that check-and-decide step
+ *   atomic, while leaders still queued for a semaphore permit hold no headroom:
+ *   the sum of live reservations plus `spent()` can never exceed `total`.
  */
 export interface WorkflowLedger extends OutputTokenBudget {
   /** Charge usage that was not already settled through a reservation. */
@@ -50,13 +50,12 @@ export interface WorkflowLedger extends OutputTokenBudget {
   /** The ceiling, or `null` when the tree is unbounded. */
   readonly total: number | null;
   /**
-   * Reserve a fair share of the current headroom for one about-to-spawn leader.
+   * Reserve a fair share of the current headroom for one semaphore-admitted leader.
    *
    * @param maxConcurrent - the run's leader-concurrency cap; the reservation is
-   *   sized to `remaining() / (maxConcurrent + 1)` (at least 1 token, capped at
-   *   whatever headroom remains). The extra share belongs to the manager, so a
-   *   full wave of background leaders cannot provisionally starve its next
-   *   supervision turn.
+   *   sized to `remaining() / maxConcurrent` (at least 1 token, capped at
+   *   whatever headroom remains). The manager has an independent primary-run
+   *   budget and therefore takes no share from this ledger.
    * @returns the {@link WorkflowReservation}, or `null` when there is no headroom
    *   left to reserve (an unbounded ledger always succeeds).
    */
@@ -168,7 +167,7 @@ export function createWorkflowLedger(total: number | null): WorkflowLedger {
       if (headroom <= 0) return null;
       const amount = Math.min(
         headroom,
-        Math.max(1, Math.ceil(headroom / (Math.max(1, maxConcurrent) + 1))),
+        Math.max(1, Math.ceil(headroom / Math.max(1, maxConcurrent))),
       );
       reserved += amount;
       let childSpent = 0;

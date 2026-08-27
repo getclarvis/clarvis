@@ -69,6 +69,14 @@ function relativeLayer(edge: ImportEdge): string | undefined {
 }
 
 describe("code's internal architecture", () => {
+  it("releases durable memory recovery only after the usable application paint", () => {
+    const source = readFileSync(join(SRC, "index.tsx"), "utf8");
+    const painted = source.indexOf('"app.boot.painted"');
+    const recovery = source.indexOf("workspaceManager.startMemoryRecovery()");
+    expect(painted).toBeGreaterThanOrEqual(0);
+    expect(recovery).toBeGreaterThan(painted);
+  });
+
   it("confines concrete kernel imports to composition and adapter boundaries", () => {
     const offenders = sourceFiles(SRC).flatMap((file) => {
       const relativeFile = relative(SRC, file).split(sep).join("/");

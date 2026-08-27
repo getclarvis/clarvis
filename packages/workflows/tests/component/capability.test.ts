@@ -48,7 +48,7 @@ describe("workflows capability", () => {
     expect(await capability.forRun(RUN_CTX)).not.toBeNull();
   });
 
-  test("grants tools only to the manager while carrying the budget to descendants", async () => {
+  test("keeps the manager on its session budget while carrying the leader budget to descendants", async () => {
     const ctx = makeCtx();
     const run = await createWorkflowsCapability(ctx).forRun(RUN_CTX);
     expect(run).not.toBeNull();
@@ -56,7 +56,7 @@ describe("workflows capability", () => {
     const ungranted = run!.forAgent(scope({ grants: [] }))!.attach(recordingBc().bc);
     const child = run!.forAgent(scope({ entry: false }))!.attach(recordingBc().bc);
     expect(manager.tools?.map((tool) => tool.wireName)).toContain(RUN_LEADER_TOOL_NAME);
-    expect(manager.outputBudget).toBe(ctx.ledger);
+    expect(manager.outputBudget).toBeUndefined();
     expect(ungranted.tools).toBeUndefined();
     expect(child.tools).toBeUndefined();
     expect(ungranted.outputBudget).toBe(ctx.ledger);
@@ -97,13 +97,26 @@ describe("workflows capability", () => {
     expect(leaderHandler!.matches({ name: "some_other_tool", arguments: {} } as never)).toBe(false);
   });
 
-  test("refuses to spawn a leader once the tree budget is exhausted", async () => {
-    const ctx = makeCtx({ ledger: createWorkflowLedger(0) });
-    const run = await createWorkflowsCapability(ctx).forRun(RUN_CTX);
+  test("settles an admitted leader failed when the tree budget is exhausted", async () => {
+    let exhausted = 0;
+    const ctx = makeCtx({
+      ledger: createWorkflowLedger(0),
+      onBudgetExhausted: () => {
+        exhausted += 1;
+      },
+    });
+    const t = testRunCtx();
+    const run = await createWorkflowsCapability(ctx).forRun(t.runCtx);
     const handler = run!.forAgent(scope())!.attach(recordingBc().bc).handlers![0]!;
     const verdict = await handler.handle(runLeaderCall({ title: "Do it", prompt: "do it" }), 0);
     expect(verdict.kind).toBe("result");
-    if (verdict.kind === "result") expect(verdict.text).toContain("budget exhausted");
+    if (verdict.kind === "result") expect(verdict.text).toContain("in the background");
+    await t.settle();
+
+    expect(exhausted).toBe(1);
+    expect(t.registry.list().map((entry) => entry.status)).toEqual(["failed"]);
+    const child = t.registry.list()[0]!;
+    expect(t.registry.poll(child.id, {})?.result).toContain("budget exhausted");
   });
 
   test("rejects a run_leader call with no prompt", async () => {
@@ -133,7 +146,7 @@ describe("workflows capability", () => {
     if (verdict.kind === "result") expect(verdict.text).toContain("title");
   });
 
-  test("refuses to spawn when the registry has no room for another live child, and releases the reservation", async () => {
+  test("refuses to spawn when the registry has no room without reserving ledger headroom", async () => {
     const ledger = createWorkflowLedger(10);
     const ctx = makeCtx({ ledger });
     const t = testRunCtx({ maxLiveChildren: 0 });
@@ -143,8 +156,6 @@ describe("workflows capability", () => {
     const verdict = await handler.handle(runLeaderCall({ title: "Do it", prompt: "do it" }), 0);
     expect(verdict.kind).toBe("result");
     if (verdict.kind === "result") expect(verdict.text).toContain("too many child agents");
-    // The reservation taken before the registry refused must have been released,
-    // not leaked against the tree budget.
     expect(ledger.remaining()).toBe(10);
   });
 

@@ -541,12 +541,13 @@ operator's own `headers`/`body` entry would set one. The enforcement mechanism i
 one-line detail text. When the catalog cannot resolve the levels at all, `UNKNOWN_CHOICES` (line 66)
 is just `[PROVIDER_CHOICE]`.
 
-The "support" status row (lines 202-213) is a 4-way branch over the same
-`supportedReasoningEfforts`/`capabilities` signals as §4.12: no published levels plus
-`lacksReasoning()` →
-"Default model does not declare reasoning support"; `available() === undefined` → "Effort levels are
-not published for this model"; `available()!.length === 0` → "This model offers no configurable
-effort levels"; otherwise → "`N` model-supported levels". Separately, the "current"
+The "support" status row is a 5-way branch over the entitled-catalog request and the same
+`supportedReasoningEfforts`/`capabilities` signals as §4.12: while a legacy subscription model's
+authenticated entitlement request is pending → "Loading subscription effort levels…"; after that,
+no published levels plus `lacksReasoning()` → "Default model does not declare reasoning support";
+`available() === undefined` → "Effort levels are not published for this model";
+`available()!.length === 0` → "This model offers no configurable effort levels"; otherwise → "`N`
+model-supported levels". Separately, the "current"
 status row (lines 193-199) reads `${current()} (not available for this model)` when the
 already-stored `default_reasoning_effort` is not among the resolved `choices()` — i.e. an effort a
 previous model supported but the current default model does not.
@@ -735,6 +736,14 @@ Test: `packages/code/tests/unit/providers-controller.test.ts:622-638`;
 `packages/code/tests/unit/effort-levels.test.ts` (persisted and legacy subscription cases);
 `packages/code/tests/integration/effort-view-render.test.tsx` (subscription model case).
 
+**INV-MC-17.** A legacy subscription model whose authenticated effort catalog is still loading is
+never presented as having unpublished effort levels. The loading state remains visible until that
+request settles; only a settled result may publish choices or the unavailable state.
+Production: `packages/code/src/views/config/EffortView.tsx` (`entitledLoading`,
+`subscription_effort_catalog`).
+Test: `packages/code/tests/integration/effort-view-render.test.tsx` (pending subscription effort
+catalog case).
+
 ## 6. Failure modes and degradation
 
 | Failure | Handling | Cite |
@@ -745,9 +754,10 @@ Test: `packages/code/tests/unit/providers-controller.test.ts:622-638`;
 | Cache or bundle file exceeds byte cap | Rejected before parse (`throw`), which `loadCatalogData`'s `try/catch` turns into the same "invalid, fall back to bundle" path | `packages/kernel/src/models/model-catalog.ts:172,180,234-241` |
 | `refreshModelsCatalog` fetch fails (non-2xx, empty body, oversized stream, network error) | The `Error` propagates out of `refreshModelsCatalog`/`createModelCatalogService.refresh()` uncaught — **no** cache write happens, existing cache/bundle is untouched | `packages/kernel/src/models/model-catalog.ts:663-704`; pinned `packages/kernel/tests/integration/model-catalog.test.ts:370-379` |
 | `resolveProvider` given an unknown token | Returns a typed `{ok:false, code:"unknown_provider", message}` rather than throwing; callers (e.g. `packages/loop/src/validation/request/provider-rules.ts:134-137`) turn it into a `ValidationError` | `packages/capability/src/provider-resolver.ts:111-115` |
-| No model resolves for an agent at run assembly | Kernel error `invalid_request`, naming the agent | `packages/kernel/src/runs/settings-assembler.ts:254-259` |
-| No reasoning effort resolves for an agent | Silently `undefined` — not an error | `packages/kernel/src/runs/settings-assembler.ts:269-273` |
-| TUI: catalog fetch (`client.models.get()`) fails, or answers with zero providers | `diagnosticEvent("catalog.unavailable", ..., "warn")`; the picker just renders empty (`catalogReady` is `false`) | `packages/code/src/index.tsx:742-744,777-782`; `catalog-pick.ts:catalogReady` |
+| No model resolves for an agent at run assembly | Kernel error `invalid_request`, naming the agent | `packages/kernel/src/runs/settings-assembler.ts:250-259` |
+| No reasoning effort resolves for an agent | Silently `undefined` — not an error | `packages/kernel/src/runs/settings-assembler.ts:279-299` |
+| TUI: authenticated subscription effort lookup is pending | Render a loading status and withhold the unpublished-level claim until the request settles | `packages/code/src/views/config/EffortView.tsx` (`entitledLoading`); pinned by `packages/code/tests/integration/effort-view-render.test.tsx` |
+| TUI: catalog fetch (`client.models.get()`) fails, or answers with zero providers | `diagnosticEvent("catalog.unavailable", ..., "warn")`; the picker just renders empty (`catalogReady` is `false`) | `packages/code/src/index.tsx:730-753`; `catalog-pick.ts:catalogReady` |
 | `configuredModelRows`/`configuredModelCapabilities` given a capability filter or a model the catalog never saw | Treated as "not known", never as "unsupported" — the model is still offered/its capabilities read as `undefined` | `packages/code/src/views/config/catalog-pick.ts:160-168` (doc-comment), `:198-201` |
 | `guard_judge` has no model (neither `cfg.model` nor `deps.defaultModel`) | Warns and degrades the judge to mode `"on"` (asks a human) rather than failing the run | `packages/kernel/src/guard/judge.ts:157-164` (outside this document's scope; cited only as a `parseModelRef`/`resolveProvider` consumer) |
 

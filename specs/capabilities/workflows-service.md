@@ -69,7 +69,7 @@ run (`packages/kernel/src/workflows/workflows-service.ts:444-458`).
 | `LeaderResult` | interface | `packages/workflows/src/types.ts:41-47` | `{runId, status, result, usage, error?}` |
 | `LeaderRequestAssembler` | type | `packages/workflows/src/types.ts:59` | `(spec, {parentRunId}) => RunRequest`; MUST strip the `workflow` grant and force `plans: "off"` (`packages/workflows/src/types.ts:53-57`) |
 | `WorkflowRunDeps` | interface | `packages/workflows/src/types.ts:69-72` | `{generateExecutionId(), executeRun(args)}` — the loop surface a workflow needs |
-| `WorkflowCtx` | interface | `packages/workflows/src/types.ts:84-123` | Tree-wide context: `deps`, `runDeps`, `owner`, `semaphore`, `ledger`, `maxConcurrency`, `assemble`, `managerRunId`, `signal`, `leaderProfiles?`, `workflowDefs?`, `elicitForLeader?`, `onLeaderEvent?`, `steerForLeader?` |
+| `WorkflowCtx` | interface | `packages/workflows/src/types.ts` | Workflow context: `deps`, `runDeps`, `owner`, `semaphore`, `ledger`, `maxConcurrency`, `assemble`, `managerRunId`, `signal`, `leaderProfiles?`, `workflowDefs?`, `elicitForLeader?`, `onLeaderEvent?`, `onBudgetExhausted?`, `steerForLeader?` |
 
 ### `@clarvis/kernel` — `packages/kernel/src/workflows/*`
 
@@ -426,9 +426,9 @@ manager as its leader profile.
      failure additionally set `edge.error` and a truncated `edge.reason`.
 4. `assembleLeader` (the `LeaderRequestAssembler` passed into `WorkflowCtx.assemble`) resolves the
    leader's agent as `spec.profile ?? resolveLeaderDefault(managerAgent) ?? managerAgent`
-   (`packages/kernel/src/workflows/workflows-service.ts:343`), forces `plans: "off"`, forwards `output_schema`, `guard_mode`,
-   `guard_judge`, `memory`, `task`, `prompt_cache_key`/`ttl` from the manager's own params when
-   present, runs the result through the shared `assembleRunRequest`, then calls
+   (`packages/kernel/src/workflows/workflows-service.ts`, `assembleLeader`), forces `plans: "off"`
+   and `memory: "off"`, forwards `output_schema`, `guard_mode`, `guard_judge`, `task`,
+   `prompt_cache_key`/`ttl` from the manager's own params when present, runs the result through the shared `assembleRunRequest`, then calls
    `stripWorkflowGrant` on every profile in the assembled body (`packages/kernel/src/workflows/workflows-service.ts:342-364,
    720-728`) — defense-in-depth beyond simply not injecting the workflows capability into a leader.
    The same `params.task` binding (an external Tasks-capability `{id, provider_key, mode}`) is also
@@ -439,8 +439,9 @@ manager as its leader profile.
    binding to both workflow manager and leaders", asserting `assembled.map(p => p.task)` equals
    `[task, task]`).
 5. `execute(context)` (the body `createManagedRun` invokes):
-   - Clones `deps` with a logger bound to `{component: "workflows", workflow_id: managerRunId}` when
-     a logger exists (`packages/kernel/src/workflows/workflows-service.ts:393-402`) — "the one place a workflow's correlation can
+   - Calls `auxiliaryWorkflowRunDeps(deps)` to remove the memory capability, then clones those deps
+     with a logger bound to `{component: "workflows", workflow_id: managerRunId}` when a logger
+     exists — "the one place a workflow's correlation can
      be bound, because it is the one place the tree's identity is known" (`:388-391`).
    - Builds an elicit mux over `context.elicit` (owned by scheduling document).
    - Builds `onLeaderEvent`, which recognizes and ignores workflow-owned persisted events
@@ -469,10 +470,12 @@ manager as its leader profile.
      [hosts/kernel-runs.md](../hosts/kernel-runs.md)).
    - `run.status === "rejected"` re-throws; else the manager's engine result is mapped to a protocol
      `RunResult` via `engineResultToProto` (out of scope).
-6. `settle(result)` / `finalize(status)`: sets `record.status`, calls `closeRunningEdges` over **all**
-   edges (not just the manager's), persists, and **synchronously flushes** the coalesced save queue
-   (`packages/kernel/src/workflows/workflows-service.ts:366-371`) — so a terminal snapshot is guaranteed on disk before the run
-   handle's `done`/`closed` resolves.
+6. `settle(result)` / `finalize(status)`: closes the manager edge with its own run status, then uses
+   `finalWorkflowStatus` for the aggregate. A completed manager still yields a failed workflow when
+   any leader is non-completed or a reservation refusal set `onBudgetExhausted`; remaining leader
+   edges close with that aggregate status. It persists and **synchronously flushes** the coalesced
+   save queue, so a terminal snapshot is guaranteed on disk before the run handle's `done`/`closed`
+   resolves.
 
 ### 4.6 `raiseLiveChildrenCeiling` (`packages/kernel/src/workflows/workflows-service.ts:705-718`)
 
@@ -670,15 +673,14 @@ loaded definition over `BUILTIN_WORKFLOWS`).
 Test: `packages/kernel/tests/integration/workflows-service.test.ts` ("reports a malformed workflow
 document without failing the run that found it").
 
-**INV-185.** A workflow leader is offered the entry agent's memory *write* tools too, not only the
-read tools a plain sub-agent would get.
-Production: `packages/kernel/src/workflows/workflows-service.ts:492-496` — the manager's
-`executeRun` call passes only `deps` (which already carries `deps.capabilities`, including a
-registered memory capability) and does not construct a narrower capability list for leaders;
-`run_leader`'s own dispatch (scheduling document) calls `executeRun({ deps: ctx.deps, ... })` with no
-override, so a leader inherits `deps.capabilities` verbatim.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:1249` ("offers the entry agent's
-memory write tools to a leader, not just to the manager").
+**INV-185.** A workflow's primary manager is its single memory-producing run. Every auxiliary
+leader forces `memory: "off"` and receives deps with the memory capability removed, so it has no
+memory seed, read/write tools, or post-run index job.
+Production: `auxiliaryWorkflowRunDeps` and `assembleLeader` in
+`packages/kernel/src/workflows/workflows-service.ts`; `runLeader` in
+`packages/workflows/src/run-leader.ts` executes exactly those deps.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`workflow memory ownership`),
+which asserts memory tools on manager calls only and exactly one queued job keyed by the manager run.
 
 **INV-230.** `createAgentWorkflowPolicy.isManagerRun` routes a plain request by the request's own
 `agent` field; when a `skill` is requested, the skill's own declared `agent` wins over the caller's
@@ -726,14 +728,13 @@ Production: `packages/kernel/src/workflows/workflows-service.ts:594,601-609`.
 Test: `packages/kernel/tests/unit/workflows-service.test.ts:111-118` and `:101` (`expect(repaired).not.toBe(original)`).
 
 **INV-W6.** The manager's `run_leader` request assembly always strips the `workflow` grant from
-every profile and forces `plans: "off"`, regardless of what the base assembler produced — a leader
-can never itself become a manager, and parallel leaders never contend over one workspace's
-single-active-plan store.
-Production: `packages/kernel/src/workflows/workflows-service.ts:347,362,720-728` (`stripWorkflowGrant`)
-and `packages/workflows/src/types.ts:53-57` (the contract documented on `LeaderRequestAssembler`).
-Test: unpinned directly in this document's scope (the scheduling document's leader-dispatch tests are the
-likely home for an assertion on the assembled leader body's `profiles[].grants` and `plans` field;
-not found in `workflows-service.test.ts`).
+every profile and forces `plans: "off"` plus `memory: "off"`, regardless of what the base assembler
+produced — a leader can never itself become a manager, contend over the primary plan store, or act
+on execution memory. Production: `assembleLeader`, `stripWorkflowGrant`, and
+`auxiliaryWorkflowRunDeps` in `packages/kernel/src/workflows/workflows-service.ts`, plus the contract
+on `LeaderRequestAssembler` in `packages/workflows/src/types.ts`. Test:
+`packages/kernel/tests/integration/workflows-service.test.ts` (`workflow memory ownership`) and the
+leader request assertions in `packages/workflows/tests/component/run-leader.test.ts`.
 
 **INV-W7** (the attribution half of INV-291, whose reporting half is below).
 `isLeaderEntryIteration` attributes an `iteration_completed` event to a leader's own turn
@@ -887,6 +888,16 @@ the reporting half of INV-W7's attribution rule; the test states what counting o
 "a permanent 'loading…' beside a leader that was working".
 Production: `packages/kernel/src/workflows/workflows-service.ts:660-689`.
 Test: `packages/kernel/tests/integration/workflows-service.test.ts:686-729`.
+
+**INV-292.** Manager status and aggregate workflow status are distinct. A completed manager edge
+stays completed, but the workflow is failed when any leader edge is non-completed or the child
+ledger refused a reservation; crash reconciliation applies the same edge rule when it has terminal
+root evidence. Production: `finalWorkflowStatus`, `closeManagerEdge`, `finalize`, and
+`reconcileRunningWorkflowRecord` in `packages/kernel/src/workflows/workflows-service.ts`; exhaustion
+is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLeaderHandler`, and
+`runOne`. Test: `packages/kernel/tests/unit/workflows-service.test.ts` (`finalWorkflowStatus` and
+`reconcileRunningWorkflowRecord`) and `packages/kernel/tests/integration/workflows-service.test.ts`
+(`flushes one coalesced terminal snapshot before done and closed settle`).
 
 
 ## 6. Failure modes and degradation

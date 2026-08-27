@@ -33,7 +33,13 @@ const named = (name: string): Capability => ({ name, forRun: () => null });
 function baseDeps(): ExecuteRunDeps {
   return {
     llm: { call: () => Promise.reject(new Error("unused")) },
-    capabilities: [named("tools"), named(HOOKS_CAPABILITY_NAME), named("agents")],
+    capabilities: [
+      named("tools"),
+      named(HOOKS_CAPABILITY_NAME),
+      named("agents"),
+      named(MEMORY_CAPABILITY_NAME),
+      named("tasks"),
+    ],
   } as unknown as ExecuteRunDeps;
 }
 
@@ -65,14 +71,19 @@ describe("composeIndexPassDeps", () => {
   });
 
   it("keeps every other capability, in the order the host registered them", () => {
-    expect(names(composeIndexPassDeps(baseDeps(), undefined)).slice(0, 2)).toEqual([
+    expect(names(composeIndexPassDeps(baseDeps(), undefined)).slice(0, 3)).toEqual([
       "tools",
       "agents",
+      "tasks",
     ]);
   });
 
-  it("registers memory unconditionally, so a carried seed marker stays recognised", () => {
-    expect(names(composeIndexPassDeps(baseDeps(), undefined))).toContain(MEMORY_CAPABILITY_NAME);
+  it("replaces ordinary memory with exactly one pass capability", () => {
+    expect(
+      names(composeIndexPassDeps(baseDeps(), undefined)).filter(
+        (name) => name === MEMORY_CAPABILITY_NAME,
+      ),
+    ).toEqual([MEMORY_CAPABILITY_NAME]);
   });
 
   it("suppresses the post-run enqueue, so a pass cannot index itself", async () => {
@@ -96,6 +107,12 @@ describe("composeIndexPassDeps", () => {
   it("does not mutate the deps it was given", () => {
     const deps = baseDeps();
     composeIndexPassDeps(deps, undefined);
-    expect(names(deps)).toEqual(["tools", HOOKS_CAPABILITY_NAME, "agents"]);
+    expect(names(deps)).toEqual([
+      "tools",
+      HOOKS_CAPABILITY_NAME,
+      "agents",
+      MEMORY_CAPABILITY_NAME,
+      "tasks",
+    ]);
   });
 });

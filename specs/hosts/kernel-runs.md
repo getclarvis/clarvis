@@ -109,7 +109,7 @@ the latter supplying `observe`/`settle` to maintain its workflow record (`:377-3
 | `defaultModel?` | none | model when neither `default_model` nor frontmatter names one (`:35`, `:240-241`) |
 | `defaultIterationLimit?` | `20` | applied when frontmatter omits `iteration_limit` (`:37`, `:253-256`) |
 | `defaultAgent?` | none | entry agent when the request names none (`:39`, `:364`) |
-| `fallbackTokenLimit?` | `40_000_000` (`FALLBACK_TOTAL_TOKEN_LIMIT`, `:109`) | fallback budget size (`:330`) |
+| `fallbackTokenLimit?` | `160_000_000` (`FALLBACK_TOTAL_TOKEN_LIMIT`, `:109`) | fallback budget size (`:330`) |
 | `fallbackOnExceed?` | `"escalate"` (`FALLBACK_ON_EXCEED`, `:112`) | fallback budget `on_exceed` (`:329`) |
 | `skills?` | none | `SkillsProvider`; without it any `skill` start param is refused (`:54`, `:93-96`) |
 | `skillPlansMode?` | none | trusted Plans-mode override for a skill, keyed by name + root source (`:56`, `:355-362`) |

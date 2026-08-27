@@ -55,18 +55,18 @@ const reasoningEffort = z.enum(["off", "minimal", "low", "medium", "high", "xhig
 
 const baseEnvSchema = z.object({
   CLARVIS_TOKEN_CEILING: positiveInt.default(200_000_000),
-  CLARVIS_ITERATION_CEILING: positiveInt.default(100),
+  CLARVIS_ITERATION_CEILING: positiveInt.default(200),
   CLARVIS_TIMEOUT_CEILING_MS: positiveInt.max(2_147_483_647).default(600000),
   CLARVIS_ESCALATION_CEILING: positiveInt.default(20),
   CLARVIS_RETRY_CEILING: nonnegativeInt.default(10),
   CLARVIS_RETRY_AFTER_CEILING_MS: positiveInt.default(300000),
 
   CLARVIS_DEFAULT_TIMEOUT_MS: positiveInt.default(300000),
-  CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT: positiveInt.default(40_000_000),
+  CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT: positiveInt.default(160_000_000),
   CLARVIS_DEFAULT_ON_EXCEED: z.enum(["stop", "escalate"]).default("escalate"),
   CLARVIS_DEFAULT_MAX_ESCALATIONS: positiveInt.default(5),
   CLARVIS_DEFAULT_ELICIT_WAIT_MS: positiveInt.default(1_800_000),
-  CLARVIS_DEFAULT_ITERATION_LIMIT: positiveInt.default(50),
+  CLARVIS_DEFAULT_ITERATION_LIMIT: positiveInt.default(200),
   CLARVIS_DEFAULT_CONTEXT_WINDOW_TOKENS: positiveInt.default(128000),
   CLARVIS_DEFAULT_STAGNATION_THRESHOLD: nonnegativeInt.default(3),
   /**

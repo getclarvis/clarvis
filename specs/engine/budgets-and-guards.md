@@ -186,14 +186,14 @@ is only cited here as the wiring that reaches this subsystem's constructors.
 | Variable | Default | File:line | Consumed by |
 |---|---|---|---|
 | `CLARVIS_TOKEN_CEILING` | `200_000_000` | `packages/capability/src/env.ts:57` | request-validation ceiling on `total_token_limit` |
-| `CLARVIS_ITERATION_CEILING` | `100` | `packages/capability/src/env.ts:58` | request-validation ceiling on `iteration_limit` |
+| `CLARVIS_ITERATION_CEILING` | `200` | `packages/capability/src/env.ts:58` | request-validation ceiling on `iteration_limit` |
 | `CLARVIS_TIMEOUT_CEILING_MS` | `600000` (max `2_147_483_647`) | `packages/capability/src/env.ts:59` | ceiling on `budget.timeout_ms` / `call_timeout_ms` |
 | `CLARVIS_ESCALATION_CEILING` | `20` | `packages/capability/src/env.ts:60` | ceiling on `budget.max_escalations` |
 | `CLARVIS_DEFAULT_TIMEOUT_MS` | `300000` | `packages/capability/src/env.ts:64` | `resolveConfig`'s `timeout_ms` fallback (`packages/loop/src/runtime/run-shape.ts:21`), which seeds `createComputeClock` |
-| `CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT` | `40_000_000` | `packages/capability/src/env.ts:65` | request-validation default |
+| `CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT` | `160_000_000` | `packages/capability/src/env.ts:65` | request-validation default, scaled 4x with the iteration default |
 | `CLARVIS_DEFAULT_MAX_ESCALATIONS` | `5` | `packages/capability/src/env.ts:67` | `SoftBudget`'s `maxEscalations` fallback (`packages/loop/src/runtime/entry-inputs.ts:141`) |
 | `CLARVIS_DEFAULT_ELICIT_WAIT_MS` | `1_800_000` | `packages/capability/src/env.ts:68` | wait bound passed to `buildSoftLimitAsk`/`buildGuardEscalationAsk` |
-| `CLARVIS_DEFAULT_ITERATION_LIMIT` | `50` | `packages/capability/src/env.ts:69` | `IterationCounter` cap fallback |
+| `CLARVIS_DEFAULT_ITERATION_LIMIT` | `200` | `packages/capability/src/env.ts:69` | `IterationCounter` soft-mode cap fallback |
 | `CLARVIS_DEFAULT_STAGNATION_THRESHOLD` | `3` | `packages/capability/src/env.ts:71` | `createStagnationGuard`'s hard `threshold` fallback |
 | `CLARVIS_DEFAULT_STAGNATION_SOFT_THRESHOLD` | `2` | `packages/capability/src/env.ts:77` | `createStagnationGuard`'s `soft` fallback |
 | `CLARVIS_GUARD_MAX_ESCALATIONS` | `2` | `packages/capability/src/env.ts:95` (doc `packages/capability/src/env.ts:78-94`) | `escalateGuardTrip`'s `maxEscalations`, deliberately separate from `CLARVIS_DEFAULT_MAX_ESCALATIONS` (comment, `packages/capability/src/env.ts:82-85`) |

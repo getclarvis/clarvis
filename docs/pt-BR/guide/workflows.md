@@ -108,21 +108,20 @@ Configurações opcionais valem para toda a árvore do workflow:
 {
   "workflows": {
     "max_concurrency": 4,
-    "budget_tokens": 262144
+    "budget_tokens": 640000000
   }
 }
 ```
 
-A concorrência padrão é `4`, com máximo de `20`. O orçamento de tokens padrão é `262144`. Use `null`
-somente quando quiser deliberadamente remover o limite de tokens do workflow.
+A concorrência padrão é `4`, com máximo de `20`. O orçamento de tokens dos líderes auxiliares é
+`640000000` por padrão. Use `null` somente quando quiser deliberadamente remover o limite de tokens
+do workflow. O gerenciador usa o orçamento próprio da sessão principal e não consome esse ledger.
 
-::: warning Limitação beta de orçamento
-Uma chamada de modelo do gerenciador reserva, enquanto está em andamento, até a saída máxima
-multiplicada por todas as tentativas configuradas. Com um modelo de saída grande, essa reserva pode
-consumir temporariamente o restante do orçamento do workflow, recusar um líder concorrente e fazer o
-restante de um lote `run_work_items` ser ignorado. Antes de depender da distribuição paralela,
-defina `budget_tokens` com margem além dessa reserva e confirme cada líder esperado em `/workflow`;
-use `over: once` quando isso não puder ser garantido.
+::: tip Admissão no orçamento
+Somente líderes admitidos por `max_concurrency` reservam orçamento auxiliar. Líderes esperando na
+fila FIFO não retêm tokens e reutilizam a parcela liberada pelos predecessores. Uma exaustão real
+ainda falha os líderes afetados e o workflow agregado; use `/workflow` para conferir todos os
+resultados esperados.
 :::
 
 Workflows do workspace substituem por inteiro workflows globais ou integrados com o mesmo nome. Uma

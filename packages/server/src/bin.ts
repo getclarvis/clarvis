@@ -346,6 +346,7 @@ async function main(argv: string[]): Promise<void> {
     { event: "server.boot.ready" },
     "the kernel is up; /readyz reports ready and runs may start",
   );
+  state.kernel.startMemoryRecovery();
 
   let shuttingDown = false;
   const beginShutdown = (reason: string): void => {

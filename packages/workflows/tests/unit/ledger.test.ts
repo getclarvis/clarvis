@@ -86,17 +86,17 @@ describe("WorkflowLedger", () => {
   });
 
   describe("reserve", () => {
-    test("divides headroom across leader slots plus the manager and reflects it in remaining()", () => {
+    test("divides headroom across leader slots without charging the manager", () => {
       const ledger = createWorkflowLedger(100);
       const r1 = ledger.reserve(4);
-      expect(r1?.amount).toBe(20);
-      expect(ledger.remaining()).toBe(80);
+      expect(r1?.amount).toBe(25);
+      expect(ledger.remaining()).toBe(75);
       const r2 = ledger.reserve(4);
-      expect(r2?.amount).toBe(16); // ceil(80/(4 leaders + the manager))
-      expect(ledger.remaining()).toBe(64);
+      expect(r2?.amount).toBe(19);
+      expect(ledger.remaining()).toBe(56);
     });
 
-    test("a full leader wave leaves a provisional share for the manager", () => {
+    test("a full leader wave reserves only from the leader ledger", () => {
       const ledger = createWorkflowLedger(100);
       for (let i = 0; i < 4; i++) expect(ledger.reserve(4)).not.toBeNull();
       expect(ledger.remaining()).toBeGreaterThan(0);
@@ -123,7 +123,7 @@ describe("WorkflowLedger", () => {
     test("release() frees the reservation without touching spent()", () => {
       const ledger = createWorkflowLedger(100);
       const reservation = ledger.reserve(1);
-      expect(ledger.remaining()).toBe(50);
+      expect(ledger.remaining()).toBe(0);
       reservation!.release();
       expect(ledger.remaining()).toBe(100);
       expect(ledger.spent()).toBe(0);
@@ -144,13 +144,13 @@ describe("WorkflowLedger", () => {
       const ledger = createWorkflowLedger(100);
       const leader = ledger.reserve(1)!;
       const call = leader.reserveOutput(60)!;
-      expect(call.amount).toBe(50);
-      expect(leader.remaining()).toBe(0);
+      expect(call.amount).toBe(60);
+      expect(leader.remaining()).toBe(40);
       call.settle(25);
       expect(leader.spent()).toBe(25);
-      expect(leader.remaining()).toBe(25);
+      expect(leader.remaining()).toBe(75);
       expect(ledger.spent()).toBe(25);
-      expect(ledger.remaining()).toBe(50);
+      expect(ledger.remaining()).toBe(0);
       leader.release();
       expect(ledger.remaining()).toBe(75);
     });
@@ -169,11 +169,11 @@ describe("WorkflowLedger", () => {
       const ledger = createWorkflowLedger(20);
       const leader = ledger.reserve(1)!;
       const call = leader.reserveOutput(10)!;
-      expect(leader.remaining()).toBe(0);
+      expect(leader.remaining()).toBe(10);
       call.release();
       call.release();
       call.settle(10);
-      expect(leader.remaining()).toBe(10);
+      expect(leader.remaining()).toBe(20);
       expect(leader.reserveOutput(0)).toBeNull();
       leader.release();
       leader.reconcile(usage([10]));

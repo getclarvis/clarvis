@@ -145,7 +145,15 @@ const kernel = createInProcessKernel({
   },
   configStore: createMemoryConfigStore(),
 });
+
+// Release durable memory-queue recovery after this host is ready for users.
+kernel.startMemoryRecovery();
 ```
+
+Construction never starts memory-index inference. Interactive hosts call
+`startMemoryRecovery()` after first paint; server hosts call it after their transport/readiness
+boundary. Owners already resident start once at that point, and owners activated later start as
+they are built. A primary run still pokes its worker after enqueuing its own job.
 
 The package exports constructors for individual services, file and in-memory
 configuration stores, secret storage, model catalogs, guard resolution and
@@ -318,6 +326,10 @@ five. That is what lets `@clarvis/code` reach its first prompt, and `@clarvis/se
 request, against a directory nothing has ever written to. `DEFAULT_ENTRY_AGENT` (`marshall`) is what
 `createFileKernel` hands the run assembler, so a request naming no agent still resolves.
 
+The two shipped leaders, `marshall` and `admiral`, each declare a 200-iteration soft session limit;
+the `coder`, `explorer`, and `planner` children remain capped at 30 iterations. The explicit lead
+value matches the product default instead of shadowing it with the former 50-iteration profile cap.
+
 For multi-step or tool-heavy work, the shipped `marshall` prompt requires a short visible update
 before the first tool and after meaningful findings or roughly a minute of uninterrupted tool work.
 The update and the next tool call stay in the same turn; the rule neither exposes hidden reasoning
@@ -419,6 +431,14 @@ with the `audit`, `implement` and `research` definitions exported by `@clarvis/w
 valid global and workspace documents by name. Effective precedence is
 `workspace > global > built-in`; a malformed document is logged and leaves the lower-precedence
 definition available. The kernel never materializes a built-in as a user-owned file.
+
+Workflow leaders are isolated auxiliary runs. Their requests force both planning and memory off,
+and their engine deps exclude the memory capability. The manager keeps the ordinary primary-run
+memory surface and is the only run in that workflow that enqueues an index job. A leader failure,
+unfinished edge, or refused leader reservation makes the aggregate workflow record failed while
+preserving the manager edge's own completed status. Because the manager's `workflow` capability is
+injected only for that primary run, its later memory pass uses the isolated digest path instead of
+trying an invalid continuation with an undeclared grant.
 
 A settled run no longer remains leased for the memory indexer's multi-minute retry schedule. Its
 event stream waits five idle seconds for the usual immediate terminal notice, renews only within a

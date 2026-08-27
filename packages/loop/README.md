@@ -20,9 +20,10 @@ optional package is absent.
 `@clarvis/memory` and `@clarvis/workflows` sit the other way round: they depend
 on this package and compose it. `@clarvis/plan` is likewise host-registered and
 never named by the engine. A host builds each capability and hands it over —
-memory and planning through `buildExecuteRunDeps({ capabilities })` so every
-leader and sub-agent inherits them, workflows per `executeRun` call so a leader
-deliberately does not.
+memory and planning through `buildExecuteRunDeps({ capabilities })` so ordinary
+runs and their in-process sub-agents inherit them, workflows per `executeRun`
+call so a workflow leader deliberately does not. The kernel also removes memory
+from those auxiliary leader runs; only their primary manager produces a memory job.
 
 Provider model entries may retain `reasoning_efforts` alongside their window, output, capability,
 and prompt-cache metadata. The engine validates and carries these provider-published strings but

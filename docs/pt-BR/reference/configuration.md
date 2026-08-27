@@ -104,7 +104,7 @@ de nível superior existente, em vez de criar um segundo documento JSON.
   },
   "workflows": {
     "max_concurrency": 4,
-    "budget_tokens": 262144
+    "budget_tokens": 640000000
   }
 }
 ```

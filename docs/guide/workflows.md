@@ -106,21 +106,20 @@ Optional settings apply to the whole workflow tree:
 {
   "workflows": {
     "max_concurrency": 4,
-    "budget_tokens": 262144
+    "budget_tokens": 640000000
   }
 }
 ```
 
-The concurrency default is `4` and the maximum is `20`. The token budget defaults to `262144`; use
-`null` only when you intentionally want no workflow token ceiling.
+The concurrency default is `4` and the maximum is `20`. The auxiliary-leader token budget defaults
+to `640000000`; use `null` only when you intentionally want no workflow token ceiling. The workflow
+manager has its own primary-session budget and does not consume this ledger.
 
-::: warning Beta budget limitation
-A manager model call reserves up to its maximum output multiplied by all configured attempts while
-it is in flight. With a large-output model, that reservation can temporarily consume the remaining
-workflow budget, refuse a concurrent leader, and cause the rest of a `run_work_items` batch to be
-skipped. Before relying on fan-out, set `budget_tokens` high enough to leave headroom beyond that
-reservation and verify every expected leader in `/workflow`; use `over: once` when that cannot be
-guaranteed.
+::: tip Budget admission
+Only leaders admitted by `max_concurrency` reserve auxiliary budget. Leaders waiting in the FIFO
+queue hold no token headroom and reuse what predecessors release. A genuine exhaustion still fails
+the affected leaders and the aggregate workflow, so use `/workflow` to inspect every expected
+result.
 :::
 
 Workspace workflows replace same-named global or built-in workflows as a whole. A malformed

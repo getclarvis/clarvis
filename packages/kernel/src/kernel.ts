@@ -156,6 +156,8 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   acquireOwner(owner: string): Promise<OwnerLease<OwnerScopedKernel>>;
   /** Lists the configured agents, delegating to {@link ConfigService.listAgents}. */
   listAgents(): Promise<AgentSummary[]>;
+  /** Begin durable memory-queue recovery after the host's critical boot path. */
+  startMemoryRecovery(): void;
   /** Releases resources by invoking the {@link CreateKernelOptions.dispose} hook, if any. */
   close(): Promise<void>;
 }
@@ -382,6 +384,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   }
   const ownerEntries = new Map<string, OwnerCacheEntry>();
   const retiringOwners = new Map<string, Promise<void>>();
+  let memoryRecoveryStarted = false;
 
   const ownerOccupancy = (): number => ownerEntries.size + retiringOwners.size;
 
@@ -393,9 +396,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       projectId: opts.project.id,
       workspaceId: opts.workspace.id,
     };
-    // Activating an owner starts recovery for that owner's durable memory queue.
-    // The owner cache calls this exactly once for each resident generation.
-    opts.memoryFactory?.start(scope.owner);
+    if (memoryRecoveryStarted) opts.memoryFactory?.start(scope.owner);
     const runLogger = logger.child?.({ owner: stateOwner }) ?? logger;
     const workflows = createWorkflowsService({
       deps: runDeps,
@@ -657,6 +658,11 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       },
     };
   };
+  const startMemoryRecovery = (): void => {
+    if (memoryRecoveryStarted) return;
+    memoryRecoveryStarted = true;
+    for (const entry of ownerEntries.values()) opts.memoryFactory?.start(entry.stateOwner);
+  };
   const scoped = forOwner(defaultOwner);
 
   lifecycle.register({
@@ -782,6 +788,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     forOwner,
     acquireOwner,
     listAgents: () => config.listAgents(),
+    startMemoryRecovery,
     async close(): Promise<void> {
       await lifecycle.close();
     },

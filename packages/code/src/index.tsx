@@ -1339,6 +1339,7 @@ async function runApp(
     },
     "info",
   );
+  workspaceManager.startMemoryRecovery();
   const markdownPreload = preloadMarkdown();
 
   if (mode.kind === "resume" || mode.kind === "continue") {

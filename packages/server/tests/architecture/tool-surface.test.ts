@@ -13,6 +13,14 @@ describe("tool surface", () => {
     expect(source).not.toContain("tasks.provider");
   });
 
+  it("releases durable memory recovery only after publishing readiness", () => {
+    const source = readFileSync(join(import.meta.dir, "../../src/bin.ts"), "utf8");
+    const ready = source.indexOf('"server.boot.ready"');
+    const recovery = source.indexOf("state.kernel.startMemoryRecovery()");
+    expect(ready).toBeGreaterThanOrEqual(0);
+    expect(recovery).toBeGreaterThan(ready);
+  });
+
   it("lists exactly the four clarvis_* tools", async () => {
     const h = await makeHarness({ host: createFakeRunHost(() => ({})) });
     const listed = (await h.client.listTools()).tools.map((t) => t.name).sort();

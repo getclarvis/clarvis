@@ -241,6 +241,7 @@ export type ContinuationBlocker =
   | "no-final-context"
   | "no-entry-profile"
   | "mcp-servers-declared"
+  | "undeclared-profile-grant"
   | "model-differs"
   | "no-cache-observed";
 
@@ -261,6 +262,8 @@ const CACHE_EVIDENCE_MIN_INPUT = 100_000;
  *
  * @param subject - the indexed run as persisted, or `null` when it is gone.
  * @param modelRef - the model the pass would run on.
+ * @param knownGrants - grant names the pass deps can validate; omitted by
+ *   callers that are evaluating only transcript and model eligibility.
  * @returns the blocking condition, or `null` when the continuation is viable.
  * @remarks `mcp-servers-declared` is the non-obvious one. MCP tools are part of
  *   the advertised array, so a pass that declared no servers against a run that
@@ -276,6 +279,7 @@ const CACHE_EVIDENCE_MIN_INPUT = 100_000;
 export function continuationBlocker(
   subject: StoredExecution | null,
   modelRef: string,
+  knownGrants?: ReadonlySet<string>,
 ): ContinuationBlocker | null {
   if (subject === null) return "no-stored-run";
   if (subject.final_context === undefined || subject.final_context.length === 0) {
@@ -290,6 +294,14 @@ export function continuationBlocker(
   }
   const entry = entryProfileOf(subject);
   if (entry === undefined) return "no-entry-profile";
+  if (
+    knownGrants !== undefined &&
+    subject.request.profiles.some((profile) =>
+      (profile.grants ?? []).some((grant) => !knownGrants.has(grant)),
+    )
+  ) {
+    return "undeclared-profile-grant";
+  }
   if (entry.model !== modelRef) return "model-differs";
   return null;
 }

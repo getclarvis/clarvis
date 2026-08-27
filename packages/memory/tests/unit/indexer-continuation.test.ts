@@ -89,6 +89,23 @@ describe("deciding whether a pass may continue the run it indexes", () => {
   it("refuses when the entry profile is missing", () => {
     expect(continuationBlocker(withRequest({ entry: "gone" }), MODEL)).toBe("no-entry-profile");
   });
+
+  it("refuses when the pass deps do not declare a carried profile grant", () => {
+    const granted = withRequest({
+      profiles: [
+        {
+          name: "coder",
+          model: MODEL,
+          tools: ["run_leader"],
+          iteration_limit: 200,
+          grants: ["workflow"],
+        },
+      ],
+    });
+    expect(continuationBlocker(granted, MODEL, new Set(["ask_user"]))).toBe(
+      "undeclared-profile-grant",
+    );
+  });
 });
 
 describe("assembling the continuation request", () => {

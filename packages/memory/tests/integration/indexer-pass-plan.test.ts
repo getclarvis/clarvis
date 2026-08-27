@@ -38,7 +38,7 @@ function hostCapability(name: string): Capability {
  *   pass's model.
  */
 async function runtimeFor(
-  over: { stored?: boolean; finalContext?: boolean; model?: string } = {},
+  over: { stored?: boolean; finalContext?: boolean; model?: string; grants?: string[] } = {},
 ): Promise<{ indexer: IndexerRuntime; subjectId: string }> {
   const { runtime } = fakeIndexerRuntime([]);
   const subjectId = "run_subject";
@@ -53,7 +53,15 @@ async function runtimeFor(
           messages: [{ role: "user", content: "fix the build" }],
           servers: [],
           entry: "coder",
-          profiles: [{ name: "coder", model: MODEL, tools: ["shell"], iteration_limit: 200 }],
+          profiles: [
+            {
+              name: "coder",
+              model: MODEL,
+              tools: ["shell"],
+              iteration_limit: 200,
+              ...(over.grants !== undefined ? { grants: over.grants } : {}),
+            },
+          ],
           providers: [{ name: "anthropic", kind: "anthropic" }],
           budget: { on_exceed: "stop", total_token_limit: 900_000 },
         },
@@ -132,5 +140,13 @@ describe("falling back to an isolated pass", () => {
   it("falls back when the pass would run on a different model", async () => {
     const { indexer, subjectId } = await runtimeFor({ model: "openai/gpt-5" });
     expect(plan(indexer, subjectId).blocker).toBe("model-differs");
+  });
+
+  it("falls back when a dynamic manager grant is absent from the pass deps", async () => {
+    const { indexer, subjectId } = await runtimeFor({ grants: ["workflow"] });
+    const p = plan(indexer, subjectId);
+    expect(p.blocker).toBe("undeclared-profile-grant");
+    expect(p.rawBody.continue_from).toBeUndefined();
+    expect(p.rawBody.entry).toBe("memory-indexer");
   });
 });

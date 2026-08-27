@@ -121,9 +121,9 @@ test("a typed field is still validated even when an unknown key is present", () 
 test("readEnvView: engine defaults when unset; parses CLARVIS_* when set", () => {
   const base = readEnvView({});
   expect(base.budgetOnExceed).toBe("escalate");
-  expect(base.iterationDefault).toBe(50);
-  expect(base.iterationCeiling).toBe(100);
-  expect(base.tokenDefault).toBe(40_000_000);
+  expect(base.iterationDefault).toBe(200);
+  expect(base.iterationCeiling).toBe(200);
+  expect(base.tokenDefault).toBe(160_000_000);
   expect(base.tokenCeiling).toBe(200_000_000);
   expect(base.maxGrant).toBe("edit");
   const set = readEnvView({

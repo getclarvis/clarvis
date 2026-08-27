@@ -58,6 +58,7 @@ export async function runLeader(
   const logger = workflowLogger(ctx);
   const reservation = heldReservation ?? ctx.ledger.reserve(ctx.maxConcurrency);
   if (reservation === null) {
+    ctx.onBudgetExhausted?.();
     return {
       runId,
       status: "budget_exhausted",

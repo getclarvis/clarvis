@@ -118,7 +118,7 @@ function hookCommandName(skill: { name: string }, source: string | undefined): s
 }
 
 /** Token limit of the fallback budget when the host configures none. */
-const FALLBACK_TOTAL_TOKEN_LIMIT = 40_000_000;
+const FALLBACK_TOTAL_TOKEN_LIMIT = 160_000_000;
 
 /** `on_exceed` of the fallback budget when the host configures none. */
 const FALLBACK_ON_EXCEED = "escalate";

@@ -17,7 +17,9 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 `createFileKernel(options)` resolves environment and paths, discovers the workspace identity, opens
 configuration and secrets, builds planning/memory/task/workflow dependencies, constructs the
 in-process kernel, recovers persisted runs, and installs workspace housekeeping. A construction
-failure unwinds already-created resources before rethrowing.
+failure unwinds already-created resources before rethrowing. It does not start durable memory-index
+recovery; the host releases that background inference through `startMemoryRecovery()` after its
+first-paint or readiness boundary.
 
 The file host always supplies the loop's remote-MCP authorization coordinator with
 `globalPaths(globalDir).mcpOAuthFile`. `openMcpAuthorizationUrl` is the separate host-authority seam:
@@ -90,6 +92,10 @@ The tools capability receives the selected workspace, sandbox policy, guard reso
 temporary roots, and secret environment names. The kernel guard makes `host_vcs` an ordinary ask:
 mode `on` uses the human channel, while a configured mode `auto` judge may answer it.
 
+Workflow leaders are separate auxiliary runs. `auxiliaryWorkflowRunDeps` removes the memory
+capability and leader assembly forces `memory: "off"`; the primary manager remains the workflow's
+single memory-producing run.
+
 Production: `packages/kernel/src/config/capability-registry.ts`;
 `packages/kernel/src/file-kernel.ts`; `packages/kernel/src/guard/resolver.ts`.
 
@@ -100,7 +106,8 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 
 Human-authored plans and memory remain in workspace/global content trees; machine state uses
 `@clarvis/paths` global state roots. Run journals are recovered before the kernel reports ready.
-Workspace housekeeping sweeps temporary spill/monitor artifacts without deleting Git checkouts.
+Durable memory jobs begin draining only after the host calls `startMemoryRecovery()`. Workspace
+housekeeping sweeps temporary spill/monitor artifacts without deleting Git checkouts.
 
 Remote MCP OAuth is the deliberate credential exception to run-scoped state: its bounded,
 schema-validated document lives at `<global>/state/mcp-oauth.json`, is private to the local host, and is
@@ -136,6 +143,14 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 5. **The kernel exposes no worktree lifecycle service or cross-workspace kernel cache.**
    Production: `packages/protocol/src/client.ts`; `packages/kernel/src/bootstrap.ts`.
    Test: protocol contract tests and `packages/code/tests/component/workspace-client-manager.test.ts`.
+
+6. **Kernel construction starts no memory-index inference; explicit recovery start is idempotent and
+   applies once to resident owners plus every later owner generation.**
+   Production: `InProcessKernel.startMemoryRecovery`, `buildOwner`, and `residentOwner` in
+   `packages/kernel/src/kernel.ts`; host calls in `packages/code/src/index.tsx`,
+   `packages/kernel/src/serve.ts`, and `packages/server/src/bin.ts`.
+   Test: `packages/kernel/tests/integration/owner-isolation.test.ts` (`starts durable memory recovery
+   only after the host releases boot`).
 
 ## 8. Failure behavior
 

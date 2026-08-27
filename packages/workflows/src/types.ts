@@ -54,7 +54,9 @@ export interface LeaderResult {
  *   {@link import("@clarvis/capability").Grant | Grant} (so a leader can never receive
  *   `run_leader` and become a manager) and force `plans: "off"` (parallel leaders
  *   share one workspace, whose plan store admits one active plan at a time). The
- *   leader keeps `can_spawn`, so it can still delegate its own sub-agents.
+ *   leader keeps `can_spawn`, so it can still delegate its own sub-agents, but
+ *   forces `memory: "off"` because only the primary manager run may enqueue a
+ *   memory job for the workflow.
  */
 export type LeaderRequestAssembler = (spec: LeaderSpec, ctx: { parentRunId: string }) => RunRequest;
 
@@ -110,6 +112,9 @@ export interface WorkflowCtx {
   /** Forwards a leader's structural trace events (delegation, iteration, status)
    * up to the workflow's event stream, tagged with the origin `runId`. */
   onLeaderEvent?: (runId: string, event: TraceEvent) => void;
+  /** Marks the workflow incomplete when a leader could not start for lack of
+   * output-token headroom. */
+  onBudgetExhausted?: () => void;
   /**
    * Supplies a leader's own steer channel, so its manager can redirect it
    * mid-flight through `agent_steer`.

@@ -802,7 +802,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   };
   depsRef.current = deps;
 
-  passDepsRef.current = composeIndexPassDeps(built.deps, memoryFactory);
+  passDepsRef.current = composeIndexPassDeps(deps, memoryFactory);
 
   const traceLogger = componentLogger("trace");
   const recoveredRuns = await recoverInterruptedRuns(built.resolved.store, traceLogger);

@@ -81,12 +81,12 @@ export function managerLiveChildrenFloor(maxConcurrency: number): number {
  */
 export const WORKFLOWS_DEFAULTS = {
   max_concurrency: 4,
-  budget_tokens: 262_144,
+  budget_tokens: 640_000_000,
 } as const;
 
-/** The `workflows:` settings block: `max_concurrency` (the tree-wide cap on
+/** The `workflows:` settings block: `max_concurrency` (the leader-wide cap on
  * concurrently running leaders) and `budget_tokens` (an optional output-token
- * ceiling summed across the whole tree; `null` means unbounded). Manager
+ * ceiling summed across leader runs; `null` means unbounded). Manager
  * designation is not a field here — it is the `workflow` grant on the entry
  * agent profile. */
 const workflowsConfigSchema = z

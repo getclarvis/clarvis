@@ -31,7 +31,7 @@ test("the GitHub release index is bounded and decoded to the policy shape", asyn
               digest: `sha256:${"a".repeat(64)}`,
               state: "uploaded",
               browser_download_url:
-                "https://github.com/getclarvis/clarvis/releases/download/v0.0.2-beta/clarvis-v0.0.2-beta-linux-x64.tar.gz",
+                "https://github.com/getclarvis/clarvis-releases/releases/download/v0.0.2-beta/clarvis-v0.0.2-beta-linux-x64.tar.gz",
             },
           ],
         },
@@ -66,7 +66,7 @@ test("asset download verifies exact bytes, size and SHA-256", async () => {
     digest: `sha256:${digest}`,
     state: "uploaded" as const,
     browserDownloadUrl:
-      "https://github.com/getclarvis/clarvis/releases/download/v0.0.2-beta/clarvis-v0.0.2-beta-linux-x64.tar.gz",
+      "https://github.com/getclarvis/clarvis-releases/releases/download/v0.0.2-beta/clarvis-v0.0.2-beta-linux-x64.tar.gz",
   };
   try {
     await downloadReleaseAsset(
@@ -92,7 +92,7 @@ test("asset download rejects truncation and digest mismatch", async () => {
     digest: `sha256:${"a".repeat(64)}`,
     state: "uploaded" as const,
     browserDownloadUrl:
-      "https://github.com/getclarvis/clarvis/releases/download/v0.0.2-beta/clarvis-v0.0.2-beta-linux-x64.tar.gz",
+      "https://github.com/getclarvis/clarvis-releases/releases/download/v0.0.2-beta/clarvis-v0.0.2-beta-linux-x64.tar.gz",
   };
   try {
     await expect(

@@ -1,9 +1,9 @@
 /** The public repository that owns Clarvis release artifacts. */
-export const RELEASE_REPOSITORY = "getclarvis/clarvis";
+export const RELEASE_REPOSITORY = "getclarvis/clarvis-releases";
 
 /** The bounded public API query used to discover stable releases and prereleases together. */
 export const RELEASES_API_URL =
-  "https://api.github.com/repos/getclarvis/clarvis/releases?per_page=30";
+  "https://api.github.com/repos/getclarvis/clarvis-releases/releases?per_page=30";
 
 /** The largest archive the updater will accept from release metadata. */
 export const MAX_RELEASE_ASSET_BYTES = 512 * 1024 * 1024;

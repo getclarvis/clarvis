@@ -12,8 +12,8 @@ interface ProductManifest {
 
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const ACTION_SHA = /^[0-9a-f]{40}$/;
-const PUBLIC_ATTESTATION_STEP =
-  /- name: [^\n]+\n\s+if: github\.event\.repository\.private == false\n\s+uses: actions\/attest@[0-9a-f]{40}/;
+const SOURCE_REPOSITORY = "getclarvis/clarvis";
+const RELEASE_REPOSITORY = "getclarvis/clarvis-releases";
 
 interface WorkflowSource {
   path: string;
@@ -113,21 +113,59 @@ export function releaseReadinessFailures(input: {
   ) {
     failures.push("release publish job must reject manual workflow dispatches");
   }
-  if (!PUBLIC_ATTESTATION_STEP.test(input.releaseWorkflow)) {
-    failures.push("release attestation must run only when the repository is public");
+  if (!input.releaseWorkflow.includes(`RELEASE_REPOSITORY: ${RELEASE_REPOSITORY}`)) {
+    failures.push(`release workflow must target ${RELEASE_REPOSITORY}`);
+  }
+  for (const required of [
+    "uses: actions/create-github-app-token@",
+    "client-id: ${{ vars.CLARVIS_RELEASE_APP_CLIENT_ID }}",
+    "private-key: ${{ secrets.CLARVIS_RELEASE_APP_PRIVATE_KEY }}",
+    "owner: getclarvis",
+    "repositories: clarvis-releases",
+    "permission-contents: write",
+  ]) {
+    if (!input.releaseWorkflow.includes(required)) {
+      failures.push(`release workflow is missing scoped GitHub App setting: ${required}`);
+    }
+  }
+  if (!input.releaseWorkflow.includes("GH_TOKEN: ${{ steps.release-token.outputs.token }}")) {
+    failures.push("release publication must authenticate with the scoped GitHub App token");
+  }
+  if (!input.releaseWorkflow.includes('--repo "$RELEASE_REPOSITORY"')) {
+    failures.push("release mutation commands must name the public distribution repository");
+  }
+  const mapGate = input.releaseWorkflow.indexOf(
+    'bun run tooling/checks/release-assets.ts build/release "$GITHUB_REF_NAME"',
+  );
+  const releaseToken = input.releaseWorkflow.indexOf("uses: actions/create-github-app-token@");
+  const createRelease = input.releaseWorkflow.indexOf('gh release create "$GITHUB_REF_NAME"');
+  if (
+    mapGate < 0 ||
+    releaseToken < 0 ||
+    createRelease < 0 ||
+    mapGate > releaseToken ||
+    releaseToken > createRelease
+  ) {
+    failures.push("release assets must pass the final map-free allowlist gate before publication");
   }
   failures.push(...workflowSecurityFailures(input.workflows));
   for (const workspace of input.workspaceLicenses) {
     if (workspace.license !== "MIT") failures.push(`${workspace.path} license must be MIT`);
   }
-  if (input.product.repository?.url !== "git+https://github.com/getclarvis/clarvis.git") {
-    failures.push("root repository URL must identify getclarvis/clarvis");
+  if (input.product.repository?.url !== `git+https://github.com/${SOURCE_REPOSITORY}.git`) {
+    failures.push(`root repository URL must identify ${SOURCE_REPOSITORY}`);
   }
   if (!input.installSh.includes(`CLARVIS_VERSION:-${version}`)) {
     failures.push("install.sh default version differs from the product version");
   }
   if (!input.installPowerShell.includes(`else { "${version}" }`)) {
     failures.push("install.ps1 default version differs from the product version");
+  }
+  if (!input.installSh.includes(`CLARVIS_RELEASE_REPOSITORY:-${RELEASE_REPOSITORY}`)) {
+    failures.push(`install.sh must download from ${RELEASE_REPOSITORY}`);
+  }
+  if (!input.installPowerShell.includes(`else { "${RELEASE_REPOSITORY}" }`)) {
+    failures.push(`install.ps1 must download from ${RELEASE_REPOSITORY}`);
   }
   if (input.tag !== undefined && input.tag.length > 0 && input.tag !== `v${version}`) {
     failures.push(`release tag ${input.tag} differs from v${version}`);
@@ -170,8 +208,8 @@ export function checkReleaseReadiness(root: string): void {
   const tag = process.env.RELEASE_TAG;
   process.stdout.write(
     tag
-      ? "release readiness: product, installers, repository and supplied tag agree\n"
-      : "release readiness: product, installers and repository agree; no release tag supplied\n",
+      ? "release readiness: product, installers, source/distribution repositories and supplied tag agree\n"
+      : "release readiness: product, installers and source/distribution repositories agree; no release tag supplied\n",
   );
 }
 

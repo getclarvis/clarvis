@@ -52,6 +52,12 @@ jobs:
         with:
           bun-version: ${VERSION}
       - run: bun --version && bun --revision
+  publish:
+    steps:
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${VERSION}
+      - run: bun --version && bun --revision
 `,
   docker: `FROM oven/bun:${VERSION}-slim AS deps\nFROM oven/bun:${VERSION}-slim AS runtime\n`,
   rootManifest: JSON.stringify({
@@ -88,12 +94,17 @@ describe("bunVersionFailures", () => {
     expect(bunVersionFailures(snapshot).join("\n")).toContain(".github/workflows/ci.yml");
   });
 
-  test("requires attributable runtime evidence in CI and the canary", () => {
+  test("requires attributable runtime evidence in CI, release and the canary", () => {
     const snapshot = validSnapshot();
     snapshot.ci = snapshot.ci.replace("      - run: bun --version && bun --revision\n", "");
+    snapshot.release = snapshot.release.replace(
+      "      - run: bun --version && bun --revision\n",
+      "",
+    );
     snapshot.canary = snapshot.canary.replace("      - run: bun --version && bun --revision\n", "");
     const failures = bunVersionFailures(snapshot).join("\n");
     expect(failures).toContain("expected three Bun version/revision evidence steps, found 2");
+    expect(failures).toContain("expected two Bun version/revision evidence steps, found 1");
     expect(failures).toContain("expected one Bun version/revision evidence step, found 0");
   });
 

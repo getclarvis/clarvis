@@ -70,11 +70,20 @@ export function assertDetachedSourceMaps(input: {
   }
 }
 
-/** Assert the installed artifact contains no source-map payload. */
-export function assertInstallArtifact(input: { artifactPaths: readonly string[] }): void {
-  const sourceMap = input.artifactPaths.find((path) => path.endsWith(".map"));
+/** Assert the installed artifact contains neither external nor inline source-map payloads. */
+export function assertInstallArtifact(input: {
+  artifactPaths: readonly string[];
+  javascriptArtifacts?: readonly { path: string; source: string }[];
+}): void {
+  const sourceMap = input.artifactPaths.find((path) => /\.map$/i.test(path));
   if (sourceMap !== undefined) {
     throw new Error(`installed artifact must not contain source maps: ${sourceMap}`);
+  }
+  const inline = input.javascriptArtifacts?.find((artifact) =>
+    /sourceMappingURL\s*=\s*data:/i.test(artifact.source),
+  );
+  if (inline !== undefined) {
+    throw new Error(`installed artifact must not contain inline source maps: ${inline.path}`);
   }
 }
 

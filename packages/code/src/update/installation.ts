@@ -46,7 +46,7 @@ export async function managedInstallation(
   const rawRoot = environment.CLARVIS_INSTALL_ROOT;
   if (rawRoot === undefined || !isAbsolute(rawRoot)) {
     throw new Error(
-      "this Clarvis command is not a managed release; reinstall from https://github.com/getclarvis/clarvis",
+      "this Clarvis command is not a managed release; reinstall from https://github.com/getclarvis/clarvis-releases/releases",
     );
   }
   const root = resolve(rawRoot);

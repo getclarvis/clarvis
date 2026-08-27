@@ -895,12 +895,12 @@ it is a filesystem property). `:275-280` states the distinction explicitly: "the
 suppressed because the product is broken on Windows, not because they do not apply to it."
 
 **BUILD-26 (INV-313).** Every executable and declaration surface derives from the one exact Bun
-version in `mise.toml`: all three CI jobs, the release package matrix and their runtime evidence, the crash-canary default and
-its evidence, both Docker stages, all 19 `engines.bun` fields, root `@types/bun`, and the declared
-plus resolved lockfile entry.
-Production: `tooling/checks/bun-version.ts:47-152` validates the snapshot, and `package.json`
+version in `mise.toml`: all three CI jobs, the release package matrix, the release publication gate,
+their runtime evidence, the crash-canary default and its evidence, both Docker stages, all 19
+`engines.bun` fields, root `@types/bun`, and the declared plus resolved lockfile entry.
+Production: `bunVersionFailures` in `tooling/checks/bun-version.ts` validates the snapshot, and `package.json`
 (`scripts.lint:intent`) runs `check:bun-version` inside `lint:intent`.
-Test: the nine cases in `tooling/tests/unit/bun-version.test.ts:65-134` cover a valid snapshot and
+Test: the cases in `tooling/tests/unit/bun-version.test.ts` cover a valid snapshot and
 independent drift in the canonical pin, CI, runtime evidence, canary, Docker, engines, types, and
 lockfile.
 
@@ -938,12 +938,14 @@ Test: `tooling/checks/test-harness.ts` applies `checkRootBuild`; the three `chec
 
 **BUILD-30.** `bun run setup` requires the exact Bun version pinned in `mise.toml`, performs a frozen
 root install, and builds the linked installation with `sourcemap: "none"`; no `.map` may exist in
-that artifact. The ordinary `build` remains diagnostic and retains detached maps. Setup does not
+that artifact and no generated JavaScript may embed a `sourceMappingURL=data:` payload. The ordinary
+`build` remains diagnostic and retains detached maps. Setup does not
 download Bun or modify shell profiles.
 Production: `packages/code/package.json` (`scripts.build`, `scripts.build:install`, `scripts.setup`),
 `packages/code/tooling/setup.ts` (build phase), and `packages/code/tooling/artifact/build.ts`
 (`installBuild`, `main`).
-Test: `packages/code/tests/architecture/artifact-contract.test.ts` (installed artifact case) and
+Test: `packages/code/tests/architecture/artifact-contract.test.ts` (external and inline installed
+artifact cases) and
 `packages/code/tests/architecture/cli-fast-path.test.ts` (manifest install-build, pinned-version,
 frozen-lockfile, safe legacy-link and no-host-mutation cases).
 

@@ -23,7 +23,7 @@ function asset(
     size: 1024,
     digest: `sha256:${"a".repeat(64)}`,
     state: "uploaded",
-    browserDownloadUrl: `https://github.com/getclarvis/clarvis/releases/download/${tagName}/${name}`,
+    browserDownloadUrl: `https://github.com/getclarvis/clarvis-releases/releases/download/${tagName}/${name}`,
     ...over,
   };
 }

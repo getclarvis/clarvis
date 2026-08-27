@@ -1,12 +1,17 @@
 #!/usr/bin/env bun
 /** Verify the native portable archive, fast paths, and real-PTY first paint. */
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { releaseAssetName, releaseTarget } from "../../src/update-contract.ts";
-import { parseReleaseManifest, verifyReleaseTree } from "../../src/update/release-manifest.ts";
+import {
+  containsInlineSourceMap,
+  isReleaseSourceMapPath,
+  parseReleaseManifest,
+  verifyReleaseTree,
+} from "../../src/update/release-manifest.ts";
 import { bootAndObserve, makeCleanHome, readable } from "../artifact/pty.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -33,6 +38,25 @@ async function requireNotice(path: string, markers: readonly string[]): Promise<
   }
 }
 
+async function sourceMaps(root: string): Promise<string[]> {
+  const found: string[] = [];
+  const visit = async (directory: string, prefix: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      const relative = prefix.length === 0 ? entry.name : `${prefix}/${entry.name}`;
+      if (entry.isDirectory()) await visit(join(directory, entry.name), relative);
+      else if (isReleaseSourceMapPath(relative)) found.push(relative);
+      else if (
+        /\.(?:[cm]?[jt]sx?|css)$/i.test(entry.name) &&
+        containsInlineSourceMap(await readFile(join(directory, entry.name), "utf8"))
+      ) {
+        found.push(`${relative} (inline)`);
+      }
+    }
+  };
+  await visit(root, "");
+  return found.sort();
+}
+
 async function main(): Promise<void> {
   const target = releaseTarget();
   if (target === undefined) throw new Error("native platform is not a release target");
@@ -57,13 +81,14 @@ async function main(): Promise<void> {
     await mkdir(join(installRoot, "versions"), { recursive: true });
     await rename(join(extracted, "clarvis"), versionRoot);
     await writeFile(join(installRoot, "current"), `v${product.version}\n`);
+    const maps = await sourceMaps(versionRoot);
+    if (maps.length > 0) {
+      throw new Error(`portable archive contains source maps: ${maps.join(", ")}`);
+    }
     const manifest = parseReleaseManifest(
       JSON.parse(await readFile(join(versionRoot, "release.json"), "utf8")),
       { version: product.version, target },
     );
-    if (manifest.files.some((file) => file.path.endsWith(".map"))) {
-      throw new Error("portable archive contains source maps");
-    }
     await verifyReleaseTree(versionRoot, manifest);
     await requireNotice(join(versionRoot, "THIRD_PARTY_NOTICES.md"), [
       "Bun 1.4.0",

@@ -55,7 +55,7 @@ test("a managed installation with no eligible release is a clean no-op", async (
     join(versionRoot, "release.json"),
     JSON.stringify({
       schema: 1,
-      repository: "getclarvis/clarvis",
+      repository: "getclarvis/clarvis-releases",
       version: "0.0.1-beta",
       target,
       files: [{ path: "placeholder", size: 0, sha256: "a".repeat(64) }],
@@ -108,7 +108,7 @@ test("an eligible verified archive is staged, smoked and activated last", async 
     join(oldRoot, "release.json"),
     JSON.stringify({
       schema: 1,
-      repository: "getclarvis/clarvis",
+      repository: "getclarvis/clarvis-releases",
       version: "0.0.1-beta",
       target,
       files: [{ path: "placeholder", size: 0, sha256: "a".repeat(64) }],
@@ -118,7 +118,7 @@ test("an eligible verified archive is staged, smoked and activated last", async 
   await writeFile(join(buildRoot, "packages", "code", "src", "cli.ts"), "");
   const manifest = {
     schema: 1,
-    repository: "getclarvis/clarvis",
+    repository: "getclarvis/clarvis-releases",
     version: "0.0.2-beta",
     target,
     files: await manifestFiles(buildRoot),
@@ -133,7 +133,7 @@ test("an eligible verified archive is staged, smoked and activated last", async 
   const archive = await Bun.file(archivePath).bytes();
   const digest = createHash("sha256").update(archive).digest("hex");
   const assetName = `clarvis-v0.0.2-beta-${target}.tar.gz`;
-  const assetUrl = `https://github.com/getclarvis/clarvis/releases/download/v0.0.2-beta/${assetName}`;
+  const assetUrl = `https://github.com/getclarvis/clarvis-releases/releases/download/v0.0.2-beta/${assetName}`;
   let calls = 0;
   const fetcher: ReleaseFetch = () => {
     calls += 1;

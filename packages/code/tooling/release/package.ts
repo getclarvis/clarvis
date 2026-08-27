@@ -16,8 +16,17 @@ import {
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { releaseAssetName, releaseTarget, type ReleaseTarget } from "../../src/update-contract.ts";
-import { manifestFiles } from "../../src/update/release-manifest.ts";
+import {
+  RELEASE_REPOSITORY,
+  releaseAssetName,
+  releaseTarget,
+  type ReleaseTarget,
+} from "../../src/update-contract.ts";
+import {
+  containsInlineSourceMap,
+  isReleaseSourceMapPath,
+  manifestFiles,
+} from "../../src/update/release-manifest.ts";
 import { assertRuntimePackageRoot, runtimePackageCandidates } from "./runtime-package-discovery.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -171,7 +180,20 @@ async function removeSourceMaps(directory: string): Promise<void> {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name);
     if (entry.isDirectory()) await removeSourceMaps(path);
-    else if (entry.isFile() && entry.name.endsWith(".map")) await rm(path);
+    else if (entry.isFile() && isReleaseSourceMapPath(entry.name)) await rm(path);
+  }
+}
+
+async function assertNoInlineSourceMaps(directory: string): Promise<void> {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) await assertNoInlineSourceMaps(path);
+    else if (
+      /\.(?:[cm]?[jt]sx?|css)$/i.test(entry.name) &&
+      containsInlineSourceMap(await readFile(path, "utf8"))
+    ) {
+      throw new Error(`portable releases must not contain inline source maps: ${path}`);
+    }
   }
 }
 
@@ -207,15 +229,16 @@ async function main(): Promise<void> {
     await copyRuntime(payload);
     const closure = await runtimeClosure(target);
     await copyDependencies(payload, closure);
-    await removeSourceMaps(join(payload, "node_modules"));
+    await removeSourceMaps(payload);
+    await assertNoInlineSourceMaps(payload);
     const release = {
       schema: 1 as const,
-      repository: "getclarvis/clarvis" as const,
+      repository: RELEASE_REPOSITORY,
       version,
       target,
       files: await manifestFiles(payload),
     };
-    if (release.files.some((file) => file.path.endsWith(".map"))) {
+    if (release.files.some((file) => isReleaseSourceMapPath(file.path))) {
       throw new Error("portable releases must not contain source maps");
     }
     await writeFile(join(payload, "release.json"), `${JSON.stringify(release, null, 2)}\n`);

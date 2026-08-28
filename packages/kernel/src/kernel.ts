@@ -233,6 +233,8 @@ export interface CreateKernelOptions {
   globalConfigDir?: string;
   /** Host-owned Environment control plane; defaults to immutable builtin:default. */
   environmentService?: EnvironmentService;
+  /** Exact active plugin refs from the host's pinned Environment snapshot. */
+  activePlugins?: () => readonly EnvironmentPluginRef[];
   /** Teardown hook invoked by {@link InProcessKernel.close}. */
   dispose?: () => Promise<void>;
   /** Provides sandbox inspection to the config service; when omitted it is unavailable. */
@@ -454,6 +456,8 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   const ownerEntries = new Map<string, OwnerCacheEntry>();
   const retiringOwners = new Map<string, Promise<void>>();
   let memoryRecoveryStarted = false;
+  let selectedPluginMutation = false;
+  let selectedPluginRecompositionRequired = false;
 
   const ownerOccupancy = (): number => ownerEntries.size + retiringOwners.size;
 
@@ -659,6 +663,18 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
           if (ownerEntries.get(owner) !== entry) {
             throw kernelError("unavailable", `owner '${owner}' is no longer resident`);
           }
+          if (selectedPluginRecompositionRequired) {
+            throw kernelError(
+              "unavailable",
+              "a selected plugin changed; reconnect the kernel before starting another run",
+            );
+          }
+          if (selectedPluginMutation) {
+            throw kernelError(
+              "conflict",
+              "a selected plugin is changing; reconnect after the mutation before starting a run",
+            );
+          }
           if (entry.timer !== undefined) {
             clearTimeout(entry.timer);
             delete entry.timer;
@@ -790,13 +806,34 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   const plugins = createPluginService({
     globalDir,
     workspaceRoot: opts.workspaceRoot,
-    enabledPlugins: () => {
-      const snapshot = opts.configStore.readSettings();
-      if (snapshot.active_plugins !== undefined) return [...snapshot.active_plugins];
-      const merged = snapshot.merged as Record<string, unknown>;
-      return Array.isArray(merged.enabledPlugins)
-        ? (merged.enabledPlugins as EnvironmentPluginRef[])
-        : [];
+    enabledPlugins:
+      opts.activePlugins ??
+      (() => {
+        const snapshot = opts.configStore.readSettings();
+        if (snapshot.active_plugins !== undefined) return [...snapshot.active_plugins];
+        const merged = snapshot.merged as Record<string, unknown>;
+        return Array.isArray(merged.enabledPlugins)
+          ? (merged.enabledPlugins as EnvironmentPluginRef[])
+          : [];
+      }),
+    withSelectedMutation: async (_ref, mutation) => {
+      if (selectedPluginMutation) {
+        throw kernelError("conflict", "another selected plugin mutation is already in progress");
+      }
+      if ([...ownerEntries.values()].some((entry) => entry.runRefs > 0)) {
+        throw kernelError("conflict", "finish active runs before changing a selected plugin");
+      }
+      selectedPluginMutation = true;
+      try {
+        if ([...ownerEntries.values()].some((entry) => entry.runRefs > 0)) {
+          throw kernelError("conflict", "finish active runs before changing a selected plugin");
+        }
+        const result = await mutation();
+        selectedPluginRecompositionRequired = true;
+        return result;
+      } finally {
+        selectedPluginMutation = false;
+      }
     },
     environment: opts.environment ?? process.env,
     lifecycle,

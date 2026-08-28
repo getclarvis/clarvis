@@ -186,6 +186,30 @@ describe("plugin contributions", () => {
     ]);
   });
 
+  it("rejects contribution drift after the Environment pins a plugin snapshot", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "atlas", {
+      mcpServers: "./.mcp.json",
+    });
+    const companion = join(dir, ".mcp.json");
+    writeFileSync(
+      companion,
+      JSON.stringify({ mcpServers: { charts: { command: "atlas-mcp-v1" } } }),
+    );
+    const loaded = contributions();
+    loaded.pin(refs("atlas"));
+
+    expect(loaded.mcpServers(refs("atlas"))[0]?.declaration.command).toBe("atlas-mcp-v1");
+    expect(() => loaded.mcpServers([])).toThrow(/active plugin selection changed/);
+    writeFileSync(
+      companion,
+      JSON.stringify({ mcpServers: { charts: { command: "atlas-mcp-v2" } } }),
+    );
+
+    expect(() => loaded.settingsScopes(refs("atlas"))).toThrow(/reconnect the kernel/);
+    expect(() => loaded.agents(refs("atlas"))).toThrow(/reconnect the kernel/);
+    expect(() => loaded.skillRoots(refs("atlas"))).toThrow(/reconnect the kernel/);
+  });
+
   it("keeps the rest of a plugin when its companion server document is unusable", () => {
     const dir = install(
       globalPaths(globalDir).pluginsDir,

@@ -660,6 +660,28 @@ test("Tasks control-plane methods stay thin pass-throughs to the kernel service"
   ]);
 });
 
+test("plugin installs forward the selected inventory target to the kernel", async () => {
+  let target: unknown;
+  const kernel = Object.assign(fakeKernel({}), {
+    plugins: {
+      install: async (_url: string, _subdir: string | undefined, input: unknown) => {
+        target = input;
+        return {} as never;
+      },
+    } as unknown as KernelClient["plugins"],
+  }) as KernelClient;
+  const c = createKernelRunClient({
+    createKernel: async () => kernel,
+    callbacks: { onEvent: () => {} },
+  });
+  await c.connect();
+
+  await c.plugins.install("https://example.test/plugin.git", undefined, { source: "clarvis" });
+
+  expect(target).toEqual({ source: "clarvis" });
+  await c.dispose();
+});
+
 test("every non-run control-plane method stays a thin pass-through to its kernel service", async () => {
   const calls: string[] = [];
   const service = (name: string): object =>

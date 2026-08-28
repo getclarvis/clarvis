@@ -269,6 +269,33 @@ describe("Agent Plugins v1 package", () => {
     expect(notes.join(" ")).toContain("MCP is disabled for this plugin");
   });
 
+  it("drops only a portable MCP entry that exceeds a Clarvis host bound", () => {
+    const data = join(root, "runtime-data");
+    mkdirSync(data, { recursive: true });
+    write("plugin.json", {
+      $schema: AGENT_PLUGIN_SCHEMA,
+      name: "portable.plugin",
+    });
+    write(
+      "skills/research/SKILL.md",
+      "---\nname: research\ndescription: Research instructions.\n---\n",
+    );
+    write("mcp.json", {
+      $schema: AGENT_MCP_SCHEMA,
+      mcpServers: {
+        good: { type: "stdio", command: "node" },
+        oversized: { type: "stdio", command: "x".repeat(8193) },
+      },
+    });
+
+    const { manifest, error, notes } = resolveAgentPlugin(data);
+
+    expect(error).toBeUndefined();
+    expect(manifest?.skills).toEqual([join(realpathSync(root), "skills")]);
+    expect(Object.keys(manifest?.mcpServers ?? {})).toEqual(["good"]);
+    expect(notes.join(" ")).toContain("'oversized' is not contributed");
+  });
+
   it("rejects an unsupported portable manifest schema instead of guessing", () => {
     write("plugin.json", {
       $schema: "https://agent-plugins.org/schemas/2.0.0/plugin.schema.json",

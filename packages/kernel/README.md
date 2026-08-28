@@ -103,12 +103,18 @@ inherits that builtin activation list. Plugin identity is always `{ scope, sourc
 substitutes for another. Workspace
 definitions are shareable authored files, selections stay machine-local, workspace plugin
 activation participates in workspace trust, and selection/definition changes require reconnect.
-Preview tokens bind the exact target, persistence scope, and prior selection bytes; definition and
-selection mutations serialize through local leases. Every run records the resolved Environment id
-and fingerprint. MCP servers contributed by an active plugin are attached to every run and marked
-`auto_tools`: their discovered tools become available to every effective agent for that run even
-when the persisted agent profile names none. This is part of atomic plugin activation, not a profile
-mutation; operator-defined MCP servers remain profile-selected.
+Preview tokens resolve the target through normal workspace-over-global precedence and bind both
+selection documents; definition and selection mutations serialize through local leases. The pinned
+fingerprint includes resolved plugin manifests and companion declarations, agent files, and packaged
+skill bodies/resources, plus selected standalone skill bodies/resources. A later contribution drift
+fails closed until reconnect. Workspace-trust
+transitions recompose that extension snapshot only while no run is active, and selected plugin
+update/uninstall uses the same kernel-owned exclusion boundary and blocks later runs until reconnect.
+Every run records the resolved Environment id and fingerprint. MCP servers contributed by an active
+plugin are attached to every run and marked `auto_tools`: their discovered tools become available to
+every effective agent for that run even when the persisted agent profile names none. This is part of
+atomic plugin activation, not a profile mutation; operator-defined MCP servers remain
+profile-selected.
 
 Multi-owner hosts must continue to pass owner-aware stores explicitly. The
 kernel publishes the standard file-backed composition without silently enabling

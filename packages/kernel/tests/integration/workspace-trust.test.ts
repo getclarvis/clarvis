@@ -10,6 +10,7 @@ import {
 } from "../../src/config.ts";
 import { globalPaths } from "@clarvis/paths";
 import { stripWorkspaceSubscriptionProviders } from "../../src/config/workspace-trust.ts";
+import { kernelError } from "../../src/core/errors.ts";
 
 const HOOK = {
   event: "session_start",
@@ -248,6 +249,38 @@ describe("approval lifts the withholding", () => {
     const changed = await config.getSettings();
     expect(changed.workspace_trust?.state).toBe("changed");
     expect(changed.withheld_workspace_fields).toEqual(["environment"]);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("refuses Environment trust transitions before mutating the trust store during a run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-wstrust-active-"));
+    const globalDir = join(root, "global");
+    let running = true;
+    const config = createConfigService(
+      createFileConfigStore({
+        workspaceRoot: root,
+        globalDir,
+        environment: {
+          resolvePlugins: () => [],
+          workspaceTrustSurface: () => ({
+            environment: { scope: "workspace", name: "project" },
+            definition_revision: "sha256:project",
+            plugins: [{ scope: "workspace", source: "clarvis", name: "runner" }],
+          }),
+          assertWorkspaceTrustTransitionAllowed: () => {
+            if (running) throw kernelError("conflict", "finish active runs first");
+          },
+        },
+      }),
+    );
+
+    await expect(config.approveWorkspace()).rejects.toMatchObject({ code: "conflict" });
+    expect((await config.getSettings()).workspace_trust?.state).toBe("unapproved");
+    running = false;
+    expect((await config.approveWorkspace()).workspace_trust?.state).toBe("trusted");
+    running = true;
+    await expect(config.revokeWorkspace()).rejects.toMatchObject({ code: "conflict" });
+    expect((await config.getSettings()).workspace_trust?.state).toBe("trusted");
     rmSync(root, { recursive: true, force: true });
   });
 });

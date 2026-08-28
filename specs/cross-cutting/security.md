@@ -622,6 +622,14 @@ Transitions:
 | `trusted`/`inert` | operator write through `ConfigService` | re-recorded over the new surface | `withOperatorWrite` (`packages/kernel/src/config/file-config-store.ts:564-575`) |
 | `unapproved`/`changed` | operator write through `ConfigService` | unchanged | `if (!carried) return out` (`:527-528`) |
 
+An explicit approve/revoke is refused with `conflict` while any run is active, before the trust file
+is changed. At an idle boundary, `resolveActive` recomposes the selected workspace Environment (and
+workspace-derived `builtin:default`) so approval admits its plugin units and revocation withholds
+them immediately (`assertWorkspaceTrustTransitionAllowed` and `resolveActive` in
+`packages/kernel/src/environments/environment-manager.ts`; the idle/active transition case in
+`packages/kernel/tests/integration/environment-manager.test.ts` and the pre-write storage case in
+`packages/kernel/tests/integration/workspace-trust.test.ts`).
+
 `writeWorkspaceTrust` throws rather than overwrite when the existing store cannot be parsed
 (`packages/kernel/src/config/workspace-trust.ts:350-352`) — but `withOperatorWrite` swallows that throw, because the settings or
 agent file has already landed by then (`packages/kernel/src/config/file-config-store.ts:569-573`).

@@ -319,8 +319,8 @@ Portable components use the v1 fixed locations and their own failure boundaries:
   full portable Agent Skills frontmatter subset (identity, license, compatibility, metadata, and
   space-separated `allowed-tools`), and cannot escape the package through a symlink;
 - MCP is read only from root `mcp.json` with the canonical v1 MCP schema. An invalid top-level MCP
-  document disables MCP for that plugin without removing its skills; an invalid server removes only
-  that server;
+  document disables MCP for that plugin without removing its skills; an invalid server, including
+  one that exceeds a Clarvis host bound after normalization, removes only that server;
 - stdio, streamable HTTP, and SSE declarations normalize to Clarvis transports. Stdio receives
   persistent `PLUGIN_ROOT` and `PLUGIN_DATA`, expands those two placeholders once in `args`, `env`,
   and `cwd`, and disables Clarvis's ordinary environment interpolation afterward. URLs and headers
@@ -863,6 +863,13 @@ an independently verified guarantee.
 in, and restores the backup if that fails (`packages/kernel/src/adapters/filesystem/plugin-repository.ts:205-213`).
 
 `uninstall` (`packages/kernel/src/plugins/plugin-service.ts:440-444`) removes the global directory or throws `not_found`.
+For an exact plugin selected by the process Environment, update/replacement and uninstall enter a
+kernel-owned exclusion boundary: an active run returns `conflict`, and run start cannot race the
+filesystem mutation. A successful mutation marks the kernel snapshot stale and later run starts
+return `unavailable` until reconnect. Unselected exact installations retain ordinary independent
+lifecycle behavior (`mutateInstalled` and `withSelectedMutation` in
+`packages/kernel/src/plugins/plugin-service.ts` and `packages/kernel/src/kernel.ts`; pinned by the
+selected lifecycle case in `packages/kernel/tests/integration/run-service.smoke.test.ts`).
 
 `validateGitUrl` (`packages/kernel/src/plugins/plugin-service.ts:46-68`) refusal order: empty → leading `-` (git flag) → `ext::`
 anywhere (arbitrary command) → local filesystem path → `http://`/`git://` cleartext → finally accept
@@ -1215,9 +1222,10 @@ All of the following are derived directly from this document's own source and te
     the sparse-file tests: `packages/loop/tests/integration/plugin-agents.test.ts:36-45`, `packages/kernel/tests/integration/plugin-manifest.test.ts:98-103`.
 
 44. **A plugin contributes only when its exact scoped installation belongs to the process-pinned
-    Environment.** Every `PluginContributions` method takes the resolved selection, and `dirFor`
-    reads only the named scope. Production:
-    `packages/kernel/src/plugins/plugin-contributions.ts:33-82`, `:201-213`; composition in
+    Environment, and later bytes cannot enter under that snapshot.** Every `PluginContributions`
+    method takes the resolved selection; `pin` captures its exact loadables and digest, while
+    `assertPinnedSnapshot` rejects drift before any later lookup. Production:
+    `packages/kernel/src/plugins/plugin-contributions.ts`; composition in
     `packages/kernel/src/environments/environment-manager.ts`. Test:
     `packages/kernel/tests/integration/environment-manager.test.ts` and
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
@@ -1444,8 +1452,9 @@ All of the following are derived directly from this document's own source and te
 83. **Portable skills and MCP obey component-local failure boundaries.** Strict immediate-child
     Agent Skills discovery, complete portable frontmatter validation, and symlink confinement can
     drop only the offending skill surface; an invalid top-level `mcp.json` drops MCP only, and an
-    invalid server drops only that server. Production: `pluginSkillScanRoots` and
-    `normalizeAgentMcp` in `packages/kernel/src/plugins/plugin-manifest.ts`, plus
+    invalid server or post-normalization host-bound violation drops only that server. Production:
+    `pluginSkillScanRoots`, `normalizeAgentMcp`, and `mcpServerPluginSchema` validation in
+    `packages/kernel/src/plugins/plugin-manifest.ts`, plus
     `assertRootValidation` in `packages/skills/src/registry.ts`. Test: the `Agent Plugins v1 package`
     cases in `packages/kernel/tests/integration/plugin-manifest.test.ts` and the Agent-plugin policy
     cases in `packages/skills/tests/integration/{discovery,scan}.test.ts`.
@@ -1499,6 +1508,8 @@ contributes no roots — but still contributes agents, hooks and MCP servers (`:
 |---|---|---|
 | `invalid_request` | manifest unusable at install; update naming a different plugin; subdir escaping the checkout; subdir not a directory; not installed from git; install-record over budget; name already installed | `packages/kernel/src/plugins/plugin-service.ts:390`, `:418`; `packages/kernel/src/adapters/git/plugin-fetcher.ts:72-79`, `:164`; `packages/kernel/src/adapters/filesystem/plugin-repository.ts:31-34`, `:189-192` |
 | `not_found` | update/uninstall of a plugin not installed globally; `approveHook` for an undeclared fingerprint | `packages/kernel/src/plugins/plugin-service.ts:408`, `:430`, `:442`, `:452` |
+| `conflict` | selected plugin update/uninstall overlaps an active run or another selected-plugin mutation | `withSelectedMutation` in `packages/kernel/src/kernel.ts` |
+| `unavailable` | a selected plugin changed successfully and the stale kernel has not reconnected | selected-plugin guard in `withOwnerRunLease` in `packages/kernel/src/kernel.ts` |
 | `resource_exhausted` | install-root fanout | `packages/kernel/src/adapters/filesystem/plugin-repository.ts:165` |
 | plain `Error` | `validateGitUrl` refusals; `git <cmd> failed: …` | `packages/kernel/src/plugins/plugin-service.ts:49-66`; `packages/kernel/src/adapters/git/plugin-fetcher.ts:84-87` |
 | plain `Error` | `hook-trust.json` unreadable on write | `packages/kernel/src/plugins/hook-trust.ts:81` |

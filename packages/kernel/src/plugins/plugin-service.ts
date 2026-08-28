@@ -308,6 +308,8 @@ export interface PluginServiceOptions {
   workspaceRoot?: string;
   /** Returns exact plugin installations active in the resolved Environment. */
   enabledPlugins: () => readonly PluginRef[];
+  /** Kernel-owned exclusion boundary for a selected plugin's filesystem mutation. */
+  withSelectedMutation?<T>(ref: PluginRef, mutation: () => Promise<T>): Promise<T>;
   /** Asynchronous process port; defaults to the Node/Bun child-process adapter. */
   processRunner?: ProcessRunner;
   /** Immutable environment inherited by Git with interactive prompts disabled. */
@@ -402,6 +404,14 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
     return enabledKeys();
   }
 
+  /** Apply the kernel's run/mutation exclusion only to an exact active installation. */
+  async function mutateInstalled<T>(ref: PluginRef, mutation: () => Promise<T>): Promise<T> {
+    if (!enabledKeys().has(pluginRefId(ref)) || opts.withSelectedMutation === undefined) {
+      return mutation();
+    }
+    return opts.withSelectedMutation(ref, mutation);
+  }
+
   /** List every installed plugin, retaining all same-name exact installations. */
   async function list(): Promise<PluginView[]> {
     const installed = await repository.list();
@@ -473,6 +483,7 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
      * @returns the updated {@link PluginView}.
      * @throws an `invalid_request` kernel error when the plugin was not installed
      *   from git (no `.git`), or a git error if the fetch/reset fails.
+     * @throws a `conflict` kernel error when the selected plugin overlaps an active run.
      */
     async update(ref): Promise<PluginView> {
       ref = checkedPluginRef(ref);
@@ -483,34 +494,35 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
       if (plugin === null) {
         throw kernelError("not_found", `'${pluginRefLabel(ref)}' is not installed`);
       }
-      const abort = new AbortController();
-      const release = opts.lifecycle?.register({ close: () => abort.abort() });
-      let prepared: Awaited<ReturnType<PluginFetcher["update"]>> = undefined;
-      try {
-        prepared = await fetcher.update(plugin, abort.signal);
-        if (prepared !== undefined) {
-          const inspected = await repository.inspect(prepared.root);
-          const { manifest, error } = readManifest(inspected);
-          if (manifest?.name !== ref.name) {
-            throw kernelError(
-              "invalid_request",
-              `refusing update for '${pluginRefLabel(ref)}': ${error ?? `manifest names '${manifest?.name ?? "unknown"}'`}`,
-            );
+      return mutateInstalled(ref, async () => {
+        const abort = new AbortController();
+        const release = opts.lifecycle?.register({ close: () => abort.abort() });
+        let prepared: Awaited<ReturnType<PluginFetcher["update"]>> = undefined;
+        try {
+          prepared = await fetcher.update(plugin, abort.signal);
+          if (prepared !== undefined) {
+            const replacement = prepared;
+            const inspected = await repository.inspect(replacement.root);
+            const { manifest, error } = readManifest(inspected);
+            if (manifest?.name !== ref.name) {
+              throw kernelError(
+                "invalid_request",
+                `refusing update for '${pluginRefLabel(ref)}': ${error ?? `manifest names '${manifest?.name ?? "unknown"}'`}`,
+              );
+            }
+            const enabled = await currentEnabledKeys();
+            return viewFor(await repository.replace(replacement.root, ref, replacement), enabled);
           }
-          return viewFor(
-            await repository.replace(prepared.root, ref, prepared),
-            await currentEnabledKeys(),
-          );
+        } finally {
+          await prepared?.dispose();
+          release?.();
         }
-      } finally {
-        await prepared?.dispose();
-        release?.();
-      }
-      const updated = await repository.get(ref);
-      if (updated === null) {
-        throw kernelError("not_found", `'${pluginRefLabel(ref)}' is not installed`);
-      }
-      return viewFor(updated, await currentEnabledKeys());
+        const updated = await repository.get(ref);
+        if (updated === null) {
+          throw kernelError("not_found", `'${pluginRefLabel(ref)}' is not installed`);
+        }
+        return viewFor(updated, await currentEnabledKeys());
+      });
     },
 
     /**
@@ -518,12 +530,15 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
      *
      * @param ref - the exact global installation to remove.
      * @throws a `not_found` kernel error when the plugin is not installed globally.
+     * @throws a `conflict` kernel error when the selected plugin overlaps an active run.
      */
     async uninstall(ref): Promise<void> {
       ref = checkedPluginRef(ref);
-      if (!(await repository.remove(ref))) {
-        throw kernelError("not_found", `'${pluginRefLabel(ref)}' is not installed`);
-      }
+      await mutateInstalled(ref, async () => {
+        if (!(await repository.remove(ref))) {
+          throw kernelError("not_found", `'${pluginRefLabel(ref)}' is not installed`);
+        }
+      });
     },
 
     hooks: hookReviews,

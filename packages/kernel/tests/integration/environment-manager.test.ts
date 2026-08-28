@@ -423,6 +423,63 @@ describe("Environment manager", () => {
     expect(manager().resolveActive([], TRUSTED).id).toBe("global:minimal");
   });
 
+  it("previews a global write through workspace selection precedence", async () => {
+    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {});
+    const setup = manager();
+    const operator = { scope: "global" as const, name: "operator" };
+    const local = { scope: "workspace" as const, name: "local" };
+    await create(setup, operator, definition({ description: "operator" }));
+    await create(
+      setup,
+      local,
+      definition({ description: "local", plugins: [pluginRef("runner", "workspace")] }),
+    );
+    const workspaceSelection = workspaceStatePaths(workspaceRoot, {
+      env: { CLARVIS_HOME: globalDir },
+    }).environmentSelectionFile;
+    mkdirSync(join(workspaceSelection, ".."), { recursive: true });
+    writeFileSync(workspaceSelection, JSON.stringify({ schema_version: 1, environment: local }));
+    const target = manager();
+    const unapproved: WorkspaceTrustVerdict = {
+      state: "unapproved",
+      fingerprint: `sha256:${"4".repeat(64)}`,
+    };
+    target.bindRuntime({
+      readWorkspaceTrust: () => unapproved,
+      approveWorkspace: () => {
+        throw new Error("a shadowed global write must not approve workspace trust");
+      },
+    });
+    const current = target.resolveActive([], unapproved);
+    expect(current.id).toBe("workspace:local");
+    expect(current.status).toBe("degraded");
+
+    const preview = await target.service.preview(operator, { selection_scope: "global" });
+
+    expect(preview.target.id).toBe("workspace:local");
+    expect(preview.target.fingerprint).toBe(current.fingerprint);
+    expect(preview.requires_workspace_trust).toBeFalse();
+    expect(preview.delta.plugins_entering).toEqual([]);
+    expect(preview.delta.plugins_leaving).toEqual([]);
+    writeFileSync(
+      workspaceSelection,
+      `${JSON.stringify({ schema_version: 1, environment: local }, null, 2)}\n`,
+    );
+    await expect(
+      target.service.select(operator, {
+        selection_scope: "global",
+        preview_token: preview.token,
+      }),
+    ).rejects.toMatchObject({ code: "conflict" });
+
+    const fresh = await target.service.preview(operator, { selection_scope: "global" });
+    await target.service.select(operator, {
+      selection_scope: "global",
+      preview_token: fresh.token,
+    });
+    expect(manager().resolveActive([], unapproved).id).toBe("workspace:local");
+  });
+
   it("previews and compare-and-swaps the fallback before clearing a local selection", async () => {
     const setup = manager();
     await create(
@@ -517,6 +574,85 @@ describe("Environment manager", () => {
       approveWorkspace: () => undefined,
     });
     expect(reconnected.resolveActive([], trust).fingerprint).toBe(preview.target.fingerprint);
+  });
+
+  it("recomposes selected workspace plugins when trust changes at an idle boundary", async () => {
+    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {
+      mcpServers: { files: { command: "runner" } },
+    });
+    const setup = manager();
+    const ref = { scope: "workspace" as const, name: "project" };
+    await create(setup, ref, definition({ plugins: [pluginRef("runner", "workspace")] }));
+    const selection = workspaceStatePaths(workspaceRoot, {
+      env: { CLARVIS_HOME: globalDir },
+    }).environmentSelectionFile;
+    mkdirSync(join(selection, ".."), { recursive: true });
+    writeFileSync(selection, JSON.stringify({ schema_version: 1, environment: ref }));
+    let running = false;
+    let trust: WorkspaceTrustVerdict = {
+      state: "unapproved",
+      fingerprint: `sha256:${"3".repeat(64)}`,
+    };
+    const target = manager();
+    target.bindRuntime({
+      readWorkspaceTrust: () => trust,
+      approveWorkspace: () => undefined,
+      hasActiveRuns: () => running,
+    });
+
+    const withheld = target.resolveActive([], trust);
+    expect(withheld.plugins[0]).toMatchObject({ active: false });
+    running = true;
+    trust = { ...trust, state: "trusted", approved: trust.fingerprint };
+    expect(() => target.resolveActive([], trust)).toThrow(/finish active runs/);
+    running = false;
+
+    const approved = target.resolveActive([], trust);
+    expect(approved.plugins[0]).toMatchObject({ active: true });
+    expect(approved.fingerprint).not.toBe(withheld.fingerprint);
+    trust = { ...trust, state: "unapproved" };
+    const revoked = target.resolveActive([], trust);
+    expect(revoked.plugins[0]).toMatchObject({ active: false });
+  });
+
+  it("fingerprints resolved companion MCP and plugin skill bytes", async () => {
+    const dir = installPlugin(globalPaths(globalDir).pluginsDir, "atlas", {
+      mcpServers: "./.mcp.json",
+      skills: "./skills",
+    });
+    const companion = join(dir, ".mcp.json");
+    writeFileSync(companion, JSON.stringify({ mcpServers: { docs: { command: "atlas-v1" } } }));
+    writeSkill(join(dir, "skills"), "atlas-guide");
+    const setup = manager();
+    const ref = { scope: "global" as const, name: "atlas" };
+    await create(setup, ref, definition({ plugins: [pluginRef("atlas")] }));
+
+    const before = manager("global:atlas").resolveActive([], TRUSTED);
+    writeFileSync(companion, JSON.stringify({ mcpServers: { docs: { command: "atlas-v2" } } }));
+    const afterMcp = manager("global:atlas").resolveActive([], TRUSTED);
+    writeFileSync(
+      join(dir, "skills", "atlas-guide", "SKILL.md"),
+      "---\nname: atlas-guide\ndescription: changed\n---\n\nUse changed guidance.\n",
+    );
+    const afterSkill = manager("global:atlas").resolveActive([], TRUSTED);
+
+    expect(afterMcp.fingerprint).not.toBe(before.fingerprint);
+    expect(afterSkill.fingerprint).not.toBe(afterMcp.fingerprint);
+  });
+
+  it("fingerprints standalone skill resources and rejects their drift until reconnect", () => {
+    const root = globalPaths(globalDir).skillsDir;
+    writeSkill(root, "research");
+    const resource = join(root, "research", "reference.md");
+    writeFileSync(resource, "version one\n");
+    const target = manager();
+    const before = target.resolveActive([], TRUSTED);
+
+    writeFileSync(resource, "version two\n");
+
+    expect(() => target.skillRoots()).toThrow(/reconnect the kernel/);
+    const after = manager().resolveActive([], TRUSTED);
+    expect(after.fingerprint).not.toBe(before.fingerprint);
   });
 
   it("requires a fresh workspace approval when switching between executable Environments", async () => {

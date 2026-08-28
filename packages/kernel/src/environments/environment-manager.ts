@@ -165,7 +165,8 @@ interface PreviewEntry {
         kind: "select";
         ref: EnvironmentRef;
         scope: EnvironmentSelectionScope;
-        selectionRevision: string | null;
+        effective: SelectedEnvironment;
+        selectionRevisions: Record<EnvironmentSelectionScope, string | null>;
       }
     | {
         kind: "clear";
@@ -180,6 +181,8 @@ interface PreviewEntry {
 export interface EnvironmentRuntimeBinding {
   readWorkspaceTrust(): WorkspaceTrustVerdict;
   approveWorkspace(): void;
+  /** Whether changing executable trust would mutate an in-flight run snapshot. */
+  hasActiveRuns?(): boolean;
 }
 
 /** File-backed Environment manager options. */
@@ -436,6 +439,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
   skillRoots(): SkillRootInput[];
   runRef(): EnvironmentRunRef;
   workspaceTrustSurface(): unknown;
+  assertWorkspaceTrustTransitionAllowed(): void;
 } {
   const logger = options.logger ?? NOOP_LOGGER;
   const global = globalPaths(options.globalDir);
@@ -611,6 +615,24 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     return { ref: BUILTIN_REF, origin: "builtin" };
   };
 
+  const selectedAfterWrite = (
+    ref: EnvironmentRef,
+    scope: EnvironmentSelectionScope,
+  ): SelectedEnvironment => {
+    if (scope === "workspace") return { ref, origin: "workspace" };
+    const local = selectionFromFile("workspace");
+    if (local.error !== undefined) {
+      return {
+        ref: { scope: "workspace", name: "invalid-selection" },
+        origin: "workspace",
+        error: local.error,
+      };
+    }
+    return local.ref === undefined
+      ? { ref, origin: "global" }
+      : { ref: local.ref, origin: "workspace" };
+  };
+
   const standaloneInventory = (): StandaloneInventoryEntry[] => {
     const out: StandaloneInventoryEntry[] = [];
     for (const [rootOrder, root] of standardRoots.entries()) {
@@ -641,7 +663,12 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
             digest: fingerprintOf({
               metadata: info.metadata,
               body: content.body,
-              resources: content.resources.map((resource) => resource.rel).sort(),
+              resources: content.resources
+                .map((resource) => ({
+                  rel: resource.rel,
+                  content: skills.readResource(info.name, resource.rel),
+                }))
+                .sort((left, right) => left.rel.localeCompare(right.rel)),
             }),
           });
         }
@@ -674,30 +701,49 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       .map((entry) => entry.ref);
   };
 
-  const pluginSkillNames = (
+  const pluginSkillInventory = (
     plugin: InstalledPlugin,
     manifest: NonNullable<ReturnType<typeof resolvePluginManifest>["manifest"]>,
     format: ReturnType<typeof resolvePluginManifest>["format"],
-  ): string[] => {
+  ): { names: string[]; digest: string } => {
     const roots = pluginSkillScanRoots(
       plugin.dir,
       manifest.skills,
       plugin.manifestLocation,
       format,
     );
-    if (roots.length === 0) return [];
+    if (roots.length === 0) return { names: [], digest: fingerprintOf([]) };
     try {
-      return createAgentSkills({
+      const skills = createAgentSkills({
         workspace: plugin.dir,
         roots,
         warningSink: () => undefined,
         logger,
-      })
+      });
+      const content = skills
         .listSkills()
-        .map((skill) => skill.name)
-        .sort();
+        .map((skill) => {
+          const loaded = skills.loadSkill(skill.name);
+          return {
+            name: skill.name,
+            description: skill.description,
+            metadata: skill.metadata,
+            body: loaded?.body,
+            resources: loaded?.resources
+              .map((resource) => ({
+                rel: resource.rel,
+                content: skills.readResource(skill.name, resource.rel),
+              }))
+              .sort((left, right) => left.rel.localeCompare(right.rel)),
+          };
+        })
+        .sort((left, right) => left.name.localeCompare(right.name));
+      return {
+        names: content.map((skill) => skill.name).sort(),
+        digest: fingerprintOf(content),
+      };
     } catch {
-      return [];
+      return { names: [], digest: fingerprintOf([{ unavailable: true }]) };
     }
   };
 
@@ -729,6 +775,10 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         manifest === undefined
           ? []
           : pluginHookReviews(options.globalDir, plugin.ref, manifest.hooks ?? []);
+      const skills =
+        manifest === undefined
+          ? { names: [], digest: fingerprintOf([]) }
+          : pluginSkillInventory(plugin, manifest, resolved.format);
       const view: ResolvedEnvironmentPlugin = {
         ref,
         active: false,
@@ -737,7 +787,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         ...(manifest?.version === undefined ? {} : { version: manifest.version }),
         ...(plugin.revision === undefined ? {} : { revision: plugin.revision }),
         agents: plugin.agentFiles.map((file) => file.name.replace(/\.md$/i, "")).sort(),
-        skills: manifest === undefined ? [] : pluginSkillNames(plugin, manifest, resolved.format),
+        skills: skills.names,
         mcp_servers:
           manifest === undefined
             ? []
@@ -753,8 +803,11 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         digest: fingerprintOf({
           ref,
           manifest: plugin.manifestRaw,
+          resolved_manifest: manifest,
+          format: resolved.format,
           manifest_error: plugin.manifestError,
           agents: plugin.agentFiles.map((file) => ({ name: file.name, content: file.content })),
+          skills: skills.digest,
           origin: plugin.origin,
           revision: plugin.revision,
           subdir: plugin.subdir,
@@ -767,6 +820,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     enabledPlugins: readonly EnvironmentPluginRef[],
     workspaceTrust: WorkspaceTrustVerdict,
     assumeWorkspaceTrusted = false,
+    pinContributions = false,
   ): ResolvedEnvironment => {
     const installed = pluginInventory();
     const discovered = standaloneInventory();
@@ -887,6 +941,10 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       : [];
     const activePlugins = pluginViews.filter((plugin) => plugin.active);
     const activeSkills = skillViews.filter((skill) => skill.active);
+    const activePluginRefs = activePlugins.map((plugin) => plugin.ref);
+    const contributionDigests = pinContributions
+      ? options.pluginContributions.pin(activePluginRefs)
+      : options.pluginContributions.snapshot(activePluginRefs);
     const status = !validDefinition ? "invalid" : issues.length > 0 ? "degraded" : "ready";
     const identity = {
       id: environmentId(selection.ref),
@@ -894,11 +952,15 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       status,
       plugins: activePlugins.map((plugin) => ({
         ref: plugin.ref,
-        digest: installedByRef.get(pluginRefId(plugin.ref))?.digest,
+        digest:
+          contributionDigests[pluginRefId(plugin.ref)] ??
+          installedByRef.get(pluginRefId(plugin.ref))?.digest,
       })),
       skills: activeSkills.map((skill) => ({ ref: skill.ref, digest: skill.digest })),
       issues,
-      workspace_trust: requiresTrust ? workspaceTrust.state : undefined,
+      workspace_trust: requiresTrust
+        ? { state: workspaceTrust.state, fingerprint: workspaceTrust.fingerprint }
+        : undefined,
     };
     return {
       id: environmentId(selection.ref),
@@ -970,8 +1032,38 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
   const activePlugins = (): EnvironmentPluginRef[] =>
     (pinned?.plugins ?? []).filter((plugin) => plugin.active).map((plugin) => plugin.ref);
 
+  /** Refuse selected standalone-skill drift before returning filesystem-backed roots. */
+  const assertPinnedStandaloneSkills = (): void => {
+    if (pinned === undefined) return;
+    const expected = pinned.standalone_skills
+      .filter((skill) => skill.active)
+      .map((skill) => ({ ref: skill.ref, digest: skill.digest }));
+    const inventory = standaloneInventory();
+    const currentByRef = new Map(
+      inventory.map((entry) => [
+        `${entry.ref.scope}\0${entry.ref.source}\0${entry.ref.name}`,
+        entry,
+      ]),
+    );
+    const selected =
+      pinned.ref.scope === "builtin"
+        ? defaultStandaloneSelection(inventory)
+        : expected.map((skill) => skill.ref);
+    const current = selected.map((ref) => {
+      const entry = currentByRef.get(`${ref.scope}\0${ref.source}\0${ref.name}`);
+      return { ref, digest: entry?.digest };
+    });
+    if (fingerprintOf(current) !== fingerprintOf(expected)) {
+      throw kernelError(
+        "unavailable",
+        "selected standalone skill content changed after the Environment snapshot was pinned; reconnect the kernel",
+      );
+    }
+  };
+
   const skillRoots = (): SkillRootInput[] => {
     if (pinned === undefined) throw kernelError("unavailable", "Environment has not been resolved");
+    assertPinnedStandaloneSkills();
     const pluginRoots = options.pluginContributions.skillRoots(activePlugins());
     if (pinned.ref.scope === "builtin") return [...pluginRoots, ...standardRoots];
     const selected = pinned.standalone_skills
@@ -997,6 +1089,15 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       definition_revision: view.revision,
       plugins: view.definition.plugins,
     };
+  };
+
+  const assertWorkspaceTrustTransitionAllowed = (): void => {
+    if (runtime?.hasActiveRuns?.() === true) {
+      throw kernelError(
+        "conflict",
+        "finish active runs before changing trust for the selected workspace Environment",
+      );
+    }
   };
 
   const list = async (): Promise<EnvironmentDefinitionView[]> => {
@@ -1061,14 +1162,17 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         "a global selection cannot point at a workspace Environment",
       );
     }
+    if (options.cliSelection !== undefined) {
+      throw kernelError("conflict", "the active --env override cannot be changed by this process");
+    }
     if (pinned === undefined) throw kernelError("unavailable", "Environment has not been resolved");
     const actualTrust = runtime?.readWorkspaceTrust() ?? pinnedTrust;
-    const view = readDefinition(ref);
-    const requiresWorkspaceTrust = workspaceTargetNeedsApproval(ref, view.definition, actualTrust);
-    const target = freshSelection(
-      { ref, origin: previewOptions.selection_scope },
-      requiresWorkspaceTrust,
-    );
+    const effective = selectedAfterWrite(ref, previewOptions.selection_scope);
+    const view = readDefinition(effective.ref);
+    const requiresWorkspaceTrust =
+      previewOptions.selection_scope === "workspace" &&
+      workspaceTargetNeedsApproval(effective.ref, view.definition, actualTrust);
+    const target = freshSelection(effective, requiresWorkspaceTrust);
     return {
       current: pinned,
       target,
@@ -1078,7 +1182,8 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
           kind: "select",
           ref,
           scope: previewOptions.selection_scope,
-          selectionRevision: selectionRevision(previewOptions.selection_scope),
+          effective,
+          selectionRevisions: selectionRevisions(),
         },
         target,
       ),
@@ -1234,26 +1339,27 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         );
       }
       const selectionMutation = entry.mutation;
-      const targetSelection: SelectedEnvironment = {
-        ref,
-        origin: selectOptions.selection_scope,
-      };
+      const targetSelection = selectionMutation.effective;
       return underDefinitionLease(targetSelection, () =>
-        underSelectionLeases([selectOptions.selection_scope], () => {
+        underSelectionLeases(["global", "workspace"], () => {
+          const revisions = selectionRevisions();
           if (
-            selectionRevision(selectOptions.selection_scope) !== selectionMutation.selectionRevision
+            revisions.global !== selectionMutation.selectionRevisions.global ||
+            revisions.workspace !== selectionMutation.selectionRevisions.workspace
           ) {
             throw kernelError(
               "conflict",
               "Environment selection changed since the preview was created",
             );
           }
-          const definition = readDefinition(ref).definition;
-          const requiresTrust = workspaceTargetNeedsApproval(
-            ref,
-            definition,
-            runtime?.readWorkspaceTrust() ?? pinnedTrust,
-          );
+          const definition = readDefinition(targetSelection.ref).definition;
+          const requiresTrust =
+            selectionMutation.scope === "workspace" &&
+            workspaceTargetNeedsApproval(
+              targetSelection.ref,
+              definition,
+              runtime?.readWorkspaceTrust() ?? pinnedTrust,
+            );
           const target = freshSelection(targetSelection, requiresTrust);
           if (target.fingerprint !== entry.fingerprint) {
             throw kernelError("conflict", "Environment changed since the preview was created");
@@ -1388,10 +1494,28 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       runtime = binding;
     },
     resolveActive(enabledPlugins, workspaceTrust) {
-      if (pinned !== undefined) return pinned;
+      if (pinned !== undefined) {
+        const trustChanged =
+          pinnedTrust.state !== workspaceTrust.state ||
+          pinnedTrust.fingerprint !== workspaceTrust.fingerprint;
+        if (!trustChanged || (pinned.ref.scope !== "workspace" && pinned.ref.scope !== "builtin")) {
+          return pinned;
+        }
+        assertWorkspaceTrustTransitionAllowed();
+        pinnedEnabled = [...enabledPlugins];
+        pinnedTrust = workspaceTrust;
+        pinned = resolved(
+          { ref: pinned.ref, origin: pinned.selection_origin },
+          pinnedEnabled,
+          pinnedTrust,
+          false,
+          true,
+        );
+        return pinned;
+      }
       pinnedEnabled = [...enabledPlugins];
       pinnedTrust = workspaceTrust;
-      pinned = resolved(selectedNow(), pinnedEnabled, pinnedTrust);
+      pinned = resolved(selectedNow(), pinnedEnabled, pinnedTrust, false, true);
       logger.info(
         {
           event: "kernel.environment.resolved",
@@ -1413,5 +1537,6 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       return { id: pinned.id, fingerprint: pinned.fingerprint };
     },
     workspaceTrustSurface,
+    assertWorkspaceTrustTransitionAllowed,
   };
 }

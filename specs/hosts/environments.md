@@ -181,21 +181,31 @@ an invalid plugin, or unapproved workspace executables produces `degraded`; an i
 definition produces `invalid` (`resolved`, packages/kernel/src/environments/environment-manager.ts:736`).
 No state silently substitutes `builtin:default`.
 
-The first `resolveActive` result is pinned for the manager's lifetime. Its fingerprint covers the
-qualified Environment id, definition revision, status, active plugin inventory digests, selected
-skill digests, issues, and applicable trust state (`identity` and `resolveActive` in
-`packages/kernel/src/environments/environment-manager.ts:848`, `:1347`). Hook definitions are part
-of the plugin manifest digest, but independent hook-approval state is excluded from Environment
-identity. Selection mutations return `reconnect_required`; definition writes leave the current
-snapshot pinned and require the host to reconnect when the active definition changed. They never
-alter an in-flight or later run on the existing kernel. Code reconnects after selection and after a
-lifecycle mutation touches a selected plugin (`EnvironmentBrowser.apply` and
-`recomposeSelectedPlugin` in `packages/code/src`).
+`resolveActive` pins one contribution snapshot for the process. Each active plugin digest covers its
+resolved manifest (including MCP/hook companion semantics), bounded agent files, packaged skill
+bodies/resources, install record, and resolved source revision (`snapshot`, `pin`, and
+`contributionDigest` in `packages/kernel/src/plugins/plugin-contributions.ts`; `identity` and
+`resolveActive` in `packages/kernel/src/environments/environment-manager.ts`). Before every later
+contribution lookup, content drift is rejected with `unavailable` until reconnect, so settings,
+agents, skills, and executables cannot consume a different checkout under the pinned fingerprint.
+Selected standalone skill digests likewise cover the skill body and every bounded resource body;
+`skillRoots` rejects a selected-skill change or a new builtin winner until reconnect. The fingerprint
+also covers the qualified Environment id, definition revision, status, issues, and applicable trust
+state/fingerprint. Hook definitions are part of the plugin manifest digest, but independent
+hook-approval state is excluded from Environment identity. Selection mutations return
+`reconnect_required`; definition writes leave the current snapshot pinned and require the host to
+reconnect when the active definition changed. They never alter an in-flight or later run on the
+existing kernel. Code reconnects after selection and after a lifecycle mutation touches a selected
+plugin (`EnvironmentBrowser.apply` and `recomposeSelectedPlugin` in `packages/code/src`).
 
 Installing a plugin never selects it. Updating or uninstalling a selected plugin is refused while a
-run is active; while idle, the lifecycle mutation reconnects the kernel so the next resolved
-fingerprint and status match the changed inventory. Installing a previously missing selected ref
-also reconnects it (`selectedPluginLifecycleBlock` and `recomposeSelectedPlugin` in
+run is active by the kernel service boundary, not only by the TUI; the boundary also prevents a new
+run from entering while the selected checkout mutation holds its lease. After a successful selected
+mutation, that kernel refuses every later run with `unavailable` until reconnect, so an idle caller
+cannot keep using the stale fingerprint. Code reconnects the kernel so the next resolved fingerprint
+and status match the changed inventory. Installing a previously missing selected ref also reconnects
+it (`withSelectedMutation` in `packages/kernel/src/{kernel,plugins/plugin-service}.ts`;
+`selectedPluginLifecycleBlock` and `recomposeSelectedPlugin` in
 `packages/code/src/app/commands.tsx`).
 
 ### 4.3 Preview, trust, and resume
@@ -206,10 +216,11 @@ confirmation
 (`deltaOf`, `packages/kernel/src/environments/environment-manager.ts:348`;
 `EnvironmentBrowser.apply`, `packages/code/src/views/config/EnvironmentBrowser.tsx:165`). A preview
 token is single-use, expires after five minutes, and binds the mutation kind, selected reference,
-persisted selection scope, exact selection-document revision, and resolved target fingerprint.
-`previewClear` resolves the exact precedence fallback without changing state and binds both
-selection documents because either can determine that fallback; a changed target, selection, or
-fallback fails with `conflict` (`preview`,
+persisted selection scope, both exact selection-document revisions, and resolved target fingerprint.
+Both `preview` and `previewClear` resolve normal precedence without changing state: a global write
+already shadowed by a workspace selection previews that unchanged effective Environment. Either
+selection document can determine the effective target, so a changed target, selection, or fallback
+fails with `conflict` (`selectedAfterWrite`, `preview`,
 `previewClear`, `EnvironmentService.select`, and `EnvironmentService.clearSelection` in
 `packages/kernel/src/environments/environment-manager.ts`).
 
@@ -225,6 +236,12 @@ recoverable operation: an approval failure restores the exact prior selection by
 remain separate (`EnvironmentService.select` and `restoreSelection` in
 `packages/kernel/src/environments/environment-manager.ts`; test
 `packages/kernel/tests/integration/environment-manager.test.ts` "restores the prior selection").
+
+Approving or revoking workspace trust recomposes the selected workspace (or `builtin:default`
+workspace-derived) plugin set immediately when the kernel is idle. The same transition returns
+`conflict` while a run is active, before the trust store is changed, so no in-flight snapshot gains
+or retains executable contributions under a different verdict
+(`assertWorkspaceTrustTransitionAllowed` and the trust-transition branch of `resolveActive`).
 
 When a saved session resumes under a different `{ id, fingerprint }`, Code preserves the session,
 adds a visible warning, and marks the status instead of pretending continuity under the same
@@ -270,24 +287,29 @@ falls back to builtin.
 ### INV-317 — A kernel uses one immutable resolved snapshot
 
 Definition/selection changes require reconnection; a stale preview cannot authorize different
-bytes, and an already running kernel retains its original fingerprint.
+bytes, contribution drift is rejected before lookup, and an already running kernel retains its
+original fingerprint. Trust transitions may recompose only at an idle boundary.
 
-- **Production:** pinned `resolveActive`, revision CAS, and preview fingerprint comparison in
-  `packages/kernel/src/environments/environment-manager.ts:1347`, `:1089`, `:1172`.
-- **Test:** `packages/kernel/tests/integration/environment-manager.test.ts:331` changes a definition
-  after preview and verifies conflict plus the still-pinned current snapshot.
+- **Production:** `PluginContributions.pin`, `assertPinnedSnapshot`,
+  `assertPinnedStandaloneSkills`, pinned `resolveActive`, revision CAS, and preview fingerprint
+  comparison in `packages/kernel/src`.
+- **Test:** the stale-preview, global-precedence, contribution-fingerprint, and trust-transition
+  cases in `packages/kernel/tests/integration/environment-manager.test.ts`; the drift case in
+  `packages/kernel/tests/integration/plugin-contributions.test.ts`; and the selected lifecycle case
+  in `packages/kernel/tests/integration/run-service.smoke.test.ts`.
 
 ### INV-318 — Workspace executable activation participates in workspace trust
 
 A repository-authored Environment with plugins is inactive until its current executable surface is
 trusted; selection can approve only the exact previewed fingerprint.
 
-- **Production:** `workspaceTrustSurface`, `preview`, and `select` in
-  `packages/kernel/src/environments/environment-manager.ts:947`, `:1005`, `:1172`.
-- **Test:** `packages/kernel/tests/integration/environment-manager.test.ts:437` proves
-  preview/approval and a matching post-reconnect fingerprint; `:482` proves switching executable
-  workspace Environments asks again; `packages/kernel/tests/integration/workspace-trust.test.ts:216`
-  pins file changes in the extension surface to the trust hash.
+- **Production:** `workspaceTrustSurface`, `preview`, `select`, and
+  `assertWorkspaceTrustTransitionAllowed` in
+  `packages/kernel/src/environments/environment-manager.ts` and the file config store.
+- **Test:** the preview/approval, switching, and idle trust-recomposition cases in
+  `packages/kernel/tests/integration/environment-manager.test.ts`; the extension-surface case in
+  `packages/kernel/tests/integration/workspace-trust.test.ts` pins file changes to the trust hash and
+  proves active-run rejection occurs before the trust store is changed.
 
 ### INV-319 — Execution history identifies its extension snapshot without secrets
 
@@ -353,6 +375,9 @@ changing the Environment fingerprint.
 | Active CLI override | persisted `select` and `clearSelection` return `conflict`; edit/reconnect may still reload the same CLI-selected definition. |
 | Malformed service input from an embedder or transport | `invalid_request`; no path is constructed or file touched. |
 | Workspace approval storage fails after a selection write | the exact prior selection is restored and the approval error is returned. |
+| Selected plugin content changes after snapshot resolution | contribution reads return `unavailable`; reconnect is required and no changed contribution is consumed under the old fingerprint. |
+| Workspace trust changes or selected plugin update/uninstall is requested during a run | `conflict`; the trust store and selected checkout remain unchanged. |
+| A selected plugin update/uninstall completed but the kernel was not reconnected | new runs return `unavailable`; management remains available for reconnect/diagnosis. |
 | Definition directory or file exceeds a resource bound | list/get reports an invalid entry; it never returns a partial silently usable definition. |
 
 The failures are implemented by `readBounded`, `definitionNames`, `resolved`, `writeDefinition`, and

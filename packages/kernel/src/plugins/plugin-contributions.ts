@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { statSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -31,11 +32,12 @@ import {
   readPluginManifestSource,
   resolvePluginManifest,
 } from "./plugin-manifest.ts";
-import { MAX_SKILL_ROOTS } from "@clarvis/skills";
+import { createAgentSkills, MAX_SKILL_ROOTS } from "@clarvis/skills";
 import { pluginHookReviews } from "./hook-trust.ts";
 import { readPluginInstallRecord } from "./plugin-install-record.ts";
 import type { PluginInstallRecord } from "./plugin-install-record.ts";
 import { ensurePluginDataDir } from "./plugin-runtime.ts";
+import { kernelError } from "../core/errors.ts";
 
 type PluginSelection = readonly EnvironmentPluginRef[];
 
@@ -52,6 +54,10 @@ type PluginSelection = readonly EnvironmentPluginRef[];
  * settings merge without recursing through `readSettings()`.
  */
 export interface PluginContributions {
+  /** Hash a fresh exact contribution set without changing the active snapshot. */
+  snapshot(enabled: PluginSelection): Readonly<Record<string, string>>;
+  /** Capture the exact contribution bytes selected for this kernel process. */
+  pin(enabled: PluginSelection): Readonly<Record<string, string>>;
   /** Skill roots for enabled + loadable plugins. */
   skillRoots(enabled: PluginSelection): SkillRootInput[];
   /**
@@ -110,6 +116,8 @@ interface Loadable {
   ref: EnvironmentPluginRef;
   /** Absolute install directory the plugin resolved to. */
   dir: string;
+  /** Exact selected manifest source admitted with its normalized projection. */
+  manifestRaw: string;
   /** The parsed `plugin.json` manifest. */
   manifest: PluginManifest;
   /** Dialect-specific discovery contract applied to bundled skills. */
@@ -120,6 +128,8 @@ interface Loadable {
   agentFiles: ReturnType<typeof readPluginAgentFiles> & { ok: true };
   /** Install provenance read once during admission, so runtime identity cannot race that check. */
   installRecord: PluginInstallRecord;
+  /** Source revision captured with the rest of the admitted contribution. */
+  resolvedRevision?: string;
 }
 
 /**
@@ -130,8 +140,10 @@ interface Loadable {
  *   from which all exact `.agents/plugins` and `.clarvis/plugins` inventories are
  *   derived.
  * @returns a {@link PluginContributions} whose every method is passed the
- *   operator-enabled plugin names, reading manifests, agent files, and hook
- *   approvals fresh on each call.
+ *   operator-enabled plugin names. Before an Environment is pinned, contribution
+ *   files are discovered per call; afterwards the admitted manifests and agents
+ *   remain immutable and any content drift is rejected until reconnect. Hook
+ *   approvals remain live because they are independent authorization state.
  * @remarks Reads the filesystem synchronously and never consults settings itself,
  *   so it can be folded into the config store's settings merge without recursing
  *   through `readSettings()`. Repeated exact references are de-duplicated; the
@@ -212,6 +224,23 @@ export function createPluginContributions(opts: {
         ]),
   ];
 
+  const refId = (ref: EnvironmentPluginRef): string => `${ref.scope}:${ref.source}:${ref.name}`;
+  const selectionId = (enabled: PluginSelection): string => enabled.map(refId).join("\0");
+  const canonical = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value === null || typeof value !== "object") return value;
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, child]) => child !== undefined)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonical(child)]),
+    );
+  };
+  const digest = (value: unknown): string =>
+    `sha256:${createHash("sha256")
+      .update(JSON.stringify(canonical(value)))
+      .digest("hex")}`;
+
   /** Exact install root and directory selected by one qualified reference. */
   const dirFor = (ref: EnvironmentPluginRef): { dir: string } | undefined => {
     const root = installRoots.find(
@@ -234,10 +263,10 @@ export function createPluginContributions(opts: {
     pluginSkillRoots(p.dir, p.manifest.skills, p.manifestLocation).roots;
 
   /** Resolve the installed snapshot without treating the manifest version as source identity. */
-  const revisionOf = (plugin: Loadable): string | undefined => {
-    if (plugin.installRecord.revision !== undefined) return plugin.installRecord.revision;
+  const revisionOf = (dir: string, installRecord: PluginInstallRecord): string | undefined => {
+    if (installRecord.revision !== undefined) return installRecord.revision;
     /* Unmanaged local plugins have no install record; Git is the fallback. */
-    const result = spawnSync("git", ["-C", plugin.dir, "rev-parse", "HEAD"], {
+    const result = spawnSync("git", ["-C", dir, "rev-parse", "HEAD"], {
       encoding: "utf8",
       env: withoutGitRepositoryEnvironment(process.env),
       windowsHide: true,
@@ -252,7 +281,7 @@ export function createPluginContributions(opts: {
   const resolvedMcpServers = (plugin: Loadable): ResolvedPluginMcpContribution[] => {
     const declarations = Object.entries(plugin.manifest.mcpServers ?? {});
     if (declarations.length === 0) return [];
-    const resolvedRevision = revisionOf(plugin);
+    const resolvedRevision = plugin.resolvedRevision;
     return declarations.map(([name, declaration]) => ({
       effectiveName: effectivePluginMcpName(plugin.name, name),
       plugin: plugin.name,
@@ -298,20 +327,23 @@ export function createPluginContributions(opts: {
       skipped(ref, "install_record", installed.error);
       return undefined;
     }
+    const resolvedRevision = revisionOf(dir, installed.record);
     return {
       name,
       ref,
       dir,
+      manifestRaw: source.raw,
       manifest,
       format: resolved.format ?? "native",
       manifestLocation: source.location,
       agentFiles: agents,
       installRecord: installed.record,
+      ...(resolvedRevision === undefined ? {} : { resolvedRevision }),
     };
   }
 
   /** Resolve exact references in order, de-duplicating identical entries. */
-  const loadables = (enabled: PluginSelection): Loadable[] => {
+  const freshLoadables = (enabled: PluginSelection): Loadable[] => {
     const out: Loadable[] = [];
     const seen = new Set<string>();
     for (const ref of enabled) {
@@ -323,6 +355,97 @@ export function createPluginContributions(opts: {
     }
     return out;
   };
+
+  const skillSurface = (plugin: Loadable): unknown => {
+    const roots = pluginSkillScanRoots(
+      plugin.dir,
+      plugin.manifest.skills,
+      plugin.manifestLocation,
+      plugin.format,
+    );
+    if (roots.length === 0) return [];
+    try {
+      const skills = createAgentSkills({
+        workspace: plugin.dir,
+        roots,
+        warningSink: () => undefined,
+        logger,
+      });
+      return skills
+        .listSkills()
+        .map((info) => {
+          const content = skills.loadSkill(info.name);
+          if (content === undefined) return { name: info.name, unavailable: true };
+          return {
+            name: info.name,
+            description: info.description,
+            metadata: info.metadata,
+            body: content.body,
+            resources: content.resources
+              .map((resource) => ({
+                rel: resource.rel,
+                content: skills.readResource(info.name, resource.rel),
+              }))
+              .sort((left, right) => left.rel.localeCompare(right.rel)),
+          };
+        })
+        .sort((left, right) => left.name.localeCompare(right.name));
+    } catch {
+      return [{ unavailable: true }];
+    }
+  };
+
+  const contributionDigest = (plugin: Loadable): string =>
+    digest({
+      ref: plugin.ref,
+      format: plugin.format,
+      manifest_location: plugin.manifestLocation,
+      manifest_source: plugin.manifestRaw,
+      manifest: plugin.manifest,
+      agents: plugin.agentFiles.files.map((file) => ({ name: file.name, content: file.content })),
+      skills: skillSurface(plugin),
+      install_record: plugin.installRecord,
+      resolved_revision: plugin.resolvedRevision,
+    });
+
+  let pinned:
+    | {
+        selection: string;
+        refs: readonly EnvironmentPluginRef[];
+        loadables: readonly Loadable[];
+        digests: Readonly<Record<string, string>>;
+      }
+    | undefined;
+
+  const loadables = (enabled: PluginSelection): readonly Loadable[] =>
+    pinned !== undefined && pinned.selection === selectionId(enabled)
+      ? pinned.loadables
+      : freshLoadables(enabled);
+
+  const assertPinnedSnapshot = (enabled: PluginSelection): void => {
+    if (pinned === undefined) return;
+    if (pinned.selection !== selectionId(enabled)) {
+      throw kernelError(
+        "unavailable",
+        "active plugin selection changed after the Environment snapshot was pinned; reconnect the kernel",
+      );
+    }
+    const current = freshLoadables(pinned.refs);
+    const currentDigests = Object.fromEntries(
+      current.map((plugin) => [refId(plugin.ref), contributionDigest(plugin)]),
+    );
+    if (JSON.stringify(currentDigests) !== JSON.stringify(pinned.digests)) {
+      throw kernelError(
+        "unavailable",
+        "selected plugin content changed after the Environment snapshot was pinned; reconnect the kernel",
+      );
+    }
+  };
+
+  const captureDigests = (loadable: readonly Loadable[]): Readonly<Record<string, string>> =>
+    Object.freeze(
+      Object.fromEntries(loadable.map((plugin) => [refId(plugin.ref), contributionDigest(plugin)])),
+    );
 
   /** Parse a plugin agent's markdown into an {@link AgentRecord} qualified as
    * `<plugin>:<agent>` with scope `plugin`, lifting `model`/`description` from the
@@ -342,7 +465,24 @@ export function createPluginContributions(opts: {
   }
 
   return {
+    snapshot(enabled) {
+      return captureDigests(freshLoadables(enabled));
+    },
+
+    pin(enabled) {
+      const captured = freshLoadables(enabled);
+      const digests = captureDigests(captured);
+      pinned = {
+        selection: selectionId(enabled),
+        refs: [...enabled],
+        loadables: captured,
+        digests,
+      };
+      return digests;
+    },
+
     skillRoots(enabled) {
+      assertPinnedSnapshot(enabled);
       let budget = PLUGIN_SKILL_ROOT_BUDGET;
       return loadables(enabled).flatMap((p) => {
         const declared = skillsDirsOf(p);
@@ -392,6 +532,7 @@ export function createPluginContributions(opts: {
     },
 
     skillBootstraps(enabled) {
+      assertPinnedSnapshot(enabled);
       return loadables(enabled).flatMap((p) =>
         p.manifest.bootstrapSkill === undefined
           ? []
@@ -400,6 +541,7 @@ export function createPluginContributions(opts: {
     },
 
     settingsScopes(enabled) {
+      assertPinnedSnapshot(enabled);
       return loadables(enabled).map((p) => {
         const settings = pluginSettingsFragment(p.manifest);
         const namespacedServers = Object.fromEntries(
@@ -420,10 +562,12 @@ export function createPluginContributions(opts: {
     },
 
     mcpServers(enabled) {
+      assertPinnedSnapshot(enabled);
       return loadables(enabled).flatMap(resolvedMcpServers);
     },
 
     agents(enabled) {
+      assertPinnedSnapshot(enabled);
       return loadables(enabled).flatMap((p) =>
         p.agentFiles.files.map((f) =>
           toAgentRecord(p.name, f.name.replace(/\.md$/i, ""), f.content),
@@ -432,13 +576,14 @@ export function createPluginContributions(opts: {
     },
 
     readAgent(enabled, qualifiedName) {
+      assertPinnedSnapshot(enabled);
       const sep = qualifiedName.indexOf(":");
       if (sep <= 0) return null;
       const plugin = qualifiedName.slice(0, sep);
       const agentName = qualifiedName.slice(sep + 1);
       const ref = enabled.find((candidate) => candidate.name === plugin);
       if (ref === undefined) return null;
-      const l = loadableOf(ref);
+      const l = loadables(enabled).find((candidate) => refId(candidate.ref) === refId(ref));
       if (l === undefined) return null;
       const expected = `${agentName}.md`;
       const file = l.agentFiles.files.find((candidate) => candidate.name === expected);
@@ -446,14 +591,12 @@ export function createPluginContributions(opts: {
     },
 
     locateCapabilityExecutable(enabled, capability, plugin) {
+      assertPinnedSnapshot(enabled);
       const ref = enabled.find((candidate) => candidate.name === plugin);
       if (ref === undefined) {
         return { error: `plugin '${plugin}' is not enabled for this workspace` };
       }
-      if (dirFor(ref) === undefined) {
-        return { error: `plugin '${plugin}' is not installed` };
-      }
-      const l = loadableOf(ref);
+      const l = loadables(enabled).find((candidate) => refId(candidate.ref) === refId(ref));
       if (l === undefined) return { error: `plugin '${plugin}' has no readable manifest` };
       const declared = l.manifest.capabilityExecutables?.[capability];
       if (declared === undefined) {
@@ -463,9 +606,11 @@ export function createPluginContributions(opts: {
     },
 
     skillPlansMode(enabled, plugin, skill) {
+      assertPinnedSnapshot(enabled);
       const ref = enabled.find((candidate) => candidate.name === plugin);
       if (ref === undefined) return undefined;
-      return loadableOf(ref)?.manifest.capabilityRunPolicies?.plans?.skills[skill];
+      return loadables(enabled).find((candidate) => refId(candidate.ref) === refId(ref))?.manifest
+        .capabilityRunPolicies?.plans?.skills[skill];
     },
   };
 }

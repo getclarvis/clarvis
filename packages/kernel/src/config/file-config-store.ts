@@ -76,6 +76,7 @@ export interface FileConfigStoreOptions {
       trust: WorkspaceTrustVerdict,
     ): readonly EnvironmentPluginRef[];
     workspaceTrustSurface(): unknown;
+    assertWorkspaceTrustTransitionAllowed?(): void;
   };
   /**
    * Where a rejected or discarded configuration document is reported.
@@ -866,6 +867,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
      * covers exactly what the operator was shown and nothing later.
      */
     setWorkspaceTrust: (approve: boolean) => {
+      opts.environment?.assertWorkspaceTrustTransitionAllowed?.();
       approveCurrentSurface(approve);
       return snapshot();
     },

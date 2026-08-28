@@ -363,6 +363,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     ...(opts.environmentSelector === undefined ? {} : { cliSelection: opts.environmentSelector }),
     logger: componentLogger("environment"),
   });
+  let environmentRunRefs = 0;
   const configStore = createFileConfigStore({
     workspaceRoot: opts.workspaceRoot,
     globalDir,
@@ -374,6 +375,8 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
           .plugins.filter((plugin) => plugin.active)
           .map((plugin) => plugin.ref),
       workspaceTrustSurface: () => environmentManager.workspaceTrustSurface(),
+      assertWorkspaceTrustTransitionAllowed: () =>
+        environmentManager.assertWorkspaceTrustTransitionAllowed(),
     },
     logger: componentLogger("config"),
   });
@@ -382,6 +385,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     approveWorkspace: () => {
       configStore.setWorkspaceTrust?.(true);
     },
+    hasActiveRuns: () => environmentRunRefs > 0,
   });
   reportConfigScopes(componentLogger("config"), configStore.readSettings(), pluginContributions);
   const secretStore = createFileSecretStore(
@@ -857,6 +861,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       workspace: gitWorkspace.workspace,
       configStore,
       environmentService: environmentManager.service,
+      activePlugins: () => environmentManager.activePlugins(),
       assemblerOptions: {
         ...(defaultModel !== undefined ? { defaultModel } : {}),
         defaultAgent: DEFAULT_ENTRY_AGENT,
@@ -888,6 +893,15 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       environment: environment.values,
       taskProviderFactory,
       tasksEnabled,
+      acquireRunLease: () => {
+        environmentRunRefs += 1;
+        let released = false;
+        return () => {
+          if (released) return;
+          released = true;
+          environmentRunRefs = Math.max(0, environmentRunRefs - 1);
+        };
+      },
       dispose: async (): Promise<void> => {
         cleanup.stop();
         await housekeeping.stop();

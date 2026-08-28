@@ -1307,7 +1307,12 @@ function normalizeAgentMcp(
     if (normalized.server === undefined) {
       notes.push(`mcp.json: '${name}' is not contributed — ${normalized.error ?? "invalid entry"}`);
     } else {
-      servers[name] = normalized.server;
+      const parsed = mcpServerPluginSchema.safeParse(normalized.server);
+      if (!parsed.success) {
+        notes.push(`mcp.json: '${name}' is not contributed — ${firstZodIssue(parsed.error)}`);
+      } else {
+        servers[name] = parsed.data;
+      }
     }
   }
   return { servers, notes };

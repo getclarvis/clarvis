@@ -121,6 +121,17 @@ test("the installed artifact contains no source maps", () => {
   expect(() => assertInstallArtifact({ artifactPaths: ["dist/maps/index.js.map"] })).toThrow(
     "installed artifact must not contain source maps",
   );
+  expect(() =>
+    assertInstallArtifact({
+      artifactPaths: ["dist/index.js"],
+      javascriptArtifacts: [
+        {
+          path: "dist/index.js",
+          source: "//# sourceMappingURL=data:application/json;base64,e30=",
+        },
+      ],
+    }),
+  ).toThrow("installed artifact must not contain inline source maps");
 });
 
 test("generated JavaScript contains no build-host checkout path", () => {

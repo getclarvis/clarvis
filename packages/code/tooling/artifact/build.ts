@@ -167,7 +167,16 @@ async function main(): Promise<void> {
   await assertRelocatableBuild(result.outputs);
   const sourceMaps = installBuild ? 0 : await detachSourceMaps(result.outputs);
   if (installBuild) {
-    assertInstallArtifact({ artifactPaths: result.outputs.map((output) => output.path) });
+    const javascript = result.outputs.filter((output) => output.path.endsWith(".js"));
+    assertInstallArtifact({
+      artifactPaths: result.outputs.map((output) => output.path),
+      javascriptArtifacts: await Promise.all(
+        javascript.map(async (artifact) => ({
+          path: artifact.path,
+          source: await Bun.file(artifact.path).text(),
+        })),
+      ),
+    });
   }
   await copyAssets();
 

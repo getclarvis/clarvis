@@ -85,9 +85,9 @@ export function bunVersionFailures(snapshot) {
   }
 
   const releasePins = setupBunPins(snapshot.release);
-  if (releasePins.length !== 1) {
+  if (releasePins.length !== 2) {
     failures.push(
-      `.github/workflows/release.yml: expected one setup-bun pin, found ${String(releasePins.length)}`,
+      `.github/workflows/release.yml: expected two setup-bun pins, found ${String(releasePins.length)}`,
     );
   }
   for (const pin of releasePins) {
@@ -98,9 +98,9 @@ export function bunVersionFailures(snapshot) {
     }
   }
   const releaseEvidence = runtimeEvidenceCount(snapshot.release);
-  if (releaseEvidence !== 1) {
+  if (releaseEvidence !== 2) {
     failures.push(
-      `.github/workflows/release.yml: expected one Bun version/revision evidence step, found ${String(releaseEvidence)}`,
+      `.github/workflows/release.yml: expected two Bun version/revision evidence steps, found ${String(releaseEvidence)}`,
     );
   }
 

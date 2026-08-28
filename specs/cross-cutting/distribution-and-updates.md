@@ -30,7 +30,8 @@ The user-facing surfaces are:
 - six `clarvis-v<version>-<target>.tar.gz` release assets plus `SHA256SUMS`, both installers,
   Clarvis's license, and standalone third-party notices/license texts;
 - root scripts `release:package`, `release:smoke`, `release:install-smoke`, and `check:release`;
-- a tag-triggered release workflow and a non-publishing `workflow_dispatch` build path.
+- a tag-triggered workflow that publishes from private `getclarvis/clarvis` to public binary-only
+  `getclarvis/clarvis-releases`, plus a non-publishing `workflow_dispatch` build path.
 
 Production: `packages/code/src/cli-args.ts` (`FLAGS`, `Mode`), root and Code `package.json`
 scripts, `packages/code/src/update-contract.ts` (`ReleaseTarget`, `releaseAssetName`), and
@@ -44,6 +45,12 @@ Installer overrides are explicit environment inputs: `CLARVIS_VERSION`,
 `CLARVIS_SKIP_PATH=1`. `CLARVIS_RELEASE_DIRECTORY` is an operator-selected local mirror, not a
 network fallback. Production: `install.sh` and `install.ps1`. Test:
 `packages/code/tooling/release/installer-smoke.ts`.
+
+Cross-repository publication uses repository variable `CLARVIS_RELEASE_APP_CLIENT_ID` and secret
+`CLARVIS_RELEASE_APP_PRIVATE_KEY`. They identify the `Clarvis Release Publisher` GitHub App, whose
+installation is limited to `getclarvis/clarvis-releases` and whose only mutable repository
+permission is `Contents: write`. Production: `.github/workflows/release.yml` (`release-token` step).
+Test: `tooling/tests/unit/release-readiness.test.ts` (scoped App contract).
 
 ## 3. Data and formats
 
@@ -62,7 +69,7 @@ supplied by those packages remain in their copied package directories. Productio
 ```json
 {
   "schema": 1,
-  "repository": "getclarvis/clarvis",
+  "repository": "getclarvis/clarvis-releases",
   "version": "0.0.2-beta",
   "target": "linux-x64",
   "files": [{ "path": "runtime/bun", "size": 80761952, "sha256": "..." }]
@@ -71,7 +78,8 @@ supplied by those packages remain in their copied package directories. Productio
 
 `files` describes every regular payload file except `release.json` itself, with a portable relative
 path, exact byte length, and lowercase SHA-256. Directories, symlinks, traversal segments, absolute
-paths, backslashes, duplicates, extra files, and more than 4,096 entries are refused. Production:
+paths, backslashes, control characters, case-insensitive `.map` suffixes, duplicates, extra files,
+and more than 4,096 entries are refused. Production:
 `packages/code/src/update/release-manifest.ts` (`parseReleaseManifest`, `manifestFiles`,
 `verifyReleaseTree`). Test: `packages/code/tests/unit/release-manifest.test.ts`.
 
@@ -99,8 +107,9 @@ that version's included runtime and `cli.ts`. Production:
 Packaging runs only for the host's native supported target. It copies the exact running Bun binary,
 discovers bare runtime package references retained by the split artifact, closes their production
 dependency graph, adds the one OpenTUI native package for the target, copies the static Bun,
-models.dev, and Vercel AI SDK license and notice set, removes every `.map`, writes the internal
-manifest, creates a gzip tar archive, and emits a sidecar SHA-256. Production:
+models.dev, and Vercel AI SDK license and notice set, removes every case-insensitive `.map` suffix
+from the complete payload, writes the internal manifest, creates a gzip tar archive, and emits a
+sidecar SHA-256. Production:
 `packages/code/tooling/release/package.ts` and
 `packages/code/tooling/release/runtime-package-discovery.ts`. Generated static-import and call
 specifiers contribute to that closure only when they name an installed bare package root; relative,
@@ -168,16 +177,19 @@ user state unchanged. Production: `packages/code/src/update/index.ts` and
 `packages/code/tests/unit/update-command.test.ts` (verified activation and preserved predecessor).
 
 The release workflow builds and smokes all six target archives independently. A tag build downloads
-the complete set, verifies every sidecar, assembles `SHA256SUMS`, creates a GitHub release as a
-draft, uploads every asset, and removes the draft flag only in the final step. When the triggering
-repository is public, the workflow also attests the archives and `SHA256SUMS` before creating the
-draft. A private-repository event skips only that unavailable attestation step and keeps checksum,
-draft, upload, and activation ordering unchanged. Manual dispatch builds downloadable workflow
-artifacts but cannot publish because the publish job requires both a tag ref and the `push` event.
-Production: `.github/workflows/release.yml`. Test:
-`tooling/tests/unit/release-readiness.test.ts` (private-repository attestation guard). Release
-publication still requires a separately authorized tag and push; nothing in the local build or
-installer creates one.
+the complete set, verifies every sidecar, assembles `SHA256SUMS`, and runs a separate final release
+set checker. That checker accepts only the six exact archives, their six sidecars, `SHA256SUMS`, the
+two installers, and the required notices/licenses; it extracts every archive and rejects any
+case-insensitive `.map` suffix or inline `sourceMappingURL=data:` payload before a publication
+credential exists. Only then does the workflow mint a one-hour GitHub App installation token scoped
+to `getclarvis/clarvis-releases`, create a draft
+there, upload the allowlisted assets explicitly, and remove the draft flag in the final step. The
+private source repository's ordinary `GITHUB_TOKEN` remains read-only and cannot mutate the public
+distribution repository. Manual dispatch builds downloadable workflow artifacts but cannot publish
+because the publish job requires both a tag ref and the `push` event. Production:
+`.github/workflows/release.yml` and `tooling/checks/release-assets.ts`. Test:
+`tooling/tests/unit/{release-assets,release-readiness}.test.ts`. Release publication still requires a
+separately authorized source tag and push; nothing in the local build or installer creates one.
 
 ## 5. Invariants
 
@@ -187,8 +199,17 @@ match it; when a release tag is supplied, it must be `v<root version>`. Producti
 `tooling/tests/unit/release-readiness.test.ts`.
 
 **DIST-2.** A portable archive contains no source map anywhere, including copied third-party
-packages. Production: `packages/code/tooling/release/package.ts` (`removeSourceMaps`, final manifest
-assertion). Test: `packages/code/tooling/release/smoke.ts` (manifest zero-map assertion).
+packages, case variants of the `.map` suffix, and inline `sourceMappingURL=data:` payloads. Packaging
+removes external maps from the complete payload and rejects inline maps; manifest generation and
+parsing reject map files; native smoke scans the extracted tree; and the final six-archive
+publication gate extracts and scans everything again before minting its credential. Production:
+`packages/code/tooling/release/package.ts` (`removeSourceMaps`, final manifest assertion),
+`packages/code/src/update/release-manifest.ts` (`isReleaseSourceMapPath`,
+`containsInlineSourceMap`, `manifestFiles`, `parseReleaseManifest`),
+`packages/code/tooling/release/smoke.ts` (`sourceMaps`), and
+`tooling/checks/release-assets.ts` (`archiveFailures`). Test:
+`packages/code/tests/{architecture/artifact-contract,unit/release-manifest}.test.ts`,
+`tooling/tests/unit/release-assets.test.ts`, and the native release smoke.
 
 **DIST-3.** Release identity is exact across repository, SemVer tag, target, asset name, asset URL,
 size, state, and SHA-256; an ambiguous or partial match is ineligible. Production:
@@ -220,14 +241,13 @@ and an existing owner is neither replaced nor removed;
 `packages/code/tooling/release/installer-smoke.ts` asserts install, ordinary uninstall, and
 stale-launcher removal all refuse an existing owner.
 
-**DIST-8.** The release workflow cannot expose a partially uploaded release: publication starts as a
-draft and clearing `draft` is the final step after checks and any visibility-required attestation.
-The attestation action is guarded to public-repository events, so a private repository can publish
-its verified release set without invoking a GitHub capability that requires Enterprise Cloud there.
-Production: `.github/workflows/release.yml` (`publish` job) and
+**DIST-8.** The release workflow cannot expose a partially uploaded release: publication in
+`getclarvis/clarvis-releases` starts as a draft and clearing `draft` is the final step after the
+allowlist, archive, checksum, and upload checks. Production: `.github/workflows/release.yml`
+(`publish` job), `tooling/checks/release-assets.ts`, and
 `tooling/checks/release-readiness.ts` (`releaseReadinessFailures`). Test:
-`tooling/tests/unit/release-readiness.test.ts` (private-repository attestation guard); the remote
-draft transition is verifiable only in an authorized release run.
+`tooling/tests/unit/{release-assets,release-readiness}.test.ts`; the remote draft transition is
+verifiable only in an authorized release run.
 
 **DIST-9.** Every portable archive carries the static Bun runtime, models.dev snapshot, and Vercel AI
 SDK notices; their license files; Bun source/relinking information; the generated target dependency
@@ -279,6 +299,13 @@ external and enter the portable archive through the target-native runtime closur
 `packages/code/tests/architecture/artifact-contract.test.ts` (POSIX and Windows build-root cases) and
 `packages/code/tooling/release/smoke.ts` (packaged runtime execution).
 
+**DIST-15.** The private source workflow cannot publish with its repository-scoped `GITHUB_TOKEN`.
+It mints a short-lived installation token only after the final asset gate, from a GitHub-owned action
+pinned to a complete commit SHA, and asks for `Contents: write` on only `clarvis-releases`.
+Production: `.github/workflows/release.yml` (`release-token` step) and
+`tooling/checks/release-readiness.ts` (`releaseReadinessFailures`). Test:
+`tooling/tests/unit/release-readiness.test.ts` (missing scope and token-bypass cases).
+
 ## 6. Failure modes and degradation
 
 | Failure | Result |
@@ -298,7 +325,7 @@ external and enter the portable archive through the target-native runtime closur
 | macOS Gatekeeper or Windows SmartScreen | unsigned beta may require explicit user approval; no bypass is automated |
 | Missing third-party notice or license marker | native release smoke fails before publication |
 | Build-host checkout path in generated JavaScript | artifact build fails before packaging |
-| Private repository on a plan without artifact attestations | the attestation step is skipped; checksum verification, draft upload, and final activation still run |
+| Missing or invalid release App variable, secret, installation, or repository permission | token minting fails after all local asset checks and before a draft or public mutation exists |
 | Workflow dispatch without a tag | packages only; no release creation or remote mutation |
 
 Production: the root installers, `packages/code/src/update/**`, and
@@ -309,8 +336,9 @@ and Code update unit tests named above.
 
 The portable path depends on the root product manifest, Clarvis license and third-party notice set,
 the Code launcher and artifact,
-the exact Bun runtime running the packaging job, OpenTUI's target-native package names, GitHub
-release metadata, and the operating system's archive/launcher conventions. It does not depend on a
+the exact Bun runtime running the packaging job, OpenTUI's target-native package names, the public
+`getclarvis/clarvis-releases` metadata, the narrowly installed publisher App, and the operating
+system's archive/launcher conventions. It does not depend on a
 Clarvis user configuration, provider credential, package registry at install time, or any remote
 kernel. Production: `packages/code/tooling/release/package.ts`, `install.sh`, and `install.ps1`.
 

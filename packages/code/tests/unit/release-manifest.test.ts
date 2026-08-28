@@ -10,9 +10,9 @@ import {
   verifyReleaseTree,
 } from "../../src/update/release-manifest.ts";
 
-test("release paths reject traversal, absolute paths, separators and empty segments", () => {
+test("release paths reject traversal, absolute paths, separators, controls and empty segments", () => {
   expect(isPortableReleasePath("packages/code/src/cli.ts")).toBe(true);
-  for (const path of ["", "/etc/passwd", "C:/x", "../x", "a/../b", "a//b", "a\\b"]) {
+  for (const path of ["", "/etc/passwd", "C:/x", "../x", "a/../b", "a//b", "a\\b", "a\nb"]) {
     expect(isPortableReleasePath(path)).toBe(false);
   }
 });
@@ -27,7 +27,7 @@ test("manifest generation and verification cover exactly every regular payload f
     const manifest = parseReleaseManifest(
       {
         schema: 1,
-        repository: "getclarvis/clarvis",
+        repository: "getclarvis/clarvis-releases",
         version: "0.0.1-beta",
         target: "linux-x64",
         files,
@@ -46,7 +46,7 @@ test("manifest generation and verification cover exactly every regular payload f
 test("manifest parsing rejects duplicate, self-referential and malformed file entries", () => {
   const base = {
     schema: 1,
-    repository: "getclarvis/clarvis",
+    repository: "getclarvis/clarvis-releases",
     version: "0.0.1-beta",
     target: "linux-x64",
   };
@@ -60,4 +60,21 @@ test("manifest parsing rejects duplicate, self-referential and malformed file en
   expect(() =>
     parseReleaseManifest({ ...base, files: [{ ...file, sha256: "bad" }] }, base as never),
   ).toThrow("invalid file entry");
+  expect(() =>
+    parseReleaseManifest(
+      { ...base, files: [{ ...file, path: "packages/code/dist/debug.MAP" }] },
+      base as never,
+    ),
+  ).toThrow("invalid file entry");
+});
+
+test("manifest generation refuses a source map anywhere in the payload", async () => {
+  const root = await mkdtemp(join(tmpdir(), "clarvis-release-map-manifest-"));
+  try {
+    await mkdir(join(root, "nested"));
+    await writeFile(join(root, "nested", "debug.map"), "map");
+    await expect(manifestFiles(root)).rejects.toThrow("contains a source map");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

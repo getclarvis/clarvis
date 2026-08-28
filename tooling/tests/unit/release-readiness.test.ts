@@ -33,23 +33,38 @@ function valid() {
     rootLicense: "MIT License",
     thirdPartyNotices: "## Vercel AI SDK",
     vercelAiSdkLicense: "Copyright 2023 Vercel, Inc.\nApache License, Version 2.0",
-    releaseWorkflow: `cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE
+    releaseWorkflow: `env:
+  RELEASE_REPOSITORY: getclarvis/clarvis-releases
+cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE
 if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-- name: attest release set when the repository is public
-  if: github.event.repository.private == false
-  uses: actions/attest@${PIN}`,
+bun run tooling/checks/release-assets.ts build/release "$GITHUB_REF_NAME"
+uses: actions/create-github-app-token@${PIN}
+client-id: \${{ vars.CLARVIS_RELEASE_APP_CLIENT_ID }}
+private-key: \${{ secrets.CLARVIS_RELEASE_APP_PRIVATE_KEY }}
+owner: getclarvis
+repositories: clarvis-releases
+permission-contents: write
+GH_TOKEN: \${{ steps.release-token.outputs.token }}
+gh release create "$GITHUB_REF_NAME" --repo "$RELEASE_REPOSITORY"`,
     workflows: [{ path: ".github/workflows/release.yml", source: secureWorkflow }],
     workspaceLicenses: [{ path: "packages/example/package.json", license: "MIT" }],
     tag: "v0.0.1-beta",
   };
 }
 
+function withReleaseRepositories(input: ReturnType<typeof valid>): ReturnType<typeof valid> {
+  input.installSh += "\nrepository=${CLARVIS_RELEASE_REPOSITORY:-getclarvis/clarvis-releases}";
+  input.installPowerShell +=
+    '\n$Repository = if ($env:CLARVIS_RELEASE_REPOSITORY) { $env:CLARVIS_RELEASE_REPOSITORY } else { "getclarvis/clarvis-releases" }';
+  return input;
+}
+
 test("accepts one product identity across the release surfaces", () => {
-  expect(releaseReadinessFailures(valid())).toEqual([]);
+  expect(releaseReadinessFailures(withReleaseRepositories(valid()))).toEqual([]);
 });
 
 test("rejects an incomplete Vercel AI SDK license release set", () => {
-  const input = valid();
+  const input = withReleaseRepositories(valid());
   input.thirdPartyNotices = "missing SDK notice";
   input.vercelAiSdkLicense = "missing license body";
   input.releaseWorkflow = "missing release asset";
@@ -58,28 +73,55 @@ test("rejects an incomplete Vercel AI SDK license release set", () => {
     "Vercel AI SDK license must contain its Apache-2.0 grant",
     "release workflow must publish the Vercel AI SDK license",
     "release publish job must reject manual workflow dispatches",
-    "release attestation must run only when the repository is public",
+    "release workflow must target getclarvis/clarvis-releases",
+    "release workflow is missing scoped GitHub App setting: uses: actions/create-github-app-token@",
+    "release workflow is missing scoped GitHub App setting: client-id: ${{ vars.CLARVIS_RELEASE_APP_CLIENT_ID }}",
+    "release workflow is missing scoped GitHub App setting: private-key: ${{ secrets.CLARVIS_RELEASE_APP_PRIVATE_KEY }}",
+    "release workflow is missing scoped GitHub App setting: owner: getclarvis",
+    "release workflow is missing scoped GitHub App setting: repositories: clarvis-releases",
+    "release workflow is missing scoped GitHub App setting: permission-contents: write",
+    "release publication must authenticate with the scoped GitHub App token",
+    "release mutation commands must name the public distribution repository",
+    "release assets must pass the final map-free allowlist gate before publication",
   ]);
 });
 
 test("rejects a publish job that a manual dispatch on a tag could reach", () => {
-  const input = valid();
+  const input = withReleaseRepositories(valid());
   input.releaseWorkflow =
     "cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE\nif: startsWith(github.ref, 'refs/tags/')";
   expect(releaseReadinessFailures(input)).toEqual([
     "release publish job must reject manual workflow dispatches",
-    "release attestation must run only when the repository is public",
+    "release workflow must target getclarvis/clarvis-releases",
+    "release workflow is missing scoped GitHub App setting: uses: actions/create-github-app-token@",
+    "release workflow is missing scoped GitHub App setting: client-id: ${{ vars.CLARVIS_RELEASE_APP_CLIENT_ID }}",
+    "release workflow is missing scoped GitHub App setting: private-key: ${{ secrets.CLARVIS_RELEASE_APP_PRIVATE_KEY }}",
+    "release workflow is missing scoped GitHub App setting: owner: getclarvis",
+    "release workflow is missing scoped GitHub App setting: repositories: clarvis-releases",
+    "release workflow is missing scoped GitHub App setting: permission-contents: write",
+    "release publication must authenticate with the scoped GitHub App token",
+    "release mutation commands must name the public distribution repository",
+    "release assets must pass the final map-free allowlist gate before publication",
   ]);
 });
 
-test("rejects an attestation step that can run for a private repository", () => {
-  const input = valid();
+test("rejects publication that bypasses the scoped cross-repository app token", () => {
+  const input = withReleaseRepositories(valid());
   input.releaseWorkflow = input.releaseWorkflow.replace(
-    "  if: github.event.repository.private == false\n",
-    "",
+    "GH_TOKEN: ${{ steps.release-token.outputs.token }}",
+    "GH_TOKEN: ${{ github.token }}",
   );
   expect(releaseReadinessFailures(input)).toEqual([
-    "release attestation must run only when the repository is public",
+    "release publication must authenticate with the scoped GitHub App token",
+  ]);
+});
+
+test("rejects minting the publication token before the final map-free gate", () => {
+  const input = withReleaseRepositories(valid());
+  const gate = 'bun run tooling/checks/release-assets.ts build/release "$GITHUB_REF_NAME"\n';
+  input.releaseWorkflow = input.releaseWorkflow.replace(gate, "") + `\n${gate}`;
+  expect(releaseReadinessFailures(input)).toEqual([
+    "release assets must pass the final map-free allowlist gate before publication",
   ]);
 });
 
@@ -105,9 +147,15 @@ test("accepts SHA-pinned actions, explicit read permissions, and a credentialles
 });
 
 test("rejects a drifting tag and either installer", () => {
-  const input = valid();
-  input.installSh = "version=old";
-  input.installPowerShell = "$Version = old";
+  const input = withReleaseRepositories(valid());
+  input.installSh = input.installSh.replace(
+    "version=${CLARVIS_VERSION:-0.0.1-beta}",
+    "version=old",
+  );
+  input.installPowerShell = input.installPowerShell.replace(
+    '$Version = if ($env:CLARVIS_VERSION) { $env:CLARVIS_VERSION } else { "0.0.1-beta" }',
+    "$Version = old",
+  );
   input.tag = "v0.0.2-beta";
   expect(releaseReadinessFailures(input)).toEqual([
     "install.sh default version differs from the product version",
@@ -117,7 +165,7 @@ test("rejects a drifting tag and either installer", () => {
 });
 
 test("rejects incomplete or stale public-release metadata", () => {
-  const input = valid();
+  const input = withReleaseRepositories(valid());
   input.product.license = "UNLICENSED";
   input.product.repository.url = "git+https://github.com/example/old.git";
   input.rootLicense = "missing license body";

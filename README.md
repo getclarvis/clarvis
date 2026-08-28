@@ -1,6 +1,6 @@
 # Clarvis
 
-[![Release](https://img.shields.io/github/v/release/getclarvis/clarvis?include_prereleases&label=release)](https://github.com/getclarvis/clarvis/releases)
+[![Release](https://img.shields.io/github/v/release/getclarvis/clarvis-releases?include_prereleases&label=release)](https://github.com/getclarvis/clarvis-releases/releases)
 [![CI](https://github.com/getclarvis/clarvis/actions/workflows/ci.yml/badge.svg)](https://github.com/getclarvis/clarvis/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -36,13 +36,13 @@ need Bun, Node.js, a compiler, a package manager, administrator access, or a sou
 Linux (glibc) and macOS:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.sh | sh
+curl -fsSL https://github.com/getclarvis/clarvis-releases/releases/download/v0.0.2-beta/install.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/getclarvis/clarvis/v0.0.2-beta/install.ps1 | iex
+irm https://github.com/getclarvis/clarvis-releases/releases/download/v0.0.2-beta/install.ps1 | iex
 ```
 
 Prefer to inspect an installer before running it? The [installation guide](https://clarvis.dev/installation)
@@ -152,18 +152,18 @@ The public, task-oriented documentation lives at [clarvis.dev](https://clarvis.d
 served from the site root, and the complete Brazilian Portuguese edition is available at
 [`/pt-BR/`](https://clarvis.dev/pt-BR/).
 
-| Need                                  | Start here                                                                                      |
-| ------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Browse the public product guide       | [clarvis.dev](https://clarvis.dev)                                                              |
-| Install, update, verify, or remove    | [Installation](https://clarvis.dev/installation)                                                |
-| Learn the TUI and CLI                 | [Public user guide](https://clarvis.dev/guide/daily-use)                                        |
-| Terminal or accessibility behavior    | [Terminal compatibility](https://clarvis.dev/terminal-compatibility)                            |
-| Diagnose a problem                    | [Troubleshooting](https://clarvis.dev/operations/troubleshooting) or [Support](SUPPORT.md)      |
-| Understand Clarvis                    | [How Clarvis works](https://clarvis.dev/explanation/how-clarvis-works)                          |
-| Contribute code                       | [Contributing](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md)                                      |
-| Contribute public documentation       | [`getclarvis/docs`](https://github.com/getclarvis/docs)                                         |
-| Inspect exact behavior and invariants | [Specification index](specs/README.md)                                                          |
-| Follow releases                       | [Changelog](CHANGELOG.md) and [GitHub Releases](https://github.com/getclarvis/clarvis/releases) |
+| Need                                  | Start here                                                                                               |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Browse the public product guide       | [clarvis.dev](https://clarvis.dev)                                                                       |
+| Install, update, verify, or remove    | [Installation](https://clarvis.dev/installation)                                                         |
+| Learn the TUI and CLI                 | [Public user guide](https://clarvis.dev/guide/daily-use)                                                 |
+| Terminal or accessibility behavior    | [Terminal compatibility](https://clarvis.dev/terminal-compatibility)                                     |
+| Diagnose a problem                    | [Troubleshooting](https://clarvis.dev/operations/troubleshooting) or [Support](SUPPORT.md)               |
+| Understand Clarvis                    | [How Clarvis works](https://clarvis.dev/explanation/how-clarvis-works)                                   |
+| Contribute code                       | [Contributing](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md)                                               |
+| Contribute public documentation       | [`getclarvis/docs`](https://github.com/getclarvis/docs)                                                  |
+| Inspect exact behavior and invariants | [Specification index](specs/README.md)                                                                   |
+| Follow releases                       | [Changelog](CHANGELOG.md) and [GitHub Releases](https://github.com/getclarvis/clarvis-releases/releases) |
 
 ## Contributing
 

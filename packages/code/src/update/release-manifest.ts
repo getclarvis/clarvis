@@ -23,15 +23,40 @@ export interface ReleaseManifest {
   files: readonly ReleaseManifestFile[];
 }
 
+/** Decide whether a portable path identifies a source-map payload. */
+export function isReleaseSourceMapPath(value: string): boolean {
+  return /\.map$/i.test(value);
+}
+
+/** Decide whether generated text embeds a source map as a data URL. */
+export function containsInlineSourceMap(value: string): boolean {
+  return /sourceMappingURL\s*=\s*data:/i.test(value);
+}
+
 function object(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
 }
 
+function containsControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && (codePoint <= 0x1f || codePoint === 0x7f)) return true;
+  }
+  return false;
+}
+
 /** Decide whether an archive member is a confined portable relative path. */
 export function isPortableReleasePath(value: string): boolean {
-  if (value.length === 0 || value.length > 512 || value.includes("\\")) return false;
+  if (
+    value.length === 0 ||
+    value.length > 512 ||
+    value.includes("\\") ||
+    containsControlCharacter(value)
+  ) {
+    return false;
+  }
   if (value.startsWith("/") || /^[A-Za-z]:/.test(value)) return false;
   const segments = value.split("/");
   return segments.every((segment) => segment.length > 0 && segment !== "." && segment !== "..");
@@ -62,6 +87,7 @@ export function parseReleaseManifest(
       file === undefined ||
       typeof file.path !== "string" ||
       !isPortableReleasePath(file.path) ||
+      isReleaseSourceMapPath(file.path) ||
       file.path === "release.json" ||
       !Number.isSafeInteger(file.size) ||
       Number(file.size) < 0 ||
@@ -117,6 +143,9 @@ export async function manifestFiles(root: string): Promise<ReleaseManifestFile[]
     if (portablePath === "release.json") continue;
     if (!isPortableReleasePath(portablePath)) {
       throw new Error(`release payload path is not portable: ${portablePath}`);
+    }
+    if (isReleaseSourceMapPath(portablePath)) {
+      throw new Error(`release payload contains a source map: ${portablePath}`);
     }
     const bytes = await readFile(path);
     files.push({

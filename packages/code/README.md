@@ -53,14 +53,15 @@ bun --filter @clarvis/code setup
 clarvis
 ```
 
-For end users, the public installers in the repository root install a portable release instead. A
-portable archive includes the exact Bun runtime, the map-free split artifact, its package-owned
-assets, and the native OpenTUI closure for one of six targets: GNU/glibc Linux, macOS, or Windows on
-x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release targets for
-this beta. Runtime dependency discovery accepts only installed bare package specifiers; relative,
-absolute, built-in, and module-internal `#` references retained by the generated artifact are not
-interpreted as package roots, while package subpaths resolve to their owning root. `release.json`
-declares the exact regular-file set checked by release smoke and self-update.
+For end users, the public installers in the repository root download portable artifacts from the
+binary-only [`getclarvis/clarvis-releases`](https://github.com/getclarvis/clarvis-releases)
+repository. A portable archive includes the exact Bun runtime, the map-free split artifact, its
+package-owned assets, and the native OpenTUI closure for one of six targets: GNU/glibc Linux, macOS,
+or Windows on x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release
+targets for this beta. Runtime dependency discovery accepts only installed bare package specifiers;
+relative, absolute, built-in, and module-internal `#` references retained by the generated artifact
+are not interpreted as package roots, while package subpaths resolve to their owning root.
+`release.json` declares the exact regular-file set checked by release smoke and self-update.
 Each archive also carries Clarvis's license; the Bun, models.dev, and Vercel AI SDK notices/license
 texts; Bun's source and relinking route; a generated runtime-package inventory; and the
 package-owned license files.
@@ -76,10 +77,11 @@ stops the operation, repeated removal is a successful no-op, and Clarvis configu
 credentials, sessions, and workspace data remain untouched.
 
 `clarvis --update` is an explicit managed-install operation. It reads the bounded public GitHub
-release index, selects only a newer version allowed by the current channel, requires GitHub's
-`sha256:` asset digest and exact target-specific URL, verifies the internal manifest, smokes the
-staged runtime, preserves the previous version, and activates the candidate last. It performs no
-automatic update check at ordinary startup and refuses source or `bun link` installations.
+release index from `getclarvis/clarvis-releases`, selects only a newer version allowed by the current
+channel, requires GitHub's `sha256:` asset digest and exact target-specific URL, verifies the
+internal manifest, smokes the staged runtime, preserves the previous version, and activates the
+candidate last. It performs no automatic update check at ordinary startup and refuses source or
+`bun link` installations.
 
 The current directory is the workspace Clarvis operates on. To run against
 another project, start the binary from that directory or use the installed

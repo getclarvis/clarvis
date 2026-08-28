@@ -7,6 +7,21 @@
 
 import type { Scope } from "./common.ts";
 
+/** Filesystem convention that owns one installed plugin. */
+export type PluginSource = "agents" | "clarvis";
+
+/** Exact identity of one installed plugin across scope and filesystem convention. */
+export interface PluginRef {
+  scope: Scope;
+  source: PluginSource;
+  name: string;
+}
+
+/** Global install tree selected for a managed plugin lifecycle operation. */
+export interface PluginInstallTarget {
+  source: PluginSource;
+}
+
 /** One external executable a plugin offers to a named capability. */
 export interface PluginCapabilityExecutable {
   capability: string;
@@ -42,12 +57,12 @@ export interface PluginContributions {
 export interface PluginView {
   name: string;
   scope: Scope;
+  /** Shared `.agents` inventory or Clarvis-native `.clarvis` inventory. */
+  source: PluginSource;
   /** Absolute install directory (display + "open" affordance). */
   dir: string;
-  /** Enabled in the effective settings for this workspace. */
+  /** Active in the kernel's pinned resolved Environment. */
   enabled: boolean;
-  /** Workspace plugin that shadows a global one of the same name. */
-  shadows_global: boolean;
   version?: string;
   description?: string;
   /**
@@ -60,8 +75,8 @@ export interface PluginView {
   display_name?: string;
   /** A one-line summary the manifest offers for the plugin list; display data only. */
   short_description?: string;
-  /** Recorded installation origin for a Git-installed plugin, including a selected subdirectory. */
-  source?: string;
+  /** Recorded Git origin for a managed install, including a selected subdirectory. */
+  install_source?: string;
   /** Resolved Git revision of the installed checkout. */
   revision?: string;
   /** Present when `plugin.json` is missing/invalid (the plugin will not load). */
@@ -81,7 +96,7 @@ export interface PluginView {
 
 /** One exact plugin hook definition and its individual review state. */
 export interface PluginHookReview {
-  plugin: string;
+  plugin: PluginRef;
   fingerprint: string;
   definition: unknown;
   approved: boolean;
@@ -89,7 +104,7 @@ export interface PluginHookReview {
 
 /** Install, update and uninstall plugins, and review unmanaged hooks. */
 export interface PluginService {
-  /** Every installed plugin across scopes (workspace shadows global by name). */
+  /** Every installed plugin across scopes and filesystem conventions. */
   list(): Promise<PluginView[]>;
 
   /**
@@ -102,27 +117,27 @@ export interface PluginService {
    *   Omit to install a plugin at the repo root.
    * @returns The newly installed plugin view.
    */
-  install(url: string, subdir?: string): Promise<PluginView>;
+  install(url: string, subdir?: string, target?: PluginInstallTarget): Promise<PluginView>;
 
   /**
    * Update a Git-installed plugin to origin HEAD. Repository-root plugins reset
    * their checkout; selected subdirectory plugins are fetched and atomically replaced.
    *
-   * @param name - Plugin name.
+   * @param ref - Exact global plugin installation.
    */
-  update(name: string): Promise<PluginView>;
+  update(ref: PluginRef): Promise<PluginView>;
 
   /**
    * Remove an installed plugin.
    *
-   * @param name - Plugin name.
+   * @param ref - Exact global plugin installation.
    */
-  uninstall(name: string): Promise<void>;
+  uninstall(ref: PluginRef): Promise<void>;
 
   /** Exact unmanaged hook definitions awaiting or carrying individual approval. */
   hooks(): Promise<PluginHookReview[]>;
   /** Approve exactly one current hook definition. */
-  approveHook(plugin: string, fingerprint: string): Promise<void>;
+  approveHook(plugin: PluginRef, fingerprint: string): Promise<void>;
   /** Revoke exactly one hook definition approval. */
-  revokeHook(plugin: string, fingerprint: string): Promise<void>;
+  revokeHook(plugin: PluginRef, fingerprint: string): Promise<void>;
 }

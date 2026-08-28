@@ -60,6 +60,9 @@ export function createMemoryTraceStore(): TraceStore {
         ...(record.capability_state !== undefined
           ? { capability_state: structuredClone(record.capability_state) }
           : {}),
+        ...(record.host_metadata !== undefined
+          ? { host_metadata: sanitizeDeep(record.host_metadata) }
+          : {}),
       });
       return Promise.resolve();
     },

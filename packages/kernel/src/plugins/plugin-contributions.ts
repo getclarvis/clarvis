@@ -17,10 +17,17 @@ import {
   type CapabilitySkillPlansMode,
   type Logger,
 } from "@clarvis/capability";
-import { globalPaths, withoutGitRepositoryEnvironment } from "@clarvis/paths";
+import {
+  agentsPluginsDirs,
+  globalPaths,
+  withoutGitRepositoryEnvironment,
+  workspacePaths,
+} from "@clarvis/paths";
 import type { AgentRecord } from "../config/config-store.ts";
+import type { EnvironmentPluginRef, PluginSource, Scope } from "@clarvis/protocol";
 import {
   pluginSkillRoots,
+  pluginSkillScanRoots,
   readPluginManifestSource,
   resolvePluginManifest,
 } from "./plugin-manifest.ts";
@@ -28,6 +35,9 @@ import { MAX_SKILL_ROOTS } from "@clarvis/skills";
 import { pluginHookReviews } from "./hook-trust.ts";
 import { readPluginInstallRecord } from "./plugin-install-record.ts";
 import type { PluginInstallRecord } from "./plugin-install-record.ts";
+import { ensurePluginDataDir } from "./plugin-runtime.ts";
+
+type PluginSelection = readonly EnvironmentPluginRef[];
 
 /**
  * Turns installed + enabled plugins into the inputs a run consumes: skill roots,
@@ -37,14 +47,13 @@ import type { PluginInstallRecord } from "./plugin-install-record.ts";
  * Unmanaged hooks are the exception: each normalized definition is withheld
  * until it has been approved through the hook review service.
  *
- * Every method takes the operator-enabled plugin names as an argument (never reads
- * settings itself) so it can be folded into the config store's settings merge
- * without recursing through `readSettings()`. A workspace plugin shadows a global
- * one of the same name.
+ * Every method takes exact operator-enabled plugin references as an argument
+ * (never reads settings itself) so it can be folded into the config store's
+ * settings merge without recursing through `readSettings()`.
  */
 export interface PluginContributions {
   /** Skill roots for enabled + loadable plugins. */
-  skillRoots(enabled: readonly string[]): SkillRootInput[];
+  skillRoots(enabled: PluginSelection): SkillRootInput[];
   /**
    * Bootstrap skills declared by enabled + loadable plugins, in `enabled` order.
    *
@@ -54,24 +63,24 @@ export interface PluginContributions {
    *   skills either, so the name cannot resolve to it and the loop's own resolution
    *   reports the miss.
    */
-  skillBootstraps(enabled: readonly string[]): PluginBootstrapSkill[];
+  skillBootstraps(enabled: PluginSelection): PluginBootstrapSkill[];
   /** Settings scopes for enabled plugins, with unapproved hooks removed. */
-  settingsScopes(enabled: readonly string[]): SettingsScope[];
+  settingsScopes(enabled: PluginSelection): SettingsScope[];
   /** Namespaced MCP declarations plus the plugin provenance used by provider identity. */
-  mcpServers(enabled: readonly string[]): ResolvedPluginMcpContribution[];
+  mcpServers(enabled: PluginSelection): ResolvedPluginMcpContribution[];
   /** Agent records (`<plugin>:<agent>`, scope `plugin`) for enabled plugins. */
-  agents(enabled: readonly string[]): AgentRecord[];
+  agents(enabled: PluginSelection): AgentRecord[];
   /** Resolve one `<plugin>:<agent>` record, or null if the plugin is not enabled. */
-  readAgent(enabled: readonly string[], qualifiedName: string): AgentRecord | null;
+  readAgent(enabled: PluginSelection, qualifiedName: string): AgentRecord | null;
   /** Locate one executable an installed + enabled + selected plugin offers. */
   locateCapabilityExecutable(
-    enabled: readonly string[],
+    enabled: PluginSelection,
     capability: string,
     plugin: string,
   ): { root: string; declaration: CapabilityExecutableDeclaration } | { error: string };
   /** Trusted Plans mode declared for one skill packaged by the selected plugin. */
   skillPlansMode(
-    enabled: readonly string[],
+    enabled: PluginSelection,
     plugin: string,
     skill: string,
   ): CapabilitySkillPlansMode | undefined;
@@ -95,14 +104,16 @@ export function effectivePluginMcpName(plugin: string, server: string): string {
  * One installed and enabled plugin that may contribute to a run.
  */
 interface Loadable {
-  /** The plugin name (as enabled by the operator). */
+  /** The plugin name used as the runtime namespace. */
   name: string;
+  /** Exact inventory identity selected by the operator. */
+  ref: EnvironmentPluginRef;
   /** Absolute install directory the plugin resolved to. */
   dir: string;
-  /** Which install root it resolved from; see {@link InstallScope}. */
-  installScope: InstallScope;
   /** The parsed `plugin.json` manifest. */
   manifest: PluginManifest;
+  /** Dialect-specific discovery contract applied to bundled skills. */
+  format: "native" | "agent-plugin-v1";
   /** Where that manifest was found, relative to {@link Loadable.dir}. */
   manifestLocation: string;
   /** Agent snapshot admitted atomically with the manifest and install record. */
@@ -112,28 +123,20 @@ interface Loadable {
 }
 
 /**
- * Which install root a plugin was found under.
- *
- * @remarks The plugin domain's own axis (`global` vs `workspace`), kept separate
- * from the skills domain's `user`/`workspace` scope and translated only where the
- * two meet, in {@link PluginContributions.skillRoots}.
- */
-type InstallScope = "global" | "workspace";
-
-/**
  * Build the {@link PluginContributions} loader over a global install root and an
  * optional workspace one.
  *
- * @param opts - install locations: `globalDir` holds `plugins/` and hook trust;
- *   `workspaceConfigDir`, when given, adds a workspace
- *   `plugins/` root that is searched first, so a workspace plugin shadows a global
- *   one of the same name.
+ * @param opts - Clarvis global state, optional home, and optional workspace root
+ *   from which all exact `.agents/plugins` and `.clarvis/plugins` inventories are
+ *   derived.
  * @returns a {@link PluginContributions} whose every method is passed the
  *   operator-enabled plugin names, reading manifests, agent files, and hook
  *   approvals fresh on each call.
  * @remarks Reads the filesystem synchronously and never consults settings itself,
  *   so it can be folded into the config store's settings merge without recursing
- *   through `readSettings()`. Duplicate names in `enabled` are de-duplicated.
+ *   through `readSettings()`. Repeated exact references are de-duplicated; the
+ *   Environment resolver rejects two different installations sharing a runtime
+ *   plugin name before this loader is called.
  */
 /**
  * How many skill roots every enabled plugin may contribute between them.
@@ -155,7 +158,8 @@ const PLUGIN_SKILL_ROOT_BUDGET = MAX_SKILL_ROOTS - 8;
 
 export function createPluginContributions(opts: {
   globalDir: string;
-  workspaceConfigDir?: string;
+  home?: string;
+  workspaceRoot?: string;
   /** Where a plugin dropped from the catalog is reported. */
   logger?: Logger;
 }): PluginContributions {
@@ -173,34 +177,52 @@ export function createPluginContributions(opts: {
    *   the same silent `undefined`.
    */
   const skipped = (
-    plugin: string,
-    scope: InstallScope | "none",
+    plugin: EnvironmentPluginRef,
     phase: "manifest" | "dir" | "skills" | "agents" | "install_record",
     cause: string,
   ): void => {
     logger.warn(
-      { event: "kernel.plugin.skipped", plugin, scope, phase, cause },
+      {
+        event: "kernel.plugin.skipped",
+        plugin: plugin.name,
+        scope: plugin.scope,
+        source: plugin.source,
+        phase,
+        cause,
+      },
       "an enabled plugin contributes nothing this run; its agents, hooks, MCP servers and skills are all absent",
     );
   };
-  const installRoots: { path: string; scope: InstallScope }[] = [
-    ...(opts.workspaceConfigDir !== undefined
-      ? [{ path: join(opts.workspaceConfigDir, "plugins"), scope: "workspace" as const }]
-      : []),
-    { path: globalPaths(opts.globalDir).pluginsDir, scope: "global" as const },
+  const agents = agentsPluginsDirs({
+    ...(opts.home === undefined ? {} : { home: opts.home }),
+    ...(opts.workspaceRoot === undefined ? {} : { cwd: opts.workspaceRoot }),
+  });
+  const installRoots: { path: string; scope: Scope; source: PluginSource }[] = [
+    { path: globalPaths(opts.globalDir).pluginsDir, scope: "global", source: "clarvis" },
+    { path: agents.user, scope: "global", source: "agents" },
+    ...(opts.workspaceRoot === undefined
+      ? []
+      : [
+          {
+            path: workspacePaths(opts.workspaceRoot).pluginsDir,
+            scope: "workspace" as const,
+            source: "clarvis" as const,
+          },
+          { path: agents.workspace, scope: "workspace" as const, source: "agents" as const },
+        ]),
   ];
 
-  /** First install root (workspace before global) that holds a directory named
-   * `name`, with the scope it was found under, or undefined when the plugin is
-   * installed nowhere. */
-  const dirFor = (name: string): { dir: string; installScope: InstallScope } | undefined => {
-    for (const root of installRoots) {
-      const dir = join(root.path, name);
-      try {
-        if (statSync(dir).isDirectory()) return { dir, installScope: root.scope };
-      } catch {
-        /* not here — try the next root */
-      }
+  /** Exact install root and directory selected by one qualified reference. */
+  const dirFor = (ref: EnvironmentPluginRef): { dir: string } | undefined => {
+    const root = installRoots.find(
+      (candidate) => candidate.scope === ref.scope && candidate.source === ref.source,
+    );
+    if (root === undefined) return undefined;
+    const dir = join(root.path, ref.name);
+    try {
+      if (statSync(dir).isDirectory()) return { dir };
+    } catch {
+      /* absent or unreadable */
     }
     return undefined;
   };
@@ -242,54 +264,61 @@ export function createPluginContributions(opts: {
 
   /** Resolve one plugin to a {@link Loadable}, or undefined when it is not
    * installed or has no readable/parseable `plugin.json`. */
-  function loadableOf(name: string): Loadable | undefined {
-    const found = dirFor(name);
+  function loadableOf(ref: EnvironmentPluginRef): Loadable | undefined {
+    const name = ref.name;
+    const found = dirFor(ref);
     if (found === undefined) {
-      skipped(name, "none", "dir", "no install root holds a directory of this name");
+      skipped(ref, "dir", "the exact inventory does not hold a directory of this name");
       return undefined;
     }
-    const { dir, installScope } = found;
+    const { dir } = found;
     const source = readPluginManifestSource(dir);
     if (!("raw" in source)) {
-      skipped(name, installScope, "manifest", source.error);
+      skipped(ref, "manifest", source.error);
       return undefined;
     }
-    const resolved = resolvePluginManifest(dir, source.raw, source.location, name);
+    const dataDir = ensurePluginDataDir({
+      globalDir: opts.globalDir,
+      ...(opts.workspaceRoot === undefined ? {} : { workspaceRoot: opts.workspaceRoot }),
+      ref,
+    });
+    const resolved = resolvePluginManifest(dir, source.raw, source.location, name, { dataDir });
     const { manifest } = resolved;
     if (manifest === undefined) {
-      skipped(name, installScope, "manifest", resolved.error ?? "manifest did not resolve");
+      skipped(ref, "manifest", resolved.error ?? "manifest did not resolve");
       return undefined;
     }
     const agents = readPluginAgentFiles(join(dir, "agents"));
     if (!agents.ok) {
-      skipped(name, installScope, "agents", agents.error);
+      skipped(ref, "agents", agents.error);
       return undefined;
     }
     const installed = readPluginInstallRecord(dir);
     if (!installed.ok) {
-      skipped(name, installScope, "install_record", installed.error);
+      skipped(ref, "install_record", installed.error);
       return undefined;
     }
     return {
       name,
+      ref,
       dir,
-      installScope,
       manifest,
+      format: resolved.format ?? "native",
       manifestLocation: source.location,
       agentFiles: agents,
       installRecord: installed.record,
     };
   }
 
-  /** Map the enabled names to their {@link Loadable}s in order, de-duplicating
-   * repeated names and dropping any that fail manifest resolution. */
-  const loadables = (enabled: readonly string[]): Loadable[] => {
+  /** Resolve exact references in order, de-duplicating identical entries. */
+  const loadables = (enabled: PluginSelection): Loadable[] => {
     const out: Loadable[] = [];
     const seen = new Set<string>();
-    for (const name of enabled) {
-      if (seen.has(name)) continue;
-      seen.add(name);
-      const l = loadableOf(name);
+    for (const ref of enabled) {
+      const key = `${ref.scope}\0${ref.source}\0${ref.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const l = loadableOf(ref);
       if (l !== undefined) out.push(l);
     }
     return out;
@@ -328,31 +357,35 @@ export function createPluginContributions(opts: {
         });
         if (present.length === 0) {
           skipped(
-            p.name,
-            p.installScope,
+            p.ref,
             "skills",
             refused ?? `none of ${String(declared.length)} declared skill roots is a directory`,
           );
           return [];
         }
         if (budget <= 0) {
-          skipped(p.name, p.installScope, "skills", "the run's plugin skill-root budget is spent");
+          skipped(p.ref, "skills", "the run's plugin skill-root budget is spent");
           return [];
         }
         const admitted = present.slice(0, budget);
         if (admitted.length < present.length) {
           skipped(
-            p.name,
-            p.installScope,
+            p.ref,
             "skills",
             `only ${String(admitted.length)} of ${String(present.length)} skill roots fit the ` +
               "run's plugin budget",
           );
         }
         budget -= admitted.length;
+        const scanRoots = new Map(
+          pluginSkillScanRoots(p.dir, p.manifest.skills, p.manifestLocation, p.format).map(
+            (root) => [root.path, root],
+          ),
+        );
         return admitted.map((path) => ({
+          ...scanRoots.get(path),
           path,
-          scope: p.installScope === "workspace" ? ("workspace" as const) : ("user" as const),
+          scope: p.ref.scope === "workspace" ? ("workspace" as const) : ("user" as const),
           source: `plugin:${p.name}`,
         }));
       });
@@ -372,7 +405,7 @@ export function createPluginContributions(opts: {
         const namespacedServers = Object.fromEntries(
           resolvedMcpServers(p).map((server) => [server.effectiveName, server.declaration]),
         );
-        const approvedHooks = pluginHookReviews(opts.globalDir, p.name, p.manifest.hooks ?? [])
+        const approvedHooks = pluginHookReviews(opts.globalDir, p.ref, p.manifest.hooks ?? [])
           .filter((review) => review.approved)
           .map((review) => review.definition);
         return {
@@ -403,8 +436,9 @@ export function createPluginContributions(opts: {
       if (sep <= 0) return null;
       const plugin = qualifiedName.slice(0, sep);
       const agentName = qualifiedName.slice(sep + 1);
-      if (!enabled.includes(plugin)) return null;
-      const l = loadableOf(plugin);
+      const ref = enabled.find((candidate) => candidate.name === plugin);
+      if (ref === undefined) return null;
+      const l = loadableOf(ref);
       if (l === undefined) return null;
       const expected = `${agentName}.md`;
       const file = l.agentFiles.files.find((candidate) => candidate.name === expected);
@@ -412,13 +446,14 @@ export function createPluginContributions(opts: {
     },
 
     locateCapabilityExecutable(enabled, capability, plugin) {
-      if (!enabled.includes(plugin)) {
+      const ref = enabled.find((candidate) => candidate.name === plugin);
+      if (ref === undefined) {
         return { error: `plugin '${plugin}' is not enabled for this workspace` };
       }
-      if (dirFor(plugin) === undefined) {
+      if (dirFor(ref) === undefined) {
         return { error: `plugin '${plugin}' is not installed` };
       }
-      const l = loadableOf(plugin);
+      const l = loadableOf(ref);
       if (l === undefined) return { error: `plugin '${plugin}' has no readable manifest` };
       const declared = l.manifest.capabilityExecutables?.[capability];
       if (declared === undefined) {
@@ -428,8 +463,9 @@ export function createPluginContributions(opts: {
     },
 
     skillPlansMode(enabled, plugin, skill) {
-      if (!enabled.includes(plugin)) return undefined;
-      return loadableOf(plugin)?.manifest.capabilityRunPolicies?.plans?.skills[skill];
+      const ref = enabled.find((candidate) => candidate.name === plugin);
+      if (ref === undefined) return undefined;
+      return loadableOf(ref)?.manifest.capabilityRunPolicies?.plans?.skills[skill];
     },
   };
 }

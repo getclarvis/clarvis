@@ -14,6 +14,11 @@ import { globalPaths } from "@clarvis/paths";
  * a Clarvis-valid manifest at the plugin root, and a `skills/` tree beside it.
  */
 const SKILLS = ["using-superpowers", "brainstorming", "writing-plans"];
+const SUPERPOWERS_REF = {
+  scope: "global" as const,
+  source: "clarvis" as const,
+  name: "superpowers",
+};
 
 let ws: string;
 let globalDir: string;
@@ -72,7 +77,7 @@ describe("a skills-only plugin installs, stays inert, and serves its skills", ()
     // one is the operator's decision and lives in their own config.
     writeFileSync(
       globalPaths(globalDir).settingsFile,
-      JSON.stringify({ enabledPlugins: ["superpowers"] }),
+      JSON.stringify({ enabledPlugins: [SUPERPOWERS_REF] }),
     );
   });
   afterEach(() => rmSync(ws, { recursive: true, force: true }));
@@ -81,7 +86,7 @@ describe("a skills-only plugin installs, stays inert, and serves its skills", ()
     installSuperpowers(manifest());
     const views = await createPluginService({
       globalDir,
-      enabledPlugins: () => ["superpowers"],
+      enabledPlugins: () => [SUPERPOWERS_REF],
       environment: process.env,
     }).list();
     expect(views.find((v) => v.name === "superpowers")?.contributions.skills).toEqual(
@@ -110,7 +115,7 @@ describe("a skills-only plugin installs, stays inert, and serves its skills", ()
     writeFileSync(
       globalPaths(globalDir).settingsFile,
       JSON.stringify({
-        enabledPlugins: ["superpowers"],
+        enabledPlugins: [SUPERPOWERS_REF],
         plans: { provider: { kind: "plugin", plugin: "superpowers" } },
       }),
     );
@@ -124,7 +129,7 @@ describe("a skills-only plugin installs, stays inert, and serves its skills", ()
     writeFileSync(
       globalPaths(globalDir).settingsFile,
       JSON.stringify({
-        enabledPlugins: ["superpowers"],
+        enabledPlugins: [SUPERPOWERS_REF],
         plans: { provider: { kind: "markdown" } },
       }),
     );
@@ -148,7 +153,7 @@ describe("a skills-only plugin installs, stays inert, and serves its skills", ()
     writeFileSync(
       globalPaths(globalDir).settingsFile,
       JSON.stringify({
-        enabledPlugins: ["superpowers"],
+        enabledPlugins: [SUPERPOWERS_REF],
         plans: { provider: { kind: "plugin", plugin: "superpowers" } },
         memory: {
           enabled: true,
@@ -179,7 +184,7 @@ describe("a skills-only plugin installs, stays inert, and serves its skills", ()
     installSuperpowers(manifest({ bootstrapSkill: "using-superpowers" }));
     const service = createPluginService({
       globalDir,
-      enabledPlugins: () => ["superpowers"],
+      enabledPlugins: () => [SUPERPOWERS_REF],
       environment: process.env,
     });
     expect((await service.list()).find((v) => v.name === "superpowers")?.enabled).toBe(true);
@@ -191,14 +196,18 @@ describe("a skills-only plugin installs, stays inert, and serves its skills", ()
     await kernel.close();
   });
 
-  it("follows the enabled list live, without restarting the kernel", async () => {
+  it("pins the enabled list until a replacement kernel starts", async () => {
     installSuperpowers(manifest({ bootstrapSkill: "using-superpowers" }));
     const kernel = await kernelFor();
     expect(fromPlugin(await kernel.skills.list())).toHaveLength(SKILLS.length);
 
     writeFileSync(globalPaths(globalDir).settingsFile, JSON.stringify({ enabledPlugins: [] }));
-    expect(fromPlugin(await kernel.skills.list())).toEqual([]);
+    expect(fromPlugin(await kernel.skills.list())).toHaveLength(SKILLS.length);
     await kernel.close();
+
+    const replacement = await kernelFor();
+    expect(fromPlugin(await replacement.skills.list())).toEqual([]);
+    await replacement.close();
   });
 
   it("contributes nothing while the operator has not enabled it", async () => {

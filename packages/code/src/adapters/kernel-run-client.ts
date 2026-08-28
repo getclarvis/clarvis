@@ -3,6 +3,8 @@ import type {
   ConfigService,
   ElicitationRequest,
   ElicitationResponse,
+  EnvironmentRunRef,
+  EnvironmentService,
   KernelClient,
   KernelCapabilities,
   Message as ProtoMessage,
@@ -110,6 +112,10 @@ export interface KernelRunClient {
   readonly sessions: SessionService;
   /** Install/manage plugins and exact hook reviews (server-side). */
   readonly plugins: PluginService;
+  /** Environment definitions, resolution diagnostics, previews, and selection. */
+  readonly environments: EnvironmentService;
+  /** Process-pinned Environment identity used to stamp newly started session turns. */
+  currentEnvironment(): EnvironmentRunRef | undefined;
   /** Provider-neutral external task control plane. */
   readonly tasks: TasksService;
   readonly storage: StorageService;
@@ -158,6 +164,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   const { createKernel, callbacks } = deps;
   let kernel: KernelClient | undefined;
   let lastCapabilities: KernelCapabilities | undefined;
+  let lastEnvironment: EnvironmentRunRef | undefined;
   const live = new Map<string, Promise<ProtoRunHandle>>();
 
   function requireKernel(): KernelClient {
@@ -190,6 +197,8 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   async function connect(): Promise<void> {
     if (!kernel) kernel = await createKernel();
     lastCapabilities = kernel.capabilities;
+    const environment = await kernel.environments.current();
+    lastEnvironment = { id: environment.id, fingerprint: environment.fingerprint };
   }
 
   async function dispose(): Promise<void> {
@@ -503,6 +512,18 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     approveHook: (plugin, fingerprint) => requireKernel().plugins.approveHook(plugin, fingerprint),
     revokeHook: (plugin, fingerprint) => requireKernel().plugins.revokeHook(plugin, fingerprint),
   };
+  const environments: EnvironmentService = {
+    list: () => requireKernel().environments.list(),
+    current: () => requireKernel().environments.current(),
+    get: (ref) => requireKernel().environments.get(ref),
+    preview: (ref, options) => requireKernel().environments.preview(ref, options),
+    previewClear: (scope) => requireKernel().environments.previewClear(scope),
+    select: (ref, options) => requireKernel().environments.select(ref, options),
+    clearSelection: (scope, options) => requireKernel().environments.clearSelection(scope, options),
+    create: (input) => requireKernel().environments.create(input),
+    update: (input) => requireKernel().environments.update(input),
+    clone: (source, target) => requireKernel().environments.clone(source, target),
+  };
   const tasks: TasksService = {
     status: (options) => requireKernel().tasks.status(options),
     capabilities: (options) => requireKernel().tasks.capabilities(options),
@@ -551,6 +572,8 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     files,
     sessions,
     plugins,
+    environments,
+    currentEnvironment: () => lastEnvironment,
     tasks,
     storage,
     dispose,

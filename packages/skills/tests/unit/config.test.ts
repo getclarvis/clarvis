@@ -44,6 +44,47 @@ describe("resolveConfig", () => {
     ]);
   });
 
+  it("normalizes an exact root allowlist without changing root precedence", () => {
+    const config = resolveConfig({
+      home: "/home/u",
+      cwd: "/proj",
+      roots: [{ path: "/a", include: ["zeta", "alpha", "zeta"] }, { path: "/b" }],
+    });
+    expect(config.roots[0]?.include).toEqual(["alpha", "zeta"]);
+    expect(config.roots[1]?.include).toBeUndefined();
+    expect(() =>
+      resolveConfig({
+        home: "/home/u",
+        cwd: "/proj",
+        roots: [{ path: "/a", include: [" spaced "] }],
+      }),
+    ).toThrow(StartupError);
+  });
+
+  it("preserves per-root portable discovery policy and resolves its confinement boundary", () => {
+    const [root] = resolveConfig({
+      home: "/home/u",
+      cwd: "/proj",
+      roots: [
+        {
+          path: "plugin/skills",
+          discovery: "immediate",
+          manifestName: "exact",
+          validation: "agent-skills",
+          confinementRoot: "plugin",
+        },
+      ],
+    }).roots;
+
+    expect(root).toMatchObject({
+      path: path.join("/proj", "plugin", "skills"),
+      discovery: "immediate",
+      manifestName: "exact",
+      validation: "agent-skills",
+      confinementRoot: path.join("/proj", "plugin"),
+    });
+  });
+
   it("defaults the workspace to cwd when none is provided", () => {
     const config = resolveConfig({ home: "/home/u", cwd: "/proj", roots: [{ path: "/x" }] });
     expect(config.workspaceDir).toBe("/proj");

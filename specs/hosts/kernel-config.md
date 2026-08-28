@@ -117,6 +117,7 @@ silently weakening the service's concurrency guarantee" (`packages/kernel/src/co
 | `globalDir?` | defaults to `globalRoot()` (`:308`) |
 | `workspaceConfigDir?` | explicit override of the `.clarvis` default (`:310`) |
 | `plugins?` | `PluginContributions`; folds plugin settings fragments and `<plugin>:<agent>` files (`:609`, `:876`) |
+| `environment?` | host-owned exact plugin resolver plus workspace Environment trust surface; omitted hosts use the already-exact merged `enabledPlugins` references (`packages/kernel/src/config/file-config-store.ts:72-79`) |
 | `logger?` | defaults to `NOOP_LOGGER` (`:306`) |
 
 ### 2.5 Settings schema composition
@@ -207,10 +208,14 @@ Schema at `packages/kernel/src/config/workspace-trust.ts:257`: `{ workspaces: Re
 a non-empty string, written as an ISO timestamp (`:347`). Written atomically with 2-space JSON
 (`:363`). The key is the **realpath** of the workspace root (`canonicalWorkspaceKey`, `:284`).
 
-The fingerprint is `sha256:` + hex over `JSON.stringify(canonical(surface))` (`:239-240`), where
+The fingerprint is `sha256:` + hex over `JSON.stringify(canonical(surface))`, where
 `canonical` sorts object keys recursively and drops `undefined` (`:154-164`) and the surface is
-`{ settings?: Record<string, unknown>, agents?: {name, digest}[] }` (`:142`), agents sorted by name
-with per-file `sha256:` digests (`:166-175`).
+`{ settings?, agents?, extensions? }` (`WorkspaceExecutableSurface` in
+`packages/kernel/src/config/workspace-trust.ts:193-200`), agents sorted by name with per-file
+`sha256:` digests. `extensions` is supplied by the Environment manager only when a workspace
+definition activates plugins; it includes the exact definition reference, revision, and qualified
+plugin allow-list. Consequently editing that definition invalidates an earlier approval even if
+`settings.json` and agent files are unchanged.
 
 ### 3.6 `WORKSPACE_RISK_FIELDS` (`packages/kernel/src/config/workspace-trust.ts:37`)
 
@@ -251,15 +256,22 @@ silently enlarge every delegated run.
    **no** `value`, so the scope contributes nothing to the merge (`:387-391`, `:400`, `:411`).
 2. If the workspace scope parsed and is **not** trusted, `stripWorkspaceRiskFields` runs and its
    `settings` half replaces the workspace layer (`:560-563`).
-3. `enabledNames` is computed by merging the *operator* scopes only — `enabledPluginNames(operatorScopes)` (`:580-584`, called at `:607`).
-4. `pluginScopes = opts.plugins.settingsScopes(enabledNames)` when plugins were supplied (`:608-609`).
+3. `enabledRefs` is computed by merging the *operator* scopes only. Every item is already an exact
+   `{ scope, source, name }` installation. When the host supplied `environment`, its
+   `resolvePlugins(enabledRefs, trust)` applies the pinned Environment; otherwise the exact list is
+   used directly.
+4. `pluginScopes = opts.plugins.settingsScopes(enabledPlugins)` folds only those exact resolved
+   installations. `SettingsSnapshot.active_plugins` reports the same list.
 5. The final merge order is `[...pluginScopes, ...operatorScopes]` (`:611`), and `mergeSettings` takes
    scopes "in ascending precedence (a later scope outranks an earlier one)"
    (`packages/loop/src/settings/settings-merge.ts:143`). So: **plugin < global < workspace**.
 6. `scopes` reports each scope's **raw** parsed value, unstripped (`:598-604`), so a UI can show what
    was refused. `sources` carries `{scope, path, exists, revision, error?}` per scope (`:606-616`).
-7. `withheld_workspace_fields` is set only when something was actually withheld (`:621-623`);
-   `workspace_trust` is always present on the file store (`:624`).
+7. `withheld_workspace_fields` is set only when something was actually withheld. In addition to
+   risky settings keys it reports the pseudo-field `environment` while a plugin-activating workspace
+   Environment is unapproved or changed.
+   `workspace_trust` and `active_plugins` are always present on the file store
+   (`packages/kernel/src/config/file-config-store.ts:708-717`).
 
 `mergeSettings` folds only keys that have a strategy plus the registry's spec keys
 (`packages/loop/src/settings/settings-merge.ts:153-160`), so `merged` never carries a key neither the
@@ -456,7 +468,7 @@ output keeps first-occurrence order (`:61`, `:66`).
 
 | State | Event | Next | Effect |
 | --- | --- | --- | --- |
-| any | workspace declares no risky field and no agent file | `inert` | nothing withheld (`:169`) |
+| any | workspace declares no risky field, agent file, or plugin-activating Environment surface | `inert` | nothing withheld |
 | `unapproved` | `getSettings()` | `unapproved` | risky fields withheld, raw file still on `scopes.workspace` (`:81`, `:92`) |
 | `unapproved` | `approveWorkspace()` | `trusted` | fields merge; `withheld_workspace_fields` absent (`:134`) |
 | `trusted` | the approved file is edited on disk | `changed` | fields withheld again (`:146`) |
@@ -642,9 +654,14 @@ Each entry: **rule** — production anchor — test anchor.
     approved". `coder` being a shipped name is what makes the assertion sharp: the question is never
     whether the agent is listed, only whether the repository's file overlays it.
 
-21. **Approval binds to the surface, not to the path.** The fingerprint covers the risky settings
-    *and* the agent file digests (`packages/kernel/src/config/workspace-trust.ts:188-223`) and the verdict is recomputed per call
-    (`packages/kernel/src/config/file-config-store.ts:508`). Pinned: `packages/kernel/tests/integration/workspace-trust.test.ts:146`.
+21. **Approval binds to the surface, not to the path.** The fingerprint covers the risky settings,
+    agent file digests, *and* a plugin-activating workspace Environment definition and selection
+    (`WorkspaceExecutableSurface` and `workspaceExecutableSurface` in
+    `packages/kernel/src/config/workspace-trust.ts`) and the verdict is recomputed per call
+    (`packages/kernel/src/config/file-config-store.ts:508`). The withheld projection names that
+    extension surface as `environment` until trusted. Pinned:
+    `packages/kernel/tests/integration/workspace-trust.test.ts` ("binds approval to the selected
+    workspace Environment definition").
 
 22. **The trust key is the resolved realpath.** `canonicalWorkspaceKey` (`packages/kernel/src/config/workspace-trust.ts:284`)
     with a `try/catch` falling back to the input. **Unpinned** — no test exercises a symlinked
@@ -757,6 +774,16 @@ Each entry: **rule** — production anchor — test anchor.
     `packages/kernel/src/config/builtin-agents/admiral.ts` (`body`). Test:
     `packages/kernel/tests/component/builtin-agents.test.ts` (`uses separate tools` and
     `may spawn a narrow Sub-agent`).
+
+41. **Environment plugin selection is exact and feeds every plugin contribution consumer from one
+    resolved list.** `snapshot().active_plugins`, plugin settings fragments, plugin agents, and the
+    file kernel's other plugin contribution lookups all use qualified `{ scope, source, name }`
+    references. There is no name-only fallback when no Environment collaborator is supplied.
+    Production: `packages/kernel/src/config/file-config-store.ts:650-684`,
+    `packages/kernel/src/plugins/plugin-contributions.ts` (`settingsScopes`), and
+    `packages/kernel/src/file-kernel.ts`. Test:
+    `packages/kernel/tests/integration/environment-manager.test.ts` (same-name exact scope/source)
+    and `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
 ## 6. Failure modes and degradation
 

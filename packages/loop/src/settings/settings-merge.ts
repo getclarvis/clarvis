@@ -6,7 +6,7 @@ import type {
 } from "@clarvis/capability";
 import { BUILTIN_SETTINGS_SPECS } from "../runtime/capabilities/settings-specs.ts";
 import type { CapabilityRegistry } from "@clarvis/capability";
-import { settingsSchema, type SettingsFile } from "./settings-schema.ts";
+import { settingsSchema, type PluginRefSettings, type SettingsFile } from "./settings-schema.ts";
 import { INPUT_LIMITS } from "../validation/input-limits.ts";
 
 /**
@@ -70,8 +70,7 @@ function mergeRecord<T>(
 
 /**
  * Concatenate a string-list field across scopes in precedence order, dropping
- * duplicates so the first occurrence sets the position (used for `enabledPlugins`
- * and `marketplaces`, where order is precedence).
+ * duplicates so the first occurrence sets the position.
  */
 function concatDistinct(
   scopes: SettingsScope[],
@@ -83,6 +82,28 @@ function concatDistinct(
   for (const scope of scopes) {
     for (const value of pick(scope.settings) ?? []) {
       if (!out.includes(value)) out.push(value);
+      if (out.length > maxEntries) {
+        throw new Error(`merged list exceeds ${String(maxEntries)} entries`);
+      }
+    }
+  }
+  return out;
+}
+
+/** Concatenate exact plugin references while retaining first-seen precedence. */
+function concatDistinctPluginRefs(
+  scopes: SettingsScope[],
+  maxEntries: number,
+): PluginRefSettings[] | undefined {
+  if (scopes.every((scope) => scope.settings.enabledPlugins === undefined)) return undefined;
+  const seen = new Set<string>();
+  const out: PluginRefSettings[] = [];
+  for (const scope of scopes) {
+    for (const ref of scope.settings.enabledPlugins ?? []) {
+      const key = `${ref.scope}\0${ref.source}\0${ref.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(ref);
       if (out.length > maxEntries) {
         throw new Error(`merged list exceeds ${String(maxEntries)} entries`);
       }
@@ -114,8 +135,7 @@ const CORE_STRATEGIES: Partial<Record<keyof SettingsFile, Strategy>> = {
   default_vision_model: (scopes) => lastWins("default_vision_model", scopes),
   default_reasoning_effort: (scopes) => lastWins("default_reasoning_effort", scopes),
   budget: (scopes) => lastWins("budget", scopes),
-  enabledPlugins: (scopes) =>
-    concatDistinct(scopes, (s) => s.enabledPlugins, INPUT_LIMITS.enabledPlugins),
+  enabledPlugins: (scopes) => concatDistinctPluginRefs(scopes, INPUT_LIMITS.enabledPlugins),
   marketplaces: (scopes) =>
     concatDistinct(scopes, (s) => s.marketplaces, INPUT_LIMITS.marketplaces),
 };

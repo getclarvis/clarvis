@@ -22,6 +22,24 @@ import { planRefFromCapabilityState } from "./plan-ref.ts";
 import { taskBindingFromCapabilityState } from "./task-binding.ts";
 import type { KernelException } from "../core/errors.ts";
 
+/** Validate the Environment identity carried in opaque host metadata. */
+function environmentFromHostMetadata(
+  metadata: Record<string, unknown> | undefined,
+): RunDetail["environment"] {
+  const value = metadata?.environment;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const environment = value as Record<string, unknown>;
+  if (
+    typeof environment.id !== "string" ||
+    !/^(?:builtin|global|workspace):(?!\.{1,2}$)[A-Za-z0-9._-]{1,128}$/.test(environment.id) ||
+    typeof environment.fingerprint !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/.test(environment.fingerprint)
+  ) {
+    return undefined;
+  }
+  return { id: environment.id, fingerprint: environment.fingerprint };
+}
+
 /** Maps a stored {@link ExecutionStatus} onto a protocol {@link RunStatus}; any
  * status other than `completed`/`cancelled` collapses to `failed`. */
 function execStatusToRun(status: ExecutionStatus): RunStatus {
@@ -143,6 +161,7 @@ export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER)
   };
   const planRef = planRefFromCapabilityState(s.capability_state);
   const activeTask = taskBindingFromCapabilityState(s.capability_state);
+  const environment = environmentFromHostMetadata(s.host_metadata);
   return {
     execution_id: s.id,
     status: execStatusToRun(s.status),
@@ -151,6 +170,7 @@ export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER)
     ...(s.request.continue_from !== undefined ? { continue_from: s.request.continue_from } : {}),
     ...(planRef !== undefined ? { plan_ref: planRef } : {}),
     ...(activeTask !== undefined ? { active_task: activeTask } : {}),
+    ...(environment !== undefined ? { environment } : {}),
     ...(s.recovery !== undefined ? { recovery: s.recovery } : {}),
     messages: engineMessagesToProto(s.request.messages),
     events: rehydrateEvents(s, logger),

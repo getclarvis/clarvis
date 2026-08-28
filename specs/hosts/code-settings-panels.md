@@ -9,7 +9,7 @@
 
 This subsystem is the **configuration surface of `@clarvis/code`**: the shared machinery every
 configuration screen is built from, plus the screens themselves that edit providers/models and browse
-the extension surfaces (MCP servers, plugins, marketplaces, hooks).
+the extension surfaces (Environments, MCP servers, plugins, marketplaces, hooks).
 
 The shared machinery is three things. `createViewHost` builds the `ViewHost` object a screen is handed
 — a level (breadcrumb) stack, a global/workspace scope toggle with an unsaved-changes guard, a dirty
@@ -144,7 +144,8 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `keyboard` | Keyboard | `keyboard.open` |
 | `controls` | Run controls | `controls.open` |
 
-`ExtensionsHub.ITEMS` (`packages/code/src/views/config/ExtensionsHub.tsx:7`) — four entries: `plugins`→`plugins.open`,
+`ExtensionsHub.ITEMS` (`packages/code/src/views/config/ExtensionsHub.tsx`) — five entries, with
+`environment`→`environments.open` first, followed by `plugins`→`plugins.open`,
 `hooks`→`hooks.open`, `market`→`marketplace.open`, `mcp`→`mcp.browse`.
 
 ### 2.7 Screen dependency interfaces
@@ -154,6 +155,7 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `ProvidersPanel(host, deps)` | `ProvidersDeps { settings, keys, code, notify, catalog, modelsService?, providerAuth?, copyText?, openUrl?, bootstrap?, onBootstrapComplete? }` | `packages/code/src/views/config/ProvidersPanel.tsx` (`ProvidersDeps`) |
 | `DefaultsPanel(host, deps)` | `DefaultsDeps { settings, env, notify }` | `packages/code/src/views/config/DefaultsPanel.tsx:20` |
 | `McpBrowser(host, deps)` | `McpBrowserDeps { nodes, refresh, editConfig, notify }` | `packages/code/src/views/config/McpBrowser.tsx:22` |
+| `EnvironmentBrowser(host, deps)` | `EnvironmentBrowserDeps { environments, reconnect, runActive, notify }` | `packages/code/src/views/config/EnvironmentBrowser.tsx:26` |
 | `PluginBrowser(host, deps)` | `PluginBrowserDeps { plugins, toggleEnabled, install, update, uninstall, notify }` | `packages/code/src/views/config/PluginBrowser.tsx:22` |
 | `MarketplaceBrowser(host, deps)` | `MarketplaceBrowserDeps { listings, sources, loading, install, refresh, addSource }` | `packages/code/src/views/config/MarketplaceBrowser.tsx:22` |
 | `HookBrowser(host, deps)` | `HookBrowserDeps { hooks, operatorHooks, approve, revoke }` | `packages/code/src/views/config/HookBrowser.tsx:35` |
@@ -982,15 +984,44 @@ both verbs), `:127` (argument table not a JSON dump), `:150`/`:160` (`[e]` namin
 (invoke), `:233` (control-plane explanation), `:244` (declared-but-empty explanation), `:289` ("no
 arguments").
 
+### 4.14a EnvironmentBrowser
+
+`EnvironmentBrowser` (`packages/code/src/views/config/EnvironmentBrowser.tsx:122`) is the first
+Extensions child and the control plane for deterministic extension activation. Its header always
+shows the process-pinned active id, plugin counts, skill counts, and `ready|degraded|invalid` status.
+The selected definition's detail shows fingerprint and selection origin, each exact scoped plugin,
+its agents/skills/MCPs/capability executables/hook approval counts, each standalone skill, and every
+resolution issue.
+
+The verbs are: `r` refresh; `w` select locally for this workspace; `g` set a non-workspace
+definition as the global default; `n` create an empty `global:name` or `workspace:name`; `c` clone
+the selected resolved definition; `x` clear the local workspace selection; and `d` clear the global
+default. Selection is disabled while a run is active or a process-local `--env` override is pinned.
+`w`/`g` call scope-bound `preview`, and `x`/`d` call `previewClear`; all four render the exact
+entering/leaving plugin, skill, MCP, and hook delta and require confirmation. A workspace executable
+target requests trust approval only for that preview. A successful mutation reconnects the backend
+before claiming it is active for new runs. Production: `apply`, `clearWorkspaceSelection`,
+`deltaLines`, `rowsFor`, and the level spec in
+`packages/code/src/views/config/EnvironmentBrowser.tsx`. Test:
+`packages/code/tests/integration/environment-browser-render.test.tsx`.
+
+The Plugins browser remains the convenient single-plugin editor. Under `builtin:default`, `e`
+updates global `enabledPlugins` with the selected exact `{ scope, source, name }` reference. Under a
+custom Environment, it CAS-updates that Environment's exact plugin allow-list, shows the
+plugin's contribution delta before confirmation, refreshes workspace trust when applicable, and
+reconnects. Install still does not activate; uninstall can leave an explicit missing-reference
+diagnostic. Production: `packages/code/src/app/commands.tsx:789-881`.
+
 ### 4.15 PluginBrowser / MarketplaceBrowser / HookBrowser
 
 **PluginBrowser** (`packages/code/src/views/config/PluginBrowser.tsx:62`) — one flat level. Verbs: `e` enable/disable (label flips
-with the selection, `:143`), `a` install from a typed git URL (`:152`), `u` update (`:159`), `d`
-uninstall (`:169`). A `workspace`-scoped plugin refuses uninstall with "lives in this workspace —
+with the selection), `a` choose global `.agents/plugins` (the default) or `.clarvis/plugins` and
+then type a Git URL, `u` update, `d` uninstall. A `workspace`-scoped plugin refuses uninstall with "lives in this workspace —
 remove it from the repo instead" (`:176`); anything else confirms with `deletes <dir>` as the detail
 line (`:183`). The detail pane colours **executable** contributions warn: agents (`:88`), servers
 (`:102`), hooks (`:108`), capability services (`:114`) and raw executables (`:129`); broken agents are
-del (`:93`). Pinned at `packages/code/tests/integration/plugin-browser-render.test.tsx:77`, `:94`, `:109`, `:122`, `:139`, `:155`.
+del (`:93`). Pinned at `packages/code/tests/integration/plugin-browser-render.test.tsx`, including
+both install-target choices and exact lifecycle refs.
 
 **MarketplaceBrowser** (`packages/code/src/views/config/MarketplaceBrowser.tsx:58`) — one level; `activate` installs only when
 `!l.installed && l.installable` (`:130`). Verbs: `a` add marketplace by git URL (`:139`) and `refresh`
@@ -1370,6 +1401,18 @@ Production: `showDevice` and `clearDevice` in
 `packages/code/tests/integration/providers-key-render.test.tsx` (pending and successful in-place
 clipboard/browser feedback).
 
+**INV-P48.** An Environment selection is never applied from the browser without an exact preview
+and explicit confirmation, never while a run is active, and never reported active until backend
+reconnection succeeds. Production: `apply` in
+`packages/code/src/views/config/EnvironmentBrowser.tsx`. Test:
+`packages/code/tests/integration/environment-browser-render.test.tsx`.
+
+**INV-P49.** Plugin toggling edits the active activation source: the global exact `enabledPlugins`
+list for `builtin:default`, otherwise the custom Environment definition by revision CAS. Installation is
+never activation. Production: `packages/code/src/app/commands.tsx:789-881`. Test:
+`packages/code/tests/integration/app-commands.test.tsx` and
+`packages/code/tests/integration/plugin-browser-render.test.tsx`.
+
 ---
 
 ## 6. Failure modes and degradation
@@ -1400,6 +1443,10 @@ clipboard/browser feedback).
 | MCP `listTools`/`listPrompts` rejects | `reportListFailure` logs `mcp.list.failed` and substitutes `[]`, so one failing half does not crash the refresh | `packages/code/src/adapters/mcp-capabilities-bridge.ts:82` |
 | An `mcpServers` entry fails its schema | dropped silently from the parsed list | `packages/code/src/adapters/mcp-capabilities.ts:69` |
 | Uninstalling a workspace plugin | refused with a notify, no confirm | `packages/code/src/views/config/PluginBrowser.tsx:176` |
+| Environment target is invalid or degraded | preview/detail preserves the exact status and issues; no silent default is shown | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`deltaLines`, `rowsFor`) |
+| Environment changes while a run is active | all selection/clear verbs are hidden and the view says to finish the run first | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`runActive`) |
+| Preview expires or target revision changes | `select` rejects; the browser reports the conflict and leaves the current kernel active | `EnvironmentBrowser.apply`; [Environment failure modes](environments.md#6-failure-modes-and-degradation) |
+| Backend reconnect fails after selection | selection remains persisted; warning tells the operator to run `/reconnect`, never claims the target is active | `packages/code/src/views/config/EnvironmentBrowser.tsx:183-190` |
 | A marketplace source failed to fetch | rendered as a persistent `ErrorBanner` per source above a still-populated list | `packages/code/src/views/config/MarketplaceBrowser.tsx:162`; test `:67` |
 | No marketplace configured | dedicated empty state explaining what a marketplace is and offering the alternative | `packages/code/src/views/config/MarketplaceBrowser.tsx:180` |
 | Workspace hooks withheld by trust | listed but marked "not running: workspace not approved" | `packages/code/src/views/config/HookBrowser.tsx:134` |
@@ -1424,6 +1471,7 @@ clipboard/browser feedback).
 | `adapters/settings.ts` | `@clarvis/kernel/config` (`kernelSettingsSchema`, `mergeProviders`, `mergeSettings`, `parseModelRef`, `isWellFormedHttpUrl`, `PLANS_DEFAULTS`) | runtime, static | `packages/code/src/adapters/settings.ts:3` |
 | `adapters/settings.ts` | `@clarvis/protocol` (`ConfigService`, `SettingsData`, `SettingsRepairPlan`, `SandboxInspection`) | type-only | `packages/code/src/adapters/settings.ts:13` |
 | `HookBrowser.tsx` | `@clarvis/protocol` (`PluginHookReview`) | type-only | `packages/code/src/views/config/HookBrowser.tsx:2` |
+| `EnvironmentBrowser.tsx` | `@clarvis/protocol` (`EnvironmentService` and Environment DTOs) | type-only | `packages/code/src/views/config/EnvironmentBrowser.tsx:1-7` |
 | `adapters/models-catalog.ts` | `@clarvis/protocol` catalog DTOs + `@clarvis/kernel/config` `parseModelRef` | runtime + type | `packages/code/src/adapters/models-catalog.ts:1`, `:2` |
 
 Every one of those is one of the five sanctioned kernel entrypoints (INV-251) — full statement owned
@@ -1463,7 +1511,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 ### 7.3 What depends on this subsystem
 
 - `app/commands.tsx` registers every screen here as a view command and owns their dependency wiring:
-  `defaults.open` (`:643`), `plugins.open` (`:679`), `hooks.open` (`:743`), `marketplace.open`
+  `defaults.open`, `environments.open`, `plugins.open`, `hooks.open`, `marketplace.open`
   (`:786`), `mcp.browse` (`:1304`), `settings.open` (`:918`), `extensions.open` (`:1327`).
 - `views/overlay-host.ts` depends on `ViewHostControls`' exact shape — `runSave`, `scopeBound`,
   `escape`, `dispose` (`packages/code/src/views/overlay-host.ts:176`–`:257`).
@@ -1479,7 +1527,9 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
   `pick-model.ts`, `ModelView`, `EffortView`, and `derivePromptCacheMode` / `cacheModeOf` themselves:
   [hosts/model-catalog.md](model-catalog.md).
 - **Plugin install mechanics** — `adapters/{plugins,plugin-install,marketplace}.ts` and the kernel's
-  plugin service: [hosts/plugins.md](plugins.md). This document covers only the four browsers' UI contracts.
+  plugin service: [hosts/plugins.md](plugins.md). Environment resolution, formats, trust, and
+  snapshot identity are [Extension Environments](environments.md). This document covers only the
+  five extension browsers' UI contracts.
 - **Domain hubs** — [hosts/code-domain-hubs.md](code-domain-hubs.md).
 - **Key registration, layers, footer projection** — `keys/**` and `ui/patterns/**`:
   [hosts/code-keyboard.md](code-keyboard.md). `LevelSpec`, `registerLevel`, `verb`, `PANEL_VERBS`,

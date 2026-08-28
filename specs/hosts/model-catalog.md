@@ -71,7 +71,7 @@ configuration surface), and again as `parseModelRef` from `@clarvis/capability`
 | `ModelCatalog` | 57 | `{ providers[], source: "cache"\|"bundle" }` |
 | `ModelCatalogService` | 64 | Public Models.dev `get`/`refresh` plus authenticated `getEntitled`/`refreshEntitled` per subscription scheme |
 
-`ModelCatalogService` is one of the fourteen services a `KernelClient` aggregates
+`ModelCatalogService` is one of the fifteen services a `KernelClient` aggregates
 (`packages/protocol/src/client.ts:70`; `packages/kernel/src/kernel.ts:127`), constructed at kernel
 boot as `createModelCatalogService(globalDir, logger)` (`packages/kernel/src/kernel.ts:721`) and
 exposed over the transport under operation key `models`

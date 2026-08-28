@@ -39,14 +39,14 @@ describe("pluginManifestSchema", () => {
     expect(pluginManifestSchema.safeParse({ version: "1.0.0" }).success).toBe(false);
   });
 
-  it("still validates version and description when they are present", () => {
-    expect(code({ name: "demo", version: "1.0" })).toBe("invalid_format");
+  it("requires non-empty version and description values when they are present", () => {
+    expect(code({ name: "demo", version: "" })).toBe("too_small");
     expect(code({ name: "demo", description: "" })).toBe("too_small");
   });
 
-  it("rejects a non-semver version", () => {
-    expect(pluginManifestSchema.safeParse({ ...happy, version: "1.0" }).success).toBe(false);
-    expect(pluginManifestSchema.safeParse({ ...happy, version: "v1.0.0" }).success).toBe(false);
+  it("accepts ecosystem version labels without imposing SemVer", () => {
+    expect(pluginManifestSchema.safeParse({ ...happy, version: "1.0" }).success).toBe(true);
+    expect(pluginManifestSchema.safeParse({ ...happy, version: "v1.0.0" }).success).toBe(true);
     expect(pluginManifestSchema.safeParse({ ...happy, version: "1.0.0-rc.1" }).success).toBe(true);
   });
 

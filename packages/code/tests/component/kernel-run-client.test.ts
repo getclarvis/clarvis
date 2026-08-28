@@ -129,6 +129,12 @@ function fakeKernel(over: KernelOver): KernelClient {
     config: {
       listAgents: async () => over.agents ?? [],
     } as KernelClient["config"],
+    environments: {
+      current: async () => ({
+        id: "builtin:default",
+        fingerprint: `sha256:${"0".repeat(64)}`,
+      }),
+    } as KernelClient["environments"],
     ...(over.tasks === undefined ? {} : { tasks: over.tasks }),
     ...(over.capabilities === undefined ? {} : { capabilities: over.capabilities }),
     close: async () => {},
@@ -146,6 +152,16 @@ function client(over: KernelOver, cbOver: Partial<KernelRunClientCallbacks> = {}
   const c = createKernelRunClient({ createKernel: async () => fakeKernel(over), callbacks });
   return { c, events, progress };
 }
+
+test("connect exposes the process-pinned Environment identity", async () => {
+  const { c } = client({});
+  await c.connect();
+  expect(c.currentEnvironment()).toEqual({
+    id: "builtin:default",
+    fingerprint: `sha256:${"0".repeat(64)}`,
+  });
+  await c.dispose();
+});
 
 test("startRun pumps the kernel event stream into onEvent and resolves done", async () => {
   const ctrl = controllableHandle("exec_1");
@@ -723,11 +739,11 @@ test("every non-run control-plane method stays a thin pass-through to its kernel
     c.sessions.delete("session"),
     c.plugins.list(),
     c.plugins.install("https://example.com/plugin.git"),
-    c.plugins.update("plugin"),
-    c.plugins.uninstall("plugin"),
+    c.plugins.update({ scope: "global", source: "clarvis", name: "plugin" }),
+    c.plugins.uninstall({ scope: "global", source: "clarvis", name: "plugin" }),
     c.plugins.hooks(),
-    c.plugins.approveHook("plugin", "fingerprint"),
-    c.plugins.revokeHook("plugin", "fingerprint"),
+    c.plugins.approveHook({ scope: "global", source: "clarvis", name: "plugin" }, "fingerprint"),
+    c.plugins.revokeHook({ scope: "global", source: "clarvis", name: "plugin" }, "fingerprint"),
   ]);
   expect(c.project).toBe(kernel.project);
   expect(c.workspace).toBe(kernel.workspace);

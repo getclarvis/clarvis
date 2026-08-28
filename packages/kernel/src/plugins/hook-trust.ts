@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
 import { globalPaths, writeFileAtomicSync } from "@clarvis/paths";
 import { readJsonFile, type PluginManifest } from "@clarvis/loop/host";
+import type { PluginRef } from "@clarvis/protocol";
 import { z } from "zod";
 
+const pluginRefSchema = z
+  .object({
+    scope: z.enum(["global", "workspace"]),
+    source: z.enum(["agents", "clarvis"]),
+    name: z.string().min(1),
+  })
+  .strict();
 const hookApprovalSchema = z
   .object({
-    plugin: z.string().min(1),
+    plugin: pluginRefSchema,
     fingerprint: z.string().regex(/^sha256:[0-9a-f]{64}$/),
     approved_at: z.string().min(1),
   })
@@ -20,7 +28,7 @@ interface HookTrustRead {
 }
 
 export interface PluginHookReview {
-  plugin: string;
+  plugin: PluginRef;
   fingerprint: string;
   definition: NonNullable<PluginManifest["hooks"]>[number];
   approved: boolean;
@@ -53,7 +61,7 @@ function readHookTrust(globalDir: string): HookTrustRead {
 
 export function pluginHookReviews(
   globalDir: string,
-  plugin: string,
+  plugin: PluginRef,
   hooks: NonNullable<PluginManifest["hooks"]> = [],
 ): PluginHookReview[] {
   const trust = readHookTrust(globalDir).trust ?? { hooks: [] };
@@ -64,7 +72,11 @@ export function pluginHookReviews(
       fingerprint,
       definition,
       approved: trust.hooks.some(
-        (entry) => entry.plugin === plugin && entry.fingerprint === fingerprint,
+        (entry) =>
+          entry.plugin.scope === plugin.scope &&
+          entry.plugin.source === plugin.source &&
+          entry.plugin.name === plugin.name &&
+          entry.fingerprint === fingerprint,
       ),
     };
   });
@@ -72,7 +84,7 @@ export function pluginHookReviews(
 
 export function writeHookApproval(
   globalDir: string,
-  plugin: string,
+  plugin: PluginRef,
   fingerprint: string,
   approved: boolean,
 ): void {
@@ -81,7 +93,13 @@ export function writeHookApproval(
     throw new Error(`hook-trust.json is unreadable, refusing to overwrite: ${current.error}`);
   }
   const without = current.trust.hooks.filter(
-    (entry) => !(entry.plugin === plugin && entry.fingerprint === fingerprint),
+    (entry) =>
+      !(
+        entry.plugin.scope === plugin.scope &&
+        entry.plugin.source === plugin.source &&
+        entry.plugin.name === plugin.name &&
+        entry.fingerprint === fingerprint
+      ),
   );
   const hooks = approved
     ? [...without, { plugin, fingerprint, approved_at: new Date().toISOString() }]

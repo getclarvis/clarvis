@@ -340,7 +340,9 @@ export function createMCPClientFactory(
  * only for MCP resource requests on the configured origin. OAuth discovery,
  * registration, and token requests do not inherit them, and an SDK-defined
  * header always wins. `${VAR}` references in `env` and `headers` resolve against
- * `environment` and throw {@link MissingEnvVarsError} when unset.
+ * `environment` and throw {@link MissingEnvVarsError} when unset unless
+ * `server.expandVariables === false`; that mode preserves package-owned literal
+ * values after a portable format adapter has performed its own bounded expansion.
  */
 export function buildTransport(
   server: McpServerConfig,
@@ -364,7 +366,11 @@ export function buildTransport(
     if (!server.command) {
       throw new Error(`server '${server.name}': command is required for stdio transport`);
     }
-    const customEnv = server.env ? resolveStringMap(server.env, environment) : undefined;
+    const customEnv = server.env
+      ? server.expandVariables === false
+        ? { ...server.env }
+        : resolveStringMap(server.env, environment)
+      : undefined;
     const cwd = server.cwd ?? defaultCwd;
     const forwarder =
       limits.onServerStderr === undefined
@@ -412,7 +418,11 @@ export function buildTransport(
     throw new Error(`server '${server.name}': url is required for ${server.transport} transport`);
   }
   const url = new URL(server.url);
-  const headers = server.headers ? resolveStringMap(server.headers, environment) : undefined;
+  const headers = server.headers
+    ? server.expandVariables === false
+      ? { ...server.headers }
+      : resolveStringMap(server.headers, environment)
+    : undefined;
   const remoteFetch = createMCPRemoteFetch({
     resourceUrl: url,
     authorization: limits.authProvider !== undefined,

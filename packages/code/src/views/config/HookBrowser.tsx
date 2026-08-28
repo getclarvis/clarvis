@@ -53,6 +53,11 @@ function definition(review: PluginHookReview): string {
   return JSON.stringify(review.definition);
 }
 
+function pluginLabel(review: PluginHookReview): string {
+  const ref = review.plugin;
+  return `${ref.scope}/${ref.source}/${ref.name}`;
+}
+
 /** Review exact normalized plugin-hook definitions independently of plugin enablement. */
 export function HookBrowser(host: ViewHost, deps: HookBrowserDeps): JSX.Element {
   const [sel, setSel] = createSignal(0);
@@ -100,7 +105,7 @@ export function HookBrowser(host: ViewHost, deps: HookBrowserDeps): JSX.Element 
             <span style={{ fg: tone(review.approved ? "ok" : "warn").fg }}>
               {tone(review.approved ? "ok" : "warn").glyph}{" "}
             </span>
-            <span style={{ fg: tokens.fg }}>{review.plugin}</span>
+            <span style={{ fg: tokens.fg }}>{pluginLabel(review)}</span>
             <span style={{ fg: tokens.muted }}>
               {`  ${review.approved ? "approved" : "review required"}`}
             </span>

@@ -50,6 +50,7 @@ import { createToolEffectPort } from "./tools/tool-effect.ts";
 import { createEntryInput } from "./entry-inputs.ts";
 import { buildElicitRelay } from "./elicit-relay.ts";
 import { openToolPool } from "./open-tool-pool.ts";
+import { addAutomaticMcpTools } from "./tools/automatic-mcp-tools.ts";
 import { deriveRunShape, resolveConfig, type RunShape } from "./run-shape.ts";
 import { loopResultToResponse } from "./run-response-mapping.ts";
 import {
@@ -458,6 +459,7 @@ export async function runOrchestrator(
   if (poolResult.degraded.length > 0) {
     traceHandle.record("mcp_degraded", { servers: poolResult.degraded });
   }
+  addAutomaticMcpTools(request.servers, opened, shape.fullRegistry.values());
 
   try {
     const outcome = await runEntryAgent({

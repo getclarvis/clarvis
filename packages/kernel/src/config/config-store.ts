@@ -1,6 +1,7 @@
 import type {
   ConfigChange,
   WorkspaceTrustVerdict,
+  EnvironmentPluginRef,
   Scope,
   SettingsData,
   SettingsSource,
@@ -186,6 +187,8 @@ export interface SettingsSnapshot {
    * declares none, otherwise `trusted` / `unapproved` / `changed`.
    */
   workspace_trust?: WorkspaceTrustVerdict;
+  /** Exact plugin installations selected by the resolved extension Environment. */
+  active_plugins?: readonly EnvironmentPluginRef[];
 }
 
 /**

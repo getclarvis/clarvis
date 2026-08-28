@@ -50,6 +50,31 @@ describe("executeRun (shared engine)", () => {
     expect(response.usage).toBeDefined();
   });
 
+  it("captures opaque host metadata once and persists it with the run", async () => {
+    const traceStore = makeTestTraceStore();
+    let reads = 0;
+    const environment = {
+      environment: {
+        id: "global:research",
+        fingerprint: `sha256:${"a".repeat(64)}`,
+      },
+    };
+    const outcome = await executeRun({
+      rawBody: BODY,
+      owner: "o",
+      deps: makeDeps({
+        traceStore,
+        hostMetadata: () => {
+          reads += 1;
+          return environment;
+        },
+      }),
+    });
+
+    expect(reads).toBe(1);
+    expect(traceStore.getById("o", outcome.executionId)?.host_metadata).toEqual(environment);
+  });
+
   it("throws ConflictError when a caller execution_id already exists for the owner", async () => {
     const traceStore = makeTestTraceStore();
     await traceStore.insert(makeExecutionRecord({ id: "dup", owner_key_name: "o" }));

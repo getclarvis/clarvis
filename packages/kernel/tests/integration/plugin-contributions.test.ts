@@ -2,12 +2,21 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { globalPaths, workspacePaths } from "@clarvis/paths";
+import { agentsPluginsDirs, globalPaths, workspacePaths } from "@clarvis/paths";
 
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
 import { createPluginService } from "../../src/plugins/plugin-service.ts";
 import { PLUGIN_RESOURCE_LIMITS } from "@clarvis/loop/host";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
+import type { PluginRef } from "@clarvis/protocol";
+
+const ref = (name: string): PluginRef => ({ scope: "global", source: "clarvis", name });
+const refs = (...names: string[]): PluginRef[] => names.map(ref);
+const exactRef = (
+  name: string,
+  scope: PluginRef["scope"],
+  source: PluginRef["source"],
+): PluginRef => ({ scope, source, name });
 
 function install(
   root: string,
@@ -36,11 +45,13 @@ describe("plugin contributions", () => {
   let root: string;
   let globalDir: string;
   let workspaceRoot: string;
+  let home: string;
 
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "clarvis-plugin-contributions-"));
     globalDir = join(root, "global");
     workspaceRoot = join(root, "workspace");
+    home = join(root, "home");
     mkdirSync(globalPaths(globalDir).pluginsDir, { recursive: true });
     mkdirSync(workspacePaths(workspaceRoot).pluginsDir, { recursive: true });
   });
@@ -49,29 +60,30 @@ describe("plugin contributions", () => {
   const contributions = () =>
     createPluginContributions({
       globalDir,
-      workspaceConfigDir: workspacePaths(workspaceRoot).clarvisDir,
+      home,
+      workspaceRoot,
     });
 
   it("installation plus enablement loads skills and agents without global fingerprint trust", () => {
     install(globalPaths(globalDir).pluginsDir, "demo", {}, { agent: true, skill: true });
     const loaded = contributions();
-    expect(loaded.skillRoots(["demo"])).toEqual([
+    expect(loaded.skillRoots(refs("demo"))).toEqual([
       {
         path: join(globalPaths(globalDir).pluginsDir, "demo", "skills"),
         scope: "user",
         source: "plugin:demo",
       },
     ]);
-    expect(loaded.agents(["demo"]).map((agent) => agent.name)).toEqual(["demo:worker"]);
-    expect(loaded.readAgent(["demo"], "demo:worker")?.body.trim()).toBe("body");
+    expect(loaded.agents(refs("demo")).map((agent) => agent.name)).toEqual(["demo:worker"]);
+    expect(loaded.readAgent(refs("demo"), "demo:worker")?.body.trim()).toBe("body");
     expect(loaded.skillRoots([])).toEqual([]);
   });
 
   it("bounds plugin skill roots and projects an optional bootstrap skill", () => {
-    const enabled: string[] = [];
+    const enabled: PluginRef[] = [];
     for (let pluginIndex = 0; pluginIndex < 7; pluginIndex += 1) {
       const name = `roots-${String(pluginIndex)}`;
-      enabled.push(name);
+      enabled.push(ref(name));
       const roots = Array.from({ length: 4 }, (_, rootIndex) => `skills-${String(rootIndex)}`);
       const dir = install(globalPaths(globalDir).pluginsDir, name, {
         skills: roots,
@@ -98,20 +110,20 @@ describe("plugin contributions", () => {
       hooks: [{ event: "run_start", command: "check" }],
     });
     const loaded = contributions();
-    expect(loaded.settingsScopes(["demo"])[0]!.settings).toMatchObject({
+    expect(loaded.settingsScopes(refs("demo"))[0]!.settings).toMatchObject({
       mcpServers: { "demo:files": { command: "file-server" } },
       hooks: undefined,
     });
     const service = createPluginService({
       globalDir,
-      enabledPlugins: () => ["demo"],
+      enabledPlugins: () => refs("demo"),
       environment: process.env,
     });
     const [hook] = await service.hooks();
-    await service.approveHook("demo", hook!.fingerprint);
+    await service.approveHook(ref("demo"), hook!.fingerprint);
     expect(
       (
-        loaded.settingsScopes(["demo"])[0]!.settings as {
+        loaded.settingsScopes(refs("demo"))[0]!.settings as {
           hooks?: { event: string; command: string }[];
         }
       ).hooks,
@@ -130,7 +142,7 @@ describe("plugin contributions", () => {
 
     const loaded = contributions();
     expect(loaded.mcpServers([])).toEqual([]);
-    expect(loaded.mcpServers(["alpha", "beta"])).toEqual([
+    expect(loaded.mcpServers(refs("alpha", "beta"))).toEqual([
       {
         effectiveName: "alpha:tasks",
         plugin: "alpha",
@@ -145,7 +157,7 @@ describe("plugin contributions", () => {
       },
     ]);
     expect(
-      loaded.settingsScopes(["alpha", "beta"]).map((scope) => scope.settings.mcpServers),
+      loaded.settingsScopes(refs("alpha", "beta")).map((scope) => scope.settings.mcpServers),
     ).toEqual([
       { "alpha:tasks": { type: "http", url: "https://alpha.example/mcp" } },
       { "beta:tasks": { type: "stdio", command: "beta-server" } },
@@ -162,14 +174,14 @@ describe("plugin contributions", () => {
     );
 
     const loaded = contributions();
-    expect(loaded.mcpServers(["atlas"])).toEqual([
+    expect(loaded.mcpServers(refs("atlas"))).toEqual([
       {
         effectiveName: "atlas:charts",
         plugin: "atlas",
         declaration: { type: "stdio", command: "atlas-mcp" },
       },
     ]);
-    expect(loaded.settingsScopes(["atlas"]).map((scope) => scope.settings.mcpServers)).toEqual([
+    expect(loaded.settingsScopes(refs("atlas")).map((scope) => scope.settings.mcpServers)).toEqual([
       { "atlas:charts": { type: "stdio", command: "atlas-mcp" } },
     ]);
   });
@@ -184,9 +196,9 @@ describe("plugin contributions", () => {
     writeFileSync(join(dir, ".mcp.json"), "{nope");
 
     const loaded = contributions();
-    expect(loaded.mcpServers(["atlas"])).toEqual([]);
-    expect(loaded.agents(["atlas"]).map((agent) => agent.name)).toEqual(["atlas:worker"]);
-    expect(loaded.skillRoots(["atlas"])).toHaveLength(1);
+    expect(loaded.mcpServers(refs("atlas"))).toEqual([]);
+    expect(loaded.agents(refs("atlas")).map((agent) => agent.name)).toEqual(["atlas:worker"]);
+    expect(loaded.skillRoots(refs("atlas"))).toHaveLength(1);
   });
 
   it("locates an enabled selected capability executable without reading its code", () => {
@@ -203,11 +215,11 @@ describe("plugin contributions", () => {
     expect(loaded.locateCapabilityExecutable([], "memory", "speckit")).toEqual({
       error: "plugin 'speckit' is not enabled for this workspace",
     });
-    expect(loaded.locateCapabilityExecutable(["speckit"], "memory", "speckit")).toEqual({
+    expect(loaded.locateCapabilityExecutable(refs("speckit"), "memory", "speckit")).toEqual({
       root: dir,
       declaration: expect.objectContaining({ command: "python3" }),
     });
-    expect(loaded.locateCapabilityExecutable(["speckit"], "plans", "speckit")).toEqual({
+    expect(loaded.locateCapabilityExecutable(refs("speckit"), "plans", "speckit")).toEqual({
       error: "plugin 'speckit' offers no capability executable 'plans'",
     });
   });
@@ -220,17 +232,86 @@ describe("plugin contributions", () => {
     });
     const loaded = contributions();
     expect(loaded.skillPlansMode([], "speckit", "speckit-plan")).toBeUndefined();
-    expect(loaded.skillPlansMode(["speckit"], "speckit", "speckit-plan")).toBe("off");
-    expect(loaded.skillPlansMode(["speckit"], "speckit", "speckit-implement")).toBe("review");
-    expect(loaded.skillPlansMode(["speckit"], "speckit", "unknown")).toBeUndefined();
+    expect(loaded.skillPlansMode(refs("speckit"), "speckit", "speckit-plan")).toBe("off");
+    expect(loaded.skillPlansMode(refs("speckit"), "speckit", "speckit-implement")).toBe("review");
+    expect(loaded.skillPlansMode(refs("speckit"), "speckit", "unknown")).toBeUndefined();
   });
 
-  it("workspace plugins shadow global plugins of the same name", () => {
+  it("same-named installations never substitute for an exact reference", () => {
     install(globalPaths(globalDir).pluginsDir, "demo", {}, { skill: true });
     install(workspacePaths(workspaceRoot).pluginsDir, "demo", {}, { agent: true });
     const loaded = contributions();
-    expect(loaded.skillRoots(["demo"])).toEqual([]);
-    expect(loaded.agents(["demo"]).map((agent) => agent.name)).toEqual(["demo:worker"]);
+    expect(loaded.skillRoots([exactRef("demo", "global", "clarvis")])).toHaveLength(1);
+    expect(loaded.agents([exactRef("demo", "global", "clarvis")])).toEqual([]);
+    expect(loaded.skillRoots([exactRef("demo", "workspace", "clarvis")])).toEqual([]);
+    expect(
+      loaded.agents([exactRef("demo", "workspace", "clarvis")]).map((agent) => agent.name),
+    ).toEqual(["demo:worker"]);
+  });
+
+  it("loads shared .agents plugins from user and workspace inventories by exact source", () => {
+    const agents = agentsPluginsDirs({ home, cwd: workspaceRoot, env: {} });
+    install(agents.user, "shared", {}, { skill: true });
+    install(agents.workspace, "project", {}, { agent: true });
+    install(globalPaths(globalDir).pluginsDir, "shared", {}, { agent: true });
+    const loaded = contributions();
+
+    expect(loaded.skillRoots([exactRef("shared", "global", "agents")])).toHaveLength(1);
+    expect(loaded.agents([exactRef("shared", "global", "agents")])).toEqual([]);
+    expect(
+      loaded.agents([exactRef("shared", "global", "clarvis")]).map((agent) => agent.name),
+    ).toEqual(["shared:worker"]);
+    expect(
+      loaded.agents([exactRef("project", "workspace", "agents")]).map((agent) => agent.name),
+    ).toEqual(["project:worker"]);
+  });
+
+  it("loads a Codex-layout package from .agents without repackaging it for Clarvis", () => {
+    const agents = agentsPluginsDirs({ home, cwd: workspaceRoot, env: {} });
+    const dir = join(agents.user, "codex-kit");
+    mkdirSync(join(dir, ".codex-plugin"), { recursive: true });
+    mkdirSync(join(dir, "skills", "research"), { recursive: true });
+    mkdirSync(join(dir, "agents"), { recursive: true });
+    writeFileSync(
+      join(dir, ".codex-plugin", "plugin.json"),
+      JSON.stringify({
+        name: "codex-kit",
+        version: "preview-1",
+        skills: "../skills",
+        mcpServers: "../.mcp.json",
+      }),
+    );
+    writeFileSync(
+      join(dir, ".mcp.json"),
+      JSON.stringify({ mcpServers: { docs: { command: "codex-docs-server" } } }),
+    );
+    writeFileSync(
+      join(dir, "skills", "research", "SKILL.md"),
+      "---\nname: research\ndescription: Research with Codex tools\n---\n",
+    );
+    writeFileSync(
+      join(dir, "agents", "reviewer.md"),
+      "---\ndescription: reviewer\n---\nReview the result.\n",
+    );
+    const loaded = contributions();
+    const selected = [exactRef("codex-kit", "global", "agents")];
+
+    expect(loaded.skillRoots(selected)).toEqual([
+      {
+        path: join(dir, "skills"),
+        scope: "user",
+        source: "plugin:codex-kit",
+      },
+    ]);
+    expect(loaded.agents(selected).map((agent) => agent.name)).toEqual(["codex-kit:reviewer"]);
+    expect(loaded.mcpServers(selected)).toMatchObject([
+      {
+        effectiveName: "codex-kit:docs",
+        plugin: "codex-kit",
+        pluginVersion: "preview-1",
+        declaration: { command: "codex-docs-server" },
+      },
+    ]);
   });
 
   it("omits every executable contribution when one agent exceeds its file budget", () => {
@@ -243,10 +324,10 @@ describe("plugin contributions", () => {
     truncateSync(join(dir, "agents", "huge.md"), PLUGIN_RESOURCE_LIMITS.agentFileBytes + 1);
 
     const loaded = contributions();
-    expect(loaded.agents(["heavy"])).toEqual([]);
-    expect(loaded.settingsScopes(["heavy"])).toEqual([]);
-    expect(loaded.mcpServers(["heavy"])).toEqual([]);
-    expect(loaded.locateCapabilityExecutable(["heavy"], "plans", "heavy")).toEqual({
+    expect(loaded.agents(refs("heavy"))).toEqual([]);
+    expect(loaded.settingsScopes(refs("heavy"))).toEqual([]);
+    expect(loaded.mcpServers(refs("heavy"))).toEqual([]);
+    expect(loaded.locateCapabilityExecutable(refs("heavy"), "plans", "heavy")).toEqual({
       error: "plugin 'heavy' has no readable manifest",
     });
   });
@@ -259,8 +340,8 @@ describe("plugin contributions", () => {
     truncateSync(join(dir, "install-record.json"), PLUGIN_RESOURCE_LIMITS.installRecordBytes + 1);
 
     const loaded = contributions();
-    expect(loaded.settingsScopes(["recorded"])).toEqual([]);
-    expect(loaded.mcpServers(["recorded"])).toEqual([]);
+    expect(loaded.settingsScopes(refs("recorded"))).toEqual([]);
+    expect(loaded.mcpServers(refs("recorded"))).toEqual([]);
   });
 
   it("contributes no hooks when the convention document exceeds its budget, and the rest anyway", () => {
@@ -272,8 +353,8 @@ describe("plugin contributions", () => {
     truncateSync(join(dir, "hooks", "hooks.json"), PLUGIN_RESOURCE_LIMITS.hookDocumentBytes + 1);
 
     const loaded = contributions();
-    expect(loaded.settingsScopes(["hooks-heavy"])[0]?.settings.hooks).toBeUndefined();
-    expect(loaded.mcpServers(["hooks-heavy"]).map((s) => s.effectiveName)).toEqual([
+    expect(loaded.settingsScopes(refs("hooks-heavy"))[0]?.settings.hooks).toBeUndefined();
+    expect(loaded.mcpServers(refs("hooks-heavy")).map((s) => s.effectiveName)).toEqual([
       "hooks-heavy:dangerous",
     ]);
   });
@@ -299,10 +380,11 @@ describe("an enabled plugin that contributes nothing says so", () => {
 
   it("reports a plugin that is enabled but not installed", () => {
     const logger = recordingLogger();
-    expect(contributions(logger).skillRoots(["ghost"])).toEqual([]);
+    expect(contributions(logger).skillRoots(refs("ghost"))).toEqual([]);
     expect(logger.events("kernel.plugin.skipped")[0]).toMatchObject({
       plugin: "ghost",
-      scope: "none",
+      scope: "global",
+      source: "clarvis",
       phase: "dir",
     });
   });
@@ -310,7 +392,7 @@ describe("an enabled plugin that contributes nothing says so", () => {
   it("reports a plugin whose manifest cannot be read", () => {
     const logger = recordingLogger();
     mkdirSync(join(globalPaths(globalDir).pluginsDir, "bare"), { recursive: true });
-    expect(contributions(logger).agents(["bare"])).toEqual([]);
+    expect(contributions(logger).agents(refs("bare"))).toEqual([]);
     const skipped = logger.events("kernel.plugin.skipped")[0];
     expect(skipped).toMatchObject({ plugin: "bare", scope: "global", phase: "manifest" });
     expect(String(skipped?.cause)).toContain("plugin.json");
@@ -321,14 +403,14 @@ describe("an enabled plugin that contributes nothing says so", () => {
     const dir = join(globalPaths(globalDir).pluginsDir, "broken");
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "plugin.json"), "{ not json");
-    expect(contributions(logger).agents(["broken"])).toEqual([]);
+    expect(contributions(logger).agents(refs("broken"))).toEqual([]);
     expect(logger.events("kernel.plugin.skipped")[0]).toMatchObject({ phase: "manifest" });
   });
 
   it("reports a plugin with no skills directory", () => {
     const logger = recordingLogger();
     install(globalPaths(globalDir).pluginsDir, "noskills", {});
-    expect(contributions(logger).skillRoots(["noskills"])).toEqual([]);
+    expect(contributions(logger).skillRoots(refs("noskills"))).toEqual([]);
     expect(logger.events("kernel.plugin.skipped")[0]).toMatchObject({
       plugin: "noskills",
       phase: "skills",
@@ -338,7 +420,7 @@ describe("an enabled plugin that contributes nothing says so", () => {
   it("stays silent for a plugin that loads", () => {
     const logger = recordingLogger();
     install(globalPaths(globalDir).pluginsDir, "ok", {}, { skill: true });
-    expect(contributions(logger).skillRoots(["ok"])).toHaveLength(1);
+    expect(contributions(logger).skillRoots(refs("ok"))).toHaveLength(1);
     expect(logger.events("kernel.plugin.skipped")).toEqual([]);
   });
 });

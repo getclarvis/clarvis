@@ -142,7 +142,7 @@ export function createGitPluginFetcher(options: GitPluginFetcherOptions): Plugin
       const root = pluginRoot(checkout, subdir);
       return {
         root,
-        source,
+        origin: source,
         revision,
         ...(subdir !== undefined && subdir !== "" && subdir !== "." ? { subdir } : {}),
         dispose(): void {
@@ -161,12 +161,12 @@ export function createGitPluginFetcher(options: GitPluginFetcherOptions): Plugin
     },
     async update(plugin: InstalledPlugin, signal): Promise<PreparedPlugin | void> {
       if (!plugin.gitCheckout) {
-        if (plugin.source === undefined) {
+        if (plugin.origin === undefined) {
           throw kernelError("invalid_request", `'${plugin.name}' was not installed from git`);
         }
-        return fetch(plugin.source, plugin.subdir, signal);
+        return fetch(plugin.origin, plugin.subdir, signal);
       }
-      const remote = plugin.source ?? plugin.dir;
+      const remote = plugin.origin ?? plugin.dir;
       await git(["fetch", "--depth", "1", "--quiet", "origin", "HEAD"], plugin.dir, signal, remote);
       await git(["reset", "--hard", "--quiet", "FETCH_HEAD"], plugin.dir, signal, remote);
     },

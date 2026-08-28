@@ -32,18 +32,19 @@ describe("plugin installation records", () => {
     const repository = createFilePluginRepository({ globalDir });
     const oversized = fixture();
     await expect(
-      repository.install(oversized, "oversized", {
+      repository.install(oversized, "oversized", "clarvis", {
         root: oversized,
-        source: "x".repeat(PLUGIN_RESOURCE_LIMITS.installRecordBytes),
+        origin: "x".repeat(PLUGIN_RESOURCE_LIMITS.installRecordBytes),
         dispose: () => {},
       }),
     ).rejects.toMatchObject({ code: "invalid_request" });
 
     const replacement = fixture();
-    await expect(repository.replace(replacement, "missing", undefined)).rejects.toMatchObject({
+    const missing = { scope: "global" as const, source: "clarvis" as const, name: "missing" };
+    await expect(repository.replace(replacement, missing, undefined)).rejects.toMatchObject({
       code: "not_found",
     });
-    expect(await repository.remove("missing")).toBe(false);
+    expect(await repository.remove(missing)).toBe(false);
 
     const installed = fixture();
     mkdirSync(join(installed, ".codex-plugin"), { recursive: true });
@@ -51,8 +52,10 @@ describe("plugin installation records", () => {
       join(installed, ".codex-plugin", "plugin.json"),
       JSON.stringify({ name: "removable", version: "1.0.0" }),
     );
-    await repository.install(installed, "removable", undefined);
-    expect(await repository.remove("removable")).toBe(true);
+    await repository.install(installed, "removable", "clarvis", undefined);
+    expect(await repository.remove({ scope: "global", source: "clarvis", name: "removable" })).toBe(
+      true,
+    );
   });
 
   it("distinguishes an unmanaged plugin from an unreadable bounded record", () => {

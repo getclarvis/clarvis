@@ -723,11 +723,21 @@ describe("mcpServers reach the engine in its own shape", () => {
     });
 
     const local = await assembleWithServers({
-      fs: { type: "stdio", command: "npx", args: ["-y"], shared: true, resources: false },
+      fs: {
+        type: "stdio",
+        command: "npx",
+        args: ["-y"],
+        cwd: ".",
+        expandVariables: false,
+        shared: true,
+        resources: false,
+      },
     });
     expect(validateBody(local, ENV()).request.servers[0]).toMatchObject({
       transport: "stdio",
       args: ["-y"],
+      cwd: ".",
+      expandVariables: false,
       shared: true,
       resources: false,
     });
@@ -747,6 +757,42 @@ describe("mcpServers reach the engine in its own shape", () => {
     });
   });
 
+  it("attaches an active plugin server independently of persisted agent tools", async () => {
+    const assemble = await assemblerWith(
+      { custom: { model: "openrouter/m", tools: [] } },
+      {
+        mcpServers: {
+          "context7:context7": { type: "http", url: "https://mcp.context7.com/mcp" },
+        },
+        providers: PROVIDERS,
+      },
+      { pluginMcpServerNames: () => ["context7:context7"] },
+    );
+    const body = assemble({ agent: "custom", messages: [MESSAGE], execution_id: "e" });
+    const { request } = validateBody(body, ENV());
+
+    expect(request.profiles[0]?.tools).toEqual([]);
+    expect(request.servers).toEqual([
+      {
+        name: "context7:context7",
+        transport: "http",
+        url: "https://mcp.context7.com/mcp",
+        auto_tools: true,
+      },
+    ]);
+  });
+
+  it("resolves an explicitly selected server namespace containing dots", async () => {
+    const body = await assembleWithServers(
+      { "docs.plugin:context": { type: "stdio", command: "plugin-srv" } },
+      "docs.plugin:context.lookup",
+    );
+    expect(validateBody(body, ENV()).request.servers[0]).toMatchObject({
+      name: "docs.plugin:context",
+      command: "plugin-srv",
+    });
+  });
+
   // A dropped server would surface much later as `invalid_profile` pointing at
   // the agent, not at the typo.
   it("rejects a malformed entry by name instead of dropping it", async () => {
@@ -754,7 +800,7 @@ describe("mcpServers reach the engine in its own shape", () => {
       /mcpServers\['fs'\].*command is required/s,
     );
     await expect(
-      assembleWithServers({ fs: { type: "stdio", command: "x", cwd: "." } }),
+      assembleWithServers({ fs: { type: "stdio", command: "x", unexpected: true } }),
     ).rejects.toThrow(/mcpServers\['fs'\]/);
   });
 

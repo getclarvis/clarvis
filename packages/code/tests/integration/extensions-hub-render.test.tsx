@@ -18,7 +18,7 @@ function mount() {
   return { host, press, opened };
 }
 
-test("lists Plugins, Hooks, Marketplace and MCP", async () => {
+test("lists Environment, Plugins, Hooks, Marketplace and MCP", async () => {
   const { host, opened } = mount();
   const t = await openRender(
     (() => ExtensionsHub(host, { openChild: (cmd) => opened.push(cmd) })) as never,
@@ -27,6 +27,7 @@ test("lists Plugins, Hooks, Marketplace and MCP", async () => {
   await t.renderOnce();
   await t.renderOnce();
   const frame = t.captureCharFrame();
+  expect(frame).toContain("Environment");
   expect(frame).toContain("Plugins");
   expect(frame).toContain("Hooks");
   expect(frame).toContain("Marketplace");
@@ -44,6 +45,6 @@ test("activating a row opens its command", async () => {
   await t.renderOnce();
   press("down");
   press("return");
-  expect(opened).toEqual(["hooks.open"]);
+  expect(opened).toEqual(["plugins.open"]);
   t.renderer.destroy();
 });

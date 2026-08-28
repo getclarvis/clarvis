@@ -18,9 +18,9 @@ function plugin(
   return {
     name,
     scope: "global",
+    source: "clarvis",
     dir: `/plugins/${name}`,
     enabled: true,
-    shadowsGlobal: false,
     contributions: {
       agents: [],
       brokenAgents: [],

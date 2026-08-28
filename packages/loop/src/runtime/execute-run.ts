@@ -72,6 +72,8 @@ export interface ExecuteRunDeps {
   persistedTraceProjectors?: PersistedTraceProjectorRegistry;
   /** Host-owned gate whose permits follow physical extension promises. */
   extensionAdmission?: ExtensionAdmissionController;
+  /** Host metadata captured once per run and persisted without engine interpretation. */
+  hostMetadata?: () => Record<string, unknown> | undefined;
 }
 
 /**
@@ -295,6 +297,7 @@ export async function executeRun({
   );
   const { request: parsed } = validateBody(rawBody, deps.env, requestRegistry);
   const requestView: CapabilityRequestView = createCapabilityRequestView(parsed);
+  const hostMetadata = deps.hostMetadata?.();
   const capabilityNeedsHuman = allCapabilities.some(
     (capability) => capability.requiresUserInput?.(requestView) === true,
   );
@@ -385,6 +388,7 @@ export async function executeRun({
                 owner_key_name: owner,
                 started_at: startedAt,
                 request: parsed,
+                ...(hostMetadata === undefined ? {} : { host_metadata: hostMetadata }),
               },
               ...(runLogger !== undefined ? { logger: runLogger } : {}),
             });
@@ -428,6 +432,7 @@ export async function executeRun({
         wallStartedAt,
         ...(finalContext !== undefined ? { finalContext } : {}),
         ...(capabilityState !== undefined ? { capabilityState } : {}),
+        ...(hostMetadata === undefined ? {} : { hostMetadata }),
       });
 
       try {

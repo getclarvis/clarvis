@@ -114,7 +114,7 @@ complete document contract.
 The onboarding and configuration views can configure
 providers and secrets, select models, manage memory, inspect MCP tool servers,
 and manage plugins. Configuration follows one hierarchy: `/settings/providers`,
-`/extensions/plugins`, `/extensions/mcp`, and `/extensions/hooks`; `/tasks` remains a standalone
+`/extensions/environment`, `/extensions/plugins`, `/extensions/mcp`, and `/extensions/hooks`; `/tasks` remains a standalone
 workspace surface. The Hooks view reviews each exact plugin hook definition independently. Capability services
 display their effective argv and packaged per-skill Plans policy in the plugin/provider panels, and
 start only when selected.
@@ -122,6 +122,16 @@ start only when selected.
 before any additional configured or discovered catalog. The built-in URL is not written to settings,
 and loading its listings does not install, enable, or approve a plugin. Installation remains an
 explicit action, followed by the existing enablement and per-hook approval gates.
+Environment selects only already-installed extensions. Its immutable `builtin:default` uses exact
+`enabledPlugins` refs and four-root skill behavior; custom Environments are complete allow-lists of
+exact `{ scope, source, name }` plugins and standalone skills. `.agents/plugins` and
+`.clarvis/plugins` participate equally; the install picker defaults to the shared `.agents` global
+inventory. Definitions may be shared from
+`.clarvis/environments`, but the active workspace selection is always local machine state. The view
+shows resolution status and the exact plugin, skill, MCP and hook delta before applying or clearing
+a workspace/global selection, then reconnects the kernel for future runs. A process-local `--env`
+keeps persisted selection controls read-only. See
+[`hosts/environments.md`](../../specs/hosts/environments.md).
 Interactive Code and local `--print` kernels also provide the operating-system browser opener used
 by remote MCP OAuth. The authorization coordinator still validates the destination and loopback
 callback; this adapter grants only the host action of opening the already validated URL. Remote
@@ -406,7 +416,8 @@ exists to make that possible and its runtime graph is itself plus the root
 an import creeps in and puts the whole module graph back on that path.
 
 ```text
-usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--format <text|md>]
+usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--env <environment>]
+                    [--format <text|md>]
                     [--resume <session-id>] [--continue] [--list] [--delete <session-id>]
                     [--refresh-models] [--update] [--ascii] [--worktree [name]]
                     [--debug[=<error|warn|info|debug>]]
@@ -415,6 +426,7 @@ usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--format <text|m
   --version                   print the version and exit
   -p, --print <prompt>        run the prompt headless: stream the reply to stdout, exit 0/1
   --agent <name>              agent to run --print as (default: entry agent)
+  --env <environment>         select an Environment for this process (scope:name or name)
   --format <text|md>          --print output: text (default) or md transcript
   --resume <session-id>       resume a saved session
   --continue                  resume this workspace's most recent session
@@ -520,6 +532,9 @@ resumes a session of the current workspace.
 
 Sessions and runs are persisted through kernel services. The UI can resume a
 specific session or continue the most recently used one.
+Each turn stores the process-pinned Environment id and fingerprint. Resuming under a different
+snapshot remains allowed, but the transcript and status line warn about the mismatch before the next
+run starts.
 
 `/storage` opens a metadata-only inventory of Clarvis-owned local state, grouped by logical data
 category without changing the physical `~/.clarvis` layout. It shows only present/owner-only posture

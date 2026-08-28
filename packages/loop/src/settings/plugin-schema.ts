@@ -5,8 +5,6 @@ import { BUILTIN_SETTINGS_SPECS } from "../runtime/capabilities/settings-specs.t
 import { capabilityPluginFields } from "../runtime/capabilities/settings-specs.ts";
 import { mcpServerPluginSchema, pluginNameField, type SettingsFile } from "./settings-schema.ts";
 
-const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-
 /**
  * A manifest's `author`, accepted either as a plain string or as the
  * `{ name, email?, url? }` object every other agent host writes, and normalized
@@ -61,9 +59,9 @@ export const pluginManifestSchema = z
     ),
     version: z
       .string()
-      .regex(SEMVER_RE, "version must be a semver string (e.g. '1.0.0')")
+      .min(1, "version must be a non-empty string")
       .optional()
-      .describe("Semver version of this plugin. Validated when present."),
+      .describe("Author-declared plugin version. Validated when present."),
     description: z
       .string()
       .min(1, "description must be a non-empty string")
@@ -75,10 +73,10 @@ export const pluginManifestSchema = z
       .optional()
       .describe(
         "MCP servers this plugin contributes. Namespaced to <plugin>:<server> on load, and " +
-          "inert until an agent references '<plugin>:<server>.<tool>'. Executable: gated on " +
-          "enable. A manifest may also name a companion document holding this map instead of " +
-          "writing it inline; the host resolves that before validation, exactly as it does for " +
-          "hooks.",
+          "their discovered tools join every effective agent when the plugin's exact installation " +
+          "is active. Executable: gated on enable. A manifest may also name a companion document " +
+          "holding this map instead of writing it inline; the host resolves that before " +
+          "validation, exactly as it does for hooks.",
       ),
     capabilityExecutables: capabilityExecutablesSchema
       .optional()

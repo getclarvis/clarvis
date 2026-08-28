@@ -117,6 +117,29 @@ describe("buildTransport", () => {
       ),
     ).toThrow(MissingEnvVarsError);
   });
+
+  it("preserves unrecognized placeholder text for a portable declaration", () => {
+    const built = buildTransport(
+      tool({
+        transport: "stdio",
+        command: "node",
+        env: { LITERAL: "${NOT_A_PORTABLE_PLUGIN_VARIABLE}" },
+        expandVariables: false,
+      }),
+    ) as unknown as { parameters: { env: Record<string, string> } };
+
+    expect(built.parameters.env.LITERAL).toBe("${NOT_A_PORTABLE_PLUGIN_VARIABLE}");
+    expect(() =>
+      buildTransport(
+        tool({
+          transport: "http",
+          url: "https://example.com/mcp",
+          headers: { "X-Literal": "${NOT_A_PORTABLE_PLUGIN_VARIABLE}" },
+          expandVariables: false,
+        }),
+      ),
+    ).not.toThrow();
+  });
 });
 
 describe("buildTransport url requirement", () => {

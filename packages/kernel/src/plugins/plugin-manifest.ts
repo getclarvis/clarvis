@@ -8,8 +8,11 @@
  * {@link resolvePluginManifest}, so a manifest cannot mean one thing to the panel
  * that asks the operator to approve it and another to the code that loads it.
  */
-import { existsSync, opendirSync } from "node:fs";
+import { existsSync, lstatSync, opendirSync, realpathSync, statSync } from "node:fs";
+import { isIP } from "node:net";
+import { validateHeaderName, validateHeaderValue } from "node:http";
 import { basename, dirname, join, resolve, sep } from "node:path";
+import { z } from "zod";
 import {
   PLUGIN_RESOURCE_LIMITS,
   mcpServerPluginSchema,
@@ -27,6 +30,8 @@ import {
 
 /** The file a manifest is named, wherever in the checkout it sits. */
 const MANIFEST_FILE = "plugin.json";
+const AGENT_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+const AGENT_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
 
 /** The directory a plugin puts the manifest it wrote *for Clarvis* in. */
 const CLARVIS_MANIFEST_DIR = ".clarvis-plugin";
@@ -178,6 +183,7 @@ export function pluginSkillRoots(
       ],
     };
   }
+  if (values.length === 0) return { roots: [], notes: [] };
 
   const roots: string[] = [];
   const notes: string[] = [];
@@ -218,6 +224,32 @@ export function pluginSkillRoots(
       `skills: nothing declared could be scanned — this plugin's '${DEFAULT_SKILLS_DIR}/' is scanned instead`,
     ],
   };
+}
+
+/** Skill-root inputs carrying the discovery policy of the resolved plugin dialect. */
+export function pluginSkillScanRoots(
+  dir: string,
+  declared: unknown,
+  manifestLocation: string | undefined,
+  format: "native" | "agent-plugin-v1" | undefined,
+): Array<{
+  path: string;
+  discovery?: "immediate";
+  manifestName?: "exact";
+  validation?: "agent-skills";
+  confinementRoot?: string;
+}> {
+  return pluginSkillRoots(dir, declared, manifestLocation).roots.map((path) =>
+    format === "agent-plugin-v1"
+      ? {
+          path,
+          discovery: "immediate",
+          manifestName: "exact",
+          validation: "agent-skills",
+          confinementRoot: dir,
+        }
+      : { path },
+  );
 }
 
 /** The manifest key holding the MCP servers a plugin contributes. */
@@ -279,6 +311,24 @@ function manifestContributionScore(raw: string): number {
   );
 }
 
+/** Whether a root manifest claims any published Agent Plugins schema. */
+function claimsAgentPluginFormat(raw: string): boolean {
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value) &&
+      typeof (value as Record<string, unknown>)["$schema"] === "string" &&
+      ((value as Record<string, unknown>)["$schema"] as string).startsWith(
+        "https://agent-plugins.org/schemas/",
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Read the plugin manifest that declares the richest Clarvis-compatible
  * contribution surface.
@@ -302,6 +352,26 @@ function manifestContributionScore(raw: string): number {
  *   selection silently.
  */
 export function readPluginManifestSource(dir: string): PluginManifestSource | { error: string } {
+  const rootPath = join(dir, MANIFEST_FILE);
+  const rootPathError =
+    pathEntryExists(rootPath) && confinedExistingPath(dir, rootPath) === undefined
+      ? `plugin manifest '${MANIFEST_FILE}' resolves outside the plugin root`
+      : undefined;
+  const rootRead =
+    rootPathError === undefined
+      ? readBoundedPluginText(
+          rootPath,
+          PLUGIN_RESOURCE_LIMITS.manifestBytes,
+          `plugin manifest '${MANIFEST_FILE}'`,
+        )
+      : undefined;
+  if (rootRead?.ok && claimsAgentPluginFormat(rootRead.text)) {
+    return { raw: rootRead.text, location: MANIFEST_FILE };
+  }
+  const rootError =
+    rootPathError ??
+    (rootRead !== undefined && !rootRead.ok && !rootRead.missing ? rootRead.error : undefined);
+
   const clarvisLocation = `${CLARVIS_MANIFEST_DIR}/${MANIFEST_FILE}`;
   const clarvisRead = readBoundedPluginText(
     join(dir, clarvisLocation),
@@ -310,6 +380,7 @@ export function readPluginManifestSource(dir: string): PluginManifestSource | { 
   );
   if (clarvisRead.ok) return { raw: clarvisRead.text, location: clarvisLocation };
   if (!clarvisRead.missing) return { error: clarvisRead.error };
+  if (rootError !== undefined) return { error: rootError };
 
   const borrowed = borrowedManifestLocations(dir);
   if ("error" in borrowed) return borrowed;
@@ -454,6 +525,8 @@ export interface PluginPresentation {
 export interface ResolvedPluginManifest {
   /** The validated manifest, absent when `error` is set. */
   manifest?: PluginManifest;
+  /** Dialect whose discovery and runtime rules produced the validated manifest. */
+  format?: "native" | "agent-plugin-v1";
   /** Why the manifest could not be used. */
   error?: string;
   /** What the manifest asks to be shown as; see {@link PluginPresentation}. */
@@ -924,6 +997,411 @@ function supplyDefaults(
   return notes;
 }
 
+const AGENT_PLUGIN_NAME_RE = /^(?!.*(?:--|\.\.))[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?$/;
+const AGENT_PLUGIN_KEYS = new Set([
+  "$schema",
+  "name",
+  "version",
+  "description",
+  "author",
+  "homepage",
+  "repository",
+  "license",
+  "keywords",
+  "extensions",
+]);
+
+const agentPluginManifestSchema = z
+  .object({
+    $schema: z.literal(AGENT_PLUGIN_SCHEMA),
+    name: z.string().min(1).max(64).regex(AGENT_PLUGIN_NAME_RE),
+    version: z.string().optional(),
+    description: z.string().optional(),
+    author: z
+      .object({
+        name: z.string().optional(),
+        email: z.string().optional(),
+        url: z.string().optional(),
+      })
+      .strict()
+      .optional(),
+    homepage: z.string().optional(),
+    repository: z.string().optional(),
+    license: z.string().optional(),
+    keywords: z.array(z.string()).optional(),
+    extensions: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strip();
+
+const agentStdioServerSchema = z
+  .object({
+    type: z.literal("stdio"),
+    command: z.string().min(1),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+    cwd: z.string().optional(),
+  })
+  .strict();
+const agentRemoteServerSchema = z
+  .object({
+    type: z.enum(["streamable-http", "sse"]),
+    url: z.string().min(1),
+    headers: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
+
+/** Runtime paths required to normalize portable Agent Plugin MCP declarations. */
+export interface PluginManifestRuntime {
+  /** Persistent client-managed data directory dedicated to this installed instance. */
+  dataDir: string;
+}
+
+interface AgentManifestNormalization {
+  document?: Record<string, unknown>;
+  error?: string;
+  notes: string[];
+}
+
+/** First validation issue rendered as one stable operator diagnostic. */
+function firstZodIssue(error: z.ZodError): string {
+  const issue = error.issues[0];
+  return issue === undefined
+    ? "schema validation failed"
+    : `${issue.path.map(String).join(".") || "(root)"}: ${issue.message}`;
+}
+
+/** Filesystem-resolved containment for a package path that must already exist. */
+function confinedExistingPath(root: string, target: string): string | undefined {
+  try {
+    const realRoot = realpathSync(root);
+    const realTarget = realpathSync(target);
+    const comparableRoot = process.platform === "win32" ? realRoot.toLowerCase() : realRoot;
+    const comparableTarget = process.platform === "win32" ? realTarget.toLowerCase() : realTarget;
+    return comparableTarget === comparableRoot || comparableTarget.startsWith(comparableRoot + sep)
+      ? realTarget
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether one directory entry exists without following a possibly dangling link. */
+function pathEntryExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Single-pass expansion of the two portable Agent Plugin placeholders. */
+function expandAgentPluginValue(value: string, root: string, data: string): string {
+  return value.replace(/\$\{PLUGIN_(ROOT|DATA)\}/g, (_match, kind: string) =>
+    kind === "ROOT" ? root : data,
+  );
+}
+
+/** Validate and resolve a portable stdio command token. */
+function agentPluginCommand(root: string, command: string): string | undefined {
+  if (command.includes("\0")) return undefined;
+  if (!command.startsWith("./")) {
+    return command.includes("/") || command.includes("\\") ? undefined : command;
+  }
+  const resolved = confinedExistingPath(root, resolve(root, command));
+  if (resolved === undefined) return undefined;
+  try {
+    return statSync(resolved).isFile() ? resolved : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolve a portable stdio working directory and enforce its declared base. */
+function agentPluginCwd(root: string, data: string, cwd: string | undefined): string | undefined {
+  if (cwd === undefined) return realpathSync(root);
+  let base: string;
+  if (cwd.startsWith("./")) base = root;
+  else if (cwd === "${PLUGIN_ROOT}" || cwd.startsWith("${PLUGIN_ROOT}/")) base = root;
+  else if (cwd === "${PLUGIN_DATA}" || cwd.startsWith("${PLUGIN_DATA}/")) base = data;
+  else return undefined;
+  const expanded = expandAgentPluginValue(cwd, root, data);
+  const target = cwd.startsWith("./") ? resolve(root, cwd) : resolve(expanded);
+  const lexicalBase = resolve(base);
+  const lexicalTarget = resolve(target);
+  if (lexicalTarget !== lexicalBase && !lexicalTarget.startsWith(lexicalBase + sep))
+    return undefined;
+  if (!existsSync(lexicalTarget)) return lexicalTarget;
+  return confinedExistingPath(lexicalBase, lexicalTarget);
+}
+
+/** Whether a remote Agent Plugin endpoint obeys the portable URL policy. */
+function validAgentPluginUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (
+    (url.protocol !== "http:" && url.protocol !== "https:") ||
+    url.username.length > 0 ||
+    url.password.length > 0 ||
+    url.hash.length > 0
+  ) {
+    return false;
+  }
+  if (url.protocol === "https:") return true;
+  const hostname = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (hostname === "localhost" || hostname === "::1") return true;
+  if (isIP(hostname) !== 4) return false;
+  return hostname.split(".")[0] === "127";
+}
+
+/** Validate fixed literal HTTP headers, including case-insensitive uniqueness. */
+function validAgentPluginHeaders(headers: Record<string, string>): boolean {
+  const seen = new Set<string>();
+  try {
+    for (const [name, value] of Object.entries(headers)) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      validateHeaderName(name);
+      validateHeaderValue(name, value);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Normalize one Agent Plugins v1 MCP entry into Clarvis's native server shape. */
+function normalizeAgentMcpServer(
+  root: string,
+  data: string,
+  entry: unknown,
+): { server?: unknown; error?: string } {
+  const stdio = agentStdioServerSchema.safeParse(entry);
+  if (stdio.success) {
+    const command = agentPluginCommand(root, stdio.data.command);
+    if (command === undefined) return { error: "command is not a confined executable token" };
+    const cwd = agentPluginCwd(root, data, stdio.data.cwd);
+    if (cwd === undefined) return { error: "cwd is not confined to PLUGIN_ROOT or PLUGIN_DATA" };
+    const env = stdio.data.env ?? {};
+    const reserved = Object.keys(env).some((name) =>
+      process.platform === "win32"
+        ? ["plugin_root", "plugin_data"].includes(name.toLowerCase())
+        : name === "PLUGIN_ROOT" || name === "PLUGIN_DATA",
+    );
+    if (reserved) return { error: "env may not define PLUGIN_ROOT or PLUGIN_DATA" };
+    return {
+      server: {
+        type: "stdio",
+        command,
+        ...(stdio.data.args === undefined
+          ? {}
+          : {
+              args: stdio.data.args.map((value) => expandAgentPluginValue(value, root, data)),
+            }),
+        env: {
+          ...Object.fromEntries(
+            Object.entries(env).map(([name, value]) => [
+              name,
+              expandAgentPluginValue(value, root, data),
+            ]),
+          ),
+          PLUGIN_ROOT: root,
+          PLUGIN_DATA: data,
+        },
+        cwd,
+        expandVariables: false,
+      },
+    };
+  }
+
+  const remote = agentRemoteServerSchema.safeParse(entry);
+  if (!remote.success) {
+    return {
+      error: firstZodIssue(
+        stdio.error.issues.length <= remote.error.issues.length ? stdio.error : remote.error,
+      ),
+    };
+  }
+  if (!validAgentPluginUrl(remote.data.url)) return { error: "url violates Agent Plugins policy" };
+  if (!validAgentPluginHeaders(remote.data.headers ?? {})) {
+    return { error: "headers contain an invalid or duplicate field name/value" };
+  }
+  return {
+    server: {
+      type: remote.data.type === "streamable-http" ? "http" : "sse",
+      url: remote.data.url,
+      ...(remote.data.headers === undefined ? {} : { headers: remote.data.headers }),
+      expandVariables: false,
+    },
+  };
+}
+
+/** Load only root `mcp.json` using Agent Plugins v1 component failure boundaries. */
+function normalizeAgentMcp(
+  root: string,
+  data: string,
+): { servers: Record<string, unknown>; notes: string[] } {
+  const path = join(root, "mcp.json");
+  if (pathEntryExists(path) && confinedExistingPath(root, path) === undefined) {
+    return {
+      servers: {},
+      notes: ["mcp.json: path resolves outside the plugin root — MCP is disabled for this plugin"],
+    };
+  }
+  const read = readBoundedPluginText(
+    path,
+    PLUGIN_RESOURCE_LIMITS.manifestBytes,
+    "Agent Plugin MCP configuration 'mcp.json'",
+  );
+  if (!read.ok) {
+    return read.missing
+      ? { servers: {}, notes: [] }
+      : { servers: {}, notes: [`mcp.json: ${read.error} — MCP is disabled for this plugin`] };
+  }
+  let source: unknown;
+  try {
+    source = JSON.parse(read.text);
+  } catch (error) {
+    return {
+      servers: {},
+      notes: [
+        `mcp.json: invalid JSON (${(error as Error).message}) — MCP is disabled for this plugin`,
+      ],
+    };
+  }
+  if (typeof source !== "object" || source === null || Array.isArray(source)) {
+    return {
+      servers: {},
+      notes: ["mcp.json: root is not an object — MCP is disabled for this plugin"],
+    };
+  }
+  const document = source as Record<string, unknown>;
+  const keys = Object.keys(document);
+  if (
+    document["$schema"] !== AGENT_MCP_SCHEMA ||
+    keys.some((key) => key !== "$schema" && key !== "mcpServers") ||
+    typeof document.mcpServers !== "object" ||
+    document.mcpServers === null ||
+    Array.isArray(document.mcpServers)
+  ) {
+    return {
+      servers: {},
+      notes: [
+        "mcp.json: unsupported schema or invalid top-level shape — MCP is disabled for this plugin",
+      ],
+    };
+  }
+  const servers: Record<string, unknown> = {};
+  const notes: string[] = [];
+  for (const [name, entry] of Object.entries(document.mcpServers as Record<string, unknown>)) {
+    if (name.length === 0) {
+      notes.push("mcp.json: an empty server name is not contributed");
+      continue;
+    }
+    const normalized = normalizeAgentMcpServer(root, data, entry);
+    if (normalized.server === undefined) {
+      notes.push(`mcp.json: '${name}' is not contributed — ${normalized.error ?? "invalid entry"}`);
+    } else {
+      servers[name] = normalized.server;
+    }
+  }
+  return { servers, notes };
+}
+
+/** Validate and project a root Agent Plugins v1 manifest into host-native fields. */
+function normalizeAgentManifest(
+  dir: string,
+  location: string | undefined,
+  document: Record<string, unknown>,
+  runtime: PluginManifestRuntime | undefined,
+): AgentManifestNormalization | undefined {
+  const schema = document["$schema"];
+  if (typeof schema !== "string" || !schema.startsWith("https://agent-plugins.org/schemas/")) {
+    return undefined;
+  }
+  if (location !== MANIFEST_FILE) {
+    return { error: "Agent Plugins manifests must be root plugin.json", notes: [] };
+  }
+  if (schema !== AGENT_PLUGIN_SCHEMA) {
+    return { error: `unsupported Agent Plugins manifest schema '${schema}'`, notes: [] };
+  }
+  const notes = Object.keys(document)
+    .filter((key) => !AGENT_PLUGIN_KEYS.has(key))
+    .sort()
+    .map((key) => `Agent Plugins manifest field '${key}' is unknown and was ignored`);
+  const candidate = Object.fromEntries(
+    Object.entries(document).filter(([key]) => AGENT_PLUGIN_KEYS.has(key)),
+  ) as Record<string, unknown>;
+  if (
+    candidate.extensions !== undefined &&
+    (typeof candidate.extensions !== "object" ||
+      candidate.extensions === null ||
+      Array.isArray(candidate.extensions))
+  ) {
+    delete candidate.extensions;
+    notes.push("Agent Plugins manifest field 'extensions' is not an object and was ignored");
+  }
+  const parsed = agentPluginManifestSchema.safeParse(candidate);
+  if (!parsed.success) return { error: firstZodIssue(parsed.error), notes };
+
+  const root = confinedExistingPath(dir, dir);
+  if (root === undefined) return { error: "plugin root could not be filesystem-resolved", notes };
+  const skillsPath = join(root, DEFAULT_SKILLS_DIR);
+  let skills: string[] = [];
+  if (existsSync(skillsPath)) {
+    const resolvedSkills = confinedExistingPath(root, skillsPath);
+    try {
+      if (resolvedSkills === undefined || !statSync(resolvedSkills).isDirectory()) {
+        notes.push("skills: fixed 'skills/' location is invalid — no skills are contributed");
+      } else {
+        skills = [resolvedSkills];
+      }
+    } catch {
+      notes.push("skills: fixed 'skills/' location is invalid — no skills are contributed");
+    }
+  }
+  const runtimeData =
+    runtime === undefined
+      ? undefined
+      : (() => {
+          try {
+            return realpathSync(runtime.dataDir);
+          } catch {
+            return resolve(runtime.dataDir);
+          }
+        })();
+  const mcp =
+    runtimeData === undefined
+      ? {
+          servers: {},
+          notes: existsSync(join(root, "mcp.json"))
+            ? ["mcp.json: plugin runtime data path is unavailable — MCP is disabled for this view"]
+            : [],
+        }
+      : normalizeAgentMcp(root, runtimeData);
+  notes.push(...mcp.notes);
+  const normalized: Record<string, unknown> = {
+    name: parsed.data.name,
+    ...(parsed.data.version === undefined || parsed.data.version.length === 0
+      ? {}
+      : { version: parsed.data.version }),
+    ...(parsed.data.description === undefined || parsed.data.description.length === 0
+      ? {}
+      : { description: parsed.data.description }),
+    ...(parsed.data.author?.name === undefined || parsed.data.author.name.length === 0
+      ? {}
+      : { author: parsed.data.author.name }),
+    skills,
+    ...(Object.keys(mcp.servers).length === 0 ? {} : { mcpServers: mcp.servers }),
+  };
+  return { document: normalized, notes };
+}
+
 /**
  * Validate a manifest document, resolving whatever it expresses in another
  * host's dialect first.
@@ -943,6 +1421,7 @@ export function resolvePluginManifest(
   raw: string,
   manifestLocation?: string,
   effectivePluginName?: string,
+  runtime?: PluginManifestRuntime,
 ): ResolvedPluginManifest {
   if (Buffer.byteLength(raw, "utf8") > PLUGIN_RESOURCE_LIMITS.manifestBytes) {
     return {
@@ -960,33 +1439,44 @@ export function resolvePluginManifest(
     return { error: "a plugin manifest must be a JSON object", notes: [] };
   }
 
-  const record = document as Record<string, unknown>;
+  let record = document as Record<string, unknown>;
   const dirs = pluginDirsFor(dir, manifestLocation);
   const notes: string[] = [];
-  notes.push(...resolveMcpServers(dirs, record));
-  notes.push(...sanitizeMcpServers(record));
-  const pluginMcpServers =
-    typeof record[MCP_SERVERS_KEY] === "object" &&
-    record[MCP_SERVERS_KEY] !== null &&
-    !Array.isArray(record[MCP_SERVERS_KEY])
-      ? Object.keys(record[MCP_SERVERS_KEY])
-      : [];
-  const declaredPluginName = displayText(record.name);
-  const pluginName =
-    effectivePluginName ??
-    (declaredPluginName !== undefined &&
-    parsePluginManifest(JSON.stringify({ name: declaredPluginName })).ok
-      ? declaredPluginName
-      : derivableName(dir));
-  notes.push(
-    ...resolveHooks(dirs, record, {
-      ...(pluginName === undefined ? {} : { pluginName }),
-      pluginMcpServers,
-    }),
-  );
-  const { presentation, notes: presentationNotes } = resolvePresentation(record);
-  notes.push(...presentationNotes);
-  notes.push(...supplyDefaults(dir, record, presentation));
+  let presentation: PluginPresentation | undefined;
+  const agentPlugin = normalizeAgentManifest(dir, manifestLocation, record, runtime);
+  if (agentPlugin !== undefined) {
+    notes.push(...agentPlugin.notes);
+    if (agentPlugin.document === undefined) {
+      return { error: agentPlugin.error ?? "invalid Agent Plugins manifest", notes };
+    }
+    record = agentPlugin.document;
+  } else {
+    notes.push(...resolveMcpServers(dirs, record));
+    notes.push(...sanitizeMcpServers(record));
+    const pluginMcpServers =
+      typeof record[MCP_SERVERS_KEY] === "object" &&
+      record[MCP_SERVERS_KEY] !== null &&
+      !Array.isArray(record[MCP_SERVERS_KEY])
+        ? Object.keys(record[MCP_SERVERS_KEY])
+        : [];
+    const declaredPluginName = displayText(record.name);
+    const pluginName =
+      effectivePluginName ??
+      (declaredPluginName !== undefined &&
+      parsePluginManifest(JSON.stringify({ name: declaredPluginName })).ok
+        ? declaredPluginName
+        : derivableName(dir));
+    notes.push(
+      ...resolveHooks(dirs, record, {
+        ...(pluginName === undefined ? {} : { pluginName }),
+        pluginMcpServers,
+      }),
+    );
+    const resolvedPresentation = resolvePresentation(record);
+    presentation = resolvedPresentation.presentation;
+    notes.push(...resolvedPresentation.notes);
+    notes.push(...supplyDefaults(dir, record, presentation));
+  }
   const shown = presentation === undefined ? {} : { presentation };
 
   const typos = suspectedManifestTypos(record);
@@ -1018,7 +1508,12 @@ export function resolvePluginManifest(
       ...shown,
     };
   }
-  return { manifest: parsed.manifest, notes, ...shown };
+  return {
+    manifest: parsed.manifest,
+    format: agentPlugin === undefined ? "native" : "agent-plugin-v1",
+    notes,
+    ...shown,
+  };
 }
 
 /** Filename that turns a directory into one directly declared skill. */

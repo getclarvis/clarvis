@@ -193,7 +193,8 @@ their owned sources.
 ### 3.2 The stdio child's environment
 
 `{ ...getDefaultEnvironment(), ...customEnv }` — the SDK's fixed safe base with the server's own
-interpolated `env` block layered on top (`packages/mcp-client/src/client.ts:382`). The caller's `environment` is used for
+conditionally interpolated `env` block layered on top (`buildTransport` in
+`packages/mcp-client/src/client.ts`). The caller's `environment` is used for
 `${VAR}` lookup only, never handed to the child. Four tests pin the consequence: a server declaring
 no `env` sees none of the host's variables, a server declaring an unrelated `env` still sees none,
 an explicitly interpolated value does arrive, and the child's key set is identical whether the caller
@@ -202,8 +203,7 @@ passed `process.env` or an injected map
 
 ### 3.3 `${VAR}` interpolation
 
-Both `env` (`packages/mcp-client/src/client.ts:367`) and `headers` (`packages/mcp-client/src/client.ts:415`) go through
-`resolveStringMap(map, environment)` from `@clarvis/capability`
+By default, both `env` and `headers` go through `resolveStringMap(map, environment)` from `@clarvis/capability`
 (`packages/capability/src/env-interpolate.ts:91`). Resolution is all-or-nothing and throws
 `MissingEnvVarsError` naming the *distinct* unresolved variables
 (`packages/capability/src/env-interpolate.ts:78`, message at `:22`). Substitution is by
@@ -211,7 +211,10 @@ Both `env` (`packages/mcp-client/src/client.ts:367`) and `headers` (`packages/mc
 (`packages/capability/src/env-interpolate.ts:48`). An end-to-end test over a real HTTP listener
 asserts the resolved value reaches the wire and the literal `${` never does
 (`packages/mcp-client/tests/integration/remote-transport.test.ts:64-65`), and that an absent variable
-fails the connection before any request is made (`:72-80`).
+fails the connection before any request is made (`:72-80`). With `expandVariables: false`, the maps
+are copied literally. This is the portable Agent Plugin seam: its adapter has already expanded only
+`PLUGIN_ROOT`/`PLUGIN_DATA`, and a second general `${VAR}` pass would violate that format. Pinned by
+`packages/mcp-client/tests/component/transport-builder.test.ts` (literal portable placeholders).
 
 ### 3.4 Wire tool names
 
@@ -284,7 +287,8 @@ tool's result cannot distinguish "no resources" from "resources are off for this
 
 A JSON string (`packages/mcp-client/src/connection-manager.ts:428-440`) of, in order: `workspace`, `owner` (or `null` under
 `poolSharing: "workspace"`), `name`, `transport`, `command ?? null`, `args ?? []`,
-`sortKeys(env)`, `cwd ?? null`, `url ?? null`, `sortKeys(headers)`, `resources ?? null`. `sortKeys`
+`sortKeys(env)`, `cwd ?? null`, `url ?? null`, `sortKeys(headers)`,
+`expandVariables ?? true`, `resources ?? null`. `sortKeys`
 (`:376-383`) makes env/header key order irrelevant — pinned at
 `packages/mcp-client/tests/component/connection-manager.test.ts:406-413`. The owner in the key is
 `ownerSegment(owner)` (`packages/mcp-client/src/connection-manager.ts:524`, `packages/paths/src/roots.ts:163`), so two owner
@@ -293,10 +297,14 @@ ids that differ only by percent-encoding stay separate
 
 A compile-time drift lock, `PoolKeyCoversConfig` / `_poolKeyDriftLock`
 (`packages/mcp-client/src/connection-manager.ts:392-410`), fails to type-check if `McpServerConfig`
-(`packages/capability/src/api.ts:132`) grows a field not covered by the key plus `shared`. Its own
+grows a field not covered by the key or explicitly classified as non-physical. `shared` is the
+precondition for entering this path; `auto_tools` is loop-owned per-run admission after discovery,
+so neither changes the physical connection identity. Its own
 comment states why a runtime test cannot cover it: "altering `transport`, `url` or `headers` makes
 the server unpoolable, so no slot is ever created and the assertion is vacuous"
 (`packages/mcp-client/src/connection-manager.ts:399-401`).
+The focused `auto_tools` exclusion is pinned by the "run-level automatic tool admission" case in
+`packages/mcp-client/tests/component/connection-manager.test.ts`.
 
 Pool keys are never logged raw. `poolKeyHash` reports the first 12 hex characters of a SHA-256
 (`packages/mcp-client/src/connection-manager.ts:126-128`), and a test asserts the record matches `/^[0-9a-f]{12}$/` and does
@@ -813,8 +821,10 @@ interpolated `env`, and never the caller's environment — regardless of whether
 `process.env` or an injected map. Production: `packages/mcp-client/src/client.ts:382`.
 Pinned: `packages/mcp-client/tests/unit/mcp-transport-env.test.ts:33-63` (four cases).
 
-**MCP-03.** An unresolved `${VAR}` in `env` or `headers` fails connection construction before any
-byte reaches the server; the literal `${…}` is never transmitted.
+**MCP-03.** With the default interpolation policy, an unresolved `${VAR}` in `env` or `headers`
+fails connection construction before any byte reaches the server; the literal `${…}` is never
+transmitted. With `expandVariables: false`, the literal is intentionally preserved because the
+owning portable adapter has already performed its narrower expansion.
 Production: `packages/mcp-client/src/client.ts:367`, `:415` →
 `packages/capability/src/env-interpolate.ts:78`.
 Pinned: `packages/mcp-client/tests/component/transport-builder.test.ts:50-60`, `:109-119`, and over a
@@ -858,11 +868,16 @@ rather than silently disabling the pool. Production:
 Pinned: `packages/mcp-client/tests/component/connection-manager.test.ts:269-297`,
 `packages/mcp-client/tests/component/observability-pool.test.ts:193-205`.
 
-**MCP-10.** The pool key carries the whole server config plus the scope, and under the default
+**MCP-10.** The pool key carries every physical server-config field plus the scope. It deliberately
+excludes `auto_tools`, because that marker changes only the loop's per-run admission after catalog
+discovery and cannot change the transport or advertised tools; it also excludes `shared`, which is
+the precondition for reaching the pooled path rather than a discriminant. Under the default
 `poolSharing: "owner"` no subprocess is shared between owners or between workspaces.
 Production: `packages/mcp-client/src/connection-manager.ts:427-441`.
-Pinned: `packages/mcp-client/tests/component/connection-manager.test.ts:613-689` (owner default,
-`workspace` opt-in, two workspaces, encoding-distinct owners, `resources` on/off, differing `cwd`).
+Pinned: the "pool key carries the scope and the whole config" cases in
+`packages/mcp-client/tests/component/connection-manager.test.ts` (owner default, `workspace`
+opt-in, two workspaces, encoding-distinct owners, `auto_tools` exclusion, `resources` on/off and
+differing `cwd`).
 A compile-time guard, not a test, covers a newly added `McpServerConfig` field
 (`packages/mcp-client/src/connection-manager.ts:405-410`).
 

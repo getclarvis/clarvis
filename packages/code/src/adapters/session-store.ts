@@ -1,4 +1,5 @@
 import type {
+  EnvironmentRunRef,
   Message,
   RunStatus,
   RunUsage,
@@ -28,6 +29,8 @@ export interface SessionTotals {
 export interface TurnRef {
   userPreview: string;
   executionId?: string;
+  /** Extension snapshot pinned when this turn began. */
+  environment?: EnvironmentRunRef;
   status: NodeStatus;
   startedAt?: number;
   endedAt?: number;
@@ -59,10 +62,27 @@ export interface SessionMeta {
   updatedAt: number;
   profile?: string;
   turns: TurnRef[];
+  /** Environment on the newest turn, retained by bounded catalog projections. */
+  lastEnvironment?: EnvironmentRunRef;
   /** Catalog-only count when the full turn index has not been loaded yet. */
   turnCount?: number;
   totals: SessionTotals;
   pending?: Message[];
+}
+
+/** Accept only the minimal Environment identity the kernel itself emits. */
+function persistedEnvironment(value: unknown): EnvironmentRunRef | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const environment = value as Record<string, unknown>;
+  if (
+    typeof environment.id !== "string" ||
+    !/^(?:builtin|global|workspace):(?!\.{1,2}$)[A-Za-z0-9._-]{1,128}$/.test(environment.id) ||
+    typeof environment.fingerprint !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/.test(environment.fingerprint)
+  ) {
+    return undefined;
+  }
+  return { id: environment.id, fingerprint: environment.fingerprint };
 }
 
 /**
@@ -311,6 +331,7 @@ export function metaToSession(m: SessionMeta): Session {
     turns: m.turns.map((t): PersistedSessionTurn => ({
       user_preview: t.userPreview,
       ...(t.executionId !== undefined ? { execution_id: t.executionId } : {}),
+      ...(t.environment !== undefined ? { environment: t.environment } : {}),
       status: t.status,
       ...(t.startedAt !== undefined ? { started_at: t.startedAt } : {}),
       ...(t.endedAt !== undefined ? { ended_at: t.endedAt } : {}),
@@ -328,6 +349,7 @@ export function metaToSession(m: SessionMeta): Session {
 
 /** Adapt a protocol wire {@link Session} back into the UI's {@link SessionMeta}, tagged with `owner`. */
 export function sessionToMeta(s: Session, owner: string): SessionMeta {
+  const lastEnvironment = persistedEnvironment(s.turns.at(-1)?.environment);
   return {
     id: s.id,
     title: s.title,
@@ -339,15 +361,18 @@ export function sessionToMeta(s: Session, owner: string): SessionMeta {
     ...(s.profile !== undefined ? { profile: s.profile } : {}),
     turns: s.turns.map((t): TurnRef => {
       const error = persistedTurnError(t);
+      const environment = persistedEnvironment(t.environment);
       return {
         userPreview: t.user_preview,
         ...(t.execution_id !== undefined ? { executionId: t.execution_id } : {}),
+        ...(environment !== undefined ? { environment } : {}),
         status: t.status,
         ...(t.started_at !== undefined ? { startedAt: t.started_at } : {}),
         ...(t.ended_at !== undefined ? { endedAt: t.ended_at } : {}),
         ...(error !== undefined ? { error } : {}),
       };
     }),
+    ...(lastEnvironment === undefined ? {} : { lastEnvironment }),
     totals: {
       input: s.totals.input,
       output: s.totals.output,
@@ -360,6 +385,7 @@ export function sessionToMeta(s: Session, owner: string): SessionMeta {
 
 /** Adapt the bounded catalog projection without pretending its turns are loaded. */
 function sessionSummaryToMeta(s: SessionSummary, owner: string): SessionMeta {
+  const lastEnvironment = persistedEnvironment(s.last_environment);
   return {
     id: s.id,
     title: s.title,
@@ -371,6 +397,7 @@ function sessionSummaryToMeta(s: SessionSummary, owner: string): SessionMeta {
     ...(s.profile !== undefined ? { profile: s.profile } : {}),
     turns: [],
     turnCount: s.turn_count,
+    ...(lastEnvironment !== undefined ? { lastEnvironment } : {}),
     totals: {
       input: s.totals.input,
       output: s.totals.output,

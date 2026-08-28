@@ -1079,8 +1079,8 @@ the default itself is **unpinned**.
 | MCP lease release throws | swallowed by `bestEffort`; the tool outcome stands | `packages/kernel/src/tasks/task-server-port.ts:92-99` |
 | control-plane caller aborts after dispatch | that waiter gets `cancelled` + `outcome_unknown: true`; the shared work continues for other waiters | `packages/kernel/src/tasks/task-service.ts:570-582` |
 | control-plane mutation table full of unresolved writes | evict the oldest **completed** record if one exists, else refuse outright — *"Too many unresolved task mutations are awaiting a stable retry."* (`unavailable` at the boundary) | `packages/kernel/src/tasks/task-service.ts:310-335` |
-| `TaskProviderFactory.status` cannot resolve | reports `incompatible` for `task_invalid_response`, `unavailable` otherwise, with a sanitized reason — it does not throw | `packages/kernel/src/tasks/task-provider-factory.ts:378-394` |
-| `TaskProviderFactory.status` is cancelled | re-thrown, not reported as a state | `packages/kernel/src/tasks/task-provider-factory.ts:379` |
+| `TaskProviderFactory.status` cannot resolve | reports `incompatible` for `task_invalid_response`, `unavailable` otherwise, with a sanitized reason — it does not throw | `packages/kernel/src/tasks/task-provider-factory.ts` (`TaskProviderFactory.status`) |
+| `TaskProviderFactory.status` is cancelled | re-thrown, not reported as a state | `packages/kernel/src/tasks/task-provider-factory.ts` (`TaskProviderFactory.status`) |
 | host has Tasks off | `TasksService.status` answers `{ state: "not_configured", writes: "disabled", reason: "Tasks are disabled in this host." }`; every other method throws `capability_disabled` | `packages/kernel/src/tasks/task-service.ts:595-602`, `:341-343` |
 
 ### 6.3 Retention and bounds

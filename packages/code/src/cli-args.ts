@@ -33,7 +33,12 @@ export interface DebugRequest {
 /** A launch-time request for a dedicated Git worktree. `true` asks Clarvis to name it. */
 export type WorktreeRequest = true | string;
 
-interface WorkspaceMode {
+interface EnvironmentMode {
+  /** Environment selected for this process, with CLI precedence. */
+  environmentSelector?: string;
+}
+
+interface WorkspaceMode extends EnvironmentMode {
   /** Resolve this invocation into a dedicated worktree before any host service boots. */
   worktree?: WorktreeRequest;
 }
@@ -52,7 +57,7 @@ export type Mode =
     } & WorkspaceMode)
   | ({ kind: "list"; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "delete"; id: SessionId; debug: DebugFlag } & WorkspaceMode)
-  | { kind: "refresh-models"; debug: DebugFlag }
+  | ({ kind: "refresh-models"; debug: DebugFlag } & EnvironmentMode)
   | { kind: "update" }
   | { kind: "help" }
   | { kind: "version" }
@@ -101,6 +106,11 @@ export const FLAGS: readonly FlagSpec[] = [
   { flag: "--refresh-models", desc: "refresh the models.dev catalog and exit", mode: true },
   { flag: "--update", desc: "install the newest eligible Clarvis release and exit", mode: true },
   { flag: "--ascii", desc: "render glyphs as plain ascii" },
+  {
+    flag: "--env",
+    value: "<environment>",
+    desc: "select an Environment for this process (scope:name or name)",
+  },
   {
     flag: "--worktree",
     optionalValue: "name",
@@ -284,7 +294,9 @@ export function parseMode(argv: string[]): Mode {
       `${seen.has("--agent") ? "--agent" : "--format"} applies only with -p/--print`,
     );
   if (mode === "--update") {
-    const incompatible = ["--ascii", "--worktree", "--debug"].find((flag) => seen.has(flag));
+    const incompatible = ["--ascii", "--worktree", "--env", "--debug"].find((flag) =>
+      seen.has(flag),
+    );
     if (incompatible !== undefined) {
       return usageError(`${incompatible} does not apply with --update`);
     }
@@ -300,8 +312,16 @@ export function parseMode(argv: string[]): Mode {
     ...(debugFlagLevel === undefined ? {} : { level: debugFlagLevel }),
   };
   const rawWorktree = seen.get("--worktree");
+  const environmentSelector = seen.get("--env");
   const selectedWorkspace: WorkspaceMode =
-    rawWorktree === undefined ? {} : { worktree: rawWorktree === "" ? true : rawWorktree };
+    rawWorktree === undefined && environmentSelector === undefined
+      ? {}
+      : {
+          ...(rawWorktree === undefined
+            ? {}
+            : { worktree: rawWorktree === "" ? true : rawWorktree }),
+          ...(environmentSelector === undefined ? {} : { environmentSelector }),
+        };
   switch (mode) {
     case "--print": {
       const prompt = seen.get("--print")!;
@@ -328,7 +348,11 @@ export function parseMode(argv: string[]): Mode {
     case "--delete":
       return { kind: "delete", id: seen.get("--delete")!, debug, ...selectedWorkspace };
     case "--refresh-models":
-      return { kind: "refresh-models", debug };
+      return {
+        kind: "refresh-models",
+        debug,
+        ...(environmentSelector === undefined ? {} : { environmentSelector }),
+      };
     case "--update":
       return { kind: "update" };
     default:

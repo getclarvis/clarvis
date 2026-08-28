@@ -156,6 +156,7 @@ function harness(): {
     agents: { active: () => "", view: () => undefined, list: () => [] } as never,
     agentFiles: { list: () => [], conflicts: () => [] } as never,
     plugins: {} as never,
+    environments: {} as never,
     code,
     memoryMode: {
       configured: () => true,

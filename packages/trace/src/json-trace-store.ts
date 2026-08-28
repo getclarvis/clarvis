@@ -802,6 +802,9 @@ export function createJsonTraceStore(opts: JsonTraceStoreOptions): JournalingTra
       ...(record.capability_state !== undefined
         ? { capability_state: record.capability_state }
         : {}),
+      ...(record.host_metadata !== undefined
+        ? { host_metadata: sanitizeDeep(record.host_metadata) }
+        : {}),
       ...(record.recovery !== undefined ? { recovery: record.recovery } : {}),
     };
     const filename = `${record.started_at}.${seg}.json`;

@@ -9,7 +9,12 @@ import {
   type CommandUi,
   type Commands,
 } from "../../src/keys/commands.ts";
-import { registerAppCommands, type AppCommandDeps } from "../../src/app/commands.tsx";
+import {
+  recomposeSelectedPlugin,
+  registerAppCommands,
+  selectedPluginLifecycleBlock,
+  type AppCommandDeps,
+} from "../../src/app/commands.tsx";
 import { registerProvidersCommands } from "../../src/features/providers/commands.ts";
 import { registerAgentsCommands } from "../../src/features/agents/commands.ts";
 import { readEnvView } from "../../src/adapters/agent-files.ts";
@@ -213,6 +218,7 @@ function baseDeps(
       reload: async () => {},
     } satisfies AgentsStore,
     plugins: fakePluginService(),
+    environments: {} as never,
     marketplaceDefaultUrls: [],
     code: fakeCode(),
     memoryMode: {
@@ -347,6 +353,77 @@ function fakePluginService(): PluginService {
     revokeHook: async () => {},
   };
 }
+
+test("plugin lifecycle recomposes only an exact selected Environment contribution", async () => {
+  const selected = {
+    id: "global:research",
+    status: "ready",
+    plugins: [{ ref: { scope: "global", source: "clarvis", name: "browser" } }],
+  } as never;
+  const recomposed = {
+    id: "global:research",
+    status: "degraded",
+    plugins: [{ ref: { scope: "global", source: "clarvis", name: "browser" } }],
+  } as never;
+  let reads = 0;
+  let reconnects = 0;
+  let reloads = 0;
+  const result = await recomposeSelectedPlugin(
+    { current: async () => (reads++ === 0 ? selected : recomposed) },
+    async () => {
+      reconnects += 1;
+      return { ok: true, message: "ok" };
+    },
+    async () => {
+      reloads += 1;
+    },
+    { scope: "global", source: "clarvis", name: "browser" },
+  );
+  expect(result).toContain("recomposed global:research");
+  expect(result).toContain("degraded");
+  expect([reconnects, reloads]).toEqual([1, 1]);
+
+  const unrelated = await recomposeSelectedPlugin(
+    { current: async () => selected },
+    async () => {
+      throw new Error("must not reconnect");
+    },
+    async () => {
+      throw new Error("must not reload");
+    },
+    { scope: "workspace", source: "clarvis", name: "browser" },
+  );
+  expect(unrelated).toBeUndefined();
+
+  const deferred = await recomposeSelectedPlugin(
+    { current: async () => selected },
+    async () => ({ ok: false, message: "run in progress" }),
+    async () => {
+      throw new Error("must not reload after a failed reconnect");
+    },
+    { scope: "global", source: "clarvis", name: "browser" },
+  );
+  expect(deferred).toContain("takes effect after /reconnect (run in progress)");
+
+  expect(
+    await selectedPluginLifecycleBlock({ current: async () => selected }, () => true, {
+      scope: "global",
+      source: "clarvis",
+      name: "browser",
+    }),
+  ).toContain("finish the active run");
+  expect(
+    await selectedPluginLifecycleBlock(
+      {
+        current: async () => {
+          throw new Error("an idle run must not read the Environment");
+        },
+      },
+      () => false,
+      { scope: "global", source: "clarvis", name: "browser" },
+    ),
+  ).toBeUndefined();
+});
 
 function fakeViewKeymap(): Interaction["keymap"] {
   const keymap = {

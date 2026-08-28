@@ -25,6 +25,9 @@ import type {
   SecretService,
   SkillsService,
   StorageService,
+  EnvironmentService,
+  EnvironmentPluginRef,
+  ResolvedEnvironment,
   TasksService,
   SandboxInspection,
   WorkspaceService,
@@ -66,7 +69,7 @@ import {
   type OwnerScope,
 } from "./application/scope-policy.ts";
 import { createAgentWorkflowPolicy } from "./application/workflow-policy.ts";
-import { globalRoot, workspacePaths } from "@clarvis/paths";
+import { globalRoot } from "@clarvis/paths";
 import { createTasksService } from "./tasks/task-service.ts";
 import type { TaskProviderFactory } from "./tasks/task-provider-factory.ts";
 import { kernelError } from "./core/errors.ts";
@@ -132,6 +135,8 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   readonly files: WorkspaceService;
   /** Installed/enabled plugins. */
   readonly plugins: PluginService;
+  /** Resolved extension Environment and its management control plane. */
+  readonly environments: EnvironmentService;
   /** Operator-owned generated-state inventory and disposable cleanup. */
   readonly storage: StorageService;
   /** Default owner's external task control plane. */
@@ -226,6 +231,8 @@ export interface CreateKernelOptions {
   providerAuthService?: ProviderAuthService;
   /** Global Clarvis config dir for models/sessions; defaults to the standard global root. */
   globalConfigDir?: string;
+  /** Host-owned Environment control plane; defaults to immutable builtin:default. */
+  environmentService?: EnvironmentService;
   /** Teardown hook invoked by {@link InProcessKernel.close}. */
   dispose?: () => Promise<void>;
   /** Provides sandbox inspection to the config service; when omitted it is unavailable. */
@@ -256,6 +263,68 @@ export const DEFAULT_KERNEL_CAPABILITIES: KernelCapabilities = {
   agent_tools: true,
   tasks: false,
 };
+
+/** Minimal Environment service for embedders that do not use the file-backed host. */
+function createBuiltinEnvironmentService(): EnvironmentService {
+  const current: ResolvedEnvironment = {
+    id: "builtin:default",
+    ref: { scope: "builtin", name: "default" },
+    immutable: true,
+    status: "ready",
+    fingerprint: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    selection_origin: "builtin",
+    plugins: [],
+    standalone_skills: [],
+    issues: [],
+    counts: {
+      plugins_active: 0,
+      plugins_installed: 0,
+      standalone_skills_active: 0,
+      standalone_skills_discovered: 0,
+      plugin_skills_active: 0,
+      plugin_skills_discovered: 0,
+      mcp_servers_active: 0,
+      hooks_declared: 0,
+      hooks_approved: 0,
+    },
+  };
+  const unavailable = (): never => {
+    throw kernelError("unavailable", "Environment definitions require the file-backed kernel");
+  };
+  return {
+    list: async () => [{ ref: current.ref, immutable: true }],
+    current: async () => current,
+    get: async (ref) => {
+      if (ref.scope !== "builtin" || ref.name !== "default") unavailable();
+      return current;
+    },
+    preview: async (ref) => {
+      if (ref.scope !== "builtin" || ref.name !== "default") unavailable();
+      return {
+        current,
+        target: current,
+        delta: {
+          plugins_entering: [],
+          plugins_leaving: [],
+          skills_entering: [],
+          skills_leaving: [],
+          mcp_servers_entering: [],
+          mcp_servers_leaving: [],
+          hooks_entering: [],
+          hooks_leaving: [],
+        },
+        token: "builtin",
+        requires_workspace_trust: false,
+      };
+    },
+    previewClear: async () => unavailable(),
+    select: async () => unavailable(),
+    clearSelection: async () => unavailable(),
+    create: async () => unavailable(),
+    update: async () => unavailable(),
+    clone: async () => unavailable(),
+  };
+}
 
 /**
  * Assembles the full set of protocol services around loop execution deps and a
@@ -720,16 +789,21 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   const files = createWorkspaceService(opts.workspaceRoot);
   const plugins = createPluginService({
     globalDir,
-    workspaceConfigDir: workspacePaths(opts.workspaceRoot).clarvisDir,
+    workspaceRoot: opts.workspaceRoot,
     enabledPlugins: () => {
-      const merged = opts.configStore.readSettings().merged as Record<string, unknown>;
-      return Array.isArray(merged.enabledPlugins) ? (merged.enabledPlugins as string[]) : [];
+      const snapshot = opts.configStore.readSettings();
+      if (snapshot.active_plugins !== undefined) return [...snapshot.active_plugins];
+      const merged = snapshot.merged as Record<string, unknown>;
+      return Array.isArray(merged.enabledPlugins)
+        ? (merged.enabledPlugins as EnvironmentPluginRef[])
+        : [];
     },
     environment: opts.environment ?? process.env,
     lifecycle,
     logger,
   });
   const storage = createStorageService(globalDir);
+  const environments = opts.environmentService ?? createBuiltinEnvironmentService();
   /**
    * What this kernel actually advertises over the handshake.
    *
@@ -762,6 +836,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     providerAuth,
     files,
     plugins,
+    environments,
     storage,
   };
   const scopePolicy = createKernelScopePolicy(ownershipMode);
@@ -783,6 +858,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     providerAuth,
     files,
     plugins,
+    environments,
     storage,
     tasks: scoped.tasks,
     forOwner,

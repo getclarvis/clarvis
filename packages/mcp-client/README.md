@@ -15,7 +15,7 @@ specified in [`engine/tool-dispatch.md`](../../specs/engine/tool-dispatch.md).
 | `openConnection`                                | one self-healing connection: reconnect, health ping, consecutive-timeout streak |
 | `createConnectionManager`                       | the pool over connections, with idle TTL and owner scoping                      |
 | `buildRegistry`, `selectTools`, `poolToolNames` | the namespaced tool registry                                                    |
-| `interpolateEnv`                                | `${VAR}` expansion in a server's `env` and `headers`                            |
+| `interpolateEnv`                                | `${VAR}` expansion in a server's `env` and `headers` when enabled               |
 | `createMCPAuthorizationCoordinator`             | browser OAuth, loopback callback, PKCE and per-resource serialization           |
 | `createMcpOAuthCredentialStore`                 | bounded, private persistence for registrations and tokens                       |
 | `CLIENT_NAME`, `VERSION`                        | MCP handshake identity using the root Clarvis product version                   |
@@ -23,6 +23,14 @@ specified in [`engine/tool-dispatch.md`](../../specs/engine/tool-dispatch.md).
 It depends on `@clarvis/capability` (the `MCPConnection` / `NamespacedRegistry`
 vocabulary and the `Logger` port), `@clarvis/paths` (`ownerSegment`,
 `executableOnPath`) and `@modelcontextprotocol/sdk`.
+
+`McpServerConfig.cwd` selects an explicit stdio working directory; otherwise the factory's
+workspace-rooted default applies. `expandVariables` defaults to true. A portable Agent Plugin
+adapter sets it false after expanding only its format-owned `PLUGIN_ROOT`/`PLUGIN_DATA` placeholders,
+so this transport preserves every remaining env/header placeholder literally instead of applying a
+second, broader Clarvis interpolation pass. The pool key includes this flag. It deliberately excludes
+`auto_tools`: that flag changes the loop's run-level admission after discovery, not the physical
+server, transport, or catalog that this package pools.
 
 ## It does not know the engine
 

@@ -1844,6 +1844,46 @@ test("loadSessionMeta: an intact turn gets no partial-record notice", async () =
   dispose();
 });
 
+test("loadSessionMeta warns when the active Environment differs from the persisted turn", async () => {
+  const client = fakeClient();
+  client.client.currentEnvironment = () => ({
+    id: "global:research",
+    fingerprint: `sha256:${"b".repeat(64)}`,
+  });
+  client.getRunImpl.fn = () => Promise.resolve(null);
+  const { host, store, dispose } = mount({ client: client.client });
+  const meta: SessionMeta = {
+    id: "session-environment-change",
+    title: "t",
+    workspace: "/tmp",
+    owner: "test-owner",
+    createdAt: 1,
+    updatedAt: 1,
+    turns: [
+      {
+        userPreview: "old",
+        executionId: "exec_old",
+        environment: { id: "workspace:project", fingerprint: `sha256:${"a".repeat(64)}` },
+        status: "done",
+      },
+    ],
+    lastEnvironment: { id: "workspace:project", fingerprint: `sha256:${"a".repeat(64)}` },
+    totals: { input: 0, output: 0, cached: 0 },
+  };
+
+  await host.loadSessionMeta(meta);
+
+  expect(host.runStatus()).toContain("Environment changed");
+  const notice = store.nodes.find(
+    (node) => node.kind === "annotation" && node.text.includes("Environment changed"),
+  );
+  expect(notice).toBeDefined();
+  expect(notice!.text).toContain("workspace:project (aaaaaaaa)");
+  expect(notice!.text).toContain("global:research (bbbbbbbb)");
+  expect(host.sessionMeta()?.lastEnvironment).toEqual(meta.lastEnvironment);
+  dispose();
+});
+
 test("a degraded resume never falls back to a silently partial full request", async () => {
   const client = fakeClient();
   client.getRunImpl.fn = () => Promise.resolve(null);

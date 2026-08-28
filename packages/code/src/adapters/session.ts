@@ -1,5 +1,6 @@
 import type {
   ActiveTaskBindingDto,
+  EnvironmentRunRef,
   Message,
   MessageContent,
   PlanRef,
@@ -72,6 +73,8 @@ export interface SessionDeps {
   project: string;
   workspace: string;
   priceFor?: (model: string) => CatalogCost | undefined;
+  /** Process-pinned Environment identity for each newly started turn. */
+  environment?: () => EnvironmentRunRef | undefined;
 }
 
 /** Initial state to seed a {@link Session} from — an existing session's metadata and history. */
@@ -136,12 +139,15 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
       };
     }
     history.push({ role: "user", content });
+    const environment = deps.environment?.();
     meta.turns.push({
       userPreview: redactPreview(contentToText(content), { redact }),
       executionId,
+      ...(environment !== undefined ? { environment } : {}),
       status: "running",
       startedAt: ts,
     });
+    if (environment !== undefined) meta.lastEnvironment = environment;
     meta.updatedAt = ts;
     deps.store.save(meta);
     return base;
@@ -178,6 +184,10 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
     if (turn) {
       turn.status = runStatusToNode(stored.status, stored.result?.ended_reason);
       if (stored.ended_at !== undefined) turn.endedAt = stored.ended_at;
+      if (stored.environment !== undefined) {
+        turn.environment = stored.environment;
+        meta.lastEnvironment = stored.environment;
+      }
     }
     if (!counted.has(stored.execution_id)) {
       const usage = stored.result?.usage;

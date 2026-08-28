@@ -1,6 +1,6 @@
 # The Clarvis spec corpus
 
-Sixty-five documents specifying what the Clarvis monorepo does, plus a register of what has been
+Sixty-six documents specifying what the Clarvis monorepo does, plus a register of what has been
 measured, ruled out, or tried and reverted.
 
 The findings register that used to sit beside them — `gaps.md`, the cross-cutting list of what the
@@ -14,7 +14,7 @@ rather than deleted, so the reasoning outlives the finding.
 
 ## What this is
 
-These sixty-five documents are the specification of the Clarvis monorepo: what each subsystem is for, what
+These sixty-six documents are the specification of the Clarvis monorepo: what each subsystem is for, what
 it publishes, how it behaves, and the rules that must hold. They are the contract; the code under
 `packages/` is what realizes it. One document covers one subsystem, and each opens with a blockquote
 naming the files that implement it, so the boundary travels with the document rather than in a
@@ -32,7 +32,7 @@ cannot be written as a requirement or checked against a line of source. That is 
 separate document.
 
 **The corpus carries no date of its own, so the table below is its timestamp.** These are the
-numbers the tree held when it was last refreshed (2026-08-26). If they no longer match, the tree has
+numbers the tree held when it was last refreshed (2026-08-27). If they no longer match, the tree has
 moved since the corpus was last checked against it, and the further it has drifted the more of the
 corpus's untested statements are worth re-checking. Regenerate them rather than trusting them:
 
@@ -44,29 +44,29 @@ find packages/<pkg>/tests -type f -name '*.test.ts*' | wc -l
 
 | Package | `src` lines | `src` files | test files |
 |---|---|---|---|
-| `code` | 51,378 | 237 | 232 |
-| `kernel` | 26,707 | 110 | 83 |
-| `loop` | 20,614 | 137 | 233 |
+| `code` | 52,145 | 238 | 233 |
+| `kernel` | 28,520 | 111 | 84 |
+| `loop` | 20,705 | 137 | 233 |
 | `memory` | 13,612 | 65 | 59 |
 | `tools` | 12,398 | 65 | 71 |
-| `capability` | 7,869 | 51 | 34 |
+| `capability` | 7,921 | 51 | 34 |
 | `plan` | 7,013 | 26 | 24 |
 | `server` | 6,450 | 37 | 38 |
 | `workflows` | 6,463 | 27 | 23 |
-| `trace` | 4,186 | 15 | 16 |
+| `trace` | 4,205 | 15 | 16 |
 | `llm` | 4,020 | 18 | 19 |
 | `tasks` | 3,797 | 13 | 6 |
-| `skills` | 3,560 | 20 | 25 |
+| `skills` | 3,608 | 20 | 25 |
 | `mcp-client` | 3,554 | 13 | 24 |
-| `paths` | 3,239 | 14 | 14 |
-| `protocol` | 2,933 | 18 | 0 |
+| `paths` | 3,254 | 14 | 14 |
+| `protocol` | 3,153 | 19 | 0 |
 | `hooks` | 2,390 | 9 | 11 |
 | `supervision` | 1,537 | 10 | 9 |
 
 ## How to read a spec
 
 Every document opens with an H1 naming its subject and a blockquote naming the files that implement
-it. Then eight numbered sections, in the same order in all sixty-five:
+it. Then eight numbered sections, in the same order in all sixty-six:
 
 | § | Section | What it holds |
 |---|---|---|
@@ -156,6 +156,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`kernel-config.md`](hosts/kernel-config.md) | The synchronous config store under the async config service, `kernelSettingsSchema` validation, the shipped agent fleet as TypeScript data, and field-by-field overlays | `kernel`, `protocol` |
 | [`kernel-runs.md`](hosts/kernel-runs.md) | Admission and execution identity, request assembly from settings plus agent records, the run-scoped handle with its queues, and the two mappers that project events into the protocol union | `kernel`, `protocol` |
 | [`kernel-transport.md`](hosts/kernel-transport.md) | The JSON-RPC-shaped wire with Clarvis's own vocabulary: one operations table both halves are built from, stdio framing, the loopback seam and inbound run-event re-validation | `kernel`, `protocol` |
+| [`environments.md`](hosts/environments.md) | Deterministic activation snapshots over already-installed plugins and standalone skills: exact scopes, selection precedence, trust, deltas, fingerprints, and session/trace identity | `kernel`, `protocol`, `paths`, `skills`, `loop`, `trace`, `code` |
 | [`storage.md`](hosts/storage.md) | Metadata-only inventory of Clarvis-owned local state, confirmed cleanup of disposable artifacts, spill/run-scratch housekeeping and session-safe trace retention | `kernel`, `protocol`, `paths`, `trace`, `loop`, `code` |
 | [`plugins.md`](hosts/plugins.md) | Reading a `plugin.json`, translating foreign dialects, degrading one artifact at a time, and the marketplace clone-and-install path | `kernel`, `loop`, `code` |
 | [`model-catalog.md`](hosts/model-catalog.md) | The shipped models.dev snapshot, `provider/model` ref parsing and provider resolution, pricing, reasoning-effort floors and where a model's cache mode is derived | `kernel`, `capability`, `code` |

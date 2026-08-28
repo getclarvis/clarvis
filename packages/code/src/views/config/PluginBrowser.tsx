@@ -17,12 +17,14 @@ import {
   type DetailRow,
 } from "./view-host.tsx";
 import type { PluginView } from "../../adapters/plugins.ts";
+import type { PluginSource } from "@clarvis/protocol";
+import { AGENTS_DIR, AGENTS_PLUGINS_DIR, CLARVIS_DIR } from "@clarvis/paths";
 
 /** Data and actions {@link PluginBrowser} needs from its host. */
 export interface PluginBrowserDeps {
   plugins: Accessor<PluginView[]>;
   toggleEnabled: (p: PluginView) => void;
-  install: (url: string) => void;
+  install: (url: string, source: PluginSource) => void;
   update: (p: PluginView) => void;
   uninstall: (p: PluginView) => void;
   notify: (message: string) => void;
@@ -80,7 +82,8 @@ export function PluginBrowser(host: ViewHost, deps: PluginBrowserDeps): JSX.Elem
     if (p.shortDescription && p.shortDescription !== p.description) {
       rows.push({ text: `summary  ${p.shortDescription}`, fg: tokens.muted });
     }
-    if (p.source) rows.push({ text: `source   ${p.source}`, fg: tokens.muted });
+    rows.push({ text: `inventory ${p.scope}/${p.source}`, fg: tokens.muted });
+    if (p.installSource) rows.push({ text: `origin    ${p.installSource}`, fg: tokens.muted });
     if (p.revision) rows.push({ text: `revision ${p.revision}`, fg: tokens.muted });
     rows.push({ text: summary(p), fg: tokens.muted });
     const c = p.contributions;
@@ -101,7 +104,7 @@ export function PluginBrowser(host: ViewHost, deps: PluginBrowserDeps): JSX.Elem
     }
     if (c.servers.length > 0) {
       rows.push({
-        text: `servers  ${c.servers.map((s) => `${p.name}:${s}`).join("  ")}  (executable)`,
+        text: `servers  ${c.servers.join("  ")}  (executable)`,
         fg: tokens.warn,
       });
     }
@@ -151,9 +154,25 @@ export function PluginBrowser(host: ViewHost, deps: PluginBrowserDeps): JSX.Elem
         key: "a",
         label: "install",
         run: () =>
-          editor.start("git URL", "", (url) => {
-            if (url.trim().length > 0) deps.install(url);
-          }),
+          editor.startPick(
+            "install inventory",
+            [
+              {
+                label: `${AGENTS_DIR}/${AGENTS_PLUGINS_DIR}`,
+                value: "agents",
+                detail: "shared Agent Plugin inventory",
+              },
+              {
+                label: `${CLARVIS_DIR}/${AGENTS_PLUGINS_DIR}`,
+                value: "clarvis",
+                detail: "Clarvis-native inventory",
+              },
+            ],
+            (source) =>
+              editor.start("git URL", "", (url) => {
+                if (url.trim().length > 0) deps.install(url, source as PluginSource);
+              }),
+          ),
       },
       {
         key: "u",
@@ -162,6 +181,12 @@ export function PluginBrowser(host: ViewHost, deps: PluginBrowserDeps): JSX.Elem
         run: () => {
           const p = selected();
           if (!p) return;
+          if (p.scope === "workspace") {
+            deps.notify(
+              `${p.name} lives in this workspace ${glyph("emDash")} update it in the repo instead`,
+            );
+            return;
+          }
           deps.update(p);
         },
       },
@@ -215,8 +240,7 @@ export function PluginBrowser(host: ViewHost, deps: PluginBrowserDeps): JSX.Elem
             <span style={{ fg: tokens.fg }}>{p.name}</span>
             <span style={{ fg: tokens.muted }}>
               {p.version ? `  v${p.version}` : ""}
-              {`  ${stateLabel(p)}  ${p.scope}`}
-              {p.shadowsGlobal ? "  shadows global" : ""}
+              {`  ${stateLabel(p)}  ${p.scope}/${p.source}`}
             </span>
           </SelectableRow>
         )}

@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { hookFingerprint } from "../../src/plugins/hook-trust.ts";
@@ -30,12 +39,21 @@ function write(relative: string, body: unknown): void {
 }
 
 const base = { name: "demo", version: "1.0.0", description: "A demo plugin." };
+const AGENT_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
+const AGENT_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
 
 /** Resolve the manifest the way both kernel readers do. */
 function resolve(): ReturnType<typeof resolvePluginManifest> {
   const source = readPluginManifestSource(root);
   if (!("raw" in source)) throw new Error(source.error);
   return resolvePluginManifest(root, source.raw, source.location);
+}
+
+/** Resolve a portable Agent Plugin with the client-managed runtime data directory. */
+function resolveAgentPlugin(dataDir: string): ReturnType<typeof resolvePluginManifest> {
+  const source = readPluginManifestSource(root);
+  if (!("raw" in source)) throw new Error(source.error);
+  return resolvePluginManifest(root, source.raw, source.location, "portable.plugin", { dataDir });
 }
 
 /** The location a manifest was read from, or undefined when none was found. */
@@ -143,6 +161,193 @@ describe("manifest location", () => {
     const source = readPluginManifestSource(root);
     expect("error" in source && source.error).toContain("manifest-discovery resource limit");
   });
+});
+
+describe("Agent Plugins v1 package", () => {
+  it("loads the fixed skills tree and normalizes portable stdio and streamable HTTP servers", () => {
+    const data = join(root, "runtime-data");
+    mkdirSync(join(data, "work"), { recursive: true });
+    write("plugin.json", {
+      $schema: AGENT_PLUGIN_SCHEMA,
+      name: "portable.plugin",
+      version: "2026.08-preview",
+      description: "Portable package",
+      skills: "./not-the-fixed-location",
+      future_field: true,
+    });
+    write(
+      "skills/research/SKILL.md",
+      "---\nname: research\ndescription: Research instructions.\n---\n",
+    );
+    write("bin/server", "#!/bin/sh\n");
+    write("mcp.json", {
+      $schema: AGENT_MCP_SCHEMA,
+      mcpServers: {
+        local: {
+          type: "stdio",
+          command: "./bin/server",
+          args: ["--root", "${PLUGIN_ROOT}/config", "${PLUGIN_DATA}/db"],
+          env: { CACHE: "${PLUGIN_DATA}/cache", PACKAGE: "${PLUGIN_ROOT}" },
+          cwd: "${PLUGIN_DATA}/work",
+        },
+        bare: { type: "stdio", command: "node" },
+        web: {
+          type: "streamable-http",
+          url: "https://plugins.example.test/mcp",
+          headers: { "X-Plugin": "portable" },
+        },
+        escaped: { type: "stdio", command: "../outside" },
+      },
+    });
+
+    const { manifest, error, notes } = resolveAgentPlugin(data);
+    const realRoot = realpathSync(root);
+    const realData = realpathSync(data);
+
+    expect(error).toBeUndefined();
+    expect(manifest).toMatchObject({
+      name: "portable.plugin",
+      version: "2026.08-preview",
+      skills: [join(realRoot, "skills")],
+      mcpServers: {
+        local: {
+          type: "stdio",
+          command: join(realRoot, "bin", "server"),
+          args: ["--root", `${realRoot}/config`, `${realData}/db`],
+          env: {
+            CACHE: `${realData}/cache`,
+            PACKAGE: realRoot,
+            PLUGIN_ROOT: realRoot,
+            PLUGIN_DATA: realData,
+          },
+          cwd: join(realData, "work"),
+          expandVariables: false,
+        },
+        bare: {
+          type: "stdio",
+          command: "node",
+          env: { PLUGIN_ROOT: realRoot, PLUGIN_DATA: realData },
+          cwd: realRoot,
+          expandVariables: false,
+        },
+        web: {
+          type: "http",
+          url: "https://plugins.example.test/mcp",
+          headers: { "X-Plugin": "portable" },
+          expandVariables: false,
+        },
+      },
+    });
+    expect(manifest?.mcpServers?.escaped).toBeUndefined();
+    expect(notes.join(" ")).toContain("field 'future_field' is unknown and was ignored");
+    expect(notes.join(" ")).toContain("field 'skills' is unknown and was ignored");
+    expect(notes.join(" ")).toContain("'escaped' is not contributed");
+  });
+
+  it("keeps the plugin and its skills when the top-level MCP document is invalid", () => {
+    const data = join(root, "runtime-data");
+    mkdirSync(data, { recursive: true });
+    write("plugin.json", {
+      $schema: AGENT_PLUGIN_SCHEMA,
+      name: "portable.plugin",
+    });
+    write(
+      "skills/research/SKILL.md",
+      "---\nname: research\ndescription: Research instructions.\n---\n",
+    );
+    write("mcp.json", {
+      $schema: AGENT_MCP_SCHEMA,
+      mcpServers: { would_run: { type: "stdio", command: "node" } },
+      unexpected: true,
+    });
+
+    const { manifest, error, notes } = resolveAgentPlugin(data);
+
+    expect(error).toBeUndefined();
+    expect(manifest?.skills).toEqual([join(realpathSync(root), "skills")]);
+    expect(manifest?.mcpServers).toBeUndefined();
+    expect(notes.join(" ")).toContain("MCP is disabled for this plugin");
+  });
+
+  it("rejects an unsupported portable manifest schema instead of guessing", () => {
+    write("plugin.json", {
+      $schema: "https://agent-plugins.org/schemas/2.0.0/plugin.schema.json",
+      name: "portable.plugin",
+    });
+    const source = readPluginManifestSource(root);
+    if (!("raw" in source)) throw new Error(source.error);
+
+    expect(resolvePluginManifest(root, source.raw, source.location).error).toContain(
+      "unsupported Agent Plugins manifest schema",
+    );
+  });
+
+  it("treats a root portable manifest as authoritative over a host-specific manifest", () => {
+    write("plugin.json", {
+      $schema: AGENT_PLUGIN_SCHEMA,
+      name: "portable.plugin",
+      description: "portable root",
+    });
+    write(".codex-plugin/plugin.json", {
+      name: "portable.plugin",
+      description: "host-specific fallback",
+      mcpServers: { hidden: { command: "would-run" } },
+    });
+
+    expect(locationRead()).toBe("plugin.json");
+    expect(resolve().manifest).toMatchObject({
+      name: "portable.plugin",
+      description: "portable root",
+    });
+    expect(resolve().manifest?.mcpServers).toBeUndefined();
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects a portable manifest symlink that leaves the package",
+    () => {
+      const outside = mkdtempSync(join(tmpdir(), "clarvis-manifest-outside-"));
+      try {
+        writeFileSync(
+          join(outside, "plugin.json"),
+          JSON.stringify({ $schema: AGENT_PLUGIN_SCHEMA, name: "portable.plugin" }),
+        );
+        symlinkSync(join(outside, "plugin.json"), join(root, "plugin.json"));
+
+        const source = readPluginManifestSource(root);
+        expect("error" in source && source.error).toContain("resolves outside the plugin root");
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "disables only MCP when root mcp.json leaves the package",
+    () => {
+      const outside = mkdtempSync(join(tmpdir(), "clarvis-mcp-outside-"));
+      const data = join(root, "runtime-data");
+      mkdirSync(data, { recursive: true });
+      try {
+        write("plugin.json", { $schema: AGENT_PLUGIN_SCHEMA, name: "portable.plugin" });
+        writeFileSync(
+          join(outside, "mcp.json"),
+          JSON.stringify({
+            $schema: AGENT_MCP_SCHEMA,
+            mcpServers: { escaped: { type: "stdio", command: "node" } },
+          }),
+        );
+        symlinkSync(join(outside, "mcp.json"), join(root, "mcp.json"));
+
+        const { manifest, error, notes } = resolveAgentPlugin(data);
+        expect(error).toBeUndefined();
+        expect(manifest?.name).toBe("portable.plugin");
+        expect(manifest?.mcpServers).toBeUndefined();
+        expect(notes.join(" ")).toContain("resolves outside the plugin root");
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe("foreign manifest fields", () => {
@@ -612,11 +817,17 @@ describe("MCP server entries a manifest carries", () => {
     expect(resolve().notes.filter((n) => n.includes("not contributed"))).toEqual([]);
   });
 
-  it("does not loosen the same rule for settings.json", () => {
+  it("supports portable cwd while settings remain strict about unrelated keys", () => {
     expect(mcpServerSettingsSchema.safeParse({ command: "x", cwd: "/somewhere" }).success).toBe(
-      false,
+      true,
     );
     expect(mcpServerPluginSchema.safeParse({ command: "x", cwd: "/somewhere" }).success).toBe(true);
+    expect(
+      mcpServerSettingsSchema.safeParse({ command: "x", workingDirectory: "/somewhere" }).success,
+    ).toBe(false);
+    expect(
+      mcpServerPluginSchema.safeParse({ command: "x", workingDirectory: "/somewhere" }).success,
+    ).toBe(true);
   });
 });
 

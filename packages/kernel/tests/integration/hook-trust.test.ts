@@ -10,17 +10,21 @@ import {
 } from "../../src/plugins/hook-trust.ts";
 
 const hook = { event: "run_start" as const, command: "python3 check.py", timeout_ms: 5000 };
+const plugin = { scope: "global" as const, source: "clarvis" as const, name: "demo" };
 
 test("hook trust binds approval to one canonical normalized definition", () => {
   const globalDir = mkdtempSync(join(tmpdir(), "clarvis-hook-trust-"));
   const fingerprint = hookFingerprint(hook);
-  expect(pluginHookReviews(globalDir, "demo", [hook])[0]?.approved).toBe(false);
+  expect(pluginHookReviews(globalDir, plugin, [hook])[0]?.approved).toBe(false);
 
-  writeHookApproval(globalDir, "demo", fingerprint, true);
-  expect(pluginHookReviews(globalDir, "demo", [hook])[0]?.approved).toBe(true);
+  writeHookApproval(globalDir, plugin, fingerprint, true);
+  expect(pluginHookReviews(globalDir, plugin, [hook])[0]?.approved).toBe(true);
   expect(
-    pluginHookReviews(globalDir, "demo", [{ ...hook, command: "python3 changed.py" }])[0]?.approved,
+    pluginHookReviews(globalDir, plugin, [{ ...hook, command: "python3 changed.py" }])[0]?.approved,
   ).toBe(false);
+  expect(pluginHookReviews(globalDir, { ...plugin, source: "agents" }, [hook])[0]?.approved).toBe(
+    false,
+  );
   expect(
     hookFingerprint({ timeout_ms: 5000, command: "python3 check.py", event: "run_start" }),
   ).toBe(fingerprint);
@@ -32,8 +36,8 @@ test("corrupt hook trust fails closed and is never overwritten", () => {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, "not json");
 
-  expect(pluginHookReviews(globalDir, "demo", [hook])[0]?.approved).toBe(false);
-  expect(() => writeHookApproval(globalDir, "demo", hookFingerprint(hook), true)).toThrow(
+  expect(pluginHookReviews(globalDir, plugin, [hook])[0]?.approved).toBe(false);
+  expect(() => writeHookApproval(globalDir, plugin, hookFingerprint(hook), true)).toThrow(
     "refusing to overwrite",
   );
 });

@@ -537,6 +537,8 @@ export interface ExecutionRecord {
    * reading `capability_state.plans`) validates the shape at its own boundary.
    */
   capability_state?: Record<string, unknown>;
+  /** Opaque, sanitized host snapshot captured once when the run starts. */
+  host_metadata?: Record<string, unknown>;
   /**
    * Present only when this record was rebuilt from a damaged crash journal and
    * something was lost or synthesized.

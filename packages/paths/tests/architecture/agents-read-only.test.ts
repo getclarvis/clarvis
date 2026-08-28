@@ -1,17 +1,12 @@
 /**
- * Clarvis reads `.agents` and writes `.clarvis`, and nothing enforced the first half.
+ * Clarvis shares `.agents` with other runtimes, with mutation authority scoped
+ * to managed plugin installations rather than the whole convention tree.
  *
- * @remarks `invariant.test.ts` is a *textual* scan: it catches a package that
- * spells `.agents` itself, which is how a new location gets built. It cannot
- * catch the other direction — an existing accessor, correctly obtained from this
- * package, being handed to a mutating call. `.agents` is the user's own content,
- * shared with other agent runtimes; writing into it would edit files Clarvis does
- * not own, in a tree no `.gitignore` of ours covers.
- *
- * The scan works from the accessors rather than from the literal: every path
- * under `.agents` comes from one of three functions, so a file that never
- * imports one cannot reach the tree at all, and a file that does gets its bound
- * names traced into every mutating call in it.
+ * @remarks `invariant.test.ts` ensures only `@clarvis/paths` spells this layout.
+ * This complementary scan enforces ownership after a consumer obtains one of
+ * those accessors: standalone skills and marketplace documents remain authored
+ * input, while exactly the filesystem plugin repository may create, replace or
+ * remove an exact directory below `.agents/plugins`.
  */
 import { describe, expect, test } from "bun:test";
 import { Glob } from "bun";
@@ -20,8 +15,15 @@ import { join, resolve, sep } from "node:path";
 
 const repoRoot = resolve(import.meta.dir, "..", "..", "..", "..");
 
-/** Every function in this package that answers a path inside `.agents`. */
-const AGENTS_ACCESSORS = ["agentsSkillsDirs", "agentsMarketplaceFile", "agentsMarketplaceFiles"];
+/** Shared authored inputs that Clarvis only discovers. */
+const READ_ONLY_ACCESSORS = ["agentsSkillsDirs", "agentsMarketplaceFile", "agentsMarketplaceFiles"];
+
+/** Shared plugin inventory roots with a deliberately narrow managed writer. */
+const PLUGIN_ACCESSORS = ["agentsPluginsDir", "agentsPluginsDirs"];
+
+const AGENTS_ACCESSORS = [...READ_ONLY_ACCESSORS, ...PLUGIN_ACCESSORS];
+
+const PLUGIN_WRITER = "packages/kernel/src/adapters/filesystem/plugin-repository.ts";
 
 /** Calls that create, modify or remove something on disk. */
 const MUTATORS = [
@@ -58,14 +60,16 @@ function isComment(line: string): boolean {
 }
 
 /** Files outside this package that import an `.agents` accessor. */
-async function consumers(): Promise<{ rel: string; text: string }[]> {
+async function consumers(
+  accessors: readonly string[] = AGENTS_ACCESSORS,
+): Promise<{ rel: string; text: string }[]> {
   const out: { rel: string; text: string }[] = [];
   for (const pattern of SCANNED) {
     for await (const match of new Glob(pattern).scan({ cwd: repoRoot })) {
       const rel = match.split(sep).join("/");
       if (rel.startsWith("packages/paths/")) continue;
       const text = await readFile(join(repoRoot, match), "utf8");
-      if (AGENTS_ACCESSORS.some((fn) => text.includes(fn))) out.push({ rel, text });
+      if (accessors.some((fn) => text.includes(fn))) out.push({ rel, text });
     }
   }
   return out.sort((a, b) => a.rel.localeCompare(b.rel));
@@ -75,9 +79,9 @@ async function consumers(): Promise<{ rel: string; text: string }[]> {
  * Names bound from an `.agents` accessor in one file — both `const x = fn(...)`
  * and the destructured `const { user, workspace } = fn()` form.
  */
-function boundNames(text: string): string[] {
+function boundNames(text: string, accessors: readonly string[] = AGENTS_ACCESSORS): string[] {
   const names = new Set<string>();
-  const call = AGENTS_ACCESSORS.join("|");
+  const call = accessors.join("|");
   for (const m of text.matchAll(new RegExp(`const\\s+(\\w+)\\s*=\\s*(?:${call})\\s*\\(`, "g"))) {
     names.add(m[1]!);
   }
@@ -93,10 +97,10 @@ function boundNames(text: string): string[] {
 }
 
 /** `<path>:<line>` wherever such a name reaches a mutating call. */
-async function writes(): Promise<string[]> {
+async function writes(accessors: readonly string[]): Promise<string[]> {
   const found: string[] = [];
-  for (const { rel, text } of await consumers()) {
-    const names = boundNames(text);
+  for (const { rel, text } of await consumers(accessors)) {
+    const names = boundNames(text, accessors);
     if (names.length === 0) continue;
     const reaching = new RegExp(
       `\\b(?:${MUTATORS.join("|")})\\s*\\([^)]*\\b(?:${names.join("|")})\\b`,
@@ -109,15 +113,29 @@ async function writes(): Promise<string[]> {
   return found;
 }
 
-describe("nothing in the monorepo writes under .agents", () => {
+/** Consumers that both reach a plugin root and contain a direct filesystem mutation. */
+async function pluginWriters(): Promise<string[]> {
+  const mutator = new RegExp(`\\b(?:${MUTATORS.join("|")})\\s*\\(`);
+  const found: string[] = [];
+  for (const { rel, text } of await consumers(PLUGIN_ACCESSORS)) {
+    if (text.split("\n").some((line) => !isComment(line) && mutator.test(line))) found.push(rel);
+  }
+  return found;
+}
+
+describe(".agents ownership stays explicit and component-scoped", () => {
   test("the scan finds the consumers it exists to check", async () => {
     const files = await consumers();
-    expect(files.length).toBeGreaterThanOrEqual(2);
+    expect(files.length).toBeGreaterThanOrEqual(4);
     expect(files.some(({ text }) => boundNames(text).length > 0)).toBe(true);
   });
 
-  test("no accessor result reaches a mutating call", async () => {
-    expect(await writes()).toEqual([]);
+  test("standalone skill and marketplace paths never reach a mutating call", async () => {
+    expect(await writes(READ_ONLY_ACCESSORS)).toEqual([]);
+  });
+
+  test("only the plugin repository has direct mutation authority beside a shared plugin root", async () => {
+    expect(await pluginWriters()).toEqual([PLUGIN_WRITER]);
   });
 
   test("the matcher recognises the write it is looking for", () => {

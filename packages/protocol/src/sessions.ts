@@ -13,6 +13,7 @@
 
 import type { CursorPage, CursorPagination, Timestamp } from "./common.ts";
 import type { Message } from "./runs.ts";
+import type { EnvironmentRunRef } from "./environments.ts";
 
 /** Lifecycle status of one turn in a session. */
 export type SessionTurnStatus =
@@ -39,6 +40,8 @@ export interface SessionTurn {
    * where the transcript lives. Absent for a turn that produced no run.
    */
   execution_id?: string;
+  /** Extension Environment snapshot under which this turn started. */
+  environment?: EnvironmentRunRef;
   status: SessionTurnStatus;
   /** Epoch-ms start; absent until the turn begins. See {@link Timestamp}. */
   started_at?: Timestamp;
@@ -85,6 +88,8 @@ export interface SessionSummary {
   profile?: string;
   turn_count: number;
   last_status?: SessionTurnStatus;
+  /** Environment stamped on the newest turn, when known. */
+  last_environment?: EnvironmentRunRef;
   totals: SessionTotals;
 }
 

@@ -56,6 +56,18 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
       approveHook: record("plugins.approveHook"),
       revokeHook: record("plugins.revokeHook"),
     },
+    environments: {
+      list: record("environments.list"),
+      current: record("environments.current"),
+      get: record("environments.get"),
+      preview: record("environments.preview"),
+      previewClear: record("environments.previewClear"),
+      select: record("environments.select"),
+      clearSelection: record("environments.clearSelection"),
+      create: record("environments.create"),
+      update: record("environments.update"),
+      clone: record("environments.clone"),
+    },
     secrets: {
       listNames: record("secrets.listNames"),
       set: record("secrets.set"),

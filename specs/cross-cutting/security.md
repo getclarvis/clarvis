@@ -35,10 +35,12 @@ code and none of them a sandbox:
    returns path, size, content, provider or token metadata (`CredentialFilePosture` in
    `packages/protocol/src/storage.ts`; `credentialPosture` in
    `packages/kernel/src/storage/storage-service.ts`).
-5. **Workspace trust** — a cloned repository's `.clarvis/settings.json` merges with the same
-   `origin: "operator"` label as the machine owner's own file, so the fields that *execute* something
-   are withheld from the merge until the operator approves that workspace's fingerprint
-   (`packages/kernel/src/config/workspace-trust.ts:37`, `packages/kernel/src/config/file-config-store.ts:600`).
+5. **Workspace trust** — a cloned repository's `.clarvis/settings.json`, agent files, and
+   plugin-activating Environment definitions are repository-authored executable surfaces. Risky
+   settings and agent files are withheld, and workspace Environment plugins stay inactive, until
+   the operator approves the exact current fingerprint
+   (`packages/kernel/src/config/workspace-trust.ts`,
+   `packages/kernel/src/environments/environment-manager.ts`).
 
 Two properties recur across all five and are worth stating once. First, refusals aimed at the **model**
 never name the escape hatch: `assertWithinWorkspace`'s message states the boundary and closes the futile
@@ -181,14 +183,14 @@ Wire methods `secrets.listNames` / `secrets.set` / `secrets.delete`, carrying
 
 | Symbol | Signature | Line |
 | --- | --- | --- |
-| `WORKSPACE_RISK_FIELDS` | 7-element const tuple | `packages/kernel/src/config/workspace-trust.ts:37` |
+| `WORKSPACE_RISK_FIELDS` | 8-element const tuple | `packages/kernel/src/config/workspace-trust.ts:37` |
 | `stripWorkspaceRiskFields` | `(settings) => { settings, withheld }` | `:96` |
-| `workspaceTrustFingerprint` | `(settings, agents) => string \| undefined` | `:233` |
-| `workspaceTrustVerdict` | `(fingerprint, key, trust) => WorkspaceTrustVerdict` | `:317` |
-| `canonicalWorkspaceKey` | `(workspaceRoot) => string` | `:284` |
-| `readWorkspaceTrustFile` | `(globalDir) => { trust?, error? }` | `:300` |
-| `writeWorkspaceTrust` | `(globalDir, key, fingerprint \| undefined, now?) => void` | `:343` |
-| `workspaceTrustSchema` | zod, `.strict()` | `:257` |
+| `workspaceTrustFingerprint` | `(settings, agents, extensions?) => string \| undefined` | `:294` |
+| `workspaceTrustVerdict` | `(fingerprint, key, trust) => WorkspaceTrustVerdict` | `packages/kernel/src/config/workspace-trust.ts` |
+| `canonicalWorkspaceKey` | `(workspaceRoot) => string` | `packages/kernel/src/config/workspace-trust.ts` |
+| `readWorkspaceTrustFile` | `(globalDir) => { trust?, error? }` | `packages/kernel/src/config/workspace-trust.ts` |
+| `writeWorkspaceTrust` | `(globalDir, key, fingerprint \| undefined, now?) => void` | `packages/kernel/src/config/workspace-trust.ts` |
+| `workspaceTrustSchema` | zod, `.strict()` | `packages/kernel/src/config/workspace-trust.ts` |
 
 ### 2.8 Wire error normalization — `@clarvis/kernel`
 
@@ -301,8 +303,11 @@ sorts object keys recursively and drops `undefined` (`:154-164`, `:239-240`). Th
 | --- | --- |
 | `settings` | only the declared risk fields, keyed by their `WORKSPACE_RISK_FIELDS` name (`:192-215`) |
 | `agents` | `{ name, digest: "sha256:<hex>" }` per `.clarvis/agents/*.md`, sorted by name (`:166-175`) |
+| `extensions` | selected workspace Environment ref, exact definition revision, and qualified plugin allow-list, when that definition activates plugins |
 
-A workspace with neither yields `undefined` — it is **inert** and never prompted about (`:218`).
+A workspace with none of the three yields `undefined` — it is **inert** and never prompted about
+(`workspaceExecutableSurface` in `packages/kernel/src/config/workspace-trust.ts`). Environment
+definitions that select standalone skills only do not enter this executable surface.
 
 ### 3.4 Risk fields
 
@@ -317,9 +322,11 @@ A workspace with neither yields `undefined` — it is **inert** and never prompt
 | `memory.provider` | only when `provider.kind` is `"executable"` or `"plugin"` (`:97-102`, `:104`) |
 | `plans.provider` | same predicate (`:105`) |
 | `tasks.provider` | any object-valued `tasks.provider` (`:106-112`) |
+| `providers.subscription` | provider entries whose kind attaches user subscription credentials |
 
-Stripping removes the whole key for the first four, deletes `tasks` entirely for `tasks.provider`, and
-deletes only the `provider` sub-key for `memory`/`plans` (`:117-134`). A `memory: { provider: { kind:
+Stripping removes the whole key for the first four, deletes `tasks` entirely for `tasks.provider`,
+deletes only the `provider` sub-key for `memory`/`plans`, and removes only subscription-backed
+entries from `providers` (`:117-134`). A `memory: { provider: { kind:
 "wiki" }, enabled: true }` survives untouched
 (`packages/kernel/tests/integration/workspace-trust.test.ts:71-77`).
 
@@ -554,7 +561,7 @@ denylist is derived from exactly this run's credentials"* (`packages/hooks/src/c
 | --- | --- | --- |
 | Clarvis-owned Git selecting a repository | `withoutGitRepositoryEnvironment(inherited)` — preserve ordinary/transport inputs, remove Git's complete repository-local set and `GIT_CEILING_DIRECTORIES` before `cwd`, `-C`, or a clone destination selects the repository | helper `packages/paths/src/git-environment.ts`; plugin fetch `packages/kernel/src/adapters/git/plugin-fetcher.ts`; plugin metadata `packages/kernel/src/adapters/filesystem/plugin-repository.ts`; memory workspace probe `packages/memory/src/workspace-state.ts`; client clone `packages/code/src/adapters/plugin-install.ts`; guarded host fallback `packages/tools/src/tools/host-vcs.ts` |
 | `host_vcs` argv fallback | `withoutGitRepositoryEnvironment(process.env)`, then remove `secretEnvNames`, disable prompts, hooks, and Git external protocols; ordinary host environment and credential transport remain | `packages/tools/src/tools/host-vcs.ts` (`hostEnvironment`) |
-| stdio MCP child | `{ ...getDefaultEnvironment(), ...interpolated server.env }` — the caller's environment is **never** the base | `packages/mcp-client/src/client.ts:382`, rationale `:324-337` |
+| stdio MCP child | `{ ...getDefaultEnvironment(), ...server.env }` — values are normally interpolated, but remain literal when a portable adapter sets `expandVariables: false`; the caller's environment is **never** the base | `buildTransport` in `packages/mcp-client/src/client.ts` |
 | `shell` / `monitor` command (unsandboxed) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted | `packages/tools/src/sandbox.ts:349-357`, applied `:397` |
 | capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts:76-84`, `:163` |
 
@@ -596,10 +603,10 @@ Verdict computation, recomputed on every call (`packages/kernel/src/config/file-
 
 | State | Condition | Effect on the merge / agents |
 | --- | --- | --- |
-| `inert` | `workspaceTrustFingerprint(...) === undefined` (`packages/kernel/src/config/workspace-trust.ts:322`) | nothing withheld (`packages/kernel/src/config/file-config-store.ts:518`) |
-| `unapproved` | no entry for this key (`packages/kernel/src/config/workspace-trust.ts:325`) | risk fields stripped; workspace agent files skipped |
+| `inert` | `workspaceTrustFingerprint(...) === undefined` | nothing withheld |
+| `unapproved` | no entry for this key (`packages/kernel/src/config/workspace-trust.ts:325`) | risk fields stripped; workspace agent files and Environment plugins withheld |
 | `trusted` | some recorded entry equals the current fingerprint (`:326-328`) | nothing withheld |
-| `changed` | entries exist but none matches; reports the most recent as `approved` (`:329`) | stripped, same as `unapproved` |
+| `changed` | entries exist but none matches; reports the most recent as `approved` (`:329`) | withheld, same as `unapproved` |
 
 An unreadable `workspace-trust.json` yields `{ trust: undefined }`, and `workspaceTrustVerdict` treats
 that as an empty store — i.e. `unapproved`, never `trusted` (`packages/kernel/src/config/workspace-trust.ts:300-306`,
@@ -618,6 +625,12 @@ Transitions:
 `writeWorkspaceTrust` throws rather than overwrite when the existing store cannot be parsed
 (`packages/kernel/src/config/workspace-trust.ts:350-352`) — but `withOperatorWrite` swallows that throw, because the settings or
 agent file has already landed by then (`packages/kernel/src/config/file-config-store.ts:569-573`).
+
+A workspace Environment preview may approve only the fingerprint it just resolved; changing the
+definition between preview and selection is a conflict. The resulting approval admits the plugin as
+a unit, but does not approve any hook definition: hook fingerprints and `hook-trust.json` remain an
+independent gate. Environment definitions and resolved snapshots never carry secrets. See
+[Extension Environments](../hosts/environments.md#43-preview-trust-and-resume).
 
 Two independent enforcement points read the verdict, and the code says gating only one would leave the
 other open (`packages/kernel/src/config/file-config-store.ts:593-625` for the settings merge;
@@ -931,6 +944,28 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/mcp-client/src/client.ts:414-438`; pinned
     `packages/mcp-client/tests/unit/remote-fetch.test.ts:7-95,141-167`.
 
+55. **A plugin-activating workspace Environment is trusted by exact definition bytes and qualified
+    `{ scope, source, name }` plugin references, while hook approvals remain independent.** Production:
+    `workspaceTrustSurface`, `preview`, and `select` in
+    `packages/kernel/src/environments/environment-manager.ts`, folded through
+    `WorkspaceExecutableSurface.extensions` in
+    `packages/kernel/src/config/workspace-trust.ts`. Test:
+    `packages/kernel/tests/integration/environment-manager.test.ts` (approval, matching reconnect
+    fingerprint, and invalidation after definition change) and
+    `packages/kernel/tests/integration/workspace-trust.test.ts` (extension surface changes the trust
+    hash and is reported as withheld `environment` until approved).
+
+56. **Portable Agent Plugin process paths remain package- or client-state-confined.** A relative
+    executable must resolve to a real file inside `PLUGIN_ROOT`; `cwd` may be rooted only in
+    `PLUGIN_ROOT` or the dedicated `PLUGIN_DATA`; those reserved variables cannot be overridden by
+    the plugin; and one format-owned expansion is followed by `expandVariables: false`, preventing
+    ambient secret names from being interpolated accidentally. Production:
+    `agentPluginCommand`, `agentPluginCwd`, and `normalizeAgentMcpServer` in
+    `packages/kernel/src/plugins/plugin-manifest.ts`; persistent path ownership in
+    `packages/kernel/src/plugins/plugin-runtime.ts`. Test: portable command/cwd/env and symlink cases
+    in `packages/kernel/tests/integration/plugin-manifest.test.ts` plus literal-placeholder cases in
+    `packages/mcp-client/tests/component/transport-builder.test.ts`.
+
 ## 6. Failure modes and degradation
 
 | Condition | Handler | Outcome |
@@ -943,7 +978,7 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 | Atomic write fails after creating a parent | `packages/tools/src/lib/atomic.ts:143-146` | the created directory is removed best-effort, then rethrow |
 | Batch commit fails mid-way | `packages/tools/src/lib/atomic.ts:283-288` (doc) / `:288` | rolled back; a failed undo becomes `io_error` naming the unrestorable originals |
 | Oversized tool result cannot be spilled | `packages/loop/src/runtime/context/tool-spill.ts:49-58`, `packages/tools/src/lib/output.ts:395-406` | degrades to a truncation marker naming no file; the run continues |
-| Unset `${VAR}` in an MCP `env`/`headers` or a provider header | `packages/capability/src/env-interpolate.ts:78` | `MissingEnvVarsError` naming the distinct variables |
+| Unset `${VAR}` in an interpolation-enabled MCP `env`/`headers` or a provider header | `packages/capability/src/env-interpolate.ts:78` | `MissingEnvVarsError` naming the distinct variables; portable literal mode does not enter this path |
 | Forbidden provider body key, validation path | `packages/loop/src/validation/request/provider-rules.ts:43-48` | `ValidationError("invalid_provider_config")` — hard failure with a diagnostic |
 | Forbidden provider body key, adapter path | `packages/llm/src/openai-compatible-request.ts:186` | **silently dropped** |
 | `keys.json` missing | `packages/kernel/src/secrets/secret-store.ts:79` | `{ values: {} }` — tolerated |

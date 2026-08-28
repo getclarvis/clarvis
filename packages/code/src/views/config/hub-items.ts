@@ -48,6 +48,12 @@ export const SETTINGS_ITEMS = [
 
 /** Lightweight route metadata for the Extensions hub. */
 export const EXTENSIONS_ITEMS = [
+  {
+    id: "environment",
+    label: "Environment",
+    desc: "Choose the active plugin and skill set",
+    cmd: "environments.open",
+  },
   { id: "plugins", label: "Plugins", desc: "Manage installed plugins", cmd: "plugins.open" },
   { id: "hooks", label: "Hooks", desc: "Configure workspace automations", cmd: "hooks.open" },
   {

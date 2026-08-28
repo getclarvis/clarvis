@@ -208,14 +208,21 @@ One MCP server (`serverSchema`, `packages/loop/src/validation/request/server-sch
 `name`, `transport` (default `"stdio"`), plus a transport-conditional set enforced by
 `refineServerTransport` (`packages/loop/src/validation/request/server-schemas.ts:107`): `stdio`
 requires `command` and forbids `url`/`headers`; `http`/`sse` requires a well-formed `url` and forbids
-`command`/`args`/`env`/`cwd`/`shared`. Two further optional fields carry their own semantics beyond
+`command`/`args`/`env`/`cwd`/`shared`. Three further optional fields carry their own semantics beyond
 being transport-conditional (`packages/loop/src/validation/request/server-schemas.ts:59-77`, mirrored
-identically on the settings side at `packages/loop/src/settings/settings-schema.ts:95-112`): `shared`
+identically on the settings side): `expandVariables` defaults to true and lets portable Agent Plugin
+adapters disable Clarvis's ordinary `${VAR}` expansion after performing their format-owned
+`PLUGIN_ROOT`/`PLUGIN_DATA` pass; `shared`
 opts a `stdio` server into one pooled subprocess reused across overlapping and sequential runs — and
 because that subprocess outlives any single run, it never advertises the MCP `elicitation`
 capability, so a server that authenticates by asking must not set it; `resources` (default on) opts
 *out* of the engine's synthetic `<server>.list_resources`/`<server>.read_resource` tools that are
-otherwise auto-attached when the server advertises the MCP `resources` capability.
+otherwise auto-attached when the server advertises the MCP `resources` capability; `auto_tools`
+(default false) is host composition, not transport policy, and admits every tool the server actually
+advertises to every effective agent in this run. The request's `profiles[].tools` arrays and any
+persisted profiles remain unchanged. Production: `serverSchema` and `addAutomaticMcpTools`. Test:
+`packages/loop/tests/unit/automatic-mcp-tools.test.ts` and the "host-composed automatic server
+tools" case in `packages/loop/tests/integration/open-tool-pool.test.ts`.
 
 ### 3.2 `settings.json` shape
 
@@ -230,6 +237,14 @@ request's `budgetSchema` — see §4.4), `...capabilitySettingsFields` (built-in
 `HOOKS_SETTINGS_FIELDS`/`AGENT_TOOLS_SETTINGS_FIELDS`/`AGENTS_SETTINGS_FIELDS`, and
 `AGENT_TOOLS_SETTINGS_FIELDS` at `packages/loop/src/runtime/capabilities/tools-settings.ts:143-149`
 is what contributes both `guard` and `sandbox`), `marketplaces?`, `enabledPlugins?`.
+
+An extension Environment is deliberately **not** part of `SettingsFile`: definitions and selections
+have their own strict JSON contracts and paths, owned by
+[Extension Environments](../hosts/environments.md). The loop continues to validate and merge
+`enabledPlugins` because `builtin:default` uses it as its exact activation list; a
+custom Environment is a complete allow-list resolved by the kernel and never overlays or copies
+`settings.json`. Consequently an `environments`/`environment` key in settings remains an unknown
+top-level key and is rejected by this strict schema.
 
 `pluginNameField` (`packages/loop/src/settings/settings-schema.ts:44-55`) refines the `^[a-z0-9_-]+$`
 plugin-name regex against `RESERVED_PLUGIN_NAMES = {"__proto__","constructor","prototype"}`; the
@@ -249,10 +264,10 @@ manifest, and with it the plugin's agents, hooks and skills" — measured, per t
 of 196 catalog plugins and 82 skills broken by the stricter rule.
 
 `mcpServerSettingsSchema` spells the transport field `type` (not `transport`); the bridge
-`settingsServerToEngine` (`packages/loop/src/settings/engine-server.ts:48`) renames it on the way to
-the engine's flat `McpServerConfig` array and deliberately drops no `cwd` field (comment,
-`packages/loop/src/settings/engine-server.ts:42-46`: the client factory's own `defaultCwd` roots a
-server in the workspace instead).
+`settingsServerToEngine` (`packages/loop/src/settings/engine-server.ts`) renames it on the way to the
+engine's flat `McpServerConfig` array and carries both an explicit `cwd` and `expandVariables`
+without reinterpretation; when `cwd` is absent, the client factory applies its workspace-rooted
+default.
 
 ### 3.3 Agent frontmatter document
 
@@ -502,14 +517,21 @@ ascending-precedence list of `SettingsScope`s (`{ origin, settings }`) key by ke
 `STRATEGIES` table built once at module load: `CORE_STRATEGIES` for `providers` (union by name, later
 wins — `mergeProviders`), `mcpServers` (shallow record merge, later wins per key —
 `mergeRecord`), `default_model`/`default_vision_model`/`default_reasoning_effort`/`budget`
-(last-wins), `enabledPlugins`/`marketplaces` (`concatDistinct` — first-seen order, later scopes can
-only add); plus one `specStrategy` per entry of `BUILTIN_SETTINGS_SPECS`
+(last-wins), `enabledPlugins` (exact-reference concatenation with duplicate identities removed) and
+`marketplaces` (distinct-string concatenation — first-seen order, later scopes can only add); plus
+one `specStrategy` per entry of `BUILTIN_SETTINGS_SPECS`
 (`packages/loop/src/settings/settings-merge.ts:124-127`); plus, inside `mergeSettings` itself, one
 more `specStrategy` per **registry**-supplied spec not already in `STRATEGIES`
 (`packages/loop/src/settings/settings-merge.ts:157-161`) — so a capability registered only at runtime
 (not among the engine's built-ins) still merges correctly. `specStrategy` (`:96-106`) collects every
 scope defining the key as a `SettingsValueScope`, then either takes the last one (`spec.merge ===
 "lastWins"`) or calls the spec's own custom fold function.
+
+The concatenated `enabledPlugins` result feeds only `builtin:default`. Each entry is the strict
+object `{ scope: "global"|"workspace", source: "agents"|"clarvis", name }`; strings and partially
+qualified references are rejected. Environment resolution happens after the operator settings
+layers are read and before plugin settings fragments are folded; no Environment data is introduced
+into this schema or merge table.
 
 A **module-load guard** (`packages/loop/src/settings/settings-merge.ts:132-136`) throws immediately
 if any key of `settingsSchema.shape` lacks an entry in `STRATEGIES` — so a new top-level settings key
@@ -640,11 +662,20 @@ Production: `packages/loop/src/settings/settings-merge.ts:132-136`. Test:
 `packages/loop/tests/unit/settings-merge.test.ts:275-280` (asserts
 `SETTINGS_MERGE_STRATEGY_KEYS` equals `Object.keys(settingsSchema.shape)`, sorted).
 
-**F.** `enabledPlugins`/`marketplaces` merge by `concatDistinct`: a later scope can only **add**
-names, never remove one an earlier scope declared, and first-seen position is preserved across
-scopes.
-Production: `packages/loop/src/settings/settings-merge.ts:76-92`. Test:
+**F.** `enabledPlugins` and `marketplaces` are additive across settings scopes. Marketplaces
+de-duplicate by URL; plugin entries de-duplicate by the complete `{ scope, source, name }` identity.
+A later scope cannot remove an earlier entry, and first-seen position is preserved.
+Production: `concatDistinct` and `concatDistinctPluginRefs` in
+`packages/loop/src/settings/settings-merge.ts`. Test:
 `packages/loop/tests/unit/settings-merge.test.ts:220-226`.
+
+This is the builtin activation behavior, not custom Environment semantics. The kernel resolves every
+reference exactly; two selected installations with the same runtime name invalidate the Environment
+instead of applying source/scope precedence. Custom Environment allow-lists never use this merge
+result. Production:
+`packages/kernel/src/environments/environment-manager.ts` (`resolved`) and
+`packages/kernel/src/config/file-config-store.ts` (`snapshot`). Test:
+`packages/kernel/tests/integration/environment-manager.test.ts`.
 
 **G.** A plugin-origin `hooks` scope is always merged **after** every operator scope regardless of
 its position in the `scopes` argument order — proven at the settings-merge level even though the

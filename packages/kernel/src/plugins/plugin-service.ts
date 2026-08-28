@@ -1,5 +1,6 @@
 import {
   agentFrontmatterSchema,
+  pluginNameField,
   type PluginAgentFile,
   type PluginManifest,
 } from "@clarvis/loop/host";
@@ -7,11 +8,11 @@ import { statSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { createAgentSkills } from "@clarvis/skills";
 import {
-  pluginSkillRoots,
+  pluginSkillScanRoots,
   resolvePluginManifest,
   type ResolvedPluginManifest,
 } from "./plugin-manifest.ts";
-import type { PluginContributions, PluginService, PluginView } from "@clarvis/protocol";
+import type { PluginContributions, PluginRef, PluginService, PluginView } from "@clarvis/protocol";
 import { kernelError } from "../core/errors.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import { parseAgentFrontmatter } from "../config/frontmatter.ts";
@@ -28,6 +29,7 @@ import type {
 } from "../ports/plugin-repository.ts";
 import { pluginHookReviews, writeHookApproval } from "./hook-trust.ts";
 import { effectivePluginMcpName } from "./plugin-contributions.ts";
+import { pluginDataDir } from "./plugin-runtime.ts";
 
 /**
  * A source naming a place on this filesystem rather than a repository to clone.
@@ -37,6 +39,29 @@ import { effectivePluginMcpName } from "./plugin-contributions.ts";
  *   is better than letting it fall through to the generic refusal.
  */
 const LOCAL_PATH_RE = /^(?:[.~]{1,2}[/\\]|\/|[A-Za-z]:[/\\])/;
+
+/** Human-readable exact identity for diagnostics. */
+function pluginRefLabel(ref: PluginRef): string {
+  return `${ref.scope}/${ref.source}/${ref.name}`;
+}
+
+/** Validate an untrusted exact plugin reference before it reaches a filesystem path. */
+function checkedPluginRef(value: unknown): PluginRef {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw kernelError("invalid_request", "plugin reference must be an object");
+  }
+  const ref = value as Record<string, unknown>;
+  const name = pluginNameField.safeParse(ref.name);
+  if (
+    (ref.scope !== "global" && ref.scope !== "workspace") ||
+    (ref.source !== "agents" && ref.source !== "clarvis") ||
+    !name.success ||
+    Object.keys(ref).some((key) => !["scope", "source", "name"].includes(key))
+  ) {
+    throw kernelError("invalid_request", "invalid exact plugin reference");
+  }
+  return { scope: ref.scope, source: ref.source, name: name.data };
+}
 
 /**
  * Validates and returns a git clone URL safe for install.
@@ -71,7 +96,7 @@ export function validateGitUrl(raw: string): string {
  * Resolve one repository snapshot's manifest, following whatever it expresses in
  * another host's dialect; see {@link resolvePluginManifest}.
  */
-function readManifest(plugin: StagedPlugin): ResolvedPluginManifest {
+function readManifest(plugin: StagedPlugin, dataDir?: string): ResolvedPluginManifest {
   if (plugin.manifestError !== undefined) {
     return { error: plugin.manifestError, notes: [] };
   }
@@ -83,6 +108,7 @@ function readManifest(plugin: StagedPlugin): ResolvedPluginManifest {
     plugin.manifestRaw,
     plugin.manifestLocation,
     plugin.name,
+    dataDir === undefined ? undefined : { dataDir },
   );
 }
 
@@ -210,20 +236,23 @@ function skillNamesOf(
   dir: string,
   manifest: PluginManifest | undefined,
   manifestLocation?: string,
+  format?: ResolvedPluginManifest["format"],
 ): PluginSkills {
   if (manifest === undefined) return { names: [], notes: [] };
-  const roots = pluginSkillRoots(dir, manifest.skills, manifestLocation).roots.filter((root) => {
-    try {
-      return statSync(root).isDirectory();
-    } catch {
-      return false;
-    }
-  });
+  const roots = pluginSkillScanRoots(dir, manifest.skills, manifestLocation, format).filter(
+    (root) => {
+      try {
+        return statSync(root.path).isDirectory();
+      } catch {
+        return false;
+      }
+    },
+  );
   if (roots.length === 0) return { names: [], notes: [] };
   const rejected: string[] = [];
   try {
     const names = createAgentSkills({
-      roots: roots.map((path) => ({ path })),
+      roots,
       workspace: dir,
       warningSink: (message) => {
         const note = skillRejectionNote(message, dir);
@@ -273,11 +302,12 @@ function contributionsOf(
 export interface PluginServiceOptions {
   /** Global config dir holding `plugins/` and per-definition hook approvals. */
   globalDir: string;
-  /** Optional workspace config dir; when present its `plugins/` are also listed and
-   * shadow global plugins of the same name. */
-  workspaceConfigDir?: string;
-  /** Returns the currently enabled plugin names from merged settings. */
-  enabledPlugins: () => string[];
+  /** Home directory owning the global `.agents/plugins` inventory. */
+  home?: string;
+  /** Optional workspace root owning both workspace plugin inventories. */
+  workspaceRoot?: string;
+  /** Returns exact plugin installations active in the resolved Environment. */
+  enabledPlugins: () => readonly PluginRef[];
   /** Asynchronous process port; defaults to the Node/Bun child-process adapter. */
   processRunner?: ProcessRunner;
   /** Immutable environment inherited by Git with interactive prompts disabled. */
@@ -295,7 +325,6 @@ export interface PluginServiceOptions {
 /**
  * Protocol {@link PluginService}: install/update/uninstall from git, list
  * contributions, and manage exact hook-definition approvals.
- * Workspace plugins shadow global ones with the same name when both are present.
  */
 export function createPluginService(opts: PluginServiceOptions): PluginService {
   const logger = opts.logger ?? NOOP_LOGGER;
@@ -304,9 +333,8 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
     opts.repository ??
     createFilePluginRepository({
       globalDir: opts.globalDir,
-      ...(opts.workspaceConfigDir !== undefined
-        ? { workspaceConfigDir: opts.workspaceConfigDir }
-        : {}),
+      ...(opts.home === undefined ? {} : { home: opts.home }),
+      ...(opts.workspaceRoot === undefined ? {} : { workspaceRoot: opts.workspaceRoot }),
     });
   const fetcher =
     opts.fetcher ??
@@ -317,20 +345,33 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
       logger,
     });
 
+  /** Runtime paths associated with one exact installed instance. */
+  const installedDataDir = (plugin: InstalledPlugin): string =>
+    pluginDataDir({
+      globalDir: opts.globalDir,
+      ...(opts.workspaceRoot === undefined ? {} : { workspaceRoot: opts.workspaceRoot }),
+      ref: plugin.ref,
+    });
+
   /** Build the full {@link PluginView} for one installed plugin: its enabled flag,
    * manifest-derived fields and contribution summary. A missing/invalid
    * manifest yields a view carrying `error` and no version/description. */
-  function viewFor(plugin: InstalledPlugin): PluginView {
-    const enabled = opts.enabledPlugins().includes(plugin.name);
-    const { manifest, error, notes: manifestNotes, presentation } = readManifest(plugin);
-    const skills = skillNamesOf(plugin.dir, manifest, plugin.manifestLocation);
+  function viewFor(plugin: InstalledPlugin, enabled: ReadonlySet<string>): PluginView {
+    const {
+      manifest,
+      format,
+      error,
+      notes: manifestNotes,
+      presentation,
+    } = readManifest(plugin, installedDataDir(plugin));
+    const skills = skillNamesOf(plugin.dir, manifest, plugin.manifestLocation, format);
     const notes = [...manifestNotes, ...skills.notes];
     return {
       name: plugin.name,
-      scope: plugin.scope,
+      scope: plugin.ref.scope,
+      source: plugin.ref.source,
       dir: plugin.dir,
-      enabled,
-      shadows_global: plugin.shadowsGlobal,
+      enabled: enabled.has(pluginRefId(plugin.ref)),
       ...(manifest?.version !== undefined ? { version: manifest.version } : {}),
       ...(manifest?.description !== undefined ? { description: manifest.description } : {}),
       ...(presentation?.displayName !== undefined
@@ -339,7 +380,7 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
       ...(presentation?.shortDescription !== undefined
         ? { short_description: presentation.shortDescription }
         : {}),
-      ...(plugin.source !== undefined ? { source: plugin.source } : {}),
+      ...(plugin.origin !== undefined ? { install_source: plugin.origin } : {}),
       ...(plugin.revision !== undefined ? { revision: plugin.revision } : {}),
       ...(error ? { error } : {}),
       ...(notes.length > 0 ? { notes } : {}),
@@ -347,19 +388,34 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
     };
   }
 
-  /** List every installed plugin across scopes, name-sorted; when a name exists in
-   * both, the workspace entry wins and is flagged `shadows_global`. */
+  /** Canonical exact identity used only for in-memory membership checks. */
+  function pluginRefId(ref: PluginRef): string {
+    return `${ref.scope}\0${ref.source}\0${ref.name}`;
+  }
+
+  /** Exact active plugin membership from the pinned Environment snapshot. */
+  function enabledKeys(): ReadonlySet<string> {
+    return new Set(opts.enabledPlugins().map(pluginRefId));
+  }
+
+  async function currentEnabledKeys(): Promise<ReadonlySet<string>> {
+    return enabledKeys();
+  }
+
+  /** List every installed plugin, retaining all same-name exact installations. */
   async function list(): Promise<PluginView[]> {
-    return (await repository.list()).map(viewFor);
+    const installed = await repository.list();
+    const enabled = enabledKeys();
+    return installed.map((plugin) => viewFor(plugin, enabled));
   }
 
   async function hookReviews(): ReturnType<PluginService["hooks"]> {
     const reviews: Awaited<ReturnType<PluginService["hooks"]>> = [];
     for (const plugin of await repository.list()) {
-      const { manifest } = readManifest(plugin);
+      const { manifest } = readManifest(plugin, installedDataDir(plugin));
       if (manifest === undefined) continue;
       reviews.push(
-        ...pluginHookReviews(opts.globalDir, plugin.name, manifest.hooks ?? []).map((review) => ({
+        ...pluginHookReviews(opts.globalDir, plugin.ref, manifest.hooks ?? []).map((review) => ({
           plugin: review.plugin,
           fingerprint: review.fingerprint,
           definition: review.definition,
@@ -378,12 +434,19 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
      *
      * @param url - git URL, validated by {@link validateGitUrl}.
      * @param subdir - optional path within the repo holding the plugin.
+     * @param target - global filesystem convention; defaults to the shared `.agents` inventory.
      * @returns the freshly installed plugin's {@link PluginView}.
      * @throws an `invalid_request` kernel error when the URL is rejected, the
      *   plugin has no valid manifest, the subdir escapes the checkout, or a plugin
      *   of that name is already installed. The staging checkout is always removed.
      */
-    async install(url, subdir): Promise<PluginView> {
+    async install(url, subdir, target = { source: "agents" }): Promise<PluginView> {
+      if (
+        (target.source !== "agents" && target.source !== "clarvis") ||
+        Object.keys(target).some((key) => key !== "source")
+      ) {
+        throw kernelError("invalid_request", "invalid plugin install target");
+      }
       const safe = validateGitUrl(url);
       const abort = new AbortController();
       const release = opts.lifecycle?.register({ close: () => abort.abort() });
@@ -393,7 +456,10 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
         const inspected = await repository.inspect(prepared.root);
         const { manifest, error } = readManifest(inspected);
         if (!manifest) throw kernelError("invalid_request", `refusing to install: ${error}`);
-        return viewFor(await repository.install(prepared.root, manifest.name, prepared));
+        return viewFor(
+          await repository.install(prepared.root, manifest.name, target.source, prepared),
+          await currentEnabledKeys(),
+        );
       } finally {
         await prepared?.dispose();
         release?.();
@@ -403,14 +469,20 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
     /**
      * Update a git-installed plugin to its origin HEAD (`fetch` + hard `reset`).
      *
-     * @param name - the installed plugin name.
+     * @param ref - the exact global installation to update.
      * @returns the updated {@link PluginView}.
      * @throws an `invalid_request` kernel error when the plugin was not installed
      *   from git (no `.git`), or a git error if the fetch/reset fails.
      */
-    async update(name): Promise<PluginView> {
-      const plugin = await repository.global(name);
-      if (plugin === null) throw kernelError("not_found", `'${name}' is not installed globally`);
+    async update(ref): Promise<PluginView> {
+      ref = checkedPluginRef(ref);
+      if (ref.scope !== "global") {
+        throw kernelError("invalid_request", "managed plugin updates are global-only");
+      }
+      const plugin = await repository.get(ref);
+      if (plugin === null) {
+        throw kernelError("not_found", `'${pluginRefLabel(ref)}' is not installed`);
+      }
       const abort = new AbortController();
       const release = opts.lifecycle?.register({ close: () => abort.abort() });
       let prepared: Awaited<ReturnType<PluginFetcher["update"]>> = undefined;
@@ -419,49 +491,58 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
         if (prepared !== undefined) {
           const inspected = await repository.inspect(prepared.root);
           const { manifest, error } = readManifest(inspected);
-          if (manifest?.name !== name) {
+          if (manifest?.name !== ref.name) {
             throw kernelError(
               "invalid_request",
-              `refusing update for '${name}': ${error ?? `manifest names '${manifest?.name ?? "unknown"}'`}`,
+              `refusing update for '${pluginRefLabel(ref)}': ${error ?? `manifest names '${manifest?.name ?? "unknown"}'`}`,
             );
           }
-          return viewFor(await repository.replace(prepared.root, name, prepared));
+          return viewFor(
+            await repository.replace(prepared.root, ref, prepared),
+            await currentEnabledKeys(),
+          );
         }
       } finally {
         await prepared?.dispose();
         release?.();
       }
-      const updated = await repository.global(name);
-      if (updated === null) throw kernelError("not_found", `'${name}' is not installed globally`);
-      return viewFor(updated);
+      const updated = await repository.get(ref);
+      if (updated === null) {
+        throw kernelError("not_found", `'${pluginRefLabel(ref)}' is not installed`);
+      }
+      return viewFor(updated, await currentEnabledKeys());
     },
 
     /**
      * Remove a globally installed plugin's directory.
      *
-     * @param name - the installed plugin name.
+     * @param ref - the exact global installation to remove.
      * @throws a `not_found` kernel error when the plugin is not installed globally.
      */
-    async uninstall(name): Promise<void> {
-      if (!(await repository.remove(name))) {
-        throw kernelError("not_found", `'${name}' is not installed globally`);
+    async uninstall(ref): Promise<void> {
+      ref = checkedPluginRef(ref);
+      if (!(await repository.remove(ref))) {
+        throw kernelError("not_found", `'${pluginRefLabel(ref)}' is not installed`);
       }
     },
 
     hooks: hookReviews,
     async approveHook(plugin, fingerprint): Promise<void> {
+      plugin = checkedPluginRef(plugin);
       const review = (await hookReviews()).find(
-        (entry) => entry.plugin === plugin && entry.fingerprint === fingerprint,
+        (entry) =>
+          pluginRefId(entry.plugin) === pluginRefId(plugin) && entry.fingerprint === fingerprint,
       );
       if (review === undefined) {
         throw kernelError(
           "not_found",
-          `hook '${fingerprint}' is not declared by plugin '${plugin}'`,
+          `hook '${fingerprint}' is not declared by plugin '${pluginRefLabel(plugin)}'`,
         );
       }
       writeHookApproval(opts.globalDir, plugin, fingerprint, true);
     },
     async revokeHook(plugin, fingerprint): Promise<void> {
+      plugin = checkedPluginRef(plugin);
       writeHookApproval(opts.globalDir, plugin, fingerprint, false);
     },
   };

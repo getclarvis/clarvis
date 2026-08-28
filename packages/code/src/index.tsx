@@ -145,6 +145,7 @@ import {
 } from "./views/App.tsx";
 
 let workspace = workspaceRoot();
+let environmentSelector: string | undefined;
 
 const ownerOverride = process.env.CLARVIS_OWNER;
 
@@ -189,6 +190,7 @@ async function bootSilentSessionStore(): Promise<{
     workspaceRoot: workspace,
     globalDir: globalRoot(),
     ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
+    ...(environmentSelector === undefined ? {} : { environmentSelector }),
     logger: activeDiagnosticLogger() ?? createLogger("silent"),
   });
   const owner = manager.defaultOwner;
@@ -250,6 +252,7 @@ async function runPrintMode(opts: {
     globalDir: printDirs.global.root,
     keySources: code.keySources(),
     memory: true,
+    ...(environmentSelector === undefined ? {} : { environmentSelector }),
     logger: activeDiagnosticLogger() ?? createLogger("silent"),
     openMcpAuthorizationUrl: openPublicUrl,
   });
@@ -389,6 +392,7 @@ async function runRefreshMode(): Promise<never> {
     const kernel = await createFileKernel({
       workspaceRoot: workspace,
       globalDir: globalRoot(),
+      ...(environmentSelector === undefined ? {} : { environmentSelector }),
       logger: activeDiagnosticLogger() ?? createLogger("silent"),
     });
     const cat = await kernel.models.refresh();
@@ -517,6 +521,7 @@ async function runApp(
       globalDir: globalRoot(),
       ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
       memory: true,
+      ...(environmentSelector === undefined ? {} : { environmentSelector }),
       logger: diagnostics?.logger ?? createLogger("silent"),
       openMcpAuthorizationUrl: openPublicUrl,
       keySources: (() => {
@@ -1308,6 +1313,9 @@ async function runApp(
     get plugins() {
       return runClient.plugins;
     },
+    get environments() {
+      return runClient.environments;
+    },
     get tasks() {
       return tasks;
     },
@@ -1385,6 +1393,7 @@ function openHeadlessDiagnostics(mode: Mode, debug: DebugRequest): void {
 
 async function main(): Promise<void> {
   const mode = parseMode(process.argv.slice(2));
+  environmentSelector = "environmentSelector" in mode ? mode.environmentSelector : undefined;
   let selectedWorktree: WorktreeBootstrapResult | undefined;
   if ("worktree" in mode && mode.worktree !== undefined) {
     selectedWorktree = await bootstrapWorktree(workspace, mode.worktree);

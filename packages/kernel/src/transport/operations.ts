@@ -15,6 +15,7 @@ import type {
   TasksService,
   WorkspaceService,
   WorkflowsService,
+  EnvironmentService,
 } from "@clarvis/protocol";
 import type { KernelTransport } from "@clarvis/protocol";
 
@@ -24,6 +25,7 @@ export type KernelServices = Pick<
   | "runs"
   | "config"
   | "plugins"
+  | "environments"
   | "secrets"
   | "models"
   | "providerAuth"
@@ -311,21 +313,27 @@ export const OPERATIONS = {
     install: {
       method: "plugins.install",
       metadata: write("plugins"),
-      encode: (url, subdir) => ({ url, subdir }),
+      encode: (url, subdir, target) => ({ url, subdir, target }),
       invoke: (services, p) =>
-        services.plugins.install(p.url as string, p.subdir as string | undefined),
+        services.plugins.install(
+          p.url as string,
+          p.subdir as string | undefined,
+          p.target as Parameters<PluginService["install"]>[2],
+        ),
     },
     update: {
       method: "plugins.update",
       metadata: write("plugins"),
-      encode: (name) => ({ name }),
-      invoke: (services, p) => services.plugins.update(p.name as string),
+      encode: (ref) => ({ ref }),
+      invoke: (services, p) =>
+        services.plugins.update(p.ref as Parameters<PluginService["update"]>[0]),
     },
     uninstall: {
       method: "plugins.uninstall",
       metadata: write("plugins"),
-      encode: (name) => ({ name }),
-      invoke: (services, p) => services.plugins.uninstall(p.name as string),
+      encode: (ref) => ({ ref }),
+      invoke: (services, p) =>
+        services.plugins.uninstall(p.ref as Parameters<PluginService["uninstall"]>[0]),
     },
     hooks: {
       method: "plugins.hooks",
@@ -338,14 +346,104 @@ export const OPERATIONS = {
       metadata: write("plugins"),
       encode: (plugin, fingerprint) => ({ plugin, fingerprint }),
       invoke: (services, p) =>
-        services.plugins.approveHook(p.plugin as string, p.fingerprint as string),
+        services.plugins.approveHook(
+          p.plugin as Parameters<PluginService["approveHook"]>[0],
+          p.fingerprint as string,
+        ),
     },
     revokeHook: {
       method: "plugins.revokeHook",
       metadata: write("plugins"),
       encode: (plugin, fingerprint) => ({ plugin, fingerprint }),
       invoke: (services, p) =>
-        services.plugins.revokeHook(p.plugin as string, p.fingerprint as string),
+        services.plugins.revokeHook(
+          p.plugin as Parameters<PluginService["revokeHook"]>[0],
+          p.fingerprint as string,
+        ),
+    },
+  }),
+  environments: serviceOperations<EnvironmentService>({
+    list: {
+      method: "environments.list",
+      metadata: read("plugins"),
+      encode: () => ({}),
+      invoke: (services) => services.environments.list(),
+    },
+    current: {
+      method: "environments.current",
+      metadata: read("plugins"),
+      encode: () => ({}),
+      invoke: (services) => services.environments.current(),
+    },
+    get: {
+      method: "environments.get",
+      metadata: read("plugins"),
+      encode: (ref) => ({ ref }),
+      invoke: (services, p) =>
+        services.environments.get(p.ref as Parameters<EnvironmentService["get"]>[0]),
+    },
+    preview: {
+      method: "environments.preview",
+      metadata: read("plugins"),
+      encode: (ref, options) => ({ ref, options }),
+      invoke: (services, p) =>
+        services.environments.preview(
+          p.ref as Parameters<EnvironmentService["preview"]>[0],
+          p.options as Parameters<EnvironmentService["preview"]>[1],
+        ),
+    },
+    previewClear: {
+      method: "environments.previewClear",
+      metadata: read("plugins"),
+      encode: (scope) => ({ scope }),
+      invoke: (services, p) =>
+        services.environments.previewClear(
+          p.scope as Parameters<EnvironmentService["previewClear"]>[0],
+        ),
+    },
+    select: {
+      method: "environments.select",
+      metadata: write("plugins"),
+      encode: (ref, options) => ({ ref, options }),
+      invoke: (services, p) =>
+        services.environments.select(
+          p.ref as Parameters<EnvironmentService["select"]>[0],
+          p.options as Parameters<EnvironmentService["select"]>[1],
+        ),
+    },
+    clearSelection: {
+      method: "environments.clearSelection",
+      metadata: write("plugins"),
+      encode: (scope, options) => ({ scope, options }),
+      invoke: (services, p) =>
+        services.environments.clearSelection(
+          p.scope as Parameters<EnvironmentService["clearSelection"]>[0],
+          p.options as Parameters<EnvironmentService["clearSelection"]>[1],
+        ),
+    },
+    create: {
+      method: "environments.create",
+      metadata: write("plugins"),
+      encode: (input) => ({ input }),
+      invoke: (services, p) =>
+        services.environments.create(p.input as Parameters<EnvironmentService["create"]>[0]),
+    },
+    update: {
+      method: "environments.update",
+      metadata: write("plugins"),
+      encode: (input) => ({ input }),
+      invoke: (services, p) =>
+        services.environments.update(p.input as Parameters<EnvironmentService["update"]>[0]),
+    },
+    clone: {
+      method: "environments.clone",
+      metadata: write("plugins"),
+      encode: (source, target) => ({ source, target }),
+      invoke: (services, p) =>
+        services.environments.clone(
+          p.source as Parameters<EnvironmentService["clone"]>[0],
+          p.target as Parameters<EnvironmentService["clone"]>[1],
+        ),
     },
   }),
   secrets: serviceOperations<SecretService>({
@@ -754,6 +852,7 @@ export const ORDINARY_OPERATIONS: readonly AnyOperation[] = [
   ...Object.values(OPERATIONS.runs),
   ...Object.values(OPERATIONS.config),
   ...Object.values(OPERATIONS.plugins),
+  ...Object.values(OPERATIONS.environments),
   ...Object.values(OPERATIONS.secrets),
   ...Object.values(OPERATIONS.models),
   ...Object.values(OPERATIONS.providerAuth),

@@ -20,6 +20,8 @@ const MATRIX: { label: string; raw: unknown }[] = [
       command: "npx",
       args: ["-y", "srv"],
       env: { TOKEN: "${TOKEN}" },
+      cwd: "/srv/plugin",
+      expandVariables: false,
       shared: true,
       resources: false,
     },
@@ -57,10 +59,13 @@ describe("settingsServerToEngine", () => {
     expect(settingsServerToEngine("fs", parse({ command: "npx" })).transport).toBe("stdio");
   });
 
-  it("never emits a cwd, which the client surface deliberately omits", () => {
-    for (const { raw } of MATRIX) {
-      expect(Object.keys(settingsServerToEngine("fs", parse(raw)))).not.toContain("cwd");
-    }
+  it("carries portable working-directory and interpolation policy", () => {
+    const out = settingsServerToEngine(
+      "fs",
+      parse({ command: "npx", cwd: "/srv/plugin", expandVariables: false }),
+    );
+    expect(out.cwd).toBe("/srv/plugin");
+    expect(out.expandVariables).toBe(false);
   });
 
   it("omits absent keys rather than emitting them as undefined", () => {
@@ -79,6 +84,8 @@ describe("settingsServerToEngine", () => {
       command: "npx",
       args: ["-y"],
       env: { A: "1" },
+      cwd: "/srv/plugin",
+      expandVariables: false,
       shared: true,
       resources: false,
     });

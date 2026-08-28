@@ -32,6 +32,13 @@ author needs: the request and settings vocabulary, the ports, the trace kinds, a
 | `@clarvis/capability/ports` | `ContextPort`, `TracePort`, `Logger`, `Elicit`, `AgentRegistryPort`, `LLMProvider`                                                                                   |
 | `@clarvis/capability/trace` | `BuiltinTraceKind`, `TraceKind`, `TraceDetailMap`, `TraceDetailFor`, `TraceEvent`, persisted trace projector types/registry, `ExecutionRecord`                       |
 
+`McpServerConfig` carries an optional stdio `cwd` and an `expandVariables` policy. The latter
+defaults to true in consumers; portable package adapters may set it false after applying their own
+format-limited placeholder expansion, preserving literal package data across the engine/client seam.
+The engine-only `auto_tools` flag is host composition rather than transport configuration: after a
+server connects, every tool it advertised joins every agent's effective MCP allow-list for that run,
+without changing the persisted profile.
+
 ## Test ownership
 
 This package owns the complete unit matrices for its contracts and vocabulary: capability
@@ -181,6 +188,11 @@ has to learn the capability's discriminators. Duplicate projector kinds fail dur
 composition rather than selecting a winner silently.
 Projectors for names in `BUILTIN_TRACE_KINDS` are rejected: contributed projectors may extend the
 persisted vocabulary, but they cannot replace the engine's canonical on-disk events.
+
+`ExecutionRecord.host_metadata` is a deliberately opaque, optional host-owned snapshot annotation.
+The loop and trace packages carry and sanitize it without learning its schema; the file kernel uses
+that seam to persist the active extension Environment's `{ id, fingerprint }`. The Environment
+contract is owned by [`hosts/environments.md`](../../specs/hosts/environments.md), not by this leaf.
 
 ## Vocabulary it owns, and why it is here rather than elsewhere
 

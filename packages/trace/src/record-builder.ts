@@ -20,6 +20,8 @@ export interface BuildRecordInput {
   finalContext?: ContextSnapshotEntry[];
   /** Durable per-capability state, keyed by capability name, when any. */
   capabilityState?: Record<string, unknown>;
+  /** Opaque host snapshot captured at run start. */
+  hostMetadata?: Record<string, unknown>;
 }
 
 /**
@@ -62,5 +64,6 @@ export function buildRecord(input: BuildRecordInput): ExecutionRecord {
     total_cache_write_tokens: totalCacheWrite,
     ...(input.finalContext !== undefined ? { final_context: input.finalContext } : {}),
     ...(input.capabilityState !== undefined ? { capability_state: input.capabilityState } : {}),
+    ...(input.hostMetadata !== undefined ? { host_metadata: input.hostMetadata } : {}),
   };
 }

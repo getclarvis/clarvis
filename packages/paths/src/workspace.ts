@@ -45,8 +45,10 @@ export interface WorkspacePaths {
   skillsDir: string;
   /** Directory of authored workflow definitions. */
   workflowsDir: string;
-  /** Enabled plugin directory. */
+  /** Clarvis-native installed plugin directory. */
   pluginsDir: string;
+  /** Shared Environment definitions authored for this workspace. */
+  environmentsDir: string;
   /** Workspace-authored guard-judge prompt override. */
   guardJudgeFile: string;
   /**
@@ -110,6 +112,7 @@ export function workspacePaths(root?: string, opts?: RootOptions): WorkspacePath
     skillsDir: join(clarvisDir, "skills"),
     workflowsDir: join(clarvisDir, "workflows"),
     pluginsDir: join(clarvisDir, "plugins"),
+    environmentsDir: join(clarvisDir, "environments"),
     guardJudgeFile: join(clarvisDir, "guard-judge.md"),
     memoryPolicyFile: join(clarvisDir, "memory-policy.md"),
     plansRoot: join(clarvisDir, "plans"),
@@ -128,14 +131,37 @@ export function workspacePaths(root?: string, opts?: RootOptions): WorkspacePath
  * @returns the user and workspace `.agents/skills` directories.
  *
  * @remarks
- * Read-only by design: Clarvis reads `.agents` and writes `.clarvis`. Both rank
- * *below* their `.clarvis` equivalents in skill precedence.
+ * Standalone skills are read as operator-authored input. Both rank *below*
+ * their `.clarvis` equivalents in skill precedence.
  */
 export function agentsSkillsDirs(opts: RootOptions = {}): { user: string; workspace: string } {
   const home = opts.home ?? homedir();
   return {
     user: join(home, AGENTS_DIR, "skills"),
     workspace: join(workspaceRoot(opts), AGENTS_DIR, "skills"),
+  };
+}
+
+/**
+ * Resolve the shared plugin directory under one `.agents` root.
+ *
+ * @param root - a home directory, workspace root, or marketplace checkout root.
+ * @returns `<root>/.agents/plugins`.
+ *
+ * @remarks This subtree is a first-class plugin surface. Readers discover
+ * plugin directories and `marketplace.json` here, while the managed plugin
+ * lifecycle may mutate an exact plugin directory without claiming ownership of
+ * unrelated `.agents` content.
+ */
+export function agentsPluginsDir(root: string): string {
+  return join(resolve(root), AGENTS_DIR, AGENTS_PLUGINS_DIR);
+}
+
+/** Resolve the user and workspace shared plugin roots. */
+export function agentsPluginsDirs(opts: RootOptions = {}): { user: string; workspace: string } {
+  return {
+    user: agentsPluginsDir(opts.home ?? homedir()),
+    workspace: agentsPluginsDir(workspaceRoot(opts)),
   };
 }
 
@@ -147,11 +173,10 @@ export function agentsSkillsDirs(opts: RootOptions = {}): { user: string; worksp
  * @returns the absolute path to that root's marketplace document.
  *
  * @remarks
- * Read-only by design, like every other `.agents` location, and always *below*
- * the marketplace document a source publishes at its own root.
+ * Always *below* the marketplace document a source publishes at its own root.
  */
 export function agentsMarketplaceFile(root: string): string {
-  return join(resolve(root), AGENTS_DIR, AGENTS_PLUGINS_DIR, MARKETPLACE_FILE);
+  return join(agentsPluginsDir(root), MARKETPLACE_FILE);
 }
 
 /**

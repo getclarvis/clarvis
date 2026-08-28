@@ -196,12 +196,13 @@ export class TaskProviderFactory implements TaskProviderResolver {
     }
     const merged = snapshot.merged as Record<string, unknown>;
     const enabledPlugins = Array.isArray(merged.enabledPlugins)
-      ? (merged.enabledPlugins as string[])
+      ? (merged.enabledPlugins as NonNullable<SettingsSnapshot["active_plugins"]>)
       : [];
+    const activePlugins = snapshot.active_plugins ?? enabledPlugins;
     const plugin = pluginFor(
       snapshot,
       server,
-      this.options.pluginContributions.mcpServers(enabledPlugins),
+      this.options.pluginContributions.mcpServers(activePlugins),
     );
     const declaration = freezeDeep(
       structuredClone(settingsServerToEngine(server, structuredClone(rawDeclaration))),

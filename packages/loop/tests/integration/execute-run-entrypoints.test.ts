@@ -280,6 +280,23 @@ describe("buildExecuteRunDeps", () => {
     }
   });
 
+  it("treats an exact empty skill-root set as an intentional empty Environment", async () => {
+    const logger = createLogger("silent");
+    const warnSpy = vi.spyOn(logger, "warn");
+    const built = await buildExecuteRunDeps({
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      logger,
+      workspaceRoot: process.cwd(),
+      skillRoots: () => [],
+    });
+    try {
+      expect(built.skills?.listSkills()).toEqual([]);
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      await built.dispose();
+    }
+  });
+
   it("re-derives plugin skill roots when the provider's list changes mid-session", async () => {
     const dir = mkdtempSync(join(tmpdir(), "clarvis-dyn-roots-"));
     const extra = join(dir, "plugin-skills");

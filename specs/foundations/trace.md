@@ -303,6 +303,7 @@ the `PersistenceError` it extends. It is not exported from `index.ts` — a call
 | `total_input_tokens` … `total_cache_write_tokens` | `number` | summed from `response.usage.by_agent` (`packages/trace/src/record-builder.ts:42-47`) |
 | `final_context?` | `ContextSnapshotEntry[]` | omitted when absent (`packages/trace/src/record-builder.ts:63`) |
 | `capability_state?` | `Record<string, unknown>` | opaque to the engine (`packages/capability/src/trace-events.ts:517-526`) |
+| `host_metadata?` | `Record<string, unknown>` | opaque host snapshot, sanitized before durable storage (`packages/capability/src/trace-events.ts:541`, `packages/trace/src/json-trace-store.ts:805`) |
 | `recovery?` | `ExecutionRecovery` | present only on a damaged recovery (`packages/trace/src/journal-recovery.ts:416-418`) |
 
 `ExecutionStatus` has six members, and `interrupted` is documented at
@@ -358,13 +359,18 @@ Line 1 is a `JournalHeader` (`packages/trace/src/journal.ts:38`):
 
 ```json
 {"v":1,"id":"exec_…","owner_key_name":"alice","started_at":1700000000000,
- "request":{…sanitized…},"writer":{"pid":4242,"host":"laptop"}}
+ "request":{…sanitized…},"host_metadata":{…sanitized…},
+ "writer":{"pid":4242,"host":"laptop"}}
 ```
 
 `JOURNAL_VERSION = 1` (`:12`). `request` passes through `sanitizeDeep` (`:159`), which the doc
 comment at `:33-36` says makes a recovered record's request "byte-equivalent to the one a normal run
 would have persisted"; pinned at `packages/trace/tests/integration/journal.test.ts:76`. `writer`
 records pid+host (`:160`) so a peer can ask whether the writer is alive (`:51-60`).
+`host_metadata`, when supplied, passes through the same `sanitizeDeep` boundary and is recovered
+without interpretation (`packages/trace/src/journal.ts:162`,
+`packages/trace/src/journal-recovery.ts:109`, `:418`). The file kernel uses it for extension
+Environment identity; that shape is owned by [`hosts/environments.md`](../hosts/environments.md).
 
 Every subsequent line is one `JSON.stringify(event)` of a **mapped** `TraceEvent` (`:171`) — the same
 object `mapEntry` produced, already rebased, capped and sanitized. A `null` mapping is skipped
@@ -481,8 +487,8 @@ Mechanics inside the builtin branches:
 
 `packages/trace/src/record-builder.ts:36`: sum `response.usage.by_agent` into four totals (`:42-47`),
 take `elapsed_ms` from `usage.elapsed_ms` (`:48`), derive `ended_at = wallStartedAt + elapsed_ms`
-(`:54`), include `final_context`/`capability_state` only when supplied (`:63-64`). Pinned at
-`packages/trace/tests/unit/record-builder.test.ts:74`, `:113`, `:148`, `:161`.
+(`:54`), include `final_context`/`capability_state`/`host_metadata` only when supplied (`:63-67`).
+Pinned at `packages/trace/tests/unit/record-builder.test.ts:74`, `:113`, `:148`, `:161`, `:184`.
 
 ### 4e. `insert` on the JSON store
 
@@ -1026,9 +1032,10 @@ recovered intact").
 `packages/trace/src/journal-recovery.ts:156` (`if (!trailing) skipped += 1`). Pinned:
 `packages/trace/tests/unit/journal-recovery.test.ts:45`, `:75`.
 
-**T-36.** `request` is stored sanitized while `final_context` and `capability_state` are stored
-verbatim. Production: `packages/trace/src/json-trace-store.ts:793-794` versus `:800-804`. Pinned:
-`packages/trace/tests/integration/json-trace-store.test.ts:76`, `:120`, `:155`.
+**T-36.** `request` and opaque `host_metadata` are stored sanitized while `final_context` and
+`capability_state` are stored verbatim. Production:
+`packages/trace/src/json-trace-store.ts:793-806`. Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:76`, `:120`, `:155`, `:193`.
 
 **T-37.** The persisted `trace` is not re-sanitized at insert; it was sanitized at map time.
 Production: `packages/trace/src/json-trace-store.ts:795` (`trace: record.trace`) against
@@ -1092,6 +1099,14 @@ Production: `packages/trace/src/event-span.ts:64`, guarding the `never` at `:155
 **T-49.** Every `src` module of `@clarvis/trace` must appear in LCOV except the one named as
 type-only. Production: floors `functions: 0.98 / lines: 0.97` at `tooling/checks/coverage.ts:44`;
 allowlist `src/trace-handle.ts` at `:151-154`.
+
+**T-50 (INV-319).** Host metadata round-trips through a live journal, crash recovery, the JSON store,
+and the memory double without the trace package interpreting its keys; durable stores redact secret
+material. Production: `JournalHeader.host_metadata`, `journalToRecord`,
+`createJsonTraceStore.insertLocked`, and `createMemoryTraceStore`. Test:
+`packages/trace/tests/integration/journal.test.ts:88`,
+`packages/trace/tests/unit/journal-recovery.test.ts:207`, and
+`packages/trace/tests/integration/json-trace-store.test.ts:193`.
 
 ## 6. Failure modes and degradation
 

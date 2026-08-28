@@ -14,8 +14,9 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 
 ## 2. Construction
 
-`createFileKernel(options)` resolves environment and paths, discovers the workspace identity, opens
-configuration and secrets, builds planning/memory/task/workflow dependencies, constructs the
+`createFileKernel(options)` resolves process environment and paths, discovers the workspace identity,
+creates the extension Environment manager, opens configuration and secrets, builds
+planning/memory/task/workflow dependencies, constructs the
 in-process kernel, recovers persisted runs, and installs workspace housekeeping. A construction
 failure unwinds already-created resources before rethrowing. It does not start durable memory-index
 recovery; the host releases that background inference through `startMemoryRecovery()` after its
@@ -38,6 +39,16 @@ is documented and tested in [code-bootstrap.md](code-bootstrap.md).
 The `builtins` switchboard names `tools`, `skills`, `hooks`, and `tasks`. Memory and planning have
 their own explicit options. Worktrees are not a runtime builtin: Code selects a checkout before this
 function runs.
+
+`CreateFileKernelOptions.environmentSelector` is the process-local Environment selector. The manager
+resolves the installed inventory before the config store is constructed, then supplies the store's
+exact active-plugin selector and workspace executable trust surface. The resulting snapshot is
+pinned for the lifetime of this file kernel; selection changes require reconstruction.
+
+Production: `packages/kernel/src/file-kernel.ts:357-378`, `:593`, `:813`, `:857`;
+`packages/kernel/src/environments/environment-manager.ts` (`resolveActive`).
+
+Test: `packages/kernel/tests/integration/environment-manager.test.ts`.
 
 Production: `packages/kernel/src/file-kernel.ts` (`CreateFileKernelOptions`, `createFileKernel`);
 `packages/kernel/src/application/lifecycle.ts`.
@@ -68,8 +79,8 @@ Test: `packages/kernel/tests/integration/git-workspace.test.ts`;
 ## 4. Kernel services
 
 The in-process kernel exposes project/workspace identity and owner-scoped services for runs,
-configuration, plugins, secrets, model catalogs, provider authentication, workspace files, memory,
-plans, workflows, skills, sessions, tasks, and storage. These are control-plane services; model tool
+configuration, plugins, Environments, secrets, model catalogs, provider authentication, workspace
+files, memory, plans, workflows, skills, sessions, tasks, and storage. These are control-plane services; model tool
 surfaces are composed separately by the loop capabilities.
 
 An owner handle is acquired lazily and cached only within this one kernel. Closing the kernel stops
@@ -88,6 +99,11 @@ skills, hooks, memory, planning, workflows, and tasks only when their owning pol
 Optional package values do not enter the eager settings/import path contrary to the capability
 composition boundary.
 
+The Environment manager narrows plugin contributions before settings, agents, MCP servers, hooks,
+capability executables, and plugin skill roots are composed. Standalone skill selection is passed as
+resolved `SkillRootInput` entries with exact `include` lists. The loop receives those roots and the
+opaque `{ id, fingerprint }` run metadata; it does not import Environment policy.
+
 The tools capability receives the selected workspace, sandbox policy, guard resolver, run-owned
 temporary roots, and secret environment names. The kernel guard makes `host_vcs` an ordinary ask:
 mode `on` uses the human channel, while a configured mode `auto` judge may answer it.
@@ -97,7 +113,8 @@ capability and leader assembly forces `memory: "off"`; the primary manager remai
 single memory-producing run.
 
 Production: `packages/kernel/src/config/capability-registry.ts`;
-`packages/kernel/src/file-kernel.ts`; `packages/kernel/src/guard/resolver.ts`.
+`packages/kernel/src/file-kernel.ts`; `packages/kernel/src/environments/environment-manager.ts`;
+`packages/kernel/src/guard/resolver.ts`.
 
 Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 `packages/kernel/tests/integration/builtin-fleet.test.ts`.
@@ -152,12 +169,22 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    Test: `packages/kernel/tests/integration/owner-isolation.test.ts` (`starts durable memory recovery
    only after the host releases boot`).
 
+7. **One file kernel composes one immutable resolved extension Environment.** Mutating a definition
+   or persisted selection cannot change its active plugins, skill roots, run metadata, or
+   fingerprint; a host must reconnect. Production: `createEnvironmentManager` and `resolveActive` in
+   `packages/kernel/src/environments/environment-manager.ts`; composition in
+   `packages/kernel/src/file-kernel.ts`. Test:
+   `packages/kernel/tests/integration/environment-manager.test.ts` (`pins the active snapshot until
+   reconnect`). The full contract is [Extension Environments](environments.md#5-invariants).
+
 ## 8. Failure behavior
 
 | Failure | Result |
 | --- | --- |
 | Git discovery is unavailable | deterministic canonical-path identity fallback |
 | Config/plugin scope is invalid | rejected scope is reported; valid scopes continue |
+| Environment selection or definition is invalid | kernel remains fail-closed on that invalid Environment; no builtin fallback is activated |
+| Selected Environment inventory is missing or untrusted | kernel boots with a `degraded` resolved snapshot and only healthy, trusted selected contributions activate |
 | A remote MCP server requires interactive OAuth and the host supplied no browser opener | explicit `MCPInteractiveAuthorizationUnavailableError`; the URL is not opened implicitly and no credential is moved through the protocol |
 | OAuth callback, state, authorization URL or persisted store is invalid | authorization fails with a bounded typed error; unrelated plugin contributions and local MCP transports remain available |
 | Orphan recovery fails | warning and degraded recovery count; kernel continues booting |

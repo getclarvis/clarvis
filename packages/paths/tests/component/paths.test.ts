@@ -6,6 +6,8 @@ import {
   AGENTS_PLUGINS_DIR,
   agentsMarketplaceFile,
   agentsMarketplaceFiles,
+  agentsPluginsDir,
+  agentsPluginsDirs,
   agentsSkillsDirs,
   CLARVIS_DIR,
   isAgentsMarketplaceFile,
@@ -49,6 +51,7 @@ describe("globalPaths", () => {
     expect(p.keysFile).toBe(join(GLOBAL, "keys.json"));
     expect(p.subscriptionsFile).toBe(join(GLOBAL, "subscriptions.json"));
     expect(p.pluginsDir).toBe(join(GLOBAL, "plugins"));
+    expect(p.environmentsDir).toBe(join(GLOBAL, "environments"));
     expect(p.hookTrustFile).toBe(join(GLOBAL, "hook-trust.json"));
     expect(p.workspaceTrustFile).toBe(join(GLOBAL, "workspace-trust.json"));
     expect(p.skillsDir).toBe(join(GLOBAL, "skills"));
@@ -64,8 +67,10 @@ describe("globalPaths", () => {
     expect(p.tracesDir).toBe(join(p.state, "traces"));
     expect(p.workflowRecordsDir).toBe(join(p.state, "workflows"));
     expect(p.mcpOAuthFile).toBe(join(p.state, "mcp-oauth.json"));
+    expect(p.pluginDataRoot).toBe(join(p.state, "plugin-data"));
     expect(p.workflowsDir).toBe(join(p.root, "workflows"));
     expect(p.codeConfigFile).toBe(join(p.state, "code.json"));
+    expect(p.environmentSelectionFile).toBe(join(p.state, "environment.json"));
     expect(p.modelsCacheFile).toBe(join(p.cache, "models-dev.json"));
   });
 
@@ -108,6 +113,7 @@ describe("workspacePaths", () => {
     expect(p.agentsDir).toBe(join(p.clarvisDir, "agents"));
     expect(p.skillsDir).toBe(join(p.clarvisDir, "skills"));
     expect(p.pluginsDir).toBe(join(p.clarvisDir, "plugins"));
+    expect(p.environmentsDir).toBe(join(p.clarvisDir, "environments"));
     expect(p.guardJudgeFile).toBe(join(p.clarvisDir, "guard-judge.md"));
     expect(p.memoryPolicyFile).toBe(join(p.clarvisDir, "memory-policy.md"));
     expect(p.plansRoot).toBe(join(p.clarvisDir, "plans"));
@@ -126,6 +132,7 @@ describe("workspacePaths", () => {
       "diagnosticsDir",
       "promptHistoryFile",
       "codeConfigFile",
+      "environmentSelectionFile",
       "monitorSidecar",
       "monitorLog",
       "monitorExit",
@@ -145,6 +152,7 @@ describe("workspacePaths", () => {
       p.skillsDir,
       p.workflowsDir,
       p.pluginsDir,
+      p.environmentsDir,
       p.guardJudgeFile,
       p.memoryPolicyFile,
       p.plansRoot,
@@ -187,6 +195,31 @@ describe("agentsSkillsDirs", () => {
 
   test("falls back to ambient home and cwd", () => {
     const dirs = agentsSkillsDirs();
+    expect(isAbsolute(dirs.user)).toBe(true);
+    expect(isAbsolute(dirs.workspace)).toBe(true);
+  });
+});
+
+describe("agentsPluginsDir", () => {
+  const expected = (root: string): string => join(resolve(root), AGENTS_DIR, AGENTS_PLUGINS_DIR);
+
+  test("names the first-class shared plugin inventory under any root", () => {
+    expect(agentsPluginsDir(WS)).toBe(expected(WS));
+    expect(agentsPluginsDir("/home/alice")).toBe(expected("/home/alice"));
+  });
+
+  test("names both user and workspace inventories independently of CLARVIS_HOME", () => {
+    const dirs = agentsPluginsDirs({
+      env: { [HOME_ENV]: "/srv/c" },
+      home: "/home/alice",
+      cwd: WS,
+    });
+    expect(dirs.user).toBe(expected("/home/alice"));
+    expect(dirs.workspace).toBe(expected(WS));
+  });
+
+  test("falls back to ambient home and cwd", () => {
+    const dirs = agentsPluginsDirs();
     expect(isAbsolute(dirs.user)).toBe(true);
     expect(isAbsolute(dirs.workspace)).toBe(true);
   });

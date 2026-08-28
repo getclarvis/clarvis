@@ -30,6 +30,7 @@ Construction, configuration, runs, and transport are specified in the four kerne
 [`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade). The
 kernel also owns host-side composition described by
 [`plugins.md`](../../specs/hosts/plugins.md),
+[`environments.md`](../../specs/hosts/environments.md),
 [`model-catalog.md`](../../specs/hosts/model-catalog.md), and
 [`sessions.md`](../../specs/hosts/sessions.md), plus the kernel halves of capability specs named in
 their package READMEs.
@@ -93,6 +94,21 @@ try {
 Configuration is read from the workspace `.clarvis` directory and the global
 Clarvis directory. The kernel owns validation and persistence; clients use the
 services defined by `@clarvis/protocol`.
+
+Before composing extensions, the file kernel resolves one process-pinned Environment. The immutable
+`builtin:default` activates the exact plugin references in `enabledPlugins` and applies four-root
+standalone-skill discovery; a custom definition is a complete qualified allow-list and never
+inherits that builtin activation list. Plugin identity is always `{ scope, source, name }`, where
+`source` distinguishes `.agents/plugins` from `.clarvis/plugins`; no same-name install shadows or
+substitutes for another. Workspace
+definitions are shareable authored files, selections stay machine-local, workspace plugin
+activation participates in workspace trust, and selection/definition changes require reconnect.
+Preview tokens bind the exact target, persistence scope, and prior selection bytes; definition and
+selection mutations serialize through local leases. Every run records the resolved Environment id
+and fingerprint. MCP servers contributed by an active plugin are attached to every run and marked
+`auto_tools`: their discovered tools become available to every effective agent for that run even
+when the persisted agent profile names none. This is part of atomic plugin activation, not a profile
+mutation; operator-defined MCP servers remain profile-selected.
 
 Multi-owner hosts must continue to pass owner-aware stores explicitly. The
 kernel publishes the standard file-backed composition without silently enabling
@@ -256,7 +272,7 @@ already-finished spinner.
 The kernel owns command-approval policy through `createGuardResolver` and
 `createShellGuard`. It also provides first-class services for configuration,
 plugins, secrets, models, provider authentication, files, memory, plans, workflows, skills,
-sessions, tasks, storage and runs — the fourteen `KernelClient` services. These are control-plane APIs rather
+sessions, tasks, storage, environments and runs — the fifteen `KernelClient` services. These are control-plane APIs rather
 than model-callable MCP tools.
 
 A run's effective mode is the per-run `guard_mode` param, else the `guard.mode`

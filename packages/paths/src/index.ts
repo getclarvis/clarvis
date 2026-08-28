@@ -51,6 +51,8 @@ export { globalPaths, type GlobalPaths } from "./global.ts";
 export {
   agentsMarketplaceFile,
   agentsMarketplaceFiles,
+  agentsPluginsDir,
+  agentsPluginsDirs,
   agentsSkillsDirs,
   isAgentsMarketplaceFile,
   workspacePaths,

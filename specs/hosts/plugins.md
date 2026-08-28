@@ -37,6 +37,21 @@ anything but its hooks**" (`packages/kernel/src/plugins/plugin-manifest.ts:538`)
 `agents/` surface, and an unusable install record, both of which drop the whole plugin
 (`packages/kernel/src/plugins/plugin-contributions.ts:262-271`).
 
+Installation and activation are separate. The installed inventory retains global and workspace
+copies and both filesystem conventions even when their names match. The resolved
+[Extension Environment](environments.md) supplies the exact qualified `{ scope, source, name }`
+installations that may contribute; `source` is `agents` for `.agents/plugins` and `clarvis` for
+`.clarvis/plugins`. `builtin:default` reads the same exact object shape from `enabledPlugins`. No
+name-only reader, source fallback, or workspace-over-global substitution exists. A protocol plugin
+listing uses the process-pinned `active_plugins` snapshot, or the same already-exact builtin list in
+a minimal embedder, so its enabled badge cannot disagree with the contributions that run
+(`enabledKeys` in `packages/kernel/src/plugins/plugin-service.ts`).
+A selected plugin remains an atomic contribution unit: agents, MCP servers, capability executables,
+skills, and eligible hooks follow the same plugin reference, while every hook still needs its own
+definition approval. Its MCP servers do not require an authored agent profile to opt in: the kernel
+attaches each active plugin namespace with `auto_tools`, and the loop admits the tools successfully
+discovered from it to every effective agent in that run.
+
 ## 2. Surface
 
 ### 2.1 Loop-side schemas (`@clarvis/loop/host`)
@@ -73,30 +88,30 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 | `pluginHookReviews` | `(globalDir, plugin, hooks?) => PluginHookReview[]` | `packages/kernel/src/plugins/hook-trust.ts:54` |
 | `writeHookApproval` | `(globalDir, plugin, fingerprint, approved) => void` | `packages/kernel/src/plugins/hook-trust.ts:73` |
 | `readPluginInstallRecord` | `(dir) => PluginInstallRecordRead` | `packages/kernel/src/plugins/plugin-install-record.ts:18` |
-| `createPluginContributions` | `({ globalDir, workspaceConfigDir?, logger? }) => PluginContributions` | `packages/kernel/src/plugins/plugin-contributions.ts:156` |
+| `createPluginContributions` | `({ globalDir, home?, workspaceRoot?, logger? }) => PluginContributions` | `packages/kernel/src/plugins/plugin-contributions.ts` |
 | `effectivePluginMcpName` | `(plugin, server) => \`${plugin}:${server}\`` | `packages/kernel/src/plugins/plugin-contributions.ts:90` |
 | `createPluginService` | `(PluginServiceOptions) => PluginService` | `packages/kernel/src/plugins/plugin-service.ts:295` |
 | `validateGitUrl` | `(raw) => string` (throws) | `packages/kernel/src/plugins/plugin-service.ts:46` |
 
-`PluginContributions` (the run-time interface, `packages/kernel/src/plugins/plugin-contributions.ts:45`)
-— every method takes the operator-enabled names as an argument and never reads settings itself:
+`PluginContributions` (the run-time interface, `packages/kernel/src/plugins/plugin-contributions.ts:48`)
+— every contribution method takes the resolved qualified selection and never reads settings itself:
 
 | Method | Signature | Line |
 |---|---|---|
-| `skillRoots` | `(enabled) => SkillRootInput[]` | `:47` |
-| `skillBootstraps` | `(enabled) => PluginBootstrapSkill[]` | `:57` |
-| `settingsScopes` | `(enabled) => SettingsScope[]` | `:59` |
-| `mcpServers` | `(enabled) => ResolvedPluginMcpContribution[]` | `:61` |
-| `agents` | `(enabled) => AgentRecord[]` | `:63` |
-| `readAgent` | `(enabled, qualifiedName) => AgentRecord \| null` | `:65` |
-| `locateCapabilityExecutable` | `(enabled, capability, plugin) => { root, declaration } \| { error }` | `:67` |
-| `skillPlansMode` | `(enabled, plugin, skill) => CapabilitySkillPlansMode \| undefined` | `:73` |
+| `skillRoots` | `(selection) => SkillRootInput[]` | `:52` |
+| `skillBootstraps` | `(selection) => PluginBootstrapSkill[]` | `:62` |
+| `settingsScopes` | `(selection) => SettingsScope[]` | `:64` |
+| `mcpServers` | `(selection) => ResolvedPluginMcpContribution[]` | `:66` |
+| `agents` | `(selection) => AgentRecord[]` | `:68` |
+| `readAgent` | `(selection, qualifiedName) => AgentRecord \| null` | `:70` |
+| `locateCapabilityExecutable` | `(selection, capability, plugin) => { root, declaration } \| { error }` | `:72` |
+| `skillPlansMode` | `(selection, plugin, skill) => CapabilitySkillPlansMode \| undefined` | `:78` |
 
 ### 2.3 Protocol / wire
 
-`PluginService` (`packages/protocol/src/plugins.ts:91`) with seven methods, and the DTOs
-`PluginView` (`:42`), `PluginContributions` (`:19`), `PluginCapabilityExecutable` (`:11`),
-`PluginHookReview` (`:83`), field by field:
+`PluginService` (`packages/protocol/src/plugins.ts`) with seven methods, exact `PluginRef`/
+`PluginSource` identity, and the DTOs `PluginView`, `PluginContributions`,
+`PluginCapabilityExecutable`, `PluginInstallTarget`, and `PluginHookReview`, field by field:
 
 `PluginCapabilityExecutable` (`:11-16`, 4 fields):
 
@@ -120,20 +135,20 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 | `capability_run_policies?` | `{ plans?: { skills: Record<string, "off"\|"on"\|"review"> } }` | trusted per-skill Plans policy the plugin declares, for operator display |
 | `executables` | `string[]` | pre-formatted `$ ...` lines: one per hook command, MCP server and capability executable |
 
-`PluginView` (`:42-80`, 11 own fields plus `contributions`):
+`PluginView` (own fields plus `contributions`):
 
 | Field | Type | Meaning |
 |---|---|---|
 | `name` | `string` | host-owned install identity (the directory name) |
 | `scope` | `Scope` | `"global"` or `"workspace"` |
+| `source` | `PluginSource` | `"agents"` or `"clarvis"`, the owning filesystem convention |
 | `dir` | `string` | absolute install directory |
-| `enabled` | `boolean` | enabled in the effective settings for this workspace |
-| `shadows_global` | `boolean` | a workspace plugin shadowing a global one of the same name |
+| `enabled` | `boolean` | this exact scope/source/name installation is active in the process-pinned Environment |
 | `version?` | `string` | manifest `version` |
 | `description?` | `string` | manifest `description` |
 | `display_name?` | `string` | a manifest-asked display name; display data only |
 | `short_description?` | `string` | manifest's one-line summary; display data only |
-| `source?` | `string` | recorded installation origin, including a selected subdirectory |
+| `install_source?` | `string` | recorded Git origin, including a selected subdirectory |
 | `revision?` | `string` | resolved Git revision of the installed checkout |
 | `error?` | `string` | present when `plugin.json` is missing/invalid (the plugin will not load) |
 | `notes?` | `string[]` | what the manifest declares that this kernel does not act on |
@@ -143,7 +158,7 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 
 | Field | Type | Meaning |
 |---|---|---|
-| `plugin` | `string` | owning plugin name |
+| `plugin` | `PluginRef` | exact owning plugin installation |
 | `fingerprint` | `string` | `hookFingerprint` of the definition |
 | `definition` | `unknown` | the exact hook object (wire-typed loosely; see §8) |
 | `approved` | `boolean` | whether `(plugin, fingerprint)` is in `hook-trust.json` |
@@ -154,9 +169,9 @@ Wire methods and their read/write metadata are in
 | Method | Params | Metadata |
 |---|---|---|
 | `plugins.list` | `{}` | `read("plugins")` |
-| `plugins.install` | `{ url, subdir }` | `write("plugins")` |
-| `plugins.update` | `{ name }` | `write("plugins")` |
-| `plugins.uninstall` | `{ name }` | `write("plugins")` |
+| `plugins.install` | `{ url, subdir, target?: { source } }` | `write("plugins")` |
+| `plugins.update` | `{ ref }` | `write("plugins")` |
+| `plugins.uninstall` | `{ ref }` | `write("plugins")` |
 | `plugins.hooks` | `{}` | `read("plugins")` |
 | `plugins.approveHook` | `{ plugin, fingerprint }` | `write("plugins")` |
 | `plugins.revokeHook` | `{ plugin, fingerprint }` | `write("plugins")` |
@@ -165,9 +180,9 @@ Wire methods and their read/write metadata are in
 
 `PluginRepository` (6 methods) and `PluginFetcher` (2 methods) are declared at
 `packages/kernel/src/ports/plugin-repository.ts:64` and `:80`, over the value shapes
-`StagedPlugin` (`:19`), `InstalledPlugin` (`:56`, which extends it with the two fields only a config
-scope can answer, `scope` and `shadowsGlobal`) and `PreparedPlugin` (`:64`). `inspect()` returns the
-*staged* shape, so a prepared root it has never installed cannot claim a scope. The two shipped
+`StagedPlugin`, `InstalledPlugin` (which extends it with the exact `ref` only an inventory can
+answer), and `PreparedPlugin`. `inspect()` returns the *staged* shape, so a prepared root it has
+never installed cannot claim a scope or filesystem convention. The two shipped
 implementations are
 `createFilePluginRepository` (`packages/kernel/src/adapters/filesystem/plugin-repository.ts:146`)
 and `createGitPluginFetcher` (`packages/kernel/src/adapters/git/plugin-fetcher.ts:95`); both are
@@ -199,11 +214,15 @@ all").
 
 | Key | Schema | Line |
 |---|---|---|
-| `enabledPlugins` | `array(pluginNameField).max(256)` | `packages/loop/src/settings/settings-schema.ts:283`, limit `packages/loop/src/validation/input-limits.ts:23` |
+| `enabledPlugins` | `array({ scope, source, name }.strict()).max(256)` | `pluginRefField` and `settingsSchema` in `packages/loop/src/settings/settings-schema.ts` |
 | `marketplaces` | `array(string.min(1).max(4096)).max(64)` | `packages/loop/src/settings/settings-schema.ts:274`, limits `packages/loop/src/validation/input-limits.ts:18,22` |
 
 Both are `WORKSPACE_RISK_FIELDS` entries (`packages/kernel/src/config/workspace-trust.ts:40-41`), so
 an unapproved workspace's `settings.json` contributes neither.
+
+`enabledPlugins` is the activation input only for `builtin:default`; custom Environment files are
+the complete allow-list and are not a settings overlay. Strings and partial plugin references are
+invalid. `marketplaces` continues to affect discovery only.
 
 ### 2.6 `@clarvis/code` adapters and views
 
@@ -214,9 +233,9 @@ an unapproved workspace's `settings.json` contributes neither.
 | `validateGitUrl`, `gitCloneAsync` (client-side duplicates) | `packages/code/src/adapters/plugin-install.ts:73, 136` |
 | `PluginBrowser`, `MarketplaceBrowser`, `HookBrowser` | `packages/code/src/views/config/PluginBrowser.tsx` (`PluginBrowser`); `packages/code/src/views/config/MarketplaceBrowser.tsx` (`MarketplaceBrowser`); `packages/code/src/views/config/HookBrowser.tsx` (`HookBrowser`) |
 
-`toPluginView` (`packages/code/src/adapters/plugins.ts:53-90`) is a one-way, field-by-field
-snake_case→camelCase rename with no other logic: `shadows_global`→`shadowsGlobal`,
-`display_name`→`displayName`, `short_description`→`shortDescription`, and inside `contributions`,
+`toPluginView` (`packages/code/src/adapters/plugins.ts`) is a one-way, field-by-field
+snake_case→camelCase rename with no identity inference: `display_name`→`displayName`,
+`short_description`→`shortDescription`, `install_source`→`installSource`, and inside `contributions`,
 `broken_agents`→`brokenAgents`. `capability_executables` entries are remapped one field at a time
 (`platform_override`→`platformOverride`, `:74-79`). `capability_run_policies?.plans` is **not**
 carried across verbatim: it is flattened from `{ skills: Record<name, mode> }` into a sorted
@@ -230,8 +249,12 @@ copied only when defined, via a spread guard (`:60-66`).
 
 | Path | Holds | Cited at |
 |---|---|---|
-| `<global>/plugins/<name>/` | global install root | `packages/paths/src/global.ts:113` |
-| `<ws>/.clarvis/plugins/<name>/` | workspace install root | `packages/paths/src/workspace.ts:112` |
+| `<home>/.agents/plugins/<name>/` | shared global plugin inventory; default managed-install target | `agentsPluginsDirs` in `packages/paths/src/workspace.ts` |
+| `<global>/plugins/<name>/` | Clarvis-native global plugin inventory | `packages/paths/src/global.ts` |
+| `<ws>/.agents/plugins/<name>/` | shared workspace plugin inventory | `agentsPluginsDirs` in `packages/paths/src/workspace.ts` |
+| `<ws>/.clarvis/plugins/<name>/` | Clarvis-native workspace plugin inventory | `packages/paths/src/workspace.ts` |
+| `<global>/state/plugin-data/<source>/<name>/` | persistent data for a global portable plugin instance | `packages/kernel/src/plugins/plugin-runtime.ts` |
+| `<global>/state/workspaces/<segment>/plugin-data/<source>/<name>/` | persistent data for a workspace portable plugin instance | `packages/kernel/src/plugins/plugin-runtime.ts` |
 | `<global>/hook-trust.json` | per-definition hook approvals | `packages/paths/src/global.ts:114` |
 | `<plugin>/plugin.json` | root manifest candidate | `packages/kernel/src/plugins/plugin-manifest.ts:29` |
 | `<plugin>/.clarvis-plugin/plugin.json` | authoritative Clarvis manifest when present | `:32`, `:292-300` |
@@ -245,6 +268,14 @@ copied only when defined, via a spread guard (`:60-66`).
 | `<root>/marketplace.json` | a source's own catalog | `packages/paths/src/constants.ts:27` |
 | `<root>/.agents/plugins/marketplace.json` | cross-runtime catalog | `packages/paths/src/workspace.ts:154` |
 
+Each inventory entry may be a physical immediate directory or a symbolic link whose current target
+is a directory. `directoryNames` in
+`packages/kernel/src/adapters/filesystem/plugin-repository.ts` follows only that outer inventory
+link; all manifest, skill, MCP, hook, agent, and executable readers still realpath-confine their
+paths to the resolved package root. A dangling link, link loop, or link to a non-directory is not an
+installed plugin. Test: `packages/kernel/tests/integration/plugin-service.test.ts` ("discovers a
+plugin linked into the shared .agents inventory").
+
 ### 3.2 `plugin.json` schema
 
 `pluginManifestSchema` (`packages/loop/src/settings/plugin-schema.ts:44`) is `.loose()` (`:90`).
@@ -252,7 +283,7 @@ copied only when defined, via a spread guard (`:60-66`).
 | Key | Shape | Line |
 |---|---|---|
 | `name` | `pluginNameField` — **the only required key** | `:46` |
-| `version` | semver `^\d+\.\d+\.\d+(-…)?(\+…)?$`, optional | `:50`, regex `:8` |
+| `version` | non-empty string, optional | `pluginManifestSchema` in `packages/loop/src/settings/plugin-schema.ts` |
 | `description` | non-empty string, optional | `:55` |
 | `author` | string **or** `{ name, … }.loose()`, transformed to the name | `:60`, field `:15-21` |
 | `mcpServers` | `record(string, mcpServerPluginSchema)` — or a path string, resolved before validation | `:65` |
@@ -269,6 +300,48 @@ error string states the reason: those "corrupt the trust map instead of storing 
 `skills` is deliberately **not** a schema key — it is read directly off the raw document by
 `pluginSkillRoots` (`packages/kernel/src/plugins/plugin-manifest.ts:853`) and then excluded from the
 "keys Clarvis does not act on" note (`:857`).
+
+#### 3.2.1 Agent Plugins v1 and Codex package dialects
+
+A root `plugin.json` whose `$schema` starts with `https://agent-plugins.org/schemas/` is a portable
+Agent Plugin, not a loose native manifest. Only the canonical v1 schema
+`https://agent-plugins.org/schemas/1.0.0/plugin.schema.json` is accepted; another published-version
+URL fails the plugin instead of being guessed. A portable manifest must be at the package root and
+is authoritative over any `.<host>-plugin/plugin.json`. Known v1 identity fields are validated,
+unknown top-level fields are ignored with notes, and a non-object `extensions` value is ignored as
+the v1 schema requires. Production: `claimsAgentPluginFormat`, `agentPluginManifestSchema`, and
+`normalizeAgentManifest` in `packages/kernel/src/plugins/plugin-manifest.ts`. Test: the `Agent
+Plugins v1 package` cases in `packages/kernel/tests/integration/plugin-manifest.test.ts`.
+
+Portable components use the v1 fixed locations and their own failure boundaries:
+
+- skills are immediate child directories of root `skills/`, require exact `SKILL.md`, validate the
+  full portable Agent Skills frontmatter subset (identity, license, compatibility, metadata, and
+  space-separated `allowed-tools`), and cannot escape the package through a symlink;
+- MCP is read only from root `mcp.json` with the canonical v1 MCP schema. An invalid top-level MCP
+  document disables MCP for that plugin without removing its skills; an invalid server removes only
+  that server;
+- stdio, streamable HTTP, and SSE declarations normalize to Clarvis transports. Stdio receives
+  persistent `PLUGIN_ROOT` and `PLUGIN_DATA`, expands those two placeholders once in `args`, `env`,
+  and `cwd`, and disables Clarvis's ordinary environment interpolation afterward. URLs and headers
+  remain literal;
+- `PLUGIN_DATA` is created outside the checkout, qualified by the exact plugin scope/source/name,
+  before an active contribution resolves. It survives a managed update because the checkout is not
+  its owner.
+
+Production: `pluginSkillScanRoots`, `normalizeAgentMcp`, `normalizeAgentMcpServer`, and
+`expandAgentPluginValue` in `packages/kernel/src/plugins/plugin-manifest.ts`;
+`ensurePluginDataDir` in `packages/kernel/src/plugins/plugin-runtime.ts`; and the
+`expandVariables`/`cwd` path through `@clarvis/loop` and `@clarvis/mcp-client`. Tests:
+`packages/kernel/tests/integration/{plugin-manifest,plugin-contributions}.test.ts`,
+`packages/kernel/tests/unit/plugin-runtime.test.ts`, and
+`packages/mcp-client/tests/component/transport-builder.test.ts`.
+
+A Codex-style package with `.codex-plugin/plugin.json`, root `.mcp.json`, `agents/`, and `skills/`
+remains a supported borrowed-host dialect even when it does not claim the portable v1 root schema.
+Manifest-relative paths are resolved from `.codex-plugin/` and confined to the plugin root; the
+package is installable in either `.agents/plugins` or `.clarvis/plugins` inventory. Test:
+`packages/kernel/tests/integration/plugin-contributions.test.ts` (the `codex-kit` fixture).
 
 ### 3.3 Resource limits
 
@@ -362,11 +435,14 @@ A real foreign-dialect catalog is committed at
 
 ### 4.1 Locating a manifest — `readPluginManifestSource`
 
-`packages/kernel/src/plugins/plugin-manifest.ts:302-345` implements a two-tier selection rule:
+`readPluginManifestSource` implements this deterministic selection rule:
 
-1. If `.clarvis-plugin/plugin.json` is present and readable, it is authoritative because its author
-   explicitly targeted Clarvis (`:303-310`).
-2. Otherwise the root `plugin.json` and every name-sorted `.<host>-plugin/plugin.json` candidate are
+1. A readable root `plugin.json` claiming an Agent Plugins schema is authoritative. This preserves
+   the portable package contract; an unsupported claimed version fails later instead of silently
+   switching to a host-specific manifest.
+2. Otherwise, if `.clarvis-plugin/plugin.json` is present and readable, it is authoritative because
+   its author explicitly targeted Clarvis.
+3. Otherwise the root `plugin.json` and every name-sorted `.<host>-plugin/plugin.json` candidate are
    read. The candidate with the greatest count of non-empty Clarvis-supported contribution keys is
    selected: `skills`, `mcpServers`, `hooks`, `bootstrapSkill`, `capabilityExecutables` and
    `capabilityRunPolicies` (`MANIFEST_CONTRIBUTION_KEYS` and `manifestContributionScore`, `:233-278`).
@@ -377,14 +453,16 @@ fatal rather than becoming a way for another document to hide it (`:287-300`, `:
 candidate, the error names every searched location (`:342-344`). The discovery scan is bounded at
 `manifestLocationEntries`; overflow returns an error instead of a partial list (`:56-95`).
 
-The selection contract is pinned at
-`packages/kernel/tests/integration/plugin-manifest.test.ts:61-147,1291-1310`: Clarvis-specific
-authority, richest-compatible selection, generic root identities not hiding contributed behavior,
-deterministic ties, a relative hook from the selected candidate, and non-matching dot-directories.
+The selection contract is pinned in `packages/kernel/tests/integration/plugin-manifest.test.ts`:
+portable root authority, Clarvis-specific authority, richest-compatible selection, generic root
+identities not hiding contributed behavior, deterministic ties, relative paths from the selected
+candidate, and non-matching dot-directories.
 
 ### 4.2 Resolving a manifest — `resolvePluginManifest`
 
-`packages/kernel/src/plugins/plugin-manifest.ts:938-1018`, in exactly this order:
+`resolvePluginManifest` first enforces the byte/JSON/object boundary, then branches by dialect.
+`normalizeAgentManifest` applies the strict portable contract described in §3.2.1. Every other
+manifest follows the native/borrowed-host normalization below, in order:
 
 | # | Step | Function | Line |
 |---|---|---|---|
@@ -432,7 +510,7 @@ Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:954-1016` (fo
 `:1051-1063` (a `.alpha-plugin` manifest's `../skills/` resolves to the plugin's `skills/` with **no**
 "outside the plugin" note), `:1081-1085` (`../../elsewhere` is still refused from either base).
 
-### 4.4 `skills` → skill roots — `pluginSkillRoots`
+### 4.4 `skills` → skill roots — `pluginSkillRoots` / `pluginSkillScanRoots`
 
 `pluginSkillRoots` and `compactSkillRoots` in
 `packages/kernel/src/plugins/plugin-manifest.ts`.
@@ -459,6 +537,10 @@ pinned by "does not compact a group when that would admit an undeclared sibling"
 presentation is pinned by `packages/kernel/tests/integration/plugin-service.test.ts`, case "list:
 serves every direct skill from an exhaustive grouped declaration". The default and a usable custom
 location produce no note.
+
+For `format: "agent-plugin-v1"`, `pluginSkillScanRoots` keeps the resolved fixed root but attaches
+`discovery: "immediate"`, `manifestName: "exact"`, `validation: "agent-skills"`, and the package
+confinement root. Native and borrowed-host manifests retain the flexible behavior in the table.
 
 ### 4.5 `mcpServers` — path inlining and per-entry sanitizing
 
@@ -646,20 +728,22 @@ name (`.staging-1`) and the schema error stands.
 
 ### 4.8 Loading a plugin for a run — `loadableOf`
 
-`packages/kernel/src/plugins/plugin-contributions.ts:244-281`, in order, each failure logging
+`loadableOf` in `packages/kernel/src/plugins/plugin-contributions.ts`, in order, each failure logging
 `kernel.plugin.skipped` with a `phase` and returning `undefined`:
 
 | # | Step | `phase` | Line |
 |---|---|---|---|
-| 1 | find the directory (workspace root before global) | `dir` | `:241-243` |
+| 1 | find the exact scope/source/name directory | `dir` | `dirFor` |
 | 2 | read the manifest source | `manifest` | `:246-249` |
-| 3 | resolve the manifest | `manifest` | `:251-256` |
-| 4 | read the whole `agents/` surface | `agents` | `:257-261` |
-| 5 | read the install record | `install_record` | `:262-266` |
+| 3 | create the persistent source-qualified runtime-data directory | — | `ensurePluginDataDir` |
+| 4 | resolve the manifest with that runtime directory | `manifest` | `resolvePluginManifest` |
+| 5 | read the whole `agents/` surface | `agents` | `readPluginAgentFiles` |
+| 6 | read the install record | `install_record` | `readPluginInstallRecord` |
 
-Install roots are ordered workspace-first (`:181-186`), so a workspace plugin shadows a global one of
-the same name (pinned `packages/kernel/tests/integration/plugin-contributions.test.ts:203-209` — the workspace copy's *absence* of a
-`skills/` directory is what the test observes).
+`dirFor` selects the root named by the qualified reference exactly
+(`packages/kernel/src/plugins/plugin-contributions.ts`). An Environment asking for
+`global/agents/browser` therefore cannot execute `global/clarvis/browser` or either workspace
+installation. The same rule applies to `builtin:default`; there is no name-only selection path.
 
 The log line's message states the consequence: "an enabled plugin contributes nothing this run; its
 agents, hooks, MCP servers and skills are all absent" (`:178`). The docstring records what it
@@ -667,7 +751,9 @@ replaced: "a manifest that did not parse, an agents tree over its limit and an a
 all the same silent `undefined`" (`:165-168`). Five skip cases plus one silence case are pinned at
 `packages/kernel/tests/integration/plugin-contributions.test.ts:257-318`.
 
-`loadables()` de-duplicates repeated names in `enabled` (`:280-290`).
+`loadables()` de-duplicates repeated qualified references. Definition validation rejects a custom
+Environment that would activate two same-named installations because downstream agent/MCP/skill
+namespaces remain plugin-name based.
 
 #### 4.8.1 Per-contribution behaviour
 
@@ -698,13 +784,15 @@ all the same silent `undefined`" (`:165-168`). Five skip cases plus one silence 
 
 ### 4.9 Merging plugin settings
 
-`createFileConfigStore`'s `snapshot()` (`packages/kernel/src/config/file-config-store.ts:643-682`):
+`createFileConfigStore`'s `snapshot()` (`packages/kernel/src/config/file-config-store.ts:673-717`):
 
 1. Read global and workspace scopes; strip `WORKSPACE_RISK_FIELDS` from workspace if it is not
    trusted (`:560-569`).
-2. Merge **operator scopes alone** to obtain `enabledPlugins` — `enabledPluginNames(operatorScopes)` (`:580-584`, called at `:607`).
-3. Ask the plugin contributions for `settingsScopes(enabledNames)` (`:608-609`).
-4. Merge `[...pluginScopes, ...operatorScopes]` — plugin scopes **first** (`:610-613`).
+2. Merge **operator scopes alone** to obtain exact `enabledPlugins` references.
+3. Ask the Environment manager for the process-pinned qualified plugin selection; an alternate host
+   without that collaborator keeps those same exact references.
+4. Ask plugin contributions for `settingsScopes(enabledPlugins)`, then merge
+   `[...pluginScopes, ...operatorScopes]` — plugin scopes **first**.
 
 Since the merge is last-wins by scope order, an operator always overrides a plugin. Within the
 `hooks` key, `hooksSettingsSpec.merge` re-sorts by origin so that *all* operator hooks precede *all*
@@ -721,7 +809,7 @@ declare `false` and cannot add a plugin-manifest surface.
 
 ### 4.10 Install / update / uninstall
 
-`install` (`packages/kernel/src/plugins/plugin-service.ts:381-396`):
+`install` in `packages/kernel/src/plugins/plugin-service.ts`:
 
 1. `validateGitUrl(url)` (`:382`).
 2. Register an `AbortController` with the kernel lifecycle (`:384`).
@@ -730,9 +818,10 @@ declare `false` and cannot add a plugin-manifest surface.
    subdir (`packages/kernel/src/adapters/git/plugin-fetcher.ts:130-155`).
 4. `repository.inspect(prepared.root)` then `readManifest`; no manifest → `invalid_request`
    `refusing to install: <error>` (`packages/kernel/src/plugins/plugin-service.ts:389-390`).
-5. `repository.install(root, manifest.name, prepared)` — refuse if the name already exists, `mkdir`
-   the install root at `0o700`, write the install record, `rename` the staging root into place
-   (`packages/kernel/src/adapters/filesystem/plugin-repository.ts:186-198`).
+5. `repository.install(root, manifest.name, target.source, prepared)` — the target defaults to the
+   global `.agents/plugins` inventory and may explicitly be `clarvis`; refuse only if the exact
+   target convention already carries that name, `mkdir` the install root at `0o700`, write the
+   install record, and `rename` the staging root into place.
 6. `finally`: `prepared.dispose()` (removes the staging tree) and release the lifecycle handle
    (`packages/kernel/src/plugins/plugin-service.ts:392-395`).
 
@@ -740,11 +829,22 @@ declare `false` and cannot add a plugin-manifest surface.
 at `packages/kernel/tests/integration/plugin-service.test.ts:448-458`, which installs `plugins/brainstorm` from a repo and asserts the
 installed tree carries neither `.git` nor `plugins/`.
 
-`update` (`packages/kernel/src/plugins/plugin-service.ts:406-432`): only a **globally** installed plugin; when the checkout is
+Managed lifecycle is global-only for both sources. Workspace `.agents/plugins` and
+`.clarvis/plugins` directories are visible and activatable, but update/uninstall refuses them because
+the repository owns those trees. Removing or replacing a checkout does not remove its persistent
+`pluginDataRoot/<source>/<name>` directory. Production:
+`createFilePluginRepository` in
+`packages/kernel/src/adapters/filesystem/plugin-repository.ts` and `pluginDataDir` in
+`packages/kernel/src/plugins/plugin-runtime.ts`. Tests:
+`packages/kernel/tests/integration/plugin-service.test.ts` and
+`packages/kernel/tests/unit/plugin-runtime.test.ts`.
+
+`update`: only an exact **globally** installed plugin; its `source` selects the same global inventory
+for lookup/replacement. When the checkout is
 still a git repo, `git fetch --depth 1 --quiet origin HEAD` + `git reset --hard --quiet FETCH_HEAD`
 in place and no `PreparedPlugin` is returned (`packages/kernel/src/adapters/git/plugin-fetcher.ts:168-170`); when it is not a checkout
 but has a recorded `source`, the plugin is re-fetched and atomically **replaced** (`:162-167`,
-`packages/kernel/src/adapters/filesystem/plugin-repository.ts:199-215`); when it is neither, `invalid_request` `'<name>' was not installed
+`packages/kernel/src/adapters/filesystem/plugin-repository.ts`); when it is neither, `invalid_request` `'<name>' was not installed
 from git` (`packages/kernel/src/adapters/git/plugin-fetcher.ts:164`). An update whose new manifest names a different plugin is refused
 (`packages/kernel/src/plugins/plugin-service.ts:417-422`).
 
@@ -781,7 +881,10 @@ now, else `not_found` (`packages/kernel/src/plugins/plugin-service.ts:447-458`).
 
 ### 4.12 Building the operator view — `viewFor`
 
-`packages/kernel/src/plugins/plugin-service.ts:318-343`. Notes are `[...manifestNotes, ...skillNotes]` (`:322`).
+`viewFor` in `packages/kernel/src/plugins/plugin-service.ts`. `list()` maps every record from all
+four inventories and therefore retains every same-named installation. `enabled` is an exact
+`{ scope, source, name }` membership test against the pinned Environment. Notes are
+`[...manifestNotes, ...skillNotes]`.
 `skillNamesOf` (`:204-241`) runs the **same** `createAgentSkills` scan a run would, over the same
 roots, and keeps the catalog's warnings: the docstring records that the panel used to list every
 child directory with a `SKILL.md`, which "disagreed by one skill on the first real plugin they were
@@ -1111,16 +1214,20 @@ All of the following are derived directly from this document's own source and te
     The one-byte read-ahead (`maxBytes + 1`, `:66`, `:73`) is what catches a sparse file. Pinned by
     the sparse-file tests: `packages/loop/tests/integration/plugin-agents.test.ts:36-45`, `packages/kernel/tests/integration/plugin-manifest.test.ts:98-103`.
 
-44. **A plugin is loaded only when the operator has enabled it, and enablement is re-read per call.**
-    Every `PluginContributions` method takes `enabled` (`packages/kernel/src/plugins/plugin-contributions.ts:45-78`), and
-    `enabledPluginNames()` re-reads merged settings each time
-    (`packages/kernel/src/file-kernel.ts:620-623`). Pinned:
-    `packages/kernel/tests/integration/plugin-skills-install.test.ts:155-170` — writing an empty
-    `enabledPlugins` makes the skills disappear without restarting the kernel.
+44. **A plugin contributes only when its exact scoped installation belongs to the process-pinned
+    Environment.** Every `PluginContributions` method takes the resolved selection, and `dirFor`
+    reads only the named scope. Production:
+    `packages/kernel/src/plugins/plugin-contributions.ts:33-82`, `:201-213`; composition in
+    `packages/kernel/src/environments/environment-manager.ts`. Test:
+    `packages/kernel/tests/integration/environment-manager.test.ts` and
+    `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
-45. **`enabledPlugins` is derived from operator scopes alone; a plugin cannot enable another plugin.**
-    `packages/kernel/src/config/file-config-store.ts:647-649` merges only the operator layers
-    (`enabledPluginNames(operatorScopes)`) before asking for plugin scopes. Unpinned.
+45. **A plugin cannot enable another plugin.** Custom Environments are complete external
+    allow-lists; `builtin:default` derives exact `enabledPlugins` refs from operator scopes alone before
+    any plugin settings fragment is merged. Production:
+    `packages/kernel/src/config/file-config-store.ts:673-688` and
+    `packages/kernel/src/environments/environment-manager.ts` (`resolved`). Test:
+    `packages/kernel/tests/integration/environment-manager.test.ts`.
 
 46. **Plugin settings scopes are merged *before* operator scopes, so an operator always wins.**
     `packages/kernel/src/config/file-config-store.ts:650-653`; within `hooks`, `hooksSettingsSpec.merge` re-orders operator-first
@@ -1131,16 +1238,31 @@ All of the following are derived directly from this document's own source and te
     "a repository cannot turn a plugin on by shipping a settings file"
     (`packages/kernel/tests/integration/plugin-skills-install.test.ts:71-73`).
 
-48. **A workspace plugin shadows a global one of the same name, in both readers.** Install roots are
-    workspace-first for contributions (`packages/kernel/src/plugins/plugin-contributions.ts:186-191`) and the repository's
-    `list()` overwrites by name with the workspace entry last (`packages/kernel/src/adapters/filesystem/plugin-repository.ts:157-177`).
-    Pinned: `packages/kernel/tests/integration/plugin-contributions.test.ts:203-209` and `packages/kernel/tests/integration/plugin-service.test.ts:159-167`.
+48. **Installed inventory preserves all four same-name identities; substitution never occurs.**
+    `listInstalledPlugins` returns every global/workspace and agents/clarvis record; exact
+    contribution lookup honors the supplied scope/source/name, and a second selected installation
+    with the same runtime name invalidates Environment resolution. Production:
+    `packages/kernel/src/adapters/filesystem/plugin-repository.ts`,
+    `packages/kernel/src/plugins/plugin-contributions.ts` (`dirFor`), and
+    `packages/kernel/src/environments/environment-manager.ts` (`resolved`). Test:
+    `packages/kernel/tests/integration/plugin-service.test.ts`,
+    `packages/kernel/tests/integration/plugin-contributions.test.ts`, and the same-name case in
+    `packages/kernel/tests/integration/environment-manager.test.ts`.
 
 49. **A plugin's MCP servers are namespaced `<plugin>:<server>` by one host-owned function.**
     `effectivePluginMcpName` (`packages/kernel/src/plugins/plugin-contributions.ts:90-92`), used by `settingsScopes` (`:371-373`),
     `mcpServers` (`:229`) and `contributionsOf` (`packages/kernel/src/plugins/plugin-service.ts:255-257`). Pinned:
     `packages/kernel/tests/integration/plugin-contributions.test.ts:96-128`, where two plugins each declaring `tasks` produce
     `alpha:tasks` and `beta:tasks`.
+
+49a. **Every MCP server of an active plugin is attached to the run and its successfully discovered
+    tools are available to every effective agent without mutating the persisted profile.**
+    Production: `createSettingsRunAssembler` (`pluginMcpServerNames` and `auto_tools`), file-kernel
+    composition in `packages/kernel/src/file-kernel.ts`, and `addAutomaticMcpTools` in the loop.
+    Test: the "attaches an active plugin server independently of persisted agent tools" case in
+    `packages/kernel/tests/component/settings-assembler.test.ts`,
+    `packages/loop/tests/unit/automatic-mcp-tools.test.ts`, and the "host-composed automatic server
+    tools" case in `packages/loop/tests/integration/open-tool-pool.test.ts`.
 
 50. **Plugin MCP provenance carries version and resolved revision, never the manifest version alone
     as identity.** `revisionOf` prefers the install record and falls back to `git rev-parse HEAD`
@@ -1311,23 +1433,53 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/src/plugins/hook-dialects.ts:611-616,632-649`; test:
     `packages/kernel/tests/integration/plugin-manifest.test.ts:880-904,1291-1310`.
 
+82. **A portable Agent Plugin root manifest is authoritative and version-exact.** A root document
+    claiming an Agent Plugins schema cannot be hidden by a host-specific manifest; the canonical v1
+    URL is accepted and another claimed version fails rather than being interpreted as native.
+    Production: `claimsAgentPluginFormat`, `readPluginManifestSource`, and
+    `normalizeAgentManifest` in `packages/kernel/src/plugins/plugin-manifest.ts`. Test: the portable
+    authority and unsupported-schema cases in
+    `packages/kernel/tests/integration/plugin-manifest.test.ts`.
+
+83. **Portable skills and MCP obey component-local failure boundaries.** Strict immediate-child
+    Agent Skills discovery, complete portable frontmatter validation, and symlink confinement can
+    drop only the offending skill surface; an invalid top-level `mcp.json` drops MCP only, and an
+    invalid server drops only that server. Production: `pluginSkillScanRoots` and
+    `normalizeAgentMcp` in `packages/kernel/src/plugins/plugin-manifest.ts`, plus
+    `assertRootValidation` in `packages/skills/src/registry.ts`. Test: the `Agent Plugins v1 package`
+    cases in `packages/kernel/tests/integration/plugin-manifest.test.ts` and the Agent-plugin policy
+    cases in `packages/skills/tests/integration/{discovery,scan}.test.ts`.
+
+84. **Portable runtime placeholders are expanded exactly once under client ownership.** Only
+    `${PLUGIN_ROOT}` and `${PLUGIN_DATA}` in stdio args/env/cwd are expanded; remote URL/header text
+    and every other placeholder remain literal, and `expandVariables: false` prevents a second
+    Clarvis interpolation pass. The persistent data directory is exact-ref-qualified and is created
+    before the active manifest resolves. Production: `normalizeAgentMcpServer` and
+    `ensurePluginDataDir`; transport propagation through `@clarvis/loop` and
+    `@clarvis/mcp-client`. Test:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts`,
+    `packages/kernel/tests/unit/plugin-runtime.test.ts`, and
+    `packages/mcp-client/tests/component/transport-builder.test.ts`.
+
 ## 6. Failure modes and degradation
 
 ### 6.1 Manifest resolution — what is fatal to the *plugin*
 
-Only four things set `ResolvedPluginManifest.error`
-(`packages/kernel/src/plugins/plugin-manifest.ts:938-1018`):
+Common parse failures and dialect-level manifest validation set `ResolvedPluginManifest.error`
+(`resolvePluginManifest` and `normalizeAgentManifest` in
+`packages/kernel/src/plugins/plugin-manifest.ts`):
 
 | Condition | Error text | Line |
 |---|---|---|
 | raw text over `manifestBytes` | "plugin manifest exceeds the …-byte resource limit" | `:944-948` |
 | not JSON | "invalid JSON: …" | `:950-955` |
 | JSON but not an object | "a plugin manifest must be a JSON object" | `:956-958` |
-| fails `pluginManifestSchema` | `<issue.path>: <issue.message>`, or the resource message | `:1004-1016` |
+| native/borrowed document fails `pluginManifestSchema` | `<issue.path>: <issue.message>`, or the resource message | `parsePluginManifest` branch |
+| claimed Agent Plugins manifest is not root canonical v1 or fails its schema | exact portable-format/schema issue | `normalizeAgentManifest` |
 
 Everything else — an absent hooks file, non-JSON hooks, an unrecognized hooks shape, a hooks path
 outside the plugin, an oversized hooks document, a missing/unusable/oversized declared or
-conventional `mcpServers` companion,
+conventional native `mcpServers` companion, a portable `mcp.json` top-level failure,
 an unusable individual server entry, an unreadable presentation block, an unscannable `skills`
 location, unknown or misspelled keys — becomes a note. Each is pinned in
 `packages/kernel/tests/integration/plugin-manifest.test.ts` (§5 invariants 14, 17, 19, 21).
@@ -1429,11 +1581,10 @@ translated from" (`:44-46`).
 graphs, not one "plugin subsystem".** `createFileKernel` builds `pluginContributions`
 (`packages/kernel/src/file-kernel.ts:401-405`) and hands it to `createFileConfigStore`; `createInProcessKernel` — called
 later, from inside `createFileKernel` — independently builds `createPluginService`
-(`packages/kernel/src/kernel.ts:723-728`) with its own `enabledPlugins` closure that reads
-`opts.configStore.readSettings()`. Both ultimately derive "which plugins are enabled" from the same
-merged settings, but neither construction holds a reference to the other, and nothing in this document's
-scope ties their two module-load-time `globalDir`/`workspaceConfigDir` derivations together
-structurally — each is passed the same values independently at each call site.
+(`packages/kernel/src/kernel.ts`) with an `enabledPlugins` closure over the pinned
+`SettingsSnapshot.active_plugins`. Both therefore receive the same resolved Environment identities,
+but neither construction holds a reference to the other; each is passed the same global/home/
+workspace roots independently at its composition site.
 
 ### 7.3 Type-only edges
 

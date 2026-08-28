@@ -12,12 +12,12 @@ function plugin(over: Partial<PluginView> = {}): PluginView {
   return {
     name: "speckit-clarvis",
     scope: "global",
+    source: "clarvis",
     dir: "/plugins/speckit-clarvis",
     enabled: true,
-    shadowsGlobal: false,
     version: "1.0.0",
     description: "Spec Kit integration",
-    source: "https://example.invalid/spec-kit.git",
+    installSource: "https://example.invalid/spec-kit.git",
     revision: "abc123",
     contributions: {
       agents: ["builder"],
@@ -66,7 +66,7 @@ function mount(plugins: PluginView[] = [plugin()]) {
     deps: {
       plugins: () => plugins,
       toggleEnabled: (value: PluginView) => toggled.push(value.name),
-      install: (url: string) => installed.push(url),
+      install: (url: string, source: "agents" | "clarvis") => installed.push(`${source}:${url}`),
       update: (value: PluginView) => updated.push(value.name),
       uninstall: (value: PluginView) => uninstalled.push(value.name),
       notify: (message: string) => notes.push(message),
@@ -119,7 +119,7 @@ test("plugin detail does not repeat a summary that is already the description", 
   rendered.renderer.destroy();
 });
 
-test("enable, update and workspace uninstall policy remain independent of hook review", async () => {
+test("enable and workspace-managed lifecycle policy remain independent of hook review", async () => {
   const mounted = mount([plugin({ scope: "workspace" })]);
   const rendered = await openRender((() => PluginBrowser(mounted.host, mounted.deps)) as never, {
     width: 130,
@@ -130,13 +130,14 @@ test("enable, update and workspace uninstall policy remain independent of hook r
   mounted.press("u");
   mounted.press("d");
   expect(mounted.toggled).toEqual(["speckit-clarvis"]);
-  expect(mounted.updated).toEqual(["speckit-clarvis"]);
+  expect(mounted.updated).toEqual([]);
   expect(mounted.uninstalled).toEqual([]);
-  expect(mounted.notes[0]).toContain("remove it from the repo instead");
+  expect(mounted.notes.some((note) => note.includes("update it in the repo instead"))).toBe(true);
+  expect(mounted.notes.some((note) => note.includes("remove it from the repo instead"))).toBe(true);
   rendered.renderer.destroy();
 });
 
-test("install accepts a typed git URL", async () => {
+test("install defaults to .agents and can explicitly target .clarvis", async () => {
   const mounted = mount();
   const rendered = await openRender((() => PluginBrowser(mounted.host, mounted.deps)) as never, {
     width: 130,
@@ -145,10 +146,25 @@ test("install accepts a typed git URL", async () => {
   await rendered.renderOnce();
   mounted.press("a");
   await rendered.renderOnce();
+  mounted.press("return");
+  await rendered.renderOnce();
   await rendered.mockInput.typeText("https://example.invalid/plugin.git");
   mounted.press("return");
   await rendered.renderOnce();
-  expect(mounted.installed).toEqual(["https://example.invalid/plugin.git"]);
+  expect(mounted.installed).toEqual(["agents:https://example.invalid/plugin.git"]);
+
+  mounted.press("a");
+  await rendered.renderOnce();
+  mounted.press("down");
+  mounted.press("return");
+  await rendered.renderOnce();
+  await rendered.mockInput.typeText("https://example.invalid/native.git");
+  mounted.press("return");
+  await rendered.renderOnce();
+  expect(mounted.installed).toEqual([
+    "agents:https://example.invalid/plugin.git",
+    "clarvis:https://example.invalid/native.git",
+  ]);
   rendered.renderer.destroy();
 });
 

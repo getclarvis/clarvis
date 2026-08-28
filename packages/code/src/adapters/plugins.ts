@@ -1,7 +1,9 @@
 import { createSignal, type Accessor } from "solid-js";
 import type {
   PluginHookReview,
+  PluginRef,
   PluginService,
+  PluginSource,
   PluginView as ProtoPluginView,
 } from "@clarvis/protocol";
 
@@ -34,14 +36,15 @@ export interface PluginView {
   scope: PluginScope;
   dir: string;
   enabled: boolean;
-  shadowsGlobal: boolean;
+  /** Shared `.agents` or Clarvis-native `.clarvis` inventory. */
+  source: PluginSource;
   version?: string;
   description?: string;
   /** A name the manifest asks to be shown under; display data, never authorization. */
   displayName?: string;
   /** A one-line summary the manifest offers; display data, never authorization. */
   shortDescription?: string;
-  source?: string;
+  installSource?: string;
   revision?: string;
   error?: string;
   /** What the manifest declares that Clarvis does not act on; never fatal. */
@@ -56,12 +59,12 @@ export function toPluginView(p: ProtoPluginView): PluginView {
     scope: p.scope,
     dir: p.dir,
     enabled: p.enabled,
-    shadowsGlobal: p.shadows_global,
+    source: p.source,
     ...(p.version !== undefined ? { version: p.version } : {}),
     ...(p.description !== undefined ? { description: p.description } : {}),
     ...(p.display_name !== undefined ? { displayName: p.display_name } : {}),
     ...(p.short_description !== undefined ? { shortDescription: p.short_description } : {}),
-    ...(p.source !== undefined ? { source: p.source } : {}),
+    ...(p.install_source !== undefined ? { installSource: p.install_source } : {}),
     ...(p.revision !== undefined ? { revision: p.revision } : {}),
     ...(p.error !== undefined ? { error: p.error } : {}),
     ...(p.notes !== undefined && p.notes.length > 0 ? { notes: p.notes } : {}),
@@ -93,11 +96,11 @@ export function toPluginView(p: ProtoPluginView): PluginView {
 export interface PluginsStore {
   list: Accessor<PluginView[]>;
   hooks: Accessor<PluginHookReview[]>;
-  install(url: string, subdir?: string): Promise<PluginView>;
-  update(name: string): Promise<PluginView>;
-  uninstall(name: string): Promise<void>;
-  approveHook(plugin: string, fingerprint: string): Promise<void>;
-  revokeHook(plugin: string, fingerprint: string): Promise<void>;
+  install(url: string, subdir?: string, source?: PluginSource): Promise<PluginView>;
+  update(ref: PluginRef): Promise<PluginView>;
+  uninstall(ref: PluginRef): Promise<void>;
+  approveHook(plugin: PluginRef, fingerprint: string): Promise<void>;
+  revokeHook(plugin: PluginRef, fingerprint: string): Promise<void>;
   reload(): Promise<void>;
 }
 
@@ -130,18 +133,18 @@ export function createPluginsStore(
   return {
     list,
     hooks,
-    install: async (url, subdir) => {
-      const view = toPluginView(await plugins.install(url, subdir));
+    install: async (url, subdir, source = "agents") => {
+      const view = toPluginView(await plugins.install(url, subdir, { source }));
       await reload();
       return view;
     },
-    update: async (name) => {
-      const view = toPluginView(await plugins.update(name));
+    update: async (ref) => {
+      const view = toPluginView(await plugins.update(ref));
       await reload();
       return view;
     },
-    uninstall: async (name) => {
-      await plugins.uninstall(name);
+    uninstall: async (ref) => {
+      await plugins.uninstall(ref);
       await reload();
     },
     approveHook: async (plugin, fingerprint) => {

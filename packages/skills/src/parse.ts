@@ -35,6 +35,8 @@ export interface SkillFrontmatterDefaults {
 /** A parsed manifest plus the required fields that had to be supplied for it. */
 export interface ParsedSkillDocument extends ParsedSkill {
   defaulted: SkillDefaultedField[];
+  /** Parsed YAML value before Clarvis supplies required catalog fields. */
+  rawFrontmatter: unknown;
 }
 
 /** The required catalog fields, in the order a report lists them. */
@@ -224,11 +226,19 @@ export function parseSkillFrontmatterWithDefaults(
   raw: string,
   maxChars: number,
   defaults: SkillFrontmatterDefaults,
-): { frontmatter: SkillFrontmatter; defaulted: SkillDefaultedField[] } {
+): {
+  frontmatter: SkillFrontmatter;
+  defaulted: SkillDefaultedField[];
+  rawFrontmatter: unknown;
+} {
   const parsed = parseFrontmatterDocument(raw);
   assertFrontmatterChars(parsed, maxChars);
   const filled = applyDefaults(parsed.data, defaults);
-  return { frontmatter: validateFrontmatter(filled.data), defaulted: filled.defaulted };
+  return {
+    frontmatter: validateFrontmatter(filled.data),
+    defaulted: filled.defaulted,
+    rawFrontmatter: parsed.data,
+  };
 }
 
 /**
@@ -252,6 +262,7 @@ export function parseSkillWithDefaults(
     frontmatter: validateFrontmatter(filled.data),
     body: parsed.body.trim(),
     defaulted: filled.defaulted,
+    rawFrontmatter: parsed.data,
   };
 }
 

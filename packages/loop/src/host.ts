@@ -40,6 +40,8 @@ export { readCapabilitySettings, settingsSchemaFor } from "./settings/capability
 export {
   mcpServerSettingsSchema,
   mcpServerPluginSchema,
+  pluginNameField,
+  pluginRefField,
   settingsSchema,
   type McpServerSettings,
   type SettingsFile,

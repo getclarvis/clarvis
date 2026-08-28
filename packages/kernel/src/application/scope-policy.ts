@@ -13,6 +13,7 @@ import type {
   TasksService,
   WorkspaceService,
   WorkflowsService,
+  EnvironmentService,
 } from "@clarvis/protocol";
 
 /** Data ownership categories used by kernel composition and host policy. */
@@ -45,6 +46,8 @@ export interface OperatorServices {
   readonly files: WorkspaceService;
   /** Operator/workspace plugin projection. */
   readonly plugins: PluginService;
+  /** Operator/workspace Environment definitions and local selection. */
+  readonly environments: EnvironmentService;
   /** Operator/workspace skill projection. */
   readonly skills: SkillsService;
   /** Operator-owned generated-state inventory and disposable cleanup. */
@@ -80,6 +83,7 @@ export interface KernelScopePolicy {
   readonly models: "operator";
   readonly providerAuth: readonly ["operator", "connection"];
   readonly plugins: readonly ["operator", "workspace"];
+  readonly environments: readonly ["operator", "workspace"];
   readonly skills: readonly ["operator", "workspace"];
   readonly files: "workspace";
   readonly storage: "operator";
@@ -99,6 +103,7 @@ export function createKernelScopePolicy(mode: KernelOwnershipMode): KernelScopeP
     models: "operator",
     providerAuth: ["operator", "connection"] as const,
     plugins: ["operator", "workspace"] as const,
+    environments: ["operator", "workspace"] as const,
     skills: ["operator", "workspace"] as const,
     files: "workspace",
     storage: "operator",

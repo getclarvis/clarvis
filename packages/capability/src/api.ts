@@ -151,6 +151,10 @@ export type AgentRole = "lead" | "subagent";
  * @remarks `command`/`args`/`env`/`cwd` apply to `stdio`; `url`/`headers` apply
  * to `http`/`sse`. `shared` opts the connection into cross-agent sharing;
  * `resources` enables the server's resource operations (list/read).
+ * `auto_tools` is host composition rather than transport configuration: after
+ * the server connects, all tools it actually advertised are added to every
+ * agent's effective MCP allow-list for this run. It lets an activated extension
+ * contribute its MCP surface without rewriting any persisted agent profile.
  */
 export interface McpServerConfig {
   name: string;
@@ -161,8 +165,11 @@ export interface McpServerConfig {
   headers?: Record<string, string>;
   env?: Record<string, string>;
   cwd?: string;
+  /** Expand Clarvis `${VAR}` references in env/headers; false preserves literal package data. */
+  expandVariables?: boolean;
   shared?: boolean;
   resources?: boolean;
+  auto_tools?: boolean;
 }
 
 /** Which physical adapter and billing boundary a provider maps to. */

@@ -45,6 +45,7 @@ import type { ConnectionState } from "../adapters/connection-state.ts";
 import type { McpClientCaps } from "../adapters/mcp-capabilities-bridge.ts";
 import type {
   ModelCatalogService,
+  EnvironmentService,
   PlansService,
   PluginService,
   ProviderAuthService,
@@ -220,6 +221,7 @@ export interface AppBackend {
   workflows: WorkflowsService;
   getRun: (id: string) => Promise<RunDetail | null>;
   plugins: PluginService;
+  environments: EnvironmentService;
   tasks: TasksController;
   storage: StorageService;
   reconnect: () => Promise<{ ok: boolean; message: string }>;
@@ -740,6 +742,7 @@ export function App(props: AppProps): JSX.Element {
     backend: props.backend.probe,
     mcpClient: props.backend.client,
     plugins: props.backend.plugins,
+    environments: props.backend.environments,
     tasks: props.backend.tasks,
     storage: props.backend.storage,
     taskWorkBlockedReason: pressureBlockedReason,

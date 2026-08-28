@@ -36,13 +36,14 @@ implements an in-process client, a loopback client and stdio transport.
 
 ## Services
 
-`KernelClient` carries the connected `project`/`workspace` identity and groups fourteen asynchronous
+`KernelClient` carries the connected `project`/`workspace` identity and groups fifteen asynchronous
 services:
 
 | Service        | Responsibility                                                                    |
 | -------------- | --------------------------------------------------------------------------------- |
 | `runs`         | Start, stream, steer, compact live or settled context, inspect and delete runs.   |
 | `config`       | Settings, agent documents and context documents.                                  |
+| `environments` | Definition, resolution, delta preview and selection of active extensions.         |
 | `plugins`      | Installed plugins, capability services, per-hook review and lifecycle operations. |
 | `secrets`      | Server-side provider secret names and writes.                                     |
 | `models`       | Model metadata and pricing catalog.                                               |
@@ -58,6 +59,14 @@ services:
 
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
+
+`EnvironmentService` is the control plane for deterministic activation of already-installed
+extensions. Custom definitions are complete allow-lists of exact `{ scope, source, name }` plugin
+installations and standalone skills; `builtin:default` is immutable builtin activation behavior.
+`.agents/plugins` and `.clarvis/plugins` are equally representable. Selection and clear
+mutations require scope-bound delta previews. The full format, selection precedence, snapshot and
+trust contract is in
+[`hosts/environments.md`](../../specs/hosts/environments.md).
 
 `StorageService` never returns file paths, credential contents or credential sizes. Its cleanup
 surface accepts only `temporary` and `cache`, supports dry-run previews, and leaves durable history,

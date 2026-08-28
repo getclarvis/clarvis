@@ -17,9 +17,10 @@ Two problems fall out of that: **where** does Clarvis look for content it did no
 **what** does it do when a document it reads spells something in another host's vocabulary?
 
 This subsystem is the answer to both, factored so the answer lives in exactly one place each time it
-is needed. `@clarvis/paths` names the one cross-runtime directory Clarvis ever reads,
-`.agents` (`packages/paths/src/constants.ts:18`), and fixes it below every `.clarvis` equivalent in
-precedence. `@clarvis/capability` owns two correspondence tables — hook event names
+is needed. `@clarvis/paths` names the cross-runtime `.agents` directory
+(`packages/paths/src/constants.ts`) and assigns ownership by component: standalone skills and
+marketplaces are discovered inputs, while `plugins/` is a first-class install inventory beside its
+`.clarvis` equivalent. `@clarvis/capability` owns two correspondence tables — hook event names
 (`EXTERNAL_HOOK_EVENT_NAMES`) and hook filter tool names (`EXTERNAL_TOOL_NAMES` /
 `EXTERNAL_TOOLS_WITHOUT_COUNTERPART`) — each with a single owner so the two directions (writing a
 foreign-legible payload, reading a foreign-authored document) can never drift apart
@@ -44,14 +45,26 @@ degrade rather than guess.
 | `AGENTS_PLUGINS_DIR` | `packages/paths/src/constants.ts:24` | `"plugins"`, the subdirectory a marketplace listing lives under inside `.agents` |
 | `MARKETPLACE_FILE` | `packages/paths/src/constants.ts:27` | `"marketplace.json"` |
 | `agentsSkillsDirs(opts)` | `packages/paths/src/workspace.ts:134` | `{ user, workspace }` — the two `.agents/skills` directories Clarvis reads |
+| `agentsPluginsDir(root)` | `packages/paths/src/workspace.ts` | one `<root>/.agents/plugins` inventory |
+| `agentsPluginsDirs(opts)` | `packages/paths/src/workspace.ts` | global and workspace `.agents/plugins` inventories |
 | `agentsMarketplaceFile(root)` | `packages/paths/src/workspace.ts:153` | `<root>/.agents/plugins/marketplace.json` |
 | `agentsMarketplaceFiles(opts)` | `packages/paths/src/workspace.ts:163` | the user- and workspace-scoped marketplace documents |
 | `isAgentsMarketplaceFile(candidate)` | `packages/paths/src/workspace.ts:183` | recognizer paired with the builder above |
 
-Every one of these is read-only by construction: nothing in the codebase writes under `.agents` (the
-doc comments on `AGENTS_DIR`, `agentsSkillsDirs` and `agentsMarketplaceFile` all say so —
-`packages/paths/src/constants.ts:11-16`, `packages/paths/src/workspace.ts:131-133`,
-`packages/paths/src/workspace.ts:150-152`). `CONTEXT_FILENAMES` (`AGENTS.md` as the cross-runtime
+Ownership is component-specific. Clarvis does not mutate standalone `.agents/skills` or a
+`marketplace.json`, but its managed global plugin lifecycle may atomically create, replace, or
+remove one exact directory below `~/.agents/plugins`. Workspace `.agents/plugins` is discovered as
+repository-owned inventory, exactly like workspace `.clarvis/plugins`; Code does not manage either
+workspace tree. The architecture test admits direct mutation through
+`agentsPluginsDir(s)` only in the filesystem plugin repository and keeps every other `.agents`
+accessor read-only (`packages/paths/tests/architecture/agents-read-only.test.ts`).
+An inventory entry may also link to a directory in a shared store; only the outer link is followed,
+and contribution readers continue to realpath-confine every package-relative path. Production:
+`directoryNames` in `packages/kernel/src/adapters/filesystem/plugin-repository.ts`. Test:
+`packages/kernel/tests/integration/plugin-service.test.ts` ("discovers a plugin linked into the
+shared .agents inventory").
+
+`CONTEXT_FILENAMES` (`AGENTS.md` as the cross-runtime
 fallback for Clarvis's own `CLARVIS.md`, `packages/paths/src/constants.ts:82`) is a related but
 distinct cross-runtime naming convention — a root-level file, not a `.agents` subdirectory — and its
 mechanics belong to the paths-directory-vocabulary document; it is noted here only to distinguish it from
@@ -187,6 +200,18 @@ sources (`agents` = `.agents/skills`, `clarvis` = `.clarvis/skills`) across two 
 
 Pinned verbatim by `packages/skills/tests/unit/preset.test.ts:8-19`, which asserts this exact array for
 `clarvisSkillRoots({ home: "/home/u", cwd: "/tmp", workspace: "/work" })`.
+
+That preset is the complete input for `builtin:default`. A custom
+[Extension Environment](../hosts/environments.md) still derives candidates from these same four
+locations, but passes only selected roots with exact `include` name lists through the host-owned
+`skillRoots` seam; roots with no selected skill are omitted. The skills package remains unaware of
+Environment definitions and applies the same root order and collision rules to whatever exact set it
+receives. Production: `packages/kernel/src/environments/environment-manager.ts` (`skillRoots`) and
+`packages/loop/src/runtime/build-run-deps.ts` (`exactRoots`). Test:
+`packages/kernel/tests/integration/environment-manager.test.ts` ("selects only exact standalone
+skills and passes exact include filters to @clarvis/skills")
+and `packages/skills/tests/integration/discovery.test.ts` ("admits only exact manifest names from a
+root allowlist").
 
 `SkillRootInput`/`SkillRoot` (`packages/skills/src/types.ts:20-38`) carry `scope: "user" | "workspace"`
 and `source: string` (free-form — `"agents"`, `"clarvis"`, or a plugin/marketplace name) purely as
@@ -467,7 +492,7 @@ This is pinned together by `packages/hooks/tests/component/capability.test.ts:41
 
 ### 4.8 Skill precedence merge (delegated mechanism, cited for context)
 
-`clarvisSkillRoots` (§3.1) hands its four roots, in ascending order, to `buildRegistry`
+For `builtin:default`, `clarvisSkillRoots` (§3.1) hands its four roots, in ascending order, to `buildRegistry`
 (`packages/skills/src/registry.ts:121`), which scans and merges in one pass: the roots are folded **in
 the order given** (`:126-152`), so a same-named skill from a later root always displaces an earlier one
 through `mergeWinner` (`:285-301`), and the loser is recorded on the winner's `shadowed` chain
@@ -514,22 +539,23 @@ Production: `packages/capability/src/hooks-config.ts:137-199`.
 Test: `packages/capability/tests/unit/hooks-config.test.ts:228-235` ("keys every entry by its own
 normalized form, so a lookup cannot miss").
 
-**AIN-04** (derived). `.agents` is read-only: nothing in `@clarvis/paths` (or, so far as this document's
-scope shows, anywhere reachable from it) ever creates or writes to a path under `AGENTS_DIR`; the
-only writers Clarvis has for its own machinery target `CLARVIS_DIR`.
-Production: `packages/paths/src/constants.ts:10-16` (doc rule stated at the constant's own definition),
-`packages/paths/src/workspace.ts:131-133`, `:150-152` (both `.agents` accessors restate "Read-only by
-design").
-Test: `packages/paths/tests/architecture/agents-read-only.test.ts:112-129` discovers production
-consumers of the three `.agents` accessors, traces the names bound from those calls into filesystem
-mutators, asserts that no such write exists, and proves the matcher catches the representative
-`mkdir(agents.user, ...)` case. The separate literal sweep in
+**AIN-04** (derived). `.agents` mutation authority is component-scoped. Standalone skills and
+marketplace documents never reach a mutator; only the filesystem plugin repository may directly
+mutate an exact directory beside an `agentsPluginsDir(s)` root. That authority does not grant
+ownership of the rest of `.agents`, and persistent plugin runtime data is kept in Clarvis state.
+Production: `AGENTS_DIR` and the accessors in `packages/paths/src/{constants,workspace}.ts`;
+the exact managed writer is
+`packages/kernel/src/adapters/filesystem/plugin-repository.ts`; runtime data is resolved by
+`packages/kernel/src/plugins/plugin-runtime.ts`.
+Test: `packages/paths/tests/architecture/agents-read-only.test.ts` discovers production consumers,
+keeps authored accessors away from filesystem mutators, and asserts that the plugin repository is
+the sole direct plugin-root writer. The separate literal sweep in
 `packages/paths/tests/architecture/invariant.test.ts` catches a newly hand-spelled `.agents` path.
 
 **AIN-05** (derived). The four standard skill roots are produced in a fixed order — `.agents/skills`
-(user, then workspace) below `.clarvis/skills` (user, then workspace) — and that order is exactly the
-merge precedence, because `buildRegistry` folds the roots in the order it is given them and later always
-displaces earlier.
+(user, then workspace) below `.clarvis/skills` (user, then workspace) — and, for whichever roots and
+exact-name filters the host admits, that order is exactly the merge precedence because
+`buildRegistry` folds the roots in the order it is given them and later always displaces earlier.
 Production: `packages/skills/src/preset.ts:32-46`; fold order at
 `packages/skills/src/registry.ts:126-152`.
 Test: `packages/skills/tests/unit/preset.test.ts:8-19` pins the exact four-element array;

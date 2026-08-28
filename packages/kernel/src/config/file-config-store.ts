@@ -23,7 +23,7 @@ import {
   writeFileAtomicSync,
 } from "@clarvis/paths";
 import { mergeSettings, splitAgentFrontmatter, type SettingsScope } from "@clarvis/loop/host";
-import type { WorkspaceTrustVerdict } from "@clarvis/protocol";
+import type { EnvironmentPluginRef, WorkspaceTrustVerdict } from "@clarvis/protocol";
 import type { Scope, SettingsData, SettingsSource } from "@clarvis/protocol";
 import {
   SettingsRevisionConflictError,
@@ -69,6 +69,14 @@ export interface FileConfigStoreOptions {
    * tests and non-plugin hosts.
    */
   plugins?: PluginContributions;
+  /** Host-owned extension Environment resolver; the loop never sees this concept. */
+  environment?: {
+    resolvePlugins(
+      enabledPlugins: readonly EnvironmentPluginRef[],
+      trust: WorkspaceTrustVerdict,
+    ): readonly EnvironmentPluginRef[];
+    workspaceTrustSurface(): unknown;
+  };
   /**
    * Where a rejected or discarded configuration document is reported.
    *
@@ -506,8 +514,15 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
    * @remarks An unreadable trust store yields `unapproved`, never `trusted`: the
    *   failure mode of a corrupt approvals file must be "nothing is approved".
    */
-  const workspaceVerdict = (settings: SettingsData | undefined): WorkspaceTrustVerdict => {
-    const fingerprint = workspaceTrustFingerprint(settings, workspaceAgentFiles());
+  const workspaceVerdict = (
+    settings: SettingsData | undefined,
+    extensionSurface: unknown = opts.environment?.workspaceTrustSurface(),
+  ): WorkspaceTrustVerdict => {
+    const fingerprint = workspaceTrustFingerprint(
+      settings,
+      workspaceAgentFiles(),
+      extensionSurface,
+    );
     if (fingerprint === undefined) return { state: "inert" };
     const key = trustKey();
     return workspaceTrustVerdict(fingerprint, key, readWorkspaceTrustFile(globalDir).trust);
@@ -528,6 +543,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     const fingerprint = workspaceTrustFingerprint(
       readScopeSettings("workspace").value,
       workspaceAgentFiles(),
+      opts.environment?.workspaceTrustSurface(),
     );
     if (fingerprint === undefined && approve) return;
     const key = trustKey();
@@ -627,28 +643,19 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     return { global, workspace, gated, scopes };
   };
 
-  /**
-   * The enabled plugin names from one merge of the operator layers.
-   *
-   * @param scopes - the operator merge input from {@link operatorLayers}.
-   * @returns the names, or `[]` when the merged `enabledPlugins` is absent or
-   *   not an array.
-   */
-  const enabledPluginNames = (scopes: SettingsScope[]): string[] => {
+  /** Exact enabled plugin references from one merge of the operator layers. */
+  const enabledPluginRefs = (scopes: SettingsScope[]): EnvironmentPluginRef[] => {
     const enabled = (mergeSettings(scopes, kernelCapabilityRegistry) as unknown as SettingsData)
       .enabledPlugins;
-    return Array.isArray(enabled) ? (enabled as string[]) : [];
+    return Array.isArray(enabled) ? (enabled as EnvironmentPluginRef[]) : [];
   };
 
-  /**
-   * The list of enabled plugin names from the merged operator settings, used to
-   * scope which plugins contribute agents.
-   */
-  const operatorEnabled = (): string[] => enabledPluginNames(operatorLayers().scopes);
+  /** The exact Environment-qualified plugin refs allowed to contribute agents. */
+  const operatorEnabled = (): readonly EnvironmentPluginRef[] => snapshot().active_plugins ?? [];
 
   /**
    * Compute the current {@link SettingsSnapshot}: merge plugin fragments (for the
-   * enabled plugins) under the operator `global` then `workspace` layers, expose
+   * active Environment plugins) under the operator `global` then `workspace` layers, expose
    * each scope's raw contents, and report per-scope {@link SettingsSource} provenance
    * (including any parse error).
    *
@@ -661,9 +668,12 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     const { global: g, workspace: w, gated, scopes: operatorScopes } = operatorLayers();
     const global = g.value;
     const workspace = w.value;
-    const enabledNames = enabledPluginNames(operatorScopes);
+    const enabledRefs = enabledPluginRefs(operatorScopes);
+    const extensionSurface = opts.environment?.workspaceTrustSurface();
+    const trust = workspaceVerdict(workspace, extensionSurface);
+    const enabledPlugins = opts.environment?.resolvePlugins(enabledRefs, trust) ?? enabledRefs;
     const pluginScopes =
-      opts.plugins !== undefined ? opts.plugins.settingsScopes(enabledNames) : [];
+      opts.plugins !== undefined ? opts.plugins.settingsScopes(enabledPlugins) : [];
     const merged = mergeSettings(
       [...pluginScopes, ...operatorScopes],
       kernelCapabilityRegistry,
@@ -687,14 +697,20 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
         ...(errorOf[scope] !== undefined ? { error: errorOf[scope] } : {}),
       };
     });
+    const withheld = [
+      ...(gated?.withheld ?? []),
+      ...(extensionSurface !== undefined &&
+      (trust.state === "unapproved" || trust.state === "changed")
+        ? ["environment"]
+        : []),
+    ];
     return {
       merged,
       scopes,
       sources,
-      ...(gated !== undefined && gated.withheld.length > 0
-        ? { withheld_workspace_fields: gated.withheld }
-        : {}),
-      workspace_trust: workspaceVerdict(workspace),
+      ...(withheld.length > 0 ? { withheld_workspace_fields: withheld } : {}),
+      workspace_trust: trust,
+      active_plugins: enabledPlugins,
     };
   };
 

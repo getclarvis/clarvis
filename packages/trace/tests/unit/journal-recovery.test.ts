@@ -200,6 +200,29 @@ describe("journalToRecord", () => {
     expect(record.elapsed_ms).toBeGreaterThan(0);
   });
 
+  it("restores host metadata from a crash journal", async () => {
+    const environment = {
+      environment: {
+        id: "global:research",
+        fingerprint: `sha256:${"b".repeat(64)}`,
+      },
+    };
+    const parsed = await parseWhole(
+      [
+        JSON.stringify({
+          ...journalHeader("exec-environment"),
+          v: JOURNAL_VERSION,
+          host_metadata: environment,
+        }),
+        JSON.stringify(leadIteration(1, 1, 1)),
+        "",
+      ].join("\n"),
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(journalToRecord(parsed).host_metadata).toEqual(environment);
+  });
+
   it("rolls subagent iterations up per model and counts distinct instances", async () => {
     const parsed = await parseWhole(
       [

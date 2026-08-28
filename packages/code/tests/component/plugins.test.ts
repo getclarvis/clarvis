@@ -3,16 +3,18 @@ import { createRoot } from "solid-js";
 import type { PluginService, PluginView as ProtoPluginView } from "@clarvis/protocol";
 import { createPluginsStore, loadPlugins, toPluginView } from "../../src/adapters/plugins.ts";
 
+const DEMO_REF = { scope: "workspace" as const, source: "clarvis" as const, name: "demo" };
+
 function protoView(over: Partial<ProtoPluginView> = {}): ProtoPluginView {
   return {
     name: over.name ?? "demo",
     scope: over.scope ?? "workspace",
     dir: over.dir ?? "/ws/plugin/demo",
     enabled: over.enabled ?? true,
-    shadows_global: over.shadows_global ?? false,
+    source: over.source ?? "clarvis",
     version: over.version ?? "1.2.0",
     description: over.description ?? "A demo.",
-    source: over.source ?? "https://example.invalid/demo.git",
+    install_source: over.install_source ?? "https://example.invalid/demo.git",
     revision: over.revision ?? "abc123",
     contributions: over.contributions ?? {
       agents: ["good"],
@@ -44,7 +46,7 @@ function fakeService(seed: ProtoPluginView[] = []): PluginService & { calls: str
     list: async () => list,
     hooks: async () => [
       {
-        plugin: "demo",
+        plugin: DEMO_REF,
         fingerprint: "sha256:hook",
         definition: { command: "check" },
         approved: false,
@@ -56,26 +58,26 @@ function fakeService(seed: ProtoPluginView[] = []): PluginService & { calls: str
       list.push(view);
       return view;
     },
-    update: async (name) => {
-      calls.push(`update:${name}`);
-      return protoView({ name });
+    update: async (ref) => {
+      calls.push(`update:${ref.scope}/${ref.source}/${ref.name}`);
+      return protoView({ name: ref.name, scope: ref.scope, source: ref.source });
     },
-    uninstall: async (name) => {
-      calls.push(`uninstall:${name}`);
+    uninstall: async (ref) => {
+      calls.push(`uninstall:${ref.scope}/${ref.source}/${ref.name}`);
     },
     approveHook: async (plugin, fingerprint) => {
-      calls.push(`approve-hook:${plugin}:${fingerprint}`);
+      calls.push(`approve-hook:${plugin.scope}/${plugin.source}/${plugin.name}:${fingerprint}`);
     },
     revokeHook: async (plugin, fingerprint) => {
-      calls.push(`revoke-hook:${plugin}:${fingerprint}`);
+      calls.push(`revoke-hook:${plugin.scope}/${plugin.source}/${plugin.name}:${fingerprint}`);
     },
   };
 }
 
 test("toPluginView maps executable declarations and installation metadata", () => {
-  const view = toPluginView(protoView({ shadows_global: true }));
-  expect(view.shadowsGlobal).toBe(true);
-  expect(view.source).toContain("demo.git");
+  const view = toPluginView(protoView());
+  expect(view.source).toBe("clarvis");
+  expect(view.installSource).toContain("demo.git");
   expect(view.revision).toBe("abc123");
   expect(view.contributions.brokenAgents).toEqual(["bad"]);
   expect(view.contributions.capabilityExecutables).toEqual([
@@ -114,9 +116,9 @@ test("store reloads plugin and exact-hook review state after mutations", async (
     await store.reload();
     expect(store.list().map((view) => view.name)).toEqual(["demo"]);
     expect(store.hooks()).toHaveLength(1);
-    await store.approveHook("demo", "sha256:hook");
+    await store.approveHook(DEMO_REF, "sha256:hook");
     await store.install("https://example.invalid/repo.git");
-    expect(service.calls).toContain("approve-hook:demo:sha256:hook");
+    expect(service.calls).toContain("approve-hook:workspace/clarvis/demo:sha256:hook");
     expect(service.calls).toContain("install:https://example.invalid/repo.git");
     dispose();
   });

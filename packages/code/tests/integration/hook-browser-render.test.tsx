@@ -31,7 +31,7 @@ function mount(review: PluginHookReview, operatorHooks: OperatorHook[] = []) {
 
 test("shows and approves the exact normalized hook definition", async () => {
   const mounted = mount({
-    plugin: "demo",
+    plugin: { scope: "global", source: "agents", name: "demo" },
     fingerprint: `sha256:${"a".repeat(64)}`,
     definition: { event: "run_start", command: "python3 check.py" },
     approved: false,
@@ -52,7 +52,7 @@ test("shows and approves the exact normalized hook definition", async () => {
 
 test("revokes an already approved definition", async () => {
   const mounted = mount({
-    plugin: "demo",
+    plugin: { scope: "global", source: "agents", name: "demo" },
     fingerprint: `sha256:${"b".repeat(64)}`,
     definition: { event: "run_start", command: "check" },
     approved: true,
@@ -73,7 +73,7 @@ test("lists the operator's own settings.json hooks beside the plugins'", async (
   // operator's own hooks appeared nowhere in the application.
   const mounted = mount(
     {
-      plugin: "demo",
+      plugin: { scope: "global", source: "agents", name: "demo" },
       fingerprint: `sha256:${"c".repeat(64)}`,
       definition: { event: "run_start", command: "plugin-side" },
       approved: true,

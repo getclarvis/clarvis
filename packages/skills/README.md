@@ -14,7 +14,8 @@ Discovery, parsing, precedence, and progressive disclosure are specified in
 [`execution/skills.md`](../../specs/execution/skills.md). Shared `.agents` behavior and plugin
 contributions are specified in
 [`cross-cutting/agent-interop.md`](../../specs/cross-cutting/agent-interop.md) and
-[`hosts/plugins.md`](../../specs/hosts/plugins.md).
+[`hosts/plugins.md`](../../specs/hosts/plugins.md). Host-selected exact roots are specified by
+[`hosts/environments.md`](../../specs/hosts/environments.md).
 
 ## How it works
 
@@ -70,6 +71,12 @@ const skills = createAgentSkills({
   ],
 });
 ```
+
+A root may also carry `include`, an exact allow-list of resolved manifest names. An absent list
+preserves full discovery; an empty list admits nothing. Filtering happens after normal manifest
+resolution, so it does not create a second naming or precedence system. The kernel uses this generic
+mechanism to pass custom Environment skill selections without making this package understand
+Environments.
 
 Call `refresh()` after the filesystem changes. `resourcePath(name, rel)` resolves
 a resource while enforcing that it stays inside the selected skill directory.
@@ -127,6 +134,16 @@ from an authored one. This is deliberate reader tolerance: a skill written in a
 dialect that leaves a field out still reaches the catalog rather than vanishing
 from it, and it applies under `strict` too — a supplied field is not a
 malformed manifest.
+
+Plugin roots that declare the portable Agent Plugins v1 contract opt into the
+stricter Agent Skills reader instead. That policy inspects only immediate child
+directories with an exact `SKILL.md`, requires the authored `name` and
+`description`, enforces the portable lowercase-hyphen name (1–64 characters and
+equal to the directory), and validates `license`, `compatibility` (1–500
+characters), string-to-string `metadata`, and the space-separated string form of
+`allowed-tools`. One invalid child is skipped without removing the plugin's other
+skills or contributions. Native, standalone, and borrowed-host roots retain the
+tolerant Clarvis behavior above.
 
 ## The harness-directed sidecar
 

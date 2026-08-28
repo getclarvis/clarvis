@@ -68,8 +68,10 @@ describe("workspaceStatePaths", () => {
       p.diagnosticsDir,
       p.memoryMachineryRoot,
       p.plansLockDir,
+      p.pluginDataRoot,
       p.promptHistoryFile,
       p.codeConfigFile,
+      p.environmentSelectionFile,
       p.runsDir,
       p.runDir("run/with separators"),
       p.runTempDir("run/with separators"),
@@ -100,8 +102,10 @@ describe("workspaceStatePaths", () => {
     expect(p.diagnosticsDir).toBe(join(p.localDir, "diagnostics"));
     expect(p.memoryMachineryRoot).toBe(join(p.root, "memory"));
     expect(p.plansLockDir).toBe(join(p.root, "plans"));
+    expect(p.pluginDataRoot).toBe(join(p.root, "plugin-data"));
     expect(p.promptHistoryFile).toBe(join(p.localDir, "prompt-history"));
     expect(p.codeConfigFile).toBe(join(p.localDir, "code.json"));
+    expect(p.environmentSelectionFile).toBe(join(p.localDir, "environment.json"));
     expect(p.runsDir).toBe(join(p.localDir, "runs"));
     expect(p.runDir("run/with separators")).toBe(
       join(p.runsDir, ownerSegment("run/with separators")),

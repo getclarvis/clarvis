@@ -121,7 +121,8 @@ optional `prepareReconnect`, and `callbacks` (`:111`).
 | `context(executionId, targetWindowTokens?)` | `ReturnType<RunService["context"]>` | `packages/code/src/adapters/kernel-run-client.ts` (`KernelRunClient.context`) |
 | `getRun(executionId)` | `Promise<RunDetail \| null>` | `:86`, impl `:397` |
 | `deleteRun(executionId)` | `Promise<boolean>` | `:87`, impl `:406` |
-| `plans` `workflows` `skills` `config` `secrets` `models` `providerAuth` `files` `sessions` `plugins` `tasks` `storage` | thin per-method pass-throughs to `requireKernel()` | `packages/code/src/adapters/kernel-run-client.ts` (`createKernelRunClient`) |
+| `plans` `workflows` `skills` `config` `secrets` `models` `providerAuth` `files` `sessions` `plugins` `environments` `tasks` `storage` | thin per-method pass-throughs to `requireKernel()` | `packages/code/src/adapters/kernel-run-client.ts` (`createKernelRunClient`) |
+| `currentEnvironment()` | the process-pinned `{id, fingerprint}` captured during `connect()` | `packages/code/src/adapters/kernel-run-client.ts` (`connect`, `currentEnvironment`) |
 
 `KernelRunClientCallbacks` (`:56`): `onEvent(event, source, executionId)`, optional
 `onProgress(progress, executionId)`, `onMemoryIngest(notice)`, `onElicit(params) => Promise<ElicitResult>`.
@@ -215,12 +216,15 @@ Declared at `packages/code/src/adapters/session-store.ts:51`.
 | `createdAt` / `updatedAt` | `number` (epoch ms) | |
 | `profile` | `string?` | agent name |
 | `turns` | `TurnRef[]` | |
+| `lastEnvironment` | `EnvironmentRunRef?` | newest turn's extension snapshot, retained by catalog-only projections |
 | `turnCount` | `number?` | present *only* on a catalog-only summary (`packages/code/src/adapters/session-store.ts:63`, `:279`) |
 | `totals` | `SessionTotals` `{input, output, cached, costUsd?}` | `:20` |
 | `pending` | `Message[]?` | unflushed observations (`:61`) |
 
-`TurnRef` (`:28`): `{ userPreview, executionId?, status, startedAt?, endedAt?, error? }`, where
-`error` is `{code, message}` and is present only on a failed turn (`:43`).
+`TurnRef` (`:29`):
+`{ userPreview, executionId?, environment?: {id, fingerprint}, status, startedAt?, endedAt?, error? }`,
+where `environment` identifies the resolved extension snapshot pinned when the turn began and `error`
+is `{code, message}` present only on a failed turn.
 
 The wire shape is `Session` from `@clarvis/protocol`; `metaToSession` and `sessionToMeta` are the
 camelCase↔snake_case adapters. The protocol's declared `SessionTurn` type has no `error` member, so
@@ -236,8 +240,12 @@ metaToSession -> disk JSON -> sessionToMeta", "a reloaded session still carries 
 and malformed persisted-error cases) and `packages/code/tests/component/session.test.ts` ("a failed
 turn's reason is masked and bounded before it is recorded").
 
-`sessionSummaryToMeta` (`:256`) maps a `SessionSummary` to a `SessionMeta` with `turns: []` and
-`turnCount: s.turn_count`; `sessionTurnCount` (`:278`) returns `turnCount ?? turns.length`.
+`sessionSummaryToMeta` maps a `SessionSummary` to a `SessionMeta` with `turns: []`,
+`turnCount: s.turn_count`, and `lastEnvironment: s.last_environment` when present;
+`sessionTurnCount` returns `turnCount ?? turns.length`. Production:
+`packages/code/src/adapters/session-store.ts` (`sessionSummaryToMeta`, `sessionTurnCount`). Test:
+`packages/code/tests/component/session-store.test.ts` ("session wire adapters preserve the active
+Environment identity").
 
 ### 3.3 Prompt-history file
 
@@ -289,8 +297,11 @@ emits a record with empty `counts`/`rates` — pinned by
    (`store.appendUserMessage`) (`:601`–`:604`).
 7. If the effective plans mode is `"review"` (`skill?.plansMode ?? deps.plansMode?.()`), append a
    plan-approval notice to the transcript (`:605`–`:612`).
-8. `sess.beginTurn(msg, executionId)` returns the **continuation base** — the previous turn's
-   execution id (`:613`, impl `packages/code/src/adapters/session.ts:113`–`:114`).
+8. `sess.beginTurn(msg, executionId)` stamps the process-pinned Environment identity on the new turn,
+   mirrors it to `SessionMeta.lastEnvironment`, and returns the **continuation base** — the previous
+   turn's execution id. Production: `packages/code/src/adapters/session.ts` (`beginTurn`). Test:
+   `packages/code/tests/component/session.test.ts` ("beginTurn stamps the selected Environment and
+   reconcile adopts the persisted run snapshot").
 9. `rememberResidentTurn` records the turn and folds the oldest when over the limit (`:614`).
 10. Collect `promptCacheKey = sess.meta()?.id`, `guardMode`, `judgePayload(guardMode)`, and `memory`
     only when the mode is `"off"` (`:619`–`:626`).
@@ -533,8 +544,13 @@ before installing their own session state.
    folded turn seeds from the same redacted preview it displays; pinned only for the former by
    `packages/code/tests/component/run-host.test.ts:867` (a single in-window turn, seed excludes
    `[redacted]`).
-6. Status: `"resumed N turns"` plus ` · N folded` and ` · N degraded` segments when non-zero
-   (`:1192`–`:1205`).
+6. Compare `meta.lastEnvironment ?? meta.turns.at(-1)?.environment` with
+   `client.currentEnvironment()`. A different id or fingerprint appends a warning naming both
+   snapshots; it does not block the resume or rewrite the historical turn.
+7. Status: `"resumed N turns"` plus ` · N folded`, ` · Environment changed`, and
+   ` · N degraded` segments when applicable. Production: `packages/code/src/run-host.ts`
+   (`loadSessionMeta`). Test: `packages/code/tests/component/run-host.test.ts`
+   ("loadSessionMeta warns when the active Environment differs from the persisted turn").
 
 `recoveryNotice` (`:210`) names both counts: `"partial record — this turn was rebuilt from a damaged
 journal after a crash: N journal lines lost, M tool results synthesized. The run happened; this record
@@ -585,9 +601,9 @@ counts toward `collapsed`, never `degraded` (`:635`–`:640`) —
 
 | Method | Effect | Line |
 |---|---|---|
-| `beginTurn(content, execId)` | creates `meta` on first call (UUIDv7 id, redacted 80-char title), pushes a `user` message and a `running` `TurnRef`, saves; returns the previous turn's execution id | `:110`–`:139` |
+| `beginTurn(content, execId)` | creates `meta` on first call (UUIDv7 id, redacted 80-char title), pushes a `user` message and a `running` `TurnRef`, stamps the current Environment on both turn and summary, saves; returns the previous turn's execution id | `packages/code/src/adapters/session.ts` (`beginTurn`) |
 | `endTurn(envelope)` | stamps `endedAt`, maps `status` via `runStatusToNode`, records/clears `turn.error`, appends the assistant reply, and folds usage into totals **once** per execution id | `:141`–`:164` |
-| `reconcile(stored)` | re-maps the status from the stored record and adds its usage if the id was not already counted | `:166`–`:182` |
+| `reconcile(stored)` | re-maps status, adopts the persisted run's Environment identity when present, and adds usage if the id was not already counted | `packages/code/src/adapters/session.ts` (`reconcile`) |
 | `setProfile(name)` | no-ops when `!meta \|\| meta.profile === name`; otherwise updates `meta.profile`/`meta.updatedAt` and saves | `:184`–`:189` |
 | `appendObservation(content, role="assistant")` | pushes into `history` **and** `pending`, mirrors `pending` into `meta` and saves | `:191`–`:203` |
 | `takePending()` | drains `pending` and deletes `meta.pending` | `:205`–`:213` |
@@ -1136,6 +1152,16 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/component/run-host.test.ts` ("compactCurrentRun queues on a live run and
     compacts the latest settled context").
 
+60. **Session continuity never disguises an Environment change.** Every new turn records the
+    process-pinned Environment id and fingerprint; a resume under a different snapshot keeps the
+    historical data intact, continues normally, and presents an explicit warning in both transcript
+    and status. Production: `packages/code/src/adapters/session.ts` (`beginTurn`, `reconcile`) and
+    `packages/code/src/run-host.ts` (`loadSessionMeta`). Test:
+    `packages/code/tests/component/session.test.ts` ("beginTurn stamps the selected Environment and
+    reconcile adopts the persisted run snapshot") and
+    `packages/code/tests/component/run-host.test.ts` ("loadSessionMeta warns when the active
+    Environment differs from the persisted turn").
+
 ## 6. Failure modes and degradation
 
 | Failure | Handler | Outcome |
@@ -1166,6 +1192,7 @@ The following are derived directly from this document's own source and its tests
 | a resumed run was rebuilt from a damaged journal | `recovery` passed beside the events (`packages/code/src/adapters/session.ts:580`), notice at `packages/code/src/run-host.ts:1187` | the events **are** shown, with a `"warn"` partial-record notice above them |
 | resumed history exceeds 16 M chars or 10 k messages | `SessionResumeLimitError` (`packages/code/src/adapters/session.ts:404`) | the whole resume rejects; **nothing renders** (`packages/code/tests/component/session.test.ts:724`) |
 | a resume is superseded by `clearSession`/another load | `loadEpoch` guards at `packages/code/src/run-host.ts:1172`, `:1194`, `:1197` | the stale resume writes nothing; status stays `"idle"` (`packages/code/tests/component/run-host.test.ts:919`) |
+| resumed session's newest Environment differs from the connected kernel | `packages/code/src/run-host.ts` (`loadSessionMeta`) | resume succeeds without rewriting history; a warning names the previous/current ids and fingerprint prefixes, and status includes `Environment changed` |
 | an export's `getRun` throws or returns `null` | `packages/code/src/run-host.ts:1032`, `:1034`, `:1103`, `:1115` | replaced by an `EXPORT INCOMPLETE`/`folded — …` node; the export completes |
 | prompt-history file missing or unreadable | `catch` returning `{entries: [], compact: false}` (`packages/code/src/adapters/file-prompt-history.ts:37`) | history starts empty |
 | a corrupt prompt-history JSON line | skipped (`packages/code/src/adapters/file-prompt-history.ts:55`) | remaining usable history survives |

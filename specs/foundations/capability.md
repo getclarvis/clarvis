@@ -213,8 +213,12 @@ compaction prompt") is drained from a `CompactionSource` (`:66-71`) the same way
 provider-neutral at the loop.
 
 **Providers and models.** `ToolTransport` (`:120`) is `stdio | http | sse`; `AgentRole` (`:123`) is
-`lead | subagent`. `McpServerConfig` (`:132-143`) names one server, its transport-specific fields, and
-`shared`/`resources` flags. `ProviderKind` (`:169-170`) is `openai-compatible | openai | anthropic |
+`lead | subagent`. `McpServerConfig` names one server, its transport-specific fields, optional stdio
+`cwd`, interpolation policy `expandVariables`, `shared`/`resources` flags, and the host-composition
+flag `auto_tools`. The last flag admits every tool the opened server actually advertises to every
+effective agent for that run; it does not mutate an authored profile or alter transport identity.
+`ProviderKind`
+(`:169-170`) is `openai-compatible | openai | anthropic |
 google | openai-codex | xai-grok`; the final two select renewable subscription billing boundaries
 over the native OpenAI Responses adapter. `PromptCacheMode`
 (`:187`) is `explicit | implicit | off`; its doc-comment states absence is deliberately not `off` — "it

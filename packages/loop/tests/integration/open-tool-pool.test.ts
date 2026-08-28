@@ -32,6 +32,37 @@ describe("openToolPool — profile references a tool absent from the opened pool
   });
 });
 
+describe("openToolPool — host-composed automatic server tools", () => {
+  it("lets a profile with no persisted MCP tools call every tool of an automatic server", async () => {
+    harness = await makeHarness({
+      llm: new MockLLM({
+        script: [{ toolCalls: [{ name: "docs.fetch", arguments: {} }] }, { text: "done" }],
+      }),
+      mcpFactory: mockMCPFactory({
+        docs: { tools: [{ name: "fetch", call: () => "official docs" }] },
+      }),
+    });
+    const res = await harness.run({
+      messages: [{ role: "user", content: "use the docs plugin" }],
+      servers: [
+        {
+          name: "docs",
+          transport: "stdio",
+          command: "node",
+          args: ["-e", ""],
+          auto_tools: true,
+        },
+      ],
+      profiles: [{ name: "solo", model: "anthropic/x", tools: [], iteration_limit: 3 }],
+      entry: "solo",
+      budget: { on_exceed: "stop", total_token_limit: 10_000 },
+    });
+
+    expect(res.status).toBe("completed");
+    if (res.status === "completed") expect(res.result).toBe("done");
+  });
+});
+
 describe("openToolPool — degraded startup when some servers fail to connect", () => {
   it("proceeds with the servers that connected and records an mcp_degraded event", async () => {
     const events: { type: string }[] = [];

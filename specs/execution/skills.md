@@ -213,6 +213,19 @@ directory]` is a YAML flow sequence, not the bracketed text its author typed, an
 vanished from the catalog along with its slash command. "Nine skills in a public catalog of 196
 plugins were lost to exactly that." (`packages/skills/src/schema.ts:41`–`:56`.)
 
+An Agent Plugins v1 skill root selects `validation: "agent-skills"`; it does not use those tolerant
+defaults for portable fields. `assertRootValidation` in `packages/skills/src/registry.ts` requires
+an authored name and description, a lowercase alphanumeric/hyphen name of at most 64 characters
+that exactly matches its directory, a string `license`, a 1–500-character string
+`compatibility`, string-to-string `metadata`, and a string `allowed-tools`. `buildResolvedSkill`
+splits that last field on whitespace, as the Agent Skills contract specifies; the native compatible
+reader continues to accept arrays and comma-separated text. Failure is local to the offending
+skill under ordinary plugin discovery. Production: `assertRootValidation` and
+`buildResolvedSkill` in `packages/skills/src/registry.ts`, with the original YAML value retained by
+`parseSkillFrontmatterWithDefaults`/`parseSkillWithDefaults` in `packages/skills/src/parse.ts`.
+Test: `packages/skills/tests/integration/discovery.test.ts` ("applies Agent Skills identity
+validation only to roots that request it").
+
 Example the fixtures exercise (`packages/skills/tests/fixtures/foreign-skills/metadata-short/SKILL.md:1`):
 
 ```markdown
@@ -334,7 +347,9 @@ back to the literal `"skill"` (`packages/skills/src/registry.ts:58`–`:84`; pin
 3. Empty `roots` ⇒ `StartupError` (`:94`); more than `MAX_SKILL_ROOTS` ⇒ `StartupError` naming both
    counts (`:96`–`:101`; pinned at `packages/skills/tests/unit/config.test.ts:56`).
 4. Each root is normalized: path resolved against workspace + `~`, `scope` defaults to `"workspace"`,
-   `source` to `""` (`packages/skills/src/config.ts:119`–`:125`).
+   `source` to `""`, and an optional `include` list is validated, de-duplicated and sorted
+   (`packages/skills/src/config.ts:119`–`:139`). An absent list means full discovery; an empty list
+   admits nothing.
 
 `createAgentSkills` scans once at construction; `AgentSkills.refresh()` re-scans every configured
 root from disk and **replaces** the in-memory registry wholesale, so additions, content
@@ -357,8 +372,11 @@ removals from disk").
 
 The `.agents` half of this ordering is an interop rule — see
 [`specs/cross-cutting/agent-interop.md`](../cross-cutting/agent-interop.md).
-The engine prepends any host-supplied extra roots **before** these four, so plugin roots sit at the
-lowest precedence of all (`packages/loop/src/runtime/build-run-deps.ts:463-467`). Plugin root
+The engine prepends any host-supplied `extraSkillRoots` **before** these four, so plugin roots sit at
+the lowest precedence of all. A host-supplied `skillRoots` is instead an exact resolved set and
+suppresses automatic appending of the standard four roots
+(`packages/loop/src/runtime/build-run-deps.ts:472-485`). The two options are mutually exclusive
+(`:372-376`). Plugin root
 construction belongs to [`specs/hosts/plugins.md`](../hosts/plugins.md); what
 matters here is only that they arrive as `SkillRootInput[]` with `source: "plugin:<name>"`
 (`packages/kernel/src/plugins/plugin-contributions.ts:352`–`:355`).
@@ -625,10 +643,11 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
 
 - `useSkills = builtins?.skills !== false` (`:370`).
 - With `useSkills && CLARVIS_SKILLS_ENABLED`, `@clarvis/skills` is loaded through a **dynamic**
-  `import()` and `createAgentSkills` is built over `[...extraRoots, ...clarvisSkillRoots()]`, with
+  `import()` and `createAgentSkills` is built over the exact `skillRoots` when supplied, otherwise
+  `[...extraRoots, ...clarvisSkillRoots()]`, with
   the package's prose warnings routed into the structured logger as
   `skills.discovery_warning` (`:443`–`:460`).
-- A function-valued `extraSkillRoots` produces `dynamicSkills`, which re-reads the roots on every
+- A function-valued `skillRoots` or `extraSkillRoots` produces `dynamicSkills`, which re-reads the roots on every
   provider access, re-scans only when the roots' JSON signature changes, and falls back to the last
   good scan (or an empty provider that throws `"skills are unavailable"` on resource access) when a
   rescan throws (`:179`–`:230`).
@@ -890,6 +909,18 @@ to this document.
 50. **The engine reaches `@clarvis/skills` only through a dynamic `import()`** (INV-076/INV-080) —
     full statement owned by
     [engine/capability-composition.md](../engine/capability-composition.md) §5.
+51. **An exact root allow-list admits only resolved manifest names in `include`; an empty list scans
+    nothing and an absent list preserves full discovery** (INV-320). Production:
+    `normalizeInclude` in `packages/skills/src/config.ts` and `scanRoot` in
+    `packages/skills/src/registry.ts`. Test: `packages/skills/tests/unit/config.test.ts:43` and
+    `packages/skills/tests/integration/discovery.test.ts:88`. Environment qualification and root
+    selection remain kernel policy, specified in [`hosts/environments.md`](../hosts/environments.md).
+52. **Agent Plugins v1 roots enforce the complete portable Agent Skills frontmatter subset without
+    changing native-reader tolerance.** Production: `assertRootValidation` and
+    `buildResolvedSkill` in `packages/skills/src/registry.ts`; raw authored values are preserved by
+    `parseSkillFrontmatterWithDefaults` and `parseSkillWithDefaults` in
+    `packages/skills/src/parse.ts`. Test: `packages/skills/tests/integration/discovery.test.ts`
+    ("applies Agent Skills identity validation only to roots that request it").
 
 ---
 

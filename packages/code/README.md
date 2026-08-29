@@ -46,6 +46,19 @@ Then launch the UI:
 bun --filter @clarvis/code start
 ```
 
+For a reusable source command from this checkout, run the root development installer once:
+
+```bash
+./dev-install.sh
+clarvis-develop
+```
+
+`clarvis-develop` always loads the current TypeScript sources, preserves the caller's current
+directory as the Clarvis workspace, and remains separate from an installed release's `clarvis`
+command. `--empty-workspace` starts it in a newly allocated directory under
+`/tmp/clarvis-development-temp/`; `--clear` removes global state and those managed workspaces, and
+the two flags can be combined to clear before opening a fresh workspace.
+
 To install the optimized command globally from this checkout:
 
 ```bash
@@ -831,6 +844,25 @@ For live development:
 ```bash
 bun --filter @clarvis/code dev
 ```
+
+For testing this checkout from arbitrary project directories without rebuilding after source
+edits, use `./dev-install.sh`. It requires the exact Bun version from `mise.toml`, performs
+`bun install --frozen-lockfile`, installs the repository hook, and atomically writes a managed
+`clarvis-develop` launcher to
+`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. Re-running it updates that owned launcher;
+an unrelated file, directory, or symlink at the destination is refused. `./dev-install.sh
+--uninstall` removes only the launcher.
+
+`clarvis-develop --empty-workspace` allocates a different empty
+`/tmp/clarvis-development-temp/workspace-*` directory on every invocation and starts Clarvis with
+that directory as its workspace. `clarvis-develop --clear` and `./dev-install.sh --clear`
+permanently remove the effective global Clarvis root (`$CLARVIS_HOME`, otherwise `~/.clarvis`) and
+the authenticated `/tmp/clarvis-development-temp` tree before the next source run. Global-state
+cleaning refuses the user home itself, any target outside it, a symlink, or a non-directory. The
+temporary root must be owned by the current user and carry its exact management marker. Other
+workspace `.clarvis` content remains out of scope. This destructive option is development-only; the
+release installer continues to preserve global state on uninstall. Bare `--clear` exits after
+cleanup; combine `--clear --empty-workspace` to clean and immediately start a fresh test workspace.
 
 This package is outside the monorepo's `tsc -b` reference graph — Bun executes the TypeScript and
 TSX source directly and nothing is emitted for consumers — but it **does** have a package build:

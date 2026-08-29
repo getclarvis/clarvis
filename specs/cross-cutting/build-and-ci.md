@@ -988,6 +988,21 @@ Test: `tooling/tests/unit/package-architecture.test.ts` (product-version policy 
 `packages/mcp-client/tests/unit/version.test.ts`, `packages/server/tests/unit/version.test.ts`, and
 `packages/server/tests/architecture/product-version.test.ts`.
 
+**BUILD-33.** The POSIX checkout bootstrap `dev-install.sh` delegates to typed Code tooling and
+installs `clarvis-develop`, never a second product `bin`. It requires the exact pinned Bun, performs
+the frozen root install, configures `.githooks`, writes only a marked regular launcher, and verifies
+its application-free version path. The launcher preserves the caller's working directory and forces
+the current TypeScript sources, so source edits need neither a Code build nor a release. Its
+development-only cleanup is explicit, resolves the app's effective global root, and refuses the
+user home, external roots, symlinks, and non-directories before recursive removal. Its empty-workspace
+mode creates a unique directory below `/tmp/clarvis-development-temp`; cleanup authenticates that
+complete root by type, current-user ownership, and exact marker before removal. Production: root
+`package.json` (`scripts.dev:install`), `dev-install.sh`, and
+`packages/code/tooling/development-install.ts` (`main`, `developmentLauncherSource`,
+`cleanDevelopmentState`, `createEmptyDevelopmentWorkspace`, `clearDevelopmentTempWorkspaces`).
+Test: `packages/code/tests/unit/development-install.test.ts` (argument, launcher, ownership,
+cleanup, empty-workspace, and shell-delegation cases).
+
 **BUILD-36.** The crash-retirement canary remains an explicitly dispatched, read-only workflow. It
 grants only `contents: read`, pins checkout and setup-bun to complete commit SHAs, disables checkout
 credential persistence, and has no scheduled or push trigger.

@@ -49,6 +49,35 @@ download Bun or mutate shell profiles; ordinary root/package builds retain detac
 (`packages/code/package.json` (`bin`, `scripts.build:install`),
 `packages/code/tooling/setup.ts` (build and link phases)).
 
+The distinct POSIX development entry starts at root `dev-install.sh`, which checks that Bun is
+available and delegates to `packages/code/tooling/development-install.ts`. That typed installer
+requires the exact `mise.toml` version, performs the frozen dependency install, configures the local
+Git hook, and atomically creates a marked `clarvis-develop` regular file without replacing an
+unmanaged destination. The launcher embeds the absolute checkout and Bun paths, does not change the
+caller's current directory, exports `CLARVIS_CODE_SOURCE=1`, and executes `src/cli.ts`; it therefore
+tests the current sources from another workspace without a release or Code build. Reinstallation
+updates only the marked launcher and `--uninstall` removes only that file. Production:
+`dev-install.sh` and `packages/code/tooling/development-install.ts`
+(`installDevelopmentLauncher`, `developmentLauncherSource`, `uninstallDevelopmentLauncher`). Test:
+`packages/code/tests/unit/development-install.test.ts` (delegation, caller-workspace preservation,
+source selection, ownership refusal, update, and uninstall cases).
+
+The development-only `--empty-workspace` operation allocates a new empty
+`/tmp/clarvis-development-temp/workspace-*` directory on every invocation and changes into it before
+starting the source entry. The fixed parent is created owner-only and authenticated by an exact
+regular-file marker. `--clear` resolves and permanently removes the same effective global root as
+the app plus that complete temporary-workspace parent. A bare launcher cleanup exits; when combined
+with `--empty-workspace`, cleanup precedes allocation and the source command starts in the new path.
+Global cleanup refuses the user home itself, targets outside the home, symbolic links, and
+non-directories. Temporary cleanup refuses a link, non-directory, foreign owner, missing marker, or
+changed marker. Other workspace state is not in scope. Production:
+`packages/code/tooling/development-install.ts` (`cleanDevelopmentState`,
+`createEmptyDevelopmentWorkspace`, `clearDevelopmentTempWorkspaces`,
+`clearDevelopmentEnvironment`). Test: `packages/code/tests/unit/development-install.test.ts`
+(`clean removes only a real global-state directory below home`, `empty workspaces are always new
+and clear removes only the authenticated root`). Release uninstall retains the separate
+state-preserving contract in [Portable distribution](../cross-cutting/distribution-and-updates.md).
+
 ### 2.2 Flag table (`FLAGS`, `packages/code/src/cli-args.ts:84-112`)
 
 `FLAGS` is declared as "the single source of truth for the CLI surface: parsing, `--help`, the usage
@@ -1272,6 +1301,16 @@ Production: `packages/code/src/index.tsx` (`runApp`, `app.boot.shell-painted`) a
 `packages/code/tests/integration/splash-render.test.tsx` (parser-free boot-frame and marker
 exclusion cases) and
 `packages/code/tooling/artifact/smoke.ts` (shell paint and deferred catalogue).
+
+**INV-CB-44.** `clarvis-develop` is a marked, source-only launcher distinct from the product's sole
+`clarvis` executable. It preserves the caller's working directory unless `--empty-workspace`
+selects a newly allocated temporary directory, never replaces an unmanaged destination, and
+exposes global-state and managed-temporary deletion only through explicit `--clear`. Production:
+`dev-install.sh` and `packages/code/tooling/development-install.ts`
+(`developmentLauncherSource`, `existingLauncher`, `cleanDevelopmentState`,
+`createEmptyDevelopmentWorkspace`, `clearDevelopmentTempWorkspaces`). Test:
+`packages/code/tests/unit/development-install.test.ts` (launcher execution, ownership, cleanup, and
+shell-delegation cases).
 
 ## 6. Failure modes and degradation
 

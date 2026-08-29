@@ -179,6 +179,20 @@ The public site source and its deployment workflow are owned by the separate
 implementation, package READMEs, specifications, release tooling, and contributor documentation; it
 does not build or deploy GitHub Pages.
 
+To install a source-only command from this checkout after Bun is available, run:
+
+```bash
+./dev-install.sh
+```
+
+That one-time machine setup installs dependencies, configures the repository hook, and creates
+`clarvis-develop` in `${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. Run the command
+from any project to test the current checkout without building or downloading a release. Use
+`clarvis-develop --empty-workspace` to open every test in a new directory under
+`/tmp/clarvis-development-temp/`. `clarvis-develop --clear` removes the effective global state and
+all managed temporary workspaces and exits; workspace-local `.clarvis` data outside that temporary
+root is not removed. Combine both flags to clear first and then open a newly allocated workspace.
+
 ## Packages
 
 Clarvis is one product made from 18 private, unversioned workspace packages. They are implementation

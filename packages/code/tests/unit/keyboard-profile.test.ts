@@ -316,6 +316,77 @@ describe("shadowing a vital action", () => {
     expect(result.config).toBeUndefined();
     expect(result.issues?.[0]?.message).toContain("shadows");
   });
+
+  test("a protected action cannot be the delayed prefix of a manual sequence", () => {
+    for (const key of ["escape x", "esc x"]) {
+      const result = applyManualBindingEdit({
+        saved: undefined,
+        command: "app.quit",
+        keys: [key],
+        knownCommands: known,
+      });
+      expect(result.issues).toEqual([
+        {
+          command: "app.quit",
+          key,
+          message: "binding has an ambiguous prefix with app.escape",
+          shadows: "app.escape",
+        },
+      ]);
+    }
+    expect(
+      applyManualBindingEdit({
+        saved: undefined,
+        command: "app.quit",
+        keys: ["ctrl+c x"],
+        knownCommands: known,
+      }).issues?.[0]?.message,
+    ).toBe("binding has an ambiguous prefix with run.cancel");
+  });
+
+  test("a protected override cannot extend an unchanged effective default", () => {
+    const result = applyManualBindingEdit({
+      saved: undefined,
+      command: "app.escape",
+      keys: ["tab x"],
+      knownCommands: new Set([...known, "focus.next"]),
+      defaultBindings: {
+        "app.escape": "escape",
+        "run.cancel": "ctrl+c",
+        "focus.next": "tab",
+      },
+    });
+    expect(result.issues).toEqual([
+      {
+        command: "app.escape",
+        key: "tab x",
+        message: "binding has an ambiguous prefix with focus.next",
+        shadows: "focus.next",
+      },
+    ]);
+  });
+
+  test("protected prefix conflicts are refused in either persisted binding order", () => {
+    const knownWithFocus = new Set([...known, "focus.next"]);
+    for (const bindings of [
+      { "app.escape": ["escape"], "focus.next": ["g"] },
+      { "focus.next": ["g"], "app.escape": ["escape"] },
+    ]) {
+      const result = applyManualBindingEdit({
+        saved: { profile: "manual", bindings },
+        command: "app.escape",
+        keys: ["g g"],
+        knownCommands: knownWithFocus,
+      });
+      expect(result.config).toBeUndefined();
+      expect(result.issues).toHaveLength(1);
+      expect([result.issues?.[0]?.command, result.issues?.[0]?.shadows].sort()).toEqual([
+        "app.escape",
+        "focus.next",
+      ]);
+      expect(result.issues?.[0]?.message).toContain("ambiguous prefix");
+    }
+  });
 });
 
 test("an alias spelling cannot take a protected action's key", () => {

@@ -21,6 +21,7 @@ import type { MarketplaceListing, MarketplaceSource } from "../../adapters/marke
 import type { PluginView } from "../../adapters/plugins.ts";
 import { errorText } from "../../adapters/errors.ts";
 import { detachObserved } from "../../core/tasks.ts";
+import { uiCommand } from "../../keys/actions.ts";
 import type { ViewHost } from "../../keys/commands.ts";
 import { glyph } from "../../theme/glyphs.ts";
 import { tokens } from "../../theme/tokens.ts";
@@ -140,21 +141,35 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   const [preview, setPreview] = createSignal<EnvironmentCompositionPreview>();
   const [busy, setBusy] = createSignal<string>();
   const [busyStartedAt, setBusyStartedAt] = createSignal<number>();
+  const [busyEscapeMode, setBusyEscapeMode] = createSignal<"level" | "close">("level");
   const [failure, setFailure] = createSignal<string>();
   const [completion, setCompletion] = createSignal<SetupCompletion>();
   let reviewScroll: ScrollBoxRenderable | undefined;
   let applyScroll: ScrollBoxRenderable | undefined;
   let consumedInitial = false;
+  let disposed = false;
+  let draftGeneration = 0;
+  let applyDetached = false;
+
+  onCleanup(() => {
+    disposed = true;
+  });
 
   useSpinnerClock(() => busy() !== undefined && host.active());
 
-  const beginBusy = (label: string): void => {
+  const replaceDraft = (next: ExtensionSetupDraft | undefined): void => {
+    draftGeneration += 1;
+    setDraft(next);
+  };
+  const beginBusy = (label: string, escapeMode: "level" | "close" = "level"): void => {
     setBusyStartedAt(Date.now());
+    setBusyEscapeMode(escapeMode);
     setBusy(label);
   };
   const finishBusy = (): void => {
     setBusy(undefined);
     setBusyStartedAt(undefined);
+    setBusyEscapeMode("level");
   };
 
   const report = (error: unknown): void => deps.notify(errorText(error), "warn");
@@ -178,11 +193,10 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
 
   const resetSetup = (): void => {
     setPicker(null);
-    setDraft(undefined);
+    replaceDraft(undefined);
     setPreview(undefined);
     setCompletion(undefined);
     setFailure(undefined);
-    finishBusy();
     setStep(0);
   };
 
@@ -215,7 +229,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
       deps.notify(view.error ?? `${environmentId(view.ref)} is not editable`, "warn");
       return;
     }
-    setDraft(next);
+    replaceDraft(next);
     setStep(3);
     openExtensionPicker();
   };
@@ -243,7 +257,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         openEnvironmentPicker(selectionScope);
         return;
       }
-      setDraft({
+      replaceDraft({
         selectionScope,
         ref: { scope, name },
         definition: basis,
@@ -525,30 +539,38 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
 
   const installAndStage = (listing: MarketplaceListing, source: "agents" | "clarvis"): void => {
     if (busy() !== undefined) return;
+    const ownerGeneration = draftGeneration;
     setPicker(null);
     beginBusy(`Installing ${listing.name}`);
     detachObserved(
       "extensions_setup_install",
       async () => {
         const installed = await deps.install(listing, source);
-        setBusy("Refreshing installed extensions");
+        if (!disposed) setBusy("Refreshing installed extensions");
         await deps.refresh(true);
-        stagePlugin({
-          scope: installed.scope,
-          source: installed.source,
-          name: installed.name,
-        });
+        const staged = !disposed && ownerGeneration === draftGeneration && draft() !== undefined;
+        if (staged) {
+          stagePlugin({
+            scope: installed.scope,
+            source: installed.source,
+            name: installed.name,
+          });
+        }
         deps.notify(
-          `installed ${installed.scope}/${installed.source}/${installed.name}; staged, not active until Step 5`,
+          staged
+            ? `installed ${installed.scope}/${installed.source}/${installed.name}; staged, not active until Step 5`
+            : `installed ${installed.scope}/${installed.source}/${installed.name}; setup was left before staging`,
           "success",
         );
-        finishBusy();
-        openExtensionPicker();
+        if (!disposed) {
+          finishBusy();
+          if (staged) openExtensionPicker();
+        }
       },
       (error) => {
-        finishBusy();
+        if (!disposed) finishBusy();
         report(error);
-        openExtensionPicker();
+        if (!disposed && ownerGeneration === draftGeneration) openExtensionPicker();
       },
     );
   };
@@ -639,7 +661,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
 
   const discardDraftAndGoBack = (selectionScope: EnvironmentSelectionScope): void => {
     setPicker(null);
-    setDraft(undefined);
+    replaceDraft(undefined);
     setPreview(undefined);
     setFailure(undefined);
     openEnvironmentPicker(selectionScope);
@@ -672,6 +694,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   function resolveReview(): void {
     const setup = draft();
     if (setup === undefined || busy() !== undefined) return;
+    const ownerGeneration = draftGeneration;
     setPicker(null);
     setPreview(undefined);
     setFailure(undefined);
@@ -686,12 +709,16 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     detachObserved(
       "extensions_setup_preview",
       async () => {
-        setPreview(await deps.environments.previewComposition(input));
+        const result = await deps.environments.previewComposition(input);
+        if (disposed) return;
+        if (ownerGeneration === draftGeneration) setPreview(result);
         finishBusy();
       },
       (error) => {
-        finishBusy();
-        setFailure(errorText(error));
+        if (!disposed) {
+          finishBusy();
+          if (ownerGeneration === draftGeneration) setFailure(errorText(error));
+        }
         report(error);
       },
     );
@@ -707,7 +734,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     const setup = draft();
     const reviewed = preview();
     if (setup === undefined || reviewed === undefined || !applyAllowed()) return;
-    beginBusy("Applying reviewed snapshot");
+    applyDetached = false;
+    beginBusy("Applying reviewed snapshot", "close");
     setFailure(undefined);
     const input: EnvironmentCompositionInput = {
       ref: setup.ref,
@@ -722,13 +750,17 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
           preview_token: reviewed.token,
           ...(reviewed.requires_workspace_trust ? { approve_workspace: true } : {}),
         });
-        setBusy("Reconnecting the kernel");
+        if (!disposed && !applyDetached) setBusy("Reconnecting the kernel");
         const reconnect = await deps.reconnect();
-        setBusy("Refreshing the resolved Environment");
+        if (!disposed && !applyDetached) setBusy("Refreshing the resolved Environment");
         await deps.refresh(true);
-        setCompletion({ reconnect });
-        finishBusy();
-        setStep(6);
+        if (!disposed) {
+          if (!applyDetached) {
+            setCompletion({ reconnect });
+            setStep(6);
+          }
+          finishBusy();
+        }
         deps.notify(
           reconnect.ok
             ? `${environmentId(setup.ref)} is active for future runs`
@@ -737,10 +769,14 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         );
       },
       (error) => {
-        finishBusy();
-        setPreview(undefined);
-        setFailure(errorText(error));
-        setStep(4);
+        if (!disposed) {
+          finishBusy();
+          if (!applyDetached) {
+            setPreview(undefined);
+            setFailure(errorText(error));
+            setStep(4);
+          }
+        }
         report(error);
       },
     );
@@ -748,7 +784,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
 
   const begin = (): void => {
     if (deps.loading() || deps.loadError() !== undefined) return;
-    setDraft(undefined);
+    replaceDraft(undefined);
     setPreview(undefined);
     setCompletion(undefined);
     setFailure(undefined);
@@ -788,10 +824,31 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
 
   createEffect(() => {
     if (!host.active() || !operationPending()) return;
+    const closesView = busyEscapeMode() === "close";
     const off = host.interaction.keymap.registerLayer({
       priority: LAYER.OVERLAY + 2,
+      commands: closesView
+        ? [
+            uiCommand({
+              id: "extensions.setup.operation.close",
+              title: "Leave pending apply",
+              description: "Close Extensions while apply and reconnect continue",
+              category: "escape",
+              surfaces: ["footer"],
+              footerLabel: "close",
+              hintPriority: 100,
+              hintGroup: "escape",
+              essential: true,
+              run: () => {
+                applyDetached = true;
+                host.markDirty(false);
+                host.close();
+              },
+            }),
+          ]
+        : [],
       bindings: [
-        { key: "escape", cmd: () => {} },
+        ...(closesView ? [{ key: "escape", cmd: "extensions.setup.operation.close" }] : []),
         { key: "return", cmd: () => {} },
       ],
     });
@@ -917,7 +974,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   bindLevelKeys({
     host,
     editor,
-    suspend: () => picker() !== null || busy() !== undefined,
+    suspend: () => picker() !== null,
     register: (enabled) => registerLevel(host.interaction.keymap, { ...spec(), enabled }),
   });
 

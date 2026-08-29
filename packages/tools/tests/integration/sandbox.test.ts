@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { makeSymlink } from "../helpers/fixtures.ts";
 import {
   discoverLinkedGitMetadataPaths,
@@ -380,7 +380,7 @@ describe("sandboxCommand", () => {
     const workspace = join(root, "workspace");
     const alias = join(root, "broad-alias");
     mkdirSync(workspace);
-    makeSymlink("/", alias);
+    makeSymlink(resolve("/"), alias, "dir");
     expect(() =>
       sandboxCommand({
         command: "true",
@@ -408,7 +408,7 @@ describe("sandboxCommand", () => {
 
   it("compiles a parameterized Seatbelt profile with matching filesystem and network policy", () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-seatbelt-profile-"));
-    const workspace = join(root, 'workspace ") (allow file-write*) ("');
+    const workspace = join(root, "workspace ) (allow file-write*) (");
     const scratch = join(root, "scratch");
     const sdk = join(workspace, "vendor", "sdk");
     const gitMetadata = join(root, "git-common");
@@ -428,6 +428,7 @@ describe("sandboxCommand", () => {
         readOnlyPaths: [sdk],
       },
       probe: () => ({ backend: "seatbelt", mode: "seatbelt" }),
+      shell: () => ({ flavor: "posix", file: "sh" }),
     });
     const profileIndex = spec.args.indexOf("-p");
     const profile = spec.args[profileIndex + 1]!;

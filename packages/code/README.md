@@ -175,9 +175,11 @@ does not parse or does not validate, Clarvis runs the shipped agent unchanged an
 which file was refused and why.
 
 Every interactive cold boot first paints a parser-free Clarvis shell in the same Solid root the
-application will use. Its branded header, slash wordmark, moving shared spinner and fake composer
-preserve the final screen's visual structure while the workspace foundation loads; the usable
-`App` replaces it in place without waiting for the models catalogue or Markdown parsers.
+application will use. Its boot-only slash header and composer placeholder, slash wordmark and moving
+shared spinner preserve the final screen's visual structure while the workspace foundation loads;
+the usable `App` replaces it in place without waiting for the models catalogue or Markdown parsers.
+The boot copy intentionally excludes the complete app's `◆ Clarvis` paint marker and `New task…`
+readiness marker, so release smoke and first-paint measurements cannot accept the placeholder shell.
 
 On the first interactive launch, startup opens a branded Clarvis setup rather than Doctor or an
 empty conversation. Enter begins the focused provider/model picker; the flow makes the selected

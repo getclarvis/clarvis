@@ -144,11 +144,22 @@ test("compactKey: normalizes every modifier spelling to the compact form", () =>
   expect(compactKey("escape")).toBe("esc");
   expect(compactKey("pageup")).toBe("pgup");
   expect(compactKey("shift+s")).toBe("S");
+  expect(compactKey("shift+1")).toBe("shift+1");
   expect(compactKey("shift+tab")).toBe("shift+tab");
 });
 
 test("compactKey: already-compact labels pass through unchanged (surfaces can re-format safely)", () => {
-  for (const label of ["alt+r", "^o", "esc", "pgup", glyph("return"), "shift+tab", "@", "/diff"]) {
+  for (const label of [
+    "alt+r",
+    "^o",
+    "esc",
+    "pgup",
+    glyph("return"),
+    `shift+${glyph("return")}`,
+    "shift+tab",
+    "@",
+    "/diff",
+  ]) {
     expect(compactKey(label)).toBe(label);
   }
 });

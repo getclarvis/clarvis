@@ -44,7 +44,7 @@ what a `when` clause means (`when-dsl.ts`), how a key label is formatted
 | Export | Signature | Cite |
 |---|---|---|
 | `LAYER` | `{ INPUT:500, LIST:810, VITAL:900, OVERLAY:950, TRANSIENT:955, MODAL:960, CONFIRM:970 }` | `packages/code/src/keys/keyspec.ts:20-28` |
-| `compactKey(token, opts?)` | `(string, {clientPlatform?}) => string` | `packages/code/src/keys/keyspec.ts:64-89` |
+| `compactKey(token, opts?)` | `(string, {clientPlatform?}) => string` | `packages/code/src/keys/keyspec.ts` (`compactKey`) |
 | `compactSequence(parts)` | `(readonly {display}[]) => string` | `packages/code/src/keys/keyspec.ts:92-94` |
 | `commandKeyLabel(keymap, command, opts?)` | `=> string \| undefined` | `packages/code/src/keys/keyspec.ts:107-120` |
 | `PROMPT_EDITING_KEYS` | `PromptKeyRow[]` (prompt editor's chords, dock-registered and OpenTUI built-in) | `packages/code/src/keys/keyspec.ts` (`PROMPT_EDITING_KEYS`) |
@@ -52,11 +52,14 @@ what a `when` clause means (`when-dsl.ts`), how a key label is formatted
 
 `compactKey` is, by its own doc comment, "THE key-label formatter" — every surface that
 prints a key routes through it, so one binding can never read `meta+r` in one place and
-`alt+r` in another (`packages/code/src/keys/keyspec.ts:58-63`). It is idempotent (feeding an already-compact
-label back in returns it unchanged — pinned at `packages/code/tests/unit/keyspec.test.ts:130-134`).
+`alt+r` in another (`packages/code/src/keys/keyspec.ts`, `compactKey`). It is idempotent (feeding an
+already-compact label back in returns it unchanged — pinned at
+`packages/code/tests/unit/keyspec.test.ts` (`compactKey: already-compact labels pass through unchanged`)).
 For the composer, unmodified Return/numpad Enter owns `prompt.send`, while both Ctrl+J and
 Shift+Return own `prompt.newline`. `compactKey` preserves the `shift+` prefix for a rendered
-non-character key such as Return, so Help cannot make newline look identical to send.
+non-character key such as Return, including when Help formats the already-compact `shift+↵` label a
+second time, so newline cannot look identical to send. Test:
+`packages/code/tests/integration/help-render.test.tsx` (newline label in Help).
 
 ### 2.2 `keys/when-dsl.ts` — the `when` DSL
 
@@ -852,10 +855,12 @@ Production: `packages/code/src/keys/interaction.ts` (`createLifecycleSafeKeymap`
 destroys its keymap host").
 
 **INV-D15.** Unmodified Return and numpad Enter submit the composer; Ctrl+J and Shift+Return insert
-a newline without submission, and the displayed Shift+Return label retains its modifier.
+a newline without submission, and the displayed Shift+Return label retains its modifier even after
+an already-compact `shift+↵` label is formatted again.
 Production: `packages/code/src/keys/keyspec.ts` (`PROMPT_EDITING_KEYS`, `compactKey`) and
 `packages/code/src/views/InputDock.tsx` (`promptHandlers`). Tests:
-`packages/code/tests/unit/keyspec.test.ts` (`PROMPT_EDITING_KEYS`) and
+`packages/code/tests/unit/keyspec.test.ts` (`PROMPT_EDITING_KEYS`, compact-label idempotence),
+`packages/code/tests/integration/help-render.test.tsx` (newline label), and
 `packages/code/tests/integration/input-dock-submit.test.tsx` ("Shift+Enter and Ctrl+J insert
 newlines without submitting the draft").
 

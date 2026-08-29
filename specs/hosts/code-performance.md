@@ -64,9 +64,12 @@ that one isolated mechanism explains every such peak.
 The benchmark owns three visible markers: `Clarvis · code · starting` for the exclusive branded
 parser-free shell,
 `◆ Clarvis` for complete header paint and `New task…` for the input dock
-(`packages/code/tooling/benchmarks/first-paint.ts`, `SHELL_MARKER`, `PAINT_MARKER`, `READY_MARKER`).
-The first marker is absent from the complete application frame, so a missing shell paint cannot be
-misreported as a header paint.
+(`packages/code/tooling/artifact/markers.ts`, `BOOT_SHELL_MARKER`, `APP_PAINT_MARKER`,
+`APP_READY_MARKER`; `packages/code/tooling/benchmarks/first-paint.ts`, imported marker aliases).
+The first marker is absent from the complete application frame, while the latter two are absent from
+`BootFrame`; each timestamp therefore belongs to one stage and a placeholder shell cannot satisfy
+application paint or readiness. Production: `packages/code/src/views/BootFrame.tsx` (`BootFrame`).
+Test: `packages/code/tests/integration/splash-render.test.tsx` (boot marker exclusion).
 
 ### 2.2 Runtime memory controls
 
@@ -508,8 +511,9 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
 
 22. **PERF-22: boot continuity adds one bounded shared clock, not parser/catalog or per-row work.**
     `BootFrame` reuses the process-wide spinner signal and owns one interval only while mounted; its
-    header, slash wordmark and fake composer are static bounded renderables. Replacing it with `App`
-    cleans the boot clock through Solid ownership. Production:
+    boot-only header, slash wordmark and composer placeholder are static bounded renderables and do
+    not reuse the complete app's paint or readiness markers. Replacing it with `App` cleans the boot
+    clock through Solid ownership. Production:
     `packages/code/src/views/BootFrame.tsx` (`BootFrame`) and
     `packages/code/src/views/spinner.ts` (`useSpinnerClock`). Tests:
     `packages/code/tests/integration/splash-render.test.tsx` (parser-free boot-frame case),

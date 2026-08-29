@@ -78,7 +78,9 @@ export function compactKey(token: string, opts: { clientPlatform?: ClientPlatfor
     else prefix += mod + "+";
   }
   if (shift) {
-    if (rawKey.length === 1 && key.length === 1) key = key.toUpperCase();
+    const casedCharacter =
+      rawKey.length === 1 && key.length === 1 && rawKey.toLowerCase() !== rawKey.toUpperCase();
+    if (casedCharacter) key = key.toUpperCase();
     else prefix = "shift+" + prefix;
   }
   return prefix + key;

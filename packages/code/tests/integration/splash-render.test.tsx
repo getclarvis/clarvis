@@ -2,6 +2,11 @@ import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { BootFrame } from "../../src/views/BootFrame.tsx";
 import {
+  APP_PAINT_MARKER,
+  APP_READY_MARKER,
+  BOOT_SHELL_MARKER,
+} from "../../tooling/artifact/markers.ts";
+import {
   BANNER,
   FIRST_RUN_SPLASH_MIN_COLUMNS,
   FIRST_RUN_SPLASH_MIN_ROWS,
@@ -58,10 +63,12 @@ test("the parser-free boot frame fills the terminal while startup modules load",
   const t = await openRender(() => <BootFrame />, { width: 48, height: 12 });
   await t.renderOnce();
   const out = t.captureCharFrame();
-  expect(out).toContain("Clarvis · code · starting");
+  expect(out).toContain(BOOT_SHELL_MARKER);
   expect(out).toContain("/  C L A R V I S");
   expect(out).toContain("loading workspace");
-  expect(out).toContain("New task…  (/ commands)");
+  expect(out).toContain("Preparing composer…");
+  expect(out).not.toContain(APP_PAINT_MARKER);
+  expect(out).not.toContain(APP_READY_MARKER);
   for (const line of out.split("\n")) expect(line.length).toBeLessThanOrEqual(48);
   t.renderer.destroy();
 });

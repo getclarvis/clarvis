@@ -529,10 +529,13 @@ terminal result."
 | 13 | after `app.boot.painted`, release durable memory-queue recovery and start Markdown parser warm-up; for `resume`/`continue`, resolve the selected workspace's session, await warm-up and then load it | `runApp` |
 
 `BootFrame` mirrors the usable shell rather than presenting a disconnected status sentence: it
-renders the Clarvis header, slash wordmark, a fake composer and the shared moving spinner. It stays
-parser-free and catalog-free, degrades its decorative rows with terminal height, and is replaced by
-`App` inside the same Solid root. Production: `packages/code/src/views/BootFrame.tsx` (`BootFrame`).
-Test: `packages/code/tests/integration/splash-render.test.tsx` (parser-free boot-frame case).
+renders a boot-only slash header and composer placeholder, the slash wordmark and the shared moving
+spinner. It stays parser-free and catalog-free, degrades its decorative rows with terminal height,
+and is replaced by `App` inside the same Solid root. Its copy excludes the complete app's
+`◆ Clarvis` paint marker and `New task…` readiness marker. Production:
+`packages/code/src/views/BootFrame.tsx` (`BootFrame`). Test:
+`packages/code/tests/integration/splash-render.test.tsx` (parser-free boot-frame case and marker
+exclusion).
 
 The manager created at step 6 receives `environmentSelector`, and its reconnect path retains that
 launch override. While one is active, persisted Environment selection mutations return a conflict
@@ -1260,11 +1263,13 @@ plumbing in `packages/code/src/index.tsx`, and
 `packages/code/tests/component/workspace-client-manager.test.ts`.
 
 **INV-CB-43.** The first interactive frame preserves Clarvis visual continuity without entering the
-application parser or models-catalog path: one branded `BootFrame` renders a header, slash wordmark,
-moving shared spinner and fake composer, then `runApp` replaces it with `App` in the same root.
+application parser or models-catalog path: one branded `BootFrame` renders a boot-only slash header,
+slash wordmark, moving shared spinner and composer placeholder, then `runApp` replaces it with `App`
+in the same root. The boot copy never contains the complete app's paint or readiness markers.
 Production: `packages/code/src/index.tsx` (`runApp`, `app.boot.shell-painted`) and
 `packages/code/src/views/BootFrame.tsx` (`BootFrame`). Tests:
-`packages/code/tests/integration/splash-render.test.tsx` (parser-free boot-frame case) and
+`packages/code/tests/integration/splash-render.test.tsx` (parser-free boot-frame and marker
+exclusion cases) and
 `packages/code/tooling/artifact/smoke.ts` (shell paint and deferred catalogue).
 
 ## 6. Failure modes and degradation

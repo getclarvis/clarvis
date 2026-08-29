@@ -4,7 +4,7 @@ import { useTerminalDimensions } from "@opentui/solid";
 import { tokens } from "../theme/tokens.ts";
 import { borderChars, glyph } from "../theme/glyphs.ts";
 import { ruleColor } from "../theme/surfaces.ts";
-import { BrandWordmark, SPLASH_WORDMARK } from "./brand.tsx";
+import { SPLASH_WORDMARK } from "./brand.tsx";
 import { spinnerChar, useSpinnerClock } from "./spinner.ts";
 
 /** Branded parser-free shell shown while the interactive foundation is loading. */
@@ -23,7 +23,12 @@ export function BootFrame(): JSX.Element {
     >
       <box flexDirection="column" flexShrink={0} height={dims().height >= 8 ? 2 : 1}>
         <box height={1} flexDirection="row" paddingLeft={1} flexShrink={0}>
-          <BrandWordmark />
+          <text flexShrink={0} wrapMode="none">
+            <b>
+              <span style={{ fg: tokens.accent }}>{"/"}</span>
+              <span style={{ fg: tokens.fg }}>{" Clarvis"}</span>
+            </b>
+          </text>
           <text fg={tokens.muted} flexShrink={1} minWidth={0} wrapMode="none" truncate>
             {` ${glyph("separator")} code ${glyph("separator")} starting`}
           </text>
@@ -71,7 +76,7 @@ export function BootFrame(): JSX.Element {
         alignItems="center"
       >
         <text fg={tokens.muted} flexShrink={1} minWidth={0} wrapMode="none" truncate>
-          {`New task${glyph("ellipsis")}  (/ commands)`}
+          {`Preparing composer${glyph("ellipsis")}`}
         </text>
       </box>
     </box>

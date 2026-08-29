@@ -31,15 +31,13 @@ import { cpus, loadavg, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bootAndObserve, makeCleanHome, readable } from "../artifact/pty.ts";
+import {
+  APP_PAINT_MARKER as PAINT_MARKER,
+  APP_READY_MARKER as READY_MARKER,
+  BOOT_SHELL_MARKER as SHELL_MARKER,
+} from "../artifact/markers.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
-
-/** Parser-free boot frame; this marker is absent from the complete application frame. */
-const SHELL_MARKER = "Clarvis · code · starting";
-/** Header chrome: `BrandWordmark` renders one SGR span per character, so this matches only after escapes are stripped. */
-const PAINT_MARKER = "◆ Clarvis";
-/** The input dock, i.e. the frame will accept a prompt. Shared with the smoke test on purpose. */
-const READY_MARKER = "New task…";
 
 const N = Number(process.env.BENCH_N ?? 7);
 const POLL_MS = Number(process.env.BENCH_POLL_MS ?? 25);

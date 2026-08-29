@@ -4,7 +4,6 @@ import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
 import { createMutable } from "solid-js/store";
 import type { KeyEvent, Renderable } from "@opentui/core";
 import type { Keymap } from "@opentui/keymap";
-import type { PlansService } from "@clarvis/protocol";
 import { OverlayRegion } from "../../src/views/app/OverlayRegion.tsx";
 import { createOverlayHost, type OverlayHost } from "../../src/views/overlay-host.ts";
 import type { OverlayKind, Interaction } from "../../src/keys/interaction.ts";
@@ -66,8 +65,6 @@ function activity(over: Partial<ActivityStore> = {}): ActivityStore {
   }) as unknown as ActivityStore;
 }
 
-const notify = (): void => {};
-
 async function settleLazyOverlay(rendered: Awaited<ReturnType<typeof openRender>>): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     await rendered.renderOnce();
@@ -107,7 +104,6 @@ test("with overlay none, the fallback shell renders and no overlay body appears"
         diffNode={() => null}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
@@ -140,7 +136,6 @@ test("full-page overlays hide the shell without unmounting and rebuilding it", a
         diffNode={() => toolNode()}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
@@ -177,7 +172,6 @@ test("the floating 'agentPicker' kind keeps the main shell rendered behind it", 
         diffNode={() => null}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
@@ -198,7 +192,6 @@ test("an unrecognized overlay kind falls back to the main shell rather than blan
         diffNode={() => null}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
@@ -226,7 +219,6 @@ test("overlay 'view' renders the mounted view's factory with its own host, not t
         diffNode={() => null}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
@@ -262,7 +254,6 @@ test("state read while constructing a mounted view does not remount its factory"
         diffNode={() => null}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
@@ -320,7 +311,6 @@ test("an empty WorkflowsHub inside OverlayRegion performs one mount and one init
         diffNode={() => null}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
@@ -348,7 +338,6 @@ test("overlay 'view' with no mounted view falls through to the fallback (no cras
         diffNode={() => null}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
@@ -390,7 +379,6 @@ test("a stacked child keeps its parent's editor mounted, unfocused, and intact o
         interaction={interaction}
         diffNode={() => null}
         activity={activity()}
-        notify={notify}
       />
     ),
     { width: 100, height: 20 },
@@ -430,7 +418,6 @@ test("overlay 'diff' with no picked node shows the DiffViewer empty state", asyn
         diffNode={() => null}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
@@ -460,7 +447,6 @@ test("overlay 'diff' with a picked node renders that tool's diff", async () => {
         diffNode={() => node}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
@@ -495,14 +481,13 @@ test("overlay 'plan' renders the plan overlay from the activity store's live pla
         diffNode={() => null}
         activity={a}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
   );
   await settleLazyOverlay(t);
   const out = t.captureCharFrame();
-  expect(out).toContain("Plans · Running · 0/1 tasks done");
+  expect(out).toContain("Plan · Running · 0/1 tasks done");
   expect(out).toContain("Do the thing");
   expect(out).not.toContain("main shell content");
   t.renderer.destroy();
@@ -520,32 +505,25 @@ test("overlay 'plan' with no live plan falls back to the plan overlay's own empt
         diffNode={() => null}
         activity={activity()}
         plans={undefined}
-        notify={notify}
       />
     ),
     { width: 100, height: 30 },
   );
   await settleLazyOverlay(t);
   const out = t.captureCharFrame();
-  expect(out).toContain("no plans yet");
+  expect(out).toContain("no plan yet");
   t.renderer.destroy();
 });
 
-test("notify passed through to the plan overlay reaches history-mode failures", async () => {
+test("the plan overlay never reads retained history without a live plan", async () => {
   const { host, setOverlay } = fakeHost("none");
   setOverlay("plan");
-  const notes: string[] = [];
-  const failingPlans: PlansService = {
-    list: async () => {
-      throw new Error("kernel unreachable");
-    },
+  let reads = 0;
+  const plans = {
     read: async () => {
-      throw new Error("unreachable");
+      reads += 1;
+      throw new Error("history must stay unreachable");
     },
-    setRetention: async () => {
-      throw new Error("unreachable");
-    },
-    delete: async () => ({ id: "x", deleted: true }),
   };
   const t = await openRender(
     () => (
@@ -555,13 +533,13 @@ test("notify passed through to the plan overlay reaches history-mode failures", 
         interaction={fakeInteraction()}
         diffNode={() => null}
         activity={activity()}
-        plans={failingPlans}
-        notify={(m) => notes.push(m)}
+        plans={plans}
       />
     ),
     { width: 100, height: 30 },
   );
   await settleLazyOverlay(t);
-  expect(t.captureCharFrame()).toContain("no plans yet");
+  expect(t.captureCharFrame()).toContain("no plan yet");
+  expect(reads).toBe(0);
   t.renderer.destroy();
 });

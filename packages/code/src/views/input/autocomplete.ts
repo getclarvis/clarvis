@@ -106,15 +106,17 @@ export type SlashSubmit =
   | { kind: "chat" };
 
 /**
- * Classifies a slash line's command name against the skill and command
- * catalogs, in that order, falling back to plain chat when the name doesn't
- * even look like a command.
+ * Classifies a slash line's command name against the registered command and
+ * skill catalogs, in that order, falling back to plain chat when the name
+ * doesn't even look like a command.
  *
  * @remarks
- * A skill is dispatched as a run only when it names an agent, so `skillAgent`
- * both decides the branch and supplies its payload. Returning the name here
- * rather than a boolean is what spares the caller a second lookup it could get a
- * different answer from.
+ * Registered commands own their slash tokens. This keeps an agent-backed skill
+ * with the same name from shadowing a built-in that the completion popup
+ * advertised. A skill fallback is dispatched as a run only when it names an
+ * agent, so `skillAgent` both decides that branch and supplies its payload.
+ * Returning the name here rather than a boolean spares the caller a second
+ * lookup it could get a different answer from.
  */
 export function classifySlashSubmit(
   name: string,
@@ -123,11 +125,11 @@ export function classifySlashSubmit(
     findCommand: (slash: string) => string | undefined;
   },
 ): SlashSubmit {
-  const agent = opts.skillAgent(name);
-  if (agent !== undefined) return { kind: "skill", agent };
   if (!/^[A-Za-z][\w:.-]*$/.test(name)) return { kind: "chat" };
   const command = opts.findCommand("/" + name);
   if (command !== undefined) return { kind: "command", command };
+  const agent = opts.skillAgent(name);
+  if (agent !== undefined) return { kind: "skill", agent };
   return { kind: "unknown" };
 }
 

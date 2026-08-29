@@ -69,7 +69,7 @@ test("the artifact contract rejects a monolithic entrypoint", () => {
 test("cold full-page and floating surfaces remain in lazy chunks", () => {
   const javascriptChunks = [
     { path: "chunk-diff.js", source: 'text: "no diff in the transcript yet"' },
-    { path: "chunk-plan.js", source: 'text: "no plans yet"' },
+    { path: "chunk-plan.js", source: 'text: "no plan yet"' },
     { path: "chunk-providers.js", source: 'title: "Unverified entitlement"' },
     { path: "chunk-sessions.js", source: 'text: "no sessions yet"' },
     { path: "chunk-workflows.js", source: 'text: "no workflows yet"' },
@@ -82,16 +82,16 @@ test("cold full-page and floating surfaces remain in lazy chunks", () => {
   ).not.toThrow();
   expect(() =>
     assertLazySurfaceArtifact({
-      entrySource: 'text: "no plans yet"',
+      entrySource: 'text: "no plan yet"',
       javascriptChunks,
     }),
-  ).toThrow('artifact loads the surface containing "no plans yet" eagerly');
+  ).toThrow('artifact loads the surface containing "no plan yet" eagerly');
   expect(() =>
     assertLazySurfaceArtifact({
       entrySource: "const boot = true",
       javascriptChunks: javascriptChunks.slice(0, 1),
     }),
-  ).toThrow('artifact has no lazy surface chunk containing "no plans yet"');
+  ).toThrow('artifact has no lazy surface chunk containing "no plan yet"');
 });
 
 test("source maps are retained away from runtime JavaScript", () => {

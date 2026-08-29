@@ -600,11 +600,11 @@ test("retention discard ends as completed history instead of a red unavailable w
   expect(joined).toContain("Completed");
   expect(joined).toContain("1/1 completed");
   expect(joined).toContain("history discarded");
-  expect(joined).toContain("Plan history deleted after success");
+  expect(joined).toContain("Plan deleted after success");
   expect(joined).not.toContain("Unavailable");
   expect(joined).not.toContain("plan file unavailable");
   expect(joined).not.toContain("Restore the plan file");
-  expect(fgOf(spans, "Plan history deleted after success")).toBe(tokens.muted.toLowerCase());
+  expect(fgOf(spans, "Plan deleted after success")).toBe(tokens.muted.toLowerCase());
 });
 
 test("the compact strip also presents an expected discard without an unavailable warning", async () => {

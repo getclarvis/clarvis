@@ -224,6 +224,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   };
   const { ui, effects, notify, env } = deps;
   let disposed = false;
+  let planReviewToggleQueue: Promise<void> = Promise.resolve();
   const requestModelsCatalog = (): void => {
     if (deps.loadCatalog !== undefined) detachObserved("models_catalog_load", deps.loadCatalog);
   };
@@ -559,88 +560,28 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     run: () => effects.openDiff(),
   });
   commands.registerAction({
-    name: "plan.enableReview",
-    title: "Require plan review",
-    desc: "Require approval before executing plans in this workspace",
-    slash: false,
-    surface: "internal",
-    group: "actions",
-    run: async () => {
-      try {
-        await patchPlansSettings(deps.settings, "workspace", { mode: "review" });
-        notify(
-          `planning: approval required (workspace settings)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
-          "success",
-        );
-      } catch (error) {
-        notify(`planning failed: ${errorText(error)}`, "error");
-      }
-    },
-  });
-  commands.registerAction({
-    name: "plan.enableDefault",
-    title: "Use normal planning",
-    desc: "Return planning to the normal ungated mode in this workspace",
-    slash: false,
-    surface: "internal",
-    group: "actions",
-    run: async () => {
-      try {
-        await patchPlansSettings(deps.settings, "workspace", {
-          mode: defaultPlansSettings().mode,
-        });
-        notify(
-          `planning: default mode restored (workspace settings)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
-          "success",
-        );
-      } catch (error) {
-        notify(`planning failed: ${errorText(error)}`, "error");
-      }
-    },
-  });
-  commands.registerAction({
-    name: "planning.configure",
-    title: "Planning mode",
-    desc: "Choose whether plans run normally or require approval",
-    slash: "/planning",
+    name: "plan.toggleReview",
+    title: "Toggle plan review",
+    desc: "Switch this workspace between normal planning and required plan review",
+    slash: "/plan",
     surface: "slash",
     group: "actions",
-    subcommands: [
-      { name: "review", desc: "Require approval before a plan executes" },
-      { name: "normal", desc: "Run plans without an approval gate" },
-    ],
-    route: (args) => {
-      const mode = args.trim().split(/\s+/)[0];
-      if (mode === "review") {
-        commands.runCommand("plan.enableReview");
-        return true;
-      }
-      if (mode === "normal") {
-        commands.runCommand("plan.enableDefault");
-        return true;
-      }
-      return false;
+    run: () => {
+      planReviewToggleQueue = planReviewToggleQueue.then(async () => {
+        try {
+          const current = deps.settings.effective().plans?.mode ?? defaultPlansSettings().mode;
+          const mode = current === "review" ? "on" : "review";
+          await patchPlansSettings(deps.settings, "workspace", { mode });
+          notify(
+            `plan review: ${mode === "review" ? "required" : "normal"} (workspace settings)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
+            "success",
+          );
+        } catch (error) {
+          notify(`plan review failed: ${errorText(error)}`, "error");
+        }
+      });
+      return planReviewToggleQueue;
     },
-    run: () => notify("choose /planning/review or /planning/normal"),
-  });
-  commands.registerAction({
-    name: "plans.open",
-    title: "Plans",
-    desc: "Browse plan history",
-    /**
-     * `/plans` names the viewer; `/planning/<mode>` owns planning policy.
-     *
-     * @remarks It used to open the workspace's planning-approval mode, which
-     *   created `<ws>/.clarvis/settings.json` — a persistent write into the
-     *   user's repository — under a name that invites someone expecting to look
-     *   at a plan. Keeping history and policy under distinct nouns makes both
-     *   discoverable through hierarchical completion without ambiguous verbs.
-     */
-    slash: "/plans",
-    surface: "slash",
-    group: "navigate",
-    parent: "inspect",
-    run: () => effects.openPlan("history"),
   });
   commands.registerAction({
     name: "plan.open",
@@ -687,7 +628,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "controls.open",
     title: "Run controls",
-    desc: "Safety presets, sandbox, guard, memory and planning for the next run",
+    desc: "Safety presets, sandbox, guard, memory and plan retention for the next run",
     surface: "internal",
     group: "navigate",
     parent: "settings",
@@ -1760,7 +1701,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         seedPlansBlock(deps.settings).then((outcome) => {
           if (!outcome.seeded) return;
           notify(
-            `planning: on ${glyph("separator")} keep plans (${outcome.scope} settings) ${glyph("emDash")} change it in Run controls`,
+            `planning: on ${glyph("separator")} keep plans (${outcome.scope} settings) ${glyph("emDash")} use /plan for review and Run controls for retention`,
           );
           recheck();
         }),

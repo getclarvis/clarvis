@@ -64,7 +64,7 @@ export interface InteractionEffects {
   focusNext(): void;
   toggleExpandAll(): void;
   openDiff(): void;
-  openPlan(origin?: "direct" | "history"): void;
+  openPlan(): void;
   focusBlock(delta: number): void;
   clearBlockFocus(): boolean;
   scrollTranscript(rows: number): void;

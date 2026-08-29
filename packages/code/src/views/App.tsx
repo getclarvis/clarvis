@@ -226,7 +226,7 @@ export interface AppBackend {
   connection: Accessor<ConnectionState>;
   probe: Accessor<BackendProbe>;
   client: McpClientCaps;
-  plans: PlansService;
+  plans: Pick<PlansService, "read">;
   models: ModelCatalogService;
   providerAuth: ProviderAuthService;
   workflows: WorkflowsService;
@@ -350,7 +350,6 @@ export function App(props: AppProps): JSX.Element {
     rehydrate: (key) => void props.store.rehydrate(key),
   });
   const [diffNode, setDiffNode] = createSignal<TranscriptToolNode | null>(null);
-  const [planOrigin, setPlanOrigin] = createSignal<"direct" | "history">("direct");
   useSpinnerClock(
     () => props.run.active() || props.run.localBusy() || props.run.compacting?.() === true,
   );
@@ -498,18 +497,11 @@ export function App(props: AppProps): JSX.Element {
       setDiffNode(pick);
       overlays.openPicker("diff");
     },
-    openPlan: (origin = "direct") => {
+    openPlan: () => {
       if (overlays.overlay() === "plan") {
-        if (planOrigin() === "history") {
-          overlays.dismissTop();
-          queueMicrotask(() => {
-            setPlanOrigin("history");
-            overlays.openPicker("plan");
-          });
-        } else overlays.dismissTop();
+        overlays.dismissTop();
         return;
       }
-      setPlanOrigin(origin);
       overlays.openPicker("plan");
     },
     /**
@@ -1077,8 +1069,6 @@ export function App(props: AppProps): JSX.Element {
             diffNode={diffNode}
             activity={props.activity}
             plans={props.backend.plans}
-            notify={notify}
-            planOrigin={planOrigin()}
             fallback={
               <TranscriptRegion
                 store={props.store}
@@ -1100,10 +1090,7 @@ export function App(props: AppProps): JSX.Element {
                 agent={agentName}
                 model={resolvedModel}
                 notify={notify}
-                openPlan={() => {
-                  setPlanOrigin("direct");
-                  overlays.openPicker("plan");
-                }}
+                openPlan={() => effects.openPlan()}
                 onOpenDetail={openActivityDetail}
                 onScrollbox={(el) => (scrollEl = el)}
                 draftNonEmpty={draftNonEmpty}
@@ -1265,13 +1252,7 @@ export function App(props: AppProps): JSX.Element {
               secondaryMode() !== "split"
             }
           >
-            <PlanStrip
-              plan={() => props.activity.plan!}
-              onOpen={() => {
-                setPlanOrigin("direct");
-                overlays.openPicker("plan");
-              }}
-            />
+            <PlanStrip plan={() => props.activity.plan!} onOpen={() => effects.openPlan()} />
           </Show>
           <InputDock
             interaction={interaction}

@@ -23,11 +23,10 @@ import {
   deriveRunControls,
   memoryDescription,
   memoryState,
-  plansDescription,
+  planRetentionDescription,
   safetyDescription,
   type CanonicalSafetyPreset,
-  type PlanHistory,
-  type PlanMode,
+  type PlanRetention,
 } from "../../adapters/execution-safety.ts";
 import {
   applySafetyPreset,
@@ -66,25 +65,11 @@ const MEMORY_CHOICES = [
   { value: "off", label: "off", detail: "do not read or update memory" },
 ] as const satisfies readonly PickItem[];
 
-const PLAN_MODE_CHOICES = [
-  { value: "off", label: "No planning", detail: "the lead gets no plan tools" },
-  {
-    value: "on",
-    label: "Without approval",
-    detail: "the lead plans and executes directly",
-  },
-  {
-    value: "review",
-    label: "Require approval",
-    detail: "the lead waits for your approval before executing",
-  },
-] as const satisfies readonly PickItem[];
-
-const PLAN_HISTORY_CHOICES = [
+const PLAN_RETENTION_CHOICES = [
   {
     value: "keep",
     label: "Keep plans",
-    detail: "plans stay available in the selected provider's history",
+    detail: "plans remain available in the selected provider",
   },
   {
     value: "discard",
@@ -95,7 +80,7 @@ const PLAN_HISTORY_CHOICES = [
 
 /**
  * Per-run safety controls: a safety preset (sandbox + guard combination),
- * guard mode and planning mode/history persist immediately to the selected
+ * guard mode and completed-plan retention persist immediately to the selected
  * scope; memory changes only the session store. Each row explains what the
  * resulting policy means for the next run.
  */
@@ -244,31 +229,19 @@ export function RunControlsPanel(
    * The `plans` block this scope's file already carries, if any.
    *
    * @remarks
-   * Deliberately the raw per-scope file, not the merged view: seeding a
-   * workspace write from `effective()` would copy the global values into the
-   * workspace block and mint a phantom override the user never asked for.
+   * Deliberately the raw per-scope file, not the merged view, so the row can
+   * distinguish an inherited value from an explicit override. The write path
+   * separately materializes a complete block through `patchPlansSettings`.
    */
   function scopedPlans(): Partial<PlansSettingsBlock> | undefined {
     return deps.settings.read(host.scope())?.plans;
   }
 
-  async function applyPlanMode(mode: PlanMode): Promise<void> {
-    try {
-      await patchPlansSettings(deps.settings, host.scope(), { mode });
-      const label = PLAN_MODE_CHOICES.find((c) => c.value === mode)!.label.toLowerCase();
-      deps.notify(
-        `planning: ${label} (${host.scope()} settings)${deps.runActive() ? ` ${glyph("emDash")} applies to the next run` : ""}`,
-      );
-    } catch (error) {
-      deps.notify(errorText(error));
-    }
-  }
-
-  async function applyPlanHistory(retention: PlanHistory): Promise<void> {
+  async function applyPlanRetention(retention: PlanRetention): Promise<void> {
     try {
       await patchPlansSettings(deps.settings, host.scope(), { retention });
       deps.notify(
-        `plan history: ${retention === "keep" ? "keep plans" : "delete after a successful run"} (${host.scope()} settings)`,
+        `completed plans: ${retention === "keep" ? "keep plans" : "delete after a successful run"} (${host.scope()} settings)`,
       );
     } catch (error) {
       deps.notify(errorText(error));
@@ -299,13 +272,10 @@ export function RunControlsPanel(
         );
         break;
       case 3:
-        fe.startEnum("Planning mode", PLAN_MODE_CHOICES, state().plans.mode, (value) =>
-          detachObserved("run_controls_plan_mode", () => applyPlanMode(value as PlanMode)),
-        );
-        break;
-      case 4:
-        fe.startEnum("Plan history", PLAN_HISTORY_CHOICES, state().plans.history, (value) =>
-          detachObserved("run_controls_plan_history", () => applyPlanHistory(value as PlanHistory)),
+        fe.startEnum("Completed plans", PLAN_RETENTION_CHOICES, state().plans.retention, (value) =>
+          detachObserved("run_controls_plan_retention", () =>
+            applyPlanRetention(value as PlanRetention),
+          ),
         );
         break;
     }
@@ -313,9 +283,9 @@ export function RunControlsPanel(
 
   /** Where the effective `plans` block comes from, and what that means for
    * future runs — the panel's answer to "did this just change everything?". */
-  function planScopeLine(): string {
+  function planRetentionScopeLine(): string {
     if (!state().plans.configured)
-      return "Not configured " + glyph("emDash") + " using the defaults";
+      return "Retention not configured " + glyph("emDash") + " using the default";
     const origin = deps.settings.origin?.("plans");
     return origin === "workspace"
       ? "Workspace override " + glyph("emDash") + " overrides the global default in this workspace"
@@ -326,7 +296,7 @@ export function RunControlsPanel(
 
   const spec = (): LevelSpec => ({
     nav: {
-      count: () => 5,
+      count: () => 4,
       index: sel,
       setIndex: setSel,
       activate: { label: "change", run: activate },
@@ -417,9 +387,14 @@ export function RunControlsPanel(
         </Show>
         <SettingRow
           setting={{
-            label: "Planning mode",
-            configured: scopedPlans()?.mode ?? "inherit",
-            effective: state().plans.mode,
+            label: "Completed plans",
+            configured:
+              scopedPlans()?.retention === undefined
+                ? "inherit"
+                : scopedPlans()!.retention === "keep"
+                  ? "keep plans"
+                  : "delete after success",
+            effective: state().plans.retention === "keep" ? "keep plans" : "delete after success",
             source: settingSource("plans"),
             applies: "next run",
             mutation: "immediate",
@@ -427,28 +402,11 @@ export function RunControlsPanel(
           selected={sel() === 3}
           expanded={sel() === 3}
         />
-        <SettingRow
-          setting={{
-            label: "Plan history",
-            configured:
-              scopedPlans()?.retention === undefined
-                ? "inherit"
-                : scopedPlans()!.retention === "keep"
-                  ? "keep plans"
-                  : "delete after success",
-            effective: state().plans.history === "keep" ? "keep plans" : "delete after success",
-            source: settingSource("plans"),
-            applies: "next run",
-            mutation: "immediate",
-          }}
-          selected={sel() === 4}
-          expanded={sel() === 4}
-        />
-        <Show when={sel() === 4}>
-          <For each={plansDescription(state())}>
+        <Show when={sel() === 3}>
+          <For each={planRetentionDescription(state().plans.retention)}>
             {(line) => <text fg={tokens.muted}>{glyph("bullet") + " " + line}</text>}
           </For>
-          <text fg={tokens.muted}>{glyph("bullet") + " " + planScopeLine()}</text>
+          <text fg={tokens.muted}>{glyph("bullet") + " " + planRetentionScopeLine()}</text>
         </Show>
       </box>
     );

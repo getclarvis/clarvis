@@ -121,7 +121,8 @@ optional `prepareReconnect`, and `callbacks` (`:111`).
 | `context(executionId, targetWindowTokens?)` | `ReturnType<RunService["context"]>` | `packages/code/src/adapters/kernel-run-client.ts` (`KernelRunClient.context`) |
 | `getRun(executionId)` | `Promise<RunDetail \| null>` | `:86`, impl `:397` |
 | `deleteRun(executionId)` | `Promise<boolean>` | `:87`, impl `:406` |
-| `plans` `workflows` `skills` `config` `secrets` `models` `providerAuth` `files` `sessions` `plugins` `environments` `tasks` `storage` | thin per-method pass-throughs to `requireKernel()` | `packages/code/src/adapters/kernel-run-client.ts` (`createKernelRunClient`) |
+| `plans` | current-plan `read` only; no retained-plan administration | `packages/code/src/adapters/kernel-run-client.ts` (`KernelRunClient.plans`, `plans`) |
+| `workflows` `skills` `config` `secrets` `models` `providerAuth` `files` `sessions` `plugins` `environments` `tasks` `storage` | thin per-method pass-throughs to `requireKernel()` | `packages/code/src/adapters/kernel-run-client.ts` (`createKernelRunClient`) |
 | `currentEnvironment()` | the process-pinned `{id, fingerprint}` captured during `connect()` and refreshed after idle trust recomposition | `packages/code/src/adapters/kernel-run-client.ts` (`connect`, `mutateTrust`, `currentEnvironment`) |
 
 `KernelRunClientCallbacks` (`:56`): `onEvent(event, source, executionId)`, optional
@@ -140,7 +141,7 @@ optional `prepareReconnect`, and `callbacks` (`:111`).
 | `adapters/connection-state.ts` | `ConnectionState`, `ConnectionStore`, `createConnectionState`, `connectionLabel`, `connectionProbe` | `:10`, `:16`, `:22`, `:30`, `:42` |
 | `adapters/stream-metrics.ts` | `StreamMetrics`, `createStreamMetrics`, `streamMetrics` | `:30`, `:50`, `:102` |
 | `adapters/memory-pressure.ts` | `MIB`, `DEFAULT_TUI_RSS_LIMIT_BYTES`, `MEMORY_PRESSURE_SAMPLE_MS`, `MEMORY_PRESSURE_ABORT_GRACE_MS`, `MEMORY_PRESSURE_RECOVERY_TIMEOUT_MS`, `MemoryPressurePhase`, `ProcessMemorySample`, `MemoryPressureSnapshot`, `MemoryRecoveryResult`, `MemoryPressureDeps`, `MemoryPressureController`, `memoryPressureAllowsSlash`, `tuiRssLimitBytes`, `createMemoryPressureController` | `:3`–`:12`, `:14`, `:17`, `:24`, `:32`, `:41`, `:59`, `:72`, `:77`, `:106` |
-| `adapters/execution-safety.ts` | `SafetyPreset`, `CanonicalSafetyPreset`, `RunControlsState`, `MemoryState`, `PlanMode`, `PlanHistory`, `PlansState`, `planHistoryLabel`, `plansState`, `modelResolves`, `memoryState`, `deriveSafetyPreset`, `deriveRunControls`, `safetyDescription`, `memoryDescription`, `plansDescription`, `settingsForPreset` | `:10`, `:12`, `:15`, `:27`, `:30`, `:33`, `:44`, `:52`, `:58`, `:71`, `:102`, `:121`, `:141`, `:162`, `:195`, `:204`, `:223` |
+| `adapters/execution-safety.ts` | `SafetyPreset`, `CanonicalSafetyPreset`, `RunControlsState`, `MemoryState`, `PlanMode`, `PlanRetention`, `PlansState`, `planRetentionLabel`, `plansState`, `modelResolves`, `memoryState`, `deriveSafetyPreset`, `deriveRunControls`, `safetyDescription`, `memoryDescription`, `planRetentionDescription`, `settingsForPreset` | symbols of the same names |
 | `adapters/file-prompt-history.ts` | `createFilePromptHistory(limit = 200, file = workspaceStatePaths().promptHistoryFile, options)` | `:84` |
 | `adapters/workspace-client-manager.ts` | `ManagedWorkspaceClient`, `WorkspaceClientOptions`, `WorkspaceClientManager` | symbols of the same names |
 | `adapters/kernel-errors.ts` | `hasKernelErrorCode(error, code): error is {code}` — the narrowing every kernel-error branch in this scope goes through | `packages/code/src/adapters/kernel-errors.ts:4-14` |
@@ -782,10 +783,12 @@ line branches only on `guardMode === "off"` (`:182`–`:187`).
 `memoryDescription` (`:195`) is a three-way switch on `state.memory`: `"on"` reads before/after, "no
 extraction model resolves" for `"inert"`, otherwise disabled-for-this-session (`:196`–`:200`).
 
-`plansDescription` (`:204`) reads `state.plans.{mode, history}`: a first line for `mode` (`"off"` no
-plan tools, `"review"` waits for approval, otherwise executes without waiting), and — only when
-`mode !== "off"` — a second line for `history` (kept in provider history vs. deleted after success,
-with a crash always leaving one) (`:206`–`:218`).
+`planRetentionDescription(retention)` describes only the completed-plan retention consequence used by
+Run Controls: `keep` leaves completed plans available in the selected provider; `discard` says a
+successful run deletes after recording its result and that failed, cancelled or interrupted runs
+retain the plan. Planning mode is intentionally absent from this presentation helper because the
+TUI changes review policy through `/plan`, not Run Controls. Pinned by
+`packages/code/tests/unit/execution-safety.test.ts` (plan-retention consequence case).
 
 `settingsForPreset(preset)` is the declared inverse of `deriveSafetyPreset`: it maps each of
 the six canonical presets to an explicit `{guard, sandbox}` settings patch — `sandbox.enabled` true
@@ -1086,8 +1089,9 @@ The following are derived directly from this document's own source and its tests
 
 49. **`memoryState` is a single tri-state rule shared by every surface**, and `modelResolves` treats a
     provider with no enumerated `models` map as resolving.
-    `packages/code/src/adapters/execution-safety.ts:102`, `:90`. Pinned:
-    `packages/code/tests/unit/execution-safety.test.ts:157`, `:181`.
+    `packages/code/src/adapters/execution-safety.ts` (`memoryState`, `modelResolves`). Pinned by
+    `packages/code/tests/unit/execution-safety.test.ts` ("is on only when the extraction model
+    reaches a declared provider" and inert-state cases).
 
 50. **A safety preset is reported only on an exact canonical match; anything else is `"custom"`.**
     `packages/code/src/adapters/execution-safety.ts:129`–`:134`. Pinned:

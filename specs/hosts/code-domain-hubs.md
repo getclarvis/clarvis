@@ -9,8 +9,8 @@
 services. Each one owns one domain the terminal user manipulates directly: authoring agent profiles
 (`AgentsPanel`), browsing and acting on external tasks (`TasksHub`), inspecting a workflow's manager→leader tree and each node's result
 (`WorkflowsHub`), resuming or deleting saved sessions (`SessionsHub`), configuring the workspace
-memory block (`MemoryConfigPanel`), and setting the safety/guard/memory/planning posture for the next
-run (`RunControlsPanel`).
+memory block (`MemoryConfigPanel`), and setting the safety/guard/memory/plan-retention posture for
+the next run (`RunControlsPanel`). Planning review itself is toggled by `/plan`, outside this hub.
 
 The views are thin. Everything that is not painting is pushed either into a **feature controller**
 (`src/features/{agents,tasks}/controller.ts`) — pure orchestration with no presentation
@@ -44,8 +44,8 @@ Every hub is registered as a *view* command. The name/title/surface/parent tuple
 | `tasks.open` | Tasks | `/tasks` | `slash` | — | `packages/code/src/app/commands.tsx:201` |
 | `sessions.open` | Sessions | `/sessions` | `slash` | `sessions` | `packages/code/src/app/commands.tsx:422` |
 | `workflows.open` | Workflows | `/workflow` | `slash` | — | `packages/code/src/app/commands.tsx:451` |
-| `controls.open` | Run controls | — | `internal` | `settings` | `packages/code/src/app/commands.tsx:608` |
-| `memory.config` | Memory settings | — | `internal` | `settings` | `packages/code/src/app/commands.tsx:883` |
+| `controls.open` | Run controls | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`controls.open`) |
+| `memory.config` | Memory settings | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`memory.config`) |
 
 `tasks.open` alone carries `enabled: deps.tasks.available` (`packages/code/src/app/commands.tsx:208`);
 the other five are unconditionally registered.
@@ -64,7 +64,7 @@ declared at `packages/code/src/keys/commands.ts:31` and supplies `scope()`/`togg
 | `WorkflowsHub` | `WorkflowsHubDeps` = `{ list; get; getRun; delete?; now; live?; openAgentPicker?; pollMs?; refreshSlowMs? }` | `packages/code/src/views/config/WorkflowsHub.tsx:34`, `:109` |
 | `SessionsHub` | `SessionsHubDeps` = `{ sessions; catalog?; now; statusLine; resume; resumeCatalog?; delete? }` plus `SessionCatalogItem` | `packages/code/src/views/config/SessionsHub.tsx:24`, `:34`, `:47` |
 | `MemoryConfigPanel` | `MemoryConfigDeps` = `{ settings: SettingsAdapter; memoryMode: MemoryModeStore; notify }` | `packages/code/src/views/config/MemoryConfigPanel.tsx:23`, `:41` |
-| `RunControlsPanel` | inline deps `{ settings; guard: GuardModeStore; memory: MemoryModeStore; notify; runActive; openSandbox }` | `packages/code/src/views/config/RunControlsPanel.tsx:101` |
+| `RunControlsPanel` | inline deps `{ settings; guard: GuardModeStore; memory: MemoryModeStore; notify; runActive; openSandbox }` | `packages/code/src/views/config/RunControlsPanel.tsx` (`RunControlsPanel`) |
 
 `refreshSlowMs` on `WorkflowsHubDeps` is explicitly documented as an internal test seam for the
 pending-operation warning (`packages/code/src/views/config/WorkflowsHub.tsx:44`).
@@ -554,22 +554,22 @@ computation," not something specific to memory or an accidental one-off.
 
 ### 4.8 Run controls
 
-Five rows, fixed order (`packages/code/src/views/config/RunControlsPanel.tsx:337`): Safety preset (0),
-Command review (1), Memory for this session (2), Planning mode (3), Plan history (4). `[b] sandbox
-details` is offered only on row 0 (`:342`), and the host wires it to `openWithReturn("sandbox.config",
-"controls.open", host.scope())` (`packages/code/src/app/commands.tsx:620`).
+Four rows, fixed order: Safety preset (0), Command review (1), Memory for this session (2),
+Completed plans (3). `[b] sandbox details` is offered only on row 0, and the host wires it to
+`openWithReturn("sandbox.config", "controls.open", host.scope())`. Production:
+`packages/code/src/views/config/RunControlsPanel.tsx` (`spec`, `body`) and
+`packages/code/src/app/commands.tsx` (`controls.open`).
 
 `host.bindScope({ mode: "retarget" })` is declared with an in-source note that "Every write here goes
 to `host.scope()`, so the toggle retargets rather than reloads"
-(`packages/code/src/views/config/RunControlsPanel.tsx:345`).
+(`packages/code/src/views/config/RunControlsPanel.tsx`, `host.bindScope`).
 
 | Row | Choices | Write |
 |---|---|---|
 | Safety preset | `free`, `judged`, `approval`, `isolated`, `reviewed`, `protected`, `custom` | shared `applySafetyPreset` |
 | Command review | `off`, `on`, `auto` (`:53`) | `applyGuard` (`:211`) |
 | Memory | `on`, `off` (`:63`) | `applyMemory` — **session store only** (`:233`) |
-| Planning mode | `off` / `on` / `review` labelled "No planning" / "Without approval" / "Require approval" (`:68`) | `applyPlanMode` (`:263`) |
-| Plan history | `keep` / `discard` labelled "Keep plans" / "Delete after success" (`:82`) | `applyPlanHistory` (`:275`) |
+| Completed plans | `keep` / `discard` labelled "Keep plans" / "Delete after success" | `applyPlanRetention` |
 
 Run Controls and the `Alt+S` quick picker consume the same product vocabulary and write path from
 `features/run/safety-presets.ts`. `safetyPresetConfirmation` requires a danger confirmation before
@@ -596,10 +596,15 @@ inherited scoped value from a session override").
 outcomes computed from `memoryState(effective, mode)`: `inert` → memory will not learn; still `off` →
 "enable it in Settings > Memory before the next run"; otherwise the plain confirmation.
 
-Planning writes go through `patchPlansSettings` (`packages/code/src/adapters/settings.ts:183`), which
-folds `patch` over the *scoped* block, then the *effective* one, then `PLANS_DEFAULTS` — so a
-workspace write does not silently inherit the global retention as a phantom override.
-`scopedPlans()`'s doc comment states exactly that (`packages/code/src/views/config/RunControlsPanel.tsx:255`).
+The completed-plan row writes only `retention`, through `patchPlansSettings`. That helper materializes
+a valid complete plan block by preserving the scoped value first, then effective mode/provider/nudge
+siblings, then `PLANS_DEFAULTS`; selecting workspace scope therefore creates an explicit workspace
+block without resetting the policy inherited at the moment of the edit. `discard` is not a
+"never save" switch: the plan capability persists the live plan and deletes it only after a
+successful result; failures, cancellation and interruption retain it. Production:
+`packages/code/src/views/config/RunControlsPanel.tsx` (`scopedPlans`, `applyPlanRetention`) and
+`packages/code/src/adapters/settings.ts` (`patchPlansSettings`). Plan lifecycle ownership remains in
+[capabilities/plan-capability.md](../capabilities/plan-capability.md).
 
 `sandboxLine()` reports the selected native backend's availability, fetched once in `onMount` via
 `settings.inspectSandbox()` and defaulting to `null` on failure (`:117`). Its most severe branch —
@@ -838,7 +843,7 @@ specific to these files.
     Pinned: `packages/code/tests/unit/memory-mode.test.ts:56`.
 
 52. **The Run-controls memory row changes only the session store, never settings.**
-    Production: `packages/code/src/views/config/RunControlsPanel.tsx:233`.
+    Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyMemory`).
     Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:183`.
 
 53. **A direct guard-mode write and a named safety preset both preserve the effective allow/deny
@@ -849,19 +854,21 @@ specific to these files.
     and `packages/code/tests/integration/run-controls-render.test.tsx`.
 
 54. **`auto` without a resolvable judge model persists `on`, not a misleading `auto`.**
-    Production: `packages/code/src/views/config/RunControlsPanel.tsx:213`.
+    Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`).
     Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:230`.
 
-55. **"No planning" persists `mode: "off"`; it does not delete the block.**
-    Production: `packages/code/src/views/config/RunControlsPanel.tsx:265` via
-    `packages/code/src/adapters/settings.ts:191`.
-    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:386`.
+55. **Run Controls contains no planning-mode selector; completed-plan retention is its only editable
+    plan row.** Planning review belongs to `/plan`. Production:
+    `packages/code/src/views/config/RunControlsPanel.tsx` (`activate`, `body`). Pinned:
+    `packages/code/tests/integration/run-controls-render.test.tsx` ("Run controls exposes retention
+    without a planning-mode control").
 
-56. **A workspace planning write does not inherit the global retention into the workspace block.**
-    Production: `packages/code/src/views/config/RunControlsPanel.tsx:259` (raw per-scope read) and
-    `packages/code/src/adapters/settings.ts:188`.
-    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:405`; the complementary
-    preservation cases at `:299`, `:319`, `:366`.
+56. **A completed-plan retention write preserves mode, pending-task nudges and provider while
+    targeting the selected scope.** Production:
+    `packages/code/src/views/config/RunControlsPanel.tsx` (`applyPlanRetention`) and
+    `packages/code/src/adapters/settings.ts` (`patchPlansSettings`). Pinned:
+    `packages/code/tests/integration/run-controls-render.test.tsx` (global/provider and workspace
+    preservation cases).
 
 57. **Every safety-preset selector shares one six-choice vocabulary and one application path; a
     preset that discards custom sandbox tuning asks first and carries `toolchains` across. `judged`
@@ -930,7 +937,7 @@ specific to these files.
 | Workflow result cannot be stringified | `packages/code/src/views/config/WorkflowsHub.tsx:82`, `:89` | "(unserializable result)". Pinned at `packages/code/tests/integration/workflows-hub-render.test.tsx:636` |
 | Leader node has no `task` (legacy record) | `packages/code/src/views/config/WorkflowsHub.tsx:203` | "Task unavailable for this legacy workflow"; `[t]` is unbound (`:459`) |
 | `settings.inspectSandbox()` rejects | `packages/code/src/views/config/RunControlsPanel.tsx` (`onMount`) | availability stays `null`; the row reads "Checking native sandbox on the kernel host…" indefinitely |
-| Any Run-controls settings write throws | `packages/code/src/views/config/RunControlsPanel.tsx:194`, `:229`, `:271`, `:282` | `notify(errorText(error))`; the session store is not updated |
+| Any Run-controls settings write throws | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyPreset`, `applyGuard`, `applyPlanRetention`) | `notify(errorText(error))`; the session store is not updated |
 | Session-memory toggle activated with no configured memory block | `packages/code/src/views/config/MemoryConfigPanel.tsx:145`–`:149` | refuses to cycle; notifies "memory is not configured in settings — save a block first". Pinned at `packages/code/tests/integration/memory-config-render.test.tsx:211` |
 | Any detached async operation rejects unobserved | `packages/code/src/core/tasks.ts:27` | a `task.failed` diagnostic event is emitted with the operation name; nothing is thrown into the render tree |
 
@@ -950,7 +957,7 @@ request that has been superseded by a queued one (`packages/code/src/views/confi
 | `adapters/agents-store.ts` | `@clarvis/kernel/config` (`compareAgentDisplayOrder`, `resolveAgentsByName`), `solid-js` | `packages/code/src/adapters/agents-store.ts:1`, `:3` |
 | `features/agents/controller.ts` | `@clarvis/kernel/config` (`isBuiltinAgent`), `solid-js` | `packages/code/src/features/agents/controller.ts:19`, `:1` |
 | `views/config/AgentsPanel.tsx` | `@clarvis/kernel/config` (`isBuiltinAgent`) | `packages/code/src/views/config/AgentsPanel.tsx:33` |
-| `views/config/RunControlsPanel.tsx` | `@clarvis/kernel/policy` (`defaultGuardMode`) | `packages/code/src/views/config/RunControlsPanel.tsx:5` |
+| `adapters/guard-mode.ts` | `@clarvis/kernel/policy` (`defaultGuardMode`) | `packages/code/src/adapters/guard-mode.ts` (`defaultGuardMode` import) |
 | `adapters/agents.ts` | `@clarvis/paths` (types only) | `packages/code/src/adapters/agents.ts:1` |
 | `views/config/{TasksHub,WorkflowsHub}.tsx`, `features/tasks/controller.ts` | `@clarvis/protocol` — **type-only** | `packages/code/src/views/config/TasksHub.tsx:5`, `packages/code/src/views/config/WorkflowsHub.tsx:6`, `packages/code/src/features/tasks/controller.ts:1` |
 
@@ -991,7 +998,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 - `CapabilityProvidersPanel` → [capabilities/provider-executables.md](../capabilities/provider-executables.md).
 - `DoctorView`, `KeyboardView` → their own documents.
 - `execution-safety.ts` (`deriveRunControls`, `memoryState`, `deriveSafetyPreset`,
-  `settingsForPreset`, `plansDescription`, `safetyDescription`, `memoryDescription`),
+  `settingsForPreset`, `planRetentionDescription`, `safetyDescription`, `memoryDescription`),
   `guard-mode.ts`, `session-store.ts`, `workflow-projection.ts`, `settings.ts` →
   [hosts/code-run-host.md](code-run-host.md) / [hosts/code-settings-panels.md](code-settings-panels.md).
 - The domain semantics behind each hub — the tasks provider contract, workflow
@@ -1022,7 +1029,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
    view's mount/dispose lifecycle, not "session" in any looser sense. `nextShortId` and `shortIds`
    (`packages/code/src/views/config/WorkflowsHub.tsx:121`–`:122`) are closure state created exactly
    once, when `WorkflowsHub(host, deps)` runs as the `view` factory of the `"workflows.open"`
-   `registerView` call (`packages/code/src/app/commands.tsx:448`–`:463`); `backToList()`
+   registration (`packages/code/src/app/commands.tsx`, `workflows.open`); `backToList()`
    (`:387`–`:390`) only clears the `detail`/`node` **signals**, never touching the counter, because
    navigating from a workflow's tree back to the list is internal `setDetail`/`setNode` state inside
    the same still-mounted instance (`openWorkflow`, `:214`–`:239`, sets `detail` without remounting).

@@ -9,6 +9,9 @@ import { tokens } from "../../src/theme/tokens.ts";
 import { selectionBg } from "../../src/theme/surfaces.ts";
 import { captureUntil } from "../helpers/render-support.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
+import { createSignal } from "solid-js";
+
+type PlanReader = Pick<PlansService, "read">;
 
 function fakeInteraction(): { interaction: Interaction; press: (key: string) => void } {
   const { keymap, press } = createFakeKeymap();
@@ -47,25 +50,15 @@ const PLAN: PlanActivity = {
   ],
 };
 
-async function mount(
-  plan: PlanActivity | null,
-  ready?: string,
-  plans?: PlansService,
-  origin?: "direct" | "history",
-) {
+async function mount(plan: PlanActivity | null, ready?: string, plans?: PlanReader) {
   const { interaction, press } = fakeInteraction();
-  const t = await openRender(
-    (() => (
-      <PlanOverlay interaction={interaction} plan={() => plan} plans={plans} origin={origin} />
-    )) as never,
-    {
-      width: 100,
-      height: 30,
-    },
+  const rendered = await openRender(
+    (() => <PlanOverlay interaction={interaction} plan={() => plan} plans={plans} />) as never,
+    { width: 100, height: 30 },
   );
-  await t.renderOnce();
-  if (ready) await captureUntil(t, ready);
-  return { t, press };
+  await rendered.renderOnce();
+  if (ready) await captureUntil(rendered, ready);
+  return { t: rendered, press };
 }
 
 function document(path: string, title: string, status: PlanDocumentDto["status"]): PlanDocumentDto {
@@ -89,6 +82,19 @@ function document(path: string, title: string, status: PlanDocumentDto["status"]
   };
 }
 
+function livePlan(doc: PlanDocumentDto): PlanActivity {
+  return {
+    id: doc.id,
+    ...(doc.path === undefined ? {} : { path: doc.path }),
+    title: doc.title,
+    status: doc.status,
+    retention: doc.retention,
+    revision: doc.revision,
+    spec_revision: doc.spec_revision,
+    tasks: doc.tasks,
+  };
+}
+
 async function frame(plan: PlanActivity | null, waitFor: string): Promise<string> {
   const { t } = await mount(plan);
   const out = await captureUntil(t, waitFor);
@@ -98,7 +104,7 @@ async function frame(plan: PlanActivity | null, waitFor: string): Promise<string
 
 test("overlay auto-selects the in_progress task and shows detail only for it", async () => {
   const out = await frame(PLAN, "understands the reducer");
-  expect(out).toContain("Plans · Running · 1/2 tasks done");
+  expect(out).toContain("Plan · Running · 1/2 tasks done");
   expect(out).toContain("Map architecture and entry point");
   expect(out).not.toContain("Read main.jsx and App.jsx");
   expect(out).toContain("Map cart state");
@@ -114,7 +120,7 @@ test("navigating to another task moves the detail with the selection", async () 
   t.renderer.destroy();
 });
 
-test("a returned task auto-selects and shows its result — the lead's judgment material", async () => {
+test("a returned task auto-selects and shows its result", async () => {
   const out = await frame(
     {
       id: ".clarvis/plans/returned.md",
@@ -144,7 +150,7 @@ test("a returned task auto-selects and shows its result — the lead's judgment 
   expect(out).not.toContain("merged in r3");
 });
 
-test("a failed task shows its error and an abandoned one its reason", async () => {
+test("failed and abandoned tasks show their terminal outcomes", async () => {
   const failed = await frame(
     {
       id: ".clarvis/plans/failed.md",
@@ -159,7 +165,6 @@ test("a failed task shows its error and an abandoned one its reason", async () =
     "bun test exited 1",
   );
   expect(failed).toContain("error");
-  expect(failed).toContain("bun test exited 1");
 
   const abandoned = await frame(
     {
@@ -177,27 +182,9 @@ test("a failed task shows its error and an abandoned one its reason", async () =
     "superseded by t2",
   );
   expect(abandoned).toContain("reason");
-  expect(abandoned).toContain("superseded by t2");
 });
 
-test("plan overlay shows task detail without reading the filesystem", async () => {
-  const out = await frame(
-    {
-      id: ".clarvis/plans/one.md",
-      path: ".clarvis/plans/one.md",
-      title: "One",
-      status: "active",
-      retention: "keep",
-      revision: 0,
-      spec_revision: 0,
-      tasks: [{ id: "t1", title: "Task one", status: "pending" }],
-    },
-    "Task one",
-  );
-  expect(out).toContain("Task one");
-});
-
-test("the progress summary distinguishes completed tasks from ones that did not run", async () => {
+test("progress distinguishes completed tasks from tasks that did not run", async () => {
   const out = await frame(
     {
       id: ".clarvis/plans/settled.md",
@@ -218,7 +205,7 @@ test("the progress summary distinguishes completed tasks from ones that did not 
   expect(out).toContain("0/3 done · 3 not run");
 });
 
-test("pending/in_progress tasks are not counted as settled", async () => {
+test("pending and in_progress tasks are not counted as settled", async () => {
   const out = await frame(
     {
       id: ".clarvis/plans/pending.md",
@@ -259,92 +246,40 @@ test("a completed plan expands its outcome without marking the last task as curr
   expect(out).not.toContain("▸ ✓ Verify release");
 });
 
-test("plan overlay falls back when there is no plan", async () => {
-  const out = await frame(null, "no plans yet");
-  expect(out).toContain("no plans yet");
-  expect(out).toContain("start a task with planning enabled");
-  expect(out).not.toContain("open detail");
-  expect(out).not.toContain("keep/delete");
-});
-
-test("history navigation reads selected details through PlansService", async () => {
-  const first = document(".clarvis/plans/first.md", "First plan", "completed");
-  const second = document(".clarvis/plans/second.md", "Second plan", "cancelled");
-  const reads: string[] = [];
-  const plans: PlansService = {
-    list: async () => ({ plans: [first, second] }),
-    read: async (id) => {
-      reads.push(id);
-      return id === first.id ? first : second;
+test("the overlay has a current-plan-only empty state", async () => {
+  let reads = 0;
+  const { t } = await mount(null, "no plan yet", {
+    read: async () => {
+      reads += 1;
+      return document("unused.md", "Historical plan", "completed");
     },
-    setRetention: async () => first,
-    delete: async (id) => ({ id, deleted: true }),
-  };
-  const { t, press } = await mount(null, "First plan", plans);
-  press("down");
-  await captureUntil(t, "Second plan");
-  press("return");
-  const out = await captureUntil(t, "Detail for Second plan");
-  expect(out).toContain("Second plan");
-  expect(out).not.toContain("history · 2 plans");
-  expect(reads).toEqual([first.id, second.id]);
+  });
+  const out = t.captureCharFrame();
+  expect(out).toContain("no plan yet");
+  expect(out).not.toContain("history");
+  expect(out).not.toContain("keep/delete");
+  expect(reads).toBe(0);
   t.renderer.destroy();
 });
 
-test("the active plan is located and read by id even when no path exists", async () => {
+test("the active plan is read by stable id even when no path exists", async () => {
   const { path: _path, ...base } = document("unused.md", "Remote plan", "active");
   const remote: PlanDocumentDto = { ...base, id: "remote-plan-42" };
   const reads: string[] = [];
-  const plans: PlansService = {
-    list: async () => ({ plans: [remote] }),
+  const live = livePlan(remote);
+  const { t } = await mount(live, "remote-plan-42", {
     read: async (id) => {
       reads.push(id);
       return remote;
     },
-    setRetention: async () => remote,
-    delete: async (id) => ({ id, deleted: true }),
-  };
-  const live: PlanActivity = {
-    id: "remote-plan-42",
-    title: "Remote plan",
-    status: "active",
-    retention: "keep",
-    revision: 1,
-    spec_revision: 1,
-    tasks: [],
-  };
-  const { t } = await mount(live, "remote-plan-42", plans);
+  });
   expect(reads).toEqual(["remote-plan-42"]);
   expect(t.captureCharFrame()).not.toContain("undefined");
   t.renderer.destroy();
 });
 
-test("a plan entered from history returns to history on Escape", async () => {
-  const doc = document(PLAN.id, PLAN.title, "active");
-  const plans: PlansService = {
-    list: async () => ({ plans: [doc] }),
-    read: async () => doc,
-    setRetention: async () => doc,
-    delete: async (id) => ({ id, deleted: true }),
-  };
-  const { t, press } = await mount(PLAN, "Plans · History", plans, "history");
-  press("return");
-  await captureUntil(t, `Detail for ${PLAN.title}`);
-  expect(t.captureCharFrame()).toContain("] scroll");
-  press("escape");
-  const history = await captureUntil(t, "open detail");
-  expect(history).toContain("open detail");
-  t.renderer.destroy();
-});
-
-test("a directly opened plan returns to its run on Escape", async () => {
+test("a directly opened plan closes on Escape", async () => {
   const doc = document(PLAN.id, PLAN.title, "awaiting_approval");
-  const plans: PlansService = {
-    list: async () => ({ plans: [doc] }),
-    read: async () => doc,
-    setRetention: async () => doc,
-    delete: async (id) => ({ id, deleted: true }),
-  };
   const { interaction, press } = fakeInteraction();
   let closed = 0;
   const t = await openRender(
@@ -352,8 +287,7 @@ test("a directly opened plan returns to its run on Escape", async () => {
       <PlanOverlay
         interaction={interaction}
         plan={() => ({ ...PLAN, status: "awaiting_approval" })}
-        plans={plans}
-        origin="direct"
+        plans={{ read: async () => doc }}
         onClose={() => closed++}
       />
     )) as never,
@@ -370,12 +304,7 @@ test("PlanOverlay leaves Ctrl+C to the global cancel-or-quit command", async () 
   let closed = 0;
   const t = await openRender(
     (() => (
-      <PlanOverlay
-        interaction={interaction}
-        plan={() => PLAN}
-        origin="direct"
-        onClose={() => closed++}
-      />
+      <PlanOverlay interaction={interaction} plan={() => PLAN} onClose={() => closed++} />
     )) as never,
     { width: 100, height: 30 },
   );
@@ -385,18 +314,8 @@ test("PlanOverlay leaves Ctrl+C to the global cancel-or-quit command", async () 
   t.renderer.destroy();
 });
 
-test("a missing active id warns and never opens another history document as active", async () => {
+test("a mismatched document id is rejected without hiding live tasks", async () => {
   const other = document("other.md", "Another document", "completed");
-  const reads: string[] = [];
-  const plans: PlansService = {
-    list: async () => ({ plans: [other] }),
-    read: async (id) => {
-      reads.push(id);
-      return other;
-    },
-    setRetention: async () => other,
-    delete: async (id) => ({ id, deleted: true }),
-  };
   const live: PlanActivity = {
     id: "active-elsewhere",
     title: "Active elsewhere",
@@ -406,56 +325,93 @@ test("a missing active id warns and never opens another history document as acti
     spec_revision: 1,
     tasks: [{ id: "t1", title: "Keep working", status: "in_progress" }],
   };
-  const { t } = await mount(live, "selected provider's current history page", plans);
-  const frame = t.captureCharFrame();
-  expect(frame).toContain("active-elsewhere");
-  expect(frame).toContain("selected provider's current history page");
-  expect(frame).toContain("Keep working");
-  expect(frame).not.toContain("Detail for Another document");
-  expect(reads).toEqual(["active-elsewhere"]);
+  const { t } = await mount(live, "while reading active plan active-elsewhere", {
+    read: async () => other,
+  });
+  const out = t.captureCharFrame();
+  expect(out).toContain("Keep working");
+  expect(out).not.toContain("Detail for Another document");
   t.renderer.destroy();
 });
 
-test("history filters and pagination are delegated to PlansService", async () => {
-  const first = document(".clarvis/plans/first.md", "First plan", "completed");
-  const calls: unknown[] = [];
-  const plans: PlansService = {
-    list: async (input) => {
-      calls.push(input);
-      return { plans: [first], next_cursor: calls.length === 1 ? "next-page" : undefined };
-    },
-    read: async () => first,
-    setRetention: async () => first,
-    delete: async (id) => ({ id, deleted: true }),
+test("a stale document response cannot replace a newer live revision", async () => {
+  const first: PlanActivity = {
+    id: "plan-race",
+    title: "First live revision",
+    status: "active",
+    retention: "keep",
+    revision: 1,
+    spec_revision: 1,
+    tasks: [{ id: "t1", title: "First live task", status: "in_progress" }],
   };
-  const { t, press } = await mount(null, "First plan", plans);
-  press("]");
+  const second: PlanActivity = {
+    ...first,
+    title: "Second live revision",
+    revision: 2,
+    tasks: [{ id: "t2", title: "Second live task", status: "in_progress" }],
+  };
+  const pending: Array<(doc: PlanDocumentDto) => void> = [];
+  const { interaction } = fakeInteraction();
+  const [plan, setPlan] = createSignal<PlanActivity | null>(first);
+  const t = await openRender(
+    (() => (
+      <PlanOverlay
+        interaction={interaction}
+        plan={plan}
+        plans={{
+          read: async () =>
+            await new Promise<PlanDocumentDto>((resolve) => {
+              pending.push(resolve);
+            }),
+        }}
+      />
+    )) as never,
+    { width: 100, height: 30 },
+  );
+
+  await captureUntil(t, "First live task");
+  expect(pending).toHaveLength(1);
+  setPlan(second);
+  await captureUntil(t, "Second live task");
+  expect(pending).toHaveLength(2);
+
+  pending[1]!({
+    ...document("plan-race", "New document", "active"),
+    revision: 2,
+  });
+  expect(await captureUntil(t, "Detail for New document")).toContain("Detail for New document");
+
+  pending[0]!(document("plan-race", "Stale document", "active"));
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
   await t.renderOnce();
-  press("f");
-  await captureUntil(t, "status:active");
-  press("t");
-  await captureUntil(t, "retention:keep");
-  expect(calls).toContainEqual({ limit: 8, cursor: "next-page" });
-  expect(calls).toContainEqual({ limit: 8, status: "active" });
-  expect(calls).toContainEqual({ limit: 8, status: "active", retention: "keep" });
+  const out = t.captureCharFrame();
+  expect(out).toContain("Detail for New document");
+  expect(out).not.toContain("Detail for Stale document");
+  t.renderer.destroy();
+});
+
+test("a reader failure is visible and preserves the live task fallback", async () => {
+  const { t } = await mount(PLAN, "provider unavailable", {
+    read: async () => {
+      throw new Error("provider unavailable");
+    },
+  });
+  const out = t.captureCharFrame();
+  expect(out).toContain("plan document invalid: provider unavailable");
+  expect(out).toContain("Map cart state");
   t.renderer.destroy();
 });
 
 async function approvalFrame(doc: PlanDocumentDto): Promise<string> {
-  const plans: PlansService = {
-    list: async () => ({ plans: [doc] }),
+  const { t } = await mount(livePlan(doc), "Detail for " + doc.title, {
     read: async () => doc,
-    setRetention: async () => doc,
-    delete: async () => ({ id: doc.id, deleted: true }),
-  };
-  const { t, press } = await mount(null, doc.title, plans);
-  press("return");
-  const out = await captureUntil(t, "Detail for " + doc.title);
+  });
+  const out = t.captureCharFrame();
   t.renderer.destroy();
   return out;
 }
 
-test("an unapproved plan says approval is pending and names the spec revision", async () => {
+test("an unapproved plan names the pending specification revision", async () => {
   const doc = {
     ...document(".clarvis/plans/a.md", "Needs approval", "awaiting_approval"),
     spec_revision: 2,
@@ -465,26 +421,24 @@ test("an unapproved plan says approval is pending and names the spec revision", 
   expect(out).toContain("Execution update #1 · specification #2");
 });
 
-test("an approved plan names the specification the human bound to", async () => {
+test("an approved plan names the specification the human approved", async () => {
   const doc = {
     ...document(".clarvis/plans/b.md", "Approved plan", "active"),
     spec_revision: 2,
     approved_spec_revision: 2,
   };
-  const out = await approvalFrame(doc);
-  expect(out).toContain("Human-approved specification #2");
-  expect(out).toContain("Execution update #1 · specification #2");
+  expect(await approvalFrame(doc)).toContain("Human-approved specification #2");
 });
 
-test("a structural edit after approval reads as invalidated, not as approved", async () => {
+test("a structural edit after approval reads as invalidated", async () => {
   const doc = {
     ...document(".clarvis/plans/c.md", "Changed plan", "awaiting_approval"),
     spec_revision: 3,
     approved_spec_revision: 2,
   };
-  const out = await approvalFrame(doc);
-  expect(out).toContain("specification #3 changed after approval of specification #2");
-  expect(out).toContain("Execution update #1 · specification #3");
+  expect(await approvalFrame(doc)).toContain(
+    "specification #3 changed after approval of specification #2",
+  );
 });
 
 test("a plan that never needed review does not claim an approval", async () => {
@@ -492,133 +446,7 @@ test("a plan that never needed review does not claim an approval", async () => {
   expect(await approvalFrame(doc)).toContain("Human review was not required");
 });
 
-test("retention toggles through the service and terminal delete arms, then y confirms", async () => {
-  const terminal = document(".clarvis/plans/done.md", "Done plan", "completed");
-  const retentions: string[] = [];
-  const deletes: string[] = [];
-  const plans: PlansService = {
-    list: async () => ({ plans: [terminal] }),
-    read: async () => terminal,
-    setRetention: async (id, retention) => {
-      retentions.push(`${id}:${retention}`);
-      return { ...terminal, retention };
-    },
-    delete: async (id) => {
-      deletes.push(id);
-      return { id, deleted: true };
-    },
-  };
-  const { t, press } = await mount(null, "Done plan", plans);
-  press("v");
-  expect(await captureUntil(t, "Delete")).toContain("Done plan");
-  press("d");
-  await t.renderOnce();
-  expect(deletes).toEqual([]);
-  const armed = t.captureCharFrame();
-  expect(armed).toContain('delete plan "Done plan"?');
-  expect(armed).toContain("[y] confirm");
-  expect(armed).toContain("[n/esc] cancel");
-  press("y");
-  await t.renderOnce();
-  expect(retentions).toEqual([`${terminal.id}:discard`]);
-  expect(deletes).toEqual([terminal.id]);
-  t.renderer.destroy();
-});
-
-test("pathless retention and delete operations use only the stable id", async () => {
-  const { path: _path, ...base } = document("unused.md", "Remote terminal", "completed");
-  const remote: PlanDocumentDto = { ...base, id: "remote-terminal-7" };
-  const calls: string[] = [];
-  const plans: PlansService = {
-    list: async () => ({ plans: [remote] }),
-    read: async (id) => {
-      calls.push(`read:${id}`);
-      return remote;
-    },
-    setRetention: async (id, retention) => {
-      calls.push(`retention:${id}:${retention}`);
-      return { ...remote, retention };
-    },
-    delete: async (id) => {
-      calls.push(`delete:${id}`);
-      return { id, deleted: true };
-    },
-  };
-  const { t, press } = await mount(null, "Remote terminal", plans);
-  press("v");
-  await captureUntil(t, "Delete");
-  press("d");
-  press("y");
-  await t.renderOnce();
-  expect(calls).toEqual([
-    "read:remote-terminal-7",
-    "retention:remote-terminal-7:discard",
-    "delete:remote-terminal-7",
-  ]);
-  t.renderer.destroy();
-});
-
-test("n keeps the armed plan: nothing is deleted and the hint returns", async () => {
-  const terminal = document(".clarvis/plans/done.md", "Done plan", "completed");
-  const deletes: string[] = [];
-  const plans: PlansService = {
-    list: async () => ({ plans: [terminal] }),
-    read: async () => terminal,
-    setRetention: async () => terminal,
-    delete: async (id) => {
-      deletes.push(id);
-      return { id, deleted: true };
-    },
-  };
-  const { t, press } = await mount(null, "Done plan", plans);
-  press("d");
-  await t.renderOnce();
-  expect(t.captureCharFrame()).toContain("[y] confirm");
-  press("n");
-  await t.renderOnce();
-  expect(deletes).toEqual([]);
-  expect(t.captureCharFrame()).not.toContain("[y] confirm");
-  t.renderer.destroy();
-});
-
-test("an armed delete never lands on a different plan than it was armed against", async () => {
-  const first = document(".clarvis/plans/first.md", "First plan", "completed");
-  const second = document(".clarvis/plans/second.md", "Second plan", "cancelled");
-  const deletes: string[] = [];
-  const plans: PlansService = {
-    list: async () => ({ plans: [first, second] }),
-    read: async (path) => (path === first.path ? first : second),
-    setRetention: async () => first,
-    delete: async (id) => {
-      deletes.push(id);
-      return { id, deleted: true };
-    },
-  };
-  const { t, press } = await mount(null, "First plan", plans);
-  press("d");
-  await t.renderOnce();
-  expect(t.captureCharFrame()).toContain('delete plan "First plan"?');
-
-  const lines = t.captureCharFrame().split("\n");
-  const y = lines.findIndex((l) => l.includes("Second plan"));
-  const x = lines[y]!.indexOf("Second plan");
-  await t.mockMouse.click(x, y);
-  await t.renderOnce();
-  expect(t.captureCharFrame()).not.toContain("[y] confirm");
-
-  press("y");
-  await captureUntil(t, "Second plan");
-  expect(deletes).toEqual([]);
-
-  press("d");
-  await captureUntil(t, 'delete plan "Second plan"?');
-  press("y");
-  await t.renderOnce();
-  expect(deletes).toEqual([second.id]);
-  t.renderer.destroy();
-});
-
-test("a seeded plan renders its readable sections, not the frontmatter, once", async () => {
+test("a seeded plan renders readable sections without duplicating live tasks", async () => {
   const markdown = [
     "---",
     "id: demo",
@@ -648,127 +476,42 @@ test("a seeded plan renders its readable sections, not the frontmatter, once", a
     ...document(".clarvis/plans/demo.md", "Demo overhaul plan", "active"),
     markdown,
   };
-  const plans: PlansService = {
-    list: async () => ({ plans: [doc] }),
-    read: async () => doc,
-    setRetention: async () => doc,
-    delete: async (id) => ({ id, deleted: true }),
-  };
   const live: PlanActivity = {
-    id: doc.id,
-    path: doc.path,
-    title: doc.title,
-    status: "active",
-    retention: "keep",
-    revision: 1,
-    spec_revision: 1,
+    ...livePlan(doc),
     tasks: [
       { id: "t1", title: "Wire the projection reducer", status: "in_progress" },
       { id: "t2", title: "Render the overlay body", status: "pending" },
     ],
   };
-  const { t } = await mount(live, "suite green before release", plans);
+  const { t } = await mount(live, "suite green before release", { read: async () => doc });
   const out = t.captureCharFrame();
   expect(out).toContain("Ship the checkout redesign.");
   expect(out).toContain("Cart flow regressed after the overhaul.");
-  expect(out).toContain("suite green before release");
   expect(out).not.toContain("id: demo");
   expect(out.split("Wire the projection reducer").length - 1).toBe(1);
   t.renderer.destroy();
 });
 
-test("with a document shown, tab switches the second focus to document scroll", async () => {
+test("a loaded document uses document-scroll mode immediately", async () => {
   const doc: PlanDocumentDto = {
     ...document(".clarvis/plans/demo.md", "Demo overhaul plan", "active"),
     markdown: ["## Objective", "", "Ship it.", "", "## Validation", "", "- green"].join("\n"),
   };
-  const plans: PlansService = {
-    list: async () => ({ plans: [doc] }),
-    read: async () => doc,
-    setRetention: async () => doc,
-    delete: async (id) => ({ id, deleted: true }),
-  };
-  const { t, press } = await mount(null, "Demo overhaul plan", plans);
-  expect(t.captureCharFrame()).toContain("] move");
-  press("return");
-  const scrolled = await captureUntil(t, "] scroll");
-  expect(scrolled).toContain("] scroll");
-  expect(scrolled).not.toContain("] move");
+  const { t, press } = await mount(livePlan(doc), "Demo overhaul plan", { read: async () => doc });
+  expect(await captureUntil(t, "] scroll")).toContain("] scroll");
   press("down");
   press("pagedown");
   await t.renderOnce();
   t.renderer.destroy();
 });
 
-test("history Enter survives a delete performed in document-scroll mode", async () => {
-  const a = document(".clarvis/plans/a.md", "Plan Aaa", "completed");
-  const b = document(".clarvis/plans/b.md", "Plan Bbb", "completed");
-  const plans: PlansService = {
-    list: async () => ({ plans: [a, b] }),
-    read: async (path) => (path === a.path ? a : b),
-    setRetention: async (path) => (path === a.path ? a : b),
-    delete: async (id) => ({ id, deleted: true }),
-  };
-  const { t, press } = await mount(null, "Plan Aaa", plans);
-  press("return"); // history -> detail; a document is shown, so this is scroll mode
-  await captureUntil(t, "] scroll");
-  press("d");
-  press("y");
-  await t.renderOnce();
-  press("tab"); // tasks -> history: mode is unchanged (no doc) — must still re-register
-  const backToHistory = await captureUntil(t, "open detail");
-  expect(backToHistory).toContain("open detail");
-  press("return");
-  const opened = await captureUntil(t, "] scroll");
-  expect(opened).toContain("] scroll");
-  t.renderer.destroy();
-});
-
-test("selection bands mix against the page surface the overlay actually sits on", async () => {
+test("task selection bands mix against the page surface", async () => {
   const band = selectionBg(tokens.bg).toLowerCase();
-
-  const taskView = await mount(PLAN, "understands the reducer");
-  const taskSpan = taskView.t
+  const { t } = await mount(PLAN, "understands the reducer");
+  const taskSpan = t
     .captureSpans()
-    .lines.flatMap((l) => l.spans)
-    .find((s) => s.text.includes("Map cart state"))!;
+    .lines.flatMap((line) => line.spans)
+    .find((span) => span.text.includes("Map cart state"))!;
   expect(rgbToHex(taskSpan.bg).toLowerCase()).toBe(band);
-  taskView.t.renderer.destroy();
-
-  const first = document(".clarvis/plans/first.md", "First plan", "completed");
-  const plans: PlansService = {
-    list: async () => ({ plans: [first] }),
-    read: async () => {
-      throw new Error("unreadable");
-    },
-    setRetention: async () => first,
-    delete: async (id) => ({ id, deleted: true }),
-  };
-  const historyView = await mount(null, "First plan", plans);
-  const historySpan = historyView.t
-    .captureSpans()
-    .lines.flatMap((l) => l.spans)
-    .find((s) => s.text.includes("First plan"))!;
-  expect(rgbToHex(historySpan.bg).toLowerCase()).toBe(band);
-  historyView.t.renderer.destroy();
-});
-
-test("delete stays disabled for an active plan", async () => {
-  const active = document(".clarvis/plans/active.md", "Active plan", "active");
-  const deletes: string[] = [];
-  const plans: PlansService = {
-    list: async () => ({ plans: [active] }),
-    read: async () => active,
-    setRetention: async () => active,
-    delete: async (id) => {
-      deletes.push(id);
-      return { id, deleted: true };
-    },
-  };
-  const { t, press } = await mount(null, "Active plan", plans);
-  press("d");
-  press("d");
-  await t.renderOnce();
-  expect(deletes).toEqual([]);
   t.renderer.destroy();
 });

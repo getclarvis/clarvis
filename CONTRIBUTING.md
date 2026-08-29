@@ -27,9 +27,30 @@ the monorepo.
 git clone https://github.com/getclarvis/clarvis.git
 cd clarvis
 mise install
-bun install --frozen-lockfile
-bun run hooks:install
+./dev-install.sh
 ```
+
+The development installer performs the frozen dependency install, configures `.githooks`, and
+creates a managed `clarvis-develop` launcher in
+`${CLARVIS_DEV_BIN_DIR:-${XDG_BIN_HOME:-$HOME/.local/bin}}`. It records this checkout and Bun binary,
+so the command can be run from another project's directory while loading the current Clarvis
+TypeScript sources instead of a release or stale bundle:
+
+```bash
+cd /path/to/project-under-test
+clarvis-develop
+```
+
+Re-run `./dev-install.sh` after moving the checkout or changing Bun installations. It updates only a
+launcher carrying its ownership marker and refuses an unrelated file with the same name.
+`./dev-install.sh --uninstall` removes that launcher. `clarvis-develop --empty-workspace` creates a
+new empty `/tmp/clarvis-development-temp/workspace-*` directory and starts the app there.
+`clarvis-develop --clear` permanently deletes the effective global state (`$CLARVIS_HOME`, or
+`~/.clarvis`) and the complete authenticated temporary-workspace root, then exits. Combine
+`--clear --empty-workspace` to clean first and start in a newly allocated workspace. Cleanup refuses
+a global target outside the user home, the home itself, a symlink, or a non-directory, and never
+removes another workspace's `.clarvis` tree. The temporary root also requires its installer marker
+and current-user ownership before removal.
 
 Confirm that the repository hook is active:
 

@@ -260,6 +260,55 @@ describe("Environment manager", () => {
     expect(target.activePlugins()).toEqual([pluginRef("same", "global", "agents")]);
   });
 
+  it("fails closed when exact installs collide on one plugin namespace", () => {
+    const agents = agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} });
+    installPlugin(globalPaths(globalDir).pluginsDir, "same", { version: "clarvis-v1" });
+    installPlugin(agents.user, "same", { version: "agents-v1" });
+    const target = manager();
+    const current = target.resolveActive(
+      [pluginRef("same"), pluginRef("same", "global", "agents")],
+      TRUSTED,
+    );
+
+    expect(current.status).toBe("invalid");
+    expect(current.plugins).toEqual([]);
+    expect(current.issues).toEqual([
+      expect.objectContaining({
+        code: "duplicate_plugin_name",
+        plugin: pluginRef("same", "global", "agents"),
+      }),
+    ]);
+    expect(target.activePlugins()).toEqual([]);
+  });
+
+  it("degrades an installed plugin whose manifest cannot enter the atomic snapshot", async () => {
+    const pluginDir = join(globalPaths(globalDir).pluginsDir, "broken");
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, "plugin.json"), "{ not json");
+    const setup = manager();
+    await create(
+      setup,
+      { scope: "global", name: "broken-plugin" },
+      definition({ plugins: [pluginRef("broken")] }),
+    );
+
+    const current = manager("global:broken-plugin").resolveActive([], TRUSTED);
+
+    expect(current.status).toBe("degraded");
+    expect(current.plugins).toEqual([
+      expect.objectContaining({
+        ref: pluginRef("broken"),
+        active: false,
+        installed: true,
+        valid: false,
+        error: expect.stringContaining("invalid JSON"),
+      }),
+    ]);
+    expect(current.issues).toEqual([
+      expect.objectContaining({ code: "invalid_plugin", plugin: pluginRef("broken") }),
+    ]);
+  });
+
   it("keeps unselected installed plugin trees off the active-resolution path", async () => {
     const setup = manager();
     await create(setup, { scope: "global", name: "minimal" }, definition());

@@ -14,6 +14,7 @@ import { useSelectionHandler, useTerminalDimensions } from "@opentui/solid";
 import { KeymapProvider, reactiveMatcherFromSignal } from "@opentui/keymap/solid";
 import type {
   CliRenderer,
+  MouseEvent,
   Renderable,
   ScrollBoxRenderable,
   TextareaRenderable,
@@ -107,18 +108,27 @@ import type { ActivityDetail as ActivityDetailValue } from "./activity-detail.ts
 import { WorktreeExitPrompt } from "./overlays/WorktreeExitPrompt.tsx";
 import { detachObserved } from "../core/tasks.ts";
 import { activeDiagnosticLogger } from "../core/diagnostic-events.ts";
-import { SurfaceBoundary } from "../ui/patterns/surface-lifecycle.tsx";
+import { SurfaceBoundary, SurfacePortal } from "../ui/patterns/surface-lifecycle.tsx";
 
 const SafetyPresetPicker = lazy(async () => {
   const module = await import("./overlays/SafetyPresetPicker.tsx");
   return { default: module.SafetyPresetPicker };
 });
 
+/** Minimal painted alpha that lets OpenTUI hit-test the pointer blocker without hiding the UI. */
+const POINTER_BLOCKER_BG = "#00000001";
+
 /** Count the current OpenTUI tree without retaining a second node index. */
 function countRenderables(root: Renderable): number {
   let count = 1;
   for (const child of root.getChildren()) count += countRenderables(child);
   return count;
+}
+
+/** Prevents queued replacement-time pointer input from reaching the retained application tree. */
+function consumePointerEvent(event: MouseEvent): void {
+  event.preventDefault();
+  event.stopPropagation();
 }
 
 /** Handles to the host renderer, platform bridge and workspace root the shell was booted with. */
@@ -1329,6 +1339,17 @@ export function App(props: AppProps): JSX.Element {
             }
           />
         </box>
+        <SurfacePortal visible={() => props.run.switching?.() ?? false} zIndex={FLOAT_Z + 3}>
+          <box
+            position="absolute"
+            left={0}
+            right={0}
+            top={0}
+            bottom={0}
+            backgroundColor={POINTER_BLOCKER_BG}
+            onMouse={consumePointerEvent}
+          />
+        </SurfacePortal>
         <Show when={layoutMode() === "floor"}>
           {/* Above the float layer on purpose: this message is the only route
               out, and an overlay that painted over it left the user with a

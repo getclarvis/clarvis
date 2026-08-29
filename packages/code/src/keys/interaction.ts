@@ -41,7 +41,7 @@ export type OverlayKind = "none" | "agentPicker" | "diff" | "plan" | (string & {
 
 /** Callbacks the built-in keymap commands dispatch into. */
 export interface InteractionEffects {
-  /** Suppresses every built-in command while the workspace runtime is being replaced. */
+  /** Suppresses every key except unmodified Escape while the workspace runtime is replaced. */
   interactionBlocked?(): boolean;
   cancelRun(): boolean;
   clearInputDraft(): void;
@@ -498,7 +498,16 @@ export function createInteraction(
   const offInteractionBlocker = keymap.intercept(
     "key",
     (ctx) => {
-      if (effects.interactionBlocked?.() === true && ctx.event.name !== "escape") {
+      const event = ctx.event;
+      const plainEscape =
+        event.name === "escape" &&
+        !event.ctrl &&
+        !event.shift &&
+        !event.meta &&
+        !event.option &&
+        !event.super &&
+        !event.hyper;
+      if (effects.interactionBlocked?.() === true && !plainEscape) {
         ctx.consume({ preventDefault: true, stopPropagation: true });
       }
     },

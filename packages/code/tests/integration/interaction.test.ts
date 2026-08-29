@@ -602,6 +602,15 @@ test("createInteraction: a workspace replacement blocks commands but keeps windo
   const platform = fakePlatform();
   const interaction = createInteraction(t.renderer, platform, effects);
   interaction.setModalContext("elicitation");
+  interaction.configureKeyboard({
+    version: 1,
+    environments: {
+      [interaction.keyboardEnvironmentId()]: {
+        profile: "manual",
+        bindings: { "run.cancel": ["ctrl+escape"] },
+      },
+    },
+  });
   const off = interaction.keymap.registerLayer({
     priority: 951,
     commands: [
@@ -620,6 +629,7 @@ test("createInteraction: a workspace replacement blocks commands but keeps windo
   });
 
   press(t.renderer, "c", { ctrl: true });
+  press(t.renderer, "escape", { ctrl: true });
   press(t.renderer, "escape");
   press(t.renderer, "z", { ctrl: true });
   await settle();

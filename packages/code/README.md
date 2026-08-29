@@ -318,7 +318,9 @@ clear the active composer input, close an editor/local detail, or return to the 
 at the root with nothing to clear it does nothing. Escape never enters a repeat timeout, cancels a
 run or quits. Ctrl+C is the exclusive keyboard route for cancellation and shutdown: it cancels an
 active run from any screen, otherwise enters the existing double-Ctrl+C quit gate without clearing
-the draft. Window-local layers never claim Ctrl+C. Input callbacks already queued during renderer
+the draft. Window-local layers never claim Ctrl+C. While a workspace runtime is being replaced, the
+mounted screen stays visible and only unmodified Escape remains interactive; modified Escape,
+every other key and all pointer actions are consumed until replacement settles. Input callbacks already queued during renderer
 teardown are discarded at the keymap host boundary, so a final macOS terminal packet cannot dispatch
 through an OpenTUI host after it has been destroyed.
 
@@ -345,7 +347,9 @@ Kitty sessions default to the enhanced profile; SSH, multiplexed legacy and unkn
 portable behavior. A remote server's operating system is never presented as the user's client OS.
 Settings > Keyboard can select portable/enhanced/manual behavior, set the client-side modifier
 convention and override any stable named action. Protected Help, back and cancel
-actions may be rebound but not left empty or used as the exact prefix of a longer manual sequence.
+actions may be rebound but not left empty or placed on either side of a strict-prefix conflict with
+the active profile's effective defaults or another manual override. Validation uses both commands in
+the conflict, so persisted binding order cannot make an unreachable protected route acceptable.
 Whenever an exact action and a longer sequence are both active, the exact action dispatches
 synchronously; Clarvis never waits on a key-sequence timeout. Keyless actions are labelled `no
 shortcut`; the removed command palette is not presented as a fallback route. The same

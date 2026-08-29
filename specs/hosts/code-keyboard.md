@@ -145,7 +145,7 @@ subscribe to those predicates (`packages/code/src/keys/commands.ts`, `CommandEnt
 | `buildKeyboardEnvironment(input, saved?)` | derives the effective environment | `packages/code/src/keys/keyboard-profile.ts:159-188` |
 | `keyboardEnvironmentId(input)` | 24-hex-char stable id from 5 dimensions | `packages/code/src/keys/keyboard-profile.ts:206-215` |
 | `resolveCommandBindings(command, candidates, environment, overrides?)` | overrides → supported enhanced → portable | `packages/code/src/keys/keyboard-profile.ts:235-253` |
-| `validateManualBindings(bindings, commands, normalizeKey?)` | shadow/unknown/empty/syntax checks | `packages/code/src/keys/keyboard-profile.ts:331-378` |
+| `validateManualBindings(bindings, commands, normalizeKey?, defaultBindings?)` | shadow/unknown/empty/syntax checks against manual overrides and effective defaults | `packages/code/src/keys/keyboard-profile.ts` (`validateManualBindings`) |
 | `applyManualBindingEdit(opts)` | folds one edit into a stored record | `packages/code/src/keys/keyboard-profile.ts:415-444` |
 | `effectiveClientPlatform(environment)` | human-readable client convention, never guessed for `ssh` | `packages/code/src/keys/keyboard-profile.ts`, `effectiveClientPlatform` |
 
@@ -326,9 +326,14 @@ not the full issue object (`packages/code/tests/unit/keyboard-profile.test.ts:32
 A strict-prefix collision is refused too: `escape x` and `esc x` report
 `"binding has an ambiguous prefix with app.escape"`. Without that rule, a timeout-based resolver
 could make the protected exact action feel frozen; with Clarvis's exact-first resolver, the longer
-route would instead be unreachable. Production: `validateManualBindings` in
-`packages/code/src/keys/keyboard-profile.ts`. Test: `packages/code/tests/unit/keyboard-profile.test.ts`
-(`"a protected action cannot be the delayed prefix of a manual sequence"`).
+route would instead be unreachable. The comparison includes every effective default for the active
+profile, not only protected defaults and persisted overrides: rebinding `app.escape` to `tab x` is
+therefore refused while unchanged `focus.next:tab` is active. Production: `validateManualBindings`
+and `applyManualBindingEdit` in `packages/code/src/keys/keyboard-profile.ts`, wired with
+`resolvedVitalBindings` by `KeyboardView`. Test:
+`packages/code/tests/unit/keyboard-profile.test.ts` (`"a protected action cannot be the delayed
+prefix of a manual sequence"`, `"a protected override cannot extend an unchanged effective
+default"`).
 
 ### 3.6 The reserved `[key(s)] label` footer segment format
 
@@ -377,11 +382,13 @@ Pinned: `packages/code/tests/unit/keyspec.test.ts:93-108` (`verb("delete", ...)`
    runs synchronously; there is no 300 ms Neovim-style timeout. Production:
    `registerImmediateExactDisambiguation` and `createInteraction` in
    `packages/code/src/keys/interaction.ts`.
-6. An `interactionBlocked` intercept at max priority consumes every key except Escape while
-   `effects.interactionBlocked?.()` is true (workspace replacement). The active view remains mounted
-   and owns its local Escape route, so switching blocks mutations without trapping navigation.
-   Production: the `offInteractionBlocker` intercept in `packages/code/src/keys/interaction.ts` and
-   the switching effect in `packages/code/src/views/App.tsx`.
+6. An `interactionBlocked` intercept at max priority consumes every key except **unmodified** Escape
+   while `effects.interactionBlocked?.()` is true (workspace replacement). The active view remains
+   mounted and owns its local Escape route; modified Escape cannot dispatch a manually rebound
+   modal-live command. A full-bleed portal surface simultaneously consumes pointer events before a
+   retained picker or page row sees them. Production: the `offInteractionBlocker` intercept in
+   `packages/code/src/keys/interaction.ts`, plus `consumePointerEvent` and the switching
+   `SurfacePortal` in `packages/code/src/views/App.tsx`.
 7. `registerWhenField`, `registerUiActionFields`, and a `modal` binding field (only the
    literal string `"none"` is a legal value) are registered (`packages/code/src/keys/interaction.ts:473-480`).
 8. The keyboard environment is computed once from the platform/keymap host metadata
@@ -763,17 +770,21 @@ never explicitly **unbound**: an empty `keys` array for either action in `valida
 cannot be unbound"`. Production: `packages/code/src/keys/keyboard-profile.ts:77-84,356-359`. Test:
 `packages/code/tests/unit/keyboard-profile.test.ts:229-251`.
 
-**INV-D3.** A manual-binding shadow check is refused even when the *vital* action is the
-one that would otherwise be silently reported — shadowing issues against a protected
-action are specifically admitted through the edited-command filter in
-`applyManualBindingEdit`, closing the case where the vital action claimed the key first
-and the ordinary edited-command filter would otherwise have dropped the complaint entirely
-and accepted the write. Production: `packages/code/src/keys/keyboard-profile.ts:392-408,430-434`. Test:
-`packages/code/tests/unit/keyboard-profile.test.ts:307-317`.
+**INV-D3.** A manual-binding shadow or protected-prefix check is refused independently of persisted
+map order. `applyManualBindingEdit` examines both `KeyboardBindingIssue.command` and `shadows`, so a
+conflict remains actionable whether the protected or ordinary command was visited second. Exact
+protected defaults are the fallback validation baseline; the Keyboard screen supplies every
+effective profile default, including unchanged ordinary commands. Production:
+`packages/code/src/keys/keyboard-profile.ts` (`validateManualBindings`, `applyManualBindingEdit`) and
+`packages/code/src/views/config/KeyboardView.tsx` (`editBinding`). Test:
+`packages/code/tests/unit/keyboard-profile.test.ts` (`"protected prefix conflicts are refused in
+either persisted binding order"`, `"a protected override cannot extend an unchanged effective
+default"`).
 
 A protected action also cannot be one exact side of a strict-prefix ambiguity. This applies in both
-directions and after alias normalization: neither `escape x` beside `app.escape:escape` nor a
-protected multi-stroke override beside its exact prefix can be saved. Production:
+directions, after alias normalization, and across manual/effective-default ownership: neither
+`escape x` beside `app.escape:escape` nor a protected multi-stroke override beside an unchanged or
+manual exact prefix can be saved. Production:
 `validateManualBindings` (`strictPrefix`, `ownedSequences`) in
 `packages/code/src/keys/keyboard-profile.ts`. Test:
 `packages/code/tests/unit/keyboard-profile.test.ts` ("a protected action cannot be the delayed
@@ -888,7 +899,7 @@ destroys its keymap host").
 | A duplicate command name, or a slash token another command already owns, is registered | Throws immediately (`register`/`registerAction` roll back the partially-inserted registry entry before rethrowing) | `packages/code/src/keys/commands.ts:357-373`; test `packages/code/tests/unit/commands.test.ts:225-251` |
 | A key event arrives with an empty `name` (observed as parser residue after Escape closes a view) | Recovered as `escape` if the raw wire bytes are exactly `U+001B`/`U+001B U+001B`; every other unnamed event is consumed before OpenTUI's strict resolver can throw on it | `packages/code/src/keys/interaction.ts:408-436`; test `packages/code/tests/integration/interaction.test.ts:479-522` |
 | A press, release, or raw-input callback was queued before renderer teardown and runs after the host is destroyed | The lifecycle-safe OpenTUI host drops it before keymap dispatch; teardown emits no `Cannot use a keymap after its host was destroyed` error | `packages/code/src/keys/interaction.ts` (`createLifecycleSafeKeymap`); test `packages/code/tests/integration/interaction.test.ts` ("queued input is inert after the renderer destroys its keymap host") |
-| The workspace runtime is being replaced (`effects.interactionBlocked?.()===true`) | Mutation and destination keys are consumed at max intercept priority; Escape remains live on the active window and can navigate away immediately | `offInteractionBlocker` in `packages/code/src/keys/interaction.ts`; the switching effect in `packages/code/src/views/App.tsx`; tests in `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/integration/app-shell-render.test.tsx` |
+| The workspace runtime is being replaced (`effects.interactionBlocked?.()===true`) | Every key except unmodified Escape is consumed at max intercept priority, including a modified Escape rebound to a modal-live command; a nearly transparent full-bleed portal consumes mouse and scroll input while the mounted page or picker stays visible, and plain Escape can still navigate the active view immediately | `offInteractionBlocker` in `packages/code/src/keys/interaction.ts`; `consumePointerEvent` and the switching `SurfacePortal` in `packages/code/src/views/App.tsx`; tests in `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/integration/app-shell-render.test.tsx` |
 | A pending elicitation modal (`setModalContext("elicitation")`) | Every vital binding **except** `MODAL_LIVE_COMMANDS` (`run.cancel`, `app.suspend`, the four `transcript.scroll*`) is inert; those six stay live (read-only navigation and escape hatches only) | `packages/code/src/keys/interaction.ts` (`MODAL_LIVE_COMMANDS`, `buildVitalBindings`); test `packages/code/tests/integration/interaction.test.ts` ("a pending modal keeps scrolling, suspend and cancel, and withholds the rest") |
 | An overlay is on the stack | The 11 `overlay==none` commands in `DEFAULT_WHEN` go dark. On the `plan` overlay only, `plan.open` remains active: the same shortcut returns a direct-origin plan to the transcript and a history-origin detail to `/plans`. `app.escape`, `run.cancel` and `app.suspend` have no overlay gate, so the cancel binding still cancels the run or enters quit. | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`), `packages/code/src/views/overlays/PlanOverlay.tsx`; tests `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/integration/app-shell-render.test.tsx` |
 | `normalizeKeyboardConfig` is handed malformed/future JSON (wrong version, non-object environments, junk verdicts) | Tolerantly degrades: unrecognized top-level shape → empty config; a malformed per-environment entry is skipped entirely; unrecognized verdict/binding entries inside an otherwise-valid entry are dropped individually | `packages/code/src/keys/keyboard-profile.ts:103-141`; test `packages/code/tests/unit/keyboard-profile.test.ts:252-` (`normalizeKeyboardConfig tolerates future and malformed UI data`) |

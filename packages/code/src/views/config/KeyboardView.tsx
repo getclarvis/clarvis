@@ -4,6 +4,7 @@ import type { KeyEvent } from "@opentui/core";
 import { reactiveMatcherFromSignal } from "@opentui/keymap/solid";
 import type { CodeConfigStore } from "../../adapters/code-config.ts";
 import type { ViewHost } from "../../keys/commands.ts";
+import { resolvedVitalBindings } from "../../keys/interaction.ts";
 import {
   applyManualBindingEdit,
   type CapabilityState,
@@ -372,6 +373,7 @@ export function KeyboardView(
         keys,
         knownCommands: new Set(stableCommands().map((item) => item.name)),
         invalidKeys,
+        defaultBindings: resolvedVitalBindings(process.platform, environment()),
         normalizeKey: (key) =>
           host.interaction.keymap
             .parseKeySequence(key)

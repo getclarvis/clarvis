@@ -853,6 +853,40 @@ test("a workspace switch keeps the active view's Escape route live", async () =>
   t.renderer.destroy();
 });
 
+test("a workspace switch blocks picker mouse actions", async () => {
+  const [switching, setSwitching] = createSignal(false);
+  const activated: string[] = [];
+  const agents = fakeAgents({
+    list: () => [
+      { name: "coder", grants: [], canSpawn: [] },
+      { name: "reviewer", grants: [], canSpawn: [] },
+    ],
+    setActive: (name) => activated.push(name),
+  });
+  const t = await mountApp(defaultProps({ agents, switching }));
+  await captureUntil(t, "New task");
+  press(t, "tab", { shift: true });
+  await captureUntil(t, "Select agent");
+
+  setSwitching(true);
+  await t.renderOnce();
+  await t.renderOnce();
+  const blocked = t.captureCharFrame();
+  const rows = blocked.split("\n");
+  const y = rows.findIndex((row) => row.includes("reviewer"));
+  const x = rows[y]!.indexOf("reviewer");
+  await t.mockMouse.click(x, y);
+  await t.renderOnce();
+  expect(activated).toEqual([]);
+  expect(t.captureCharFrame()).toContain("Select agent");
+
+  setSwitching(false);
+  await t.renderOnce();
+  press(t, "escape");
+  await captureUntil(t, "New task");
+  t.renderer.destroy();
+});
+
 test("Alt+M no longer changes memory for the session", async () => {
   const knobs = () => ({ memoryEnabled: true });
   const build = defaultProps({ settingsKnobs: knobs });

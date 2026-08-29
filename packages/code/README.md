@@ -741,8 +741,12 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   Unbroken long tokens wrap by character, so continuing to type never hides the draft prefix.
 
 Steering submitted while a run is still starting waits for the kernel handle
-instead of being dropped. Likewise, completion of a cancelled `!bash` job from
-an outgoing session cannot overwrite the current session's status.
+instead of being dropped. Once the run result settles, the composer immediately
+leaves steer mode and a subsequent message starts a new turn. Post-run memory
+indexing may keep the event stream physically open and continue updating the
+status line, but it never keeps the footer `Running` or routes user input to the
+settled run. Likewise, completion of a cancelled `!bash` job from an outgoing
+session cannot overwrite the current session's status.
 
 `/compact` performs a forced pass while retaining the configured recent tail. During a run it queues
 the pass before the next model call. After a run it rewrites that run's persisted `final_context`

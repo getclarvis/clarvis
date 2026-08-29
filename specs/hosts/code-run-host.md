@@ -38,7 +38,7 @@ whether a late callback still owns the surface it wants to write to
 
 | Member | Signature | Line |
 |---|---|---|
-| `runActive` | `Accessor<boolean>` | `:118` |
+| `runActive` | `Accessor<boolean>` — true only while the current run accepts interactive control; post-run stream delivery does not keep it true | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`) |
 | `bashActive` | `Accessor<boolean>` | `:119` |
 | `compactionActive` | `Accessor<boolean>` — live compaction pipeline state | `packages/code/src/run-host.ts` (`RunHost`) |
 | `physicalWorkActive` | `Accessor<boolean>` — remains true until every run handle and local command settles | `packages/code/src/run-host.ts` (`RunHost`) |
@@ -288,32 +288,38 @@ emits a record with empty `counts`/`rates` — pinned by
    `MentionImageError` sets the status to the error's message, calls `draftRestore` with the original
    draft, and returns **before any session or run state is created** (`:568`–`:571`); any other error
    rethrows (`:568`).
-4. **If a run is already active**: this is a *steer*, not a new turn (`:573`). An optimistic
+4. **If a run is already interactively active**: this is a *steer*, not a new turn (`:573`). An optimistic
    `queueSteer` annotation is added only if the current sink is that execution's
    (`:575`–`:578`); `client.steer` is awaited; a non-`"steered"` status rolls the annotation back and
    shows the raw status; a throw rolls it back, sets `"steer failed — message restored to the input"`
-   and restores the draft (`:579`–`:591`). Returns.
-5. Otherwise create the session if absent (`loadEpoch += 1`, `createSession`) (`:594`–`:600`).
-6. Mint `executionId`, snapshot `messagesBeforeTurn`, append the user node
+   and restores the draft (`:579`–`:591`). Returns. A run whose `done` result has settled is no
+   longer active here even when `closed` is still waiting on post-run memory events.
+5. If `done` has settled but stored-run reconciliation is still finishing, await that semantic
+   settlement and re-check `runActive`; the message is retained for a new turn and is never sent to
+   the settled handle's steer queue. Production: `packages/code/src/run-host.ts` (`submitTurn`,
+   `currentSettlement`). Test: `packages/code/tests/component/run-host.test.ts` ("done releases
+   interactive ownership before the post-run event stream closes").
+6. Otherwise create the session if absent (`loadEpoch += 1`, `createSession`) (`:594`–`:600`).
+7. Mint `executionId`, snapshot `messagesBeforeTurn`, append the user node
    (`store.appendUserMessage`) (`:601`–`:604`).
-7. If the effective plans mode is `"review"` (`skill?.plansMode ?? deps.plansMode?.()`), append a
+8. If the effective plans mode is `"review"` (`skill?.plansMode ?? deps.plansMode?.()`), append a
    plan-approval notice to the transcript (`:605`–`:612`).
-8. `sess.beginTurn(msg, executionId)` stamps the process-pinned Environment identity on the new turn,
+9. `sess.beginTurn(msg, executionId)` stamps the process-pinned Environment identity on the new turn,
    mirrors it to `SessionMeta.lastEnvironment`, and returns the **continuation base** — the previous
    turn's execution id. Production: `packages/code/src/adapters/session.ts` (`beginTurn`). Test:
    `packages/code/tests/component/session.test.ts` ("beginTurn stamps the selected Environment and
    reconcile adopts the persisted run snapshot").
-9. `rememberResidentTurn` records the turn and folds the oldest when over the limit (`:614`).
-10. Collect `promptCacheKey = sess.meta()?.id`, `guardMode`, `judgePayload(guardMode)`, and `memory`
+10. `rememberResidentTurn` records the turn and folds the oldest when over the limit (`:614`).
+11. Collect `promptCacheKey = sess.meta()?.id`, `guardMode`, `judgePayload(guardMode)`, and `memory`
     only when the mode is `"off"` (`:619`–`:626`).
-11. `workflowRunId = executionId; setWorkflowActivity(null)` (`:629`, `:630`).
-12. Run through `runManaged` (`:671`): a continuation start when `continueFrom && !isManager`
+12. `workflowRunId = executionId; setWorkflowActivity(null)` (`:629`, `:630`).
+13. Run through `runManaged` (`:671`): a continuation start when `continueFrom && !isManager`
     (sending only `[...pending, {role:"user", content: msg}]`), otherwise a full start
     (`:676`–`:696`).
-13. On a `continuation_unavailable` failure that was not cancelled, await `handle.closed`, set
+14. On a `continuation_unavailable` failure that was not cancelled, await `handle.closed`, set
     `"context expired — rebuilding from history…"`, and re-start full with a rebuilt history
     (`:699`–`:710`).
-14. `afterRun: sess.endTurn(envelope)` (`:713`). `onStored`: `sess.reconcile(stored)`,
+15. `afterRun: sess.endTurn(envelope)` (`:713`). `onStored`: `sess.reconcile(stored)`,
     `replayRunEvents(sink, stored)`, and `sess.releaseHistory()` when a trace exists, including for a
     manager (`:714`–`:718`). `onError`: `sess.endTurn(undefined)` and a `"cancelled"` /
     `"run error: …"` status (`:719`–`:722`).
@@ -334,28 +340,31 @@ Every run shape (`submitTurn`, `submitSkillRun`, `workOnTask`) goes through it.
 | enter | `transcript = store.openRun(id)`; `sink = teeSink(transcript, activity.openRun())` | `:490`, `:491` |
 | enter | `currentSink = {executionId, sink, transcript}`; `cancelRequested = false`; `currentStatusExecId = executionId`; `memoryStatusBase = null` | `:492`–`:496` |
 | enter | `diagnosticBind({execution_id})`; `setRunActive(true)`; `setRunStartedAt(Date.now())`; initial status; `attention.setTitle("running")` | `:497`–`:501` |
+| enter | open `currentSettlement`, the semantic-reconciliation gate that does not extend `runActive` | `packages/code/src/run-host.ts` (`runManaged`, `currentSettlement`) |
+| handle | `setHandle` records an independent physical-work lease and attaches its release to `handle.closed` | `packages/code/src/run-host.ts` (`runManaged`) |
 | resolve | ownership re-check (`session !== sess \|\| epoch mismatch` ⇒ return) | `:507` |
-| resolve | `afterRun?`; `client.getRun(executionId)`; on throw, `store.settleRun(id, status === "completed")` | `:508`–`:513` |
+| resolve | `afterRun?`; publish the outcome status; release interactive handle/title/`runActive`; replay any held ingest notice | `packages/code/src/run-host.ts` (`runManaged`, `releaseInteractiveOwnership`) |
+| resolve | `client.getRun(executionId)`; on throw, `store.settleRun(id, status === "completed")` | `:508`–`:513` |
 | resolve | ownership re-check again, then `onStored(envelope, stored, sink)` | `:515`, `:516` |
 | resolve | `store.appendRunFailure` when the envelope failed with an error | `:517`, `:518` |
-| resolve | status ← `runOutcomeStatus(envelope)`; `attention.notify` when not cancelled and away | `:519`–`:521` |
+| resolve | `attention.notify` when not cancelled and away | `packages/code/src/run-host.ts` (`runManaged`) |
 | reject | `onError(e)`; `store.settleRun(id)`; `attention.notify("run failed")` when not cancelled and away | `:522`–`:527` |
-| finally | `await Promise.allSettled(lifecycleClosures)` — the handles' `closed` promises | `:532` |
-| finally | `diagnosticBind({execution_id: undefined})` | `:533` |
-| finally | if the epoch still matches **and** `currentSink?.sink === sink`: release sink/handle, `workflowRunId = null`, `setRunActive(false)`, `attention.setTitle(null)`, replay a `heldIngest` for this run | `:534`–`:545` |
+| finally | idempotently release interactive ownership on an error path; clear the diagnostic binding and sink; resolve `currentSettlement` without awaiting `closed` | `packages/code/src/run-host.ts` (`runManaged`, `releaseInteractiveOwnership`) |
 | finally | `elicit.cancelPending()` unconditionally | `:546` |
 
 `runOutcomeStatus` (`:272`) renders `"failed — <message>"` for a failed envelope carrying an error,
 otherwise `envelope?.status ?? "done"`.
 
-The `closed` await is what keeps a run "owned" past `done`;
-`packages/code/tests/component/run-host.test.ts:252` fails if it regresses.
-Every handle also holds a separate physical-work lease from `setHandle` until its own `closed`
-promise settles. `teardownRuns` may detach visual ownership and clear `runActive`, but it cannot
-release that lease. The memory recovery path therefore cannot run GC while a detached backend is
-still unwinding. Production: `packages/code/src/run-host.ts` (`physicalHandles`,
-`physicalWorkActive`, `runManaged`). Test: `packages/code/tests/component/run-host.test.ts` ("forced
-teardown keeps the physical run lease until closed").
+Interactive ownership ends as soon as the result has updated the session and outcome status, before
+stored-run reconciliation and without awaiting `closed`. A new submission waits on
+`currentSettlement` only long enough for reconciliation to finish, then re-checks `runActive` and
+starts a semantic turn; it is never steered into the settled run. Every handle separately holds a
+physical-work lease from `setHandle` until its own `closed` promise settles. This keeps post-run
+memory events deliverable and prevents memory recovery from running GC while the backend is still
+unwinding, without leaving the composer in steer mode. Production: `packages/code/src/run-host.ts`
+(`currentSettlement`, `physicalHandles`, `physicalWorkActive`, `runManaged`). Tests:
+`packages/code/tests/component/run-host.test.ts` ("done releases interactive ownership before the
+post-run event stream closes" and "forced teardown keeps the physical run lease until closed").
 
 ### 4.3 `submitSkillRun` (`packages/code/src/run-host.ts:761`)
 
@@ -865,11 +874,15 @@ The following are derived directly from this document's own source and its tests
    still gated by the event predicate (`:326`). Pinned:
    `packages/code/tests/component/run-host.test.ts:372`.
 
-4. **A run keeps ownership of its sink, status and title until its event stream closes, not merely
-   until `done` resolves.** `runManaged` awaits `Promise.allSettled(lifecycleClosures)` before
-   releasing (`packages/code/src/run-host.ts:550`), and `driveHandle`'s `closed` awaits both
-   `handle.closed` and the pump (`packages/code/src/adapters/kernel-run-client.ts:344`–`:346`).
-   Pinned: `packages/code/tests/component/run-host.test.ts:252` and
+4. **A settled result releases interactive ownership before its post-run event stream closes.**
+   `runManaged` clears `currentHandle`, title and `runActive` after `done` without awaiting `closed`.
+   A submission arriving during stored-run reconciliation waits on `currentSettlement`, then starts
+   a new turn instead of steering a settled queue. `setHandle` separately retains the physical lease
+   until `closed`, while `driveHandle.closed` still awaits both the protocol handle and its event
+   pump. Production: `packages/code/src/run-host.ts` (`runManaged`, `currentSettlement`,
+   `physicalHandles`) and `packages/code/src/adapters/kernel-run-client.ts` (`driveHandle`). Test:
+   `packages/code/tests/component/run-host.test.ts` ("done releases interactive ownership before the
+   post-run event stream closes") and
    `packages/code/tests/component/kernel-run-client.test.ts:160`.
 
 5. **A settle only writes back if the session object and the ownership epoch are both unchanged.**
@@ -1191,7 +1204,7 @@ The following are derived directly from this document's own source and its tests
 | run rejects before any model call | `onError` + `store.settleRun(id)` (`:524`, `:525`) | spinners settle, session turn marked `error` |
 | run fails with an envelope error | `store.appendRunFailure` (`:518`, impl `packages/code/src/adapters/store.ts:791`) | one error node per distinct `(execId, code)`, suppressed if the same rendered text is already present |
 | the kernel event stream throws mid-iteration | `reportStreamInterrupted` → `diagnosticEvent("run.stream.interrupted", …, "warn")` (`packages/code/src/adapters/kernel-run-client.ts:307`, `:320`) | `done` still resolves; later events are silently missing from the transcript (stated in the TSDoc `@remarks` at `:316`–`:318`) |
-| `handle.closed` rejects | `reportCloseFailure` → `diagnosticEvent("run.close.failed", …, "debug")` (`packages/code/src/adapters/kernel-run-client.ts:350`, `:331`) | swallowed, because `closed` is awaited from `finally` blocks |
+| `handle.closed` rejects | `reportCloseFailure` → `diagnosticEvent("run.close.failed", …, "debug")` in `packages/code/src/adapters/kernel-run-client.ts` (`reportCloseFailure`) | swallowed after the independent physical-lifecycle observer records the failure |
 | an elicitation handler throws | `reportElicitFailure` → `diagnosticEvent("elicit.handler.failed", …, "warn")` and answers `{action:"cancel"}` (`packages/code/src/adapters/kernel-run-client.ts:265`) | the kernel is always answered; the defect is distinguishable from a user dismissal only in the diagnostic record |
 | no `onElicit` callback registered | `packages/code/src/adapters/kernel-run-client.ts:281` | answers `{action:"decline"}` |
 | an operation issued before `connect()` | `requireKernel()` throws `"kernel run client is not connected"` (`packages/code/src/adapters/kernel-run-client.ts:154`) | hard failure — except `capabilities`, which returns the last descriptor (`:173`) |

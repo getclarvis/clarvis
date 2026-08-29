@@ -55,6 +55,9 @@ export function createMemoryConfigStore(seed?: MemoryConfigSeed): ConfigStore {
   /** Recompute the snapshot: a shallow `global` then `workspace` merge plus `memory:`-prefixed sources. */
   const snapshot = (): SettingsSnapshot => {
     const merged: SettingsData = { ...(settings.global ?? {}), ...(settings.workspace ?? {}) };
+    const mcpServerOrigins = Object.fromEntries(
+      Object.keys(merged.mcpServers ?? {}).map((name) => [name, "operator" as const]),
+    );
     const sources: SettingsSource[] = SCOPES.map((scope) => ({
       scope,
       path: `memory:${scope}`,
@@ -64,7 +67,7 @@ export function createMemoryConfigStore(seed?: MemoryConfigSeed): ConfigStore {
           ? null
           : settingsDocumentRevision(JSON.stringify(settings[scope])),
     }));
-    return { merged, scopes: { ...settings }, sources };
+    return { merged, scopes: { ...settings }, sources, mcpServerOrigins };
   };
 
   /** Build an {@link AgentRecord}, lifting `model`/`description` out of the frontmatter when typed as strings. */

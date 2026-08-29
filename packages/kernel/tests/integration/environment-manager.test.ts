@@ -926,13 +926,18 @@ describe("Environment manager", () => {
     expect(revoked.plugins[0]).toMatchObject({ active: false });
   });
 
-  it("fingerprints resolved companion MCP and plugin skill bytes", async () => {
+  it("fingerprints resolved companion MCP, plugin skill, and process-file bytes", async () => {
     const dir = installPlugin(globalPaths(globalDir).pluginsDir, "atlas", {
       mcpServers: "./.mcp.json",
       skills: "./skills",
+      capabilityExecutables: {
+        memory: { command: "python3", args: ["./provider.py"] },
+      },
     });
     const companion = join(dir, ".mcp.json");
+    const provider = join(dir, "provider.py");
     writeFileSync(companion, JSON.stringify({ mcpServers: { docs: { command: "atlas-v1" } } }));
+    writeFileSync(provider, "print('v1')\n");
     writeSkill(join(dir, "skills"), "atlas-guide");
     const setup = manager();
     const ref = { scope: "global" as const, name: "atlas" };
@@ -946,9 +951,12 @@ describe("Environment manager", () => {
       "---\nname: atlas-guide\ndescription: changed\n---\n\nUse changed guidance.\n",
     );
     const afterSkill = manager("global:atlas").resolveActive([], TRUSTED);
+    writeFileSync(provider, "print('v2')\n");
+    const afterProcess = manager("global:atlas").resolveActive([], TRUSTED);
 
     expect(afterMcp.fingerprint).not.toBe(before.fingerprint);
     expect(afterSkill.fingerprint).not.toBe(afterMcp.fingerprint);
+    expect(afterProcess.fingerprint).not.toBe(afterSkill.fingerprint);
   });
 
   it("fingerprints standalone skill resources and rejects their drift until reconnect", () => {

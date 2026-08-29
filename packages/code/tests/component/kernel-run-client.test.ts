@@ -89,6 +89,9 @@ interface KernelOver {
   agents?: { name: string; scope: "workspace" | "global"; model?: string; description?: string }[];
   tasks?: KernelClient["tasks"];
   capabilities?: Partial<KernelClient["capabilities"]>;
+  approveWorkspace?: KernelClient["config"]["approveWorkspace"];
+  revokeWorkspace?: KernelClient["config"]["revokeWorkspace"];
+  currentEnvironment?: KernelClient["environments"]["current"];
 }
 
 /**
@@ -128,12 +131,16 @@ function fakeKernel(over: KernelOver): KernelClient {
     },
     config: {
       listAgents: async () => over.agents ?? [],
+      approveWorkspace: over.approveWorkspace ?? (async () => ({}) as never),
+      revokeWorkspace: over.revokeWorkspace ?? (async () => ({}) as never),
     } as KernelClient["config"],
     environments: {
-      current: async () => ({
-        id: "builtin:default",
-        fingerprint: `sha256:${"0".repeat(64)}`,
-      }),
+      current:
+        over.currentEnvironment ??
+        (async () => ({
+          id: "builtin:default",
+          fingerprint: `sha256:${"0".repeat(64)}`,
+        })),
     } as KernelClient["environments"],
     ...(over.tasks === undefined ? {} : { tasks: over.tasks }),
     ...(over.capabilities === undefined ? {} : { capabilities: over.capabilities }),
@@ -160,6 +167,29 @@ test("connect exposes the process-pinned Environment identity", async () => {
     id: "builtin:default",
     fingerprint: `sha256:${"0".repeat(64)}`,
   });
+  await c.dispose();
+});
+
+test("workspace trust transitions refresh the process-pinned Environment identity", async () => {
+  let fingerprint = `sha256:${"1".repeat(64)}`;
+  const { c } = client({
+    currentEnvironment: async () => ({ id: "workspace:project", fingerprint }) as never,
+    approveWorkspace: async () => {
+      fingerprint = `sha256:${"2".repeat(64)}`;
+      return {} as never;
+    },
+    revokeWorkspace: async () => {
+      fingerprint = `sha256:${"3".repeat(64)}`;
+      return {} as never;
+    },
+  });
+  await c.connect();
+
+  await c.config.approveWorkspace();
+  expect(c.currentEnvironment()?.fingerprint).toBe(`sha256:${"2".repeat(64)}`);
+
+  await c.config.revokeWorkspace();
+  expect(c.currentEnvironment()?.fingerprint).toBe(`sha256:${"3".repeat(64)}`);
   await c.dispose();
 });
 

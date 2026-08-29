@@ -27,6 +27,8 @@ export interface StagedPlugin {
   readonly manifestError?: string;
   /** Agent files used for validation and contribution discovery. */
   readonly agentFiles: PluginAgentFile[];
+  /** Whether the inventory entry itself is a symbolic link Clarvis does not own. */
+  readonly linked?: boolean;
   /** Whether the root itself remains a Git checkout. */
   readonly gitCheckout: boolean;
   /** Git origin recorded with the installation, when available. */

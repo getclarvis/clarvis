@@ -198,8 +198,10 @@ No state silently substitutes `builtin:default`.
 
 `resolveActive` pins one contribution snapshot for the process. Each active plugin digest covers its
 resolved manifest (including MCP/hook companion semantics), bounded agent files, packaged skill
-bodies/resources, install record, and resolved source revision (`snapshot`, `pin`, and
-`contributionDigest` in `packages/kernel/src/plugins/plugin-contributions.ts`; `identity` and
+bodies/resources, install record, resolved source revision, and every directly referenced
+package-local MCP, hook, or capability process file's content, size, executable mode, and relative
+path. The process-file surface is capped at 256 files, 8 MiB per file, and 32 MiB per plugin
+(`snapshotPluginExecutables`, `snapshot`, and `pin` in `packages/kernel/src/plugins`; `identity` and
 `resolveActive` in `packages/kernel/src/environments/environment-manager.ts`). Before every later
 contribution lookup, content drift is rejected with `unavailable` until reconnect, so settings,
 agents, skills, and executables cannot consume a different checkout under the pinned fingerprint.
@@ -270,6 +272,9 @@ workspace-derived) plugin set immediately when the kernel is idle. The same tran
 `conflict` while a run is active, before the trust store is changed, so no in-flight snapshot gains
 or retains executable contributions under a different verdict
 (`assertWorkspaceTrustTransitionAllowed` and the trust-transition branch of `resolveActive`).
+Code then reads `EnvironmentService.current()` and replaces its process snapshot cache before the
+trust operation resolves to the caller (`mutateTrust` in
+`packages/code/src/adapters/kernel-run-client.ts`).
 
 When a saved session resumes under a different `{ id, fingerprint }`, Code preserves the session,
 adds a visible warning, and marks the status instead of pretending continuity under the same
@@ -320,10 +325,11 @@ bytes, contribution drift is rejected before lookup, and an already running kern
 original fingerprint. Trust transitions may recompose only at an idle boundary.
 
 - **Production:** `PluginContributions.pin`, `assertPinnedSnapshot`,
-  `assertPinnedStandaloneSkills`, pinned `resolveActive`, revision CAS, and preview fingerprint
-  comparison in `packages/kernel/src`.
+  `snapshotPluginExecutables`, `assertPinnedStandaloneSkills`, pinned `resolveActive`, revision CAS,
+  and preview fingerprint comparison in `packages/kernel/src`.
 - **Test:** the stale-preview, global-precedence, contribution-fingerprint, and trust-transition
-  cases in `packages/kernel/tests/integration/environment-manager.test.ts`; the drift case in
+  cases in `packages/kernel/tests/integration/environment-manager.test.ts`, including process-file
+  fingerprint drift; the MCP/hook/capability process-file drift cases in
   `packages/kernel/tests/integration/plugin-contributions.test.ts`; and the selected lifecycle case
   in `packages/kernel/tests/integration/run-service.smoke.test.ts`.
 
@@ -380,16 +386,18 @@ absence cannot be established safely.
 
 ### INV-322 — Hook definitions are part of the atomic plugin snapshot
 
-The selected plugin manifest, including every hook definition and executable contribution, is
-hashed into the Environment identity. No mutable per-hook approval projection can change execution
-eligibility underneath an unchanged `{ id, fingerprint }`.
+The selected plugin manifest, including every hook definition and executable declaration, and every
+directly referenced package-local process file are hashed into the Environment identity. No mutable
+per-hook approval projection or changed process byte can alter execution eligibility underneath an
+unchanged `{ id, fingerprint }`.
 
-- **Production:** `pluginInventory` and `pluginContentDigest` in
-  `packages/kernel/src/environments/environment-manager.ts`; `pluginSettingsContributions` in
-  `packages/kernel/src/plugins/plugin-contributions.ts`.
-- **Test:** `packages/kernel/tests/integration/environment-manager.test.ts` (content digest and
-  snapshot drift cases) and `packages/kernel/tests/integration/plugin-contributions.test.ts`
-  (selected hooks compose with their plugin).
+- **Production:** `PluginContributions.pin` and `contributionSnapshot` in
+  `packages/kernel/src/plugins/plugin-contributions.ts`; `snapshotPluginExecutables` in
+  `packages/kernel/src/plugins/plugin-executable-snapshot.ts`.
+- **Test:** `packages/kernel/tests/integration/environment-manager.test.ts` (content, skill, and
+  process-file fingerprint drift) and
+  `packages/kernel/tests/integration/plugin-contributions.test.ts` (selected hooks compose with
+  their plugin and all three process projections reject changed bytes).
 
 ### INV-323 — Missing catalogs are safe and workspace reads are side-effect-free
 

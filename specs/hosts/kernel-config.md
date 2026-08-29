@@ -265,9 +265,14 @@ silently enlarge every delegated run.
 5. The final merge order is `[...pluginScopes, ...operatorScopes]` (`:611`), and `mergeSettings` takes
    scopes "in ascending precedence (a later scope outranks an earlier one)"
    (`packages/loop/src/settings/settings-merge.ts:143`). So: **plugin < global < workspace**.
-6. `scopes` reports each scope's **raw** parsed value, unstripped (`:598-604`), so a UI can show what
+6. `mcpServerOrigins` walks that same ordered scope list and records the last declaration origin for
+   each MCP namespace. The run assembler uses this internal provenance to grant `auto_tools` only
+   when the winning declaration is still plugin-owned; a same-name operator override remains
+   profile-selected (`mcpServerOrigins` in `file-config-store.ts`; `createSettingsRunAssembler` in
+   `packages/kernel/src/runs/settings-assembler.ts`).
+7. `scopes` reports each scope's **raw** parsed value, unstripped (`:598-604`), so a UI can show what
    was refused. `sources` carries `{scope, path, exists, revision, error?}` per scope (`:606-616`).
-7. `withheld_workspace_fields` is set only when something was actually withheld. In addition to
+8. `withheld_workspace_fields` is set only when something was actually withheld. In addition to
    risky settings keys it reports the pseudo-field `environment` while a plugin-activating workspace
    Environment is unapproved or changed.
    `workspace_trust` and `active_plugins` are always present on the file store

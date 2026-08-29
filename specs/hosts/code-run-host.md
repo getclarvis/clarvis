@@ -122,7 +122,7 @@ optional `prepareReconnect`, and `callbacks` (`:111`).
 | `getRun(executionId)` | `Promise<RunDetail \| null>` | `:86`, impl `:397` |
 | `deleteRun(executionId)` | `Promise<boolean>` | `:87`, impl `:406` |
 | `plans` `workflows` `skills` `config` `secrets` `models` `providerAuth` `files` `sessions` `plugins` `environments` `tasks` `storage` | thin per-method pass-throughs to `requireKernel()` | `packages/code/src/adapters/kernel-run-client.ts` (`createKernelRunClient`) |
-| `currentEnvironment()` | the process-pinned `{id, fingerprint}` captured during `connect()` | `packages/code/src/adapters/kernel-run-client.ts` (`connect`, `currentEnvironment`) |
+| `currentEnvironment()` | the process-pinned `{id, fingerprint}` captured during `connect()` and refreshed after idle trust recomposition | `packages/code/src/adapters/kernel-run-client.ts` (`connect`, `mutateTrust`, `currentEnvironment`) |
 
 `KernelRunClientCallbacks` (`:56`): `onEvent(event, source, executionId)`, optional
 `onProgress(progress, executionId)`, `onMemoryIngest(notice)`, `onElicit(params) => Promise<ElicitResult>`.
@@ -546,7 +546,9 @@ before installing their own session state.
    `[redacted]`).
 6. Compare `meta.lastEnvironment ?? meta.turns.at(-1)?.environment` with
    `client.currentEnvironment()`. A different id or fingerprint appends a warning naming both
-   snapshots; it does not block the resume or rewrite the historical turn.
+   snapshots; it does not block the resume or rewrite the historical turn. `currentEnvironment()`
+   is refreshed after every successful trust approval/revocation, so this comparison cannot retain
+   the pre-transition fingerprint until reconnect.
 7. Status: `"resumed N turns"` plus ` · N folded`, ` · Environment changed`, and
    ` · N degraded` segments when applicable. Production: `packages/code/src/run-host.ts`
    (`loadSessionMeta`). Test: `packages/code/tests/component/run-host.test.ts`
@@ -1155,12 +1157,16 @@ The following are derived directly from this document's own source and its tests
 60. **Session continuity never disguises an Environment change.** Every new turn records the
     process-pinned Environment id and fingerprint; a resume under a different snapshot keeps the
     historical data intact, continues normally, and presents an explicit warning in both transcript
-    and status. Production: `packages/code/src/adapters/session.ts` (`beginTurn`, `reconcile`) and
-    `packages/code/src/run-host.ts` (`loadSessionMeta`). Test:
+    and status. An idle trust mutation refreshes that process identity from the recomposed kernel
+    before returning. Production: `packages/code/src/adapters/session.ts` (`beginTurn`, `reconcile`),
+    `packages/code/src/run-host.ts` (`loadSessionMeta`), and
+    `packages/code/src/adapters/kernel-run-client.ts` (`mutateTrust`). Test:
     `packages/code/tests/component/session.test.ts` ("beginTurn stamps the selected Environment and
     reconcile adopts the persisted run snapshot") and
     `packages/code/tests/component/run-host.test.ts` ("loadSessionMeta warns when the active
-    Environment differs from the persisted turn").
+    Environment differs from the persisted turn"), plus
+    `packages/code/tests/component/kernel-run-client.test.ts` (trust transitions refresh the
+    process-pinned identity).
 
 ## 6. Failure modes and degradation
 

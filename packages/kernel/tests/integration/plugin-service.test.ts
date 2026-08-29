@@ -271,6 +271,30 @@ describe("PluginService", () => {
     },
   );
 
+  it.skipIf(process.platform === "win32")(
+    "update: refuses a linked Git checkout without mutating its external worktree",
+    async () => {
+      const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
+      const external = makeGitRepo({ name: "linked-git", version: "1.0.0", description: "d" });
+      try {
+        mkdirSync(agents.user, { recursive: true });
+        symlinkSync(external, join(agents.user, "linked-git"), "dir");
+        const manifest = join(external, "plugin.json");
+        const dirty = JSON.stringify({ name: "linked-git", version: "dirty", description: "d" });
+        writeFileSync(manifest, dirty);
+
+        const listed = await svc().list();
+        expect(listed[0]?.install_source).toBeUndefined();
+        await expect(
+          svc().update(pluginRef("linked-git", "global", "agents")),
+        ).rejects.toMatchObject({ code: "invalid_request" });
+        await expect(Bun.file(manifest).text()).resolves.toBe(dirty);
+      } finally {
+        rmSync(external, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("list: applies Agent Plugin skill discovery and validation rules inside .agents", async () => {
     const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
     const dir = writePluginAt(agents.workspace, "portable", {

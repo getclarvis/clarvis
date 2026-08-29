@@ -136,7 +136,8 @@ written to settings, and loading its listings does not install or activate a plu
 on an available detail is one composed consent: install the complete plugin, select its exact ref in
 the current Environment, reconnect, and verify it remains active after reload. Hooks are part of
 that atomic plugin unit and have no independent approval screen. Update and uninstall are guarded at
-the idle boundary; workspace-owned checkouts are edited in their repository. Environment selects
+the idle boundary. Workspace-owned checkouts are edited in their repository, and linked external
+checkouts remain visible and activatable but never offer the managed update action. Environment selects
 only already-installed extensions. The guided flow obtains the complete exact
 inventory from `EnvironmentService.inventory()` and commits a definition plus local selection only
 through `previewComposition`/`applyComposition`; a changed definition, selection document, or
@@ -580,6 +581,9 @@ Settings saves are serialized by the adapter and carry the exact source revision
 kernel. Another process editing the same scope produces an explicit conflict; Code never retries by
 blindly overwriting the newer source. Reloads, workspace-trust changes and repairs share that same
 state-publication queue, so an older slow response cannot replace a newer cached view or agent list.
+After an idle workspace-trust approval or revocation recomposes the kernel Environment, the run
+client refreshes its cached `{id, fingerprint}` immediately; the next turn and resume comparison
+therefore use the post-transition snapshot without requiring a reconnect.
 
 The header carries the selected branch. `--continue`, `--resume`, `--list` and `--delete` operate
 only on this process's selected workspace.

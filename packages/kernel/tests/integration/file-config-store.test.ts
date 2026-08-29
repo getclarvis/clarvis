@@ -214,6 +214,36 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
     expect(requests).toEqual([{ enabled: [pluginRef("demo")], name: "demo:worker" }]);
   });
 
+  it("records the winning MCP declaration origin across plugin and operator layers", () => {
+    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mcp-origin-"));
+    const settingsFile = globalPaths(globalDir).settingsFile;
+    seedGlobal(settingsFile, JSON.stringify({ enabledPlugins: [pluginRef("atlas")] }));
+    const store = createFileConfigStore({
+      globalDir,
+      plugins: {
+        settingsScopes: () => [
+          {
+            origin: "plugin",
+            settings: {
+              mcpServers: { "atlas:docs": { type: "stdio", command: "plugin-server" } },
+            },
+          },
+        ],
+      } as never,
+    });
+
+    expect(store.readSettings().mcpServerOrigins).toEqual({ "atlas:docs": "plugin" });
+
+    writeFileSync(
+      settingsFile,
+      JSON.stringify({
+        enabledPlugins: [pluginRef("atlas")],
+        mcpServers: { "atlas:docs": { type: "stdio", command: "operator-server" } },
+      }),
+    );
+    expect(store.readSettings().mcpServerOrigins).toEqual({ "atlas:docs": "operator" });
+  });
+
   it("surfaces a parse error on the scope's source instead of dropping it silently", () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-cfg-err-"));
     const globalDir = join(root, "global");

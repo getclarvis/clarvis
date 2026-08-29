@@ -114,7 +114,9 @@ Enter on an installed detail opens the Environment composer primed with that exa
 confirms that an update may change skills, MCP servers, hooks, or executable services before the
 kernel update/recompose path runs. `d` confirms uninstall, first removes active Environment
 membership and reconnects, then removes the checkout. Workspace-owned checkouts must be edited in
-the repository rather than deleted or updated through the host.
+the repository rather than deleted or updated through the host. A linked external checkout is also
+visible and activatable, but its absent managed install source suppresses `u`; kernel fetch and
+replacement boundaries independently reject an attempted update.
 
 Selected plugin update/uninstall is refused while a run is active. A run keeps the content snapshot
 and fingerprint captured at its start; no list refresh, update, trust transition, or Environment
@@ -124,11 +126,13 @@ change mutates it.
   `uninstallPlugin`, and `selectedPluginLifecycleBlock` in
   `packages/code/src/app/commands.tsx`; `pluginDetail`, `listingDetail`, `update`, and `uninstall` in
   `packages/code/src/views/config/MarketplaceBrowser.tsx`; lifecycle enforcement in
-  `packages/kernel/src/plugins/plugin-service.ts`.
+  `packages/kernel/src/plugins/plugin-service.ts`, `plugin-fetcher.ts`, and
+  `plugin-repository.ts`.
 - **Test:** `packages/code/tests/integration/app-commands.test.tsx` (install remains active after
   reload), `packages/code/tests/integration/marketplace-browser-render.test.tsx` (details, update,
-  uninstall, progress), and `packages/kernel/tests/integration/plugin-service.test.ts` (active-run
-  lifecycle refusal).
+  uninstall, progress, and no update action for an unmanaged local plugin), and
+  `packages/kernel/tests/integration/plugin-service.test.ts` (active-run lifecycle refusal and
+  linked-checkout protection).
 
 ### 3.3 Marketplace sources and direct Git
 
@@ -181,15 +185,19 @@ Escape keeps it blocked. `/workspace-trust` is the later fallback for reopening 
 decision, not the primary onboarding path.
 
 Approving or revoking trust cannot occur during a run. An idle transition recomposes the selected
-Environment before future runs. A changed fingerprint never silently falls back to a broader
-Environment.
+Environment before future runs. Code refreshes the run client's cached Environment identity from
+`EnvironmentService.current()` before the mutation promise resolves, so the next turn and resume
+comparison use the recomposed fingerprint without waiting for reconnect. A changed fingerprint
+never silently falls back to a broader Environment.
 
 - **Production:** `WorkspaceTrustPrompt` in
   `packages/code/src/views/config/WorkspaceTrustPrompt.tsx`; startup routing and
   `workspace.trust.prompt` in `packages/code/src/app/commands.tsx`; trust transition enforcement in
-  `packages/kernel/src/environments/environment-manager.ts`.
+  `packages/kernel/src/environments/environment-manager.ts`; `mutateTrust` in
+  `packages/code/src/adapters/kernel-run-client.ts`.
 - **Test:** `packages/code/tests/integration/app-shell-render.test.tsx` (proactive changed-workspace
-  prompt) and `packages/kernel/tests/integration/environment-manager.test.ts` (idle recompose and
+  prompt), `packages/code/tests/component/kernel-run-client.test.ts` (post-transition identity
+  refresh), and `packages/kernel/tests/integration/environment-manager.test.ts` (idle recompose and
   active-run refusal).
 
 ## 6. Progress and responsive behavior

@@ -160,6 +160,12 @@ export function createGitPluginFetcher(options: GitPluginFetcherOptions): Plugin
       return fetch(source, subdir, signal);
     },
     async update(plugin: InstalledPlugin, signal): Promise<PreparedPlugin | void> {
+      if (plugin.linked === true) {
+        throw kernelError(
+          "invalid_request",
+          `'${plugin.name}' is linked from outside the managed plugin inventory`,
+        );
+      }
       if (!plugin.gitCheckout) {
         if (plugin.origin === undefined) {
           throw kernelError("invalid_request", `'${plugin.name}' was not installed from git`);

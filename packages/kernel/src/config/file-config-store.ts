@@ -651,6 +651,17 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     return Array.isArray(enabled) ? (enabled as EnvironmentPluginRef[]) : [];
   };
 
+  /** Winning declaration origin for each shallow-merged MCP namespace. */
+  const mcpServerOrigins = (
+    scopes: SettingsScope[],
+  ): NonNullable<SettingsSnapshot["mcpServerOrigins"]> => {
+    const origins: Record<string, SettingsScope["origin"]> = {};
+    for (const scope of scopes) {
+      for (const name of Object.keys(scope.settings.mcpServers ?? {})) origins[name] = scope.origin;
+    }
+    return origins;
+  };
+
   /** The exact Environment-qualified plugin refs allowed to contribute agents. */
   const operatorEnabled = (): readonly EnvironmentPluginRef[] => snapshot().active_plugins ?? [];
 
@@ -675,10 +686,8 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     const enabledPlugins = opts.environment?.resolvePlugins(enabledRefs, trust) ?? enabledRefs;
     const pluginScopes =
       opts.plugins !== undefined ? opts.plugins.settingsScopes(enabledPlugins) : [];
-    const merged = mergeSettings(
-      [...pluginScopes, ...operatorScopes],
-      kernelCapabilityRegistry,
-    ) as unknown as SettingsData;
+    const mergeScopes = [...pluginScopes, ...operatorScopes];
+    const merged = mergeSettings(mergeScopes, kernelCapabilityRegistry) as unknown as SettingsData;
     const scopes: Partial<Record<Scope, SettingsData>> = {
       ...(global !== undefined ? { global } : {}),
       ...(workspace !== undefined ? { workspace } : {}),
@@ -712,6 +721,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
       ...(withheld.length > 0 ? { withheld_workspace_fields: withheld } : {}),
       workspace_trust: trust,
       active_plugins: enabledPlugins,
+      mcpServerOrigins: mcpServerOrigins(mergeScopes),
     };
   };
 

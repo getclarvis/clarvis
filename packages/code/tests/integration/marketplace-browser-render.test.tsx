@@ -221,7 +221,9 @@ test("uninstall immediately replaces the active row with its available listing",
 });
 
 test("locally installed plugins remain manageable without a marketplace listing", async () => {
-  const mounted = mount({ plugins: [plugin({ name: "local-only", displayName: "Local Only" })] });
+  const mounted = mount({
+    plugins: [plugin({ name: "local-only", displayName: "Local Only", installSource: undefined })],
+  });
   const rendered = await openRender(
     (() => MarketplaceBrowser(mounted.host, mounted.deps)) as never,
     { width: 100, height: 24 },
@@ -231,6 +233,11 @@ test("locally installed plugins remain manageable without a marketplace listing"
   mounted.press("return");
   await rendered.renderOnce();
   expect(rendered.captureCharFrame()).toContain("inventory  global/agents");
+  expect(rendered.captureCharFrame()).not.toContain("u update");
+  mounted.press("u");
+  await rendered.renderOnce();
+  expect(mounted.updated).toEqual([]);
+  expect(rendered.captureCharFrame()).not.toContain("Update local-only?");
   rendered.renderer.destroy();
 });
 

@@ -425,7 +425,15 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
             key: "u",
             label: "update",
             run: update,
-            when: () => selectedPlugin() !== undefined && operation() === undefined,
+            when: () => {
+              const plugin = selectedPlugin();
+              return (
+                plugin !== undefined &&
+                plugin.scope === "global" &&
+                plugin.installSource !== undefined &&
+                operation() === undefined
+              );
+            },
           },
           {
             id: "marketplace.plugin.uninstall",

@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { agentsPluginsDirs, globalPaths, workspacePaths } from "@clarvis/paths";
 
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
-import { PLUGIN_RESOURCE_LIMITS } from "@clarvis/loop/host";
+import {
+  PLUGIN_EXECUTABLE_RESOURCE_LIMITS,
+  snapshotPluginExecutables,
+} from "../../src/plugins/plugin-executable-snapshot.ts";
+import { PLUGIN_RESOURCE_LIMITS, type PluginManifest } from "@clarvis/loop/host";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
 import type { PluginRef } from "@clarvis/protocol";
 
@@ -193,11 +197,23 @@ describe("plugin contributions", () => {
       JSON.stringify({ mcpServers: { charts: { command: "atlas-mcp-v2" } } }),
     );
 
-    expect(loaded.settingsScopes(refs("atlas"))[0]?.settings.mcpServers).toEqual({
-      "atlas:charts": { type: "stdio", command: "atlas-mcp-v1" },
-    });
+    expect(() => loaded.settingsScopes(refs("atlas"))).toThrow(/reconnect the kernel/);
+    expect(() => loaded.mcpServers(refs("atlas"))).toThrow(/reconnect the kernel/);
     expect(loaded.agents(refs("atlas"))).toEqual([]);
     expect(() => loaded.skillRoots(refs("atlas"))).toThrow(/reconnect the kernel/);
+  });
+
+  it("rejects drift in a selected skill resource", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "handbook", {}, { skill: true });
+    const resources = join(dir, "skills", "guide", "references");
+    mkdirSync(resources, { recursive: true });
+    const reference = join(resources, "runtime.md");
+    writeFileSync(reference, "runtime v1\n");
+    const loaded = contributions();
+    loaded.pin(refs("handbook"));
+
+    writeFileSync(reference, "runtime v2\n");
+    expect(() => loaded.skillRoots(refs("handbook"))).toThrow(/selected plugin content changed/);
   });
 
   it("keeps the rest of a plugin when its companion server document is unusable", () => {
@@ -215,7 +231,7 @@ describe("plugin contributions", () => {
     expect(loaded.skillRoots(refs("atlas"))).toHaveLength(1);
   });
 
-  it("locates an enabled selected capability executable without reading its code", () => {
+  it("locates an enabled selected capability executable captured by the snapshot", () => {
     const dir = install(globalPaths(globalDir).pluginsDir, "speckit", {
       capabilityExecutables: {
         memory: {
@@ -225,6 +241,8 @@ describe("plugin contributions", () => {
         },
       },
     });
+    mkdirSync(join(dir, "providers"), { recursive: true });
+    writeFileSync(join(dir, "providers", "server.py"), "print('ready')\n");
     const loaded = contributions();
     expect(loaded.locateCapabilityExecutable([], "memory", "speckit")).toEqual({
       error: "plugin 'speckit' is not enabled for this workspace",
@@ -235,6 +253,134 @@ describe("plugin contributions", () => {
     });
     expect(loaded.locateCapabilityExecutable(refs("speckit"), "plans", "speckit")).toEqual({
       error: "plugin 'speckit' offers no capability executable 'plans'",
+    });
+  });
+
+  it("rejects drift in package-local MCP, hook, and capability process files", () => {
+    const dir = join(globalPaths(globalDir).pluginsDir, "runtime");
+    install(globalPaths(globalDir).pluginsDir, "runtime", {
+      mcpServers: {
+        docs: { command: "python3", args: ["./server.py"], cwd: dir },
+      },
+      hooks: [{ event: "run_start", command: `python3 "${join(dir, "hook.py")}"` }],
+      capabilityExecutables: {
+        memory: { command: "python3", args: ["./provider.py"] },
+      },
+    });
+    const files = ["server.py", "hook.py", "provider.py"];
+    for (const file of files) writeFileSync(join(dir, file), `${file}:v1\n`);
+
+    const cases = [
+      {
+        file: "server.py",
+        read: (loaded: ReturnType<typeof contributions>) => loaded.mcpServers(refs("runtime")),
+      },
+      {
+        file: "hook.py",
+        read: (loaded: ReturnType<typeof contributions>) => loaded.settingsScopes(refs("runtime")),
+      },
+      {
+        file: "provider.py",
+        read: (loaded: ReturnType<typeof contributions>) =>
+          loaded.locateCapabilityExecutable(refs("runtime"), "memory", "runtime"),
+      },
+    ];
+    for (const entry of cases) {
+      const loaded = contributions();
+      loaded.pin(refs("runtime"));
+      writeFileSync(join(dir, entry.file), `${entry.file}:v2\n`);
+      expect(() => entry.read(loaded)).toThrow(/selected plugin content changed/);
+      writeFileSync(join(dir, entry.file), `${entry.file}:v1\n`);
+    }
+  });
+
+  it("omits a plugin whose referenced process file exceeds the executable byte bound", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "huge-runtime", {
+      capabilityExecutables: {
+        memory: { command: "python3", args: ["./provider.py"] },
+      },
+    });
+    writeFileSync(join(dir, "provider.py"), "x");
+    truncateSync(join(dir, "provider.py"), PLUGIN_EXECUTABLE_RESOURCE_LIMITS.fileBytes + 1);
+
+    const loaded = contributions();
+    expect(loaded.snapshot(refs("huge-runtime"))).toEqual([]);
+    expect(
+      loaded.locateCapabilityExecutable(refs("huge-runtime"), "memory", "huge-runtime"),
+    ).toEqual({ error: "plugin 'huge-runtime' has no readable manifest" });
+  });
+
+  it("fails a direct executable snapshot when the plugin root is absent", () => {
+    expect(
+      snapshotPluginExecutables(join(root, "missing"), { name: "missing" } as PluginManifest),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("plugin root could not be resolved"),
+    });
+  });
+
+  it("ignores process paths and working directories outside the package", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "confined", {});
+    const outside = join(root, "outside.py");
+    writeFileSync(outside, "print('outside')\n");
+
+    expect(
+      snapshotPluginExecutables(dir, {
+        name: "confined",
+        mcpServers: {
+          outside: { type: "stdio", command: outside, cwd: root },
+          absent: { type: "stdio", command: "./missing.py", cwd: join(root, "missing") },
+        },
+        hooks: [{ event: "run_start", command: outside }],
+      } as PluginManifest),
+    ).toEqual({ ok: true, files: [] });
+  });
+
+  it("bounds the number of package-local process files", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "many-runtime-files", {});
+    const args = Array.from(
+      { length: PLUGIN_EXECUTABLE_RESOURCE_LIMITS.files + 1 },
+      (_, index) => `./runtime-${String(index)}.js`,
+    );
+    for (const arg of args) writeFileSync(join(dir, arg), "");
+
+    expect(
+      snapshotPluginExecutables(dir, {
+        name: "many-runtime-files",
+        capabilityExecutables: {
+          memory: { command: "node", args, env: {}, timeout_ms: 30_000 },
+        },
+      } as PluginManifest),
+    ).toEqual({
+      ok: false,
+      error: `package executable surface exceeds the ${String(PLUGIN_EXECUTABLE_RESOURCE_LIMITS.files)}-file resource limit`,
+    });
+  });
+
+  it("bounds aggregate package-local process bytes", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "large-runtime-surface", {});
+    const args = Array.from({ length: 5 }, (_, index) => `./runtime-${String(index)}.bin`);
+    for (const [index, arg] of args.entries()) {
+      const path = join(dir, arg);
+      writeFileSync(path, "");
+      truncateSync(
+        path,
+        index === args.length - 1 ? 1 : PLUGIN_EXECUTABLE_RESOURCE_LIMITS.fileBytes,
+      );
+    }
+
+    expect(
+      snapshotPluginExecutables(dir, {
+        name: "large-runtime-surface",
+        capabilityExecutables: {
+          memory: { command: "node", args, env: {}, timeout_ms: 30_000 },
+        },
+      } as PluginManifest),
+    ).toEqual({
+      ok: false,
+      error:
+        `package executable surface exceeds the ` +
+        `${String(PLUGIN_EXECUTABLE_RESOURCE_LIMITS.aggregateBytes)}-byte aggregate limit`,
     });
   });
 

@@ -214,6 +214,14 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     await connect();
   }
 
+  /** Apply an idle trust mutation and refresh the process snapshot identity it recomposed. */
+  async function mutateTrust<T>(mutation: () => Promise<T>): Promise<T> {
+    const result = await mutation();
+    const environment = await requireKernel().environments.current();
+    lastEnvironment = { id: environment.id, fingerprint: environment.fingerprint };
+    return result;
+  }
+
   async function listProfiles(
     prefetched?: Awaited<ReturnType<KernelClient["config"]["listAgents"]>>,
   ): Promise<ProfileInfo[]> {
@@ -461,8 +469,8 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     updateSettings: (scope, patch, expectedRevision) =>
       requireKernel().config.updateSettings(scope, patch, expectedRevision),
     inspectSandbox: (options) => requireKernel().config.inspectSandbox(options),
-    approveWorkspace: () => requireKernel().config.approveWorkspace(),
-    revokeWorkspace: () => requireKernel().config.revokeWorkspace(),
+    approveWorkspace: () => mutateTrust(() => requireKernel().config.approveWorkspace()),
+    revokeWorkspace: () => mutateTrust(() => requireKernel().config.revokeWorkspace()),
     workspaceTrustError: () => requireKernel().config.workspaceTrustError(),
     listAgents: () => requireKernel().config.listAgents(),
     getAgent: (scope, name) => requireKernel().config.getAgent(scope, name),

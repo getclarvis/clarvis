@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   opendirSync,
   renameSync,
@@ -133,10 +134,16 @@ function inspectPlugin(dir: string, name: string): StagedPlugin {
   const installed = readPluginInstallRecord(dir);
   if (!installed.ok && manifestError === undefined) manifestError = installed.error;
   const recorded: PluginInstallRecord = installed.ok ? installed.record : {};
-  const gitCheckout = existsSync(join(dir, ".git"));
+  let linked = false;
+  try {
+    linked = lstatSync(dir).isSymbolicLink();
+  } catch {
+    if (manifestError === undefined) manifestError = "plugin inventory entry changed while read";
+  }
+  const gitCheckout = !linked && existsSync(join(dir, ".git"));
   const origin =
     (gitCheckout ? gitValue(dir, ["config", "--get", "remote.origin.url"]) : undefined) ??
-    recorded.source;
+    (linked ? undefined : recorded.source);
   const revision =
     (gitCheckout ? gitValue(dir, ["rev-parse", "HEAD"]) : undefined) ?? recorded.revision;
   return {
@@ -146,6 +153,7 @@ function inspectPlugin(dir: string, name: string): StagedPlugin {
     ...(manifestLocation !== undefined ? { manifestLocation } : {}),
     ...(manifestError !== undefined ? { manifestError } : {}),
     agentFiles: agents.ok ? agents.files : [],
+    linked,
     gitCheckout,
     ...(origin !== undefined ? { origin } : {}),
     ...(revision !== undefined ? { revision } : {}),
@@ -299,6 +307,12 @@ export function createFilePluginRepository(options: FilePluginRepositoryOptions)
       const dir = join(rootDir, ref.name);
       if (!existsSync(dir)) {
         throw kernelError("not_found", `'${ref.name}' is not installed at global/${ref.source}`);
+      }
+      if (lstatSync(dir).isSymbolicLink()) {
+        throw kernelError(
+          "invalid_request",
+          `'${ref.name}' is linked from outside the managed plugin inventory`,
+        );
       }
       recordInstall(root, prepared);
       const backup = join(rootDir, `.plugin-replaced-${ref.name}-${randomUUID()}`);

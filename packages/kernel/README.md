@@ -112,17 +112,20 @@ manager also exposes every exact plugin and standalone-skill origin as inactive 
 authored fingerprint, and effective fingerprint; `applyComposition` revalidates and writes the
 definition plus selection as one recoverable transaction. Trust-write failure restores both prior
 documents, while an unchanged workspace selection shadowing a global-default write is neither
-activated nor newly approved. The pinned
-fingerprint includes resolved plugin manifests and companion declarations, agent files, and packaged
-skill bodies/resources, plus selected standalone skill bodies/resources. A later contribution drift
-fails closed until reconnect. Workspace-trust
+activated nor newly approved. The pinned fingerprint includes resolved plugin manifests and
+companion declarations, agent files, packaged skill bodies/resources, and the content, size, mode,
+and package-relative path of every directly referenced package-local MCP, hook, or capability
+process file, plus selected standalone skill bodies/resources. Process-file admission is bounded per
+file, per plugin, and by file count. A later contribution drift fails closed until reconnect.
+Workspace-trust
 transitions recompose that extension snapshot only while no run is active, and selected plugin
 update/uninstall uses the same kernel-owned exclusion boundary and blocks later runs until reconnect.
-Every run records the resolved Environment id and fingerprint. MCP servers contributed by an active
-plugin are attached to every run and marked `auto_tools`: their discovered tools become available to
-every effective agent for that run even when the persisted agent profile names none. This is part of
-atomic plugin activation, not a profile mutation; operator-defined MCP servers remain
-profile-selected.
+Every run records the resolved Environment id and fingerprint. An MCP namespace whose winning
+declaration still comes from an active plugin is attached to every run and marked `auto_tools`: its
+discovered tools become available to every effective agent for that run even when the persisted
+agent profile names none. This is part of atomic plugin activation, not a profile mutation. A global
+or workspace declaration that replaces the same namespace remains profile-selected and never
+inherits the plugin's automatic grant.
 
 Multi-owner hosts must continue to pass owner-aware stores explicitly. The
 kernel publishes the standard file-backed composition without silently enabling
@@ -219,6 +222,11 @@ temporary index, work tree, object store, common directory, or local Git config.
 runner does not impose this policy; each Git-owning adapter applies it before invoking the runner.
 `GIT_CEILING_DIRECTORIES` is removed as well so a parent cannot stop discovery before the selected
 repository root.
+
+A symbolic link may contribute an external checkout to any `.agents/plugins` or
+`.clarvis/plugins` inventory, but Clarvis treats that entry as discovery-only. It does not advertise
+an install source or run managed update against the linked target; the repository and Git adapters
+both refuse replacement/update so Clarvis cannot discard edits in a checkout it does not own.
 
 Plugin admission is all-or-nothing only for artifacts that define the plugin as a whole: its selected
 manifest, install record and bounded agent tree. A declared or conventional hooks/MCP companion that

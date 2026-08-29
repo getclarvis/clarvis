@@ -55,11 +55,11 @@ export interface SettingsAssemblerOptions {
   /** Resolves a trusted Plans override for a skill and its scanned provenance. */
   skillPlansMode?: (skill: { name: string; source?: string }) => PlansMode | undefined;
   /**
-   * Effective MCP namespaces contributed by the process-pinned active plugins.
+   * Candidate MCP namespaces contributed by the process-pinned active plugins.
    *
-   * @remarks These servers are attached even when no persisted agent profile
-   * names one of their tools and are marked `auto_tools`, so activation remains
-   * an Environment concern rather than an agent-profile edit.
+   * @remarks The assembler still verifies the winning merged declaration's
+   * provenance. An operator layer that replaces a same-named plugin server stays
+   * profile-selected and never inherits the plugin's `auto_tools` authority.
    */
   pluginMcpServerNames?: () => readonly string[];
 }
@@ -389,7 +389,8 @@ export function createSettingsRunAssembler(
       : declared;
   };
   return (params) => {
-    const merged = store.readSettings().merged as unknown as EngineSettings;
+    const settings = store.readSettings();
+    const merged = settings.merged as unknown as EngineSettings;
     const contexts = (["global", "workspace"] as const).flatMap((scope) => {
       const context = store.readContext(scope);
       return context === null ? [] : [context];
@@ -429,7 +430,11 @@ export function createSettingsRunAssembler(
     }
 
     const registry = merged.mcpServers ?? {};
-    const pluginServerRefs = new Set(options.pluginMcpServerNames?.() ?? []);
+    const pluginServerRefs = new Set(
+      (options.pluginMcpServerNames?.() ?? []).filter(
+        (name) => settings.mcpServerOrigins?.[name] === "plugin",
+      ),
+    );
     const registryNames = Object.keys(registry).sort((a, b) => b.length - a.length);
     const allServerRefs = new Set(pluginServerRefs);
     for (const tool of profiles.flatMap((profile) => profile.tools)) {

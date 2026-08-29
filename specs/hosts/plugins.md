@@ -257,8 +257,11 @@ is a directory. `directoryNames` in
 `packages/kernel/src/adapters/filesystem/plugin-repository.ts` follows only that outer inventory
 link; all manifest, skill, MCP, hook, agent, and executable readers still realpath-confine their
 paths to the resolved package root. A dangling link, link loop, or link to a non-directory is not an
-installed plugin. Test: `packages/kernel/tests/integration/plugin-service.test.ts` ("discovers a
-plugin linked into the shared .agents inventory").
+installed plugin. A linked checkout is discovery-only: `inspectPlugin` marks it `linked`, does not
+advertise its recorded install source, and never classifies the target as a managed Git checkout.
+Both `PluginFetcher.update` and repository replacement reject it before any Git or filesystem
+mutation. Tests: `packages/kernel/tests/integration/plugin-service.test.ts` ("discovers a plugin
+linked into the shared .agents inventory" and "refuses a linked Git checkout").
 
 ### 3.2 `plugin.json` schema
 
@@ -824,8 +827,10 @@ the repository owns those trees. Removing or replacing a checkout does not remov
 `packages/kernel/tests/integration/plugin-service.test.ts` and
 `packages/kernel/tests/unit/plugin-runtime.test.ts`.
 
-`update`: only an exact **globally** installed plugin; its `source` selects the same global inventory
-for lookup/replacement. When the checkout is
+`update`: only an exact **globally** installed, non-linked plugin; its `source` selects the same
+global inventory for lookup/replacement. A linked external checkout is visible and activatable but
+has no managed install source, receives no update affordance in Code, and is rejected independently
+by both the fetcher and repository replacement. When the checkout is
 still a git repo, `git fetch --depth 1 --quiet origin HEAD` + `git reset --hard --quiet FETCH_HEAD`
 in place and no `PreparedPlugin` is returned (`packages/kernel/src/adapters/git/plugin-fetcher.ts:168-170`); when it is not a checkout
 but has a recorded `source`, the plugin is re-fetched and atomically **replaced** (`:162-167`,
@@ -1202,6 +1207,15 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/tests/integration/environment-manager.test.ts` and
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
+44a. **Every directly referenced package-local process file is part of the plugin snapshot.**
+    `snapshotPluginExecutables` resolves confined regular files from MCP stdio argv/cwd, the current
+    platform capability argv, and translated absolute hook words; it hashes content and executable
+    mode under bounded file, count, and aggregate budgets. Production:
+    `packages/kernel/src/plugins/plugin-executable-snapshot.ts` and `contributionSnapshot` in
+    `packages/kernel/src/plugins/plugin-contributions.ts`. Test: the process-file fingerprint and
+    drift cases in
+    `packages/kernel/tests/integration/{environment-manager,plugin-contributions}.test.ts`.
+
 45. **A plugin cannot enable another plugin.** Custom Environments are complete external
     allow-lists; `builtin:default` derives exact `enabledPlugins` refs from operator scopes alone before
     any plugin settings fragment is merged. Production:
@@ -1235,12 +1249,16 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/tests/integration/plugin-contributions.test.ts:96-128`, where two plugins each declaring `tasks` produce
     `alpha:tasks` and `beta:tasks`.
 
-49a. **Every MCP server of an active plugin is attached to the run and its successfully discovered
-    tools are available to every effective agent without mutating the persisted profile.**
-    Production: `createSettingsRunAssembler` (`pluginMcpServerNames` and `auto_tools`), file-kernel
-    composition in `packages/kernel/src/file-kernel.ts`, and `addAutomaticMcpTools` in the loop.
+49a. **Every winning MCP declaration of an active plugin is attached to the run and its successfully
+    discovered tools are available to every effective agent without mutating the persisted profile.**
+    The file config store records the winning origin after plugin < global < workspace merge; an
+    operator declaration that replaces the same namespace is never marked `auto_tools`.
+    Production: `mcpServerOrigins` in `packages/kernel/src/config/file-config-store.ts`,
+    `createSettingsRunAssembler` (`pluginMcpServerNames` and `auto_tools`), file-kernel composition
+    in `packages/kernel/src/file-kernel.ts`, and `addAutomaticMcpTools` in the loop.
     Test: the "attaches an active plugin server independently of persisted agent tools" case in
-    `packages/kernel/tests/component/settings-assembler.test.ts`,
+    `packages/kernel/tests/component/settings-assembler.test.ts`, its operator-override case,
+    `packages/kernel/tests/integration/file-config-store.test.ts` (winning MCP origin),
     `packages/loop/tests/unit/automatic-mcp-tools.test.ts`, and the "host-composed automatic server
     tools" case in `packages/loop/tests/integration/open-tool-pool.test.ts`.
 

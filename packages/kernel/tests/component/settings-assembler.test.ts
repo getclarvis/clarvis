@@ -26,10 +26,18 @@ async function assemblerWith(
   agents: Record<string, Record<string, unknown>>,
   settings: Record<string, unknown> = {},
   options: SettingsAssemblerOptions = {},
+  mcpServerOrigins?: Record<string, "operator" | "plugin">,
 ) {
-  const store = createMemoryConfigStore({
+  const memory = createMemoryConfigStore({
     settings: { global: { default_model: "openrouter/m", ...settings } },
   });
+  const store =
+    mcpServerOrigins === undefined
+      ? memory
+      : {
+          ...memory,
+          readSettings: () => ({ ...memory.readSettings(), mcpServerOrigins }),
+        };
   const config = createConfigService(store);
   for (const [name, frontmatter] of Object.entries(agents)) {
     await config.writeAgent("global", name, { frontmatter, body: `You are ${name}.` });
@@ -767,6 +775,7 @@ describe("mcpServers reach the engine in its own shape", () => {
         providers: PROVIDERS,
       },
       { pluginMcpServerNames: () => ["context7:context7"] },
+      { "context7:context7": "plugin" },
     );
     const body = assemble({ agent: "custom", messages: [MESSAGE], execution_id: "e" });
     const { request } = validateBody(body, ENV());
@@ -778,6 +787,29 @@ describe("mcpServers reach the engine in its own shape", () => {
         transport: "http",
         url: "https://mcp.context7.com/mcp",
         auto_tools: true,
+      },
+    ]);
+  });
+
+  it("does not grant auto_tools to an operator override of a plugin namespace", async () => {
+    const assemble = await assemblerWith(
+      { custom: { model: "openrouter/m", tools: ["atlas:docs.lookup"] } },
+      {
+        mcpServers: {
+          "atlas:docs": { type: "stdio", command: "operator-server" },
+        },
+        providers: PROVIDERS,
+      },
+      { pluginMcpServerNames: () => ["atlas:docs"] },
+    );
+    const body = assemble({ agent: "custom", messages: [MESSAGE], execution_id: "e" });
+    const { request } = validateBody(body, ENV());
+
+    expect(request.servers).toEqual([
+      {
+        name: "atlas:docs",
+        transport: "stdio",
+        command: "operator-server",
       },
     ]);
   });

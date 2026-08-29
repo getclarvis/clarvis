@@ -37,6 +37,10 @@ import { readPluginInstallRecord } from "./plugin-install-record.ts";
 import type { PluginInstallRecord } from "./plugin-install-record.ts";
 import { ensurePluginDataDir } from "./plugin-runtime.ts";
 import { kernelError } from "../core/errors.ts";
+import {
+  snapshotPluginExecutables,
+  type PluginExecutableFileSnapshot,
+} from "./plugin-executable-snapshot.ts";
 
 type PluginSelection = readonly EnvironmentPluginRef[];
 
@@ -141,6 +145,8 @@ interface Loadable {
   installRecord: PluginInstallRecord;
   /** Source revision captured with the rest of the admitted contribution. */
   resolvedRevision?: string;
+  /** Package-local process files captured with the executable declarations that reference them. */
+  executableFiles: PluginExecutableFileSnapshot[];
 }
 
 /**
@@ -201,7 +207,7 @@ export function createPluginContributions(opts: {
    */
   const skipped = (
     plugin: EnvironmentPluginRef,
-    phase: "manifest" | "dir" | "skills" | "agents" | "install_record",
+    phase: "manifest" | "dir" | "skills" | "agents" | "install_record" | "executables",
     cause: string,
   ): void => {
     logger.warn(
@@ -338,6 +344,11 @@ export function createPluginContributions(opts: {
       skipped(ref, "install_record", installed.error);
       return undefined;
     }
+    const executableSurface = snapshotPluginExecutables(dir, manifest);
+    if (!executableSurface.ok) {
+      skipped(ref, "executables", executableSurface.error);
+      return undefined;
+    }
     const resolvedRevision = revisionOf(dir, installed.record);
     return {
       name,
@@ -349,6 +360,7 @@ export function createPluginContributions(opts: {
       manifestLocation: source.location,
       agentFiles: agents,
       installRecord: installed.record,
+      executableFiles: executableSurface.files,
       ...(resolvedRevision === undefined ? {} : { resolvedRevision }),
     };
   }
@@ -421,6 +433,7 @@ export function createPluginContributions(opts: {
         manifest: plugin.manifest,
         agents: plugin.agentFiles.files.map((file) => ({ name: file.name, content: file.content })),
         skills,
+        executable_files: plugin.executableFiles,
         install_record: plugin.installRecord,
         resolved_revision: plugin.resolvedRevision,
       }),
@@ -577,7 +590,7 @@ export function createPluginContributions(opts: {
     },
 
     settingsScopes(enabled) {
-      assertPinnedSelection(enabled);
+      assertPinnedSnapshot(enabled);
       return loadables(enabled).map((p) => {
         const settings = pluginSettingsFragment(p.manifest);
         const namespacedServers = Object.fromEntries(
@@ -594,7 +607,7 @@ export function createPluginContributions(opts: {
     },
 
     mcpServers(enabled) {
-      assertPinnedSelection(enabled);
+      assertPinnedSnapshot(enabled);
       return loadables(enabled).flatMap(resolvedMcpServers);
     },
 

@@ -830,6 +830,29 @@ test("a workspace switch blocks shell interaction until it settles", async () =>
   t.renderer.destroy();
 });
 
+test("a workspace switch keeps the active view's Escape route live", async () => {
+  const [switching, setSwitching] = createSignal(false);
+  const t = await mountApp(defaultProps({ switching }));
+  await captureUntil(t, "New task");
+  await t.mockInput.typeText("/settings");
+  await t.renderOnce();
+  press(t, "return");
+  await captureUntil(t, "Run controls");
+
+  setSwitching(true);
+  let out = await captureUntil(t, "switching workspace");
+  expect(out).toContain("Settings");
+  press(t, "escape");
+  await t.renderOnce();
+  out = t.captureCharFrame();
+  expect(out).not.toContain("Settings");
+  expect(out).toContain("switching workspace");
+
+  setSwitching(false);
+  await captureUntil(t, "New task");
+  t.renderer.destroy();
+});
+
 test("Alt+M no longer changes memory for the session", async () => {
   const knobs = () => ({ memoryEnabled: true });
   const build = defaultProps({ settingsKnobs: knobs });

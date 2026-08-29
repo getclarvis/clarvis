@@ -1023,7 +1023,7 @@ export function App(props: AppProps): JSX.Element {
 
   createEffect(() => {
     const switching = props.run.switching?.() ?? false;
-    overlays.setInteractionBlocked(switching || transientOverlay() !== "none");
+    overlays.setInteractionBlocked(transientOverlay() !== "none");
     interaction.setModalContext(props.run.elicit() != null || switching ? "elicitation" : "none");
   });
 

@@ -316,6 +316,33 @@ describe("shadowing a vital action", () => {
     expect(result.config).toBeUndefined();
     expect(result.issues?.[0]?.message).toContain("shadows");
   });
+
+  test("a protected action cannot be the delayed prefix of a manual sequence", () => {
+    for (const key of ["escape x", "esc x"]) {
+      const result = applyManualBindingEdit({
+        saved: undefined,
+        command: "app.quit",
+        keys: [key],
+        knownCommands: known,
+      });
+      expect(result.issues).toEqual([
+        {
+          command: "app.quit",
+          key,
+          message: "binding has an ambiguous prefix with app.escape",
+          shadows: "app.escape",
+        },
+      ]);
+    }
+    expect(
+      applyManualBindingEdit({
+        saved: undefined,
+        command: "app.quit",
+        keys: ["ctrl+c x"],
+        knownCommands: known,
+      }).issues?.[0]?.message,
+    ).toBe("binding has an ambiguous prefix with run.cancel");
+  });
 });
 
 test("an alias spelling cannot take a protected action's key", () => {

@@ -49,15 +49,19 @@ snapshot, so the installed plugin enters only when Step 5 applies the reviewed c
 the wizard never silently uninstalls that checkout.
 
 Escape always means back. Escape from a retained picker finishes that choice; Escape from an edited
-Environment asks before discarding the draft; Escape during a mutation is absorbed until the safe
-boundary. No `b`, `y`, or hidden Escape alias duplicates those outcomes.
+Environment asks before discarding the draft. Preview and install keep running when Escape returns to
+the previous level, and an installed checkout is staged only if the draft that started it still
+exists. Apply is already committed work: Escape closes Extensions immediately while apply,
+reconnect, refresh, and the final notification finish in the background. Escape never cancels or
+waits for one of those operations. No `b`, `y`, or hidden Escape alias duplicates those outcomes.
 
-- **Production:** `ExtensionSetupDraft`, `openExtensionPicker`, `installAndStage`, `resolveReview`,
-  `apply`, `backFromExtensions`, and `spec` in
+- **Production:** `ExtensionSetupDraft`, `replaceDraft`, `openExtensionPicker`, `installAndStage`,
+  `resolveReview`, `apply`, the pending-operation key layer, `backFromExtensions`, and `spec` in
   `packages/code/src/views/config/ExtensionsHub.tsx`; `EnvironmentService.previewComposition` and
   `applyComposition` in `packages/protocol/src/environments.ts`.
 - **Test:** `packages/code/tests/integration/extensions-hub-render.test.tsx` (complete journey,
-  discard confirmation, install staging, origin replacement, long delta, and active-run cases).
+  discard confirmation, pending preview/install/apply Escape, install staging, origin replacement,
+  long delta, and active-run cases).
 
 ## 3. Plugins surface
 

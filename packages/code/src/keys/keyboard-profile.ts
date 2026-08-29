@@ -62,7 +62,7 @@ export interface KeyboardBindingIssue {
   key?: string;
   message: string;
   /**
-   * For a shadowing issue, the command whose binding `command` took; absent on
+   * For a shadow or prefix conflict, the other command involved; absent on
    * every other kind.
    *
    * @remarks It is what lets a caller tell "this override shadows a vital
@@ -333,6 +333,7 @@ export function validateManualBindings(
 ): KeyboardBindingIssue[] {
   const issues: KeyboardBindingIssue[] = [];
   const owners = new Map<string, string>();
+  const ownedSequences: { command: string; strokes: readonly string[] }[] = [];
   const canonical = (key: string): string => {
     try {
       return normalizeKey(key);
@@ -340,8 +341,14 @@ export function validateManualBindings(
       return canonicalizeAliases(key);
     }
   };
+  const remember = (command: string, normalized: string): void => {
+    owners.set(normalized, command);
+    ownedSequences.push({ command, strokes: normalized.trim().split(/\s+/) });
+  };
+  const strictPrefix = (left: readonly string[], right: readonly string[]): boolean =>
+    left.length < right.length && left.every((stroke, index) => stroke === right[index]);
   for (const [command, key] of Object.entries(PROTECTED_DEFAULT_BINDINGS)) {
-    if (!(command in bindings)) owners.set(canonical(key), command);
+    if (!(command in bindings)) remember(command, canonical(key));
   }
   for (const [command, keys] of Object.entries(bindings)) {
     if (!commands.has(command)) {
@@ -367,9 +374,24 @@ export function validateManualBindings(
       const owner = owners.get(normalized);
       if (owner && owner !== command) {
         issues.push({ command, key: raw, message: `binding shadows ${owner}`, shadows: owner });
-      } else {
-        owners.set(normalized, command);
+        continue;
       }
+      const strokes = normalized.trim().split(/\s+/);
+      const prefixConflict = ownedSequences.find(
+        (candidate) =>
+          (PROTECTED_ACTIONS.has(command) || PROTECTED_ACTIONS.has(candidate.command)) &&
+          (strictPrefix(candidate.strokes, strokes) || strictPrefix(strokes, candidate.strokes)),
+      );
+      if (prefixConflict !== undefined) {
+        issues.push({
+          command,
+          key: raw,
+          message: `binding has an ambiguous prefix with ${prefixConflict.command}`,
+          shadows: prefixConflict.command,
+        });
+        continue;
+      }
+      remember(command, normalized);
     }
   }
   return issues;

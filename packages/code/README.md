@@ -119,11 +119,13 @@ every resulting agent/skill/MCP/hook/executable contribution, then apply one pre
 reconnect. Each decision exposes one key per outcome: Enter advances or applies and Escape finishes
 the multi-select or walks back, asking before an edited draft is discarded. Install, exact
 resolution and Apply use the shared footer-right spinner, show elapsed time, advance through their
-real host phases and suspend local actions until the operation settles. Large catalogs use bounded
-retained rows, review bodies scroll independently from their decisions, and the optional splash
-disappears on compact terminals. Internal Environments, Plugins and MCP children remain available
-from that home and return to it with Escape; they are not nested slash commands. `/tasks` remains a
-standalone workspace surface.
+real host phases and suspend mutation keys until the operation settles, while Escape remains live.
+Leaving an install or preview returns immediately without cancelling its background work; once Apply
+has started, Escape closes Extensions while apply, reconnect, refresh and the final notification
+continue. Large catalogs use bounded retained rows, review bodies scroll independently from their
+decisions, and the optional splash disappears on compact terminals. Internal Environments, Plugins
+and MCP children remain available from that home and return to it with Escape; they are not nested
+slash commands. `/tasks` remains a standalone workspace surface.
 Capability services display their effective argv and packaged per-skill Plans policy in the
 plugin/provider panels, and start only when selected.
 
@@ -343,10 +345,12 @@ Kitty sessions default to the enhanced profile; SSH, multiplexed legacy and unkn
 portable behavior. A remote server's operating system is never presented as the user's client OS.
 Settings > Keyboard can select portable/enhanced/manual behavior, set the client-side modifier
 convention and override any stable named action. Protected Help, back and cancel
-actions may be rebound but not left empty. Keyless actions are labelled `no shortcut`; the removed
-command palette is not presented as a fallback route. The same normalized-event diagnostic is reachable from
-Doctor; it stores only capability verdicts and never raw escape sequences, hostnames, addresses or
-typed text.
+actions may be rebound but not left empty or used as the exact prefix of a longer manual sequence.
+Whenever an exact action and a longer sequence are both active, the exact action dispatches
+synchronously; Clarvis never waits on a key-sequence timeout. Keyless actions are labelled `no
+shortcut`; the removed command palette is not presented as a fallback route. The same
+normalized-event diagnostic is reachable from Doctor; it stores only capability verdicts and never
+raw escape sequences, hostnames, addresses or typed text.
 
 ### The command guard, and answering it automatically
 

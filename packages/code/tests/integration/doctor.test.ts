@@ -190,7 +190,12 @@ function buildCtx(
     backend: () => backend,
     ...(subscriptionReadiness !== undefined ? { subscriptionReadiness } : {}),
     sandboxInspection: () => ({
-      bubblewrap: { available: true, mode: "fresh-proc", degraded: false },
+      backend: {
+        type: "bubblewrap",
+        available: true,
+        mode: "fresh-proc",
+        degraded: false,
+      },
       toolchains: [],
       extra_paths: [],
       effective_path: ["/usr/bin"],
@@ -520,7 +525,7 @@ test("run_safety: a not-yet-inspected sandbox passes with detail; a genuinely br
     providers: [KEYLESS_PROVIDER as never],
     default_model: "local/m",
     sandbox: {
-      type: "bubblewrap",
+      type: "native",
       enabled: true,
       availability: "required",
       filesystem: "workspace-write",
@@ -537,7 +542,13 @@ test("run_safety: a not-yet-inspected sandbox passes with detail; a genuinely br
     const broken = runGates({
       ...buildCtx(dirs, settings),
       sandboxInspection: () => ({
-        bubblewrap: { available: false, mode: "unavailable", degraded: true, reason: "not found" },
+        backend: {
+          type: "bubblewrap",
+          available: false,
+          mode: "unavailable",
+          degraded: true,
+          reason: "not found",
+        },
         toolchains: [],
         extra_paths: [],
         effective_path: [],
@@ -774,7 +785,7 @@ test("run_safety: a sandboxed, LLM-reviewed guard resolves to the 'reviewed' pre
     default_model: "local/m",
     guard: { type: "shell", mode: "auto" } as never,
     sandbox: {
-      type: "bubblewrap",
+      type: "native",
       enabled: true,
       availability: "required",
       filesystem: "workspace-write",

@@ -73,7 +73,12 @@ describe("ConfigService over a storage-agnostic ConfigStore (memory)", () => {
 
   it("exposes host sandbox inspection through the config service", async () => {
     const inspection = {
-      bubblewrap: { available: true, mode: "fresh-proc" as const, degraded: false },
+      backend: {
+        type: "bubblewrap" as const,
+        available: true,
+        mode: "fresh-proc" as const,
+        degraded: false,
+      },
       toolchains: [],
       extra_paths: [],
       effective_path: ["/usr/bin"],

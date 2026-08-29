@@ -1,14 +1,6 @@
 import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import nodePath, {
-  delimiter,
-  dirname,
-  extname,
-  isAbsolute,
-  relative,
-  resolve,
-  sep,
-} from "node:path";
+import nodePath, { delimiter, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { spawnSync, type SpawnOptions, type SpawnSyncReturns } from "node:child_process";
 import { ToolError } from "./errors.ts";
 import { executableOnPath } from "@clarvis/paths";
@@ -16,18 +8,19 @@ import { resolveShell, shellArgs, type ShellSpec } from "./shell.ts";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
 
 /**
- * Configuration for running a command inside a bubblewrap (`bwrap`) sandbox.
+ * Configuration for running a command inside the host's native sandbox.
  *
  * @remarks
- * `availability: "optional"` lets a command fall back to running unsandboxed
- * when bubblewrap is unavailable, whereas `"required"` (the default posture in
- * {@link sandboxCommand}) makes an unavailable sandbox a hard error.
- * `readOnlyPaths` and `runtimePaths` are bound read-only into the sandbox;
- * `runtimePaths` additionally shape the sandboxed `PATH`. `passEnv` names extra
- * host env vars to carry through the otherwise minimal environment.
+ * Clarvis selects Bubblewrap on Linux and Seatbelt on macOS. `availability:
+ * "optional"` lets a command fall back to running unsandboxed when the native
+ * backend is unavailable, whereas `"required"` (the default posture in
+ * {@link sandboxCommand}) makes that a hard error. `readOnlyPaths` and
+ * `runtimePaths` are exposed read-only; `runtimePaths` additionally shape the
+ * sandboxed `PATH`. `passEnv` names extra host env vars to carry through the
+ * otherwise minimal environment.
  */
-export interface BubblewrapSandbox {
-  type: "bubblewrap";
+export interface NativeSandbox {
+  type: "native";
   availability?: "required" | "optional";
   filesystem?: "workspace-write" | "workspace-read-only";
   network?: "host" | "none";
@@ -36,20 +29,20 @@ export interface BubblewrapSandbox {
   runtimePaths?: string[];
 }
 
-/** The supported sandbox configurations; currently only {@link BubblewrapSandbox}. */
-export type SandboxConfig = BubblewrapSandbox;
+/** The supported sandbox configurations. */
+export type SandboxConfig = NativeSandbox;
 
 /**
  * A ready-to-spawn command: the executable `file`, its `args`, and the `cwd`/
- * `env` spawn options - either the bare `sh -c` form or the `bwrap` wrapping,
- * as decided by {@link sandboxCommand}.
+ * `env` spawn options — bare or wrapped by Bubblewrap/Seatbelt, as decided by
+ * {@link sandboxCommand}.
  */
 export interface SandboxedCommand {
   file: string;
   args: string[];
   options: Pick<SpawnOptions, "cwd" | "env">;
   /**
-   * Whether the command is actually wrapped in `bwrap`.
+   * Whether the command is actually wrapped in the selected native backend.
    *
    * @remarks False both when no sandbox was configured and when one was
    *   configured `optional` and the host cannot provide it — the caller needs
@@ -60,14 +53,25 @@ export interface SandboxedCommand {
 }
 
 /**
- * The outcome of probing bubblewrap on this host: usable with a fresh `/proc`
- * (`fresh-proc`), usable only by bind-mounting the host `/proc` (`host-proc`),
- * or `unavailable` with a human-readable `reason`.
+ * The outcome of probing Bubblewrap on this host: usable with a fresh `/proc`,
+ * usable only by bind-mounting the host `/proc`, or unavailable.
  */
 export type BubblewrapProbe =
-  { mode: "fresh-proc" | "host-proc" } | { mode: "unavailable"; reason: string };
+  | { backend: "bubblewrap"; mode: "fresh-proc" | "host-proc" }
+  | { backend: "bubblewrap"; mode: "unavailable"; reason: string };
 
-let cachedProbe: BubblewrapProbe | undefined;
+/** The outcome of probing the macOS Seatbelt command-line backend. */
+export type SeatbeltProbe =
+  | { backend: "seatbelt"; mode: "seatbelt" }
+  | { backend: "seatbelt"; mode: "unavailable"; reason: string };
+
+/** The native sandbox backend usable on this host, or why none is usable. */
+export type SandboxProbe =
+  BubblewrapProbe | SeatbeltProbe | { backend: "unsupported"; mode: "unavailable"; reason: string };
+
+let cachedBubblewrapProbe: BubblewrapProbe | undefined;
+let cachedSeatbeltProbe: SeatbeltProbe | undefined;
+let cachedSandboxProbe: SandboxProbe | undefined;
 
 /**
  * Injectable seams for {@link probeBubblewrap}, so every branch (missing
@@ -109,21 +113,27 @@ function computeProbe(deps: BubblewrapProbeDeps): BubblewrapProbe {
   const probeSpawnSync = deps.spawnSync ?? spawnSync;
   if (platform !== "linux") {
     return {
+      backend: "bubblewrap",
       mode: "unavailable",
       reason: `Bubblewrap is supported only on Linux (host platform: ${platform})`,
     };
   }
   const version = probeSpawnSync("bwrap", ["--version"], { stdio: "ignore" });
   if (version.error || version.status !== 0) {
-    return { mode: "unavailable", reason: "bwrap executable was not found" };
+    return {
+      backend: "bubblewrap",
+      mode: "unavailable",
+      reason: "bwrap executable was not found",
+    };
   }
   if (probeSpawnSync("bwrap", probeArgs("fresh-proc"), { stdio: "ignore" }).status === 0) {
-    return { mode: "fresh-proc" };
+    return { backend: "bubblewrap", mode: "fresh-proc" };
   }
   if (probeSpawnSync("bwrap", probeArgs("host-proc"), { stdio: "ignore" }).status === 0) {
-    return { mode: "host-proc" };
+    return { backend: "bubblewrap", mode: "host-proc" };
   }
   return {
+    backend: "bubblewrap",
     mode: "unavailable",
     reason: "bwrap cannot create the namespaces or mounts required by Clarvis",
   };
@@ -144,8 +154,89 @@ function computeProbe(deps: BubblewrapProbeDeps): BubblewrapProbe {
  * fresh mount vs a bind of the host's).
  */
 export function probeBubblewrap(deps?: BubblewrapProbeDeps): BubblewrapProbe {
-  if (deps === undefined) return (cachedProbe ??= computeProbe({}));
+  if (deps === undefined) return (cachedBubblewrapProbe ??= computeProbe({}));
   return computeProbe(deps);
+}
+
+/** Injectable seams for {@link probeSeatbelt}. */
+export interface SeatbeltProbeDeps {
+  platform?: NodeJS.Platform;
+  /** `child_process.spawnSync`; defaults to the real one. */
+  spawnSync?: (
+    command: string,
+    args: string[],
+    options: { stdio: "ignore" },
+  ) => Pick<SpawnSyncReturns<Buffer>, "status" | "error">;
+}
+
+const SEATBELT_EXECUTABLE = "/usr/bin/sandbox-exec";
+const SEATBELT_PROBE_PROFILE = `(version 1)\n(allow default)\n(deny file-write*)`;
+
+/** {@link probeSeatbelt}'s uncached implementation. */
+function computeSeatbeltProbe(deps: SeatbeltProbeDeps): SeatbeltProbe {
+  const platform = deps.platform ?? process.platform;
+  if (platform !== "darwin") {
+    return {
+      backend: "seatbelt",
+      mode: "unavailable",
+      reason: `Seatbelt is supported only on macOS (host platform: ${platform})`,
+    };
+  }
+  const probeSpawnSync = deps.spawnSync ?? spawnSync;
+  const result = probeSpawnSync(
+    SEATBELT_EXECUTABLE,
+    ["-p", SEATBELT_PROBE_PROFILE, "/usr/bin/true"],
+    { stdio: "ignore" },
+  );
+  if (result.error || result.status !== 0) {
+    return {
+      backend: "seatbelt",
+      mode: "unavailable",
+      reason: "sandbox-exec could not apply the Clarvis Seatbelt profile",
+    };
+  }
+  return { backend: "seatbelt", mode: "seatbelt" };
+}
+
+/**
+ * Detect whether macOS Seatbelt can apply a process profile on this host.
+ *
+ * @param deps - test seams. An injected call is never cached.
+ * @returns `seatbelt` after a real profile launch, otherwise `unavailable`.
+ */
+export function probeSeatbelt(deps?: SeatbeltProbeDeps): SeatbeltProbe {
+  if (deps === undefined) return (cachedSeatbeltProbe ??= computeSeatbeltProbe({}));
+  return computeSeatbeltProbe(deps);
+}
+
+/** Injectable seams for {@link probeSandbox}. */
+export interface SandboxProbeDeps {
+  platform?: NodeJS.Platform;
+  /** Shared process-spawn seam passed to the selected backend probe. */
+  spawnSync?: BubblewrapProbeDeps["spawnSync"];
+}
+
+/** {@link probeSandbox}'s uncached platform dispatcher. */
+function computeSandboxProbe(deps: SandboxProbeDeps): SandboxProbe {
+  const platform = deps.platform ?? process.platform;
+  if (platform === "linux") return probeBubblewrap({ platform, spawnSync: deps.spawnSync });
+  if (platform === "darwin") return probeSeatbelt({ platform, spawnSync: deps.spawnSync });
+  return {
+    backend: "unsupported",
+    mode: "unavailable",
+    reason: `Native sandboxing is unsupported on host platform: ${platform}`,
+  };
+}
+
+/**
+ * Detect the native sandbox backend for this host.
+ *
+ * @param deps - test seams. An injected call is never cached.
+ * @returns Bubblewrap on Linux, Seatbelt on macOS, or `unavailable` elsewhere.
+ */
+export function probeSandbox(deps?: SandboxProbeDeps): SandboxProbe {
+  if (deps === undefined) return (cachedSandboxProbe ??= computeSandboxProbe({}));
+  return computeSandboxProbe(deps);
 }
 
 /**
@@ -271,22 +362,32 @@ export function discoverLinkedGitMetadataPaths(workspaceRoot: string): readonly 
 /**
  * The roots too broad to expose to a sandbox, resolved against this host.
  *
- * @returns `/`, `/home` and the user's home directory, each resolved.
+ * @returns `/`, `/home`, the user's home parent, and the user's home directory,
+ *   including their canonical spellings when they differ.
  * @remarks A function rather than a constant because `homedir()` is read at call
  *   time; a module-level array would freeze whatever `HOME` was when the module
  *   first loaded, which a test that moves `HOME` then silently disagrees with.
  *   It is exported because the host-side validator in `@clarvis/loop`
- *   (`runtime/capabilities/sandbox-host-policy.ts`) enforces the same three
- *   roots with a different return convention, and spelling them twice is how
+ *   (`runtime/capabilities/sandbox-host-policy.ts`) enforces the same roots with
+ *   a different return convention, and spelling them twice is how
  *   one side gains a root the other does not.
  */
 export function forbiddenSandboxRoots(): string[] {
-  return [resolve("/"), resolve("/home"), resolve(homedir())];
+  const home = resolve(homedir());
+  return [
+    ...new Set(
+      [resolve("/"), resolve("/home"), dirname(home), home].flatMap((path) => [
+        path,
+        canonicalOrSelf(path),
+      ]),
+    ),
+  ];
 }
 
 /**
  * Reject a caller-supplied read-only mount that is dangerously broad (`/`,
- * `/home`, the user's home) or that would shadow the workspace by containing it.
+ * `/home`, the user's home parent, or the user's home) or that would shadow the
+ * workspace by containing it.
  *
  * @throws {@link ToolError} (`invalid_input`) when the path is a forbidden root
  *   or contains `workspaceRoot`.
@@ -306,8 +407,9 @@ function validateReadOnlyPath(path: string, workspaceRoot: string): void {
 /**
  * Compute the `PATH` for a sandboxed process: keep only host `PATH` entries that
  * live under a system root (`/usr`, `/bin`, `/sbin`) or one of the
- * `runtimePaths`, and prepend each runtime root's `bin`. Entries are
- * deduplicated while preserving order.
+ * `runtimePaths`, ensure the standard system executable directories remain
+ * available even when the host `PATH` was reduced, and prepend each runtime
+ * root's `bin`. Entries are deduplicated while preserving order.
  */
 function sandboxPath(runtimePaths: readonly string[]): string {
   const roots = runtimePaths.map((path) => resolve(path));
@@ -319,6 +421,9 @@ function sandboxPath(runtimePaths: readonly string[]): string {
       const normalized = resolve(entry);
       return [...systemRoots, ...roots].some((root) => isWithin(normalized, root));
     });
+  for (const path of ["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]) {
+    if (existsSync(path) && !entries.includes(path)) entries.push(path);
+  }
   for (const root of roots) {
     const bin = resolve(root, "bin");
     if (existsSync(bin) && !entries.includes(bin)) entries.unshift(bin);
@@ -336,9 +441,10 @@ function minimalEnv(
   passEnv: readonly string[] = [],
   runtimePaths: readonly string[] = [],
   temporaryRoot = "/tmp",
+  home = "/home/clarvis",
 ): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
-    HOME: "/home/clarvis",
+    HOME: home,
     PATH: sandboxPath(runtimePaths),
     TMPDIR: temporaryRoot,
     TEMP: temporaryRoot,
@@ -388,21 +494,21 @@ export interface SandboxCommandArgs {
    * inherited environment on the unsandboxed path.
    *
    * @remarks
-   * Ignored under bubblewrap, which builds its environment from nothing via
-   * {@link minimalEnv} and where `passEnv` is already the only way in. This
-   * exists for the bare path, which is what runs on macOS and Windows and on any
-   * Linux host without bubblewrap — there, an agent's own shell tool could
-   * simply print the host's API keys, and a command that exfiltrates them is
-   * indistinguishable from one that legitimately reads the environment.
+   * Ignored under a native backend, which builds its environment from nothing
+   * via {@link minimalEnv} and where `passEnv` is already the only way in. This
+   * exists for the bare path on an unsupported host or an explicitly optional
+   * fallback — there, an agent's own shell tool could simply print the host's
+   * API keys, and a command that exfiltrates them is indistinguishable from one
+   * that legitimately reads the environment.
    */
   secretEnvNames?: readonly string[] | undefined;
   /** Run-owned scratch root mounted writable and exposed through TMPDIR/TEMP/TMP. */
   temporaryRoot?: string | undefined;
   /**
-   * Bubblewrap capability probe; defaults to {@link probeBubblewrap} and is
-   * injectable for tests.
+   * Native capability probe; defaults to {@link probeSandbox} and is injectable
+   * for tests.
    */
-  probe?: () => BubblewrapProbe;
+  probe?: () => SandboxProbe;
   /** Host shell resolver; defaults to {@link resolveShell}, injectable for tests. */
   shell?: () => ShellSpec;
 }
@@ -424,28 +530,144 @@ function withoutSecrets(
   return out;
 }
 
+/** Validate and de-duplicate every caller-supplied read-only root. */
+function validatedReadOnlyPaths(sandbox: SandboxConfig, workspaceRoot: string): string[] {
+  const paths = [...(sandbox.readOnlyPaths ?? []), ...(sandbox.runtimePaths ?? [])];
+  const validated: string[] = [];
+  const workspacePaths = pathVariants(workspaceRoot);
+  for (const extra of new Set(paths)) {
+    if (!isAbsolute(extra)) {
+      throw new ToolError("invalid_input", `Sandbox read-only path must be absolute: ${extra}`);
+    }
+    const path = resolve(extra);
+    for (const candidate of pathVariants(path)) {
+      for (const workspace of workspacePaths) validateReadOnlyPath(candidate, workspace);
+    }
+    if (existsSync(path)) validated.push(path);
+  }
+  return validated;
+}
+
+/** Return the normalized authored path and its filesystem-canonical target. */
+function pathVariants(path: string): string[] {
+  const normalized = resolve(path);
+  return [...new Set([normalized, canonicalOrSelf(normalized)])];
+}
+
+const SEATBELT_SYSTEM_READ_FILTERS = [
+  '(literal "/")',
+  '(subpath "/System")',
+  '(subpath "/usr")',
+  '(subpath "/bin")',
+  '(subpath "/sbin")',
+  '(subpath "/Library/Apple")',
+  '(subpath "/Library/Preferences")',
+  '(subpath "/Library/Developer")',
+  '(subpath "/Applications/Xcode.app")',
+  '(subpath "/private/etc")',
+  '(subpath "/private/var/db")',
+  '(literal "/private/var/select/sh")',
+  '(literal "/dev/null")',
+  '(literal "/dev/zero")',
+  '(literal "/dev/random")',
+  '(literal "/dev/urandom")',
+] as const;
+
+interface SeatbeltPolicy {
+  profile: string;
+  definitions: string[];
+}
+
+/**
+ * Compile the filesystem and network policy shared with Bubblewrap into SBPL.
+ *
+ * @remarks
+ * Dynamic paths are passed through `sandbox-exec -D` parameters rather than
+ * interpolated into the profile. The profile starts from the host's normal
+ * non-file behavior, removes all filesystem access, then admits only system
+ * runtime reads, declared roots, and the configured writable trees. A final
+ * deny makes a read-only path nested inside a writable workspace stay
+ * read-only, matching Bubblewrap's later read-only bind.
+ */
+function seatbeltPolicy(args: {
+  sandbox: SandboxConfig;
+  workspaceRoot: string;
+  gitMetadataPaths: readonly string[];
+  temporaryRoot?: string | undefined;
+  readOnlyPaths: readonly string[];
+}): SeatbeltPolicy {
+  const definitions: string[] = [];
+  const keys = new Map<string, string>();
+  const keyFor = (path: string): string => {
+    const prior = keys.get(path);
+    if (prior !== undefined) return prior;
+    const key = `ROOT_${keys.size}`;
+    keys.set(path, key);
+    definitions.push("-D", `${key}=${path}`);
+    return key;
+  };
+  const dynamicFilter = (path: string): string => `(subpath (param "${keyFor(path)}"))`;
+  const workspacePaths = pathVariants(args.workspaceRoot);
+  const gitMetadataPaths = args.gitMetadataPaths.flatMap(pathVariants);
+  const temporaryPaths = args.temporaryRoot === undefined ? [] : pathVariants(args.temporaryRoot);
+  const readOnlyPaths = args.readOnlyPaths.flatMap(pathVariants);
+  const readablePaths = [
+    ...workspacePaths,
+    ...gitMetadataPaths,
+    ...temporaryPaths,
+    ...readOnlyPaths,
+  ];
+  const readable = [...new Set(readablePaths.filter((path) => existsSync(path)))];
+  const writable = [
+    ...(args.sandbox.filesystem === "workspace-read-only"
+      ? []
+      : [...workspacePaths, ...gitMetadataPaths]),
+    ...temporaryPaths,
+  ].filter((path) => existsSync(path));
+  const profile = [
+    "(version 1)",
+    "(allow default)",
+    "(deny signal)",
+    "(allow signal (target same-sandbox))",
+    "(deny process-info*)",
+    "(allow process-info* (target same-sandbox))",
+    "(deny file-read* file-test-existence file-map-executable file-write*)",
+    `(allow file-read* file-test-existence file-map-executable ${[
+      ...SEATBELT_SYSTEM_READ_FILTERS,
+      ...readable.map(dynamicFilter),
+    ].join(" ")})`,
+    `(allow file-read-metadata file-test-existence ${readable
+      .map((path) => `(path-ancestors (param "${keyFor(path)}"))`)
+      .join(" ")})`,
+    ...(writable.length === 0
+      ? []
+      : [`(allow file-write* ${[...new Set(writable)].map(dynamicFilter).join(" ")})`]),
+    '(allow file-write-data file-ioctl (literal "/dev/null") (literal "/dev/zero"))',
+    ...(readOnlyPaths.length === 0
+      ? []
+      : [`(deny file-write* ${readOnlyPaths.map(dynamicFilter).join(" ")})`]),
+    ...(args.sandbox.network === "none" ? ["(deny network*)"] : []),
+  ].join("\n");
+  return { profile, definitions };
+}
+
 /**
  * Turn a shell command into a {@link SandboxedCommand}, either bare or wrapped
- * in a locked-down `bwrap` invocation per the `sandbox` config.
+ * in the locked-down native backend selected for this host.
  *
  * @param args_ - see {@link SandboxCommandArgs}.
  * @returns the executable, args, and spawn options to run.
  * @throws {@link ToolError} (`io_error`) when the sandbox is required but
- *   bubblewrap is unavailable; (`invalid_input`) when a read-only path is
+ *   the native sandbox is unavailable; (`invalid_input`) when a read-only path is
  *   relative or {@link validateReadOnlyPath} rejects it.
  * @remarks
  * When `sandbox` is undefined, or unavailable with `availability: "optional"`,
  * the command runs bare through the host shell with the host environment less
- * {@link SandboxCommandArgs.secretEnvNames | secretEnvNames}. Otherwise it
- * drops all capabilities and unshares user/pid/ipc/uts (and net when
- * `network: "none"`), binds core system paths read-only, binds the workspace per
- * `filesystem`, adds each validated read-only/runtime path, and runs with the
- * scrubbed {@link minimalEnv}. With networking on, {@link resolverMounts} is
- * added so DNS resolves.
- *
- * The bubblewrap branch is reachable only with a POSIX shell - bubblewrap
- * requires Linux, and Linux implies `sh` - so its tail is always `sh -c` in
- * practice even though it is written in terms of the resolved shell.
+ * {@link SandboxCommandArgs.secretEnvNames | secretEnvNames}. Otherwise,
+ * Bubblewrap drops capabilities and unshares user/pid/ipc/uts, while Seatbelt
+ * applies an SBPL profile to the spawned process. Both expose the same declared
+ * filesystem roots, honor `network`, and run with the scrubbed
+ * {@link minimalEnv}.
  */
 export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
   const {
@@ -456,7 +678,7 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
     sandbox,
     secretEnvNames,
     temporaryRoot,
-    probe = probeBubblewrap,
+    probe = probeSandbox,
     shell = resolveShell,
     logger = NOOP_TOOLS_LOGGER,
   } = args_;
@@ -483,10 +705,38 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
     return bare();
   }
   if (support.mode === "unavailable") {
-    throw new ToolError("io_error", `Bubblewrap sandbox is required: ${support.reason}`);
+    throw new ToolError("io_error", `Native sandbox is required: ${support.reason}`);
   }
 
   const root = resolve(workspaceRoot);
+  const readOnlyPaths = validatedReadOnlyPaths(sandbox, root);
+  if (support.backend === "seatbelt") {
+    const scratch = temporaryRoot === undefined ? undefined : resolve(temporaryRoot);
+    const gitPaths = gitMetadataPaths.map((path) => resolve(path));
+    const policy = seatbeltPolicy({
+      sandbox,
+      workspaceRoot: root,
+      gitMetadataPaths: gitPaths,
+      temporaryRoot: scratch,
+      readOnlyPaths,
+    });
+    const home = canonicalOrSelf(scratch ?? root);
+    return {
+      file: SEATBELT_EXECUTABLE,
+      args: [...policy.definitions, "-p", policy.profile, host.file, ...shellArgs(host, command)],
+      options: {
+        cwd,
+        env: minimalEnv(
+          sandbox.passEnv,
+          sandbox.runtimePaths,
+          canonicalOrSelf(scratch ?? root),
+          home,
+        ),
+      },
+      sandboxed: true,
+    };
+  }
+
   const args = [
     "--die-with-parent",
     "--new-session",
@@ -521,15 +771,7 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
     const scratch = resolve(temporaryRoot);
     if (existsSync(scratch)) args.push("--bind", scratch, scratch);
   }
-  const readOnlyPaths = [...(sandbox.readOnlyPaths ?? []), ...(sandbox.runtimePaths ?? [])];
-  for (const extra of new Set(readOnlyPaths)) {
-    if (!isAbsolute(extra)) {
-      throw new ToolError("invalid_input", `Sandbox read-only path must be absolute: ${extra}`);
-    }
-    const path = resolve(extra);
-    validateReadOnlyPath(path, root);
-    if (existsSync(path)) args.push("--ro-bind", path, path);
-  }
+  for (const path of readOnlyPaths) args.push("--ro-bind", path, path);
   if (sandbox.network === "none") args.push("--unshare-net");
   else args.push(...resolverMounts());
   args.push("--chdir", cwd, "--", host.file, ...shellArgs(host, command));
@@ -600,8 +842,8 @@ const INSTALL_ROOT_PATTERNS = [
 
 /**
  * The known language toolchains, each mapping a stable id to the CLI commands
- * that belong to it. The first command in each list is the probe used to decide
- * whether the toolchain is present on the host.
+ * that belong to it. The first command in each list is the path-resolution
+ * anchor used to decide whether the toolchain is present on the host.
  */
 export const TOOLCHAIN_COMMANDS = {
   bun: ["bun", "bunx"],
@@ -631,8 +873,9 @@ export type ToolchainId = keyof typeof TOOLCHAIN_COMMANDS;
  * @remarks
  * `logicalPath` is the executable as found on `PATH`; `resolvedPath` is that
  * path with symlinks resolved; `root` is the inferred install prefix; `manager`
- * names the version manager it belongs to (see the `managerOf` heuristic);
- * `version` is the first line of `--version`. `commands` lists the subset of the
+ * names the version manager it belongs to (see the `managerOf` heuristic).
+ * There is deliberately no version field: inspecting a host must not execute
+ * an arbitrary discovered binary. `commands` lists the subset of the
  * toolchain's commands actually found on `PATH`. When `available` is `false`,
  * `error` explains why and the location fields may be absent.
  */
@@ -644,7 +887,6 @@ export interface DiscoveredToolchain {
   resolvedPath?: string;
   root?: string;
   manager?: string;
-  version?: string;
   error?: string;
 }
 
@@ -708,52 +950,20 @@ export function installationRoot(
   return pathApi.dirname(pathApi.dirname(path));
 }
 
-/** Extensions Windows will not spawn directly, and must route through `cmd`. */
-const WINDOWS_SHELL_SCRIPTS = new Set([".cmd", ".bat"]);
-
 /**
- * Run `command --version` and return its first line (capped at 160 chars), or
- * `undefined` if the process fails to exit cleanly. Bounded by a 2s timeout.
- *
- * @remarks
- * A `.cmd` or `.bat` cannot be spawned directly - Node refuses to, as the
- * mitigation for a command-injection vulnerability in how the arguments were
- * passed. On Windows most toolchain entry points are exactly that (`npm`,
- * `npx`, `bunx`, `gradle`, `mvn`, `composer`, `kotlinc`), so without the `cmd`
- * route this reports nearly every toolchain as unavailable.
- *
- * `/d` skips `AutoRun`, `/s` fixes the quote handling so a path containing
- * spaces survives, and `windowsVerbatimArguments` stops the runtime re-quoting
- * a line that `cmd` will parse itself. `command` is a path this module resolved
- * from `PATH` and the only argument is the literal `--version`, so nothing
- * caller-supplied reaches the command line.
- */
-function versionOf(command: string, env: NodeJS.ProcessEnv): string | undefined {
-  const options = { env, encoding: "utf8" as const, timeout: 2_000, windowsHide: true };
-  const result =
-    process.platform === "win32" && WINDOWS_SHELL_SCRIPTS.has(extname(command).toLowerCase())
-      ? spawnSync(process.env.ComSpec ?? "cmd.exe", ["/d", "/s", "/c", `"${command}" --version`], {
-          ...options,
-          windowsVerbatimArguments: true,
-        })
-      : spawnSync(command, ["--version"], options);
-  if (result.status !== 0) return undefined;
-  return `${result.stdout}${result.stderr}`.trim().split(/\r?\n/, 1)[0]?.slice(0, 160);
-}
-
-/**
- * Probe the host for installed language toolchains.
+ * Inspect the host for installed language toolchains without executing them.
  *
  * @param include - ids to probe; defaults to every {@link TOOLCHAIN_COMMANDS}
  *   entry. Ids not in this set are skipped.
  * @returns one {@link DiscoveredToolchain} per included, known id, in
  *   {@link TOOLCHAIN_COMMANDS} order.
  * @remarks
- * A toolchain is reported unavailable (with an `error`) when its probe command
+ * A toolchain is reported unavailable (with an `error`) when its anchor command
  * is absent from `PATH` or when resolving its real path throws; otherwise its
- * location, `manager`, `version`, and the subset of present `commands` are
- * filled in. Purely read-only host inspection - it spawns each present
- * toolchain's `--version` but changes nothing.
+ * location, `manager`, and the subset of present `commands` are filled in.
+ * Discovery performs filesystem/path inspection only and never spawns a
+ * discovered entrypoint. This is a product-safety boundary: platform shims such
+ * as macOS `/usr/bin/cc` can open installers merely by being executed.
  */
 export function discoverToolchains(
   include: readonly string[] = Object.keys(TOOLCHAIN_COMMANDS),
@@ -783,7 +993,6 @@ export function discoverToolchains(
             ? dirname(logicalRoot)
             : resolvedRoot
           : (resolvedRoot ?? logicalRoot);
-      const version = versionOf(logicalPath, process.env);
       out.push({
         id,
         commands: allCommands.filter((command) => executableOnPath(command) !== undefined),
@@ -792,7 +1001,6 @@ export function discoverToolchains(
         resolvedPath,
         ...(root !== undefined ? { root } : {}),
         manager: managerOf(resolvedPath),
-        ...(version !== undefined ? { version } : {}),
       });
     } catch (error) {
       out.push({

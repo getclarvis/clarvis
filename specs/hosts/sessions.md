@@ -253,8 +253,10 @@ empty id string are all rejected).
 
 `referencedSessionExecutionIds` performs the separate cross-owner scan used by trace retention. It
 returns `{ ids, complete }`: malformed and oversized records are ignored, while either aggregate
-bound or a non-missing filesystem error sets `complete: false`. Trace cleanup treats that flag as a
-fail-closed destructive boundary and skips the pass rather than trusting a partial protection set.
+bound or a non-missing filesystem error sets `complete: false`. A session catalog that is absent at
+open or at the first lazy directory read is the same complete empty catalog, including on Bun
+runtimes that defer `opendirSync` failure until `readSync`. Trace cleanup treats an incomplete flag
+as a fail-closed destructive boundary and skips the pass rather than trusting a partial protection set.
 Production: `packages/kernel/src/sessions/session-service.ts` and
 `packages/kernel/src/file-kernel.ts`. Test:
 `packages/kernel/tests/integration/session-service.test.ts`.

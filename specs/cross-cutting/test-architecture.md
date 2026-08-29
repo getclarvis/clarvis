@@ -671,8 +671,8 @@ That configuration is not decorative — the repository currently contains
 a root-level `coverage/lcov.info` whose 13 `SF:` records span `packages/paths/src/*`,
 `packages/protocol/src/index.ts` **and `tooling/test-runtime/clarvis-home-preload.ts`**, which is the fingerprint of
 exactly such a root-cwd run (and shows the root bunfig's lack of `coveragePathIgnorePatterns`).
-CI itself makes two root-cwd runs, in the Windows and macOS keyboard-policy jobs
-(`.github/workflows/ci.yml`, jobs `windows` and `keyboard-macos`).
+CI itself makes root-cwd runs in the Windows and macOS platform-policy jobs
+(`.github/workflows/ci.yml`, jobs `windows` and `sandbox-macos`).
 
 Seventeen of the eighteen packages repeat the preload in their own `bunfig.toml`; only the
 type-only `protocol` package omits it.

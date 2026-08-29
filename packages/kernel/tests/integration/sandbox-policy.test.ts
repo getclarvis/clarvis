@@ -1,11 +1,46 @@
 import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { createFileConfigStore } from "../../src/config/file-config-store.ts";
 import { createSandboxPolicyResolver } from "../../src/sandbox/policy.ts";
 
 describe("sandbox host policy", () => {
+  it.skipIf(process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
+    "inspects a discovered toolchain without executing it through the real native backend",
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-policy-canary-"));
+      const globalDir = join(root, "global");
+      const workspace = join(root, "workspace");
+      const bin = join(root, "runtime", "bin");
+      const executable = join(bin, "bun");
+      mkdirSync(workspace, { recursive: true });
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(executable, "#!/bin/sh\nexit 73\n", { mode: 0o755 });
+      const store = createFileConfigStore({ workspaceRoot: workspace, globalDir });
+      store.writeSettings("workspace", {
+        sandbox: { type: "native", toolchains: { include: ["bun"] } },
+      });
+      const previousPath = process.env.PATH;
+      process.env.PATH = previousPath ? `${bin}${delimiter}${previousPath}` : bin;
+      try {
+        const inspection = await createSandboxPolicyResolver(store, workspace).inspect();
+        expect(inspection.backend).toMatchObject({
+          type: process.platform === "darwin" ? "seatbelt" : "bubblewrap",
+          available: true,
+        });
+        expect(inspection.toolchains[0]).toMatchObject({
+          id: "bun",
+          available: true,
+        });
+        expect(inspection.toolchains[0]).not.toHaveProperty("version");
+      } finally {
+        process.env.PATH = previousPath;
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("combines global absolute and workspace-relative extra paths", () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-policy-"));
     const globalDir = join(root, "global");
@@ -16,13 +51,13 @@ describe("sandbox host policy", () => {
     const store = createFileConfigStore({ workspaceRoot: workspace, globalDir });
     store.writeSettings("global", {
       sandbox: {
-        type: "bubblewrap",
+        type: "native",
         toolchains: { mode: "manual", extra_paths: [globalSdk] },
       },
     });
     store.writeSettings("workspace", {
       sandbox: {
-        type: "bubblewrap",
+        type: "native",
         toolchains: { extra_paths: ["./vendor/sdk"] },
       },
     });
@@ -34,6 +69,39 @@ describe("sandbox host policy", () => {
     ]);
   });
 
+  it.skipIf(process.platform === "win32")(
+    "does not execute a discovered toolchain while building host inspection",
+    async () => {
+      const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-passive-inspection-"));
+      const globalDir = join(root, "global");
+      const workspace = join(root, "workspace");
+      const bin = join(root, "runtime", "bin");
+      const sentinel = join(root, "entrypoint-ran");
+      mkdirSync(workspace, { recursive: true });
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(
+        join(bin, "bun"),
+        '#!/bin/sh\nprintf invoked > "$(dirname "$0")/../../entrypoint-ran"\n',
+        { mode: 0o755 },
+      );
+      const store = createFileConfigStore({ workspaceRoot: workspace, globalDir });
+      store.writeSettings("workspace", {
+        sandbox: { type: "native", toolchains: { include: ["bun"] } },
+      });
+      const previousPath = process.env.PATH;
+      process.env.PATH = bin;
+      try {
+        const inspection = await createSandboxPolicyResolver(store, workspace).inspect();
+        expect(inspection.toolchains[0]).toMatchObject({ id: "bun", available: true });
+        expect(inspection.toolchains[0]).not.toHaveProperty("version");
+        expect(existsSync(sentinel)).toBe(false);
+      } finally {
+        process.env.PATH = previousPath;
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("lets workspace excluded_paths suppress an inherited global path", () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-sandbox-exclude-"));
     const globalDir = join(root, "global");
@@ -44,13 +112,13 @@ describe("sandbox host policy", () => {
     const store = createFileConfigStore({ workspaceRoot: workspace, globalDir });
     store.writeSettings("global", {
       sandbox: {
-        type: "bubblewrap",
+        type: "native",
         toolchains: { mode: "manual", extra_paths: [globalSdk] },
       },
     });
     store.writeSettings("workspace", {
       sandbox: {
-        type: "bubblewrap",
+        type: "native",
         toolchains: { excluded_paths: [globalSdk] },
       },
     });
@@ -68,7 +136,7 @@ describe("sandbox host policy", () => {
     const store = createFileConfigStore({ workspaceRoot: workspace, globalDir });
     store.writeSettings("workspace", {
       sandbox: {
-        type: "bubblewrap",
+        type: "native",
         toolchains: { mode: "manual", extra_paths: ["/", join(root, "workspace")] },
       },
     });
@@ -103,7 +171,7 @@ describe("sandbox host policy", () => {
     const store = createFileConfigStore({ workspaceRoot: workspace, globalDir });
     store.writeSettings("workspace", {
       sandbox: {
-        type: "bubblewrap",
+        type: "native",
         toolchains: { include: ["bun"] },
       },
     });
@@ -111,18 +179,20 @@ describe("sandbox host policy", () => {
     process.env.PATH = bin;
     try {
       const resolver = createSandboxPolicyResolver(store, workspace);
-      expect((await resolver.inspect()).toolchains[0]?.version).toBe("1.0.0");
+      expect((await resolver.inspect()).toolchains[0]?.available).toBe(true);
 
-      writeFileSync(executable, "#!/bin/sh\necho 2.0.0\n", { mode: 0o755 });
-      expect((await resolver.inspect()).toolchains[0]?.version).toBe("1.0.0");
-      expect((await resolver.inspect({ refresh: true })).toolchains[0]?.version).toBe("2.0.0");
+      rmSync(executable);
+      expect((await resolver.inspect()).toolchains[0]?.available).toBe(true);
+      expect((await resolver.inspect({ refresh: true })).toolchains[0]?.available).toBe(false);
 
+      writeFileSync(executable, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
       const otherBin = join(root, "other");
       mkdirSync(otherBin);
       process.env.PATH = `${otherBin}:${bin}`;
-      expect((await resolver.inspect()).toolchains[0]?.version).toBe("2.0.0");
+      expect((await resolver.inspect()).toolchains[0]?.available).toBe(true);
     } finally {
       process.env.PATH = previousPath;
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

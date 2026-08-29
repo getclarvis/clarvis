@@ -48,7 +48,7 @@ describe("readable state artifacts", () => {
     writeFileSync(spill, "output\n");
     const config = makeConfig(root, {
       stateRoot,
-      sandbox: { type: "bubblewrap", readOnlyPaths: ["/opt/toolchain"] },
+      sandbox: { type: "native", readOnlyPaths: ["/opt/toolchain"] },
     });
 
     expect(

@@ -1117,7 +1117,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "sandbox.config",
     title: "Sandbox",
-    desc: "Enable, disable and configure Bubblewrap command isolation",
+    desc: "Enable, disable and configure native command isolation",
     surface: "internal",
     group: "navigate",
     parent: "settings",

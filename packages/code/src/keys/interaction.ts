@@ -99,7 +99,10 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   "app.suspend": [{ key: "ctrl+z" }],
   "focus.next": [{ key: "tab" }],
   "agent.picker": [{ key: "shift+tab" }],
-  "safety.picker": [{ key: "alt+s", minimumProfile: "enhanced", requires: ["meta"] }],
+  "safety.picker": [
+    { key: "alt+s", minimumProfile: "enhanced", requires: ["meta"] },
+    { key: "ctrl+s" },
+  ],
   "controls.open": [
     { key: "alt+r", minimumProfile: "enhanced", requires: ["meta"] },
     { key: "alt+g", minimumProfile: "enhanced", requires: ["meta"] },

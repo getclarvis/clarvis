@@ -52,7 +52,7 @@ and the log line says so explicitly (`packages/hooks/src/env.ts:148`,
 
 Delegated to siblings: server authentication and bind policy
 ([hosts/server-auth.md](../hosts/server-auth.md)), command approval and the guard judge
-([execution/command-guard.md](../execution/command-guard.md)), bubblewrap sandboxing
+([execution/command-guard.md](../execution/command-guard.md)), native Bubblewrap/Seatbelt sandboxing
 ([execution/sandbox.md](../execution/sandbox.md)), the `.clarvis`/state directory layout itself
 ([foundations/paths.md](../foundations/paths.md)), and release artifact identity, checksums, download
 bounds, staging, and activation ([distribution-and-updates.md](distribution-and-updates.md)).
@@ -562,7 +562,7 @@ denylist is derived from exactly this run's credentials"* (`packages/hooks/src/c
 | Clarvis-owned Git selecting a repository | `withoutGitRepositoryEnvironment(inherited)` — preserve ordinary/transport inputs, remove Git's complete repository-local set and `GIT_CEILING_DIRECTORIES` before `cwd`, `-C`, or a clone destination selects the repository | helper `packages/paths/src/git-environment.ts`; plugin fetch `packages/kernel/src/adapters/git/plugin-fetcher.ts`; plugin metadata `packages/kernel/src/adapters/filesystem/plugin-repository.ts`; memory workspace probe `packages/memory/src/workspace-state.ts`; client clone `packages/code/src/adapters/plugin-install.ts`; guarded host fallback `packages/tools/src/tools/host-vcs.ts` |
 | `host_vcs` argv fallback | `withoutGitRepositoryEnvironment(process.env)`, then remove `secretEnvNames`, disable prompts, hooks, and Git external protocols; ordinary host environment and credential transport remain | `packages/tools/src/tools/host-vcs.ts` (`hostEnvironment`) |
 | stdio MCP child | `{ ...getDefaultEnvironment(), ...server.env }` — values are normally interpolated, but remain literal when a portable adapter sets `expandVariables: false`; the caller's environment is **never** the base | `buildTransport` in `packages/mcp-client/src/client.ts` |
-| `shell` / `monitor` command (unsandboxed) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted | `packages/tools/src/sandbox.ts:349-357`, applied `:397` |
+| `shell` / `monitor` command (unsandboxed) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted | `packages/tools/src/sandbox.ts` (`withoutSecrets`, applied by `sandboxCommand`) |
 | capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts:76-84`, `:163` |
 
 `secretEnvNames` for the toolset comes from `resolveSecretNames(ctx)`

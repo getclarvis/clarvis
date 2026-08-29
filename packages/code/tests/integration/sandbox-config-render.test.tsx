@@ -10,23 +10,35 @@ import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 const fakeKeymap = createFakeKeymap;
 
 const INSPECTION: SandboxInspection = {
-  bubblewrap: { available: true, mode: "fresh-proc", degraded: false },
+  backend: { type: "bubblewrap", available: true, mode: "fresh-proc", degraded: false },
   toolchains: [],
   extra_paths: [],
   effective_path: [],
 };
 
-const SANDBOX: NonNullable<SettingsFile["sandbox"]> = { type: "bubblewrap", enabled: true };
+const SANDBOX: NonNullable<SettingsFile["sandbox"]> = { type: "native", enabled: true };
 
 const UNAVAILABLE_INSPECTION: SandboxInspection = {
-  bubblewrap: { available: false, mode: "unavailable", degraded: false, reason: "not installed" },
+  backend: {
+    type: "bubblewrap",
+    available: false,
+    mode: "unavailable",
+    degraded: false,
+    reason: "not installed",
+  },
   toolchains: [],
   extra_paths: [],
   effective_path: [],
 };
 
 const DEGRADED_INSPECTION: SandboxInspection = {
-  bubblewrap: { available: true, mode: "fresh-proc", degraded: true },
+  backend: {
+    type: "bubblewrap",
+    available: true,
+    mode: "host-proc",
+    degraded: true,
+    reason: "shares the host /proc",
+  },
   toolchains: [],
   extra_paths: [],
   effective_path: [],
@@ -97,7 +109,7 @@ function bigInspection(count: number): SandboxInspection {
     "swift",
   ];
   return {
-    bubblewrap: { available: true, mode: "fresh-proc", degraded: false },
+    backend: { type: "bubblewrap", available: true, mode: "fresh-proc", degraded: false },
     toolchains: ids.slice(0, count).map((id, i) => ({
       id,
       commands: [id],
@@ -105,7 +117,6 @@ function bigInspection(count: number): SandboxInspection {
       enabled: true,
       scope: "auto",
       manager: "mise",
-      version: i < 3 ? "1.0.0" : undefined,
     })),
     extra_paths: [],
     effective_path: [],
@@ -209,11 +220,11 @@ test("effective policy, host diagnosis, and toolchain inventory have distinct ow
   const frame = t.captureCharFrame();
   expect(frame.indexOf("effective")).toBeLessThan(frame.indexOf("Sandbox  on"));
   expect(frame.indexOf("host")).toBeLessThan(frame.indexOf("Toolchains on kernel host"));
-  expect(frame).toContain("Tool       Version             Manager   Source     State");
+  expect(frame).toContain("Tool       Manager   Source     State");
   t.renderer.destroy();
 });
 
-test("the Bubblewrap probe routes through the shared loading hint while pending", async () => {
+test("the native sandbox probe routes through the shared loading hint while pending", async () => {
   const { host, deps } = mount({ inspect: () => new Promise<SandboxInspection>(() => {}) });
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 110,
@@ -221,7 +232,7 @@ test("the Bubblewrap probe routes through the shared loading hint while pending"
   });
   await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("checking Bubblewrap on kernel host…");
+  expect(frame).toContain("checking native sandbox on kernel host…");
   expect(frame).toContain("discovering toolchains…");
   t.renderer.destroy();
 });
@@ -264,12 +275,12 @@ test("a failed inspection surfaces the error in the banner and in the host statu
   await tick();
   await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("Bubblewrap Error: probe failed");
+  expect(frame).toContain("Native sandbox Error: probe failed");
   expect(frame).toContain("Error: probe failed");
   t.renderer.destroy();
 });
 
-test("no sandbox block: the fallback row renders and enabling creates a default block, warning when Bubblewrap is unavailable", async () => {
+test("no sandbox block: enabling creates a default block and warns when native isolation is unavailable", async () => {
   const { host, deps, press, notes } = mount({
     readSandbox: null,
     effectiveSandbox: null,
@@ -289,7 +300,7 @@ test("no sandbox block: the fallback row renders and enabling creates a default 
   await t.renderOnce();
   expect(host.dirty()).toBe(true);
   expect(notes).toHaveLength(1);
-  expect(notes[0]).toContain("Bubblewrap is not installed here");
+  expect(notes[0]).toContain("native sandbox is not installed here");
   expect(notes[0]).toContain("required");
   frame = t.captureCharFrame();
   expect(frame).toContain("Sandbox  off · configured on · product default · next run");
@@ -297,7 +308,7 @@ test("no sandbox block: the fallback row renders and enabling creates a default 
   t.renderer.destroy();
 });
 
-test("creating a block when Bubblewrap is available does not warn", async () => {
+test("creating a block when the native backend is available does not warn", async () => {
   const { host, deps, press, notes } = mount({ readSandbox: null, effectiveSandbox: null });
   const t = await openRender((() => SandboxConfigPanel(host, deps)) as never, {
     width: 110,
@@ -497,8 +508,8 @@ test("host warning: degraded mode is reported even though it is still available"
   await tick();
   await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("degraded mode: the sandbox shares the host /proc");
-  expect(frame).toContain("degraded: shares host /proc");
+  expect(frame).toContain("degraded mode: shares the host /proc");
+  expect(frame).toContain("degraded: shares the host /proc");
   t.renderer.destroy();
 });
 
@@ -564,12 +575,12 @@ test("workspace policy rows identify workspace provenance", async () => {
 
 test("sandbox rows project scalar inheritance and union-list provenance field by field", async () => {
   const global: NonNullable<SettingsFile["sandbox"]> = {
-    type: "bubblewrap",
+    type: "native",
     availability: "optional",
     pass_env: ["GLOBAL_TOKEN"],
   };
   const workspace: NonNullable<SettingsFile["sandbox"]> = {
-    type: "bubblewrap",
+    type: "native",
     enabled: true,
     pass_env: ["WORKSPACE_TOKEN"],
   };
@@ -577,7 +588,7 @@ test("sandbox rows project scalar inheritance and union-list provenance field by
     initialScope: "workspace",
     scopes: { global, workspace },
     effectiveSandbox: {
-      type: "bubblewrap",
+      type: "native",
       enabled: true,
       availability: "optional",
       pass_env: ["GLOBAL_TOKEN", "WORKSPACE_TOKEN"],

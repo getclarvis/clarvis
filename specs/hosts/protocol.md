@@ -569,13 +569,13 @@ the `RunEvent` union itself. `ElicitationCommandDetail` exists so a client "rend
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts:59-64` |
 | `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts:67-72` |
 | `MemoryConfig` | `{ enabled?; model?; [k]: unknown }` | `packages/protocol/src/config.ts:180-184` |
-| `SandboxConfig` | `{ type: "bubblewrap"; enabled?; availability?: "required" \| "optional"; filesystem?; network?; pass_env?; toolchains?: { mode?: "auto" \| "manual"; include?; exclude?; extra_paths?; excluded_paths? } }` | `packages/protocol/src/config.ts:80-105` |
+| `SandboxConfig` | `{ type: "native"; enabled?; availability?: "required" \| "optional"; filesystem?; network?; pass_env?; toolchains?: { mode?: "auto" \| "manual"; include?; exclude?; extra_paths?; excluded_paths? } }` | `packages/protocol/src/config.ts` (`SandboxConfig`) |
 | `SandboxToolchainScope` | `"system" \| "auto" \| "global" \| "workspace"` | `packages/protocol/src/config.ts:112` |
-| `SandboxInspection` | `{ bubblewrap: { available; mode: "fresh-proc" \| "host-proc" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts:160-177` |
+| `SandboxInspection` | `{ backend: { type: "bubblewrap" \| "seatbelt" \| "unsupported"; available; mode: "fresh-proc" \| "host-proc" \| "seatbelt" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts` (`SandboxInspection`) |
 
-`SandboxInspection.bubblewrap.mode`'s three states are glossed at the field's own comment:
-`"fresh-proc"` is "full isolation", `"host-proc"` is "degraded, shares host pid/proc", and
-`"unavailable"` means "Bubblewrap not usable" (`packages/protocol/src/config.ts:163-167`). `SandboxToolchainScope`'s four
+`SandboxInspection.backend` identifies what the host actually probed: Bubblewrap uses `fresh-proc`
+or degraded `host-proc`, Seatbelt uses `seatbelt`, and an unavailable selected/unsupported backend
+uses `unavailable` (`packages/protocol/src/config.ts`, `SandboxInspection`). `SandboxToolchainScope`'s four
 values name where a discovered toolchain (or read-only path) originates: `"system"` (already on the
 host `PATH`), `"auto"` (found by discovery), or the `"global"` / `"workspace"` settings scope that
 declared it (`packages/protocol/src/config.ts:107-111`). This is the return shape behind `ConfigService.inspectSandbox`,

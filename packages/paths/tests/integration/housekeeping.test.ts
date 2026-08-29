@@ -45,7 +45,11 @@ afterEach(() => {
 
 describe("sweepSpillDir", () => {
   test("returns quietly when the state directory does not exist", async () => {
+    const missing = Object.assign(new Error("state directory is absent"), { code: "ENOENT" });
+    const open = vi.spyOn(fsp, "opendir").mockRejectedValue(missing);
+
     await expect(sweepSpillDir(root)).resolves.toBeUndefined();
+    expect(open).toHaveBeenCalledWith(workspaceStatePaths(root).localDir);
     expect(existsSync(workspaceStatePaths(root).localDir)).toBe(false);
   });
 

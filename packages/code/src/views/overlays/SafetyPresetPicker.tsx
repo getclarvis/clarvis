@@ -128,7 +128,7 @@ export function SafetyPresetPicker(props: {
                 >
                   {choice.value === "free" || choice.value === "judged"
                     ? `${glyph("warning")} No sandbox boundary.`
-                    : "Commands remain inside the Bubblewrap boundary."}
+                    : "Commands remain inside the native sandbox boundary."}
                 </text>
                 <text fg={tokens.muted}>
                   {choice.value === "judged" || choice.value === "reviewed"

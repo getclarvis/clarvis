@@ -41,6 +41,10 @@ their package READMEs.
 global Clarvis configuration, resolves provider secrets, builds loop
 dependencies and returns an asynchronous kernel client.
 
+Its sandbox inspection probes only Clarvis's fixed native-backend canary. Discovered toolchains are
+reported from passive executable-path resolution and are never launched by `ConfigService` merely to
+populate diagnostics.
+
 It also binds remote MCP OAuth persistence to the global `state/mcp-oauth.json` path. A local host
 may provide `openMcpAuthorizationUrl` to grant browser-opening authority; a remote or intentionally
 headless host omits it and fails explicitly if a server requires interactive authorization. The

@@ -4,7 +4,7 @@
  * toolchain roots the sandbox must expose read-only. Lives on the host side of
  * the guard/sandbox seam (it touches the real filesystem and `@clarvis/tools`).
  */
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import {
   discoverToolchains,
@@ -19,6 +19,15 @@ import type { ResolvedSandboxSettings, SandboxSettings } from "./tools-settings.
 function within(path: string, root: string): boolean {
   const rel = relative(root, path);
   return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+}
+
+/** Resolve symlinks for a path known to exist, retaining its spelling on failure. */
+function canonicalOrSelf(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }
 
 /** A resolved sandbox path: the absolute `path`, plus an `error` string when it
@@ -39,8 +48,9 @@ export interface ResolvedSandboxPath {
  *   global settings, which require absolute paths).
  * @returns A {@link ResolvedSandboxPath}; `error` is set when the path is
  *   non-absolute where disallowed, a relative path escapes the workspace, the
- *   path is too broad (`/`, `/home`, the home dir), it contains the workspace,
- *   or it does not exist.
+ *   path is too broad (`/`, the platform's home parent, or the home dir), it
+ *   contains the workspace, resolves outside a workspace-relative request, or
+ *   it does not exist.
  */
 export function resolveSandboxPath(
   raw: string,
@@ -55,13 +65,19 @@ export function resolveSandboxPath(
   if (!isAbsolute(raw) && !within(path, root)) {
     return { path, error: "workspace sandbox path escapes the workspace" };
   }
-  if (forbiddenSandboxRoots().includes(path)) {
+  if (!existsSync(path)) return { path, error: "path does not exist" };
+  const canonicalRoot = canonicalOrSelf(root);
+  const canonicalPath = canonicalOrSelf(path);
+  if (!isAbsolute(raw) && !within(canonicalPath, canonicalRoot)) {
+    return { path, error: "workspace sandbox path escapes through a symlink" };
+  }
+  const forbiddenRoots = forbiddenSandboxRoots();
+  if (forbiddenRoots.includes(path) || forbiddenRoots.includes(canonicalPath)) {
     return { path, error: "sandbox path is too broad" };
   }
-  if (within(root, path)) {
+  if (within(root, path) || within(canonicalRoot, canonicalPath)) {
     return { path, error: "sandbox path may not contain the workspace" };
   }
-  if (!existsSync(path)) return { path, error: "path does not exist" };
   return { path };
 }
 

@@ -291,11 +291,16 @@ syntax, editing commands and the effective terminal path. F1 has no built-in act
 footer segment. Slash commands and configuration hubs remain the searchable routes to destinations
 and actions.
 
-`Alt+S` opens the canonical safety-preset picker on enhanced keyboard paths. The picker is loaded on
-first use, retained after that first mount, and reuses the same preset application policy as Run
-controls. There is no sidebar-toggle command: activity appears automatically as a wide split when it
-has content, while compact layouts open the activity drawer from the visible activity strip and
-close it with Escape.
+`Ctrl+S` opens the canonical safety-preset picker on every keyboard profile; `Alt+S` remains an
+enhanced-path accelerator. In a direct iTerm session on macOS, Clarvis requests Kitty's all-key and
+associated-text reports so Option+S remains identifiable even when the profile leaves Option in its
+normal text-producing mode. iTerm's standalone modifier-state packets are consumed before OpenTUI
+can misread their numeric payload as control text. Other terminal paths still need to deliver Option
+as Meta/Esc+ for the enhanced accelerator; a literal `ß` from a legacy path remains ordinary text,
+while `Ctrl+S` keeps the picker reachable. The picker is loaded on first use, retained after that
+first mount, and reuses the same preset application policy as Run controls. There is no
+sidebar-toggle command: activity appears automatically as a wide split when it has content, while
+compact layouts open the activity drawer from the visible activity strip and close it with Escape.
 
 Scrollable collections use shared ownership patterns rather than page-local windowing code.
 `ListPicker` owns filterable modal lists, `SelectableList` owns scroll-following page lists, and
@@ -375,7 +380,7 @@ Changing the guard mode or choosing a named safety preset preserves the effectiv
 policy. A preset changes execution posture; it does not erase the command policy.
 
 The six selectable presets are `free`, `judged`, `approval`, `isolated`, `reviewed`, and
-`protected`. `judged` runs directly on the host without a Bubblewrap boundary while the LLM judge
+`protected`. `judged` runs directly on the host without a native sandbox boundary while the LLM judge
 reviews risky commands; if no judge can resolve a decision, execution falls back to asking the user.
 Because `free` and `judged` remove the sandbox boundary, the quick picker requires an explicit danger
 confirmation before applying either posture.

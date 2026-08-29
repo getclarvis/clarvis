@@ -46,7 +46,7 @@ insertions and duplicate context deterministic.
 
 A later `read_file` or `read_files` call may read an overflow artifact whose absolute path was reported by
 an earlier tool call, including one restored from a previous run. A `shell` or `monitor_start`
-command receives the same exception only when its configured sandbox can mount the file read-only.
+command receives the same exception only when its configured sandbox can expose the file read-only.
 This is an exact-file exception, not state-directory access: Clarvis admits only an existing,
 regular, non-link spill directly under this workspace's machine-local state directory. Prompt
 history, monitor controls, other state files and another workspace's spills remain outside
@@ -97,6 +97,15 @@ const result = await agentTools.callTool("read_file", {
 `workspaceRoot` must name an existing directory. Tools are confined to it by
 default. Use `readOnly: true` to expose only non-mutating tools.
 
+`sandbox: { type: "native" }` selects Bubblewrap on Linux and Seatbelt on macOS. Both backends apply
+the configured workspace read/write posture, read-only runtime roots, minimal environment, writable
+run scratch, and host/denied networking; their kernel primitives are not identical. Required
+isolation fails closed when the selected backend cannot apply its policy. Only
+`availability: "optional"` permits a logged, secret-scrubbed direct-host fallback. Other platforms
+currently have no native backend. Toolchain inventory is passive: it resolves executable paths and
+install roots but never launches discovered entrypoints for version probes, so merely opening host
+diagnostics cannot trigger an operating-system installer or tool initialization.
+
 `host_vcs` is the narrow fallback for an operation the sandbox cannot perform because it lacks a
 host environment variable, credential channel, runtime, or service. The historical name remains for
 compatibility, but `program` may name any host executable. This is not a host shell: arguments are an
@@ -110,7 +119,7 @@ should use this fallback only after the sandboxed command cannot complete the op
 
 For a linked worktree, Clarvis validates the `.git` pointer, its `<common>/worktrees/<name>` target,
 and the reciprocal backlink once while creating the toolset. The resulting canonical common Git
-directory is pinned in runtime configuration and mounted for later sandbox commands; mutable
+directory is pinned in runtime configuration and exposed for later sandbox commands; mutable
 `.git` or `commondir` files are not consulted again.
 
 A host may additionally pass existing `temporaryRoots`. These are narrow,
@@ -164,7 +173,7 @@ message for that shape, so a helpful-looking hint cannot come back by accident.
 | `@clarvis/tools`         | `createAgentTools`, `listTools`, `dispatch`, and the re-exported `which` helpers |
 | `@clarvis/tools/guard`   | the guard types and shell-analysis helpers, without the rest of the tool API     |
 | `@clarvis/tools/shell`   | `resolveShell`, `shellArgs`, `killTree`, `ownProcessGroup`                       |
-| `@clarvis/tools/sandbox` | Bubblewrap probing, policy types, argv construction, and path-policy helpers     |
+| `@clarvis/tools/sandbox` | Native Bubblewrap/Seatbelt probing, policy construction, and path-policy helpers |
 
 `./shell` exists for `@clarvis/hooks`, which spawns operator-declared commands and
 must behave exactly like a `shell` tool command on the same host, without pulling

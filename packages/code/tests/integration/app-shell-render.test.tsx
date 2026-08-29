@@ -523,13 +523,12 @@ test("first boot explains the guided provider picker before saving anything", as
   t.renderer.destroy();
 });
 
-test("/help opens the full Help screen and returns to the same shell", async () => {
+test("rapid /help and Enter open Help and return to the same shell", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
-  await t.mockInput.typeText("/help");
+  await t.mockInput.typeText("/");
   await t.renderOnce();
-  press(t, "escape");
-  await t.renderOnce();
+  void t.mockInput.typeText("help");
   t.mockInput.pressEnter();
   const help = await captureUntil(t, "Go to");
   expect(help).toContain("Help");
@@ -864,11 +863,11 @@ test("agent picker overlay opens on /agent and closes on escape", async () => {
   t.renderer.destroy();
 });
 
-test("Alt+S opens the safety-preset picker and Escape returns to the composer", async () => {
+test("Ctrl+S opens the safety-preset picker and Escape returns to the composer", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
 
-  press(t, "s", { meta: true });
+  press(t, "s", { ctrl: true });
   const picker = await captureUntil(t, "Select safety preset");
 
   expect(picker).toContain("judged");
@@ -876,6 +875,17 @@ test("Alt+S opens the safety-preset picker and Escape returns to the composer", 
   press(t, "escape");
   const back = await captureUntil(t, "New task");
   expect(back).not.toContain("Select safety preset");
+  t.renderer.destroy();
+});
+
+test("a literal sharp s remains composer text instead of opening the safety picker", async () => {
+  const t = await mountApp(defaultProps({}));
+  await captureUntil(t, "New task");
+
+  await t.mockInput.typeText("ß");
+  const out = await captureUntil(t, "ß");
+
+  expect(out).not.toContain("Select safety preset");
   t.renderer.destroy();
 });
 

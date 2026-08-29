@@ -33,10 +33,20 @@ jobs:
       - name: record Bun runtime
         run: bun --version && bun --revision
       # ripgrep is not preinstalled on the ubuntu-latest image; @clarvis/tools'
-      # grep-parity suite (TEST-01) requires it whenever CI=true. The trailing
-      # `rg --version` is the assertion that it actually landed - see the Windows
-      # job for what a package manager reporting success over a no-op costs.
-      - run: sudo apt-get update && sudo apt-get install -y ripgrep && rg --version
+      # grep-parity suite (TEST-01) requires it whenever CI=true. Bubblewrap is
+      # equally load-bearing now: the native-sandbox canary below must exercise
+      # a real Linux backend rather than only inspect generated argv. Ubuntu
+      # restricts unprivileged user namespaces through AppArmor, so load the
+      # packaged bwrap profile instead of disabling that protection globally.
+      # The minimal launch proves the profile works before the long test suite.
+      - name: install Linux test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apparmor-profiles bubblewrap ripgrep
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          bwrap --unshare-user --ro-bind / / -- /bin/true
+          bwrap --version
+          rg --version
       # Root install only: one lockfile, and bunfig.toml's `linker = "hoisted"`
       # keeps node_modules symlink-free.
       - run: bun install --frozen-lockfile
@@ -52,7 +62,7 @@ jobs:
       # until the GitHub-runner retirement canary in Known issues passes. A real
       # test failure, a coverage threshold miss, and a cancellation are all
       # passed straight through.
-      - run: bash tooling/ci/retry-code-coverage.sh
+      - run: CLARVIS_NATIVE_SANDBOX_CANARY=1 bash tooling/ci/retry-code-coverage.sh
       # The root build already produced the code bundle after the TypeScript
       # library graph. Boots that artifact under a PTY and asserts first paint.
       # It fabricates a clean HOME, which is load-bearing: `loadCatalogData` prefers
@@ -136,9 +146,12 @@ jobs:
       - run: bun --filter @clarvis/memory test
       - run: bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts
 
-  # Modifier naming must be validated on a Darwin runtime too, even though the
-  # terminal-path policy itself is pure and never guesses the remote client OS.
-  keyboard-macos:
+  # Darwin owns a real sandbox surface in addition to modifier naming. The
+  # @clarvis/tools suite runs a Seatbelt canary against actual host files and a
+  # loopback listener; the keyboard tests retain the platform policy coverage.
+  sandbox-macos:
+    # `Protect main` requires this exact status context. Keep the stable public
+    # name when extending the job with additional macOS-specific canaries.
     name: keyboard policy (macos)
     runs-on: macos-14
     timeout-minutes: 10
@@ -151,5 +164,8 @@ jobs:
           bun-version: 1.4.0
       - name: record Bun runtime
         run: bun --version && bun --revision
+      - run: brew install ripgrep && rg --version
       - run: bun install --frozen-lockfile
+      - run: CLARVIS_NATIVE_SANDBOX_CANARY=1 bun --filter @clarvis/tools test
+      - run: CLARVIS_NATIVE_SANDBOX_CANARY=1 bun test packages/kernel/tests/integration/sandbox-policy.test.ts
       - run: bun test packages/code/tests/unit/keyboard-profile.test.ts packages/code/tests/unit/keyspec.test.ts packages/code/tests/unit/active-actions.test.ts

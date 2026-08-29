@@ -134,7 +134,7 @@ describe("mergeSettings", () => {
     const merged = mergeSettings([
       operator({
         sandbox: {
-          type: "bubblewrap",
+          type: "native",
           network: "none",
           pass_env: ["CI"],
           toolchains: {
@@ -146,7 +146,7 @@ describe("mergeSettings", () => {
       }),
       operator({
         sandbox: {
-          type: "bubblewrap",
+          type: "native",
           network: "host",
           pass_env: ["TERM"],
           toolchains: {
@@ -158,7 +158,7 @@ describe("mergeSettings", () => {
       }),
     ]);
     expect(merged.sandbox).toEqual({
-      type: "bubblewrap",
+      type: "native",
       network: "host",
       pass_env: ["CI", "TERM"],
       toolchains: {
@@ -264,10 +264,10 @@ describe("mergeSettings — aggregate limits", () => {
 
     expect(() =>
       mergeSettings([
-        operator({ sandbox: { type: "bubblewrap", pass_env: Array(129).fill("A") } }),
+        operator({ sandbox: { type: "native", pass_env: Array(129).fill("A") } }),
         operator({
           sandbox: {
-            type: "bubblewrap",
+            type: "native",
             pass_env: Array.from({ length: 129 }, (_, index) => `B${index}`),
           },
         }),
@@ -277,13 +277,13 @@ describe("mergeSettings — aggregate limits", () => {
       mergeSettings([
         operator({
           sandbox: {
-            type: "bubblewrap",
+            type: "native",
             pass_env: Array.from({ length: 129 }, (_, index) => `A${index}`),
           },
         }),
         operator({
           sandbox: {
-            type: "bubblewrap",
+            type: "native",
             pass_env: Array.from({ length: 129 }, (_, index) => `B${index}`),
           },
         }),

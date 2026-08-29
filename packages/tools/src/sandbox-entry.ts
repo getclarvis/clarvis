@@ -4,6 +4,8 @@
  */
 export {
   probeBubblewrap,
+  probeSeatbelt,
+  probeSandbox,
   sandboxCommand,
   discoverLinkedGitMetadataPaths,
   discoverToolchains,
@@ -12,9 +14,13 @@ export {
 } from "./sandbox.ts";
 export type {
   SandboxConfig,
-  BubblewrapSandbox,
+  NativeSandbox,
+  SandboxProbe,
+  SandboxProbeDeps,
   BubblewrapProbe,
   BubblewrapProbeDeps,
+  SeatbeltProbe,
+  SeatbeltProbeDeps,
   SandboxedCommand,
   ToolchainId,
   DiscoveredToolchain,

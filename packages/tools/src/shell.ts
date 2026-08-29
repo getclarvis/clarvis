@@ -64,7 +64,7 @@ function computeShell(deps: ShellDeps): ShellSpec {
  * The shell this host runs commands through, derived from `process.platform`.
  *
  * @param deps - test seams. When omitted the result is memoized process-wide,
- *   exactly as the bubblewrap probe memoizes its own; an injected call is never
+ *   exactly as the native sandbox probe memoizes its own; an injected call is never
  *   cached and never poisons the cache.
  * @returns the executable to spawn and the syntax it speaks.
  * @remarks

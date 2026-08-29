@@ -54,7 +54,7 @@ interface Probe {
 const PROBES: Probe[] = [
   { label: "Ctrl+K", verdict: "ctrl", match: (event) => event.ctrl && event.name === "k" },
   {
-    label: "Alt/Option+K",
+    label: "Alt+K (Option as Meta on macOS)",
     verdict: "meta",
     match: (event) => (event.meta || event.option) && event.name === "k",
   },
@@ -213,6 +213,10 @@ function KeyboardDiagnostic(props: {
       <text fg={tokens.accent}>Keyboard diagnostic</text>
       <text fg={tokens.muted} paddingTop={1}>
         Normalized events are shown only here. Raw sequences and typed text are never saved.
+      </text>
+      <text fg={tokens.muted}>
+        On macOS, a special character means Option is text; configure it as Meta/Esc+ or use the
+        portable shortcut.
       </text>
       <Show
         when={!done()}

@@ -84,7 +84,13 @@ export function referencedSessionExecutionIds(
   let complete = true;
   try {
     for (;;) {
-      const owner = owners.readSync();
+      let owner: Dirent | null;
+      try {
+        owner = owners.readSync();
+      } catch (error) {
+        if (!isMissing(error)) complete = false;
+        break;
+      }
       if (owner === null) break;
       if (scanned >= maxFiles) return { ids, complete: false };
       if (!owner.isDirectory()) continue;
@@ -97,7 +103,13 @@ export function referencedSessionExecutionIds(
       }
       try {
         for (;;) {
-          const entry = files.readSync();
+          let entry: Dirent | null;
+          try {
+            entry = files.readSync();
+          } catch (error) {
+            if (!isMissing(error)) complete = false;
+            break;
+          }
           if (entry === null) break;
           if (scanned >= maxFiles) return { ids, complete: false };
           if (
@@ -132,11 +144,19 @@ export function referencedSessionExecutionIds(
           }
         }
       } finally {
-        files.closeSync();
+        try {
+          files.closeSync();
+        } catch (error) {
+          if (!isMissing(error)) complete = false;
+        }
       }
     }
   } finally {
-    owners.closeSync();
+    try {
+      owners.closeSync();
+    } catch (error) {
+      if (!isMissing(error)) complete = false;
+    }
   }
   return { ids, complete };
 }

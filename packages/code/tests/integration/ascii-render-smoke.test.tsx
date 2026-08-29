@@ -13,7 +13,7 @@ test("ASCII mode renders representative brand and navigation surfaces without un
         <Splash agent={() => "coder"} model={() => "sonnet-4-5"} width={() => 90} />
         <Footer
           hint={() => ({ text: "", tone: "info" })}
-          navigation={<text>[/] commands [alt+s] safety</text>}
+          navigation={<text>[/] commands [ctrl+s] safety</text>}
         />
       </box>
     ),
@@ -29,7 +29,7 @@ test("ASCII mode renders representative brand and navigation surfaces without un
     expect([...frame].filter((character) => character.codePointAt(0)! > 0x7f)).toEqual([]);
     expect(frame).toContain("agent: coder . model: sonnet-4-5");
     expect(frame).toContain("[/] commands");
-    expect(frame).toContain("[alt+s] safety");
+    expect(frame).toContain("[ctrl+s] safety");
   } finally {
     t.renderer.destroy();
   }

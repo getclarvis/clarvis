@@ -1,9 +1,8 @@
 import { delimiter } from "node:path";
-import { spawnSync } from "node:child_process";
 import type { SandboxInspection, SandboxPathStatus, Scope } from "@clarvis/protocol";
 import type { ResolvedSandboxSettings, SandboxSettings } from "@clarvis/loop/host";
 import { discoverSandboxToolchains, resolveSandboxPath } from "@clarvis/loop/capabilities/tools";
-import { probeBubblewrap, sandboxCommand, type DiscoveredToolchain } from "@clarvis/tools/sandbox";
+import { probeSandbox, sandboxCommand, type DiscoveredToolchain } from "@clarvis/tools/sandbox";
 import type { ConfigStore, SettingsSnapshot } from "../config/config-store.ts";
 
 /**
@@ -94,14 +93,13 @@ export interface SandboxPolicyResolver {
   resolve(): ResolvedSandboxSettings | undefined;
 
   /**
-   * Produces a full sandbox inspection - bubblewrap availability, per-toolchain
+   * Produces a full sandbox inspection - native backend availability, per-toolchain
    * status, configured extra paths, and the effective sandbox `PATH`.
    *
    * @param options - pass `refresh: true` to bypass the discovery cache and
-   *   re-probe toolchains.
-   * @returns the {@link SandboxInspection}; when bubblewrap is available, each
-   *   discovered toolchain is additionally verified by running its `--version`
-   *   inside the sandbox and demoted to unavailable on failure.
+   *   rediscover toolchain paths.
+   * @returns the {@link SandboxInspection}. Toolchain status comes from passive
+   *   path discovery; inspection never executes a discovered entrypoint.
    */
   inspect(options?: { refresh?: boolean }): Promise<SandboxInspection>;
 }
@@ -164,85 +162,56 @@ export function createSandboxPolicyResolver(
     },
 
     async inspect(options): Promise<SandboxInspection> {
-      const { settings, discovered, runtimePaths, paths } = build(options?.refresh === true);
-      const bubblewrap = probeBubblewrap();
+      const { settings, discovered, paths } = build(options?.refresh === true);
+      const backend = probeSandbox();
       const enabled = new Set(
         settings?.toolchains?.mode === "manual" ? [] : discovered.map((item) => item.id),
       );
-      const statuses = discovered.map((item) => {
-        let available = item.available;
-        let error = item.error;
-        if (available && bubblewrap.mode !== "unavailable") {
-          try {
-            const spec = sandboxCommand({
-              command: `${item.commands[0]} --version`,
-              cwd: workspaceRoot,
-              workspaceRoot,
-              sandbox: {
-                type: "bubblewrap",
-                availability: "required",
-                filesystem: "workspace-read-only",
-                network: settings?.network ?? "host",
-                runtimePaths,
-                readOnlyPaths: paths.resolved,
-              },
-              probe: () => bubblewrap,
-            });
-            const result = spawnSync(spec.file, spec.args, {
-              ...spec.options,
-              encoding: "utf8",
-              timeout: 2_000,
-            });
-            if (result.status !== 0) {
-              available = false;
-              error = `${result.stderr || result.stdout || `probe exited ${result.status}`}`.trim();
-            }
-          } catch (cause) {
-            available = false;
-            error = String(cause);
-          }
-        }
-        return {
-          id: item.id,
-          commands: item.commands,
-          available,
-          enabled: enabled.has(item.id),
-          scope: item.manager === "system" ? ("system" as const) : ("auto" as const),
-          ...(item.manager !== undefined ? { manager: item.manager } : {}),
-          ...(item.version !== undefined ? { version: item.version } : {}),
-          ...(item.logicalPath !== undefined ? { logical_path: item.logicalPath } : {}),
-          ...(item.resolvedPath !== undefined ? { resolved_path: item.resolvedPath } : {}),
-          ...(item.root !== undefined ? { root: item.root } : {}),
-          ...(error !== undefined ? { error } : {}),
-        };
-      });
+      const statuses = discovered.map((item) => ({
+        id: item.id,
+        commands: item.commands,
+        available: item.available,
+        enabled: enabled.has(item.id),
+        scope: item.manager === "system" ? ("system" as const) : ("auto" as const),
+        ...(item.manager !== undefined ? { manager: item.manager } : {}),
+        ...(item.logicalPath !== undefined ? { logical_path: item.logicalPath } : {}),
+        ...(item.resolvedPath !== undefined ? { resolved_path: item.resolvedPath } : {}),
+        ...(item.root !== undefined ? { root: item.root } : {}),
+        ...(item.error !== undefined ? { error: item.error } : {}),
+      }));
       const resolved = settings === undefined ? undefined : this.resolve();
       const spec =
-        resolved === undefined || bubblewrap.mode === "unavailable"
+        resolved === undefined || backend.mode === "unavailable"
           ? undefined
           : sandboxCommand({
               command: "true",
               cwd: workspaceRoot,
               workspaceRoot,
               sandbox: {
-                type: "bubblewrap",
+                type: "native",
                 runtimePaths: resolved.resolved_runtime_paths,
                 readOnlyPaths: resolved.resolved_read_only_paths,
               },
+              probe: () => backend,
             });
       return {
-        bubblewrap:
-          bubblewrap.mode === "unavailable"
+        backend:
+          backend.mode === "unavailable"
             ? {
+                type: backend.backend,
                 available: false,
-                mode: bubblewrap.mode,
+                mode: backend.mode,
                 degraded: false,
-                reason: bubblewrap.reason,
+                reason: backend.reason,
               }
             : {
+                type: backend.backend,
                 available: true,
-                mode: bubblewrap.mode,
-                degraded: bubblewrap.mode === "host-proc",
+                mode: backend.mode,
+                degraded: backend.mode === "host-proc",
+                ...(backend.mode === "host-proc"
+                  ? { reason: "Bubblewrap shares the host /proc on this host" }
+                  : {}),
               },
         toolchains: statuses,
         extra_paths: paths.status,

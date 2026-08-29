@@ -773,7 +773,7 @@ asserted as the literal array `["create:1", "close:1", "evict", "create:2"]` at
 Pure functions of `RunControlsState`, no state of their own.
 
 `safetyDescription` (`:162`) branches first on `sandboxEnabled`: when on, it appends up to three lines
-— whether Bubblewrap is required or a host fallback is possible (further split by `guardMode` when
+— whether the native sandbox is required or a host fallback is possible (further split by `guardMode` when
 required: `"off"` reads as fully autonomous, `"auto"` as the model escalating what it judges risky,
 anything else as risky actions asking first), then a filesystem line (`workspace-read-only` vs.
 read-write) and a network line (`none` vs. host access) (`:163`–`:181`); when sandboxing is off, one

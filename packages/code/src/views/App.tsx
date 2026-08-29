@@ -809,8 +809,7 @@ export function App(props: AppProps): JSX.Element {
       safetyPreset: runControls().preset,
       guardMode: runControls().guardMode,
       sandboxUnavailable:
-        runControls().sandboxEnabled &&
-        appWiring.sandboxInspection()?.bubblewrap.available === false,
+        runControls().sandboxEnabled && appWiring.sandboxInspection()?.backend.available === false,
       memoryConfigured: props.fleet.memoryMode.configured(),
       memory: runControls().memory,
       plans: runControls().plans,

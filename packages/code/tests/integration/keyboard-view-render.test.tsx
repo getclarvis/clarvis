@@ -224,7 +224,10 @@ test("the diagnostic saves its verdicts without switching a manual profile off",
   await t.renderOnce();
   mounted.press("d");
   await t.renderOnce();
-  expect(t.captureCharFrame()).toContain("Keyboard diagnostic");
+  const diagnostic = t.captureCharFrame();
+  expect(diagnostic).toContain("Keyboard diagnostic");
+  expect(diagnostic).toContain("Option is text");
+  expect(diagnostic).toContain("Meta/Esc+");
   for (let probe = 0; probe < 4; probe++) mounted.press("u");
   await t.renderOnce();
   expect(t.captureCharFrame()).toContain("Diagnostic complete.");

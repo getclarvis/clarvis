@@ -115,7 +115,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`tools-shell-and-monitor.md`](execution/tools-shell-and-monitor.md) | Running host commands: `shell` to completion and the `monitor_*` family in the background, shell resolution, process trees, killing, and bounded spill-backed output | `tools` |
 | [`command-guard.md`](execution/command-guard.md) | Per-call approval, split three ways: the shell analyzer that produces facts, the kernel's fixed-precedence policy cascade, and the engine wiring that consults them once per run | `tools`, `kernel`, `loop`, `code` |
 | [`hooks.md`](execution/hooks.md) | Operator-declared shell commands bound to lifecycle events: matching, the subprocess contract, the three spellings of a block, the flat foreign-dialect payload, and argument rewriting | `hooks`, `capability`, `loop` |
-| [`sandbox.md`](execution/sandbox.md) | Bubblewrap probing and argv construction, toolchain discovery on `PATH`, the host path policy layered above it, and what the operator's Sandbox panel truthfully reports | `tools`, `loop`, `kernel`, `code` |
+| [`sandbox.md`](execution/sandbox.md) | Native Bubblewrap/Seatbelt probing and policy construction, toolchain discovery on `PATH`, host path policy, real-platform canaries, and operator inspection | `tools`, `loop`, `kernel`, `protocol`, `code` |
 | [`skills.md`](execution/skills.md) | Discovering, parsing and merging `SKILL.md` trees across roots with last-wins precedence, and serving them in three tiers through `load_skill` | `skills`, `kernel`, `loop` |
 
 ### `engine/` — the loop itself

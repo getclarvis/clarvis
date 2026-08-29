@@ -539,8 +539,10 @@ contributes only its platform-independent keyboard-policy tests. `kernel`, `loop
 the complete `@clarvis/tools` suite plus the kernel sandbox-policy integration with
 `CLARVIS_NATIVE_SANDBOX_CANARY=1`. It then runs the same three keyboard test files as Windows. The
 real-host canaries verify Seatbelt file/network/process enforcement and a discovered toolchain's
-kernel inspection path; this is not inferred from generated profile text. Production:
-`.github/workflows/ci.yml` (`jobs.sandbox-macos`).
+kernel inspection path; this is not inferred from generated profile text. The job publishes the
+stable `keyboard policy (macos)` status context required by the `Protect main` repository ruleset;
+adding macOS canaries must not rename that external contract. Production: `.github/workflows/ci.yml`
+(`jobs.sandbox-macos`).
 
 All three jobs record `bun --version` and `bun --revision` immediately after setup, so a future run
 remains attributable to the executable it actually used. CI was restored for the new public

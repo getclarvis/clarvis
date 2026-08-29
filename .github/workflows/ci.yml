@@ -150,7 +150,9 @@ jobs:
   # @clarvis/tools suite runs a Seatbelt canary against actual host files and a
   # loopback listener; the keyboard tests retain the platform policy coverage.
   sandbox-macos:
-    name: tools sandbox and keyboard policy (macos)
+    # `Protect main` requires this exact status context. Keep the stable public
+    # name when extending the job with additional macOS-specific canaries.
+    name: keyboard policy (macos)
     runs-on: macos-14
     timeout-minutes: 10
     steps:

@@ -263,42 +263,58 @@ test("a late event from another execution cannot enter the current run's sink", 
   dispose();
 });
 
-test("the run remains owned until its event-stream lifecycle closes", async () => {
-  let resolveDone!: (result: RunResult) => void;
+test("done releases interactive ownership before the post-run event stream closes", async () => {
   let resolveClosed!: () => void;
-  const done = new Promise<RunResult>((resolve) => {
-    resolveDone = resolve;
-  });
   const closed = new Promise<void>((resolve) => {
     resolveClosed = resolve;
   });
-  let executionId = "";
-  const base = fakeClient().client;
+  const fake = fakeClient();
+  let resolveStored!: (stored: RunDetail | null) => void;
+  const stored = new Promise<RunDetail | null>((resolve) => {
+    resolveStored = resolve;
+  });
+  let getRunCalls = 0;
+  fake.getRunImpl.fn = () => (++getRunCalls === 1 ? stored : Promise.resolve(null));
+  let starts = 0;
   const { host, dispose } = mount({
     client: {
-      ...base,
+      ...fake.client,
       startRun: (input) => {
-        executionId = input.executionId!;
-        return { executionId, cancel: async () => {}, done, closed };
+        const handle = fake.client.startRun(input);
+        starts += 1;
+        return starts === 1 ? { ...handle, closed } : handle;
       },
     },
   });
 
-  let settled = false;
-  const turn = host.submitTurn("wait for stream close").then(() => {
-    settled = true;
-  });
+  const firstTurn = host.submitTurn("wait for stream close");
   await flush();
-  resolveDone(completed(executionId));
+  const firstId = fake.runs[0]!.handle.executionId;
+  fake.runs[0]!.resolve(completed(firstId));
   await flush();
-  expect(settled).toBe(false);
+  expect(host.runActive()).toBe(false);
+  expect(host.ownsExecution(firstId)).toBe(true);
+  expect(host.physicalWorkActive()).toBe(true);
+  host.onMemoryIngest({ execution_id: firstId, phase: "started" });
+  expect(host.runStatus()).toContain("memory: learning");
+
+  const secondTurn = host.submitTurn("this is a new turn, not steering");
+  await flush();
+  expect(fake.runs).toHaveLength(1);
+
+  resolveStored(null);
+  await firstTurn;
+  await flush();
+  expect(fake.runs).toHaveLength(2);
   expect(host.runActive()).toBe(true);
-  expect(host.ownsExecution(executionId)).toBe(true);
+  fake.runs[1]!.resolve(completed(fake.runs[1]!.handle.executionId));
+  await secondTurn;
+  expect(host.runActive()).toBe(false);
+  expect(host.physicalWorkActive()).toBe(true);
 
   resolveClosed();
-  await turn;
-  expect(host.runActive()).toBe(false);
-  expect(host.ownsExecution(executionId)).toBe(false);
+  await flush();
+  expect(host.physicalWorkActive()).toBe(false);
   dispose();
 });
 
@@ -1158,7 +1174,7 @@ test("attention cues: the title mirrors the run and a settle away from the termi
   expect(calls).toEqual(["title:running"]);
   runs[0]!.resolve(completed(runs[0]!.handle.executionId));
   await turn;
-  expect(calls).toEqual(["title:running", "notify:run completed", "title:base"]);
+  expect(calls).toEqual(["title:running", "title:base", "notify:run completed"]);
   dispose();
 });
 
@@ -2048,8 +2064,8 @@ test("attention cues: a torn-down run settling after the next run started stays 
     "title:running",
     "title:base",
     "title:running",
-    "notify:run completed",
     "title:base",
+    "notify:run completed",
   ]);
   dispose();
 });

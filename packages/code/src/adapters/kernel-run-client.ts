@@ -352,7 +352,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
    *
    * @param executionId - the run being torn down.
    * @param error - the failure, which is deliberately not rethrown because
-   *   `closed` is awaited from `finally` blocks.
+   *   `closed` is observed only as an independent physical-lifecycle signal.
    */
   function reportCloseFailure(executionId: string, error: unknown): void {
     diagnosticEvent("run.close.failed", { execution_id: executionId, error }, "debug");
@@ -374,7 +374,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
         await pump;
       })
       // A start failure is already reported through `done`; lifecycle closure
-      // must remain safe to await from a `finally` block.
+      // must remain safe for detached physical-lifecycle observers.
       .catch((error: unknown) => reportCloseFailure(executionId, error))
       .finally(() => {
         if (live.get(executionId) === handleP) live.delete(executionId);

@@ -943,6 +943,14 @@ and never touches `getPrompt` (`:163`–`:166`); otherwise it awaits `deps.clien
 ${args}` `` or bare `` `/${local}` `` and `skillMeta` carries `name`, `task` only when `args.length >
 0`, and `plansMode` only when the spec has one (`:169`–`:173`).
 
+`skillAgents` is only a fallback input to `classifySlashSubmit`; the classifier first resolves the
+registered slash catalog. A skill that collides with `/plan` or another registered command may
+remain represented in this metadata map, but it cannot shadow that command. Production:
+`syncPromptCommands` in `packages/code/src/adapters/mcp-capabilities-bridge.ts` and
+`classifySlashSubmit` in `packages/code/src/views/input/autocomplete.ts`. Test:
+`packages/code/tests/unit/autocomplete.test.ts` and
+`packages/code/tests/integration/app-shell-render.test.tsx`.
+
 For a `"downstream"` origin with a `server` (`:178`), the key is `` `${server}:${local}` ``
 (`promptKey`, `:61`); the spec carries only `name`/`description`/`arguments`; the same
 fingerprint-dedupe applies (`:184`–`:187`); the registered handler (`:188`) collects arguments through

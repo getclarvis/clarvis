@@ -292,6 +292,7 @@ function defaultProps(overrides: {
   clear?: () => void;
   costLine?: () => string;
   worktree?: AppProps["shell"]["worktree"];
+  submitSkillRun?: AppProps["run"]["submitSkillRun"];
 }) {
   return (renderer: ReturnType<typeof useRenderer>): AppProps => {
     const store = createTranscriptStore();
@@ -324,7 +325,7 @@ function defaultProps(overrides: {
         status: overrides.status ?? (() => ""),
         submit: () => {},
         submitPrompt: () => {},
-        submitSkillRun: () => {},
+        submitSkillRun: overrides.submitSkillRun ?? (() => {}),
         compact: () => {},
         cancel: overrides.cancel ?? (() => false),
         active: overrides.active ?? (() => false),
@@ -938,6 +939,44 @@ test("/plan enables required review from normal planning", async () => {
   t.mockInput.pressEnter();
   const out = await captureUntil(t, "plan review: required");
   expect(out).not.toContain("unknown command");
+  t.renderer.destroy();
+});
+
+test("/plan remains the built-in toggle when an agent-backed skill is also named plan", async () => {
+  let resolveListed!: () => void;
+  const listed = new Promise<void>((resolve) => {
+    resolveListed = resolve;
+  });
+  const skillRuns: Array<{ name: string; task: string; agent: string }> = [];
+  const backend = baseBackend({
+    client: {
+      listTools: async () => [],
+      listPrompts: async () => {
+        resolveListed();
+        return [{ name: "plan", agent: "coder" }];
+      },
+      getPrompt: async () => [],
+      connectionStatus: () => "connected",
+    },
+  });
+  const t = await mountApp(
+    defaultProps({
+      backend,
+      submitSkillRun: (name, task, agent) => skillRuns.push({ name, task, agent }),
+    }),
+  );
+  await listed;
+  await Promise.resolve();
+  await Promise.resolve();
+  await captureUntil(t, "New task");
+  await t.mockInput.typeText("/plan");
+  await t.renderOnce();
+  press(t, "escape");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  const out = await captureUntil(t, "plan review: required");
+  expect(out).not.toContain("unknown command");
+  expect(skillRuns).toEqual([]);
   t.renderer.destroy();
 });
 

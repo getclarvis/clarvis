@@ -31,12 +31,20 @@ test("parseSlashCommand: non-slash text and a bare slash → null", () => {
   expect(parseSlashCommand("/   ")).toBeNull();
 });
 
-test("classifySlashSubmit: skill > registered command > unknown; path-like heads stay chat", () => {
+test("classifySlashSubmit: registered command > skill fallback > unknown; path-like heads stay chat", () => {
   const opts = {
-    skillAgent: (n: string) => (n === "review" ? "reviewer" : undefined),
+    skillAgent: (n: string) => ({ review: "reviewer", plan: "planner" })[n as "review" | "plan"],
     findCommand: (slash: string) =>
-      ({ "/export": "session.export", "/mcp:prompt": "mcp:prompt" })[slash],
+      ({
+        "/export": "session.export",
+        "/mcp:prompt": "mcp:prompt",
+        "/plan": "plan.toggleReview",
+      })[slash],
   };
+  expect(classifySlashSubmit("plan", opts)).toEqual({
+    kind: "command",
+    command: "plan.toggleReview",
+  });
   expect(classifySlashSubmit("review", opts)).toEqual({ kind: "skill", agent: "reviewer" });
   expect(classifySlashSubmit("export", opts)).toEqual({
     kind: "command",

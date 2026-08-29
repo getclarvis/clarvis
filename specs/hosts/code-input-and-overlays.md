@@ -310,9 +310,9 @@ scroll-following page collections compose through `SelectableList`. Production:
 
 At the application region, the transcript shell remains mounted while Diff or Plan is visible.
 Those pages are dynamically imported and mount lazily on first use, remain hidden afterward and
-gate their key layers with stable reactive matchers; Plan reloads persisted/live data, invalidates
-in-flight reads on deactivation and restores origin-appropriate focus on each inactive-to-active
-transition. Configuration views are intentionally different: the mounted
+gate their key layers with stable reactive matchers; Plan reloads the current live document on each
+inactive-to-active transition and invalidates in-flight reads on deactivation. Configuration views
+are intentionally different: the mounted
 stack preserves inactive parents, but a popped frame still disposes once. Production:
 `packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`),
 `packages/code/src/views/overlays/{DiffViewer,PlanOverlay}.tsx`, and
@@ -398,10 +398,15 @@ vs. `doc.spec_revision`, deliberately never sharing the label "revision" between
 5. Otherwise: push non-blank text to history, `composeMessage()` (text + staged image attachments),
    clear the textarea and attachments, call `onSubmit(content)` (`:149-154`).
 
-`classifySlashSubmit` (called by the host that implements `onSlashCommand`, e.g. `packages/code/src/views/App.tsx:768`
-— outside this document, in [hosts/code-bootstrap.md](code-bootstrap.md)) decides among `skill` (an agent name),
-`command` (a registered command), `unknown` (notify + block), or `chat` (fall through as `pass`) —
-see `packages/code/src/views/input/autocomplete.ts:119-132`. `collectArgs`, the one place a slash line's argument
+`classifySlashSubmit` (called by the host that implements `onSlashCommand` in
+`packages/code/src/views/App.tsx` — outside this document, in
+[hosts/code-bootstrap.md](code-bootstrap.md)) gives a registered `command` its slash token before
+consulting the agent-backed `skill` fallback; this prevents a same-named skill from shadowing a
+built-in such as `/plan`. It otherwise returns `unknown` (notify + block) or `chat` (fall through as
+`pass`). Production: `classifySlashSubmit` in
+`packages/code/src/views/input/autocomplete.ts`. Test:
+`packages/code/tests/unit/autocomplete.test.ts` and
+`packages/code/tests/integration/app-shell-render.test.tsx`. `collectArgs`, the one place a slash line's argument
 tail actually feeds a schema (an MCP prompt's declared `arguments`, `packages/code/src/app/commands.tsx`, `mcpEffects.collectArgs`),
 maps it positionally with `splitSlashArgs(raw, count)` (`packages/code/src/views/input/autocomplete.ts:72-85`): one
 whitespace-separated token per declared argument, and the last argument takes the entire remainder
@@ -691,9 +696,13 @@ settled turn's persisted continuation; an empty session reports that there is no
    to its title, so a typo of one command's slash cannot fuzzy-match a different command's title.
    `packages/code/src/views/input/autocomplete.ts` (`slashTokenMatches`). Pinned (the exact regression the docstring names):
    `packages/code/tests/unit/autocomplete.test.ts:256-262` (`/hlep` never reaches `/plan-review`).
-7. **`classifySlashSubmit` orders skill-name lookup before command lookup, and refuses a path-like
-   name (`etc/hosts`) as chat rather than "unknown".** `packages/code/src/views/input/autocomplete.ts:119-132`. Pinned:
-   `packages/code/tests/unit/autocomplete.test.ts:35-53`.
+7. **`classifySlashSubmit` gives a registered command precedence over an agent-backed skill with
+   the same slash token, then uses the skill as a fallback, and refuses a path-like name
+   (`etc/hosts`) as chat rather than "unknown".** Production: `classifySlashSubmit` in
+   `packages/code/src/views/input/autocomplete.ts`. Test:
+   `packages/code/tests/unit/autocomplete.test.ts` and
+   `packages/code/tests/integration/app-shell-render.test.tsx` (`/plan` with an agent-backed
+   same-named skill).
 8. **An attachment's declared size can never understate its actual encoded payload** —
    `attachmentBytes` takes `Math.max(declared, base64DecodedBytes(data))`.
    `packages/code/src/core/attachments.ts:218-223`. Pinned: `packages/code/tests/unit/attachments.test.ts:187-190`.

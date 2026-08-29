@@ -39,8 +39,10 @@ export interface McpCapabilities {
   nodes: Accessor<ServerNode[]>;
   refresh(): Promise<void>;
   /**
-   * The agent a skill runs on, or `undefined` when it names none — which is also
-   * how a caller learns the slash command is not a skill run at all.
+   * The agent a skill runs on, or `undefined` when it names none.
+   *
+   * @remarks This is a fallback classification input. A registered slash
+   * command with the same token remains authoritative.
    */
   skillAgent(name: string): string | undefined;
   /** Stop pending refreshes and unregister every prompt/skill command. */

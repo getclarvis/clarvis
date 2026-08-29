@@ -82,7 +82,7 @@ test("a plan_review is framed as an approval gate, not as an agent question", as
   expect(out).toContain("Implement session search");
   expect(out).toContain("revision 2");
   expect(out).toContain("2 tasks");
-  expect(out).toContain("history: keep");
+  expect(out).toContain("retention: keep");
   expect(out).toContain("request changes");
   expect(out).not.toContain("request_changes");
 });

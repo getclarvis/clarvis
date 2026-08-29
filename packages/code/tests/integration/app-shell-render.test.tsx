@@ -7,7 +7,6 @@ import { KeyEvent } from "@opentui/core";
 import type {
   MemoryService,
   ModelCatalog,
-  PlansService,
   PluginService,
   ResolvedEnvironment,
   RunDetail,
@@ -243,11 +242,8 @@ function baseBackend(over: Partial<AppBackend> = {}): AppBackend {
     },
     memory: {} as unknown as MemoryService,
     plans: {
-      list: async () => ({ plans: [] }),
       read: async () => null,
-      setRetention: async () => {},
-      delete: async () => {},
-    } as unknown as PlansService,
+    } as unknown as AppBackend["plans"],
     workflows: {
       list: async () => [],
       get: async () => null,
@@ -296,6 +292,7 @@ function defaultProps(overrides: {
   clear?: () => void;
   costLine?: () => string;
   worktree?: AppProps["shell"]["worktree"];
+  submitSkillRun?: AppProps["run"]["submitSkillRun"];
 }) {
   return (renderer: ReturnType<typeof useRenderer>): AppProps => {
     const store = createTranscriptStore();
@@ -328,7 +325,7 @@ function defaultProps(overrides: {
         status: overrides.status ?? (() => ""),
         submit: () => {},
         submitPrompt: () => {},
-        submitSkillRun: () => {},
+        submitSkillRun: overrides.submitSkillRun ?? (() => {}),
         compact: () => {},
         cancel: overrides.cancel ?? (() => false),
         active: overrides.active ?? (() => false),
@@ -932,84 +929,80 @@ test("/diff with an edit in the transcript opens the diff viewer", async () => {
   t.renderer.destroy();
 });
 
-test("/planning/review enables approval-required planning", async () => {
+test("/plan enables required review from normal planning", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
-  await t.mockInput.typeText("/planning/review");
+  await t.mockInput.typeText("/plan");
   await t.renderOnce();
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  const out = await captureUntil(t, "planning: approval required");
-  expect(out).not.toContain("no plan yet");
-  t.renderer.destroy();
-});
-
-test("/plans opens plan history rather than writing a setting", async () => {
-  const t = await mountApp(defaultProps({}));
-  await captureUntil(t, "New task");
-  await t.mockInput.typeText("/plans");
-  await t.renderOnce();
-  press(t, "escape");
-  await t.renderOnce();
-  t.mockInput.pressEnter();
-  const out = await captureUntil(t, "Plans · History");
-  expect(out).not.toContain("planning: approval required");
-  t.renderer.destroy();
-});
-
-test("Ctrl+P from a history-opened plan detail returns to plan history", async () => {
-  const doc = {
-    id: "plan-history",
-    path: ".clarvis/plans/history.md",
-    title: "Historical plan",
-    status: "completed" as const,
-    retention: "keep" as const,
-    revision: 1,
-    spec_revision: 1,
-    created_at: "2026-08-08T00:00:00Z",
-    updated_at: "2026-08-08T00:00:00Z",
-    created_by_run: "exec_1",
-    objective: "Review history navigation",
-    context: "",
-    tasks: [],
-    validation: [],
-    notes: "",
-    markdown: "## Objective\n\nReview history navigation.",
-  };
-  const plans: PlansService = {
-    list: async () => ({ plans: [doc] }),
-    read: async () => doc,
-    setRetention: async () => doc,
-    delete: async (id) => ({ id, deleted: true }),
-  };
-  const t = await mountApp(defaultProps({ backend: baseBackend({ plans }) }));
-  await captureUntil(t, "New task");
-  await t.mockInput.typeText("/plans");
-  await t.renderOnce();
-  press(t, "escape");
-  await t.renderOnce();
-  t.mockInput.pressEnter();
-  await captureUntil(t, "Plans · History");
-  press(t, "return");
-  await captureUntil(t, "Review history navigation.");
-
-  press(t, "p", { ctrl: true });
-  const history = await captureUntil(t, "Plans · History");
-  expect(history).toContain("Historical plan");
-  t.renderer.destroy();
-});
-
-test("/planning/normal restores normal planning mode", async () => {
-  const t = await mountApp(defaultProps({}));
-  await captureUntil(t, "New task");
-  await t.mockInput.typeText("/planning/normal");
-  await t.renderOnce();
-  press(t, "escape");
-  await t.renderOnce();
-  t.mockInput.pressEnter();
-  const out = await captureUntil(t, "planning: default mode restored");
+  const out = await captureUntil(t, "plan review: required");
   expect(out).not.toContain("unknown command");
+  t.renderer.destroy();
+});
+
+test("/plan remains the built-in toggle when an agent-backed skill is also named plan", async () => {
+  let resolveListed!: () => void;
+  const listed = new Promise<void>((resolve) => {
+    resolveListed = resolve;
+  });
+  const skillRuns: Array<{ name: string; task: string; agent: string }> = [];
+  const backend = baseBackend({
+    client: {
+      listTools: async () => [],
+      listPrompts: async () => {
+        resolveListed();
+        return [{ name: "plan", agent: "coder" }];
+      },
+      getPrompt: async () => [],
+      connectionStatus: () => "connected",
+    },
+  });
+  const t = await mountApp(
+    defaultProps({
+      backend,
+      submitSkillRun: (name, task, agent) => skillRuns.push({ name, task, agent }),
+    }),
+  );
+  await listed;
+  await Promise.resolve();
+  await Promise.resolve();
+  await captureUntil(t, "New task");
+  await t.mockInput.typeText("/plan");
+  await t.renderOnce();
+  press(t, "escape");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  const out = await captureUntil(t, "plan review: required");
+  expect(out).not.toContain("unknown command");
+  expect(skillRuns).toEqual([]);
+  t.renderer.destroy();
+});
+
+test("the removed /plans command is rejected instead of opening history", async () => {
+  const t = await mountApp(defaultProps({}));
+  await captureUntil(t, "New task");
+  await t.mockInput.typeText("/plans");
+  await t.renderOnce();
+  press(t, "escape");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  const out = await captureUntil(t, "unknown command: /plans");
+  expect(out).not.toContain("Plan · History");
+  t.renderer.destroy();
+});
+
+test("the removed /planning command is rejected", async () => {
+  const t = await mountApp(defaultProps({}));
+  await captureUntil(t, "New task");
+  await t.mockInput.typeText("/planning");
+  await t.renderOnce();
+  press(t, "escape");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  const out = await captureUntil(t, "unknown command: /planning");
+  expect(out).not.toContain("plan review: required");
   t.renderer.destroy();
 });
 
@@ -1032,11 +1025,8 @@ test("Ctrl+P toggles a run's plan detail, while Ctrl+C cancels without closing i
     notes: "",
     markdown: "## Objective\n\nShip checkout safely.",
   };
-  const plans: PlansService = {
-    list: async () => ({ plans: [doc] }),
+  const plans: AppBackend["plans"] = {
     read: async () => doc,
-    setRetention: async () => doc,
-    delete: async (id) => ({ id, deleted: true }),
   };
   const stream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
@@ -1067,7 +1057,7 @@ test("Ctrl+P toggles a run's plan detail, while Ctrl+C cancels without closing i
   expect(await captureUntil(t, "Ship checkout safely.")).toContain("Ship checkout safely.");
   press(t, "p", { ctrl: true });
   const main = await captureUntil(t, "Steer this run");
-  expect(main).not.toContain("Plans · History");
+  expect(main).not.toContain("Plan · History");
   expect(cancels).toEqual([]);
 
   press(t, "p", { ctrl: true });

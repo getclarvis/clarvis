@@ -4,7 +4,7 @@ import {
   memoryDescription,
   memoryState,
   modelResolves,
-  plansDescription,
+  planRetentionDescription,
   safetyDescription,
   settingsForPreset,
 } from "../../src/adapters/execution-safety.ts";
@@ -91,7 +91,7 @@ describe("execution safety", () => {
     );
   });
 
-  it("explains every guard, sandbox, memory, and plan-policy consequence", () => {
+  it("explains every guard, sandbox, memory, and plan-retention consequence", () => {
     const sandbox = {
       ...deriveRunControls(
         {
@@ -125,27 +125,13 @@ describe("execution safety", () => {
     expect(memoryDescription({ ...sandbox, memory: "inert" })).toContain("no extraction model");
     expect(memoryDescription({ ...sandbox, memory: "off" })).toContain("Disabled for this session");
 
-    expect(
-      plansDescription({
-        ...sandbox,
-        plans: { mode: "off", history: "keep", configured: true },
-      }),
-    ).toEqual(["The lead gets no plan tools and works without a written plan."]);
-    expect(
-      plansDescription({
-        ...sandbox,
-        plans: { mode: "review", history: "keep", configured: true },
-      }),
-    ).toEqual([
-      expect.stringContaining("waits for your approval"),
-      expect.stringContaining("stay available"),
+    expect(planRetentionDescription("keep")).toEqual([
+      "Completed plans remain available in the selected provider.",
     ]);
-    expect(
-      plansDescription({
-        ...sandbox,
-        plans: { mode: "on", history: "discard", configured: true },
-      }),
-    ).toEqual([expect.stringContaining("without waiting"), expect.stringContaining("deleted")]);
+    expect(planRetentionDescription("discard")).toEqual([
+      "Successful runs delete their plan after the result is recorded.",
+      "Failed, cancelled or interrupted runs keep their plan.",
+    ]);
   });
 });
 

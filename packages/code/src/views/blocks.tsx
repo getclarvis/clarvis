@@ -889,7 +889,7 @@ export function BlockView(props: {
                         <text fg={tokens.muted} wrapMode="word">
                           {planNode().planRemoved
                             ? planNode().planDiscarded
-                              ? "  Plan history was deleted after success, as configured"
+                              ? "  Plan was deleted after success, as configured"
                               : "  The backing record is unavailable; restore it or create a replacement plan"
                             : "  Open plan for the full objective, task list and review history"}
                         </text>

@@ -14,7 +14,7 @@ function baseInput(over: Partial<HeaderInput> = {}): HeaderInput {
     guardMode: "off",
     memoryConfigured: true,
     memory: "on",
-    plans: { mode: "on", history: "discard", configured: true },
+    plans: { mode: "on", retention: "discard", configured: true },
     connection: { phase: "ready" },
     doctorDirty: false,
     workspace: "/work/clarvis_bench/demo_01",

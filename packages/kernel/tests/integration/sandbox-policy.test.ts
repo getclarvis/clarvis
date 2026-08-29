@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { createFileConfigStore } from "../../src/config/file-config-store.ts";
 import { createSandboxPolicyResolver } from "../../src/sandbox/policy.ts";
 
@@ -22,7 +22,7 @@ describe("sandbox host policy", () => {
         sandbox: { type: "native", toolchains: { include: ["bun"] } },
       });
       const previousPath = process.env.PATH;
-      process.env.PATH = bin;
+      process.env.PATH = previousPath ? `${bin}${delimiter}${previousPath}` : bin;
       try {
         const inspection = await createSandboxPolicyResolver(store, workspace).inspect();
         expect(inspection.backend).toMatchObject({

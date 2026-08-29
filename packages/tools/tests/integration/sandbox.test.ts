@@ -408,7 +408,10 @@ describe("sandboxCommand", () => {
 
   it("compiles a parameterized Seatbelt profile with matching filesystem and network policy", () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-seatbelt-profile-"));
-    const workspace = join(root, "workspace ) (allow file-write*) (");
+    const workspace = join(
+      root,
+      process.platform === "win32" ? "workspace" : 'workspace ") (allow file-write*) ("',
+    );
     const scratch = join(root, "scratch");
     const sdk = join(workspace, "vendor", "sdk");
     const gitMetadata = join(root, "git-common");

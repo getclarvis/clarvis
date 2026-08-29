@@ -8,7 +8,6 @@ import {
   registerEnabledFields,
   registerEscapeClearsPendingSequence,
   registerMetadataFields,
-  registerNeovimDisambiguation,
   registerUnresolvedCommandWarnings,
 } from "@opentui/keymap/addons";
 import { registerBaseLayoutFallback } from "@opentui/keymap/addons/opentui";
@@ -32,12 +31,17 @@ type OpenTuiKeymap = Keymap<Renderable, KeyEvent>;
 type OpenTuiCommand = Command<Renderable, KeyEvent>;
 type OpenTuiBinding = Binding<Renderable, KeyEvent>;
 
+/** Resolves every exact-versus-prefix ambiguity in favour of the exact action immediately. */
+function registerImmediateExactDisambiguation(keymap: OpenTuiKeymap): () => void {
+  return keymap.appendDisambiguationResolver((context) => context.runExact());
+}
+
 /** Which overlay (if any) is on top of the overlay stack, driving the keymap's `when` context. */
 export type OverlayKind = "none" | "agentPicker" | "diff" | "plan" | (string & {});
 
 /** Callbacks the built-in keymap commands dispatch into. */
 export interface InteractionEffects {
-  /** Suppresses every built-in command while the workspace runtime is being replaced. */
+  /** Suppresses every key except unmodified Escape while the workspace runtime is replaced. */
   interactionBlocked?(): boolean;
   cancelRun(): boolean;
   clearInputDraft(): void;
@@ -481,7 +485,7 @@ export function createInteraction(
     );
   });
   const addonDisposers = [
-    registerNeovimDisambiguation(keymap, { timeoutMs: 300 }),
+    registerImmediateExactDisambiguation(keymap),
     // Clarvis does not expose pending key sequences as a visible mode. Let one
     // Escape clear a half-entered sequence and continue to the active Back /
     // Close command; consuming it here made the UI appear to ignore the first
@@ -494,7 +498,16 @@ export function createInteraction(
   const offInteractionBlocker = keymap.intercept(
     "key",
     (ctx) => {
-      if (effects.interactionBlocked?.() === true) {
+      const event = ctx.event;
+      const plainEscape =
+        event.name === "escape" &&
+        !event.ctrl &&
+        !event.shift &&
+        !event.meta &&
+        !event.option &&
+        !event.super &&
+        !event.hyper;
+      if (effects.interactionBlocked?.() === true && !plainEscape) {
         ctx.consume({ preventDefault: true, stopPropagation: true });
       }
     },

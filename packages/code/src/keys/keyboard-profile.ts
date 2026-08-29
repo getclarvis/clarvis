@@ -62,7 +62,7 @@ export interface KeyboardBindingIssue {
   key?: string;
   message: string;
   /**
-   * For a shadowing issue, the command whose binding `command` took; absent on
+   * For a shadow or prefix conflict, the other command involved; absent on
    * every other kind.
    *
    * @remarks It is what lets a caller tell "this override shadows a vital
@@ -270,6 +270,8 @@ function looksLikeKeySequence(value: string): boolean {
  * @param commands - the commands currently registered on the keymap.
  * @param normalizeKey - canonical form of one key sequence, for the
  *   shadowing comparison; defaults to trim + lower-case.
+ * @param defaultBindings - every binding resolved from the active profile;
+ *   a command with a manual override has its default omitted.
  * @returns every issue found, across the whole map.
  * @remarks `normalizeKey` is what makes the shadowing rule mean anything. The
  *   comparison used to be between raw lower-cased strings, so `esc` and
@@ -330,9 +332,13 @@ export function validateManualBindings(
   bindings: Readonly<Record<string, readonly string[]>>,
   commands: ReadonlySet<string>,
   normalizeKey: (key: string) => string = canonicalizeAliases,
+  defaultBindings: Readonly<
+    Record<string, string | readonly string[]>
+  > = PROTECTED_DEFAULT_BINDINGS,
 ): KeyboardBindingIssue[] {
   const issues: KeyboardBindingIssue[] = [];
   const owners = new Map<string, string>();
+  const ownedSequences: { command: string; strokes: readonly string[] }[] = [];
   const canonical = (key: string): string => {
     try {
       return normalizeKey(key);
@@ -340,8 +346,17 @@ export function validateManualBindings(
       return canonicalizeAliases(key);
     }
   };
-  for (const [command, key] of Object.entries(PROTECTED_DEFAULT_BINDINGS)) {
-    if (!(command in bindings)) owners.set(canonical(key), command);
+  const remember = (command: string, normalized: string): void => {
+    owners.set(normalized, command);
+    ownedSequences.push({ command, strokes: normalized.trim().split(/\s+/) });
+  };
+  const strictPrefix = (left: readonly string[], right: readonly string[]): boolean =>
+    left.length < right.length && left.every((stroke, index) => stroke === right[index]);
+  for (const [command, value] of Object.entries(defaultBindings)) {
+    if (command in bindings) continue;
+    for (const key of typeof value === "string" ? [value] : value) {
+      remember(command, canonical(key));
+    }
   }
   for (const [command, keys] of Object.entries(bindings)) {
     if (!commands.has(command)) {
@@ -367,9 +382,24 @@ export function validateManualBindings(
       const owner = owners.get(normalized);
       if (owner && owner !== command) {
         issues.push({ command, key: raw, message: `binding shadows ${owner}`, shadows: owner });
-      } else {
-        owners.set(normalized, command);
+        continue;
       }
+      const strokes = normalized.trim().split(/\s+/);
+      const prefixConflict = ownedSequences.find(
+        (candidate) =>
+          (PROTECTED_ACTIONS.has(command) || PROTECTED_ACTIONS.has(candidate.command)) &&
+          (strictPrefix(candidate.strokes, strokes) || strictPrefix(strokes, candidate.strokes)),
+      );
+      if (prefixConflict !== undefined) {
+        issues.push({
+          command,
+          key: raw,
+          message: `binding has an ambiguous prefix with ${prefixConflict.command}`,
+          shadows: prefixConflict.command,
+        });
+        continue;
+      }
+      remember(command, normalized);
     }
   }
   return issues;
@@ -383,23 +413,23 @@ export function validateManualBindings(
  * @param opts.keys - its new key sequences; empty clears the override.
  * @param opts.knownCommands - commands currently registered on the keymap.
  * @param opts.invalidKeys - keys the keymap refused to parse, reported as-is.
+ * @param opts.defaultBindings - every binding resolved from the active profile
+ *   before manual overrides are applied.
  * @returns the record to write, or the issues that block the write.
  * @remarks Two rules live here rather than at the call site, because both are
  *   the kind of mistake that reads as correct.
  *
  *   The whole map is validated — so a new key can be seen shadowing a sibling
- *   override — but only the **edited** command's issues, plus any raised against
- *   a vital action, block the write. A stale entry naming a command that is no
+ *   override — but only conflicts touching the **edited** command or a vital
+ *   action block the write. A stale entry naming a command that is no
  *   longer registered (an MCP prompt whose server was removed from
  *   `settings.json`) reports "unknown command" forever, and reporting it here
  *   made every later edit impossible, including clearing that very entry.
  *
- *   Admitting a vital action's *shadowing* issue is what closes the other half.
- *   Shadowing is reported against whichever command is *seen second*, so when
- *   the edited command claimed the key first, the complaint landed on the vital
- *   action and the edited-command filter dropped it — an ordinary command could
- *   take Escape, and the write was accepted with no validation at all. Only
- *   `shadows` issues are admitted, not every issue a vital action can carry: a
+ *   Inspecting both `command` and `shadows` closes the other half. A conflict is
+ *   reported against whichever command is *seen second*, so filtering only that
+ *   field made the result depend on persisted object order. Only `shadows`
+ *   issues involving a vital action are admitted, not every issue it can carry: a
  *   hand-edited `keyboard.json` that leaves one unbound, or names one no longer
  *   registered, would otherwise block every later edit with a message about a
  *   command the user is not editing — the very trap the paragraph above says
@@ -418,6 +448,8 @@ export function applyManualBindingEdit(opts: {
   invalidKeys?: readonly string[];
   /** Canonical form of a key sequence; see {@link validateManualBindings}. */
   normalizeKey?: (key: string) => string;
+  /** Effective profile defaults; overridden commands are excluded during validation. */
+  defaultBindings?: Readonly<Record<string, string | readonly string[]>>;
 }):
   | { config: KeyboardEnvironmentConfig; issues?: undefined }
   | { config?: undefined; issues: KeyboardBindingIssue[] } {
@@ -425,10 +457,17 @@ export function applyManualBindingEdit(opts: {
   if (opts.keys.length > 0) bindings[opts.command] = [...opts.keys];
   else delete bindings[opts.command];
 
-  const issues = validateManualBindings(bindings, opts.knownCommands, opts.normalizeKey).filter(
+  const issues = validateManualBindings(
+    bindings,
+    opts.knownCommands,
+    opts.normalizeKey,
+    opts.defaultBindings,
+  ).filter(
     (issue) =>
       issue.command === opts.command ||
-      (issue.shadows !== undefined && PROTECTED_ACTIONS.has(issue.command)),
+      issue.shadows === opts.command ||
+      (issue.shadows !== undefined &&
+        (PROTECTED_ACTIONS.has(issue.command) || PROTECTED_ACTIONS.has(issue.shadows))),
   );
   for (const key of opts.invalidKeys ?? []) {
     issues.push({ command: opts.command, key, message: "invalid key sequence" });

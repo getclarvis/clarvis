@@ -178,6 +178,7 @@ function mount(
     cliSelection?: boolean;
     definition?: EnvironmentDefinition;
     installGate?: Promise<void>;
+    previewGate?: Promise<void>;
     applyGate?: Promise<void>;
     requiresWorkspaceTrust?: boolean;
     previewIssue?: boolean;
@@ -235,6 +236,7 @@ function mount(
     },
     previewComposition: async (input) => {
       previews.push(input);
+      await options.previewGate;
       const resolved = resolveDraft(input.ref, input.definition, inventory);
       const authored: ResolvedEnvironment = options.previewIssue
         ? {
@@ -436,10 +438,6 @@ test("guides scope, Environment, exact extensions, capabilities and activation",
   frame = rendered.captureCharFrame();
   expect(frame).toContain(spinnerChar());
   expect(frame).toContain("Applying reviewed snapshot");
-  expect(frame).not.toContain("[esc]");
-  mounted.press("escape");
-  await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain("Applying reviewed snapshot");
   expect(mounted.applied).toEqual([]);
   applyGate.release();
   await settle(rendered, () => rendered.captureCharFrame().includes("Extensions ready"));
@@ -501,7 +499,7 @@ test("Escape leaves an unchanged existing draft without a discard prompt", async
   rendered.renderer.destroy();
 });
 
-test("pins apply progress in the footer beside a long delta and absorbs Escape", async () => {
+test("pins apply progress beside a long delta and lets Escape leave while apply continues", async () => {
   const applyGate = operationGate();
   const plugins = Array.from({ length: 36 }, (_, index) => {
     const plugin = context7Inventory("agents");
@@ -541,14 +539,47 @@ test("pins apply progress in the footer beside a long delta and absorbs Escape",
   expect(applying).toContain("Applying reviewed snapshot");
   expect(applying).toContain("footer reports progress");
   expect(applying.trimEnd().split("\n").at(-1)).toContain("Applying reviewed snapshot");
-  expect(applying).not.toContain("[esc]");
+  expect(applying).toContain("[esc] close");
   mounted.press("escape");
   await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain("Applying reviewed snapshot");
-  expect(mounted.closed).toEqual([]);
+  expect(mounted.closed).toEqual(["closed"]);
+  expect(mounted.applied).toEqual([]);
 
   applyGate.release();
-  await settle(rendered, () => rendered.captureCharFrame().includes("Extensions ready"));
+  await settle(rendered, () => mounted.applied.length === 1);
+  expect(mounted.notifications.join("\n")).toContain("global:mine is active for future runs");
+  expect(rendered.captureCharFrame()).not.toContain("Extensions ready");
+  rendered.renderer.destroy();
+});
+
+test("Escape returns from a pending capability preview without waiting for it", async () => {
+  const previewGate = operationGate();
+  const mounted = mount({
+    initialEnvironment: { scope: "global", name: "mine" },
+    previewGate: previewGate.wait,
+  });
+  const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
+    width: 100,
+    height: 26,
+  });
+  await settle(rendered, () => rendered.captureCharFrame().includes("Step 3 of 5"));
+  mounted.press("return");
+  await settle(rendered, () =>
+    rendered.captureCharFrame().includes("Resolving exact capabilities"),
+  );
+  expect(rendered.captureCharFrame()).toContain("[esc] back");
+
+  mounted.press("escape");
+  await settle(rendered, () => rendered.captureCharFrame().includes("[↵] continue"));
+  expect(rendered.captureCharFrame()).toContain("Step 3 of 5");
+
+  previewGate.release();
+  await settle(
+    rendered,
+    () => !rendered.captureCharFrame().includes("Resolving exact capabilities"),
+  );
+  expect(rendered.captureCharFrame()).toContain("Step 3 of 5");
+  expect(rendered.captureCharFrame()).not.toContain("Capabilities of");
   rendered.renderer.destroy();
 });
 
@@ -616,10 +647,6 @@ test("installs into the chosen convention but waits for Step 5 to activate", asy
   const installing = rendered.captureCharFrame();
   expect(installing).toContain(spinnerChar());
   expect(installing).toContain("Installing context7");
-  expect(installing).not.toContain("[esc]");
-  mounted.press("escape");
-  await rendered.renderOnce();
-  expect(rendered.captureCharFrame()).toContain("Installing context7");
   expect(mounted.installed).toEqual([]);
   installGate.release();
   await settle(rendered, () => mounted.notifications.length > 0);
@@ -634,6 +661,36 @@ test("installs into the chosen convention but waits for Step 5 to activate", asy
     { scope: "global", source: "clarvis", name: "context7" },
   ]);
   expect(mounted.applied).toEqual([]);
+  rendered.renderer.destroy();
+});
+
+test("Escape leaves a pending install immediately and the checkout finishes without stale staging", async () => {
+  const installGate = operationGate();
+  const mounted = mount({
+    inventory: { plugins: [], standalone_skills: [] },
+    initialEnvironment: { scope: "global", name: "mine" },
+    installGate: installGate.wait,
+  });
+  const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
+    width: 100,
+    height: 26,
+  });
+  await settle(rendered, () => rendered.captureCharFrame().includes("Step 3 of 5"));
+  mounted.press("down");
+  mounted.press("return");
+  mounted.press("down");
+  mounted.press("return");
+  await settle(rendered, () => rendered.captureCharFrame().includes("Installing context7"));
+  expect(rendered.captureCharFrame()).toContain("[esc] back");
+
+  mounted.press("escape");
+  await settle(rendered, () => rendered.captureCharFrame().includes("Step 2 of 5"));
+  expect(mounted.installed).toEqual([]);
+
+  installGate.release();
+  await settle(rendered, () => mounted.installed.length === 1);
+  expect(mounted.applied).toEqual([]);
+  expect(mounted.notifications.join("\n")).toContain("setup was left before staging");
   rendered.renderer.destroy();
 });
 

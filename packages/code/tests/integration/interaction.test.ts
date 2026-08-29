@@ -379,6 +379,49 @@ test("createInteraction: app.escape dismisses the top overlay first, short-circu
   t.renderer.destroy();
 });
 
+test("createInteraction: an exact action beats a longer prefix synchronously", async () => {
+  const t = await openCoreRenderer({ width: 80, height: 24 });
+  const interaction = createInteraction(t.renderer, fakePlatform(), fakeEffects());
+  const calls: string[] = [];
+  const off = interaction.keymap.registerLayer({
+    priority: 951,
+    commands: [
+      uiCommand({
+        id: "test.back",
+        title: "Back",
+        description: "Go back immediately",
+        category: "test",
+        surfaces: [],
+        run: () => {
+          calls.push("back");
+        },
+      }),
+      uiCommand({
+        id: "test.escape.sequence",
+        title: "Long Escape sequence",
+        description: "Expose an exact-versus-prefix ambiguity",
+        category: "test",
+        surfaces: [],
+        run: () => {
+          calls.push("sequence");
+        },
+      }),
+    ],
+    bindings: [
+      { key: "escape", cmd: "test.back" },
+      { key: "escape x", cmd: "test.escape.sequence" },
+    ],
+  });
+
+  press(t.renderer, "escape");
+
+  expect(calls).toEqual(["back"]);
+  expect(interaction.keymap.hasPendingSequence()).toBe(false);
+  off();
+  interaction.dispose();
+  t.renderer.destroy();
+});
+
 test("createInteraction: one Escape both clears an invisible pending sequence and navigates back", async () => {
   const t = await openCoreRenderer({ width: 80, height: 24 });
   const effects = fakeEffects({
@@ -551,22 +594,50 @@ test("createInteraction: an elicitation modal suppresses global destination bind
   t.renderer.destroy();
 });
 
-test("createInteraction: a workspace replacement suppresses every built-in command", async () => {
+test("createInteraction: a workspace replacement blocks commands but keeps window Escape live", async () => {
   const t = await openCoreRenderer({ width: 80, height: 24 });
   const effects = fakeEffects({
     interactionBlocked: () => true,
-    isDraftNonEmpty: () => true,
   });
   const platform = fakePlatform();
-  createInteraction(t.renderer, platform, effects);
+  const interaction = createInteraction(t.renderer, platform, effects);
+  interaction.setModalContext("elicitation");
+  interaction.configureKeyboard({
+    version: 1,
+    environments: {
+      [interaction.keyboardEnvironmentId()]: {
+        profile: "manual",
+        bindings: { "run.cancel": ["ctrl+escape"] },
+      },
+    },
+  });
+  const off = interaction.keymap.registerLayer({
+    priority: 951,
+    commands: [
+      uiCommand({
+        id: "test.blocked.back",
+        title: "Back",
+        description: "Leave the active window during a workspace replacement",
+        category: "test",
+        surfaces: [],
+        run: () => {
+          effects.calls.push("back");
+        },
+      }),
+    ],
+    bindings: [{ key: "escape", cmd: "test.blocked.back" }],
+  });
 
   press(t.renderer, "c", { ctrl: true });
+  press(t.renderer, "escape", { ctrl: true });
   press(t.renderer, "escape");
   press(t.renderer, "z", { ctrl: true });
   await settle();
 
-  expect(effects.calls).toEqual([]);
+  expect(effects.calls).toEqual(["back"]);
   expect(platform.suspendCalls).toBe(0);
+  off();
+  interaction.dispose();
   t.renderer.destroy();
 });
 

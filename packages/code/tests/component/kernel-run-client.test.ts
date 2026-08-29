@@ -549,7 +549,7 @@ test("an event stream that throws mid-iteration is recorded, not swallowed", asy
   });
 });
 
-test("a lifecycle closure that rejects is recorded rather than escaping a finally", async () => {
+test("a lifecycle closure that rejects is recorded without rejecting physical observers", async () => {
   const ctrl = controllableHandle("exec_c");
   const broken = { ...ctrl.handle, closed: Promise.reject(new Error("teardown refused")) };
   const { c } = client({ start: async () => broken });

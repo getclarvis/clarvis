@@ -116,6 +116,7 @@ export interface RunHostDeps {
  * workflow status.
  */
 export interface RunHost {
+  /** True only while the current run can still accept interactive control. */
   runActive: Accessor<boolean>;
   bashActive: Accessor<boolean>;
   /** True while the context-compaction pipeline is doing hook or model work. */
@@ -338,6 +339,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   let currentSink: { executionId: string; sink: RunSink; transcript: RunSink } | undefined;
   let currentHandle: RunHandle | undefined;
   const physicalHandles = new Set<RunHandle>();
+  /** Serializes a new semantic turn behind reconciliation without extending steer mode. */
+  let currentSettlement: { promise: Promise<void>; release: () => void } | undefined;
   let runOwnershipEpoch = 0;
   let cancelRequested = false;
   let session: Session | undefined;
@@ -532,6 +535,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
 
   function teardownRuns(): void {
     runOwnershipEpoch += 1;
+    const settlement = currentSettlement;
+    currentSettlement = undefined;
+    settlement?.release();
     bashAbort?.abort();
     if (currentHandle) {
       cancelRequested = true;
@@ -542,6 +548,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     workflowRunId = null;
     currentStatusExecId = null;
     heldIngest = null;
+    diagnosticBind({ execution_id: undefined });
     setRunActive(false);
     setCompactionActive(false);
     deps.attention?.setTitle(null);
@@ -582,7 +589,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const transcript = store.openRun(executionId);
     const sink = teeSink(transcript, activity.openRun());
     currentSink = { executionId, sink, transcript };
-    const lifecycleClosures: Promise<void>[] = [];
     cancelRequested = false;
     currentStatusExecId = executionId;
     memoryStatusBase = null;
@@ -592,12 +598,36 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setRunStartedAt(Date.now());
     setStatus(opts.initialStatus);
     attention?.setTitle("running");
+    let releaseSettlement!: () => void;
+    const settlement = {
+      promise: new Promise<void>((resolve) => {
+        releaseSettlement = resolve;
+      }),
+      release: () => releaseSettlement(),
+    };
+    currentSettlement = settlement;
+    let interactiveReleased = false;
+    const releaseInteractiveOwnership = (): void => {
+      if (interactiveReleased || ownershipEpoch !== runOwnershipEpoch || currentSink?.sink !== sink)
+        return;
+      interactiveReleased = true;
+      currentHandle = undefined;
+      workflowRunId = null;
+      setRunActive(false);
+      setCompactionActive(false);
+      attention?.setTitle(null);
+      if (heldIngest?.execution_id === executionId) {
+        const notice = heldIngest;
+        heldIngest = null;
+        onMemoryIngest(notice);
+      }
+    };
     try {
       const envelope = await opts.run((h) => {
         currentHandle = h;
         physicalHandles.add(h);
         setPhysicalRunCount((count) => count + 1);
-        const closure = h.closed.then(
+        void h.closed.then(
           () => {
             physicalHandles.delete(h);
             setPhysicalRunCount((count) => Math.max(0, count - 1));
@@ -607,10 +637,11 @@ export function createRunHost(deps: RunHostDeps): RunHost {
             setPhysicalRunCount((count) => Math.max(0, count - 1));
           },
         );
-        lifecycleClosures.push(closure);
       });
       if (session !== sess || ownershipEpoch !== runOwnershipEpoch) return;
       opts.afterRun?.(envelope);
+      setStatus(runOutcomeStatus(envelope));
+      releaseInteractiveOwnership();
       let stored: StoredRun = null;
       try {
         stored = await client.getRun(executionId);
@@ -621,7 +652,6 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       opts.onStored(envelope, stored, sink);
       if (envelope?.status === "failed" && envelope.error)
         store.appendRunFailure(executionId, envelope.error);
-      setStatus(runOutcomeStatus(envelope));
       if (!cancelRequested && attention?.away())
         attention.notify(`run ${presentStatus(runOutcomeStatus(envelope))}`);
     } catch (e) {
@@ -631,24 +661,13 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         if (!cancelRequested && attention?.away()) attention.notify("run failed");
       }
     } finally {
-      // `done` is the model result; post-run memory notices can still be in the
-      // protocol stream. Keep this run's sink/status ownership until that stream
-      // and the client pump both release it.
-      await Promise.allSettled(lifecycleClosures);
-      diagnosticBind({ execution_id: undefined });
       if (ownershipEpoch === runOwnershipEpoch && currentSink?.sink === sink) {
+        releaseInteractiveOwnership();
+        diagnosticBind({ execution_id: undefined });
         currentSink = undefined;
-        currentHandle = undefined;
-        workflowRunId = null;
-        setRunActive(false);
-        setCompactionActive(false);
-        attention?.setTitle(null);
-        if (heldIngest?.execution_id === executionId) {
-          const notice = heldIngest;
-          heldIngest = null;
-          onMemoryIngest(notice);
-        }
       }
+      if (currentSettlement === settlement) currentSettlement = undefined;
+      settlement.release();
       elicit.cancelPending();
     }
   }
@@ -676,6 +695,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       draftRestore?.(draftText, typeof content === "string" ? undefined : content);
       return;
     }
+    const settlement = currentSettlement;
+    if (!runActive() && settlement !== undefined) await settlement.promise;
     if (runActive() && currentHandle) {
       const execId = currentHandle.executionId;
       const discardQueuedNotice =
@@ -844,6 +865,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function submitSkillRun(name: string, task: string, agent: string): Promise<void> {
+    const settlement = currentSettlement;
+    if (!runActive() && settlement !== undefined) await settlement.promise;
     if (runActive()) {
       setStatus(["busy ", { mark: "emDash" }, " finish the current run first"]);
       return;
@@ -889,6 +912,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   async function workOnTask(ref: TaskRefDto, profile: string): Promise<void> {
+    const settlement = currentSettlement;
+    if (!runActive() && settlement !== undefined) await settlement.promise;
     if (runActive() || bashActive()) {
       setStatus(["busy ", { mark: "emDash" }, " finish the current run or command first"]);
       return;
@@ -948,6 +973,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   }
 
   function runBangCommand(cmd: string): boolean {
+    if (currentSettlement !== undefined) return false;
     if (bashActive()) {
       setStatus(["a ! command is already running ", { mark: "emDash" }, " draft kept"]);
       return false;

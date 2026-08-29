@@ -132,6 +132,11 @@ payloads. Production: `packages/kernel/src/core/event-stream.ts` (`EventStream.s
 `packages/kernel/tests/unit/event-stream.test.ts` ("reports O(1) buffered item, byte and drop
 counters").
 
+Consumers must preserve the same distinction. `@clarvis/code` releases composer/steering ownership
+after `done`, while retaining `closed` only as a physical-work lease for the event pump and post-run
+memory notices. Production and test ownership live in
+[`code-run-host.md`](code-run-host.md#42-runmanaged--the-single-funnel-packagescodesrcrun-hostts496).
+
 ## 3. Data and formats
 
 ### 3.1 Identifiers

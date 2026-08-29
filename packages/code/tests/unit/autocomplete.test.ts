@@ -195,6 +195,22 @@ test("windowRows: degenerate inputs (empty list / zero width)", () => {
   expect(windowRows(["a", "b"], 0, 0)).toEqual({ rows: [], offset: 0, above: 0, below: 0 });
 });
 
+test("windowRows: scroll mode uses the whole viewport without indicator rows", () => {
+  const items = Array.from({ length: 8 }, (_, index) => index);
+  expect(windowRows(items, 0, 3, "scroll")).toEqual({
+    rows: [0, 1, 2],
+    offset: 0,
+    above: 0,
+    below: 5,
+  });
+  expect(windowRows(items, 5, 3, "scroll")).toEqual({
+    rows: [3, 4, 5],
+    offset: 3,
+    above: 3,
+    below: 2,
+  });
+});
+
 interface G {
   group?: string;
 }
@@ -238,6 +254,16 @@ test("windowGroupedRows: a window that starts mid-group still reports that group
   const w = windowGroupedRows(items, 9, 4);
   expect(w.offset).toBeGreaterThan(0);
   expect(w.headers[0]).toBe("Solo");
+});
+
+test("windowGroupedRows: scroll mode spends the line budget only on rows and headers", () => {
+  const items: G[] = Array.from({ length: 8 }, () => ({ group: "Solo" }));
+  const w = windowGroupedRows(items, 5, 4, "scroll");
+  const headerCount = w.headers.filter((header) => header !== undefined).length;
+  expect(w.rows.length + headerCount).toBeLessThanOrEqual(4);
+  expect(w.above).toBeGreaterThan(0);
+  expect(w.below).toBeGreaterThan(0);
+  expect(w.rows).toContain(items[5]!);
 });
 
 test("slashCompletion: Tab fills the exact command with no trailing space (popup stays open, Enter runs)", () => {

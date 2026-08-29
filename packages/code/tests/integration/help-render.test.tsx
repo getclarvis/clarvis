@@ -37,10 +37,20 @@ function fakeInteraction(): { interaction: Interaction; cleanup(): void } {
         surfaces: ["full-help"],
         run: () => {},
       }),
+      uiCommand({
+        id: "prompt.newline",
+        title: "Insert newline",
+        description: "Insert a newline",
+        category: "prompt",
+        surfaces: ["full-help"],
+        run: () => {},
+      }),
     ],
     bindings: [
       { key: "ctrl+c", cmd: "run.cancel" },
       { key: "return", cmd: "prompt.send" },
+      { key: "ctrl+j", cmd: "prompt.newline" },
+      { key: "shift+return", cmd: "prompt.newline" },
     ],
   });
   const offGated = keymap.registerLayer({
@@ -178,6 +188,8 @@ test("help projects active actions, destinations and environment without duplica
   expect(out).toContain("settings > Providers");
   expect(out).toContain("Editing");
   expect(out).toContain("Send the current prompt");
+  expect(out).toContain("[^j] / [shift+↵]");
+  expect(out).toContain("Insert a newline");
   expect(out).toContain("Input syntax");
   expect(out).toContain("Keyboard environment");
   expect(out).toContain("portable");

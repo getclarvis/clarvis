@@ -13,6 +13,7 @@ import {
   verifyReleaseTree,
 } from "../../src/update/release-manifest.ts";
 import { bootAndObserve, makeCleanHome, readable } from "../artifact/pty.ts";
+import { APP_READY_MARKER } from "../artifact/markers.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const repositoryRoot = join(packageRoot, "..", "..");
@@ -135,7 +136,7 @@ async function main(): Promise<void> {
       args: ["--debug"],
       home,
       workspace,
-      markers: [{ name: "ready", text: "New task…" }],
+      markers: [{ name: "ready", text: APP_READY_MARKER }],
       timeoutMs: Number(process.env.SMOKE_TIMEOUT_MS ?? 90_000),
       pollMs: 100,
       extraEnv: { CLARVIS_INSTALL_ROOT: installRoot },

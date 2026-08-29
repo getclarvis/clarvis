@@ -61,11 +61,15 @@ that one isolated mechanism explains every such peak.
 | `--require-ac` | optionally requires mains power | `packages/code/tooling/benchmarks/first-paint.ts:331-338` |
 | `--debug[=level]` | writes bounded redacted lifecycle and memory diagnostics | `packages/code/src/cli-args.ts:108-110`, `packages/code/src/adapters/diagnostic-session.ts:354-374` |
 
-The benchmark owns three visible markers: `Clarvis · starting` for the exclusive parser-free shell,
+The benchmark owns three visible markers: `Clarvis · code · starting` for the exclusive branded
+parser-free shell,
 `◆ Clarvis` for complete header paint and `New task…` for the input dock
-(`packages/code/tooling/benchmarks/first-paint.ts`, `SHELL_MARKER`, `PAINT_MARKER`, `READY_MARKER`).
-The first marker is absent from the complete application frame, so a missing shell paint cannot be
-misreported as a header paint.
+(`packages/code/tooling/artifact/markers.ts`, `BOOT_SHELL_MARKER`, `APP_PAINT_MARKER`,
+`APP_READY_MARKER`; `packages/code/tooling/benchmarks/first-paint.ts`, imported marker aliases).
+The first marker is absent from the complete application frame, while the latter two are absent from
+`BootFrame`; each timestamp therefore belongs to one stage and a placeholder shell cannot satisfy
+application paint or readiness. Production: `packages/code/src/views/BootFrame.tsx` (`BootFrame`).
+Test: `packages/code/tests/integration/splash-render.test.tsx` (boot marker exclusion).
 
 ### 2.2 Runtime memory controls
 
@@ -106,7 +110,7 @@ changes, but it remains evidence rather than an allocator or a second hard budge
 
 ### 3.1 Benchmark result
 
-Each arm reports four `Stats` records — module-graph `version`, minimal `shell`, header `paint`, and
+Each arm reports four `Stats` records — module-graph `version`, branded `shell`, header `paint`, and
 input `ready` — with `n`, minimum, median and maximum
 (`packages/code/tooling/benchmarks/first-paint.ts`, `ArmResult`, `measure`). The
 report also records Bun version, cwd, poll interval, power state, CPU governor/profile, observed CPU
@@ -128,7 +132,7 @@ Interactive `--debug` writes versioned, redacted JSONL. Performance-relevant eve
 | `app.boot.begin` | mode and workspace | `packages/code/src/index.tsx:426-436` |
 | `async.started` / `async.settled` | operation, duration, outcome and sampled count | `packages/code/src/core/diagnostic-events.ts:125-170` |
 | `markdown.preload.completed|failed` | parser preload outcome | `packages/code/src/index.tsx:445-458` |
-| `app.boot.shell-painted` | process uptime after the minimal parser-free shell reaches renderer idle | `packages/code/src/index.tsx` (`app.boot.shell-painted`) |
+| `app.boot.shell-painted` | process uptime after the branded parser-free shell reaches renderer idle | `packages/code/src/index.tsx` (`app.boot.shell-painted`) |
 | `app.render.mounted` | mode | `packages/code/src/index.tsx:1291-1307` |
 | `app.boot.painted` | process uptime, mode and whether the catalog signal is still empty | `packages/code/src/index.tsx:1307-1315` |
 | `catalog.load.started` | the catalog-dependent surface that crossed the lazy boundary | `packages/code/src/index.tsx` (`ensureModelsCatalog`) |
@@ -157,7 +161,7 @@ The launcher answers `--help` and `--version` before importing the application g
 the built artifact for every other mode (`packages/code/src/cli.ts:23-51`). Interactive boot then:
 
 1. opens diagnostics;
-2. creates the renderer and mounts one Solid root containing the parser-free `BootFrame`;
+2. creates the renderer and mounts one Solid root containing the branded parser-free `BootFrame`;
 3. waits for renderer idle and emits `app.boot.shell-painted`;
 4. connects and loads the workspace/kernel foundation without calling the models service or
    subscription provider;
@@ -278,7 +282,8 @@ onto these families without measurement:
   `packages/code/src/views/overlays/PlanOverlay.tsx` (`tasks`, `Prose`),
   `packages/code/src/views/overlays/DiffViewer.tsx:43-81`). Plan has no history catalogue to window.
 - `AutocompletePopup` is lazily retained by `InputDock`. It windows to at most ten rows and rewrites
-  the same container, headers, highlighted spans and row slots after the first open
+  the same fixed-height container, headers, highlighted spans and row slots after the first open;
+  scroll mode mounts no overflow-count rows as selection moves
   (`packages/code/src/views/InputDock.tsx`, `SurfaceBoundary`,
   `packages/code/src/ui/patterns/windowed-list.tsx`, `StableWindowedList`,
   `packages/code/src/views/input/AutocompletePopup.tsx`, `MAX_ROWS_CAP`).
@@ -444,7 +449,7 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     `packages/code/tests/architecture/artifact-contract.test.ts`, and
     `packages/code/tooling/artifact/smoke.ts`.
 
-16. **PERF-16: one Solid root paints a parser-free shell before the usable application, and parser
+16. **PERF-16: one Solid root paints a branded parser-free shell before the usable application, and parser
     warm-up does not hold that usable paint; aggregate memory diagnostics are O(1) at their data
     sources and disabled when no diagnostic sink exists.**
     Production: `packages/code/src/index.tsx` (`appProps`, `app.boot.shell-painted`),
@@ -503,6 +508,17 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     `packages/code/tests/integration/marketplace-browser-render.test.tsx` (exact collection case)
     and `packages/code/tooling/benchmarks/overlays.tsx`
     (`marketplace-collections-retained-196-listings`, `stableRegistrations`).
+
+22. **PERF-22: boot continuity adds one bounded shared clock, not parser/catalog or per-row work.**
+    `BootFrame` reuses the process-wide spinner signal and owns one interval only while mounted; its
+    boot-only header, slash wordmark and composer placeholder are static bounded renderables and do
+    not reuse the complete app's paint or readiness markers. Replacing it with `App` cleans the boot
+    clock through Solid ownership. Production:
+    `packages/code/src/views/BootFrame.tsx` (`BootFrame`) and
+    `packages/code/src/views/spinner.ts` (`useSpinnerClock`). Tests:
+    `packages/code/tests/integration/splash-render.test.tsx` (parser-free boot-frame case),
+    `packages/code/tests/unit/spinner.test.ts` (clock cleanup), and
+    `packages/code/tooling/artifact/smoke.ts` (deferred catalogue).
 
 No invariant currently sets an absolute usable-input or healthy-idle RSS target. The overlay runner
 enforces 5 MiB/100 post-GC growth and balanced renderer/key ownership for production-policy cases at
@@ -721,7 +737,7 @@ as a memory reduction or a zero slope. Production:
    models.dev:** settings panels, domain hubs and Help load through cached Solid lazy boundaries;
    artifact checks reject representative markers in the startup entry. Kernel bootstrap remains
    eager because it is the in-process host, not an optional route.
-8. **Paint a minimal shell before non-visual boot work.** **Implemented:** one Solid root first paints
+8. **Paint a branded shell before non-visual boot work.** **Implemented:** one Solid root first paints
    `BootFrame`, then usable `<App>` before Markdown warm-up starts. Restored session Markdown waits
    for both grammars.
 9. **Extend measurement coverage.** Add a configured-home fixture with a shell-only ready marker, a

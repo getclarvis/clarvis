@@ -2,7 +2,7 @@ import type { JSX } from "solid-js";
 import { createMemo, Index, Show } from "solid-js";
 import { useTerminalDimensions } from "@opentui/solid";
 import { tokens } from "../../theme/tokens.ts";
-import { borderChars, glyph } from "../../theme/glyphs.ts";
+import { borderChars } from "../../theme/glyphs.ts";
 import { overlayBg } from "../../theme/surfaces.ts";
 import { PickerRow } from "../overlays/PickerRow.tsx";
 import type { CompleteItem } from "./autocomplete.ts";
@@ -60,6 +60,14 @@ export function AutocompletePopup(props: {
   const dims = useTerminalDimensions();
   const maxRows = (): number =>
     Math.max(MIN_ROWS, Math.min(MAX_ROWS_CAP, dims().height - CHROME_RESERVE));
+  const contentLines = createMemo(() => {
+    let headers = 0;
+    for (let index = 0; index < props.items.length; index += 1) {
+      const group = props.items[index]?.group;
+      if (group && (index === 0 || group !== props.items[index - 1]?.group)) headers += 1;
+    }
+    return Math.max(1, Math.min(maxRows(), props.items.length + headers));
+  });
   const popupWidth = createMemo(() => {
     const content = props.items.reduce(
       (width, item) => Math.max(width, item.label.length + (item.detail?.length ?? 0) + ROW_CHROME),
@@ -79,6 +87,7 @@ export function AutocompletePopup(props: {
       flexDirection="column"
       flexShrink={0}
       width={popupWidth()}
+      height={contentLines() + 2}
       marginBottom={0}
       paddingLeft={1}
       paddingRight={1}
@@ -101,11 +110,7 @@ export function AutocompletePopup(props: {
         maxLines={maxRows()}
         slotCount={MAX_ROWS_CAP}
         grouped
-        above={(overflow) => (
-          <text visible={overflow.visible()} fg={tokens.muted}>
-            {`  ${glyph("arrowUp")} ${overflow.count()} more`}
-          </text>
-        )}
+        overflowMode="scroll"
         row={(slot) => {
           const item = slot.item;
           const active = slot.selected;
@@ -185,11 +190,6 @@ export function AutocompletePopup(props: {
             </>
           );
         }}
-        below={(overflow) => (
-          <text visible={overflow.visible()} fg={tokens.muted}>
-            {`  ${glyph("arrowDown")} ${overflow.count()} more`}
-          </text>
-        )}
       />
     </box>
   );

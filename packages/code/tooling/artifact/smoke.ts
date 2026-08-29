@@ -34,15 +34,11 @@ import {
   assertLazyProviderArtifact,
   assertLazySurfaceArtifact,
 } from "./contract.ts";
+import { APP_READY_MARKER } from "./markers.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const artifact = join(packageRoot, "dist/index.js");
 
-/**
- * Substring proving the normal Unicode input is mounted, i.e. the UI rendered
- * a full frame with the default glyph policy rather than the `--ascii` fallback.
- */
-const READY_MARKER = "New task…";
 const TIMEOUT_MS = Number(process.env.SMOKE_TIMEOUT_MS ?? 90_000);
 
 /**
@@ -153,7 +149,7 @@ async function main(): Promise<void> {
     args: ["--debug"],
     home,
     workspace,
-    markers: [{ name: "ready", text: READY_MARKER }],
+    markers: [{ name: "ready", text: APP_READY_MARKER }],
     afterMarkersReady: async () => {
       const painted = await readDiagnosticDetails<BootPaintedDetails>(home, "app.boot.painted");
       const markdown = await readDiagnosticDetails<MarkdownPreloadDetails>(

@@ -9,6 +9,9 @@ export interface RowWindow<T> {
   below: number;
 }
 
+/** Whether a row window reserves lines for explicit overflow counts or scrolls edge to edge. */
+export type WindowOverflowMode = "indicators" | "scroll";
+
 /**
  * Slices `items` down to at most `max` rows while keeping `index` visible.
  *
@@ -16,11 +19,25 @@ export interface RowWindow<T> {
  * Below three rows there is no room for both overflow indicators and content, so the window keeps
  * only the selected row and reports the remaining items on either side.
  */
-export function windowRows<T>(items: readonly T[], index: number, max: number): RowWindow<T> {
+export function windowRows<T>(
+  items: readonly T[],
+  index: number,
+  max: number,
+  overflowMode: WindowOverflowMode = "indicators",
+): RowWindow<T> {
   const n = items.length;
   if (max <= 0 || n === 0) return { rows: [], offset: 0, above: 0, below: 0 };
   const selected = Math.max(0, Math.min(n - 1, index));
   if (n <= max) return { rows: [...items], offset: 0, above: 0, below: 0 };
+  if (overflowMode === "scroll") {
+    const offset = Math.min(Math.max(0, selected - max + 1), n - max);
+    return {
+      rows: items.slice(offset, offset + max),
+      offset,
+      above: offset,
+      below: n - offset - max,
+    };
+  }
   if (max < 3)
     return {
       rows: [items[selected]!],
@@ -70,18 +87,28 @@ export function windowGroupedRows<T extends { group?: string }>(
   items: readonly T[],
   index: number,
   max: number,
+  overflowMode: WindowOverflowMode = "indicators",
 ): GroupedRowWindow<T> {
   let budget = max;
-  let win = windowRows(items, index, budget);
+  let win = windowRows(items, index, budget, overflowMode);
   for (let attempt = 0; attempt < 4; attempt++) {
     const headers = headersFor(win.rows);
     const headerCount = headers.filter((header) => header !== undefined).length;
-    const indicatorLines = (win.above > 0 ? 1 : 0) + (win.below > 0 ? 1 : 0);
+    const indicatorLines =
+      overflowMode === "indicators" ? (win.above > 0 ? 1 : 0) + (win.below > 0 ? 1 : 0) : 0;
     if (win.rows.length + headerCount + indicatorLines <= max) return { ...win, headers };
-    budget = max - headerCount;
-    win = windowRows(items, index, budget);
+    budget = Math.max(1, max - headerCount);
+    win = windowRows(items, index, budget, overflowMode);
   }
-  return { ...win, headers: headersFor(win.rows) };
+  const headers = headersFor(win.rows);
+  for (
+    let slot = headers.length - 1;
+    win.rows.length + headers.filter((header) => header !== undefined).length > max && slot >= 0;
+    slot -= 1
+  ) {
+    headers[slot] = undefined;
+  }
+  return { ...win, headers };
 }
 
 /** The reactive state exposed for one retained row slot. */
@@ -114,6 +141,7 @@ export function StableWindowedList<T>(props: {
   maxLines: number;
   slotCount: number;
   grouped?: boolean;
+  overflowMode?: WindowOverflowMode;
   above?: (state: StableWindowOverflow) => JSX.Element;
   row: (state: StableWindowSlot<T>) => JSX.Element;
   tail?: JSX.Element;
@@ -129,8 +157,12 @@ export function StableWindowedList<T>(props: {
         props.items as readonly (T & { group?: string })[],
         props.index,
         props.maxLines,
+        props.overflowMode,
       );
-    return { ...windowRows(props.items, props.index, props.maxLines), headers: [] };
+    return {
+      ...windowRows(props.items, props.index, props.maxLines, props.overflowMode),
+      headers: [],
+    };
   });
   const above = (): number => win().above;
   const below = (): number => win().below;

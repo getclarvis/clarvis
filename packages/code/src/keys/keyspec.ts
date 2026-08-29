@@ -78,7 +78,9 @@ export function compactKey(token: string, opts: { clientPlatform?: ClientPlatfor
     else prefix += mod + "+";
   }
   if (shift) {
-    if (key.length === 1) key = key.toUpperCase();
+    const casedCharacter =
+      rawKey.length === 1 && key.length === 1 && rawKey.toLowerCase() !== rawKey.toUpperCase();
+    if (casedCharacter) key = key.toUpperCase();
     else prefix = "shift+" + prefix;
   }
   return prefix + key;
@@ -126,7 +128,11 @@ export interface PromptKeyRow {
 /** The prompt editor's keybindings, both dock-registered commands and OpenTUI's built-in chords. */
 export const PROMPT_EDITING_KEYS: PromptKeyRow[] = [
   { command: "prompt.send", keys: ["return", "kpenter"], desc: "send (numpad Enter too)" },
-  { command: "prompt.newline", keys: ["ctrl+j"], desc: "insert a newline" },
+  {
+    command: "prompt.newline",
+    keys: ["ctrl+j", "shift+return"],
+    desc: "insert a newline",
+  },
   {
     command: "prompt.historyPrev",
     keys: ["up"],

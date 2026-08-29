@@ -144,11 +144,22 @@ test("compactKey: normalizes every modifier spelling to the compact form", () =>
   expect(compactKey("escape")).toBe("esc");
   expect(compactKey("pageup")).toBe("pgup");
   expect(compactKey("shift+s")).toBe("S");
+  expect(compactKey("shift+1")).toBe("shift+1");
   expect(compactKey("shift+tab")).toBe("shift+tab");
 });
 
 test("compactKey: already-compact labels pass through unchanged (surfaces can re-format safely)", () => {
-  for (const label of ["alt+r", "^o", "esc", "pgup", glyph("return"), "shift+tab", "@", "/diff"]) {
+  for (const label of [
+    "alt+r",
+    "^o",
+    "esc",
+    "pgup",
+    glyph("return"),
+    `shift+${glyph("return")}`,
+    "shift+tab",
+    "@",
+    "/diff",
+  ]) {
     expect(compactKey(label)).toBe(label);
   }
 });
@@ -164,6 +175,6 @@ test("PROMPT_EDITING_KEYS: dock rows carry prompt.* commands; promptKeyLabel ded
     expect(row.desc.length).toBeGreaterThan(0);
   }
   expect(promptKeyLabel("prompt.send")).toBe(glyph("return"));
-  expect(promptKeyLabel("prompt.newline")).toBe("^j");
+  expect(promptKeyLabel("prompt.newline")).toBe(`^j / shift+${glyph("return")}`);
   expect(promptKeyLabel("no.such.command")).toBe("");
 });

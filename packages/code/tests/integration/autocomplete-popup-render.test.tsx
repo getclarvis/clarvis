@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createSignal, type Setter } from "solid-js";
 import { rgbToHex } from "@opentui/core";
 import { openRender } from "../helpers/tracked-render.ts";
 import { AutocompletePopup } from "../../src/views/input/AutocompletePopup.tsx";
@@ -68,7 +69,7 @@ test("fuzzy emphasis stays in the field that matched", async () => {
   t.renderer.destroy();
 });
 
-test("a tall terminal still caps suggestions at ten popup rows", async () => {
+test("a tall terminal caps suggestions at ten continuous rows without overflow labels", async () => {
   const many = Array.from({ length: 30 }, (_, index) => ({
     label: `/cmd-${index}`,
     detail: `command ${index}`,
@@ -80,13 +81,13 @@ test("a tall terminal still caps suggestions at ten popup rows", async () => {
   });
   await t.renderOnce();
   const out = t.captureCharFrame();
-  expect(out).toContain("/cmd-8");
+  expect(out).toContain("/cmd-9");
   expect(out).not.toContain("/cmd-10");
-  expect(out).toContain("21 more");
+  expect(out).not.toContain("more");
   t.renderer.destroy();
 });
 
-test("low height retains an explicit initial focus and a remaining-count route", async () => {
+test("low height retains an explicit initial focus without adding overflow labels", async () => {
   const many = Array.from({ length: 30 }, (_, index) => ({
     label: `/cmd-${index}`,
     detail: `command ${index}`,
@@ -99,25 +100,38 @@ test("low height retains an explicit initial focus and a remaining-count route",
   await t.renderOnce();
   const out = t.captureCharFrame();
   expect(out).toContain("▸ /cmd-0");
-  expect(out).toContain("29 more");
+  expect(out).not.toContain("more");
   t.renderer.destroy();
 });
 
-test("a later selection keeps an explicit route to suggestions above the window", async () => {
+test("scrolling keeps the popup frame fixed while the visible rows move continuously", async () => {
   const many = Array.from({ length: 30 }, (_, index) => ({
     label: `/cmd-${index}`,
     detail: `command ${index}`,
     value: `cmd.${index}`,
   }));
-  const t = await openRender(() => <AutocompletePopup label="commands" items={many} index={20} />, {
-    width: 120,
-    height: 24,
-  });
+  let setIndex: Setter<number> | undefined;
+  const t = await openRender(
+    () => {
+      const [index, set] = createSignal(0);
+      setIndex = set;
+      return <AutocompletePopup label="commands" items={many} index={index()} />;
+    },
+    { width: 120, height: 24 },
+  );
   await t.renderOnce();
-  const out = t.captureCharFrame();
-  expect(out).toContain("more");
-  expect(out).toContain("/cmd-20");
-  expect(out).not.toContain("/cmd-0 ");
+  const before = t.captureCharFrame().split("\n");
+  const beforeTop = before.findIndex((line) => line.includes("commands"));
+  const beforeBottom = before.findIndex((line) => line.includes("╰"));
+
+  setIndex!(20);
+  await t.renderOnce();
+  const after = t.captureCharFrame().split("\n");
+  expect(after.findIndex((line) => line.includes("commands"))).toBe(beforeTop);
+  expect(after.findIndex((line) => line.includes("╰"))).toBe(beforeBottom);
+  expect(after.join("\n")).not.toContain("more");
+  expect(after.join("\n")).toContain("/cmd-20");
+  expect(after.join("\n")).not.toContain("/cmd-0 ");
   t.renderer.destroy();
 });
 

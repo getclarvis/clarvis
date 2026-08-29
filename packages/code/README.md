@@ -174,6 +174,11 @@ cannot be renamed or deleted; fork it under a new name instead. If a customizati
 does not parse or does not validate, Clarvis runs the shipped agent unchanged and Doctor reports
 which file was refused and why.
 
+Every interactive cold boot first paints a parser-free Clarvis shell in the same Solid root the
+application will use. Its branded header, slash wordmark, moving shared spinner and fake composer
+preserve the final screen's visual structure while the workspace foundation loads; the usable
+`App` replaces it in place without waiting for the models catalogue or Markdown parsers.
+
 On the first interactive launch, startup opens a branded Clarvis setup rather than Doctor or an
 empty conversation. Enter begins the focused provider/model picker; the flow makes the selected
 model the default and asks for its credential without ever rendering the secret. After saving,
@@ -305,7 +310,8 @@ compact layouts open the activity drawer from the visible activity strip and clo
 Scrollable collections use shared ownership patterns rather than page-local windowing code.
 `ListPicker` owns filterable modal lists, `SelectableList` owns scroll-following page lists, and
 `StableWindowedList` owns bounded windows with a fixed retained row pool for high-churn surfaces.
-Autocomplete uses that stable-window primitive. The slash-command provider
+Autocomplete uses that stable-window primitive as one continuously scrolling viewport: selection
+moves the visible rows without changing the popup frame or inserting `N more` rows. The slash-command provider
 also reuses its command catalog and bare-slash row projection until registration, keyboard
 environment or dynamic eligibility actually changes; typing and deleting `/` does not rebuild the
 complete command graph each time.
@@ -713,6 +719,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   5 MiB each and 10 MiB aggregate. Binary clipboard input is rejected before base64 expansion;
   workspace images resolved from `@path` are checked against the same per-item and aggregate limits
   before a run or steer request starts.
+- The composer sends with unmodified Enter, inserts a newline with either Shift+Enter or Ctrl+J,
+  and grows from visual soft wraps as well as explicit newlines up to its bounded inline height.
+  Unbroken long tokens wrap by character, so continuing to type never hides the draft prefix.
 
 Steering submitted while a run is still starting waits for the kernel handle
 instead of being dropped. Likewise, completion of a cancelled `!bash` job from

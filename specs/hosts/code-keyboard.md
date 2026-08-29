@@ -47,13 +47,16 @@ what a `when` clause means (`when-dsl.ts`), how a key label is formatted
 | `compactKey(token, opts?)` | `(string, {clientPlatform?}) => string` | `packages/code/src/keys/keyspec.ts:64-89` |
 | `compactSequence(parts)` | `(readonly {display}[]) => string` | `packages/code/src/keys/keyspec.ts:92-94` |
 | `commandKeyLabel(keymap, command, opts?)` | `=> string \| undefined` | `packages/code/src/keys/keyspec.ts:107-120` |
-| `PROMPT_EDITING_KEYS` | `PromptKeyRow[]` (prompt editor's chords, dock-registered and OpenTUI built-in) | `packages/code/src/keys/keyspec.ts:131-154` |
-| `promptKeyLabel(command)` | `(string) => string` | `packages/code/src/keys/keyspec.ts:153-157` |
+| `PROMPT_EDITING_KEYS` | `PromptKeyRow[]` (prompt editor's chords, dock-registered and OpenTUI built-in) | `packages/code/src/keys/keyspec.ts` (`PROMPT_EDITING_KEYS`) |
+| `promptKeyLabel(command)` | `(string) => string` | `packages/code/src/keys/keyspec.ts` (`promptKeyLabel`) |
 
 `compactKey` is, by its own doc comment, "THE key-label formatter" — every surface that
 prints a key routes through it, so one binding can never read `meta+r` in one place and
 `alt+r` in another (`packages/code/src/keys/keyspec.ts:58-63`). It is idempotent (feeding an already-compact
 label back in returns it unchanged — pinned at `packages/code/tests/unit/keyspec.test.ts:130-134`).
+For the composer, unmodified Return/numpad Enter owns `prompt.send`, while both Ctrl+J and
+Shift+Return own `prompt.newline`. `compactKey` preserves the `shift+` prefix for a rendered
+non-character key such as Return, so Help cannot make newline look identical to send.
 
 ### 2.2 `keys/when-dsl.ts` — the `when` DSL
 
@@ -847,6 +850,14 @@ release, or raw input, so a listener snapshot cannot dispatch into a destroyed k
 Production: `packages/code/src/keys/interaction.ts` (`createLifecycleSafeKeymap`). Test:
 `packages/code/tests/integration/interaction.test.ts` ("queued input is inert after the renderer
 destroys its keymap host").
+
+**INV-D15.** Unmodified Return and numpad Enter submit the composer; Ctrl+J and Shift+Return insert
+a newline without submission, and the displayed Shift+Return label retains its modifier.
+Production: `packages/code/src/keys/keyspec.ts` (`PROMPT_EDITING_KEYS`, `compactKey`) and
+`packages/code/src/views/InputDock.tsx` (`promptHandlers`). Tests:
+`packages/code/tests/unit/keyspec.test.ts` (`PROMPT_EDITING_KEYS`) and
+`packages/code/tests/integration/input-dock-submit.test.tsx` ("Shift+Enter and Ctrl+J insert
+newlines without submitting the draft").
 
 ## 6. Failure modes and degradation
 

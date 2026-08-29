@@ -164,6 +164,6 @@ test("PROMPT_EDITING_KEYS: dock rows carry prompt.* commands; promptKeyLabel ded
     expect(row.desc.length).toBeGreaterThan(0);
   }
   expect(promptKeyLabel("prompt.send")).toBe(glyph("return"));
-  expect(promptKeyLabel("prompt.newline")).toBe("^j");
+  expect(promptKeyLabel("prompt.newline")).toBe(`^j / shift+${glyph("return")}`);
   expect(promptKeyLabel("no.such.command")).toBe("");
 });

@@ -57,6 +57,21 @@ test("first-run splash fit keeps one threshold across setup and catalog pickers"
 test("the parser-free boot frame fills the terminal while startup modules load", async () => {
   const t = await openRender(() => <BootFrame />, { width: 48, height: 12 });
   await t.renderOnce();
-  expect(t.captureCharFrame()).toContain("Clarvis · starting");
+  const out = t.captureCharFrame();
+  expect(out).toContain("Clarvis · code · starting");
+  expect(out).toContain("/  C L A R V I S");
+  expect(out).toContain("loading workspace");
+  expect(out).toContain("New task…  (/ commands)");
+  for (const line of out.split("\n")) expect(line.length).toBeLessThanOrEqual(48);
+  t.renderer.destroy();
+});
+
+test("the boot frame drops decorative identity before it competes with the compact loader", async () => {
+  const t = await openRender(() => <BootFrame />, { width: 24, height: 6 });
+  await t.renderOnce();
+  const out = t.captureCharFrame();
+  expect(out).not.toContain("C L A R V I S");
+  expect(out).toContain("loading workspace");
+  for (const line of out.split("\n")) expect(line.length).toBeLessThanOrEqual(24);
   t.renderer.destroy();
 });

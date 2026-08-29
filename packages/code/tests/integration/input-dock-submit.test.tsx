@@ -136,14 +136,14 @@ async function mount(
       }),
     );
   };
-  const pressKey = (name: string, mods: { ctrl?: boolean } = {}): void => {
+  const pressKey = (name: string, mods: { ctrl?: boolean; shift?: boolean } = {}): void => {
     t.renderer.keyInput.emit(
       "keypress",
       new KeyEvent({
         name,
         ctrl: mods.ctrl ?? false,
         meta: false,
-        shift: false,
+        shift: mods.shift ?? false,
         option: false,
         sequence: name,
         number: false,
@@ -188,6 +188,36 @@ test("inline composition is height-bounded and the expanded Task editor preserve
   await h.t.renderOnce();
   expect(h.dock().expanded()).toBe(false);
   expect(h.el().plainText).toBe(draft);
+  h.t.renderer.destroy();
+});
+
+test("Shift+Enter and Ctrl+J insert newlines without submitting the draft", async () => {
+  const h = await mount();
+  h.el().setText("first");
+  h.el().gotoBufferEnd();
+
+  h.pressKey("return", { shift: true });
+  h.pressKey("j", { ctrl: true });
+  await h.t.renderOnce();
+
+  expect(h.el().plainText).toBe("first\n\n");
+  expect(h.log.submitted).toEqual([]);
+  expect(h.log.slash).toEqual([]);
+  h.t.renderer.destroy();
+});
+
+test("a soft-wrapped logical line grows the inline composer and keeps its prefix visible", async () => {
+  const h = await mount();
+  const draft = "1234567890".repeat(18);
+  h.el().setText(draft);
+  h.el().gotoBufferEnd();
+  await h.t.renderOnce();
+
+  const frame = h.t.captureCharFrame();
+  expect(h.el().lineInfo.lineStartCols.length).toBeGreaterThan(1);
+  expect(h.el().height).toBeGreaterThan(1);
+  expect(frame).toContain(draft.slice(0, 30));
+  expect(frame).toContain(draft.slice(-30));
   h.t.renderer.destroy();
 });
 

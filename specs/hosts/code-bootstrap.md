@@ -518,7 +518,7 @@ terminal result."
 | 2 | open/install optional diagnostics, print its path, register a provisional exit close, emit `app.boot.begin` | 402-420 |
 | 3 | for `resume`/`continue`, preflight the session in this selected workspace | 422-423 |
 | 4 | read dev/SSH settings and create the renderer | `runApp` |
-| 5 | mount one Solid root with the parser-free `BootFrame`, wait for renderer idle and emit `app.boot.shell-painted` | `runApp`, `packages/code/src/views/BootFrame.tsx` |
+| 5 | mount one Solid root with the branded parser-free `BootFrame`, wait for renderer idle and emit `app.boot.shell-painted` | `runApp`, `packages/code/src/views/BootFrame.tsx` |
 | 6 | create the process's single `WorkspaceClientManager` with memory and key sources | 466-487 |
 | 7 | establish immutable workspace identity; create stores, config, history, run client and capabilities | 488-686 |
 | 8 | `bootFoundation()` without reading the models.dev catalog; on failure mount `runFatalBoot` and retry | `runApp`, `loadFoundation` |
@@ -527,6 +527,12 @@ terminal result."
 | 11 | create the Tasks controller and the five `App` control groups | 1009-1236 |
 | 12 | replace `BootFrame` with `<App>` inside the existing root and emit mounted/painted diagnostics | `runApp` |
 | 13 | after `app.boot.painted`, release durable memory-queue recovery and start Markdown parser warm-up; for `resume`/`continue`, resolve the selected workspace's session, await warm-up and then load it | `runApp` |
+
+`BootFrame` mirrors the usable shell rather than presenting a disconnected status sentence: it
+renders the Clarvis header, slash wordmark, a fake composer and the shared moving spinner. It stays
+parser-free and catalog-free, degrades its decorative rows with terminal height, and is replaced by
+`App` inside the same Solid root. Production: `packages/code/src/views/BootFrame.tsx` (`BootFrame`).
+Test: `packages/code/tests/integration/splash-render.test.tsx` (parser-free boot-frame case).
 
 The manager created at step 6 receives `environmentSelector`, and its reconnect path retains that
 launch override. While one is active, persisted Environment selection mutations return a conflict
@@ -1252,6 +1258,14 @@ plumbing in `packages/code/src/index.tsx`, and
 `packages/code/src/adapters/workspace-client-manager.ts`. Test:
 `packages/code/tests/unit/cli-args.test.ts` and
 `packages/code/tests/component/workspace-client-manager.test.ts`.
+
+**INV-CB-43.** The first interactive frame preserves Clarvis visual continuity without entering the
+application parser or models-catalog path: one branded `BootFrame` renders a header, slash wordmark,
+moving shared spinner and fake composer, then `runApp` replaces it with `App` in the same root.
+Production: `packages/code/src/index.tsx` (`runApp`, `app.boot.shell-painted`) and
+`packages/code/src/views/BootFrame.tsx` (`BootFrame`). Tests:
+`packages/code/tests/integration/splash-render.test.tsx` (parser-free boot-frame case) and
+`packages/code/tooling/artifact/smoke.ts` (shell paint and deferred catalogue).
 
 ## 6. Failure modes and degradation
 

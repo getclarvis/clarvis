@@ -74,9 +74,10 @@ and the slash-command popup itself all share the same windowing math
 
 | Export | Signature | File:symbol |
 | --- | --- | --- |
-| `RowWindow<T>` / `windowRows(items, index, max)` | `{rows, offset, above, below}` | `packages/code/src/ui/patterns/windowed-list.tsx` (`RowWindow`, `windowRows`) |
-| `GroupedRowWindow<T>` / `windowGroupedRows(items, index, max)` | adds `headers` | `packages/code/src/ui/patterns/windowed-list.tsx` (`GroupedRowWindow`, `windowGroupedRows`) |
-| `StableWindowedList<T>(props)` | fixed retained slots over a grouped or ungrouped window | `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`) |
+| `WindowOverflowMode` | `"indicators" \| "scroll"` | `packages/code/src/ui/patterns/windowed-list.tsx` (`WindowOverflowMode`) |
+| `RowWindow<T>` / `windowRows(items, index, max, overflowMode?)` | `{rows, offset, above, below}` | `packages/code/src/ui/patterns/windowed-list.tsx` (`RowWindow`, `windowRows`) |
+| `GroupedRowWindow<T>` / `windowGroupedRows(items, index, max, overflowMode?)` | adds `headers` | `packages/code/src/ui/patterns/windowed-list.tsx` (`GroupedRowWindow`, `windowGroupedRows`) |
+| `StableWindowedList<T>(props)` | fixed retained slots over a grouped or ungrouped window, with optional overflow mode | `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`) |
 
 The file-local `headersFor` helper derives one optional group heading per visible row for
 `windowGroupedRows`; autocomplete consumes the resulting projection rather than owning that policy.
@@ -288,7 +289,10 @@ Test: `packages/code/tests/integration/input-dock-submit.test.tsx` and
 Windowing is a shared UI pattern, not an autocomplete-owned algorithm. `windowRows` and
 `windowGroupedRows` compute bounded projections; `StableWindowedList` projects those windows into a
 fixed row/header/overflow slot pool whose OpenTUI ownership does not change as the selection moves.
-Autocomplete uses the stable pool, modal collections compose through `ListPicker`, and
+The default `"indicators"` mode preserves explicit overflow-count rows for generic pickers.
+Autocomplete selects `"scroll"`: all available lines belong to item/header slots, no overflow
+labels mount, and its explicit popup height stays fixed while the selected window moves.
+Modal collections compose through `ListPicker`, and
 scroll-following page collections compose through `SelectableList`. Production:
 `packages/code/src/ui/patterns/windowed-list.tsx`,
 `packages/code/src/views/overlays/ListPicker.tsx`, and
@@ -401,7 +405,11 @@ Pinned: `packages/code/tests/unit/autocomplete.test.ts:124-135`.
 ### Composer sizing and history-recall gating (`views/InputDock.tsx`)
 
 The textarea auto-grows with the draft up to `maxInlineRows()` — `Math.min(12, ...)`, itself
-capped at 30% of `dims().height - 5` (`:103-106`) — so a long paste never claims the whole screen.
+capped at 30% of `dims().height - 5` — so a long paste never claims the whole screen. Its inline
+height follows the textarea's visual-line projection (`lineInfo.lineStartCols`, with
+`virtualLineCount` as a second renderer signal), while the expanded editor's status keeps the
+logical newline count. `wrapMode="char"` gives even an uninterrupted token a soft wrap instead of
+turning the one-row viewport into a horizontally moving suffix.
 Up/Down only recall prompt history when the cursor is already on the buffer's first/last line
 (`atTop()`/`atBottom()`, `:216-224`); otherwise they move the cursor within a multi-line draft, so
 history recall and in-draft navigation share the same two keys without either shadowing the other.
@@ -497,9 +505,12 @@ prompt the file no longer has (but the session remembers) is still recovered. Pi
 
 ### Windowing math (`windowRows`/`windowGroupedRows`, `packages/code/src/ui/patterns/windowed-list.tsx`)
 
-`windowRows(items, index, max)` keeps the selected index inside a `max`-row slice: below `max===3`
-it collapses to a single selected row (reporting the rest as overflow on whichever side); above
-that it reserves one row for the empty "N more" indicator on whichever end has overflow.
+`windowRows(items, index, max, "indicators")` keeps the selected index inside a `max`-row slice:
+below `max===3` it collapses to a single selected row (reporting the rest as overflow on whichever
+side); above that it reserves one row for the empty "N more" indicator on whichever end has
+overflow. In `"scroll"` mode it instead spends the entire budget on a contiguous item window and
+slides that window just enough to keep the selected index visible; `above`/`below` remain available
+as data but consume no lines.
 `windowGroupedRows` re-derives the window with a shrinking budget (up to 4 attempts) until
 `rows.length + headerCount + indicatorLines <= max`, so a header line never pushes the rendered
 popup past its row budget (proven for the full cross-product of terminal heights and scroll
@@ -508,6 +519,10 @@ positions by `packages/code/tests/unit/autocomplete.test.ts:210-227`). `windowRo
 (`packages/code/src/views/overlays/ListPicker.tsx`, `showOverflow`) suppresses the "N more" indicators entirely rather than mounting them
 alongside a `windowRows` result with no room left for them — the selected row is what a reader needs
 at that height, and the counts are what goes.
+
+`AutocompletePopup` uses the scroll mode and an explicit bounded content height. Therefore moving
+through slash commands rewrites the ten retained row/header slots inside one stable frame; it does
+not add or remove top/bottom count rows as the selection crosses a window boundary.
 
 ### `AutocompletePopup` rendering (`views/input/AutocompletePopup.tsx`)
 
@@ -814,8 +829,9 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/tests/integration/interaction.test.ts:437-477` and end to end at
     `packages/code/tests/integration/app-shell-render.test.tsx:605-628,1123-1175,1586-1596`.
 37. **Opening and closing autocomplete reuses one bounded native projection after first use.** It
-    keeps exactly ten row/header slots, hides unused slots and changes the `autocomplete` keymap datum
-    only when its boolean value changes. Production: `packages/code/src/views/InputDock.tsx`
+    keeps exactly ten row/header slots, hides unused slots, continuously scrolls them inside a fixed
+    popup frame without `N more` labels and changes the `autocomplete` keymap datum only when its
+    boolean value changes. Production: `packages/code/src/views/InputDock.tsx`
     (`SurfaceBoundary`, `closeAc`, `refreshAc`) and
     `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`) and
     `packages/code/src/views/input/AutocompletePopup.tsx` (`MAX_ROWS_CAP`, `visible`). Test:
@@ -898,6 +914,26 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/src/views/config/CatalogPicker.tsx` (`firstRunIntroRows`). Test:
     `packages/code/tests/integration/catalog-picker-render.test.tsx` (`first-run branding stays with
     the picker only while the complete splash fits`).
+47. **The composer separates send from newline across all declared Enter chords.** Unmodified Return
+    and numpad Enter submit; Ctrl+J and Shift+Return insert a newline and leave the draft unsent.
+    Production: `packages/code/src/keys/keyspec.ts` (`PROMPT_EDITING_KEYS`) and
+    `packages/code/src/views/InputDock.tsx` (`promptHandlers`). Test:
+    `packages/code/tests/integration/input-dock-submit.test.tsx` ("Shift+Enter and Ctrl+J insert
+    newlines without submitting the draft").
+48. **Inline composer height follows visual soft wraps, not only explicit newline characters.** It
+    uses the renderer's visual-line projection, caps at `maxInlineRows()` and wraps unbroken tokens
+    by character, while the expanded status continues to report logical lines. Production:
+    `packages/code/src/views/InputDock.tsx` (`visualRows`, `inlineRows`, `syncDraftState`, textarea
+    `wrapMode`). Test: `packages/code/tests/integration/input-dock-submit.test.tsx` ("a soft-wrapped
+    logical line grows the inline composer and keeps its prefix visible").
+49. **Autocomplete scroll mode changes only the retained row/header projection.** It uses every
+    available content line without overflow-count labels and keeps the popup's top and bottom frame
+    rows fixed as selection moves. Production:
+    `packages/code/src/ui/patterns/windowed-list.tsx` (`WindowOverflowMode`, `windowRows`,
+    `windowGroupedRows`) and `packages/code/src/views/input/AutocompletePopup.tsx`
+    (`contentLines`, `overflowMode`). Tests: `packages/code/tests/unit/autocomplete.test.ts`
+    (scroll-mode cases) and `packages/code/tests/integration/autocomplete-popup-render.test.tsx`
+    (fixed-frame scrolling case).
 
 ## 6. Failure modes and degradation
 

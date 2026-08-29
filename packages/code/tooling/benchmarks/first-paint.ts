@@ -35,7 +35,7 @@ import { bootAndObserve, makeCleanHome, readable } from "../artifact/pty.ts";
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 /** Parser-free boot frame; this marker is absent from the complete application frame. */
-const SHELL_MARKER = "Clarvis · starting";
+const SHELL_MARKER = "Clarvis · code · starting";
 /** Header chrome: `BrandWordmark` renders one SGR span per character, so this matches only after escapes are stripped. */
 const PAINT_MARKER = "◆ Clarvis";
 /** The input dock, i.e. the frame will accept a prompt. Shared with the smoke test on purpose. */

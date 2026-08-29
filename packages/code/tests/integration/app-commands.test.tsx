@@ -57,7 +57,7 @@ async function waitForFrame(
     await rendered.renderOnce();
     frame = rendered.captureCharFrame();
     if (frame.includes(token)) return frame;
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 5));
   }
   return frame;
 }

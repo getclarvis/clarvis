@@ -80,6 +80,7 @@ export function InputDock(props: {
   const dims = useTerminalDimensions();
   const providers = (): CompleteProvider[] => props.providers ?? [];
   const [contentRows, setContentRows] = createSignal(1);
+  const [visualRows, setVisualRows] = createSignal(1);
   const [expanded, setExpanded] = createSignal(false);
   const setEditorExpanded = (value: boolean): void => {
     setExpanded(value);
@@ -105,15 +106,24 @@ export function InputDock(props: {
   const maxInlineRows = createMemo(() =>
     Math.max(1, Math.min(12, Math.floor(Math.max(1, dims().height - 5) * 0.3))),
   );
-  const inlineRows = createMemo(() => Math.min(contentRows(), maxInlineRows()));
+  const inlineRows = createMemo(() => Math.min(visualRows(), maxInlineRows()));
   const targetLabel = (): string =>
     props.targetLabel?.() ?? (props.runActive?.() ? "Steer this run" : "New task");
 
   function syncDraftState(): void {
     const text = ref?.plainText ?? "";
     setContentRows(Math.max(1, text.split("\n").length));
+    setVisualRows(Math.max(1, ref?.virtualLineCount ?? 1, ref?.lineInfo.lineStartCols.length ?? 1));
     props.onDraftChange?.(text.length > 0 || attachments.list().length > 0);
   }
+
+  createEffect(() => {
+    dims();
+    if (!ref) return;
+    const syncAfterLayout = (): void => syncDraftState();
+    props.renderer.once("frame", syncAfterLayout);
+    onCleanup(() => props.renderer.off("frame", syncAfterLayout));
+  });
 
   function submit(): void {
     const text = ref?.plainText ?? "";
@@ -607,6 +617,7 @@ export function InputDock(props: {
             props.onReady?.(el);
           }}
           height={expanded() ? "100%" : inlineRows()}
+          wrapMode="char"
           placeholder={`${targetLabel()}${glyph("ellipsis")}  (/ commands)`}
           placeholderColor={tokens.muted}
           textColor={tokens.fg}

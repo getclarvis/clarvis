@@ -299,9 +299,9 @@ export function McpBrowser(host: ViewHost, deps: McpBrowserDeps): JSX.Element {
         <Show when={T === 0 && n.prompts.length === 0}>
           <text fg={tokens.muted}>
             {n.status === "declared"
-              ? "declared in settings " +
+              ? "configured for the current Environment " +
                 glyph("emDash") +
-                " capabilities appear once the server connects"
+                " live capabilities appear after the server connects or is first used"
               : "no capabilities exposed"}
           </text>
         </Show>

@@ -763,13 +763,10 @@ test("every non-run control-plane method stays a thin pass-through to its kernel
     c.plugins.install("https://example.com/plugin.git"),
     c.plugins.update({ scope: "global", source: "clarvis", name: "plugin" }),
     c.plugins.uninstall({ scope: "global", source: "clarvis", name: "plugin" }),
-    c.plugins.hooks(),
-    c.plugins.approveHook({ scope: "global", source: "clarvis", name: "plugin" }, "fingerprint"),
-    c.plugins.revokeHook({ scope: "global", source: "clarvis", name: "plugin" }, "fingerprint"),
   ]);
   expect(c.project).toBe(kernel.project);
   expect(c.workspace).toBe(kernel.workspace);
-  expect(calls).toHaveLength(51);
+  expect(calls).toHaveLength(48);
   await c.dispose();
 });
 

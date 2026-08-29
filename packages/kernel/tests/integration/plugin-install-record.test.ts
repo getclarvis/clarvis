@@ -45,6 +45,17 @@ describe("plugin installation records", () => {
       code: "not_found",
     });
     expect(await repository.remove(missing)).toBe(false);
+    const workspaceRef = {
+      scope: "workspace" as const,
+      source: "clarvis" as const,
+      name: "workspace-plugin",
+    };
+    await expect(repository.replace(fixture(), workspaceRef, undefined)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await expect(repository.remove(workspaceRef)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
 
     const installed = fixture();
     mkdirSync(join(installed, ".codex-plugin"), { recursive: true });

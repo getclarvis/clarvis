@@ -45,6 +45,7 @@ that one isolated mechanism explains every such peak.
 | `bun run bench:code` | runs the package first-paint benchmark | `package.json:68`, `packages/code/package.json:31` |
 | `bun run bench:code-overlays` | runs isolated post-GC renderer lifecycle cases; optional case names select a subset | `package.json` (`bench:code-overlays`), `packages/code/package.json` (`bench:overlays`) |
 | `OVERLAY_SOAK_CYCLES`, `OVERLAY_SOAK_BATCH`, `OVERLAY_SOAK_WARMUP` | control measured cycles, sample cadence and discarded warm-up; defaults 100, 20 and 10 | `packages/code/tooling/benchmarks/overlays.tsx` (`cycles`, `batchSize`, `warmupCycles`) |
+| per-case warm-up | a finite high-cardinality case may raise, never lower, the discarded global warm-up; the effective count is recorded in its result | `packages/code/tooling/benchmarks/overlays.tsx` (`SoakCase.warmupCycles`, `subjectWarmupCycles`) |
 | `OVERLAY_SOAK_SIZES` | comma-separated matrix; defaults to reference 120x32 plus compact 80x24 | `packages/code/tooling/benchmarks/overlays.tsx` (`matrixSizes`) |
 | `OVERLAY_SOAK_WIDTH`, `OVERLAY_SOAK_HEIGHT` | child-process dimensions supplied by the matrix runner | `packages/code/tooling/benchmarks/overlays.tsx` (`width`, `height`) |
 | `OVERLAY_SOAK_MAX_MIB_PER_100` | production-policy PSS growth ceiling, or RSS off Linux; default 5 MiB/100 | `packages/code/tooling/benchmarks/overlays.tsx` (`PRODUCTION_CASES`, `maxMiBPer100`) |
@@ -281,6 +282,25 @@ onto these families without measurement:
   (`packages/code/src/views/InputDock.tsx`, `SurfaceBoundary`,
   `packages/code/src/ui/patterns/windowed-list.tsx`, `StableWindowedList`,
   `packages/code/src/views/input/AutocompletePopup.tsx`, `MAX_ROWS_CAP`).
+- guided Extensions Step 3 projects 196 representative listings into fixed retained slots.
+  Its production-policy case first traverses the finite catalog as discarded warm-up, then measures
+  another 100 selection changes while requiring stable renderable, lifecycle-pass, live-key-layer
+  and key-layer-registration ownership
+  (`packages/code/src/views/config/ExtensionsHub.tsx`, `openExtensionPicker`;
+  `packages/code/tooling/benchmarks/overlays.tsx`,
+  `extensions-setup-retained-196-listings`).
+- guided Extensions pending-operation motion has a separate production-policy case. It enters a
+  deliberately unresolved plugin install, then measures 100 animated frames while requiring stable
+  renderable, lifecycle-pass, live-key-layer, and key-layer-registration ownership
+  (`packages/code/src/views/config/ExtensionsHub.tsx`, `operationProgress`;
+  `packages/code/tooling/benchmarks/overlays.tsx`, `extensions-setup-pending-install`).
+- the focused Plugins browser keeps 196 marketplace listings in the same bounded row pool while a
+  right/left collection round trip replaces All with Installed, an exact source, Workspace, or Add
+  Marketplace. After finite warm-up, 100 round trips must retain identical renderable, lifecycle,
+  live-key-layer, and key-registration ownership
+  (`packages/code/src/views/config/MarketplaceBrowser.tsx`, `collections`, `changeCollection`, and
+  `StableWindowedList`; `packages/code/tooling/benchmarks/overlays.tsx`,
+  `marketplace-collections-retained-196-listings`).
 - the compact activity drawer mounts a full-bleed scrim and Sidebar, while editor expansion merely
   changes layout properties on the already-mounted input region
   (`packages/code/src/views/app/TranscriptRegion.tsx:246-280`,
@@ -458,6 +478,31 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     painted streaming markdown visible until its final tree is ready"), and
     `packages/code/tests/integration/tool-diff-render.test.tsx` ("a finalized diff keeps one
     renderable while an active sibling updates").
+
+19. **PERF-19: high-cardinality guided Extensions selection rewrites a bounded retained slot pool
+    and does not re-register its key layer after warm-up.** Production:
+    `packages/code/src/views/config/ExtensionsHub.tsx` (`openExtensionPicker`, `spec`) and
+    `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`). Test:
+    `packages/code/tooling/benchmarks/overlays.tsx`
+    (`extensions-setup-retained-196-listings`, `stableRegistrations`).
+
+20. **PERF-20: guided Extensions operation motion owns no per-row clock and no phase-driven key
+    registration churn.** The process-shared spinner clock runs only while the retained view is
+    active and an operation is pending; busy state gates the existing level through its reactive
+    matcher. Production: `packages/code/src/views/config/ExtensionsHub.tsx` (`useSpinnerClock`,
+    `operationProgress`, `bindLevelKeys`). Test:
+    `packages/code/tests/integration/extensions-hub-render.test.tsx` (pending install and Apply)
+    and `packages/code/tooling/benchmarks/overlays.tsx`
+    (`extensions-setup-pending-install`, `stableRegistrations`).
+
+21. **PERF-21: marketplace collection movement reuses the retained row/key owners after warm-up.**
+    Left/right changes only the reactive collection projection; it performs no fetch, filesystem
+    scan, timer allocation, or structural key-layer registration. Production:
+    `packages/code/src/views/config/MarketplaceBrowser.tsx` (`collections`, `collectionRows`,
+    `changeCollection`, `StableWindowedList`). Test:
+    `packages/code/tests/integration/marketplace-browser-render.test.tsx` (exact collection case)
+    and `packages/code/tooling/benchmarks/overlays.tsx`
+    (`marketplace-collections-retained-196-listings`, `stableRegistrations`).
 
 No invariant currently sets an absolute usable-input or healthy-idle RSS target. The overlay runner
 enforces 5 MiB/100 post-GC growth and balanced renderer/key ownership for production-policy cases at

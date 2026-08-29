@@ -95,8 +95,8 @@ operation whose argument tuple and result are inferred from the service method
 `AsyncMethodKeys` filter itself (`packages/kernel/src/transport/operations.ts:64-68`). The two run
 methods use the special streaming/control operation path.
 
-**90 request methods exist**: 82 ordinary plus 8 special, flattened into `KNOWN_METHODS`.
-Ordinary counts per service: runs 4, config 14, plugins 7, environments 10, secrets 3, models 4,
+**93 request methods exist**: 85 ordinary plus 8 special, flattened into `KNOWN_METHODS`.
+Ordinary counts per service: runs 4, config 14, plugins 7, environments 13, secrets 3, models 4,
 provider-auth 5, files 3, memory 4, plans 4, workflows 3, skills 2, sessions 5, tasks 12, storage 2. There is no
 worktree service or worktree operation: checkout selection happens before kernel construction.
 Production: `packages/kernel/src/transport/operations.ts` (`OPERATIONS`, `SPECIAL_OPERATIONS`,
@@ -116,10 +116,10 @@ The 8 special operations and their metadata:
 | `config.subscribe` | read | — |
 | `config.unsubscribe` | read | — |
 
-`M` names 30 of the 90 (`packages/kernel/src/transport/wire.ts`); the rest are reached only through the service proxies. The
+`M` names 30 of the 93 (`packages/kernel/src/transport/wire.ts`); the rest are reached only through the service proxies. The
 whole DTO vocabulary each method carries belongs to **protocol-kernel-contract**.
 
-The 82 ordinary operations' individual `access`/`sensitivity` pairing is declared by
+The 85 ordinary operations' individual `access`/`sensitivity` pairing is declared by
 `OPERATIONS` in `packages/kernel/src/transport/operations.ts`.
 Six service groups carry a `sensitivity` tag on every operation (`plugins`, `environments`,
 `secrets`, `providerAuth`, `files`, `tasks`). Environments deliberately shares the `plugins`
@@ -151,18 +151,19 @@ operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workfl
 | plugins | `plugins.install` | write | `plugins` |
 | plugins | `plugins.update` | write | `plugins` |
 | plugins | `plugins.uninstall` | write | `plugins` |
-| plugins | `plugins.hooks` | read | `plugins` |
-| plugins | `plugins.approveHook` | write | `plugins` |
-| plugins | `plugins.revokeHook` | write | `plugins` |
 | environments | `environments.list` | read | `plugins` |
 | environments | `environments.current` | read | `plugins` |
 | environments | `environments.get` | read | `plugins` |
+| environments | `environments.inventory` | read | `plugins` |
 | environments | `environments.preview` | read | `plugins` |
 | environments | `environments.previewClear` | read | `plugins` |
+| environments | `environments.previewComposition` | read | `plugins` |
 | environments | `environments.select` | write | `plugins` |
 | environments | `environments.clearSelection` | write | `plugins` |
+| environments | `environments.applyComposition` | write | `plugins` |
 | environments | `environments.create` | write | `plugins` |
 | environments | `environments.update` | write | `plugins` |
+| environments | `environments.delete` | write | `plugins` |
 | environments | `environments.clone` | write | `plugins` |
 | secrets | `secrets.listNames` | read | `secrets` |
 | secrets | `secrets.set` | write | `secrets` |

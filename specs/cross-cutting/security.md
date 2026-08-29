@@ -636,9 +636,9 @@ agent file has already landed by then (`packages/kernel/src/config/file-config-s
 
 A workspace Environment preview may approve only the fingerprint it just resolved; changing the
 definition between preview and selection is a conflict. The resulting approval admits the plugin as
-a unit, but does not approve any hook definition: hook fingerprints and `hook-trust.json` remain an
-independent gate. Environment definitions and resolved snapshots never carry secrets. See
-[Extension Environments](../hosts/environments.md#43-preview-trust-and-resume).
+an atomic unit, including its normalized hooks. There is no mutable per-hook approval projection.
+Environment definitions and resolved snapshots never carry secrets. See
+[Extension Environments](../hosts/environments.md#43-preview-composition-trust-and-resume).
 
 Two independent enforcement points read the verdict, and the code says gating only one would leave the
 other open (`packages/kernel/src/config/file-config-store.ts:593-625` for the settings merge;
@@ -953,7 +953,8 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/mcp-client/tests/unit/remote-fetch.test.ts:7-95,141-167`.
 
 55. **A plugin-activating workspace Environment is trusted by exact definition bytes and qualified
-    `{ scope, source, name }` plugin references, while hook approvals remain independent.** Production:
+    `{ scope, source, name }` plugin references; hook definitions are part of that atomic plugin
+    snapshot.** Production:
     `workspaceTrustSurface`, `preview`, and `select` in
     `packages/kernel/src/environments/environment-manager.ts`, folded through
     `WorkspaceExecutableSurface.extensions` in

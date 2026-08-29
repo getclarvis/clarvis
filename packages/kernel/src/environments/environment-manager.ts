@@ -1,9 +1,19 @@
-import { constants, closeSync, fstatSync, openSync, opendirSync, readSync, rmSync } from "node:fs";
+import {
+  constants,
+  closeSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  opendirSync,
+  readSync,
+  rmSync,
+} from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { z } from "zod";
 import {
   acquireLocalLeaseSync,
+  DIR_MODE,
   globalPaths,
   workspacePaths,
   workspaceStatePaths,
@@ -13,11 +23,15 @@ import { clarvisSkillRoots, createAgentSkills, type SkillRootInput } from "@clar
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type {
   EnvironmentApplyResult,
+  EnvironmentCompositionApplyResult,
+  EnvironmentCompositionInput,
+  EnvironmentCompositionPreview,
   EnvironmentDefinition,
   EnvironmentDefinitionInput,
   EnvironmentDefinitionView,
   EnvironmentDelta,
   EnvironmentIssue,
+  EnvironmentInventory,
   EnvironmentPluginRef,
   EnvironmentPreview,
   EnvironmentRef,
@@ -33,10 +47,15 @@ import type {
   WorkspaceTrustVerdict,
 } from "@clarvis/protocol";
 import { kernelError } from "../core/errors.ts";
-import { listInstalledPlugins } from "../adapters/filesystem/plugin-repository.ts";
+import {
+  getInstalledPlugin,
+  listInstalledPlugins,
+} from "../adapters/filesystem/plugin-repository.ts";
 import type { InstalledPlugin } from "../ports/plugin-repository.ts";
-import type { PluginContributions } from "../plugins/plugin-contributions.ts";
-import { pluginHookReviews } from "../plugins/hook-trust.ts";
+import type {
+  PluginContributions,
+  PluginContributionSnapshot,
+} from "../plugins/plugin-contributions.ts";
 import { pluginSkillScanRoots, resolvePluginManifest } from "../plugins/plugin-manifest.ts";
 import { pluginDataDir } from "../plugins/plugin-runtime.ts";
 
@@ -108,6 +127,16 @@ const definitionInputSchema = z
 const definitionUpdateInputSchema = definitionInputSchema
   .extend({ expected_revision: z.string().regex(/^sha256:[0-9a-f]{64}$/) })
   .strict();
+const definitionRevisionSchema = z.string().regex(/^sha256:[0-9a-f]{64}$/);
+const definitionDeleteOptionsSchema = z
+  .object({ expected_revision: definitionRevisionSchema })
+  .strict();
+const compositionInputSchema = definitionInputSchema
+  .extend({
+    expected_revision: definitionRevisionSchema.nullable(),
+    selection_scope: z.enum(["global", "workspace"]),
+  })
+  .strict();
 const selectOptionsSchema = z
   .object({
     selection_scope: z.enum(["global", "workspace"]),
@@ -119,6 +148,9 @@ const previewOptionsSchema = z
   .object({ selection_scope: z.enum(["global", "workspace"]) })
   .strict();
 const clearOptionsSchema = z.object({ preview_token: z.uuid() }).strict();
+const compositionApplyOptionsSchema = z
+  .object({ preview_token: z.uuid(), approve_workspace: z.boolean().optional() })
+  .strict();
 const selectionSchema = z
   .object({
     schema_version: z.literal(1),
@@ -144,12 +176,11 @@ interface StandaloneInventoryEntry {
   root: SkillRootInput;
   rootOrder: number;
   description: string;
-  digest: string;
+  loadDigest(): string | undefined;
 }
 
 interface PluginInventoryEntry {
   view: ResolvedEnvironmentPlugin;
-  digest: string;
 }
 
 interface DefinitionCatalog {
@@ -171,6 +202,16 @@ interface PreviewEntry {
     | {
         kind: "clear";
         scope: EnvironmentSelectionScope;
+        selectionRevisions: Record<EnvironmentSelectionScope, string | null>;
+      }
+    | {
+        kind: "compose";
+        ref: { scope: Scope; name: string };
+        scope: EnvironmentSelectionScope;
+        expectedRevision: string | null;
+        definitionRevision: string;
+        authoredFingerprint: string;
+        effective: SelectedEnvironment;
         selectionRevisions: Record<EnvironmentSelectionScope, string | null>;
       };
   fingerprint: string;
@@ -313,18 +354,32 @@ function parseDefinition(
   return { definition };
 }
 
+/** Resolve an absent definition catalog, optionally materializing its authored global container. */
+function missingDefinitionCatalog(dir: string, materialize: boolean): DefinitionCatalog {
+  if (!materialize) return { names: [], entries: 0 };
+  try {
+    mkdirSync(dir, { recursive: true, mode: DIR_MODE });
+  } catch (error) {
+    return { error: `Environment directory could not be created: ${(error as Error).message}` };
+  }
+  return definitionNames(dir);
+}
+
 /** List bounded JSON definition names without following entries as directories. */
-function definitionNames(dir: string): DefinitionCatalog {
+function definitionNames(dir: string, materializeMissing = false): DefinitionCatalog {
   let opened: ReturnType<typeof opendirSync>;
   try {
     opened = opendirSync(dir);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
-    if (code === "ENOENT" || code === "ENOTDIR") return { names: [], entries: 0 };
+    if (code === "ENOENT") return missingDefinitionCatalog(dir, materializeMissing);
+    if (code === "ENOTDIR") return { names: [], entries: 0 };
     return { error: `Environment directory could not be opened: ${(error as Error).message}` };
   }
   const names: string[] = [];
   let entries = 0;
+  let scanFailed = false;
+  let scanFailure: unknown;
   try {
     for (;;) {
       const entry = opened.readSync();
@@ -342,8 +397,17 @@ function definitionNames(dir: string): DefinitionCatalog {
       const name = entry.name.slice(0, -5);
       if (NAME_RE.test(name)) names.push(name);
     }
+  } catch (error) {
+    scanFailed = true;
+    scanFailure = error;
   } finally {
     opened.closeSync();
+  }
+  if (scanFailed) {
+    const code = (scanFailure as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return missingDefinitionCatalog(dir, materializeMissing);
+    if (code === "ENOTDIR") return { names: [], entries: 0 };
+    return { error: `Environment directory could not be read: ${(scanFailure as Error).message}` };
   }
   if (names.length > MAX_ENVIRONMENTS_PER_SCOPE) {
     return {
@@ -633,13 +697,20 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       : { ref: local.ref, origin: "workspace" };
   };
 
-  const standaloneInventory = (): StandaloneInventoryEntry[] => {
+  const standaloneCatalog = (
+    selected?: readonly EnvironmentSkillRef[],
+  ): StandaloneInventoryEntry[] => {
     const out: StandaloneInventoryEntry[] = [];
     for (const [rootOrder, root] of standardRoots.entries()) {
+      const include = selected
+        ?.filter((ref) => ref.scope === root.scope && ref.source === root.source)
+        .map((ref) => ref.name)
+        .sort();
+      if (selected !== undefined && include?.length === 0) continue;
       try {
         const skills = createAgentSkills({
           workspace: options.workspaceRoot,
-          roots: [root],
+          roots: [{ ...root, ...(include === undefined ? {} : { include }) }],
           warningSink: (message) =>
             logger.warn(
               { event: "kernel.environment.skill_warning", warning: message.trimEnd() },
@@ -648,8 +719,6 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
           logger,
         });
         for (const info of skills.listSkills()) {
-          const content = skills.loadSkill(info.name);
-          if (content === undefined) continue;
           const ref: EnvironmentSkillRef = {
             scope: root.scope ?? "workspace",
             source: root.source === "agents" ? "agents" : "clarvis",
@@ -660,16 +729,20 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
             root,
             rootOrder,
             description: info.description,
-            digest: fingerprintOf({
-              metadata: info.metadata,
-              body: content.body,
-              resources: content.resources
-                .map((resource) => ({
-                  rel: resource.rel,
-                  content: skills.readResource(info.name, resource.rel),
-                }))
-                .sort((left, right) => left.rel.localeCompare(right.rel)),
-            }),
+            loadDigest: () => {
+              const content = skills.loadSkill(info.name);
+              if (content === undefined) return undefined;
+              return fingerprintOf({
+                metadata: info.metadata,
+                body: content.body,
+                resources: content.resources
+                  .map((resource) => ({
+                    rel: resource.rel,
+                    content: skills.readResource(info.name, resource.rel),
+                  }))
+                  .sort((left, right) => left.rel.localeCompare(right.rel)),
+              });
+            },
           });
         }
       } catch (error) {
@@ -689,6 +762,29 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     );
   };
 
+  const standaloneInventory = (
+    selected?: readonly EnvironmentSkillRef[],
+  ): (StandaloneInventoryEntry & { digest: string })[] => {
+    const out: (StandaloneInventoryEntry & { digest: string })[] = [];
+    for (const entry of standaloneCatalog(selected)) {
+      try {
+        const digest = entry.loadDigest();
+        if (digest !== undefined) out.push({ ...entry, digest });
+      } catch (error) {
+        logger.warn(
+          {
+            event: "kernel.environment.skill_read_failed",
+            path: entry.root.path,
+            skill: entry.ref.name,
+            cause: error instanceof Error ? error.message : String(error),
+          },
+          "a standalone skill failed while its inventory snapshot was captured",
+        );
+      }
+    }
+    return out;
+  };
+
   const defaultStandaloneSelection = (
     inventory: readonly StandaloneInventoryEntry[],
   ): EnvironmentSkillRef[] => {
@@ -705,14 +801,14 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     plugin: InstalledPlugin,
     manifest: NonNullable<ReturnType<typeof resolvePluginManifest>["manifest"]>,
     format: ReturnType<typeof resolvePluginManifest>["format"],
-  ): { names: string[]; digest: string } => {
+  ): string[] => {
     const roots = pluginSkillScanRoots(
       plugin.dir,
       manifest.skills,
       plugin.manifestLocation,
       format,
     );
-    if (roots.length === 0) return { names: [], digest: fingerprintOf([]) };
+    if (roots.length === 0) return [];
     try {
       const skills = createAgentSkills({
         workspace: plugin.dir,
@@ -720,39 +816,29 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         warningSink: () => undefined,
         logger,
       });
-      const content = skills
+      return skills
         .listSkills()
-        .map((skill) => {
-          const loaded = skills.loadSkill(skill.name);
-          return {
-            name: skill.name,
-            description: skill.description,
-            metadata: skill.metadata,
-            body: loaded?.body,
-            resources: loaded?.resources
-              .map((resource) => ({
-                rel: resource.rel,
-                content: skills.readResource(skill.name, resource.rel),
-              }))
-              .sort((left, right) => left.rel.localeCompare(right.rel)),
-          };
-        })
-        .sort((left, right) => left.name.localeCompare(right.name));
-      return {
-        names: content.map((skill) => skill.name).sort(),
-        digest: fingerprintOf(content),
-      };
+        .map((skill) => skill.name)
+        .sort();
     } catch {
-      return { names: [], digest: fingerprintOf([{ unavailable: true }]) };
+      return [];
     }
   };
 
-  const pluginInventory = (): PluginInventoryEntry[] =>
-    listInstalledPlugins({
+  const pluginInventory = (selected?: readonly EnvironmentPluginRef[]): PluginInventoryEntry[] => {
+    const repositoryOptions = {
       globalDir: options.globalDir,
       ...(options.home === undefined ? {} : { home: options.home }),
       workspaceRoot: options.workspaceRoot,
-    }).map((plugin) => {
+    };
+    const installed =
+      selected === undefined
+        ? listInstalledPlugins(repositoryOptions)
+        : selected.flatMap((ref) => {
+            const plugin = getInstalledPlugin(repositoryOptions, ref);
+            return plugin === undefined ? [] : [plugin];
+          });
+    return installed.map((plugin) => {
       const ref = plugin.ref;
       const resolved =
         plugin.manifestError === undefined && plugin.manifestRaw !== undefined
@@ -771,14 +857,9 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
             )
           : { notes: [], error: plugin.manifestError ?? "no readable plugin manifest" };
       const manifest = resolved.manifest;
-      const hooks =
-        manifest === undefined
-          ? []
-          : pluginHookReviews(options.globalDir, plugin.ref, manifest.hooks ?? []);
+      const hooks = manifest?.hooks ?? [];
       const skills =
-        manifest === undefined
-          ? { names: [], digest: fingerprintOf([]) }
-          : pluginSkillInventory(plugin, manifest, resolved.format);
+        manifest === undefined ? [] : pluginSkillInventory(plugin, manifest, resolved.format);
       const view: ResolvedEnvironmentPlugin = {
         ref,
         active: false,
@@ -787,33 +868,20 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         ...(manifest?.version === undefined ? {} : { version: manifest.version }),
         ...(plugin.revision === undefined ? {} : { revision: plugin.revision }),
         agents: plugin.agentFiles.map((file) => file.name.replace(/\.md$/i, "")).sort(),
-        skills: skills.names,
+        skills,
         mcp_servers:
           manifest === undefined
             ? []
             : Object.keys(manifest.mcpServers ?? {})
                 .map((name) => `${plugin.name}:${name}`)
                 .sort(),
-        hooks: { total: hooks.length, approved: hooks.filter((hook) => hook.approved).length },
+        hooks: { total: hooks.length },
         capability_executables: Object.keys(manifest?.capabilityExecutables ?? {}).sort(),
         ...(resolved.error === undefined ? {} : { error: resolved.error }),
       };
-      return {
-        view,
-        digest: fingerprintOf({
-          ref,
-          manifest: plugin.manifestRaw,
-          resolved_manifest: manifest,
-          format: resolved.format,
-          manifest_error: plugin.manifestError,
-          agents: plugin.agentFiles.map((file) => ({ name: file.name, content: file.content })),
-          skills: skills.digest,
-          origin: plugin.origin,
-          revision: plugin.revision,
-          subdir: plugin.subdir,
-        }),
-      };
+      return { view };
     });
+  };
 
   const resolved = (
     selection: SelectedEnvironment,
@@ -821,11 +889,14 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     workspaceTrust: WorkspaceTrustVerdict,
     assumeWorkspaceTrusted = false,
     pinContributions = false,
+    definitionOverride?: EnvironmentDefinitionView,
   ): ResolvedEnvironment => {
-    const installed = pluginInventory();
-    const discovered = standaloneInventory();
     const definitionView =
-      selection.error === undefined ? readDefinition(selection.ref) : undefined;
+      selection.error === undefined
+        ? definitionOverride !== undefined && sameRef(definitionOverride.ref, selection.ref)
+          ? definitionOverride
+          : readDefinition(selection.ref)
+        : undefined;
     const issues: EnvironmentIssue[] = [];
     if (selection.error !== undefined) {
       issues.push({ code: "invalid_selection", message: selection.error });
@@ -842,6 +913,9 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       (selection.ref.scope === "builtin" || definition !== undefined);
     const selectedPlugins =
       selection.ref.scope === "builtin" ? [...enabledPlugins] : (definition?.plugins ?? []);
+    const discovered = standaloneCatalog(
+      selection.ref.scope === "builtin" ? undefined : (definition?.skills ?? []),
+    );
     const selectedSkills =
       selection.ref.scope === "builtin"
         ? defaultStandaloneSelection(discovered)
@@ -875,13 +949,50 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
           "the workspace Environment selects executable plugins but its current fingerprint is not approved",
       });
     }
-    const installedByRef = new Map(
-      installed.map((entry) => [pluginRefId(entry.view.ref), entry] as const),
+    const contributionSnapshots: readonly PluginContributionSnapshot[] = validDefinition
+      ? pinContributions
+        ? trusted
+          ? options.pluginContributions.pin(selectedPlugins)
+          : (() => {
+              const snapshots = options.pluginContributions.snapshot(selectedPlugins);
+              options.pluginContributions.pin([]);
+              return snapshots;
+            })()
+        : options.pluginContributions.snapshot(selectedPlugins)
+      : pinContributions
+        ? options.pluginContributions.pin([])
+        : [];
+    const contributionByRef = new Map(
+      contributionSnapshots.map((snapshot) => [pluginRefId(snapshot.ref), snapshot] as const),
+    );
+    const unresolvedRefs = validDefinition
+      ? selectedPlugins.filter((ref) => !contributionByRef.has(pluginRefId(ref)))
+      : [];
+    const unresolvedInstalled = new Map(
+      pluginInventory(unresolvedRefs).map(
+        (entry) => [pluginRefId(entry.view.ref), entry.view] as const,
+      ),
     );
     const pluginViews: ResolvedEnvironmentPlugin[] = validDefinition
       ? selectedPlugins.map((ref) => {
-          const inventory = installedByRef.get(pluginRefId(ref));
-          if (inventory === undefined) {
+          const snapshot = contributionByRef.get(pluginRefId(ref));
+          if (snapshot !== undefined) {
+            return {
+              ref,
+              active: trusted,
+              installed: true,
+              valid: true,
+              ...(snapshot.version === undefined ? {} : { version: snapshot.version }),
+              ...(snapshot.revision === undefined ? {} : { revision: snapshot.revision }),
+              agents: snapshot.agents,
+              skills: snapshot.skills,
+              mcp_servers: snapshot.mcpServers,
+              hooks: snapshot.hooks,
+              capability_executables: snapshot.capabilityExecutables,
+            };
+          }
+          const installed = unresolvedInstalled.get(pluginRefId(ref));
+          if (installed === undefined) {
             issues.push({
               code: "missing_plugin",
               plugin: ref,
@@ -895,21 +1006,19 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
               agents: [],
               skills: [],
               mcp_servers: [],
-              hooks: { total: 0, approved: 0 },
+              hooks: { total: 0 },
               capability_executables: [],
               error: "not installed",
             };
           }
-          if (!inventory.view.valid) {
-            issues.push({
-              code: "invalid_plugin",
-              plugin: ref,
-              message: inventory.view.error ?? `plugin '${pluginRefLabel(ref)}' is invalid`,
-            });
-          }
+          const error =
+            installed.error ?? `plugin '${pluginRefLabel(ref)}' could not be captured atomically`;
+          issues.push({ code: "invalid_plugin", plugin: ref, message: error });
           return {
-            ...inventory.view,
-            active: trusted && inventory.view.valid,
+            ...installed,
+            active: false,
+            valid: false,
+            error,
           };
         })
       : [];
@@ -930,21 +1039,39 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
             });
             return { ref, active: false, found: false, error: "not discovered" };
           }
+          let digest: string | undefined;
+          try {
+            digest = entry.loadDigest();
+          } catch (error) {
+            logger.warn(
+              {
+                event: "kernel.environment.skill_read_failed",
+                path: entry.root.path,
+                skill: ref.name,
+                cause: error instanceof Error ? error.message : String(error),
+              },
+              "a selected standalone skill failed while its snapshot was captured",
+            );
+          }
+          if (digest === undefined) {
+            issues.push({
+              code: "missing_skill",
+              skill: ref,
+              message: `skill '${ref.scope}/${ref.source}/${ref.name}' could not be captured`,
+            });
+            return { ref, active: false, found: false, error: "could not be captured" };
+          }
           return {
             ref,
             active: true,
             found: true,
             description: entry.description,
-            digest: entry.digest,
+            digest,
           };
         })
       : [];
     const activePlugins = pluginViews.filter((plugin) => plugin.active);
     const activeSkills = skillViews.filter((skill) => skill.active);
-    const activePluginRefs = activePlugins.map((plugin) => plugin.ref);
-    const contributionDigests = pinContributions
-      ? options.pluginContributions.pin(activePluginRefs)
-      : options.pluginContributions.snapshot(activePluginRefs);
     const status = !validDefinition ? "invalid" : issues.length > 0 ? "degraded" : "ready";
     const identity = {
       id: environmentId(selection.ref),
@@ -952,9 +1079,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       status,
       plugins: activePlugins.map((plugin) => ({
         ref: plugin.ref,
-        digest:
-          contributionDigests[pluginRefId(plugin.ref)] ??
-          installedByRef.get(pluginRefId(plugin.ref))?.digest,
+        digest: contributionByRef.get(pluginRefId(plugin.ref))?.digest,
       })),
       skills: activeSkills.map((skill) => ({ ref: skill.ref, digest: skill.digest })),
       issues,
@@ -980,15 +1105,9 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       issues,
       counts: {
         plugins_active: activePlugins.length,
-        plugins_installed: installed.length,
         standalone_skills_active: activeSkills.length,
-        standalone_skills_discovered: discovered.length,
         plugin_skills_active: activePlugins.reduce(
           (count, plugin) => count + plugin.skills.length,
-          0,
-        ),
-        plugin_skills_discovered: installed.reduce(
-          (count, plugin) => count + plugin.view.skills.length,
           0,
         ),
         mcp_servers_active: activePlugins.reduce(
@@ -996,7 +1115,6 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
           0,
         ),
         hooks_declared: activePlugins.reduce((count, plugin) => count + plugin.hooks.total, 0),
-        hooks_approved: activePlugins.reduce((count, plugin) => count + plugin.hooks.approved, 0),
       },
     };
   };
@@ -1015,6 +1133,24 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         }
       : observedTrust;
     return resolved(selection, pinnedEnabled, effectiveTrust, assumeTrusted);
+  };
+
+  /** Resolve one transient authored definition through the same inventory and trust rules. */
+  const freshCompositionTarget = (
+    selection: SelectedEnvironment,
+    definition: EnvironmentDefinitionView,
+    assumeTrusted = false,
+  ): ResolvedEnvironment => {
+    const observedTrust = runtime?.readWorkspaceTrust() ?? pinnedTrust;
+    const effectiveTrust: WorkspaceTrustVerdict = assumeTrusted
+      ? {
+          state: "trusted",
+          ...(observedTrust.fingerprint === undefined
+            ? {}
+            : { fingerprint: observedTrust.fingerprint }),
+        }
+      : observedTrust;
+    return resolved(selection, pinnedEnabled, effectiveTrust, assumeTrusted, false, definition);
   };
 
   const freshTarget = (input: EnvironmentRef, assumeTrusted = false): ResolvedEnvironment => {
@@ -1038,7 +1174,9 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     const expected = pinned.standalone_skills
       .filter((skill) => skill.active)
       .map((skill) => ({ ref: skill.ref, digest: skill.digest }));
-    const inventory = standaloneInventory();
+    const inventory = standaloneInventory(
+      pinned.ref.scope === "builtin" ? undefined : expected.map((skill) => skill.ref),
+    );
     const currentByRef = new Map(
       inventory.map((entry) => [
         `${entry.ref.scope}\0${entry.ref.source}\0${entry.ref.name}`,
@@ -1103,7 +1241,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
   const list = async (): Promise<EnvironmentDefinitionView[]> => {
     const out: EnvironmentDefinitionView[] = [{ ref: BUILTIN_REF, immutable: true }];
     for (const scope of ["global", "workspace"] as const) {
-      const listed = definitionNames(definitionDir(scope));
+      const listed = definitionNames(definitionDir(scope), scope === "global");
       if (listed.error !== undefined) {
         out.push({
           ref: { scope, name: "invalid-directory" },
@@ -1116,6 +1254,17 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     }
     return out;
   };
+
+  const inventory = async (): Promise<EnvironmentInventory> => ({
+    plugins: pluginInventory().map((entry) => ({ ...entry.view, active: false })),
+    standalone_skills: standaloneInventory().map((entry) => ({
+      ref: entry.ref,
+      active: false,
+      found: true,
+      description: entry.description,
+      digest: entry.digest,
+    })),
+  });
 
   const rememberPreview = (
     mutation: PreviewEntry["mutation"],
@@ -1144,6 +1293,158 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     if (ref.scope !== "workspace" || (definition?.plugins.length ?? 0) === 0) return false;
     const current = selectedNow();
     return current.error !== undefined || !sameRef(current.ref, ref) || trust.state !== "trusted";
+  };
+
+  const compositionDefinition = (
+    input: EnvironmentCompositionInput,
+  ): {
+    serialized: string;
+    view: EnvironmentDefinitionView & {
+      revision: string;
+      definition: EnvironmentDefinition;
+    };
+  } => {
+    const serialized = `${JSON.stringify(input.definition, null, 2)}\n`;
+    const parsed = parseDefinition(input.ref, serialized);
+    if (parsed.definition === undefined) {
+      throw kernelError("invalid_request", parsed.error ?? "invalid Environment definition");
+    }
+    return {
+      serialized,
+      view: {
+        ref: input.ref,
+        immutable: false,
+        revision: documentRevision(Buffer.from(serialized)),
+        definition: parsed.definition,
+      },
+    };
+  };
+
+  const assertExpectedDefinition = (
+    ref: { scope: Scope; name: string },
+    expectedRevision: string | null,
+    current: ReadDocument,
+  ): void => {
+    if (expectedRevision === null) {
+      if (current.missing === true) return;
+      if (current.revision !== undefined) {
+        throw kernelError("conflict", `Environment '${environmentId(ref)}' already exists`);
+      }
+      throw kernelError(
+        "unavailable",
+        current.error ?? `Environment '${environmentId(ref)}' could not be inspected`,
+      );
+    }
+    if (current.revision !== expectedRevision) {
+      throw kernelError("conflict", "Environment changed since it was read", {
+        expected_revision: expectedRevision,
+        actual_revision: current.revision ?? null,
+      });
+    }
+  };
+
+  const assertCatalogCapacity = (scope: Scope): void => {
+    const catalog = definitionNames(definitionDir(scope));
+    if (catalog.error !== undefined) {
+      throw kernelError(
+        catalog.resourceExhausted === true ? "resource_exhausted" : "unavailable",
+        catalog.error,
+      );
+    }
+    if (
+      (catalog.names?.length ?? 0) >= MAX_ENVIRONMENTS_PER_SCOPE ||
+      (catalog.entries ?? 0) >= MAX_ENVIRONMENT_DIRECTORY_ENTRIES
+    ) {
+      throw kernelError(
+        "resource_exhausted",
+        `Environment catalog '${scope}' has reached its definition or entry limit`,
+        {
+          definitions: catalog.names?.length ?? 0,
+          definition_limit: MAX_ENVIRONMENTS_PER_SCOPE,
+          entries: catalog.entries ?? 0,
+          entry_limit: MAX_ENVIRONMENT_DIRECTORY_ENTRIES,
+        },
+      );
+    }
+  };
+
+  const compositionNeedsWorkspaceTrust = (
+    input: EnvironmentCompositionInput,
+    effective: SelectedEnvironment,
+    definition: EnvironmentDefinitionView,
+    trust: WorkspaceTrustVerdict,
+  ): boolean => {
+    const effectiveDefinition = sameRef(effective.ref, input.ref)
+      ? definition.definition
+      : readDefinition(effective.ref).definition;
+    if (effective.ref.scope !== "workspace" || (effectiveDefinition?.plugins.length ?? 0) === 0) {
+      return false;
+    }
+    if (sameRef(effective.ref, input.ref) && definition.revision !== input.expected_revision) {
+      return true;
+    }
+    const before = selectedNow();
+    if (sameRef(before.ref, effective.ref) && before.origin === effective.origin) return false;
+    return workspaceTargetNeedsApproval(effective.ref, effectiveDefinition, trust);
+  };
+
+  const previewComposition = async (
+    raw: EnvironmentCompositionInput,
+  ): Promise<EnvironmentCompositionPreview> => {
+    const input = parsedInput(compositionInputSchema, raw, "invalid Environment composition input");
+    if (input.selection_scope === "global" && input.ref.scope === "workspace") {
+      throw kernelError(
+        "invalid_request",
+        "a global selection cannot point at a workspace Environment",
+      );
+    }
+    if (options.cliSelection !== undefined) {
+      throw kernelError("conflict", "the active --env override cannot be changed by this process");
+    }
+    if (pinned === undefined) throw kernelError("unavailable", "Environment has not been resolved");
+    const before = readBounded(
+      definitionPath(input.ref)!,
+      `Environment '${environmentId(input.ref)}'`,
+    );
+    assertExpectedDefinition(input.ref, input.expected_revision, before);
+    if (input.expected_revision === null) assertCatalogCapacity(input.ref.scope);
+    const proposed = compositionDefinition(input);
+    const actualTrust = runtime?.readWorkspaceTrust() ?? pinnedTrust;
+    const effective = selectedAfterWrite(input.ref, input.selection_scope);
+    const requiresWorkspaceTrust = compositionNeedsWorkspaceTrust(
+      input,
+      effective,
+      proposed.view,
+      actualTrust,
+    );
+    const authoredAssumesTrust =
+      input.ref.scope === "workspace" && input.definition.plugins.length > 0;
+    const authored = freshCompositionTarget(
+      { ref: input.ref, origin: input.ref.scope },
+      proposed.view,
+      authoredAssumesTrust,
+    );
+    const target = freshCompositionTarget(effective, proposed.view, requiresWorkspaceTrust);
+    return {
+      current: pinned,
+      authored,
+      target,
+      delta: deltaOf(pinned, target),
+      token: rememberPreview(
+        {
+          kind: "compose",
+          ref: input.ref,
+          scope: input.selection_scope,
+          expectedRevision: input.expected_revision,
+          definitionRevision: proposed.view.revision,
+          authoredFingerprint: authored.fingerprint,
+          effective,
+          selectionRevisions: selectionRevisions(),
+        },
+        target,
+      ),
+      requires_workspace_trust: requiresWorkspaceTrust,
+    };
   };
 
   const preview = async (
@@ -1234,64 +1535,37 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     return { selected: ref, reconnect_required: true };
   };
 
+  const withDefinitionMutation = <T>(
+    ref: { scope: Scope; name: string },
+    expectedRevision: string | null,
+    operation: (current: ReadDocument, path: string) => T,
+  ): T => {
+    const path = definitionPath(ref)!;
+    const mutate = (): T =>
+      underDefinitionLease({ ref, origin: ref.scope }, () => {
+        const current = readBounded(path, `Environment '${environmentId(ref)}'`);
+        assertExpectedDefinition(ref, expectedRevision, current);
+        if (expectedRevision === null) assertCatalogCapacity(ref.scope);
+        return operation(current, path);
+      });
+    return expectedRevision === null
+      ? underLease(definitionDir(ref.scope), `${ref.scope} Environment catalog`, mutate)
+      : mutate();
+  };
+
   const writeDefinition = (
     input: EnvironmentDefinitionInput,
     expectedRevision?: string,
   ): EnvironmentDefinitionView => {
-    const ref = input.ref;
-    const serialized = `${JSON.stringify(input.definition, null, 2)}\n`;
-    const parsed = parseDefinition(ref, serialized);
-    if (parsed.definition === undefined) {
-      throw kernelError("invalid_request", parsed.error ?? "invalid Environment definition");
-    }
-    const path = definitionPath(ref)!;
-    const write = (): EnvironmentDefinitionView =>
-      underDefinitionLease({ ref, origin: ref.scope }, () => {
-        const current = readBounded(path, `Environment '${environmentId(ref)}'`);
-        if (expectedRevision === undefined) {
-          if (current.missing !== true) {
-            if (current.revision !== undefined) {
-              throw kernelError("conflict", `Environment '${environmentId(ref)}' already exists`);
-            }
-            throw kernelError(
-              "unavailable",
-              current.error ?? `Environment '${environmentId(ref)}' could not be inspected`,
-            );
-          }
-          const catalog = definitionNames(definitionDir(ref.scope));
-          if (catalog.error !== undefined) {
-            throw kernelError(
-              catalog.resourceExhausted === true ? "resource_exhausted" : "unavailable",
-              catalog.error,
-            );
-          }
-          if (
-            (catalog.names?.length ?? 0) >= MAX_ENVIRONMENTS_PER_SCOPE ||
-            (catalog.entries ?? 0) >= MAX_ENVIRONMENT_DIRECTORY_ENTRIES
-          ) {
-            throw kernelError(
-              "resource_exhausted",
-              `Environment catalog '${ref.scope}' has reached its definition or entry limit`,
-              {
-                definitions: catalog.names?.length ?? 0,
-                definition_limit: MAX_ENVIRONMENTS_PER_SCOPE,
-                entries: catalog.entries ?? 0,
-                entry_limit: MAX_ENVIRONMENT_DIRECTORY_ENTRIES,
-              },
-            );
-          }
-        } else if (current.revision !== expectedRevision) {
-          throw kernelError("conflict", "Environment changed since it was read", {
-            expected_revision: expectedRevision,
-            actual_revision: current.revision ?? null,
-          });
-        }
-        writeFileAtomicSync(path, serialized);
-        return readDefinition(ref);
-      });
-    return expectedRevision === undefined
-      ? underLease(definitionDir(ref.scope), `${ref.scope} Environment catalog`, write)
-      : write();
+    const composition = compositionDefinition({
+      ...input,
+      expected_revision: expectedRevision ?? null,
+      selection_scope: input.ref.scope,
+    });
+    return withDefinitionMutation(input.ref, expectedRevision ?? null, (_current, path) => {
+      writeFileAtomicSync(path, composition.serialized);
+      return readDefinition(input.ref);
+    });
   };
 
   const restoreSelection = (scope: EnvironmentSelectionScope, before: ReadDocument): void => {
@@ -1305,6 +1579,163 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     writeFileAtomicSync(selectionPath(scope), before.raw);
   };
 
+  const restoreDefinition = (ref: { scope: Scope; name: string }, before: ReadDocument): void => {
+    const path = definitionPath(ref)!;
+    if (before.missing === true) {
+      rmSync(path, { force: true });
+      return;
+    }
+    if (before.raw === undefined) {
+      throw kernelError("unavailable", "the previous Environment definition cannot be restored");
+    }
+    writeFileAtomicSync(path, before.raw);
+  };
+
+  const applyComposition = async (
+    raw: EnvironmentCompositionInput,
+    rawOptions: { preview_token: string; approve_workspace?: boolean },
+  ): Promise<EnvironmentCompositionApplyResult> => {
+    const input = parsedInput(compositionInputSchema, raw, "invalid Environment composition input");
+    const applyOptions = parsedInput(
+      compositionApplyOptionsSchema,
+      rawOptions,
+      "invalid Environment composition apply options",
+    );
+    const proposed = compositionDefinition(input);
+    const entry = previews.get(applyOptions.preview_token);
+    previews.delete(applyOptions.preview_token);
+    if (
+      entry === undefined ||
+      entry.expiresAt <= Date.now() ||
+      entry.mutation.kind !== "compose" ||
+      !sameRef(entry.mutation.ref, input.ref) ||
+      entry.mutation.scope !== input.selection_scope ||
+      entry.mutation.expectedRevision !== input.expected_revision ||
+      entry.mutation.definitionRevision !== proposed.view.revision
+    ) {
+      throw kernelError(
+        "conflict",
+        "Environment composition preview is missing, expired, or names another draft",
+      );
+    }
+    if (input.selection_scope === "global" && input.ref.scope === "workspace") {
+      throw kernelError(
+        "invalid_request",
+        "a global selection cannot point at a workspace Environment",
+      );
+    }
+    if (options.cliSelection !== undefined) {
+      throw kernelError("conflict", "the active --env override cannot be changed by this process");
+    }
+    if (pinned === undefined) throw kernelError("unavailable", "Environment has not been resolved");
+    const mutation = entry.mutation;
+    return withDefinitionMutation(input.ref, input.expected_revision, (beforeDefinition, path) =>
+      underSelectionLeases(["global", "workspace"], () => {
+        const revisions = selectionRevisions();
+        if (
+          revisions.global !== mutation.selectionRevisions.global ||
+          revisions.workspace !== mutation.selectionRevisions.workspace
+        ) {
+          throw kernelError(
+            "conflict",
+            "Environment selections changed since the composition preview was created",
+          );
+        }
+        const actualTrust = runtime?.readWorkspaceTrust() ?? pinnedTrust;
+        const effective = selectedAfterWrite(input.ref, input.selection_scope);
+        if (
+          !sameRef(effective.ref, mutation.effective.ref) ||
+          effective.origin !== mutation.effective.origin ||
+          effective.error !== mutation.effective.error
+        ) {
+          throw kernelError(
+            "conflict",
+            "the effective Environment changed since the composition preview was created",
+          );
+        }
+        const requiresWorkspaceTrust = compositionNeedsWorkspaceTrust(
+          input,
+          effective,
+          proposed.view,
+          actualTrust,
+        );
+        const authored = freshCompositionTarget(
+          { ref: input.ref, origin: input.ref.scope },
+          proposed.view,
+          input.ref.scope === "workspace" && input.definition.plugins.length > 0,
+        );
+        const target = freshCompositionTarget(effective, proposed.view, requiresWorkspaceTrust);
+        if (
+          authored.fingerprint !== mutation.authoredFingerprint ||
+          target.fingerprint !== entry.fingerprint
+        ) {
+          throw kernelError(
+            "conflict",
+            "Environment inventory or definition changed since the composition preview",
+          );
+        }
+        if (requiresWorkspaceTrust && applyOptions.approve_workspace !== true) {
+          throw kernelError(
+            "conflict",
+            "the previewed workspace Environment requires explicit trust approval",
+          );
+        }
+        if (requiresWorkspaceTrust && runtime === undefined) {
+          throw kernelError("unavailable", "workspace trust is unavailable");
+        }
+        const beforeSelection = readBounded(
+          selectionPath(input.selection_scope),
+          `${input.selection_scope} Environment selection`,
+        );
+        if (beforeSelection.error !== undefined) {
+          throw kernelError(
+            "unavailable",
+            "the previous Environment selection cannot be snapshotted before composition",
+          );
+        }
+        let definitionWritten = false;
+        let selectionWritten = false;
+        try {
+          writeFileAtomicSync(path, proposed.serialized);
+          definitionWritten = true;
+          writeSelection(input.ref, input.selection_scope);
+          selectionWritten = true;
+          if (requiresWorkspaceTrust) runtime!.approveWorkspace();
+        } catch (error) {
+          const rollbackErrors: string[] = [];
+          if (selectionWritten) {
+            try {
+              restoreSelection(input.selection_scope, beforeSelection);
+            } catch (rollbackError) {
+              rollbackErrors.push(`selection: ${(rollbackError as Error).message}`);
+            }
+          }
+          if (definitionWritten) {
+            try {
+              restoreDefinition(input.ref, beforeDefinition);
+            } catch (rollbackError) {
+              rollbackErrors.push(`definition: ${(rollbackError as Error).message}`);
+            }
+          }
+          if (rollbackErrors.length > 0) {
+            throw kernelError(
+              "unavailable",
+              "Environment composition failed and its prior state could not be fully restored",
+              { cause: (error as Error).message, rollback: rollbackErrors },
+            );
+          }
+          throw error;
+        }
+        return {
+          definition: readDefinition(input.ref),
+          selected: input.ref,
+          effective: target.ref,
+          reconnect_required: true,
+        };
+      }),
+    );
+  };
+
   const service: EnvironmentService = {
     list,
     async current() {
@@ -1315,8 +1746,10 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     async get(ref) {
       return freshTarget(environmentRef(ref));
     },
+    inventory,
     preview,
     previewClear,
+    previewComposition,
     async select(inputRef, inputOptions) {
       const ref = environmentRef(inputRef);
       const selectOptions = parsedInput(
@@ -1446,6 +1879,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         }),
       );
     },
+    applyComposition,
     async create(input) {
       return writeDefinition(
         parsedInput(definitionInputSchema, input, "invalid Environment definition input"),
@@ -1458,6 +1892,44 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         "invalid Environment definition update",
       );
       return writeDefinition(update, update.expected_revision);
+    },
+    async delete(inputRef, inputOptions) {
+      const ref = parsedInput(
+        authoredRefSchema,
+        inputRef,
+        "invalid Environment definition reference",
+      );
+      const deleteOptions = parsedInput(
+        definitionDeleteOptionsSchema,
+        inputOptions,
+        "invalid Environment deletion options",
+      );
+      return withDefinitionMutation(ref, deleteOptions.expected_revision, (_current, path) =>
+        underSelectionLeases(["global", "workspace"], () => {
+          if (pinned !== undefined && sameRef(pinned.ref, ref)) {
+            throw kernelError(
+              "conflict",
+              `Environment '${environmentId(ref)}' is active; select another Environment and reconnect before deleting it`,
+            );
+          }
+          for (const scope of ["global", "workspace"] as const) {
+            const selection = selectionFromFile(scope);
+            if (selection.error !== undefined) {
+              throw kernelError(
+                "unavailable",
+                `the ${scope} Environment selection must be repaired before deleting a definition`,
+              );
+            }
+            if (selection.ref !== undefined && sameRef(selection.ref, ref)) {
+              throw kernelError(
+                "conflict",
+                `Environment '${environmentId(ref)}' is selected for ${scope}; clear that selection before deleting it`,
+              );
+            }
+          }
+          rmSync(path);
+        }),
+      );
     },
     async clone(inputSource, inputTarget) {
       const source = environmentRef(inputSource);
@@ -1513,6 +1985,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
         );
         return pinned;
       }
+      const startedAt = Date.now();
       pinnedEnabled = [...enabledPlugins];
       pinnedTrust = workspaceTrust;
       pinned = resolved(selectedNow(), pinnedEnabled, pinnedTrust, false, true);
@@ -1524,6 +1997,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
           status: pinned.status,
           plugins: pinned.counts.plugins_active,
           skills: pinned.counts.standalone_skills_active + pinned.counts.plugin_skills_active,
+          duration_ms: Date.now() - startedAt,
         },
         "the kernel extension Environment is pinned for this process",
       );

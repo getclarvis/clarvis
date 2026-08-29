@@ -857,10 +857,9 @@ failure kinds (`ReadJsonFileFailureKind`, `:10`) — `unreadable` (I/O error, `e
 schema, `detail`/`at` naming the first zod issue and its field path). A missing file is folded into
 the `unreadable` kind but flagged `missing: true` (from the underlying `ENOENT` code), which is what
 lets every caller in this document tell "the file has never been written" apart from "the file is
-there and broken": `readWorkspaceTrustFile` (`packages/kernel/src/config/workspace-trust.ts:300-306`)
-and `readHookTrust` ([plugins-and-marketplace](plugins.md),
-`packages/kernel/src/plugins/hook-trust.ts:47-52`) both fold a missing sidecar to an empty store and
-only a genuine read/parse/schema failure to `{ error }`; `@clarvis/code`'s `loadFile`
+there and broken": `readWorkspaceTrustFile` in
+`packages/kernel/src/config/workspace-trust.ts` folds a missing sidecar to an empty store and only a
+genuine read/parse/schema failure to `{ error }`; `@clarvis/code`'s `loadFile`
 (`packages/code/src/adapters/code-config.ts:66-71`, outside this document's scope) makes the identical
 choice for its own config file. `packages/loop/tests/integration/json-file.test.ts` pins the byte
 ceiling, the three failure kinds, and the `missing` flag.

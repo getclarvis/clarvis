@@ -114,6 +114,12 @@ export function ListPicker<T>(props: {
     if (item !== undefined) props.onConfirm(item);
   }
 
+  const confirmLabel = (): string =>
+    typeof props.confirmLabel === "function"
+      ? props.confirmLabel(rows()[clamp(sel())])
+      : (props.confirmLabel ?? "select");
+  const escapeLabel = (): string => props.escLabel ?? "cancel";
+
   const toVerbSpec = (v: ListPickerVerb<T>): VerbSpec => {
     const run = (): void => {
       const item = rows()[clamp(sel())];
@@ -134,10 +140,7 @@ export function ListPicker<T>(props: {
         lettersNav: !props.filter,
         showArrows: true,
         activate: {
-          label:
-            typeof props.confirmLabel === "function"
-              ? props.confirmLabel(rows()[clamp(sel())])
-              : (props.confirmLabel ?? "select"),
+          label: confirmLabel(),
           run: confirm,
         },
       },
@@ -237,6 +240,12 @@ export function ListPicker<T>(props: {
             actionFilter={(action) =>
               action.id.startsWith("ui.list.") || action.id.startsWith("ui.level.")
             }
+            actionTransform={(action) => {
+              if (action.id === "ui.list.activate")
+                return { ...action, footerLabel: confirmLabel() };
+              if (action.id === "ui.level.escape") return { ...action, footerLabel: escapeLabel() };
+              return action;
+            }}
           />
         ) : undefined
       }

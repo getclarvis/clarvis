@@ -11,7 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hookFingerprint } from "../../src/plugins/hook-trust.ts";
+import { createHash } from "node:crypto";
 import {
   pluginSkillRoots,
   readPluginManifestSource,
@@ -41,6 +41,10 @@ function write(relative: string, body: unknown): void {
 const base = { name: "demo", version: "1.0.0", description: "A demo plugin." };
 const AGENT_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 const AGENT_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
+
+function hookFingerprint(value: unknown): string {
+  return `sha256:${createHash("sha256").update(JSON.stringify(value)).digest("hex")}`;
+}
 
 /** Resolve the manifest the way both kernel readers do. */
 function resolve(): ReturnType<typeof resolvePluginManifest> {

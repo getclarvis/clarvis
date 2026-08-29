@@ -24,6 +24,10 @@ export interface CatalogPickerSpec {
   onManual?: () => void;
   manualEnabled?: Accessor<boolean>;
   onClose: () => void;
+  /** Contextual Escape wording when cancel/done would misstate navigation. */
+  escLabel?: string;
+  /** Contextual action label; may depend on the currently selected row. */
+  confirmLabel?: string | ((row: CatalogRow | undefined) => string);
   stayOpen?: boolean;
   counter?: () => number;
   counterLabel?: string;
@@ -123,7 +127,9 @@ export function CatalogPicker(props: CatalogPickerProps | CatalogPickerSurfacePr
           fg: row.id === current().currentId ? tokens.accent : tokens.muted,
           text: row.id === current().currentId ? glyph("radioOn") : glyph("radioOff"),
         }
-      : { width: ADDED_COL_WIDTH, fg: tokens.add, text: row.added ? glyph("success") : " " },
+      : row.action
+        ? { width: ADDED_COL_WIDTH, fg: tokens.accent2, text: glyph("arrowRight") }
+        : { width: ADDED_COL_WIDTH, fg: tokens.add, text: row.added ? glyph("success") : " " },
     labelCell(row, selected),
     ...(row.columns ?? []).map((col) => ({
       width: col.width,
@@ -146,9 +152,9 @@ export function CatalogPicker(props: CatalogPickerProps | CatalogPickerSurfacePr
       items={() => filterRows(current().rows(), term(), manualEnabled())}
       cells={cells}
       onConfirm={pick}
-      confirmLabel={current().stayOpen ? "add/remove" : "select"}
+      confirmLabel={current().confirmLabel ?? (current().stayOpen ? "add/remove" : "select")}
       onClose={() => current().onClose()}
-      escLabel={current().stayOpen ? "done" : "cancel"}
+      escLabel={current().escLabel ?? (current().stayOpen ? "done" : "cancel")}
       filter={
         compact()
           ? undefined

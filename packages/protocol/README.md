@@ -39,23 +39,23 @@ implements an in-process client, a loopback client and stdio transport.
 `KernelClient` carries the connected `project`/`workspace` identity and groups fifteen asynchronous
 services:
 
-| Service        | Responsibility                                                                    |
-| -------------- | --------------------------------------------------------------------------------- |
-| `runs`         | Start, stream, steer, compact live or settled context, inspect and delete runs.   |
-| `config`       | Settings, agent documents and context documents.                                  |
-| `environments` | Definition, resolution, delta preview and selection of active extensions.         |
-| `plugins`      | Installed plugins, capability services, per-hook review and lifecycle operations. |
-| `secrets`      | Server-side provider secret names and writes.                                     |
-| `models`       | Model metadata and pricing catalog.                                               |
-| `providerAuth` | Token-free local subscription status, device login and disconnect control.        |
-| `files`        | Read-only workspace file and image access.                                        |
-| `memory`       | Owner-facing execution-memory review and curation.                                |
-| `plans`        | History from the workspace's selected plan provider.                              |
-| `workflows`    | Agentic workflows: a manager run fanning out leaders.                             |
-| `skills`       | Skill listing and prompt rendering.                                               |
-| `sessions`     | Workspace-scoped conversation/session records.                                    |
-| `tasks`        | Provider-neutral external task discovery, mutation and transition previews.       |
-| `storage`      | Metadata-only local inventory and confirmed cleanup of disposable artifacts.      |
+| Service        | Responsibility                                                                         |
+| -------------- | -------------------------------------------------------------------------------------- |
+| `runs`         | Start, stream, steer, compact live or settled context, inspect and delete runs.        |
+| `config`       | Settings, agent documents and context documents.                                       |
+| `environments` | Exact inventory, definition, composition preview and selection of active extensions.   |
+| `plugins`      | Installed plugins, atomic contributions, capability services and lifecycle operations. |
+| `secrets`      | Server-side provider secret names and writes.                                          |
+| `models`       | Model metadata and pricing catalog.                                                    |
+| `providerAuth` | Token-free local subscription status, device login and disconnect control.             |
+| `files`        | Read-only workspace file and image access.                                             |
+| `memory`       | Owner-facing execution-memory review and curation.                                     |
+| `plans`        | History from the workspace's selected plan provider.                                   |
+| `workflows`    | Agentic workflows: a manager run fanning out leaders.                                  |
+| `skills`       | Skill listing and prompt rendering.                                                    |
+| `sessions`     | Workspace-scoped conversation/session records.                                         |
+| `tasks`        | Provider-neutral external task discovery, mutation and transition previews.            |
+| `storage`      | Metadata-only local inventory and confirmed cleanup of disposable artifacts.           |
 
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
@@ -64,8 +64,10 @@ configuration types do not cross this boundary.
 extensions. Custom definitions are complete allow-lists of exact `{ scope, source, name }` plugin
 installations and standalone skills; `builtin:default` is immutable builtin activation behavior.
 `.agents/plugins` and `.clarvis/plugins` are equally representable. Selection and clear
-mutations require scope-bound delta previews. The full format, selection precedence, snapshot and
-trust contract is in
+mutations require scope-bound delta previews. Guided composition reads the qualified installed
+inventory, resolves a complete draft, and applies its definition plus selection through one
+single-use preview token; the service still never installs anything. The full format, selection
+precedence, snapshot and trust contract is in
 [`hosts/environments.md`](../../specs/hosts/environments.md).
 
 `StorageService` never returns file paths, credential contents or credential sizes. Its cleanup

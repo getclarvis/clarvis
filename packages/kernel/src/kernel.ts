@@ -231,6 +231,8 @@ export interface CreateKernelOptions {
   providerAuthService?: ProviderAuthService;
   /** Global Clarvis config dir for models/sessions; defaults to the standard global root. */
   globalConfigDir?: string;
+  /** Home directory owning the shared `.agents/plugins` inventory; injectable for isolated hosts. */
+  home?: string;
   /** Host-owned Environment control plane; defaults to immutable builtin:default. */
   environmentService?: EnvironmentService;
   /** Exact active plugin refs from the host's pinned Environment snapshot. */
@@ -280,14 +282,10 @@ function createBuiltinEnvironmentService(): EnvironmentService {
     issues: [],
     counts: {
       plugins_active: 0,
-      plugins_installed: 0,
       standalone_skills_active: 0,
-      standalone_skills_discovered: 0,
       plugin_skills_active: 0,
-      plugin_skills_discovered: 0,
       mcp_servers_active: 0,
       hooks_declared: 0,
-      hooks_approved: 0,
     },
   };
   const unavailable = (): never => {
@@ -300,6 +298,7 @@ function createBuiltinEnvironmentService(): EnvironmentService {
       if (ref.scope !== "builtin" || ref.name !== "default") unavailable();
       return current;
     },
+    inventory: async () => ({ plugins: [], standalone_skills: [] }),
     preview: async (ref) => {
       if (ref.scope !== "builtin" || ref.name !== "default") unavailable();
       return {
@@ -320,10 +319,13 @@ function createBuiltinEnvironmentService(): EnvironmentService {
       };
     },
     previewClear: async () => unavailable(),
+    previewComposition: async () => unavailable(),
     select: async () => unavailable(),
     clearSelection: async () => unavailable(),
+    applyComposition: async () => unavailable(),
     create: async () => unavailable(),
     update: async () => unavailable(),
+    delete: async () => unavailable(),
     clone: async () => unavailable(),
   };
 }
@@ -806,6 +808,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
   const plugins = createPluginService({
     globalDir,
     workspaceRoot: opts.workspaceRoot,
+    ...(opts.home === undefined ? {} : { home: opts.home }),
     enabledPlugins:
       opts.activePlugins ??
       (() => {

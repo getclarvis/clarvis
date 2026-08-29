@@ -1,10 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   acquireLocalLeaseSync,
   agentsPluginsDirs,
+  DIR_MODE,
   globalPaths,
   workspacePaths,
   workspaceStatePaths,
@@ -16,8 +25,8 @@ import type {
   WorkspaceTrustVerdict,
 } from "@clarvis/protocol";
 import { createEnvironmentManager } from "../../src/environments/environment-manager.ts";
-import { hookFingerprint, writeHookApproval } from "../../src/plugins/hook-trust.ts";
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
+import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
 
 const TRUSTED: WorkspaceTrustVerdict = {
   state: "trusted",
@@ -74,7 +83,7 @@ describe("Environment manager", () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  function manager(cliSelection?: string) {
+  function manager(cliSelection?: string, logger?: RecordingLogger) {
     return createEnvironmentManager({
       globalDir,
       workspaceRoot,
@@ -83,7 +92,9 @@ describe("Environment manager", () => {
         globalDir,
         home: join(root, "home"),
         workspaceRoot,
+        ...(logger === undefined ? {} : { logger }),
       }),
+      ...(logger === undefined ? {} : { logger }),
       ...(cliSelection === undefined ? {} : { cliSelection }),
     });
   }
@@ -126,6 +137,22 @@ describe("Environment manager", () => {
     });
   });
 
+  it("materializes an empty global catalog without writing into the workspace", async () => {
+    const target = manager();
+    const globalCatalog = globalPaths(globalDir).environmentsDir;
+    const workspaceCatalog = workspacePaths(workspaceRoot).environmentsDir;
+    expect(existsSync(globalCatalog)).toBeFalse();
+    expect(existsSync(workspaceCatalog)).toBeFalse();
+
+    expect(await target.service.list()).toEqual([
+      { ref: { scope: "builtin", name: "default" }, immutable: true },
+    ]);
+
+    expect(existsSync(globalCatalog)).toBeTrue();
+    expect(statSync(globalCatalog).mode & 0o777).toBe(DIR_MODE);
+    expect(existsSync(workspaceCatalog)).toBeFalse();
+  });
+
   it("activates a configured .agents plugin in builtin:default without a custom Environment", () => {
     const agents = agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} });
     installPlugin(agents.user, "portable", { version: "agent-v1" });
@@ -141,26 +168,63 @@ describe("Environment manager", () => {
     expect(target.activePlugins()).toEqual([selected]);
   });
 
-  it("inventories all four scope/source plugin roots independently", () => {
+  it("inventories all four scope/source plugin roots independently", async () => {
     const agents = agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} });
     installPlugin(globalPaths(globalDir).pluginsDir, "global-native");
     installPlugin(agents.user, "global-shared");
     installPlugin(workspacePaths(workspaceRoot).pluginsDir, "workspace-native");
     installPlugin(agents.workspace, "workspace-shared");
 
-    const current = manager().resolveActive([], TRUSTED);
+    const target = manager();
+    target.resolveActive([], TRUSTED);
+    const inventory = await target.service.inventory();
 
-    expect(current.counts.plugins_installed).toBe(4);
+    expect(inventory.plugins).toHaveLength(4);
   });
 
-  it("keeps builtin standalone skill shadowing identical to four-root discovery", () => {
+  it("returns every exact plugin and standalone skill origin to the composer", async () => {
+    const agents = agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} });
+    installPlugin(globalPaths(globalDir).pluginsDir, "same", { version: "global-clarvis" });
+    installPlugin(agents.user, "same", { version: "global-agents" });
+    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "same", {
+      version: "workspace-clarvis",
+    });
+    installPlugin(agents.workspace, "same", { version: "workspace-agents" });
+    writeSkill(globalPaths(globalDir).skillsDir, "same-skill");
+    writeSkill(join(root, "home", ".agents", "skills"), "same-skill");
+    writeSkill(workspacePaths(workspaceRoot).skillsDir, "same-skill");
+    writeSkill(join(workspaceRoot, ".agents", "skills"), "same-skill");
+    const target = manager();
+    target.resolveActive([], TRUSTED);
+
+    const inventory = await target.service.inventory();
+
+    expect(
+      inventory.plugins.map((plugin) => [plugin.ref.scope, plugin.ref.source, plugin.version]),
+    ).toEqual([
+      ["global", "agents", "global-agents"],
+      ["global", "clarvis", "global-clarvis"],
+      ["workspace", "agents", "workspace-agents"],
+      ["workspace", "clarvis", "workspace-clarvis"],
+    ]);
+    expect(inventory.plugins.every((plugin) => !plugin.active)).toBeTrue();
+    expect(inventory.standalone_skills.map((skill) => skill.ref)).toEqual([
+      { scope: "user", source: "agents", name: "same-skill" },
+      { scope: "workspace", source: "agents", name: "same-skill" },
+      { scope: "user", source: "clarvis", name: "same-skill" },
+      { scope: "workspace", source: "clarvis", name: "same-skill" },
+    ]);
+    expect(inventory.standalone_skills.every((skill) => skill.found && !skill.active)).toBeTrue();
+  });
+
+  it("keeps builtin standalone skill shadowing identical to four-root discovery", async () => {
     writeSkill(globalPaths(globalDir).skillsDir, "same-skill");
     writeSkill(workspacePaths(workspaceRoot).skillsDir, "same-skill");
     const target = manager();
 
     const current = target.resolveActive([], TRUSTED);
 
-    expect(current.counts.standalone_skills_discovered).toBe(2);
+    expect((await target.service.inventory()).standalone_skills).toHaveLength(2);
     expect(current.standalone_skills).toEqual([
       expect.objectContaining({
         ref: { scope: "workspace", source: "clarvis", name: "same-skill" },
@@ -196,6 +260,26 @@ describe("Environment manager", () => {
     expect(target.activePlugins()).toEqual([pluginRef("same", "global", "agents")]);
   });
 
+  it("keeps unselected installed plugin trees off the active-resolution path", async () => {
+    const setup = manager();
+    await create(setup, { scope: "global", name: "minimal" }, definition());
+    for (let index = 0; index < 64; index += 1) {
+      const name = `inactive-${String(index).padStart(2, "0")}`;
+      const dir = installPlugin(globalPaths(globalDir).pluginsDir, name, { skills: "./skills" });
+      writeSkill(join(dir, "skills"), `${name}-skill`);
+    }
+    const logger = recordingLogger();
+    const target = manager("global:minimal", logger);
+
+    const current = target.resolveActive([], TRUSTED);
+
+    expect(current.status).toBe("ready");
+    expect(current.plugins).toEqual([]);
+    expect(logger.events("skills.discovered")).toEqual([]);
+    expect(logger.events("skill.body_disclosed")).toEqual([]);
+    expect((await target.service.inventory()).plugins).toHaveLength(64);
+  });
+
   it("counts installed plugin skills separately from the active atomic contribution", async () => {
     const activeDir = installPlugin(globalPaths(globalDir).pluginsDir, "active", {
       skills: "./skills",
@@ -215,7 +299,12 @@ describe("Environment manager", () => {
     const current = manager("global:one-plugin").resolveActive([], TRUSTED);
 
     expect(current.counts.plugin_skills_active).toBe(1);
-    expect(current.counts.plugin_skills_discovered).toBe(2);
+    expect(
+      (await manager("global:one-plugin").service.inventory()).plugins.reduce(
+        (total, plugin) => total + plugin.skills.length,
+        0,
+      ),
+    ).toBe(2);
   });
 
   it("selects only exact standalone skills and passes exact include filters to @clarvis/skills", async () => {
@@ -421,6 +510,228 @@ describe("Environment manager", () => {
     });
     expect((await target.service.current()).id).toBe("builtin:default");
     expect(manager().resolveActive([], TRUSTED).id).toBe("global:minimal");
+  });
+
+  it("previews and applies one exact definition plus selection transaction", async () => {
+    installPlugin(globalPaths(globalDir).pluginsDir, "context7", {
+      mcpServers: { docs: { command: "context7" } },
+    });
+    writeSkill(globalPaths(globalDir).skillsDir, "research");
+    const target = manager();
+    const pinned = target.resolveActive([], TRUSTED);
+    const input = {
+      ref: { scope: "global" as const, name: "research" },
+      expected_revision: null,
+      selection_scope: "workspace" as const,
+      definition: definition({
+        plugins: [pluginRef("context7")],
+        skills: [{ scope: "user" as const, source: "clarvis" as const, name: "research" }],
+      }),
+    };
+
+    const preview = await target.service.previewComposition(input);
+
+    expect(preview.current).toEqual(pinned);
+    expect(preview.authored.id).toBe("global:research");
+    expect(preview.authored.plugins[0]).toMatchObject({
+      active: true,
+      mcp_servers: ["context7:docs"],
+    });
+    expect(preview.target.id).toBe("global:research");
+    expect(preview.delta.plugins_entering).toEqual([pluginRef("context7")]);
+    expect(preview.delta.mcp_servers_entering).toEqual(["context7:docs"]);
+    expect(existsSync(join(globalPaths(globalDir).environmentsDir, "research.json"))).toBeFalse();
+
+    const applied = await target.service.applyComposition(input, {
+      preview_token: preview.token,
+    });
+
+    expect(applied).toMatchObject({
+      selected: input.ref,
+      effective: input.ref,
+      reconnect_required: true,
+    });
+    expect(applied.definition.definition).toEqual(input.definition);
+    expect((await target.service.current()).fingerprint).toBe(pinned.fingerprint);
+    expect(manager().resolveActive([], TRUSTED)).toMatchObject({
+      id: "global:research",
+      counts: { plugins_active: 1, standalone_skills_active: 1, mcp_servers_active: 1 },
+    });
+    await expect(
+      target.service.applyComposition(input, { preview_token: preview.token }),
+    ).rejects.toMatchObject({ code: "conflict" });
+  });
+
+  it("rejects composition drift before writing either definition or selection", async () => {
+    const plugin = installPlugin(globalPaths(globalDir).pluginsDir, "mutable", {
+      version: "one",
+    });
+    const target = manager();
+    target.resolveActive([], TRUSTED);
+    const input = {
+      ref: { scope: "global" as const, name: "drift" },
+      expected_revision: null,
+      selection_scope: "workspace" as const,
+      definition: definition({ plugins: [pluginRef("mutable")] }),
+    };
+    const preview = await target.service.previewComposition(input);
+    writeFileSync(join(plugin, "plugin.json"), JSON.stringify({ name: "mutable", version: "two" }));
+
+    await expect(
+      target.service.applyComposition(input, { preview_token: preview.token }),
+    ).rejects.toMatchObject({ code: "conflict" });
+
+    expect(existsSync(join(globalPaths(globalDir).environmentsDir, "drift.json"))).toBeFalse();
+    expect(
+      existsSync(
+        workspaceStatePaths(workspaceRoot, { env: { CLARVIS_HOME: globalDir } })
+          .environmentSelectionFile,
+      ),
+    ).toBeFalse();
+  });
+
+  it("rejects a stale definition revision before a composition can change selection", async () => {
+    const target = manager();
+    const ref = { scope: "global" as const, name: "existing" };
+    const created = await target.service.create({ ref, definition: definition() });
+    target.resolveActive([], TRUSTED);
+    const input = {
+      ref,
+      expected_revision: created.revision!,
+      selection_scope: "workspace" as const,
+      definition: definition({ description: "reviewed draft" }),
+    };
+    const preview = await target.service.previewComposition(input);
+    await target.service.update({
+      ref,
+      expected_revision: created.revision!,
+      definition: definition({ description: "concurrent edit" }),
+    });
+
+    await expect(
+      target.service.applyComposition(input, { preview_token: preview.token }),
+    ).rejects.toMatchObject({ code: "conflict" });
+
+    expect((await target.service.get(ref)).description).toBe("concurrent edit");
+    expect(
+      existsSync(
+        workspaceStatePaths(workspaceRoot, { env: { CLARVIS_HOME: globalDir } })
+          .environmentSelectionFile,
+      ),
+    ).toBeFalse();
+  });
+
+  it("restores definition and selection bytes when composition trust approval fails", async () => {
+    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {});
+    const target = manager();
+    target.bindRuntime({
+      readWorkspaceTrust: () => ({ state: "unapproved" }),
+      approveWorkspace: () => {
+        throw new Error("approval store unavailable");
+      },
+    });
+    target.resolveActive([], { state: "unapproved" });
+    const input = {
+      ref: { scope: "workspace" as const, name: "project" },
+      expected_revision: null,
+      selection_scope: "workspace" as const,
+      definition: definition({ plugins: [pluginRef("runner", "workspace")] }),
+    };
+    const preview = await target.service.previewComposition(input);
+    expect(preview.requires_workspace_trust).toBeTrue();
+
+    await expect(
+      target.service.applyComposition(input, {
+        preview_token: preview.token,
+        approve_workspace: true,
+      }),
+    ).rejects.toThrow("approval store unavailable");
+
+    expect(
+      existsSync(join(workspacePaths(workspaceRoot).environmentsDir, "project.json")),
+    ).toBeFalse();
+    expect(
+      existsSync(
+        workspaceStatePaths(workspaceRoot, { env: { CLARVIS_HOME: globalDir } })
+          .environmentSelectionFile,
+      ),
+    ).toBeFalse();
+  });
+
+  it("previews normal precedence when a workspace choice shadows a new global default", async () => {
+    const setup = manager();
+    const local = { scope: "workspace" as const, name: "local" };
+    await create(setup, local, definition({ description: "local" }));
+    const selection = workspaceStatePaths(workspaceRoot, {
+      env: { CLARVIS_HOME: globalDir },
+    }).environmentSelectionFile;
+    mkdirSync(join(selection, ".."), { recursive: true });
+    writeFileSync(selection, JSON.stringify({ schema_version: 1, environment: local }));
+    const target = manager();
+    target.resolveActive([], TRUSTED);
+    const input = {
+      ref: { scope: "global" as const, name: "operator" },
+      expected_revision: null,
+      selection_scope: "global" as const,
+      definition: definition({ description: "operator" }),
+    };
+
+    const preview = await target.service.previewComposition(input);
+
+    expect(preview.authored.id).toBe("global:operator");
+    expect(preview.target.id).toBe("workspace:local");
+    expect(preview.delta).toEqual({
+      plugins_entering: [],
+      plugins_leaving: [],
+      skills_entering: [],
+      skills_leaving: [],
+      mcp_servers_entering: [],
+      mcp_servers_leaving: [],
+      hooks_entering: [],
+      hooks_leaving: [],
+    });
+    const applied = await target.service.applyComposition(input, {
+      preview_token: preview.token,
+    });
+    expect(applied.effective).toEqual(local);
+    expect(manager().resolveActive([], TRUSTED).id).toBe("workspace:local");
+  });
+
+  it("does not approve an unchanged untrusted workspace target shadowing a global composition", async () => {
+    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {});
+    const setup = manager();
+    const local = { scope: "workspace" as const, name: "local" };
+    await create(setup, local, definition({ plugins: [pluginRef("runner", "workspace")] }));
+    const workspaceSelection = workspaceStatePaths(workspaceRoot, {
+      env: { CLARVIS_HOME: globalDir },
+    }).environmentSelectionFile;
+    mkdirSync(join(workspaceSelection, ".."), { recursive: true });
+    writeFileSync(workspaceSelection, JSON.stringify({ schema_version: 1, environment: local }));
+    const target = manager();
+    const unapproved: WorkspaceTrustVerdict = { state: "unapproved" };
+    target.bindRuntime({
+      readWorkspaceTrust: () => unapproved,
+      approveWorkspace: () => {
+        throw new Error("a shadowed global composition must not approve workspace trust");
+      },
+    });
+    const current = target.resolveActive([], unapproved);
+    const input = {
+      ref: { scope: "global" as const, name: "operator" },
+      expected_revision: null,
+      selection_scope: "global" as const,
+      definition: definition({ description: "operator" }),
+    };
+
+    const preview = await target.service.previewComposition(input);
+
+    expect(preview.target.id).toBe("workspace:local");
+    expect(preview.target.fingerprint).toBe(current.fingerprint);
+    expect(preview.requires_workspace_trust).toBeFalse();
+    await expect(
+      target.service.applyComposition(input, { preview_token: preview.token }),
+    ).resolves.toMatchObject({ effective: local });
+    expect(manager().resolveActive([], unapproved).id).toBe("workspace:local");
   });
 
   it("previews a global write through workspace selection precedence", async () => {
@@ -742,6 +1053,20 @@ describe("Environment manager", () => {
         }),
       }),
     ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      target.service.create({
+        ref: { scope: "workspace", name: "duplicate-skill" },
+        definition: definition({
+          skills: [
+            { scope: "user", source: "agents", name: "same-skill" },
+            { scope: "workspace", source: "clarvis", name: "same-skill" },
+          ],
+        }),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(target.service.get({ scope: "builtin", name: "unknown" })).rejects.toMatchObject({
+      code: "not_found",
+    });
 
     const cloned = await target.service.clone(
       { scope: "builtin", name: "default" },
@@ -792,6 +1117,38 @@ describe("Environment manager", () => {
     expect(updated.definition?.description).toBe("written");
   });
 
+  it("deletes only an inactive authored Environment at its exact revision", async () => {
+    const setup = manager();
+    const removable = { scope: "global" as const, name: "removable" };
+    const selected = { scope: "global" as const, name: "selected" };
+    const removableView = await setup.service.create({
+      ref: removable,
+      definition: definition({ description: "remove me" }),
+    });
+    const selectedView = await setup.service.create({
+      ref: selected,
+      definition: definition({ description: "keep me" }),
+    });
+
+    await expect(
+      setup.service.delete(removable, { expected_revision: `sha256:${"0".repeat(64)}` }),
+    ).rejects.toMatchObject({ code: "conflict" });
+    expect((await setup.service.get(removable)).description).toBe("remove me");
+
+    await setup.service.delete(removable, { expected_revision: removableView.revision! });
+    expect((await setup.service.get(removable)).status).toBe("invalid");
+    expect(
+      (await setup.service.list()).some((view) => view.ref.name === removable.name),
+    ).toBeFalse();
+
+    const active = manager("global:selected");
+    active.resolveActive([], TRUSTED);
+    await expect(
+      active.service.delete(selected, { expected_revision: selectedView.revision! }),
+    ).rejects.toThrow("select another Environment and reconnect");
+    expect((await active.service.get(selected)).description).toBe("keep me");
+  });
+
   it("serializes catalog creates and enforces both catalog resource bounds", async () => {
     const target = manager();
     const dir = globalPaths(globalDir).environmentsDir;
@@ -820,6 +1177,28 @@ describe("Environment manager", () => {
       }),
     ).rejects.toMatchObject({ code: "resource_exhausted" });
     expect(existsSync(overflow)).toBeFalse();
+
+    writeFileSync(join(dir, "bounded-128.json"), "{}\n");
+    const listed = await target.service.list();
+    expect(listed).toContainEqual(
+      expect.objectContaining({
+        ref: { scope: "global", name: "invalid-directory" },
+        error: expect.stringContaining("more than 128 definitions"),
+      }),
+    );
+
+    const oversized = join(workspacePaths(workspaceRoot).environmentsDir, "oversized.json");
+    mkdirSync(workspacePaths(workspaceRoot).environmentsDir, { recursive: true });
+    writeFileSync(oversized, " ");
+    truncateSync(oversized, 1024 * 1024 + 1);
+    expect(await target.service.get({ scope: "workspace", name: "oversized" })).toMatchObject({
+      status: "invalid",
+      issues: [
+        expect.objectContaining({
+          message: expect.stringContaining("1048576-byte resource limit"),
+        }),
+      ],
+    });
   });
 
   it("never replaces an existing definition entry it cannot read safely", async () => {
@@ -836,7 +1215,7 @@ describe("Environment manager", () => {
     expect(existsSync(join(path, "sentinel"))).toBeTrue();
   });
 
-  it("keeps hook approval outside the Environment fingerprint", async () => {
+  it("activates plugin hooks atomically with their Environment membership", async () => {
     const hook = { event: "run_start" as const, command: "echo ready" };
     installPlugin(globalPaths(globalDir).pluginsDir, "hooked", { hooks: [hook] });
     const setup = manager();
@@ -845,14 +1224,8 @@ describe("Environment manager", () => {
       { scope: "global", name: "hooks" },
       definition({ plugins: [pluginRef("hooked")] }),
     );
-    const before = manager("global:hooks").resolveActive([], TRUSTED);
-    expect(before.counts.hooks_approved).toBe(0);
-
-    writeHookApproval(globalDir, pluginRef("hooked"), hookFingerprint(hook), true);
-    const after = manager("global:hooks").resolveActive([], TRUSTED);
-
-    expect(after.counts.hooks_approved).toBe(1);
-    expect(after.fingerprint).toBe(before.fingerprint);
+    const resolved = manager("global:hooks").resolveActive([], TRUSTED);
+    expect(resolved.counts.hooks_declared).toBe(1);
   });
 
   it("rejects malformed service inputs as invalid requests without touching the filesystem", async () => {

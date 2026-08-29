@@ -705,7 +705,7 @@ the same design language used for plugin manifests generally (`packages/kernel/s
   comments as the origin of these numbers, but the catalog itself is not part of this repository and
   this document could not independently verify it).
 - **The plugin manifest's broader per-artifact degradation model** (agents, skills-root directives,
-  install records, hook trust) is delegated to [hosts/plugins.md](../hosts/plugins.md); this document cites
+  install records, and atomic plugin hooks) is delegated to [hosts/plugins.md](../hosts/plugins.md); this document cites
   `plugin-manifest.ts` only at the points where it composes the tables, translator, and MCP companion
   tolerance this document owns (`resolveMcpServers` at `:763-778`, `sanitizeMcpServers` at `:780-821`,
   and `harvestDocument`/`convertHooksDocument` at `:484-551`).

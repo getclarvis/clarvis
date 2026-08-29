@@ -51,6 +51,7 @@ export function LevelHost(props: {
   picker?: () => CatalogPickerSpec | null;
   /** Applies the responsive first-run splash only to this host's catalog picker. */
   firstRunPicker?: boolean;
+  footerStatus?: Parameters<typeof UiLevelHost>[0]["footerStatus"];
 }): JSX.Element {
   return (
     <UiLevelHost

@@ -15,7 +15,7 @@ change grants/sandbox/memory, pin plugin versions, or inherit from another Envir
 Environment is a complete allow-list of exact plugin installations and standalone skills; plugin
 contributions remain atomic. (`EnvironmentDefinition` in
 `packages/protocol/src/environments.ts:36`; `resolved` and `skillRoots` in
-`packages/kernel/src/environments/environment-manager.ts:736`, `:930`.)
+`packages/kernel/src/environments/environment-manager.ts`.)
 
 The immutable virtual `builtin:default` activates the exact `{ scope, source, name }` references in
 `enabledPlugins`; plugin skills follow those active plugins, and standalone skills use all four
@@ -27,7 +27,7 @@ cases in `packages/kernel/tests/integration/environment-manager.test.ts`.)
 The kernel owns discovery, resolution, trust, and snapshot identity. `@clarvis/skills` receives only
 resolved roots and exact `include` lists, while the loop sees roots plus opaque host metadata rather
 than an Environment domain object. (`skillRoots` in
-`packages/kernel/src/environments/environment-manager.ts:930`; `HostRunDeps.hostMetadata` in
+`packages/kernel/src/environments/environment-manager.ts`; `HostRunDeps.hostMetadata` in
 `packages/loop/src/runtime/execute-run.ts:76`.)
 
 ## 2. Surface
@@ -42,24 +42,27 @@ than an Environment domain object. (`skillRoots` in
 | `EnvironmentSkillRef` | Exact standalone source: `user|workspace`, `agents|clarvis`, plus name. |
 | `EnvironmentDefinition` | Version-one description and complete `plugins` / `skills` allow-lists. |
 | `ResolvedEnvironment` | Immutable resolution snapshot, status, fingerprint, resolved contributions, issues, and counts. |
+| `EnvironmentInventory` | Every exact installed plugin and discovered standalone skill, projected inactive for composition. |
 | `EnvironmentPreview` | Current/target snapshots, exact delta, expiring apply token, and workspace-trust requirement. |
-| `EnvironmentService` | `list`, `current`, `get`, `preview`, `previewClear`, `select`, preview-bound `clearSelection`, `create`, revision-bound `update`, and `clone`. |
+| `EnvironmentCompositionPreview` | Current, authored, and normally effective snapshots plus one definition-and-selection apply token. |
+| `EnvironmentService` | `list`, `current`, `get`, `inventory`, `preview`, `previewClear`, `previewComposition`, `select`, preview-bound `clearSelection`, `applyComposition`, `create`, revision-bound `update`/`delete`, and `clone`. |
 
 `KernelClient.environments` exposes that service beside the other kernel services
 (`KernelClient.environments`, `packages/protocol/src/client.ts:68`). The in-process kernel accepts an injected service and gives
 embedders an immutable builtin-only fallback (`createBuiltinEnvironmentService` in
 `packages/kernel/src/kernel.ts:267`); the file kernel supplies the file-backed manager
-(`packages/kernel/src/file-kernel.ts:357`, `:857`). The same ten operations are generated for local
+(`packages/kernel/src/file-kernel.ts:357`, `:857`). The same fourteen operations are generated for local
 and remote clients by the shared operation catalog (`ENVIRONMENT_OPERATIONS` entries in
-`packages/kernel/src/transport/operations.ts:355`).
+`packages/kernel/src/transport/operations.ts`).
 
-Code exposes the surface under Extensions as **Environment**, never as a generic profile. The view
-lists and diagnoses definitions, creates empty definitions, clones a resolved set, previews the
-delta, selects a local or global default, and reconnects the backend
-(`EnvironmentBrowser` in `packages/code/src/views/config/EnvironmentBrowser.tsx:123`). The plugin
-browser edits the active custom definition with revision CAS; under `builtin:default` it preserves
-the exact global `enabledPlugins` write (`plugins.open` registration in
-`packages/code/src/app/commands.tsx:816`).
+Code exposes the surface under Extensions as **Environment**, never as a generic profile. The
+primary route guides scope, definition/clone choice, exact inventory, capability review, and one
+composition apply. The focused view lists and diagnoses definitions, routes creation/customization
+into that composer, previews direct selection/clear deltas, and reconnects the backend
+(`ExtensionsHub` and `EnvironmentBrowser` in `packages/code/src/views/config`). The focused Plugins
+browser composes installation and exact membership through the current Environment; its configure
+action returns to the guided composer primed with the selected exact ref (`marketplace.open`
+registration in `packages/code/src/app/commands.tsx`).
 
 ## 3. Data and formats
 
@@ -76,6 +79,11 @@ The path vocabulary is constructed only by `globalPaths`, `workspacePaths`, and
 `workspaceStatePaths` (`packages/paths/src/global.ts:41`, `:79`, `:124`, `:136`;
 `packages/paths/src/workspace.ts:51`, `:115`; `packages/paths/src/workspace-state.ts:55`, `:195`).
 Definitions may therefore be committed, while merely cloning a repository does not select one.
+Listing definitions materializes an absent global catalog with `DIR_MODE`, but an absent workspace
+catalog contributes no definitions and is not created as a read side effect. Both an initial
+`opendir` absence and an `ENOENT` raised later by bounded directory iteration follow that same rule
+(`missingDefinitionCatalog`, `definitionNames`, and `list` in
+`packages/kernel/src/environments/environment-manager.ts`).
 
 ### 3.2 Version-one definition
 
@@ -98,7 +106,7 @@ most 64 plugins and 256 standalone skills. Duplicate plugin names across scopes 
 names across roots are rejected because the downstream catalogs merge by unqualified name. A global
 definition may reference only global plugins and user-scoped skills. (`definitionSchema`,
 `readBounded`, and `parseDefinition` in
-`packages/kernel/src/environments/environment-manager.ts:68`, `:242`, `:273`.)
+`packages/kernel/src/environments/environment-manager.ts`.)
 
 Each scope admits at most 128 definition files and 256 total directory entries. Create operations
 hold a scope-wide catalog lease before the per-definition lease, re-read both limits inside that
@@ -109,8 +117,12 @@ or non-regular existing entry is never replaced. (`definitionNames`, `underLease
 Selection documents are strict `{ "schema_version": 1, "environment": EnvironmentRef }` JSON
 written atomically. A global selection cannot point at a workspace definition
 (`selectionSchema`, `selectionFromFile`, and `writeSelection` in
-`packages/kernel/src/environments/environment-manager.ts:117`, `:523`, `:1069`). Definition writes
+`packages/kernel/src/environments/environment-manager.ts`). Definition writes
 are formatted JSON and updates compare the exact-byte SHA-256 revision returned by the prior read.
+Deletion accepts only authored global/workspace refs and the exact expected revision. Under both
+selection leases it refuses the process-pinned Environment and any definition still selected by
+either global or workspace state, then removes only that exact regular file (`EnvironmentService.delete`
+and `withDefinitionMutation` in `packages/kernel/src/environments/environment-manager.ts`).
 Definition and selection mutations perform that comparison under crash-recoverable local leases, so
 cooperating Clarvis processes cannot both win a stale write (`underLease`, `underDefinitionLease`,
 `underSelectionLeases`, and `writeDefinition` in
@@ -141,10 +153,11 @@ The active reference is selected in this order:
 4. `builtin:default`.
 
 `selectedNow` implements the persisted precedence and `selectorRef` implements qualified and bare
-CLI selectors (`packages/kernel/src/environments/environment-manager.ts:548`, `:570`). A bare name
+CLI selectors in `packages/kernel/src/environments/environment-manager.ts`. A bare name
 chooses an existing workspace definition before the global one; if that workspace file exists but
 is invalid, it remains the selected invalid definition and does not fall through
-(`packages/kernel/tests/integration/environment-manager.test.ts:278`).
+(`does not let an invalid workspace definition fall through a bare CLI selector` in
+`packages/kernel/tests/integration/environment-manager.test.ts`).
 
 Resolution inventories all four plugin roots — global/workspace crossed with
 `.agents/plugins`/`.clarvis/plugins` — and matches every Environment reference exactly
@@ -158,15 +171,16 @@ Environment.
 Standalone skills are inventoried separately in the four established roots. Custom Environments
 emit only selected roots with exact `include` filters; `@clarvis/skills` normalizes that list and
 filters after manifest resolution, so precedence and manifest-name validation remain unchanged
-(`skillRoots`, `packages/kernel/src/environments/environment-manager.ts:930`;
+(`skillRoots` in `packages/kernel/src/environments/environment-manager.ts`;
 `normalizeInclude`, `packages/skills/src/config.ts:129`; `scanRoot`,
 `packages/skills/src/registry.ts:349`). Plugin skill roots are admitted only through active plugins,
 and a plugin's agents, MCP servers, capability executables, hooks, and skills are one activation
-unit (`pluginInventory`, `packages/kernel/src/environments/environment-manager.ts:683`). Active
+unit (`pluginInventory` in `packages/kernel/src/environments/environment-manager.ts`). Active
 plugin MCP servers are attached independently of authored agent tool lists and marked `auto_tools`;
 after each server opens, all tools it advertised join every effective per-run agent while the
-persisted profile remains unchanged (`createSettingsRunAssembler`, `addAutomaticMcpTools`). Hook
-execution still depends on its independent exact-definition approval count.
+persisted profile remains unchanged (`createSettingsRunAssembler`, `addAutomaticMcpTools`). Plugin
+hooks enter with that same atomic contribution; workspace-authored executable content remains gated
+by the workspace fingerprint approval described below.
 
 An exact empty root set is intentional: the loop exposes an empty skills provider without appending
 standard roots and without reporting a discovery failure. This keeps a custom Environment with no
@@ -178,7 +192,8 @@ standalone or plugin skills truly empty (`emptySkillsProvider` and `dynamicSkill
 
 `ready` means every selected reference resolved and applicable trust is present; missing inventory,
 an invalid plugin, or unapproved workspace executables produces `degraded`; an invalid selection or
-definition produces `invalid` (`resolved`, packages/kernel/src/environments/environment-manager.ts:736`).
+definition produces `invalid` (`resolved` in
+`packages/kernel/src/environments/environment-manager.ts`).
 No state silently substitutes `builtin:default`.
 
 `resolveActive` pins one contribution snapshot for the process. Each active plugin digest covers its
@@ -208,12 +223,12 @@ it (`withSelectedMutation` in `packages/kernel/src/{kernel,plugins/plugin-servic
 `selectedPluginLifecycleBlock` and `recomposeSelectedPlugin` in
 `packages/code/src/app/commands.tsx`).
 
-### 4.3 Preview, trust, and resume
+### 4.3 Preview, composition, trust, and resume
 
 Before an interactive selection or local-selection clear, Code asks the kernel for an exact delta
 of plugins, standalone and plugin skills, MCP servers, and hook counts, then requires explicit
 confirmation
-(`deltaOf`, `packages/kernel/src/environments/environment-manager.ts:348`;
+(`deltaOf` in `packages/kernel/src/environments/environment-manager.ts`;
 `EnvironmentBrowser.apply`, `packages/code/src/views/config/EnvironmentBrowser.tsx:165`). A preview
 token is single-use, expires after five minutes, and binds the mutation kind, selected reference,
 persisted selection scope, both exact selection-document revisions, and resolved target fingerprint.
@@ -224,17 +239,30 @@ fails with `conflict` (`selectedAfterWrite`, `preview`,
 `previewClear`, `EnvironmentService.select`, and `EnvironmentService.clearSelection` in
 `packages/kernel/src/environments/environment-manager.ts`).
 
+The guided composer reads `EnvironmentService.inventory()` once per coalesced refresh and stages a
+complete definition in Code memory. `previewComposition` binds that definition's canonical bytes,
+its expected prior revision (or exact absence), both selection-document revisions, the authored
+snapshot fingerprint, and the normally effective target fingerprint. `applyComposition` consumes
+the token once, revalidates those facts under catalog/definition/selection leases, and writes the
+definition plus intended selection as one recoverable operation. No conflict writes a substitute
+definition or a different selection; trust approval failure restores both prior documents. A
+workspace-local selection that already shadows a new global default remains the effective target.
+If that unchanged target is untrusted, the global write neither activates it nor grants new trust
+(`inventory`, `previewComposition`, `applyComposition`, `restoreDefinition`, and
+`restoreSelection` in `packages/kernel/src/environments/environment-manager.ts`; composition cases
+in `packages/kernel/tests/integration/environment-manager.test.ts`).
+
 A selected workspace definition containing plugins enters the existing workspace executable
 surface with its reference, exact definition revision, and qualified plugin list. Any file change
 therefore changes the workspace-trust fingerprint and requires a fresh approval before those plugins
 become active. A verdict for the currently selected workspace Environment never authorizes switching
 to another executable Environment; the target selection receives its own approval
-(`workspaceTrustSurface`, `workspaceTargetNeedsApproval`,
-`packages/kernel/src/environments/environment-manager.ts:947`; `workspaceExecutableSurface` in
-`packages/kernel/src/config/workspace-trust.ts:242`). The selection write and trust approval are one
-recoverable operation: an approval failure restores the exact prior selection bytes. Hook approvals
-remain separate (`EnvironmentService.select` and `restoreSelection` in
-`packages/kernel/src/environments/environment-manager.ts`; test
+(`workspaceTrustSurface` and `workspaceTargetNeedsApproval` in
+`packages/kernel/src/environments/environment-manager.ts`; `workspaceExecutableSurface` in
+`packages/kernel/src/config/workspace-trust.ts`). The selection write and trust approval are one
+recoverable operation: an approval failure restores the exact prior selection bytes. Plugin hooks
+are part of the selected plugin unit rather than a second approval projection
+(`EnvironmentService.select`, `restoreSelection`, and `pluginSettingsContributions`; test
 `packages/kernel/tests/integration/environment-manager.test.ts` "restores the prior selection").
 
 Approving or revoking workspace trust recomposes the selected workspace (or `builtin:default`
@@ -258,7 +286,7 @@ An Environment resolver never clones, updates, removes, or otherwise installs a 
 only the installed inventory. Plugin lifecycle remains on `PluginService`.
 
 - **Production:** `pluginInventory` in
-  `packages/kernel/src/environments/environment-manager.ts:683`; `EnvironmentService` in
+  `packages/kernel/src/environments/environment-manager.ts`; `EnvironmentService` in
   `packages/protocol/src/environments.ts:178` has no install operation.
 - **Test:** `packages/kernel/tests/integration/environment-manager.test.ts` constructs all four
   inventories before exact activation and proves an unrelated install stays inactive.
@@ -268,8 +296,8 @@ only the installed inventory. Plugin lifecycle remains on `PluginService`.
 The builtin activation list does not leak into a custom Environment, and no `{ scope, source, name }`
 reference silently means another scope or source.
 
-- **Production:** custom branches and exact `installedByRef` lookup in `resolved`,
-  `packages/kernel/src/environments/environment-manager.ts:760`, `:786`.
+- **Production:** custom branches and exact `installedByRef` lookup in `resolved` in
+  `packages/kernel/src/environments/environment-manager.ts`.
 - **Test:** `packages/kernel/tests/integration/environment-manager.test.ts` proves exact global
   `.agents`/`.clarvis` selection despite same-named alternatives and proves unselected installs are
   absent.
@@ -280,9 +308,10 @@ An invalid selection or definition activates neither custom plugins nor standalo
 falls back to builtin.
 
 - **Production:** `validDefinition`, `pluginViews`, and `skillViews` gates in
-  `packages/kernel/src/environments/environment-manager.ts:757`, `:784`, `:825`.
-- **Test:** `packages/kernel/tests/integration/environment-manager.test.ts:241` and `:278` pin invalid
-  persisted and CLI-selected workspace cases.
+  `packages/kernel/src/environments/environment-manager.ts`.
+- **Test:** `fails closed for an invalid persisted selection` and `does not let an invalid workspace
+  definition fall through a bare CLI selector` in
+  `packages/kernel/tests/integration/environment-manager.test.ts` pin both invalid cases.
 
 ### INV-317 — A kernel uses one immutable resolved snapshot
 
@@ -342,22 +371,60 @@ Two processes cannot both create past a catalog limit, and creation never replac
 absence cannot be established safely.
 
 - **Production:** `definitionNames` and `writeDefinition` in
-  `packages/kernel/src/environments/environment-manager.ts:299`, `:1089` enforce catalog and
+  `packages/kernel/src/environments/environment-manager.ts` enforce catalog and
   per-definition leases, both limits, exact absence, and atomic publication.
-- **Test:** `packages/kernel/tests/integration/environment-manager.test.ts:626` holds the catalog
-  lease and fills the 128-definition bound; `:656` proves a non-regular target survives unchanged.
+- **Test:** `serializes catalog creates and enforces both catalog resource bounds` in
+  `packages/kernel/tests/integration/environment-manager.test.ts` holds the catalog lease and
+  proves both bounds; `never replaces an existing definition entry it cannot read safely` proves a
+  non-regular target survives unchanged.
 
-### INV-322 — Hook approval is independent from Environment identity
+### INV-322 — Hook definitions are part of the atomic plugin snapshot
 
-The plugin manifest, including its hook definitions, identifies the extension snapshot. Approving
-or revoking one unchanged definition changes its execution eligibility and displayed count without
-changing the Environment fingerprint.
+The selected plugin manifest, including every hook definition and executable contribution, is
+hashed into the Environment identity. No mutable per-hook approval projection can change execution
+eligibility underneath an unchanged `{ id, fingerprint }`.
 
-- **Production:** `pluginInventory` reports approval in the view at
-  `packages/kernel/src/environments/environment-manager.ts:718`, while its identity digest includes
-  manifest bytes and install provenance, not the approval projection, at `:724`.
-- **Test:** `packages/kernel/tests/integration/environment-manager.test.ts:670` changes hook approval,
-  observes the count change, and pins the unchanged fingerprint.
+- **Production:** `pluginInventory` and `pluginContentDigest` in
+  `packages/kernel/src/environments/environment-manager.ts`; `pluginSettingsContributions` in
+  `packages/kernel/src/plugins/plugin-contributions.ts`.
+- **Test:** `packages/kernel/tests/integration/environment-manager.test.ts` (content digest and
+  snapshot drift cases) and `packages/kernel/tests/integration/plugin-contributions.test.ts`
+  (selected hooks compose with their plugin).
+
+### INV-323 — Missing catalogs are safe and workspace reads are side-effect-free
+
+The first definition listing creates an absent global catalog with private directory permissions.
+An absent workspace catalog is an empty inventory and is never created merely by opening the view;
+an absence reported during either directory open or bounded iteration has the same outcome.
+
+- **Production:** `missingDefinitionCatalog`, `definitionNames`, and `list` in
+  `packages/kernel/src/environments/environment-manager.ts`.
+- **Test:** `packages/kernel/tests/integration/environment-manager.test.ts` ("materializes an empty
+  global catalog without writing into the workspace").
+
+### INV-324 — Guided composition is one preview-bound recoverable mutation
+
+A composition apply can write only the definition bytes and normally effective selection reviewed
+under its token. Definition, inventory, or selection drift fails before either write; approval
+failure restores both prior documents.
+
+- **Production:** `previewComposition`, `applyComposition`, `withDefinitionMutation`,
+  `restoreDefinition`, and `restoreSelection` in
+  `packages/kernel/src/environments/environment-manager.ts`.
+- **Test:** the composition success, stale-definition, inventory-drift, shadowed-precedence,
+  unchanged-untrusted-target, trust-rollback, and token-replay cases in
+  `packages/kernel/tests/integration/environment-manager.test.ts`.
+
+### INV-325 — Definition deletion is inactive, exact, and revision-bound
+
+Deletion cannot name the builtin, cannot remove a definition selected at either precedence level,
+and cannot remove bytes other than the revision the caller inspected.
+
+- **Production:** `EnvironmentService.delete`, `withDefinitionMutation`, and
+  `underSelectionLeases` in `packages/kernel/src/environments/environment-manager.ts`.
+- **Test:** `packages/kernel/tests/integration/environment-manager.test.ts` (deletion lifecycle and
+  stale revision cases) and `packages/code/tests/integration/environment-browser-render.test.tsx`
+  (danger-confirmed inactive delete).
 
 ## 6. Failure modes and degradation
 
@@ -371,20 +438,25 @@ changing the Environment fingerprint.
 | Definition changed after read or another Clarvis writer holds its definition/catalog lease | revision-bound mutation returns `conflict`. |
 | Definition catalog reached 128 definitions or 256 entries | `create` returns `resource_exhausted`; no partial file is written. |
 | Existing target is unreadable or non-regular | `create` returns `unavailable` and never replaces it. |
+| Delete targets the builtin, an active/selected definition, or a stale revision | `invalid_request` or `conflict`; no file is removed. |
 | Target, selection bytes/scope, or precedence fallback changed after preview | `select` or `clearSelection` returns `conflict`; no selection is changed. |
+| Draft definition, expected definition revision, selection bytes, or resolved inventory changed after composition preview | `applyComposition` returns `conflict`; neither definition nor selection is written. |
 | Active CLI override | persisted `select` and `clearSelection` return `conflict`; edit/reconnect may still reload the same CLI-selected definition. |
 | Malformed service input from an embedder or transport | `invalid_request`; no path is constructed or file touched. |
 | Workspace approval storage fails after a selection write | the exact prior selection is restored and the approval error is returned. |
+| Workspace approval storage fails during composition | the exact prior definition and selection are restored and the approval error is returned. |
 | Selected plugin content changes after snapshot resolution | contribution reads return `unavailable`; reconnect is required and no changed contribution is consumed under the old fingerprint. |
 | Workspace trust changes or selected plugin update/uninstall is requested during a run | `conflict`; the trust store and selected checkout remain unchanged. |
 | A selected plugin update/uninstall completed but the kernel was not reconnected | new runs return `unavailable`; management remains available for reconnect/diagnosis. |
+| Global definition catalog is absent | listing creates it with private directory permissions and continues with `builtin:default`. |
+| Workspace definition catalog is absent | listing treats it as empty and does not create repository content. |
 | Definition directory or file exceeds a resource bound | list/get reports an invalid entry; it never returns a partial silently usable definition. |
 
 The failures are implemented by `readBounded`, `definitionNames`, `resolved`, `writeDefinition`, and
 `EnvironmentService.select` in `packages/kernel/src/environments/environment-manager.ts`. The TUI
 renders status, every issue, missing contribution, fingerprint, and source rather than reducing a
-degraded Environment to an empty list (`rowsFor`,
-`packages/code/src/views/config/EnvironmentBrowser.tsx:64`).
+degraded Environment to an empty list (`fullDetail` and `normalBody` in
+`packages/code/src/views/config/EnvironmentBrowser.tsx`).
 
 ## 7. Coupling
 

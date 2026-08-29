@@ -139,3 +139,39 @@ test("the picker signal drives the single CatalogPicker mount", async () => {
   expect(frame).toContain("LIST BODY");
   t.renderer.destroy();
 });
+
+test("a retained CatalogPicker projects the active spec's action wording", async () => {
+  const [picker, setPicker] = createSignal<CatalogPickerSpec | null>(null);
+  const { t } = await mount((h) => ({
+    host: h,
+    levels: [{ title: "Things", body: () => <text>LIST BODY</text> }],
+    picker,
+  }));
+  setPicker({
+    title: "Choose scope",
+    rows: () => [{ id: "scope", label: "workspace", haystack: "workspace" }],
+    onPick: () => {},
+    onClose: () => setPicker(null),
+  });
+  await t.renderOnce();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("[esc] cancel");
+
+  setPicker(null);
+  await t.renderOnce();
+  setPicker({
+    title: "Compose extensions",
+    rows: () => [{ id: "plugin", label: "context7", haystack: "context7", added: true }],
+    onPick: () => {},
+    onClose: () => setPicker(null),
+    stayOpen: true,
+    confirmLabel: (row) => (row?.added ? "remove" : "add"),
+  });
+  await t.renderOnce();
+  await t.renderOnce();
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("[↵] remove");
+  expect(frame).toContain("[esc] done");
+  expect(frame).not.toContain("[esc] cancel");
+  t.renderer.destroy();
+});

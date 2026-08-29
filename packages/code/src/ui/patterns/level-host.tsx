@@ -1,7 +1,7 @@
 import type { Accessor, JSX } from "solid-js";
 import { createMemo, Show } from "solid-js";
 import type { ViewHost } from "../../keys/commands.ts";
-import { ViewFrame } from "./view-frame.tsx";
+import { ViewFrame, type ViewFrameStatus } from "./view-frame.tsx";
 import { SurfaceBoundary } from "./surface-lifecycle.tsx";
 
 interface EditorHost {
@@ -36,6 +36,7 @@ export function LevelHost<PickerSpec = never>(props: {
   editor?: EditorHost;
   picker?: () => PickerSpec | null;
   renderPicker?: (spec: Accessor<PickerSpec | null>, active: Accessor<boolean>) => JSX.Element;
+  footerStatus?: () => ViewFrameStatus | undefined;
 }): JSX.Element {
   const depth = (): number => props.host.level.depth();
   const active = createMemo<LevelView | undefined>(() =>
@@ -49,7 +50,12 @@ export function LevelHost<PickerSpec = never>(props: {
   return (
     <>
       <Show when={active()}>
-        <ViewFrame host={props.host} title={title()} readOnly={active()?.readOnly ?? false}>
+        <ViewFrame
+          host={props.host}
+          title={title()}
+          readOnly={active()?.readOnly ?? false}
+          footerStatus={props.footerStatus}
+        >
           {active()?.body()}
           <Show when={props.editor?.editing()}>{props.editor!.EditInput()}</Show>
         </ViewFrame>

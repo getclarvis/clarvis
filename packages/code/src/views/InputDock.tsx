@@ -288,15 +288,17 @@ export function InputDock(props: {
   function acceptAc(): void {
     const item = acItems()[clampIndex(acIndex(), acItems().length)];
     const provider = acProvider;
+    const currentText = ref?.plainText.trim() ?? "";
     closeAc();
     if (!item || !provider) {
       if (!item) props.onNotify?.("no match");
       return;
     }
     if (provider.trigger.startsWith("/")) {
-      ref?.setText(item.insert ?? "");
+      const accepted = currentText === item.label ? { ...item, insert: "" } : item;
+      ref?.setText(accepted.insert ?? "");
       ref?.gotoBufferEnd();
-      provider.onAccept?.(item);
+      provider.onAccept?.(accepted);
       return;
     }
     ref?.setText(acceptMention(ref?.plainText ?? "", provider.trigger, item.insert ?? item.value));

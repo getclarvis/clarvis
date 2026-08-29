@@ -149,12 +149,16 @@ describe("transport operation descriptors", () => {
       list: "read",
       current: "read",
       get: "read",
+      inventory: "read",
       preview: "read",
       previewClear: "read",
+      previewComposition: "read",
       select: "write",
       clearSelection: "write",
+      applyComposition: "write",
       create: "write",
       update: "write",
+      delete: "write",
       clone: "write",
     } as const;
 

@@ -1,6 +1,6 @@
 import { glyph } from "../theme/glyphs.ts";
 import type { Accessor } from "solid-js";
-import { createEffect, createMemo, createSignal, onMount } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { detachObserved } from "../core/tasks.ts";
 import type { Platform } from "../adapters/platform.ts";
 import type { ActiveAgentStore } from "../adapters/active-agent.ts";
@@ -42,13 +42,17 @@ import {
 import type { LivePrompt, PromptMessage } from "../adapters/mcp-capabilities.ts";
 import type {
   PlansMode,
+  EnvironmentDefinition,
+  EnvironmentRef,
   EnvironmentService,
   PluginRef,
   ModelCatalogService,
   PluginService,
   ProviderAuthService,
+  ResolvedEnvironment,
   RunDetail,
   SandboxInspection,
+  SkillsService,
   StorageService,
   WorkflowsService,
   SubscriptionScheme,
@@ -60,9 +64,9 @@ import { splitSlashArgs } from "../views/input/autocomplete.ts";
 import type { SetupState } from "../views/onboarding/SetupView.tsx";
 import type { StartupIssue } from "../views/onboarding/RecoveryView.tsx";
 import type { SessionCatalogItem } from "../views/config/SessionsHub.tsx";
-import { EXTENSIONS_ITEMS, SETTINGS_ITEMS } from "../views/config/hub-items.ts";
+import { SETTINGS_ITEMS } from "../views/config/hub-items.ts";
 import { lazyView } from "../views/config/lazy-view.tsx";
-import { createPluginsStore } from "../adapters/plugins.ts";
+import { createPluginsStore, type PluginView } from "../adapters/plugins.ts";
 import { addMarketplaceSource, createMarketplaceAdapter } from "../adapters/marketplace.ts";
 import { errorText } from "../adapters/errors.ts";
 import type { HintTone } from "../views/hint.ts";
@@ -109,6 +113,7 @@ export interface AppCommandDeps {
   agentFiles: AgentsStore;
   plugins: PluginService;
   environments: EnvironmentService;
+  skills: SkillsService;
   /** Overrides product-owned marketplace sources for an embedding or isolated test host. */
   marketplaceDefaultUrls?: readonly string[];
   code: CodeConfigStore;
@@ -286,7 +291,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
    *   run in has one. `/settings providers` therefore opened on a scope with no
    *   `settings.json` and listed nothing, while `/settings` followed by picking
    *   Providers from the menu worked, because the hub forwards `host.scope()`
-   *   instead. The same predicate feeds `/extensions <child>` and the first-run
+   *   instead. The same predicate feeds internal child navigation and the first-run
    *   doctor, where the cost is higher: a new user is told a provider is
    *   missing, presses fix, lands on an empty workspace-scoped panel, and is
    *   invited to write a duplicate that then shadows the good global one.
@@ -327,6 +332,16 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     run: () => effects.openAgentPicker(),
   });
+
+  let extensionSetupInitialEnvironment: EnvironmentRef | undefined;
+  let extensionSetupInitialPlugin: PluginRef | undefined;
+
+  const openWorkspaceTrustPrompt = (): void => {
+    const factory = commands.viewFactory("workspace.trust.prompt");
+    if (factory !== undefined) {
+      ui.openView("workspace.trust.prompt", factory, { scope: preferredScope() });
+    }
+  };
 
   commands.registerAction({
     name: "safety.picker",
@@ -451,15 +466,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         );
         return;
       }
-      const fields = deps.settings.withheldWorkspaceFields();
-      const what = fields.length > 0 ? fields.join(", ") : "agents";
-      void deps.settings.setWorkspaceTrust(true).then(
-        () => {
-          notify(`workspace approved ${glyph("emDash")} now active: ${what}`, "success");
-          recheck();
-        },
-        (e: unknown) => notify(errorText(e), "warn"),
-      );
+      openWorkspaceTrustPrompt();
     },
   });
 
@@ -768,6 +775,145 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   const selectedLifecycleBlock = (ref: PluginRef) =>
     selectedPluginLifecycleBlock(deps.environments, deps.runActive, ref);
 
+  const refOf = (plugin: {
+    scope: "global" | "workspace";
+    source: "agents" | "clarvis";
+    name: string;
+  }): PluginRef => ({
+    scope: plugin.scope,
+    source: plugin.source,
+    name: plugin.name,
+  });
+
+  const samePluginRef = (left: PluginRef, right: PluginRef): boolean =>
+    left.scope === right.scope && left.source === right.source && left.name === right.name;
+
+  const persistPluginMembership = async (
+    environment: ResolvedEnvironment,
+    ref: PluginRef,
+    include: boolean,
+  ): Promise<void> => {
+    if (environment.ref.scope === "builtin") {
+      const current = deps.settings.read("global")?.enabledPlugins ?? [];
+      if (!include && !current.some((candidate) => samePluginRef(candidate, ref))) {
+        throw new Error(
+          `${ref.scope}/${ref.source}/${ref.name} is selected outside global settings; configure a custom Environment before removing it`,
+        );
+      }
+      const enabledPlugins = include
+        ? [...current.filter((candidate) => candidate.name !== ref.name), ref]
+        : current.filter((candidate) => !samePluginRef(candidate, ref));
+      await deps.settings.write("global", { enabledPlugins });
+      return;
+    }
+    if (environment.definition === undefined || environment.definition_revision === undefined) {
+      throw new Error(`Environment ${environment.id} has no editable definition`);
+    }
+    const authoredRef = environment.ref as { scope: "global" | "workspace"; name: string };
+    const plugins = include
+      ? [...environment.definition.plugins.filter((candidate) => candidate.name !== ref.name), ref]
+      : environment.definition.plugins.filter((candidate) => !samePluginRef(candidate, ref));
+    const definition: EnvironmentDefinition = { ...environment.definition, plugins };
+    if (environment.selection_origin === "cli") {
+      if (include && environment.ref.scope === "workspace") {
+        throw new Error(
+          `restart without --env before installing into workspace Environment ${environment.id}`,
+        );
+      }
+      await deps.environments.update({
+        ref: authoredRef,
+        definition,
+        expected_revision: environment.definition_revision,
+      });
+      return;
+    }
+    const selectionScope = environment.selection_origin === "global" ? "global" : "workspace";
+    const input = {
+      ref: authoredRef,
+      definition,
+      expected_revision: environment.definition_revision,
+      selection_scope: selectionScope,
+    } as const;
+    const preview = await deps.environments.previewComposition(input);
+    await deps.environments.applyComposition(input, {
+      preview_token: preview.token,
+      ...(preview.requires_workspace_trust ? { approve_workspace: true } : {}),
+    });
+  };
+
+  const marketplaceInstallPreflight = async (): Promise<ResolvedEnvironment> => {
+    if (deps.runActive()) throw new Error("finish the active run before installing a plugin");
+    const environment = await deps.environments.current();
+    if (
+      environment.ref.scope !== "builtin" &&
+      (environment.definition === undefined || environment.definition_revision === undefined)
+    ) {
+      throw new Error(`Environment ${environment.id} cannot be edited for plugin activation`);
+    }
+    if (environment.selection_origin === "cli" && environment.ref.scope === "workspace") {
+      throw new Error(
+        `restart without --env before installing into workspace Environment ${environment.id}`,
+      );
+    }
+    return environment;
+  };
+
+  const installAndActivatePlugin = async (
+    url: string,
+    source: "agents" | "clarvis",
+    subdir?: string,
+  ): Promise<string> => {
+    const environment = await marketplaceInstallPreflight();
+    const installed = await pluginsStore.install(url, subdir, source);
+    const ref = refOf(installed);
+    let membershipAccepted = false;
+    try {
+      await persistPluginMembership(environment, ref, true);
+      membershipAccepted = true;
+      const reconnect = await deps.reconnectBackend();
+      if (!reconnect.ok) {
+        await pluginsStore.reload();
+        return `installed ${ref.scope}/${ref.source}/${ref.name}; activation takes effect after /reconnect (${reconnect.message})`;
+      }
+      await pluginsStore.reload();
+      const active = pluginsStore.list().find((plugin) => samePluginRef(refOf(plugin), ref));
+      const current = await deps.environments.current();
+      return active?.enabled
+        ? `installed and activated ${ref.scope}/${ref.source}/${ref.name} in ${current.id}`
+        : `installed ${ref.scope}/${ref.source}/${ref.name}; ${current.id} is degraded and did not activate it`;
+    } catch (error) {
+      if (membershipAccepted) throw error;
+      await deps.plugins.uninstall(ref).catch(() => undefined);
+      await pluginsStore.reload().catch(() => undefined);
+      throw error;
+    }
+  };
+
+  const updatePlugin = async (plugin: PluginView): Promise<string> => {
+    const ref = refOf(plugin);
+    const blocked = await selectedLifecycleBlock(ref);
+    if (blocked !== undefined) throw new Error(blocked);
+    const updated = await pluginsStore.update(ref);
+    const recomposed = await recomposePlugin(ref);
+    return `updated ${plugin.scope}/${plugin.source}/${plugin.name}${updated.version ? ` to v${updated.version}` : ""}${recomposed === undefined ? "" : ` ${glyph("emDash")} ${recomposed}`}`;
+  };
+
+  const uninstallPlugin = async (plugin: PluginView): Promise<string> => {
+    const ref = refOf(plugin);
+    const blocked = await selectedLifecycleBlock(ref);
+    if (blocked !== undefined) throw new Error(blocked);
+    const environment = await deps.environments.current();
+    if (environmentSelectsPlugin(environment, ref)) {
+      await persistPluginMembership(environment, ref, false);
+      const reconnect = await deps.reconnectBackend();
+      if (!reconnect.ok) {
+        return `deactivated ${plugin.scope}/${plugin.source}/${plugin.name}; reconnect before uninstalling (${reconnect.message})`;
+      }
+    }
+    await pluginsStore.uninstall(ref);
+    return `uninstalled ${plugin.scope}/${plugin.source}/${plugin.name}`;
+  };
+
   commands.registerView({
     name: "environments.open",
     title: "Environment",
@@ -783,6 +929,54 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           environments: deps.environments,
           reconnect: deps.reconnectBackend,
           runActive: deps.runActive,
+          notify,
+          configure: (ref) => {
+            extensionSetupInitialEnvironment = ref;
+            extensionSetupInitialPlugin = undefined;
+            openWithReturn("extensions.open", "environments.open", host.scope());
+          },
+        });
+    }),
+  });
+
+  commands.registerView({
+    name: "workspace.trust.prompt",
+    title: "Workspace approval",
+    desc: "Approve or revise a new executable workspace snapshot",
+    slash: false,
+    surface: "internal",
+    group: "actions",
+    parent: "extensions",
+    view: lazyView(async () => {
+      const { WorkspaceTrustPrompt } = await import("../views/config/WorkspaceTrustPrompt.tsx");
+      return (host) =>
+        WorkspaceTrustPrompt(host, {
+          state: () => deps.settings.workspaceTrust(),
+          fields: () => deps.settings.withheldWorkspaceFields(),
+          environment: () => deps.environments.current(),
+          approve: async () => {
+            if (deps.runActive()) {
+              throw new Error("finish the active run before approving a changed workspace");
+            }
+            await deps.settings.setWorkspaceTrust(true);
+            await deps.refreshAgentProfiles();
+            recheck();
+          },
+          review: () => {
+            detachObserved(
+              "workspace_trust_review",
+              async () => {
+                extensionSetupInitialEnvironment = (await deps.environments.current()).ref;
+                extensionSetupInitialPlugin = undefined;
+                host.close();
+                const factory = commands.viewFactory("extensions.open");
+                if (factory !== undefined) {
+                  ui.openView("extensions.open", factory, { scope: preferredScope() });
+                }
+              },
+              (error) => notify(errorText(error), "warn"),
+            );
+          },
           notify,
         });
     }),
@@ -810,200 +1004,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           tasks: deps.tasks,
           notify,
           openPlugins: () =>
-            openWithReturn("plugins.open", "capability-providers.open", host.scope()),
-        });
-      };
-    }),
-  });
-
-  commands.registerView({
-    name: "plugins.open",
-    title: "Plugins",
-    desc: "Install, enable and inspect plugins",
-    slash: false,
-    surface: "internal",
-    group: "navigate",
-    parent: "extensions",
-    view: lazyView(async () => {
-      const { PluginBrowser } = await import("../views/config/PluginBrowser.tsx");
-      return (host) => {
-        const store = pluginsStore;
-        detachObserved(
-          "plugins_reload",
-          () => store.reload(),
-          (e) => notify(errorText(e), "warn"),
-        );
-        const act = (fn: () => Promise<string>): void => {
-          void fn().then(
-            (label) => notify(label, "success"),
-            (e) => notify(errorText(e), "warn"),
-          );
-        };
-        return PluginBrowser(host, {
-          plugins: store.list,
-          toggleEnabled: (p) =>
-            act(async () => {
-              const environment = await deps.environments.current();
-              const verb = p.enabled ? "disabled" : "enabled";
-              const pluginRef: PluginRef = {
-                scope: p.scope,
-                source: p.source,
-                name: p.name,
-              };
-              if (environment.immutable) {
-                const current = deps.settings.read("global")?.enabledPlugins ?? [];
-                const selected = current.some(
-                  (ref) =>
-                    ref.scope === pluginRef.scope &&
-                    ref.source === pluginRef.source &&
-                    ref.name === pluginRef.name,
-                );
-                const now = selected
-                  ? current.filter(
-                      (ref) =>
-                        ref.scope !== pluginRef.scope ||
-                        ref.source !== pluginRef.source ||
-                        ref.name !== pluginRef.name,
-                    )
-                  : [...current, pluginRef];
-                await deps.settings.write("global", { enabledPlugins: now });
-              } else {
-                if (
-                  environment.definition === undefined ||
-                  environment.definition_revision === undefined
-                ) {
-                  throw new Error(`Environment ${environment.id} has no editable definition`);
-                }
-                const active = environment.definition.plugins.some(
-                  (ref) => ref.scope === p.scope && ref.source === p.source && ref.name === p.name,
-                );
-                const confirmed = await host.confirm({
-                  message: `${active ? "Disable" : "Enable"} ${p.scope}/${p.source}/${p.name} in ${environment.id}?`,
-                  detail: [
-                    `${p.contributions.agents.length} agents`,
-                    `${p.contributions.skills.length} skills`,
-                    `${p.contributions.servers.length} MCP servers`,
-                    `${p.contributions.hooks} hooks`,
-                    `${p.contributions.capabilityExecutables.length} capability executables`,
-                  ],
-                  danger:
-                    !active &&
-                    (p.contributions.agents.length > 0 ||
-                      p.contributions.servers.length > 0 ||
-                      p.contributions.hooks > 0 ||
-                      p.contributions.capabilityExecutables.length > 0),
-                  confirmLabel: active ? "disable and reconnect" : "enable and reconnect",
-                  cancelLabel: "keep current",
-                });
-                if (!confirmed) return `kept ${p.scope}/${p.source}/${p.name} unchanged`;
-                const plugins = active
-                  ? environment.definition.plugins.filter(
-                      (ref) =>
-                        ref.scope !== p.scope || ref.source !== p.source || ref.name !== p.name,
-                    )
-                  : [...environment.definition.plugins, pluginRef];
-                await deps.environments.update({
-                  ref: environment.ref as { scope: "global" | "workspace"; name: string },
-                  definition: { ...environment.definition, plugins },
-                  expected_revision: environment.definition_revision,
-                });
-                if (environment.selection_origin !== "cli") {
-                  const preview = await deps.environments.preview(environment.ref, {
-                    selection_scope:
-                      environment.selection_origin === "global" ? "global" : "workspace",
-                  });
-                  await deps.environments.select(environment.ref, {
-                    selection_scope:
-                      environment.selection_origin === "global" ? "global" : "workspace",
-                    preview_token: preview.token,
-                    ...(preview.requires_workspace_trust ? { approve_workspace: true } : {}),
-                  });
-                }
-              }
-              const reconnect = await deps.reconnectBackend();
-              await store.reload();
-              if (!reconnect.ok) {
-                return `${verb} ${p.scope}/${p.source}/${p.name} ${glyph("emDash")} takes effect after /reconnect (${reconnect.message})`;
-              }
-              const resolved = await deps.environments.current();
-              return `${verb} ${p.scope}/${p.source}/${p.name} in ${resolved.id} ${glyph("emDash")} ${resolved.status}`;
-            }),
-          install: (url, source) =>
-            act(async () => {
-              const m = await store.install(url, undefined, source);
-              const ref: PluginRef = { scope: m.scope, source: m.source, name: m.name };
-              const recomposed = await recomposePlugin(ref);
-              return recomposed === undefined
-                ? `installed ${m.scope}/${m.source}/${m.name} v${m.version} ${glyph("emDash")} not activated`
-                : `installed ${m.scope}/${m.source}/${m.name} v${m.version} ${glyph("emDash")} ${recomposed}`;
-            }),
-          update: (p) =>
-            act(async () => {
-              const ref: PluginRef = { scope: p.scope, source: p.source, name: p.name };
-              const blocked = await selectedLifecycleBlock(ref);
-              if (blocked !== undefined) return blocked;
-              const m = await store.update(ref);
-              const recomposed = await recomposePlugin(ref);
-              return `updated ${p.scope}/${p.source}/${p.name} to v${m.version}${recomposed === undefined ? "" : ` ${glyph("emDash")} ${recomposed}`}`;
-            }),
-          uninstall: (p) =>
-            act(async () => {
-              const ref: PluginRef = { scope: p.scope, source: p.source, name: p.name };
-              const blocked = await selectedLifecycleBlock(ref);
-              if (blocked !== undefined) return blocked;
-              await store.uninstall(ref);
-              const recomposed = await recomposePlugin(ref);
-              return recomposed === undefined
-                ? `uninstalled ${p.scope}/${p.source}/${p.name}`
-                : `uninstalled ${p.scope}/${p.source}/${p.name} ${glyph("emDash")} ${recomposed}`;
-            }),
-          notify,
-        });
-      };
-    }),
-  });
-
-  commands.registerView({
-    name: "hooks.open",
-    title: "Hooks",
-    desc: "Review your settings.json hooks and every plugin's hook definitions",
-    slash: false,
-    surface: "internal",
-    group: "navigate",
-    parent: "extensions",
-    view: lazyView(async () => {
-      const { HookBrowser } = await import("../views/config/HookBrowser.tsx");
-      return (host) => {
-        const store = pluginsStore;
-        detachObserved(
-          "hooks_reload",
-          () => store.reload(),
-          (e) => notify(errorText(e), "warn"),
-        );
-        return HookBrowser(host, {
-          hooks: store.hooks,
-          operatorHooks: () => {
-            const withheld = deps.settings.withheldWorkspaceFields().includes("hooks");
-            return (["global", "workspace"] as const).flatMap((scope) =>
-              (deps.settings.read(scope)?.hooks ?? []).map((definition) => ({
-                scope,
-                definition,
-                ...(scope === "workspace" && withheld ? { withheld: true } : {}),
-              })),
-            );
-          },
-          approve: (review) =>
-            detachObserved(
-              "hook_approve",
-              () => store.approveHook(review.plugin, review.fingerprint),
-              (e) => notify(errorText(e), "warn"),
-            ),
-          revoke: (review) =>
-            detachObserved(
-              "hook_revoke",
-              () => store.revokeHook(review.plugin, review.fingerprint),
-              (e) => notify(errorText(e), "warn"),
-            ),
+            openWithReturn("marketplace.open", "capability-providers.open", host.scope()),
         });
       };
     }),
@@ -1020,13 +1021,9 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       const { MarketplaceBrowser } = await import("../views/config/MarketplaceBrowser.tsx");
       return (host) => {
         const store = pluginsStore;
-        detachObserved(
-          "marketplace_plugins_reload",
-          () => store.reload(),
-          (e) => notify(errorText(e), "warn"),
-        );
         const [stamp, bump] = createSignal(0);
         const [loading, setLoading] = createSignal(false);
+        const [environment, setEnvironment] = createSignal<string>();
         const installedNames = createMemo(() => store.list().map((p) => p.name));
         const market = createMarketplaceAdapter({
           urls: () => deps.settings.effective().marketplaces ?? [],
@@ -1040,10 +1037,12 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           detachObserved(
             "marketplace_load",
             () =>
-              market.load().finally(() => {
-                setLoading(false);
-                bump(stamp() + 1);
-              }),
+              Promise.all([store.reload(), market.load(), deps.environments.current()])
+                .then(([, , current]) => setEnvironment(current.id))
+                .finally(() => {
+                  setLoading(false);
+                  bump(stamp() + 1);
+                }),
             (e) => notify(errorText(e), "warn"),
           );
         };
@@ -1057,26 +1056,23 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
             stamp();
             return market.sources();
           },
+          plugins: store.list,
+          environment,
           loading,
-          install: (l) => {
-            void store
-              .install(l.source, l.path)
-              .then(async (m) => {
-                const recomposed = await recomposePlugin({
-                  scope: m.scope,
-                  source: m.source,
-                  name: m.name,
-                });
-                notify(
-                  recomposed === undefined
-                    ? `installed ${m.name} v${m.version} ${glyph("emDash")} not activated; enable it here`
-                    : `installed ${m.name} v${m.version} ${glyph("emDash")} ${recomposed}`,
-                  "success",
-                );
-                openWithReturn("plugins.open", "extensions.open");
-              })
-              .catch((e: unknown) => notify(errorText(e), "warn"));
-          },
+          install: (listing) => installAndActivatePlugin(listing.source, "agents", listing.path),
+          installUrl: (url, source) => installAndActivatePlugin(url, source),
+          configure: (plugin) =>
+            detachObserved(
+              "marketplace_environment_configure",
+              async () => {
+                extensionSetupInitialEnvironment = (await deps.environments.current()).ref;
+                extensionSetupInitialPlugin = refOf(plugin);
+                openWithReturn("extensions.open", "marketplace.open", host.scope());
+              },
+              (error) => notify(errorText(error), "warn"),
+            ),
+          update: updatePlugin,
+          uninstall: uninstallPlugin,
           refresh: () => {
             market.refresh();
             notify("re-reading marketplaces");
@@ -1094,6 +1090,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
               (e: unknown) => notify(errorText(e), "warn"),
             );
           },
+          notify,
         });
       };
     }),
@@ -1449,7 +1446,13 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
             host.dispatch("setup.providers");
           },
           retry: () => detachObserved("retry_clarvis_setup", prepareSetup),
-          finish: () => host.close(),
+          finish: () => {
+            host.close();
+            const trust = deps.settings.workspaceTrust();
+            if (trust === "unapproved" || trust === "changed") {
+              queueMicrotask(openWorkspaceTrustPrompt);
+            }
+          },
         });
     }),
   });
@@ -1624,18 +1627,129 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "extensions.open",
     title: "Extensions",
-    desc: "Environment, plugins, hooks, Marketplace and MCP",
+    desc: "Guided discovery, composition, capability review and activation",
     slash: "/extensions",
     surface: "slash",
     group: "navigate",
-    subcommands: hubSubcommands(EXTENSIONS_ITEMS),
-    route: hubRoute(EXTENSIONS_ITEMS, "extensions.open"),
     view: lazyView(async () => {
       const { ExtensionsHub } = await import("../views/config/ExtensionsHub.tsx");
-      return (host) =>
-        ExtensionsHub(host, {
-          openChild: (cmd) => openWithReturn(cmd, "extensions.open", preferredScope()),
+      return (host) => {
+        const initialEnvironment = extensionSetupInitialEnvironment;
+        const initialPlugin = extensionSetupInitialPlugin;
+        extensionSetupInitialEnvironment = undefined;
+        extensionSetupInitialPlugin = undefined;
+        const [stamp, setStamp] = createSignal(0);
+        const [loading, setLoading] = createSignal(false);
+        const [loadError, setLoadError] = createSignal<string>();
+        const [definitions, setDefinitions] = createSignal<
+          Awaited<ReturnType<EnvironmentService["list"]>>
+        >([]);
+        const [inventory, setInventory] =
+          createSignal<Awaited<ReturnType<EnvironmentService["inventory"]>>>();
+        const [environment, setEnvironment] = createSignal<ResolvedEnvironment>();
+        const installedNames = createMemo(() => pluginsStore.list().map((plugin) => plugin.name));
+        const market = createMarketplaceAdapter({
+          urls: () => deps.settings.effective().marketplaces ?? [],
+          installed: installedNames,
+          ...(deps.marketplaceDefaultUrls === undefined
+            ? {}
+            : { defaultUrls: deps.marketplaceDefaultUrls }),
         });
+        let disposed = false;
+        let refreshActive: Promise<void> | undefined;
+        let refreshQueued = false;
+        let inventoryLoaded = false;
+
+        onCleanup(() => {
+          disposed = true;
+        });
+
+        const refreshOnce = async (refreshInventory: boolean): Promise<void> => {
+          setLoading(true);
+          try {
+            await pluginsStore.reload();
+            const nextInventory =
+              refreshInventory || !inventoryLoaded
+                ? deps.environments.inventory()
+                : Promise.resolve(undefined);
+            const [nextDefinitions, nextEnvironment, refreshedInventory] = await Promise.all([
+              deps.environments.list(),
+              deps.environments.current(),
+              nextInventory,
+              market.load(),
+            ]);
+            if (disposed) return;
+            setDefinitions(nextDefinitions);
+            setEnvironment(nextEnvironment);
+            if (refreshedInventory !== undefined) {
+              setInventory(refreshedInventory);
+              inventoryLoaded = true;
+            }
+            setLoadError(undefined);
+            setStamp((value) => value + 1);
+          } catch (error) {
+            if (!disposed) setLoadError(errorText(error));
+            throw error;
+          } finally {
+            if (!disposed) setLoading(false);
+          }
+        };
+
+        const refresh = (refreshInventory = false): Promise<void> => {
+          if (refreshActive !== undefined) {
+            refreshQueued = refreshQueued || refreshInventory;
+            return refreshActive;
+          }
+          refreshActive = (async () => {
+            let inventory = refreshInventory;
+            do {
+              refreshQueued = false;
+              await refreshOnce(inventory);
+              inventory = refreshQueued;
+            } while (refreshQueued && !disposed);
+          })().finally(() => {
+            refreshActive = undefined;
+          });
+          return refreshActive;
+        };
+
+        detachObserved(
+          "extensions_catalog_load",
+          () => refresh(true),
+          (error) => notify(errorText(error), "warn"),
+        );
+
+        const listings = (): ReturnType<typeof market.listings> => {
+          stamp();
+          return market.listings();
+        };
+        const sources = (): ReturnType<typeof market.sources> => {
+          stamp();
+          return market.sources();
+        };
+
+        return ExtensionsHub(host, {
+          environments: deps.environments,
+          definitions,
+          inventory,
+          current: environment,
+          listings,
+          sources,
+          loading,
+          loadError,
+          install: (listing, source) => pluginsStore.install(listing.source, listing.path, source),
+          refresh: async (refreshInventory = false) => {
+            market.refresh();
+            await refresh(refreshInventory);
+          },
+          reconnect: deps.reconnectBackend,
+          runActive: deps.runActive,
+          notify,
+          openChild: (cmd) => openWithReturn(cmd, "extensions.open", preferredScope()),
+          ...(initialEnvironment === undefined ? {} : { initialEnvironment }),
+          ...(initialPlugin === undefined ? {} : { initialPlugin }),
+        });
+      };
     }),
   });
 
@@ -1679,7 +1793,11 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       (e) => notify(errorText(e), "warn"),
     );
     const route = startupRoute(doctorCtx, report());
-    if (route === "shell") return;
+    if (route === "shell") {
+      const trust = deps.settings.workspaceTrust();
+      if (trust === "unapproved" || trust === "changed") openWorkspaceTrustPrompt();
+      return;
+    }
     const name = route === "setup" ? "setup.open" : "recovery.open";
     const factory = commands.viewFactory(name);
     if (factory) ui.openView(name, factory, { scope: preferredScope() });

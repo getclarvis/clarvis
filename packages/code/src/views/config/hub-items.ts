@@ -45,22 +45,3 @@ export const SETTINGS_ITEMS = [
     cmd: "controls.open",
   },
 ] as const;
-
-/** Lightweight route metadata for the Extensions hub. */
-export const EXTENSIONS_ITEMS = [
-  {
-    id: "environment",
-    label: "Environment",
-    desc: "Choose the active plugin and skill set",
-    cmd: "environments.open",
-  },
-  { id: "plugins", label: "Plugins", desc: "Manage installed plugins", cmd: "plugins.open" },
-  { id: "hooks", label: "Hooks", desc: "Configure workspace automations", cmd: "hooks.open" },
-  {
-    id: "market",
-    label: "Marketplace",
-    desc: "Browse and install extensions",
-    cmd: "marketplace.open",
-  },
-  { id: "mcp", label: "MCP", desc: "Manage connected servers and tools", cmd: "mcp.browse" },
-] as const;

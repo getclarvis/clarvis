@@ -1,6 +1,6 @@
 # The Clarvis spec corpus
 
-Sixty-six documents specifying what the Clarvis monorepo does, plus a register of what has been
+Sixty-seven documents specifying what the Clarvis monorepo does, plus a register of what has been
 measured, ruled out, or tried and reverted.
 
 The findings register that used to sit beside them — `gaps.md`, the cross-cutting list of what the
@@ -14,7 +14,7 @@ rather than deleted, so the reasoning outlives the finding.
 
 ## What this is
 
-These sixty-six documents are the specification of the Clarvis monorepo: what each subsystem is for, what
+These sixty-seven documents are the specification of the Clarvis monorepo: what each subsystem is for, what
 it publishes, how it behaves, and the rules that must hold. They are the contract; the code under
 `packages/` is what realizes it. One document covers one subsystem, and each opens with a blockquote
 naming the files that implement it, so the boundary travels with the document rather than in a
@@ -32,7 +32,7 @@ cannot be written as a requirement or checked against a line of source. That is 
 separate document.
 
 **The corpus carries no date of its own, so the table below is its timestamp.** These are the
-numbers the tree held when it was last refreshed (2026-08-27). If they no longer match, the tree has
+numbers the tree held when it was last refreshed (2026-08-28). If they no longer match, the tree has
 moved since the corpus was last checked against it, and the further it has drifted the more of the
 corpus's untested statements are worth re-checking. Regenerate them rather than trusting them:
 
@@ -44,7 +44,7 @@ find packages/<pkg>/tests -type f -name '*.test.ts*' | wc -l
 
 | Package | `src` lines | `src` files | test files |
 |---|---|---|---|
-| `code` | 52,145 | 238 | 233 |
+| `code` | 54,275 | 239 | 235 |
 | `kernel` | 28,520 | 111 | 84 |
 | `loop` | 20,705 | 137 | 233 |
 | `memory` | 13,612 | 65 | 59 |
@@ -66,7 +66,7 @@ find packages/<pkg>/tests -type f -name '*.test.ts*' | wc -l
 ## How to read a spec
 
 Every document opens with an H1 naming its subject and a blockquote naming the files that implement
-it. Then eight numbered sections, in the same order in all sixty-six:
+it. Then eight numbered sections, in the same order in all sixty-seven:
 
 | § | Section | What it holds |
 |---|---|---|
@@ -170,6 +170,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`code-transcript.md`](hosts/code-transcript.md) | Framework-free node projection, prefix-stable Markdown segmentation, windowing and grouping, tool-call rendering and identity — all under hard display ceilings | `code` |
 | [`code-input-and-overlays.md`](hosts/code-input-and-overlays.md) | The composer and its completion popup, the shared floating-card and windowed-list primitives, plan/history overlays, and the `!bash` escape hatch | `code` |
 | [`code-domain-hubs.md`](hosts/code-domain-hubs.md) | The six full-screen domain views (agents, tasks, workflows, sessions, memory, run controls) and the controller/adapter layering that keeps them thin | `code` |
+| [`code-extensions.md`](hosts/code-extensions.md) | The five-step Extensions setup, unified exact catalog, capability review, preview-bound Environment composition and retained-list performance contract | `code`, `kernel`, `protocol`, `skills` |
 | [`code-settings-panels.md`](hosts/code-settings-panels.md) | The configuration surface: the view host with its scope toggle and dirty latch, the single-slot field editor, and the provider/model and extension-browser screens | `code` |
 | [`code-keyboard.md`](hosts/code-keyboard.md) | Capability-gated key candidates over `@opentui/keymap`, and generating every footer segment, help row and hint from that one live declaration | `code` |
 | [`code-theme.md`](hosts/code-theme.md) | The design-token layer: token resolution to hex, derived surface washes, syntax colors, and the paired ASCII rendering of every non-ASCII glyph | `code` |

@@ -335,32 +335,6 @@ export const OPERATIONS = {
       invoke: (services, p) =>
         services.plugins.uninstall(p.ref as Parameters<PluginService["uninstall"]>[0]),
     },
-    hooks: {
-      method: "plugins.hooks",
-      metadata: read("plugins"),
-      encode: () => ({}),
-      invoke: (services) => services.plugins.hooks(),
-    },
-    approveHook: {
-      method: "plugins.approveHook",
-      metadata: write("plugins"),
-      encode: (plugin, fingerprint) => ({ plugin, fingerprint }),
-      invoke: (services, p) =>
-        services.plugins.approveHook(
-          p.plugin as Parameters<PluginService["approveHook"]>[0],
-          p.fingerprint as string,
-        ),
-    },
-    revokeHook: {
-      method: "plugins.revokeHook",
-      metadata: write("plugins"),
-      encode: (plugin, fingerprint) => ({ plugin, fingerprint }),
-      invoke: (services, p) =>
-        services.plugins.revokeHook(
-          p.plugin as Parameters<PluginService["revokeHook"]>[0],
-          p.fingerprint as string,
-        ),
-    },
   }),
   environments: serviceOperations<EnvironmentService>({
     list: {
@@ -382,6 +356,12 @@ export const OPERATIONS = {
       invoke: (services, p) =>
         services.environments.get(p.ref as Parameters<EnvironmentService["get"]>[0]),
     },
+    inventory: {
+      method: "environments.inventory",
+      metadata: read("plugins"),
+      encode: () => ({}),
+      invoke: (services) => services.environments.inventory(),
+    },
     preview: {
       method: "environments.preview",
       metadata: read("plugins"),
@@ -399,6 +379,15 @@ export const OPERATIONS = {
       invoke: (services, p) =>
         services.environments.previewClear(
           p.scope as Parameters<EnvironmentService["previewClear"]>[0],
+        ),
+    },
+    previewComposition: {
+      method: "environments.previewComposition",
+      metadata: read("plugins"),
+      encode: (input) => ({ input }),
+      invoke: (services, p) =>
+        services.environments.previewComposition(
+          p.input as Parameters<EnvironmentService["previewComposition"]>[0],
         ),
     },
     select: {
@@ -421,6 +410,16 @@ export const OPERATIONS = {
           p.options as Parameters<EnvironmentService["clearSelection"]>[1],
         ),
     },
+    applyComposition: {
+      method: "environments.applyComposition",
+      metadata: write("plugins"),
+      encode: (input, options) => ({ input, options }),
+      invoke: (services, p) =>
+        services.environments.applyComposition(
+          p.input as Parameters<EnvironmentService["applyComposition"]>[0],
+          p.options as Parameters<EnvironmentService["applyComposition"]>[1],
+        ),
+    },
     create: {
       method: "environments.create",
       metadata: write("plugins"),
@@ -434,6 +433,16 @@ export const OPERATIONS = {
       encode: (input) => ({ input }),
       invoke: (services, p) =>
         services.environments.update(p.input as Parameters<EnvironmentService["update"]>[0]),
+    },
+    delete: {
+      method: "environments.delete",
+      metadata: write("plugins"),
+      encode: (ref, options) => ({ ref, options }),
+      invoke: (services, p) =>
+        services.environments.delete(
+          p.ref as Parameters<EnvironmentService["delete"]>[0],
+          p.options as Parameters<EnvironmentService["delete"]>[1],
+        ),
     },
     clone: {
       method: "environments.clone",

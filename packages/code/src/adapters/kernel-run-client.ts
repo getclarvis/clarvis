@@ -508,20 +508,22 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     install: (url, subdir, target) => requireKernel().plugins.install(url, subdir, target),
     update: (name) => requireKernel().plugins.update(name),
     uninstall: (name) => requireKernel().plugins.uninstall(name),
-    hooks: () => requireKernel().plugins.hooks(),
-    approveHook: (plugin, fingerprint) => requireKernel().plugins.approveHook(plugin, fingerprint),
-    revokeHook: (plugin, fingerprint) => requireKernel().plugins.revokeHook(plugin, fingerprint),
   };
   const environments: EnvironmentService = {
     list: () => requireKernel().environments.list(),
     current: () => requireKernel().environments.current(),
     get: (ref) => requireKernel().environments.get(ref),
+    inventory: () => requireKernel().environments.inventory(),
     preview: (ref, options) => requireKernel().environments.preview(ref, options),
     previewClear: (scope) => requireKernel().environments.previewClear(scope),
+    previewComposition: (input) => requireKernel().environments.previewComposition(input),
     select: (ref, options) => requireKernel().environments.select(ref, options),
     clearSelection: (scope, options) => requireKernel().environments.clearSelection(scope, options),
+    applyComposition: (input, options) =>
+      requireKernel().environments.applyComposition(input, options),
     create: (input) => requireKernel().environments.create(input),
     update: (input) => requireKernel().environments.update(input),
+    delete: (ref, options) => requireKernel().environments.delete(ref, options),
     clone: (source, target) => requireKernel().environments.clone(source, target),
   };
   const tasks: TasksService = {

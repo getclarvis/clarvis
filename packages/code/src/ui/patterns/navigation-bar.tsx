@@ -26,15 +26,20 @@ export function NavigationBar(props: {
   environment: Accessor<KeyboardEnvironment>;
   width: Accessor<number>;
   actionFilter?: (action: ActiveAction) => boolean;
+  /** Project surface-local wording without rebuilding the owning key layer. */
+  actionTransform?: (action: ActiveAction) => ActiveAction;
   active?: Accessor<boolean>;
 }): JSX.Element {
   const actions = useActiveActions(props.environment);
-  const visible = createMemo(() =>
-    budgetFooterActions(
-      props.actionFilter ? actions().filter(props.actionFilter) : actions(),
+  const visible = createMemo(() => {
+    const transformed = props.actionTransform
+      ? actions().map((action) => props.actionTransform!(action))
+      : actions();
+    return budgetFooterActions(
+      props.actionFilter ? transformed.filter(props.actionFilter) : transformed,
       props.width(),
-    ),
-  );
+    );
+  });
   const text = createMemo(() => visible().map(actionSegment).join("  "));
   return (
     <Show when={(props.active?.() ?? true) && text().length > 0}>
@@ -48,6 +53,7 @@ export function NavigationBar(props: {
 function NavigationBarForInteraction(props: {
   interaction: Interaction;
   actionFilter?: (action: ActiveAction) => boolean;
+  actionTransform?: (action: ActiveAction) => ActiveAction;
 }): JSX.Element {
   const dimensions = useTerminalDimensions();
   const fallback: KeyboardEnvironment = {
@@ -71,6 +77,7 @@ function NavigationBarForInteraction(props: {
       environment={props.interaction.keyboardEnvironment ?? (() => fallback)}
       width={() => dimensions().width}
       actionFilter={props.actionFilter}
+      actionTransform={props.actionTransform}
     />
   );
 }
@@ -79,6 +86,7 @@ function NavigationBarForInteraction(props: {
 export function InteractionNavigationBar(props: {
   interaction: Interaction;
   actionFilter?: (action: ActiveAction) => boolean;
+  actionTransform?: (action: ActiveAction) => ActiveAction;
 }): JSX.Element {
   if (
     typeof (props.interaction.keymap as Partial<Interaction["keymap"]>).getActiveKeys !== "function"
@@ -89,6 +97,7 @@ export function InteractionNavigationBar(props: {
       <NavigationBarForInteraction
         interaction={props.interaction}
         actionFilter={props.actionFilter}
+        actionTransform={props.actionTransform}
       />
     </KeymapProvider>
   );

@@ -52,7 +52,6 @@ describe("globalPaths", () => {
     expect(p.subscriptionsFile).toBe(join(GLOBAL, "subscriptions.json"));
     expect(p.pluginsDir).toBe(join(GLOBAL, "plugins"));
     expect(p.environmentsDir).toBe(join(GLOBAL, "environments"));
-    expect(p.hookTrustFile).toBe(join(GLOBAL, "hook-trust.json"));
     expect(p.workspaceTrustFile).toBe(join(GLOBAL, "workspace-trust.json"));
     expect(p.skillsDir).toBe(join(GLOBAL, "skills"));
     expect(p.guardJudgeFile).toBe(join(GLOBAL, "guard-judge.md"));

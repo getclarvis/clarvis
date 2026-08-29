@@ -45,8 +45,8 @@ All 19 source files, each opened directly:
 | `common.ts` | 109 | `Scope`, `Principal`, `ProjectRef`, `WorkspaceRef`, `Pagination`/`Page`, `CursorPagination`/`CursorPage`, `Timestamp`, `JsonSchema`, `KernelErrorCode`, `KernelError`, `Unsubscribe` |
 | `runs.ts` | 805 | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (38-variant union), messages, usage, Environment identity, guard/memory/plans modes, elicitation types |
 | `config.ts` | 490 | `ConfigService`, `SettingsData`/`SettingsView` (incl. `WorkspaceTrustVerdict`, `known_grants`), the `SandboxConfig`/`SandboxInspection` doctor cluster, `SettingsRepairPlan` (2-variant union), `AgentSummary`/`AgentDoc`/`AgentOverlay`/`AgentBudget`, context docs — see §3.11/§3.12 |
-| `plugins.ts` | 128 | `PluginService`, `PluginView`, `PluginContributions`, `PluginHookReview` |
-| `environments.ts` | 215 | `EnvironmentService`, exact plugin/skill references, definitions, resolved snapshots, deltas, diagnostics, and persisted run identity |
+| `plugins.ts` | 128 | `PluginService`, `PluginView`, `PluginContributions`, atomic install/lifecycle DTOs |
+| `environments.ts` | 250 | `EnvironmentService`, exact inventory and plugin/skill references, definitions, composition previews, resolved snapshots, deltas, diagnostics, deletion, and persisted run identity |
 | `secrets.ts` | 31 | `SecretService` |
 | `models.ts` | 82 | `ModelCatalogService`, `ModelCatalog`, `CatalogProvider`, `CatalogModel` |
 | `provider-auth.ts` | 43 | token-free subscription schemes, states, device authorization and `ProviderAuthService` |
@@ -168,9 +168,6 @@ copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 | `install` | `(url, subdir?, target?: { source }) => Promise<PluginView>` | `PluginService.install` |
 | `update` | `(ref: PluginRef) => Promise<PluginView>` | `PluginService.update` |
 | `uninstall` | `(ref: PluginRef) => Promise<void>` | `PluginService.uninstall` |
-| `hooks` | `() => Promise<PluginHookReview[]>` | `packages/protocol/src/plugins.ts:123` |
-| `approveHook` | `(plugin: PluginRef, fingerprint: string) => Promise<void>` | `PluginService.approveHook` |
-| `revokeHook` | `(plugin: PluginRef, fingerprint: string) => Promise<void>` | `PluginService.revokeHook` |
 
 #### `EnvironmentService` (`packages/protocol/src/environments.ts`, symbol `EnvironmentService`)
 
@@ -179,18 +176,24 @@ copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 | `list` | `() => Promise<EnvironmentDefinitionView[]>` | `EnvironmentService.list` |
 | `current` | `() => Promise<ResolvedEnvironment>` | `EnvironmentService.current` |
 | `get` | `(ref: EnvironmentRef) => Promise<ResolvedEnvironment>` | `EnvironmentService.get` |
+| `inventory` | `() => Promise<EnvironmentInventory>` | `EnvironmentService.inventory` |
 | `preview` | `(ref, { selection_scope }) => Promise<EnvironmentPreview>` | `EnvironmentService.preview` |
 | `previewClear` | `(scope: EnvironmentSelectionScope) => Promise<EnvironmentPreview>` | `EnvironmentService.previewClear` |
+| `previewComposition` | `(input: EnvironmentCompositionInput) => Promise<EnvironmentCompositionPreview>` | `EnvironmentService.previewComposition` |
 | `select` | `(ref, { selection_scope, preview_token, approve_workspace? }) => Promise<EnvironmentApplyResult>` | `EnvironmentService.select` |
 | `clearSelection` | `(scope, { preview_token }) => Promise<EnvironmentApplyResult>` | `EnvironmentService.clearSelection` |
+| `applyComposition` | `(input, { preview_token, approve_workspace? }) => Promise<EnvironmentCompositionApplyResult>` | `EnvironmentService.applyComposition` |
 | `create` | `(input: EnvironmentDefinitionInput) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.create` |
 | `update` | `(input: EnvironmentDefinitionInput & { expected_revision }) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.update` |
+| `delete` | `(ref, { expected_revision }) => Promise<void>` | `EnvironmentService.delete` |
 | `clone` | `(source, target) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.clone` |
 
-The service selects already-installed inventory and has no install operation. `preview` and
+The service selects already-installed inventory and has no install operation. `inventory` exposes
+all exact inactive composer candidates. `preview` and
 `previewClear` return the exact entering/leaving extension surface plus a single-use token;
 `preview` also names the intended persisted selection scope. `select` and `clearSelection` bind the
-persisted mutation to that preview. The full behavioral and
+persisted mutation to that preview. `previewComposition`/`applyComposition` bind a complete
+definition and its intended selection to the same reviewed authored/effective fingerprints. The full behavioral and
 trust contract is owned by
 [Extension Environments](environments.md).
 
@@ -644,9 +647,10 @@ executables: string[] }` — `hooks` is "count of hook entries (not their names)
 "concrete commands this plugin would run... pre-formatted for display" (`packages/protocol/src/plugins.ts:25,33-38`).
 `PluginView.display_name`/`short_description` (`packages/protocol/src/plugins.ts:53-62`) are documented as "display data
 only. A plugin cannot widen what it is allowed to do by describing itself well: trust stays with the
-install, the enable list and the hook reviews" (`packages/protocol/src/plugins.ts:56-58`).
+process-pinned Environment and workspace trust boundary" (`packages/protocol/src/plugins.ts`,
+`PluginView.display_name`).
 `PluginRef` is the strict `{ scope: "global"|"workspace", source: "agents"|"clarvis", name }`
-identity shared by lifecycle, activation, hook review, and Environment DTOs; `PluginView.source`
+identity shared by lifecycle, activation, and Environment DTOs; `PluginView.source`
 reports the same filesystem convention and `install_source` is separately reserved for Git origin.
 
 `ModelCost` (`packages/protocol/src/models.ts:9-18`): `{ input: number; output: number; cache_read?: number;
@@ -792,10 +796,12 @@ The following are derived directly from this package's own source and tests.
    declarations in two files; unpinned by a test in this package (the CAS mechanics are plan-package
    territory — see `specs/hosts/protocol.md` §8 delegation note and the sibling plan-capability document).
 
-9. **Environment selection is preview-bound and execution history carries only its minimal
-   identity.** `EnvironmentService.select` and `.clearSelection` require `preview_token`, definition
-   updates require `expected_revision`, and `EnvironmentRunRef` contains only `id` and `fingerprint`.
-   Production: `packages/protocol/src/environments.ts:134-138`, `:185-210`. Test:
+9. **Environment selection and composition are preview-bound, while execution history carries only
+   its minimal identity.** `EnvironmentService.select`, `.clearSelection`, and
+   `.applyComposition` require `preview_token`; composition and definition updates require an exact
+   expected revision, and `EnvironmentRunRef` contains only `id` and `fingerprint`.
+   Production: `EnvironmentRunRef`, `EnvironmentCompositionInput`, and `EnvironmentService` in
+   `packages/protocol/src/environments.ts`. Test:
    `packages/protocol/tests/contract/public-contract.fixture.ts:176-210` compile-pins the service on
    `KernelClient`; runtime behavior is pinned by
    `packages/kernel/tests/integration/environment-manager.test.ts` and owned by

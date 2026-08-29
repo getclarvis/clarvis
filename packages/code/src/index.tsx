@@ -1316,6 +1316,9 @@ async function runApp(
     get environments() {
       return runClient.environments;
     },
+    get skills() {
+      return runClient.skills;
+    },
     get tasks() {
       return tasks;
     },

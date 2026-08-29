@@ -1,4 +1,4 @@
-# Settings navigation, provider/model screens and extension browsers
+# Settings navigation, provider/model screens and shared configuration toolkit
 
 > Implemented at `packages/code/src/views/config/**`, `packages/code/src/features/providers/**` and
 > `packages/code/src/adapters/{settings,mcp-capabilities, mcp-capabilities-bridge,zod-summary}.ts`.
@@ -8,20 +8,20 @@
 ## 1. Purpose
 
 This subsystem is the **configuration surface of `@clarvis/code`**: the shared machinery every
-configuration screen is built from, plus the screens themselves that edit providers/models and browse
-the extension surfaces (Environments, MCP servers, plugins, marketplaces, hooks).
+configuration screen is built from, plus the screens that edit providers and models. The unified
+Extensions catalog and its focused Environment, plugin, marketplace and MCP experiences are owned by
+[code-extensions.md](code-extensions.md).
 
 The shared machinery is three things. `createViewHost` builds the `ViewHost` object a screen is handed
 — a level (breadcrumb) stack, a global/workspace scope toggle with an unsaved-changes guard, a dirty
 latch, save/cancel handler registration, and an armed two-step confirm
 (`packages/code/src/views/config/create-view-host.ts:54`). `createFieldEditor` is a single-slot modal
 editor covering text, masked secret, number, pick, enum and multiline inputs
-(`packages/code/src/views/config/field-editor.tsx:98`). `HubMenu` is the flat "menu of children"
-screen both hubs render (`packages/code/src/views/config/hub-menu.tsx:24`), over item lists that are
-simultaneously the menu, the `/settings <child>` deep-link router table and the inline subcommand
-hints (`packages/code/src/views/config/SettingsHub.tsx:7`,
-`packages/code/src/views/config/ExtensionsHub.tsx:7`, consumed at
-`packages/code/src/app/commands.tsx:931` and `:1331`).
+(`packages/code/src/views/config/field-editor.tsx:98`). `HubMenu` is the flat Settings menu
+(`packages/code/src/views/config/hub-menu.tsx:24`), over the same item list used by the
+`/settings <child>` deep-link router and inline subcommand hints
+(`packages/code/src/views/config/SettingsHub.tsx`, `SETTINGS_ITEMS`; consumed by
+`packages/code/src/app/commands.tsx`, `settings.open`).
 
 The largest screen is Providers. It is a facade (`ProvidersPanel`) that owns lifecycle and shared
 state, and three private level modules that own the three drill depths: L0 the provider list, L1 one
@@ -123,7 +123,7 @@ A thin re-export of `issueSet`, `mapProviderIssues`, `IssueLevel`, `IssueSet`, `
 `packages/code/src/features/issues.ts` (`packages/code/src/views/config/validation.ts:8`); the implementations are at
 `packages/code/src/features/issues.ts:29` and `:45`.
 
-### 2.6 Hubs
+### 2.6 Settings hub and extension child routes
 
 ```ts
 interface HubMenuItem { id: string; label: string; desc: string; cmd: string }   // packages/code/src/views/config/hub-menu.tsx:10
@@ -144,21 +144,22 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `keyboard` | Keyboard | `keyboard.open` |
 | `controls` | Run controls | `controls.open` |
 
-`ExtensionsHub.ITEMS` (`packages/code/src/views/config/ExtensionsHub.tsx`) — five entries, with
-`environment`→`environments.open` first, followed by `plugins`→`plugins.open`,
-`hooks`→`hooks.open`, `market`→`marketplace.open`, `mcp`→`mcp.browse`.
+`ExtensionsHub` is a five-step guided setup rather than a `HubMenu`. `/extensions` is its only slash
+route; internal Environments, Plugins, and MCP children open from the intro and return through the
+view stack. Its scope, Environment, exact catalog, capability review, Apply sequence, and focused
+children are specified in [code-extensions.md](code-extensions.md)
+(`packages/code/src/views/config/ExtensionsHub.tsx`, `ExtensionsHub`).
 
 ### 2.7 Screen dependency interfaces
 
 | Screen | Deps interface | Line |
 |---|---|---|
+| `ExtensionsHub(host, deps)` | `ExtensionsHubDeps` projections and lifecycle actions | `packages/code/src/views/config/ExtensionsHub.tsx` (`ExtensionsHubDeps`) |
 | `ProvidersPanel(host, deps)` | `ProvidersDeps { settings, keys, code, notify, catalog, modelsService?, providerAuth?, copyText?, openUrl?, bootstrap?, onBootstrapComplete? }` | `packages/code/src/views/config/ProvidersPanel.tsx` (`ProvidersDeps`) |
 | `DefaultsPanel(host, deps)` | `DefaultsDeps { settings, env, notify }` | `packages/code/src/views/config/DefaultsPanel.tsx:20` |
 | `McpBrowser(host, deps)` | `McpBrowserDeps { nodes, refresh, editConfig, notify }` | `packages/code/src/views/config/McpBrowser.tsx:22` |
-| `EnvironmentBrowser(host, deps)` | `EnvironmentBrowserDeps { environments, reconnect, runActive, notify }` | `packages/code/src/views/config/EnvironmentBrowser.tsx:26` |
-| `PluginBrowser(host, deps)` | `PluginBrowserDeps { plugins, toggleEnabled, install, update, uninstall, notify }` | `packages/code/src/views/config/PluginBrowser.tsx:22` |
-| `MarketplaceBrowser(host, deps)` | `MarketplaceBrowserDeps { listings, sources, loading, install, refresh, addSource }` | `packages/code/src/views/config/MarketplaceBrowser.tsx:22` |
-| `HookBrowser(host, deps)` | `HookBrowserDeps { hooks, operatorHooks, approve, revoke }` | `packages/code/src/views/config/HookBrowser.tsx:35` |
+| `EnvironmentBrowser(host, deps)` | `EnvironmentBrowserDeps { environments, reconnect, runActive, notify, configure }` | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`EnvironmentBrowserDeps`) |
+| `MarketplaceBrowser(host, deps)` | `MarketplaceBrowserDeps { listings, sources, plugins, environment, loading, install, installUrl, configure, update, uninstall, refresh, addSource, notify }` | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`MarketplaceBrowserDeps`) |
 
 ### 2.8 Providers levels (private modules, no package entrypoint)
 
@@ -491,18 +492,28 @@ calling `commit` (`:29`). Pinned at `packages/code/tests/unit/key-entry.test.ts:
 ### 4.4 Hub navigation
 
 `HubMenu` registers one level whose `nav.activate` calls `deps.openChild(item.cmd)`
-(`packages/code/src/views/config/hub-menu.tsx:38`). The app wires `openChild` to `openWithReturn(cmd, "<hub>.open", preferredScope())`
-(`packages/code/src/app/commands.tsx:934`, `:1331`). `openWithReturn` opens the child with a `parent` route back to the
-hub (`packages/code/src/app/commands.tsx:228`). `hubRoute` turns `/settings <id>` into the same call and returns `false`
+(`packages/code/src/views/config/hub-menu.tsx:38`). The app wires Settings `openChild` to
+`openWithReturn(cmd, "settings.open", preferredScope())` (`packages/code/src/app/commands.tsx`,
+`settings.open`). `openWithReturn` opens the child with a `parent` route back to the hub
+(`packages/code/src/app/commands.tsx`, `openWithReturn`). `hubRoute` turns `/settings <id>` into the same call and returns `false`
 for an unknown id so the plain command falls through and opens the hub itself
-(`packages/code/src/app/commands.tsx:272`). `hubSubcommands` derives the inline choice hints from the same array
-(`:262`) — so the item list is the single source for menu, router and hints.
+(`packages/code/src/app/commands.tsx`, `hubRoute`). `hubSubcommands` derives the inline choice hints
+from the same array (`packages/code/src/app/commands.tsx`, `hubSubcommands`) — so `SETTINGS_ITEMS` is
+the single source for the Settings menu, router and hints. Extensions deliberately has no child
+slash-routing array; its intro owns the internal return-stack actions
+(`packages/code/src/app/commands.tsx`, `extensions.open`).
 
 `providers.open` is deliberately an internal `settings` child (`slash: false`, `parent: "settings"`),
 so its command route is `/settings/providers`; there is no standalone `/providers` command.
 Production: `registerProvidersCommands` in `packages/code/src/features/providers/commands.ts` and
 `SettingsHub.ITEMS`. Test: `packages/code/tests/integration/app-commands.test.tsx` (hub children have
 one hierarchical slash route instead of duplicate aliases).
+
+For a hierarchical parent, Enter on the exact typed token executes the parent view; Tab continues
+to insert its child-completion prefix. A fuzzy or incomplete parent hit still completes instead of
+executing. Production: `acceptAc` in `packages/code/src/views/InputDock.tsx`. Test:
+`packages/code/tests/integration/app-shell-render.test.tsx` (exact hierarchical parent and Tab child
+completion cases).
 
 `preferredScope()` is `read("workspace") !== undefined ? "workspace" : "global"`
 (`packages/code/src/app/commands.tsx:254`); its TSDoc states the mechanism it replaced ("This used to test whether
@@ -984,60 +995,15 @@ both verbs), `:127` (argument table not a JSON dump), `:150`/`:160` (`[e]` namin
 (invoke), `:233` (control-plane explanation), `:244` (declared-but-empty explanation), `:289` ("no
 arguments").
 
-### 4.14a EnvironmentBrowser
+### 4.14a Guided Extensions setup and focused browsers
 
-`EnvironmentBrowser` (`packages/code/src/views/config/EnvironmentBrowser.tsx:122`) is the first
-Extensions child and the control plane for deterministic extension activation. Its header always
-shows the process-pinned active id, plugin counts, skill counts, and `ready|degraded|invalid` status.
-The selected definition's detail shows fingerprint and selection origin, each exact scoped plugin,
-its agents/skills/MCPs/capability executables/hook approval counts, each standalone skill, and every
-resolution issue.
-
-The verbs are: `r` refresh; `w` select locally for this workspace; `g` set a non-workspace
-definition as the global default; `n` create an empty `global:name` or `workspace:name`; `c` clone
-the selected resolved definition; `x` clear the local workspace selection; and `d` clear the global
-default. Selection is disabled while a run is active or a process-local `--env` override is pinned.
-`w`/`g` call scope-bound `preview`, and `x`/`d` call `previewClear`; all four render the exact
-entering/leaving plugin, skill, MCP, and hook delta and require confirmation. A workspace executable
-target requests trust approval only for that preview. A successful mutation reconnects the backend
-before claiming it is active for new runs. Production: `apply`, `clearWorkspaceSelection`,
-`deltaLines`, `rowsFor`, and the level spec in
-`packages/code/src/views/config/EnvironmentBrowser.tsx`. Test:
-`packages/code/tests/integration/environment-browser-render.test.tsx`.
-
-The Plugins browser remains the convenient single-plugin editor. Under `builtin:default`, `e`
-updates global `enabledPlugins` with the selected exact `{ scope, source, name }` reference. Under a
-custom Environment, it CAS-updates that Environment's exact plugin allow-list, shows the
-plugin's contribution delta before confirmation, refreshes workspace trust when applicable, and
-reconnects. Install still does not activate; uninstall can leave an explicit missing-reference
-diagnostic. Production: `packages/code/src/app/commands.tsx:789-881`.
-
-### 4.15 PluginBrowser / MarketplaceBrowser / HookBrowser
-
-**PluginBrowser** (`packages/code/src/views/config/PluginBrowser.tsx:62`) — one flat level. Verbs: `e` enable/disable (label flips
-with the selection), `a` choose global `.agents/plugins` (the default) or `.clarvis/plugins` and
-then type a Git URL, `u` update, `d` uninstall. A `workspace`-scoped plugin refuses uninstall with "lives in this workspace —
-remove it from the repo instead" (`:176`); anything else confirms with `deletes <dir>` as the detail
-line (`:183`). The detail pane colours **executable** contributions warn: agents (`:88`), servers
-(`:102`), hooks (`:108`), capability services (`:114`) and raw executables (`:129`); broken agents are
-del (`:93`). Pinned at `packages/code/tests/integration/plugin-browser-render.test.tsx`, including
-both install-target choices and exact lifecycle refs.
-
-**MarketplaceBrowser** (`packages/code/src/views/config/MarketplaceBrowser.tsx:58`) — one level; `activate` installs only when
-`!l.installed && l.installable` (`:130`). Verbs: `a` add marketplace by git URL (`:139`) and `refresh`
-(`:145`). `bindLevelKeys` is given the `editor` so the level's verb keys are released while a URL is
-being typed — the inline comment at `:151` states that without it "every 'a' typed into a URL was
-eaten by [a] add marketplace". `summary()` (`:77`) prints one line for the whole catalog: the bare
-count when all listings are installable, `N listings ⟩ M installable from here` when some are, and a
-three-sentence explanation when none are. Pinned at `packages/code/tests/integration/marketplace-browser-render.test.tsx:111`, `:130`,
-`:144`, `:163`, `:217`, `:235`.
-
-**HookBrowser** (`packages/code/src/views/config/HookBrowser.tsx:57`) — one level over plugin hooks with verbs `t` "approve exact
-hook" (only while `approved === false`) and `x` "revoke" (only while `approved === true`) (`:63`,
-`:72`). Beneath it, the operator's own `settings.json` hooks are listed read-only, per scope, with a
-`not running: workspace not approved` marker when `withheld` is set (`:133`). The `withheld` flag is
-computed by the caller from `settings.withheldWorkspaceFields().includes("hooks")`
-(`packages/code/src/app/commands.tsx:762`). Pinned at `packages/code/tests/integration/hook-browser-render.test.tsx:32`, `:53`, `:70`.
+The five-step setup, its focused Environment/Plugins/MCP browsers,
+composition transaction, exact scrollable previews, and responsive/performance rules are specified in
+[code-extensions.md](code-extensions.md). This document retains only the shared `ViewHost`, field
+editor and key-binding machinery those views consume
+(`packages/code/src/views/config/ExtensionsHub.tsx`, `ExtensionsHub`;
+`packages/code/src/views/config/EnvironmentBrowser.tsx`, `EnvironmentBrowser`;
+`packages/code/src/views/config/MarketplaceBrowser.tsx`, `MarketplaceBrowser`).
 
 ### 4.16 Settings adapter
 
@@ -1226,10 +1192,11 @@ Test: unpinned.
 
 **INV-P19.** Level key bindings are released whenever a field edit, a confirm, an inactive frame, or
 an explicitly suspended overlay is in effect.
-Production: `packages/code/src/ui/patterns/bind-level-keys.ts:26`–`:31`; providers pass `suspend: () => picker() !== null`
-(the `bindLevelKeys` call in `packages/code/src/views/config/ProvidersPanel.tsx`) and marketplace passes `editor` (`packages/code/src/views/config/MarketplaceBrowser.tsx:153`).
-Test: unpinned for the specific `suspend` wiring; the marketplace rationale is stated inline at
-`packages/code/src/views/config/MarketplaceBrowser.tsx:151`.
+Production: `packages/code/src/ui/patterns/bind-level-keys.ts:26`–`:31`; providers pass
+`suspend: () => picker() !== null` (the `bindLevelKeys` call in
+`packages/code/src/views/config/ProvidersPanel.tsx`) and marketplace passes `editor`
+(`packages/code/src/views/config/MarketplaceBrowser.tsx`, `bindLevelKeys`). Test:
+`packages/code/tests/integration/marketplace-browser-render.test.tsx` (add-source URL input).
 
 **INV-P20.** In `ProvidersPanel.specFor`, the map editor's spec wins over every depth-based spec.
 Production: `specFor` in `packages/code/src/views/config/ProvidersPanel.tsx`. Test: exercised indirectly by
@@ -1312,19 +1279,22 @@ Production: `packages/code/src/views/config/McpBrowser.tsx:69` (`prompts.length 
 Test: unpinned as such; `packages/code/tests/integration/mcp-browser-render.test.tsx:194` exercises the positive case only.
 
 **INV-P36.** A workspace-scoped plugin can never be uninstalled from the browser.
-Production: `packages/code/src/views/config/PluginBrowser.tsx:175`. Test: `packages/code/tests/integration/plugin-browser-render.test.tsx:122`.
+Production: `packages/code/src/views/config/MarketplaceBrowser.tsx` (`uninstall`). Test:
+`packages/code/tests/integration/marketplace-browser-render.test.tsx` (workspace lifecycle policy).
 
 **INV-P37.** A marketplace listing this host cannot fetch from is never installed, whether by the
 `activate` verb or otherwise.
-Production: `packages/code/src/views/config/MarketplaceBrowser.tsx:132` (`!l.installed && l.installable`).
-Test: `packages/code/tests/integration/marketplace-browser-render.test.tsx:131`, `:144`, `:110`.
+Production: `packages/code/src/views/config/MarketplaceBrowser.tsx` (`runPrimary`). Test:
+`packages/code/tests/integration/marketplace-browser-render.test.tsx` (unavailable local entry).
 
-**INV-P38.** The Settings and Extensions hub item arrays are the single source for the menu, the
-`/<hub> <child>` deep-link router and the inline subcommand hints.
-Production: `packages/code/src/views/config/SettingsHub.tsx:7` / `packages/code/src/views/config/ExtensionsHub.tsx:7`, consumed at `packages/code/src/app/commands.tsx:1006-1019` and
-`:1465-1478`.
-Test: `packages/code/tests/integration/settings-hub-render.test.tsx:24`, `:38`;
-`packages/code/tests/integration/extensions-hub-render.test.tsx:21`, `:37` — but see §8 on what these do *not* pin.
+**INV-P38.** `SETTINGS_ITEMS` is the single source for the Settings menu, deep-link router and inline
+subcommand hints. Extensions has only one public route; guided setup steps and internal focused
+children remain owned by `ExtensionsHub` and its command registration.
+Production: `packages/code/src/views/config/hub-items.ts`, `packages/code/src/views/config/SettingsHub.tsx`,
+`packages/code/src/views/config/ExtensionsHub.tsx` (`SetupStep`, `spec`) and
+`packages/code/src/app/commands.tsx` (`settings.open`, `extensions.open`). Test:
+`packages/code/tests/integration/settings-hub-render.test.tsx` and
+`packages/code/tests/integration/app-commands.test.tsx` (hub routing).
 
 **INV-P39.** `McpCapabilities.refresh()` calls are single-flight: any call issued while one is already
 in flight coalesces onto that same promise and only sets a trailing flag, never starting a second
@@ -1403,15 +1373,23 @@ clipboard/browser feedback).
 
 **INV-P48.** An Environment selection is never applied from the browser without an exact preview
 and explicit confirmation, never while a run is active, and never reported active until backend
-reconnection succeeds. Production: `apply` in
+reconnection succeeds. Production: `applyPending` in
 `packages/code/src/views/config/EnvironmentBrowser.tsx`. Test:
 `packages/code/tests/integration/environment-browser-render.test.tsx`.
 
-**INV-P49.** Plugin toggling edits the active activation source: the global exact `enabledPlugins`
-list for `builtin:default`, otherwise the custom Environment definition by revision CAS. Installation is
-never activation. Production: `packages/code/src/app/commands.tsx:789-881`. Test:
-`packages/code/tests/integration/app-commands.test.tsx` and
-`packages/code/tests/integration/plugin-browser-render.test.tsx`.
+**INV-P49.** The focused Plugins browser never toggles raw settings directly. Its Environment action
+passes the exact selected installation and current Environment to the guided composer; focused
+Marketplace install composes installation, exact membership and reconnect as one consent action.
+Production: `MarketplaceBrowser` and `marketplace.open` in
+`packages/code/src/app/commands.tsx`. Test:
+`packages/code/tests/integration/marketplace-browser-render.test.tsx` and
+`packages/code/tests/integration/app-commands.test.tsx`.
+
+**INV-P50.** Enter executes an exact hierarchical parent token while Tab retains child completion;
+an incomplete token never executes the fuzzy top hit. Production: `acceptAc` in
+`packages/code/src/views/InputDock.tsx`. Test:
+`packages/code/tests/integration/app-shell-render.test.tsx` (exact parent, Tab completion, and typo
+cases).
 
 ---
 
@@ -1442,14 +1420,14 @@ never activation. Production: `packages/code/src/app/commands.tsx:789-881`. Test
 | MCP refresh never settles | `loading` stays true and the loading hint shows, not "no MCP servers" | `packages/code/src/views/config/McpBrowser.tsx:54`; test `:84` |
 | MCP `listTools`/`listPrompts` rejects | `reportListFailure` logs `mcp.list.failed` and substitutes `[]`, so one failing half does not crash the refresh | `packages/code/src/adapters/mcp-capabilities-bridge.ts:82` |
 | An `mcpServers` entry fails its schema | dropped silently from the parsed list | `packages/code/src/adapters/mcp-capabilities.ts:69` |
-| Uninstalling a workspace plugin | refused with a notify, no confirm | `packages/code/src/views/config/PluginBrowser.tsx:176` |
-| Environment target is invalid or degraded | preview/detail preserves the exact status and issues; no silent default is shown | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`deltaLines`, `rowsFor`) |
+| Uninstalling a workspace plugin | refused with a notify, no confirm | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`uninstall`) |
+| Environment target is invalid or degraded | preview/detail preserves the exact status and issues; no silent default is shown | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`exactDelta`, `fullDetail`) |
 | Environment changes while a run is active | all selection/clear verbs are hidden and the view says to finish the run first | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`runActive`) |
-| Preview expires or target revision changes | `select` rejects; the browser reports the conflict and leaves the current kernel active | `EnvironmentBrowser.apply`; [Environment failure modes](environments.md#6-failure-modes-and-degradation) |
-| Backend reconnect fails after selection | selection remains persisted; warning tells the operator to run `/reconnect`, never claims the target is active | `packages/code/src/views/config/EnvironmentBrowser.tsx:183-190` |
-| A marketplace source failed to fetch | rendered as a persistent `ErrorBanner` per source above a still-populated list | `packages/code/src/views/config/MarketplaceBrowser.tsx:162`; test `:67` |
-| No marketplace configured | dedicated empty state explaining what a marketplace is and offering the alternative | `packages/code/src/views/config/MarketplaceBrowser.tsx:180` |
-| Workspace hooks withheld by trust | listed but marked "not running: workspace not approved" | `packages/code/src/views/config/HookBrowser.tsx:134` |
+| Preview expires or target revision changes | `select` rejects; the browser reports the conflict and leaves the current kernel active | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`applyPending`); [Environment failure modes](environments.md#6-failure-modes-and-degradation) |
+| Composition preview expires or definition/inventory/selection drifts | `applyComposition` rejects; the guided setup retains the draft, returns to capability review, and writes no substitute | `packages/code/src/views/config/ExtensionsHub.tsx` (`apply`); [Environment failure modes](environments.md#6-failure-modes-and-degradation) |
+| Backend reconnect fails after selection | selection remains persisted; warning tells the operator to run `/reconnect`, never claims the target is active | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`applyPending`) |
+| A marketplace source failed to fetch | Plugins keeps successful listings and renders the failed source in All and its exact source collection; guided setup keeps exact installed inventory and reports the failed-source count | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`currentSourceError`); `packages/code/src/views/config/ExtensionsHub.tsx` (`setupIntro`) |
+| No marketplace listing is available | the current collection renders a dedicated empty state and points to left/right or Add Marketplace recovery | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`list`) |
 | Target scope's `settings.json` unparsable | `write` throws "…is invalid (…) — fix it by hand before saving" after recording `settings.save.rejected` with `reason: "unparsable"` | `packages/code/src/adapters/settings.ts:392` |
 | Merged document fails the kernel schema | `write` throws `refusing to save invalid settings: <first two issues> (+N more)` | `packages/code/src/adapters/settings.ts:400`, `packages/code/src/adapters/zod-summary.ts:10` |
 | CAS conflict / kernel refusal | `resyncAfterRefusedWrite` logs, re-reads settings + agents, bumps `version`, and rethrows the original error | `packages/code/src/adapters/settings.ts:372` |
@@ -1470,7 +1448,6 @@ never activation. Production: `packages/code/src/app/commands.tsx:789-881`. Test
 | `adapters/mcp-capabilities.ts` | `@clarvis/kernel/config` (`mcpServerSettingsSchema`), `@clarvis/kernel/policy` (`CONTROL_PLANE_TOOL_NAMES`) | runtime, static | `:2`, `:3` |
 | `adapters/settings.ts` | `@clarvis/kernel/config` (`kernelSettingsSchema`, `mergeProviders`, `mergeSettings`, `parseModelRef`, `isWellFormedHttpUrl`, `PLANS_DEFAULTS`) | runtime, static | `packages/code/src/adapters/settings.ts:3` |
 | `adapters/settings.ts` | `@clarvis/protocol` (`ConfigService`, `SettingsData`, `SettingsRepairPlan`, `SandboxInspection`) | type-only | `packages/code/src/adapters/settings.ts:13` |
-| `HookBrowser.tsx` | `@clarvis/protocol` (`PluginHookReview`) | type-only | `packages/code/src/views/config/HookBrowser.tsx:2` |
 | `EnvironmentBrowser.tsx` | `@clarvis/protocol` (`EnvironmentService` and Environment DTOs) | type-only | `packages/code/src/views/config/EnvironmentBrowser.tsx:1-7` |
 | `adapters/models-catalog.ts` | `@clarvis/protocol` catalog DTOs + `@clarvis/kernel/config` `parseModelRef` | runtime + type | `packages/code/src/adapters/models-catalog.ts:1`, `:2` |
 
@@ -1526,10 +1503,11 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 - **Catalog data** — `adapters/models-catalog.ts`, `catalog-pick.ts`, `CatalogPicker.tsx`,
   `pick-model.ts`, `ModelView`, `EffortView`, and `derivePromptCacheMode` / `cacheModeOf` themselves:
   [hosts/model-catalog.md](model-catalog.md).
-- **Plugin install mechanics** — `adapters/{plugins,plugin-install,marketplace}.ts` and the kernel's
-  plugin service: [hosts/plugins.md](plugins.md). Environment resolution, formats, trust, and
-  snapshot identity are [Extension Environments](environments.md). This document covers only the
-  five extension browsers' UI contracts.
+- **Extension product experience** — guided discovery, exact composition, capability review,
+  responsive detail and the focused browsers are owned by
+  [code-extensions.md](code-extensions.md). Plugin install mechanics remain in
+  [plugins.md](plugins.md); Environment resolution, formats, trust and snapshot identity remain in
+  [environments.md](environments.md).
 - **Domain hubs** — [hosts/code-domain-hubs.md](code-domain-hubs.md).
 - **Key registration, layers, footer projection** — `keys/**` and `ui/patterns/**`:
   [hosts/code-keyboard.md](code-keyboard.md). `LevelSpec`, `registerLevel`, `verb`, `PANEL_VERBS`,

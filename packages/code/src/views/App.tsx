@@ -49,6 +49,7 @@ import type {
   PlansService,
   PluginService,
   ProviderAuthService,
+  SkillsService,
   RunDetail,
   StorageService,
   WorkflowsService,
@@ -222,6 +223,7 @@ export interface AppBackend {
   getRun: (id: string) => Promise<RunDetail | null>;
   plugins: PluginService;
   environments: EnvironmentService;
+  skills: SkillsService;
   tasks: TasksController;
   storage: StorageService;
   reconnect: () => Promise<{ ok: boolean; message: string }>;
@@ -743,6 +745,7 @@ export function App(props: AppProps): JSX.Element {
     mcpClient: props.backend.client,
     plugins: props.backend.plugins,
     environments: props.backend.environments,
+    skills: props.backend.skills,
     tasks: props.backend.tasks,
     storage: props.backend.storage,
     taskWorkBlockedReason: pressureBlockedReason,

@@ -9,6 +9,7 @@ import type {
   ModelCatalog,
   PlansService,
   PluginService,
+  ResolvedEnvironment,
   RunDetail,
   WorkflowsService,
 } from "@clarvis/protocol";
@@ -96,6 +97,9 @@ interface SettingsKnobs {
   providers?: unknown[];
   sandbox?: Record<string, unknown>;
   plans?: Record<string, unknown>;
+  workspaceTrust?: "inert" | "trusted" | "unapproved" | "changed";
+  withheldWorkspaceFields?: readonly string[];
+  setWorkspaceTrust?: (approve: boolean) => Promise<void>;
 }
 
 const HEALTHY_PROVIDERS = [{ name: "acme", models: {} }];
@@ -131,9 +135,10 @@ function fakeSettings(knobs: Accessor<SettingsKnobs>): SettingsAdapter {
     origin: () => undefined,
     effectiveProviders: () => [],
     knownGrants: () => undefined,
-    withheldWorkspaceFields: () => [],
-    workspaceTrust: () => "inert",
-    setWorkspaceTrust: async () => {},
+    withheldWorkspaceFields: () => knobs().withheldWorkspaceFields ?? [],
+    workspaceTrust: () => knobs().workspaceTrust ?? "inert",
+    setWorkspaceTrust: (approve: boolean) =>
+      knobs().setWorkspaceTrust?.(approve) ?? Promise.resolve(),
     sources: () => ({ global: "/nonexistent/global" }),
     write: async () => {},
     validateProviders: () => ({ ok: knobs().providersValid ?? true }),
@@ -250,6 +255,7 @@ function baseBackend(over: Partial<AppBackend> = {}): AppBackend {
     } as unknown as WorkflowsService,
     getRun: async (): Promise<RunDetail | null> => null,
     plugins: { list: () => [], install: async () => {} } as unknown as PluginService,
+    skills: { list: async () => [], getPrompt: async () => [] },
     tasks: { available: () => false } as never,
     workspaceId: () => "ws_current",
     reconnect: async () => ({ ok: true, message: "ok" }),
@@ -350,6 +356,66 @@ function defaultProps(overrides: {
     };
   };
 }
+
+const CHANGED_WORKSPACE_ENVIRONMENT: ResolvedEnvironment = {
+  id: "workspace:project",
+  ref: { scope: "workspace", name: "project" },
+  immutable: false,
+  status: "degraded",
+  fingerprint: `sha256:${"c".repeat(64)}`,
+  selection_origin: "workspace",
+  plugins: [
+    {
+      ref: { scope: "workspace", source: "agents", name: "context7" },
+      active: false,
+      installed: true,
+      valid: true,
+      agents: [],
+      skills: ["docs"],
+      mcp_servers: ["context7:docs"],
+      hooks: { total: 1 },
+      capability_executables: [],
+    },
+  ],
+  standalone_skills: [],
+  issues: [{ code: "workspace_untrusted", message: "workspace changed" }],
+  counts: {
+    plugins_active: 0,
+    standalone_skills_active: 0,
+    plugin_skills_active: 0,
+    mcp_servers_active: 0,
+    hooks_declared: 0,
+  },
+};
+
+test("a changed executable workspace opens the approval question before the shell", async () => {
+  let approvals = 0;
+  const settingsKnobs = () => ({
+    workspaceTrust: "changed" as const,
+    withheldWorkspaceFields: ["mcpServers", "hooks"],
+    setWorkspaceTrust: async (approve: boolean) => {
+      if (approve) approvals += 1;
+    },
+  });
+  const t = await mountApp(
+    defaultProps({
+      settingsKnobs,
+      backend: baseBackend({
+        environments: {
+          current: async () => CHANGED_WORKSPACE_ENVIRONMENT,
+        } as AppBackend["environments"],
+      }),
+    }),
+  );
+  const approval = await captureUntil(t, "This workspace's executable snapshot changed.");
+  expect(approval).toContain("MCP servers");
+  expect(approval).toContain("[n] no, review and remove");
+  expect(approvals).toBe(0);
+  press(t, "return");
+  for (let index = 0; index < 20 && approvals === 0; index += 1) await t.renderOnce();
+  expect(approvals).toBe(1);
+  t.renderer.destroy();
+});
 
 test("default wide layout: header, derived navigation and input dock are live", async () => {
   const t = await mountApp(defaultProps({}));
@@ -481,6 +547,27 @@ test("a child name anywhere in a hierarchical route is discoverable from the sla
   await t.mockInput.typeText("/provider");
   const suggestions = await captureUntil(t, "/settings/providers");
   expect(suggestions).toContain("/settings/providers");
+  t.renderer.destroy();
+});
+
+test("Extensions exposes only the wizard slash command, never hidden child deep links", async () => {
+  const t = await mountApp(defaultProps({}));
+  await captureUntil(t, "New task");
+  await t.mockInput.typeText("/extensions/marketplace");
+  const out = await captureUntil(t, "no match");
+  expect(out).not.toContain("Browse and install extensions");
+  t.renderer.destroy();
+});
+
+test("Enter runs an exact hierarchical hub while Tab still owns child completion", async () => {
+  const t = await mountApp(defaultProps({}));
+  await captureUntil(t, "New task");
+  await t.mockInput.typeText("/settings");
+  await t.renderOnce();
+  press(t, "return");
+  const settings = await captureUntil(t, "[↵] open");
+  expect(settings).toContain("Settings");
+  expect(settings).toContain("Providers");
   t.renderer.destroy();
 });
 

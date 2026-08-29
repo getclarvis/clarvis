@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { agentsPluginsDirs, globalPaths, workspacePaths } from "@clarvis/paths";
 
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
-import { createPluginService } from "../../src/plugins/plugin-service.ts";
 import { PLUGIN_RESOURCE_LIMITS } from "@clarvis/loop/host";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
 import type { PluginRef } from "@clarvis/protocol";
@@ -104,23 +103,12 @@ describe("plugin contributions", () => {
     ).toBeTrue();
   });
 
-  it("withholds only unmanaged hooks until their exact definitions are reviewed", async () => {
+  it("activates valid plugin hooks with the selected atomic contribution", async () => {
     install(globalPaths(globalDir).pluginsDir, "demo", {
       mcpServers: { files: { command: "file-server" } },
       hooks: [{ event: "run_start", command: "check" }],
     });
     const loaded = contributions();
-    expect(loaded.settingsScopes(refs("demo"))[0]!.settings).toMatchObject({
-      mcpServers: { "demo:files": { command: "file-server" } },
-      hooks: undefined,
-    });
-    const service = createPluginService({
-      globalDir,
-      enabledPlugins: () => refs("demo"),
-      environment: process.env,
-    });
-    const [hook] = await service.hooks();
-    await service.approveHook(ref("demo"), hook!.fingerprint);
     expect(
       (
         loaded.settingsScopes(refs("demo"))[0]!.settings as {
@@ -186,7 +174,7 @@ describe("plugin contributions", () => {
     ]);
   });
 
-  it("rejects contribution drift after the Environment pins a plugin snapshot", () => {
+  it("serves pinned in-memory contributions and rejects drift before filesystem-backed roots", () => {
     const dir = install(globalPaths(globalDir).pluginsDir, "atlas", {
       mcpServers: "./.mcp.json",
     });
@@ -205,8 +193,10 @@ describe("plugin contributions", () => {
       JSON.stringify({ mcpServers: { charts: { command: "atlas-mcp-v2" } } }),
     );
 
-    expect(() => loaded.settingsScopes(refs("atlas"))).toThrow(/reconnect the kernel/);
-    expect(() => loaded.agents(refs("atlas"))).toThrow(/reconnect the kernel/);
+    expect(loaded.settingsScopes(refs("atlas"))[0]?.settings.mcpServers).toEqual({
+      "atlas:charts": { type: "stdio", command: "atlas-mcp-v1" },
+    });
+    expect(loaded.agents(refs("atlas"))).toEqual([]);
     expect(() => loaded.skillRoots(refs("atlas"))).toThrow(/reconnect the kernel/);
   });
 

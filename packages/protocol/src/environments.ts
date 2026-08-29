@@ -84,7 +84,7 @@ export interface ResolvedEnvironmentPlugin {
   agents: string[];
   skills: string[];
   mcp_servers: string[];
-  hooks: { total: number; approved: number };
+  hooks: { total: number };
   capability_executables: string[];
   error?: string;
 }
@@ -99,17 +99,19 @@ export interface ResolvedEnvironmentSkill {
   error?: string;
 }
 
+/** Complete exact installed/discovered inventory available to an Environment composer. */
+export interface EnvironmentInventory {
+  plugins: ResolvedEnvironmentPlugin[];
+  standalone_skills: ResolvedEnvironmentSkill[];
+}
+
 /** Counts rendered by the Environment browser without reinterpreting inventory. */
 export interface EnvironmentCounts {
   plugins_active: number;
-  plugins_installed: number;
   standalone_skills_active: number;
-  standalone_skills_discovered: number;
   plugin_skills_active: number;
-  plugin_skills_discovered: number;
   mcp_servers_active: number;
   hooks_declared: number;
-  hooks_approved: number;
 }
 
 /** Immutable extension snapshot used by this kernel process. */
@@ -144,8 +146,8 @@ export interface EnvironmentDelta {
   skills_leaving: string[];
   mcp_servers_entering: string[];
   mcp_servers_leaving: string[];
-  hooks_entering: { plugin: EnvironmentPluginRef; total: number; approved: number }[];
-  hooks_leaving: { plugin: EnvironmentPluginRef; total: number; approved: number }[];
+  hooks_entering: { plugin: EnvironmentPluginRef; total: number }[];
+  hooks_leaving: { plugin: EnvironmentPluginRef; total: number }[];
 }
 
 /** Preview pinned by a token so selection cannot apply a different target. */
@@ -155,6 +157,25 @@ export interface EnvironmentPreview {
   delta: EnvironmentDelta;
   token: string;
   requires_workspace_trust: boolean;
+}
+
+/** Complete authored definition plus the local selection it should replace. */
+export interface EnvironmentCompositionInput extends EnvironmentDefinitionInput {
+  /** Exact prior definition revision, or `null` when the target must not exist. */
+  expected_revision: string | null;
+  selection_scope: EnvironmentSelectionScope;
+}
+
+/** Exact authored and effective snapshots reviewed before one composition transaction. */
+export interface EnvironmentCompositionPreview extends EnvironmentPreview {
+  /** The proposed authored definition, even when a workspace selection shadows a global write. */
+  authored: ResolvedEnvironment;
+}
+
+/** Definition and selection committed together; the current kernel remains pinned until reconnect. */
+export interface EnvironmentCompositionApplyResult extends EnvironmentApplyResult {
+  definition: EnvironmentDefinitionView;
+  effective: EnvironmentRef;
 }
 
 /** Where a persisted selection is written. */
@@ -180,6 +201,8 @@ export interface EnvironmentService {
   current(): Promise<ResolvedEnvironment>;
   /** Resolve one definition against current installed inventory without selecting it. */
   get(ref: EnvironmentRef): Promise<ResolvedEnvironment>;
+  /** Return every exact installed plugin and discovered standalone skill once for composition UI. */
+  inventory(): Promise<EnvironmentInventory>;
   /** Compute the exact activation delta and a single-use apply token. */
   preview(
     ref: EnvironmentRef,
@@ -187,6 +210,8 @@ export interface EnvironmentService {
   ): Promise<EnvironmentPreview>;
   /** Preview the fallback that would become selected after clearing one persisted choice. */
   previewClear(scope: EnvironmentSelectionScope): Promise<EnvironmentPreview>;
+  /** Resolve a complete draft and its effective activation delta without writing it. */
+  previewComposition(input: EnvironmentCompositionInput): Promise<EnvironmentCompositionPreview>;
   /** Persist a selection after verifying the preview token. */
   select(
     ref: EnvironmentRef,
@@ -201,12 +226,22 @@ export interface EnvironmentService {
     scope: EnvironmentSelectionScope,
     options: { preview_token: string },
   ): Promise<EnvironmentApplyResult>;
+  /** Atomically persist the previewed draft and selection, then require a kernel reconnect. */
+  applyComposition(
+    input: EnvironmentCompositionInput,
+    options: { preview_token: string; approve_workspace?: boolean },
+  ): Promise<EnvironmentCompositionApplyResult>;
   /** Create one new global or workspace definition. */
   create(input: EnvironmentDefinitionInput): Promise<EnvironmentDefinitionView>;
   /** Compare-and-swap an existing definition. */
   update(
     input: EnvironmentDefinitionInput & { expected_revision: string },
   ): Promise<EnvironmentDefinitionView>;
+  /** Delete one inactive authored definition after verifying its exact revision. */
+  delete(
+    ref: { scope: Scope; name: string },
+    options: { expected_revision: string },
+  ): Promise<void>;
   /** Copy a resolved custom definition to a new authored identity. */
   clone(
     source: EnvironmentRef,

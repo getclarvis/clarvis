@@ -168,6 +168,35 @@ export interface FilePluginRepositoryOptions {
   workspaceRoot?: string;
 }
 
+/** Inspect one exact installed plugin without traversing the other inventory entries. */
+export function getInstalledPlugin(
+  options: FilePluginRepositoryOptions,
+  ref: PluginRef,
+): InstalledPlugin | undefined {
+  const agents = agentsPluginsDirs({
+    ...(options.home === undefined ? {} : { home: options.home }),
+    ...(options.workspaceRoot === undefined ? {} : { cwd: options.workspaceRoot }),
+  });
+  const root =
+    ref.scope === "global"
+      ? ref.source === "agents"
+        ? agents.user
+        : globalPaths(options.globalDir).pluginsDir
+      : options.workspaceRoot === undefined
+        ? undefined
+        : ref.source === "agents"
+          ? agents.workspace
+          : workspacePaths(options.workspaceRoot).pluginsDir;
+  if (root === undefined) return undefined;
+  const dir = join(root, ref.name);
+  try {
+    if (!statSync(dir).isDirectory()) return undefined;
+  } catch {
+    return undefined;
+  }
+  return installed(inspectPlugin(dir, ref.name), ref);
+}
+
 /**
  * Read every installed plugin with its exact owning scope.
  *
@@ -245,10 +274,7 @@ export function createFilePluginRepository(options: FilePluginRepositoryOptions)
       return inspectPlugin(root, basename(root));
     },
     async get(ref): Promise<InstalledPlugin | null> {
-      const dir = target(ref);
-      return dir !== undefined && existsSync(dir)
-        ? installed(inspectPlugin(dir, ref.name), ref)
-        : null;
+      return getInstalledPlugin(options, ref) ?? null;
     },
     async install(root, name, source, prepared): Promise<InstalledPlugin> {
       const ref: PluginRef = { scope: "global", source, name };

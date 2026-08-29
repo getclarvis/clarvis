@@ -341,7 +341,7 @@ describe("PluginService", () => {
     });
   });
 
-  it("reviews and approves plugin hooks individually", async () => {
+  it("reports plugin hooks as part of the atomic contribution surface", async () => {
     writePlugin(workspace, "demo", {
       name: "demo",
       hooks: [
@@ -350,13 +350,7 @@ describe("PluginService", () => {
       ],
     });
     const s = svc();
-    const hooks = await s.hooks();
-    expect(hooks.map((hook) => hook.approved)).toEqual([false, false]);
-    const ref = pluginRef("demo", "workspace");
-    await s.approveHook(ref, hooks[0]!.fingerprint);
-    expect((await s.hooks()).map((hook) => hook.approved)).toEqual([true, false]);
-    await s.revokeHook(ref, hooks[0]!.fingerprint);
-    expect((await s.hooks()).every((hook) => !hook.approved)).toBe(true);
+    expect((await s.list())[0]!.contributions.hooks).toBe(2);
   });
 
   it("a skills-only plugin lists without a global trust decision", async () => {
@@ -371,12 +365,6 @@ describe("PluginService", () => {
 
   it("uninstall 404s a plugin that isn't installed globally", async () => {
     await expect(svc().uninstall(pluginRef("ghost"))).rejects.toMatchObject({ code: "not_found" });
-  });
-
-  it("approveHook 404s an undeclared fingerprint", async () => {
-    await expect(svc().approveHook(pluginRef("ghost"), "missing")).rejects.toMatchObject({
-      code: "not_found",
-    });
   });
 
   it("validateGitUrl rejects unsafe transports", () => {

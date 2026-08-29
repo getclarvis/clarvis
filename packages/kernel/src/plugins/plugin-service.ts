@@ -27,7 +27,6 @@ import type {
   PluginFetcher,
   PluginRepository,
 } from "../ports/plugin-repository.ts";
-import { pluginHookReviews, writeHookApproval } from "./hook-trust.ts";
 import { effectivePluginMcpName } from "./plugin-contributions.ts";
 import { pluginDataDir } from "./plugin-runtime.ts";
 
@@ -300,7 +299,7 @@ function contributionsOf(
 
 /** Configuration for {@link createPluginService}. */
 export interface PluginServiceOptions {
-  /** Global config dir holding `plugins/` and per-definition hook approvals. */
+  /** Global config dir holding managed plugin state. */
   globalDir: string;
   /** Home directory owning the global `.agents/plugins` inventory. */
   home?: string;
@@ -326,7 +325,7 @@ export interface PluginServiceOptions {
 
 /**
  * Protocol {@link PluginService}: install/update/uninstall from git, list
- * contributions, and manage exact hook-definition approvals.
+ * contributions as one atomic plugin unit.
  */
 export function createPluginService(opts: PluginServiceOptions): PluginService {
   const logger = opts.logger ?? NOOP_LOGGER;
@@ -417,23 +416,6 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
     const installed = await repository.list();
     const enabled = enabledKeys();
     return installed.map((plugin) => viewFor(plugin, enabled));
-  }
-
-  async function hookReviews(): ReturnType<PluginService["hooks"]> {
-    const reviews: Awaited<ReturnType<PluginService["hooks"]>> = [];
-    for (const plugin of await repository.list()) {
-      const { manifest } = readManifest(plugin, installedDataDir(plugin));
-      if (manifest === undefined) continue;
-      reviews.push(
-        ...pluginHookReviews(opts.globalDir, plugin.ref, manifest.hooks ?? []).map((review) => ({
-          plugin: review.plugin,
-          fingerprint: review.fingerprint,
-          definition: review.definition,
-          approved: review.approved,
-        })),
-      );
-    }
-    return reviews;
   }
 
   return {
@@ -539,26 +521,6 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
           throw kernelError("not_found", `'${pluginRefLabel(ref)}' is not installed`);
         }
       });
-    },
-
-    hooks: hookReviews,
-    async approveHook(plugin, fingerprint): Promise<void> {
-      plugin = checkedPluginRef(plugin);
-      const review = (await hookReviews()).find(
-        (entry) =>
-          pluginRefId(entry.plugin) === pluginRefId(plugin) && entry.fingerprint === fingerprint,
-      );
-      if (review === undefined) {
-        throw kernelError(
-          "not_found",
-          `hook '${fingerprint}' is not declared by plugin '${pluginRefLabel(plugin)}'`,
-        );
-      }
-      writeHookApproval(opts.globalDir, plugin, fingerprint, true);
-    },
-    async revokeHook(plugin, fingerprint): Promise<void> {
-      plugin = checkedPluginRef(plugin);
-      writeHookApproval(opts.globalDir, plugin, fingerprint, false);
     },
   };
 }

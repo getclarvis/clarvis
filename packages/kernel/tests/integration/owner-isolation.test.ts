@@ -111,6 +111,7 @@ function makeKernel(
     ...kernelIdentity(ws),
     configStore: seededConfig(),
     globalConfigDir: join(ws, "global"),
+    home: join(ws, "home"),
     memoryFactory,
     planFactory: planFactoryFor(
       memoizeByOwner((owner: string) =>

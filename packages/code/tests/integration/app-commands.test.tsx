@@ -23,7 +23,14 @@ import type { CodeConfigStore } from "../../src/adapters/code-config.ts";
 import type { AgentsStore } from "../../src/adapters/agents-store.ts";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import { createViewHost } from "../../src/views/config/view-host.tsx";
-import type { PluginService } from "@clarvis/protocol";
+import type {
+  EnvironmentService,
+  PluginRef,
+  PluginService,
+  PluginView,
+  ResolvedEnvironment,
+  SkillsService,
+} from "@clarvis/protocol";
 import { TOKEN_ORDER } from "../../src/theme/model.ts";
 import { fakeDebugSession } from "../helpers/fake-debug-session.ts";
 import { SUBAGENT_ORDER } from "../../src/theme/tokens.ts";
@@ -219,6 +226,7 @@ function baseDeps(
     } satisfies AgentsStore,
     plugins: fakePluginService(),
     environments: {} as never,
+    skills: { list: async () => [], getPrompt: async () => [] },
     marketplaceDefaultUrls: [],
     code: fakeCode(),
     memoryMode: {
@@ -342,15 +350,12 @@ function fakePluginService(): PluginService {
   return {
     list: async () => [],
     install: async () => {
-      throw new Error("plugin installation belongs to PluginBrowser tests");
+      throw new Error("plugin installation belongs to MarketplaceBrowser tests");
     },
     update: async () => {
-      throw new Error("plugin updates belong to PluginBrowser tests");
+      throw new Error("plugin updates belong to Marketplace tests");
     },
     uninstall: async () => {},
-    hooks: async () => [],
-    approveHook: async () => {},
-    revokeHook: async () => {},
   };
 }
 
@@ -423,6 +428,128 @@ test("plugin lifecycle recomposes only an exact selected Environment contributio
       { scope: "global", source: "clarvis", name: "browser" },
     ),
   ).toBeUndefined();
+});
+
+test("Marketplace install atomically activates the plugin and stays active after reload", async () => {
+  const ref: PluginRef = { scope: "global", source: "agents", name: "context7" };
+  let installed = false;
+  let enabledPlugins: PluginRef[] = [];
+  let reconnects = 0;
+  const view = (): PluginView => ({
+    name: ref.name,
+    scope: ref.scope,
+    source: ref.source,
+    dir: "/tmp/context7",
+    enabled: enabledPlugins.some(
+      (candidate) =>
+        candidate.scope === ref.scope &&
+        candidate.source === ref.source &&
+        candidate.name === ref.name,
+    ),
+    display_name: "Context7",
+    description: "Current documentation",
+    contributions: {
+      agents: [],
+      broken_agents: [],
+      skills: ["context7"],
+      servers: ["context7"],
+      hooks: 1,
+      capability_executables: [],
+      executables: ["npx -y @upstash/context7-mcp"],
+    },
+  });
+  const plugins: PluginService = {
+    list: async () => (installed ? [view()] : []),
+    install: async () => {
+      installed = true;
+      return view();
+    },
+    update: async () => view(),
+    uninstall: async () => {
+      installed = false;
+    },
+  };
+  const current = async (): Promise<ResolvedEnvironment> => {
+    const active = installed && view().enabled;
+    return {
+      id: "builtin:default",
+      ref: { scope: "builtin", name: "default" },
+      immutable: true,
+      status: "ready",
+      fingerprint: `sha256:${"a".repeat(64)}`,
+      selection_origin: "builtin",
+      plugins: active
+        ? [
+            {
+              ref,
+              active: true,
+              installed: true,
+              valid: true,
+              agents: [],
+              skills: ["context7"],
+              mcp_servers: ["context7:context7"],
+              hooks: { total: 1 },
+              capability_executables: [],
+            },
+          ]
+        : [],
+      standalone_skills: [],
+      issues: [],
+      counts: {
+        plugins_active: active ? 1 : 0,
+        standalone_skills_active: 0,
+        plugin_skills_active: active ? 1 : 0,
+        mcp_servers_active: active ? 1 : 0,
+        hooks_declared: active ? 1 : 0,
+      },
+    };
+  };
+  const settings: SettingsAdapter = {
+    ...fakeSettings(),
+    read: (scope) =>
+      scope === "global"
+        ? ({ guard: { type: "shell", allowed_commands: ["git status"] }, enabledPlugins } as never)
+        : undefined,
+    effective: () => ({
+      guard: { type: "shell", allowed_commands: ["git status"] },
+      enabledPlugins,
+    }),
+    write: async (_scope, patch) => {
+      if (patch.enabledPlugins !== undefined) enabledPlugins = [...patch.enabledPlugins];
+    },
+  };
+  const mounted = harness({
+    plugins,
+    settings,
+    environments: { current } as EnvironmentService,
+    reconnectBackend: async () => {
+      reconnects += 1;
+      return { ok: true, message: "ok" };
+    },
+  });
+  const marketplace = mountInteractiveView(mounted.commands, "marketplace.open");
+  const rendered = await openRender(() => marketplace.factory(marketplace.host), {
+    width: 110,
+    height: 26,
+  });
+  await waitForFrame(rendered, "No plugins in this collection");
+  marketplace.press("g");
+  await rendered.renderOnce();
+  marketplace.press("return");
+  await rendered.renderOnce();
+  await rendered.mockInput.typeText("https://example.invalid/context7.git");
+  marketplace.press("return");
+  const frame = await waitForFrame(rendered, "1 active");
+  expect(frame).toContain("Context7");
+  expect(installed).toBe(true);
+  expect(enabledPlugins).toEqual([ref]);
+  expect(reconnects).toBe(1);
+  await plugins.list();
+  await rendered.renderOnce();
+  expect(rendered.captureCharFrame()).toContain("active");
+  rendered.renderer.destroy();
+  marketplace.controls.dispose();
+  mounted.dispose();
 });
 
 function fakeViewKeymap(): Interaction["keymap"] {
@@ -704,8 +831,6 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
     "effort.open": ["/effort"],
     "extensions.open": ["/extensions"],
     "providers.open": [],
-    "plugins.open": [],
-    "hooks.open": [],
     "mcp.browse": [],
   };
   for (const [name, slashes] of Object.entries(expected)) {
@@ -731,19 +856,22 @@ test("non-aliased hub children and folded toggles stay off the slash surface", (
   dispose();
 });
 
-test("hub children have one hierarchical slash route instead of duplicate aliases", () => {
+test("Extensions children remain internal and only the wizard owns a slash route", () => {
   const { commands, dispose } = harness();
   const byName = new Map(commands.entries().map((entry) => [entry.name, entry]));
   expect(byName.get("providers.open")).toMatchObject({
     slashes: [],
     parent: "settings",
   });
-  expect(byName.get("plugins.open")).toMatchObject({
+  expect(byName.get("plugins.open")).toBeUndefined();
+  expect(byName.get("marketplace.open")).toMatchObject({
     slashes: [],
     parent: "extensions",
   });
-  expect(byName.get("hooks.open")).toMatchObject({ slashes: [], parent: "extensions" });
+  expect(byName.get("hooks.open")).toBeUndefined();
   expect(byName.get("mcp.browse")).toMatchObject({ slashes: [], parent: "extensions" });
+  expect(byName.get("extensions.open")?.subcommands).toEqual([]);
+  expect(commands.route("extensions.open", "market")).toBe(false);
   dispose();
 });
 
@@ -773,13 +901,6 @@ test("settings children prefer workspace scope when workspace settings exist", (
   mounted.dispose();
 });
 
-test("/extensions <child> deep-links", () => {
-  const { commands, calls, dispose } = harness();
-  expect(commands.route("extensions.open", "market")).toBe(true);
-  expect(calls).toContain("view:marketplace.open");
-  dispose();
-});
-
 const DISPOSITION: [string, { surface: string; group: string; parent?: string }][] = [
   ["agent.picker", { surface: "slash", group: "navigate" }],
   ["safety.picker", { surface: "internal", group: "navigate" }],
@@ -803,8 +924,6 @@ const DISPOSITION: [string, { surface: string; group: string; parent?: string }]
   ["defaults.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["model.open", { surface: "slash", group: "navigate" }],
   ["effort.open", { surface: "slash", group: "navigate" }],
-  ["plugins.open", { surface: "internal", group: "navigate", parent: "extensions" }],
-  ["hooks.open", { surface: "internal", group: "navigate", parent: "extensions" }],
   ["marketplace.open", { surface: "internal", group: "navigate", parent: "extensions" }],
   ["memory.config", { surface: "internal", group: "navigate", parent: "settings" }],
   ["sandbox.config", { surface: "internal", group: "navigate", parent: "settings" }],
@@ -1085,8 +1204,6 @@ const FACTORY_SMOKES = [
   "model.open",
   "effort.open",
   "capability-providers.open",
-  "plugins.open",
-  "hooks.open",
   "marketplace.open",
   "memory.config",
   "sandbox.config",
@@ -1099,6 +1216,70 @@ const FACTORY_SMOKES = [
   "mcp.browse",
   "extensions.open",
 ] as const;
+
+test("Extensions coalesces repeated refreshes and never overlaps catalog loads", async () => {
+  let releaseFirst!: () => void;
+  const first = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  let calls = 0;
+  let active = 0;
+  let maxActive = 0;
+  const skills: SkillsService = {
+    list: async () => [],
+    getPrompt: async () => [],
+  };
+  const loadInventory = async () => {
+    calls += 1;
+    active += 1;
+    maxActive = Math.max(maxActive, active);
+    if (calls === 1) await first;
+    active -= 1;
+    return { plugins: [], standalone_skills: [] };
+  };
+  const environment: ResolvedEnvironment = {
+    id: "builtin:default",
+    ref: { scope: "builtin", name: "default" },
+    immutable: true,
+    status: "ready",
+    fingerprint: `sha256:${"a".repeat(64)}`,
+    selection_origin: "builtin",
+    plugins: [],
+    standalone_skills: [],
+    issues: [],
+    counts: {
+      plugins_active: 0,
+      standalone_skills_active: 0,
+      plugin_skills_active: 0,
+      mcp_servers_active: 0,
+      hooks_declared: 0,
+    },
+  };
+  const environments = {
+    list: async () => [{ ref: environment.ref, immutable: true }],
+    current: async () => environment,
+    get: async () => environment,
+    inventory: loadInventory,
+  } as unknown as EnvironmentService;
+  const mounted = harness({ environments, skills });
+  const view = mountInteractiveView(mounted.commands, "extensions.open");
+  const rendered = await openRender(() => view.factory(view.host), { width: 120, height: 30 });
+  try {
+    await rendered.renderOnce();
+    await waitUntil(() => calls === 1);
+    view.press("r");
+    view.press("r");
+    releaseFirst();
+    await waitUntil(() => calls === 2);
+    await waitUntil(() => active === 0);
+    expect(calls).toBe(2);
+    expect(maxActive).toBe(1);
+  } finally {
+    view.controls.dispose();
+    rendered.renderer.destroy();
+    mounted.dispose();
+  }
+});
 
 test("every registered view factory boots through one data-driven composition smoke", async () => {
   const { commands, dispose } = harness();
@@ -1351,14 +1532,5 @@ test("it still opens on the workspace when that scope really carries settings", 
     scope: "workspace",
     parent: "settings.open",
   });
-  dispose();
-});
-
-test("the same router feeds /extensions, so its children get the corrected scope too", () => {
-  const { commands, opened, dispose } = harness({
-    settings: { ...fakeSettings(), read: () => undefined } satisfies SettingsAdapter,
-  });
-  expect(commands.route("extensions.open", "plugins")).toBe(true);
-  expect(opened.at(-1)?.scope).toBe("global");
   dispose();
 });

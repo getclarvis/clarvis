@@ -103,8 +103,16 @@ inherits that builtin activation list. Plugin identity is always `{ scope, sourc
 substitutes for another. Workspace
 definitions are shareable authored files, selections stay machine-local, workspace plugin
 activation participates in workspace trust, and selection/definition changes require reconnect.
+The first catalog read materializes an absent global `environments/` directory with the private
+directory mode; it treats an absent workspace catalog as empty without creating repository content.
 Preview tokens resolve the target through normal workspace-over-global precedence and bind both
 selection documents; definition and selection mutations serialize through local leases. The pinned
+manager also exposes every exact plugin and standalone-skill origin as inactive composer inventory.
+`previewComposition` binds a complete draft, prior definition revision, both selection revisions,
+authored fingerprint, and effective fingerprint; `applyComposition` revalidates and writes the
+definition plus selection as one recoverable transaction. Trust-write failure restores both prior
+documents, while an unchanged workspace selection shadowing a global-default write is neither
+activated nor newly approved. The pinned
 fingerprint includes resolved plugin manifests and companion declarations, agent files, and packaged
 skill bodies/resources, plus selected standalone skill bodies/resources. A later contribution drift
 fails closed until reconnect. Workspace-trust
@@ -177,6 +185,10 @@ Construction never starts memory-index inference. Interactive hosts call
 boundary. Owners already resident start once at that point, and owners activated later start as
 they are built. A primary run still pokes its worker after enqueuing its own job.
 
+An embedding that isolates filesystem fixtures may pass `home` to relocate only the shared
+`.agents/plugins` inventory used by the in-process plugin service. Production file kernels omit it
+and use the operator's normal home; `globalConfigDir` continues to own `.clarvis` independently.
+
 The package exports constructors for individual services, file and in-memory
 configuration stores, secret storage, model catalogs, guard resolution and
 engine-to-protocol mapping.
@@ -194,9 +206,11 @@ sessions lazily, multiplexes calls, and closes every child with the kernel lifec
 outside the Clarvis process and may be written in any language; see
 [`specs/capabilities/provider-executables.md`](../../specs/capabilities/provider-executables.md).
 
-Packaged capability services are authorized by installation, enablement and provider selection.
-Plugin hooks use a separate exact-definition review store and remain inactive until approved in
-`/extensions/hooks`; the kernel does not invent a transitive-code fingerprint for either surface.
+Packaged capability services are authorized by installation, Environment selection and provider
+selection. A selected plugin is one atomic extension unit: its agents, skills, MCP servers, hook
+declarations and capability executables become eligible together. Installing from Code's focused
+Marketplace is the explicit consent action; workspace trust remains a separate exact-snapshot gate
+for executable content inherited by entering or changing a workspace.
 
 Every kernel Git operation that selects a plugin checkout through a clone destination, `cwd`, or `-C`
 removes Git's repository-local environment first. A kernel launched by a parent repository's hook

@@ -1,5 +1,5 @@
 /**
- * PluginService — install and manage plugins plus exact hook reviews.
+ * PluginService — install and manage atomic plugin extension units.
  *
  * On a hosted kernel this must be server-side (a remote UI has no local git or fs).
  * The kernel scans both scopes and runs git; the UI renders the resulting views.
@@ -70,7 +70,7 @@ export interface PluginView {
    *
    * Display data only. A plugin cannot widen what it is allowed to do by
    * describing itself well: trust stays with the install, the enable list and
-   * the hook reviews.
+   * the process-pinned Environment and workspace trust boundary.
    */
   display_name?: string;
   /** A one-line summary the manifest offers for the plugin list; display data only. */
@@ -94,15 +94,7 @@ export interface PluginView {
   contributions: PluginContributions;
 }
 
-/** One exact plugin hook definition and its individual review state. */
-export interface PluginHookReview {
-  plugin: PluginRef;
-  fingerprint: string;
-  definition: unknown;
-  approved: boolean;
-}
-
-/** Install, update and uninstall plugins, and review unmanaged hooks. */
+/** Install, update and uninstall plugins. */
 export interface PluginService {
   /** Every installed plugin across scopes and filesystem conventions. */
   list(): Promise<PluginView[]>;
@@ -133,11 +125,4 @@ export interface PluginService {
    * @param ref - Exact global plugin installation.
    */
   uninstall(ref: PluginRef): Promise<void>;
-
-  /** Exact unmanaged hook definitions awaiting or carrying individual approval. */
-  hooks(): Promise<PluginHookReview[]>;
-  /** Approve exactly one current hook definition. */
-  approveHook(plugin: PluginRef, fingerprint: string): Promise<void>;
-  /** Revoke exactly one hook definition approval. */
-  revokeHook(plugin: PluginRef, fingerprint: string): Promise<void>;
 }

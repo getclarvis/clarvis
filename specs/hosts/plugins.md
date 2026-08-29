@@ -84,9 +84,6 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 | `pluginSkillRoots` | `(dir, declared, manifestLocation?) => { roots, notes }` | `packages/kernel/src/plugins/plugin-manifest.ts:162` |
 | `hooksDocumentSchema` | zod union | `packages/kernel/src/plugins/hook-dialects.ts:164` |
 | `convertHooksDocument` | `(document, pluginRoot, options?) => { hooks, notes }` | `packages/kernel/src/plugins/hook-dialects.ts:546` |
-| `hookFingerprint` | `(hook: unknown) => string` | `packages/kernel/src/plugins/hook-trust.ts:41` |
-| `pluginHookReviews` | `(globalDir, plugin, hooks?) => PluginHookReview[]` | `packages/kernel/src/plugins/hook-trust.ts:54` |
-| `writeHookApproval` | `(globalDir, plugin, fingerprint, approved) => void` | `packages/kernel/src/plugins/hook-trust.ts:73` |
 | `readPluginInstallRecord` | `(dir) => PluginInstallRecordRead` | `packages/kernel/src/plugins/plugin-install-record.ts:18` |
 | `createPluginContributions` | `({ globalDir, home?, workspaceRoot?, logger? }) => PluginContributions` | `packages/kernel/src/plugins/plugin-contributions.ts` |
 | `effectivePluginMcpName` | `(plugin, server) => \`${plugin}:${server}\`` | `packages/kernel/src/plugins/plugin-contributions.ts:90` |
@@ -109,9 +106,9 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 
 ### 2.3 Protocol / wire
 
-`PluginService` (`packages/protocol/src/plugins.ts`) with seven methods, exact `PluginRef`/
+`PluginService` (`packages/protocol/src/plugins.ts`) with four methods, exact `PluginRef`/
 `PluginSource` identity, and the DTOs `PluginView`, `PluginContributions`,
-`PluginCapabilityExecutable`, `PluginInstallTarget`, and `PluginHookReview`, field by field:
+`PluginCapabilityExecutable`, and `PluginInstallTarget`, field by field:
 
 `PluginCapabilityExecutable` (`:11-16`, 4 fields):
 
@@ -154,15 +151,6 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 | `notes?` | `string[]` | what the manifest declares that this kernel does not act on |
 | `contributions` | `PluginContributions` | the projected contribution summary above |
 
-`PluginHookReview` (`:83-88`, 4 fields):
-
-| Field | Type | Meaning |
-|---|---|---|
-| `plugin` | `PluginRef` | exact owning plugin installation |
-| `fingerprint` | `string` | `hookFingerprint` of the definition |
-| `definition` | `unknown` | the exact hook object (wire-typed loosely; see §8) |
-| `approved` | `boolean` | whether `(plugin, fingerprint)` is in `hook-trust.json` |
-
 Wire methods and their read/write metadata are in
 `packages/kernel/src/transport/operations.ts:289-335`:
 
@@ -172,9 +160,6 @@ Wire methods and their read/write metadata are in
 | `plugins.install` | `{ url, subdir, target?: { source } }` | `write("plugins")` |
 | `plugins.update` | `{ ref }` | `write("plugins")` |
 | `plugins.uninstall` | `{ ref }` | `write("plugins")` |
-| `plugins.hooks` | `{}` | `read("plugins")` |
-| `plugins.approveHook` | `{ plugin, fingerprint }` | `write("plugins")` |
-| `plugins.revokeHook` | `{ plugin, fingerprint }` | `write("plugins")` |
 
 ### 2.4 Ports and adapters
 
@@ -231,7 +216,7 @@ invalid. `marketplaces` continues to affect discovery only.
 | `toPluginView`, `loadPlugins`, `createPluginsStore`, `PluginsStore` | `packages/code/src/adapters/plugins.ts:53, 105, 117, 93` |
 | `OFFICIAL_MARKETPLACE_URL`, `MarketplaceListing`, `MarketplaceSource`, `MarketplaceAdapter`, `createMarketplaceAdapter`, `addMarketplaceSource` | `packages/code/src/adapters/marketplace.ts:28, 34, 40, 47, 252, 324` |
 | `validateGitUrl`, `gitCloneAsync` (client-side duplicates) | `packages/code/src/adapters/plugin-install.ts:73, 136` |
-| `PluginBrowser`, `MarketplaceBrowser`, `HookBrowser` | `packages/code/src/views/config/PluginBrowser.tsx` (`PluginBrowser`); `packages/code/src/views/config/MarketplaceBrowser.tsx` (`MarketplaceBrowser`); `packages/code/src/views/config/HookBrowser.tsx` (`HookBrowser`) |
+| `MarketplaceBrowser` | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`MarketplaceBrowser`) |
 
 `toPluginView` (`packages/code/src/adapters/plugins.ts`) is a one-way, field-by-field
 snake_case→camelCase rename with no identity inference: `display_name`→`displayName`,
@@ -255,7 +240,6 @@ copied only when defined, via a spread guard (`:60-66`).
 | `<ws>/.clarvis/plugins/<name>/` | Clarvis-native workspace plugin inventory | `packages/paths/src/workspace.ts` |
 | `<global>/state/plugin-data/<source>/<name>/` | persistent data for a global portable plugin instance | `packages/kernel/src/plugins/plugin-runtime.ts` |
 | `<global>/state/workspaces/<segment>/plugin-data/<source>/<name>/` | persistent data for a workspace portable plugin instance | `packages/kernel/src/plugins/plugin-runtime.ts` |
-| `<global>/hook-trust.json` | per-definition hook approvals | `packages/paths/src/global.ts:114` |
 | `<plugin>/plugin.json` | root manifest candidate | `packages/kernel/src/plugins/plugin-manifest.ts:29` |
 | `<plugin>/.clarvis-plugin/plugin.json` | authoritative Clarvis manifest when present | `:32`, `:292-300` |
 | `<plugin>/.<host>-plugin/plugin.json` | another host's candidate, matched by regex `^\.[A-Za-z0-9_-]+-plugin$` | `:44` |
@@ -386,24 +370,25 @@ scan roots without widening the declared contribution surface.
 
 ### 3.4 `install-record.json`
 
-Three optional string fields, `source` / `revision` / `subdir`
-(`packages/kernel/src/plugins/plugin-install-record.ts:7-11`), written pretty-printed with a trailing
-newline at mode `0o600` (`packages/kernel/src/adapters/filesystem/plugin-repository.ts:29-39`).
+Three optional string fields, `source` / `revision` / `subdir` (`INSTALL_RECORD_SCHEMA` in
+`packages/kernel/src/plugins/plugin-install-record.ts`), written pretty-printed with a trailing
+newline at mode `0o600` (`recordInstall` in
+`packages/kernel/src/adapters/filesystem/plugin-repository.ts`).
 Reading it distinguishes three outcomes: absent → `{ ok: true, record: {}, present: false }`
 (an unmanaged local plugin), present-and-valid → `{ ok: true, present: true }`, present-and-invalid →
-`{ ok: false, error }` (`:25-64`). Pinned at
-`packages/kernel/tests/integration/plugin-install-record.test.ts:29-64`.
+`{ ok: false, error }` (`readPluginInstallRecord`). Pinned by `bounds install metadata and exercises
+repository replacement and removal failures` and the bounded-record cases in
+`packages/kernel/tests/integration/plugin-install-record.test.ts`.
 
-### 3.5 `hook-trust.json`
+### 3.5 No per-hook approval state
 
-`{ "hooks": [ { plugin, fingerprint, approved_at } ] }`, both objects `.strict()`
-(`packages/kernel/src/plugins/hook-trust.ts:6-14`). `fingerprint` matches
-`/^sha256:[0-9a-f]{64}$/` (`:9`). Written atomically with `writeFileAtomicSync` (`:89`).
-
-A fingerprint is `sha256:` + hex over `JSON.stringify(canonical(hook))`, where `canonical` sorts
-object keys recursively and drops `undefined` values (`:29-45`). Key order therefore does not affect
-the fingerprint —
-`packages/kernel/tests/integration/hook-trust.test.ts:25` asserts exactly that.
+Plugin hooks have no independent persisted approval document. A selected plugin contributes its
+normalized hook definitions as part of the same atomic extension unit as its agents, skills, MCP
+servers, and capability executables. The manifest and companion bytes, including hooks, participate
+in the Environment content digest; a change therefore produces a different snapshot fingerprint
+rather than mutating eligibility under an unchanged identity (`pluginContentDigest` in
+`packages/kernel/src/environments/environment-manager.ts`; `pluginSettingsContributions` in
+`packages/kernel/src/plugins/plugin-contributions.ts`).
 
 ### 3.6 `marketplace.json`
 
@@ -767,9 +752,9 @@ namespaces remain plugin-name based.
 - **`skillBootstraps`** (`:355-361`) does **not** check that the roots exist; the interface docstring
   says a plugin with no skills root contributes no skills either, so the name cannot resolve and the
   loop reports the miss (`:52-55`).
-- **`settingsScopes`** (`:363-381`) builds `pluginSettingsFragment(manifest)`, replaces `mcpServers`
-  with the `<plugin>:<server>`-namespaced map, and sets `hooks` to **only the approved definitions**,
-  or `undefined` when none are approved (`:369-377`).
+- **`settingsScopes`** builds `pluginSettingsFragment(manifest)`, replaces `mcpServers` with the
+  `<plugin>:<server>`-namespaced map, and carries every normalized hook definition of that selected
+  plugin. No second mutable approval projection filters the snapshot.
 - **`mcpServers`** (`:383-385`) attaches `pluginVersion` (from the manifest) and `resolvedRevision`
   (from the install record, or `git rev-parse HEAD` as a fallback for unmanaged plugins —
   `revisionOf`, `:210-222`).
@@ -876,17 +861,7 @@ anywhere (arbitrary command) → local filesystem path → `http://`/`git://` cl
 only `https://`, `file://`, or an scp/ssh spelling. Pinned at `packages/kernel/tests/integration/plugin-service.test.ts:227-243` and,
 for the byte-identical `@clarvis/code` copy, at `packages/code/tests/integration/plugin-install.test.ts:13-45`.
 
-### 4.11 Hook review
-
-`pluginHookReviews(globalDir, plugin, hooks)` (`packages/kernel/src/plugins/hook-trust.ts:54-71`) fingerprints each definition
-and marks it approved iff `(plugin, fingerprint)` is in the trust file. `writeHookApproval`
-(`:73-93`) removes the pair and re-adds it with a fresh `approved_at` when approving; when the trust
-file exists and is unreadable it **throws** rather than overwriting (`:80-82`).
-
-`PluginService.approveHook` first checks the fingerprint is actually declared by that plugin right
-now, else `not_found` (`packages/kernel/src/plugins/plugin-service.ts:447-458`). `revokeHook` performs no such check (`:459-461`).
-
-### 4.12 Building the operator view — `viewFor`
+### 4.11 Building the operator view — `viewFor`
 
 `viewFor` in `packages/kernel/src/plugins/plugin-service.ts`. `list()` maps every record from all
 four inventories and therefore retains every same-named installation. `enabled` is an exact
@@ -1172,32 +1147,29 @@ All of the following are derived directly from this document's own source and te
     alone.** `substituteRoot` (`packages/kernel/src/plugins/hook-dialects.ts:259-308`), `BARE_PLUGIN_ROOT`'s lookahead (`:191`).
     Pinned: `packages/kernel/tests/integration/plugin-manifest.test.ts:505-548`.
 
-35. **A plugin hook is withheld from merged settings until its exact definition is approved.**
-    `settingsScopes` filters on `review.approved` (`packages/kernel/src/plugins/plugin-contributions.ts:374-376`). Pinned:
-    `packages/kernel/tests/integration/plugin-contributions.test.ts:70-94`, which shows `hooks: undefined` before approval and the exact
-    definition after.
+35. **A selected plugin contributes every normalized hook in its atomic settings fragment.**
+    `pluginSettingsContributions` in
+    `packages/kernel/src/plugins/plugin-contributions.ts`. Pinned:
+    `packages/kernel/tests/integration/plugin-contributions.test.ts` (selected hook composition).
 
-36. **A hook approval is bound to one canonical, key-order-independent definition.**
-    `canonical` + `hookFingerprint` (`packages/kernel/src/plugins/hook-trust.ts:29-45`). Pinned:
-    `packages/kernel/tests/integration/hook-trust.test.ts:14-27` — changing the command revokes
-    approval; reordering the keys does not.
+36. **Changing hook or companion bytes changes the Environment fingerprint.**
+    `pluginContentDigest` in `packages/kernel/src/environments/environment-manager.ts` hashes every
+    resolved contribution. Pinned: `packages/kernel/tests/integration/environment-manager.test.ts`
+    (root MCP and plugin-content digest drift cases).
 
-37. **A hook that arrives from an external file is fingerprinted exactly as an inline one is.** Stated
-    at `packages/kernel/src/plugins/hook-dialects.ts:22-25`. Pinned:
-    `packages/kernel/tests/integration/plugin-manifest.test.ts:991-1001`.
+37. **A hook that arrives from an external file is normalized under the same plugin snapshot as an
+    inline one.** `packages/kernel/src/plugins/hook-dialects.ts` and
+    `packages/kernel/src/plugins/plugin-manifest.ts`. Pinned:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts` (external hook conversion cases).
 
-38. **An unreadable `hook-trust.json` fails closed, and the two readers of it fail closed
-    differently.** `readHookTrust` distinguishes missing from unreadable (`packages/kernel/src/plugins/hook-trust.ts:47-51`). On
-    the *read* side, `pluginHookReviews` folds an unreadable file to an empty trust store —
-    `readHookTrust(globalDir).trust ?? { hooks: [] }` (`:59`) — so every hook silently reports
-    `approved: false`, with no error surfaced. On the *write* side, `writeHookApproval` throws
-    "refusing to overwrite" rather than risk clobbering the file (`:80-82`). Both behaviours are
-    pinned by the same test: `packages/kernel/tests/integration/hook-trust.test.ts:29-38` asserts
-    `pluginHookReviews(...)[0]?.approved === false` against a corrupt file, and that
-    `writeHookApproval` against the same file throws.
+38. **The plugin protocol exposes lifecycle for the atomic plugin, not approval for internal
+    contributions.** `PluginService` in `packages/protocol/src/plugins.ts` and the plugin operation
+    registrations in `packages/kernel/src/transport/operations.ts`. Pinned:
+    `packages/kernel/tests/contract/transport-codecs.test.ts`.
 
-39. **`approveHook` refuses a fingerprint the plugin does not currently declare.**
-    `packages/kernel/src/plugins/plugin-service.ts:447-458`. Unpinned.
+39. **Focused Marketplace install is the consent action for the complete plugin.**
+    `installAndActivatePlugin` in `packages/code/src/app/commands.tsx`. Pinned:
+    `packages/code/tests/integration/app-commands.test.tsx` (atomic install and reload case).
 
 40. **An unusable `agents/` surface or install record omits the plugin's entire executable surface.**
     `loadableOf` returns `undefined` at both steps (`packages/kernel/src/plugins/plugin-contributions.ts:262-271`), and the
@@ -1390,13 +1362,13 @@ All of the following are derived directly from this document's own source and te
     Pinned: `packages/kernel/tests/integration/plugin-service.test.ts:252-266` (a `skills/` subdirectory with no `SKILL.md` is not a
     skill) and `:268-281` (an over-budget fanout contributes no skills and does not break the plugin).
 
-72. **A workspace plugin cannot be uninstalled from the UI.** `PluginBrowser`'s `d` verb notifies
-    instead (`packages/code/src/views/config/PluginBrowser.tsx:175-179`). Pinned:
-    `packages/code/tests/integration/plugin-browser-render.test.tsx:122-137`.
+72. **A workspace plugin cannot be uninstalled from the UI.** `MarketplaceBrowser`'s `uninstall`
+    path notifies instead. Pinned:
+    `packages/code/tests/integration/marketplace-browser-render.test.tsx`.
 
-73. **Every `PluginsStore` mutation reloads both the list and the hook reviews from the kernel.**
-    `packages/code/src/adapters/plugins.ts:124-155`. Pinned:
-    `packages/code/tests/component/plugins.test.ts:110-122`.
+73. **Every `PluginsStore` mutation reloads the exact installed list from the kernel.**
+    `packages/code/src/adapters/plugins.ts`. Pinned:
+    `packages/code/tests/component/plugins.test.ts`.
 
 74. **`load()` caches a success and retries an error; `refresh()` clears everything.**
     `packages/code/src/adapters/marketplace.ts:290-306`. Pinned:
@@ -1507,12 +1479,11 @@ contributes no roots — but still contributes agents, hooks and MCP servers (`:
 | Code | Raised by | Line |
 |---|---|---|
 | `invalid_request` | manifest unusable at install; update naming a different plugin; subdir escaping the checkout; subdir not a directory; not installed from git; install-record over budget; name already installed | `packages/kernel/src/plugins/plugin-service.ts:390`, `:418`; `packages/kernel/src/adapters/git/plugin-fetcher.ts:72-79`, `:164`; `packages/kernel/src/adapters/filesystem/plugin-repository.ts:31-34`, `:189-192` |
-| `not_found` | update/uninstall of a plugin not installed globally; `approveHook` for an undeclared fingerprint | `packages/kernel/src/plugins/plugin-service.ts:408`, `:430`, `:442`, `:452` |
+| `not_found` | update/uninstall of a plugin not installed globally | `packages/kernel/src/plugins/plugin-service.ts` |
 | `conflict` | selected plugin update/uninstall overlaps an active run or another selected-plugin mutation | `withSelectedMutation` in `packages/kernel/src/kernel.ts` |
 | `unavailable` | a selected plugin changed successfully and the stale kernel has not reconnected | selected-plugin guard in `withOwnerRunLease` in `packages/kernel/src/kernel.ts` |
 | `resource_exhausted` | install-root fanout | `packages/kernel/src/adapters/filesystem/plugin-repository.ts:165` |
 | plain `Error` | `validateGitUrl` refusals; `git <cmd> failed: …` | `packages/kernel/src/plugins/plugin-service.ts:49-66`; `packages/kernel/src/adapters/git/plugin-fetcher.ts:84-87` |
-| plain `Error` | `hook-trust.json` unreadable on write | `packages/kernel/src/plugins/hook-trust.ts:81` |
 
 ### 6.4 Timeouts, retries, cancellation
 
@@ -1544,7 +1515,6 @@ contributes no roots — but still contributes agents, hooks and MCP servers (`:
 - Duplicate skill-root declarations are de-duplicated with no note (`packages/kernel/src/plugins/plugin-manifest.ts:195`).
 - `skillNamesOf` swallows a throw from `createAgentSkills` and returns empty
   (`packages/kernel/src/plugins/plugin-service.ts:238-240`).
-- `revokeHook` never checks that the fingerprint exists (`packages/kernel/src/plugins/plugin-service.ts:459-461`).
 - A `directoryNames` / agent-walk `ENOENT`/`ENOTDIR` mid-read is treated as an empty directory
   (`packages/kernel/src/adapters/filesystem/plugin-repository.ts:81-84`, `packages/loop/src/settings/plugin-agents.ts:78-80`).
 
@@ -1558,7 +1528,6 @@ contributes no roots — but still contributes agents, hooks and MCP servers (`:
 | `packages/kernel/src/plugins/hook-dialects.ts:28-36` | `@clarvis/capability` | the two correspondence tables, `MAX_HOOK_TIMEOUT_MS`, `OBSERVER_HOOK_EVENTS`, `normalizeToolName` |
 | `packages/kernel/src/plugins/plugin-contributions.ts:20-21` | `@clarvis/paths`, `@clarvis/skills` | `globalPaths(...).pluginsDir` and `withoutGitRepositoryEnvironment`; `MAX_SKILL_ROOTS` |
 | `packages/kernel/src/plugins/plugin-service.ts:8` | `@clarvis/skills` | `createAgentSkills` — the panel runs the real catalog scan |
-| `packages/kernel/src/plugins/hook-trust.ts:2-3` | `@clarvis/paths`, `@clarvis/loop/host` | `globalPaths(...).hookTrustFile`, `writeFileAtomicSync`, `readJsonFile` |
 | `packages/kernel/src/adapters/git/plugin-fetcher.ts:5` | `ports/process-runner.js` | git runs through the injected `ProcessRunner`, never `child_process` directly |
 | `packages/kernel/src/plugins/plugin-service.ts:19` | `adapters/process/node-process-runner.js` | default `ProcessRunner` when the host supplies none (`:297`) — the same adapter class `createGitPluginFetcher` is handed by injection |
 | `packages/code/src/adapters/marketplace.ts:10` | `@clarvis/kernel/config` | `marketplaceSchema` (which is `@clarvis/loop`'s, re-exported twice) |
@@ -1674,12 +1643,6 @@ duplicated tests rather than by a drift lock.
   It is declared at `packages/loop/src/settings/plugin-resources.ts:20` and exercised at
   `packages/kernel/tests/integration/plugin-service.test.ts:268-281`, where the enforcement happens inside `@clarvis/skills` —
   delegated to [execution/skills.md](../execution/skills.md).
-
-- **The `PluginHookReview.definition` wire field is typed `unknown`**
-  (`packages/protocol/src/plugins.ts:86`) while the kernel produces
-  `NonNullable<PluginManifest["hooks"]>[number]` (`packages/kernel/src/plugins/hook-trust.ts:25`). `HookBrowser` renders it with
-  `JSON.stringify` (`packages/code/src/views/config/HookBrowser.tsx:53`). Whether the widening is
-  deliberate protocol looseness is not stated.
 
 - ~~**The panel's displayed revision and a run's MCP-provenance revision can disagree, with no test
   proving either side of it wrong... whether the asymmetry is intentional... is not stated.**~~

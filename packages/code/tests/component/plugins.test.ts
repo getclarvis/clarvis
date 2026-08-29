@@ -3,8 +3,6 @@ import { createRoot } from "solid-js";
 import type { PluginService, PluginView as ProtoPluginView } from "@clarvis/protocol";
 import { createPluginsStore, loadPlugins, toPluginView } from "../../src/adapters/plugins.ts";
 
-const DEMO_REF = { scope: "workspace" as const, source: "clarvis" as const, name: "demo" };
-
 function protoView(over: Partial<ProtoPluginView> = {}): ProtoPluginView {
   return {
     name: over.name ?? "demo",
@@ -44,16 +42,10 @@ function fakeService(seed: ProtoPluginView[] = []): PluginService & { calls: str
   return {
     calls,
     list: async () => list,
-    hooks: async () => [
-      {
-        plugin: DEMO_REF,
-        fingerprint: "sha256:hook",
-        definition: { command: "check" },
-        approved: false,
-      },
-    ],
-    install: async (url) => {
+    install: async (url, subdir, options) => {
       calls.push(`install:${url}`);
+      if (subdir !== undefined) calls.push(`subdir:${subdir}`);
+      if (options !== undefined) calls.push(`source:${options.source}`);
       const view = protoView({ name: "installed" });
       list.push(view);
       return view;
@@ -64,12 +56,6 @@ function fakeService(seed: ProtoPluginView[] = []): PluginService & { calls: str
     },
     uninstall: async (ref) => {
       calls.push(`uninstall:${ref.scope}/${ref.source}/${ref.name}`);
-    },
-    approveHook: async (plugin, fingerprint) => {
-      calls.push(`approve-hook:${plugin.scope}/${plugin.source}/${plugin.name}:${fingerprint}`);
-    },
-    revokeHook: async (plugin, fingerprint) => {
-      calls.push(`revoke-hook:${plugin.scope}/${plugin.source}/${plugin.name}:${fingerprint}`);
     },
   };
 }
@@ -87,6 +73,24 @@ test("toPluginView maps executable declarations and installation metadata", () =
       args: ["-B", "server.py", "memory"],
       platformOverride: false,
     },
+  ]);
+});
+
+test("toPluginView projects sorted per-skill Plans policies", () => {
+  const view = toPluginView(
+    protoView({
+      contributions: {
+        ...protoView().contributions,
+        capability_run_policies: {
+          plans: { skills: { zebra: "review", alpha: "on" } },
+        },
+      },
+    }),
+  );
+
+  expect(view.contributions.skillPlanPolicies).toEqual([
+    { skill: "alpha", mode: "on" },
+    { skill: "zebra", mode: "review" },
   ]);
 });
 
@@ -109,17 +113,20 @@ test("loadPlugins maps every view from the service", async () => {
   expect(views.map((view) => view.name)).toEqual(["a", "b"]);
 });
 
-test("store reloads plugin and exact-hook review state after mutations", async () => {
+test("store reloads plugin state after mutations", async () => {
   await createRoot(async (dispose) => {
     const service = fakeService([protoView()]);
     const store = createPluginsStore(service);
     await store.reload();
     expect(store.list().map((view) => view.name)).toEqual(["demo"]);
-    expect(store.hooks()).toHaveLength(1);
-    await store.approveHook(DEMO_REF, "sha256:hook");
-    await store.install("https://example.invalid/repo.git");
-    expect(service.calls).toContain("approve-hook:workspace/clarvis/demo:sha256:hook");
+    await store.install("https://example.invalid/repo.git", "packages/demo", "clarvis");
     expect(service.calls).toContain("install:https://example.invalid/repo.git");
+    expect(service.calls).toContain("subdir:packages/demo");
+    expect(service.calls).toContain("source:clarvis");
+    await store.update({ scope: "global", source: "clarvis", name: "demo" });
+    expect(service.calls).toContain("update:global/clarvis/demo");
+    await store.uninstall({ scope: "global", source: "clarvis", name: "demo" });
+    expect(service.calls).toContain("uninstall:global/clarvis/demo");
     dispose();
   });
 });

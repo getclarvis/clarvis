@@ -1,6 +1,5 @@
 import { createSignal, type Accessor } from "solid-js";
 import type {
-  PluginHookReview,
   PluginRef,
   PluginService,
   PluginSource,
@@ -92,15 +91,12 @@ export function toPluginView(p: ProtoPluginView): PluginView {
   };
 }
 
-/** The reactive plugin list and its lifecycle plus exact-hook review operations. */
+/** The reactive installed-plugin list and lifecycle. */
 export interface PluginsStore {
   list: Accessor<PluginView[]>;
-  hooks: Accessor<PluginHookReview[]>;
   install(url: string, subdir?: string, source?: PluginSource): Promise<PluginView>;
   update(ref: PluginRef): Promise<PluginView>;
   uninstall(ref: PluginRef): Promise<void>;
-  approveHook(plugin: PluginRef, fingerprint: string): Promise<void>;
-  revokeHook(plugin: PluginRef, fingerprint: string): Promise<void>;
   reload(): Promise<void>;
 }
 
@@ -110,9 +106,8 @@ export async function loadPlugins(plugins: PluginService): Promise<PluginView[]>
 }
 
 /**
- * Build the reactive {@link PluginsStore}: every mutation reloads the list and
- * hook-review state from the kernel afterward, so the store never drifts from
- * what was actually persisted.
+ * Build the reactive {@link PluginsStore}: every mutation reloads the list from
+ * the kernel afterward, so the store never drifts from what was actually persisted.
  *
  * @param plugins - the kernel plugin service.
  * @param initial - the initial list to seed the signal with, before the first reload.
@@ -122,17 +117,13 @@ export function createPluginsStore(
   initial: PluginView[] = [],
 ): PluginsStore {
   const [list, setList] = createSignal<PluginView[]>(initial);
-  const [hooks, setHooks] = createSignal<PluginHookReview[]>([]);
 
   async function reload(): Promise<void> {
-    const [views, reviews] = await Promise.all([loadPlugins(plugins), plugins.hooks()]);
-    setList(views);
-    setHooks(reviews);
+    setList(await loadPlugins(plugins));
   }
 
   return {
     list,
-    hooks,
     install: async (url, subdir, source = "agents") => {
       const view = toPluginView(await plugins.install(url, subdir, { source }));
       await reload();
@@ -145,14 +136,6 @@ export function createPluginsStore(
     },
     uninstall: async (ref) => {
       await plugins.uninstall(ref);
-      await reload();
-    },
-    approveHook: async (plugin, fingerprint) => {
-      await plugins.approveHook(plugin, fingerprint);
-      await reload();
-    },
-    revokeHook: async (plugin, fingerprint) => {
-      await plugins.revokeHook(plugin, fingerprint);
       await reload();
     },
     reload,

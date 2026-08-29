@@ -137,7 +137,6 @@ chose it — is the first thing every other path in this package is derived from
 | `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts:118` |
 | `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts:119` |
 | `environmentsDir` | `<global>/environments` | `packages/paths/src/global.ts:124` |
-| `hookTrustFile` | `<global>/hook-trust.json` | `packages/paths/src/global.ts:120` |
 | `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts:121` |
 | `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts:122` |
 | `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts:123` |
@@ -396,7 +395,7 @@ hand-edited file with the seeded template. Production: `ensureWorkspaceDir` and 
 
 `<global>` = `$CLARVIS_HOME` or `<home>/.clarvis` (`packages/paths/src/roots.ts:71-87`). Beneath it:
 operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `plugins/`, `environments/`,
-`hook-trust.json`, `workspace-trust.json`, `skills/`, `workflows/`, `guard-judge.md`,
+`workspace-trust.json`, `skills/`, `workflows/`, `guard-judge.md`,
 `memory-policy.md`, `auth.json`, `auth-key.json`), and generated state under `state/`
 (`sessions/`, `traces/`, `workflows/` [records], `environment.json`, `code.json`, private remote-MCP OAuth credentials)
 and `cache/` (`models-dev.json`)
@@ -419,9 +418,14 @@ per-workspace selections are generated state. This split makes workspace definit
 without making repository checkout an activation action. The format and precedence belong to
 [`hosts/environments.md`](../hosts/environments.md). Production: `GlobalPaths.environmentsDir`,
 `GlobalPaths.environmentSelectionFile`, `WorkspacePaths.environmentsDir`, and
-`WorkspaceStatePaths.environmentSelectionFile`. Test:
-`packages/paths/tests/component/paths.test.ts:52-70`, `:113`, and
-`packages/paths/tests/component/workspace-state.test.ts:106`.
+`WorkspaceStatePaths.environmentSelectionFile`. The kernel materializes the global authored
+catalog on first list but deliberately does not materialize the workspace authored catalog during
+a read; that lifecycle is owned by `missingDefinitionCatalog` and `list` in
+`packages/kernel/src/environments/environment-manager.ts`. Test:
+`packages/paths/tests/component/paths.test.ts:52-70`, `:113`,
+`packages/paths/tests/component/workspace-state.test.ts:106`, and
+`packages/kernel/tests/integration/environment-manager.test.ts` ("materializes an empty global
+catalog without writing into the workspace").
 
 ### 3.4 Owner-id and segment encoding
 

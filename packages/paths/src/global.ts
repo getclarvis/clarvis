@@ -41,8 +41,6 @@ export interface GlobalPaths {
   pluginsDir: string;
   /** Operator-authored reusable Environment definitions. */
   environmentsDir: string;
-  /** Per-definition approvals for unmanaged plugin hooks. */
-  hookTrustFile: string;
   /** Recorded workspace-surface trust decisions. */
   workspaceTrustFile: string;
   /** Global skill directory. */
@@ -125,7 +123,6 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     mcpOAuthFile: join(state, "mcp-oauth.json"),
     pluginsDir: join(base, "plugins"),
     environmentsDir: join(base, "environments"),
-    hookTrustFile: join(base, "hook-trust.json"),
     workspaceTrustFile: join(base, "workspace-trust.json"),
     skillsDir: join(base, "skills"),
     workflowsDir: join(base, "workflows"),

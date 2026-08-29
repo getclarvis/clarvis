@@ -229,11 +229,11 @@ describe("settingsSchema (infra)", () => {
     ).toBe("unrecognized_keys");
   });
 
-  it("accepts an opt-in Bubblewrap sandbox", () => {
+  it("accepts an opt-in native sandbox", () => {
     expect(
       settingsSchema.safeParse({
         sandbox: {
-          type: "bubblewrap",
+          type: "native",
           enabled: false,
           availability: "required",
           filesystem: "workspace-read-only",
@@ -252,7 +252,7 @@ describe("settingsSchema (infra)", () => {
   it("rejects unknown sandbox options", () => {
     expect(
       settingsSchema.safeParse({
-        sandbox: { type: "bubblewrap", unknown: true },
+        sandbox: { type: "native", unknown: true },
       }).success,
     ).toBe(false);
   });
@@ -265,7 +265,7 @@ describe("settingsSchema (infra)", () => {
     ).toBe(false);
     expect(
       settingsSchema.safeParse({
-        sandbox: { type: "bubblewrap", pass_env: Array(257).fill("CI") },
+        sandbox: { type: "native", pass_env: Array(257).fill("CI") },
       }).success,
     ).toBe(false);
     expect(

@@ -124,9 +124,9 @@ export interface RuntimeConfig {
    * The agent controls the text of the commands it runs, so an unscrubbed
    * environment makes every API key on the host one `printenv` away — and a
    * command that exfiltrates one is indistinguishable from a command that
-   * legitimately reads its environment. Under bubblewrap this is redundant (the
-   * child's environment is built from nothing); it is the unsandboxed path,
-   * which is what macOS and Windows always take, that needs it.
+   * legitimately reads its environment. Under a native sandbox this is
+   * redundant (the child's environment is built from nothing); it is the bare
+   * path on an unsupported host or explicit optional fallback that needs it.
    */
   secretEnvNames?: readonly string[];
 }

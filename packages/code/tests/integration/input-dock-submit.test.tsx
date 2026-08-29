@@ -358,6 +358,34 @@ test("an interactive provider still owns Enter while its popup is open", async (
   h.t.renderer.destroy();
 });
 
+test("rapid text and Enter accept the live completion instead of the stale browse row", async () => {
+  const accepted: string[] = [];
+  const provider: CompleteProvider = {
+    id: "command",
+    trigger: "/",
+    label: "commands",
+    query: (term) =>
+      term === "help"
+        ? [{ label: "/help", value: "help.open", insert: "" }]
+        : [
+            { label: "/clear", value: "session.clear", insert: "" },
+            { label: "/help", value: "help.open", insert: "" },
+          ],
+    onAccept: (item) => accepted.push(item.value),
+  };
+  const h = await mount("handled", [provider]);
+
+  await h.t.mockInput.typeText("/");
+  await h.t.renderOnce();
+  void h.t.mockInput.typeText("help");
+  h.t.mockInput.pressEnter();
+  await h.t.renderOnce();
+
+  expect(accepted).toEqual(["help.open"]);
+  expect(h.el().plainText).toBe("");
+  h.t.renderer.destroy();
+});
+
 test("accepting a slash completion leaves the cursor after the inserted command", async () => {
   const provider: CompleteProvider = {
     id: "command",

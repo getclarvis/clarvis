@@ -601,7 +601,7 @@ folds `patch` over the *scoped* block, then the *effective* one, then `PLANS_DEF
 workspace write does not silently inherit the global retention as a phantom override.
 `scopedPlans()`'s doc comment states exactly that (`packages/code/src/views/config/RunControlsPanel.tsx:255`).
 
-`sandboxLine()` (`:128`) reports Bubblewrap availability, fetched once in `onMount` via
+`sandboxLine()` reports the selected native backend's availability, fetched once in `onMount` via
 `settings.inspectSandbox()` and defaulting to `null` on failure (`:117`). Its most severe branch —
 unavailable *and* `sandboxRequired` — is rendered in the delete color (`:138`). Sandbox semantics
 themselves belong to the [execution/sandbox.md](../execution/sandbox.md) document.
@@ -929,7 +929,7 @@ specific to these files.
 | Workflow refresh never settles | `packages/code/src/views/config/WorkflowsHub.tsx:334` | "Refresh is still pending; the backend may be unavailable"; still one in-flight request |
 | Workflow result cannot be stringified | `packages/code/src/views/config/WorkflowsHub.tsx:82`, `:89` | "(unserializable result)". Pinned at `packages/code/tests/integration/workflows-hub-render.test.tsx:636` |
 | Leader node has no `task` (legacy record) | `packages/code/src/views/config/WorkflowsHub.tsx:203` | "Task unavailable for this legacy workflow"; `[t]` is unbound (`:459`) |
-| `settings.inspectSandbox()` rejects | `packages/code/src/views/config/RunControlsPanel.tsx:121` | availability stays `null`; the row reads "Checking Bubblewrap on the kernel host…" indefinitely |
+| `settings.inspectSandbox()` rejects | `packages/code/src/views/config/RunControlsPanel.tsx` (`onMount`) | availability stays `null`; the row reads "Checking native sandbox on the kernel host…" indefinitely |
 | Any Run-controls settings write throws | `packages/code/src/views/config/RunControlsPanel.tsx:194`, `:229`, `:271`, `:282` | `notify(errorText(error))`; the session store is not updated |
 | Session-memory toggle activated with no configured memory block | `packages/code/src/views/config/MemoryConfigPanel.tsx:145`–`:149` | refuses to cycle; notifies "memory is not configured in settings — save a block first". Pinned at `packages/code/tests/integration/memory-config-render.test.tsx:211` |
 | Any detached async operation rejects unobserved | `packages/code/src/core/tasks.ts:27` | a `task.failed` diagnostic event is emitted with the operation name; nothing is thrown into the render tree |
@@ -987,7 +987,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 
 ### 7.4 Explicit delegations
 
-- Sandbox semantics, `SandboxConfigPanel`, `probeBubblewrap` → [execution/sandbox.md](../execution/sandbox.md).
+- Sandbox semantics, `SandboxConfigPanel`, `probeSandbox` → [execution/sandbox.md](../execution/sandbox.md).
 - `CapabilityProvidersPanel` → [capabilities/provider-executables.md](../capabilities/provider-executables.md).
 - `DoctorView`, `KeyboardView` → their own documents.
 - `execution-safety.ts` (`deriveRunControls`, `memoryState`, `deriveSafetyPreset`,

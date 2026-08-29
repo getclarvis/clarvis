@@ -18,7 +18,7 @@ test("the quick picker confirms judged mode and applies the shared preset contra
     effective: () => ({
       guard: { type: "shell", mode: "auto" as const, allowed_commands: ["git status"] },
       sandbox: {
-        type: "bubblewrap" as const,
+        type: "native" as const,
         enabled: true,
         availability: "required" as const,
         filesystem: "workspace-write" as const,
@@ -83,7 +83,7 @@ test("the quick picker confirms judged mode and applies the shared preset contra
           mode: "auto",
         },
         sandbox: {
-          type: "bubblewrap",
+          type: "native",
           enabled: false,
           availability: "required",
           filesystem: "workspace-write",

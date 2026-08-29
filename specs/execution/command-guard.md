@@ -450,8 +450,8 @@ unrepresentable rather than merely discouraged (`packages/tools/src/guard/dialec
 
 The POSIX null device is the one special path-shaped token discarded by `pathCandidate`: after a
 redirection prefix is stripped (or when it is a spaced redirect target), `/dev/null` contributes no
-outside-workspace fact. Bubblewrap supplies its own `/dev`; an unsandboxed process reaches the host's
-null device. Other absolute device paths remain ordinary path facts. Production:
+outside-workspace fact. Native sandbox policy explicitly admits the null device; an unsandboxed
+process reaches the host's null device. Other absolute device paths remain ordinary path facts. Production:
 `packages/tools/src/guard/dialects/posix.ts`. Test:
 `packages/tools/tests/unit/posix-dialect.test.ts` and
 `packages/tools/tests/integration/guard-dispatch.test.ts`.

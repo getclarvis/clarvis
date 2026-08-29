@@ -86,13 +86,13 @@ integration suite behind every claim there.
 | Symbol | Shape | Cite |
 |---|---|---|
 | `PlatformCapabilities` | `{revision, keyboard, remote, runtimePlatform, terminal, mouse, clipboard:{osc52}, multiplexer, plain, themeBg, colorDepth}` | `packages/code/src/adapters/platform.ts:17-29` |
-| `Platform` | `{capabilities, onShutdown, shutdown, suspend, resume, copyText, readClipboardImage}` | `packages/code/src/adapters/platform.ts:38-46` |
-| `PlatformOptions` | `{dev?: boolean; clipboardProcess?: ClipboardProcessRunner}` | `packages/code/src/adapters/platform.ts:49-53` |
-| `assertInteractiveTTY(io?)` | exits process with code `2` and a stderr usage line if stdin/stdout are not a TTY | `packages/code/src/adapters/platform.ts:195-208` |
-| `buildRendererConfig(opts?): CliRendererConfig` | the OpenTUI renderer config `code` boots with | `packages/code/src/adapters/platform.ts:221-235` |
-| `createPlatform(renderer, opts?): Platform` | constructs the adapter around a live `CliRenderer` | `packages/code/src/adapters/platform.ts:267-416` |
-| `readClipboardImage(signal?, run?): Promise<ClipboardImage\|null>` | free function, also exposed on `Platform` | `packages/code/src/adapters/platform.ts:152-187` |
-| `WINDOWS_CLIPBOARD_COPY_SCRIPT` | const (exported for tests) | `packages/code/src/adapters/platform.ts:89-91` |
+| `Platform` | `{capabilities, onShutdown, shutdown, suspend, resume, copyText, readClipboardImage}` | `packages/code/src/adapters/platform.ts:38-48` |
+| `PlatformOptions` | `{dev?, clipboardProcess?, runtimePlatform?, processEnv?}`; the last three fields are internal test seams | `packages/code/src/adapters/platform.ts:51-59` |
+| `assertInteractiveTTY(io?)` | exits process with code `2` and a stderr usage line if stdin/stdout are not a TTY | `packages/code/src/adapters/platform.ts:201-214` |
+| `buildRendererConfig(opts?): CliRendererConfig` | the OpenTUI renderer config `code` boots with | `packages/code/src/adapters/platform.ts:249-265` |
+| `createPlatform(renderer, opts?): Platform` | constructs the adapter around a live `CliRenderer` | `packages/code/src/adapters/platform.ts:320-470` |
+| `readClipboardImage(signal?, run?): Promise<ClipboardImage\|null>` | free function, also exposed on `Platform` | `packages/code/src/adapters/platform.ts:158-193` |
+| `WINDOWS_CLIPBOARD_COPY_SCRIPT` | const (exported for tests) | `packages/code/src/adapters/platform.ts:95-97` |
 
 ### 2.5 `adapters/clipboard-process.ts`
 
@@ -345,14 +345,17 @@ producer of named diagnostic events/counters:
 
 ### 3.6 Renderer configuration (as data)
 
-`buildRendererConfig` (`packages/code/src/adapters/platform.ts:221-235`) returns the fixed `CliRendererConfig` `code` boots with:
+`buildRendererConfig` (`packages/code/src/adapters/platform.ts`) returns the fixed base `CliRendererConfig` `code` boots with:
 
 ```
 {
   screenMode: "alternate-screen",
   exitOnCtrlC: false,
   exitSignals: [],
-  useKittyKeyboard: {},
+  useKittyKeyboard: directMacIterm
+    ? { allKeysAsEscapes: true, reportText: true }
+    : {},
+  ...(directMacIterm ? { prependInputHandlers: [consumeItermModifierStateReport] } : {}),
   useMouse: true,
   autoFocus: true,
   clearOnShutdown: true,
@@ -362,6 +365,12 @@ producer of named diagnostic events/counters:
   maxFps: 60,
 }
 ```
+
+`directMacIterm` requires a local, non-tmux iTerm session. Full reporting lets the renderer retain
+the physical Option key and its associated text at once. iTerm also emits standalone modifier-state
+packets in this mode; the prepended handler consumes only those packets before OpenTUI can parse
+their numeric state as a control character. SSH, tmux and every other terminal retain OpenTUI's
+conservative disambiguation-plus-alternate-key defaults.
 
 `exitOnCtrlC: false` and `exitSignals: []` pair with the manual `SIGINT`/`SIGTERM`/`SIGHUP` handlers in
 §4.6 — OpenTUI is told to leave process-exit entirely to `platform.ts`'s own `shutdown()`. `maxFps` is

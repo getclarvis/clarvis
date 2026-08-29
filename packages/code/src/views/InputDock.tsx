@@ -286,16 +286,33 @@ export function InputDock(props: {
       props.interaction.keymap.setData("autocomplete", !hint);
   }
   function acceptAc(): void {
-    const item = acItems()[clampIndex(acIndex(), acItems().length)];
-    const provider = acProvider;
-    const currentText = ref?.plainText.trim() ?? "";
+    const currentText = ref?.plainText ?? "";
+    const list = providers();
+    const hit = detectTrigger(
+      currentText,
+      list.map((candidate) => candidate.trigger),
+    );
+    const provider = hit ? list.find((candidate) => candidate.trigger === hit.trigger) : undefined;
+    const term = hit?.term;
+    const cacheIsCurrent = provider === acProvider && term === acTerm;
+    const items =
+      provider && term !== undefined ? (cacheIsCurrent ? acItems() : provider.query(term)) : [];
+    const item = items[clampIndex(cacheIsCurrent ? acIndex() : 0, items.length)];
     closeAc();
-    if (!item || !provider) {
-      if (!item) props.onNotify?.("no match");
+    if (!provider || provider.kind === "hint") {
+      // The textarea can apply its last printable key after the popup's Solid
+      // signals were derived. If Return arrives in that same stdin drain, the
+      // stale autocomplete layer still owns it; submit the live text instead
+      // of swallowing the key or accepting the previous provider.
+      submit();
+      return;
+    }
+    if (!item) {
+      props.onNotify?.("no match");
       return;
     }
     if (provider.trigger.startsWith("/")) {
-      const accepted = currentText === item.label ? { ...item, insert: "" } : item;
+      const accepted = currentText.trim() === item.label ? { ...item, insert: "" } : item;
       ref?.setText(accepted.insert ?? "");
       ref?.gotoBufferEnd();
       provider.onAccept?.(accepted);

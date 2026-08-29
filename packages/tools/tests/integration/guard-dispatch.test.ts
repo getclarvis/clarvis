@@ -146,7 +146,7 @@ describe("dispatch guard hook", () => {
 
     const sandboxed = makeConfig(root, {
       guard,
-      sandbox: { type: "bubblewrap", readOnlyPaths: [] },
+      sandbox: { type: "native", readOnlyPaths: [] },
     });
     expect(
       touchesOutside(buildGuardContext("shell", { command: `grep -n needle ${spill}` }, sandboxed)),

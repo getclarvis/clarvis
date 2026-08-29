@@ -45,9 +45,9 @@ function showConfiguredList(values: string[] | undefined): string {
 }
 
 /**
- * Config panel for the per-scope Bubblewrap sandbox block: enable/disable,
+ * Config panel for the per-scope native sandbox block: enable/disable,
  * availability, filesystem/network posture and toolchain discovery, plus a
- * live host inspection (Bubblewrap availability, discovered toolchains).
+ * live host inspection (selected backend availability, discovered toolchains).
  *
  * @remarks
  * The discovered toolchain/path list is rendered in a scrollbox sized to its
@@ -76,7 +76,7 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
   let inspectionRequest = 0;
   let disposed = false;
   const [showUnavailable, setShowUnavailable] = createSignal(false);
-  const availability = () => inspection()?.bubblewrap;
+  const availability = () => inspection()?.backend;
   const visibleToolchains = () =>
     (inspection()?.toolchains ?? [])
       .filter((toolchain) => showUnavailable() || toolchain.available)
@@ -140,7 +140,7 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
   function createBlock(): void {
     const inherited = deps.settings.effective().sandbox;
     setDraft({
-      type: "bubblewrap",
+      type: "native",
       enabled: inherited?.enabled ?? true,
       availability: inherited?.availability ?? "required",
       filesystem: inherited?.filesystem ?? "workspace-write",
@@ -152,7 +152,7 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
     const avail = availability();
     if (avail && !avail.available) {
       deps.notify(
-        `heads up: Bubblewrap is ${avail.reason ?? "unavailable"} here ${glyph("emDash")} ` +
+        `heads up: native sandbox is ${avail.reason ?? "unavailable"} here ${glyph("emDash")} ` +
           `a 'required' sandbox will fail runs on this host`,
       );
     }
@@ -346,7 +346,7 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
     }
     if (avail.degraded) {
       return {
-        text: `${glyph("warning")} degraded mode: the sandbox shares the host /proc`,
+        text: `${glyph("warning")} degraded mode: ${avail.reason ?? "reduced isolation"}`,
         fg: tokens.warn,
       };
     }
@@ -359,12 +359,20 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
     return avail.available ? (avail.degraded ? tokens.warn : tokens.muted) : tokens.del;
   }
 
+  const backendName = (): string => {
+    const type = availability()?.type;
+    return type === "bubblewrap"
+      ? "Bubblewrap"
+      : type === "seatbelt"
+        ? "Seatbelt"
+        : "Native sandbox";
+  };
   const hostText = (): string =>
     availability()?.available
       ? availability()!.degraded
-        ? "Bubblewrap available (degraded: shares host /proc)"
-        : "Bubblewrap available on kernel host"
-      : `Bubblewrap ${availability()?.reason ?? inspectionError() ?? "unavailable"}`;
+        ? `${backendName()} available (degraded: ${availability()!.reason ?? "reduced isolation"})`
+        : `${backendName()} available on kernel host`
+      : `${backendName()} ${availability()?.reason ?? inspectionError() ?? "unavailable"}`;
 
   const sandboxAt = (scope: "global" | "workspace"): SandboxDraft | undefined =>
     deps.settings.read(scope)?.sandbox;
@@ -401,7 +409,7 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
         <StatusRow label="effective" text={effectiveStatus().text} fg={effectiveStatus().fg} />
         <Show
           when={!inspecting()}
-          fallback={<LoadingHint text="checking Bubblewrap on kernel host" />}
+          fallback={<LoadingHint text="checking native sandbox on kernel host" />}
         >
           <StatusRow label="host" text={hostText()} fg={hostColor()} />
         </Show>
@@ -412,7 +420,10 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
           <DetailLines
             indent
             rows={[
-              { text: "Bubblewrap applies to bash and monitor_start on Linux", fg: tokens.muted },
+              {
+                text: "Bubblewrap on Linux; Seatbelt on macOS; applies to shell and monitor_start",
+                fg: tokens.muted,
+              },
             ]}
           />
         </box>
@@ -543,12 +554,12 @@ export function SandboxConfigPanel(host: ViewHost, deps: SandboxConfigDeps): JSX
           verticalScrollbarOptions={scrollbarOptions()}
         >
           <text fg={tokens.muted} selectable={false}>
-            {"Tool       Version             Manager   Source     State"}
+            {"Tool       Manager   Source     State"}
           </text>
           <For each={visibleToolchains()}>
             {(toolchain) => (
               <text flexShrink={0} fg={toolchain.available ? tokens.add : tokens.muted}>
-                {`${toolchain.id.padEnd(10)} ${(toolchain.version ?? glyph("emDash")).padEnd(19)} ${(toolchain.manager ?? glyph("emDash")).padEnd(9)} ${toolchain.scope.padEnd(10)} ${toolchain.available ? "Available" : "Unavailable"}`}
+                {`${toolchain.id.padEnd(10)} ${(toolchain.manager ?? glyph("emDash")).padEnd(9)} ${toolchain.scope.padEnd(10)} ${toolchain.available ? "Available" : "Unavailable"}`}
               </text>
             )}
           </For>

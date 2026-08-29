@@ -567,7 +567,7 @@ order as the Agents window"`).
 The picker presents `SAFETY_PRESET_CHOICES` through the shared `ListPicker`, marks the currently
 derived posture, previews the sandbox boundary and judge behavior, and applies through the same
 `applySafetyPreset` function used by Run Controls. `free` and `judged` arm `useArmedConfirm` before
-writing because both remove Bubblewrap; a second Enter accepts the pending choice and Escape keeps
+writing because both remove the native sandbox; a second Enter accepts the pending choice and Escape keeps
 the current settings. `App` owns the overlay as a lazy `retain-one` portal boundary, so the component
 module does not enter first boot and its native tree is reused after first open. Production:
 `packages/code/src/features/run/safety-presets.ts`,

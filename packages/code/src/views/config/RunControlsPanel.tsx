@@ -112,13 +112,11 @@ export function RunControlsPanel(
 ): JSX.Element {
   const [sel, setSel] = createSignal(0);
   const fe = createFieldEditor(host.interaction, host.active);
-  const [availability, setAvailability] = createSignal<SandboxInspection["bubblewrap"] | null>(
-    null,
-  );
+  const [availability, setAvailability] = createSignal<SandboxInspection["backend"] | null>(null);
   onMount(() => {
     void deps.settings
       .inspectSandbox()
-      .then((inspection) => setAvailability(inspection.bubblewrap))
+      .then((inspection) => setAvailability(inspection.backend))
       .catch(() => setAvailability(null));
   });
   const state = createMemo(() => {
@@ -128,33 +126,36 @@ export function RunControlsPanel(
 
   function sandboxLine(): { text: string; fg: string } {
     const s = state();
-    if (!s.sandboxEnabled) return { text: "Bubblewrap is off.", fg: tokens.warn };
+    if (!s.sandboxEnabled) return { text: "Native sandbox is off.", fg: tokens.warn };
     const avail = availability();
     if (!avail)
       return {
-        text: "Checking Bubblewrap on the kernel host" + glyph("ellipsis"),
+        text: "Checking native sandbox on the kernel host" + glyph("ellipsis"),
         fg: tokens.muted,
       };
     if (!avail.available) {
       return s.sandboxRequired
         ? {
-            text: `${glyph("warning")} Bubblewrap unavailable here (${avail.reason}); required sandbox fails every run.`,
+            text: `${glyph("warning")} Native sandbox unavailable here (${avail.reason}); required sandbox fails every run.`,
             fg: tokens.del,
           }
         : {
-            text: `Bubblewrap unavailable here (${avail.reason}); optional sandbox runs directly on the host.`,
+            text: `Native sandbox unavailable here (${avail.reason}); optional sandbox runs directly on the host.`,
             fg: tokens.warn,
           };
     }
     if (avail.degraded)
-      return { text: "Bubblewrap runs in degraded mode (shares the host /proc).", fg: tokens.warn };
+      return {
+        text: `${avail.type === "bubblewrap" ? "Bubblewrap" : "Native sandbox"} runs in degraded mode (${avail.reason ?? "reduced isolation"}).`,
+        fg: tokens.warn,
+      };
     if (!s.sandboxRequired)
       return {
         text: "Optional sandbox may execute directly on an incompatible host.",
         fg: tokens.warn,
       };
     return {
-      text: "Bubblewrap is available; an incompatible host fails closed.",
+      text: `${avail.type === "seatbelt" ? "Seatbelt" : "Bubblewrap"} is available; an incompatible host fails closed.`,
       fg: tokens.muted,
     };
   }

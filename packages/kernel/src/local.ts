@@ -1,11 +1,19 @@
 /** Local process, shell, executable, filesystem, and git adapters. */
 export {
   probeBubblewrap,
+  probeSeatbelt,
+  probeSandbox,
   sandboxCommand,
   discoverToolchains,
   TOOLCHAIN_COMMANDS,
 } from "@clarvis/tools/sandbox";
-export type { BubblewrapProbe, DiscoveredToolchain, ToolchainId } from "@clarvis/tools/sandbox";
+export type {
+  SandboxProbe,
+  BubblewrapProbe,
+  SeatbeltProbe,
+  DiscoveredToolchain,
+  ToolchainId,
+} from "@clarvis/tools/sandbox";
 export {
   POSIX_DEFAULT_ALLOWED_COMMANDS,
   WINDOWS_DEFAULT_ALLOWED_COMMANDS,

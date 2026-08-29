@@ -59,14 +59,14 @@ describe("tools.config_resolved", () => {
       probeRipgrep: () => true,
       readOnly: true,
       confineToWorkspace: false,
-      sandbox: { type: "bubblewrap", availability: "optional" },
+      sandbox: { type: "native", availability: "optional" },
     });
     const [record] = eventsOf(records, "tools.config_resolved");
     expect(record?.level).toBe("debug");
     expect(record?.fields).toEqual({
       event: "tools.config_resolved",
       ripgrep: true,
-      sandbox_mode: "bubblewrap",
+      sandbox_mode: "native",
       sandbox_availability: "optional",
       read_only: true,
       confined: false,
@@ -106,8 +106,12 @@ describe("tools.sandbox_unavailable", () => {
       command: "true",
       cwd: "/ws",
       workspaceRoot: "/ws",
-      sandbox: { type: "bubblewrap", availability: "optional" },
-      probe: () => ({ mode: "unavailable", reason: "bwrap executable was not found" }),
+      sandbox: { type: "native", availability: "optional" },
+      probe: () => ({
+        backend: "unsupported",
+        mode: "unavailable",
+        reason: "bwrap executable was not found",
+      }),
       shell: () => ({ flavor: "posix", file: "sh" }),
       logger,
     });
@@ -116,7 +120,7 @@ describe("tools.sandbox_unavailable", () => {
       level: "warn",
       fields: {
         event: "tools.sandbox_unavailable",
-        requested: "bubblewrap",
+        requested: "native",
         reason: "bwrap executable was not found",
       },
     });
@@ -141,8 +145,8 @@ describe("tools.sandbox_unavailable", () => {
         command: "true",
         cwd: "/ws",
         workspaceRoot: "/ws",
-        sandbox: { type: "bubblewrap", availability: "required" },
-        probe: () => ({ mode: "unavailable", reason: "no namespaces" }),
+        sandbox: { type: "native", availability: "required" },
+        probe: () => ({ backend: "unsupported", mode: "unavailable", reason: "no namespaces" }),
         shell: () => ({ flavor: "posix", file: "sh" }),
       }),
     ).toThrow(ToolError);

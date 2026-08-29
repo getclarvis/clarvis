@@ -33,11 +33,19 @@ export {
 export type { ShellDialect, Token, PathCandidate } from "./runtime/tools/builtin/index.ts";
 export {
   probeBubblewrap,
+  probeSeatbelt,
+  probeSandbox,
   sandboxCommand,
   discoverToolchains,
   TOOLCHAIN_COMMANDS,
 } from "@clarvis/tools/sandbox";
-export type { BubblewrapProbe, DiscoveredToolchain, ToolchainId } from "@clarvis/tools/sandbox";
+export type {
+  SandboxProbe,
+  BubblewrapProbe,
+  SeatbeltProbe,
+  DiscoveredToolchain,
+  ToolchainId,
+} from "@clarvis/tools/sandbox";
 export {
   resolveShell,
   shellArgs,

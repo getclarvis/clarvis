@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveSandboxHostPolicy, resolveSandboxPath } from "../../src/capabilities-tools.ts";
@@ -34,6 +34,22 @@ describe("sandbox host policy", () => {
     );
   });
 
+  it("rejects workspace-relative paths that escape through a symlink", () => {
+    const root = tempRoot("clarvis-host-policy-link-");
+    const workspace = join(root, "workspace");
+    const outside = join(root, "outside");
+    mkdirSync(workspace);
+    mkdirSync(outside);
+    symlinkSync(outside, join(workspace, "outside"), "dir");
+    const broadAlias = join(root, "broad");
+    symlinkSync("/", broadAlias, "dir");
+
+    expect(resolveSandboxPath("./outside", workspace, true).error).toBe(
+      "workspace sandbox path escapes through a symlink",
+    );
+    expect(resolveSandboxPath(broadAlias, workspace, true).error).toBe("sandbox path is too broad");
+  });
+
   it("compiles manual extra paths without automatic discovery", () => {
     const root = tempRoot("clarvis-host-policy-manual-");
     const workspace = join(root, "workspace");
@@ -44,7 +60,7 @@ describe("sandbox host policy", () => {
     expect(
       resolveSandboxHostPolicy(
         {
-          type: "bubblewrap",
+          type: "native",
           toolchains: {
             mode: "manual",
             extra_paths: [sdk, "/", join(root, "missing")],
@@ -53,7 +69,7 @@ describe("sandbox host policy", () => {
         workspace,
       ),
     ).toEqual({
-      type: "bubblewrap",
+      type: "native",
       toolchains: {
         mode: "manual",
         extra_paths: [sdk, "/", join(root, "missing")],
@@ -68,14 +84,14 @@ describe("sandbox host policy", () => {
     mkdirSync(workspace);
 
     const included = resolveSandboxHostPolicy(
-      { type: "bubblewrap", toolchains: { mode: "auto", include: ["bun"] } },
+      { type: "native", toolchains: { mode: "auto", include: ["bun"] } },
       workspace,
     );
     expect(included?.resolved_runtime_paths?.length).toBeGreaterThan(0);
 
     const excluded = resolveSandboxHostPolicy(
       {
-        type: "bubblewrap",
+        type: "native",
         toolchains: { mode: "auto", include: ["bun"], exclude: ["bun"] },
       },
       workspace,

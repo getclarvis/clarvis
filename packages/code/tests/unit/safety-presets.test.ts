@@ -24,7 +24,7 @@ describe("safety presets", () => {
 
   test("warns when direct execution also resets non-default sandbox availability", () => {
     const request = safetyPresetConfirmation("judged", {
-      type: "bubblewrap",
+      type: "native",
       enabled: true,
       availability: "optional",
     });
@@ -41,7 +41,7 @@ describe("safety presets", () => {
     const writes: { scope: string; patch: Partial<SettingsFile> }[] = [];
     const effective = {
       sandbox: {
-        type: "bubblewrap",
+        type: "native",
         enabled: true,
         toolchains: { mode: "manual", extra_paths: ["/opt/node/bin"] },
       },
@@ -80,7 +80,7 @@ describe("safety presets", () => {
             denied_commands: ["git push --force*"],
           },
           sandbox: {
-            type: "bubblewrap",
+            type: "native",
             enabled: false,
             availability: "required",
             filesystem: "workspace-write",

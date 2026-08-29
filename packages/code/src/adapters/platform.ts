@@ -52,6 +52,10 @@ export interface PlatformOptions {
   dev?: boolean;
   /** @internal Injectable process seam for deterministic clipboard tests. */
   clipboardProcess?: ClipboardProcessRunner;
+  /** @internal Injectable runtime seam for renderer-policy tests. */
+  runtimePlatform?: NodeJS.Platform;
+  /** @internal Injectable environment seam for renderer-policy tests. */
+  processEnv?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -209,6 +213,28 @@ export function assertInteractiveTTY(io?: {
   }
 }
 
+const ITERM_MODIFIER_STATE_REPORT = /^\[[1-8](?::[123])?u$/;
+
+/** Consume iTerm's standalone modifier-state packets before OpenTUI treats 1-8 as text controls. */
+function consumeItermModifierStateReport(sequence: string): boolean {
+  const consumed =
+    sequence.charCodeAt(0) === 0x1b && ITERM_MODIFIER_STATE_REPORT.test(sequence.slice(1));
+  if (consumed) diagnosticCount("keyboard.event.iterm-modifier-state", { outcome: "discarded" });
+  return consumed;
+}
+
+function useFullItermKeyboardReporting(opts: PlatformOptions): boolean {
+  const runtimePlatform = opts.runtimePlatform ?? process.platform;
+  const env = opts.processEnv ?? process.env;
+  return (
+    runtimePlatform === "darwin" &&
+    env.TERM_PROGRAM === "iTerm.app" &&
+    env.TMUX === undefined &&
+    env.SSH_TTY === undefined &&
+    env.SSH_CONNECTION === undefined
+  );
+}
+
 /**
  * The OpenTUI renderer config `code` boots with, given the parsed platform options.
  *
@@ -221,11 +247,13 @@ export function assertInteractiveTTY(io?: {
  *   limiter, showing up as jitter with nothing in this file to point at.
  */
 export function buildRendererConfig(opts: PlatformOptions = {}): CliRendererConfig {
+  const fullItermKeyboard = useFullItermKeyboardReporting(opts);
   return {
     screenMode: "alternate-screen",
     exitOnCtrlC: false,
     exitSignals: [],
-    useKittyKeyboard: {},
+    useKittyKeyboard: fullItermKeyboard ? { allKeysAsEscapes: true, reportText: true } : {},
+    ...(fullItermKeyboard ? { prependInputHandlers: [consumeItermModifierStateReport] } : {}),
     useMouse: true,
     autoFocus: true,
     clearOnShutdown: true,

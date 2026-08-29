@@ -415,7 +415,7 @@ URLs scraped from the crash logs.
 ### 4.1 Install and resolution
 
 `bun install --frozen-lockfile` is run once from the root in every CI job
-(`.github/workflows/ci.yml`, install steps under jobs `linux`, `windows`, and `keyboard-macos`) and inside the Docker `deps` stage
+(`.github/workflows/ci.yml`, install steps under jobs `linux`, `windows`, and `sandbox-macos`) and inside the Docker `deps` stage
 (`packages/server/Dockerfile:26`). `bunfig.toml:2` sets `linker = "hoisted"`, so `node_modules` is
 symlink-free (stated at `.github/workflows/ci.yml:56-57`).
 
@@ -512,8 +512,9 @@ cross-package types through the built `dist/*.d.ts` (§4.2). The hook is install
 
 **`linux`**, `ubuntu-latest`, runs the full build, typecheck, formatting, lint, Docker image build,
 coverage-with-classified-crash retry, and real-PTY artifact smoke. It installs and executes ripgrep
-before tests because CI makes grep parity a hard contract. Production: `.github/workflows/ci.yml`
-(`jobs.linux`).
+and Bubblewrap before tests because CI makes grep parity and the Linux native-sandbox canary hard
+contracts. `CLARVIS_NATIVE_SANDBOX_CANARY=1` reaches the coverage suite. Production:
+`.github/workflows/ci.yml` (`jobs.linux`).
 
 **`windows`**, `windows-latest`, records the exact Bun runtime and installs ripgrep from a pinned
 release asset after checking its SHA-256 and executing it in the same step. Then it runs four
@@ -532,8 +533,12 @@ contributes only its platform-independent keyboard-policy tests. `kernel`, `loop
 `mcp-client` and `supervision` remain deliberately absent. Production: `.github/workflows/ci.yml`
 (`jobs.windows.steps`).
 
-**`keyboard-macos`**, `macos-14`, records the Bun version/revision and runs exactly the same three
-keyboard test files. Production: `.github/workflows/ci.yml` (`jobs.keyboard-macos`).
+**`sandbox-macos`**, `macos-14`, records the Bun version/revision, installs/verifies ripgrep, and runs
+the complete `@clarvis/tools` suite plus the kernel sandbox-policy integration with
+`CLARVIS_NATIVE_SANDBOX_CANARY=1`. It then runs the same three keyboard test files as Windows. The
+real-host canaries verify Seatbelt file/network/process enforcement and a discovered toolchain's
+kernel inspection path; this is not inferred from generated profile text. Production:
+`.github/workflows/ci.yml` (`jobs.sandbox-macos`).
 
 All three jobs record `bun --version` and `bun --revision` immediately after setup, so a future run
 remains attributable to the executable it actually used. CI was restored for the new public
@@ -845,13 +850,21 @@ Production: `packages/code/src/cli-entry.ts:37-49`.
 Test: `packages/code/tests/unit/cli-entry.test.ts:6-29`.
 
 **BUILD-19.** In CI, `rg` must be present.
-Production: `.github/workflows/ci.yml:55` (linux, `apt-get` + `rg --version`) and `:133-149`
-(windows, pinned release + SHA256 + `rg.exe --version`); `packages/server/Dockerfile:74-77` does the
+Production: `.github/workflows/ci.yml` (`jobs.linux`, `jobs.windows`, `jobs.sandbox-macos` install
+steps); `packages/server/Dockerfile:74-77` does the
 same for the image.
 Test: `packages/tools/tests/contract/grep-parity.test.ts:15-17` — "ripgrep must be installed in CI
 (TEST-01)", asserted only when `process.env.CI` is set.
 
-**BUILD-20.** The crash retry accepts exactly 132/134/139 and never retries 130 or 143.
+**BUILD-20.** Linux and macOS CI must execute the real native-sandbox canary; generated argv/profile
+tests alone do not establish host enforcement.
+Production: `.github/workflows/ci.yml` (`jobs.linux`, `jobs.sandbox-macos`,
+`CLARVIS_NATIVE_SANDBOX_CANARY`).
+Test: `packages/tools/tests/integration/sandbox.test.ts` (`enforces the native sandbox against real
+host resources`) and `packages/kernel/tests/integration/sandbox-policy.test.ts` (`probes a discovered
+toolchain through the real native backend`).
+
+**BUILD-21.** The crash retry accepts exactly 132/134/139 and never retries 130 or 143.
 Production: `tooling/ci/retry-code-coverage.sh:34-39`, `:55`.
 Unpinned — there is no test for this shell script.
 

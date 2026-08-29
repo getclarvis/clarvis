@@ -200,12 +200,11 @@ test("Ctrl+P toggles the plan; enhanced terminals also retain Alt+P", () => {
   expect(DEFAULT_WHEN["memory.cycle"]).toBeUndefined();
 });
 
-test("Alt+S opens safety presets on enhanced terminals and stays off portable profiles", () => {
-  expect(portable()["safety.picker"]).toBeUndefined();
-  expect(enhanced()["safety.picker"]).toBe("alt+s");
-  expect(find(buildVitalBindings(enhanced(), DEFAULT_WHEN), "safety.picker")[0]?.when).toBe(
-    "overlay==none",
-  );
+test("Ctrl+S opens safety presets everywhere and enhanced terminals retain Alt+S", () => {
+  expect(portable()["safety.picker"]).toBe("ctrl+s");
+  expect(enhanced()["safety.picker"]).toEqual(["alt+s", "ctrl+s"]);
+  for (const binding of find(buildVitalBindings(enhanced(), DEFAULT_WHEN), "safety.picker"))
+    expect(binding.when).toBe("overlay==none");
 });
 
 test("F1 has no built-in action", async () => {
@@ -412,7 +411,7 @@ test("createInteraction: one Escape both clears an invisible pending sequence an
   t.renderer.destroy();
 });
 
-test("createInteraction: Alt+S dispatches the safety picker", async () => {
+test("createInteraction: Ctrl+S and Alt+S dispatch the safety picker", async () => {
   const t = await openCoreRenderer({ width: 80, height: 24 });
   const effects = fakeEffects();
   const interaction = createInteraction(t.renderer, fakePlatform(), effects);
@@ -429,10 +428,11 @@ test("createInteraction: Alt+S dispatches the safety picker", async () => {
     ],
   });
 
+  press(t.renderer, "s", { ctrl: true });
   press(t.renderer, "s", { meta: true });
   await settle();
 
-  expect(effects.calls).toEqual(["openSafetyPresetPicker"]);
+  expect(effects.calls).toEqual(["openSafetyPresetPicker", "openSafetyPresetPicker"]);
   off();
   interaction.dispose();
   t.renderer.destroy();

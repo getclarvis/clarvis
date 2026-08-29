@@ -72,14 +72,14 @@ export interface GuardConfig {
 }
 
 /**
- * Sandbox settings block. `bubblewrap` is currently the only sandbox type. The
- * kernel resolves this into the concrete jail for command execution; the UI
- * reads it back through {@link SandboxInspection} via
+ * Sandbox settings block. `native` selects Bubblewrap on Linux and Seatbelt on
+ * macOS. The kernel resolves this into the concrete jail for command execution;
+ * the UI reads it back through {@link SandboxInspection} via
  * {@link ConfigService.inspectSandbox}.
  */
 export interface SandboxConfig {
-  /** Sandbox implementation; only `bubblewrap` is defined today. */
-  type: "bubblewrap";
+  /** Platform-native sandbox selection. */
+  type: "native";
   enabled?: boolean;
   /** `required` fails a run when the sandbox is unavailable; `optional` runs unsandboxed instead. */
   availability?: "required" | "optional";
@@ -112,7 +112,7 @@ export interface SandboxConfig {
 export type SandboxToolchainScope = "system" | "auto" | "global" | "workspace";
 
 /**
- * Doctor status for one toolchain the sandbox discovered or probed, as reported
+ * Doctor status for one toolchain the sandbox discovered passively, as reported
  * by {@link ConfigService.inspectSandbox}.
  */
 export interface SandboxToolchainStatus {
@@ -120,21 +120,20 @@ export interface SandboxToolchainStatus {
   id: string;
   /** The executables this toolchain provides. */
   commands: string[];
-  /** Whether the toolchain resolved and (when Bubblewrap is up) passed a probe run. */
+  /** Whether the toolchain's executable path resolved successfully. */
   available: boolean;
   /** Whether it is folded into the effective sandbox `PATH`. */
   enabled: boolean;
   scope: SandboxToolchainScope;
   /** Version manager that owns it (e.g. `mise`, `asdf`, `system`), when known. */
   manager?: string;
-  version?: string;
   /** The symlink/shim path as it appears on `PATH` (pre-resolution). */
   logical_path?: string;
   /** The real path {@link logical_path} resolves to. */
   resolved_path?: string;
   /** Directory added to the sandbox `PATH` to expose this toolchain. */
   root?: string;
-  /** Populated when discovery or the probe run failed. */
+  /** Populated when executable-path discovery failed. */
   error?: string;
 }
 
@@ -154,17 +153,19 @@ export interface SandboxPathStatus {
 
 /**
  * Full sandbox doctor snapshot returned by {@link ConfigService.inspectSandbox}:
- * the Bubblewrap probe plus the resolved toolchains, extra paths, and effective
+ * the native backend probe plus resolved toolchains, extra paths, and effective
  * `PATH` a sandboxed run would see.
  */
 export interface SandboxInspection {
-  bubblewrap: {
+  backend: {
+    /** Backend selected for this host, even when it is unavailable. */
+    type: "bubblewrap" | "seatbelt" | "unsupported";
     available: boolean;
     /**
-     * `fresh-proc` (full isolation), `host-proc` (degraded, shares host pid/proc),
-     * or `unavailable` (Bubblewrap not usable).
+     * Bubblewrap uses `fresh-proc` or the degraded `host-proc`; Seatbelt uses
+     * `seatbelt`; an unusable or unsupported backend reports `unavailable`.
      */
-    mode: "fresh-proc" | "host-proc" | "unavailable";
+    mode: "fresh-proc" | "host-proc" | "seatbelt" | "unavailable";
     /** True when running in a reduced-isolation mode (`host-proc`). */
     degraded: boolean;
     /** Why the sandbox is unavailable or degraded, when applicable. */
@@ -417,7 +418,7 @@ export interface ConfigService {
     expectedRevision: string | null,
   ): Promise<SettingsView>;
 
-  /** Inspect Bubblewrap and the toolchains visible on the kernel host. */
+  /** Inspect the native sandbox and toolchains visible on the kernel host. */
   inspectSandbox(options?: { refresh?: boolean }): Promise<SandboxInspection>;
 
   /**

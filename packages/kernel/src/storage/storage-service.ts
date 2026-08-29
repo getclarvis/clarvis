@@ -74,6 +74,10 @@ interface StorageInspectionLimits {
   maxDepth?: number;
 }
 
+function isMissing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
 export function createStorageService(
   globalDir: string,
   limits: StorageInspectionLimits = {},
@@ -114,8 +118,10 @@ export function createStorageService(
         let dir: Awaited<ReturnType<typeof opendir>>;
         try {
           dir = await opendir(current.path);
-        } catch {
-          continue;
+        } catch (error) {
+          if (isMissing(error)) continue;
+          truncated = true;
+          break;
         }
         try {
           for await (const entry of dir) {
@@ -147,8 +153,12 @@ export function createStorageService(
               }
             } catch {}
           }
+        } catch (error) {
+          if (!isMissing(error)) truncated = true;
         } finally {
-          await dir.close().catch(() => undefined);
+          try {
+            await dir.close();
+          } catch {}
         }
         if (truncated) break;
       }

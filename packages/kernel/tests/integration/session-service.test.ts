@@ -111,6 +111,13 @@ describe("SessionService (file-backed)", () => {
     expect([...references.ids].sort()).toEqual(["exec_a", "exec_b"]);
   });
 
+  it("treats an absent session catalog as a complete empty reference scan", () => {
+    const references = referencedSessionExecutionIds(dir);
+
+    expect(references.complete).toBe(true);
+    expect(references.ids.size).toBe(0);
+  });
+
   it("marks a bounded reference scan incomplete instead of authorizing deletion", async () => {
     const svc = createSessionService({
       dir,

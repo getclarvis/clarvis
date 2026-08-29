@@ -1186,10 +1186,24 @@ enforces the guard, while local pre-commit runs still do not set `CI`: a local m
 skips the parity contract at `:20` rather than failing it. The environment precondition is therefore
 remote-CI-enforced but not local-gate-enforced.
 
-**`bubblewrap` is the best-handled of the four, and is not a gap.** The outcome is a typed union
-carrying a reason (`packages/tools/src/sandbox.ts:11`–`:22`), decided behind injectable seams,
-fail-closed by default, tested on every branch, and surfaced to the operator by the platform doctor.
-It is recorded here only so a later pass does not re-open it.
+**Native sandbox backends are operationally gated, with one macOS platform risk.** Bubblewrap and
+Seatbelt outcomes are discriminated typed probes carrying a reason, decided behind injectable seams,
+fail-closed by default, and surfaced to the operator (`packages/tools/src/sandbox.ts`,
+`SandboxProbe`, `probeSandbox`). Linux and macOS CI enable real-host canaries for workspace
+write/read-only behavior, scratch writes, undeclared-path and process isolation, host/denied
+networking, and the kernel toolchain-inspection path (`packages/tools/tests/integration/sandbox.test.ts`,
+`enforces the native sandbox against real host resources`;
+`packages/kernel/tests/integration/sandbox-policy.test.ts`, `inspects a discovered toolchain without
+executing it through the real native backend`; `.github/workflows/ci.yml`, `jobs.linux` and
+`jobs.sandbox-macos`).
+
+The remaining risk is specific and external: Apple marks `sandbox-exec` deprecated, and Apple DTS
+states that the Sandbox Profile Language is not a supported API for third-party products
+([Apple Developer Forums](https://developer.apple.com/forums/thread/661939)). Clarvis does not hide
+that with an optional fallback by default: if `/usr/bin/sandbox-exec` or the profile stops working,
+the Seatbelt probe reports unavailable and a required run fails closed. The CI canary detects drift
+on the supported macOS runner, but cannot turn this private/deprecated OS surface into a durable Apple
+compatibility promise.
 
 **`git`, and a citation the report gets wrong.** It cites
 `packages/code/src/adapters/marketplace.ts:197`–`:205` as "spawns `git` directly through

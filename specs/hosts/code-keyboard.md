@@ -271,7 +271,7 @@ verdicts. Pinned: `packages/code/tests/unit/keyboard-profile.test.ts:81-92` (a p
 | `focus.next` | `tab` | `overlay==none` |
 | `agent.picker` | `shift+tab` | `overlay==none` |
 | `controls.open` | `alt+r` (enhanced, requires `meta`), `alt+g` (enhanced, requires `meta`) | `overlay==none` |
-| `safety.picker` | `alt+s` (enhanced, requires `meta`) | `overlay==none` |
+| `safety.picker` | `alt+s` (enhanced, requires `meta`), `ctrl+s` | `overlay==none` |
 | `plan.open` | `ctrl+p`, `alt+p` (enhanced, requires `meta`) | `overlay in (none, plan)` |
 | `transcript.toggleCollapse` | `ctrl+o` | `overlay==none` |
 | `transcript.focusPrev` | `ctrl+up` | `overlay==none` |
@@ -295,7 +295,7 @@ For an `enhanced` environment with all modifiers `"supported"` (no manual overri
   "app.escape": "escape",
   "controls.open": ["alt+r", "alt+g"],
   "plan.open": ["alt+p", "ctrl+p"],
-  "safety.picker": "alt+s"
+  "safety.picker": ["alt+s", "ctrl+s"]
 }
 ```
 
@@ -824,15 +824,21 @@ clear effect are wired at `packages/code/src/views/App.tsx:373-390`.
 Tests: `packages/code/tests/integration/interaction.test.ts:325-477,726-743`; full-shell paths are
 pinned at `packages/code/tests/integration/app-shell-render.test.tsx:1028-1093,1123-1175,1586-1596`.
 
-**INV-D13.** `Alt+S` is the enhanced-path binding for the internal `safety.picker` action and is
-inactive while another overlay is open. The picker remains reachable through projected actions when
-the terminal path cannot carry Alt. No global sidebar command or binding exists; sidebar presence is
-owned by the content- and viewport-driven layout contract.
+**INV-D13.** `Ctrl+S` is the portable binding for the internal `safety.picker` action, `Alt+S` is its
+enhanced-path accelerator, and both are inactive while another overlay is open. A direct iTerm
+session on macOS requests Kitty all-key plus associated-text reporting, preserving the physical
+Option+S identity even when Option normally produces `ß`; iTerm's standalone modifier-state packets
+are consumed before key dispatch. Other terminal paths must still deliver Option as Meta/Esc+ for
+the enhanced binding. A legacy literal `ß` remains composer text, while `Ctrl+S` keeps the picker
+reachable without terminal configuration. No global sidebar command or binding exists;
+sidebar presence is owned by the content- and viewport-driven layout contract.
 Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`, `DEFAULT_WHEN`),
+`packages/code/src/views/config/KeyboardView.tsx` (`PROBES`, `KeyboardDiagnostic`),
 `packages/code/src/app/commands.tsx` (`safety.picker`), and
 `packages/code/src/app/layout.ts` (`createLayoutController`). Tests:
 `packages/code/tests/integration/interaction.test.ts`,
-`packages/code/tests/integration/app-shell-render.test.tsx`, and
+`packages/code/tests/integration/app-shell-render.test.tsx`,
+`packages/code/tests/integration/keyboard-view-render.test.tsx`, and
 `packages/code/tests/unit/layout.test.ts`.
 
 **INV-D14.** Input callbacks already queued while OpenTUI destroys the renderer are inert. The

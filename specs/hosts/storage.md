@@ -42,7 +42,9 @@ Production: `CATEGORIES` and the inspection roots in
 
 The kernel scans only roots built by `globalPaths`. The walk is bounded to 100,000 entries and depth
 24, ignores non-file/non-directory entries, and sets `truncated` when a bound is reached. Workspace
-state is classified from relative path components; it is not reorganized on disk.
+state is classified from relative path components; it is not reorganized on disk. A root missing at
+open or at a runtime's lazy first directory read is an empty category. Any other open or iteration
+failure marks the inventory truncated so an apply fails closed.
 
 Credential reporting is deliberately narrower than ordinary inventory. `keys.json` and
 `subscriptions.json` yield only `{ present, owner_only }`. No content, pathname, byte size, provider,

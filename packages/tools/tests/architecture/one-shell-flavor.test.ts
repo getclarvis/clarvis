@@ -44,11 +44,11 @@ const rel = (file: string): string => relative(PKG, file).split("\\").join("/");
  * What marks a platform read as *producing a shell flavor*, rather than merely
  * mentioning a shell.
  *
- * @remarks Deliberately narrow. `systemExecutableRoots` branches on `win32` to
- * pick a path list, and the toolchain probe branches on it to reach `cmd.exe`
- * for a `--version` call; neither decides the language the guard parses, and a
- * looser word list flagged both. A line only counts when the platform decides a
- * `flavor` or names `powershell` as a value.
+ * @remarks Deliberately narrow. `systemExecutableRoots` and several filesystem
+ * or process helpers branch on `win32`, but none decides the language the guard
+ * parses; a looser word list flagged those unrelated platform decisions. A line
+ * only counts when the platform decides a `flavor` or names `powershell` as a
+ * value.
  */
 const PRODUCES_A_FLAVOR = /powershell|flavor/i;
 

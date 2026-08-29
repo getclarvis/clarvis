@@ -29,21 +29,9 @@ describe("execution safety", () => {
     ["free", {}, "off"],
     ["judged", {}, "auto"],
     ["approval", {}, "on"],
-    [
-      "isolated",
-      { sandbox: { type: "bubblewrap", enabled: true, availability: "required" } },
-      "off",
-    ],
-    [
-      "reviewed",
-      { sandbox: { type: "bubblewrap", enabled: true, availability: "required" } },
-      "auto",
-    ],
-    [
-      "protected",
-      { sandbox: { type: "bubblewrap", enabled: true, availability: "required" } },
-      "on",
-    ],
+    ["isolated", { sandbox: { type: "native", enabled: true, availability: "required" } }, "off"],
+    ["reviewed", { sandbox: { type: "native", enabled: true, availability: "required" } }, "auto"],
+    ["protected", { sandbox: { type: "native", enabled: true, availability: "required" } }, "on"],
   ] as const)("derives %s", (preset, settings, guard) => {
     expect(deriveRunControls(settings, guard, "off").preset).toBe(preset);
   });
@@ -53,7 +41,7 @@ describe("execution safety", () => {
       deriveRunControls(
         {
           sandbox: {
-            type: "bubblewrap",
+            type: "native",
             enabled: true,
             filesystem: "workspace-read-only",
             network: "none",
@@ -84,7 +72,7 @@ describe("execution safety", () => {
         default_model: "openai/model",
         memory: {} as SettingsFile["memory"],
         sandbox: {
-          type: "bubblewrap",
+          type: "native",
           enabled: true,
           filesystem: "workspace-read-only",
           network: "none",
@@ -94,7 +82,7 @@ describe("execution safety", () => {
       "on",
     );
     expect(safetyDescription(state)).toEqual([
-      "Commands run autonomously inside Bubblewrap.",
+      "Commands run autonomously inside the native sandbox.",
       "Shell commands see the workspace read-only.",
       "Shell network access is disabled.",
     ]);
@@ -108,7 +96,7 @@ describe("execution safety", () => {
       ...deriveRunControls(
         {
           sandbox: {
-            type: "bubblewrap" as const,
+            type: "native" as const,
             enabled: true,
             availability: "optional" as const,
             filesystem: "workspace-write" as const,
@@ -120,7 +108,7 @@ describe("execution safety", () => {
       ),
     };
     expect(safetyDescription(sandbox)).toEqual([
-      "Commands use Bubblewrap when available and may fall back to the host.",
+      "Commands use the native sandbox when available and may fall back to the host.",
       "Shell commands may change this workspace.",
       "Host network access is enabled.",
     ]);

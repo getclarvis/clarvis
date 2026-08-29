@@ -256,7 +256,7 @@ logger.info(
 {
   event: "tools.config_resolved",
   ripgrep: true,
-  sandbox_mode: "bubblewrap",
+  sandbox_mode: "native",
   sandbox_availability: "optional",
   read_only: true,
   confined: false,

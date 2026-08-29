@@ -166,9 +166,9 @@ export function safetyDescription(state: RunControlsState): string[] {
   if (state.sandboxEnabled) {
     lines.push(
       !state.sandboxRequired
-        ? "Commands use Bubblewrap when available and may fall back to the host."
+        ? "Commands use the native sandbox when available and may fall back to the host."
         : state.guardMode === "off"
-          ? "Commands run autonomously inside Bubblewrap."
+          ? "Commands run autonomously inside the native sandbox."
           : state.guardMode === "auto"
             ? "Commands stay contained; the model escalates actions it judges risky."
             : "Risky actions ask first; approved commands remain contained.",
@@ -237,7 +237,7 @@ export function settingsForPreset(
   return {
     guard: { type: "shell", mode: guardMode },
     sandbox: {
-      type: "bubblewrap",
+      type: "native",
       enabled: sandboxOn,
       availability: "required",
       filesystem: "workspace-write",

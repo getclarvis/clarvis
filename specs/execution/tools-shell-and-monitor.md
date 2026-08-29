@@ -191,8 +191,8 @@ The exit sentinel (`<...>.exit`) holds only ASCII decimal digits, optionally sig
 
 An absolute spill path in the shell truncation marker remains usable by a later command, including
 after run rehydration. Guard analysis admits only that exact existing regular non-link spill under
-the owning workspace's local state directory, while a bubblewrap execution receives the same file
-as a read-only bind. This is intentionally not access to `stateRoot` or `localDir`. Production:
+the owning workspace's local state directory, while native sandbox execution receives the same file
+as a read-only root. This is intentionally not access to `stateRoot` or `localDir`. Production:
 `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/guard/context.ts`,
 `packages/tools/src/tools/shell.ts`, and `packages/tools/src/tools/monitor.ts`. Test:
 `packages/tools/tests/integration/guard-dispatch.test.ts`.
@@ -638,7 +638,7 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   by `packages/paths/tests/architecture/invariant.test.ts`, outside this document's scope).
 - `../sandbox.ts` (`sandboxCommand`) — both `packages/tools/src/tools/shell.ts:18` and
   `packages/tools/src/tools/monitor.ts:24` import it to build the actual spawn spec (file/args/env,
-  possibly bubblewrap-wrapped). Both pass the pinned `gitMetadataPaths` and first `temporaryRoot`;
+  possibly native-sandbox-wrapped). Both pass the pinned `gitMetadataPaths` and first `temporaryRoot`;
   the former makes linked-worktree Git metadata available without re-reading a mutable `.git`
   pointer, while the latter supplies run-owned scratch. Sandboxed execution
   itself is **out of this document's scope** (see the [sandbox-and-toolchains](sandbox.md) document); this
@@ -714,7 +714,7 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   another value in the same order of magnitude.
 
 - **The exact shape and content of `spec.options` and how `sandboxCommand` decides between a bare
-  spawn and a bubblewrap-wrapped one** is out of this document's scope (owned by
+  spawn and a native-sandbox-wrapped one** is out of this document's scope (owned by
   [sandbox-and-toolchains](sandbox.md)); this document only establishes that `shell.ts`/`monitor.ts` call into it
   and thread a pre-resolved `ShellSpec` through.
 

@@ -42,7 +42,7 @@ function mount(
     providers: opts.resolvable === false ? [] : [{ name: "openrouter", kind: "openai-compatible" }],
     ...(opts.sandboxInspection === undefined
       ? {}
-      : { sandbox: { type: "bubblewrap", enabled: true, availability: "optional" } }),
+      : { sandbox: { type: "native", enabled: true, availability: "optional" } }),
     ...((scoped.workspace ?? scoped.global) ? { plans: scoped.workspace ?? scoped.global } : {}),
     ...((opts.guard?.workspace ?? opts.guard?.global)
       ? { guard: opts.guard?.workspace ?? opts.guard?.global }
@@ -70,7 +70,11 @@ function mount(
     inspectSandbox: async () => {
       if (opts.sandboxInspection instanceof Error) throw opts.sandboxInspection;
       return {
-        bubblewrap: opts.sandboxInspection ?? { available: true, degraded: false },
+        backend: {
+          type: "bubblewrap",
+          mode: "fresh-proc",
+          ...(opts.sandboxInspection ?? { available: true, degraded: false }),
+        },
       };
     },
   } as unknown as SettingsAdapter;
@@ -174,7 +178,7 @@ test("the safety row opens sandbox details and persists a selected protected pre
       patch: {
         guard: { type: "shell", mode: "on" },
         sandbox: {
-          type: "bubblewrap",
+          type: "native",
           enabled: true,
           availability: "required",
           filesystem: "workspace-write",
@@ -214,7 +218,7 @@ test("judged confirms direct host execution and persists guard auto without a sa
       patch: {
         guard: { type: "shell", mode: "auto" },
         sandbox: {
-          type: "bubblewrap",
+          type: "native",
           enabled: false,
           availability: "required",
           filesystem: "workspace-write",
@@ -290,7 +294,7 @@ test("the safety status distinguishes checking, unavailable, degraded and option
   const cases = [
     {
       inspection: new Error("probe failed"),
-      expected: "Checking Bubblewrap on the kernel host",
+      expected: "Checking native sandbox on the kernel host",
     },
     {
       inspection: { available: false, degraded: false, reason: "missing" },

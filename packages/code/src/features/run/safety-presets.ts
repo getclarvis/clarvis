@@ -57,9 +57,9 @@ export function safetyPresetConfirmation(
 ): SafetyPresetConfirmation | null {
   const detail: string[] = [];
   if (preset === "free") {
-    detail.push("Commands bypass both Bubblewrap and command approval.");
+    detail.push("Commands bypass both the native sandbox and command approval.");
   } else if (preset === "judged") {
-    detail.push("Commands bypass Bubblewrap; the LLM judge decides risky actions.");
+    detail.push("Commands bypass the native sandbox; the LLM judge decides risky actions.");
     detail.push("If the judge cannot resolve, Clarvis asks you instead.");
   }
   if (resetsCustomSandbox(sandbox)) {

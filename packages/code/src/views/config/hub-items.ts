@@ -30,7 +30,7 @@ export const SETTINGS_ITEMS = [
     desc: "Enable and configure execution memory",
     cmd: "memory.config",
   },
-  { id: "sandbox", label: "Sandbox", desc: "Bubblewrap command isolation", cmd: "sandbox.config" },
+  { id: "sandbox", label: "Sandbox", desc: "Native command isolation", cmd: "sandbox.config" },
   { id: "theme", label: "Theme", desc: "Colors, presets, contrast", cmd: "theme.open" },
   {
     id: "keyboard",

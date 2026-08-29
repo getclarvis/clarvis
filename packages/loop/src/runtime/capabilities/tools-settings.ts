@@ -68,7 +68,7 @@ export type GuardConfig = z.infer<typeof guardSchema>;
 
 const sandboxSchema = z
   .object({
-    type: z.literal("bubblewrap"),
+    type: z.literal("native"),
     enabled: z.boolean().optional(),
     availability: z.enum(["required", "optional"]).optional(),
     filesystem: z.enum(["workspace-write", "workspace-read-only"]).optional(),
@@ -86,7 +86,7 @@ const sandboxSchema = z
       .optional(),
   })
   .strict()
-  .describe("Optional Linux Bubblewrap sandbox for shell and monitor_start.");
+  .describe("Optional native sandbox for shell and monitor_start on Linux and macOS.");
 
 /** The validated `sandbox` settings block (the inferred shape of `sandboxSchema`). */
 export type SandboxSettings = z.infer<typeof sandboxSchema>;
@@ -238,7 +238,7 @@ export const sandboxSettingsSpec: CapabilitySettingsSpec = {
       ...(excludedPaths !== undefined ? { excluded_paths: excludedPaths } : {}),
     };
     return {
-      type: "bubblewrap" as const,
+      type: "native" as const,
       ...(last("enabled") !== undefined ? { enabled: last("enabled") } : {}),
       ...(last("availability") !== undefined ? { availability: last("availability") } : {}),
       ...(last("filesystem") !== undefined ? { filesystem: last("filesystem") } : {}),

@@ -368,7 +368,7 @@ export const GATES: Gate[] = [
       const sandbox = eff.sandbox !== undefined && eff.sandbox.enabled !== false;
       const preset = deriveSafetyPreset(eff, resolvedGuardMode(eff.guard));
       if (sandbox) {
-        const a = ctx.sandboxInspection()?.bubblewrap;
+        const a = ctx.sandboxInspection()?.backend;
         if (!a) {
           return {
             status: "pass",
@@ -380,14 +380,14 @@ export const GATES: Gate[] = [
           return {
             status: "warn",
             detail: `${preset} — sandbox unavailable here`,
-            hint: `Bubblewrap ${a.reason}; runs will fail. Set availability to optional or disable the sandbox.`,
+            hint: `Native sandbox ${a.reason}; runs will fail. Set availability to optional or disable the sandbox.`,
           };
         }
         if (!a.available) {
           return {
             status: "warn",
             detail: `${preset} — sandbox unavailable, running directly`,
-            hint: `Bubblewrap ${a.reason}; commands fall back to the host.`,
+            hint: `Native sandbox ${a.reason}; commands fall back to the host.`,
           };
         }
       }

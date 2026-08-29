@@ -134,6 +134,35 @@ test("buildRendererConfig: default opts keep openConsoleOnError off", async () =
   expect(cfg.maxFps).toBe(60);
 });
 
+test("buildRendererConfig: direct macOS iTerm requests unambiguous Option key reports", async () => {
+  const { buildRendererConfig } = await import("../../src/adapters/platform.ts");
+  const cfg = buildRendererConfig({
+    runtimePlatform: "darwin",
+    processEnv: { TERM_PROGRAM: "iTerm.app", TERM_PROGRAM_VERSION: "3.6.11" },
+  });
+
+  expect(cfg.useKittyKeyboard).toEqual({ allKeysAsEscapes: true, reportText: true });
+  expect(cfg.prependInputHandlers).toHaveLength(1);
+  const consume = cfg.prependInputHandlers![0]!;
+  expect(consume("\u001b[3u")).toBe(true);
+  expect(consume("\u001b[5u")).toBe(true);
+  expect(consume("\u001b[13u")).toBe(false);
+  expect(consume("\u001b[115;3;223u")).toBe(false);
+});
+
+test("buildRendererConfig: multiplexed and remote iTerm paths retain conservative reporting", async () => {
+  const { buildRendererConfig } = await import("../../src/adapters/platform.ts");
+  for (const processEnv of [
+    { TERM_PROGRAM: "iTerm.app", TMUX: "/tmp/tmux" },
+    { TERM_PROGRAM: "iTerm.app", SSH_TTY: "/dev/ttys001" },
+    { TERM_PROGRAM: "iTerm.app", SSH_CONNECTION: "client server" },
+  ]) {
+    const cfg = buildRendererConfig({ runtimePlatform: "darwin", processEnv });
+    expect(cfg.useKittyKeyboard).toEqual({});
+    expect(cfg.prependInputHandlers).toBeUndefined();
+  }
+});
+
 test("buildRendererConfig: dev:true turns openConsoleOnError on", async () => {
   const { buildRendererConfig } = await import("../../src/adapters/platform.ts");
   const cfg = buildRendererConfig({ dev: true });

@@ -12,7 +12,7 @@ export type SafetyPreset =
 /** The presets a user can actually select — every {@link SafetyPreset} but `"custom"`. */
 export type CanonicalSafetyPreset = Exclude<SafetyPreset, "custom">;
 
-/** The effective safety/memory/planning policy Run Controls displays and edits. */
+/** Effective safety, memory and planning state consumed by the shell and Run Controls. */
 export interface RunControlsState {
   preset: SafetyPreset;
   sandboxEnabled: boolean;
@@ -27,11 +27,11 @@ export interface RunControlsState {
 /** Canonical memory tri-state; see {@link memoryState} for how it's derived. */
 export type MemoryState = "off" | "inert" | "on";
 
-/** Planning mode as the UI names it. Mirrors the settings block's `mode`. */
+/** Effective planning mode consumed by `/plan`, Doctor and the run host. */
 export type PlanMode = "off" | "on" | "review";
 
 /** What happens to a plan record once its run finishes cleanly. */
-export type PlanHistory = "keep" | "discard";
+export type PlanRetention = "keep" | "discard";
 
 /**
  * The effective planning policy for the next run.
@@ -44,14 +44,14 @@ export type PlanHistory = "keep" | "discard";
  */
 export interface PlansState {
   mode: PlanMode;
-  history: PlanHistory;
+  retention: PlanRetention;
   configured: boolean;
 }
 
 /** Plan retention named by its consequence, so every surface that shows it —
  * Run Controls, the Plan overlay, the doctor — uses one vocabulary. */
-export function planHistoryLabel(history: PlanHistory): string {
-  return history === "keep" ? "keep" : "delete after success";
+export function planRetentionLabel(retention: PlanRetention): string {
+  return retention === "keep" ? "keep" : "delete after success";
 }
 
 /** The single "what will planning do on the next run" rule — Run Controls, the
@@ -59,10 +59,10 @@ export function planHistoryLabel(history: PlanHistory): string {
 export function plansState(settings: SettingsFile): PlansState {
   const block = settings.plans;
   if (block === undefined)
-    return { mode: PLANS_DEFAULTS.mode, history: PLANS_DEFAULTS.retention, configured: false };
+    return { mode: PLANS_DEFAULTS.mode, retention: PLANS_DEFAULTS.retention, configured: false };
   return {
     mode: block.mode ?? PLANS_DEFAULTS.mode,
-    history: block.retention ?? PLANS_DEFAULTS.retention,
+    retention: block.retention ?? PLANS_DEFAULTS.retention,
     configured: true,
   };
 }
@@ -204,23 +204,14 @@ export function memoryDescription(state: RunControlsState): string {
       : "Disabled for this session; runs neither read nor update memory.";
 }
 
-/** The consequence of the current planning policy, in the user's terms. */
-export function plansDescription(state: RunControlsState): string[] {
-  const { mode, history } = state.plans;
-  const lines = [
-    mode === "off"
-      ? "The lead gets no plan tools and works without a written plan."
-      : mode === "review"
-        ? "The lead may explore first, but waits for your approval before executing its plan."
-        : "The lead writes a plan and executes it without waiting for you.",
-  ];
-  if (mode !== "off")
-    lines.push(
-      history === "keep"
-        ? "Plans stay available in the selected provider's history."
-        : "Plans are deleted from the selected provider once the run's result is recorded; a crash always leaves them.",
-    );
-  return lines;
+/** Plain-language consequences of the completed-plan retention default. */
+export function planRetentionDescription(retention: PlanRetention): string[] {
+  return retention === "keep"
+    ? ["Completed plans remain available in the selected provider."]
+    : [
+        "Successful runs delete their plan after the result is recorded.",
+        "Failed, cancelled or interrupted runs keep their plan.",
+      ];
 }
 
 /** The canonical `guard`/`sandbox` settings shape for a given named preset. */

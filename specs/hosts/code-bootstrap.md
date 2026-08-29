@@ -176,7 +176,7 @@ do not implement runtime worktree switching:
 | `run` | `AppRunControls` (`packages/code/src/views/App.tsx:111-139`) | `packages/code/src/index.tsx:1129-1150` | submit/compact/context inspection/cancel/local-command controls; `switching` is always false |
 | `session` | `AppSessionControls` (`packages/code/src/views/App.tsx:142-153`) | `packages/code/src/index.tsx:1151-1175` | current-workspace list/catalog/resume/delete/clear/export/status/cost |
 | `fleet` | `AppFleet` (`packages/code/src/views/App.tsx:156-171`) | `packages/code/src/index.tsx:1182-1213` | agents/settings/guard/memory/keys/catalog and refresh operations |
-| `backend` | `AppBackend` (`packages/code/src/views/App.tsx:174-187`) | `packages/code/src/index.tsx:1214-1243` | client/plans/models/provider auth/workflows/plugins/tasks/storage/run lookup/reconnect |
+| `backend` | `AppBackend` (`packages/code/src/views/App.tsx`, `AppBackend`) | `packages/code/src/index.tsx` (`backendConn`) | client/current-plan reader/models/provider auth/workflows/plugins/tasks/storage/run lookup/reconnect |
 
 ### 2.6 Environment variables read by this subsystem
 
@@ -812,23 +812,23 @@ The two-route overlay rule is stated at `packages/code/src/views/App.tsx:194-199
 card mounted as a sibling after the region "so the transcript keeps rendering behind it — moving it
 into the region's switch would black out everything the scrim exists to show through."
 
-**`OverlayRegion` itself** (`packages/code/src/views/app/OverlayRegion.tsx:52-77`) is a Solid `<Switch fallback={props.fallback}>`
-over `props.host.overlay()` with three `<Match>` arms: `"view"` (only when `props.host.views().length
-> 0`) renders every mounted view frame inside a `<For>`, each wrapped in a `box` whose `visible` tracks
-`frame.host.active()`; `"diff"` renders `DiffViewer`; `"plan"` renders `PlanOverlay`, wired to
-`props.activity.plan`, `props.plans`, `props.notify`, `props.planOrigin` and an `onClose` that calls
+**`OverlayRegion` itself** (`packages/code/src/views/app/OverlayRegion.tsx`, `OverlayRegion`) keeps
+the fallback shell mounted but hidden for full-region `diff`/`plan` surfaces, renders each mounted
+configuration frame inside a retained `SurfaceBoundary`, and gives Diff and Plan their own lazy
+retained boundaries. `PlanOverlay` is wired only to `props.activity.plan`, the optional
+`Pick<PlansService, "read">`, the active accessor and an `onClose` that calls
 `props.host.dismissTop()`. Its own TSDoc names the omission: "A picker kind such as `agentPicker` is
-deliberately not here… so it reaches this switch as the fallback rather than as a `Match`. Anything
-else unrecognized falls back the same way, which is what keeps an unknown kind from blanking the
-screen." (`:41-50`). `ActivityDetail` follows this floating route through App's `activityDetail`
+deliberately not here… so it reaches this switch as the fallback rather than as a full-region
+branch. Anything else unrecognized falls back the same way, which keeps an unknown kind from
+blanking the screen." `ActivityDetail` follows this floating route through App's `activityDetail`
 transient overlay kind: opening a bounded activity preview stores the full content, blocks transcript
 input behind the scrim. Escape restores it; Ctrl+C remains the global cancel-or-quit route. Production: `openActivityDetail` and the
 `activityDetail` render branch in `packages/code/src/views/App.tsx`; pinned by
 `packages/code/tests/integration/app-shell-render.test.tsx` and
-`activity-detail-render.test.tsx`. `OverlayRegionProps.plans` is `PlansService | undefined`, and its own TSDoc gives
-the reason: "Absent until a backend supplies one; `PlanOverlay` declares the same prop optional and
-opens on its task list rather than its history when it is missing, so requiring it here only made this
-component stricter than the one it forwards to." (`:30-35`).
+`activity-detail-render.test.tsx`. `OverlayRegionProps.plans` is
+`Pick<PlansService, "read"> | undefined`: the TUI can read the current plan document but has no
+protocol surface for history listing, per-plan retention mutation or deletion. Pinned by
+`packages/code/tests/integration/overlay-region-render.test.tsx` (live-plan and no-history-read cases).
 
 Each `"view"` frame is painted through the module-level `renderMountedView` (`:12-21`), which wraps
 `frame.factory(frame.host)` in Solid's `untrack` and records `diagnosticCount("overlay.view.factory",
@@ -849,7 +849,8 @@ mount and one initial list").
 load-bearing: `packages/code/tests/integration/page-frame-clip.test.tsx:14-42` reproduces the two-box shape at 80×5
 with an unwrapped `<Splash>` child and shows that `overflow="visible"` lets the absolutely-positioned,
 vertically-centred wordmark paint into the title row while `"hidden"` does not. Its three consumers
-are `DiffViewer` (`packages/code/src/views/overlays/DiffViewer.tsx:43`), `PlanOverlay` (`packages/code/src/views/overlays/PlanOverlay.tsx:521`)
+are `DiffViewer` (`packages/code/src/views/overlays/DiffViewer.tsx`, `DiffViewer`), `PlanOverlay`
+(`packages/code/src/views/overlays/PlanOverlay.tsx`, `PlanOverlay`)
 and `Help` (`packages/code/src/views/overlays/Help.tsx:193`).
 
 `Splash` (`packages/code/src/views/Splash.tsx`, `Splash`) is absolutely positioned with `right = rightInset?.() ?? 0` so a
@@ -1352,7 +1353,7 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
 | `views/app/TranscriptRegion.tsx` | `Splash` | `packages/code/src/views/app/TranscriptRegion.tsx:16` |
 | `views/onboarding/{SetupView,RecoveryView}.tsx` | `BrandBanner`; Setup also uses `firstRunSplashFits` | the corresponding imports in each onboarding view |
 | `views/config/CatalogPicker.tsx` | `BANNER`, `BrandBanner`, `firstRunSplashFits` | the first-run picker intro |
-| `views/overlays/{DiffViewer,PlanOverlay,Help}.tsx` | `PageFrame` | `packages/code/src/views/overlays/DiffViewer.tsx:9`, `packages/code/src/views/overlays/PlanOverlay.tsx:25`, `packages/code/src/views/overlays/Help.tsx:12` |
+| `views/overlays/{DiffViewer,PlanOverlay,Help}.tsx` | `PageFrame` | corresponding `PageFrame` imports |
 | `packages/code/tooling/artifact/build.ts` (via the `build` script) | `src/index.tsx` as the bundle entry | `packages/code/package.json:18` |
 
 ### 7.4 What forces the direction

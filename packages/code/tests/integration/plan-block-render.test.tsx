@@ -70,7 +70,7 @@ test("a retention discard is historical rather than an unavailable plan", async 
   );
   expect(out).toContain("1/1 completed");
   expect(out).toContain("History discarded");
-  expect(out).toContain("Plan history was deleted after success, as configured");
+  expect(out).toContain("Plan was deleted after success, as configured");
   expect(out).not.toContain("unavailable");
   expect(out).not.toContain("restore it");
 });

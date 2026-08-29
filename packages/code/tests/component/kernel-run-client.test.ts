@@ -745,10 +745,7 @@ test("every non-run control-plane method stays a thin pass-through to its kernel
   await c.connect();
 
   await Promise.all([
-    c.plans.list(),
     c.plans.read("plan"),
-    c.plans.setRetention("plan", "keep"),
-    c.plans.delete("plan"),
     c.workflows.get("workflow"),
     c.workflows.list(),
     c.workflows.delete("workflow"),
@@ -796,7 +793,8 @@ test("every non-run control-plane method stays a thin pass-through to its kernel
   ]);
   expect(c.project).toBe(kernel.project);
   expect(c.workspace).toBe(kernel.workspace);
-  expect(calls).toHaveLength(48);
+  expect(Object.keys(c.plans)).toEqual(["read"]);
+  expect(calls).toHaveLength(45);
   await c.dispose();
 });
 

@@ -309,7 +309,7 @@ function PlanSummary(props: {
         paddingTop={1}
       >
         {expectedDiscard() ? (
-          "Plan history deleted after success"
+          "Plan deleted after success"
         ) : props.plan().removed ? (
           "Restore the plan file or create a replacement"
         ) : (

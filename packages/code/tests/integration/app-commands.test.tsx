@@ -744,37 +744,41 @@ test("sandbox inspection is deferred until an explicit Doctor recheck", async ()
   mounted.dispose();
 });
 
-test("planning mode commands switch workspace policy without resetting plan retention", async () => {
+test("/plan toggles workspace review without resetting the rest of the plan block", async () => {
   const writes: { scope: string; patch: unknown }[] = [];
+  let mode: "off" | "on" | "review" = "off";
   const settings: SettingsAdapter = {
     ...fakeSettings(),
     read: (scope) =>
       scope === "workspace"
         ? ({
             plans: {
-              mode: "off",
+              mode,
               retention: "discard",
               pending_task_nudges: 7,
+              provider: { kind: "plugin", plugin: "linear" },
             },
           } as never)
         : undefined,
     effective: () =>
       ({
         plans: {
-          mode: "off",
+          mode,
           retention: "discard",
           pending_task_nudges: 7,
+          provider: { kind: "plugin", plugin: "linear" },
         },
       }) as never,
     write: async (scope, patch) => {
       writes.push({ scope, patch });
+      mode = (patch.plans?.mode ?? mode) as typeof mode;
     },
   };
   const { commands, calls, dispose } = harness({ settings });
 
-  commands.runCommand("plan.enableReview");
+  commands.runCommand("plan.toggleReview");
   await waitUntil(() =>
-    calls.includes("notify:planning: approval required (workspace settings):success"),
+    calls.includes("notify:plan review: required (workspace settings):success"),
   );
 
   expect(writes.filter((write) => write.scope === "workspace")).toEqual([
@@ -785,16 +789,15 @@ test("planning mode commands switch workspace policy without resetting plan rete
           mode: "review",
           retention: "discard",
           pending_task_nudges: 7,
+          provider: { kind: "plugin", plugin: "linear" },
         },
       },
     },
   ]);
-  expect(calls).toContain("notify:planning: approval required (workspace settings):success");
+  expect(calls).toContain("notify:plan review: required (workspace settings):success");
 
-  commands.runCommand("plan.enableDefault");
-  await waitUntil(() =>
-    calls.includes("notify:planning: default mode restored (workspace settings):success"),
-  );
+  commands.runCommand("plan.toggleReview");
+  await waitUntil(() => calls.includes("notify:plan review: normal (workspace settings):success"));
 
   expect(writes.filter((write) => write.scope === "workspace").at(-1)).toEqual({
     scope: "workspace",
@@ -803,10 +806,53 @@ test("planning mode commands switch workspace policy without resetting plan rete
         mode: "on",
         retention: "discard",
         pending_task_nudges: 7,
+        provider: { kind: "plugin", plugin: "linear" },
       },
     },
   });
-  expect(calls).toContain("notify:planning: default mode restored (workspace settings):success");
+  expect(calls).toContain("notify:plan review: normal (workspace settings):success");
+  dispose();
+});
+
+test("/plan serializes repeated input and applies every toggle", async () => {
+  let mode: "on" | "review" = "on";
+  const releases: Array<() => void> = [];
+  const planWrites: Array<{ plans?: { mode?: string } }> = [];
+  const settings: SettingsAdapter = {
+    ...fakeSettings(),
+    effective: () => ({ plans: { mode, retention: "keep" } }) as never,
+    write: (_scope, patch) => {
+      if (patch.plans === undefined) return Promise.resolve();
+      planWrites.push(patch);
+      return new Promise<void>((resolve) => {
+        releases.push(() => {
+          mode = patch.plans?.mode === "review" ? "review" : "on";
+          resolve();
+        });
+      });
+    },
+  };
+  const { commands, calls, dispose } = harness({ settings });
+  commands.runCommand("plan.toggleReview");
+  await waitUntil(() => planWrites.length === 1);
+  commands.runCommand("plan.toggleReview");
+  expect(planWrites).toHaveLength(1);
+  releases[0]!();
+  await waitUntil(() =>
+    calls.includes("notify:plan review: required (workspace settings):success"),
+  );
+  await waitUntil(() => planWrites.length === 2);
+  expect(planWrites[1]?.plans?.mode).toBe("on");
+  releases[1]!();
+  await waitUntil(() => calls.includes("notify:plan review: normal (workspace settings):success"));
+  dispose();
+});
+
+test("/plan reports that an active run will pick up review only on the next run", async () => {
+  const { commands, calls, dispose } = harness({ runActive: () => true });
+  commands.runCommand("plan.toggleReview");
+  await waitUntil(() => calls.some((call) => call.includes("plan review: required")));
+  expect(calls.some((call) => call.includes("applies to the next run"))).toBe(true);
   dispose();
 });
 
@@ -818,10 +864,7 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
     "agent.picker": ["/agent"],
     "safety.picker": [],
     "transcript.diff": ["/diff"],
-    "plan.enableReview": [],
-    "planning.configure": ["/planning"],
-    "plans.open": ["/plans"],
-    "plan.enableDefault": [],
+    "plan.toggleReview": ["/plan"],
     "catalog.refresh": ["/refresh"],
     "backend.reconnect": ["/reconnect"],
     "doctor.open": ["/doctor"],
@@ -836,6 +879,12 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
   for (const [name, slashes] of Object.entries(expected)) {
     expect([name, byName.get(name)?.slashes]).toEqual([name, slashes]);
   }
+  expect(byName.has("plans.open")).toBe(false);
+  expect(byName.has("planning.configure")).toBe(false);
+  expect(byName.has("plan.enableReview")).toBe(false);
+  expect(byName.has("plan.enableDefault")).toBe(false);
+  expect(commands.entries().flatMap((entry) => entry.slashes)).not.toContain("/plans");
+  expect(commands.entries().flatMap((entry) => entry.slashes)).not.toContain("/planning");
   dispose();
 });
 
@@ -910,10 +959,7 @@ const DISPOSITION: [string, { surface: string; group: string; parent?: string }]
   ["settings.open", { surface: "slash", group: "navigate" }],
   ["extensions.open", { surface: "slash", group: "navigate" }],
   ["transcript.diff", { surface: "slash", group: "navigate", parent: "inspect" }],
-  ["plan.enableReview", { surface: "internal", group: "actions" }],
-  ["planning.configure", { surface: "slash", group: "actions" }],
-  ["plan.enableDefault", { surface: "internal", group: "actions" }],
-  ["plans.open", { surface: "slash", group: "navigate", parent: "inspect" }],
+  ["plan.toggleReview", { surface: "slash", group: "actions" }],
   ["plan.open", { surface: "internal", group: "navigate" }],
   ["app.quit", { surface: "slash", group: "actions" }],
   ["catalog.refresh", { surface: "slash", group: "actions", parent: "inspect" }],
@@ -956,7 +1002,6 @@ test("thin action commands dispatch through their injected application effects",
     ["safety.picker", "safety-picker"],
     ["guard.cycle", "guard-cycle"],
     ["transcript.diff", "diff"],
-    ["plans.open", "plan"],
     ["plan.open", "plan"],
     ["app.quit", "quit"],
   ] as const;

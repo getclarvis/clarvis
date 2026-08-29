@@ -712,7 +712,7 @@ preview of the delegation brief with a click affordance for the full Markdown de
 when collapsed or blank; `plan` (`:768`–`:786`) always shows a header
 line (`plan <title>` plus `planMeta`, `:770`–`:773`), conditionally shows a `  review: <verdict>` line
 when `planReview` is set, and, only when not collapsed, chooses among three guidance sentences:
-`planDiscarded` says `"Plan history was deleted after success, as configured"`; another
+`planDiscarded` says `"Plan was deleted after success, as configured"`; another
 `planRemoved` says `"The backing record is unavailable; restore it or create a replacement plan"`;
 an available plan says `"Open plan for the full objective, task list and review history"`
 (`packages/code/src/views/blocks.tsx:805-823`). Thus retention cleanup remains neutral while an
@@ -1056,7 +1056,7 @@ the one line `No run activity to inspect` (`:405`).
 accent title, a lifecycle/progress line in its semantic status colour, the windowed task list, a
 distinct `Last result` section, and a footer hint. For an expected discard,
 the muted meta is `Completed · C/N completed · history discarded` and the muted footer is
-`Plan history deleted after success`; only another removed plan gets `Unavailable · plan file
+`Plan deleted after success`; only another removed plan gets `Unavailable · plan file
 unavailable` plus the red `Restore the plan file or create a replacement` recovery action
 (`packages/code/src/views/Sidebar.tsx:128-166,216-230`). `planProgress` otherwise reports
 `N task(s) proposed` while `awaiting_approval`, and `C/N completed`. Each task row takes its glyph and colour

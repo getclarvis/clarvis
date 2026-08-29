@@ -94,8 +94,8 @@ export interface KernelRunClient {
   context(executionId: string, targetWindowTokens?: number): ReturnType<RunService["context"]>;
   getRun(executionId: string): Promise<RunDetail | null>;
   deleteRun(executionId: string): Promise<boolean>;
-  /** History from the workspace's selected plan provider. */
-  readonly plans: PlansService;
+  /** Current-plan document reader; retained-plan administration is not a TUI surface. */
+  readonly plans: Pick<PlansService, "read">;
   /** The workspace's user-invocable skills (kernel.skills), for slash-commands. */
   readonly skills: SkillsService;
   /** Workspace configuration (settings + agents + context). */
@@ -444,11 +444,8 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     }
   }
 
-  const plans: PlansService = {
-    list: (input) => requireKernel().plans.list(input),
+  const plans: Pick<PlansService, "read"> = {
     read: (id) => requireKernel().plans.read(id),
-    setRetention: (id, retention) => requireKernel().plans.setRetention(id, retention),
-    delete: (id) => requireKernel().plans.delete(id),
   };
   const workflows: WorkflowsService = {
     get: (id) => requireKernel().workflows.get(id),

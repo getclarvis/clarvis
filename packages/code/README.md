@@ -336,13 +336,20 @@ page. The manager and legacy records without a persisted task do not advertise o
 When a current plan is available, `Ctrl+P` is the portable route to its full detail and `Alt+P`
 remains an enhanced alternative. Retained completed, failed and canceled plans stay reachable as
 the latest plan; a removed plan advertises neither shortcut. A directly opened detail returns to
-the run when the same plan shortcut is pressed again or on Escape; a detail entered from `/plans`
-returns to history first. Ctrl+C leaves the plan screen open and cancels the active run (or enters
-quit when no run is active). The sidebar separates the plan title, lifecycle, task states, active
-task and last result with explicit labels and an active-row surface, so progress is not encoded by
-colour alone. Planning policy uses a separate,
-hierarchical command: `/planning/review` requires approval and `/planning/normal` restores normal
-execution for the next run. Execution memory has no global quick toggle:
+the run when the same plan shortcut is pressed again or on Escape. Ctrl+C leaves the plan screen
+open and cancels the active run (or enters quit when no run is active). The sidebar separates the
+plan title, lifecycle, task states, active task and last result with explicit labels and an
+active-row surface, so progress is not encoded by colour alone. The TUI has no retained-plan
+catalogue, filters, per-plan retention mutation or deletion; its backend seam reads only the live
+plan's document.
+
+`/plan` toggles this workspace's next-run policy between normal planning and required human review:
+`review` becomes `on`, while `on` or `off` becomes `review`. Repeated invocations serialize, so a
+second `/plan` restores normal planning even when entered while the first write is settling. Run
+controls has no planning-mode selector; its only plan row chooses whether completed plans are kept
+or deleted after a successful result. Registered Clarvis commands own their slash tokens, so an
+agent-backed skill named `plan` cannot shadow this built-in action.
+`/plans` and `/planning` are not commands. Execution memory has no global quick toggle:
 the next-run/session choice belongs to Run controls, while persistent configuration belongs to
 Settings > Memory.
 

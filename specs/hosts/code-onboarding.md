@@ -174,7 +174,7 @@ next two steps.
 
 `RecoveryView` (`packages/code/src/views/onboarding/RecoveryView.tsx:19-66`) presents one blocking
 `StartupIssue { label; detail; hint? }` (`:12-16`) — always the *first* blocking gate, computed by its
-caller (`recoveryIssue()`, `packages/code/src/app/commands.tsx:1169-1177`, outside this document). Its `deps`
+caller (`recoveryIssue` in `packages/code/src/app/commands.tsx`, outside this document). Its `deps`
 add `ready(): boolean` and `onReady(): void` to the same shape of callbacks: a `createEffect` (`:31-33`)
 calls `deps.onReady()` via `queueMicrotask` the moment `deps.ready()` turns true, which is how the screen
 closes itself as soon as the last blocking gate clears without any user action. Its `LevelSpec` (`:33-47`)
@@ -443,10 +443,11 @@ gate's result.
 - **`workspace_trust`** is keyed on the trust verdict (`inert`/`trusted`/other), never solely on
   `withheldWorkspaceFields()`, because an untrusted workspace whose only executable surface is agent
   `.md` files would otherwise report "nothing withheld" (`packages/code/src/onboarding/doctor.ts:300-324`).
-- **`memory`** reports `warn` ("not configured") when its block is absent from `effective()`
-  (`packages/code/src/onboarding/doctor.ts:438-443`); **`plans`** instead reports `pass` ("`<policy>` (defaults)") when unconfigured
-  (`packages/code/src/onboarding/doctor.ts:466-471`) — only memory's absence is flagged as a warning, plans treats its defaults as a
-  healthy state. Neither ever blocks boot regardless, since both are `ui` severity
+- **`memory`** reports `warn` ("not configured") when its block is absent from `effective()`;
+  **`plans`** instead reports `pass` ("`<policy>` (defaults)") when unconfigured
+  (`packages/code/src/onboarding/doctor.ts`, `memory` and `plans` gate definitions) — only memory's absence is flagged as a warning, plans treats its defaults as a
+  healthy state. Its hint routes review changes to `/plan` and retention changes to Run Controls;
+  Run Controls no longer edits planning mode. Neither gate ever blocks boot regardless, since both are `ui` severity
   (`packages/code/tests/integration/doctor.test.ts:649-673` for memory, `:675-699` for plans — the latter asserting
   `results.plans.status` is `"pass"`, not `"warn"`, on an unconfigured block).
 - **`credentials`** (soft severity): subscription-backed `openai-codex` and `xai-grok` providers are
@@ -468,12 +469,13 @@ gate's result.
 
 ### 4.4 Seeding sequence at app mount
 
-On mount (`packages/code/src/app/commands.tsx:1337-1375`, outside this document's owned file set but the call site of every
+On mount (`packages/code/src/app/commands.tsx`, `registerAppCommands`'s `seed_plans_settings`,
+`seed_memory_settings` and `seed_default_allowlist` observed tasks; outside this document's owned file set but the call site of every
 seeder here), three seeders run unconditionally and idempotently, each `.then()`-notifying the user only
 on a real write and calling `recheck()` to re-run the gate ladder:
 
-1. `seedPlansBlock` → on success, notify `planning: on · keep plans (<scope> settings) — change it in
-   Run controls`.
+1. `seedPlansBlock` → on success, notify `planning: on · keep plans (<scope> settings) — use
+   /plan for review and Run controls for retention`.
 2. `seedMemoryBlock` → on success, also calls `deps.memoryMode.refresh()` then `.setMode("on")` before
    notifying — the memory-mode store freezes its signal from `configured()` at construction
    (`packages/code/src/onboarding/seed-memory.ts:34-38`), so a mid-session seed must force both calls or the session keeps asking for
@@ -481,8 +483,8 @@ on a real write and calling `recheck()` to re-run the gate ladder:
 3. `seedDefaultAllowlist` → on success, notify the count of commands seeded.
 
 Only after those three (fire-and-forget) is `startupRoute` consulted to decide whether to open
-`setup.open` or `recovery.open` (`packages/code/src/app/commands.tsx:1379-1383`). The first-run **wizard** path
-(`prepareSetup`, `packages/code/src/app/commands.tsx:1067-1110`) calls the same three seeders synchronously
+`setup.open` or `recovery.open` (`packages/code/src/app/commands.tsx`, `startupRoute`). The first-run **wizard** path
+(`prepareSetup` in `packages/code/src/app/commands.tsx`) calls the same three seeders synchronously
 (`seedSetupDefaults`) before refreshing the live agent catalogue and setting the default entry agent.
 It performs no workflow filesystem writes.
 
@@ -627,8 +629,8 @@ alone observes. `SetupView` has no auto-close — `finish` fires only from the u
 its `createEffect` (`packages/code/src/views/onboarding/RecoveryView.tsx:31-33`) re-runs on every change to
 `deps.ready()`, and the instant it reads `true` it schedules `deps.onReady()` on a microtask rather than
 calling it synchronously inside the effect. `commands.tsx` wires `ready` to `bootGate(report()) ===
-"shell"` and `onReady` to `host.close()` (`packages/code/src/app/commands.tsx:1231-1232`), so a repair
-that clears every blocking gate (e.g. `repairStartupSettings`'s `recheck()`, `:1206`) dismisses the
+"shell"` and `onReady` to `host.close()` (`packages/code/src/app/commands.tsx`, `recovery.open`), so a repair
+that clears every blocking gate (e.g. `repairStartupSettings`'s `recheck()`) dismisses the
 recovery screen with no further keypress — pinned by
 `packages/code/tests/integration/onboarding-render.test.tsx:116-119` ("recovery closes itself once
 `ready()` turns true").
@@ -774,7 +776,7 @@ recovery screen with no further keypress — pinned by
   (`packages/code/src/onboarding/seed-default-allowlist.ts:1-4`), `resolveShell`/`shellArgs` (Windows clipboard script construction,
   `packages/code/src/adapters/platform.ts:4`), `killTree`/`ownProcessGroup` (`packages/code/src/adapters/clipboard-process.ts:2`).
 - `../adapters/execution-safety.ts` (`deriveSafetyPreset`, `memoryState`, `modelResolves`,
-  `planHistoryLabel`, `plansState`) and `../adapters/agent-files.ts` (`agentReadiness`) — doctor's gate
+  `planRetentionLabel`, `plansState`) and `../adapters/agent-files.ts` (`agentReadiness`) — doctor's gate
   logic reads these projections but does not own their semantics (`packages/code/src/onboarding/doctor.ts:6-13`) — delegated to
   sibling documents (memory/plan capability semantics; agent readiness/grants).
 - `@opentui/core` — `CliRenderer`/`CliRendererConfig` types, consumed structurally by `platform.ts`.
@@ -782,7 +784,7 @@ recovery screen with no further keypress — pinned by
 **What forces the direction:**
 
 - `doctor.ts` imports only *interfaces* it is handed (`SettingsAdapter`, `CodeConfigStore`, `AgentFile`,
-  `EnvView`) — `DoctorCtx` is built by the caller (`packages/code/src/app/commands.tsx:955-964`, outside this document), so
+  `EnvView`) — `DoctorCtx` is built by the caller (`doctorCtx` in `packages/code/src/app/commands.tsx`, outside this document), so
   `doctor.ts` cannot construct its own dependencies and is a pure function of whatever `ctx` it is given;
   this is what lets `tests/integration/doctor.test.ts` build a `DoctorCtx` entirely from fakes/real
   adapters without touching the app shell.
@@ -801,7 +803,7 @@ recovery screen with no further keypress — pinned by
 
 - `packages/code/src/index.tsx` and `packages/code/src/app/commands.tsx` (outside this document's file set)
   are the sole call sites of every symbol here: `runGates`/`bootGate`/`startupRoute` drive boot routing
-  (`packages/code/src/app/commands.tsx:978`, `:1088`, `:1207`, `:1374`), and the three seeders are called
+  (`packages/code/src/app/commands.tsx`, `report`, `prepareSetup`, `recovery.open`, startup routing), and the three seeders are called
   both at `onMount` and from the guided-setup `prepareSetup`, while workflows require no onboarding
   call. `createDebugSessionController`/`resolveDebugRequest`/`installDiagnosticSession` drive the
   `--debug` lifecycle (`packages/code/src/index.tsx`, `runApp`, `openHeadlessDiagnostics`, and `main`),

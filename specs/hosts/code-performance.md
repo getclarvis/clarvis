@@ -272,11 +272,11 @@ onto these families without measurement:
   layout and painting; configuration parents deliberately stay mounted only while their frame
   remains in the stack (`packages/code/src/views/app/OverlayRegion.tsx`, `OverlayRegion`,
   `packages/code/src/views/overlay-host.ts`, `mountView`, `popView`).
-- full Help, Diff and Plan pages use `PageFrame`. Help and Plan currently construct all projected
-  rows, while Diff may construct a large tool renderer
-  (`packages/code/src/views/overlays/Help.tsx:193`,
-  `packages/code/src/views/overlays/PlanOverlay.tsx:521-570`,
-  `packages/code/src/views/overlays/DiffViewer.tsx:43-81`).
+- full Help, Diff and Plan pages use `PageFrame`. Help and the current-plan fallback currently
+  construct all projected rows, while a loaded current-plan document and Diff may construct a large
+  Markdown or tool renderer (`packages/code/src/views/overlays/Help.tsx:193`,
+  `packages/code/src/views/overlays/PlanOverlay.tsx` (`tasks`, `Prose`),
+  `packages/code/src/views/overlays/DiffViewer.tsx:43-81`). Plan has no history catalogue to window.
 - `AutocompletePopup` is lazily retained by `InputDock`. It windows to at most ten rows and rewrites
   the same container, headers, highlighted spans and row slots after the first open
   (`packages/code/src/views/InputDock.tsx`, `SurfaceBoundary`,
@@ -894,7 +894,7 @@ Run every row below independently so one surface cannot inherit another's retain
 | `ActivityDetail` | short plain text; long Markdown with code blocks and lists |
 | `WorktreeExitPrompt` | cancel path, using an isolated disposable clean-worktree fixture |
 | autocomplete | slash and workspace-file triggers; zero, one and ten visible rows; fixed non-empty draft so Splash does not churn |
-| full-region pages | full Help; empty and populated Diff; empty, active and history-heavy Plan; root and nested Settings views |
+| full-region pages | full Help; empty and populated Diff; empty, task-heavy and Markdown-heavy current Plan; root and nested Settings views |
 | shell overlays | activity drawer; Splash visibility; terminal-floor resize transition; editor expansion control |
 
 The harness becomes the regression gate; one-off `ps` snapshots remain diagnostic evidence only.
@@ -934,7 +934,8 @@ outer card is insufficient if variable children are still destroyed on every cyc
   PTY result is not enough by itself.
 - Measure `PageFrame` and configuration `ViewFrame` separately. If flat, add the soak regression and
   do not complicate their ownership. If they retain native memory, keep one full-region frame rooted
-  and swap bounded content; window Help/Plan history and bound large Diff/Markdown projections.
+  and swap bounded content; window Help rows and bound current-plan task/Markdown and large Diff
+  projections.
 - Preserve the existing configuration stack rule: inactive parents remain mounted, a popped frame
   disposes once, and closing the root disposes the complete stack. Add exact mount/factory/dispose
   counter assertions around async updates.

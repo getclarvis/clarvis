@@ -898,9 +898,9 @@ limit, the effective cell shows `env.tokenDefault`; the kernel's real fallback i
 `createMcpCapabilities(deps)` (`packages/code/src/adapters/mcp-capabilities-bridge.ts:87`) holds one
 Solid signal, `nodes`, and two mutable maps: `registered` (per slash-command key → `{fingerprint,
 off}`) and `skillAgents` (per bare skill name → the agent it runs on, `:88`–`:90`). It is constructed
-once by `packages/code/src/app/commands.tsx:1431-1437` and fed to both `McpBrowser` (its
-`nodes`/`refresh` at `:1453-1461`) and the autocomplete layer's `skillAgent` lookup
-(`:1385`, consumed at `packages/code/src/views/input/autocomplete.ts:126`).
+once by `packages/code/src/app/commands.tsx` (`mcpCaps`) and fed to both `McpBrowser` (its
+`nodes`/`refresh` in the `mcp.browse` registration) and the autocomplete layer's `skillAgent`
+lookup (consumed at `packages/code/src/views/input/autocomplete.ts:126`).
 
 **`refreshOnce()`** (`:95`) reads `deps.client.connectionStatus()`; only when it is `"connected"` does
 it `Promise.all` the client's `listTools()`/`listPrompts()`, each `.catch`-guarded by
@@ -1478,7 +1478,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 - `adapters/mcp-capabilities-bridge.ts` imports `classifyCapability`/`reconcile` and their supporting
   types from `adapters/mcp-capabilities.ts` (`packages/code/src/adapters/mcp-capabilities-bridge.ts:5`–`:13`); the
   reverse never happens, so the pure reconciler has no knowledge of the live bridge built over it.
-  `McpBrowser` consumes only the bridge's `McpCapabilities.nodes`/`refresh` (`packages/code/src/app/commands.tsx:1453-1461`), never
+  `McpBrowser` consumes only the bridge's `McpCapabilities.nodes`/`refresh` (`packages/code/src/app/commands.tsx`, `mcp.browse`), never
   `reconcile` directly, and `McpClientCaps` is implemented in production by
   `adapters/kernel-capabilities-client.ts:13`; `index.tsx:1217` constructs it as `capabilities`, whose
   value `AppBackend.client`'s getter re-exposes (`views/App.tsx:166`, `index.tsx:1601`–`:1603`), which
@@ -1647,7 +1647,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 
 12. **`McpEffects.activeProfile` has no reader.** It is declared on the interface
     (`packages/code/src/adapters/mcp-capabilities-bridge.ts:32`) and implemented at the one production
-    construction site (`packages/code/src/app/commands.tsx:1263`, `() => deps.agents.active()`), but a
+    construction site (`packages/code/src/app/commands.tsx`, `mcpEffects.activeProfile`), but a
     grep of `mcp-capabilities-bridge.ts` finds no call to `deps.effects.activeProfile` anywhere in
     `refreshOnce`, `syncPromptCommands` or either registered command handler, and no other module reads
     it off `mcpEffects` either. Whether it is a planned seam or a leftover from an earlier shape of the

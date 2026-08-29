@@ -721,9 +721,9 @@ itself because guard mode is resolved from host settings it never sees"
   (`packages/code/src/views/App.tsx:404`-`:409`, `:345`-`:353`).
 - **Run Controls** writes the block to `settings.json` and *pre-degrades*: choosing `auto` without a
   usable `default_model` persists `"on"` and says so
-  (`packages/code/src/views/config/RunControlsPanel.tsx:211`-`:231`). Its source column reads
+  (`packages/code/src/views/config/RunControlsPanel.tsx`, `applyGuard`). Its source column reads
   `"session"` whenever the session mode differs from the persisted one
-  (`packages/code/src/views/config/RunControlsPanel.tsx:356`-`:358`). Both direct guard-mode changes
+  (`packages/code/src/views/config/RunControlsPanel.tsx`, `guardSource`). Both direct guard-mode changes
   and named safety presets preserve the effective `allowed_commands`/`denied_commands` through
   `guardPolicyForWrite`; a workspace write carries forward a global policy when the workspace has no
   list of its own (`packages/code/src/views/config/RunControlsPanel.tsx`). Pinned by
@@ -1101,7 +1101,7 @@ broken.
 | Host supplies no `resolveGuard` | the run is unguarded — stated as such | `packages/loop/src/runtime/capabilities/tools.ts:76` |
 | Host supplies no audit logger | `NOOP_LOGGER`; rulings still happen, nothing is recorded | `packages/kernel/src/guard/resolver.ts:227`; test `packages/kernel/tests/unit/guard-audit.test.ts:318`-`:324` |
 | `guard-judge.md` unreadable / blank / >1 MiB | silently treated as absent, next scope wins | `packages/code/src/adapters/guard-judge-prompt.ts:56`, `:64`, `:66` |
-| `auto` chosen in Run Controls without a usable model | persisted as `"on"` with a notification | `packages/code/src/views/config/RunControlsPanel.tsx:213`-`:225` |
+| `auto` chosen in Run Controls without a usable model | persisted as `"on"` with a notification | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`) |
 
 An unappealable static `deny` carries the guard's reason. When an `ask` reaches a reviewer but is not
 approved — whether declined, cancelled, timed out or denied by the model — the tool error instead
@@ -1186,7 +1186,7 @@ separately postures guard confirmations per principal
 - **`code.json`'s `guard.mode` is read but never written.** It is **read** as a seed by
   `createGuardModeStore` (`packages/code/src/adapters/code-config.ts:203`,
   `packages/code/src/adapters/guard-mode.ts:44`-`:46`), while Run Controls persists the mode through
-  `deps.settings.write` instead (`packages/code/src/views/config/RunControlsPanel.tsx:214`-`:216`).
+  `deps.settings.write` instead (`packages/code/src/views/config/RunControlsPanel.tsx`, `applyGuard`).
   `GuardModeStore` accordingly exposes only `mode`/`setMode`/`cycle`
   (`packages/code/src/adapters/guard-mode.ts:28`-`:32`) — nothing in it writes the seed back.
   Whether the read-only seed is intentional remains undetermined.

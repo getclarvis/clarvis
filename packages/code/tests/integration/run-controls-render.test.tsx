@@ -437,31 +437,28 @@ test("command review separates an inherited scoped value from a session override
   second.renderer.destroy();
 });
 
-test("changing the planning mode preserves the scope's retention and nudge budget", async () => {
-  const { host, deps, press, notes, writes } = mount({
-    plans: { global: { mode: "on", retention: "discard", pending_task_nudges: 7 } },
+test("Run controls exposes retention without a planning-mode control", async () => {
+  const { host, deps } = mount({
+    plans: { global: { mode: "review", retention: "keep", pending_task_nudges: 3 } },
   });
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
     width: 110,
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 3, ["down"]);
-  expect(writes).toEqual([
-    {
-      scope: "global",
-      patch: { plans: { mode: "review", retention: "discard", pending_task_nudges: 7 } },
-    },
-  ]);
-  expect(notes[0]).toContain("planning: require approval (global settings)");
+  const frame = t.captureCharFrame();
+  expect(frame).toContain("Completed plans  keep plans");
+  expect(frame).not.toContain("Planning mode");
+  expect(frame).not.toContain("Require approval");
+  expect(frame).not.toContain("No planning");
   t.renderer.destroy();
 });
 
-test("changing planning policy preserves plans.provider", async () => {
+test("changing completed-plan retention preserves mode, nudge budget and provider", async () => {
   const { host, deps, press, writes } = mount({
     plans: {
       global: {
-        mode: "on",
+        mode: "review",
         retention: "keep",
         pending_task_nudges: 3,
         provider: { kind: "plugin", plugin: "linear" },
@@ -480,7 +477,7 @@ test("changing planning policy preserves plans.provider", async () => {
       patch: {
         plans: {
           mode: "review",
-          retention: "keep",
+          retention: "discard",
           pending_task_nudges: 3,
           provider: { kind: "plugin", plugin: "linear" },
         },
@@ -490,21 +487,30 @@ test("changing planning policy preserves plans.provider", async () => {
   t.renderer.destroy();
 });
 
-test("retention descriptions are provider-neutral", async () => {
-  const { host, deps } = mount();
+test("retention surfaces are provider-neutral and contain no history-browser vocabulary", async () => {
+  const { host, deps, press } = mount();
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
+    width: 140,
     height: 40,
   });
   await t.renderOnce();
-  const frame = t.captureCharFrame();
-  expect(frame).toContain("Plan history  keep plans");
+  let frame = t.captureCharFrame();
+  expect(frame).toContain("Completed plans  keep plans");
   expect(frame).not.toContain(".clarvis/plans");
   expect(frame).not.toContain("Plan files");
+
+  press("down");
+  press("down");
+  press("down");
+  press("return");
+  await t.renderOnce();
+  frame = t.captureCharFrame();
+  expect(frame).toContain("plans remain available in the selected provider");
+  expect(frame.toLowerCase()).not.toContain("history");
   t.renderer.destroy();
 });
 
-test("changing the plan history preserves the mode", async () => {
+test("changing completed-plan retention preserves the mode", async () => {
   const { host, deps, press, writes, notes } = mount({
     plans: { global: { mode: "review", retention: "keep", pending_task_nudges: 3 } },
   });
@@ -513,39 +519,20 @@ test("changing the plan history preserves the mode", async () => {
     height: 40,
   });
   await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 4, ["down"]);
+  await selectOption(press, () => t.renderOnce(), 3, ["down"]);
   expect(writes).toEqual([
     {
       scope: "global",
       patch: { plans: { mode: "review", retention: "discard", pending_task_nudges: 3 } },
     },
   ]);
-  expect(notes[0]).toContain("plan history: delete after a successful run");
+  expect(notes[0]).toContain("completed plans: delete after a successful run");
   t.renderer.destroy();
 });
 
-test("'No planning' persists mode 'off' rather than deleting the block", async () => {
+test("a workspace retention write carries the effective plan policy into its block", async () => {
   const { host, deps, press, writes } = mount({
-    plans: { global: { mode: "on", retention: "keep", pending_task_nudges: 3 } },
-  });
-  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
-    width: 110,
-    height: 40,
-  });
-  await t.renderOnce();
-  await selectOption(press, () => t.renderOnce(), 3, ["up"]);
-  expect(writes).toEqual([
-    {
-      scope: "global",
-      patch: { plans: { mode: "off", retention: "keep", pending_task_nudges: 3 } },
-    },
-  ]);
-  t.renderer.destroy();
-});
-
-test("a workspace write does not inherit the global retention into the workspace block", async () => {
-  const { host, deps, press, writes } = mount({
-    plans: { global: { mode: "on", retention: "discard", pending_task_nudges: 9 } },
+    plans: { global: { mode: "review", retention: "keep", pending_task_nudges: 9 } },
   });
   const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
     width: 110,
@@ -572,8 +559,8 @@ test("an unconfigured workspace reports the defaults without claiming a scope", 
   await t.renderOnce();
   const out = t.captureCharFrame();
   expect(out).toContain("product default");
-  expect(out).toContain("Plan history  keep plans");
-  expect(out).toContain("Planning mode  on");
+  expect(out).toContain("Completed plans  keep plans");
+  expect(out).not.toContain("Planning mode");
   t.renderer.destroy();
 });
 

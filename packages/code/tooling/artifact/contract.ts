@@ -3,7 +3,7 @@ const PROVIDER_ADAPTER_MARKER = "class AiSdkAdapter";
 
 const LAZY_SURFACE_MARKERS = [
   "no diff in the transcript yet",
-  "no plans yet",
+  "no plan yet",
   "Unverified entitlement",
   "no sessions yet",
   "no workflows yet",

@@ -7,7 +7,7 @@ import {
   deriveSafetyPreset,
   memoryState,
   modelResolves,
-  planHistoryLabel,
+  planRetentionLabel,
   plansState,
 } from "../adapters/execution-safety.ts";
 import { agentReadiness, type AgentFile, type EnvView } from "../adapters/agent-files.ts";
@@ -496,12 +496,12 @@ export const GATES: Gate[] = [
     fix: { kind: "view", view: "controls" },
     check: (ctx) => {
       const state = plansState(ctx.settings.effective());
-      const policy = `${state.mode === "review" ? "approval required" : "on"} ${glyph("separator")} ${planHistoryLabel(state.history)}`;
+      const policy = `${state.mode === "review" ? "approval required" : "on"} ${glyph("separator")} ${planRetentionLabel(state.retention)}`;
       if (!state.configured)
         return {
           status: "pass",
           detail: `${policy} (defaults)`,
-          hint: "open Run controls to set the planning policy",
+          hint: "use /plan to require review; Run controls sets retention",
         };
       if (state.mode === "off") return { status: "pass", detail: "off" };
       return { status: "pass", detail: policy };

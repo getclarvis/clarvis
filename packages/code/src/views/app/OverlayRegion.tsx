@@ -4,7 +4,6 @@ import type { ActivityStore } from "../../adapters/activity-store.ts";
 import type { TranscriptToolNode } from "../../adapters/store.ts";
 import type { Interaction } from "../../keys/interaction.ts";
 import type { MountedView, OverlayHost } from "../overlay-host.ts";
-import type { HintTone } from "../hint.ts";
 import { diagnosticCount } from "../../core/diagnostic-events.ts";
 import { SurfaceBoundary, SurfaceRegion } from "../../ui/patterns/surface-lifecycle.tsx";
 
@@ -36,15 +35,8 @@ export interface OverlayRegionProps {
   interaction: Interaction;
   diffNode: Accessor<TranscriptToolNode | null>;
   activity: ActivityStore;
-  /**
-   * Absent until a backend supplies one; {@link PlanOverlay} declares the same
-   * prop optional and opens on its task list rather than its history when it is
-   * missing, so requiring it here only made this component stricter than the one
-   * it forwards to.
-   */
-  plans?: PlansService;
-  notify: (message: string, tone?: HintTone) => void;
-  planOrigin?: "direct" | "history";
+  /** Absent until a backend supplies the current-plan document reader. */
+  plans?: Pick<PlansService, "read">;
 }
 
 /**
@@ -55,8 +47,8 @@ export interface OverlayRegionProps {
  *   picker paints as an absolutely positioned `FloatFrame` card over its own
  *   dimming scrim, mounted by `App` as a sibling of this region, and the
  *   transcript has to keep rendering behind it — so it reaches this switch as
- *   the fallback rather than as a `Match`. Anything else unrecognized falls back
- *   the same way, which is what keeps an unknown kind from blanking the screen.
+ *   the fallback rather than as a full-region branch. Anything else unrecognized
+ *   falls back the same way, which keeps an unknown kind from blanking the screen.
  */
 export function OverlayRegion(props: OverlayRegionProps): JSX.Element {
   return (
@@ -96,13 +88,11 @@ export function OverlayRegion(props: OverlayRegionProps): JSX.Element {
       <SurfaceBoundary active={() => props.host.overlay() === "plan"} retention="retain-one">
         {(lifecycle) => (
           <SurfaceRegion>
-            <Suspense fallback={<text>Loading plans…</text>}>
+            <Suspense fallback={<text>Loading plan…</text>}>
               <PlanOverlay
                 interaction={props.interaction}
                 plan={() => props.activity.plan}
                 plans={props.plans}
-                notify={props.notify}
-                origin={props.planOrigin}
                 active={lifecycle.active}
                 onClose={() => props.host.dismissTop()}
               />

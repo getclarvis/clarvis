@@ -66,7 +66,7 @@ export function ElicitBlock(props: {
   const accent = (): string =>
     isGuard ? tokens.warn : isPlanReview || isWorkflowReview ? tokens.accent2 : tokens.accent;
 
-  /** `title` + `revision N · M tasks · history: keep`, or null when the plan
+  /** `title` + `revision N · M tasks · retention: keep`, or null when the plan
    * projection has not arrived. */
   const planSummary = createMemo(() => {
     const plan = props.plan?.();
@@ -77,7 +77,7 @@ export function ElicitBlock(props: {
       meta: [
         `revision ${plan.spec_revision}`,
         `${plan.tasks.length} ${plan.tasks.length === 1 ? "task" : "tasks"}`,
-        `history: ${plan.retention === "keep" ? "keep" : "delete after success"}`,
+        `retention: ${plan.retention === "keep" ? "keep" : "delete after success"}`,
       ].join(sep),
     };
   });

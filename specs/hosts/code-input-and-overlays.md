@@ -19,8 +19,8 @@ The unifying problem is turning one line of typed text into one of four dispatch
 chat message, a `/slash` command, a `!shell` command, or a `@mention`/attachment — while a single
 popup (`AutocompletePopup`) and a family of generic list/card primitives (`FloatFrame`,
 `ListPicker`, `PickerRow`, `ChoiceRows`, `FilterField`) serve every place in the app that needs a
-searchable, keyboard-navigable, windowed list: the agent/profile picker, the plan history browser,
-and the slash-command popup itself all share the same windowing math
+searchable, keyboard-navigable, windowed list: the agent/profile picker and the slash-command popup
+share the same windowing math
 (`windowRows`/`windowGroupedRows` in `ui/patterns/windowed-list.tsx`) rather than each re-deriving it.
 
 ## 2. Surface
@@ -170,7 +170,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `SafetyPresetPicker(props)` | Lazy retained `ListPicker` over the six canonical execution postures, with armed confirmation for direct-host choices | `packages/code/src/views/overlays/SafetyPresetPicker.tsx` (`SafetyPresetPicker`) |
 | `Help(props)` | Full-page live-projected key/action/destination reference with stable indexed rows | `packages/code/src/views/overlays/Help.tsx` (`Help`) |
 | `DiffViewer(props)` | Full-screen page rendering one transcript tool node's diff via the tool registry; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
-| `PlanOverlay(props)` | Full-screen plan history + task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`) |
+| `PlanOverlay(props)` | Full-screen current/latest-plan task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`) |
 | `ActivityDetail(props)` | Floating scrollable Markdown reader for a full delegation brief or terminal task/sub-agent result | `packages/code/src/views/overlays/ActivityDetail.tsx` |
 | `AutocompletePopup(props)` | Floating windowed/grouped suggestion list above the input, backed by ten stable row/header slots | `packages/code/src/views/input/AutocompletePopup.tsx` (`AutocompletePopup`, `MAX_ROWS_CAP`); `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`) |
 | `CommandGroupHeader(props)` | Non-interactive section divider above a command group's first row | `packages/code/src/views/input/CommandGroupHeader.tsx:18-41` |
@@ -187,18 +187,29 @@ Each registration carries a `slash?` token, a `surface` (`"slash" \| "internal"`
 optional `parent`; the `/name` autocomplete provider (in `views/App.tsx`, outside this document)
 reads these fields back. Example
 dispositions actually registered by this file (name → slash/surface/group/parent), pinned by
-`packages/code/tests/integration/app-commands.test.tsx:449-594`:
+`packages/code/tests/integration/app-commands.test.tsx` (canonical token and disposition tests):
 
 | name | slash | surface | group | parent |
 | --- | --- | --- | --- | --- |
 | `agent.picker` | `/agent` | slash | navigate | — |
 | `transcript.diff` | `/diff` | slash | navigate | `inspect` |
-| `plans.open` | `/plans` | slash | navigate | `inspect` |
+| `plan.toggleReview` | `/plan` | slash | actions | — |
 | `plan.open` | — | internal | navigate | — |
-| `plan.enableReview` / `plan.enableDefault` | — | internal | actions | — |
 | `app.quit` | `/quit` | slash | actions | — |
 | `sessions.open` | `/sessions` | slash | navigate | `sessions` |
 | `storage.open` | `/storage` | slash | navigate | — |
+
+`plan.toggleReview` reads the effective workspace policy at dispatch time, maps `review` to `on`
+and either `on` or `off` to `review`, then writes the workspace scope through
+`patchPlansSettings`, preserving retention, provider and pending-task nudges. Repeated invocations
+serialize their writes and re-read effective state after the preceding write, so two quick `/plan`
+commands still perform both halves of the toggle. An active run keeps its submitted mode and the
+notification says the change applies to the next run. The command registry has no `/plans` history
+route and no `/planning` hierarchy. Production:
+`packages/code/src/app/commands.tsx` (`plan.toggleReview` registration). Test:
+`packages/code/tests/integration/app-commands.test.tsx` (`/plan` toggle/serialization and removed
+registrations) and `packages/code/tests/integration/app-shell-render.test.tsx` (`/plan`, `/plans`,
+`/planning`).
 
 `StorageView` is an unscoped operator view. On mount and Ctrl+R it calls `storage.inspect`; category
 rows show logical bytes/file/directory counts and highlight reclaimable bytes. Credential rows show
@@ -360,11 +371,11 @@ after a fresh `createFilePromptHistory` against the same file.
 
 ### Plan overlay's document vs. live-activity duality
 
-`PlanOverlay` reads two independent sources for the same plan: the live `PlanActivity` projection
+`PlanOverlay` reads two independent sources for the same current/latest plan: the live `PlanActivity` projection
 (`props.plan`, from `adapters/activity-store.ts` — owned by [hosts/code-run-host.md](code-run-host.md)) for the
-in-run task list, and, when a `PlansService` is supplied (`@clarvis/protocol`, owned by
-[capabilities/plan-capability.md](../capabilities/plan-capability.md)), the persisted `PlanDocumentDto` fetched via `plans.read(id)`
-(`packages/code/src/views/overlays/PlanOverlay.tsx:144-157,197-214`). `approvalLine(doc)` (`:53-63`) renders the
+in-run task list, and, when a `Pick<PlansService, "read">` is supplied (`@clarvis/protocol`, owned by
+[capabilities/plan-capability.md](../capabilities/plan-capability.md)), the persisted `PlanDocumentDto` fetched via
+`plans.read(plan.id)` (`PlanOverlay.loadActivePlan`). `approvalLine(doc)` renders the
 distinct "human approval" vs. "specification revision" counters from `doc.approved_spec_revision`
 vs. `doc.spec_revision`, deliberately never sharing the label "revision" between them.
 
@@ -391,11 +402,11 @@ vs. `doc.spec_revision`, deliberately never sharing the label "revision" between
 — outside this document, in [hosts/code-bootstrap.md](code-bootstrap.md)) decides among `skill` (an agent name),
 `command` (a registered command), `unknown` (notify + block), or `chat` (fall through as `pass`) —
 see `packages/code/src/views/input/autocomplete.ts:119-132`. `collectArgs`, the one place a slash line's argument
-tail actually feeds a schema (an MCP prompt's declared `arguments`, `packages/code/src/app/commands.tsx:1273-1288`),
+tail actually feeds a schema (an MCP prompt's declared `arguments`, `packages/code/src/app/commands.tsx`, `mcpEffects.collectArgs`),
 maps it positionally with `splitSlashArgs(raw, count)` (`packages/code/src/views/input/autocomplete.ts:72-85`): one
 whitespace-separated token per declared argument, and the last argument takes the entire remainder
 (so a trailing free-text argument keeps its spaces). A required argument left unfilled is reported
-with a warn notification naming it (`packages/code/src/app/commands.tsx:1281-1285`) rather than submitted with a gap.
+with a warn notification naming it (`mcpEffects.collectArgs`) rather than submitted with a gap.
 Pinned: `packages/code/tests/unit/autocomplete.test.ts:124-135`.
 
 ### Composer sizing and history-recall gating (`views/InputDock.tsx`)
@@ -602,38 +613,24 @@ args-reconstructed diff (`:59-74`). Pinned: `packages/code/tests/integration/dif
 
 ### `PlanOverlay` (`views/overlays/PlanOverlay.tsx`)
 
-Two `PlanFocus` states, `"history"` and `"tasks"`, chosen at mount from `props.origin` and whether a
-live plan/`PlansService` exists (`:110-116`). On mount (`:384-424`) it registers an escape layer at
-`LAYER.OVERLAY + 1` and kicks off `Promise.all([loadPlans(), loadActivePlan()])`. State machine
-(informal, keyed by focus + verb):
+The overlay has no history state. A visible, non-removed `PlanActivity` is the only key that can
+start I/O. When its id or revision tuple changes while the retained surface is active,
+`loadActivePlan` calls only `plans.read(plan.id)`; without a live plan it renders `no plan yet` and
+never calls the reader. The returned id must equal the requested live id or the document is rejected
+and the live task projection remains visible.
 
-| State | Event | Effect |
-| --- | --- | --- |
-| `history` | `Tab` (when `plans` set and history non-empty) | → `tasks` |
-| `tasks` | `Tab` (same condition) | → `history` |
-| `history` | `Enter`/confirm on a row | `readSelected(index)` if not already the shown doc, then → `tasks` (`openHistoryDetail`, `:280-286`) |
-| `tasks` (`origin === "history"`) | `Escape` or `Ctrl+P` | → `history`, whether the detail is the live plan or a loaded history document |
-| `tasks` (direct origin, or no `plans`) | `Escape` or `Ctrl+P` | `props.onClose?.()` and return to transcript |
-| any | `Ctrl+C` | not claimed locally; global `run.cancel` cancels the run or enters quit |
-| `history` | `f` | cycles `statusFilter` through `STATUS_FILTERS` (`:38-45`), resets pagination, reloads |
-| `history` | `t` | cycles `retentionFilter` through `RETENTION_FILTERS` (`:46`), resets pagination, reloads |
-| `history` | `[`/`]` | previous/next page via `cursorStack` + `nextCursor` |
-| `tasks`, document shown | `v` | toggles `doc.retention` keep↔discard via `plans.setRetention` |
-| `tasks`, document shown, status not `active`/`awaiting_approval` | `d` | arms delete (`useArmedConfirm`) |
-
-The armed delete's `watch` list is `[historySel, statusFilter, retentionFilter, () =>
-document()?.id]` (`:141`) — any of those changing disarms it, which is what stops a `y` typed after
-navigating away from landing on a different plan than the one `d` was pressed against.
-
-When `document() !== null` and `focus() === "tasks"`, the key spec swaps from row-navigation to
-scroll-mode (`scrollMode`/`scrollSpec`, `:378-382`): the same `verbs` stay bound but `nav` is
-replaced by `scroll: () => scrollEl`, so arrow/`pagedown` drive the scrollbox instead of the
-(now-absent) task list.
+When `document() !== null`, `spec()` supplies `scroll: () => scrollEl`, so arrows and page keys
+scroll readable Markdown. Without a document, the same spec supplies task-row navigation and
+auto-selects `in_progress`, then `returned`, then `pending`. Escape and `Ctrl+P` both call
+`onClose`; `Ctrl+C` is not claimed locally, so the global cancel/quit behavior remains live. There
+are no list/filter/page verbs and no per-plan retention/delete mutations. Production:
+`packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`, `loadActivePlan`, `spec`). Test:
+`packages/code/tests/integration/plan-overlay-render.test.tsx`.
 
 The readable document (`Prose` over `stripDocChrome(doc.markdown)`) renders whenever a document has
-been loaded for the *live* plan; the interactive task-row list (`taskRow`, `:462-518`) is only the
-fallback when `!document()` — so the two views never double-render the same tasks (`tasks()`,
-`:245-250`, and the `Show` gates at `:626-630`).
+been loaded for the *live* plan; the interactive task-row list (`taskRow`) is only the fallback when
+`!document()` — so the two views never double-render the same tasks (`tasks` and the final `Show`
+gates in `PlanOverlay`).
 
 ### The local `!` shell path (`adapters/local-shell.ts:runLocalBash`)
 
@@ -749,26 +746,32 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/tests/integration/list-picker-render.test.tsx:93-103`.
 23. **`PlanOverlay`'s readable markdown document supersedes the fallback task-row projection whenever
     a document has been loaded for the live plan; they never both render.**
-    `packages/code/src/views/overlays/PlanOverlay.tsx:245-250,585-630`. Pinned:
-    `packages/code/tests/integration/plan-overlay-render.test.tsx:621-677` (readable sections shown once, "Wire the
+    `packages/code/src/views/overlays/PlanOverlay.tsx` (`document`, final `Show` gates). Pinned:
+    `packages/code/tests/integration/plan-overlay-render.test.tsx` (readable sections shown once, "Wire the
     projection reducer" appears exactly once even though it exists in both the live tasks and the
     markdown body).
-24. **If the active plan's id is absent from the current history page, the overlay warns and opens
-    no other document as "active."** `packages/code/src/views/overlays/PlanOverlay.tsx:172-182`. Pinned:
-    `packages/code/tests/integration/plan-overlay-render.test.tsx:388-417`.
-25. **Delete is only offered for a plan whose status is not `active`/`awaiting_approval`.**
-    `packages/code/src/views/overlays/PlanOverlay.tsx:356-374`. Pinned:
-    `packages/code/tests/integration/plan-overlay-render.test.tsx:756-774`.
-26. **An armed plan delete is disarmed by any change to selection, status filter, retention filter,
-    or the shown document's id — it can never fire against a plan other than the one it was armed
-    against.** `packages/code/src/views/overlays/PlanOverlay.tsx:141` (`useArmedConfirm` `watch` list). Pinned:
-    `packages/code/tests/integration/plan-overlay-render.test.tsx:584-619`.
-27. **Escape or Ctrl+P from a plan opened `origin="history"` returns to
-    the history list; from `origin="direct"` (or with no `PlansService`) either closes the whole
-    overlay and returns to the transcript. The shortcut that entered it is therefore a valid exit.
+24. **No live plan means no backend read. A returned document whose id differs from the live id is
+    rejected rather than substituted as the current plan.** Production:
+    `packages/code/src/views/overlays/PlanOverlay.tsx` (`activePlan`, `loadActivePlan`). Test:
+    `packages/code/tests/integration/plan-overlay-render.test.tsx` (current-only empty state and
+    mismatched-id cases).
+25. **The TUI's plan backend boundary exposes only `PlansService.read`; it cannot list retained
+    plans, mutate one plan's retention or delete one.** Production: `KernelRunClient.plans` in
+    `packages/code/src/adapters/kernel-run-client.ts`, `AppBackend.plans` in
+    `packages/code/src/views/App.tsx`, `OverlayRegionProps.plans`, and `PlanOverlay.props.plans`.
+    Test: `packages/code/tests/component/kernel-run-client.test.ts` (read-only plan surface), the
+    read-only fakes in `packages/code/tests/integration/app-shell-render.test.tsx` and
+    `packages/code/tests/integration/overlay-region-render.test.tsx`.
+26. **A stale plan-document response cannot overwrite a newer live revision.** `loadActivePlan`
+    captures a monotonic `documentRequestSeq`; deactivation, plan disappearance or a new live
+    revision advances it.
+    Production: `packages/code/src/views/overlays/PlanOverlay.tsx` (`documentRequestSeq`,
+    `loadedPlanKey`, `loadActivePlan`). Test:
+    `packages/code/tests/integration/plan-overlay-render.test.tsx` (stale document response case).
+27. **Escape or Ctrl+P closes the current-plan overlay and returns to the transcript.
     Ctrl+C is not claimed by the plan: the global command cancels the active run or enters quit while
     the plan stays open.** Production: `packages/code/src/views/overlays/PlanOverlay.tsx`
-    (`handleEscape`), `packages/code/src/views/App.tsx` (`openPlan`), and
+    (`plan.escape`), `packages/code/src/views/App.tsx` (`openPlan`), and
     `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`). Pinned by
     `packages/code/tests/integration/plan-overlay-render.test.tsx` and
     `packages/code/tests/integration/app-shell-render.test.tsx`.
@@ -928,13 +931,11 @@ settled turn's persisted continuation; an empty session reports that there is no
 - **A corrupt line in the prompt-history file is skipped, not fatal** — `loadEntries`'s `JSON.parse`
   is wrapped per-line (`packages/code/src/adapters/file-prompt-history.ts:52-57`). Pinned:
   `packages/code/tests/integration/input-editor.test.ts:101-112`.
-- **`PlanOverlay`'s `readSelected`/`loadPlans`/`loadActivePlan` each guard against a stale response**
-  via a monotonic request sequence number (`documentRequestSeq`/`historyRequestSeq`,
-  `packages/code/src/views/overlays/PlanOverlay.tsx:124-126,147-214`) — an out-of-order resolve is discarded rather
-  than overwriting newer state. A read failure sets `loadingError()` and is rendered as
-  `"plan document invalid: <message>"` (`:607-613`) rather than throwing.
-- **Every fire-and-forget UI effect in `PlanOverlay`** (filter cycling, pagination, opening history
-  detail) is wrapped in `detachObserved` (`packages/code/src/core/tasks.ts:21-45`, owned elsewhere), which records a
+- **`PlanOverlay.loadActivePlan` guards against a stale response** via `documentRequestSeq`; an
+  out-of-order resolve is discarded rather than overwriting a newer live revision. A read failure
+  sets `loadingError()` and renders `"plan document invalid: <message>"` while preserving live tasks.
+- **The fire-and-forget active-plan read** is wrapped in `detachObserved`
+  (`packages/code/src/core/tasks.ts:21-45`, owned elsewhere), which records a
   `task.failed` diagnostic before any local observer runs and — by design — never falls back to
   `process.emitWarning`, so a background failure cannot paint over the terminal.
 - **A hooks/agent-loop capability importing this subsystem is out of scope** — nothing here degrades
@@ -955,15 +956,15 @@ settled turn's persisted continuation; an empty session reports that there is no
 - `@clarvis/kernel/local` (`resolveShell`, `shellArgs`, `killTree`, `ownProcessGroup`) —
   `packages/code/src/adapters/local-shell.ts:2` reuses the exact shell-dialect resolver the kernel's own tools use, so
   `!` never diverges in *which* shell binary/flavor runs, only in forcing `bash` over bare `sh`.
-- `@clarvis/protocol` — `MessageContent`, `PlanDocumentDto`/`PlansService`/`PlanRetention`/
-  `PlanStatus`, `Scope` — the wire types `InputDock` composes and `PlanOverlay`/`ProfilePicker`
+- `@clarvis/protocol` — `MessageContent`, `PlanDocumentDto`/`PlansService`, `Scope` — the wire types
+  `InputDock` composes and `PlanOverlay`/`ProfilePicker`
   render against.
 - `adapters/activity-store.ts`, `adapters/execution-safety.ts`, `views/blocks.tsx`,
   `ui/presentation.ts`, `views/Prose.tsx`, `views/config/view-host.tsx` — all owned by sibling documents
   ([hosts/code-run-host.md](code-run-host.md), [hosts/code-transcript.md](code-transcript.md)); `PlanOverlay`/`DiffViewer` read
   from them but do not own their contracts.
-- `views/confirm.ts` (`useArmedConfirm`) and `core/tasks.ts` (`detachObserved`) — small shared
-  utilities this document consumes but does not own.
+- `core/tasks.ts` (`detachObserved`) — the shared observed-task helper this document consumes but
+  does not own.
 
 **Depended on by**:
 - `views/App.tsx` ([hosts/code-bootstrap.md](code-bootstrap.md) document) mounts `InputDock` and,

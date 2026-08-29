@@ -1573,7 +1573,7 @@ translated from" (`:44-46`).
 | `packages/kernel/src/tasks/task-provider-factory.ts:201-221` | `mcpServers` for provider identity | |
 | `packages/kernel/src/kernel.ts:723` | `createPluginService` | |
 | `packages/kernel/src/transport/operations.ts:289-335` | the seven wire methods | |
-| `packages/code/src/app/commands.tsx:652, 699, 757, 802, 819` | the store, the three browsers and the adapter | |
+| `packages/code/src/app/commands.tsx` (`pluginsStore`, plugin/marketplace/extension view registrations, `installAndActivatePlugin`) | the store, the three browsers and the adapter | |
 
 **`createPluginContributions` and `createPluginService` are two separately constructed object
 graphs, not one "plugin subsystem".** `createFileKernel` builds `pluginContributions`

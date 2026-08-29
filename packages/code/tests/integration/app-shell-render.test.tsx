@@ -291,6 +291,7 @@ function defaultProps(overrides: {
   catalog?: AppFleet["catalog"];
   clear?: () => void;
   costLine?: () => string;
+  initialDraft?: string;
   worktree?: AppProps["shell"]["worktree"];
   submitSkillRun?: AppProps["run"]["submitSkillRun"];
 }) {
@@ -350,9 +351,16 @@ function defaultProps(overrides: {
       },
       fleet: baseFleet(settings, agents, overrides.code, overrides.catalog),
       backend: overrides.backend ?? baseBackend(),
+      ...(overrides.initialDraft === undefined ? {} : { initialDraft: overrides.initialDraft }),
     };
   };
 }
+
+test("the complete composer adopts the draft typed during startup", async () => {
+  const t = await mountApp(defaultProps({ initialDraft: "draft from startup" }));
+  expect(await captureUntil(t, "draft from startup")).toContain("draft from startup");
+  t.renderer.destroy();
+});
 
 const CHANGED_WORKSPACE_ENVIRONMENT: ResolvedEnvironment = {
   id: "workspace:project",

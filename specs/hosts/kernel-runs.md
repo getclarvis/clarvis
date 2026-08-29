@@ -1007,7 +1007,7 @@ store owns the full schema" (`:17-18`).
 | `packages/server/src/mcp/notify.ts:2-5,144,366-370` | `RUN_EVENT_POLICY`, `coalesceRunEvents`, `sizeOfRunEvent` | MCP notification fan-out reuses the table rather than re-listing droppable types |
 | `packages/server/src/mcp/event-view.ts:1,168,184` | `RUN_EVENT_POLICY`, `coalesceRunEvents` | the coalesce class is read from the table rather than restated (`:162-168`) |
 | `packages/code/src/adapters/event-span.ts:2` | `deriveRunEventSpan` | the TUI groups its transcript by the kernel's span ids |
-| `packages/kernel/src/index.ts:8-9,52-55` and `packages/kernel/src/policy.ts:10-36` | the exported surface | pinned to five entrypoints by `packages/kernel/tests/architecture/public-surface.test.ts:12` |
+| `packages/kernel/src/index.ts`, focused subpath modules, and `packages/kernel/package.json` | the exported surface | pinned to six entrypoints by `packages/kernel/tests/architecture/public-surface.test.ts` |
 
 ### 7.3 Direction-forcing facts
 

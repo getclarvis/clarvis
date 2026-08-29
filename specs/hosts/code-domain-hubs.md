@@ -25,7 +25,7 @@ sit beside them: `features/issues.ts` (validation issue projection), `features/d
 `features/notice.ts` is recorded in §8 item 8.
 
 All six views reach their data through `@clarvis/protocol` service interfaces or through
-`@clarvis/kernel`'s five sanctioned entrypoints; none of them touches the filesystem or the engine.
+`@clarvis/kernel`'s six sanctioned entrypoints; none of them touches the filesystem or the engine.
 `WorkflowsHub`'s own doc comment states the rule: "It reads everything through the kernel's
 workflows/runs services, never the local filesystem, so a remote kernel needs no change"
 (`packages/code/src/views/config/WorkflowsHub.tsx:106`). `TasksHub` states the same: "All reads and
@@ -961,7 +961,7 @@ request that has been superseded by a queued one (`packages/code/src/views/confi
 | `adapters/agents.ts` | `@clarvis/paths` (types only) | `packages/code/src/adapters/agents.ts:1` |
 | `views/config/{TasksHub,WorkflowsHub}.tsx`, `features/tasks/controller.ts` | `@clarvis/protocol` — **type-only** | `packages/code/src/views/config/TasksHub.tsx:5`, `packages/code/src/views/config/WorkflowsHub.tsx:6`, `packages/code/src/features/tasks/controller.ts:1` |
 
-Only the five kernel entrypoints appear (INV-251) — full statement owned by
+Only the six kernel entrypoints appear (INV-251) — full statement owned by
 [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 
 `features/tasks/controller.ts` imports only types from `@clarvis/protocol`, so it holds no runtime
@@ -976,7 +976,7 @@ edge to the kernel. `TasksController` is a structural `ReturnType<>` alias
 | `src/features/agents/commands.ts` | `AgentsPanel` | `packages/code/src/features/agents/commands.ts:7` |
 | `src/views/App.tsx` | `SessionCatalogItem` (type) | `packages/code/src/views/App.tsx:40` |
 | `src/views/App.tsx` | `runStripText` | `packages/code/src/views/App.tsx:1014` |
-| `src/index.tsx` | `progressStatusText`, `presentStatusLine` | `packages/code/src/index.tsx:652`, `:1023` |
+| `src/runtime.tsx` | `progressStatusText`, `presentStatusLine` | `packages/code/src/runtime.tsx` (`runApp`, `buildRunHost`) |
 | `src/views/overlays/ProfilePicker.tsx` | `deriveAgentShape`, `grantBadges` | `packages/code/src/views/overlays/ProfilePicker.tsx:5` |
 | `src/adapters/active-agent.ts` | `profileView`, `deriveAgentShape` | `packages/code/src/adapters/active-agent.ts:4` |
 | `src/features/providers/controller.ts` | `createDisposeGuard` | `packages/code/src/features/providers/controller.ts:20` |

@@ -18,6 +18,7 @@ specified in [`engine/tool-dispatch.md`](../../specs/engine/tool-dispatch.md).
 | `interpolateEnv`                                | `${VAR}` expansion in a server's `env` and `headers` when enabled               |
 | `createMCPAuthorizationCoordinator`             | browser OAuth, loopback callback, PKCE and per-resource serialization           |
 | `createMcpOAuthCredentialStore`                 | bounded, private persistence for registrations and tokens                       |
+| `MCPAuthorizationWait`, `MCPAuthorizationPendingError` | blocking/embedder and background/run authorization policy                 |
 | `CLIENT_NAME`, `VERSION`                        | MCP handshake identity using the root Clarvis product version                   |
 
 It depends on `@clarvis/capability` (the `MCPConnection` / `NamespacedRegistry`
@@ -69,10 +70,20 @@ fields, and never renders a code or state into its response.
 
 An authorization challenge may arrive during the handshake, catalog discovery, a tool/resource
 request, or a health probe. Clarvis completes the SDK-started browser flow and repeats only the
-refused request once; a later challenge receives a fresh state and verifier. The outer connection
-budget pauses while initial authorization or another flow for the same resource is pending, but
-cancellation and the five-minute human-authorization deadline remain live. Coordinator shutdown
-also waits for an in-progress callback-listener startup before closing it.
+refused request once; a later challenge receives a fresh state and verifier. The default
+`authorizationWait: "blocking"` contract retains that behavior for explicit embedder operations.
+Run acquisition uses `"background"`: once the browser flow starts, that acquisition rejects with
+`MCPAuthorizationPendingError`, the MCP is inactive for that run, and authorization continues
+without the run's abort signal. A second run arriving behind the same pending flow also degrades
+immediately instead of waiting on the serialized credential key. If the user completes the browser
+flow, the durable token is available to a later run without opening a second page. A late challenge
+during a tool call similarly maps to `mcp_unavailable` without reconnecting or opening the circuit.
+
+The outer connection budget pauses while blocking initial authorization or another flow for the
+same resource is pending, but cancellation and the five-minute human-authorization deadline remain
+live. Coordinator shutdown also waits for an in-progress callback-listener startup before closing
+it. Background authorization remains bounded by the same human deadline and by coordinator
+shutdown; it is detached only from the run that must remain responsive.
 
 `createMcpOAuthCredentialStore` persists SDK-validated client registrations and tokens in a
 versioned JSON document. The default file is `state/mcp-oauth.json` under the global Clarvis root;
@@ -182,6 +193,7 @@ The suite is classified by the boundary each test exercises:
   replaced. Session and resource-policy matrices are not repeated here;
 - `tests/integration/` owns real stdio subprocess and loopback HTTP behavior,
   the complete OAuth discovery/registration/PKCE/callback/token/reconnect path,
+  background initial/catalog/tool-call authorization and concurrent-run degradation,
   private credential-store filesystem behavior, one narrow MCP SDK elicitation
   compatibility canary and the real Clarvis relay round-trip;
 - `tests/architecture/` owns the package's public-versus-internal export

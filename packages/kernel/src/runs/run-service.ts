@@ -1,11 +1,5 @@
-import {
-  compactStoredContext,
-  estimateStoredContextTokens,
-  executeRun,
-  fitStoredContextToWindow,
-  generateExecutionId,
-  type ExecuteRunDeps,
-} from "@clarvis/loop";
+import type { ExecuteRunDeps } from "@clarvis/loop";
+import { generateExecutionId } from "@clarvis/trace";
 import type {
   Page,
   Pagination,
@@ -117,6 +111,7 @@ export function createRunService(cfg: RunServiceConfig): RunService {
       lifecycle: cfg.lifecycle,
       async execute(context): Promise<RunResult> {
         const rawBody = assembleRunRequest({ ...params, execution_id: executionId });
+        const { executeRun } = await import("@clarvis/loop");
         const outcome = await executeRun({
           rawBody,
           owner,
@@ -190,6 +185,7 @@ export function createRunService(cfg: RunServiceConfig): RunService {
         return { status: "skipped", execution_id: executionId, reason: "no_context" };
       }
       if (mechanicalTarget !== undefined) {
+        const { fitStoredContextToWindow } = await import("@clarvis/loop");
         const fitted = fitStoredContextToWindow(
           stored.final_context,
           mechanicalTarget,
@@ -213,6 +209,7 @@ export function createRunService(cfg: RunServiceConfig): RunService {
           },
         };
       }
+      const { compactStoredContext } = await import("@clarvis/loop");
       const outcome = await compactStoredContext({
         context: stored.final_context,
         request: stored.request,
@@ -271,6 +268,7 @@ export function createRunService(cfg: RunServiceConfig): RunService {
       const stored = store.getById(owner, executionId);
       if (stored === null) throw kernelError("not_found", `run '${executionId}' not found`);
       const context = stored.final_context ?? [];
+      const { estimateStoredContextTokens } = await import("@clarvis/loop");
       const estimatedTokens = estimateStoredContextTokens(context);
       return {
         execution_id: executionId,

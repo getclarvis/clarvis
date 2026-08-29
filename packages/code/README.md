@@ -172,7 +172,10 @@ lifecycle experience.
 Interactive Code and local `--print` kernels also provide the operating-system browser opener used
 by remote MCP OAuth. The authorization coordinator still validates the destination and loopback
 callback; this adapter grants only the host action of opening the already validated URL. Remote
-kernel clients and server hosts do not inherit that local authority.
+kernel clients and server hosts do not inherit that local authority. Opening the browser never holds
+an interactive run: the challenged MCP is shown as degraded and stays inactive for that run while
+authorization continues in the background. Ignoring the page leaves the composer and model run
+usable; completing it stores the token for a later run.
 After onboarding, `/model` is the only surface that changes `default_model`, and `/effort` is the
 only surface that changes its `default_reasoning_effort`. They write only their own setting in the
 selected global/workspace scope. Providers owns credentials and the available-model set, while
@@ -189,12 +192,19 @@ cannot be renamed or deleted; fork it under a new name instead. If a customizati
 does not parse or does not validate, Clarvis runs the shipped agent unchanged and Doctor reports
 which file was refused and why.
 
-Every interactive cold boot first paints a parser-free Clarvis shell in the same Solid root the
-application will use. Its boot-only slash header and composer placeholder, slash wordmark and moving
-shared spinner preserve the final screen's visual structure while the workspace foundation loads;
-the usable `App` replaces it in place without waiting for the models catalogue or Markdown parsers.
-The boot copy intentionally excludes the complete app's `◆ Clarvis` paint marker and `New task…`
-readiness marker, so release smoke and first-paint measurements cannot accept the placeholder shell.
+Every interactive cold boot first paints a parser-free, focused `StartupComposer` in one lightweight
+Solid root. Its slash header and wordmark preserve the final screen's visual structure while the
+application chunk and workspace foundation load concurrently. In `run` mode the user can type
+immediately; Enter stores the exact submission outside renderer ownership. As soon as the run host
+exists, that queued task starts before complete-app hydration, and the resulting store/events survive
+the root handoff. An unsent draft is adopted by the full input instead. Resume/continue keep startup
+input locked until their saved session is restored.
+
+The complete `App` replaces the startup root without waiting for the models catalogue or Markdown
+parsers. The startup copy has its own `Queue a task…` readiness marker and intentionally excludes the
+complete app's `◆ Clarvis` paint marker and `New task…` marker. The first-paint benchmark therefore
+reports functional startup input separately from full hydration, and release smoke still requires
+the complete application plus its `app.boot.painted` diagnostic.
 
 On the first interactive launch, startup opens a branded Clarvis setup rather than Doctor or an
 empty conversation. Enter begins the focused provider/model picker; the flow makes the selected
@@ -918,11 +928,14 @@ step that covers it. The smoke fixture fabricates a clean `HOME`, asserts the sh
 exists for a later Providers open, and proves first paint emits no `catalog.load.started` while
 `deferred_catalog` remains true.
 
-`bun run bench:code` measures the launch: the module graph (`--version`), exclusive
-parser-free shell, complete header and input-ready frame, n≥7 with min/median/max.
+`bun run bench:code` measures the launch: the module graph (`--version`), minimal shell, focused
+startup composer, complete header and complete input-ready frame, n≥7 with min/median/max.
 It refuses to report on a busy machine and stamps the power state, because CPU
 frequency scaling moved one unchanged measurement from 2.05 s to 0.60 s and three
 conclusions had to be withdrawn over it.
+The repository's [Clarvis performance validation
+skill](../../.agents/skills/clarvis-performance-validation/SKILL.md) owns the future clean-versus-
+marketplace A/B, real-PTY run, ignored-OAuth, skill/MCP/subagent, hashing-drift and cleanup checklist.
 
 `bun run bench:code-overlays` runs the renderer lifecycle soak. Every named case and default
 120x32/80x24 size gets a fresh process, warm-up, forced-GC batch samples and RSS/PSS/private-dirty plus live renderable, renderer

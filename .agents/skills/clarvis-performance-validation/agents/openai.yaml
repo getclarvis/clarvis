@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clarvis Performance Validation"
+  short_description: "Revalidate TUI boot and plugin-heavy real runs"
+  default_prompt: "Use $clarvis-performance-validation to revalidate Clarvis startup and real-run performance with clean and marketplace-heavy profiles."

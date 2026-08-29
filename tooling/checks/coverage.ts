@@ -86,23 +86,22 @@ const NO_COUNTER_ALLOWLIST = {
   code: [
     // Type-only.
     "src/adapters/run-types.ts",
+    "src/boot-shell.ts",
     "src/core/run-types.ts",
     "src/core/transcript/types.ts",
     "src/views/config/providers/context.ts",
-    // Executable entry points: the `clarvis` bin and the TUI boot module.
-    // Importing either from a test starts a terminal UI.
+    // Executable entry points plus the complete TUI runtime.
+    // Importing any of them from a test starts process/application lifecycle work.
     //
-    // `src/index.tsx` is the largest exemption in the repository — the whole
-    // interactive boot — and its only end-to-end cover is `bun run smoke`, which
-    // asserts first paint and nothing beyond it. Closing it is a design decision
-    // nobody has taken: either the boot sequence is split into importable steps
-    // (argument mode selection, kernel construction, session restore, the
-    // one-shot `--print` path), or the smoke harness grows assertions and stops
-    // being a smoke test. Both are real work with a real cost, and neither is
-    // owed by any change in flight — so this stays recorded rather than quietly
-    // treated as covered.
+    // `src/index.tsx` is the thin renderer entry and `src/runtime.tsx` is the
+    // complete interactive/headless boot it imports after first input paint.
+    // Importing either still starts application lifecycle work; their end-to-end
+    // cover is the PTY-driven artifact smoke. Splitting the entry keeps heavy
+    // code out of first paint but does not make either module safe to import into
+    // the in-process coverage runner.
     "src/cli.ts",
     "src/index.tsx",
+    "src/runtime.tsx",
   ],
   hooks: [],
   kernel: [
@@ -113,6 +112,8 @@ const NO_COUNTER_ALLOWLIST = {
     "src/connection-health.ts",
     "src/ports/plugin-repository.ts",
     "src/ports/process-runner.ts",
+    // Pure re-export barrel for the startup logger path.
+    "src/logger.ts",
     // Executable entry point: the `clarvis-kernel` bin. Unlike the server's, this
     // one is a thin `serveFileKernelOverStdio` wrapper plus two failure writes,
     // so the untested surface is small and the decision below does not apply.
@@ -174,7 +175,8 @@ const NO_COUNTER_ALLOWLIST = {
     "src/guard/types.ts",
     "src/sandbox-entry.ts",
     "src/tools/types.ts",
-    // Pure re-export barrel (the `./shell` subpath).
+    // Pure re-export barrels for the narrow shell and monitor subpaths.
+    "src/monitor-entry.ts",
     "src/shell-entry.ts",
   ],
   trace: [

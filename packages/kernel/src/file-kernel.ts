@@ -32,13 +32,10 @@ import {
   type HostExtensionAdmission,
   type HostModelCallAdmission,
   createLogger,
-  type ExecuteRunDeps,
-  type HookConfig,
-  type Logger,
-  type ProviderConfig,
   type PluginBootstrapSkill,
   type SkillRootInput,
-} from "@clarvis/loop";
+} from "@clarvis/loop/host";
+import type { ExecuteRunDeps, HookConfig, Logger, ProviderConfig } from "@clarvis/loop";
 import { TraceCleanup, type TraceStore } from "@clarvis/trace";
 import type { GuardConfig } from "@clarvis/loop/host";
 import type { EventStreamOptions } from "./core/event-stream.ts";
@@ -82,7 +79,7 @@ import {
   sweepSpillDir,
   workspacePaths,
 } from "@clarvis/paths";
-import { sweepMonitors } from "@clarvis/tools";
+import { sweepMonitors } from "@clarvis/tools/monitor";
 import { WorkspaceHousekeeping } from "./application/workspace-housekeeping.ts";
 import { referencedSessionExecutionIds } from "./sessions/session-service.ts";
 import { discoverGitWorkspace } from "./git-workspace.ts";
@@ -894,6 +891,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       taskProviderFactory,
       tasksEnabled,
       acquireRunLease: () => {
+        environmentManager.assertRunSnapshot();
         environmentRunRefs += 1;
         let released = false;
         return () => {

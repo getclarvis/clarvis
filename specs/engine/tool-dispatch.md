@@ -255,17 +255,21 @@ throws inside the reporter itself (`:117-121`).
 
 ### 4.2 `openToolPool` — acquiring the pool and validating it against profiles
 
-1. `Promise.allSettled` acquires a `Lease` per declared server (`packages/loop/src/runtime/open-tool-pool.ts:64-73`).
+1. `Promise.allSettled` acquires a `Lease` per declared server with
+   `authorizationWait: "background"`, so an opened browser flow can never hold run admission
+   (`openToolPool` in `packages/loop/src/runtime/open-tool-pool.ts`).
 2. Successes/failures are partitioned (`:76-80`).
 3. **If the caller's signal is already aborted**, every acquired lease is released
    (`Promise.allSettled(successes.map(o => o.release()))`) and the function returns
    `{ ok:false, response:{status:"cancelled", result:"", usage: emptyUsage()} }` — *before* any
    further validation (`:82-85`). This is unconditional: it runs even when every server actually
    connected.
-4. **If every server failed** and at least one was declared, the run fails with either
+4. **If every server failed for a terminal reason** and at least one was declared, the run fails with either
    `mcp_connection_failed` (carrying `mcp_name`/`transport` from the thrown
-   `MCPConnectionFailedError`) or a generic `provider_error` (`:87-107`).
-5. Otherwise, every failed server is logged once as `mcp.connect.failed` and folded into
+   `MCPConnectionFailedError`) or a generic `provider_error`. An
+   `MCPAuthorizationPendingError` is deliberately excluded from this terminal-failure predicate; if
+   every failure is pending browser OAuth, the run continues with an empty MCP pool.
+5. Otherwise, every failed/pending server is logged once as `mcp.connect.failed` and folded into
    `DegradedServer[]` (`:110-121`) — the run is **not** failed merely because *some* servers failed.
    The caller (`packages/loop/src/runtime/orchestrator.ts:459`, out of this document's scope) turns a non-empty `degraded`
    into a persisted trace record of kind `"mcp_degraded"` carrying `{ servers: poolResult.degraded }`,
@@ -466,6 +470,7 @@ can reclassify `shell` as `read` (`:49-56`, pinned by `packages/loop/tests/unit/
 | INV-061 | A tool-effect classifier built from declared `toolEffects` answers the declared effect for a declared name and `"unknown"` for any undeclared name. | `packages/loop/src/runtime/tools/tool-effect.ts:57-67` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:95-100` |
 | INV-062 | Every call site of `buildRegistry` in `@clarvis/loop`'s source passes exactly two arguments, never omitting the second (which would silently let an MCP server shadow a reserved name). At least three such call sites exist. | `packages/loop/src/runtime/orchestrator.ts:584`, `packages/loop/src/runtime/entry-inputs.ts:305-311`, `packages/loop/src/runtime/subagents/delegate-task.ts:398-401` | `packages/loop/tests/architecture/mcp-registry-call-sites.test.ts:57-81` — walks every `.ts` file under `src/`, regex-scans for `buildRegistry(` call sites (excluding the definition itself), asserts there are `>= 3` (`:57-59`), and asserts each passes exactly two top-level, balanced-bracket-parsed arguments (`:61-81`) |
 | INV-063 | `openToolPool`, given a signal already aborted before it acquires a lease, still releases the lease it acquired and returns a `cancelled` response rather than leaking it. | `packages/loop/src/runtime/open-tool-pool.ts:82-85` | `packages/loop/tests/unit/open-tool-pool-policy.test.ts:16-53` |
+| INV-064 | Every run requests background MCP authorization. A pool whose only failures are pending browser OAuth returns success with zero MCP tools plus `mcp_degraded`; it never waits for the browser or fails the model run. | `openToolPool` in `packages/loop/src/runtime/open-tool-pool.ts` | `packages/loop/tests/integration/open-tool-pool.test.ts` (`continues with no MCP tools when every browser authorization is pending`) |
 | INV-065 | `AGENT_TOOL_WIRE_NAMES` stays exactly in sync (as a set) with `AGENT_TOOL_NAMES`, the list `@clarvis/tools` actually registers. | `packages/loop/src/runtime/tools/wire-names.ts:53-77`, `packages/loop/src/runtime/tools/builtin/names.ts:4` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:12-16` |
 | INV-066 | `READ_ONLY_AGENT_TOOL_WIRE_NAMES` matches `READ_ONLY_TOOL_NAMES` exactly, and `READ_ONLY_TOOL_NAMES ∪ EDIT_TOOL_NAMES` equals `AGENT_TOOL_NAMES` with no overlap. | `packages/loop/src/runtime/tools/wire-names.ts:98-108`, `packages/loop/src/runtime/tools/builtin/names.ts:14-21` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:18-29` |
 | INV-067 | `shell` and `monitor_start` are never classified as read-only. | `packages/loop/src/runtime/tools/builtin/names.ts:16-47` (via `readOnlyTools` from `@clarvis/tools`) | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:30-33`, also `packages/loop/tests/unit/tool-effect.test.ts:35-44` |
@@ -553,7 +558,8 @@ Additional invariants derived directly from the code, carrying no INV number of 
 | `output_schema` malformed / oversized / cyclic / non-object | `compileResultContract` (`packages/loop/src/runtime/tools/result-contract.ts:115-158`) | `ValidationError("invalid_output_schema")` thrown pre-execution, run never starts |
 | `submit_result` arguments fail the (valid) `output_schema` | `ResultContract.validate` (`packages/loop/src/runtime/tools/result-contract.ts:164-170`) | `{ok:false, error:"submit_result rejected: …"}`, surfaced to the model as a re-callable rejection (not terminal) |
 | MCP server fails to connect at startup | `openToolPool` (`packages/loop/src/runtime/open-tool-pool.ts:110-121`) | logged `mcp.connect.failed`, folded into `degraded`, run proceeds without it, and packages/loop/src/runtime/orchestrator.ts:477 persists it as an `mcp_degraded` trace record (`packages/loop/tests/integration/open-tool-pool.test.ts:36-67`) |
-| Every declared MCP server fails to connect | `openToolPool` (`:87-107`) | run fails hard: `mcp_connection_failed` (typed) or `provider_error` (generic) |
+| Every declared MCP server fails for a non-OAuth reason | `openToolPool` | run fails hard: `mcp_connection_failed` (typed) or `provider_error` (generic) |
+| Every declared MCP is awaiting browser OAuth | `openToolPool` | all are recorded in `mcp_degraded`; run proceeds with no MCP tools and does not await human input |
 | Profile references a tool absent from the surviving pool, not for a failed-server reason | `openToolPool` + `findInvalidToolRef` (`:130-147`) | every acquired lease released, `invalid_profile` error naming the profile and tool (`packages/loop/tests/integration/open-tool-pool.test.ts:12-32`) |
 | Profile references a tool belonging to a server that merely failed to connect | `openToolPool`'s `belongsToFailed` filter (`:110`, `:124-129`) | the reference is exempt from `invalid_profile`; run proceeds on the surviving pool (`packages/loop/tests/integration/open-tool-pool.test.ts:69-90`) |
 | Caller's signal already aborted when `openToolPool` runs | `openToolPool` (`:82-85`) | every acquired lease released, `cancelled` response, no further validation attempted |

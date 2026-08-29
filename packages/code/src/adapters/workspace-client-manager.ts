@@ -1,9 +1,17 @@
-import {
-  createFileKernel,
-  type CreateFileKernelOptions,
-  ownerFromWorkspace,
+import type {
+  createFileKernel as CreateFileKernel,
+  CreateFileKernelOptions,
 } from "@clarvis/kernel/bootstrap";
+import { ownerFromWorkspace } from "@clarvis/paths";
 import type { KernelClient, WorkspaceRef } from "@clarvis/protocol";
+
+type FileKernelFactory = typeof CreateFileKernel;
+type ManagedFileKernel = Awaited<ReturnType<FileKernelFactory>>;
+
+export async function loadFileKernelFactory(): Promise<FileKernelFactory> {
+  const loaded = await import("@clarvis/kernel/bootstrap");
+  return loaded.createFileKernel;
+}
 
 export interface ManagedWorkspaceClient {
   readonly client: KernelClient;
@@ -26,15 +34,22 @@ export class WorkspaceClientManager {
   private memoryRecoveryStarted = false;
 
   private constructor(
-    private kernel: Awaited<ReturnType<typeof createFileKernel>>,
+    private kernel: ManagedFileKernel,
     private readonly options: WorkspaceClientOptions,
     readonly defaultOwner: string,
+    private readonly createKernel: FileKernelFactory,
   ) {}
 
   static async create(options: WorkspaceClientOptions): Promise<WorkspaceClientManager> {
+    const createFileKernel = await loadFileKernelFactory();
     const defaultOwner = options.defaultOwner ?? ownerFromWorkspace(options.workspaceRoot);
     const resolved = { ...options, defaultOwner };
-    return new WorkspaceClientManager(await createFileKernel(resolved), resolved, defaultOwner);
+    return new WorkspaceClientManager(
+      await createFileKernel(resolved),
+      resolved,
+      defaultOwner,
+      createFileKernel,
+    );
   }
 
   get project() {
@@ -63,7 +78,7 @@ export class WorkspaceClientManager {
   async invalidate(workspaceId: string): Promise<void> {
     if (workspaceId !== this.current.id) throw new Error("this process is pinned to one workspace");
     await this.kernel.close();
-    this.kernel = await createFileKernel(this.options);
+    this.kernel = await this.createKernel(this.options);
     if (this.memoryRecoveryStarted) this.kernel.startMemoryRecovery();
   }
 

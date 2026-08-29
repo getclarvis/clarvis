@@ -13,8 +13,10 @@ import {
 import { runMCPRequest } from "./client.ts";
 import type { MCPClientHandle } from "./client.ts";
 import { isMcpProtocolError, isMcpRequestTimeout } from "./errors.ts";
+import { MCPAuthorizationPendingError } from "./oauth.ts";
 import {
   abortedResult,
+  authorizationPendingResult,
   becameUnavailableResult,
   interruptedResult,
   runtimeErrorResult,
@@ -55,7 +57,8 @@ export interface ResilientSessionTimer {
 export type ReconnectTrigger = "transport_error" | "reprobe" | "health_ping_failed";
 
 /** How one `mcp.call.done` record classifies the call it closes. */
-export type McpCallOutcome = "ok" | "timeout" | "protocol" | "transport" | "aborted";
+export type McpCallOutcome =
+  "ok" | "timeout" | "protocol" | "transport" | "aborted" | "unavailable";
 
 function errorText(error: unknown): string {
   return sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
@@ -331,6 +334,10 @@ export function createResilientSession(options: ResilientSessionOptions): Resili
         // server. Cancellation is still reported as cancellation, but callers
         // must reconcile mutations before issuing a new idempotency key.
         if (signal?.aborted) return cancelled();
+        if (err instanceof MCPAuthorizationPendingError) {
+          outcome = "unavailable";
+          return authorizationPendingResult(options.mcpName);
+        }
         if (isMcpRequestTimeout(err)) {
           outcome = "timeout";
           timeoutStreak += 1;

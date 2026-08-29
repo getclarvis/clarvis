@@ -1018,7 +1018,8 @@ describe("Environment manager", () => {
 
     writeFileSync(resource, "version two\n");
 
-    expect(() => target.skillRoots()).toThrow(/reconnect the kernel/);
+    expect(target.skillRoots()).toHaveLength(4);
+    expect(() => target.assertRunSnapshot()).toThrow(/reconnect the kernel/);
     const after = manager().resolveActive([], TRUSTED);
     expect(after.fingerprint).not.toBe(before.fingerprint);
   });

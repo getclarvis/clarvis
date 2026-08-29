@@ -70,11 +70,19 @@ function relativeLayer(edge: ImportEdge): string | undefined {
 
 describe("code's internal architecture", () => {
   it("releases durable memory recovery only after the usable application paint", () => {
-    const source = readFileSync(join(SRC, "index.tsx"), "utf8");
+    const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
     const painted = source.indexOf('"app.boot.painted"');
     const recovery = source.indexOf("workspaceManager.startMemoryRecovery()");
     expect(painted).toBeGreaterThanOrEqual(0);
     expect(recovery).toBeGreaterThan(painted);
+  });
+
+  it("starts a task queued in the startup composer before complete-app hydration", () => {
+    const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
+    const submission = source.indexOf('detachObserved("startup_submit"');
+    const appMount = source.indexOf('diagnosticAsync("boot.app-mount"');
+    expect(submission).toBeGreaterThanOrEqual(0);
+    expect(appMount).toBeGreaterThan(submission);
   });
 
   it("confines concrete kernel imports to composition and adapter boundaries", () => {
@@ -82,6 +90,8 @@ describe("code's internal architecture", () => {
       const relativeFile = relative(SRC, file).split(sep).join("/");
       if (
         relativeFile === "index.tsx" ||
+        relativeFile === "runtime.tsx" ||
+        relativeFile === "startup-foundation.ts" ||
         relativeFile.startsWith("bootstrap/") ||
         relativeFile.startsWith("adapters/")
       )

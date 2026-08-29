@@ -10,7 +10,7 @@ Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clar
 `@clarvis/capability`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
-Clients remain independent of the engine through five deliberately bounded public entrypoints. Each
+Clients remain independent of the engine through six deliberately bounded public entrypoints. Each
 public symbol has one thematic owner; the root is not a compatibility barrel for lower packages.
 
 | Entry                       | Responsibility                                                                             |
@@ -20,6 +20,7 @@ public symbol has one thematic owner; the root is not a compatibility barrel for
 | `@clarvis/kernel/config`    | config stores/schemas, agents, models, plugins, workflows and settings composition         |
 | `@clarvis/kernel/policy`    | guard, sanitization, tool identity, event mapping/policy/spans and ingest state            |
 | `@clarvis/kernel/local`     | shell/process/executable helpers and local filesystem/git adapters                         |
+| `@clarvis/kernel/logger`    | logger constructor and types without loading file-kernel bootstrap                        |
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > may change during the beta period.
@@ -117,10 +118,14 @@ authored fingerprint, and effective fingerprint; `applyComposition` revalidates 
 definition plus selection as one recoverable transaction. Trust-write failure restores both prior
 documents, while an unchanged workspace selection shadowing a global-default write is neither
 activated nor newly approved. The pinned fingerprint includes resolved plugin manifests and
-companion declarations, agent files, packaged skill bodies/resources, and the content, size, mode,
+companion declarations, agent files, raw bounded packaged-skill manifest/resource bytes, and the content, size, mode,
 and package-relative path of every directly referenced package-local MCP, hook, or capability
 process file, plus selected standalone skill bodies/resources. Process-file admission is bounded per
-file, per plugin, and by file count. A later contribution drift fails closed until reconnect.
+file, per plugin, and by file count. Ordinary contribution projections reuse the pinned parsed
+snapshot instead of rescanning and rehashing every accessor. Immediately before a run lease is
+admitted, the kernel rehashes the complete selected contribution surface once; drift fails that run
+closed until reconnect, while control-plane reads remain responsive and cannot consume changed
+bytes under the old fingerprint.
 Workspace-trust
 transitions recompose that extension snapshot only while no run is active, and selected plugin
 update/uninstall uses the same kernel-owned exclusion boundary and blocks later runs until reconnect.
@@ -599,7 +604,7 @@ The suite is classified by its primary boundary while the architecture migration
 - `tests/integration/` owns real filesystem, process, git, loop, plan, stdio and loopback boundaries,
   plus file-kernel and owner/composition wiring. Memory capability/loop behavior belongs to
   `@clarvis/memory`; this package keeps one composition-root sentinel only.
-- `tests/architecture/` owns static enforcement of the five-entry public surface and the
+- `tests/architecture/` owns static enforcement of the six-entry public surface and the
   cross-package workspace-layout invariant.
 - `tests/helpers/` contains executable fixtures only. They run under the repository's pinned Bun
   runtime; the kernel test suite does not require a second language runtime. Helpers are not test

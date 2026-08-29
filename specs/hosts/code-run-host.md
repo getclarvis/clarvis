@@ -427,8 +427,9 @@ relabelling a completed run — `packages/code/tests/component/run-host.test.ts:
 `teardownRuns` (`:442`) is the hard form: it bumps `runOwnershipEpoch`, aborts bash, cancels the
 handle with `cancelRequested = true`, clears `currentSink`/`currentHandle`/`workflowRunId`/
 `currentStatusExecId`/`heldIngest`, sets `runActive(false)` and resets the terminal title (`:443`–`:455`).
-It is what `App.tsx` supplies as the memory fuse's `forceStopRun`
-(`packages/code/src/index.tsx:1140`, consumed at `packages/code/src/views/App.tsx:209`).
+It is what `runtime.tsx` supplies as the memory fuse's `forceStopRun`
+(`packages/code/src/runtime.tsx`, `runControls.forceStop`, consumed by
+`packages/code/src/views/App.tsx`).
 
 Unlike `runManaged`'s `finally`, `teardownRuns` does **not** await the handle's `closed` or `done`: the
 cancel is fire-and-forget — `void currentHandle.cancel().catch(() => undefined)` (`:444`–`:446`) — so a
@@ -1115,7 +1116,7 @@ The following are derived directly from this document's own source and its tests
     `TranscriptStoreDeps.describeToolCall` is injected rather than imported
     (`packages/code/src/adapters/store.ts:269`–`:278`).
 
-52. **Every `@clarvis/kernel` import in this scope uses one of the five sanctioned entrypoints**
+52. **Every `@clarvis/kernel` import in this scope uses one of the six sanctioned entrypoints**
     (INV-251) — full statement owned by [hosts/code-bootstrap.md](code-bootstrap.md) §5. In
     scope: `@clarvis/kernel/policy` (`packages/code/src/run-host.ts:10`,
     `packages/code/src/adapters/session-store.ts:9`), `@clarvis/kernel/config`
@@ -1232,7 +1233,7 @@ The following are derived directly from this document's own source and its tests
 |---|---|---|
 | `@clarvis/kernel/policy` | `packages/code/src/run-host.ts:10` (`isIngestPending`), `packages/code/src/adapters/session-store.ts:9` (`sanitizeText`) | value imports; both are shared classification rules with a single kernel owner |
 | `@clarvis/kernel/config` | `packages/code/src/adapters/kernel-run-client.ts:1` (`resolveAgentsByName`), `packages/code/src/adapters/execution-safety.ts:1` (`parseModelRef`, `PLANS_DEFAULTS`) | value imports |
-| `@clarvis/kernel/bootstrap` | `packages/code/src/adapters/workspace-client-manager.ts` (`createFileKernel`) | value import; `WorkspaceClientManager` owns one pinned file kernel |
+| `@clarvis/kernel/bootstrap` | `packages/code/src/adapters/workspace-client-manager.ts` (`loadFileKernelFactory`) | type-only options plus a dynamic value import; `WorkspaceClientManager` owns one pinned file kernel without adding bootstrap to the eager startup graph |
 | `@clarvis/paths` | `packages/code/src/adapters/file-prompt-history.ts:1` (`DIR_MODE`, `FILE_MODE`, `workspaceStatePaths`) | value import — the only place in this scope that names a path |
 | `solid-js` / `solid-js/store` | `packages/code/src/run-host.ts:1`, `packages/code/src/adapters/store.ts:1`,`:2`, `packages/code/src/adapters/activity-store.ts:1`, `packages/code/src/adapters/active-agent.ts:1`, `packages/code/src/adapters/connection-state.ts:1` | reactive primitives; `batch` is load-bearing (invariant 38) |
 | `node:crypto` | `packages/code/src/adapters/store.ts:3` (`createHash` for `transcriptTextFingerprint`) | value import |
@@ -1249,12 +1250,12 @@ The following are derived directly from this document's own source and its tests
 
 | Consumer | What it takes | Line |
 |---|---|---|
-| `packages/code/src/index.tsx` | `createRunHost` and the entire dep wiring | `:36`, `:1003`–`:1029` |
-| `packages/code/src/index.tsx` | one `createKernelRunClient` for the pinned workspace, with `prepareReconnect` bound to `workspaceManager.invalidate` | `createWorkspaceRunClient` |
-| `packages/code/src/index.tsx` | `WorkspaceClientManager.create` | `bootSilentSessionStore` and `runApp` |
-| `packages/code/src/index.tsx` | `createSessionStore`, `createTranscriptStore`, `createActivityStore`, `createConnectionState`, `createFilePromptHistory`, `createActiveAgentStore` | `:185`, `:543`, `:547`, `:554`, `:595`, `:911` |
+| `packages/code/src/runtime.tsx` | `createRunHost` and the entire dependency wiring | `runApp` |
+| `packages/code/src/runtime.tsx` | one `createKernelRunClient` for the pinned workspace, with `prepareReconnect` bound to `workspaceManager.invalidate` | `createWorkspaceRunClient` |
+| `packages/code/src/runtime.tsx` and `packages/code/src/startup-foundation.ts` | `WorkspaceClientManager.create`; ordinary run may prepare it while the complete runtime chunk loads | `bootSilentSessionStore`, `runApp`, `prepareStartupFoundation` |
+| `packages/code/src/runtime.tsx` | `createSessionStore`, `createTranscriptStore`, `createActivityStore`, `createConnectionState`, `createFilePromptHistory`, `createActiveAgentStore` | `runApp` |
 | `packages/code/src/views/App.tsx` | `createMemoryPressureController` + `tuiRssLimitBytes`, wired to `run.active` / `run.cancel` / `run.forceStop` / `backend.reconnect` | `:79`, `:81`, `:205`–`:212` |
-| `packages/code/src/index.tsx` | `runHost.teardownRuns()` supplied as the fuse's `forceStop` | `:1490` |
+| `packages/code/src/runtime.tsx` | `runHost.teardownRuns()` supplied as the fuse's `forceStop` | `runControls.forceStop` |
 
 ### 7.4 The layering constraint
 
@@ -1269,15 +1270,15 @@ Three architecture tests hold the direction:
   and `MemoryIngestNotice` live in `core/run-types.ts` and are merely re-exported from
   `packages/code/src/adapters/run-types.ts:10`, and why `PromptHistory` is a `core` interface with a `file-prompt-history`
   adapter behind its `PromptHistoryPersistence` port (`packages/code/src/core/prompt-history.ts:35`).
-- Only five `@clarvis/kernel` entrypoints, and no lower package —
+- Only six `@clarvis/kernel` entrypoints, and no lower package —
   `packages/code/tests/architecture/dependency-boundary.test.ts:73`, `:89`.
 
 ### 7.5 Coverage policy touching this scope
 
 `tooling/checks/coverage.ts:29` sets `@clarvis/code`'s floors to 0.93 functions / 0.96 lines.
 `src/adapters/run-types.ts` and `src/core/run-types.ts` are listed in the `NO_COUNTER_ALLOWLIST` as
-type-only (`tooling/checks/coverage.ts:87`, `:87`); `src/index.tsx` is allow-listed as an executable
-entry point whose import would start a terminal UI (`:72`–`:75`).
+type-only; `src/index.tsx` and `src/runtime.tsx` are allow-listed because importing either starts
+application lifecycle work (`tooling/checks/coverage.ts`, `NO_COUNTER_ALLOWLIST.code`).
 
 ## 8. Open questions
 
@@ -1310,7 +1311,7 @@ entry point whose import would start a terminal UI (`:72`–`:75`).
   otherwise. What changed is that the signature no longer implies they would not.
   `TranscriptStore.openRun` keeps its parameter, because it really is keyed by execution: it
   namespaces every node key with it (`packages/code/src/adapters/store.ts:949`-`:950`).
-- **`ConnectionStore` and `connectionLabel` have no producer in this document's scope.** `index.tsx` calls
+- **`ConnectionStore` and `connectionLabel` have no producer in this document's scope.** `runtime.tsx` calls
   `conn.set(...)` (`:830`, `:1079`, `:1087`), but which header component consumes `connectionLabel`
   belongs to [hosts/code-bootstrap.md](code-bootstrap.md).
 - **Delegated, deliberately:** transcript node kinds, segmentation, the tool-body hydration window and

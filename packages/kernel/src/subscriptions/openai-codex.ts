@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import type { CatalogProvider } from "@clarvis/protocol";
-import { VERSION } from "@clarvis/loop";
+import { VERSION } from "@clarvis/loop/host";
 
 import {
   assertOrigin,

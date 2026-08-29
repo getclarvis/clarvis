@@ -22,7 +22,7 @@ export interface AgentsCommandDeps {
 /** Registers the Agents settings view on the shared command registry. */
 export function registerAgentsCommands(commands: CommandScope, deps: AgentsCommandDeps): void {
   const view = lazyView(async () => {
-    const { AgentsPanel } = await import("../../views/config/AgentsPanel.tsx");
+    const { AgentsPanel } = await import("../../views/cold-surfaces.ts");
     return (host: ViewHost) => {
       if (deps.loadCatalog !== undefined) detachObserved("models_catalog_load", deps.loadCatalog);
       return AgentsPanel(host, {

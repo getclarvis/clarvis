@@ -31,6 +31,18 @@ export class MCPInteractiveAuthorizationUnavailableError extends Error {
   }
 }
 
+/** Browser authorization is continuing without holding the current run. */
+export class MCPAuthorizationPendingError extends Error {
+  readonly code = "mcp_oauth_authorization_pending" as const;
+
+  constructor(readonly completion: Promise<void> = Promise.resolve()) {
+    super(
+      "MCP OAuth authorization is continuing in the browser; this MCP is inactive for the current run.",
+    );
+    this.name = "MCPAuthorizationPendingError";
+  }
+}
+
 /** Browser authorization did not complete successfully. */
 export class MCPAuthorizationFailedError extends Error {
   readonly code = "mcp_oauth_authorization_failed" as const;

@@ -339,7 +339,7 @@ records that a fourth, `GRANDFATHERED`, was never legitimate and no longer has a
 | Package | Type-only | Barrel | Entry point | GRANDFATHERED |
 |---|---:|---:|---:|---|
 | capability | 8 | – | – | – |
-| code | 4 | – | 2 (`src/cli.ts`, `src/index.tsx`) | – (was `src/adapters/kernel-capabilities-client.ts`; closed 2026-08-22) |
+| code | 4 | – | 3 (`src/cli.ts`, `src/index.tsx`, `src/runtime.tsx`) | – (was `src/adapters/kernel-capabilities-client.ts`; closed 2026-08-22) |
 | hooks | – | – | – | – (empty array) |
 | kernel | 5 | – | 1 (`src/bin.ts`) | – |
 | loop | – | 4 (`host`, `lib`, `workflows`, `workspace`) | – | – (was `src/version.ts` and `src/settings/marketplace-schema.ts`; both closed 2026-08-22) |
@@ -1011,7 +1011,7 @@ only the owner-specific default").
 | Missing report **and** missing `src/`, type-only package | `tooling/checks/coverage.ts:245` | `readdir` throws `ENOENT`; pinned by `tooling/tests/unit/coverage.test.ts:34-39` |
 | Empty own-source report, non-type-only | `tooling/checks/coverage.ts:271` | `Error: <pkg>: LCOV report contains no own-source line data` |
 | Floor breach, unmeasured module, or type-only runtime export | `tooling/checks/coverage.ts` (`checkCoverage`, failure collection and final `AggregateError`) | collected across **all** packages, then one `AggregateError` — the run does not stop at the first bad package |
-| Stale allowlist entry | `tooling/checks/coverage.ts:446-463` | **tolerated**: printed as an informational line, exit code unaffected |
+| Stale allowlist entry | `tooling/checks/coverage.ts` (`staleEntries`) | **tolerated**: printed as an informational line, exit code unaffected |
 | Package with zero functions in LCOV | `tooling/checks/coverage.ts:275` | scored `1` rather than dividing by zero |
 | Stream-metrics drift | `tooling/tests/architecture/stream-metrics-drift.test.ts`, "the two production stream metrics implementations stay token-identical" | its `expect(...).toBe(...)` fails through Bun's normal test reporter; the test has no custom stderr or `process.exitCode` path |
 | Normalizer admits an unrelated token difference | `tooling/tests/architecture/stream-metrics-drift.test.ts`, "the normalizer permits only the owner-specific default" | its negative-control expectation fails through Bun's normal test reporter |

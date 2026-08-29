@@ -95,6 +95,9 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 
 | Method | Signature | Line |
 |---|---|---|
+| `snapshot` | `(selection) => readonly PluginContributionSnapshot[]` | `PluginContributions` |
+| `pin` | `(selection) => readonly PluginContributionSnapshot[]` | `PluginContributions` |
+| `assertUnchanged` | `(selection) => void` | `PluginContributions` |
 | `skillRoots` | `(selection) => SkillRootInput[]` | `:52` |
 | `skillBootstraps` | `(selection) => PluginBootstrapSkill[]` | `:62` |
 | `settingsScopes` | `(selection) => SettingsScope[]` | `:64` |
@@ -745,6 +748,17 @@ namespaces remain plugin-name based.
 
 #### 4.8.1 Per-contribution behaviour
 
+`pin` resolves the qualified selection once, retains the parsed loadables, and records one digest
+per plugin. Skill identity hashes each bounded `SKILL.md` and resource as raw bytes, including the
+relative resource name, using `enumerateResources` and the exact limits exported by
+`@clarvis/skills`; it does not decode and reserialize every Markdown body into a second semantic
+snapshot. Ordinary projection methods verify that the requested selection is the pinned selection
+and reuse those loadables. `assertUnchanged` is the explicit full revalidation used at run admission.
+Production: `skillSurface`, `assertPinnedSelection`, `assertPinnedSnapshot`, `pin`, and
+`assertUnchanged` in `packages/kernel/src/plugins/plugin-contributions.ts`. Test:
+`packages/kernel/tests/integration/plugin-contributions.test.ts` (pinned projections and explicit
+run-boundary drift cases).
+
 - **`skillRoots`** (`:310-353`) filters declared roots to those that `statSync` says are directories,
   reports a plugin with none, then spends the shared 24-root budget, truncating and reporting when a
   plugin does not fit. `installScope: "workspace"` maps to skills-scope `"workspace"`, `"global"` to
@@ -1199,13 +1213,13 @@ All of the following are derived directly from this document's own source and te
     the sparse-file tests: `packages/loop/tests/integration/plugin-agents.test.ts:36-45`, `packages/kernel/tests/integration/plugin-manifest.test.ts:98-103`.
 
 44. **A plugin contributes only when its exact scoped installation belongs to the process-pinned
-    Environment, and later bytes cannot enter under that snapshot.** Every `PluginContributions`
-    method takes the resolved selection; `pin` captures its exact loadables and digest, while
-    `assertPinnedSnapshot` rejects drift before any later lookup. Production:
-    `packages/kernel/src/plugins/plugin-contributions.ts`; composition in
-    `packages/kernel/src/environments/environment-manager.ts`. Test:
-    `packages/kernel/tests/integration/environment-manager.test.ts` and
-    `packages/kernel/tests/integration/plugin-contributions.test.ts`.
+    Environment, and later bytes cannot execute under that snapshot.** Every
+    `PluginContributions` method takes the resolved selection; `pin` captures its exact loadables and
+    digest, ordinary projections reject selection changes without rehashing, and
+    `assertUnchanged` performs full drift validation before the kernel admits each run. Production:
+    `packages/kernel/src/plugins/plugin-contributions.ts`, `EnvironmentManager.assertRunSnapshot`,
+    and `acquireRunLease` in `packages/kernel/src/file-kernel.ts`. Test:
+    `packages/kernel/tests/integration/{environment-manager,plugin-contributions,file-kernel}.test.ts`.
 
 44a. **Every directly referenced package-local process file is part of the plugin snapshot.**
     `snapshotPluginExecutables` resolves confined regular files from MCP stdio argv/cwd, the current
@@ -1685,11 +1699,12 @@ duplicated tests rather than by a drift lock.
   same manually-advanced checkout to observe the resulting display/provenance mismatch directly, but
   the *design intent* behind the asymmetry is no longer undetermined.
 
-- **The four `PluginContributions` skill/agent readers each call `loadableOf` afresh.** `skillRoots`,
-  `agents`, `readAgent`, `locateCapabilityExecutable` and `skillPlansMode` all re-read the manifest,
-  the agent tree and the install record from disk on every call
-  (`packages/kernel/src/plugins/plugin-contributions.ts:285-295`, `:400-432`). The docstring says contributions are read "fresh
-  on each call" (`:134-136`) but gives no cost model, and nothing measures it.
+- ~~**Contribution readers rescan and rehash every selected plugin on every accessor.**~~
+  **Resolved:** `pin` retains the parsed loadables, ordinary projections use only
+  `assertPinnedSelection`, and the full raw-byte digest check is centralized at
+  `EnvironmentManager.assertRunSnapshot` immediately before run admission. The runtime test in
+  `packages/kernel/tests/integration/file-kernel.test.ts` proves a drifted skill can still be listed
+  from the pinned projection but cannot enter a new run.
 
 - **`code`'s marketplace clone bypasses the kernel entirely**
   (`packages/code/src/adapters/marketplace.ts:212-226` spawns git through `Bun.spawn`), while plugin

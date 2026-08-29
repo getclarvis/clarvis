@@ -35,6 +35,11 @@
       "bun": "./src/local.ts",
       "types": "./dist/local.d.ts",
       "import": "./dist/local.js"
+    },
+    "./logger": {
+      "bun": "./src/logger.ts",
+      "types": "./dist/logger.d.ts",
+      "import": "./dist/logger.js"
     }
   },
   "bin": {

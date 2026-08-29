@@ -1,5 +1,5 @@
-/** The adapter class marker emitted in the provider SDK chunk. */
-const PROVIDER_ADAPTER_MARKER = "class AiSdkAdapter";
+/** A stable diagnostic marker emitted only with the provider SDK adapter. */
+const PROVIDER_ADAPTER_MARKER = "llm.provider.resolved";
 
 const LAZY_SURFACE_MARKERS = [
   "no diff in the transcript yet",
@@ -31,13 +31,13 @@ export function assertLazyProviderArtifact(input: {
   }
   const chunkBasename = providerChunk.path.split(/[\\/]/).at(-1);
   if (chunkBasename === undefined) throw new Error("artifact provider chunk has no basename");
-  const dynamicImport = `await import("./${chunkBasename}")`;
-  const staticImport = `from "./${chunkBasename}"`;
+  const dynamicImport = `import("./${chunkBasename}")`;
+  const staticImports = [`from "./${chunkBasename}"`, `from"./${chunkBasename}"`];
   const sources = [input.entrySource, ...input.javascriptChunks.map((chunk) => chunk.source)];
   if (!sources.some((source) => source.includes(dynamicImport))) {
     throw new Error("artifact has no dynamic import for the AiSdkAdapter chunk");
   }
-  if (sources.some((source) => source.includes(staticImport))) {
+  if (sources.some((source) => staticImports.some((marker) => source.includes(marker)))) {
     throw new Error("artifact statically imports the AiSdkAdapter chunk");
   }
 }

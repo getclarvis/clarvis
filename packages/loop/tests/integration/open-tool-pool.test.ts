@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from "../bun-test.ts";
 import { makeHarness, type TestHarness } from "./_helpers.ts";
 import { MockLLM, mockMCPFactory } from "./_fixtures.ts";
+import { MCPAuthorizationPendingError, type MCPClientFactory } from "@clarvis/mcp-client";
 
 let harness: TestHarness | null = null;
 afterEach(async () => {
@@ -64,6 +65,36 @@ describe("openToolPool — host-composed automatic server tools", () => {
 });
 
 describe("openToolPool — degraded startup when some servers fail to connect", () => {
+  it("continues with no MCP tools when every browser authorization is pending", async () => {
+    const authorizationWaits: Array<string | undefined> = [];
+    const mcpFactory: MCPClientFactory = async (_server, _relay, options) => {
+      authorizationWaits.push(options?.authorizationWait);
+      throw new MCPAuthorizationPendingError();
+    };
+    const events: { type: string }[] = [];
+    harness = await makeHarness({
+      llm: new MockLLM({ script: [{ text: "run continued" }] }),
+      mcpFactory,
+      onEvent: (event) => events.push(event),
+    });
+
+    const res = await harness.run({
+      messages: [{ role: "user", content: "continue without oauth" }],
+      servers: [
+        { name: "expo", transport: "http", url: "https://example.test/expo" },
+        { name: "supabase", transport: "http", url: "https://example.test/supabase" },
+      ],
+      profiles: [{ name: "solo", model: "anthropic/x", tools: [], iteration_limit: 2 }],
+      entry: "solo",
+      budget: { on_exceed: "stop", total_token_limit: 1_000 },
+    });
+
+    expect(res.status).toBe("completed");
+    if (res.status === "completed") expect(res.result).toBe("run continued");
+    expect(authorizationWaits).toEqual(["background", "background"]);
+    expect(events.some((event) => event.type === "mcp_degraded")).toBe(true);
+  });
+
   it("proceeds with the servers that connected and records an mcp_degraded event", async () => {
     const events: { type: string }[] = [];
     harness = await makeHarness({

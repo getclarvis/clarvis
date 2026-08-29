@@ -141,6 +141,8 @@ export interface AppShell {
   workspaceLabel?: string;
   branch?: string;
   files: () => string[];
+  /** Queue non-visual startup work until the first usable application frame is idle. */
+  afterPaint?(task: () => void): void;
   worktree?: {
     name: string;
     branch: string;
@@ -248,6 +250,8 @@ export interface AppProps {
   session: AppSessionControls;
   fleet: AppFleet;
   backend: AppBackend;
+  /** Draft typed into the startup composer before the complete application mounted. */
+  initialDraft?: string;
 }
 
 /**
@@ -745,6 +749,9 @@ export function App(props: AppProps): JSX.Element {
     hasAvailablePlan: () => isAvailablePlan(props.activity.plan),
     backend: props.backend.probe,
     mcpClient: props.backend.client,
+    ...(props.shell.afterPaint === undefined
+      ? {}
+      : { afterPaint: (task: () => void) => props.shell.afterPaint!(task) }),
     plugins: props.backend.plugins,
     environments: props.backend.environments,
     skills: props.backend.skills,
@@ -1272,6 +1279,10 @@ export function App(props: AppProps): JSX.Element {
             onBashCommand={props.run.bang}
             onReady={(el) => {
               inputEl = el;
+              if (props.initialDraft !== undefined && el.plainText.length === 0) {
+                el.setText(props.initialDraft);
+                el.gotoBufferEnd();
+              }
               props.run.registerDraftRestore?.((text, content) => {
                 if ((el.plainText ?? "").trim().length > 0) return;
                 el.setText(text);

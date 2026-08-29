@@ -28,6 +28,7 @@ export type {
   ElicitationRelay,
   MCPClientHandle,
   MCPConnectOptions,
+  MCPAuthorizationWait,
   MCPClientFactory,
   RuntimeEnvironment,
   MCPClientFactoryOptions,
@@ -37,6 +38,7 @@ export {
   DEFAULT_MCP_OAUTH_AUTHORIZATION_TIMEOUT_MS,
   DEFAULT_MCP_OAUTH_CALLBACK_PORT,
   MCPAuthorizationFailedError,
+  MCPAuthorizationPendingError,
   MCPInteractiveAuthorizationUnavailableError,
 } from "./oauth.ts";
 export type {

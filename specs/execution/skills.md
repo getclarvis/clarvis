@@ -54,6 +54,8 @@ Declared in `packages/skills/package.json:25`–`:42`; every entry resolves to `
 | `ParsedSkill` | type only | `packages/skills/src/parse.ts:16` |
 | `clarvisSkillRoots(opts?)` | `(ClarvisSkillRootsOptions) => SkillRootInput[]` | `packages/skills/src/preset.ts:32` |
 | `MAX_SKILL_ROOTS` | `32` | `packages/skills/src/limits.ts:2` |
+| `enumerateResources(dir, followSymlinks, config)` | bounded `ResourceEntry[]` walk used by disclosure and snapshot consumers | `packages/skills/src/scan.ts` |
+| snapshot file/resource limits | `MAX_SKILL_FILE_BYTES`, `MAX_SKILL_FILE_CHARS`, `MAX_SKILL_RESOURCE_BYTES`, `MAX_SKILL_RESOURCE_CHARS` | `packages/skills/src/limits.ts` |
 | `ErrorCode` | type only — the closed union of error codes | `packages/skills/src/errors.ts:6` |
 | re-exports from `@clarvis/paths` | `resolveWorkspaceDir`, `resolveAgainst`, `expandHome` | `packages/skills/src/index.ts:66` |
 
@@ -490,6 +492,11 @@ Pinned: the three resource outcomes at
 `packages/skills/tests/integration/sidecar.test.ts:193`, `:201`.
 
 ### 4.7 Resource enumeration (`enumerateResources`)
+
+`enumerateResources` is also exported from `@clarvis/skills`. This lets a host that must fingerprint
+the admitted resource surface use the same symlink, depth, entry and resource-count policy as the
+registry instead of implementing a divergent second walk. The function still owns no host or
+Environment semantics.
 
 Depth-first with a `realpath`-keyed `visited` set, so a symlink cycle back into the skill terminates
 (`packages/skills/src/scan.ts:247`, `:263`–`:265`; pinned at
@@ -1023,7 +1030,7 @@ alone.
 | `@clarvis/loop` | `import type { AgentSkills, SkillRootInput }`, `import type { SkillsProvider }` (`packages/loop/src/runtime/build-run-deps.ts:2`, `:30`); `export type` re-exports (`packages/loop/src/lib.ts:19`–`:20`); `export type { PluginBootstrapSkill }` (`packages/loop/src/runtime/capabilities/skills-settings.ts:50`) | **type-only** — erased |
 | `@clarvis/loop` | `import("@clarvis/skills")` and `import("@clarvis/skills/capability")` inside `buildExecuteRunDeps` (`:448`, `:541`) | **dynamic** value import, deliberately |
 | `@clarvis/kernel` | `createAgentSkills` for the plugin panel's skill listing (`packages/kernel/src/plugins/plugin-service.ts:8`) | static value |
-| `@clarvis/kernel` | `MAX_SKILL_ROOTS` to bound the plugin root budget (`packages/kernel/src/plugins/plugin-contributions.ts:27`) | static value |
+| `@clarvis/kernel` | `MAX_SKILL_ROOTS`, `enumerateResources`, and the public file/resource limits to bound and hash the plugin skill surface (`packages/kernel/src/plugins/plugin-contributions.ts`) | static value |
 | `@clarvis/kernel` | `SkillsProvider` type via `@clarvis/loop` (`packages/kernel/src/skills/skills-service.ts:1`) | type-only |
 | `@clarvis/code` | reaches skills only through `KernelClient.skills` (`packages/code/src/adapters/kernel-run-client.ts:429`–`:430`, `packages/code/src/adapters/kernel-capabilities-client.ts:30`) | protocol only |
 

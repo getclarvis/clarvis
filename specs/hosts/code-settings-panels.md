@@ -1459,7 +1459,7 @@ cases).
 | `EnvironmentBrowser.tsx` | `@clarvis/protocol` (`EnvironmentService` and Environment DTOs) | type-only | `packages/code/src/views/config/EnvironmentBrowser.tsx:1-7` |
 | `adapters/models-catalog.ts` | `@clarvis/protocol` catalog DTOs + `@clarvis/kernel/config` `parseModelRef` | runtime + type | `packages/code/src/adapters/models-catalog.ts:1`, `:2` |
 
-Every one of those is one of the five sanctioned kernel entrypoints (INV-251) — full statement owned
+Every one of those is one of the six sanctioned kernel entrypoints (INV-251) — full statement owned
 by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 
 ### 7.2 Internal edges

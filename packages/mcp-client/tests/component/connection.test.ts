@@ -138,6 +138,20 @@ describe("openConnection connection boundary", () => {
     await opened.conn.close();
   });
 
+  it("forwards background browser authorization without changing the direct-call default", async () => {
+    let authorizationWait: string | undefined;
+    const opened = await open(
+      async (_server, _relay, options) => {
+        authorizationWait = options?.authorizationWait;
+        return handle();
+      },
+      { authorizationWait: "background" },
+    );
+
+    expect(authorizationWait).toBe("background");
+    await opened.conn.close();
+  });
+
   it("pauses only the connect deadline while interactive authorization is pending", async () => {
     vi.useFakeTimers();
     try {

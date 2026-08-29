@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   pluginSettingsFragment,
@@ -32,7 +32,14 @@ import {
   readPluginManifestSource,
   resolvePluginManifest,
 } from "./plugin-manifest.ts";
-import { createAgentSkills, MAX_SKILL_ROOTS } from "@clarvis/skills";
+import {
+  createAgentSkills,
+  enumerateResources,
+  MAX_SKILL_FILE_BYTES,
+  MAX_SKILL_RESOURCE_BYTES,
+  MAX_SKILL_RESOURCE_CHARS,
+  MAX_SKILL_ROOTS,
+} from "@clarvis/skills";
 import { readPluginInstallRecord } from "./plugin-install-record.ts";
 import type { PluginInstallRecord } from "./plugin-install-record.ts";
 import { ensurePluginDataDir } from "./plugin-runtime.ts";
@@ -60,6 +67,8 @@ export interface PluginContributions {
   snapshot(enabled: PluginSelection): readonly PluginContributionSnapshot[];
   /** Capture the exact contribution bytes selected for this kernel process. */
   pin(enabled: PluginSelection): readonly PluginContributionSnapshot[];
+  /** Reject selected contribution drift at the boundary before a new run starts. */
+  assertUnchanged(enabled: PluginSelection): void;
   /** Skill roots for enabled + loadable plugins. */
   skillRoots(enabled: PluginSelection): SkillRootInput[];
   /**
@@ -379,9 +388,31 @@ export function createPluginContributions(opts: {
     return out;
   };
 
+  /** Hash one bounded file into a selected plugin's immutable contribution snapshot. */
+  const hashFile = (
+    hash: ReturnType<typeof createHash>,
+    path: string,
+    maxBytes: number,
+    maxChars?: number,
+  ): void => {
+    const before = statSync(path);
+    if (!before.isFile() || before.size > maxBytes) throw new Error("plugin skill file is invalid");
+    const bytes = readFileSync(path);
+    const after = statSync(path);
+    if (
+      bytes.byteLength !== before.size ||
+      after.size !== before.size ||
+      after.mtimeMs !== before.mtimeMs
+    )
+      throw new Error("plugin skill file changed while it was read");
+    if (maxChars !== undefined && bytes.toString("utf8").length > maxChars)
+      throw new Error("plugin skill resource exceeds its character limit");
+    hash.update(bytes);
+  };
+
   const skillSurface = (
     plugin: Loadable,
-  ): ({ name: string; [key: string]: unknown } | { unavailable: true })[] => {
+  ): ({ name: string; digest: string } | { unavailable: true })[] => {
     const roots = pluginSkillScanRoots(
       plugin.dir,
       plugin.manifest.skills,
@@ -399,20 +430,18 @@ export function createPluginContributions(opts: {
       return skills
         .listSkills()
         .map((info) => {
-          const content = skills.loadSkill(info.name);
-          if (content === undefined) return { name: info.name, unavailable: true };
-          return {
-            name: info.name,
-            description: info.description,
-            metadata: info.metadata,
-            body: content.body,
-            resources: content.resources
-              .map((resource) => ({
-                rel: resource.rel,
-                content: skills.readResource(info.name, resource.rel),
-              }))
-              .sort((left, right) => left.rel.localeCompare(right.rel)),
-          };
+          const hash = createHash("sha256");
+          hash.update(info.name).update("\0manifest\0");
+          hashFile(hash, info.path, MAX_SKILL_FILE_BYTES);
+          for (const resource of enumerateResources(
+            info.dir,
+            skills.config.followSymlinks,
+            skills.config,
+          )) {
+            hash.update("\0resource\0").update(resource.rel).update("\0");
+            hashFile(hash, resource.path, MAX_SKILL_RESOURCE_BYTES, MAX_SKILL_RESOURCE_CHARS);
+          }
+          return { name: info.name, digest: `sha256:${hash.digest("hex")}` };
         })
         .sort((left, right) => left.name.localeCompare(right.name));
     } catch {
@@ -530,8 +559,12 @@ export function createPluginContributions(opts: {
       return snapshots;
     },
 
-    skillRoots(enabled) {
+    assertUnchanged(enabled) {
       assertPinnedSnapshot(enabled);
+    },
+
+    skillRoots(enabled) {
+      assertPinnedSelection(enabled);
       let budget = PLUGIN_SKILL_ROOT_BUDGET;
       return loadables(enabled).flatMap((p) => {
         const declared = skillsDirsOf(p);
@@ -581,7 +614,7 @@ export function createPluginContributions(opts: {
     },
 
     skillBootstraps(enabled) {
-      assertPinnedSnapshot(enabled);
+      assertPinnedSelection(enabled);
       return loadables(enabled).flatMap((p) =>
         p.manifest.bootstrapSkill === undefined
           ? []
@@ -590,7 +623,7 @@ export function createPluginContributions(opts: {
     },
 
     settingsScopes(enabled) {
-      assertPinnedSnapshot(enabled);
+      assertPinnedSelection(enabled);
       return loadables(enabled).map((p) => {
         const settings = pluginSettingsFragment(p.manifest);
         const namespacedServers = Object.fromEntries(
@@ -607,7 +640,7 @@ export function createPluginContributions(opts: {
     },
 
     mcpServers(enabled) {
-      assertPinnedSnapshot(enabled);
+      assertPinnedSelection(enabled);
       return loadables(enabled).flatMap(resolvedMcpServers);
     },
 

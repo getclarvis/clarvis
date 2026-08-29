@@ -12,7 +12,12 @@ import {
   levelEnabled,
   unref,
 } from "@clarvis/capability";
-import type { ElicitationRelay, MCPClientFactory, MCPClientHandle } from "./client.ts";
+import type {
+  ElicitationRelay,
+  MCPAuthorizationWait,
+  MCPClientFactory,
+  MCPClientHandle,
+} from "./client.ts";
 import { openConnection } from "./connection.ts";
 import type { OpenedConnection, ConnectionEventSink, PoolScope } from "./connection.ts";
 import { normalizeMcpCloseGraceMs, type ResilientSessionTimer } from "./resilient-session.ts";
@@ -44,6 +49,8 @@ export interface AcquireOptions {
    * advertises no `elicitation` capability. */
   relay?: ElicitationRelay;
   signal?: AbortSignal;
+  /** Whether browser OAuth blocks this acquisition or continues in the background. */
+  authorizationWait?: MCPAuthorizationWait;
   /** Override pool sharing for this lease; security-sensitive adapters use `owner`. */
   poolSharing?: PoolSharing;
 }
@@ -625,6 +632,7 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
         logger,
         ...(o.relay && !pooled ? { relay: o.relay } : {}),
         signal: linked.signal,
+        ...(o.authorizationWait === undefined ? {} : { authorizationWait: o.authorizationWait }),
       });
       manageConnectionClose(opened.conn, {
         disposeSignal: () => linked.dispose(),

@@ -10,6 +10,7 @@ import {
   type CodeConfig,
 } from "../../src/adapters/code-config.ts";
 import { createThemePreview } from "../../src/theme/theme.ts";
+import { readStartupKeySources } from "../../src/adapters/startup-key-sources.ts";
 import type { ThemeConfig } from "../../src/theme/model.ts";
 import type { ClarvisDirs } from "../../src/adapters/agents.ts";
 import {
@@ -302,6 +303,25 @@ test("keySources: workspace wins per var; writeKeySource round-trips and 'auto' 
     code.writeKeySource("global", "A_KEY", "auto");
     expect(readCfg(dirs.global.codeConfigFile).keySources?.A_KEY).toBeUndefined();
     dispose();
+  });
+});
+
+test("startup key-source projection preserves precedence and fails invalid values to auto", () => {
+  const dirs = tmpDirs();
+  seed(dirs.global.codeConfigFile, {
+    keySources: { SHARED_KEY: "env", GLOBAL_KEY: "keyfile" },
+    theme: { mode: "dark" },
+  });
+  mkdirSync(dirname(dirs.state.codeConfigFile), { recursive: true });
+  writeFileSync(
+    dirs.state.codeConfigFile,
+    JSON.stringify({ keySources: { SHARED_KEY: "keyfile", INVALID_KEY: "prompt" } }),
+  );
+
+  expect(readStartupKeySources(dirs)).toEqual({
+    SHARED_KEY: "keyfile",
+    GLOBAL_KEY: "keyfile",
+    INVALID_KEY: "auto",
   });
 });
 

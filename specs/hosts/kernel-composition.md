@@ -164,7 +164,7 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 6. **Kernel construction starts no memory-index inference; explicit recovery start is idempotent and
    applies once to resident owners plus every later owner generation.**
    Production: `InProcessKernel.startMemoryRecovery`, `buildOwner`, and `residentOwner` in
-   `packages/kernel/src/kernel.ts`; host calls in `packages/code/src/index.tsx`,
+   `packages/kernel/src/kernel.ts`; host calls in `packages/code/src/runtime.tsx`,
    `packages/kernel/src/serve.ts`, and `packages/server/src/bin.ts`.
    Test: `packages/kernel/tests/integration/owner-isolation.test.ts` (`starts durable memory recovery
    only after the host releases boot`).

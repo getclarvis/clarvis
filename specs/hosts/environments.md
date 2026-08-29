@@ -197,16 +197,20 @@ definition produces `invalid` (`resolved` in
 No state silently substitutes `builtin:default`.
 
 `resolveActive` pins one contribution snapshot for the process. Each active plugin digest covers its
-resolved manifest (including MCP/hook companion semantics), bounded agent files, packaged skill
-bodies/resources, install record, resolved source revision, and every directly referenced
+resolved manifest (including MCP/hook companion semantics), bounded agent files, the raw bytes of
+packaged skill manifests/resources under the skills package's own limits, install record, resolved source revision, and every directly referenced
 package-local MCP, hook, or capability process file's content, size, executable mode, and relative
 path. The process-file surface is capped at 256 files, 8 MiB per file, and 32 MiB per plugin
 (`snapshotPluginExecutables`, `snapshot`, and `pin` in `packages/kernel/src/plugins`; `identity` and
-`resolveActive` in `packages/kernel/src/environments/environment-manager.ts`). Before every later
-contribution lookup, content drift is rejected with `unavailable` until reconnect, so settings,
-agents, skills, and executables cannot consume a different checkout under the pinned fingerprint.
-Selected standalone skill digests likewise cover the skill body and every bounded resource body;
-`skillRoots` rejects a selected-skill change or a new builtin winner until reconnect. The fingerprint
+`resolveActive` in `packages/kernel/src/environments/environment-manager.ts`). Ordinary settings,
+MCP, agent and skill-root projections reuse those pinned parsed loadables and perform only an exact
+selection check; they neither rescan nor rehash the whole plugin tree. Immediately before each run
+lease, `EnvironmentManager.assertRunSnapshot` rehashes all selected plugin and standalone-skill
+bytes. Drift rejects that run with `unavailable` until reconnect, before any executable contribution
+can enter execution under the old fingerprint. Capability executable location retains its own full
+check at the executable boundary. Selected standalone skill digests cover the manifest and every
+bounded resource body; their full drift check likewise occurs at run admission rather than every
+`skillRoots` projection. The fingerprint
 also covers the qualified Environment id, definition revision, status, issues, and applicable trust
 state/fingerprint. Hook definitions are part of the plugin manifest digest, but independent
 hook-approval state is excluded from Environment identity. Selection mutations return
@@ -321,11 +325,13 @@ falls back to builtin.
 ### INV-317 — A kernel uses one immutable resolved snapshot
 
 Definition/selection changes require reconnection; a stale preview cannot authorize different
-bytes, contribution drift is rejected before lookup, and an already running kernel retains its
-original fingerprint. Trust transitions may recompose only at an idle boundary.
+bytes, contribution drift is rejected once at every run-admission boundary, and an already running
+kernel retains its original fingerprint. Read-only/control-plane projections use the pinned parse
+and cannot consume drifted bytes. Trust transitions may recompose only at an idle boundary.
 
-- **Production:** `PluginContributions.pin`, `assertPinnedSnapshot`,
-  `snapshotPluginExecutables`, `assertPinnedStandaloneSkills`, pinned `resolveActive`, revision CAS,
+- **Production:** `PluginContributions.pin`, `assertUnchanged`,
+  `snapshotPluginExecutables`, `EnvironmentManager.assertRunSnapshot`,
+  `assertPinnedStandaloneSkills`, pinned `resolveActive`, revision CAS,
   and preview fingerprint comparison in `packages/kernel/src`.
 - **Test:** the stale-preview, global-precedence, contribution-fingerprint, and trust-transition
   cases in `packages/kernel/tests/integration/environment-manager.test.ts`, including process-file
@@ -453,7 +459,7 @@ and cannot remove bytes other than the revision the caller inspected.
 | Malformed service input from an embedder or transport | `invalid_request`; no path is constructed or file touched. |
 | Workspace approval storage fails after a selection write | the exact prior selection is restored and the approval error is returned. |
 | Workspace approval storage fails during composition | the exact prior definition and selection are restored and the approval error is returned. |
-| Selected plugin content changes after snapshot resolution | contribution reads return `unavailable`; reconnect is required and no changed contribution is consumed under the old fingerprint. |
+| Selected plugin or standalone-skill content changes after snapshot resolution | control-plane projections remain pinned; the next run is refused at lease admission with `unavailable`, reconnect is required, and no changed contribution executes under the old fingerprint. |
 | Workspace trust changes or selected plugin update/uninstall is requested during a run | `conflict`; the trust store and selected checkout remain unchanged. |
 | A selected plugin update/uninstall completed but the kernel was not reconnected | new runs return `unavailable`; management remains available for reconnect/diagnosis. |
 | Global definition catalog is absent | listing creates it with private directory permissions and continues with `builtin:default`. |

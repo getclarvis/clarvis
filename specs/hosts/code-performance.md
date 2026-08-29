@@ -20,9 +20,10 @@ those paths together because their costs accumulate in one process and are exper
 
 Three distinctions are load-bearing:
 
-1. **Module load is not first paint, and first paint is not usable conversation.** The benchmark
-   times `--version`, the parser-free boot frame, the branded header and the input marker
-   independently (`packages/code/tooling/benchmarks/first-paint.ts`, `timeFirstPaint`, `measure`).
+1. **Module load is not first paint, and full hydration is not the start of interaction.** The
+   benchmark times `--version`, the minimal shell, the focused startup composer, the branded header
+   and the complete input marker independently (`packages/code/tooling/benchmarks/first-paint.ts`,
+   `timeFirstPaint`, `measure`).
 2. **RSS is not JavaScript heap.** The sampler records `rss`, `heapUsed`, `external` and
    `arrayBuffers`, while only RSS drives the fuse
    (`packages/code/src/adapters/memory-pressure.ts:110-118`, `:169-188`). Native renderer
@@ -61,15 +62,16 @@ that one isolated mechanism explains every such peak.
 | `--require-ac` | optionally requires mains power | `packages/code/tooling/benchmarks/first-paint.ts:331-338` |
 | `--debug[=level]` | writes bounded redacted lifecycle and memory diagnostics | `packages/code/src/cli-args.ts:108-110`, `packages/code/src/adapters/diagnostic-session.ts:354-374` |
 
-The benchmark owns three visible markers: `Clarvis · code · starting` for the exclusive branded
-parser-free shell,
-`◆ Clarvis` for complete header paint and `New task…` for the input dock
+The benchmark owns four visible markers: `Clarvis · code · starting` for the minimal shell,
+`Queue a task…` for the focused startup composer, `◆ Clarvis` for complete header paint and
+`New task…` for the complete input dock
 (`packages/code/tooling/artifact/markers.ts`, `BOOT_SHELL_MARKER`, `APP_PAINT_MARKER`,
-`APP_READY_MARKER`; `packages/code/tooling/benchmarks/first-paint.ts`, imported marker aliases).
-The first marker is absent from the complete application frame, while the latter two are absent from
-`BootFrame`; each timestamp therefore belongs to one stage and a placeholder shell cannot satisfy
-application paint or readiness. Production: `packages/code/src/views/BootFrame.tsx` (`BootFrame`).
-Test: `packages/code/tests/integration/splash-render.test.tsx` (boot marker exclusion).
+`STARTUP_READY_MARKER`, `APP_READY_MARKER`; `packages/code/tooling/benchmarks/first-paint.ts`, imported
+marker aliases). The startup frame excludes both complete-app markers, and the complete application
+excludes the startup-readiness marker. Each timestamp therefore belongs to one stage; a focused
+composer cannot satisfy full hydration and a decorative shell cannot satisfy functional input.
+Production: `packages/code/src/views/StartupComposer.tsx` (`StartupComposer`). Test:
+`packages/code/tests/integration/splash-render.test.tsx` (marker exclusion).
 
 ### 2.2 Runtime memory controls
 
@@ -110,8 +112,9 @@ changes, but it remains evidence rather than an allocator or a second hard budge
 
 ### 3.1 Benchmark result
 
-Each arm reports four `Stats` records — module-graph `version`, branded `shell`, header `paint`, and
-input `ready` — with `n`, minimum, median and maximum
+Each arm reports five `Stats` records — module-graph `version`, minimal `shell`, focused
+`startupReady`, complete-header `paint`, and complete-app `ready` — with `n`, minimum, median and
+maximum
 (`packages/code/tooling/benchmarks/first-paint.ts`, `ArmResult`, `measure`). The
 report also records Bun version, cwd, poll interval, power state, CPU governor/profile, observed CPU
 frequency and load per core (`packages/code/tooling/benchmarks/first-paint.ts`, `Environment`,
@@ -129,13 +132,13 @@ Interactive `--debug` writes versioned, redacted JSONL. Performance-relevant eve
 
 | Event | Relevant details | Source |
 | --- | --- | --- |
-| `app.boot.begin` | mode and workspace | `packages/code/src/index.tsx:426-436` |
+| `app.boot.begin` | mode and workspace | `packages/code/src/runtime.tsx` (`runApp`, `runHeadlessMode`) |
 | `async.started` / `async.settled` | operation, duration, outcome and sampled count | `packages/code/src/core/diagnostic-events.ts:125-170` |
-| `markdown.preload.completed|failed` | parser preload outcome | `packages/code/src/index.tsx:445-458` |
-| `app.boot.shell-painted` | process uptime after the branded parser-free shell reaches renderer idle | `packages/code/src/index.tsx` (`app.boot.shell-painted`) |
-| `app.render.mounted` | mode | `packages/code/src/index.tsx:1291-1307` |
-| `app.boot.painted` | process uptime, mode and whether the catalog signal is still empty | `packages/code/src/index.tsx:1307-1315` |
-| `catalog.load.started` | the catalog-dependent surface that crossed the lazy boundary | `packages/code/src/index.tsx` (`ensureModelsCatalog`) |
+| `markdown.preload.completed|failed` | parser preload outcome | `packages/code/src/runtime.tsx` (`preloadMarkdown`) |
+| `app.boot.shell-painted` | process uptime captured after the focused startup root reaches renderer idle | `packages/code/src/index.tsx` (`runInteractive`), emitted by `packages/code/src/runtime.tsx` (`runApp`) |
+| `app.render.mounted` | mode | `packages/code/src/runtime.tsx` (`runApp`) |
+| `app.boot.painted` | process uptime, mode and whether the catalog signal is still empty | `packages/code/src/runtime.tsx` (`runApp`) |
+| `catalog.load.started` | the catalog-dependent surface that crossed the lazy boundary | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`) |
 | `memory.sample` | phase, RSS, heap, external, array buffers and limit | `packages/code/src/adapters/memory-pressure.ts:169-182` |
 | `memory.phase` | previous phase, next phase, RSS and limit | `packages/code/src/adapters/memory-pressure.ts:183-188` |
 | `memory.efficiency` | advisory transition, RSS, baseline and recent slope | `packages/code/src/adapters/memory-pressure.ts` (`publish`) |
@@ -158,17 +161,24 @@ GC occurred; otherwise it must not be compared to a post-GC floor.
 ### 4.1 Startup critical path
 
 The launcher answers `--help` and `--version` before importing the application graph, then imports
-the built artifact for every other mode (`packages/code/src/cli.ts:23-51`). Interactive boot then:
+the built artifact for every other mode (`packages/code/src/cli.ts`, `main`). Interactive boot then:
 
-1. opens diagnostics;
-2. creates the renderer and mounts one Solid root containing the branded parser-free `BootFrame`;
-3. waits for renderer idle and emits `app.boot.shell-painted`;
-4. connects and loads the workspace/kernel foundation without calling the models service or
-   subscription provider;
-5. constructs stores, the run host and lightweight command routing;
-6. replaces `BootFrame` with `<App>` in the same root, emits `app.boot.painted`, and only then starts
-   Markdown parser warm-up; restored session content awaits the warm-up
-   (`packages/code/src/index.tsx`, `runApp`, `loadFoundation`; `packages/code/src/views/BootFrame.tsx`).
+1. validates the terminal, creates the renderer and mounts a focused `StartupComposer` from the
+   lightweight entry;
+2. after renderer idle, starts the complete runtime import and, for an ordinary run without debug or
+   worktree bootstrap, prepares the workspace kernel concurrently;
+3. opens diagnostics in the runtime, uses or creates the pinned `WorkspaceClientManager`, and loads
+   the foundation without calling models.dev or subscription entitlement;
+4. constructs stores, the run host and command routing while the startup input remains usable;
+5. takes the startup snapshot once and submits an accepted task before mounting `<App>`; otherwise
+   the exact unsent draft becomes `App.initialDraft`;
+6. mounts the complete application, emits `app.boot.painted`, releases after-paint work and only then
+   starts Markdown parser warm-up; restored session content awaits the warm-up.
+
+Production: `packages/code/src/index.tsx` (`runInteractive`),
+`packages/code/src/startup-foundation.ts` (`prepareStartupFoundation`),
+`packages/code/src/runtime.tsx` (`runApp`), and
+`packages/code/src/views/StartupComposer.tsx` (`createStartupComposerState`).
 
 The models.dev snapshot remains a required distributable asset because Providers, Model and Effort
 need the offline catalog. First boot does not read or project it. `ensureModelsCatalog` is a
@@ -176,7 +186,7 @@ single-flight loader invoked only when one of those catalog-dependent routes is 
 routes await it concurrently with the dynamic module import before mounting because their first-run
 picker opens synchronously; Model and Effort may mount against the reactive facade. The artifact
 smoke rejects any first paint that emits `catalog.load.started` or reports
-`deferred_catalog !== true` (`packages/code/src/index.tsx`, `ensureModelsCatalog`;
+`deferred_catalog !== true` (`packages/code/src/runtime.tsx`, `ensureModelsCatalog`;
 `packages/code/src/features/providers/commands.ts`; `packages/code/src/app/commands.tsx`,
 `setup.providers`; `packages/code/tooling/artifact/smoke.ts`).
 
@@ -210,8 +220,12 @@ This keeps offline diagnostic maps in developer/root builds without distributing
 installed command (`packages/code/tooling/artifact/build.ts` (`installBuild`, `main`),
 `packages/code/tooling/setup.ts` (build phase)).
 
-`src/index.tsx` still statically imports the app shell and kernel bootstrap entry because they own
-the interactive host. Cold full-page routes do not enter the startup entry: `lazyView` combines
+`src/index.tsx` statically imports only renderer/startup-shell concerns. It dynamically imports
+`runtime.tsx`, while `startup-foundation.ts` may construct the same workspace manager concurrently
+through the exact dynamic `@clarvis/kernel/bootstrap` boundary in
+`adapters/workspace-client-manager.ts`. The build groups Code-owned cold surfaces behind
+`views/cold-surfaces.ts` so dozens of route imports do not inflate linker fan-out; each route still
+mounts through its lazy owner. Cold full-page routes do not enter the startup entry: `lazyView` combines
 Solid `lazy` and `Suspense`, caches each module promise, and lets the route owner dispose the mounted
 subtree. Settings and Extensions list metadata lives in a lightweight module so rendering their
 menus does not import every child (`packages/code/src/views/config/lazy-view.tsx`,
@@ -441,7 +455,7 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
 15. **PERF-15: first boot does not read the models.dev catalog, call subscription entitlement or
     probe sandbox toolchains; catalog and cold full-page modules load only when their owning routes
     mount.**
-    Production: `packages/code/src/index.tsx` (`ensureModelsCatalog`),
+    Production: `packages/code/src/runtime.tsx` (`ensureModelsCatalog`),
     `packages/code/src/views/config/lazy-view.tsx`, and
     `packages/code/src/app/commands.tsx` (dynamic route factories), plus
     `packages/code/src/views/App.tsx` (lazy `SafetyPresetPicker`).
@@ -449,11 +463,12 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     `packages/code/tests/architecture/artifact-contract.test.ts`, and
     `packages/code/tooling/artifact/smoke.ts`.
 
-16. **PERF-16: one Solid root paints a branded parser-free shell before the usable application, and parser
-    warm-up does not hold that usable paint; aggregate memory diagnostics are O(1) at their data
-    sources and disabled when no diagnostic sink exists.**
-    Production: `packages/code/src/index.tsx` (`appProps`, `app.boot.shell-painted`),
-    `packages/code/src/views/BootFrame.tsx`, `packages/code/src/views/App.tsx` (`ledgerEnabled`), and
+16. **PERF-16: the lightweight Solid root paints a focused parser-free composer before the complete
+    application, and parser warm-up does not hold either usable input or full paint; aggregate memory
+    diagnostics are O(1) at their data sources and disabled when no diagnostic sink exists.**
+    Production: `packages/code/src/index.tsx` (`runInteractive`),
+    `packages/code/src/runtime.tsx` (`runApp`),
+    `packages/code/src/views/StartupComposer.tsx`, `packages/code/src/views/App.tsx` (`ledgerEnabled`), and
     `packages/kernel/src/core/event-stream.ts` (`stats`).
     Test: `packages/code/tooling/artifact/smoke.ts`,
     `packages/code/tests/unit/memory-pressure.test.ts`, and
@@ -509,18 +524,20 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     and `packages/code/tooling/benchmarks/overlays.tsx`
     (`marketplace-collections-retained-196-listings`, `stableRegistrations`).
 
-22. **PERF-22: boot continuity adds one bounded shared clock, not parser/catalog or per-row work.**
-    `BootFrame` reuses the process-wide spinner signal and owns one interval only while mounted; its
-    boot-only header, slash wordmark and composer placeholder are static bounded renderables and do
-    not reuse the complete app's paint or readiness markers. Replacing it with `App` cleans the boot
-    clock through Solid ownership. Production:
-    `packages/code/src/views/BootFrame.tsx` (`BootFrame`) and
-    `packages/code/src/views/spinner.ts` (`useSpinnerClock`). Tests:
-    `packages/code/tests/integration/splash-render.test.tsx` (parser-free boot-frame case),
-    `packages/code/tests/unit/spinner.test.ts` (clock cleanup), and
-    `packages/code/tooling/artifact/smoke.ts` (deferred catalogue).
+22. **PERF-22: boot continuity owns one bounded startup composer, not parser/catalog or per-row work.**
+    It has one focused input, one external draft/submission snapshot and distinct markers. Enter is
+    accepted once; the task starts before complete-app mount, while an unsent draft transfers exactly
+    to `App`. Production: `packages/code/src/views/StartupComposer.tsx`
+    (`createStartupComposerState`, `StartupComposer`) and `packages/code/src/runtime.tsx`
+    (`startup_submit`, `boot.app-mount`). Tests:
+    `packages/code/tests/integration/splash-render.test.tsx`,
+    `packages/code/tests/integration/app-shell-render.test.tsx`,
+    `packages/code/tests/architecture/architecture-boundary.test.ts`, and
+    `packages/code/tooling/artifact/smoke.ts` (complete paint and deferred catalogue).
 
-No invariant currently sets an absolute usable-input or healthy-idle RSS target. The overlay runner
+The near-250 ms and below-500 ms functional startup targets are review criteria on a comparable
+named host, not cross-platform invariants. No invariant currently sets an absolute complete-app or
+healthy-idle RSS target. The overlay runner
 enforces 5 MiB/100 post-GC growth and balanced renderer/key ownership for production-policy cases at
 reference and compact dimensions. It does not yet sample a complete real-model multi-run process
 tree.
@@ -531,9 +548,10 @@ tree.
 | --- | --- | --- |
 | benchmark host is too busy | refuse unless forced; forced report is untrusted | `packages/code/tooling/benchmarks/first-paint.ts:331-360` |
 | PTY never reaches a marker | fail with bounded screen and stderr context | `packages/code/tooling/benchmarks/first-paint.ts:211-234` |
-| Markdown parser warm-up fails | emit a warning diagnostic and keep the usable application shell | `packages/code/src/index.tsx` (`markdownPreload`) |
+| Markdown parser warm-up fails | emit a warning diagnostic and keep the usable application shell | `packages/code/src/runtime.tsx` (`markdownPreload`) |
 | final Markdown or diff syntax work is still pending | keep the previous Markdown tree visible or the new diff transparent until `waitForSyntaxFrame` completes; reveal OpenTUI's fallback if readiness rejects, and do not pause the renderer | `packages/code/src/ui/patterns/stable-syntax.tsx` (`StableMarkdown`, `StableDiff`, `waitForSyntaxFrame`) |
-| on-demand catalog load fails | keep the live catalog empty and emit `catalog.unavailable`; the already-painted shell remains usable | `packages/code/src/index.tsx` (`ensureModelsCatalog`) |
+| on-demand catalog load fails | keep the live catalog empty and emit `catalog.unavailable`; the already-painted shell remains usable | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`) |
+| an OAuth-backed MCP has no token and its browser is ignored | keep authorization background, omit that server from the current run, and continue other tools/model work | `packages/mcp-client/src/oauth.ts` (`MCPAuthorizationPendingError`), `packages/loop/src/runtime/open-tool-pool.ts` |
 | subscription readiness has not been inspected | keep the local gate passing with `subscription check deferred`; explicit Doctor inspection can later report a real warning | `packages/code/src/onboarding/doctor.ts` (`credentialGate`) |
 | one transcript prose value is oversized | truncate before it enters reactive state | `packages/code/src/adapters/store.ts:103-110` |
 | aggregate prose is full | release older settled prose, preserve newest | `packages/code/src/adapters/store.ts:394-470` |
@@ -551,12 +569,14 @@ tree.
   bundle so its worker, grammars and platform package keep correct ownership
   (`packages/code/tooling/artifact/build.ts:20-23`, `:120-125`).
 - **`code` -> `kernel`:** the interactive host constructs an in-process file kernel before mounting
-  `<App>`, so kernel imports and composition are part of startup and RSS
-  (`packages/code/src/index.tsx:11`, `:466-487`).
+  `<App>`, but kernel bootstrap enters through the exact dynamic factory boundary and may run in
+  parallel with the complete runtime import (`packages/code/src/startup-foundation.ts`,
+  `prepareStartupFoundation`; `packages/code/src/adapters/workspace-client-manager.ts`,
+  `loadFileKernelFactory`).
 - **`code` -> model/subscription services:** the boot foundation does not cross either expensive
   service. Catalog-bearing routes call the models service through `ensureModelsCatalog`; Doctor's
   explicit recheck and subscription-dependent actions call entitlement over the protocol surface
-  (`packages/code/src/index.tsx`, `ensureModelsCatalog`;
+  (`packages/code/src/runtime.tsx`, `ensureModelsCatalog`;
   `packages/code/src/app/commands.tsx`, `inspectReadiness`).
 - **`code` -> transcript/session persistence:** visual windows can release presentation data, but a
   future full request may require persisted traces to reconstruct semantic history
@@ -709,6 +729,49 @@ as a memory reduction or a zero slope. Production:
 `packages/code/tests/integration/autocomplete-popup-render.test.tsx`, and
 `packages/code/tooling/benchmarks/overlays.tsx`.
 
+#### Marketplace-heavy startup and real-run follow-up — 2026-08-29
+
+An isolated profile installed all nine plugins present in the pinned official marketplace revision
+used by the run (`aws-core`, `context7`, `expo`, `mattpocock-skills`, `observability`, `pulumi`,
+`supabase`, `superpowers`, `terraform`). Its selected contribution surface contained 138
+`SKILL.md` files and 722 Markdown files. Before attribution, repeated semantic contribution
+validation made Environment readiness take about 32.9 seconds. The same filesystem was being parsed
+and cryptographically hashed through multiple projections.
+
+The correction pins the parsed contribution snapshot for control-plane projections and performs one
+full raw-byte revalidation at run admission. Warm individual plugin snapshots then completed within
+about 235 ms and the combined nine-plugin Environment resolved in about 330 ms; kernel readiness was
+about 391 ms. A byte-mutation integration case proves that admission still fails closed, so the
+reduction is not a metadata-only shortcut.
+
+The same fixture exposed a separate human-time wait: missing Expo and Supabase OAuth held initial
+connection acquisition for about 302 seconds each, producing a roughly seven-minute run. Background
+authorization now opens the browser, marks only the challenged MCP inactive for that run and lets
+other work continue. In the repeated real PTY run, Context7 connected at 518 ms, Expo degraded as
+authorization-pending at 776 ms, a separate AWS connection failed at 1,755 ms, Supabase degraded as
+pending at 2,284 ms, and the run still completed in about 44 seconds. It used an installed skill, a
+working Context7 MCP and exactly two parallel subagents while both authorization pages were ignored.
+
+One forced three-sample bundle benchmark was intentionally marked untrusted because load was
+4.42/12 cores = 0.369, just above the 0.35 gate. It remains useful only as local stage evidence:
+
+| Stage | min | median | max |
+| --- | ---: | ---: | ---: |
+| module graph | 127 ms | 136 ms | 140 ms |
+| minimal shell | 181 ms | 182 ms | 183 ms |
+| startup composer | 181 ms | 182 ms | 183 ms |
+| complete header | 674 ms | 675 ms | 704 ms |
+| complete app input | 674 ms | 675 ms | 704 ms |
+
+A single nine-plugin real launch reached the startup composer in 264 ms and the complete app in
+1,110 ms. Those single-run configured timings are not comparable to the clean controlled batch, but
+they demonstrate the product boundary: input and submission no longer wait for complete hydration.
+The strict complete-app 500 ms goal remains unmet. A non-split build made both startup and full paint
+worse; Bun bytecode produced a CommonJS artifact unable to load OpenTUI's asynchronous ESM graph,
+while attempting to absorb OpenTUI into the bundle failed on its top-level-await modules. These are
+direct Bun/OpenTUI constraints recorded as exact experiments, not an excuse for the repository-owned
+hashing or OAuth waits above.
+
 ### 8.2 Prioritized changes and implementation status
 
 1. **Remove subscription entitlement from the blocking startup path.** Treat locally connected but
@@ -733,28 +796,38 @@ as a memory reduction or a zero slope. Production:
 6. **Separate efficiency warning from catastrophic fuse.** **Implemented:** the advisory uses
    absolute, baseline-growth and recent-slope gates without abort or GC; positive fuse overrides
    have a 512 MiB floor, and the product default is now 2 GiB.
-7. **Split cold routes and capabilities.** **Implemented for Code-owned full-page routes and
-   models.dev:** settings panels, domain hubs and Help load through cached Solid lazy boundaries;
-   artifact checks reject representative markers in the startup entry. Kernel bootstrap remains
-   eager because it is the in-process host, not an optional route.
-8. **Paint a branded shell before non-visual boot work.** **Implemented:** one Solid root first paints
-   `BootFrame`, then usable `<App>` before Markdown warm-up starts. Restored session Markdown waits
-   for both grammars.
+7. **Split cold routes and capabilities.** **Implemented:** the entry paints `StartupComposer` before
+   dynamically importing the complete runtime; ordinary run prepares the exact dynamic kernel
+   factory concurrently. Settings panels, domain hubs and Help retain cached Solid lazy boundaries,
+   while `cold-surfaces.ts` groups their linker fan-out. Artifact checks reject representative cold
+   markers in the startup entry.
+8. **Paint a functional composer before non-visual boot work.** **Implemented:** the lightweight root
+   first paints a focused `StartupComposer`; queued submission begins when the run host exists and
+   does not await `<App>`. Complete-app paint precedes Markdown warm-up, and restored session Markdown
+   still waits for both grammars.
 9. **Extend measurement coverage.** Add a configured-home fixture with a shell-only ready marker, a
    long manager-session soak, and a real-model multi-run process-tree sampler. **Partially
    implemented:** artifact smoke asserts the shell marker and catalog deferral; the controlled
-   first-paint benchmark records the exclusive parser-free shell separately from the complete app;
+   first-paint benchmark records minimal shell, functional startup input and complete app separately;
    overlay soaks run at two sizes under a parent RSS/time watchdog and enforce the production
-   threshold. Real-model and long-manager process-tree soaks remain intentionally user-controlled
-   external measurements.
+   threshold. One marketplace-heavy real-model run now covers a skill, a working MCP, two subagents
+   and ignored OAuth; long-manager and multi-run process-tree soaks remain intentionally
+   user-controlled external measurements.
+10. **Remove plugin-count and human-time waits from run admission.** **Implemented:** contribution
+    projections reuse a pinned parsed snapshot, run admission performs one exact raw-byte rehash, and
+    an OAuth challenge degrades only that MCP while its browser flow continues in the background.
 
 ### 8.3 Acceptance and review gates
 
 The production overlay gate is implemented; the remaining absolute values are review criteria until
 they have a named reference host and owner acceptance:
 
-- no external network request blocks the conversation shell on an already configured launch;
-- trusted configured-startup median below 1 second on the named Linux reference host;
+- no external network or human OAuth response blocks the startup composer or a run using other
+  capabilities;
+- focused startup-composer median near 250 ms and below 500 ms on a named comparable reference host;
+- submission from that composer begins before complete-app hydration once the run host is ready;
+- complete-app hydration is reported separately, with a desired sub-500 ms target rather than being
+  hidden behind the earlier functional marker;
 - healthy idle below 200 MiB RSS at 120x32 on that host;
 - no more than 5 MiB post-GC PSS growth after 100 repeated opens of every production-policy overlay
   case on Linux, or RSS where PSS is unavailable — **enforced by `bench:code-overlays`**;

@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { BootFrame } from "../../src/views/BootFrame.tsx";
+import { createStartupComposerState, StartupComposer } from "../../src/views/StartupComposer.tsx";
 import {
   APP_PAINT_MARKER,
   APP_READY_MARKER,
   BOOT_SHELL_MARKER,
+  STARTUP_READY_MARKER,
 } from "../../tooling/artifact/markers.ts";
 import {
   BANNER,
@@ -81,4 +83,52 @@ test("the boot frame drops decorative identity before it competes with the compa
   expect(out).toContain("loading workspace");
   for (const line of out.split("\n")) expect(line.length).toBeLessThanOrEqual(24);
   t.renderer.destroy();
+});
+
+test("the startup composer paints honest readiness markers and queues an early task", async () => {
+  const state = createStartupComposerState();
+  const t = await openRender(() => <StartupComposer state={state} acceptsInput />, {
+    width: 72,
+    height: 16,
+  });
+  await t.renderOnce();
+  const first = t.captureCharFrame();
+  expect(first).toContain(BOOT_SHELL_MARKER);
+  expect(first).toContain(STARTUP_READY_MARKER);
+  expect(first).not.toContain(APP_PAINT_MARKER);
+  expect(first).not.toContain(APP_READY_MARKER);
+  expect(first).toContain("Type now; Enter queues the task");
+
+  await t.mockInput.typeText("inspect plugin startup");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("task queued");
+  expect(state.take()).toEqual({
+    draft: "inspect plugin startup",
+    submission: "inspect plugin startup",
+  });
+  t.renderer.destroy();
+});
+
+test("the startup composer preserves an unsent draft and keeps resume locked", async () => {
+  const draftState = createStartupComposerState();
+  const draft = await openRender(() => <StartupComposer state={draftState} acceptsInput />, {
+    width: 60,
+    height: 12,
+  });
+  await draft.renderOnce();
+  await draft.mockInput.typeText("keep this draft");
+  await draft.renderOnce();
+  expect(draftState.take()).toEqual({ draft: "keep this draft" });
+  draft.renderer.destroy();
+
+  const resume = await openRender(
+    () => <StartupComposer state={createStartupComposerState()} acceptsInput={false} />,
+    { width: 60, height: 12 },
+  );
+  await resume.renderOnce();
+  const frame = resume.captureCharFrame();
+  expect(frame).toContain("Restoring session");
+  expect(frame).not.toContain(APP_READY_MARKER);
+  resume.renderer.destroy();
 });

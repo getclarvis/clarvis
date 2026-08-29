@@ -178,7 +178,7 @@ describe("plugin contributions", () => {
     ]);
   });
 
-  it("serves pinned in-memory contributions and rejects drift before filesystem-backed roots", () => {
+  it("serves pinned projections and rejects drift at the explicit run boundary", () => {
     const dir = install(globalPaths(globalDir).pluginsDir, "atlas", {
       mcpServers: "./.mcp.json",
     });
@@ -197,10 +197,11 @@ describe("plugin contributions", () => {
       JSON.stringify({ mcpServers: { charts: { command: "atlas-mcp-v2" } } }),
     );
 
-    expect(() => loaded.settingsScopes(refs("atlas"))).toThrow(/reconnect the kernel/);
-    expect(() => loaded.mcpServers(refs("atlas"))).toThrow(/reconnect the kernel/);
+    expect(loaded.settingsScopes(refs("atlas"))).toHaveLength(1);
+    expect(loaded.mcpServers(refs("atlas"))[0]?.declaration.command).toBe("atlas-mcp-v1");
     expect(loaded.agents(refs("atlas"))).toEqual([]);
-    expect(() => loaded.skillRoots(refs("atlas"))).toThrow(/reconnect the kernel/);
+    expect(loaded.skillRoots(refs("atlas"))).toEqual([]);
+    expect(() => loaded.assertUnchanged(refs("atlas"))).toThrow(/reconnect the kernel/);
   });
 
   it("rejects drift in a selected skill resource", () => {
@@ -213,7 +214,10 @@ describe("plugin contributions", () => {
     loaded.pin(refs("handbook"));
 
     writeFileSync(reference, "runtime v2\n");
-    expect(() => loaded.skillRoots(refs("handbook"))).toThrow(/selected plugin content changed/);
+    expect(loaded.skillRoots(refs("handbook"))).toHaveLength(1);
+    expect(() => loaded.assertUnchanged(refs("handbook"))).toThrow(
+      /selected plugin content changed/,
+    );
   });
 
   it("keeps the rest of a plugin when its companion server document is unusable", () => {
@@ -289,7 +293,14 @@ describe("plugin contributions", () => {
       const loaded = contributions();
       loaded.pin(refs("runtime"));
       writeFileSync(join(dir, entry.file), `${entry.file}:v2\n`);
-      expect(() => entry.read(loaded)).toThrow(/selected plugin content changed/);
+      if (entry.file === "provider.py") {
+        expect(() => entry.read(loaded)).toThrow(/selected plugin content changed/);
+      } else {
+        expect(() => entry.read(loaded)).not.toThrow();
+        expect(() => loaded.assertUnchanged(refs("runtime"))).toThrow(
+          /selected plugin content changed/,
+        );
+      }
       writeFileSync(join(dir, entry.file), `${entry.file}:v1\n`);
     }
   });

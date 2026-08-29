@@ -96,7 +96,8 @@ this document covers only the grant string that gates them.
 | `createAgentToolsCapability(opts?)` | the `tools` capability (`AGENT_TOOLS_CAPABILITY_NAME = "tools"`) | `packages/loop/src/runtime/capabilities/tools.ts:46,124-150` |
 
 `@clarvis/code` sets the ceiling default to `"exec"` for its own process
-(`packages/code/src/index.tsx:145: process.env.CLARVIS_AGENT_TOOLS_MAX_GRANT ??= "exec"`),
+(`packages/code/src/index.tsx`, `runInteractive`:
+`process.env.CLARVIS_AGENT_TOOLS_MAX_GRANT ??= "exec"`),
 above the loop's own schema default of `"edit"` (`packages/capability/src/env.ts:113`).
 
 ### 2.5 Built-in agent profiles' grant/spawn arrays

@@ -307,7 +307,9 @@ also omit versions. The root `package.json` owns the single Clarvis product vers
 
 `packages/code/tooling/artifact/build.ts` (`main`) calls `Bun.build` with
 `entrypoints: [src/index.tsx]`, `target: "bun"`, `outdir: dist`, the Solid transform plugin,
-`external: ["@opentui/core", "@opentui/core-*"]` and `splitting: true`. The ordinary developer/root
+`external: ["@opentui/core", "@opentui/core-*", "pino"]`, `splitting: true` and `minify: true`.
+The entry contains the renderer/startup composer and dynamically imports the complete runtime.
+The ordinary developer/root
 build uses `sourcemap: "external"`; `build:install` passes `--install` and uses `sourcemap: "none"`.
 The developer artifact is:
 
@@ -329,9 +331,10 @@ nor deletes an unrelated command (`packages/code/tooling/setup.ts`).
 
 The generated chunk-name shape is pinned by the smoke's listing filter
 `/^chunk-[a-z0-9]+\.js$/`. The provider contract is deliberately graph-shaped rather than tied to
-one Bun rewrite: it finds the chunk containing `class AiSdkAdapter`, requires a generated dynamic
+one Bun rewrite: it finds the chunk containing the adapter-owned `llm.provider.resolved` marker,
+requires a generated dynamic
 import of that basename somewhere in the artifact, rejects any static import of it, and rejects the
-class marker in the entry. Bun reports output paths with host-native separators, so basename
+adapter marker in the entry. Bun reports output paths with host-native separators, so basename
 extraction accepts both `/` and `\` before matching the generated import specifier
 (`packages/code/tooling/artifact/contract.ts`, `assertLazyProviderArtifact`).
 
@@ -350,7 +353,7 @@ built-ins are TypeScript values bundled with `@clarvis/workflows`, not path-read
 Copying `models-dev.json` is an offline availability contract, not an eager startup read. Interactive
 boot leaves the catalog untouched until Model, Effort or Providers mounts and calls Code's
 single-flight loader. The artifact smoke requires the asset to exist while also rejecting
-`catalog.load.started` before first usable paint (`packages/code/src/index.tsx`,
+`catalog.load.started` before complete usable paint (`packages/code/src/runtime.tsx`,
 `ensureModelsCatalog`; `packages/code/tooling/artifact/smoke.ts`).
 
 ### 3.3 The Docker build context
@@ -832,7 +835,7 @@ Test: `tooling/checks/test-harness.ts` checks the root bunfig and every package 
 `tooling/tests/unit/test-harness.test.ts:55-79,93-97,121-134` pins parsing, missing-preload failure, and the
 type-only exception.
 
-**BUILD-16.** `code` reaches `@clarvis/kernel` only through its five published entrypoints and imports
+**BUILD-16.** `code` reaches `@clarvis/kernel` only through its six published entrypoints and imports
 no lower implementation package, in `src/` **and** `tests/`.
 Production: `packages/code/package.json:33-37` declares exactly `@clarvis/kernel`, `@clarvis/paths`,
 `@clarvis/protocol`.

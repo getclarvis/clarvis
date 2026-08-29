@@ -619,7 +619,7 @@ role and answer channel all permit it").
 | Server elicitation controller is `dispose()`d with questions outstanding | `dispose()` (`packages/server/src/mcp/elicitation.ts:284-287`) | every pending question is force-auto-declined; `disposed` latches so any later `attach`-delivered question is auto-declined too (`:217-219`) |
 | Server's `relay` posture: `sendRequest` throws (client refuses, disconnects, or answer fails schema validation) | `catch` around `sendRequest` (`packages/server/src/mcp/elicitation.ts:251-253`) | falls back to `autoDecline(request.id)` — a relay failure degrades to a decline, not a stuck run |
 | `code`'s own `onElicit` callback throws | `reportElicitFailure` (`packages/code/src/adapters/kernel-run-client.ts:257-266`) | logs `elicit.handler.failed` (warn) and still answers `{action:"cancel"}` |
-| `code` invoked headlessly (`--prompt`, no interactive UI) | `handle.onElicit` registered at `packages/code/src/index.tsx:317-322` | every question is logged to stderr and auto-declined via `handle.respond({id, action:"decline"})` |
+| `code` invoked headlessly (`--prompt`, no interactive UI) | `handle.onElicit` registered in `packages/code/src/runtime.tsx` (`runPrintMode`) | every question is logged to stderr and auto-declined via `handle.respond({id, action:"decline"})` |
 | Elicitation disabled or no `elicit` supplied at all (`shape.userInputEnabled === false`) | `buildElicitRelay`'s `relayEnabled` guard (`packages/loop/src/runtime/elicit-relay.ts:71-77`) | `relay` is `undefined`; `serializedElicit` falls back to the raw (possibly `undefined`) `elicit` — callers that need one and find it absent are a capability-construction concern outside this document |
 | A run needs a human (`shape.userInputEnabled === true`) but no `elicit` callback was supplied at all | `packages/loop/src/runtime/execute-run.ts:303-309`, checked immediately after `deriveRunShape` | the run never starts: throws `ValidationError("elicitation_not_supported", ...)` — the only elicitation failure resolved at request validation rather than per-question (§4.10) |
 | `elicit_wait_ms` request param fails validation | `zodIssueToRequestErrorCode` (`packages/loop/src/validation/request/parsing.ts:42-44`) | `invalid_elicit_wait` request error code |
@@ -678,11 +678,11 @@ role and answer channel all permit it").
   `createGuardElicit(ctx.elicit, {...})` per guard resolution — the guard's own escalation/decision
   policy (out of scope here; see **command-guard-and-approval**) rides this document's `Elicit`/`GuardElicit`
   adaptation to reach the human.
-- `code`'s `run-host.ts` and `index.tsx` hold the only production `ElicitSlot`
-  (`packages/code/src/index.tsx:534`), threading `elicit.ask` into the run callback
-  (`packages/code/src/index.tsx:617-629`), `elicit.cancelPending` into run teardown
+- `code`'s `run-host.ts` and `runtime.tsx` hold the only production `ElicitSlot`
+  (`packages/code/src/runtime.tsx`, `runApp`), threading `elicit.ask` into the run callback
+  (`packages/code/src/runtime.tsx`, `buildRunHost`), `elicit.cancelPending` into run teardown
   (`packages/code/src/run-host.ts:596`), and `elicit.resolve` into the App surface
-  (`packages/code/src/index.tsx:1148`). Detailed overlay/keyboard rendering of the resulting block is
+  (`packages/code/src/runtime.tsx`, `runControls`). Detailed overlay/keyboard rendering of the resulting block is
   **code-input-overlays-and-commands**' concern.
 
 ## 8. Open questions

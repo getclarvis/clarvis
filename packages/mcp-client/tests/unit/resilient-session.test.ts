@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolResult } from "@clarvis/capability";
 import type { MCPClientHandle } from "../../src/client.ts";
+import { MCPAuthorizationPendingError } from "../../src/oauth.ts";
 import {
   createResilientSession,
   DEFAULT_MCP_CLOSE_GRACE_MS,
@@ -332,6 +333,29 @@ describe("resilient session — invocation state", () => {
     const result = await invoke(resilient);
     expect(result.error?.code).toBe("mcp_runtime_error");
     expect(result.error?.message).toContain("bad params");
+    expect(reconnects).toBe(0);
+    expect(resilient.status).toBe("connected");
+    await resilient.close();
+  });
+
+  it("keeps browser OAuth pending as a per-run unavailable result without reconnecting", async () => {
+    let reconnects = 0;
+    const resilient = session(
+      handle({
+        call: () => Promise.reject(new MCPAuthorizationPendingError()),
+      }),
+      async () => {
+        reconnects += 1;
+        return handle();
+      },
+    );
+
+    const result = await invoke(resilient);
+    expect(result.error).toEqual({
+      code: "mcp_unavailable",
+      message: "MCP 'm' is inactive for this run while browser authorization is pending.",
+      kind: "unavailable",
+    });
     expect(reconnects).toBe(0);
     expect(resilient.status).toBe("connected");
     await resilient.close();

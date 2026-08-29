@@ -68,10 +68,18 @@ export { resolveWorkspaceDir, resolveAgainst, expandHome } from "@clarvis/paths"
 export { clarvisSkillRoots } from "./preset.ts";
 export type { ClarvisSkillRootsOptions } from "./preset.ts";
 
+export { enumerateResources } from "./scan.ts";
+
 export { resolveConfig } from "./config.ts";
 export type { SkillConfig, AgentSkillsOptions } from "./config.ts";
 
-export { MAX_SKILL_ROOTS } from "./limits.ts";
+export {
+  MAX_SKILL_FILE_BYTES,
+  MAX_SKILL_FILE_CHARS,
+  MAX_SKILL_RESOURCE_BYTES,
+  MAX_SKILL_RESOURCE_CHARS,
+  MAX_SKILL_ROOTS,
+} from "./limits.ts";
 
 export type { ErrorCode } from "./errors.ts";
 

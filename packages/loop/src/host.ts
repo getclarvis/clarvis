@@ -85,5 +85,17 @@ export type {
 } from "@clarvis/capability";
 export type { MCPStatus, NamespacedTool } from "@clarvis/capability";
 export type { ToolTransport } from "@clarvis/capability";
-export type { SkillRootInput } from "./runtime/build-run-deps.ts";
+export {
+  buildExecuteRunDeps,
+  createHostExtensionAdmission,
+  createHostModelCallAdmission,
+  hooksEffective,
+  type BuildRunDepsOptions,
+  type BuiltRunDeps,
+  type HostExtensionAdmission,
+  type HostModelCallAdmission,
+  type SkillRootInput,
+} from "./runtime/build-run-deps.ts";
 export type { PluginBootstrapSkill } from "./runtime/capabilities/skills-settings.ts";
+export { createLogger, type CreateLoggerOptions, type Logger } from "./logger.ts";
+export { VERSION } from "./version.ts";

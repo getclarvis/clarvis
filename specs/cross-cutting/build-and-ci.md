@@ -513,7 +513,9 @@ cross-package types through the built `dist/*.d.ts` (§4.2). The hook is install
 **`linux`**, `ubuntu-latest`, runs the full build, typecheck, formatting, lint, Docker image build,
 coverage-with-classified-crash retry, and real-PTY artifact smoke. It installs and executes ripgrep
 and Bubblewrap before tests because CI makes grep parity and the Linux native-sandbox canary hard
-contracts. `CLARVIS_NATIVE_SANDBOX_CANARY=1` reaches the coverage suite. Production:
+contracts. On Ubuntu's AppArmor-restricted host it loads the packaged `bwrap-userns-restrict`
+profile and proves a minimal sandbox launch; it does not disable the host-wide namespace protection.
+`CLARVIS_NATIVE_SANDBOX_CANARY=1` reaches the coverage suite. Production:
 `.github/workflows/ci.yml` (`jobs.linux`).
 
 **`windows`**, `windows-latest`, records the exact Bun runtime and installs ripgrep from a pinned

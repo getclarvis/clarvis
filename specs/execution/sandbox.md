@@ -530,8 +530,10 @@ configuration views. The exact package edges remain generated in
 
 ### 7.2 CI verification
 
-The Linux CI job installs Bubblewrap and ripgrep, then enables
-`CLARVIS_NATIVE_SANDBOX_CANARY=1` for the full coverage suite. The macOS job runs the complete
+The Linux CI job installs Bubblewrap, ripgrep, and Ubuntu's packaged
+`bwrap-userns-restrict` AppArmor profile. It loads that narrow profile rather than disabling the
+host-wide unprivileged-user-namespace restriction, proves a minimal Bubblewrap launch, and then
+enables `CLARVIS_NATIVE_SANDBOX_CANARY=1` for the full coverage suite. The macOS job runs the complete
 `@clarvis/tools` suite plus the kernel sandbox-policy integration with the same variable before its
 keyboard-policy tests. The tools canary proves on each real runner that workspace writes, read-only
 workspace, writable scratch, undeclared-path denial, process isolation, host network, and denied

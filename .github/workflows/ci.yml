@@ -35,9 +35,18 @@ jobs:
       # ripgrep is not preinstalled on the ubuntu-latest image; @clarvis/tools'
       # grep-parity suite (TEST-01) requires it whenever CI=true. Bubblewrap is
       # equally load-bearing now: the native-sandbox canary below must exercise
-      # a real Linux backend rather than only inspect generated argv. The version
-      # commands assert that both binaries actually landed.
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap ripgrep && bwrap --version && rg --version
+      # a real Linux backend rather than only inspect generated argv. Ubuntu
+      # restricts unprivileged user namespaces through AppArmor, so load the
+      # packaged bwrap profile instead of disabling that protection globally.
+      # The minimal launch proves the profile works before the long test suite.
+      - name: install Linux test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apparmor-profiles bubblewrap ripgrep
+          sudo apparmor_parser -r /usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          bwrap --unshare-user --ro-bind / / -- /bin/true
+          bwrap --version
+          rg --version
       # Root install only: one lockfile, and bunfig.toml's `linker = "hoisted"`
       # keeps node_modules symlink-free.
       - run: bun install --frozen-lockfile

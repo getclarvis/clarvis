@@ -55,6 +55,16 @@ export interface SkillDirEntry {
   file: string;
 }
 
+/** Per-root discovery constraints supplied by the host that owns that root. */
+export interface SkillScanPolicy {
+  /** Whether grouping directories are traversed or only immediate children are inspected. */
+  discovery?: "nested" | "immediate";
+  /** Whether the canonical manifest filename is matched exactly. */
+  manifestName?: "case-insensitive" | "exact";
+  /** Filesystem boundary every discovered directory and manifest must remain inside. */
+  confinementRoot?: string;
+}
+
 /**
  * List the skill at {@link root}, or the skill directories below it, sorted by
  * directory path for deterministic ordering.
@@ -80,9 +90,21 @@ export function listSkillDirs(
   followSymlinks: boolean,
   diagnostics: SkillDiagnostics = DEFAULT_DIAGNOSTICS,
   maximumSkills = MAX_SKILLS_PER_ROOT + 1,
+  policy: SkillScanPolicy = {},
 ): SkillDirEntry[] {
-  const rootFile = findSkillFile(root, followSymlinks, diagnostics);
-  if (rootFile !== undefined) return [{ dir: root, file: rootFile }];
+  const confinementReal =
+    policy.confinementRoot === undefined
+      ? undefined
+      : safeRealpath(policy.confinementRoot, diagnostics);
+  const find = (dir: string): string | undefined =>
+    findSkillFile(dir, followSymlinks, diagnostics, {
+      manifestName: policy.manifestName,
+      ...(confinementReal === undefined ? {} : { confinementRoot: confinementReal }),
+    });
+  if (policy.discovery !== "immediate") {
+    const rootFile = find(root);
+    if (rootFile !== undefined) return [{ dir: root, file: rootFile }];
+  }
 
   const out: SkillDirEntry[] = [];
   const pending: { dir: string; depth: number }[] = [{ dir: root, depth: 0 }];
@@ -99,6 +121,14 @@ export function listSkillDirs(
     for (const entry of listed.entries) {
       const dir = path.join(next.dir, entry.name);
       if (!isDirEntry(entry, dir, followSymlinks, diagnostics)) continue;
+      if (confinementReal !== undefined && escapesRoot(confinementReal, dir)) {
+        warn(
+          `clarvis-skills: skipping skill path escaping its package ${dir}\n`,
+          diagnostics.warningSink,
+        );
+        skipped(diagnostics, "escaping_symlink", dir);
+        continue;
+      }
       probed += 1;
       if (probed > MAX_SKILL_GROUP_DIRECTORIES) {
         warn(
@@ -109,13 +139,15 @@ export function listSkillDirs(
         skipped(diagnostics, "entries", root);
         return done();
       }
-      const file = findSkillFile(dir, followSymlinks, diagnostics);
+      const file = find(dir);
       if (file !== undefined) {
         out.push({ dir, file });
         if (out.length >= maximumSkills) return done();
         continue;
       }
-      if (next.depth + 1 < MAX_SKILL_NESTING) pending.push({ dir, depth: next.depth + 1 });
+      if (policy.discovery !== "immediate" && next.depth + 1 < MAX_SKILL_NESTING) {
+        pending.push({ dir, depth: next.depth + 1 });
+      }
     }
   }
   return done();
@@ -135,13 +167,29 @@ export function findSkillFile(
   dir: string,
   followSymlinks: boolean,
   diagnostics: SkillDiagnostics = DEFAULT_DIAGNOSTICS,
+  policy: Pick<SkillScanPolicy, "manifestName" | "confinementRoot"> = {},
 ): string | undefined {
   const listed = readDirectoryBounded(dir, MAX_SKILL_DIRECTORY_ENTRIES, diagnostics);
   if (listed.overflow) return undefined;
   for (const entry of listed.entries) {
-    if (entry.name.toLowerCase() !== SKILL_FILE) continue;
+    if (
+      policy.manifestName === "exact"
+        ? entry.name !== "SKILL.md"
+        : entry.name.toLowerCase() !== SKILL_FILE
+    ) {
+      continue;
+    }
     const full = path.join(dir, entry.name);
-    if (isFileEntry(entry, full, followSymlinks, diagnostics)) return full;
+    if (!isFileEntry(entry, full, followSymlinks, diagnostics)) continue;
+    if (policy.confinementRoot !== undefined && escapesRoot(policy.confinementRoot, full)) {
+      warn(
+        `clarvis-skills: skipping skill manifest escaping its package ${full}\n`,
+        diagnostics.warningSink,
+      );
+      skipped(diagnostics, "escaping_symlink", full);
+      continue;
+    }
+    return full;
   }
   return undefined;
 }

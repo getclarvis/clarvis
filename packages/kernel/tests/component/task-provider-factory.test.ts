@@ -7,6 +7,8 @@ import { effectiveMcpServers } from "../../src/mcp/effective-servers.ts";
 import type { PluginContributions } from "../../src/plugins/plugin-contributions.ts";
 import { TaskProviderFactory } from "../../src/tasks/task-provider-factory.ts";
 
+const JIRA_REF = { scope: "global" as const, source: "clarvis" as const, name: "jira-work" };
+
 const CAPABILITIES = {
   protocol_version: 2,
   provider_kind: "jira",
@@ -139,7 +141,7 @@ describe("TaskProviderFactory", () => {
   });
 
   it("includes resolved plugin identity in keys without letting enablement select it", async () => {
-    const merged = { ...settings(), enabledPlugins: ["jira-work"] };
+    const merged = { ...settings(), enabledPlugins: [JIRA_REF] };
     const snapshot: SettingsSnapshot = { merged, scopes: {}, sources: [] };
     const serverPort = port();
     const factory = (revision: string) =>
@@ -157,7 +159,7 @@ describe("TaskProviderFactory", () => {
       settings: {
         global: {
           mcpServers: (merged as Record<string, unknown>).mcpServers,
-          enabledPlugins: ["jira-work"],
+          enabledPlugins: [JIRA_REF],
         },
       },
     });

@@ -26,7 +26,14 @@ import {
   type ConfigStore,
 } from "../../src/config/config-store.ts";
 import { acquireLocalLeaseSync, globalPaths, type LocalLeaseSync } from "@clarvis/paths";
+import type { EnvironmentPluginRef } from "@clarvis/protocol";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
+
+const pluginRef = (name: string): EnvironmentPluginRef => ({
+  scope: "global",
+  source: "clarvis",
+  name,
+});
 
 /** Seed a global-scope fixture, creating the config group it now lives in. */
 function seedGlobal(file: string, content: string | Uint8Array): void {
@@ -179,7 +186,10 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
 
   it("falls back to an enabled plugin contribution for a namespaced agent missing on disk", () => {
     const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-plugin-agent-"));
-    seedGlobal(globalPaths(globalDir).settingsFile, JSON.stringify({ enabledPlugins: ["demo"] }));
+    seedGlobal(
+      globalPaths(globalDir).settingsFile,
+      JSON.stringify({ enabledPlugins: [pluginRef("demo")] }),
+    );
     const pluginAgent = {
       name: "demo:worker",
       scope: "plugin" as const,
@@ -188,11 +198,12 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
       body: "Plugin worker.",
       description: "worker",
     };
-    const requests: Array<{ enabled: readonly string[]; name: string }> = [];
+    const requests: Array<{ enabled: readonly EnvironmentPluginRef[]; name: string }> = [];
     const store = createFileConfigStore({
       globalDir,
       plugins: {
-        readAgent: (enabled: readonly string[], name: string) => {
+        settingsScopes: () => [],
+        readAgent: (enabled: readonly EnvironmentPluginRef[], name: string) => {
           requests.push({ enabled, name });
           return pluginAgent;
         },
@@ -200,7 +211,37 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
     });
 
     expect(store.readAgent("global", "demo:worker")).toBe(pluginAgent);
-    expect(requests).toEqual([{ enabled: ["demo"], name: "demo:worker" }]);
+    expect(requests).toEqual([{ enabled: [pluginRef("demo")], name: "demo:worker" }]);
+  });
+
+  it("records the winning MCP declaration origin across plugin and operator layers", () => {
+    const globalDir = mkdtempSync(join(tmpdir(), "clarvis-cfg-mcp-origin-"));
+    const settingsFile = globalPaths(globalDir).settingsFile;
+    seedGlobal(settingsFile, JSON.stringify({ enabledPlugins: [pluginRef("atlas")] }));
+    const store = createFileConfigStore({
+      globalDir,
+      plugins: {
+        settingsScopes: () => [
+          {
+            origin: "plugin",
+            settings: {
+              mcpServers: { "atlas:docs": { type: "stdio", command: "plugin-server" } },
+            },
+          },
+        ],
+      } as never,
+    });
+
+    expect(store.readSettings().mcpServerOrigins).toEqual({ "atlas:docs": "plugin" });
+
+    writeFileSync(
+      settingsFile,
+      JSON.stringify({
+        enabledPlugins: [pluginRef("atlas")],
+        mcpServers: { "atlas:docs": { type: "stdio", command: "operator-server" } },
+      }),
+    );
+    expect(store.readSettings().mcpServerOrigins).toEqual({ "atlas:docs": "operator" });
   });
 
   it("surfaces a parse error on the scope's source instead of dropping it silently", () => {
@@ -449,7 +490,7 @@ describe("FileConfigStore.mutateSettings", () => {
     let seen: unknown;
     store.mutateSettings!("global", store.readSettingsDocument("global")!.revision, (current) => {
       seen = current;
-      return { ...current, enabledPlugins: ["p"] };
+      return { ...current, enabledPlugins: [pluginRef("p")] };
     });
 
     expect(seen).toEqual(writtenByAnotherProcess);

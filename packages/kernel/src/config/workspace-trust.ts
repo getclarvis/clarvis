@@ -23,7 +23,8 @@ import type { SettingsData, WorkspaceTrustVerdict } from "@clarvis/protocol";
  * or by choosing what will execute:
  * - `hooks` spawns a shell command on a lifecycle event.
  * - `mcpServers` spawns a subprocess with a repository-chosen `command`.
- * - `enabledPlugins` turns on a plugin, which contributes both of the above.
+ * - `enabledPlugins` turns on a plugin in `builtin:default`, which contributes
+ *   both of the above.
  * - `marketplaces` seeds the plugin browser with a repository-chosen git URL.
  *   It executes nothing by itself, so it is the weakest entry here; it is
  *   included because an origin the repository picked should not appear in the
@@ -195,6 +196,8 @@ export interface WorkspaceExecutableSurface {
   settings?: Record<string, unknown>;
   /** Name-sorted digests of the workspace's `.clarvis/agents/*.md`. */
   agents?: WorkspaceAgentSurface[];
+  /** Workspace Environment selection/definition surface that activates plugins. */
+  extensions?: unknown;
 }
 
 interface WorkspaceAgentSurface {
@@ -239,6 +242,7 @@ function workspaceAgentSurface(
 function workspaceExecutableSurface(
   settings: SettingsData | undefined,
   agents: { name: string; content: string }[] = [],
+  extensions?: unknown,
 ): WorkspaceExecutableSurface | undefined {
   const risky: Record<string, unknown> = {};
   for (const field of WORKSPACE_RISK_FIELDS) {
@@ -271,10 +275,12 @@ function workspaceExecutableSurface(
   }
   const hasSettings = Object.keys(risky).length > 0;
   const hasAgents = agents.length > 0;
-  if (!hasSettings && !hasAgents) return undefined;
+  const hasExtensions = extensions !== undefined;
+  if (!hasSettings && !hasAgents && !hasExtensions) return undefined;
   return {
     ...(hasSettings ? { settings: risky } : {}),
     ...(hasAgents ? { agents: workspaceAgentSurface(agents) } : {}),
+    ...(hasExtensions ? { extensions } : {}),
   };
 }
 
@@ -289,8 +295,9 @@ function workspaceExecutableSurface(
 export function workspaceTrustFingerprint(
   settings: SettingsData | undefined,
   agents: { name: string; content: string }[] = [],
+  extensions?: unknown,
 ): string | undefined {
-  const surface = workspaceExecutableSurface(settings, agents);
+  const surface = workspaceExecutableSurface(settings, agents, extensions);
   if (surface === undefined) return undefined;
   const json = JSON.stringify(canonical(surface));
   return `sha256:${createHash("sha256").update(json).digest("hex")}`;

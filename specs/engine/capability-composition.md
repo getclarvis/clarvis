@@ -104,6 +104,7 @@ buildExecuteRunDeps(options: BuildRunDepsOptions): Promise<BuiltRunDeps>
 | `workspaceRoot` | `string` | must be non-blank or the call throws (`packages/loop/src/runtime/build-run-deps.ts:365-367`) |
 | `traceDir?` | `string` | overrides the resolved trace store's directory |
 | `extraSkillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[])` | array form is static; function form is re-read (and rescanned only on signature change) every call (`packages/loop/src/runtime/build-run-deps.ts:186-237`) |
+| `skillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[])` | exact host-resolved roots; suppresses automatic standard-root appending, including for an intentional empty array, and is mutually exclusive with `extraSkillRoots` (`packages/loop/src/runtime/build-run-deps.ts:120-124`, `:372-376`) |
 | `skillBootstraps?` | `() => readonly PluginBootstrapSkill[]` | function-only, so a plugin enabled after deps were built still takes effect (`packages/loop/src/runtime/build-run-deps.ts:124-126`) |
 | `resolveHooks?` | `(ctx) => readonly HookConfig[] \| undefined` | host port for workspace hooks; omitted entirely means no hook ever runs (`packages/loop/src/runtime/build-run-deps.ts:127-131`) |
 | `hookCredentialNames?` | `() => readonly string[]` | forwarded to the hooks capability's env denylist |
@@ -359,10 +360,13 @@ Given `seedMarkers: ["<cap-block>"]`:
    feature-package imports: `@clarvis/mcp-client` is an ordinary engine dependency.
 6. Build the retrying/logging/admission-wrapped AI SDK provider (`:416-437`).
 7. **Skills** (only if `useSkills && env.CLARVIS_SKILLS_ENABLED`): dynamically import
-   `@clarvis/skills`, then either build a static `SkillsProvider` from an array `extraSkillRoots`
-   or wrap a function form in `dynamicSkills` (memoized-by-signature rescanning,
+   `@clarvis/skills`, then either build a static `SkillsProvider` from an array `skillRoots` /
+   `extraSkillRoots` or wrap a function form in `dynamicSkills` (memoized-by-signature rescanning,
    `packages/loop/src/runtime/build-run-deps.ts:186-237`); a discovery failure degrades to "no skills" (initial) or the
-   last good scan (rescans), never a thrown error (`:439-477`).
+   last good scan (rescans), never a thrown error. Exact `skillRoots` are used as-is; only the
+   additional-root form receives the four standard roots (`:472-485`). An exact empty root set
+   yields an intentional empty provider without a discovery warning (`emptySkillsProvider` and
+   `dynamicSkills`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:283`).
 8. Build an empty `capabilities: Capability[]` array and a fresh `capabilityRegistry`.
 9. **Hooks** (only if `useHooks`): dynamically import `@clarvis/hooks/capability`, push
    `createWorkspaceHooksCapability({...})` **first** (`:483-497`).
@@ -579,9 +583,11 @@ their own:**
 |---|---|---|
 | Enabled built-in's optional package fails to `import()` | `buildExecuteRunDeps` **throws** an actionable `Error` naming the package and the opt-out | `packages/loop/src/runtime/build-run-deps.ts:262-289` |
 | `workspaceRoot` blank | `buildExecuteRunDeps` throws before touching any built-in | `packages/loop/src/runtime/build-run-deps.ts:365-367`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:~312-318` |
-| Skill discovery throws (initial, array `extraSkillRoots`) | Skills disabled for these deps; warned, not thrown | `packages/loop/src/runtime/build-run-deps.ts:477-488` |
-| Skill discovery throws (function `extraSkillRoots`, rescan) | Falls back to last good scan, or an empty provider on first failure | `dynamicSkills`, `packages/loop/src/runtime/build-run-deps.ts:186-237`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:~325-347` |
-| `extraSkillRoots` provider function throws | Treated as "no roots" for that rescan, logged at `debug` | `packages/loop/src/runtime/build-run-deps.ts:200-212` |
+| Both `skillRoots` and `extraSkillRoots` supplied | `buildExecuteRunDeps` throws before optional package construction | `packages/loop/src/runtime/build-run-deps.ts:372-376` |
+| Exact `skillRoots` resolves to `[]` | An intentional empty provider is returned without a warning or standard-root fallback | `emptySkillsProvider`, `packages/loop/src/runtime/build-run-deps.ts`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:283` |
+| Skill discovery throws (initial, array roots) | Skills disabled for these deps; warned, not thrown | `packages/loop/src/runtime/build-run-deps.ts:487-498` |
+| Skill discovery throws (function roots, rescan) | Falls back to last good scan, or an empty provider on first failure | `dynamicSkills`, `packages/loop/src/runtime/build-run-deps.ts:186-237`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:~325-347` |
+| Root provider function throws | Treated as "no roots" for that rescan, logged at `debug` | `packages/loop/src/runtime/build-run-deps.ts:200-212` |
 | Workspace path does not resolve at all | Skills come back `undefined` rather than throwing | test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:~309-320` |
 | A capability's `forRun` exceeds `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | Activation resolves `null` for this run; warned | `packages/loop/src/runtime/orchestrator.ts:263-285` |
 | A capability's `forRun` throws `ExtensionCallUnavailableError` (host gate saturated) | Activation resolves `null`; warned, not thrown | `packages/loop/src/runtime/orchestrator.ts:263-274` |

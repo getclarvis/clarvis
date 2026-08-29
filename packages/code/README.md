@@ -111,17 +111,49 @@ replaces a same-named global or built-in definition; a valid global document rep
 built-in. See [`@clarvis/workflows`](../workflows/README.md#built-ins-and-workflow-documents) for the
 complete document contract.
 
-The onboarding and configuration views can configure
-providers and secrets, select models, manage memory, inspect MCP tool servers,
-and manage plugins. Configuration follows one hierarchy: `/settings/providers`,
-`/extensions/plugins`, `/extensions/mcp`, and `/extensions/hooks`; `/tasks` remains a standalone
-workspace surface. The Hooks view reviews each exact plugin hook definition independently. Capability services
-display their effective argv and packaged per-skill Plans policy in the plugin/provider panels, and
-start only when selected.
-`/extensions/market` includes `https://github.com/getclarvis/marketplace.git` as a built-in source
-before any additional configured or discovered catalog. The built-in URL is not written to settings,
-and loading its listings does not install, enable, or approve a plugin. Installation remains an
-explicit action, followed by the existing enablement and per-hook approval gates.
+The onboarding and configuration views can configure providers and secrets, select models, manage
+memory, inspect MCP tool servers, and manage extensions. `/extensions` is the only public extension
+route. It uses the same guided decision pattern as first boot: choose workspace/global selection
+scope, choose or stage an Environment, search exact plugin and standalone-skill inventory, review
+every resulting agent/skill/MCP/hook/executable contribution, then apply one preview-bound delta and
+reconnect. Each decision exposes one key per outcome: Enter advances or applies and Escape finishes
+the multi-select or walks back, asking before an edited draft is discarded. Install, exact
+resolution and Apply use the shared footer-right spinner, show elapsed time, advance through their
+real host phases and suspend local actions until the operation settles. Large catalogs use bounded
+retained rows, review bodies scroll independently from their decisions, and the optional splash
+disappears on compact terminals. Internal Environments, Plugins and MCP children remain available
+from that home and return to it with Escape; they are not nested slash commands. `/tasks` remains a
+standalone workspace surface.
+Capability services display their effective argv and packaged per-skill Plans policy in the
+plugin/provider panels, and start only when selected.
+
+The Plugins child includes `https://github.com/getclarvis/marketplace.git` as a built-in source
+before any configured or discovered catalog. Its retained collection bar moves with left/right
+through All, Installed, each exact marketplace URL, Workspace, and Add Marketplace; up/down moves
+through plugins and `/` searches only the current collection. Enter opens a dedicated detail with
+source, lifecycle, capabilities, executables and active Environment state. The built-in URL is not
+written to settings, and loading its listings does not install or activate a plugin. A second Enter
+on an available detail is one composed consent: install the complete plugin, select its exact ref in
+the current Environment, reconnect, and verify it remains active after reload. Hooks are part of
+that atomic plugin unit and have no independent approval screen. Update and uninstall are guarded at
+the idle boundary. Workspace-owned checkouts are edited in their repository, and linked external
+checkouts remain visible and activatable but never offer the managed update action. Environment selects
+only already-installed extensions. The guided flow obtains the complete exact
+inventory from `EnvironmentService.inventory()` and commits a definition plus local selection only
+through `previewComposition`/`applyComposition`; a changed definition, selection document, or
+resolved contribution invalidates the review before either write. Its immutable `builtin:default` uses exact
+`enabledPlugins` refs and four-root skill behavior; custom Environments are complete allow-lists of
+exact `{ scope, source, name }` plugins and standalone skills. `.agents/plugins` and
+`.clarvis/plugins` participate equally; the install picker defaults to the shared `.agents` global
+inventory. Definitions may be shared from `.clarvis/environments`, but the active workspace
+selection is always local machine state. The Environment browser shows resolution status, routes
+creation/customization into the guided composer, retains direct selection/clear diagnostics, and
+can revision-safely delete an inactive custom definition. A process-local `--env`
+keeps persisted selection controls read-only. A failed Environment catalog reload remains visible
+inside the browser, with `r` retry, instead of surviving only as a transient footer notification. See
+[`hosts/environments.md`](../../specs/hosts/environments.md) for activation semantics and
+[`hosts/code-extensions.md`](../../specs/hosts/code-extensions.md) for the interactive catalog and
+lifecycle experience.
 Interactive Code and local `--print` kernels also provide the operating-system browser opener used
 by remote MCP OAuth. The authorization coordinator still validates the destination and loopback
 callback; this adapter grants only the host action of opening the already validated URL. Remote
@@ -406,7 +438,8 @@ exists to make that possible and its runtime graph is itself plus the root
 an import creeps in and puts the whole module graph back on that path.
 
 ```text
-usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--format <text|md>]
+usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--env <environment>]
+                    [--format <text|md>]
                     [--resume <session-id>] [--continue] [--list] [--delete <session-id>]
                     [--refresh-models] [--update] [--ascii] [--worktree [name]]
                     [--debug[=<error|warn|info|debug>]]
@@ -415,6 +448,7 @@ usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--format <text|m
   --version                   print the version and exit
   -p, --print <prompt>        run the prompt headless: stream the reply to stdout, exit 0/1
   --agent <name>              agent to run --print as (default: entry agent)
+  --env <environment>         select an Environment for this process (scope:name or name)
   --format <text|md>          --print output: text (default) or md transcript
   --resume <session-id>       resume a saved session
   --continue                  resume this workspace's most recent session
@@ -520,6 +554,9 @@ resumes a session of the current workspace.
 
 Sessions and runs are persisted through kernel services. The UI can resume a
 specific session or continue the most recently used one.
+Each turn stores the process-pinned Environment id and fingerprint. Resuming under a different
+snapshot remains allowed, but the transcript and status line warn about the mismatch before the next
+run starts.
 
 `/storage` opens a metadata-only inventory of Clarvis-owned local state, grouped by logical data
 category without changing the physical `~/.clarvis` layout. It shows only present/owner-only posture
@@ -544,6 +581,9 @@ Settings saves are serialized by the adapter and carry the exact source revision
 kernel. Another process editing the same scope produces an explicit conflict; Code never retries by
 blindly overwriting the newer source. Reloads, workspace-trust changes and repairs share that same
 state-publication queue, so an older slow response cannot replace a newer cached view or agent list.
+After an idle workspace-trust approval or revocation recomposes the kernel Environment, the run
+client refreshes its cached `{id, fingerprint}` immediately; the next turn and resume comparison
+therefore use the post-transition snapshot without requiring a reconnect.
 
 The header carries the selected branch. `--continue`, `--resume`, `--list` and `--delete` operate
 only on this process's selected workspace.

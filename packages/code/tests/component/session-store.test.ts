@@ -38,6 +38,9 @@ function fakeSessions(seed: Session[] = []): SessionService & { store: Map<strin
           ...(session.turns.at(-1)?.status === undefined
             ? {}
             : { last_status: session.turns.at(-1)!.status }),
+          ...(session.turns.at(-1)?.environment === undefined
+            ? {}
+            : { last_environment: session.turns.at(-1)!.environment }),
           totals: session.totals,
         })),
         ...(start + limit < sorted.length ? { next_cursor: String(start + limit) } : {}),
@@ -63,6 +66,7 @@ function meta(over: Partial<SessionMeta> = {}): SessionMeta {
     updatedAt: over.updatedAt ?? 1000,
     profile: over.profile,
     turns: over.turns ?? [],
+    ...(over.lastEnvironment === undefined ? {} : { lastEnvironment: over.lastEnvironment }),
     totals: over.totals ?? { input: 0, output: 0, cached: 0 },
   };
 }
@@ -89,6 +93,37 @@ test("metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)", (
   });
   expect(wire.totals).toEqual({ input: 10, output: 5, cached: 2, cost_usd: 0.01 });
   expect(sessionToMeta(wire, "clarvis")).toEqual(m);
+});
+
+test("Environment identity round-trips on turns and bounded summaries", async () => {
+  const environment = {
+    id: "workspace:research",
+    fingerprint: `sha256:${"a".repeat(64)}`,
+  };
+  const m = meta({
+    turns: [{ userPreview: "hi", executionId: "exec_1", environment, status: "done" }],
+    lastEnvironment: environment,
+  });
+  const wire = metaToSession(m);
+  expect(wire.turns[0]?.environment).toEqual(environment);
+  expect(sessionToMeta(wire, "clarvis")).toEqual(m);
+
+  const [summary] = await loadSessions(fakeSessions([wire]), "clarvis");
+  expect(summary?.lastEnvironment).toEqual(environment);
+});
+
+test("malformed persisted Environment identity is ignored at both session boundaries", async () => {
+  const wire = metaToSession(
+    meta({ turns: [{ userPreview: "hi", executionId: "exec_1", status: "done" }] }),
+  );
+  (wire.turns[0] as unknown as { environment: unknown }).environment = {
+    id: "workspace:research",
+    fingerprint: "not-a-digest",
+  };
+
+  expect(sessionToMeta(wire, "clarvis").turns[0]?.environment).toBeUndefined();
+  const [summary] = await loadSessions(fakeSessions([wire]), "clarvis");
+  expect(summary?.lastEnvironment).toBeUndefined();
 });
 
 test("facade: save/list/get/delete over the cache, persisting to the service", async () => {

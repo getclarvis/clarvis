@@ -214,10 +214,19 @@ A host supplies or builds:
 - a workspace root;
 - trace persistence;
 - downstream MCP connections;
+- whether a server's discovered tools are host-composed into every agent for this run through
+  `McpServerConfig.auto_tools`; the loop applies that union only after the connection succeeds and
+  never rewrites the request's or operator's persisted profiles;
 - optional persistent browser authorization for remote MCP connections; the host owns both the
   private store path and whether it can open a browser;
 - optional event, steering, explicit-compaction, elicitation and cancellation channels;
 - any additional capabilities.
+
+A host may also supply `HostRunDeps.hostMetadata`, an opaque snapshot evaluated once per run and
+carried into its journal and final execution record. The loop does not inspect the value. The file
+kernel uses it for extension Environment identity and supplies only already-resolved skill roots, so
+Environment discovery and trust remain host policy. See
+[`hosts/environments.md`](../../specs/hosts/environments.md).
 
 `buildExecuteRunDeps` provides the standard local wiring. `executeRun` returns
 the execution ID and final response while emitting detailed trace events during

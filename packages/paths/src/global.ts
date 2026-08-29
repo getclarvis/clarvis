@@ -25,6 +25,8 @@ export interface GlobalPaths {
   state: string;
   /** Derived data that may be deleted at any time. */
   cache: string;
+  /** Persistent writable state supplied to portable plugin processes. */
+  pluginDataRoot: string;
   /** Global settings document. */
   settingsFile: string;
   /** Directory of file-based agent profiles. */
@@ -37,8 +39,8 @@ export interface GlobalPaths {
   mcpOAuthFile: string;
   /** Installed plugin directory. */
   pluginsDir: string;
-  /** Per-definition approvals for unmanaged plugin hooks. */
-  hookTrustFile: string;
+  /** Operator-authored reusable Environment definitions. */
+  environmentsDir: string;
   /** Recorded workspace-surface trust decisions. */
   workspaceTrustFile: string;
   /** Global skill directory. */
@@ -73,6 +75,8 @@ export interface GlobalPaths {
   tracesDir: string;
   /** Persisted records of workflows that have run. */
   workflowRecordsDir: string;
+  /** Operator-wide default Environment selection. */
+  environmentSelectionFile: string;
   /** The terminal UI's own preferences. */
   codeConfigFile: string;
   /** Cached model catalogue snapshot. */
@@ -111,13 +115,14 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     root: base,
     state,
     cache,
+    pluginDataRoot: join(state, "plugin-data"),
     settingsFile: join(base, "settings.json"),
     agentsDir,
     keysFile: join(base, "keys.json"),
     subscriptionsFile: join(base, "subscriptions.json"),
     mcpOAuthFile: join(state, "mcp-oauth.json"),
     pluginsDir: join(base, "plugins"),
-    hookTrustFile: join(base, "hook-trust.json"),
+    environmentsDir: join(base, "environments"),
     workspaceTrustFile: join(base, "workspace-trust.json"),
     skillsDir: join(base, "skills"),
     workflowsDir: join(base, "workflows"),
@@ -128,6 +133,7 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     sessionsDir: join(state, "sessions"),
     tracesDir: join(state, "traces"),
     workflowRecordsDir: join(state, "workflows"),
+    environmentSelectionFile: join(state, "environment.json"),
     codeConfigFile: join(state, "code.json"),
     modelsCacheFile: join(cache, "models-dev.json"),
     contextCandidates: CONTEXT_FILENAMES.map((name) => join(base, name)),

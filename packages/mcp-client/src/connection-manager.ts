@@ -386,11 +386,21 @@ function sortKeys(o?: Record<string, string>): Record<string, string> | null {
  * The {@link McpServerConfig} fields {@link poolKey} discriminates on.
  *
  * @remarks Everything except `shared`, which is a precondition of the poolable
- *   path rather than a discriminant: two entries reaching {@link poolKey} both
- *   have it set.
+ *   path rather than a discriminant, and `auto_tools`, which is run-level tool
+ *   admission applied by the loop after a connection opens. Neither changes the
+ *   physical server or the tools it advertises.
  */
 type PoolKeyField =
-  "name" | "transport" | "command" | "args" | "env" | "cwd" | "url" | "headers" | "resources";
+  | "name"
+  | "transport"
+  | "command"
+  | "args"
+  | "env"
+  | "cwd"
+  | "url"
+  | "headers"
+  | "expandVariables"
+  | "resources";
 
 /**
  * Compile-time drift guard: only type-checks while {@link PoolKeyField} plus
@@ -402,7 +412,9 @@ type PoolKeyField =
  *   this exists for — it decides whether the synthetic resource tools are
  *   attached, and every lease of a slot is handed the same `tools` array.
  */
-type PoolKeyCoversConfig = [Exclude<keyof McpServerConfig, PoolKeyField | "shared">] extends [never]
+type PoolKeyCoversConfig = [
+  Exclude<keyof McpServerConfig, PoolKeyField | "shared" | "auto_tools">,
+] extends [never]
   ? true
   : false;
 
@@ -436,6 +448,7 @@ function poolKey(server: McpServerConfig, scope: PoolScope, sharing: PoolSharing
     cwd: server.cwd ?? null,
     url: server.url ?? null,
     headers: sortKeys(server.headers),
+    expandVariables: server.expandVariables ?? true,
     resources: server.resources ?? null,
   });
 }

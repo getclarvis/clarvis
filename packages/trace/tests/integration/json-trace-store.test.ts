@@ -189,11 +189,30 @@ describe("json-trace-store — persisted continuation payload", () => {
     expect(JSON.stringify(got.final_context)).toContain(secret);
   });
 
-  it("omits final_context/capability_state when the record has none", async () => {
+  it("round-trips sanitized host metadata with the execution snapshot", async () => {
+    const environment = {
+      id: "global:research",
+      fingerprint: `sha256:${"a".repeat(64)}`,
+    };
+    await store.insert(
+      makeExecutionRecord({
+        id: "exec_host_metadata",
+        owner_key_name: "alice",
+        host_metadata: { environment, api_token: "sk-proj-ABCDEFGH12345678" },
+      }),
+    );
+
+    const got = store.getById("alice", "exec_host_metadata")!;
+    expect(got.host_metadata?.environment).toEqual(environment);
+    expect(JSON.stringify(got.host_metadata)).not.toContain("sk-proj-ABCDEFGH12345678");
+  });
+
+  it("omits final_context/capability_state/host_metadata when the record has none", async () => {
     await store.insert(makeExecutionRecord({ id: "exec_plain", owner_key_name: "alice" }));
     const got = store.getById("alice", "exec_plain")!;
     expect(got).not.toHaveProperty("final_context");
     expect(got).not.toHaveProperty("capability_state");
+    expect(got).not.toHaveProperty("host_metadata");
   });
 });
 

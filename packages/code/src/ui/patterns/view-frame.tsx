@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import type { Accessor, JSX } from "solid-js";
 import { For, Show } from "solid-js";
 import { tokens } from "../../theme/tokens.ts";
 import { glyph } from "../../theme/glyphs.ts";
@@ -7,6 +7,14 @@ import type { ViewHost } from "../../keys/commands.ts";
 import { ScopeBadge } from "../primitives/index.ts";
 import { InteractionNavigationBar } from "./navigation-bar.tsx";
 import type { ActiveAction } from "./active-actions.ts";
+
+/** One compact, reactive status pinned to the right edge of a view footer. */
+export interface ViewFrameStatus {
+  text: string;
+  fg?: string;
+  glyph?: string;
+  glyphFg?: string;
+}
 
 /**
  * Renders one level's chrome: title/breadcrumb/scope, body and keymap-derived navigation.
@@ -35,6 +43,7 @@ export function ViewFrame(props: {
   purpose?: string;
   mutationContract?: string;
   actionFilter?: (action: ActiveAction) => boolean;
+  footerStatus?: () => ViewFrameStatus | undefined;
   children: JSX.Element;
 }): JSX.Element {
   return (
@@ -103,12 +112,28 @@ export function ViewFrame(props: {
             {(line) => <text fg={tokens.muted}>{"  " + line}</text>}
           </For>
         </Show>
-        <InteractionNavigationBar
-          interaction={props.host.interaction}
-          actionFilter={(action) =>
-            action.id !== "run.cancel" && (props.actionFilter?.(action) ?? true)
-          }
-        />
+        <box height={1} flexDirection="row">
+          <box flexGrow={1} flexShrink={1} minWidth={0} overflow="hidden">
+            <InteractionNavigationBar
+              interaction={props.host.interaction}
+              actionFilter={(action) =>
+                action.id !== "run.cancel" && (props.actionFilter?.(action) ?? true)
+              }
+            />
+          </box>
+          <Show when={props.footerStatus?.()}>
+            {(status: Accessor<ViewFrameStatus>) => (
+              <text flexShrink={0} wrapMode="none">
+                <Show when={status().glyph}>
+                  <span style={{ fg: status().glyphFg ?? status().fg ?? tokens.muted }}>
+                    {status().glyph + " "}
+                  </span>
+                </Show>
+                <span style={{ fg: status().fg ?? tokens.muted }}>{status().text}</span>
+              </text>
+            )}
+          </Show>
+        </box>
       </box>
     </box>
   );

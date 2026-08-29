@@ -1,12 +1,14 @@
 import type {
   ConfigChange,
   WorkspaceTrustVerdict,
+  EnvironmentPluginRef,
   Scope,
   SettingsData,
   SettingsSource,
   Unsubscribe,
 } from "@clarvis/protocol";
 import { createHash } from "node:crypto";
+import type { SettingsScopeOrigin } from "@clarvis/capability";
 
 /** Exact source bytes and the revision used for optimistic settings repair. */
 export interface SettingsDocument {
@@ -186,6 +188,10 @@ export interface SettingsSnapshot {
    * declares none, otherwise `trusted` / `unapproved` / `changed`.
    */
   workspace_trust?: WorkspaceTrustVerdict;
+  /** Exact plugin installations selected by the resolved extension Environment. */
+  active_plugins?: readonly EnvironmentPluginRef[];
+  /** Winning layer for each effective MCP namespace; internal authorization provenance. */
+  mcpServerOrigins?: Readonly<Record<string, SettingsScopeOrigin>>;
 }
 
 /**

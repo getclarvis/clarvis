@@ -172,4 +172,23 @@ describe("buildRecord", () => {
     expect(record.final_context).toEqual(FINAL_CONTEXT);
     expect(record.capability_state).toEqual({ plans: PLAN_STATE });
   });
+
+  it("carries opaque host metadata into the immutable execution snapshot", () => {
+    const environment = {
+      environment: {
+        id: "global:research",
+        fingerprint: `sha256:${"a".repeat(64)}`,
+      },
+    };
+    const record = buildRecord({
+      id: "exec_7",
+      owner: "alice",
+      request: REQUEST,
+      response: response([lead()]),
+      trace: { events: [] },
+      wallStartedAt: 0,
+      hostMetadata: environment,
+    });
+    expect(record.host_metadata).toEqual(environment);
+  });
 });

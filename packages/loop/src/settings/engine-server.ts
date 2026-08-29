@@ -7,7 +7,16 @@ import type { McpServerSettings } from "./settings-schema.ts";
  * pass through under their own names.
  */
 type MappedSettingsKey =
-  "type" | "command" | "args" | "url" | "headers" | "env" | "shared" | "resources";
+  | "type"
+  | "command"
+  | "args"
+  | "url"
+  | "headers"
+  | "env"
+  | "cwd"
+  | "expandVariables"
+  | "shared"
+  | "resources";
 
 /**
  * Compile-time drift guard: only type-checks while every key of
@@ -40,10 +49,8 @@ void _engineServerDriftLock;
  * @param entry - a server entry already parsed by `mcpServerSettingsSchema`.
  * @returns the engine-shaped config, carrying only the keys `entry` actually set.
  * @remarks `entry.type` is always present because the settings schema defaults it
- *   to `stdio`. No `cwd` is emitted: it is deliberately absent from the client
- *   surface, and the subprocess working directory comes from the client factory's
- *   `defaultCwd` instead, so a server is rooted in the workspace rather than in
- *   whichever directory the host process was launched from.
+ *   to `stdio`. A declared `cwd` is carried exactly; otherwise the client factory
+ *   applies its workspace-rooted default.
  */
 export function settingsServerToEngine(name: string, entry: McpServerSettings): McpServerConfig {
   return {
@@ -54,6 +61,8 @@ export function settingsServerToEngine(name: string, entry: McpServerSettings): 
     ...(entry.url !== undefined ? { url: entry.url } : {}),
     ...(entry.headers !== undefined ? { headers: entry.headers } : {}),
     ...(entry.env !== undefined ? { env: entry.env } : {}),
+    ...(entry.cwd !== undefined ? { cwd: entry.cwd } : {}),
+    ...(entry.expandVariables !== undefined ? { expandVariables: entry.expandVariables } : {}),
     ...(entry.shared !== undefined ? { shared: entry.shared } : {}),
     ...(entry.resources !== undefined ? { resources: entry.resources } : {}),
   };

@@ -89,6 +89,9 @@ interface KernelOver {
   agents?: { name: string; scope: "workspace" | "global"; model?: string; description?: string }[];
   tasks?: KernelClient["tasks"];
   capabilities?: Partial<KernelClient["capabilities"]>;
+  approveWorkspace?: KernelClient["config"]["approveWorkspace"];
+  revokeWorkspace?: KernelClient["config"]["revokeWorkspace"];
+  currentEnvironment?: KernelClient["environments"]["current"];
 }
 
 /**
@@ -128,7 +131,17 @@ function fakeKernel(over: KernelOver): KernelClient {
     },
     config: {
       listAgents: async () => over.agents ?? [],
+      approveWorkspace: over.approveWorkspace ?? (async () => ({}) as never),
+      revokeWorkspace: over.revokeWorkspace ?? (async () => ({}) as never),
     } as KernelClient["config"],
+    environments: {
+      current:
+        over.currentEnvironment ??
+        (async () => ({
+          id: "builtin:default",
+          fingerprint: `sha256:${"0".repeat(64)}`,
+        })),
+    } as KernelClient["environments"],
     ...(over.tasks === undefined ? {} : { tasks: over.tasks }),
     ...(over.capabilities === undefined ? {} : { capabilities: over.capabilities }),
     close: async () => {},
@@ -146,6 +159,39 @@ function client(over: KernelOver, cbOver: Partial<KernelRunClientCallbacks> = {}
   const c = createKernelRunClient({ createKernel: async () => fakeKernel(over), callbacks });
   return { c, events, progress };
 }
+
+test("connect exposes the process-pinned Environment identity", async () => {
+  const { c } = client({});
+  await c.connect();
+  expect(c.currentEnvironment()).toEqual({
+    id: "builtin:default",
+    fingerprint: `sha256:${"0".repeat(64)}`,
+  });
+  await c.dispose();
+});
+
+test("workspace trust transitions refresh the process-pinned Environment identity", async () => {
+  let fingerprint = `sha256:${"1".repeat(64)}`;
+  const { c } = client({
+    currentEnvironment: async () => ({ id: "workspace:project", fingerprint }) as never,
+    approveWorkspace: async () => {
+      fingerprint = `sha256:${"2".repeat(64)}`;
+      return {} as never;
+    },
+    revokeWorkspace: async () => {
+      fingerprint = `sha256:${"3".repeat(64)}`;
+      return {} as never;
+    },
+  });
+  await c.connect();
+
+  await c.config.approveWorkspace();
+  expect(c.currentEnvironment()?.fingerprint).toBe(`sha256:${"2".repeat(64)}`);
+
+  await c.config.revokeWorkspace();
+  expect(c.currentEnvironment()?.fingerprint).toBe(`sha256:${"3".repeat(64)}`);
+  await c.dispose();
+});
 
 test("startRun pumps the kernel event stream into onEvent and resolves done", async () => {
   const ctrl = controllableHandle("exec_1");
@@ -644,6 +690,28 @@ test("Tasks control-plane methods stay thin pass-throughs to the kernel service"
   ]);
 });
 
+test("plugin installs forward the selected inventory target to the kernel", async () => {
+  let target: unknown;
+  const kernel = Object.assign(fakeKernel({}), {
+    plugins: {
+      install: async (_url: string, _subdir: string | undefined, input: unknown) => {
+        target = input;
+        return {} as never;
+      },
+    } as unknown as KernelClient["plugins"],
+  }) as KernelClient;
+  const c = createKernelRunClient({
+    createKernel: async () => kernel,
+    callbacks: { onEvent: () => {} },
+  });
+  await c.connect();
+
+  await c.plugins.install("https://example.test/plugin.git", undefined, { source: "clarvis" });
+
+  expect(target).toEqual({ source: "clarvis" });
+  await c.dispose();
+});
+
 test("every non-run control-plane method stays a thin pass-through to its kernel service", async () => {
   const calls: string[] = [];
   const service = (name: string): object =>
@@ -723,15 +791,12 @@ test("every non-run control-plane method stays a thin pass-through to its kernel
     c.sessions.delete("session"),
     c.plugins.list(),
     c.plugins.install("https://example.com/plugin.git"),
-    c.plugins.update("plugin"),
-    c.plugins.uninstall("plugin"),
-    c.plugins.hooks(),
-    c.plugins.approveHook("plugin", "fingerprint"),
-    c.plugins.revokeHook("plugin", "fingerprint"),
+    c.plugins.update({ scope: "global", source: "clarvis", name: "plugin" }),
+    c.plugins.uninstall({ scope: "global", source: "clarvis", name: "plugin" }),
   ]);
   expect(c.project).toBe(kernel.project);
   expect(c.workspace).toBe(kernel.workspace);
-  expect(calls).toHaveLength(51);
+  expect(calls).toHaveLength(48);
   await c.dispose();
 });
 

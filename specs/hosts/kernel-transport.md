@@ -95,9 +95,9 @@ operation whose argument tuple and result are inferred from the service method
 `AsyncMethodKeys` filter itself (`packages/kernel/src/transport/operations.ts:64-68`). The two run
 methods use the special streaming/control operation path.
 
-**80 request methods exist**: 72 ordinary plus 8 special, flattened into `KNOWN_METHODS`.
-Ordinary counts per service: runs 4, config 14, plugins 7, secrets 3, models 4, provider-auth 5,
-files 3, memory 4, plans 4, workflows 3, skills 2, sessions 5, tasks 12, storage 2. There is no
+**93 request methods exist**: 85 ordinary plus 8 special, flattened into `KNOWN_METHODS`.
+Ordinary counts per service: runs 4, config 14, plugins 7, environments 13, secrets 3, models 4,
+provider-auth 5, files 3, memory 4, plans 4, workflows 3, skills 2, sessions 5, tasks 12, storage 2. There is no
 worktree service or worktree operation: checkout selection happens before kernel construction.
 Production: `packages/kernel/src/transport/operations.ts` (`OPERATIONS`, `SPECIAL_OPERATIONS`,
 `ORDINARY_OPERATIONS`, `KNOWN_METHODS`). Test:
@@ -116,13 +116,14 @@ The 8 special operations and their metadata:
 | `config.subscribe` | read | — |
 | `config.unsubscribe` | read | — |
 
-`M` names 30 of the 80 (`packages/kernel/src/transport/wire.ts`); the rest are reached only through the service proxies. The
+`M` names 30 of the 93 (`packages/kernel/src/transport/wire.ts`); the rest are reached only through the service proxies. The
 whole DTO vocabulary each method carries belongs to **protocol-kernel-contract**.
 
-The 72 ordinary operations' individual `access`/`sensitivity` pairing is declared by
+The 85 ordinary operations' individual `access`/`sensitivity` pairing is declared by
 `OPERATIONS` in `packages/kernel/src/transport/operations.ts`.
-Five service groups carry a `sensitivity` tag on every operation (`plugins`, `secrets`,
-`providerAuth`, `files`, `tasks`). Models uses `provider_auth` only for its two entitled-catalog
+Six service groups carry a `sensitivity` tag on every operation (`plugins`, `environments`,
+`secrets`, `providerAuth`, `files`, `tasks`). Environments deliberately shares the `plugins`
+sensitivity because selecting or editing one changes the active executable extension set. Models uses `provider_auth` only for its two entitled-catalog
 operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workflows`, `skills`,
 `sessions`, `storage`) never carry one:
 
@@ -150,9 +151,20 @@ operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workfl
 | plugins | `plugins.install` | write | `plugins` |
 | plugins | `plugins.update` | write | `plugins` |
 | plugins | `plugins.uninstall` | write | `plugins` |
-| plugins | `plugins.hooks` | read | `plugins` |
-| plugins | `plugins.approveHook` | write | `plugins` |
-| plugins | `plugins.revokeHook` | write | `plugins` |
+| environments | `environments.list` | read | `plugins` |
+| environments | `environments.current` | read | `plugins` |
+| environments | `environments.get` | read | `plugins` |
+| environments | `environments.inventory` | read | `plugins` |
+| environments | `environments.preview` | read | `plugins` |
+| environments | `environments.previewClear` | read | `plugins` |
+| environments | `environments.previewComposition` | read | `plugins` |
+| environments | `environments.select` | write | `plugins` |
+| environments | `environments.clearSelection` | write | `plugins` |
+| environments | `environments.applyComposition` | write | `plugins` |
+| environments | `environments.create` | write | `plugins` |
+| environments | `environments.update` | write | `plugins` |
+| environments | `environments.delete` | write | `plugins` |
+| environments | `environments.clone` | write | `plugins` |
 | secrets | `secrets.listNames` | read | `secrets` |
 | secrets | `secrets.set` | write | `secrets` |
 | secrets | `secrets.delete` | write | `secrets` |
@@ -177,7 +189,6 @@ operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workfl
 | plans | `plans.setRetention` | write | — |
 | plans | `plans.delete` | write | — |
 | workflows | `workflows.get` | read | — |
-| workflows | `workflows.list` | read | — |
 | workflows | `workflows.delete` | write | — |
 | skills | `skills.list` | read | — |
 | skills | `skills.getPrompt` | read | — |
@@ -361,7 +372,7 @@ In the order the function runs (`packages/kernel/src/transport/client.ts:143-408
    `project` / `workspace` objects, string `project.id`, `workspace.id`, `workspace.projectId`,
    `workspace.label`, a `workspace.kind` in `primary | external_worktree`, and a
    `principal` that, if present, is an object with a string `id`.
-7. Build the twelve service proxies plus the two subscribe-aware wrappers and the streaming `runs`
+7. Build the thirteen ordinary service proxies, the subscribe-aware `config` wrapper, and the streaming `runs`
    (`:507-607`), and return the `RemoteKernel` carrying `hello.capabilities`, `hello.project`,
    `hello.workspace` and, when present, `hello.principal` (`:609-638`).
 
@@ -868,6 +879,14 @@ Test: `packages/kernel/tests/contract/transport-codecs.test.ts:407-445` — `tas
 `provider_key` round-trip byte-for-byte, and `tasks.search` both preserves an opaque `next_cursor`
 and forwards a caller's `AbortSignal` as `options: { signal }` on the wire request.
 
+**INV-T22.** Every Environment service method is an ordinary operation and is classified with
+`sensitivity: "plugins"`; observation methods are reads, while selection and definition mutations
+are writes. This lets a remote host apply the same executable-extension authorization boundary to
+plugins and Environments without inspecting payloads. Production:
+`packages/kernel/src/transport/operations.ts` (`OPERATIONS.environments`). Test:
+`packages/kernel/tests/contract/transport-codecs.test.ts` ("classifies every Environment operation
+as plugin-sensitive with exact read/write access").
+
 ## 6. Failure modes and degradation
 
 ### 6.1 Error codes emitted by this subsystem
@@ -1054,7 +1073,7 @@ nothing in the tree builds yet.
 | `../runs/coalesce-events.ts` | runtime | `packages/kernel/src/transport/client.ts:43-50` |
 | `../kernel.ts` (`InProcessKernel`) | **type-only** | `packages/kernel/src/transport/server.ts:12` — the kernel instance arrives as an argument, so `server.ts` holds no runtime edge to kernel composition |
 
-`operations.ts` imports the fourteen service interfaces purely as types and derives `KernelServices`
+`operations.ts` imports the fifteen service interfaces purely as types and derives `KernelServices`
 as a `Pick` of `KernelClient` (`packages/kernel/src/transport/operations.ts:21-36`). That `Pick` is the type constraint that forces
 the catalog to stay exhaustive: `serviceOperations<Service>` demands an entry for every async method
 of the service it is given (`packages/kernel/src/transport/operations.ts:80-95`).
@@ -1234,7 +1253,7 @@ and §4.5 is pinned by tests rather than by production traffic — is a fact abo
 judgement about the design.
 
 **Deliberately delegated.**
-- The DTO shapes every method carries, and `KernelClient`'s fourteen services →
+- The DTO shapes every method carries, and `KernelClient`'s fifteen services →
   **protocol-kernel-contract**.
 - Which run events exist, what they mean, and the coalescing/droppability policy behind
   `DEFAULT_RUN_EVENT_BUFFER` → **kernel-run-service-and-events**.

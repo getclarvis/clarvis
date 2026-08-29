@@ -13,6 +13,12 @@ export { createPlansService } from "./plans/plans-service.ts";
 export { createSkillsService } from "./skills/skills-service.ts";
 export type { SkillsServiceConfig } from "./skills/skills-service.ts";
 export {
+  createEnvironmentManager,
+  environmentId,
+  type EnvironmentManagerOptions,
+  type EnvironmentRuntimeBinding,
+} from "./environments/environment-manager.ts";
+export {
   createWorkflowsService,
   type WorkflowsServiceConfig,
   type WorkflowsRuntimeSettings,

@@ -11,7 +11,9 @@ A `Session` (`packages/protocol/src/sessions.ts:54`) is a conversation index: an
 turns, each optionally pointing at a run (`execution_id`) whose full transcript lives in the runs
 service, plus running token/cost totals and any not-yet-delivered "pending" observations
 (`packages/protocol/src/sessions.ts:70-74`). The session document itself never carries the
-transcript — only enough to look up and re-render it.
+transcript — only enough to look up and re-render it. Each turn may also carry the id and fingerprint
+of the resolved [Extension Environment](environments.md) under which it began; this is historical
+identity, not a request to reactivate that Environment during resume.
 
 Two problems this subsystem solves:
 
@@ -88,13 +90,15 @@ interface Session {                       // packages/protocol/src/sessions.ts:5
 }
 interface SessionTurn {                   // packages/protocol/src/sessions.ts:34
   user_preview: string; execution_id?: string;
+  environment?: EnvironmentRunRef;
   status: "pending"|"running"|"done"|"error"|"cancelled"|"interrupted";
   started_at?: Timestamp; ended_at?: Timestamp;
 }
 interface SessionSummary {                // packages/protocol/src/sessions.ts:78 — never carries turns/pending
   id: string; title: string; project_id: string; workspace: string;
   created_at: Timestamp; updated_at: Timestamp; profile?: string;
-  turn_count: number; last_status?: SessionTurnStatus; totals: SessionTotals;
+  turn_count: number; last_status?: SessionTurnStatus;
+  last_environment?: EnvironmentRunRef; totals: SessionTotals;
 }
 ```
 
@@ -187,6 +191,13 @@ two representations at the storage boundary:
   source has it (spread-guarded, e.g. `...(t.executionId !== undefined ? { executionId: ... } : {})`).
   Pinned round-trip: "metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)"
   (`packages/code/tests/component/session-store.test.ts:73-91`).
+- **`TurnRef.environment` / `SessionMeta.lastEnvironment`** preserve the resolved Environment id and
+  fingerprint without embedding its definition, plugins, skills, or secrets. `metaToSession` and
+  `sessionToMeta` round-trip the turn field; `sessionSummaryToMeta` retains
+  `SessionSummary.last_environment` even though its bounded projection deliberately omits `turns`.
+  Production: `packages/code/src/adapters/session-store.ts` (`metaToSession`, `sessionToMeta`,
+  `sessionSummaryToMeta`). Test: `packages/code/tests/component/session-store.test.ts`
+  ("Environment identity round-trips on turns and bounded summaries").
 - **`TurnRef.error`** (`packages/code/src/adapters/session-store.ts`, `{ code: string; message: string }`)
   has no declared counterpart in the protocol `SessionTurn` DTO listed above (§2), but it is
   intentionally persisted through a local `PersistedSessionTurn` widening. `metaToSession` writes
@@ -780,6 +791,18 @@ recovered-context salvage when there is no result" (`packages/code/tests/compone
     malformed-value rejection, and sanitizer/bound cases) and
     `packages/code/tests/component/session.test.ts` (failed-turn producer cases).
 
+19. **Environment history is snapshot identity, never implicit activation.** A full session turn
+    persists only `{id, fingerprint}`; the bounded sidecar projects the newest value as
+    `last_environment`; loading or resuming the session does not select that Environment. A host may
+    compare it with its current snapshot and warn, as [code-run-host.md](code-run-host.md) specifies.
+    Production: `packages/protocol/src/sessions.ts` (`SessionTurn`, `SessionSummary`),
+    `packages/kernel/src/sessions/session-service.ts` (`toSummary`), and
+    `packages/code/src/adapters/session-store.ts` (`metaToSession`, `sessionToMeta`,
+    `sessionSummaryToMeta`). Test: `packages/kernel/tests/integration/session-service.test.ts`
+    ("projects the newest Environment identity into the bounded summary") and
+    `packages/code/tests/component/session-store.test.ts` ("Environment identity round-trips on
+    turns and bounded summaries").
+
 ## 6. Failure modes and degradation
 
 | Condition | Handling | Cite |
@@ -798,6 +821,7 @@ recovered-context salvage when there is no result" (`packages/code/tests/compone
 | `delete(id)` on an already-deleted session | Returns `false`; the (already-absent) summary unlink error is separately swallowed | `packages/kernel/src/sessions/session-service.ts:588-599` |
 | A turn's run trace is gone by the time `resumeSession` looks for it | Turn is rendered `degraded` with a reason distinguishing `interrupted`/`trace_pruned`/`trace_unavailable`; the session as a whole still resumes | `packages/code/src/adapters/session.ts:632-644` |
 | A turn's `RunDetail` was reconstructed from a damaged crash journal | Turn replays normally; `recovery` counts are surfaced beside its (possibly incomplete) events, never withheld | `packages/code/src/adapters/session.ts:377-385` |
+| Newest persisted Environment differs from the active kernel snapshot | Session data remains readable and resume continues; the TUI surfaces the mismatch without changing either snapshot | [code-run-host.md](code-run-host.md) (`loadSessionMeta`) |
 | Resume history exceeds message/char limits | Hard failure (`SessionResumeLimitError`, `code: "resource_exhausted"`) before rendering anything, rather than truncating context silently | `packages/code/src/adapters/session.ts:404-418` |
 | An individual trace-delete resolves `false` (e.g. `not_found`) during `deleteSession` | Recorded as `{ executionId, deleted: false }`; the cascade continues and the session record is still deleted | `packages/code/src/adapters/session.ts:674-681`; `packages/code/tests/component/session.test.ts` ("records a missing trace") |
 | An individual trace-delete *rejects* during `deleteSession`, and the caller's `deleteRun` does not catch it | The rejection propagates out of `deleteSession`; the cascade stops and the session record is **not** deleted | `deleteSession` in `packages/code/src/adapters/session.ts` (no try/catch), TUI `sessionControls.delete` in `packages/code/src/index.tsx`, `deleteRun` in `packages/code/src/adapters/kernel-run-client.ts`, and `packages/code/tests/component/session.test.ts` ("preserves the session") |

@@ -37,16 +37,19 @@ const boundedMcpValues = z
   });
 
 /**
- * A validated plugin name: a lowercase `^[a-z0-9_-]+$` token that doubles as a
- * directory name and a namespace prefix, and can never be a prototype-polluting
- * key (`__proto__`/`constructor`/`prototype`) since names index the trust map.
+ * A validated plugin name: a lowercase filesystem-safe token that doubles as a
+ * directory name and namespace prefix. Dots are accepted for Agent Plugin
+ * compatibility; path separators, edge punctuation and ambiguous repeated
+ * separators are rejected. Prototype-polluting keys remain forbidden because
+ * plugin names index trust and contribution maps.
  */
 export const pluginNameField = z
   .string()
   .min(1, "a plugin name must be a non-empty string")
+  .max(64, "a plugin name must contain at most 64 characters")
   .regex(
-    /^[a-z0-9_-]+$/,
-    "a plugin name must match ^[a-z0-9_-]+$ (it is a directory name and a namespace prefix)",
+    /^[a-z0-9](?!.*(?:--|\.\.))[a-z0-9._-]*[a-z0-9]$|^[a-z0-9]$/,
+    "a plugin name must be lowercase, start and end with an alphanumeric character, and contain only '.', '_', or '-' separators",
   )
   .refine((name) => !RESERVED_PLUGIN_NAMES.has(name), {
     error:
@@ -91,6 +94,20 @@ const mcpServerBase = z
       .describe(
         "Optional environment variables for a stdio transport. Values may embed ${VAR}, resolved " +
           "from the server's env at spawn time (never a literal secret on the wire).",
+      ),
+    cwd: z
+      .string()
+      .min(1)
+      .max(INPUT_LIMITS.pathChars)
+      .optional()
+      .describe("Optional working directory for a stdio transport."),
+    expandVariables: z
+      .boolean()
+      .optional()
+      .describe(
+        "Whether Clarvis ${VAR} interpolation applies to env/header values. Default true; " +
+          "portable Agent Plugin declarations set false because their format permits only " +
+          "PLUGIN_ROOT and PLUGIN_DATA expansion.",
       ),
     shared: z
       .boolean()
@@ -180,6 +197,13 @@ function refineMcpServer(server: z.infer<typeof mcpServerBase>, ctx: z.core.$Ref
         path: ["env"],
       });
     }
+    if (server.cwd !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `mcpServers[].cwd is not valid for a '${server.type}' transport`,
+        path: ["cwd"],
+      });
+    }
     if (server.shared !== undefined) {
       ctx.addIssue({
         code: "custom",
@@ -220,11 +244,20 @@ export const mcpServerSettingsSchema = mcpServerBase.strict().superRefine(refine
  */
 export const mcpServerPluginSchema = mcpServerBase.superRefine(refineMcpServer);
 
+/** Exact identity of one plugin installation in settings. */
+export const pluginRefField = z
+  .object({
+    scope: z.enum(["global", "workspace"]),
+    source: z.enum(["agents", "clarvis"]),
+    name: pluginNameField,
+  })
+  .strict();
+
 /**
  * The full `settings.json` schema: provider instances, MCP servers, model /
  * reasoning / budget defaults, every capability's settings block (spread in from
- * {@link capabilitySettingsFields}), plugin marketplaces, and the ordered
- * `enabledPlugins` precedence list.
+ * {@link capabilitySettingsFields}), plugin marketplaces, and the exact
+ * `enabledPlugins` activation list used by `builtin:default`.
  *
  * @remarks `.strict()` — an unrecognized top-level key is rejected. Merge
  *   strategy across global/workspace/plugin scopes is defined in the settings
@@ -281,13 +314,13 @@ export const settingsSchema = z
           "to be installed, enabled, and approved.",
       ),
     enabledPlugins: z
-      .array(pluginNameField)
+      .array(pluginRefField)
       .max(INPUT_LIMITS.enabledPlugins)
       .optional()
       .describe(
-        "Plugins to enable, by directory name under .clarvis/plugins. Array order is " +
-          "precedence: a later plugin overrides an earlier one. Every plugin ranks below " +
-          "both global and workspace settings, so an operator always wins.",
+        "Exact plugin installations to enable in builtin:default. Duplicate exact references " +
+          "are removed while distinct installations with the same runtime name make the " +
+          "resolved Environment invalid.",
       ),
   })
   .strict();
@@ -296,3 +329,5 @@ export const settingsSchema = z
 export type SettingsFile = z.infer<typeof settingsSchema>;
 /** The inferred type of one validated MCP server entry; see {@link mcpServerSettingsSchema}. */
 export type McpServerSettings = z.infer<typeof mcpServerSettingsSchema>;
+/** The inferred exact plugin identity used by `enabledPlugins`. */
+export type PluginRefSettings = z.infer<typeof pluginRefField>;

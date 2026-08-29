@@ -156,6 +156,8 @@ function harness(): {
     agents: { active: () => "", view: () => undefined, list: () => [] } as never,
     agentFiles: { list: () => [], conflicts: () => [] } as never,
     plugins: {} as never,
+    environments: {} as never,
+    skills: { list: async () => [], getPrompt: async () => [] },
     code,
     memoryMode: {
       configured: () => true,
@@ -242,7 +244,6 @@ const VIEW_CONTRACT = [
   ["model.open", "Default model", "slash", undefined],
   ["effort.open", "Default effort", "slash", undefined],
   ["capability-providers.open", "Feature backends", "internal", "settings"],
-  ["plugins.open", "Plugins", "internal", "extensions"],
   ["marketplace.open", "Marketplace", "internal", "extensions"],
   ["memory.config", "Memory settings", "internal", "settings"],
   ["sandbox.config", "Sandbox", "internal", "settings"],

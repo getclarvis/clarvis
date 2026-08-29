@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,7 +14,7 @@ const KEY_B = "b".repeat(64);
 const roots: string[] = [];
 
 async function temporaryStore() {
-  const root = await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-")));
   roots.push(root);
   const state = join(root, "state");
   await mkdir(state);
@@ -107,7 +107,7 @@ describe("persistent MCP OAuth credential store", () => {
   it.if(process.platform !== "win32")(
     "does not read through a symlinked parent directory",
     async () => {
-      const root = await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-parent-"));
+      const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-parent-")));
       roots.push(root);
       const target = join(root, "target");
       const linked = join(root, "linked");

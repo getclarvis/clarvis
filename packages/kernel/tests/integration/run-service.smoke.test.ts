@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "bun:test";
@@ -13,6 +13,7 @@ import type { RunEvent, StartRunParams } from "@clarvis/protocol";
 import { createInProcessKernel } from "../../src/index.ts";
 import { createMemoryConfigStore } from "../../src/config.ts";
 import { kernelIdentity } from "../helpers/kernel-identity.ts";
+import { globalPaths } from "@clarvis/paths";
 
 const PROVIDERS = [
   { name: "anthropic", kind: "anthropic" },
@@ -204,6 +205,49 @@ describe("kernel over loop, driven by settings (the closed loop)", () => {
     await first.done;
     await first.closed;
     expect(releasedLeases).toBe(2);
+    await kernel.close();
+  });
+
+  it("guards selected plugin lifecycle mutations at the kernel boundary", async () => {
+    const ws = mkdtempSync(join(tmpdir(), "clarvis-kernel-"));
+    const globalDir = join(ws, "global");
+    const ref = { scope: "global" as const, source: "clarvis" as const, name: "selected" };
+    const pluginDir = join(globalPaths(globalDir).pluginsDir, ref.name);
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, "plugin.json"), JSON.stringify({ name: ref.name }));
+    const kernel = createInProcessKernel({
+      deps: buildDeps(ws, [
+        { toolCalls: [{ name: "shell", arguments: { command: "sleep 2" } }] },
+        { text: "Done." },
+      ]),
+      workspaceRoot: ws,
+      ...kernelIdentity(ws),
+      configStore: seededConfig(),
+      globalConfigDir: globalDir,
+      activePlugins: () => [ref],
+    });
+    const request = {
+      messages: [{ role: "user", content: "run it" }],
+      agent: "sysop",
+    } satisfies StartRunParams;
+    const active = await kernel.runs.start(request);
+    const events = active.events[Symbol.asyncIterator]();
+    while (true) {
+      const next = await events.next();
+      if (next.done || next.value.type === "tool_call_started") break;
+    }
+
+    await expect(kernel.plugins.update(ref)).rejects.toMatchObject({ code: "conflict" });
+    await expect(kernel.plugins.uninstall(ref)).rejects.toMatchObject({ code: "conflict" });
+    expect(existsSync(pluginDir)).toBeTrue();
+    await active.cancel();
+    await active.done;
+    await active.closed;
+    await events.return?.();
+
+    await kernel.plugins.uninstall(ref);
+    expect(existsSync(pluginDir)).toBeFalse();
+    await expect(kernel.runs.start(request)).rejects.toMatchObject({ code: "unavailable" });
     await kernel.close();
   });
 

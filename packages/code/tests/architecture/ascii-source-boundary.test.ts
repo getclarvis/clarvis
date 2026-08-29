@@ -10,7 +10,6 @@ const SWEPT_SOURCES = [
   "src/views/config/DoctorView.tsx",
   "src/views/config/MarketplaceBrowser.tsx",
   "src/views/config/McpBrowser.tsx",
-  "src/views/config/PluginBrowser.tsx",
   "src/views/config/RunControlsPanel.tsx",
   "src/views/config/SandboxConfigPanel.tsx",
   "src/views/config/ThemeView.tsx",

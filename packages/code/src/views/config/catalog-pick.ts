@@ -13,7 +13,7 @@ interface CatalogRowColumn {
   width: number;
 }
 
-/** One row of a {@link CatalogPicker} list: a provider, a model, or the synthetic manual-entry row. */
+/** One row of a {@link CatalogPicker} list: a choice, an explicit journey action, or manual entry. */
 export interface CatalogRow {
   id: string;
   label: string;
@@ -21,6 +21,8 @@ export interface CatalogRow {
   detail?: string;
   columns?: CatalogRowColumn[];
   added?: boolean;
+  /** Marks a journey-control row that advances without representing catalog inventory. */
+  action?: boolean;
   manual?: boolean;
 }
 

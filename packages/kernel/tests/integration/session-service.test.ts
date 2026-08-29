@@ -26,6 +26,7 @@ function session(id: string, updatedAt: number): Session {
 }
 
 function summary(value: Session): SessionSummary {
+  const last = value.turns.at(-1);
   return {
     id: value.id,
     title: value.title,
@@ -34,7 +35,8 @@ function summary(value: Session): SessionSummary {
     created_at: value.created_at,
     updated_at: value.updated_at,
     turn_count: value.turns.length,
-    ...(value.turns.at(-1) === undefined ? {} : { last_status: value.turns.at(-1)!.status }),
+    ...(last === undefined ? {} : { last_status: last.status }),
+    ...(last?.environment === undefined ? {} : { last_environment: last.environment }),
     totals: value.totals,
   };
 }
@@ -60,6 +62,25 @@ describe("SessionService (file-backed)", () => {
     expect((await svc.get("s2"))?.title).toBe("session s2");
     expect((await svc.list()).map((s) => s.id)).toEqual(["s2", "s3", "s1"]);
     expect((await svc.listPage()).items.map((s) => s.id)).toEqual(["s2", "s3", "s1"]);
+  });
+
+  it("projects the newest Environment identity into the bounded summary", async () => {
+    const svc = createSessionService({
+      dir,
+      owner: "owner-a",
+      projectId: "prj_test",
+      workspaceId: "ws_test",
+    });
+    const environment = {
+      id: "workspace:research",
+      fingerprint: `sha256:${"a".repeat(64)}`,
+    };
+    await svc.save({
+      ...session("environment", 100),
+      turns: [{ user_preview: "hi", status: "done", environment }],
+    });
+
+    expect((await svc.listPage()).items[0]?.last_environment).toEqual(environment);
   });
 
   it("indexes only execution ids from valid full session records across owners", async () => {

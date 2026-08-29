@@ -25,7 +25,7 @@ import {
   type PlanStore,
 } from "@clarvis/plan";
 import { createPlanningRuntime } from "./plans/planning-runtime.ts";
-import type { RunEvent } from "@clarvis/protocol";
+import type { EnvironmentPluginRef, RunEvent } from "@clarvis/protocol";
 import {
   buildExecuteRunDeps,
   hooksEffective,
@@ -89,6 +89,7 @@ import { discoverGitWorkspace } from "./git-workspace.ts";
 import { SubscriptionManager } from "./subscriptions/manager.ts";
 import { createFileSubscriptionStore } from "./subscriptions/store.ts";
 import { createModelCatalogService } from "./models/model-catalog.ts";
+import { createEnvironmentManager } from "./environments/environment-manager.ts";
 
 /**
  * Options for {@link createFileKernel}: workspace root plus optional env, logging, paths, and key resolution.
@@ -114,6 +115,8 @@ export interface CreateFileKernelOptions {
   traceDir?: string;
   /** Global Clarvis dir for config/secrets/models/sessions; defaults to the standard global root. */
   globalDir?: string;
+  /** Process-local Environment override (`scope:name`); never persisted. */
+  environmentSelector?: string;
   /** Default model id; falls back to `CLARVIS_DEFAULT_MODEL` in the environment. */
   defaultModel?: string;
   /** Enables the memory subsystem when `true`; otherwise memory is inert. */
@@ -168,9 +171,9 @@ export interface CreateFileKernelOptions {
  *
  * @remarks `workspaceHooks` is not on {@link InProcessKernel} because trust here
  * is a property of *files on this machine*, which only a file-backed host has.
- * There is no UI affordance for it yet — the plugin browser is plugin-shaped —
- * so today this is the only way to approve a repository's hooks, which is the
- * intended default for a workspace nobody has vouched for.
+ * The same verdict also covers the selected workspace Environment's executable
+ * extension surface. Environment selection has an explicit approval flow; this
+ * host-only API remains the way to approve or revoke workspace settings hooks.
  */
 export interface FileKernel extends InProcessKernel {
   readonly workspaceHooks: {
@@ -225,7 +228,10 @@ function reportConfigScopes(
   plugins: PluginContributions,
 ): void {
   const merged = snapshot.merged as Record<string, unknown>;
-  const enabled = Array.isArray(merged.enabledPlugins) ? (merged.enabledPlugins as string[]) : [];
+  const enabled = Array.isArray(merged.enabledPlugins)
+    ? (merged.enabledPlugins as EnvironmentPluginRef[])
+    : [];
+  const active = snapshot.active_plugins ?? enabled;
   const presence = (scope: "global" | "workspace"): boolean =>
     snapshot.sources.find((source) => source.scope === scope)?.exists ?? false;
   logger.info(
@@ -234,8 +240,8 @@ function reportConfigScopes(
       global_present: presence("global"),
       workspace_present: presence("workspace"),
       workspace_trust: snapshot.workspace_trust?.state ?? "inert",
-      plugin_scopes: plugins.settingsScopes(enabled).length,
-      enabled_plugins: enabled.join(","),
+      plugin_scopes: plugins.settingsScopes(active).length,
+      enabled_plugins: active.map((ref) => `${ref.scope}/${ref.source}/${ref.name}`).join(","),
     },
     "the kernel read its configuration scopes; only the scopes reported present contribute to the merge",
   );
@@ -347,14 +353,39 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const kernelDefaultOwner = opts.defaultOwner ?? ownerFromWorkspace(opts.workspaceRoot);
   const pluginContributions = createPluginContributions({
     globalDir,
-    workspaceConfigDir: workspacePaths(opts.workspaceRoot).clarvisDir,
+    workspaceRoot: opts.workspaceRoot,
     logger: componentLogger("plugins"),
   });
+  const environmentManager = createEnvironmentManager({
+    globalDir,
+    workspaceRoot: opts.workspaceRoot,
+    pluginContributions,
+    ...(opts.environmentSelector === undefined ? {} : { cliSelection: opts.environmentSelector }),
+    logger: componentLogger("environment"),
+  });
+  let environmentRunRefs = 0;
   const configStore = createFileConfigStore({
     workspaceRoot: opts.workspaceRoot,
     globalDir,
     plugins: pluginContributions,
+    environment: {
+      resolvePlugins: (enabledPlugins, trust) =>
+        environmentManager
+          .resolveActive(enabledPlugins, trust)
+          .plugins.filter((plugin) => plugin.active)
+          .map((plugin) => plugin.ref),
+      workspaceTrustSurface: () => environmentManager.workspaceTrustSurface(),
+      assertWorkspaceTrustTransitionAllowed: () =>
+        environmentManager.assertWorkspaceTrustTransitionAllowed(),
+    },
     logger: componentLogger("config"),
+  });
+  environmentManager.bindRuntime({
+    readWorkspaceTrust: () => configStore.readSettings().workspace_trust ?? { state: "inert" },
+    approveWorkspace: () => {
+      configStore.setWorkspaceTrust?.(true);
+    },
+    hasActiveRuns: () => environmentRunRefs > 0,
   });
   reportConfigScopes(componentLogger("config"), configStore.readSettings(), pluginContributions);
   const secretStore = createFileSecretStore(
@@ -562,18 +593,13 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
   };
 
-  /** The operator-enabled plugin names, re-read per call so enabling or disabling
-   * a plugin takes effect on the next run without restarting the host. */
-  const enabledPluginNames = (): string[] => {
-    const merged = configStore.readSettings().merged as Record<string, unknown>;
-    return Array.isArray(merged.enabledPlugins) ? (merged.enabledPlugins as string[]) : [];
-  };
+  /** Exact plugin installations pinned by the process Environment snapshot. */
+  const activePluginRefs = () => configStore.readSettings().active_plugins ?? [];
 
-  const pluginSkillRoots = (): SkillRootInput[] =>
-    pluginContributions.skillRoots(enabledPluginNames());
+  const pluginSkillRoots = (): SkillRootInput[] => environmentManager.skillRoots();
 
   const pluginSkillBootstraps = (): PluginBootstrapSkill[] =>
-    pluginContributions.skillBootstraps(enabledPluginNames());
+    pluginContributions.skillBootstraps(activePluginRefs());
 
   /**
    * Bind a packaged skill's Plans override to the plugin the operator selected
@@ -589,7 +615,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     const selected = provider as { kind?: unknown; plugin?: unknown };
     if (selected.kind !== "plugin" || typeof selected.plugin !== "string") return undefined;
     if (skill.source !== `plugin:${selected.plugin}`) return undefined;
-    return pluginContributions.skillPlansMode(enabledPluginNames(), selected.plugin, skill.name);
+    return pluginContributions.skillPlansMode(activePluginRefs(), selected.plugin, skill.name);
   };
 
   /** Provider selection is operator configuration and is re-read per resolution. */
@@ -605,7 +631,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const planPluginPort: PlanPluginPort = {
     locate: (plugin) =>
       pluginContributions.locateCapabilityExecutable(
-        enabledPluginNames(),
+        activePluginRefs(),
         PLANS_CAPABILITY_NAME,
         plugin,
       ),
@@ -658,7 +684,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     environment: environment.values,
     logger,
     workspaceRoot: opts.workspaceRoot,
-    extraSkillRoots: pluginSkillRoots,
+    skillRoots: pluginSkillRoots,
     skillBootstraps: pluginSkillBootstraps,
     resolveGuard: createGuardResolver({
       loadSettings: loadGuardSettings,
@@ -731,7 +757,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const memoryPluginPort: MemoryPluginPort = {
     locate: (plugin) =>
       pluginContributions.locateCapabilityExecutable(
-        enabledPluginNames(),
+        activePluginRefs(),
         MEMORY_CAPABILITY_NAME,
         plugin,
       ),
@@ -790,6 +816,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   reportCapability(logger, "tasks", tasksEnabled, tasksEnabled ? "host_default" : "host_disabled");
   const deps: ExecuteRunDeps = {
     ...built.deps,
+    hostMetadata: () => ({ environment: environmentManager.runRef() }),
     capabilities: [
       ...(built.deps.capabilities ?? []),
       createMemoryCapability(memoryFactory),
@@ -833,6 +860,8 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       project: gitWorkspace.project,
       workspace: gitWorkspace.workspace,
       configStore,
+      environmentService: environmentManager.service,
+      activePlugins: () => environmentManager.activePlugins(),
       assemblerOptions: {
         ...(defaultModel !== undefined ? { defaultModel } : {}),
         defaultAgent: DEFAULT_ENTRY_AGENT,
@@ -840,6 +869,10 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         fallbackTokenLimit: env.CLARVIS_DEFAULT_TOTAL_TOKEN_LIMIT,
         fallbackOnExceed: env.CLARVIS_DEFAULT_ON_EXCEED,
         skillPlansMode,
+        pluginMcpServerNames: () =>
+          pluginContributions
+            .mcpServers(activePluginRefs())
+            .map((contribution) => contribution.effectiveName),
       },
       ...(memoryFactory !== undefined ? { memoryFactory } : {}),
       planFactory: planning.planFactory,
@@ -860,6 +893,15 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       environment: environment.values,
       taskProviderFactory,
       tasksEnabled,
+      acquireRunLease: () => {
+        environmentRunRefs += 1;
+        let released = false;
+        return () => {
+          if (released) return;
+          released = true;
+          environmentRunRefs = Math.max(0, environmentRunRefs - 1);
+        };
+      },
       dispose: async (): Promise<void> => {
         cleanup.stop();
         await housekeeping.stop();

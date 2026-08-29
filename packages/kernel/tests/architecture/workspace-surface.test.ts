@@ -39,6 +39,7 @@ const ALLOWED_TOP_LEVEL = new Set([
   "skills",
   "workflows",
   "plugins",
+  "environments",
   "guard-judge.md",
   "plans",
   "memory",

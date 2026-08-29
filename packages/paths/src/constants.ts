@@ -8,12 +8,12 @@
 export const CLARVIS_DIR = ".clarvis";
 
 /**
- * The cross-runtime agent directory Clarvis *reads* and never writes.
+ * The cross-runtime agent directory shared by compatible agent hosts.
  *
  * @remarks
- * Only its `skills/` subdirectory is consulted, and always at lower precedence
- * than the {@link CLARVIS_DIR} equivalent. Clarvis reads `.agents`, writes
- * `.clarvis`.
+ * Standalone skills remain operator-authored input. The `plugins/` subtree is
+ * also a first-class install and marketplace surface, so the plugin lifecycle
+ * may create, replace, or remove exact plugin directories there.
  */
 export const AGENTS_DIR = ".agents";
 

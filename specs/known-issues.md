@@ -3,7 +3,7 @@
 What was **measured**, what was **ruled out**, and what was **tried and reverted**. `AGENTS.md`
 carries the short form of each entry; this file carries the evidence.
 
-It sits beside [`specs/README.md`](README.md)'s sixty-five-document corpus rather than inside it, and
+It sits beside [`specs/README.md`](README.md)'s sixty-seven-document corpus rather than inside it, and
 the distinction is load-bearing. That corpus specifies what Clarvis must do and cites the
 lines that implement it; it cannot say what a CI run measured, what an RSS soak showed, or what was
 attempted and abandoned. `specs/cross-cutting/build-and-ci.md`
@@ -441,6 +441,55 @@ The subject was wrong. Opening a panel **directly** was flat — **340 to 351 Mi
 and only the route through the now-removed F2 overlay leaked. That control turned three
 differently-sized "panel leaks" into one per-rendered-row rate. For current regressions, repeat the
 same controlled measurement with an existing `ListPicker` rather than assuming a panel leak.
+
+### Guided Extensions retained-selection soak
+
+The 2026-08-28 production-policy soak for guided Extensions Step 3 used OpenTUI 0.5.7 and Bun 1.4.0
+on macOS x64. It rendered 196 marketplace listings, 24 installed plugins and 50 standalone skills
+in one retained composer, discarded 220 high-churn selection cycles so the finite catalog had been
+traversed, then measured 100 further cycles at post-GC floors. The exact command was
+`cd packages/code && bun run bench:overlays extensions-setup-retained-196-listings`.
+
+| Terminal | RSS growth per 100 cycles | renderables | lifecycle owners | live key layers | key registrations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 120 × 32 | +1.9609375 MiB | Δ0 | Δ0 | Δ0 | +0 |
+| 80 × 24 | +0.6640625 MiB | Δ0 | Δ0 | Δ0 | +0 |
+
+PSS is unavailable on macOS. A preliminary run that discarded only ten cycles crossed the 5
+MiB/100 policy while the renderer was still materializing finite catalog content; the benchmark now
+records and enforces the case-specific 220-cycle warm-up before measuring steady-state churn. The
+threshold was not relaxed. The owning contract and executable case are
+[`hosts/code-performance.md`](hosts/code-performance.md) (`PERF-19`) and
+`packages/code/tooling/benchmarks/overlays.tsx`
+(`extensions-setup-retained-196-listings`, `stableRegistrations`).
+
+The same date's pending-operation soak held one marketplace installation open across 100 animated
+spinner cycles after ten discarded warm-up cycles. It used the same runtime and dimensions and ran
+`cd packages/code && bun run bench:overlays extensions-setup-pending-install`.
+
+| Terminal | RSS growth per 100 cycles | renderables | lifecycle owners | live key layers | key registrations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 120 × 32 | +0.078125 MiB | Δ0 | Δ0 | Δ0 | +0 |
+| 80 × 24 | +0.15234375 MiB | Δ0 | Δ0 | Δ0 | +0 |
+
+This case keeps one active 200 ms spinner clock and a reactively gated existing level; it allocates
+no timer per row and phase-copy changes do not register a new key layer. The owning invariants are
+[`hosts/code-performance.md`](hosts/code-performance.md) (`PERF-20`) and
+[`hosts/code-extensions.md`](hosts/code-extensions.md) (`EXT-6`).
+
+The focused Plugins collection soak on the same runtime rendered the same 196 listings and 24
+installed plugins, discarded 220 right/left round trips, then measured 100 more. The exact command
+was `bun run bench:code-overlays marketplace-collections-retained-196-listings`.
+
+| Terminal | RSS growth per 100 cycles | renderables | lifecycle owners | live key layers | key registrations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 120 × 32 | +0.3203125 MiB | Δ0 | Δ0 | Δ0 | +0 |
+| 80 × 24 | +0.62109375 MiB | Δ0 | Δ0 | Δ0 | +0 |
+
+The first 12-cycle warm-up still measured finite native-render allocation at +6.88 MiB/100; the
+production case now uses the existing 220-cycle finite-catalog warm-up and keeps the 5 MiB/100
+threshold unchanged. The owning invariant is
+[`hosts/code-performance.md`](hosts/code-performance.md) (`PERF-21`).
 
 ---
 

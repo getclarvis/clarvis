@@ -700,6 +700,23 @@ describe("ConnectionManager — the pool key carries the scope and the whole con
     await m.closeAll();
   });
 
+  it("reuses one slot when only run-level automatic tool admission differs", async () => {
+    const { factory, connects } = genFactory([() => makeHandle()]);
+    const m = scopedManager(factory);
+    const explicit = await m.acquire({
+      server: { ...SHARED, auto_tools: false },
+      owner: OWNER,
+    });
+    const automatic = await m.acquire({
+      server: { ...SHARED, auto_tools: true },
+      owner: OWNER,
+    });
+    expect(connects()).toBe(1);
+    expect(automatic.conn).toBe(explicit.conn);
+    await Promise.all([explicit.release(), automatic.release()]);
+    await m.closeAll();
+  });
+
   // `resources` gates the synthetic list_resources/read_resource tools, and every
   // lease of a slot is handed the same `tools` array — so sharing a slot across
   // both settings lets whoever connects first pick the other's tool surface.

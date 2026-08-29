@@ -84,6 +84,30 @@ test("parseMode: --worktree selects a launch workspace with an optional name", (
   });
 });
 
+test("parseMode: --env pins an Environment across interactive and headless kernels", () => {
+  expect(parseMode(["--env", "workspace:research"])).toEqual({
+    kind: "run",
+    ascii: false,
+    debug: { enabled: false },
+    environmentSelector: "workspace:research",
+  });
+  expect(parseMode(["--list", "--env", "minimal"])).toEqual({
+    kind: "list",
+    debug: { enabled: false },
+    environmentSelector: "minimal",
+  });
+  expect(parseMode(["--refresh-models", "--env", "global:research"])).toEqual({
+    kind: "refresh-models",
+    debug: { enabled: false },
+    environmentSelector: "global:research",
+  });
+  expect(parseMode(["--env"]).kind).toBe("usage-error");
+  expect(parseMode(["--update", "--env", "minimal"])).toEqual({
+    kind: "usage-error",
+    message: "--env does not apply with --update",
+  });
+});
+
 test("parseMode: --debug folds into normal application modes, headless ones included", () => {
   expect(parseMode(["--debug"])).toEqual({ kind: "run", ascii: false, debug: { enabled: true } });
   expect(parseMode(["--continue", "--debug"])).toEqual({

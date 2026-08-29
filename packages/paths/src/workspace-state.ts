@@ -47,10 +47,14 @@ export interface WorkspaceStatePaths {
   memoryMachineryRoot: string;
   /** Where `@clarvis/plan` keeps its compare-and-swap lockfiles. */
   plansLockDir: string;
+  /** Persistent writable state supplied to workspace plugin processes. */
+  pluginDataRoot: string;
   /** Persisted prompt history for the terminal UI. */
   promptHistoryFile: string;
   /** The terminal UI's workspace-scoped preferences. */
   codeConfigFile: string;
+  /** Machine-local Environment selection for this workspace. */
+  environmentSelectionFile: string;
   /** Parent directory containing every run-owned scratch directory. */
   runsDir: string;
   /** One run's scratch container, removed after its final temporary root. */
@@ -188,8 +192,10 @@ export function workspaceStatePaths(root?: string, opts?: RootOptions): Workspac
     diagnosticsDir: join(localDir, "diagnostics"),
     memoryMachineryRoot: join(base, "memory"),
     plansLockDir: join(base, "plans"),
+    pluginDataRoot: join(base, "plugin-data"),
     promptHistoryFile: join(localDir, "prompt-history"),
     codeConfigFile: join(localDir, "code.json"),
+    environmentSelectionFile: join(localDir, "environment.json"),
     runsDir,
     runDir,
     runTempDir: (executionId: string) => join(runDir(executionId), "tmp"),

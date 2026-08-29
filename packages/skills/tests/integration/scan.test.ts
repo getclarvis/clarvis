@@ -75,6 +75,43 @@ describe("listSkillDirs", () => {
     writeSkill(path.join(root, "group"), "beta");
     expect(listSkillDirs(root, true, undefined, 1)).toHaveLength(1);
   });
+
+  it("can enforce immediate-child discovery with the exact canonical manifest name", () => {
+    writeSkill(root, "direct");
+    writeSkill(path.join(root, "group"), "nested");
+    const lower = path.join(root, "lower");
+    mkdirSync(lower, { recursive: true });
+    writeFileSync(path.join(lower, "skill.md"), "x");
+
+    expect(
+      listSkillDirs(root, true, undefined, undefined, {
+        discovery: "immediate",
+        manifestName: "exact",
+      }).map((entry) => path.basename(entry.dir)),
+    ).toEqual(["direct"]);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects a discovered skill that escapes its package",
+    () => {
+      const outside = makeWorkspace();
+      writeSkill(outside, "escaped");
+      symlinkSync(path.join(outside, "escaped"), path.join(root, "escaped"));
+      const captured = captureWarnings();
+      try {
+        expect(
+          listSkillDirs(root, true, captured, undefined, {
+            discovery: "immediate",
+            manifestName: "exact",
+            confinementRoot: root,
+          }),
+        ).toEqual([]);
+        expect(captured.warnings.join(" ")).toContain("escaping its package");
+      } finally {
+        cleanup(outside);
+      }
+    },
+  );
 });
 
 describe("findSkillFile", () => {
@@ -89,6 +126,11 @@ describe("findSkillFile", () => {
   it("matches SKILL.md case-insensitively", () => {
     writeFileSync(path.join(dir, "Skill.md"), "x");
     expect(findSkillFile(dir, true)).toBe(path.join(dir, "Skill.md"));
+  });
+
+  it("can require the exact canonical filename", () => {
+    writeFileSync(path.join(dir, "Skill.md"), "x");
+    expect(findSkillFile(dir, true, undefined, { manifestName: "exact" })).toBeUndefined();
   });
 
   it("returns undefined when there is no manifest", () => {
@@ -108,6 +150,29 @@ describe("findSkillFile", () => {
       cleanup(targetDir);
     }
   });
+
+  it.skipIf(process.platform === "win32")(
+    "rejects a symlinked manifest that escapes its confinement root",
+    () => {
+      const targetDir = makeWorkspace();
+      const target = path.join(targetDir, "real-skill.md");
+      writeFileSync(target, "x");
+      symlinkSync(target, path.join(dir, "SKILL.md"));
+      const captured = captureWarnings();
+      try {
+        expect(
+          findSkillFile(dir, true, captured, {
+            manifestName: "exact",
+            confinementRoot: dir,
+          }),
+        ).toBeUndefined();
+        expect(captured.warnings.join(" ")).toContain("skill manifest escaping its package");
+      } finally {
+        captured.restore();
+        cleanup(targetDir);
+      }
+    },
+  );
 });
 
 describe("enumerateResources", () => {

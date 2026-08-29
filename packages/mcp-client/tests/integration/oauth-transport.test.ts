@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -198,7 +198,7 @@ describe("remote MCP OAuth transport", () => {
   it("discovers, registers, authorizes, exchanges PKCE, reconnects, and reuses tokens", async () => {
     const fixture = await oauthMcpFixture();
     cleanups.push(() => fixture.close());
-    const root = await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-e2e-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-e2e-")));
     roots.push(root);
     const stateDir = join(root, "state");
     await mkdir(stateDir);
@@ -253,7 +253,7 @@ describe("remote MCP OAuth transport", () => {
   it("finishes a challenge raised by tool catalog discovery", async () => {
     const fixture = await oauthMcpFixture("tools/list");
     cleanups.push(() => fixture.close());
-    const root = await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-catalog-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-catalog-")));
     roots.push(root);
     const stateDir = join(root, "state");
     await mkdir(stateDir);
@@ -291,7 +291,7 @@ describe("remote MCP OAuth transport", () => {
   it("finishes a challenge raised by a request after catalog discovery", async () => {
     const fixture = await oauthMcpFixture("tools/call");
     cleanups.push(() => fixture.close());
-    const root = await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-late-call-"));
+    const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-late-call-")));
     roots.push(root);
     const stateDir = join(root, "state");
     await mkdir(stateDir);

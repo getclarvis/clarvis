@@ -36,6 +36,7 @@ import type {
   ResolvedSkill,
   ShadowedSkill,
   SkillContent,
+  SkillDefaultedField,
   SkillInfo,
   SkillRegistry,
   SkillRoot,
@@ -62,6 +63,10 @@ const UNSUPPORTED_NAME_CHARS = /[^A-Za-z0-9._-]+/g;
 
 /** Leading or trailing separators left behind by {@link UNSUPPORTED_NAME_CHARS}. */
 const EDGE_SEPARATORS = /^-+|-+$/g;
+
+/** Agent Skills v1 bounds applied only to roots that opt into strict portability. */
+const MAX_AGENT_SKILL_NAME_CHARS = 64;
+const MAX_AGENT_SKILL_COMPATIBILITY_CHARS = 500;
 
 /**
  * Derive a usable skill name from the directory that holds it.
@@ -347,8 +352,20 @@ function toShadowed(info: SkillInfo): ShadowedSkill {
  * @throws {@link SkillError} in strict mode on a build failure or duplicate name.
  */
 function scanRoot(root: SkillRoot, config: SkillConfig, stats: DiscoveryStats): ResolvedSkill[] {
+  if (root.include?.length === 0) return [];
+  const included = root.include === undefined ? undefined : new Set(root.include);
   const byName = new Map<string, ResolvedSkill>();
-  const candidates = listSkillDirs(root.path, config.followSymlinks, config);
+  const candidates = listSkillDirs(
+    root.path,
+    config.followSymlinks,
+    config,
+    MAX_SKILLS_PER_ROOT + 1,
+    {
+      discovery: root.discovery,
+      manifestName: root.manifestName,
+      confinementRoot: root.confinementRoot,
+    },
+  );
   if (candidates.length > MAX_SKILLS_PER_ROOT) {
     const message =
       `skill root ${root.path} contains more than ${String(MAX_SKILLS_PER_ROOT)} manifests; ` +
@@ -379,6 +396,7 @@ function scanRoot(root: SkillRoot, config: SkillConfig, stats: DiscoveryStats): 
       rejected(config.logger, "parse", { dir, file, cause: causeOf(err) });
       continue;
     }
+    if (included !== undefined && !included.has(resolved.info.name)) continue;
     const existing = byName.get(resolved.info.name);
     if (existing !== undefined) {
       if (config.strict) {
@@ -454,6 +472,7 @@ function buildResolvedSkill(
   };
   const parsed = parseSkillFrontmatterWithDefaults(prefix, MAX_SKILL_FRONTMATTER_CHARS, defaults);
   const frontmatter = parsed.frontmatter;
+  assertRootValidation(root, frontmatter, parsed.defaulted, parsed.rawFrontmatter, dir, file);
   const suppliedName = parsed.defaulted.includes("name");
 
   const dirName = path.basename(dir);
@@ -485,11 +504,15 @@ function buildResolvedSkill(
   });
 
   const rawTools = frontmatter["allowed-tools"] ?? frontmatter.tools;
+  const allowedTools =
+    root.validation === "agent-skills" && typeof rawTools === "string"
+      ? rawTools.split(/\s+/).filter((tool) => tool.length > 0)
+      : normalizeTools(rawTools);
   const info: SkillInfo = {
     name: frontmatter.name,
     description,
     metadata: { ...frontmatter, description },
-    ...(rawTools === undefined ? {} : { allowedTools: normalizeTools(rawTools) }),
+    ...(rawTools === undefined ? {} : { allowedTools }),
     userInvocable: frontmatter["user-invocable"] ?? true,
     ...(sidecar?.catalogSuppressed === true ? { catalogSuppressed: true } : {}),
     ...(presentation === undefined ? {} : { presentation }),
@@ -514,6 +537,14 @@ function buildResolvedSkill(
           logger,
         });
         const current = parseSkillWithDefaults(raw, MAX_SKILL_FRONTMATTER_CHARS, defaults);
+        assertRootValidation(
+          root,
+          current.frontmatter,
+          current.defaulted,
+          current.rawFrontmatter,
+          dir,
+          file,
+        );
         if (current.frontmatter.name !== info.name) {
           logger.warn(
             {
@@ -537,6 +568,92 @@ function buildResolvedSkill(
       return cachedBody;
     },
   };
+}
+
+/** Apply the strict identity subset required by an Agent Skills-conformant root. */
+function assertRootValidation(
+  root: SkillRoot,
+  frontmatter: SkillFrontmatter,
+  defaulted: readonly SkillDefaultedField[],
+  rawFrontmatter: unknown,
+  dir: string,
+  file: string,
+): void {
+  if (root.validation !== "agent-skills") return;
+  if (defaulted.length > 0) {
+    throw new SkillError(
+      "invalid_skill",
+      `Agent Skills frontmatter requires ${defaulted.join(" and ")}`,
+      { path: file, fields: [...defaulted] },
+    );
+  }
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(frontmatter.name)) {
+    throw new SkillError(
+      "invalid_skill",
+      "Agent Skills name must contain lowercase alphanumeric segments separated by single hyphens",
+      { path: file, name: frontmatter.name },
+    );
+  }
+  if (frontmatter.name.length > MAX_AGENT_SKILL_NAME_CHARS) {
+    throw new SkillError(
+      "invalid_skill",
+      `Agent Skills name must contain at most ${String(MAX_AGENT_SKILL_NAME_CHARS)} characters`,
+      { path: file, name: frontmatter.name, maximum: MAX_AGENT_SKILL_NAME_CHARS },
+    );
+  }
+  const directory = path.basename(dir);
+  if (frontmatter.name !== directory) {
+    throw new SkillError(
+      "invalid_skill",
+      `Agent Skills name '${frontmatter.name}' must match directory '${directory}'`,
+      { path: file, name: frontmatter.name, directory },
+    );
+  }
+
+  const raw =
+    typeof rawFrontmatter === "object" && rawFrontmatter !== null && !Array.isArray(rawFrontmatter)
+      ? (rawFrontmatter as Record<string, unknown>)
+      : {};
+  const license = raw.license;
+  if (license !== undefined && typeof license !== "string") {
+    throw new SkillError("invalid_skill", "Agent Skills license must be a string", {
+      path: file,
+    });
+  }
+  const compatibility = raw.compatibility;
+  if (
+    compatibility !== undefined &&
+    (typeof compatibility !== "string" ||
+      compatibility.length === 0 ||
+      compatibility.length > MAX_AGENT_SKILL_COMPATIBILITY_CHARS)
+  ) {
+    throw new SkillError(
+      "invalid_skill",
+      `Agent Skills compatibility must contain 1-${String(MAX_AGENT_SKILL_COMPATIBILITY_CHARS)} characters`,
+      { path: file, maximum: MAX_AGENT_SKILL_COMPATIBILITY_CHARS },
+    );
+  }
+  const metadata = raw.metadata;
+  if (
+    metadata !== undefined &&
+    (typeof metadata !== "object" ||
+      metadata === null ||
+      Array.isArray(metadata) ||
+      Object.values(metadata as Record<string, unknown>).some((value) => typeof value !== "string"))
+  ) {
+    throw new SkillError(
+      "invalid_skill",
+      "Agent Skills metadata must map string keys to string values",
+      { path: file },
+    );
+  }
+  if (raw["allowed-tools"] !== undefined && typeof raw["allowed-tools"] !== "string") {
+    throw new SkillError(
+      "invalid_skill",
+      "Agent Skills allowed-tools must be a space-separated string",
+      { path: file },
+    );
+  }
 }
 
 /**

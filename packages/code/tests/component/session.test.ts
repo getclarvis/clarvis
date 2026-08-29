@@ -116,6 +116,7 @@ function stored(
     planRef?: PlanRef;
     continueFrom?: string;
     activeTask?: ActiveTaskBindingDto;
+    environment?: { id: string; fingerprint: string };
   } = {},
 ): RunDetail {
   const runStatus = status === "error" ? "failed" : "completed";
@@ -129,6 +130,7 @@ function stored(
     events: parts.events ?? [],
     ...(parts.planRef ? { plan_ref: parts.planRef } : {}),
     ...(parts.activeTask ? { active_task: parts.activeTask } : {}),
+    ...(parts.environment ? { environment: parts.environment } : {}),
     result: {
       execution_id: execId,
       status: runStatus,
@@ -151,6 +153,33 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   });
   return { promise, resolve };
 }
+
+test("a turn snapshots its Environment and reconciliation trusts the persisted run", () => {
+  const store = fakeStore();
+  const initial = {
+    id: "global:research",
+    fingerprint: `sha256:${"a".repeat(64)}`,
+  };
+  const persisted = {
+    id: "global:research",
+    fingerprint: `sha256:${"b".repeat(64)}`,
+  };
+  const s = createSession({
+    store,
+    owner: "clarvis",
+    project: "prj_test",
+    workspace: "/ws",
+    environment: () => initial,
+  });
+
+  s.beginTurn("hi", "exec_environment");
+  expect(s.meta()?.turns[0]?.environment).toEqual(initial);
+  expect(s.meta()?.lastEnvironment).toEqual(initial);
+
+  s.reconcile(stored("exec_environment", "completed", [0, 0, 0], { environment: persisted }));
+  expect(s.meta()?.turns[0]?.environment).toEqual(persisted);
+  expect(s.meta()?.lastEnvironment).toEqual(persisted);
+});
 
 test("a failed turn records why, and a later success clears it", () => {
   // The kernel preserves `error: {code, message}` on a failed run's envelope.

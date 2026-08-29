@@ -3,8 +3,14 @@ import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
 import { testRender } from "@opentui/solid";
 import { createTestKeymap } from "@opentui/keymap/testing";
-import { createSignal, For, Show, type Accessor, type JSX } from "solid-js";
+import { createSignal, For, onCleanup, Show, type Accessor, type JSX } from "solid-js";
 import type { BaseRenderable } from "@opentui/core";
+import type {
+  EnvironmentDefinition,
+  EnvironmentInventory,
+  EnvironmentService,
+  ResolvedEnvironment,
+} from "@clarvis/protocol";
 import { FloatFrame } from "../../src/views/overlays/FloatFrame.tsx";
 import { AutocompletePopup } from "../../src/views/input/AutocompletePopup.tsx";
 import { PageFrame } from "../../src/views/PageFrame.tsx";
@@ -25,6 +31,10 @@ import type { GuardModeStore } from "../../src/adapters/guard-mode.ts";
 import type { SettingsAdapter } from "../../src/adapters/settings.ts";
 import { createViewHost } from "../../src/views/config/view-host.tsx";
 import { WorkflowsHub } from "../../src/views/config/WorkflowsHub.tsx";
+import { ExtensionsHub } from "../../src/views/config/ExtensionsHub.tsx";
+import { MarketplaceBrowser } from "../../src/views/config/MarketplaceBrowser.tsx";
+import type { MarketplaceListing, MarketplaceSource } from "../../src/adapters/marketplace.ts";
+import type { PluginView } from "../../src/adapters/plugins.ts";
 import {
   SurfaceBoundary,
   SurfacePortal,
@@ -78,6 +88,8 @@ interface CaseResult {
 interface SoakCase {
   name: string;
   portal?: boolean;
+  stableRegistrations?: boolean;
+  warmupCycles?: number;
   render(open: Accessor<boolean>): JSX.Element;
   advance?: (cycle: number) => void;
 }
@@ -186,6 +198,227 @@ function EmptyWorkflowsPage(props: { active?: Accessor<boolean> } = {}): JSX.Ele
     getRun: async () => null,
     now: () => Date.now(),
     pollMs: 60_000,
+  });
+}
+
+const extensionListings = Array.from({ length: 196 }, (_, index): MarketplaceListing => ({
+  name: `extension-${String(index).padStart(3, "0")}`,
+  displayName: `Extension ${String(index).padStart(3, "0")}`,
+  description: `Representative marketplace extension ${index}`,
+  source: `https://example.invalid/extension-${index}.git`,
+  marketplaceUrl:
+    index % 2 === 0
+      ? "https://example.invalid/clarvis-marketplace.git"
+      : "https://example.invalid/community-marketplace.git",
+  marketplace: index % 2 === 0 ? "Clarvis" : "Community",
+  category: index % 3 === 0 ? "research" : "developer tools",
+  installable: true,
+  installed: index < 24,
+  notes: [],
+}));
+
+const extensionPlugins = Array.from({ length: 24 }, (_, index): PluginView => ({
+  name: `extension-${String(index).padStart(3, "0")}`,
+  displayName: `Extension ${String(index).padStart(3, "0")}`,
+  description: `Installed representative plugin ${index}`,
+  scope: "global",
+  source: index % 2 === 0 ? "agents" : "clarvis",
+  dir: `/plugins/extension-${index}`,
+  enabled: index < 8,
+  contributions: {
+    agents: index % 4 === 0 ? [`agent-${index}`] : [],
+    brokenAgents: [],
+    skills: [`skill-${String(index).padStart(3, "0")}`],
+    servers: index % 3 === 0 ? [`server-${index}`] : [],
+    hooks: index % 5 === 0 ? 2 : 0,
+    capabilityExecutables: [],
+    executables: index % 3 === 0 ? [`node server-${index}.js`] : [],
+  },
+}));
+
+const extensionSkills: EnvironmentInventory["standalone_skills"] = Array.from(
+  { length: 50 },
+  (_, index) => ({
+    ref: {
+      scope: "user",
+      source: index % 2 === 0 ? "agents" : "clarvis",
+      name: `skill-${String(index).padStart(3, "0")}`,
+    },
+    active: false,
+    found: true,
+    description: `Representative skill ${index}`,
+  }),
+);
+
+const extensionDefinition: EnvironmentDefinition = {
+  schema_version: 1,
+  description: "Representative soak Environment",
+  plugins: [],
+  skills: [],
+};
+
+const extensionInventory: EnvironmentInventory = {
+  plugins: extensionPlugins.map((plugin) => ({
+    ref: { scope: plugin.scope, source: plugin.source, name: plugin.name },
+    active: false,
+    installed: true,
+    valid: plugin.error === undefined,
+    agents: plugin.contributions.agents,
+    skills: plugin.contributions.skills,
+    mcp_servers: plugin.contributions.servers,
+    hooks: { total: plugin.contributions.hooks },
+    capability_executables: plugin.contributions.capabilityExecutables.map(
+      (entry) => entry.capability,
+    ),
+  })),
+  standalone_skills: extensionSkills,
+};
+
+const emptyExtensionInventory: EnvironmentInventory = {
+  plugins: [],
+  standalone_skills: [],
+};
+
+const pendingPluginInstall = new Promise<PluginView>(() => {});
+
+const extensionEnvironment: ResolvedEnvironment = {
+  id: "global:benchmark",
+  ref: { scope: "global", name: "benchmark" },
+  immutable: false,
+  status: "ready",
+  fingerprint: `sha256:${"a".repeat(64)}`,
+  selection_origin: "global",
+  definition: extensionDefinition,
+  definition_revision: `sha256:${"b".repeat(64)}`,
+  plugins: [],
+  standalone_skills: [],
+  issues: [],
+  counts: {
+    plugins_active: 8,
+    standalone_skills_active: 16,
+    plugin_skills_active: 8,
+    mcp_servers_active: 3,
+    hooks_declared: 4,
+  },
+};
+
+const extensionEnvironmentService: EnvironmentService = {
+  list: async () => [
+    { ref: { scope: "builtin", name: "default" }, immutable: true },
+    {
+      ref: extensionEnvironment.ref,
+      immutable: false,
+      definition: extensionDefinition,
+      revision: extensionEnvironment.definition_revision,
+    },
+  ],
+  current: async () => extensionEnvironment,
+  get: async () => extensionEnvironment,
+  inventory: async () => extensionInventory,
+  preview: async () => {
+    throw new Error("not reached");
+  },
+  previewClear: async () => {
+    throw new Error("not reached");
+  },
+  previewComposition: async () => {
+    throw new Error("not reached");
+  },
+  select: async () => {
+    throw new Error("not reached");
+  },
+  clearSelection: async () => {
+    throw new Error("not reached");
+  },
+  applyComposition: async () => {
+    throw new Error("not reached");
+  },
+  create: async () => {
+    throw new Error("not reached");
+  },
+  update: async () => {
+    throw new Error("not reached");
+  },
+  delete: async () => {
+    throw new Error("not reached");
+  },
+  clone: async () => {
+    throw new Error("not reached");
+  },
+};
+
+function ExtensionsCatalogPage(props: {
+  active: Accessor<boolean>;
+  pendingInstall?: boolean;
+}): JSX.Element {
+  const { host, controls } = createViewHost({
+    interaction: fakeInteraction,
+    active: props.active,
+    close: () => {},
+    dispatch: () => {},
+  });
+  onCleanup(() => controls.dispose());
+  return ExtensionsHub(host, {
+    environments: extensionEnvironmentService,
+    definitions: () => [
+      { ref: { scope: "builtin", name: "default" }, immutable: true },
+      {
+        ref: extensionEnvironment.ref,
+        immutable: false,
+        definition: extensionDefinition,
+        revision: extensionEnvironment.definition_revision,
+      },
+    ],
+    inventory: () => (props.pendingInstall ? emptyExtensionInventory : extensionInventory),
+    current: () => extensionEnvironment,
+    listings: () => (props.pendingInstall ? [extensionListings[24]!] : extensionListings),
+    sources: () => [{ url: "https://github.com/getclarvis/marketplace.git" }],
+    loading: () => false,
+    loadError: () => undefined,
+    install: () =>
+      props.pendingInstall ? pendingPluginInstall : Promise.resolve(extensionPlugins[0]!),
+    refresh: async () => {},
+    reconnect: async () => ({ ok: true, message: "connected" }),
+    runActive: () => false,
+    notify: () => {},
+    openChild: () => {},
+    initialEnvironment: extensionEnvironment.ref,
+  });
+}
+
+const marketplaceSources: MarketplaceSource[] = [
+  {
+    url: "https://example.invalid/clarvis-marketplace.git",
+    marketplace: { name: "clarvis", displayName: "Clarvis", plugins: [], notes: [] },
+  },
+  {
+    url: "https://example.invalid/community-marketplace.git",
+    marketplace: { name: "community", displayName: "Community", plugins: [], notes: [] },
+  },
+];
+
+function MarketplacePage(props: { active: Accessor<boolean> }): JSX.Element {
+  const { host, controls } = createViewHost({
+    interaction: fakeInteraction,
+    active: props.active,
+    close: () => {},
+    dispatch: () => {},
+  });
+  onCleanup(() => controls.dispose());
+  return MarketplaceBrowser(host, {
+    listings: () => extensionListings,
+    sources: () => marketplaceSources,
+    plugins: () => extensionPlugins,
+    environment: () => extensionEnvironment.id,
+    loading: () => false,
+    install: async () => "installed",
+    installUrl: async () => "installed",
+    configure: () => {},
+    update: async () => "updated",
+    uninstall: async () => "uninstalled",
+    refresh: () => {},
+    addSource: () => {},
+    notify: () => {},
   });
 }
 
@@ -499,6 +732,58 @@ const cases: SoakCase[] = [
       </SurfaceBoundary>
     ),
   },
+  {
+    name: "extensions-setup-retained-196-listings",
+    stableRegistrations: true,
+    warmupCycles: 220,
+    advance: (cycle) =>
+      keymapHarness.host.press(
+        cycle > 0 && cycle % extensionListings.length === 0 ? "home" : "down",
+      ),
+    render: (open) => (
+      <SurfaceBoundary active={open} retention="retain-one">
+        {(lifecycle) => (
+          <SurfaceRegion>
+            <ExtensionsCatalogPage active={lifecycle.active} />
+          </SurfaceRegion>
+        )}
+      </SurfaceBoundary>
+    ),
+  },
+  {
+    name: "extensions-setup-pending-install",
+    stableRegistrations: true,
+    advance: (cycle) => {
+      if (cycle < 2) keymapHarness.host.press("return");
+    },
+    render: (open) => (
+      <SurfaceBoundary active={open} retention="retain-one">
+        {(lifecycle) => (
+          <SurfaceRegion>
+            <ExtensionsCatalogPage active={lifecycle.active} pendingInstall />
+          </SurfaceRegion>
+        )}
+      </SurfaceBoundary>
+    ),
+  },
+  {
+    name: "marketplace-collections-retained-196-listings",
+    stableRegistrations: true,
+    warmupCycles: 220,
+    advance: () => {
+      keymapHarness.host.press("right");
+      keymapHarness.host.press("left");
+    },
+    render: (open) => (
+      <SurfaceBoundary active={open} retention="retain-one">
+        {(lifecycle) => (
+          <SurfaceRegion>
+            <MarketplacePage active={lifecycle.active} />
+          </SurfaceRegion>
+        )}
+      </SurfaceBoundary>
+    ),
+  },
 ];
 
 function positiveInteger(raw: string | undefined, fallback: number): number {
@@ -545,6 +830,9 @@ const PRODUCTION_CASES = new Set([
   "hint-toast",
   "splash",
   "workflows-page-retained-empty",
+  "extensions-setup-retained-196-listings",
+  "extensions-setup-pending-install",
+  "marketplace-collections-retained-196-listings",
 ]);
 
 function countRenderables(root: BaseRenderable): number {
@@ -642,7 +930,8 @@ async function runCase(subject: SoakCase): Promise<CaseResult> {
   };
 
   try {
-    for (let index = 0; index < warmupCycles; index += 1) await oneCycle();
+    const subjectWarmupCycles = Math.max(warmupCycles, subject.warmupCycles ?? 0);
+    for (let index = 0; index < subjectWarmupCycles; index += 1) await oneCycle();
     const lifecyclePasses = (): number => rendered.renderer.getLifecyclePasses().size;
     const samples: MemorySample[] = [await collect(0, rendered.renderer.root, lifecyclePasses)];
     for (let completed = 0; completed < cycles; completed += 1) {
@@ -668,7 +957,7 @@ async function runCase(subject: SoakCase): Promise<CaseResult> {
         height,
         nativeRender: !process.env.OTUI_NO_NATIVE_RENDER,
       },
-      warmupCycles,
+      warmupCycles: subjectWarmupCycles,
       cycles,
       batchSize,
       samples,
@@ -762,6 +1051,12 @@ async function runParent(selected: string[]): Promise<void> {
           throw new Error(
             `${name} left live owners: renderables ${String(result.growth.renderables)}, ` +
               `lifecycle ${String(result.growth.lifecyclePasses)}, key layers ${String(result.growth.keyLayers)}`,
+          );
+        }
+        const subject = cases.find((candidate) => candidate.name === name);
+        if (subject?.stableRegistrations && result.growth.keyLayerRegistrations !== 0) {
+          throw new Error(
+            `${name} re-registered ${String(result.growth.keyLayerRegistrations)} key layers after warm-up`,
           );
         }
       }

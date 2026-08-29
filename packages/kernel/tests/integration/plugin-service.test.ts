@@ -1,16 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createPluginService, validateGitUrl } from "../../src/plugins/plugin-service.ts";
+import type { PluginRef } from "@clarvis/protocol";
 import { createKernelLifecycle } from "../../src/application/lifecycle.ts";
 import type {
   InstalledPlugin,
   PluginFetcher,
   PluginRepository,
 } from "../../src/ports/plugin-repository.ts";
-import { globalPaths } from "@clarvis/paths";
+import { agentsPluginsDirs, globalPaths, workspacePaths } from "@clarvis/paths";
 import { PLUGIN_RESOURCE_LIMITS } from "@clarvis/loop/host";
 import { withoutGitRepositoryEnvironment } from "@clarvis/paths";
 
@@ -27,7 +36,12 @@ function writePlugin(
   manifest: object | string,
   scope: "global" | "workspace" = "workspace",
 ): string {
-  const root = scope === "global" ? globalPaths(base).pluginsDir : join(base, "plugins");
+  const root = scope === "global" ? globalPaths(base).pluginsDir : workspacePaths(base).pluginsDir;
+  return writePluginAt(root, name, manifest);
+}
+
+/** Install a fixture directly into one exact inventory root. */
+function writePluginAt(root: string, name: string, manifest: object | string): string {
   const dir = join(root, name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(
@@ -35,6 +49,14 @@ function writePlugin(
     typeof manifest === "string" ? manifest : JSON.stringify(manifest),
   );
   return dir;
+}
+
+function pluginRef(
+  name: string,
+  scope: PluginRef["scope"] = "global",
+  source: PluginRef["source"] = "clarvis",
+): PluginRef {
+  return { scope, source, name };
 }
 
 function writeAgent(dir: string, name: string, frontmatter: string): void {
@@ -66,12 +88,12 @@ function virtualPlugin(
   name: string,
   manifestRaw: string,
   dir = `/virtual/${name}`,
+  ref: PluginRef = pluginRef(name),
 ): InstalledPlugin {
   return {
     name,
-    scope: "global",
+    ref,
     dir,
-    shadowsGlobal: false,
     manifestRaw,
     agentFiles: [],
     gitCheckout: true,
@@ -81,11 +103,12 @@ function virtualPlugin(
 describe("PluginService", () => {
   let global: string;
   let workspace: string;
-  let enabled: string[];
+  let enabled: PluginRef[];
   function svc() {
     return createPluginService({
       globalDir: global,
-      workspaceConfigDir: workspace,
+      home: join(workspace, "home"),
+      workspaceRoot: workspace,
       enabledPlugins: () => enabled,
       environment: process.env,
     });
@@ -118,11 +141,12 @@ describe("PluginService", () => {
       join(p, "skills", "demo-review", "SKILL.md"),
       "---\nname: demo-review\ndescription: d\n---\n",
     );
-    enabled = ["demo"];
+    enabled = [pluginRef("demo", "workspace")];
 
     const [view] = await svc().list();
     expect(view!.name).toBe("demo");
     expect(view!.scope).toBe("workspace");
+    expect(view!.source).toBe("clarvis");
     expect(view!.enabled).toBe(true);
     expect(view!.version).toBe("1.2.0");
     expect(view!.contributions).toEqual({
@@ -191,14 +215,127 @@ describe("PluginService", () => {
     ]);
   });
 
-  it("list: a workspace plugin shadows a global one of the same name", async () => {
+  it("list: retains both exact installs when scopes carry the same plugin name", async () => {
     writePlugin(global, "demo", { name: "demo", version: "1.0.0", description: "g" }, "global");
     writePlugin(workspace, "demo", { name: "demo", version: "2.0.0", description: "w" });
     const views = await svc().list();
-    expect(views).toHaveLength(1);
-    expect(views[0]!.scope).toBe("workspace");
-    expect(views[0]!.shadows_global).toBe(true);
-    expect(views[0]!.version).toBe("2.0.0");
+    expect(views).toHaveLength(2);
+    expect(views.find((view) => view.scope === "workspace")).toMatchObject({
+      source: "clarvis",
+      version: "2.0.0",
+    });
+    expect(views.find((view) => view.scope === "global")).toMatchObject({
+      source: "clarvis",
+      version: "1.0.0",
+    });
+  });
+
+  it("list: discovers .agents and .clarvis inventories at both scopes without substitution", async () => {
+    const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
+    writePluginAt(agents.user, "same", { name: "same", version: "agents-global" });
+    writePlugin(global, "same", { name: "same", version: "clarvis-global" }, "global");
+    writePluginAt(agents.workspace, "same", { name: "same", version: "agents-workspace" });
+    writePlugin(workspace, "same", { name: "same", version: "clarvis-workspace" });
+
+    const views = await svc().list();
+
+    expect(views).toHaveLength(4);
+    expect(views.map((view) => `${view.scope}/${view.source}:${view.version}`).sort()).toEqual([
+      "global/agents:agents-global",
+      "global/clarvis:clarvis-global",
+      "workspace/agents:agents-workspace",
+      "workspace/clarvis:clarvis-workspace",
+    ]);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "list: discovers a plugin linked into the shared .agents inventory",
+    async () => {
+      const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
+      const shared = writePluginAt(join(workspace, "shared-plugins"), "linked", {
+        name: "linked",
+        version: "1.0.0",
+      });
+      mkdirSync(agents.user, { recursive: true });
+      symlinkSync(shared, join(agents.user, "linked"), "dir");
+
+      const views = await svc().list();
+
+      expect(views).toHaveLength(1);
+      expect(views[0]).toMatchObject({
+        name: "linked",
+        scope: "global",
+        source: "agents",
+        version: "1.0.0",
+      });
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "update: refuses a linked Git checkout without mutating its external worktree",
+    async () => {
+      const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
+      const external = makeGitRepo({ name: "linked-git", version: "1.0.0", description: "d" });
+      try {
+        mkdirSync(agents.user, { recursive: true });
+        symlinkSync(external, join(agents.user, "linked-git"), "dir");
+        const manifest = join(external, "plugin.json");
+        const dirty = JSON.stringify({ name: "linked-git", version: "dirty", description: "d" });
+        writeFileSync(manifest, dirty);
+
+        const listed = await svc().list();
+        expect(listed[0]?.install_source).toBeUndefined();
+        await expect(
+          svc().update(pluginRef("linked-git", "global", "agents")),
+        ).rejects.toMatchObject({ code: "invalid_request" });
+        await expect(Bun.file(manifest).text()).resolves.toBe(dirty);
+      } finally {
+        rmSync(external, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it("list: applies Agent Plugin skill discovery and validation rules inside .agents", async () => {
+    const agents = agentsPluginsDirs({ home: join(workspace, "home"), cwd: workspace, env: {} });
+    const dir = writePluginAt(agents.workspace, "portable", {
+      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+      name: "portable",
+    });
+    mkdirSync(join(dir, "skills", "valid"), { recursive: true });
+    writeFileSync(
+      join(dir, "skills", "valid", "SKILL.md"),
+      "---\nname: valid\ndescription: Valid portable skill.\n---\n",
+    );
+    mkdirSync(join(dir, "skills", "lowercase"), { recursive: true });
+    writeFileSync(
+      join(dir, "skills", "lowercase", "skill.md"),
+      "---\nname: lowercase\ndescription: Wrong filename.\n---\n",
+    );
+    mkdirSync(join(dir, "skills", "group", "nested"), { recursive: true });
+    writeFileSync(
+      join(dir, "skills", "group", "nested", "SKILL.md"),
+      "---\nname: nested\ndescription: Too deep.\n---\n",
+    );
+    mkdirSync(join(dir, "skills", "mismatch"), { recursive: true });
+    writeFileSync(
+      join(dir, "skills", "mismatch", "SKILL.md"),
+      "---\nname: another-name\ndescription: Mismatched identity.\n---\n",
+    );
+
+    const [view] = await svc().list();
+
+    expect(view?.contributions.skills).toEqual(["valid"]);
+    expect(view?.notes?.join(" ")).toContain("must match directory");
+  });
+
+  it("list: activates only the exact qualified installation", async () => {
+    writePlugin(global, "demo", { name: "demo", version: "1.0.0" }, "global");
+    writePlugin(workspace, "demo", { name: "demo", version: "2.0.0" });
+    enabled = [pluginRef("demo")];
+
+    const views = await svc().list();
+    expect(views.find((view) => view.scope === "workspace")?.enabled).toBe(false);
+    expect(views.find((view) => view.scope === "global")?.enabled).toBe(true);
   });
 
   it("list: a broken manifest is surfaced, not hidden", async () => {
@@ -228,7 +365,7 @@ describe("PluginService", () => {
     });
   });
 
-  it("reviews and approves plugin hooks individually", async () => {
+  it("reports plugin hooks as part of the atomic contribution surface", async () => {
     writePlugin(workspace, "demo", {
       name: "demo",
       hooks: [
@@ -237,12 +374,7 @@ describe("PluginService", () => {
       ],
     });
     const s = svc();
-    const hooks = await s.hooks();
-    expect(hooks.map((hook) => hook.approved)).toEqual([false, false]);
-    await s.approveHook("demo", hooks[0]!.fingerprint);
-    expect((await s.hooks()).map((hook) => hook.approved)).toEqual([true, false]);
-    await s.revokeHook("demo", hooks[0]!.fingerprint);
-    expect((await s.hooks()).every((hook) => !hook.approved)).toBe(true);
+    expect((await s.list())[0]!.contributions.hooks).toBe(2);
   });
 
   it("a skills-only plugin lists without a global trust decision", async () => {
@@ -256,13 +388,7 @@ describe("PluginService", () => {
   });
 
   it("uninstall 404s a plugin that isn't installed globally", async () => {
-    await expect(svc().uninstall("ghost")).rejects.toMatchObject({ code: "not_found" });
-  });
-
-  it("approveHook 404s an undeclared fingerprint", async () => {
-    await expect(svc().approveHook("ghost", "missing")).rejects.toMatchObject({
-      code: "not_found",
-    });
+    await expect(svc().uninstall(pluginRef("ghost"))).rejects.toMatchObject({ code: "not_found" });
   });
 
   it("validateGitUrl rejects unsafe transports", () => {
@@ -284,10 +410,10 @@ describe("PluginService", () => {
   });
 
   it("list: a JSON-valid but schema-invalid manifest reports the zod issue path", async () => {
-    writePlugin(workspace, "bad2", { name: "bad2", version: "not-semver", description: "d" });
+    writePlugin(workspace, "bad2", { name: "BAD", description: "d" });
     const [view] = await svc().list();
-    expect(view!.error).toContain("version");
-    expect(view!.error).toContain("semver");
+    expect(view!.error).toContain("name");
+    expect(view!.error).toContain("lowercase");
   });
 
   it("list: a skills subdirectory without SKILL.md is not reported as a skill", async () => {
@@ -340,7 +466,9 @@ describe("PluginService", () => {
 
   it("list: refuses an excessive install-root fanout without returning a partial catalog", async () => {
     for (let index = 0; index <= PLUGIN_RESOURCE_LIMITS.installRootEntries; index += 1) {
-      mkdirSync(join(workspace, "plugins", `p-${String(index)}`), { recursive: true });
+      mkdirSync(join(workspacePaths(workspace).pluginsDir, `p-${String(index)}`), {
+        recursive: true,
+      });
     }
 
     await expect(svc().list()).rejects.toMatchObject({ code: "resource_exhausted" });
@@ -363,19 +491,26 @@ describe("PluginService", () => {
       async inspect(root) {
         return virtualPlugin("staging", manifest, root);
       },
-      async global(name) {
-        return installed?.name === name ? installed : null;
+      async get(ref) {
+        return installed?.name === ref.name && installed.ref.source === ref.source
+          ? installed
+          : null;
       },
-      async install(_root, name) {
-        installed = virtualPlugin(name, manifest);
+      async install(_root, name, source) {
+        installed = virtualPlugin(
+          name,
+          manifest,
+          `/virtual/${name}`,
+          pluginRef(name, "global", source),
+        );
         return installed;
       },
-      async replace(_root, name) {
-        installed = virtualPlugin(name, manifest);
+      async replace(_root, ref) {
+        installed = virtualPlugin(ref.name, manifest, `/virtual/${ref.name}`, ref);
         return installed;
       },
-      async remove(name) {
-        if (installed?.name !== name) return false;
+      async remove(ref) {
+        if (installed?.name !== ref.name || installed.ref.source !== ref.source) return false;
         installed = null;
         return true;
       },
@@ -403,7 +538,7 @@ describe("PluginService", () => {
     expect((await service.install("https://example.test/virtual.git")).name).toBe("virtual");
     expect(disposed).toBe(true);
     expect((await service.list()).map((plugin) => plugin.name)).toEqual(["virtual"]);
-    await service.uninstall("virtual");
+    await service.uninstall(pluginRef("virtual", "global", "agents"));
     expect(await service.list()).toEqual([]);
   });
 
@@ -449,8 +584,10 @@ describe("PluginService", () => {
           root,
         );
       },
-      async global(name) {
-        return name === installed.name ? installed : null;
+      async get(ref) {
+        return ref.name === installed.name && ref.source === installed.ref.source
+          ? installed
+          : null;
       },
       async install() {
         return installed;
@@ -482,11 +619,41 @@ describe("PluginService", () => {
       environment: {},
     });
 
-    await expect(service.update("virtual")).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(service.update(pluginRef("virtual"))).rejects.toMatchObject({
+      code: "invalid_request",
+    });
     expect(disposed).toBe(true);
   });
 
   describe("install/update against a real local git remote", () => {
+    it("installs into .agents by default and into .clarvis only when explicitly selected", async () => {
+      const repo = makeGitRepo({ name: "dual", version: "1.0.0", description: "d" });
+      try {
+        const s = svc();
+        const shared = await s.install(`file://${repo}`);
+        const native = await s.install(`file://${repo}`, undefined, { source: "clarvis" });
+        const agents = agentsPluginsDirs({
+          home: join(workspace, "home"),
+          cwd: workspace,
+          env: {},
+        });
+
+        expect(shared).toMatchObject({
+          scope: "global",
+          source: "agents",
+          dir: join(agents.user, "dual"),
+        });
+        expect(native).toMatchObject({
+          scope: "global",
+          source: "clarvis",
+          dir: join(globalPaths(global).pluginsDir, "dual"),
+        });
+        expect(await s.list()).toHaveLength(2);
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
     it("install: refuses when a plugin of that name is already installed", async () => {
       const repo = makeGitRepo({ name: "dup", version: "1.0.0", description: "d" });
       try {
@@ -507,7 +674,9 @@ describe("PluginService", () => {
         { name: "manual", version: "1.0.0", description: "d" },
         "global",
       );
-      await expect(svc().update("manual")).rejects.toMatchObject({ code: "invalid_request" });
+      await expect(svc().update(pluginRef("manual"))).rejects.toMatchObject({
+        code: "invalid_request",
+      });
     });
 
     it("update: fetches and hard-resets to origin HEAD", async () => {
@@ -523,7 +692,7 @@ describe("PluginService", () => {
         );
         runGit(repo, "commit", "-am", "bump");
 
-        const updated = await s.update("up");
+        const updated = await s.update(pluginRef("up", "global", "agents"));
         expect(updated.version).toBe("2.0.0");
       } finally {
         rmSync(repo, { recursive: true, force: true });
@@ -561,7 +730,8 @@ describe("PluginService", () => {
         expect(view.name).toBe("brainstorm");
         expect(view.version).toBe("1.0.0");
         expect(view.contributions.skills).toEqual(["brainstorm"]);
-        expect(view.source).toBe(`file://${repo}`);
+        expect(view.source).toBe("agents");
+        expect(view.install_source).toBe(`file://${repo}`);
         expect(view.revision).toMatch(/^[0-9a-f]{40}$/);
         expect(existsSync(join(view.dir, ".git"))).toBe(false);
         expect(existsSync(join(view.dir, "plugins"))).toBe(false);
@@ -576,9 +746,10 @@ describe("PluginService", () => {
         );
         runGit(repo, "add", "-A");
         runGit(repo, "commit", "-m", "bump nested plugin");
-        const updated = await svc().update("brainstorm");
+        const updated = await svc().update(pluginRef("brainstorm", "global", "agents"));
         expect(updated.version).toBe("2.0.0");
-        expect(updated.source).toBe(`file://${repo}`);
+        expect(updated.source).toBe("agents");
+        expect(updated.install_source).toBe(`file://${repo}`);
         expect(updated.revision).not.toBe(view.revision);
         expect(existsSync(join(updated.dir, "plugins"))).toBe(false);
       } finally {

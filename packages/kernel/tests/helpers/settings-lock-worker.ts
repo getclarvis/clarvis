@@ -13,7 +13,9 @@ function patchFor(index: number, iteration: number): Record<string, unknown> {
     case 1:
       return { marketplaces: [`https://example.com/w1-iter-${iteration}.git`] };
     case 2:
-      return { enabledPlugins: [`w2-iter-${iteration}`] };
+      return {
+        enabledPlugins: [{ scope: "global", source: "clarvis", name: `w2-iter-${iteration}` }],
+      };
     default:
       return { default_reasoning_effort: REASONING_EFFORTS[iteration % REASONING_EFFORTS.length] };
   }

@@ -68,6 +68,7 @@ line and the README synopsis all derive from this table" (`packages/code/src/cli
 | `--refresh-models` | — | — | yes | `refresh the models.dev catalog and exit` | `packages/code/src/cli-args.ts:100` |
 | `--update` | — | — | yes | `install the newest eligible Clarvis release and exit` | `packages/code/src/cli-args.ts` (`FLAGS`) |
 | `--ascii` | — | — | no | `render glyphs as plain ascii` | `packages/code/src/cli-args.ts:101` |
+| `--env` | — | `<environment>` (next token) | no | `select an Environment for this process (scope:name or name)` | `packages/code/src/cli-args.ts:110-113` |
 | `--worktree` | — | optional next token or `=name` | no | `open a dedicated Git worktree; omit name to generate one` | `packages/code/src/cli-args.ts:102-106` |
 | `--debug` | — | `[=<error\|warn\|info\|debug>]` (inline, optional) | no | `write bounded application diagnostics; --debug=<level>` | `packages/code/src/cli-args.ts` (`FLAGS`) |
 
@@ -79,7 +80,8 @@ permits the bare flag (`packages/code/src/cli-args.ts:60-78`).
 
 ```ts
 export type WorktreeRequest = true | string;
-interface WorkspaceMode { worktree?: WorktreeRequest }
+interface EnvironmentMode { environmentSelector?: string }
+interface WorkspaceMode extends EnvironmentMode { worktree?: WorktreeRequest }
 
 export type Mode =
   | ({ kind: "run"; ascii: boolean; debug: DebugFlag } & WorkspaceMode)
@@ -88,7 +90,7 @@ export type Mode =
   | ({ kind: "print"; prompt: string; agent?: string; format: PrintFormat; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "list"; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "delete"; id: SessionId; debug: DebugFlag } & WorkspaceMode)
-  | { kind: "refresh-models"; debug: DebugFlag }
+  | ({ kind: "refresh-models"; debug: DebugFlag } & EnvironmentMode)
   | { kind: "update" }
   | { kind: "help" }
   | { kind: "version" }
@@ -96,7 +98,11 @@ export type Mode =
 ```
 
 `worktree` reaches run, resume, continue, print, list and delete, but not the repository-independent
-refresh/update/help/version/error modes. `ascii` reaches only the three interactive variants;
+refresh/update/help/version/error modes. `environmentSelector` reaches every mode that constructs a
+kernel, including refresh, but not update/help/version/error. It is the process-local `--env`
+selector with highest Environment precedence; it changes no persisted selection. Qualified
+`scope:name` and bare-name resolution are owned by
+[Extension Environments](environments.md). `ascii` reaches only the three interactive variants;
 `update`/`help`/`version`/`usage-error` carry no `debug`
 member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard keys on
 (`packages/code/src/cli-args.ts:146`).
@@ -376,9 +382,11 @@ launcher only performs it" (`packages/code/src/cli-entry.ts:5-8`; the allowlist 
 7. At most one `mode: true` flag; two or more →
    `` `${modes[0]} cannot be combined with ${rest.join(", ")}` `` (`:239-241`).
 8. `--agent`/`--format` outside `--print` → `<flag> applies only with -p/--print` (`:244-247`).
-9. `--debug=<x>` with an unrecognised `x` → `--debug must be one of error, warn, info, debug, got: x`
+9. `--update` rejects `--ascii`, `--worktree`, `--env`, or `--debug`; it never constructs a kernel.
+10. `--debug=<x>` with an unrecognised `x` → `--debug must be one of error, warn, info, debug, got: x`
    (`:250-253`). A **bare** `--debug` stores `""` and is exempt from that check (`:252`).
-10. Switch on the mode flag (`:258-280`). `--print` additionally rejects a whitespace-only prompt
+11. Fold `--worktree` and `--env` into the shared mode fragments, then switch on the mode flag.
+    `--print` additionally rejects a whitespace-only prompt
     (`:261`) and a `--format` that is neither `text` nor `md` (`:262-264`); `format` defaults to
     `"text"` (`:262`). No mode flag → `{ kind: "run", ascii, debug }` (`:279`).
 
@@ -390,6 +398,10 @@ and is silently discarded — `--refresh-models --ascii` parses without error an
 where `--format` in the same position would be a usage error. No test in
 `packages/code/tests/unit/cli-args.test.ts` exercises `--ascii` combined with a headless mode flag; see
 §8.
+
+`environmentSelector` is retained on run, resume, continue, print, list, delete, and refresh-models.
+Tests in `packages/code/tests/unit/cli-args.test.ts` pin the missing-value error, qualified/bare values,
+propagation to those modes, and the `--update` incompatibility.
 
 ### 4.3 `resolveDebugRequest` — folding flag and environment
 
@@ -425,6 +437,11 @@ Before resolving diagnostics or dispatching a mode, `main` applies `--worktree`:
 `bootstrapWorktree`, replaces the process workspace with the returned canonical checkout, and sets
 `CLARVIS_WORKSPACE_ROOT` (`:1307-1311`).
 
+`main` also captures `mode.environmentSelector` before dispatch. Every later kernel constructor or
+`WorkspaceClientManager.create` receives it, so CLI Environment selection has identical semantics in
+silent session preflights, print, refresh, and interactive boot. Resolution occurs against the final
+worktree and is pinned by the newly constructed kernel.
+
 | `mode.kind` | Handler | Line |
 |---|---|---|
 | `usage-error` | stderr `<message>\n<usageText()>`, exit 1 | 1315-1317 |
@@ -453,8 +470,9 @@ has any use for" (`:167-169`).
 **`runPrintMode`** (`packages/code/src/index.tsx:247-371`):
 1. Builds `ClarvisDirs` from `globalPaths()`/`workspacePaths(workspace)`/`workspaceStatePaths(workspace)` (`:247-251`).
 2. Creates a `CodeConfigStore` inside a `createRoot` to get `keySources()` (`:252-255`).
-3. `createFileKernel({ workspaceRoot, globalDir, keySources, memory: true, logger,
-   openMcpAuthorizationUrl: openPublicUrl })` (`:251-258`). `--print` is headless only in its output
+3. `createFileKernel({ workspaceRoot, globalDir, keySources, memory: true, environmentSelector,
+   logger, openMcpAuthorizationUrl: openPublicUrl })` (`packages/code/src/index.tsx:250-258`).
+   `--print` is headless only in its output
    and elicitation policy: a remote MCP OAuth challenge may still open the system browser.
 4. If `--agent` was not given, resolves one: `kernel.listAgents()` + `loadAgentFiles` + settings +
    `readEnvView()`, filters to runnable candidates via `agentReadiness`, prefers `code.agentDefault()`
@@ -509,6 +527,10 @@ terminal result."
 | 11 | create the Tasks controller and the five `App` control groups | 1009-1236 |
 | 12 | replace `BootFrame` with `<App>` inside the existing root and emit mounted/painted diagnostics | `runApp` |
 | 13 | after `app.boot.painted`, release durable memory-queue recovery and start Markdown parser warm-up; for `resume`/`continue`, resolve the selected workspace's session, await warm-up and then load it | `runApp` |
+
+The manager created at step 6 receives `environmentSelector`, and its reconnect path retains that
+launch override. While one is active, persisted Environment selection mutations return a conflict
+because they could not change the process-selected Environment.
 
 Two orderings the code annotates explicitly:
 
@@ -1223,12 +1245,21 @@ Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts` (paint-
 order) and `packages/kernel/tests/integration/owner-isolation.test.ts` (idempotent release and later
 owner startup).
 
+**INV-CB-42.** One `--env` value reaches every kernel created by the invocation and remains the
+highest-precedence selector across backend reconnects; it never writes persisted selection state.
+Production: `Mode.environmentSelector` in `packages/code/src/cli-args.ts`, capture and constructor
+plumbing in `packages/code/src/index.tsx`, and
+`packages/code/src/adapters/workspace-client-manager.ts`. Test:
+`packages/code/tests/unit/cli-args.test.ts` and
+`packages/code/tests/component/workspace-client-manager.test.ts`.
+
 ## 6. Failure modes and degradation
 
 | Situation | Handling | Exit / effect | Cite |
 |---|---|---|---|
 | No `dist/index.js` and no `CLARVIS_CODE_SOURCE` | full remedy text on stderr | exit 1 | `packages/code/src/cli.ts:43-46`, `packages/code/src/cli-entry.ts:40-49` |
 | Unknown flag / missing value / mode conflict / bad `--print` prompt or format | `usage-error` mode; **not** intercepted by `cli.ts`, so the whole app loads first | stderr `<message>\n<usage>`, exit 1 | `packages/code/src/cli.ts:14-16`, `packages/code/src/index.tsx:1322-1324` |
+| `--env` names an invalid or missing Environment | kernel creation/current resolution fails closed or exposes the invalid snapshot; no builtin fallback is substituted | invocation fails or the interactive diagnostics view shows the exact issue | [Extension Environments](environments.md#6-failure-modes-and-degradation) |
 | stdout or stdin is not a TTY in an interactive mode | guidance naming every headless mode | exit 2 | `packages/code/src/adapters/platform.ts:201-207` |
 | `--resume <id>` names no session | `session not found: <id> — run clarvis --list` | exit 1 | `packages/code/src/index.tsx:209-223` |
 | `--continue` with no session in this workspace | `no session to continue in this workspace — run clarvis --list` | exit 1 | `packages/code/src/index.tsx:209-223` |

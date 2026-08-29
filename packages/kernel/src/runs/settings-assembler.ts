@@ -54,6 +54,14 @@ export interface SettingsAssemblerOptions {
   skills?: SkillsProvider;
   /** Resolves a trusted Plans override for a skill and its scanned provenance. */
   skillPlansMode?: (skill: { name: string; source?: string }) => PlansMode | undefined;
+  /**
+   * Candidate MCP namespaces contributed by the process-pinned active plugins.
+   *
+   * @remarks The assembler still verifies the winning merged declaration's
+   * provenance. An operator layer that replaces a same-named plugin server stays
+   * profile-selected and never inherits the plugin's `auto_tools` authority.
+   */
+  pluginMcpServerNames?: () => readonly string[];
 }
 
 /** A resolved skill run: the agent it enters on and the message that seeds it. */
@@ -208,7 +216,11 @@ function agentsBlockToParam(block: Record<string, unknown>): Record<string, numb
  *   as `profile '...' lists tool '...', which is not in the tool pool`, which
  *   points at the agent rather than at the typo.
  */
-function toEngineServer(name: string, entry: Record<string, unknown>): McpServerConfig {
+function toEngineServer(
+  name: string,
+  entry: Record<string, unknown>,
+  autoTools = false,
+): McpServerConfig {
   const parsed = mcpServerSettingsSchema.safeParse(entry);
   if (!parsed.success) {
     const detail = parsed.error.issues
@@ -216,7 +228,10 @@ function toEngineServer(name: string, entry: Record<string, unknown>): McpServer
       .join("; ");
     throw kernelError("invalid_request", `mcpServers['${name}'] is not a valid server: ${detail}`);
   }
-  return settingsServerToEngine(name, parsed.data);
+  return {
+    ...settingsServerToEngine(name, parsed.data),
+    ...(autoTools ? { auto_tools: true } : {}),
+  };
 }
 
 /**
@@ -321,8 +336,9 @@ function buildProfile(
  * @param options - defaults for model, iteration limit, and entry agent.
  * @returns an assembler that, per run, resolves the entry agent, transitively
  *   expands `can_spawn` into a deduplicated profile graph, appends each scope's
- *   effective context preamble to the entry profile, attaches only the MCP servers
- *   named by some profile's tool namespaces, and picks the budget
+ *   effective context preamble to the entry profile, attaches the MCP servers
+ *   named by some profile's tool namespaces plus every active plugin MCP server,
+ *   and picks the budget
  *   (entry agent > merged settings > the fallback built from
  *   {@link SettingsAssemblerOptions.fallbackTokenLimit} and
  *   {@link SettingsAssemblerOptions.fallbackOnExceed}). The `plans` param
@@ -373,7 +389,8 @@ export function createSettingsRunAssembler(
       : declared;
   };
   return (params) => {
-    const merged = store.readSettings().merged as unknown as EngineSettings;
+    const settings = store.readSettings();
+    const merged = settings.merged as unknown as EngineSettings;
     const contexts = (["global", "workspace"] as const).flatMap((scope) => {
       const context = store.readContext(scope);
       return context === null ? [] : [context];
@@ -413,15 +430,20 @@ export function createSettingsRunAssembler(
     }
 
     const registry = merged.mcpServers ?? {};
-    const allServerRefs = new Set(
-      profiles
-        .flatMap((p) => p.tools)
-        .map((t) => t.split(".")[0] ?? "")
-        .filter(Boolean),
+    const pluginServerRefs = new Set(
+      (options.pluginMcpServerNames?.() ?? []).filter(
+        (name) => settings.mcpServerOrigins?.[name] === "plugin",
+      ),
     );
+    const registryNames = Object.keys(registry).sort((a, b) => b.length - a.length);
+    const allServerRefs = new Set(pluginServerRefs);
+    for (const tool of profiles.flatMap((profile) => profile.tools)) {
+      const name = registryNames.find((candidate) => tool.startsWith(`${candidate}.`));
+      if (name !== undefined) allServerRefs.add(name);
+    }
     const servers = [...allServerRefs].flatMap((name) => {
       const entry = registry[name];
-      return entry === undefined ? [] : [toEngineServer(name, entry)];
+      return entry === undefined ? [] : [toEngineServer(name, entry, pluginServerRefs.has(name))];
     });
 
     const entryBudget = entryRecord.frontmatter.budget;

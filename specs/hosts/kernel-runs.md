@@ -117,7 +117,7 @@ the latter supplying `observe`/`settle` to maintain its workflow record (`:377-3
 ### 2.6 Protocol shapes this subsystem produces and consumes
 
 `StartRunParams` (`packages/protocol/src/runs.ts:69-114`) is the input; `RunHandle`
-(`:653-702`), `RunResult` (`:160-171`), `RunSummary` (`:173-186`), `RunDetail` (`:207-226`) and
+(`:653-702`), `RunResult` (`:162-172`), `RunSummary` (`:202-214`), `RunDetail` (`:235-255`) and
 `RunEvent` (`:291` onward) are the outputs. `RunHandle` has two settle points that are deliberately
 distinct: `done` "Resolves when execution ends; it does not imply that `events` has closed"
 (`:693`) and `closed` "Resolves after execution and bounded post-run event delivery both finish"
@@ -155,7 +155,7 @@ counters").
 |---|---|---|
 | `messages` | `protoMessagesToEngine(params.messages)` then, for a skill run, one appended `{ role: "user", content: skillRun.seed }` | `:431-435` |
 | `providers` | `merged.providers ?? []` | `:436` |
-| `servers` | one entry per distinct `<namespace>` prefix of any profile's tool names that exists in `merged.mcpServers` | `:415-425`, `:437` |
+| `servers` | every active-plugin MCP namespace plus each operator MCP namespace referenced by a profile; plugin entries carry `auto_tools: true` | `createSettingsRunAssembler` in `packages/kernel/src/runs/settings-assembler.ts` |
 | `profiles` | the transitive `can_spawn` closure, deduplicated | `:400-413`, `:438` |
 | `entry` | resolved agent name | `:439` |
 | `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed | `:427-443` |
@@ -296,12 +296,16 @@ ignored.
 
 ### 3.6 `RunDetail` hydration
 
-`storedToDetail` (`packages/kernel/src/runs/map-result.ts:135-159`) builds the detail from a `StoredExecution`:
+`storedToDetail` (`packages/kernel/src/runs/map-result.ts:153-178`) builds the detail from a `StoredExecution`:
 `result` from `engineResultToProto`, then usage token totals **overwritten** from the stored row's
-`total_input_tokens`/`total_output_tokens`/`total_cached_tokens` (`:138-143`), `plan_ref` from
+`total_input_tokens`/`total_output_tokens`/`total_cached_tokens` (`:154-161`), `plan_ref` from
 `capability_state` (delegated; `packages/kernel/src/runs/plan-ref.ts:62`), `active_task` likewise (`packages/kernel/src/runs/task-binding.ts:6`),
-`recovery` forwarded verbatim when present (`:154`), `messages` via `engineMessagesToProto`, and
-`events` via `rehydrateEvents`.
+`environment` validated from opaque `host_metadata.environment`, `recovery` forwarded verbatim when
+present, `messages` via `engineMessagesToProto`, and `events` via `rehydrateEvents`.
+
+`environmentFromHostMetadata` accepts only a qualified Environment id and a lowercase SHA-256
+fingerprint, then projects exactly those two strings (`packages/kernel/src/runs/map-result.ts:25-41`).
+Malformed or extra host metadata is not reflected into the protocol DTO.
 
 `engineResultToProto`'s `liveUsage` (`:50-57`) maps each `by_agent` row through `mapPerAgent`
 (`:33-45`), which renames the engine's `type` to protocol `role` and includes `iterations` only when
@@ -372,8 +376,11 @@ Per call, in order:
 7. Breadth-first walk over `can_spawn` with a `seen` set; a child that resolves to `null` is
    **skipped, not fatal** (`:391-400`; pinned at `packages/kernel/tests/component/settings-assembler.test.ts:62-77`). Only the first
    name is treated as the entry, and only that profile receives the context documents (`:397-398`).
-8. Server selection: every profile's tool names split on `"."`, first segment kept if non-empty, then
-   looked up in `merged.mcpServers`; a missing key contributes nothing (`:403-413`).
+8. Server selection starts with every namespace returned by `pluginMcpServerNames`, then resolves
+   each profile tool against the longest exact registered `<namespace>.` prefix. This preserves
+   namespaced plugins whose compatible package name itself contains dots. A missing key contributes
+   nothing. Active plugin entries carry `auto_tools: true`; operator entries remain profile-scoped
+   (`createSettingsRunAssembler`).
 9. Budget: entry frontmatter `budget` if it is a non-null object, else `merged.budget`, else the
    fallback; `on_exceed` filled from the fallback when the declared budget omits it (`:415-417`,
    `:354-362`, `:428-431`).
@@ -873,6 +880,14 @@ Production `packages/kernel/src/runs/settings-assembler.ts:216-223`, `:382-389`,
 Production `packages/kernel/src/runs/settings-assembler.ts:213-218`. Test
 `packages/kernel/tests/component/settings-assembler.test.ts:667-674`.
 
+**INV-R35a.** Active plugin MCP servers are attached even when every persisted profile has an empty
+MCP tool list, carry `auto_tools: true`, and leave those profile lists unchanged. Operator MCP
+servers are still omitted unless a profile references their namespace. A namespace containing dots
+is matched as one exact registered prefix rather than split at its first dot.
+Production: `createSettingsRunAssembler` and file-kernel `pluginMcpServerNames` composition. Test:
+the active-plugin, dotted-namespace, and unreferenced-server cases in
+`packages/kernel/tests/component/settings-assembler.test.ts`.
+
 **INV-R36.** A `can_spawn` target that resolves to no agent is skipped, not fatal.
 Production `packages/kernel/src/runs/settings-assembler.ts:393` (`if (rec === null) continue`). Test
 `packages/kernel/tests/component/settings-assembler.test.ts:58-73`.
@@ -923,6 +938,13 @@ Production: `packages/kernel/src/runs/map-events.ts` (`engineEventToProto`),
 `packages/kernel/tests/contract/transport-codecs.test.ts` ("preserves compaction lifecycle and
 fallback attribution").
 
+**INV-R44.** A hydrated run exposes an Environment only when durable host metadata contains exactly
+a valid qualified id and SHA-256 fingerprint; it never projects arbitrary host metadata.
+Production: `environmentFromHostMetadata` and `storedToDetail` in
+`packages/kernel/src/runs/map-result.ts`. Test:
+`packages/kernel/tests/unit/map-result.test.ts` (valid Environment projection and malformed metadata
+omission). The persistence half is [INV-319](environments.md#inv-319--execution-history-identifies-its-extension-snapshot-without-secrets).
+
 ## 6. Failure modes and degradation
 
 | Condition | Handler | Outcome |
@@ -948,6 +970,7 @@ fallback attribution").
 | capability detail too large, cyclic, or with throwing accessors | `packages/kernel/src/runs/map-events.ts:192-216` | bounded and truncated, never thrown; unserializable becomes the literal `"[unserializable capability event]"` (`:208`) |
 | rehydration loses events | `packages/kernel/src/runs/map-result.ts:176-185` | the run is returned with fewer events plus a `runs.rehydrated` line carrying the delta |
 | plan or task slot in `capability_state` malformed | `packages/kernel/src/runs/plan-ref.ts:66`, `packages/kernel/src/runs/task-binding.ts:10` (delegated) | field omitted from `RunDetail`, no throw; pinned at `packages/kernel/tests/unit/map-result.test.ts:52-66` and `:92-123` |
+| Environment slot in `host_metadata` malformed | `environmentFromHostMetadata` in `packages/kernel/src/runs/map-result.ts` | `environment` omitted from `RunDetail`; other run data still hydrates |
 
 ## 7. Coupling
 

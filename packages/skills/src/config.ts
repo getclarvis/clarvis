@@ -117,11 +117,33 @@ export function resolveConfig(options: AgentSkillsOptions): SkillConfig {
  * and `source` to the empty string.
  */
 function normalizeRoot(input: SkillRootInput, workspaceDir: string, home: string): SkillRoot {
+  const include = input.include === undefined ? undefined : normalizeInclude(input.include);
+  const confinementRoot =
+    input.confinementRoot === undefined
+      ? undefined
+      : resolveAgainst(workspaceDir, input.confinementRoot, home);
   return {
     path: resolveAgainst(workspaceDir, input.path, home),
     scope: input.scope ?? "workspace",
     source: input.source ?? "",
+    ...(include === undefined ? {} : { include }),
+    ...(input.discovery === undefined ? {} : { discovery: input.discovery }),
+    ...(input.manifestName === undefined ? {} : { manifestName: input.manifestName }),
+    ...(input.validation === undefined ? {} : { validation: input.validation }),
+    ...(confinementRoot === undefined ? {} : { confinementRoot }),
   };
+}
+
+/** Validate, de-duplicate and sort one root's exact-name allow-list. */
+function normalizeInclude(values: readonly string[]): readonly string[] {
+  const names = new Set<string>();
+  for (const value of values) {
+    if (typeof value !== "string" || value.length === 0 || value.trim() !== value) {
+      throw new StartupError("skill root include names must be non-empty, trimmed strings");
+    }
+    names.add(value);
+  }
+  return [...names].sort((left, right) => left.localeCompare(right));
 }
 
 /**

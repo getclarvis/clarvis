@@ -46,6 +46,8 @@ export interface JournalHeader {
   started_at: number;
   /** The originating run request, sanitized. */
   request: RunRequest;
+  /** Opaque host snapshot captured at run start. */
+  host_metadata?: Record<string, unknown>;
   /**
    * The process that opened the journal, and the host it ran on.
    *
@@ -157,6 +159,9 @@ export function createRunJournal(opts: CreateRunJournalOptions): RunJournal {
       owner_key_name: header.owner_key_name,
       started_at: header.started_at,
       request: sanitizeDeep(header.request),
+      ...(header.host_metadata === undefined
+        ? {}
+        : { host_metadata: sanitizeDeep(header.host_metadata) }),
       writer: { pid: process.pid, host: hostname() },
     };
     writeSync(fd, `${JSON.stringify(line)}\n`);

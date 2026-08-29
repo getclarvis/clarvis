@@ -353,7 +353,7 @@ export const GATES: Gate[] = [
           state === "changed"
             ? `this workspace changed since you approved it; withheld: ${parts.join(", ")}`
             : `withheld from this workspace: ${parts.join(", ")}`,
-        hint: "this repository can run code on your machine; run /workspace-trust to review and approve it",
+        hint: "review the approval prompt when the workspace opens; /workspace-trust reopens it later",
       };
     },
   },

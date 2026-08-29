@@ -11,6 +11,11 @@ import { z } from "zod";
 
 const operator = (settings: SettingsFile): SettingsScope => ({ origin: "operator", settings });
 const plugin = (settings: SettingsFile): SettingsScope => ({ origin: "plugin", settings });
+const pluginRef = (name: string) => ({
+  scope: "global" as const,
+  source: "clarvis" as const,
+  name,
+});
 
 describe("mergeSettings", () => {
   it("returns an empty object when there are no scopes", () => {
@@ -209,10 +214,10 @@ describe("mergeSettings — plugin scopes (D7)", () => {
 describe("mergeSettings — enabledPlugins", () => {
   it("concatenates scopes and de-duplicates, keeping first-seen order", () => {
     const merged = mergeSettings([
-      operator({ enabledPlugins: ["a", "b"] }),
-      operator({ enabledPlugins: ["b", "c"] }),
+      operator({ enabledPlugins: [pluginRef("a"), pluginRef("b")] }),
+      operator({ enabledPlugins: [pluginRef("b"), pluginRef("c")] }),
     ]);
-    expect(merged.enabledPlugins).toEqual(["a", "b", "c"]);
+    expect(merged.enabledPlugins).toEqual([pluginRef("a"), pluginRef("b"), pluginRef("c")]);
   });
 
   it("stays absent when no scope declares it", () => {
@@ -221,10 +226,10 @@ describe("mergeSettings — enabledPlugins", () => {
 
   it("cannot be un-enabled by a later scope — a workspace only ever adds", () => {
     const merged = mergeSettings([
-      operator({ enabledPlugins: ["a"] }),
+      operator({ enabledPlugins: [pluginRef("a")] }),
       operator({ enabledPlugins: [] }),
     ]);
-    expect(merged.enabledPlugins).toEqual(["a"]);
+    expect(merged.enabledPlugins).toEqual([pluginRef("a")]);
   });
 });
 
@@ -236,7 +241,9 @@ describe("mergeSettings — aggregate limits", () => {
     }));
     expect(() => mergeSettings([operator({ providers })])).toThrow(/providers exceed 1000/);
 
-    const enabledPlugins = Array.from({ length: 257 }, (_, index) => `plugin-${String(index)}`);
+    const enabledPlugins = Array.from({ length: 257 }, (_, index) =>
+      pluginRef(`plugin-${String(index)}`),
+    );
     expect(() => mergeSettings([operator({ enabledPlugins })])).toThrow(/list exceeds 256/);
   });
 

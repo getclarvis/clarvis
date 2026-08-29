@@ -1,5 +1,5 @@
 import { sanitizeErrorMessage } from "@clarvis/capability";
-import type { AgentSkills, SkillRootInput } from "@clarvis/skills";
+import type { SkillRootInput } from "@clarvis/skills";
 
 export type { SkillRootInput };
 import type { EnvConfig, ExtensionAdmissionController, HookConfig } from "@clarvis/capability";
@@ -118,6 +118,9 @@ export interface BuildRunDepsOptions {
   logger: Logger;
   workspaceRoot: string;
   traceDir?: string;
+  /** Exact host-resolved roots. When supplied, the four standard roots are not appended. */
+  skillRoots?: SkillRootInput[] | (() => SkillRootInput[]);
+  /** Additional roots appended ahead of the four standard Clarvis roots. */
   extraSkillRoots?: SkillRootInput[] | (() => SkillRootInput[]);
   /** Plugin-declared bootstrap skills, in `enabledPlugins` order. Function-only
    * (unlike `extraSkillRoots`, which also accepts an array) because the set must
@@ -171,11 +174,22 @@ export interface BuildRunDepsOptions {
 
 type SkillsSeam = SkillsProvider;
 
+/** Empty exact skill catalogue used when a host intentionally selects no roots. */
+function emptySkillsProvider(): SkillsSeam {
+  return {
+    listSkills: () => [],
+    loadSkill: () => undefined,
+    readResource: () => {
+      throw new Error("skills are unavailable");
+    },
+  };
+}
+
 /**
  * Wrap a skills builder so the skill roots are re-read per call and rescanned only
  * when they change, keeping live edits visible without rescanning every request.
  *
- * @param build - constructs an {@link AgentSkills} from the current extra roots.
+ * @param build - constructs a skills provider from the current resolved roots.
  * @param provider - returns the current extra skill roots (called per access).
  * @param logger - receives a warning when a rescan fails.
  * @returns a {@link SkillsProvider} that serves from a memoized scan, falling back
@@ -184,19 +198,13 @@ type SkillsSeam = SkillsProvider;
  *   prior scan. A `provider()` throw is treated as no roots.
  */
 function dynamicSkills(
-  build: (extra: SkillRootInput[]) => AgentSkills,
+  build: (extra: SkillRootInput[]) => SkillsSeam,
   provider: () => SkillRootInput[],
   logger: Logger,
 ): SkillsSeam {
   let sig: string | undefined;
   let inner: SkillsSeam | undefined;
-  const empty: SkillsSeam = {
-    listSkills: () => [],
-    loadSkill: () => undefined,
-    readResource: () => {
-      throw new Error("skills are unavailable");
-    },
-  };
+  const empty = emptySkillsProvider();
   const ensure = (): SkillsSeam => {
     let roots: SkillRootInput[];
     try {
@@ -346,6 +354,7 @@ export async function buildExecuteRunDeps({
   logger,
   workspaceRoot,
   traceDir,
+  skillRoots,
   extraSkillRoots,
   skillBootstraps,
   resolveGuard,
@@ -364,6 +373,11 @@ export async function buildExecuteRunDeps({
 }: BuildRunDepsOptions): Promise<BuiltRunDeps> {
   if (workspaceRoot.trim() === "") {
     throw new Error("buildExecuteRunDeps: 'workspaceRoot' must be a non-empty path.");
+  }
+  if (skillRoots !== undefined && extraSkillRoots !== undefined) {
+    throw new Error(
+      "buildExecuteRunDeps: supply either 'skillRoots' or 'extraSkillRoots', not both.",
+    );
   }
   const logScopes = parseLogScopes(env.CLARVIS_LOG);
   const logFloor =
@@ -460,22 +474,28 @@ export async function buildExecuteRunDeps({
       logger,
       () => import("@clarvis/skills"),
     );
-    const build = (extra: SkillRootInput[]): AgentSkills =>
-      createAgentSkills({
-        workspace: workspaceRoot,
-        roots: [...extra, ...clarvisSkillRoots({ workspace: workspaceRoot })],
-        warningSink: (message) =>
-          logger.warn(
-            { event: "skills.discovery_warning", warning: message.trimEnd() },
-            "a skill root produced a warning; that skill is skipped",
-          ),
-        logger,
-      });
-    if (typeof extraSkillRoots === "function") {
-      skills = dynamicSkills(build, extraSkillRoots, logger);
+    const exactRoots = skillRoots !== undefined;
+    const build = (roots: SkillRootInput[]): SkillsSeam =>
+      exactRoots && roots.length === 0
+        ? emptySkillsProvider()
+        : createAgentSkills({
+            workspace: workspaceRoot,
+            roots: exactRoots
+              ? roots
+              : [...roots, ...clarvisSkillRoots({ workspace: workspaceRoot })],
+            warningSink: (message) =>
+              logger.warn(
+                { event: "skills.discovery_warning", warning: message.trimEnd() },
+                "a skill root produced a warning; that skill is skipped",
+              ),
+            logger,
+          });
+    const configuredRoots = skillRoots ?? extraSkillRoots;
+    if (typeof configuredRoots === "function") {
+      skills = dynamicSkills(build, configuredRoots, logger);
     } else {
       try {
-        skills = build(extraSkillRoots ?? []);
+        skills = build(configuredRoots ?? []);
       } catch (err) {
         logger.warn(
           {

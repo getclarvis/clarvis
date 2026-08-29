@@ -72,8 +72,10 @@ capability names, locked by `packages/loop/tests/architecture/builtin-capability
 ### 2.3 `ExecuteRunDeps` — the long-lived collaborators
 
 `env`, `llm`, `connections`, `traceStore`, `logger?`, `workspaceRoot`, `capabilities?`,
-`capabilityRegistry?`, `persistedTraceProjectors?`, `extensionAdmission?`
-(`packages/loop/src/runtime/execute-run.ts:53-75`).
+`capabilityRegistry?`, `persistedTraceProjectors?`, `extensionAdmission?`, and optional opaque
+`hostMetadata?`
+(`packages/loop/src/runtime/execute-run.ts:53-78`). `hostMetadata` is evaluated once after request
+validation and is never interpreted by the engine.
 
 ### 2.4 `OrchestratorDeps` / `OrchestratorResult`
 
@@ -347,7 +349,7 @@ contributed, so the record stays clean (`:263`, pinned at `:38-41`).
 | 3 | compose the persisted-trace projector registry from host + every capability | `:288-291`, `packages/loop/src/runtime/run-trace.ts:37-45` |
 | 4 | compose the capability registry with every capability's `grants` | `:310-313` |
 | 5 | `validateBody(rawBody, env, requestRegistry)` | `:314` |
-| 6 | build the request view; ask every capability `requiresUserInput?` | `:315-318` |
+| 6 | build the request view, capture optional host metadata once, then ask every capability `requiresUserInput?` | `:298-303` |
 | 7 | `deriveRunShape(parsed, capabilityNeedsHuman)` and derive `runMode` | `:319-320` |
 | 8 | **throw** `ValidationError("elicitation_not_supported")` if `userInputEnabled` and no `elicit` | `:321-328` |
 | 9 | compile the result contract when `output_schema` is present | `:330-331` |
@@ -360,7 +362,7 @@ contributed, so the record stays clean (`:263`, pinned at `:38-41`).
 | 16 | create the run's `AbortController` and forward `externalSignal` (including an already-aborted one) | `:386-393` |
 | 17 | `runOrchestrator(parsed, {...})` with the prompt-cache-defaulted LLM | `:397-431`, `:412` |
 | 18 | `collectCapabilityState(runCapabilities, response.status, continuation?.capability_state, …)` | `:433-439` |
-| 19 | `buildRecord({...})` with `mapTrace(trace.entries, wallStartedAt, projectors)` | `:440-449` |
+| 19 | `buildRecord({...})` with `mapTrace(trace.entries, wallStartedAt, projectors)` and the same host metadata used in the journal header | `:388-391`, `:432-438` |
 | 20 | `traceStore.insert(record)`; on success `journal.discard()` | `:451-453` |
 | 21 | fire every capability's `onRunEnd(record)`, collecting returned promises | `:472-500` |
 | 22 | await them under `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` via `raceWithBudget` | `:501-511` |
@@ -392,7 +394,8 @@ Step 8's error carries `{ capability: "elicitation" }` details and is pinned by
 | 15 | wrap `elicit` in `withElicitWaitBound`, then the serializing relay | `:449-463` |
 | 16 | `openToolPool`; on `!ok` short-circuit straight to `wrap(poolResult.response)` | `:465-474` |
 | 17 | record `mcp_degraded` when some servers failed but the pool is usable | `:476-478` |
-| 18 | `runEntryAgent(…)`, then `wrap(outcome.response, outcome)` | `:480-497` |
+| 18 | add tools discovered from successfully opened `auto_tools` servers to every resolved per-run profile | `addAutomaticMcpTools` in `packages/loop/src/runtime/tools/automatic-mcp-tools.ts` |
+| 19 | `runEntryAgent(…)`, then `wrap(outcome.response, outcome)` | `runOrchestrator` in `packages/loop/src/runtime/orchestrator.ts` |
 | — | `finally`: `Promise.allSettled(opened.map(o => o.release()))` | `:498-500` |
 
 `wrap` (`:413-441`) is the single exit funnel: it unions every activation's `guardTripCodes`
@@ -911,6 +914,11 @@ Every way a run reaches its terminal `RunResponse`:
 17. **MCP leases are released on every exit path from the entry agent.** —
     `packages/loop/src/runtime/orchestrator.ts:480-482`. Pinned indirectly by
     `packages/loop/tests/integration/connection-leak.test.ts`.
+17a. **An `auto_tools` server contributes only tools it advertised after a successful open, to
+    every resolved agent for this run; it never changes the request's profile DTOs or an authored
+    profile.** — Production: `addAutomaticMcpTools` and its call from `runOrchestrator`. Tests:
+    `packages/loop/tests/unit/automatic-mcp-tools.test.ts` and the "host-composed automatic server
+    tools" integration case in `packages/loop/tests/integration/open-tool-pool.test.ts`.
 18. **`finalize()` (the usage snapshot) is called exactly once per run, on every exit path.** —
     `packages/loop/src/runtime/run-timeout.ts:122,147,149,151`; documented at `:59`. **Unpinned.**
 19. **The run timeout measures inactivity, not wall time: it is re-armed by every trace entry.** —
@@ -1138,6 +1146,12 @@ Every way a run reaches its terminal `RunResponse`:
     Production: `packages/loop/src/runtime/loop/loop.ts:445-502`. Test:
     `packages/loop/tests/unit/tool-hooks.test.ts` ("bounds rewritten arguments before appending them
     to the model context").
+72. **Opaque host metadata is captured exactly once per run and the identical snapshot reaches both
+    the crash journal header and final execution record** (INV-319). Production:
+    `packages/loop/src/runtime/execute-run.ts:300`, `:388-391`, `:432-438`. Test:
+    `packages/loop/tests/component/execute-run.test.ts:59`. The loop does not import or validate the
+    Environment DTO stored there; that host contract belongs to
+    [`hosts/environments.md`](../hosts/environments.md).
 
 ## 6. Failure modes and degradation
 

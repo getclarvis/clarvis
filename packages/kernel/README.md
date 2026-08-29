@@ -30,6 +30,7 @@ Construction, configuration, runs, and transport are specified in the four kerne
 [`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade). The
 kernel also owns host-side composition described by
 [`plugins.md`](../../specs/hosts/plugins.md),
+[`environments.md`](../../specs/hosts/environments.md),
 [`model-catalog.md`](../../specs/hosts/model-catalog.md), and
 [`sessions.md`](../../specs/hosts/sessions.md), plus the kernel halves of capability specs named in
 their package READMEs.
@@ -94,6 +95,38 @@ Configuration is read from the workspace `.clarvis` directory and the global
 Clarvis directory. The kernel owns validation and persistence; clients use the
 services defined by `@clarvis/protocol`.
 
+Before composing extensions, the file kernel resolves one process-pinned Environment. The immutable
+`builtin:default` activates the exact plugin references in `enabledPlugins` and applies four-root
+standalone-skill discovery; a custom definition is a complete qualified allow-list and never
+inherits that builtin activation list. Plugin identity is always `{ scope, source, name }`, where
+`source` distinguishes `.agents/plugins` from `.clarvis/plugins`; no same-name install shadows or
+substitutes for another. Workspace
+definitions are shareable authored files, selections stay machine-local, workspace plugin
+activation participates in workspace trust, and selection/definition changes require reconnect.
+The first catalog read materializes an absent global `environments/` directory with the private
+directory mode; it treats an absent workspace catalog as empty without creating repository content.
+Preview tokens resolve the target through normal workspace-over-global precedence and bind both
+selection documents; definition and selection mutations serialize through local leases. The pinned
+manager also exposes every exact plugin and standalone-skill origin as inactive composer inventory.
+`previewComposition` binds a complete draft, prior definition revision, both selection revisions,
+authored fingerprint, and effective fingerprint; `applyComposition` revalidates and writes the
+definition plus selection as one recoverable transaction. Trust-write failure restores both prior
+documents, while an unchanged workspace selection shadowing a global-default write is neither
+activated nor newly approved. The pinned fingerprint includes resolved plugin manifests and
+companion declarations, agent files, packaged skill bodies/resources, and the content, size, mode,
+and package-relative path of every directly referenced package-local MCP, hook, or capability
+process file, plus selected standalone skill bodies/resources. Process-file admission is bounded per
+file, per plugin, and by file count. A later contribution drift fails closed until reconnect.
+Workspace-trust
+transitions recompose that extension snapshot only while no run is active, and selected plugin
+update/uninstall uses the same kernel-owned exclusion boundary and blocks later runs until reconnect.
+Every run records the resolved Environment id and fingerprint. An MCP namespace whose winning
+declaration still comes from an active plugin is attached to every run and marked `auto_tools`: its
+discovered tools become available to every effective agent for that run even when the persisted
+agent profile names none. This is part of atomic plugin activation, not a profile mutation. A global
+or workspace declaration that replaces the same namespace remains profile-selected and never
+inherits the plugin's automatic grant.
+
 Multi-owner hosts must continue to pass owner-aware stores explicitly. The
 kernel publishes the standard file-backed composition without silently enabling
 it:
@@ -155,6 +188,10 @@ Construction never starts memory-index inference. Interactive hosts call
 boundary. Owners already resident start once at that point, and owners activated later start as
 they are built. A primary run still pokes its worker after enqueuing its own job.
 
+An embedding that isolates filesystem fixtures may pass `home` to relocate only the shared
+`.agents/plugins` inventory used by the in-process plugin service. Production file kernels omit it
+and use the operator's normal home; `globalConfigDir` continues to own `.clarvis` independently.
+
 The package exports constructors for individual services, file and in-memory
 configuration stores, secret storage, model catalogs, guard resolution and
 engine-to-protocol mapping.
@@ -172,9 +209,11 @@ sessions lazily, multiplexes calls, and closes every child with the kernel lifec
 outside the Clarvis process and may be written in any language; see
 [`specs/capabilities/provider-executables.md`](../../specs/capabilities/provider-executables.md).
 
-Packaged capability services are authorized by installation, enablement and provider selection.
-Plugin hooks use a separate exact-definition review store and remain inactive until approved in
-`/extensions/hooks`; the kernel does not invent a transitive-code fingerprint for either surface.
+Packaged capability services are authorized by installation, Environment selection and provider
+selection. A selected plugin is one atomic extension unit: its agents, skills, MCP servers, hook
+declarations and capability executables become eligible together. Installing from Code's focused
+Marketplace is the explicit consent action; workspace trust remains a separate exact-snapshot gate
+for executable content inherited by entering or changing a workspace.
 
 Every kernel Git operation that selects a plugin checkout through a clone destination, `cwd`, or `-C`
 removes Git's repository-local environment first. A kernel launched by a parent repository's hook
@@ -183,6 +222,11 @@ temporary index, work tree, object store, common directory, or local Git config.
 runner does not impose this policy; each Git-owning adapter applies it before invoking the runner.
 `GIT_CEILING_DIRECTORIES` is removed as well so a parent cannot stop discovery before the selected
 repository root.
+
+A symbolic link may contribute an external checkout to any `.agents/plugins` or
+`.clarvis/plugins` inventory, but Clarvis treats that entry as discovery-only. It does not advertise
+an install source or run managed update against the linked target; the repository and Git adapters
+both refuse replacement/update so Clarvis cannot discard edits in a checkout it does not own.
 
 Plugin admission is all-or-nothing only for artifacts that define the plugin as a whole: its selected
 manifest, install record and bounded agent tree. A declared or conventional hooks/MCP companion that
@@ -256,7 +300,7 @@ already-finished spinner.
 The kernel owns command-approval policy through `createGuardResolver` and
 `createShellGuard`. It also provides first-class services for configuration,
 plugins, secrets, models, provider authentication, files, memory, plans, workflows, skills,
-sessions, tasks, storage and runs — the fourteen `KernelClient` services. These are control-plane APIs rather
+sessions, tasks, storage, environments and runs — the fifteen `KernelClient` services. These are control-plane APIs rather
 than model-callable MCP tools.
 
 A run's effective mode is the per-run `guard_mode` param, else the `guard.mode`

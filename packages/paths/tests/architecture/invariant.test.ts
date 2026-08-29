@@ -91,7 +91,7 @@ describe("the directory vocabulary is owned by @clarvis/paths", () => {
       " * Ensure the workspace's `.clarvis` directory exists and is git-ignored.",
       " * Memory is a navigable markdown wiki under `<ws>/.clarvis/memory`.",
       "/** Workspace root; its `.clarvis` becomes the workspace config dir. */",
-      "// eslint-disable-next-line -- the `.agents` root is read-only",
+      "// eslint-disable-next-line -- this `.agents` accessor is read-only",
     ]) {
       expect(isComment(line)).toBe(true);
     }

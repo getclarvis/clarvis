@@ -45,6 +45,11 @@ summary before either persistence or presentation can make an honest display dec
 The iteration event also retains an optional bounded `response_phase` (`commentary` or
 `final_answer`) so replayed clients can distinguish a progress update from a terminal answer without
 duplicating opaque provider metadata into the trace.
+An execution record may likewise carry optional host-owned `host_metadata`. The journal, recovery,
+JSON store and in-memory test store round-trip it after deep sanitization without interpreting its
+shape. The file kernel uses this narrow seam for the active extension Environment's id and
+fingerprint; the owning contract is
+[`hosts/environments.md`](../../specs/hosts/environments.md).
 Tool arguments additionally share a 64 Ki-character aggregate key/string budget, 4,096-entry
 ceiling and depth 32. Those structural bounds complement the 10,000-character per-leaf cap: a very
 wide object made of small values cannot bypass it, and cyclic/deep contributed detail is replaced

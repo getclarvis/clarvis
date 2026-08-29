@@ -87,6 +87,34 @@ describe("createRunJournal", () => {
     expect(readFileSync(path, "utf8")).not.toContain("sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAA");
   });
 
+  it("sanitizes and stamps host metadata beside the request", () => {
+    const path = join(dir, "environment.jsonl");
+    const journal = createRunJournal({
+      path,
+      header: {
+        ...header("exec-environment"),
+        host_metadata: {
+          environment: {
+            id: "workspace:research",
+            fingerprint: `sha256:${"a".repeat(64)}`,
+          },
+          token: "sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAA",
+        },
+      },
+    });
+    journal.close();
+    const persisted = JSON.parse(readFileSync(path, "utf8")) as {
+      host_metadata: Record<string, unknown>;
+    };
+    expect(persisted.host_metadata.environment).toEqual({
+      id: "workspace:research",
+      fingerprint: `sha256:${"a".repeat(64)}`,
+    });
+    expect(JSON.stringify(persisted.host_metadata)).not.toContain(
+      "sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAA",
+    );
+  });
+
   it("discard() removes the file", () => {
     const path = join(dir, "gone.jsonl");
     const journal = createRunJournal({ path, header: header("exec-2") });

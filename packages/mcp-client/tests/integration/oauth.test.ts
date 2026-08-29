@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -18,7 +18,7 @@ const coordinators: MCPAuthorizationCoordinator[] = [];
 async function coordinator(
   openAuthorizationUrl?: (url: string) => Promise<boolean>,
 ): Promise<MCPAuthorizationCoordinator> {
-  const root = await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-flow-"));
+  const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-flow-")));
   roots.push(root);
   const state = join(root, "state");
   await mkdir(state);

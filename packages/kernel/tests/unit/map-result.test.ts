@@ -209,3 +209,31 @@ describe("storedToDetail — the recovery counts of a partially recovered run", 
     expect(Object.hasOwn(detail, "recovery")).toBe(false);
   });
 });
+
+describe("storedToDetail — Environment identity sourced from host metadata", () => {
+  it("projects a valid id and SHA-256 fingerprint", () => {
+    const stored = baseStoredExecution();
+    stored.host_metadata = {
+      environment: {
+        id: "workspace:research",
+        fingerprint: `sha256:${"a".repeat(64)}`,
+      },
+    };
+    expect(storedToDetail(stored).environment).toEqual({
+      id: "workspace:research",
+      fingerprint: `sha256:${"a".repeat(64)}`,
+    });
+  });
+
+  it("drops malformed or unknown host metadata without affecting the run", () => {
+    for (const environment of [
+      { id: "research", fingerprint: `sha256:${"a".repeat(64)}` },
+      { id: "workspace:research", fingerprint: "not-a-digest" },
+      { id: "workspace:../research", fingerprint: `sha256:${"a".repeat(64)}` },
+    ]) {
+      const stored = baseStoredExecution();
+      stored.host_metadata = { environment };
+      expect(storedToDetail(stored).environment).toBeUndefined();
+    }
+  });
+});

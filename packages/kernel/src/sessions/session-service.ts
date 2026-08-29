@@ -252,6 +252,7 @@ function toSummary(session: Session): SessionSummary {
     ...(session.profile === undefined ? {} : { profile: session.profile }),
     turn_count: session.turns.length,
     ...(last === undefined ? {} : { last_status: last.status }),
+    ...(last?.environment === undefined ? {} : { last_environment: last.environment }),
     totals: session.totals,
   };
 }

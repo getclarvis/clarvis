@@ -10,6 +10,7 @@ import {
 } from "../../src/config.ts";
 import { globalPaths } from "@clarvis/paths";
 import { stripWorkspaceSubscriptionProviders } from "../../src/config/workspace-trust.ts";
+import { kernelError } from "../../src/core/errors.ts";
 
 const HOOK = {
   event: "session_start",
@@ -54,7 +55,7 @@ describe("stripWorkspaceRiskFields", () => {
     const settings = {
       hooks: [HOOK],
       mcpServers: { server: { command: "server" } },
-      enabledPlugins: ["plugin"],
+      enabledPlugins: [{ scope: "global", source: "clarvis", name: "plugin" }],
       marketplaces: ["https://example.invalid/catalog.git"],
       memory: { provider: { kind: "executable", command: "memory-server" }, enabled: true },
       plans: { provider: { kind: "plugin", plugin: "plans-plugin" }, mode: "review" },
@@ -212,6 +213,76 @@ describe("approval lifts the withholding", () => {
     writeWorkspace({ default_model: "anthropic/sonnet" });
     expect((await config.getSettings()).workspace_trust?.state).toBe("inert");
   });
+
+  it("binds approval to the selected workspace Environment definition", async () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-wstrust-environment-"));
+    const globalDir = join(root, "global");
+    let extensions: unknown = {
+      environment: { scope: "workspace", name: "project" },
+      definition_revision: "sha256:first",
+      plugins: [{ scope: "workspace", source: "clarvis", name: "runner" }],
+    };
+    const config = createConfigService(
+      createFileConfigStore({
+        workspaceRoot: root,
+        globalDir,
+        environment: {
+          resolvePlugins: () => [],
+          workspaceTrustSurface: () => extensions,
+        },
+      }),
+    );
+
+    const unapproved = await config.getSettings();
+    expect(unapproved.workspace_trust?.state).toBe("unapproved");
+    expect(unapproved.withheld_workspace_fields).toEqual(["environment"]);
+    expect((await config.approveWorkspace()).workspace_trust?.state).toBe("trusted");
+    expect((await config.getSettings()).withheld_workspace_fields).toBeUndefined();
+    extensions = {
+      environment: { scope: "workspace", name: "project" },
+      definition_revision: "sha256:changed",
+      plugins: [
+        { scope: "workspace", source: "clarvis", name: "runner" },
+        { scope: "global", source: "clarvis", name: "browser" },
+      ],
+    };
+    const changed = await config.getSettings();
+    expect(changed.workspace_trust?.state).toBe("changed");
+    expect(changed.withheld_workspace_fields).toEqual(["environment"]);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("refuses Environment trust transitions before mutating the trust store during a run", async () => {
+    const root = mkdtempSync(join(tmpdir(), "clarvis-wstrust-active-"));
+    const globalDir = join(root, "global");
+    let running = true;
+    const config = createConfigService(
+      createFileConfigStore({
+        workspaceRoot: root,
+        globalDir,
+        environment: {
+          resolvePlugins: () => [],
+          workspaceTrustSurface: () => ({
+            environment: { scope: "workspace", name: "project" },
+            definition_revision: "sha256:project",
+            plugins: [{ scope: "workspace", source: "clarvis", name: "runner" }],
+          }),
+          assertWorkspaceTrustTransitionAllowed: () => {
+            if (running) throw kernelError("conflict", "finish active runs first");
+          },
+        },
+      }),
+    );
+
+    await expect(config.approveWorkspace()).rejects.toMatchObject({ code: "conflict" });
+    expect((await config.getSettings()).workspace_trust?.state).toBe("unapproved");
+    running = false;
+    expect((await config.approveWorkspace()).workspace_trust?.state).toBe("trusted");
+    running = true;
+    await expect(config.revokeWorkspace()).rejects.toMatchObject({ code: "conflict" });
+    expect((await config.getSettings()).workspace_trust?.state).toBe("trusted");
+    rmSync(root, { recursive: true, force: true });
+  });
 });
 
 describe("every risk field is gated, not just hooks", () => {
@@ -219,7 +290,7 @@ describe("every risk field is gated, not just hooks", () => {
     const { config, writeWorkspace } = freshConfig();
     writeWorkspace({
       mcpServers: { evil: { type: "stdio", command: "curl", args: ["evil.example"] } },
-      enabledPlugins: ["attacker-plugin"],
+      enabledPlugins: [{ scope: "workspace", source: "clarvis", name: "attacker-plugin" }],
       marketplaces: ["https://evil.example/registry.git"],
       default_model: "anthropic/sonnet",
     });

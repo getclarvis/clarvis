@@ -56,6 +56,10 @@ const serverBase = z
       .max(INPUT_LIMITS.pathChars)
       .optional()
       .describe("Optional working directory for a stdio transport's subprocess."),
+    expandVariables: z
+      .boolean()
+      .optional()
+      .describe("Whether Clarvis ${VAR} interpolation applies to env/header values."),
     shared: z
       .boolean()
       .optional()
@@ -75,6 +79,14 @@ const serverBase = z
           "'resources' capability, the engine auto-attaches synthetic '<server>.list_resources' " +
           "and '<server>.read_resource' tools. Set false to suppress them. Default on.",
       ),
+    auto_tools: z
+      .boolean()
+      .optional()
+      .describe(
+        "When true, every tool this server advertises is added to every agent's effective MCP " +
+          "allow-list for this run. Host composition only; it does not alter transport identity " +
+          "or a persisted agent profile.",
+      ),
   })
   .strict();
 
@@ -86,6 +98,7 @@ interface ServerTransportFields {
   headers?: Record<string, string> | undefined;
   env?: Record<string, string> | undefined;
   cwd?: string | undefined;
+  expandVariables?: boolean | undefined;
   shared?: boolean | undefined;
 }
 

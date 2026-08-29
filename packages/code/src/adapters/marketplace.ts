@@ -32,6 +32,8 @@ const DEFAULT_MARKETPLACE_URLS: readonly string[] = [OFFICIAL_MARKETPLACE_URL];
 
 /** One plugin entry from a fetched marketplace, tagged with its source and install state. */
 export interface MarketplaceListing extends MarketplaceEntry {
+  /** Exact catalog source identity, independent from its presentation name. */
+  marketplaceUrl: string;
   marketplace: string;
   installed: boolean;
 }
@@ -280,6 +282,7 @@ export function createMarketplaceAdapter(deps: {
           seen.add(key);
           out.push({
             ...entry,
+            marketplaceUrl: url,
             marketplace: s.marketplace.displayName ?? s.marketplace.name,
             installed: installed.has(entry.name),
           });

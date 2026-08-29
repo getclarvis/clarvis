@@ -106,12 +106,14 @@ function parseHeader(line: string): JournalHeader | null {
    */
   if (!isRecord(request)) return null;
   const writer = raw.writer;
+  const hostMetadata = raw.host_metadata;
   return {
     v,
     id,
     owner_key_name,
     started_at,
     request: request as unknown as JournalHeader["request"],
+    ...(isRecord(hostMetadata) ? { host_metadata: hostMetadata } : {}),
     ...(isRecord(writer) && typeof writer.pid === "number" && typeof writer.host === "string"
       ? { writer: { pid: writer.pid, host: writer.host } }
       : {}),
@@ -413,6 +415,9 @@ export function journalToRecord(parsed: JournalParseSuccess): ExecutionRecord {
     total_output_tokens: totalOutput,
     total_cached_tokens: totalCached,
     total_cache_write_tokens: totalCacheWrite,
+    ...(parsed.header.host_metadata === undefined
+      ? {}
+      : { host_metadata: parsed.header.host_metadata }),
     ...(parsed.skipped > 0 || synthesized > 0
       ? { recovery: { skipped_lines: parsed.skipped, synthesized_tool_calls: synthesized } }
       : {}),

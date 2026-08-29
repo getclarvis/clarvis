@@ -24,6 +24,16 @@ export interface SkillRoot {
   path: string;
   scope: SkillScope;
   source: SkillSource;
+  /** Exact skill names admitted from this root; absent means discover every skill. */
+  include?: readonly string[];
+  /** Whether discovery may descend through grouping directories. */
+  discovery?: "nested" | "immediate";
+  /** Whether the manifest filename must be exactly `SKILL.md`. */
+  manifestName?: "case-insensitive" | "exact";
+  /** Whether the portable Agent Skills frontmatter contract is enforced without defaults. */
+  validation?: "compatible" | "agent-skills";
+  /** Filesystem-resolved package boundary that discovered paths may not escape. */
+  confinementRoot?: string;
 }
 
 /**
@@ -36,6 +46,16 @@ export interface SkillRootInput {
   path: string;
   scope?: SkillScope;
   source?: SkillSource;
+  /** Exact skill names admitted from this root; absent preserves full discovery. */
+  include?: readonly string[];
+  /** `immediate` inspects only direct child directories; default `nested` preserves groups. */
+  discovery?: "nested" | "immediate";
+  /** `exact` requires the canonical uppercase `SKILL.md` filename. */
+  manifestName?: "case-insensitive" | "exact";
+  /** `agent-skills` enforces portable identity, metadata, compatibility, and tool fields. */
+  validation?: "compatible" | "agent-skills";
+  /** Optional package boundary; resolved like {@link SkillRootInput.path}. */
+  confinementRoot?: string;
 }
 
 /**

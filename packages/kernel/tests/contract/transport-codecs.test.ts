@@ -144,6 +144,44 @@ describe("transport operation descriptors", () => {
     expect(invoked).toEqual(ORDINARY_OPERATIONS.map((operation) => operation.method));
   });
 
+  it("classifies every Environment operation as plugin-sensitive with exact read/write access", () => {
+    const expected = {
+      list: "read",
+      current: "read",
+      get: "read",
+      inventory: "read",
+      preview: "read",
+      previewClear: "read",
+      previewComposition: "read",
+      select: "write",
+      clearSelection: "write",
+      applyComposition: "write",
+      create: "write",
+      update: "write",
+      delete: "write",
+      clone: "write",
+    } as const;
+
+    for (const [name, access] of Object.entries(expected)) {
+      expect(OPERATIONS.environments[name as keyof typeof expected].metadata).toEqual({
+        access,
+        sensitivity: "plugins",
+      });
+    }
+  });
+
+  it("binds an Environment preview request to its persisted selection scope", () => {
+    expect(
+      OPERATIONS.environments.preview.encode(
+        { scope: "global", name: "research" },
+        { selection_scope: "workspace" },
+      ),
+    ).toEqual({
+      ref: { scope: "global", name: "research" },
+      options: { selection_scope: "workspace" },
+    });
+  });
+
   it("keeps every optional transport request projection inert without a signal", () => {
     const projections = ORDINARY_OPERATIONS.filter(
       (operation) => operation.requestOptions !== undefined,

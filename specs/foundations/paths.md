@@ -129,13 +129,14 @@ chose it — is the first thing every other path in this package is derived from
 | `root` | `<global>` | `packages/paths/src/global.ts:111` |
 | `state` | `<global>/state` | `packages/paths/src/global.ts:107,112` |
 | `cache` | `<global>/cache` | `packages/paths/src/global.ts:108,113` |
+| `pluginDataRoot` | `<global>/state/plugin-data` | `GlobalPaths.pluginDataRoot`, `globalPaths` |
 | `settingsFile` | `<global>/settings.json` | `packages/paths/src/global.ts:114` |
 | `agentsDir` | `<global>/agents` | `packages/paths/src/global.ts:109,115` |
 | `keysFile` | `<global>/keys.json` | `packages/paths/src/global.ts:116` |
 | `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts:117` |
 | `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts:118` |
 | `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts:119` |
-| `hookTrustFile` | `<global>/hook-trust.json` | `packages/paths/src/global.ts:120` |
+| `environmentsDir` | `<global>/environments` | `packages/paths/src/global.ts:124` |
 | `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts:121` |
 | `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts:122` |
 | `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts:123` |
@@ -146,6 +147,7 @@ chose it — is the first thing every other path in this package is derived from
 | `sessionsDir` | `<global>/state/sessions` | `packages/paths/src/global.ts:128` |
 | `tracesDir` | `<global>/state/traces` | `packages/paths/src/global.ts:129` |
 | `workflowRecordsDir` | `<global>/state/workflows` | `packages/paths/src/global.ts:130` |
+| `environmentSelectionFile` | `<global>/state/environment.json` | `packages/paths/src/global.ts:136` |
 | `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts:131` |
 | `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts:132` |
 | `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts:133` |
@@ -172,6 +174,7 @@ consequence" (`packages/paths/src/global.ts:17-19`).
 | `skillsDir` | `<ws>/.clarvis/skills` | `packages/paths/src/workspace.ts:110` |
 | `workflowsDir` | `<ws>/.clarvis/workflows` | `packages/paths/src/workspace.ts:111` |
 | `pluginsDir` | `<ws>/.clarvis/plugins` | `packages/paths/src/workspace.ts:112` |
+| `environmentsDir` | `<ws>/.clarvis/environments` | `packages/paths/src/workspace.ts:115` |
 | `guardJudgeFile` | `<ws>/.clarvis/guard-judge.md` | `packages/paths/src/workspace.ts:113` |
 | `memoryPolicyFile` | `<ws>/.clarvis/memory-policy.md` | `packages/paths/src/workspace.ts:114` |
 | `plansRoot` | `<ws>/.clarvis/plans` | `packages/paths/src/workspace.ts:115` |
@@ -187,11 +190,13 @@ error rather than a convention." (`packages/paths/src/workspace.ts:24-29`). The 
 atomic write's temp file must be a sibling of its target inside the same filesystem
 (`packages/paths/src/workspace.ts:31-33`).
 
-Supporting functions, all read-only against `.agents` (`packages/paths/src/workspace.ts:130-191`):
+Supporting `.agents` functions (`packages/paths/src/workspace.ts`):
 
 | Symbol | Line | What it returns |
 |---|---|---|
 | `agentsSkillsDirs(opts?)` | `packages/paths/src/workspace.ts:134` | `{ user: <home>/.agents/skills, workspace: <ws>/.agents/skills }` |
+| `agentsPluginsDir(root)` | `packages/paths/src/workspace.ts` | `<root>/.agents/plugins` |
+| `agentsPluginsDirs(opts?)` | `packages/paths/src/workspace.ts` | the global and workspace shared plugin inventories |
 | `agentsMarketplaceFile(root)` | `packages/paths/src/workspace.ts:153` | `<root>/.agents/plugins/marketplace.json` |
 | `agentsMarketplaceFiles(opts?)` | `packages/paths/src/workspace.ts:163` | the same, for both `home` and `workspaceRoot` |
 | `isAgentsMarketplaceFile(candidate)` | `packages/paths/src/workspace.ts:183` | predicate matching the last three path segments |
@@ -210,8 +215,10 @@ record (`packages/paths/src/workspace-state.ts:36`) rooted at `<global>/state/wo
 | `diagnosticsDir` | `<root>/local/diagnostics` | `packages/paths/src/workspace-state.ts:180` |
 | `memoryMachineryRoot` | `<root>/memory` | `packages/paths/src/workspace-state.ts:181` |
 | `plansLockDir` | `<root>/plans` | `packages/paths/src/workspace-state.ts:182` |
+| `pluginDataRoot` | `<root>/plugin-data` | `WorkspaceStatePaths.pluginDataRoot`, `workspaceStatePaths` |
 | `promptHistoryFile` | `<root>/local/prompt-history` | `packages/paths/src/workspace-state.ts:183` |
 | `codeConfigFile` | `<root>/local/code.json` | `packages/paths/src/workspace-state.ts:184` |
+| `environmentSelectionFile` | `<root>/local/environment.json` | `packages/paths/src/workspace-state.ts:195` |
 | `runTempDir(executionId)` | `<root>/local/runs/<ownerSegment(executionId)>/tmp` | `WorkspaceStatePaths.runTempDir`, `workspaceStatePaths` |
 | `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts:185` |
 | `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts:186` |
@@ -223,6 +230,16 @@ record (`packages/paths/src/workspace-state.ts:36`) rooted at `<global>/state/wo
 
 Predicates paired with the builders above: `isMonitorSidecar(name)` (`packages/paths/src/workspace-state.ts:122`)
 and `isSpillFile(name)` (`packages/paths/src/workspace-state.ts:140`).
+
+The `.agents` accessors do not share one blanket write policy. Standalone skills and marketplace
+documents are read-only authored inputs. The managed global plugin lifecycle may mutate exactly one
+directory below a global `agentsPluginsDir`, while both workspace plugin inventories are
+repository-owned. Persistent portable-plugin data is source-qualified below `pluginDataRoot`, never
+written into `.agents/plugins` or `.clarvis/plugins`. Production:
+`packages/kernel/src/adapters/filesystem/plugin-repository.ts` and
+`packages/kernel/src/plugins/plugin-runtime.ts`. Test:
+`packages/paths/tests/architecture/agents-read-only.test.ts` and
+`packages/kernel/tests/unit/plugin-runtime.test.ts`.
 
 Ensure functions: `ensureWorkspaceStateDir(root?, opts?)` (`packages/paths/src/workspace-state.ts:206`) and
 `ensureWorkspaceLocalDir(root?, opts?)` (`packages/paths/src/workspace-state.ts:224`) both `mkdirSync` with
@@ -355,7 +372,7 @@ confirmed by the absence of `zod` from its dependencies (`package.json`, section
 
 `<ws>/.clarvis` top level, exhaustively enumerated by the allow-list a kernel test drives every
 real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
-`guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
+`environments`, `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts:34-45`, INV-192).
 
 `WORKSPACE_GITIGNORE` content, seeded verbatim (`packages/paths/src/ensure.ts:33`):
@@ -377,17 +394,17 @@ hand-edited file with the seeded template. Production: `ensureWorkspaceDir` and 
 ### 3.2 The global tree
 
 `<global>` = `$CLARVIS_HOME` or `<home>/.clarvis` (`packages/paths/src/roots.ts:71-87`). Beneath it:
-operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `plugins/`,
-`hook-trust.json`, `workspace-trust.json`, `skills/`, `workflows/`, `guard-judge.md`,
+operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `plugins/`, `environments/`,
+`workspace-trust.json`, `skills/`, `workflows/`, `guard-judge.md`,
 `memory-policy.md`, `auth.json`, `auth-key.json`), and generated state under `state/`
-(`sessions/`, `traces/`, `workflows/` [records], `code.json`, private remote-MCP OAuth credentials)
+(`sessions/`, `traces/`, `workflows/` [records], `environment.json`, `code.json`, private remote-MCP OAuth credentials)
 and `cache/` (`models-dev.json`)
 — see the table in §2.4.
 
 ### 3.3 Per-workspace machine state tree
 
 `<global>/state/workspaces/<segment>/`, where `segment = ownerSegment(ownerFromWorkspace(root))`
-(`packages/paths/src/workspace-state.ts:157-159,173`). Under it: `local/` (prompt history, `code.json`, `diagnostics/`,
+(`packages/paths/src/workspace-state.ts:157-159,173`). Under it: `local/` (prompt history, `code.json`, `environment.json`, `diagnostics/`,
 monitor sidecars/logs/exits, shell spills, tool-output spills), `memory/` (the wiki's machinery —
 delegated to [memory-wiki-store](../capabilities/memory-store.md)), `plans/` (lockfiles — delegated to plan's own spec), and
 `owners/<seg>/{memory,plans}` for a multi-owner deployment. "Nothing here is seeded with a
@@ -395,6 +412,20 @@ delegated to [memory-wiki-store](../capabilities/memory-store.md)), `plans/` (lo
 (`packages/paths/src/workspace-state.ts:33-34`). Confirmed present at runtime by the kernel test:
 `inState.some((rel) => rel.startsWith("memory/.state/"))` and `"memory/.history/"`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts:159-164`).
+
+Environment definitions are authored content in the global/workspace trees; their global and
+per-workspace selections are generated state. This split makes workspace definitions shareable
+without making repository checkout an activation action. The format and precedence belong to
+[`hosts/environments.md`](../hosts/environments.md). Production: `GlobalPaths.environmentsDir`,
+`GlobalPaths.environmentSelectionFile`, `WorkspacePaths.environmentsDir`, and
+`WorkspaceStatePaths.environmentSelectionFile`. The kernel materializes the global authored
+catalog on first list but deliberately does not materialize the workspace authored catalog during
+a read; that lifecycle is owned by `missingDefinitionCatalog` and `list` in
+`packages/kernel/src/environments/environment-manager.ts`. Test:
+`packages/paths/tests/component/paths.test.ts:52-70`, `:113`,
+`packages/paths/tests/component/workspace-state.test.ts:106`, and
+`packages/kernel/tests/integration/environment-manager.test.ts` ("materializes an empty global
+catalog without writing into the workspace").
 
 ### 3.4 Owner-id and segment encoding
 

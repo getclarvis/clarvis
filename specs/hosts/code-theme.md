@@ -479,15 +479,15 @@ its transitions are defined in `adapters/memory-pressure.ts`, outside this docum
 
 ## 5. Invariants
 
-1. **INV-247 (owned).** Fourteen specifically named source files
+1. **INV-247 (owned).** Thirteen specifically named source files
    (`src/adapters/code-config.ts`, `src/adapters/guard-mode.ts`, `src/adapters/session-store.ts`,
    `src/adapters/settings.ts`, and ten config-view `.tsx` files —
    `AgentsPanel.tsx`, `DoctorView.tsx`, `MarketplaceBrowser.tsx`, `McpBrowser.tsx`,
-   `PluginBrowser.tsx`, `RunControlsPanel.tsx`, `SandboxConfigPanel.tsx`, `ThemeView.tsx`,
+   `RunControlsPanel.tsx`, `SandboxConfigPanel.tsx`, `ThemeView.tsx`,
    `WorkflowsHub.tsx`, `view-host.tsx`) contain **zero** non-ASCII characters (codepoint `> 0x7f`)
    outside comments. Production files: `views/config/ThemeView.tsx` (in this document's scope) plus the
-   thirteen listed above (mostly owned by sibling documents, listed here because the rule spans all
-   fourteen as one set). Test: `packages/code/tests/architecture/ascii-source-boundary.test.ts:29-34`, list at
+   twelve listed above (mostly owned by sibling documents, listed here because the rule spans all
+   thirteen as one set). Test: `packages/code/tests/architecture/ascii-source-boundary.test.ts`, list at
    `:4-19`. The practical consequence for this document: `ThemeView.tsx` may render a glyph only by
    calling `glyph(name)`/`borderChars()` from `theme/glyphs.ts` — never a literal Unicode character —
    confirmed against the source (§2/§4 above): every glyph reference in `ThemeView.tsx` goes

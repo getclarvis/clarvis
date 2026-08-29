@@ -1,6 +1,6 @@
 # The transport-agnostic kernel to UI contract
 
-> Implemented at `packages/protocol/src/**` (18 files) plus
+> Implemented at `packages/protocol/src/**` (19 files) plus
 > `packages/kernel/src/transport/operations.ts` as the consumer table. Every claim below is anchored
 > to a file and line. Open questions are collected in the final section.
 
@@ -26,10 +26,10 @@ arrays, records and nested interfaces of the same kind; the sole escape hatches 
 fields explicitly documented as such, e.g. `KernelError.details` at `packages/protocol/src/common.ts:105`).
 
 The package achieves its "transport-agnostic" claim not just by convention but by construction: it
-declares 165 non-reexport type-level exports across its 17 modules — 129 `export interface`
-declarations (`grep -cE "^export interface\b" packages/protocol/src/*.ts`) plus 36 `export type <Name>
+declares 186 non-reexport type-level exports across its 18 sibling modules — 145 `export interface`
+declarations (`grep -cE "^export interface\b" packages/protocol/src/*.ts`) plus 41 `export type <Name>
 = ...` aliases (e.g. `packages/protocol/src/common.ts:11`'s `Scope`, `packages/protocol/src/runs.ts:117`'s `RunStatus`, `packages/protocol/src/tasks.ts:3`'s
-`TaskStageDto`) — and `packages/protocol/src/index.ts:12-28` re-exports all 17 sibling modules with `export type *`.
+`TaskStageDto`) — and `packages/protocol/src/index.ts:12-29` re-exports all 18 sibling modules with `export type *`.
 TypeScript erases the whole surface at compile time — the package produces **zero runtime values**,
 confirmed independently below (§7).
 
@@ -37,15 +37,16 @@ confirmed independently below (§7).
 
 ### 2.1 Module list
 
-All 18 source files, each opened directly:
+All 19 source files, each opened directly:
 
 | File | Lines | Owns |
 |---|---|---|
-| `index.ts` | 28 | Barrel: `export type *` from the 17 modules below |
+| `index.ts` | 29 | Barrel: `export type *` from the 18 modules below |
 | `common.ts` | 109 | `Scope`, `Principal`, `ProjectRef`, `WorkspaceRef`, `Pagination`/`Page`, `CursorPagination`/`CursorPage`, `Timestamp`, `JsonSchema`, `KernelErrorCode`, `KernelError`, `Unsubscribe` |
-| `runs.ts` | 802 | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (38-variant union), messages, usage, guard/memory/plans modes, elicitation types |
+| `runs.ts` | 805 | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (38-variant union), messages, usage, Environment identity, guard/memory/plans modes, elicitation types |
 | `config.ts` | 490 | `ConfigService`, `SettingsData`/`SettingsView` (incl. `WorkspaceTrustVerdict`, `known_grants`), the `SandboxConfig`/`SandboxInspection` doctor cluster, `SettingsRepairPlan` (2-variant union), `AgentSummary`/`AgentDoc`/`AgentOverlay`/`AgentBudget`, context docs — see §3.11/§3.12 |
-| `plugins.ts` | 128 | `PluginService`, `PluginView`, `PluginContributions`, `PluginHookReview` |
+| `plugins.ts` | 128 | `PluginService`, `PluginView`, `PluginContributions`, atomic install/lifecycle DTOs |
+| `environments.ts` | 250 | `EnvironmentService`, exact inventory and plugin/skill references, definitions, composition previews, resolved snapshots, deltas, diagnostics, deletion, and persisted run identity |
 | `secrets.ts` | 31 | `SecretService` |
 | `models.ts` | 82 | `ModelCatalogService`, `ModelCatalog`, `CatalogProvider`, `CatalogModel` |
 | `provider-auth.ts` | 43 | token-free subscription schemes, states, device authorization and `ProviderAuthService` |
@@ -54,17 +55,17 @@ All 18 source files, each opened directly:
 | `plans.ts` | 197 | `PlansService`, `PlanDocumentDto`, `PlanTaskDto`, `PlanRef` |
 | `workflows.ts` | 101 | `WorkflowsService`, `WorkflowNode`, `WorkflowSummary`/`WorkflowDetail` |
 | `skills.ts` | 104 | `SkillsService`, `SkillSummary`, `SkillProvenance`, `SkillPresentation` |
-| `sessions.ts` | 121 | `SessionService`, `Session`, `SessionSummary`, `SessionTurn` |
+| `sessions.ts` | 126 | `SessionService`, `Session`, `SessionSummary`, `SessionTurn` and their Environment snapshot identity |
 | `tasks.ts` | 223 | `TasksService`, all `Task*Dto` shapes, `ActiveTaskRequestDto`/`ActiveTaskBindingDto` |
 | `storage.ts` | 62 | `StorageService`, bounded inventory DTOs and cleanup request/result shapes |
 | `transport.ts` | 68 | `KernelTransport`, `KernelRequestOptions`, `KernelAbortSignal` |
-| `client.ts` | 91 | `KernelClient`, `KernelCapabilities`, `ConnectOptions` |
+| `client.ts` | 94 | `KernelClient`, `KernelCapabilities`, `ConnectOptions` |
 
 (`packages/protocol/src/index.ts` — one `export type *` line per module above.)
 
 ### 2.2 `KernelClient` — the object a UI programs against
 
-Defined in `packages/protocol/src/client.ts`. Aggregates 4 readonly fields, 14 named services and one method:
+Defined in `packages/protocol/src/client.ts`. Aggregates 4 readonly fields, 15 named services and one method:
 
 | Member | Type | Line |
 |---|---|---|
@@ -75,8 +76,9 @@ Defined in `packages/protocol/src/client.ts`. Aggregates 4 readonly fields, 14 n
 | `runs` | `RunService` | `packages/protocol/src/client.ts:62` |
 | `config` | `ConfigService` | `packages/protocol/src/client.ts:64` |
 | `plugins` | `PluginService` | `packages/protocol/src/client.ts:66` |
-| `secrets` | `SecretService` | `packages/protocol/src/client.ts:68` |
-| `models` | `ModelCatalogService` | `packages/protocol/src/client.ts:70` |
+| `environments` | `EnvironmentService` | `packages/protocol/src/client.ts:68` |
+| `secrets` | `SecretService` | `packages/protocol/src/client.ts:70` |
+| `models` | `ModelCatalogService` | `packages/protocol/src/client.ts:72` |
 | `providerAuth` | `ProviderAuthService` | `packages/protocol/src/client.ts` (`KernelClient.providerAuth`) |
 | `files` | `WorkspaceService` | `packages/protocol/src/client.ts:72` |
 | `memory` | `MemoryService` | `packages/protocol/src/client.ts:74` |
@@ -100,7 +102,7 @@ any of the three, so all three have been removed. The wire's own `CLARVIS_WIRE_V
 function — `ConnectOptions` is a shape a transport-specific connector elsewhere accepts; the type
 alone lives here.
 
-### 2.3 The 14 services, method by method
+### 2.3 The 15 services, method by method
 
 Every signature below is the one declared in its file.
 
@@ -163,12 +165,37 @@ copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 | Method | Signature | Line |
 |---|---|---|
 | `list` | `() => Promise<PluginView[]>` | `packages/protocol/src/plugins.ts:93` |
-| `install` | `(url: string, subdir?: string) => Promise<PluginView>` | `packages/protocol/src/plugins.ts:105` |
-| `update` | `(name: string) => Promise<PluginView>` | `packages/protocol/src/plugins.ts:113` |
-| `uninstall` | `(name: string) => Promise<void>` | `packages/protocol/src/plugins.ts:120` |
-| `hooks` | `() => Promise<PluginHookReview[]>` | `packages/protocol/src/plugins.ts:123` |
-| `approveHook` | `(plugin: string, fingerprint: string) => Promise<void>` | `packages/protocol/src/plugins.ts:125` |
-| `revokeHook` | `(plugin: string, fingerprint: string) => Promise<void>` | `packages/protocol/src/plugins.ts:127` |
+| `install` | `(url, subdir?, target?: { source }) => Promise<PluginView>` | `PluginService.install` |
+| `update` | `(ref: PluginRef) => Promise<PluginView>` | `PluginService.update` |
+| `uninstall` | `(ref: PluginRef) => Promise<void>` | `PluginService.uninstall` |
+
+#### `EnvironmentService` (`packages/protocol/src/environments.ts`, symbol `EnvironmentService`)
+
+| Method | Signature | Line |
+|---|---|---|
+| `list` | `() => Promise<EnvironmentDefinitionView[]>` | `EnvironmentService.list` |
+| `current` | `() => Promise<ResolvedEnvironment>` | `EnvironmentService.current` |
+| `get` | `(ref: EnvironmentRef) => Promise<ResolvedEnvironment>` | `EnvironmentService.get` |
+| `inventory` | `() => Promise<EnvironmentInventory>` | `EnvironmentService.inventory` |
+| `preview` | `(ref, { selection_scope }) => Promise<EnvironmentPreview>` | `EnvironmentService.preview` |
+| `previewClear` | `(scope: EnvironmentSelectionScope) => Promise<EnvironmentPreview>` | `EnvironmentService.previewClear` |
+| `previewComposition` | `(input: EnvironmentCompositionInput) => Promise<EnvironmentCompositionPreview>` | `EnvironmentService.previewComposition` |
+| `select` | `(ref, { selection_scope, preview_token, approve_workspace? }) => Promise<EnvironmentApplyResult>` | `EnvironmentService.select` |
+| `clearSelection` | `(scope, { preview_token }) => Promise<EnvironmentApplyResult>` | `EnvironmentService.clearSelection` |
+| `applyComposition` | `(input, { preview_token, approve_workspace? }) => Promise<EnvironmentCompositionApplyResult>` | `EnvironmentService.applyComposition` |
+| `create` | `(input: EnvironmentDefinitionInput) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.create` |
+| `update` | `(input: EnvironmentDefinitionInput & { expected_revision }) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.update` |
+| `delete` | `(ref, { expected_revision }) => Promise<void>` | `EnvironmentService.delete` |
+| `clone` | `(source, target) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.clone` |
+
+The service selects already-installed inventory and has no install operation. `inventory` exposes
+all exact inactive composer candidates. `preview` and
+`previewClear` return the exact entering/leaving extension surface plus a single-use token;
+`preview` also names the intended persisted selection scope. `select` and `clearSelection` bind the
+persisted mutation to that preview. `previewComposition`/`applyComposition` bind a complete
+definition and its intended selection to the same reviewed authored/effective fingerprints. The full behavioral and
+trust contract is owned by
+[Extension Environments](environments.md).
 
 #### `SecretService` (`packages/protocol/src/secrets.ts:13-31`)
 
@@ -501,7 +528,7 @@ on the same part rather than separate variants.
 | `RunUsage` | `{ iterations; elapsed_ms; input_tokens?; output_tokens?; cached_tokens?; by_agent?: PerAgentUsage[]; warnings? }` | `packages/protocol/src/runs.ts:145-158` |
 | `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message } }` | `packages/protocol/src/runs.ts:161-171` |
 | `RunSummary` | `{ execution_id; owner?; status; created_at; ended_at? }` | `packages/protocol/src/runs.ts:174-186` |
-| `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; active_task?: ActiveTaskBindingDto; recovery?: RunRecovery` | `packages/protocol/src/runs.ts:207-226` |
+| `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; active_task?: ActiveTaskBindingDto; environment?: EnvironmentRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts:235-255` |
 
 `PerAgentUsage.role`'s `"vision"` member is not an agent: its own doc comment calls it "the engine's
 image-reading pre-pass, one completion on a model no agent runs on" (`packages/protocol/src/runs.ts:129-131`) — the same
@@ -509,6 +536,11 @@ escape-hatch shape as `capability_event`'s open string (§5 invariant 4), applie
 rather than to the event union. `RunUsage.by_agent` is optional because "a live run's final result may
 report per-agent detail... instead" of the flat totals (`packages/protocol/src/runs.ts:149-150`), which are themselves
 "present on a stored run (`get`)" but optional on a live result.
+
+`EnvironmentRunRef` is deliberately only `{ id, fingerprint }`. `RunDetail.environment`,
+`SessionTurn.environment`, and `SessionSummary.last_environment` retain that identity without
+serializing a definition, settings, or secrets (`packages/protocol/src/environments.ts:134-138`,
+`packages/protocol/src/runs.ts:249-250`, `packages/protocol/src/sessions.ts:43-44`, `:91-92`).
 
 ### 3.9 Elicitation types (`runs.ts`)
 
@@ -615,7 +647,11 @@ executables: string[] }` — `hooks` is "count of hook entries (not their names)
 "concrete commands this plugin would run... pre-formatted for display" (`packages/protocol/src/plugins.ts:25,33-38`).
 `PluginView.display_name`/`short_description` (`packages/protocol/src/plugins.ts:53-62`) are documented as "display data
 only. A plugin cannot widen what it is allowed to do by describing itself well: trust stays with the
-install, the enable list and the hook reviews" (`packages/protocol/src/plugins.ts:56-58`).
+process-pinned Environment and workspace trust boundary" (`packages/protocol/src/plugins.ts`,
+`PluginView.display_name`).
+`PluginRef` is the strict `{ scope: "global"|"workspace", source: "agents"|"clarvis", name }`
+identity shared by lifecycle, activation, and Environment DTOs; `PluginView.source`
+reports the same filesystem convention and `install_source` is separately reserved for Git origin.
 
 `ModelCost` (`packages/protocol/src/models.ts:9-18`): `{ input: number; output: number; cache_read?: number;
 cache_write?: number }` — four price-per-token fields. `CatalogProvider.needs_base_url: boolean`
@@ -681,7 +717,7 @@ The following are derived directly from this package's own source and tests.
 
 1. **The package's public surface is exhaustively type-only: every export is `interface`/`type`, and
    every sibling module is re-exported with `export type *`.**
-   Production: `packages/protocol/src/index.ts:12-28` (17 `export type *` lines).
+   Production: `packages/protocol/src/index.ts:12-29` (18 `export type *` lines).
    Test/enforcement: `tooling/checks/coverage.ts:323-330`'s `findUnmeasuredSources` calls
    `looksExecutionFree` (`tooling/checks/coverage.ts:297-305`) on every module of a
    `TYPE_ONLY_PACKAGES` member (`tooling/checks/coverage.ts:55`, containing only `"protocol"`) and
@@ -703,12 +739,12 @@ The following are derived directly from this package's own source and tests.
    consumer's own `verbatimModuleSyntax` setting, if any, rejects mixing a type-only import as a
    value import, or fail silently at bundling since there is nothing to import).
 
-3. **`KernelClient` aggregates exactly 14 named services, not more or fewer.**
+3. **`KernelClient` aggregates exactly 15 named services, not more or fewer.**
    Production: `packages/protocol/src/client.ts` — `runs`, `config`, `plugins`, `secrets`, `models`, `providerAuth`, `files`, `memory`,
-   `plans`, `workflows`, `skills`, `sessions`, `tasks`, `storage` (14 fields, plus 4
+   `plans`, `workflows`, `skills`, `sessions`, `tasks`, `storage`, `environments` (15 fields, plus 4
    readonly identity fields and `close()`).
-   Test: `packages/protocol/tests/contract/public-contract.fixture.ts:178-196` constructs a literal
-   `satisfies KernelClient` naming every one of the 14 services plus `capabilities`/`project`/
+   Test: `packages/protocol/tests/contract/public-contract.fixture.ts:176-210` constructs a literal
+   `satisfies KernelClient` naming every one of the 15 services plus `capabilities`/`project`/
    `workspace`/`close` — a fixture that would fail to typecheck (and thus fail `bun run test:contract`,
    which is literally `tsc -p tsconfig.json`, `packages/protocol/package.json:26`) if a service were
    missing or an extra one were required. The same fixture file separately compile-pins `RunHandle`,
@@ -716,8 +752,8 @@ The following are derived directly from this package's own source and tests.
    (`packages/protocol/tests/contract/public-contract.fixture.ts:89-164`, §3.6) and `SettingsRepairPlan`/`CreateTaskDto` as single literals
    (`packages/protocol/tests/contract/public-contract.fixture.ts:63-68`, `:70-75`) — five further interfaces get compile-time pinning beyond the
    `KernelClient` aggregate and the lone `RunEvent` variant this invariant and invariant 4 discuss.
-   Also pinned from the consumer side: `packages/kernel/src/transport/operations.ts:21-36` defines
-   `KernelServices` as a `Pick<KernelClient, ...>` naming the same 14 service keys
+   Also pinned from the consumer side: `packages/kernel/src/transport/operations.ts:21-37` defines
+   `KernelServices` as a `Pick<KernelClient, ...>` naming the same 15 service keys
    (minus the 4 identity fields, which are not "services").
 
 4. **`RunEvent` is closed to exactly 38 named variants; an open/unknown capability event is carried
@@ -760,6 +796,17 @@ The following are derived directly from this package's own source and tests.
    declarations in two files; unpinned by a test in this package (the CAS mechanics are plan-package
    territory — see `specs/hosts/protocol.md` §8 delegation note and the sibling plan-capability document).
 
+9. **Environment selection and composition are preview-bound, while execution history carries only
+   its minimal identity.** `EnvironmentService.select`, `.clearSelection`, and
+   `.applyComposition` require `preview_token`; composition and definition updates require an exact
+   expected revision, and `EnvironmentRunRef` contains only `id` and `fingerprint`.
+   Production: `EnvironmentRunRef`, `EnvironmentCompositionInput`, and `EnvironmentService` in
+   `packages/protocol/src/environments.ts`. Test:
+   `packages/protocol/tests/contract/public-contract.fixture.ts:176-210` compile-pins the service on
+   `KernelClient`; runtime behavior is pinned by
+   `packages/kernel/tests/integration/environment-manager.test.ts` and owned by
+   [Extension Environments](environments.md#5-invariants).
+
 ## 6. Failure modes and degradation
 
 This package defines no error *handling* — it defines the vocabulary a kernel is expected to return
@@ -775,6 +822,8 @@ errors in, and documents on individual methods where a specific code applies:
 | A workflow leader failed | `workflow_run_failed`'s `error?: { code; message }` | `packages/protocol/src/runs.ts:492` |
 | A run was rebuilt from a damaged crash journal | `RunDetail.recovery?: RunRecovery` — `skipped_lines` and `synthesized_tool_calls` counts, "present ... only when something was actually lost or synthesized, so its absence means the record is intact" | `packages/protocol/src/runs.ts:188-204`, `:221-225` |
 | A settings scope file exists but fails to parse/validate | `SettingsSource.error?: string` — "the UI shows this instead of silently treating the scope as empty" | `packages/protocol/src/config.ts:193-197` |
+| An Environment selection or definition is invalid | `ResolvedEnvironment.status: "invalid"` plus typed `EnvironmentIssue[]`; no fallback is represented | `packages/protocol/src/environments.ts:55-76`, `:116-132` |
+| An Environment reference is missing or a workspace executable surface is untrusted | `status: "degraded"` plus the exact `missing_plugin`, `missing_skill`, or `workspace_untrusted` issue | `packages/protocol/src/environments.ts:55-76` |
 | An agent config file's frontmatter fails to parse | `AgentDoc.malformed?: string` — "the `frontmatter` above is then the lenient fallback (`{}`), not the file's real content" | `packages/protocol/src/config.ts:323-331` |
 | An agent config file overlaying a shipped agent is unusable | `AgentOverlay.status: "rejected"` + `reason` — "the shipped default runs unchanged" | `packages/protocol/src/config.ts:274-290` |
 | A repository's `settings.json` asked for fields it may not set on its own authority | `SettingsView.withheld_workspace_fields?: readonly string[]` | `packages/protocol/src/config.ts:211-220` |
@@ -799,8 +848,8 @@ Two properties the package states about *degradation of fidelity* rather than er
 Nothing. `packages/protocol/package.json` has no `dependencies`/`devDependencies`/
 `optionalDependencies`/`peerDependencies` key at all (`packages/protocol/package.json:1-33`, read in
 full — no such key appears). Its own `.ts` files import nothing from any other package; every
-`import type` among its 18 files (`packages/protocol/src/client.ts:9-22`, `packages/protocol/src/runs.ts:8-11`, `packages/protocol/src/config.ts:8`, `packages/protocol/src/memory.ts:16`,
-`packages/protocol/src/sessions.ts:14-15`, `packages/protocol/src/tasks.ts:1`, `packages/protocol/src/workflows.ts:14-15`, `packages/protocol/src/skills.ts:10`) points at a sibling module
+`import type` among its 19 files (`packages/protocol/src/client.ts:9-24`, `packages/protocol/src/runs.ts:8-12`, `packages/protocol/src/config.ts:8`, `packages/protocol/src/environments.ts:10-11`, `packages/protocol/src/memory.ts:16`,
+`packages/protocol/src/sessions.ts:14-16`, `packages/protocol/src/tasks.ts:1`, `packages/protocol/src/workflows.ts:14-15`, `packages/protocol/src/skills.ts:10`) points at a sibling module
 inside `packages/protocol/src/`. `common.ts` is the one exception: as the vocabulary root, it imports
 nothing at all (`grep -n "import" packages/protocol/src/common.ts` returns no matches) — every other
 type in the package is built from what `common.ts` itself declares.
@@ -845,8 +894,8 @@ on the engine" as one design, not two.
   method-name → operation dispatch, the wire codec for `RunEvent` — is explicitly delegated by this
   document's own scope statement to [hosts/kernel-transport.md](kernel-transport.md) (`specs/hosts/kernel-transport.md`,
   referenced but not read, per the delegation boundary this document was given). `operations.ts` was read
-  only as far as needed to confirm the 14-service `KernelServices` `Pick` and the `runs.start`
-  exclusion (`packages/kernel/src/transport/operations.ts:21-36`, `:147`) — its full method-table content is that sibling document's
+  only as far as needed to confirm the 15-service `KernelServices` `Pick` and the `runs.start`
+  exclusion (`packages/kernel/src/transport/operations.ts:21-37`, `:147`) — its full method-table content is that sibling document's
   territory.
 - **Whether any hosted/multi-tenant kernel actually exists yet** that would make `Principal`,
   `auth?: string` on `ConnectOptions`, or the "hosted kernel" language throughout the doc comments

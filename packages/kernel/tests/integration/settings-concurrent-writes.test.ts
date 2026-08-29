@@ -52,7 +52,9 @@ describe("ConfigStore.mutateSettings — real cross-process concurrent writers",
     const lastIteration = ITERATIONS_PER_WORKER - 1;
     expect(onDisk.default_model).toBe(`w0/iter-${lastIteration}`);
     expect(onDisk.marketplaces).toEqual([`https://example.com/w1-iter-${lastIteration}.git`]);
-    expect(onDisk.enabledPlugins).toEqual([`w2-iter-${lastIteration}`]);
+    expect(onDisk.enabledPlugins).toEqual([
+      { scope: "global", source: "clarvis", name: `w2-iter-${lastIteration}` },
+    ]);
     expect(onDisk.default_reasoning_effort).toBeDefined();
   });
 });

@@ -7,8 +7,9 @@ state live on disk.
 
 The directory vocabulary, atomic-write family, local leases, and shared Git repository-environment
 filter are specified in
-[`foundations/paths.md`](../../specs/foundations/paths.md). The shared `.agents` read-only seam is
-specified in [`cross-cutting/agent-interop.md`](../../specs/cross-cutting/agent-interop.md).
+[`foundations/paths.md`](../../specs/foundations/paths.md). The shared `.agents` interoperability
+seam and its component-specific ownership rules are specified in
+[`cross-cutting/agent-interop.md`](../../specs/cross-cutting/agent-interop.md).
 
 Nothing else in the monorepo spells `".clarvis"` or `".agents"`. An architecture test in this
 package (`tests/architecture/invariant.test.ts`) enforces that, scanning every package's `src/`
@@ -74,9 +75,13 @@ st.diagnosticsDir; //             ~/.clarvis/state/workspaces/ws_<sha256>/local/
 
 const g = globalPaths(); //     $CLARVIS_HOME ?? ~/.clarvis
 g.settingsFile; //              …/settings.json
+g.pluginsDir; //                …/plugins (Clarvis-native global plugin inventory)
+g.pluginDataRoot; //            …/state/plugin-data (persistent runtime data)
 g.subscriptionsFile; //         …/subscriptions.json (renewable subscription credentials)
 g.mcpOAuthFile; //              …/state/mcp-oauth.json (remote MCP registrations and tokens)
 g.tracesDir; //                 …/state/traces
+g.environmentsDir; //           …/environments (operator-authored definitions)
+g.environmentSelectionFile; //  …/state/environment.json (operator-wide default)
 ```
 
 Two environment variables override the roots: `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`.
@@ -89,7 +94,7 @@ removed rather than deprecated.
 
 `<ws>/.clarvis` holds what a human authors or reads plus one explicitly ignored Git-owned checkout
 root. `settings.json`, `agents/`, `skills/`,
-`plugins/`, `workflows/` and `guard-judge.md` are the workspace's own configuration and belong in its
+`plugins/`, `environments/`, `workflows/` and `guard-judge.md` are the workspace's own configuration and belong in its
 history; `plans/` and `memory/` are generated Markdown the user is expected to open mid-run.
 `worktrees/` contains operator-requested linked checkouts anchored in the primary worktree and is
 always excluded by `.clarvis/.gitignore` before Git creates a checkout.
@@ -99,14 +104,28 @@ history, the UI's `code.json`, bounded opt-in diagnostics, per-run temporary roo
 wiki's `.history`/`.journal`/`.state`/`.lock`, and the plan lockfiles. The segment is
 `ownerSegment(ownerFromWorkspace(root))`, the same composition `state/traces` and `state/sessions`
 already use, so one workspace's generated data all lands under one name.
+The workspace's active Environment selection is also local machinery under that `local/` tree, so
+switching Environments never dirties the repository.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
-`keys.json`, `subscriptions.json`, plugins and their trust records, `guard-judge.md`, `auth.json` — and nests only what a
+`keys.json`, `subscriptions.json`, plugins, reusable Environment definitions and their trust records, `guard-judge.md`, `auth.json` — and nests only what a
 user never edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above),
 `cache/`, `exports/`. A `config/` layer was tried and removed: it made the global tree disagree with
 the workspace one, where `settings.json` and `agents/` have always sat at the root. This physical
 layout stays stable; operator inventory classifies it logically rather than moving files into a new
 hierarchy.
+
+`.agents` is not one uniformly read-only tree. Standalone skills and marketplace documents remain
+foreign/user-authored inputs, while `.agents/plugins/<name>/` is a first-class plugin inventory
+beside `.clarvis/plugins/<name>/`. `agentsPluginsDirs()` returns its global and workspace roots;
+managed global installs may target either global convention, and both workspace plugin roots remain
+repository-owned rather than lifecycle-managed by the UI. Persistent `PLUGIN_DATA` never enters an
+installed checkout: global instances use `<global>/state/plugin-data/<source>/<name>/`, and
+workspace instances use that workspace's machine-local `plugin-data/<source>/<name>/` state tree.
+
+Definition and selection ownership is specified in
+[`hosts/environments.md`](../../specs/hosts/environments.md): authored definitions live in the
+global/workspace roots, while global and per-workspace choices live in generated state.
 
 **The separation is enforced by the type, not by convention.** `WorkspacePaths` has no key naming
 `local/`, a monitor file, a spill, prompt history or `code.json` — they were _removed_ rather than

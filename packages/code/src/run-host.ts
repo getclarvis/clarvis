@@ -69,7 +69,7 @@ export interface RunHostDeps {
   sessionStore: SessionStore;
   history: PromptHistory;
   client: Pick<KernelRunClient, "startRun" | "steer" | "compact" | "getRun" | "files"> &
-    Partial<Pick<KernelRunClient, "context">>;
+    Partial<Pick<KernelRunClient, "context" | "currentEnvironment">>;
   elicit: Pick<ElicitSlot, "cancelPending">;
   owner: string;
   project: string;
@@ -247,6 +247,13 @@ function recoveryNotice(recovery: RunRecovery): string {
   return `partial record — this turn was rebuilt from a damaged journal after a crash: ${parts.join(", ")}. The run happened; this record of it is incomplete.`;
 }
 
+/** Human-sized SHA-256 prefix without repeating the algorithm label. */
+function fingerprintPrefix(fingerprint: string): string {
+  return fingerprint.startsWith("sha256:")
+    ? fingerprint.slice("sha256:".length, "sha256:".length + 8)
+    : fingerprint.slice(0, 8);
+}
+
 function foldedPrefixNotice(turns: number): string {
   return `${turns} earlier turn${turns === 1 ? " was" : "s were"} folded from this live view to protect memory. Use /export to read the persisted transcript.`;
 }
@@ -367,6 +374,15 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   function priceFor(model: string): CatalogCost | undefined {
     return deps.priceFor(model);
   }
+
+  const boundSessionDeps = {
+    store: sessionStore,
+    owner,
+    project,
+    workspace: workspaceId,
+    priceFor,
+    ...(client.currentEnvironment === undefined ? {} : { environment: client.currentEnvironment }),
+  };
 
   /**
    * Apply one run event to the transcript and the workflow projection.
@@ -683,10 +699,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     }
     if (!session) {
       loadEpoch += 1;
-      session = createSession(
-        { store: sessionStore, owner, project, workspace: workspaceId, priceFor },
-        { profile },
-      );
+      session = createSession(boundSessionDeps, { profile });
     }
     const sess = session;
     const executionId = "exec_" + crypto.randomUUID();
@@ -838,10 +851,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const profile = deps.activeProfile();
     if (!session) {
       loadEpoch += 1;
-      session = createSession(
-        { store: sessionStore, owner, project, workspace: workspaceId, priceFor },
-        { profile: profile || undefined },
-      );
+      session = createSession(boundSessionDeps, { profile: profile || undefined });
     }
     const sess = session;
     const executionId = "exec_" + crypto.randomUUID();
@@ -891,10 +901,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     deps.setActiveProfile(profile);
     loadEpoch += 1;
     sessionTask = { id: ref.id, provider_key: ref.provider_key, mode: "work" };
-    session = createSession(
-      { store: sessionStore, owner, project, workspace: workspaceId, priceFor },
-      { profile },
-    );
+    session = createSession(boundSessionDeps, { profile });
     const sess = session;
     const executionId = "exec_" + crypto.randomUUID();
     const message =
@@ -947,10 +954,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     }
     if (!session) {
       loadEpoch += 1;
-      session = createSession(
-        { store: sessionStore, owner, project, workspace: workspaceId, priceFor },
-        { profile: deps.activeProfile() || undefined },
-      );
+      session = createSession(boundSessionDeps, { profile: deps.activeProfile() || undefined });
     }
     const sess = session;
     const finish = store.beginLocalBash(cmd);
@@ -1267,21 +1271,34 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     }
     if (epoch !== loadEpoch) return;
     sessionTask = resumed.activeTask;
-    session = createSession(
-      { store: sessionStore, owner, project, workspace: workspaceId, priceFor },
-      {
-        meta,
-        messages: resumed.messages,
-        profile: meta.profile,
-        historyComplete: resumed.degraded.length === 0,
-      },
-    );
+    session = createSession(boundSessionDeps, {
+      meta,
+      messages: resumed.messages,
+      profile: meta.profile,
+      historyComplete: resumed.degraded.length === 0,
+    });
     history.seed(seeds);
     if (meta.profile) deps.setActiveProfile(meta.profile);
+    const previousEnvironment = meta.lastEnvironment ?? meta.turns.at(-1)?.environment;
+    const currentEnvironment = client.currentEnvironment?.();
+    const environmentChanged =
+      previousEnvironment !== undefined &&
+      currentEnvironment !== undefined &&
+      (previousEnvironment.id !== currentEnvironment.id ||
+        previousEnvironment.fingerprint !== currentEnvironment.fingerprint);
+    if (environmentChanged) {
+      store.appendNotice(
+        `Environment changed since the newest persisted turn: ${previousEnvironment.id} (${fingerprintPrefix(previousEnvironment.fingerprint)}) -> ${currentEnvironment.id} (${fingerprintPrefix(currentEnvironment.fingerprint)}).`,
+        "warn",
+      );
+    }
     setStatus([
       `resumed ${meta.turns.length} turns`,
       ...(foldedTurns.length
         ? ([" ", { mark: "separator" }, ` ${foldedTurns.length} folded`] satisfies StatusLine)
+        : []),
+      ...(environmentChanged
+        ? ([" ", { mark: "separator" }, " Environment changed"] satisfies StatusLine)
         : []),
       ...(resumed.degraded.length
         ? ([

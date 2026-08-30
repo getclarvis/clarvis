@@ -128,6 +128,7 @@ import {
   type AppProps,
 } from "./views/App.tsx";
 import type { BootShell } from "./boot-shell.ts";
+import { resolveStartupComposerHandoff } from "./views/StartupComposer.tsx";
 
 let workspace = workspaceRoot();
 let environmentSelector: string | undefined;
@@ -438,7 +439,12 @@ async function runApp(
   const dev = !!process.env.CLARVIS_CODE_DEV;
   const asciiFlag = mode.ascii;
   const platform = createPlatform(renderer, { dev });
+  const releaseBootRendererLifecycle = bootShell.handoffRendererLifecycle(() =>
+    platform.shutdown("signal:SIGINT"),
+  );
+  let bootShutdownRequested = false;
   platform.onShutdown(() => {
+    bootShutdownRequested = true;
     releaseTerminal();
   });
   /**
@@ -801,7 +807,7 @@ async function runApp(
   } catch (e) {
     reportBootFailure(e);
     conn.set({ phase: "failed", detail: errorText(e) });
-    await runFatalBoot({
+    const recovered = await runFatalBoot({
       renderer,
       error: e,
       retry: async () => {
@@ -814,15 +820,14 @@ async function runApp(
         }
       },
       quit: () => {
-        try {
-          renderer.destroy();
-        } catch {}
-        releaseTerminal();
-        process.exit(1);
+        releaseBootRendererLifecycle();
+        platform.shutdown("boot-failed").catch(() => undefined);
       },
     });
+    if (!recovered) return;
     conn.set({ phase: "connecting" });
   }
+  if (bootShutdownRequested) return;
   bootPhase = "profiles";
   const bootProfiles = await diagnosticAsync("boot.profiles", () =>
     runClient.listProfiles(bootAgentSummaries),
@@ -830,6 +835,7 @@ async function runApp(
     reportBootFailure(error);
     throw error;
   });
+  if (bootShutdownRequested) return;
   void runBootstrapGit(activeWorkspacePath, ["branch", "--show-current"])
     .then((result) => {
       setActiveBranch(result.stdout.trim() || undefined);
@@ -1312,9 +1318,16 @@ async function runApp(
   };
 
   const startupInput = bootShell.takeStartupInput();
-  const startupSubmission = startupInput.submission;
+  const activeStartupProfile = workspaceAdapters.agents.active();
+  const startupHandoff = resolveStartupComposerHandoff(
+    startupInput,
+    activeStartupProfile.length > 0 && workspaceAdapters.agents.isRunnable(activeStartupProfile),
+  );
+  const startupSubmission = startupHandoff.submission;
   if (startupSubmission !== undefined) {
     detachObserved("startup_submit", () => runHost.submitTurn(startupSubmission));
+  } else if (startupInput.submission !== undefined) {
+    runHost.setRunStatus("no backend yet");
   }
   await diagnosticAsync("boot.app-mount", async () => {
     const appProps: AppProps = {
@@ -1325,12 +1338,13 @@ async function runApp(
       session: sessionControls,
       fleet,
       backend: backendConn,
-      ...(startupInput.submission === undefined && startupInput.draft.length > 0
-        ? { initialDraft: startupInput.draft }
-        : {}),
+      ...(startupHandoff.initialDraft === undefined
+        ? {}
+        : { initialDraft: startupHandoff.initialDraft }),
     };
     await bootShell.mount(() => <App {...appProps} />);
   });
+  releaseBootRendererLifecycle();
   diagnosticEvent("app.render.mounted", { mode: mode.kind }, "info");
   diagnosticEvent(
     "app.boot.painted",

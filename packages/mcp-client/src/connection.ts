@@ -24,6 +24,7 @@ import type {
   MCPClientHandle,
 } from "./client.ts";
 import { MCPAuthorizationPendingError } from "./oauth.ts";
+import { MCPBackgroundConnectDeferredError } from "./errors.ts";
 import {
   appendResourceDescriptors,
   catalogResult,
@@ -150,7 +151,11 @@ export async function openConnection({
   try {
     handle = await connect();
   } catch (err) {
-    if (err instanceof MCPAuthorizationPendingError) throw err;
+    if (
+      err instanceof MCPAuthorizationPendingError ||
+      err instanceof MCPBackgroundConnectDeferredError
+    )
+      throw err;
     if (err instanceof MCPConnectionFailedError) throw err;
     throw new MCPConnectionFailedError(server.name, server.transport, errorText(err));
   }
@@ -174,13 +179,14 @@ export async function openConnection({
         logger: log,
       });
     if (err instanceof MCPAuthorizationPendingError) {
-      detachObserved(() => err.completion.then(close, close), {
+      const completion = err.completion.finally(close);
+      detachObserved(() => completion, {
         operation: "mcp_oauth_pending_connection_close",
         workspace: scope.workspace,
         dedupeKey: `mcp_oauth_pending_connection_close\0${scope.workspace}\0${server.name}`,
         logger: log,
       });
-      throw err;
+      throw new MCPAuthorizationPendingError(completion);
     }
     await close();
     throw new MCPConnectionFailedError(

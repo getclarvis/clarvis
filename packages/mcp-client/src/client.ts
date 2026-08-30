@@ -506,6 +506,16 @@ type AuthorizedRequest = <T>(request: () => Promise<T>, signal?: AbortSignal) =>
 
 const authorizedRequests = new WeakMap<MCPClientHandle, AuthorizedRequest>();
 
+/** Carry an existing late-authorization boundary onto a manager-owned handle
+ * wrapper without exposing the boundary itself. */
+export function aliasMCPRequestAuthorization(
+  source: MCPClientHandle,
+  alias: MCPClientHandle,
+): void {
+  const request = authorizedRequests.get(source);
+  if (request !== undefined) authorizedRequests.set(alias, request);
+}
+
 /** Run an SDK request through a production handle's late-authorization boundary. */
 export function runMCPRequest<T>(
   handle: MCPClientHandle,

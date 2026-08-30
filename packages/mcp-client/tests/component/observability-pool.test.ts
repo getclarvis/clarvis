@@ -164,6 +164,30 @@ describe("connection pool observability", () => {
     await pool.closeAll();
   });
 
+  it("does not report a deferred background connect as queued", async () => {
+    const recording = createRecordingLogger();
+    let release!: (handle: MCPClientHandle) => void;
+    const pending = new Promise<MCPClientHandle>((resolve) => {
+      release = resolve;
+    });
+    const pool = manager(() => pending, recording, {
+      maxConnections: 2,
+      maxParallelConnects: 1,
+    });
+
+    const first = pool.acquire({ server: TOOL, owner: OWNER });
+    await Promise.resolve();
+    await expect(
+      pool.acquire({ server: TOOL, owner: OWNER, authorizationWait: "background" }),
+    ).rejects.toMatchObject({ code: "mcp_background_connect_deferred" });
+    expect(recording.all("mcp.pool.connect_queued")).toHaveLength(0);
+
+    release(makeHandle());
+    const lease = await first;
+    await lease.release();
+    await pool.closeAll();
+  });
+
   it("says nothing about a queued connect when the logger is above debug", async () => {
     const recording = createRecordingLogger("warn");
     const releases: Array<() => void> = [];

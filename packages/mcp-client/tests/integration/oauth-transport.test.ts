@@ -9,7 +9,9 @@ import type { McpServerConfig } from "@clarvis/capability";
 import {
   createMCPAuthorizationCoordinator,
   createMCPClientFactory,
+  createConnectionManager,
   openConnection,
+  type MCPClientFactory,
   type MCPAuthorizationCoordinator,
 } from "@clarvis/mcp-client";
 
@@ -485,7 +487,7 @@ describe("remote MCP OAuth transport", () => {
     expect(fixture.authenticatedMcpRequests).toBeGreaterThanOrEqual(4);
   });
 
-  it("finishes a challenge raised by tool catalog discovery", async () => {
+  it("finishes a catalog challenge through the manager even when the factory freezes its handle", async () => {
     const fixture = await oauthMcpFixture("tools/list");
     cleanups.push(() => fixture.close());
     const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-catalog-")));
@@ -508,19 +510,26 @@ describe("remote MCP OAuth transport", () => {
     });
     cleanups.push(() => authorization.close());
 
-    const opened = await openConnection({
-      scope: SCOPE,
-      server: { name: "oauth-catalog", transport: "http", url: fixture.url },
-      factory: createMCPClientFactory({}, { authorization }),
+    const authorizedFactory = createMCPClientFactory({}, { authorization });
+    const frozenFactory: MCPClientFactory = async (server, relay, options) =>
+      Object.freeze(await authorizedFactory(server, relay, options));
+    const manager = createConnectionManager({
+      workspace: SCOPE.workspace,
+      factory: frozenFactory,
       connectTimeoutMs: 2_000,
       callTimeoutMs: 2_000,
       resourcesEnabled: false,
       healthPingIntervalMs: 0,
     });
+    const opened = await manager.acquire({
+      server: { name: "oauth-catalog", transport: "http", url: fixture.url },
+      owner: SCOPE.owner,
+    });
 
     expect(opened.tools).toEqual([]);
     expect(fixture.tokenExchanges).toBe(1);
-    await opened.conn.close();
+    await opened.release();
+    await manager.closeAll();
   });
 
   it("finishes a challenge raised by a request after catalog discovery", async () => {

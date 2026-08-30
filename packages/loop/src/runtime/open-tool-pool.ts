@@ -1,5 +1,9 @@
 import type { ElicitationRelay } from "@clarvis/mcp-client";
-import { MCPAuthorizationPendingError, MCPConnectionFailedError } from "@clarvis/mcp-client";
+import {
+  MCPAuthorizationPendingError,
+  MCPBackgroundConnectDeferredError,
+  MCPConnectionFailedError,
+} from "@clarvis/mcp-client";
 import type { ConnectionManager, Lease } from "@clarvis/mcp-client";
 import { poolToolNames } from "./tools/mcp-registry.ts";
 import { sanitizeErrorMessage } from "@clarvis/capability";
@@ -86,9 +90,14 @@ export async function openToolPool(input: {
     return { ok: false, response: { status: "cancelled", result: "", usage: emptyUsage() } };
   }
 
-  const terminalFailure = failed.find(
-    (entry) => !(entry.reason instanceof MCPAuthorizationPendingError),
-  );
+  const everyFailureIsTerminal =
+    failed.length > 0 &&
+    failed.every(
+      (entry) =>
+        !(entry.reason instanceof MCPAuthorizationPendingError) &&
+        !(entry.reason instanceof MCPBackgroundConnectDeferredError),
+    );
+  const terminalFailure = everyFailureIsTerminal ? failed[0] : undefined;
   if (successes.length === 0 && request.servers.length > 0 && terminalFailure !== undefined) {
     const err = terminalFailure.reason;
     if (err instanceof MCPConnectionFailedError) {

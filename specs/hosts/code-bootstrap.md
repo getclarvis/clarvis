@@ -182,7 +182,7 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | | `registerAppCommands` | `(deps: AppCommandDeps) => AppCommandWiring` | 173 |
 | `src/views/App.tsx` | `AppShell` / `AppRunControls` / `AppSessionControls` / `AppFleet` / `AppBackend` / `AppProps` | see §2.5 | 98, 111, 142, 156, 174, 190 |
 | | `App` | `(props: AppProps) => JSX.Element` | 213 |
-| `src/views/FatalBoot.tsx` | `runFatalBoot` | `({ renderer, error, retry, quit }) => Promise<void>` | 63-68 |
+| `src/views/FatalBoot.tsx` | `runFatalBoot` | `({ renderer, error, retry, quit }) => Promise<boolean>`; `true` means retry recovery, `false` means terminal renderer teardown | `runFatalBoot` |
 | `src/views/Splash.tsx` | `BANNER` | `string[]`, 8 rows of ASCII art | 8-17 |
 | | `FIRST_RUN_SPLASH_MIN_COLUMNS` / `FIRST_RUN_SPLASH_MIN_ROWS` | `76` / `24` | named constants |
 | | `firstRunSplashFits` | `(width: number, height: number) => boolean` | `firstRunSplashFits` |
@@ -543,25 +543,28 @@ terminal result."
 
 | # | Step | Production |
 |---|---|---|
-| 1 | the thin entry validates TTY/SSH/ASCII policy, creates OpenTUI and mounts a focused `StartupComposer` | `runInteractive` in `packages/code/src/index.tsx`; `packages/code/src/views/StartupComposer.tsx` |
+| 1 | the thin entry validates TTY/SSH/ASCII policy, creates OpenTUI, immediately installs bootstrap teardown ownership, and mounts a focused `StartupComposer` | `runInteractive` in `packages/code/src/index.tsx`; `installBootRendererLifecycle` in `packages/code/src/adapters/renderer-bootstrap.ts`; `packages/code/src/views/StartupComposer.tsx` |
 | 2 | after renderer idle, capture `shellElapsedMs`; start the runtime import and, for ordinary `run`, the workspace foundation in parallel | `runInteractive`; `prepareStartupFoundation` in `packages/code/src/startup-foundation.ts` |
-| 3 | the runtime opens diagnostics, records `app.boot.begin` plus the captured `app.boot.shell-painted`, and preflights resume/continue | `runApp` in `packages/code/src/runtime.tsx` |
+| 3 | the runtime opens diagnostics, records `app.boot.begin` plus the captured `app.boot.shell-painted`, and preflights resume/continue while the bootstrap owner remains active; it then creates the complete platform and transfers Ctrl+C ownership while retaining exit/key teardown through full-app mount | `BootShell.handoffRendererLifecycle`; `runApp` in `packages/code/src/runtime.tsx` |
 | 4 | use the prepared `WorkspaceClientManager` or create one; establish immutable workspace identity and construct stores/config/history/capabilities | `runApp`; `WorkspaceClientManager.create` |
 | 5 | load the foundation without reading models.dev, then list profiles, resolve the branch and bind the run host | `runApp`, `loadFoundation` |
-| 6 | take the startup snapshot exactly once; an Enter submission starts immediately through `runHost.submitTurn`, before full-app mount | `StartupComposerState.take`; `startup_submit` in `runApp` |
-| 7 | replace the startup root with `<App>`; an unsent draft becomes `initialDraft`; emit mounted/painted diagnostics | `BootShell.mount`; `AppProps.initialDraft` |
+| 6 | take the startup snapshot exactly once; an Enter submission starts immediately through `runHost.submitTurn` before full-app mount only when the active profile is runnable | `StartupComposerState.take`; `resolveStartupComposerHandoff`; `startup_submit` in `runApp` |
+| 7 | replace the startup root with `<App>`; an unsent draft or a submission that had no runnable profile becomes exact `initialDraft`; release bootstrap key/exit ownership only after mount; emit mounted/painted diagnostics | `BootShell.mount`; `AppProps.initialDraft`; `releaseBootRendererLifecycle` |
 | 8 | after `app.boot.painted`, release memory recovery and Markdown warm-up; resume/continue restore saved content after parser warm-up | `runApp` |
 
 `StartupComposer` is not a decorative progress placeholder. In `run` mode it owns a real focused
 OpenTUI input, records content outside Solid/renderable ownership, and accepts Enter once. Its
 `Queue a task…` marker is distinct from the complete app's `◆ Clarvis` and `New task…` markers.
-Replacing the root cannot lose an unsent draft or an accepted task. Resume/continue render the same
+Replacing the root cannot lose an unsent draft or an accepted task: the latter either starts on a
+runnable profile or returns as exact composer text. Resume/continue render the same
 bounded frame with input disabled. Production: `createStartupComposerState` and `StartupComposer` in
 `packages/code/src/views/StartupComposer.tsx`, `BootShell` in `packages/code/src/boot-shell.ts`, and
 the handoff in `packages/code/src/index.tsx` and `packages/code/src/runtime.tsx`. Test:
 `packages/code/tests/integration/splash-render.test.tsx`,
 `packages/code/tests/integration/app-shell-render.test.tsx`, and
-`packages/code/tests/architecture/architecture-boundary.test.ts` (submission before app mount).
+`packages/code/tests/architecture/architecture-boundary.test.ts` (submission before app mount and
+bootstrap teardown ownership through mount), plus
+`packages/code/tests/unit/renderer-bootstrap-lifecycle.test.ts`.
 
 The manager created at step 6 receives `environmentSelector`, and its reconnect path retains that
 launch override. While one is active, persisted Environment selection mutations return a conflict
@@ -656,29 +659,37 @@ mounting its provider picker") and `packages/code/tooling/artifact/smoke.ts`.
 
 ### 4.8 `runFatalBoot` — the boot-failure screen
 
-`packages/code/src/views/FatalBoot.tsx:63-115`. It mounts on the **bare** renderer via
-`engine.attach` + `_render` with a manual `RendererContext.Provider` (`:72-82`), because it is
+`packages/code/src/views/FatalBoot.tsx` (`runFatalBoot`). It mounts on the **bare** renderer via
+`engine.attach` + `_render` with a manual `RendererContext.Provider`, because it is
 "Rendered before the keymap/theme exist — the token signals carry usable defaults, and keys are bound
 straight off the renderer" (`:10-11`).
 
-| State | Key | Effect | Line |
+| State | Key | Effect | Production symbol |
 |---|---|---|---|
-| idle | `r` | `setBusy(true)`, call `retry()` | 101-103 |
-| idle | `ctrl+c` | call `quit()` (expected to exit); `q`, Escape and all other keys are ignored | 97-101 |
-| idle | anything else | ignored | 101 |
-| busy | any | ignored (`if (busy()) return`) | 96 |
-| retry resolved | — | `close(true)`: unhook keypress + destroy listener, hide, dispose the Solid root, resolve | 85-93, 104 |
-| retry rejected | — | `setMessage(errorText(e))`, `setBusy(false)` — the screen stays up for another attempt | 105-109 |
-| renderer destroyed | — | `close(false)` — resolve without clearing | 94, 113 |
+| idle | `r` | `setBusy(true)`, call `retry()` | `runFatalBoot` (`onKey`) |
+| idle | `ctrl+c` | call `quit()` (expected to exit); `q`, Escape and all other keys are ignored | `runFatalBoot` (`onKey`) |
+| idle | anything else | ignored | `runFatalBoot` (`onKey`) |
+| busy | `ctrl+c` | prevent propagation and remain on the retry screen | `runFatalBoot` (`onKey`) |
+| busy | anything else | ignored | `runFatalBoot` (`onKey`) |
+| retry resolved | — | `close(true)`: unhook keypress + destroy listener, hide, dispose the Solid root, resolve | `runFatalBoot` (`close`, `onKey`) |
+| retry rejected | — | `setMessage(errorText(e))`, `setBusy(false)` — the screen stays up for another attempt | `runFatalBoot` (`onKey`) |
+| renderer destroyed | — | `close(false)` — resolve `false` without clearing so the surrounding boot returns instead of continuing during shutdown | `runFatalBoot` (`onDestroy`), `runtime.tsx` (`recovered`) |
 
 `runtime.tsx`'s `retry` closure disposes the failed run client first, then re-runs `bootFoundation()`,
 re-reporting any failure before rethrowing so the screen sees it (`packages/code/src/runtime.tsx`,
-`bootFoundation`); `quit`
-destroys the renderer inside a `try`/empty-`catch`, releases the terminal and exits 1 (`:791-797`).
+`bootFoundation`); `quit` releases the temporary boot renderer lifecycle and delegates to the
+platform's `boot-failed` shutdown path, which restores the renderer once and exits 1
+(`packages/code/src/runtime.tsx`, `packages/code/src/adapters/platform.ts`).
+Its key listener is prepended ahead of the temporary bootstrap Ctrl+C owner. It prevents propagation
+for Ctrl+C in both states: idle calls the fatal `quit`, while busy keeps the documented inert retry
+state instead of falling through to platform shutdown. Test:
+`packages/code/tests/integration/fatal-boot-render.test.tsx` (`fatal boot owns Ctrl+C ahead of
+bootstrap teardown and ignores it during retry`).
 
-`packages/code/tests/integration/fatal-boot-render.test.tsx:74-101` additionally pins that the root is
-disposed on success — after `settled`, a freshly rendered `<text>APP_MOUNTED</text>` is the only thing
-on screen and the renderer's `destroy` listener count is back to `rootsBefore + 1`.
+`packages/code/tests/integration/fatal-boot-render.test.tsx` ("fatal boot: disposes its root on
+success so the App mounts alone") additionally pins that the root is disposed on success — after
+`settled`, a freshly rendered `<text>APP_MOUNTED</text>` is the only thing on screen and the
+renderer's `destroy` listener count is back to `rootsBefore + 1`.
 
 ### 4.9 Launch-time worktree selection
 
@@ -1244,14 +1255,17 @@ Production: `packages/code/src/views/App.tsx:343, 377, 396, 1324`.
 Pinned: `packages/code/tests/integration/app-shell-render.test.tsx:415-427`.
 
 **INV-CB-33.** `runFatalBoot` accepts `r` repeatedly until one retry succeeds, ignores keys while a
-retry is in flight, and routes only `ctrl+c` to `quit`; `q` and Escape are inert.
-Production: `packages/code/src/views/FatalBoot.tsx:95-110`.
-Pinned: `packages/code/tests/integration/fatal-boot-render.test.tsx:12-48` and `:50-72`.
+retry is in flight, and routes idle `ctrl+c` to `quit`; `q` and Escape are inert. It resolves `false`
+when renderer teardown wins, and `runApp` treats that result as terminal so profile boot cannot
+continue while shutdown drains. Production: `packages/code/src/views/FatalBoot.tsx`
+(`runFatalBoot`, `onKey`, `onDestroy`) and `packages/code/src/runtime.tsx` (`recovered`). Pinned:
+`packages/code/tests/integration/fatal-boot-render.test.tsx` (retry, key ownership, and terminal
+renderer-teardown cases) and `packages/code/tests/architecture/architecture-boundary.test.ts`.
 
 **INV-CB-34.** `runFatalBoot` disposes its Solid root on success, so the application mounts alone
-rather than on top of it.
-Production: `packages/code/src/views/FatalBoot.tsx:85-93` (`dispose()` at `:91`).
-Pinned: `packages/code/tests/integration/fatal-boot-render.test.tsx:74-101`.
+rather than on top of it. Production: `packages/code/src/views/FatalBoot.tsx` (`runFatalBoot`,
+`close`). Pinned: `packages/code/tests/integration/fatal-boot-render.test.tsx` ("fatal boot:
+disposes its root on success so the App mounts alone").
 
 **INV-CB-35.** `PageFrame`'s content region clips, so an over-tall or absolutely-positioned child can
 never composite over the title row.
@@ -1324,6 +1338,24 @@ exposes global-state and managed-temporary deletion only through explicit `--cle
 `packages/code/tests/unit/development-install.test.ts` (launcher execution, ownership, cleanup, and
 shell-delegation cases).
 
+**INV-CB-45.** Renderer teardown has an owner from the first post-creation instruction through the
+complete keymap mount. Exit, every platform-supported catchable OpenTUI default signal, raw Ctrl+C,
+and a failing resume/continue preflight cannot leave raw mode or the alternate screen behind;
+`SIGKILL` is inherently uncatchable. Ownership transfers to the platform without a gap, and
+FatalBoot has priority over the temporary Ctrl+C owner. A startup submission starts only when the
+active profile is runnable, otherwise its exact bytes become the complete composer's draft.
+The first platform shutdown hook latches boot shutdown before releasing the terminal; `runApp`
+checks that latch before starting and immediately after awaiting profile discovery, so neither
+startup submission nor complete-app mount can begin after shutdown wins the boot race.
+Production: `installBootRendererLifecycle` in
+`packages/code/src/adapters/renderer-bootstrap.ts`, `runInteractive` in
+`packages/code/src/index.tsx`, `resolveStartupComposerHandoff` in
+`packages/code/src/views/StartupComposer.tsx`, and `runApp` in
+`packages/code/src/runtime.tsx`. Test:
+`packages/code/tests/unit/renderer-bootstrap-lifecycle.test.ts`,
+`packages/code/tests/integration/{fatal-boot-render,splash-render}.test.tsx`, and
+`packages/code/tests/architecture/architecture-boundary.test.ts`.
+
 ## 6. Failure modes and degradation
 
 | Situation | Handling | Exit / effect | Cite |
@@ -1344,8 +1376,8 @@ shell-delegation cases).
 | `--print` receives an elicitation | auto-declined, one stderr line per request | run continues | `packages/code/src/runtime.tsx` (`runPrintMode`) |
 | `--print` event stream throws mid-iteration | swallowed; `drained` still resolves | the run's `done` still settles | `packages/code/src/cli-mode.ts:98-100` |
 | Tree-sitter Markdown warm-up fails | `markdown.preload.failed` at `warn`; the already-usable shell continues unhighlighted | degrade | `packages/code/src/runtime.tsx` (`markdownPreload`) |
-| `loadFoundation` throws on boot | `boot.failed` with the phase, connection → `failed`, `runFatalBoot` retry screen | interactive retry; `q` exits 1 | `packages/code/src/runtime.tsx` (`loadFoundation`, `bootFoundation`) |
-| A retry inside `runFatalBoot` throws | message replaced on the same screen, `busy` cleared, screen stays | retryable | `packages/code/src/views/FatalBoot.tsx:105-109` |
+| `loadFoundation` throws on boot | `boot.failed` with the phase, connection → `failed`, `runFatalBoot` retry screen | interactive retry; Ctrl+C exits 1, while `q` is inert | `packages/code/src/runtime.tsx` (`loadFoundation`, `bootFoundation`) |
+| A retry inside `runFatalBoot` throws | message replaced on the same screen, `busy` cleared, screen stays | retryable | `packages/code/src/views/FatalBoot.tsx` (`runFatalBoot`, `onKey`) |
 | `boot.profiles` throws | reported, then rethrown outside the fatal-foundation retry | `clarvis failed: …`, `process.exitCode = 1` | `packages/code/src/runtime.tsx` (`runApp`); `packages/code/src/index.tsx` (`main`) |
 | Models catalogue unavailable after a catalog surface requests it | `catalog.unavailable` at `warn` with `source: "kernel" \| "snapshot"`; `liveCatalog` answers empty on every accessor | picker empty, boot is unaffected | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`, `liveCatalog`) |
 | Worktree branch lookup fails | `worktree.branch.unavailable` at `warn`; header branch stays `undefined` | degrade | `packages/code/src/runtime.tsx` (`runApp`) |

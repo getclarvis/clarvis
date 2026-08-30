@@ -196,9 +196,12 @@ Every interactive cold boot first paints a parser-free, focused `StartupComposer
 Solid root. Its slash header and wordmark preserve the final screen's visual structure while the
 application chunk and workspace foundation load concurrently. In `run` mode the user can type
 immediately; Enter stores the exact submission outside renderer ownership. As soon as the run host
-exists, that queued task starts before complete-app hydration, and the resulting store/events survive
-the root handoff. An unsent draft is adopted by the full input instead. Resume/continue keep startup
-input locked until their saved session is restored.
+exists with a runnable active profile, that queued task starts before complete-app hydration, and the
+resulting store/events survive the root handoff. If provider/agent setup is not runnable yet, the
+accepted text is restored as the full composer's exact draft instead of disappearing. An unsent draft
+uses the same handoff. Resume/continue keep startup input locked until their saved session is restored.
+If terminal shutdown wins while the foundation or profiles are still loading, a boot latch prevents
+both startup-task admission and complete-app mount after teardown has begun.
 
 The complete `App` replaces the startup root without waiting for the models catalogue or Markdown
 parsers. The startup copy has its own `Queue a task…` readiness marker and intentionally excludes the
@@ -349,7 +352,11 @@ clear the active composer input, close an editor/local detail, or return to the 
 at the root with nothing to clear it does nothing. Escape never enters a repeat timeout, cancels a
 run or quits. Ctrl+C is the exclusive keyboard route for cancellation and shutdown: it cancels an
 active run from any screen, otherwise enters the existing double-Ctrl+C quit gate without clearing
-the draft. Window-local layers never claim Ctrl+C. While a workspace runtime is being replaced, the
+the draft. From the instant the bootstrap renderer enters raw/alternate-screen mode, a lightweight
+lifecycle owner restores it on exit and every platform-supported catchable OpenTUI signal, then
+the platform retains the same ownership; `SIGKILL` is inherently outside this contract. Raw Ctrl+C
+stays owned through complete-keymap mount. The fatal-boot screen takes priority during that interval,
+so idle Ctrl+C exits 1 and Ctrl+C during retry remains inert. Window-local layers never claim Ctrl+C. While a workspace runtime is being replaced, the
 mounted screen stays visible and only unmodified Escape remains interactive; modified Escape,
 every other key and all pointer actions are consumed until replacement settles. Input callbacks already queued during renderer
 teardown are discarded at the keymap host boundary, so a final macOS terminal packet cannot dispatch

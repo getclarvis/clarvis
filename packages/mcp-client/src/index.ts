@@ -101,7 +101,11 @@ export type {
   PoolSharing,
   ConnectionManagerOptions,
 } from "./connection-manager.ts";
-export { isMcpRequestTimeout, isMcpProtocolError } from "./errors.ts";
+export {
+  MCPBackgroundConnectDeferredError,
+  isMcpRequestTimeout,
+  isMcpProtocolError,
+} from "./errors.ts";
 export { toWireToolName, buildRegistry, poolToolNames, selectTools } from "./registry.ts";
 export type { NamespacedRegistry, RegistryEntry, BuildRegistryOptions } from "./registry.ts";
 export { CLIENT_NAME, VERSION } from "./version.ts";

@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import {
   pluginSettingsFragment,
@@ -35,7 +35,9 @@ import {
 import {
   createAgentSkills,
   enumerateResources,
+  readBoundedBytes,
   MAX_SKILL_FILE_BYTES,
+  MAX_SKILL_FILE_CHARS,
   MAX_SKILL_RESOURCE_BYTES,
   MAX_SKILL_RESOURCE_CHARS,
   MAX_SKILL_ROOTS,
@@ -388,27 +390,19 @@ export function createPluginContributions(opts: {
     return out;
   };
 
-  /** Hash one bounded file into a selected plugin's immutable contribution snapshot. */
-  const hashFile = (
-    hash: ReturnType<typeof createHash>,
-    path: string,
-    maxBytes: number,
-    maxChars?: number,
-  ): void => {
-    const before = statSync(path);
-    if (!before.isFile() || before.size > maxBytes) throw new Error("plugin skill file is invalid");
-    const bytes = readFileSync(path);
-    const after = statSync(path);
-    if (
-      bytes.byteLength !== before.size ||
-      after.size !== before.size ||
-      after.mtimeMs !== before.mtimeMs
-    )
-      throw new Error("plugin skill file changed while it was read");
-    if (maxChars !== undefined && bytes.toString("utf8").length > maxChars)
-      throw new Error("plugin skill resource exceeds its character limit");
-    hash.update(bytes);
-  };
+  /** Return the raw-byte digest of one descriptor-bounded snapshot file. */
+  const snapshotFileDigest = (path: string, maxBytes: number, maxChars?: number): string =>
+    `sha256:${createHash("sha256")
+      .update(
+        readBoundedBytes(path, {
+          maxBytes,
+          ...(maxChars === undefined ? {} : { maxChars }),
+          code: "invalid_skill",
+          label: "plugin skill file",
+          logger,
+        }),
+      )
+      .digest("hex")}`;
 
   const skillSurface = (
     plugin: Loadable,
@@ -430,18 +424,35 @@ export function createPluginContributions(opts: {
       return skills
         .listSkills()
         .map((info) => {
-          const hash = createHash("sha256");
-          hash.update(info.name).update("\0manifest\0");
-          hashFile(hash, info.path, MAX_SKILL_FILE_BYTES);
-          for (const resource of enumerateResources(
+          const resources = enumerateResources(
             info.dir,
             skills.config.followSymlinks,
             skills.config,
-          )) {
-            hash.update("\0resource\0").update(resource.rel).update("\0");
-            hashFile(hash, resource.path, MAX_SKILL_RESOURCE_BYTES, MAX_SKILL_RESOURCE_CHARS);
-          }
-          return { name: info.name, digest: `sha256:${hash.digest("hex")}` };
+          ).map((resource) => ({
+            rel: resource.rel,
+            digest: snapshotFileDigest(
+              resource.path,
+              MAX_SKILL_RESOURCE_BYTES,
+              MAX_SKILL_RESOURCE_CHARS,
+            ),
+          }));
+          return {
+            name: info.name,
+            digest: digest({
+              manifest: snapshotFileDigest(info.path, MAX_SKILL_FILE_BYTES, MAX_SKILL_FILE_CHARS),
+              catalog: {
+                name: info.name,
+                description: info.description,
+                metadata: info.metadata,
+                allowed_tools: info.allowedTools,
+                user_invocable: info.userInvocable,
+                catalog_suppressed: info.catalogSuppressed,
+                presentation: info.presentation,
+                defaulted: info.defaulted,
+              },
+              resources,
+            }),
+          };
         })
         .sort((left, right) => left.name.localeCompare(right.name));
     } catch {
@@ -449,10 +460,12 @@ export function createPluginContributions(opts: {
     }
   };
 
+  const unavailableSkillSnapshots = new WeakSet<PluginContributionSnapshot>();
+
   const contributionSnapshot = (plugin: Loadable): PluginContributionSnapshot => {
     const skills = skillSurface(plugin);
     const hooks = plugin.manifest.hooks ?? [];
-    return {
+    const snapshot: PluginContributionSnapshot = {
       ref: plugin.ref,
       digest: digest({
         ref: plugin.ref,
@@ -476,6 +489,10 @@ export function createPluginContributions(opts: {
       hooks: { total: hooks.length },
       capabilityExecutables: Object.keys(plugin.manifest.capabilityExecutables ?? {}).sort(),
     };
+    if (skills.some((skill) => "unavailable" in skill)) {
+      unavailableSkillSnapshots.add(snapshot);
+    }
+    return snapshot;
   };
 
   let pinned:
@@ -564,9 +581,20 @@ export function createPluginContributions(opts: {
     },
 
     skillRoots(enabled) {
-      assertPinnedSelection(enabled);
+      assertPinnedSnapshot(enabled);
+      const selectedLoadables = loadables(enabled);
+      const snapshots =
+        pinned !== undefined && pinned.selection === selectionId(enabled)
+          ? pinned.snapshots
+          : captureSnapshots(selectedLoadables);
+      const snapshotsByRef = new Map(snapshots.map((snapshot) => [refId(snapshot.ref), snapshot]));
       let budget = PLUGIN_SKILL_ROOT_BUDGET;
-      return loadables(enabled).flatMap((p) => {
+      return selectedLoadables.flatMap((p) => {
+        const snapshot = snapshotsByRef.get(refId(p.ref));
+        if (snapshot === undefined || unavailableSkillSnapshots.has(snapshot)) {
+          skipped(p.ref, "skills", "the selected skill surface could not be captured atomically");
+          return [];
+        }
         const declared = skillsDirsOf(p);
         let refused: string | undefined;
         const present = declared.filter((path) => {

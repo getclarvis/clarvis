@@ -35,7 +35,14 @@ import {
   type PluginBootstrapSkill,
   type SkillRootInput,
 } from "@clarvis/loop/host";
-import type { ExecuteRunDeps, HookConfig, Logger, ProviderConfig } from "@clarvis/loop";
+import type {
+  ExecuteRunArgs,
+  ExecuteRunDeps,
+  ExecuteRunOutcome,
+  HookConfig,
+  Logger,
+  ProviderConfig,
+} from "@clarvis/loop";
 import { TraceCleanup, type TraceStore } from "@clarvis/trace";
 import type { GuardConfig } from "@clarvis/loop/host";
 import type { EventStreamOptions } from "./core/event-stream.ts";
@@ -87,6 +94,7 @@ import { SubscriptionManager } from "./subscriptions/manager.ts";
 import { createFileSubscriptionStore } from "./subscriptions/store.ts";
 import { createModelCatalogService } from "./models/model-catalog.ts";
 import { createEnvironmentManager } from "./environments/environment-manager.ts";
+import { withRunLease } from "./runs/run-lease.ts";
 
 /**
  * Options for {@link createFileKernel}: workspace root plus optional env, logging, paths, and key resolution.
@@ -384,6 +392,21 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
     hasActiveRuns: () => environmentRunRefs > 0,
   });
+  const acquireEnvironmentRunLease = (): (() => void) => {
+    environmentManager.assertRunSnapshot();
+    environmentRunRefs += 1;
+    let released = false;
+    return (): void => {
+      if (released) return;
+      released = true;
+      environmentRunRefs = Math.max(0, environmentRunRefs - 1);
+    };
+  };
+  const executeEnvironmentRun = (args: ExecuteRunArgs): Promise<ExecuteRunOutcome> =>
+    withRunLease(acquireEnvironmentRunLease, async () => {
+      const { executeRun } = await import("@clarvis/loop");
+      return await executeRun(args);
+    });
   reportConfigScopes(componentLogger("config"), configStore.readSettings(), pluginContributions);
   const secretStore = createFileSecretStore(
     opts.globalDir !== undefined ? { dir: opts.globalDir } : {},
@@ -792,6 +815,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         // value would be circular. By the time a pass resolves it, `deps` is
         // assigned.
         runDeps: () => depsRef.current,
+        executeRun: executeEnvironmentRun,
         passRunDeps: () => passDepsRef.current,
         loadPolicy: () =>
           loadMemoryPolicy({
@@ -890,16 +914,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       environment: environment.values,
       taskProviderFactory,
       tasksEnabled,
-      acquireRunLease: () => {
-        environmentManager.assertRunSnapshot();
-        environmentRunRefs += 1;
-        let released = false;
-        return () => {
-          if (released) return;
-          released = true;
-          environmentRunRefs = Math.max(0, environmentRunRefs - 1);
-        };
-      },
+      acquireRunLease: acquireEnvironmentRunLease,
       dispose: async (): Promise<void> => {
         cleanup.stop();
         await housekeeping.stop();

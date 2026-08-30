@@ -11,7 +11,11 @@ import {
 } from "./cli-args.ts";
 import { applyAsciiMode } from "./theme/glyphs.ts";
 import { createStartupComposerState, StartupComposer } from "./views/StartupComposer.tsx";
-import { assertInteractiveTTY, buildRendererConfig } from "./adapters/renderer-bootstrap.ts";
+import {
+  assertInteractiveTTY,
+  buildRendererConfig,
+  installBootRendererLifecycle,
+} from "./adapters/renderer-bootstrap.ts";
 import { installTerminalGuard } from "./adapters/terminal-guard.ts";
 import type { BootShell } from "./boot-shell.ts";
 
@@ -24,6 +28,7 @@ async function runInteractive(mode: InteractiveMode): Promise<void> {
   applyAsciiMode(mode.ascii);
   const dev = !!process.env.CLARVIS_CODE_DEV;
   const renderer = await createCliRenderer(buildRendererConfig({ dev }));
+  const rendererLifecycle = installBootRendererLifecycle(renderer);
   const releaseTerminal = installTerminalGuard();
   process.once("exit", releaseTerminal);
   const startupInput = createStartupComposerState();
@@ -44,6 +49,7 @@ async function runInteractive(mode: InteractiveMode): Promise<void> {
       renderer,
       shellElapsedMs: Math.round(process.uptime() * 1000),
       releaseTerminal,
+      handoffRendererLifecycle: (shutdown) => rendererLifecycle.handoff(shutdown),
       takeStartupInput: () => startupInput.take(),
       async mount(nextView): Promise<void> {
         setView(() => nextView);
@@ -61,9 +67,7 @@ async function runInteractive(mode: InteractiveMode): Promise<void> {
     const runtime = await import("./runtime.tsx");
     await runtime.runInteractiveMode(mode, shell, preparedFoundation);
   } catch (error) {
-    try {
-      renderer.destroy();
-    } catch {}
+    rendererLifecycle.destroy();
     releaseTerminal();
     throw error;
   }

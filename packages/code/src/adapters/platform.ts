@@ -5,7 +5,11 @@ import { resolveShell, shellArgs } from "@clarvis/kernel/local";
 import { runClipboardProcess } from "./clipboard-process.ts";
 import { detachObserved } from "../core/tasks.ts";
 import { diagnosticCount, diagnosticEvent } from "../core/diagnostic-events.ts";
-import type { RendererBootstrapOptions } from "./renderer-bootstrap.ts";
+import {
+  rendererTeardownSignals,
+  type RendererBootstrapOptions,
+  type RendererTeardownSignal,
+} from "./renderer-bootstrap.ts";
 import { openPublicUrl } from "./open-public-url.ts";
 export { assertInteractiveTTY, buildRendererConfig } from "./renderer-bootstrap.ts";
 export { openPublicUrl } from "./open-public-url.ts";
@@ -13,7 +17,7 @@ export { openPublicUrl } from "./open-public-url.ts";
 type ClipboardProcessRunner = typeof runClipboardProcess;
 
 type ShutdownReason =
-  "signal:SIGINT" | "signal:SIGTERM" | "signal:SIGHUP" | "user-quit" | "panic" | "tty-lost";
+  `signal:${RendererTeardownSignal}` | "user-quit" | "boot-failed" | "panic" | "tty-lost";
 
 type ShutdownHook = (reason: ShutdownReason) => void | Promise<void>;
 
@@ -217,15 +221,15 @@ function drainStdinUntilQuiet(maxMs: number, quietMs: number): Promise<void> {
  * @param renderer - the active OpenTUI renderer.
  * @param _opts - platform options (currently unused).
  * @returns the {@link Platform} the rest of `code` programs against.
- * @remarks `SIGHUP` is registered only off Windows, which never raises it -
- *   registering it there would install a handler for a signal that cannot
- *   arrive.
+ * @remarks The signal set matches the catchable OpenTUI defaults for the current
+ *   platform. `SIGKILL` remains inherently uncatchable.
  */
 export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}): Platform {
   const hooks = new Set<ShutdownHook>();
   const clipboardControllers = new Set<AbortController>();
   let restored = false;
   let shuttingDown = false;
+  let shutdownFailed = false;
 
   const [themeBg, setThemeBg] = createSignal<ThemeMode>(renderer.themeMode ?? "dark");
   const [capabilityRevision, setCapabilityRevision] = createSignal(0);
@@ -288,15 +292,17 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
   }
 
   async function shutdown(reason: ShutdownReason, err?: unknown): Promise<never> {
+    const failed = reason === "panic" || reason === "boot-failed";
+    shutdownFailed ||= failed;
     if (shuttingDown) {
       restore();
-      process.exit(reason === "panic" ? 1 : 0);
+      process.exit(shutdownFailed ? 1 : 0);
     }
     shuttingDown = true;
     diagnosticEvent(
       "platform.shutdown.begin",
       { reason, ...(err === undefined ? {} : { error: err }) },
-      reason === "panic" ? "error" : "info",
+      failed ? "error" : "info",
     );
     for (const controller of clipboardControllers) controller.abort("platform shutdown");
 
@@ -312,16 +318,14 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
     if (reason !== "panic" && remote) await drainStdinUntilQuiet(DRAIN_MAX_MS, DRAIN_QUIET_MS);
     if (reason === "panic" && err)
       process.stderr.write(String((err as Error)?.stack ?? err) + "\n");
-    process.exit(reason === "panic" ? 1 : 0);
+    process.exit(shutdownFailed ? 1 : 0);
   }
 
   process.on("exit", restore);
   process.on("uncaughtException", (e) => void shutdown("panic", e));
   process.on("unhandledRejection", (e) => void shutdown("panic", e));
-  process.on("SIGINT", () => void shutdown("signal:SIGINT"));
-  process.on("SIGTERM", () => void shutdown("signal:SIGTERM"));
-  if (process.platform !== "win32") {
-    process.on("SIGHUP", () => void shutdown("signal:SIGHUP"));
+  for (const signal of rendererTeardownSignals(process.platform)) {
+    process.on(signal, () => void shutdown(`signal:${signal}`));
   }
 
   return {

@@ -95,8 +95,10 @@ connection manager in `dispose()`.
 Every run acquires remote MCP servers with background browser authorization. Clarvis still opens the
 authorization page, but the current run never waits for a human response: that server is recorded as
 degraded and contributes no tools to the run. Ignoring the page therefore cannot hold model work;
-completing it persists the credential for a later run. A non-OAuth terminal connection failure keeps
-the existing all-servers-failed policy.
+completing it persists the credential for a later run. Saturation of either background connection
+bound degrades the same way without queuing behind a timeout, including a later run while an earlier
+OAuth flow retains capacity. A terminal failure can hard-fail only when
+every declared server failed terminally; any pending/deferred server keeps the empty pool runnable.
 
 `rawBody` is validated into a `RunRequest`; the exact provider, profile, budget
 and orchestration fields are defined by the exported API types. Hosts normally

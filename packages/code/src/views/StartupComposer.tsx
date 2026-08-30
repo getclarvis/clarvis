@@ -12,6 +12,28 @@ export interface StartupComposerSnapshot {
   submission?: string;
 }
 
+/** Exact input disposition when the complete composer replaces the startup shell. */
+export interface StartupComposerHandoff {
+  submission?: string;
+  initialDraft?: string;
+}
+
+/**
+ * Preserve startup input unless the complete runtime can admit its queued submission now.
+ *
+ * @param snapshot - Single-consumer snapshot from the startup composer.
+ * @param runnable - Whether the active profile can start a run in this runtime.
+ * @returns Either one admitted submission or one exact draft for the complete composer.
+ */
+export function resolveStartupComposerHandoff(
+  snapshot: StartupComposerSnapshot,
+  runnable: boolean,
+): StartupComposerHandoff {
+  if (snapshot.submission !== undefined && runnable) return { submission: snapshot.submission };
+  const initialDraft = snapshot.submission ?? snapshot.draft;
+  return initialDraft.length === 0 ? {} : { initialDraft };
+}
+
 /** Host-owned bridge that keeps startup input alive across the root's view replacement. */
 export interface StartupComposerState {
   bind(input: InputRenderable): void;

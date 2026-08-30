@@ -118,6 +118,10 @@ stop with the pyramid open — a touched leaf must ship with each ancestor
 `TOPIC.md` and with `PROFILE.md`. Most runs deserve no change at all.
 Already-indexed run IDs are skipped. Runs without tool calls are still examined:
 user instructions and final answers may contain durable knowledge.
+`CreateMemoryFactoryOptions.executeRun` lets the host wrap every physical pass in its own lifecycle
+admission. The file kernel uses that seam for the same immutable Environment lease as foreground
+runs, including durable retries that begin after the original run handle has closed; an embedder
+that omits it retains the direct loop executor.
 
 When the kernel selects an executable or plugin Memory provider, the same indexing policy runs over
 that provider's serializable tools. Writable providers receive indexing calls through their own

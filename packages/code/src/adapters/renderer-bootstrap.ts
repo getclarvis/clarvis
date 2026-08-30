@@ -1,4 +1,5 @@
-import type { CliRendererConfig } from "@opentui/core";
+import { constants } from "node:os";
+import type { CliRenderer, CliRendererConfig, KeyEvent } from "@opentui/core";
 import { diagnosticCount } from "../core/diagnostic-events.ts";
 
 /** Options that affect the renderer before the application runtime is loaded. */
@@ -8,6 +9,114 @@ export interface RendererBootstrapOptions {
   runtimePlatform?: NodeJS.Platform;
   /** @internal Injectable environment seam for renderer-policy tests. */
   processEnv?: NodeJS.ProcessEnv;
+}
+
+/** Catchable signals OpenTUI owns by default when a host does not replace them. */
+export type RendererTeardownSignal =
+  "SIGINT" | "SIGTERM" | "SIGQUIT" | "SIGABRT" | "SIGHUP" | "SIGPIPE" | "SIGBREAK" | "SIGBUS";
+
+/** Platform-supported catchable signals that must restore the renderer before exit. */
+export function rendererTeardownSignals(
+  platform: NodeJS.Platform,
+): readonly RendererTeardownSignal[] {
+  return platform === "win32"
+    ? ["SIGINT", "SIGTERM", "SIGBREAK"]
+    : ["SIGINT", "SIGTERM", "SIGQUIT", "SIGABRT", "SIGHUP", "SIGPIPE", "SIGBUS"];
+}
+
+function signalExitCode(signal: RendererTeardownSignal): number {
+  return 128 + (constants.signals[signal] ?? 1);
+}
+
+/** Process surface used by the renderer's pre-platform lifecycle owner. */
+export type BootRendererProcess = Pick<NodeJS.Process, "platform" | "once" | "off" | "exit">;
+
+/** Ownership transfer from the lightweight shell to the complete platform. */
+export interface BootRendererLifecycle {
+  /**
+   * Transfer process-signal ownership and retain raw Ctrl+C until the full keymap is mounted.
+   *
+   * @param shutdown - Complete-platform shutdown for a raw Ctrl+C during hydration.
+   * @returns A release for the temporary key and exit listeners.
+   */
+  handoff(shutdown: () => unknown): () => void;
+  /** Restore the renderer immediately when boot fails before ownership transfers. */
+  destroy(): void;
+}
+
+/**
+ * Own renderer teardown from the instant raw mode and the alternate screen exist.
+ *
+ * @param renderer - The newly created renderer, before any runtime import or preflight.
+ * @param host - Injectable process event surface for deterministic lifecycle tests.
+ * @returns The two-phase lifecycle owner transferred to {@link createPlatform} by the boot shell.
+ */
+export function installBootRendererLifecycle(
+  renderer: CliRenderer,
+  host: BootRendererProcess = process,
+): BootRendererLifecycle {
+  const signals = rendererTeardownSignals(host.platform);
+  let phase: "boot" | "platform" | "released" | "destroyed" = "boot";
+  let platformShutdown: (() => unknown) | undefined;
+  const signalHandlers = new Map<RendererTeardownSignal, () => void>();
+
+  const removeSignals = (): void => {
+    for (const [signal, handler] of signalHandlers) host.off(signal, handler);
+    signalHandlers.clear();
+  };
+  const removeKey = (): void => {
+    renderer.keyInput.off("keypress", onKey);
+  };
+  const restore = (): void => {
+    if (phase === "destroyed") return;
+    phase = "destroyed";
+    removeSignals();
+    removeKey();
+    host.off("exit", onExit);
+    try {
+      renderer.destroy();
+    } catch {}
+  };
+  const onExit = (): void => restore();
+  const exitForSignal = (exitCode: number): void => {
+    restore();
+    host.exit(exitCode);
+  };
+  const onKey = (key: KeyEvent): void => {
+    if (key.defaultPrevented || !key.ctrl || key.name !== "c") return;
+    key.preventDefault();
+    key.stopPropagation();
+    if (phase === "platform") {
+      void platformShutdown?.();
+      return;
+    }
+    if (phase === "boot") exitForSignal(130);
+  };
+
+  host.once("exit", onExit);
+  for (const signal of signals) {
+    const handler = (): void => exitForSignal(signalExitCode(signal));
+    signalHandlers.set(signal, handler);
+    host.once(signal, handler);
+  }
+  renderer.keyInput.on("keypress", onKey);
+
+  return {
+    handoff(shutdown) {
+      if (phase !== "boot") return () => undefined;
+      phase = "platform";
+      platformShutdown = shutdown;
+      removeSignals();
+      return (): void => {
+        if (phase !== "platform") return;
+        phase = "released";
+        platformShutdown = undefined;
+        removeKey();
+        host.off("exit", onExit);
+      };
+    },
+    destroy: restore,
+  };
 }
 
 /**

@@ -175,7 +175,9 @@ export async function indexRun(args: IndexRunArgs): Promise<IndexReport> {
   }
 
   const ledger = createTouchedLedger();
-  const { executeRun, generateExecutionId } = await import("@clarvis/loop");
+  const loop = await import("@clarvis/loop");
+  const execute = indexer.executeRun ?? loop.executeRun;
+  const { generateExecutionId } = loop;
   const indexerRunId = generateExecutionId();
   const plan = planPass({
     run,
@@ -189,7 +191,7 @@ export async function indexRun(args: IndexRunArgs): Promise<IndexReport> {
 
   let outcome;
   try {
-    outcome = await executeRun({
+    outcome = await execute({
       rawBody: plan.rawBody,
       owner: indexer.owner,
       deps: plan.deps,

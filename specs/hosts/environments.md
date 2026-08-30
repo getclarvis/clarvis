@@ -168,8 +168,9 @@ invalid because their agents and MCP namespaces would collide. Missing or invali
 in the resolved view as inactive issues; no extension outside the allow-list enters a custom
 Environment.
 
-Standalone skills are inventoried separately in the four established roots. Custom Environments
-emit only selected roots with exact `include` filters; `@clarvis/skills` normalizes that list and
+Standalone skills are inventoried separately in the four established roots. Builtin and custom
+Environments emit only active, atomically captured winners with exact `include` filters; invalid or
+inactive skills never re-enter through a broad root. `@clarvis/skills` normalizes that list and
 filters after manifest resolution, so precedence and manifest-name validation remain unchanged
 (`skillRoots` in `packages/kernel/src/environments/environment-manager.ts`;
 `normalizeInclude`, `packages/skills/src/config.ts:129`; `scanRoot`,
@@ -200,17 +201,20 @@ No state silently substitutes `builtin:default`.
 resolved manifest (including MCP/hook companion semantics), bounded agent files, the raw bytes of
 packaged skill manifests/resources under the skills package's own limits, install record, resolved source revision, and every directly referenced
 package-local MCP, hook, or capability process file's content, size, executable mode, and relative
-path. The process-file surface is capped at 256 files, 8 MiB per file, and 32 MiB per plugin
+path. If any skill in one plugin cannot be captured, that plugin's whole skill-root surface is
+withheld so a constant unavailable sentinel cannot mask sibling drift; independently valid
+non-skill contributions remain. The process-file surface is capped at 256 files, 8 MiB per file, and 32 MiB per plugin
 (`snapshotPluginExecutables`, `snapshot`, and `pin` in `packages/kernel/src/plugins`; `identity` and
 `resolveActive` in `packages/kernel/src/environments/environment-manager.ts`). Ordinary settings,
-MCP, agent and skill-root projections reuse those pinned parsed loadables and perform only an exact
-selection check; they neither rescan nor rehash the whole plugin tree. Immediately before each run
+MCP and agent projections reuse those pinned parsed loadables and perform only an exact selection
+check. Skill-root projections repeat exact selected-content validation at the lazy read boundary.
+Immediately before each run
 lease, `EnvironmentManager.assertRunSnapshot` rehashes all selected plugin and standalone-skill
 bytes. Drift rejects that run with `unavailable` until reconnect, before any executable contribution
 can enter execution under the old fingerprint. Capability executable location retains its own full
-check at the executable boundary. Selected standalone skill digests cover the manifest and every
-bounded resource body; their full drift check likewise occurs at run admission rather than every
-`skillRoots` projection. The fingerprint
+check at the executable boundary. Selected standalone skill digests cover effective catalog
+metadata, the manifest, and every bounded resource body; their full drift check occurs both at run
+admission and every `skillRoots` projection. The fingerprint
 also covers the qualified Environment id, definition revision, status, issues, and applicable trust
 state/fingerprint. Hook definitions are part of the plugin manifest digest, but independent
 hook-approval state is excluded from Environment identity. Selection mutations return
@@ -325,18 +329,25 @@ falls back to builtin.
 ### INV-317 — A kernel uses one immutable resolved snapshot
 
 Definition/selection changes require reconnection; a stale preview cannot authorize different
-bytes, contribution drift is rejected once at every run-admission boundary, and an already running
-kernel retains its original fingerprint. Read-only/control-plane projections use the pinned parse
-and cannot consume drifted bytes. Trust transitions may recompose only at an idle boundary.
+bytes, contribution drift is rejected at every foreground and memory-indexer run-admission boundary,
+and an already running kernel retains its original fingerprint. Exact lazy skill catalog, body, and
+resource reads repeat full selected-content validation rather than falling back to a last-good scan;
+only atomically captured plugin skill surfaces and exact builtin/custom standalone includes reach
+the runtime. Read-only/control-plane projections use the pinned parse and cannot consume drifted bytes. Trust
+transitions may recompose only at an idle boundary.
 
 - **Production:** `PluginContributions.pin`, `assertUnchanged`,
   `snapshotPluginExecutables`, `EnvironmentManager.assertRunSnapshot`,
-  `assertPinnedStandaloneSkills`, pinned `resolveActive`, revision CAS,
+  `assertPinnedStandaloneSkills`, `EnvironmentManager.skillRoots`, `withRunLease`, the memory
+  factory's host executor, pinned `resolveActive`, revision CAS,
   and preview fingerprint comparison in `packages/kernel/src`.
 - **Test:** the stale-preview, global-precedence, contribution-fingerprint, and trust-transition
   cases in `packages/kernel/tests/integration/environment-manager.test.ts`, including process-file
   fingerprint drift; the MCP/hook/capability process-file drift cases in
-  `packages/kernel/tests/integration/plugin-contributions.test.ts`; and the selected lifecycle case
+  `packages/kernel/tests/integration/plugin-contributions.test.ts`, including invalid-sibling
+  withholding; builtin exact-root filtering in `environment-manager.test.ts`; lazy exact-root rejection in
+  `packages/loop/tests/integration/execute-run-entrypoints.test.ts`; the run-lease helper and memory
+  factory executor tests; and the selected lifecycle case
   in `packages/kernel/tests/integration/run-service.smoke.test.ts`.
 
 ### INV-318 — Workspace executable activation participates in workspace trust

@@ -1,7 +1,11 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { BootFrame } from "../../src/views/BootFrame.tsx";
-import { createStartupComposerState, StartupComposer } from "../../src/views/StartupComposer.tsx";
+import {
+  createStartupComposerState,
+  resolveStartupComposerHandoff,
+  StartupComposer,
+} from "../../src/views/StartupComposer.tsx";
 import {
   APP_PAINT_MARKER,
   APP_READY_MARKER,
@@ -131,4 +135,14 @@ test("the startup composer preserves an unsent draft and keeps resume locked", a
   expect(frame).toContain("Restoring session");
   expect(frame).not.toContain(APP_READY_MARKER);
   resume.renderer.destroy();
+});
+
+test("startup handoff submits only to a runnable profile and otherwise restores exact input", () => {
+  const queued = { draft: "queued task", submission: "queued task" };
+  expect(resolveStartupComposerHandoff(queued, true)).toEqual({ submission: "queued task" });
+  expect(resolveStartupComposerHandoff(queued, false)).toEqual({ initialDraft: "queued task" });
+  expect(resolveStartupComposerHandoff({ draft: "unsent draft" }, false)).toEqual({
+    initialDraft: "unsent draft",
+  });
+  expect(resolveStartupComposerHandoff({ draft: "" }, false)).toEqual({});
 });

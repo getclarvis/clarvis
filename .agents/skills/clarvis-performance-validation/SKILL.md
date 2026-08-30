@@ -77,11 +77,21 @@ Use debug lifecycle durations or narrowly instrumented temporary diagnostics to 
 Remove diagnostic changes before handoff. Look first for repeated filesystem walks or hashes when
 cost scales with plugin count. Ordinary projections may reuse a pinned contribution snapshot, but
 run admission must still validate the exact qualified plugin identities and raw bounded skill or
-resource bytes. Metadata-only shortcuts are not an acceptable performance fix.
+resource bytes. Verify that snapshot reads size and read one opened descriptor, enforce both
+manifest byte and character caps, and hash a canonical list of relative paths plus per-file digests.
+Effective sidecar-derived catalog metadata must participate too. Metadata-only shortcuts and raw
+delimiter concatenation are not acceptable performance fixes.
 
-In an isolated fixture, mutate one skill/resource byte after Environment resolution and prove that
-the next run fails closed. This guards against an optimization that silently weakens drift
-detection.
+If one plugin skill cannot be captured within those bounds, confirm that the plugin's complete
+skill-root surface is withheld; a constant unavailable sentinel must never leave valid siblings
+readable under untracked drift. Builtin and custom standalone roots must both use exact `include`
+lists from the admitted snapshot, excluding invalid or inactive skills.
+
+In an isolated fixture, mutate one manifest, sidecar, and resource after Environment resolution.
+Prove that lazy catalog, body, and resource access fails closed immediately and that the next
+foreground run also fails admission. Trigger a durable memory-indexer pass after the foreground
+handle closes and prove it reacquires the same Environment lease. These guard against optimizations
+that silently weaken drift detection outside the obvious foreground boundary.
 
 ## Prove a real run in a PTY
 
@@ -92,10 +102,17 @@ render snapshots alone are insufficient.
 2. Type a unique fixture token and press Enter before the complete-app marker appears.
 3. Verify the exact draft or submission survives the root handoff and starts without a second
    Enter.
-4. Execute a bounded task that uses one installed skill, one working MCP tool, and exactly two
+4. Repeat with no runnable provider/profile and verify an accepted startup submission becomes the
+   complete composer's exact draft rather than disappearing.
+5. Execute a bounded task that uses one installed skill, one working MCP tool, and exactly two
    parallel Clarvis subagents. Make the task read-only unless edits are part of the requested test.
-5. Require both subagents to settle, the MCP result to appear, the fixture token to be preserved,
+6. Require both subagents to settle, the MCP result to appear, the fixture token to be preserved,
    and the parent run to complete.
+
+Also send Ctrl+C and a non-SIGINT catchable signal such as SIGQUIT during the gap between renderer
+creation and complete-app mount. The renderer must restore raw mode/alternate screen exactly once;
+a resume/continue preflight failure must do the same. On FatalBoot, idle Ctrl+C must take the fatal
+exit path while Ctrl+C during an in-flight retry remains inert.
 
 Record timestamps for composer readiness, Environment resolution, kernel readiness, full app,
 submission, first tool call, each subagent, and completion. A synthetic unit test does not replace
@@ -113,6 +130,11 @@ Accept only this behavior:
 - that MCP is inactive for the current run while other tools, skills, and subagents continue;
 - authorization-pending does not consume reconnect budget or trip the MCP circuit breaker;
 - concurrent callers share one pending authorization instead of opening duplicate browsers;
+- an initial pending flow retains both manager limits until completion; a catalog pending flow
+  retains connection capacity through cleanup without rewriting a failed completion as success;
+- once either background connection bound is saturated, later run acquisitions degrade immediately instead
+  of waiting for the connect timeout or consuming another connection slot;
+- a pending/deferred server beside a terminal failure still yields a degraded runnable pool;
 - if the callback later completes, the credential is persisted and a subsequent run can reuse it.
 
 An ignored browser must never keep application boot, tool acquisition, run teardown, or process
@@ -150,6 +172,10 @@ bun run check:graph
 bun run check:harness
 git diff --check
 ```
+
+Include the focused canaries for renderer lifecycle/startup handoff, bounded skill reads and
+canonical snapshot hashing, lazy Environment drift, memory run leases, MCP retained admission, and
+mixed MCP failure policy. Do not rely on the broad suite alone to identify which invariant broke.
 
 Run MCP OAuth integration tests in an environment that permits loopback sockets. Re-run the clean
 and marketplace PTY scenarios against the final artifact, not an earlier intermediate build.

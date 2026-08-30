@@ -18,6 +18,9 @@ import type {
   MCPClientFactory,
   MCPClientHandle,
 } from "./client.ts";
+import { aliasMCPRequestAuthorization } from "./client.ts";
+import { MCPAuthorizationPendingError } from "./oauth.ts";
+import { MCPBackgroundConnectDeferredError } from "./errors.ts";
 import { openConnection } from "./connection.ts";
 import type { OpenedConnection, ConnectionEventSink, PoolScope } from "./connection.ts";
 import { normalizeMcpCloseGraceMs, type ResilientSessionTimer } from "./resilient-session.ts";
@@ -102,7 +105,7 @@ export interface ConnectionManagerOptions {
   logger?: Logger;
   /** Maximum live plus connecting MCP transports. Defaults to 32. */
   maxConnections?: number;
-  /** Maximum connection handshakes in flight. Defaults to 4. */
+  /** Maximum handshakes or retained background authorization completions. Defaults to 4. */
   maxParallelConnects?: number;
   /** Maximum zero-ref shared transports kept warm. Defaults to 8. */
   maxIdleConnections?: number;
@@ -182,6 +185,7 @@ interface InitialHandleTracker {
    * decide whether its connection-capacity slot must stay quarantined. */
   attempt: Promise<MCPClientHandle> | undefined;
   settled: boolean;
+  failure: unknown;
 }
 
 /** Keep the initial post-handshake handle visible to manager teardown without
@@ -189,27 +193,36 @@ interface InitialHandleTracker {
 function withInitialHandleTracking(
   factory: MCPClientFactory,
   tracker: InitialHandleTracker,
+  attempts: Set<Promise<MCPClientHandle>>,
+  trackHandleClose: (handle: MCPClientHandle) => MCPClientHandle,
 ): MCPClientFactory {
   return (server, relay, connect) => {
-    const attempt = factory(server, relay, connect);
+    const attempt = factory(server, relay, connect).then((handle) => {
+      const tracked = trackHandleClose(handle);
+      if (tracker.active) {
+        tracker.handle = tracked;
+        tracker.registry?.add(tracked);
+      }
+      return tracked;
+    });
+    attempts.add(attempt);
+    void attempt.then(
+      () => attempts.delete(attempt),
+      () => attempts.delete(attempt),
+    );
     if (tracker.active && tracker.attempt === undefined) {
       tracker.attempt = attempt;
       void attempt.then(
         () => {
           tracker.settled = true;
         },
-        () => {
+        (error: unknown) => {
           tracker.settled = true;
+          tracker.failure = error;
         },
       );
     }
-    return attempt.then((handle) => {
-      if (tracker.active) {
-        tracker.handle = handle;
-        tracker.registry?.add(handle);
-      }
-      return handle;
-    });
+    return attempt;
   };
 }
 
@@ -287,6 +300,8 @@ interface PhysicalConnectGate {
   close(): void;
 }
 
+type RetainPendingAdmission = (completion: Promise<void>, release: () => void) => void;
+
 /**
  * Keep a permit for the lifetime of the physical factory invocation, not only
  * for the caller's bounded wait around it.
@@ -301,6 +316,7 @@ function createPhysicalConnectGate(
   factory: MCPClientFactory,
   maxParallelConnects: number,
   logger: Logger,
+  retainPendingAdmission: RetainPendingAdmission,
 ): PhysicalConnectGate {
   const waiters: PhysicalConnectWaiter[] = [];
   const sampleQueued = createSampler();
@@ -320,12 +336,18 @@ function createPhysicalConnectGate(
     }
   };
 
-  const acquire = (signal: AbortSignal | undefined): Promise<void> | null => {
+  const acquire = (
+    signal: AbortSignal | undefined,
+    authorizationWait: MCPAuthorizationWait | undefined,
+  ): Promise<void> | null => {
     if (closed) return Promise.reject(new Error("connection manager closed"));
     if (signal?.aborted) return Promise.reject(abortReason(signal));
     if (active < maxParallelConnects) {
       active += 1;
       return null;
+    }
+    if (authorizationWait === "background") {
+      throw new MCPBackgroundConnectDeferredError(maxParallelConnects);
     }
     return new Promise<void>((resolve, reject) => {
       const waiter: PhysicalConnectWaiter = { resolve, reject, signal };
@@ -344,7 +366,7 @@ function createPhysicalConnectGate(
   return {
     factory: async (server, relay, connect) => {
       const signal = connect?.signal;
-      const waiting = acquire(signal);
+      const waiting = acquire(signal, connect?.authorizationWait);
       if (waiting !== null) {
         if (queuedEnabled && sampleQueued(server.name)) {
           logger.debug(
@@ -359,14 +381,21 @@ function createPhysicalConnectGate(
         }
         await waiting;
       }
+      let retained = false;
       try {
         if (signal?.aborted) throw abortReason(signal);
         return await factory(server, relay, connect);
+      } catch (error) {
+        if (error instanceof MCPAuthorizationPendingError) {
+          retained = true;
+          retainPendingAdmission(error.completion, release);
+        }
+        throw error;
       } finally {
         // Deliberately follows the physical factory promise. A logical timeout
         // aborts `signal`, but cannot release this permit until the factory has
         // actually unwound.
-        release();
+        if (!retained) release();
       }
     },
     close(): void {
@@ -483,8 +512,10 @@ function poolKey(server: McpServerConfig, scope: PoolScope, sharing: PoolSharing
  *   `connected` is discarded and reopened on the next acquire. Non-poolable
  *   acquires get a dedicated connection closed on release. `signal` aborts only
  *   the caller's wait, never a shared connect that other runs may still be
- *   awaiting. After {@link ConnectionManager.closeAll | closeAll} every acquire
- *   throws, without opening anything first.
+ *   awaiting. A background acquire never queues behind a saturated physical
+ *   gate; it degrades for that run while already admitted work retains its
+ *   permit until completion. After {@link ConnectionManager.closeAll | closeAll}
+ *   every acquire throws, without opening anything first.
  */
 export function createConnectionManager(opts: ConnectionManagerOptions): ConnectionManager {
   const idleTtlMs = finiteIntegerAtLeast(opts.idleTtlMs, DEFAULT_IDLE_TTL_MS, 0);
@@ -513,9 +544,24 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
   const slots = new Map<string, SharedSlot>();
   const live = new Set<MCPConnection>();
   const backgroundClosures = new Set<Promise<unknown>>();
+  const pendingAdmissions = new Set<Promise<void>>();
+  const pendingConnectAttempts = new Set<Promise<MCPClientHandle>>();
   const pendingOpens = new Set<Promise<OpenedConnection>>();
   const openingHandles = new Set<MCPClientHandle>();
-  const physicalConnects = createPhysicalConnectGate(opts.factory, maxParallelConnects, logger);
+  const retainPendingAdmission: RetainPendingAdmission = (completion, release) => {
+    const retained = completion.then(release, release);
+    pendingAdmissions.add(retained);
+    void retained.then(
+      () => pendingAdmissions.delete(retained),
+      () => pendingAdmissions.delete(retained),
+    );
+  };
+  const physicalConnects = createPhysicalConnectGate(
+    opts.factory,
+    maxParallelConnects,
+    logger,
+    retainPendingAdmission,
+  );
   let admittedConnections = 0;
   let closed = false;
   let closeAllPromise: Promise<void> | undefined;
@@ -528,6 +574,30 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
       () => backgroundClosures.delete(promise),
     );
     return promise;
+  }
+
+  function trackHandleClose(handle: MCPClientHandle): MCPClientHandle {
+    const close = handle.close.bind(handle);
+    let closing: Promise<void> | undefined;
+    const trackedClose = (): Promise<void> => {
+      closing ??= trackClosure(close);
+      return closing;
+    };
+    try {
+      handle.close = trackedClose;
+      if (handle.close === trackedClose) return handle;
+    } catch {}
+    const tracked: MCPClientHandle = {
+      get client() {
+        return handle.client;
+      },
+      get protocolVersion() {
+        return handle.protocolVersion;
+      },
+      close: trackedClose,
+    };
+    aliasMCPRequestAuthorization(handle, tracked);
+    return tracked;
   }
 
   function trackOpen(open: Promise<OpenedConnection>): Promise<OpenedConnection> {
@@ -594,6 +664,9 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
         "mcp connection limit reached; this server is not connected and the run continues " +
           "without its tools",
       );
+      if (o.authorizationWait === "background") {
+        throw new MCPBackgroundConnectDeferredError(maxConnections, "connections");
+      }
       throw new MCPConnectionLimitError(maxConnections);
     }
     admittedConnections += 1;
@@ -611,8 +684,14 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
       registry: openingHandles,
       attempt: undefined,
       settled: false,
+      failure: undefined,
     };
-    const trackedFactory = withInitialHandleTracking(physicalConnects.factory, initialHandle);
+    const trackedFactory = withInitialHandleTracking(
+      physicalConnects.factory,
+      initialHandle,
+      pendingConnectAttempts,
+      trackHandleClose,
+    );
     try {
       const opened = await openConnection({
         server: o.server,
@@ -642,7 +721,11 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
       return opened;
     } catch (error) {
       const attempt = initialHandle.attempt;
-      if (attempt !== undefined && !initialHandle.settled) {
+      if (error instanceof MCPAuthorizationPendingError) {
+        retainPendingAdmission(error.completion, releaseCapacity);
+      } else if (error instanceof MCPBackgroundConnectDeferredError) {
+        releaseCapacity();
+      } else if (attempt !== undefined && !initialHandle.settled) {
         logger.warn(
           {
             event: "mcp.connect.quarantined",
@@ -652,7 +735,15 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
           "mcp connect attempt outlived its bounded wait; its connection slot stays reserved " +
             "until the attempt unwinds",
         );
-        void attempt.then(releaseCapacity, releaseCapacity);
+        void attempt.then(releaseCapacity, (attemptError: unknown) => {
+          if (attemptError instanceof MCPAuthorizationPendingError) {
+            retainPendingAdmission(attemptError.completion, releaseCapacity);
+            return;
+          }
+          releaseCapacity();
+        });
+      } else if (initialHandle.failure instanceof MCPAuthorizationPendingError) {
+        retainPendingAdmission(initialHandle.failure.completion, releaseCapacity);
       } else {
         releaseCapacity();
       }
@@ -894,7 +985,22 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
     closing.push(...openingHandleCloses);
     const openings = [...pendingOpens];
     pendingOpens.clear();
-    closing.push(...openings.map((opening) => opening.then((opened) => closeOnce(opened.conn))));
+    const connectAttempts = [...pendingConnectAttempts];
+    pendingConnectAttempts.clear();
+    const openingAndAdmissionDrain = Promise.allSettled(connectAttempts).then(async (attempts) => {
+      await Promise.allSettled(
+        attempts.flatMap((result) => (result.status === "fulfilled" ? [result.value.close()] : [])),
+      );
+      const settled = await Promise.allSettled(openings);
+      await Promise.allSettled(
+        settled.flatMap((result) =>
+          result.status === "fulfilled" ? [closeOnce(result.value.conn)] : [],
+        ),
+      );
+      const admissions = [...pendingAdmissions];
+      pendingAdmissions.clear();
+      await Promise.allSettled(admissions);
+    });
     for (const slot of slots.values()) {
       if (slot.idleTimer) clearTimeout(slot.idleTimer);
       if (slot.opened) closing.push(closeOnce(slot.opened.conn));
@@ -904,7 +1010,7 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
     slots.clear();
     live.clear();
     admittedConnections = 0;
-    await awaitCloseGrace([...closing, ...background]);
+    await awaitCloseGrace([...closing, ...background, openingAndAdmissionDrain]);
   }
 
   function closeAll(): Promise<void> {

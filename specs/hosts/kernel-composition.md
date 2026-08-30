@@ -112,6 +112,14 @@ Workflow leaders are separate auxiliary runs. `auxiliaryWorkflowRunDeps` removes
 capability and leader assembly forces `memory: "off"`; the primary manager remains the workflow's
 single memory-producing run.
 
+Foreground runs and every physical memory-indexer pass share one Environment admission function.
+The file host injects a memory executor that acquires the immutable snapshot lease immediately
+before calling `executeRun` and releases it in `finally`; durable retries therefore revalidate even
+when no foreground handle remains. Production: `acquireEnvironmentRunLease` and
+`executeEnvironmentRun` in `packages/kernel/src/file-kernel.ts`, plus `withRunLease` in
+`packages/kernel/src/runs/run-lease.ts`. Test: `packages/kernel/tests/unit/run-lease.test.ts` and
+`packages/memory/tests/component/factory.test.ts`.
+
 Production: `packages/kernel/src/config/capability-registry.ts`;
 `packages/kernel/src/file-kernel.ts`; `packages/kernel/src/environments/environment-manager.ts`;
 `packages/kernel/src/guard/resolver.ts`.
@@ -176,6 +184,14 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    `packages/kernel/src/file-kernel.ts`. Test:
    `packages/kernel/tests/integration/environment-manager.test.ts` (`pins the active snapshot until
    reconnect`). The full contract is [Extension Environments](environments.md#5-invariants).
+
+8. **Every physical run owned by the file kernel, including a delayed memory-indexer continuation,
+   acquires the same immutable Environment lease.** Admission validates before execution and release
+   runs after success or failure. Production: `acquireEnvironmentRunLease` and
+   `executeEnvironmentRun` in `packages/kernel/src/file-kernel.ts`; `withRunLease` in
+   `packages/kernel/src/runs/run-lease.ts`. Test:
+   `packages/kernel/tests/unit/run-lease.test.ts` and
+   `packages/memory/tests/component/factory.test.ts`.
 
 ## 8. Failure behavior
 

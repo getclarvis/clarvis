@@ -1,7 +1,7 @@
 import { mkdirSync, readSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "bun:test";
-import { readBoundedText } from "../../src/bounded-read.ts";
+import { readBoundedBytes, readBoundedText } from "../../src/bounded-read.ts";
 import { SkillError } from "../../src/errors.ts";
 import { cleanup, makeWorkspace } from "../helpers/fixtures.ts";
 import { recordingLogger } from "../helpers/logging.ts";
@@ -15,6 +15,33 @@ const OPTIONS = {
 };
 
 describe("bounded text reads", () => {
+  it("preserves exact bytes for snapshot consumers", () => {
+    const workspace = makeWorkspace();
+    try {
+      const file = path.join(workspace, "bytes.bin");
+      const expected = Buffer.from([0xff, 0x00, 0x01, 0x7f]);
+      writeFileSync(file, expected);
+
+      expect(readBoundedBytes(file, OPTIONS)).toEqual(expected);
+    } finally {
+      cleanup(workspace);
+    }
+  });
+
+  it("enforces character bounds for snapshot byte consumers", () => {
+    const workspace = makeWorkspace();
+    try {
+      const file = path.join(workspace, "characters.txt");
+      writeFileSync(file, "four");
+
+      expect(() => readBoundedBytes(file, { ...OPTIONS, maxChars: 3 })).toThrow(
+        /maximum characters/,
+      );
+    } finally {
+      cleanup(workspace);
+    }
+  });
+
   it("rejects a directory before allocating a payload buffer", () => {
     const workspace = makeWorkspace();
     try {
@@ -50,6 +77,23 @@ describe("bounded text reads", () => {
         readBoundedText(file, OPTIONS, (descriptor, buffer, offset, length, position) => {
           if (position === 4) return 1;
           return readSync(descriptor, buffer, offset, length, position);
+        }),
+      ).toThrow(/changed while it was being read/);
+    } finally {
+      cleanup(workspace);
+    }
+  });
+
+  it("rejects a file that becomes shorter than its opened descriptor snapshot", () => {
+    const workspace = makeWorkspace();
+    try {
+      const file = path.join(workspace, "short.txt");
+      writeFileSync(file, "seed");
+
+      expect(() =>
+        readBoundedBytes(file, OPTIONS, (descriptor, buffer, offset, length, position) => {
+          if (position === 2) return 0;
+          return readSync(descriptor, buffer, offset, Math.min(length, 2), position);
         }),
       ).toThrow(/changed while it was being read/);
     } finally {

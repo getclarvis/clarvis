@@ -10,7 +10,7 @@ import { createIndexWorker, type MemoryIndexWorker } from "./worker.ts";
 
 import { parseModelRef, sanitizeErrorMessage } from "@clarvis/capability";
 import type { CapabilityExecutablePort, LLMProvider, ProviderKind } from "@clarvis/capability";
-import type { ExecuteRunDeps } from "@clarvis/loop";
+import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis/loop";
 import type { Logger } from "@clarvis/capability";
 import type { ProviderConfig } from "@clarvis/capability";
 import { translateDrainSettlement, type MemoryIngestListener } from "./ingest.ts";
@@ -45,6 +45,8 @@ export interface CreateMemoryFactoryOptions {
    * every run's learning until deps are wired.
    */
   runDeps?: () => ExecuteRunDeps | undefined;
+  /** Host-owned executor for lifecycle and Environment admission around every indexer pass. */
+  executeRun?: (args: ExecuteRunArgs) => Promise<ExecuteRunOutcome>;
   /**
    * The engine deps a pass uses when it continues the run it indexes.
    *
@@ -288,6 +290,7 @@ export function createMemoryFactory(opts: CreateMemoryFactoryOptions): MemoryFac
         deps,
         modelRef,
         providers,
+        ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
         memoryProvider: resolved.provider,
         memoryProviderKey: resolved.key,
         ...(passDeps !== undefined ? { passDeps } : {}),

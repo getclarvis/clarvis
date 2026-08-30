@@ -1,5 +1,21 @@
 import { ErrorCode as McpErrorCode } from "@modelcontextprotocol/sdk/types.js";
 
+/** A background run declined to wait behind the physical-connect gate. */
+export class MCPBackgroundConnectDeferredError extends Error {
+  readonly code = "mcp_background_connect_deferred" as const;
+
+  constructor(
+    readonly limit: number,
+    readonly resource: "connections" | "handshakes" = "handshakes",
+  ) {
+    super(
+      `MCP connect admission is busy (${String(limit)} concurrent ${resource}); ` +
+        "this MCP is inactive for the current run.",
+    );
+    this.name = "MCPBackgroundConnectDeferredError";
+  }
+}
+
 /**
  * Whether an error is an MCP request-timeout — a JSON-RPC error whose numeric
  * `code` is {@link McpErrorCode.RequestTimeout}.

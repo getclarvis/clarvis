@@ -170,8 +170,9 @@ the built artifact for every other mode (`packages/code/src/cli.ts`, `main`). In
 3. opens diagnostics in the runtime, uses or creates the pinned `WorkspaceClientManager`, and loads
    the foundation without calling models.dev or subscription entitlement;
 4. constructs stores, the run host and command routing while the startup input remains usable;
-5. takes the startup snapshot once and submits an accepted task before mounting `<App>`; otherwise
-   the exact unsent draft becomes `App.initialDraft`;
+5. takes the startup snapshot once and submits an accepted task before mounting `<App>` only when
+   the active profile is runnable; otherwise the exact accepted submission or unsent draft becomes
+   `App.initialDraft`;
 6. mounts the complete application, emits `app.boot.painted`, releases after-paint work and only then
    starts Markdown parser warm-up; restored session content awaits the warm-up.
 
@@ -526,12 +527,16 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
 
 22. **PERF-22: boot continuity owns one bounded startup composer, not parser/catalog or per-row work.**
     It has one focused input, one external draft/submission snapshot and distinct markers. Enter is
-    accepted once; the task starts before complete-app mount, while an unsent draft transfers exactly
-    to `App`. Production: `packages/code/src/views/StartupComposer.tsx`
+    accepted once; the task starts before complete-app mount when a profile is runnable, while an
+    unsent draft or currently unrunnable submission transfers exactly to `App`. Renderer teardown
+    is owned continuously from creation through the complete keymap mount. Production:
+    `packages/code/src/views/StartupComposer.tsx`
     (`createStartupComposerState`, `StartupComposer`) and `packages/code/src/runtime.tsx`
-    (`startup_submit`, `boot.app-mount`). Tests:
+    (`startup_submit`, `boot.app-mount`) and
+    `packages/code/src/adapters/renderer-bootstrap.ts` (`installBootRendererLifecycle`). Tests:
     `packages/code/tests/integration/splash-render.test.tsx`,
     `packages/code/tests/integration/app-shell-render.test.tsx`,
+    `packages/code/tests/unit/renderer-bootstrap-lifecycle.test.ts`,
     `packages/code/tests/architecture/architecture-boundary.test.ts`, and
     `packages/code/tooling/artifact/smoke.ts` (complete paint and deferred catalogue).
 

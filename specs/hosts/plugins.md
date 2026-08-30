@@ -749,15 +749,21 @@ namespaces remain plugin-name based.
 #### 4.8.1 Per-contribution behaviour
 
 `pin` resolves the qualified selection once, retains the parsed loadables, and records one digest
-per plugin. Skill identity hashes each bounded `SKILL.md` and resource as raw bytes, including the
-relative resource name, using `enumerateResources` and the exact limits exported by
-`@clarvis/skills`; it does not decode and reserialize every Markdown body into a second semantic
-snapshot. Ordinary projection methods verify that the requested selection is the pinned selection
-and reuse those loadables. `assertUnchanged` is the explicit full revalidation used at run admission.
+per plugin. Skill identity hashes each bounded `SKILL.md` and resource from one opened descriptor,
+then hashes a canonical list of relative paths and per-file digests. It also includes effective
+catalog metadata so a sidecar-derived description/presentation change cannot preserve identity.
+Manifest byte and character caps and resource byte/character caps are the exact limits exported by
+`@clarvis/skills`; ambiguous concatenation and pre-read path `stat` are not snapshot boundaries.
+Ordinary captured projections verify the requested selection and reuse pinned loadables.
+`assertUnchanged` fully revalidates at run admission, while `skillRoots` repeats the same full check
+at lazy catalog/body/resource access so changed bytes cannot be read under the admitted digest.
+If any packaged skill cannot be captured under those bounds, the digest records an unavailable
+surface and `skillRoots` withholds every skill root for that plugin. Other valid contribution kinds
+remain active, but no valid sibling skill stays readable behind a constant error sentinel.
 Production: `skillSurface`, `assertPinnedSelection`, `assertPinnedSnapshot`, `pin`, and
 `assertUnchanged` in `packages/kernel/src/plugins/plugin-contributions.ts`. Test:
-`packages/kernel/tests/integration/plugin-contributions.test.ts` (pinned projections and explicit
-run-boundary drift cases).
+`packages/kernel/tests/integration/plugin-contributions.test.ts` (captured projections, canonical
+file framing, manifest limits, sidecar metadata, and lazy/run-boundary drift cases).
 
 - **`skillRoots`** (`:310-353`) filters declared roots to those that `statSync` says are directories,
   reports a plugin with none, then spends the shared 24-root budget, truncating and reporting when a
@@ -1215,11 +1221,17 @@ All of the following are derived directly from this document's own source and te
 44. **A plugin contributes only when its exact scoped installation belongs to the process-pinned
     Environment, and later bytes cannot execute under that snapshot.** Every
     `PluginContributions` method takes the resolved selection; `pin` captures its exact loadables and
-    digest, ordinary projections reject selection changes without rehashing, and
-    `assertUnchanged` performs full drift validation before the kernel admits each run. Production:
+    digest, ordinary captured projections reject selection changes, `assertUnchanged` performs full
+    drift validation before the kernel admits each foreground or memory-indexer run, and
+    `skillRoots` performs full validation at every lazy skill read boundary and withholds the whole
+    packaged-skill surface when any sibling could not be captured. Production:
     `packages/kernel/src/plugins/plugin-contributions.ts`, `EnvironmentManager.assertRunSnapshot`,
-    and `acquireRunLease` in `packages/kernel/src/file-kernel.ts`. Test:
-    `packages/kernel/tests/integration/{environment-manager,plugin-contributions,file-kernel}.test.ts`.
+    `acquireEnvironmentRunLease`/`executeEnvironmentRun` in
+    `packages/kernel/src/file-kernel.ts`, and exact-root handling in
+    `packages/loop/src/runtime/build-run-deps.ts`. Test:
+    `packages/kernel/tests/integration/{environment-manager,plugin-contributions,file-kernel}.test.ts`,
+    `packages/kernel/tests/unit/run-lease.test.ts`, and
+    `packages/loop/tests/integration/execute-run-entrypoints.test.ts`.
 
 44a. **Every directly referenced package-local process file is part of the plugin snapshot.**
     `snapshotPluginExecutables` resolves confined regular files from MCP stdio argv/cwd, the current
@@ -1229,6 +1241,16 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/src/plugins/plugin-contributions.ts`. Test: the process-file fingerprint and
     drift cases in
     `packages/kernel/tests/integration/{environment-manager,plugin-contributions}.test.ts`.
+
+44b. **Packaged-skill identity is unambiguous and runtime admission is atomic.** Snapshot reads use
+    one opened descriptor with fixed allocation, enforce manifest/resource byte and character caps,
+    and hash canonical relative paths plus per-file digests and effective sidecar metadata. A partial
+    capture contributes no plugin skill roots. Production: `readBoundedBytes` in `@clarvis/skills`
+    and `snapshotFileDigest`, `skillSurface`, `contributionSnapshot`, and `skillRoots` in
+    `packages/kernel/src/plugins/plugin-contributions.ts`. Test:
+    `packages/skills/tests/unit/bounded-read.test.ts` and the canonical framing, manifest limit,
+    sidecar, invalid-sibling, and lazy drift cases in
+    `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
 45. **A plugin cannot enable another plugin.** Custom Environments are complete external
     allow-lists; `builtin:default` derives exact `enabledPlugins` refs from operator scopes alone before

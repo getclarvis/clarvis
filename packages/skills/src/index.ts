@@ -69,6 +69,8 @@ export { clarvisSkillRoots } from "./preset.ts";
 export type { ClarvisSkillRootsOptions } from "./preset.ts";
 
 export { enumerateResources } from "./scan.ts";
+export { readBoundedBytes } from "./bounded-read.ts";
+export type { BoundedReadOptions, DescriptorReader } from "./bounded-read.ts";
 
 export { resolveConfig } from "./config.ts";
 export type { SkillConfig, AgentSkillsOptions } from "./config.ts";

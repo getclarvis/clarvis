@@ -1383,8 +1383,9 @@ cross-machine absolute baseline.
 
 The repository-owned multiplicative waits were separately reproduced and corrected. Repeated plugin
 parsing/hashing had made the same nine-plugin Environment take about 32.9 seconds; pinned projections
-plus one exact raw-byte run-admission revalidation reduced the observed combined resolution to about
-330 ms. Two unanswered MCP OAuth flows had each waited about 302 seconds; background authorization
+plus canonical per-file descriptor-bounded revalidation at admission and lazy skill reads reduced
+the observed combined resolution to about 330 ms. Two unanswered MCP OAuth flows had each waited
+about 302 seconds; background authorization
 now leaves only those servers inactive and the real run completes while their browser pages are
 ignored. Neither correction weakens fingerprint drift or token persistence.
 

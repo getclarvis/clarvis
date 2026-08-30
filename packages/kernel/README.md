@@ -118,14 +118,19 @@ authored fingerprint, and effective fingerprint; `applyComposition` revalidates 
 definition plus selection as one recoverable transaction. Trust-write failure restores both prior
 documents, while an unchanged workspace selection shadowing a global-default write is neither
 activated nor newly approved. The pinned fingerprint includes resolved plugin manifests and
-companion declarations, agent files, raw bounded packaged-skill manifest/resource bytes, and the content, size, mode,
+companion declarations, agent files, canonical per-file digests of bounded packaged-skill
+manifest/resource bytes plus effective sidecar-derived catalog metadata, and the content, size, mode,
 and package-relative path of every directly referenced package-local MCP, hook, or capability
 process file, plus selected standalone skill bodies/resources. Process-file admission is bounded per
 file, per plugin, and by file count. Ordinary contribution projections reuse the pinned parsed
-snapshot instead of rescanning and rehashing every accessor. Immediately before a run lease is
-admitted, the kernel rehashes the complete selected contribution surface once; drift fails that run
-closed until reconnect, while control-plane reads remain responsive and cannot consume changed
-bytes under the old fingerprint.
+snapshot instead of rescanning and rehashing every accessor. Immediately before every foreground or
+memory-indexer run lease is admitted, the kernel rehashes the complete selected contribution
+surface; exact lazy skill catalog/body/resource access repeats that full check at its read boundary.
+Builtin and custom standalone roots carry exact `include` lists for only the skills captured in that
+snapshot. If any packaged skill in a plugin cannot be captured within its bounds, that plugin's
+entire skill-root surface is withheld while its independently valid non-skill contributions remain.
+Drift fails closed until reconnect, while captured control-plane projections remain responsive and
+cannot consume changed bytes under the old fingerprint.
 Workspace-trust
 transitions recompose that extension snapshot only while no run is active, and selected plugin
 update/uninstall uses the same kernel-owned exclusion boundary and blocks later runs until reconnect.
@@ -502,6 +507,8 @@ A settled run no longer remains leased for the memory indexer's multi-minute ret
 event stream waits five idle seconds for the usual immediate terminal notice, renews only within a
 15-second absolute window, and hard-caps every override at one minute. The durable memory job keeps
 retrying after the stream closes; only the transient client projection is released.
+Each physical indexer pass reacquires the same Environment run lease before calling the loop, so a
+durable retry cannot consume host skills or extension bytes after the foreground lease has closed.
 
 File-backed agent operations validate agent names at the service boundary.
 Names may contain letters, numbers, underscores and hyphens; path separators

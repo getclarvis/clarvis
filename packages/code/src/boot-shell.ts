@@ -7,6 +7,7 @@ export interface BootShell {
   readonly renderer: CliRenderer;
   readonly shellElapsedMs: number;
   releaseTerminal(): void;
+  handoffRendererLifecycle(shutdown: () => unknown): () => void;
   takeStartupInput(): StartupComposerSnapshot;
   mount(view: () => JSX.Element): Promise<void>;
 }

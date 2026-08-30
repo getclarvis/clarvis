@@ -44,7 +44,7 @@ import {
   type Logger,
   type RunRequest,
 } from "@clarvis/capability";
-import { executeRun, generateExecutionId, type ExecuteRunDeps } from "@clarvis/loop";
+import type { ExecuteRunDeps } from "@clarvis/loop";
 import { BUILTIN_GRANT_NAMES } from "@clarvis/loop/host";
 import type { MemoryJobPhase } from "../jobs.ts";
 import type { MemoryBudgets, MemoryMutationFence, MemoryStore, RunSnapshot } from "../types.ts";
@@ -175,6 +175,9 @@ export async function indexRun(args: IndexRunArgs): Promise<IndexReport> {
   }
 
   const ledger = createTouchedLedger();
+  const loop = await import("@clarvis/loop");
+  const execute = indexer.executeRun ?? loop.executeRun;
+  const { generateExecutionId } = loop;
   const indexerRunId = generateExecutionId();
   const plan = planPass({
     run,
@@ -188,7 +191,7 @@ export async function indexRun(args: IndexRunArgs): Promise<IndexReport> {
 
   let outcome;
   try {
-    outcome = await executeRun({
+    outcome = await execute({
       rawBody: plan.rawBody,
       owner: indexer.owner,
       deps: plan.deps,

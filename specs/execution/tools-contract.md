@@ -29,11 +29,10 @@ either name today gets the same `not_found` refusal as a typo
 
 ## 2. Surface
 
-### Package exports (five `exports` keys, four real subpaths)
+### Package exports (six `exports` keys, five source entries)
 
-`packages/tools/package.json:29`-`51` declares five keys under `exports`: four subpaths each with a
-`bun` (source), `types` and `import` (built) condition, plus a fifth, `./package.json`, that is a bare
-self-reference string with none of those conditions (`packages/tools/package.json:50`):
+`packages/tools/package.json` declares six keys under `exports`: five source entries each with a
+`bun` (source), `types` and `import` (built) condition, plus `./package.json` as a bare self-reference:
 
 | Subpath | Source entry | Consumer-facing purpose |
 | --- | --- | --- |
@@ -41,13 +40,24 @@ self-reference string with none of those conditions (`packages/tools/package.jso
 | `./guard` | `packages/tools/src/guard/index.ts` | the command-approval analysis surface (owned by the sibling [command-guard-and-approval](command-guard.md) document) |
 | `./shell` | `packages/tools/src/shell-entry.ts` | shell resolution primitives (`resolveShell`, `shellArgs`, `encodePowerShellCommand`, `exitCaptureWrapper`, `currentShellFlavor`, plus `killTree`/`ownProcessGroup` and the `ShellSpec`/`ShellDeps`/`ShellFlavor`/`KillDeps`/`TaskkillRunner` types) re-exported for `@clarvis/hooks` and `@clarvis/kernel` without pulling in the rest of the tool API |
 | `./sandbox` | `packages/tools/src/sandbox-entry.ts` | sandbox configuration types (owned by the sibling [sandbox-and-toolchains](sandbox.md) document) |
+| `./monitor` | `packages/tools/src/monitor-entry.ts` | `sweepMonitors` housekeeping for kernel boot without the complete registry/dispatcher graph |
 | `./package.json` | `package.json` itself | boilerplate self-reference (no `bun`/`types`/`import` condition); not a source entry and out of scope below |
 
 `./shell` and `./guard` are not the *only* way to reach those bindings: root `.` re-exports the
 identical shell primitives and the identical guard-analysis surface (see the root facade table below),
 so a consumer that already imports `.` for anything else does not need the subpath at all — the
-subpaths exist so `@clarvis/hooks` (for `./shell`) and the sibling guard document's consumers (for
-`./guard`) can pull in only that surface without the rest of the tool API.
+subpaths exist so `@clarvis/hooks` (for `./shell`), `@clarvis/kernel` (for `./monitor`) and the
+sibling guard document's consumers (for `./guard`) can pull in only that surface without the rest of
+the tool API.
+
+### `./monitor` — `packages/tools/src/monitor-entry.ts`
+
+This is a re-export-only boot boundary. `sweepMonitors` keeps its root export, but the file kernel
+imports the narrow subpath so stale-monitor housekeeping does not statically load tool definitions,
+Ajv, diff, glob or dispatch code. Production: `packages/tools/src/monitor-entry.ts` and
+`packages/kernel/src/file-kernel.ts`. The package build/typecheck plus kernel integration suite pin
+resolution and behavior; monitor cleanup behavior remains owned by
+[tools-shell-and-background-monitors](tools-shell-and-monitor.md).
 
 ### `./shell` — `packages/tools/src/shell-entry.ts` (26 lines, re-exports only)
 

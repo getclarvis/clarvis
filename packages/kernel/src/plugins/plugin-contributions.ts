@@ -32,7 +32,16 @@ import {
   readPluginManifestSource,
   resolvePluginManifest,
 } from "./plugin-manifest.ts";
-import { createAgentSkills, MAX_SKILL_ROOTS } from "@clarvis/skills";
+import {
+  createAgentSkills,
+  enumerateResources,
+  readBoundedBytes,
+  MAX_SKILL_FILE_BYTES,
+  MAX_SKILL_FILE_CHARS,
+  MAX_SKILL_RESOURCE_BYTES,
+  MAX_SKILL_RESOURCE_CHARS,
+  MAX_SKILL_ROOTS,
+} from "@clarvis/skills";
 import { readPluginInstallRecord } from "./plugin-install-record.ts";
 import type { PluginInstallRecord } from "./plugin-install-record.ts";
 import { ensurePluginDataDir } from "./plugin-runtime.ts";
@@ -60,6 +69,8 @@ export interface PluginContributions {
   snapshot(enabled: PluginSelection): readonly PluginContributionSnapshot[];
   /** Capture the exact contribution bytes selected for this kernel process. */
   pin(enabled: PluginSelection): readonly PluginContributionSnapshot[];
+  /** Reject selected contribution drift at the boundary before a new run starts. */
+  assertUnchanged(enabled: PluginSelection): void;
   /** Skill roots for enabled + loadable plugins. */
   skillRoots(enabled: PluginSelection): SkillRootInput[];
   /**
@@ -379,9 +390,23 @@ export function createPluginContributions(opts: {
     return out;
   };
 
+  /** Return the raw-byte digest of one descriptor-bounded snapshot file. */
+  const snapshotFileDigest = (path: string, maxBytes: number, maxChars?: number): string =>
+    `sha256:${createHash("sha256")
+      .update(
+        readBoundedBytes(path, {
+          maxBytes,
+          ...(maxChars === undefined ? {} : { maxChars }),
+          code: "invalid_skill",
+          label: "plugin skill file",
+          logger,
+        }),
+      )
+      .digest("hex")}`;
+
   const skillSurface = (
     plugin: Loadable,
-  ): ({ name: string; [key: string]: unknown } | { unavailable: true })[] => {
+  ): ({ name: string; digest: string } | { unavailable: true })[] => {
     const roots = pluginSkillScanRoots(
       plugin.dir,
       plugin.manifest.skills,
@@ -399,19 +424,34 @@ export function createPluginContributions(opts: {
       return skills
         .listSkills()
         .map((info) => {
-          const content = skills.loadSkill(info.name);
-          if (content === undefined) return { name: info.name, unavailable: true };
+          const resources = enumerateResources(
+            info.dir,
+            skills.config.followSymlinks,
+            skills.config,
+          ).map((resource) => ({
+            rel: resource.rel,
+            digest: snapshotFileDigest(
+              resource.path,
+              MAX_SKILL_RESOURCE_BYTES,
+              MAX_SKILL_RESOURCE_CHARS,
+            ),
+          }));
           return {
             name: info.name,
-            description: info.description,
-            metadata: info.metadata,
-            body: content.body,
-            resources: content.resources
-              .map((resource) => ({
-                rel: resource.rel,
-                content: skills.readResource(info.name, resource.rel),
-              }))
-              .sort((left, right) => left.rel.localeCompare(right.rel)),
+            digest: digest({
+              manifest: snapshotFileDigest(info.path, MAX_SKILL_FILE_BYTES, MAX_SKILL_FILE_CHARS),
+              catalog: {
+                name: info.name,
+                description: info.description,
+                metadata: info.metadata,
+                allowed_tools: info.allowedTools,
+                user_invocable: info.userInvocable,
+                catalog_suppressed: info.catalogSuppressed,
+                presentation: info.presentation,
+                defaulted: info.defaulted,
+              },
+              resources,
+            }),
           };
         })
         .sort((left, right) => left.name.localeCompare(right.name));
@@ -420,10 +460,12 @@ export function createPluginContributions(opts: {
     }
   };
 
+  const unavailableSkillSnapshots = new WeakSet<PluginContributionSnapshot>();
+
   const contributionSnapshot = (plugin: Loadable): PluginContributionSnapshot => {
     const skills = skillSurface(plugin);
     const hooks = plugin.manifest.hooks ?? [];
-    return {
+    const snapshot: PluginContributionSnapshot = {
       ref: plugin.ref,
       digest: digest({
         ref: plugin.ref,
@@ -447,6 +489,10 @@ export function createPluginContributions(opts: {
       hooks: { total: hooks.length },
       capabilityExecutables: Object.keys(plugin.manifest.capabilityExecutables ?? {}).sort(),
     };
+    if (skills.some((skill) => "unavailable" in skill)) {
+      unavailableSkillSnapshots.add(snapshot);
+    }
+    return snapshot;
   };
 
   let pinned:
@@ -530,10 +576,25 @@ export function createPluginContributions(opts: {
       return snapshots;
     },
 
+    assertUnchanged(enabled) {
+      assertPinnedSnapshot(enabled);
+    },
+
     skillRoots(enabled) {
       assertPinnedSnapshot(enabled);
+      const selectedLoadables = loadables(enabled);
+      const snapshots =
+        pinned !== undefined && pinned.selection === selectionId(enabled)
+          ? pinned.snapshots
+          : captureSnapshots(selectedLoadables);
+      const snapshotsByRef = new Map(snapshots.map((snapshot) => [refId(snapshot.ref), snapshot]));
       let budget = PLUGIN_SKILL_ROOT_BUDGET;
-      return loadables(enabled).flatMap((p) => {
+      return selectedLoadables.flatMap((p) => {
+        const snapshot = snapshotsByRef.get(refId(p.ref));
+        if (snapshot === undefined || unavailableSkillSnapshots.has(snapshot)) {
+          skipped(p.ref, "skills", "the selected skill surface could not be captured atomically");
+          return [];
+        }
         const declared = skillsDirsOf(p);
         let refused: string | undefined;
         const present = declared.filter((path) => {
@@ -581,7 +642,7 @@ export function createPluginContributions(opts: {
     },
 
     skillBootstraps(enabled) {
-      assertPinnedSnapshot(enabled);
+      assertPinnedSelection(enabled);
       return loadables(enabled).flatMap((p) =>
         p.manifest.bootstrapSkill === undefined
           ? []
@@ -590,7 +651,7 @@ export function createPluginContributions(opts: {
     },
 
     settingsScopes(enabled) {
-      assertPinnedSnapshot(enabled);
+      assertPinnedSelection(enabled);
       return loadables(enabled).map((p) => {
         const settings = pluginSettingsFragment(p.manifest);
         const namespacedServers = Object.fromEntries(
@@ -607,7 +668,7 @@ export function createPluginContributions(opts: {
     },
 
     mcpServers(enabled) {
-      assertPinnedSnapshot(enabled);
+      assertPinnedSelection(enabled);
       return loadables(enabled).flatMap(resolvedMcpServers);
     },
 

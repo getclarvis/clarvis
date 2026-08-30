@@ -12,7 +12,8 @@ checkout from which it was launched. With the flag, bootstrap completes before t
 catalog, or TUI starts.
 
 Production: `packages/code/src/cli-args.ts` (`FlagSpec.optionalValue`, `parseCli`);
-`packages/code/src/index.tsx` (`main`).
+`packages/code/src/index.tsx` (`main`);
+`packages/code/src/runtime.tsx` (`runApp`, `runHeadlessMode`).
 
 Test: `packages/code/tests/unit/cli-args.test.ts`;
 `packages/code/tests/integration/worktree-bootstrap.test.ts`.
@@ -84,7 +85,7 @@ Git-derived identity replaces the deleted registry: project identity hashes the 
 directory and workspace identity hashes the per-worktree Git directory. Outside Git, both identities
 fall back to the canonical workspace path.
 
-Production: `packages/code/src/index.tsx` (`main`);
+Production: `packages/code/src/runtime.tsx` (`runApp`, `createWorkspaceRuntime`);
 `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.create`);
 `packages/kernel/src/git-workspace.ts` (`discoverGitWorkspace`);
 `packages/kernel/src/file-kernel.ts` (`createFileKernel`).
@@ -126,7 +127,7 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
 ## 6. Invariants
 
 1. **One process owns one canonical workspace for its entire lifetime.**
-   Production: `packages/code/src/index.tsx`; `packages/code/src/adapters/workspace-client-manager.ts`.
+   Production: `packages/code/src/runtime.tsx`; `packages/code/src/adapters/workspace-client-manager.ts`.
    Test: `packages/code/tests/component/workspace-client-manager.test.ts`.
 
 2. **Git's registered worktree list is the only worktree authority.**
@@ -137,7 +138,7 @@ Test: `packages/tools/tests/integration/sandbox.test.ts`;
    removes its branch.**
    Production: `WorktreeExitPrompt` in `packages/code/src/views/overlays/WorktreeExitPrompt.tsx`;
    `worktreeIsClean` and `removeWorktreeCheckout` in
-   `packages/code/src/bootstrap/worktree.ts`; pre-shutdown wiring in `packages/code/src/index.tsx`.
+   `packages/code/src/bootstrap/worktree.ts`; pre-shutdown wiring in `packages/code/src/runtime.tsx`.
    Test: `packages/code/tests/integration/app-shell-render.test.tsx`;
    `packages/code/tests/integration/worktree-bootstrap.test.ts`.
 

@@ -47,6 +47,11 @@
       "types": "./dist/sandbox-entry.d.ts",
       "import": "./dist/sandbox-entry.js"
     },
+    "./monitor": {
+      "bun": "./src/monitor-entry.ts",
+      "types": "./dist/monitor-entry.d.ts",
+      "import": "./dist/monitor-entry.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

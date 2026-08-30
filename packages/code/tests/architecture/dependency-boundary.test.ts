@@ -15,6 +15,7 @@ const KERNEL_ENTRYPOINTS = new Set([
   "@clarvis/kernel/config",
   "@clarvis/kernel/policy",
   "@clarvis/kernel/local",
+  "@clarvis/kernel/logger",
 ]);
 
 function importedSpecifiers(source: string): string[] {

@@ -45,7 +45,7 @@ additional direct application-owned edges
 This is deliberately not `code/server -> kernel -> every symbol`. The kernel is the local host
 implementation and composition root, not a generic barrel. Clients and the implementation both
 depend on the transport-neutral protocol; applications may also depend directly on a foundation
-when they own the corresponding concern. The kernel publishes five owned entrypoints today
+when they own the corresponding concern. The kernel publishes six owned entrypoints today
 (`packages/kernel/package.json`, `exports`), and its architecture test prevents the root from
 becoming a barrel for lower packages
 (`packages/kernel/tests/architecture/public-surface.test.ts`, `kernel public surface`).
@@ -152,7 +152,7 @@ module graph. The analyzer resolves export conditions, validates requested subpa
 both forms (`tooling/lib/package-graph.ts`, `analyzePackageGraph`).
 
 A package root exports only symbols it owns. Re-exporting lower packages to make all consumers
-depend on one facade is prohibited. Kernel's current five-entry surface and no-generic-barrel rule
+depend on one facade is prohibited. Kernel's current six-entry surface and no-generic-barrel rule
 are pinned by `packages/kernel/tests/architecture/public-surface.test.ts` (`kernel public surface`).
 
 ### 3.3 Graph report
@@ -272,12 +272,14 @@ Production: `tooling/lib/package-architecture.ts` (`APPLICATION_FOUNDATIONS` and
 
 Test: `packages/code/tests/architecture/dependency-boundary.test.ts` (`code dependency boundary`).
 
-**INV-PA5. Concrete Kernel imports in Code are confined to `src/index.tsx`, `src/bootstrap/**`, and
+**INV-PA5. Concrete Kernel imports in Code are confined to composition modules
+(`src/index.tsx`, `src/runtime.tsx`, `src/startup-foundation.ts`), `src/bootstrap/**`, and
 `src/adapters/**`.** Core, generic UI, Views, feature controllers, onboarding, commands and the run
 host consume Code-owned adapters or Protocol contracts.
 
-Production: `packages/code/src/index.tsx`; `packages/code/src/bootstrap/**`;
-`packages/code/src/adapters/**`.
+Production: `packages/code/src/index.tsx`, `packages/code/src/runtime.tsx`,
+`packages/code/src/startup-foundation.ts`;
+`packages/code/src/bootstrap/**`; `packages/code/src/adapters/**`.
 
 Test: `packages/code/tests/architecture/architecture-boundary.test.ts`
 (`confines concrete kernel imports to composition and adapter boundaries`).
@@ -292,7 +294,7 @@ Production: `tooling/lib/package-architecture.ts` (`APPLICATION_FOUNDATIONS` and
 Test: `packages/server/tests/architecture/dependency-boundary.test.ts`
 (`server dependency boundary`).
 
-**INV-PA7. Kernel exposes only its five owned entrypoints and its root is not a generic re-export
+**INV-PA7. Kernel exposes only its six owned entrypoints and its root is not a generic re-export
 barrel for lower packages. Protocol remains dependency-free.**
 
 Production: `packages/kernel/package.json` (`exports`); `packages/kernel/src/index.ts`;
@@ -378,8 +380,8 @@ contracts are small, yet Kernel composes them as product capabilities beside Mem
 The terminal application contains both a local composition root and a transport-neutral client. The
 package separates them inside the package:
 
-- `src/index.tsx`, `src/bootstrap/**` and explicitly local process/filesystem adapters may construct
-  or host `@clarvis/kernel`;
+- `src/index.tsx`, `src/runtime.tsx`, `src/startup-foundation.ts`, `src/bootstrap/**` and explicitly
+  local process/filesystem adapters may construct or host `@clarvis/kernel`;
 - service-facing adapters depend on `@clarvis/protocol` and receive a `KernelClient` or a narrower
   service port;
 - `src/core/**`, `src/ui/**`, `src/views/**` and feature controllers do not import any
@@ -392,13 +394,16 @@ package separates them inside the package:
   controllers or views.
 
 The architecture suite scans every Code source file and rejects a concrete Kernel import outside
-`index.tsx`, `bootstrap/**`, or `adapters/**`
+the composition modules (`index.tsx`, `runtime.tsx`, `startup-foundation.ts`), `bootstrap/**`, or
+`adapters/**`
 (`packages/code/tests/architecture/architecture-boundary.test.ts`,
 `confines concrete kernel imports to composition and adapter boundaries`). Model parsing and cache
 policy enter presentation through `adapters/model-policy.ts`; plan and guard defaults through
 `adapters/settings.ts` and `adapters/guard-mode.ts`; provider request constraints through
 `adapters/provider-request-policy.ts`; and shipped-agent identity through `adapters/agent-files.ts`.
-Local construction remains explicit in `packages/code/src/index.tsx` (`createFileKernel`).
+Local construction remains explicit behind `packages/code/src/adapters/workspace-client-manager.ts`
+(`loadFileKernelFactory`); `startup-foundation.ts` may begin it concurrently with the dynamically
+loaded complete runtime.
 
 Moving every shared runtime value into Protocol is not the target: Protocol is currently a
 dependency-free type contract (`packages/protocol/package.json`). Prefer returning an effective

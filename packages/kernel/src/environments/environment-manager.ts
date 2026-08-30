@@ -501,6 +501,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
   ): ResolvedEnvironment;
   activePlugins(): EnvironmentPluginRef[];
   skillRoots(): SkillRootInput[];
+  assertRunSnapshot(): void;
   runRef(): EnvironmentRunRef;
   workspaceTrustSurface(): unknown;
   assertWorkspaceTrustTransitionAllowed(): void;
@@ -733,7 +734,15 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
               const content = skills.loadSkill(info.name);
               if (content === undefined) return undefined;
               return fingerprintOf({
-                metadata: info.metadata,
+                catalog: {
+                  description: info.description,
+                  metadata: info.metadata,
+                  allowed_tools: info.allowedTools,
+                  user_invocable: info.userInvocable,
+                  catalog_suppressed: info.catalogSuppressed,
+                  presentation: info.presentation,
+                  defaulted: info.defaulted,
+                },
                 body: content.body,
                 resources: content.resources
                   .map((resource) => ({
@@ -1203,7 +1212,6 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     if (pinned === undefined) throw kernelError("unavailable", "Environment has not been resolved");
     assertPinnedStandaloneSkills();
     const pluginRoots = options.pluginContributions.skillRoots(activePlugins());
-    if (pinned.ref.scope === "builtin") return [...pluginRoots, ...standardRoots];
     const selected = pinned.standalone_skills
       .filter((skill) => skill.active)
       .map((skill) => skill.ref);
@@ -1215,6 +1223,13 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       return include.length === 0 ? [] : [{ ...root, include }];
     });
     return [...pluginRoots, ...exact];
+  };
+
+  /** Revalidate every selected filesystem contribution before admitting a new run. */
+  const assertRunSnapshot = (): void => {
+    if (pinned === undefined) throw kernelError("unavailable", "Environment has not been resolved");
+    options.pluginContributions.assertUnchanged(activePlugins());
+    assertPinnedStandaloneSkills();
   };
 
   const workspaceTrustSurface = (): unknown => {
@@ -2005,6 +2020,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     },
     activePlugins,
     skillRoots,
+    assertRunSnapshot,
     runRef() {
       if (pinned === undefined)
         throw kernelError("unavailable", "Environment has not been resolved");

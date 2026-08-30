@@ -297,6 +297,26 @@ describe("buildExecuteRunDeps", () => {
     }
   });
 
+  it("fails closed when an exact Environment skill-root snapshot drifts lazily", async () => {
+    let drifted = false;
+    const built = await buildExecuteRunDeps({
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      logger: createLogger("silent"),
+      workspaceRoot: process.cwd(),
+      skillRoots: () => {
+        if (drifted) throw new Error("Environment contribution drifted");
+        return [];
+      },
+    });
+    try {
+      expect(built.skills?.listSkills()).toEqual([]);
+      drifted = true;
+      expect(() => built.skills?.loadSkill("anything")).toThrow(/contribution drifted/);
+    } finally {
+      await built.dispose();
+    }
+  });
+
   it("re-derives plugin skill roots when the provider's list changes mid-session", async () => {
     const dir = mkdtempSync(join(tmpdir(), "clarvis-dyn-roots-"));
     const extra = join(dir, "plugin-skills");

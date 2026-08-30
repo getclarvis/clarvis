@@ -174,10 +174,13 @@ message for that shape, so a helpful-looking hint cannot come back by accident.
 | `@clarvis/tools/guard`   | the guard types and shell-analysis helpers, without the rest of the tool API     |
 | `@clarvis/tools/shell`   | `resolveShell`, `shellArgs`, `killTree`, `ownProcessGroup`                       |
 | `@clarvis/tools/sandbox` | Native Bubblewrap/Seatbelt probing, policy construction, and path-policy helpers |
+| `@clarvis/tools/monitor` | `sweepMonitors` housekeeping without loading the complete tool registry          |
 
 `./shell` exists for `@clarvis/hooks`, which spawns operator-declared commands and
 must behave exactly like a `shell` tool command on the same host, without pulling
 in the tool API.
+`./monitor` exists for the kernel's startup housekeeping path; it retains the root export for
+compatibility while keeping tool definitions and dispatch code outside kernel boot.
 
 ## Guards
 

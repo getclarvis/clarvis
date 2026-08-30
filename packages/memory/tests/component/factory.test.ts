@@ -8,6 +8,7 @@ import { createInMemoryMemoryStore } from "../../src/testing.ts";
 import { ScriptedLLM as MockLLM } from "../helpers/capability.ts";
 import { fakeIndexerRuntime } from "../helpers/indexer-runtime.ts";
 import type { LLMProvider, Logger } from "@clarvis/capability";
+import type { ExecuteRunArgs } from "@clarvis/loop";
 
 function makeFactoryDeps(over: { llm?: MockLLM } = {}) {
   const llm = over.llm ?? new MockLLM({ script: [{ text: "[]" }, { text: "[]" }] });
@@ -193,6 +194,28 @@ describe("createMemoryFactory", () => {
     expect(report.note).toBe("nothing-to-record");
     const passLlm = runtime.deps.llm as unknown as { calls: { model: string }[] };
     expect(passLlm.calls[0]?.model).toBe("claude-cheap");
+  });
+
+  it("routes every indexer pass through the host-owned run executor", async () => {
+    const { llm, logger } = makeFactoryDeps();
+    const { runtime } = fakeIndexerRuntime([{ text: "nothing durable" }]);
+    const executeRun = vi.fn(async (args: ExecuteRunArgs) => {
+      const loop = await import("@clarvis/loop");
+      return loop.executeRun(args);
+    });
+    const factory = createMemoryFactory({
+      llm,
+      workspaceRoot: tempWorkspace(),
+      logger,
+      runDeps: () => runtime.deps,
+      executeRun,
+      loadSettings: () => ({ config: CONFIG, defaultModel: "anthropic/claude-cheap" }),
+    });
+
+    const report = await factory.forOwner("evandro")!.index(run());
+
+    expect(report.note).toBe("nothing-to-record");
+    expect(executeRun).toHaveBeenCalledTimes(1);
   });
 
   it("subscribeToRun delivers a translated notice once the real worker drains the job", async () => {

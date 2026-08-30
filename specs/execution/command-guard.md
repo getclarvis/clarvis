@@ -155,7 +155,7 @@ capability vocabulary declares `GuardMode` at `packages/capability/src/api.ts:45
 | `GuardJudgePrompt` | `packages/code/src/adapters/guard-judge-prompt.ts:31` | `{ prompt; source: "workspace"\|"global"\|"builtin" }` |
 | `loadGuardJudgePrompt` | `packages/code/src/adapters/guard-judge-prompt.ts:81` | workspace → global → builtin |
 
-The mode reaches a run through `judgePayloadFor` (`packages/code/src/index.tsx:625-630`) and
+The mode reaches a run through `judgePayloadFor` (`packages/code/src/runtime.tsx`) and
 `toStartParams` (`packages/code/src/adapters/kernel-run-client.ts:129`-`:138`). The command
 `guard.cycle` is registered at `packages/code/src/app/commands.tsx:412`-`:416` and runs
 `cycleGuardMode` (`packages/code/src/views/App.tsx:404`-`:409`).
@@ -733,8 +733,8 @@ itself because guard mode is resolved from host settings it never sees"
   unreadable file treated as absent (`packages/code/src/adapters/guard-judge-prompt.ts:81`-`:87`,
   `:39`-`:61`) and a >1 MiB file rejected without reading its body (`:37`, `:45`); pinned at
   `packages/code/tests/integration/guard-judge-prompt.test.ts:25`-`:61`. The prompt is sent only
-  when the mode is `auto` (`packages/code/src/index.tsx:625-630`). `judgePayloadFor`
-  (`packages/code/src/index.tsx:625-630`, called at `:990`) is the only production path that attaches `guard_judge` to a
+  when the mode is `auto` (`packages/code/src/runtime.tsx`, `judgePayloadFor`). `judgePayloadFor`
+  (called by `buildRunHost` in `packages/code/src/runtime.tsx`) is the only production path that attaches `guard_judge` to a
   run request, and its return type is `{ guardJudge?: { prompt: string } }`
   (`packages/code/src/run-host.ts:81`) — it never sets `model`, `on_unsure` or `timeout_ms`, even
   though `toStartParams` forwards all three when present (`packages/code/src/adapters/kernel-run-client.ts:129`-`:136`)
@@ -1038,7 +1038,7 @@ broken.
     `packages/loop/tests/unit/settings-schema.test.ts:188`-`:195`.
 
 53. **`code` never sends a judge prompt for a mode other than `auto`.**
-    `packages/code/src/index.tsx:625-630`. Unpinned.
+    `packages/code/src/runtime.tsx` (`judgePayloadFor`). Unpinned.
 
 54. **`code`'s judge-prompt loader treats blank, unreadable and oversized files as absent, falling
     through to the next scope.** `packages/code/src/adapters/guard-judge-prompt.ts:56`, `:64`,

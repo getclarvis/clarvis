@@ -92,6 +92,14 @@ coordinator. The host owns the private store path and may supply a browser opene
 the coordinator into HTTP/SSE transports and closes its callback listener together with the
 connection manager in `dispose()`.
 
+Every run acquires remote MCP servers with background browser authorization. Clarvis still opens the
+authorization page, but the current run never waits for a human response: that server is recorded as
+degraded and contributes no tools to the run. Ignoring the page therefore cannot hold model work;
+completing it persists the credential for a later run. Saturation of either background connection
+bound degrades the same way without queuing behind a timeout, including a later run while an earlier
+OAuth flow retains capacity. A terminal failure can hard-fail only when
+every declared server failed terminally; any pending/deferred server keeps the empty pool runnable.
+
 `rawBody` is validated into a `RunRequest`; the exact provider, profile, budget
 and orchestration fields are defined by the exported API types. Hosts normally
 assemble this request from their own configuration surface.
@@ -309,7 +317,9 @@ The list below is the whole of `package.json`'s `exports` map:
   Clarvis product manifest.
 - `@clarvis/loop/capabilities/tools` — coding tools and guard integration.
 - `@clarvis/loop/host` — the narrow host-composition surface for config,
-  provider, plugin and sandbox policy that `@clarvis/kernel` programs against.
+  provider, plugin and sandbox policy that `@clarvis/kernel` programs against, including dependency
+  construction, logger/version bindings and their host-facing types without importing the full
+  execution entry.
 - `@clarvis/loop/workflows` — the engine-owned elicitation serializer a workflow
   implementation needs; shared contracts come directly from `@clarvis/capability`.
 - `@clarvis/loop/testing` — engine-owned `MockLLM`/`MockMCP` doubles plus fresh MCP/trace

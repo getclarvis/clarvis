@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   readdir,
   rm,
   symlink,
@@ -70,6 +71,7 @@ test("managed launcher runs the checkout source while preserving the caller work
   await mkdir(join(repository, "packages", "code", "tooling"), { recursive: true });
   await mkdir(workspace);
   await mkdir(emptyWorkspace);
+  const canonicalWorkspace = await realpath(workspace);
   await writeFile(join(repository, "packages", "code", "src", "cli.ts"), "");
   await writeFile(join(repository, "packages", "code", "tooling", "development-install.ts"), "");
   await writeFile(
@@ -95,7 +97,7 @@ test("managed launcher runs the checkout source while preserving the caller work
   });
   expect(child.status).toBe(0);
   expect(await readFile(log, "utf8")).toBe(
-    `cwd=${workspace}\nsource=1\nentry=${repository}/packages/code/src/cli.ts\narg=--version\n`,
+    `cwd=${canonicalWorkspace}\nsource=1\nentry=${repository}/packages/code/src/cli.ts\narg=--version\n`,
   );
   expect(await readFile(launcher, "utf8")).toContain(DEVELOPMENT_LAUNCHER_MARKER);
 

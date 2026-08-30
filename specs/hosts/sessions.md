@@ -124,10 +124,10 @@ createSessionService(opts: {
 
 | Flag | Value | Cite (behavior) |
 |---|---|---|
-| `--resume` | `<session-id>` | `resumeSessionById` at `packages/code/src/run-host.ts:1257-1272`, wired at `packages/code/src/index.tsx:1163`; `assertSessionExists` at `packages/code/src/index.tsx:204-221` |
-| `--continue` | — | `assertSessionExists` calls `resolveResumeMeta` during boot preflight (`packages/code/src/index.tsx:204-221`); interactive resume resolves the same metadata at `packages/code/src/index.tsx:1272-1284` |
-| `--list` | — | `runListMode`, `packages/code/src/index.tsx:198-221` |
-| `--delete` | `<session-id>` | `runDeleteMode`, `packages/code/src/index.tsx:373-402` |
+| `--resume` | `<session-id>` | `resumeSessionById` at `packages/code/src/run-host.ts:1257-1272`, wired by `sessionControls` in `packages/code/src/runtime.tsx`; `assertSessionExists` in the same runtime |
+| `--continue` | — | `assertSessionExists` calls `resolveResumeMeta` during boot preflight; interactive resume resolves the same metadata in `runApp` (`packages/code/src/runtime.tsx`) |
+| `--list` | — | `runListMode`, `packages/code/src/runtime.tsx` |
+| `--delete` | `<session-id>` | `runDeleteMode`, `packages/code/src/runtime.tsx` |
 
 The CLI flag *parsing* and the `Mode` union are [hosts/code-run-host.md](code-run-host.md)'s territory; only
 the session-delete/resume cascade these modes call into is this document's.
@@ -427,12 +427,12 @@ behavior that same test exercises (its `deleteRun` stub always resolves, never r
 The two call sites that build a `deleteRun` differ in how much they insulate `deleteSession` from
 a real error, which matters for whether the session record ends up deleted:
 
-- **CLI `--delete`** (`runDeleteMode` in `packages/code/src/index.tsx`) wraps every call in a blanket
+- **CLI `--delete`** (`runDeleteMode` in `packages/code/src/runtime.tsx`) wraps every call in a blanket
   `try { … return true } catch { return false }` — any run-delete failure, of any kind, becomes
   `false` rather than a rejection, so the cascade always reaches `store.delete` and the session
   record is always removed; the CLI then reports the successful trace count from the returned
   array.
-- **The TUI session delete path** (`sessionControls.delete` in `packages/code/src/index.tsx`) passes
+- **The TUI session delete path** (`sessionControls.delete` in `packages/code/src/runtime.tsx`) passes
   `runClient.deleteRun` directly,
   with no additional catch. `deleteRun` itself (`packages/code/src/adapters/kernel-run-client.ts`)
   only swallows a `not_found` kernel error into `false`; any other error (e.g. a transport failure)
@@ -732,11 +732,11 @@ recovered-context salvage when there is no result" (`packages/code/tests/compone
     aborts the cascade before `store.delete` runs, leaving the session record intact. Whether a
     given failure surfaces to `deleteSession` as a rejection or as a resolved `false` is entirely a
     property of the `deleteRun` closure the *caller* supplies (see §4.9): the CLI call site in
-    `packages/code/src/index.tsx` catches every error into `false` (so the session record is always
+    `packages/code/src/runtime.tsx` catches every error into `false` (so the session record is always
     removed there), while the TUI session-controls path passes `kernel-run-client.ts`'s `deleteRun`
     directly, which only swallows `not_found`.
     Production: `deleteSession` in `packages/code/src/adapters/session.ts`; `runDeleteMode` and
-    `sessionControls.delete` in `packages/code/src/index.tsx`; `deleteRun` in
+    `sessionControls.delete` in `packages/code/src/runtime.tsx`; `deleteRun` in
     `packages/code/src/adapters/kernel-run-client.ts`.
     Test: `packages/code/tests/component/session.test.ts` ("deleteSession removes the session file
     and cascades delete_run per turn" and "deleteSession records a missing trace and still removes
@@ -826,8 +826,8 @@ recovered-context salvage when there is no result" (`packages/code/tests/compone
 | Newest persisted Environment differs from the active kernel snapshot | Session data remains readable and resume continues; the TUI surfaces the mismatch without changing either snapshot | [code-run-host.md](code-run-host.md) (`loadSessionMeta`) |
 | Resume history exceeds message/char limits | Hard failure (`SessionResumeLimitError`, `code: "resource_exhausted"`) before rendering anything, rather than truncating context silently | `packages/code/src/adapters/session.ts:404-418` |
 | An individual trace-delete resolves `false` (e.g. `not_found`) during `deleteSession` | Recorded as `{ executionId, deleted: false }`; the cascade continues and the session record is still deleted | `packages/code/src/adapters/session.ts:674-681`; `packages/code/tests/component/session.test.ts` ("records a missing trace") |
-| An individual trace-delete *rejects* during `deleteSession`, and the caller's `deleteRun` does not catch it | The rejection propagates out of `deleteSession`; the cascade stops and the session record is **not** deleted | `deleteSession` in `packages/code/src/adapters/session.ts` (no try/catch), TUI `sessionControls.delete` in `packages/code/src/index.tsx`, `deleteRun` in `packages/code/src/adapters/kernel-run-client.ts`, and `packages/code/tests/component/session.test.ts` ("preserves the session") |
-| An individual trace-delete rejects, but the caller's `deleteRun` catches every error into `false` | Cascade continues as if the delete had simply failed; session record is still deleted | CLI `runDeleteMode` in `packages/code/src/index.tsx` |
+| An individual trace-delete *rejects* during `deleteSession`, and the caller's `deleteRun` does not catch it | The rejection propagates out of `deleteSession`; the cascade stops and the session record is **not** deleted | `deleteSession` in `packages/code/src/adapters/session.ts` (no try/catch), TUI `sessionControls.delete` in `packages/code/src/runtime.tsx`, `deleteRun` in `packages/code/src/adapters/kernel-run-client.ts`, and `packages/code/tests/component/session.test.ts` ("preserves the session") |
+| An individual trace-delete rejects, but the caller's `deleteRun` catches every error into `false` | Cascade continues as if the delete had simply failed; session record is still deleted | CLI `runDeleteMode` in `packages/code/src/runtime.tsx` |
 | An event reaches a mapper with no recognized projection (rehydration or live) | Dropped; a rate-limited `debug` log names the path/kind/capability/reason, but nothing is sent to the client | `packages/kernel/src/runs/map-events.ts:50-69,397-402,676-679` |
 
 ## 7. Coupling
@@ -856,7 +856,7 @@ recovered-context salvage when there is no result" (`packages/code/tests/compone
   small `ResumeDeps`/`deleteRun` function-shaped parameters they are given** (`packages/code/src/adapters/session.ts:360-388`,
   `:662`) — not on `@clarvis/kernel` or `SessionService` directly. The kernel-shaped `getRun`,
   `deleteRun` and `sessions` bindings are supplied by `packages/code/src/run-host.ts` and
-  `packages/code/src/index.tsx`, which is how a remote kernel would need no change to this file: it
+  `packages/code/src/runtime.tsx`, which is how a remote kernel would need no change to this file: it
   never imports a kernel type, only protocol DTOs (`Message`, `RunDetail`, `RunEvent`, `RunResult`,
   `ActiveTaskBindingDto`, `PlanRef`, `RunRecovery`, from `@clarvis/protocol`, `packages/code/src/adapters/session.ts:1-10`).
 - **`packages/code/src/adapters/session-store.ts`'s `SessionStore` is the only thing `deleteSession`

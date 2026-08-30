@@ -1,15 +1,23 @@
 import { createSignal } from "solid-js";
-import type { CliRenderer, CliRendererConfig } from "@opentui/core";
+import type { CliRenderer } from "@opentui/core";
 import { depthFromCapabilities, type ColorDepth, type ThemeMode } from "../core/theme-types.ts";
 import { resolveShell, shellArgs } from "@clarvis/kernel/local";
 import { runClipboardProcess } from "./clipboard-process.ts";
 import { detachObserved } from "../core/tasks.ts";
 import { diagnosticCount, diagnosticEvent } from "../core/diagnostic-events.ts";
+import {
+  rendererTeardownSignals,
+  type RendererBootstrapOptions,
+  type RendererTeardownSignal,
+} from "./renderer-bootstrap.ts";
+import { openPublicUrl } from "./open-public-url.ts";
+export { assertInteractiveTTY, buildRendererConfig } from "./renderer-bootstrap.ts";
+export { openPublicUrl } from "./open-public-url.ts";
 
 type ClipboardProcessRunner = typeof runClipboardProcess;
 
 type ShutdownReason =
-  "signal:SIGINT" | "signal:SIGTERM" | "signal:SIGHUP" | "user-quit" | "panic" | "tty-lost";
+  `signal:${RendererTeardownSignal}` | "user-quit" | "boot-failed" | "panic" | "tty-lost";
 
 type ShutdownHook = (reason: ShutdownReason) => void | Promise<void>;
 
@@ -48,14 +56,9 @@ export interface Platform {
 }
 
 /** Options for {@link createPlatform} / {@link buildRendererConfig}. */
-export interface PlatformOptions {
-  dev?: boolean;
+export interface PlatformOptions extends RendererBootstrapOptions {
   /** @internal Injectable process seam for deterministic clipboard tests. */
   clipboardProcess?: ClipboardProcessRunner;
-  /** @internal Injectable runtime seam for renderer-policy tests. */
-  runtimePlatform?: NodeJS.Platform;
-  /** @internal Injectable environment seam for renderer-policy tests. */
-  processEnv?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -119,29 +122,6 @@ async function nativeClipboardCopy(
   return false;
 }
 
-/** Open one validated HTTP(S) URL with the operating system's default browser. */
-export async function openPublicUrl(url: string): Promise<boolean> {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return false;
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false;
-  const argv =
-    process.platform === "darwin"
-      ? ["open", parsed.href]
-      : process.platform === "win32"
-        ? ["rundll32", "url.dll,FileProtocolHandler", parsed.href]
-        : ["xdg-open", parsed.href];
-  try {
-    const child = Bun.spawn(argv, { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
-    return (await child.exited) === 0;
-  } catch {
-    return false;
-  }
-}
-
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 function isPng(buf: Buffer): boolean {
@@ -193,78 +173,6 @@ export async function readClipboardImage(
 }
 
 /**
- * Exit the process with code `2` and a usage message if stdin/stdout are not a
- * real TTY — `code` is an interactive TUI and cannot run headless.
- *
- * @param io - override streams to check, for testing; defaults to `process.stdin`/`process.stdout`.
- */
-export function assertInteractiveTTY(io?: {
-  stdin: NodeJS.ReadStream;
-  stdout: NodeJS.WriteStream;
-}): void {
-  const stdin = io?.stdin ?? process.stdin;
-  const stdout = io?.stdout ?? process.stdout;
-  if (!stdout.isTTY || !stdin.isTTY) {
-    process.stderr.write(
-      "clarvis is an interactive TUI and needs a terminal.\n" +
-        "Headless modes: clarvis --help | --list | --delete <id> | --refresh-models | --update | -p <prompt>\n",
-    );
-    process.exit(2);
-  }
-}
-
-const ITERM_MODIFIER_STATE_REPORT = /^\[[1-8](?::[123])?u$/;
-
-/** Consume iTerm's standalone modifier-state packets before OpenTUI treats 1-8 as text controls. */
-function consumeItermModifierStateReport(sequence: string): boolean {
-  const consumed =
-    sequence.charCodeAt(0) === 0x1b && ITERM_MODIFIER_STATE_REPORT.test(sequence.slice(1));
-  if (consumed) diagnosticCount("keyboard.event.iterm-modifier-state", { outcome: "discarded" });
-  return consumed;
-}
-
-function useFullItermKeyboardReporting(opts: PlatformOptions): boolean {
-  const runtimePlatform = opts.runtimePlatform ?? process.platform;
-  const env = opts.processEnv ?? process.env;
-  return (
-    runtimePlatform === "darwin" &&
-    env.TERM_PROGRAM === "iTerm.app" &&
-    env.TMUX === undefined &&
-    env.SSH_TTY === undefined &&
-    env.SSH_CONNECTION === undefined
-  );
-}
-
-/**
- * The OpenTUI renderer config `code` boots with, given the parsed platform options.
- *
- * @remarks `maxFps` is stated rather than left at OpenTUI's default, even though
- *   it carries the same value. `targetFps` paces the render loop; `maxFps` caps
- *   the immediate re-renders a `requestRender()` can force, so it is the ceiling
- *   that the delta pipeline runs into — and today it never does, because
- *   `@clarvis/loop`'s `DELTA_BATCH` (`src/providers/ai-sdk-adapter.ts`) already
- *   holds flushes to well under it. Raise those thresholds and this becomes the
- *   limiter, showing up as jitter with nothing in this file to point at.
- */
-export function buildRendererConfig(opts: PlatformOptions = {}): CliRendererConfig {
-  const fullItermKeyboard = useFullItermKeyboardReporting(opts);
-  return {
-    screenMode: "alternate-screen",
-    exitOnCtrlC: false,
-    exitSignals: [],
-    useKittyKeyboard: fullItermKeyboard ? { allKeysAsEscapes: true, reportText: true } : {},
-    ...(fullItermKeyboard ? { prependInputHandlers: [consumeItermModifierStateReport] } : {}),
-    useMouse: true,
-    autoFocus: true,
-    clearOnShutdown: true,
-    consoleMode: opts.dev === true ? "console-overlay" : "disabled",
-    openConsoleOnError: opts.dev ?? false,
-    targetFps: 30,
-    maxFps: 60,
-  };
-}
-
-/**
  * Total wall budget for the shutdown sequence before the process exits anyway.
  *
  * @remarks Bounds work whose failure is not fatal — flushing the session,
@@ -313,15 +221,15 @@ function drainStdinUntilQuiet(maxMs: number, quietMs: number): Promise<void> {
  * @param renderer - the active OpenTUI renderer.
  * @param _opts - platform options (currently unused).
  * @returns the {@link Platform} the rest of `code` programs against.
- * @remarks `SIGHUP` is registered only off Windows, which never raises it -
- *   registering it there would install a handler for a signal that cannot
- *   arrive.
+ * @remarks The signal set matches the catchable OpenTUI defaults for the current
+ *   platform. `SIGKILL` remains inherently uncatchable.
  */
 export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}): Platform {
   const hooks = new Set<ShutdownHook>();
   const clipboardControllers = new Set<AbortController>();
   let restored = false;
   let shuttingDown = false;
+  let shutdownFailed = false;
 
   const [themeBg, setThemeBg] = createSignal<ThemeMode>(renderer.themeMode ?? "dark");
   const [capabilityRevision, setCapabilityRevision] = createSignal(0);
@@ -384,15 +292,17 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
   }
 
   async function shutdown(reason: ShutdownReason, err?: unknown): Promise<never> {
+    const failed = reason === "panic" || reason === "boot-failed";
+    shutdownFailed ||= failed;
     if (shuttingDown) {
       restore();
-      process.exit(reason === "panic" ? 1 : 0);
+      process.exit(shutdownFailed ? 1 : 0);
     }
     shuttingDown = true;
     diagnosticEvent(
       "platform.shutdown.begin",
       { reason, ...(err === undefined ? {} : { error: err }) },
-      reason === "panic" ? "error" : "info",
+      failed ? "error" : "info",
     );
     for (const controller of clipboardControllers) controller.abort("platform shutdown");
 
@@ -408,16 +318,14 @@ export function createPlatform(renderer: CliRenderer, opts: PlatformOptions = {}
     if (reason !== "panic" && remote) await drainStdinUntilQuiet(DRAIN_MAX_MS, DRAIN_QUIET_MS);
     if (reason === "panic" && err)
       process.stderr.write(String((err as Error)?.stack ?? err) + "\n");
-    process.exit(reason === "panic" ? 1 : 0);
+    process.exit(shutdownFailed ? 1 : 0);
   }
 
   process.on("exit", restore);
   process.on("uncaughtException", (e) => void shutdown("panic", e));
   process.on("unhandledRejection", (e) => void shutdown("panic", e));
-  process.on("SIGINT", () => void shutdown("signal:SIGINT"));
-  process.on("SIGTERM", () => void shutdown("signal:SIGTERM"));
-  if (process.platform !== "win32") {
-    process.on("SIGHUP", () => void shutdown("signal:SIGHUP"));
+  for (const signal of rendererTeardownSignals(process.platform)) {
+    process.on(signal, () => void shutdown(`signal:${signal}`));
   }
 
   return {

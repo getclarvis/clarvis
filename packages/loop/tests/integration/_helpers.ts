@@ -81,6 +81,7 @@ export interface TestHarness {
 export interface HarnessOptions {
   llm: LLMProvider;
   mcpFactory: MCPClientFactory;
+  mcpLimits?: { maxConnections?: number; maxParallelConnects?: number };
   env?: Partial<Record<string, string>>;
   workspaceRoot?: string;
   owner?: string;
@@ -176,6 +177,7 @@ export async function makeHarness(opts: HarnessOptions): Promise<TestHarness> {
     connectTimeoutMs: env.CLARVIS_MCP_CONNECT_TIMEOUT_MS,
     callTimeoutMs: env.CLARVIS_MCP_TOOL_CALL_TIMEOUT_MS,
     logger: opts.logger,
+    ...(opts.mcpLimits ?? {}),
   });
   const deps: ExecuteRunDeps = {
     env,

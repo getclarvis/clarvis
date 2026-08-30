@@ -58,14 +58,16 @@ function FatalBoot(props: { error: Accessor<string>; busy: Accessor<boolean> }):
 /**
  * Mounts the fatal-boot screen on a bare renderer and drives it: [r] re-runs
  * `retry` until one attempt succeeds (then the screen unmounts and the promise
- * resolves), and ctrl+c calls `quit` (expected to exit the process).
+ * resolves `true`), and ctrl+c calls `quit` (expected to exit the process).
+ * Renderer teardown resolves `false`, so boot orchestration cannot continue
+ * while an asynchronous shutdown is still draining.
  */
 export function runFatalBoot(opts: {
   renderer: CliRenderer;
   error: unknown;
   retry: () => Promise<void>;
   quit: () => void;
-}): Promise<void> {
+}): Promise<boolean> {
   const [message, setMessage] = createSignal(errorText(opts.error));
   const [busy, setBusy] = createSignal(false);
   const [visible, setVisible] = createSignal(true);
@@ -89,15 +91,17 @@ export function runFatalBoot(opts: {
       opts.renderer.off("destroy", onDestroy);
       if (clear) setVisible(false);
       dispose();
-      resolve();
+      resolve(clear);
     };
     const onDestroy = (): void => close(false);
     const onKey = (key: KeyEvent): void => {
-      if (busy()) return;
       if (key.ctrl && key.name === "c") {
-        opts.quit();
+        key.preventDefault();
+        key.stopPropagation();
+        if (!busy()) opts.quit();
         return;
       }
+      if (busy() || key.defaultPrevented) return;
       if (key.name !== "r") return;
       setBusy(true);
       void opts.retry().then(
@@ -109,7 +113,7 @@ export function runFatalBoot(opts: {
         },
       );
     };
-    opts.renderer.keyInput.on("keypress", onKey);
+    opts.renderer.keyInput.prependListener("keypress", onKey);
     opts.renderer.once("destroy", onDestroy);
   });
 }

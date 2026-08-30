@@ -333,6 +333,18 @@ test("createPlatform: shutdown runs hooks in reverse-registration order and exit
   exitSpy.mockRestore();
 });
 
+test("createPlatform: fatal boot shutdown restores the renderer and exits 1", async () => {
+  const { createPlatform } = await import("../../src/adapters/platform.ts");
+  const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
+  const renderer = fakeRenderer();
+  const destroySpy = spyOn(renderer, "destroy");
+  const p = createPlatform(renderer);
+  await p.shutdown("boot-failed");
+  expect(destroySpy).toHaveBeenCalledTimes(1);
+  expect(exitSpy).toHaveBeenCalledWith(1);
+  exitSpy.mockRestore();
+});
+
 test("createPlatform: shutdown tolerates a throwing/rejecting hook without failing the run", async () => {
   const { createPlatform } = await import("../../src/adapters/platform.ts");
   const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
@@ -423,6 +435,20 @@ test("createPlatform: a second concurrent shutdown call short-circuits straight 
   await Promise.all([first, second]);
   expect(destroySpy).toHaveBeenCalled();
   expect(exitSpy).toHaveBeenCalledWith(0);
+  exitSpy.mockRestore();
+});
+
+test("createPlatform: a concurrent signal cannot downgrade a fatal boot exit", async () => {
+  const { createPlatform } = await import("../../src/adapters/platform.ts");
+  const exitSpy = spyOn(process, "exit").mockImplementation(() => undefined as never);
+  const callsBefore = exitSpy.mock.calls.length;
+  const p = createPlatform(fakeRenderer());
+  const first = p.shutdown("boot-failed");
+  const second = p.shutdown("signal:SIGTERM");
+  await Promise.all([first, second]);
+  const exitCodes = exitSpy.mock.calls.slice(callsBefore).map(([code]) => code);
+  expect(exitCodes.length).toBeGreaterThanOrEqual(2);
+  expect(exitCodes.every((code) => code === 1)).toBe(true);
   exitSpy.mockRestore();
 });
 

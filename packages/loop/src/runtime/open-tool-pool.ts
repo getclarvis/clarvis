@@ -1,5 +1,9 @@
 import type { ElicitationRelay } from "@clarvis/mcp-client";
-import { MCPConnectionFailedError } from "@clarvis/mcp-client";
+import {
+  MCPAuthorizationPendingError,
+  MCPBackgroundConnectDeferredError,
+  MCPConnectionFailedError,
+} from "@clarvis/mcp-client";
 import type { ConnectionManager, Lease } from "@clarvis/mcp-client";
 import { poolToolNames } from "./tools/mcp-registry.ts";
 import { sanitizeErrorMessage } from "@clarvis/capability";
@@ -32,9 +36,10 @@ export type OpenToolPoolResult =
  * A server that fails to connect does not fail the run: it is dropped as a
  * {@link DegradedServer} and the run proceeds without it, and profile tool
  * references belonging to a failed server are excluded from validation. The run
- * only fails when every declared server fails (no successes), when the signal is
- * already aborted, or when a profile references a tool that is absent for a
- * reason other than a failed server.
+ * only fails when every declared server has a terminal connection failure (no
+ * successes), when the signal is already aborted, or when a profile references
+ * a tool that is absent for a reason other than a failed server. A set made
+ * entirely unavailable by background OAuth remains a degraded, runnable pool.
  *
  * @param input.request - the run request supplying `servers` and `profiles`.
  * @param input.connections - the manager used to acquire each server lease.
@@ -68,6 +73,7 @@ export async function openToolPool(input: {
         owner,
         ...(relay ? { relay } : {}),
         ...(signal ? { signal } : {}),
+        authorizationWait: "background",
       }),
     ),
   );
@@ -84,8 +90,16 @@ export async function openToolPool(input: {
     return { ok: false, response: { status: "cancelled", result: "", usage: emptyUsage() } };
   }
 
-  if (successes.length === 0 && request.servers.length > 0) {
-    const err = failed[0]?.reason;
+  const everyFailureIsTerminal =
+    failed.length > 0 &&
+    failed.every(
+      (entry) =>
+        !(entry.reason instanceof MCPAuthorizationPendingError) &&
+        !(entry.reason instanceof MCPBackgroundConnectDeferredError),
+    );
+  const terminalFailure = everyFailureIsTerminal ? failed[0] : undefined;
+  if (successes.length === 0 && request.servers.length > 0 && terminalFailure !== undefined) {
+    const err = terminalFailure.reason;
     if (err instanceof MCPConnectionFailedError) {
       return {
         ok: false,

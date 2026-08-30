@@ -9,7 +9,9 @@ import type { McpServerConfig } from "@clarvis/capability";
 import {
   createMCPAuthorizationCoordinator,
   createMCPClientFactory,
+  createConnectionManager,
   openConnection,
+  type MCPClientFactory,
   type MCPAuthorizationCoordinator,
 } from "@clarvis/mcp-client";
 
@@ -34,6 +36,37 @@ interface OAuthMcpFixture {
   tokenExchanges: number;
   authenticatedMcpRequests: number;
   close(): Promise<void>;
+}
+
+type BoundedOutcome<T> =
+  { kind: "resolved"; value: T } | { kind: "failed"; error: unknown } | { kind: "blocked" };
+
+async function settleWithin<T>(promise: Promise<T>, timeoutMs = 1_000): Promise<BoundedOutcome<T>> {
+  return new Promise<BoundedOutcome<T>>((resolve) => {
+    const timer = setTimeout(() => resolve({ kind: "blocked" }), timeoutMs);
+    void promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve({ kind: "resolved", value });
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        resolve({ kind: "failed", error });
+      },
+    );
+  });
+}
+
+async function approveAuthorization(value: string): Promise<void> {
+  const authorizationUrl = new URL(value);
+  const redirect = authorizationUrl.searchParams.get("redirect_uri");
+  const state = authorizationUrl.searchParams.get("state");
+  expect(redirect).not.toBeNull();
+  expect(state).not.toBeNull();
+  const callback = new URL(redirect!);
+  callback.searchParams.set("state", state!);
+  callback.searchParams.set("code", "approved-code");
+  expect((await fetch(callback)).ok).toBe(true);
 }
 
 type OAuthChallengePoint = "initialize" | "tools/list" | "tools/call";
@@ -195,6 +228,210 @@ afterEach(async () => {
 });
 
 describe("remote MCP OAuth transport", () => {
+  it("opens browser authorization in the background and leaves the current acquisition inactive", async () => {
+    const fixture = await oauthMcpFixture();
+    cleanups.push(() => fixture.close());
+    const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-background-")));
+    roots.push(root);
+    const stateDir = join(root, "state");
+    await mkdir(stateDir);
+    const openedAuthorizationUrls: string[] = [];
+    const authorization = createMCPAuthorizationCoordinator({
+      storeFile: join(stateDir, "mcp-oauth.json"),
+      callbackPort: 0,
+      openAuthorizationUrl: async (value) => {
+        openedAuthorizationUrls.push(value);
+        return true;
+      },
+    });
+    cleanups.push(() => authorization.close());
+    const options = {
+      scope: SCOPE,
+      server: { name: "oauth-background", transport: "http", url: fixture.url } as const,
+      factory: createMCPClientFactory({}, { authorization }),
+      connectTimeoutMs: 2_000,
+      callTimeoutMs: 2_000,
+      resourcesEnabled: false,
+      healthPingIntervalMs: 0,
+    };
+    const currentRun = new AbortController();
+
+    const outcome = await settleWithin(
+      openConnection({
+        ...options,
+        authorizationWait: "background",
+        signal: currentRun.signal,
+      }),
+    );
+
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind !== "failed") throw new Error("background authorization did not detach");
+    expect(outcome.error).toMatchObject({ code: "mcp_oauth_authorization_pending" });
+    expect(openedAuthorizationUrls).toHaveLength(1);
+    expect(fixture.tokenExchanges).toBe(0);
+
+    currentRun.abort(new Error("current run finished"));
+    await approveAuthorization(openedAuthorizationUrls[0]!);
+
+    const next = await openConnection(options);
+    expect(next.tools).toEqual([]);
+    expect(fixture.tokenExchanges).toBe(1);
+    expect(openedAuthorizationUrls).toHaveLength(1);
+    await next.conn.close();
+  });
+
+  it("keeps concurrent runs inactive while one browser authorization is already pending", async () => {
+    const fixture = await oauthMcpFixture();
+    cleanups.push(() => fixture.close());
+    const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-concurrent-")));
+    roots.push(root);
+    const stateDir = join(root, "state");
+    await mkdir(stateDir);
+    const openedAuthorizationUrls: string[] = [];
+    const authorization = createMCPAuthorizationCoordinator({
+      storeFile: join(stateDir, "mcp-oauth.json"),
+      callbackPort: 0,
+      openAuthorizationUrl: async (value) => {
+        openedAuthorizationUrls.push(value);
+        return true;
+      },
+    });
+    cleanups.push(() => authorization.close());
+    const options = {
+      scope: SCOPE,
+      server: { name: "oauth-concurrent", transport: "http", url: fixture.url } as const,
+      factory: createMCPClientFactory({}, { authorization }),
+      connectTimeoutMs: 2_000,
+      callTimeoutMs: 2_000,
+      resourcesEnabled: false,
+      healthPingIntervalMs: 0,
+      authorizationWait: "background" as const,
+    };
+
+    const first = await settleWithin(openConnection(options));
+    const second = await settleWithin(openConnection(options));
+
+    expect(first).toMatchObject({
+      kind: "failed",
+      error: { code: "mcp_oauth_authorization_pending" },
+    });
+    expect(second).toMatchObject({
+      kind: "failed",
+      error: { code: "mcp_oauth_authorization_pending" },
+    });
+    expect(openedAuthorizationUrls).toHaveLength(1);
+
+    await approveAuthorization(openedAuthorizationUrls[0]!);
+    const next = await openConnection({ ...options, authorizationWait: "blocking" });
+    expect(next.tools).toEqual([]);
+    expect(fixture.tokenExchanges).toBe(1);
+    await next.conn.close();
+  });
+
+  it("keeps a background catalog authorization alive after the current run ends", async () => {
+    const fixture = await oauthMcpFixture("tools/list");
+    cleanups.push(() => fixture.close());
+    const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-catalog-bg-")));
+    roots.push(root);
+    const stateDir = join(root, "state");
+    await mkdir(stateDir);
+    const openedAuthorizationUrls: string[] = [];
+    const authorization = createMCPAuthorizationCoordinator({
+      storeFile: join(stateDir, "mcp-oauth.json"),
+      callbackPort: 0,
+      openAuthorizationUrl: async (value) => {
+        openedAuthorizationUrls.push(value);
+        return true;
+      },
+    });
+    cleanups.push(() => authorization.close());
+    const options = {
+      scope: SCOPE,
+      server: { name: "oauth-catalog-bg", transport: "http", url: fixture.url } as const,
+      factory: createMCPClientFactory({}, { authorization }),
+      connectTimeoutMs: 2_000,
+      callTimeoutMs: 2_000,
+      resourcesEnabled: false,
+      healthPingIntervalMs: 0,
+    };
+    const currentRun = new AbortController();
+
+    const outcome = await settleWithin(
+      openConnection({
+        ...options,
+        authorizationWait: "background",
+        signal: currentRun.signal,
+      }),
+    );
+
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind !== "failed") throw new Error("catalog authorization did not detach");
+    expect(outcome.error).toMatchObject({ code: "mcp_oauth_authorization_pending" });
+    expect(openedAuthorizationUrls).toHaveLength(1);
+    expect(fixture.tokenExchanges).toBe(0);
+
+    currentRun.abort(new Error("current run finished"));
+    await approveAuthorization(openedAuthorizationUrls[0]!);
+
+    const next = await openConnection(options);
+    expect(next.tools).toEqual([]);
+    expect(fixture.tokenExchanges).toBe(1);
+    expect(openedAuthorizationUrls).toHaveLength(1);
+    await next.conn.close();
+  });
+
+  it("keeps a late tool authorization alive after its run connection closes", async () => {
+    const fixture = await oauthMcpFixture("tools/call");
+    cleanups.push(() => fixture.close());
+    const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-call-bg-")));
+    roots.push(root);
+    const stateDir = join(root, "state");
+    await mkdir(stateDir);
+    const openedAuthorizationUrls: string[] = [];
+    const authorization = createMCPAuthorizationCoordinator({
+      storeFile: join(stateDir, "mcp-oauth.json"),
+      callbackPort: 0,
+      openAuthorizationUrl: async (value) => {
+        openedAuthorizationUrls.push(value);
+        return true;
+      },
+    });
+    cleanups.push(() => authorization.close());
+    const options = {
+      scope: SCOPE,
+      server: { name: "oauth-call-bg", transport: "http", url: fixture.url } as const,
+      factory: createMCPClientFactory({}, { authorization }),
+      connectTimeoutMs: 2_000,
+      callTimeoutMs: 2_000,
+      resourcesEnabled: false,
+      healthPingIntervalMs: 0,
+    };
+    const currentRun = new AbortController();
+    const opened = await openConnection({
+      ...options,
+      authorizationWait: "background",
+      signal: currentRun.signal,
+    });
+    expect(opened.tools.map((tool) => tool.name)).toEqual(["secure_echo"]);
+
+    const result = await opened.conn.callTool("secure_echo", {});
+
+    expect(result).toMatchObject({ ok: false, error: { code: "mcp_unavailable" } });
+    expect(openedAuthorizationUrls).toHaveLength(1);
+    expect(fixture.tokenExchanges).toBe(0);
+
+    currentRun.abort(new Error("current run finished"));
+    await opened.conn.close();
+    await approveAuthorization(openedAuthorizationUrls[0]!);
+
+    const next = await openConnection(options);
+    expect(next.tools.map((tool) => tool.name)).toEqual(["secure_echo"]);
+    expect(await next.conn.callTool("secure_echo", {})).toMatchObject({ ok: true });
+    expect(fixture.tokenExchanges).toBe(1);
+    expect(openedAuthorizationUrls).toHaveLength(1);
+    await next.conn.close();
+  });
+
   it("discovers, registers, authorizes, exchanges PKCE, reconnects, and reuses tokens", async () => {
     const fixture = await oauthMcpFixture();
     cleanups.push(() => fixture.close());
@@ -250,7 +487,7 @@ describe("remote MCP OAuth transport", () => {
     expect(fixture.authenticatedMcpRequests).toBeGreaterThanOrEqual(4);
   });
 
-  it("finishes a challenge raised by tool catalog discovery", async () => {
+  it("finishes a catalog challenge through the manager even when the factory freezes its handle", async () => {
     const fixture = await oauthMcpFixture("tools/list");
     cleanups.push(() => fixture.close());
     const root = await realpath(await mkdtemp(join(tmpdir(), "clarvis-mcp-oauth-catalog-")));
@@ -273,19 +510,26 @@ describe("remote MCP OAuth transport", () => {
     });
     cleanups.push(() => authorization.close());
 
-    const opened = await openConnection({
-      scope: SCOPE,
-      server: { name: "oauth-catalog", transport: "http", url: fixture.url },
-      factory: createMCPClientFactory({}, { authorization }),
+    const authorizedFactory = createMCPClientFactory({}, { authorization });
+    const frozenFactory: MCPClientFactory = async (server, relay, options) =>
+      Object.freeze(await authorizedFactory(server, relay, options));
+    const manager = createConnectionManager({
+      workspace: SCOPE.workspace,
+      factory: frozenFactory,
       connectTimeoutMs: 2_000,
       callTimeoutMs: 2_000,
       resourcesEnabled: false,
       healthPingIntervalMs: 0,
     });
+    const opened = await manager.acquire({
+      server: { name: "oauth-catalog", transport: "http", url: fixture.url },
+      owner: SCOPE.owner,
+    });
 
     expect(opened.tools).toEqual([]);
     expect(fixture.tokenExchanges).toBe(1);
-    await opened.conn.close();
+    await opened.release();
+    await manager.closeAll();
   });
 
   it("finishes a challenge raised by a request after catalog discovery", async () => {

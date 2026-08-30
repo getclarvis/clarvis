@@ -10,7 +10,7 @@
  * this aggregate host-facing surface back through a type cycle.
  */
 import type { ProviderConfig } from "@clarvis/capability";
-import type { ExecuteRunDeps } from "@clarvis/loop";
+import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis/loop";
 import type { MemoryBatchCommit, MemoryRecoveryReport } from "./journal.ts";
 import type {
   MemoryIndexJob,
@@ -39,6 +39,8 @@ export interface IndexerRuntime {
   deps: ExecuteRunDeps;
   modelRef: string;
   providers: readonly ProviderConfig[];
+  /** Host-owned execution boundary for lifecycle and Environment admission around every pass. */
+  executeRun?: (args: ExecuteRunArgs) => Promise<ExecuteRunOutcome>;
   /** Same memory provider selected for the run being learned from. */
   memoryProvider?: MemoryProvider;
   /** Stable identity used to prevent a queued run from crossing provider changes. */

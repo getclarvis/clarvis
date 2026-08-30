@@ -18,6 +18,7 @@ specified in [`engine/tool-dispatch.md`](../../specs/engine/tool-dispatch.md).
 | `interpolateEnv`                                | `${VAR}` expansion in a server's `env` and `headers` when enabled               |
 | `createMCPAuthorizationCoordinator`             | browser OAuth, loopback callback, PKCE and per-resource serialization           |
 | `createMcpOAuthCredentialStore`                 | bounded, private persistence for registrations and tokens                       |
+| `MCPAuthorizationWait`, pending/deferred errors | blocking/embedder and non-blocking run authorization/admission policy            |
 | `CLIENT_NAME`, `VERSION`                        | MCP handshake identity using the root Clarvis product version                   |
 
 It depends on `@clarvis/capability` (the `MCPConnection` / `NamespacedRegistry`
@@ -69,10 +70,25 @@ fields, and never renders a code or state into its response.
 
 An authorization challenge may arrive during the handshake, catalog discovery, a tool/resource
 request, or a health probe. Clarvis completes the SDK-started browser flow and repeats only the
-refused request once; a later challenge receives a fresh state and verifier. The outer connection
-budget pauses while initial authorization or another flow for the same resource is pending, but
-cancellation and the five-minute human-authorization deadline remain live. Coordinator shutdown
-also waits for an in-progress callback-listener startup before closing it.
+refused request once; a later challenge receives a fresh state and verifier. The default
+`authorizationWait: "blocking"` contract retains that behavior for explicit embedder operations.
+Run acquisition uses `"background"`: once the browser flow starts, that acquisition rejects with
+`MCPAuthorizationPendingError`, the MCP is inactive for that run, and authorization continues
+without the run's abort signal. An initial-connect challenge retains both the live-connection slot
+and physical-handshake permit until its completion settles; a catalog challenge retains its
+connection slot through temporary-handle cleanup and preserves the completion's success or failure.
+A second run arriving behind the same pending initial flow, or behind either saturated background
+admission bound, degrades immediately instead of waiting on the serialized credential key or connect
+timeout. If the user completes the browser
+flow, the durable token is available to a later run without opening a second page. A late challenge
+during a tool call similarly maps to `mcp_unavailable` without reconnecting or opening the circuit;
+that later flow is coordinator-bounded, not retained as manager connection capacity.
+
+The outer connection budget pauses while blocking initial authorization or another flow for the
+same resource is pending, but cancellation and the five-minute human-authorization deadline remain
+live. Coordinator shutdown also waits for an in-progress callback-listener startup before closing
+it. Background authorization remains bounded by the same human deadline and by coordinator
+shutdown; it is detached only from the run that must remain responsive.
 
 `createMcpOAuthCredentialStore` persists SDK-validated client registrations and tokens in a
 versioned JSON document. The default file is `state/mcp-oauth.json` under the global Clarvis root;
@@ -97,7 +113,10 @@ Discovery is bounded before catalogs are retained. Tool discovery allows 2,048
 descriptors / 8 MiB and resource plus template discovery allows 5,000 entries /
 4 MiB; either catalog refuses a cursor chain beyond 50 pages. The connection
 manager admits at most 32 live-or-connecting transports, four simultaneous
-handshakes and eight zero-reference warm shared transports by default. These
+handshakes/initial background authorization completions and eight zero-reference warm shared
+transports by default. Blocking callers queue behind the handshake gate. A background caller that
+reaches either the connection or handshake bound receives `MCPBackgroundConnectDeferredError`, is
+never logged as queued, and leaves that MCP inactive for the run. These
 are package-level safety defaults and remain overridable through the factory,
 connection and manager option seams.
 
@@ -105,8 +124,11 @@ Manager and resilient-session shutdown never wait forever for a custom factory,
 reconnect or handle `close()`. Manager teardown gets one 2-second window and each
 session lifecycle operation gets the same default; `closeGraceMs` can tune either,
 but is hard-capped at 30 seconds. After that window a late promise remains observed,
-and any handle that eventually opens is still closed. Manager shutdown also aborts
-all owned handshakes and clears pool/capacity references before waiting on its grace.
+and any handle that eventually opens is still closed. When a factory resolves during that window
+after abort or timeout, an idempotent close shim keeps the late handle's `close()` in the same
+manager grace rather than letting teardown finish at factory resolution. Mutable handles preserve
+their identity; a read-only fallback wrapper inherits the late-OAuth request boundary. Manager shutdown also aborts all
+owned handshakes and clears pool/capacity references before waiting on its grace.
 
 ## What it logs
 
@@ -182,6 +204,7 @@ The suite is classified by the boundary each test exercises:
   replaced. Session and resource-policy matrices are not repeated here;
 - `tests/integration/` owns real stdio subprocess and loopback HTTP behavior,
   the complete OAuth discovery/registration/PKCE/callback/token/reconnect path,
+  background initial/catalog/tool-call authorization and concurrent-run degradation,
   private credential-store filesystem behavior, one narrow MCP SDK elicitation
   compatibility canary and the real Clarvis relay round-trip;
 - `tests/architecture/` owns the package's public-versus-internal export

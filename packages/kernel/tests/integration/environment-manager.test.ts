@@ -27,6 +27,7 @@ import type {
 import { createEnvironmentManager } from "../../src/environments/environment-manager.ts";
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
+import { MAX_SKILL_FILE_CHARS } from "@clarvis/skills";
 
 const TRUSTED: WorkspaceTrustVerdict = {
   state: "trusted",
@@ -1019,8 +1020,60 @@ describe("Environment manager", () => {
     writeFileSync(resource, "version two\n");
 
     expect(() => target.skillRoots()).toThrow(/reconnect the kernel/);
+    expect(() => target.assertRunSnapshot()).toThrow(/reconnect the kernel/);
     const after = manager().resolveActive([], TRUSTED);
     expect(after.fingerprint).not.toBe(before.fingerprint);
+  });
+
+  it("fingerprints standalone sidecar presentation and rejects lazy catalog drift", () => {
+    const root = globalPaths(globalDir).skillsDir;
+    writeSkill(root, "presented");
+    const agents = join(root, "presented", "agents");
+    mkdirSync(agents, { recursive: true });
+    const sidecar = join(agents, "openai.yaml");
+    writeFileSync(sidecar, "short-description: First presentation\n");
+    const target = manager();
+    const before = target.resolveActive([], TRUSTED);
+
+    writeFileSync(sidecar, "short-description: Second presentation\n");
+
+    expect(() => target.skillRoots()).toThrow(/reconnect the kernel/);
+    const after = manager().resolveActive([], TRUSTED);
+    expect(after.fingerprint).not.toBe(before.fingerprint);
+  });
+
+  it("returns exact builtin roots that exclude a standalone skill that was not captured", () => {
+    const root = globalPaths(globalDir).skillsDir;
+    writeSkill(root, "valid");
+    writeSkill(root, "broken");
+    const broken = join(root, "broken", "SKILL.md");
+    writeFileSync(
+      broken,
+      "---\nname: broken\ndescription: one\n---\n" + "x".repeat(MAX_SKILL_FILE_CHARS + 1),
+    );
+    const target = manager();
+    const resolved = target.resolveActive([], TRUSTED);
+
+    expect(resolved.standalone_skills).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ ref: expect.objectContaining({ name: "valid" }), active: true }),
+        expect.objectContaining({
+          ref: expect.objectContaining({ name: "broken" }),
+          active: false,
+        }),
+      ]),
+    );
+    expect(target.skillRoots()).toEqual([
+      expect.objectContaining({ path: root, include: ["valid"] }),
+    ]);
+
+    writeFileSync(
+      broken,
+      "---\nname: broken\ndescription: two\n---\n" + "y".repeat(MAX_SKILL_FILE_CHARS + 1),
+    );
+    expect(target.skillRoots()).toEqual([
+      expect.objectContaining({ path: root, include: ["valid"] }),
+    ]);
   });
 
   it("requires a fresh workspace approval when switching between executable Environments", async () => {

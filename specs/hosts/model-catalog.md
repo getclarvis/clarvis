@@ -112,7 +112,7 @@ exposed over the transport under operation key `models`
 | `catalog-pick.ts` | — | row builders: `providerRows`, `recommendedProviderRows`, `modelRows`, `configuredModelRows`, `configuredModelCapabilities`, `knownToLackReasoning`, `filterRows`, `catalogReady` |
 | `effort-levels.ts` | — | `EFFORT_LEVELS`, `normalizeReasoningEfforts`, `supportedReasoningEfforts`, `recommendedReasoningEffort` |
 | `pick-model.ts` | — | `modelPickerSpec(...)` — glue reused by `DefaultsPanel` (vision model), `AgentsPanel` (per-agent model override), `MemoryConfigPanel` (indexer model); full contract in §4.17 |
-| CLI `--refresh-models` | `packages/code/src/cli-args.ts:84`, `packages/code/src/index.tsx:404-422` | headless mode: `kernel.models.refresh()` then exits |
+| CLI `--refresh-models` | `packages/code/src/cli-args.ts`, `packages/code/src/runtime.tsx` (`runRefreshMode`) | headless mode: `kernel.models.refresh()` then exits |
 
 ## 3. Data and formats
 
@@ -144,9 +144,9 @@ file). The first key in `providers` is `requesty` (the example block below), not
 }
 ```
 
-The comment at `packages/code/src/index.tsx:767-771` states the parse/projection cost as measured:
-"~59 ms of parse and projection (166 providers, 5501 models)" — matching the file's actual counts
-exactly, confirming the comment is current.
+The 166-provider/5,501-model counts are derived from the bundled snapshot. Interactive first boot no
+longer parses or projects it; the catalog crosses an explicit on-demand boundary in
+`packages/code/src/runtime.tsx` (`ensureModelsCatalog`).
 
 ### 3.2 On-disk schema (Zod, `packages/kernel/src/models/model-catalog.ts:36-73`)
 
@@ -414,22 +414,22 @@ window-aware output-budget clamp) — both outside this document's scope (delega
 [foundations/llm.md](../foundations/llm.md) and the loop's budget/clock machinery respectively); this document owns only the
 floor function itself.
 
-### 4.10 TUI catalog boot sequence (`packages/code/src/index.tsx`)
+### 4.10 TUI catalog boot sequence (`packages/code/src/runtime.tsx`)
 
-1. `loadFoundation` optionally **defers** the catalog fetch (`opts?.deferCatalog === true`,
-   line 773): when deferred, `client.models.get()` runs unawaited and populates the
-   `modelsCatalog` signal on completion (lines 777-782); when not deferred, the boot path
-   `await`s it directly (line 784).
-2. `liveCatalog` (lines 612-620) is a `ModelsCatalog` object whose every method reads through the
+1. `loadFoundation` never calls `client.models.get()`. `ensureModelsCatalog` is a single-flight
+   loader crossed only by a catalog-dependent command or surface; provider routes await it alongside
+   their own dynamic module import before mounting the first-run picker.
+2. `liveCatalog` is a `ModelsCatalog` object whose every method reads through the
    `modelsCatalog()` signal and degrades to an empty/`undefined` answer while it is still `null` —
    so every UI surface holding a reference to `liveCatalog` need not know whether the catalog has
    landed yet.
 3. An empty-providers catalog or a failed `client.models.get()` call is reported via
    `diagnosticEvent("catalog.unavailable", { reason, source }, "warn")`
-   (`reportCatalogUnavailable`, lines 735-737), never thrown — the picker simply renders empty.
+   (`reportCatalogUnavailable`), never thrown — the picker simply renders empty.
 4. `--refresh-models` (headless CLI mode) constructs a throwaway `FileKernel`, calls
    `kernel.models.refresh()`, prints `"models.dev refreshed — N providers / M models"`, and exits 0
-   (or prints `"refresh failed: ..."` and exits 1) — `packages/code/src/index.tsx:404-422`.
+   (or prints `"refresh failed: ..."` and exits 1) — `packages/code/src/runtime.tsx`
+   (`runRefreshMode`).
 
 ### 4.11 `/model` and `/effort` write coupling
 
@@ -757,7 +757,7 @@ catalog case).
 | No model resolves for an agent at run assembly | Kernel error `invalid_request`, naming the agent | `packages/kernel/src/runs/settings-assembler.ts:250-259` |
 | No reasoning effort resolves for an agent | Silently `undefined` — not an error | `packages/kernel/src/runs/settings-assembler.ts:279-299` |
 | TUI: authenticated subscription effort lookup is pending | Render a loading status and withhold the unpublished-level claim until the request settles | `packages/code/src/views/config/EffortView.tsx` (`entitledLoading`); pinned by `packages/code/tests/integration/effort-view-render.test.tsx` |
-| TUI: catalog fetch (`client.models.get()`) fails, or answers with zero providers | `diagnosticEvent("catalog.unavailable", ..., "warn")`; the picker just renders empty (`catalogReady` is `false`) | `packages/code/src/index.tsx:730-753`; `catalog-pick.ts:catalogReady` |
+| TUI: catalog fetch (`client.models.get()`) fails, or answers with zero providers | `diagnosticEvent("catalog.unavailable", ..., "warn")`; the picker just renders empty (`catalogReady` is `false`) | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`); `catalog-pick.ts:catalogReady` |
 | `configuredModelRows`/`configuredModelCapabilities` given a capability filter or a model the catalog never saw | Treated as "not known", never as "unsupported" — the model is still offered/its capabilities read as `undefined` | `packages/code/src/views/config/catalog-pick.ts:160-168` (doc-comment), `:198-201` |
 | `guard_judge` has no model (neither `cfg.model` nor `deps.defaultModel`) | Warns and degrades the judge to mode `"on"` (asks a human) rather than failing the run | `packages/kernel/src/guard/judge.ts:157-164` (outside this document's scope; cited only as a `parseModelRef`/`resolveProvider` consumer) |
 
@@ -797,7 +797,7 @@ catalog case).
   `packages/code/src/views/config/providers/model-level.tsx:3` imports `cacheModeOf`/`derivePromptCacheMode` the same
   way. What the TUI does not import is the kernel's **catalog construction logic** itself, which is a
   **structural duplication forced by the package boundary** (per the repository's own rule that
-  `code` reaches the engine only through `@clarvis/kernel`'s five entrypoints + `@clarvis/protocol`
+  `code` reaches the engine only through `@clarvis/kernel`'s six entrypoints + `@clarvis/protocol`
   for anything beyond scalar helpers), not an oversight — but it means `resolveModelPrice`'s
   exact/fill algorithm, and `seed`/`safeName` (§4.13), exist in two source files that must be kept in
   step by hand (the TUI's version diverges from the kernel's in both directions — §4.4).

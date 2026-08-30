@@ -34,6 +34,17 @@ export function unavailableResult(mcpName: string): ToolResult {
   };
 }
 
+export function authorizationPendingResult(mcpName: string): ToolResult {
+  return {
+    ok: false,
+    error: {
+      code: "mcp_unavailable",
+      message: `MCP '${mcpName}' is inactive for this run while browser authorization is pending.`,
+      kind: "unavailable",
+    },
+  };
+}
+
 export function interruptedResult(label: string, err: unknown): ToolResult {
   return {
     ok: false,

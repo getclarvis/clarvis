@@ -17,7 +17,14 @@ import {
   unref,
 } from "@clarvis/capability";
 import { runMCPRequest } from "./client.ts";
-import type { ElicitationRelay, MCPClientFactory, MCPClientHandle } from "./client.ts";
+import type {
+  ElicitationRelay,
+  MCPAuthorizationWait,
+  MCPClientFactory,
+  MCPClientHandle,
+} from "./client.ts";
+import { MCPAuthorizationPendingError } from "./oauth.ts";
+import { MCPBackgroundConnectDeferredError } from "./errors.ts";
 import {
   appendResourceDescriptors,
   catalogResult,
@@ -88,6 +95,8 @@ export interface OpenConnectionOptions {
   factory: MCPClientFactory;
   relay?: ElicitationRelay;
   signal?: AbortSignal;
+  /** Whether an opened browser OAuth flow blocks this connection acquisition. */
+  authorizationWait?: MCPAuthorizationWait;
   reprobeCooldownMs?: number;
   timeoutStreakThreshold?: number;
   healthPingIntervalMs?: number;
@@ -110,6 +119,7 @@ export async function openConnection({
   factory,
   relay,
   signal,
+  authorizationWait,
   reprobeCooldownMs = UNAVAILABLE_REPROBE_COOLDOWN_MS,
   timeoutStreakThreshold = DEFAULT_TIMEOUT_STREAK_THRESHOLD,
   healthPingIntervalMs = DEFAULT_HEALTH_PING_INTERVAL_MS,
@@ -132,7 +142,7 @@ export async function openConnection({
   const connect = (): Promise<MCPClientHandle> => {
     attempts += 1;
     return observedConnect(
-      { factory, server, relay, connectTimeoutMs, signal, scope, logger: log },
+      { factory, server, relay, connectTimeoutMs, signal, scope, authorizationWait, logger: log },
       attempts,
     );
   };
@@ -141,6 +151,11 @@ export async function openConnection({
   try {
     handle = await connect();
   } catch (err) {
+    if (
+      err instanceof MCPAuthorizationPendingError ||
+      err instanceof MCPBackgroundConnectDeferredError
+    )
+      throw err;
     if (err instanceof MCPConnectionFailedError) throw err;
     throw new MCPConnectionFailedError(server.name, server.transport, errorText(err));
   }
@@ -156,12 +171,24 @@ export async function openConnection({
       signal,
     );
   } catch (err) {
-    await bestEffort(() => handle.close(), {
-      operation: "mcp_failed_listing_close",
-      workspace: scope.workspace,
-      dedupeKey: `mcp_failed_listing_close\0${scope.workspace}\0${server.name}`,
-      logger: log,
-    });
+    const close = (): Promise<void> =>
+      bestEffort(() => handle.close(), {
+        operation: "mcp_failed_listing_close",
+        workspace: scope.workspace,
+        dedupeKey: `mcp_failed_listing_close\0${scope.workspace}\0${server.name}`,
+        logger: log,
+      });
+    if (err instanceof MCPAuthorizationPendingError) {
+      const completion = err.completion.finally(close);
+      detachObserved(() => completion, {
+        operation: "mcp_oauth_pending_connection_close",
+        workspace: scope.workspace,
+        dedupeKey: `mcp_oauth_pending_connection_close\0${scope.workspace}\0${server.name}`,
+        logger: log,
+      });
+      throw new MCPAuthorizationPendingError(completion);
+    }
+    await close();
     throw new MCPConnectionFailedError(
       server.name,
       server.transport,
@@ -328,6 +355,7 @@ interface ConnectAttemptContext {
   connectTimeoutMs: number;
   signal: AbortSignal | undefined;
   scope: PoolScope;
+  authorizationWait: MCPAuthorizationWait | undefined;
   logger: Logger;
 }
 
@@ -382,6 +410,7 @@ async function observedConnect(
       ctx.connectTimeoutMs,
       ctx.signal,
       ctx.scope,
+      ctx.authorizationWait,
       ctx.logger,
     );
     ctx.logger.info(
@@ -417,6 +446,7 @@ async function connectWithinBound(
   connectTimeoutMs: number,
   signal: AbortSignal | undefined,
   scope: PoolScope,
+  authorizationWait: MCPAuthorizationWait | undefined,
   logger: Logger,
 ): Promise<MCPClientHandle> {
   const connectAbort = new AbortController();
@@ -503,6 +533,7 @@ async function connectWithinBound(
       scope,
       onAuthorizationWaitStart: pauseTimer,
       onAuthorizationWaitEnd: resumeTimer,
+      ...(authorizationWait === undefined ? {} : { authorizationWait }),
     });
   } catch (error) {
     handlePromise = Promise.reject(error instanceof Error ? error : new Error(String(error)));

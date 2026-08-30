@@ -74,7 +74,7 @@ async function assertLazyProviderChunk(outputs: readonly Bun.BuildArtifact[]): P
   const entry = outputs.find((output) => output.kind === "entry-point");
   if (entry === undefined) throw new Error("build emitted no entry point");
   const javascriptChunks = outputs.filter(
-    (output) => output.kind === "chunk" && output.path.endsWith(".js"),
+    (output) => output.path !== entry.path && output.path.endsWith(".js"),
   );
   assertLazyProviderArtifact({
     entrySource: await Bun.file(entry.path).text(),
@@ -155,6 +155,7 @@ async function main(): Promise<void> {
     // node_modules path in generated __dirname values.
     external: ["@opentui/core", "@opentui/core-*", "pino"],
     splitting: true,
+    minify: true,
     sourcemap: installBuild ? "none" : "external",
   });
 
@@ -163,13 +164,15 @@ async function main(): Promise<void> {
     throw new Error("bun build failed");
   }
 
-  await assertLazyProviderChunk(result.outputs);
-  await assertRelocatableBuild(result.outputs);
-  const sourceMaps = installBuild ? 0 : await detachSourceMaps(result.outputs);
+  const outputs = result.outputs;
+
+  await assertLazyProviderChunk(outputs);
+  await assertRelocatableBuild(outputs);
+  const sourceMaps = installBuild ? 0 : await detachSourceMaps(outputs);
   if (installBuild) {
-    const javascript = result.outputs.filter((output) => output.path.endsWith(".js"));
+    const javascript = outputs.filter((output) => output.path.endsWith(".js"));
     assertInstallArtifact({
-      artifactPaths: result.outputs.map((output) => output.path),
+      artifactPaths: outputs.map((output) => output.path),
       javascriptArtifacts: await Promise.all(
         javascript.map(async (artifact) => ({
           path: artifact.path,
@@ -181,13 +184,13 @@ async function main(): Promise<void> {
   await copyAssets();
 
   const entry = result.outputs.find((o) => o.kind === "entry-point");
-  const chunks = result.outputs.filter((o) => o.kind === "chunk" && o.path.endsWith(".js"));
+  const chunks = outputs.filter((o) => o.kind === "chunk" && o.path.endsWith(".js"));
   const bytes = entry ? (await stat(entry.path)).size : 0;
   process.stdout.write(
     `built ${outdir}/index.js  ${(bytes / 1024 / 1024).toFixed(2)} MB  ` +
       `${chunks.length} lazy chunks  ` +
       `${installBuild ? "no source maps" : `${sourceMaps} detached maps`}  ` +
-      `${result.outputs.length} outputs  ` +
+      `${outputs.length} outputs  ` +
       `${(performance.now() - started).toFixed(0)}ms\n`,
   );
 }

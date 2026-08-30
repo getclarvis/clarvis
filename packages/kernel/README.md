@@ -10,7 +10,7 @@ Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clar
 `@clarvis/capability`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
-Clients remain independent of the engine through five deliberately bounded public entrypoints. Each
+Clients remain independent of the engine through six deliberately bounded public entrypoints. Each
 public symbol has one thematic owner; the root is not a compatibility barrel for lower packages.
 
 | Entry                       | Responsibility                                                                             |
@@ -20,6 +20,7 @@ public symbol has one thematic owner; the root is not a compatibility barrel for
 | `@clarvis/kernel/config`    | config stores/schemas, agents, models, plugins, workflows and settings composition         |
 | `@clarvis/kernel/policy`    | guard, sanitization, tool identity, event mapping/policy/spans and ingest state            |
 | `@clarvis/kernel/local`     | shell/process/executable helpers and local filesystem/git adapters                         |
+| `@clarvis/kernel/logger`    | logger constructor and types without loading file-kernel bootstrap                        |
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > may change during the beta period.
@@ -117,10 +118,19 @@ authored fingerprint, and effective fingerprint; `applyComposition` revalidates 
 definition plus selection as one recoverable transaction. Trust-write failure restores both prior
 documents, while an unchanged workspace selection shadowing a global-default write is neither
 activated nor newly approved. The pinned fingerprint includes resolved plugin manifests and
-companion declarations, agent files, packaged skill bodies/resources, and the content, size, mode,
+companion declarations, agent files, canonical per-file digests of bounded packaged-skill
+manifest/resource bytes plus effective sidecar-derived catalog metadata, and the content, size, mode,
 and package-relative path of every directly referenced package-local MCP, hook, or capability
 process file, plus selected standalone skill bodies/resources. Process-file admission is bounded per
-file, per plugin, and by file count. A later contribution drift fails closed until reconnect.
+file, per plugin, and by file count. Ordinary contribution projections reuse the pinned parsed
+snapshot instead of rescanning and rehashing every accessor. Immediately before every foreground or
+memory-indexer run lease is admitted, the kernel rehashes the complete selected contribution
+surface; exact lazy skill catalog/body/resource access repeats that full check at its read boundary.
+Builtin and custom standalone roots carry exact `include` lists for only the skills captured in that
+snapshot. If any packaged skill in a plugin cannot be captured within its bounds, that plugin's
+entire skill-root surface is withheld while its independently valid non-skill contributions remain.
+Drift fails closed until reconnect, while captured control-plane projections remain responsive and
+cannot consume changed bytes under the old fingerprint.
 Workspace-trust
 transitions recompose that extension snapshot only while no run is active, and selected plugin
 update/uninstall uses the same kernel-owned exclusion boundary and blocks later runs until reconnect.
@@ -497,6 +507,8 @@ A settled run no longer remains leased for the memory indexer's multi-minute ret
 event stream waits five idle seconds for the usual immediate terminal notice, renews only within a
 15-second absolute window, and hard-caps every override at one minute. The durable memory job keeps
 retrying after the stream closes; only the transient client projection is released.
+Each physical indexer pass reacquires the same Environment run lease before calling the loop, so a
+durable retry cannot consume host skills or extension bytes after the foreground lease has closed.
 
 File-backed agent operations validate agent names at the service boundary.
 Names may contain letters, numbers, underscores and hyphens; path separators
@@ -599,7 +611,7 @@ The suite is classified by its primary boundary while the architecture migration
 - `tests/integration/` owns real filesystem, process, git, loop, plan, stdio and loopback boundaries,
   plus file-kernel and owner/composition wiring. Memory capability/loop behavior belongs to
   `@clarvis/memory`; this package keeps one composition-root sentinel only.
-- `tests/architecture/` owns static enforcement of the five-entry public surface and the
+- `tests/architecture/` owns static enforcement of the six-entry public surface and the
   cross-package workspace-layout invariant.
 - `tests/helpers/` contains executable fixtures only. They run under the repository's pinned Bun
   runtime; the kernel test suite does not require a second language runtime. Helpers are not test

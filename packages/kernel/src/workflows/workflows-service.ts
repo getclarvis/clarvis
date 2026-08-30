@@ -5,12 +5,8 @@ import {
   type ExecutionStatus,
   type TraceEvent,
 } from "@clarvis/capability";
-import {
-  executeRun,
-  generateExecutionId,
-  type ExecuteRunDeps,
-  type RunRequest,
-} from "@clarvis/loop";
+import type { ExecuteRunDeps, RunRequest } from "@clarvis/loop";
+import { generateExecutionId } from "@clarvis/trace";
 import { globalPaths, workspacePaths } from "@clarvis/paths";
 import { MEMORY_CAPABILITY_NAME } from "@clarvis/memory/settings";
 import {
@@ -68,7 +64,10 @@ import {
 import type { KernelLifecycle } from "../application/lifecycle.ts";
 import { generateWorkflowTitle } from "./workflow-title.ts";
 
-const WORKFLOW_RUN_DEPS = { executeRun, generateExecutionId } satisfies WorkflowRunDeps;
+const WORKFLOW_RUN_DEPS = {
+  executeRun: async (args) => (await import("@clarvis/loop")).executeRun(args),
+  generateExecutionId,
+} satisfies WorkflowRunDeps;
 
 /** The resolved `workflows` fan-out settings a manager run executes under.
  * Manager designation is the `workflow` grant, not a field here. */
@@ -515,7 +514,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
             title: generated,
           });
         });
-        const runTask = executeRun({
+        const runTask = WORKFLOW_RUN_DEPS.executeRun({
           rawBody: managerBody,
           owner,
           deps,

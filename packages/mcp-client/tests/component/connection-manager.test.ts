@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "../helpers/bun-test.ts";
-import { createConnectionManager } from "@clarvis/mcp-client";
+import {
+  createConnectionManager,
+  MCPAuthorizationPendingError,
+  MCPBackgroundConnectDeferredError,
+} from "@clarvis/mcp-client";
 import type { ConnectionManager, MCPClientFactory, MCPClientHandle } from "@clarvis/mcp-client";
 import type { McpServerConfig } from "@clarvis/capability";
 
@@ -170,6 +174,223 @@ describe("ConnectionManager (Stage 0 — 1:1 acquire/release, no reuse)", () => 
     await m.closeAll();
   });
 
+  it("retains both connection limits while background OAuth continues", async () => {
+    let finishAuthorization!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      finishAuthorization = resolve;
+    });
+    let physicalAttempts = 0;
+    const factory: MCPClientFactory = async () => {
+      physicalAttempts += 1;
+      if (physicalAttempts === 1) throw new MCPAuthorizationPendingError(completion);
+      return makeHandle();
+    };
+    const m = createConnectionManager({
+      workspace: WS,
+      factory,
+      connectTimeoutMs: 1_000,
+      callTimeoutMs: 600_000,
+      maxConnections: 2,
+      maxParallelConnects: 1,
+    });
+
+    await expect(
+      m.acquire({ server: TOOL, owner: OWNER, authorizationWait: "background" }),
+    ).rejects.toBeInstanceOf(MCPAuthorizationPendingError);
+    const waiting = m.acquire({ server: TOOL, owner: OWNER, authorizationWait: "blocking" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(physicalAttempts).toBe(1);
+    await expect(
+      m.acquire({ server: TOOL, owner: OWNER, authorizationWait: "background" }),
+    ).rejects.toMatchObject({
+      code: "mcp_background_connect_deferred",
+      resource: "connections",
+    });
+
+    finishAuthorization();
+    const lease = await waiting;
+    expect(physicalAttempts).toBe(2);
+    await lease.release();
+    await m.closeAll();
+  });
+
+  it("degrades background acquisitions immediately while OAuth owns the handshake gate", async () => {
+    let finishAuthorization!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      finishAuthorization = resolve;
+    });
+    let physicalAttempts = 0;
+    const m = createConnectionManager({
+      workspace: WS,
+      factory: async () => {
+        physicalAttempts += 1;
+        throw new MCPAuthorizationPendingError(completion);
+      },
+      connectTimeoutMs: 1_000,
+      callTimeoutMs: 600_000,
+      maxConnections: 2,
+      maxParallelConnects: 1,
+    });
+
+    await expect(
+      m.acquire({ server: TOOL, owner: OWNER, authorizationWait: "background" }),
+    ).rejects.toBeInstanceOf(MCPAuthorizationPendingError);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await expect(
+        m.acquire({ server: TOOL, owner: OWNER, authorizationWait: "background" }),
+      ).rejects.toBeInstanceOf(MCPBackgroundConnectDeferredError);
+    }
+    expect(physicalAttempts).toBe(1);
+
+    finishAuthorization();
+    await m.closeAll();
+  });
+
+  it("degrades a later background run while OAuth owns the connection limit", async () => {
+    let finishAuthorization!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      finishAuthorization = resolve;
+    });
+    let physicalAttempts = 0;
+    const m = createConnectionManager({
+      workspace: WS,
+      factory: async () => {
+        physicalAttempts += 1;
+        throw new MCPAuthorizationPendingError(completion);
+      },
+      connectTimeoutMs: 1_000,
+      callTimeoutMs: 600_000,
+      maxConnections: 1,
+      maxParallelConnects: 4,
+    });
+
+    await expect(
+      m.acquire({ server: TOOL, owner: OWNER, authorizationWait: "background" }),
+    ).rejects.toBeInstanceOf(MCPAuthorizationPendingError);
+    await expect(
+      m.acquire({ server: TOOL, owner: OWNER, authorizationWait: "background" }),
+    ).rejects.toMatchObject({
+      code: "mcp_background_connect_deferred",
+      resource: "connections",
+    });
+    expect(physicalAttempts).toBe(1);
+
+    finishAuthorization();
+    await m.closeAll();
+  });
+
+  it("retains connection capacity when cancellation wins just before OAuth becomes pending", async () => {
+    const caller = new AbortController();
+    let finishAuthorization!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      finishAuthorization = resolve;
+    });
+    let physicalAttempts = 0;
+    const m = createConnectionManager({
+      workspace: WS,
+      factory: async () => {
+        physicalAttempts += 1;
+        if (physicalAttempts === 1) {
+          caller.abort(new Error("run cancelled"));
+          await Promise.resolve();
+          throw new MCPAuthorizationPendingError(completion);
+        }
+        return makeHandle();
+      },
+      connectTimeoutMs: 1_000,
+      callTimeoutMs: 600_000,
+      maxConnections: 1,
+      maxParallelConnects: 2,
+    });
+
+    await expect(
+      m.acquire({
+        server: TOOL,
+        owner: OWNER,
+        authorizationWait: "background",
+        signal: caller.signal,
+      }),
+    ).rejects.toThrow("run cancelled");
+    await Promise.resolve();
+    await expect(
+      m.acquire({ server: TOOL, owner: OWNER, authorizationWait: "blocking" }),
+    ).rejects.toMatchObject({ code: "mcp_connection_limit" });
+    expect(physicalAttempts).toBe(1);
+
+    finishAuthorization();
+    await Promise.resolve();
+    const lease = await m.acquire({ server: TOOL, owner: OWNER, authorizationWait: "blocking" });
+    expect(physicalAttempts).toBe(2);
+    await lease.release();
+    await m.closeAll();
+  });
+
+  it("bounds shutdown while a retained OAuth admission never settles", async () => {
+    const scheduled: Array<() => void> = [];
+    const m = createConnectionManager({
+      workspace: WS,
+      factory: async () =>
+        Promise.reject(new MCPAuthorizationPendingError(new Promise<void>(() => {}))),
+      connectTimeoutMs: 1_000,
+      callTimeoutMs: 600_000,
+      closeGraceMs: 5,
+      scheduleCloseTimeout(callback) {
+        scheduled.push(callback);
+        return { cancel() {} };
+      },
+    });
+    await expect(
+      m.acquire({ server: TOOL, owner: OWNER, authorizationWait: "background" }),
+    ).rejects.toBeInstanceOf(MCPAuthorizationPendingError);
+
+    let closed = false;
+    const closing = m.closeAll().then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    expect(closed).toBe(false);
+    scheduled.splice(0).forEach((run) => run());
+    await closing;
+    expect(closed).toBe(true);
+  });
+
+  it("keeps a late OAuth admission inside the bounded shutdown drain", async () => {
+    const scheduled: Array<() => void> = [];
+    let rejectConnect!: (error: Error) => void;
+    const m = createConnectionManager({
+      workspace: WS,
+      factory: () =>
+        new Promise<MCPClientHandle>((_resolve, reject) => {
+          rejectConnect = reject;
+        }),
+      connectTimeoutMs: 1_000,
+      callTimeoutMs: 600_000,
+      closeGraceMs: 5,
+      scheduleCloseTimeout(callback) {
+        scheduled.push(callback);
+        return { cancel() {} };
+      },
+    });
+    const acquiring = m
+      .acquire({ server: TOOL, owner: OWNER, authorizationWait: "background" })
+      .catch((error: unknown) => error);
+    await Promise.resolve();
+
+    let closed = false;
+    const closing = m.closeAll().then(() => {
+      closed = true;
+    });
+    await Promise.resolve();
+    rejectConnect(new MCPAuthorizationPendingError(new Promise<void>(() => {})));
+    await acquiring;
+    await Promise.resolve();
+
+    expect(closed).toBe(false);
+    scheduled.splice(0).forEach((run) => run());
+    await closing;
+    expect(closed).toBe(true);
+  });
+
   it("does not start a dedicated reconnect after its caller signal aborts", async () => {
     let reconnectSignal: AbortSignal | undefined;
     let connects = 0;
@@ -245,6 +466,17 @@ describe("ConnectionManager (Stage 0 — 1:1 acquire/release, no reuse)", () => 
     const a = await m.acquire({ server: TOOL, owner: OWNER });
     await a.release();
     await a.release();
+    expect(closes).toBe(1);
+  });
+
+  it("tracks close without mutating a frozen factory handle", async () => {
+    let closes = 0;
+    const handle = Object.freeze(makeHandle({ onClose: () => (closes += 1) }));
+    const m = manager(async () => handle);
+    const lease = await m.acquire({ server: TOOL, owner: OWNER });
+    await lease.release();
+    expect(closes).toBe(1);
+    await m.closeAll();
     expect(closes).toBe(1);
   });
 
@@ -744,6 +976,70 @@ describe("ConnectionManager — the pool key carries the scope and the whole con
 // `poolable` used to include `!closed`, so an acquire on a torn-down manager took
 // the unpooled branch: it spawned a real subprocess, then closed it and threw.
 describe("ConnectionManager — teardown", () => {
+  for (const cause of ["abort", "timeout"] as const) {
+    it(`waits for a late handle close after ${cause} until the shared close grace`, async () => {
+      let startFactory!: () => void;
+      const factoryStarted = new Promise<void>((resolve) => {
+        startFactory = resolve;
+      });
+      let settleFactory!: (handle: MCPClientHandle) => void;
+      const lateFactory = new Promise<MCPClientHandle>((resolve) => {
+        settleFactory = resolve;
+      });
+      let closeStarted!: () => void;
+      const startedClosing = new Promise<void>((resolve) => {
+        closeStarted = resolve;
+      });
+      let finishClose!: () => void;
+      const closeFinished = new Promise<void>((resolve) => {
+        finishClose = resolve;
+      });
+      const scheduled: Array<() => void> = [];
+      const m = createConnectionManager({
+        workspace: WS,
+        factory: async () => {
+          startFactory();
+          return await lateFactory;
+        },
+        connectTimeoutMs: cause === "timeout" ? 5 : 60_000,
+        callTimeoutMs: 600_000,
+        closeGraceMs: 60_000,
+        scheduleCloseTimeout(callback) {
+          scheduled.push(callback);
+          return { cancel() {} };
+        },
+      });
+      const abort = new AbortController();
+      const acquiring = m.acquire({
+        server: TOOL,
+        owner: OWNER,
+        ...(cause === "abort" ? { signal: abort.signal } : {}),
+      });
+      await factoryStarted;
+      if (cause === "abort") abort.abort();
+      await expect(acquiring).rejects.toThrow(cause === "abort" ? "aborted" : "within 5ms");
+
+      let managerClosed = false;
+      const closing = m.closeAll().then(() => {
+        managerClosed = true;
+      });
+      settleFactory(
+        makeHandle({
+          onClose: closeStarted,
+          close: () => closeFinished,
+        }),
+      );
+      await startedClosing;
+      await Promise.resolve();
+      expect(managerClosed).toBe(false);
+      expect(scheduled).toHaveLength(1);
+
+      finishClose();
+      await closing;
+      expect(managerClosed).toBe(true);
+    });
+  }
+
   it("returns after its grace when a pending open never settles", async () => {
     let listingStarted!: () => void;
     const started = new Promise<void>((resolve) => {

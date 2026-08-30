@@ -46,7 +46,7 @@ is a pure re-export list (`packages/mcp-client/src/index.ts:18-116`).
 | `buildTransport` | fn | `packages/mcp-client/src/client.ts:345` | `(server, environment = process.env, defaultCwd?, limits = {}) => BunStdioClientTransport \| StdioClientTransport \| StreamableHTTPClientTransport \| SSEClientTransport` |
 | `MCPClientFactory` | type | `packages/mcp-client/src/client.ts:86` | `(server: McpServerConfig, relay?: ElicitationRelay, opts?: MCPConnectOptions) => Promise<MCPClientHandle>` |
 | `MCPClientHandle` | type | `packages/mcp-client/src/client.ts:55-68` | `{ client; close(); protocolVersion? }` |
-| `MCPConnectOptions` | type | `packages/mcp-client/src/client.ts:70` | `{ signal?; timeoutMs?; scope?; onAuthorizationWaitStart?; onAuthorizationWaitEnd? }` |
+| `MCPConnectOptions` | type | `packages/mcp-client/src/client.ts` | signal/deadline/scope, wait-budget hooks, and `authorizationWait?: "blocking" | "background"` |
 | `ElicitationRelay` | type | `packages/mcp-client/src/client.ts:47` | `{ handle(params: Record<string, unknown>, signal?: AbortSignal): Promise<ElicitationRelayResult> }` |
 | `ElicitationRelayResult` | type | `packages/mcp-client/src/client.ts:36` | `{ action: "accept" \| "decline" \| "cancel"; content?: Record<string, unknown> }` |
 | `RuntimeEnvironment` | type | `packages/mcp-client/src/client.ts:93` | `Readonly<Record<string, string \| undefined>>` |
@@ -70,8 +70,8 @@ is a pure re-export list (`packages/mcp-client/src/index.ts:18-116`).
 | `DEFAULT_MAX_TOOL_CATALOG_BYTES` | const | `packages/mcp-client/src/connection.ts:35` | `8 * 1024 * 1024` |
 | `MAX_TOOL_CATALOG_PAGES` | const | `packages/mcp-client/src/connection.ts:36` | `50` |
 
-`OpenConnectionOptions` (`packages/mcp-client/src/connection.ts:83-103`) carries `server`, `scope`, `connectTimeoutMs`,
-`callTimeoutMs`, `factory`, plus optional `relay`, `signal`, `reprobeCooldownMs`,
+`OpenConnectionOptions` (`packages/mcp-client/src/connection.ts`) carries `server`, `scope`, `connectTimeoutMs`,
+`callTimeoutMs`, `factory`, plus optional `relay`, `signal`, `authorizationWait`, `reprobeCooldownMs`,
 `timeoutStreakThreshold`, `healthPingIntervalMs`, `closeGraceMs`, `resourcesEnabled`, the four
 catalog bounds, `onEvent` and `logger`.
 
@@ -82,9 +82,10 @@ catalog bounds, `onEvent` and `logger`.
 | `createConnectionManager` | fn | `packages/mcp-client/src/connection-manager.ts:469` | `(ConnectionManagerOptions) => ConnectionManager` |
 | `ConnectionManager` | type | `packages/mcp-client/src/connection-manager.ts:58` | `{ acquire(opts: AcquireOptions): Promise<Lease>; closeAll(): Promise<void> }` |
 | `Lease` | type | `packages/mcp-client/src/connection-manager.ts:26` | `OpenedConnection & { release: () => Promise<void> }` |
-| `AcquireOptions` | type | `packages/mcp-client/src/connection-manager.ts:37` | `{ server; owner; relay?; signal?; poolSharing? }` |
+| `AcquireOptions` | type | `packages/mcp-client/src/connection-manager.ts` | `{ server; owner; relay?; signal?; authorizationWait?; poolSharing? }` |
 | `PoolSharing` | type | `packages/mcp-client/src/connection-manager.ts:73` | `"owner" \| "workspace"` |
 | `MCPConnectionLimitError` | class | `packages/mcp-client/src/connection-manager.ts:235` | `code: "mcp_connection_limit"`, `limit` |
+| `MCPBackgroundConnectDeferredError` | class | `packages/mcp-client/src/errors.ts` | `code: "mcp_background_connect_deferred"`; `resource: "connections" \| "handshakes"`; background acquire is inactive rather than queued |
 | `DEFAULT_MAX_MCP_CONNECTIONS` | const | `packages/mcp-client/src/connection-manager.ts:131` | `32` |
 | `DEFAULT_MAX_PARALLEL_MCP_CONNECTS` | const | `packages/mcp-client/src/connection-manager.ts:132` | `4` |
 | `DEFAULT_MAX_IDLE_MCP_CONNECTIONS` | const | `packages/mcp-client/src/connection-manager.ts:133` | `8` |
@@ -143,6 +144,8 @@ The OAuth surface exported by `src/index.ts:35-54` is:
 | `MCPAuthorizationCoordinator`, `MCPAuthorizationOptions`, `MCPAuthorizationSession`, `OAuthFinishingTransport` | interface/type | `packages/mcp-client/src/oauth.ts:44-80` | host options and the client-factory seam |
 | `MCPInteractiveAuthorizationUnavailableError` | class | `packages/mcp-client/src/oauth.ts:25-31` | an OAuth challenge needs a browser but the host cannot open one |
 | `MCPAuthorizationFailedError` | class | `packages/mcp-client/src/oauth.ts:35-41` | callback, state, URL, timeout or authorization failure |
+| `MCPAuthorizationWait` | type | `packages/mcp-client/src/client.ts` | `"blocking" | "background"`; caller policy for a browser flow |
+| `MCPAuthorizationPendingError` | class | `packages/mcp-client/src/oauth.ts` | browser flow continues, but this acquisition/run proceeds without the MCP |
 | `createMcpOAuthCredentialStore` | fn | `packages/mcp-client/src/oauth-store.ts:199-247` | bounded, validated, process-coordinated persistence |
 | `McpOAuthCredentialStore`, `McpOAuthRecord` | interface/type | `packages/mcp-client/src/oauth-store.ts:22-53` | store operations and one persisted record |
 | `McpOAuthStoreError` | class | `packages/mcp-client/src/oauth-store.ts:35-43` | corrupt, oversized, unsafe or unreadable store |
@@ -238,8 +241,8 @@ of each, first-wins on lowercase collision (`packages/mcp-client/src/registry.ts
 
 ### 3.6 `ToolResult` failure vocabulary
 
-Produced entirely by `src/tool-results.ts` and pinned literally by
-`packages/mcp-client/tests/unit/tool-results.test.ts:51-105`:
+Produced entirely by `src/tool-results.ts` and pinned by
+`packages/mcp-client/tests/unit/tool-results.test.ts` plus the OAuth-pending resilient-session case:
 
 | Producer | `code` | `kind` | `outcome` | Message form |
 |---|---|---|---|---|
@@ -247,6 +250,7 @@ Produced entirely by `src/tool-results.ts` and pinned literally by
 | `abortedResult(label, true)` `:3` | `mcp_runtime_error` | `cancelled` | `unknown` | same |
 | `runtimeErrorResult` `:15` | `mcp_runtime_error` | `operational` | — | `Tool 'X' failed: <err>` |
 | `unavailableResult` `:26` | `mcp_unavailable` | `unavailable` | — | `MCP 'N' is unavailable.` |
+| `authorizationPendingResult` | `mcp_unavailable` | `unavailable` | — | `MCP 'N' is inactive for this run while browser authorization is pending.` |
 | `interruptedResult` `:37` | `mcp_runtime_error` | `operational` | `unknown` | `Tool 'X' failed in transit: <err>. The connection was restored, but the call may or may not have executed on the server — retry only if running it twice is safe.` |
 | `becameUnavailableResult` `:52` | `mcp_unavailable` | `unavailable` | `unknown` | `MCP 'N' became unavailable: <err>` |
 | `timeoutResult` `:64` | `mcp_timeout` | `timeout` | `unknown` | `Tool 'X' timed out after Nms (still connected).` |
@@ -362,15 +366,21 @@ The default host path is `<global>/state/mcp-oauth.json`
    this is the entire path (`:258-260`).
 6. A remote OAuth-enabled path requires `opts.scope`, serializes work under its credential key,
    creates one provider session, and tries the connection with stored credentials. Only an SDK
-   `UnauthorizedError` enters interactive authorization: the factory calls `finishAuth`, closes the
-   challenged client, then constructs and connects one fresh client with the saved token
-   (`packages/mcp-client/src/client.ts:258-305`). Other failures propagate without
-   being reclassified as OAuth.
+   `UnauthorizedError` enters interactive authorization. Under the default `"blocking"` policy the
+   factory calls `finishAuth`, closes the challenged client, then constructs and connects one fresh
+   client with the saved token. Under `"background"`, the same browser/callback work continues
+   independently as soon as human wait begins and the caller receives
+   `MCPAuthorizationPendingError`; a same-key caller queued behind that flow receives the same
+   immediate pending outcome. The completion includes reconnect verification and temporary-handle
+   close. Other failures propagate without being reclassified as OAuth
+   (`createMCPClientFactory` in `packages/mcp-client/src/client.ts`).
 7. Every production remote handle is registered in the internal late-authorization dispatcher.
    `runMCPRequest` uses that dispatcher around catalog pages, resource probes, health pings and live
    tool/resource calls. If one of those SDK requests starts a browser flow and throws
-   `UnauthorizedError`, same-key completion is single-flighted and the refused operation is repeated
-   once; no other failure is retried (`packages/mcp-client/src/client.ts:451-518`;
+   `UnauthorizedError`, same-key completion is single-flighted. Blocking callers repeat the refused
+   operation once; background callers return `mcp_unavailable` for this run while the token exchange
+   continues, without reconnecting or mutating circuit state. No other failure is retried (`attachAuthorization` in
+   `packages/mcp-client/src/client.ts`;
    `packages/mcp-client/src/connection.ts:261-281`;
    `packages/mcp-client/src/resources.ts:82-139`;
    `packages/mcp-client/src/resilient-session.ts:243-322`).
@@ -510,17 +520,18 @@ Then the call runs through the late-authorization boundary with
 |---|---|---|---|
 | success (`:323-327`) | `connected` | `"ok"` | both streaks reset, `lastActivityAt` stamped, `onResult(raw)` |
 | signal aborted after dispatch (`:333`) | unchanged | `"aborted"` | `abortedResult(label, true)` — `outcome: "unknown"` |
+| `MCPAuthorizationPendingError` | unchanged | `"unavailable"` | `authorizationPendingResult`; no reconnect, streak or circuit transition |
 | MCP `RequestTimeout`, streak `< threshold` (`:334-353`) | unchanged (`connected`) | `"timeout"` | `timeoutResult(label, callTimeoutMs)` |
 | MCP `RequestTimeout`, streak `>= threshold` (`:337-351`) | `unavailable` | `"timeout"` | `becameUnavailableResult`; the threshold crossing is warned exactly once (`:337-347`) |
 | MCP protocol error (`:355-358`) | unchanged (`connected`) | `"protocol"` | `runtimeErrorResult` — **no reconnect** |
 | transport error, first in this generation (`:359-369`) | reconnect attempted | `"transport"` | on success `interruptedResult` (`outcome: "unknown"`); on failure `becameUnavailableResult` |
 | transport error, `transportFailStreak >= 2` (`:363-365`) | `unavailable` | `"transport"` | `becameUnavailableResult` — circuit opens without another reconnect |
 
-`McpCallOutcome` (`packages/mcp-client/src/resilient-session.ts:58`) is the closed 5-member type `"ok" | "timeout" |
-"protocol" | "transport" | "aborted"` tagging the `mcp.call.done` record built in the `invoke`
+`McpCallOutcome` (`packages/mcp-client/src/resilient-session.ts`) is the closed 6-member type `"ok" | "timeout" |
+"protocol" | "transport" | "aborted" | "unavailable"` tagging the `mcp.call.done` record built in the `invoke`
 `finally` block (`:370-383`, §6.5). It is initialized to `"transport"` before dispatch (`:307`), which
 is why the two transport-error rows above never assign it explicitly — the declared default *is* the
-transport branch, reassigned only by the other four outcomes. None of the six preconditions in the
+transport branch, reassigned by the other outcomes. None of the six preconditions in the
 table above reach this `finally` block at all, so a call rejected before dispatch produces no
 `mcp.call.done` record.
 
@@ -622,8 +633,8 @@ Three independent bounds:
 
 | Bound | Mechanism | Behaviour on exhaustion |
 |---|---|---|
-| `maxConnections` (live + connecting) | `admittedConnections` counter checked at `openFresh` entry (`:566-578`) | `warn mcp.pool.limit`, then throw `MCPConnectionLimitError` |
-| `maxParallelConnects` (handshakes in flight) | `createPhysicalConnectGate` (`:293`) wrapping the factory | the acquire waits for a permit; a `debug mcp.pool.connect_queued` is sampled |
+| `maxConnections` (live + connecting) | `admittedConnections` counter checked at `openFresh` entry | `warn mcp.pool.limit`; background acquire throws `MCPBackgroundConnectDeferredError`, blocking acquire throws `MCPConnectionLimitError` |
+| `maxParallelConnects` (handshakes/initial background authorization completions) | `createPhysicalConnectGate` wrapping the factory | blocking acquire waits with sampled `mcp.pool.connect_queued`; background acquire throws `MCPBackgroundConnectDeferredError` immediately and is never logged as queued |
 | `maxIdleConnections` (zero-ref warm slots) | oldest-first eviction inside `armIdle` (`:700-703`) | `debug mcp.pool.evicted{reason:"max_idle"}` |
 
 Capacity is released only when `connection.close()` completes, via the wrapper installed by
@@ -637,6 +648,13 @@ Two quarantine rules exist because a factory may ignore its abort signal:
   acquires could start one never-settling subprocess or HTTP handshake per timeout"
   (`:287-290`). Pinned by six timed-out acquires producing exactly two physical attempts
   (`packages/mcp-client/tests/component/connection-manager.test.ts:114-138`).
+- An initial background OAuth pending outcome transfers both the handshake permit and connection
+  slot to its completion promise. A catalog challenge happens after the handshake and retains its
+  connection slot through temporary-handle cleanup while preserving the completion's outcome.
+  Repeated background acquires fail fast without starting another physical attempt or consuming
+  retained capacity; a blocking embedder still queues. Pinned by
+  `packages/mcp-client/tests/component/{connection,connection-manager}.test.ts` (catalog completion,
+  retained OAuth limits, abort/pending races, and immediate background degradation).
 - The **connection slot** stays reserved when a timed-out factory attempt has not settled; a
   `warn mcp.connect.quarantined` is emitted and capacity is released when the attempt finally unwinds
   (`:622-638`). Pinned at `packages/mcp-client/tests/component/connection-manager.test.ts:140-171`.
@@ -647,15 +665,20 @@ back to the defaults rather than disabling admission — pinned individually
 
 ### 4.9 `closeAll`
 
-`closeAllInner` (`:858`) sets `closed`, aborts the shutdown controller (which is linked into every
-open connect via `linkedSignal`, `:144-168`), closes the physical gate, and then closes: every live
-dedicated connection, every handle captured mid-handshake by `withInitialHandleTracking`
-(`:182-207`), every pending open once it resolves, and every pooled slot — each exactly once via a
-`WeakSet` (`:862-880`). The whole set is awaited inside `awaitCloseGrace` (`:828-856`), which returns
-at the grace and detaches the remainder. Pinned: a never-settling open still lets `closeAll` return
-and later closes the connection (`packages/mcp-client/tests/component/connection-manager.test.ts:695-736`); a
-never-settling close likewise (`:775-799`); a shared connection still connecting is closed and its
-acquire rejects with "aborted" (`:564-579`).
+`closeAllInner` sets `closed`, aborts the shutdown controller linked into every open connect, closes
+the physical gate, and then closes every live dedicated connection, every handle captured
+mid-handshake by `withInitialHandleTracking`, every pending open and physical attempt once it
+resolves, every retained OAuth admission registered while those attempts settle, and every pooled
+slot. `trackHandleClose` installs an idempotent observable close while preserving mutable handle
+identity; its read-only fallback wrapper inherits the original late-authorization boundary, so a factory that
+resolves after caller abort or connect timeout cannot let manager teardown finish until that late
+handle closes or the shared grace expires. The whole set is awaited inside `awaitCloseGrace`, which
+returns at the grace and detaches the remainder. Production:
+`packages/mcp-client/src/connection-manager.ts` (`withInitialHandleTracking`, `trackHandleClose`,
+`closeAllInner`, `awaitCloseGrace`). Pinned: `packages/mcp-client/tests/component/connection-manager.test.ts`
+(`waits for a late handle close after abort until the shared close grace`, the equivalent timeout
+case, never-settling open/close cases, shared connection still connecting, and late OAuth admission
+drain).
 
 ### 4.10 Bounded HTTP fetch
 
@@ -774,6 +797,19 @@ starting, then closes it (`packages/mcp-client/src/oauth.ts:519-538`). Tests cov
 startup/close races, state rejection, fresh sequential/concurrent flow state, credential
 reuse/invalidation, headless and insecure-URL failures, authorization refusal, and serialization
 (`packages/mcp-client/tests/integration/oauth.test.ts:40-275`).
+
+Background policy changes ownership of the wait, not the OAuth protocol. Once a browser flow starts,
+the run-scoped connection attempt throws `MCPAuthorizationPendingError` with an observed completion
+promise; the authorization attempt stops listening to that run's abort signal, reconnects only to
+persist/verify the token, then closes its temporary handle. Initial-connect, catalog-list and late
+tool-call challenges all retain the callback after the run ends. A concurrent background connection
+for the same credential key reports pending while the first flow still owns the browser, so it does
+not wait for the five-minute deadline. The next blocking or background connection reuses the saved
+token without reopening the page. Production: `createMCPClientFactory` and `attachAuthorization` in
+`packages/mcp-client/src/client.ts`, pending-handle cleanup in `packages/mcp-client/src/connection.ts`,
+and pending-call classification in `packages/mcp-client/src/resilient-session.ts`. Test:
+`packages/mcp-client/tests/integration/oauth-transport.test.ts` (background initial, concurrent,
+catalog and tool-call cases) and `packages/mcp-client/tests/unit/resilient-session.test.ts`.
 `packages/mcp-client/tests/unit/remote-fetch.test.ts:6-192` pins origin-scoped resource headers,
 same-origin SDK-header precedence, insecure OAuth-target refusal and pre-fetch redirect validation. A
 real loopback MCP/OAuth fixture pins
@@ -1013,6 +1049,34 @@ the authorization URL that is actually opened remains paired with its own PKCE v
 `packages/mcp-client/src/oauth.ts:316-480,542-552`. Pinned:
 `packages/mcp-client/tests/integration/oauth.test.ts:217-275`.
 
+**MCP-35.** Background browser authorization never retains the current run as its lifetime owner.
+After the browser flow starts, initial connection or catalog discovery reports
+`mcp_oauth_authorization_pending`; a late tool challenge returns `mcp_unavailable`. In all three
+cases authorization continues under the coordinator deadline, a concurrent same-key run also
+returns pending without opening another page, and a successfully persisted token is consumed by a
+later connection. No pending outcome advances reconnect or circuit-breaker state. Production:
+`createMCPClientFactory`/`attachAuthorization` in `packages/mcp-client/src/client.ts`,
+`openConnection` in `packages/mcp-client/src/connection.ts`, and `invoke` in
+`packages/mcp-client/src/resilient-session.ts`. Test:
+`packages/mcp-client/tests/integration/oauth-transport.test.ts` and
+`packages/mcp-client/tests/unit/resilient-session.test.ts`.
+
+**MCP-36.** An initial background OAuth flow remains under both connection and physical-handshake
+admission until its observed completion settles; a catalog flow remains under connection admission
+through temporary-handle cleanup. A late tool/resource challenge remains coordinator-bounded but is
+not represented as manager connection capacity. A later background acquire never queues behind a
+saturated connection or handshake bound; it receives `mcp_background_connect_deferred` and is
+inactive for that run, while a blocking caller may queue only at the handshake gate. Manager
+shutdown observes retained initial/catalog completions and those registered during an in-flight
+attempt only through its bounded close grace; a raw handle that resolves after abort or timeout has
+its idempotent close tracked in that same grace. Production: `createPhysicalConnectGate`,
+`retainPendingAdmission`, `trackHandleClose`, `openFresh`, and
+`closeAllInner` in `packages/mcp-client/src/connection-manager.ts`; cleanup completion in
+`packages/mcp-client/src/client.ts` and `packages/mcp-client/src/connection.ts`. Test:
+`packages/mcp-client/tests/component/{connection,connection-manager,observability-pool}.test.ts`
+(completion outcome, retained limits, consecutive/abort races, immediate degradation, truthful
+queue diagnostics, and bounded shutdown).
+
 ## 6. Failure modes and degradation
 
 ### 6.1 Error types
@@ -1020,12 +1084,14 @@ the authorization URL that is actually opened remains paired with its own PKCE v
 | Error | Code | Thrown by | Effect |
 |---|---|---|---|
 | `MCPConnectionFailedError` | `mcp_connection_failed` | `packages/mcp-client/src/connection.ts:55`, raised at `:145`, `:165`, `:423-449` | the connection is not opened; the caller decides |
-| `MCPConnectionLimitError` | `mcp_connection_limit` | `packages/mcp-client/src/connection-manager.ts:235`, raised at `:577` | acquire rejects |
+| `MCPConnectionLimitError` | `mcp_connection_limit` | blocking saturation branch in `openFresh` | blocking acquire rejects; background callers receive the deferred error below |
+| `MCPBackgroundConnectDeferredError` | `mcp_background_connect_deferred` | saturated background branch in `openFresh` or `createPhysicalConnectGate` | current run proceeds without that MCP; `resource` identifies `connections` or `handshakes`; no connect-timeout queue |
 | `MCPStdioFrameLimitError` | `mcp_stdio_frame_too_large` | `packages/mcp-client/src/bun-stdio-client.ts:117`, raised at `:235` | surfaces on `transport.onerror`, then `close()` (`:219-222`) |
 | `MCPHttpResponseLimitError` | `mcp_http_response_too_large` | `packages/mcp-client/src/bounded-fetch.ts:11`, raised at `:102`, `:140`, `:151` | the fetch throws or the body stream errors |
 | `MCPResourceCatalogLimitError` | `mcp_resource_catalog_too_large` | `packages/mcp-client/src/resources.ts:11`, raised at `:184-195` | see §6.4 |
 | `MCPInteractiveAuthorizationUnavailableError` | `mcp_oauth_interactive_unavailable` | `packages/mcp-client/src/oauth.ts:25-31,362-410` | the challenged connect or request rejects; a headless host never waits for a callback |
 | `MCPAuthorizationFailedError` | `mcp_oauth_authorization_failed` | `packages/mcp-client/src/oauth.ts:35-41` and callback/session failure paths; `packages/mcp-client/src/remote-fetch.ts:35-40,95-117` | authorization rejects; pending state is removed and an insecure target is never fetched |
+| `MCPAuthorizationPendingError` | `mcp_oauth_authorization_pending` | background branches in `packages/mcp-client/src/client.ts` | current acquisition ends without the MCP; its completion remains observed by the coordinator |
 | `McpOAuthStoreError` | `mcp_oauth_store_invalid` | `packages/mcp-client/src/oauth-store.ts:35-43`, raised by validation/read/write bounds | credentials are not used or overwritten; operator repair is required |
 | `MissingEnvVarsError` | — | `packages/capability/src/env-interpolate.ts:19` | transport construction throws; `missing_env` is logged |
 | plain `Error` (tool catalog limit) | — | `packages/mcp-client/src/connection.ts:245-258` | wrapped into `MCPConnectionFailedError` at `:165` |
@@ -1047,13 +1113,17 @@ the authorization URL that is actually opened remains paired with its own PKCE v
 | a stdout frame ends with a lone `\r` or is empty | `packages/mcp-client/src/bun-stdio-client.ts:253-254` | skipped, no message emitted |
 | lifecycle work (stale close, reconnect, handle close) never settles | `packages/mcp-client/src/resilient-session.ts:128-153` | returns at the grace and detaches the work |
 | manager teardown work never settles | `packages/mcp-client/src/connection-manager.ts:844-855` | same, via `scheduleCloseTimeout` |
+| browser OAuth is pending under background policy | `MCPAuthorizationPendingError` / `authorizationPendingResult` | connection acquisition is inactive for this run, or a late call returns `mcp_unavailable`; browser/token work continues for a later run |
+| background connection or physical-connect admission is saturated | `MCPBackgroundConnectDeferredError` | acquisition returns immediately; the MCP is inactive for that run, is not reported as queued, and no new physical attempt starts |
 
 ### 6.3 Retries and timeouts
 
-There is no general tool-call retry in this package. The sole request-level repetition is an SDK
-operation that first failed with `UnauthorizedError` after starting browser authorization; once the
-callback is exchanged, `runMCPRequest` invokes that refused operation one more time and does not catch
-a second failure (`packages/mcp-client/src/client.ts:451-518`). Session reconnection is bounded three
+There is no general tool-call retry in this package. The sole request-level repetition is for a
+blocking SDK operation that first failed with `UnauthorizedError`; once the callback is exchanged,
+`runMCPRequest` invokes that refused operation one more time and does not catch a second failure.
+Background policy does not repeat the current run's operation; it reports unavailable while the
+credential flow completes for a later connection (`attachAuthorization` in
+`packages/mcp-client/src/client.ts`). Session reconnection is bounded three
 ways:
 single-flighted per generation (`packages/mcp-client/src/resilient-session.ts:234-240`), refused
 while `transportFailStreak >= 2` (`:363-365`), and gated behind the `reprobeCooldownMs` window once
@@ -1063,7 +1133,8 @@ ping), `callTimeoutMs` (per tool/resource call), `reprobeCooldownMs` (default 30
 
 OAuth also adds one narrowly-scoped connection repetition: after the SDK's first remote handshake
 raises `UnauthorizedError`, Clarvis completes authorization and connects a newly constructed client
-once with the saved credentials (`packages/mcp-client/src/client.ts:258-305`). The
+once with the saved credentials. Under background policy this fresh handle exists only to finish and
+verify persistence, then closes; it is not leased back into the run that already degraded. The
 human authorization clock is five minutes by default, independently capped at 30 minutes
 (`packages/mcp-client/src/oauth.ts:15-22,195-203,450-480`); the outer connect
 clock is paused only for initial browser/serialization waits (§4.3).

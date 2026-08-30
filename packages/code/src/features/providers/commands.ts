@@ -28,7 +28,7 @@ export function registerProvidersCommands(
 ): void {
   const view = lazyView(async () => {
     const [{ ProvidersPanel }] = await Promise.all([
-      import("../../views/config/ProvidersPanel.tsx"),
+      import("../../views/cold-surfaces.ts"),
       deps.loadCatalog?.() ?? Promise.resolve(),
     ]);
     return (host: ViewHost) => {

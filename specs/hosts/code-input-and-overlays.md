@@ -671,7 +671,8 @@ gates in `PlanOverlay`).
 
 This function is called from `run-host.ts`'s `runBangCommand` ([hosts/code-run-host.md](code-run-host.md) document,
 `packages/code/src/run-host.ts:904-939`), which is itself the implementation behind `InputDock`'s `onBashCommand` prop
-(wired at `packages/code/src/index.tsx:1144` and `packages/code/src/views/App.tsx:120,1260` as `props.run.bang`). **No `KernelClient`
+(wired at `packages/code/src/runtime.tsx` (`runControls.bang`) and
+`packages/code/src/views/App.tsx` as `props.run.bang`). **No `KernelClient`
 call, no `GuardContext`, and no shell-command analysis happen anywhere on this path** — the command
 guard that gates an agent's own `shell` tool calls is entirely bypassed, by design (comment at
 `packages/code/src/adapters/local-shell.ts:76-84`), because the command is one the user typed and submitted
@@ -1020,7 +1021,8 @@ settled turn's persisted continuation; an empty session reports that there is no
 - `run-host.ts` ([hosts/code-run-host.md](code-run-host.md) document) is the concrete `runBash`/`bang` implementation
   behind `onBashCommand`, and the mention-image resolution step (`buildContent`/
   `appendMentionImages`) that runs on `InputDock`'s composed content before it reaches a run.
-- `index.tsx` wires `runHost.runBangCommand` to `props.run.bang` (`packages/code/src/index.tsx:1144`).
+- `runtime.tsx` wires `runHost.runBangCommand` to `props.run.bang`
+  (`packages/code/src/runtime.tsx`, `runControls.bang`).
 - `views/ElicitBlock.tsx` ([cross-cutting/elicitation.md](../cross-cutting/elicitation.md) document) reuses `ChoiceRows` for rendering
   elicitation option lists — a one-way dependency out of this document's `views/overlays/*`.
 - `views/config/CatalogPicker.tsx` reuses `ListPicker<T>`.

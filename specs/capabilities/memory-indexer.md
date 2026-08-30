@@ -16,8 +16,8 @@ that later claims that record, runs a real `executeRun`, and settles it
 in-flight promise: a process that dies mid-pass loses nothing it had accepted responsibility for"
 (`packages/memory/src/jobs.ts:5`).
 
-An *index pass* is not a single completion. `indexRun` builds a `RunRequest` and calls the engine's
-`executeRun` (`packages/memory/src/indexer/run.ts:190`), so the model edits the wiki through the same
+An *index pass* is not a single completion. `indexRun` builds a `RunRequest` and calls the host-owned
+executor when supplied, otherwise the engine's `executeRun`, so the model edits the wiki through the same
 seven memory tools an agent gets. Two shapes exist. The **isolated** pass runs an inline
 `memory-indexer` profile over a rendered execution digest and *replaces* the host's capability list
 (`packages/memory/src/indexer/run.ts:364`). The **continuation** pass is a `continue_from` of the very
@@ -463,7 +463,7 @@ error has ever described" (`packages/memory/src/drain.ts:333-335`).
 | 2 | `store.exclusive(tx => tx.wasIndexed(run_id))` | `:158` | `skipped`, note `already-indexed` |
 | 3 | `store.recover()` probe, outside any exclusive section | `:167-174` | throws `MemoryIndexError("apply", "memory is awaiting recovery…")` |
 | 4 | `generateExecutionId()`, `planPass(...)` | `:177-186` | — |
-| 5 | `executeRun({ rawBody, owner, deps, elicit: declineElicit, externalSignal? })` | `:190-196` | throw → `MemoryIndexError("generate", "index-run-failed: …")`, terminal iff `err.name === "ValidationError"` (`:410`) |
+| 5 | host `IndexerRuntime.executeRun` when supplied, else loop `executeRun({ rawBody, owner, deps, elicit: declineElicit, externalSignal? })` | `indexRun` in `packages/memory/src/indexer/run.ts` | throw → `MemoryIndexError("generate", "index-run-failed: …")`, terminal iff `err.name === "ValidationError"` |
 | 6 | `response.status === "error"` | `:206-213` | `MemoryIndexError("generate", "index-run-errored: <code>: <msg>")`, terminal iff code is `no_progress` |
 | 7 | `status !== "completed"` | `:220-222` | `MemoryIndexError("validate", "index-run-<status>")` |
 | 8 | `pyramidIssue(mutations)` | `:224-227` | `MemoryIndexError("validate", "pyramid-not-closed: …")` |
@@ -1052,6 +1052,16 @@ process's repository-local routing or temporary index. Production:
 `packages/memory/tests/integration/workspace-state.test.ts:11-49` injects `GIT_DIR`, `GIT_WORK_TREE`,
 `GIT_INDEX_FILE`, and `GIT_COMMON_DIR` while asserting the selected repository's branch, commit and
 clean state.
+
+**MIX-38.** Every index pass uses the host executor when `CreateMemoryFactoryOptions.executeRun` is
+supplied, including a durable retry after the originating foreground handle has closed. The Clarvis
+file host wraps that executor in the same Environment admission lease as a foreground run, so a hot
+continuation cannot consume selected skill/plugin bytes without snapshot validation. Production:
+`createMemoryFactory` in `packages/memory/src/factory.ts`, `indexRun` in
+`packages/memory/src/indexer/run.ts`, and `executeEnvironmentRun`/`withRunLease` in
+`packages/kernel/src`. Test: `packages/memory/tests/component/factory.test.ts` (`routes every
+indexer pass through the host-owned run executor`) and
+`packages/kernel/tests/unit/run-lease.test.ts`.
 
 ---
 

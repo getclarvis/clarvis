@@ -10,6 +10,7 @@ import {
   snapshotPluginExecutables,
 } from "../../src/plugins/plugin-executable-snapshot.ts";
 import { PLUGIN_RESOURCE_LIMITS, type PluginManifest } from "@clarvis/loop/host";
+import { MAX_SKILL_FILE_CHARS } from "@clarvis/skills";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
 import type { PluginRef } from "@clarvis/protocol";
 
@@ -178,7 +179,7 @@ describe("plugin contributions", () => {
     ]);
   });
 
-  it("serves pinned in-memory contributions and rejects drift before filesystem-backed roots", () => {
+  it("serves captured projections but rejects lazy skill access and run admission after drift", () => {
     const dir = install(globalPaths(globalDir).pluginsDir, "atlas", {
       mcpServers: "./.mcp.json",
     });
@@ -197,10 +198,11 @@ describe("plugin contributions", () => {
       JSON.stringify({ mcpServers: { charts: { command: "atlas-mcp-v2" } } }),
     );
 
-    expect(() => loaded.settingsScopes(refs("atlas"))).toThrow(/reconnect the kernel/);
-    expect(() => loaded.mcpServers(refs("atlas"))).toThrow(/reconnect the kernel/);
+    expect(loaded.settingsScopes(refs("atlas"))).toHaveLength(1);
+    expect(loaded.mcpServers(refs("atlas"))[0]?.declaration.command).toBe("atlas-mcp-v1");
     expect(loaded.agents(refs("atlas"))).toEqual([]);
     expect(() => loaded.skillRoots(refs("atlas"))).toThrow(/reconnect the kernel/);
+    expect(() => loaded.assertUnchanged(refs("atlas"))).toThrow(/reconnect the kernel/);
   });
 
   it("rejects drift in a selected skill resource", () => {
@@ -214,6 +216,68 @@ describe("plugin contributions", () => {
 
     writeFileSync(reference, "runtime v2\n");
     expect(() => loaded.skillRoots(refs("handbook"))).toThrow(/selected plugin content changed/);
+    expect(() => loaded.assertUnchanged(refs("handbook"))).toThrow(
+      /selected plugin content changed/,
+    );
+  });
+
+  it("hashes a canonical list of per-file digests instead of an ambiguous byte stream", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "framed", {}, { skill: true });
+    const resources = join(dir, "skills", "guide", "references");
+    mkdirSync(resources, { recursive: true });
+    writeFileSync(join(resources, "a"), "X\0resource\0b\0Y");
+    const loaded = contributions();
+    const single = loaded.snapshot(refs("framed"))[0]!.digest;
+
+    writeFileSync(join(resources, "a"), "X");
+    writeFileSync(join(resources, "b"), "Y");
+    const split = loaded.snapshot(refs("framed"))[0]!.digest;
+
+    expect(split).not.toBe(single);
+  });
+
+  it("rejects an overlong skill manifest while constructing the contribution snapshot", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "long-skill", {}, { skill: true });
+    writeFileSync(
+      join(dir, "skills", "guide", "SKILL.md"),
+      "---\nname: guide\ndescription: guide\n---\n" + "x".repeat(MAX_SKILL_FILE_CHARS + 1),
+    );
+
+    const loaded = contributions();
+    expect(loaded.pin(refs("long-skill"))[0]?.skills).toEqual([]);
+    expect(loaded.skillRoots(refs("long-skill"))).toEqual([]);
+  });
+
+  it("withholds every plugin skill when one skill cannot be captured atomically", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "mixed-skills", {}, { skill: true });
+    const broken = join(dir, "skills", "broken");
+    mkdirSync(broken, { recursive: true });
+    writeFileSync(
+      join(broken, "SKILL.md"),
+      "---\nname: broken\ndescription: broken\n---\n" + "x".repeat(MAX_SKILL_FILE_CHARS + 1),
+    );
+    const guide = join(dir, "skills", "guide", "SKILL.md");
+    const loaded = contributions();
+    expect(loaded.pin(refs("mixed-skills"))[0]?.skills).toEqual([]);
+    expect(loaded.skillRoots(refs("mixed-skills"))).toEqual([]);
+
+    writeFileSync(guide, "---\nname: guide\ndescription: guide v2\n---\nchanged\n");
+    expect(loaded.skillRoots(refs("mixed-skills"))).toEqual([]);
+  });
+
+  it("fingerprints sidecar-derived presentation metadata", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "presented", {}, { skill: true });
+    const agents = join(dir, "skills", "guide", "agents");
+    mkdirSync(agents, { recursive: true });
+    const sidecar = join(agents, "openai.yaml");
+    writeFileSync(sidecar, "short-description: First presentation\n");
+    const loaded = contributions();
+    const before = loaded.snapshot(refs("presented"))[0]!.digest;
+
+    writeFileSync(sidecar, "short-description: Second presentation\n");
+    const after = loaded.snapshot(refs("presented"))[0]!.digest;
+
+    expect(after).not.toBe(before);
   });
 
   it("keeps the rest of a plugin when its companion server document is unusable", () => {
@@ -289,7 +353,14 @@ describe("plugin contributions", () => {
       const loaded = contributions();
       loaded.pin(refs("runtime"));
       writeFileSync(join(dir, entry.file), `${entry.file}:v2\n`);
-      expect(() => entry.read(loaded)).toThrow(/selected plugin content changed/);
+      if (entry.file === "provider.py") {
+        expect(() => entry.read(loaded)).toThrow(/selected plugin content changed/);
+      } else {
+        expect(() => entry.read(loaded)).not.toThrow();
+        expect(() => loaded.assertUnchanged(refs("runtime"))).toThrow(
+          /selected plugin content changed/,
+        );
+      }
       writeFileSync(join(dir, entry.file), `${entry.file}:v1\n`);
     }
   });

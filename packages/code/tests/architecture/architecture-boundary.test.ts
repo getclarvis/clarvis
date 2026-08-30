@@ -70,11 +70,59 @@ function relativeLayer(edge: ImportEdge): string | undefined {
 
 describe("code's internal architecture", () => {
   it("releases durable memory recovery only after the usable application paint", () => {
-    const source = readFileSync(join(SRC, "index.tsx"), "utf8");
+    const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
     const painted = source.indexOf('"app.boot.painted"');
     const recovery = source.indexOf("workspaceManager.startMemoryRecovery()");
     expect(painted).toBeGreaterThanOrEqual(0);
     expect(recovery).toBeGreaterThan(painted);
+  });
+
+  it("starts a task queued in the startup composer before complete-app hydration", () => {
+    const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
+    const submission = source.indexOf('detachObserved("startup_submit"');
+    const appMount = source.indexOf('diagnosticAsync("boot.app-mount"');
+    expect(submission).toBeGreaterThanOrEqual(0);
+    expect(appMount).toBeGreaterThan(submission);
+  });
+
+  it("does not resume profile boot after the fatal renderer is destroyed", () => {
+    const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
+    const fatalBoot = source.indexOf("const recovered = await runFatalBoot");
+    const terminalGuard = source.indexOf("if (!recovered) return", fatalBoot);
+    const profiles = source.indexOf("const bootProfiles = await", fatalBoot);
+    expect(fatalBoot).toBeGreaterThanOrEqual(0);
+    expect(terminalGuard).toBeGreaterThan(fatalBoot);
+    expect(profiles).toBeGreaterThan(terminalGuard);
+  });
+
+  it("does not admit startup work after shutdown begins during boot", () => {
+    const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
+    const latch = source.indexOf("bootShutdownRequested = true");
+    const profiles = source.indexOf("const bootProfiles = await");
+    const guard = source.indexOf("if (bootShutdownRequested) return", profiles);
+    const submission = source.indexOf('detachObserved("startup_submit"');
+    expect(latch).toBeGreaterThanOrEqual(0);
+    expect(profiles).toBeGreaterThan(latch);
+    expect(guard).toBeGreaterThan(profiles);
+    expect(submission).toBeGreaterThan(guard);
+  });
+
+  it("retains bootstrap Ctrl+C ownership through complete-app mount", () => {
+    const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
+    const appMount = source.indexOf('diagnosticAsync("boot.app-mount"');
+    const release = source.indexOf("releaseBootRendererLifecycle()", appMount);
+    expect(appMount).toBeGreaterThanOrEqual(0);
+    expect(release).toBeGreaterThan(appMount);
+  });
+
+  it("installs renderer teardown before any later bootstrap owner", () => {
+    const source = readFileSync(join(SRC, "index.tsx"), "utf8");
+    const renderer = source.indexOf("const renderer = await createCliRenderer");
+    const lifecycle = source.indexOf("const rendererLifecycle = installBootRendererLifecycle");
+    const terminal = source.indexOf("const releaseTerminal = installTerminalGuard");
+    expect(renderer).toBeGreaterThanOrEqual(0);
+    expect(lifecycle).toBeGreaterThan(renderer);
+    expect(terminal).toBeGreaterThan(lifecycle);
   });
 
   it("confines concrete kernel imports to composition and adapter boundaries", () => {
@@ -82,6 +130,8 @@ describe("code's internal architecture", () => {
       const relativeFile = relative(SRC, file).split(sep).join("/");
       if (
         relativeFile === "index.tsx" ||
+        relativeFile === "runtime.tsx" ||
+        relativeFile === "startup-foundation.ts" ||
         relativeFile.startsWith("bootstrap/") ||
         relativeFile.startsWith("adapters/")
       )

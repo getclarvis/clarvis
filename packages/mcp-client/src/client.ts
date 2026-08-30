@@ -27,6 +27,7 @@ import type {
   MCPAuthorizationSession,
   OAuthFinishingTransport,
 } from "./oauth.ts";
+import { MCPAuthorizationPendingError } from "./oauth.ts";
 import type { PoolScope } from "./connection.ts";
 
 /**
@@ -66,7 +67,10 @@ export interface MCPClientHandle {
   protocolVersion?: string;
 }
 
-/** Connect-time tuning, identity, and human-authorization timeout controls. */
+/** Whether a caller waits for browser OAuth or lets it continue independently. */
+export type MCPAuthorizationWait = "blocking" | "background";
+
+/** Connect-time tuning, identity, and human-authorization controls. */
 export interface MCPConnectOptions {
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -76,6 +80,8 @@ export interface MCPConnectOptions {
   onAuthorizationWaitStart?: () => void;
   /** Resumes that budget after the browser wait, on success or failure. */
   onAuthorizationWaitEnd?: () => void;
+  /** `background` makes an opened browser flow inactive for this caller instead of awaiting it. */
+  authorizationWait?: MCPAuthorizationWait;
 }
 
 /**
@@ -232,9 +238,12 @@ export function createMCPClientFactory(
       };
       return { client, transport, handle };
     };
-    const connectBuilt = async (built: BuiltClient): Promise<MCPClientHandle> => {
+    const connectBuilt = async (
+      built: BuiltClient,
+      signal: AbortSignal | undefined = opts?.signal,
+    ): Promise<MCPClientHandle> => {
       await built.client.connect(built.transport, {
-        ...(opts?.signal ? { signal: opts.signal } : {}),
+        ...(signal ? { signal } : {}),
         ...(opts?.timeoutMs !== undefined ? { timeout: opts.timeoutMs } : {}),
       });
       return built.handle;
@@ -242,13 +251,14 @@ export function createMCPClientFactory(
     const connectOnce = async (
       authProvider?: OAuthClientProvider,
       boundary?: AuthorizationBoundary,
+      signal: AbortSignal | undefined = opts?.signal,
     ): Promise<MCPClientHandle> => {
       const built = buildClient(authProvider);
       if (authorization !== undefined && boundary !== undefined) {
-        attachAuthorization(built, authorization, boundary);
+        attachAuthorization(built, authorization, boundary, opts?.authorizationWait);
       }
       try {
-        return await connectBuilt(built);
+        return await connectBuilt(built, signal);
       } catch (error) {
         await closeFailedClient(built.client);
         throw error;
@@ -264,45 +274,84 @@ export function createMCPClientFactory(
     }
 
     const key = authorization.key(opts.scope, server.url);
-    return authorization.runExclusive(
-      key,
-      opts.signal,
-      opts.onAuthorizationWaitStart,
-      opts.onAuthorizationWaitEnd,
-      async (): Promise<MCPClientHandle> => {
-        const session: MCPAuthorizationSession = await authorization.session(
-          opts.scope!,
-          server.url!,
-        );
-        const boundary: AuthorizationBoundary = [session, key, server.name];
-        const first = buildClient(session.provider);
-        attachAuthorization(first, authorization, boundary);
-        try {
-          return await connectBuilt(first);
-        } catch (error) {
-          if (!(error instanceof UnauthorizedError)) {
-            await closeFailedClient(first.client);
-            throw error;
-          }
-
-          const finisher = finishingTransport(first.transport);
-          if (finisher === undefined) {
-            await closeFailedClient(first.client);
-            throw new Error(`server '${server.name}': remote transport cannot finish OAuth`, {
-              cause: error,
-            });
-          }
-          opts.onAuthorizationWaitStart?.();
+    const authorize = (
+      onWaitStart: (() => void) | undefined,
+      onWaitEnd: (() => void) | undefined,
+      authorizationSignal: AbortSignal | undefined,
+    ): Promise<MCPClientHandle> =>
+      authorization.runExclusive(
+        key,
+        authorizationSignal,
+        onWaitStart,
+        onWaitEnd,
+        async (): Promise<MCPClientHandle> => {
+          const session: MCPAuthorizationSession = await authorization.session(
+            opts.scope!,
+            server.url!,
+          );
+          const boundary: AuthorizationBoundary = [session, key, server.name];
+          const first = buildClient(session.provider);
+          attachAuthorization(first, authorization, boundary, opts.authorizationWait);
           try {
-            await session.finishAuthorization(finisher, opts.signal);
-          } finally {
-            opts.onAuthorizationWaitEnd?.();
-            await closeFailedClient(first.client);
+            return await connectBuilt(first);
+          } catch (error) {
+            if (!(error instanceof UnauthorizedError)) {
+              await closeFailedClient(first.client);
+              throw error;
+            }
+
+            const finisher = finishingTransport(first.transport);
+            if (finisher === undefined) {
+              await closeFailedClient(first.client);
+              throw new Error(`server '${server.name}': remote transport cannot finish OAuth`, {
+                cause: error,
+              });
+            }
+            onWaitStart?.();
+            try {
+              await session.finishAuthorization(finisher, authorizationSignal);
+            } finally {
+              onWaitEnd?.();
+              await closeFailedClient(first.client);
+            }
+            return connectOnce(session.provider, boundary, authorizationSignal);
           }
-          return connectOnce(session.provider, boundary);
-        }
+        },
+      );
+
+    if (opts.authorizationWait !== "background") {
+      return authorize(opts.onAuthorizationWaitStart, opts.onAuthorizationWaitEnd, opts.signal);
+    }
+
+    let announcePending!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      announcePending = resolve;
+    });
+    let announced = false;
+    const attempt = authorize(
+      () => {
+        if (announced) return;
+        announced = true;
+        announcePending();
       },
+      undefined,
+      undefined,
     );
+    const outcome = await Promise.race([
+      attempt.then(
+        (handle) => ({ kind: "connected" as const, handle }),
+        (error: unknown) => ({ kind: "failed" as const, error }),
+      ),
+      pending.then(() => ({ kind: "pending" as const })),
+    ]);
+    if (outcome.kind === "connected") return outcome.handle;
+    if (outcome.kind === "failed") throw outcome.error;
+
+    const completion = attempt.then(async (handle) => {
+      await handle.close();
+    });
+    void completion.catch(() => undefined);
+    throw new MCPAuthorizationPendingError(completion);
   };
 }
 
@@ -457,6 +506,16 @@ type AuthorizedRequest = <T>(request: () => Promise<T>, signal?: AbortSignal) =>
 
 const authorizedRequests = new WeakMap<MCPClientHandle, AuthorizedRequest>();
 
+/** Carry an existing late-authorization boundary onto a manager-owned handle
+ * wrapper without exposing the boundary itself. */
+export function aliasMCPRequestAuthorization(
+  source: MCPClientHandle,
+  alias: MCPClientHandle,
+): void {
+  const request = authorizedRequests.get(source);
+  if (request !== undefined) authorizedRequests.set(alias, request);
+}
+
 /** Run an SDK request through a production handle's late-authorization boundary. */
 export function runMCPRequest<T>(
   handle: MCPClientHandle,
@@ -498,6 +557,7 @@ function attachAuthorization(
   built: BuiltClient,
   authorization: MCPAuthorizationCoordinator,
   [session, key, serverName]: AuthorizationBoundary,
+  authorizationWait: MCPAuthorizationWait = "blocking",
 ): void {
   let finishing: Promise<void> | undefined;
   authorizedRequests.set(
@@ -513,13 +573,19 @@ function attachAuthorization(
             cause: error,
           });
         }
+        const background = authorizationWait === "background";
         finishing ??= authorization
-          .runExclusive(key, signal, undefined, undefined, () =>
-            session.finishAuthorization(finisher, signal),
+          .runExclusive(key, background ? undefined : signal, undefined, undefined, () =>
+            session.finishAuthorization(finisher, background ? undefined : signal),
           )
           .finally(() => {
             finishing = undefined;
           });
+        if (authorizationWait === "background") {
+          const completion = finishing;
+          void completion.catch(() => undefined);
+          throw new MCPAuthorizationPendingError(completion);
+        }
         await waitForAuthorization(finishing, signal);
         return request();
       }

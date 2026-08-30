@@ -85,7 +85,7 @@ a resource while enforcing that it stays inside the selected skill directory.
 
 | Entry                        | Contents                                                                                                       |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `@clarvis/skills`            | discovery, parsing and loading — `createAgentSkills`, `clarvisSkillRoots`                                      |
+| `@clarvis/skills`            | discovery/loading, bounded resource enumeration, and snapshot file/resource limits                            |
 | `@clarvis/skills/catalog`    | `renderSkillCatalog`: catalog metadata → a compact Markdown block for a prompt                                 |
 | `@clarvis/skills/capability` | the loop adapter: `createSkillsCapability`, the `load_skill` tool and its handler, plugin bootstrap resolution |
 
@@ -99,6 +99,13 @@ const markdown = renderSkillCatalog(skills.listSkills());
 eager configuration path may reach it, or `builtins.skills = false` would still
 load this package on every import of the engine. The loop reaches it through a
 dynamic import instead.
+
+The root also exports `enumerateResources`, `readBoundedBytes`, its option/reader types, and the
+bounded skill file/resource byte and character limits. `readBoundedBytes` opens once, sizes the
+opened descriptor, allocates only that bounded size, requires the complete read, and probes for
+growth before returning exact bytes. The kernel uses those exact primitives when hashing a plugin
+skill snapshot, so identity and later disclosure walk and read the same admitted resource surface
+instead of maintaining a second scanner.
 
 `LOAD_SKILL_TOOL_NAME` is owned only here. `createSkillsCapability` derives its
 `reservedWireNames` and `toolEffects` from the canonical `loadSkillTool`

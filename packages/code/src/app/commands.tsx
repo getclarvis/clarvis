@@ -130,6 +130,8 @@ export interface AppCommandDeps {
   hasAvailablePlan: () => boolean;
   backend: Accessor<BackendProbe>;
   mcpClient: McpClientCaps;
+  /** Defers the initial capability inventory until the usable application frame is painted. */
+  afterPaint?: (task: () => void) => void;
   onSubmitPrompt: (
     messages: PromptMessage[],
     display?: string,
@@ -237,7 +239,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     surface: "slash",
     group: "actions",
     view: lazyView(async () => {
-      const { Help } = await import("../views/overlays/Help.tsx");
+      const { Help } = await import("../views/cold-surfaces.ts");
       return (host) => (
         <Help
           interaction={host.interaction}
@@ -256,7 +258,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     enabled: deps.tasks.available,
     view: lazyView(async () => {
-      const { TasksHub } = await import("../views/config/TasksHub.tsx");
+      const { TasksHub } = await import("../views/cold-surfaces.ts");
       return (host) =>
         TasksHub(host, {
           controller: deps.tasks,
@@ -487,7 +489,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     surface: "slash",
     group: "navigate",
     view: lazyView(async () => {
-      const { StorageView } = await import("../views/config/StorageView.tsx");
+      const { StorageView } = await import("../views/cold-surfaces.ts");
       return (host) => StorageView(host, { storage: deps.storage, notify });
     }),
   });
@@ -500,7 +502,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "sessions",
     view: lazyView(async () => {
-      const { SessionsHub } = await import("../views/config/SessionsHub.tsx");
+      const { SessionsHub } = await import("../views/cold-surfaces.ts");
       return (host) =>
         SessionsHub(host, {
           sessions: deps.session.list,
@@ -531,7 +533,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     surface: "slash",
     group: "navigate",
     view: lazyView(async () => {
-      const { WorkflowsHub } = await import("../views/config/WorkflowsHub.tsx");
+      const { WorkflowsHub } = await import("../views/cold-surfaces.ts");
       return (host) =>
         WorkflowsHub(host, {
           list: () => deps.workflows.list(),
@@ -633,7 +635,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "settings",
     view: lazyView(async () => {
-      const { RunControlsPanel } = await import("../views/config/RunControlsPanel.tsx");
+      const { RunControlsPanel } = await import("../views/cold-surfaces.ts");
       return (host) =>
         RunControlsPanel(host, {
           settings: deps.settings,
@@ -654,7 +656,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     surface: "slash",
     group: "navigate",
     view: lazyView(async () => {
-      const { ModelView } = await import("../views/config/ModelView.tsx");
+      const { ModelView } = await import("../views/cold-surfaces.ts");
       return (host) => {
         requestModelsCatalog();
         return ModelView(host, {
@@ -679,7 +681,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     surface: "slash",
     group: "navigate",
     view: lazyView(async () => {
-      const { EffortView } = await import("../views/config/EffortView.tsx");
+      const { EffortView } = await import("../views/cold-surfaces.ts");
       return (host) => {
         requestModelsCatalog();
         return EffortView(host, {
@@ -700,7 +702,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "settings",
     view: lazyView(async () => {
-      const { DefaultsPanel } = await import("../views/config/DefaultsPanel.tsx");
+      const { DefaultsPanel } = await import("../views/cold-surfaces.ts");
       return (host) => DefaultsPanel(host, { settings: deps.settings, env, notify });
     }),
   });
@@ -864,7 +866,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "extensions",
     view: lazyView(async () => {
-      const { EnvironmentBrowser } = await import("../views/config/EnvironmentBrowser.tsx");
+      const { EnvironmentBrowser } = await import("../views/cold-surfaces.ts");
       return (host) =>
         EnvironmentBrowser(host, {
           environments: deps.environments,
@@ -889,7 +891,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "actions",
     parent: "extensions",
     view: lazyView(async () => {
-      const { WorkspaceTrustPrompt } = await import("../views/config/WorkspaceTrustPrompt.tsx");
+      const { WorkspaceTrustPrompt } = await import("../views/cold-surfaces.ts");
       return (host) =>
         WorkspaceTrustPrompt(host, {
           state: () => deps.settings.workspaceTrust(),
@@ -931,8 +933,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "settings",
     view: lazyView(async () => {
-      const { CapabilityProvidersPanel } =
-        await import("../views/config/CapabilityProvidersPanel.tsx");
+      const { CapabilityProvidersPanel } = await import("../views/cold-surfaces.ts");
       return (host) => {
         detachObserved(
           "capability_provider_plugins_reload",
@@ -959,7 +960,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "extensions",
     view: lazyView(async () => {
-      const { MarketplaceBrowser } = await import("../views/config/MarketplaceBrowser.tsx");
+      const { MarketplaceBrowser } = await import("../views/cold-surfaces.ts");
       return (host) => {
         const store = pluginsStore;
         const [stamp, bump] = createSignal(0);
@@ -1045,7 +1046,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "settings",
     view: lazyView(async () => {
-      const { MemoryConfigPanel } = await import("../views/config/MemoryConfigPanel.tsx");
+      const { MemoryConfigPanel } = await import("../views/cold-surfaces.ts");
       return (host) =>
         MemoryConfigPanel(host, {
           settings: deps.settings,
@@ -1063,7 +1064,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "settings",
     view: lazyView(async () => {
-      const { SandboxConfigPanel } = await import("../views/config/SandboxConfigPanel.tsx");
+      const { SandboxConfigPanel } = await import("../views/cold-surfaces.ts");
       return (host) => SandboxConfigPanel(host, { settings: deps.settings, notify });
     }),
   });
@@ -1076,7 +1077,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "settings",
     view: lazyView(async () => {
-      const { ThemeView } = await import("../views/config/ThemeView.tsx");
+      const { ThemeView } = await import("../views/cold-surfaces.ts");
       return (host) =>
         ThemeView(host, {
           preview: deps.preview,
@@ -1096,7 +1097,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "settings",
     view: lazyView(async () => {
-      const { KeyboardView } = await import("../views/config/KeyboardView.tsx");
+      const { KeyboardView } = await import("../views/cold-surfaces.ts");
       return (host) => {
         const startDiagnostic = startKeyboardDiagnostic;
         startKeyboardDiagnostic = false;
@@ -1115,7 +1116,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     subcommands: hubSubcommands(SETTINGS_ITEMS),
     route: hubRoute(SETTINGS_ITEMS, "settings.open"),
     view: lazyView(async () => {
-      const { SettingsHub } = await import("../views/config/SettingsHub.tsx");
+      const { SettingsHub } = await import("../views/cold-surfaces.ts");
       return (host) =>
         SettingsHub(host, {
           openChild: (cmd) => openWithReturn(cmd, "settings.open", preferredScope()),
@@ -1249,7 +1250,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "inspect",
     view: lazyView(async () => {
-      const { DoctorView } = await import("../views/config/DoctorView.tsx");
+      const { DoctorView } = await import("../views/cold-surfaces.ts");
       return (host) =>
         DoctorView(host, {
           ctx: doctorCtx,
@@ -1335,7 +1336,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     view: lazyView(async () => {
       const [{ ProvidersPanel }] = await Promise.all([
-        import("../views/config/ProvidersPanel.tsx"),
+        import("../views/cold-surfaces.ts"),
         deps.loadCatalog?.() ?? Promise.resolve(),
       ]);
       return (host) => {
@@ -1372,7 +1373,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     surface: "internal",
     group: "navigate",
     view: lazyView(async () => {
-      const { SetupView } = await import("../views/onboarding/SetupView.tsx");
+      const { SetupView } = await import("../views/cold-surfaces.ts");
       return (host) =>
         SetupView(host, {
           state: setupState,
@@ -1464,7 +1465,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     surface: "internal",
     group: "navigate",
     view: lazyView(async () => {
-      const { RecoveryView } = await import("../views/onboarding/RecoveryView.tsx");
+      const { RecoveryView } = await import("../views/cold-surfaces.ts");
       return (host) =>
         RecoveryView(host, {
           issue: recoveryIssue,
@@ -1539,11 +1540,21 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     profiles: () => deps.agents.list().map((v) => v.name),
   });
   const backendConnected = createMemo(() => deps.connection().phase === "ready");
+  let initialMcpRefresh = true;
   createEffect(() => {
     backendConnected();
-    void mcpCaps
-      .refresh()
-      .catch((e: unknown) => notify(`mcp refresh failed: ${errorText(e)}`, "error"));
+    const refresh = (): void => {
+      void mcpCaps
+        .refresh()
+        .catch((e: unknown) => notify(`mcp refresh failed: ${errorText(e)}`, "error"));
+    };
+    if (initialMcpRefresh && deps.afterPaint !== undefined) {
+      initialMcpRefresh = false;
+      deps.afterPaint(refresh);
+      return;
+    }
+    initialMcpRefresh = false;
+    refresh();
   });
   commands.registerView({
     name: "mcp.browse",
@@ -1554,7 +1565,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     group: "navigate",
     parent: "extensions",
     view: lazyView(async () => {
-      const { McpBrowser } = await import("../views/config/McpBrowser.tsx");
+      const { McpBrowser } = await import("../views/cold-surfaces.ts");
       return (host) =>
         McpBrowser(host, {
           nodes: mcpCaps.nodes,
@@ -1573,7 +1584,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     surface: "slash",
     group: "navigate",
     view: lazyView(async () => {
-      const { ExtensionsHub } = await import("../views/config/ExtensionsHub.tsx");
+      const { ExtensionsHub } = await import("../views/cold-surfaces.ts");
       return (host) => {
         const initialEnvironment = extensionSetupInitialEnvironment;
         const initialPlugin = extensionSetupInitialPlugin;

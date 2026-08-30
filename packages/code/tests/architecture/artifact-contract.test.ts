@@ -12,7 +12,7 @@ const lazyEntry = `async function load() {
 }`;
 const providerChunk = {
   path: "chunk-provider123.js",
-  source: "class AiSdkAdapter {}\nexport { AiSdkAdapter };",
+  source: 'const event = "llm.provider.resolved";',
 };
 
 test("the artifact contract accepts a provider adapter behind a generated chunk", () => {
@@ -47,7 +47,7 @@ test("the artifact contract rejects a monolithic entrypoint", () => {
   ).toThrow("artifact has no lazy JavaScript chunks");
   expect(() =>
     assertLazyProviderArtifact({
-      entrySource: "class AiSdkAdapter {}",
+      entrySource: 'const event = "llm.provider.resolved";',
       javascriptChunks: [providerChunk],
     }),
   ).toThrow("artifact loads AiSdkAdapter eagerly");

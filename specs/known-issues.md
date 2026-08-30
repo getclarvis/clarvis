@@ -1020,7 +1020,7 @@ flag (`:437`–`:440`).
 The asset remains installed but no longer enters interactive first boot. Code's foundation never
 calls the models service; the first Model, Effort or Providers mount invokes a single-flight loader.
 The clean-HOME artifact smoke requires the asset while rejecting any pre-paint
-`catalog.load.started` event (`packages/code/src/index.tsx`, `ensureModelsCatalog`;
+`catalog.load.started` event (`packages/code/src/runtime.tsx`, `ensureModelsCatalog`;
 `packages/code/tooling/artifact/smoke.ts`).
 
 **The snapshot is not raw models.dev, and that moves where the risk sits.** It is already in
@@ -1367,6 +1367,40 @@ and zero test failures. The seven-sample TUI benchmark was trusted (AC power, pe
 ms on 1.3.11 to 1134.21/1134.64 ms on 1.4.0; bundled `--version` improved from 418.02 to 281.66 ms.
 This local candidate evidence does not stand in for the still-unrun GitHub 1.3 control arm or the
 Windows/macOS jobs.
+
+---
+
+## Complete TUI hydration remains above 500 ms under Bun 1.4.0 and OpenTUI 0.5.7
+
+**Mitigated at the functional-input boundary on 2026-08-29; strict complete hydration remains
+unresolved.** The lightweight entry now paints a focused startup composer before importing the
+complete application runtime. A forced three-sample local bundle batch was untrusted because
+load/core was 0.369 against the 0.35 gate, but its staging was stable: minimal shell and focused
+input both had a 182 ms median, while complete header and input hydration had a 675 ms median. One
+nine-plugin real launch reached the focused composer at 264 ms and complete hydration at 1,110 ms.
+These samples are not mutually comparable; they establish which stage remains expensive, not a
+cross-machine absolute baseline.
+
+The repository-owned multiplicative waits were separately reproduced and corrected. Repeated plugin
+parsing/hashing had made the same nine-plugin Environment take about 32.9 seconds; pinned projections
+plus canonical per-file descriptor-bounded revalidation at admission and lazy skill reads reduced
+the observed combined resolution to about 330 ms. Two unanswered MCP OAuth flows had each waited
+about 302 seconds; background authorization
+now leaves only those servers inactive and the real run completes while their browser pages are
+ignored. Neither correction weakens fingerprint drift or token persistence.
+
+Three artifact experiments bound the remaining complete-hydration path:
+
+- disabling Bun splitting made both startup and complete paint worse;
+- Bun bytecode emitted a CommonJS artifact that could not load OpenTUI's asynchronous ESM graph;
+- absorbing OpenTUI into the application bundle failed on OpenTUI modules that use top-level await.
+
+The direct failures mean Clarvis cannot currently replace the split ESM/OpenTUI load with those two
+Bun artifact strategies. They do not prove every remaining 675 ms is irreducibly upstream, so future
+work must keep measuring runtime chunk topology and must not reintroduce eager plugin walks. The
+product mitigation is load-bearing: a task submitted in the startup composer begins when the run
+host is ready, before complete-app mount. The revalidation procedure lives in
+`.agents/skills/clarvis-performance-validation/SKILL.md`.
 
 ---
 

@@ -3,7 +3,7 @@ import type { Logger } from "@clarvis/capability";
 import { SkillError, fsError } from "./errors.ts";
 import { closeQuietly } from "./lib/log.ts";
 
-interface BoundedReadOptions {
+export interface BoundedReadOptions {
   maxBytes: number;
   /** Complete-file cap when a smaller prefix allocation is requested. */
   maxFileBytes?: number;
@@ -14,7 +14,7 @@ interface BoundedReadOptions {
   logger: Logger;
 }
 
-type DescriptorReader = (
+export type DescriptorReader = (
   descriptor: number,
   buffer: Buffer,
   offset: number,
@@ -42,7 +42,7 @@ function tooLarge(
  * even if another process grows the file after `fstat`.
  */
 export function readBoundedPrefix(file: string, options: BoundedReadOptions): string {
-  return readFromFile(file, options, options.maxBytes);
+  return decodeBoundedText(file, readFromFile(file, options, options.maxBytes), options);
 }
 
 /**
@@ -58,7 +58,38 @@ export function readBoundedText(
   options: BoundedReadOptions,
   reader: DescriptorReader = readSync,
 ): string {
-  return readFromFile(file, options, undefined, reader);
+  return decodeBoundedText(file, readFromFile(file, options, undefined, reader), options);
+}
+
+function decodeBoundedText(file: string, bytes: Buffer, options: BoundedReadOptions): string {
+  const text = bytes.toString("utf8");
+  if (options.maxChars !== undefined && text.length > options.maxChars) {
+    throw tooLarge(file, "characters", text.length, options.maxChars, options);
+  }
+  return text;
+}
+
+/**
+ * Read complete regular-file bytes behind a descriptor-owned allocation bound.
+ *
+ * @param file - Regular file to read.
+ * @param options - Complete-file byte bound and diagnostic classification.
+ * @param reader - Positional descriptor reader; injectable for concurrent-change tests.
+ * @returns The exact bytes read from the opened descriptor.
+ */
+export function readBoundedBytes(
+  file: string,
+  options: BoundedReadOptions,
+  reader: DescriptorReader = readSync,
+): Buffer {
+  const bytes = readFromFile(file, options, undefined, reader);
+  if (options.maxChars !== undefined) {
+    const chars = bytes.toString("utf8").length;
+    if (chars > options.maxChars) {
+      throw tooLarge(file, "characters", chars, options.maxChars, options);
+    }
+  }
+  return bytes;
 }
 
 function readFromFile(
@@ -66,7 +97,7 @@ function readFromFile(
   options: BoundedReadOptions,
   prefixBytes?: number,
   reader: DescriptorReader = readSync,
-): string {
+): Buffer {
   let descriptor: number | undefined;
   try {
     descriptor = openSync(file, "r");
@@ -87,6 +118,13 @@ function readFromFile(
       if (count === 0) break;
       offset += count;
     }
+    if (offset !== requested) {
+      throw new SkillError(
+        options.code,
+        `${options.label} '${file}' changed while it was being read`,
+        { path: file },
+      );
+    }
     if (prefixBytes === undefined) {
       const probe = Buffer.allocUnsafe(1);
       if (reader(descriptor, probe, 0, 1, offset) !== 0) {
@@ -97,11 +135,7 @@ function readFromFile(
         );
       }
     }
-    const text = buffer.subarray(0, offset).toString("utf8");
-    if (options.maxChars !== undefined && text.length > options.maxChars) {
-      throw tooLarge(file, "characters", text.length, options.maxChars, options);
-    }
-    return text;
+    return buffer;
   } catch (error) {
     if (error instanceof SkillError) throw error;
     throw fsError(error as NodeJS.ErrnoException, file);

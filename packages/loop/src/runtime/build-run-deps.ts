@@ -192,15 +192,19 @@ function emptySkillsProvider(): SkillsSeam {
  * @param build - constructs a skills provider from the current resolved roots.
  * @param provider - returns the current extra skill roots (called per access).
  * @param logger - receives a warning when a rescan fails.
+ * @param failClosed - propagate provider failures for an exact host snapshot.
  * @returns a {@link SkillsProvider} that serves from a memoized scan, falling back
- *   to the last good scan (or an empty provider) if discovery throws.
+ *   to the last good scan (or an empty provider) if non-exact discovery throws.
  * @remarks The roots' JSON is the cache signature; a matching signature reuses the
- *   prior scan. A `provider()` throw is treated as no roots.
+ *   prior scan. An extra-root `provider()` throw is treated as no roots, while an
+ *   exact Environment provider throws so lazy catalog/body/resource reads cannot
+ *   consume changed bytes under an admitted fingerprint.
  */
 function dynamicSkills(
   build: (extra: SkillRootInput[]) => SkillsSeam,
   provider: () => SkillRootInput[],
   logger: Logger,
+  failClosed: boolean,
 ): SkillsSeam {
   let sig: string | undefined;
   let inner: SkillsSeam | undefined;
@@ -210,6 +214,7 @@ function dynamicSkills(
     try {
       roots = provider();
     } catch (err) {
+      if (failClosed) throw err;
       roots = [];
       logger.debug(
         {
@@ -492,7 +497,7 @@ export async function buildExecuteRunDeps({
           });
     const configuredRoots = skillRoots ?? extraSkillRoots;
     if (typeof configuredRoots === "function") {
-      skills = dynamicSkills(build, configuredRoots, logger);
+      skills = dynamicSkills(build, configuredRoots, logger, exactRoots);
     } else {
       try {
         skills = build(configuredRoots ?? []);

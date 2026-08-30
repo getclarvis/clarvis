@@ -327,6 +327,36 @@ describe("createFileKernel — skills roots from plugins", () => {
 
     await kernel.close();
   });
+
+  it("rejects plugin skill drift when a run is admitted, not on the boot projection path", async () => {
+    const ws = seedWorkspace();
+    const globalDir = join(ws, "global");
+    const pluginDir = join(globalPaths(globalDir).pluginsDir, "handbook");
+    const skillFile = join(pluginDir, "skills", "guide", "SKILL.md");
+    seedFile(
+      globalPaths(globalDir).settingsFile,
+      JSON.stringify({
+        enabledPlugins: [{ scope: "global", source: "clarvis", name: "handbook" }],
+      }),
+    );
+    seedFile(join(pluginDir, "plugin.json"), JSON.stringify({ name: "handbook" }));
+    seedFile(skillFile, "---\nname: guide\ndescription: first\n---\n\nfirst\n");
+
+    const kernel = await createFileKernel({
+      workspaceRoot: ws,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      traceDir: join(ws, "traces"),
+      globalDir,
+    });
+    expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBe(true);
+
+    writeFileSync(skillFile, "---\nname: guide\ndescription: second\n---\n\nsecond\n");
+    await expect(
+      kernel.runs.start({ messages: [{ role: "user", content: "hi" }], agent: "coder" }),
+    ).rejects.toThrow(/selected plugin content changed.*reconnect the kernel/);
+
+    await kernel.close();
+  });
 });
 
 describe("createFileKernel — guard settings loader", () => {

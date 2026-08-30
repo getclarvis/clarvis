@@ -87,10 +87,10 @@ integration suite behind every claim there.
 |---|---|---|
 | `PlatformCapabilities` | `{revision, keyboard, remote, runtimePlatform, terminal, mouse, clipboard:{osc52}, multiplexer, plain, themeBg, colorDepth}` | `packages/code/src/adapters/platform.ts:17-29` |
 | `Platform` | `{capabilities, onShutdown, shutdown, suspend, resume, copyText, readClipboardImage}` | `packages/code/src/adapters/platform.ts:38-48` |
-| `PlatformOptions` | `{dev?, clipboardProcess?, runtimePlatform?, processEnv?}`; the last three fields are internal test seams | `packages/code/src/adapters/platform.ts:51-59` |
-| `assertInteractiveTTY(io?)` | exits process with code `2` and a stderr usage line if stdin/stdout are not a TTY | `packages/code/src/adapters/platform.ts:201-214` |
-| `buildRendererConfig(opts?): CliRendererConfig` | the OpenTUI renderer config `code` boots with | `packages/code/src/adapters/platform.ts:249-265` |
-| `createPlatform(renderer, opts?): Platform` | constructs the adapter around a live `CliRenderer` | `packages/code/src/adapters/platform.ts:320-470` |
+| `PlatformOptions` | `{dev?, clipboardProcess?, runtimePlatform?, processEnv?}`; the last three fields are internal test seams | `packages/code/src/adapters/platform.ts` (`PlatformOptions`), `packages/code/src/adapters/renderer-bootstrap.ts` (`RendererBootstrapOptions`) |
+| `assertInteractiveTTY(io?)` | exits process with code `2` and a stderr usage line if stdin/stdout are not a TTY | `packages/code/src/adapters/renderer-bootstrap.ts` |
+| `buildRendererConfig(opts?): CliRendererConfig` | the OpenTUI renderer config `code` boots with | `packages/code/src/adapters/renderer-bootstrap.ts` |
+| `createPlatform(renderer, opts?): Platform` | constructs the adapter around a live `CliRenderer` | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
 | `readClipboardImage(signal?, run?): Promise<ClipboardImage\|null>` | free function, also exposed on `Platform` | `packages/code/src/adapters/platform.ts:158-193` |
 | `WINDOWS_CLIPBOARD_COPY_SCRIPT` | const (exported for tests) | `packages/code/src/adapters/platform.ts:95-97` |
 
@@ -336,16 +336,17 @@ producer of named diagnostic events/counters:
 
 | Event/counter | Fields | Cite |
 |---|---|---|
-| `platform.create` | `dev`, `remote` (an `SSH_TTY`/`SSH_CONNECTION` check), `runtime` (`process.platform`) | `packages/code/src/adapters/platform.ts:298-302` |
-| `renderer.theme-mode` (counter) | `mode` | `packages/code/src/adapters/platform.ts:304` |
-| `renderer.capabilities` (counter) | none | `packages/code/src/adapters/platform.ts:308` |
-| `renderer.destroy` | none | `packages/code/src/adapters/platform.ts:350` |
-| `platform.shutdown.begin` | `reason`, `error?` | `packages/code/src/adapters/platform.ts:362-366` |
-| `platform.shutdown.hooks-settled` | `reason` | `packages/code/src/adapters/platform.ts:374` |
+| `platform.create` | `dev`, `remote` (an `SSH_TTY`/`SSH_CONNECTION` check), `runtime` (`process.platform`) | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
+| `renderer.theme-mode` (counter) | `mode` | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
+| `renderer.capabilities` (counter) | none | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
+| `renderer.destroy` | none | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
+| `platform.shutdown.begin` | `reason`, `error?` | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
+| `platform.shutdown.hooks-settled` | `reason` | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
 
 ### 3.6 Renderer configuration (as data)
 
-`buildRendererConfig` (`packages/code/src/adapters/platform.ts`) returns the fixed base `CliRendererConfig` `code` boots with:
+`buildRendererConfig` (`packages/code/src/adapters/renderer-bootstrap.ts`) returns the fixed base
+`CliRendererConfig` `code` boots with:
 
 ```
 {
@@ -490,7 +491,7 @@ It performs no workflow filesystem writes.
 
 ### 4.5 Clipboard candidate ordering
 
-`copyText` (`packages/code/src/adapters/platform.ts:410-428`):
+`copyText` (`packages/code/src/adapters/platform.ts`, `createPlatform`):
 
 ```
 remote (SSH_TTY or SSH_CONNECTION set)?
@@ -514,7 +515,7 @@ out):
 
 ### 4.6 Shutdown sequence
 
-`shutdown(reason, err?)` (`packages/code/src/adapters/platform.ts:356-382`): a second concurrent call short-circuits to
+`shutdown(reason, err?)` (`packages/code/src/adapters/platform.ts`, `createPlatform`): a second concurrent call short-circuits to
 `restore()` + `process.exit` immediately (`:325-328`, pinned by
 `packages/code/tests/integration/platform-lifecycle.test.ts:359-371`). Otherwise: abort every in-flight clipboard
 controller → run every registered `onShutdown` hook in **reverse registration order**, each wrapped so a
@@ -523,7 +524,8 @@ terminal (destroy the renderer, swallowing any error) → if not a panic and run
 until quiet (`drainStdinUntilQuiet`, capped at `DRAIN_MAX_MS`=500 with a `DRAIN_QUIET_MS`=120 quiet
 window) → on panic with an error, write its stack to stderr → `process.exit(reason==="panic" ? 1 : 0)`.
 
-**What invokes `shutdown`**, registered once inside `createPlatform` (`packages/code/src/adapters/platform.ts:384-391`):
+**What invokes `shutdown`**, registered once inside `createPlatform`
+(`packages/code/src/adapters/platform.ts`, `createPlatform`):
 
 | Event | Handler | Calls full `shutdown()`? |
 |---|---|---|
@@ -730,7 +732,7 @@ recovery screen with no further keypress — pinned by
     is withheld and later flushed).
 21. **Locally (no SSH env vars), `copyText` never invokes OSC-52 when the native tool already
     succeeded**; over SSH, OSC-52 is tried first and the native tool is skipped when it succeeds. —
-    `packages/code/src/adapters/platform.ts:410-428` — pinned by `packages/code/tests/integration/platform-copy.test.ts:68-107`.
+    `packages/code/src/adapters/platform.ts` (`copyText`) — pinned by `packages/code/tests/integration/platform-copy.test.ts:68-107`.
 22. **`readClipboardImage` never falls back to `xsel` for image paste**, even though `xsel` is a text-copy
     candidate. — `packages/code/src/adapters/platform.ts:156-171` — pinned by `packages/code/tests/integration/platform.test.ts:133-142`.
 23. **A clipboard helper process is force-killed (`SIGTERM` then, after `killGraceMs`, `SIGKILL`) on
@@ -739,7 +741,7 @@ recovery screen with no further keypress — pinned by
     `packages/code/tests/integration/clipboard-process.test.ts:28-46` (timeout→SIGTERM→SIGKILL),
     `:66-82` (oversized output capped and terminated).
 24. **`SIGHUP` is registered only off Windows** (`process.platform !== "win32"`), since Windows never
-    raises it. — `packages/code/src/adapters/platform.ts:389-391` — unpinned by a Windows-specific test within this document's scope
+    raises it. — `packages/code/src/adapters/platform.ts` (`createPlatform`) — unpinned by a Windows-specific test within this document's scope
     (no Windows job covers `code`; see the repository-wide Windows-CI note, out of this document's scope).
 
 ## 6. Failure modes and degradation
@@ -751,9 +753,9 @@ recovery screen with no further keypress — pinned by
 | A seeder finds a corrupt scope | Declines with `reason:"corrupt"`, writes nothing (would fail anyway) | `packages/code/src/onboarding/seed-block-once.ts:50` |
 | Native clipboard tool spawn fails (`ENOENT`, `EPERM`, ...) | Reported as `result.error`, treated as a miss — the next candidate (or OSC-52 fallback) is tried, never a thrown exception reaching `Platform.copyText` | `packages/code/src/adapters/platform.ts:108-113`, pinned `packages/code/tests/integration/platform-lifecycle.test.ts:436-444` |
 | Clipboard helper hangs | Killed after `timeoutMs` (default 2000 ms); `child.kill` itself throwing is swallowed | `packages/code/src/adapters/clipboard-process.ts:101-121` |
-| `renderer.destroy()`/`suspend()`/`resume()` throws | Swallowed with an empty `catch {}` | `packages/code/src/adapters/platform.ts:351-354`, `:378-385`, pinned `packages/code/tests/integration/platform-lifecycle.test.ts:398-403` |
-| A registered `onShutdown` hook throws or its promise rejects | Wrapped in `Promise.resolve().then(...)`, awaited via `Promise.allSettled`, so one hook's failure never blocks another's | `packages/code/src/adapters/platform.ts:369-371`, pinned `packages/code/tests/integration/platform-lifecycle.test.ts:280-293` |
-| Shutdown hooks collectively exceed `SHUTDOWN_BUDGET_MS` | The `Promise.race` against a timer proceeds to `restore()` anyway — hooks may still be in flight | `packages/code/src/adapters/platform.ts:369-373` |
+| `renderer.destroy()`/`suspend()`/`resume()` throws | Swallowed with an empty `catch {}` | `packages/code/src/adapters/platform.ts` (`createPlatform`), pinned `packages/code/tests/integration/platform-lifecycle.test.ts:398-403` |
+| A registered `onShutdown` hook throws or its promise rejects | Wrapped in `Promise.resolve().then(...)`, awaited via `Promise.allSettled`, so one hook's failure never blocks another's | `packages/code/src/adapters/platform.ts` (`createPlatform`), pinned `packages/code/tests/integration/platform-lifecycle.test.ts:280-293` |
+| Shutdown hooks collectively exceed `SHUTDOWN_BUDGET_MS` | The `Promise.race` against a timer proceeds to `restore()` anyway — hooks may still be in flight | `packages/code/src/adapters/platform.ts` (`SHUTDOWN_BUDGET_MS`, `createPlatform`) |
 | Diagnostic session's file write itself fails (`writeSync` throws) | Session marks itself `saturated` and drops further non-forced writes; does not throw out to the caller | `packages/code/src/adapters/diagnostic-session.ts:418-425` |
 | A diagnostic record would exceed `MAX_RECORD_BYTES` | Replaced with a `{truncated:true, reason:"record exceeded 16 KiB"}` details stand-in, same envelope | `packages/code/src/adapters/diagnostic-session.ts:406-412`, pinned `packages/code/tests/unit/diagnostics.test.ts:234-237` |
 | A pathological/oversized event or counter name | Normalized to `diagnostics.invalid-event`/`diagnostics.invalid-counter`, never persisted verbatim | `packages/code/src/adapters/diagnostic-session.ts:215-225`, pinned `packages/code/tests/unit/diagnostics.test.ts:252-265` |
@@ -791,7 +793,8 @@ recovery screen with no further keypress — pinned by
 - `DiagnosticLogger` is a **structural** port (`packages/code/src/core/diagnostic-events.ts:29-51`) deliberately shaped so a
   pino-backed `Logger` from `@clarvis/capability`/`@clarvis/loop` satisfies it without either package
   importing the other — `activeDiagnosticLogger()` is handed to `@clarvis/kernel`'s construction call
-  (`packages/code/src/index.tsx:186`, `:261`, `:403`, outside this document), so the coupling from kernel→diagnostics runs
+  (`packages/code/src/runtime.tsx`, `bootSilentSessionStore`, `runPrintMode`, `runApp`, outside this
+  document), so the coupling from kernel→diagnostics runs
   through this narrow structural type, never a concrete import.
 - `installDiagnosticSession`'s uninstall guard (`if (activeSession === session) activeSession =
   undefined`, `packages/code/src/core/diagnostic-events.ts:86-88`) is what makes two independently-owned sessions (a boot-time
@@ -801,13 +804,14 @@ recovery screen with no further keypress — pinned by
 
 **What depends on this subsystem:**
 
-- `packages/code/src/index.tsx` and `packages/code/src/app/commands.tsx` (outside this document's file set)
+- `packages/code/src/runtime.tsx` and `packages/code/src/app/commands.tsx` (outside this document's file set)
   are the sole call sites of every symbol here: `runGates`/`bootGate`/`startupRoute` drive boot routing
   (`packages/code/src/app/commands.tsx`, `report`, `prepareSetup`, `recovery.open`, startup routing), and the three seeders are called
   both at `onMount` and from the guided-setup `prepareSetup`, while workflows require no onboarding
   call. `createDebugSessionController`/`resolveDebugRequest`/`installDiagnosticSession` drive the
-  `--debug` lifecycle (`packages/code/src/index.tsx`, `runApp`, `openHeadlessDiagnostics`, and `main`),
-  and `installTerminalGuard` is installed once at boot and released on every `onShutdown` (`runApp`).
+  `--debug` lifecycle (`packages/code/src/runtime.tsx`, `runApp`, `runHeadlessMode`, and
+  `packages/code/src/index.tsx`, `main`), and `installTerminalGuard` is installed once by
+  `runInteractive` and released through the `BootShell`/runtime shutdown path.
   `src/views/onboarding/SetupView.tsx`/`RecoveryView.tsx` are the visual presentation of the
   `setup`/`repair` `StartupRoute`s — they consume `startupRoute`'s result and the seeder/doctor state via
   `commands.tsx` (§2.11, §4.11), while their key-binding *machinery* (`LevelSpec`, `bindLevelKeys`,

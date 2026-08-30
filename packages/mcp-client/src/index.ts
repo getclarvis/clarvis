@@ -28,6 +28,7 @@ export type {
   ElicitationRelay,
   MCPClientHandle,
   MCPConnectOptions,
+  MCPAuthorizationWait,
   MCPClientFactory,
   RuntimeEnvironment,
   MCPClientFactoryOptions,
@@ -37,6 +38,7 @@ export {
   DEFAULT_MCP_OAUTH_AUTHORIZATION_TIMEOUT_MS,
   DEFAULT_MCP_OAUTH_CALLBACK_PORT,
   MCPAuthorizationFailedError,
+  MCPAuthorizationPendingError,
   MCPInteractiveAuthorizationUnavailableError,
 } from "./oauth.ts";
 export type {
@@ -99,7 +101,11 @@ export type {
   PoolSharing,
   ConnectionManagerOptions,
 } from "./connection-manager.ts";
-export { isMcpRequestTimeout, isMcpProtocolError } from "./errors.ts";
+export {
+  MCPBackgroundConnectDeferredError,
+  isMcpRequestTimeout,
+  isMcpProtocolError,
+} from "./errors.ts";
 export { toWireToolName, buildRegistry, poolToolNames, selectTools } from "./registry.ts";
 export type { NamespacedRegistry, RegistryEntry, BuildRegistryOptions } from "./registry.ts";
 export { CLIENT_NAME, VERSION } from "./version.ts";

@@ -35,6 +35,7 @@ import {
   APP_PAINT_MARKER as PAINT_MARKER,
   APP_READY_MARKER as READY_MARKER,
   BOOT_SHELL_MARKER as SHELL_MARKER,
+  STARTUP_READY_MARKER,
 } from "../artifact/markers.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -198,6 +199,7 @@ async function timeVersion(
 
 interface PaintSample {
   shell: number | undefined;
+  startupReady: number | undefined;
   paint: number | undefined;
   ready: number;
 }
@@ -216,6 +218,7 @@ async function timeFirstPaint(
       workspace,
       markers: [
         { name: "shell", text: SHELL_MARKER },
+        { name: "startupReady", text: STARTUP_READY_MARKER },
         { name: "paint", text: PAINT_MARKER },
         { name: "ready", text: READY_MARKER },
       ],
@@ -232,6 +235,7 @@ async function timeFirstPaint(
     }
     return {
       shell: observed.marks.shell,
+      startupReady: observed.marks.startupReady,
       paint: observed.marks.paint,
       ready: observed.marks.ready!,
     };
@@ -266,6 +270,7 @@ interface ArmResult {
   entry: string;
   version: Stats | undefined;
   shell: Stats | undefined;
+  startupReady: Stats | undefined;
   paint: Stats | undefined;
   ready: Stats | undefined;
 }
@@ -278,11 +283,13 @@ async function measure(arm: Arm, workspace: string): Promise<ArmResult> {
 
   await timeFirstPaint(arm.entry, arm.env).catch(() => undefined);
   const shells: number[] = [];
+  const startupReadies: number[] = [];
   const paints: number[] = [];
   const readies: number[] = [];
   for (let i = 0; i < N; i++) {
     const sample = await timeFirstPaint(arm.entry, arm.env);
     if (sample.shell !== undefined) shells.push(sample.shell);
+    if (sample.startupReady !== undefined) startupReadies.push(sample.startupReady);
     if (sample.paint !== undefined) paints.push(sample.paint);
     readies.push(sample.ready);
   }
@@ -291,6 +298,7 @@ async function measure(arm: Arm, workspace: string): Promise<ArmResult> {
     entry: arm.entry,
     version: summarise(versions),
     shell: summarise(shells),
+    startupReady: summarise(startupReadies),
     paint: summarise(paints),
     ready: summarise(readies),
   };
@@ -323,14 +331,14 @@ function report(results: ArmResult[], env: Environment, cwd: string, trusted: bo
   for (const result of results) {
     lines.push(row(`\`${result.name}\` --version (module graph)`, result.version));
     lines.push(row(`\`${result.name}\` first paint (minimal shell)`, result.shell));
+    lines.push(row(`\`${result.name}\` startup composer (input ready)`, result.startupReady));
     lines.push(row(`\`${result.name}\` first paint (header)`, result.paint));
-    lines.push(row(`\`${result.name}\` first paint (input ready)`, result.ready));
+    lines.push(row(`\`${result.name}\` complete app (input ready)`, result.ready));
   }
   lines.push(
     "",
-    "The shell-to-header gap measures the non-visual foundation that now runs behind the",
-    "parser-free frame. A zero header-to-input-ready gap means the complete app becomes usable",
-    "in the same observed frame.",
+    "The startup-composer row is the first focused input a user can type into and submit.",
+    "The later header and complete-app rows measure background hydration, not the start of input.",
   );
   return lines.join("\n");
 }

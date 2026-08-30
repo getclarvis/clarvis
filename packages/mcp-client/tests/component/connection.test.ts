@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "../helpers/bun-test.ts";
 import type { McpServerConfig } from "@clarvis/capability";
-import { MCPConnectionFailedError, openConnection } from "@clarvis/mcp-client";
+import {
+  MCPAuthorizationPendingError,
+  MCPConnectionFailedError,
+  openConnection,
+} from "@clarvis/mcp-client";
 import type { ElicitationRelay, MCPClientFactory, MCPClientHandle } from "@clarvis/mcp-client";
 
 const SCOPE = { workspace: "/ws", owner: "owner" };
@@ -138,6 +142,20 @@ describe("openConnection connection boundary", () => {
     await opened.conn.close();
   });
 
+  it("forwards background browser authorization without changing the direct-call default", async () => {
+    let authorizationWait: string | undefined;
+    const opened = await open(
+      async (_server, _relay, options) => {
+        authorizationWait = options?.authorizationWait;
+        return handle();
+      },
+      { authorizationWait: "background" },
+    );
+
+    expect(authorizationWait).toBe("background");
+    await opened.conn.close();
+  });
+
   it("pauses only the connect deadline while interactive authorization is pending", async () => {
     vi.useFakeTimers();
     try {
@@ -201,6 +219,25 @@ describe("openConnection connection boundary", () => {
     );
 
     await expect(opening).rejects.toThrow("Failed to list tools on 'docs': cannot list");
+    expect(closes).toBe(1);
+  });
+
+  it("preserves a catalog OAuth completion failure after closing its temporary handle", async () => {
+    const failure = new Error("oauth failed");
+    const completion = Promise.reject(failure);
+    let closes = 0;
+    const opening = open(async () =>
+      handle({
+        listTools: () => {
+          throw new MCPAuthorizationPendingError(completion);
+        },
+        onClose: () => (closes += 1),
+      }),
+    );
+
+    const error = await opening.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(MCPAuthorizationPendingError);
+    await expect((error as MCPAuthorizationPendingError).completion).rejects.toBe(failure);
     expect(closes).toBe(1);
   });
 

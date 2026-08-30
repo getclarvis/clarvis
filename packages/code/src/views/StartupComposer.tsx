@@ -4,7 +4,10 @@ import { useTerminalDimensions } from "@opentui/solid";
 import { tokens } from "../theme/tokens.ts";
 import { borderChars, glyph } from "../theme/glyphs.ts";
 import { ruleColor } from "../theme/surfaces.ts";
-import { SPLASH_WORDMARK } from "./brand.tsx";
+import { BrandBanner } from "./Splash.tsx";
+
+/** Rows required by the fixed startup chrome plus the complete eight-row Clarvis banner. */
+const STARTUP_SPLASH_MIN_ROWS = 16;
 
 /** Text accepted by the startup composer before the complete application graph is ready. */
 export interface StartupComposerSnapshot {
@@ -138,12 +141,10 @@ export function StartupComposer(props: {
         alignItems="center"
       >
         <Show when={dims().height >= 8}>
-          <text wrapMode="none">
-            <b>
-              <span style={{ fg: tokens.accent }}>{"/"}</span>
-              <span style={{ fg: tokens.fg }}>{SPLASH_WORDMARK}</span>
-            </b>
-          </text>
+          <BrandBanner
+            width={() => dims().width}
+            compact={() => dims().height < STARTUP_SPLASH_MIN_ROWS}
+          />
         </Show>
         <text fg={queued() ? tokens.accent2 : tokens.muted} wrapMode="none" truncate>
           {queued()

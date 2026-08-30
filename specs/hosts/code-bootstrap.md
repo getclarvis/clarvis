@@ -186,7 +186,7 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | `src/views/Splash.tsx` | `BANNER` | `string[]`, 8 rows of ASCII art | 8-17 |
 | | `FIRST_RUN_SPLASH_MIN_COLUMNS` / `FIRST_RUN_SPLASH_MIN_ROWS` | `76` / `24` | named constants |
 | | `firstRunSplashFits` | `(width: number, height: number) => boolean` | `firstRunSplashFits` |
-| | `BrandBanner` | `({ width: () => number }) => JSX.Element` | `BrandBanner` |
+| | `BrandBanner` | `({ width: () => number, compact?: () => boolean }) => JSX.Element` | `BrandBanner` |
 | | `Splash` | `({ agent, model, width, rightInset? }) => JSX.Element` | `Splash` |
 | `src/views/PageFrame.tsx` | `PageFrame` | `({ title, subtitle?, interaction, children }) => JSX.Element` | 16-21 |
 | `src/views/HeaderRows.tsx` | `HeaderRowsProps` / `HeaderRows` | `{ plan: Accessor<HeaderPlan> }` | 8, 15 |
@@ -323,8 +323,8 @@ pins (`packages/code/tests/unit/session-row.test.ts:43-50`).
 ### 3.8 The splash banner (`packages/code/src/views/Splash.tsx`, `BANNER`)
 
 Eight literal rows of figlet-style ASCII spelling `Clarvis`, e.g. row 0 is
-`" .d8888b.  888                           d8b"`. `packages/code/tests/integration/splash-render.test.tsx:35-38`
-pins both facts about it: exactly 8 rows, and every row shorter than 60 columns — matching the
+`" .d8888b.  888                           d8b"`. `packages/code/tests/integration/splash-render.test.tsx`
+(`the banner art is 8 rows and fits 60 cols`) pins both facts about it: exactly 8 rows, and every row shorter than 60 columns — matching the
 60-column fallback inside `BrandBanner`.
 
 First-run setup uses the stricter shared `firstRunSplashFits(width, height)` predicate: the complete
@@ -332,6 +332,13 @@ banner is mounted only from 76 columns by 24 rows. The column floor accounts for
 card and its horizontal chrome; the row floor leaves card chrome, a filter and at least three catalog
 rows after the banner. `packages/code/tests/integration/splash-render.test.tsx`
 (`first-run splash fit keeps one threshold across setup and catalog pickers`) pins both edges.
+
+The lightweight `StartupComposer` also mounts `BrandBanner`. It allows the complete banner from 60
+columns by 16 rows, the exact space needed by its fixed header/input chrome plus the banner and
+connection status. Below either edge it uses `BrandBanner`'s one-line wordmark instead, so first paint
+keeps the empty-run identity without clipping the usable startup input. Test:
+`packages/code/tests/integration/splash-render.test.tsx` (`the startup composer shares the responsive
+Clarvis splash on first paint`).
 
 ### 3.9 Execution identifier for `--print`
 
@@ -354,8 +361,8 @@ Four literal fragments, top to bottom on the screen:
 ### 3.12 The `Splash` agent/model line and hint row (`packages/code/src/views/Splash.tsx`, `Splash`)
 
 The idle screen's second block reads `"agent: "` + `props.agent()` then
-`` " " + glyph("separator") + " model: " `` + `props.model()` (`:69-74`); its third block joins three
-literal strings with `glyph("separator")` (`:76-83`):
+`` " " + glyph("separator") + " model: " `` + `props.model()` (`Splash`, agent/model block); its
+third block joins three literal strings with `glyph("separator")` (`Splash`, hint block):
 
 ```
 "Type / for commands", "@ for workspace files", "Shift+Tab for agents"
@@ -555,6 +562,9 @@ terminal result."
 `StartupComposer` is not a decorative progress placeholder. In `run` mode it owns a real focused
 OpenTUI input, records content outside Solid/renderable ownership, and accepts Enter once. Its
 `Queue a task…` marker is distinct from the complete app's `◆ Clarvis` and `New task…` markers.
+Its centre uses the shared `BrandBanner`: the complete eight-row splash appears when 60×16 fits and
+the standard compact wordmark appears below either threshold. The startup-only connection status
+does not invent the not-yet-resolved agent/model line or advertise complete-app shortcuts.
 Replacing the root cannot lose an unsent draft or an accepted task: the latter either starts on a
 runnable profile or returns as exact composer text. Resume/continue render the same
 bounded frame with input disabled. Production: `createStartupComposerState` and `StartupComposer` in
@@ -899,12 +909,20 @@ are `DiffViewer` (`packages/code/src/views/overlays/DiffViewer.tsx`, `DiffViewer
 (`packages/code/src/views/overlays/PlanOverlay.tsx`, `PlanOverlay`)
 and `Help` (`packages/code/src/views/overlays/Help.tsx:193`).
 
-`Splash` (`packages/code/src/views/Splash.tsx`, `Splash`) is absolutely positioned with `right = rightInset?.() ?? 0` so a
-visible sidebar does not get painted under (`:51-53, 59`), and shows the gradient `BANNER` at ≥60
-columns or `glyph("diamond") + SPLASH_WORDMARK` below (`:25-28`). It is mounted by `TranscriptRegion`
+`Splash` (`packages/code/src/views/Splash.tsx`, `Splash`) is absolutely positioned with
+`right = rightInset?.() ?? 0` so a visible sidebar does not get painted under, and `BrandBanner`
+shows the gradient `BANNER` at ≥60 columns or `glyph("diamond") + SPLASH_WORDMARK` below. It is mounted by `TranscriptRegion`
 only when the transcript is empty, no elicitation is pending and the draft is empty
 (`packages/code/src/views/app/TranscriptRegion.tsx:244-253`), and `TranscriptRegion`'s root box clips for the same
 reason `PageFrame`'s does (`packages/code/src/views/app/TranscriptRegion.tsx:62-76`).
+
+`StartupComposer` reuses `BrandBanner` inside its bounded centre rather than copying the banner. It
+forces the compact branch below 16 rows because its fixed header, connection status and focused input
+consume the remaining space; the ordinary 60-column width fallback still applies. Production:
+`packages/code/src/views/StartupComposer.tsx` (`STARTUP_SPLASH_MIN_ROWS`, `StartupComposer`) and
+`packages/code/src/views/Splash.tsx` (`BrandBanner`). Test:
+`packages/code/tests/integration/splash-render.test.tsx` (`the startup composer shares the responsive
+Clarvis splash on first paint`).
 
 The guided setup and its catalog pickers deliberately do not use that compact fallback. `SetupView`
 and bootstrap `CatalogPicker` both gate `BrandBanner` through `firstRunSplashFits`, so the same complete
@@ -1272,10 +1290,11 @@ never composite over the title row.
 Production: `packages/code/src/views/PageFrame.tsx:47` (rule stated at `:11-14`).
 Pinned: `packages/code/tests/integration/page-frame-clip.test.tsx:32-42`.
 
-**INV-CB-36.** The splash falls back to a one-line wordmark below 60 columns, and the banner art is 8
-rows each under 60 columns wide.
+**INV-CB-36.** The shared banner falls back to a one-line wordmark below 60 columns or when its caller
+explicitly cannot spare the eight-row art; the banner art is 8 rows each under 60 columns wide.
 Production: `packages/code/src/views/Splash.tsx` (`BANNER`, `BrandBanner`).
-Pinned: `packages/code/tests/integration/splash-render.test.tsx:29-38`.
+Pinned: `packages/code/tests/integration/splash-render.test.tsx` (idle width fallback, banner shape,
+and startup width/height edges).
 
 **INV-CB-37.** `HeaderRows` is one terminal row.
 Production: `packages/code/src/views/HeaderRows.tsx:18-19` (`height={1}` on the only row box, inside the single column wrapper at `:17`).
@@ -1317,12 +1336,15 @@ plumbing in `packages/code/src/runtime.tsx` and `packages/code/src/startup-found
 `packages/code/tests/component/workspace-client-manager.test.ts`.
 
 **INV-CB-43.** The first interactive frame preserves Clarvis visual continuity without entering the
-application parser or models-catalog path: one branded `StartupComposer` owns a focused input and a
-distinct startup-readiness marker. It accepts at most one queued task; the snapshot survives root
-replacement, starts before complete-app hydration when submitted, and otherwise transfers the exact
-draft to `App`. It never contains the complete app's paint/readiness markers. Production:
+application parser or models-catalog path: one branded `StartupComposer` owns a focused input, a
+distinct startup-readiness marker and the shared `BrandBanner`. At 60×16 or larger it paints the same
+complete eight-row banner as an empty untouched run; below either edge it paints the shared compact
+wordmark. It accepts at most one queued task; the snapshot survives root replacement, starts before
+complete-app hydration when submitted, and otherwise transfers the exact draft to `App`. It never
+contains the complete app's paint/readiness markers. Production:
 `runInteractive` in `packages/code/src/index.tsx`, `createStartupComposerState` in
-`packages/code/src/views/StartupComposer.tsx`, and the startup handoff in
+`packages/code/src/views/StartupComposer.tsx`, `BrandBanner` in
+`packages/code/src/views/Splash.tsx`, and the startup handoff in
 `packages/code/src/runtime.tsx`. Tests: `packages/code/tests/integration/splash-render.test.tsx`,
 `packages/code/tests/integration/app-shell-render.test.tsx`,
 `packages/code/tests/architecture/architecture-boundary.test.ts`, and
@@ -1432,6 +1454,7 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
 | `src/startup-foundation.ts` | startup key-source reader, browser opener and `WorkspaceClientManager` | `packages/code/src/startup-foundation.ts` |
 | `src/runtime.tsx` | print/session helpers, workspace callbacks, worktree lifecycle, `runFatalBoot`, `App` and its five control interfaces | `packages/code/src/runtime.tsx` |
 | `views/App.tsx` | `createLayoutController`, `FLOOR_MIN_COLUMNS`, `FLOOR_MIN_ROWS` | `packages/code/src/views/App.tsx:68` |
+| `views/StartupComposer.tsx` | `BrandBanner` | `packages/code/src/views/StartupComposer.tsx` |
 | `views/app/TranscriptRegion.tsx` | `Splash` | `packages/code/src/views/app/TranscriptRegion.tsx:16` |
 | `views/onboarding/{SetupView,RecoveryView}.tsx` | `BrandBanner`; Setup also uses `firstRunSplashFits` | the corresponding imports in each onboarding view |
 | `views/config/CatalogPicker.tsx` | `BANNER`, `BrandBanner`, `firstRunSplashFits` | the first-run picker intro |

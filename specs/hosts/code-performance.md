@@ -70,6 +70,8 @@ The benchmark owns four visible markers: `Clarvis · code · starting` for the m
 marker aliases). The startup frame excludes both complete-app markers, and the complete application
 excludes the startup-readiness marker. Each timestamp therefore belongs to one stage; a focused
 composer cannot satisfy full hydration and a decorative shell cannot satisfy functional input.
+The startup composer reuses the fixed `BrandBanner`: the eight-row banner paints at 60×16 or larger,
+and its compact wordmark paints below either edge, without adding parser, catalog or runtime data.
 Production: `packages/code/src/views/StartupComposer.tsx` (`StartupComposer`). Test:
 `packages/code/tests/integration/splash-render.test.tsx` (marker exclusion).
 
@@ -163,8 +165,8 @@ GC occurred; otherwise it must not be compared to a post-GC floor.
 The launcher answers `--help` and `--version` before importing the application graph, then imports
 the built artifact for every other mode (`packages/code/src/cli.ts`, `main`). Interactive boot then:
 
-1. validates the terminal, creates the renderer and mounts a focused `StartupComposer` from the
-   lightweight entry;
+1. validates the terminal, creates the renderer and mounts a focused `StartupComposer` with the
+   shared responsive Clarvis banner from the lightweight entry;
 2. after renderer idle, starts the complete runtime import and, for an ordinary run without debug or
    worktree bootstrap, prepares the workspace kernel concurrently;
 3. opens diagnostics in the runtime, uses or creates the pinned `WorkspaceClientManager`, and loads
@@ -221,7 +223,8 @@ This keeps offline diagnostic maps in developer/root builds without distributing
 installed command (`packages/code/tooling/artifact/build.ts` (`installBuild`, `main`),
 `packages/code/tooling/setup.ts` (build phase)).
 
-`src/index.tsx` statically imports only renderer/startup-shell concerns. It dynamically imports
+`src/index.tsx` statically imports only renderer/startup-shell concerns, including the fixed shared
+banner reached through `StartupComposer`. It dynamically imports
 `runtime.tsx`, while `startup-foundation.ts` may construct the same workspace manager concurrently
 through the exact dynamic `@clarvis/kernel/bootstrap` boundary in
 `adapters/workspace-client-manager.ts`. The build groups Code-owned cold surfaces behind
@@ -525,13 +528,16 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     and `packages/code/tooling/benchmarks/overlays.tsx`
     (`marketplace-collections-retained-196-listings`, `stableRegistrations`).
 
-22. **PERF-22: boot continuity owns one bounded startup composer, not parser/catalog or per-row work.**
-    It has one focused input, one external draft/submission snapshot and distinct markers. Enter is
-    accepted once; the task starts before complete-app mount when a profile is runnable, while an
-    unsent draft or currently unrunnable submission transfers exactly to `App`. Renderer teardown
-    is owned continuously from creation through the complete keymap mount. Production:
+22. **PERF-22: boot continuity owns one bounded startup composer, not parser/catalog or variable
+    per-row work.** It has one focused input, one external draft/submission snapshot, distinct
+    markers and the shared fixed-size `BrandBanner`. The complete eight-row banner is admitted only
+    at 60×16 or larger; its one-line fallback preserves compact layouts. Enter is accepted once; the
+    task starts before complete-app mount when a profile is runnable, while an unsent draft or
+    currently unrunnable submission transfers exactly to `App`. Renderer teardown is owned
+    continuously from creation through the complete keymap mount. Production:
     `packages/code/src/views/StartupComposer.tsx`
-    (`createStartupComposerState`, `StartupComposer`) and `packages/code/src/runtime.tsx`
+    (`STARTUP_SPLASH_MIN_ROWS`, `createStartupComposerState`, `StartupComposer`),
+    `packages/code/src/views/Splash.tsx` (`BrandBanner`) and `packages/code/src/runtime.tsx`
     (`startup_submit`, `boot.app-mount`) and
     `packages/code/src/adapters/renderer-bootstrap.ts` (`installBootRendererLifecycle`). Tests:
     `packages/code/tests/integration/splash-render.test.tsx`,

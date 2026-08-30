@@ -193,8 +193,12 @@ does not parse or does not validate, Clarvis runs the shipped agent unchanged an
 which file was refused and why.
 
 Every interactive cold boot first paints a parser-free, focused `StartupComposer` in one lightweight
-Solid root. Its slash header and wordmark preserve the final screen's visual structure while the
-application chunk and workspace foundation load concurrently. In `run` mode the user can type
+Solid root. Its header and shared `BrandBanner` preserve the final screen's visual structure while the
+application chunk and workspace foundation load concurrently. At 60 columns by 16 rows or larger,
+the first paint shows the same complete eight-row Clarvis banner as an empty, untouched run; a
+narrower or shorter frame uses the shared one-line wordmark, and an extremely short frame retains
+only the branded header. The connection status remains startup-specific instead of claiming an
+agent, model or complete-app shortcut before those values exist. In `run` mode the user can type
 immediately; Enter stores the exact submission outside renderer ownership. As soon as the run host
 exists with a runnable active profile, that queued task starts before complete-app hydration, and the
 resulting store/events survive the root handoff. If provider/agent setup is not runnable yet, the

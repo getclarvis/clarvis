@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-version=${CLARVIS_VERSION:-0.0.2-beta}
+version=${CLARVIS_VERSION:-0.0.3-beta}
 repository=${CLARVIS_RELEASE_REPOSITORY:-getclarvis/clarvis-releases}
 install_root=${CLARVIS_INSTALL_ROOT:-${XDG_DATA_HOME:-"$HOME/.local/share"}/clarvis}
 bin_dir=${CLARVIS_BIN_DIR:-${XDG_BIN_HOME:-"$HOME/.local/bin"}}

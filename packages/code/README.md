@@ -71,9 +71,10 @@ binary-only [`getclarvis/clarvis-releases`](https://github.com/getclarvis/clarvi
 repository. A portable archive includes the exact Bun runtime, the map-free split artifact, its
 package-owned assets, and the native OpenTUI closure for one of six targets: GNU/glibc Linux, macOS,
 or Windows on x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release
-targets for this beta. Runtime dependency discovery accepts only installed bare package specifiers;
-relative, absolute, built-in, and module-internal `#` references retained by the generated artifact
-are not interpreted as package roots, while package subpaths resolve to their owning root.
+targets for this beta. Runtime dependency discovery accepts only installed bare package specifiers
+from generated imports and calls, including minified `createRequire` bindings; relative, absolute,
+built-in, and module-internal `#` references retained by the generated artifact are not interpreted
+as package roots, while package subpaths resolve to their owning root.
 `release.json` declares the exact regular-file set checked by release smoke and self-update.
 Each archive also carries Clarvis's license; the Bun, models.dev, and Vercel AI SDK notices/license
 texts; Bun's source and relinking route; a generated runtime-package inventory; and the

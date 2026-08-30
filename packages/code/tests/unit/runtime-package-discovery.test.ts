@@ -55,6 +55,7 @@ test("artifact discovery keeps static and called packages while ignoring path-li
     'export { readFile } from "node:fs"',
     'const Ajv = createRequire(import.meta.url)("ajv")',
     'const ignore = createRequire(import.meta.url)("ignore/subpath")',
+    'const bundled = co(import.meta.url)("aliased-create-require/subpath")',
     'const zod = load("zod/v4")',
     'const relative = createRequire(import.meta.url)(".")',
     'const root = createRequire(import.meta.url)("/")',
@@ -65,6 +66,7 @@ test("artifact discovery keeps static and called packages while ignoring path-li
   expect(runtimePackageCandidates(source)).toEqual([
     "@scope/exported",
     "ajv",
+    "aliased-create-require",
     "ignore",
     "pino",
     "side-effect-package",

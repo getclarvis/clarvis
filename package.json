@@ -1,6 +1,6 @@
 {
   "name": "clarvis",
-  "version": "0.0.2-beta",
+  "version": "0.0.3-beta",
   "private": true,
   "description": "Clarvis monorepo — loop engine, tools, skills, MCP server and the terminal UI.",
   "license": "MIT",

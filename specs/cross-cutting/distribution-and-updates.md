@@ -70,7 +70,7 @@ supplied by those packages remain in their copied package directories. Productio
 {
   "schema": 1,
   "repository": "getclarvis/clarvis-releases",
-  "version": "0.0.2-beta",
+  "version": "0.0.3-beta",
   "target": "linux-x64",
   "files": [{ "path": "runtime/bun", "size": 80761952, "sha256": "..." }]
 }
@@ -91,7 +91,7 @@ A managed installation is:
 ├── current
 ├── update.lock
 └── versions/
-    ├── v0.0.2-beta/clarvis-payload...
+    ├── v0.0.3-beta/clarvis-payload...
     └── v<newer>/clarvis-payload...
 ```
 
@@ -271,14 +271,15 @@ external actions to complete commit SHAs, and disables checkout credential reten
 Test: `tooling/tests/unit/release-readiness.test.ts` (workflow-security cases).
 
 **DIST-12.** Portable runtime discovery accepts only installed bare package roots from generated
-static-import and call specifiers. Path-like, built-in, and module-internal specifiers cannot become
-filesystem paths beneath `node_modules`; package subpaths resolve to their owning root, and manifest
-resolution rejects any invalid package name that reaches the closure.
+static-import and call specifiers, including the aliased `createRequire` call shape emitted by Bun's
+minifier. Path-like, built-in, and module-internal specifiers cannot become filesystem paths beneath
+`node_modules`; package subpaths resolve to their owning root, and manifest resolution rejects any
+invalid package name that reaches the closure.
 Production: `packages/code/tooling/release/runtime-package-discovery.ts`
 (`runtimePackageName`, `runtimePackageCandidates`, `assertRuntimePackageRoot`) and
 `packages/code/tooling/release/package.ts` (`packageManifest`, `discoveredRuntimePackages`). Test:
-`packages/code/tests/unit/runtime-package-discovery.test.ts` (package roots, rejected specifiers,
-and invalid closure entries).
+`packages/code/tests/unit/runtime-package-discovery.test.ts` (package roots, minified
+`createRequire` bindings, rejected specifiers, and invalid closure entries).
 
 **DIST-13.** Installer output identifies the selected target and resolved destination and announces
 every download, verification, staging, and activation phase. Uninstall removes only an authenticated

@@ -50,6 +50,8 @@ export function assertRuntimePackageRoot(name: string): void {
  *
  * @remarks This is deliberately filesystem-independent. The packaging caller separately requires
  *   each candidate to exist under the installed root before adding it to the runtime closure.
+ *   Bun may rename an imported `createRequire` binding while minifying, so the generated
+ *   `binding(import.meta.url)(specifier)` form is recognized independently of the binding name.
  */
 export function runtimePackageCandidates(source: string): string[] {
   const found = new Set<string>();
@@ -61,7 +63,9 @@ export function runtimePackageCandidates(source: string): string[] {
   for (const match of source.matchAll(/\b[A-Za-z_$][\w$]*\(["'`]([^"'`]+)["'`]\)/g)) {
     add(match[1]);
   }
-  for (const match of source.matchAll(/createRequire\(import\.meta\.url\)\(["']([^"']+)["']\)/g)) {
+  for (const match of source.matchAll(
+    /\b[A-Za-z_$][\w$]*\(\s*import\.meta\.url\s*\)\s*\(\s*["']([^"']+)["']\s*\)/g,
+  )) {
     add(match[1]);
   }
   for (const match of source.matchAll(/\b(?:from|import)\s*["']([^"']+)["']/g)) {

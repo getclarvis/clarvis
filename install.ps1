@@ -234,7 +234,7 @@ if ($Uninstall) {
   return
 }
 
-$Version = if ($env:CLARVIS_VERSION) { $env:CLARVIS_VERSION } else { "0.0.2-beta" }
+$Version = if ($env:CLARVIS_VERSION) { $env:CLARVIS_VERSION } else { "0.0.3-beta" }
 $Repository = if ($env:CLARVIS_RELEASE_REPOSITORY) { $env:CLARVIS_RELEASE_REPOSITORY } else { "getclarvis/clarvis-releases" }
 if ($Version -cnotmatch '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') {
   Fail "CLARVIS_VERSION must be an exact release version"

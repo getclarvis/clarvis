@@ -201,6 +201,7 @@ async function createArchive(stage: string, archivePath: string): Promise<void> 
   const tar = Bun.which("tar");
   if (tar === null) throw new Error("release packaging requires tar");
   const child = Bun.spawn([tar, "-czf", archivePath, "-C", stage, "clarvis"], {
+    env: { ...process.env, LC_ALL: "C" },
     stdin: "ignore",
     stdout: "inherit",
     stderr: "inherit",

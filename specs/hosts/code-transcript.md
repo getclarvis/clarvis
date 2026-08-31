@@ -10,8 +10,16 @@
 ## 1. Purpose
 
 This subsystem turns an already-reduced array of semantic transcript nodes into what the terminal
-actually paints, and it does so under hard resource ceilings. It owns four concerns that are visible
-in the code as four separate layers:
+actually paints, and it does so under hard resource ceilings. It owns **how one current snapshot
+renders**. It no longer owns the cross-event question of when a snapshot becomes historical,
+whether background work may move/remount it, or where mutable loaders live. The current
+committed-history/live-frontier contract for those questions is isolated in
+[code-transcript-stability.md](code-transcript-stability.md). Semantic filtering, grouping and
+legacy reordering remain described here as rendering inputs. Physical residency is delegated to
+measured publication batches. Committed history consumes grouping/section metadata already frozen
+by the publisher; the mutable tail still derives those projections live.
+
+Within that scope it owns four concerns that are visible in the code as four separate layers:
 
 1. **Framework-free projection** (`src/core/transcript/**`) — the node type union
    (`packages/code/src/core/transcript/types.ts:151`), the presenter strings a node renders as
@@ -19,12 +27,12 @@ in the code as four separate layers:
    (`packages/code/src/core/transcript/tool-display.ts:200`), and prefix-stable Markdown segmentation of a streaming assistant reply
    (`packages/code/src/core/transcript/segment.ts:129`, `packages/code/src/core/transcript/segment.ts:178`). Nothing here imports Solid or OpenTUI — an architecture test
    enforces that (`packages/code/tests/architecture/architecture-boundary.test.ts:72`).
-2. **View-state derivation** (`src/views/transcript-{state,window,completion}.ts`,
-   `tool-groups.ts`, `subagent-sections.ts`, `block-focus.ts`) — windowing the transcript to a
-   bounded page (`packages/code/src/views/transcript-window.ts:175`), regrouping it into lead nodes and per-sub-agent
-   sections (`packages/code/src/views/subagent-sections.ts:52`), collapsing runs of identical tool calls
-   (`packages/code/src/views/tool-groups.ts:37`), and tracking fold overrides and keyboard focus (`packages/code/src/views/block-focus.ts:36`,
-   `packages/code/src/views/block-focus.ts:73`).
+2. **View-state derivation** (`src/views/transcript-{state,completion}.ts`, `tool-groups.ts`,
+   `subagent-sections.ts`, `block-focus.ts`) — choosing the Lead-only main projection or one
+   explicitly selected sub-agent's isolated projection, regrouping that current projection
+   (`packages/code/src/views/subagent-sections.ts:52`), collapsing runs of identical tool calls
+   (`packages/code/src/views/tool-groups.ts:37`), and tracking fold overrides and keyboard focus
+   (`packages/code/src/views/block-focus.ts:36`, `packages/code/src/views/block-focus.ts:73`).
 3. **Rendering** (`src/views/blocks.tsx`, `src/views/tools/**`, `Prose.tsx`, `spinner.ts`,
    `truncate.ts`) — one Solid component per node kind (`packages/code/src/views/blocks.tsx:563`), a per-tool renderer
    registry (`packages/code/src/views/tools/registry.tsx:727`), a one-line argument signature (`packages/code/src/views/tools/signature.ts:86`), and a
@@ -35,15 +43,19 @@ in the code as four separate layers:
    used by the renderer registry, the signature table, the grouping pass and the mutation gate alike
    (`packages/code/src/adapters/tool-identity.ts:11`).
 
-Beside those four sits the transcript's persistent companion chrome — the sidebar and its compact
-`PlanStrip` substitute (`packages/code/src/views/Sidebar.tsx:279`, `:228`), which paint the plan,
-workflow and sub-agent projections this document already owns rather than any transcript node. They are
-treated in section 4.19.
+Beside those four sits the transcript's persistent companion chrome — the responsive Sidebar, the
+bounded agent/workflow footer strip and the composer-adjacent Lead activity band. Plan activity
+lives only in the Sidebar or `Ctrl+P`; it contributes no footer text. Workflow activity remains in
+the Sidebar/footer, never in the transcript. There is no lower Plan pane between history and the
+composer. The sub-agent roster also lives in that chrome; selecting one row changes the transcript
+to that child's isolated semantic projection. These surfaces are treated in section 4.19.
 
 The recurring problem the code solves is cost: a long streaming reply re-parsed on every delta, a
 100 KiB tool payload handed to a native text renderable, a 6,000-node session mounted at once. The
-answers are, respectively, prefix-stable segmentation (`packages/code/src/core/transcript/segment.ts:129`), a cached bounded payload
-projection (`packages/code/src/core/transcript/tool-display.ts:200`), and a render-budget pager (`packages/code/src/views/transcript-window.ts:175`).
+answers are, respectively, prefix-stable segmentation
+(`packages/code/src/core/transcript/segment.ts:129`), a cached bounded payload projection
+(`packages/code/src/core/transcript/tool-display.ts:200`), and the physically measured owner window
+owned by [code-transcript-stability.md](code-transcript-stability.md).
 
 ---
 
@@ -77,27 +89,42 @@ Exported from their modules but **not** re-exported through the barrel:
 |---|---|---|
 | `toolIdentity` | `(mcpName?: string, toolName?: string) => string` | `:11` |
 | `toolLabel` | `(mcpName?: string, toolName?: string) => string` | `:29` |
-| `toolDisplayLabel` | `(mcpName?: string, toolName?: string) => string` | `:47` |
-| `MUTATION_TOOLS` | `Set<string>` | `:63` |
-| `isMutationTool` | `(mcpName?: string, toolName?: string) => boolean` | `:75` |
+| `isTranscriptExternalOrchestrationTool` | `(mcpName?: string, toolName?: string) => boolean` | `:61` |
+| `toolDisplayLabel` | `(mcpName?: string, toolName?: string) => string` | `:69` |
+| `MUTATION_TOOLS` | `Set<string>` | `:85` |
+| `isMutationTool` | `(mcpName?: string, toolName?: string) => boolean` | `:97` |
 
 `MUTATION_TOOLS` is `FILE_MUTATING_TOOL_NAMES` (imported from `@clarvis/kernel/policy`,
 `packages/code/src/adapters/tool-identity.ts:1`) unioned with the literal `["write_memory","edit_memory","delete_memory"]`
-(`packages/code/src/adapters/tool-identity.ts:56`). `FILE_MUTATING_TOOL_NAMES` is itself derived —
+(`MEMORY_MUTATING_TOOL_NAMES` in `packages/code/src/adapters/tool-identity.ts`). `FILE_MUTATING_TOOL_NAMES` is itself derived —
 `packages/kernel/src/policy.ts:44` re-exports
 `packages/loop/src/runtime/tools/builtin/names.ts`'s `FILE_MUTATING_TOOL_NAMES`: every explicit file
 mutation plus `host_vcs`. The host fallback deliberately remains mutation-presented even though the
 exec ceiling independently classifies and filters it as a command runner.
 
-`toolDisplayLabel` (`:47`–`:54`) is distinct from `toolLabel`: when both `mcpName` and `toolName` are
-present it returns the raw `server:tool` unchanged (`:51`), otherwise it resolves `toolIdentity` through
+`toolDisplayLabel` is distinct from `toolLabel`: when both `mcpName` and `toolName` are present it
+returns the raw `server:tool` unchanged, otherwise it resolves `toolIdentity` through
 the 9-entry `BUILTIN_TOOL_LABELS` table (`:34`–`:44`) — `await_agents` → "Wait for agents",
 `agent_poll` → "Check agent", `agent_steer` → "Steer agent", `agent_stop` → "Stop agent",
 `delegate_task` → "Delegate task", `run_leader` → "Start workflow leader", `run_workflow` → "Run
 workflow", `run_round` → "Run workflow rounds", `run_work_items` → "Run work items" — falling back to
 the bare identity for anything not in the table. This is what remaps the engine's internal
 orchestration-tool names to product-facing labels while leaving a real MCP call's `server:tool`
-identity untouched. Test `packages/code/tests/unit/tool-identity.test.ts:16`–`:23`.
+identity untouched. Test: `packages/code/tests/unit/tool-identity.test.ts` ("toolDisplayLabel
+translates orchestration internals but preserves MCP identity").
+
+Those labels do not grant a Lead-owned orchestration call transcript visibility. The closed
+supervision/orchestration set — `spawn_subagent`, `delegate_task`, `agent_list`, `agent_poll`,
+`agent_stop`, `agent_steer`, `await_agents`, `run_leader`, `run_workflow`, `run_round`,
+`run_work_items` — is suppressed from the Lead projection before a composing, started,
+streaming-output or terminal tool row can become a frontier candidate or publication batch. Thus
+even temporary copy such as `Wait for agents starting…` is invalid in the Lead transcript. Ordinary
+Lead `thinking`/`working` state is not a tool row and remains eligible for the fixed activity line
+outside the transcript; a child-attributed tool remains available only in that child's explicitly
+selected transcript. Production:
+`isTranscriptExternalOrchestrationTool`, `createTranscriptStore` (`openRun`) and
+`TranscriptPublisher.#publishTool`. Test: `streaming-delta.test.ts` ("Lead-owned orchestration tools
+never create composing, started, or terminal nodes").
 
 ### 2.3 `views/tools/registry.tsx`
 
@@ -139,7 +166,7 @@ identity untouched. Test `packages/code/tests/unit/tool-identity.test.ts:16`–`
 | `railColor(node)` | `string` | `:163` |
 | `agentGlyph(status)` | `string` | `:239` |
 | `BlockView(props)` | the one transcript block component | `:563` |
-| `StableMarkdown(props)` | retained streaming/final Markdown handoff | `packages/code/src/ui/patterns/stable-syntax.tsx` |
+| `StableMarkdown(props)` | retained streaming/final Markdown handoff plus per-geometry-epoch streaming row high-water | `packages/code/src/ui/patterns/stable-syntax.tsx` |
 | `StableDiff(props)` | normalized diff with syntax-ready reveal | `packages/code/src/ui/patterns/stable-syntax.tsx` |
 | `waitForSyntaxFrame(root, current, renderer)` | waits for descendant `CodeRenderable.highlightingDone` and a confirming paint | `packages/code/src/ui/patterns/stable-syntax.tsx` |
 
@@ -147,31 +174,30 @@ identity untouched. Test `packages/code/tests/unit/tool-identity.test.ts:16`–`
 `overrideOf?`, `focused?`, `onToggle?`, `onOpenDetail?`, `defaultFolded?`, and
 `fillAvailableWidth?` (`packages/code/src/views/blocks.tsx`, `BlockView`).
 
-### 2.6 `views/transcript-window.ts`
+### 2.6 Semantic projection versus physical residency
 
-| Symbol | Value / signature | Line |
-|---|---|---|
-| `WINDOW_MIN_BLOCKS` | `80` | `:9` |
-| `WINDOW_MAX_BLOCKS` | `400` | `:12` |
-| `WINDOW_RENDER_BUDGET` | `900` | `:15` |
-| `WINDOW_TEXT_CHARS_BUDGET` | `= TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS` = `512 * 1024` | `:18`, `packages/code/src/core/transcript/presenters.ts:5` |
-| `TranscriptTurnCounter` | `{ count(nodes, start, end): number }` | `:26` |
-| `createTranscriptTurnIndex()` | append-aware turn index | `:40` |
-| `NO_TRANSCRIPT_TURNS` | counter that always returns `0` | `:90` |
-| `transcriptNodeRenderCost(node)` | `number` | `:103` |
-| `transcriptNodeMountedTextChars(node)` | `number` | `:124` |
-| `TranscriptWindow` | `{ nodes, hiddenTurns, hiddenBlocks, laterTurns, laterBlocks, atStart, atEnd, start, end, renderCost, mountedTextChars }` | `:131` |
-| `windowTranscriptIndexed(...)` | caller-owned index — "This is the production path" | `:200` |
-| `earlierLabel` / `laterLabel` | `string` | `:212` / `:219` |
+`TranscriptState.semanticNodes` exposes the complete ordered semantic projection for the current
+view: Lead-owned nodes when no sub-agent is selected — including the two bounded lifecycle markers
+for each delegation — or nodes for exactly one selected child. It does not estimate rows, slice a
+page or label hidden turns. The immutable publisher and backing store retain the complete resident
+ledger, including child nodes hidden from the main view;
+`CommittedHistory` later maps batches matching the active projection into the
+measured owner window defined by
+[code-transcript-stability.md](code-transcript-stability.md). This separation lets grouping, focus
+and detail navigation retain the complete active projection while OpenTUI mounts only the rows
+around the viewport. Page commands are admitted by that physical owner before coordinates change;
+native wheel/trackpad input updates the ScrollBox normally and reports direction afterward so an
+edge can prefetch its adjacent owner. Projection completeness therefore does not require exposing an
+unmounted spacer.
 
 ### 2.7 `views/transcript-state.ts`
 
-`TranscriptStateDeps` (`:35`): `nodes()`, `subagents()`, `notify(message)`, `defaultFolded?(key)`,
-`rehydrate?(key)`.
+`TranscriptStateDeps` (`:35`): `nodes()`, optional `detailNodes()`, optional `preserveOrder`,
+`subagents()`, `notify(message)`, `defaultFolded?(key)`, `rehydrate?(key)`.
 
-`TranscriptState` (`:55`): `grouped`, `toolGroups`, `window`, `loadEarlier()`, `loadLater()`,
-`expandAll`, `selectedSubagent`, `focusedKey`, `folded(key)`, `overrideOf(key)`, `toggleAt(key)`,
-`reset()`, `toggleSubagent(id)`, `cycleSubagent()`, `toggleExpandOrBlock()`, `focusBlock(delta)`,
+`TranscriptState` (`:55`): `grouped`, `toolGroups`, `semanticNodes`, `expandAll`,
+`selectedSubagent`, `focusedKey`, `folded(key)`, `overrideOf(key)`, `toggleAt(key)`, `reset()`,
+`toggleSubagent(id)`, `cycleSubagent()`, `toggleExpandOrBlock()`, `focusBlock(delta)`,
 `clearFocus()`, `pickDiffNode()`.
 
 Also exported: `withRunMarkersLast(nodes)` (`:114`).
@@ -188,7 +214,7 @@ Also exported: `withRunMarkersLast(nodes)` (`:114`).
 | `views/truncate.ts` | `truncateEnd`, `truncateStart`, `fmtCount`, `moreChip`, `padColumn` | `:14`, `:34`, `:52`, `:63`, `:80` |
 | `views/spinner.ts` | `SPINNER_FRAMES`, `SPINNER_ASCII`, `charForFrame`, `spinnerChar`, `thinkingDots`, `tickNow`, `formatElapsed` (re-export), `useSpinnerClock` | `:5`, `:8`, `:33`, `:39`, `:44`, `:55`, `:59`, `:67` |
 | `views/Prose.tsx` | `Prose`, `stripDocChrome` | `:9`, `:31` |
-| `views/Sidebar.tsx` | `PLAN_SIDEBAR_TASK_LIMIT`, `planTaskWindow`, `contextMeter`, `rosterSummary`, `subagentProgress`, `PlanStrip`, `Sidebar` | source symbols |
+| `views/Sidebar.tsx` | `PLAN_SIDEBAR_TASK_LIMIT`, `planTaskWindow`, `contextMeter`, `rosterSummary`, `subagentProgress`, `Sidebar` | source symbols |
 | `views/activity-detail.ts` | `ActivityDetail`, `activityPreview` | source symbols |
 | `views/overlays/ActivityDetail.tsx` | `ActivityDetail` | source symbol |
 | `core/marks.ts` | `MarkForms`, `MarkName`, `GLYPHS`/`GlyphForms`/`GlyphName` aliases, `applyAsciiMode`, `asciiMode`, `mark`, `glyph` (`@deprecated`), `borderChars` | `:4`, `:81`, `:84`–`:86`, `:97`, `:102`, `:113`, `:119`, `:143` |
@@ -229,7 +255,8 @@ elapsedMs? }` (`packages/code/src/core/transcript/types.ts:18`).
 
 `packages/code/src/adapters/store.ts:33` re-derives `TranscriptNode` by replacing the plan variant's `tasks` with
 `PlanTaskActivity[]`; every view module imports the node types from `adapters/store.ts`, not from
-core (e.g. `packages/code/src/views/blocks.tsx:8`, `packages/code/src/views/tool-groups.ts:1`, `packages/code/src/views/transcript-window.ts:1`).
+core (e.g. `packages/code/src/views/blocks.tsx:8`, `packages/code/src/views/tool-groups.ts:1`,
+`packages/code/src/views/transcript-state.ts:3`).
 
 ### 3.2 Node key format
 
@@ -239,7 +266,7 @@ Keys are strings with meaning encoded as prefixes. Three consumers parse them:
 |---|---|---|
 | `<execId>::<span_id>` | a node belonging to run `execId` | `packages/code/src/views/transcript-state.ts:120`, `packages/code/src/views/transcript-completion.ts:4`, `packages/code/src/views/subagent-sections.ts:31` |
 | `<execId>::run` | that run's terminal marker | `packages/code/src/views/transcript-state.ts:122` |
-| `user:<n>` | a user turn boundary | `packages/code/src/views/transcript-window.ts:53` (`TURN_PREFIX`), produced at `packages/code/src/adapters/store.ts:768` |
+| `user:<n>` | a locally sequenced user message | produced by `packages/code/src/adapters/store.ts` (`addUser`) |
 | `local:<n>` | a locally-appended `!bash` node | `packages/code/src/views/subagent-sections.ts:68`, produced at `packages/code/src/adapters/store.ts:863` |
 
 The `<span_id>` half comes from `deriveRunEventSpan` in the kernel
@@ -339,76 +366,82 @@ not a real diff computation (`packages/code/src/adapters/tool-parsers.ts:222`). 
 
 ### 4.1 The pipeline, in the order it runs
 
-`TranscriptRegion` is the only production caller
-(`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`).
-The chain from raw store nodes to painted rows:
+`App` constructs the production `TranscriptState`; `TranscriptRegion` delegates one chronological
+surface to `CommittedHistory`, whose ScrollBox owns both frozen history and `LiveTranscriptTail` as
+its final content-height child. The committed chain is:
 
 | Step | Function | Line |
 |---|---|---|
-| 1. sub-agent isolation filter | `visibleNodes` memo, filters on `subagentId` | `packages/code/src/views/transcript-state.ts:147` |
-| 2. move each run's terminal marker last | `withRunMarkersLast` | `packages/code/src/views/transcript-state.ts:114` |
-| 3. select one bounded page | `windowTranscriptIndexed` | `packages/code/src/views/transcript-state.ts:165` |
-| 4. regroup into lead nodes + sub-agent sections | `computeGroupedNodes` | `packages/code/src/views/transcript-state.ts:172` |
-| 5. collapse runs of identical tool calls | `computeToolGroups` | `packages/code/src/views/transcript-state.ts:173` |
-| 6. compute keyboard-focusable keys | `computeFocusables` | `packages/code/src/views/transcript-state.ts:174` |
-| 7. move the run marker before the final answer | `completionBeforeFinalAnswer` | `packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion` |
-| 8. render one block per node | `BlockView` | `packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion` |
+| 1. read only frozen committed nodes | `store.committedNodes` with `preserveOrder: true` | `packages/code/src/views/App.tsx` (`createTranscriptState`) |
+| 2. choose the Lead-only main projection or one child-only isolated projection | `visibleNodes` memo | `packages/code/src/views/transcript-state.ts` (`visibleNodes`) |
+| 3. derive section/group/focus state over that complete current projection | `computeGroupedNodes`, `computeToolGroups`, `computeFocusables` | `packages/code/src/views/transcript-state.ts` |
+| 4. select immutable publication batches intersecting that semantic projection | `semanticBatches` | `packages/code/src/views/history/CommittedHistory.tsx` |
+| 5. admit only physically measured batches around the viewport | `createPhysicalWindowController` | `packages/code/src/views/history/physical-window.ts` |
+| 6. render each resident frozen batch's `BlockView` using its frozen group/header/default-fold metadata | `PhysicalPublicationOwner` | `packages/code/src/views/history/CommittedHistory.tsx` |
 
-Step 3 happens **before** step 4, and the code states why: `computeToolGroups` assigns head/member by
-adjacency, `isFoldedAway` resolves a section anchor, and `computeFocusables` would otherwise hand out
-focus on unmounted keys (`packages/code/src/views/transcript-state.ts:153`–`:164`). The ordering is pinned by
-`packages/code/tests/unit/transcript-window-state.test.ts:57`, which asserts every grouped node, every
-focusable key and every `headKey` is inside the mounted window.
+Step 3 deliberately precedes physical residency. `computeToolGroups` assigns head/member by semantic
+adjacency, `isFoldedAway` resolves a section anchor, and `computeFocusables` keeps keyboard navigation
+complete even when its target owner is not mounted. `App` hands a selected key to
+`CommittedHistoryHandle.revealKey`, which admits adjacent measured batches before placing the exact
+target row. Page commands route through `CommittedHistoryHandle.scrollBy`, keeping the current
+measured interval visible until one serial adjacent owner settles. Wheel and trackpad packets do not
+take that command path: `TranscriptScrollBoxRenderable.onMouseEvent` first delegates to OpenTUI's
+native `ScrollBoxRenderable.onMouseEvent`, then reports only the vertical direction through
+`onVerticalScrollIntent`. `CommittedHistory` uses that callback to prefetch an adjacent range when
+the native viewport reaches an edge; it does not replay the gesture as a page jump. Committed
+`BlockView` structure still reads frozen publication metadata rather than these dynamic maps.
+`LiveTranscriptTail` independently applies the same
+Lead-or-selected-child filter and derives grouping from `store.frontierNodes()` because mutation is
+allowed there. It retains a frozen handoff snapshot until the matching measured owner is visible.
+It has no fixed reservation or nested scrollbox; the complete placement and handoff contract are
+normative in [code-transcript-stability.md](code-transcript-stability.md).
 
-### 4.2 Windowing
+### 4.2 Semantic projection and measured residency
 
-`selectTranscriptWindow` (`packages/code/src/views/transcript-window.ts:175`) walks **backwards** from `end` (which is
-`nodes.length` when `pageEnd` is `null`, `packages/code/src/views/transcript-window.ts:183`) and stops on the first of:
+`visibleNodes` starts from `deps.nodes()` and chooses exactly one of two projections:
 
-| Stop condition | Line |
-|---|---|
-| `end - start >= maxBlocks` (400) | `:177` |
-| `renderCost + cost > renderBudget` (900), once at least one node is included | `:178` |
-| `mountedTextChars + textChars > 512 KiB`, once at least one node is included | `:178` |
-| `start === 0` | `:172` |
-| the node just admitted is a `user:` turn boundary **and** `end - start >= minBlocks` (80) | `:184` |
+- with `selectedSubagent() === null`, it retains only nodes whose `subagentId` is absent — the
+  Lead-only main transcript;
+- with a selected id, it retains only nodes whose `subagentId` equals that id — one isolated child
+  transcript.
 
-`start < end` guards the two budget conditions, so a single pathological node is always admitted and
-then presentation-clamped by `transcriptDisplayText`/`projectTranscriptToolDisplay` rather than
-excluded — pinned at `packages/code/tests/unit/transcript-window.test.ts:81`, which asserts a page of
-exactly one node whose `mountedTextChars` equals the budget.
+The main transcript renders zero child-content rows: no delegation card, brief, tool, reasoning,
+answer or terminal result. It does render exactly two Lead-owned lifecycle markers for every
+delegation. `delegation_created` appends a friendly immutable `spawned` marker;
+`delegation_completed` or `delegation_failed` later appends a separate friendly immutable settled
+marker. The second marker never patches or replaces the first, and `delegation_started` creates no
+row. The generic delegation `capability_event` mirror is suppressed, so it cannot create a duplicate
+third marker. Child nodes remain retained for explicit isolated selection without replay or copying.
+Every composing/started/output/terminal tool row whose Lead-owned identity belongs to the closed
+supervision/orchestration set is likewise suppressed. Workflow events still contribute zero
+transcript rows and remain in the footer activity strip and Sidebar only.
 
-`transcriptNodeRenderCost` (`:103`) is `base + ceil(mountedTextChars / 4096)` with per-kind bases:
-`tool_call` 12, `assistant` 8, `subagent`/`plan`/`error` 6, `user`/`reasoning`/`run` 5, default 3
-(`:105`–`:120`).
+With `preserveOrder: true`, the production committed path returns the chosen semantic order
+directly; legacy callers may still apply `withRunMarkersLast`
+(`packages/code/src/views/transcript-state.ts`, `visibleNodes`).
 
-`createTranscriptTurnIndex` (`:40`) keeps `turnPositions` and answers a range count by binary search
-(`:46`, `:84`). It **rebuilds** when the array identity changed, the array shrank, or the formerly
-scanned tail key no longer matches (`:79`); it **extends** when only appended (`:81`). Pinned:
-appended-suffix-only scanning at `packages/code/tests/unit/transcript-window.test.ts:165`, rebuild-on-replacement
-at `:185`.
+No node count, source-character total, estimated render cost or turn boundary slices this projection.
+`semanticNodes` therefore remains suitable for grouping and focus inside the active view. Explicit
+detail lookup may use `detailNodes()` to inspect the complete store independently. Physical
+mounting is a later and independent concern: `CommittedHistory` intersects frozen publication
+batches with the semantic key set, and the marker controller admits owners by settled OpenTUI row
+measurements. Its exact bounds, anchors, lazy boundaries and disposal contract are normative in
+[code-transcript-stability.md](code-transcript-stability.md).
 
-`NO_TRANSCRIPT_TURNS` (`:90`) is substituted whenever a sub-agent is selected
-(`packages/code/src/views/transcript-state.ts:169`) — a filtered sub-agent transcript contains no `user:` keys.
+`reset()` clears focus and fold overrides without truncating the backing ledger. Changing sub-agent
+selection changes only the semantic filter; the physical controller then re-admits the matching
+immutable batches. Tests in `packages/code/tests/unit/transcript-window-state.test.ts` ("the main
+transcript excludes sub-agent work until that transcript is selected") and
+`packages/code/tests/integration/transcript-region-render.test.tsx` ("the main transcript hides
+sub-agent work until an isolated transcript is selected" and "one selected sub-agent transcript
+excludes every sibling transcript") pin the projection independently from physical residency.
+An override is retained only while its key remains in the complete semantic source; retention
+eviction prunes it immediately, independently of which Lead/child projection is selected.
 
-**Paging state machine** (`packages/code/src/views/transcript-state.ts:143`, `:216`, `:223`):
+### 4.3 Legacy mutable-node ordering helpers and committed order
 
-| State | Event | Next state | Effect |
-|---|---|---|---|
-| `pageEnd = null` (following newest) | `loadEarlier()` and `!atStart` | `pageEnd = w.start` | push `w.end` onto `laterPageEnds`; return `true` |
-| any | `loadEarlier()` and `atStart` | unchanged | return `false` |
-| `pageEnd = k` | `loadLater()` and `!atEnd` | `pageEnd = popped end`, or `null` when the popped value is `undefined` or `>= visibleNodes().length` | pop `laterPageEnds`; return `true` |
-| any | `loadLater()` and `atEnd` | unchanged | return `false` |
-| any | `reset()` | `pageEnd = null`, `laterPageEnds = []` | also clears focus and overrides |
-| any | `selectedSubagent` changes | `pageEnd = null`, `laterPageEnds = []` | deferred effect, `packages/code/src/views/transcript-state.ts:181` |
-
-Round-tripping to both ends without the page ever growing is pinned at
-`packages/code/tests/unit/transcript-window-state.test.ts:85`.
-
-### 4.3 Run-marker reordering, twice
-
-Two independent reorderings run on the same node array, at different points and for different
-reasons.
+Two ordering helpers remain specified and unit-tested for callers that construct state without
+`preserveOrder`, but the publisher now decides production committed order before first visibility.
 
 `withRunMarkersLast` (`packages/code/src/views/transcript-state.ts:114`) moves each `<exec>::run` node **after** the last
 node sharing its `<exec>::` prefix. It returns the input array unchanged when nothing moves
@@ -417,15 +450,19 @@ the code: events for work that had already finished can land after `run_ended`, 
 cancellation (`packages/code/src/views/transcript-state.ts:101`–`:106`). It is a projection rather than a store mutation
 because the store guarantees node identity across a reconcile (`:108`–`:112`).
 
-`completionBeforeFinalAnswer` (`packages/code/src/views/transcript-completion.ts:14`) then moves the run node **before** the
-run's final lead assistant node — but only for runs where the answer currently sits *before* the
-marker (`:28`), and only for lead answers (`subagentOrder === undefined`, `:21`). Runs without a lead
-answer keep protocol order (`packages/code/tests/unit/transcript-completion.test.ts:19`). It always returns a fresh
-array when anything moves (`:32`) and a shallow copy otherwise (`:30`).
+`completionBeforeFinalAnswer` (`packages/code/src/views/transcript-completion.ts:14`) moves a run node
+before its final lead assistant node for legacy snapshot callers. `CommittedHistory` does not call
+it: `TranscriptPublisher.completeRun` creates `[final answer, run outcome]` as one batch to preserve
+the live answer's row during physical handoff, and
+`createTranscriptState` receives `preserveOrder: true`. Runs without a lead answer keep protocol
+order (`packages/code/tests/unit/transcript-completion.test.ts:19`).
 
-### 4.4 Sub-agent sectioning
+### 4.4 Sub-agent sectioning inside an isolated transcript
 
-`computeGroupedNodes` (`packages/code/src/views/subagent-sections.ts:52`) runs three passes.
+The Lead-only main projection reaches this pass with no child nodes. When one child is explicitly
+selected, `computeGroupedNodes` (`packages/code/src/views/subagent-sections.ts:52`) structures only
+that child's card and body; sibling workers cannot enter the projection. Legacy callers may still
+feed a mixed projection. The helper runs three passes.
 
 **Pass 1 — lead bookkeeping** (`:62`–`:77`): for each non-`run` node with no `subagentOrder`, whose
 kind is in `LEAD_KINDS = {assistant, reasoning, thinking, tool_call, error}` (`:14`) and whose key
@@ -442,13 +479,16 @@ pending sections, then emits itself, seeding a `lead: true` header when
 `leadHasWork.has(rid) && leadFirst.get(rid) === node.key` (`:162`). `flush` (`:146`) sorts pending
 sections so **inactive sections come first** (`:150`) and then by `subagentOrder` (`:151`).
 
-`emitSection` (`packages/code/src/views/subagent-sections.ts`, `emitSection`) picks the section's
+`emitSection` (`packages/code/src/views/subagent-sections.ts`, `emitSection`) picks the selected section's
 `card` (the `subagent`-kind node) and `body` (everything else). With no body it emits only the card
-and its header. Otherwise the **anchor** is the card when present, else the first body node. A
-card-backed section folds its whole body even when the Lead recorded no visible transcript, so
-spawning several workers cannot expand all of them into an initially empty surface. A degraded
-cardless section in that no-Lead state keeps its first body node visible as the identity anchor and
-folds any remaining entries; with visible Lead context, its whole body folds as before. Header
+and its header. Otherwise the **anchor** is the card when present, else the first body node. Its
+semantic default keeps a card-backed body folded behind the card. On the first explicit selection,
+`createTranscriptState` supplies one expanded override for that exact anchor, so the isolated body is
+immediately readable; selection before body arrival expands it when the section becomes foldable. A
+manual header toggle consumes that automatic expansion and remains collapsed across Lead/reselection,
+while each sibling owns an independent first-selection override. A degraded cardless isolated
+transcript keeps its first body node visible as the identity anchor and folds any remaining entries.
+Header
 status first consults the live roster using the `subagentId` carried by any node in the bucket, then
 falls back to the card or `"running"`.
 
@@ -460,6 +500,8 @@ tool-call count (`packages/code/src/views/subagent-sections.ts:163`–`:170`); `
 `SectionHead`'s folded-count label is deliberately different for the two branches: a lead's number is
 tool calls, a sub-agent section's is hidden entries, and the code states they "must not share a word"
 (`packages/code/src/views/blocks.tsx:488`–`:501`).
+The chevron on either branch is a real affordance: clicking the section header toggles its anchor;
+an inactive physical measurement owner cannot run that callback.
 
 `GroupedTranscript.anchors` (`packages/code/src/views/subagent-sections.ts:27`, populated at `:122`) is a `Map<string,string>`
 from every folded body node's key to its section's anchor key — the data structure `isFoldedAway`
@@ -544,12 +586,27 @@ Two self-healing effects: a `selectedSubagent` that vanished from the roster is 
 
 | Action | Behaviour | Line |
 |---|---|---|
-| `toggleSubagent(id)` with `id` already selected | clear selection, notify `"showing all activity"` | `:248` |
-| `toggleSubagent(id)` otherwise | select, notify `subagentFocusToast(title \|\| id)` | `:252` |
-| `cycleSubagent()` with an empty roster | clear, notify `"no sub-agents to focus"` | `:259` |
-| `cycleSubagent()` otherwise | advance through the roster sorted ascending by `order`, wrapping past the end to `null` | `:258`, `:266` |
+| `toggleSubagent(id)` with `id` already selected | clear selection, return to Lead and notify `"showing Lead transcript"` | `:204`–`:208` |
+| `toggleSubagent(id)` otherwise | select, notify `subagentFocusToast(title \|\| id)` | `:210`–`:212` |
+| `cycleSubagent()` with an empty roster | clear, notify `"no sub-agents to focus"` | `:214`–`:219` |
+| `cycleSubagent()` otherwise | advance through the roster sorted ascending by `order`, wrapping past the end to `null` | `:221`–`:229` |
 
 Pinned at `packages/code/tests/unit/transcript-state.test.ts:37`, `:57`, `:113`, `:140`.
+
+Pointer selection follows the same path. A Sidebar agent row calls only `onSelectSubagent`, which
+`TranscriptRegion` wires to `toggleSubagent`; it does not call `onOpenDetail`, even for a settled
+worker with a result. The selected child's transcript is the detail surface in this action. Opening
+the separate Markdown `ActivityDetail` requires an explicit affordance inside a transcript block or
+another detail-owning surface. Production: `packages/code/src/views/Sidebar.tsx` (agent-row
+`onMouseDown`), `packages/code/src/views/app/TranscriptRegion.tsx` (`onSelectSubagent`) and
+`packages/code/src/views/transcript-state.ts` (`createTranscriptState`, first-selection anchor
+override). Tests: `packages/code/tests/unit/transcript-state.test.ts` (immediate/late expansion,
+sticky manual collapse, independent sibling and pruning),
+`packages/code/tests/integration/sidebar-render.test.tsx` ("clicking a sub-agent row calls
+onSelectSubagent with that instance's id" and "clicking a settled sub-agent selects its transcript
+without opening ActivityDetail") and
+`packages/code/tests/integration/app-shell-render.test.tsx` (readable first selection and manual
+collapse across Lead/reselection).
 
 `focusBlock(delta)` (`:282`–`:289`) notifies `"nothing to focus"` and returns `null` when `nextFocus`
 finds nothing (an empty `focusables()` list), else sets and returns the new focused key.
@@ -562,11 +619,12 @@ is asserted at `packages/code/tests/unit/transcript-state.test.ts:182`.
 
 `pickDiffNode()` (`:297`) prefers the focused node when it is in
 `DIFF_TOOLS = {apply_patch, edit_file, multi_edit, write_file, diff, replace}`
-(`packages/code/src/views/transcript-state.ts:22`), otherwise scans `deps.nodes()` **backwards** — i.e. over the full
-transcript, not the mounted page (`:313`). A dehydrated pick triggers `rehydrate` and is still
+(`packages/code/src/views/transcript-state.ts:22`), otherwise scans `detailNodes()` or `deps.nodes()`
+**backwards** — i.e. over the full semantic/detail source, not physical residency. A dehydrated pick
+triggers `rehydrate` and is still
 returned, so the overlay fills in rather than silently opening an older diff (`:300`–`:309`). Pinned
 at `packages/code/tests/unit/transcript-state.test.ts:293` and
-`packages/code/tests/unit/transcript-window-state.test.ts:134`.
+`packages/code/tests/unit/transcript-window-state.test.ts` (`pickDiffNode` case).
 
 ### 4.8 Assistant Markdown segmentation
 
@@ -634,10 +692,27 @@ reveals the final tree and disposes the old one. No timer or renderer-wide pause
 at most two Markdown trees exist during that bounded handoff. Every segment after the first carries
 `marginTop={1}`, because
 `MarkdownRenderable` applies its inter-block margin internally and that margin is exactly what a cut
-discards. A `simplified` settled reply prints
+discards.
+
+While that tail is streaming, `StableMarkdown` samples the visible renderable height and retains its
+maximum as `liveHeightFloor` for the current `geometryEpoch`. OpenTUI may parse an unfinished inline
+delimiter and conceal its source characters, reducing the Markdown renderable's intrinsic height;
+the containing box may grow but cannot return those rows within the same epoch. A changed epoch
+clears the reservation. This is geometry-only: `conceal`, streaming parsing and native attributes
+remain enabled. The production-shaped ScrollBox regression drives the intrinsic sequence
+`2, 2, 2, 1, 2`, proves `scrollTop` and the earlier anchor never move backward, and confirms the
+settled `bold` cells remain bold with delimiter characters concealed
+(`packages/code/tests/integration/transcript-scrollbox-render.test.tsx`, "bottom-following streaming
+Markdown never gives rows back when parsing conceals syntax"). A `simplified` settled reply prints
 `"Formatting simplified to keep this large response responsive."`.
 
 ### 4.9 Tool block rendering
+
+This section applies only after a tool call is admitted to the active transcript projection.
+Lead-owned supervision/spawn/delegation/workflow-orchestration identities are rejected before this
+renderer: no composing header, running row, live tail, grouped row or terminal block for them may
+mount. Their absence cannot suppress ordinary Lead `thinking`/`working` state in the fixed
+composer-adjacent activity line or the two typed delegation lifecycle markers.
 
 `ToolLine` (`packages/code/src/views/blocks.tsx:256`) derives, in order:
 
@@ -706,8 +781,9 @@ section header's leading blank row is not painted with the rail glyph — pinned
 Per-kind bodies (`packages/code/src/views/blocks.tsx:662`–`:879`): `user` gets a `userBandBg()` band with a rail glyph
 (`:630`); `reasoning` renders nothing at all when collapsed (`:650`) — pinned at
 `packages/code/tests/integration/reasoning-hidden-render.test.tsx:32`; `thinking` is a spinner plus animated dots
-(`:664`); `assistant` is the segmented Markdown and preserves a provider-declared `commentary` phase
-without synthesizing a visible label or changing its body; `subagent` is a bounded one-line plain-text
+(`:664`); `assistant` uses one static bullet plus segmented Markdown in both running and terminal
+states, and preserves a provider-declared `commentary` phase without synthesizing a visible label or
+changing its body; `subagent` is a bounded one-line plain-text
 preview of the delegation brief with a click affordance for the full Markdown detail modal, hidden
 when collapsed or blank; `plan` (`:768`–`:786`) always shows a header
 line (`plan <title>` plus `planMeta`, `:770`–`:773`), conditionally shows a `  review: <verdict>` line
@@ -939,6 +1015,14 @@ and returns `Date.now()` (`:55`), which is how a running tool's elapsed chip re-
 (`packages/code/src/views/blocks.tsx:327`). `charForFrame` and `thinkingDots` index with a double-modulo so a negative index
 still resolves (`:35`, `:46`).
 
+Assistant prose deliberately does not subscribe its transcript marker to that clock. A running and a
+settled assistant both use the same static bullet; live activity remains visible in the fixed
+`LeadActivityLine` and in any running tool row. This prevents an otherwise immutable Markdown owner
+from repainting merely because an ornamental glyph advanced. Production:
+`packages/code/src/views/blocks.tsx` (`BlockView`). Test:
+`packages/code/tests/integration/markdown-render-contract.test.tsx` ("a streaming assistant keeps a
+static transcript marker").
+
 ### 4.15 `core/run-status.ts` — framework-free status lines
 
 Three builders return a `StatusLine` (a `readonly StatusSegment[]`, each segment a literal string or a
@@ -966,6 +1050,19 @@ segment (`"<input>→<output> tok"`) when `usage` is set — joining every segme
 
 Test `tests/unit/run-status.test.ts` (174 lines) pins all three, through the themed wrapper
 `features/run/status-presenter.ts` that composes `presentStatusLine` over each builder.
+
+The application shell does not put that live lifecycle line in the canonical footer.
+`App.leadActivityDetail` seats elapsed time, the current iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt beside
+the `thinking`/`working` phase in `LeadActivityLine`. `runStripText` separately keeps gross `Context`
+plus cumulative `Session` input/output and cost before and after settlement, prefixing a terminal
+outcome only after settlement; it never adds `Running`, elapsed time or iteration. Wide terminals
+show the Session token totals, and input subtracts the reported cache hit. Production:
+`packages/code/src/views/App.tsx` (`leadActivityDetail`, `footerRunStrip`) and
+`packages/code/src/features/run/status-presenter.ts` (`runStripText`). Tests:
+`packages/code/tests/integration/app-shell-render.test.tsx` ("an active run seats its live metadata
+beside working and keeps the session footer stable") and
+`packages/code/tests/unit/run-status.test.ts` ("the run strip keeps cumulative session tokens before
+and after a run settles").
 
 ### 4.16 `core/attention.ts` — terminal focus and notification cues
 
@@ -1014,43 +1111,55 @@ session — a message the user is entitled to read as delivered when it never wa
 (`:153`–`:156`) is a plain `"focused sub-agent: <title>"` string, also used by `toggleSubagent`
 (section 4.7).
 
-### 4.19 The sidebar, the plan strip and the roster
+### 4.19 The Sidebar, plan access and the roster
 
-`views/Sidebar.tsx` is the persistent chrome column beside the transcript. It holds no run state of
+`views/Sidebar.tsx` is the optional inspector column beside the transcript. It holds no run state of
 its own — only a scroll handle and a per-mount handle table: everything it paints comes from the two
 projections of section 4.12, `PlanActivity` and `WorkflowActivity`, plus `ActivityStore.subagents`.
 Its own TSDoc states the scope rule (`packages/code/src/views/Sidebar.tsx:278`): it is a
-*summary-only* inspector, and "complete prompts, plans, results and run totals live elsewhere".
+*summary-only* inspector. Complete child tools and answers live in the explicitly selected isolated
+transcript; workflow activity remains structure/status in the footer strip and Sidebar and never
+becomes transcript content.
 
 **Two mounts, one component.** `TranscriptRegion` mounts `Sidebar` twice from identical props — as a
 split column when `layout.secondaryMode()` is `"split"`
 (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`) and inside a scrim-backed
-absolute drawer when it is `"drawer"`. `PlanStrip` is mounted instead by `App.tsx`, and only
-while no overlay and no elicitation are up, a plan exists, and the secondary surface is **not**
-split (`packages/code/src/views/App.tsx:1231`–`:1237`) — so the strip and the sidebar's Plan section
-are mutually exclusive by construction. Whether the sidebar has anything to show at all is decided
-one level up, by `sidebarHasContent` (`packages/code/src/views/App.tsx:247`), which feeds the layout
-controller.
+absolute drawer when it is `"drawer"`. No `PlanStrip` or other live pane is mounted below history:
+the Sidebar owns compact plan detail, `Ctrl+P` owns the full plan, and Plan contributes nothing to
+`compactActivityStrip` (`packages/code/src/views/App.tsx`). App owns three
+independent execution-scoped automatic intents: the first live Plan, first workflow leader and first
+typed delegation open the same combined Sidebar and reveal `Plan`, `Parallel work` or `Agents`.
+`/activity plan`, `/activity workflow` and `/activity agents` may explicitly reopen a chosen section;
+bare `/activity` chooses the first available one. A pointer intent remains available later when the
+footer contains agent or workflow activity. `createLayoutController.secondaryMode` projects either
+explicit source of intent as split or drawer.
 
 The effective secondary mode also owns roster placement. A split or drawer is the sole detailed
-roster surface. When both are closed, the aggregate transcript mounts no replacement roster; `App`'s
-clickable compact footer activity strip preserves waiting/running/done/failed counts without
-consuming transcript height and composes them after the canonical run/context/usage strip rather
-than replacing it. Clicking that strip opens the drawer. Tab cycles agent selection in split or
-drawer mode, and clicking any sidebar agent, including a settled summary row, selects that agent's
-transcript before opening detail. While both
-secondary surfaces are closed, the selection is represented by a single `Viewing A<n> <title> ·
-<outcome>` context row. Opening either secondary surface removes that row, so the same identity and
-status are never presented in two adjacent regions.
+roster surface. Each of the three first-event intents is consumed independently. Explicitly closing
+an automatic reveal is sticky for later updates of that same section/execution, but does not consume
+the first event for another section; the latter may reopen and reorient the Sidebar. The Agents
+intent does not change the Lead selection or open `ActivityDetail`. The outer Sidebar ScrollBox
+reveals the whole section owner with native `scrollChildIntoView`, so a long Plan cannot hide later
+workflow or Agents content below the viewport. When closed, the Lead transcript
+mounts no replacement roster; `App`'s clickable footer activity strip
+preserves agent waiting/running/done/failed counts and workflow leader count without consuming
+transcript height, and composes them after canonical Context/Session state rather than replacing it.
+Plan never contributes to that strip. Clicking it is the explicit intent that opens a split at
+eligible widths or a drawer otherwise; `/activity` remains the keyboard-accessible route for every
+section after Escape. Tab cycles agent selection in split or drawer mode, and clicking any sidebar
+agent, including a settled summary row, selects only that agent's isolated transcript. It does not
+open `ActivityDetail`. While both
+secondary surfaces are closed, the selection is represented by a single `Viewing A<n> <title>`
+context row. Opening either secondary surface removes that row, so the same identity is never
+presented in two adjacent regions.
 
-**Frame.** The root box is `props.width?.()` wide or 44 columns
-(`packages/code/src/views/Sidebar.tsx:311`), never shrinks, carries a left border whose colour is
-`tokens.accent` while `props.focused()` and `tokens.muted` otherwise (`:320`), and sits at
-`zIndex={1}` (`:316`). The body is a single scrollbox (`:322`) holding up to three sections — Plan
-(`:323`), Parallel work (`:327`), Agents (`:351`) — each introduced by the local `SectionHeader`
-(`:117`), which prints a bold accent label and an optional muted meta suffix. When `hasContent()` —
-a plan, or at least one leader, or at least one sub-agent (`:305`) — is false, the entire body is
-the one line `No run activity to inspect` (`:405`).
+**Frame.** The `Sidebar` root is `props.width?.()` wide or 44 columns, never shrinks, carries a left
+border whose colour is `tokens.accent` while `props.focused()` and `tokens.muted` otherwise, and
+sits at `zIndex={1}`. The body is a single ScrollBox holding up to three section-owner boxes — Plan,
+Parallel work, Agents — each introduced by `SectionHeader`. `SidebarRevealIntent` identifies the
+section and execution context; after layout, `Sidebar` asks the native ScrollBox to reveal that whole
+owner. When `hasContent()` — a plan, at least one leader or at least one sub-agent — is false, the
+entire body is the one line `No run activity to inspect`.
 
 **Plan section.** `PlanSummary` (`packages/code/src/views/Sidebar.tsx`, `PlanSummary`) renders a bold
 accent title, a lifecycle/progress line in its semantic status colour, the windowed task list, a
@@ -1090,41 +1199,46 @@ over `packages/code/src/ui/patterns/list-navigation.ts:180`), a `queueMicrotask`
 and the scrollbox's `onSizeChange` (`:173`). The scrollbox itself is height-clamped to 4–16 rows
 (`:172`).
 
-**`PlanStrip`.** The compact one-row substitute (`packages/code/src/views/Sidebar.tsx:235`): a
-leading accent word — `Plan ` while `isLivePlan`, `Latest plan ` once terminal, `Plan completed ` for
-an expected discard, and red `Plan unavailable ` only for another removal (`:254`–`:266`) — then
-progress or `history discarded`, then the task/title projection (`:267`–`:278`), then `Ctrl+P` only
-while detail exists. A removed row cannot call `onOpen` (`:252`), regardless of whether the removal
-was expected.
+**Plan access outside the Sidebar.** The first live Plan may reveal the Sidebar once for its
+execution. After that surface is explicitly closed, later Plan updates cannot reopen it
+automatically, but `/activity plan` can reveal it again. Plan contributes no footer summary.
+`Ctrl+P` opens the complete plan surface. No plan task, title, loading row or live Plan pane mounts
+between the transcript and composer; plan churn therefore cannot resize the history region or move
+its newest row. Pinned by
+`packages/code/tests/integration/transcript-region-render.test.tsx` ("a current plan stays out of
+the transcript tail when the sidebar is closed") and
+`packages/code/tests/integration/app-shell-render.test.tsx` (independent Plan/workflow/Agents reveal
+intent).
 
 **Parallel work.** Leaders come straight from the workflow projection: every node with `kind ===
 "leader"`, ordered by `startedAt` (`packages/code/src/views/Sidebar.tsx:309`–`:315`). Each row
-prints a synthetic `A1`, `A2`, … handle, `cleanTitle(node.title)` — first non-blank line, whitespace
+prints a synthetic `L1`, `L2`, … handle, `cleanTitle(node.title)` — first non-blank line, whitespace
 collapsed (`:70`) — and a muted `status · elapsed · N iterations` line, where each of the last two
 segments is omitted when it has no value (`:343`–`:345`). The header meta counts the leaders and
-singularizes (`:328`–`:332`). The synthetic handles come from `agentId` (`:291`–`:297`), a per-mount
-`Map` from native id to `A<n>`: **one counter serves both leaders and sub-agents**, so the numbering
-is assignment order within a mounted sidebar, not a run-tree address.
+singularizes (`:328`–`:332`). Leader handles are derived directly from the current sorted projection;
+there is no retained id ledger across runs.
 
 **Agents.** The header meta starts with `subagentProgress(...).label` and appends `· N failed` when
 needed. `subagentProgress` counts `done` and `error` as *settled*, `running` separately, `error` as
 *failed*, and formats `S/T finished`, appending ` · N running` only while something is running.
-The first row is the one-line aggregate target `All transcripts`, with its cursor drawn on the
+The first row is the one-line main target `Lead transcript`, with its cursor drawn on the
 **negation** of `props.focused()`; clicking it calls `onShowAllAgents`, which `TranscriptRegion`
-wires to clearing the selection. Progress belongs to the section header and is not repeated on this
-row. Then one row per sub-agent in store order: cursor, handle and `cleanTitle`, followed by one
+wires to clearing the selection and restoring the Lead-only view. Progress belongs to the section
+header and is not repeated on this row. Then one row per sub-agent in store order: cursor, handle and `cleanTitle`, followed by one
 `status · elapsed` line. A live agent has no second `Activity: working` or waiting line because its
 lifecycle already communicates that state. A settled agent adds the bounded `Failed: <summary>` /
 `Result: <summary>` outcome, degrading to bare `Failed` / `Completed` when there is no summary; the
-selected row may additionally show `Profile <name> · <model>`.
-Clicking a settled row with a result opens the latest persisted assistant response for that sub-agent
-in the shared Markdown detail modal; clicking a live row retains transcript-focus behavior.
+selected row may additionally show `Profile <name> · <model>`. Clicking either a live or settled
+row performs the same selection-only action; the child's retained tool/answer nodes then render in
+its isolated transcript. Sub-agent handles use the separate `A<n>` namespace derived from canonical
+zero-based spawn `order`, so a workflow leader cannot renumber an agent and a later run cannot inherit
+an earlier run's id allocation.
 
 The `focused` prop is worth reading twice. `TranscriptRegion` passes `() => ts.selectedSubagent()
 !== null` (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`), so it means "an
 individual agent is selected", and the sidebar uses it in two opposite directions at once: it
-accents the panel border while it *removes* the cursor from the `All transcripts` row
-(`packages/code/src/views/Sidebar.tsx`, `Sidebar`). The aggregate row is current exactly when no
+accents the panel border while it *removes* the cursor from the `Lead transcript` row
+(`packages/code/src/views/Sidebar.tsx`, `Sidebar`). The main row is current exactly when no
 individual agent is.
 
 **`activityPreview` / `rosterSummary` — one plain line, deliberately.**
@@ -1132,17 +1246,16 @@ individual agent is.
 delegates to it for compatibility. An absent input, or one that strips to nothing, yields
 `undefined`. Their TSDoc gives the reason
 (`:75`–`:82`): the sidebar is "a navigation and status surface, not a second Markdown reader", and
-keeping this to one stripped line "prevents a worker's table, code fence, or long final answer from
-competing with the transcript where that result can be read in context". `TranscriptRegion` reuses
-it at a 92-character limit for the focused-agent context row
-(`packages/code/src/views/app/TranscriptRegion.tsx`, `agentOutcome`).
+keeping this to one stripped line prevents a worker's table, code fence or long final answer from
+competing with the selected isolated transcript where that result can be read in context.
 
-`computeGroupedNodes` receives the live roster status map. A terminal roster status found through
-any section node's `subagentId` overrides a stale delegation-card status for headers and active
-sorting. The lookup is deliberately not card-only because windowing or an incomplete replay can
-retain body nodes without their delegation card; neither case may leave a finished agent labelled
-`Running`. Pinned by `packages/code/tests/unit/block-focus.test.ts` and
-`packages/code/tests/integration/app-shell-render.test.tsx`.
+Within a selected isolated transcript, `computeGroupedNodes` receives the live roster status map. A
+terminal roster status found through any section node's `subagentId` overrides a stale
+delegation-card status for its header. The lookup is deliberately not card-only because retention or
+an incomplete replay can retain body nodes without their delegation card; neither case may leave a
+finished selected agent labelled `Running`. Pinned by
+`packages/code/tests/unit/block-focus.test.ts` and
+`packages/code/tests/integration/transcript-region-render.test.tsx`.
 
 **Elapsed times are bounded.** `displayElapsed` (`packages/code/src/views/Sidebar.tsx:45`) defers to
 `formatElapsed`, but returns the empty string for a negative span or one over
@@ -1241,40 +1354,48 @@ is still caught. Production `packages/code/src/core/transcript/tool-display.ts:1
 Tests `packages/code/tests/unit/tool-display.test.ts:94` and `:109`.
 
 **INV-T09.** The projection is memoised per node by the identities of `args`, `result`, `diff` and
-`error`, so transcript paging and block rendering share one computation. Production
+`error`, so immutable publication and block rendering share one computation. Production
 `packages/code/src/core/transcript/tool-display.ts:204`–`:213`, `:239`. Test
 `packages/code/tests/unit/tool-display.test.ts:39` (`toBe` on a repeated call).
 
-**INV-T10.** One mounted transcript page can never exceed 400 semantic nodes, a render cost of 900,
-or 512 KiB of semantic text — and a single pathological node cannot defeat any of the three, because
-it is admitted and then presentation-clamped rather than excluded. Production
-`packages/code/src/views/transcript-window.ts:192`–`:215`. Tests
-`packages/code/tests/unit/transcript-window.test.ts:51`, `:70`, `:78`, `:118`; the reactive path at
-`packages/code/tests/unit/transcript-window-state.test.ts:47`.
+**INV-T10.** `semanticNodes` exposes exactly one complete ordered projection: nodes without a
+`subagentId` for the Lead-only main transcript — including typed delegation lifecycle markers — or
+nodes matching one explicitly selected child id. Child nodes remain in the backing store and
+publication ledger; physical residency cannot alter either semantic filter. Production:
+`createTranscriptState` (`visibleNodes`, `semanticNodes`). Tests:
+`packages/code/tests/unit/transcript-window-state.test.ts` ("the main transcript excludes sub-agent
+work until that transcript is selected") and
+`packages/code/tests/integration/transcript-region-render.test.tsx` (main-hidden and sibling-isolation
+cases).
 
-**INV-T11.** The window's own accounting closes on both sides:
-`hiddenBlocks + nodes.length + laterBlocks === total`, and the same for turns. Production
-`packages/code/src/views/transcript-window.ts:208`–`:220`. Test
-`packages/code/tests/unit/transcript-window.test.ts:139`.
+**INV-T11.** Section grouping, tool grouping and focus derive from the same complete current
+Lead-or-child projection; a focused non-resident key in that projection is handed to physical
+`revealKey` rather than omitted. Production:
+`createTranscriptState` (`grouped`, `toolGroups`, `focusables`) and `packages/code/src/views/App.tsx`
+(`focusBlock`). Tests: `packages/code/tests/unit/transcript-window-state.test.ts` and
+`packages/code/tests/integration/transcript-window-render.test.tsx` (physical navigation).
 
-**INV-T12.** A short transcript is returned as the **same array**, not a copy. Production
-`packages/code/src/views/transcript-window.ts:207`. Test
-`packages/code/tests/unit/transcript-window.test.ts:43` (`toBe`).
+**INV-T12.** `reset()` clears focus and fold overrides but never slices, replaces or reorders the
+semantic projection. Production: `createTranscriptState` (`reset`). Test:
+`packages/code/tests/unit/transcript-window-state.test.ts` (reset case).
 
-**INV-T13.** The production turn index rescans only an appended suffix after its first page, and
-rebuilds when the source array is replaced, shrinks or has a changed former tail. Production
-`packages/code/src/views/transcript-window.ts:109`–`:112`. Tests
-`packages/code/tests/unit/transcript-window.test.ts:165` (Proxy-counted key reads) and `:185`.
+**INV-T13.** No estimated node-cost, character-cost or turn-count selector may decide ordinary
+physical residency. Production: `CommittedHistory` and `createPhysicalWindowController`. Tests:
+`packages/code/tests/architecture/architecture-boundary.test.ts` (estimated-paging exclusion) and
+`packages/code/tests/unit/transcript-physical-window.test.ts` (equal-marker metamorphic case).
 
-**INV-T14.** Windowing happens **before** grouping: every node in `grouped().ordered`, every
-focusable key and every group `headKey` is inside the mounted window. Production
-`packages/code/src/views/transcript-state.ts:165`–`:174`. Test
-`packages/code/tests/unit/transcript-window-state.test.ts:57`.
+**INV-T14.** Committed block structure reads frozen publication group/header/default-fold metadata;
+live grouping maps may drive navigation or the same-selection `LiveTranscriptTail`, but cannot
+reshape an already committed owner. Production: `PhysicalPublicationOwner` and
+`LiveTranscriptTail`. Test:
+`packages/code/tests/integration/transcript-publication-render.test.tsx` (stable memory, diff and
+write owners while later activity changes).
 
-**INV-T15.** `pickDiffNode` deliberately escapes the window: it scans the full node list, so a diff
-older than the mounted page is still reachable. Production
-`packages/code/src/views/transcript-state.ts:310`–`:316`. Test
-`packages/code/tests/unit/transcript-window-state.test.ts:134`.
+**INV-T15.** `pickDiffNode` deliberately ignores physical residency: it scans the full detail source
+or semantic node source, so a currently unmounted diff remains reachable. Production:
+`createTranscriptState` (`pickDiffNode`). Tests:
+`packages/code/tests/unit/transcript-window-state.test.ts` and
+`packages/code/tests/unit/transcript-state.test.ts` (diff selection and hydration).
 
 **INV-T16.** `withRunMarkersLast` returns its input array untouched when no marker moves, and
 otherwise emits every node exactly once. Production
@@ -1401,11 +1522,14 @@ Production: `packages/code/src/views/blocks.tsx` (`BlockView`),
 Production `packages/code/src/core/transcript/presenters.ts:34`–`:35` (documented at `:25`–`:32`).
 Test `packages/code/tests/integration/markdown-render-contract.test.tsx:80`.
 
-**INV-T37.** One node's mounted text is bounded at 512 KiB, and the pager's accounting uses the same
-ceiling, so the two layers cannot disagree about how much text OpenTUI receives. Production
-`packages/code/src/core/transcript/presenters.ts:20`, `:36`–`:39`;
-`packages/code/src/views/transcript-window.ts:48`, `:154`. Test
-`packages/code/tests/unit/transcript-window.test.ts:81`.
+**INV-T37.** One prose node's mounted text is bounded at 512 KiB, and every tool display projection
+reports mounted text within the same aggregate ceiling before OpenTUI receives it. Physical row
+admission does not bypass either per-artifact cap. Production:
+`packages/code/src/core/transcript/presenters.ts` (`transcriptDisplayTextChars`,
+`transcriptDisplayText`) and `packages/code/src/core/transcript/tool-display.ts`
+(`projectTranscriptToolDisplay`). Tests: `packages/code/tests/unit/presentation.test.ts`,
+`packages/code/tests/unit/tool-display.test.ts` and
+`packages/code/tests/unit/transcript-publication.test.ts` (pathological bounded snapshots).
 
 **INV-T38.** A plan projection with an older `revision` for the same plan id is discarded, returning
 the current projection by identity. Production
@@ -1459,7 +1583,8 @@ both and asserts the frame contains neither "context" nor "tokens".
 
 **INV-T46.** A removed plan is neutral retention history iff its last projection says all three of
 `removed`, `status: completed`, and `retention: discard`; no weaker combination suppresses the
-unavailable/recovery state. Sidebar, compact strip, and transcript block all consume that distinction.
+unavailable/recovery state. Sidebar and transcript block consume that distinction; the footer never
+projects Plan state.
 Production: `packages/code/src/adapters/plan-projection.ts:43-48`,
 `packages/code/src/adapters/store.ts:1198-1218`, `packages/code/src/views/Sidebar.tsx:128-166,221-280`,
 and `packages/code/src/views/blocks.tsx:817-823`. Tests:
@@ -1477,29 +1602,52 @@ so auditability does not require mounting raw JSON in the live transcript. Produ
 curated shell renderer and the generic fallback, asserting useful output and signatures remain while
 JSON key/value presentation is absent.
 
-**INV-T48.** The detailed agent roster has exactly one responsive owner. In `split` and `drawer`
-modes it is the `Sidebar`; a closed secondary surface mounts no aggregate roster in the transcript,
-but the footer retains lifecycle counts beside canonical run/context/usage state and opens the
-drawer on click. An individually focused agent mounts only one compact context row. Tab remains the
-keyboard route through the roster in both split and drawer modes, and settled-row activation selects
-the transcript before detail. Production:
+**INV-T48.** Detailed Plan, Parallel work and Agents state has exactly one responsive owner. In
+`split` and `drawer` modes it is the combined `Sidebar`; a closed secondary surface mounts no roster
+or Plan/workflow pane in the Lead transcript. The footer retains bounded agent/workflow activity
+beside canonical Context/Session state and reopens the surface on click, while Plan contributes no
+footer text. `/activity [plan|workflow|agents]` explicitly reopens any available section after
+Escape. The first live Plan, first workflow leader and first delegation own independent
+once-per-execution automatic intents that
+open/reveal their whole section. Closing one is sticky only for repeated events of that intent; the
+first event for another section may reopen and reorient the Sidebar. The Agents intent keeps `Lead
+transcript` selected and opens no `ActivityDetail`. Repeated updates cannot flap the layout, and a
+long Plan cannot clip a later revealed section. An individually focused agent mounts only one compact
+context row. Tab remains the keyboard route through the roster in both split and drawer modes. Any
+agent-row activation only selects that child's isolated transcript; it never opens `ActivityDetail`
+automatically. Production:
 `packages/code/src/views/app/TranscriptRegion.tsx` (`secondaryMode`, focused-agent context and the two
-`Sidebar` mounts), `packages/code/src/views/Sidebar.tsx` (`Agents` section), and
-`packages/code/src/views/App.tsx` (`compactActivityStrip`). Tests:
+`Sidebar` mounts), `packages/code/src/views/Sidebar.tsx` (`SidebarRevealIntent`, `Sidebar` section
+owners and native reveal), and `packages/code/src/views/App.tsx` (`visiblePlanContext`,
+`visibleSubagentContext`, `requestAutomaticSidebar`, `closeActivitySidebar`,
+`openActivitySidebar`, the `activity.open` command and `compactActivityStrip`). Tests:
 `packages/code/tests/integration/transcript-region-render.test.tsx`,
-`packages/code/tests/integration/sidebar-render.test.tsx`, and
-`packages/code/tests/integration/app-shell-render.test.tsx`.
+`packages/code/tests/integration/sidebar-render.test.tsx` (including the settled-row negative
+`ActivityDetail` case), and
+`packages/code/tests/integration/app-shell-render.test.tsx` (the independent Plan/workflow/Agents
+auto-reveal contract, per-intent sticky close, `/activity` reopening, long-Plan reveal and
+completed-agent selection).
 
-**INV-T49.** An empty Lead transcript does not auto-expand parallel workers: every card-backed
-sub-agent body starts folded behind its delegation card. In the same no-Lead state, a degraded
-cardless section keeps only its first body node visible as the identity anchor and folds later
-entries; with Lead context, its whole body folds. Terminal roster status is resolved through any
-resident node carrying that sub-agent's id, so a missing card cannot leave the section at `Running`
-after completion. Production:
-`packages/code/src/views/subagent-sections.ts` (`computeGroupedNodes`, `rosterStatus`,
-`emitSection`). Tests: `packages/code/tests/unit/block-focus.test.ts`,
-`packages/code/tests/integration/transcript-region-render.test.tsx`, and
-`packages/code/tests/integration/app-shell-render.test.tsx`.
+**INV-T49.** Every delegation mounts exactly two friendly, Lead-owned, append-only lifecycle markers:
+one `spawned` marker from `delegation_created`, then one `completed` or `failed` marker from the
+terminal typed event. `delegation_started` and the generic delegation `capability_event` mirror mount
+no Lead row. Neither marker contains the child brief, tools, reasoning, answer or result, and the
+terminal marker cannot mutate the already frozen spawned marker. Selecting one child mounts only
+that child's retained content nodes; every sibling remains absent. A card-backed isolated body has a
+folded semantic default, but its first explicit selection installs a one-time expanded override for
+that section anchor so the body opens readable, including when the body commits after selection.
+Manual collapse remains folded across Lead/reselection; a sibling expands independently; Lead/global
+fold preference is unchanged. A degraded cardless isolated transcript keeps its first body node as
+the identity anchor. Terminal roster status is resolved through any retained node carrying the
+selected child's id, so a missing card cannot leave that isolated section at `Running` after
+completion. Production:
+`createTranscriptState` (`visibleNodes`, first-selection anchor expansion), `LiveTranscriptTail`
+(`belongsToSelection`) and
+`packages/code/src/views/subagent-sections.ts` (`computeGroupedNodes`, `rosterStatus`, `emitSection`).
+Tests: `packages/code/tests/unit/transcript-window-state.test.ts` (Lead/child filter),
+`packages/code/tests/unit/transcript-state.test.ts` (first/late selection, manual collapse,
+independent sibling and pruning), and `packages/code/tests/integration/app-shell-render.test.tsx`
+(readable first selection and collapsed reselection).
 
 **INV-T50.** Settling assistant Markdown never exposes the final OpenTUI tree before its syntax
 descendants and one confirming frame are complete. The already painted streaming tree remains the
@@ -1509,11 +1657,85 @@ Production: `packages/code/src/ui/patterns/stable-syntax.tsx` (`StableMarkdown`,
 `packages/code/tests/integration/markdown-render-contract.test.tsx` ("settlement keeps the painted
 streaming markdown visible until its final tree is ready").
 
-**INV-T51.** A finalized diff retains the same `DiffRenderable` while unrelated reactive siblings
-update, and a newly mounted diff becomes visible only after its syntax-ready frame. Production:
+**INV-T51.** Within one continuously mounted `BlockView`, a finalized diff retains the same
+`DiffRenderable` while an unrelated sibling outside that block updates, and a newly mounted diff
+becomes visible only after its syntax-ready frame. Production composition additionally freezes group
+metadata and keeps that owner independent from the mutable tail; the end-to-end identity invariant is
+owned by [code-transcript-stability.md](code-transcript-stability.md). Production:
 `packages/code/src/ui/patterns/stable-syntax.tsx` (`StableDiff`, `waitForSyntaxFrame`). Test:
 `packages/code/tests/integration/tool-diff-render.test.tsx` ("a finalized diff keeps one renderable
 while an active sibling updates").
+
+**INV-T52.** Fold overrides contain no tombstone for a key evicted from the complete semantic
+source. Lead/child selection alone does not prune the other projection's still-retained overrides.
+Production: `createTranscriptState` (override-pruning effect). Test:
+`packages/code/tests/unit/transcript-state.test.ts` (100-cycle semantic-retention plateau).
+
+**INV-T53.** Sidebar handles are stateless projections with disjoint namespaces: workflow leaders
+are `L1`, `L2`, … in current start order, while sub-agents are `A<order + 1>`. A new run reuses its
+own local handles without retaining native ids or allowing leaders to shift agent numbering.
+Production: `Sidebar` (`leaders`, both roster loops). Test:
+`packages/code/tests/integration/sidebar-render.test.tsx` (combined workflow/agent run replacement).
+
+**INV-T54.** The Lead transcript suppresses provider tool rows for the closed supervision and
+orchestration identity set `spawn_subagent`, `delegate_task`, `agent_list`, `agent_poll`, `agent_stop`,
+`agent_steer`, `await_agents`, `run_leader`, `run_workflow`, `run_round`, `run_work_items`.
+Suppression covers `tool_input_delta`, `tool_call_started`, `tool_output_delta` and terminal
+`tool_call`, so no composing placeholder, running row, output tail, group or settled block can flash
+before disappearing. Exactly two typed delegation markers remain; workflow state remains outside
+the transcript; ordinary Lead `thinking`/`working` remains eligible only in the fixed activity line
+outside the ScrollBox. A tool carrying a child id
+belongs only to that child's isolated transcript. Production:
+`isTranscriptExternalOrchestrationTool`, `createTranscriptStore` (`openRun`),
+`TranscriptPublisher.#publishTool` and `createTranscriptState` (`visibleNodes`). Test:
+`streaming-delta.test.ts` ("Lead-owned orchestration tools never create composing, started, or
+terminal nodes"), plus production-shaped Lead/child rendering cases.
+
+**INV-T55.** Transient Lead activity has exactly one physical owner: `LeadActivityLine`, a one-row
+sibling immediately above `InputDock`. It reuses the same band for `thinking`, `working` and settled
+`ready`; while a run is active, elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt share that line.
+Slash autocomplete replaces the activity line instead of stacking above or below it. The line is
+never a live or committed transcript node and cannot scroll or change transcript height. The history
+ScrollBox ends with a fixed reading runway of three rows,
+reduced to one row only when terminal height is at most 28; streaming state cannot change that
+height. No Plan pane mounts between transcript and composer. Production:
+`packages/code/src/views/App.tsx` (`leadActivityPhase`, `leadActivityDetail`, `inputPopupOpen` and
+bottom composition),
+`packages/code/src/views/Footer.tsx` (`LeadActivityLine`),
+`packages/code/src/views/live/LiveTranscriptTail.tsx` (Lead-thinking exclusion and runway), and
+`packages/code/src/views/app/TranscriptRegion.tsx` (`transcriptReadingRunwayRows`). Tests:
+`packages/code/tests/integration/app-shell-render.test.tsx` ("an active run seats its live metadata
+beside working and keeps the session footer stable", "Lead thinking and working reuse one fixed line
+immediately above the composer", and "autocomplete replaces the Lead activity row instead of
+stacking ready or working above it") and
+`packages/code/tests/integration/transcript-region-render.test.tsx` (plan exclusion and normal versus
+compact runway bands).
+
+**INV-T56.** Syntax recovery cannot reduce the semantic quality of a transcript artifact. Once a
+Markdown, diff or code body has painted, a later physical measurement lease retains that exact tree,
+waits for the public syntax-completion contract and commits only after two equal positive dimensions;
+while pending, it remains visible and cannot be remounted or replaced with a warning. A candidate
+that has never painted may stop waiting for Tree-sitter after the bounded retry, but it still renders
+through the same `BlockView`, `MarkdownRenderable`, `DiffRenderable` and `CodeRenderable`
+presentation. Its `rich` or `plain-semantic` choice persists by batch id across physical
+eviction/remount and is purged with the source publication. Measurement also re-arms across every
+`number -> undefined -> number` revision lifecycle. Production:
+`packages/code/src/ui/patterns/stable-syntax.tsx` (`SyntaxPublicationBoundary`,
+`freezeUnsettledSyntax`, `StableMarkdown`, `StableDiff`) and
+`packages/code/src/views/history/CommittedHistory.tsx` (`PhysicalPublicationOwner`). Tests:
+`packages/code/tests/integration/transcript-publication-render.test.tsx` (inactive revision re-arm,
+painted `write_memory` handoff across a resize and forced short-lease semantic recovery).
+
+**INV-T57.** Within one running assistant `geometryEpoch`, `StableMarkdown` retains the greatest
+visible row height it has observed as a layout floor. OpenTUI may later parse and conceal an
+unfinished Markdown delimiter, but the tail cannot give those rows back, reduce sticky `scrollTop`
+or pull an earlier transcript anchor downward. A changed epoch clears the floor. The reservation
+does not replace native Markdown, disable `conceal` or flatten attributes: parsed strong text remains
+bold and its delimiter characters remain hidden. Production:
+`packages/code/src/ui/patterns/stable-syntax.tsx` (`StableMarkdown`, `liveHeightFloor`) and
+`packages/code/src/views/blocks.tsx` (`AssistantMarkdown`, `geometryEpoch`). Test:
+`packages/code/tests/integration/transcript-scrollbox-render.test.tsx` ("bottom-following streaming
+Markdown never gives rows back when parsing conceals syntax").
 
 ---
 
@@ -1547,8 +1769,8 @@ while an active sibling updates").
 | Retention deletes a completed `discard` plan | projected history stays completed and muted; the UI confirms configured cleanup rather than requesting recovery | `packages/code/src/adapters/plan-projection.ts:43-48`; `packages/code/src/views/Sidebar.tsx:161-166,221-230` |
 | A workflow terminal event arrives before any leader seeded the tree | `run_ended` returns `current` unchanged; `workflow_title_updated` returns `null` | `packages/code/src/adapters/workflow-projection.ts:90`, `:80` |
 | A workflow progress/terminal event names an unknown leader | a minimal leader node is synthesized in place | `packages/code/src/adapters/workflow-projection.ts:132`, `:152` |
-| A sub-agent's section has a body but no `subagent` card | with no Lead context the first body node stays visible as the identity anchor and later entries fold behind it; with Lead context the whole body folds. Live roster status is resolved through any body node carrying `subagentId`; only an absent live status falls back to `"running"` | `packages/code/src/views/subagent-sections.ts` (`rosterStatus`, `emitSection`) |
-| A run produced only sub-agent work (no Lead node) | each card-backed body remains folded behind its delegation card; the absence of Lead prose does not expand workers | `packages/code/src/views/subagent-sections.ts` (`emitSection`) |
+| A selected sub-agent transcript has a body but no `subagent` card | the first body node stays visible as the isolated identity anchor and later entries fold behind it. Live roster status is resolved through any body node carrying `subagentId`; only an absent live status falls back to `"running"` | `packages/code/src/views/subagent-sections.ts` (`rosterStatus`, `emitSection`) |
+| A run produced only delegated work and no Lead answer/tool | the Lead transcript contains only each delegation's frozen spawned and settled markers; selecting one worker reveals only that worker's retained body and expands its card-backed section on first explicit selection | `packages/code/src/views/transcript-state.ts` (`visibleNodes`, first-selection anchor expansion), `packages/code/src/views/subagent-sections.ts` (`emitSection`) |
 | The terminal reports no capabilities (headless / test renderer) | every attention cue no-ops; `away()` returns `true` so the terminal decides | `packages/code/src/core/attention.ts:47`, `:51`, `:55` |
 | A `RunEvent` type is added without a span mapping | compile-time exhaustiveness error, not a runtime path | `packages/kernel/src/runs/run-event-span.ts:133`–`:136` |
 
@@ -1565,7 +1787,7 @@ Degradation that is **silent by design**: a tool whose result the parser cannot 
 
 | Edge | Direction | What forces it |
 |---|---|---|
-| `views/**` → `core/transcript/**` | runtime | value imports at `packages/code/src/views/blocks.tsx:17`, `packages/code/src/views/transcript-window.ts:2`, `packages/code/src/views/transcript-state.ts:4` |
+| `views/**` → `core/transcript/**` | runtime | value imports at `packages/code/src/views/blocks.tsx:17` and `packages/code/src/views/transcript-state.ts:4` |
 | `core/transcript/**` → `core/marks.ts` | runtime | `packages/code/src/core/transcript/presenters.ts:1` — the only import in the whole core-transcript tree |
 | `core/**` ↛ `solid-js` / `@opentui/*` / `adapters` / `theme` / `ui` / `views` | forbidden | `packages/code/tests/architecture/architecture-boundary.test.ts:72` |
 | `adapters/**` ↛ `ui` / `views` | forbidden | `packages/code/tests/architecture/architecture-boundary.test.ts:91` |
@@ -1573,7 +1795,7 @@ Degradation that is **silent by design**: a tool whose result the parser cannot 
 | `adapters/event-span.ts` → `@clarvis/kernel/policy` | runtime re-export + type | `packages/code/src/adapters/event-span.ts:1` |
 | `adapters/{plan,workflow}-projection.ts` → `@clarvis/protocol` | **type-only** | `packages/code/src/adapters/plan-projection.ts:1`, `packages/code/src/adapters/workflow-projection.ts:1` (`import type`) |
 | `adapters/message-content.ts` → `@clarvis/protocol` | **type-only** | `packages/code/src/adapters/message-content.ts:1` |
-| `views/**` → `adapters/store.ts` | mostly type-only; one value import | `packages/code/src/views/blocks.tsx:8` (types) and `packages/code/src/views/blocks.tsx:16` (`rawToolArguments`), `packages/code/src/views/transcript-window.ts:1` (`rawToolArguments`) |
+| `views/**` → `adapters/store.ts` | mostly type-only; one value import | `packages/code/src/views/blocks.tsx:8` (types) and `packages/code/src/views/blocks.tsx:16` (`rawToolArguments`) |
 | `views/**` → `theme/{tokens,glyphs,tone,syntax,surfaces}` | runtime | `packages/code/src/views/blocks.tsx:3`–`:7`, `packages/code/src/views/tools/registry.tsx:3`–`:5`, `packages/code/src/views/tools/mutation-gate.ts:3`, `packages/code/src/views/truncate.ts:1`, `packages/code/src/views/spinner.ts:2` |
 | `theme/glyphs.ts` → `core/marks.ts` | runtime | `packages/code/src/theme/glyphs.ts:2`; the theme wraps the core table in a Solid signal so an ascii toggle re-renders (`packages/code/src/theme/glyphs.ts:16`–`:21`) |
 | `views/tools/**` → `adapters/{tool-identity,tool-parsers}` | runtime | `packages/code/src/views/tools/registry.tsx:7`, `:23`; `packages/code/src/views/tools/mutation-gate.ts:1`, `:2`; `packages/code/src/views/tools/signature.ts:1` |
@@ -1593,21 +1815,22 @@ document. Four concrete couplings matter here:
    `packages/code/src/runtime.tsx`) is the injection that
    lets the store keep a resident `signature` and `mutation` on each tool node without importing
    `views/`. It is called on `tool_call` close (`packages/code/src/adapters/store.ts:1369`).
-4. **`defaultFolded`** (`packages/code/src/adapters/store.ts:1521`, backed by `foldDefaults`) supplies `BlockView`'s and
-   `toggleOverride`'s default fold state; it is set on tool close from the call's success
-   (`packages/code/src/adapters/store.ts:1380`) and on local shell close (`packages/code/src/adapters/store.ts:888`).
+4. **`defaultFolded`** (backed by `foldDefaults`) supplies `toggleOverride` and is captured into each
+   immutable publication batch before history renders it. It is set on tool close from the call's
+   success and on local shell close.
 
 ### 7.3 Downstream consumers inside `code`
 
 | Consumer | What it uses |
 |---|---|
-| `packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion` | `completionBeforeFinalAnswer`, `BlockView`, `earlierLabel`/`laterLabel`, the whole `TranscriptState` |
+| `packages/code/src/views/history/CommittedHistory.tsx` | `BlockView` and the user-driven semantic subset of `TranscriptState`; group/section metadata comes from frozen publication batches, while physical boundary labels come from measured batch counts |
+| `packages/code/src/views/live/LiveTranscriptTail.tsx` | `BlockView`, `computeGroupedNodes` and `computeToolGroups` over mutable frontier nodes, plus the frozen live-to-committed handoff |
 | `views/overlays/DiffViewer.tsx` | `resolveToolRenderer` with `full`/`wrap` set (`packages/code/src/views/tools/registry.tsx:36`, `:46`) |
 | `views/config/McpBrowser.tsx` | `renderToolPreview` (`packages/code/src/views/tools/registry.tsx`, `renderToolPreview`) |
 | `packages/code/src/views/ElicitBlock.tsx:13` | `MEASURE_MAX_COLS` |
 | `views/Sidebar.tsx`, `views/overlays/PlanOverlay.tsx` | `taskTone` (`packages/code/src/views/blocks.tsx:79`) |
-| `packages/code/src/views/app/TranscriptRegion.tsx` | `Sidebar` (the split column and drawer mounts), plus `rosterSummary` for the closed-surface focused-agent context row |
-| `packages/code/src/views/App.tsx:1237` | `PlanStrip`, mounted only when the secondary surface is not split (`:1231`–`:1234`) |
+| `packages/code/src/views/app/TranscriptRegion.tsx` | `Sidebar` (the split column and drawer mounts), the focused-agent identity row and the fixed physical reading runway |
+| `packages/code/src/views/App.tsx` | `LeadActivityLine` immediately above `InputDock`; the footer carries only bounded activity summaries |
 | `packages/code/src/runtime.tsx` (`describeToolCall`) | `formatToolCall` + `mutationStats` composed into `describeToolCall` |
 | `src/run-host.ts`, `src/cli-mode.ts`, `src/features/run/status-presenter.ts` | `core/run-status.ts`'s `plainStatusLine`/`memoryNoticeStatus`/`progressStatus`/`liveRunStatus` |
 
@@ -1615,6 +1838,8 @@ document. Four concrete couplings matter here:
 
 - The **events themselves** and their reduction into nodes — [hosts/kernel-runs.md](kernel-runs.md) and
   [hosts/code-run-host.md](code-run-host.md).
+- **Publication lifecycle, passive visual immutability, the committed/live boundary and placement of
+  moving state** — [hosts/code-transcript-stability.md](code-transcript-stability.md).
 - **Theme tokens, glyph table policy and ascii mode** — [hosts/code-theme.md](code-theme.md). This document touches
   `core/marks.ts` only as the framework-free source the theme wraps.
 - **Input handling, overlays, the diff viewer and slash commands** —
@@ -1630,9 +1855,8 @@ document. Four concrete couplings matter here:
 source or test: `MAX_BODY_LINES = 10` (`packages/code/src/views/tools/registry.tsx:100`), `MUTATION_GATE_LINES = 40`
 (`packages/code/src/views/tools/mutation-gate.ts:17`), `MEASURE_MAX_COLS = 110` (`packages/code/src/views/blocks.tsx:54`), `MAX_GROUP_SIGNATURES = 6`
 (`packages/code/src/views/blocks.tsx:118`), `LIVE_TAIL_LINES = 5` (`packages/code/src/views/blocks.tsx:139`), `SLOW_TOOL_MS = 2000` (`packages/code/src/views/blocks.tsx:129`),
-`MIN_GROUP = 2` (`packages/code/src/views/tool-groups.ts:14`), and all four `WINDOW_*` budgets
-(`packages/code/src/views/transcript-window.ts:31`–`:48`). `packages/code/src/views/transcript-window.ts:129`–`:132` says the per-kind render costs "err
-high for tools" but gives no measurement. By contrast, `segment.ts` does state numbers — ~50 ms per
+and `MIN_GROUP = 2` (`packages/code/src/views/tool-groups.ts:14`). By contrast, `segment.ts` does
+state numbers — ~50 ms per
 flush at 60 KB against a 33 ms frame (`packages/code/src/views/blocks.tsx:415`–`:429`), and
 ~0.5 ms plain versus ~50 ms parsed (`packages/code/src/core/transcript/segment.ts:11`–`:21`) — so the absence elsewhere is an absence,
 not a convention.

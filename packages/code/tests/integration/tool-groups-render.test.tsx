@@ -141,28 +141,28 @@ test("a model message splits the batch, and failed members stay hidden until exp
   expect(expanded).toContain("boom");
 });
 
-test("a composing delegation batch has one compact progress row and no empty signatures", async () => {
+test("a generic composing batch has one compact progress row and no empty signatures", async () => {
   const nodes: TranscriptNode[] = [
     {
-      key: "delegate-1",
+      key: "read-1",
       kind: "tool_call",
       status: "running",
       text: "",
-      toolName: "delegate_task",
+      toolName: "read_file",
       inputChars: 120,
     },
     {
-      key: "delegate-2",
+      key: "read-2",
       kind: "tool_call",
       status: "running",
       text: "",
-      toolName: "delegate_task",
+      toolName: "read_file",
       inputChars: 240,
     },
   ];
 
   const out = await frame(nodes, false);
-  expect(out).toContain("Delegate task");
+  expect(out).toContain("read_file");
   expect(out).toContain("x2");
   expect(out).toContain("starting…");
   expect(out).not.toContain("()\n");

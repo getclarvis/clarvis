@@ -27,162 +27,162 @@ share the same windowing math
 
 ### `InputDock.tsx` — the composer
 
-| Symbol | Signature | File:line |
-| --- | --- | --- |
-| `SlashOutcome` | `"handled" \| "block" \| "pass"` | `packages/code/src/views/InputDock.tsx:45` |
-| `InputDock(props)` | see prop table below | `packages/code/src/views/InputDock.tsx:51-76` |
+| Symbol             | Signature                        | File:line                                     |
+| ------------------ | -------------------------------- | --------------------------------------------- |
+| `SlashOutcome`     | `"handled" \| "block" \| "pass"` | `packages/code/src/views/InputDock.tsx:45`    |
+| `InputDock(props)` | see prop table below             | `packages/code/src/views/InputDock.tsx:51-76` |
 
 `InputDock` props:
 
-| Prop | Type | Meaning |
-| --- | --- | --- |
-| `interaction` | `Interaction` | keymap/renderer/overlay-context handle (owned by [hosts/code-keyboard.md](code-keyboard.md)) |
-| `renderer` | `CliRenderer` | OpenTUI renderer, used to listen for `paste` events |
-| `platform` | `Platform` | supplies `readClipboardImage()` |
-| `history` | `PromptHistory` | Up/Down recall, see §2 below |
-| `providers?` | `CompleteProvider[]` | autocomplete providers; read once per refresh (Invariant 6) |
-| `visible?`, `runActive?` | `() => boolean` | gate key-layer registration / border color / placeholder |
-| `onSubmit` | `(content: MessageContent) => void` | fires on an ordinary (non-slash, non-bang) submit |
-| `onSlashCommand?` | `(name, args) => SlashOutcome` | classifies/dispatches a `/name args` line |
-| `onBashCommand?` | `(cmd: string) => boolean` | dispatches a `!cmd` line; return `true` clears the draft |
-| `submissionBlocked?` | `Accessor<string \| null>` | non-null refuses ordinary/bang submission, keeps the draft |
-| `onReady?` | `(el: TextareaRenderable) => void` | exposes the underlying textarea |
-| `onDock?` | callback receiving `{clearAttachments, restoreAttachments, popupOpen, expanded, closeEditor}` | the dock's imperative handle |
-| `onNotify?`, `onDraftChange?`, `onExpandedChange?`, `targetLabel?` | — | UI callbacks |
+| Prop                                                               | Type                                                                                          | Meaning                                                                                      |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `interaction`                                                      | `Interaction`                                                                                 | keymap/renderer/overlay-context handle (owned by [hosts/code-keyboard.md](code-keyboard.md)) |
+| `renderer`                                                         | `CliRenderer`                                                                                 | OpenTUI renderer, used to listen for `paste` events                                          |
+| `platform`                                                         | `Platform`                                                                                    | supplies `readClipboardImage()`                                                              |
+| `history`                                                          | `PromptHistory`                                                                               | Up/Down recall, see §2 below                                                                 |
+| `providers?`                                                       | `CompleteProvider[]`                                                                          | autocomplete providers; read once per refresh (Invariant 6)                                  |
+| `visible?`, `runActive?`                                           | `() => boolean`                                                                               | gate key-layer registration / border color / placeholder                                     |
+| `onSubmit`                                                         | `(content: MessageContent) => void`                                                           | fires on an ordinary (non-slash, non-bang) submit                                            |
+| `onSlashCommand?`                                                  | `(name, args) => SlashOutcome`                                                                | classifies/dispatches a `/name args` line                                                    |
+| `onBashCommand?`                                                   | `(cmd: string) => boolean`                                                                    | dispatches a `!cmd` line; return `true` clears the draft                                     |
+| `submissionBlocked?`                                               | `Accessor<string \| null>`                                                                    | non-null refuses ordinary/bang submission, keeps the draft                                   |
+| `onReady?`                                                         | `(el: TextareaRenderable) => void`                                                            | exposes the underlying textarea                                                              |
+| `onDock?`                                                          | callback receiving `{clearAttachments, restoreAttachments, popupOpen, expanded, closeEditor}` | the dock's imperative handle                                                                 |
+| `onNotify?`, `onDraftChange?`, `onExpandedChange?`, `targetLabel?` | —                                                                                             | UI callbacks                                                                                 |
 
 (`packages/code/src/views/InputDock.tsx:51-76`)
 
 ### `views/input/autocomplete.ts` — pure completion/parsing helpers
 
-| Export | Signature | File:line |
-| --- | --- | --- |
-| `CompleteItem` | `{label, detail?, value, insert?, group?}` | `:2-9` |
-| `CompleteProvider` | `{id, trigger, label, kind?: "completion"\|"hint", query, onAccept?}` | `:11-22` |
-| `TriggerHit` | `{trigger, term}` | `:25-28` |
-| `detectTrigger(text, triggers)` | `TriggerHit \| null` | `:49-65` |
-| `splitSlashArgs(raw, count)` | `string[]` | `:72-85` |
-| `parseSlashCommand(text)` | `{name, args} \| null` | `:88-94` |
-| `slashCompletion(label)` | `string` | `:97-99` |
-| `SlashSubmit` | `{kind:"skill",agent}\|{kind:"command",command}\|{kind:"unknown"}\|{kind:"chat"}` | `:102-106` |
-| `classifySlashSubmit(name, {skillAgent, findCommand})` | `SlashSubmit` | `:119-132` |
-| `parseBangCommand(text)` | `string \| null` | `:135-138` |
-| `acceptMention(text, trigger, insert)` | `string` | `:141-145` |
-| `clampIndex(index, length)` | `number` | `:148-151` |
-| `slashTokenMatches(slashes, term)` | `boolean` | `packages/code/src/views/input/autocomplete.ts` (`slashTokenMatches`) |
+| Export                                                 | Signature                                                                         | File:line                                                             |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `CompleteItem`                                         | `{label, detail?, value, insert?, group?}`                                        | `:2-9`                                                                |
+| `CompleteProvider`                                     | `{id, trigger, label, kind?: "completion"\|"hint", query, onAccept?}`             | `:11-22`                                                              |
+| `TriggerHit`                                           | `{trigger, term}`                                                                 | `:25-28`                                                              |
+| `detectTrigger(text, triggers)`                        | `TriggerHit \| null`                                                              | `:49-65`                                                              |
+| `splitSlashArgs(raw, count)`                           | `string[]`                                                                        | `:72-85`                                                              |
+| `parseSlashCommand(text)`                              | `{name, args} \| null`                                                            | `:88-94`                                                              |
+| `slashCompletion(label)`                               | `string`                                                                          | `:97-99`                                                              |
+| `SlashSubmit`                                          | `{kind:"skill",agent}\|{kind:"command",command}\|{kind:"unknown"}\|{kind:"chat"}` | `:102-106`                                                            |
+| `classifySlashSubmit(name, {skillAgent, findCommand})` | `SlashSubmit`                                                                     | `:119-132`                                                            |
+| `parseBangCommand(text)`                               | `string \| null`                                                                  | `:135-138`                                                            |
+| `acceptMention(text, trigger, insert)`                 | `string`                                                                          | `:141-145`                                                            |
+| `clampIndex(index, length)`                            | `number`                                                                          | `:148-151`                                                            |
+| `slashTokenMatches(slashes, term)`                     | `boolean`                                                                         | `packages/code/src/views/input/autocomplete.ts` (`slashTokenMatches`) |
 
 ### `ui/patterns/windowed-list.tsx` — shared retained-window projection
 
-| Export | Signature | File:symbol |
-| --- | --- | --- |
-| `WindowOverflowMode` | `"indicators" \| "scroll"` | `packages/code/src/ui/patterns/windowed-list.tsx` (`WindowOverflowMode`) |
-| `RowWindow<T>` / `windowRows(items, index, max, overflowMode?)` | `{rows, offset, above, below}` | `packages/code/src/ui/patterns/windowed-list.tsx` (`RowWindow`, `windowRows`) |
-| `GroupedRowWindow<T>` / `windowGroupedRows(items, index, max, overflowMode?)` | adds `headers` | `packages/code/src/ui/patterns/windowed-list.tsx` (`GroupedRowWindow`, `windowGroupedRows`) |
-| `StableWindowedList<T>(props)` | fixed retained slots over a grouped or ungrouped window, with optional overflow mode | `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`) |
+| Export                                                                        | Signature                                                                            | File:symbol                                                                                 |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| `WindowOverflowMode`                                                          | `"indicators" \| "scroll"`                                                           | `packages/code/src/ui/patterns/windowed-list.tsx` (`WindowOverflowMode`)                    |
+| `RowWindow<T>` / `windowRows(items, index, max, overflowMode?)`               | `{rows, offset, above, below}`                                                       | `packages/code/src/ui/patterns/windowed-list.tsx` (`RowWindow`, `windowRows`)               |
+| `GroupedRowWindow<T>` / `windowGroupedRows(items, index, max, overflowMode?)` | adds `headers`                                                                       | `packages/code/src/ui/patterns/windowed-list.tsx` (`GroupedRowWindow`, `windowGroupedRows`) |
+| `StableWindowedList<T>(props)`                                                | fixed retained slots over a grouped or ungrouped window, with optional overflow mode | `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`)                    |
 
 The file-local `headersFor` helper derives one optional group heading per visible row for
 `windowGroupedRows`; autocomplete consumes the resulting projection rather than owning that policy.
 
 ### `views/input/attachments.ts` — Solid-backed attachment store
 
-| Export | Signature | File:line |
-| --- | --- | --- |
-| `createAttachmentStore()` | `AttachmentStore` (Solid signal over `core/attachments.ts` logic) | `:26-46` |
-| re-exports | `attachmentAdmissionMessage`, `base64DecodedBytes`, `composeWithAttachments`, `formatAttachmentBytes`, `nextAttachmentId`, `Attachment`, `AttachmentAdmission`, `AttachmentAdmissionFailure`, `AttachmentStore`, `ImageLoader` | `:5-16` |
+| Export                    | Signature                                                                                                                                                                                                                      | File:line |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- |
+| `createAttachmentStore()` | `AttachmentStore` (Solid signal over `core/attachments.ts` logic)                                                                                                                                                              | `:26-46`  |
+| re-exports                | `attachmentAdmissionMessage`, `base64DecodedBytes`, `composeWithAttachments`, `formatAttachmentBytes`, `nextAttachmentId`, `Attachment`, `AttachmentAdmission`, `AttachmentAdmissionFailure`, `AttachmentStore`, `ImageLoader` | `:5-16`   |
 
 ### `core/attachments.ts` — pure attachment/mention logic
 
-| Export | Signature | File:line |
-| --- | --- | --- |
-| `isImageRef(path)` | `boolean` | `:11-14` |
-| `parseMentions(text)` | `string[]` | `:22-28` |
-| `ImageLoader` | `(path) => Promise<ImagePart \| null>` | `:31` |
-| `buildContent(text, loadImage)` | `Promise<MessageContent>` | `:73-80` |
-| `appendMentionImages(parts, loadImage)` | `Promise<ContentPart[]>` | `:90-101` |
-| `MAX_COMPOSER_IMAGES` | `4` | `:106` |
-| `MAX_COMPOSER_IMAGE_BYTES` | `5 * 1024 * 1024` | `:109` |
-| `MAX_COMPOSER_IMAGE_TOTAL_BYTES` | `10 * 1024 * 1024` | `:112` |
-| `AttachmentAdmissionFailure` | `"empty" \| "count" \| "item_bytes" \| "total_bytes"` | `:115` |
-| `MentionImageError` (abstract) / `MentionImageLoadError` / `MentionImageAdmissionError` | — | `:128-177` |
-| `formatAttachmentBytes(bytes)` | `string` (`"123B"`/`"1.2k"`/`"3.4M"`) | `:145-149` |
-| `attachmentAdmissionMessage(admission, prefix?)` | `string` | `:152-166` |
-| `Attachment` / `AttachmentStore` | interfaces | `:180-198` |
-| `base64DecodedBytes(data)` | `number` | `:204-210` |
-| `attachmentBytes(attachment)` | `number` (max of declared vs decoded) | `:218-223` |
-| `checkAttachmentAdmission(existing, bytes)` | `AttachmentAdmission` | `:230-240` |
-| `nextAttachmentId()` | `` `att_${Date.now()}_${seq}` `` | `:289-292` |
-| `composeWithAttachments(text, attachments)` | `MessageContent` | `:301-315` |
+| Export                                                                                  | Signature                                             | File:line  |
+| --------------------------------------------------------------------------------------- | ----------------------------------------------------- | ---------- |
+| `isImageRef(path)`                                                                      | `boolean`                                             | `:11-14`   |
+| `parseMentions(text)`                                                                   | `string[]`                                            | `:22-28`   |
+| `ImageLoader`                                                                           | `(path) => Promise<ImagePart \| null>`                | `:31`      |
+| `buildContent(text, loadImage)`                                                         | `Promise<MessageContent>`                             | `:73-80`   |
+| `appendMentionImages(parts, loadImage)`                                                 | `Promise<ContentPart[]>`                              | `:90-101`  |
+| `MAX_COMPOSER_IMAGES`                                                                   | `4`                                                   | `:106`     |
+| `MAX_COMPOSER_IMAGE_BYTES`                                                              | `5 * 1024 * 1024`                                     | `:109`     |
+| `MAX_COMPOSER_IMAGE_TOTAL_BYTES`                                                        | `10 * 1024 * 1024`                                    | `:112`     |
+| `AttachmentAdmissionFailure`                                                            | `"empty" \| "count" \| "item_bytes" \| "total_bytes"` | `:115`     |
+| `MentionImageError` (abstract) / `MentionImageLoadError` / `MentionImageAdmissionError` | —                                                     | `:128-177` |
+| `formatAttachmentBytes(bytes)`                                                          | `string` (`"123B"`/`"1.2k"`/`"3.4M"`)                 | `:145-149` |
+| `attachmentAdmissionMessage(admission, prefix?)`                                        | `string`                                              | `:152-166` |
+| `Attachment` / `AttachmentStore`                                                        | interfaces                                            | `:180-198` |
+| `base64DecodedBytes(data)`                                                              | `number`                                              | `:204-210` |
+| `attachmentBytes(attachment)`                                                           | `number` (max of declared vs decoded)                 | `:218-223` |
+| `checkAttachmentAdmission(existing, bytes)`                                             | `AttachmentAdmission`                                 | `:230-240` |
+| `nextAttachmentId()`                                                                    | `` `att_${Date.now()}_${seq}` ``                      | `:289-292` |
+| `composeWithAttachments(text, attachments)`                                             | `MessageContent`                                      | `:301-315` |
 
 ### `core/prompt-history.ts`
 
-| Export | Signature | File:line |
-| --- | --- | --- |
-| `PromptHistory` | `{push, seed, prev, next, resetCursor, size, flush, persistenceDegraded}` | `:2-19` |
-| `PromptHistoryPersistence` | `{path, load(limit), append(text), compact(entries)}` | `:35-44` |
-| `PromptHistoryOptions` | `{onPersistenceError?}` | `:46-49` |
-| `MAX_PROMPT_HISTORY_ENTRY_CHARS` | `1_000_000` | `:53` |
-| `createPromptHistory(limit=200, persistence=null, options={})` | `PromptHistory` | `:62-215` |
+| Export                                                         | Signature                                                                 | File:line |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------- | --------- |
+| `PromptHistory`                                                | `{push, seed, prev, next, resetCursor, size, flush, persistenceDegraded}` | `:2-19`   |
+| `PromptHistoryPersistence`                                     | `{path, load(limit), append(text), compact(entries)}`                     | `:35-44`  |
+| `PromptHistoryOptions`                                         | `{onPersistenceError?}`                                                   | `:46-49`  |
+| `MAX_PROMPT_HISTORY_ENTRY_CHARS`                               | `1_000_000`                                                               | `:53`     |
+| `createPromptHistory(limit=200, persistence=null, options={})` | `PromptHistory`                                                           | `:62-215` |
 
 Backing hard bounds (not exported): `MAX_PROMPT_HISTORY_ENTRIES = 1_000` (`:52`),
 `MAX_PROMPT_HISTORY_CHARS = 8_000_000` (`:54`).
 
 ### `core/fuzzy.ts`
 
-| Export | Signature | File:line |
-| --- | --- | --- |
-| `fuzzyScore(text, term)` | `number \| null` | `:34-37` |
-| `fuzzyFilter(items, term, key)` | `T[]`, sorted desc by score, ties by original order | `:47-56` |
-| `fuzzyPositions(text, term)` | `number[] \| null` | `:67-80` |
-| `HighlightRun` / `matchRuns(text, positions)` | `{text,hit}[]` | `:83-106` |
-| `labelRuns(label, term)` | `HighlightRun[]` | `:115-117` |
+| Export                                         | Signature                                             | File:line  |
+| ---------------------------------------------- | ----------------------------------------------------- | ---------- |
+| `fuzzyScore(text, term)`                       | `number \| null`                                      | `:34-37`   |
+| `fuzzyFilter(items, term, key)`                | `T[]`, sorted desc by score, ties by original order   | `:47-56`   |
+| `fuzzyPositions(text, term)`                   | `number[] \| null`                                    | `:67-80`   |
+| `HighlightRun` / `matchRuns(text, positions)`  | `{text,hit}[]`                                        | `:83-106`  |
+| `labelRuns(label, term)`                       | `HighlightRun[]`                                      | `:115-117` |
 | `FieldMatch` / `fuzzyFieldMatch(fields, term)` | best-scoring field + positions, ties to earlier field | `:120-145` |
-| `ItemMatch` | `{field:"label"\|"detail", positions}` | `:148-151` |
+| `ItemMatch`                                    | `{field:"label"\|"detail", positions}`                | `:148-151` |
 
 ### `adapters/local-shell.ts` — the `!` seam
 
-| Export | Signature | File:line |
-| --- | --- | --- |
-| `LocalBashResult` | `{exitCode, stdout, stderr, signal, timedOut, cancelled, stdoutTruncated, stderrTruncated, durationMs}` | `:11-21` |
-| `LocalBashOptions` | `{cwd, timeoutMs?, maxBytes?, signal?, env?}` | `:24-30` |
-| `stripAnsi(s)` | `string` | `:37-39` |
-| `runLocalBash(command, opts)` | `Promise<LocalBashResult>` | `:101-189` |
-| `formatBashObservation(command, r)` | `string` (tagged text block) | `:198-210` |
+| Export                              | Signature                                                                                               | File:line  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------- |
+| `LocalBashResult`                   | `{exitCode, stdout, stderr, signal, timedOut, cancelled, stdoutTruncated, stderrTruncated, durationMs}` | `:11-21`   |
+| `LocalBashOptions`                  | `{cwd, timeoutMs?, maxBytes?, signal?, env?}`                                                           | `:24-30`   |
+| `stripAnsi(s)`                      | `string`                                                                                                | `:37-39`   |
+| `runLocalBash(command, opts)`       | `Promise<LocalBashResult>`                                                                              | `:101-189` |
+| `formatBashObservation(command, r)` | `string` (tagged text block)                                                                            | `:198-210` |
 
 Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL_GRACE_MS = 1_500`,
 `EXIT_DRAIN_MS = 1_000` (`:5-8`).
 
 ### Overlay components (`views/overlays/*`, `views/input/{AutocompletePopup,CommandGroupHeader}.tsx`)
 
-| Component | Purpose | File:line |
-| --- | --- | --- |
-| `SurfaceBoundary(props)` | Lazy surface owner with explicit `dispose-on-close`/`retain-one`, activation identity and optional stable root-portal placement; portal placement requires `retain-one` | `packages/code/src/ui/patterns/surface-lifecycle.tsx` (`SurfaceBoundary`) |
-| `SurfaceRegion` / `SurfaceOverlay` / `SurfacePortal` | Hidden retained region, full-bleed in-region surface and stable root portal primitives | `packages/code/src/ui/patterns/surface-lifecycle.tsx` |
-| `FloatFrame(props)` | Generic centered animated card (title/footer/nav), scrim behind it, `sm`/`lg` sizing; its floating host belongs to the surrounding `SurfaceBoundary` | `packages/code/src/views/overlays/FloatFrame.tsx` (`FloatFrame`) |
-| `floatMaxRows(terminalRows)` | `Math.floor(terminalRows * 0.8)` | `:24-26` |
-| `FLOAT_CHROME_ROWS` | `5` | `:21` |
-| `FLOAT_Z` | `100` — z-index every `FloatFrame`/scrim paints at | `:12` |
-| `PickerRow(props)` | One selectable row: chevron + cells, optional retained visibility, mouse-down selects+confirms | `packages/code/src/views/overlays/PickerRow.tsx` (`PickerRow`) |
-| `PickerCell` | `{text?, render?, fg?, width?, grow?, marginLeft?, shrink?}` | `:13-32` |
-| `ChoiceRow<T>` | `{value, label, description, tone?: "normal"\|"warn"}` | `packages/code/src/views/overlays/ChoiceRows.tsx:10-15` |
-| `ChoiceRows(props)` | Renders `ChoiceRow<T>[]` as `PickerRow`s with a radio marker | `packages/code/src/views/overlays/ChoiceRows.tsx:32-69` |
-| `FilterField(props)` | Auto-focused single-line filter input, reports term via `onTerm` | `packages/code/src/views/overlays/FilterField.tsx:14-48` |
-| `ListPicker<T>(props)` | Generic filterable/scrollable/windowed picker inside a `FloatFrame`; an optional fixed `intro` declares its responsive `introRows` cost | `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`) |
-| `ListPickerVerb<T>` | shared `PanelVerbName` or one-off `{key,label,run,when?}` | `:33-35` |
-| `ProfilePicker(props)` | `ListPicker` of agent profiles + a nested default-scope `ListPicker` | `packages/code/src/views/overlays/ProfilePicker.tsx:53-186` |
-| `SafetyPresetPicker(props)` | Lazy retained `ListPicker` over the six canonical execution postures, with armed confirmation for direct-host choices | `packages/code/src/views/overlays/SafetyPresetPicker.tsx` (`SafetyPresetPicker`) |
-| `Help(props)` | Full-page live-projected key/action/destination reference with stable indexed rows | `packages/code/src/views/overlays/Help.tsx` (`Help`) |
-| `DiffViewer(props)` | Full-screen page rendering one transcript tool node's diff via the tool registry; an optional active accessor gates retained key layers | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`) |
-| `PlanOverlay(props)` | Full-screen current/latest-plan task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`) |
-| `ActivityDetail(props)` | Floating scrollable Markdown reader for a full delegation brief or terminal task/sub-agent result | `packages/code/src/views/overlays/ActivityDetail.tsx` |
-| `AutocompletePopup(props)` | Floating windowed/grouped suggestion list above the input, backed by ten stable row/header slots | `packages/code/src/views/input/AutocompletePopup.tsx` (`AutocompletePopup`, `MAX_ROWS_CAP`); `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`) |
-| `CommandGroupHeader(props)` | Non-interactive section divider above a command group's first row | `packages/code/src/views/input/CommandGroupHeader.tsx:18-41` |
+| Component                                            | Purpose                                                                                                                                                                 | File:line                                                                                                                                                             |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SurfaceBoundary(props)`                             | Lazy surface owner with explicit `dispose-on-close`/`retain-one`, activation identity and optional stable root-portal placement; portal placement requires `retain-one` | `packages/code/src/ui/patterns/surface-lifecycle.tsx` (`SurfaceBoundary`)                                                                                             |
+| `SurfaceRegion` / `SurfaceOverlay` / `SurfacePortal` | Hidden retained region, full-bleed in-region surface and stable root portal primitives                                                                                  | `packages/code/src/ui/patterns/surface-lifecycle.tsx`                                                                                                                 |
+| `FloatFrame(props)`                                  | Generic centered animated card (title/footer/nav), scrim behind it, `sm`/`lg` sizing; its floating host belongs to the surrounding `SurfaceBoundary`                    | `packages/code/src/views/overlays/FloatFrame.tsx` (`FloatFrame`)                                                                                                      |
+| `floatMaxRows(terminalRows)`                         | `Math.floor(terminalRows * 0.8)`                                                                                                                                        | `:24-26`                                                                                                                                                              |
+| `FLOAT_CHROME_ROWS`                                  | `5`                                                                                                                                                                     | `:21`                                                                                                                                                                 |
+| `FLOAT_Z`                                            | `100` — z-index every `FloatFrame`/scrim paints at                                                                                                                      | `:12`                                                                                                                                                                 |
+| `PickerRow(props)`                                   | One selectable row: chevron + cells, optional retained visibility, mouse-down selects+confirms                                                                          | `packages/code/src/views/overlays/PickerRow.tsx` (`PickerRow`)                                                                                                        |
+| `PickerCell`                                         | `{text?, render?, fg?, width?, grow?, marginLeft?, shrink?}`                                                                                                            | `:13-32`                                                                                                                                                              |
+| `ChoiceRow<T>`                                       | `{value, label, description, tone?: "normal"\|"warn"}`                                                                                                                  | `packages/code/src/views/overlays/ChoiceRows.tsx:10-15`                                                                                                               |
+| `ChoiceRows(props)`                                  | Renders `ChoiceRow<T>[]` as `PickerRow`s with a radio marker                                                                                                            | `packages/code/src/views/overlays/ChoiceRows.tsx:32-69`                                                                                                               |
+| `FilterField(props)`                                 | Auto-focused single-line filter input, reports term via `onTerm`                                                                                                        | `packages/code/src/views/overlays/FilterField.tsx:14-48`                                                                                                              |
+| `ListPicker<T>(props)`                               | Generic filterable/scrollable/windowed picker inside a `FloatFrame`; an optional fixed `intro` declares its responsive `introRows` cost                                 | `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`)                                                                                                      |
+| `ListPickerVerb<T>`                                  | shared `PanelVerbName` or one-off `{key,label,run,when?}`                                                                                                               | `:33-35`                                                                                                                                                              |
+| `ProfilePicker(props)`                               | `ListPicker` of agent profiles + a nested default-scope `ListPicker`                                                                                                    | `packages/code/src/views/overlays/ProfilePicker.tsx:53-186`                                                                                                           |
+| `SafetyPresetPicker(props)`                          | Lazy retained `ListPicker` over the six canonical execution postures, with armed confirmation for direct-host choices                                                   | `packages/code/src/views/overlays/SafetyPresetPicker.tsx` (`SafetyPresetPicker`)                                                                                      |
+| `Help(props)`                                        | Full-page live-projected key/action/destination reference with stable indexed rows                                                                                      | `packages/code/src/views/overlays/Help.tsx` (`Help`)                                                                                                                  |
+| `DiffViewer(props)`                                  | Full-screen page rendering one transcript tool node's diff via the tool registry; an optional active accessor gates retained key layers                                 | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`)                                                                                                      |
+| `PlanOverlay(props)`                                 | Full-screen current/latest-plan task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen                                     | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`)                                                                                                    |
+| `ActivityDetail(props)`                              | Floating scrollable Markdown reader for a full delegation brief or terminal task/sub-agent result                                                                       | `packages/code/src/views/overlays/ActivityDetail.tsx`                                                                                                                 |
+| `AutocompletePopup(props)`                           | Floating windowed/grouped suggestion list above the input, backed by ten stable row/header slots                                                                        | `packages/code/src/views/input/AutocompletePopup.tsx` (`AutocompletePopup`, `MAX_ROWS_CAP`); `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`) |
+| `CommandGroupHeader(props)`                          | Non-interactive section divider above a command group's first row                                                                                                       | `packages/code/src/views/input/CommandGroupHeader.tsx:18-41`                                                                                                          |
 
 ### `app/commands.tsx` — command and view wiring
 
-| Export | Signature | File:line |
-| --- | --- | --- |
-| `AppCommandDeps` | large dependency-injection interface (settings, agents, plugins, plans, workflows, tasks, session, backend probe, debug session, …) | `packages/code/src/app/commands.tsx` |
-| `AppCommandWiring` | `{doctorDirty, recheck, sandboxInspection, skillAgent, dispose}` | `:143-156` |
-| `registerAppCommands(deps)` | `AppCommandWiring` — registers every app-level (non-feature) command/view/action | `:165-…` |
+| Export                      | Signature                                                                                                                           | File:line                            |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `AppCommandDeps`            | large dependency-injection interface (settings, agents, plugins, plans, workflows, tasks, session, backend probe, debug session, …) | `packages/code/src/app/commands.tsx` |
+| `AppCommandWiring`          | `{doctorDirty, recheck, sandboxInspection, skillAgent, dispose}`                                                                    | `:143-156`                           |
+| `registerAppCommands(deps)` | `AppCommandWiring` — registers every app-level (non-feature) command/view/action                                                    | `:165-…`                             |
 
 Each registration carries a `slash?` token, a `surface` (`"slash" \| "internal"`), a `group` and an
 optional `parent`; the `/name` autocomplete provider (in `views/App.tsx`, outside this document)
@@ -190,15 +190,15 @@ reads these fields back. Example
 dispositions actually registered by this file (name → slash/surface/group/parent), pinned by
 `packages/code/tests/integration/app-commands.test.tsx` (canonical token and disposition tests):
 
-| name | slash | surface | group | parent |
-| --- | --- | --- | --- | --- |
-| `agent.picker` | `/agent` | slash | navigate | — |
-| `transcript.diff` | `/diff` | slash | navigate | `inspect` |
-| `plan.toggleReview` | `/plan` | slash | actions | — |
-| `plan.open` | — | internal | navigate | — |
-| `app.quit` | `/quit` | slash | actions | — |
-| `sessions.open` | `/sessions` | slash | navigate | `sessions` |
-| `storage.open` | `/storage` | slash | navigate | — |
+| name                | slash       | surface  | group    | parent     |
+| ------------------- | ----------- | -------- | -------- | ---------- |
+| `agent.picker`      | `/agent`    | slash    | navigate | —          |
+| `transcript.diff`   | `/diff`     | slash    | navigate | `inspect`  |
+| `plan.toggleReview` | `/plan`     | slash    | actions  | —          |
+| `plan.open`         | —           | internal | navigate | —          |
+| `app.quit`          | `/quit`     | slash    | actions  | —          |
+| `sessions.open`     | `/sessions` | slash    | navigate | `sessions` |
+| `storage.open`      | `/storage`  | slash    | navigate | —          |
 
 `plan.toggleReview` reads the effective workspace policy at dispatch time, maps `review` to `on`
 and either `on` or `off` to `review`, then writes the workspace scope through
@@ -234,6 +234,7 @@ factory, scope}` route, so one Escape returns to the hub rather than to the root
 ### Message content the dock hands to `onSubmit`
 
 `composeWithAttachments(text, attachments)` (`packages/code/src/core/attachments.ts:301-315`) returns:
+
 - the plain `text` string when there are no image attachments;
 - otherwise a `ContentPart[]`: an optional `{type:"text", text}` (only when `text.trim()` is
   non-empty) followed by one `{type:"image", mime, data}` per staged image, in staging order.
@@ -259,11 +260,11 @@ throwing a typed `MentionImageLoadError` (the loader itself threw) or
 
 ### Attachment admission budgets
 
-| Limit | Value | Constant | File:line |
-| --- | --- | --- | --- |
-| Images per composer submission | 4 | `MAX_COMPOSER_IMAGES` | `packages/code/src/core/attachments.ts:106` |
-| Bytes per staged image (decoded) | 5 MiB | `MAX_COMPOSER_IMAGE_BYTES` | `:109` |
-| Aggregate decoded bytes across all staged images | 10 MiB | `MAX_COMPOSER_IMAGE_TOTAL_BYTES` | `:112` |
+| Limit                                            | Value  | Constant                         | File:line                                   |
+| ------------------------------------------------ | ------ | -------------------------------- | ------------------------------------------- |
+| Images per composer submission                   | 4      | `MAX_COMPOSER_IMAGES`            | `packages/code/src/core/attachments.ts:106` |
+| Bytes per staged image (decoded)                 | 5 MiB  | `MAX_COMPOSER_IMAGE_BYTES`       | `:109`                                      |
+| Aggregate decoded bytes across all staged images | 10 MiB | `MAX_COMPOSER_IMAGE_TOTAL_BYTES` | `:112`                                      |
 
 `checkImageAdmission` (`:242-280`) evaluates, in order: count ≥ max → `"count"`; normalized bytes
 `=== 0` → `"empty"`; bytes `>` per-item cap → `"item_bytes"`; existing+new `>` aggregate cap →
@@ -312,13 +313,18 @@ scroll-following page collections compose through `SelectableList`. Production:
 `packages/code/tests/integration/autocomplete-popup-render.test.tsx`, and
 `packages/code/tests/integration/list-picker-render.test.tsx`.
 
-At the application region, the transcript shell remains mounted while Diff or Plan is visible.
-Those pages are dynamically imported and mount lazily on first use, remain hidden afterward and
-gate their key layers with stable reactive matchers; Plan reloads the current live document on each
-inactive-to-active transition and invalidates in-flight reads on deactivation. Configuration views
-are intentionally different: the mounted
-stack preserves inactive parents, but a popped frame still disposes once. Production:
-`packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`),
+At the application region, the transcript shell and its Yoga geometry remain mounted behind Diff,
+Plan and every full-region configuration view, including Workflows. The shell is transparent and
+cannot receive pointer input there; `overlayFallbackActive` also pauses its physical-history
+observation and removes any elicitation from the hidden interactive projection. Returning therefore
+reveals the same transcript owners and scroll state instead of reconstructing them. Diff and Plan
+are dynamically imported and mount lazily on first use, remain hidden afterward and gate their key
+layers with stable reactive matchers; Plan reloads the current live document on each
+inactive-to-active transition and invalidates in-flight reads on deactivation. The configuration
+stack still preserves only its own inactive parents and disposes a popped frame once; retaining the
+shell does not cache closed configuration frames. Production:
+`packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`, `overlayFallbackActive`),
+`packages/code/src/views/app/TranscriptRegion.tsx` (`active`, `TranscriptProjection`),
 `packages/code/src/views/overlays/{DiffViewer,PlanOverlay}.tsx`, and
 `packages/code/src/views/overlay-host.ts` (`mountView`, `popView`). Test:
 `packages/code/tests/integration/overlay-region-render.test.tsx` and
@@ -484,7 +490,7 @@ non-empty term anywhere after the route's leading slash. A child therefore remai
   `submit()` → `parseSlashCommand` → `onSlashCommand`; both end at `commands.runCommand`, by two
   genuinely different call paths.
 - `completeAc()` (Tab): for a `/`-triggered item, sets the text to `item.insert ||
-  slashCompletion(item.label)`, **does not** call `onAccept`, and re-runs `refreshAc()` — so the
+slashCompletion(item.label)`, **does not** call `onAccept`, and re-runs `refreshAc()` — so the
   popup stays open and the model is still just a completed token, not a run command. Any other
   trigger falls back to `acceptAc()`.
 
@@ -558,7 +564,7 @@ optional filter row, and (when it still fits) a fixed 3-row preview pane from
 `floatMaxRows(terminalHeight)`. The visible slice is `windowRows(rows(), selection,
 maxVisibleRows())` — only the windowed rows are ever mounted, which is the same "does not leak native
 memory per unrendered row" property documented beside the `win` memo. The mouse wheel moves the
-*selection* rather than scrolling a box, because a windowed list has nothing to scroll (`onWheel`).
+_selection_ rather than scrolling a box, because a windowed list has nothing to scroll (`onWheel`).
 A caller's `verbs` bound to a key that a generic
 row-traversal command would otherwise claim (e.g. `tab`) take precedence, because `registerLevel`
 folds `verbs` after `nav` in the same `LevelSpec` (`spec`, keybinding resolution order is owned
@@ -568,7 +574,7 @@ An optional `active` accessor gates both the picker's own key layer and its
 `FilterField`'s focus: while `active` reads `false`, the registration effect tears down the
 layer (`off?.()`, no `registerLevel` call) instead of registering it, and `FilterField` blurs its
 input rather than stealing focus (`packages/code/src/views/overlays/FilterField.tsx:20-29`) — so a picker stacked
-*underneath* another one (e.g. `ProfilePicker`'s scope chooser over its agent list) claims no keys
+_underneath_ another one (e.g. `ProfilePicker`'s scope chooser over its agent list) claims no keys
 and no focus while it is hidden, without being unmounted.
 
 ### `ProfilePicker` (`views/overlays/ProfilePicker.tsx`)
@@ -609,7 +615,7 @@ module does not enter first boot and its native tree is reused after first open.
 
 Composes up to seven sections (`sections`, `:134-190`), each dropped when empty: **Available here**
 (`available()`, the live-projected active-action list), **Available elsewhere** (`elsewhere`,
-`:100-132`, a *registered*-visibility scan that excludes anything already in "Available here", any
+`:100-132`, a _registered_-visibility scan that excludes anything already in "Available here", any
 `EDITING_CATEGORIES` command, and any name matching the `CHROME_COMMAND` prefix regex
 `/^(ui\.|view\.|confirm\.|autocomplete\.|elicit\.|editor\.)/`, so a screen's own transient chrome
 commands never clutter the reference), **Editing** (`editing()`, `:82-98`, the same
@@ -624,7 +630,7 @@ With no node loaded, the page shows an empty-state hint ("no diff in the transcr
 than a blank pane (`:49-57`). The subtitle names the file, not only the tool: when the node's
 `args.path` is a string it is appended after the tool's label (`toolLabel(n.mcpName, n.toolName)`),
 because the full-screen view otherwise said only e.g. `edit_file` while the inline block a reader
-opens it *from* already shows the path (`subtitle()`, `:27-41`). The diff itself always goes
+opens it _from_ already shows the path (`subtitle()`, `:27-41`). The diff itself always goes
 through the shared tool-result renderer (`resolveToolRenderer`) in `full`/`wrap` mode, passing the
 node's own `diff` through unchanged — a node without one falls back to the renderer's own
 args-reconstructed diff (`:59-74`). Pinned: `packages/code/tests/integration/diff-viewer-render.test.tsx:55-99`
@@ -648,7 +654,7 @@ are no list/filter/page verbs and no per-plan retention/delete mutations. Produc
 `packages/code/tests/integration/plan-overlay-render.test.tsx`.
 
 The readable document (`Prose` over `stripDocChrome(doc.markdown)`) renders whenever a document has
-been loaded for the *live* plan; the interactive task-row list (`taskRow`) is only the fallback when
+been loaded for the _live_ plan; the interactive task-row list (`taskRow`) is only the fallback when
 `!document()` — so the two views never double-render the same tasks (`tasks` and the final `Show`
 gates in `PlanOverlay`).
 
@@ -697,12 +703,12 @@ settled turn's persisted continuation; an empty session reports that there is no
    refresh).
 3. **`detectTrigger`'s `/` handling is anchored and compound-aware**: a bare leading `/` with no
    following whitespace is a trigger; `/name arg…` first tries a non-slash trigger inside the
-   argument tail (so `/skill @src/x` completes `@`), then falls back to treating a *registered*
+   argument tail (so `/skill @src/x` completes `@`), then falls back to treating a _registered_
    `/name` prefix as its own trigger, and an unregistered compound head closes the popup rather than
    matching the bare `/`. `packages/code/src/views/input/autocomplete.ts:49-65`. Pinned:
    `packages/code/tests/unit/autocomplete.test.ts:73-145`.
 4. **`windowGroupedRows` never renders more than `max` total lines** (rows + group headers + over/
-    under indicators), across every item count, group layout, scroll position and budget tested.
+   under indicators), across every item count, group layout, scroll position and budget tested.
    Production: `packages/code/src/ui/patterns/windowed-list.tsx` (`windowGroupedRows`). Test:
    `packages/code/tests/unit/autocomplete.test.ts` (grouped-window cases).
 5. **The autocomplete popup caps at 10 rows regardless of terminal height.**
@@ -757,7 +763,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     output of exactly maxBytes was flagged truncated by the >= cap check").
 19. **A timeout or abort kills the whole process group**, not only the direct child, and a
     grandchild that outlives the child does not wedge the call. `packages/code/src/adapters/local-shell.ts:125-136,
-    180-186`. Pinned: `packages/code/tests/integration/local-shell.test.ts:119-139`.
+180-186`. Pinned: `packages/code/tests/integration/local-shell.test.ts:119-139`.
 20. **`ListPicker` mounts only the windowed slice of items, never the whole list.**
     `packages/code/src/views/overlays/ListPicker.tsx` (`win`, via `windowRows`). Pinned:
     `packages/code/tests/integration/list-picker-render.test.tsx:216-236` (120 items, far fewer than 30 rendered).
@@ -803,36 +809,36 @@ settled turn's persisted continuation; an empty session reports that there is no
 28. **`fuzzyFieldMatch` ties go to the earlier-indexed field**, and a match spanning only the
     concatenation of two fields (neither field alone) is `null`. `packages/code/src/core/fuzzy.ts:132-145`. Pinned:
     `packages/code/tests/unit/fuzzy-positions.test.ts:42-49`.
-30. **A local `!` command never reaches the command guard or a `KernelClient` call.**
+29. **A local `!` command never reaches the command guard or a `KernelClient` call.**
     `packages/code/src/adapters/local-shell.ts:76-84` (design statement in the source comment; the function's own body
     contains no such call). **Unpinned by an automated test** — this is an absence-of-a-call
     property, not directly assertable from the outside; verified here only from the function
     and its call sites.
-31. **`ProfilePicker`'s scope chooser is a fully reversible round trip**: opening it (`s`) never
+30. **`ProfilePicker`'s scope chooser is a fully reversible round trip**: opening it (`s`) never
     mutates a default by itself, `escLabel="back"`/`onClose` return to the agent list with no
     default changed, and a successful `onSetDefault`/`onClearDefault` is what closes it back to the
     agent list — never the reverse. `packages/code/src/views/overlays/ProfilePicker.tsx:103,144-157`. Pinned:
     `packages/code/tests/integration/profile-picker-render.test.tsx:104-127`.
-32. **While the Task editor is expanded, a first Escape closes an open autocomplete popup; only a
+31. **While the Task editor is expanded, a first Escape closes an open autocomplete popup; only a
     second Escape (with no popup open) collapses the editor back to the inline composer.**
     `packages/code/src/views/InputDock.tsx:404-440` (the `escape` binding registered only while `expanded()`, sharing
     the layer with `dismissAutocomplete`). Pinned:
     `packages/code/tests/integration/input-dock-submit.test.tsx:208-232`.
-33. **`PromptHistory.prev` stashes the live draft only the first time the cursor steps off the end of
+32. **`PromptHistory.prev` stashes the live draft only the first time the cursor steps off the end of
     the ring; `push` no-ops on an immediate repeat of the previous entry; `seed` never re-adds an
     entry already known to the ring, while still recovering one the backing file no longer has.**
     `packages/code/src/core/prompt-history.ts:159-197` (`prev`, `push`, `seed`). Pinned:
     `packages/code/tests/integration/input-editor.test.ts:39-58,114-144`.
-34. **`Help`'s "Available elsewhere" section is a live, deduplicated projection, not a static table**:
+33. **`Help`'s "Available elsewhere" section is a live, deduplicated projection, not a static table**:
     it excludes anything already shown in "Available here", any `EDITING_CATEGORIES` command, and
     any `CHROME_COMMAND`-matching name, so the one screen whose purpose is documenting keys still
     lists a global key the `/help` overlay itself deactivates while open.
     `packages/code/src/views/overlays/Help.tsx:100-132`. Pinned: `packages/code/tests/integration/help-render.test.tsx:191-204`.
-35. **`ActivityDetail` renders the original content as scrollable Markdown and owns Escape while
+34. **`ActivityDetail` renders the original content as scrollable Markdown and owns Escape while
     open; Ctrl+C remains global.** The sidebar/transcript preview is deliberately not the detail source. Production:
     `packages/code/src/views/overlays/ActivityDetail.tsx`; pinned by
     `packages/code/tests/integration/activity-detail-render.test.tsx`.
-36. **Escape only clears the active input or returns one screen, and every Escape dispatch is
+35. **Escape only clears the active input or returns one screen, and every Escape dispatch is
     immediate.** At the root composer it clears text plus staged attachments and emits
     `"Draft cleared"`; with no draft/focus/overlay it does nothing. It never cancels a run or quits.
     Top overlays, focused transcript blocks, autocomplete and the expanded editor keep their
@@ -841,7 +847,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/src/views/App.tsx:373-390`. Pinned synchronously at
     `packages/code/tests/integration/interaction.test.ts:437-477` and end to end at
     `packages/code/tests/integration/app-shell-render.test.tsx:605-628,1123-1175,1586-1596`.
-37. **Opening and closing autocomplete reuses one bounded native projection after first use.** It
+36. **Opening and closing autocomplete reuses one bounded native projection after first use.** It
     keeps exactly ten row/header slots, hides unused slots, continuously scrolls them inside a fixed
     popup frame without `N more` labels and changes the `autocomplete` keymap datum only when its
     boolean value changes. Production: `packages/code/src/views/InputDock.tsx`
@@ -850,23 +856,29 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/src/views/input/AutocompletePopup.tsx` (`MAX_ROWS_CAP`, `visible`). Test:
     `packages/code/tests/integration/autocomplete-popup-render.test.tsx` and
     `packages/code/tests/integration/input-dock-submit.test.tsx`.
-38. **Plan and Diff never reconstruct the transcript shell after first use.** They mount lazily,
-    remain hidden after first use and cannot dispatch their retained key layers while inactive.
-    Production: `packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`),
+37. **No full-region page reconstructs or interacts through the transcript shell.** Diff, Plan and
+    configuration pages, including Workflows, cover one still-mounted fallback whose Yoga geometry,
+    owners and scroll state remain intact. While covered, the fallback is transparent, rejects mouse
+    input, pauses physical transcript observation and exposes no elicitation; returning reveals the
+    same shell instance. Diff and Plan mount lazily, remain hidden after first use and cannot dispatch
+    their retained key layers while inactive. Production:
+    `packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`, `overlayFallbackActive`),
+    `packages/code/src/views/app/TranscriptRegion.tsx` (`active`, `TranscriptProjection`),
     `packages/code/src/views/overlays/PlanOverlay.tsx` (`active`, `when`), and
     `packages/code/src/views/overlays/DiffViewer.tsx` (`active`, `registerScrollKeys`). Test:
     `packages/code/tests/integration/overlay-region-render.test.tsx` ("full-page overlays hide the
-    shell without unmounting and rebuilding it") and
+    shell without unmounting and rebuilding it" and full-region repeated-visit geometry) and
     `packages/code/tests/unit/when-dsl.test.ts`.
-39. **Configuration-page retention stops at the stack boundary.** Opening the stack removes the
-    transcript shell; an inactive parent remains mounted, but popping a child disposes that frame once
-    and closing the root disposes the remaining stack. Plan/Diff retention must not turn popped
-    configuration frames into an application-lifetime cache. Production:
+38. **Configuration-page retention stops at the stack boundary.** Opening the stack removes the
+    transcript shell from paint and interaction but not from ownership or layout. An inactive
+    configuration parent remains mounted, but popping a child disposes that frame once and closing
+    the root disposes the remaining configuration stack. Shell retention and Plan/Diff retention
+    must not turn popped configuration frames into an application-lifetime cache. Production:
     `packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`) and
     `packages/code/src/views/overlay-host.ts` (`mountView`, `popView`, `closeView`).
     Test: `packages/code/tests/unit/overlay-host.test.ts` and
     `packages/code/tests/integration/overlay-region-render.test.tsx`.
-40. **High-churn picker and drawer trees mount lazily once, then hide without owning inactive
+39. **High-churn picker and drawer trees mount lazily once, then hide without owning inactive
     keys.** Profile Picker, Catalog Picker and the narrow activity drawer retain their renderer trees
     only after first use. A retained catalog resets its filter and cursor whenever the active picker
     spec changes. Production: `packages/code/src/ui/patterns/surface-lifecycle.tsx`
@@ -877,7 +889,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/src/views/config/field-editor.tsx` (`PickerInput`). Test:
     `packages/code/tests/integration/app-shell-render.test.tsx` and
     `packages/code/tests/integration/field-editor-pick-render.test.tsx`.
-41. **Help is a full-page, slash-only destination.** `/help` lazily mounts the `Help` view, projects
+40. **Help is a full-page, slash-only destination.** `/help` lazily mounts the `Help` view, projects
     active and elsewhere-registered actions from the live keymap, and adds destinations, input
     syntax, editing commands and keyboard-environment diagnostics. No floating Help overlay or F1
     action exists. Production: `packages/code/src/app/commands.tsx` (`help.open`),
@@ -887,7 +899,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/tests/integration/app-shell-render.test.tsx` ("/help opens the full Help screen and
     returns to the same shell"), and `packages/code/tests/integration/interaction.test.ts`
     ("F1 has no built-in action").
-42. **Floating content escapes clipped pages without remounting its portal host.** A floating
+41. **Floating content escapes clipped pages without remounting its portal host.** A floating
     `SurfaceBoundary` creates one root portal outside its content and requires `retain-one`. The host
     becomes invisible while inactive so it cannot intercept mouse input, while the bounded subtree
     and its lifecycle-pass set remain constant after first use. `dispose-on-close` is restricted to
@@ -898,19 +910,22 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/tests/integration/surface-lifecycle-render.test.tsx` (portal clipping, focus/guard
     lifecycle and retained-frame lifecycle-set cases) and
     `packages/code/tests/integration/app-shell-render.test.tsx` (drawer/modal mouse routes).
-43. **A bare slash reuses both the command catalog and its completion rows.** The catalog is
+42. **A bare slash reuses both the command catalog and its completion rows.** The catalog is
     invalidated only by command registration/disposal or a new keyboard-environment object; the
     browse projection is invalidated only when that catalog or dynamic eligibility changes.
     Production: `packages/code/src/keys/commands.ts` (`commandCatalog`, `entries`) and
     `packages/code/src/views/input/command-completion.ts` (`createCommandCompletionProvider`). Test:
     `packages/code/tests/unit/commands.test.ts` (catalog identity and bare-slash eligibility cases).
-44. **A retained `FloatFrame` animates once, then reopens without restarting its timeline.** The
-    first activation preserves the entrance treatment; later activations reveal the settled retained
-    tree and keep the single timeline owner paused while inactive. Production:
+43. **A retained `FloatFrame` owns one animation and one resolved navigation subtree.** The first
+    activation preserves the entrance treatment; later activations reveal the settled retained tree
+    and keep the single timeline owner paused while inactive. Its JSX-valued navigation prop is
+    resolved once, so footer visibility checks cannot mount duplicate responsive navigation trees or
+    duplicate their renderer resize listeners. Production:
     `packages/code/src/views/overlays/FloatFrame.tsx` (`FloatFrame`, `onSurfaceActivate`). Test:
-    `packages/code/tooling/benchmarks/overlays.tsx` (retained Profile, Safety and Catalog picker
-    cases).
-45. **The safety-preset picker is one lazy retained overlay over the shared preset contract.** It
+    `packages/code/tests/integration/float-frame-render.test.tsx` (single navigation subtree and
+    listener cleanup) and `packages/code/tooling/benchmarks/overlays.tsx` (retained Profile, Safety
+    and Catalog picker cases).
+44. **The safety-preset picker is one lazy retained overlay over the shared preset contract.** It
     mounts only after `safety.picker` opens it, reuses `ListPicker`, cannot own keys while inactive,
     and cannot implement a settings merge that differs from Run Controls. Production:
     `packages/code/src/views/App.tsx` (`SafetyPresetPicker`, the `safetyPicker` boundary),
@@ -920,26 +935,26 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/tests/integration/safety-preset-picker-render.test.tsx`,
     `packages/code/tests/integration/interaction.test.ts`, and
     `packages/code/tests/unit/safety-presets.test.ts`.
-46. **A fixed picker intro pays for its rows before list windowing.** A responsive intro reports zero
+45. **A fixed picker intro pays for its rows before list windowing.** A responsive intro reports zero
     rows while hidden; when visible, its full row count is subtracted before filter, preview and list
     space are allocated, so fixed branding cannot paint over the catalog or footer. Production:
     `packages/code/src/views/overlays/ListPicker.tsx` (`intro`, `introRows`, `rowBudget`) and
     `packages/code/src/views/config/CatalogPicker.tsx` (`firstRunIntroRows`). Test:
     `packages/code/tests/integration/catalog-picker-render.test.tsx` (`first-run branding stays with
-    the picker only while the complete splash fits`).
-47. **The composer separates send from newline across all declared Enter chords.** Unmodified Return
+the picker only while the complete splash fits`).
+46. **The composer separates send from newline across all declared Enter chords.** Unmodified Return
     and numpad Enter submit; Ctrl+J and Shift+Return insert a newline and leave the draft unsent.
     Production: `packages/code/src/keys/keyspec.ts` (`PROMPT_EDITING_KEYS`) and
     `packages/code/src/views/InputDock.tsx` (`promptHandlers`). Test:
     `packages/code/tests/integration/input-dock-submit.test.tsx` ("Shift+Enter and Ctrl+J insert
     newlines without submitting the draft").
-48. **Inline composer height follows visual soft wraps, not only explicit newline characters.** It
+47. **Inline composer height follows visual soft wraps, not only explicit newline characters.** It
     uses the renderer's visual-line projection, caps at `maxInlineRows()` and wraps unbroken tokens
     by character, while the expanded status continues to report logical lines. Production:
     `packages/code/src/views/InputDock.tsx` (`visualRows`, `inlineRows`, `syncDraftState`, textarea
     `wrapMode`). Test: `packages/code/tests/integration/input-dock-submit.test.tsx` ("a soft-wrapped
     logical line grows the inline composer and keeps its prefix visible").
-49. **Autocomplete scroll mode changes only the retained row/header projection.** It uses every
+48. **Autocomplete scroll mode changes only the retained row/header projection.** It uses every
     available content line without overflow-count labels and keeps the popup's top and bottom frame
     rows fixed as selection moves. Production:
     `packages/code/src/ui/patterns/windowed-list.tsx` (`WindowOverflowMode`, `windowRows`,
@@ -990,6 +1005,7 @@ settled turn's persisted continuation; an empty session reports that there is no
 ## 7. Coupling
 
 **Depends on** (runtime, static imports):
+
 - `@opentui/{core,solid,keymap}` — textarea/renderer/keymap primitives, throughout `InputDock.tsx`
   and every overlay.
 - `views/theme/*` ([hosts/code-theme.md](code-theme.md) document) — `tokens`, `glyph`/`borderChars`, `overlayBg`/
@@ -1001,7 +1017,7 @@ settled turn's persisted continuation; an empty session reports that there is no
   this vocabulary; this document does not re-derive keybinding semantics.
 - `@clarvis/kernel/local` (`resolveShell`, `shellArgs`, `killTree`, `ownProcessGroup`) —
   `packages/code/src/adapters/local-shell.ts:2` reuses the exact shell-dialect resolver the kernel's own tools use, so
-  `!` never diverges in *which* shell binary/flavor runs, only in forcing `bash` over bare `sh`.
+  `!` never diverges in _which_ shell binary/flavor runs, only in forcing `bash` over bare `sh`.
 - `@clarvis/protocol` — `MessageContent`, `PlanDocumentDto`/`PlansService`, `Scope` — the wire types
   `InputDock` composes and `PlanOverlay`/`ProfilePicker`
   render against.
@@ -1013,8 +1029,9 @@ settled turn's persisted continuation; an empty session reports that there is no
   does not own.
 
 **Depended on by**:
+
 - `views/App.tsx` ([hosts/code-bootstrap.md](code-bootstrap.md) document) mounts `InputDock` and,
-  via `views/app/OverlayRegion.tsx`, `DiffViewer`/`PlanOverlay`; it also *is* the
+  via `views/app/OverlayRegion.tsx`, `DiffViewer`/`PlanOverlay`; it also _is_ the
   concrete `onSlashCommand`/`onBashCommand` implementation (`classifySlashSubmit`, the `commandProvider`
   and `mentionProvider` autocomplete providers) that `InputDock`'s props describe abstractly. This
   item does not describe `App.tsx`'s own internals beyond the seam.
@@ -1050,7 +1067,7 @@ nothing beyond `@clarvis/protocol` types and are themselves leaves within `packa
   absence-property.~~ **Pinned 2026-08-22** by
   `packages/code/tests/architecture/local-bash-bypasses-the-kernel.test.ts`, which asserts the absence
   structurally — the module names no kernel client, no `GuardContext`, and no shell analysis. Writing
-  it corrected the claim in one respect: the module *does* import `@clarvis/kernel`, but from
+  it corrected the claim in one respect: the module _does_ import `@clarvis/kernel`, but from
   `./local`, the host process/shell adapter surface, which is precisely what keeps `!` from diverging
   from the shell the agent's own commands run through. The test asserts that distinction — exactly one
   kernel import, and it is `/local` — rather than a blanket absence that would have been false.
@@ -1061,7 +1078,7 @@ nothing beyond `@clarvis/protocol` types and are themselves leaves within `packa
 - **Whether `keys/commands.ts`'s registry (`createCommands`, tested in
   `tests/unit/commands.test.ts`/`commands-revision.test.ts`) belongs partially to this document** is
   ambiguous from the file list alone: `app/commands.tsx` (`registerAppCommands`, in this document's scope)
-  is a thin *consumer* of that registry, which is specified in
+  is a thin _consumer_ of that registry, which is specified in
   [hosts/code-keyboard.md](code-keyboard.md) §2.5. This spec treats the registry itself, and the deep-linking/
   hub-child mechanics tested at length in `tests/integration/app-commands.test.tsx` (planning-mode
   settings writes, doctor gates, debug session, first-run/recovery routing), as belonging to sibling

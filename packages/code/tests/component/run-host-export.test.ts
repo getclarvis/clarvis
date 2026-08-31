@@ -139,6 +139,7 @@ function metaWith(turns: number): SessionMeta {
     createdAt: 1,
     updatedAt: 1,
     turns: Array.from({ length: turns }, (_, i) => ({
+      kind: "conversation",
       userPreview: `question ${i}`,
       executionId: `exec_${i}`,
       status: "done" as const,
@@ -237,6 +238,7 @@ describe("exportNodeBatches", () => {
   });
 
   test("a live session keeps 20 semantic turns and lazily exports its complete folded prefix", async () => {
+    const totalTurns = 80;
     const details = new Map<string, RunDetail>();
     let reads = 0;
     let turnIndex = 0;
@@ -263,7 +265,19 @@ describe("exportNodeBatches", () => {
       },
     );
 
-    for (let index = 0; index < 25; index += 1) await host.submitTurn(`question ${index}`);
+    for (let index = 0; index < totalTurns; index += 1) {
+      await host.submitTurn(`question ${index}`);
+      const turnCount = index + 1;
+      if (turnCount < RESIDENT_TRANSCRIPT_TURN_LIMIT) continue;
+      expect(host.memory()).toMatchObject({
+        transcript_resident_turns: RESIDENT_TRANSCRIPT_TURN_LIMIT,
+        transcript_folded_turns: turnCount - RESIDENT_TRANSCRIPT_TURN_LIMIT,
+        session_turn_refs: turnCount,
+      });
+      expect(store.nodes.filter((node) => node.kind === "user")).toHaveLength(
+        RESIDENT_TRANSCRIPT_TURN_LIMIT,
+      );
+    }
 
     const residentUsers = store.nodes.filter((node) => node.kind === "user");
     const foldNotices = store.nodes.filter(
@@ -271,17 +285,185 @@ describe("exportNodeBatches", () => {
     );
     expect(residentUsers).toHaveLength(RESIDENT_TRANSCRIPT_TURN_LIMIT);
     expect(foldNotices).toHaveLength(1);
-    expect(foldNotices[0]!.text).toContain("5 earlier turns");
+    expect(foldNotices[0]!.text).toContain("60 earlier turns");
     expect(store.nodes.some((node) => node.text.includes("question 0"))).toBe(false);
-    expect(store.nodes.some((node) => node.text.includes("question 24"))).toBe(true);
+    expect(store.nodes.some((node) => node.text.includes("question 79"))).toBe(true);
+    expect(host.memory()).toMatchObject({
+      transcript_resident_turns: RESIDENT_TRANSCRIPT_TURN_LIMIT,
+      transcript_folded_turns: totalTurns - RESIDENT_TRANSCRIPT_TURN_LIMIT,
+      session_turn_refs: totalTurns,
+    });
+
+    const readsBeforeExport = reads;
+    const exported = renderTranscriptMarkdown(await exportNodes(host));
+    expect(reads - readsBeforeExport).toBe(totalTurns - RESIDENT_TRANSCRIPT_TURN_LIMIT);
+    for (let index = 0; index < totalTurns; index += 1) {
+      expect(exported).toContain(`question ${index}`);
+      expect(exported).toContain(answerLine(index));
+    }
+    dispose();
+  });
+
+  test("a refused incremental fold falls back to one bounded current-turn suffix", async () => {
+    let turnIndex = 0;
+    const { host, store, dispose } = mount(() => Promise.resolve(null), {
+      startRun: (input) => {
+        const executionId = input.executionId!;
+        const detail = detailFor(`exec_${turnIndex++}`);
+        detail.execution_id = executionId;
+        detail.result = { ...detail.result!, execution_id: executionId };
+        return {
+          executionId,
+          cancel: async () => {},
+          done: Promise.resolve(detail.result),
+          closed: Promise.resolve(),
+        };
+      },
+    });
+
+    for (let index = 0; index < RESIDENT_TRANSCRIPT_TURN_LIMIT; index += 1) {
+      await host.submitTurn(`question ${index}`);
+    }
+    const foldPrefixBefore = store.foldPrefixBefore.bind(store);
+    let foldAttempts = 0;
+    store.foldPrefixBefore = (beforeKey, notice) => {
+      foldAttempts += 1;
+      return foldAttempts === 1 ? false : foldPrefixBefore(beforeKey, notice);
+    };
+    await host.submitTurn("fold refused");
+
+    expect(foldAttempts).toBe(2);
+    expect(host.memory()).toMatchObject({
+      transcript_resident_turns: 1,
+      transcript_folded_turns: RESIDENT_TRANSCRIPT_TURN_LIMIT,
+      session_turn_refs: RESIDENT_TRANSCRIPT_TURN_LIMIT + 1,
+    });
+    expect(store.nodes.filter((node) => node.kind === "user")).toHaveLength(1);
+    expect(
+      store.publicationBatches.filter((publication) =>
+        publication.id.startsWith("publication:folded-prefix:"),
+      ),
+    ).toHaveLength(1);
+    expect(store.memory?.().publication_known_keys).toBeLessThanOrEqual(store.nodes.length);
+    dispose();
+  });
+
+  test("two refused structural folds still roll back the speculative resident-turn ref", async () => {
+    let turnIndex = 0;
+    const { host, store, dispose } = mount(() => Promise.resolve(null), {
+      startRun: (input) => {
+        const executionId = input.executionId!;
+        const detail = detailFor(`exec_${turnIndex++}`);
+        detail.execution_id = executionId;
+        detail.result = { ...detail.result!, execution_id: executionId };
+        return {
+          executionId,
+          cancel: async () => {},
+          done: Promise.resolve(detail.result),
+          closed: Promise.resolve(),
+        };
+      },
+    });
+
+    for (let index = 0; index < RESIDENT_TRANSCRIPT_TURN_LIMIT; index += 1) {
+      await host.submitTurn(`question ${index}`);
+    }
+    store.foldPrefixBefore = () => false;
+    await host.submitTurn("fold refused twice");
+
+    expect(host.memory()).toMatchObject({
+      transcript_resident_turns: RESIDENT_TRANSCRIPT_TURN_LIMIT,
+      transcript_folded_turns: 0,
+      session_turn_refs: RESIDENT_TRANSCRIPT_TURN_LIMIT + 1,
+    });
+    dispose();
+  });
+
+  test("transcript-only skill runs use the same bounded canonical export index", async () => {
+    const details = new Map<string, RunDetail>();
+    let reads = 0;
+    let turnIndex = 0;
+    const { host, store, dispose } = mount(
+      async (executionId) => {
+        reads += 1;
+        return details.get(executionId) ?? null;
+      },
+      {
+        startRun: (input) => {
+          const index = turnIndex++;
+          const executionId = input.executionId!;
+          const detail = detailFor(`exec_${index}`);
+          detail.execution_id = executionId;
+          detail.messages = [];
+          detail.result = { ...detail.result!, execution_id: executionId };
+          details.set(executionId, detail);
+          return {
+            executionId,
+            cancel: async () => {},
+            done: Promise.resolve(detail.result),
+            closed: Promise.resolve(),
+          };
+        },
+      },
+    );
+
+    for (let index = 0; index < 25; index += 1) {
+      await host.submitSkillRun("explorer", `question ${index}`, "explorer");
+    }
+
+    expect(host.sessionMeta()?.turns.every((turn) => turn.kind === "transcript")).toBe(true);
+    expect(store.nodes.filter((node) => node.kind === "user")).toHaveLength(
+      RESIDENT_TRANSCRIPT_TURN_LIMIT,
+    );
+    expect(host.memory()).toMatchObject({
+      transcript_resident_turns: RESIDENT_TRANSCRIPT_TURN_LIMIT,
+      transcript_folded_turns: 5,
+      session_turn_refs: 25,
+    });
 
     const readsBeforeExport = reads;
     const exported = renderTranscriptMarkdown(await exportNodes(host));
     expect(reads - readsBeforeExport).toBe(5);
     for (let index = 0; index < 25; index += 1) {
-      expect(exported).toContain(`question ${index}`);
+      expect(exported).toContain(`/explorer question ${index}`);
       expect(exported).toContain(answerLine(index));
     }
+    dispose();
+  });
+
+  test("folded export reads the canonical turn index one item at a time", async () => {
+    const reads: string[] = [];
+    const requested: string[] = [];
+    const { host, dispose } = mount((id) => {
+      requested.push(id);
+      return Promise.resolve(detailFor(id));
+    });
+    await host.loadSessionMeta(metaWith(25));
+    requested.length = 0;
+
+    const meta = host.sessionMeta()!;
+    meta.turns[0] = {
+      ...meta.turns[0]!,
+      kind: "conversation",
+      userPreview: "canonical question",
+      executionId: "exec_canonical",
+    };
+    meta.turns = new Proxy(meta.turns, {
+      get(target, property, receiver) {
+        if (typeof property === "string" && /^\d+$/.test(property)) reads.push(property);
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+
+    const iterator = host.exportNodeBatches()[Symbol.asyncIterator]();
+    expect(reads).toEqual([]);
+    const first = await iterator.next();
+    expect(first.done).toBe(false);
+    expect(reads).toEqual(["0"]);
+    expect(requested).toEqual(["exec_canonical"]);
+    expect(renderTranscriptMarkdown(first.value)).toContain("question canonical");
+
+    await iterator.return?.();
     dispose();
   });
 
@@ -324,6 +506,100 @@ describe("exportNodeBatches", () => {
     const exported = renderTranscriptMarkdown(await exportNodes(host));
     expect(exported).toContain(answerLine(0));
     expect(exported).not.toContain(answerLine(1));
+    dispose();
+  });
+
+  test("a folded turn whose canonical metadata disappeared degrades in place", async () => {
+    const { host, dispose } = mount((id) => Promise.resolve(detailFor(id)));
+    await host.loadSessionMeta(metaWith(25));
+    const turns = host.sessionMeta()!.turns as Array<SessionMeta["turns"][number] | undefined>;
+    turns[0] = undefined;
+
+    const iterator = host.exportNodeBatches()[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    expect(first.done).toBe(false);
+    expect(
+      first.value.some(
+        (node: TranscriptNode) =>
+          node.kind === "annotation" &&
+          node.text.includes("this turn's session metadata could not be reloaded"),
+      ),
+    ).toBe(true);
+    await iterator.return?.();
+    dispose();
+  });
+
+  test("a folded canonical turn without a trace id remains readable", async () => {
+    const { host, dispose } = mount((id) => Promise.resolve(detailFor(id)));
+    await host.loadSessionMeta(metaWith(25));
+    delete host.sessionMeta()!.turns[0]!.executionId;
+
+    const iterator = host.exportNodeBatches()[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    expect(first.done).toBe(false);
+    const exported = renderTranscriptMarkdown(first.value);
+    expect(exported).toContain("question 0");
+    expect(
+      first.value.some(
+        (node: TranscriptNode) =>
+          node.kind === "annotation" &&
+          node.text.includes("this turn has no persisted run to reload"),
+      ),
+    ).toBe(true);
+    await iterator.return?.();
+    dispose();
+  });
+
+  test("a folded conversation whose trace lost its prompt keeps the canonical preview", async () => {
+    const { host, dispose } = mount((id) => Promise.resolve({ ...detailFor(id), messages: [] }));
+    await host.loadSessionMeta(metaWith(25));
+
+    const iterator = host.exportNodeBatches()[Symbol.asyncIterator]();
+    const first = await iterator.next();
+    expect(first.done).toBe(false);
+    const exported = renderTranscriptMarkdown(first.value);
+    expect(exported).toContain("question 0");
+    expect(
+      first.value.some(
+        (node: TranscriptNode) =>
+          node.kind === "annotation" && node.text.includes("complete prompt could not be reloaded"),
+      ),
+    ).toBe(true);
+    await iterator.return?.();
+    dispose();
+  });
+
+  test("a resident released block contains a persisted-read failure", async () => {
+    let exportPhase = false;
+    const { host, dispose } = mount(
+      (id) =>
+        exportPhase ? Promise.reject(new Error("storage offline")) : Promise.resolve(detailFor(id)),
+      { proseTotalLimitBytes: 16 },
+    );
+    await host.loadSessionMeta(metaWith(3));
+    exportPhase = true;
+
+    const exported = renderTranscriptMarkdown(await exportNodes(host));
+    expect(exported).toContain("EXPORT INCOMPLETE");
+    expect(exported).toContain("could not be fetched");
+    dispose();
+  });
+
+  test("resident released prose reports missing prompt and reply projections", async () => {
+    let exportPhase = false;
+    const { host, dispose } = mount(
+      (id) =>
+        Promise.resolve(
+          exportPhase ? { ...detailFor(id), messages: [], events: [] } : detailFor(id),
+        ),
+      { proseTotalLimitBytes: 16 },
+    );
+    await host.loadSessionMeta(metaWith(3));
+    exportPhase = true;
+
+    const exported = renderTranscriptMarkdown(await exportNodes(host));
+    expect(exported).toContain("has no recoverable prompt");
+    expect(exported).toContain("has no recoverable assistant block");
     dispose();
   });
 

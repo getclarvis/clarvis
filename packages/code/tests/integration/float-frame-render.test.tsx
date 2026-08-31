@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { useTerminalDimensions } from "@opentui/solid";
 import { openRender } from "../helpers/tracked-render.ts";
 import { FloatFrame } from "../../src/views/overlays/FloatFrame.tsx";
 import { HintToast } from "../../src/views/Footer.tsx";
@@ -39,6 +40,29 @@ test("FloatFrame renders a centered bordered panel over a backdrop scrim", async
   expect(rows.some((r) => r.includes("Pick one"))).toBe(true);
   expect(rows.some((r) => r.includes("row content"))).toBe(true);
   expect(rows.some((r) => r.includes("Esc closes"))).toBe(true);
+});
+
+test("FloatFrame resolves a JSX navigation prop into one responsive subtree", async () => {
+  let mounts = 0;
+  const NavigationProbe = () => {
+    mounts += 1;
+    const dimensions = useTerminalDimensions();
+    return <text>{`width ${dimensions().width}`}</text>;
+  };
+  const t = await openRender(
+    () => (
+      <FloatFrame title="One navigation" navigation={<NavigationProbe />}>
+        <text>row content</text>
+      </FloatFrame>
+    ),
+    { width: 100, height: 24 },
+  );
+
+  await t.renderOnce();
+  expect(mounts).toBe(1);
+  expect(t.renderer.listenerCount("resize")).toBe(2);
+  t.renderer.destroy();
+  expect(t.renderer.listenerCount("resize")).toBe(0);
 });
 
 test("a notify with a picker open survives the scrim: footer row buried, HintToast on top", async () => {

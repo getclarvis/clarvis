@@ -3,7 +3,7 @@
 What was **measured**, what was **ruled out**, and what was **tried and reverted**. `AGENTS.md`
 carries the short form of each entry; this file carries the evidence.
 
-It sits beside [`specs/README.md`](README.md)'s sixty-seven-document corpus rather than inside it, and
+It sits beside [`specs/README.md`](README.md)'s sixty-eight-document corpus rather than inside it, and
 the distinction is load-bearing. That corpus specifies what Clarvis must do and cites the
 lines that implement it; it cannot say what a CI run measured, what an RSS soak showed, or what was
 attempted and abandoned. `specs/cross-cutting/build-and-ci.md`
@@ -238,7 +238,9 @@ now-removed F2 overlay; the overlay was the measured leak source.
 none can be reconstructed by reading source.** They are kept verbatim, with their original framing,
 and must not be trimmed or re-rounded. The affected dependency set was the exact coordinated
 `@opentui/{core,keymap,solid}` 0.4.3 pin; the current package manifest instead pins all three at
-0.5.7 (`packages/code/package.json`, `dependencies`).
+0.5.9 (`packages/code/package.json`, `dependencies`). The 0.5.7 measurements below remain the
+historical comparison that resolved this issue; the later lockstep patch update does not rewrite
+their environment.
 
 Measured with a 320-cycle open/close soak inside one renderer, sampling RSS at post-GC floors:
 
@@ -630,6 +632,38 @@ is sensitive to, and because the test that covers it,
 
 ---
 
+## The Codex workspace sandbox can reject ephemeral loopback listeners
+
+**Status: confirmed environmental limitation on 2026-08-30; not a Clarvis product regression and
+not evidence that port `0` is occupied.**
+
+Some repository tests deliberately bind a local listener on `127.0.0.1` with port `0`, asking the OS
+for an available ephemeral port. Examples include `captureServer` in
+`packages/mcp-client/tests/integration/remote-transport.test.ts`, the OAuth fixture in
+`packages/mcp-client/tests/integration/oauth-transport.test.ts`, and the native-network enforcement
+case in `packages/tools/tests/integration/sandbox.test.ts` (`Bun.listen`). Inside a Codex
+workspace sandbox that prohibits listener creation, these otherwise independent tests can fail with
+the shared Bun signature:
+
+```text
+Failed to start server. Is port 0 in use?
+```
+
+That wording is misleading in this environment. Port `0` is a request for dynamic allocation, not a
+specific occupied port, and a sandbox denial can surface through the same runtime error. A cluster of
+listener-based failures with this exact signature must therefore be classified first as an execution
+environment failure. Rerun the affected test file or package outside the Codex sandbox before changing
+Clarvis code or reporting a product defect. Only a reproduction outside that sandbox is product
+evidence.
+
+This exception is deliberately narrow. It does not make an assertion failure, protocol mismatch,
+timeout after a listener was successfully created, or a failure on an unrestricted host ignorable.
+The handoff must name the exact command and error and keep the affected surface unverified until the
+outside-sandbox rerun passes. `AGENTS.md` carries this entry's short operational rule under **Known
+environmental failures**.
+
+---
+
 ## Bun dies by signal in the `@clarvis/code` suite
 
 **Status: the upstream Worker lifetime fix shipped in Bun 1.4. Clarvis has not yet run the
@@ -992,6 +1026,173 @@ that does not depend on the trace, and no such source of truth exists today.
 
 ---
 
+## Settled transcript blocks can remount and flicker under unrelated live activity
+
+**Resolved on 2026-08-31 under OpenTUI 0.5.9.** Code now freezes terminal candidates into immutable
+publication batches, commits semantics independently from view readiness, mounts history through a
+narrow publication-only port, and renders the content-height `LiveTranscriptTail` as the final child
+of the same chronological ScrollBox. One serial hidden owner settles syntax and two equal physical
+observations; the same owner then becomes visible at its exact marker row, while the tail retains the
+handoff snapshot until that owner is ready. Direct ScrollBox children outside two prepared
+viewports in the last scroll direction and one retained viewport behind are disposed, while exact
+extents preserve the reader anchor. Native scroll admits lazy history at either edge, and an
+off-tail newer count is a top overlay rather than another row
+below history. Stored reconciliation closes the publisher explicitly. The normative contract is
+[`hosts/code-transcript-stability.md`](hosts/code-transcript-stability.md).
+
+The quoted `later batch` wording below is retained only as the exact historical symptom. That
+superseded bottom boundary is not current UI: newer work is now admitted by downward native scroll,
+with a non-interactive count overlaid at the top only while the reader is away from the tail.
+
+The first real-model run exposed one further OpenTUI interaction before closure: the final outcome
+and long answer stayed behind a `1 later batch` boundary until a one-column resize created a new
+layout epoch. The semantic terminal batch was intact. OpenTUI 0.5.9 documents that viewport culling
+skips offscreen render hooks, so `CommittedHistory` suspends culling only during its single candidate
+and restores it after the marker commit.
+
+That change was necessary but not sufficient. A second real subscription run still retained `1
+later batch` for more than 30 seconds, and Page Down did not release it. During that stable failure,
+the event queue and run-handle count were zero, renderer lifecycle passes stopped at 29, native
+renderables stayed at 204, and RSS stayed near 332 MiB; this was one abandoned syntax candidate, not
+continuing transcript accumulation. OpenTUI's own `ScrollbackSurface.settle` uses a 2-second bound
+while waiting for `CodeRenderable.highlightingDone`, so Clarvis gave the hidden candidate one
+2-second lease and one fresh syntax subtree. The original recovery then switched the whole batch to
+a plain text owner. That advanced the physical window, but it was not visually safe: the generic
+projection did not include `args.content`, so it could remove a `write_memory`/`write_file` body.
+
+An installed `clarvis-release-003-final3` capture exposed that remaining defect directly. Frames
+132-160 retained the parsed `write_memory` frontmatter, then lost its body and painted `Syntax
+formatting was simplified because highlighting did not settle.`; ordinary write presentation
+degraded later. The trigger was a second bug in `SyntaxPublicationBoundary`: optional
+`measurementRevision` used `undefined` both as a real inactive value and as the not-yet-observed
+sentinel. After `number -> undefined -> number`, the later token could inherit `completed=true`, no
+new syntax measurement started, and the leases expired into the destructive fallback.
+
+The correction separates revision initialization from its value. A later numeric token always
+re-arms measurement. Recovery no longer constructs a warning/text dump: a never-published candidate
+keeps the same `BlockView` and native Markdown/diff/code renderers, disables parser work through
+their public `filetype` setters and bypasses only unfinished syntax work after the bounded retry. If
+the owner already painted, its
+identity is retained while it waits for public syntax completion, then its marker commits only after
+two equal positive observations. If the parser stays pending, that owner remains visible and
+unchanged instead of being remounted or degraded. The
+deterministic regression records every handoff frame of a real `write_memory` body across more than
+two forced lease intervals and a resize, then resolves a deliberately pending highlight to prove
+there is no late mutation. `CommittedHistory` also retains the monotonic `rich` or `plain-semantic`
+decision by batch id and purges it with the source publication; the eviction regression proves a
+parser-independent owner remounts without restarting highlighting or changing variant.
+
+The follow-on visual regression was closed with an installed `0.0.3-beta` artifact in a real PTY.
+The captured subscription run exercised parsed `write_memory`, an ordinary write diff, long Markdown,
+native scroll in both directions, return-to-tail submission and terminal settlement. The settled
+memory and diff bodies retained their native presentation throughout later tools and assistant output;
+no simplified-format warning, raw/parsed oscillation or transparent owner was observed.
+
+The deterministic navigation regression then exposed a separate 120-to-119-column feedback loop:
+admitting overscan made OpenTUI's vertical bar visible, reduced content width, invalidated every
+marker, removed overscan, and hid the bar again. History now reserves the bar's one column
+permanently and changes only indicator opacity. The navigation case asserts that loading and
+remounting both edges retain one layout epoch; the forced short-lease terminal case reaches zero
+unmeasured newer entries with fewer than ten frame listeners.
+
+Checked-in evidence covers the originally reported `write_memory`, a real diff, ordinary
+`write_file`, long later assistant output, same-tool regrouping, isolation of child tools/content from
+the Lead transcript with exactly two typed delegation markers, explicit selection of one isolated
+child transcript, recorded history cells, atomic outcome/final publication,
+replay/session/degraded equivalence, hydration, whole-owner eviction/remount, exact marker height,
+bounded row residency and the import boundary. Workflow activity is likewise pinned to the footer
+strip/Sidebar rather than a transcript row. A later installed-artifact capture exposed a separate
+Lead-projection leak: the provider's `await_agents` composing phase briefly rendered
+`Wait for agents starting…`. The Lead contract now suppresses every composing, started, output and
+terminal row for the closed supervision/spawn/delegation/workflow-orchestration tool set; typed
+delegation events remain the only owners of the two friendly lifecycle markers, and ordinary Lead
+`thinking`/`working` may remain visible. The same installed-artifact validation spawned two real
+sub-agents: the Sidebar revealed automatically, the Lead projection showed only the typed lifecycle
+markers, and selecting a child opened its isolated transcript without collapsing it. Escape plus
+`/activity agents` reopened the Sidebar, and returning to Lead preserved the main transcript. The
+primary tests are
+`packages/code/tests/integration/transcript-publication-render.test.tsx` and
+`packages/code/tests/integration/transcript-window-render.test.tsx`; the pure publication and marker
+ledgers are covered by `packages/code/tests/unit/{transcript-publication,transcript-physical-window}.test.ts`,
+and the architecture guard is in
+`packages/code/tests/architecture/architecture-boundary.test.ts`.
+
+The visible symptom is an already-settled Markdown or diff body briefly returning to an unparsed or
+transparent state while the run has moved on to later tools or the model's answer. The report that
+started the investigation named `write_memory`; the same behavior had been observed in ordinary
+writes and diffs. The exact instrumented capture below proves `write_memory` and a synthetic diff,
+not every anecdotal surface.
+
+The pre-fix ownership path made the symptom possible. In that historical snapshot,
+`TranscriptRegion` mounted every historical block and the live elicitation control inside one
+sticky-bottom ScrollBox (`packages/code/src/views/app/TranscriptRegion.tsx`, former
+`TranscriptRegion` history loop). Each production `BlockView` received a reactive
+`group={() => ts.toolGroups().get(node.key)}` accessor. That map belonged to the live
+`visibleNodes -> window -> grouped -> toolGroups -> focusables` chain
+(`packages/code/src/views/transcript-state.ts`, `createTranscriptState`), and `BlockView` read the
+group through a memo that controls structural head/member/solo rendering
+(`packages/code/src/views/blocks.tsx`, `BlockView`). An event did not need to patch the old
+diff/content itself to invalidate the owner that mounted it.
+
+The local renderer harness used the then-current OpenTUI 0.5.7 dependency and a production-shaped group
+accessor. It was deliberately instrumented at native-renderable identity, not inferred from terminal
+screenshots:
+
+- A settled `write_memory` without a real diff carried 1,226 Markdown characters over 44 lines.
+  While 539 later assistant-response characters arrived, the capture observed **188 distinct
+  `CodeRenderable` instances and 187 replacements**; visible samples repeatedly alternated between
+  raw and parsed Markdown.
+- Removing only the production-shaped reactive `group` prop from the same harness produced **one
+  `CodeRenderable` and zero visible-mode transitions**.
+- A settled synthetic diff driven through 40 otherwise unrelated group updates produced **41
+  distinct `DiffRenderable` instances and 72 invisible samples**. Its control retained one diff
+  renderable with zero invisible samples.
+
+These are local ad hoc measurements, not a checked-in benchmark, and the counts should not be read
+as a product rate. Their value is causal narrowing: content, parser setup and later activity stayed
+the same while the production group dependency was the only controlled difference.
+
+The old `StableDiff` and `StableMarkdown` boundary did not contradict the result. It hid a candidate
+until descendant `CodeRenderable.highlightingDone` promises had painted
+(`packages/code/src/ui/patterns/stable-syntax.tsx`, `waitForSyntaxFrame`, `StableMarkdown` and
+`StableDiff`). That protects one continuous mount. Cleanup abandons the old revision, and a
+reconstructed ancestor starts a new hidden/raw-to-parsed lifecycle. The existing test called "a
+finalized diff keeps one renderable while an active sibling updates" mounts the sibling **outside**
+an isolated `BlockView` and never supplies the production group accessor
+(`packages/code/tests/integration/tool-diff-render.test.tsx`). It proves the local component boundary
+and missed the old production composition.
+
+A separate OpenTUI layout harness isolated the second mechanism. With settled history and a growing
+live tail in the same `stickyScroll` / `stickyStart="bottom"` ScrollBox, expanding the tail from one
+to three rows changed which settled history rows occupied the captured viewport. An experimental
+separate two-row sibling kept that capture byte-identical. That result proved the distinction between
+owner stability and viewport translation; it did **not** establish a separate panel as acceptable
+product UX. A fixed sibling reserves dead space and makes the same answer change regions when it
+commits. The final contract therefore keeps one chronological ScrollBox: while explicitly following
+the tail, the whole native viewport may translate upward exactly as normal scrolling does, but an
+older owner cannot reflow, remount or change identity, and the live-to-committed handoff preserves
+the artifact's content row.
+
+The original experiment did **not** validate those acceptance surfaces. The later installed-artifact
+run covered the built release, measured lazy navigation, retention/remount while moving between Lead
+and child projections, and a real-model multi-agent run in a PTY. A physical iTerm session, theme
+change and platform canaries remain separate environment-specific evidence rather than prerequisites
+for this resolved renderer defect. The implemented fix has both layers:
+
+1. a production `TranscriptRegion` regression that asserts
+   native renderable identity and never-visible raw/transparent frames; and
+2. Lead loaders, tools, retries, pending elicitation and future same-agent live motion are
+   content-height state after the frozen owners in the same ScrollBox. Child and workflow lifecycle
+   motion stays in the footer/explicit Sidebar; child transcript content becomes eligible only after
+   explicit isolated selection — never as a row inserted into the Lead history.
+
+Do not apply a broad `untrack` to generic transcript hosts as a shortcut. The workflow-remount entry
+above already records why generic structural owners may legitimately depend on reactive state. The
+durable boundary is publication: freeze group/section/display metadata before append, and keep live
+dependencies out of committed history.
+
+---
+
 ## Ten behaviours that turn on something outside this repository
 
 Carried here from the gap report's §4 on 2026-08-22 and re-verified entry by entry. What these share
@@ -1196,6 +1397,20 @@ networking, and the kernel toolchain-inspection path (`packages/tools/tests/inte
 `packages/kernel/tests/integration/sandbox-policy.test.ts`, `inspects a discovered toolchain without
 executing it through the real native backend`; `.github/workflows/ci.yml`, `jobs.linux` and
 `jobs.sandbox-macos`).
+
+**A resolved 2026-08-30 Seatbelt regression made installed Apple Git look absent.** A real Clarvis
+run executed `git status --short` inside Seatbelt; `xcode-select` could not read
+`/var/select/developer_dir`, printed “No developer tools were found” and opened the Command Line
+Tools installer even though host `/usr/bin/git --version` reported Apple Git 2.39.5. The first exact
+link allowance was insufficient: Seatbelt's `file-test-existence` checks also require the authored
+alias parents, and the real Git then required authored `/etc/gitconfig` checks beside canonical
+`/private/etc`. The final policy admits read-only `/etc`, `/private/etc`, the `/var` link and only
+the authored/canonical `var/select` trees. It does not admit general `/private/var` or writes. The
+opt-in macOS canary now resolves `/var/select/developer_dir` inside the generated profile before it
+executes the installed `/usr/bin/git --version`; a selector regression therefore stops before the
+Git shim can request the graphical installer. It also rejects the developer-tools fallback
+(`packages/tools/tests/integration/sandbox.test.ts`, `runs the installed Apple Git without
+triggering the developer-tools fallback`).
 
 The remaining risk is specific and external: Apple marks `sandbox-exec` deprecated, and Apple DTS
 states that the Sandbox Profile Language is not a supported API for third-party products

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   isMutationTool,
+  isTranscriptExternalOrchestrationTool,
   MUTATION_TOOLS,
   toolDisplayLabel,
   toolIdentity,
@@ -20,6 +21,13 @@ test("toolDisplayLabel translates orchestration internals but preserves MCP iden
   expect(toolDisplayLabel(undefined, "run_round")).toBe("Run workflow rounds");
   expect(toolDisplayLabel(undefined, "run_work_items")).toBe("Run work items");
   expect(toolDisplayLabel("github", "search_code")).toBe("github:search_code");
+});
+
+test("transcript orchestration identity matches only bare builtins, never an MCP leaf collision", () => {
+  expect(isTranscriptExternalOrchestrationTool("await_agents", "")).toBe(true);
+  expect(isTranscriptExternalOrchestrationTool("await_agents", undefined)).toBe(true);
+  expect(isTranscriptExternalOrchestrationTool("server", "await_agents")).toBe(false);
+  expect(isTranscriptExternalOrchestrationTool("server_await_agents", undefined)).toBe(false);
 });
 
 test("toolLabel: server:tool for namespaced, bare name for builtins — never a dangling colon", () => {

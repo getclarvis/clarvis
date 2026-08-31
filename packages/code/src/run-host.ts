@@ -213,13 +213,7 @@ export const RESIDENT_TRANSCRIPT_TURN_LIMIT = 20;
 const EXPORT_INCOMPLETE_PREFIX =
   "EXPORT INCOMPLETE — original transcript prose was released from the live TUI";
 
-interface FoldedTurnRef {
-  executionId?: string;
-  /** Persisted, redacted one-line fallback; the complete prompt stays in the run trace. */
-  userPreview: string;
-}
-
-interface ResidentTurnRef extends FoldedTurnRef {
+interface ResidentTurnRef {
   userKey: string;
 }
 
@@ -483,7 +477,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   function latestExecutionId(): string | undefined {
     return runActive() && currentHandle !== undefined
       ? currentHandle.executionId
-      : [...(session?.meta()?.turns ?? [])].reverse().find((turn) => turn.executionId !== undefined)
+      : [...(session?.meta()?.turns ?? [])]
+          .reverse()
+          .find((turn) => turn.kind === "conversation" && turn.executionId !== undefined)
           ?.executionId;
   }
 
@@ -598,6 +594,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setRunStartedAt(Date.now());
     setStatus(opts.initialStatus);
     attention?.setTitle("running");
+    let publicationCompleted = false;
     let releaseSettlement!: () => void;
     const settlement = {
       promise: new Promise<void>((resolve) => {
@@ -643,21 +640,38 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       setStatus(runOutcomeStatus(envelope));
       releaseInteractiveOwnership();
       let stored: StoredRun = null;
+      let storedReadDegraded = false;
       try {
         stored = await client.getRun(executionId);
       } catch {
+        storedReadDegraded = true;
         store.settleRun(executionId, envelope?.status === "completed");
       }
       if (session !== sess || ownershipEpoch !== runOwnershipEpoch) return;
       opts.onStored(envelope, stored, sink);
       if (envelope?.status === "failed" && envelope.error)
         store.appendRunFailure(executionId, envelope.error);
+      transcript.complete(
+        storedReadDegraded
+          ? {
+              degraded:
+                "Stored run reconciliation was unavailable; committed history uses the terminal live events that reached this client.",
+            }
+          : undefined,
+      );
+      publicationCompleted = true;
       if (!cancelRequested && attention?.away())
         attention.notify(`run ${presentStatus(runOutcomeStatus(envelope))}`);
     } catch (e) {
       if (session === sess && ownershipEpoch === runOwnershipEpoch) {
         opts.onError(e);
         store.settleRun(executionId);
+        if (!publicationCompleted) {
+          transcript.complete({
+            degraded:
+              "Run settlement ended before authoritative stored reconciliation; committed history uses the available terminal events.",
+          });
+        }
         if (!cancelRequested && attention?.away()) attention.notify("run failed");
       }
     } finally {
@@ -735,11 +749,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         ]),
       );
     const continueFrom = sess.beginTurn(msg, executionId);
-    rememberResidentTurn({
-      executionId,
-      userKey,
-      userPreview: redactPreview(display ?? contentToText(msg)),
-    });
+    rememberResidentTurn({ userKey });
     const promptCacheKey = sess.meta()?.id;
     const guardMode = deps.guardMode();
     const memoryMode = deps.memoryMode();
@@ -880,8 +890,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const executionId = "exec_" + crypto.randomUUID();
     const label = task.trim().length > 0 ? `/${name} ${task.trim()}` : `/${name}`;
     const userKey = store.appendUserMessage(label, label, executionId);
-    rememberResidentTurn({ executionId, userKey, userPreview: redactPreview(label) });
     const promptCacheKey = sess.meta()?.id;
+    sess.beginTranscriptTurn(label, executionId);
+    rememberResidentTurn({ userKey });
     const skillGuardMode = deps.guardMode();
     const skillMemoryMode = deps.memoryMode();
     await runManaged({
@@ -901,13 +912,17 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         setHandle(handle);
         return handle.done;
       },
+      afterRun: (envelope) => sess.endTranscriptTurn(envelope),
       onStored: (envelope, stored, sink) => {
         replayRunEvents(sink, stored);
         sess.appendObservation(
           buildSkillRunDigest(name, agent, envelope, stored, deps.planProviderKey?.()),
         );
       },
-      onError: (e) => setStatus([`/${name} failed: ${errorText(e)}`]),
+      onError: (e) => {
+        sess.endTranscriptTurn(undefined);
+        setStatus([`/${name} failed: ${errorText(e)}`]);
+      },
     });
   }
 
@@ -935,7 +950,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const display = `Work on task ${ref.id}`;
     const userKey = store.appendUserMessage(message, display, executionId);
     sess.beginTurn(message, executionId);
-    rememberResidentTurn({ executionId, userKey, userPreview: redactPreview(display) });
+    rememberResidentTurn({ userKey });
     const promptCacheKey = sess.meta()?.id;
     const guardMode = deps.guardMode();
     const memoryMode = deps.memoryMode();
@@ -1016,8 +1031,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     return true;
   }
 
-  /** Old semantic turns represented by the transcript's single prefix notice. */
-  let foldedTurns: FoldedTurnRef[] = [];
+  /** Number of canonical session turns represented by the transcript's single prefix notice. */
+  let foldedTurnCount = 0;
 
   /** Complete turns still represented by semantic nodes in the live store. */
   let residentTurns: ResidentTurnRef[] = [];
@@ -1035,25 +1050,30 @@ export function createRunHost(deps: RunHostDeps): RunHost {
    * Add one resident turn and structurally fold the oldest one when needed.
    *
    * @remarks `TranscriptStore.foldPrefixBefore` replaces the whole prefix in a
-   * single write/reindex. The metadata retained here is intentionally just a
-   * run id and persisted-size preview; `/export` retrieves complete content
-   * from that run's trace only when requested.
+   * single write/reindex. The live host retains only a scalar count; the
+   * canonical persisted session turn index supplies `/export` metadata lazily.
    */
   function rememberResidentTurn(turn: ResidentTurnRef): void {
     residentTurns.push(turn);
     if (residentTurns.length <= RESIDENT_TRANSCRIPT_TURN_LIMIT) return;
 
-    const oldest = residentTurns[0];
     const nextOldest = residentTurns[1];
-    if (oldest === undefined || nextOldest === undefined) return;
-    const nextFoldedCount = foldedTurns.length + 1;
-    if (!store.foldPrefixBefore(nextOldest.userKey, foldedPrefixNotice(nextFoldedCount))) return;
+    if (nextOldest === undefined) return;
+    const nextFoldedCount = foldedTurnCount + 1;
+    if (!store.foldPrefixBefore(nextOldest.userKey, foldedPrefixNotice(nextFoldedCount))) {
+      const fallbackFoldedCount = foldedTurnCount + residentTurns.length - 1;
+      if (store.foldPrefixBefore(turn.userKey, foldedPrefixNotice(fallbackFoldedCount))) {
+        residentTurns.splice(0, residentTurns.length - 1);
+        foldedTurnCount = fallbackFoldedCount;
+        foldedPrefix = 1;
+        return;
+      }
+      residentTurns.pop();
+      return;
+    }
 
     residentTurns.shift();
-    foldedTurns.push({
-      executionId: oldest.executionId,
-      userPreview: oldest.userPreview,
-    });
+    foldedTurnCount = nextFoldedCount;
     foldedPrefix = 1;
   }
 
@@ -1065,7 +1085,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     sessionTask = undefined;
     store.clear();
     activity.clear();
-    foldedTurns = [];
+    foldedTurnCount = 0;
     residentTurns = [];
     foldedPrefix = 0;
     setStatus(["idle"]);
@@ -1113,7 +1133,10 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         scratch.clear();
         const sink = scratch.openRun(executionId);
         batch(() => {
+          sink.beginReconcile();
           for (const event of cachedDetail!.events) applyEvent(sink, event, "replay");
+          sink.endReconcile();
+          sink.complete();
         });
         restored = new Map(scratch.nodes.map((candidate) => [candidate.key, candidate]));
       };
@@ -1187,7 +1210,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     }
 
     try {
-      if (foldedTurns.length === 0) {
+      if (foldedTurnCount === 0) {
         if (!store.nodes.some(isReleasedProse)) {
           yield store.nodes;
           return;
@@ -1196,8 +1219,19 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         return;
       }
 
-      for (const turn of foldedTurns) {
+      const canonicalTurns = session?.meta()?.turns;
+      for (let index = 0; index < foldedTurnCount; index += 1) {
         scratch.clear();
+        const turn = canonicalTurns?.[index];
+        if (turn === undefined) {
+          scratch.appendUserMessage(`Earlier turn ${index + 1}`);
+          scratch.appendNotice(
+            "folded — this turn's session metadata could not be reloaded",
+            "info",
+          );
+          yield [...scratch.nodes];
+          continue;
+        }
         const executionId = turn.executionId;
         if (executionId === undefined) {
           scratch.appendUserMessage(turn.userPreview);
@@ -1215,20 +1249,24 @@ export function createRunHost(deps: RunHostDeps): RunHost {
           scratch.appendUserMessage(turn.userPreview, undefined, executionId);
           scratch.appendNotice("folded — this turn's reply could not be reloaded", "info");
         } else {
-          const persistedUserContent = detail.messages.at(-1)?.content;
+          const persistedUserContent =
+            turn.kind === "conversation" ? detail.messages.at(-1)?.content : undefined;
           scratch.appendUserMessage(
             persistedUserContent ?? turn.userPreview,
             undefined,
             executionId,
           );
-          if (persistedUserContent === undefined)
+          if (turn.kind === "conversation" && persistedUserContent === undefined)
             scratch.appendNotice(
               "folded — this turn's complete prompt could not be reloaded",
               "info",
             );
           const sink = scratch.openRun(executionId);
           batch(() => {
+            sink.beginReconcile();
             for (const event of detail.events) applyEvent(sink, event, "replay");
+            sink.endReconcile();
+            sink.complete();
           });
         }
         yield [...scratch.nodes];
@@ -1247,19 +1285,20 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     sessionTask = undefined;
     store.clear();
     activity.clear();
-    foldedTurns = [];
+    foldedTurnCount = 0;
     residentTurns = [];
     foldedPrefix = 0;
     const windowStart = Math.max(0, meta.turns.length - RESIDENT_TRANSCRIPT_TURN_LIMIT);
     if (windowStart > 0) {
-      foldedTurns = meta.turns.slice(0, windowStart).map((turn) => ({
-        executionId: turn.executionId,
-        userPreview: turn.userPreview,
-      }));
-      store.appendNotice(foldedPrefixNotice(foldedTurns.length));
+      foldedTurnCount = windowStart;
+      store.appendNotice(foldedPrefixNotice(foldedTurnCount));
       foldedPrefix = 1;
     }
-    const seeds: string[] = foldedTurns.map((turn) => turn.userPreview);
+    const seeds: string[] = [];
+    for (let index = 0; index < foldedTurnCount; index += 1) {
+      const turn = meta.turns[index];
+      if (turn?.kind === "conversation") seeds.push(turn.userPreview);
+    }
     let renderedTurnIndex = 0;
     let resumed: Awaited<ReturnType<typeof resumeSession>>;
     try {
@@ -1277,13 +1316,22 @@ export function createRunHost(deps: RunHostDeps): RunHost {
               redactPreview(
                 typeof userContent === "string" ? userContent : contentToText(userContent),
               );
-            seeds.push(typeof userContent === "string" ? userContent : contentToText(userContent));
+            const renderedContent = persistedTurn?.kind === "transcript" ? preview : userContent;
+            if (persistedTurn?.kind === "conversation") {
+              seeds.push(
+                typeof userContent === "string" ? userContent : contentToText(userContent),
+              );
+            }
             batch(() => {
-              const userKey = store.appendUserMessage(userContent, undefined, executionId);
-              residentTurns.push({ executionId, userKey, userPreview: preview });
+              const userKey = store.appendUserMessage(renderedContent, undefined, executionId);
+              residentTurns.push({ userKey });
               if (events && executionId) {
-                const sink = teeSink(store.openRun(executionId), activity.openRun());
+                const transcript = store.openRun(executionId);
+                const sink = teeSink(transcript, activity.openRun());
+                sink.beginReconcile();
                 for (const event of events) applyEvent(sink, event, "replay");
+                sink.endReconcile();
+                transcript.complete();
               }
               if (recovery) store.appendNotice(recoveryNotice(recovery), "warn");
             });
@@ -1320,8 +1368,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     }
     setStatus([
       `resumed ${meta.turns.length} turns`,
-      ...(foldedTurns.length
-        ? ([" ", { mark: "separator" }, ` ${foldedTurns.length} folded`] satisfies StatusLine)
+      ...(foldedTurnCount
+        ? ([" ", { mark: "separator" }, ` ${foldedTurnCount} folded`] satisfies StatusLine)
         : []),
       ...(environmentChanged
         ? ([" ", { mark: "separator" }, " Environment changed"] satisfies StatusLine)
@@ -1373,6 +1421,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
         ...(store.memory?.() ?? {}),
         ...(sessionStore.memory?.() ?? {}),
         ...(sessionMemory ?? {}),
+        transcript_resident_turns: residentTurns.length,
+        transcript_folded_turns: foldedTurnCount,
+        session_turn_refs: session?.meta()?.turns.length ?? 0,
         manager_history_bytes:
           deps.isManagerProfile?.() === true && sessionMemory?.session_history_complete === true
             ? sessionMemory.session_payload_bytes

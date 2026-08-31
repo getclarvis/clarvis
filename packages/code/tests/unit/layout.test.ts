@@ -77,22 +77,34 @@ test("inspector width stays useful when possible and clamps to the viewport", ()
   compact.dispose();
 });
 
-test("sidebar visibility follows content at split-capable widths", () => {
+test("sidebar visibility changes only after explicit intent at split-capable widths", () => {
   const { controller, setHasContent, dispose } = harness({ w: 200, h: 60 }, false);
   expect(controller.sidebarVisible()).toBe(false);
   setHasContent(true);
+  expect(controller.sidebarVisible()).toBe(false);
+  controller.setDrawerOpen(true);
   expect(controller.sidebarVisible()).toBe(true);
   setHasContent(false);
+  expect(controller.sidebarVisible()).toBe(true);
+  expect(controller.drawerOpen()).toBe(true);
+  setHasContent(true);
+  expect(controller.sidebarVisible()).toBe(true);
+  controller.setDrawerOpen(false);
   expect(controller.sidebarVisible()).toBe(false);
   dispose();
 });
 
 test("contentInset is inspector width only when the split is eligible and visible", () => {
   const wide = harness({ w: 200, h: 60 }, true);
+  expect(wide.controller.contentInset()).toBe(0);
+  wide.controller.setDrawerOpen(true);
   expect(wide.controller.contentInset()).toBe(INSPECTOR_MAX_WIDTH);
   wide.dispose();
 
   const wideHidden = harness({ w: 200, h: 60 }, false);
+  expect(wideHidden.controller.contentInset()).toBe(0);
+  wideHidden.controller.setDrawerOpen(true);
+  expect(wideHidden.controller.drawerOpen()).toBe(false);
   expect(wideHidden.controller.contentInset()).toBe(0);
   wideHidden.dispose();
 
@@ -112,6 +124,8 @@ test("the exact split boundary opens a 32-column inspector at 100 columns", () =
   below.dispose();
 
   const at = harness({ w: INSPECTOR_SPLIT_MIN_WIDTH, h: 40 }, true);
+  expect(at.controller.secondaryMode()).toBe("closed");
+  at.controller.setDrawerOpen(true);
   expect(at.controller.secondaryMode()).toBe("split");
   expect(at.controller.sidebarWidth()).toBe(INSPECTOR_MIN_WIDTH);
   expect(INSPECTOR_SPLIT_MIN_WIDTH - at.controller.sidebarWidth()).toBe(68);

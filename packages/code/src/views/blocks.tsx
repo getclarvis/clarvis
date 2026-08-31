@@ -462,7 +462,6 @@ function AssistantMarkdown(props: { node: TranscriptNode }): JSX.Element {
               streaming={false}
               conceal
               content={part.text}
-              internalBlockMode="top-level"
               marginTop={i() === 0 ? 0 : 1}
             />
           </Show>
@@ -476,7 +475,8 @@ function AssistantMarkdown(props: { node: TranscriptNode }): JSX.Element {
               streaming={running()}
               conceal
               content={seg().tail}
-              internalBlockMode="top-level"
+              geometryEpoch={epoch()}
+              internalBlockMode={running() ? "top-level" : undefined}
               marginTop={tailMargin()}
             />
           }
@@ -490,7 +490,11 @@ function AssistantMarkdown(props: { node: TranscriptNode }): JSX.Element {
   );
 }
 
-function SectionHead(props: { header: SectionHeader; onClick?: () => void }): JSX.Element {
+function SectionHead(props: {
+  header: SectionHeader;
+  folded: Accessor<boolean>;
+  onClick?: () => void;
+}): JSX.Element {
   const h = (): SectionHeader => props.header;
   /**
    * The folded-section count and its label.
@@ -505,7 +509,9 @@ function SectionHead(props: { header: SectionHeader; onClick?: () => void }): JS
   const foldedLabel = (): string =>
     h().lead
       ? `${foldedCount()} tool call${foldedCount() === 1 ? "" : "s"}`
-      : `${foldedCount()} hidden`;
+      : props.folded()
+        ? `${foldedCount()} hidden`
+        : `${foldedCount()} entr${foldedCount() === 1 ? "y" : "ies"}`;
   const stateLabel = (): string => {
     if (h().status === "ok") return "Completed";
     if (h().status === "error") return "Failed";
@@ -514,12 +520,7 @@ function SectionHead(props: { header: SectionHeader; onClick?: () => void }): JS
   };
   return (
     <box>
-      <text
-        onMouseDown={h().lead ? props.onClick : undefined}
-        wrapMode="none"
-        truncate
-        selectable={false}
-      >
+      <text onMouseDown={props.onClick} wrapMode="none" truncate selectable={false}>
         <span style={{ fg: h().lead ? tokens.accent2 : statusTone(h().status).fg }}>
           {(h().lead ? glyph("diamond") : agentGlyph(h().status)) + " "}
         </span>
@@ -539,7 +540,7 @@ function SectionHead(props: { header: SectionHeader; onClick?: () => void }): JS
           <span style={{ fg: tokens.muted }}>
             {h().lead
               ? ` ${glyph("separator")} ${foldedLabel()}`
-              : ` ${glyph("separator")} ${glyph("chevronRight")} ${foldedLabel()}`}
+              : ` ${glyph("separator")} ${glyph(props.folded() ? "chevronRight" : "caretDown")} ${foldedLabel()}`}
           </span>
         </Show>
       </text>
@@ -569,10 +570,13 @@ function SectionHead(props: { header: SectionHeader; onClick?: () => void }): JS
  */
 export function BlockView(props: {
   node: TranscriptNode;
+  /** Whether this physical owner may react to pointer input. */
+  interactive?: () => boolean;
   /** Maximum rendered width; the transcript shell may widen blocks when it owns the full viewport. */
   maxWidth?: number | `${number}%`;
   forceExpand?: () => boolean;
   folded?: () => boolean;
+  sectionFolded?: () => boolean;
   group?: () => ToolGroupInfo | undefined;
   sectionHeader?: () => SectionHeader | undefined;
   overrideOf?: (key: string) => BlockOverride | undefined;
@@ -585,6 +589,13 @@ export function BlockView(props: {
    * sibling such as the activity sidebar. */
   fillAvailableWidth?: () => boolean;
 }): JSX.Element {
+  const interactive = (): boolean => props.interactive?.() ?? true;
+  const onToggle = (): void => {
+    if (interactive()) props.onToggle?.();
+  };
+  const onOpenDetail = (detail: ActivityDetail): void => {
+    if (interactive()) props.onOpenDetail?.(detail);
+  };
   const own = (): BlockOverride | undefined => props.overrideOf?.(props.node.key);
   const leadMutation = (): boolean => props.node.kind === "tool_call" && isLeadMutation(props.node);
   const collapsed = (): boolean => {
@@ -643,7 +654,7 @@ export function BlockView(props: {
     role() === "member" &&
     !groupExpanded() &&
     !(props.node.kind === "tool_call" && props.node.warn);
-  const members = createMemo<TranscriptToolNode[]>(() => group()?.members ?? [toolNode()]);
+  const members = createMemo<readonly TranscriptToolNode[]>(() => group()?.members ?? [toolNode()]);
   const agg = createMemo<NodeStatus>(() => aggregateStatus(members()));
   const failures = createMemo<number>(() => failureCount(members()));
   const quietMembers = createMemo<TranscriptToolNode[]>(() =>
@@ -684,7 +695,13 @@ export function BlockView(props: {
           }
         >
           <Show when={props.sectionHeader?.()}>
-            {(h: Accessor<SectionHeader>) => <SectionHead header={h()} onClick={props.onToggle} />}
+            {(h: Accessor<SectionHeader>) => (
+              <SectionHead
+                header={h()}
+                folded={props.sectionFolded ?? bodyFolded}
+                onClick={onToggle}
+              />
+            )}
           </Show>
           <Show when={!bodyFolded()}>
             <box flexDirection="row">
@@ -736,7 +753,7 @@ export function BlockView(props: {
                   <Match when={props.node.kind === "assistant"}>
                     <box paddingTop={1} flexDirection="row">
                       <text fg={railColor(props.node)} flexShrink={0}>
-                        {(props.node.status === "running" ? spinnerChar() : glyph("bullet")) + " "}
+                        {glyph("bullet") + " "}
                       </text>
                       <AssistantMarkdown node={props.node} />
                     </box>
@@ -750,7 +767,7 @@ export function BlockView(props: {
                           showBody={groupExpanded() || !collapsed()}
                           full={fullBody()}
                           ungatedMutationBody={leadMutation()}
-                          onHeaderClick={props.onToggle}
+                          onHeaderClick={onToggle}
                         />
                       </Match>
 
@@ -758,7 +775,7 @@ export function BlockView(props: {
                         <box flexDirection="column" paddingTop={1} overflow="hidden">
                           <box paddingLeft={1}>
                             <text
-                              onMouseDown={props.onToggle}
+                              onMouseDown={onToggle}
                               wrapMode="none"
                               truncate
                               selectable={false}
@@ -842,7 +859,7 @@ export function BlockView(props: {
                         flexDirection="row"
                         paddingLeft={1}
                         onMouseDown={() =>
-                          props.onOpenDetail?.({
+                          onOpenDetail({
                             title: `${capitalize(subagentNode().title ?? "sub-agent")} delegation`,
                             eyebrow: "Brief from the lead",
                             content: props.node.text,
@@ -860,7 +877,7 @@ export function BlockView(props: {
                           minWidth={0}
                           selectable={false}
                           onMouseDown={() =>
-                            props.onOpenDetail?.({
+                            onOpenDetail({
                               title: `${capitalize(subagentNode().title ?? "sub-agent")} delegation`,
                               eyebrow: "Brief from the lead",
                               content: props.node.text,

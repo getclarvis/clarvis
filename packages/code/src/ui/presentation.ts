@@ -149,7 +149,7 @@ export interface EntitySummary {
 
 /** Labelled metrics for exactly one owner. */
 export interface ScopedUsage {
-  owner: "Run" | "Agent" | "Workflow" | "Context";
+  owner: "Run" | "Session" | "Agent" | "Workflow" | "Context";
   input?: number;
   output?: number;
   used?: number;

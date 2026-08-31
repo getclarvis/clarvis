@@ -25,6 +25,15 @@ through `SessionService`), plus small leaves — `run-reducers.ts`, `run-types.t
 `connection-state.ts`, `stream-metrics.ts`, `memory-pressure.ts`, `execution-safety.ts`,
 `file-prompt-history.ts`.
 
+This document owns **when** live events, the result envelope and stored reconciliation reach those
+stores. It does not decide when a rendered candidate becomes immutable or where live motion belongs:
+that publication/layout contract is
+[code-transcript-stability.md](code-transcript-stability.md). `onEvent` applies the transcript and
+activity sinks inside one Solid batch. `runManaged` releases interactive ownership, fetches and
+reconciles the stored run, then closes publication through `TranscriptRunSink.complete`; a failed
+stored read or exceptional settlement supplies an explicit degraded completion instead of leaving
+the terminal batch pending. Session restore closes each replayed sink through the same boundary.
+
 The recurring problem the code solves is **ownership across asynchrony**. A run's events, its
 `done` envelope, its stream close, its persisted trace, its post-run memory-ingest notice, a user's
 `^C`, a session switch and a backend reconnect all arrive on independent schedules. Nearly every guard
@@ -222,21 +231,29 @@ Declared at `packages/code/src/adapters/session-store.ts:51`.
 | `totals` | `SessionTotals` `{input, output, cached, costUsd?}` | `:20` |
 | `pending` | `Message[]?` | unflushed observations (`:61`) |
 
-`TurnRef` (`:29`):
-`{ userPreview, executionId?, environment?: {id, fingerprint}, status, startedAt?, endedAt?, error? }`,
-where `environment` identifies the resolved extension snapshot pinned when the turn began and `error`
-is `{code, message}` present only on a failed turn.
+`TurnRef` is the required discriminated union `ConversationTurnRef | TranscriptTurnRef`. Both variants
+carry
+`{ kind, userPreview, executionId?, environment?: {id, fingerprint}, status, startedAt?, endedAt?, error? }`;
+`kind: "conversation"` participates in provider continuation, while `kind: "transcript"` remains a
+canonical display/export turn without becoming continuation context. `environment` identifies the
+resolved extension snapshot pinned when the turn began and `error` is `{code, message}` present only
+on a failed turn. Production: `packages/code/src/adapters/session-store.ts` (`TurnRefBase`,
+`ConversationTurnRef`, `TranscriptTurnRef`, `TurnRef`).
 
 The wire shape is `Session` from `@clarvis/protocol`; `metaToSession` and `sessionToMeta` are the
-camelCase↔snake_case adapters. The protocol's declared `SessionTurn` type has no `error` member, so
-the adapter deliberately widens the persisted turn locally with optional `{code,message}`. The write
-leg includes that member only when present; the read leg accepts it only when both fields are strings.
+camelCase↔snake_case adapters. Protocol `SessionTurn.kind` is mandatory. `metaToSession` writes it for
+every turn and `sessionToMeta` calls `persistedTurnKind`; a stale pre-discriminator document with a
+missing or unknown `kind` throws instead of guessing whether its run belongs to continuation. The
+protocol's declared `SessionTurn` type has no `error` member, so the adapter deliberately widens the
+persisted turn locally with optional `{code,message}`. The write leg includes that member only when
+present; the read leg accepts it only when both fields are strings.
 `createSession.endTurn` applies `redactTurnError` before either memory or disk sees the value, masking
 the message unless preview redaction is disabled and bounding it to `TURN_ERROR_MAX_CHARS = 2000`.
 Production: `packages/code/src/adapters/session-store.ts` (`PersistedSessionTurn`,
 `persistedTurnError`, `metaToSession`, `sessionToMeta`, `redactTurnError`) and
 `packages/code/src/adapters/session.ts` (`endTurn`). Test:
-`packages/code/tests/component/session-store.test.ts` ("a failed turn's reason survives
+`packages/code/tests/component/session-store.test.ts` ("transcript-only turn identity is persisted
+and stale undiscriminated turns are rejected", "a failed turn's reason survives
 metaToSession -> disk JSON -> sessionToMeta", "a reloaded session still carries why its turn failed",
 and malformed persisted-error cases) and `packages/code/tests/component/session.test.ts` ("a failed
 turn's reason is masked and bounded before it is recorded").
@@ -378,16 +395,26 @@ while a run is already active").
    `{profile}` `submitTurn` uses (`:598`), so an empty active profile is stored as absent rather than
    as `""`.
 2. Mint `executionId`, build the label `` `/${name} ${task}` `` (or bare `` `/${name}` `` when `task`
-   is blank), append the user node and call `rememberResidentTurn` (`:757`–`:760`).
+   is blank), append the user node, persist it through `sess.beginTranscriptTurn(label, executionId)`
+   and call `rememberResidentTurn`. `beginTranscriptTurn` writes `kind: "transcript"` but does not
+   append the skill's internal prompt to model history or advance the session's conversation
+   continuation base.
 3. `client.startRun` is composed inline — `guardMode: skillGuardMode, ...deps.judgePayload(skillGuardMode),
    ...(skillMemoryMode === "off" ? {memory: skillMemoryMode} : {})` (`:769`–`:777`) — rather than
    through the intermediate `guardArgs` object `submitTurn` builds once and spreads at its call sites
    (`:622`–`:626`). The composed fields are the same shape either way: `guardMode` always present,
    `memory` only when the mode is `"off"`.
 4. Run through `runManaged` with `run` calling `client.startRun({ skill: {name, task}, … })` (`:764`–`:780`).
-5. `onStored` never calls `sess.reconcile` or `sess.releaseHistory` — it only replays the run's events
-   and appends `buildSkillRunDigest(name, agent, envelope, stored, deps.planProviderKey?.())` as an
-   observation on the session (`:781`–`:786`).
+5. `afterRun` calls `sess.endTranscriptTurn(envelope)`, which settles the matching transcript-kind
+   turn without appending its assistant result to conversation history. `onStored` never calls
+   `sess.reconcile` or `sess.releaseHistory` — it only replays the run's events and appends
+   `buildSkillRunDigest(name, agent, envelope, stored, deps.planProviderKey?.())` as a pending
+   observation for the next conversation run. `onError` also settles only the transcript-kind turn.
+   Production: `packages/code/src/run-host.ts` (`submitSkillRun`) and
+   `packages/code/src/adapters/session.ts` (`beginTranscriptTurn`, `endTranscriptTurn`). Tests:
+   `packages/code/tests/component/run-host.test.ts` ("submitSkillRun: starts a run on the skill's
+   agent, appends its digest, and settles") and `packages/code/tests/component/session.test.ts`
+   ("transcript-only runs are canonical without becoming continuation context").
 
 ### 4.4 `workOnTask` (`packages/code/src/run-host.ts:809`)
 
@@ -478,20 +505,38 @@ words: `"! cancelled"`, `"! timed out"`, `` `! exit ${exitCode ?? "?"}` `` (`:88
 
 ### 4.9 Resident-turn folding
 
-`rememberResidentTurn` (`packages/code/src/run-host.ts:941`) pushes a `ResidentTurnRef`
-(`{executionId, userKey, userPreview}`, `:194`) and returns immediately while
-`residentTurns.length <= RESIDENT_TRANSCRIPT_TURN_LIMIT` (`:925`). Over the limit it asks the store to
-`foldPrefixBefore(residentTurns[1].userKey, foldedPrefixNotice(n+1))` (`:931`); only if that succeeds
-does it shift the oldest into `foldedTurns` and set `foldedPrefix = 1` (`:933`–`:938`).
+`rememberResidentTurn` pushes the new `{userKey}` `ResidentTurnRef` and returns immediately while
+`residentTurns.length <= RESIDENT_TRANSCRIPT_TURN_LIMIT`. Over the limit it first asks the store to
+`foldPrefixBefore(residentTurns[1].userKey, foldedPrefixNotice(foldedTurnCount + 1))`. On success it
+shifts the oldest ref, increments the scalar `foldedTurnCount` and sets `foldedPrefix = 1`; no second
+array retains metadata for folded turns.
 
-`foldPrefixBefore` (`packages/code/src/adapters/store.ts:820`) refuses an absent or index-`0`
-boundary (`:822`), then performs **one** array replacement `[foldedNotice, ...nodes.slice(boundary)]`
-(`:834`) and returns whether it folded. That single replacement is the run-host-visible contract; the
-bookkeeping it also performs on the folded-away keys' entries in `foldDefaults`, the hydrated-tool
-window and its byte accounting, and any queued rehydration jobs for those keys (`:836`–`:854`) is the
-tool-body hydration window's own internal state and is described by [hosts/code-transcript.md](code-transcript.md),
-not here — this paragraph names it only so the "one array replacement" claim is not mistaken for the
-whole of what the call does.
+If that incremental boundary is refused, the fail-bounded path tries the newly appended turn's own
+`userKey`, folding the entire earlier resident prefix at once. A successful fallback retains only the
+new turn and advances `foldedTurnCount` by the number of discarded refs. If both boundaries are
+refused, the speculative new ref is popped and neither `foldedTurnCount` nor `foldedPrefix` advances,
+so `residentTurns` itself never grows beyond 20. Production: `packages/code/src/run-host.ts`
+(`ResidentTurnRef`, `rememberResidentTurn`). Tests:
+`packages/code/tests/component/run-host-export.test.ts` (incremental-fold fallback and double-refusal
+cases).
+
+`foldPrefixBefore` (`packages/code/src/adapters/store.ts`) refuses an absent or index-`0` boundary,
+then performs one batched semantic replacement `[foldedNotice, ...nodes.slice(boundary)]` and one
+resident-publication replacement. The latter drops only complete sealed batches whose nodes all
+belong to the removed prefix, replaces the previous folded-prefix publication and prepends one new
+frozen committed notice. It passes only removed keys absent from every retained publication to
+`TranscriptPublisher.forgetDiscarded`; that method rechecks semantic residency, cancels discarded
+tool staging and releases the matching `knownKeys`, held-answer and reserved-sub-agent bookkeeping.
+A pending staging timer therefore cannot republish folded content, and repeated folds keep the
+publication identity ledger bounded. The bookkeeping it also performs on `foldDefaults`,
+hydrated-tool byte accounting and queued rehydration jobs is the tool-body hydration window's own
+internal state and is described by
+[hosts/code-transcript.md](code-transcript.md); the immutable publication consequence is owned by
+[hosts/code-transcript-stability.md](code-transcript-stability.md). Production:
+`packages/code/src/adapters/store.ts` (`foldPrefixBefore`) and
+`packages/code/src/adapters/transcript-publication.ts` (`forgetDiscarded`). Tests:
+`packages/code/tests/unit/transcript-publication.test.ts` (discard-release and staged-flush
+retention cases) and `packages/code/tests/unit/store-status.test.ts` (repeated 20-turn plateau).
 
 ### 4.10 `exportNodeBatches` (`packages/code/src/run-host.ts:973`)
 
@@ -502,7 +547,18 @@ Creates a **scratch** `TranscriptStore` in its own `createRoot`, with every rete
 |---|---|---|
 | no folded turns and no released prose | yields `store.nodes` itself (identity), then done | `:1071`–`:1074` |
 | no folded turns but released prose present | yields through `exportResidentNodes` | `:1076` |
-| folded turns present | one batch per folded turn, rebuilt from its trace, then the live window from `store.nodes.slice(foldedPrefix)` | `:1080`–`:1117` |
+| folded turns present | lazily index `session.meta().turns[0..foldedTurnCount)`, rebuild and yield one canonical turn at a time, then stream the live window from `store.nodes.slice(foldedPrefix)` | `packages/code/src/run-host.ts` (`exportNodeBatches`) |
+
+The host deliberately retains only `foldedTurnCount`, not a parallel `foldedTurns[]`. When export
+begins, `canonicalTurns = session?.meta()?.turns` supplies each folded turn's preview, kind and trace
+id by index. `scratch.clear()` runs before every index and the generator yields that reconstructed
+turn before reading the next one, so export does not materialize a second copy of the session or
+eagerly fetch the folded prefix. A transcript-kind turn uses its canonical display preview rather
+than substituting the skill's internal persisted prompt. Production: `packages/code/src/run-host.ts`
+(`exportNodeBatches`). Tests: `packages/code/tests/component/run-host-export.test.ts` ("folded export
+reads the canonical turn index one item at a time", "transcript-only skill runs use the same bounded
+canonical export index", and "folded turns are yielded one at a time before the bounded live
+window").
 
 `exportResidentNodes` (`:972`) walks nodes, and for each released-prose node
 (`isReleasedProse`, `:240`) resolves the source execution id (`sourceExecutionId`, `:247` — the
@@ -530,17 +586,17 @@ prompt — `packages/code/tests/component/run-host-export.test.ts:204`.
 `clearSession(opts?: {flush?: boolean})` bumps `loadEpoch`, calls `teardownRuns()`, then — **flush is
 the default**: `if (opts?.flush !== false) session?.flush()` (`:944`), so a caller must pass
 `{flush: false}` explicitly to skip persisting the outgoing session — drops `session`/`sessionTask`,
-clears `store`/`activity`, resets `foldedTurns`/`residentTurns`/`foldedPrefix` to empty/`0`, and sets
-status to `["idle"]` (`:941`–`:953`). `loadSessionMeta` and `workOnTask` both rely on this full reset
-before installing their own session state.
+clears `store`/`activity`, resets `foldedTurnCount`/`residentTurns`/`foldedPrefix` to `0`/empty/`0`, and
+sets status to `["idle"]`. `loadSessionMeta` and `workOnTask` both rely on this full reset before
+installing their own session state.
 
 ### 4.12 `loadSessionMeta` (`packages/code/src/run-host.ts:1141`)
 
 1. `epoch = ++loadEpoch`; `teardownRuns()`; `session?.flush()`; drop session/task; clear both stores
    and the fold bookkeeping (`:1124`–`:1133`).
-2. `windowStart = max(0, meta.turns.length - RESIDENT_TRANSCRIPT_TURN_LIMIT)` (`:1134`). When
-   positive, the older turns become `foldedTurns`, one folded notice is appended and
-   `foldedPrefix = 1` (`:1135`–`:1141`).
+2. `windowStart = max(0, meta.turns.length - RESIDENT_TRANSCRIPT_TURN_LIMIT)`. When positive,
+   `foldedTurnCount = windowStart`, one folded notice is appended and `foldedPrefix = 1`. The older
+   turn metadata stays only in canonical `meta.turns`; it is not copied into another host array.
 3. `resumeSession(meta, {getRun, currentPlanProviderKey, renderTurn}, {renderWindow: 20})`
    (`:1147`–`:1174`). `renderTurn` drops anything whose epoch has moved on or whose index is before
    `windowStart` (`:1154`), otherwise appends the user node, records the resident turn, replays the
@@ -548,13 +604,14 @@ before installing their own session state.
    with tone `"warn"` when the record was rebuilt from a damaged journal (`:1162`–`:1170`).
 4. Post-resume epoch check (`:1179`), then `sessionTask = resumed.activeTask` and a fresh `Session`
    seeded with `historyComplete: resumed.degraded.length === 0` (`:1180`–`:1189`).
-5. `history.seed(seeds)`. The seed array starts as the redacted `userPreview` of every folded
-   (pre-window) turn (`:1143`); for each turn `resumeSession` actually renders — i.e. every turn at or
-   after `windowStart` — `renderTurn` additionally pushes the turn's **rehydrated** `userContent`
-   (`:1161`). So a turn inside the resident render window seeds from its rehydrated content, while a
-   folded turn seeds from the same redacted preview it displays; pinned only for the former by
-   `packages/code/tests/component/run-host.test.ts:867` (a single in-window turn, seed excludes
-   `[redacted]`).
+5. `history.seed(seeds)`. The seed array starts from `meta.turns[0..foldedTurnCount)`, adding the
+   stored redacted `userPreview` only for `kind: "conversation"`; transcript-only turns never enter
+   prompt history. For each resident turn `resumeSession` renders, `renderTurn` likewise pushes
+   rehydrated `userContent` only for a conversation turn. A conversation inside the resident render
+   window therefore seeds from its rehydrated content, while a folded conversation seeds from its
+   canonical redacted preview. Production: `packages/code/src/run-host.ts` (`loadSessionMeta`). Test:
+   `packages/code/tests/component/run-host.test.ts` ("resume seeds prompt history from the rehydrated
+   user content, not userPreview").
 6. Compare `meta.lastEnvironment ?? meta.turns.at(-1)?.environment` with
    `client.currentEnvironment()`. A different id or fingerprint appends a warning naming both
    snapshots; it does not block the resume or rewrite the historical turn. `currentEnvironment()`
@@ -614,8 +671,10 @@ counts toward `collapsed`, never `degraded` (`:635`–`:640`) —
 
 | Method | Effect | Line |
 |---|---|---|
-| `beginTurn(content, execId)` | creates `meta` on first call (UUIDv7 id, redacted 80-char title), pushes a `user` message and a `running` `TurnRef`, stamps the current Environment on both turn and summary, saves; returns the previous turn's execution id | `packages/code/src/adapters/session.ts` (`beginTurn`) |
-| `endTurn(envelope)` | stamps `endedAt`, maps `status` via `runStatusToNode`, records/clears `turn.error`, appends the assistant reply, and folds usage into totals **once** per execution id | `:141`–`:164` |
+| `beginTurn(content, execId)` | creates `meta` on first call, pushes a user message and a running `kind: "conversation"` turn, advances continuation and returns its previous conversation execution id | `packages/code/src/adapters/session.ts` (`beginTurn`) |
+| `beginTranscriptTurn(display, execId)` | creates a running `kind: "transcript"` turn without mutating model history or continuation | `packages/code/src/adapters/session.ts` (`beginTranscriptTurn`) |
+| `endTurn(envelope)` | settles the matching conversation turn, appends the assistant reply, and folds usage into totals once | `packages/code/src/adapters/session.ts` (`endTurn`, `finishTurn`) |
+| `endTranscriptTurn(envelope)` | settles the matching transcript turn and totals without appending its result to model history | `packages/code/src/adapters/session.ts` (`endTranscriptTurn`, `finishTurn`) |
 | `reconcile(stored)` | re-maps status, adopts the persisted run's Environment identity when present, and adds usage if the id was not already counted | `packages/code/src/adapters/session.ts` (`reconcile`) |
 | `setProfile(name)` | no-ops when `!meta \|\| meta.profile === name`; otherwise updates `meta.profile`/`meta.updatedAt` and saves | `:184`–`:189` |
 | `appendObservation(content, role="assistant")` | pushes into `history` **and** `pending`, mirrors `pending` into `meta` and saves | `:191`–`:203` |
@@ -624,8 +683,8 @@ counts toward `collapsed`, never `degraded` (`:635`–`:640`) —
 | `releaseHistory()` | empties `history` and sets `historyComplete = false` | `:219`–`:222` |
 | `restoreHistory(messages)` | splices in a rebuilt chain and sets `historyComplete = true` | `:224`–`:227` |
 
-`lastTurnFor` (`:101`) searches backwards for a matching `executionId` and **falls back to the newest
-turn** when none matches.
+`lastTurnFor` searches backwards for the requested `kind` and, when supplied, exact `executionId`; it
+returns `undefined` rather than falling back to a turn of another kind or id.
 
 `runStatusToNode` (`packages/code/src/adapters/session-store.ts:72`): `completed→done`, `cancelled→cancelled`,
 `running→running`, everything else `→ error` — except `endedReason === "soft_limit_declined"`, which
@@ -950,26 +1009,32 @@ The following are derived directly from this document's own source and its tests
     and the full retry (`:668`, `:693`). Pinned:
     `packages/code/tests/component/run-host.test.ts:1429`.
 
-18. **Exactly 20 semantic turns stay resident, and folding produces exactly one prefix notice.**
-    `RESIDENT_TRANSCRIPT_TURN_LIMIT` (`packages/code/src/run-host.ts:202`), enforced both on the live
-    path (`:925`) and on resume (`:1134`). Pinned:
-    `packages/code/tests/component/run-host.test.ts:1910` and
-    `packages/code/tests/component/run-host-export.test.ts:239`.
+18. **`residentTurns` never exceeds 20, and every successful structural fold produces exactly one
+    frozen prefix notice.** The ordinary fold leaves 20 refs; if its boundary is refused, a
+    current-turn-boundary fallback compresses the entire older prefix and leaves one. If both folds
+    are refused, the speculative ref is rolled back.
+    Production: `packages/code/src/run-host.ts` (`RESIDENT_TRANSCRIPT_TURN_LIMIT`,
+    `rememberResidentTurn`, `loadSessionMeta`) and `packages/code/src/adapters/store.ts`
+    (`foldPrefixBefore`). Pinned by `packages/code/tests/component/run-host.test.ts` (resident-turn
+    retention) and `packages/code/tests/component/run-host-export.test.ts` (25-turn resident/export
+    round trip).
 
-19. **A turn is recorded as folded only if the store actually folded it.** `rememberResidentTurn`
-    returns early when `foldPrefixBefore` reports `false`
-    (`packages/code/src/run-host.ts:949`); the store refuses an absent or first-node boundary
-    (`packages/code/src/adapters/store.ts:822`). Pinned:
-    `packages/code/tests/unit/store-status.test.ts:391`.
+19. **`foldedTurnCount` advances only when the store actually folds a prefix.** Both ordinary and
+    fail-bounded fallback calls must return `true`; double refusal leaves the scalar unchanged.
+    Production: `packages/code/src/run-host.ts` (`rememberResidentTurn`) and
+    `packages/code/src/adapters/store.ts` (`foldPrefixBefore`). Pinned by
+    `packages/code/tests/unit/store-status.test.ts` ("foldPrefixBefore rejects absent and first-node
+    boundaries without mutating the transcript").
 
 20. **An export never fails because of one missing trace.** Every fetch failure becomes a node or a
     notice (`packages/code/src/run-host.ts:1032`, `:1113`–`:1127`). Pinned:
     `packages/code/tests/component/run-host-export.test.ts:302` and `:319`.
 
-21. **An export yields one folded turn at a time, so a second copy of the session is never resident.**
-    `scratch.clear()` before each rebuild and a `yield` per turn
-    (`packages/code/src/run-host.ts:1099`, `:1133`). Pinned:
-    `packages/code/tests/component/run-host-export.test.ts:340` (6 batches for a 25-turn session).
+21. **An export lazily indexes canonical `SessionMeta.turns` and yields one folded turn at a time, so
+    a second copy of the session is never resident.** Production: `packages/code/src/run-host.ts`
+    (`exportNodeBatches`). Pinned by `packages/code/tests/component/run-host-export.test.ts` ("folded
+    export reads the canonical turn index one item at a time" and "folded turns are yielded one at a
+    time before the bounded live window").
 
 22. **A session that still fits the resident window exports `store.nodes` itself, refetching nothing.**
     `packages/code/src/run-host.ts:1089`–`:1092`. Pinned by object identity at
@@ -980,14 +1045,11 @@ The following are derived directly from this document's own source and its tests
     displayed.** The `sourceTextFingerprint` comparison at `packages/code/src/run-host.ts:1045`.
     Pinned: `packages/code/tests/component/run-host-export.test.ts:204`.
 
-24. **Prompt-history seeding is rehydrated content only for turns inside the resident render window;
-    a folded (pre-window) turn seeds from its stored, already-redacted preview instead.** The seed
-    array starts as `foldedTurns.map((turn) => turn.userPreview)` (`packages/code/src/run-host.ts:1161`)
-    and only turns whose index is `>= windowStart` push their rehydrated `userContent` on top
-    (`:1161`). Pinned only for the in-window case:
-    `packages/code/tests/component/run-host.test.ts:867` seeds a single turn inside the window and
-    asserts the seed does not contain `[redacted]`; no test in this scope exercises seeding for a
-    folded turn.
+24. **Prompt-history seeding includes conversation turns only: resident conversations use rehydrated
+    content and folded conversations use their canonical, already-redacted preview; transcript-only
+    turns seed neither path.** Production: `packages/code/src/run-host.ts` (`loadSessionMeta`). Pinned
+    for the resident conversation case by `packages/code/tests/component/run-host.test.ts` ("resume
+    seeds prompt history from the rehydrated user content, not userPreview").
 
 25. **`memory_ingest` is status-line material and never enters the transcript.**
     `packages/code/src/adapters/kernel-run-client.ts:299`–`:302`. Pinned:
@@ -1211,6 +1273,7 @@ The following are derived directly from this document's own source and its tests
 | an operation issued before `connect()` | `requireKernel()` throws `"kernel run client is not connected"` (`packages/code/src/adapters/kernel-run-client.ts:154`) | hard failure — except `capabilities`, which returns the last descriptor (`:173`) |
 | `getRun`/`deleteRun` hit a kernel `not_found` | `hasKernelErrorCode` (`packages/code/src/adapters/kernel-errors.ts:4-14`, called at `packages/code/src/adapters/kernel-run-client.ts:401`, `:411`) | `null` / `false` respectively; any other error rethrows |
 | a session write fails | `opts.onError?.(\`session ${kind} failed: ${message}\`)` (`packages/code/src/adapters/session-store.ts:482`) | the cache keeps the optimistic value; the lane continues draining |
+| a full session turn has missing/unknown `kind` | `packages/code/src/adapters/session-store.ts` (`persistedTurnKind`, called by `sessionToMeta`) | load/resume rejects instead of guessing continuation semantics; catalog summaries remain listable until the full document is loaded |
 | `sessions.get` returns `null` for a cached id | `packages/code/src/adapters/session-store.ts:507`–`:512` | cache entry and LRU slot are evicted, `load` returns `null` |
 | a resumed turn's trace is gone | classified `interrupted` / `trace_pruned` / `trace_unavailable` (`packages/code/src/adapters/session.ts:633`) | the turn renders from `userPreview` with a `degraded` marker; the count shows in the status (`packages/code/src/run-host.ts:1215`) |
 | a resumed run was rebuilt from a damaged journal | `recovery` passed beside the events (`packages/code/src/adapters/session.ts:580`), notice at `packages/code/src/run-host.ts:1187` | the events **are** shown, with a `"warn"` partial-record notice above them |

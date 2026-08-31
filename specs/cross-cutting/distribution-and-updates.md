@@ -109,15 +109,19 @@ discovers bare runtime package references retained by the split artifact, closes
 dependency graph, adds the one OpenTUI native package for the target, copies the static Bun,
 models.dev, and Vercel AI SDK license and notice set, removes every case-insensitive `.map` suffix
 from the complete payload, writes the internal manifest, creates a gzip tar archive, and emits a
-sidecar SHA-256. Production:
+sidecar SHA-256. The tar subprocess receives the portable `C` locale explicitly, so a host runtime's
+synthetic or unavailable UTF-8 locale cannot add a platform warning or alter archive processing.
+Production:
 `packages/code/tooling/release/package.ts` and
 `packages/code/tooling/release/runtime-package-discovery.ts`. Generated static-import and call
 specifiers contribute to that closure only when they name an installed bare package root; relative,
 absolute, built-in, and module-internal `#` references are ignored, package subpaths resolve to their
-owning root, and an invalid name reaching manifest resolution is rejected before any path is read. Test:
-`packages/code/tests/unit/runtime-package-discovery.test.ts`. The release smoke re-extracts the
+owning root, and an invalid name reaching manifest resolution is rejected before any path is read.
+Test: `packages/code/tests/unit/runtime-package-discovery.test.ts` and
+`packages/code/tests/architecture/artifact-contract.test.ts`. The release smoke re-extracts the
 archive, verifies the manifest, required notices/licenses, and zero-map rule, runs `--version` and
-`--help`, and on POSIX boots first paint under a real PTY using the packaged runtime. Test:
+`--help`, and on POSIX observes the complete-app marker under a real PTY using the packaged runtime.
+Its elapsed value is explicitly the outer PTY/polling duration, not a first-paint benchmark. Test:
 `packages/code/tooling/release/smoke.ts` and
 `packages/code/tooling/artifact/pty.ts`.
 
@@ -129,14 +133,18 @@ requested version. An existing same-version payload must carry the same manifest
 `current`, the installer acquires `update.lock` and refuses an unrelated command at the launcher
 path, including a POSIX launcher bound to another install root. Marker and activation destinations
 must be regular non-linked files when present and are revalidated immediately before replacement.
+Archive creation, POSIX checksum parsing/calculation, and POSIX extraction all force the portable
+`C` locale, so an unsupported inherited locale cannot add a warning or alter archive/checksum
+interpretation.
 Only then does the installer store the ownership marker, activate the version, and atomically
 replace its own marked launcher. The stable launcher validates the `current` identifier before using
 it in a path. The POSIX installer accepts the script either as a file or on `/bin/sh`'s standard
 input, asks no interactive question, and invokes the staged Clarvis payload only through the
 application-free `--version` fast path before activation. Production: `install.sh`, `install.ps1`, and
 `packages/code/src/cli.ts`. Test: `packages/code/tooling/release/installer-smoke.ts` covers visible
-progress, the POSIX standard-input entry, unmanaged and cross-root launcher refusal, linked and
-non-file marker refusal, a same-version reinstall, the ownership marker, and the stable launcher.
+progress under a synthetic host locale, the POSIX standard-input entry, unmanaged and cross-root
+launcher refusal, linked and non-file marker refusal, a same-version reinstall, the ownership
+marker, and the stable launcher.
 
 Uninstall is an explicit mode of the same versioned scripts. It prints the resolved install root and
 launcher before mutation, authenticates the exact ownership marker, and supports installations made
@@ -322,7 +330,7 @@ Production: `.github/workflows/release.yml` (`release-token` step) and
 | Unknown top-level files under an authenticated install root | managed files are removed; unknown files and the non-empty root remain and are reported |
 | Source checkout or `bun link` command | `--update` refuses and directs the operator to Git/setup |
 | No eligible newer release | exit 0 and report the current version is up to date |
-| Windows release smoke | manifest and fast paths run natively; real-PTY first paint remains covered by POSIX release jobs |
+| Windows release smoke | manifest and fast paths run natively; real-PTY complete-app boot remains covered by POSIX release jobs |
 | macOS Gatekeeper or Windows SmartScreen | unsigned beta may require explicit user approval; no bypass is automated |
 | Missing third-party notice or license marker | native release smoke fails before publication |
 | Build-host checkout path in generated JavaScript | artifact build fails before packaging |

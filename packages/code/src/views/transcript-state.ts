@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js";
-import { createEffect, createMemo, createSignal, on } from "solid-js";
+import { createEffect, createMemo, createSignal } from "solid-js";
 import type { NodeStatus, TranscriptNode, TranscriptToolNode } from "../adapters/store.ts";
 import { subagentFocusToast } from "../core/transcript/index.ts";
 import { toolIdentity } from "../adapters/tool-identity.ts";
@@ -12,12 +12,6 @@ import {
   toggleOverride,
   type BlockOverride,
 } from "./block-focus.ts";
-import {
-  createTranscriptTurnIndex,
-  NO_TRANSCRIPT_TURNS,
-  windowTranscriptIndexed,
-  type TranscriptWindow,
-} from "./transcript-window.ts";
 
 const DIFF_TOOLS = new Set([
   "apply_patch",
@@ -34,6 +28,10 @@ const DIFF_TOOLS = new Set([
  */
 export interface TranscriptStateDeps {
   nodes: () => readonly TranscriptNode[];
+  /** Mutable/detail source used only by explicit overlays, never by committed history rendering. */
+  detailNodes?: () => readonly TranscriptNode[];
+  /** Preserve publisher order instead of applying the legacy mutable-run terminal projection. */
+  preserveOrder?: boolean;
   subagents: () => readonly { id: string; order: number; title: string; status?: NodeStatus }[];
   notify: (message: string) => void;
   defaultFolded?: (key: string) => boolean;
@@ -55,17 +53,8 @@ export interface TranscriptStateDeps {
 export interface TranscriptState {
   grouped: Accessor<GroupedTranscript>;
   toolGroups: Accessor<Map<string, ToolGroupInfo>>;
-  /** What the transcript currently renders, and what it is holding back. */
-  window: Accessor<TranscriptWindow>;
-  /**
-   * Replace the current page with the next older page.
-   *
-   * @returns `false` when the window already reaches the start of the
-   *   transcript, so the caller can say so rather than appearing to do nothing.
-   */
-  loadEarlier(): boolean;
-  /** Replace the current page with the next newer page. */
-  loadLater(): boolean;
+  /** Lead-only main projection, or one explicitly selected sub-agent transcript. */
+  semanticNodes: Accessor<readonly TranscriptNode[]>;
   expandAll: Accessor<boolean>;
   selectedSubagent: Accessor<string | null>;
   focusedKey: Accessor<string | null>;
@@ -140,38 +129,35 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
   const [selectedSubagent, setSelectedSubagent] = createSignal<string | null>(null);
   const [focusedKey, setFocusedKey] = createSignal<string | null>(null);
   const [overrides, setOverrides] = createSignal<ReadonlyMap<string, BlockOverride>>(new Map());
-  const [pageEnd, setPageEnd] = createSignal<number | null>(null);
-  const [laterPageEnds, setLaterPageEnds] = createSignal<readonly number[]>([]);
-  const turnIndex = createTranscriptTurnIndex();
+  /** Section anchors that already consumed their one automatic first-selection expansion. */
+  const firstSelectionExpandedAnchors = new Set<string>();
 
   const visibleNodes = createMemo(() => {
     const sel = selectedSubagent();
     const base = deps.nodes();
-    const scoped = sel === null ? base : base.filter((n) => n.subagentId === sel);
-    return withRunMarkersLast(scoped);
+    const scoped =
+      sel === null
+        ? base.some((node) => node.subagentId !== undefined || node.subagentOrder !== undefined)
+          ? base.filter((node) => node.subagentId === undefined && node.subagentOrder === undefined)
+          : base
+        : base.filter((node) => node.subagentId === sel);
+    return deps.preserveOrder ? scoped : withRunMarkersLast(scoped);
   });
-  /**
-   * The rendered slice of the transcript.
-   *
-   * @remarks Windowing happens **here**, ahead of {@link computeGroupedNodes},
-   *   rather than by slicing `grouped().ordered` afterwards. Everything
-   *   downstream reads adjacency or resolves a key: `computeToolGroups` assigns
-   *   `head`/`member` by adjacency, so a head left outside the slice would hide
-   *   its own visible members; `isFoldedAway` resolves a section anchor that
-   *   would no longer be there; and `computeFocusables` would hand out focus on
-   *   keys that are not mounted. Cutting the nodes first means all of it derives
-   *   from exactly what is rendered.
-   */
-  const window_ = createMemo(() =>
-    windowTranscriptIndexed(
-      visibleNodes(),
-      pageEnd(),
-      selectedSubagent() === null ? turnIndex : NO_TRANSCRIPT_TURNS,
-    ),
-  );
+
+  createEffect(() => {
+    const semanticKeys = new Set(deps.nodes().map((node) => node.key));
+    for (const key of firstSelectionExpandedAnchors)
+      if (!semanticKeys.has(key)) firstSelectionExpandedAnchors.delete(key);
+
+    const current = overrides();
+    if (current.size === 0) return;
+    if ([...current.keys()].every((key) => semanticKeys.has(key))) return;
+    setOverrides(new Map([...current].filter(([key]) => semanticKeys.has(key))));
+  });
+
   const grouped = createMemo(() =>
     computeGroupedNodes(
-      window_().nodes,
+      visibleNodes(),
       new Map(
         deps
           .subagents()
@@ -184,20 +170,28 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
   const focusables = createMemo(() => computeFocusables(grouped(), toolGroups(), overrides()));
 
   createEffect(() => {
+    if (selectedSubagent() === null) return;
+    const anchors = [...grouped().headers].filter(
+      ([key, header]) =>
+        !header.lead && (header.hiddenEntries ?? 0) > 0 && !firstSelectionExpandedAnchors.has(key),
+    );
+    if (anchors.length === 0) return;
+
+    const next = new Map(overrides());
+    let changed = false;
+    for (const [key] of anchors) {
+      firstSelectionExpandedAnchors.add(key);
+      if (next.has(key)) continue;
+      next.set(key, "expanded");
+      changed = true;
+    }
+    if (changed) setOverrides(next);
+  });
+
+  createEffect(() => {
     const sel = selectedSubagent();
     if (sel !== null && !deps.subagents().some((w) => w.id === sel)) setSelectedSubagent(null);
   });
-
-  createEffect(
-    on(
-      selectedSubagent,
-      () => {
-        setPageEnd(null);
-        setLaterPageEnds([]);
-      },
-      { defer: true },
-    ),
-  );
 
   createEffect(() => {
     const key = focusedKey();
@@ -222,27 +216,11 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
   return {
     grouped,
     toolGroups,
-    window: window_,
-    loadEarlier: () => {
-      const w = window_();
-      if (w.atStart) return false;
-      setLaterPageEnds((ends) => [...ends, w.end]);
-      setPageEnd(w.start);
-      return true;
-    },
-    loadLater: () => {
-      const w = window_();
-      if (w.atEnd) return false;
-      const ends = laterPageEnds();
-      const next = ends[ends.length - 1];
-      setLaterPageEnds(ends.slice(0, -1));
-      setPageEnd(next === undefined || next >= visibleNodes().length ? null : next);
-      return true;
-    },
+    semanticNodes: visibleNodes,
     expandAll,
     selectedSubagent,
     focusedKey,
-    folded: (key) => selectedSubagent() === null && isFoldedAway(grouped(), key, overrides()),
+    folded: (key) => isFoldedAway(grouped(), key, overrides()),
     overrideOf: (key) => overrides().get(key),
     toggleAt: (key) => {
       setFocusedKey(key);
@@ -251,13 +229,12 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
     reset: () => {
       setFocusedKey(null);
       setOverrides(new Map());
-      setPageEnd(null);
-      setLaterPageEnds([]);
+      firstSelectionExpandedAnchors.clear();
     },
     toggleSubagent: (id) => {
       if (selectedSubagent() === id) {
         setSelectedSubagent(null);
-        deps.notify("showing all activity");
+        deps.notify("showing Lead transcript");
         return;
       }
       setSelectedSubagent(id);
@@ -275,7 +252,7 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
       const idx = cur === null ? -1 : subagents.findIndex((w) => w.id === cur);
       const next = idx + 1 >= subagents.length ? null : subagents[idx + 1]!.id;
       setSelectedSubagent(next);
-      if (next === null) deps.notify("showing all activity");
+      if (next === null) deps.notify("showing Lead transcript");
       else {
         const w = subagents.find((x) => x.id === next);
         deps.notify(subagentFocusToast(w ? w.title : next));
@@ -317,7 +294,14 @@ export function createTranscriptState(deps: TranscriptStateDeps): TranscriptStat
         if (n.dehydrated === true) deps.rehydrate?.(n.key);
         return n;
       };
-      const nodes = deps.nodes();
+      const source = deps.detailNodes?.() ?? deps.nodes();
+      const selected = selectedSubagent();
+      const nodes =
+        selected === null
+          ? source.filter(
+              (node) => node.subagentId === undefined && node.subagentOrder === undefined,
+            )
+          : source.filter((node) => node.subagentId === selected);
       const focusedNode = nodes.find((n) => n.key === focusedKey());
       if (focusedNode && isDiffTool(focusedNode)) return chosen(focusedNode);
       for (let i = nodes.length - 1; i >= 0; i -= 1) {

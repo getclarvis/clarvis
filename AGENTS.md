@@ -227,8 +227,9 @@ The full architecture, gate order, coverage policy, and CI/platform scope are in
 ## TUI validation
 
 Interactive `@clarvis/code` defects must be reproduced and verified in a real PTY. Use the
-`tui-driver` skill for exploratory or repeatable interaction and `bun run smoke` for the automated
-artifact boot contract.
+[`clarvis-tui-e2e-validation`](.agents/skills/clarvis-tui-e2e-validation/SKILL.md) skill for the
+end-to-end evidence contract, the `tui-driver` skill for its PTY interaction mechanics, and
+`bun run smoke` for the automated artifact boot contract.
 
 - Build the bundle with `bun run build` (all distributables) or `bun run build:code` (TUI only), or
   set `CLARVIS_CODE_SOURCE=1`; otherwise the CLI may run a stale `dist/index.js`.
@@ -262,6 +263,14 @@ particular:
 - `@clarvis/code` can crash under Bun with a signal after a passing test; retry and classify the
   process crash separately from an assertion failure.
 - `@clarvis/loop` has a distinct rare Bun `epoll_ctl EEXIST` CI failure.
+- The Codex workspace sandbox can prohibit local socket listeners. Tests that bind an ephemeral
+  loopback port may then fail together with `Failed to start server. Is port 0 in use?` even though
+  no port is occupied. On that signature, rerun the affected test or package outside the sandbox
+  before diagnosing a product regression or changing code.
+- On macOS, invoking the host `/usr/bin/git` from the Codex workspace sandbox can falsely trigger
+  the Command Line Developer Tools installer even when Git works on the host. Use injected fake
+  executables for sandbox contract tests and rerun real host-Git probes outside the Codex sandbox;
+  do not diagnose a missing Git installation from that popup.
 - Windows and macOS CI availability and known Windows gaps are recorded there and in the build spec.
 - Workspace-confined writes still have a documented parent-directory TOCTOU; do not claim a partial
   path re-check closes it.

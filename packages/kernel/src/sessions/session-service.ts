@@ -23,6 +23,7 @@ function isSession(v: unknown): v is Session {
     typeof s.workspace === "string" &&
     typeof s.created_at === "number" &&
     Array.isArray(s.turns) &&
+    s.turns.every((turn) => turn?.kind === "conversation" || turn?.kind === "transcript") &&
     s.totals !== null &&
     typeof s.totals === "object"
   );

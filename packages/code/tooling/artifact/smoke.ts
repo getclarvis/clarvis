@@ -217,8 +217,9 @@ async function main(): Promise<void> {
   }
 
   process.stdout.write(
-    `smoke ok - artifact reached first paint in ${result.elapsed.toFixed(0)}ms ` +
-      `(shell: ${String(shellPainted.elapsed_ms)}ms, app: ${String(painted.elapsed_ms)}ms, ` +
+    `smoke ok - artifact and required diagnostics settled in ${result.elapsed.toFixed(0)}ms ` +
+      `(startup shell paint: ${String(shellPainted.elapsed_ms)}ms, ` +
+      `complete app paint: ${String(painted.elapsed_ms)}ms, ` +
       `deferred_catalog=${String(painted.deferred_catalog)})\n`,
   );
 }

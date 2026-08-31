@@ -1,11 +1,11 @@
-import { For, lazy, Show, Suspense, untrack, type Accessor, type JSX } from "solid-js";
+import { For, lazy, Suspense, untrack, type Accessor, type JSX } from "solid-js";
 import type { PlansService } from "@clarvis/protocol";
 import type { ActivityStore } from "../../adapters/activity-store.ts";
 import type { TranscriptToolNode } from "../../adapters/store.ts";
 import type { Interaction } from "../../keys/interaction.ts";
 import type { MountedView, OverlayHost } from "../overlay-host.ts";
 import { diagnosticCount } from "../../core/diagnostic-events.ts";
-import { SurfaceBoundary, SurfaceRegion } from "../../ui/patterns/surface-lifecycle.tsx";
+import { SurfaceBoundary, SurfaceOverlay } from "../../ui/patterns/surface-lifecycle.tsx";
 
 const DiffViewer = lazy(async () => {
   const module = await import("../overlays/DiffViewer.tsx");
@@ -39,6 +39,15 @@ export interface OverlayRegionProps {
   plans?: Pick<PlansService, "read">;
 }
 
+/** Whether the persistent shell owns paint and interaction for the current overlay state. */
+export function overlayFallbackActive(host: OverlayHost): boolean {
+  return (
+    host.overlay() !== "diff" &&
+    host.overlay() !== "plan" &&
+    (host.overlay() !== "view" || host.views().length === 0)
+  );
+}
+
 /**
  * Renders the overlay kinds that own the whole region — `view`, `diff` and
  * `plan` — or the main shell fallback.
@@ -51,30 +60,40 @@ export interface OverlayRegionProps {
  *   falls back the same way, which keeps an unknown kind from blanking the screen.
  */
 export function OverlayRegion(props: OverlayRegionProps): JSX.Element {
+  const fallbackActive = (): boolean => overlayFallbackActive(props.host);
+
   return (
     <>
-      <Show when={props.host.overlay() !== "view" || props.host.views().length === 0}>
-        <box
-          visible={props.host.overlay() !== "diff" && props.host.overlay() !== "plan"}
-          flexGrow={1}
-          flexDirection="column"
-        >
-          {props.fallback}
-        </box>
-      </Show>
+      <box
+        flexGrow={1}
+        flexShrink={1}
+        minWidth={0}
+        minHeight={0}
+        flexDirection="column"
+        overflow="hidden"
+        opacity={fallbackActive() ? 1 : 0}
+        zIndex={fallbackActive() ? 0 : -1}
+        onMouse={(event) => {
+          if (fallbackActive()) return;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+      >
+        {props.fallback}
+      </box>
       <For each={props.host.views()}>
         {(frame) => (
           <SurfaceBoundary
             active={() => props.host.overlay() === "view" && frame.host.active()}
             retention="retain-one"
           >
-            {() => <SurfaceRegion>{renderMountedView(frame)}</SurfaceRegion>}
+            {() => <SurfaceOverlay>{renderMountedView(frame)}</SurfaceOverlay>}
           </SurfaceBoundary>
         )}
       </For>
       <SurfaceBoundary active={() => props.host.overlay() === "diff"} retention="retain-one">
         {(lifecycle) => (
-          <SurfaceRegion>
+          <SurfaceOverlay>
             <Suspense fallback={<text>Loading diff…</text>}>
               <DiffViewer
                 interaction={props.interaction}
@@ -82,12 +101,12 @@ export function OverlayRegion(props: OverlayRegionProps): JSX.Element {
                 active={lifecycle.active}
               />
             </Suspense>
-          </SurfaceRegion>
+          </SurfaceOverlay>
         )}
       </SurfaceBoundary>
       <SurfaceBoundary active={() => props.host.overlay() === "plan"} retention="retain-one">
         {(lifecycle) => (
-          <SurfaceRegion>
+          <SurfaceOverlay>
             <Suspense fallback={<text>Loading plan…</text>}>
               <PlanOverlay
                 interaction={props.interaction}
@@ -97,7 +116,7 @@ export function OverlayRegion(props: OverlayRegionProps): JSX.Element {
                 onClose={() => props.host.dismissTop()}
               />
             </Suspense>
-          </SurfaceRegion>
+          </SurfaceOverlay>
         )}
       </SurfaceBoundary>
     </>

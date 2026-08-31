@@ -43,6 +43,35 @@ const BUILTIN_TOOL_LABELS: Readonly<Record<string, string>> = {
   run_work_items: "Run work items",
 };
 
+const TRANSCRIPT_EXTERNAL_ORCHESTRATION_TOOLS = new Set([
+  "spawn_subagent",
+  "delegate_task",
+  "agent_list",
+  "agent_poll",
+  "agent_stop",
+  "agent_steer",
+  "await_agents",
+  "run_leader",
+  "run_workflow",
+  "run_round",
+  "run_work_items",
+]);
+
+/**
+ * Whether a bare built-in tool's lifecycle belongs to Sidebar/footer orchestration rather than
+ * Lead history.
+ *
+ * @remarks A non-empty `toolName` denotes a namespaced MCP identity such as
+ * `server.await_agents`; matching only its leaf would hide an unrelated downstream tool. During
+ * provider composition the unsplit wire name must be supplied as `mcpName`.
+ */
+export function isTranscriptExternalOrchestrationTool(
+  mcpName: string | undefined,
+  toolName: string | undefined,
+): boolean {
+  return !toolName && TRANSCRIPT_EXTERNAL_ORCHESTRATION_TOOLS.has(mcpName ?? "");
+}
+
 /** Product-facing label for built-in orchestration tools; MCP identities remain exact. */
 export function toolDisplayLabel(
   mcpName: string | undefined,

@@ -105,6 +105,13 @@ isolation fails closed when the selected backend cannot apply its policy. Only
 currently have no native backend. Toolchain inventory is passive: it resolves executable paths and
 install roots but never launches discovered entrypoints for version probes, so merely opening host
 diagnostics cannot trigger an operating-system installer or tool initialization.
+Seatbelt admits both authored and canonical spellings of the read-only macOS system aliases it
+depends on. In particular, `/etc` resolves to `/private/etc`, while `/var` plus the narrow
+`/var/select` and `/private/var/select` trees let Apple's installed Git shim resolve
+`developer_dir`; denying those existence/readlink checks makes Apple incorrectly request Command
+Line Tools even when they are installed. The opt-in real-host canary first resolves that selector
+inside the generated profile and only then executes `/usr/bin/git --version`; a selector regression
+therefore fails before Apple's Git shim can request the graphical installer.
 
 `host_vcs` is the narrow fallback for an operation the sandbox cannot perform because it lacks a
 host environment variable, credential channel, runtime, or service. The historical name remains for

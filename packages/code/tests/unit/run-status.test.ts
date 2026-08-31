@@ -87,7 +87,7 @@ test("the canonical run strip owns terminal outcomes, context and wide usage", (
       usage: { input: 12_400, output: 820 },
       width: 160,
     }),
-  ).toBe("Running · iteration 4 · 1m05s · Context 25% · Run  In 12k · Out 820");
+  ).toBe("Context 25% · Run  In 12k · Out 820");
   expect(
     runStripText({
       active: false,
@@ -111,7 +111,7 @@ test("the strip's run tokens report what was read, not what was in the window", 
       usage: { input: 12_400, output: 820, cached: 10_000 },
       width: 160,
     }),
-  ).toBe("Running · Context 25% · Run  In 2.4k · Out 820");
+  ).toBe("Context 25% · Run  In 2.4k · Out 820");
 });
 
 test("a provider that reports no cache split leaves the run tokens gross", () => {
@@ -139,6 +139,22 @@ test("the run strip keeps cumulative session cost without duplicating run token 
       width: 100,
     }),
   ).toBe("Completed · Context 25% · Session $0.042");
+});
+
+test("the run strip keeps cumulative session tokens before and after a run settles", () => {
+  const shared = {
+    status: "completed",
+    startedAt: null,
+    now: 0,
+    context: { used: 25_000, limit: 100_000 },
+    usage: { input: 500, output: 50 },
+    sessionUsage: { input: 120_000, output: 12_000, cached: 1_000 },
+    width: 160,
+  };
+  expect(runStripText({ ...shared, active: true })).toContain("Session  In 119k · Out 12k");
+  expect(runStripText({ ...shared, active: false })).toBe(
+    "Completed · Context 25% · Session  In 119k · Out 12k",
+  );
 });
 
 test("every memory ingest phase renders distinct text, including queued and blocked", () => {

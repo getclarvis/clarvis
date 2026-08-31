@@ -1,5 +1,5 @@
 import type { JSX } from "solid-js";
-import { createSignal, onMount, Show } from "solid-js";
+import { children, createSignal, onMount, Show } from "solid-js";
 import { useTerminalDimensions, useTimeline } from "@opentui/solid";
 import { tokens } from "../../theme/tokens.ts";
 import { borderChars } from "../../theme/glyphs.ts";
@@ -51,6 +51,8 @@ export function FloatFrame(props: {
   maxHeight?: number | `${number}%`;
 }): JSX.Element {
   const dims = useTerminalDimensions();
+  /** Resolve the JSX-valued getter once so footer probes cannot mount duplicate navigation trees. */
+  const navigation = children(() => props.navigation);
   const lifecycle = useOptionalSurfaceLifecycle();
   const maxHeight = (): number | `${number}%` =>
     props.maxHeight ?? (props.size === "sm" ? SM_MAX_HEIGHT : floatMaxRows(dims().height));
@@ -124,11 +126,11 @@ export function FloatFrame(props: {
         <box flexDirection="column" paddingTop={1} flexGrow={1} minHeight={1}>
           {props.children}
         </box>
-        <Show when={props.navigation || (props.footer?.length ?? 0) > 0}>
+        <Show when={navigation() || (props.footer?.length ?? 0) > 0}>
           <box height={1} flexShrink={0} flexDirection="row">
-            <Show when={props.navigation}>
+            <Show when={navigation()}>
               <box flexGrow={1} minWidth={0}>
-                {props.navigation}
+                {navigation()}
               </box>
             </Show>
             <Show when={(props.footer?.length ?? 0) > 0}>

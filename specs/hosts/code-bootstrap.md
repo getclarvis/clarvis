@@ -763,12 +763,11 @@ teardown.
 
 `secondaryMode` (`packages/code/src/app/layout.ts`, `createLayoutController`):
 
-| `hasSidebarContent` | `w >= 100` | `drawerOpen` | result |
-|---|---|---|---|
-| false | — | — | `closed` |
-| true | true | — | `split` |
-| true | false | true | `drawer` |
-| true | false | false | `closed` |
+| explicit `drawerOpen` intent | `w >= 100` | result |
+|---|---|---|
+| false | — | `closed` |
+| true | true | `split` |
+| true | false | `drawer` |
 
 `sidebarVisible` is exactly `secondaryMode() === "split"`; `contentInset` is `sidebarWidth()`
 when visible, else `0`. `sidebarWidth` is `clamp(round(w * 0.32), 32, 56)` then clamped again
@@ -776,17 +775,26 @@ to the viewport, so a 24-column terminal yields `24` — pinned at
 `packages/code/tests/unit/layout.test.ts:71-73`. In split mode, `TranscriptRegion.splitOpen()` also
 opts transcript blocks and inline elicitation cards into the full width of the remaining left pane;
 the pane's flex boundary, not a second arithmetic inset, stops them at the sidebar
-(`packages/code/src/views/app/TranscriptRegion.tsx:80-86,184-243`). The 200-column shell regression
+(`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`). The 200-column shell regression
 pins content beyond the old 110-column cap and no transcript text past the sidebar at
 `packages/code/tests/integration/app-shell-render.test.tsx:1490-1530`.
 
-There is no stored sidebar preference and no global toggle. At 100 columns or wider, content opens
-the split automatically. Below that threshold the visible compact activity strip may set
-`drawerOpen`; Escape closes the drawer. Content disappearing closes either presentation regardless
-of the drawer signal. Production: `packages/code/src/app/layout.ts` (`createLayoutController`) and
-`packages/code/src/views/App.tsx` (`compactActivityStrip`, `dismissTopOverlay`). Tests:
-`packages/code/tests/unit/layout.test.ts` and
-`packages/code/tests/integration/app-shell-render.test.tsx`.
+There is no stored sidebar preference and no global toggle. `App` owns three independent automatic
+reveal intents: the first live Plan reveals Plan, the first workflow leader reveals Parallel work,
+and the first typed delegation reveals Agents once for that execution context. Each intent preserves
+the Lead transcript selection and never opens `ActivityDetail`. Escape or scrim close dismisses the
+intent that opened the surface, so later updates of that kind cannot reopen it; the first event for a
+different section may still reveal and orient the Sidebar. A new execution context resets the
+corresponding intent. The controller presents either automatic or pointer intent as a split at 100
+columns or wider and as a drawer below the threshold. Production:
+`packages/code/src/app/layout.ts` (`createLayoutController`) and
+`packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `visiblePlanContext`,
+`visibleSubagentContext`, `closeActivitySidebar`,
+`compactActivityStrip`, `Footer.onRunStripMouseDown`, `dismissTopOverlay`). Tests:
+`packages/code/tests/unit/layout.test.ts` (responsive explicit-intent mechanics) and
+`packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
+independent once-per-run sidebar reveals", "the first workflow leader opens and reveals Parallel
+work", the narrow-drawer Escape case and isolated child selection).
 
 ### 4.11 The floor screen
 
@@ -860,18 +868,23 @@ The render tree returned by `App` is, top to bottom: `KeymapProvider` →
 its fallback → the floating pickers/readers (`ProfilePicker`, lazy `SafetyPresetPicker`,
 `ActivityDetail`, `WorktreeExitPrompt`) as
 **siblings
-after** the region → `HintToast` → the bottom box (`MemoryPressureBanner`, `PlanStrip`, `InputDock`,
-`Footer`) → the floor panel.
+after** the region → `HintToast` → the bottom box (`LeadActivityLine`, `InputDock`, `Footer`) → the
+floor panel. `MemoryPressureBanner`, elicitation and the fixed reading runway remain final children
+of the history ScrollBox through `LiveTranscriptTail`; no Plan pane is mounted below the transcript.
 
-The two-route overlay rule is stated at `packages/code/src/views/App.tsx:194-199`: a kind that owns the whole region (`view`,
-`diff`, `plan`) is rendered by `OverlayRegion` which swaps out the transcript; a picker is a floating
-card mounted as a sibling after the region "so the transcript keeps rendering behind it — moving it
-into the region's switch would black out everything the scrim exists to show through."
+The two-route overlay rule is stated at `packages/code/src/views/App.tsx`: a kind that owns the whole
+region (`view`, `diff`, `plan`) is rendered by `OverlayRegion` as a cover over one still-mounted,
+paused transcript fallback; a picker is a floating card mounted as a sibling after the region "so
+the transcript keeps rendering behind it — moving it into the region's switch would black out
+everything the scrim exists to show through."
 
 **`OverlayRegion` itself** (`packages/code/src/views/app/OverlayRegion.tsx`, `OverlayRegion`) keeps
-the fallback shell mounted but hidden for full-region `diff`/`plan` surfaces, renders each mounted
-configuration frame inside a retained `SurfaceBoundary`, and gives Diff and Plan their own lazy
-retained boundaries. `PlanOverlay` is wired only to `props.activity.plan`, the optional
+the fallback shell and its Yoga geometry mounted but hidden for every full-region configuration,
+Workflow, Diff and Plan surface. `overlayFallbackActive` pauses its physical-history observation and
+removes hidden input, hit and elicitation ownership without discarding the Lead projection, its one
+bounded child projection or either projection's scroll state. Configuration frames remain bounded
+by their mounted stack and dispose when popped; Diff and Plan have their own lazy retained
+boundaries. `PlanOverlay` is wired only to `props.activity.plan`, the optional
 `Pick<PlansService, "read">`, the active accessor and an `onClose` that calls
 `props.host.dismissTop()`. Its own TSDoc names the omission: "A picker kind such as `agentPicker` is
 deliberately not here… so it reaches this switch as the fallback rather than as a full-region
@@ -913,8 +926,8 @@ and `Help` (`packages/code/src/views/overlays/Help.tsx:193`).
 `right = rightInset?.() ?? 0` so a visible sidebar does not get painted under, and `BrandBanner`
 shows the gradient `BANNER` at ≥60 columns or `glyph("diamond") + SPLASH_WORDMARK` below. It is mounted by `TranscriptRegion`
 only when the transcript is empty, no elicitation is pending and the draft is empty
-(`packages/code/src/views/app/TranscriptRegion.tsx:244-253`), and `TranscriptRegion`'s root box clips for the same
-reason `PageFrame`'s does (`packages/code/src/views/app/TranscriptRegion.tsx:62-76`).
+(`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`'s Splash condition), and
+`TranscriptRegion`'s root box clips for the same reason `PageFrame`'s does (`TranscriptRegion`).
 
 `StartupComposer` reuses `BrandBanner` inside its bounded centre rather than copying the banner. It
 forces the compact branch below 16 rows because its fixed header, connection status and focused input
@@ -1220,24 +1233,6 @@ Pinned for inherited `GIT_INDEX_FILE` isolation:
 `packages/code/tests/integration/worktree-bootstrap.test.ts:42-65`; the argv-only spawn, prompt
 variables and timeout/output caps are unpinned.
 
-**INV-CB-29.** A managed checkout can be removed on exit only after an explicit `y`, only after two
-cleanliness checks, and only through non-forced `git worktree remove`; its branch is preserved and
-the requested cleanup completes before the bounded platform-shutdown sequence begins. An external
-checkout's parent is never treated as Clarvis-owned.
-Production: `WorktreeExitPrompt` in `packages/code/src/views/overlays/WorktreeExitPrompt.tsx`,
-`worktreeIsClean` and `removeWorktreeCheckout` in `packages/code/src/bootstrap/worktree.ts`, and the
-pre-shutdown close/removal path in `packages/code/src/runtime.tsx`. Pinned:
-`packages/code/tests/integration/app-shell-render.test.tsx` (remove/keep/dirty UI paths) and
-`packages/code/tests/integration/worktree-bootstrap.test.ts` (clean removal, branch retention, dirty
-refusal, external-parent retention and external reopen without primary setup).
-
-**INV-CB-30.** The primary checkout's `.clarvis/.gitignore` effectively ignores `worktrees/` before
-any nested checkout is created, and launching from a linked checkout still targets the primary root.
-Production: `ensureWorktreeIgnore` and `bootstrapWorktree` in
-`packages/code/src/bootstrap/worktree.ts`; `ensureWorkspaceDir` in `packages/paths/src/ensure.ts`.
-Pinned: `packages/code/tests/integration/worktree-bootstrap.test.ts` and
-`packages/paths/tests/integration/ensure.test.ts`.
-
 **INV-CB-27.** A callback target is accepted only while it is the published, still-bound target;
 `clear()` makes it inert.
 Production: `packages/code/src/app/workspace-runtime.ts:1-30`.
@@ -1254,13 +1249,24 @@ Pinned: `packages/code/tests/component/workspace-client-manager.test.ts`.
 Production: `packages/code/src/app/layout.ts:47-52`.
 Pinned: `packages/code/tests/unit/layout.test.ts:34-56`.
 
-**INV-CB-30.** The split sidebar opens only at ≥100 columns and only when content exists. There is no
-sidebar preference or toggle command; below the split threshold the explicit drawer signal is the
-only way to show the secondary surface, and `contentInset` stays 0.
+**INV-CB-30.** The secondary inspector has three independent automatic reveal intents per execution
+context: the first live Plan reveals Plan, the first workflow leader reveals Parallel work, and the
+first visible sub-agent reveals Agents. Each preserves `Lead transcript` selection and leaves
+`ActivityDetail` closed. An explicit close is sticky for later updates of the intent that opened the
+surface; the first event for a different section may still reveal it, and a new execution context
+may reveal each section once again. Automatic and explicit footer intent both produce a split at
+≥100 columns and a drawer below that threshold; while closed, and for every drawer presentation,
+`contentInset` stays 0. There is no stored sidebar preference or global toggle command.
 Production: `packages/code/src/app/layout.ts` (`createLayoutController`) and
-`packages/code/src/views/App.tsx` (`compactActivityStrip`).
-Pinned: `packages/code/tests/unit/layout.test.ts` and
-`packages/code/tests/integration/app-shell-render.test.tsx`.
+`packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `visiblePlanContext`,
+`visibleSubagentContext`, `closeActivitySidebar`,
+`compactActivityStrip`, `Footer.onRunStripMouseDown`). Pinned:
+`packages/code/tests/unit/layout.test.ts` (responsive intent mechanics) and
+`packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
+independent once-per-run sidebar reveals", including new Plan and Workflow contexts; "the first
+visible sub-agent opens Agents once per run and an explicit close is sticky"; "clicking the drawer
+scrim keeps dismissal sticky for later sub-agents"; "Escape closes a narrow-layout inspector drawer
+without canceling the active run"; and the isolated child-selection cases).
 
 **INV-CB-31.** `sidebarWidth` never exceeds the viewport, so the inspector's nominal 32-column minimum
 degrades rather than overflowing on a 24-column terminal.
@@ -1377,6 +1383,24 @@ Production: `installBootRendererLifecycle` in
 `packages/code/tests/unit/renderer-bootstrap-lifecycle.test.ts`,
 `packages/code/tests/integration/{fatal-boot-render,splash-render}.test.tsx`, and
 `packages/code/tests/architecture/architecture-boundary.test.ts`.
+
+**INV-CB-46.** A managed checkout can be removed on exit only after an explicit `y`, only after two
+cleanliness checks, and only through non-forced `git worktree remove`; its branch is preserved and
+the requested cleanup completes before the bounded platform-shutdown sequence begins. An external
+checkout's parent is never treated as Clarvis-owned.
+Production: `WorktreeExitPrompt` in `packages/code/src/views/overlays/WorktreeExitPrompt.tsx`,
+`worktreeIsClean` and `removeWorktreeCheckout` in `packages/code/src/bootstrap/worktree.ts`, and the
+pre-shutdown close/removal path in `packages/code/src/runtime.tsx`. Pinned:
+`packages/code/tests/integration/app-shell-render.test.tsx` (remove/keep/dirty UI paths) and
+`packages/code/tests/integration/worktree-bootstrap.test.ts` (clean removal, branch retention, dirty
+refusal, external-parent retention and external reopen without primary setup).
+
+**INV-CB-47.** The primary checkout's `.clarvis/.gitignore` effectively ignores `worktrees/` before
+any nested checkout is created, and launching from a linked checkout still targets the primary root.
+Production: `ensureWorktreeIgnore` and `bootstrapWorktree` in
+`packages/code/src/bootstrap/worktree.ts`; `ensureWorkspaceDir` in `packages/paths/src/ensure.ts`.
+Pinned: `packages/code/tests/integration/worktree-bootstrap.test.ts` and
+`packages/paths/tests/integration/ensure.test.ts`.
 
 ## 6. Failure modes and degradation
 

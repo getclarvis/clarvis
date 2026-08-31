@@ -2,11 +2,11 @@ import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { rgbToHex, type RGBA } from "@opentui/core";
 import type { TestRendererSetup } from "@opentui/core/testing";
+import { createSignal } from "solid-js";
 import { createMutable } from "solid-js/store";
 import {
   PLAN_SIDEBAR_TASK_LIMIT,
   planTaskWindow,
-  PlanStrip,
   rosterSummary,
   Sidebar,
   subagentProgress,
@@ -44,6 +44,7 @@ async function mount(
     width?: number;
     selected?: () => string | null;
     onSelectSubagent?: (id: string) => void;
+    onOpenDetail?: () => void;
     workflow?: () => WorkflowActivity | null;
   } = {},
 ): Promise<TestRendererSetup> {
@@ -57,6 +58,7 @@ async function mount(
           contextWindow={() => 1_024_000}
           selected={opts.selected}
           onSelectSubagent={opts.onSelectSubagent}
+          onOpenDetail={opts.onOpenDetail}
           width={() => width}
           workflow={opts.workflow}
         />
@@ -121,7 +123,7 @@ test("agent rows keep stable ids and let essential titles wrap", async () => {
   expect(rows.join(" ")).toContain("and the whole test suite");
   expect(rows.join(" ")).toContain("A1");
   expect(rows.join(" ")).toContain("Running");
-  expect(rows.join(" ")).toContain("All transcripts");
+  expect(rows.join(" ")).toContain("Lead transcript");
   expect(rows.join(" ")).not.toContain("Activity: working");
   expect(rows.join(" ").match(/0\/1 finished/g)?.length).toBe(1);
   expect(rows.join(" ")).not.toContain("glm-5.2");
@@ -158,6 +160,59 @@ test("parallel-work metadata stays on one line at the minimum inspector width", 
   const header = rows.find((row) => row.includes("Parallel work"));
   expect(header).toContain("1 leader");
   expect(rows.some((row) => row.trim() === "s")).toBe(false);
+  t.renderer.destroy();
+});
+
+test("workflow leaders and sub-agents use separate run-local handle namespaces", async () => {
+  const workflowOf = (suffix: string): WorkflowActivity => ({
+    root: `manager-${suffix}`,
+    nodes: new Map([
+      [
+        `manager-${suffix}`,
+        {
+          runId: `manager-${suffix}`,
+          kind: "manager",
+          title: `Manager ${suffix}`,
+          status: "running",
+        },
+      ],
+      [
+        `leader-${suffix}`,
+        {
+          runId: `leader-${suffix}`,
+          parentRunId: `manager-${suffix}`,
+          kind: "leader",
+          title: `Leader ${suffix}`,
+          status: "running",
+        },
+      ],
+    ]),
+  });
+  const a = activity({
+    subagents: [
+      { id: "agent-first", order: 0, status: "running", title: "Agent first", input: 0, output: 0 },
+    ] as ActivityStore["subagents"],
+  });
+  const [workflow, setWorkflow] = createSignal<WorkflowActivity | null>(workflowOf("first"));
+  const t = await mount(a, { width: 36, workflow });
+
+  let rows = t.captureCharFrame().split("\n");
+  expect(rows.some((row) => row.includes("L1") && row.includes("Leader first"))).toBe(true);
+  expect(rows.some((row) => row.includes("A1") && row.includes("Agent first"))).toBe(true);
+  expect(rows.some((row) => row.includes("A2") && row.includes("Agent first"))).toBe(false);
+
+  a.subagents = [
+    { id: "agent-next", order: 0, status: "running", title: "Agent next", input: 0, output: 0 },
+  ] as ActivityStore["subagents"];
+  setWorkflow(workflowOf("next"));
+  await t.renderOnce();
+  await t.renderOnce();
+
+  rows = t.captureCharFrame().split("\n");
+  expect(rows.some((row) => row.includes("L1") && row.includes("Leader next"))).toBe(true);
+  expect(rows.some((row) => row.includes("A1") && row.includes("Agent next"))).toBe(true);
+  expect(rows.join(" ")).not.toContain("Leader first");
+  expect(rows.join(" ")).not.toContain("Agent first");
   t.renderer.destroy();
 });
 
@@ -201,6 +256,40 @@ test("clicking a sub-agent row calls onSelectSubagent with that instance's id", 
   await t.renderOnce();
   expect(calls).toEqual(["scout-id", "fixer-id"]);
   expect(t.renderer.hasSelection).toBe(false);
+  t.renderer.destroy();
+});
+
+test("clicking a settled sub-agent selects its transcript without opening ActivityDetail", async () => {
+  const selected: string[] = [];
+  let detailsOpened = 0;
+  const a = activity({
+    subagents: [
+      {
+        id: "reviewer-id",
+        order: 0,
+        status: "done",
+        title: "Review auth",
+        summary: "Authentication review complete",
+        input: 0,
+        output: 0,
+      },
+    ] as ActivityStore["subagents"],
+  });
+  const t = await mount(a, {
+    width: 44,
+    onSelectSubagent: (id) => selected.push(id),
+    onOpenDetail: () => (detailsOpened += 1),
+  });
+  const rows = t.captureCharFrame().split("\n");
+  const agentRow = rows.findIndex((row) => row.includes("Review auth"));
+  expect(agentRow).toBeGreaterThan(-1);
+  expect(rows.join(" ")).toContain("Result: Authenticat");
+  expect(rows.join(" ")).toContain("click to read");
+
+  await t.mockMouse.click(2, agentRow);
+  await t.renderOnce();
+  expect(selected).toEqual(["reviewer-id"]);
+  expect(detailsOpened).toBe(0);
   t.renderer.destroy();
 });
 
@@ -396,61 +485,6 @@ test("a long plan scrolls the current task into view and keeps full-plan navigat
   expect(joined).toContain("Ctrl+P full plan");
 });
 
-test("the compact plan strip keeps current work visible when the split inspector is closed", async () => {
-  const plan = {
-    id: "compact-plan",
-    title: "Compact plan",
-    status: "active" as const,
-    retention: "keep" as const,
-    revision: 1,
-    spec_revision: 1,
-    tasks: [
-      { id: "one", title: "Done task", status: "done" },
-      { id: "two", title: "Current responsive task", status: "in_progress" },
-    ],
-  };
-  let opens = 0;
-  const t = await openRender(() => <PlanStrip plan={() => plan} onOpen={() => (opens += 1)} />, {
-    width: 80,
-    height: 4,
-  });
-  await t.renderOnce();
-  const frame = t.captureCharFrame();
-  expect(frame).toContain("Plan 1/2 completed · Current responsive task");
-  expect(frame).toContain("Ctrl+P");
-  await t.mockMouse.click(5, 1);
-  expect(opens).toBe(1);
-  t.renderer.destroy();
-});
-
-test("a retained terminal plan stays openable and is labelled as the latest plan", async () => {
-  const plan = {
-    id: "completed-plan",
-    title: "Completed plan",
-    status: "completed" as const,
-    retention: "keep" as const,
-    revision: 3,
-    spec_revision: 1,
-    tasks: [{ id: "one", title: "Shipped task", status: "done" }],
-  };
-  let opens = 0;
-  const t = await openRender(() => <PlanStrip plan={() => plan} onOpen={() => (opens += 1)} />, {
-    width: 80,
-    height: 4,
-  });
-  try {
-    await t.renderOnce();
-    const frame = t.captureCharFrame();
-    expect(frame).toContain("Latest plan 1/1 completed");
-    expect(frame).toContain("Completed");
-    expect(frame).toContain("Ctrl+P");
-    await t.mockMouse.click(5, 1);
-    expect(opens).toBe(1);
-  } finally {
-    t.renderer.destroy();
-  }
-});
-
 test("a completed plan does not leave its final task looking active", async () => {
   const a = activity({
     plan: {
@@ -605,25 +639,6 @@ test("retention discard ends as completed history instead of a red unavailable w
   expect(joined).not.toContain("plan file unavailable");
   expect(joined).not.toContain("Restore the plan file");
   expect(fgOf(spans, "Plan deleted after success")).toBe(tokens.muted.toLowerCase());
-});
-
-test("the compact strip also presents an expected discard without an unavailable warning", async () => {
-  const plan = {
-    id: "discarded-plan",
-    title: "Disposable plan",
-    status: "completed" as const,
-    retention: "discard" as const,
-    revision: 2,
-    spec_revision: 1,
-    removed: true,
-    tasks: [{ id: "t1", title: "Finish work", status: "done" }],
-  };
-  const t = await openRender(() => <PlanStrip plan={() => plan} />, { width: 80, height: 4 });
-  await t.renderOnce();
-  const out = t.captureCharFrame();
-  t.renderer.destroy();
-  expect(out).toContain("Plan completed history discarded");
-  expect(out).not.toContain("unavailable");
 });
 
 test("an orphan plan removal keeps an unavailable sidebar across continuation", async () => {

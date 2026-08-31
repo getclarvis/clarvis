@@ -17,11 +17,11 @@ type ToolGroupRole = "solo" | "head" | "member";
 
 /** One tool call's place within its group: alone, the visible head, or a folded member. */
 export interface ToolGroupInfo {
-  role: ToolGroupRole;
-  ordinal: number;
-  size: number;
-  members?: TranscriptToolNode[];
-  headKey?: string;
+  readonly role: ToolGroupRole;
+  readonly ordinal: number;
+  readonly size: number;
+  readonly members?: readonly TranscriptToolNode[];
+  readonly headKey?: string;
 }
 
 /**

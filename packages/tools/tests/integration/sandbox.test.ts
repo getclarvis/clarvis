@@ -441,6 +441,11 @@ describe("sandboxCommand", () => {
     );
     expect(profile).toContain("(allow signal (target same-sandbox))");
     expect(profile).toContain("(allow process-info* (target same-sandbox))");
+    expect(profile).toContain('(literal "/etc")');
+    expect(profile).toContain('(subpath "/etc")');
+    expect(profile).toContain('(literal "/var")');
+    expect(profile).toContain('(subpath "/var/select")');
+    expect(profile).toContain('(subpath "/private/var/select")');
     expect(profile).toContain("(deny network*)");
     expect(profile).toContain("(deny file-write*");
     expect(profile).not.toContain(workspace);
@@ -778,6 +783,46 @@ it.skipIf(process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+it.skipIf(process.platform !== "darwin" || process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
+  "runs the installed Apple Git without triggering the developer-tools fallback",
+  () => {
+    const workspace = mkdtempSync(join(tmpdir(), "clarvis-seatbelt-git-"));
+    try {
+      const backend = probeSandbox();
+      if (backend.mode === "unavailable") throw new Error(backend.reason);
+      const run = (command: string) => {
+        const spec = sandboxCommand({
+          command,
+          cwd: workspace,
+          workspaceRoot: workspace,
+          sandbox: {
+            type: "native",
+            availability: "required",
+            filesystem: "workspace-read-only",
+            network: "none",
+          },
+          probe: () => backend,
+        });
+        return spawnSync(spec.file, spec.args, {
+          ...spec.options,
+          encoding: "utf8",
+        });
+      };
+
+      const selector = run("/usr/bin/readlink /var/select/developer_dir");
+      expect(selector.status).toBe(0);
+      expect(selector.stdout.trim()).toMatch(/^\/.+/);
+
+      const result = run("/usr/bin/git --version");
+      expect(result.stderr).not.toContain("No developer tools were found");
+      expect(result.status).toBe(0);
+      expect(result.stdout).toMatch(/^git version /);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
     }
   },
 );

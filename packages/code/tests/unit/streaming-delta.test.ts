@@ -410,6 +410,44 @@ const callStarted = (callId: string, tool: string, args: Record<string, unknown>
     arguments: args,
   });
 
+const bareCallStarted = (callId: string, tool: string, args: Record<string, unknown>): RunEvent =>
+  ev({
+    type: "tool_call_started",
+    agent: "lead",
+    call_id: callId,
+    at: 5,
+    server: tool,
+    tool: "",
+    arguments: args,
+  });
+
+const bareCallCompleted = (callId: string, tool: string): RunEvent =>
+  ev({
+    type: "tool_call",
+    agent: "lead",
+    call_id: callId,
+    at: 6,
+    server: tool,
+    tool: "",
+    arguments: {},
+    result: "ok",
+    ok: true,
+  });
+
+const transcriptExternalOrchestrationTools = [
+  "spawn_subagent",
+  "delegate_task",
+  "agent_list",
+  "agent_poll",
+  "agent_stop",
+  "agent_steer",
+  "await_agents",
+  "run_leader",
+  "run_workflow",
+  "run_round",
+  "run_work_items",
+] as const;
+
 test("a tool call the model is still composing gets a node before the call exists", () => {
   // The window this covers is most of a real run's wall clock, and until
   // `tool_input_delta` existed nothing was on screen for any of it: the first
@@ -489,30 +527,116 @@ test("a call closed without ever having started drops its composing label", () =
 });
 
 test("a placeholder the trace never confirms does not outlive the model call", () => {
-  // `delegate_task` and the workflow spawn tools record no `tool_call` at all,
-  // so nothing closes their node. The next iteration starting is proof the
-  // model call is over, and a spinner still counting up is a claim that it is
-  // not.
   const { store, apply } = driver();
-  apply(inputDelta("c1", "delegate_task", 512));
+  apply(inputDelta("c1", "write_file", 512));
   expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(1);
 
   apply(leadIterationStarted(2));
   expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(0);
 });
 
-test("each created delegation retires one composing delegate_task placeholder immediately", () => {
+test("Lead-owned orchestration tools never create composing, started, or terminal nodes", () => {
+  for (const [index, tool] of transcriptExternalOrchestrationTools.entries()) {
+    const { store, apply } = driver();
+    const callId = `orchestration-${index}`;
+
+    apply(inputDelta(callId, tool, 128));
+    expect(store.nodes.filter((node) => node.kind === "tool_call")).toHaveLength(0);
+
+    apply(bareCallStarted(callId, tool, { task: "private orchestration payload" }));
+    expect(store.nodes.filter((node) => node.kind === "tool_call")).toHaveLength(0);
+
+    apply(bareCallCompleted(callId, tool));
+    expect(store.nodes.filter((node) => node.kind === "tool_call")).toHaveLength(0);
+  }
+});
+
+test("an MCP leaf colliding with orchestration stays continuous from wire composition to terminal", () => {
   const { store, apply } = driver();
-  apply(inputDelta("c1", "delegate_task", 128));
-  apply(inputDelta("c2", "delegate_task", 256));
+  apply(inputDelta("mcp-collision", "server_await_agents", 64));
+  expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
+    expect.objectContaining({ toolName: "server_await_agents", status: "running" }),
+  ]);
 
-  apply(spawn("w1", "first worker"));
-  expect(store.nodes.filter((node) => node.kind === "tool_call")).toHaveLength(1);
-  expect(store.nodes.filter((node) => node.kind === "subagent")).toHaveLength(1);
+  apply(
+    ev({
+      type: "tool_call_started",
+      agent: "lead",
+      call_id: "mcp-collision",
+      at: 5,
+      server: "server",
+      tool: "await_agents",
+      arguments: { query: "real downstream tool" },
+    }),
+  );
+  expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
+    expect.objectContaining({
+      mcpName: "server",
+      toolName: "await_agents",
+      status: "running",
+    }),
+  ]);
 
-  apply(spawn("w2", "second worker"));
-  expect(store.nodes.filter((node) => node.kind === "tool_call")).toHaveLength(0);
-  expect(store.nodes.filter((node) => node.kind === "subagent")).toHaveLength(2);
+  apply(
+    ev({
+      type: "tool_call",
+      agent: "lead",
+      call_id: "mcp-collision",
+      at: 6,
+      server: "server",
+      tool: "await_agents",
+      arguments: { query: "real downstream tool" },
+      result: "downstream result",
+      ok: true,
+    }),
+  );
+  expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
+    expect.objectContaining({
+      mcpName: "server",
+      toolName: "await_agents",
+      status: "ok",
+      result: "downstream result",
+    }),
+  ]);
+});
+
+test("a subagent tool lifecycle without its required id cannot leak into Lead history", () => {
+  const { store, apply } = driver();
+  const events: RunEvent[] = [
+    ev({
+      type: "tool_input_delta",
+      agent: "subagent",
+      call_id: "missing-child",
+      at: 4,
+      tool: "read_file",
+      chars: 64,
+    }),
+    ev({
+      type: "tool_call_started",
+      agent: "subagent",
+      call_id: "missing-child",
+      at: 5,
+      server: "read_file",
+      tool: "",
+      arguments: { path: "private.md" },
+    }),
+    ev({
+      type: "tool_call",
+      agent: "subagent",
+      call_id: "missing-child",
+      at: 6,
+      server: "read_file",
+      tool: "",
+      arguments: { path: "private.md" },
+      result: "private child result",
+      ok: true,
+    }),
+  ];
+
+  for (const event of events) {
+    apply(event);
+    expect(store.nodes.filter((node) => node.kind === "tool_call")).toHaveLength(0);
+  }
 });
 
 test("a real call is never swept, however long it runs across iterations", () => {
@@ -534,11 +658,11 @@ test("the lead's next iteration leaves a subagent's live placeholder alone", () 
       subagent_id: "w1",
       call_id: "c2",
       at: 4,
-      tool: "delegate_task",
+      tool: "read_file",
       chars: 64,
     }),
   );
-  apply(inputDelta("c1", "delegate_task", 64));
+  apply(inputDelta("c1", "write_file", 64));
   expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(2);
 
   apply(leadIterationStarted(2));
@@ -549,7 +673,7 @@ test("the lead's next iteration leaves a subagent's live placeholder alone", () 
 
 test("a placeholder left by the final model call does not survive the run", () => {
   const { store, apply } = driver();
-  apply(inputDelta("c1", "run_leader", 300));
+  apply(inputDelta("c1", "write_file", 300));
   apply(ev({ type: "run_ended", status: "completed", at: 9, reason: "completed" }));
 
   expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(0);
@@ -573,6 +697,8 @@ test("the transcript memory ledger follows resident prose and clears atomically"
   expect(store.memory?.()).toMatchObject({
     transcript_nodes: 1,
     transcript_prose_bytes: "ledger payload".length * 2,
+    publication_batches: 1,
+    publication_known_keys: 1,
     hydrated_tool_nodes: 0,
     hydrated_tool_bytes: 0,
   });
@@ -581,6 +707,8 @@ test("the transcript memory ledger follows resident prose and clears atomically"
   expect(store.memory?.()).toMatchObject({
     transcript_nodes: 0,
     transcript_prose_bytes: 0,
+    publication_batches: 0,
+    publication_known_keys: 0,
     hydrated_tool_nodes: 0,
     hydrated_tool_bytes: 0,
   });

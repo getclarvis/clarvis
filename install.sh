@@ -315,13 +315,13 @@ step "Obtaining $asset"
 download "$base_url/$asset" "$archive"
 
 step 'Verifying the archive SHA-256 checksum'
-expected=$(awk -v asset="$asset" '$2 == asset { print $1 }' "$checksums")
+expected=$(LC_ALL=C awk -v asset="$asset" '$2 == asset { print $1 }' "$checksums")
 [ "${#expected}" -eq 64 ] || fail "SHA256SUMS has no exact SHA-256 entry for $asset"
 case "$expected" in *[!0-9a-f]*) fail "SHA256SUMS has an invalid digest for $asset" ;; esac
 if command -v sha256sum >/dev/null 2>&1; then
-  actual=$(sha256sum "$archive" | awk '{ print $1 }')
+  actual=$(LC_ALL=C sha256sum "$archive" | LC_ALL=C awk '{ print $1 }')
 elif command -v shasum >/dev/null 2>&1; then
-  actual=$(shasum -a 256 "$archive" | awk '{ print $1 }')
+  actual=$(LC_ALL=C shasum -a 256 "$archive" | LC_ALL=C awk '{ print $1 }')
 else
   fail "sha256sum or shasum is required"
 fi
@@ -329,7 +329,7 @@ fi
 
 step 'Extracting the verified archive'
 mkdir -p "$temporary/extract"
-tar -xzf "$archive" -C "$temporary/extract"
+LC_ALL=C tar -xzf "$archive" -C "$temporary/extract"
 payload="$temporary/extract/clarvis"
 [ -d "$payload" ] || fail "archive does not contain the clarvis payload"
 runtime="$payload/runtime/bun"

@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js";
 import { createMemo, Show } from "solid-js";
 import { tokens } from "../theme/tokens.ts";
+import { glyph } from "../theme/glyphs.ts";
 import { tone, type Tone } from "../theme/tone.ts";
 import type { HintTone } from "./hint.ts";
 import { spinnerChar } from "./spinner.ts";
@@ -8,6 +9,9 @@ import { FLOAT_Z } from "./overlays/FloatFrame.tsx";
 
 /** "running" renders as spinner (accent) + text (muted) — the live run line. */
 export type FooterStatusTone = HintTone | "running";
+
+/** Lead activity shown in the fixed row immediately above the composer. */
+export type LeadActivityPhase = "ready" | "thinking" | "working";
 
 function hintTone(t: HintTone): Exclude<Tone, "running"> {
   switch (t) {
@@ -48,6 +52,54 @@ export function HintToast(props: { hint: () => { text: string; tone: HintTone } 
         </text>
       </box>
     </Show>
+  );
+}
+
+/** Keeps transient Lead activity out of the scrollable transcript. */
+export function LeadActivityLine(props: {
+  phase: () => LeadActivityPhase;
+  /** Run-owned detail that shares the live activity row instead of the session footer. */
+  detail?: () => string;
+}): JSX.Element {
+  const running = createMemo(() => tone("running", spinnerChar()));
+  return (
+    <box
+      id="lead-activity-line"
+      height={1}
+      flexShrink={0}
+      flexDirection="row"
+      paddingLeft={1}
+      paddingRight={1}
+      backgroundColor={tokens.bg}
+    >
+      <Show
+        when={props.phase() !== "ready"}
+        fallback={
+          <text fg={tokens.muted} wrapMode="none" truncate selectable={false}>
+            {`${glyph("bullet")} ready`}
+          </text>
+        }
+      >
+        <text fg={running().fg} flexShrink={0} wrapMode="none" selectable={false}>
+          {running().glyph + " "}
+        </text>
+        <text fg={tokens.muted} flexShrink={0} wrapMode="none" selectable={false}>
+          {props.phase()}
+        </text>
+        <Show when={(props.detail?.() ?? "").length > 0}>
+          <text
+            fg={tokens.muted}
+            flexShrink={1}
+            minWidth={0}
+            wrapMode="none"
+            truncate
+            selectable={false}
+          >
+            {` ${glyph("separator")} ${props.detail?.() ?? ""}`}
+          </text>
+        </Show>
+      </Show>
+    </box>
   );
 }
 

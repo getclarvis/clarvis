@@ -170,6 +170,49 @@ describe("code's internal architecture", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("keeps committed history independent from mutable run projections", () => {
+    const root = join(SRC, "views", "history");
+    const forbiddenImports = [
+      "activity-store",
+      "workflow-projection",
+      "spinner",
+      "run-host",
+      "views/live",
+      "adapters/store",
+    ];
+    const offenders = sourceFiles(root).flatMap((file) =>
+      specifiersIn(file)
+        .filter((specifier) => forbiddenImports.some((token) => specifier.includes(token)))
+        .map((specifier) => ({ file: relative(SRC, file).split(sep).join("/"), specifier })),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps estimated semantic paging out of the production transcript path", () => {
+    const state = readFileSync(join(SRC, "views", "transcript-state.ts"), "utf8");
+    const history = readFileSync(join(SRC, "views", "history", "CommittedHistory.tsx"), "utf8");
+    expect(state).not.toContain("windowTranscript");
+    expect(state).not.toContain("WINDOW_RENDER_BUDGET");
+    expect(history).not.toContain("history-page");
+    expect(history).toContain("viewportCulling");
+    expect(history).toContain("controller.rowOf(batch.id)");
+  });
+
+  it("uses top-level Markdown blocks only for the mutable streaming tail", () => {
+    const blocks = readFileSync(join(SRC, "views", "blocks.tsx"), "utf8");
+    const stable = readFileSync(join(SRC, "ui", "patterns", "stable-syntax.tsx"), "utf8");
+    expect(blocks).not.toContain('internalBlockMode="top-level"');
+    expect(blocks).toContain('internalBlockMode={running() ? "top-level" : undefined}');
+    expect(stable).toContain("internalBlockMode={value().internalBlockMode}");
+  });
+
+  it("uses only OpenTUI's public syntax-settlement surface", () => {
+    const offenders = sourceFiles(SRC)
+      .filter((file) => readFileSync(file, "utf8").includes("clearPendingHighlight"))
+      .map((file) => relative(SRC, file).split(sep).join("/"));
+    expect(offenders).toEqual([]);
+  });
+
   it("keeps generic UI independent from kernel services and feature implementations", () => {
     const offenders = edgesUnder("ui").filter((edge) => {
       const layer = relativeLayer(edge);

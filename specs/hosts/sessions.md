@@ -22,12 +22,11 @@ Two problems this subsystem solves:
    file-backed `SessionService`: one JSON document per session under a per-owner directory, plus a
    bounded "summary" sidecar so listing a large catalog never has to read every full document
    (`packages/kernel/src/sessions/session-service.ts:33,143-157,370-414`).
-2. **How a client rebuilds a visible transcript from a persisted trace**, since a session's `turns`
-   record only an `execution_id` — `resumeSession`
-   (`packages/code/src/adapters/session.ts:504`) walks those ids backwards, refetches each turn's
-   `RunDetail`, and re-derives both the model-facing continuation history and the human-facing
-   rendered transcript, while explicitly tracking what could not be restored (`degraded`) versus
-   what was simply outside the visible window (`collapsed`).
+2. **How a client rebuilds a visible transcript from persisted traces.** Every turn carries a
+   required `kind`: conversation turns may rebuild model-facing continuation, while transcript turns
+   are display/export-only. `resumeSession` walks conversation ids backwards for continuation and
+   separately fetches every kind inside the visual window, while tracking what could not be restored
+   (`degraded`) versus what was simply outside that window (`collapsed`).
 
 Deletion is a third concern this document owns: `deleteSession`
 (`packages/code/src/adapters/session.ts:670`) cascades a session delete into a delete of every
@@ -40,6 +39,11 @@ rehydration arm that decides which already-mapped events survive a restore versu
 "live-only" and are simply gone once a run ends. The TUI's `SessionStore` write-coalescing cache
 and the CLI's `--resume`/`--continue` flag wiring are described only insofar as they call into this
 item's functions; their own mechanics are [hosts/code-run-host.md](code-run-host.md)'s scope.
+Whether the reconstructed nodes are immediately mutable UI state or are prepared into an immutable
+history page is separately owned by
+[hosts/code-transcript-stability.md](code-transcript-stability.md). `resumeSession` supplies ordered
+`RunDetail.events` to its `renderTurn` callback (`packages/code/src/adapters/session.ts:597-642`); it
+does not define a renderer commit boundary.
 
 ## 2. Surface
 
@@ -89,6 +93,7 @@ interface Session {                       // packages/protocol/src/sessions.ts:5
   turns: SessionTurn[]; totals: SessionTotals; pending?: Message[];
 }
 interface SessionTurn {                   // packages/protocol/src/sessions.ts:34
+  kind: "conversation"|"transcript";
   user_preview: string; execution_id?: string;
   environment?: EnvironmentRunRef;
   status: "pending"|"running"|"done"|"error"|"cancelled"|"interrupted";
@@ -172,7 +177,7 @@ and never calls `writeFileDurableSync`.
   "workspace": "ws_test",
   "created_at": 1,
   "updated_at": 100,
-  "turns": [{ "user_preview": "hi", "status": "done" }],
+  "turns": [{ "kind": "conversation", "user_preview": "hi", "status": "done" }],
   "totals": { "input": 0, "output": 0, "cached": 0 }
 }
 ```
@@ -191,6 +196,15 @@ two representations at the storage boundary:
   source has it (spread-guarded, e.g. `...(t.executionId !== undefined ? { executionId: ... } : {})`).
   Pinned round-trip: "metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)"
   (`packages/code/tests/component/session-store.test.ts:73-91`).
+- **`TurnRef.kind` / `SessionTurn.kind` is mandatory and semantic.** The code-side `TurnRef` is the
+  discriminated union `ConversationTurnRef | TranscriptTurnRef`; `metaToSession` writes its kind and
+  `sessionToMeta` validates it through `persistedTurnKind`. Missing or unknown values from a stale
+  pre-discriminator document throw `"session turn kind is required"`; the adapter never guesses a
+  continuation role. Production: `packages/protocol/src/sessions.ts` (`SessionTurnKind`,
+  `SessionTurn`), `packages/code/src/adapters/session-store.ts` (`ConversationTurnRef`,
+  `TranscriptTurnRef`, `TurnRef`, `persistedTurnKind`, `metaToSession`, `sessionToMeta`). Test:
+  `packages/code/tests/component/session-store.test.ts` ("transcript-only turn identity is persisted
+  and stale undiscriminated turns are rejected").
 - **`TurnRef.environment` / `SessionMeta.lastEnvironment`** preserve the resolved Environment id and
   fingerprint without embedding its definition, plugins, skills, or secrets. `metaToSession` and
   `sessionToMeta` round-trip the turn field; `sessionSummaryToMeta` retains
@@ -445,31 +459,33 @@ a real error, which matters for whether the session record ends up deleted:
 
 1. **Reserve budget for `meta.pending`** (unflushed observations) first (`:534`), since
    `createSession` will later prepend them to the reconstructed chain (comment at `:531-533`).
-2. **Walk turns backwards in concurrency-`FETCH_CONCURRENCY`(6) batches**, fetching each turn's
-   `RunDetail` via `deps.getRun(executionId)` (or treating a turn with no `executionId` as `null`
-   without a call), until either every turn has been visited or a batch produces a turn whose
+2. **Walk conversation turns backwards in concurrency-`FETCH_CONCURRENCY`(6) batches**, skipping
+   every `kind: "transcript"` turn and fetching each conversation's `RunDetail` via
+   `deps.getRun(executionId)`, until either every conversation has been visited or a batch produces one whose
    `RunDetail.continue_from` is absent (`:580-585`, `fetchBatch` at `:536-578`). That turn is the
    **reset point** (`foundReset = true; resetIdx = index`, `:573-576`) — everything before it is
    provably superfluous because a non-continued run replaces the accumulated history outright
    (doc comment `:473-482`). The stop is checked once per whole batch, not per turn, so up to
    `FETCH_CONCURRENCY - 1` turns older than the reset can be fetched needlessly — a bounded,
    constant-size overfetch, not one that grows with session length (same doc comment).
-3. Within the "keep history" span (from the newest turn back to and including the reset point),
-   each batch's projection additionally calls `reserveHistory` (`:510-529`), which throws
+3. Within the conversation-only "keep history" span (from the newest conversation back to and
+   including the reset point), each batch's projection additionally calls `reserveHistory`, which throws
    `SessionResumeLimitError("messages", ...)` or `SessionResumeLimitError("payload_chars", ...)`
    (`:403-417`) the instant the running totals would exceed `SESSION_RESUME_MAX_MESSAGES` (10,000)
    or `SESSION_RESUME_MAX_PAYLOAD_CHARS` (16,000,000) — **before** fetching the next batch
    (`packages/code/tests/component/session.test.ts:724-756`, asserting exactly 18 of 30 turns were
    fetched and zero turns were rendered once the limit tripped: the whole projection is atomic on
    failure).
-4. **A second, independent pass** fills in any turns inside the visual render window
+4. **A second, independent pass** fills in every turn kind inside the visual render window
    (`windowStart = turns.length - renderWindow`, `:499-500`) that fall *before* the reset point and
    were not already visited by the backward walk (`:587-591`) — because those turns need their
    `events` for display even though their history contributes nothing to the continuation chain.
 5. **Final single pass over every turn in order** (`:597-642`) calls `deps.renderTurn` for each:
-   - A turn whose projection is present and at/after `resetIdx` contributes its `history.messages`
+   - A conversation turn whose projection is present and at/after `resetIdx` contributes its `history.messages`
      (accumulated if it carried `continue_from`, or replacing the chain outright if it did not,
      `:606-607`) plus its assistant content, to the returned `messages`.
+   - A transcript turn is rendered from its canonical `userPreview` and events when resident, but
+     never contributes its internal run messages, assistant result or `active_task` to continuation.
    - A turn outside the render window (`collapsed = idx < windowStart`) is still rendered (with
      `collapsed: true` and no events) but is counted in `resumed.collapsed`, never in `degraded`.
    - A turn that was `visited` (a fetch was attempted) but has no projection (`getRun` returned
@@ -481,8 +497,8 @@ a real error, which matters for whether the session record ends up deleted:
      and the reset point already terminated the backward walk) is simply `collapsed` — never
      `degraded` — because collapsing is a display choice about turns known to be intact
      (`:634-640`, and doc comment `:369-374` distinguishing `collapsed` from `degraded`).
-6. `newestActiveTask` tracks the highest-index turn whose `RunDetail.active_task` is defined
-   (`:549-553`), independent of the reset/window logic, and is returned as `resumed.activeTask` —
+6. `newestActiveTask` tracks the highest-index **conversation** turn whose
+   `RunDetail.active_task` is defined and is returned as `resumed.activeTask` —
    used so a continued run can recover which external task was bound even if that turn's own
    history was not retained (`:644-649`).
 
@@ -492,7 +508,8 @@ turn are mutually exclusive and their counts never overlap —
 turn as degraded only, never as both") constructs a turn that is *both* outside the render window
 *and* has a pruned trace, and asserts it counts only toward `degraded`, with
 `resumed.collapsed + resumed.degraded.length` equal to the total non-rendered-with-events turn
-count.
+count. The kind split is pinned by `packages/code/tests/component/session.test.ts`
+("resumeSession renders transcript-only runs without adding them to continuation").
 
 `RunRecovery` (crash-journal reconstruction counts on a `RunDetail`, `packages/protocol/src/runs.ts:196-204`)
 is threaded through to `renderTurn` only for turns inside the render window, and is explicitly *not*
@@ -558,18 +575,24 @@ split, demonstrated directly in the `code` client's own reconciliation code.
 
 ### 4.13 `createSession` — the code-side turn tracker
 
-`packages/code/src/adapters/session.ts:93-244` builds the in-memory `Session` handle that mirrors
-`SessionMeta` into the live run loop and saves it to `deps.store` after every mutation. Its twelve
-methods are not a passive DTO: they are the mechanism that produces the persisted record
+`packages/code/src/adapters/session.ts` builds the in-memory `Session` handle that mirrors
+`SessionMeta` into the live run loop and saves it to `deps.store` after every mutation. Its methods
+are not a passive DTO: they are the mechanism that produces the persisted record
 `session-service.ts` stores and the counterpart (`restoreHistory`) that re-arms a resumed session.
 
-- **`beginTurn(content, executionId)`** (`packages/code/src/adapters/session.ts:111-140`) seeds `meta` on the very first turn
-  (minting a `uuidv7()` id and a `redactPreview`-derived `title`, max 80 chars) or appends a new
-  `TurnRef` with `status: "running"` to an existing one, pushes the user message onto `history`, and
-  returns the **previous** turn's `executionId` (`base`, `:112-114`) as the continuation base for the
-  new run — pinned by "`beginTurn` returns the previous turn's executionId as the continuation base"
-  (`packages/code/tests/component/session.test.ts:221-230`).
-- **`endTurn(envelope)`** (`packages/code/src/adapters/session.ts:142-165`) is the live completion path: it sets the turn's
+- **`beginTurn(content, executionId)`** seeds `meta` on the first turn or appends a running
+  `kind: "conversation"` turn, pushes the user message onto `history`, advances
+  `continuationBase`, and returns the previous **conversation** execution id. Initialization likewise
+  scans backward for the newest conversation turn, skipping transcript turns. Pinned by
+  `packages/code/tests/component/session.test.ts` ("beginTurn returns the previous turn's executionId
+  as the continuation base").
+- **`beginTranscriptTurn(display, executionId)`** appends a running `kind: "transcript"` turn for a
+  separately invoked run without pushing its internal prompt into history or changing
+  `continuationBase`; **`endTranscriptTurn`** settles that exact kind without appending its assistant
+  result. Both kinds still contribute usage totals once. Pinned by
+  `packages/code/tests/component/session.test.ts` ("transcript-only runs are canonical without
+  becoming continuation context").
+- **`endTurn(envelope)`** is the live conversation completion path: it sets the turn's
   `status` via `runStatusToNode` (see below), records a redacted and bounded copy of
   `envelope.error` on the turn via `redactTurnError` (or clears it on a later success), appends the
   assistant message if the envelope produced one, and folds
@@ -578,6 +601,10 @@ methods are not a passive DTO: they are the mechanism that produces the persiste
   double-counting. Pinned by "a failed turn records why, and a later success clears it"
   (`packages/code/tests/component/session.test.ts:151-169`) and "createSession accumulates a multi-turn Message[] and totals"
   (`packages/code/tests/component/session.test.ts:170-196`).
+- **`lastTurnFor(executionId, kind)`** scans backward for an exact kind and, when present, execution
+  id. It returns `undefined` rather than falling back to the newest unrelated turn; this prevents a
+  transcript run from settling a conversation turn or vice versa. Production:
+  `packages/code/src/adapters/session.ts` (`lastTurnFor`, `finishTurn`).
 - **`reconcile(stored)`** (`packages/code/src/adapters/session.ts:167-183`) is the independent re-derivation path used when a
   live `envelope` was never observed (e.g. a turn resumed from a stored `RunDetail`): it re-derives
   `status` from the stored record's own `result?.ended_reason` and folds `stored.result?.usage`
@@ -653,6 +680,10 @@ describes (`:267-271`), or, when neither exists, a bare `"<tag> <status> with no
 line. Pinned by "buildSkillRunDigest tags the result with the skill, its agent and the execution id"
 (`packages/code/tests/component/session.test.ts:839-849`) and "buildSkillRunDigest falls back to the
 recovered-context salvage when there is no result" (`packages/code/tests/component/session.test.ts:850-862`).
+
+The `/skill` run itself is separately persisted as a transcript-only turn; the digest is a pending
+observation delivered to the next conversation, not evidence that the skill run became the provider
+continuation base.
 
 ## 5. Invariants
 
@@ -743,8 +774,8 @@ recovered-context salvage when there is no result" (`packages/code/tests/compone
     the session", and "deleteSession preserves the session when a trace deletion rejects") pins
     sequential order, resolved `true`/`false`, and rejection behavior.
 
-13. **`resumeSession` never re-derives history from a turn older than the first turn (walking
-    backwards) whose `RunDetail.continue_from` is absent** — that turn's `messages` replace the
+13. **`resumeSession` never re-derives history from a conversation turn older than the first
+    conversation turn (walking backwards) whose `RunDetail.continue_from` is absent** — that turn's `messages` replace the
     accumulated chain outright, and no older turn is fetched for history purposes (only, possibly,
     for its events if inside the render window).
     Production: `packages/code/src/adapters/session.ts:574-577,606-607`.
@@ -805,6 +836,21 @@ recovered-context salvage when there is no result" (`packages/code/tests/compone
     `packages/code/tests/component/session-store.test.ts` ("Environment identity round-trips on
     turns and bounded summaries").
 
+20. **Every persisted turn has an explicit continuation role; stale undiscriminated turns are
+    rejected.** `kind: "conversation"` is the only variant that can rebuild or advance provider
+    continuation. `kind: "transcript"` remains canonical for display, export, status and totals but
+    never contributes its internal prompt/result or active-task binding to model history. Missing or
+    unknown `kind` throws during `sessionToMeta` rather than receiving a legacy default.
+    Production: `packages/protocol/src/sessions.ts` (`SessionTurnKind`, `SessionTurn`),
+    `packages/code/src/adapters/session-store.ts` (`persistedTurnKind`, `metaToSession`,
+    `sessionToMeta`), and `packages/code/src/adapters/session.ts` (`beginTurn`,
+    `beginTranscriptTurn`, `finishTurn`, `resumeSession`). Test:
+    `packages/code/tests/component/session-store.test.ts` ("transcript-only turn identity is persisted
+    and stale undiscriminated turns are rejected") and
+    `packages/code/tests/component/session.test.ts` ("transcript-only runs are canonical without
+    becoming continuation context", "resumeSession renders transcript-only runs without adding them
+    to continuation").
+
 ## 6. Failure modes and degradation
 
 | Condition | Handling | Cite |
@@ -814,6 +860,7 @@ recovered-context salvage when there is no result" (`packages/code/tests/compone
 | A `.json` file over `SESSION_MAX_BYTES` | `readOne` returns `null` (skipped) | `packages/kernel/src/sessions/session-service.ts:358` |
 | A `.json` file fails to parse, or parses to a non-`Session` shape | `readOne` returns `null` | `packages/kernel/src/sessions/session-service.ts:359-364` (caught by the enclosing `try`) |
 | A session belongs to a different `project_id`/`workspace` | Read as absent (`readOne`/`readSummary`), write rejected `invalid_request` (`save`) | `packages/kernel/src/sessions/session-service.ts:360-364,384-390,557-562` |
+| A full turn has missing or unknown `kind` | `sessionToMeta` throws `"session turn kind is required"`; resume/load stops rather than guessing continuation semantics | `packages/code/src/adapters/session-store.ts` (`persistedTurnKind`, `sessionToMeta`) |
 | Cursor over 256 bytes or malformed | `invalid_request`, before scanning | `packages/kernel/src/sessions/session-service.ts:295-314` |
 | `listPage` limit `<1`, `>200`, or non-integer | `invalid_request` | `packages/kernel/src/sessions/session-service.ts:451-453` |
 | `list()` crosses 200 records or 32 MiB | `resource_exhausted`, telling the caller to use `listPage` | `packages/kernel/src/sessions/session-service.ts:495-499,507-511` |

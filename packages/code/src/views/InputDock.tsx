@@ -74,6 +74,8 @@ export function InputDock(props: {
   onNotify?: (message: string) => void;
   onDraftChange?: (nonEmpty: boolean) => void;
   onExpandedChange?: (expanded: boolean) => void;
+  /** Reports whether slash/mention autocomplete currently owns the rows above the composer. */
+  onPopupOpenChange?: (open: boolean) => void;
   targetLabel?: () => string;
 }): JSX.Element {
   let ref: TextareaRenderable | undefined;
@@ -96,6 +98,8 @@ export function InputDock(props: {
   let acProvider: CompleteProvider | undefined;
   let acTerm: string | undefined;
   let acSuppressed = false;
+
+  createEffect(() => props.onPopupOpenChange?.(acOpen()));
 
   const attachments = createAttachmentStore();
 
@@ -544,6 +548,7 @@ export function InputDock(props: {
 
   return (
     <box
+      id="input-dock"
       flexDirection="column"
       flexShrink={expanded() ? 1 : 0}
       flexGrow={expanded() ? 1 : 0}

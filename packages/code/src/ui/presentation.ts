@@ -152,6 +152,8 @@ export interface ScopedUsage {
   owner: "Run" | "Session" | "Agent" | "Workflow" | "Context";
   input?: number;
   output?: number;
+  /** Share of gross input served from the provider's prompt cache, as a percentage. */
+  cacheHitPercent?: number;
   used?: number;
   limit?: number;
   percent?: number;
@@ -171,6 +173,8 @@ export function scopedUsageText(usage: ScopedUsage, compact = false): string {
   const segments: string[] = [];
   if (usage.input !== undefined) segments.push(`In ${compactCount(usage.input)}`);
   if (usage.output !== undefined) segments.push(`Out ${compactCount(usage.output)}`);
+  if (usage.cacheHitPercent !== undefined)
+    segments.push(`Cache hit ${Math.round(usage.cacheHitPercent)}%`);
   if (usage.used !== undefined && usage.limit !== undefined)
     segments.push(`Context ${compactCount(usage.used)} / ${compactCount(usage.limit)}`);
   if (usage.percent !== undefined) segments.push(`Context ${Math.round(usage.percent)}%`);

@@ -860,17 +860,20 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - Session token totals are maintained incrementally across mounted runs; reconciliation subtracts
   and rebuilds only that run, so a new streamed iteration never rescans the complete session history
   or adds settled history to a cumulative live total a second time.
-- The canonical footer keeps gross Context plus cumulative `Session` input/output and cost available
-  before and after a run settles (token totals appear in the wide band). It does not repeat
+- The canonical footer keeps gross Context plus cumulative `Session` input/output, prompt-cache hit
+  percentage and cost available before and after a run settles (token totals and cache percentage
+  appear in the wide band). It does not repeat
   `Running`, elapsed time or iteration there; those live-run facts sit beside `thinking`/`working`
   immediately above the composer. `/status` and Sessions expose the same session-level totals for
   explicit inspection.
-- **Every token count on screen reports input the provider had to read** — the gross prompt less
+- **Every `In` token count on screen reports input the provider had to read** — the gross prompt less
   what its prefix cache served (`uncachedInput`, and the run strip's own subtraction from
-  `UsageActivity.cached`). Pricing keeps the gross figure, because a cache hit still costs a
-  reduced rate; the count beside it answers a different question, and on a long session the two
-  differ by an order of magnitude. `Context` is the one figure that stays gross: a cached prefix
-  still occupies the window. The per-iteration split reaches the client on
+  `UsageActivity.cached`). The adjacent `Cache hit` percentage uses `cached / gross input`, scoped
+  independently to the projected Run or cumulative Session; it never divides by the already-net
+  `In` value. Pricing keeps the gross figure, because a cache hit still costs a reduced rate; the
+  count beside it answers a different question, and on a long session the two differ by an order of
+  magnitude. `Context` is the one figure that stays gross: a cached prefix still occupies the
+  window. The per-iteration split reaches the client on
   `iteration_completed.cached_tokens`, which is optional — absent, the strip states the gross
   number rather than guessing.
 - The activity sidebar does not retain a second copy of each full delegated brief. It keeps at most

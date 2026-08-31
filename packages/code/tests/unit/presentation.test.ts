@@ -88,8 +88,13 @@ test("setting summaries explain inheritance and when a change applies", () => {
 });
 
 test("usage is labelled by owner and never uses a bare token arrow", () => {
-  const value = scopedUsageText({ owner: "Agent", input: 12_400, output: 820 });
-  expect(value).toBe("Agent  In 12k · Out 820");
+  const value = scopedUsageText({
+    owner: "Agent",
+    input: 12_400,
+    output: 820,
+    cacheHitPercent: 80.6,
+  });
+  expect(value).toBe("Agent  In 12k · Out 820 · Cache hit 81%");
   expect(value).not.toContain("→");
 });
 

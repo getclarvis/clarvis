@@ -111,7 +111,7 @@ test("the strip's run tokens report what was read, not what was in the window", 
       usage: { input: 12_400, output: 820, cached: 10_000 },
       width: 160,
     }),
-  ).toBe("Context 25% · Run  In 2.4k · Out 820");
+  ).toBe("Context 25% · Run  In 2.4k · Out 820 · Cache hit 81%");
 });
 
 test("a provider that reports no cache split leaves the run tokens gross", () => {
@@ -124,7 +124,46 @@ test("a provider that reports no cache split leaves the run tokens gross", () =>
       usage: { input: 12_400, output: 820 },
       width: 160,
     }),
-  ).toContain("In 12k");
+  ).toBe("Run  In 12k · Out 820");
+});
+
+test("cache hit percentage is scoped independently to the run or cumulative session", () => {
+  const shared = {
+    active: true,
+    status: "running",
+    startedAt: null,
+    now: 0,
+    width: 160,
+  };
+  expect(
+    runStripText({
+      ...shared,
+      usage: { input: 10_000, output: 500, cached: 8_000 },
+    }),
+  ).toBe("Run  In 2.0k · Out 500 · Cache hit 80%");
+  expect(
+    runStripText({
+      ...shared,
+      usage: { input: 10_000, output: 500, cached: 8_000 },
+      sessionUsage: { input: 40_000, output: 2_000, cached: 20_000 },
+    }),
+  ).toBe("Session  In 20k · Out 2.0k · Cache hit 50%");
+});
+
+test("cache hit percentage omits an empty denominator and bounds malformed provider totals", () => {
+  const shared = {
+    active: true,
+    status: "running",
+    startedAt: null,
+    now: 0,
+    width: 160,
+  };
+  expect(runStripText({ ...shared, usage: { input: 0, output: 5, cached: 0 } })).toBe(
+    "Run  In 0 · Out 5",
+  );
+  expect(runStripText({ ...shared, usage: { input: 10, output: 5, cached: 40 } })).toBe(
+    "Run  In 0 · Out 5 · Cache hit 100%",
+  );
 });
 
 test("the run strip keeps cumulative session cost without duplicating run token counts", () => {
@@ -151,9 +190,11 @@ test("the run strip keeps cumulative session tokens before and after a run settl
     sessionUsage: { input: 120_000, output: 12_000, cached: 1_000 },
     width: 160,
   };
-  expect(runStripText({ ...shared, active: true })).toContain("Session  In 119k · Out 12k");
+  expect(runStripText({ ...shared, active: true })).toContain(
+    "Session  In 119k · Out 12k · Cache hit 1%",
+  );
   expect(runStripText({ ...shared, active: false })).toBe(
-    "Completed · Context 25% · Session  In 119k · Out 12k",
+    "Completed · Context 25% · Session  In 119k · Out 12k · Cache hit 1%",
   );
 });
 

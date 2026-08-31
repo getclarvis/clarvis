@@ -886,7 +886,7 @@ test("an active run seats its live metadata beside working and keeps the session
         model: "m",
         input_tokens: 120_000,
         output_tokens: 12_000,
-        cached_tokens: 1_000,
+        cached_tokens: 100_000,
         response: "",
       }),
       ev({ type: "run_ended", status: "completed", at: 3, reason: "completed" }),
@@ -911,7 +911,7 @@ test("an active run seats its live metadata beside working and keeps the session
   const [sessionUsage, setSessionUsage] = createSignal({
     input: 120_000,
     output: 12_000,
-    cached: 1_000,
+    cached: 100_000,
   });
   const t = await mountApp(
     defaultProps({
@@ -929,16 +929,57 @@ test("an active run seats its live metadata beside working and keeps the session
   expect(activityRow).toMatch(/working · \d+s · iteration 9 · \^c to interrupt/);
   const footer = out.split("\n").find((row) => row.includes("Session  In"));
   expect(footer).toContain("Context ");
-  expect(footer).toContain("Session  In 124k · Out 12k");
+  expect(footer).toContain("Session  In 25k · Out 12k · Cache hit 80%");
   expect(footer).not.toContain("Running");
   expect(footer).not.toContain("iteration");
 
-  setSessionUsage({ input: 125_000, output: 12_100, cached: 1_000 });
+  setSessionUsage({ input: 125_000, output: 12_100, cached: 100_000 });
   setStatus("completed");
   setActive(false);
   const settled = await captureUntil(t, "Completed");
   const settledFooter = settled.split("\n").find((row) => row.includes("Session  In"));
-  expect(settledFooter).toContain("Session  In 124k · Out 12k");
+  expect(settledFooter).toContain("Session  In 25k · Out 12k · Cache hit 80%");
+  t.renderer.destroy();
+});
+
+test("an active session keeps a known zero cache hit visible across its live projection", async () => {
+  const activity = createActivityStore();
+  applyRunEvents(
+    activity.openRun(),
+    [
+      ev({ type: "run_started", at: 1 }),
+      ev({
+        type: "iteration_completed",
+        agent: "lead",
+        iteration: 1,
+        at: 2,
+        model: "m",
+        input_tokens: 16_000,
+        output_tokens: 10,
+        response: "",
+      }),
+      ev({ type: "run_ended", status: "completed", at: 3, reason: "completed" }),
+    ],
+    "live",
+  );
+  const [active, setActive] = createSignal(true);
+  const [status, setStatus] = createSignal("running iteration 1");
+  const t = await mountApp(
+    defaultProps({
+      active,
+      status,
+      activity,
+      sessionUsage: () => ({ input: 16_000, output: 10, cached: 0 }),
+    }),
+    { width: 160, height: 40 },
+  );
+  let out = await captureUntil(t, "Cache hit 0%");
+  expect(out).toContain("Session  In 16k · Out 10 · Cache hit 0%");
+
+  setActive(false);
+  setStatus("completed");
+  out = await captureUntil(t, "Completed");
+  expect(out).toContain("Session  In 16k · Out 10 · Cache hit 0%");
   t.renderer.destroy();
 });
 
@@ -1057,7 +1098,7 @@ test("the settled footer keeps cumulative session tokens and cost", async () => 
   const out = await captureUntil(t, "Session $0.042");
   expect(out).toContain("Completed");
   expect(out).toContain("$0.042");
-  expect(out).toContain("Session  In 119k · Out 12k");
+  expect(out).toContain("Session  In 119k · Out 12k · Cache hit 1%");
   expect(out).not.toContain("12k→820 tok");
   t.renderer.destroy();
 });

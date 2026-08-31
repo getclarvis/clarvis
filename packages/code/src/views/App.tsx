@@ -1162,7 +1162,15 @@ export function App(props: AppProps): JSX.Element {
     const context = props.activity.context;
     const usage = props.activity.usage;
     const settledSessionUsage = props.session.usage?.() ?? null;
-    const sessionUsage = props.run.active() ? (usage ?? settledSessionUsage) : settledSessionUsage;
+    const activeSessionUsage = usage
+      ? {
+          ...usage,
+          ...(usage.cached === undefined && settledSessionUsage?.cached !== undefined
+            ? { cached: settledSessionUsage.cached }
+            : {}),
+        }
+      : settledSessionUsage;
+    const sessionUsage = props.run.active() ? activeSessionUsage : settledSessionUsage;
     const sessionCost = props.session.costLine();
     const runStrip = runStripText({
       active: props.run.active(),

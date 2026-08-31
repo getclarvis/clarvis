@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clarvis TUI E2E Validation"
+  short_description: "Validate TUI integration flows with visual evidence"
+  default_prompt: "Use $clarvis-tui-e2e-validation to validate this Clarvis TUI flow end to end with screenshots and observable assertions."

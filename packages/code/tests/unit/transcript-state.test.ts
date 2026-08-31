@@ -16,22 +16,26 @@ function harness(
   ts: TranscriptState;
   toasts: string[];
   dispose: () => void;
+  setNodes: (nodes: TranscriptNode[]) => void;
   setSubagents: (s: SubagentDep[]) => void;
 } {
   const toasts: string[] = [];
   let ts!: TranscriptState;
   let setSubs!: (s: SubagentDep[]) => void;
+  let setNodes!: (nodes: TranscriptNode[]) => void;
   const dispose = createRoot((d) => {
     const [subs, setSubsSignal] = createSignal(subagents);
+    const [currentNodes, setNodesSignal] = createSignal(nodes);
     setSubs = setSubsSignal;
+    setNodes = (next) => setNodesSignal(next);
     ts = createTranscriptState({
-      nodes: () => nodes,
+      nodes: currentNodes,
       subagents: () => subs(),
       notify: (m) => toasts.push(m),
     });
     return d;
   });
-  return { ts, toasts, dispose, setSubagents: setSubs };
+  return { ts, toasts, dispose, setNodes, setSubagents: setSubs };
 }
 
 test("cycleSubagent: none → each subagent ascending → back to all", () => {
@@ -50,7 +54,7 @@ test("cycleSubagent: none → each subagent ascending → back to all", () => {
   expect(h.toasts.at(-1)).toBe("focused sub-agent: Fixer");
   h.ts.cycleSubagent();
   expect(h.ts.selectedSubagent()).toBeNull();
-  expect(h.toasts.at(-1)).toBe("showing all activity");
+  expect(h.toasts.at(-1)).toBe("showing Lead transcript");
   h.dispose();
 });
 
@@ -62,7 +66,7 @@ test("cycleSubagent: empty roster clears the selection and says so", () => {
   h.dispose();
 });
 
-test("a selected subagent isolates the grouped view to only its own blocks", () => {
+test("a selected subagent isolates its blocks and cycling back restores only Lead", () => {
   const nodes = [
     node({ key: "r::u", kind: "user", text: "q" }),
     node({ key: "r::lead", kind: "assistant" }),
@@ -83,7 +87,7 @@ test("a selected subagent isolates the grouped view to only its own blocks", () 
   expect(h.ts.grouped().ordered.map((n) => n.key)).toEqual(["r::w0"]);
   h.ts.cycleSubagent();
   h.ts.cycleSubagent();
-  expect(h.ts.grouped().ordered.map((n) => n.key)).toHaveLength(4);
+  expect(h.ts.grouped().ordered.map((n) => n.key)).toEqual(["r::u", "r::lead"]);
   h.dispose();
 });
 
@@ -130,7 +134,7 @@ test("toggleSubagent: selects, re-toggling the same clears, toggling another swi
   expect(h.ts.grouped().ordered.map((n) => n.key)).toEqual(["r::w0"]);
   h.ts.toggleSubagent("scout-id");
   expect(h.ts.selectedSubagent()).toBeNull();
-  expect(h.toasts.at(-1)).toBe("showing all activity");
+  expect(h.toasts.at(-1)).toBe("showing Lead transcript");
   h.ts.toggleSubagent("fixer-id");
   expect(h.ts.selectedSubagent()).toBe("fixer-id");
   expect(h.ts.grouped().ordered.map((n) => n.key)).toEqual(["r::w1"]);
@@ -176,6 +180,144 @@ test("selecting a subagent clears a focused key that's no longer visible", () =>
   expect(h.ts.focusedKey()).toBe("r::t1");
   h.ts.toggleSubagent("scout-id");
   expect(h.ts.focusedKey()).toBeNull();
+  h.dispose();
+});
+
+test("a first child selection expands its section without changing Lead fold state", () => {
+  const lead = node({ key: "run::lead-tool", mcpName: "fs", toolName: "grep" });
+  const card = node({
+    key: "run::child-card",
+    kind: "subagent",
+    title: "Scout",
+    subagentId: "scout-id",
+    subagentOrder: 0,
+  });
+  const body = node({
+    key: "run::child-body",
+    kind: "assistant",
+    text: "child result",
+    subagentId: "scout-id",
+    subagentOrder: 0,
+  });
+  const h = harness([lead, card, body], [{ id: "scout-id", order: 0, title: "Scout" }]);
+  h.ts.toggleAt(lead.key);
+  expect(h.ts.overrideOf(lead.key)).toBe("collapsed");
+
+  h.ts.toggleSubagent("scout-id");
+
+  expect(h.ts.overrideOf(card.key)).toBe("expanded");
+  expect(h.ts.folded(body.key)).toBe(false);
+  expect(h.ts.overrideOf(lead.key)).toBe("collapsed");
+  expect(h.ts.expandAll()).toBe(false);
+  h.dispose();
+});
+
+test("a child selected before its body arrives expands when the section becomes foldable", () => {
+  const card = node({
+    key: "run::child-card",
+    kind: "subagent",
+    title: "Scout",
+    subagentId: "scout-id",
+    subagentOrder: 0,
+  });
+  const body = node({
+    key: "run::child-body",
+    kind: "assistant",
+    text: "late child result",
+    subagentId: "scout-id",
+    subagentOrder: 0,
+  });
+  const h = harness([card], [{ id: "scout-id", order: 0, title: "Scout" }]);
+  h.ts.toggleSubagent("scout-id");
+  expect(h.ts.overrideOf(card.key)).toBeUndefined();
+
+  h.setNodes([card, body]);
+
+  expect(h.ts.overrideOf(card.key)).toBe("expanded");
+  expect(h.ts.folded(body.key)).toBe(false);
+  h.dispose();
+});
+
+test("manual child collapse survives Lead and child reselection while siblings expand independently", () => {
+  const scoutCard = node({
+    key: "run::scout-card",
+    kind: "subagent",
+    title: "Scout",
+    subagentId: "scout-id",
+    subagentOrder: 0,
+  });
+  const scoutBody = node({
+    key: "run::scout-body",
+    kind: "assistant",
+    text: "scout result",
+    subagentId: "scout-id",
+    subagentOrder: 0,
+  });
+  const fixerCard = node({
+    key: "run::fixer-card",
+    kind: "subagent",
+    title: "Fixer",
+    subagentId: "fixer-id",
+    subagentOrder: 1,
+  });
+  const fixerBody = node({
+    key: "run::fixer-body",
+    kind: "assistant",
+    text: "fixer result",
+    subagentId: "fixer-id",
+    subagentOrder: 1,
+  });
+  const h = harness(
+    [scoutCard, scoutBody, fixerCard, fixerBody],
+    [
+      { id: "scout-id", order: 0, title: "Scout" },
+      { id: "fixer-id", order: 1, title: "Fixer" },
+    ],
+  );
+
+  h.ts.toggleSubagent("scout-id");
+  expect(h.ts.overrideOf(scoutCard.key)).toBe("expanded");
+  h.ts.toggleAt(scoutCard.key);
+  expect(h.ts.overrideOf(scoutCard.key)).toBeUndefined();
+  expect(h.ts.folded(scoutBody.key)).toBe(true);
+
+  h.ts.toggleSubagent("scout-id");
+  h.ts.toggleSubagent("scout-id");
+  expect(h.ts.overrideOf(scoutCard.key)).toBeUndefined();
+  expect(h.ts.folded(scoutBody.key)).toBe(true);
+
+  h.ts.toggleSubagent("fixer-id");
+  expect(h.ts.overrideOf(fixerCard.key)).toBe("expanded");
+  expect(h.ts.folded(fixerBody.key)).toBe(false);
+  expect(h.ts.overrideOf(scoutCard.key)).toBeUndefined();
+  h.dispose();
+});
+
+test("first-selection anchors are pruned with semantic retention", () => {
+  const card = node({
+    key: "run::child-card",
+    kind: "subagent",
+    title: "Scout",
+    subagentId: "scout-id",
+    subagentOrder: 0,
+  });
+  const body = node({
+    key: "run::child-body",
+    kind: "assistant",
+    text: "child result",
+    subagentId: "scout-id",
+    subagentOrder: 0,
+  });
+  const h = harness([card, body], [{ id: "scout-id", order: 0, title: "Scout" }]);
+  h.ts.toggleSubagent("scout-id");
+  h.ts.toggleAt(card.key);
+  expect(h.ts.overrideOf(card.key)).toBeUndefined();
+
+  h.setNodes([]);
+  h.setNodes([card, body]);
+
+  expect(h.ts.overrideOf(card.key)).toBe("expanded");
+  expect(h.ts.folded(body.key)).toBe(false);
   h.dispose();
 });
 
@@ -240,6 +382,30 @@ test("toggleAt focuses the block and toggles it; reset clears focus and override
   h.dispose();
 });
 
+test("fold overrides are pruned as semantic retention evicts their keys", () => {
+  const first = node({ key: "turn-0::tool", mcpName: "fs", toolName: "grep" });
+  const h = harness([first]);
+  h.ts.toggleAt(first.key);
+
+  for (let turn = 1; turn <= 100; turn += 1) {
+    const previousKey = `turn-${turn - 1}::tool`;
+    const current = node({
+      key: `turn-${turn}::tool`,
+      mcpName: "fs",
+      toolName: "grep",
+    });
+    h.setNodes([current]);
+    expect(h.ts.overrideOf(previousKey)).toBeUndefined();
+    h.ts.toggleAt(current.key);
+    expect(h.ts.overrideOf(current.key)).toBe("collapsed");
+  }
+
+  for (let turn = 0; turn < 100; turn += 1)
+    expect(h.ts.overrideOf(`turn-${turn}::tool`)).toBeUndefined();
+  expect(h.ts.overrideOf("turn-100::tool")).toBe("collapsed");
+  h.dispose();
+});
+
 test("pickDiffNode: newest diff-producing call by default, including builtin mutations", () => {
   const nodes = [
     node({ key: "a::1", mcpName: "write_file" }),
@@ -248,6 +414,23 @@ test("pickDiffNode: newest diff-producing call by default, including builtin mut
   ];
   const h = harness(nodes);
   expect(h.ts.pickDiffNode()?.key).toBe("a::2");
+  h.dispose();
+});
+
+test("pickDiffNode never crosses between Lead and a selected sub-agent transcript", () => {
+  const nodes = [
+    node({ key: "a::lead-edit", toolName: "edit_file" }),
+    node({
+      key: "a::child-edit",
+      toolName: "write_file",
+      subagentId: "worker",
+      subagentOrder: 0,
+    }),
+  ];
+  const h = harness(nodes, [{ id: "worker", order: 0, title: "Worker" }]);
+  expect(h.ts.pickDiffNode()?.key).toBe("a::lead-edit");
+  h.ts.toggleSubagent("worker");
+  expect(h.ts.pickDiffNode()?.key).toBe("a::child-edit");
   h.dispose();
 });
 

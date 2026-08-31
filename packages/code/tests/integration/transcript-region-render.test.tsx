@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import { openRender, settleSyntaxSurfaces } from "../helpers/tracked-render.ts";
 import type { TestRendererSetup } from "@opentui/core/testing";
+import { createSignal } from "solid-js";
 import { createMutable } from "solid-js/store";
-import type { ScrollBoxRenderable } from "@opentui/core";
+import { MouseEvent, type Renderable, type ScrollBoxRenderable } from "@opentui/core";
 import { TranscriptRegion } from "../../src/views/app/TranscriptRegion.tsx";
 import { createTranscriptState } from "../../src/views/transcript-state.ts";
 import type {
@@ -16,8 +17,26 @@ import type { ElicitRequestParams, ElicitResult } from "../../src/adapters/elici
 import type { Interaction } from "../../src/keys/interaction.ts";
 import type { LayoutMode } from "../../src/app/layout.ts";
 import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
+import type { MemoryPressureSnapshot } from "../../src/adapters/memory-pressure.ts";
 import type { LegacyCollapsibleToolNode } from "../helpers/transcript-fixtures.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
+import { computeGroupedNodes } from "../../src/views/subagent-sections.ts";
+import { computeToolGroups } from "../../src/views/tool-groups.ts";
+import type { TranscriptPublicationBatch } from "../../src/adapters/transcript-publication.ts";
+import type { CommittedHistoryHandle } from "../../src/views/history/CommittedHistory.tsx";
+
+function renderableCount(root: Renderable): number {
+  return 1 + root.getChildren().reduce((count, child) => count + renderableCount(child), 0);
+}
+
+function renderableByNumber(root: Renderable, number: number): Renderable | undefined {
+  if (root.num === number) return root;
+  for (const child of root.getChildren()) {
+    const found = renderableByNumber(child, number);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
 
 function fakeInteraction(): { interaction: Interaction; press: (key: string) => void } {
   const { keymap, press } = createFakeKeymap();
@@ -42,10 +61,31 @@ function activity(over: Partial<ActivityStore> = {}): ActivityStore {
   }) as unknown as ActivityStore;
 }
 
-function store(nodes: TranscriptNode[]): TranscriptStore {
+function store(
+  nodes: TranscriptNode[],
+  defaultFolded: (key: string) => boolean = () => false,
+): TranscriptStore {
+  const grouped = computeGroupedNodes(nodes);
+  const toolGroups = computeToolGroups(grouped.ordered);
+  const publication: TranscriptPublicationBatch = {
+    id: "fixture-publication",
+    kind: "annotation",
+    nodes: grouped.ordered,
+    defaultFolded: Object.fromEntries(nodes.map((node) => [node.key, defaultFolded(node.key)])),
+    toolGroups: Object.fromEntries(toolGroups),
+    sectionHeaders: Object.fromEntries(grouped.headers),
+    sectionAnchors: Object.fromEntries(grouped.anchors),
+    sectionFoldedKeys: [...grouped.folded],
+    phase: "committed",
+    ready: true,
+  };
   return {
     nodes,
-    defaultFolded: () => false,
+    publicationBatches: nodes.length === 0 ? [] : [publication],
+    frontierNodes: () => [],
+    committedNodes: () => grouped.ordered,
+    markPublicationReady: () => {},
+    defaultFolded,
   } as unknown as TranscriptStore;
 }
 
@@ -57,6 +97,7 @@ function layout(over: Partial<TranscriptRegionLayout> = {}): TranscriptRegionLay
     drawerOpen: () => false,
     contentInset: () => 0,
     width: () => 120,
+    height: () => 34,
     ...over,
   };
 }
@@ -112,6 +153,7 @@ function baseProps(overrides: Partial<TranscriptRegionProps> = {}): TranscriptRe
     interaction: overrides.interaction ?? fakeInteraction().interaction,
     run: overrides.run ?? run(),
     layout: overrides.layout ?? layout(),
+    active: overrides.active,
     contextWindow: overrides.contextWindow ?? (() => 1_024_000),
     agent: overrides.agent ?? (() => "coder"),
     model: overrides.model ?? (() => "z-ai/glm-5.2"),
@@ -119,11 +161,18 @@ function baseProps(overrides: Partial<TranscriptRegionProps> = {}): TranscriptRe
     openPlan: overrides.openPlan ?? (() => {}),
     onOpenDetail: overrides.onOpenDetail,
     onScrollbox: overrides.onScrollbox ?? (() => {}),
+    onHistoryHandle: overrides.onHistoryHandle,
+    memoryPressure: overrides.memoryPressure,
+    historyMeasurementRecovery: overrides.historyMeasurementRecovery,
   };
 }
 
-async function mount(props: TranscriptRegionProps, width = 120): Promise<TestRendererSetup> {
-  const t = await openRender(() => <TranscriptRegion {...props} />, { width, height: 34 });
+async function mount(
+  props: TranscriptRegionProps,
+  width = 120,
+  height = 34,
+): Promise<TestRendererSetup> {
+  const t = await openRender(() => <TranscriptRegion {...props} />, { width, height });
   await settleSyntaxSurfaces(t);
   return t;
 }
@@ -133,6 +182,145 @@ test("with no nodes and no elicitation, the splash screen renders", async () => 
   const out = t.captureCharFrame();
   expect(out).toContain("coder");
   expect(out).toContain("z-ai/glm-5.2");
+  t.renderer.destroy();
+});
+
+test("memory pressure stays after committed history in the mutable tail", async () => {
+  const pressure: MemoryPressureSnapshot = {
+    phase: "tripped",
+    advisory: false,
+    rss: 5 * 1024 ** 3,
+    heapUsed: 1,
+    external: 1,
+    arrayBuffers: 1,
+    limitBytes: 5 * 1024 ** 3,
+    warningBytes: 4 * 1024 ** 3,
+    rearmBytes: 3.5 * 1024 ** 3,
+    sampledAt: 1,
+  };
+  const nodes = [toolNode()];
+  const t = await mount(
+    baseProps({
+      store: store(nodes),
+      memoryPressure: { state: () => pressure, onRecover: () => {} },
+    }),
+  );
+  const out = t.captureCharFrame();
+  expect(out).toContain("Work is blocked");
+  expect(out).toContain("/recover-memory");
+  t.renderer.destroy();
+});
+
+test("a current plan stays out of the transcript tail when the sidebar is closed", async () => {
+  const nodes = [toolNode()];
+  const plan: TranscriptNode = {
+    key: "exec-live-plan::plan",
+    kind: "plan",
+    status: "running",
+    text: ".clarvis/plans/live-plan.md",
+    planTitle: "Keep history still",
+    planStatus: "active",
+    revision: 1,
+    tasks: [{ id: "task-1", title: "Measure the physical window", status: "in_progress" }],
+  };
+  const committed = store(nodes);
+  const liveStore = {
+    ...committed,
+    nodes: [...nodes, plan],
+    frontierNodes: () => [plan],
+  } as TranscriptStore;
+  const t = await mount(
+    baseProps({
+      store: liveStore,
+      activity: activity({
+        plan: {
+          id: "live-plan",
+          title: "Keep history still",
+          status: "active",
+          retention: "keep",
+          revision: 1,
+          spec_revision: 1,
+          tasks: [{ id: "task-1", title: "Measure the physical window", status: "in_progress" }],
+        },
+      }),
+    }),
+  );
+  const out = t.captureCharFrame();
+  expect(out).not.toContain("Plan 0/1");
+  expect(out).not.toContain("Measure the physical window");
+  t.renderer.destroy();
+});
+
+test("the physical reading runway uses fixed normal and compact height bands", async () => {
+  const tall = await mount(
+    baseProps({
+      store: store([toolNode()]),
+      layout: layout({ height: () => 34 }),
+    }),
+    120,
+    34,
+  );
+  const tallRunway = tall.renderer.root.findDescendantById("transcript-reading-runway");
+  expect(tallRunway).toBeDefined();
+  expect(tallRunway!.height).toBe(3);
+  expect(
+    tall.renderer.root
+      .findDescendantById("committed-history")
+      ?.findDescendantById("transcript-reading-runway"),
+  ).toBe(tallRunway);
+  tall.renderer.destroy();
+
+  const compact = await mount(
+    baseProps({
+      store: store([toolNode()]),
+      layout: layout({ mode: () => "single", width: () => 64, height: () => 24 }),
+    }),
+    64,
+    24,
+  );
+  const compactRunway = compact.renderer.root.findDescendantById("transcript-reading-runway");
+  expect(compactRunway).toBeDefined();
+  expect(compactRunway!.height).toBe(1);
+  compact.renderer.destroy();
+});
+
+test("workflow activity never enters or moves the main transcript", async () => {
+  const live: TranscriptNode = {
+    key: "live::msg",
+    kind: "assistant",
+    status: "running",
+    text: "STREAMING ANCHOR",
+  };
+  const liveStore = {
+    nodes: [live],
+    publicationBatches: [],
+    frontierNodes: () => [live],
+    committedNodes: () => [],
+    markPublicationReady: () => {},
+    defaultFolded: () => false,
+  } as unknown as TranscriptStore;
+  const [workflow, setWorkflow] = createSignal<WorkflowActivity | null>(null);
+  const t = await mount(
+    baseProps({
+      store: liveStore,
+      run: run({ workflowActivity: workflow }),
+    }),
+  );
+  const beforeRows = t.captureCharFrame().split("\n");
+  const before = beforeRows.findIndex((row) => row.includes("STREAMING ANCHOR"));
+  expect(before).toBeGreaterThanOrEqual(0);
+
+  setWorkflow({
+    root: "manager",
+    nodes: new Map([
+      ["leader", { runId: "leader", kind: "leader", title: "verify", status: "running" }],
+    ]),
+  });
+  await t.renderOnce();
+  const afterRows = t.captureCharFrame().split("\n");
+  const after = afterRows.findIndex((row) => row.includes("STREAMING ANCHOR"));
+  expect(after).toBe(before);
+  expect(afterRows.join("\n")).not.toContain("workflow leader active");
   t.renderer.destroy();
 });
 
@@ -151,6 +339,67 @@ test("an active elicitation suppresses the splash even with an empty transcript"
   const out = t.captureCharFrame();
   expect(out).toContain("proceed with the risky command?");
   expect(out).not.toContain("z-ai/glm-5.2");
+  t.renderer.destroy();
+});
+
+test("a full-region cover pauses interaction without destroying the transcript projection", async () => {
+  const request: ElicitRequestParams = { message: "covered elicitation must be inert" };
+  const node = toolNode();
+  const [active, setActive] = createSignal(true);
+  let scrollbox: ScrollBoxRenderable | undefined;
+  let history: CommittedHistoryHandle | undefined;
+  const props = baseProps({
+    store: store([node]),
+    active,
+    run: run({ elicit: () => request }),
+    onScrollbox: (value) => (scrollbox = value),
+    onHistoryHandle: (value) => (history = value),
+  });
+  const t = await mount(props);
+  const retainedScrollbox = scrollbox;
+  const retainedHistory = history;
+  expect(t.captureCharFrame()).toContain("covered elicitation must be inert");
+  expect(retainedScrollbox).toBeDefined();
+  expect(retainedHistory).toBeDefined();
+  const activeRows = t.captureCharFrame().split("\n");
+  const headerRow = activeRows.findIndex((row) => row.includes("edit_file"));
+  const headerColumn = activeRows[headerRow]!.indexOf("edit_file");
+  const targetNumber = t.renderer.hitTest(headerColumn, headerRow);
+  const retainedTarget = renderableByNumber(t.renderer.root, targetNumber);
+  expect(retainedTarget).toBeDefined();
+
+  setActive(false);
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("covered elicitation must be inert");
+  expect(scrollbox).toBe(retainedScrollbox);
+  expect(history).toBe(retainedHistory);
+  expect(retainedScrollbox!.isDestroyed).toBe(false);
+  retainedTarget!.processMouseEvent(
+    new MouseEvent(retainedTarget!, {
+      type: "down",
+      button: 0,
+      x: headerColumn,
+      y: headerRow,
+      modifiers: { shift: false, alt: false, ctrl: false },
+    }),
+  );
+  expect(props.transcript.overrideOf(node.key)).toBeUndefined();
+
+  setActive(true);
+  await t.renderOnce();
+  expect(t.captureCharFrame()).toContain("covered elicitation must be inert");
+  expect(scrollbox).toBe(retainedScrollbox);
+  expect(history).toBe(retainedHistory);
+  retainedTarget!.processMouseEvent(
+    new MouseEvent(retainedTarget!, {
+      type: "down",
+      button: 0,
+      x: headerColumn,
+      y: headerRow,
+      modifiers: { shift: false, alt: false, ctrl: false },
+    }),
+  );
+  expect(props.transcript.overrideOf(node.key)).toBeDefined();
   t.renderer.destroy();
 });
 
@@ -227,10 +476,7 @@ test("a failed tool reveals its error only after the user clicks its header", as
       result: message,
     }),
   ];
-  const failedStore = {
-    ...store(nodes),
-    defaultFolded: () => true,
-  } as TranscriptStore;
+  const failedStore = store(nodes, () => true);
   const props = baseProps({ store: failedStore });
   const t = await mount(props);
   let out = t.captureCharFrame();
@@ -241,7 +487,7 @@ test("a failed tool reveals its error only after the user clicks its header", as
   const rows = out.split("\n");
   const headerRow = rows.findIndex((row) => row.includes("read_file"));
   await t.mockMouse.click(rows[headerRow]!.indexOf("read_file"), headerRow);
-  await t.renderOnce();
+  await settleSyntaxSurfaces(t);
   out = t.captureCharFrame();
   expect(out).toContain(message);
   t.renderer.destroy();
@@ -262,20 +508,20 @@ test("a collapsed mutation chip counts the real diff, not the display-bounded co
 
   const node = toolNode({
     toolName: "write_file",
-    subagentOrder: 0,
     args: { path: "big.ts" },
     diff,
     result: "Wrote big.ts",
-    collapsed: true,
   });
-  const t = await mount(baseProps({ store: store([node]) }));
+  const props = baseProps({ store: store([node]) });
+  props.transcript.toggleAt(node.key);
+  const t = await mount(props);
   const frame = t.captureCharFrame();
   t.renderer.destroy();
 
   expect(frame).toContain(`+${String(changed)}`);
 });
 
-test("a transcript sub-agent header is informational; only the sidebar selects its details", async () => {
+test("the main transcript hides sub-agent work until an isolated transcript is selected", async () => {
   const card: TranscriptNode = {
     key: "run-1::subagent-s1",
     kind: "subagent",
@@ -299,25 +545,23 @@ test("a transcript sub-agent header is informational; only the sidebar selects i
     }),
   });
   const t = await mount(props);
-  const rows = t.captureCharFrame().split("\n");
-  const workerRow = rows.findIndex((row) => row.includes("Worker"));
-  expect(workerRow).toBeGreaterThan(-1);
+  expect(t.captureCharFrame()).not.toContain("Worker");
+  expect(t.captureCharFrame()).not.toContain("edit_file");
 
-  await t.mockMouse.click(rows[workerRow]!.indexOf("Worker") + 2, workerRow);
-  await t.renderOnce();
-
-  expect(props.transcript.selectedSubagent()).toBeNull();
-  expect(props.transcript.overrideOf(card.key)).toBeUndefined();
-  expect(props.transcript.focusedKey()).toBeNull();
-  expect(t.renderer.hasSelection).toBe(false);
+  props.transcript.toggleSubagent("s1");
+  await settleSyntaxSurfaces(t);
+  expect(t.captureCharFrame()).toContain("Worker");
+  props.transcript.toggleExpandOrBlock();
+  await settleSyntaxSurfaces(t);
+  expect(t.captureCharFrame()).toContain("edit_file");
   t.renderer.destroy();
 });
 
-test("an empty lead transcript keeps parallel worker bodies folded and terminal statuses current", async () => {
+test("one selected sub-agent transcript excludes every sibling transcript", async () => {
   const researcherCard: TranscriptNode = {
     key: "run-empty::subagent:researcher",
     kind: "subagent",
-    status: "running",
+    status: "ok",
     text: "Inspect the implementation",
     title: "Researcher",
     subagentId: "researcher",
@@ -344,46 +588,70 @@ test("an empty lead transcript keeps parallel worker bodies folded and terminal 
   const reviewerCard: TranscriptNode = {
     key: "run-empty::subagent:reviewer",
     kind: "subagent",
-    status: "running",
+    status: "ok",
     text: "Review the implementation",
     title: "Reviewer",
     subagentId: "reviewer",
     subagentOrder: 1,
   };
-  const t = await mount(
-    baseProps({
-      store: store([researcherCard, researcherBody, reviewerCard, reviewerBody]),
-      activity: activity({
-        subagents: [
-          {
-            id: "researcher",
-            order: 0,
-            status: "done",
-            title: "Researcher",
-            input: 0,
-            output: 0,
-          },
-          {
-            id: "reviewer",
-            order: 1,
-            status: "done",
-            title: "Reviewer",
-            input: 0,
-            output: 0,
-          },
-        ] as ActivityStore["subagents"],
-      }),
+  const props = baseProps({
+    store: store([researcherCard, researcherBody, reviewerCard, reviewerBody]),
+    activity: activity({
+      subagents: [
+        {
+          id: "researcher",
+          order: 0,
+          status: "done",
+          title: "Researcher",
+          input: 0,
+          output: 0,
+        },
+        {
+          id: "reviewer",
+          order: 1,
+          status: "done",
+          title: "Reviewer",
+          input: 0,
+          output: 0,
+        },
+      ] as ActivityStore["subagents"],
     }),
-  );
+  });
+  const t = await mount(props);
 
+  expect(t.captureCharFrame()).not.toContain("Researcher");
+  expect(t.captureCharFrame()).not.toContain("Reviewer");
+  props.transcript.toggleSubagent("researcher");
+  await settleSyntaxSurfaces(t);
+  expect(props.transcript.overrideOf(researcherCard.key)).toBe("expanded");
   const frame = t.captureCharFrame();
   expect(frame).toContain("Researcher");
-  expect(frame).toContain("Reviewer");
-  expect(frame.match(/Completed/g)?.length).toBe(2);
-  expect(frame.match(/1 hidden/g)?.length).toBe(2);
-  expect(frame).not.toContain("RESEARCHER BODY MUST START FOLDED");
+  expect(frame).not.toContain("Reviewer");
+  expect(frame.match(/Completed/g)?.length).toBe(1);
+  expect(frame.match(/1 entry/g)?.length).toBe(1);
+  const researcherBodyOwner = t.renderer.root.findDescendantById(researcherBody.key);
+  expect(researcherBodyOwner).toBeDefined();
+  expect(researcherBodyOwner!.height).toBeGreaterThan(0);
+  expect(frame).toContain("RESEARCHER BODY MUST START FOLDED");
   expect(frame).not.toContain("REVIEWER BODY MUST START FOLDED");
-  expect(frame).not.toContain("Running");
+  const foldedRows = frame.split("\n");
+  const researcherRow = foldedRows.findIndex(
+    (row) => row.includes("Researcher") && row.includes("Completed"),
+  );
+  const researcherColumn = foldedRows[researcherRow]?.indexOf("Researcher") ?? -1;
+  expect(researcherRow).toBeGreaterThanOrEqual(0);
+  expect(researcherColumn).toBeGreaterThanOrEqual(0);
+  await t.mockMouse.click(researcherColumn, researcherRow);
+  await settleSyntaxSurfaces(t);
+  expect(t.captureCharFrame()).toContain("1 hidden");
+  expect(t.captureCharFrame()).not.toContain("RESEARCHER BODY MUST START FOLDED");
+  expect(t.captureCharFrame()).not.toContain("REVIEWER BODY MUST START FOLDED");
+
+  props.transcript.toggleSubagent("researcher");
+  props.transcript.toggleSubagent("researcher");
+  await settleSyntaxSurfaces(t);
+  expect(t.captureCharFrame()).toContain("1 hidden");
+  expect(t.captureCharFrame()).not.toContain("RESEARCHER BODY MUST START FOLDED");
   t.renderer.destroy();
 });
 
@@ -399,17 +667,17 @@ test("a delegation keeps only a bounded preview inline and opens the full brief 
     subagentOrder: 0,
   };
   let opened = "";
-  const t = await mount(
-    baseProps({
-      store: store([card]),
-      activity: activity({
-        subagents: [
-          { id: "worker", order: 0, status: "running", title: "researcher", input: 0, output: 0 },
-        ] as ActivityStore["subagents"],
-      }),
-      onOpenDetail: (detail) => (opened = detail.content),
+  const props = baseProps({
+    store: store([card]),
+    activity: activity({
+      subagents: [
+        { id: "worker", order: 0, status: "running", title: "researcher", input: 0, output: 0 },
+      ] as ActivityStore["subagents"],
     }),
-  );
+    onOpenDetail: (detail) => (opened = detail.content),
+  });
+  props.transcript.toggleSubagent("worker");
+  const t = await mount(props);
   const frame = t.captureCharFrame();
   expect(frame).toContain("click to read");
   expect(frame).not.toContain(
@@ -544,7 +812,7 @@ test("transcript blocks use the available pane beside an inline sidebar", async 
   t.renderer.destroy();
 });
 
-test("focused sub-agent context stays pinned above its filtered transcript", async () => {
+test("focused sub-agent identity stays pinned without live status in its transcript", async () => {
   const a = activity({
     subagents: [
       {
@@ -563,13 +831,14 @@ test("focused sub-agent context stays pinned above its filtered transcript", asy
   props.transcript.toggleSubagent("s1");
   const t = await mount(props);
   const out = t.captureCharFrame();
-  expect(out).toContain("Viewing A1 Audit authentication · Activity: working");
+  expect(out).toContain("Viewing A1 Audit authentication");
+  expect(out).not.toContain("Activity: working");
   expect(out).not.toContain("Focused agent");
-  expect(out).not.toContain("All transcripts");
+  expect(out).not.toContain("Lead transcript");
   t.renderer.destroy();
 });
 
-test("a focused failed sub-agent keeps its terminal reason visible", async () => {
+test("a focused failed sub-agent keeps its terminal summary out of the transcript banner", async () => {
   const a = activity({
     subagents: [
       {
@@ -587,7 +856,10 @@ test("a focused failed sub-agent keeps its terminal reason visible", async () =>
   const props = baseProps({ store: store([toolNode()]), activity: a });
   props.transcript.toggleSubagent("s1");
   const t = await mount(props);
-  expect(t.captureCharFrame()).toContain("Failed: The release test failed on Windows");
+  const out = t.captureCharFrame();
+  expect(out).toContain("Viewing A1 Verify release");
+  expect(out).not.toContain("The release test failed on Windows");
+  expect(out).not.toContain("Failed:");
   t.renderer.destroy();
 });
 
@@ -605,7 +877,7 @@ test("the aggregate transcript does not duplicate the roster when the optional s
   );
   const out = t.captureCharFrame();
   expect(out).not.toContain("All agents");
-  expect(out).not.toContain("All transcripts");
+  expect(out).not.toContain("Lead transcript");
   expect(out).not.toContain("A1 Worker");
   t.renderer.destroy();
 });
@@ -628,7 +900,7 @@ test("the split sidebar is the sole owner of the agent roster", async () => {
   );
   const out = t.captureCharFrame();
   const normalized = out.replace(/\s+/g, " ");
-  expect(out).toContain("All transcripts");
+  expect(out).toContain("Lead transcript");
   expect(normalized).toContain("A1 Split worker");
   expect(out).not.toContain("Viewing A1");
   expect(out).not.toContain("All agents");
@@ -648,7 +920,7 @@ test("single mode with the drawer open renders the sidebar as an absolute-positi
     }),
   );
   const out = t.captureCharFrame();
-  expect(out).toContain("All transcripts");
+  expect(out).toContain("Lead transcript");
   expect(out).toContain("Drawer worker");
   expect(out).not.toContain("Viewing A1");
   t.renderer.destroy();
@@ -672,7 +944,7 @@ test("single mode with the drawer closed leaves the aggregate transcript unobstr
   );
   const out = t.captureCharFrame();
   expect(out).not.toContain("All agents");
-  expect(out).not.toContain("All transcripts");
+  expect(out).not.toContain("Lead transcript");
   expect(out).not.toContain("A1 Hidden worker");
   t.renderer.destroy();
 });
@@ -709,6 +981,121 @@ test("onScrollbox receives the mounted scrollbox ref", async () => {
   let received: ScrollBoxRenderable | undefined;
   const t = await mount(baseProps({ onScrollbox: (el) => (received = el) }));
   expect(received).toBeDefined();
+  t.renderer.destroy();
+});
+
+test("Lead keeps its physical reader state while one bounded child projection is visited", async () => {
+  const leadNodes: TranscriptNode[] = Array.from({ length: 40 }, (_, index) => ({
+    key: `lead-${String(index)}`,
+    kind: "assistant",
+    status: "ok",
+    text: `LEAD ROW ${String(index)} ${"reader context ".repeat(5)}`,
+  }));
+  const childNodes: TranscriptNode[] = [
+    {
+      key: "child-a-card",
+      kind: "subagent",
+      status: "ok",
+      text: "Inspect child A",
+      title: "Child A",
+      subagentId: "a",
+      subagentOrder: 0,
+    },
+    {
+      key: "child-a",
+      kind: "assistant",
+      status: "ok",
+      text: "CHILD A TRANSCRIPT",
+      subagentId: "a",
+      subagentOrder: 0,
+    },
+    {
+      key: "child-b-card",
+      kind: "subagent",
+      status: "ok",
+      text: "Inspect child B",
+      title: "Child B",
+      subagentId: "b",
+      subagentOrder: 1,
+    },
+    {
+      key: "child-b",
+      kind: "assistant",
+      status: "ok",
+      text: "CHILD B TRANSCRIPT",
+      subagentId: "b",
+      subagentOrder: 1,
+    },
+  ];
+  let activeScrollbox: ScrollBoxRenderable | undefined;
+  let activeHandle: CommittedHistoryHandle | undefined;
+  const props = baseProps({
+    store: store([...leadNodes, ...childNodes]),
+    activity: activity({
+      subagents: [
+        { id: "a", order: 0, status: "done", title: "Child A", input: 0, output: 0 },
+        { id: "b", order: 1, status: "done", title: "Child B", input: 0, output: 0 },
+      ] as ActivityStore["subagents"],
+    }),
+    onScrollbox: (value) => (activeScrollbox = value),
+    onHistoryHandle: (value) => (activeHandle = value),
+  });
+  const t = await mount(props, 100, 20);
+  const leadScrollbox = activeScrollbox;
+  const leadHandle = activeHandle;
+  expect(leadScrollbox).toBeDefined();
+  expect(leadHandle).toBeDefined();
+  leadScrollbox!.stickyScroll = false;
+  leadScrollbox!.scrollTo({ x: 0, y: 6 });
+  await t.renderOnce();
+  const retainedTop = leadScrollbox!.scrollTop;
+  expect(retainedTop).toBeGreaterThan(0);
+
+  props.transcript.toggleSubagent("a");
+  await settleSyntaxSurfaces(t);
+  const childA = activeScrollbox;
+  expect(childA).toBeDefined();
+  expect(childA).not.toBe(leadScrollbox);
+  expect(t.captureCharFrame()).toContain("CHILD A TRANSCRIPT");
+  expect(leadScrollbox!.isDestroyed).toBe(false);
+
+  props.transcript.toggleSubagent("b");
+  await settleSyntaxSurfaces(t);
+  const childB = activeScrollbox;
+  expect(childB).toBeDefined();
+  expect(childB).not.toBe(childA);
+  expect(childA!.isDestroyed).toBe(true);
+  expect(t.captureCharFrame()).toContain("CHILD B TRANSCRIPT");
+
+  await new Promise<void>((resolve) => process.nextTick(resolve));
+  await new Promise<void>((resolve) => process.nextTick(resolve));
+  await t.renderOnce();
+  const retainedFrameListeners = t.renderer.listenerCount("frame");
+  const retainedRenderables = renderableCount(t.renderer.root);
+  const retainedLifecyclePasses = t.renderer.getLifecyclePasses().size;
+
+  for (let cycle = 0; cycle < 12; cycle += 1) {
+    const target = cycle % 2 === 0 ? "a" : "b";
+    props.transcript.toggleSubagent(target);
+    await settleSyntaxSurfaces(t);
+    await new Promise<void>((resolve) => process.nextTick(resolve));
+    await new Promise<void>((resolve) => process.nextTick(resolve));
+    await t.renderOnce();
+    expect(t.captureCharFrame()).toContain(
+      target === "a" ? "CHILD A TRANSCRIPT" : "CHILD B TRANSCRIPT",
+    );
+    expect(t.renderer.listenerCount("frame")).toBe(retainedFrameListeners);
+    expect(renderableCount(t.renderer.root)).toBe(retainedRenderables);
+    expect(t.renderer.getLifecyclePasses().size).toBe(retainedLifecyclePasses);
+  }
+
+  props.transcript.toggleSubagent("b");
+  await t.renderOnce();
+  expect(activeScrollbox).toBe(leadScrollbox);
+  expect(activeHandle).toBe(leadHandle);
+  expect(leadScrollbox!.scrollTop).toBe(retainedTop);
+  expect(t.captureCharFrame()).toContain("LEAD ROW");
+  expect(t.captureCharFrame()).not.toContain("CHILD B TRANSCRIPT");
   t.renderer.destroy();
 });
 

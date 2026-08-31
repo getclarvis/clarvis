@@ -25,12 +25,10 @@ export interface SessionTotals {
   costUsd?: number;
 }
 
-/** One turn (user message + run) within a session. */
-export interface TurnRef {
+/** Lifecycle fields shared by every persisted session turn. */
+interface TurnRefBase {
   userPreview: string;
   executionId?: string;
-  /** Extension snapshot pinned when this turn began. */
-  environment?: EnvironmentRunRef;
   status: NodeStatus;
   startedAt?: number;
   endedAt?: number;
@@ -49,6 +47,23 @@ export interface TurnRef {
    */
   error?: { code: string; message: string };
 }
+
+/** A conversation turn whose trace participates in provider continuation. */
+export interface ConversationTurnRef extends TurnRefBase {
+  kind: "conversation";
+  /** Extension snapshot pinned when this turn began. */
+  environment?: EnvironmentRunRef;
+}
+
+/** A separately-invoked run rendered in the transcript but excluded from continuation. */
+export interface TranscriptTurnRef extends TurnRefBase {
+  kind: "transcript";
+  /** Extension snapshot pinned when this transcript-only run began. */
+  environment?: EnvironmentRunRef;
+}
+
+/** One canonical persisted transcript turn within a session. */
+export type TurnRef = ConversationTurnRef | TranscriptTurnRef;
 
 /** A session's persisted metadata: its turns, totals, and any unflushed pending messages. */
 export interface SessionMeta {
@@ -295,8 +310,16 @@ export function listSessionsForWorkspace(store: SessionStore, workspace: string)
  *   and it disappears the day the wire type gains the slot.
  */
 type PersistedSessionTurn = Session["turns"][number] & {
+  kind: TurnRef["kind"];
   error?: { code: string; message: string };
 };
+
+/** Reject stale pre-discriminator session documents instead of guessing continuation semantics. */
+function persistedTurnKind(turn: Session["turns"][number]): TurnRef["kind"] {
+  const kind = (turn as PersistedSessionTurn).kind;
+  if (kind === "conversation" || kind === "transcript") return kind;
+  throw new Error("session turn kind is required");
+}
 
 /**
  * Read a persisted turn's failure reason, ignoring anything that is not the
@@ -329,6 +352,7 @@ export function metaToSession(m: SessionMeta): Session {
     updated_at: m.updatedAt,
     ...(m.profile !== undefined ? { profile: m.profile } : {}),
     turns: m.turns.map((t): PersistedSessionTurn => ({
+      kind: t.kind,
       user_preview: t.userPreview,
       ...(t.executionId !== undefined ? { execution_id: t.executionId } : {}),
       ...(t.environment !== undefined ? { environment: t.environment } : {}),
@@ -363,6 +387,7 @@ export function sessionToMeta(s: Session, owner: string): SessionMeta {
       const error = persistedTurnError(t);
       const environment = persistedEnvironment(t.environment);
       return {
+        kind: persistedTurnKind(t),
         userPreview: t.user_preview,
         ...(t.execution_id !== undefined ? { executionId: t.execution_id } : {}),
         ...(environment !== undefined ? { environment } : {}),

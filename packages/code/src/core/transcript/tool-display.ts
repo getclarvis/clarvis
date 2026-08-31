@@ -197,7 +197,7 @@ function projectField(value: string | undefined | null): { text: string; truncat
  *
  * The persisted node remains complete for export. Each independent string is capped,
  * argument traversal is bounded before serialization, and the result is cached by
- * the node's payload identities so transcript paging and block rendering share it.
+ * the node's payload identities so immutable publication and block rendering share it.
  */
 export function projectTranscriptToolDisplay(
   node: TranscriptToolNode,
@@ -247,18 +247,4 @@ export function projectTranscriptToolDisplay(
     projection,
   });
   return projection;
-}
-
-/** Text the tool block can mount, including its bounded running tail and hydration notice. */
-export function transcriptToolMountedTextChars(
-  node: TranscriptToolNode,
-  sourceArguments: Record<string, unknown> | undefined = node.args,
-): number {
-  const projection = projectTranscriptToolDisplay(node, sourceArguments);
-  return Math.min(
-    TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS,
-    projection.mountedTextChars +
-      (node.liveOutput?.length ?? 0) +
-      (node.hydrationNotice?.length ?? 0),
-  );
 }

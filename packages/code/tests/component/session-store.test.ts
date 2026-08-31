@@ -79,12 +79,22 @@ test("uuidv7 has version 7 and variant bits", () => {
 test("metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)", () => {
   const m = meta({
     profile: "coder",
-    turns: [{ userPreview: "hi", executionId: "exec_1", status: "done", startedAt: 1, endedAt: 2 }],
+    turns: [
+      {
+        kind: "conversation",
+        userPreview: "hi",
+        executionId: "exec_1",
+        status: "done",
+        startedAt: 1,
+        endedAt: 2,
+      },
+    ],
     totals: { input: 10, output: 5, cached: 2, costUsd: 0.01 },
     pending: [{ role: "user", content: "note" }],
   });
   const wire = metaToSession(m);
-  expect(wire.turns[0]).toEqual({
+  expect(wire.turns[0] as Session["turns"][number] & { kind: string }).toEqual({
+    kind: "conversation",
     user_preview: "hi",
     execution_id: "exec_1",
     status: "done",
@@ -95,13 +105,44 @@ test("metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)", (
   expect(sessionToMeta(wire, "clarvis")).toEqual(m);
 });
 
+test("transcript-only turn identity is persisted and stale undiscriminated turns are rejected", () => {
+  const m = meta({
+    turns: [
+      {
+        kind: "transcript",
+        userPreview: "/explorer inspect",
+        executionId: "exec_skill",
+        status: "done",
+      },
+    ],
+  });
+  const wire = metaToSession(m);
+  expect(wire.turns[0]).toMatchObject({
+    kind: "transcript",
+    user_preview: "/explorer inspect",
+    execution_id: "exec_skill",
+  });
+  expect(sessionToMeta(wire, "clarvis")).toEqual(m);
+
+  delete (wire.turns[0] as unknown as { kind?: string }).kind;
+  expect(() => sessionToMeta(wire, "clarvis")).toThrow("session turn kind is required");
+});
+
 test("Environment identity round-trips on turns and bounded summaries", async () => {
   const environment = {
     id: "workspace:research",
     fingerprint: `sha256:${"a".repeat(64)}`,
   };
   const m = meta({
-    turns: [{ userPreview: "hi", executionId: "exec_1", environment, status: "done" }],
+    turns: [
+      {
+        kind: "conversation",
+        userPreview: "hi",
+        executionId: "exec_1",
+        environment,
+        status: "done",
+      },
+    ],
     lastEnvironment: environment,
   });
   const wire = metaToSession(m);
@@ -114,7 +155,9 @@ test("Environment identity round-trips on turns and bounded summaries", async ()
 
 test("malformed persisted Environment identity is ignored at both session boundaries", async () => {
   const wire = metaToSession(
-    meta({ turns: [{ userPreview: "hi", executionId: "exec_1", status: "done" }] }),
+    meta({
+      turns: [{ kind: "conversation", userPreview: "hi", executionId: "exec_1", status: "done" }],
+    }),
   );
   (wire.turns[0] as unknown as { environment: unknown }).environment = {
     id: "workspace:research",
@@ -135,6 +178,12 @@ test("facade: save/list/get/delete over the cache, persisting to the service", a
   store.save(newer);
   await store.flushPending?.();
 
+  expect(store.memory?.()).toEqual({
+    cached_sessions: 2,
+    full_sessions: 2,
+    pending_session_write_lanes: 0,
+    queued_session_writes: 0,
+  });
   expect(store.list().map((m) => m.title)).toEqual(["newer", "older"]);
   expect(store.get(newer.id)?.title).toBe("newer");
   expect(svc.store.has(newer.id)).toBe(true);
@@ -203,7 +252,11 @@ test("facade coalesces a blocked stream of saves to the latest snapshot", async 
       meta({
         id: "coalesced",
         title: String(index),
-        turns: Array.from({ length: index + 1 }, () => ({ userPreview: "x", status: "done" })),
+        turns: Array.from({ length: index + 1 }, () => ({
+          kind: "conversation",
+          userPreview: "x",
+          status: "done",
+        })),
       }),
     );
   }
@@ -251,7 +304,7 @@ test("cache demotes older full session documents to bounded summaries", async ()
         meta({
           id: `loaded-${index}`,
           updatedAt: count - index,
-          turns: [{ userPreview: `turn-${index}`, status: "done" }],
+          turns: [{ kind: "conversation", userPreview: `turn-${index}`, status: "done" }],
         }),
       ),
     ),
@@ -295,7 +348,7 @@ test("cache skips sessions with active persistence lanes while choosing an LRU v
       meta({
         id: `busy-${index}`,
         updatedAt: index,
-        turns: [{ userPreview: `turn-${index}`, status: "done" }],
+        turns: [{ kind: "conversation", userPreview: `turn-${index}`, status: "done" }],
       }),
     );
   }
@@ -475,6 +528,7 @@ test("a failed turn's reason survives metaToSession -> disk JSON -> sessionToMet
   const m = meta({
     turns: [
       {
+        kind: "conversation",
         userPreview: "hi",
         executionId: "exec_1",
         status: "error",
@@ -486,6 +540,7 @@ test("a failed turn's reason survives metaToSession -> disk JSON -> sessionToMet
   });
   const onDisk = JSON.parse(JSON.stringify(metaToSession(m))) as Session;
   expect(onDisk.turns[0]).toEqual({
+    kind: "conversation",
     user_preview: "hi",
     execution_id: "exec_1",
     status: "error",
@@ -498,8 +553,10 @@ test("a failed turn's reason survives metaToSession -> disk JSON -> sessionToMet
   // A turn that did not fail still serializes byte-identically to before: the
   // conditional spread emits no key at all, not an `error: undefined` one that
   // `toEqual` would happily ignore.
-  const ok = metaToSession(meta({ turns: [{ userPreview: "hi", status: "done" }] }));
-  expect(Object.keys(ok.turns[0]!)).toEqual(["user_preview", "status"]);
+  const ok = metaToSession(
+    meta({ turns: [{ kind: "conversation", userPreview: "hi", status: "done" }] }),
+  );
+  expect(Object.keys(ok.turns[0]!)).toEqual(["kind", "user_preview", "status"]);
 });
 
 // The same property through the adapter a reload actually uses: save into the
@@ -511,6 +568,7 @@ test("a reloaded session still carries why its turn failed", async () => {
   const m = meta({
     turns: [
       {
+        kind: "conversation",
         userPreview: "hi",
         executionId: "exec_1",
         status: "error",
@@ -534,7 +592,9 @@ test("a reloaded session still carries why its turn failed", async () => {
 // not the {code, message} pair the producer writes degrades to "no reason
 // recorded" rather than to a TurnRef whose `error` is not an error.
 test("a persisted turn error that is not a {code, message} pair reads back as absent", () => {
-  const wire = metaToSession(meta({ turns: [{ userPreview: "hi", status: "error" }] }));
+  const wire = metaToSession(
+    meta({ turns: [{ kind: "conversation", userPreview: "hi", status: "error" }] }),
+  );
   const withTurnError = (error: unknown): Session => {
     const copy = JSON.parse(JSON.stringify(wire)) as unknown as {
       turns: Record<string, unknown>[];

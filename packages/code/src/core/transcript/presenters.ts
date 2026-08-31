@@ -1,7 +1,7 @@
 import { glyph } from "../marks.ts";
 import type { TranscriptNode, TranscriptPlanNode } from "./types.ts";
 
-/** Maximum semantic-text characters one mounted transcript page can hand to OpenTUI. */
+/** Maximum semantic-text characters one prose artifact can hand to OpenTUI. */
 export const TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS = 512 * 1024;
 
 /** Honest recovery route for prose released from the live Solid/OpenTUI store. */

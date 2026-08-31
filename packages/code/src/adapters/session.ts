@@ -59,6 +59,10 @@ export interface Session {
   restoreHistory(messages: readonly Message[]): void;
   beginTurn(content: MessageContent, executionId: string): string | undefined;
   endTurn(envelope: RunResult | undefined): void;
+  /** Record a separately-invoked run without adding its prompt or result to continuation history. */
+  beginTranscriptTurn(display: string, executionId: string): void;
+  /** Settle the newest matching transcript-only turn without appending an assistant message. */
+  endTranscriptTurn(envelope: RunResult | undefined): void;
   reconcile(stored: RunDetail | null): void;
   setProfile(name: string): void;
   appendObservation(content: MessageContent, role?: "user" | "assistant"): void;
@@ -109,53 +113,91 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
   let historyComplete = init.historyComplete !== false;
   const counted = new Set<string>();
   const redact = init.redactPreviews !== false;
+  let continuationBase: string | undefined;
+  if (meta) {
+    for (let index = meta.turns.length - 1; index >= 0; index -= 1) {
+      const turn = meta.turns[index];
+      if (turn?.kind !== "conversation" || turn.executionId === undefined) continue;
+      continuationBase = turn.executionId;
+      break;
+    }
+  }
 
-  function lastTurnFor(executionId: string): TurnRef | undefined {
+  function lastTurnFor(
+    executionId: string | undefined,
+    kind: TurnRef["kind"],
+  ): TurnRef | undefined {
     if (!meta) return undefined;
     for (let i = meta.turns.length - 1; i >= 0; i--) {
       const t = meta.turns[i];
-      if (t && t.executionId === executionId) return t;
+      if (t?.kind === kind && (executionId === undefined || t.executionId === executionId))
+        return t;
     }
-    return meta.turns[meta.turns.length - 1];
+    return undefined;
+  }
+
+  function ensureMeta(title: string, ts: number): SessionMeta {
+    if (meta) return meta;
+    meta = {
+      id: uuidv7(),
+      title: redactPreview(title, { redact, max: 80 }),
+      projectId: deps.project,
+      workspace: deps.workspace,
+      owner: deps.owner,
+      createdAt: ts,
+      updatedAt: ts,
+      profile: init.profile,
+      turns: [],
+      totals: { input: 0, output: 0, cached: 0 },
+    };
+    return meta;
   }
 
   function beginTurn(content: MessageContent, executionId: string): string | undefined {
     const ts = now();
-    const base = meta
-      ? [...meta.turns].reverse().find((t) => t.executionId)?.executionId
-      : undefined;
-    if (!meta) {
-      meta = {
-        id: uuidv7(),
-        title: redactPreview(contentToText(content), { redact, max: 80 }),
-        projectId: deps.project,
-        workspace: deps.workspace,
-        owner: deps.owner,
-        createdAt: ts,
-        updatedAt: ts,
-        profile: init.profile,
-        turns: [],
-        totals: { input: 0, output: 0, cached: 0 },
-      };
-    }
+    const base = continuationBase;
+    const current = ensureMeta(contentToText(content), ts);
     history.push({ role: "user", content });
     const environment = deps.environment?.();
-    meta.turns.push({
+    current.turns.push({
+      kind: "conversation",
       userPreview: redactPreview(contentToText(content), { redact }),
       executionId,
       ...(environment !== undefined ? { environment } : {}),
       status: "running",
       startedAt: ts,
     });
-    if (environment !== undefined) meta.lastEnvironment = environment;
-    meta.updatedAt = ts;
-    deps.store.save(meta);
+    continuationBase = executionId;
+    if (environment !== undefined) current.lastEnvironment = environment;
+    current.updatedAt = ts;
+    deps.store.save(current);
     return base;
   }
 
-  function endTurn(envelope: RunResult | undefined): void {
+  function beginTranscriptTurn(display: string, executionId: string): void {
+    const ts = now();
+    const current = ensureMeta(display, ts);
+    const environment = deps.environment?.();
+    current.turns.push({
+      kind: "transcript",
+      userPreview: redactPreview(display, { redact }),
+      executionId,
+      ...(environment !== undefined ? { environment } : {}),
+      status: "running",
+      startedAt: ts,
+    });
+    if (environment !== undefined) current.lastEnvironment = environment;
+    current.updatedAt = ts;
+    deps.store.save(current);
+  }
+
+  function finishTurn(
+    kind: TurnRef["kind"],
+    envelope: RunResult | undefined,
+    appendAssistant: boolean,
+  ): void {
     if (!meta) return;
-    const turn = envelope ? lastTurnFor(envelope.execution_id) : meta.turns[meta.turns.length - 1];
+    const turn = lastTurnFor(envelope?.execution_id, kind);
     const ts = now();
     if (turn) turn.endedAt = ts;
     if (envelope) {
@@ -166,7 +208,8 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
         else delete turn.error;
       }
       const assistant = resultToContent(envelope);
-      if (assistant != null) history.push({ role: "assistant", content: assistant });
+      if (appendAssistant && assistant != null)
+        history.push({ role: "assistant", content: assistant });
       if (envelope.usage && turn?.executionId && !counted.has(turn.executionId)) {
         addUsageToTotals(meta.totals, envelope.usage, deps.priceFor);
         counted.add(turn.executionId);
@@ -178,9 +221,17 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
     deps.store.save(meta);
   }
 
+  function endTurn(envelope: RunResult | undefined): void {
+    finishTurn("conversation", envelope, true);
+  }
+
+  function endTranscriptTurn(envelope: RunResult | undefined): void {
+    finishTurn("transcript", envelope, false);
+  }
+
   function reconcile(stored: RunDetail | null): void {
     if (!meta || !stored) return;
-    const turn = lastTurnFor(stored.execution_id);
+    const turn = lastTurnFor(stored.execution_id, "conversation");
     if (turn) {
       turn.status = runStatusToNode(stored.status, stored.result?.ended_reason);
       if (stored.ended_at !== undefined) turn.endedAt = stored.ended_at;
@@ -266,6 +317,8 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
     restoreHistory,
     beginTurn,
     endTurn,
+    beginTranscriptTurn,
+    endTranscriptTurn,
     reconcile,
     setProfile,
     appendObservation,
@@ -583,18 +636,20 @@ export async function resumeSession(
       }),
     );
     for (const { index, detail } of fetched) {
+      const turn = turns[index];
       visited.add(index);
       if (detail === null) {
         projected.set(index, null);
         continue;
       }
       if (
+        turn?.kind === "conversation" &&
         detail.active_task !== undefined &&
         (newestActiveTask === undefined || index > newestActiveTask.index)
       )
         newestActiveTask = { index, binding: detail.active_task };
       const messages = detail.messages;
-      const keepHistory = retainHistory && !foundReset;
+      const keepHistory = turn?.kind === "conversation" && retainHistory && !foundReset;
       const assistant = keepHistory
         ? (resultToContent(detail.result) ??
           buildRecoveredContext(detail.events, detail.plan_ref, deps.currentPlanProviderKey?.()))
@@ -623,12 +678,17 @@ export async function resumeSession(
   let cursor = turns.length - 1;
   while (cursor >= 0 && !foundReset) {
     const batch: number[] = [];
-    while (batch.length < FETCH_CONCURRENCY && cursor >= 0) batch.push(cursor--);
+    while (batch.length < FETCH_CONCURRENCY && cursor >= 0) {
+      const index = cursor--;
+      if (turns[index]?.kind === "conversation") batch.push(index);
+    }
+    if (batch.length === 0) continue;
     await fetchBatch(batch, true);
   }
 
   const pendingRender: number[] = [];
-  for (let idx = windowStart; idx < resetIdx; idx++) if (!visited.has(idx)) pendingRender.push(idx);
+  for (let idx = windowStart; idx < turns.length; idx++)
+    if (!visited.has(idx)) pendingRender.push(idx);
   for (let i = 0; i < pendingRender.length; i += FETCH_CONCURRENCY) {
     await fetchBatch(pendingRender.slice(i, i + FETCH_CONCURRENCY), false);
   }
@@ -643,7 +703,7 @@ export async function resumeSession(
     if (stored !== undefined && stored !== null) {
       if (collapsed) collapsedCount++;
       const history = stored.history;
-      if (idx >= resetIdx) {
+      if (turn.kind === "conversation" && idx >= resetIdx) {
         if (history === undefined)
           throw new Error(`resume projection missing history for turn ${idx}`);
         if (stored.continueFrom) rehydrated.push(...history.messages);
@@ -653,7 +713,8 @@ export async function resumeSession(
       }
       deps.renderTurn({
         executionId: turn.executionId,
-        userContent: stored.userContent ?? turn.userPreview,
+        userContent:
+          turn.kind === "transcript" ? turn.userPreview : (stored.userContent ?? turn.userPreview),
         ...(collapsed
           ? { collapsed: true }
           : {

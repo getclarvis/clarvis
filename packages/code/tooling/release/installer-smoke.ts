@@ -102,6 +102,9 @@ export function installerOutputIncludes(output: string, expected: string): boole
 }
 
 function assertVisibleProgress(output: string): void {
+  if (/setting locale failed|unsupported locale setting/i.test(output)) {
+    throw new Error("installer inherited an unavailable locale into an archive command");
+  }
   for (const expected of [
     "Clarvis installer",
     "[1/8] Detected the",
@@ -275,6 +278,7 @@ async function main(): Promise<void> {
     CLARVIS_INSTALL_ROOT: installRoot,
     CLARVIS_BIN_DIR: binDirectory,
     CLARVIS_SKIP_PATH: "1",
+    LC_ALL: "C.UTF-8",
     HOME: join(temporary, "home"),
     USERPROFILE: join(temporary, "home"),
   };

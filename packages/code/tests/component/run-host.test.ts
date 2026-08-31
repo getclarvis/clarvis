@@ -209,6 +209,14 @@ test("happy path: submitTurn wires begin→startRun→sink→endTurn and settles
   expect(host.runStartedAt()).not.toBeNull();
   expect(runs.length).toBe(1);
   expect(runs[0]!.input.profile).toBe("coder");
+  Object.defineProperty(runs[0]!.handle, "buffered", {
+    value: () => ({ buffered_items: 3, buffered_bytes: 144, dropped: 1 }),
+  });
+  expect(host.memory()).toMatchObject({
+    event_queue_items: 3,
+    event_queue_bytes: 144,
+    event_queue_dropped: 1,
+  });
   const msgs = runs[0]!.input.messages!;
   expect(msgs[msgs.length - 1]).toEqual({ role: "user", content: "do the thing" });
 
@@ -749,6 +757,47 @@ test("compactCurrentRun queues on a live run and compacts the latest settled con
   dispose();
 });
 
+test("context inspection and mechanical fitting target the current conversation", async () => {
+  const external = fakeClient();
+  const contextCalls: Array<[string, number | undefined]> = [];
+  const { host, dispose } = mount({ client: external.client });
+
+  expect(host.inspectCurrentContext(4096)).toBeNull();
+  expect(await host.fitCurrentContext(4096)).toBeNull();
+
+  const turn = host.submitTurn("large context");
+  await flush();
+  const executionId = external.runs[0]!.handle.executionId;
+  expect(host.inspectCurrentContext(4096)).toBeNull();
+
+  Object.defineProperty(external.client, "context", {
+    value: (id: string, target: number | undefined) => {
+      contextCalls.push([id, target]);
+      return Promise.resolve({
+        execution_id: id,
+        estimated_tokens: 5000,
+        has_context: true,
+        requires_compaction: true,
+      });
+    },
+  });
+  await expect(host.inspectCurrentContext(4096)).resolves.toMatchObject({
+    execution_id: executionId,
+    requires_compaction: true,
+  });
+  expect(contextCalls).toEqual([[executionId, 4096]]);
+
+  await expect(host.fitCurrentContext(4096)).resolves.toMatchObject({ status: "queued" });
+  expect(external.compactCalls.at(-1) as unknown).toEqual({
+    executionId,
+    mechanicalTargetTokens: 4096,
+  });
+
+  external.runs[0]!.resolve(completed(executionId));
+  await turn;
+  dispose();
+});
+
 test("cancelling a ! job acks the request and settles as '! cancelled'", async () => {
   const hangingBash: RunHostDeps["runBash"] = (_cmd, opts) =>
     new Promise<LocalBashResult>((resolve) => {
@@ -811,14 +860,14 @@ test("clearSession during an active run: cancels it, runActive false, no orphan 
   dispose();
 });
 
-test("forced teardown keeps a physical lease until the detached handle closes", async () => {
+test("forced teardown releases its physical lease when the detached handle close rejects", async () => {
   let resolveDone!: (result: RunResult) => void;
-  let resolveClosed!: () => void;
+  let rejectClosed!: (error: Error) => void;
   const done = new Promise<RunResult>((resolve) => {
     resolveDone = resolve;
   });
-  const closed = new Promise<void>((resolve) => {
-    resolveClosed = resolve;
+  const closed = new Promise<void>((_resolve, reject) => {
+    rejectClosed = reject;
   });
   const base = fakeClient().client;
   const client: RunHostDeps["client"] = {
@@ -842,9 +891,12 @@ test("forced teardown keeps a physical lease until the detached handle closes", 
   resolveDone(completed("exec_physical"));
   await flush();
   expect(host.physicalWorkActive()).toBe(true);
-  resolveClosed();
+  expect(host.memory()).toMatchObject({ physical_run_handles: 1 });
+  rejectClosed(new Error("post-run stream close failed"));
   await turn;
+  await flush();
   expect(host.physicalWorkActive()).toBe(false);
+  expect(host.memory()).toMatchObject({ physical_run_handles: 0 });
   dispose();
 });
 
@@ -1019,7 +1071,12 @@ test("resume seeds prompt history from the rehydrated user content, not userPrev
     createdAt: 1,
     updatedAt: 1,
     turns: [
-      { userPreview: "deploy with token [redacted]", executionId: "exec_old", status: "done" },
+      {
+        kind: "conversation",
+        userPreview: "deploy with token [redacted]",
+        executionId: "exec_old",
+        status: "done",
+      },
     ],
     totals: { input: 0, output: 0, cached: 0 },
   };
@@ -1046,7 +1103,7 @@ test("clearSession invalidates a session resume that is still loading traces", a
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "old", executionId: "exec_old", status: "done" }],
+    turns: [{ kind: "conversation", userPreview: "old", executionId: "exec_old", status: "done" }],
     totals: { input: 0, output: 0, cached: 0 },
   };
 
@@ -1574,7 +1631,14 @@ test("resumed task binding survives continuation fallback without session-side p
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 2,
-    turns: [{ userPreview: "work on it", executionId: "exec_task_old", status: "done" }],
+    turns: [
+      {
+        kind: "conversation",
+        userPreview: "work on it",
+        executionId: "exec_task_old",
+        status: "done",
+      },
+    ],
     totals: { input: 0, output: 0, cached: 0 },
   };
   await host.loadSessionMeta(meta);
@@ -1638,6 +1702,30 @@ test("submitPromptTurn: a kernel skill carries its identity without duplicating 
   dispose();
 });
 
+test("submitPromptTurn: a continued kernel skill sends only identity and continuation delta", async () => {
+  const { host, runs, dispose } = mount();
+  const first = host.submitTurn("establish context");
+  await flush();
+  const firstExecutionId = runs[0]!.handle.executionId;
+  runs[0]!.resolve(completed(firstExecutionId));
+  await first;
+
+  host.submitPromptTurn(
+    [{ role: "user", content: "internal rendered body" }],
+    "/speckit-plan auth",
+    { name: "speckit-plan", task: "auth" },
+  );
+  await flush();
+
+  expect(runs).toHaveLength(2);
+  expect(runs[1]!.input.continueFrom).toBe(firstExecutionId);
+  expect(runs[1]!.input.messages).toEqual([]);
+  expect(runs[1]!.input.skill).toEqual({ name: "speckit-plan", task: "auth" });
+  runs[1]!.resolve(completed(runs[1]!.handle.executionId));
+  await runs[1]!.handle.done;
+  dispose();
+});
+
 test("submitSkillRun: refuses to start while a run is already active", async () => {
   const { host, runs, dispose } = mount();
   const turn = host.submitTurn("busy first");
@@ -1684,6 +1772,19 @@ test("submitSkillRun: starts a run on the skill's agent, appends its digest, and
   runs[0]!.resolve(completed(runs[0]!.handle.executionId));
   await turn;
   expect(host.runStatus()).toBe("completed");
+  expect(host.sessionMeta()?.turns).toMatchObject([
+    {
+      kind: "transcript",
+      executionId: runs[0]!.handle.executionId,
+      userPreview: "/explorer find the config loader",
+      status: "done",
+    },
+  ]);
+  expect(host.memory()).toMatchObject({
+    transcript_resident_turns: 1,
+    transcript_folded_turns: 0,
+    session_turn_refs: 1,
+  });
   dispose();
 });
 
@@ -1750,7 +1851,7 @@ test("loadSessionMeta: a turn whose trace is gone rehydrates as degraded, and th
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "old", executionId: "exec_gone", status: "done" }],
+    turns: [{ kind: "conversation", userPreview: "old", executionId: "exec_gone", status: "done" }],
     totals: { input: 0, output: 0, cached: 0 },
   };
   await host.loadSessionMeta(meta);
@@ -1779,7 +1880,9 @@ test("loadSessionMeta: a turn recovered from a damaged journal is marked partial
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "do it", executionId: "exec_torn", status: "done" }],
+    turns: [
+      { kind: "conversation", userPreview: "do it", executionId: "exec_torn", status: "done" },
+    ],
     totals: { input: 0, output: 0, cached: 0 },
   };
 
@@ -1816,7 +1919,9 @@ test("loadSessionMeta: the partial-record notice names only the damage that happ
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "do it", executionId: "exec_one_line", status: "done" }],
+    turns: [
+      { kind: "conversation", userPreview: "do it", executionId: "exec_one_line", status: "done" },
+    ],
     totals: { input: 0, output: 0, cached: 0 },
   };
 
@@ -1850,7 +1955,9 @@ test("loadSessionMeta: an intact turn gets no partial-record notice", async () =
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "do it", executionId: "exec_intact", status: "done" }],
+    turns: [
+      { kind: "conversation", userPreview: "do it", executionId: "exec_intact", status: "done" },
+    ],
     totals: { input: 0, output: 0, cached: 0 },
   };
 
@@ -1877,6 +1984,7 @@ test("loadSessionMeta warns when the active Environment differs from the persist
     updatedAt: 1,
     turns: [
       {
+        kind: "conversation",
         userPreview: "old",
         executionId: "exec_old",
         environment: { id: "workspace:project", fingerprint: `sha256:${"a".repeat(64)}` },
@@ -1911,7 +2019,7 @@ test("a degraded resume never falls back to a silently partial full request", as
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "old", executionId: "exec_gone", status: "done" }],
+    turns: [{ kind: "conversation", userPreview: "old", executionId: "exec_gone", status: "done" }],
     totals: { input: 0, output: 0, cached: 0 },
   };
   await host.loadSessionMeta(meta);
@@ -1944,7 +2052,7 @@ test("loadSessionMeta: a getRun failure mid-resume propagates to the caller", as
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "old", executionId: "exec_x", status: "done" }],
+    turns: [{ kind: "conversation", userPreview: "old", executionId: "exec_x", status: "done" }],
     totals: { input: 0, output: 0, cached: 0 },
   };
   await expect(host.loadSessionMeta(meta)).rejects.toThrow("network down");
@@ -1958,6 +2066,17 @@ test("resumeSessionById: an unknown session id reports 'session not found'", asy
   dispose();
 });
 
+test("resumeSessionById reports a session catalog read failure", async () => {
+  const sessions = fakeSessionStore();
+  sessions.load = () => Promise.reject(new Error("session catalog offline"));
+  const { host, dispose } = mount({ sessionStore: sessions });
+
+  await host.resumeSessionById("unreadable" as SessionId);
+  expect(host.runStatus()).toContain("resume failed");
+  expect(host.runStatus()).toContain("session catalog offline");
+  dispose();
+});
+
 test("resumeSessionById: a resume failure (e.g. a dropped connection) is caught and reported", async () => {
   const sessions = fakeSessionStore();
   const meta: SessionMeta = {
@@ -1967,7 +2086,7 @@ test("resumeSessionById: a resume failure (e.g. a dropped connection) is caught 
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "old", executionId: "exec_y", status: "done" }],
+    turns: [{ kind: "conversation", userPreview: "old", executionId: "exec_y", status: "done" }],
     totals: { input: 0, output: 0, cached: 0 },
   };
   sessions.save(meta);
@@ -1990,7 +2109,7 @@ test("resumeSessionById: a valid id resumes the session, syncing the active prof
     createdAt: 1,
     updatedAt: 1,
     profile: "reviewer",
-    turns: [{ userPreview: "old", executionId: "exec_z", status: "done" }],
+    turns: [{ kind: "conversation", userPreview: "old", executionId: "exec_z", status: "done" }],
     totals: { input: 0, output: 0, cached: 0 },
   };
   sessions.save(meta);
@@ -2017,7 +2136,9 @@ test("clearSession invalidates a resume whose stored run resolves after teardown
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "old prompt", executionId: "exec_late", status: "done" }],
+    turns: [
+      { kind: "conversation", userPreview: "old prompt", executionId: "exec_late", status: "done" },
+    ],
     totals: { input: 0, output: 0, cached: 0 },
   };
   sessions.save(meta);
@@ -2102,6 +2223,7 @@ test("loadSessionMeta: the folded prefix gets one visible marker and only 20 res
     createdAt: 1,
     updatedAt: 1,
     turns: Array.from({ length: 25 }, (_, i) => ({
+      kind: "conversation",
       userPreview: `q${i}`,
       executionId: `exec_${i}`,
       status: "done" as const,

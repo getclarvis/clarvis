@@ -27,6 +27,11 @@ four distinct jobs:
    (`packages/kernel/src/runs/map-message.ts:40,50,56`), and the declarative per-event policy table that says which of those
    two paths owns each event and whether it survives a restart (`packages/kernel/src/runs/event-policy.ts:56`).
 
+`RUN_EVENT_POLICY` is a transport/durability policy, not a TUI publication policy. Code classifies
+the resulting closed `RunEvent` union again for live-frontier versus committed-history ownership in
+[code-transcript-stability.md](code-transcript-stability.md#41-exhaustive-event-disposition); it may
+not change which mapper emits an event or whether that event survives restart.
+
 The subsystem is the only place where the engine's vocabulary (`TraceEvent`, `RunResponse`,
 `StoredExecution`, engine `Message`) and the protocol's vocabulary (`RunEvent`, `RunResult`,
 `RunDetail`, protocol `Message`) meet. A client of `@clarvis/protocol` never sees an engine type,

@@ -312,6 +312,49 @@ test("beginTurn returns the previous turn's executionId as the continuation base
   expect(s.beginTurn("third", "exec_3")).toBe("exec_2");
 });
 
+test("setProfile persists only a changed profile on an established session", () => {
+  const store = fakeStore();
+  const s = createSession({ store, owner: "clarvis", project: "prj_test", workspace: "/ws" });
+
+  s.setProfile("before-first-turn");
+  expect(store.snapshots).toHaveLength(0);
+
+  s.beginTurn("first", "exec_1");
+  const afterBegin = store.snapshots.length;
+  s.setProfile("reviewer");
+  expect(s.meta()?.profile).toBe("reviewer");
+  expect(store.snapshots).toHaveLength(afterBegin + 1);
+
+  s.setProfile("reviewer");
+  expect(store.snapshots).toHaveLength(afterBegin + 1);
+});
+
+test("transcript-only runs are canonical without becoming continuation context", () => {
+  const store = fakeStore();
+  const s = createSession({ store, owner: "clarvis", project: "prj_test", workspace: "/ws" });
+  s.beginTurn("first", "exec_conversation");
+  s.endTurn(wire("exec_conversation", "completed", "answer", usage(2, 1, 0)));
+
+  s.beginTranscriptTurn("/explorer inspect", "exec_skill");
+  s.endTranscriptTurn(wire("exec_skill", "completed", "internal result", usage(3, 2, 0)));
+
+  expect(s.meta()?.turns).toMatchObject([
+    { kind: "conversation", executionId: "exec_conversation", status: "done" },
+    {
+      kind: "transcript",
+      executionId: "exec_skill",
+      userPreview: "/explorer inspect",
+      status: "done",
+    },
+  ]);
+  expect(s.messages()).toEqual([
+    { role: "user", content: "first" },
+    { role: "assistant", content: "answer" },
+  ]);
+  expect(s.meta()?.totals).toEqual({ input: 5, output: 3, cached: 0 });
+  expect(s.beginTurn("second", "exec_next")).toBe("exec_conversation");
+});
+
 test("a resumed session continues from the last stored turn", () => {
   const store = fakeStore();
   const meta: SessionMeta = {
@@ -322,8 +365,20 @@ test("a resumed session continues from the last stored turn", () => {
     createdAt: 1,
     updatedAt: 2,
     turns: [
-      { userPreview: "one", executionId: "exec_a", status: "done", startedAt: 1 },
-      { userPreview: "two", executionId: "exec_b", status: "error", startedAt: 2 },
+      {
+        kind: "conversation",
+        userPreview: "one",
+        executionId: "exec_a",
+        status: "done",
+        startedAt: 1,
+      },
+      {
+        kind: "conversation",
+        userPreview: "two",
+        executionId: "exec_b",
+        status: "error",
+        startedAt: 2,
+      },
     ],
     totals: { input: 0, output: 0, cached: 0 },
   };
@@ -382,8 +437,8 @@ test("resumeSession rehydrates from the last available trace and flags degraded 
     createdAt: 1,
     updatedAt: 1,
     turns: [
-      { userPreview: "q1", executionId: "exec_a", status: "done" },
-      { userPreview: "q2", executionId: "exec_b", status: "running" },
+      { kind: "conversation", userPreview: "q1", executionId: "exec_a", status: "done" },
+      { kind: "conversation", userPreview: "q2", executionId: "exec_b", status: "running" },
     ],
     totals: { input: 0, output: 0, cached: 0 },
   };
@@ -422,9 +477,9 @@ test("resumeSession accumulates slim continue_from turns instead of replacing th
     createdAt: 1,
     updatedAt: 1,
     turns: [
-      { userPreview: "q1", executionId: "exec_a", status: "done" },
-      { userPreview: "q2", executionId: "exec_b", status: "done" },
-      { userPreview: "q3", executionId: "exec_c", status: "done" },
+      { kind: "conversation", userPreview: "q1", executionId: "exec_a", status: "done" },
+      { kind: "conversation", userPreview: "q2", executionId: "exec_b", status: "done" },
+      { kind: "conversation", userPreview: "q3", executionId: "exec_c", status: "done" },
     ],
     totals: { input: 0, output: 0, cached: 0 },
   };
@@ -459,6 +514,67 @@ test("resumeSession accumulates slim continue_from turns instead of replacing th
   expect(resumed.degraded).toEqual([]);
 });
 
+test("resumeSession renders transcript-only runs without adding them to continuation", async () => {
+  const meta: SessionMeta = {
+    id: "sid-mixed",
+    title: "mixed",
+    workspace: "/ws",
+    owner: "clarvis",
+    createdAt: 1,
+    updatedAt: 1,
+    turns: [
+      { kind: "conversation", userPreview: "q1", executionId: "exec_a", status: "done" },
+      {
+        kind: "transcript",
+        userPreview: "/explorer inspect",
+        executionId: "exec_skill",
+        status: "done",
+      },
+      { kind: "conversation", userPreview: "q2", executionId: "exec_b", status: "done" },
+    ],
+    totals: { input: 0, output: 0, cached: 0 },
+  };
+  const skillTask: ActiveTaskBindingDto = {
+    id: "SHOULD-NOT-BIND",
+    provider_key: "mcp:test:tasks",
+    mode: "work",
+  };
+  const runs: Record<string, RunDetail> = {
+    exec_a: stored("exec_a", "completed", [1, 1, 0], {
+      messages: [{ role: "user", content: "q1" }],
+      result: "a1",
+    }),
+    exec_skill: stored("exec_skill", "completed", [9, 9, 0], {
+      messages: [{ role: "user", content: "internal skill prompt" }],
+      result: "internal skill result",
+      activeTask: skillTask,
+    }),
+    exec_b: stored("exec_b", "completed", [1, 1, 0], {
+      messages: [{ role: "user", content: "q2" }],
+      result: "a2",
+      continueFrom: "exec_a",
+    }),
+  };
+  const rendered: { executionId?: string; userContent: Message["content"] }[] = [];
+  const resumed = await resumeSession(meta, {
+    getRun: async (id) => runs[id] ?? null,
+    renderTurn: ({ executionId, userContent }) => rendered.push({ executionId, userContent }),
+  });
+
+  expect(resumed.messages).toEqual([
+    { role: "user", content: "q1" },
+    { role: "assistant", content: "a1" },
+    { role: "user", content: "q2" },
+    { role: "assistant", content: "a2" },
+  ]);
+  expect(resumed.activeTask).toBeUndefined();
+  expect(rendered).toEqual([
+    { executionId: "exec_a", userContent: "q1" },
+    { executionId: "exec_skill", userContent: "/explorer inspect" },
+    { executionId: "exec_b", userContent: "q2" },
+  ]);
+});
+
 test("resumeSession restores the newest persisted task binding", async () => {
   const meta: SessionMeta = {
     id: "sid-task",
@@ -468,8 +584,8 @@ test("resumeSession restores the newest persisted task binding", async () => {
     createdAt: 1,
     updatedAt: 2,
     turns: [
-      { userPreview: "q1", executionId: "exec_a", status: "done" },
-      { userPreview: "q2", executionId: "exec_b", status: "done" },
+      { kind: "conversation", userPreview: "q1", executionId: "exec_a", status: "done" },
+      { kind: "conversation", userPreview: "q2", executionId: "exec_b", status: "done" },
     ],
     totals: { input: 0, output: 0, cached: 0 },
   };
@@ -500,8 +616,8 @@ test("resumeSession: a full-wire retry turn replaces the accumulated history (au
     createdAt: 1,
     updatedAt: 1,
     turns: [
-      { userPreview: "q1", executionId: "exec_a", status: "done" },
-      { userPreview: "q2", executionId: "exec_b", status: "done" },
+      { kind: "conversation", userPreview: "q1", executionId: "exec_a", status: "done" },
+      { kind: "conversation", userPreview: "q2", executionId: "exec_b", status: "done" },
     ],
     totals: { input: 0, output: 0, cached: 0 },
   };
@@ -540,6 +656,7 @@ function manyTurns(n: number): SessionMeta {
     createdAt: 1,
     updatedAt: 1,
     turns: Array.from({ length: n }, (_, i) => ({
+      kind: "conversation",
       userPreview: `q${i}`,
       executionId: `exec_${i}`,
       status: "done" as const,
@@ -999,7 +1116,9 @@ test("resumeSession injects recovered context for an interrupted turn with no re
     owner: "clarvis",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "plan the app", executionId: "exec_x", status: "error" }],
+    turns: [
+      { kind: "conversation", userPreview: "plan the app", executionId: "exec_x", status: "error" },
+    ],
     totals: { input: 0, output: 0, cached: 0 },
   };
 
@@ -1029,7 +1148,14 @@ test("resumeSession threads the host's known current plan provider into recovery
     owner: "clarvis",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "continue", executionId: "exec_provider", status: "error" }],
+    turns: [
+      {
+        kind: "conversation",
+        userPreview: "continue",
+        executionId: "exec_provider",
+        status: "error",
+      },
+    ],
     totals: { input: 0, output: 0, cached: 0 },
   };
   const resumed = await resumeSession(meta, {
@@ -1054,8 +1180,8 @@ test("deleteSession removes the session file and cascades delete_run per turn", 
     createdAt: 1,
     updatedAt: 1,
     turns: [
-      { userPreview: "q1", executionId: "exec_a", status: "done" },
-      { userPreview: "q2", executionId: "exec_b", status: "done" },
+      { kind: "conversation", userPreview: "q1", executionId: "exec_a", status: "done" },
+      { kind: "conversation", userPreview: "q2", executionId: "exec_b", status: "done" },
     ],
     totals: { input: 0, output: 0, cached: 0 },
   };
@@ -1084,7 +1210,9 @@ test("deleteSession records a missing trace and still removes the session", asyn
     owner: "clarvis",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "q", executionId: "exec_missing", status: "done" }],
+    turns: [
+      { kind: "conversation", userPreview: "q", executionId: "exec_missing", status: "done" },
+    ],
     totals: { input: 0, output: 0, cached: 0 },
   };
   store.save(meta);
@@ -1107,7 +1235,7 @@ test("deleteSession preserves the session when a trace deletion rejects", async 
     owner: "clarvis",
     createdAt: 1,
     updatedAt: 1,
-    turns: [{ userPreview: "q", executionId: "exec_error", status: "done" }],
+    turns: [{ kind: "conversation", userPreview: "q", executionId: "exec_error", status: "done" }],
     totals: { input: 0, output: 0, cached: 0 },
   };
   store.save(meta);

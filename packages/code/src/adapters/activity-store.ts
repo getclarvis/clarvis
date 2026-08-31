@@ -38,7 +38,7 @@ interface SubagentActivity {
   summary?: string;
 }
 
-/** Total token usage accumulated across the current run's iterations. */
+/** Total token usage accumulated across every run currently mounted in this session projection. */
 export interface UsageActivity {
   input: number;
   output: number;
@@ -63,12 +63,13 @@ export interface ContextActivity {
  * context) for the sidebar/status surfaces, fed by {@link RunEvent}s through
  * {@link ActivityStore.openRun}.
  *
- * @remarks One projection, not one per run: the surfaces it feeds show *the*
- *   current run. {@link ActivityStore.openRun} therefore takes no execution id —
- *   it used to accept one and ignore it, which read as a per-run guarantee the
- *   store does not make. Two sinks open at once fold into the same subagent,
- *   plan and usage state; {@link TranscriptStore.openRun}, which really is keyed
- *   by execution, is the one that keeps its parameter.
+ * @remarks One projection, not one per run: subagent and plan surfaces show *the*
+ *   current run, while usage remains cumulative across its mounted run sinks for
+ *   the session footer. {@link ActivityStore.openRun} therefore takes no execution
+ *   id — it used to accept one and ignore it, which read as a per-run guarantee the
+ *   store does not make. Two sinks open at once fold into the same activity state;
+ *   {@link TranscriptStore.openRun}, which really is keyed by execution, is the one
+ *   that keeps its parameter.
  */
 export interface ActivityStore {
   subagents: SubagentActivity[];

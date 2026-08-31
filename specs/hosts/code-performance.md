@@ -41,26 +41,27 @@ that one isolated mechanism explains every such peak.
 
 ### 2.1 Measurement commands and controls
 
-| Surface | Contract | Source |
-| --- | --- | --- |
-| `bun run bench:code` | runs the package first-paint benchmark | `package.json:68`, `packages/code/package.json:31` |
-| `bun run bench:code-overlays` | runs isolated post-GC renderer lifecycle cases; optional case names select a subset | `package.json` (`bench:code-overlays`), `packages/code/package.json` (`bench:overlays`) |
-| `OVERLAY_SOAK_CYCLES`, `OVERLAY_SOAK_BATCH`, `OVERLAY_SOAK_WARMUP` | control measured cycles, sample cadence and discarded warm-up; defaults 100, 20 and 10 | `packages/code/tooling/benchmarks/overlays.tsx` (`cycles`, `batchSize`, `warmupCycles`) |
-| per-case warm-up | a finite high-cardinality case may raise, never lower, the discarded global warm-up; the effective count is recorded in its result | `packages/code/tooling/benchmarks/overlays.tsx` (`SoakCase.warmupCycles`, `subjectWarmupCycles`) |
-| `OVERLAY_SOAK_SIZES` | comma-separated matrix; defaults to reference 120x32 plus compact 80x24 | `packages/code/tooling/benchmarks/overlays.tsx` (`matrixSizes`) |
-| `OVERLAY_SOAK_WIDTH`, `OVERLAY_SOAK_HEIGHT` | child-process dimensions supplied by the matrix runner | `packages/code/tooling/benchmarks/overlays.tsx` (`width`, `height`) |
-| `OVERLAY_SOAK_MAX_MIB_PER_100` | production-policy PSS growth ceiling, or RSS off Linux; default 5 MiB/100 | `packages/code/tooling/benchmarks/overlays.tsx` (`PRODUCTION_CASES`, `maxMiBPer100`) |
-| `OVERLAY_SOAK_WATCHDOG_MS`, `OVERLAY_SOAK_WATCHDOG_RSS_MB` | parent-process time and RSS limits; defaults 120 seconds and 1 GiB per case | `packages/code/tooling/benchmarks/overlays.tsx` (`watchdogMs`, `watchdogRssBytes`) |
-| `OTUI_NO_NATIVE_RENDER=true` | runs the same soak with OpenTUI native frame composition disabled; the result is a control, not a heap/native-ownership classifier by itself | `packages/code/tooling/benchmarks/overlays.tsx` (`CaseResult.runtime.nativeRender`), `@opentui/core` (`OTUI_NO_NATIVE_RENDER`) |
-| `BENCH_N` | measured repetitions after one discarded warm-up; default 7 | `packages/code/tooling/benchmarks/first-paint.ts:41`, `:265-278` |
-| `BENCH_POLL_MS` | PTY polling interval; default 25 ms | `packages/code/tooling/benchmarks/first-paint.ts:42`, `:219-220` |
-| `BENCH_TIMEOUT_MS` | deadline for one boot; default 90 seconds | `packages/code/tooling/benchmarks/first-paint.ts:43`, `:219` |
-| `BENCH_MAX_LOAD` | maximum one-minute load per core; default `0.35` | `packages/code/tooling/benchmarks/first-paint.ts:44-45` |
-| `--arm=source|bundle|bin` | selects source, direct artifact or launcher arm | `packages/code/tooling/benchmarks/first-paint.ts:237-254` |
-| `--json` | emits the environment and raw summary as JSON | `packages/code/tooling/benchmarks/first-paint.ts:325-365` |
-| `--force` | permits an otherwise refused run and marks it untrusted | `packages/code/tooling/benchmarks/first-paint.ts:325-338` |
-| `--require-ac` | optionally requires mains power | `packages/code/tooling/benchmarks/first-paint.ts:331-338` |
-| `--debug[=level]` | writes bounded redacted lifecycle and memory diagnostics | `packages/code/src/cli-args.ts:108-110`, `packages/code/src/adapters/diagnostic-session.ts:354-374` |
+| Surface                                                            | Contract                                                                                                                                     | Source                                                                                                                         |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| OpenTUI dependency set                                             | `@opentui/core`, `@opentui/keymap` and `@opentui/solid` are pinned together at 0.5.9                                                         | `packages/code/package.json` (`dependencies`)                                                                                  |
+| `bun run bench:code`                                               | runs the package first-paint benchmark                                                                                                       | `package.json:68`, `packages/code/package.json:31`                                                                             |
+| `bun run bench:code-overlays`                                      | runs isolated post-GC renderer lifecycle cases; optional case names select a subset                                                          | `package.json` (`bench:code-overlays`), `packages/code/package.json` (`bench:overlays`)                                        |
+| `OVERLAY_SOAK_CYCLES`, `OVERLAY_SOAK_BATCH`, `OVERLAY_SOAK_WARMUP` | control measured cycles, sample cadence and discarded warm-up; defaults 100, 20 and 10                                                       | `packages/code/tooling/benchmarks/overlays.tsx` (`cycles`, `batchSize`, `warmupCycles`)                                        |
+| per-case warm-up                                                   | a finite high-cardinality case may raise, never lower, the discarded global warm-up; the effective count is recorded in its result           | `packages/code/tooling/benchmarks/overlays.tsx` (`SoakCase.warmupCycles`, `subjectWarmupCycles`)                               |
+| `OVERLAY_SOAK_SIZES`                                               | comma-separated matrix; defaults to reference 120x32 plus compact 80x24                                                                      | `packages/code/tooling/benchmarks/overlays.tsx` (`matrixSizes`)                                                                |
+| `OVERLAY_SOAK_WIDTH`, `OVERLAY_SOAK_HEIGHT`                        | child-process dimensions supplied by the matrix runner                                                                                       | `packages/code/tooling/benchmarks/overlays.tsx` (`width`, `height`)                                                            |
+| `OVERLAY_SOAK_MAX_MIB_PER_100`                                     | production-policy PSS growth ceiling, or RSS off Linux; default 5 MiB/100                                                                    | `packages/code/tooling/benchmarks/overlays.tsx` (`PRODUCTION_CASES`, `maxMiBPer100`)                                           |
+| `OVERLAY_SOAK_WATCHDOG_MS`, `OVERLAY_SOAK_WATCHDOG_RSS_MB`         | parent-process time and RSS limits; defaults 120 seconds and 1 GiB per case                                                                  | `packages/code/tooling/benchmarks/overlays.tsx` (`watchdogMs`, `watchdogRssBytes`)                                             |
+| `OTUI_NO_NATIVE_RENDER=true`                                       | runs the same soak with OpenTUI native frame composition disabled; the result is a control, not a heap/native-ownership classifier by itself | `packages/code/tooling/benchmarks/overlays.tsx` (`CaseResult.runtime.nativeRender`), `@opentui/core` (`OTUI_NO_NATIVE_RENDER`) |
+| `BENCH_N`                                                          | measured repetitions after one discarded warm-up; default 7                                                                                  | `packages/code/tooling/benchmarks/first-paint.ts:41`, `:265-278`                                                               |
+| `BENCH_POLL_MS`                                                    | PTY polling interval; default 25 ms                                                                                                          | `packages/code/tooling/benchmarks/first-paint.ts:42`, `:219-220`                                                               |
+| `BENCH_TIMEOUT_MS`                                                 | deadline for one boot; default 90 seconds                                                                                                    | `packages/code/tooling/benchmarks/first-paint.ts:43`, `:219`                                                                   |
+| `BENCH_MAX_LOAD`                                                   | maximum one-minute load per core; default `0.35`                                                                                             | `packages/code/tooling/benchmarks/first-paint.ts:44-45`                                                                        |
+| `--arm=source                                                      | bundle                                                                                                                                       | bin`                                                                                                                           | selects source, direct artifact or launcher arm | `packages/code/tooling/benchmarks/first-paint.ts:237-254` |
+| `--json`                                                           | emits the environment and raw summary as JSON                                                                                                | `packages/code/tooling/benchmarks/first-paint.ts:325-365`                                                                      |
+| `--force`                                                          | permits an otherwise refused run and marks it untrusted                                                                                      | `packages/code/tooling/benchmarks/first-paint.ts:325-338`                                                                      |
+| `--require-ac`                                                     | optionally requires mains power                                                                                                              | `packages/code/tooling/benchmarks/first-paint.ts:331-338`                                                                      |
+| `--debug[=level]`                                                  | writes bounded redacted lifecycle and memory diagnostics                                                                                     | `packages/code/src/cli-args.ts:108-110`, `packages/code/src/adapters/diagnostic-session.ts:354-374`                            |
 
 The benchmark owns four visible markers: `Clarvis · code · starting` for the minimal shell,
 `Queue a task…` for the focused startup composer, `◆ Clarvis` for complete header paint and
@@ -70,39 +71,43 @@ The benchmark owns four visible markers: `Clarvis · code · starting` for the m
 marker aliases). The startup frame excludes both complete-app markers, and the complete application
 excludes the startup-readiness marker. Each timestamp therefore belongs to one stage; a focused
 composer cannot satisfy full hydration and a decorative shell cannot satisfy functional input.
+The startup composer reuses the fixed `BrandBanner`: the eight-row banner paints at 60×16 or larger,
+and its compact wordmark paints below either edge, without adding parser, catalog or runtime data.
 Production: `packages/code/src/views/StartupComposer.tsx` (`StartupComposer`). Test:
 `packages/code/tests/integration/splash-render.test.tsx` (marker exclusion).
 
 ### 2.2 Runtime memory controls
 
-| Surface | Current value or behavior | Source |
-| --- | --- | --- |
-| `CLARVIS_TUI_RSS_LIMIT_MB` | limit in MiB; `0` disables the interactive fuse | `packages/code/src/adapters/memory-pressure.ts:101-108` |
-| default RSS limit | 2 GiB | `packages/code/src/adapters/memory-pressure.ts` (`DEFAULT_TUI_RSS_LIMIT_BYTES`) |
-| positive custom-limit floor | 512 MiB | `packages/code/src/adapters/memory-pressure.ts` (`MIN_TUI_RSS_LIMIT_BYTES`, `tuiRssLimitBytes`) |
-| sampling interval | 500 ms | `packages/code/src/adapters/memory-pressure.ts:5`, `:251-255` |
-| warning threshold | 80% of the configured limit | `packages/code/src/adapters/memory-pressure.ts:7-11`, `:133` |
-| recovery threshold | three samples below 70% | `packages/code/src/adapters/memory-pressure.ts:7-11`, `:212-218` |
-| abort grace | 10 seconds before forced run detachment | `packages/code/src/adapters/memory-pressure.ts:6`, `:200-209` |
-| recovery GC | synchronous `Bun.gc(true)` only when every physical run handle and local process has settled; otherwise skip | `packages/code/src/views/App.tsx` (`createMemoryPressureController`), `packages/code/src/adapters/memory-pressure.ts` (`finishRecovery`) |
-| efficiency advisory | 512 MiB absolute RSS, 256 MiB growth from baseline and 64 MiB rise over 20 samples; records evidence but does not abort or collect | `packages/code/src/adapters/memory-pressure.ts` (`MEMORY_EFFICIENCY_*`, `publish`) |
+| Surface                     | Current value or behavior                                                                                                          | Source                                                                                                                                   |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `CLARVIS_TUI_RSS_LIMIT_MB`  | limit in MiB; `0` disables the interactive fuse                                                                                    | `packages/code/src/adapters/memory-pressure.ts:101-108`                                                                                  |
+| default RSS limit           | 2 GiB                                                                                                                              | `packages/code/src/adapters/memory-pressure.ts` (`DEFAULT_TUI_RSS_LIMIT_BYTES`)                                                          |
+| positive custom-limit floor | 512 MiB                                                                                                                            | `packages/code/src/adapters/memory-pressure.ts` (`MIN_TUI_RSS_LIMIT_BYTES`, `tuiRssLimitBytes`)                                          |
+| sampling interval           | 500 ms                                                                                                                             | `packages/code/src/adapters/memory-pressure.ts:5`, `:251-255`                                                                            |
+| warning threshold           | 80% of the configured limit                                                                                                        | `packages/code/src/adapters/memory-pressure.ts:7-11`, `:133`                                                                             |
+| recovery threshold          | three samples below 70%                                                                                                            | `packages/code/src/adapters/memory-pressure.ts:7-11`, `:212-218`                                                                         |
+| abort grace                 | 10 seconds before forced run detachment                                                                                            | `packages/code/src/adapters/memory-pressure.ts:6`, `:200-209`                                                                            |
+| recovery GC                 | synchronous `Bun.gc(true)` only when every physical run handle and local process has settled; otherwise skip                       | `packages/code/src/views/App.tsx` (`createMemoryPressureController`), `packages/code/src/adapters/memory-pressure.ts` (`finishRecovery`) |
+| efficiency advisory         | 512 MiB absolute RSS, 256 MiB growth from baseline and 64 MiB rise over 20 samples; records evidence but does not abort or collect | `packages/code/src/adapters/memory-pressure.ts` (`MEMORY_EFFICIENCY_*`, `publish`)                                                       |
 
 The fuse samples only the TUI process. It does not account for external MCP servers, shell children
 or other process trees (`packages/code/README.md:143-158`).
 
 ### 2.3 Resident collection ceilings
 
-| Collection | Current ceiling | Source |
-| --- | ---: | --- |
-| one transcript prose node | 2 Mi characters | `packages/code/src/adapters/store.ts:84-90` |
-| aggregate resident transcript prose | 64 MiB estimated UTF-16 | `packages/code/src/adapters/store.ts:89-90`, `:349-352` |
-| hydrated tool bodies | 200 nodes and 64 MiB estimated | `packages/code/src/adapters/store.ts:286-307`, `:596-617` |
-| one hydrated tool body | 32 MiB estimated | `packages/code/src/adapters/store.ts:306-307`, `:601-605` |
-| visual transcript turns | 20 semantic turns | `packages/code/src/run-host.ts:202-205`, `:973-981` |
-| session resume chain | 10,000 messages and 16,000,000 payload characters | `packages/code/src/adapters/session.ts:399-400`, `:510-531` |
-| complete session documents in the client cache | 8, excluding live write lanes from demotion | `packages/code/src/adapters/session-store.ts:250`, `:326-338` |
-| provider HTTP response | 32 MiB | `packages/llm/src/ai-sdk/bounded-fetch.ts:4`, `:64-109` |
-| MCP HTTP or stdio frame | 16 MiB | `packages/mcp-client/src/bounded-fetch.ts:6`, `packages/mcp-client/src/bun-stdio-client.ts:112` |
+| Collection                                     |                                                                              Current ceiling | Source                                                                                                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| one mutable transcript prose node              |                                                                              2 Mi characters | `packages/code/src/adapters/store.ts:84-90`                                                                                                                                |
+| aggregate mutable transcript prose             |                                                                      64 MiB estimated UTF-16 | `packages/code/src/adapters/store.ts:89-90`, `:349-352`                                                                                                                    |
+| one immutable publication node's mounted prose |                                                                            512 Ki characters | `packages/code/src/adapters/transcript-publication.ts` (`snapshotTranscriptNode`), `packages/code/src/core/transcript/presenters.ts` (`TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS`) |
+| one immutable publication tool field           | 64 Ki characters; arguments additionally use a 40 Ki character/value and 512-node projection | `packages/code/src/core/transcript/tool-display.ts` (`TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS`, `projectTranscriptToolDisplay`)                                            |
+| hydrated tool bodies                           |                                                               200 nodes and 64 MiB estimated | `packages/code/src/adapters/store.ts:286-307`, `:596-617`                                                                                                                  |
+| one hydrated tool body                         |                                                                             32 MiB estimated | `packages/code/src/adapters/store.ts:306-307`, `:601-605`                                                                                                                  |
+| visual transcript turns                        |                                                                            20 semantic turns | `packages/code/src/run-host.ts:202-205`, `:973-981`                                                                                                                        |
+| session resume chain                           |                                            10,000 messages and 16,000,000 payload characters | `packages/code/src/adapters/session.ts:399-400`, `:510-531`                                                                                                                |
+| complete session documents in the client cache |                                                  8, excluding live write lanes from demotion | `packages/code/src/adapters/session-store.ts:250`, `:326-338`                                                                                                              |
+| provider HTTP response                         |                                                                                       32 MiB | `packages/llm/src/ai-sdk/bounded-fetch.ts:4`, `:64-109`                                                                                                                    |
+| MCP HTTP or stdio frame                        |                                                                                       16 MiB | `packages/mcp-client/src/bounded-fetch.ts:6`, `packages/mcp-client/src/bun-stdio-client.ts:112`                                                                            |
 
 These figures are independent safeguards, not permission for all maxima to be resident
 simultaneously. Debug mode samples an aggregate application ledger every ten seconds and at state
@@ -126,24 +131,31 @@ refuses excessive load and marks a batch untrusted when load drifts materially d
 another cwd, or a direct `dist/index.js --version` comparison against the launcher's fast-path
 `--version` does not support a startup conclusion.
 
+The artifact smoke's outer elapsed duration is not a sixth startup marker. It includes the PTY's
+100 ms polling cadence and waits for the complete-app marker plus the required
+`app.boot.painted` and Markdown-preload diagnostics. Its success line therefore labels that value as
+artifact-and-diagnostic settlement and reports the process-relative startup-shell and complete-app
+paint diagnostics separately. Only the repeated benchmark above supports a performance comparison
+(`packages/code/tooling/artifact/smoke.ts`, `main`).
+
 ### 3.2 Diagnostic records
 
 Interactive `--debug` writes versioned, redacted JSONL. Performance-relevant events include:
 
-| Event | Relevant details | Source |
-| --- | --- | --- |
-| `app.boot.begin` | mode and workspace | `packages/code/src/runtime.tsx` (`runApp`, `runHeadlessMode`) |
-| `async.started` / `async.settled` | operation, duration, outcome and sampled count | `packages/code/src/core/diagnostic-events.ts:125-170` |
-| `markdown.preload.completed|failed` | parser preload outcome | `packages/code/src/runtime.tsx` (`preloadMarkdown`) |
-| `app.boot.shell-painted` | process uptime captured after the focused startup root reaches renderer idle | `packages/code/src/index.tsx` (`runInteractive`), emitted by `packages/code/src/runtime.tsx` (`runApp`) |
-| `app.render.mounted` | mode | `packages/code/src/runtime.tsx` (`runApp`) |
-| `app.boot.painted` | process uptime, mode and whether the catalog signal is still empty | `packages/code/src/runtime.tsx` (`runApp`) |
-| `catalog.load.started` | the catalog-dependent surface that crossed the lazy boundary | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`) |
-| `memory.sample` | phase, RSS, heap, external, array buffers and limit | `packages/code/src/adapters/memory-pressure.ts:169-182` |
-| `memory.phase` | previous phase, next phase, RSS and limit | `packages/code/src/adapters/memory-pressure.ts:183-188` |
-| `memory.efficiency` | advisory transition, RSS, baseline and recent slope | `packages/code/src/adapters/memory-pressure.ts` (`publish`) |
-| `memory.ledger` | bounded transcript/session/renderer/run/event-queue counters; debug only | `packages/code/src/views/App.tsx` (`ledger`), `packages/code/src/adapters/memory-pressure.ts` (`publish`) |
-| `memory.gc.completed|failed|skipped` | recovery collection outcome and whether physical work prevented it | `packages/code/src/adapters/memory-pressure.ts` (`finishRecovery`) |
+| Event                             | Relevant details                                                             | Source                                                                                                    |
+| --------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `app.boot.begin`                  | mode and workspace                                                           | `packages/code/src/runtime.tsx` (`runApp`, `runHeadlessMode`)                                             |
+| `async.started` / `async.settled` | operation, duration, outcome and sampled count                               | `packages/code/src/core/diagnostic-events.ts:125-170`                                                     |
+| `markdown.preload.completed       | failed`                                                                      | parser preload outcome                                                                                    | `packages/code/src/runtime.tsx` (`preloadMarkdown`)                |
+| `app.boot.shell-painted`          | process uptime captured after the focused startup root reaches renderer idle | `packages/code/src/index.tsx` (`runInteractive`), emitted by `packages/code/src/runtime.tsx` (`runApp`)   |
+| `app.render.mounted`              | mode                                                                         | `packages/code/src/runtime.tsx` (`runApp`)                                                                |
+| `app.boot.painted`                | process uptime, mode and whether the catalog signal is still empty           | `packages/code/src/runtime.tsx` (`runApp`)                                                                |
+| `catalog.load.started`            | the catalog-dependent surface that crossed the lazy boundary                 | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`)                                                   |
+| `memory.sample`                   | phase, RSS, heap, external, array buffers and limit                          | `packages/code/src/adapters/memory-pressure.ts:169-182`                                                   |
+| `memory.phase`                    | previous phase, next phase, RSS and limit                                    | `packages/code/src/adapters/memory-pressure.ts:183-188`                                                   |
+| `memory.efficiency`               | advisory transition, RSS, baseline and recent slope                          | `packages/code/src/adapters/memory-pressure.ts` (`publish`)                                               |
+| `memory.ledger`                   | bounded transcript/session/renderer/run/event-queue counters, including frame listeners; debug only | `packages/code/src/views/App.tsx` (`ledger`), `packages/code/src/adapters/memory-pressure.ts` (`publish`) |
+| `memory.gc.completed              | failed                                                                       | skipped`                                                                                                  | recovery collection outcome and whether physical work prevented it | `packages/code/src/adapters/memory-pressure.ts` (`finishRecovery`) |
 
 Repeated diagnostic counters are sampled rather than written on every occurrence, so the debug log
 cannot itself become an unbounded amplifier (`packages/code/src/adapters/diagnostic-session.ts:535-558`).
@@ -163,8 +175,8 @@ GC occurred; otherwise it must not be compared to a post-GC floor.
 The launcher answers `--help` and `--version` before importing the application graph, then imports
 the built artifact for every other mode (`packages/code/src/cli.ts`, `main`). Interactive boot then:
 
-1. validates the terminal, creates the renderer and mounts a focused `StartupComposer` from the
-   lightweight entry;
+1. validates the terminal, creates the renderer and mounts a focused `StartupComposer` with the
+   shared responsive Clarvis banner from the lightweight entry;
 2. after renderer idle, starts the complete runtime import and, for an ordinary run without debug or
    worktree bootstrap, prepares the workspace kernel concurrently;
 3. opens diagnostics in the runtime, uses or creates the pinned `WorkspaceClientManager`, and loads
@@ -221,7 +233,8 @@ This keeps offline diagnostic maps in developer/root builds without distributing
 installed command (`packages/code/tooling/artifact/build.ts` (`installBuild`, `main`),
 `packages/code/tooling/setup.ts` (build phase)).
 
-`src/index.tsx` statically imports only renderer/startup-shell concerns. It dynamically imports
+`src/index.tsx` statically imports only renderer/startup-shell concerns, including the fixed shared
+banner reached through `StartupComposer`. It dynamically imports
 `runtime.tsx`, while `startup-foundation.ts` may construct the same workspace manager concurrently
 through the exact dynamic `@clarvis/kernel/bootstrap` boundary in
 `adapters/workspace-client-manager.ts`. The build groups Code-owned cold surfaces behind
@@ -236,10 +249,54 @@ well as Diff and Plan (`packages/code/tooling/artifact/contract.ts`).
 
 ### 4.4 Transcript and session retention
 
-Settled prose is charged against one aggregate budget and old prose is replaced with a release
-notice. Settled tool bodies are charged by both count and estimated bytes and are dehydrated oldest
-first (`packages/code/src/adapters/store.ts:384-470`, `:596-625`). The live host also folds semantic
-turns beyond its 20-turn visual window (`packages/code/src/run-host.ts:973-981`).
+Mutable settled prose is charged against one aggregate budget and old prose is replaced with a
+release notice. Mutable settled tool bodies are charged by both count and estimated bytes and are
+dehydrated oldest first (`packages/code/src/adapters/store.ts:384-470`, `:596-625`). An immutable
+publication keeps only the already-bounded inline projection: at most 512 Ki characters of prose and
+the independently bounded tool fields, never the raw hydration payload. The live host also folds
+semantic turns beyond its 20-turn resident history; that same action evicts complete immutable
+publication batches for the removed prefix and installs one frozen notice.
+
+Within that semantic bound, `CommittedHistory` retains marker metadata but mounts native owners only
+for the measured visible rows, two prepared viewports ahead in the last vertical-scroll direction
+and one retained viewport behind. One serial transparent candidate may coexist while syntax and two
+equal physical observations settle. Direct publication
+owners are pinned to exact marker rows; lightweight exact before/active/after extents preserve scroll
+geometry, and an unknown range costs one boundary row rather than an estimated spacer. After
+settlement, owner count is therefore independent of completed-turn count. ScrollBox viewport culling
+is enabled in that steady state and suspended only for the one transparent candidate whose native
+syntax render hooks must run; this does not expand the physical owner window. A candidate has one
+two-second retry lease before a parser-independent semantic retry owner preserves the same
+Markdown/diff/code presentation while bypassing only unfinished parser work; its frame listener is
+released immediately after the exact marker commits. The vertical scrollbar permanently owns one
+layout column and changes opacity only, preventing overflow from repeatedly invalidating width
+epochs. Before an earlier-history prepend publishes changed children, the exact anchor correction is
+queued and then consumed by the ScrollBox update and public content-size callback; the reader sees
+the corrected position in the first painted frame. Boundary-aware Page Up and vertical-wheel input
+remains on the prepared owner window until one serial candidate settles, so a fast scroll cannot
+reveal spacer-only rows or multiply native measurement owners. Repeated old/new navigation must also
+leave every registered lifecycle pass reachable from the live renderer root; current lifecycle-set
+size may vary with the active batch's syntax complexity, but detached/destroyed entries are
+forbidden. `LiveTranscriptTail` is instead the
+content-height final child of that same ScrollBox. There is no second scroll area or fixed live-row
+reservation: while tail-following, live growth uses the native bottom-following flow; while the user
+reads older history, the tail is not mounted in the visible window and newer semantic batches are
+represented only by the bounded top overlay until downward scroll admits them. This keeps one
+chronological surface without making the mutable frontier a permanent empty allocation
+(`packages/code/src/views/history/{CommittedHistory.tsx,TranscriptScrollBox.ts,physical-window.ts}`,
+`packages/code/src/views/live/LiveTranscriptTail.tsx`, and
+[`code-transcript-stability.md`](code-transcript-stability.md)). Renderer regressions are pinned by
+`packages/code/tests/integration/{transcript-publication-render,transcript-window-render}.test.tsx`.
+The application retains one permanent Lead projection plus at most one explicitly selected child
+projection. They own separate ScrollBoxes, physical-window controllers, marker ledgers and scroll
+positions; selecting a different child disposes the previously retained child and its listeners,
+while returning to Lead reveals its unchanged reader state. Child and workflow activity therefore
+cannot grow the main transcript's owner window; their lifecycle summaries stay in the bounded
+footer/Sidebar projections. Production:
+`packages/code/src/views/app/TranscriptRegion.tsx` (`TranscriptProjection`, `retainedChildId`) and
+`packages/code/src/views/history/CommittedHistory.tsx` (`CommittedHistory`). Test:
+`packages/code/tests/integration/transcript-region-render.test.tsx` ("Lead keeps its physical reader
+state while one bounded child projection is visited").
 
 An ordinary or manager session releases its reconstructible full message chain after the stored
 trace is available. Manager turns still never use `continue_from`: immediately before the next
@@ -268,13 +325,13 @@ is the authority for the leak rate.
 
 The floating family is larger than the two historically measured entry points:
 
-| Surface | Mount path | Variable allocation risk | Current evidence |
-| --- | --- | --- | --- |
-| agent picker and default-scope picker | `App` -> retained `ProfilePicker` -> `ListPicker` -> `FloatFrame` | windowed agent rows, preview and optional second picker | remount +12.71; retained -0.23 MiB PSS/100 |
-| safety preset picker | `App` -> lazy retained `SafetyPresetPicker` -> `ListPicker` -> `FloatFrame` | six fixed rows, one preview and an armed confirmation | +1.56 MiB PSS/100 at 120x32; +1.28 at 80x24; zero owner deltas |
-| provider/model/enum picker | config view -> retained `CatalogPicker` -> `ListPicker` -> `FloatFrame` | windowed rows, fuzzy-highlight spans, optional input, and a fixed nine-row first-run splash intro only when 76×24 fits | remount +14.26; retained -1.49 MiB PSS/100 (pre-intro measurement) |
-| activity detail | `App` -> retained `ActivityDetail` -> `FloatFrame` | Markdown block count and parser-native renderables; payload is cleared on close | -16.92 MiB PSS/100 in the 200-section remount case; no confirmed slope |
-| clean-worktree exit prompt | `App` -> retained `WorktreeExitPrompt` -> `FloatFrame` | fixed, small body | +0.44 MiB PSS/100 in the remount case; no confirmed slope |
+| Surface                               | Mount path                                                                  | Variable allocation risk                                                                                               | Current evidence                                                       |
+| ------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| agent picker and default-scope picker | `App` -> retained `ProfilePicker` -> `ListPicker` -> `FloatFrame`           | windowed agent rows, preview and optional second picker                                                                | remount +12.71; retained -0.23 MiB PSS/100                             |
+| safety preset picker                  | `App` -> lazy retained `SafetyPresetPicker` -> `ListPicker` -> `FloatFrame` | six fixed rows, one preview and an armed confirmation                                                                  | +1.56 MiB PSS/100 at 120x32; +1.28 at 80x24; zero owner deltas         |
+| provider/model/enum picker            | config view -> retained `CatalogPicker` -> `ListPicker` -> `FloatFrame`     | windowed rows, fuzzy-highlight spans, optional input, and a fixed nine-row first-run splash intro only when 76×24 fits | remount +14.26; retained -1.49 MiB PSS/100 (pre-intro measurement)     |
+| activity detail                       | `App` -> retained `ActivityDetail` -> `FloatFrame`                          | Markdown block count and parser-native renderables; payload is cleared on close                                        | -16.92 MiB PSS/100 in the 200-section remount case; no confirmed slope |
+| clean-worktree exit prompt            | `App` -> retained `WorktreeExitPrompt` -> `FloatFrame`                      | fixed, small body                                                                                                      | +0.44 MiB PSS/100 in the remount case; no confirmed slope              |
 
 `HintToast` is also conditionally instantiated while any host or transient overlay is open
 (`packages/code/src/views/App.tsx:1284-1286`, `packages/code/src/views/Footer.tsx:34-56`). A full-app
@@ -286,10 +343,11 @@ native toast box.
 Not every surface called an overlay uses `FloatFrame`, and the known per-row rate must not be copied
 onto these families without measurement:
 
-- `OverlayRegion` keeps the transcript shell mounted while switching to retained configuration,
-  `DiffViewer` or `PlanOverlay` surfaces. `SurfaceRegion` removes inactive retained pages from Yoga
-  layout and painting; configuration parents deliberately stay mounted only while their frame
-  remains in the stack (`packages/code/src/views/app/OverlayRegion.tsx`, `OverlayRegion`,
+- `OverlayRegion` keeps the transcript shell and Yoga geometry mounted while switching to any
+  full-region configuration, Workflow, `DiffViewer` or `PlanOverlay` surface. The hidden fallback is
+  input-inert and pauses physical-history observation. `SurfaceRegion` removes inactive retained
+  pages from Yoga layout and painting; configuration parents deliberately stay mounted only while
+  their frame remains in the stack (`packages/code/src/views/app/OverlayRegion.tsx`, `OverlayRegion`,
   `packages/code/src/views/overlay-host.ts`, `mountView`, `popView`).
 - full Help, Diff and Plan pages use `PageFrame`. Help and the current-plan fallback currently
   construct all projected rows, while a loaded current-plan document and Diff may construct a large
@@ -323,12 +381,12 @@ onto these families without measurement:
   `marketplace-collections-retained-196-listings`).
 - the compact activity drawer mounts a full-bleed scrim and Sidebar, while editor expansion merely
   changes layout properties on the already-mounted input region
-  (`packages/code/src/views/app/TranscriptRegion.tsx:246-280`,
+  (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`'s drawer `SurfaceBoundary`,
   `packages/code/src/views/App.tsx:1290-1321`).
 - Splash, elicitation, terminal-floor and fatal-boot surfaces are conditional, but they are not
   normal high-frequency modal routes. They still belong in control cases because input churn can
   accidentally remount Splash and make an autocomplete measurement invalid
-  (`packages/code/src/views/app/TranscriptRegion.tsx:199-245`,
+  (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`'s Splash condition,
   `packages/code/src/views/App.tsx` (terminal-floor `Show`), and
   `packages/code/src/views/FatalBoot.tsx` (`FatalBoot`)).
 
@@ -407,8 +465,9 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     Test: `packages/code/tests/integration/doctor.test.ts` and
     `packages/code/tests/integration/app-commands.test.tsx` (explicit entitlement recheck).
 
-11. **PERF-11: repeated Plan, Diff and autocomplete opens reuse bounded renderer ownership after
-    first use, while configuration navigation retains its exact shell/frame disposal.**
+11. **PERF-11: repeated full-region visits preserve one bounded transcript shell; Plan, Diff and
+    autocomplete reuse bounded renderer ownership after first use, while configuration navigation
+    retains its exact frame-disposal boundary.**
     Production: `packages/code/src/views/app/OverlayRegion.tsx` (`OverlayRegion`),
     `packages/code/src/views/InputDock.tsx` (`SurfaceBoundary`), and
     `packages/code/src/ui/patterns/windowed-list.tsx` (`StableWindowedList`) and
@@ -430,15 +489,18 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     non-visual ownership.** Non-portal regions may dispose or retain; portal surfaces always retain
     one bounded subtree because changing the Portal host during recursive conditional removal
     orphans lifecycle-pass renderables. Inactive floating components keep disabled key layers and a
-    constant lifecycle-pass set rather than registering or allocating again per activation.
+    constant lifecycle-pass set rather than registering or allocating again per activation. A
+    `FloatFrame` resolves its JSX-valued navigation prop once, so repeated footer probes cannot mount
+    duplicate responsive subtrees or renderer resize listeners.
     Production: `packages/code/src/ui/patterns/surface-lifecycle.tsx` (`SurfaceBoundary`,
     `SurfacePortal`, `useSurfaceFocus`, `useSurfaceActivationGuard`),
     `packages/code/src/views/overlays/FloatFrame.tsx` (`FloatFrame`), and
     `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`), including the lazy retained
     `SafetyPresetPicker` host in `packages/code/src/views/App.tsx`.
-    Test: `packages/code/tests/integration/surface-lifecycle-render.test.tsx` and
-    `packages/code/tests/integration/list-picker-render.test.tsx` ("a retained picker keeps one key
-    layer registration and gates it while inactive"), plus
+    Test: `packages/code/tests/integration/surface-lifecycle-render.test.tsx`,
+    `packages/code/tests/integration/float-frame-render.test.tsx` (single responsive navigation
+    subtree and listener cleanup), and `packages/code/tests/integration/list-picker-render.test.tsx`
+    ("a retained picker keeps one key layer registration and gates it while inactive"), plus
     `packages/code/tooling/benchmarks/overlays.tsx` (`safety-preset-picker-retained`).
 
 14. **PERF-14: retained inactive configuration pages do not keep periodic background work alive.**
@@ -525,13 +587,16 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     and `packages/code/tooling/benchmarks/overlays.tsx`
     (`marketplace-collections-retained-196-listings`, `stableRegistrations`).
 
-22. **PERF-22: boot continuity owns one bounded startup composer, not parser/catalog or per-row work.**
-    It has one focused input, one external draft/submission snapshot and distinct markers. Enter is
-    accepted once; the task starts before complete-app mount when a profile is runnable, while an
-    unsent draft or currently unrunnable submission transfers exactly to `App`. Renderer teardown
-    is owned continuously from creation through the complete keymap mount. Production:
+22. **PERF-22: boot continuity owns one bounded startup composer, not parser/catalog or variable
+    per-row work.** It has one focused input, one external draft/submission snapshot, distinct
+    markers and the shared fixed-size `BrandBanner`. The complete eight-row banner is admitted only
+    at 60×16 or larger; its one-line fallback preserves compact layouts. Enter is accepted once; the
+    task starts before complete-app mount when a profile is runnable, while an unsent draft or
+    currently unrunnable submission transfers exactly to `App`. Renderer teardown is owned
+    continuously from creation through the complete keymap mount. Production:
     `packages/code/src/views/StartupComposer.tsx`
-    (`createStartupComposerState`, `StartupComposer`) and `packages/code/src/runtime.tsx`
+    (`STARTUP_SPLASH_MIN_ROWS`, `createStartupComposerState`, `StartupComposer`),
+    `packages/code/src/views/Splash.tsx` (`BrandBanner`) and `packages/code/src/runtime.tsx`
     (`startup_submit`, `boot.app-mount`) and
     `packages/code/src/adapters/renderer-bootstrap.ts` (`installBootRendererLifecycle`). Tests:
     `packages/code/tests/integration/splash-render.test.tsx`,
@@ -549,23 +614,23 @@ tree.
 
 ## 6. Failure modes and degradation
 
-| Failure or pressure | Current degradation | Evidence |
-| --- | --- | --- |
-| benchmark host is too busy | refuse unless forced; forced report is untrusted | `packages/code/tooling/benchmarks/first-paint.ts:331-360` |
-| PTY never reaches a marker | fail with bounded screen and stderr context | `packages/code/tooling/benchmarks/first-paint.ts:211-234` |
-| Markdown parser warm-up fails | emit a warning diagnostic and keep the usable application shell | `packages/code/src/runtime.tsx` (`markdownPreload`) |
-| final Markdown or diff syntax work is still pending | keep the previous Markdown tree visible or the new diff transparent until `waitForSyntaxFrame` completes; reveal OpenTUI's fallback if readiness rejects, and do not pause the renderer | `packages/code/src/ui/patterns/stable-syntax.tsx` (`StableMarkdown`, `StableDiff`, `waitForSyntaxFrame`) |
-| on-demand catalog load fails | keep the live catalog empty and emit `catalog.unavailable`; the already-painted shell remains usable | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`) |
-| an OAuth-backed MCP has no token and its browser is ignored | keep authorization background, omit that server from the current run, and continue other tools/model work | `packages/mcp-client/src/oauth.ts` (`MCPAuthorizationPendingError`), `packages/loop/src/runtime/open-tool-pool.ts` |
-| subscription readiness has not been inspected | keep the local gate passing with `subscription check deferred`; explicit Doctor inspection can later report a real warning | `packages/code/src/onboarding/doctor.ts` (`credentialGate`) |
-| one transcript prose value is oversized | truncate before it enters reactive state | `packages/code/src/adapters/store.ts:103-110` |
-| aggregate prose is full | release older settled prose, preserve newest | `packages/code/src/adapters/store.ts:394-470` |
-| hydrated tool budget is full | dehydrate older bodies; explicit expand can re-fetch within queue limits | `packages/code/src/adapters/store.ts:596-617`, `:647-758` |
-| session reconstruction exceeds request-shape limits | throw `SessionResumeLimitError` before the next batch | `packages/code/src/adapters/session.ts:510-531` |
-| RSS reaches configured limit | cancel, detach after grace if required, block new work and offer recovery | `packages/code/src/adapters/memory-pressure.ts:193-229` |
-| overlay soak child starves or grows past its process budget | parent watchdog kills it and fails with the case name and limit | `packages/code/tooling/benchmarks/overlays.tsx` (`runParent`) |
-| interactive event loop is starved outside the soak | in-process sampler may not run; host/process-tree monitoring is still required | `specs/known-issues.md` (reactive microtask starvation) |
-| external MCP/shell process grows | TUI self-RSS fuse does not observe it | `packages/code/README.md:149-151` |
+| Failure or pressure                                         | Current degradation                                                                                                                                                                     | Evidence                                                                                                           |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| benchmark host is too busy                                  | refuse unless forced; forced report is untrusted                                                                                                                                        | `packages/code/tooling/benchmarks/first-paint.ts:331-360`                                                          |
+| PTY never reaches a marker                                  | fail with bounded screen and stderr context                                                                                                                                             | `packages/code/tooling/benchmarks/first-paint.ts:211-234`                                                          |
+| Markdown parser warm-up fails                               | emit a warning diagnostic and keep the usable application shell                                                                                                                         | `packages/code/src/runtime.tsx` (`markdownPreload`)                                                                |
+| final Markdown or diff syntax work is still pending         | keep the previous Markdown tree visible or the new diff transparent until `waitForSyntaxFrame` completes; reveal OpenTUI's fallback if readiness rejects, and do not pause the renderer | `packages/code/src/ui/patterns/stable-syntax.tsx` (`StableMarkdown`, `StableDiff`, `waitForSyntaxFrame`)           |
+| on-demand catalog load fails                                | keep the live catalog empty and emit `catalog.unavailable`; the already-painted shell remains usable                                                                                    | `packages/code/src/runtime.tsx` (`ensureModelsCatalog`)                                                            |
+| an OAuth-backed MCP has no token and its browser is ignored | keep authorization background, omit that server from the current run, and continue other tools/model work                                                                               | `packages/mcp-client/src/oauth.ts` (`MCPAuthorizationPendingError`), `packages/loop/src/runtime/open-tool-pool.ts` |
+| subscription readiness has not been inspected               | keep the local gate passing with `subscription check deferred`; explicit Doctor inspection can later report a real warning                                                              | `packages/code/src/onboarding/doctor.ts` (`credentialGate`)                                                        |
+| one transcript prose value is oversized                     | truncate before it enters reactive state                                                                                                                                                | `packages/code/src/adapters/store.ts:103-110`                                                                      |
+| aggregate prose is full                                     | release older settled prose, preserve newest                                                                                                                                            | `packages/code/src/adapters/store.ts:394-470`                                                                      |
+| hydrated tool budget is full                                | dehydrate older bodies; explicit expand can re-fetch within queue limits                                                                                                                | `packages/code/src/adapters/store.ts:596-617`, `:647-758`                                                          |
+| session reconstruction exceeds request-shape limits         | throw `SessionResumeLimitError` before the next batch                                                                                                                                   | `packages/code/src/adapters/session.ts:510-531`                                                                    |
+| RSS reaches configured limit                                | cancel, detach after grace if required, block new work and offer recovery                                                                                                               | `packages/code/src/adapters/memory-pressure.ts:193-229`                                                            |
+| overlay soak child starves or grows past its process budget | parent watchdog kills it and fails with the case name and limit                                                                                                                         | `packages/code/tooling/benchmarks/overlays.tsx` (`runParent`)                                                      |
+| interactive event loop is starved outside the soak          | in-process sampler may not run; host/process-tree monitoring is still required                                                                                                          | `specs/known-issues.md` (reactive microtask starvation)                                                            |
+| external MCP/shell process grows                            | TUI self-RSS fuse does not observe it                                                                                                                                                   | `packages/code/README.md:149-151`                                                                                  |
 
 ## 7. Coupling
 
@@ -607,11 +672,11 @@ The official benchmark ran with Bun 1.4.0, 16 cores, AC power, `performance` gov
 approximately 4.5 GHz observed CPU frequency, low per-core load, five measured repetitions plus one
 discarded warm-up, and returned `trusted: true`.
 
-| Arm | `--version` median | header median | input-ready median |
-| --- | ---: | ---: | ---: |
-| source | 15.9 ms | 1,131.3 ms | 1,131.3 ms |
-| direct bundle | 261.9 ms | 1,131.1 ms | 1,131.1 ms |
-| launcher/bin | 16.8 ms | 1,132.1 ms | 1,132.1 ms |
+| Arm           | `--version` median | header median | input-ready median |
+| ------------- | -----------------: | ------------: | -----------------: |
+| source        |            15.9 ms |    1,131.3 ms |         1,131.3 ms |
+| direct bundle |           261.9 ms |    1,131.1 ms |         1,131.1 ms |
+| launcher/bin  |            16.8 ms |    1,132.1 ms |         1,132.1 ms |
 
 The direct-bundle `--version` arm intentionally loads the application entry; the launcher answers
 that flag before importing it. For an interactive launch, the diagnostic interval from process start
@@ -624,11 +689,11 @@ catalog was parsed/projected.
 Three configured PTY boots using the local connected subscription separated the first header from a
 conversation-only marker:
 
-| Sample | header | conversation usable | gap |
-| --- | ---: | ---: | ---: |
-| 1 | 727.6 ms | 1,336.7 ms | 609.0 ms |
-| 2 | 726.6 ms | 1,356.0 ms | 629.4 ms |
-| 3 | 725.2 ms | 1,265.1 ms | 539.9 ms |
+| Sample |   header | conversation usable |      gap |
+| ------ | -------: | ------------------: | -------: |
+| 1      | 727.6 ms |          1,336.7 ms | 609.0 ms |
+| 2      | 726.6 ms |          1,356.0 ms | 629.4 ms |
+| 3      | 725.2 ms |          1,265.1 ms | 539.9 ms |
 
 Source inspection and the mounted-view diagnostics show that `recovery.open` existed during that
 gap and closed after subscription readiness changed. It is therefore a supported inference — not a
@@ -760,12 +825,12 @@ working Context7 MCP and exactly two parallel subagents while both authorization
 One forced three-sample bundle benchmark was intentionally marked untrusted because load was
 4.42/12 cores = 0.369, just above the 0.35 gate. It remains useful only as local stage evidence:
 
-| Stage | min | median | max |
-| --- | ---: | ---: | ---: |
-| module graph | 127 ms | 136 ms | 140 ms |
-| minimal shell | 181 ms | 182 ms | 183 ms |
-| startup composer | 181 ms | 182 ms | 183 ms |
-| complete header | 674 ms | 675 ms | 704 ms |
+| Stage              |    min | median |    max |
+| ------------------ | -----: | -----: | -----: |
+| module graph       | 127 ms | 136 ms | 140 ms |
+| minimal shell      | 181 ms | 182 ms | 183 ms |
+| startup composer   | 181 ms | 182 ms | 183 ms |
+| complete header    | 674 ms | 675 ms | 704 ms |
 | complete app input | 674 ms | 675 ms | 704 ms |
 
 A single nine-plugin real launch reached the startup composer in 264 ms and the complete app in
@@ -776,6 +841,56 @@ worse; Bun bytecode produced a CommonJS artifact unable to load OpenTUI's asynch
 while attempting to absorb OpenTUI into the bundle failed on its top-level-await modules. These are
 direct Bun/OpenTUI constraints recorded as exact experiments, not an excuse for the repository-owned
 hashing or OAuth waits above.
+
+#### Transcript-stability startup revalidation — 2026-08-30
+
+The final transcript-stability artifact, including OpenTUI 0.5.9 and the shared first-frame Clarvis
+splash, was measured in three unforced supported bundle benchmark batches on the same macOS host and
+Bun 1.4.0. Every batch passed the load gate (`2.26/12 = 0.188`, `2.23/12 = 0.186`, and
+`4.17/12 = 0.347`); the benchmark cannot detect macOS power state and reported `power=unknown`, while
+the host's `pmset` reported AC power. Each batch used one discarded warm-up plus seven measured
+boots:
+
+| Stage                                      | Batch one min / median / max | Batch two min / median / max | Batch three min / median / max |
+| ------------------------------------------ | ---------------------------: | ---------------------------: | -----------------------------: |
+| module graph                               |       112 / **114** / 115 ms |       110 / **114** / 115 ms |         102 / **108** / 117 ms |
+| minimal shell and focused startup composer |       158 / **160** / 184 ms |       157 / **160** / 183 ms |         154 / **156** / 179 ms |
+| complete header and application input      |       746 / **750** / 773 ms |       746 / **749** / 766 ms |         682 / **686** / 785 ms |
+
+The comparable 2026-08-29 bundle median was 784 ms for the complete application, so these batches
+do not reproduce a 900 ms first-paint regression. The clean-HOME smoke after the third batch settled
+all artifact/diagnostic assertions in 920 ms while its process-relative diagnostics recorded the
+startup shell at 184 ms and complete app at 753 ms. That outer smoke value includes 100 ms polling
+and Markdown diagnostic settlement, and its output now labels it accordingly. The strict complete-app
+500 ms goal remains unmet even though the first usable composer remains below its target.
+
+After the final Sidebar auto-open, fixed Lead activity row and transcript-runway changes, one further
+unforced seven-sample bundle batch passed the load gate at `3.75/12 = 0.313`. It recorded module graph
+110 / **117** / 123 ms, minimal shell and focused startup composer 154 / **180** / 183 ms, and complete
+header/application input 705 / **733** / 765 ms. The benchmark reported `power=unknown`; `pmset`
+simultaneously reported an AC-power heading and a discharging battery, so this remains a
+host-qualified batch rather than a power-normalized comparison. Its clean-HOME smoke settled all
+artifact and diagnostics checks in 918 ms, with process-relative shell paint at 165 ms and complete
+application paint at 738 ms. The 918 ms outer result is therefore not a first-paint measurement.
+
+After the final immutable syntax remeasurement correction, a fresh seven-sample bundle batch passed
+the load gate at `2.30/12 = 0.192`. It recorded module graph 116 / **123** / 138 ms, minimal shell and
+focused startup composer 179 / **182** / 184 ms, and complete header/application input
+761 / **789** / 815 ms. The corresponding clean-HOME artifact smoke settled in 921 ms while its
+process-relative diagnostics recorded shell paint at 175 ms and complete application paint at
+767 ms. As above, the outer polling/diagnostic duration is not first paint; the first focused input
+remained available at 182 ms median. The complete-app 500 ms goal remains unmet.
+
+After the directional runway, retained Lead/child projections and atomic explicit-tail swap were
+finalized, the supported seven-sample bundle batch passed the load gate at `2.07/12 = 0.172`. It
+recorded module graph 102 / **103** / 105 ms, minimal shell and focused startup composer
+156 / **157** / 159 ms, and complete header/application input 637 / **639** / 664 ms. The benchmark
+reported `power=unknown` and qualified the host as battery-powered, so comparisons remain
+host-local. The immediately preceding clean-HOME artifact smoke settled all artifact and diagnostic
+assertions in 819 ms while its process-relative diagnostics recorded shell paint at 155 ms and
+complete application paint at 679 ms with deferred catalogue loading. The first focused input and
+complete application are therefore both below the owner's 800 ms usability reference in this run;
+the strict complete-app 500 ms goal remains unmet.
 
 ### 8.2 Prioritized changes and implementation status
 
@@ -868,7 +983,9 @@ The correction followed the attribution order and was widened beyond F1:
    when its spec changes.
 4. The non-float audit found a repeatable Plan page residue. `OverlayRegion` now keeps the shell
    mounted behind Plan/Diff, lazily retains those pages after first use, and gates their inactive key
-   layers. Plan PSS changed from about +15.1 MiB to +2.15 MiB per 100 real PTY cycles.
+   layers. The later full-region continuity contract also keeps that shell mounted and paused behind
+   configuration and Workflow views without retaining popped configuration frames. Plan PSS changed
+   from about +15.1 MiB to +2.15 MiB per 100 real PTY cycles.
 5. `InputDock` now lazily retains one autocomplete container with ten stable row/header slots;
    Help uses stable indexed section/row ownership. Prompt/editor layers register once and are gated
    by reactive visibility/state matchers. The retained autocomplete primitive measured -1.48 MiB
@@ -931,21 +1048,21 @@ The final 120x32 native-render matrix used ten warm-up cycles and 100 measured c
 process. These are endpoint PSS changes after forced collection, not amounts of memory "saved" when
 negative:
 
-| Case | PSS MiB/100 | Cumulative registrations during measured cycles |
-| --- | ---: | ---: |
-| no-overlay control | +0.27 | 0 |
-| `FloatFrame`, 30 rows | -1.16 | 0 |
-| autocomplete remount / retained | +4.41 / +0.60 | 0 / 0 |
-| former Context Help remount / retained | +3.27 / -2.04 | 100 / 0 |
-| former Context Help retained with reprojected actions | -2.11 | 0 |
-| Profile Picker remount / retained | +11.42 / -1.65 | 100 / 0 |
-| retained Safety Preset Picker | +1.56 | 0 |
-| Catalog Picker remount / retained | +8.01 / -1.53 | 200 / 0 |
-| 64-agent drawer remount / retained | +25.13 / -1.46 | 0 / 0 |
-| retained Activity Detail, 200 Markdown sections | -28.55 | 0 |
-| retained worktree prompt | -4.12 | 0 |
-| empty Workflows page remount / retained | +2.81 / +1.17 | 200 / 0 |
-| elicitation / Splash / HintToast | +1.79 / +1.36 / -0.18 | 100 / 0 / 0 |
+| Case                                                  |           PSS MiB/100 | Cumulative registrations during measured cycles |
+| ----------------------------------------------------- | --------------------: | ----------------------------------------------: |
+| no-overlay control                                    |                 +0.27 |                                               0 |
+| `FloatFrame`, 30 rows                                 |                 -1.16 |                                               0 |
+| autocomplete remount / retained                       |         +4.41 / +0.60 |                                           0 / 0 |
+| former Context Help remount / retained                |         +3.27 / -2.04 |                                         100 / 0 |
+| former Context Help retained with reprojected actions |                 -2.11 |                                               0 |
+| Profile Picker remount / retained                     |        +11.42 / -1.65 |                                         100 / 0 |
+| retained Safety Preset Picker                         |                 +1.56 |                                               0 |
+| Catalog Picker remount / retained                     |         +8.01 / -1.53 |                                         200 / 0 |
+| 64-agent drawer remount / retained                    |        +25.13 / -1.46 |                                           0 / 0 |
+| retained Activity Detail, 200 Markdown sections       |                -28.55 |                                               0 |
+| retained worktree prompt                              |                 -4.12 |                                               0 |
+| empty Workflows page remount / retained               |         +2.81 / +1.17 |                                         200 / 0 |
+| elicitation / Splash / HintToast                      | +1.79 / +1.36 / -0.18 |                                     100 / 0 / 0 |
 
 The remount rows remain attribution controls and intentionally expose the behavior the production
 policy avoids. Every retained comparator had zero additional layer registrations after warm-up;
@@ -978,18 +1095,18 @@ bundle and a real OpenTUI renderer. Each case must:
 
 Run every row below independently so one surface cannot inherit another's retained memory:
 
-| Family | Required cases |
-| --- | --- |
-| controls | no overlay; draft mutation with Splash held either mounted or unmounted; empty `HintToast` lifecycle |
-| `FloatFrame` primitive | empty fixed-size frame; frame with fixed row counts of 1, 10 and 30 |
-| `ProfilePicker` | primary agent list; default-scope second step; empty and maximum practical lists |
-| `SafetyPresetPicker` | six-row retained picker; direct-host armed-confirmation path |
-| `CatalogPicker` | compact enum; filtered provider/model catalog; empty/manual row; maximum visible window |
-| `ActivityDetail` | short plain text; long Markdown with code blocks and lists |
-| `WorktreeExitPrompt` | cancel path, using an isolated disposable clean-worktree fixture |
-| autocomplete | slash and workspace-file triggers; zero, one and ten visible rows; fixed non-empty draft so Splash does not churn |
-| full-region pages | full Help; empty and populated Diff; empty, task-heavy and Markdown-heavy current Plan; root and nested Settings views |
-| shell overlays | activity drawer; Splash visibility; terminal-floor resize transition; editor expansion control |
+| Family                 | Required cases                                                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| controls               | no overlay; draft mutation with Splash held either mounted or unmounted; empty `HintToast` lifecycle                   |
+| `FloatFrame` primitive | empty fixed-size frame; frame with fixed row counts of 1, 10 and 30                                                    |
+| `ProfilePicker`        | primary agent list; default-scope second step; empty and maximum practical lists                                       |
+| `SafetyPresetPicker`   | six-row retained picker; direct-host armed-confirmation path                                                           |
+| `CatalogPicker`        | compact enum; filtered provider/model catalog; empty/manual row; maximum visible window                                |
+| `ActivityDetail`       | short plain text; long Markdown with code blocks and lists                                                             |
+| `WorktreeExitPrompt`   | cancel path, using an isolated disposable clean-worktree fixture                                                       |
+| autocomplete           | slash and workspace-file triggers; zero, one and ten visible rows; fixed non-empty draft so Splash does not churn      |
+| full-region pages      | full Help; empty and populated Diff; empty, task-heavy and Markdown-heavy current Plan; root and nested Settings views |
+| shell overlays         | activity drawer; Splash visibility; terminal-floor resize transition; editor expansion control                         |
 
 The harness becomes the regression gate; one-off `ps` snapshots remain diagnostic evidence only.
 

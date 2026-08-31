@@ -34,6 +34,7 @@ import { applyRunEvents, runEvent } from "../helpers/run-events.ts";
 import { captureUntil } from "../helpers/render-support.ts";
 import { keyboardEnvironmentId } from "../../src/keys/keyboard-profile.ts";
 import { createModelsCatalog } from "../../src/adapters/models-catalog.ts";
+import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
 
 const ev = runEvent;
 
@@ -57,6 +58,33 @@ function press(
       source: "raw",
     }),
   );
+}
+
+async function clickText(
+  t: Awaited<ReturnType<typeof openRender>>,
+  frame: string,
+  needle: string,
+): Promise<void> {
+  const hit = frame
+    .split("\n")
+    .map((row, y) => ({ y, x: row.indexOf(needle) }))
+    .find((candidate) => candidate.x >= 0);
+  expect(hit).toBeDefined();
+  await t.mockMouse.click(hit!.x + Math.min(2, needle.length - 1), hit!.y);
+}
+
+async function clickLastText(
+  t: Awaited<ReturnType<typeof openRender>>,
+  frame: string,
+  needle: string,
+): Promise<void> {
+  const hit = frame
+    .split("\n")
+    .map((row, y) => ({ y, x: row.lastIndexOf(needle) }))
+    .filter((candidate) => candidate.x >= 0)
+    .sort((left, right) => right.x - left.x)[0];
+  expect(hit).toBeDefined();
+  await t.mockMouse.click(hit!.x + Math.min(2, needle.length - 1), hit!.y);
 }
 
 function fakePlatform(over: Partial<Platform> = {}): Platform {
@@ -291,13 +319,19 @@ function defaultProps(overrides: {
   catalog?: AppFleet["catalog"];
   clear?: () => void;
   costLine?: () => string;
+  sessionUsage?: () => { input: number; output: number; cached?: number } | null;
   initialDraft?: string;
   worktree?: AppProps["shell"]["worktree"];
+  submit?: AppProps["run"]["submit"];
+  submitPrompt?: AppProps["run"]["submitPrompt"];
   submitSkillRun?: AppProps["run"]["submitSkillRun"];
+  store?: ReturnType<typeof createTranscriptStore>;
+  activity?: ReturnType<typeof createActivityStore>;
+  workflowActivity?: AppProps["run"]["workflowActivity"];
 }) {
   return (renderer: ReturnType<typeof useRenderer>): AppProps => {
-    const store = createTranscriptStore();
-    const activity = createActivityStore();
+    const store = overrides.store ?? createTranscriptStore();
+    const activity = overrides.activity ?? createActivityStore();
     if (overrides.seedStream) {
       const sink = store.openRun("exec_1");
       const asink = activity.openRun();
@@ -324,14 +358,14 @@ function defaultProps(overrides: {
       },
       run: {
         status: overrides.status ?? (() => ""),
-        submit: () => {},
-        submitPrompt: () => {},
+        submit: overrides.submit ?? (() => {}),
+        submitPrompt: overrides.submitPrompt ?? (() => {}),
         submitSkillRun: overrides.submitSkillRun ?? (() => {}),
         compact: () => {},
         cancel: overrides.cancel ?? (() => false),
         active: overrides.active ?? (() => false),
         startedAt: () => (overrides.active?.() ? Date.now() - 5000 : null),
-        workflowActivity: () => null,
+        workflowActivity: overrides.workflowActivity ?? (() => null),
         bang: () => true,
         localBusy: () => false,
         registerDraftRestore: () => {},
@@ -348,12 +382,40 @@ function defaultProps(overrides: {
         export: async () => "exported",
         statusLine: () => "status line",
         costLine: overrides.costLine ?? (() => ""),
+        usage: overrides.sessionUsage ?? (() => null),
       },
       fleet: baseFleet(settings, agents, overrides.code, overrides.catalog),
       backend: overrides.backend ?? baseBackend(),
       ...(overrides.initialDraft === undefined ? {} : { initialDraft: overrides.initialDraft }),
     };
   };
+}
+
+function leadTurn(iteration: number, response: string, at: number): RunEvent[] {
+  return [
+    ev({ type: "iteration_started", agent: "lead", iteration, at, model: "m" }),
+    ev({
+      type: "iteration_completed",
+      agent: "lead",
+      iteration,
+      at: at + 1,
+      model: "m",
+      response,
+      response_phase: "commentary",
+      input_tokens: 10,
+      output_tokens: 4,
+    }),
+  ];
+}
+
+async function moveReaderAwayFromTail(t: Awaited<ReturnType<typeof openRender>>): Promise<void> {
+  for (let pass = 0; pass < 600; pass += 1) {
+    press(t, "pageup");
+    await t.renderOnce();
+    if (t.renderer.root.findDescendantById("history-newer-indicator") !== undefined) return;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error(`reader never left the tail:\n${t.captureCharFrame()}`);
 }
 
 test("the complete composer adopts the draft typed during startup", async () => {
@@ -430,6 +492,70 @@ test("default wide layout: header, derived navigation and input dock are live", 
   expect(out).toContain("[^c] cancel / quit");
   expect(out).toContain("[↵] send / steer");
   expect(out).not.toContain("open plan");
+  t.renderer.destroy();
+});
+
+test("autocomplete replaces the Lead activity row instead of stacking ready or working above it", async () => {
+  for (const [active, activityText] of [
+    [false, "ready"],
+    [true, "working"],
+  ] as const) {
+    const t = await mountApp(defaultProps({ active: () => active }));
+    expect(await captureUntil(t, activityText)).toContain(activityText);
+    await t.mockInput.typeText("/");
+    await captureUntil(t, "/clear");
+    await t.renderOnce();
+    const open = t.captureCharFrame();
+    expect(open).not.toMatch(new RegExp(`(?:^|\\s)${activityText}(?:\\s|$)`));
+    expect(t.renderer.root.findDescendantById("lead-activity-line")).toBeUndefined();
+    t.renderer.destroy();
+  }
+});
+
+test("a completed Plan never contributes a task counter to the compact footer", async () => {
+  const tasks: Extract<RunEvent, { type: "plan_created" }>["tasks"] = Array.from(
+    { length: 5 },
+    (_, index) => ({
+      id: `done-${index + 1}`,
+      title: `Done ${index + 1}`,
+      status: "done",
+    }),
+  );
+  const stream: RunEvent[] = [
+    ev({ type: "run_started", at: 1 }),
+    ev({
+      type: "plan_created",
+      at: 2,
+      id: "finished-plan",
+      path: ".clarvis/plans/finished.md",
+      title: "Finished plan",
+      status: "active",
+      retention: "keep",
+      revision: 1,
+      spec_revision: 1,
+      tasks,
+    }),
+    ev({
+      type: "plan_updated",
+      change: "status",
+      at: 3,
+      id: "finished-plan",
+      path: ".clarvis/plans/finished.md",
+      title: "Finished plan",
+      status: "completed",
+      retention: "keep",
+      revision: 2,
+      spec_revision: 1,
+      tasks,
+    }),
+    ev({ type: "run_ended", at: 4, status: "completed", reason: "completed" }),
+  ];
+  const t = await mountApp(defaultProps({ seedStream: stream, status: () => "Completed" }), {
+    width: 80,
+    height: 24,
+  });
+  const closed = await captureUntil(t, "Completed");
+  expect(closed).not.toMatch(/Plan \d+\/\d+/);
   t.renderer.destroy();
 });
 
@@ -520,6 +646,7 @@ test("first boot explains the guided provider picker before saving anything", as
   t.mockInput.pressEnter();
   frame = await captureUntil(t, "Step 1 of 2");
   expect(frame).toContain("anthropic");
+  expect(t.renderer.listenerCount("resize")).toBeLessThanOrEqual(t.renderer.getMaxListeners());
   press(t, "down");
   press(t, "down");
   press(t, "return");
@@ -745,12 +872,145 @@ test("a terminal below the floor threshold shows 'terminal too small' instead of
   t.renderer.destroy();
 });
 
-test("an active run replaces the footer hint with cancel/steer and shows a live status line", async () => {
-  const t = await mountApp(defaultProps({ active: () => true, status: () => "running turn 2" }));
+test("an active run seats its live metadata beside working and keeps the session footer stable", async () => {
+  const activity = createActivityStore();
+  applyRunEvents(
+    activity.openRun(),
+    [
+      ev({ type: "run_started", at: 1 }),
+      ev({
+        type: "iteration_completed",
+        agent: "lead",
+        iteration: 1,
+        at: 2,
+        model: "m",
+        input_tokens: 120_000,
+        output_tokens: 12_000,
+        cached_tokens: 1_000,
+        response: "",
+      }),
+      ev({ type: "run_ended", status: "completed", at: 3, reason: "completed" }),
+    ],
+    "live",
+  );
+  const stream: RunEvent[] = [
+    ev({ type: "run_started", at: 4 }),
+    ev({
+      type: "iteration_completed",
+      agent: "lead",
+      iteration: 1,
+      at: 5,
+      model: "m",
+      input_tokens: 5_000,
+      output_tokens: 100,
+      response: "",
+    }),
+  ];
+  const [active, setActive] = createSignal(true);
+  const [status, setStatus] = createSignal("running iteration 9");
+  const [sessionUsage, setSessionUsage] = createSignal({
+    input: 120_000,
+    output: 12_000,
+    cached: 1_000,
+  });
+  const t = await mountApp(
+    defaultProps({
+      active,
+      status,
+      seedStream: stream,
+      activity,
+      sessionUsage,
+    }),
+    { width: 160, height: 40 },
+  );
   const out = await captureUntil(t, "cancel");
   expect(out).toContain("steer");
-  expect(out).toContain("Running");
-  expect(out.split("\n").find((row) => row.includes("Clarvis"))).not.toContain("Running");
+  const activityRow = out.split("\n").find((row) => row.includes("working"));
+  expect(activityRow).toMatch(/working · \d+s · iteration 9 · \^c to interrupt/);
+  const footer = out.split("\n").find((row) => row.includes("Session  In"));
+  expect(footer).toContain("Context ");
+  expect(footer).toContain("Session  In 124k · Out 12k");
+  expect(footer).not.toContain("Running");
+  expect(footer).not.toContain("iteration");
+
+  setSessionUsage({ input: 125_000, output: 12_100, cached: 1_000 });
+  setStatus("completed");
+  setActive(false);
+  const settled = await captureUntil(t, "Completed");
+  const settledFooter = settled.split("\n").find((row) => row.includes("Session  In"));
+  expect(settledFooter).toContain("Session  In 124k · Out 12k");
+  t.renderer.destroy();
+});
+
+test("Lead thinking and working reuse one fixed line immediately above the composer", async () => {
+  const [active, setActive] = createSignal(true);
+  const store = createTranscriptStore();
+  const sink = store.openRun("exec_activity_line");
+  applyRunEvents(
+    sink,
+    [
+      ev({ type: "run_started", at: 1 }),
+      ev({ type: "iteration_started", agent: "lead", iteration: 1, at: 2, model: "m" }),
+    ],
+    "live",
+  );
+  const t = await mountApp(defaultProps({ active, store }));
+  const thinking = await captureUntil(t, "thinking");
+  const line = t.renderer.root.findDescendantById("lead-activity-line");
+  const input = t.renderer.root.findDescendantById("input-dock");
+  const history = t.renderer.root.findDescendantById("committed-history");
+  expect(line).toBeDefined();
+  expect(input).toBeDefined();
+  expect(line!.y + line!.height).toBe(input!.y);
+  expect(history?.findDescendantById("lead-activity-line")).toBeUndefined();
+  expect(thinking.match(/thinking/g)?.length).toBe(1);
+  const fixedY = line!.y;
+
+  applyRunEvents(
+    sink,
+    [
+      ev({
+        type: "text_delta",
+        agent: "lead",
+        iteration: 1,
+        channel: "text",
+        text: "VISIBLE LEAD ANSWER",
+        at: 3,
+        reset: true,
+      }),
+    ],
+    "live",
+  );
+  const working = await captureUntil(t, "working");
+  expect(working).toContain("VISIBLE LEAD ANSWER");
+  expect(t.renderer.root.findDescendantById("lead-activity-line")).toBe(line);
+  expect(line!.y).toBe(fixedY);
+
+  applyRunEvents(
+    sink,
+    [
+      ev({
+        type: "iteration_completed",
+        agent: "lead",
+        iteration: 1,
+        at: 4,
+        model: "m",
+        response: "VISIBLE LEAD ANSWER",
+        input_tokens: 1,
+        output_tokens: 1,
+      }),
+      ev({ type: "run_ended", status: "completed", at: 5, reason: "completed" }),
+    ],
+    "live",
+  );
+  setActive(false);
+  await t.renderOnce();
+  await t.renderOnce();
+  const settledLine = t.captureCharFrame().split("\n")[fixedY] ?? "";
+  expect(settledLine).toContain("ready");
+  expect(settledLine).not.toContain("thinking");
+  expect(t.renderer.root.findDescendantById("lead-activity-line")).toBe(line);
+  expect(line!.y).toBe(fixedY);
   t.renderer.destroy();
 });
 
@@ -785,16 +1045,19 @@ test("footer status uses canonical terminal outcomes and hides generic internal 
   t.renderer.destroy();
 });
 
-test("the footer keeps cumulative session cost without repeating token counts", async () => {
+test("the settled footer keeps cumulative session tokens and cost", async () => {
   const t = await mountApp(
     defaultProps({
       status: () => "completed",
       costLine: () => "$0.042",
+      sessionUsage: () => ({ input: 120_000, output: 12_000, cached: 1_000 }),
     }),
+    { width: 160, height: 40 },
   );
   const out = await captureUntil(t, "Session $0.042");
   expect(out).toContain("Completed");
   expect(out).toContain("$0.042");
+  expect(out).toContain("Session  In 119k · Out 12k");
   expect(out).not.toContain("12k→820 tok");
   t.renderer.destroy();
 });
@@ -1117,7 +1380,7 @@ test("Ctrl+P toggles a run's plan detail, while Ctrl+C cancels without closing i
       cancel: () => (cancels.push(1), true),
     }),
   );
-  expect(await captureUntil(t, "open plan")).toContain("open plan");
+  expect(await captureUntil(t, "Active checkout plan")).toContain("│ Plan");
   press(t, "p", { meta: true });
   expect(await captureUntil(t, "Ship checkout safely.")).toContain("Ship checkout safely.");
   press(t, "p", { ctrl: true });
@@ -1314,25 +1577,369 @@ test("double ctrl+c exits while a requested run cancellation is still settling",
   t.renderer.destroy();
 });
 
-test("sidebar content makes the split sidebar visible without a global toggle", async () => {
-  const subStream: RunEvent[] = [
+test("the first visible sub-agent opens Agents once per run and an explicit close is sticky", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_1");
+  const activitySink = activity.openRun();
+  const initial: RunEvent[] = [
+    ev({ type: "run_started", at: 1 }),
+    ev({ type: "iteration_started", agent: "lead", iteration: 1, at: 2, model: "m" }),
+    ev({
+      type: "text_delta",
+      agent: "lead",
+      iteration: 1,
+      channel: "text",
+      text: "WIDTH ANCHOR before delegated activity",
+      at: 3,
+      reset: true,
+    }),
+  ];
+  applyRunEvents(sink, initial, "live");
+  applyRunEvents(activitySink, initial, "live");
+  const t = await mountApp(defaultProps({ store, activity }));
+  await captureUntil(t, "WIDTH ANCHOR");
+  const historyBefore = t.renderer.root.findDescendantById("committed-history");
+  const historyWidthBefore = historyBefore?.width;
+
+  const delegation: RunEvent[] = [
+    ev({
+      type: "delegation_created",
+      delegation_id: "w1",
+      at: 4,
+      title: "explorer",
+      task: "look around",
+      tools: [],
+    }),
+    ev({ type: "delegation_started", delegation_id: "w1", at: 5, model: "m" }),
+  ];
+  applyRunEvents(sink, delegation, "live");
+  applyRunEvents(activitySink, delegation, "live");
+  const out = await captureUntil(t, "Lead transcript");
+  const historyOpen = t.renderer.root.findDescendantById("committed-history");
+  expect(out).toContain("explorer");
+  expect(out).toContain("Running");
+  expect(out).not.toContain("tokens");
+  expect(out).toContain("│ Agents");
+  expect(out.replace(/\s+/g, " ")).toContain("> Lead transcript");
+  expect(out).not.toContain("look around");
+  expect(out).not.toContain("Activity detail");
+  expect(historyOpen!.width).toBeLessThan(historyWidthBefore!);
+
+  press(t, "escape");
+  await t.renderOnce();
+  await t.renderOnce();
+  const historyExplicitlyClosed = t.renderer.root.findDescendantById("committed-history");
+  expect(historyExplicitlyClosed?.width).toBe(historyWidthBefore);
+
+  const laterDelegation: RunEvent[] = [
+    ev({
+      type: "delegation_created",
+      delegation_id: "w2",
+      at: 6,
+      title: "reviewer",
+      task: "review the result",
+      tools: [],
+    }),
+    ev({ type: "delegation_started", delegation_id: "w2", at: 7, model: "m" }),
+  ];
+  applyRunEvents(sink, laterDelegation, "live");
+  applyRunEvents(activitySink, laterDelegation, "live");
+  const stillClosed = await captureUntil(t, "Agents 2");
+  expect(stillClosed).not.toContain("│ Agents");
+  expect(t.renderer.root.findDescendantById("committed-history")?.width).toBe(historyWidthBefore);
+
+  const nextSink = store.openRun("exec_2");
+  const nextActivitySink = activity.openRun();
+  const nextRun: RunEvent[] = [
+    ev({ type: "run_started", at: 8 }),
+    ev({
+      type: "delegation_created",
+      delegation_id: "w1",
+      at: 9,
+      title: "new-run explorer",
+      task: "inspect the new run",
+      tools: [],
+    }),
+  ];
+  applyRunEvents(nextSink, nextRun, "live");
+  applyRunEvents(nextActivitySink, nextRun, "live");
+  const reopened = await captureUntil(t, "new-run explorer");
+  expect(reopened).toContain("│ Agents");
+  expect(reopened.replace(/\s+/g, " ")).toContain("> Lead transcript");
+  t.renderer.destroy();
+});
+
+test("Plan, Parallel work, and Agents own independent once-per-run sidebar reveals", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_intents");
+  const activitySink = activity.openRun();
+  const [workflow, setWorkflow] = createSignal<WorkflowActivity | null>(null);
+  const started = [ev({ type: "run_started", at: 1 })];
+  applyRunEvents(sink, started, "live");
+  applyRunEvents(activitySink, started, "live");
+  const t = await mountApp(defaultProps({ store, activity, workflowActivity: workflow }), {
+    width: 140,
+    height: 30,
+  });
+
+  const tasks: Extract<RunEvent, { type: "plan_created" }>["tasks"] = Array.from(
+    { length: 12 },
+    (_, index) => ({
+      id: `task-${index + 1}`,
+      title: `Plan task ${index + 1}`,
+      status: index === 0 ? "in_progress" : "pending",
+    }),
+  );
+  const planCreated: RunEvent[] = [
+    ev({
+      type: "plan_created",
+      at: 2,
+      id: "intent-plan",
+      path: ".clarvis/plans/intent.md",
+      title: "Intent plan",
+      status: "active",
+      retention: "keep",
+      revision: 1,
+      spec_revision: 1,
+      tasks,
+    }),
+  ];
+  applyRunEvents(sink, planCreated, "live");
+  applyRunEvents(activitySink, planCreated, "live");
+  const planOpen = await captureUntil(t, "Intent plan");
+  expect(planOpen).toContain("│ Plan");
+
+  press(t, "escape");
+  await t.renderOnce();
+  const planUpdate: RunEvent[] = [
+    ev({
+      type: "plan_updated",
+      change: "task",
+      at: 3,
+      id: "intent-plan",
+      path: ".clarvis/plans/intent.md",
+      title: "Intent plan",
+      status: "active",
+      retention: "keep",
+      revision: 2,
+      spec_revision: 1,
+      tasks: tasks.map((task, index) =>
+        index === 0
+          ? { ...task, status: "done" }
+          : index === 1
+            ? { ...task, status: "in_progress" }
+            : task,
+      ),
+    }),
+  ];
+  applyRunEvents(sink, planUpdate, "live");
+  applyRunEvents(activitySink, planUpdate, "live");
+  await t.renderOnce();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("│ Plan");
+
+  await t.mockInput.typeText("/activity plan");
+  t.mockInput.pressEnter();
+  const manuallyReopenedPlan = await captureUntil(t, "Intent plan");
+  expect(manuallyReopenedPlan).toContain("│ Plan");
+  press(t, "escape");
+  await t.renderOnce();
+
+  setWorkflow({
+    root: "workflow_intents",
+    nodes: new Map([
+      [
+        "workflow_intents",
+        {
+          runId: "workflow_intents",
+          kind: "manager",
+          title: "manager",
+          status: "running",
+        },
+      ],
+      [
+        "leader-1",
+        {
+          runId: "leader-1",
+          parentRunId: "workflow_intents",
+          kind: "leader",
+          title: "Workflow intent leader",
+          status: "running",
+        },
+      ],
+    ]),
+  });
+  const workflowOpen = await captureUntil(t, "Workflow intent leader");
+  expect(workflowOpen).toContain("Parallel work");
+
+  press(t, "escape");
+  await t.renderOnce();
+  setWorkflow((current) => {
+    const nodes = new Map(current!.nodes);
+    nodes.set("leader-2", {
+      runId: "leader-2",
+      parentRunId: "workflow_intents",
+      kind: "leader",
+      title: "Later workflow leader",
+      status: "running",
+    });
+    return { root: current!.root, nodes };
+  });
+  await t.renderOnce();
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("Parallel work");
+
+  await t.mockInput.typeText("/activity workflow");
+  t.mockInput.pressEnter();
+  const manuallyReopenedWorkflow = await captureUntil(t, "Later workflow leader");
+  expect(manuallyReopenedWorkflow).toContain("Parallel work");
+  press(t, "escape");
+  await t.renderOnce();
+
+  const firstDelegation: RunEvent[] = [
+    ev({
+      type: "delegation_created",
+      delegation_id: "intent-worker-1",
+      at: 4,
+      title: "Agent intent worker",
+      task: "inspect the intent",
+      tools: [],
+    }),
+  ];
+  applyRunEvents(sink, firstDelegation, "live");
+  applyRunEvents(activitySink, firstDelegation, "live");
+  const agentsOpen = await captureUntil(t, "│ Agents");
+  expect(agentsOpen).toContain("│ Agents");
+  expect(agentsOpen).toContain("Lead transcript");
+
+  press(t, "escape");
+  await t.renderOnce();
+  const laterDelegation: RunEvent[] = [
+    ev({
+      type: "delegation_created",
+      delegation_id: "intent-worker-2",
+      at: 5,
+      title: "Later agent worker",
+      task: "inspect again",
+      tools: [],
+    }),
+  ];
+  applyRunEvents(sink, laterDelegation, "live");
+  applyRunEvents(activitySink, laterDelegation, "live");
+  await t.renderOnce();
+  await t.renderOnce();
+  const agentsStillClosed = t.captureCharFrame();
+  expect(agentsStillClosed).not.toContain("│ Agents");
+  expect(agentsStillClosed).not.toContain("Lead transcript");
+
+  await t.mockInput.typeText("/activity agents");
+  t.mockInput.pressEnter();
+  const manuallyReopenedAgents = await captureUntil(t, "│ Agents");
+  expect(manuallyReopenedAgents).toContain("│ Agents");
+  expect(manuallyReopenedAgents).toContain("Lead transcript");
+  press(t, "escape");
+  await t.renderOnce();
+
+  setWorkflow({
+    root: "workflow_next",
+    nodes: new Map([
+      [
+        "workflow_next",
+        {
+          runId: "workflow_next",
+          kind: "manager",
+          title: "manager",
+          status: "running",
+        },
+      ],
+      [
+        "leader-next",
+        {
+          runId: "leader-next",
+          parentRunId: "workflow_next",
+          kind: "leader",
+          title: "Next workflow leader",
+          status: "running",
+        },
+      ],
+    ]),
+  });
+  const nextWorkflow = await captureUntil(t, "Next workflow leader");
+  expect(nextWorkflow).toContain("Parallel work");
+
+  press(t, "escape");
+  await t.renderOnce();
+  setWorkflow(null);
+  const nextSink = store.openRun("exec_intents_next");
+  const nextActivitySink = activity.openRun();
+  const nextPlan: RunEvent[] = [
+    ev({ type: "run_started", at: 6 }),
+    ev({
+      type: "plan_created",
+      at: 7,
+      id: "intent-plan",
+      path: ".clarvis/plans/intent.md",
+      title: "Intent plan next run",
+      status: "active",
+      retention: "keep",
+      revision: 1,
+      spec_revision: 1,
+      tasks,
+    }),
+  ];
+  applyRunEvents(nextSink, nextPlan, "live");
+  applyRunEvents(nextActivitySink, nextPlan, "live");
+  const nextPlanOpen = await captureUntil(t, "Intent plan next run");
+  expect(nextPlanOpen).toContain("│ Plan");
+  t.renderer.destroy();
+});
+
+test("clicking the drawer scrim keeps dismissal sticky for later sub-agents", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_scrim");
+  const activitySink = activity.openRun();
+  const firstDelegation: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
       type: "delegation_created",
       delegation_id: "w1",
       at: 2,
-      title: "explorer",
-      task: "look around",
+      title: "scrim explorer",
+      task: "inspect the drawer",
       tools: [],
     }),
-    ev({ type: "delegation_started", delegation_id: "w1", at: 3, model: "m" }),
   ];
-  const t = await mountApp(defaultProps({ seedStream: subStream }));
-  const out = await captureUntil(t, "A1");
-  expect(out).toContain("explorer");
-  expect(out).toContain("Running");
-  expect(out).not.toContain("tokens");
-  expect(out).toContain("│ Agents");
+  applyRunEvents(sink, firstDelegation, "live");
+  applyRunEvents(activitySink, firstDelegation, "live");
+  const t = await mountApp(defaultProps({ store, activity }), { width: 90, height: 30 });
+  const open = await captureUntil(t, "Lead transcript");
+  expect(open).toContain("scrim explorer");
+
+  await t.mockMouse.click(2, 5);
+  await t.renderOnce();
+  await t.renderOnce();
+  const closed = t.captureCharFrame();
+  expect(closed).not.toContain("│ Agents");
+  expect(closed).not.toContain("Lead transcript");
+
+  const laterDelegation: RunEvent[] = [
+    ev({
+      type: "delegation_created",
+      delegation_id: "w2",
+      at: 3,
+      title: "scrim reviewer",
+      task: "review the drawer",
+      tools: [],
+    }),
+  ];
+  applyRunEvents(sink, laterDelegation, "live");
+  applyRunEvents(activitySink, laterDelegation, "live");
+  const stillClosed = await captureUntil(t, "Agents 2");
+  expect(stillClosed).not.toContain("│ Agents");
+  expect(stillClosed).not.toContain("Lead transcript");
   t.renderer.destroy();
 });
 
@@ -1358,14 +1965,8 @@ test("Escape closes a narrow-layout inspector drawer without canceling the activ
     }),
     { width: 90, height: 30 },
   );
-  const compact = await captureUntil(t, "Agents 1");
-  const activity = compact
-    .split("\n")
-    .map((row, y) => ({ row, y, x: row.indexOf("Agents 1") }))
-    .find((hit) => hit.x >= 0);
-  expect(activity).toBeDefined();
-  await t.mockMouse.click(activity!.x + 2, activity!.y);
-  await captureUntil(t, "A1");
+  const open = await captureUntil(t, "Lead transcript");
+  expect(open).toContain("drawer explorer");
 
   press(t, "escape");
   await t.renderOnce();
@@ -1375,6 +1976,198 @@ test("Escape closes a narrow-layout inspector drawer without canceling the activ
   // drawer roster.
   expect(t.captureCharFrame()).not.toContain("│ Agents");
   expect(cancels).toEqual([]);
+  t.renderer.destroy();
+});
+
+test("normal submit and steer return an old reader to the Lead tail while background events do not", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_submit_tail");
+  const activitySink = activity.openRun();
+  const initial: RunEvent[] = [ev({ type: "run_started", at: 1 })];
+  for (let iteration = 1; iteration <= 40; iteration += 1)
+    initial.push(...leadTurn(iteration, `TAIL RESPONSE ${iteration}`, iteration * 3));
+  applyRunEvents(sink, initial, "live");
+  applyRunEvents(activitySink, initial, "live");
+  const [active, setActive] = createSignal(false);
+  const submissions: unknown[] = [];
+  const t = await mountApp(
+    defaultProps({
+      store,
+      activity,
+      active,
+      submit: (content) => submissions.push(content),
+    }),
+    { width: 120, height: 30 },
+  );
+
+  await captureUntil(t, "TAIL RESPONSE 40");
+  await moveReaderAwayFromTail(t);
+  const background = leadTurn(41, "BACKGROUND APPEND MUST NOT JUMP", 200);
+  applyRunEvents(sink, background, "live");
+  applyRunEvents(activitySink, background, "live");
+  for (let pass = 0; pass < 8; pass += 1) await t.renderOnce();
+  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeDefined();
+  expect(t.captureCharFrame()).not.toContain("BACKGROUND APPEND MUST NOT JUMP");
+
+  await t.mockInput.typeText("normal explicit submit");
+  t.mockInput.pressEnter();
+  const afterSubmit = await captureUntil(t, "BACKGROUND APPEND MUST NOT JUMP");
+  expect(afterSubmit).toContain("BACKGROUND APPEND MUST NOT JUMP");
+  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeUndefined();
+  expect(submissions).toEqual(["normal explicit submit"]);
+
+  setActive(true);
+  await captureUntil(t, "Steer this run");
+  await moveReaderAwayFromTail(t);
+  const steerBackground = leadTurn(42, "STEER RETURN TARGET", 220);
+  applyRunEvents(sink, steerBackground, "live");
+  applyRunEvents(activitySink, steerBackground, "live");
+  for (let pass = 0; pass < 8; pass += 1) await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("STEER RETURN TARGET");
+
+  await t.mockInput.typeText("explicit steer");
+  t.mockInput.pressEnter();
+  expect(await captureUntil(t, "STEER RETURN TARGET")).toContain("STEER RETURN TARGET");
+  expect(submissions).toEqual(["normal explicit submit", "explicit steer"]);
+  t.renderer.destroy();
+});
+
+test("submitting from a retained child selects Lead and returns its old reader to the newest tail", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_child_submit_tail");
+  const activitySink = activity.openRun();
+  const initial: RunEvent[] = [ev({ type: "run_started", at: 1 })];
+  for (let iteration = 1; iteration <= 40; iteration += 1)
+    initial.push(...leadTurn(iteration, `RETAINED LEAD ${iteration}`, iteration * 3));
+  initial.push(
+    ev({
+      type: "delegation_created",
+      delegation_id: "child-submit",
+      at: 200,
+      title: "Submit child",
+      task: "verify Lead return",
+      tools: [],
+    }),
+    ev({
+      type: "delegation_started",
+      delegation_id: "child-submit",
+      at: 201,
+      model: "m",
+    }),
+    ev({
+      type: "iteration_completed",
+      agent: "subagent",
+      subagent_id: "child-submit",
+      iteration: 1,
+      at: 202,
+      model: "m",
+      response: "CHILD SUBMIT VIEW",
+      input_tokens: 10,
+      output_tokens: 4,
+    }),
+  );
+  applyRunEvents(sink, initial, "live");
+  applyRunEvents(activitySink, initial, "live");
+  const submissions: unknown[] = [];
+  const t = await mountApp(
+    defaultProps({
+      store,
+      activity,
+      submit: (content) => submissions.push(content),
+    }),
+    { width: 120, height: 30 },
+  );
+
+  const leadTail = await captureUntil(t, "RETAINED LEAD 40");
+  await moveReaderAwayFromTail(t);
+  expect(t.captureCharFrame()).not.toContain("RETAINED LEAD 40");
+  await clickLastText(t, leadTail, "Submit child");
+  const child = await captureUntil(t, "CHILD SUBMIT VIEW");
+  expect(child).not.toContain("RETAINED LEAD 40");
+
+  const background = leadTurn(41, "CHILD-SELECTED LEAD RETURN TARGET", 220);
+  applyRunEvents(sink, background, "live");
+  applyRunEvents(activitySink, background, "live");
+  for (let pass = 0; pass < 8; pass += 1) await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("CHILD-SELECTED LEAD RETURN TARGET");
+
+  await clickText(t, t.captureCharFrame(), "New task");
+  await t.mockInput.typeText("submit from child");
+  t.mockInput.pressEnter();
+  for (let pass = 0; pass < 8; pass += 1) await t.renderOnce();
+  expect(submissions).toEqual(["submit from child"]);
+  const returned = await captureUntil(t, "CHILD-SELECTED LEAD RETURN TARGET");
+  expect(returned.replace(/\s+/g, " ")).toContain("> Lead transcript");
+  expect(returned).not.toContain("CHILD SUBMIT VIEW");
+  t.renderer.destroy();
+});
+
+test("model-backed prompt and skill submit also return an old reader to the Lead tail", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_command_tail");
+  const activitySink = activity.openRun();
+  const initial: RunEvent[] = [ev({ type: "run_started", at: 1 })];
+  for (let iteration = 1; iteration <= 32; iteration += 1)
+    initial.push(...leadTurn(iteration, `COMMAND TAIL ${iteration}`, iteration * 3));
+  applyRunEvents(sink, initial, "live");
+  applyRunEvents(activitySink, initial, "live");
+
+  let resolveListed!: () => void;
+  const listed = new Promise<void>((resolve) => {
+    resolveListed = resolve;
+  });
+  const promptSubmissions: unknown[][] = [];
+  const skillSubmissions: Array<{ name: string; task: string; agent: string }> = [];
+  const backend = baseBackend({
+    client: {
+      listTools: async () => [],
+      listPrompts: async () => {
+        resolveListed();
+        return [
+          { name: "figma:inspect", description: "Inspect through a downstream prompt." },
+          { name: "quickfix", description: "Run a skill.", agent: "coder" },
+        ];
+      },
+      getPrompt: async () => [{ role: "user" as const, content: "inspect now" }],
+      connectionStatus: () => "connected",
+    },
+  });
+  const t = await mountApp(
+    defaultProps({
+      store,
+      activity,
+      backend,
+      submitPrompt: (...args) => promptSubmissions.push(args),
+      submitSkillRun: (name, task, agent) => skillSubmissions.push({ name, task, agent }),
+    }),
+    { width: 120, height: 30 },
+  );
+  await listed;
+  await Promise.resolve();
+  await Promise.resolve();
+  await captureUntil(t, "COMMAND TAIL 32");
+
+  await moveReaderAwayFromTail(t);
+  await t.mockInput.typeText("/figma:inspect");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  for (let pass = 0; pass < 100 && promptSubmissions.length === 0; pass += 1) {
+    await Promise.resolve();
+    await t.renderOnce();
+  }
+  expect(promptSubmissions).toHaveLength(1);
+  expect(promptSubmissions[0]?.[1]).toBe("/figma:inspect");
+  expect(await captureUntil(t, "COMMAND TAIL 32")).toContain("COMMAND TAIL 32");
+
+  await moveReaderAwayFromTail(t);
+  await t.mockInput.typeText("/quickfix audit");
+  await t.renderOnce();
+  t.mockInput.pressEnter();
+  expect(skillSubmissions).toEqual([{ name: "quickfix", task: "audit", agent: "coder" }]);
+  expect(await captureUntil(t, "COMMAND TAIL 32")).toContain("COMMAND TAIL 32");
   t.renderer.destroy();
 });
 
@@ -1499,7 +2292,7 @@ test("the split sidebar owns one compact textual agent roster, including after e
   const t = await mountApp(defaultProps({ seedStream: stream }), { width: 120, height: 34 });
   const before = await captureUntil(t, "2/3 finished");
   const normalizedBefore = before.replace(/\s+/g, " ");
-  expect(before).toContain("All transcripts");
+  expect(before).toContain("Lead transcript");
   expect(before.match(/2\/3 finished/g)?.length).toBe(1);
   expect(before).toContain("1 running");
   expect(before).toContain("1 failed");
@@ -1518,12 +2311,12 @@ test("the split sidebar owns one compact textual agent roster, including after e
   press(t, "o", { ctrl: true });
   await t.renderOnce();
   const expanded = t.captureCharFrame();
-  expect(expanded).toContain("All transcripts");
+  expect(expanded).toContain("Lead transcript");
   expect(expanded.replace(/\s+/g, " ")).toContain("A1 Scout");
   t.renderer.destroy();
 });
 
-test("a subagent-only transcript starts folded and settles every worker header", async () => {
+test("the main transcript omits workers and sidebar selection opens one isolated transcript", async () => {
   const stream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -1542,7 +2335,7 @@ test("a subagent-only transcript starts folded and settles every worker header",
       iteration: 1,
       at: 4,
       model: "m",
-      response: "SCOUT BODY MUST START FOLDED",
+      response: "SCOUT BODY OPENS READABLE",
       input_tokens: 10,
       output_tokens: 4,
     }),
@@ -1569,7 +2362,7 @@ test("a subagent-only transcript starts folded and settles every worker header",
       iteration: 1,
       at: 8,
       model: "m",
-      response: "REVIEWER BODY MUST START FOLDED",
+      response: "REVIEWER BODY OPENS READABLE",
       input_tokens: 10,
       output_tokens: 4,
     }),
@@ -1582,22 +2375,89 @@ test("a subagent-only transcript starts folded and settles every worker header",
     }),
     ev({ type: "run_ended", status: "completed", at: 10, reason: "completed" }),
   ];
-  const t = await mountApp(defaultProps({ seedStream: stream }), { width: 90, height: 34 });
-  await captureUntil(t, "Agents 2");
-  await t.renderOnce();
-  await t.renderOnce();
+  const t = await mountApp(defaultProps({ seedStream: stream }), { width: 120, height: 34 });
+  const main = await captureUntil(t, "Reviewer");
+  expect(main.replace(/\s+/g, " ")).toContain("> Lead transcript");
+  expect(main).not.toContain("SCOUT BODY OPENS READABLE");
+  expect(main).not.toContain("REVIEWER BODY OPENS READABLE");
+  expect(main).not.toContain("Activity detail");
 
-  const frame = t.captureCharFrame();
-  const normalized = frame.replace(/\s+/g, " ");
-  expect(normalized).toMatch(/Scout .* Completed .* 1 hidden/);
-  expect(normalized).toMatch(/Reviewer .* Completed .* 1 hidden/);
-  expect(frame).not.toContain("SCOUT BODY MUST START FOLDED");
-  expect(frame).not.toContain("REVIEWER BODY MUST START FOLDED");
-  expect(normalized).not.toMatch(/(?:Scout|Reviewer) .* Running/);
+  await clickLastText(t, main, "Scout");
+  const isolated = await captureUntil(t, "SCOUT BODY OPENS READABLE");
+  expect(isolated).toContain("SCOUT BODY OPENS READABLE");
+  expect(isolated).not.toContain("REVIEWER BODY OPENS READABLE");
+
+  await clickText(t, isolated, "Scout");
+  const collapsed = await captureUntil(t, "hidden");
+  expect(collapsed).not.toContain("SCOUT BODY OPENS READABLE");
+  await clickText(t, collapsed, "Lead transcript");
+  const leadAgain = await captureUntil(t, "Reviewer");
+  await clickLastText(t, leadAgain, "Scout");
+  press(t, "pageup");
+  const reselected = await captureUntil(t, "hidden");
+  expect(reselected).toContain("hidden");
+  expect(reselected).not.toContain("SCOUT BODY OPENS READABLE");
   t.renderer.destroy();
 });
 
-test("clicking a completed agent opens its Markdown result in the shared detail modal", async () => {
+test("returning from a child sidebar transcript restores the live Lead frontier", async () => {
+  const stream: RunEvent[] = [
+    ev({ type: "run_started", at: 1 }),
+    ev({ type: "iteration_started", agent: "lead", iteration: 1, at: 2, model: "m" }),
+    ev({
+      type: "text_delta",
+      agent: "lead",
+      iteration: 1,
+      channel: "text",
+      text: "LEAD FRONTIER MUST RETURN",
+      at: 3,
+      reset: true,
+    }),
+    ev({
+      type: "delegation_created",
+      delegation_id: "w1",
+      at: 4,
+      title: "Scout",
+      task: "Inspect the live-tail handoff",
+      tools: [],
+    }),
+    ev({ type: "delegation_started", delegation_id: "w1", at: 5, model: "m" }),
+    ev({
+      type: "iteration_completed",
+      agent: "subagent",
+      subagent_id: "w1",
+      iteration: 1,
+      at: 6,
+      model: "m",
+      response: "CHILD COMMITTED TRANSCRIPT",
+      input_tokens: 10,
+      output_tokens: 4,
+    }),
+    ev({
+      type: "delegation_completed",
+      delegation_id: "w1",
+      at: 7,
+      status: "completed",
+      summary: "Scout completed",
+    }),
+  ];
+  const t = await mountApp(defaultProps({ seedStream: stream, active: () => true }), {
+    width: 120,
+    height: 34,
+  });
+  const lead = await captureUntil(t, "Scout");
+  expect(lead).toContain("LEAD FRONTIER MUST RETURN");
+  await clickLastText(t, lead, "Scout");
+  const child = await captureUntil(t, "CHILD COMMITTED TRANSCRIPT");
+  expect(child).not.toContain("LEAD FRONTIER MUST RETURN");
+
+  await clickText(t, child, "Lead transcript");
+  const restored = await captureUntil(t, "LEAD FRONTIER MUST RETURN");
+  expect(restored).not.toContain("CHILD COMMITTED TRANSCRIPT");
+  t.renderer.destroy();
+});
+
+test("clicking a completed agent opens its isolated transcript without a detail modal", async () => {
   const stream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -1609,9 +2469,20 @@ test("clicking a completed agent opens its Markdown result in the shared detail 
       tools: [],
     }),
     ev({
+      type: "iteration_completed",
+      agent: "subagent",
+      subagent_id: "w1",
+      iteration: 1,
+      at: 3,
+      model: "m",
+      response: "ISOLATED WORKER RESULT",
+      input_tokens: 10,
+      output_tokens: 4,
+    }),
+    ev({
       type: "delegation_completed",
       delegation_id: "w1",
-      at: 3,
+      at: 4,
       status: "completed",
       summary: "## Result\n\n| check | status |\n| --- | --- |\n| transcript | **fixed** |",
     }),
@@ -1624,17 +2495,9 @@ test("clicking a completed agent opens its Markdown result in the shared detail 
     .find((hit) => hit.x > 90);
   expect(researcher).toBeDefined();
   await t.mockMouse.click(researcher!.x + 2, researcher!.y);
-  await t.renderOnce();
-  await t.renderOnce();
-  const modal = t.captureCharFrame();
-  expect(modal).toContain("A1 Researcher");
-  expect(modal).toContain("check");
-  expect(modal).toContain("status");
-  expect(modal).toContain("fixed");
-  press(t, "escape");
-  await t.renderOnce();
-  const selected = t.captureCharFrame();
+  const selected = await captureUntil(t, "ISOLATED WORKER RESULT");
   expect(selected).not.toContain("Completed sub-agent response");
+  expect(selected).not.toContain("Activity detail");
   expect(selected).toContain("> A1");
   t.renderer.destroy();
 });
@@ -1656,17 +2519,48 @@ test("a compact activity strip keeps sub-agents visible when the split sidebar c
     width: 80,
     height: 24,
   });
-  const frame = await captureUntil(t, "Agents 1");
+  const frame = await captureUntil(t, "Lead transcript");
+  expect(frame).toContain("responsive explorer");
   expect(frame).toContain("Agents 1");
   expect(frame).toContain("1 running");
-  expect(frame).not.toContain("│ Agents");
-  const rows = frame.split("\n");
-  const activity = rows
-    .map((row, y) => ({ row, y, x: row.indexOf("Agents 1") }))
-    .find((hit) => hit.x >= 0);
-  expect(activity).toBeDefined();
-  await t.mockMouse.click(activity!.x + 2, activity!.y);
-  expect(await captureUntil(t, "All transcripts")).toContain("All transcripts");
+  press(t, "escape");
+  await t.renderOnce();
+  await t.renderOnce();
+  const closed = t.captureCharFrame();
+  expect(closed).not.toContain("Lead transcript");
+  expect(closed).toContain("Agents 1");
+  t.renderer.destroy();
+});
+
+test("the first workflow leader opens and reveals Parallel work", async () => {
+  const workflow = () => ({
+    root: "manager",
+    nodes: new Map([
+      [
+        "manager",
+        {
+          runId: "manager",
+          kind: "manager" as const,
+          title: "manager",
+          status: "running" as const,
+        },
+      ],
+      [
+        "leader-1",
+        {
+          runId: "leader-1",
+          parentRunId: "manager",
+          kind: "leader" as const,
+          title: "Visual continuity audit",
+          status: "running" as const,
+        },
+      ],
+    ]),
+  });
+  const t = await mountApp(defaultProps({ workflowActivity: workflow }));
+  const split = await captureUntil(t, "Visual continuity audit");
+  expect(split).toContain("Parallel work");
+  expect(split).toContain("1 leader");
   t.renderer.destroy();
 });
 
@@ -1793,6 +2687,7 @@ test("a wide split transcript uses the space up to the sidebar", async () => {
   ];
   const t = await mountApp(defaultProps({ seedStream: stream }), { width: 200, height: 40 });
   const frame = await captureUntil(t, "Split width plan");
+  expect(frame).toContain("│ Plan");
   const rows = frame.split("\n");
   const sidebarStart = rows.find((row) => row.includes("│ Plan"))!.indexOf("│");
   const transcriptRows = rows.filter((row) => row.includes("splitword"));

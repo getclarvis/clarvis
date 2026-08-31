@@ -5,6 +5,8 @@ import { openRender } from "../helpers/tracked-render.ts";
 import { FINAL_MARKDOWN_CAP, TAIL_PLAIN_CAP } from "../../src/core/transcript/segment.ts";
 import { BlockView } from "../../src/views/blocks.tsx";
 import type { NodeStatus, TranscriptNode } from "../../src/adapters/store.ts";
+import { glyph } from "../../src/theme/glyphs.ts";
+import { SPINNER_FRAMES } from "../../src/views/spinner.ts";
 
 type Harness = Awaited<ReturnType<typeof openRender>>;
 
@@ -100,6 +102,18 @@ test("released assistant prose renders the persisted-export recovery route", asy
   expect(rendered).toContain("/export");
   expect(rendered).toContain("persisted transcript");
   expect(rendered).not.toContain("Reopen the session");
+});
+
+test("a streaming assistant keeps a static transcript marker", async () => {
+  const rendered = await capture({
+    key: "live-static-marker",
+    kind: "assistant",
+    status: "running",
+    text: "Live Markdown response",
+  });
+  expect(rendered).toContain(`${glyph("bullet")} Live Markdown response`);
+  for (const frame of SPINNER_FRAMES)
+    expect(rendered).not.toContain(`${frame} Live Markdown response`);
 });
 
 test("a sealed heading stays visually stable while the streaming tail grows", async () => {

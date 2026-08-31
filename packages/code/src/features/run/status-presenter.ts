@@ -7,7 +7,6 @@ import {
   type StatusLine,
 } from "../../core/run-status.ts";
 import type { MemoryIngestNotice, RunProgress } from "../../core/run-types.ts";
-import { formatElapsed } from "../../core/format-elapsed.ts";
 import { scopedUsageText } from "../../ui/presentation.ts";
 
 /** Renders a structured run status using the active terminal glyph mode. */
@@ -37,6 +36,7 @@ export interface RunStripInput {
   now: number;
   context?: { used: number; limit: number };
   usage?: { input: number; output: number; cached?: number };
+  sessionUsage?: { input: number; output: number; cached?: number };
   sessionCost?: string;
   width: number;
 }
@@ -64,7 +64,7 @@ export function runOutcomeLabel(status: string): string | undefined {
 }
 
 /**
- * The sole shell-owned projection of phase, time, iteration, context, run usage and session spend.
+ * The shell-owned projection of stable context, usage, spend, and a settled outcome.
  *
  * @remarks The token counts on this row report **input the provider had to
  * read** — the gross prompt less what its prefix cache served. `Context` is the
@@ -77,29 +77,26 @@ export function runStripText(input: RunStripInput): string {
         input.context.limit > 0 ? (input.context.used / input.context.limit) * 100 : 0,
       )}%`
     : "";
+  const tokenUsage = input.sessionUsage ?? input.usage;
+  const tokenScope = input.sessionUsage === undefined ? "Run" : "Session";
+  const tokens =
+    input.width >= 120 && tokenUsage
+      ? scopedUsageText(
+          {
+            owner: tokenScope,
+            input: Math.max(0, tokenUsage.input - (tokenUsage.cached ?? 0)),
+            output: tokenUsage.output,
+          },
+          true,
+        )
+      : "";
   if (!input.active) {
     const outcome = runOutcomeLabel(input.status) ?? "";
-    return [outcome, context, input.sessionCost ? `Session ${input.sessionCost}` : ""]
+    return [outcome, context, input.sessionCost ? `Session ${input.sessionCost}` : "", tokens]
       .filter(Boolean)
       .join(` ${glyph("separator")} `);
   }
-  const parts = ["Running"];
-  const iteration = /iteration\s+(\d+)/i.exec(input.status)?.[1];
-  if (iteration) parts.push(`iteration ${iteration}`);
-  if (input.startedAt !== null) parts.push(formatElapsed(input.now - input.startedAt));
-  if (context) parts.push(context);
-  if (input.sessionCost) parts.push(`Session ${input.sessionCost}`);
-  if (input.width >= 120 && input.usage) {
-    parts.push(
-      scopedUsageText(
-        {
-          owner: "Run",
-          input: Math.max(0, input.usage.input - (input.usage.cached ?? 0)),
-          output: input.usage.output,
-        },
-        true,
-      ),
-    );
-  }
-  return parts.join(` ${glyph("separator")} `);
+  return [context, input.sessionCost ? `Session ${input.sessionCost}` : "", tokens]
+    .filter(Boolean)
+    .join(` ${glyph("separator")} `);
 }

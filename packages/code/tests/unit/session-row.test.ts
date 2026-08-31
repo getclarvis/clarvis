@@ -13,8 +13,8 @@ function meta(over: Partial<SessionMeta> = {}): SessionMeta {
     createdAt: NOW - 60_000,
     updatedAt: NOW - 60_000,
     turns: [
-      { userPreview: "first", status: "done" },
-      { userPreview: "second", status: "done" },
+      { kind: "conversation", userPreview: "first", status: "done" },
+      { kind: "conversation", userPreview: "second", status: "done" },
     ],
     totals: { input: 1200, output: 340, cached: 0, costUsd: 0.0312 },
     ...over,

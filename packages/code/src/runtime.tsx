@@ -312,7 +312,10 @@ async function runPrintMode(opts: {
       store.appendUserMessage(opts.prompt, undefined, executionId);
       const sink = store.openRun(executionId);
       onEvent = (event) => applyEvent(sink, event, "live");
-      finish = () => process.stdout.write(renderTranscriptMarkdown(store.nodes) + "\n");
+      finish = () => {
+        sink.complete();
+        process.stdout.write(renderTranscriptMarkdown(store.nodes) + "\n");
+      };
     } else {
       let printedAny = false;
       onEvent = createPrintStream((chunk) => {
@@ -1240,6 +1243,12 @@ async function runApp(
     export: exportSession,
     statusLine,
     costLine: sessionCostLine,
+    usage: () => {
+      const totals = runHost.sessionMeta()?.totals;
+      return totals === undefined
+        ? null
+        : { input: totals.input, output: totals.output, cached: totals.cached };
+    },
   };
   async function refreshModels(): Promise<{ providers: number; models: number }> {
     const cat = await runClient.models.refresh();

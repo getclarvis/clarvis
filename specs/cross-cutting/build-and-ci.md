@@ -632,6 +632,10 @@ Step 4 must follow step 3: `assertLazyProviderChunk` reads the entry from `entry
    for checking both the screen marker and this JSONL record rather than either alone: "The screen
    marker alone proves a frame was drawn; the record proves the diagnostic channel...survived bundling
    too, and it carries the boot's elapsed time, which the screen does not" (`:22-26`).
+8. Reports the outer PTY/polling/diagnostic duration as artifact settlement, not as first paint, and
+   labels the two process-relative diagnostic timings as startup-shell paint and complete-app paint.
+   The outer duration includes the 100 ms poll cadence plus Markdown diagnostic settlement and is not
+   a performance benchmark (`packages/code/tooling/artifact/smoke.ts`, `main`).
 
 `makeCleanHome` (`packages/code/tooling/artifact/pty.ts:273-297`) writes only a
 `settings.json` with one `openai-compatible` provider pointing at `https://example.invalid/v1` and an

@@ -226,7 +226,9 @@ An available macOS command executes:
 `seatbeltPolicy` starts from normal non-file host behavior, restricts process information and signals
 to the same sandbox, denies all file reads/tests/executable maps/writes, and then admits:
 
-- read access to the system runtime roots needed by macOS command-line processes;
+- read access to the system runtime roots needed by macOS command-line processes, including both
+  authored and canonical `/etc` plus the narrow authored/canonical `var/select` and `var/db`
+  toolchain-selector aliases;
 - read access to the canonical workspace, linked Git metadata, run temporary root, and declared
   read-only/runtime roots;
 - traversal metadata for ancestors of those dynamic roots;
@@ -243,10 +245,21 @@ absolute command arguments and kernel-canonicalized filesystem operations withou
 root they identify. Validation applies to both spellings first, so a symlink alias cannot disguise a
 forbidden root or a path that contains the workspace.
 
+Static macOS aliases need the same two-spelling treatment even though they are not caller-supplied
+roots. The policy admits `/etc` and `/private/etc` read-only. It also admits the `/var` link itself
+plus only the authored/canonical `var/select` and `var/db` trees, allowing Apple's Git shim to
+test/read `developer_dir` and `xcode_select_link` and reach the already-allowed Command Line
+Tools/Xcode tree. It does not admit general `/private/var` access or any write. Without the authored
+existence checks, `xcode-select` reports a false missing-toolchain condition and opens the system
+installer despite an installed Git. The real-host canary resolves both selectors first and calls Git
+only after both safe preflights succeed, so the same regression cannot open the graphical installer
+during local tests.
+
 Production: `packages/tools/src/sandbox.ts` (`SEATBELT_SYSTEM_READ_FILTERS`, `seatbeltPolicy`,
 `sandboxCommand`). Tests: `packages/tools/tests/integration/sandbox.test.ts` (`compiles a parameterized
 Seatbelt profile with matching filesystem and network policy`, including a profile-shaped workspace
-name) and the opt-in real-host canary.
+name) and the opt-in real-host canaries (`runs the installed Apple Git without triggering the
+developer-tools fallback`).
 
 ### 3.5 Toolchains
 
@@ -412,8 +425,9 @@ Bubblewrap `host-proc` is the named process-visibility exception and is never re
 - Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`, `seatbeltPolicy`, `minimalEnv`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`enforces the native sandbox against real
   host resources`, including direct and workspace-symlink host escapes plus process isolation outside
-  `host-proc`). This canary runs only with `CLARVIS_NATIVE_SANDBOX_CANARY=1`; CI enables it on Linux
-  and macOS.
+  `host-proc`, and `runs the installed Apple Git without triggering the developer-tools fallback`).
+  The Git case is macOS-only; these canaries run only with
+  `CLARVIS_NATIVE_SANDBOX_CANARY=1`, which CI enables on Linux and macOS.
 
 **INV-S4 — Dynamic paths cannot become SBPL.** Seatbelt path bytes travel only through `-D`
 parameters; the static profile never contains a workspace/runtime path.
@@ -496,6 +510,7 @@ therefore cannot trigger platform installers, tool initialization, or user-contr
 | --- | --- |
 | Linux without usable Bubblewrap | Backend `bubblewrap`, mode `unavailable`, reason from probe |
 | macOS where `sandbox-exec` cannot apply the profile | Backend `seatbelt`, mode `unavailable`; required runs fail closed |
+| macOS system alias denied while Apple Git is installed | Policy regression: the real Git canary fails; Clarvis must not report or trigger the developer-tools fallback |
 | Unsupported platform | Backend `unsupported`, mode `unavailable`; no probe process |
 | Fresh `/proc` blocked but host `/proc` bind works | Available `bubblewrap` / `host-proc`, `degraded: true`, explicit reason |
 | Optional backend unavailable | Warn `tools.sandbox_unavailable`; run scrubbed bare command |
@@ -536,15 +551,16 @@ host-wide unprivileged-user-namespace restriction, proves a minimal Bubblewrap l
 enables `CLARVIS_NATIVE_SANDBOX_CANARY=1` for the full coverage suite. The macOS job runs the complete
 `@clarvis/tools` suite plus the kernel sandbox-policy integration with the same variable before its
 keyboard-policy tests. The tools canary proves on each real runner that workspace writes, read-only
-workspace, writable scratch, undeclared-path denial, process isolation, host network, and denied
-network match the contract. The kernel canary additionally discovers a fixture toolchain whose
+workspace, writable scratch, undeclared-path denial, process isolation, host network, denied
+network, and installed Apple Git resolution match the contract. The kernel canary additionally discovers a fixture toolchain whose
 entrypoint exits non-zero if launched, and requires the real backend probe while inspection still
 reports that path available without executing it. Ordinary tests pin probe branches, generated policy,
 and passive discovery.
 
 Production: `.github/workflows/ci.yml` (`jobs.linux`, `jobs.sandbox-macos`). Test:
 `packages/tools/tests/integration/sandbox.test.ts` (`enforces the native sandbox against real host
-resources`) and `packages/kernel/tests/integration/sandbox-policy.test.ts` (`inspects a discovered
+resources`, `runs the installed Apple Git without triggering the developer-tools fallback`) and
+`packages/kernel/tests/integration/sandbox-policy.test.ts` (`inspects a discovered
 toolchain without executing it through the real native backend`). CI ownership and platform scope are
 specified in
 [`../cross-cutting/build-and-ci.md`](../cross-cutting/build-and-ci.md).

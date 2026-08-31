@@ -27,6 +27,10 @@ performance, run hosting, transcript projection, input/overlays, domain hubs, se
 keyboard policy, theme, and onboarding. The performance contract and dated measurement review live
 in [`code-performance.md`](../../specs/hosts/code-performance.md). Image entry and the vision pre-pass are specified in
 [`engine/vision-routing.md`](../../specs/engine/vision-routing.md).
+Transcript snapshot rendering remains in
+[`code-transcript.md`](../../specs/hosts/code-transcript.md); publication, visual stability and the
+committed-history/live-frontier contract are separated into
+[`code-transcript-stability.md`](../../specs/hosts/code-transcript-stability.md).
 
 ## Requirements
 
@@ -71,17 +75,20 @@ binary-only [`getclarvis/clarvis-releases`](https://github.com/getclarvis/clarvi
 repository. A portable archive includes the exact Bun runtime, the map-free split artifact, its
 package-owned assets, and the native OpenTUI closure for one of six targets: GNU/glibc Linux, macOS,
 or Windows on x64 or arm64. Alpine and other musl-only Linux distributions are not portable-release
-targets for this beta. Runtime dependency discovery accepts only installed bare package specifiers;
-relative, absolute, built-in, and module-internal `#` references retained by the generated artifact
-are not interpreted as package roots, while package subpaths resolve to their owning root.
+targets for this beta. Runtime dependency discovery accepts only installed bare package specifiers
+from generated imports and calls, including minified `createRequire` bindings; relative, absolute,
+built-in, and module-internal `#` references retained by the generated artifact are not interpreted
+as package roots, while package subpaths resolve to their owning root.
 `release.json` declares the exact regular-file set checked by release smoke and self-update.
 Each archive also carries Clarvis's license; the Bun, models.dev, and Vercel AI SDK notices/license
 texts; Bun's source and relinking route; a generated runtime-package inventory; and the
 package-owned license files.
 The installer also verifies the release-level `SHA256SUMS`, confirms that the staged CLI reports the
 requested version, stores it under `versions/v<version>`, and writes `current` only after every
-earlier step succeeds. Both root installers print the target, resolved destination, and numbered
-download, verification, staging, and activation phases. `install.sh --uninstall` and
+earlier step succeeds. On POSIX, checksum parsing, checksum calculation, and archive extraction all
+use the portable `C` locale, so a synthetic host locale cannot add warnings to an otherwise healthy
+install. Both root installers print the target, resolved destination, and numbered download,
+verification, staging, and activation phases. `install.sh --uninstall` and
 `install.ps1 -Uninstall` authenticate the installer-owned marker (or the complete legacy managed
 layout), share the updater's mutation lock through launcher and Windows `PATH` cleanup, and remove
 only managed application files. POSIX launcher ownership is bound to the selected install root;
@@ -193,8 +200,12 @@ does not parse or does not validate, Clarvis runs the shipped agent unchanged an
 which file was refused and why.
 
 Every interactive cold boot first paints a parser-free, focused `StartupComposer` in one lightweight
-Solid root. Its slash header and wordmark preserve the final screen's visual structure while the
-application chunk and workspace foundation load concurrently. In `run` mode the user can type
+Solid root. Its header and shared `BrandBanner` preserve the final screen's visual structure while the
+application chunk and workspace foundation load concurrently. At 60 columns by 16 rows or larger,
+the first paint shows the same complete eight-row Clarvis banner as an empty, untouched run; a
+narrower or shorter frame uses the shared one-line wordmark, and an extremely short frame retains
+only the branded header. The connection status remains startup-specific instead of claiming an
+agent, model or complete-app shortcut before those values exist. In `run` mode the user can type
 immediately; Enter stores the exact submission outside renderer ownership. As soon as the run host
 exists with a runnable active profile, that queued task starts before complete-app hydration, and the
 resulting store/events survive the root handoff. If provider/agent setup is not runnable yet, the
@@ -207,7 +218,10 @@ The complete `App` replaces the startup root without waiting for the models cata
 parsers. The startup copy has its own `Queue a task…` readiness marker and intentionally excludes the
 complete app's `◆ Clarvis` paint marker and `New task…` marker. The first-paint benchmark therefore
 reports functional startup input separately from full hydration, and release smoke still requires
-the complete application plus its `app.boot.painted` diagnostic.
+the complete application plus its `app.boot.painted` diagnostic. The smoke's outer elapsed time also
+includes its 100 ms polling cadence and required Markdown-diagnostic settlement, so it is an artifact
+health duration rather than a startup-performance sample; compare startup only through the repeated
+benchmark's individual markers.
 
 On the first interactive launch, startup opens a branded Clarvis setup rather than Doctor or an
 empty conversation. Enter begins the focused provider/model picker; the flow makes the selected
@@ -302,6 +316,7 @@ handle and local process has settled. Forced visual detachment does not release 
 If work is still settling, recovery skips collection and records `memory.gc.skipped`; it never queues
 an asynchronous collection that could overlap the next run. Every ten seconds and at memory state
 changes, debug mode records one aggregate `memory.ledger` containing transcript/session bytes,
+renderer renderable, lifecycle-pass and frame-listener counts,
 renderable ownership, physical handles, and protocol event-queue counters.
 
 Set `CLARVIS_TUI_RSS_LIMIT_MB` to another MiB value, or `0` to disable this interactive-only guard.
@@ -333,9 +348,15 @@ normal text-producing mode. iTerm's standalone modifier-state packets are consum
 can misread their numeric payload as control text. Other terminal paths still need to deliver Option
 as Meta/Esc+ for the enhanced accelerator; a literal `ß` from a legacy path remains ordinary text,
 while `Ctrl+S` keeps the picker reachable. The picker is loaded on first use, retained after that
-first mount, and reuses the same preset application policy as Run controls. There is no
-sidebar-toggle command: activity appears automatically as a wide split when it has content, while
-compact layouts open the activity drawer from the visible activity strip and close it with Escape.
+first mount, and reuses the same preset application policy as Run controls. There is no global
+physical sidebar-toggle binding; `/activity [plan|workflow|agents]` is the contextual reopen command.
+The first live Plan, first workflow leader and first typed delegation each own an independent,
+once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents
+sections. Those reveals keep the Lead transcript selected and never open result detail. Closing the
+split or drawer dismisses the intent that opened it, so later updates of that kind do not reopen it
+automatically; the first event for another section may still reveal and orient the Sidebar. Escape
+closes either presentation but does not block `/activity`. The footer activity strip remains an
+explicit pointer route when agents or workflows contribute it; Plan never appears there.
 
 Scrollable collections use shared ownership patterns rather than page-local windowing code.
 `ListPicker` owns filterable modal lists, `SelectableList` owns scroll-following page lists, and
@@ -561,33 +582,35 @@ full log still records its final counters.
 
 Beyond the `async.*`, `diagnostics.*` and `task.*` vocabulary above:
 
-| Level | Event                                                                                  | Fields                                                         |
-| ----- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| info  | `app.boot.begin`, `app.boot.shell-painted`, `app.render.mounted`, `app.shutdown`       | `elapsed_ms`, `mode`, `workspace`, `reason`                    |
-| info  | `app.boot.painted`                                                                     | `elapsed_ms`, `mode`, `deferred_catalog`                       |
-| debug | `markdown.preload.completed`                                                           | `markdown`, `markdownInline`, `duration_ms`                    |
-| warn  | `markdown.preload.failed`                                                              | `error`, `duration_ms`                                         |
-| error | `boot.failed`                                                                          | `phase`, `error`, `attempt`                                    |
-| warn  | `catalog.unavailable`                                                                  | `reason`, `source` (`kernel` \| `snapshot`)                    |
-| info  | `catalog.load.started`                                                                 | `trigger`                                                      |
-| debug | `memory.ledger`                                                                        | bounded ownership, payload and event-queue counters            |
-| info  | `memory.gc.completed`, `memory.gc.skipped`                                             | `mode`, `reason`                                               |
-| warn  | `memory.gc.failed`, `memory.efficiency`                                                | collection error or RSS baseline/slope evidence                |
-| info  | `worktree.remove.completed`                                                            | `name`, `branch`                                               |
-| error | `worktree.remove.failed`                                                               | `name`, `branch`, `error`                                      |
-| info  | `settings.save.applied`                                                                | `scope`, `keys`                                                |
-| error | `settings.save.rejected`                                                               | `scope`, `issue_count`, `fields`, `reason`                     |
-| debug | `settings.model_ref.unparsed`                                                          | `site`, `error` (sampled)                                      |
-| error | `plugin.install.failed`                                                                | `phase`, `argv0`, `subcommand`, `exit_code`, `stderr_tail`     |
-| warn  | `marketplace.containment.unknown`                                                      | `reason`                                                       |
-| error | `doctor.check.failed`                                                                  | `check_id`, `error`, `duration_ms`                             |
-| debug | `shell.local.exit`                                                                     | `exit_code`, `duration_ms`, `killed`, `signal`, `spawn_failed` |
-| warn  | `run.stream.interrupted`                                                               | `execution_id`, `error`                                        |
-| debug | `run.close.failed`                                                                     | `execution_id`, `error`                                        |
-| warn  | `elicit.handler.failed`                                                                | `error`                                                        |
-| warn  | `transcript.rehydrate.failed`                                                          | `error`                                                        |
-| warn  | `mcp.list.failed`                                                                      | `surface` (`tools` \| `prompts`), `error`                      |
-| debug | `memory.sample`, `keyboard.event.unnamed`, `command.dispatch`, `mcp.refresh.requested` | sampled counters                                               |
+| Level | Event                                                                                                               | Fields                                                         |
+| ----- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| info  | `app.boot.begin`, `app.boot.shell-painted`, `app.render.mounted`, `app.shutdown`                                    | `elapsed_ms`, `mode`, `workspace`, `reason`                    |
+| info  | `app.boot.painted`                                                                                                  | `elapsed_ms`, `mode`, `deferred_catalog`                       |
+| debug | `markdown.preload.completed`                                                                                        | `markdown`, `markdownInline`, `duration_ms`                    |
+| warn  | `markdown.preload.failed`                                                                                           | `error`, `duration_ms`                                         |
+| error | `boot.failed`                                                                                                       | `phase`, `error`, `attempt`                                    |
+| warn  | `catalog.unavailable`                                                                                               | `reason`, `source` (`kernel` \| `snapshot`)                    |
+| info  | `catalog.load.started`                                                                                              | `trigger`                                                      |
+| debug | `memory.ledger`                                                                                                     | bounded ownership, payload and event-queue counters            |
+| info  | `memory.gc.completed`, `memory.gc.skipped`                                                                          | `mode`, `reason`                                               |
+| warn  | `memory.gc.failed`, `memory.efficiency`                                                                             | collection error or RSS baseline/slope evidence                |
+| info  | `worktree.remove.completed`                                                                                         | `name`, `branch`                                               |
+| error | `worktree.remove.failed`                                                                                            | `name`, `branch`, `error`                                      |
+| info  | `settings.save.applied`                                                                                             | `scope`, `keys`                                                |
+| error | `settings.save.rejected`                                                                                            | `scope`, `issue_count`, `fields`, `reason`                     |
+| debug | `settings.model_ref.unparsed`                                                                                       | `site`, `error` (sampled)                                      |
+| error | `plugin.install.failed`                                                                                             | `phase`, `argv0`, `subcommand`, `exit_code`, `stderr_tail`     |
+| warn  | `marketplace.containment.unknown`                                                                                   | `reason`                                                       |
+| error | `doctor.check.failed`                                                                                               | `check_id`, `error`, `duration_ms`                             |
+| debug | `shell.local.exit`                                                                                                  | `exit_code`, `duration_ms`, `killed`, `signal`, `spawn_failed` |
+| warn  | `run.stream.interrupted`                                                                                            | `execution_id`, `error`                                        |
+| debug | `run.close.failed`                                                                                                  | `execution_id`, `error`                                        |
+| warn  | `elicit.handler.failed`                                                                                             | `error`                                                        |
+| warn  | `transcript.rehydrate.failed`                                                                                       | `error`                                                        |
+| debug | `transcript.syntax.pending`, `transcript.syntax.started`, `transcript.syntax.painted`, `transcript.syntax.measured` | `batch_id`, registration counts, dimensions, `duration_ms`     |
+| debug | `transcript.measurement.started`, `transcript.measurement.observed`, `transcript.measurement.lease_expired`         | `batch_id`, fold/dimensions, acceptance, retry/fallback        |
+| warn  | `mcp.list.failed`                                                                                                   | `surface` (`tools` \| `prompts`), `error`                      |
+| debug | `memory.sample`, `keyboard.event.unnamed`, `command.dispatch`, `mcp.refresh.requested`                              | sampled counters                                               |
 
 `shell.local.exit` deliberately carries no command text: a `!` command is
 whatever the user typed, credentials included.
@@ -676,49 +699,150 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 
 ## Main features
 
-- Streaming lead-agent and sub-agent transcripts.
+- One Lead-only main transcript plus one explicitly selected, isolated sub-agent transcript. Each
+  delegation contributes exactly two friendly Lead-owned lifecycle markers to the main flow: one
+  immutable `spawned` marker from `delegation_created`, then one separately appended immutable
+  `completed` or `failed` marker when it settles. `delegation_started` adds no row. Child-owned
+  cards, tools, reasoning and answers remain outside the Lead projection; selecting a worker from the
+  Sidebar swaps the projection to that worker alone.
 - Provider-declared commentary assistant turns retain their full Markdown body without a synthetic
   `update` marker; final answers keep the ordinary assistant presentation, and absent phase metadata
-  never causes the client to synthesize text.
-- Delegation briefs and terminal task/sub-agent results stay as bounded one-line previews in the
-  transcript/sidebar; clicking them opens the original content in a scrollable Markdown detail modal.
-  A completed roster state also settles a stale or cardless transcript section header through any
-  resident node carrying that sub-agent identity, so one agent cannot read `Completed` in the
-  sidebar and `Running` in the transcript at the same time. Parallel sub-agent bodies start folded
-  behind their delegation cards even when the Lead produced no visible transcript.
-- The agent roster has one responsive owner: the split sidebar or drawer when either is open. With
-  both closed, the aggregate transcript stays unobstructed and the footer composes lifecycle counts
-  with canonical run/context status. The compact footer strip is a portable mouse route into the
-  drawer. Tab cycles agent selection in both the drawer and wide split; clicking a settled agent
-  selects its transcript before opening result detail.
-- Bounded transcript pages with incremental Markdown; live tails use OpenTUI's streaming mode and
-  preserve sealed-prefix identity when a reply settles. A final Markdown candidate is prepared
-  transparently and revealed only after its syntax descendants have painted; finalized diffs use
-  the same readiness boundary and remain mounted through unrelated transcript activity. Oversized
-  tails fall back to plain text with an explicit formatting-simplified notice instead of starting
+  never causes the client to synthesize text. Running and settled assistant prose use the same
+  static bullet; progress animation belongs to the composer-adjacent activity line and running tool
+  rows, not to already-painted Markdown history.
+- Delegation briefs and terminal sub-agent results are absent from the Lead transcript. Its two
+  lifecycle markers contain only bounded, friendly identity/status copy; the settled marker never
+  rewrites the spawned marker. The Sidebar keeps bounded one-line status/result summaries; clicking
+  an agent selects its isolated transcript and does not open result detail automatically. Inside that
+  isolated transcript, the first explicit selection expands that child's section so its delegation
+  card and worker tools/answers are immediately readable. A manual collapse remains sticky across a
+  return to Lead and reselection, while a sibling still receives its own one-time expansion; neither
+  path changes Lead/global fold preference. An explicit detail affordance may open the original
+  content in the scrollable Markdown modal.
+- The delegation capability's generic `capability_event` wire mirror is suppressed rather than
+  producing a duplicate third row. Only typed delegation lifecycle events own the two Lead markers,
+  Sidebar/footer state and the selected child's isolated transcript.
+- Provider tool plumbing for Lead-owned supervision, spawning/delegation and workflow orchestration
+  is also transcript-silent in every phase. Composing, started, streaming-output and terminal rows for
+  `spawn_subagent`, `delegate_task`, `agent_list`, `agent_poll`, `agent_stop`, `agent_steer`,
+  `await_agents`, `run_leader`, `run_workflow`, `run_round` and `run_work_items` never mount in the
+  Lead transcript; this includes transient copy such as `Wait for agents starting…`. Typed delegation
+  events remain the sole owner of the two lifecycle markers, while workflow state remains
+  Sidebar/footer-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
+  immediately above the composer, outside the transcript ScrollBox; child-owned tools/content remain
+  available only in that child's selected transcript.
+- The combined activity Sidebar has one responsive owner: a wide split or compact drawer. It has
+  three independent, once-per-execution automatic reveal intents: the first live Plan reveals
+  **Plan**, the first workflow leader reveals **Parallel work**, and the first delegation reveals
+  **Agents** while Lead remains selected. Repeated updates of the same kind do not flap the layout;
+  closing an automatically revealed section is sticky for that intent, while the first event for a
+  different section may still reopen and reorient the Sidebar. Each section is one native ScrollBox
+  child, so a later section is scrolled fully into view even when a long Plan precedes it. With the
+  Sidebar closed, the aggregate transcript stays unobstructed. `/activity` reopens the first
+  available section, while `/activity plan`, `/activity workflow` and `/activity agents` select one
+  explicitly even after Escape made its automatic reveal sticky. The footer keeps a pointer target
+  only when agent or workflow activity contributes its bounded strip; clicking that strip reopens
+  the responsive surface. Plan never contributes footer text. Tab cycles agent selection, and
+  clicking an agent selects only that agent's transcript. Workflow progress never contributes a row
+  to the Lead transcript. Workflow leaders use run-local `L<n>` handles and sub-agents use the
+  separate `A<spawn order + 1>` namespace; both derive from the current projection and retain no
+  native-id allocation ledger across runs.
+- Plan activity has no lower pane between history and the composer and contributes no footer text.
+  Its complete operational view remains in the Sidebar or the `Ctrl+P` plan surface; its first live
+  projection may reveal the Sidebar once for that execution. The fixed Lead activity line reuses the
+  same physical row for `thinking`, `working` and settled `ready`; during a run that row also owns
+  elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. Slash autocomplete replaces the whole activity
+  band while it is open. Transient activity therefore never enters history or changes transcript
+  height, and run-local timing never competes with Context or cumulative Session usage in the
+  footer.
+- Physically windowed transcript history with incremental Markdown; live tails use OpenTUI's
+  streaming mode and preserve an identity-stable committed prefix. Within one response geometry
+  epoch, a streaming Markdown tail retains a row-height high-water mark: syntax concealment may
+  reduce the native tail's intrinsic height, but cannot give rows back and pull the reader's scroll
+  anchor downward. A new epoch clears that reservation. This does not disable Markdown parsing or
+  concealment; formatted output such as bold text remains native OpenTUI Markdown. Terminal nodes
+  commit immediately as frozen semantic batches. A serial hidden owner parked just below the clipped
+  viewport then waits for every Markdown/diff/code descendant and two equal physical observations
+  before the same owner becomes visible at its exact measured row. The parked owner remains outside
+  the hit grid; a handoff prepaint is likewise input-inert until admission. Resident batches are
+  direct ScrollBox children pinned to physical markers. The last vertical-scroll direction receives two prepared viewports
+  ahead while one is retained behind; owners outside that directional runway are disposed while
+  exact spacers preserve scroll geometry. Runway trim/admission uses matching half-open edges, so an
+  unchanged viewport cannot remount and trim the same measured owner in a frame loop. Every vertical
+  wheel or trackpad intent reverses the runway immediately, before the reader reaches its edge. Before the
+  first marker, an append-only session-resume burst coalesces its pending initial target to the
+  newest batch and opens on the reconstructed tail. Viewport culling stays enabled after settlement but is suspended
+  for the sole transparent candidate, because OpenTUI skips the native render hooks that candidate
+  syntax settlement requires. A syntax owner receives one two-second retry lease. If highlighting
+  still does not settle, a never-published candidate keeps the same Markdown/diff/code presentation,
+  disables parser work through the native renderers' public `filetype` setters and bypasses only
+  unfinished syntax work; an already-painted owner keeps its exact tree, waits for public syntax
+  completion and commits only after two equal positive dimensions. If that completion remains
+  pending, the owner stays visible and unchanged. Tool argument bodies
+  are never replaced by a text fallback or syntax warning. Consecutive confirming frames are
+  self-scheduled after OpenTUI releases its one-shot renderer latch; they do not wait for input,
+  animation or the recovery timer to invalidate the screen. Measurement revisions re-arm across an
+  inactive `number -> undefined -> number` candidate cycle. The chosen `rich` or `plain-semantic`
+  policy persists by batch id across physical eviction/remount and is purged when that publication
+  leaves the store. The one-column vertical scrollbar gutter is always reserved and only its opacity
+  changes, so adding a measured runway owner cannot create a width/epoch
+  feedback loop. Unknown earlier history uses one passive boundary above the content and is never
+  assigned an estimated height; ordinary upward scroll or trackpad input admits it serially without
+  a click. The exact anchor correction is queued before changed children publish and is consumed by
+  the ScrollBox update plus its public content-size callback, so even a delta larger than the old
+  scroll range is complete before the first new frame. Frozen owners and the content-height mutable tail are one chronological ScrollBox flow
+  for the current projection: Lead-only in the main view, or child-only after explicit selection.
+  Clarvis keeps the Lead projection mounted plus at most one selected-child projection; each owns a
+  separate ScrollBox, physical-history controller, markers and scroll position. Selecting another
+  child disposes the previously retained child, while returning to Lead reveals its exact reader
+  state. An accepted explicit submit or steer from older history or a child first selects Lead and
+  returns its reader to the current tail; background transcript, Plan, Workflow and delegation
+  events never move that reader.
+  Its final child is a fixed three-row physical reading runway, reduced to one row only in the compact
+  height band, so new content never starts against the composer and streaming cannot grow or shrink
+  that gap. The `thinking`/`working`/`ready` activity row is a sibling immediately above the composer,
+  outside the ScrollBox; there is no second transcript scroll area. While the reader is away from the tail, a non-interactive newer-entry count may
+  overlay the top of the viewport; downward scroll admits those entries and returns naturally to
+  tail-following. The event, replay, ordering, physical-anchor and retention rules are in
+  [`code-transcript-stability.md`](../../specs/hosts/code-transcript-stability.md). Oversized tails
+  still fall back to plain text with an explicit formatting-simplified notice instead of starting
   unbounded highlighting.
 - The semantic transcript itself retains only the latest 20 complete turns, both while a session is
-  live and after resume. One prefix notice represents every older turn; `/export` reloads those turns
-  one trace at a time, so complete persisted history remains available without a second resident copy.
-- Hidden/later turn labels use an append-aware boundary index, so a streamed structural append does
-  work proportional to the mounted page and new suffix instead of rescanning the whole conversation.
-- One mounted transcript page carries at most 512 Ki semantic text characters. Every textual node
-  pays proportional render cost, and one individually pathological node is visibly shortened at the
-  same boundary so it cannot bypass the page ceiling.
+  live and after resume. Retention evicts complete sealed publication batches with the matching
+  semantic prefix, replaces the previous folded-prefix publication with one frozen notice, and
+  releases publisher `knownKeys` only after neither the semantic store nor a retained publication
+  references them. Discarded staging is cancelled, so a later timer cannot resurrect an evicted
+  tool; repeated folds plateau instead of accumulating tombstones. Fold overrides are pruned with
+  their evicted semantic keys. `/export` reloads folded turns one trace at a time, so complete
+  persisted history remains available without a second resident copy.
+- Semantic grouping, folding, focus and detail lookup retain the complete resident projection for
+  the current Lead or selected-child view; only
+  native owners are lazy. OpenTUI keeps ordinary vertical wheel and trackpad scrolling native, while
+  its supported component-catalogue extension reports edge intent so adjacent batches can be
+  measured and admitted serially. Page Up/Down and focused navigation use the same ledger. Rapid
+  input coalesces one pending direction and never mounts a guessed or partially prepared target.
+  Recomputing an unchanged publication intersection preserves its projected owner identity.
+  Immutable tool grouping compares the exact `(mcpName, toolName)` pair in live staging, terminal
+  sweep and sub-agent batch metadata; equal leaf names from different MCP servers remain separate.
+- One prose node carries at most 512 Ki semantic text characters into OpenTUI, and each immutable
+  tool snapshot uses the same aggregate mounted-text ceiling after its per-field caps. A single tall
+  batch may exceed the row target, but it cannot bypass those artifact-level display ceilings.
 - Individual user/assistant/reasoning prose nodes retain at most 2 million characters and append an explicit
   truncation notice. This cap is applied before the value enters Solid/OpenTUI state, including the
   authoritative iteration-complete replacement, so one extreme provider response cannot dominate
   the interactive process.
-- Resident user/assistant/reasoning prose also shares a 64 MiB UTF-16 budget. Old settled prose is
-  replaced by an explicit `/export` recovery notice while semantic nodes, status, attribution and
-  persisted run traces remain intact; streamed/running prose and the newest update are never evicted
+- Mutable user/assistant/reasoning prose also shares a 64 MiB UTF-16 budget. Old settled mutable
+  prose is replaced by an explicit `/export` recovery notice; each immutable published copy already
+  contains only the at-most-512-Ki-character inline projection and leaves residency only with its
+  complete retained turn batch. Streamed/running prose and the newest update are never evicted
   mid-write.
-- Tool bodies are retained under a 200-call window, a 64 MiB estimated aggregate heap budget and a
-  32 MiB single-body ceiling. Older arguments, results, diffs and errors are reloaded from the
+- Mutable tool bodies are retained under a 200-call window, a 64 MiB estimated aggregate heap budget
+  and a 32 MiB single-body ceiling. Published history freezes only the bounded inline projection;
+  older raw arguments, results, diffs and errors are reloaded from the
   persisted run on demand through two concurrent reads and an eight-item queue; a body beyond the
   ceiling stays persisted and gives an explicit `/export` route instead of defeating the bound.
   Expanded live rendering separately caps each arguments/result/diff/error field at 64 KiB before
-  any parser or native renderable sees it, and transcript paging charges that bounded projection plus
+  any parser or native renderable sees it; immutable publication freezes that bounded projection plus
   its header signature. Markdown export includes the bounded, renderer-safe argument projection even
   though the live transcript intentionally mounts no raw argument panel.
 - File and memory mutations from the run lead open by default and show their bounded mutation body
@@ -733,11 +857,14 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   a slow filesystem cannot retain the quadratic sequence of every growing turn list. At most eight
   idle complete session documents stay cached; older entries demote to catalog summaries and reload
   only when selected.
-- Session token totals are maintained incrementally per mounted run; reconciliation subtracts and
-  rebuilds only that run, so a new streamed iteration never rescans the complete session history.
-- The live footer shows token input/output once, scoped to `Run`; cumulative session information on
-  that row is cost-only (`Session $...`). `/status` and Sessions retain the session-level token total
-  for explicit inspection instead of duplicating it beside the run counters.
+- Session token totals are maintained incrementally across mounted runs; reconciliation subtracts
+  and rebuilds only that run, so a new streamed iteration never rescans the complete session history
+  or adds settled history to a cumulative live total a second time.
+- The canonical footer keeps gross Context plus cumulative `Session` input/output and cost available
+  before and after a run settles (token totals appear in the wide band). It does not repeat
+  `Running`, elapsed time or iteration there; those live-run facts sit beside `thinking`/`working`
+  immediately above the composer. `/status` and Sessions expose the same session-level totals for
+  explicit inspection.
 - **Every token count on screen reports input the provider had to read** — the gross prompt less
   what its prefix cache served (`uncachedInput`, and the run strip's own subtraction from
   `UsageActivity.cached`). Pricing keeps the gross figure, because a cache hit still costs a
@@ -747,11 +874,12 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   `iteration_completed.cached_tokens`, which is optional — absent, the strip states the gross
   number rather than guessing.
 - The activity sidebar does not retain a second copy of each full delegated brief. It keeps at most
-  64 terminal summaries of 512 characters; complete task and result detail remains in the transcript
-  and persisted run.
+  64 terminal summaries of 512 characters; complete child task and result detail remains in that
+  child's explicitly selected isolated transcript and in the persisted run.
 - Tool-call, diff, reasoning, plan and budget views.
-- Transcript blocks use the full available content width when the inline sidebar is closed, while
-  the split layout retains the 110-column reading measure.
+- Transcript blocks use the full available content width while the inspector is closed and the full
+  remaining pane width beside an explicitly opened split; the old 110-column reading cap no longer
+  applies.
 - Session browsing and continuation.
 - Command guards and approval flows.
 - User elicitation during a run.
@@ -954,9 +1082,11 @@ fail above 5 MiB PSS per 100 cycles on Linux (RSS elsewhere) or when live render
 or key-layer counts do not balance; the corresponding limits are configurable through
 `OVERLAY_SOAK_{MAX_MIB_PER_100,WATCHDOG_MS,WATCHDOG_RSS_MB}`. The case set includes the production floating modals, pickers, activity drawer,
 elicitation, Splash, HintToast and an empty configuration page, not only primitive frames. The current
-lifecycle keeps the transcript shell mounted behind retained Plan/Diff pages and lazily retains
-Profile Picker, Safety Preset Picker, Catalog Picker, the narrow drawer and a bounded ten-slot
-autocomplete projection.
+lifecycle keeps the transcript shell mounted, paused and input-inert behind every full-region
+configuration, Workflow, Plan and Diff page. Diff and Plan are lazily retained after first use;
+configuration frames remain bounded by their stack and dispose when popped. Profile Picker, Safety
+Preset Picker, Catalog Picker, the narrow drawer and a bounded ten-slot autocomplete projection are
+also retained lazily.
 The autocomplete cases cover both visibility churn and a retained ten-row scrolling mutation; both
 must keep renderable, lifecycle-pass and key-layer ownership constant. Immediate RSS/PSS may rise
 while Bun and OpenTUI retain collectable arenas, so the pass/fail leak rate is the post-GC
@@ -967,9 +1097,10 @@ the Portal host while OpenTUI recursively removes a conditional subtree leaves o
 lifecycle-pass nodes. The inactive retained host is invisible, and component key layers are gated,
 including configuration levels across page activation; workflow/provider timers pause and focus is
 released. Activity Detail clears its last Markdown payload on close. A retained `FloatFrame`
-animates only its first activation; reopening it
-reveals the settled retained tree instead of restarting the timeline. Non-portal regions may still
-use `dispose-on-close`. Configuration pages
+animates only its first activation; reopening it reveals the settled retained tree instead of
+restarting the timeline. Its optional JSX navigation is resolved once, so one card owns one
+responsive navigation subtree and one corresponding renderer resize subscription. Non-portal
+regions may still use `dispose-on-close`. Configuration pages
 keep their stricter stack semantics: inactive parents remain mounted, but popped frames are disposed
 rather than cached.
 

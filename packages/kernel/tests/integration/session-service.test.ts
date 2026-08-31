@@ -20,7 +20,7 @@ function session(id: string, updatedAt: number): Session {
     workspace: "ws_test",
     created_at: 1,
     updated_at: updatedAt,
-    turns: [{ user_preview: "hi", status: "done" }],
+    turns: [{ kind: "conversation", user_preview: "hi", status: "done" }],
     totals: { input: 0, output: 0, cached: 0 },
   };
 }
@@ -64,6 +64,20 @@ describe("SessionService (file-backed)", () => {
     expect((await svc.listPage()).items.map((s) => s.id)).toEqual(["s2", "s3", "s1"]);
   });
 
+  it("rejects a stale session whose turns predate the required kind discriminator", async () => {
+    const svc = createSessionService({
+      dir,
+      owner: "owner-a",
+      projectId: "prj_test",
+      workspaceId: "ws_test",
+    });
+    const stale = session("stale", 100);
+    delete (stale.turns[0] as unknown as { kind?: string }).kind;
+    await svc.save(stale);
+
+    expect(await svc.get("stale")).toBeNull();
+  });
+
   it("projects the newest Environment identity into the bounded summary", async () => {
     const svc = createSessionService({
       dir,
@@ -77,7 +91,7 @@ describe("SessionService (file-backed)", () => {
     };
     await svc.save({
       ...session("environment", 100),
-      turns: [{ user_preview: "hi", status: "done", environment }],
+      turns: [{ kind: "conversation", user_preview: "hi", status: "done", environment }],
     });
 
     expect((await svc.listPage()).items[0]?.last_environment).toEqual(environment);
@@ -98,11 +112,11 @@ describe("SessionService (file-backed)", () => {
     });
     await first.save({
       ...session("a", 1),
-      turns: [{ user_preview: "a", status: "done", execution_id: "exec_a" }],
+      turns: [{ kind: "conversation", user_preview: "a", status: "done", execution_id: "exec_a" }],
     });
     await second.save({
       ...session("b", 2),
-      turns: [{ user_preview: "b", status: "done", execution_id: "exec_b" }],
+      turns: [{ kind: "conversation", user_preview: "b", status: "done", execution_id: "exec_b" }],
     });
     writeFileSync(join(globalPaths(dir).sessionsDir, "owner-a", "broken.json"), "{bad");
 
@@ -127,7 +141,7 @@ describe("SessionService (file-backed)", () => {
     });
     await svc.save({
       ...session("a", 1),
-      turns: [{ user_preview: "a", status: "done", execution_id: "exec_a" }],
+      turns: [{ kind: "conversation", user_preview: "a", status: "done", execution_id: "exec_a" }],
     });
 
     const references = referencedSessionExecutionIds(dir, { maxFiles: 0 });

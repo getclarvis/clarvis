@@ -39,9 +39,9 @@
     "@clarvis/kernel": "workspace:*",
     "@clarvis/paths": "workspace:*",
     "@clarvis/protocol": "workspace:*",
-    "@opentui/core": "0.5.7",
-    "@opentui/keymap": "0.5.7",
-    "@opentui/solid": "0.5.7",
+    "@opentui/core": "0.5.9",
+    "@opentui/keymap": "0.5.9",
+    "@opentui/solid": "0.5.9",
     "solid-js": "1.9.12",
     "web-tree-sitter": "0.25.10",
     "zod": "^4.4.3"

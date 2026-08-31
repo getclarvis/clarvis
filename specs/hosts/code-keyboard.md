@@ -133,6 +133,15 @@ this file** (see §8).
 command's current availability only while it is the active consumer; registration itself does not
 subscribe to those predicates (`packages/code/src/keys/commands.ts`, `CommandEntryView.canAct`).
 
+The application composition adds one contextual navigation action after registry construction:
+`activity.open` exposes `/activity` plus `plan`, `workflow` and `agents` subcommands whenever any
+run-activity section exists. Bare `/activity` chooses the first available section; the explicit
+subcommands reveal their named section. This is the keyboard-accessible reopen route after Escape
+closes the responsive Sidebar (`packages/code/src/views/App.tsx`, `openActivitySidebar` and the
+`activity.open` registration). The production-shaped command paths are pinned by
+`packages/code/tests/integration/app-shell-render.test.tsx` ("Plan, Parallel work, and Agents own
+independent once-per-run sidebar reveals").
+
 ### 2.6 `keys/keyboard-profile.ts` — compatibility environment and manual overrides
 
 | Export | Signature | Cite |
@@ -196,6 +205,7 @@ at all; it is content-agnostic formatting shared by settings screens (delegated 
 | Export | Signature | Cite |
 |---|---|---|
 | `FooterStatusTone` | `HintTone \| "running"` | `packages/code/src/views/Footer.tsx:10` |
+| `LeadActivityPhase`, `LeadActivityLine(props)` | one-row `ready`/`thinking`/`working` owner with optional run detail, replaced while composer autocomplete owns the band | `packages/code/src/views/Footer.tsx` |
 | `HintToast(props)` | overlay-safe notify surface | `packages/code/src/views/Footer.tsx:32-52` |
 | `Footer(props)` | `{hint, status?, runStrip?, navigation?: JSX.Element, compact?}` | `packages/code/src/views/Footer.tsx:62-123` |
 | `HintTone` | = `NoticeTone` | `packages/code/src/views/hint.ts:6` |
@@ -290,6 +300,19 @@ verdicts. Pinned: `packages/code/tests/unit/keyboard-profile.test.ts:81-92` (a p
 Modified arrows (`ctrl+up`/`ctrl+down`) are portable — "plain xterm", not gated — while
 `alt+…` candidates carry `minimumProfile:"enhanced"` because Alt is the modifier terminals
 actually intercept (`packages/code/src/keys/interaction.ts:86-97`; pinned `packages/code/tests/integration/interaction.test.ts:222-227`).
+
+The transcript scroll commands dispatch row intent through `App.scrollTranscript`, which delegates
+to `CommittedHistory.scrollBy` whenever committed history is mounted. That handle clamps page input
+to the currently prepared physical interval and coalesces one adjacent measurement; it does not let
+rapid Page Up/Down enter an exact virtual spacer. Vertical wheel and trackpad packets remain on
+OpenTUI's native ScrollBox path: `TranscriptScrollBoxRenderable.onMouseEvent` calls
+`super.onMouseEvent(event)` first, then reports only the direction. `CommittedHistory` consumes that
+callback as edge-prefetch intent; it never converts the native gesture into `scrollBy` or a page
+command. Production: `packages/code/src/views/App.tsx`,
+`packages/code/src/views/history/CommittedHistory.tsx` (`scrollBy`, `onVerticalScrollIntent`) and
+`packages/code/src/views/history/TranscriptScrollBox.ts` (`TranscriptScrollBoxRenderable`). Test:
+`packages/code/tests/integration/transcript-window-render.test.tsx` ("rapid page and wheel navigation
+keep the prepared page visible until admission").
 
 ### 3.4 Vital-command bindings example — `resolvedVitalBindings` output
 
@@ -714,6 +737,20 @@ absolutely positioned above the float layer (`zIndex: FLOAT_Z + 1`): it exists b
 floating overlay's full-bleed scrim otherwise paints over the in-flow footer, so a
 `notify()` raised while a picker or other overlay is open would land on a buried row.
 
+The composer owns one additional exclusivity rule for the row above it. `InputDock` reports
+`onPopupOpenChange`; while slash autocomplete is open, `App.inputPopupOpen` removes
+`LeadActivityLine` so the menu replaces that band instead of stacking with `ready`, `thinking` or
+`working`. When visible during a run, the activity line owns phase, elapsed time, iteration and
+the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. The canonical footer is deliberately stable across that lifecycle: it keeps
+Context plus cumulative Session token totals/cost before and after settlement and never repeats
+`Running`, elapsed time or iteration. Production: `packages/code/src/views/InputDock.tsx`
+(`onPopupOpenChange`), `packages/code/src/views/App.tsx` (`inputPopupOpen`, `leadActivityDetail`,
+`footerRunStrip`) and `packages/code/src/features/run/status-presenter.ts` (`runStripText`). Tests:
+`packages/code/tests/integration/app-shell-render.test.tsx` ("autocomplete replaces the Lead activity
+row instead of stacking ready or working above it" and "an active run seats its live metadata beside
+working and keeps the session footer stable") and `packages/code/tests/unit/run-status.test.ts` ("the
+run strip keeps cumulative session tokens before and after a run settles").
+
 ### 4.16 `SelectableList`'s error/loading/empty precedence
 
 `SelectableList` (`packages/code/src/ui/patterns/selectable-list.tsx:56-94`) renders its three status rows
@@ -873,12 +910,23 @@ session on macOS requests Kitty all-key plus associated-text reporting, preservi
 Option+S identity even when Option normally produces `ß`; iTerm's standalone modifier-state packets
 are consumed before key dispatch. Other terminal paths must still deliver Option as Meta/Esc+ for
 the enhanced binding. A legacy literal `ß` remains composer text, while `Ctrl+S` keeps the picker
-reachable without terminal configuration. No global sidebar command or binding exists;
-sidebar presence is owned by the content- and viewport-driven layout contract.
+reachable without terminal configuration. No global physical sidebar binding exists; `/activity`
+and `/activity [plan|workflow|agents]` are contextual slash actions. The first live Plan, first
+workflow leader and first visible sub-agent each own an independent automatic
+reveal once per execution for Plan, Parallel work and Agents. Closing the surface is sticky for
+later updates of the intent that opened it, while the first event for another section may still
+reveal it. Escape only suppresses that repeated automatic reveal: `/activity` can reopen any
+available section explicitly. The bounded agent/workflow footer strip remains a pointer reopen route,
+whose split or drawer presentation is determined by the viewport; Plan never contributes footer
+text.
+
 Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`, `DEFAULT_WHEN`),
 `packages/code/src/views/config/KeyboardView.tsx` (`PROBES`, `KeyboardDiagnostic`),
 `packages/code/src/app/commands.tsx` (`safety.picker`), and
-`packages/code/src/app/layout.ts` (`createLayoutController`). Tests:
+`packages/code/src/app/layout.ts` (`createLayoutController`) and
+`packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `visiblePlanContext`,
+`visibleSubagentContext`, `closeActivitySidebar`, `openActivitySidebar`, the `activity.open` command
+and `compactActivityStrip`). Tests:
 `packages/code/tests/integration/interaction.test.ts`,
 `packages/code/tests/integration/app-shell-render.test.tsx`,
 `packages/code/tests/integration/keyboard-view-render.test.tsx`, and
@@ -893,13 +941,21 @@ destroys its keymap host").
 
 **INV-D15.** Unmodified Return and numpad Enter submit the composer; Ctrl+J and Shift+Return insert
 a newline without submission, and the displayed Shift+Return label retains its modifier even after
-an already-compact `shift+↵` label is formatted again.
+an already-compact `shift+↵` label is formatted again. Every accepted explicit model submission —
+ordinary submit, steer, MCP prompt or skill — made while reading older history or a selected child
+first returns selection and scroll ownership to the current Lead tail. Background transcript,
+delegation, Plan and Workflow events never perform that navigation.
 Production: `packages/code/src/keys/keyspec.ts` (`PROMPT_EDITING_KEYS`, `compactKey`) and
-`packages/code/src/views/InputDock.tsx` (`promptHandlers`). Tests:
+`packages/code/src/views/InputDock.tsx` (`promptHandlers`) and
+`packages/code/src/views/App.tsx` (`submitFromLeadTail`). Tests:
 `packages/code/tests/unit/keyspec.test.ts` (`PROMPT_EDITING_KEYS`, compact-label idempotence),
 `packages/code/tests/integration/help-render.test.tsx` (newline label), and
 `packages/code/tests/integration/input-dock-submit.test.tsx` ("Shift+Enter and Ctrl+J insert
-newlines without submitting the draft").
+newlines without submitting the draft") and
+`packages/code/tests/integration/app-shell-render.test.tsx` ("normal submit and steer return an old
+reader to the Lead tail while background events do not", "model-backed prompt and skill submit also
+return an old reader to the Lead tail", and "returning from a child sidebar transcript restores the
+live Lead frontier").
 
 ## 6. Failure modes and degradation
 

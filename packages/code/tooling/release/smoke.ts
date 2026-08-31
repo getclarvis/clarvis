@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-/** Verify the native portable archive, fast paths, and real-PTY first paint. */
+/** Verify the native portable archive, fast paths, and real-PTY complete-app boot. */
 import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -125,7 +125,7 @@ async function main(): Promise<void> {
     }
     if (process.platform === "win32") {
       process.stdout.write(
-        `release smoke ok - ${target} ${product.version} passed manifest and fast-path checks; PTY first paint is covered by POSIX release jobs\n`,
+        `release smoke ok - ${target} ${product.version} passed manifest and fast-path checks; PTY complete-app boot is covered by POSIX release jobs\n`,
       );
       return;
     }
@@ -143,11 +143,11 @@ async function main(): Promise<void> {
     });
     if (boot.outcome !== "ready") {
       throw new Error(
-        `portable first paint ${boot.outcome}\n${readable(boot.screen).slice(-3000)}\n${boot.stderr.slice(-1000)}`,
+        `portable complete-app boot ${boot.outcome}\n${readable(boot.screen).slice(-3000)}\n${boot.stderr.slice(-1000)}`,
       );
     }
     process.stdout.write(
-      `release smoke ok - ${target} ${product.version} reached first paint in ${boot.elapsed.toFixed(0)}ms\n`,
+      `release smoke ok - ${target} ${product.version} observed the complete-app marker after ${boot.elapsed.toFixed(0)}ms of outer PTY/polling time\n`,
     );
   } finally {
     await rm(home, { recursive: true, force: true });

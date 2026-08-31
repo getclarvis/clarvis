@@ -1,5 +1,6 @@
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { Accessor, JSX } from "solid-js";
+import { useRenderer } from "@opentui/solid";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { tokens } from "../theme/tokens.ts";
 import { scrollbarOptions, selectionBg } from "../theme/surfaces.ts";
@@ -107,15 +108,29 @@ function agentOutcome(agent: ActivityStore["subagents"][number]): string | undef
   return undefined;
 }
 
-function SectionHeader(props: { label: string; meta?: string; pad?: boolean }): JSX.Element {
+function SectionHeader(props: {
+  label: string;
+  meta?: string;
+  pad?: boolean;
+  id?: string;
+}): JSX.Element {
   return (
-    <text fg={tokens.accent} paddingTop={props.pad ? 1 : 0} selectable={false}>
+    <text id={props.id} fg={tokens.accent} paddingTop={props.pad ? 1 : 0} selectable={false}>
       <b>{props.label}</b>
       <Show when={props.meta}>
         <span style={{ fg: tokens.muted }}>{`  ${props.meta}`}</span>
       </Show>
     </text>
   );
+}
+
+/** Sidebar section selected by one bounded automatic or explicit reveal intent. */
+export type SidebarRevealSection = "plan" | "workflow" | "agents";
+
+/** Run-scoped reveal token consumed by the Sidebar's native ScrollBox. */
+export interface SidebarRevealIntent {
+  section: SidebarRevealSection;
+  context: string;
 }
 
 function planProgress(plan: PlanActivity): string {
@@ -325,60 +340,6 @@ function PlanSummary(props: {
   );
 }
 
-/** Compact always-visible plan context for terminals too narrow for the split inspector. */
-export function PlanStrip(props: {
-  plan: Accessor<PlanActivity>;
-  onOpen?: () => void;
-}): JSX.Element {
-  const current = createMemo(() => currentPlanTask(props.plan()));
-  const expectedDiscard = createMemo(() => isExpectedPlanDiscard(props.plan()));
-  return (
-    <box
-      flexDirection="row"
-      flexShrink={0}
-      paddingLeft={1}
-      paddingRight={1}
-      border={["top"]}
-      borderStyle="single"
-      customBorderChars={borderChars()}
-      borderColor={tokens.muted}
-      onMouseDown={() => !props.plan().removed && props.onOpen?.()}
-    >
-      <text
-        fg={props.plan().removed && !expectedDiscard() ? tokens.del : tokens.accent}
-        flexShrink={0}
-        selectable={false}
-      >
-        {expectedDiscard()
-          ? "Plan completed "
-          : props.plan().removed
-            ? "Plan unavailable "
-            : isLivePlan(props.plan())
-              ? "Plan "
-              : "Latest plan "}
-      </text>
-      <Show when={!props.plan().removed || expectedDiscard()}>
-        <text
-          fg={tokens.muted}
-          flexShrink={0}
-          selectable={false}
-        >{`${expectedDiscard() ? "history discarded" : planProgress(props.plan())} ${glyph("separator")} `}</text>
-      </Show>
-      <text fg={tokens.fg} truncate wrapMode="none" flexGrow={1} minWidth={0} selectable={false}>
-        {props.plan().removed
-          ? props.plan().title
-          : (current()?.title ?? lifecycleLabel(uiLifecycle(props.plan().status)))}
-      </text>
-      <Show when={!props.plan().removed}>
-        <text fg={tokens.muted} flexShrink={0} selectable={false}>
-          {" "}
-          Ctrl+P
-        </text>
-      </Show>
-    </box>
-  );
-}
-
 /** Summary-only inspector/roster. Complete prompts, plans, results and run totals live elsewhere. */
 export function Sidebar(props: {
   activity: ActivityStore;
@@ -388,19 +349,12 @@ export function Sidebar(props: {
   onSelectSubagent?: (id: string) => void;
   onShowAllAgents?: () => void;
   onOpenDetail?: (detail: ActivityDetail) => void;
-  onOpenSubagentDetail?: (id: string) => void;
   width?: Accessor<number>;
   workflow?: Accessor<WorkflowActivity | null>;
+  reveal?: Accessor<SidebarRevealIntent | null>;
 }): JSX.Element {
-  const agentIds = new Map<string, string>();
-  let nextAgent = 1;
-  const agentId = (native: string): string => {
-    const current = agentIds.get(native);
-    if (current) return current;
-    const assigned = `A${nextAgent++}`;
-    agentIds.set(native, assigned);
-    return assigned;
-  };
+  const renderer = useRenderer();
+  let activityScrollEl: ScrollBoxRenderable | undefined;
   const leaders = (): WorkflowNodeActivity[] => {
     const workflow = props.workflow?.();
     if (!workflow) return [];
@@ -413,6 +367,24 @@ export function Sidebar(props: {
   const progress = () => subagentProgress(props.activity.subagents);
   const progressLabel = (): string =>
     `${progress().label}${progress().failed > 0 ? ` ${glyph("separator")} ${progress().failed} failed` : ""}`;
+  createEffect(() => {
+    const reveal = props.reveal?.();
+    if (reveal === null || reveal === undefined) return;
+    const available =
+      reveal.section === "plan"
+        ? props.activity.plan !== null
+        : reveal.section === "workflow"
+          ? leaders().length > 0
+          : props.activity.subagents.length > 0;
+    if (!available) return;
+    const revealAfterLayout = (): void => {
+      activityScrollEl?.scrollChildIntoView(`sidebar-section-${reveal.section}`);
+      renderer.requestRender();
+    };
+    renderer.once("frame", revealAfterLayout);
+    renderer.requestRender();
+    onCleanup(() => renderer.off("frame", revealAfterLayout));
+  });
   return (
     <box
       flexDirection="column"
@@ -427,95 +399,100 @@ export function Sidebar(props: {
       border={["left"]}
       borderColor={props.focused() ? tokens.accent : tokens.muted}
     >
-      <scrollbox flexGrow={1} minHeight={0} verticalScrollbarOptions={scrollbarOptions()}>
+      <scrollbox
+        ref={(el: ScrollBoxRenderable) => (activityScrollEl = el)}
+        flexGrow={1}
+        minHeight={0}
+        verticalScrollbarOptions={scrollbarOptions()}
+      >
         <Show when={props.activity.plan !== null}>
-          <SectionHeader label="Plan" />
-          <PlanSummary plan={() => props.activity.plan!} onOpenDetail={props.onOpenDetail} />
+          <box id="sidebar-section-plan" flexDirection="column">
+            <SectionHeader label="Plan" />
+            <PlanSummary plan={() => props.activity.plan!} onOpenDetail={props.onOpenDetail} />
+          </box>
         </Show>
         <Show when={leaders().length > 0}>
-          <SectionHeader
-            label="Parallel work"
-            meta={`${leaders().length} ${leaders().length === 1 ? "leader" : "leaders"}`}
-            pad
-          />
-          <For each={leaders()}>
-            {(node) => {
-              const elapsed = (): string =>
-                displayElapsed(node.startedAt, node.endedAt ?? tickNow());
-              return (
-                <box flexDirection="column" paddingTop={1}>
-                  <text wrapMode="word" selectable={false}>
-                    <span style={{ fg: tokens.accent2 }}>{`${agentId(node.runId)}  `}</span>
-                    <span style={{ fg: tokens.fg }}>{cleanTitle(node.title)}</span>
-                  </text>
-                  <text fg={tokens.muted} selectable={false}>
-                    {`${lifecycleLabel(uiLifecycle(node.status))}${elapsed() ? ` · ${elapsed()}` : ""}${node.iterations === undefined ? "" : ` · ${node.iterations} iterations`}`}
-                  </text>
-                </box>
-              );
-            }}
-          </For>
+          <box id="sidebar-section-workflow" flexDirection="column">
+            <SectionHeader
+              label="Parallel work"
+              meta={`${leaders().length} ${leaders().length === 1 ? "leader" : "leaders"}`}
+              pad
+            />
+            <For each={leaders()}>
+              {(node, index) => {
+                const elapsed = (): string =>
+                  displayElapsed(node.startedAt, node.endedAt ?? tickNow());
+                return (
+                  <box flexDirection="column" paddingTop={1}>
+                    <text wrapMode="word" selectable={false}>
+                      <span style={{ fg: tokens.accent2 }}>{`L${index() + 1}  `}</span>
+                      <span style={{ fg: tokens.fg }}>{cleanTitle(node.title)}</span>
+                    </text>
+                    <text fg={tokens.muted} selectable={false}>
+                      {`${lifecycleLabel(uiLifecycle(node.status))}${elapsed() ? ` · ${elapsed()}` : ""}${node.iterations === undefined ? "" : ` · ${node.iterations} iterations`}`}
+                    </text>
+                  </box>
+                );
+              }}
+            </For>
+          </box>
         </Show>
         <Show when={props.activity.subagents.length > 0}>
-          <SectionHeader label="Agents" meta={progressLabel()} pad />
-          <box flexDirection="column" paddingTop={1} onMouseDown={() => props.onShowAllAgents?.()}>
-            <text wrapMode="none" truncate selectable={false}>
-              <span style={{ fg: !props.focused() ? tokens.accent : tokens.muted }}>
-                {(!props.focused() ? "> " : "  ") + "All transcripts"}
-              </span>
-            </text>
-          </box>
-          <For each={props.activity.subagents}>
-            {(agent) => {
-              const selected = (): boolean => props.selected?.() === agent.id;
-              const elapsed = (): string =>
-                agent.status === "running" ? displayElapsed(agent.startedAt) : "";
-              return (
-                <box
-                  flexDirection="column"
-                  paddingTop={1}
-                  onMouseDown={() => {
-                    if (
-                      (agent.status === "done" || agent.status === "error") &&
-                      agent.summary !== undefined
-                    ) {
-                      props.onSelectSubagent?.(agent.id);
-                      props.onOpenSubagentDetail?.(agent.id);
-                      return;
-                    }
-                    props.onSelectSubagent?.(agent.id);
-                  }}
-                >
-                  <text wrapMode="word" selectable={false}>
-                    <span style={{ fg: selected() ? tokens.accent : tokens.muted }}>
-                      {(selected() ? "> " : "  ") + `${agentId(agent.id)}  `}
-                    </span>
-                    <span style={{ fg: tokens.fg }}>{cleanTitle(agent.title)}</span>
-                  </text>
-                  <text fg={tokens.muted} wrapMode="word" selectable={false}>
-                    {`${lifecycleLabel(uiLifecycle(agent.status))}${elapsed() ? ` · ${elapsed()}` : ""}`}
-                  </text>
-                  <Show when={agentOutcome(agent)}>
-                    {(outcome: Accessor<string>) => (
-                      <text
-                        fg={agent.status === "error" ? tokens.del : tokens.muted}
-                        wrapMode="none"
-                        truncate
-                        selectable={false}
-                      >
-                        {`${outcome()}${agent.summary ? " · click to read" : ""}`}
-                      </text>
-                    )}
-                  </Show>
-                  <Show when={selected() && (agent.profile ?? agent.model)}>
-                    <text fg={tokens.muted} wrapMode="word" selectable={false}>
-                      {`Profile ${agent.profile ?? "default"}${agent.model ? ` ${glyph("separator")} ${agent.model}` : ""}`}
+          <box id="sidebar-section-agents" flexDirection="column">
+            <SectionHeader label="Agents" meta={progressLabel()} pad />
+            <box
+              flexDirection="column"
+              paddingTop={1}
+              onMouseDown={() => props.onShowAllAgents?.()}
+            >
+              <text wrapMode="none" truncate selectable={false}>
+                <span style={{ fg: !props.focused() ? tokens.accent : tokens.muted }}>
+                  {(!props.focused() ? "> " : "  ") + "Lead transcript"}
+                </span>
+              </text>
+            </box>
+            <For each={props.activity.subagents}>
+              {(agent) => {
+                const selected = (): boolean => props.selected?.() === agent.id;
+                const elapsed = (): string =>
+                  agent.status === "running" ? displayElapsed(agent.startedAt) : "";
+                return (
+                  <box
+                    flexDirection="column"
+                    paddingTop={1}
+                    onMouseDown={() => props.onSelectSubagent?.(agent.id)}
+                  >
+                    <text wrapMode="word" selectable={false}>
+                      <span style={{ fg: selected() ? tokens.accent : tokens.muted }}>
+                        {(selected() ? "> " : "  ") + `A${agent.order + 1}  `}
+                      </span>
+                      <span style={{ fg: tokens.fg }}>{cleanTitle(agent.title)}</span>
                     </text>
-                  </Show>
-                </box>
-              );
-            }}
-          </For>
+                    <text fg={tokens.muted} wrapMode="word" selectable={false}>
+                      {`${lifecycleLabel(uiLifecycle(agent.status))}${elapsed() ? ` · ${elapsed()}` : ""}`}
+                    </text>
+                    <Show when={agentOutcome(agent)}>
+                      {(outcome: Accessor<string>) => (
+                        <text
+                          fg={agent.status === "error" ? tokens.del : tokens.muted}
+                          wrapMode="none"
+                          truncate
+                          selectable={false}
+                        >
+                          {`${outcome()}${agent.summary ? " · click to read" : ""}`}
+                        </text>
+                      )}
+                    </Show>
+                    <Show when={selected() && (agent.profile ?? agent.model)}>
+                      <text fg={tokens.muted} wrapMode="word" selectable={false}>
+                        {`Profile ${agent.profile ?? "default"}${agent.model ? ` ${glyph("separator")} ${agent.model}` : ""}`}
+                      </text>
+                    </Show>
+                  </box>
+                );
+              }}
+            </For>
+          </box>
         </Show>
         <Show when={!hasContent()}>
           <text fg={tokens.muted}>No run activity to inspect</text>

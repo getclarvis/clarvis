@@ -230,6 +230,74 @@ test("overlay 'view' renders the mounted view's factory with its own host, not t
   t.renderer.destroy();
 });
 
+test("full-region views preserve the fallback owner and its Yoga geometry across repeated visits", async () => {
+  const { host, setOverlay, setView } = fakeHost("none");
+  const viewHost = { active: () => true, dirty: () => false } as unknown as ViewHost;
+  let shellOwner: Renderable | undefined;
+  let mounts = 0;
+  let cleanups = 0;
+  let factoryCalls = 0;
+  const Shell = () => {
+    onMount(() => {
+      mounts += 1;
+      onCleanup(() => {
+        cleanups += 1;
+      });
+    });
+    return (
+      <box id="retained-shell-owner" ref={(value: Renderable) => (shellOwner = value)} flexGrow={1}>
+        <text>retained transcript shell</text>
+      </box>
+    );
+  };
+  setView({
+    name: "workflows",
+    factory: () => {
+      factoryCalls += 1;
+      return <text>workflow browser</text>;
+    },
+    host: viewHost,
+  });
+  const t = await openRender(
+    () => (
+      <OverlayRegion
+        host={host}
+        fallback={<Shell />}
+        interaction={fakeInteraction()}
+        diffNode={() => null}
+        activity={activity()}
+        plans={undefined}
+      />
+    ),
+    { width: 100, height: 30 },
+  );
+  await t.renderOnce();
+  const original = shellOwner;
+  const geometry = { width: original?.width, height: original?.height };
+  expect(original).toBeDefined();
+  expect(mounts).toBe(1);
+
+  for (let cycle = 0; cycle < 12; cycle += 1) {
+    setOverlay("view");
+    await t.renderOnce();
+    expect(t.captureCharFrame()).toContain("workflow browser");
+    expect(t.captureCharFrame()).not.toContain("retained transcript shell");
+    expect(shellOwner).toBe(original);
+    expect(original?.isDestroyed).toBe(false);
+    expect({ width: original?.width, height: original?.height }).toEqual(geometry);
+
+    setOverlay("none");
+    await t.renderOnce();
+    expect(t.captureCharFrame()).toContain("retained transcript shell");
+    expect(shellOwner).toBe(original);
+  }
+
+  expect(mounts).toBe(1);
+  expect(cleanups).toBe(0);
+  expect(factoryCalls).toBe(1);
+  t.renderer.destroy();
+});
+
 test("state read while constructing a mounted view does not remount its factory", async () => {
   const { host, setOverlay, setView } = fakeHost("none");
   const viewHost = { active: () => true, dirty: () => false } as unknown as ViewHost;

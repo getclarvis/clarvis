@@ -1,4 +1,4 @@
-import { batch } from "solid-js";
+import { batch, createSignal } from "solid-js";
 import { $RAW, createStore, produce } from "solid-js/store";
 import { createHash } from "node:crypto";
 import type { MessageContent, RunDetail, RunEvent } from "@clarvis/protocol";
@@ -11,7 +11,7 @@ import {
   type PlanTaskActivity,
 } from "./plan-projection.ts";
 import { contentToText } from "./message-content.ts";
-import { toolIdentity } from "./tool-identity.ts";
+import { isTranscriptExternalOrchestrationTool, toolIdentity } from "./tool-identity.ts";
 import type { LocalBashResult } from "./local-shell.ts";
 import { parseBash } from "./tool-parsers.ts";
 import { streamMetrics } from "./stream-metrics.ts";
@@ -27,6 +27,13 @@ import {
   type TranscriptNode as CoreTranscriptNode,
 } from "../core/transcript/index.ts";
 import { TRANSCRIPT_PROSE_RELEASED_DISPLAY } from "../core/transcript/presenters.ts";
+import {
+  delegationLeadMarkerKey,
+  TranscriptPublisher,
+  type TranscriptPublicationBatch,
+  type TranscriptPublicationScheduler,
+  type TranscriptRunPublicationCompletion,
+} from "./transcript-publication.ts";
 
 export type { NodeStatus } from "../core/transcript/index.ts";
 
@@ -144,6 +151,25 @@ function appendLiveOutput(existing: string | undefined, chunk: string): string {
   return next;
 }
 
+/** Stable frontier label for a provider retry without exposing a moving countdown. */
+function modelRetryText(event: Extract<RunEvent, { type: "model_retry" }>): string {
+  const delay = Math.max(0, Math.ceil(event.delay_ms / 1000));
+  return `retrying in ${delay}s (${event.attempt}/${event.max_retries}) — ${event.kind}`;
+}
+
+/** Immutable question/answer fact produced when an elicitation leaves the live frontier. */
+function elicitationOutcomeText(
+  event: Extract<RunEvent, { type: "elicitation_resolved" }>,
+): string {
+  const outcome =
+    event.outcome === "accept" && event.answer?.trim()
+      ? event.answer.trim()
+      : event.outcome === "accept"
+        ? "accepted"
+        : event.outcome;
+  return `asked: ${event.question}\nanswered: ${outcome}`;
+}
+
 /** Receives one callback per event span phase: opened, an interior point, or closed. */
 export interface SpanSink {
   open(span: EventSpan, event: RunEvent, source: EventSource): void;
@@ -180,6 +206,11 @@ export interface RunSink extends SpanSink {
   endReconcile(): void;
 }
 
+/** Run sink whose transcript publisher is closed only after host reconciliation completes. */
+export interface TranscriptRunSink extends RunSink {
+  complete(completion?: TranscriptRunPublicationCompletion): void;
+}
+
 /** The fields of a local (`!bash`) shell result the transcript needs to render it. */
 export type LocalBashDisplay = Pick<
   LocalBashResult,
@@ -196,10 +227,31 @@ export type LocalBashDisplay = Pick<
 /** The reactive transcript the UI renders, and the reducers that populate it from runs and local commands. */
 export interface TranscriptStore {
   nodes: TranscriptNode[];
+  /**
+   * Immutable history batches, append-only during ordinary publication.
+   *
+   * @remarks Explicit host retention may replace an evicted whole-batch prefix
+   *   with one immutable folded-prefix batch; individual published nodes are
+   *   never patched in place.
+   */
+  readonly publicationBatches: readonly TranscriptPublicationBatch[];
+  /** Mutable candidates not yet visible as committed history. */
+  frontierNodes(): readonly TranscriptNode[];
+  /** Immutable nodes from every semantically sealed publication batch. */
+  committedNodes(): readonly TranscriptNode[];
+  /**
+   * Compatibility acknowledgement for callers predating physical viewport ownership.
+   *
+   * @remarks Physical readiness now belongs to `CommittedHistory`; semantic publication is sealed
+   * immediately and this method deliberately performs no state transition.
+   */
+  markPublicationReady(batchId: string): void;
   /** O(1) retained-memory counters for the process-level diagnostic ledger. */
   memory?(): {
     transcript_nodes: number;
     transcript_prose_bytes: number;
+    publication_batches: number;
+    publication_known_keys: number;
     hydrated_tool_nodes: number;
     hydrated_tool_bytes: number;
     active_rehydrates: number;
@@ -241,7 +293,7 @@ export interface TranscriptStore {
    */
   appendRunFailure(execId: string, error: { code: string; message: string }): void;
   settleRun(execId: string, ok?: boolean): void;
-  openRun(execId: string): RunSink;
+  openRun(execId: string): TranscriptRunSink;
   clear(): void;
   /**
    * Refill a tool block whose body was dropped by the retention window.
@@ -291,6 +343,12 @@ export interface TranscriptStoreDeps {
     args?: Record<string, unknown>;
     diff?: string;
   }) => { signature: string; mutation: { added: number; removed: number; lines: number } | null };
+  /** Injectable publication scheduler used by deterministic grouping tests. */
+  publicationScheduler?: TranscriptPublicationScheduler;
+  /** Maximum time a terminal same-tool candidate may wait for a grouping sibling. */
+  publicationToolGroupLatencyMs?: number;
+  /** Maximum terminal same-tool candidates retained by one staging group. */
+  publicationToolGroupMaxEntries?: number;
 }
 
 /**
@@ -324,16 +382,48 @@ const TOOL_BODY_REHYDRATE_FAILED_NOTICE =
   "Tool body could not be reloaded from persistence. Use /export to inspect the available transcript.";
 
 /**
- * Build the {@link TranscriptStore} backed by a SolidJS store: user messages,
- * local shell commands, and each run's live events (via {@link TranscriptStore.openRun})
- * all upsert into one ordered `nodes` array, keyed and folded so a rehydration
- * replay ({@link RunSink.beginReconcile}/{@link RunSink.endReconcile}) patches
- * existing nodes in place instead of remounting the transcript.
+ * Build the {@link TranscriptStore} with a mutable semantic ledger and a
+ * separate immutable publication ledger. User messages, local shell commands,
+ * and each run's live events (via {@link TranscriptStore.openRun}) upsert the
+ * semantic `nodes` array so reconciliation can repair detail state in place;
+ * the publisher snapshots terminal candidates into frozen batches that the
+ * committed-history owner mounts without later semantic updates.
  */
 export function createTranscriptStore(deps: TranscriptStoreDeps = {}): TranscriptStore {
   const [state, setState] = createStore<{ nodes: TranscriptNode[] }>({ nodes: [] });
+  const [publicationBatches, setPublicationBatches] = createSignal<
+    readonly TranscriptPublicationBatch[]
+  >(Object.freeze([]));
   const indexOfKey = new Map<string, number>();
   const foldDefaults = new Map<string, boolean>();
+  const publisher = new TranscriptPublisher(
+    {
+      nodes: () => state.nodes,
+      defaultFolded: (key) => foldDefaults.get(key) ?? false,
+      toolArguments: rawToolArguments,
+      append: (prepared) => {
+        setPublicationBatches((current) =>
+          Object.freeze([
+            ...current,
+            Object.freeze({
+              ...prepared,
+              phase: "committed" as const,
+              ready: true,
+            }),
+          ]),
+        );
+      },
+    },
+    {
+      ...(deps.publicationScheduler === undefined ? {} : { scheduler: deps.publicationScheduler }),
+      ...(deps.publicationToolGroupLatencyMs === undefined
+        ? {}
+        : { toolGroupLatencyMs: deps.publicationToolGroupLatencyMs }),
+      ...(deps.publicationToolGroupMaxEntries === undefined
+        ? {}
+        : { toolGroupMaxEntries: deps.publicationToolGroupMaxEntries }),
+    },
+  );
   const metrics = streamMetrics();
   const hydratedToolLimit = Math.max(
     0,
@@ -785,6 +875,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
       ...(sourceExecutionId === undefined ? {} : { sourceExecutionId }),
       ...(bounded.truncated ? { textTruncated: true } : {}),
     }));
+    publisher.publishImmediate(key, "user");
     return key;
   }
 
@@ -818,15 +909,18 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
 
   function appendNotice(text: string, tone: "info" | "warn" | "accent" = "info"): void {
     const bounded = boundTranscriptText(text);
-    upsert(`notice:${noticeSeq++}`, () => ({
+    const key = `notice:${noticeSeq++}`;
+    upsert(key, () => ({
       kind: "annotation",
       status: "ok",
       tone,
       text: bounded.text,
     }));
+    publisher.publishImmediate(key, "annotation");
   }
 
   const FOLDED_PREFIX_KEY = "transcript:folded-prefix";
+  let foldedPrefixPublicationSequence = 0;
 
   function foldPrefixBefore(beforeKey: string, notice: string): boolean {
     const boundary = indexOfKey.get(beforeKey);
@@ -841,8 +935,34 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
       text: notice,
     };
 
-    // One structural write, regardless of how many nodes the old turns held.
-    setState("nodes", [foldedNotice, ...state.nodes.slice(boundary)]);
+    const foldedPublication: TranscriptPublicationBatch = Object.freeze({
+      id: `publication:folded-prefix:${foldedPrefixPublicationSequence++}`,
+      kind: "annotation",
+      nodes: Object.freeze([Object.freeze({ ...foldedNotice })]),
+      defaultFolded: Object.freeze({ [FOLDED_PREFIX_KEY]: false }),
+      toolGroups: Object.freeze({}),
+      sectionHeaders: Object.freeze({}),
+      sectionAnchors: Object.freeze({}),
+      sectionFoldedKeys: Object.freeze([]),
+      phase: "committed",
+      ready: true,
+    });
+
+    const retainedPublications = publicationBatches().filter(
+      (publication) =>
+        !publication.id.startsWith("publication:folded-prefix:") &&
+        !publication.nodes.every((node) => removed.has(node.key)),
+    );
+    const retainedPublicationKeys = new Set(
+      retainedPublications.flatMap((publication) => publication.nodes.map((node) => node.key)),
+    );
+
+    batch(() => {
+      setState("nodes", [foldedNotice, ...state.nodes.slice(boundary)]);
+      setPublicationBatches(Object.freeze([foldedPublication, ...retainedPublications]));
+    });
+
+    publisher.forgetDiscarded([...removed].filter((key) => !retainedPublicationKeys.has(key)));
 
     for (const key of removed) foldDefaults.delete(key);
     const retainedHydrated = hydratedTools.filter((key) => !removed.has(key));
@@ -899,6 +1019,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         foldDefaults.set(n.key, !failed);
       });
       noteHydrated(key);
+      publisher.publishImmediate(key, "local");
     };
   }
 
@@ -957,7 +1078,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     });
   }
 
-  function openRun(execId: string): RunSink {
+  function openRun(execId: string): TranscriptRunSink {
     const ns = (k: string): string => `${execId}::${k}`;
     const subagents = createSubagentRegistry();
     let plan: PlanActivity | null = null;
@@ -981,15 +1102,14 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
      *   `subagentOrder` (`undefined` being the lead).
      *
      * @remarks `tool_input_delta` is emitted from the *provider stream*, so it
-     *   fires for every tool call the model composes. The lifecycle that closes
-     *   a tool node, though, is emitted by whichever *dispatcher* runs the call
-     *   — and not every one of them emits it. `delegate_task` and the workflow
-     *   spawn tools record no `tool_call` at all, so without this their
-     *   placeholder would spin for the rest of the session. The client cannot
-     *   know which tools those are, and must not have to: an in-flight model
-     *   call is over by the time the next iteration starts, so a placeholder
-     *   still carrying `inputChars` then is not a running tool call and saying
-     *   so is a lie the elapsed timer keeps telling.
+     *   fires for every visible tool call the model composes. The lifecycle that
+     *   closes a tool node, though, is emitted by whichever *dispatcher* runs
+     *   the call, and a missing terminal event must not leave a placeholder
+     *   spinning forever. An in-flight model call is over by the time the next
+     *   iteration starts, so a placeholder still carrying `inputChars` then is
+     *   not a running tool call and saying so is a lie the elapsed timer keeps
+     *   telling. Sub-agent/workflow orchestration is excluded before this
+     *   fallback because its lifecycle belongs to the Sidebar/footer instead.
      *
      *   Scoped by agent because a sub-agent runs concurrently with the lead —
      *   an unscoped sweep on the lead's next iteration would delete a
@@ -1007,31 +1127,6 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           doomed.push(n.key);
       for (const key of doomed) remove(key);
     };
-    /**
-     * Retire the oldest composing placeholder for a tool whose real lifecycle
-     * is represented by another event family.
-     *
-     * A delegation has no `tool_call_started`/`tool_call` pair to reconcile
-     * with the provider's `tool_input_delta`. `delegation_created` is the first
-     * authoritative proof that one `delegate_task` call has left composition,
-     * so consume one placeholder per creation event. Consuming all of them at
-     * once would hide a sibling that is still being composed in the same model
-     * turn.
-     */
-    const dropFirstComposingTool = (
-      tool: string,
-      inScope: (order: number | undefined) => boolean,
-    ): void => {
-      const placeholder = state.nodes.find(
-        (node) =>
-          node.key.startsWith(`${execId}::`) &&
-          node.kind === "tool_call" &&
-          node.inputChars !== undefined &&
-          toolIdentity(node.mcpName, node.toolName) === tool &&
-          inScope(node.subagentOrder),
-      );
-      if (placeholder !== undefined) remove(placeholder.key);
-    };
     const rememberModel = (wid: string | undefined, model: string | undefined): void => {
       if (!model) return;
       if (wid === undefined) {
@@ -1046,12 +1141,17 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     let leadSteerSeq = 0;
     let attributedSteerSeq = 0;
     const pendingSteerKeys: { key: string; message: string }[] = [];
+    const pendingElicitations: { key: string; question: string }[] = [];
     let runStartedAt: number | undefined;
     let leadInput = 0;
     let leadOutput = 0;
+    let completed = false;
+    const missingSubagentAttribution = (event: RunEvent): boolean =>
+      "agent" in event && event.agent === "subagent" && event.subagent_id === undefined;
 
-    const sink: RunSink = {
+    const sink: TranscriptRunSink = {
       queueSteer(message) {
+        if (completed) return () => {};
         const key = ns(`steer:lead:${leadSteerSeq++}`);
         pendingSteerKeys.push({ key, message });
         upsert(key, () => ({
@@ -1068,34 +1168,51 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         };
       },
 
-      open(span, event) {
+      open(span, event, source) {
+        if (completed || missingSubagentAttribution(event)) return;
         if (span.kind === "run" && event.type === "run_started") {
           runStartedAt = event.at;
           rememberModel(undefined, event.lead_model);
         } else if (span.kind === "tool" && event.type === "tool_call_started") {
-          const index = upsert(ns(span.span_id), () => ({
-            kind: "tool_call",
-            status: "running",
-            text: "",
-            mcpName: event.server,
-            toolName: event.tool,
-            args: asArgs(event.arguments),
-            startedAt: event.at,
-            ...attrOf(event.subagent_id),
-          }));
-          // The node may already exist, created by `tool_input_delta` while the
-          // model was still composing this call. `upsert` only runs its factory
-          // when absent, so the authoritative fields have to be written here or
-          // the placeholder's empty args would survive the real call.
-          patchKind(index, "tool_call", (n) => {
-            n.mcpName = event.server;
-            n.toolName = event.tool;
-            n.args = asArgs(event.arguments);
-            n.inputChars = undefined;
-          });
+          if (
+            event.agent === "lead" &&
+            isTranscriptExternalOrchestrationTool(event.server, event.tool)
+          ) {
+            remove(ns(span.span_id));
+          } else {
+            const index = upsert(ns(span.span_id), () => ({
+              kind: "tool_call",
+              status: "running",
+              text: "",
+              mcpName: event.server,
+              toolName: event.tool,
+              args: asArgs(event.arguments),
+              startedAt: event.at,
+              ...attrOf(event.subagent_id),
+            }));
+            // The node may already exist, created by `tool_input_delta` while the
+            // model was still composing this call. `upsert` only runs its factory
+            // when absent, so the authoritative fields have to be written here or
+            // the placeholder's empty args would survive the real call.
+            patchKind(index, "tool_call", (n) => {
+              n.mcpName = event.server;
+              n.toolName = event.tool;
+              n.args = asArgs(event.arguments);
+              n.inputChars = undefined;
+            });
+          }
         } else if (span.kind === "subagent" && event.type === "delegation_created") {
-          dropFirstComposingTool("delegate_task", (order) => order === undefined);
-          subagents.resolve(event.delegation_id).title = event.title;
+          const subagent = subagents.resolve(event.delegation_id);
+          subagent.title = event.title;
+          const marker = boundTranscriptText(
+            `Spawned sub-agent A${subagent.order + 1} · ${subagent.title}`,
+          );
+          upsert(ns(delegationLeadMarkerKey(event.delegation_id, "spawned")), () => ({
+            kind: "annotation",
+            status: "ok",
+            tone: "accent",
+            text: marker.text,
+          }));
           upsert(ns(`subagent:${event.delegation_id}`), () => ({
             kind: "subagent",
             status: "running",
@@ -1115,16 +1232,13 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             ...attrOf(wid),
           }));
         }
+        publisher.observe(execId, span, event, source);
       },
 
-      point(span, event) {
-        if (
-          event.type === "text_delta" &&
-          event.agent === "subagent" &&
-          event.subagent_id === undefined
-        )
-          return;
+      point(span, event, source) {
+        if (completed || missingSubagentAttribution(event)) return;
         if (span.kind === "iteration" && event.type === "text_delta" && event.channel === "text") {
+          remove(ns(`${span.span_id}#retry`));
           metrics.count("store_text_delta");
           remove(ns(`${span.span_id}#thinking`));
           const index = upsert(ns(`${span.span_id}#msg`), () => ({
@@ -1145,6 +1259,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             n.proseReleased = undefined;
           });
         } else if (span.kind === "iteration" && event.type === "reasoning") {
+          remove(ns(`${span.span_id}#retry`));
           remove(ns(`${span.span_id}#thinking`));
           const index = upsert(ns(`${span.span_id}#reasoning`), () => ({
             kind: "reasoning",
@@ -1176,18 +1291,25 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           // Without it the model spends tens of seconds composing arguments
           // with no mark on screen at all.
           metrics.count("store_tool_input_delta");
-          const index = upsert(ns(span.span_id), () => ({
-            kind: "tool_call",
-            status: "running",
-            text: "",
-            toolName: event.tool,
-            startedAt: event.at,
-            ...attrOf(event.subagent_id),
-          }));
-          patchKind(index, "tool_call", (n) => {
-            if (n.status !== "running") return;
-            n.inputChars = event.chars;
-          });
+          if (
+            event.agent === "lead" &&
+            isTranscriptExternalOrchestrationTool(event.tool, undefined)
+          ) {
+            remove(ns(span.span_id));
+          } else {
+            const index = upsert(ns(span.span_id), () => ({
+              kind: "tool_call",
+              status: "running",
+              text: "",
+              toolName: event.tool,
+              startedAt: event.at,
+              ...attrOf(event.subagent_id),
+            }));
+            patchKind(index, "tool_call", (n) => {
+              if (n.status !== "running") return;
+              n.inputChars = event.chars;
+            });
+          }
         } else if (span.kind === "iteration" && event.type === "model_error") {
           const index = upsert(ns(`${span.span_id}#error`), () => ({
             kind: "error",
@@ -1197,6 +1319,20 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           patch(index, (n) => {
             n.text = `${event.kind}: ${event.message}`;
             Object.assign(n, attrOf(event.subagent_id));
+          });
+        } else if (span.kind === "iteration" && event.type === "model_retry") {
+          const index = upsert(ns(`${span.span_id}#retry`), () => ({
+            kind: "annotation",
+            status: "running",
+            tone: "info",
+            text: modelRetryText(event),
+            ...attrOf(event.subagent_id),
+          }));
+          patchKind(index, "annotation", (node) => {
+            node.status = "running";
+            node.tone = "info";
+            node.text = modelRetryText(event);
+            Object.assign(node, attrOf(event.subagent_id));
           });
         } else if (
           event.type === "plan_created" ||
@@ -1227,7 +1363,21 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
                   ? "error"
                   : "running";
           });
+        } else if (event.type === "compaction_started") {
+          const index = upsert(ns(`${span.span_id}#compaction-live`), () => ({
+            kind: "annotation",
+            status: "running",
+            tone: "info",
+            text: "compacting context…",
+            ...attrOf(event.subagent_id),
+          }));
+          patchKind(index, "annotation", (node) => {
+            node.status = "running";
+            node.text = "compacting context…";
+            Object.assign(node, attrOf(event.subagent_id));
+          });
         } else if (event.type === "compaction") {
+          remove(ns(`${span.span_id}#compaction-live`));
           upsert(ns(`${span.span_id}#compaction:${annSeq++}`), () => ({
             kind: "annotation",
             status: "ok",
@@ -1240,6 +1390,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             ...attrOf(event.subagent_id),
           }));
         } else if (event.type === "compaction_skipped") {
+          remove(ns(`${span.span_id}#compaction-live`));
           upsert(ns(`${span.span_id}#compaction-skipped:${annSeq++}`), () => ({
             kind: "annotation",
             status: "error",
@@ -1262,13 +1413,36 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             text: softLimitNoticeText(event.dimension, event.used, event.limit, event.outcome),
           }));
         } else if (event.type === "elicitation_requested") {
-          upsert(ns(`ask:${annSeq++}`), () => ({
+          const key = ns(`ask:${annSeq++}`);
+          pendingElicitations.push({ key, question: event.question });
+          upsert(key, () => ({
             kind: "annotation",
-            status: "ok",
+            status: "pending",
             tone: "info",
             text: `asked: ${event.question}`,
             ...attrOf(event.subagent_id),
           }));
+        } else if (event.type === "elicitation_resolved") {
+          const pendingIndex = pendingElicitations.findIndex(
+            (candidate) => candidate.question === event.question,
+          );
+          const key =
+            pendingIndex === -1
+              ? ns(`ask:${annSeq++}`)
+              : pendingElicitations.splice(pendingIndex, 1)[0]!.key;
+          const index = upsert(key, () => ({
+            kind: "annotation",
+            status: "ok",
+            tone: "info",
+            text: elicitationOutcomeText(event),
+            ...attrOf(event.subagent_id),
+          }));
+          patchKind(index, "annotation", (node) => {
+            node.status = "ok";
+            node.tone = "info";
+            node.text = elicitationOutcomeText(event);
+            Object.assign(node, attrOf(event.subagent_id));
+          });
         } else if (event.type === "steering_applied") {
           const key =
             event.agent === "lead"
@@ -1287,14 +1461,49 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             node.text = steerNoticeText(event.message);
             Object.assign(node, attrOf(event.subagent_id));
           });
+        } else if (
+          event.type === "capability_event" &&
+          event.capability !== "delegation" &&
+          event.capability !== "workflows"
+        ) {
+          const bounded = boundTranscriptText(
+            `${event.capability}.${event.kind}: ${event.projection}${event.truncated ? " [detail shortened]" : ""}`,
+          );
+          upsert(ns(`capability:${annSeq++}`), () => ({
+            kind: "annotation",
+            status: "ok",
+            tone: "info",
+            text: bounded.text,
+          }));
+        } else if (event.type === "events_dropped") {
+          upsert(ns(`events-dropped:${annSeq++}`), () => ({
+            kind: "annotation",
+            status: "error",
+            tone: "warn",
+            text: `${event.dropped} incremental live event${event.dropped === 1 ? " was" : "s were"} dropped; terminal tool results and assistant responses remain authoritative.`,
+          }));
+        } else if (event.type === "mcp_degraded") {
+          const detail = event.servers
+            .map((server) => `${server.name}: ${server.reason}`)
+            .join("; ");
+          const bounded = boundTranscriptText(`MCP degraded — ${detail}`);
+          upsert(ns(`mcp-degraded:${annSeq++}`), () => ({
+            kind: "annotation",
+            status: "error",
+            tone: "warn",
+            text: bounded.text,
+          }));
         }
+        publisher.observe(execId, span, event, source);
       },
 
-      close(span, event) {
+      close(span, event, source) {
+        if (completed || missingSubagentAttribution(event)) return;
         if (
           span.kind === "subagent" &&
           (event.type === "delegation_completed" || event.type === "delegation_failed")
         ) {
+          const subagent = subagents.resolve(event.delegation_id);
           const index = upsert(ns(`subagent:${event.delegation_id}`), () => ({
             kind: "subagent",
             status: "running",
@@ -1306,9 +1515,20 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             n.status = subagentCompletedOk(event.status) ? "ok" : "error";
             foldDefaults.set(n.key, n.status === "ok");
           });
+          const succeeded = subagentCompletedOk(event.status);
+          const marker = boundTranscriptText(
+            `Sub-agent A${subagent.order + 1} ${succeeded ? "completed" : "failed"} · ${subagent.title}`,
+          );
+          upsert(ns(delegationLeadMarkerKey(event.delegation_id, "settled")), () => ({
+            kind: "annotation",
+            status: succeeded ? "ok" : "error",
+            tone: succeeded ? "info" : "warn",
+            text: marker.text,
+          }));
         } else if (span.kind === "iteration") {
           if (event.type === "iteration_completed") {
             closedIterations.add(span.span_id);
+            remove(ns(`${span.span_id}#retry`));
             remove(ns(`${span.span_id}#thinking`));
             const rIndex = indexOfKey.get(ns(`${span.span_id}#reasoning`));
             if (rIndex !== undefined)
@@ -1351,6 +1571,13 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
               if (mIndex !== undefined) patch(mIndex, (n) => (n.status = "ok"));
             }
           }
+        } else if (
+          span.kind === "tool" &&
+          event.type === "tool_call" &&
+          event.agent === "lead" &&
+          isTranscriptExternalOrchestrationTool(event.server, event.tool)
+        ) {
+          remove(ns(span.span_id));
         } else if (span.kind === "tool" && event.type === "tool_call") {
           const index = upsert(ns(span.span_id), () => ({
             kind: "tool_call",
@@ -1413,6 +1640,16 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
               node.text = steerUndeliveredNoticeText(pendingSteer.message);
             });
           }
+          const transientAnnotations = state.nodes
+            .filter(
+              (node) =>
+                node.key.startsWith(`${execId}::`) &&
+                node.kind === "annotation" &&
+                (node.status === "running" || node.status === "pending"),
+            )
+            .map((node) => node.key);
+          for (const key of transientAnnotations) remove(key);
+          pendingElicitations.length = 0;
           const ok = event.reason === "completed";
           // A rehydrated session is rebuilt from the persisted trace alone, and
           // `appendRunFailure` — the live path's error node — is a runtime
@@ -1448,9 +1685,12 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             if (leadOutput > 0) n.outputTokens = leadOutput;
           });
         }
+        publisher.observe(execId, span, event, source);
       },
 
       beginReconcile() {
+        if (completed) return;
+        publisher.beginReconcile(execId);
         replayed = { keys: [], seen: new Set() };
         leadInput = 0;
         leadOutput = 0;
@@ -1458,14 +1698,19 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         leadSteerSeq = 0;
         attributedSteerSeq = 0;
         pendingSteerKeys.length = 0;
+        pendingElicitations.length = 0;
         closedIterations.clear();
         runStartedAt = undefined;
       },
 
       endReconcile() {
+        if (completed) return;
         const pass = replayed;
         replayed = null;
-        if (pass === null) return;
+        if (pass === null) {
+          publisher.endReconcile(execId);
+          return;
+        }
         const prefix = `${execId}::`;
         const planKey = ns("plan");
         if (plan !== null && indexOfKey.has(planKey) && !pass.seen.has(planKey)) {
@@ -1500,6 +1745,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         }
         if (next.length === state.nodes.length && next.every((n, i) => n === state.nodes[i])) {
           rebuildProseAccounting();
+          publisher.endReconcile(execId);
           return;
         }
         setState("nodes", next);
@@ -1509,13 +1755,35 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         for (const key of [...hydratedTools]) if (!survivingKeys.has(key)) forgetHydrated(key);
         reindex();
         rebuildProseAccounting();
+        publisher.endReconcile(execId);
+      },
+
+      complete(completion) {
+        if (completed) return;
+        completed = true;
+        publisher.completeRun(execId, completion);
       },
     };
     return sink;
   }
 
+  function committedPublicationKeys(): Set<string> {
+    return new Set(
+      publicationBatches().flatMap((publication) =>
+        publication.phase === "committed" ? publication.nodes.map((node) => node.key) : [],
+      ),
+    );
+  }
+
+  function markPublicationReady(batchId: string): void {
+    void batchId;
+  }
+
   function clear(): void {
     setState("nodes", []);
+    setPublicationBatches(Object.freeze([]));
+    publisher.clear();
+    foldedPrefixPublicationSequence = 0;
     indexOfKey.clear();
     foldDefaults.clear();
     hydratedTools.length = 0;
@@ -1536,9 +1804,23 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     get nodes() {
       return state.nodes;
     },
+    get publicationBatches() {
+      return publicationBatches();
+    },
+    frontierNodes: () => {
+      const committed = committedPublicationKeys();
+      return state.nodes.filter((node) => !committed.has(node.key));
+    },
+    committedNodes: () =>
+      publicationBatches().flatMap((publication) =>
+        publication.phase === "committed" ? publication.nodes : [],
+      ),
+    markPublicationReady,
     memory: () => ({
       transcript_nodes: state.nodes.length,
       transcript_prose_bytes: proseBytes,
+      publication_batches: publicationBatches().length,
+      publication_known_keys: publisher.knownKeyCount(),
       hydrated_tool_nodes: hydratedTools.length,
       hydrated_tool_bytes: hydratedToolBytes,
       active_rehydrates: activeRehydrates,

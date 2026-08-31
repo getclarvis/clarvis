@@ -49,6 +49,20 @@ const leadTool = (id: string): RunEvent =>
     ok: true,
   });
 
+const transcriptExternalOrchestrationTools = [
+  "spawn_subagent",
+  "delegate_task",
+  "agent_list",
+  "agent_poll",
+  "agent_stop",
+  "agent_steer",
+  "await_agents",
+  "run_leader",
+  "run_workflow",
+  "run_round",
+  "run_work_items",
+] as const;
+
 function liveThenReplay(stream: RunEvent[]): TranscriptNode[] {
   return createRoot(() => {
     const store = createTranscriptStore();
@@ -242,6 +256,320 @@ test("subagent-attributed annotations carry subagentOrder (no Lead flush-barrier
   expect(steer.subagentOrder).toBeUndefined();
 });
 
+test("typed delegation lifecycle emits one friendly Lead marker per semantic boundary", () => {
+  for (const terminalType of ["delegation_completed", "delegation_failed"] as const) {
+    createRoot((dispose) => {
+      const store = createTranscriptStore();
+      const sink = store.openRun(`exec_${terminalType}`);
+      const apply = (event: RunEvent): void => applyRunEvent(sink, event, "live");
+      const lifecycleMarkers = (): TranscriptNode[] =>
+        store.nodes.filter(
+          (node) =>
+            node.subagentId === undefined &&
+            node.text.toLowerCase().includes("research authentication"),
+        );
+
+      apply(ev({ type: "run_started", at: 0 }));
+      apply(
+        ev({
+          type: "delegation_created",
+          delegation_id: "worker",
+          at: 1,
+          title: "Research authentication",
+          task: "SECRET CHILD BRIEF",
+          tools: [],
+        }),
+      );
+
+      const [spawned] = lifecycleMarkers();
+      expect(lifecycleMarkers()).toHaveLength(1);
+      expect(spawned?.text.toLowerCase()).toContain("spawned");
+      expect(spawned?.text).toContain("A1");
+      expect(spawned?.text).not.toContain("SECRET CHILD BRIEF");
+      const immutableSpawn = spawned && {
+        key: spawned.key,
+        text: spawned.text,
+        status: spawned.status,
+      };
+
+      apply(
+        ev({
+          type: "delegation_started",
+          delegation_id: "worker",
+          at: 2,
+          model: "openai/gpt-5",
+        }),
+      );
+      expect(lifecycleMarkers()).toHaveLength(1);
+
+      apply(
+        ev({
+          type: "tool_call",
+          at: 3,
+          agent: "subagent",
+          subagent_id: "worker",
+          call_id: "child-read",
+          server: "builtin",
+          tool: "read_file",
+          arguments: { path: "private.ts" },
+          result: "SECRET CHILD TOOL RESULT",
+          ok: true,
+        }),
+      );
+      apply(
+        terminalType === "delegation_completed"
+          ? ev({
+              type: terminalType,
+              delegation_id: "worker",
+              at: 4,
+              status: "completed",
+              summary: "SECRET CHILD SUMMARY",
+            })
+          : ev({
+              type: terminalType,
+              delegation_id: "worker",
+              at: 4,
+              status: "error",
+              summary: "SECRET CHILD SUMMARY",
+            }),
+      );
+
+      const markers = lifecycleMarkers();
+      expect(markers).toHaveLength(2);
+      expect(new Set(markers.map((node) => node.key)).size).toBe(2);
+      expect(markers[0]).toMatchObject(immutableSpawn ?? {});
+      expect(markers[1]?.text.toLowerCase()).toContain(
+        terminalType === "delegation_completed" ? "completed" : "failed",
+      );
+      expect(markers.every((node) => !node.text.includes("SECRET CHILD"))).toBe(true);
+      expect(markers.every((node) => !node.text.includes("worker"))).toBe(true);
+      expect(
+        store.nodes.filter((node) => node.subagentId === "worker").map((node) => node.kind),
+      ).toEqual(["subagent", "tool_call"]);
+      dispose();
+    });
+  }
+});
+
+test("the delegation capability mirror never creates Lead transcript rows", () => {
+  const store = replayStore([
+    ev({ type: "run_started", at: 0 }),
+    ev({
+      type: "capability_event",
+      at: 1,
+      capability: "delegation",
+      kind: "delegation_created",
+      projection: "delegation_created",
+      truncated: false,
+    }),
+    ev({
+      type: "capability_event",
+      at: 2,
+      capability: "audit",
+      kind: "checkpoint",
+      projection: "ready",
+      truncated: false,
+    }),
+  ]);
+
+  expect(
+    store.nodes
+      .filter((node) => node.kind === "annotation" && node.subagentId === undefined)
+      .map((node) => node.text),
+  ).toEqual(["audit.checkpoint: ready"]);
+  expect(
+    store.publicationBatches
+      .flatMap((publication) => publication.nodes)
+      .filter((node) => node.kind === "annotation" && node.subagentId === undefined)
+      .map((node) => node.text),
+  ).toEqual(["audit.checkpoint: ready"]);
+});
+
+test("Lead orchestration tools remain absent across live replay while child tools stay isolated", () => {
+  createRoot((dispose) => {
+    const store = createTranscriptStore();
+    const sink = store.openRun("exec_orchestration");
+    const stream: RunEvent[] = [ev({ type: "run_started", at: 0 })];
+
+    for (const [index, tool] of transcriptExternalOrchestrationTools.entries()) {
+      const callId = `orchestration-${index}`;
+      stream.push(
+        ev({
+          type: "tool_input_delta",
+          agent: "lead",
+          call_id: callId,
+          at: index * 3 + 1,
+          tool,
+          chars: 64,
+        }),
+        ev({
+          type: "tool_call_started",
+          agent: "lead",
+          call_id: callId,
+          at: index * 3 + 2,
+          server: tool,
+          tool: "",
+          arguments: { task: "private orchestration payload" },
+        }),
+        ev({
+          type: "tool_call",
+          agent: "lead",
+          call_id: callId,
+          at: index * 3 + 3,
+          server: tool,
+          tool: "",
+          arguments: { task: "private orchestration payload" },
+          result: "private orchestration result",
+          ok: true,
+        }),
+      );
+    }
+    stream.push(
+      ev({
+        type: "delegation_created",
+        delegation_id: "worker",
+        at: 40,
+        title: "Explorer",
+        task: "inspect ordinary tool attribution",
+        tools: [],
+      }),
+      ev({
+        type: "tool_call_started",
+        agent: "subagent",
+        subagent_id: "worker",
+        call_id: "child-read",
+        at: 41,
+        server: "read_file",
+        tool: "",
+        arguments: { path: "src/index.ts" },
+      }),
+      ev({
+        type: "tool_call",
+        agent: "subagent",
+        subagent_id: "worker",
+        call_id: "child-read",
+        at: 42,
+        server: "read_file",
+        tool: "",
+        arguments: { path: "src/index.ts" },
+        result: "ordinary child result",
+        ok: true,
+      }),
+    );
+
+    for (const event of stream) applyRunEvent(sink, event, "live");
+    expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
+      expect.objectContaining({
+        key: "exec_orchestration::child-read",
+        status: "ok",
+        mcpName: "read_file",
+        toolName: "",
+        subagentId: "worker",
+      }),
+    ]);
+
+    sink.beginReconcile();
+    for (const event of stream) applyRunEvent(sink, event, "replay");
+    sink.endReconcile();
+    expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
+      expect.objectContaining({
+        key: "exec_orchestration::child-read",
+        status: "ok",
+        mcpName: "read_file",
+        toolName: "",
+        subagentId: "worker",
+      }),
+    ]);
+    dispose();
+  });
+});
+
+test("an MCP leaf collision survives replay while a child lifecycle missing its id fails closed", () => {
+  createRoot((dispose) => {
+    const store = createTranscriptStore();
+    const sink = store.openRun("exec_collision");
+    const stream: RunEvent[] = [
+      ev({ type: "run_started", at: 0 }),
+      ev({
+        type: "tool_input_delta",
+        agent: "lead",
+        call_id: "mcp",
+        at: 1,
+        tool: "server_await_agents",
+        chars: 64,
+      }),
+      ev({
+        type: "tool_call_started",
+        agent: "lead",
+        call_id: "mcp",
+        at: 2,
+        server: "server",
+        tool: "await_agents",
+        arguments: { query: "downstream" },
+      }),
+      ev({
+        type: "tool_call",
+        agent: "lead",
+        call_id: "mcp",
+        at: 3,
+        server: "server",
+        tool: "await_agents",
+        arguments: { query: "downstream" },
+        result: "visible downstream result",
+        ok: true,
+      }),
+      ev({
+        type: "tool_call_started",
+        agent: "subagent",
+        call_id: "missing-child",
+        at: 4,
+        server: "read_file",
+        tool: "",
+        arguments: { path: "private.md" },
+      }),
+      ev({
+        type: "tool_call",
+        agent: "subagent",
+        call_id: "missing-child",
+        at: 5,
+        server: "read_file",
+        tool: "",
+        arguments: { path: "private.md" },
+        result: "private child result",
+        ok: true,
+      }),
+      ev({ type: "run_ended", status: "completed", at: 6, reason: "completed" }),
+    ];
+
+    for (const event of stream) applyRunEvent(sink, event, "live");
+    sink.beginReconcile();
+    for (const event of stream) applyRunEvent(sink, event, "replay");
+    sink.endReconcile();
+    sink.complete();
+
+    expect(store.nodes.filter((node) => node.kind === "tool_call")).toEqual([
+      expect.objectContaining({
+        key: "exec_collision::mcp",
+        mcpName: "server",
+        toolName: "await_agents",
+        result: "visible downstream result",
+      }),
+    ]);
+    expect(
+      store.publicationBatches
+        .flatMap((publication) => publication.nodes)
+        .filter((node) => node.kind === "tool_call"),
+    ).toEqual([
+      expect.objectContaining({
+        key: "exec_collision::mcp",
+        mcpName: "server",
+        toolName: "await_agents",
+      }),
+    ]);
+    dispose();
+  });
+});
+
 test("manual compaction annotations distinguish applied and skipped requests", () => {
   const nodes = replay([
     ev({ type: "run_started", at: 0 }),
@@ -318,7 +646,7 @@ test("two same-type annotations in the same millisecond both land (sequence keys
   expect(anns).toHaveLength(2);
 });
 
-test("an elicitation request is retained as an attributed transcript annotation", () => {
+test("an elicitation request remains a pending attributed frontier annotation", () => {
   const nodes = replay([
     ev({ type: "run_started", at: 0 }),
     ev({
@@ -332,7 +660,7 @@ test("an elicitation request is retained as an attributed transcript annotation"
   ]);
 
   expect(nodes.find((node) => node.kind === "annotation")).toMatchObject({
-    status: "ok",
+    status: "pending",
     tone: "info",
     text: "asked: Which environment?",
     subagentId: "worker-1",
@@ -392,6 +720,112 @@ test("foldPrefixBefore replaces an arbitrarily large semantic prefix with one no
     expect(store.nodes.slice(1)).toEqual(keptNodes);
     expect(store.nodes.filter((node) => node.kind === "annotation")).toHaveLength(1);
     expect(store.nodes.some((node) => node.key.startsWith("exec_old::"))).toBe(false);
+    expect(
+      store.publicationBatches
+        .flatMap((publication) => publication.nodes)
+        .some((node) => node.key.startsWith("exec_old::")),
+    ).toBe(false);
+    expect(store.publicationBatches[0]).toMatchObject({
+      id: "publication:folded-prefix:0",
+      phase: "committed",
+      ready: true,
+    });
+    expect(Object.isFrozen(store.publicationBatches[0]?.nodes[0])).toBe(true);
+    dispose();
+  });
+});
+
+test("repeated 20-turn retention folds keep semantic and publication ledgers at a plateau", () => {
+  createRoot((dispose) => {
+    const store = createTranscriptStore();
+    const residentTurnLimit = 20;
+    const residentUserKeys: string[] = [];
+    const foldedPublicationIds = new Set<string>();
+    let previousFoldedPublication = store.publicationBatches[0];
+
+    for (let turn = 1; turn <= 80; turn += 1) {
+      const executionId = `retention_${turn}`;
+      residentUserKeys.push(store.appendUserMessage(`turn ${turn}`, undefined, executionId));
+      const sink = store.openRun(executionId);
+      applyRunEvent(sink, ev({ type: "run_started", at: turn * 10 }), "live");
+      applyRunEvent(
+        sink,
+        ev({
+          type: "iteration_started",
+          agent: "lead",
+          iteration: 1,
+          at: turn * 10 + 1,
+          model: "m",
+        }),
+        "live",
+      );
+      applyRunEvent(
+        sink,
+        ev({
+          type: "iteration_completed",
+          agent: "lead",
+          iteration: 1,
+          at: turn * 10 + 2,
+          model: "m",
+          response: `answer ${turn}`,
+          response_phase: "final_answer",
+          input_tokens: 1,
+          output_tokens: 1,
+        }),
+        "live",
+      );
+      applyRunEvent(
+        sink,
+        ev({
+          type: "run_ended",
+          at: turn * 10 + 3,
+          status: "completed",
+          reason: "completed",
+        }),
+        "live",
+      );
+      sink.complete();
+      if (residentUserKeys.length <= residentTurnLimit) continue;
+
+      const notice = `${turn - residentTurnLimit} earlier turns folded`;
+      expect(store.foldPrefixBefore(residentUserKeys[1]!, notice)).toBe(true);
+      residentUserKeys.shift();
+
+      const foldedPublication = store.publicationBatches[0]!;
+      expect(foldedPublication.id).toStartWith("publication:folded-prefix:");
+      expect(foldedPublication.id).not.toBe(previousFoldedPublication?.id);
+      expect(foldedPublication).not.toBe(previousFoldedPublication);
+      expect(foldedPublication.nodes).toEqual([
+        expect.objectContaining({
+          key: "transcript:folded-prefix",
+          text: notice,
+        }),
+      ]);
+      if (previousFoldedPublication !== undefined)
+        expect(
+          store.publicationBatches.some(
+            (publication) => publication.id === previousFoldedPublication?.id,
+          ),
+        ).toBe(false);
+      foldedPublicationIds.add(foldedPublication.id);
+      previousFoldedPublication = foldedPublication;
+
+      expect(store.nodes).toHaveLength(residentTurnLimit * 3 + 1);
+      expect(store.publicationBatches).toHaveLength(residentTurnLimit * 2 + 1);
+      expect(new Set(store.publicationBatches.map((publication) => publication.id)).size).toBe(
+        residentTurnLimit * 2 + 1,
+      );
+      expect(store.memory?.()).toMatchObject({
+        transcript_nodes: residentTurnLimit * 3 + 1,
+        publication_batches: residentTurnLimit * 2 + 1,
+        publication_known_keys: residentTurnLimit * 3,
+      });
+    }
+
+    expect(foldedPublicationIds.size).toBe(80 - residentTurnLimit);
+    expect(store.nodes.filter((node) => node.kind === "user").map((node) => node.key)).toEqual(
+      residentUserKeys,
+    );
     dispose();
   });
 });

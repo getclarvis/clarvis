@@ -5,6 +5,42 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+## [0.0.3-beta] - 2026-08-30
+
+### Added
+
+- Environment profiles now pin qualified plugin and skill selections into immutable run snapshots,
+  with guided creation and editing through the Extensions workflow.
+- macOS can enforce native Seatbelt sandbox profiles for shell execution, with matching inspection
+  and CI coverage alongside the Linux Bubblewrap backend.
+- A source-development installer provides the `clarvis-develop` launcher for running the current
+  checkout without replacing a managed release installation.
+
+### Changed
+
+- The terminal UI now opens with a usable startup composer and responsive Clarvis splash on its first
+  paint, while deferred hydration continues in the background.
+- Plugin-heavy startup reuses validated extension state and keeps MCP OAuth discovery in the
+  background so an unanswered authorization flow does not block run admission.
+- Plan controls use a simpler command workflow, and Escape navigation dismisses replaceable overlays
+  immediately.
+
+### Fixed
+
+- Settled runs now release the composer from steer mode so the next prompt starts a new run instead
+  of targeting an inactive one.
+- Environment resolution preserves qualified plugin identities and rejects missing, changed, or
+  ambiguous snapshot entries instead of silently substituting another contribution.
+- Portable release packaging now includes runtime packages loaded through Bun-minified
+  `createRequire` bindings.
+
+### Security
+
+- macOS shell execution can require a native sandbox instead of falling back to an unconstrained
+  host shell, while Linux sandbox enforcement remains fail-closed.
+- Environment snapshots are revalidated at run admission and recorded with their exact identities so
+  workspace or marketplace drift cannot silently change an approved run.
+
 ## [0.0.2-beta] - 2026-08-27
 
 ### Added

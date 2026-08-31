@@ -19,6 +19,9 @@ import type { EnvironmentRunRef } from "./environments.ts";
 export type SessionTurnStatus =
   "pending" | "running" | "done" | "error" | "cancelled" | "interrupted";
 
+/** Whether a persisted run participates in provider continuation or only in transcript history. */
+export type SessionTurnKind = "conversation" | "transcript";
+
 /** Aggregate token / cost totals for a session, summed across its runs. */
 export interface SessionTotals {
   /** Total input (prompt) tokens. */
@@ -33,6 +36,8 @@ export interface SessionTotals {
 
 /** One user turn and the run it drove, if any. */
 export interface SessionTurn {
+  /** Conversation runs rebuild model history; transcript runs are display/export-only. */
+  kind: SessionTurnKind;
   /** Redacted first-line preview of the user's message. */
   user_preview: string;
   /**

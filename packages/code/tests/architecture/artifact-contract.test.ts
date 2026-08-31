@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   assertDetachedSourceMaps,
   assertInstallArtifact,
@@ -163,4 +164,32 @@ test("generated JavaScript contains no build-host checkout path", () => {
       ],
     }),
   ).toThrow(String.raw`artifact embeds the build-host path: dist\chunk-pino.js`);
+});
+
+test("portable packaging and installation pin archive commands to the C locale", () => {
+  const packager = readFileSync(
+    new URL("../../tooling/release/package.ts", import.meta.url),
+    "utf8",
+  );
+  const archiveBody = packager.slice(
+    packager.indexOf("async function createArchive"),
+    packager.indexOf("async function main"),
+  );
+  expect(archiveBody).toContain('env: { ...process.env, LC_ALL: "C" }');
+
+  const installer = readFileSync(new URL("../../../../install.sh", import.meta.url), "utf8");
+  expect(installer).toContain(
+    'expected=$(LC_ALL=C awk -v asset="$asset" \'$2 == asset { print $1 }\' "$checksums")',
+  );
+  expect(installer).toContain(
+    "actual=$(LC_ALL=C sha256sum \"$archive\" | LC_ALL=C awk '{ print $1 }')",
+  );
+  expect(installer).toContain(
+    "actual=$(LC_ALL=C shasum -a 256 \"$archive\" | LC_ALL=C awk '{ print $1 }')",
+  );
+  expect(installer).toContain('LC_ALL=C tar -xzf "$archive" -C "$temporary/extract"');
+
+  const smoke = readFileSync(new URL("../../tooling/release/smoke.ts", import.meta.url), "utf8");
+  expect(smoke).toContain("observed the complete-app marker after");
+  expect(smoke).not.toContain("reached first paint in");
 });

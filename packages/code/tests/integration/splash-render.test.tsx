@@ -99,6 +99,7 @@ test("the startup composer paints honest readiness markers and queues an early t
   const first = t.captureCharFrame();
   expect(first).toContain(BOOT_SHELL_MARKER);
   expect(first).toContain(STARTUP_READY_MARKER);
+  expect(first).toContain(".d8888b.");
   expect(first).not.toContain(APP_PAINT_MARKER);
   expect(first).not.toContain(APP_READY_MARKER);
   expect(first).toContain("Type now; Enter queues the task");
@@ -112,6 +113,36 @@ test("the startup composer paints honest readiness markers and queues an early t
     submission: "inspect plugin startup",
   });
   t.renderer.destroy();
+});
+
+test("the startup composer shares the responsive Clarvis splash on first paint", async () => {
+  const complete = await openRender(
+    () => <StartupComposer state={createStartupComposerState()} acceptsInput />,
+    { width: 60, height: 16 },
+  );
+  await complete.renderOnce();
+  expect(complete.captureCharFrame()).toContain(".d8888b.");
+  complete.renderer.destroy();
+
+  const short = await openRender(
+    () => <StartupComposer state={createStartupComposerState()} acceptsInput />,
+    { width: 60, height: 15 },
+  );
+  await short.renderOnce();
+  const shortFrame = short.captureCharFrame();
+  expect(shortFrame).not.toContain(".d8888b.");
+  expect(shortFrame).toContain("C L A R V I S");
+  short.renderer.destroy();
+
+  const narrow = await openRender(
+    () => <StartupComposer state={createStartupComposerState()} acceptsInput />,
+    { width: 59, height: 16 },
+  );
+  await narrow.renderOnce();
+  const narrowFrame = narrow.captureCharFrame();
+  expect(narrowFrame).not.toContain(".d8888b.");
+  expect(narrowFrame).toContain("C L A R V I S");
+  narrow.renderer.destroy();
 });
 
 test("the startup composer preserves an unsent draft and keeps resume locked", async () => {

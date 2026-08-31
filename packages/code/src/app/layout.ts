@@ -43,9 +43,11 @@ export interface LayoutController {
 
 /**
  * Builds the reactive {@link LayoutController} that derives layout mode and
- * sidebar/drawer state from terminal dimensions and sidebar content.
+ * presents available secondary content only after an explicit user intent or one of the bounded
+ * run-scoped first-Plan, first-workflow-leader, or first-delegation intents supplied by the
+ * application shell.
  *
- * @param opts - Accessors for terminal dimensions and sidebar content presence.
+ * @param opts - Accessors for terminal dimensions and secondary content presence.
  * @returns The layout controller.
  */
 export function createLayoutController(opts: {
@@ -57,11 +59,16 @@ export function createLayoutController(opts: {
     return layoutModeFromDims(w, h);
   });
   const [drawerOpen, setDrawerOpen] = createSignal(false);
+  const setDrawerOpenWithContentGuard: LayoutController["setDrawerOpen"] = (next) => {
+    setDrawerOpen((previous) => {
+      const requested = typeof next === "function" ? next(previous) : next;
+      return requested && !previous && !opts.hasSidebarContent() ? false : requested;
+    });
+  };
   const splitEligible = createMemo(() => opts.dims().w >= INSPECTOR_SPLIT_MIN_WIDTH);
   const secondaryMode = createMemo<SecondarySurfaceMode>(() => {
-    if (!opts.hasSidebarContent()) return "closed";
-    if (splitEligible()) return "split";
-    return drawerOpen() ? "drawer" : "closed";
+    if (!drawerOpen()) return "closed";
+    return splitEligible() ? "split" : "drawer";
   });
   const sidebarVisible = createMemo(() => secondaryMode() === "split");
   const sidebarWidth = createMemo(() => {
@@ -75,7 +82,7 @@ export function createLayoutController(opts: {
   return {
     layoutMode,
     drawerOpen,
-    setDrawerOpen,
+    setDrawerOpen: setDrawerOpenWithContentGuard,
     sidebarVisible,
     secondaryMode,
     sidebarWidth,

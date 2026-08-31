@@ -5,13 +5,7 @@ import {
   TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS,
   TRANSCRIPT_TOOL_DISPLAY_SHORTENED_NOTICE,
 } from "../../src/core/transcript/index.ts";
-import {
-  createTranscriptTurnIndex,
-  transcriptNodeMountedTextChars,
-  transcriptNodeRenderCost,
-  windowTranscriptIndexed,
-  WINDOW_TEXT_CHARS_BUDGET,
-} from "../../src/views/transcript-window.ts";
+import { TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS } from "../../src/core/transcript/presenters.ts";
 
 type ToolNode = Extract<TranscriptNode, { kind: "tool_call" }>;
 
@@ -37,8 +31,8 @@ test("tool display caps a one-line result before any renderer can inspect it", (
   expect(display.truncated).toBe(true);
   expect(node.result).toBe(raw);
   expect(projectTranscriptToolDisplay(node)).toBe(display);
-  expect(transcriptNodeMountedTextChars(node)).toBe(display.mountedTextChars);
-  expect(transcriptNodeRenderCost(node)).toBeGreaterThan(12);
+  expect(display.mountedTextChars).toBeGreaterThan(TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS);
+  expect(display.mountedTextChars).toBeLessThanOrEqual(TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS);
 });
 
 test("tool display bounds argument traversal and serialization while preserving a useful prefix", () => {
@@ -150,19 +144,17 @@ test("tool argument projection handles collisions, sparse arrays, cycles and dee
   expect(display.truncated).toBe(true);
 });
 
-test("transcript paging charges bounded tool payloads instead of treating them as empty text", () => {
+test("each physical-publication snapshot bounds tool payloads before native mounting", () => {
   const raw = "z".repeat(TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS * 2);
   const nodes = Array.from({ length: 20 }, (_, index) =>
     tool({ key: `exec::tool-${index}`, result: raw }),
   );
-  const window = windowTranscriptIndexed(nodes, null, createTranscriptTurnIndex());
-
-  expect(window.nodes.length).toBeLessThan(nodes.length);
-  expect(window.mountedTextChars).toBeGreaterThan(0);
-  expect(window.mountedTextChars).toBeLessThanOrEqual(WINDOW_TEXT_CHARS_BUDGET);
-  expect(window.mountedTextChars).toBe(
-    window.nodes.reduce((total, node) => total + transcriptNodeMountedTextChars(node), 0),
-  );
+  const displays = nodes.map((node) => projectTranscriptToolDisplay(node));
+  expect(displays.every((display) => display.mountedTextChars > 0)).toBe(true);
+  expect(
+    displays.every((display) => display.mountedTextChars <= TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS),
+  ).toBe(true);
+  expect(nodes.every((node) => node.result === raw)).toBe(true);
 });
 
 test("tool display charges the header signature as well as its argument-derived body", () => {
@@ -170,5 +162,5 @@ test("tool display charges the header signature as well as its argument-derived 
   const display = projectTranscriptToolDisplay(node);
 
   expect(display.mountedTextChars).toBeGreaterThan(display.argumentsText.length);
-  expect(transcriptNodeMountedTextChars(node)).toBe(display.mountedTextChars);
+  expect(display.mountedTextChars).toBeLessThanOrEqual(TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS);
 });

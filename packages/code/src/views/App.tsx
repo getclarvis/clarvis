@@ -66,7 +66,7 @@ import type { TasksController } from "../features/tasks/controller.ts";
 import type { SessionCatalogItem } from "./config/SessionsHub.tsx";
 import { createInteraction, type InteractionEffects } from "../keys/interaction.ts";
 import { uiCommand } from "../keys/actions.ts";
-import { LAYER } from "../keys/keyspec.ts";
+import { commandKeyLabel, LAYER } from "../keys/keyspec.ts";
 import { createCommands, type CommandEffects } from "../keys/commands.ts";
 import {
   classifySlashSubmit,
@@ -82,19 +82,19 @@ import { createTranscriptState } from "./transcript-state.ts";
 import { createOverlayHost } from "./overlay-host.ts";
 import { createHintState, type HintTone } from "./hint.ts";
 import { createQuitConfirm } from "./quit-confirm.ts";
-import { tickNow, useSpinnerClock } from "./spinner.ts";
+import { formatElapsed, tickNow, useSpinnerClock } from "./spinner.ts";
 import { runStripText } from "../features/run/status-presenter.ts";
 import { errorText } from "../adapters/errors.ts";
-import { Footer, HintToast } from "./Footer.tsx";
+import { Footer, HintToast, LeadActivityLine, type LeadActivityPhase } from "./Footer.tsx";
 import { FLOAT_Z } from "./overlays/FloatFrame.tsx";
 import { InputDock, type SlashOutcome } from "./InputDock.tsx";
-import { PlanStrip } from "./Sidebar.tsx";
 import { ProfilePicker, type AgentDefaults } from "./overlays/ProfilePicker.tsx";
 import { createLayoutController, FLOOR_MIN_COLUMNS, FLOOR_MIN_ROWS } from "../app/layout.ts";
-import { OverlayRegion } from "./app/OverlayRegion.tsx";
+import { OverlayRegion, overlayFallbackActive } from "./app/OverlayRegion.tsx";
 import { TranscriptRegion } from "./app/TranscriptRegion.tsx";
+import type { CommittedHistoryHandle } from "./history/CommittedHistory.tsx";
 import { NavigationBar } from "../ui/patterns/navigation-bar.tsx";
-import { isAvailablePlan } from "../adapters/plan-projection.ts";
+import { isAvailablePlan, isLivePlan } from "../adapters/plan-projection.ts";
 import { bindSyntaxStyleRenderer } from "../theme/syntax.ts";
 import {
   createMemoryPressureController,
@@ -102,7 +102,6 @@ import {
   tuiRssLimitBytes,
   type MemoryPressurePhase,
 } from "../adapters/memory-pressure.ts";
-import { MemoryPressureBanner } from "./MemoryPressureBanner.tsx";
 import { ActivityDetail } from "./overlays/ActivityDetail.tsx";
 import type { ActivityDetail as ActivityDetailValue } from "./activity-detail.ts";
 import { WorktreeExitPrompt } from "./overlays/WorktreeExitPrompt.tsx";
@@ -129,6 +128,36 @@ function countRenderables(root: Renderable): number {
 function consumePointerEvent(event: MouseEvent): void {
   event.preventDefault();
   event.stopPropagation();
+}
+
+function executionContext(key: string): string {
+  const boundary = key.indexOf("::");
+  return boundary < 0 ? key : key.slice(0, boundary);
+}
+
+/** Identifies the execution that owns the first sub-agent in the current activity roster. */
+function visibleSubagentContext(store: TranscriptStore, activity: ActivityStore): string | null {
+  const first = activity.subagents[0];
+  if (first === undefined) return null;
+  for (let index = store.nodes.length - 1; index >= 0; index -= 1) {
+    const node = store.nodes[index];
+    if (node?.subagentId !== first.id) continue;
+    return executionContext(node.key);
+  }
+  return null;
+}
+
+/** Identifies the execution that owns the current live Plan projection. */
+function visiblePlanContext(store: TranscriptStore, activity: ActivityStore): string | null {
+  const plan = activity.plan;
+  if (!isLivePlan(plan)) return null;
+  const reference = plan.path ?? plan.id;
+  for (let index = store.nodes.length - 1; index >= 0; index -= 1) {
+    const node = store.nodes[index];
+    if (node?.kind !== "plan" || node.text !== reference) continue;
+    return executionContext(node.key);
+  }
+  return null;
 }
 
 /** Handles to the host renderer, platform bridge and workspace root the shell was booted with. */
@@ -201,6 +230,8 @@ export interface AppSessionControls {
   export: () => Promise<string>;
   statusLine: () => string;
   costLine: () => string;
+  /** Cumulative token totals for the current session, retained after a run settles. */
+  usage?: () => { input: number; output: number; cached?: number } | null;
 }
 
 /** The workspace's configuration surfaces — agents, settings, guard/memory mode, keys and the model catalog. */
@@ -285,6 +316,7 @@ export function App(props: AppProps): JSX.Element {
       ...(props.run.memory?.() ?? {}),
       renderer_renderables: countRenderables(props.shell.renderer.root),
       renderer_lifecycle_passes: props.shell.renderer.getLifecyclePasses().size,
+      renderer_frame_listeners: props.shell.renderer.listenerCount("frame"),
     }),
   });
   const [pressure, setPressure] = createSignal(memoryPressure.state());
@@ -341,7 +373,9 @@ export function App(props: AppProps): JSX.Element {
   const secondaryMode = layout.secondaryMode;
   const contentInset = layout.contentInset;
   const ts = createTranscriptState({
-    nodes: () => props.store.nodes,
+    nodes: () => props.store.committedNodes(),
+    detailNodes: () => props.store.nodes,
+    preserveOrder: true,
     subagents: () =>
       props.activity.subagents.map((w) => ({
         id: w.id,
@@ -368,19 +402,100 @@ export function App(props: AppProps): JSX.Element {
       }
     | undefined;
   const [editorExpanded, setEditorExpanded] = createSignal(false);
+  const [inputPopupOpen, setInputPopupOpen] = createSignal(false);
   const [draftNonEmpty, setDraftNonEmpty] = createSignal(false);
   type TransientOverlay = "none" | "activityDetail" | "worktreeExit";
   const [transientOverlay, setTransientOverlay] = createSignal<TransientOverlay>("none");
   const [activityDetail, setActivityDetail] = createSignal<ActivityDetailValue | null>(null);
   let scrollEl: ScrollBoxRenderable | undefined;
+  let historyHandle: CommittedHistoryHandle | undefined;
+  let leadHistoryHandle: CommittedHistoryHandle | undefined;
+  const submitFromLeadTail = (submit: () => void): void => {
+    if (refuseModelAction()) return;
+    const selected = ts.selectedSubagent();
+    if (selected !== null) ts.toggleSubagent(selected);
+    leadHistoryHandle?.returnToTail();
+    submit();
+  };
+  type AutoSidebarIntent = "plan" | "workflow" | "agents";
+  interface AutoSidebarState {
+    context: string | null;
+    opened: boolean;
+    dismissed: boolean;
+  }
+  const autoSidebar: Record<AutoSidebarIntent, AutoSidebarState> = {
+    plan: { context: null, opened: false, dismissed: false },
+    workflow: { context: null, opened: false, dismissed: false },
+    agents: { context: null, opened: false, dismissed: false },
+  };
+  const [sidebarReveal, setSidebarReveal] = createSignal<{
+    section: AutoSidebarIntent;
+    context: string;
+  } | null>(null);
+  let autoSidebarOwner: AutoSidebarIntent | null = null;
 
-  createEffect(
-    on(ts.selectedSubagent, (sel) => {
-      if (sel === null) return;
-      const first = ts.grouped().ordered[0];
-      if (first) scrollEl?.scrollChildIntoView(first.key);
-    }),
-  );
+  const requestAutomaticSidebar = (intent: AutoSidebarIntent, context: string): void => {
+    const state = autoSidebar[intent];
+    if (state.context !== context) {
+      state.context = context;
+      state.opened = false;
+      state.dismissed = false;
+    }
+    if (state.opened || state.dismissed) return;
+    state.opened = true;
+    autoSidebarOwner = intent;
+    setSidebarReveal({ section: intent, context });
+    layout.setDrawerOpen(true);
+  };
+
+  const closeActivitySidebar = (): void => {
+    if (layout.drawerOpen() && autoSidebarOwner !== null)
+      autoSidebar[autoSidebarOwner].dismissed = true;
+    layout.setDrawerOpen(false);
+  };
+
+  const sidebarSectionAvailable = (section: AutoSidebarIntent): boolean => {
+    if (section === "plan") return props.activity.plan !== null;
+    if (section === "workflow")
+      return [...(props.run.workflowActivity()?.nodes.values() ?? [])].some(
+        (node) => node.kind === "leader",
+      );
+    return props.activity.subagents.length > 0;
+  };
+  let manualSidebarReveal = 0;
+  const openActivitySidebar = (requested?: AutoSidebarIntent): void => {
+    const section =
+      requested ?? (["agents", "workflow", "plan"] as const).find(sidebarSectionAvailable) ?? null;
+    if (section === null || !sidebarSectionAvailable(section)) {
+      notify(
+        requested === undefined
+          ? "no run activity to inspect"
+          : `${capitalize(requested)} activity is not available`,
+        "warn",
+      );
+      return;
+    }
+    autoSidebarOwner = null;
+    manualSidebarReveal += 1;
+    setSidebarReveal({ section, context: `manual:${manualSidebarReveal}` });
+    layout.setDrawerOpen(true);
+  };
+
+  createEffect(() => {
+    const context = visiblePlanContext(props.store, props.activity);
+    if (context !== null) requestAutomaticSidebar("plan", context);
+  });
+
+  createEffect(() => {
+    const workflow = props.run.workflowActivity();
+    if (workflow !== null && [...workflow.nodes.values()].some((node) => node.kind === "leader"))
+      requestAutomaticSidebar("workflow", workflow.root);
+  });
+
+  createEffect(() => {
+    const context = visibleSubagentContext(props.store, props.activity);
+    if (context !== null) requestAutomaticSidebar("agents", context);
+  });
 
   const overlays = createOverlayHost({
     interaction: () => interaction,
@@ -456,7 +571,7 @@ export function App(props: AppProps): JSX.Element {
     dismissTopOverlay: () => {
       if (closeTransientOverlay() || overlays.dismissTop()) return true;
       if (!layout.drawerOpen()) return false;
-      layout.setDrawerOpen(false);
+      closeActivitySidebar();
       return true;
     },
     isRunActive: () => props.run.active(),
@@ -489,7 +604,7 @@ export function App(props: AppProps): JSX.Element {
     focusBlock: (delta) => {
       if (overlays.overlay() !== "none") return;
       const key = ts.focusBlock(delta);
-      if (key) scrollEl?.scrollChildIntoView(key);
+      if (key && !historyHandle?.revealKey(key)) scrollEl?.scrollChildIntoView(key);
     },
     clearBlockFocus: () => ts.clearFocus(),
     openDiff: () => {
@@ -517,22 +632,16 @@ export function App(props: AppProps): JSX.Element {
      *   the window rather than needing a key of their own to learn.
      */
     scrollTranscript: (rows) => {
-      if (rows < 0 && (scrollEl?.scrollTop ?? 0) === 0) {
-        if (!ts.loadEarlier()) notify("start of transcript");
-        return;
-      }
-      if (
-        rows > 0 &&
-        scrollEl !== undefined &&
-        scrollEl.scrollTop >= Math.max(0, scrollEl.scrollHeight - scrollEl.height - 1)
-      ) {
-        if (!ts.loadLater()) notify("latest transcript page");
+      const result = historyHandle?.scrollBy(rows);
+      if (result !== undefined) {
+        if (result === "start") notify("start of transcript");
+        if (result === "end") notify("latest transcript batch");
         return;
       }
       scrollEl?.scrollBy({ x: 0, y: rows });
     },
     loadEarlier: () => {
-      if (!ts.loadEarlier()) notify("start of transcript");
+      if (!historyHandle?.requestEarlier()) notify("start of transcript");
     },
   };
 
@@ -594,7 +703,7 @@ export function App(props: AppProps): JSX.Element {
           hintPriority: 100,
           hintGroup: "escape",
           essential: true,
-          run: () => layout.setDrawerOpen(false),
+          run: closeActivitySidebar,
         }),
       ],
       bindings: [{ key: "escape", cmd: "sidebar.drawer.close" }],
@@ -629,6 +738,27 @@ export function App(props: AppProps): JSX.Element {
     },
   };
   const commands = createCommands(interaction, commandEffects, overlays.ui);
+  commands.registerAction({
+    name: "activity.open",
+    title: "Run activity",
+    desc: "Reopen the current Plan, parallel workflow, or sub-agent sidebar",
+    slash: "/activity",
+    surface: "slash",
+    group: "navigate",
+    enabled: sidebarHasContent,
+    subcommands: [
+      { name: "plan", desc: "Reveal the current Plan" },
+      { name: "workflow", desc: "Reveal parallel workflow leaders" },
+      { name: "agents", desc: "Reveal delegated sub-agents" },
+    ],
+    route: (args) => {
+      const section = args.trim().split(/\s+/)[0];
+      if (section !== "plan" && section !== "workflow" && section !== "agents") return false;
+      openActivitySidebar(section);
+      return true;
+    },
+    run: () => openActivitySidebar(),
+  });
   let notifiedMissingEntryAgent = false;
   let entryAgentPromptQueued = false;
   createEffect(() => {
@@ -759,10 +889,10 @@ export function App(props: AppProps): JSX.Element {
     storage: props.backend.storage,
     taskWorkBlockedReason: pressureBlockedReason,
     onSubmitPrompt: (messages, display, skill) => {
-      if (!refuseModelAction()) props.run.submitPrompt(messages, display, skill);
+      submitFromLeadTail(() => props.run.submitPrompt(messages, display, skill));
     },
     onSubmitSkillRun: (name, task, agent) => {
-      if (!refuseModelAction()) props.run.submitSkillRun(name, task, agent);
+      submitFromLeadTail(() => props.run.submitSkillRun(name, task, agent));
     },
     onCompactRun: (request) => {
       if (!refuseModelAction()) props.run.compact(request);
@@ -853,7 +983,7 @@ export function App(props: AppProps): JSX.Element {
       findCommand: (slash) => commands.entries().find((e) => e.slashes.includes(slash))?.name,
     });
     if (hit.kind === "skill") {
-      props.run.submitSkillRun(name, args, hit.agent);
+      submitFromLeadTail(() => props.run.submitSkillRun(name, args, hit.agent));
       return "handled";
     }
     if (hit.kind === "command") {
@@ -953,8 +1083,38 @@ export function App(props: AppProps): JSX.Element {
       : overlays.overlay() !== "none" || transientOverlay() !== "none"
         ? { text: "", tone: "info" }
         : hint();
+  const leadActivityPhase = (): LeadActivityPhase => {
+    const busy = props.run.active() || props.run.localBusy() || props.run.compacting?.() === true;
+    if (!busy) return "ready";
+    if (
+      props.run.active() &&
+      props.store
+        .frontierNodes()
+        .some(
+          (node) =>
+            node.kind === "thinking" &&
+            node.subagentId === undefined &&
+            node.subagentOrder === undefined,
+        )
+    )
+      return "thinking";
+    return "working";
+  };
+  const leadActivityDetail = (): string => {
+    if (!props.run.active()) return "";
+    const detail: string[] = [];
+    const startedAt = props.run.startedAt();
+    if (startedAt !== null) detail.push(formatElapsed(tickNow() - startedAt));
+    const iteration = /iteration\s+(\d+)/i.exec(props.run.status())?.[1];
+    if (iteration) detail.push(`iteration ${iteration}`);
+    const interruptKey = commandKeyLabel(interaction.keymap, "run.cancel", {
+      visibility: "registered",
+    });
+    if (interruptKey !== undefined) detail.push(`${interruptKey} to interrupt`);
+    return detail.join(` ${glyph("separator")} `);
+  };
   const compactActivityStrip = (): string => {
-    if (secondaryMode() === "split" || props.activity.subagents.length === 0) return "";
+    if (secondaryMode() === "split") return "";
     const counts = {
       waiting: props.activity.subagents.filter((agent) => agent.status === "spawned").length,
       running: props.activity.subagents.filter((agent) => agent.status === "running").length,
@@ -965,14 +1125,23 @@ export function App(props: AppProps): JSX.Element {
     const selectedIndex = selected
       ? props.activity.subagents.findIndex((agent) => agent.id === selected)
       : -1;
-    return [
-      `Agents ${props.activity.subagents.length}`,
-      counts.waiting > 0 ? `${counts.waiting} waiting` : "",
-      counts.running > 0 ? `${counts.running} running` : "",
-      counts.done > 0 ? `${counts.done} done` : "",
-      counts.failed > 0 ? `${counts.failed} failed` : "",
-      selectedIndex >= 0 ? `A${selectedIndex + 1} focused` : "",
-    ]
+    const agents =
+      props.activity.subagents.length === 0
+        ? ""
+        : [
+            `Agents ${props.activity.subagents.length}`,
+            counts.waiting > 0 ? `${counts.waiting} waiting` : "",
+            counts.running > 0 ? `${counts.running} running` : "",
+            counts.done > 0 ? `${counts.done} done` : "",
+            counts.failed > 0 ? `${counts.failed} failed` : "",
+            selectedIndex >= 0 ? `A${selectedIndex + 1} focused` : "",
+          ]
+            .filter(Boolean)
+            .join(` ${glyph("separator")} `);
+    const leaders = [...(props.run.workflowActivity()?.nodes.values() ?? [])].filter(
+      (node) => node.kind === "leader",
+    ).length;
+    return [agents, leaders > 0 ? `Workflow ${leaders}` : ""]
       .filter(Boolean)
       .join(` ${glyph("separator")} `);
   };
@@ -992,6 +1161,8 @@ export function App(props: AppProps): JSX.Element {
     const activityStrip = compactActivityStrip();
     const context = props.activity.context;
     const usage = props.activity.usage;
+    const settledSessionUsage = props.session.usage?.() ?? null;
+    const sessionUsage = props.run.active() ? (usage ?? settledSessionUsage) : settledSessionUsage;
     const sessionCost = props.session.costLine();
     const runStrip = runStripText({
       active: props.run.active(),
@@ -1000,7 +1171,7 @@ export function App(props: AppProps): JSX.Element {
       now: tickNow(),
       width: dims().w,
       ...(context ? { context: { used: context.used, limit: contextWindow() } } : {}),
-      ...(usage ? { usage } : {}),
+      ...(sessionUsage ? { sessionUsage } : {}),
       ...(sessionCost ? { sessionCost } : {}),
     });
     return [runStrip, activityStrip].filter(Boolean).join(` ${glyph("separator")} `);
@@ -1083,24 +1254,30 @@ export function App(props: AppProps): JSX.Element {
                 activity={props.activity}
                 interaction={interaction}
                 run={props.run}
+                active={() => overlayFallbackActive(overlays)}
                 layout={{
                   mode: layoutMode,
                   sidebarVisible,
                   secondaryMode,
                   sidebarWidth,
                   drawerOpen,
-                  closeDrawer: () => layout.setDrawerOpen(false),
+                  closeDrawer: closeActivitySidebar,
                   contentInset,
                   width: () => dims().w,
+                  height: () => dims().h,
                 }}
                 contextWindow={contextWindow}
                 agent={agentName}
                 model={resolvedModel}
                 notify={notify}
                 openPlan={() => effects.openPlan()}
+                sidebarReveal={sidebarReveal}
                 onOpenDetail={openActivityDetail}
                 onScrollbox={(el) => (scrollEl = el)}
+                onHistoryHandle={(handle) => (historyHandle = handle)}
+                onLeadHistoryHandle={(handle) => (leadHistoryHandle = handle)}
                 draftNonEmpty={draftNonEmpty}
+                memoryPressure={{ state: pressure, onRecover: recoverMemory }}
               />
             }
           />
@@ -1250,16 +1427,8 @@ export function App(props: AppProps): JSX.Element {
           backgroundColor={tokens.bg}
           zIndex={editorExpanded() ? 3 : 1}
         >
-          <MemoryPressureBanner state={pressure} onRecover={recoverMemory} />
-          <Show
-            when={
-              overlays.overlay() === "none" &&
-              !props.run.elicit() &&
-              props.activity.plan !== null &&
-              secondaryMode() !== "split"
-            }
-          >
-            <PlanStrip plan={() => props.activity.plan!} onOpen={() => effects.openPlan()} />
+          <Show when={!inputPopupOpen()}>
+            <LeadActivityLine phase={leadActivityPhase} detail={leadActivityDetail} />
           </Show>
           <InputDock
             interaction={interaction}
@@ -1273,7 +1442,7 @@ export function App(props: AppProps): JSX.Element {
             runActive={() => props.run.active()}
             submissionBlocked={pressureBlockedReason}
             onSubmit={(content) => {
-              if (!refuseModelAction()) props.run.submit(content);
+              submitFromLeadTail(() => props.run.submit(content));
             }}
             onSlashCommand={onSlashCommand}
             onBashCommand={props.run.bang}
@@ -1294,6 +1463,7 @@ export function App(props: AppProps): JSX.Element {
               dock = value;
             }}
             onExpandedChange={setEditorExpanded}
+            onPopupOpenChange={setInputPopupOpen}
             onDraftChange={setDraftNonEmpty}
             targetLabel={() => {
               if (pressureBlocked()) return "Memory recovery required";
@@ -1313,7 +1483,10 @@ export function App(props: AppProps): JSX.Element {
             }
             runStrip={footerRunStrip}
             onRunStripMouseDown={() => {
-              if (compactActivityStrip()) layout.setDrawerOpen(true);
+              if (compactActivityStrip()) {
+                autoSidebarOwner = null;
+                layout.setDrawerOpen(true);
+              }
             }}
             navigation={
               <NavigationBar

@@ -34,14 +34,18 @@ export function firstRunSplashFits(width: number, height: number): boolean {
   return width >= FIRST_RUN_SPLASH_MIN_COLUMNS && height >= FIRST_RUN_SPLASH_MIN_ROWS;
 }
 
-/** Shared Clarvis banner used by the idle splash and the first-run experience. */
-export function BrandBanner(props: { width: () => number }): JSX.Element {
+/** Shared Clarvis banner used by the idle splash, first paint, and the first-run experience. */
+export function BrandBanner(props: {
+  width: () => number;
+  /** Force the one-line wordmark when the caller cannot spare the banner's eight rows. */
+  compact?: () => boolean;
+}): JSX.Element {
   const stops = createMemo(() =>
     gradientStops(BANNER.length, tokens.accent, tokens.accent2, tokens.bg),
   );
   return (
     <Show
-      when={props.width() >= 60}
+      when={!props.compact?.() && props.width() >= 60}
       fallback={<text fg={tokens.accent}>{glyph("diamond") + SPLASH_WORDMARK}</text>}
     >
       <box flexDirection="column" flexShrink={0}>

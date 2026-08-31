@@ -14,6 +14,7 @@ import {
   TRANSCRIPT_TOOL_GROUP_MAX_ENTRIES,
   snapshotTranscriptNode,
   type TranscriptPublicationScheduler,
+  type TranscriptPublisherHost,
 } from "../../src/adapters/transcript-publication.ts";
 import { TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS } from "../../src/core/transcript/presenters.ts";
 
@@ -97,7 +98,13 @@ function iterationCompleted(
   };
 }
 
-function toolCall(call_id: string, tool: string, result: string, subagent_id?: string): RunEvent {
+function toolCall(
+  call_id: string,
+  tool: string,
+  result: string,
+  subagent_id?: string,
+  server = "builtin",
+): RunEvent {
   return {
     type: "tool_call",
     at: 20,
@@ -105,7 +112,7 @@ function toolCall(call_id: string, tool: string, result: string, subagent_id?: s
     ...(subagent_id === undefined ? {} : { subagent_id }),
     call_id,
     tool,
-    server: "builtin",
+    server,
     arguments: { path: `${call_id}.md`, content: `# ${call_id}` },
     ok: true,
     result,
@@ -327,6 +334,61 @@ describe("transcript publication", () => {
     expect(store.publicationBatches[2]!.nodes.map((node) => node.key)).toEqual(["exec::d"]);
   });
 
+  test("live publication never groups the same leaf name from different MCP servers", () => {
+    const { store, scheduler, sink } = fixture();
+    event(sink, runStarted());
+    event(sink, toolCall("alpha-run", "run", "A", undefined, "alpha"));
+    event(sink, toolCall("beta-run", "run", "B", undefined, "beta"));
+
+    scheduler.flush();
+    expect(store.publicationBatches).toHaveLength(2);
+    expect(store.publicationBatches[0]!.nodes.map((node) => node.key)).toEqual(["exec::alpha-run"]);
+    expect(store.publicationBatches[0]!.toolGroups["exec::alpha-run"]?.role).toBe("solo");
+
+    expect(store.publicationBatches[1]!.nodes.map((node) => node.key)).toEqual(["exec::beta-run"]);
+    expect(store.publicationBatches[1]!.toolGroups["exec::beta-run"]?.role).toBe("solo");
+  });
+
+  test("terminal sweep never groups the same leaf name from different MCP servers", () => {
+    const nodes: TranscriptNode[] = [
+      {
+        key: "exec::alpha-run",
+        kind: "tool_call",
+        status: "ok",
+        text: "",
+        mcpName: "alpha",
+        toolName: "run",
+        result: "A",
+      },
+      {
+        key: "exec::beta-run",
+        kind: "tool_call",
+        status: "ok",
+        text: "",
+        mcpName: "beta",
+        toolName: "run",
+        result: "B",
+      },
+    ];
+    const publications: Parameters<TranscriptPublisherHost["append"]>[0][] = [];
+    const publisher = new TranscriptPublisher({
+      nodes: () => nodes,
+      defaultFolded: () => false,
+      toolArguments: () => undefined,
+      append: (batch) => publications.push(batch),
+    });
+
+    publisher.completeRun("exec");
+
+    const toolPublications = publications.filter((batch) => batch.kind === "tool_group");
+    expect(toolPublications.map((batch) => batch.nodes.map((node) => node.key))).toEqual([
+      ["exec::alpha-run"],
+      ["exec::beta-run"],
+    ]);
+    expect(toolPublications[0]!.toolGroups["exec::alpha-run"]?.role).toBe("solo");
+    expect(toolPublications[1]!.toolGroups["exec::beta-run"]?.role).toBe("solo");
+  });
+
   test("continuous same-tool traffic seals at the default pressure ceiling", () => {
     const scheduler = new ManualPublicationScheduler();
     const store = createTranscriptStore({
@@ -409,6 +471,35 @@ describe("transcript publication", () => {
       ?.nodes.find((node) => node.key === "exec::child");
     expect(child?.kind === "tool_call" ? child.result : undefined).toBe("original-child");
     expect(child?.kind === "tool_call" ? child.dehydrated : true).toBeUndefined();
+  });
+
+  test("one sub-agent batch keeps equal leaf names from different MCP servers separate", () => {
+    const { store, sink } = fixture();
+    event(sink, runStarted());
+    event(sink, {
+      type: "delegation_created",
+      at: 2,
+      delegation_id: "worker",
+      title: "worker",
+      task: "inspect",
+    });
+    event(sink, toolCall("alpha-run", "run", "A", "worker", "alpha"));
+    event(sink, toolCall("beta-run", "run", "B", "worker", "beta"));
+    event(sink, {
+      type: "delegation_completed",
+      at: 30,
+      delegation_id: "worker",
+      status: "completed",
+    });
+
+    const child = store.publicationBatches.find((batch) => batch.kind === "subagent");
+    expect(child?.nodes.map((node) => node.key)).toEqual([
+      "exec::subagent:worker",
+      "exec::alpha-run",
+      "exec::beta-run",
+    ]);
+    expect(child?.toolGroups["exec::alpha-run"]?.role).toBe("solo");
+    expect(child?.toolGroups["exec::beta-run"]?.role).toBe("solo");
   });
 
   test("Lead orchestration lifecycles never publish while child ordinary tools stay isolated", () => {

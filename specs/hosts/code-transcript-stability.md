@@ -318,11 +318,13 @@ After stored reconciliation (or definitive degradation), `completeRun` appends
 already-painted answer row: the outcome appears after it. When admitted physically, both nodes share
 one owner. No post-render movement touches committed history.
 
-Grouping-eligible same-tool calls wait at most 80 ms from the first candidate and at most eight
-terminal entries. A different tool, mutation, non-tool boundary, sub-agent terminal event or run
-close flushes staging. Frozen `solo`/`head`/`member` metadata never changes. Semantic sub-agent
-sections append in terminal completion order and are visible only in the matching isolated
-transcript; spawn-order navigation remains a Sidebar concern.
+Grouping-eligible calls with the same exact `(mcpName, toolName)` pair wait at most 80 ms from the
+first candidate and at most eight terminal entries. A different server, different tool, mutation,
+non-tool boundary, sub-agent terminal event or run close flushes staging. The same pair comparison
+governs live staging, terminal sweep and frozen sub-agent batch metadata; a leaf-only renderer lookup
+identity never groups calls across MCP servers. Frozen `solo`/`head`/`member` metadata never changes.
+Semantic sub-agent sections append in terminal completion order and are visible only in the matching
+isolated transcript; spawn-order navigation remains a Sidebar concern.
 
 ### 4.3 Syntax settlement and physical measurement
 
@@ -683,9 +685,12 @@ projections, clocks, spinners, run host or live views. Its store port contains f
 only. Production: `CommittedHistoryPublicationStore`. Test:
 `architecture-boundary.test.ts` (committed-history boundary).
 
-**INV-TP13.** Same-tool staging closes after 80 ms, eight terminal calls or a semantic barrier;
-frozen group metadata never changes. Production: `TranscriptPublisher.#publishTool`. Test:
-`transcript-publication.test.ts` (group bounds and barriers).
+**INV-TP13.** Same-pair staging closes after 80 ms, eight terminal calls or a semantic barrier;
+`mcpName` and `toolName` are compared separately in live staging, terminal sweep and sub-agent batch
+metadata, and frozen group metadata never changes. Production: `publicationToolIdentity`,
+`samePublicationToolIdentity`, `publicationToolGroups`, `TranscriptPublisher.#publishTool` and
+`TranscriptPublisher.#publishRemainingLead`. Test: `transcript-publication.test.ts` (group bounds,
+barriers and equal leaf names from different MCP servers in all three publication paths).
 
 **INV-TP14.** Each delegation has exactly two Lead-owned lifecycle publications: a friendly frozen
 spawned marker at `delegation_created`, then a separate friendly frozen completed/failed marker at its
@@ -890,8 +895,9 @@ Sidebar and `Ctrl+P` surface and contributes no footer summary. Production: `Blo
 `LeadActivityLine`. Tests:
 `packages/code/tests/integration/markdown-render-contract.test.tsx` (static streaming marker) and
 `packages/code/tests/integration/app-shell-render.test.tsx` (active-run detail ownership,
-autocomplete replacement and Plan staying absent from the footer across terminal and later run
-state), plus `packages/code/tests/unit/run-status.test.ts` (Session tokens before and after settle).
+autocomplete replacement, Plan staying absent from the footer across terminal and later run state,
+and a second active turn retaining exactly the same cumulative usage at settlement), plus
+`packages/code/tests/unit/run-status.test.ts` (Session tokens before and after settle).
 
 **INV-TP32.** Within one running assistant `geometryEpoch`, `StableMarkdown` retains the greatest
 visible row height it has observed. OpenTUI may later parse and conceal an unfinished delimiter, but

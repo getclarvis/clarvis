@@ -523,6 +523,15 @@ The break conditions are exactly: a non-`tool_call` node, a different `mcpName`,
 `tests/unit/tool-groups.test.ts` — a message between calls at `:37`, reasoning at `:42`, different
 servers at `:52`, different sub-agents at `:57`.
 
+Immutable publication applies the same full `(mcpName, toolName)` identity in live staging, the
+terminal sweep and frozen sub-agent batch metadata. `toolIdentity` remains the renderer lookup key;
+its leaf-name fallback is not a publication grouping identity. Production:
+`packages/code/src/adapters/transcript-publication.ts` (`publicationToolIdentity`,
+`samePublicationToolIdentity`, `publicationToolGroups`, `TranscriptPublisher.#publishTool`,
+`TranscriptPublisher.#publishRemainingLead`). Test:
+`packages/code/tests/unit/transcript-publication.test.ts` (same leaf name from different MCP servers
+in live publication, terminal sweep and one sub-agent batch).
+
 `aggregateStatus` (`:71`) is running → error → ok, in that precedence; `failureCount` (`:78`) tallies
 `"error"`. Pinned at `packages/code/tests/unit/tool-groups.test.ts:97`.
 
@@ -1414,9 +1423,15 @@ many identical calls are adjacent. Production `packages/code/src/views/tool-grou
 `packages/code/tests/unit/tool-groups.test.ts:71` and `:88`.
 
 **INV-T19.** A group breaks on any of: a non-`tool_call` node, a different `mcpName`, a different
-`toolName`, a different `subagentOrder`. Production
-`packages/code/src/views/tool-groups.ts:50`–`:56`. Tests
-`packages/code/tests/unit/tool-groups.test.ts:37`, `:42`, `:47`, `:52`, `:57`.
+`toolName`, a different `subagentOrder`. Both current-projection grouping and immutable publication
+preserve the server and tool slots separately; a leaf-only renderer identity cannot merge calls from
+different MCP servers. Production: `packages/code/src/views/tool-groups.ts` (`computeToolGroups`)
+and `packages/code/src/adapters/transcript-publication.ts` (`publicationToolGroups`,
+`samePublicationToolIdentity`, `TranscriptPublisher.#publishTool`,
+`TranscriptPublisher.#publishRemainingLead`). Tests:
+`packages/code/tests/unit/tool-groups.test.ts` (all break conditions) and
+`packages/code/tests/unit/transcript-publication.test.ts` (different MCP servers across live,
+terminal-sweep and sub-agent publication paths).
 
 **INV-T20.** Only tool calls that are `"solo"` or `"head"` — plus a folded section's single anchor —
 are keyboard-focusable. Production `packages/code/src/views/block-focus.ts:43`, `:48`–`:51`. Test

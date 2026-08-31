@@ -822,6 +822,8 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   measured and admitted serially. Page Up/Down and focused navigation use the same ledger. Rapid
   input coalesces one pending direction and never mounts a guessed or partially prepared target.
   Recomputing an unchanged publication intersection preserves its projected owner identity.
+  Immutable tool grouping compares the exact `(mcpName, toolName)` pair in live staging, terminal
+  sweep and sub-agent batch metadata; equal leaf names from different MCP servers remain separate.
 - One prose node carries at most 512 Ki semantic text characters into OpenTUI, and each immutable
   tool snapshot uses the same aggregate mounted-text ceiling after its per-field caps. A single tall
   batch may exceed the row target, but it cannot bypass those artifact-level display ceilings.
@@ -855,8 +857,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   a slow filesystem cannot retain the quadratic sequence of every growing turn list. At most eight
   idle complete session documents stay cached; older entries demote to catalog summaries and reload
   only when selected.
-- Session token totals are maintained incrementally per mounted run; reconciliation subtracts and
-  rebuilds only that run, so a new streamed iteration never rescans the complete session history.
+- Session token totals are maintained incrementally across mounted runs; reconciliation subtracts
+  and rebuilds only that run, so a new streamed iteration never rescans the complete session history
+  or adds settled history to a cumulative live total a second time.
 - The canonical footer keeps gross Context plus cumulative `Session` input/output and cost available
   before and after a run settles (token totals appear in the wide band). It does not repeat
   `Running`, elapsed time or iteration there; those live-run facts sit beside `thinking`/`working`

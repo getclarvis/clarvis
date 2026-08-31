@@ -873,37 +873,72 @@ test("a terminal below the floor threshold shows 'terminal too small' instead of
 });
 
 test("an active run seats its live metadata beside working and keeps the session footer stable", async () => {
+  const activity = createActivityStore();
+  applyRunEvents(
+    activity.openRun(),
+    [
+      ev({ type: "run_started", at: 1 }),
+      ev({
+        type: "iteration_completed",
+        agent: "lead",
+        iteration: 1,
+        at: 2,
+        model: "m",
+        input_tokens: 120_000,
+        output_tokens: 12_000,
+        cached_tokens: 1_000,
+        response: "",
+      }),
+      ev({ type: "run_ended", status: "completed", at: 3, reason: "completed" }),
+    ],
+    "live",
+  );
   const stream: RunEvent[] = [
-    ev({ type: "run_started", at: 1 }),
+    ev({ type: "run_started", at: 4 }),
     ev({
       type: "iteration_completed",
       agent: "lead",
       iteration: 1,
-      at: 2,
+      at: 5,
       model: "m",
       input_tokens: 5_000,
       output_tokens: 100,
       response: "",
     }),
   ];
+  const [active, setActive] = createSignal(true);
+  const [status, setStatus] = createSignal("running iteration 9");
+  const [sessionUsage, setSessionUsage] = createSignal({
+    input: 120_000,
+    output: 12_000,
+    cached: 1_000,
+  });
   const t = await mountApp(
     defaultProps({
-      active: () => true,
-      status: () => "running iteration 9",
+      active,
+      status,
       seedStream: stream,
-      sessionUsage: () => ({ input: 120_000, output: 12_000, cached: 1_000 }),
+      activity,
+      sessionUsage,
     }),
     { width: 160, height: 40 },
   );
   const out = await captureUntil(t, "cancel");
   expect(out).toContain("steer");
-  const activity = out.split("\n").find((row) => row.includes("working"));
-  expect(activity).toMatch(/working · \d+s · iteration 9 · \^c to interrupt/);
+  const activityRow = out.split("\n").find((row) => row.includes("working"));
+  expect(activityRow).toMatch(/working · \d+s · iteration 9 · \^c to interrupt/);
   const footer = out.split("\n").find((row) => row.includes("Session  In"));
   expect(footer).toContain("Context ");
   expect(footer).toContain("Session  In 124k · Out 12k");
   expect(footer).not.toContain("Running");
   expect(footer).not.toContain("iteration");
+
+  setSessionUsage({ input: 125_000, output: 12_100, cached: 1_000 });
+  setStatus("completed");
+  setActive(false);
+  const settled = await captureUntil(t, "Completed");
+  const settledFooter = settled.split("\n").find((row) => row.includes("Session  In"));
+  expect(settledFooter).toContain("Session  In 124k · Out 12k");
   t.renderer.destroy();
 });
 

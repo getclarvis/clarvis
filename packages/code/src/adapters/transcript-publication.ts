@@ -1,10 +1,6 @@
 import type { RunEvent } from "@clarvis/protocol";
 import type { EventSource, EventSpan } from "./event-span.ts";
-import {
-  isMutationTool,
-  isTranscriptExternalOrchestrationTool,
-  toolIdentity,
-} from "./tool-identity.ts";
+import { isMutationTool, isTranscriptExternalOrchestrationTool } from "./tool-identity.ts";
 import {
   projectTranscriptToolDisplay,
   transcriptDisplayText,
@@ -166,13 +162,18 @@ export interface TranscriptRunPublicationCompletion {
 }
 
 interface RunPublicationState {
-  pendingToolIdentity?: string;
+  pendingToolIdentity?: PublicationToolIdentity;
   pendingTools: ReservedPublicationNode[];
   groupFlushHandle?: unknown;
   heldUnknownAnswer?: string;
   heldFinalAnswer?: string;
   completedSubagents: string[];
   reservedSubagents: Map<string, Map<string, ReservedPublicationNode>>;
+}
+
+interface PublicationToolIdentity {
+  readonly mcpName: string | undefined;
+  readonly toolName: string | undefined;
 }
 
 interface ReservedPublicationNode {
@@ -271,14 +272,14 @@ function publicationToolGroups(
       index += 1;
       continue;
     }
-    const identity = toolIdentity(head.mcpName, head.toolName);
     let end = index + 1;
     while (end < nodes.length) {
       const candidate = nodes[end]!;
       if (
         candidate.kind !== "tool_call" ||
         isMutationTool(candidate.mcpName, candidate.toolName) ||
-        toolIdentity(candidate.mcpName, candidate.toolName) !== identity ||
+        candidate.mcpName !== head.mcpName ||
+        candidate.toolName !== head.toolName ||
         candidate.subagentId !== head.subagentId
       )
         break;
@@ -311,6 +312,17 @@ function publicationToolGroups(
     index = end;
   }
   return Object.freeze(groups);
+}
+
+function publicationToolIdentity(node: TranscriptToolNode): PublicationToolIdentity {
+  return { mcpName: node.mcpName, toolName: node.toolName };
+}
+
+function samePublicationToolIdentity(
+  identity: PublicationToolIdentity,
+  node: TranscriptToolNode,
+): boolean {
+  return identity.mcpName === node.mcpName && identity.toolName === node.toolName;
 }
 
 function publicationSection(
@@ -702,10 +714,12 @@ export class TranscriptPublisher {
     }
     const reserved = this.#reserve([node]);
     if (reserved.length === 0) return;
-    const identity = toolIdentity(node.mcpName, node.toolName);
-    if (state.pendingToolIdentity !== undefined && state.pendingToolIdentity !== identity)
+    if (
+      state.pendingToolIdentity !== undefined &&
+      !samePublicationToolIdentity(state.pendingToolIdentity, node)
+    )
       this.#flushLeadTools(executionId, state);
-    state.pendingToolIdentity = identity;
+    state.pendingToolIdentity = publicationToolIdentity(node);
     state.pendingTools.push(...reserved);
     if (state.pendingTools.length >= this.#toolGroupMaxEntries)
       this.#flushLeadTools(executionId, state);
@@ -838,10 +852,12 @@ export class TranscriptPublisher {
           this.#flushLeadTools(executionId, state);
           this.#append("tool_group", [node], executionId);
         } else {
-          const identity = toolIdentity(node.mcpName, node.toolName);
-          if (state.pendingToolIdentity !== undefined && state.pendingToolIdentity !== identity)
+          if (
+            state.pendingToolIdentity !== undefined &&
+            !samePublicationToolIdentity(state.pendingToolIdentity, node)
+          )
             this.#flushLeadTools(executionId, state);
-          state.pendingToolIdentity = identity;
+          state.pendingToolIdentity = publicationToolIdentity(node);
           state.pendingTools.push(...this.#reserve([node]));
         }
         continue;

@@ -1404,11 +1404,14 @@ run executed `git status --short` inside Seatbelt; `xcode-select` could not read
 Tools installer even though host `/usr/bin/git --version` reported Apple Git 2.39.5. The first exact
 link allowance was insufficient: Seatbelt's `file-test-existence` checks also require the authored
 alias parents, and the real Git then required authored `/etc/gitconfig` checks beside canonical
-`/private/etc`. The final policy admits read-only `/etc`, `/private/etc`, the `/var` link and only
-the authored/canonical `var/select` trees. It does not admit general `/private/var` or writes. The
-opt-in macOS canary now resolves `/var/select/developer_dir` inside the generated profile before it
-executes the installed `/usr/bin/git --version`; a selector regression therefore stops before the
-Git shim can request the graphical installer. It also rejects the developer-tools fallback
+`/private/etc`. A later macOS 14 CI runner proved that Apple Git can consult
+`/var/db/xcode_select_link` as well: its canonical `/private/var/db` tree was admitted, but the
+authored alias was not, so Seatbelt denied the readlink and reproduced the same fallback. The final
+policy admits read-only `/etc`, `/private/etc`, the `/var` link and only the authored/canonical
+`var/select` and `var/db` trees. It does not admit general `/private/var` or writes. The opt-in macOS
+canary now resolves both selectors inside the generated profile before it executes the installed
+`/usr/bin/git --version`; a selector regression therefore stops before the Git shim can request the
+graphical installer. It also rejects the developer-tools fallback
 (`packages/tools/tests/integration/sandbox.test.ts`, `runs the installed Apple Git without
 triggering the developer-tools fallback`).
 

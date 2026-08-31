@@ -567,6 +567,7 @@ const SEATBELT_SYSTEM_READ_FILTERS = [
   '(literal "/etc")',
   '(subpath "/etc")',
   '(subpath "/private/etc")',
+  '(subpath "/var/db")',
   '(subpath "/private/var/db")',
   '(literal "/var")',
   '(subpath "/var/select")',

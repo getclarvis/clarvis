@@ -444,6 +444,8 @@ describe("sandboxCommand", () => {
     expect(profile).toContain('(literal "/etc")');
     expect(profile).toContain('(subpath "/etc")');
     expect(profile).toContain('(literal "/var")');
+    expect(profile).toContain('(subpath "/var/db")');
+    expect(profile).toContain('(subpath "/private/var/db")');
     expect(profile).toContain('(subpath "/var/select")');
     expect(profile).toContain('(subpath "/private/var/select")');
     expect(profile).toContain("(deny network*)");
@@ -813,9 +815,11 @@ it.skipIf(process.platform !== "darwin" || process.env.CLARVIS_NATIVE_SANDBOX_CA
         });
       };
 
-      const selector = run("/usr/bin/readlink /var/select/developer_dir");
-      expect(selector.status).toBe(0);
-      expect(selector.stdout.trim()).toMatch(/^\/.+/);
+      for (const path of ["/var/select/developer_dir", "/var/db/xcode_select_link"]) {
+        const selector = run(`/usr/bin/readlink ${path}`);
+        expect(selector.status).toBe(0);
+        expect(selector.stdout.trim()).toMatch(/^\/.+/);
+      }
 
       const result = run("/usr/bin/git --version");
       expect(result.stderr).not.toContain("No developer tools were found");

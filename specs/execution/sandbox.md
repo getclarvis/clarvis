@@ -227,7 +227,8 @@ An available macOS command executes:
 to the same sandbox, denies all file reads/tests/executable maps/writes, and then admits:
 
 - read access to the system runtime roots needed by macOS command-line processes, including both
-  authored and canonical `/etc` plus the narrow `/var/select` toolchain-selector aliases;
+  authored and canonical `/etc` plus the narrow authored/canonical `var/select` and `var/db`
+  toolchain-selector aliases;
 - read access to the canonical workspace, linked Git metadata, run temporary root, and declared
   read-only/runtime roots;
 - traversal metadata for ancestors of those dynamic roots;
@@ -246,12 +247,13 @@ forbidden root or a path that contains the workspace.
 
 Static macOS aliases need the same two-spelling treatment even though they are not caller-supplied
 roots. The policy admits `/etc` and `/private/etc` read-only. It also admits the `/var` link itself
-plus only `/var/select` and `/private/var/select`, allowing Apple's Git shim to test/read
-`developer_dir` and reach the already-allowed Command Line Tools/Xcode tree. It does not admit
-general `/private/var` access or any write. Without the authored existence checks, `xcode-select`
-reports a false missing-toolchain condition and opens the system installer despite an installed Git.
-The real-host canary resolves `/var/select/developer_dir` first and calls Git only after that safe
-preflight succeeds, so the same regression cannot open the graphical installer during local tests.
+plus only the authored/canonical `var/select` and `var/db` trees, allowing Apple's Git shim to
+test/read `developer_dir` and `xcode_select_link` and reach the already-allowed Command Line
+Tools/Xcode tree. It does not admit general `/private/var` access or any write. Without the authored
+existence checks, `xcode-select` reports a false missing-toolchain condition and opens the system
+installer despite an installed Git. The real-host canary resolves both selectors first and calls Git
+only after both safe preflights succeed, so the same regression cannot open the graphical installer
+during local tests.
 
 Production: `packages/tools/src/sandbox.ts` (`SEATBELT_SYSTEM_READ_FILTERS`, `seatbeltPolicy`,
 `sandboxCommand`). Tests: `packages/tools/tests/integration/sandbox.test.ts` (`compiles a parameterized

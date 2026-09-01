@@ -64,6 +64,19 @@ export function runOutcomeLabel(status: string): string | undefined {
 }
 
 /**
+ * Calculates the provider prompt-cache share against gross input.
+ *
+ * @remarks `cached` is already included in `input`; adding it to the denominator
+ * would double-count every cache hit. Missing cache detail and an empty prompt
+ * have no meaningful percentage, while malformed provider values are bounded to
+ * the displayable range.
+ */
+function cacheHitPercent(input: number, cached: number | undefined): number | undefined {
+  if (cached === undefined || input <= 0) return undefined;
+  return Math.min(100, Math.max(0, (cached / input) * 100));
+}
+
+/**
  * The shell-owned projection of stable context, usage, spend, and a settled outcome.
  *
  * @remarks The token counts on this row report **input the provider had to
@@ -79,6 +92,7 @@ export function runStripText(input: RunStripInput): string {
     : "";
   const tokenUsage = input.sessionUsage ?? input.usage;
   const tokenScope = input.sessionUsage === undefined ? "Run" : "Session";
+  const hitPercent = tokenUsage ? cacheHitPercent(tokenUsage.input, tokenUsage.cached) : undefined;
   const tokens =
     input.width >= 120 && tokenUsage
       ? scopedUsageText(
@@ -86,6 +100,7 @@ export function runStripText(input: RunStripInput): string {
             owner: tokenScope,
             input: Math.max(0, tokenUsage.input - (tokenUsage.cached ?? 0)),
             output: tokenUsage.output,
+            ...(hitPercent === undefined ? {} : { cacheHitPercent: hitPercent }),
           },
           true,
         )

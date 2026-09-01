@@ -49,6 +49,7 @@ test("cached input accumulates beside the gross count and leaves the context win
       "live",
     );
     expect(activity.usage).toEqual({ input: 10_000, output: 500, cached: 8_000 });
+    expect(activity.currentUsage).toEqual({ input: 10_000, output: 500, cached: 8_000 });
     expect(activity.context!.used).toBe(10_000);
 
     applyRunEvent(
@@ -64,6 +65,7 @@ test("cached input accumulates beside the gross count and leaves the context win
       "live",
     );
     expect(activity.usage).toEqual({ input: 22_000, output: 800, cached: 19_000 });
+    expect(activity.currentUsage).toEqual({ input: 22_000, output: 800, cached: 19_000 });
     dispose();
   });
 });
@@ -85,6 +87,68 @@ test("an iteration that reports no cache split leaves cached off the usage entir
       "live",
     );
     expect(activity.usage).toEqual({ input: 10_000, output: 500 });
+    expect(activity.currentUsage).toEqual({ input: 10_000, output: 500 });
+    dispose();
+  });
+});
+
+test("a measured zero stays distinct from missing cache detail and replay never owns current usage", () => {
+  createRoot((dispose) => {
+    const activity = createActivityStore();
+    const replay = activity.openRun();
+    applyRunEvent(replay, ev({ type: "run_started", at: 1 }), "replay");
+    applyRunEvent(
+      replay,
+      iter({
+        type: "iteration_completed",
+        agent: "lead",
+        iteration: 1,
+        input_tokens: 20_000,
+        output_tokens: 2_000,
+        cached_tokens: 10_000,
+      }),
+      "replay",
+    );
+    expect(activity.currentUsage).toBeNull();
+
+    const live = activity.openRun();
+    applyRunEvent(live, ev({ type: "run_started", at: 2 }), "live");
+    applyRunEvent(
+      live,
+      iter({
+        type: "iteration_completed",
+        agent: "lead",
+        iteration: 1,
+        input_tokens: 5_000,
+        output_tokens: 100,
+        cached_tokens: 0,
+      }),
+      "live",
+    );
+    expect(activity.currentUsage).toEqual({ input: 5_000, output: 100, cached: 0 });
+
+    replay.beginReconcile();
+    applyRunEvent(replay, ev({ type: "run_started", at: 3 }), "replay");
+    applyRunEvent(
+      replay,
+      iter({
+        type: "iteration_completed",
+        agent: "lead",
+        iteration: 1,
+        input_tokens: 30_000,
+        output_tokens: 3_000,
+      }),
+      "replay",
+    );
+    replay.endReconcile();
+    expect(activity.currentUsage).toEqual({ input: 5_000, output: 100, cached: 0 });
+    expect(activity.usage).toEqual({ input: 35_000, output: 3_100 });
+
+    activity.openRun({ current: true });
+    expect(activity.currentUsage).toEqual({ input: 0, output: 0, cached: 0 });
+
+    activity.clear();
+    expect(activity.currentUsage).toBeNull();
     dispose();
   });
 });

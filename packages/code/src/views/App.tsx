@@ -58,7 +58,7 @@ import type {
 import type { PromptMessage } from "../adapters/mcp-capabilities.ts";
 import type { PlansMode } from "@clarvis/protocol";
 import type { TranscriptStore, TranscriptToolNode } from "../adapters/store.ts";
-import type { ActivityStore } from "../adapters/activity-store.ts";
+import type { ActivityStore, UsageActivity } from "../adapters/activity-store.ts";
 import type { SessionId, SessionMeta } from "../adapters/session-store.ts";
 import type { PromptHistory } from "../core/prompt-history.ts";
 import type { McpStartupNotice, RunHost } from "../run-host.ts";
@@ -204,6 +204,8 @@ export interface AppRunControls {
   memory?: () => Record<string, number | boolean>;
   /** Epoch ms of the active run's start (null before the first run). */
   startedAt: () => number | null;
+  /** Full persisted session totals captured before the active run began. */
+  sessionUsageBaseline: Accessor<UsageActivity | null>;
   /** The current (or last) workflow's live tree; null when not a workflow. */
   workflowActivity: Accessor<WorkflowActivity | null>;
   /** Latest live-only MCP startup warning, displayed once outside conversation history. */
@@ -285,6 +287,22 @@ export interface AppProps {
   backend: AppBackend;
   /** Draft typed into the startup composer before the complete application mounted. */
   initialDraft?: string;
+}
+
+/** Combine a frozen full-session baseline with only the active run's live delta. */
+function activeSessionUsage(
+  baseline: UsageActivity | null,
+  current: UsageActivity | null,
+): UsageActivity | null {
+  if (baseline === null) return current;
+  if (current === null) return baseline;
+  return {
+    input: baseline.input + current.input,
+    output: baseline.output + current.output,
+    ...(baseline.cached !== undefined && current.cached !== undefined
+      ? { cached: baseline.cached + current.cached }
+      : {}),
+  };
 }
 
 /**
@@ -1175,9 +1193,14 @@ export function App(props: AppProps): JSX.Element {
     if (footerHint().text.length > 0) return "";
     const activityStrip = compactActivityStrip();
     const context = props.activity.context;
-    const usage = props.activity.usage;
     const settledSessionUsage = props.session.usage?.() ?? null;
-    const sessionUsage = props.run.active() ? (usage ?? settledSessionUsage) : settledSessionUsage;
+    const liveSessionUsage = activeSessionUsage(
+      props.run.sessionUsageBaseline(),
+      props.activity.currentUsage,
+    );
+    const sessionUsage = props.run.active()
+      ? (liveSessionUsage ?? settledSessionUsage)
+      : settledSessionUsage;
     const sessionCost = props.session.costLine();
     const runStrip = runStripText({
       active: props.run.active(),

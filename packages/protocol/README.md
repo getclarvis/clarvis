@@ -91,6 +91,11 @@ configuration, plans, memory and credentials outside the deletion vocabulary.
 phase (`commentary` or `final_answer`). The response text remains authoritative; clients must not
 invent prose when the field is absent.
 
+`SessionTotals.cached` is likewise optional by meaning, not merely by transport compatibility: a
+number, including zero, is a complete measured cache-read total; absence means at least one
+contributing run did not report the split. Clients must then keep input gross and omit any derived
+cache-hit rate.
+
 Subscription authentication and entitled-catalog DTOs are specified in
 [`subscription-providers.md`](../../specs/hosts/subscription-providers.md). They intentionally expose
 neither renewable credentials nor provider account header identifiers.

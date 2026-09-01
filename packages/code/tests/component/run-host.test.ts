@@ -207,6 +207,7 @@ test("happy path: submitTurn wires begin→startRun→sink→endTurn and settles
   await flush();
   expect(host.runActive()).toBe(true);
   expect(host.runStartedAt()).not.toBeNull();
+  expect(host.sessionUsageBaseline()).toEqual({ input: 0, output: 0, cached: 0 });
   expect(runs.length).toBe(1);
   expect(runs[0]!.input.profile).toBe("coder");
   Object.defineProperty(runs[0]!.handle, "buffered", {
@@ -243,6 +244,12 @@ test("happy path: submitTurn wires begin→startRun→sink→endTurn and settles
   expect(meta.turns.length).toBe(1);
   expect(meta.turns[0]!.status).toBe("done");
   expect(meta.totals).toEqual({ input: 100, output: 10, cached: 0 });
+
+  const second = host.submitTurn("continue");
+  await flush();
+  expect(host.sessionUsageBaseline()).toEqual({ input: 100, output: 10, cached: 0 });
+  runs[1]!.resolve(completed(runs[1]!.handle.executionId));
+  await second;
   dispose();
 });
 

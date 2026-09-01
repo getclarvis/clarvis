@@ -320,6 +320,7 @@ function defaultProps(overrides: {
   clear?: () => void;
   costLine?: () => string;
   sessionUsage?: () => { input: number; output: number; cached?: number } | null;
+  sessionUsageBaseline?: () => { input: number; output: number; cached?: number } | null;
   initialDraft?: string;
   worktree?: AppProps["shell"]["worktree"];
   submit?: AppProps["run"]["submit"];
@@ -366,6 +367,7 @@ function defaultProps(overrides: {
         cancel: overrides.cancel ?? (() => false),
         active: overrides.active ?? (() => false),
         startedAt: () => (overrides.active?.() ? Date.now() - 5000 : null),
+        sessionUsageBaseline: overrides.sessionUsageBaseline ?? (() => null),
         workflowActivity: overrides.workflowActivity ?? (() => null),
         ...(overrides.mcpStartupNotice === undefined
           ? {}
@@ -894,7 +896,86 @@ test("a terminal below the floor threshold shows 'terminal too small' instead of
   t.renderer.destroy();
 });
 
-test("an active run seats its live metadata beside working and keeps the session footer stable", async () => {
+test("an active run adds only its live delta to the full session baseline", async () => {
+  const activity = createActivityStore();
+  for (let index = 0; index < 20; index += 1) {
+    applyRunEvents(
+      activity.openRun(),
+      [
+        ev({ type: "run_started", at: index * 3 + 1 }),
+        ev({
+          type: "iteration_completed",
+          agent: "lead",
+          iteration: 1,
+          at: index * 3 + 2,
+          model: "m",
+          input_tokens: 1_000,
+          output_tokens: 100,
+          cached_tokens: 500,
+          response: "",
+        }),
+        ev({
+          type: "run_ended",
+          status: "completed",
+          at: index * 3 + 3,
+          reason: "completed",
+        }),
+      ],
+      "replay",
+    );
+  }
+  const stream: RunEvent[] = [
+    ev({ type: "run_started", at: 4 }),
+    ev({
+      type: "iteration_completed",
+      agent: "lead",
+      iteration: 1,
+      at: 5,
+      model: "m",
+      input_tokens: 5_000,
+      output_tokens: 100,
+      cached_tokens: 0,
+      response: "",
+    }),
+  ];
+  const [active, setActive] = createSignal(true);
+  const [status, setStatus] = createSignal("running iteration 9");
+  const [sessionUsage, setSessionUsage] = createSignal({
+    input: 120_000,
+    output: 12_000,
+    cached: 100_000,
+  });
+  const t = await mountApp(
+    defaultProps({
+      active,
+      status,
+      seedStream: stream,
+      activity,
+      sessionUsage,
+      sessionUsageBaseline: () => ({ input: 120_000, output: 12_000, cached: 100_000 }),
+    }),
+    { width: 160, height: 40 },
+  );
+  const out = await captureUntil(t, "cancel");
+  expect(out).toContain("steer");
+  const activityRow = out.split("\n").find((row) => row.includes("working"));
+  expect(activityRow).toMatch(/working · \d+s · iteration 9 · \^c to interrupt/);
+  const footer = out.split("\n").find((row) => row.includes("Session  In"));
+  expect(footer).toContain("Context ");
+  expect(footer).toContain("Session  In 25k · Out 12k · Cache hit 80%");
+  expect(footer).not.toContain("Running");
+  expect(footer).not.toContain("iteration");
+
+  setSessionUsage({ input: 125_000, output: 12_100, cached: 100_000 });
+  setStatus("completed");
+  setActive(false);
+  const settled = await captureUntil(t, "Completed");
+  const settledFooter = settled.split("\n").find((row) => row.includes("Session  In"));
+  expect(settledFooter).toContain("Session  In 25k · Out 12k · Cache hit 80%");
+  t.renderer.destroy();
+});
+
+test("an active session keeps a known zero cache hit visible across its live projection", async () => {
   const activity = createActivityStore();
   applyRunEvents(
     activity.openRun(),
@@ -906,61 +987,82 @@ test("an active run seats its live metadata beside working and keeps the session
         iteration: 1,
         at: 2,
         model: "m",
-        input_tokens: 120_000,
-        output_tokens: 12_000,
-        cached_tokens: 1_000,
+        input_tokens: 16_000,
+        output_tokens: 10,
+        cached_tokens: 0,
         response: "",
       }),
       ev({ type: "run_ended", status: "completed", at: 3, reason: "completed" }),
     ],
     "live",
   );
-  const stream: RunEvent[] = [
-    ev({ type: "run_started", at: 4 }),
-    ev({
-      type: "iteration_completed",
-      agent: "lead",
-      iteration: 1,
-      at: 5,
-      model: "m",
-      input_tokens: 5_000,
-      output_tokens: 100,
-      response: "",
-    }),
-  ];
   const [active, setActive] = createSignal(true);
-  const [status, setStatus] = createSignal("running iteration 9");
-  const [sessionUsage, setSessionUsage] = createSignal({
-    input: 120_000,
-    output: 12_000,
-    cached: 1_000,
-  });
+  const [status, setStatus] = createSignal("running iteration 1");
   const t = await mountApp(
     defaultProps({
       active,
       status,
-      seedStream: stream,
       activity,
-      sessionUsage,
+      sessionUsage: () => ({ input: 16_000, output: 10, cached: 0 }),
+      sessionUsageBaseline: () => ({ input: 0, output: 0, cached: 0 }),
     }),
     { width: 160, height: 40 },
   );
-  const out = await captureUntil(t, "cancel");
-  expect(out).toContain("steer");
-  const activityRow = out.split("\n").find((row) => row.includes("working"));
-  expect(activityRow).toMatch(/working · \d+s · iteration 9 · \^c to interrupt/);
-  const footer = out.split("\n").find((row) => row.includes("Session  In"));
-  expect(footer).toContain("Context ");
-  expect(footer).toContain("Session  In 124k · Out 12k");
-  expect(footer).not.toContain("Running");
-  expect(footer).not.toContain("iteration");
+  let out = await captureUntil(t, "Cache hit 0%");
+  expect(out).toContain("Session  In 16k · Out 10 · Cache hit 0%");
 
-  setSessionUsage({ input: 125_000, output: 12_100, cached: 1_000 });
+  setActive(false);
+  setStatus("completed");
+  out = await captureUntil(t, "Completed");
+  expect(out).toContain("Session  In 16k · Out 10 · Cache hit 0%");
+  t.renderer.destroy();
+});
+
+test("a missing cache split stays unknown during the run and after settlement", async () => {
+  const activity = createActivityStore();
+  applyRunEvents(
+    activity.openRun(),
+    [
+      ev({ type: "run_started", at: 1 }),
+      ev({
+        type: "iteration_completed",
+        agent: "lead",
+        iteration: 1,
+        at: 2,
+        model: "m",
+        input_tokens: 6_000,
+        output_tokens: 5,
+        response: "",
+      }),
+    ],
+    "live",
+  );
+  const [active, setActive] = createSignal(true);
+  const [status, setStatus] = createSignal("running iteration 1");
+  const [sessionUsage, setSessionUsage] = createSignal<{
+    input: number;
+    output: number;
+    cached?: number;
+  }>({ input: 10_000, output: 5, cached: 5_000 });
+  const t = await mountApp(
+    defaultProps({
+      active,
+      status,
+      activity,
+      sessionUsage,
+      sessionUsageBaseline: () => ({ input: 10_000, output: 5, cached: 5_000 }),
+    }),
+    { width: 160, height: 40 },
+  );
+  let out = await captureUntil(t, "Session  In 16k");
+  expect(out).not.toContain("Cache hit");
+
+  setSessionUsage({ input: 16_000, output: 10 });
   setStatus("completed");
   setActive(false);
-  const settled = await captureUntil(t, "Completed");
-  const settledFooter = settled.split("\n").find((row) => row.includes("Session  In"));
-  expect(settledFooter).toContain("Session  In 124k · Out 12k");
+  out = await captureUntil(t, "Completed");
+  expect(out).toContain("Session  In 16k · Out 10");
+  expect(out).not.toContain("Cache hit");
   t.renderer.destroy();
 });
 
@@ -1079,7 +1181,7 @@ test("the settled footer keeps cumulative session tokens and cost", async () => 
   const out = await captureUntil(t, "Session $0.042");
   expect(out).toContain("Completed");
   expect(out).toContain("$0.042");
-  expect(out).toContain("Session  In 119k · Out 12k");
+  expect(out).toContain("Session  In 119k · Out 12k · Cache hit 1%");
   expect(out).not.toContain("12k→820 tok");
   t.renderer.destroy();
 });

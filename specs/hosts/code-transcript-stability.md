@@ -63,10 +63,10 @@ not valid. Transient Lead phase is deliberately not transcript content: one comp
 band immediately above the input shows `LeadActivityLine` as `thinking`, `working` or settled
 `ready`; during a run it also owns elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt. Slash
 autocomplete replaces that complete activity band while open. The canonical footer separately keeps
-Context and cumulative Session token totals/cost before and after settlement, without `Running` or
-iteration. Neither band can scroll, publish or resize history. The runway is three rows in the normal
-height band and one row at 28 rows or below; live state cannot change it. The transcript surface is
-Lead-only by default.
+Context plus cumulative Session token totals, cache-hit percentage and cost before and after
+settlement, without `Running` or iteration. Neither band can scroll, publish or resize history. The
+runway is three rows in the normal height band and one row at 28 rows or below; live state cannot
+change it. The transcript surface is Lead-only by default.
 Detailed sub-agent semantics remain retained but have no owner
 in the main flow; each delegation contributes only one friendly frozen `spawned` marker and one later
 friendly frozen `completed`/`failed` marker there. Explicit Sidebar selection replaces the projection
@@ -301,13 +301,23 @@ the transcript store and immutable publication ledger. Production: `packages/cod
 
 The event table's `status/footer` wording does not put run lifecycle beside stable session figures.
 During a run, `LeadActivityLine` owns phase, elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt; the
-footer keeps Context plus cumulative Session token totals/cost and retains them after settlement.
+footer keeps Context plus cumulative Session token totals, cache-hit percentage and cost during the
+run and retains them after settlement. The cache percentage is scoped to the same Run or Session
+owner as its token totals and divides cached tokens by gross input, not by the already-net `In`
+display. During a run the Session owner is one frozen full-session baseline plus only the current
+live run delta; resident transcript replays are never an accounting source. A numeric cached zero is
+measured, while any missing positive-input split makes the complete scope unknown: the footer keeps
+gross `In` and omits the percentage during the run and after settlement.
 Slash autocomplete replaces the activity line while its popup owns that band. Production:
-`packages/code/src/views/App.tsx` (`leadActivityPhase`, `leadActivityDetail`, `inputPopupOpen`,
-`footerRunStrip`) and `packages/code/src/features/run/status-presenter.ts` (`runStripText`). Tests:
+`packages/code/src/run-host.ts` (`sessionUsageBaseline`, `runManaged`),
+`packages/code/src/adapters/activity-store.ts` (`currentUsage`),
+`packages/code/src/views/App.tsx` (`activeSessionUsage`, `leadActivityPhase`, `leadActivityDetail`,
+`inputPopupOpen`, `footerRunStrip`) and `packages/code/src/features/run/status-presenter.ts`
+(`runStripText`). Tests:
 `packages/code/tests/integration/app-shell-render.test.tsx` (active-run metadata, autocomplete
-replacement and Plan-free footer cases) and `packages/code/tests/unit/run-status.test.ts` (session
-tokens before and after settlement).
+replacement, Plan-free footer, baseline/delta ownership and missing-cache cases) and
+`packages/code/tests/unit/run-status.test.ts` (session tokens, owner-scoped cache percentage and
+settlement continuity).
 
 The tool-row exception is identity-closed: `spawn_subagent`, `delegate_task`, `agent_list`,
 `agent_poll`, `agent_stop`, `agent_steer`, `await_agents`, `run_leader`, `run_workflow`, `run_round`,
@@ -899,16 +909,23 @@ prompt/skill routes while background append remains anchored).
 does not subscribe an ornamental marker inside Markdown history to the shared spinner clock. Live
 activity remains visible in a running tool row and in `LeadActivityLine`. That composer-adjacent line
 owns phase plus active-run elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt; slash autocomplete
-replaces it while open. The footer instead preserves Context and cumulative Session token totals/cost
-before and after settlement, without `Running` or iteration. Plan state remains exclusive to the
-Sidebar and `Ctrl+P` surface and contributes no footer summary. Production: `BlockView`, `App`
-(`leadActivityDetail`, `inputPopupOpen`, `footerRunStrip`, `compactActivityStrip`), `runStripText` and
+replaces it while open. The footer instead preserves Context plus cumulative Session token totals,
+cache-hit percentage and cost before and after settlement, without `Running` or iteration. Plan
+state remains exclusive to the Sidebar and `Ctrl+P` surface and contributes no footer summary. The
+active total is the full pre-run Session snapshot plus the current live delta, never the resident
+transcript aggregate; missing cache detail remains missing across that sum and settlement, while a
+reported zero remains visible as `0%`.
+Production: `BlockView`, `App`
+(`activeSessionUsage`, `leadActivityDetail`, `inputPopupOpen`, `footerRunStrip`,
+`compactActivityStrip`), `RunHost.sessionUsageBaseline`, `ActivityStore.currentUsage`, `runStripText` and
 `LeadActivityLine`. Tests:
 `packages/code/tests/integration/markdown-render-contract.test.tsx` (static streaming marker) and
 `packages/code/tests/integration/app-shell-render.test.tsx` (active-run detail ownership,
 autocomplete replacement, Plan staying absent from the footer across terminal and later run state,
-and a second active turn retaining exactly the same cumulative usage at settlement), plus
-`packages/code/tests/unit/run-status.test.ts` (Session tokens before and after settle).
+and the baseline/delta plus known/unknown cache cases retaining exactly the same honest cumulative
+usage at settlement), plus
+`packages/code/tests/unit/run-status.test.ts` (Session tokens and scope-proportional cache percentage
+before and after settle).
 
 **INV-TP32.** Within one running assistant `geometryEpoch`, `StableMarkdown` retains the greatest
 visible row height it has observed. OpenTUI may later parse and conceal an unfinished delimiter, but

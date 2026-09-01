@@ -16,15 +16,16 @@ rather than deleted, so the reasoning outlives the finding.
 
 These sixty-eight documents are the specification of the Clarvis monorepo: what each subsystem is for, what
 it publishes, how it behaves, and the rules that must hold. They are the contract; the code under
-`packages/` is what realizes it. One document covers one subsystem, and each opens with a blockquote
-naming the files that implement it, so the boundary travels with the document rather than in a
-separate plan.
+`packages/` is what realizes it. One document covers one subsystem, and each names production and
+test evidence either in an opening ownership block or beside the claims it supports, so the boundary
+travels with the document rather than in a separate plan.
 
-The corpus's one hard rule is that **every non-trivial statement carries a
-`packages/x/src/y.ts:LINE` citation to the line that implements it.** That is what makes a
-specification checkable rather than aspirational: a statement without a citation is one you should
-not trust, and a citation is an invitation — open the line and see whether the implementation still
-honours it.
+The corpus's one hard rule is that **every non-trivial statement carries checkable source or test
+evidence.** Prefer a stable symbol in its repository path; an explicit `:LINE` or `:START-END`
+snapshot is useful when it identifies the exact branch, but line numbers alone are not identity and
+move whenever code is inserted above them. That evidence is what makes a specification checkable
+rather than aspirational: a statement without it is one you should not trust, and a citation is an
+invitation — open the source and see whether the implementation still honours it.
 
 [`known-issues.md`](known-issues.md) sits beside the corpus rather than inside it, because what it
 records — CI history, memory soaks, upstream bug numbers, and designs that were tried and reverted —
@@ -32,7 +33,7 @@ cannot be written as a requirement or checked against a line of source. That is 
 separate document.
 
 **The corpus carries no date of its own, so the table below is its timestamp.** These are the
-numbers the tree held when it was last refreshed (2026-08-31). If they no longer match, the tree has
+numbers the tree held when it was last refreshed (2026-09-01). If they no longer match, the tree has
 moved since the corpus was last checked against it, and the further it has drifted the more of the
 corpus's untested statements are worth re-checking. Regenerate them rather than trusting them:
 
@@ -44,29 +45,32 @@ find packages/<pkg>/tests -type f -name '*.test.ts*' | wc -l
 
 | Package | `src` lines | `src` files | test files |
 |---|---|---|---|
-| `code` | 59,066 | 249 | 237 |
-| `kernel` | 30,771 | 114 | 85 |
-| `loop` | 20,884 | 138 | 234 |
+| `code` | 59,441 | 249 | 237 |
+| `kernel` | 31,532 | 114 | 85 |
+| `loop` | 21,517 | 139 | 235 |
 | `memory` | 13,654 | 65 | 59 |
-| `tools` | 12,618 | 66 | 71 |
-| `capability` | 7,928 | 51 | 34 |
+| `tools` | 12,750 | 66 | 71 |
+| `capability` | 8,038 | 51 | 34 |
 | `plan` | 7,013 | 26 | 24 |
-| `server` | 6,451 | 37 | 38 |
 | `workflows` | 6,464 | 27 | 23 |
+| `server` | 6,451 | 37 | 38 |
+| `mcp-client` | 5,309 | 16 | 28 |
+| `skills` | 4,348 | 20 | 25 |
 | `trace` | 4,205 | 15 | 16 |
 | `llm` | 4,020 | 18 | 19 |
 | `tasks` | 3,797 | 13 | 6 |
-| `skills` | 3,849 | 20 | 25 |
-| `mcp-client` | 5,037 | 16 | 28 |
 | `paths` | 3,281 | 14 | 14 |
-| `protocol` | 3,201 | 19 | 0 |
-| `hooks` | 2,494 | 9 | 11 |
+| `protocol` | 3,269 | 19 | 0 |
+| `hooks` | 2,750 | 9 | 11 |
 | `supervision` | 1,537 | 10 | 9 |
 
 ## How to read a spec
 
-Every document opens with an H1 naming its subject and a blockquote naming the files that implement
-it. Then eight numbered sections, in the same order in all sixty-eight:
+Every document opens with an H1 naming its subject and carries implementation evidence near the
+claim it supports. Most use an opening ownership blockquote; the shorter domain contracts instead
+put `Production:` / `Test:` evidence directly in their sections. Sixty-four documents have eight
+numbered top-level sections, three have nine, and [`storage.md`](hosts/storage.md) uses six
+unnumbered sections. The recurring section roles are:
 
 | § | Section | What it holds |
 |---|---|---|
@@ -79,8 +83,13 @@ it. Then eight numbered sections, in the same order in all sixty-eight:
 | 7 | **Coupling** | Who it depends on, who depends on it, and where the seams are |
 | 8 | **Open questions** | What this document deliberately leaves open, and what the implementation does not settle |
 
-The one variance is [`capabilities/tasks-domain.md`](capabilities/tasks-domain.md), which inserts a
-fifth section, *State model*, and so numbers its remaining sections 6–9.
+The layouts are not mechanically identical. [`capabilities/tasks-domain.md`](capabilities/tasks-domain.md)
+inserts *State model* and shifts its remaining sections to 6–9;
+[`hosts/kernel-composition.md`](hosts/kernel-composition.md) and
+[`hosts/subscription-providers.md`](hosts/subscription-providers.md) use nine domain-sequenced
+sections; [`hosts/storage.md`](hosts/storage.md) keeps its compact six-section contract unnumbered.
+Other documents may rename a recurring role, but still keep production and test evidence beside the
+contract rather than relying on this index as proof.
 
 **"Open questions"** is a first-class section, not an apology. It records what a document does not
 decide, and what the implementation leaves unsettled: a trace kind nothing in the
@@ -114,7 +123,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`tools-mutation.md`](execution/tools-mutation.md) | The nine mutating tools and the shared staging/locking/rollback machinery that makes a write all-or-nothing | `tools` |
 | [`tools-shell-and-monitor.md`](execution/tools-shell-and-monitor.md) | Running host commands: `shell` to completion and the `monitor_*` family in the background, shell resolution, process trees, killing, and bounded spill-backed output | `tools` |
 | [`command-guard.md`](execution/command-guard.md) | Per-call approval, split three ways: the shell analyzer that produces facts, the kernel's fixed-precedence policy cascade, and the engine wiring that consults them once per run | `tools`, `kernel`, `loop`, `code` |
-| [`hooks.md`](execution/hooks.md) | Operator-declared shell commands bound to lifecycle events: matching, the subprocess contract, the three spellings of a block, the flat foreign-dialect payload, and argument rewriting | `hooks`, `capability`, `loop` |
+| [`hooks.md`](execution/hooks.md) | Operator- and plugin-declared command or MCP-tool invocations bound to lifecycle events: matching, blocking and observer semantics, subprocess and MCP execution, foreign payloads, and argument rewriting | `hooks`, `capability`, `loop`, `mcp-client` |
 | [`sandbox.md`](execution/sandbox.md) | Native Bubblewrap/Seatbelt probing and policy construction, toolchain discovery on `PATH`, host path policy, real-platform canaries, and operator inspection | `tools`, `loop`, `kernel`, `protocol`, `code` |
 | [`skills.md`](execution/skills.md) | Discovering, parsing and merging `SKILL.md` trees across roots with last-wins precedence, and serving them in three tiers through `load_skill` | `skills`, `kernel`, `loop` |
 
@@ -158,7 +167,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`kernel-transport.md`](hosts/kernel-transport.md) | The JSON-RPC-shaped wire with Clarvis's own vocabulary: one operations table both halves are built from, stdio framing, the loopback seam and inbound run-event re-validation | `kernel`, `protocol` |
 | [`environments.md`](hosts/environments.md) | Deterministic activation snapshots over already-installed plugins and standalone skills: exact scopes, selection precedence, trust, deltas, fingerprints, and session/trace identity | `kernel`, `protocol`, `paths`, `skills`, `loop`, `trace`, `code` |
 | [`storage.md`](hosts/storage.md) | Metadata-only inventory of Clarvis-owned local state, confirmed cleanup of disposable artifacts, spill/run-scratch housekeeping and session-safe trace retention | `kernel`, `protocol`, `paths`, `trace`, `loop`, `code` |
-| [`plugins.md`](hosts/plugins.md) | Reading a `plugin.json`, translating foreign dialects, degrading one artifact at a time, and the marketplace clone-and-install path | `kernel`, `loop`, `code` |
+| [`plugins.md`](hosts/plugins.md) | Reading a `plugin.json`, translating foreign dialects, degrading one artifact at a time, and normalized Git/local/npm marketplace installation | `kernel`, `loop`, `code` |
 | [`model-catalog.md`](hosts/model-catalog.md) | The shipped models.dev snapshot, `provider/model` ref parsing and provider resolution, pricing, reasoning-effort floors and where a model's cache mode is derived | `kernel`, `capability`, `code` |
 | [`subscription-providers.md`](hosts/subscription-providers.md) | Local ChatGPT and Grok subscription login, credentials, entitled catalogs, pinned Responses transports, billing separation, coexistence, and remote unavailability | `paths`, `protocol`, `capability`, `loop`, `llm`, `kernel`, `code`, `server` |
 | [`sessions.md`](hosts/sessions.md) | A session as a conversation index of turns pointing at runs: the file-backed service with its bounded summary sidecar, and how a client rebuilds a transcript from persisted traces | `kernel`, `code`, `protocol` |
@@ -187,7 +196,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`elicitation.md`](cross-cutting/elicitation.md) | Every way a run asks a human — `ask_user`, guard prompts, budget escalation, MCP elicitation — through one port, one per-run FIFO, one tree-wide mux and each host's own surface | `loop`, `kernel`, `server`, `code`, `workflows` |
 | [`security.md`](cross-cutting/security.md) | Path confinement, the single redaction module and its two rule sets, environment filtering for subprocesses, workspace trust, and what is explicitly *not* a sandbox | `tools`, `kernel`, `capability`, `hooks` |
 | [`observability.md`](cross-cutting/observability.md) | The one `Logger` port and its single backend, the event-name vocabulary, environment-only verbosity, the cost model at hot call sites, and the audit channel | `capability`, `kernel` (repo-wide) |
-| [`agent-interop.md`](cross-cutting/agent-interop.md) | The `.agents` seam Clarvis reads but never writes, and the single-owner correspondence tables that make a foreign-dialect hook document degrade instead of silently failing open | `kernel`, `skills`, `capability`, `paths` |
+| [`agent-interop.md`](cross-cutting/agent-interop.md) | Component-scoped ownership of the shared `.agents` seam, plus the single-owner correspondence tables that make a foreign-dialect hook document degrade instead of silently failing open | `kernel`, `skills`, `capability`, `paths` |
 | [`test-architecture.md`](cross-cutting/test-architecture.md) | Test placement in six named directories, runner isolation and the banned `mock.module()`, the pre-commit gate's ordered phases, and LCOV-summed coverage floors | `tooling/`, root config, all workspaces |
 | [`build-and-ci.md`](cross-cutting/build-and-ci.md) | One Bun workspace and lockfile, the two-layer TypeScript configuration, shared lint/format, the `tsc -b` graph, the three CI jobs, the TUI bundle and platform support | root config, `code`, all workspaces |
 | [`distribution-and-updates.md`](cross-cutting/distribution-and-updates.md) | Portable native archives, installers, release trust and publication, explicit self-update, staging and atomic activation | root release config, `code` |
@@ -218,42 +227,42 @@ If an implementation-only change leaves the documented contract intact, the hand
 assumption. [`AGENTS.md`](../AGENTS.md#the-iteration-contract) owns the complete working rule.
 
 One check runs over these files: `bun run check:specs` (inside `lint:intent`, and so inside the
-pre-commit gate) resolves every documentation link and refuses a literal control character. It does
-not verify a `packages/x/src/y.ts:LINE` citation, so two further mechanisms do that work, and both are
-the reader's to use.
+pre-commit gate). It refuses dangerous literal characters, resolves documentation links, and checks
+that every explicit source citation whose repository target exists stays within that file's line
+bounds. It deliberately ignores nonexistent illustrative targets and does not independently resolve
+bare ambient `:LINE` continuations. Most importantly, an in-bounds citation can still point at the
+wrong symbol: semantic support remains a source-and-test review, not a property this structural check
+can prove.
 
-**Statements carry citations, so any statement can be checked in one step.** A sentence anchored to
-`packages/x/src/y.ts:123` is falsifiable by opening line 123. A disagreement between a document and
-the code is a defect on one side or the other — either the implementation has drifted from what was
-specified, or the specification moved and the code has not followed — and it has to be resolved, not
-assumed away in either direction. The citation is what makes that check cheap enough to actually
-perform, and a statement that lost its citation in an edit has lost its standing along with it.
+**Statements carry citations, so any statement can be checked from one named place.** A sentence
+anchored to a source symbol or `packages/x/src/y.ts:123` snapshot is falsifiable by opening that
+place. A disagreement between a document and the code is a defect on one side or the other — either
+the implementation has drifted from what was specified, or the specification moved and the code has
+not followed — and it has to be resolved, not assumed away in either direction. The citation is
+what makes that check cheap enough to actually perform, and a statement that lost its evidence in an
+edit has lost its standing along with it.
 
-**Invariants name the test that pins them, so the suite is what keeps them honest.** Section 5 of
-every spec lists its rules in the form *Production: `file:line`* / *Test: `file:line`*, each carrying its `INV-nnn` id. That is the load-bearing
-distinction in the whole
-corpus: a rule with a test behind it stays true because breaking it turns a suite red, while a rule
-that nothing pins can stop being honoured without anything turning red. Where a document carries the
-second kind, it says so — an unpinned invariant is recorded in section 8 as exactly that, not
-promoted into section 5.
+**Invariants name their production support and test status, so the suite is what keeps the pinned
+ones honest.** The exact presentation varies: tables use `Production` plus `Test` or `Pinned by`,
+while prose uses `Production:` plus `Test:` or `Pinned:`. A rule with a test behind it stays true
+because breaking it turns a suite red; a rule marked `unpinned` can stop being honoured without
+anything turning red. The document must state that distinction beside the rule and surface the
+remaining gap in its open questions rather than letting prose imply a test exists.
 
 ### What the corpus was measured to be worth
 
-The corpus was checked against the implementation three ways, and the numbers are kept because "the
-specs and the code agree" is itself a claim that should carry evidence.
+"The specs and the code agree" is itself a claim that needs dated, reproducible evidence. The
+current 2026-09-01 snapshot contains 68 subsystem documents (71 Markdown files including this index,
+the known-issues register and the generated coupling report). `extractLineCitations` currently finds
+16,032 distinct explicit citation groups carrying 18,633 cited ranges, and
+`extractDocumentLinks` finds 610 document links. `bun run check:specs` is the maintained gate over
+their bounds, targets, links and characters; it does not turn those counts into semantic proof.
 
-**A blind stride sample, opened by hand.** 142 citations were drawn by a fixed stride across all six
-directories and each was opened at its cited line: **142 confirmed, 0 stale, 0 refuted, 0
-unresolvable.**
-
-**Adversarial re-verification.** Every code-side claim in the findings register was handed to a
-verifier instructed to refute it against `packages/*/src` and `packages/*/tests`. Each one held.
-
-**A mechanical whole-corpus sweep.** Every path and `path:line` reference resolved against the tree:
-**20,743** path references, of which **19,653** are direct `path:LINE` citations and **12,418** are
-bare `` `:LINE` `` continuations onto a section's ambient file; **0** line numbers past the end of the
-file they name; **0** real references to a path that does not exist; and **366** relative markdown
-links, **0** of them dangling. `bun run check:specs` now holds the last of those permanently.
+A prior corpus audit recorded a 142-citation manual stride sample and an adversarial pass over the
+then-current findings register. Those experiments were not repeated as part of the 2026-09-01
+refresh, so their old zero-finding result is historical evidence, not a guarantee about this
+snapshot. Current semantic confidence comes from tracing each changed claim through its owning
+source and tests; future reviews must do the same instead of inheriting the old sample as fact.
 
 **One method note, because it cost real damage to learn.** When source edits move line numbers, do
 not repair `path:LINE` citations with a line delta derived from `git diff`. It is not idempotent —

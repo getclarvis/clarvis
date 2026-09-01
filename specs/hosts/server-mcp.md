@@ -757,6 +757,13 @@ triggering event is itself non-droppable).
 Test: `packages/server/tests/unit/notify.test.ts:424-441` ("wedges instead of
 growing without bound when structural events saturate the buffer").
 
+**Invariant 12 (INV-SM19).** A live `compaction_started` event projects to an `info` notification
+labeled `context compaction started`, so a default-threshold MCP client receives positive progress
+before the model-backed compaction can block on provider latency. The terminal event remains
+structured and retains any `fallback_reason` supplied by the kernel.
+Production: `viewOf`, `packages/server/src/mcp/event-view.ts` (`case "compaction_started"`).
+Test: `packages/server/tests/unit/event-view.test.ts` (`projects compaction_started`).
+
 ## 6. Failure modes and degradation
 
 | Condition | Handling | Cite |
@@ -889,14 +896,3 @@ file's declarations (`:7` field, `:42,58` parameters).
   something the code states a rationale for — `meetsThreshold`'s clamp
   (`:31`, `Math.min(idx, LEVEL_RANK.error)`) simply treats any level above
   `error` as equivalent to `error` for filtering purposes.
-
-## 9. Compaction progress invariant
-
-**INV-SM19.** A live `compaction_started` event projects to an `info` notification labeled
-`context compaction started`, so a default-threshold MCP client receives positive progress before
-the model-backed compaction can block on provider latency. The terminal event remains structured and
-retains any `fallback_reason` supplied by the kernel.
-
-Production: `viewOf`, `packages/server/src/mcp/event-view.ts` (`case "compaction_started"`).
-
-Test: `packages/server/tests/unit/event-view.test.ts` (`projects compaction_started`).

@@ -154,9 +154,9 @@ this document's scope description names explicitly as owning "the reserve/releas
 
 | Export | Kind | Signature / shape | File:line |
 |---|---|---|---|
-| `admittedRunCapability(capabilityName, activated, admission, logger?)` | function | wraps every lifecycle hook + `seedBlock`/`onRunEnd`/`finalizeRun` of one `RunCapability` in admission calls | `packages/loop/src/runtime/extension-admission.ts:122-180` |
-| `isExtensionAdmissionRefusal(error)` | type guard | `=> error is ExtensionCallUnavailableError` | `packages/loop/src/runtime/extension-admission.ts:182-186` |
-| `capabilityActivationOperation(name)` | function | `=> \`capability:${name}:forRun\`` | `packages/loop/src/runtime/extension-admission.ts:188-190` |
+| `admittedRunCapability(capabilityName, activated, admission, logger?)` | function | wraps every lifecycle hook + `seedBlock`/`onRunEnd`/`finalizeRun` of one `RunCapability` in admission calls | `packages/loop/src/runtime/extension-admission.ts:138-196` |
+| `isExtensionAdmissionRefusal(error)` | type guard | `=> error is ExtensionCallUnavailableError` | `packages/loop/src/runtime/extension-admission.ts:198-202` |
+| `capabilityActivationOperation(name)` | function | `=> \`capability:${name}:forRun\`` | `packages/loop/src/runtime/extension-admission.ts:204-206` |
 
 ### 2.6 `packages/capability/src/semaphore.ts`
 
@@ -165,7 +165,7 @@ this document's scope description names explicitly as owning "the reserve/releas
 | `Semaphore` | interface | `acquire(signal?): Promise<void>`, `release(): void` | `packages/capability/src/semaphore.ts:9-25` |
 | `createSemaphore(limit)` | factory | `=> Semaphore`, FIFO, `limit` coerced to `max(1, floor(limit))` | `packages/capability/src/semaphore.ts:39-79` |
 
-Two independent bounds are built over this one factory: `packages/loop/src/runtime/orchestrator.ts:591`
+Two independent bounds are built over this one factory: `packages/loop/src/runtime/orchestrator.ts:606`
 (`createSemaphore(deps.env.CLARVIS_MAX_PARALLEL_SUBAGENTS)`, the run's `delegate_task` fan-out limit —
 consumed in `packages/loop/src/runtime/delegation.ts`, owned by [loop-delegation-and-subagents](delegation-and-subagents.md)) and the
 workflow leader-concurrency semaphore (`packages/workflows/src/*`, owned by
@@ -197,7 +197,7 @@ is only cited here as the wiring that reaches this subsystem's constructors.
 | `CLARVIS_DEFAULT_STAGNATION_THRESHOLD` | `3` | `packages/capability/src/env.ts:71` | `createStagnationGuard`'s hard `threshold` fallback |
 | `CLARVIS_DEFAULT_STAGNATION_SOFT_THRESHOLD` | `2` | `packages/capability/src/env.ts:77` | `createStagnationGuard`'s `soft` fallback |
 | `CLARVIS_GUARD_MAX_ESCALATIONS` | `2` | `packages/capability/src/env.ts:95` (doc `packages/capability/src/env.ts:78-94`) | `escalateGuardTrip`'s `maxEscalations`, deliberately separate from `CLARVIS_DEFAULT_MAX_ESCALATIONS` (comment, `packages/capability/src/env.ts:82-85`) |
-| `CLARVIS_MAX_PARALLEL_SUBAGENTS` | `4` | `packages/capability/src/env.ts:199` | the `delegate_task` fan-out `Semaphore` (`packages/loop/src/runtime/orchestrator.ts:591`) |
+| `CLARVIS_MAX_PARALLEL_SUBAGENTS` | `4` | `packages/capability/src/env.ts:199` | the `delegate_task` fan-out `Semaphore` (`packages/loop/src/runtime/orchestrator.ts:608`) |
 | `CLARVIS_MAX_CONCURRENT_EXTENSION_CALLS` | `32` | `packages/capability/src/env.ts:167` (referenced `126-128`) | `ExtensionAdmissionController.maxActiveNormal` fallback |
 | `CLARVIS_MAX_CONCURRENT_EXTENSION_RUN_END_CALLS` | `8` | `packages/capability/src/env.ts:168` | `.maxActiveRunEnd` fallback |
 | `CLARVIS_MAX_CONCURRENT_EXTENSION_CALLS_PER_OPERATION` | `4` | `packages/capability/src/env.ts:169` | `.maxActivePerOperation` fallback |
@@ -216,8 +216,8 @@ subsystem's constructors read.
 | `budget.timeout_ms` | positive int, optional | `packages/loop/src/validation/request/request-schema.ts:117-121` | `createComputeClock`'s `timeoutMs` |
 | `budget.max_escalations` | positive int, optional | `packages/loop/src/validation/request/request-schema.ts:122-127` | `SoftBudget.maxEscalations` |
 | `profiles[].iteration_limit` | non-negative int | `profile-schemas.ts:~195` | per-agent `IterationCounter` cap |
-| `profiles[].stagnation_threshold` | non-negative int, optional | `packages/loop/src/validation/request/profile-schemas.ts:197`, `packages/capability/src/api.ts:331` | `createStagnationGuard`'s hard `threshold` (per-profile override) |
-| `guard_escalation` | boolean, optional | `packages/loop/src/validation/request/request-schema.ts:215-217`, `packages/capability/src/api.ts:405` | whether `escalateGuardTrip`'s `ask` is wired at all (`packages/loop/src/runtime/entry-inputs.ts:259-262`) |
+| `profiles[].stagnation_threshold` | non-negative int, optional | `packages/loop/src/validation/request/profile-schemas.ts:197`, `packages/capability/src/api.ts:392-409` | `createStagnationGuard`'s hard `threshold` (per-profile override) |
+| `guard_escalation` | boolean, optional | `packages/loop/src/validation/request/request-schema.ts:215-217`, `packages/capability/src/api.ts:476` | whether `escalateGuardTrip`'s `ask` is wired at all (`packages/loop/src/runtime/entry-inputs.ts:259-262`) |
 
 > `packages/loop/src/validation` holds **two** files both named `request-schema.ts`: the barrel at
 > `packages/loop/src/validation/request-schema.ts` (50 lines, only re-exports, and does not itself
@@ -262,9 +262,9 @@ added to or subtracted from `consumed()`; cache **reads** (`cached`) are subtrac
 |---|---|---|---|
 | `budget_check` | `{tokens_used, tokens_remaining}` | `packages/capability/src/trace-kinds.ts:247-249` | `runBudgetCheckpoint` (hard path, `packages/loop/src/runtime/budget/budget-checkpoint.ts:56-60`) and the pre-loop check (`packages/loop/src/runtime/loop/run-agent.ts:341-345`) |
 | `soft_limit_check` | `{agent, dimension, used, limit, outcome, new_checkpoint?, escalations}` | `packages/capability/src/trace-kinds.ts:371-378` | `evaluateSoftBudget` (`packages/loop/src/runtime/budget/soft-budget.ts:212-241`) |
-| `convergence_warning` | `{agent, subagent_instance_id?, code, message}` | `packages/capability/src/trace-kinds.ts:500-505` | the iteration driver after each soft-tier warning (`packages/loop/src/runtime/loop/loop.ts:1046-1053`) |
+| `convergence_warning` | `{agent, subagent_instance_id?, code, message}` | `packages/capability/src/trace-kinds.ts:500-505` | the iteration driver after each soft-tier warning (`packages/loop/src/runtime/loop/loop.ts:1083-1090`) |
 | `guard_escalation` | `{agent, subagent_instance_id?, code, outcome, escalations}` | `packages/capability/src/trace-kinds.ts:514-520` | `run-agent.ts`'s `onGuardTrip` (`packages/loop/src/runtime/loop/run-agent.ts:242-249`) |
-| `terminate` | `unknown` (observed `{reason: string}`) | `packages/capability/src/trace-kinds.ts:631` | multiple call sites, incl. `packages/loop/src/runtime/loop/run-agent.ts:349` and `:590` (no_progress), `packages/loop/src/runtime/loop/loop.ts:1072` (`trip.code`) |
+| `terminate` | `unknown` (observed `{reason: string}`) | `packages/capability/src/trace-kinds.ts:631` | multiple call sites, incl. `packages/loop/src/runtime/loop/run-agent.ts:349` and `:590` (no_progress), `packages/loop/src/runtime/loop/loop.ts:1112` (`trip.code`) |
 
 `outcome` on both `soft_limit_check` and `guard_escalation` is one of
 `"continued"|"declined"|"no_response"|"escalations_exhausted"` (`packages/capability/src/trace-kinds.ts:376,519`) — the two
@@ -328,28 +328,28 @@ that the sole `subagent` row present is the entry agent, not the pre-pass.
 ### 4.1 The per-iteration checkpoint order (`packages/loop/src/runtime/loop/loop.ts`)
 
 Within one iteration of `runAgentLoop`, after a model call and tool dispatch, the fixed order is
-(`packages/loop/src/runtime/loop/loop.ts:1026-1085`):
+(`packages/loop/src/runtime/loop/loop.ts:1049-1108`):
 
-1. Fast-accept a `submit_result` if the finalize gate already takes it (`packages/loop/src/runtime/loop/loop.ts:1026-1027`).
+1. Fast-accept a `submit_result` if the finalize gate already takes it (`packages/loop/src/runtime/loop/loop.ts:1049-1050`).
 2. Dispatch tool calls (`runDispatch`), which is where `guards.record(...)` is fed per call (delegated
    to [loop-tool-dispatch-and-results](tool-dispatch.md); call sites `packages/loop/src/runtime/tools/mcp-dispatch.ts:229`
    and `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:95,146`).
 3. `d.guards.takeSoft()` — any pending soft warnings from either guard are joined into **one**
    `[runtime: …]` note (both replace the same note kind, so a second warning does not erase the first —
-   comment, `packages/loop/src/runtime/loop/loop.ts:1034-1039`) and each is separately traced as `convergence_warning`
-   (`packages/loop/src/runtime/loop/loop.ts:1046-1053`).
+   comment, `packages/loop/src/runtime/loop/loop.ts:1057-1062`) and each is separately traced as `convergence_warning`
+   (`packages/loop/src/runtime/loop/loop.ts:1069-1076`).
 4. `d.guards.tripped()` — if either guard has tripped, `onGuardTrip` is offered the trip; a `"continue"`
    outcome (escalation accepted) falls through to the **next** step rather than looping immediately, so
-   the iteration still counts against progress and the budget checkpoint (comment, `packages/loop/src/runtime/loop/loop.ts:1056-1061`).
+   the iteration still counts against progress and the budget checkpoint (comment, `packages/loop/src/runtime/loop/loop.ts:1079-1084`).
    Any other outcome ends the loop with `d.results.guardTrip(trip)`, or with the escalation's own
-   cancellation result if the abort raced the prompt (`packages/loop/src/runtime/loop/loop.ts:1062-1073`).
+   cancellation result if the abort raced the prompt (`packages/loop/src/runtime/loop/loop.ts:1085-1096`).
 5. The no-progress tracker is bumped (`d.progress.bump`); a stuck run ends here
-   (`packages/loop/src/runtime/loop/loop.ts:1077-1080`).
-6. `checkpoint()` — the budget checkpoint runs last in the iteration (`packages/loop/src/runtime/loop/loop.ts:1084-1085`), via
+   (`packages/loop/src/runtime/loop/loop.ts:1100-1103`).
+6. `checkpoint()` — the budget checkpoint runs last in the iteration (`packages/loop/src/runtime/loop/loop.ts:1107-1108`), via
    `runBudgetCheckpoint` (`packages/loop/src/runtime/loop/run-agent.ts:261-274`).
 
 An `OutputBudgetExhaustedError` thrown from inside the model call is caught immediately around the model
-call itself (`packages/loop/src/runtime/loop/loop.ts:967-970`) and again around the whole iteration loop (`packages/loop/src/runtime/loop/loop.ts:1088`), both
+call itself (`packages/loop/src/runtime/loop/loop.ts:990-993`) and again around the whole iteration loop (`packages/loop/src/runtime/loop/loop.ts:1111`), both
 converting it to `d.results.budgetExhausted()` rather than letting it propagate as an ordinary thrown
 error.
 
@@ -376,7 +376,7 @@ error.
 ### 4.3 Wiring the request into these objects (`packages/loop/src/runtime/entry-inputs.ts`, owned by
 [loop-run-lifecycle](loop-run-lifecycle.md) — cited here only as the construction site)
 
-- A single `TokenLedger` is created once **per run** (`packages/loop/src/runtime/orchestrator.ts:585`,
+- A single `TokenLedger` is created once **per run** (`packages/loop/src/runtime/orchestrator.ts:600`,
   `createTokenLedger(config.max_tokens)`), and `config.max_tokens` is
   `Number.POSITIVE_INFINITY` unless `on_exceed === "stop"` (`packages/loop/src/runtime/run-shape.ts:20-27`)
   — so a soft-mode ("escalate") run has an unbounded hard ledger and relies entirely on `SoftBudget` to
@@ -387,7 +387,7 @@ error.
   behavioral inversion — the hard-mode branch is unreachable through any real run.** `entryMax` for a
   lead is `entryResolved.iterationLimit ?? Number.POSITIVE_INFINITY` in **hard** mode
   (`on_exceed: "stop"`) and `entryResolved.iterationLimit ?? deps.env.CLARVIS_DEFAULT_ITERATION_LIMIT`
-  in **soft** mode (`packages/loop/src/runtime/orchestrator.ts:586-590`). `runOrchestrator` has exactly
+  in **soft** mode (`packages/loop/src/runtime/orchestrator.ts:601-605`). `runOrchestrator` has exactly
   one production call site — `executeRun` (`packages/loop/src/runtime/execute-run.ts:380`), always
   downstream of `validateBody` (`execute-run.ts:314`) — and `enforceBudgetMode` requires an
   `iteration_limit` on every "running agent" whenever `on_exceed === "stop"`: `runningAgents` is
@@ -421,7 +421,7 @@ error.
   `softMode` reflects (`packages/loop/src/runtime/subagents/build-lead-input.ts:63-72`,
   `packages/loop/tests/integration/orchestrator.test.ts:631-670`) — a soft-mode property, not evidence
   of an uncapped hard-mode lead. A non-lead entry always resolves through `resolveIterationCap`
-  (`packages/loop/src/runtime/orchestrator.ts:590`,
+  (`packages/loop/src/runtime/orchestrator.ts:605`,
   `packages/loop/src/runtime/subagents/subagent-profiles.ts:67-72`), which never substitutes `Infinity`
   either.
 - Each agent (lead, and separately each delegated sub-agent instance) gets its **own**
@@ -474,8 +474,8 @@ error.
 4. The clock is **poked** — its remaining budget reset to the full `timeoutMs` — on every trace entry
    via `traceBridge` (`packages/loop/src/runtime/run-trace.ts:138-149`, `clockHolder.clock?.poke()` at
    line 149), on every sub-agent registry activity event
-   (`packages/loop/src/runtime/orchestrator.ts:210`, `onActivity: () => clockHolder.clock?.poke()`), and
-   on every model-call retry (`packages/loop/src/runtime/loop/loop.ts:422`, inside `onRetry`). So
+   (`packages/loop/src/runtime/orchestrator.ts:215`, `onActivity: () => clockHolder.clock?.poke()`), and
+   on every model-call retry (`packages/loop/src/runtime/loop/loop.ts:445`, inside `onRetry`). So
    `timeout_ms` measures **inactivity**, not run wall time (comment, `packages/loop/src/runtime/run-timeout.ts:44-46`): a run that
    keeps producing trace entries, sub-agent activity, or retries never trips it, however long it runs.
 5. `soft-budget.ts`'s `buildSoftLimitAsk` and `guard-escalation.ts`'s `buildGuardEscalationAsk` both
@@ -493,28 +493,28 @@ error.
 
 ### 4.6 Extension admission wiring (`packages/loop/src/runtime/orchestrator.ts`)
 
-`extensionAdmissionFor` (`packages/loop/src/runtime/extension-admission.ts:216-228`, called at `packages/loop/src/runtime/orchestrator.ts:234`) resolves one `ExtensionAdmissionController` per run
+`extensionAdmissionFor` (`packages/loop/src/runtime/extension-admission.ts:232-244`, called at `packages/loop/src/runtime/orchestrator.ts:239`) resolves one `ExtensionAdmissionController` per run
 — either the caller-supplied `deps.extensionAdmission`, or a fallback memoized per `deps` object via a
 `WeakMap` and constructed from the three `CLARVIS_MAX_CONCURRENT_EXTENSION_*` env vars
-(`packages/loop/src/runtime/extension-admission.ts:220-225`). Every capability's activation (`capability.forRun(capabilityCtx)`) is
+(`packages/loop/src/runtime/extension-admission.ts:236-241`). Every capability's activation (`capability.forRun(capabilityCtx)`) is
 itself run through this same controller, under operation key
-`capabilityActivationOperation(capability.name)` (`packages/loop/src/runtime/orchestrator.ts:244-251`), **and** independently
+`capabilityActivationOperation(capability.name)` (`packages/loop/src/runtime/orchestrator.ts:249-256`), **and** independently
 bounded by a wall-clock `boundPromise(..., {timeoutMs: setupTimeoutMs})`
-(`packages/loop/src/runtime/orchestrator.ts:246-262`, `setupTimeoutMs = deps.env.CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS`) — these are
+(`packages/loop/src/runtime/orchestrator.ts:251-267`, `setupTimeoutMs = deps.env.CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS`) — these are
 two separate ceilings (physical concurrency vs. wall time) applied to the same call. A refusal from the
 admission gate is caught and turned into a `capability.extension_saturated` warning log plus `null`
 activation (i.e. the capability contributes nothing this run) rather than propagating
-(`packages/loop/src/runtime/orchestrator.ts:263-273`). Once activated, every capability's lifecycle hooks and `finalizeRun`/
-`onRunEnd` are re-wrapped by `admittedRunCapability` (`packages/loop/src/runtime/orchestrator.ts:301`), which is what routes their
+(`packages/loop/src/runtime/orchestrator.ts:268-278`). Once activated, every capability's lifecycle hooks and `finalizeRun`/
+`onRunEnd` are re-wrapped by `admittedRunCapability` (`packages/loop/src/runtime/orchestrator.ts:306`), which is what routes their
 *subsequent* per-call invocations (not just the one-time `forRun`) through the same admission gate.
 If an admitted `forRun` exceeds its wall timeout, the logical wait ends but the physical admission
 permit remains held until the underlying invocation settles; `ExtensionAdmissionController.call`
 releases permits only from the physical promise's fulfillment/rejection observer
 (`packages/capability/src/extension-admission.ts:156-169`). Controllers created by
 `buildExecuteRunDeps` close during that returned object's `dispose()`; caller-supplied controllers
-remain caller-owned (`packages/loop/src/runtime/build-run-deps.ts:583-594`). The fallback controller
+remain caller-owned (`packages/loop/src/runtime/build-run-deps.ts:602-613`). The fallback controller
 used when `runOrchestrator` is driven directly is memoized in a `WeakMap` and has no separate teardown
-path (`packages/loop/src/runtime/extension-admission.ts:201-227`).
+path (`packages/loop/src/runtime/extension-admission.ts:217-243`).
 
 ## 5. Invariants
 
@@ -576,8 +576,8 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
     dispatched tool call inside `runDispatch`'s per-call loop
     (`packages/loop/src/runtime/tools/mcp-dispatch.ts:229`, `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:95,146`),
     while `tripped()` is queried exactly once per *iteration*, after the whole batch of that
-    iteration's tool calls has been dispatched (`packages/loop/src/runtime/loop/loop.ts:1062`, reached from the single
-    `runDispatch` call at `:982`). A model turn that batches several tool calls can therefore make
+    iteration's tool calls has been dispatched (`packages/loop/src/runtime/loop/loop.ts:1085`, reached from the single
+    `runDispatch` call at `:1005`). A model turn that batches several tool calls can therefore make
     *both* underlying guards latch within one iteration — e.g. three identical failing calls first
     (tripping `doom`), then three consecutive identical successful calls (tripping `stag`) — before
     `tripped()` is ever consulted. An error resets the stagnation streak and a success clears the doom
@@ -631,14 +631,14 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
     gate** — every `LifecycleHook` method, `seedBlock`, `onRunEnd`, `finalizeRun` — **and only
     `seedBlock` degrades gracefully on saturation**, catching `ExtensionCallUnavailableError` and
     returning `undefined` with a `capability.extension_saturated` warning; every other admitted surface
-    propagates the refusal to its caller unhandled. Production: `packages/loop/src/runtime/extension-admission.ts:24-180`
-    (the `seedBlock` try/catch at `:137-155` has no counterpart on any other wrapped method). Test:
+    propagates the refusal to its caller unhandled. Production: `packages/loop/src/runtime/extension-admission.ts:24-196`
+    (the `seedBlock` try/catch at `:153-171` has no counterpart on any other wrapped method). Test:
     `packages/loop/tests/unit/extension-admission.test.ts:15-130` (routes every surface),
     `:132-185` ("omits a saturated seed before invocation and rethrows ordinary failures").
 26. **Activation admission is keyed by the capability's stable registration *name*, not the returned
     object's identity** — so a host that constructs a fresh `RunCapability` object per run still bounces
-    off the same per-operation ceiling. Production: `packages/loop/src/runtime/extension-admission.ts:114-121`
-    (remark) and `capabilityActivationOperation` (`:188-190`). Test: partially pinned —
+    off the same per-operation ceiling. Production: `packages/loop/src/runtime/extension-admission.ts:130-137`
+    (remark) and `capabilityActivationOperation` (`:204-206`). Test: partially pinned —
     `packages/loop/tests/unit/extension-admission.test.ts:187-192` confirms the stable key *format*
     (`capability:x:forRun`), but no test exercises reusing a fresh object across runs against the same
     controller to prove the ceiling still bites; that specific scenario is unpinned.
@@ -674,8 +674,8 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
     exhaustion is covered instead by [workflows-scheduling-and-spawn](../capabilities/workflows-scheduling.md)'s own tests).
 32. **The compute clock is poked on every trace entry, every sub-agent registry activity event, and
     every model-call retry** — `timeout_ms` measures inactivity, not wall time. Production:
-    `packages/loop/src/runtime/run-trace.ts:138-149`, `packages/loop/src/runtime/orchestrator.ts:210`,
-    `packages/loop/src/runtime/loop/loop.ts:422`. Test:
+    `packages/loop/src/runtime/run-trace.ts:138-149`, `packages/loop/src/runtime/orchestrator.ts:215`,
+    `packages/loop/src/runtime/loop/loop.ts:445`. Test:
     `packages/loop/tests/integration/retry-pokes-stall-clock.test.ts:13-39` (retry path only; the trace
     and agent-activity poke paths are exercised only indirectly by every passing long-running
     integration test, not by a test that isolates them).
@@ -711,7 +711,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
     unbounded**, because the checkpoint that would stop the tree runs only after dispatch (§4.1 step 6)
     — a concrete, test-pinned bound is `total <= cap + 2 * (max single-call usage)` for one lead plus
     one concurrently-spending sub-agent sharing a cap of 100 with calls sized up to 50 tokens.
-    Production: the checkpoint-after-dispatch ordering already cited at `packages/loop/src/runtime/loop/loop.ts:1026-1085`. Test:
+    Production: the checkpoint-after-dispatch ordering already cited at `packages/loop/src/runtime/loop/loop.ts:1049-1108`. Test:
     `packages/loop/tests/integration/shared-budget.test.ts:12-84` (`total > 100`, `total <= 100 + 2*50`).
 38. **Only `seedBlock` among a `RunCapability`'s admitted surfaces degrades gracefully on saturation
     (INV-25); `forAgent`, `systemSection`, `order` and `guardTripCodes` are never admission-gated at
@@ -721,7 +721,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
     contributing multiple `LifecycleHook` objects gets an **independent** admission lane per hook, keyed
     by that hook's array index (`` `lifecycle:${hookIndex}:${method}` ``) — two hooks calling the same
     method do not share one ceiling. Production: `packages/loop/src/runtime/extension-admission.ts:16-23`
-    (hook-index keying), `:153-157,174` (un-admitted surfaces).
+    (hook-index keying), `:169-173,174` (un-admitted surfaces).
 
 ## 6. Failure modes and degradation
 
@@ -730,7 +730,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
 | Hard token or iteration cap reached (no soft budget configured) | `checkLimits` returns terminal; the checkpoint reports `budgetStop("exhausted")` → `status: "budget_exhausted"`, firing `onBudgetExhausted` lifecycle observers first | `packages/loop/src/runtime/budget/budget.ts:110-118`, `packages/loop/src/runtime/loop/run-agent.ts:198-215`; test `budget-iteration-cap.test.ts`, `budget-token-cap.test.ts` |
 | Soft checkpoint crossed and the user declines / times out / gives no answer | `evaluateSoftBudget` returns `declined`; the checkpoint reports `budgetStop("declined")` → `status: "soft_limit_declined"` | `packages/loop/src/runtime/budget/budget-checkpoint.ts:52-55`, `packages/loop/src/runtime/loop/run-agent.ts:198-215` |
 | Soft or guard-escalation ask throws for a reason other than the signal aborting | Treated as `no_response` → `declined`, never left hanging | `packages/loop/src/runtime/budget/soft-budget.ts:217-224`, `packages/loop/src/runtime/guards/guard-escalation.ts:115-122` |
-| Guard trips with no escalation configured | Unconditionally terminal: `status: "error"`, `error.code` = the guard's own code (`tool_failure_loop`/`stagnation_detected`) | `packages/loop/src/runtime/loop/run-agent.ts:514` (no `onGuardTrip` wired), `packages/loop/src/runtime/loop/loop.ts:1072-1073`; test `packages/loop/tests/integration/guard-escalation.test.ts:85-99` |
+| Guard trips with no escalation configured | Unconditionally terminal: `status: "error"`, `error.code` = the guard's own code (`tool_failure_loop`/`stagnation_detected`) | `packages/loop/src/runtime/loop/run-agent.ts:514` (no `onGuardTrip` wired), `packages/loop/src/runtime/loop/loop.ts:1095-1096`; test `packages/loop/tests/integration/guard-escalation.test.ts:85-99` |
 | Guard trips, escalation configured, user declines | Same terminal outcome as above, but a `guard_escalation` trace entry records `outcome: "declined"` first | `packages/loop/tests/integration/guard-escalation.test.ts:124-134` |
 | Guard escalation cap spent | Further trips decline without ever asking again | `packages/loop/src/runtime/guards/guard-escalation.ts:110-113`; test `packages/loop/tests/integration/guard-escalation.test.ts:136-153` |
 | `ComputeClock` deadline fires | `runWithClockAndTimeout` returns `errorResponse(..., "timeout", ...)`; loop teardown is given `settleGraceMs` then detached (not awaited) if it does not cooperate, logging `run.teardown_detached` | `packages/loop/src/runtime/run-timeout.ts:103-120` |
@@ -738,9 +738,9 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
 | Output-token budget has no headroom before a call | `OutputBudgetExhaustedError` thrown synchronously before the provider is ever called | `packages/loop/src/runtime/loop/output-budget.ts:87,96-100` |
 | A model call fails after streaming had genuinely begun, or with an unclassified error carrying no usage evidence | The **entire** reservation is charged, deliberately erring toward exhausting the shared ceiling rather than under-charging an uncertain case | `packages/loop/src/runtime/loop/output-budget.ts:127-134`, comment `:128-131` |
 | A model call fails with provably no billable output (`producedNoBillableOutput`) | The reservation is released in full — this is the fix for the historical 429-drains-the-tree defect | `packages/loop/src/runtime/loop/output-budget.ts:49-56,125-126`; test `packages/loop/tests/unit/output-budget.test.ts:216-228` |
-| A capability's `forRun` activation exceeds `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | Logged as `capability.setup_timeout`; the capability contributes nothing (`activated === null`), the run proceeds without it | `packages/loop/src/runtime/orchestrator.ts:263-278` (timeout branch) |
-| A capability's `forRun`/lifecycle call is refused by the extension admission gate | Logged as `capability.extension_saturated`; the activation (or, for `seedBlock` specifically, the seed) is treated as absent rather than the run failing | `packages/loop/src/runtime/orchestrator.ts:263-273` (forRun), `packages/loop/src/runtime/extension-admission.ts:142-155` (seedBlock only) |
-| A `LifecycleHook` method (not `seedBlock`) is refused by the admission gate | The `ExtensionCallUnavailableError` propagates unhandled to whatever awaited that hook | `packages/loop/src/runtime/extension-admission.ts:24-111` (no catch on any of these branches); test `packages/loop/tests/unit/extension-admission.test.ts:15-130` shows every one of these is a direct passthrough with no degradation path exercised |
+| A capability's `forRun` activation exceeds `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | Logged as `capability.setup_timeout`; the capability contributes nothing (`activated === null`), the run proceeds without it | `packages/loop/src/runtime/orchestrator.ts:268-283` (timeout branch) |
+| A capability's `forRun`/lifecycle call is refused by the extension admission gate | Logged as `capability.extension_saturated`; the activation (or, for `seedBlock` specifically, the seed) is treated as absent rather than the run failing | `packages/loop/src/runtime/orchestrator.ts:268-278` (forRun), `packages/loop/src/runtime/extension-admission.ts:158-171` (seedBlock only) |
+| A `LifecycleHook` method (not `seedBlock`) is refused by the admission gate | The `ExtensionCallUnavailableError` propagates unhandled to whatever awaited that hook | `packages/loop/src/runtime/extension-admission.ts:24-127` (no catch on any of these branches); test `packages/loop/tests/unit/extension-admission.test.ts:15-130` shows every one of these is a direct passthrough with no degradation path exercised |
 | A queued `Semaphore.acquire` whose caller aborts | Rejects with the abort reason (or a generic `Error("aborted")` for a non-Error reason); no slot is ever granted or leaked | `packages/capability/src/semaphore.ts:55-68`; test `packages/capability/tests/unit/semaphore.test.ts:89-135` |
 | An `ExtensionAdmissionController` is `.close()`d and something calls `.call()` afterward | Throws `ExtensionCallUnavailableError` with reason `"closed"`, synchronously, before invoking anything; `close()` itself still fires `onStateChange` | `packages/capability/src/extension-admission.ts:119-123,137-139`; test `packages/capability/tests/unit/extension-admission.test.ts:107-110,158-169` (capability) |
 | `ExtensionAdmissionController`'s constructor is given a non-positive-integer ceiling, or `.call()` is given an empty operation name | Both throw `TypeError` synchronously (constructor: `maxActiveNormal`/`maxActiveRunEnd`/`maxActivePerOperation` validated by a shared `positiveInteger` helper; `.call`: `"operation must be non-empty."`) | `packages/capability/src/extension-admission.ts:58-64,88-102,136`; test `packages/capability/tests/unit/extension-admission.test.ts:111-118` (capability) |
@@ -767,7 +767,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
 
 - `packages/loop/src/runtime/loop/run-agent.ts` and `loop.ts` (owned by [loop-run-lifecycle](loop-run-lifecycle.md)) **must**
   call `checkpoint()` and consult `guards.tripped()`/`takeSoft()` in the fixed order documented in §4.1
-  — the ordering comment at `packages/loop/src/runtime/loop/loop.ts:1056-1061` states explicitly what breaks if a waived guard trip
+  — the ordering comment at `packages/loop/src/runtime/loop/loop.ts:1079-1084` states explicitly what breaks if a waived guard trip
   were made to `continue` immediately instead of falling through: "the iteration still counts against
   the no-progress tracker and still hits the budget checkpoint. Skipping both would make 'continue past
   the guard' quietly exempt that turn from two unrelated stop conditions."
@@ -787,7 +787,7 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
   code outside a workflow. This is a real, structural coupling: this document's central mechanism has
   exactly one caller, and that caller is owned by a different document.
 - `packages/loop/src/runtime/delegation.ts` (owned by [loop-delegation-and-subagents](delegation-and-subagents.md)) is the sole
-  consumer of the fan-out `Semaphore` built at `packages/loop/src/runtime/orchestrator.ts:591` — it calls `.acquire()`/`.release()`
+  consumer of the fan-out `Semaphore` built at `packages/loop/src/runtime/orchestrator.ts:606` — it calls `.acquire()`/`.release()`
   around each `delegate_task` dispatch; this document owns only the `createSemaphore` factory and its FIFO/
   abort contract, not the fan-out policy built over it.
 - `packages/loop/src/runtime/run-trace.ts`'s `GUARD_TRIP_CODES` (owned by [loop-run-lifecycle](loop-run-lifecycle.md)) is what

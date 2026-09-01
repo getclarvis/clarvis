@@ -19,14 +19,14 @@ schema registry.
 The design property the modules exist to hold is that a method string is spelled **once**. `M` in
 `wire.ts` is not a literal table: every entry reads its value out of `OPERATIONS` or
 `SPECIAL_OPERATIONS` (`packages/kernel/src/transport/wire.ts:27-60`), and both the client proxy
-(`createServiceProxy`, `packages/kernel/src/transport/operations.ts:774`) and the server dispatch map (`packages/kernel/src/transport/server.ts:294`) are built
+(`createServiceProxy`, `packages/kernel/src/transport/operations.ts:784`) and the server dispatch map (`packages/kernel/src/transport/server.ts:294`) are built
 from that same catalog. A wire name therefore cannot drift between the two halves.
 
 The second property is that both directions of the boundary are treated as untrusted. Inbound frames
 go through a strict structural decoder that returns `null` rather than coercing
 (`packages/kernel/src/transport/stdio.ts:126-162`); inbound run events go through per-discriminator `zod` schemas that are all
 `.strict()` (`packages/kernel/src/transport/run-event-codec.ts:76-410`); inbound request parameter envelopes are checked against
-the key set the operation's own encoder produces (`packages/kernel/src/transport/operations.ts:753-771`); and an error travelling
+the key set the operation's own encoder produces (`packages/kernel/src/transport/operations.ts:763-781`); and an error travelling
 outbound is size-bounded, control-character-stripped and secret-redacted before it is serialized
 (`packages/kernel/src/transport/stdio.ts:349-381`).
 
@@ -46,12 +46,12 @@ Re-exported by `packages/kernel/src/index.ts:57-81`:
 | `createStdioTransport(io, logger?)` | value | `packages/kernel/src/transport/stdio.ts:406` | Client-side NDJSON transport |
 | `serveKernelOverStdio(server, io, logger?)` | value | `packages/kernel/src/transport/stdio.ts:529` | Server-side NDJSON pump |
 | `WIRE_METHODS` (`M`), `WIRE_NOTIFICATIONS` (`N`) | values | `packages/kernel/src/transport/wire.ts:27,70` | Named method / notification constants |
-| `KERNEL_OPERATIONS` (`OPERATIONS`), `SPECIAL_OPERATIONS`, `KNOWN_METHODS` | values | `packages/kernel/src/transport/operations.ts:146,709,742` | The operation catalog |
+| `KERNEL_OPERATIONS` (`OPERATIONS`), `SPECIAL_OPERATIONS`, `KNOWN_METHODS` | values | `packages/kernel/src/transport/operations.ts:146,719,752` | The operation catalog |
 | `KernelOperation`, `KernelOperationMetadata`, `KernelServices` | types | `packages/kernel/src/transport/operations.ts:47,39,21` | Catalog shapes |
 
 Exported from their module but **not** re-exported by `src/index.ts`: `CLARVIS_WIRE_VERSION`
 (`packages/kernel/src/transport/wire.ts:15`), `MAX_WIRE_FRAME_BYTES` and `decodeFrame` (`packages/kernel/src/transport/stdio.ts:42,126`), `ORDINARY_OPERATIONS`,
-`decodeOperationParams`, `createServiceProxy` (`packages/kernel/src/transport/operations.ts:725,753,774`), `decodeRunEvent`
+`decodeOperationParams`, `createServiceProxy` (`packages/kernel/src/transport/operations.ts:735,763,784`), `decodeRunEvent`
 (`packages/kernel/src/transport/run-event-codec.ts:413`). The tests reach them by relative path
 (`packages/kernel/tests/contract/stdio-codec.test.ts:5-10`, `packages/kernel/tests/contract/transport-codecs.test.ts:3-14`).
 
@@ -466,7 +466,7 @@ its steer/compact/cancel/respond dispatch through the same `runs.*` special-oper
 (`packages/kernel/src/transport/server.ts:270-278`). The client side is symmetric: `streamingStart` (§4.4) is the same function a
 workflow's start goes through, "since the kernel routes a manager run through `runs.start`"
 (`packages/kernel/src/transport/client.ts:410-415`). Only `workflows.get`/`workflows.list`/`workflows.delete` remain
-workflow-specific operations (`packages/kernel/src/transport/operations.ts:449-470`) — everything else a workflow needs (event
+workflow-specific operations (`packages/kernel/src/transport/operations.ts:459-480`) — everything else a workflow needs (event
 streaming, elicitation, steer/compact/cancel/respond) is the run machinery this section and §4.4-4.5
 document, unmodified.
 
@@ -708,7 +708,7 @@ Test: `packages/kernel/tests/contract/transport-codecs.test.ts:114-125`.
 
 **INV-217.** `KNOWN_METHODS` holds no duplicate, and every ordinary operation's `invoke` genuinely
 reaches the matching service method in catalog order.
-Production: `packages/kernel/src/transport/operations.ts:725-745`, each operation's `invoke`.
+Production: `packages/kernel/src/transport/operations.ts:735-755`, each operation's `invoke`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts:129-145` (each fake service method throws
 `RECORDED_OPERATION`, `packages/kernel/tests/helpers/recording-kernel-services.ts:5,16-19`).
 
@@ -716,7 +716,7 @@ Test: `packages/kernel/tests/contract/transport-codecs.test.ts:129-145` (each fa
 `sessions.listPage` and `workflows.list` unchanged — via a locally-cast widened method signature that
 never appears on the public wire `SessionService` contract.
 Production: `listSessionPage` `packages/kernel/src/transport/operations.ts:121-128`, `listWorkflows` `packages/kernel/src/transport/operations.ts:136-143`,
-wired at `packages/kernel/src/transport/operations.ts:496-501` and `:459-464`.
+wired at `packages/kernel/src/transport/operations.ts:506-511` and `:469-474`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts:147-173` (session and workflow catalog
 cases); `packages/kernel/tests/integration/session-service.test.ts:126-141` corroborates from the
 service side — the session service itself honors an aborted signal mid-scan, not merely relays it.
@@ -773,7 +773,7 @@ only — it constrains the **keys**, not the payload shape (see §8).
 **INV-T4.** A request parameter envelope may carry no key the operation's own encoder does not
 produce; the allowed key set is derived once per operation by invoking `encode` with `undefined`
 placeholders and memoized in a `WeakMap`.
-Production: `decodeOperationParams` `packages/kernel/src/transport/operations.ts:747-771`, enforced at `packages/kernel/src/transport/server.ts:431-437`.
+Production: `decodeOperationParams` `packages/kernel/src/transport/operations.ts:757-781`, enforced at `packages/kernel/src/transport/server.ts:431-437`.
 Test: `packages/kernel/tests/integration/transport.test.ts:466-468` (`listAgents` with `{ unexpected: true }` →
 `invalid_request`).
 
@@ -869,7 +869,7 @@ bound to its own wire", …)`. The composition around it belongs to the kernel-b
 **INV-T21.** A Tasks operation's client-supplied `AbortSignal` is extracted by the operation's own
 `requestOptions`, not by widening the parameter envelope: `taskRequestOptions` turns a caller's
 `{ signal }` into the transport `request`'s third argument (`packages/kernel/src/transport/operations.ts:107-113`), wired on every
-one of the twelve Tasks operations (`packages/kernel/src/transport/operations.ts:588,595,602,613,624,632,643,654,665,676,687,698`).
+one of the twelve Tasks operations (`packages/kernel/src/transport/operations.ts:598,605,612,623,634,642,653,664,675,686,697,708`).
 This is distinct from INV-218's mechanism, under which `sessions.listPage`/`workflows.list` thread a
 signal into `invoke` server-side with no client-side `requestOptions` involved at all. Opaque
 cursor/id fields inside a Tasks operation's `input` (e.g. `next_cursor`) pass through the wire
@@ -1006,8 +1006,8 @@ the owner's decision and remains open.
 
 **What `secrets.set` carries.** The catalog's most sensitive operation puts the raw value straight
 into the wire parameter object — `encode: (name, value) => ({ name, value })`
-(`packages/kernel/src/transport/operations.ts:346`) — and `invoke` hands both to
-`services.secrets.set` (`:347`), which reaches `createFileSecretStore`'s `set`
+(`packages/kernel/src/transport/operations.ts:356`) — and `invoke` hands both to
+`services.secrets.set` (`:357`), which reaches `createFileSecretStore`'s `set`
 (`packages/kernel/src/secrets/secret-store.ts:111-117`) and rewrites the whole file through
 `writeFileAtomicSync` (`:104-106`) at `0o600` inside a `0o700` directory
 (`packages/paths/src/constants.ts:52`, `:40`). No redaction touches it: `sanitizeDeep`/`terminalSafe`
@@ -1025,7 +1025,7 @@ scoped to: "Values only ever flow client → kernel; listing returns names, neve
 travel over the transport on `set`. That is fine over local stdio (same user/host); a hosted kernel
 needs TLS plus at-rest protection" (`packages/protocol/src/secrets.ts:4-9`). The catalog matches the
 first half — `listNames` / `set` / `delete` and no `get`
-(`packages/kernel/src/transport/operations.ts:336-355`) — so a peer that can write a secret still
+(`packages/kernel/src/transport/operations.ts:346-365`) — so a peer that can write a secret still
 cannot read one back over the wire.
 
 The second half holds because the wire has exactly one production host. `serveFileKernelOverStdio`
@@ -1206,9 +1206,9 @@ unexamined.
 `unavailable`) but not the log record.
 
 **`decodeOperationParams` validates only the key set** — it checks no required key is missing and no
-value's type (`packages/kernel/src/transport/operations.ts:757-771`); `invoke` then casts
+value's type (`packages/kernel/src/transport/operations.ts:767-781`); `invoke` then casts
 (`packages/kernel/src/transport/operations.ts:152` and throughout). The TSDoc's claim that "domain
-services remain responsible for their nested DTOs" (`:751`) is not merely asserted: it is verified true
+services remain responsible for their nested DTOs" (`:761`) is not merely asserted: it is verified true
 for at least two representative operations, one on each side of the read/write split. `runs.start`'s
 `invoke` passes the cast params straight into `startReserved` → `assembleRunRequest` →
 `executeRun({ rawBody, … })` (`packages/kernel/src/runs/run-service.ts:109-113`), and `executeRun` calls

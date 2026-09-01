@@ -33,7 +33,7 @@ Production: `packages/kernel/src/file-kernel.ts:93-145`, `:656-677`;
 
 Test of the composed coordinator/store behavior:
 `packages/mcp-client/tests/integration/oauth-transport.test.ts:197-251` and
-`packages/mcp-client/tests/integration/oauth-store.test.ts:29-137`. The Code host's browser authority
+`packages/mcp-client/tests/integration/oauth-store.test.ts:29-162`. The Code host's browser authority
 is documented and tested in [code-bootstrap.md](code-bootstrap.md).
 
 The `builtins` switchboard names `tools`, `skills`, `hooks`, and `tasks`. Memory and planning have
@@ -142,7 +142,7 @@ lifecycle; the kernel owns the file location and browser-opening authority.
 Production: `packages/kernel/src/owner-scoped-file-stores.ts`;
 `packages/kernel/src/application/workspace-housekeeping.ts`;
 `packages/kernel/src/file-kernel.ts:656-677`;
-`packages/loop/src/runtime/build-run-deps.ts:386-427`, `:577-594`;
+`packages/loop/src/runtime/build-run-deps.ts:391-432`, `:596-613`;
 `packages/paths/src/global.ts:108-120`.
 
 Test: `packages/kernel/tests/integration/file-kernel.test.ts`.

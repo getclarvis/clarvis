@@ -650,7 +650,7 @@ Each entry: **rule** — production anchor — test anchor.
     same verdict through `agentFilesTrusted` (`:683`, over `workspaceTrusted` at `:476-479`) —
     deliberately the *same* verdict as the executable settings fields, because "an agent's markdown
     body becomes a system prompt section verbatim" (`:837-841`). Pinned for settings:
-    `packages/kernel/tests/integration/workspace-trust.test.ts:81`, `:177`, `:275`. **The agent half is pinned too**:
+    `packages/kernel/tests/integration/workspace-trust.test.ts:81`, `:177`, `:281`. **The agent half is pinned too**:
     `packages/kernel/tests/integration/file-kernel.test.ts:139` seeds `.clarvis/agents/coder.md` on
     disk and asserts that before `config.approveWorkspace()` the listed `coder` is the **shipped**
     one — `scope: "builtin"`, no `overlay`, not the file's `description` — with
@@ -691,7 +691,7 @@ Each entry: **rule** — production anchor — test anchor.
 
 26. **The view a write returns reflects the approval that write carried.** `snapshot()` is taken after
     `withOperatorWrite` returns, never inside it (`packages/kernel/src/config/file-config-store.ts:858`, `:814`). Pinned:
-    `packages/kernel/tests/integration/workspace-trust.test.ts:238`.
+    `packages/kernel/tests/integration/workspace-trust.test.ts:241`.
 
 27. **Settings mutation is serialized by a local lease and derives its input from the bytes whose
     revision it checked.** `packages/kernel/src/config/file-config-store.ts:798-807`, `:773` (`settingsFromDocument` reuses the
@@ -881,7 +881,7 @@ ceiling, the three failure kinds, and the `missing` flag.
 | `runs/settings-assembler.ts` | `AgentRecord`, `ConfigStore`, `readEffectiveAgent` | `packages/kernel/src/runs/settings-assembler.ts:10`, `:364`, `:376` |
 | `application/workflow-policy.ts` | `resolveAgentsByName`, `ConfigStore` | `packages/kernel/src/application/workflow-policy.ts:3-4`, `:45`, `:49` |
 | `mcp/effective-servers.ts`, `sandbox/policy.ts`, `tasks/task-provider-factory.ts` | `ConfigStore`/`SettingsSnapshot` types | `:3`, `:7`, `:14` respectively |
-| `plugins/plugin-service.ts` | `parseAgentFrontmatter` | `packages/kernel/src/plugins/plugin-service.ts:17` |
+| `plugins/plugin-service.ts` | `parseAgentFrontmatter` | `packages/kernel/src/plugins/plugin-service.ts:26` |
 | `plugins/plugin-contributions.ts` | `AgentRecord` type | `packages/kernel/src/plugins/plugin-contributions.ts:20`; it also implements `settingsScopes`/`agents`/`readAgent` consumed at `packages/kernel/src/config/file-config-store.ts:649`, `:942`, `:957` |
 | `@clarvis/code` | `resolveAgentsByName`, `AgentSummary.overlay.shadowed` | `packages/code/src/adapters/kernel-run-client.ts:202`, `packages/code/src/adapters/agents-store.ts:40-52` |
 
@@ -911,7 +911,7 @@ type-only import plus an injected `opts.plugins` object.
 
 2. **`SettingsData.mcp_servers` (snake_case, `packages/protocol/src/config.ts:29`) is not the key anything
    writes.** The engine's schema key is `mcpServers`
-   (`packages/loop/src/settings/settings-schema.ts:240`) and that is what
+   (`packages/loop/src/settings/settings-schema.ts:353`) and that is what
    `WORKSPACE_RISK_FIELDS` strips (`packages/kernel/src/config/workspace-trust.ts:39`). The snake_case field compiles only
    because of the interface's index signature (`packages/protocol/src/config.ts:37`). Whether it is dead or a
    planned rename is not stated.
@@ -938,7 +938,7 @@ type-only import plus an injected `opts.plugins` object.
 
 6. **`resolveAgentsByName` and `parseAgentFrontmatter` have no kernel test.**
    `resolveAgentsByName` is tested only transitively via `packages/code/tests/integration/doctor.test.ts`;
-   `parseAgentFrontmatter`'s only caller is `packages/kernel/src/plugins/plugin-service.ts:17`. `scopeRank`'s `"builtin"`
+   `parseAgentFrontmatter`'s only caller is `packages/kernel/src/plugins/plugin-service.ts:26`. `scopeRank`'s `"builtin"`
    arm is documented as unreachable in practice ("In practice `builtin` never has to lose this
    comparison", `packages/kernel/src/config/agent-resolution.ts:8`) and nothing tests it.
 

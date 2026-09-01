@@ -70,19 +70,19 @@ The kernel's transport layer accesses this widened shape by a local, non-exporte
 (`SignalAwareSessionListPage`, `packages/kernel/src/transport/operations.ts:115-128`) precisely so
 the wire-level `CursorPagination` DTO never grows a `signal` field.
 
-### Wire methods (`packages/kernel/src/transport/operations.ts:491-526`)
+### Wire methods (`packages/kernel/src/transport/operations.ts:677-714`)
 
 | Method | Access | Encode | Cite |
 |---|---|---|---|
-| `sessions.listPage` | read | `{ page }` | `packages/kernel/src/transport/operations.ts:492-502` |
-| `sessions.list` | read | `{}` | `packages/kernel/src/transport/operations.ts:503-508` |
-| `sessions.get` | read | `{ id }` | `packages/kernel/src/transport/operations.ts:509-514` |
-| `sessions.save` | write | `{ session }` | `packages/kernel/src/transport/operations.ts:515-521` |
-| `sessions.delete` | write | `{ id }` | `packages/kernel/src/transport/operations.ts:522-527` |
+| `sessions.listPage` | read | `{ page }` | `packages/kernel/src/transport/operations.ts:678-688` |
+| `sessions.list` | read | `{}` | `packages/kernel/src/transport/operations.ts:689-694` |
+| `sessions.get` | read | `{ id }` | `packages/kernel/src/transport/operations.ts:695-700` |
+| `sessions.save` | write | `{ session }` | `packages/kernel/src/transport/operations.ts:701-707` |
+| `sessions.delete` | write | `{ id }` | `packages/kernel/src/transport/operations.ts:708-713` |
 
-`packages/code/src/adapters/kernel-run-client.ts:467-472` is a bare passthrough of these five
+`packages/code/src/adapters/kernel-run-client.ts:504-510` is a bare passthrough of these five
 methods onto `requireKernel().sessions`, exposed on the client at `sessions`
-(`packages/code/src/adapters/kernel-run-client.ts:101,533`).
+(`packages/code/src/adapters/kernel-run-client.ts:112,581`).
 
 ### `Session` / `SessionSummary` DTOs (`packages/protocol/src/sessions.ts`)
 
@@ -137,7 +137,7 @@ createSessionService(opts: {
 
 | Flag | Value | Cite (behavior) |
 |---|---|---|
-| `--resume` | `<session-id>` | `resumeSessionById` at `packages/code/src/run-host.ts:1257-1272`, wired by `sessionControls` in `packages/code/src/runtime.tsx`; `assertSessionExists` in the same runtime |
+| `--resume` | `<session-id>` | `resumeSessionById` at `packages/code/src/run-host.ts:1418-1433`, wired by `sessionControls` in `packages/code/src/runtime.tsx`; `assertSessionExists` in the same runtime |
 | `--continue` | — | `assertSessionExists` calls `resolveResumeMeta` during boot preflight; interactive resume resolves the same metadata in `runApp` (`packages/code/src/runtime.tsx`) |
 | `--list` | — | `runListMode`, `packages/code/src/runtime.tsx` |
 | `--delete` | `<session-id>` | `runDeleteMode`, `packages/code/src/runtime.tsx` |

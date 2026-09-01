@@ -1263,7 +1263,7 @@ so the achievable posture is a guard on the way in, never a guarantee.
 ### The foreign plugin-dialect tables rest on a census taken outside this tree
 
 `EXTERNAL_TOOL_NAMES` and `EXTERNAL_TOOLS_WITHOUT_COUNTERPART`
-(`packages/capability/src/hooks-config.ts:137-186`) exist because a measurement
+(`packages/capability/src/hooks-config.ts:142-191`) exist because a measurement
 was taken over a public catalog of plugin manifests, and that catalog is not in this repository.
 `packages/kernel/src/plugins/hook-dialects.ts:11`–`:13` states that naming the hosts is deliberately
 avoided — "Naming the hosts would date the file and invite a class per vendor, when what varies
@@ -1287,8 +1287,8 @@ it does not make the public catalog that motivated the table reproducible inside
 names three sites, one of which — `packages/kernel/src/plugins/plugin-manifest.ts:140-145` —
 carries a **different** measurement (twenty plugins declaring a non-default skills location, holding
 316 skills, at `:138`) and no `196` anywhere. Four is the right count and the composition is wrong:
-the string appears at `packages/capability/src/hooks-config.ts:119`,
-`packages/loop/src/settings/settings-schema.ts:212`, `packages/skills/src/schema.ts:51` and
+the string appears at `packages/capability/src/hooks-config.ts:124`,
+`packages/loop/src/settings/settings-schema.ts:310`, `packages/skills/src/schema.ts:51` and
 `packages/code/src/views/config/MarketplaceBrowser.tsx:73`. The last two are named nowhere in the
 report.
 
@@ -1356,9 +1356,9 @@ assistant-text-only shapes of the `"message"` arm are pinned nowhere.
 The capture works by replacing `transport.setProtocolVersion`
 (`packages/mcp-client/src/client.ts:218`–`:223`), and whether the SDK calls that method exactly once,
 or at all, is outside this tree. The field is typed `string | undefined` (`:66`) and its one reader
-guards it (`packages/mcp-client/src/connection.ts:352`), so a version that never arrives degrades to
+guards it (`packages/mcp-client/src/connection.ts:369`), so a version that never arrives degrades to
 an absent diagnostic field rather than to anything worse. The half worth pinning is the *forwarding*,
-not the capture: `:219`–`:223` re-binds the original and calls through, which is what keeps
+not the capture: `:235`–`:239` re-binds the original and calls through, which is what keeps
 `mcp-protocol-version` on every post-handshake HTTP request. As of 2026-08-22 a test drives that
 against a real SDK client and a real HTTP server
 (`packages/mcp-client/tests/integration/protocol-version.test.ts`).
@@ -1424,10 +1424,10 @@ on the supported macOS runner, but cannot turn this private/deprecated OS surfac
 compatibility promise.
 
 **`git`, and a citation the report gets wrong.** It cites
-`packages/code/src/adapters/marketplace.ts:197`–`:205` as "spawns `git` directly through
+`packages/code/src/adapters/marketplace.ts:204`–`:212` as "spawns `git` directly through
 `Bun.spawn`". Those lines are TSDoc `@remarks`, not code, and that module contains no spawn at all:
-it imports `gitCloneAsync` at `:14` and calls it at `:211`, and the spawn is
-`packages/code/src/adapters/plugin-install.ts:112`. The substance is right and is already
+it imports `gitCloneAsync` at `:14` and calls it at `:226`, and the spawn is
+`packages/code/src/adapters/plugin-install.ts:112-137`. The substance is right and is already
 recorded at the declaration — against a remote kernel, installing a plugin would reach the kernel's
 filesystem while adding a marketplace would clone onto the operator's own laptop. What is recorded
 nowhere is the precondition itself: `git` must be on the **client's** `PATH` for the browse path, and
@@ -1730,25 +1730,24 @@ asserting bookkeeping rather than captured output passes. `shell` is unaffected 
 over pipes (`packages/tools/src/tools/shell.ts:258`, `stdio: ["ignore", "pipe", "pipe"]`).
 
 Nine `monitor` tests are suppressed behind `monitorCapturesOutput`
-(`packages/tools/tests/helpers/fixtures.ts:281`; the nine call sites are
+(`packages/tools/tests/helpers/fixtures.ts:282`; the nine call sites are
 `packages/tools/tests/integration/monitor.test.ts:70,130,176,208,314,335,384,403,422`) — a predicate
 kept **separate from `posixShell` on purpose**, because those tests are suppressed by a defect, not
 by inapplicability.
 
 **Ruled out, with the reasoning that ruled it out.** Opening the log twice (one handle per stdio
-slot) was tried and changed nothing. The experiment is `50ea97c`, reverted the same day in `2705c3a`
-(2026-07-28). Its hypothesis was that handing the *same* descriptor to two stdio slots is the one
+slot) was tried and changed nothing. The source and package README record that experiment as
+`50aa7c2`, reverted in `2705c3a`; neither hash resolves in the current public repository history, so
+the exact commit provenance and date are not locally verifiable. Its hypothesis was that handing the
+*same* descriptor to two stdio slots is the one
 thing this path does that the working `shell` path does not — Node services that on Windows by
 duplicating the underlying handle per slot, and Bun reimplements `child_process` — so two independent
 `"a"` handles would remove the sharing while interleaving identically and leaving POSIX untouched.
-The commit's own diagnostic still stands and is worth keeping: *that the log is completely empty* is
+The recorded diagnostic still stands and is worth keeping: *that the log is completely empty* is
 the evidence, because if either stream were connected, PowerShell's own parse errors would have
 landed in it. Neither stdout nor stderr reaches the file. The remaining explanation is that
 inheriting a numeric descriptor does not work there at all, so the fix is to let the child open the
 log itself rather than inherit it.
-
-Note that `packages/tools/src/tools/monitor.ts:169` cites that experiment as `50aa7c2`. That hash
-does not resolve; the commit is `50ea97c`.
 
 **What was built instead of a runner.** `tools.monitor_spawn`
 (`packages/tools/src/tools/monitor.ts:272`, naming platform, `detached`, the stdio slots and the log
@@ -1796,7 +1795,7 @@ with debug logging on now answers the question that CI was previously the only w
 Four modules probe whether a pid is alive with a signal-0 `process.kill`, and they split three to
 one on what an unclassifiable errno means. That split is deliberate and each owning spec records the
 direction its site chose (`specs/foundations/paths.md:615`–`:623`,
-`specs/execution/tools-shell-and-monitor.md:272`–`:282`, `specs/capabilities/memory-store.md:436`,
+`specs/execution/tools-shell-and-monitor.md:277`–`:287`, `specs/capabilities/memory-store.md:436`,
 `specs/foundations/trace.md:706`–`:710`), so it is not the defect. The defect is the **errno
 spelling** the three fail-open sites share:
 
@@ -1860,13 +1859,13 @@ about the tests, and relabelling it as a test problem is how it would get lost.
 `sidecar.test.ts:203,232`) and one in `@clarvis/memory`
 (`tests/integration/file-provider.test.ts:187`); `packages/code/tests/integration/marketplace.test.ts`
 has three more, equally outside the job. Five of the skills sites link a **file**, where the
-`"junction"` substitution that `packages/tools/tests/helpers/fixtures.ts:332` and
+`"junction"` substitution that `packages/tools/tests/helpers/fixtures.ts:333` and
 `packages/plan/tests/integration/file-repository.test.ts:48` use does not apply — the guard there has
 to be a probe, not a substitution. Two of them (`paths.test.ts:64`, `scan.test.ts:164`) are *escape*
 tests, so guarding them suppresses a security assertion; say so at the point it happens rather than
 letting it pass as routine.
 
-**Two rows that are not gaps.** `packages/skills/src/scan.ts:416`–`:418` is listed as "POSIX
+**Two rows that are not gaps.** `packages/skills/src/scan.ts:429`–`:431` is listed as "POSIX
 separator normalisation". It is the opposite: `toPosixRel` splits on `path.sep` and joins with `/`,
 which is the platform-*correct* normalisation for a display path and the same idiom `@clarvis/tools`
 uses deliberately. Rewriting it to a bare `path.relative` would make resource paths host-shaped and
@@ -1956,20 +1955,20 @@ and `head` all run there; only genuine *shell syntax* (`1>&2`, `$$`, `for … in
 
 A guard applied on the wrong premise turns a real defect into a green run — which is exactly how the
 `monitor` gap above stayed hidden. `posixShell`
-(`packages/tools/tests/helpers/fixtures.ts:203`) is for syntax; a defect gets its own named
+(`packages/tools/tests/helpers/fixtures.ts:204`) is for syntax; a defect gets its own named
 predicate.
 
 Two more predicates in the same file carry platform truths worth knowing: `modeBitsEnforced`
-(`:190`) is false on Windows **and** under root (both make a "permission denied" assertion
-unprovable), and `makeSymlink` (`:332`) needs `"dir"` to pick the junction Windows requires for a
+(`:191`) is false on Windows **and** under root (both make a "permission denied" assertion
+unprovable), and `makeSymlink` (`:333`) needs `"dir"` to pick the junction Windows requires for a
 directory link.
 
-The discipline held as the file grew: `canSymlink` (`:313`) and `nonUtf8FilenamesSupported` (`:250`)
+The discipline held as the file grew: `canSymlink` (`:314`) and `nonUtf8FilenamesSupported` (`:251`)
 are **probed** rather than derived from `process.platform`, because Windows can symlink given
 Developer Mode or elevation and encoding validity is a property of the filesystem rather than the OS;
-`detachedSleepCommand` (`:224`) records that `setsid(1)` is util-linux and absent on macOS and the
+`detachedSleepCommand` (`:225`) records that `setsid(1)` is util-linux and absent on macOS and the
 BSDs, where the fixture silently stopped constructing its scenario at all and passed vacuously on
-Linux while failing everywhere else. `lines()` (`:343`) normalizes CRLF so a fixture never fails on
+Linux while failing everywhere else. `lines()` (`:344`) normalizes CRLF so a fixture never fails on
 the line ending alone.
 
 Four packages joined the Windows job after this record was written. Plan and Paths retain local

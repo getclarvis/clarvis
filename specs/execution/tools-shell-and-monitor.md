@@ -37,11 +37,11 @@ this command started" work identically (in effect, not in mechanism) on POSIX an
 
 | Tool | File:line | `bounded` | Required args | Optional args |
 |---|---|---|---|---|
-| `shell` | `packages/tools/src/tools/shell.ts:134` | `true` (`:155`) | `command` | `cwd`, `timeout_ms` |
-| `monitor_start` | `packages/tools/src/tools/monitor.ts:174` | `true` (`:188`) | `command` | `cwd`, `ready_when`, `ready_timeout_ms` |
-| `monitor_poll` | `packages/tools/src/tools/monitor.ts:346` | `true` (`:353`) | `id` | `offset`, `match` |
-| `monitor_stop` | `packages/tools/src/tools/monitor.ts:447` | `true` (`:456`) | `id` | — |
-| `monitor_list` | `packages/tools/src/tools/monitor.ts:493` | `true` (`:498`) | — | — |
+| `shell` | `packages/tools/src/tools/shell.ts:134-138` | `true` (`:155`) | `command` | `cwd`, `timeout_ms` |
+| `monitor_start` | `packages/tools/src/tools/monitor.ts:174-179` | `true` (`:188`) | `command` | `cwd`, `ready_when`, `ready_timeout_ms` |
+| `monitor_poll` | `packages/tools/src/tools/monitor.ts:346-347` | `true` (`:353`) | `id` | `offset`, `match` |
+| `monitor_stop` | `packages/tools/src/tools/monitor.ts:447-452` | `true` (`:456`) | `id` | — |
+| `monitor_list` | `packages/tools/src/tools/monitor.ts:493-494` | `true` (`:498`) | — | — |
 
 All five are registered `readOnly: false` in `toolDescriptors`
 (`packages/tools/src/tools/registry.ts:55`, `:57-60`), including `monitor_poll` and `monitor_list`, which only
@@ -51,8 +51,8 @@ independently pins that `shell` and `monitor_start` specifically are never class
 ("they observe and mutate through one entry point").
 
 `shell`'s and every `monitor_*` tool's `inputSchema` is a plain JSON Schema object compiled once by
-Ajv (`packages/tools/src/core.ts:23-25`); `dispatch` validates, defaults and coerces caller arguments
-against it before the handler runs (`packages/tools/src/core.ts:184-191`).
+Ajv (`packages/tools/src/core.ts:49-51`); `dispatch` validates, defaults and coerces caller arguments
+against it before the handler runs (`packages/tools/src/core.ts:210-217`).
 
 ### Exported functions and types (reachable from `.`, `./shell`, or both)
 
@@ -92,26 +92,26 @@ Not exported from any entrypoint (internal to `tools/monitor.ts`/`lib/monitor.ts
 `packages/tools/tests/component/monitor-spawn.test.ts:6` and
 `packages/tools/tests/component/monitor-stop-kill.test.ts:4` import the `create*` factories directly).
 
-### Relevant `RuntimeConfig` fields (`packages/tools/src/config.ts:15-130`)
+### Relevant `RuntimeConfig` fields (`packages/tools/src/config.ts:15-133`)
 
 | Field | Default constant | Default value | File:line |
 |---|---|---|---|
-| `maxOutputBytes` | `DEFAULT_MAX_OUTPUT_BYTES` | `131072` | `packages/tools/src/config.ts:20`, `:135` |
-| `maxShellOutputBytes` | `DEFAULT_MAX_SHELL_OUTPUT_BYTES` | `16384` | `:23`, `:137` |
-| `shellTimeoutMs` | `DEFAULT_SHELL_TIMEOUT_MS` | `120000` | `:44`, `:151` |
-| `shellTimeoutMaxMs` | `DEFAULT_SHELL_TIMEOUT_MAX_MS` | `600000` | `:47`, `:153` |
-| `monitorReadyTimeoutMs` | `DEFAULT_MONITOR_READY_TIMEOUT_MS` | `30000` | `:50`, `:155` |
-| `maxMonitors` | `DEFAULT_MAX_MONITORS` | `32` | `:53`, `:157` |
-| `stateRoot` | — | (derived) | `:80-89`, resolved at `:446` |
-| `temporaryRoots` | — | `[]` | `:91-92`, resolved at `:347-358` |
+| `maxOutputBytes` | `DEFAULT_MAX_OUTPUT_BYTES` | `131072` | `packages/tools/src/config.ts:20`, `:138` |
+| `maxShellOutputBytes` | `DEFAULT_MAX_SHELL_OUTPUT_BYTES` | `16384` | `:23`, `:140` |
+| `shellTimeoutMs` | `DEFAULT_SHELL_TIMEOUT_MS` | `120000` | `:44`, `:154` |
+| `shellTimeoutMaxMs` | `DEFAULT_SHELL_TIMEOUT_MAX_MS` | `600000` | `:47`, `:156` |
+| `monitorReadyTimeoutMs` | `DEFAULT_MONITOR_READY_TIMEOUT_MS` | `30000` | `:50`, `:158` |
+| `maxMonitors` | `DEFAULT_MAX_MONITORS` | `32` | `:53`, `:160` |
+| `stateRoot` | — | (derived) | `:80-89`, resolved at `:503` |
+| `temporaryRoots` | — | `[]` | `:91-92`, resolved at `:354-365` |
 | `skillExecutionRoots` | — | `[]` | host-selected, canonical package directories; validated by `resolveConfig` |
-| `gitMetadataPaths` | — | discovered once from a validated linked worktree | `:94-95`, resolved at `:329` |
-| `registerTemporaryRoot` | — | closure over the live `temporaryRoots` list | `:97-98`, built at `:359-371` |
-| `logger` | — | `NOOP_TOOLS_LOGGER` when unset | `:100-110`, resolved at `:330` |
-| `sandbox` | — | `undefined` | `:117-118` |
-| `secretEnvNames` | — | `undefined` | `:119-131` |
+| `gitMetadataPaths` | — | discovered once from a validated linked worktree | `:97-98`, resolved at `:336` |
+| `registerTemporaryRoot` | — | closure over the live `temporaryRoots` list | `:100-101`, built at `:405-417` |
+| `logger` | — | `NOOP_TOOLS_LOGGER` when unset | `:103-113`, resolved at `:337` |
+| `sandbox` | — | `undefined` | `:120-121` |
+| `secretEnvNames` | — | `undefined` | `:122-134` |
 
-`ServerConfig` (`packages/tools/src/config.ts:458`) is a type alias of `RuntimeConfig` and is
+`ServerConfig` (`packages/tools/src/config.ts:516`) is a type alias of `RuntimeConfig` and is
 **not** re-exported from `index.ts`, whose type re-export at `packages/tools/src/index.ts:65` names
 only `RuntimeConfig` and `AgentToolsOptions` — tests import it directly from `../../src/config.ts`.
 
@@ -230,7 +230,7 @@ is needed.
    still refused.
    For linked worktrees, the spawn request also carries the canonical Git metadata paths that
    `resolveConfig` pinned at toolset creation; how those paths are mounted is owned by the sandbox
-   spec. Production: `packages/tools/src/config.ts:329`,
+   spec. Production: `packages/tools/src/config.ts:336`,
    `packages/tools/src/tools/shell.ts:241-250`. Test:
    `packages/tools/tests/integration/sandbox.test.ts` (linked-worktree metadata mount posture).
    The same confinement admits `cwd` and analyzed command paths below a selected
@@ -436,7 +436,7 @@ Four structured `logger.debug` events, each carrying a remark quoted nowhere els
 | Event | File:line | Remark |
 |---|---|---|
 | `tools.shell_spawn` | `packages/tools/src/tools/shell.ts:244-255` | "a shell command is being spawned; everything it does from here is attributed to this process group" |
-| `tools.shell_exit` | `packages/tools/src/tools/shell.ts:348-361` | "a shell command settled; the trace keeps its output as opaque text and indexes none of these" |
+| `tools.shell_exit` | `packages/tools/src/tools/shell.ts:369-382` | "a shell command settled; the trace keeps its output as opaque text and indexes none of these" |
 | `tools.monitor_spawn` | `packages/tools/src/tools/monitor.ts:270-281` | "a background monitor is being spawned with both streams redirected into one log; this is the write side of the pair that decides whether output can be captured at all" |
 | `tools.monitor_poll` | `packages/tools/src/tools/monitor.ts:381-390` | "a monitor was polled; this is the read side of the pair — zero bytes against a running monitor means the capture never happened, not that the command is quiet" |
 
@@ -595,7 +595,7 @@ side has silently failed.
 21. **The dispatcher never re-clamps a `bounded: true` tool's text output to `maxOutputBytes`** — all
     five tools in this subsystem set `bounded: true`, so their own internal bounding (via `bound`,
     `boundOrSpill`, or a `CaptureSink`) is the only truncation that ever applies to them.
-    Production: `packages/tools/src/core.ts:51-55` (`boundParts` returns `parts` unchanged when
+    Production: `packages/tools/src/core.ts:77-81` (`boundParts` returns `parts` unchanged when
     `bounded` is truthy); tool declarations at `packages/tools/src/tools/shell.ts:150`,
     `packages/tools/src/tools/monitor.ts:187`, `:350`, `:453`, `:495`.
     Test: unpinned by a dedicated bounded-vs-unbounded comparison test in this document's scope; the truncation
@@ -631,7 +631,7 @@ side has silently failed.
 | `killTree` cannot signal anything | `packages/tools/src/lib/process.ts:81-87` | returns `false`; logged at `tools.kill_tree_failed`; every caller (`shell`'s `killAll`, `monitor_stop`) falls back to a direct `child.kill`/no further action rather than throwing |
 | `taskkill` binary absent/fails on a non-Windows test host | `packages/tools/src/lib/process.ts:88-97` | falls back to `process.kill(pid, "SIGKILL")`; if that also throws, `false` |
 | Monitor process ignores `SIGTERM` | `packages/tools/src/tools/monitor.ts:465-471` | after `STOP_GRACE_MS`, escalates to `SIGKILL` |
-| **Windows: `monitor_start`'s redirected stdio never captures output at all** | not handled — an open defect | `packages/tools/tests/helpers/fixtures.ts:265-281` (`monitorCapturesOutput`) documents this as the write side failing silently: "the log is empty, not merely differently encoded"; `shell` is unaffected because it captures over pipes, not an inherited descriptor. The tool's own doc comment (`packages/tools/src/tools/monitor.ts:164-171`) independently records that establishing which side (write vs. read) fails took "an abandoned two-handle experiment" and that a `running` monitor whose poll reports zero bytes is this defect surfacing, not a quiet command |
+| **Windows: `monitor_start`'s redirected stdio never captures output at all** | not handled — an open defect | `packages/tools/tests/helpers/fixtures.ts:266-282` (`monitorCapturesOutput`) documents this as the write side failing silently: "the log is empty, not merely differently encoded"; `shell` is unaffected because it captures over pipes, not an inherited descriptor. The tool's own doc comment (`packages/tools/src/tools/monitor.ts:164-171`) independently records that establishing which side (write vs. read) fails took "an abandoned two-handle experiment" and that a `running` monitor whose poll reports zero bytes is this defect surfacing, not a quiet command |
 | Non-`ToolError` throw anywhere in a handler | `packages/tools/src/errors.ts:65-76` | collapsed to a generic `{error:"internal", message:"internal error"}`; the real detail (stack or message) goes only to the warn sink at `tools.internal_error` |
 | A descendant is re-parented before `killTree` walks the tree | `packages/tools/src/lib/process.ts:66-72` | escapes the kill on both platforms, from opposite directions — acknowledged, unmitigated, by the function's own remark: "Both have the same hole from opposite directions: a descendant whose intermediate parent has already exited is re-parented and escapes the walk, exactly as `setsid` detaches a child from its group on POSIX. Closing it on Windows would take a Job Object, which is deliberately out of scope." Not handled by any timeout/abort/output_limit/`monitor_stop` path, all of which rely on `killTree` |
 
@@ -659,17 +659,17 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   subsystem only threads a resolved `ShellSpec` into it so the wrapper and the executor can never
   disagree on shell flavor (`packages/tools/src/tools/monitor.ts:255-271`).
 - `../guard/context.ts` (`buildGuardContext`) is used by `core.ts`'s `applyGuard`
-  (`packages/tools/src/core.ts:126-145`), not by `shell.ts`/`monitor.ts` directly — whether a `shell`
+  (`packages/tools/src/core.ts:152-171`), not by `shell.ts`/`monitor.ts` directly — whether a `shell`
   or `monitor_start` call is allowed at all is decided upstream of the handler, by the
   [command-guard-and-approval](command-guard.md) document's machinery. `RuntimeConfig.guard`/`.elicit`
-  (`packages/tools/src/config.ts:100-103`) are the seam; this document's handlers never reference them.
+  (`packages/tools/src/config.ts:103-106`) are the seam; this document's handlers never reference them.
 - `../core.ts`'s `dispatch`/`boundParts` — the dispatcher (not the handler) is what makes `bounded:
-  true` mean "do not re-clamp" (`packages/tools/src/core.ts:51-55`); this document's tools only declare
+  true` mean "do not re-clamp" (`packages/tools/src/core.ts:77-81`); this document's tools only declare
   the flag.
 
 **What depends on this subsystem:**
 
-- `@clarvis/loop` (`packages/loop/src/runtime/build-run-deps.ts:506-525`) dynamically imports
+- `@clarvis/loop` (`packages/loop/src/runtime/build-run-deps.ts:511-530`) dynamically imports
   `@clarvis/tools` and calls `setWarnSink`, bridging the global `warn()` singleton's call sites —
   `bestEffort`'s failures in `lib/tasks.ts`, plus the two named in `lib/log.ts`'s own doc comment as
   the ones with no `RuntimeConfig` in scope: `serializeError` (`packages/tools/src/errors.ts`) and the
@@ -743,6 +743,6 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   into `@clarvis/code`.
 
 - **Whether any host other than `@clarvis/loop` installs a `WarnSink`** — this document's scope shows exactly
-  one call site (`packages/loop/src/runtime/build-run-deps.ts:507-525`); whether `@clarvis/server` or
+  one call site (`packages/loop/src/runtime/build-run-deps.ts:512-530`); whether `@clarvis/server` or
   a bare `createAgentTools` consumer does anything with the default `stderr` sink is not visible from
   this package's own source.

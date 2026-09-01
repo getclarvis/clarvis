@@ -8,8 +8,8 @@
 ## 1. Purpose
 
 A `Grant` is the one string vocabulary an `AgentProfile` uses to ask for a
-capability's behaviour (`packages/capability/src/api.ts:255`). The engine owns
-four such strings itself (`BuiltinGrant`, `packages/capability/src/api.ts:247`);
+capability's behaviour (`packages/capability/src/api.ts:293`). The engine owns
+four such strings itself (`BuiltinGrant`, `packages/capability/src/api.ts:285`);
 everything else is contributed at boot by whichever capability package wants a
 grant to exist, before any request is validated
 (`packages/capability/src/contract.ts:75-80`, `packages/capability/src/registry.ts:62-72`).
@@ -35,12 +35,12 @@ capability activation).
 
 | Symbol | Signature | File:line |
 |---|---|---|
-| `BuiltinGrant` | `"ask_user" \| "read_workspace" \| "edit_workspace" \| "run_commands"` | `packages/capability/src/api.ts:247` |
-| `Grant` | `BuiltinGrant \| (string & {})` — deliberately open | `packages/capability/src/api.ts:255` |
-| `AgentProfile.grants` | `Grant[] \| undefined` | `packages/capability/src/api.ts:327` |
-| `AgentProfile.tools` | `string[]` (MCP `server.tool` names; unrelated to grants) | `packages/capability/src/api.ts:326` |
-| `AgentProfile.can_spawn` | `string[] \| undefined` — profile names this agent may spawn | `packages/capability/src/api.ts:328` |
-| `AgentProfile.default_spawn` | `string \| undefined` | `packages/capability/src/api.ts:329` |
+| `BuiltinGrant` | `"ask_user" \| "read_workspace" \| "edit_workspace" \| "run_commands"` | `packages/capability/src/api.ts:317-318` |
+| `Grant` | `BuiltinGrant \| (string & {})` — deliberately open | `packages/capability/src/api.ts:320-326` |
+| `AgentProfile.grants` | `Grant[] \| undefined` | `packages/capability/src/api.ts:392-409` |
+| `AgentProfile.tools` | `string[]` (MCP `server.tool` names; unrelated to grants) | `packages/capability/src/api.ts:392-409` |
+| `AgentProfile.can_spawn` | `string[] \| undefined` — profile names this agent may spawn | `packages/capability/src/api.ts:392-409` |
+| `AgentProfile.default_spawn` | `string \| undefined` | `packages/capability/src/api.ts:392-409` |
 | `BUILTIN_GRANT_NAMES` | `["ask_user","read_workspace","edit_workspace","run_commands"]`, static discovery aid on `grantSchema.options` | `packages/loop/src/validation/request/grant-registry.ts:9-19`, `packages/loop/src/validation/request/profile-schemas.ts:119-122` |
 
 ### 2.2 Capability grant contribution
@@ -53,17 +53,17 @@ capability activation).
 | `CapabilityRegistry.grants()` | `readonly CapabilityGrantDeclaration[]`, registration order | `packages/capability/src/registry.ts:73-75` |
 | `composeCapabilityRegistry(base, declarations)` | copies a registry, appending per-run grant declarations without mutating the host's long-lived one | `packages/capability/src/registry.ts:86-94` |
 | `requireKnownGrants(data, registry?)` | throws `ValidationError("invalid_profile", …)` on the first grant not in `BUILTIN_GRANT_NAMES ∪ registry.grants()` | `packages/loop/src/validation/request/grant-registry.ts:22-39` |
-| `RunCapabilityContext.entryGrants` | `readonly string[]` — the run's entry profile's own grants, sourced as `shape.entryProfile.grants ?? []` | `packages/capability/src/contract.ts:87`; sourced at `packages/loop/src/runtime/orchestrator.ts:224` |
+| `RunCapabilityContext.entryGrants` | `readonly string[]` — the run's entry profile's own grants, sourced as `shape.entryProfile.grants ?? []` | `packages/capability/src/contract.ts:87`; sourced at `packages/loop/src/runtime/orchestrator.ts:222-230` |
 | `SubagentCapabilitiesFactory` | `(grants: readonly string[] \| undefined) => AgentActivation` — the grant-gated per-subagent factory threaded into the spawn path | `packages/capability/src/contract.ts:337-339` |
 
 ### 2.3 Every grant name that actually exists in this repository
 
 | Grant | Owner | Declares `entryCanSpawn` | File:line |
 |---|---|---|---|
-| `ask_user` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts:247` |
-| `read_workspace` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts:247` |
-| `edit_workspace` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts:247` |
-| `run_commands` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts:247` |
+| `ask_user` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts:317-318` |
+| `read_workspace` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts:317-318` |
+| `edit_workspace` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts:317-318` |
+| `run_commands` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts:317-318` |
 | `use_skills` | `@clarvis/skills` | no | `packages/skills/src/capability.ts:55,92` |
 | `workflow` | `@clarvis/workflows` | **yes** | `packages/workflows/src/capability.ts:51-59,137` |
 | `tasks.read` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts:12`, registered `packages/tasks/src/capability.ts:1486` |
@@ -92,8 +92,8 @@ this document covers only the grant string that gates them.
 | `agentToolCaps(grants, ceiling)` | `(grants: readonly string[] \| undefined, ceiling: GrantCeiling) => { canRead, canMutate, canExec }` | `packages/loop/src/runtime/tools/builtin/grants.ts:39-54` |
 | `agentToolsActive(env, grants)` | `boolean` — true iff `CLARVIS_AGENT_TOOLS_ENABLED` and the grants clear the `read` ceiling | `packages/loop/src/runtime/tools/builtin/grants.ts:64-67` |
 | `AGENT_TOOL_NAMES` / `READ_ONLY_TOOL_NAMES` / `EDIT_TOOL_NAMES` / `EXEC_TOOL_NAMES` / `FILE_MUTATING_TOOL_NAMES` | derived tool-name sets | `packages/loop/src/runtime/tools/builtin/names.ts:4-52` |
-| `createAgentToolset(opts)` | builds the per-agent `{ defs, names, dispatch }` gated by `canMutate`/`canExec` | `packages/loop/src/runtime/tools/builtin/toolset.ts:161-198` |
-| `createAgentToolsCapability(opts?)` | the `tools` capability (`AGENT_TOOLS_CAPABILITY_NAME = "tools"`) | `packages/loop/src/runtime/capabilities/tools.ts:46,124-150` |
+| `createAgentToolset(opts)` | builds the per-agent `{ defs, names, dispatch }` gated by `canMutate`/`canExec` | `packages/loop/src/runtime/tools/builtin/toolset.ts:165-202` |
+| `createAgentToolsCapability(opts?)` | the `tools` capability (`AGENT_TOOLS_CAPABILITY_NAME = "tools"`) | `packages/loop/src/runtime/capabilities/tools.ts:46,127-155` |
 
 `@clarvis/code` sets the ceiling default to `"exec"` for its own process
 (`packages/code/src/index.tsx`, `runInteractive`:
@@ -244,7 +244,7 @@ Tool name strings verified individually at their definitions: `read_file`
    `runOrchestrator` performs the same flat-map independently when deriving
    `grantDeclarations` for `canSpawnChildren` (§4.3), falling back to it when
    `deps.grantDeclarations` is not precomputed
-   (`packages/loop/src/runtime/orchestrator.ts:202-203`).
+   (`packages/loop/src/runtime/orchestrator.ts:207-208`).
 3. `validateBody` calls `requireKnownGrants(data, registry)` **before**
    `requireEntryShape`/`requireKnownSpawnTargets`/env-ceiling/provider checks
    (`packages/loop/src/validation/request-schema.ts:33-45`) — every grant on
@@ -263,7 +263,7 @@ Tool name strings verified individually at their definitions: `read_file`
 ### 4.2 Per-agent coding-toolset activation (the `tools` capability)
 
 For each agent (entry or spawned), `createAgentToolsRunCapability.forAgent(scope)`
-(`packages/loop/src/runtime/capabilities/tools.ts:199-253`):
+(`packages/loop/src/runtime/capabilities/tools.ts:205-260`):
 
 1. Computes `caps = agentToolCaps(scope.grants, ctx.env.CLARVIS_AGENT_TOOLS_MAX_GRANT)`.
    `agentToolCaps` (`packages/loop/src/runtime/tools/builtin/grants.ts:39-54`):
@@ -273,18 +273,18 @@ For each agent (entry or spawned), `createAgentToolsRunCapability.forAgent(scope
    - each `wants*` is further ANDed with `CEILING_RANK[ceiling] >= CEILING_RANK[read|edit|exec]`.
 2. If `!caps.canRead`, `forAgent` returns `null` — this agent gets **no**
    coding toolset at all, not even a read-only one
-   (`packages/loop/src/runtime/capabilities/tools.ts:201`).
+   (`packages/loop/src/runtime/capabilities/tools.ts:207`).
 3. Otherwise `createAgentToolset({ workspaceRoot, canMutate: caps.canMutate,
    canExec: caps.canExec, … })` is built
-   (`packages/loop/src/runtime/tools/builtin/toolset.ts:197-198`):
+   (`packages/loop/src/runtime/tools/builtin/toolset.ts:201-202`):
    - `resolveConfig({ readOnly: !canMutate, … })` — `@clarvis/tools` itself
      restricts to `readOnlyTools` whenever `canMutate` is false
-     (`packages/loop/src/runtime/tools/builtin/toolset.ts:120-137`,
-     `packages/tools/src/core.ts:108-115`, `packages/tools/src/tools/registry.ts:83-92`).
+     (`packages/loop/src/runtime/tools/builtin/toolset.ts:121-141`,
+     `packages/tools/src/core.ts:134-141`, `packages/tools/src/tools/registry.ts:83-92`).
    - Then, independently, `createAgentToolsetWithAdapter` filters out every
      `EXEC_TOOL_NAMES` member whenever `canExec` is false, even from an
      otherwise-full (`canMutate: true`) definition list
-     (`packages/loop/src/runtime/tools/builtin/toolset.ts:165-168`).
+     (`packages/loop/src/runtime/tools/builtin/toolset.ts:169-172`).
    - Net effect per ceiling tier: `read` → the 9 read-only tools only; `edit` →
      read-only + the 9 non-exec members of `FILE_MUTATING_TOOL_NAMES`, with no `shell`, `host_vcs`,
      or `monitor_*`; `exec` → all 24. `host_vcs` stays in the mutation-presentation set but is also an
@@ -293,7 +293,7 @@ For each agent (entry or spawned), `createAgentToolsRunCapability.forAgent(scope
 4. `dispatch(name, …)` on the built toolset rejects any call whose `name` is
    not in the filtered `names` set with `{ isError: true, text: "Tool '<name>'
    is not available to this agent." }`
-   (`packages/loop/src/runtime/tools/builtin/toolset.ts:173-179`) — a
+   (`packages/loop/src/runtime/tools/builtin/toolset.ts:177-183`) — a
    second, independent gate at call time, not just at advertisement time.
 
 ### 4.3 Whether an agent can spawn children at all
@@ -366,7 +366,7 @@ without also granting supervision visibility, or vice versa.
 ### 4.5 Entry-only grant: `ask_user`
 
 The ask-user capability gates on the run's **entry** grants (`ctx.entryGrants`, always
-`shape.entryProfile.grants ?? []` — `packages/loop/src/runtime/orchestrator.ts:224`)
+`shape.entryProfile.grants ?? []` — `packages/loop/src/runtime/orchestrator.ts:229`)
 and additionally restrict `forAgent` to `scope.entry === true`, so even a
 sub-agent profile that independently names the grant never receives the tool.
 The internal `forRun`/`forAgent` derivation below goes one level deeper than
@@ -473,7 +473,7 @@ except for this one filtered field — carried `workflow`.
    ceiling-filtered `names` set, independent of whatever `@clarvis/tools`
    itself would allow; the exec partition includes both sandboxed `shell` and
    host-boundary `host_vcs`.**
-   Production: `packages/loop/src/runtime/tools/builtin/toolset.ts:161-180`
+   Production: `packages/loop/src/runtime/tools/builtin/toolset.ts:165-184`
    (the `!names.has(name)` branch returns an error result rather than
    forwarding to `resolved.dispatch`).
    Test: `packages/loop/tests/unit/toolset.test.ts`
@@ -507,21 +507,21 @@ except for this one filtered field — carried `workflow`.
 | Condition | What happens | File:line |
 |---|---|---|
 | Profile grant not in built-ins or the run's registry | Whole request rejected at validation: `ValidationError("invalid_profile", "profile '<name>'.grants contains undeclared grant '<grant>'.")` | `packages/loop/src/validation/request/grant-registry.ts:33-37` |
-| Agent's grants clear no `read` ceiling (`!caps.canRead`) | `tools` capability's `forAgent` returns `null` — the agent gets no coding toolset, not a degraded one | `packages/loop/src/runtime/capabilities/tools.ts:199-201` |
-| `CLARVIS_AGENT_TOOLS_ENABLED=false` | The whole `tools` capability's `forRun` returns `null` for every agent in the run, regardless of grants | `packages/loop/src/runtime/capabilities/tools.ts:127-128` |
+| Agent's grants clear no `read` ceiling (`!caps.canRead`) | `tools` capability's `forAgent` returns `null` — the agent gets no coding toolset, not a degraded one | `packages/loop/src/runtime/capabilities/tools.ts:205-207` |
+| `CLARVIS_AGENT_TOOLS_ENABLED=false` | The whole `tools` capability's `forRun` returns `null` for every agent in the run, regardless of grants | `packages/loop/src/runtime/capabilities/tools.ts:130-131` |
 | A spawnable sub-agent profile has no `tools` and no active built-in coding tools | Static usage warning `subagent_has_no_tools` (still runs; advisory only) | `packages/loop/src/runtime/usage-accounting.ts:44-52`; tested `packages/loop/tests/integration/subagent-config-warnings.test.ts:52-89` (builtin-aware: a read_workspace-only sub-agent does **not** warn; `CLARVIS_AGENT_TOOLS_ENABLED=false` makes that same grant inert and the warning reappears) |
 | A spawnable sub-agent profile carries `ask_user` | Static usage warning `subagent_ask_user_ignored` (the grant itself stays syntactically legal and structurally inert, per §5 invariant 5) | `packages/loop/src/runtime/usage-accounting.ts:45,54-56`; tested `packages/loop/tests/integration/subagent-config-warnings.test.ts:92-108` |
 | A `delegate_task` call names a `profile` not in the spawnable registry | Call rejected: `{ ok: false, message: "unknown profile '<name>'. Registered profiles: …" }` | `packages/loop/src/runtime/subagents/delegate-task.ts:105-112` |
 | `delegate_task` omits `profile`, no usable default | Call rejected: `"profile is required — name the profile this Sub-agent should run as."` | `packages/loop/src/runtime/subagents/delegate-task.ts:118-122` |
-| A tool call names something outside the agent's ceiling-filtered set | `dispatch` returns `{ isError: true, text: "Tool '<name>' is not available to this agent." }` rather than throwing | `packages/loop/src/runtime/tools/builtin/toolset.ts:173-179` |
-| The abort signal fires mid-dispatch | `raceAbort` resolves to `{ isError: true, text: "Tool call aborted (run cancelled)." }`, listener always removed | `packages/loop/src/runtime/tools/builtin/toolset.ts:90-113` |
+| A tool call names something outside the agent's ceiling-filtered set | `dispatch` returns `{ isError: true, text: "Tool '<name>' is not available to this agent." }` rather than throwing | `packages/loop/src/runtime/tools/builtin/toolset.ts:177-183` |
+| The abort signal fires mid-dispatch | `raceAbort` resolves to `{ isError: true, text: "Tool call aborted (run cancelled)." }`, listener always removed | `packages/loop/src/runtime/tools/builtin/toolset.ts:91-114` |
 
 ## 7. Coupling
 
 - **`@clarvis/capability` is upstream of everything here.** `BuiltinGrant`,
   `Grant`, `CapabilityGrantDeclaration`, `CapabilityRegistry` and
   `activationForScope`/`capabilitiesForScope` all live there
-  (`packages/capability/src/api.ts:247-255`, `packages/capability/src/contract.ts:75-80`,
+  (`packages/capability/src/api.ts:285-293`, `packages/capability/src/contract.ts:75-80`,
   `packages/capability/src/registry.ts`, `packages/capability/src/compose.ts:42-71`), and every consumer (`loop`, `skills`,
   `workflows`, `tasks`) imports the type from it rather than
   redeclaring it — a static, compile-time edge.

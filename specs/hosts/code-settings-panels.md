@@ -516,7 +516,7 @@ executing. Production: `acceptAc` in `packages/code/src/views/InputDock.tsx`. Te
 completion cases).
 
 `preferredScope()` is `read("workspace") !== undefined ? "workspace" : "global"`
-(`packages/code/src/app/commands.tsx:254`); its TSDoc states the mechanism it replaced ("This used to test whether
+(`packages/code/src/app/commands.tsx:259`); its TSDoc states the mechanism it replaced ("This used to test whether
 `<ws>/.clarvis` **existed**", `:240`).
 
 ### 4.5 Providers panel composition
@@ -1456,7 +1456,7 @@ cases).
 | `adapters/mcp-capabilities.ts` | `@clarvis/kernel/config` (`mcpServerSettingsSchema`), `@clarvis/kernel/policy` (`CONTROL_PLANE_TOOL_NAMES`) | runtime, static | `:2`, `:3` |
 | `adapters/settings.ts` | `@clarvis/kernel/config` (`kernelSettingsSchema`, `mergeProviders`, `mergeSettings`, `parseModelRef`, `isWellFormedHttpUrl`, `PLANS_DEFAULTS`) | runtime, static | `packages/code/src/adapters/settings.ts:3` |
 | `adapters/settings.ts` | `@clarvis/protocol` (`ConfigService`, `SettingsData`, `SettingsRepairPlan`, `SandboxInspection`) | type-only | `packages/code/src/adapters/settings.ts:13` |
-| `EnvironmentBrowser.tsx` | `@clarvis/protocol` (`EnvironmentService` and Environment DTOs) | type-only | `packages/code/src/views/config/EnvironmentBrowser.tsx:1-7` |
+| `EnvironmentBrowser.tsx` | `@clarvis/protocol` (`EnvironmentService` and Environment DTOs) | type-only | `packages/code/src/views/config/EnvironmentBrowser.tsx:5-13` |
 | `adapters/models-catalog.ts` | `@clarvis/protocol` catalog DTOs + `@clarvis/kernel/config` `parseModelRef` | runtime + type | `packages/code/src/adapters/models-catalog.ts:1`, `:2` |
 
 Every one of those is one of the six sanctioned kernel entrypoints (INV-251) — full statement owned

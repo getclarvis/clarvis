@@ -28,7 +28,7 @@ body and one unterminated SSE event before an SDK parser can retain them. (e) A 
 
 The package has no `zod` dependency and defines no settings schema
 (`packages/llm/package.json:47-54`); it is configured entirely through function arguments handed to
-it by `@clarvis/loop`'s `buildRunDeps` (`packages/loop/src/runtime/build-run-deps.ts:425-446`).
+it by `@clarvis/loop`'s `buildRunDeps` (`packages/loop/src/runtime/build-run-deps.ts:430-451`).
 
 ---
 
@@ -122,7 +122,7 @@ citation is locatable by symbol, not only by line.
 | *(any name)* | `packages/llm/src/ai-sdk-adapter.ts:250` | `process.env[name]` is the **default** credential/header resolver when `AiSdkProviderConfig.resolveRegistryKey` is absent |
 
 There is no other environment read in `packages/llm/src`. The provider timeouts, retry budget and
-transport bounds arrive as arguments from the host (`packages/loop/src/runtime/build-run-deps.ts:425-446`).
+transport bounds arrive as arguments from the host (`packages/loop/src/runtime/build-run-deps.ts:430-451`).
 
 ---
 
@@ -701,13 +701,13 @@ against cycles.
 
 ### 4.16 Decorator composition, as the host wires it
 
-`packages/loop/src/runtime/build-run-deps.ts:425-446` builds, innermost first:
+`packages/loop/src/runtime/build-run-deps.ts:430-451` builds, innermost first:
 
 ```
-createAiSdkProvider(...)                       :391
-  → withModelCallAdmission(provider, gate)     :403
-  → withCallLogging(..., logger)               :403
-  → withTransportRetry(..., {...})             :402
+createAiSdkProvider(...)                       :396
+  → withModelCallAdmission(provider, gate)     :408
+  → withCallLogging(..., logger)               :408
+  → withTransportRetry(..., {...})             :407
 ```
 
 and `packages/loop/src/runtime/execute-run.ts:394` wraps that again per run with
@@ -1190,7 +1190,7 @@ takes one value import, `contentToText`, at `:3`).
   settings, and `parseModelRef`/`resolveProvider` — belongs to
   [model-catalog-and-provider-resolution](../hosts/model-catalog.md). This package consumes the resolved value only.
 - **Where admission, retry budget and timeouts are wired into a run**, and the `CLARVIS_*` env
-  values that set them (`packages/loop/src/runtime/build-run-deps.ts:426-445`), belong to
+  values that set them (`packages/loop/src/runtime/build-run-deps.ts:431-450`), belong to
   [loop-budgets-clocks-and-guards](../engine/budgets-and-guards.md).
 
 ---

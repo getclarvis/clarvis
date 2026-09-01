@@ -41,9 +41,9 @@ That claim is about grants, not about every path into `mode`: a trusted plugin c
 `capabilityRunPolicies.plans.skills[skill]` (`packages/capability/src/capability-run-policies.ts:9-14`)
 for a skill it packages, and when a run is entered through that skill *and* the operator has selected
 that same plugin as the Plans provider, the kernel folds the declared mode over the settings block's
-`mode` for that one run — `skillPlansMode` (`packages/kernel/src/file-kernel.ts:638-648`,
-`packages/kernel/src/plugins/plugin-contributions.ts:429-431`) is read in the settings assembler
-(`packages/kernel/src/runs/settings-assembler.ts:368-374,436-445`) and only ever loses to an explicit
+`mode` for that one run — `skillPlansMode` (`packages/kernel/src/file-kernel.ts:629-639`,
+`packages/kernel/src/plugins/plugin-contributions.ts:738-744`) is read in the settings assembler
+(`packages/kernel/src/runs/settings-assembler.ts:399-406,491-506`) and only ever loses to an explicit
 `plans` param on the run request itself, never to the settings block. This bypasses `pluginContributable:
 false` on `plansSettingsSpec` (`packages/plan/src/settings.ts:90`) entirely, because it never goes
 through the settings merge that flag governs. The mechanism, its parsing and its precedence belong to
@@ -1112,7 +1112,7 @@ what keeps the dependency edge pointing one way" (`packages/plan/src/capability/
 - **Capability fold order.** `order: -100` (`packages/plan/src/capability/index.ts:232`) is consumed by `orderCapabilities`
   (`packages/loop/src/runtime/capability-order.ts:14`), called at
   `packages/loop/src/runtime/entry-inputs.ts:208` and
-  `packages/loop/src/runtime/orchestrator.ts:235`. The contract states the consequence: "planning's
+  `packages/loop/src/runtime/orchestrator.ts:240`. The contract states the consequence: "planning's
   review blocker has to be consulted before the coding toolset and before the MCP catch-all or it
   guards nothing" (`packages/capability/src/contract.ts:225`–`228`). The loop test pins the exact
   plans-shaped ordering by sorting `plans` at `-100` ahead of default-order capabilities
@@ -1172,7 +1172,7 @@ deliberately.
 
 **`PLAN_REVIEW_ELICIT_KIND` has one owner and one pinned duplicate.** The constant is declared in
 `@clarvis/capability` (`packages/capability/src/elicit.ts:68`, exported at
-`packages/capability/src/index.ts:252`) and read here (`packages/plan/src/capability/review-gate.ts:52`).
+`packages/capability/src/index.ts:256`) and read here (`packages/plan/src/capability/review-gate.ts:52`).
 `@clarvis/code` cannot import it — it depends on `@clarvis/kernel`, `@clarvis/protocol` and
 `@clarvis/paths` only — so it declares its own at
 `packages/code/src/adapters/elicit-types.ts:17` and uses that at

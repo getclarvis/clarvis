@@ -340,9 +340,9 @@ export interface ToolResult {
 /**
  * A live connection to one MCP server.
  *
- * @remarks {@link callTool} invokes a server-local tool; {@link listResources}
- * and {@link readResource} are present only when the server advertises
- * resources. Each accepts an optional {@link AbortSignal} for cancellation, and
+ * @remarks {@link callTool} invokes a server-local tool. Resource methods are optional at this
+ * cross-host boundary; the production MCP client defines both and exposes model-facing descriptors
+ * only when discovery succeeds. Remote operations accept an optional {@link AbortSignal}, and
  * {@link close} tears the connection down.
  */
 export interface MCPConnection {

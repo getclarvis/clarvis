@@ -1615,7 +1615,7 @@ Production: `packages/code/src/adapters/plan-projection.ts:43-48`,
 `packages/code/src/adapters/store.ts:1198-1218`, `packages/code/src/views/Sidebar.tsx:128-166,221-280`,
 and `packages/code/src/views/blocks.tsx:817-823`. Tests:
 `packages/code/tests/unit/plan-projection.test.ts:164-216`,
-`packages/code/tests/unit/store-status.test.ts:391-430`,
+`packages/code/tests/unit/store-status.test.ts:405-444`,
 `packages/code/tests/integration/sidebar-render.test.tsx:489-616`, and
 `packages/code/tests/integration/plan-block-render.test.tsx:61-76`.
 
@@ -1624,7 +1624,7 @@ Projected arguments feed the bounded one-line signature and the identity-specifi
 Markdown export adds the complete bounded, renderer-safe projection plus an explicit shortening marker,
 so auditability does not require mounting raw JSON in the live transcript. Production
 `packages/code/src/views/blocks.tsx:263-395`, with the only mounted sections after the header at
-`:350-395`. Tests `packages/code/tests/integration/tool-destripe-render.test.tsx:112-159` cover both a
+`:364-409`. Tests `packages/code/tests/integration/tool-destripe-render.test.tsx:112-159` cover both a
 curated shell renderer and the generic fallback, asserting useful output and signatures remain while
 JSON key/value presentation is absent.
 

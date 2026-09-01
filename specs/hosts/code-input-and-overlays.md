@@ -225,7 +225,7 @@ stops before confirmation. Production:
 `packages/kernel/tests/integration/storage-service.test.ts`.
 
 `registerAppCommands` also builds `openWithReturn(childCmd, returnCmd, scope?)`
-(`packages/code/src/app/commands.tsx:228-236`) — the mechanism behind every `/hub <child>` deep link
+(`packages/code/src/app/commands.tsx:233-241`) — the mechanism behind every `/hub <child>` deep link
 (`hubRoute`, `:269-277`): it opens `childCmd`'s view with a synthetic `parent: {name: returnCmd,
 factory, scope}` route, so one Escape returns to the hub rather than to the root screen.
 
@@ -242,7 +242,7 @@ factory, scope}` route, so one Escape returns to the hub rather than to the root
 This is exactly the shape `InputDock.composeMessage()` returns (`packages/code/src/views/InputDock.tsx:99-101`) and
 what `onSubmit`/`restoreAttachments` exchange. Downstream, `run-host.ts` ([hosts/code-run-host.md](code-run-host.md)
 item) runs this content through `buildContent`/`appendMentionImages`
-(`packages/code/src/core/attachments.ts:73-101`, called at `packages/code/src/run-host.ts:581-584`) to additionally resolve `@path`
+(`packages/code/src/core/attachments.ts:73-101`, called at `packages/code/src/run-host.ts:605-608`) to additionally resolve `@path`
 image mentions before the turn reaches the model — a separate pass the dock itself never invokes
 (no `buildContent`/`appendMentionImages` import in `InputDock.tsx`).
 
@@ -285,7 +285,7 @@ understate its own size to slip past the budget.
 
 `CompleteProvider` (`:11-22`): `{id, trigger, label, kind?, query, onAccept?}`. `kind:"hint"`
 providers are display-only — the popup shows their items but the popup claims no keys, so Enter
-still submits the line (used for argument-hint providers built in `packages/code/src/views/App.tsx:910-927` from
+still submits the line (used for argument-hint providers built in `packages/code/src/views/App.tsx:925-942` from
 each command's declared `args`).
 
 `InputDock` lazily mounts autocomplete on its first open and then changes the container's `visible`
@@ -450,11 +450,11 @@ At the root composer, after any top overlay and focused transcript block have ha
 consume Escape, `app.escape` checks the complete composer draft. Any text (including whitespace) or
 staged attachment clears through `clearInputDraft` and reports `"Draft cleared"`; with nothing to clear,
 Escape is a no-op. It never cancels a run or enters quit (`packages/code/src/keys/interaction.ts:496-516`;
-`packages/code/src/views/App.tsx:373-390`). Window-local Escape layers still take priority: an open
+`packages/code/src/views/App.tsx:388-405`). Window-local Escape layers still take priority: an open
 autocomplete closes first, and the expanded Task editor collapses before the root command is
 reachable. All of these handlers dispatch without an Escape timer or grace interval. Pinned at the
 command boundary by `packages/code/tests/integration/interaction.test.ts:393-477,739-756` and end to
-end by `packages/code/tests/integration/app-shell-render.test.tsx:1467-1488`.
+end by `packages/code/tests/integration/app-shell-render.test.tsx:1489-1510`.
 
 ### Autocomplete refresh (`refreshAc()`, `packages/code/src/views/InputDock.tsx:256-284`)
 
@@ -473,8 +473,8 @@ not on the next keystroke inside the same token.
 The `/` provider also projects every hub child as its canonical hierarchical route and matches a
 non-empty term anywhere after the route's leading slash. A child therefore remains a subcommand —
 `Providers` has no standalone `/providers` alias — while `/provider` can still offer
-`/settings/providers` for the user to select (`packages/code/src/views/App.tsx:814-832`). Pinned by
-`packages/code/tests/integration/app-shell-render.test.tsx:603-611`.
+`/settings/providers` for the user to select (`packages/code/src/views/App.tsx:829-847`). Pinned by
+`packages/code/tests/integration/app-shell-render.test.tsx:625-633`.
 
 ### Accept vs. complete (`acceptAc()`/`completeAc()`, `:285-314`)
 
@@ -482,9 +482,9 @@ non-empty term anywhere after the route's leading slash. A child therefore remai
   item, replaces the whole buffer with `item.insert ?? ""` and calls `provider.onAccept?.(item)`;
   for a mention-style trigger, splices `trigger+insert` in at the current token via `acceptMention`
   and calls `onAccept`. A plain, argument-less, subcommand-less slash command has `insert === ""`
-  (built that way in `packages/code/src/views/App.tsx:847-853`, outside this document), so pressing Enter on one **clears
+  (built that way in `packages/code/src/views/App.tsx:862-868`, outside this document), so pressing Enter on one **clears
   the textarea** via `ref.setText("")` and then reaches `commands.runCommand` only through
-  `provider.onAccept` checking `if (item.insert) return;` (`packages/code/src/views/App.tsx:885-897`) — a route that
+  `provider.onAccept` checking `if (item.insert) return;` (`packages/code/src/views/App.tsx:900-912`) — a route that
   never touches `InputDock.submit()`, `parseSlashCommand`, or `classifySlashSubmit`. Typing the same
   command's full text and pressing Enter with the popup already closed instead goes through
   `submit()` → `parseSlashCommand` → `onSlashCommand`; both end at `commands.runCommand`, by two
@@ -523,7 +523,7 @@ prompt the file no longer has (but the session remembers) is still recovered. Pi
 - `restoreAttachments(content)` (`:178-186`): clears the current attachment list, then re-adds only
   the `image` parts of `content` that carry `data`, ignoring anything else — the mechanism a caller
   (`run-host.ts`, via the `onDock` handle) uses to put staged images back after a failed
-  steer/mention-resolution (`packages/code/src/run-host.ts:586-588`).
+  steer/mention-resolution (`packages/code/src/run-host.ts:610-612`).
 
 ### Windowing math (`windowRows`/`windowGroupedRows`, `packages/code/src/ui/patterns/windowed-list.tsx`)
 
@@ -676,7 +676,7 @@ gates in `PlanOverlay`).
    resolves the `LocalBashResult`.
 
 This function is called from `run-host.ts`'s `runBangCommand` ([hosts/code-run-host.md](code-run-host.md) document,
-`packages/code/src/run-host.ts:904-939`), which is itself the implementation behind `InputDock`'s `onBashCommand` prop
+`packages/code/src/run-host.ts:928-963`), which is itself the implementation behind `InputDock`'s `onBashCommand` prop
 (wired at `packages/code/src/runtime.tsx` (`runControls.bang`) and
 `packages/code/src/views/App.tsx` as `props.run.bang`). **No `KernelClient`
 call, no `GuardContext`, and no shell-command analysis happen anywhere on this path** — the command
@@ -695,7 +695,7 @@ settled turn's persisted continuation; an empty session reports that there is no
 1. **Slash-command dispatch is checked before `submissionBlocked`, which is checked before the bang
    path, which is checked before an ordinary submit.** `packages/code/src/views/InputDock.tsx:120-154`. Pinned:
    `packages/code/tests/integration/input-dock-submit.test.tsx:285-314` (slash and bang each reach their handler
-   with an image still pending) and `:467-477` (a `submissionBlocked` reason blocks ordinary and bang
+   with an image still pending) and `:491-501` (a `submissionBlocked` reason blocks ordinary and bang
    submission, leaving the draft intact).
 2. **The autocomplete provider list is read at most once per refresh.** `packages/code/src/views/InputDock.tsx:256-262`
    (`providers()` read into a local before use). Pinned:
@@ -844,9 +844,9 @@ settled turn's persisted continuation; an empty session reports that there is no
     Top overlays, focused transcript blocks, autocomplete and the expanded editor keep their
     higher-priority clear/back behavior, while Ctrl+C remains the sole cancel-or-quit key.
     Production: `packages/code/src/keys/interaction.ts:356-386,496-516`,
-    `packages/code/src/views/App.tsx:373-390`. Pinned synchronously at
+    `packages/code/src/views/App.tsx:388-405`. Pinned synchronously at
     `packages/code/tests/integration/interaction.test.ts:437-477` and end to end at
-    `packages/code/tests/integration/app-shell-render.test.tsx:605-628,1123-1175,1586-1596`.
+    `packages/code/tests/integration/app-shell-render.test.tsx:627-650,1145-1197,1608-1618`.
 36. **Opening and closing autocomplete reuses one bounded native projection after first use.** It
     keeps exactly ten row/header slots, hides unused slots, continuously scrolls them inside a fixed
     popup frame without `N more` labels and changes the `autocomplete` keymap datum only when its
@@ -974,12 +974,12 @@ the picker only while the complete splash fits`).
   (`"clipboard image read failed"`), guarded by a `disposed` flag so a resolution after the component
   unmounted is silently dropped rather than calling a stale `onNotify` (`packages/code/src/views/InputDock.tsx:200-213`).
 - **An unknown `/name` submitted through the host's `onSlashCommand` implementation reports
-  `unknown command: /name` and blocks** (this decision lives in the host — e.g. `packages/code/src/views/App.tsx:783-786`
+  `unknown command: /name` and blocks** (this decision lives in the host — e.g. `packages/code/src/views/App.tsx:798-801`
   — not in `InputDock` itself, which only relays the `SlashOutcome`).
 - **A mentioned-image load failure (`MentionImageError`) restores the exact draft text and staged
   attachments** rather than silently dropping the message — this recovery is `run-host.ts`'s
   ([hosts/code-run-host.md](code-run-host.md)), reached through the `onDock.restoreAttachments` handle
-  (`packages/code/src/run-host.ts:585-588`).
+  (`packages/code/src/run-host.ts:609-612`).
 - **`runLocalBash`'s own spawn failure (`proc.on("error", ...)`) still resolves, never rejects**: it
   records `spawnError`, settles with `exitCode: null` and `stderr` falling back to the spawn error's
   message (`packages/code/src/adapters/local-shell.ts:176-179,164-175`). Pinned:
@@ -1055,7 +1055,7 @@ nothing beyond `@clarvis/protocol` types and are themselves leaves within `packa
 - **The exact combination of a slash line submitted while `submissionBlocked` is simultaneously
   set** is not exercised by a test in this document's scope. The source shows `onSlashCommand` is invoked
   unconditionally before the `submissionBlocked` check (`packages/code/src/views/InputDock.tsx:120-134`), and — one
-  layer up, in `packages/code/src/views/App.tsx:755-758` (outside this document) — the concrete `onSlashCommand`
+  layer up, in `packages/code/src/views/App.tsx:770-773` (outside this document) — the concrete `onSlashCommand`
   implementation applies its own memory-pressure gate per slash name. Whether every other host of
   `InputDock` (there appears to be exactly one, `App.tsx`) relies on this same double-gating, or
   whether a slash command could bypass a blocked-submission reason the plain-text/bang paths would

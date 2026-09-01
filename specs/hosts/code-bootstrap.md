@@ -226,7 +226,7 @@ do not implement runtime worktree switching:
 | `CLARVIS_AGENT_TOOLS_MAX_GRANT` | `packages/code/src/index.tsx` (`runInteractive`) | defaulted (`??=`) to `"exec"` before workspace-kernel construction |
 | `CLARVIS_CODE_DEV` | `packages/code/src/index.tsx` (`runInteractive`) | `dev` flag into `buildRendererConfig`; the runtime passes it to `createPlatform` |
 | `SSH_TTY` / `SSH_CONNECTION` | `packages/code/src/index.tsx` (`runInteractive`) | sets `OPENTUI_FORCE_EXPLICIT_WIDTH ??= "true"` |
-| `CLARVIS_TUI_RSS_LIMIT_MB` | `packages/code/src/views/App.tsx:206` | memory-fuse limit (owned by the memory-pressure adapter) |
+| `CLARVIS_TUI_RSS_LIMIT_MB` | `packages/code/src/views/App.tsx:338-340` | memory-fuse limit (owned by the memory-pressure adapter) |
 
 ## 3. Data and formats
 
@@ -780,7 +780,7 @@ opts transcript blocks and inline elicitation cards into the full width of the r
 the pane's flex boundary, not a second arithmetic inset, stops them at the sidebar
 (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`). The 200-column shell regression
 pins content beyond the old 110-column cap and no transcript text past the sidebar at
-`packages/code/tests/integration/app-shell-render.test.tsx:1490-1530`.
+`packages/code/tests/integration/app-shell-render.test.tsx:1512-1552`.
 
 There is no stored sidebar preference and no global toggle. `App` owns three independent automatic
 reveal intents: the first live Plan reveals Plan, the first workflow leader reveals Parallel work,
@@ -809,7 +809,7 @@ Two independent mechanisms, both in `App.tsx`:
    that could get the user out — so the request is refused here rather than at each opener"
    (`:334-342`).
 2. The floor panel itself is rendered last, absolutely positioned, at `zIndex={FLOAT_Z + 2}`
-   (`packages/code/src/views/App.tsx:1309-1331`), showing `terminal too small` and
+   (`packages/code/src/views/App.tsx:1324-1346`), showing `terminal too small` and
    `needs ${FLOOR_MIN_COLUMNS}x${FLOOR_MIN_ROWS}, have ${w}x${h}` — i.e. `needs 24x6, have …`. The
    inline comment says this second half stops "one already open from covering the message" (`:1310-1313`).
 
@@ -864,7 +864,7 @@ the dirty-view/live-run gate: it runs only after that gate accepts the quit requ
 providers and agents feature commands into it (`:36-51`), then calls `registerAppCommands(deps)`
 (`:52`), and returns the app wiring with a `dispose` that is idempotent and disposes the app
 registration before the feature scope (`:53-62`). `registerAppCommands` itself opens its own scope and
-shadows the four registration methods so everything it registers lands there (`packages/code/src/app/commands.tsx:168-176`).
+shadows the four registration methods so everything it registers lands there (`packages/code/src/app/commands.tsx:173-181`).
 
 The render tree returned by `App` is, top to bottom: `KeymapProvider` →
 `HeaderRows` → a one-row top rule → the region box holding `OverlayRegion` with `TranscriptRegion` as
@@ -1278,8 +1278,8 @@ Pinned: `packages/code/tests/unit/layout.test.ts:71-73`.
 
 **INV-CB-32.** At the floor, no overlay may be opened, and the floor message paints above the float
 layer so an already-open overlay cannot cover it.
-Production: `packages/code/src/views/App.tsx:343, 377, 396, 1324`.
-Pinned: `packages/code/tests/integration/app-shell-render.test.tsx:415-427`.
+Production: `packages/code/src/views/App.tsx:358, 392, 411, 1339`.
+Pinned: `packages/code/tests/integration/app-shell-render.test.tsx:419-431`.
 
 **INV-CB-33.** `runFatalBoot` accepts `r` repeatedly until one retry succeeds, ignores keys while a
 retry is in flight, and routes idle `ctrl+c` to `quit`; `q` and Escape are inert. It resolves `false`
@@ -1314,7 +1314,7 @@ a `BODY` line after the header and asserts they land on rows 1 and 2.
 before the feature scope.
 Production: `packages/code/src/app/command-composition.ts:53-62`.
 Unpinned — no test in `packages/code/tests/` calls `registerCodeCommands().dispose()` twice; `App`
-calls it once from `onCleanup` (`packages/code/src/views/App.tsx:717`).
+calls it once from `onCleanup` (`packages/code/src/views/App.tsx:732`).
 
 **INV-CB-39.** `src/cli.ts`, `src/index.tsx` and `src/runtime.tsx` are absent from LCOV by design and
 must stay on `NO_COUNTER_ALLOWLIST`: the first two are executable entries, while importing either
@@ -1458,7 +1458,7 @@ Pinned: `packages/code/tests/integration/worktree-bootstrap.test.ts` and
 | `startup-foundation.ts` | `@clarvis/paths`, `@clarvis/kernel/logger` | minimal workspace/key-source projection while the runtime chunk loads | `packages/code/src/startup-foundation.ts` |
 | `adapters/workspace-client-manager.ts` | `@clarvis/kernel/bootstrap` | type-only options plus dynamic `createFileKernel` factory | `packages/code/src/adapters/workspace-client-manager.ts` (`loadFileKernelFactory`) |
 | `runtime.tsx` | `@clarvis/paths`, `@clarvis/kernel/logger`, OpenTUI/Solid, Node filesystem | complete headless and interactive composition graph | `packages/code/src/runtime.tsx` |
-| `views/App.tsx` | `../app/command-composition.ts` | value: `registerCodeCommands` | `packages/code/src/views/App.tsx:27` |
+| `views/App.tsx` | `../app/command-composition.ts` | value: `registerCodeCommands` | `packages/code/src/views/App.tsx:43` |
 | `views/App.tsx` | `../app/layout.ts` | value | `packages/code/src/views/App.tsx` |
 | `app/command-composition.ts` | `./commands.tsx`, `../features/{agents,providers}/commands.ts` | value | `packages/code/src/app/command-composition.ts:8-10` |
 | `app/commands.tsx` | lightweight route metadata, controllers and adapters; registered config/help screens enter through `lazyView` dynamic imports | mixed | `packages/code/src/app/commands.tsx`, `packages/code/src/views/config/lazy-view.tsx` |
@@ -1480,7 +1480,7 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
 | `src/index.tsx` | parser/help/version plus `StartupComposer`, `BootShell` and renderer bootstrap | `packages/code/src/index.tsx` |
 | `src/startup-foundation.ts` | startup key-source reader, browser opener and `WorkspaceClientManager` | `packages/code/src/startup-foundation.ts` |
 | `src/runtime.tsx` | print/session helpers, workspace callbacks, worktree lifecycle, `runFatalBoot`, `App` and its five control interfaces | `packages/code/src/runtime.tsx` |
-| `views/App.tsx` | `createLayoutController`, `FLOOR_MIN_COLUMNS`, `FLOOR_MIN_ROWS` | `packages/code/src/views/App.tsx:68` |
+| `views/App.tsx` | `createLayoutController`, `FLOOR_MIN_COLUMNS`, `FLOOR_MIN_ROWS` | `packages/code/src/views/App.tsx:92` |
 | `views/StartupComposer.tsx` | `BrandBanner` | `packages/code/src/views/StartupComposer.tsx` |
 | `views/app/TranscriptRegion.tsx` | `Splash` | `packages/code/src/views/app/TranscriptRegion.tsx:16` |
 | `views/onboarding/{SetupView,RecoveryView}.tsx` | `BrandBanner`; Setup also uses `firstRunSplashFits` | the corresponding imports in each onboarding view |
@@ -1496,7 +1496,7 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
   `packages/code/tests/architecture/cli-fast-path.test.ts:94-98`; the split exists only to satisfy that.
 - **`views/App.tsx` imports `app/command-composition.ts`, not the reverse** — `command-composition.ts`
   imports only adapter/feature types and `commands.tsx` (`packages/code/src/app/command-composition.ts:1-10`), while
-  `commands.tsx` imports `views/config/*` freely (`packages/code/src/app/commands.tsx:60-72`). No test forbids the reverse
+  `commands.tsx` imports `views/config/*` freely (`packages/code/src/app/commands.tsx:60-77`). No test forbids the reverse
   edge; the four boundary rules do not cover `app/`.
 - **`runtime.tsx` is the only place all complete-app layers meet.** It imports `adapters/`, `core/`,
   `theme/`, `features/`, `app/`, `views/`, `onboarding/` and the narrow kernel logger entry together.
@@ -1558,7 +1558,7 @@ Its importers span every layer this document's boundary rules separate: `run-hos
 4. **The exact `AppCommandDeps` contents and app command registrations** are out of scope
    here — `app/commands.tsx` is 1,394 lines and belongs to the [hosts/code-input-and-overlays.md](code-input-and-overlays.md) document.
    This spec covers only its two exported types, its scope-shadowing construction
-   (`packages/code/src/app/commands.tsx:168-176`) and the composition wrapper.
+   (`packages/code/src/app/commands.tsx:173-181`) and the composition wrapper.
 5. **Run streaming, `run-host.ts`, `kernel-run-client.ts`, `WorkspaceClientManager` and the transcript
    store** are named here only as the objects `runtime.tsx` assembles. Their contracts belong to
    [hosts/code-run-host.md](code-run-host.md).
@@ -1585,7 +1585,7 @@ Its importers span every layer this document's boundary rules separate: `run-hos
     surface.
 12. ~~**`HeaderRowsProps.agentName` is a dead prop.**~~ **Resolved by removal:** the prop is gone.
     `HeaderRowsProps` is now `{ plan: Accessor<HeaderPlan> }` (`packages/code/src/views/HeaderRows.tsx:8`-`:10`) and the
-    call site passes only `plan` (`packages/code/src/views/App.tsx:1077`), which matches what the render
+    call site passes only `plan` (`packages/code/src/views/App.tsx:1092`), which matches what the render
     body (`packages/code/src/views/HeaderRows.tsx:15`-`:68`) ever read. The active-agent name still reaches the row, but
     through `HeaderInput.agentName` → `projectHeader`'s `identity` field
     (`packages/code/src/views/header-projection.ts:13`, `:209`-`:216`), never as a prop.

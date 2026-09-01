@@ -173,8 +173,8 @@ Environments emit only active, atomically captured winners with exact `include` 
 inactive skills never re-enter through a broad root. `@clarvis/skills` normalizes that list and
 filters after manifest resolution, so precedence and manifest-name validation remain unchanged
 (`skillRoots` in `packages/kernel/src/environments/environment-manager.ts`;
-`normalizeInclude`, `packages/skills/src/config.ts:129`; `scanRoot`,
-`packages/skills/src/registry.ts:349`). Plugin skill roots are admitted only through active plugins,
+`normalizeInclude`, `packages/skills/src/config.ts:133`; `scanRoot`,
+`packages/skills/src/registry.ts:350`). Plugin skill roots are admitted only through active plugins,
 and a plugin's agents, MCP servers, capability executables, hooks, and skills are one activation
 unit (`pluginInventory` in `packages/kernel/src/environments/environment-manager.ts`). Active
 plugin MCP servers are attached independently of authored agent tool lists and marked `auto_tools`;
@@ -300,7 +300,7 @@ the same Environment remain admitted
 `packages/kernel/src/config/workspace-trust.ts`). A selection may still carry the workspace approval
 when the proactive question was declined, and an approval failure restores the exact prior selection
 bytes. Plugin hooks are part of the selected plugin unit rather than a second approval projection
-(`EnvironmentService.select`, `restoreSelection`, and `pluginSettingsContributions`; test
+(`EnvironmentService.select`, `restoreSelection`, and `PluginContributions.settingsScopes`; test
 `packages/kernel/tests/integration/environment-manager.test.ts` "restores the prior selection").
 
 Approving or revoking workspace trust recomposes the selected workspace (or `builtin:default`
@@ -315,7 +315,7 @@ trust operation resolves to the caller (`mutateTrust` in
 When a saved session resumes under a different `{ id, fingerprint }`, Code preserves the session,
 adds a visible warning, and marks the status instead of pretending continuity under the same
 extension snapshot (Environment comparison in `resumeSession`,
-`packages/code/src/run-host.ts:1282`). Newly started turns are
+`packages/code/src/run-host.ts:1306`). Newly started turns are
 stamped with the current process snapshot (`createSession.beginTurn`,
 `packages/code/src/adapters/session.ts:122`).
 
@@ -328,7 +328,7 @@ only the installed inventory. Plugin lifecycle remains on `PluginService`.
 
 - **Production:** `pluginInventory` in
   `packages/kernel/src/environments/environment-manager.ts`; `EnvironmentService` in
-  `packages/protocol/src/environments.ts:178` has no install operation.
+  `packages/protocol/src/environments.ts:179` has no install operation.
 - **Test:** `packages/kernel/tests/integration/environment-manager.test.ts` constructs all four
   inventories before exact activation and proves an unrelated install stays inactive.
 
@@ -422,7 +422,7 @@ The loop accepts opaque host metadata and resolved roots; the skills package onl
 root filters. Neither imports the kernel Environment manager or protocol service.
 
 - **Production:** `HostRunDeps.hostMetadata` in `packages/loop/src/runtime/execute-run.ts:76` and
-  `SkillRootInput.include` in `packages/skills/src/types.ts:28`.
+  `SkillRootInput.include` in `packages/skills/src/types.ts:29`.
 - **Test:** `packages/loop/tests/component/execute-run.test.ts:53`,
   `packages/skills/tests/integration/discovery.test.ts:86`, and the existing optional-package
   architecture suites under `packages/loop/tests/architecture/`.

@@ -40,7 +40,7 @@ advisory check a UI can run without executing anything
 | `modelField` | `z.string()` regex `^[a-z0-9_-]+/[a-zA-Z0-9_./:-]+$` | `packages/loop/src/validation/request/profile-schemas.ts:6` |
 | `grantSchema` | `z.string()` + `.options = BUILTIN_GRANT_NAMES` | `packages/loop/src/validation/request/profile-schemas.ts:119` |
 | `providerConfigSchema` | Zod object, `.strict()` | `packages/loop/src/validation/request/provider-schemas.ts:26` |
-| `serverSchema` | `serverBase.superRefine(refineServerTransport)` | `packages/loop/src/validation/request/server-schemas.ts:183` |
+| `serverSchema` | `serverBase.superRefine(refineServerTransport)` | `packages/loop/src/validation/request/server-schemas.ts:288` |
 | `messagesField` / `messageSchema` | Zod array / object | `packages/loop/src/validation/request/message-schemas.ts:100`, `:67` |
 | `deriveRunShape` | `(request: RunRequest, capabilityNeedsHuman?: boolean) => RunShape \| undefined` | `packages/loop/src/validation/request/run-shape.ts:12` |
 | `parseRunRequest` | `(raw: unknown, registry?) => ParsedRunRequest` | `packages/loop/src/validation/request/parsing.ts:113` |
@@ -57,23 +57,23 @@ Barrel: `packages/loop/src/validation/index.ts:5-7` re-exports `ajv`, `profile-r
 `request-schema`. The barrel itself has no package-root export path, and
 `@clarvis/loop`'s bare export (`.` → `src/lib.ts`) re-exports none of these symbols either, so the
 outside world reaches them only through the narrower `@clarvis/loop/host` subpath
-(`packages/loop/src/host.ts:55-61`), which is what `@clarvis/kernel` actually imports (see §7).
+(`packages/loop/src/host.ts:58-64`), which is what `@clarvis/kernel` actually imports (see §7).
 
 ### 2.2 Settings (`src/settings/**`, engine half)
 
 | Symbol | Signature | File:line |
 | --- | --- | --- |
-| `settingsSchema` | Zod object, `.strict()` | `packages/loop/src/settings/settings-schema.ts:233` |
-| `SettingsFile` | `z.infer<typeof settingsSchema>` | `packages/loop/src/settings/settings-schema.ts:296` |
-| `mcpServerSettingsSchema` | `mcpServerBase.strict().superRefine(refineMcpServer)` | `packages/loop/src/settings/settings-schema.ts:197` |
-| `mcpServerPluginSchema` | `mcpServerBase.superRefine(refineMcpServer)` (no `.strict()`) | `packages/loop/src/settings/settings-schema.ts:221` |
-| `pluginNameField` | `z.string()` regex `^[a-z0-9_-]+$`, refined against 3 reserved names | `packages/loop/src/settings/settings-schema.ts:44` |
+| `settingsSchema` | Zod object, `.strict()` | `packages/loop/src/settings/settings-schema.ts:381-442` |
+| `SettingsFile` | `z.infer<typeof settingsSchema>` | `packages/loop/src/settings/settings-schema.ts:444` |
+| `mcpServerSettingsSchema` | `mcpServerBase.strict().superRefine(refineMcpServer)` | `packages/loop/src/settings/settings-schema.ts:334` |
+| `mcpServerPluginSchema` | `mcpServerBase.superRefine(refineMcpServer)` (no `.strict()`) | `packages/loop/src/settings/settings-schema.ts:358-360` |
+| `pluginNameField` | lowercase filesystem-safe token with `.`, `_`, `-`; rejects `--`, `..`, edge separators and 3 reserved names | `packages/loop/src/settings/settings-schema.ts:119-131` |
 | `settingsSchemaFor` | `(registry?: CapabilityRegistry) => z.ZodType<SettingsFile>` | `packages/loop/src/settings/capability-settings.ts:42` |
 | `readCapabilitySettings` | `<T>(settings, spec: CapabilitySettingsSpec) => T \| undefined` | `packages/loop/src/settings/capability-settings.ts:84` |
 | `mergeSettings` | `(scopes: SettingsScope[], registry?) => SettingsFile` | `packages/loop/src/settings/settings-merge.ts:148` |
 | `mergeProviders` | `(...lists: (ProviderConfig[] \| undefined)[]) => ProviderConfig[] \| undefined` | `packages/loop/src/settings/settings-merge.ts:44` |
 | `SETTINGS_MERGE_STRATEGY_KEYS` | `(keyof SettingsFile)[]` | `packages/loop/src/settings/settings-merge.ts:130` |
-| `settingsServerToEngine` | `(name: string, entry: McpServerSettings) => McpServerConfig` | `packages/loop/src/settings/engine-server.ts:48` |
+| `settingsServerToEngine` | `(name: string, entry: McpServerSettings) => McpServerConfig` | `packages/loop/src/settings/engine-server.ts:66` |
 | `agentFrontmatterSchema` | `agentProfileSchema.omit(...).extend(...).loose()` | `packages/loop/src/settings/agent-frontmatter.ts:97` |
 | `splitAgentFrontmatter` | `(raw: string, mode?: "strict" \| "lenient") => RawAgentFrontmatter` | `packages/loop/src/settings/agent-frontmatter.ts:39` |
 | `normalizeTools` | `(tools: string[] \| string \| undefined) => string[]` | `packages/loop/src/settings/agent-frontmatter.ts:10` |
@@ -93,7 +93,7 @@ only referenced here as a coupling (§7).
 `packages/kernel/src` returns nothing). Every one of `mergeSettings`, `settingsSchemaFor`,
 `agentFrontmatterSchema`, `profileReadinessIssues`, `readCapabilitySettings`, `BUILTIN_GRANT_NAMES`,
 `splitAgentFrontmatter`, `settingsSchema`, `providerConfigSchema` and `grantSchema` reaches
-`@clarvis/kernel` through the single `@clarvis/loop/host` export (`packages/loop/src/host.ts:1-87`),
+`@clarvis/kernel` through the single `@clarvis/loop/host` export (`packages/loop/src/host.ts:1-90`),
 which is the sanctioned "host composition surface for config, provider, plugin, and sandbox policy"
 (`packages/loop/src/host.ts:2`). `validateBody` itself is **not** re-exported from `host.ts`; it is
 called only from inside the engine (`packages/loop/src/runtime/execute-run.ts:296`) and separately
@@ -232,9 +232,9 @@ and `addAutomaticMcpTools`. Test: `packages/loop/tests/unit/settings-schema.test
 
 ### 3.2 `settings.json` shape
 
-`settingsSchema` (`packages/loop/src/settings/settings-schema.ts:233`) is a strict object:
+`settingsSchema` (`packages/loop/src/settings/settings-schema.ts:381-441`) is a strict object:
 `providers?`, `mcpServers?` (a **record** keyed by server name — the "ecosystem-standard `mcpServers`
-shape", `packages/loop/src/settings/settings-schema.ts:247`, as opposed to the request's flat
+shape", `packages/loop/src/settings/settings-schema.ts:388-397`, as opposed to the request's flat
 `servers[]` array where each entry carries its own `name`), `default_model?`,
 `default_vision_model?`, `default_reasoning_effort?`, `budget?` (every field optional, unlike the
 request's `budgetSchema` — see §4.4), `...capabilitySettingsFields` (built-in blocks: `hooks`,
@@ -264,7 +264,7 @@ but `mcpServerPluginSchema` inherits the base's `.strip()` — a **third** toler
 mode for an unrecognized key, distinct from both `agentFrontmatterSchema`'s "carried through" (§3.3)
 and `settingsSchema`'s "rejected": a plugin-manifest MCP entry silently **drops** a key this host
 gives no meaning to, rather than carrying or rejecting it. The schema's own doc comment
-(`:199-220`) states the reason: an operator's own `settings.json` typo is best rejected outright, but
+(`:336-357`) states the reason: an operator's own `settings.json` typo is best rejected outright, but
 a plugin manifest written for another agent host arrives with configuration keys this host does not
 have, and failing the whole entry over one of them "did not withhold a server; it failed the
 manifest, and with it the plugin's agents, hooks and skills" — measured, per the same comment, at 24
@@ -553,7 +553,7 @@ YAML-parses the frontmatter text. `"strict"` mode is the default; `"lenient"` is
 production *read/list* path uses so a malformed file still lists (degrading only its frontmatter to
 `{}`, never dropping the agent) — `@clarvis/kernel`'s `parseAgentFile`
 (`packages/kernel/src/config/file-config-store.ts:697`) and its plugin-manifest counterpart
-(`packages/kernel/src/plugins/plugin-contributions.ts:301`) both call it with `"lenient"`. The
+(`packages/kernel/src/plugins/plugin-contributions.ts:570-581`) both call it with `"lenient"`. The
 **only** production call in `"strict"` mode anywhere in the monorepo is the same `parseAgentFile`,
 immediately after its lenient parse, wrapped in a `try`/`catch` whose sole purpose is to populate
 `AgentRecord.malformed` as a diagnostic string for listing (`packages/kernel/src/config/file-config-store.ts:699-703`)
@@ -628,7 +628,7 @@ asserts every `require(...)` call is nested inside a function).
 same optional prompt-expansion context, while the kernel adds it only for a successfully resolved,
 user-invoked skill command.
 Production: `packages/loop/src/runtime/capabilities/hooks.ts:35-53`,
-`packages/capability/src/api.ts:435-443`, `packages/kernel/src/runs/settings-assembler.ts:382-389`,
+`packages/capability/src/api.ts:473-481`, `packages/kernel/src/runs/settings-assembler.ts:382-389`,
 `:460-466`. Test: `packages/kernel/tests/component/settings-assembler.test.ts:540-579`.
 
 ### Further invariants derived directly from the code (not in the numbered catalog above)
@@ -699,7 +699,7 @@ comment states what it
 would silently miss without this: "a key added to the settings schema and forgotten here would
 otherwise be dropped in silence on the way to the engine — which is exactly how the
 `type`/`transport` mismatch survived from the initial commit."
-Production: `packages/loop/src/settings/engine-server.ts:9-26`.
+Production: `packages/loop/src/settings/engine-server.ts:9-37`.
 
 **I.** `compactionSchema`'s `superRefine` enforces two cross-field rules no single field's own type
 expresses: `compaction.target_fraction` must be `<= compaction.context_fraction`, and
@@ -710,7 +710,7 @@ Production: `packages/loop/src/validation/request/profile-schemas.ts:65-86`. Tes
 **J.** A provider model entry accepts `reasoning_efforts` only as an array of non-empty strings and
 retains it through both run-request and settings validation, while the hand-authored `ModelConfig`
 type carries the same optional field.
-Production: `packages/capability/src/api.ts:176-184`;
+Production: `packages/capability/src/api.ts:214-222`;
 `packages/loop/src/validation/request/provider-schemas.ts:75-80`. Test:
 `packages/loop/tests/unit/request-provider-validation.test.ts` (complete provider surface);
 `packages/loop/tests/unit/settings-schema.test.ts` (provider models map).
@@ -726,7 +726,7 @@ Production: `modelField` in `packages/loop/src/validation/request/profile-schema
 
 | Situation | Handling | Cite |
 | --- | --- | --- |
-| Malformed structural field in a run request | `ValidationError` with a code from `classifyIssue`, carrying the **first** Zod issue's message/path only | `packages/loop/src/validation/request/parsing.ts:113-121` |
+| Malformed structural field in a run request | `ValidationError` with a code from `classifyIssue`, carrying the **first** Zod issue's message/path only | `packages/loop/src/validation/request/parsing.ts:113-124` |
 | A registered capability's request param collides with an engine field | Plain `Error` (not `ValidationError`) at schema-build time — a host bug, refused before any request is even parsed | `packages/loop/src/validation/request/parsing.ts:100-106` |
 | A registered capability's settings block collides with a built-in block, or claims an unreadable plugin surface | Plain `Error` at `settingsSchemaFor` call time | `packages/loop/src/settings/capability-settings.ts:45-63` |
 | An agent markdown file's frontmatter fence is malformed / YAML fails to parse, in `"lenient"` mode | Degrades to `{}` frontmatter, keeps the file's body — the agent still lists and runs | `packages/loop/src/settings/agent-frontmatter.ts:44-62` |
@@ -754,7 +754,7 @@ schema at settings-read time, a third, uncoded shape the two-way framing above d
   layer every request/settings rule is written against; none of it is optional.
 - `packages/loop/src/runtime/capabilities/settings-specs.ts` — `capabilityRequestParamFields` (spread
   into `runRequestSchema`, `packages/loop/src/validation/request/request-schema.ts:8`, `:224`) and
-  `capabilitySettingsFields`/`BUILTIN_SETTINGS_SPECS` (spread/iterated by `packages/loop/src/settings/settings-schema.ts:3`,`:273`
+  `capabilitySettingsFields`/`BUILTIN_SETTINGS_SPECS` (spread/iterated by `packages/loop/src/settings/settings-schema.ts:3`,`:388`
   and `packages/loop/src/settings/settings-merge.ts:7`,`:126`). This is a **static, compile-time** coupling: the request and
   settings schemas' own inferred types depend on exactly which built-in capabilities exist, which is
   why the drift-lock types (`_runRequestDriftLock` etc.) are meaningful at all. Per-capability content

@@ -201,7 +201,7 @@ arguments it was matched against.
   its output and failures cannot block the run.
 - **The compiled `LifecycleHook` defines only the methods that have a spec.** Two engine behaviours
   read a method's mere _presence_ — `buildPreFinalizeGate`'s `fastAcceptOk` and the
-  fast-accept-submit path — so an object carrying all eleven keys would switch both off for the whole
+  fast-accept-submit path — so an object carrying all thirteen keys would switch both off for the whole
   run.
 - **Argument rewriting is sequential and selection-stable.** Every matching hook is selected against
   the model's original call. A successful `pre_tool_use` rewrite replaces the entire argument object

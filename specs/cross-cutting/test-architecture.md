@@ -355,7 +355,7 @@ records that a fourth, `GRANDFATHERED`, was never legitimate and no longer has a
 The **barrel** reason turns on the *form* of the re-exports rather than on the word. All four `loop`
 entries are the package's entry-point barrels, and each spells its statements as a named list —
 `export { VERSION } from "./version.ts"` (`packages/loop/src/lib.ts:200`),
-`export { ownerFromWorkspace } from "./workspace.ts"` (`packages/loop/src/host.ts:73`) — which is the
+`export { ownerFromWorkspace } from "./workspace.ts"` (`packages/loop/src/host.ts:76`) — which is the
 shape the allowlist's own comment says "emits no counters of its own"
 (`tooling/checks/coverage.ts:121-122`). The package's three *internal* barrels are absent from the list
 and pass anyway: `packages/loop/src/runtime/budget/index.ts:7-9`,

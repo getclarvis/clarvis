@@ -113,12 +113,12 @@ owns.
 
 | Symbol | Signature | Line |
 |---|---|---|
-| `createAgentToolset` | `(opts: AgentToolsetOptions) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts:197` |
-| `createAgentToolsetWithAdapter` | `(opts, adapter: AgentToolsAdapter) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts:161` |
-| `AgentToolset` | `{ defs: NamespacedTool[]; names: Set<string>; dispatch(name, args, signal?, onOutput?) => Promise<AgentToolResult> }` | `packages/loop/src/runtime/tools/builtin/toolset.ts:61-71` |
-| `AgentToolResult` | `{ isError; text; images?; diff?; guard? }`; `guard` is the final review metadata returned by a guarded shell-family call | `packages/loop/src/runtime/tools/builtin/toolset.ts:43-55` |
-| `AgentToolsetOptions` | `{ workspaceRoot; canMutate; canExec; confineToWorkspace?; temporaryRoots?; onTemporaryRootRegistered?; guard?; elicit?; sandbox?; secretEnvNames?; logger? }` — the entire configuration surface connecting the coding toolset to run scratch roots, command review, elicitation and sandboxing | `packages/loop/src/runtime/tools/builtin/toolset.ts:22-42` |
-| `AgentToolsAdapter` | `{ resolve(opts: AgentToolsetOptions): { defs: NamespacedTool[]; dispatch: AgentToolset["dispatch"] } }` — the injectable test seam `createAgentToolsetWithAdapter` takes in place of the real `@clarvis/tools` calls; its own doc comment calls it a "package-private seam" (`packages/loop/src/runtime/tools/builtin/toolset.ts:73-75`) | `packages/loop/src/runtime/tools/builtin/toolset.ts:76-81` |
+| `createAgentToolset` | `(opts: AgentToolsetOptions) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts:201` |
+| `createAgentToolsetWithAdapter` | `(opts, adapter: AgentToolsAdapter) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts:165` |
+| `AgentToolset` | `{ defs: NamespacedTool[]; names: Set<string>; dispatch(name, args, signal?, onOutput?) => Promise<AgentToolResult> }` | `packages/loop/src/runtime/tools/builtin/toolset.ts:62-72` |
+| `AgentToolResult` | `{ isError; text; images?; diff?; guard? }`; `guard` is the final review metadata returned by a guarded shell-family call | `packages/loop/src/runtime/tools/builtin/toolset.ts:44-56` |
+| `AgentToolsetOptions` | `{ workspaceRoot; canMutate; canExec; confineToWorkspace?; temporaryRoots?; onTemporaryRootRegistered?; guard?; elicit?; sandbox?; secretEnvNames?; logger? }` — the entire configuration surface connecting the coding toolset to run scratch roots, command review, elicitation and sandboxing | `packages/loop/src/runtime/tools/builtin/toolset.ts:22-43` |
+| `AgentToolsAdapter` | `{ resolve(opts: AgentToolsetOptions): { defs: NamespacedTool[]; dispatch: AgentToolset["dispatch"] } }` — the injectable test seam `createAgentToolsetWithAdapter` takes in place of the real `@clarvis/tools` calls; its own doc comment calls it a "package-private seam" | `packages/loop/src/runtime/tools/builtin/toolset.ts:73-82` |
 
 `builtin/index.ts` is the barrel: it re-exports `FILE_MUTATING_TOOL_NAMES`, `agentToolCaps`,
 `agentToolsActive`, `createAgentToolset`, the `AgentToolset`/`AgentToolsetOptions` types, and the whole
@@ -132,8 +132,8 @@ calling it package-private.
 
 | Symbol | Signature | Line |
 |---|---|---|
-| `openToolPool` | `(input: { request, connections, owner, signal?, relay, emptyUsage, logger? }) => Promise<OpenToolPoolResult>` | `packages/loop/src/runtime/open-tool-pool.ts:53` |
-| `OpenToolPoolResult` | `{ ok: true; opened: Lease[]; degraded: DegradedServer[] } \| { ok: false; response: RunResponse }` | `packages/loop/src/runtime/open-tool-pool.ts:25-26` |
+| `openToolPool` | `(input: { request, connections, owner, signal?, relay, emptyUsage, logger? }) => Promise<OpenToolPoolResult>` | `packages/loop/src/runtime/open-tool-pool.ts:54-66` |
+| `OpenToolPoolResult` | `{ ok: true; opened: Lease[]; degraded: DegradedServer[] } \| { ok: false; response: RunResponse }` | `packages/loop/src/runtime/open-tool-pool.ts:29-32` |
 | `DegradedServer` | `{ name: string; transport: ToolTransport; reason: string }` | `packages/loop/src/runtime/open-tool-pool.ts:14-18` |
 
 ### 2.9 The barrel (`runtime/tools/index.ts`)
@@ -154,7 +154,7 @@ so the comment is stale for this directory.
 A registry entry carries `fullName` (`"<mcpName>.<toolName>"`), `wireName` (the model-facing name),
 `mcpName`, `toolName`, `description`, `inputSchema`, optional `kind` (`resource_list`/
 `resource_read`). Built-in tools reuse the same shape with `mcpName: ""` and
-`wireName === fullName === toolName` (`packages/loop/src/runtime/tools/submit-result-tool.ts:15-19`, `packages/loop/src/runtime/tools/builtin/toolset.ts:80-87`).
+`wireName === fullName === toolName` (`packages/loop/src/runtime/tools/submit-result-tool.ts:15-19`, `packages/loop/src/runtime/tools/builtin/toolset.ts:81-88`).
 
 ### 3.2 Wire-name sanitization (delegated mechanism, `@clarvis/mcp-client`)
 
@@ -246,7 +246,7 @@ throws inside the reporter itself (`:117-121`).
    `@clarvis/mcp-client`'s `buildRegistry` with reserved names =
    `[...RESERVED_WIRE_NAMES, ...capabilityReserved]`. There are (at least) three call sites in
    `@clarvis/loop`'s source: the entry agent's own registry
-   (`packages/loop/src/runtime/orchestrator.ts:584`), a lead's lazily-built subagent registry
+   (`packages/loop/src/runtime/orchestrator.ts:599`), a lead's lazily-built subagent registry
    (`packages/loop/src/runtime/entry-inputs.ts:305-311`, closed over inside
    `buildSubagentRegistry`), and delegation's per-call registry
    (`packages/loop/src/runtime/subagents/delegate-task.ts:398-401`). `capabilityReserved` in the last
@@ -272,7 +272,7 @@ throws inside the reporter itself (`:117-121`).
 3. **If the caller's signal is already aborted**, every acquired lease is released
    (`Promise.allSettled(successes.map(o => o.release()))`) and the function returns
    `{ ok:false, response:{status:"cancelled", result:"", usage: emptyUsage()} }` — *before* any
-   further validation (`:82-85`). This is unconditional: it runs even when every server actually
+   further validation (`:99-102`). This is unconditional: it runs even when every server actually
    connected.
 4. **If every server failed for a terminal reason** and at least one was declared, the run fails with either
    `mcp_connection_failed` (carrying `mcp_name`/`transport` from the thrown
@@ -281,8 +281,8 @@ throws inside the reporter itself (`:117-121`).
    from this terminal-failure predicate. A mixed pending/deferred plus terminal failure set therefore
    continues with an empty MCP pool; one terminal error cannot mask an inactive background server.
 5. Otherwise, every failed/pending server is logged once as `mcp.connect.failed` and folded into
-   `DegradedServer[]` (`:110-121`) — the run is **not** failed merely because *some* servers failed.
-   The caller (`packages/loop/src/runtime/orchestrator.ts:459`, out of this document's scope) turns a non-empty `degraded`
+   `DegradedServer[]` (`:126-137`) — the run is **not** failed merely because *some* servers failed.
+   The caller (`packages/loop/src/runtime/orchestrator.ts:471`, out of this document's scope) turns a non-empty `degraded`
    into a persisted trace record of kind `"mcp_degraded"` carrying `{ servers: poolResult.degraded }`,
    so a degraded startup is not only an in-memory return value but a wire-visible event a client or a
    rehydrated session actually sees; asserted end-to-end by
@@ -362,9 +362,9 @@ covering `executeAgentToolCall` (`:64-191`) and `executeMcpToolCall` (`:193-304`
 `deps.registry.tools.map(t => t.wireName)` when the caller omits it (`:33`). Its `canonicalName`
 resolves the call through the same registry and returns `fullName` (`:36`). The loop keeps the wire
 name as `tool`, adds a distinct `toolFullName` only when resolution succeeds and differs, and treats a
-throwing optional resolver as absent (`packages/loop/src/runtime/loop/loop.ts:471-485`). Both the
-before- and after-tool hook payloads use that same identity (`:526-543`, `:572-594`). The coding-tool equivalent,
-`buildAgentToolsHandler` (`packages/loop/src/runtime/capabilities/tools.ts:213-241`, owned by
+throwing optional resolver as absent (`packages/loop/src/runtime/loop/loop.ts:494-508`). Both the
+before- and after-tool hook payloads use that same identity (`:549-566`, `:595-617`). The coding-tool equivalent,
+`buildAgentToolsHandler` (`packages/loop/src/runtime/capabilities/tools.ts:220-248`, owned by
 [loop-capability-composition](capability-composition.md)), instead matches only `toolset.names.has(call.name)`. The run's
 handler list is assembled as:
 
@@ -400,7 +400,7 @@ raw tool defs + dispatch, then:
 `ToolResultImage[]`, its `meta.diff` into the flat `diff` field, and its final `GuardReview` into the
 flat `guard` field. `temporaryRoots` and `onTemporaryRootRegistered` are forwarded into
 `resolveConfig`, so roots admitted during a run become available to the already-resolved toolset and
-are reported back to its owner (`packages/loop/src/runtime/tools/builtin/toolset.ts:125-132`).
+are reported back to its owner (`packages/loop/src/runtime/tools/builtin/toolset.ts:126-136`).
 
 This whole policy layer (gate, exec filtering, abort race, listener cleanup) is directly pinned by
 `packages/loop/tests/unit/toolset.test.ts` against a fake `AgentToolsAdapter`, independent of the real
@@ -477,15 +477,15 @@ can reclassify `shell` as `read` (`:49-56`, pinned by `packages/loop/tests/unit/
 | INV-057 | `RESERVED_WIRE_NAMES` is *derived from* (not hand-copied alongside) `BUILTIN_WIRE_NAMES` concatenated with `AGENT_TOOL_WIRE_NAMES` — the two lists must literally be the same array. | `packages/loop/src/runtime/tools/wire-names.ts:119-122` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:32-34` |
 | INV-058 | A wire-safe, case-insensitively unique, non-host-reserved MCP local name is preserved exactly. Eligible locals are reserved before fallbacks, making their ownership independent of entry order. Duplicate/case-colliding, invalid, or reserved locals use a sanitized namespaced fallback; a built-in name such as `submit_result`, `ask_user`, `read_file`, or `delegate_task` is never taken, and dotted `mcp.tool` remains canonical and resolvable. | `buildRegistry` in `packages/loop/src/runtime/tools/mcp-registry.ts`; `makeRegistry` and `toWireToolName` in `packages/mcp-client/src/registry.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` (`"an MCP extension tool named … never takes the built-in's name"`); `packages/mcp-client/tests/unit/registry.test.ts` (`"preserves a unique provider-safe local name for skill/tool compatibility"`, `"falls back to namespaced names when local names collide across servers"`, and `"reserves a unique local name before allocating colliding namespaced fallbacks"`) |
 | INV-059 | A capability's tool metadata (`reservedWireNames`, `toolEffects`) is collected from **every registered capability**, including one whose `forRun()` returns `null` for this run — declaration is independent of activation. | `packages/loop/src/runtime/capability-tool-metadata.ts:23-33` (owned by [loop-capability-composition](capability-composition.md)) | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:74-81` |
-| INV-060 | An MCP tool colliding with a *capability's* reserved name is blocked the same way, once passed through `buildRegistry`; without passing it, the engine alone provides no such protection. | `packages/loop/src/runtime/tools/mcp-registry.ts:33-37` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:83-93`, `:102-108` |
+| INV-060 | An MCP tool colliding with a *capability's* reserved name is blocked the same way, once passed through `buildRegistry`; without passing it, the engine alone provides no such protection. | `packages/loop/src/runtime/tools/mcp-registry.ts:33-37` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:84-94`, `:103-114` |
 | INV-061 | A tool-effect classifier built from declared `toolEffects` answers the declared effect for a declared name and `"unknown"` for any undeclared name. | `packages/loop/src/runtime/tools/tool-effect.ts:57-67` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:95-100` |
-| INV-062 | Every call site of `buildRegistry` in `@clarvis/loop`'s source passes exactly two arguments, never omitting the second (which would silently let an MCP server shadow a reserved name). At least three such call sites exist. | `packages/loop/src/runtime/orchestrator.ts:584`, `packages/loop/src/runtime/entry-inputs.ts:305-311`, `packages/loop/src/runtime/subagents/delegate-task.ts:398-401` | `packages/loop/tests/architecture/mcp-registry-call-sites.test.ts:57-81` — walks every `.ts` file under `src/`, regex-scans for `buildRegistry(` call sites (excluding the definition itself), asserts there are `>= 3` (`:57-59`), and asserts each passes exactly two top-level, balanced-bracket-parsed arguments (`:61-81`) |
-| INV-063 | `openToolPool`, given a signal already aborted before it acquires a lease, still releases the lease it acquired and returns a `cancelled` response rather than leaking it. | `packages/loop/src/runtime/open-tool-pool.ts:82-85` | `packages/loop/tests/unit/open-tool-pool-policy.test.ts:16-53` |
+| INV-062 | Every call site of `buildRegistry` in `@clarvis/loop`'s source passes exactly two arguments, never omitting the second (which would silently let an MCP server shadow a reserved name). At least three such call sites exist. | `packages/loop/src/runtime/orchestrator.ts:599`, `packages/loop/src/runtime/entry-inputs.ts:305-311`, `packages/loop/src/runtime/subagents/delegate-task.ts:398-401` | `packages/loop/tests/architecture/mcp-registry-call-sites.test.ts:57-81` — walks every `.ts` file under `src/`, regex-scans for `buildRegistry(` call sites (excluding the definition itself), asserts there are `>= 3` (`:57-59`), and asserts each passes exactly two top-level, balanced-bracket-parsed arguments (`:61-81`) |
+| INV-063 | `openToolPool`, given a signal already aborted before it acquires a lease, still releases the lease it acquired and returns a `cancelled` response rather than leaking it. | `packages/loop/src/runtime/open-tool-pool.ts:99-102` | `packages/loop/tests/unit/open-tool-pool-policy.test.ts:16-53` |
 | INV-064 | Every run requests background MCP authorization/admission. If any failed server is pending browser OAuth or deferred behind a saturated connection/handshake bound, an otherwise empty pool returns success plus `mcp_degraded`; mixed terminal failures cannot mask that nonterminal state. | `openToolPool` in `packages/loop/src/runtime/open-tool-pool.ts` | `packages/loop/tests/integration/open-tool-pool.test.ts` (all-pending, mixed pending/terminal, busy-admission, and consecutive-run cases) |
 | INV-065 | `AGENT_TOOL_WIRE_NAMES` stays exactly in sync (as a set) with `AGENT_TOOL_NAMES`, the list `@clarvis/tools` actually registers. | `packages/loop/src/runtime/tools/wire-names.ts:53-77`, `packages/loop/src/runtime/tools/builtin/names.ts:4` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:12-16` |
 | INV-066 | `READ_ONLY_AGENT_TOOL_WIRE_NAMES` matches `READ_ONLY_TOOL_NAMES` exactly, and `READ_ONLY_TOOL_NAMES ∪ EDIT_TOOL_NAMES` equals `AGENT_TOOL_NAMES` with no overlap. | `packages/loop/src/runtime/tools/wire-names.ts:98-108`, `packages/loop/src/runtime/tools/builtin/names.ts:14-21` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:18-29` |
 | INV-067 | `shell` and `monitor_start` are never classified as read-only. | `packages/loop/src/runtime/tools/builtin/names.ts:16-47` (via `readOnlyTools` from `@clarvis/tools`) | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:30-33`, also `packages/loop/tests/unit/tool-effect.test.ts:35-44` |
-| INV-TD-01 | A handler's canonical identity is additive: lifecycle hooks retain the model-facing wire name as `tool` and receive a different resolved identity only as `toolFullName`, consistently before and after dispatch. | `packages/capability/src/loop-contract.ts:94-104`, `packages/loop/src/runtime/loop/loop.ts:471-485`, `:526-594` | `packages/loop/tests/unit/tool-hooks.test.ts:171-214` |
+| INV-TD-01 | A handler's canonical identity is additive: lifecycle hooks retain the model-facing wire name as `tool` and receive a different resolved identity only as `toolFullName`, consistently before and after dispatch. | `packages/capability/src/loop-contract.ts:94-104`, `packages/loop/src/runtime/loop/loop.ts:494-508`, `:549-617` | `packages/loop/tests/unit/tool-hooks.test.ts:171-214` |
 
 Additional invariants derived directly from the code, carrying no INV number of their own:
 
@@ -530,10 +530,10 @@ Additional invariants derived directly from the code, carrying no INV number of 
   `packages/loop/tests/unit/tool-arg-validator.test.ts:104-118` (`warn` called exactly once across two `validate` calls).
 - **A coding-tool call outside the agent's ceiling never reaches the adapter.**
   `createAgentToolsetWithAdapter`'s wrapped `dispatch` returns the "not available" error before
-  calling `adapter.resolve(...).dispatch` at all (`packages/loop/src/runtime/tools/builtin/toolset.ts:163-169`). Test:
+  calling `adapter.resolve(...).dispatch` at all (`packages/loop/src/runtime/tools/builtin/toolset.ts:167-173`). Test:
   `packages/loop/tests/unit/toolset.test.ts:97-106` (`adapter.calls` stays empty for a filtered-out or unknown name).
 - **An abort during a coding-tool dispatch always removes its listener**, whether it fired
-  (`raceAbort`'s `.finally`, `packages/loop/src/runtime/tools/builtin/toolset.ts:112`) or the call finished normally first. Test:
+  (`raceAbort`'s `.finally`, `packages/loop/src/runtime/tools/builtin/toolset.ts:113`) or the call finished normally first. Test:
   `packages/loop/tests/unit/toolset.test.ts:145-170` (both the abort-wins and the normal-completion case assert
   `getEventListeners(signal, "abort")` is empty afterward).
 - **No `tool_call_started` record fires for a call that fails argument validation.** The record sits
@@ -543,7 +543,7 @@ Additional invariants derived directly from the code, carrying no INV number of 
   `tool_call` record still always fires (§4.3 step 8).
 - **A profile's tool reference to a tool on a server that merely failed to connect is exempt from
   `invalid_profile`, not treated as a bad reference.** `belongsToFailed` filters such references out
-  of what `findInvalidToolRef` checks (`packages/loop/src/runtime/open-tool-pool.ts:110`, `:124-129`) before it runs, so the run
+  of what `findInvalidToolRef` checks (`packages/loop/src/runtime/open-tool-pool.ts:126`, `:140-145`) before it runs, so the run
   proceeds on the surviving pool rather than failing outright. Test:
   `packages/loop/tests/integration/open-tool-pool.test.ts:69-90`.
 - **`collectCapabilityToolMetadata`'s `toolEffects` merge is last-registration-wins with no conflict
@@ -562,20 +562,20 @@ Additional invariants derived directly from the code, carrying no INV number of 
 | MCP arguments fail schema | `executeMcpToolCall` via `argValidator` (`:162-166`) | non-productive, `InputValidationError: …` |
 | MCP tool call itself errors, code `mcp_unavailable` | `executeMcpToolCall` (`:193-197`) | non-productive (excused from convergence-guard penalty) |
 | MCP tool call errors, any other code | `executeMcpToolCall` (`:193-197`) | productive (a real tool failure, still counted) |
-| Coding-tool call not in the agent's `names` set | `createAgentToolsetWithAdapter`'s wrapped `dispatch` (`packages/loop/src/runtime/tools/builtin/toolset.ts:164-169`) | immediate error result, tool never reached |
-| Abort signal fires mid coding-tool call | `raceAbort` (`packages/loop/src/runtime/tools/builtin/toolset.ts:100-113`) | `abortedResult()`, adapter promise abandoned (listener always removed) |
+| Coding-tool call not in the agent's `names` set | `createAgentToolsetWithAdapter`'s wrapped `dispatch` (`packages/loop/src/runtime/tools/builtin/toolset.ts:168-173`) | immediate error result, tool never reached |
+| Abort signal fires mid coding-tool call | `raceAbort` (`packages/loop/src/runtime/tools/builtin/toolset.ts:101-114`) | `abortedResult()`, adapter promise abandoned (listener always removed) |
 | Coding-tool malformed arguments | `executeAgentToolCall` (`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:76-98`) | traced + guarded as non-productive, `malformedArgumentsMessage` |
 | Argument schema itself uncompilable/`$async`/throws | `createToolArgValidator` (`packages/loop/src/runtime/tools/tool-arg-validator.ts:156-178`) | call accepted unchecked (`null`), one `tool.args_validation_failed_open` log line |
 | `output_schema` malformed / oversized / cyclic / non-object | `compileResultContract` (`packages/loop/src/runtime/tools/result-contract.ts:115-158`) | `ValidationError("invalid_output_schema")` thrown pre-execution, run never starts |
 | `submit_result` arguments fail the (valid) `output_schema` | `ResultContract.validate` (`packages/loop/src/runtime/tools/result-contract.ts:164-170`) | `{ok:false, error:"submit_result rejected: …"}`, surfaced to the model as a re-callable rejection (not terminal) |
-| MCP server fails to connect at startup | `openToolPool` (`packages/loop/src/runtime/open-tool-pool.ts:110-121`) | logged `mcp.connect.failed`, folded into `degraded`, run proceeds without it, and packages/loop/src/runtime/orchestrator.ts:477 persists it as an `mcp_degraded` trace record (`packages/loop/tests/integration/open-tool-pool.test.ts:36-67`) |
+| MCP server fails to connect at startup | `openToolPool` (`packages/loop/src/runtime/open-tool-pool.ts:126-137`) | logged `mcp.connect.failed`, folded into `degraded`, run proceeds without it, and packages/loop/src/runtime/orchestrator.ts:492 persists it as an `mcp_degraded` trace record (`packages/loop/tests/integration/open-tool-pool.test.ts:36-67`) |
 | Every declared MCP server fails for a non-OAuth reason | `openToolPool` | run fails hard: `mcp_connection_failed` (typed) or `provider_error` (generic) |
 | Every declared MCP is awaiting browser OAuth | `openToolPool` | all are recorded in `mcp_degraded`; run proceeds with no MCP tools and does not await human input |
 | Background MCP connection or handshake admission is saturated | `openToolPool` + connection manager | deferred server is recorded in `mcp_degraded`; run proceeds without waiting for a connect timeout, including while an earlier run's OAuth retains capacity |
 | Pending/deferred MCP sits beside a terminal failure | `openToolPool` | all are degraded; the terminal failure does not hard-fail the otherwise runnable empty pool |
 | Profile references a tool absent from the surviving pool, not for a failed-server reason | `openToolPool` + `findInvalidToolRef` (`:130-147`) | every acquired lease released, `invalid_profile` error naming the profile and tool (`packages/loop/tests/integration/open-tool-pool.test.ts:12-32`) |
 | Profile references a tool belonging to a server that merely failed to connect | `openToolPool`'s `belongsToFailed` filter (`:110`, `:124-129`) | the reference is exempt from `invalid_profile`; run proceeds on the surviving pool (`packages/loop/tests/integration/open-tool-pool.test.ts:69-90`) |
-| Caller's signal already aborted when `openToolPool` runs | `openToolPool` (`:82-85`) | every acquired lease released, `cancelled` response, no further validation attempted |
+| Caller's signal already aborted when `openToolPool` runs | `openToolPool` (`:99-102`) | every acquired lease released, `cancelled` response, no further validation attempted |
 
 ## 7. Coupling
 
@@ -611,11 +611,11 @@ Additional invariants derived directly from the code, carrying no INV number of 
 - **Consumed by `runtime/execute-run.ts`** (out of scope): calls `compileResultContract` exactly once
   per run, gated on `parsed.output_schema !== undefined` (`packages/loop/src/runtime/execute-run.ts:313`).
 - **Consumed by `runtime/orchestrator.ts`** (out of scope): registers the tool-effect port
-  (`services.provide(TOOL_EFFECT_PORT, createToolEffectPort(...))`, `packages/loop/src/runtime/orchestrator.ts:339`) and is one
-  of the three `buildRegistry` call sites (`:584`).
+  (`services.provide(TOOL_EFFECT_PORT, createToolEffectPort(...))`, `packages/loop/src/runtime/orchestrator.ts:344`) and is one
+  of the three `buildRegistry` call sites (`:599`).
 - **Consumed by `runtime/capabilities/tools.ts`** (owned by [loop-capability-composition](capability-composition.md)): builds
   `AgentToolset` via `createAgentToolset` and wraps `executeAgentToolCall` as
-  `buildAgentToolsHandler`, the coding-toolset's own `ToolHandler` (`packages/loop/src/runtime/capabilities/tools.ts:213-241`) — this is a
+  `buildAgentToolsHandler`, the coding-toolset's own `ToolHandler` (`packages/loop/src/runtime/capabilities/tools.ts:220-248`) — this is a
   runtime edge in the opposite direction from `builtin/**`'s own imports (the capability imports
   `builtin/**`, not the reverse).
 - **`error-text.js`'s `errorText`** is imported by `packages/loop/src/runtime/tools/tool-arg-validator.ts:3` to render a fail-open
@@ -624,7 +624,7 @@ Additional invariants derived directly from the code, carrying no INV number of 
   `packages/loop/src/runtime/tools/tool-arg-validator.ts:117-121`). The function itself
   (`packages/loop/src/error-text.ts:9`) is a two-branch coercion — `e instanceof Error ? e.message :
   String(e)` — with no module dependency of its own; it is this package's original, re-exported
-  outward as `errorText` from `./host` (`packages/loop/src/host.ts:66`), which
+  outward as `errorText` from `./host` (`packages/loop/src/host.ts:69`), which
   `packages/kernel/src/policy.ts:49,51` re-exports in turn from `@clarvis/loop/host`. Three modules
   down that chain, `packages/code/src/adapters/errors.ts` keeps a deliberate, independent copy of the
   same two-line body rather than importing it — its own doc comment states the copy is "kept
@@ -643,7 +643,7 @@ Additional invariants derived directly from the code, carrying no INV number of 
   scope, `packages/loop/src/runtime/tools/ask-user-tool.ts:160` (`extractAnswer`, owned by
   [elicitation-and-user-interaction](../cross-cutting/elicitation.md)), reaches the same function for
   the same reason: serializing an elicitation answer that turned out not to be a plain string.
-- **`CONTROL_PLANE_TOOL_NAMES` is re-exported outward** through `packages/loop/src/host.ts:63` →
+- **`CONTROL_PLANE_TOOL_NAMES` is re-exported outward** through `packages/loop/src/host.ts:66` →
   `packages/kernel/src/policy.ts:47`, consumed by
   `packages/code/src/adapters/mcp-capabilities.ts:74` — this document only owns the constant's
   declaration, not its downstream consumers.

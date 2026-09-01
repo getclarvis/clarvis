@@ -6,7 +6,7 @@
 ## 1. Purpose
 
 `packages/kernel/src/runs/` is the layer that turns the protocol's `RunService`
-(`packages/protocol/src/runs.ts:705`) into calls on the engine's `executeRun`
+(`packages/protocol/src/runs.ts:706`) into calls on the engine's `executeRun`
 (`packages/kernel/src/runs/run-service.ts:111`), and turns everything the engine and its capabilities
 emit back into the protocol's closed `RunEvent` union (`packages/protocol/src/runs.ts:291`). It owns
 four distinct jobs:
@@ -122,11 +122,11 @@ the latter supplying `observe`/`settle` to maintain its workflow record (`:377-3
 ### 2.6 Protocol shapes this subsystem produces and consumes
 
 `StartRunParams` (`packages/protocol/src/runs.ts:69-114`) is the input; `RunHandle`
-(`:653-702`), `RunResult` (`:162-172`), `RunSummary` (`:202-214`), `RunDetail` (`:235-255`) and
+(`:654-703`), `RunResult` (`:162-172`), `RunSummary` (`:202-214`), `RunDetail` (`:235-255`) and
 `RunEvent` (`:291` onward) are the outputs. `RunHandle` has two settle points that are deliberately
 distinct: `done` "Resolves when execution ends; it does not imply that `events` has closed"
-(`:693`) and `closed` "Resolves after execution and bounded post-run event delivery both finish"
-(`:697`).
+(`:694`) and `closed` "Resolves after execution and bounded post-run event delivery both finish"
+(`:698`).
 
 Managed and remote handles additionally project the optional `RunHandle.buffered()` counters from
 their event streams. `EventStream.stats()` maintains item count, estimated bytes and dropped count
@@ -140,7 +140,7 @@ counters").
 Consumers must preserve the same distinction. `@clarvis/code` releases composer/steering ownership
 after `done`, while retaining `closed` only as a physical-work lease for the event pump and post-run
 memory notices. Production and test ownership live in
-[`code-run-host.md`](code-run-host.md#42-runmanaged--the-single-funnel-packagescodesrcrun-hostts496).
+[`code-run-host.md`](code-run-host.md#42-runmanaged--the-single-funnel-packagescodesrcrun-hostts520).
 
 ## 3. Data and formats
 

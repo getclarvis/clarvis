@@ -75,7 +75,7 @@ configuration surface), and again as `parseModelRef` from `@clarvis/capability`
 (`packages/protocol/src/client.ts:70`; `packages/kernel/src/kernel.ts:127`), constructed at kernel
 boot as `createModelCatalogService(globalDir, logger)` (`packages/kernel/src/kernel.ts:721`) and
 exposed over the transport under operation key `models`
-(`packages/kernel/src/transport/operations.ts:356`, `packages/kernel/src/transport/client.ts:565`).
+(`packages/kernel/src/transport/operations.ts:366`, `packages/kernel/src/transport/client.ts:565`).
 
 ### 2.3 `@clarvis/capability` exports
 
@@ -312,7 +312,7 @@ the exact-match cost guard (kernel only).
    `order` does NOT survive under a model override of `provider.allow_fallbacks`).
 4. `promptCache` is taken **only** from the model (`model?.prompt_cache`) — there is no
    provider-level `prompt_cache` field to fall back to (confirmed against
-   `packages/capability/src/api.ts:199-206`: `ProviderConfig` has no `prompt_cache` key at all,
+   `packages/capability/src/api.ts:237-244`: `ProviderConfig` has no `prompt_cache` key at all,
    only `ModelConfig` does, line 178).
 5. `headers` values are projected **as authored** — `${VAR}` templates, never resolved — per the
    remark at `packages/capability/src/provider-resolver.ts:83-85` and pinned by test line 109-112.
@@ -409,7 +409,7 @@ reasoningOutputFloor(kind, effort):
 xhigh:16384, max:32768`. Monotonic in effort — pinned by
 `packages/capability/tests/unit/reasoning-budget.test.ts:29-33` ("is monotonic in effort, so a
 deeper effort never reserves less"). Consumed by `packages/llm/src/ai-sdk/request-options.ts:195`
-(building the actual call) and `packages/loop/src/runtime/loop/loop.ts:393` (the loop's
+(building the actual call) and `packages/loop/src/runtime/loop/loop.ts:416` (the loop's
 window-aware output-budget clamp) — both outside this document's scope (delegated to
 [foundations/llm.md](../foundations/llm.md) and the loop's budget/clock machinery respectively); this document owns only the
 floor function itself.
@@ -805,7 +805,7 @@ catalog case).
   MemoryConfigPanel,ProvidersPanel}.tsx` and `packages/code/src/adapters/effort-levels.ts` all import
   `adapters/models-catalog.ts` and/or `views/config/catalog-pick.ts` — a static, compile-time
   dependency; there is no dynamic/lazy loading of the catalog adapter.
-- `packages/llm/src/ai-sdk/request-options.ts:195` and `packages/loop/src/runtime/loop/loop.ts:393`
+- `packages/llm/src/ai-sdk/request-options.ts:195` and `packages/loop/src/runtime/loop/loop.ts:416`
   both call `reasoningOutputFloor` — outside this document's scope (owned by [foundations/llm.md](../foundations/llm.md) and
   the loop's budget machinery), cited here only to show the floor function's actual callers.
 - `packages/loop/src/validation/request/provider-rules.ts:134`,

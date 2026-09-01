@@ -912,10 +912,10 @@ repair: the branch under test is platform-independent code, so the test should b
 (`posixShell`), an enforcement property (`modeBitsEnforced`), a measurement that is undecidable
 (`backgroundSettleIsMeasurable`), or a **named open defect** (`monitorCapturesOutput`) — never a
 blanket platform skip.
-Production: `packages/tools/tests/helpers/fixtures.ts:190` (`modeBitsEnforced`), `:203`
-(`posixShell`), `:281` (`monitorCapturesOutput`), `:304` (`backgroundSettleIsMeasurable`), `:313`
-(`canSymlink`, *probed* rather than derived), `:250` (`nonUtf8FilenamesSupported`, probed because
-it is a filesystem property). `:275-280` states the distinction explicitly: "these tests are
+Production: `packages/tools/tests/helpers/fixtures.ts:191` (`modeBitsEnforced`), `:204`
+(`posixShell`), `:282` (`monitorCapturesOutput`), `:305` (`backgroundSettleIsMeasurable`), `:314`
+(`canSymlink`, *probed* rather than derived), `:251` (`nonUtf8FilenamesSupported`, probed because
+it is a filesystem property). `:276-281` states the distinction explicitly: "these tests are
 suppressed because the product is broken on Windows, not because they do not apply to it."
 
 **BUILD-26 (INV-313).** Every executable and declaration surface derives from the one exact Bun

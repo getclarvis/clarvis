@@ -14,8 +14,8 @@ policy:
   `undecidable` flag), and turns any tool call into a `GuardContext` carrying resolved `PathFact`s
   (`packages/tools/src/guard/analyze-shell.ts:39`, `packages/tools/src/guard/context.ts:46`). It
   ships **no policy**: `RuntimeConfig.guard` and `RuntimeConfig.elicit` are host-supplied ports
-  (`packages/tools/src/config.ts:104`, `packages/tools/src/config.ts:107`), and
-  `packages/tools/src/core.ts:126`'s `applyGuard` is the only place a tool dispatch consults them.
+  (`packages/tools/src/config.ts:107`, `packages/tools/src/config.ts:110`), and
+  `packages/tools/src/core.ts:152`'s `applyGuard` is the only place a tool dispatch consults them.
 - **`packages/kernel/src/guard/**` — the policy.** `createShellGuard`
   (`packages/kernel/src/guard/shell-guard.ts:244`) is a fixed-precedence rule cascade over deny
   host-command escalation, lists, undecidability, workspace containment, credential-file patterns
@@ -24,8 +24,8 @@ policy:
   the guard, wires the answering channel (human elicitation, LLM judge, or a session allow list),
   and writes the audit record.
 - **`packages/loop/src/runtime/capabilities/tools.ts` — the wiring.** The engine names a
-  `GuardResolver` port (`:57`), calls it once per run (`:126`), and threads the resulting guard and
-  a wait-bounded elicit into every agent's toolset (`:162`-`:170`). It owns the `guard` settings
+  `GuardResolver` port (`:57`), calls it once per run (`:129`), and threads the resulting guard and
+  a wait-bounded elicit into every agent's toolset (`:165`-`:223`). It owns the `guard` settings
   block and the `guard_mode`/`guard_judge` run params
   (`packages/loop/src/runtime/capabilities/tools-settings.ts:21`, `:154`) in pure zod, with no
   import of `@clarvis/tools`, as that file's own header states
@@ -66,7 +66,7 @@ subsystem.
 | `PathCandidate` | type | `packages/tools/src/guard/dialect.ts:26` | `{kind:"none"} \| {kind:"path";value} \| {kind:"prefix";value} \| {kind:"opaque"}` |
 | `ShellDialect` | iface | `packages/tools/src/guard/dialect.ts:48` | `{ flavor; split; tokenize; decidable; normalize; pathCandidate }` |
 | `analyzeShell` | fn | `packages/tools/src/guard/analyze-shell.ts:39` | `(command: string, dialect = currentDialect()) => ShellFacts` |
-| `buildGuardContext` | fn | `packages/tools/src/guard/context.ts:46` | `(tool, args, config, dialect = currentDialect()) => GuardContext` |
+| `buildGuardContext` | fn | `packages/tools/src/guard/context.ts:66` | `(tool, args, config, dialect = currentDialect()) => GuardContext` |
 | `posixDialect` | const | `packages/tools/src/guard/dialects/posix.ts:463` | the POSIX front end |
 | `powershellDialect` | const | `packages/tools/src/guard/dialects/powershell.ts:748` | the PowerShell front end |
 | `dialectFor` | fn | `packages/tools/src/guard/dialects/index.ts:12` | `(flavor: ShellFlavor) => ShellDialect` |
@@ -110,8 +110,8 @@ only by `packages/kernel/src/runs/settings-assembler.ts:13`.
 | --- | --- | --- |
 | `GuardResolution` | `:47` | `{ guard?: Guard; elicit?: GuardElicit }` |
 | `GuardResolver` | `:57` | `(ctx: RunCapabilityContext) => Promise<GuardResolution\|undefined> \| GuardResolution \| undefined` |
-| `AgentToolsCapabilityOptions.resolveGuard` | `:78` | optional; omitting it "runs unguarded" (`:76`) |
-| `withGuardElicitWaitBound` | `:97` | `(elicit, waitMs, signal) => GuardElicit` |
+| `AgentToolsCapabilityOptions.resolveGuard` | `:80` | optional; omitting it "runs unguarded" (`:78`) |
+| `withGuardElicitWaitBound` | `:100` | `(elicit, waitMs, signal) => GuardElicit` |
 | `AGENT_TOOLS_CAPABILITY_NAME` | `:43` | `"tools"` |
 
 ### 2.4 Settings key `guard` (`packages/loop/src/runtime/capabilities/tools-settings.ts:21`)
@@ -140,8 +140,8 @@ Both reach the request schema through `capabilityRequestParamFields`
 (`packages/loop/src/runtime/capabilities/settings-specs.ts:64-69`) and the spec's
 `requestParams` (`packages/loop/src/runtime/capabilities/tools-settings.ts:268`). The protocol mirrors them as `StartRunParams.guard_mode`
 / `guard_judge` (`packages/protocol/src/runs.ts:94`-`:95`, types at `:45` and `:48`); the
-capability vocabulary declares `GuardMode` at `packages/capability/src/api.ts:451` and
-`GuardJudgeConfig` at `:414`.
+capability vocabulary declares `GuardMode` at `packages/capability/src/api.ts:489` and
+`GuardJudgeConfig` at `:452`.
 
 ### 2.6 `@clarvis/code` surface
 
@@ -157,8 +157,8 @@ capability vocabulary declares `GuardMode` at `packages/capability/src/api.ts:45
 
 The mode reaches a run through `judgePayloadFor` (`packages/code/src/runtime.tsx`) and
 `toStartParams` (`packages/code/src/adapters/kernel-run-client.ts:129`-`:138`). The command
-`guard.cycle` is registered at `packages/code/src/app/commands.tsx:412`-`:416` and runs
-`cycleGuardMode` (`packages/code/src/views/App.tsx:404`-`:409`).
+`guard.cycle` is registered at `packages/code/src/app/commands.tsx:417`-`:421` and runs
+`cycleGuardMode` (`packages/code/src/views/App.tsx:419`-`:424`).
 
 ---
 
@@ -347,32 +347,32 @@ containment. Production: `packages/code/src/adapters/guard-judge-prompt.ts`
 
 ### 4.1 Where the guard is consulted
 
-`packages/tools/src/core.ts:172`'s `dispatch` runs, in order:
+`packages/tools/src/core.ts:198`'s `dispatch` runs, in order:
 
-1. tool lookup → `not_found` (`packages/tools/src/core.ts:179`-`:182`);
+1. tool lookup → `not_found` (`packages/tools/src/core.ts:205`-`:208`);
 2. `structuredClone` + AJV validation of the arguments → `invalid_input`
-   (`packages/tools/src/core.ts:184`-`:189`);
-3. **`applyGuard(name, filled, config)`** (`packages/tools/src/core.ts:191`-`:192`);
-4. the handler (`packages/tools/src/core.ts:195`).
+   (`packages/tools/src/core.ts:210`-`:215`);
+3. **`applyGuard(name, filled, config)`** (`packages/tools/src/core.ts:217`-`:218`);
+4. the handler (`packages/tools/src/core.ts:221`).
 
 So the guard sees **defaulted, schema-valid arguments**, never the raw ones, and the handler is
 never entered when the gate returns a result.
 
-`applyGuard` itself (`packages/tools/src/core.ts:126`-`:151`):
+`applyGuard` itself (`packages/tools/src/core.ts:152`-`:177`):
 
 | Condition | Result | Line |
 | --- | --- | --- |
-| `config.guard` absent | `null` (proceed) | `:131` |
-| `verdict === "allow"` | `null` | `:135` |
-| `verdict === "deny"` | `ToolError("denied", reason)` | `:137` |
-| `verdict === "ask"`, no `config.elicit` | `ToolError("denied", reason)` | `:138` |
-| `verdict === "ask"`, elicit resolves truthy | `null` | `:146`-`:147` |
-| `verdict === "ask"`, elicit resolves falsy | `ToolError("denied", reason)` | `:147` |
-| guard or elicit **throws** | `errorResult(err)` — fail closed | `:148`-`:150` |
+| `config.guard` absent | `null` (proceed) | `:157` |
+| `verdict === "allow"` | `null` | `:161` |
+| `verdict === "deny"` | `ToolError("denied", reason)` | `:163` |
+| `verdict === "ask"`, no `config.elicit` | `ToolError("denied", reason)` | `:164` |
+| `verdict === "ask"`, elicit resolves truthy | `null` | `:172`-`:173` |
+| `verdict === "ask"`, elicit resolves falsy | `ToolError("denied", reason)` | `:173` |
+| guard or elicit **throws** | `errorResult(err)` — fail closed | `:174`-`:176` |
 
-`reason` defaults to the literal `"blocked by guard"` (`packages/tools/src/core.ts:136`). The `ElicitRequest` handed
+`reason` defaults to the literal `"blocked by guard"` (`packages/tools/src/core.ts:162`). The `ElicitRequest` handed
 on carries `tool`, `args`, `reason`, `ctx.shell` and `escalate` when the decision set it
-(`packages/tools/src/core.ts:139`-`:145`). All of these are pinned in
+(`packages/tools/src/core.ts:165`-`:171`). All of these are pinned in
 `packages/tools/tests/integration/guard-dispatch.test.ts` by the allow, deny, no-elicit, and
 "resolves an ask through the elicit handler" cases.
 
@@ -645,13 +645,13 @@ up, in the loop (§4.8).
 
 ### 4.8 The engine's wiring
 
-`createAgentToolsCapability` (`packages/loop/src/runtime/capabilities/tools.ts:121`):
+`createAgentToolsCapability` (`packages/loop/src/runtime/capabilities/tools.ts:124`):
 
-1. `forRun` returns `null` unless `ctx.env.CLARVIS_AGENT_TOOLS_ENABLED` (`:125`) — no toolset, no
+1. `forRun` returns `null` unless `ctx.env.CLARVIS_AGENT_TOOLS_ENABLED` (`:128`) — no toolset, no
    guard.
-2. `await opts?.resolveGuard?.(ctx)` — **once per run** (`:126`).
+2. `await opts?.resolveGuard?.(ctx)` — **once per run** (`:129`).
 3. `elicitWaitMs = ctx.request.elicit_wait_ms ?? ctx.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS`
-   (`:152`; env default 1,800,000 ms at `packages/capability/src/env.ts:68`).
+   (`:157`; env default 1,800,000 ms at `packages/capability/src/env.ts:68`).
 4. `forAgent` computes the grant ceiling and returns `null` for an agent that cannot even read
    (`:156`-`:157`); otherwise it wraps the elicit with `withGuardElicitWaitBound(…, scope.signal)`
    (`:159`-`:161`) and passes `guard` + `elicit` into `createAgentToolset` (`:169`-`:170`).
@@ -723,9 +723,9 @@ itself because guard mode is resolved from host settings it never sees"
   derived default (`packages/code/src/adapters/guard-mode.ts:44`-`:49`,
   `packages/code/src/adapters/code-config.ts:203`-`:206`). `cycle()` walks `off → on → auto → off`
   (`packages/code/src/adapters/guard-mode.ts:8`, `:51`-`:54`; pinned at `packages/code/tests/unit/guard-mode.test.ts:54`).
-- **`Alt`-cycled** through the `guard.cycle` action (`packages/code/src/app/commands.tsx:412`),
+- **`Alt`-cycled** through the `guard.cycle` action (`packages/code/src/app/commands.tsx:417`),
   which notifies `guard: <mode> (this session)` and warns when `auto` will degrade
-  (`packages/code/src/views/App.tsx:404`-`:409`, `:345`-`:353`).
+  (`packages/code/src/views/App.tsx:419`-`:424`, `:360`-`:368`).
 - **Run Controls** writes the block to `settings.json` and *pre-degrades*: choosing `auto` without a
   usable `default_model` persists `"on"` and says so
   (`packages/code/src/views/config/RunControlsPanel.tsx`, `applyGuard`). Its source column reads
@@ -847,17 +847,17 @@ broken.
     Pinned: `packages/tools/tests/unit/guard-context.test.ts:26`-`:29` and `:48`-`:50`.
 
 16. **The guard runs after argument validation and before the handler.**
-    `packages/tools/src/core.ts:184`-`:192`. Pinned: the handler's side effect is absent in
+    `packages/tools/src/core.ts:210`-`:218`. Pinned: the handler's side effect is absent in
     `packages/tools/tests/integration/guard-dispatch.test.ts`, "denies the call and never runs the
     handler".
 
 17. **An `ask` with no elicit channel is a denial, not an allow.**
-    `packages/tools/src/core.ts:138`. Pinned in
+    `packages/tools/src/core.ts:164`. Pinned in
     `packages/tools/tests/integration/guard-dispatch.test.ts`, "denies an ask when no elicit handler
     is configured".
 
 18. **A throw anywhere in the guard or the elicit fails closed.**
-    `packages/tools/src/core.ts:148`-`:150`. Pinned in
+    `packages/tools/src/core.ts:174`-`:176`. Pinned in
     `packages/tools/tests/integration/guard-dispatch.test.ts`, "fails closed when the guard throws".
 
 19. **The rule cascade's order is fixed: deny list → undecidable → guarded host-command review →
@@ -1023,11 +1023,11 @@ broken.
 48. **The guard elicit is wait-bounded and fails closed on timeout, abort or rejection; `waitMs: 0`
     denies promptly rather than waiting forever, and a late resolution that arrives after the bound
     already denied is swallowed rather than racing or double-firing.**
-    `packages/loop/src/runtime/capabilities/tools.ts:97`-`:110`. Pinned:
+    `packages/loop/src/runtime/capabilities/tools.ts:100`-`:113`. Pinned:
     `packages/loop/tests/unit/guard-elicit-bound.test.ts:15`, `:32`, `:43`, `:66`, `:81`, `:89`.
 
 49. **The run's guard is resolved once and applies to every agent in the run, sub-agents
-    included.** `packages/loop/src/runtime/capabilities/tools.ts:126` (run scope) vs `:155`
+    included.** `packages/loop/src/runtime/capabilities/tools.ts:129` (run scope) vs `:160`
     (per agent). Pinned: `packages/loop/tests/integration/command-guard-wiring.test.ts:211`-`:272`.
 
 50. **A run whose guard parks on a human gets `prompt_cache_ttl: "1h"` unless the caller named a
@@ -1098,11 +1098,11 @@ broken.
 
 | Failure | Handling | Cite |
 | --- | --- | --- |
-| Guard function throws | `applyGuard` catches and returns an error result; the handler never runs | `packages/tools/src/core.ts:148`-`:150` |
-| Elicit throws inside the tools layer | same catch | `packages/tools/src/core.ts:148` |
-| Elicit throws inside the loop wrapper | `mapRejection: () => false` — denies | `packages/loop/src/runtime/capabilities/tools.ts:107` |
-| Elicit exceeds `elicit_wait_ms` | `onTimeout: () => false` — denies | `packages/loop/src/runtime/capabilities/tools.ts:106` |
-| Run cancelled mid-prompt | `onAbort: () => false` at the loop layer; `signal` also passed into the elicitation itself | `packages/loop/src/runtime/capabilities/tools.ts:108`; `packages/kernel/src/guard/guard-elicit.ts:167` |
+| Guard function throws | `applyGuard` catches and returns an error result; the handler never runs | `packages/tools/src/core.ts:174`-`:176` |
+| Elicit throws inside the tools layer | same catch | `packages/tools/src/core.ts:174` |
+| Elicit throws inside the loop wrapper | `mapRejection: () => false` — denies | `packages/loop/src/runtime/capabilities/tools.ts:110` |
+| Elicit exceeds `elicit_wait_ms` | `onTimeout: () => false` — denies | `packages/loop/src/runtime/capabilities/tools.ts:109` |
+| Run cancelled mid-prompt | `onAbort: () => false` at the loop layer; `signal` also passed into the elicitation itself | `packages/loop/src/runtime/capabilities/tools.ts:111`; `packages/kernel/src/guard/guard-elicit.ts:167` |
 | Client declines or cancels the elicitation | `false` (deny) | `packages/kernel/src/guard/guard-elicit.ts:169` |
 | No human channel on an escalated ask | `false` + warn `guard.escalation.no_channel` — the code calls this "the one denial a user can neither see nor answer" | `packages/kernel/src/guard/resolver.ts:198`-`:207` |
 | No judge model / unresolvable provider | judge is not built; run degrades to the human prompt; `warn` ending `"degrading to mode 'on'"` | `packages/kernel/src/guard/judge.ts:160`-`:173` |
@@ -1112,8 +1112,8 @@ broken.
 | Escalated human elicit rejects inside the judge | memo evicted and the rejection rethrown | `packages/kernel/src/guard/judge.ts:232`-`:235` |
 | Analyzer cannot parse the command | `undecidable` → rule 2a/2b (deny with a deny list, human-escalated ask without) | `packages/kernel/src/guard/shell-guard.ts:258`-`:273` |
 | A tool family the context builder does not know | no paths, no shell facts → rule 6 `non_bash` `allow` | `packages/tools/src/guard/context.ts:44`, `packages/kernel/src/guard/shell-guard.ts:297`-`:299` |
-| `CLARVIS_AGENT_TOOLS_ENABLED` unset | no toolset at all, so no guard is even constructed | `packages/loop/src/runtime/capabilities/tools.ts:125` |
-| Host supplies no `resolveGuard` | the run is unguarded — stated as such | `packages/loop/src/runtime/capabilities/tools.ts:76` |
+| `CLARVIS_AGENT_TOOLS_ENABLED` unset | no toolset at all, so no guard is even constructed | `packages/loop/src/runtime/capabilities/tools.ts:128` |
+| Host supplies no `resolveGuard` | the run is unguarded — stated as such | `packages/loop/src/runtime/capabilities/tools.ts:78` |
 | Host supplies no audit logger | `NOOP_LOGGER`; rulings still happen, nothing is recorded | `packages/kernel/src/guard/resolver.ts:227`; test `packages/kernel/tests/unit/guard-audit.test.ts:318`-`:324` |
 | `guard-judge.md` unreadable / blank / >1 MiB | silently treated as absent, next scope wins | `packages/code/src/adapters/guard-judge-prompt.ts:56`, `:64`, `:66` |
 | `auto` chosen in Run Controls without a usable model | persisted as `"on"` with a notification | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`) |
@@ -1121,7 +1121,7 @@ broken.
 An unappealable static `deny` carries the guard's reason. When an `ask` reaches a reviewer but is not
 approved — whether declined, cancelled, timed out or denied by the model — the tool error instead
 prefixes that reason with `"command review did not approve"`, making the attempted review visible
-without claiming why it returned false (`packages/tools/src/core.ts:137`-`:149`). Both reach the
+without claiming why it returned false (`packages/tools/src/core.ts:163`-`:175`). Both reach the
 transcript as the tool call's `error`
 (`packages/loop/tests/integration/command-guard-wiring.test.ts:83`). Note that the guard's reason strings
 are tool results, so they fall under the tools package's "no bypass hints" scan
@@ -1150,7 +1150,7 @@ rules use `answerer: "policy"`; an unavailable review channel uses
 
 | From | To | What forces it |
 | --- | --- | --- |
-| `packages/tools/src/core.ts:133` | `buildGuardContext` | `applyGuard` must build a context before calling the host's guard |
+| `packages/tools/src/core.ts:156-168` | `buildGuardContext` | `applyGuard` must build a context before calling the host's guard |
 | `packages/tools/src/guard/context.ts:2`, `:4` | `analyzeShell`, `currentDialect` | command tools need facts and a dialect |
 | `packages/tools/src/guard/dialects/index.ts:1` | `lib/platform.ts` | dialect selection derives from the same flavor the executor uses |
 | `packages/kernel/src/guard/shell-guard.ts:2`-`:9` | `@clarvis/tools/guard` (`withinWorkspace`, `touchesOutside` + types) | the policy reasons over the analyzer's facts |
@@ -1158,7 +1158,7 @@ rules use `answerer: "policy"`; an unavailable review channel uses
 | `packages/kernel/src/guard/resolver.ts:11` | `@clarvis/loop/host`'s `defaultGuardMode` + `GuardConfig` | the settings shape is the engine's, not the kernel's |
 | `packages/kernel/src/guard/judge.ts:11` | `@clarvis/capability`'s `parseModelRef`, `resolveProvider` | judge model resolution reuses the shared provider registry |
 | `packages/kernel/src/file-kernel.ts:663-667` | `createGuardResolver` | the only production construction site |
-| `packages/loop/src/runtime/capabilities/tools.ts:126` | `opts.resolveGuard` | the engine's single call into host guard policy |
+| `packages/loop/src/runtime/capabilities/tools.ts:127-133` | `opts.resolveGuard` | the engine's single call into host guard policy |
 | `packages/loop/src/runtime/tools/builtin/index.ts:21`-`:29` | `@clarvis/tools/guard` values | re-export barrel under the tools capability subpath |
 | `packages/code/src/onboarding/seed-default-allowlist.ts:1`-`:4` | `@clarvis/kernel/local`'s two default lists | the seed is the analyzer's own list, not a copy |
 | `packages/code/src/adapters/guard-mode.ts:2` | `@clarvis/kernel/policy`'s `defaultGuardMode` | the TUI's seed must agree with the kernel's default |

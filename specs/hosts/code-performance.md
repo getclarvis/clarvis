@@ -103,7 +103,7 @@ or other process trees (`packages/code/README.md:143-158`).
 | one immutable publication tool field           | 64 Ki characters; arguments additionally use a 40 Ki character/value and 512-node projection | `packages/code/src/core/transcript/tool-display.ts` (`TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS`, `projectTranscriptToolDisplay`)                                            |
 | hydrated tool bodies                           |                                                               200 nodes and 64 MiB estimated | `packages/code/src/adapters/store.ts:286-307`, `:596-617`                                                                                                                  |
 | one hydrated tool body                         |                                                                             32 MiB estimated | `packages/code/src/adapters/store.ts:306-307`, `:601-605`                                                                                                                  |
-| visual transcript turns                        |                                                                            20 semantic turns | `packages/code/src/run-host.ts:202-205`, `:973-981`                                                                                                                        |
+| visual transcript turns                        |                                                                            20 semantic turns | `packages/code/src/run-host.ts:212-215`, `:997-1005`                                                                                                                        |
 | session resume chain                           |                                            10,000 messages and 16,000,000 payload characters | `packages/code/src/adapters/session.ts:399-400`, `:510-531`                                                                                                                |
 | complete session documents in the client cache |                                                  8, excluding live write lanes from demotion | `packages/code/src/adapters/session-store.ts:250`, `:326-338`                                                                                                              |
 | provider HTTP response                         |                                                                                       32 MiB | `packages/llm/src/ai-sdk/bounded-fetch.ts:4`, `:64-109`                                                                                                                    |
@@ -226,7 +226,7 @@ cold route and explicit recheck.
 The distributable build enables splitting, keeps OpenTUI package-owned, keeps provider adapters
 behind generated dynamic chunks, and moves development source maps away from runtime JavaScript
 (`packages/code/tooling/artifact/build.ts:20-35`, `:110-135`). These choices reduced the recorded idle Linux
-baseline from roughly 237 MB to 171 MB (`packages/code/README.md:655-663`).
+baseline from roughly 237 MB to 171 MB (`packages/code/README.md:670-678`).
 
 The installed build goes further: `build:install` emits no source maps before the package is linked.
 This keeps offline diagnostic maps in developer/root builds without distributing them through the
@@ -334,7 +334,7 @@ The floating family is larger than the two historically measured entry points:
 | clean-worktree exit prompt            | `App` -> retained `WorktreeExitPrompt` -> `FloatFrame`                      | fixed, small body                                                                                                      | +0.44 MiB PSS/100 in the remount case; no confirmed slope              |
 
 `HintToast` is also conditionally instantiated while any host or transient overlay is open
-(`packages/code/src/views/App.tsx:1284-1286`, `packages/code/src/views/Footer.tsx:34-56`). A full-app
+(`packages/code/src/views/App.tsx:1299-1301`, `packages/code/src/views/Footer.tsx:34-56`). A full-app
 soak must account for it separately from the card under test, even though an empty hint mounts no
 native toast box.
 
@@ -382,7 +382,7 @@ onto these families without measurement:
 - the compact activity drawer mounts a full-bleed scrim and Sidebar, while editor expansion merely
   changes layout properties on the already-mounted input region
   (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`'s drawer `SurfaceBoundary`,
-  `packages/code/src/views/App.tsx:1290-1321`).
+  `packages/code/src/views/App.tsx:1305-1336`).
 - Splash, elicitation, terminal-floor and fatal-boot surfaces are conditional, but they are not
   normal high-frequency modal routes. They still belong in control cases because input churn can
   accidentally remount Splash and make an autocomplete measurement invalid
@@ -437,8 +437,8 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
 
 6. **PERF-6: a persisted non-manager turn releases reconstructible history and can rebuild it
    lazily when provider continuation is unavailable.**
-   Production: `packages/code/src/run-host.ts:678-768`.
-   Test: `packages/code/tests/component/run-host.test.ts:1269-1340`.
+   Production: `packages/code/src/run-host.ts:702-792`.
+   Test: `packages/code/tests/component/run-host.test.ts:1321-1392`.
 
 7. **PERF-7: a manager releases durably reconstructible resident history while idle, then rebuilds
    and sends the complete chain rather than using `continue_from`.**
@@ -654,7 +654,7 @@ tree.
   `packages/code/src/app/commands.tsx`, `inspectReadiness`).
 - **`code` -> transcript/session persistence:** visual windows can release presentation data, but a
   future full request may require persisted traces to reconstruct semantic history
-  (`packages/code/src/run-host.ts:681-699`, `packages/code/src/adapters/session.ts:462-509`).
+  (`packages/code/src/run-host.ts:705-723`, `packages/code/src/adapters/session.ts:462-509`).
 - **`code` -> `llm`/`mcp-client`:** response ceilings bound individual inputs to the transcript but
   are not charged against the same resident budget
   (`packages/llm/src/ai-sdk/bounded-fetch.ts:64-109`,

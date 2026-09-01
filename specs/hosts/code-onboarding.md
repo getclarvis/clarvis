@@ -817,7 +817,7 @@ recovery screen with no further keypress — pinned by
   `commands.tsx` (§2.11, §4.11), while their key-binding *machinery* (`LevelSpec`, `bindLevelKeys`,
   `ViewFrame`) belongs to `code-keyboard-and-navigation`.
 - `packages/code/src/app/commands.tsx`'s `/debug` slash command (`applyDebugCommand`,
-  `packages/code/src/app/commands.tsx:312-345` — doc comment `:310-320`, body `:321-343`) is the sole caller of
+  `packages/code/src/app/commands.tsx:317-350` — doc comment `:315-325`, body `:326-348`) is the sole caller of
   `DebugSessionController.open`/`close`/`status`. Its final branch (`:341-342`) is the "kernel records
   need a relaunch with --debug" notice, fired whenever `open()` did not report a retune.
 

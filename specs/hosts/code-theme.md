@@ -644,7 +644,7 @@ its transitions are defined in `adapters/memory-pressure.ts`, outside this docum
 - `views/tools/registry.tsx` imports `diffColorProps`, `filetypeFor`, `syntaxStyle` from
   `theme/syntax.ts` (`packages/code/src/views/tools/registry.tsx:5`, delegated to [hosts/code-transcript.md](code-transcript.md)).
 - `views/App.tsx` imports `bindSyntaxStyleRenderer` and mounts `MemoryPressureBanner`
-  (`packages/code/src/views/App.tsx:77,84,202,1228`; delegated to [hosts/code-bootstrap.md](code-bootstrap.md)).
+  (`packages/code/src/views/App.tsx:77,84,202,1243`; delegated to [hosts/code-bootstrap.md](code-bootstrap.md)).
 - `src/runtime.tsx` calls `createTheme`, reads/writes `tokens.bg`, and drives `applyAsciiMode` from the
   combined CLI-flag/persisted-setting value (`packages/code/src/runtime.tsx`,
   `createWorkspaceAdapters`; delegated to

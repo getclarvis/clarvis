@@ -165,7 +165,7 @@ clamped to `MAX_LIMIT = 100`, and `retryJob(runId)`
 (`packages/kernel/src/memory/memory-service.ts:107,132,151,15`). The wire `MemoryJob` drops the
 snapshot deliberately (`packages/kernel/src/memory/memory-service.ts:23-37`). Transport methods:
 `memory.jobs`, `memory.retryJob`, and health at
-`packages/kernel/src/transport/operations.ts:396,409,412`.
+`packages/kernel/src/transport/operations.ts:406,419,422`.
 
 ---
 
@@ -1129,7 +1129,7 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 | `@clarvis/kernel` (`kernel.ts`) | registers `memoryFactory.stop()` on the kernel lifecycle | `packages/kernel/src/kernel.ts:280` |
 | `@clarvis/kernel` (`memory-service`) | exposes `health`/`jobs`/`retryJob` over the protocol | `packages/kernel/src/memory/memory-service.ts:107,132,151` |
 | `@clarvis/kernel` (`managed-run`, `run-service`, `workflows-service`) | uses `ingestPendingAfter` / `DEFAULT_INGEST_CLOSE_GRACE_MS` to decide whether a run's stream may close | `packages/kernel/src/runs/managed-run.ts:207`, `packages/kernel/src/runs/run-service.ts:96`, `packages/kernel/src/workflows/workflows-service.ts:155` |
-| `@clarvis/code` | reads `memory_ingest` phases through the kernel's policy export | `packages/kernel/src/policy.ts:11`, consumed at `packages/code/src/run-host.ts:10`, `:397` |
+| `@clarvis/code` | reads `memory_ingest` phases through the kernel's policy export | `packages/kernel/src/policy.ts:11`, consumed at `packages/code/src/run-host.ts:10`, `:410` |
 | memory's own run capability | calls `enqueueFinishedRun`, `factory.subscribeToRun`, `factory.poke` in `onRunEnd` | `packages/memory/src/capability.ts:330-350` (`onRunEnd`) |
 
 ### 7.3 What the host, not this package, must compose

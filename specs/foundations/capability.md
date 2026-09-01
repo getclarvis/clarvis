@@ -9,7 +9,7 @@
 (`packages/capability/package.json:50-52`), and no internal ones. It holds two things that the rest
 of the monorepo is written against.
 
-The first is the **capability contract**: a three-level lifecycle
+The first is the **capability contract**: a four-level lifecycle
 (`Capability` -> `RunCapability` -> `AgentCapability` -> `AgentLoopContribution`,
 `packages/capability/src/contract.ts:6-11`) plus the machinery that folds a list of such
 contributions into the single tool/handler/gate bundle a loop consumes
@@ -222,103 +222,106 @@ every effective agent for that run; it does not mutate an authored profile or al
 identity. `McpOAuthConfig` supports a pre-registered client id, configured callback URL or port, and
 an HTTPS client-metadata URL for CIMD.
 `ProviderKind`
-(`:169-170`) is `openai-compatible | openai | anthropic |
+(`:185-186`) is `openai-compatible | openai | anthropic |
 google | openai-codex | xai-grok`; the final two select renewable subscription billing boundaries
 over the native OpenAI Responses adapter. `PromptCacheMode`
-(`:187`) is `explicit | implicit | off`; its doc-comment states absence is deliberately not `off` — "it
-means nobody has decided," and a host with a pricing catalog is expected to resolve it (`:148-162`).
-`ModelConfig` (`packages/capability/src/api.ts:176-184`) carries `context_window_tokens`,
+(`:225`) is `explicit | implicit | off`; its doc-comment states absence is deliberately not `off` — "it
+means nobody has decided," and a host with a pricing catalog is expected to resolve it (`:160-174`).
+`ModelConfig` (`packages/capability/src/api.ts:214-222`) carries `context_window_tokens`,
 `max_output_tokens`, `capabilities`, provider-published `reasoning_efforts`, `prompt_cache`, and
-per-model `headers`/`body` overrides; `ProviderConfig` (`:202-210`) carries the
+per-model `headers`/`body` overrides; `ProviderConfig` (`:240-248`) carries the
 provider-wide `kind`/`base_url`/`api_key_env`/`headers`/`body`/`models`, with the doc-comment
 restricting `body` from carrying a key that is the cached prefix (`messages`, `tools`) or that
-contradicts the resolved call (`model`, `stream`, `tool_choice`, `stream_options`) (`:183-198`). The
+contradicts the resolved call (`model`, `stream`, `tool_choice`, `stream_options`) (`:221-236`). The
 four-row `promptCache` resolution table (which value maps to which behavior on `anthropic` versus
 `openai-compatible`) lives on `ResolvedProviderConfig` in `llm-port.ts`, not here — see §3.7.
 
-**Budget and grants.** `BudgetMode` (`:210`) is `stop | escalate`; `BudgetConfig` (`:219-224`) is
+**Budget and grants.** `BudgetMode` (`:248`) is `stop | escalate`; `BudgetConfig` (`:257-262`) is
 `on_exceed` plus optional `total_token_limit`/`timeout_ms`/`max_escalations`. `BuiltinGrant`
-(`:227`) is the engine's own four grants (`ask_user`, `read_workspace`, `edit_workspace`,
-`run_commands`); `Grant` (`:235`) opens it the same way `ErrorCode` opens, because its doc-comment
+(`:265`) is the engine's own four grants (`ask_user`, `read_workspace`, `edit_workspace`,
+`run_commands`); `Grant` (`:273`) opens it the same way `ErrorCode` opens, because its doc-comment
 states "external capability grant names are registered before request validation rather than added to
-this union" (`:232-233`). `ReasoningSummary`
-(`:238`) and `ReasoningEffort` (`:241`) are the two reasoning-tuning enums.
+this union" (`:270-271`). `ReasoningSummary`
+(`:276`) and `ReasoningEffort` (`:279`) are the two reasoning-tuning enums.
 
-**Per-agent overrides and `AgentProfile`.** `CompactionConfigInput` (`:255-263`), `RetryConfigInput`
-(`:270-273`) and `OrchestrationConfigInput` (`:286-288`; its doc-comment at `:278-280` calls
+**Per-agent overrides and `AgentProfile`.** `CompactionConfigInput` (`:293-301`), `RetryConfigInput`
+(`:308-311`) and `OrchestrationConfigInput` (`:324-326`; its doc-comment at `:316-318` calls
 `force_tool_on_nudge` "a property of the agent's own loop, applied by the loop rather than by
 whichever capability raised the nudge") are the
-three per-agent override blocks. `AgentProfile` (`:301-318`) is the full agent definition: `name`,
+three per-agent override blocks. `AgentProfile` (`:339-356`) is the full agent definition: `name`,
 `description?`, `model`, `base_prompt?`, `tools`, `grants?`, `can_spawn?`/`default_spawn?` (delegation),
 `iteration_limit?`/`stagnation_threshold?`/`call_timeout_ms?`, and the three override blocks above.
 
-**`RunRequest` (`:400-444`).** The complete input to one loop run:
+**`RunRequest` (`:438-482`).** The complete input to one loop run:
 
 | Field | Type | Note |
 |---|---|---|
 | `execution_id?` | `string` | a clash raises `execution_id_conflict` |
 | `continue_from?` | `string` | resumes a prior run's persisted trace |
 | `prompt_cache_key?` | `string` | defaults to the execution id |
-| `prompt_cache_ttl?` | `PromptCacheTtl` (`:347`, `5m \| 1h`) | Anthropic-only; see below |
+| `prompt_cache_ttl?` | `PromptCacheTtl` (`:385`, `5m \| 1h`) | Anthropic-only; see below |
 | `messages` | `Message[]` | seed conversation |
 | `servers` | `McpServerConfig[]` | — |
 | `profiles` | `AgentProfile[]` | — |
 | `entry` | `string` | profile to start from |
-| `vision_model?` | `string` | a model reference, not a profile — reads the turn's images in a single-completion, no-tools, no-workspace, no-agent-identity pass, when the entry agent's own model cannot see them (`:358-365`) |
+| `vision_model?` | `string` | a model reference, not a profile — reads the turn's images in a single-completion, no-tools, no-workspace, no-agent-identity pass, when the entry agent's own model cannot see them (`:396-403`) |
 | `budget` | `BudgetConfig` | — |
 | `providers` | `ProviderConfig[]` | — |
 | `output_schema?` | `unknown` | constrains the agent's result |
 | `elicit_wait_ms?` | `number` | bounds user elicitation |
-| `guard_escalation?` | `boolean` | whether a hard convergence-guard trip asks the user; off by default, deliberately not inferred from elicit-channel presence — a headless caller's auto-declining channel would otherwise add a prompt round-trip to every trip with no change in outcome (`:371-379`) |
-| `agents?` | `AgentsParam` (`:395-407`) | see below |
-| `guard_mode?` | `GuardMode` (`:410`, `off \| on \| auto`) | — |
-| `guard_judge?` | `GuardJudgeConfig` (`:414-419`) | judge `prompt`, optional `model`/`on_unsure`/`timeout_ms` |
-| `hook_user_prompt_expansion?` | `{ command_name: string }` | host-derived context for the one user-invoked skill expansion that seeded the run; ordinary prompts and model-initiated skill loads omit it (`:435-443`) |
+| `guard_escalation?` | `boolean` | whether a hard convergence-guard trip asks the user; off by default, deliberately not inferred from elicit-channel presence — a headless caller's auto-declining channel would otherwise add a prompt round-trip to every trip with no change in outcome (`:409-417`) |
+| `agents?` | `AgentsParam` (`:433-445`) | see below |
+| `guard_mode?` | `GuardMode` (`:448`, `off \| on \| auto`) | — |
+| `guard_judge?` | `GuardJudgeConfig` (`:452-457`) | judge `prompt`, optional `model`/`on_unsure`/`timeout_ms` |
+| `hook_user_prompt_expansion?` | `{ command_name: string }` | host-derived context for the one user-invoked skill expansion that seeded the run; ordinary prompts and model-initiated skill loads omit it (`:473-481`) |
 
 `PromptCacheTtl`'s doc-comment states Anthropic bills a `5m` write at 1.25x base input and a `1h` write
-at 2x, a read at 0.1x either way (`:342-345`). A capability shipped in its own package takes its
+at 2x, a read at 0.1x either way (`:380-383`). A capability shipped in its own package takes its
 per-run param through a registered `CapabilitySettingsSpec` instead — which is why `memory` and `plans`
-are not fields here (`:333-337`).
+are not fields here (`:371-375`).
 
-`AgentsParam` (`:395-407`) is ten ceilings the doc-comment describes as bounding what the supervising
+`AgentsParam` (`:433-445`) is ten ceilings the doc-comment describes as bounding what the supervising
 *parent* pays for — memory, context, or liveness — with no on/off field, because whether the surface
 exists follows from whether the run's entry agent can spawn at all: `buffer_lines`, `buffer_bytes`,
 `max_total_buffer_bytes`, `poll_max_bytes`, `await_timeout_ms`, `max_live_children`,
 `max_retained_children`, `max_notices_per_iteration`, `max_consecutive_failed_children`,
 `finish_nudges`. Why exactly these ten, and no others, is not stated anywhere in the file.
 
-`BudgetConfig` (`:219-224`) models only `stop`/`escalate` outcomes for an exceeded budget; no reason for
+`BudgetConfig` (`:257-262`) models only `stop`/`escalate` outcomes for an exceeded budget; no reason for
 that closed pair over a richer policy is stated in the source.
 
-**`HandlerResult` and the hook vocabulary.** `HandlerResult` (`:495-500`) is `text`, `progress`
-(feeds stagnation detection), optional `taskId`, optional `images`. `HookVerdict` (`:540`) is
+**`HandlerResult` and the hook vocabulary.** `HandlerResult` (`:540-545`) is `text`, `progress`
+(feeds stagnation detection), optional `taskId`, optional `images`. `HookVerdict` (`:585`) is
 `pass | deny(message) | advise(message) | rewrite(arguments, message?)`; the doc-comment states
 `rewrite` is meaningful only for `beforeToolUse` and is safe because a rewrite happens *upstream* of
 both the tool's own schema validation and the command guard, and that the replacement is total, never a
-merge (`:517-539`). `LifecycleHook` (`:680-703`) bundles four gates returning a `HookVerdict`
-(`beforeToolUse`, `afterToolUse`, `preFinalize`, `preDelegateTask`) and seven `void`-returning observers
-(`onRunStart`, `onRunEnd`, `onSubagentComplete`, `onPreCompact`, `onModelCallError`,
-`onBudgetExhausted`, `onUserSteer`); all eleven are optional. Their contexts:
+merge (`:562-585`). `LifecycleHook` (`:742-767`) bundles four verdict-returning gates
+(`beforeToolUse`, `afterToolUse`, `preFinalize`, `preDelegateTask`), eight `void` observers
+(`onRunStart`, `onRunEnd`, `onSubagentStart`, `onSubagentComplete`, `onPostCompact`,
+`onModelCallError`, `onBudgetExhausted`, `onUserSteer`), and the contribution-returning
+`onPreCompact`; all thirteen are optional. Their contexts:
 
 | Context | Fields | Cite |
 |---|---|---|
-| `BeforeToolUseContext` | wire `tool`, optional stable `toolFullName`, `arguments` | `:543-549` |
-| `AfterToolUseContext` | wire `tool`, optional stable `toolFullName`, `arguments`, read-only `result: HandlerResult` | `:552-559` |
-| `PreFinalizeContext` | `agent`, `subagentInstanceId?`, `mode: "text" \| "submit"`, `text?`, `value?` | `:570-578` |
-| `PreDelegateTaskContext` | `title`, `task`, `profile`, `taskId?` | `:581-586` |
-| `RunStartContext` | `mode`, `entry`, `leadModel?`, `subagentModel?` | `:589-594` |
-| `RunEndContext` | `status`, `errorCode?`, `iterationsUsed`, `elapsedMs` | `:597-602` |
-| `SubagentCompleteContext` | `subagentInstanceId`, `status`, `result` | `:605-609` |
-| `PreCompactContext` | `agent`, `subagentInstanceId?`, `estimatedTokens` | `:612-616` |
-| `ModelCallErrorContext` | `agent`, `subagentInstanceId?`, `iteration`, `model`, `message` | `:648-654` |
-| `BudgetExhaustedContext` | `agent`, `reason: "exhausted" \| "declined"`, `tokensUsed`, `iterationsUsed` | `:657-662` |
-| `UserSteerContext` | `agent`, `subagentInstanceId?`, `iteration`, `message`, `id?` | `:665-671` |
+| `BeforeToolUseContext` | wire `tool`, optional stable `toolFullName`, `arguments` | `:587-594` |
+| `AfterToolUseContext` | wire `tool`, optional stable `toolFullName`, `arguments`, read-only `result: HandlerResult` | `:596-604` |
+| `PreFinalizeContext` | `agent`, `subagentInstanceId?`, `mode: "text" \| "submit"`, `text?`, `value?` | `:606-623` |
+| `PreDelegateTaskContext` | `title`, `task`, `profile`, `taskId?` | `:625-631` |
+| `RunStartContext` | `mode`, `entry`, `leadModel?`, `subagentModel?` | `:633-639` |
+| `RunEndContext` | `status`, `errorCode?`, `iterationsUsed`, `elapsedMs` | `:641-647` |
+| `SubagentStartContext` | `subagentInstanceId`, `profile`, `model`, `task` | `:656-662` |
+| `SubagentCompleteContext` | `subagentInstanceId`, `status`, `result` | `:649-654` |
+| `PreCompactContext` | `agent`, `subagentInstanceId?`, `estimatedTokens` | `:664-669` |
+| `PostCompactContext` | `agent`, `subagentInstanceId?`, `operation`, `freedChars?`, `keptChars?` | `:671-678` |
+| `ModelCallErrorContext` | `agent`, `subagentInstanceId?`, `iteration`, `model`, `message` | `:709-716` |
+| `BudgetExhaustedContext` | `agent`, `reason: "exhausted" \| "declined"`, `tokensUsed`, `iterationsUsed` | `:718-724` |
+| `UserSteerContext` | `agent`, `subagentInstanceId?`, `iteration`, `message`, `id?` | `:726-733` |
 
-`onPreCompact` may additionally return `CompactionContribution[]` (`:633-645`): a `source` (attribution
+`onPreCompact` may return `CompactionContribution[]` (`:695-707`, method at `:753-763`): a `source` (attribution
 only, never shown to the summarizer — "workspace hooks all report `hook`") plus the request `text`,
 *added* to the profile's own compaction prompt, never able to replace it because the type carries no
-field through which "instead of" could be expressed (`:618-632`). A throw from `onPreCompact` is
-swallowed by the caller, since compaction fires because the context is already over budget (`:689-699`).
+field through which "instead of" could be expressed (`:680-707`). A throw from `onPreCompact` is
+swallowed by the caller, since compaction fires because the context is already over budget (`:753-761`).
 
 ### 2.8 The loop-time build context (`loop-contract.ts`)
 
@@ -366,13 +369,13 @@ budget — or `{kind:"terminal", result: AgentResult}`. `FinalizeGate` (`:125-12
 plus an optional `fastAcceptOk()` that reports (without running `check`) whether the gate would
 trivially pass, letting the loop skip the sweep.
 
-`OrchestrationHooks` (`:144-150`) is `beforeIteration?`, `afterDispatch?`, `contributesProgress?`,
+`OrchestrationHooks` (`:146-152`) is `beforeIteration?`, `afterDispatch?`, `contributesProgress?`,
 `onFinalizeAccepted?`, `onTeardown?` — the five hooks §4.1's `foldHooks` fans out. The doc-comment
 states `onTeardown` may return a promise the loop awaits, and that it must stay bounded: a capability
 holding work that outlives a dispatch (a background child) has to be able to wind it down while the
 run's trace, MCP pool and usage accounting are all still open, so a fire-and-forget teardown would drop
 that child's token usage on the floor — "everything after the loop resolves is waiting on it"
-(`:136-143`).
+(`:139-144`).
 
 ## 3. Data and formats
 
@@ -424,7 +427,7 @@ The model-facing return strings are fixed:
 ### 3.3 Capability state on a run record
 
 `RunContinuation.capability_state` is `Record<string, unknown>` keyed by capability name, and its
-values are opaque to the engine (`packages/capability/src/run.ts:400-413`). It is read back into
+values are opaque to the engine (`packages/capability/src/run.ts:402-415`). It is read back into
 `RunCapabilityContext.priorState`, where a capability reads only its own slot and the value is
 exactly what its own `finalizeRun` returned (`packages/capability/src/contract.ts:98-106`). `finalizeRun` returns the value
 to file under the capability's name in `ExecutionRecord.capability_state`, or `undefined` to write
@@ -642,15 +645,16 @@ echoed at `packages/capability/src/execution-status.ts:11-13`, §3.4). `WireRunR
 that `resolveConfig` fixed at `Number.POSITIVE_INFINITY` for every run, which is why `run_started`'s
 finite-only emission of it never fired. The run's real iteration cap is `entryMax`, resolved from the
 agent profile. `MutableUsage` (`:312-315`) is a running tally: `iterations` + a `TokenCounts`
-accumulator. `MCPStatus` (`:314`) is `connected | lost | unavailable`. `ToolResult` (`:323-334`) is
+accumulator. `MCPStatus` (`:318`) is `connected | lost | unavailable`. `ToolResult` (`:327-337`) is
 `ok` + `data?` on success, or `error` (`code`, `message`, optional `kind`/`outcome: "unknown"` — the
 doc-comment states a sent request whose effect cannot be proved must never be retried automatically) on
-failure. `MCPConnection` (`:344-352`) is one live server connection: `name`, `transport`, `status`,
-`callTool`/`listResources?`/`readResource?`/`close`. `NamespacedTool` (`:361-369`) is one MCP tool under
+failure. `MCPConnection` (`:348-357`) is one live server connection: `name`, `transport`, `status`,
+bounded initialize `instructions?`, `callTool`/`listResources?`/`readResource?`/`close`.
+`NamespacedTool` (`:367-375`) is one MCP tool under
 a collision-free wire name: `fullName`, `wireName`, `mcpName`, `toolName`, optional `description`,
 `inputSchema`, `kind`.
 
-`ContextSnapshotEntry` (`:378-394`) is one entry in a persisted context snapshot used to continue a run:
+`ContextSnapshotEntry` (`:380-396`) is one entry in a persisted context snapshot used to continue a run:
 `message: LiveMessage`, `evictable`, `summary`, `canonical` (booleans marking what compaction may drop,
 what is a compaction-produced summary, and what is always retained), optional `task_id` (associates the
 entry with a plan task), `note_kind?` (a replaceable-note identity — without it a continued run restores
@@ -765,8 +769,8 @@ The module docstring states the resolution discipline: a consumer reads at `atta
 run's capability order would silently decide which features could see each other, and the failure
 would be a missing tool rather than an error (`packages/capability/src/services.ts:11-16`). The engine's own sequencing is
 consistent with that: `AGENT_REGISTRY_PORT` is provided before any `forRun`
-(`packages/loop/src/runtime/orchestrator.ts:214-215`) while `TOOL_EFFECT_PORT` is provided *after*
-every `forRun` has resolved (`packages/loop/src/runtime/orchestrator.ts:339`), so a capability that
+(`packages/loop/src/runtime/orchestrator.ts:219-220`) while `TOOL_EFFECT_PORT` is provided *after*
+every `forRun` has resolved (`packages/loop/src/runtime/orchestrator.ts:344`), so a capability that
 read the effect port in `forRun` would find nothing.
 
 `createCapabilityRequestView(request)` returns `{ request, requestParam }` where `requestParam(key)`
@@ -1105,8 +1109,8 @@ object with an undefined key. Production: `packages/capability/src/agent-result.
 **INV-C45.** A capability's `seedMarker` and `reservedWireNames` are collected from every
 **registered** capability, active or not — the engine reads them off `allCapabilities` before the
 activation filter. Production (declaration): `packages/capability/src/contract.ts:139-154`. Production (engine):
-`packages/loop/src/runtime/orchestrator.ts:191` and `:336-338` both read `allCapabilities`, while
-`runCapabilities` is the post-`forRun` filtered list at `:235`. Unpinned in this package; the
+`packages/loop/src/runtime/orchestrator.ts:196` and `:341-343` both read `allCapabilities`, while
+`runCapabilities` is the post-`forRun` filtered list at `:240`. Unpinned in this package; the
 engine-side test is delegated to [loop-capability-composition](../engine/capability-composition.md).
 
 **INV-C46.** A reserved wire name that a capability did not also classify in `toolEffects` resolves to
@@ -1150,8 +1154,8 @@ own per-provider-kind handling of each of the four values is delegated to [llm-p
 model-facing wire name, while `toolFullName` is the optional stable dotted identity supplied by the
 claiming `ToolHandler.canonicalName`. When present, the same full identity reaches both the before- and
 after-tool hook contexts for that dispatch. Production (contract):
-`packages/capability/src/loop-contract.ts:94-104` and `packages/capability/src/api.ts:542-559`.
-Production (engine): `packages/loop/src/runtime/loop/loop.ts:471-485`, `:526-594`. Test:
+`packages/capability/src/loop-contract.ts:94-104` and `packages/capability/src/api.ts:580-597`.
+Production (engine): `packages/loop/src/runtime/loop/loop.ts:494-508`, `:549-617`. Test:
 `packages/loop/tests/unit/tool-hooks.test.ts:171-214`.
 
 ## 6. Failure modes and degradation
@@ -1171,8 +1175,8 @@ Production (engine): `packages/loop/src/runtime/loop/loop.ts:471-485`, `:526-594
 | Tool arguments could not be decoded | `{ ok: false }` with a bounded preview and reason; the caller is expected to refuse the call and say why | `packages/capability/src/tool-arguments.ts:66`, `:70`, `:72`; message at `:87-101` |
 | `LLMToolCall.malformedArguments` present | Documented signal that `arguments` is a `{}` **substitute** and the dispatcher must refuse the call | `packages/capability/src/llm-port.ts:19-30` |
 | `LLMToolCall.rewrittenFrom` present | Documented signal that `arguments` is not what the model sent (a `beforeToolUse` rewrite) | `packages/capability/src/llm-port.ts:31-42` |
-| `Capability.forRun` exceeds its budget | The contract states the capability is **skipped for this run** under `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS`; long work must observe `ctx.signal` because a timeout stops waiting but cannot stop arbitrary host code | `packages/capability/src/contract.ts:186-191`; env key defined `packages/capability/src/env.ts:153` (default 5000 ms, max 60000); engine handling `packages/loop/src/runtime/orchestrator.ts:233`, `:248-270` |
-| `RunCapability.seedBlock` throws | Documented to **fail the run**; a timeout omits the block instead | `packages/capability/src/contract.ts:233-238`; engine timeout branch `packages/loop/src/runtime/orchestrator.ts:311-327` |
+| `Capability.forRun` exceeds its budget | The contract states the capability is **skipped for this run** under `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS`; long work must observe `ctx.signal` because a timeout stops waiting but cannot stop arbitrary host code | `packages/capability/src/contract.ts:186-191`; env key defined `packages/capability/src/env.ts:153` (default 5000 ms, max 60000); engine handling `packages/loop/src/runtime/orchestrator.ts:238`, `:253-275` |
+| `RunCapability.seedBlock` throws | Documented to **fail the run**; a timeout omits the block instead | `packages/capability/src/contract.ts:233-238`; engine timeout branch `packages/loop/src/runtime/orchestrator.ts:316-332` |
 | `RunCapability.finalizeRun` throws or times out | The slot is omitted; the run is unaffected. Bounded by `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | `packages/capability/src/contract.ts:277-282`; env key `packages/capability/src/env.ts:165` (default 2000 ms); engine `packages/loop/src/runtime/execute-run.ts:204-238` |
 | `RunCapability.onRunEnd` rejects or times out | Logged; the run is unaffected. Must not await long work | `packages/capability/src/contract.ts:255-263` |
 | A capability event listener throws | Swallowed by the engine, per the contract | `packages/capability/src/contract.ts:56`, `:94` |
@@ -1208,7 +1212,7 @@ Verified samples of the forcing edge:
 
 | Consumer | Edge | Cite |
 |---|---|---|
-| `@clarvis/loop` | value import of `createCapabilityRequestView` / `createCapabilityServices` | `packages/loop/src/runtime/orchestrator.ts:45` |
+| `@clarvis/loop` | value import of `createCapabilityRequestView` / `createCapabilityServices` | `packages/loop/src/runtime/orchestrator.ts:46-47` |
 | `@clarvis/loop` | value import of `composeCapabilityRegistry` / `createCapabilityRequestView` | `packages/loop/src/runtime/execute-run.ts:38` |
 | `@clarvis/loop` | reads `Capability.reservedWireNames` and `.toolEffects` off the registered list | `packages/loop/src/runtime/capability-tool-metadata.ts:26-32` |
 | `@clarvis/loop` | sorts by `RunCapability.order`, defaulting `0` | `packages/loop/src/runtime/capability-order.ts:15` |
@@ -1274,7 +1278,7 @@ widening of the contract, preferring a port over exposing an engine type
   `dedupeKey` (`packages/capability/tests/unit/tasks.test.ts:47`, `:101`) or inside the `operation` string
   (`packages/capability/tests/unit/tasks.test.ts:60`, `:81`).
 - **`ports.ts` re-export surface vs. `index.ts`.** `trace.ts` does `export * from "./trace-kinds.ts"`
-  (`packages/capability/src/trace.ts:9`) while `index.ts` enumerates its type exports explicitly (`packages/capability/src/index.ts:311-364`), so at
+  (`packages/capability/src/trace.ts:9`) while `index.ts` enumerates its type exports explicitly (`packages/capability/src/index.ts:315-368`), so at
   least one type (`VisionAnalysisDetail`, declared at `packages/capability/src/trace-kinds.ts:277`
   and named nowhere in `index.ts`) is reachable through `./trace` but not through `.`. Whether that asymmetry is deliberate is not
   recorded in either file.

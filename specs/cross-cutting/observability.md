@@ -87,7 +87,7 @@ this document can source more directly.
 | `createRateLimiter` | fn | `packages/capability/src/log.ts:284-298` | admits one occurrence of a key per `windowMs` (default 60,000 ms), `maxKeys` defaults to `DEFAULT_MAX_KEYS` |
 
 Every one of the above that its module exports is re-exported through `@clarvis/capability`'s root
-`index.ts` (`packages/capability/src/index.ts:101-117`). The three exceptions are module-private and
+`index.ts` (`packages/capability/src/index.ts:102-118`). The three exceptions are module-private and
 appear in the table only because the exported functions' defaults and eviction behaviour are theirs:
 `evictOldest`, `DEFAULT_MAX_KEYS` and `DEFAULT_RATE_LIMIT_MS` carry no `export` keyword
 (`packages/capability/src/log.ts:229-231`, `:272`).
@@ -609,7 +609,7 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
 - **`@clarvis/tools`, `@clarvis/skills` (and, outside this document's direct scope,
   `@clarvis/paths` and `@clarvis/hooks`) each declare their own minimal structural logger port**
   (`ToolsLogger`, `SkillDiagnostics.logger`, `PathsLogger`, and `HookLogger` at
-  `packages/hooks/src/types.ts:166`) rather than depending on
+  `packages/hooks/src/types.ts:176`) rather than depending on
   `@clarvis/capability`. `packages/tools/src/lib/log.ts:16-20` states the reason directly: "this
   package's only internal dependency is `@clarvis/paths`, and it stays that way. The capability port
   satisfies this shape, so a host passes its own logger straight in." This is a *type-only* coupling:

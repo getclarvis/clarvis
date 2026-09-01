@@ -490,7 +490,7 @@ to clear input or navigate one level, including rapid consecutive presses.
 current registered single-stroke `run.cancel` binding, so rebinding transfers repeat protection and
 physical Ctrl+C no longer receives special treatment. Repeat ownership is pinned at
 `packages/code/tests/integration/interaction.test.ts`; rapid Escape navigation is
-pinned at `packages/code/tests/integration/app-shell-render.test.tsx:605-628`.
+pinned at `packages/code/tests/integration/app-shell-render.test.tsx:627-650`.
 
 ### 4.4 `registerLevel` — a level's key layer (nav/scroll, verbs, guards, escape)
 
@@ -900,9 +900,9 @@ no-op; it never calls run cancellation or quit. Conversely, global `run.cancel` 
 cancels an active run and otherwise enters the quit gate without clearing the draft, and remains
 active while overlays and elicitation modals are open.
 Production: `packages/code/src/keys/interaction.ts:484-516`; the complete draft predicate and
-clear effect are wired at `packages/code/src/views/App.tsx:373-390`.
+clear effect are wired at `packages/code/src/views/App.tsx:388-405`.
 Tests: `packages/code/tests/integration/interaction.test.ts:325-477,726-743`; full-shell paths are
-pinned at `packages/code/tests/integration/app-shell-render.test.tsx:1028-1093,1123-1175,1586-1596`.
+pinned at `packages/code/tests/integration/app-shell-render.test.tsx:1050-1115,1145-1197,1608-1618`.
 
 **INV-D13.** `Ctrl+S` is the portable binding for the internal `safety.picker` action, `Alt+S` is its
 enhanced-path accelerator, and both are inactive while another overlay is open. A direct iTerm

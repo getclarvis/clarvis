@@ -113,7 +113,7 @@ function byEvent(hooks: readonly HookConfig[]): Map<HookEvent, HookConfig[]> {
  * the grouped map rather than the event list. Two engine behaviours read the
  * mere presence of a method: `buildPreFinalizeGate`'s `fastAcceptOk` and the
  * fast-accept-submit path, both of which would be switched off for the whole run
- * by an object that carried all eleven keys.
+ * by an object that carried all thirteen keys.
  *
  * No method ever throws - the runner turns every failure into a value - so the
  * engine's blanket fail-closed treatment of a *thrown* host hook is unreachable

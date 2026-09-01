@@ -13,7 +13,7 @@
 An image can enter a Clarvis model context two ways: a user attaches or `@mentions` one in `code`'s
 composer, or an agent calls `read_image` on a workspace or admitted run-scratch file. Composer images
 become engine `ImagePart`s in a `user` message; `read_image` instead produces `ToolResultImage`s on
-the tool-result message (`packages/loop/src/runtime/tools/builtin/toolset.ts:140-153`). Either route
+the tool-result message (`packages/loop/src/runtime/tools/builtin/toolset.ts:144-157`). Either route
 requires a model that can see, but the automatic prepass concerns only composer images on a blind
 entry model — the run's `entry` profile may declare no `vision` capability
 (`packages/loop/src/runtime/entry-seed.ts:135`).
@@ -22,7 +22,7 @@ entry model — the run's `entry` profile may declare no `vision` capability
 also configured a separate model that *can* read images. It is a single, tool-less, agent-less
 completion, spliced into the entry agent's context as a `[image analysis]` message
 (`packages/loop/src/runtime/vision-prepass.ts:100,195-205`), run once per turn before the entry agent's
-own loop starts (`packages/loop/src/runtime/orchestrator.ts:629-638`). Its stated reason for being a
+own loop starts (`packages/loop/src/runtime/orchestrator.ts:644-653`). Its stated reason for being a
 call rather than a sub-agent: "Reading an image needs no tool surface, no spawn identity and no
 iteration budget; running a nested agent to get one put an unaddressable child on the core run path and
 charged an entire agent loop for a description." (`packages/loop/src/runtime/vision-prepass.ts:75-78`).
@@ -89,8 +89,8 @@ family, capability gating).
 
 | Key | Location | Notes |
 | --- | --- | --- |
-| `default_vision_model` (settings.json) | `packages/loop/src/settings/settings-schema.ts:256-262` | optional `modelField`; merge strategy `lastWins` (`packages/loop/src/settings/settings-merge.ts:114`) |
-| `RunRequest.vision_model` | `packages/capability/src/api.ts:376-393` | optional model ref string; a model reference, not a profile name |
+| `default_vision_model` (settings.json) | `packages/loop/src/settings/settings-schema.ts:371-377` | optional `modelField`; merge strategy `lastWins` (`packages/loop/src/settings/settings-merge.ts:114`) |
+| `RunRequest.vision_model` | `packages/capability/src/api.ts:446-480` | optional model ref string; a model reference, not a profile name |
 | kernel assembly | `packages/kernel/src/runs/settings-assembler.ts:428-430` | `merged.default_vision_model` (a string) becomes `request.vision_model` |
 | request validation | `packages/loop/src/validation/request/provider-rules.ts:118-136` (`requireResolvableModelProviders`) | `vision_model`'s provider token must resolve, exactly like every profile's `model` |
 | wire schema description | `packages/loop/src/validation/request/request-schema.ts:203-210` | user-facing text: "Omit to leave images as numbered placeholders for a model that cannot see." |
@@ -142,7 +142,7 @@ unreached from any path this document traces (see §8).
 
 Converting the tool-result shape into `ToolResultImage` (`{ data, mediaType }`) — what a `tool`-role
 message's `images` field carries — happens at
-`packages/loop/src/runtime/tools/builtin/toolset.ts:132-135`: `r.content.filter(p => p.type ===
+`packages/loop/src/runtime/tools/builtin/toolset.ts:136-139`: `r.content.filter(p => p.type ===
 "image").map(p => ({ data: p.data, mediaType: p.mimeType }))`.
 
 ### Vision-model request/settings wiring
@@ -212,11 +212,11 @@ makes at most one such call" and folding it in "reported a spawned sub-agent tha
    (`packages/code/src/core/attachments.ts:301-315`).
 3. `run-host.ts`'s `submitTurn` then folds in any `@mentions` **not already staged**: a string `content`
    goes through `buildContent` (parses mentions from scratch), an array `content` goes through
-   `appendMentionImages` (scans only the text parts already present) — `packages/code/src/run-host.ts:581-584`.
+   `appendMentionImages` (scans only the text parts already present) — `packages/code/src/run-host.ts:605-608`.
    Either call can throw `MentionImageLoadError` or `MentionImageAdmissionError`
    (`packages/code/src/core/attachments.ts:133-142,169-177`); `submitTurn` catches only
    `MentionImageError`, reports the message via `setStatus`, and restores the draft
-   (`packages/code/src/run-host.ts:585-589`) — the message never reaches a run.
+   (`packages/code/src/run-host.ts:609-613`) — the message never reaches a run.
 4. The resulting `MessageContent` is submitted as a protocol `Message`; the kernel's
    `protoMessagesToEngine` (`packages/kernel/src/runs/map-message.ts:52-55`) converts it to the engine's
    `Message[]`, which becomes `request.messages`.
@@ -224,7 +224,7 @@ makes at most one such call" and folding it in "reported a spawned sub-agent tha
 ### 4.2 Turning `request.messages` into `EntrySeed` (engine)
 
 `buildEntrySeed` (`packages/loop/src/runtime/entry-seed.ts:126-186`), called once per run
-(`packages/loop/src/runtime/orchestrator.ts:596`):
+(`packages/loop/src/runtime/orchestrator.ts:611`):
 
 1. `turnImages = collectTurnImages(messages)` — every image part across every `user` message of
    *this turn's* `messages` argument, in order (`packages/loop/src/runtime/entry-seed.ts:134`,
@@ -241,7 +241,7 @@ makes at most one such call" and folding it in "reported a spawned sub-agent tha
 ### 4.3 The prepass itself
 
 Invoked from `orchestrator.ts` inside `runWithClockAndTimeout`'s `buildLoop` callback, **before**
-`runAgent` is called (`packages/loop/src/runtime/orchestrator.ts:629-638`):
+`runAgent` is called (`packages/loop/src/runtime/orchestrator.ts:644-653`):
 
 ```ts
 await runVisionPrepass({ signal, deps, request, trace: traceHandle, ledger, seed, accounting });
@@ -297,7 +297,7 @@ images.
 
 Calling `read_image` resolves the file against the workspace plus the run-owned
 `config.temporaryRoots`, then reads it (`resolvePath` + `readRawFile`, capped at `config.maxImageBytes`,
-default `DEFAULT_MAX_IMAGE_BYTES = 5_000_000` — `packages/tools/src/config.ts:131-132`), sniffs its
+default `DEFAULT_MAX_IMAGE_BYTES = 5_000_000` — `packages/tools/src/config.ts:134-135`), sniffs its
 format from magic bytes (`sniffImageMime`, `packages/tools/src/lib/image.ts`, PNG/JPEG/GIF/WebP only),
 and returns `{ content: [imagePart(base64, mimeType)] }` or throws `not_an_image`
 (`packages/tools/src/tools/read-image.ts:56-64`). A successful call's result content is the `imagePart` alone — no text part —
@@ -478,7 +478,7 @@ Nothing in this subsystem retries a failed vision call; a run makes at most one 
   a vision-model call that declared `vision` still reaches the provider with real image parts rather
   than placeholders (`toUserContent`, `packages/llm/src/to-model-messages.ts:18-45`).
 
-**Forces the calling order**: `packages/loop/src/runtime/orchestrator.ts:629-638` calls `runVisionPrepass` and only then builds
+**Forces the calling order**: `packages/loop/src/runtime/orchestrator.ts:644-653` calls `runVisionPrepass` and only then builds
 the entry agent's `RunAgentInput` via `buildEntryInput(clock, signal)` — the shared-array-reference
 mechanism (§4.3) is what makes appending to `seed.entryMessages` visible to the entry agent's first
 call. Nothing in the type system enforces this order; it is enforced only by the two statements'

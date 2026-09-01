@@ -107,12 +107,12 @@ both declared `ErrorCode` members (`packages/capability/src/run.ts:195-196`).
 
 ```ts
 promptCacheKey?: string;
-promptCacheTtl?: PromptCacheTtl;           // "5m" | "1h" — packages/capability/src/api.ts:347
+promptCacheTtl?: PromptCacheTtl;           // "5m" | "1h" — packages/capability/src/api.ts:385
 cacheBreakpoints?: readonly number[];      // indices into `messages`, oldest first
 ```
 
 `cacheBreakpoints` is supplied by the loop from `LiveContext.cacheBreakpoints()`
-(`packages/loop/src/runtime/loop/loop.ts:395-402`), filtered to non-negative indices:
+(`packages/loop/src/runtime/loop/loop.ts:418-425`), filtered to non-negative indices:
 
 ```ts
 const breakpoints = d.ctx.cacheBreakpoints();               // { stable, prior }
@@ -131,7 +131,7 @@ Reproduced from `packages/capability/src/llm-port.ts:130-138` (documented there,
 | `"off"` | no breakpoints | nothing |
 | absent | cache breakpoints | nothing |
 
-`PromptCacheMode = "explicit" \| "implicit" \| "off"` — `packages/capability/src/api.ts:163`. How a
+`PromptCacheMode = "explicit" \| "implicit" \| "off"` — `packages/capability/src/api.ts:175`. How a
 model's mode is resolved from the catalog is out of scope here ([hosts/model-catalog.md](../hosts/model-catalog.md)).
 
 ### 3.3 `RequestCacheDiagnostics` — what one assembled request decided
@@ -157,7 +157,7 @@ Logged as `llm.cache.request` (debug) and, when a requested breakpoint failed to
 
 ### 3.4 `ContextSnapshotEntry` — the persisted, restorable transcript shape
 
-`packages/capability/src/run.ts:382-398`:
+`packages/capability/src/run.ts:384-400`:
 
 ```ts
 interface ContextSnapshotEntry {
@@ -243,7 +243,7 @@ affinity ACROSS a conversation's `continue_from` turns, pass your own stable val
 `execution_id` default changes per turn and does not carry over"
 (`packages/loop/src/validation/request/request-schema.ts:28-46`). `@clarvis/code` supplies that stable
 value: it sets `promptCacheKey = sess.meta()?.id` — the session id, not a fresh execution id — on every
-turn it starts (`packages/code/src/run-host.ts:619,667,692,761,773,817,833`). Neither
+turn it starts (`packages/code/src/run-host.ts:643,691,716,785,797,841,857`). Neither
 `@clarvis/kernel`'s `packages/kernel/src/runs/settings-assembler.ts:433-435` nor `packages/kernel/src/workflows/workflows-service.ts:354-356,470-472` derive or
 override `prompt_cache_key`; they only forward whatever the caller supplied.
 
@@ -311,7 +311,7 @@ to the true end and is never inside the durable prefix. `removeAt`/`replace` rep
 ### 4.5 Runtime detection of a broken prefix (in-band, on every model call)
 
 `CachePrefixWatch` (`packages/loop/src/runtime/loop/iteration-metrics.ts:105-123`), one instance per
-agent loop (`packages/loop/src/runtime/loop/loop.ts:859`), folds each iteration's `cached_tokens`:
+agent loop (`packages/loop/src/runtime/loop/loop.ts:882`), folds each iteration's `cached_tokens`:
 
 | Prior `cached_tokens` | This iteration's `cached_tokens` | `observe()` returns | Effect |
 |---|---|---|---|
@@ -378,8 +378,8 @@ identical across every iteration of one run: the same `JSON.stringify(tools)`, t
 (not incidental Set/Map iteration order), and the same rendered system message content.
 Production: `packages/loop/src/runtime/entry-seed.ts:142-149` (system head built once per run from
 inputs that do not change turn to turn); the tool array is part of `LoopDerived`, computed once per
-`runAgentLoop` invocation (`packages/loop/src/runtime/loop/loop.ts:848`) and passed unchanged to every
-`buildModelCall` (`:379-411`).
+`runAgentLoop` invocation (`packages/loop/src/runtime/loop/loop.ts:871`) and passed unchanged to every
+`buildModelCall` (`:402-434`).
 Test: `packages/loop/tests/integration/prefix-invariants.test.ts:68` (tool definitions),
 `:77` (tool order), `:87` (system head).
 
@@ -541,7 +541,7 @@ top, which reject the run request before any call is made.
   order" per its own doc comment (`:51`). A capability cannot bypass it because `LiveContext` (the type
   every capability and the loop itself holds) exposes no other way to mutate `entries`.
 - **`buildModelCall` (loop) is the sole producer of `cacheBreakpoints` for an `LLMCallParams`.**
-  `packages/loop/src/runtime/loop/loop.ts:395-402` reads `LiveContext.cacheBreakpoints()` once per
+  `packages/loop/src/runtime/loop/loop.ts:418-425` reads `LiveContext.cacheBreakpoints()` once per
   call and forwards at most two indices; `@clarvis/llm` never computes a breakpoint itself, it only
   decides — per `ResolvedProviderConfig.promptCache` — whether and how to act on the ones it is given.
 - **`execute-run.ts` is the sole place the run-level `promptCacheKey`/`promptCacheTtl` pair is
@@ -555,7 +555,7 @@ top, which reject the run request before any call is made.
   `packages/kernel/src/guard/resolver.ts:66-87`) — see §4.1 point 3.
 - **`@clarvis/code` is what actually achieves cross-turn session affinity**, by supplying
   `prompt_cache_key = sess.meta()?.id` on every `startRun` call
-  (`packages/code/src/run-host.ts:619,667,692,761,773,817,833`). The loop and kernel are agnostic to
+  (`packages/code/src/run-host.ts:643,691,716,785,797,841,857`). The loop and kernel are agnostic to
   this: `@clarvis/kernel`'s `settings-assembler.ts` and `workflows-service.ts` only forward whatever
   `prompt_cache_key` a caller supplied — the session-scoping behavior belongs entirely to the TUI host,
   not to any package this document's scope otherwise covers.

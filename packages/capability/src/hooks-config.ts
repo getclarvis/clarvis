@@ -284,8 +284,8 @@ export const hookSchema = z
         "Lifecycle event that triggers the hook. Gate events (pre_tool_use, " +
           "post_tool_use, pre_finalize, pre_delegate_task) fire before/around a " +
           "decision and their verdict controls the loop (deny blocks, advise annotates). " +
-          "Observer events (run_start, run_end, subagent_complete, model_call_error, " +
-          "budget_exhausted, user_steer) are notify-only: the command runs, its output " +
+          "Observer events (run_start, run_end, post_compact, subagent_start, subagent_complete, " +
+          "model_call_error, budget_exhausted, user_steer) are notify-only: the command runs, its output " +
           "is ignored, and it can never block the run. " +
           "user_prompt_expansion fires once for a user-invoked skill command, before that " +
           "skill's seeded run; its output is likewise ignored. " +

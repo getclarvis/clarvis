@@ -125,9 +125,28 @@ describe("toWireToolName — canonical wire-safe projection", () => {
     expect(first).toMatch(WIRE_SAFE);
     expect(second).toMatch(WIRE_SAFE);
   });
+
+  it("treats caller-owned names case-insensitively while adding the exact chosen name", () => {
+    const used = new Set(["SEARCH"]);
+    expect(toWireToolName("search", used)).toBe("search_1");
+    expect(used.has("search_1")).toBe(true);
+  });
 });
 
 describe("registry wireName ↔ fullName round-trip", () => {
+  it("preserves a unique provider-safe local name for skill/tool compatibility", () => {
+    const reg = buildRegistry([
+      {
+        conn: fakeConn("miro:miro"),
+        tools: [{ name: "diagram_create_mermaid", inputSchema: { type: "object" } }],
+      },
+    ]);
+    expect(reg.tools[0]!.wireName).toBe("diagram_create_mermaid");
+    expect(reg.resolve("diagram_create_mermaid")?.fullName).toBe(
+      "miro:miro.diagram_create_mermaid",
+    );
+  });
+
   it("exposes a wire-safe name for every tool while keeping the dotted fullName", () => {
     const reg = buildRegistry([
       { conn: fakeConn("fs"), tools: [{ name: "read_file", inputSchema: { type: "object" } }] },
@@ -172,11 +191,32 @@ describe("registry wireName ↔ fullName round-trip", () => {
     expect(reg.resolve(wireNames[1]!)?.connection).toBe(b);
   });
 
+  it("falls back to namespaced names when local names collide across servers", () => {
+    const reg = buildRegistry([
+      { conn: fakeConn("alpha"), tools: [{ name: "search", inputSchema: {} }] },
+      { conn: fakeConn("beta"), tools: [{ name: "SEARCH", inputSchema: {} }] },
+    ]);
+    expect(reg.tools.map((tool) => tool.wireName)).toEqual(["alpha_search", "beta_SEARCH"]);
+  });
+
+  it("reserves a unique local name before allocating colliding namespaced fallbacks", () => {
+    const entries = [
+      { conn: fakeConn("alpha"), tools: [{ name: "search", inputSchema: {} }] },
+      { conn: fakeConn("beta"), tools: [{ name: "SEARCH", inputSchema: {} }] },
+      { conn: fakeConn("gamma"), tools: [{ name: "alpha_search", inputSchema: {} }] },
+    ];
+    for (const ordered of [entries, [...entries].reverse()]) {
+      const reg = buildRegistry(ordered);
+      expect(reg.resolve("alpha_search")?.fullName).toBe("gamma.alpha_search");
+      expect(new Set(reg.tools.map((tool) => tool.wireName.toLowerCase())).size).toBe(3);
+    }
+  });
+
   it("an MCP tool that sanitizes to a reserved built-in coding-tool name is disambiguated", () => {
     const reg = buildRegistry([
-      { conn: fakeConn("read"), tools: [{ name: "file", inputSchema: { type: "object" } }] },
+      { conn: fakeConn("fs"), tools: [{ name: "read_file", inputSchema: { type: "object" } }] },
     ]);
-    const tool = reg.tools.find((t) => t.fullName === "read.file")!;
+    const tool = reg.tools.find((t) => t.fullName === "fs.read_file")!;
     expect(tool.wireName).not.toBe("read_file");
     expect(tool.wireName).toMatch(WIRE_SAFE);
   });
@@ -230,11 +270,11 @@ describe("selectTools and poolToolNames", () => {
 });
 
 describe("registry — the host's reserved names are honoured, whatever they are", () => {
-  it("an MCP tool that sanitizes to a reserved name is suffixed, never shadowing it", () => {
+  it("a unique local tool name is preserved even when its full-name projection is reserved", () => {
     const reg = buildRegistry([
       { conn: fakeConn("load"), tools: [{ name: "skill", inputSchema: { type: "object" } }] },
     ]);
-    expect(reg.tools[0]!.wireName).toBe("load_skill_1");
+    expect(reg.tools[0]!.wireName).toBe("skill");
   });
 
   it("reserves nothing when the host reserves nothing", () => {
@@ -242,6 +282,6 @@ describe("registry — the host's reserved names are honoured, whatever they are
       [{ conn: fakeConn("load"), tools: [{ name: "skill", inputSchema: { type: "object" } }] }],
       [],
     );
-    expect(reg.tools[0]!.wireName).toBe("load_skill");
+    expect(reg.tools[0]!.wireName).toBe("skill");
   });
 });

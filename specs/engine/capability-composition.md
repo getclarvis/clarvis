@@ -372,8 +372,10 @@ Given `seedMarkers: ["<cap-block>"]`:
    `createWorkspaceHooksCapability({...})` **first** (`:483-497`).
 10. **Tools** (only if `useTools`): dynamically import `@clarvis/tools` to install its warning
     sink (mapping tool warnings onto the host logger by level), then dynamically import
-    `./capabilities/tools.ts` and push `createAgentToolsCapability({...})` **second**
-    (`:498-534`).
+    `./capabilities/tools.ts` and push `createAgentToolsCapability({...})` **second**. When skills
+    exist, the injected `resolveSkillExecutionRoots` takes a fresh cloned skill list, selects only
+    entries carrying explicit `executionRoot`, de-duplicates those exact skill directories, and
+    passes them to each run's toolsets (`buildExecuteRunDeps` and `createAgentToolsCapability`).
 11. Push `createAskUserCapability()` **unconditionally, third** (`:535`) — ask-user is the one
     built-in with **no** `builtins.*` toggle and no package-import gate at all; it is gated entirely
     downstream, at `forRun` on the entry profile's `ask_user` grant and at `forAgent` on
@@ -421,6 +423,16 @@ the order `foldContributions` later folds contributions in when none declares an
 8. `reportRunComposition` logs `run.composed` at `info` (§3.5).
 9. `buildEntrySeed` (`packages/loop/src/runtime/entry-seed.ts:126-186`) consumes `seedBlocks`/`seedMarkers` to compose the
    entry agent's opening messages (§3.4).
+
+MCP initialize instructions are necessarily composed later than those nine steps: the engine must
+first open the run's MCP pool. `createMcpInstructionsRunCapability` groups the connected servers'
+bounded instructions under exact server names and appends that prompt-only run capability to the
+already-activated list passed to `runEntryAgent`. It contributes no tools or lifecycle hooks and is
+available to the entry agent and spawned subagents; higher-priority instructions remain explicit in
+the section. Production: `renderMcpInstructions` and `createMcpInstructionsRunCapability` in
+`packages/loop/src/runtime/mcp-instructions.ts`, composed in
+`packages/loop/src/runtime/orchestrator.ts`. Test:
+`packages/loop/tests/unit/mcp-instructions.test.ts`.
 
 ### 4.3 Per-agent fold (`packages/loop/src/runtime/loop/run-agent.ts`, `~ln 296-420`)
 
@@ -552,11 +564,25 @@ their own:**
 
 - **A capability's `seedMarker`/`reservedWireNames`/`toolEffects` are computed over every
   *registered* capability, never only the activated subset**, so a gated-off capability's tool
-  names stay reserved and its seed marker still strips a stale continuation entry.
-  Production: `packages/capability/src/contract.ts:138-150`;
+  names stay reserved and its seed marker still strips a stale continuation entry. Production:
+  `packages/capability/src/contract.ts:138-150`;
   `packages/loop/src/runtime/orchestrator.ts:190-191,336-338`. Test:
   `packages/loop/tests/unit/entry-seed-markers.test.ts:118-136`
   ("still drops a block whose capability is no longer active").
+- **Skill discovery approval does not become plugin-root execution.** The tools resolver receives
+  only `SkillInfo.executionRoot`; the skills registry exposes that field only for an approved root
+  and sets it to the individual skill directory. Missing approval contributes no path, and a
+  resolver integrity failure is not swallowed into an empty permission set. Production:
+  `packages/skills/src/registry.ts`, `packages/loop/src/runtime/build-run-deps.ts`, and
+  `packages/loop/src/runtime/capabilities/tools.ts`. Test:
+  `packages/skills/tests/integration/api.test.ts` and
+  `packages/tools/tests/integration/api.test.ts`.
+- **MCP initialize instructions are prompt-only and post-connection.** A server that did not connect
+  contributes nothing; a connected server's text is grouped under its exact identity and the whole
+  section is bounded without splitting Unicode code points. Production:
+  `packages/loop/src/runtime/mcp-instructions.ts` and
+  `packages/loop/src/runtime/orchestrator.ts`. Test:
+  `packages/loop/tests/unit/mcp-instructions.test.ts`.
 - **Capability contributions fold in registration order, and dispatch is first-match**, so order is
   behaviour: an earlier capability's handler shadows a later one's for the same tool name.
   Production: `packages/capability/src/contract.ts:219-231` (`RunCapability.order`'s own doc:

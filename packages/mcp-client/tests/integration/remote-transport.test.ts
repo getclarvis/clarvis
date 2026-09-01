@@ -78,4 +78,29 @@ describe("remote transport reaches a server over real HTTP", () => {
     };
     await expect(openConnection({ scope: SCOPE, server: tool, ...OPTS })).rejects.toThrow();
   });
+
+  it("always resolves declarative credential env fields when authored expansion is disabled", async () => {
+    process.env.CLARVIS_TEST_REMOTE_DECLARED_TOKEN = "declared-secret";
+    process.env.CLARVIS_TEST_REMOTE_REGION = "south";
+    srv = await captureServer();
+    try {
+      const tool: McpServerConfig = {
+        name: "remote",
+        transport: "http",
+        url: srv.url,
+        expandVariables: false,
+        bearer_token_env_var: "CLARVIS_TEST_REMOTE_DECLARED_TOKEN",
+        env_http_headers: { "X-Region": "CLARVIS_TEST_REMOTE_REGION" },
+        headers: { "X-Literal": "${PORTABLE_VALUE}" },
+      };
+      void openConnection({ scope: SCOPE, server: tool, ...OPTS }).catch(() => {});
+      const headers = await srv.firstHeaders;
+      expect(headers.authorization).toBe("Bearer declared-secret");
+      expect(headers["x-region"]).toBe("south");
+      expect(headers["x-literal"]).toBe("${PORTABLE_VALUE}");
+    } finally {
+      delete process.env.CLARVIS_TEST_REMOTE_DECLARED_TOKEN;
+      delete process.env.CLARVIS_TEST_REMOTE_REGION;
+    }
+  });
 });

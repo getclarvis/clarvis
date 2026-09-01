@@ -50,6 +50,13 @@ function fakeService(seed: ProtoPluginView[] = []): PluginService & { calls: str
       list.push(view);
       return view;
     },
+    installSource: async (source, options) => {
+      calls.push(`installSource:${source.kind}`);
+      if (options !== undefined) calls.push(`source:${options.source}`);
+      const view = protoView({ name: "installed" });
+      list.push(view);
+      return view;
+    },
     update: async (ref) => {
       calls.push(`update:${ref.scope}/${ref.source}/${ref.name}`);
       return protoView({ name: ref.name, scope: ref.scope, source: ref.source });
@@ -94,16 +101,35 @@ test("toPluginView projects sorted per-skill Plans policies", () => {
   ]);
 });
 
-test("toPluginView carries display metadata through without inventing any", () => {
+test("toPluginView carries complete publisher and display metadata without inventing any", () => {
   const plain = toPluginView(protoView());
   expect(plain.displayName).toBeUndefined();
   expect(plain.shortDescription).toBeUndefined();
+  expect(plain.author).toBeUndefined();
 
-  const shown = toPluginView(
-    protoView({ display_name: "Atlas Tools", short_description: "Charts and maps." }),
-  );
+  const shown = toPluginView({
+    ...protoView(),
+    author: { name: "Atlas Labs", email: "plugins@atlas.example" },
+    license: "MIT",
+    repository: "https://github.com/atlas/plugin",
+    display_name: "Atlas Tools",
+    short_description: "Charts and maps.",
+    long_description: "A longer description.",
+    capabilities: ["Read", "Write"],
+    website_url: "https://atlas.example",
+    default_prompt: ["Draw a chart"],
+    composer_icon: "./assets/icon.png",
+  });
+  expect(shown.author).toEqual({ name: "Atlas Labs", email: "plugins@atlas.example" });
+  expect(shown.license).toBe("MIT");
+  expect(shown.repository).toBe("https://github.com/atlas/plugin");
   expect(shown.displayName).toBe("Atlas Tools");
   expect(shown.shortDescription).toBe("Charts and maps.");
+  expect(shown.longDescription).toBe("A longer description.");
+  expect(shown.capabilities).toEqual(["Read", "Write"]);
+  expect(shown.websiteURL).toBe("https://atlas.example");
+  expect(shown.defaultPrompt).toEqual(["Draw a chart"]);
+  expect(shown.composerIcon).toBe("./assets/icon.png");
 });
 
 test("loadPlugins maps every view from the service", async () => {
@@ -123,6 +149,9 @@ test("store reloads plugin state after mutations", async () => {
     expect(service.calls).toContain("install:https://example.invalid/repo.git");
     expect(service.calls).toContain("subdir:packages/demo");
     expect(service.calls).toContain("source:clarvis");
+    await store.installSource({ kind: "npm", package: "@scope/demo", version: "1.0.0" });
+    expect(service.calls).toContain("installSource:npm");
+    expect(service.calls).toContain("source:agents");
     await store.update({ scope: "global", source: "clarvis", name: "demo" });
     expect(service.calls).toContain("update:global/clarvis/demo");
     await store.uninstall({ scope: "global", source: "clarvis", name: "demo" });

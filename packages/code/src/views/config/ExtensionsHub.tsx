@@ -1218,7 +1218,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
             <Show when={reviewed.requires_workspace_trust}>
               <SectionHeader label="Workspace trust" />
               <text fg={tokens.warn} wrapMode="word">
-                {`Apply approves only ${reviewed.target.id} at ${reviewed.target.fingerprint}. Each selected plugin enters as one complete unit.`}
+                {`Apply approves repository-owned plugins in ${reviewed.target.id} at ${reviewed.target.fingerprint}. Global installed plugins already carry installation consent.`}
               </text>
             </Show>
           </box>

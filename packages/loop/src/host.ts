@@ -14,6 +14,9 @@ export {
 } from "./settings/agent-frontmatter.ts";
 export {
   marketplaceSchema,
+  pluginGitSelectorIssue,
+  pluginGitUrlIssue,
+  pluginNpmSourceIssue,
   type Marketplace,
   type MarketplaceEntry,
 } from "./settings/marketplace-schema.ts";

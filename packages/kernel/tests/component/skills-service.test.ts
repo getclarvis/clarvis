@@ -11,6 +11,13 @@ type Skill = {
   scope?: "user" | "workspace";
   source?: string;
   presentation?: unknown;
+  dependencies?: Array<{
+    type: "mcp";
+    value: string;
+    description?: string;
+    transport?: string;
+    url?: string;
+  }>;
   catalogSuppressed?: boolean;
 };
 
@@ -285,6 +292,37 @@ describe("createSkillsService", () => {
       color: "#3b82f6",
       starterPrompt: "Draft the notes.",
     });
+  });
+
+  it("projects declared MCP dependencies onto the skill catalog summary", async () => {
+    const svc = createSkillsService({
+      skills: provider([
+        {
+          name: "notes",
+          description: "d",
+          userInvocable: true,
+          metadata: {},
+          dependencies: [
+            {
+              type: "mcp",
+              value: "notion",
+              description: "Read workspace notes",
+              transport: "http",
+              url: "https://mcp.notion.example",
+            },
+          ],
+        },
+      ]),
+    });
+    expect((await svc.list())[0]!.dependencies).toEqual([
+      {
+        type: "mcp",
+        value: "notion",
+        description: "Read workspace notes",
+        transport: "http",
+        url: "https://mcp.notion.example",
+      },
+    ]);
   });
 
   it("refuses an icon path a provider supplied that would leave the skill directory", async () => {

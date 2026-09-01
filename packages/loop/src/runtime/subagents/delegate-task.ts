@@ -610,6 +610,17 @@ export async function runPreparedSubagent(
       },
     }),
   );
+  await fireObservers(
+    ctx.hooks,
+    "onSubagentStart",
+    {
+      subagentInstanceId,
+      profile: selectedProfile.name,
+      model: selectedProfile.modelRef,
+      task: subagentTask,
+    },
+    ctx.logger,
+  );
   try {
     ({ outcome, usage } = await runSubagent(
       buildRunSubagentInput(selectedProfile, {

@@ -19,7 +19,14 @@ import {
   workspaceStatePaths,
   writeFileAtomicSync,
 } from "@clarvis/paths";
-import { clarvisSkillRoots, createAgentSkills, type SkillRootInput } from "@clarvis/skills";
+import {
+  clarvisSkillRoots,
+  createAgentSkills,
+  hashBoundedFile,
+  MAX_SKILL_RESOURCE_FILE_BYTES,
+  MAX_SKILL_RESOURCE_SNAPSHOT_BYTES,
+  type SkillRootInput,
+} from "@clarvis/skills";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type {
   EnvironmentApplyResult,
@@ -250,6 +257,13 @@ function pluginRefId(ref: EnvironmentPluginRef): string {
 /** Filesystem-shaped plugin identity for operator-facing diagnostics. */
 function pluginRefLabel(ref: EnvironmentPluginRef): string {
   return `${ref.scope}/${ref.source}/${ref.name}`;
+}
+
+/** Plugins inherited from the workspace rather than installed in an operator-owned inventory. */
+function workspacePluginRefs(
+  definition: EnvironmentDefinition | undefined,
+): EnvironmentPluginRef[] {
+  return definition?.plugins.filter((ref) => ref.scope === "workspace") ?? [];
 }
 
 /** Parse an untrusted protocol value or raise the public request error. */
@@ -733,6 +747,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
             loadDigest: () => {
               const content = skills.loadSkill(info.name);
               if (content === undefined) return undefined;
+              let aggregateResourceBytes = 0;
               return fingerprintOf({
                 catalog: {
                   description: info.description,
@@ -740,15 +755,34 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
                   allowed_tools: info.allowedTools,
                   user_invocable: info.userInvocable,
                   catalog_suppressed: info.catalogSuppressed,
+                  dependencies: info.dependencies,
                   presentation: info.presentation,
                   defaulted: info.defaulted,
                 },
                 body: content.body,
                 resources: content.resources
-                  .map((resource) => ({
-                    rel: resource.rel,
-                    content: skills.readResource(info.name, resource.rel),
-                  }))
+                  .map((resource) => {
+                    const snapshot = hashBoundedFile(resource.path, {
+                      maxBytes: MAX_SKILL_RESOURCE_FILE_BYTES,
+                      code: "invalid_skill",
+                      label: "standalone skill resource",
+                      logger,
+                    });
+                    aggregateResourceBytes += snapshot.bytes;
+                    if (aggregateResourceBytes > MAX_SKILL_RESOURCE_SNAPSHOT_BYTES) {
+                      throw new Error(
+                        `standalone skill resources exceed the ${String(
+                          MAX_SKILL_RESOURCE_SNAPSHOT_BYTES,
+                        )}-byte aggregate limit`,
+                      );
+                    }
+                    return {
+                      rel: resource.rel,
+                      digest: snapshot.digest,
+                      bytes: snapshot.bytes,
+                      mode: snapshot.mode,
+                    };
+                  })
                   .sort((left, right) => left.rel.localeCompare(right.rel)),
               });
             },
@@ -945,7 +979,9 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       selectedPluginNames.add(ref.name);
     }
     const validDefinition = definitionIsValid && pluginNamesAreUnique;
-    const requiresTrust = selection.ref.scope === "workspace" && selectedPlugins.length > 0;
+    const requiresTrust =
+      selection.ref.scope === "workspace" &&
+      selectedPlugins.some((ref) => ref.scope === "workspace");
     const trusted =
       assumeWorkspaceTrusted ||
       !requiresTrust ||
@@ -955,16 +991,19 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
       issues.push({
         code: "workspace_untrusted",
         message:
-          "the workspace Environment selects executable plugins but its current fingerprint is not approved",
+          "the workspace Environment selects workspace-owned executable plugins but its current fingerprint is not approved",
       });
     }
+    const admittedPlugins = trusted
+      ? selectedPlugins
+      : selectedPlugins.filter((ref) => ref.scope !== "workspace");
     const contributionSnapshots: readonly PluginContributionSnapshot[] = validDefinition
       ? pinContributions
         ? trusted
           ? options.pluginContributions.pin(selectedPlugins)
           : (() => {
               const snapshots = options.pluginContributions.snapshot(selectedPlugins);
-              options.pluginContributions.pin([]);
+              options.pluginContributions.pin(admittedPlugins);
               return snapshots;
             })()
         : options.pluginContributions.snapshot(selectedPlugins)
@@ -988,7 +1027,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
           if (snapshot !== undefined) {
             return {
               ref,
-              active: trusted,
+              active: trusted || ref.scope !== "workspace",
               installed: true,
               valid: true,
               ...(snapshot.version === undefined ? {} : { version: snapshot.version }),
@@ -1232,15 +1271,33 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     assertPinnedStandaloneSkills();
   };
 
+  /**
+   * Capture the complete bounded repository-plugin inventory for workspace trust.
+   *
+   * This is resolved by the kernel after Code's lightweight startup composer has
+   * painted. Invalid checkouts remain represented with a null digest so repairing,
+   * adding, removing, or changing any repository plugin invalidates the one
+   * workspace-wide verdict before that plugin can be selected.
+   */
   const workspaceTrustSurface = (): unknown => {
-    const selection = selectedNow();
-    if (selection.error !== undefined || selection.ref.scope !== "workspace") return undefined;
-    const view = readDefinition(selection.ref);
-    if (view.definition === undefined || view.definition.plugins.length === 0) return undefined;
+    const plugins = pluginInventory()
+      .map((entry) => entry.view)
+      .filter((plugin) => plugin.ref.scope === "workspace")
+      .sort((left, right) => pluginRefId(left.ref).localeCompare(pluginRefId(right.ref)));
+    if (plugins.length === 0) return undefined;
+    const snapshots = new Map(
+      options.pluginContributions
+        .snapshot(plugins.map((plugin) => plugin.ref))
+        .map((snapshot) => [pluginRefId(snapshot.ref), snapshot] as const),
+    );
     return {
-      environment: selection.ref,
-      definition_revision: view.revision,
-      plugins: view.definition.plugins,
+      plugins: plugins.map((plugin) => {
+        const snapshot = snapshots.get(pluginRefId(plugin.ref));
+        return {
+          ref: plugin.ref,
+          digest: snapshot?.digest ?? null,
+        };
+      }),
     };
   };
 
@@ -1305,9 +1362,8 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     definition: EnvironmentDefinition | undefined,
     trust: WorkspaceTrustVerdict,
   ): boolean => {
-    if (ref.scope !== "workspace" || (definition?.plugins.length ?? 0) === 0) return false;
-    const current = selectedNow();
-    return current.error !== undefined || !sameRef(current.ref, ref) || trust.state !== "trusted";
+    if (ref.scope !== "workspace" || workspacePluginRefs(definition).length === 0) return false;
+    return trust.state !== "trusted";
   };
 
   const compositionDefinition = (
@@ -1392,11 +1448,11 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     const effectiveDefinition = sameRef(effective.ref, input.ref)
       ? definition.definition
       : readDefinition(effective.ref).definition;
-    if (effective.ref.scope !== "workspace" || (effectiveDefinition?.plugins.length ?? 0) === 0) {
+    if (
+      effective.ref.scope !== "workspace" ||
+      workspacePluginRefs(effectiveDefinition).length === 0
+    ) {
       return false;
-    }
-    if (sameRef(effective.ref, input.ref) && definition.revision !== input.expected_revision) {
-      return true;
     }
     const before = selectedNow();
     if (sameRef(before.ref, effective.ref) && before.origin === effective.origin) return false;

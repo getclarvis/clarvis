@@ -131,6 +131,19 @@ describe("PluginService", () => {
       name: "demo",
       version: "1.2.0",
       description: "The demo plugin.",
+      author: { name: "Demo Labs", email: "plugins@demo.test" },
+      homepage: "https://demo.test/plugin",
+      repository: "https://github.com/demo/plugin",
+      license: "MIT",
+      keywords: ["demo", "tools"],
+      interface: {
+        displayName: "Demo Tools",
+        longDescription: "A complete demo plugin.",
+        developerName: "Demo Labs",
+        capabilities: ["Read", "Write"],
+        websiteURL: "https://demo.test",
+        defaultPrompt: ["Run the demo"],
+      },
       mcpServers: { git: { command: "git-mcp" } },
       hooks: [{ event: "pre_tool_use", command: "x" }],
     });
@@ -149,6 +162,19 @@ describe("PluginService", () => {
     expect(view!.source).toBe("clarvis");
     expect(view!.enabled).toBe(true);
     expect(view!.version).toBe("1.2.0");
+    expect(view).toMatchObject({
+      author: { name: "Demo Labs", email: "plugins@demo.test" },
+      homepage: "https://demo.test/plugin",
+      repository: "https://github.com/demo/plugin",
+      license: "MIT",
+      keywords: ["demo", "tools"],
+      display_name: "Demo Tools",
+      long_description: "A complete demo plugin.",
+      developer_name: "Demo Labs",
+      capabilities: ["Read", "Write"],
+      website_url: "https://demo.test",
+      default_prompt: ["Run the demo"],
+    });
     expect(view!.contributions).toEqual({
       agents: ["good"],
       broken_agents: ["bad"],
@@ -480,6 +506,107 @@ describe("PluginService", () => {
     ).rejects.toThrow(/git clone failed/);
   });
 
+  it("installSource: copies a local marketplace plugin into the managed inventory", async () => {
+    const source = join(workspace, "catalog", "local-demo");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(
+      join(source, "plugin.json"),
+      JSON.stringify({ name: "local-demo", version: "1.0.0", description: "d" }),
+    );
+
+    const installed = await svc().installSource({ kind: "local", path: source });
+    expect(installed).toMatchObject({
+      name: "local-demo",
+      scope: "global",
+      source: "agents",
+      install_source: `local:${source}`,
+      updateable: false,
+    });
+    expect(installed.dir).not.toBe(source);
+    expect(existsSync(join(installed.dir, "plugin.json"))).toBe(true);
+  });
+
+  it("installSource: uses the marketplace identity when a foreign manifest has no name", async () => {
+    const source = join(workspace, "catalog", "unnamed");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "plugin.json"), JSON.stringify({ description: "d" }));
+
+    const installed = await svc().installSource({
+      kind: "local",
+      path: source,
+      expected_name: "stable-name",
+    });
+
+    expect(installed.name).toBe("stable-name");
+    expect(installed.dir.endsWith(join("plugins", "stable-name"))).toBe(true);
+  });
+
+  it("installSource: refuses a manifest that disagrees with the marketplace identity", async () => {
+    const source = join(workspace, "catalog", "mismatch");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "plugin.json"), JSON.stringify({ name: "actual-name" }));
+
+    await expect(
+      svc().installSource({ kind: "local", path: source, expected_name: "listed-name" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect((await svc().list()).map((plugin) => plugin.name)).not.toContain("actual-name");
+  });
+
+  it("installSource: requires a declared name when no marketplace identity is supplied", async () => {
+    const source = join(workspace, "catalog", "unstable");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "plugin.json"), JSON.stringify({ description: "d" }));
+
+    await expect(svc().installSource({ kind: "local", path: source })).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+  });
+
+  it("installSource: rejects invalid marketplace identity and Git selectors before fetching", async () => {
+    await expect(
+      svc().installSource({
+        kind: "git",
+        url: "https://example.test/plugin.git",
+        expected_name: "../spoofed",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      svc().installSource({
+        kind: "git",
+        url: "https://example.test/plugin.git",
+        ref: "--upload-pack=evil",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("installSource: rejects npm path selectors and credential-bearing registries", async () => {
+    const service = svc();
+    await expect(
+      service.installSource({ kind: "npm", package: "demo", version: "../demo" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      service.installSource({
+        kind: "npm",
+        package: "demo",
+        registry: "https://user:secret@registry.example.test",
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("installSource: rejects local plugin trees containing symlinks", async () => {
+    const source = join(workspace, "catalog", "linked-demo");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(
+      join(source, "plugin.json"),
+      JSON.stringify({ name: "linked-demo", description: "d" }),
+    );
+    symlinkSync(join(source, "plugin.json"), join(source, "linked.json"));
+
+    await expect(svc().installSource({ kind: "local", path: source })).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+  });
+
   it("coordinates install policy entirely through injected repositories and fetchers", async () => {
     const manifest = JSON.stringify({ name: "virtual", version: "1.0.0", description: "d" });
     let installed: InstalledPlugin | null = null;
@@ -567,22 +694,19 @@ describe("PluginService", () => {
     await expect(install).rejects.toThrow("plugin fetch cancelled");
   });
 
-  it("refuses an update whose prepared manifest changes the installed plugin name", async () => {
+  it("refuses an update name change but preserves an unnamed marketplace identity", async () => {
     const installed = virtualPlugin(
       "virtual",
       JSON.stringify({ name: "virtual", version: "1.0.0", description: "d" }),
     );
+    let stagedManifest = JSON.stringify({ name: "impostor", version: "1.0.0", description: "d" });
     let disposed = false;
     const repository: PluginRepository = {
       async list() {
         return [installed];
       },
       async inspect(root) {
-        return virtualPlugin(
-          "staging",
-          JSON.stringify({ name: "impostor", version: "1.0.0", description: "d" }),
-          root,
-        );
+        return virtualPlugin("staging", stagedManifest, root);
       },
       async get(ref) {
         return ref.name === installed.name && ref.source === installed.ref.source
@@ -623,9 +747,30 @@ describe("PluginService", () => {
       code: "invalid_request",
     });
     expect(disposed).toBe(true);
+
+    stagedManifest = JSON.stringify({ version: "2.0.0", description: "d" });
+    expect((await service.update(pluginRef("virtual"))).name).toBe("virtual");
   });
 
   describe("install/update against a real local git remote", () => {
+    it("installs a Git marketplace source under its expected identity", async () => {
+      const repo = makeGitRepo({ name: "market-git", version: "1.0.0", description: "d" });
+      try {
+        const installed = await svc().installSource({
+          kind: "git",
+          url: `file://${repo}`,
+          expected_name: "market-git",
+        });
+        expect(installed).toMatchObject({
+          name: "market-git",
+          install_source: `file://${repo}`,
+          updateable: true,
+        });
+      } finally {
+        rmSync(repo, { recursive: true, force: true });
+      }
+    });
+
     it("installs into .agents by default and into .clarvis only when explicitly selected", async () => {
       const repo = makeGitRepo({ name: "dual", version: "1.0.0", description: "d" });
       try {
@@ -732,6 +877,7 @@ describe("PluginService", () => {
         expect(view.contributions.skills).toEqual(["brainstorm"]);
         expect(view.source).toBe("agents");
         expect(view.install_source).toBe(`file://${repo}`);
+        expect(view.updateable).toBe(true);
         expect(view.revision).toMatch(/^[0-9a-f]{40}$/);
         expect(existsSync(join(view.dir, ".git"))).toBe(false);
         expect(existsSync(join(view.dir, "plugins"))).toBe(false);

@@ -422,9 +422,8 @@ function sortKeys(o?: Record<string, string>): Record<string, string> | null {
  * The {@link McpServerConfig} fields {@link poolKey} discriminates on.
  *
  * @remarks Everything except `shared`, which is a precondition of the poolable
- *   path rather than a discriminant, and `auto_tools`, which is run-level tool
- *   admission applied by the loop after a connection opens. Neither changes the
- *   physical server or the tools it advertises.
+ *   path rather than a discriminant; `auto_tools`, `enabled`, `required`, and
+ *   `authentication` are host/run policy rather than physical connection state.
  */
 type PoolKeyField =
   | "name"
@@ -432,11 +431,19 @@ type PoolKeyField =
   | "command"
   | "args"
   | "env"
+  | "env_vars"
   | "cwd"
   | "url"
   | "headers"
+  | "env_http_headers"
+  | "bearer_token_env_var"
   | "expandVariables"
-  | "resources";
+  | "resources"
+  | "oauth"
+  | "startup_timeout_ms"
+  | "tool_timeout_ms"
+  | "enabled_tools"
+  | "disabled_tools";
 
 /**
  * Compile-time drift guard: only type-checks while {@link PoolKeyField} plus
@@ -449,7 +456,10 @@ type PoolKeyField =
  *   attached, and every lease of a slot is handed the same `tools` array.
  */
 type PoolKeyCoversConfig = [
-  Exclude<keyof McpServerConfig, PoolKeyField | "shared" | "auto_tools">,
+  Exclude<
+    keyof McpServerConfig,
+    PoolKeyField | "shared" | "auto_tools" | "enabled" | "required" | "authentication"
+  >,
 ] extends [never]
   ? true
   : false;
@@ -481,11 +491,19 @@ function poolKey(server: McpServerConfig, scope: PoolScope, sharing: PoolSharing
     command: server.command ?? null,
     args: server.args ?? [],
     env: sortKeys(server.env),
+    env_vars: [...(server.env_vars ?? [])].sort(),
     cwd: server.cwd ?? null,
     url: server.url ?? null,
     headers: sortKeys(server.headers),
+    env_http_headers: sortKeys(server.env_http_headers),
+    bearer_token_env_var: server.bearer_token_env_var ?? null,
     expandVariables: server.expandVariables ?? true,
     resources: server.resources ?? null,
+    oauth: server.oauth ?? null,
+    startup_timeout_ms: server.startup_timeout_ms ?? null,
+    tool_timeout_ms: server.tool_timeout_ms ?? null,
+    enabled_tools: [...(server.enabled_tools ?? [])].sort(),
+    disabled_tools: [...(server.disabled_tools ?? [])].sort(),
   });
 }
 
@@ -696,8 +714,8 @@ export function createConnectionManager(opts: ConnectionManagerOptions): Connect
       const opened = await openConnection({
         server: o.server,
         scope: scopeOf(o.owner),
-        connectTimeoutMs: opts.connectTimeoutMs,
-        callTimeoutMs: opts.callTimeoutMs,
+        connectTimeoutMs: o.server.startup_timeout_ms ?? opts.connectTimeoutMs,
+        callTimeoutMs: o.server.tool_timeout_ms ?? opts.callTimeoutMs,
         factory: trackedFactory,
         resourcesEnabled: opts.resourcesEnabled ?? true,
         ...(opts.timeoutStreakThreshold !== undefined

@@ -20,19 +20,6 @@ const DEFAULT_MARKETPLACE_NAME = "unnamed marketplace";
 /** Description supplied for a listing whose document does not author one. */
 const DEFAULT_ENTRY_DESCRIPTION = "no description provided by this marketplace";
 
-/**
- * Why a listing naming a local source is read but never offered for install.
- *
- * @remarks Installing from a local source is deliberately out of scope: a
- *   marketplace is fetched into a scratch checkout that is deleted immediately
- *   afterwards, so a path relative to it names nothing durable. Parsing it and
- *   saying so is the whole point — a listing that quietly looked installable and
- *   then failed at the last step would be worse than one that is honest up front.
- */
-const LOCAL_SOURCE_NOTE =
-  "names a local source; Clarvis installs a plugin from git only, so this listing is " +
-  "shown but cannot be installed from here";
-
 /** A non-empty string, the smallest field shape this document uses. */
 const nonEmptyString = z.string().min(1);
 
@@ -69,6 +56,15 @@ const sourceDescriptorSchema = z
   .object({
     source: nonEmptyString.describe("How the plugin is obtained, e.g. 'local'."),
     path: nonEmptyString.optional().describe("Where the plugin sits, for a kind that has a path."),
+    url: nonEmptyString.optional(),
+    ref: nonEmptyString.max(512).optional(),
+    sha: z
+      .string()
+      .regex(/^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/)
+      .optional(),
+    package: nonEmptyString.max(214).optional(),
+    version: nonEmptyString.max(256).optional(),
+    registry: nonEmptyString.max(2_048).optional(),
   })
   .loose();
 
@@ -81,6 +77,107 @@ const TRANSPORT_SOURCE_RE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 /** A source string in scp-like ssh spelling, e.g. `user@host:path`. */
 const SSH_SOURCE_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:/;
 
+/** A source naming a local filesystem path rather than a Git transport. */
+const LOCAL_GIT_PATH_RE = /^(?:[.~]{1,2}[/\\]|\/|[A-Za-z]:[/\\])/;
+
+/**
+ * Return why a Git source cannot cross the marketplace/install boundary.
+ *
+ * @remarks Shared by the tolerant marketplace reader and strict kernel
+ * installer so the UI never offers an action the kernel will deterministically
+ * reject.
+ */
+export function pluginGitUrlIssue(raw: string): string | undefined {
+  const url = raw.trim();
+  if (url.length === 0) return "a git URL is required";
+  if (url.startsWith("-")) {
+    return `refusing '${url}': a URL starting with '-' would be read by git as a flag`;
+  }
+  if (/ext::/i.test(url))
+    return `refusing '${url}': git's ext:: transport runs an arbitrary command`;
+  if (LOCAL_GIT_PATH_RE.test(url)) {
+    return (
+      `refusing '${url}': that names a local path, and Clarvis installs a plugin from git. ` +
+      "Use https://, ssh (user@host:path), or file:// for a local checkout."
+    );
+  }
+  if (/^(?:http|git):\/\//i.test(url)) {
+    return (
+      `refusing '${url}': ${url.slice(0, url.indexOf(":"))}:// is unauthenticated cleartext, so ` +
+      "anyone on the path can swap the code you are about to install. Use https:// or ssh."
+    );
+  }
+  const ssh = /^(?:ssh:\/\/)?[A-Za-z0-9._-]+@[A-Za-z0-9._-]+[:/][A-Za-z0-9._~/-]+$/;
+  if (/^(?:https|file):\/\//i.test(url) || ssh.test(url)) return undefined;
+  return `refusing '${url}': install from https://, ssh (user@host:path), or file:// for a local checkout`;
+}
+
+/** Return why a Git ref/SHA selector cannot be passed to the installer. */
+export function pluginGitSelectorIssue(selector: {
+  ref?: string;
+  sha?: string;
+}): string | undefined {
+  if (selector.ref !== undefined && selector.sha !== undefined) {
+    return "a plugin source cannot declare both ref and sha";
+  }
+  if (
+    selector.ref !== undefined &&
+    (selector.ref.length > 512 ||
+      selector.ref.startsWith("-") ||
+      /[\0-\x20~^:?*\\]/.test(selector.ref) ||
+      selector.ref.includes("..") ||
+      selector.ref.includes("@{"))
+  ) {
+    return "invalid plugin git ref";
+  }
+  if (selector.sha !== undefined && !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(selector.sha)) {
+    return "invalid plugin git sha";
+  }
+  return undefined;
+}
+
+/** Return why an npm source cannot be handed to the script-free package fetcher. */
+export function pluginNpmSourceIssue(source: {
+  package: string;
+  version?: string;
+  registry?: string;
+}): string | undefined {
+  if (
+    !/^(?:@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/i.test(
+      source.package,
+    )
+  ) {
+    return "invalid npm plugin package name";
+  }
+  if (
+    source.version !== undefined &&
+    (source.version.length > 256 ||
+      source.version.startsWith("-") ||
+      /[\0\r\n/\\]/.test(source.version) ||
+      source.version.includes("://"))
+  ) {
+    return "invalid npm plugin version";
+  }
+  if (source.registry !== undefined) {
+    let registry: URL;
+    try {
+      registry = new URL(source.registry);
+    } catch {
+      return "invalid npm registry URL";
+    }
+    if (
+      registry.protocol !== "https:" ||
+      registry.username !== "" ||
+      registry.password !== "" ||
+      registry.search !== "" ||
+      registry.hash !== ""
+    ) {
+      return "npm registries must use HTTPS without embedded credentials";
+    }
+  }
+  return undefined;
+}
+
 /** The keys {@link readEntry} gives meaning to. */
 const KNOWN_ENTRY_KEYS: ReadonlySet<string> = new Set([
   "name",
@@ -90,6 +187,8 @@ const KNOWN_ENTRY_KEYS: ReadonlySet<string> = new Set([
   "homepage",
   "displayName",
   "category",
+  "policy",
+  "interface",
 ]);
 
 /** The keys {@link readMarketplaceDocument} gives meaning to. */
@@ -240,6 +339,12 @@ function authoredTextVia(
 interface SourceReading {
   /** The source as one string: the URL to clone, or the local path named. */
   source: string;
+  kind: "git" | "local" | "npm";
+  path?: string;
+  ref?: string;
+  sha?: string;
+  version?: string;
+  registry?: string;
   /** Whether this host can install from it. */
   installable: boolean;
   /** Why it is not installable, when it is not. */
@@ -252,41 +357,118 @@ interface SourceReading {
  * @param raw - the validated `source` value.
  * @returns the normalized source, and whether this host installs from it.
  * @remarks A bare string carrying a transport or an ssh spelling is a remote
- *   source and is installable; anything else names a local one, which parses,
- *   is reported, and is never offered for install.
+ *   source and is installable. A confined relative spelling is an installable
+ *   local source; an absolute or escaping path remains visible but cannot be
+ *   installed.
  */
 function readSource(raw: string | z.infer<typeof sourceDescriptorSchema>): SourceReading {
   if (typeof raw === "string") {
     const value = raw.trim();
     if (TRANSPORT_SOURCE_RE.test(value) || SSH_SOURCE_RE.test(value)) {
-      return { source: value, installable: true };
+      const issue = pluginGitUrlIssue(value);
+      return {
+        source: value,
+        kind: "git",
+        installable: issue === undefined,
+        ...(issue === undefined ? {} : { note: issue }),
+      };
     }
     if (!isRelativeSubpath(value)) {
       return {
         source: value,
+        kind: "local",
         installable: false,
         note: "names a local source that would resolve outside the marketplace root",
       };
     }
-    return { source: value, installable: false, note: LOCAL_SOURCE_NOTE };
+    return { source: value, kind: "local", path: value, installable: true };
   }
   const kind = raw.source.trim().toLowerCase();
   const path = raw.path?.trim();
   if (kind === "local") {
     if (path === undefined) {
-      return { source: kind, installable: false, note: "names a local source with no path" };
+      return {
+        source: kind,
+        kind: "local",
+        installable: false,
+        note: "names a local source with no path",
+      };
     }
     if (!isRelativeSubpath(path)) {
       return {
         source: path,
+        kind: "local",
         installable: false,
         note: "names a local source that would resolve outside the marketplace root",
       };
     }
-    return { source: path, installable: false, note: LOCAL_SOURCE_NOTE };
+    return { source: path, kind: "local", path, installable: true };
+  }
+  if (kind === "url" || kind === "git-subdir") {
+    const url = raw.url?.trim();
+    if (url === undefined || !(TRANSPORT_SOURCE_RE.test(url) || SSH_SOURCE_RE.test(url))) {
+      return {
+        source: url ?? kind,
+        kind: "git",
+        installable: false,
+        note: `names source kind '${kind}' without a usable git URL`,
+      };
+    }
+    const urlIssue = pluginGitUrlIssue(url);
+    if (urlIssue !== undefined) {
+      return {
+        source: url,
+        kind: "git",
+        installable: false,
+        note: urlIssue,
+      };
+    }
+    if (kind === "git-subdir" && (path === undefined || !isRelativeSubpath(path))) {
+      return {
+        source: url,
+        kind: "git",
+        installable: false,
+        note: "names a git-subdir source without a confined relative path",
+      };
+    }
+    const selectorIssue = pluginGitSelectorIssue({
+      ...(raw.ref === undefined ? {} : { ref: raw.ref.trim() }),
+      ...(raw.sha === undefined ? {} : { sha: raw.sha }),
+    });
+    return {
+      source: url,
+      kind: "git",
+      ...(path === undefined ? {} : { path }),
+      ...(raw.ref === undefined ? {} : { ref: raw.ref.trim() }),
+      ...(raw.sha === undefined ? {} : { sha: raw.sha.toLowerCase() }),
+      installable: selectorIssue === undefined,
+      ...(selectorIssue === undefined ? {} : { note: selectorIssue }),
+    };
+  }
+  if (kind === "npm") {
+    const packageName = raw.package?.trim();
+    const version = raw.version?.trim();
+    const registry = raw.registry?.trim();
+    const invalid =
+      packageName === undefined
+        ? "names an npm source without a usable package name"
+        : pluginNpmSourceIssue({
+            package: packageName,
+            ...(version === undefined ? {} : { version }),
+            ...(registry === undefined ? {} : { registry }),
+          });
+    return {
+      source: packageName ?? kind,
+      kind: "npm",
+      ...(version === undefined ? {} : { version }),
+      ...(registry === undefined ? {} : { registry }),
+      installable: invalid === undefined,
+      ...(invalid === undefined ? {} : { note: invalid }),
+    };
   }
   return {
     source: path ?? raw.source.trim(),
+    kind: "git",
     installable: false,
     note: `names source kind '${raw.source.trim()}', which Clarvis has no fetcher for`,
   };
@@ -304,8 +486,15 @@ export interface MarketplaceEntry {
   name: string;
   /** The source as one string: a URL to clone, or the local path named. */
   source: string;
+  sourceType: "git" | "local" | "npm";
   /** Subdirectory within the source holding this plugin's manifest. */
   path?: string;
+  ref?: string;
+  sha?: string;
+  version?: string;
+  registry?: string;
+  installation: "AVAILABLE" | "INSTALLED_BY_DEFAULT" | "NOT_AVAILABLE";
+  authentication: "ON_INSTALL" | "ON_FIRST_USE";
   /** One line on what this plugin is for; supplied when the document authors none. */
   description: string;
   /** Where to read more about it. */
@@ -381,7 +570,7 @@ function readEntry(raw: unknown, position: number): EntryReading {
   const resolved = readSource(sourceValue.data);
   if (resolved.note !== undefined) notes.push(`${named} ${resolved.note}`);
 
-  const path = readField(source.path, relativeSubpathField, named, "path", notes);
+  const path = resolved.path ?? readField(source.path, relativeSubpathField, named, "path", notes);
   let installable = resolved.installable;
   if (source.path !== undefined && path === undefined) {
     installable = false;
@@ -392,6 +581,27 @@ function readEntry(raw: unknown, position: number): EntryReading {
   }
   const homepage = readField(source.homepage, nonEmptyString, named, "homepage", notes);
   const category = readField(source.category, nonEmptyString, named, "category", notes);
+  const policy =
+    typeof source.policy === "object" && source.policy !== null && !Array.isArray(source.policy)
+      ? (source.policy as Record<string, unknown>)
+      : {};
+  const installation =
+    readField(
+      policy.installation,
+      z.enum(["AVAILABLE", "INSTALLED_BY_DEFAULT", "NOT_AVAILABLE"]),
+      named,
+      "policy.installation",
+      notes,
+    ) ?? "AVAILABLE";
+  const authentication =
+    readField(
+      policy.authentication,
+      z.enum(["ON_INSTALL", "ON_FIRST_USE"]),
+      named,
+      "policy.authentication",
+      notes,
+    ) ?? "ON_FIRST_USE";
+  if (installation === "NOT_AVAILABLE") installable = false;
   const titled = authoredTextVia(source, DISPLAY_NAME_KEYS);
   const displayName =
     readField(source.displayName, nonEmptyString, named, "displayName", notes) ?? titled.value;
@@ -421,7 +631,14 @@ function readEntry(raw: unknown, position: number): EntryReading {
     entry: {
       name: name.data,
       source: resolved.source,
+      sourceType: resolved.kind,
       ...(path !== undefined ? { path } : {}),
+      ...(resolved.ref === undefined ? {} : { ref: resolved.ref }),
+      ...(resolved.sha === undefined ? {} : { sha: resolved.sha }),
+      ...(resolved.version === undefined ? {} : { version: resolved.version }),
+      ...(resolved.registry === undefined ? {} : { registry: resolved.registry }),
+      installation,
+      authentication,
       description,
       ...(homepage !== undefined ? { homepage } : {}),
       ...(displayName !== undefined ? { displayName } : {}),

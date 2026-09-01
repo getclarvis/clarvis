@@ -562,6 +562,9 @@ terminal result."
 `StartupComposer` is not a decorative progress placeholder. In `run` mode it owns a real focused
 OpenTUI input, records content outside Solid/renderable ownership, and accepts Enter once. Its
 `Queue a task…` marker is distinct from the complete app's `◆ Clarvis` and `New task…` markers.
+Workspace-plugin trust resolution does not enter this bootstrap root. Repository plugins remain
+inactive while the kernel resolves their bounded inventory; after `<App>` mounts, its internal
+command wiring opens the workspace approval modal automatically for `unapproved` or `changed`.
 Its centre uses the shared `BrandBanner`: the complete eight-row splash appears when 60×16 fits and
 the standard compact wordmark appears below either threshold. The startup-only connection status
 does not invent the not-yet-resolved agent/model line or advertise complete-app shortcuts.

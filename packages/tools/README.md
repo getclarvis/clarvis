@@ -130,6 +130,20 @@ and the reciprocal backlink once while creating the toolset. The resulting canon
 directory is pinned in runtime configuration and exposed for later sandbox commands; mutable
 `.git` or `commondir` files are not consulted again.
 
+A host may pass up to 512 canonical `skillExecutionRoots` for selected skills whose helper files
+must be addressed by `shell` or `monitor_start`. Each entry must already be a directory and may be
+neither a filesystem root nor a root that contains the workspace. The containment comparison uses
+the canonical identities of both paths, so platform aliases such as macOS `/var` → `/private/var`
+cannot disguise the workspace as a separate child. Command path analysis and `cwd` confinement admit
+only those exact package roots. Native file-mutation tools still reject every target beneath them,
+including when a package sits below the workspace. The recursive `replace` tool also rejects an
+ancestor scope that contains one of those packages; otherwise walking `.agents`, for example, could
+rewrite protected descendants without naming them directly. With a native sandbox the same roots
+are mounted read-only. Without one, commands are ordinary secret-scrubbed host processes: the guard
+still reviews them, but this option is not a filesystem-immutability boundary and a command can
+modify files its operating-system identity may write. Nothing here executes a helper merely because
+its skill was selected.
+
 A host may additionally pass existing `temporaryRoots`. These are narrow,
 host-owned scratch roots, not a general filesystem escape: every native tool
 and guarded path analysis admits exactly those roots, while unrelated `/tmp`
@@ -272,22 +286,22 @@ carries a structured `ToolsWarning` beside its message, so a host bridges both o
 without losing the event name. Until a host installs one, the default writes to `stderr` — a
 fallback the TUI host must replace before tool warnings are possible.
 
-| Level   | `event`                         | Fields                                                                                           |
-| ------- | ------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `debug` | `tools.config_resolved`         | `ripgrep, sandbox_mode, sandbox_availability, read_only, confined, platform`                     |
-| `warn`  | `tools.sandbox_unavailable`     | `requested, reason` — the probe reason an `optional` sandbox used to discard                     |
-| `debug` | `tools.shell_spawn`             | `shell_file, flavor, detached, cwd, timeout_ms, sandboxed` — **never the command text**          |
-| `debug` | `tools.shell_exit`              | `exit_code, signal, timed_out, aborted, output_limited, stdout_bytes, stderr_bytes, duration_ms` |
-| `warn`  | `tools.kill_tree_failed`        | `pid, signal, platform` — every caller ignores the `false` return                                |
-| `debug` | `tools.monitor_spawn`           | `id, platform, detached, stdio_slots, log_path, flavor` — the write side of the capture          |
-| `debug` | `tools.monitor_poll`            | `id, running, offset, log_bytes` — the read side                                                 |
-| `warn`  | `tools.monitor_exit_unreadable` | `id, raw, reason, flavor`                                                                        |
-| `warn`  | `tools.spill_failed`            | `stream, target, cause`                                                                          |
-| `debug` | `tools.grep_path`               | `engine, is_dir, confined`                                                                       |
-| `debug` | `tools.path_refused`            | `input, reason, allow_roots_count`                                                               |
-| `error` | `tools.internal_error`          | `err` — via the warn sink                                                                        |
-| `warn`  | `tools.ignore_unreadable`       | `path` — via the warn sink                                                                       |
-| `debug` | `tools.fs_error_unmapped`       | `errno_code, syscall, path, platform` — via the warn sink                                        |
+| Level   | `event`                         | Fields                                                                                              |
+| ------- | ------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `debug` | `tools.config_resolved`         | `ripgrep, sandbox_mode, sandbox_availability, read_only, confined, skill_execution_roots, platform` |
+| `warn`  | `tools.sandbox_unavailable`     | `requested, reason` — the probe reason an `optional` sandbox used to discard                        |
+| `debug` | `tools.shell_spawn`             | `shell_file, flavor, detached, cwd, timeout_ms, sandboxed` — **never the command text**             |
+| `debug` | `tools.shell_exit`              | `exit_code, signal, timed_out, aborted, output_limited, stdout_bytes, stderr_bytes, duration_ms`    |
+| `warn`  | `tools.kill_tree_failed`        | `pid, signal, platform` — every caller ignores the `false` return                                   |
+| `debug` | `tools.monitor_spawn`           | `id, platform, detached, stdio_slots, log_path, flavor` — the write side of the capture             |
+| `debug` | `tools.monitor_poll`            | `id, running, offset, log_bytes` — the read side                                                    |
+| `warn`  | `tools.monitor_exit_unreadable` | `id, raw, reason, flavor`                                                                           |
+| `warn`  | `tools.spill_failed`            | `stream, target, cause`                                                                             |
+| `debug` | `tools.grep_path`               | `engine, is_dir, confined`                                                                          |
+| `debug` | `tools.path_refused`            | `input, reason, allow_roots_count`                                                                  |
+| `error` | `tools.internal_error`          | `err` — via the warn sink                                                                           |
+| `warn`  | `tools.ignore_unreadable`       | `path` — via the warn sink                                                                          |
+| `debug` | `tools.fs_error_unmapped`       | `errno_code, syscall, path, platform` — via the warn sink                                           |
 
 Four of these exist to make remaining **Windows** gaps diagnosable. The Windows
 CI leg now runs `@clarvis/tools`; named capability predicates suppress only the

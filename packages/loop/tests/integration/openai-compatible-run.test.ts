@@ -293,7 +293,7 @@ describe("reasoning capture end-to-end", () => {
                       {
                         id: "call_read",
                         type: "function",
-                        function: { name: "filesystem_read", arguments: '{"path":"/x"}' },
+                        function: { name: "read", arguments: '{"path":"/x"}' },
                       },
                     ],
                   },

@@ -8,6 +8,32 @@ import type { ToolCallHooks } from "./tools/types.ts";
 import { buildGuardContext } from "./guard/context.ts";
 import type { ElicitRequest, GuardReview } from "./guard/types.ts";
 import type { RuntimeConfig } from "./config.ts";
+import { assertOutsideRoots } from "./lib/paths.ts";
+
+const NATIVE_MUTATION_TOOLS = new Set([
+  "write_file",
+  "edit_file",
+  "multi_edit",
+  "apply_patch",
+  "replace",
+  "move",
+  "copy",
+  "mkdir",
+  "remove",
+]);
+
+/** Refuse native mutations below host-selected skill directories before guard or handler work. */
+function protectSkillPackages(
+  name: string,
+  args: Record<string, unknown>,
+  config: RuntimeConfig,
+): void {
+  if (!NATIVE_MUTATION_TOOLS.has(name) || config.skillExecutionRoots.length === 0) return;
+  const context = buildGuardContext(name, args, config);
+  for (const fact of context.paths) {
+    assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw, name === "replace");
+  }
+}
 
 interface AjvInstance {
   compile(schema: unknown): ValidateFunction;
@@ -214,6 +240,12 @@ export async function dispatch(
   if (!validate(filled)) {
     const detail = ajv.errorsText(validate.errors, { separator: "; " });
     return errorResult(new ToolError("invalid_input", detail || "invalid arguments"));
+  }
+
+  try {
+    protectSkillPackages(name, filled, config);
+  } catch (error) {
+    return errorResult(error);
   }
 
   const gate = await applyGuard(name, filled, config);

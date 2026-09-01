@@ -1,6 +1,7 @@
 import { resolveConfig } from "./config.ts";
 import { discoverSkills } from "./core.ts";
 import type { AgentSkillsOptions, SkillConfig } from "./config.ts";
+import type { BoundedTextChunk } from "./bounded-read.ts";
 import type { SkillContent, SkillInfo, SkillRegistry } from "./types.ts";
 
 /**
@@ -30,6 +31,14 @@ export interface AgentSkills {
   /** Read a bundled resource through the registry's confinement boundary. */
   readResource(name: string, rel: string): string;
 
+  /** Read one bounded UTF-8 page of a bundled resource. */
+  readResourceChunk(
+    name: string,
+    rel: string,
+    offset?: number,
+    maxChars?: number,
+  ): BoundedTextChunk;
+
   /** Re-scan every root from disk, replacing the in-memory registry. */
   refresh(): void;
 }
@@ -53,6 +62,8 @@ export function createAgentSkills(options: AgentSkillsOptions): AgentSkills {
     loadSkill: (name) => registry.get(name),
     resourcePath: (name, rel) => registry.resource(name, rel),
     readResource: (name, rel) => registry.readResource(name, rel),
+    readResourceChunk: (name, rel, offset, maxChars) =>
+      registry.readResourceChunk(name, rel, offset, maxChars),
     refresh: () => {
       registry = discoverSkills(config);
     },
@@ -69,8 +80,14 @@ export { clarvisSkillRoots } from "./preset.ts";
 export type { ClarvisSkillRootsOptions } from "./preset.ts";
 
 export { enumerateResources } from "./scan.ts";
-export { readBoundedBytes } from "./bounded-read.ts";
-export type { BoundedReadOptions, DescriptorReader } from "./bounded-read.ts";
+export { hashBoundedFile, readBoundedBytes, readBoundedTextChunk } from "./bounded-read.ts";
+export type {
+  BoundedFileDigest,
+  BoundedReadOptions,
+  BoundedTextChunk,
+  BoundedTextChunkOptions,
+  DescriptorReader,
+} from "./bounded-read.ts";
 
 export { resolveConfig } from "./config.ts";
 export type { SkillConfig, AgentSkillsOptions } from "./config.ts";
@@ -80,6 +97,8 @@ export {
   MAX_SKILL_FILE_CHARS,
   MAX_SKILL_RESOURCE_BYTES,
   MAX_SKILL_RESOURCE_CHARS,
+  MAX_SKILL_RESOURCE_FILE_BYTES,
+  MAX_SKILL_RESOURCE_SNAPSHOT_BYTES,
   MAX_SKILL_ROOTS,
 } from "./limits.ts";
 
@@ -94,6 +113,7 @@ export type {
   SkillDefaultedField,
   SkillIcons,
   SkillPresentation,
+  SkillToolDependency,
   SkillResource,
   SkillScope,
   SkillSource,

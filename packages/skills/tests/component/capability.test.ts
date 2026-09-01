@@ -187,6 +187,47 @@ describe("skills capability composition", () => {
     expect(await run.forAgent!(fakeAgentScope({ grants: [USE_SKILLS_GRANT] }))).toBeNull();
   });
 
+  it("offers only skills whose direct or plugin-qualified MCP dependencies are present", async () => {
+    const catalog = [
+      makeInfo({
+        name: "direct",
+        dependencies: [{ type: "mcp", value: "docs" }],
+      }),
+      makeInfo({
+        ...pluginInfo("qualified"),
+        dependencies: [{ type: "mcp", value: "search" }],
+      }),
+      makeInfo({
+        ...pluginInfo("missing"),
+        dependencies: [{ type: "mcp", value: "absent" }],
+      }),
+    ];
+    const skills: SkillsProvider = {
+      listSkills: () => catalog,
+      loadSkill: () => undefined,
+      readResource: () => {
+        throw new Error("no resources in this fake");
+      },
+    };
+    const base = fakeRunCapabilityContext({ env: loadEnv({ CLARVIS_SKILLS_ENABLED: "1" }) });
+    const run = await createSkillsCapability(skills).forRun({
+      ...base,
+      request: {
+        ...base.request,
+        servers: [
+          { name: "docs", transport: "stdio", command: "x" },
+          { name: "superpowers:search", transport: "stdio", command: "x" },
+        ],
+      },
+    });
+    if (run === null) throw new Error("expected the skills capability to activate");
+
+    const section = run.systemSection!(lead)!;
+    expect(section).toContain("**direct**");
+    expect(section).toContain("**qualified**");
+    expect(section).not.toContain("**missing**");
+  });
+
   it("wires the unadvertised load_skill handler and preserves trace context", async () => {
     const run = await runCapability({ skills: provider() });
     const agent = await run.forAgent!(fakeAgentScope({ grants: [USE_SKILLS_GRANT] }));

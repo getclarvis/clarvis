@@ -17,7 +17,7 @@ export const MAX_MCP_OAUTH_STORE_BYTES = 1024 * 1024;
 export const MAX_MCP_OAUTH_RECORDS = 128;
 const MAX_RECORD_BYTES = 512 * 1024;
 const RECORD_KEY = /^[a-f0-9]{64}$/;
-const CALLBACK_URL = /^http:\/\/127\.0\.0\.1:\d{1,5}\/oauth\/callback$/;
+const MAX_REDIRECT_URL_CHARS = 2_048;
 
 /** Persisted credentials for one owner and remote MCP resource. */
 export interface McpOAuthRecord {
@@ -57,11 +57,28 @@ function emptyFile(): McpOAuthFileV1 {
 }
 
 function validRedirect(value: unknown): value is string {
-  if (typeof value !== "string" || !CALLBACK_URL.test(value)) return false;
+  if (typeof value !== "string" || value.length === 0 || value.length > MAX_REDIRECT_URL_CHARS) {
+    return false;
+  }
   try {
     const url = new URL(value);
+    if (
+      url.username.length > 0 ||
+      url.password.length > 0 ||
+      url.search.length > 0 ||
+      url.hash.length > 0
+    ) {
+      return false;
+    }
+    if (url.protocol === "https:") return true;
+    if (
+      url.protocol !== "http:" ||
+      !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname.toLowerCase())
+    ) {
+      return false;
+    }
     const port = Number(url.port);
-    return port >= 1 && port <= 65_535;
+    return url.port.length > 0 && port >= 1 && port <= 65_535;
   } catch {
     return false;
   }

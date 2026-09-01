@@ -78,11 +78,22 @@ export async function openToolPool(input: {
     ),
   );
   const successes: Lease[] = [];
-  const failed: { name: string; transport: ToolTransport; reason: unknown }[] = [];
+  const failed: {
+    name: string;
+    transport: ToolTransport;
+    required: boolean;
+    reason: unknown;
+  }[] = [];
   request.servers.forEach((server, i) => {
     const r = results[i]!;
     if (r.status === "fulfilled") successes.push(r.value);
-    else failed.push({ name: server.name, transport: server.transport, reason: r.reason });
+    else
+      failed.push({
+        name: server.name,
+        transport: server.transport,
+        required: server.required === true,
+        reason: r.reason,
+      });
   });
 
   if (signal?.aborted) {
@@ -97,8 +108,13 @@ export async function openToolPool(input: {
         !(entry.reason instanceof MCPAuthorizationPendingError) &&
         !(entry.reason instanceof MCPBackgroundConnectDeferredError),
     );
-  const terminalFailure = everyFailureIsTerminal ? failed[0] : undefined;
-  if (successes.length === 0 && request.servers.length > 0 && terminalFailure !== undefined) {
+  const requiredFailure = failed.find((entry) => entry.required);
+  const terminalFailure = requiredFailure ?? (everyFailureIsTerminal ? failed[0] : undefined);
+  if (
+    terminalFailure !== undefined &&
+    (requiredFailure !== undefined || (successes.length === 0 && request.servers.length > 0))
+  ) {
+    await Promise.allSettled(successes.map((o) => o.release()));
     const err = terminalFailure.reason;
     if (err instanceof MCPConnectionFailedError) {
       return {

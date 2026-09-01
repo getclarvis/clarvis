@@ -82,6 +82,7 @@ export function createSkillsService(cfg: SkillsServiceConfig): SkillsService {
               : {}),
             ...(plansMode !== undefined ? { plansMode } : {}),
             ...(presentation !== undefined ? { presentation } : {}),
+            ...(s.dependencies !== undefined ? { dependencies: s.dependencies } : {}),
           };
         });
     },

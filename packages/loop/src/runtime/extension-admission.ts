@@ -76,6 +76,22 @@ function admittedLifecycleHook(
               hook.onSubagentComplete!.call(hook, context),
             ),
         }),
+    ...(hook.onSubagentStart === undefined
+      ? {}
+      : {
+          onSubagentStart: (context) =>
+            admission.call(lane("onSubagentStart"), "normal", () =>
+              hook.onSubagentStart!.call(hook, context),
+            ),
+        }),
+    ...(hook.onPostCompact === undefined
+      ? {}
+      : {
+          onPostCompact: (context) =>
+            admission.call(lane("onPostCompact"), "normal", () =>
+              hook.onPostCompact!.call(hook, context),
+            ),
+        }),
     ...(hook.onPreCompact === undefined
       ? {}
       : {

@@ -35,11 +35,12 @@ import {
 import {
   createAgentSkills,
   enumerateResources,
+  hashBoundedFile,
   readBoundedBytes,
   MAX_SKILL_FILE_BYTES,
   MAX_SKILL_FILE_CHARS,
-  MAX_SKILL_RESOURCE_BYTES,
-  MAX_SKILL_RESOURCE_CHARS,
+  MAX_SKILL_RESOURCE_FILE_BYTES,
+  MAX_SKILL_RESOURCE_SNAPSHOT_BYTES,
   MAX_SKILL_ROOTS,
 } from "@clarvis/skills";
 import { readPluginInstallRecord } from "./plugin-install-record.ts";
@@ -50,6 +51,12 @@ import {
   snapshotPluginExecutables,
   type PluginExecutableFileSnapshot,
 } from "./plugin-executable-snapshot.ts";
+
+/** Exact hashing bounds for all bundled resources contributed by one plugin. */
+export const PLUGIN_SKILL_RESOURCE_LIMITS = Object.freeze({
+  fileBytes: MAX_SKILL_RESOURCE_FILE_BYTES,
+  aggregateBytes: MAX_SKILL_RESOURCE_SNAPSHOT_BYTES,
+});
 
 type PluginSelection = readonly EnvironmentPluginRef[];
 
@@ -415,6 +422,7 @@ export function createPluginContributions(opts: {
     );
     if (roots.length === 0) return [];
     try {
+      let aggregateResourceBytes = 0;
       const skills = createAgentSkills({
         workspace: plugin.dir,
         roots,
@@ -428,14 +436,28 @@ export function createPluginContributions(opts: {
             info.dir,
             skills.config.followSymlinks,
             skills.config,
-          ).map((resource) => ({
-            rel: resource.rel,
-            digest: snapshotFileDigest(
-              resource.path,
-              MAX_SKILL_RESOURCE_BYTES,
-              MAX_SKILL_RESOURCE_CHARS,
-            ),
-          }));
+          ).map((resource) => {
+            const snapshot = hashBoundedFile(resource.path, {
+              maxBytes: PLUGIN_SKILL_RESOURCE_LIMITS.fileBytes,
+              code: "invalid_skill",
+              label: "plugin skill resource",
+              logger,
+            });
+            aggregateResourceBytes += snapshot.bytes;
+            if (aggregateResourceBytes > PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes) {
+              throw new Error(
+                `plugin skill resources exceed the ${String(
+                  PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes,
+                )}-byte aggregate limit`,
+              );
+            }
+            return {
+              rel: resource.rel,
+              digest: snapshot.digest,
+              bytes: snapshot.bytes,
+              mode: snapshot.mode,
+            };
+          });
           return {
             name: info.name,
             digest: digest({
@@ -447,6 +469,7 @@ export function createPluginContributions(opts: {
                 allowed_tools: info.allowedTools,
                 user_invocable: info.userInvocable,
                 catalog_suppressed: info.catalogSuppressed,
+                dependencies: info.dependencies,
                 presentation: info.presentation,
                 defaulted: info.defaulted,
               },
@@ -635,6 +658,7 @@ export function createPluginContributions(opts: {
         return admitted.map((path) => ({
           ...scanRoots.get(path),
           path,
+          executionRoot: p.dir,
           scope: p.ref.scope === "workspace" ? ("workspace" as const) : ("user" as const),
           source: `plugin:${p.name}`,
         }));

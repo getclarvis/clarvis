@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import type { Accessor, JSX } from "solid-js";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
@@ -430,7 +430,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
               return (
                 plugin !== undefined &&
                 plugin.scope === "global" &&
-                plugin.installSource !== undefined &&
+                plugin.updateable === true &&
                 operation() === undefined
               );
             },
@@ -662,6 +662,104 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         <Show when={plugin.version}>
           <text fg={tokens.muted}>{`version    ${plugin.version}`}</text>
         </Show>
+        <Show when={plugin.longDescription}>
+          <text fg={tokens.muted} wrapMode="word">
+            {plugin.longDescription}
+          </text>
+        </Show>
+        <Show
+          when={
+            plugin.author ??
+            plugin.developerName ??
+            plugin.license ??
+            plugin.homepage ??
+            plugin.repository
+          }
+        >
+          <SectionHeader label="Publisher" />
+          <Show when={plugin.author}>
+            {(author: Accessor<NonNullable<PluginView["author"]>>) => (
+              <>
+                <text
+                  fg={tokens.muted}
+                  wrapMode="word"
+                >{`author     ${author().name}${author().email ? ` <${author().email}>` : ""}`}</text>
+                <Show when={author().url}>
+                  <text fg={tokens.muted} wrapMode="word">{`author URL ${author().url}`}</text>
+                </Show>
+              </>
+            )}
+          </Show>
+          <Show when={plugin.developerName}>
+            <text fg={tokens.muted}>{`developer  ${plugin.developerName}`}</text>
+          </Show>
+          <Show when={plugin.license}>
+            <text fg={tokens.muted}>{`license    ${plugin.license}`}</text>
+          </Show>
+          <Show when={plugin.homepage}>
+            <text fg={tokens.muted} wrapMode="word">{`homepage   ${plugin.homepage}`}</text>
+          </Show>
+          <Show when={plugin.repository}>
+            <text fg={tokens.muted} wrapMode="word">{`repository ${plugin.repository}`}</text>
+          </Show>
+          <Show when={plugin.keywords?.length}>
+            <text
+              fg={tokens.muted}
+              wrapMode="word"
+            >{`keywords   ${plugin.keywords?.join(", ")}`}</text>
+          </Show>
+        </Show>
+        <Show
+          when={
+            plugin.category ??
+            plugin.websiteURL ??
+            plugin.privacyPolicyURL ??
+            plugin.termsOfServiceURL ??
+            plugin.brandColor ??
+            plugin.composerIcon ??
+            plugin.logo ??
+            plugin.screenshots?.[0] ??
+            plugin.defaultPrompt?.[0]
+          }
+        >
+          <SectionHeader label="Presentation" />
+          <Show when={plugin.category}>
+            <text fg={tokens.muted}>{`category   ${plugin.category}`}</text>
+          </Show>
+          <Show when={plugin.capabilities?.length}>
+            <text
+              fg={tokens.muted}
+              wrapMode="word"
+            >{`labels     ${plugin.capabilities?.join(", ")}`}</text>
+          </Show>
+          <Show when={plugin.websiteURL}>
+            <text fg={tokens.muted} wrapMode="word">{`website    ${plugin.websiteURL}`}</text>
+          </Show>
+          <Show when={plugin.privacyPolicyURL}>
+            <text fg={tokens.muted} wrapMode="word">{`privacy    ${plugin.privacyPolicyURL}`}</text>
+          </Show>
+          <Show when={plugin.termsOfServiceURL}>
+            <text
+              fg={tokens.muted}
+              wrapMode="word"
+            >{`terms      ${plugin.termsOfServiceURL}`}</text>
+          </Show>
+          <Show when={plugin.brandColor}>
+            <text fg={tokens.muted}>{`color      ${plugin.brandColor}`}</text>
+          </Show>
+          <Show when={plugin.composerIcon}>
+            <text fg={tokens.muted} wrapMode="word">{`icon       ${plugin.composerIcon}`}</text>
+          </Show>
+          <Show when={plugin.logo}>
+            <text fg={tokens.muted} wrapMode="word">{`logo       ${plugin.logo}`}</text>
+          </Show>
+          <For each={plugin.screenshots ?? []}>
+            {(path) => <text fg={tokens.muted} wrapMode="word">{`screenshot ${path}`}</text>}
+          </For>
+          <For each={plugin.defaultPrompt ?? []}>
+            {(prompt) => <text fg={tokens.muted} wrapMode="word">{`prompt     ${prompt}`}</text>}
+          </For>
+        </Show>
         <SectionHeader label="Capabilities" />
         <text fg={tokens.muted}>{contributionSummary(plugin)}</text>
         <For each={contributions.agents}>
@@ -698,7 +796,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         </For>
         <SectionHeader label="Source" />
         <Show when={plugin.installSource}>
-          <text fg={tokens.muted} wrapMode="word">{`repository ${plugin.installSource}`}</text>
+          <text fg={tokens.muted} wrapMode="word">{`origin     ${plugin.installSource}`}</text>
         </Show>
         <Show when={plugin.revision}>
           <text fg={tokens.muted}>{`revision   ${plugin.revision}`}</text>
@@ -732,7 +830,12 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         </text>
         <SectionHeader label="Source" />
         <text fg={tokens.muted} wrapMode="word">{`marketplace  ${listing.marketplace}`}</text>
-        <text fg={tokens.muted} wrapMode="word">{`repository   ${listing.source}`}</text>
+        <text
+          fg={tokens.muted}
+          wrapMode="word"
+        >{`${listing.sourceType.padEnd(12)} ${listing.source}`}</text>
+        <text fg={tokens.muted}>{`installation ${listing.installation}`}</text>
+        <text fg={tokens.muted}>{`authentication ${listing.authentication}`}</text>
         <Show when={listing.category}>
           <text fg={tokens.muted}>{`category     ${listing.category}`}</text>
         </Show>

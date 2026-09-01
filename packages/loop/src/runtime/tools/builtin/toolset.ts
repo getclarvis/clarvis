@@ -25,6 +25,7 @@ export interface AgentToolsetOptions {
   canExec: boolean;
   confineToWorkspace?: boolean;
   temporaryRoots?: readonly string[];
+  skillExecutionRoots?: readonly string[];
   onTemporaryRootRegistered?: (root: string) => void;
   guard?: Guard;
   elicit?: Elicit;
@@ -126,6 +127,9 @@ const REAL_AGENT_TOOLS_ADAPTER: AgentToolsAdapter = {
         ? { confineToWorkspace: opts.confineToWorkspace }
         : {}),
       ...(opts.temporaryRoots !== undefined ? { temporaryRoots: opts.temporaryRoots } : {}),
+      ...(opts.skillExecutionRoots !== undefined
+        ? { skillExecutionRoots: opts.skillExecutionRoots }
+        : {}),
       ...(opts.onTemporaryRootRegistered !== undefined
         ? { onTemporaryRootRegistered: opts.onTemporaryRootRegistered }
         : {}),

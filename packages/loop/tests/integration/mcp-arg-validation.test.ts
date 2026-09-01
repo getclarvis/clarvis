@@ -106,7 +106,7 @@ describe("MCP tool-argument validation", () => {
     const llm = new MockLLM({
       script: [
         {
-          toolCalls: [{ name: "Filesystem_Read", arguments: { path: "/x" } }],
+          toolCalls: [{ name: "Filesystem.Read", arguments: { path: "/x" } }],
           usage: { input_tokens: 8, output_tokens: 3 },
         },
         { text: "done", usage: { input_tokens: 4, output_tokens: 2 } },

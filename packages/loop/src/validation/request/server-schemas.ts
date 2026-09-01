@@ -11,6 +11,52 @@ const boundedValues = z
     message: `must contain at most ${String(INPUT_LIMITS.mcpMapEntries)} entries`,
   });
 
+const envName = z
+  .string()
+  .min(1)
+  .max(INPUT_LIMITS.mcpNameChars)
+  .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "must be an environment-variable name");
+
+const boundedNames = z
+  .array(z.string().min(1).max(INPUT_LIMITS.mcpNameChars))
+  .max(INPUT_LIMITS.mcpMapEntries)
+  .transform((values) => [...new Set(values)]);
+
+const oauthSchema = z
+  .object({
+    client_id: z.string().min(1).max(INPUT_LIMITS.mcpValueChars).optional(),
+    callback_url: z
+      .string()
+      .url()
+      .max(INPUT_LIMITS.mcpValueChars)
+      .refine((raw) => {
+        const url = new URL(raw);
+        return (
+          (url.protocol === "https:" ||
+            (url.protocol === "http:" &&
+              ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname.toLowerCase()))) &&
+          url.pathname !== "/" &&
+          url.username.length === 0 &&
+          url.password.length === 0 &&
+          url.search.length === 0 &&
+          url.hash.length === 0
+        );
+      }, "must be an HTTPS or loopback HTTP callback URL with a non-root path and no query or fragment")
+      .optional(),
+    callback_port: z.number().int().min(0).max(65_535).optional(),
+    client_metadata_url: z
+      .string()
+      .url()
+      .max(INPUT_LIMITS.mcpValueChars)
+      .refine((raw) => {
+        const url = new URL(raw);
+        return url.protocol === "https:" && url.pathname !== "/";
+      }, "must be an HTTPS URL with a non-root path")
+      .optional(),
+  })
+  .strict()
+  .optional();
+
 const serverBase = z
   .object({
     name: z
@@ -87,6 +133,22 @@ const serverBase = z
           "allow-list for this run. Host composition only; it does not alter transport identity " +
           "or a persisted agent profile.",
       ),
+    oauth: oauthSchema,
+    bearer_token_env_var: envName.optional(),
+    env_http_headers: z
+      .record(z.string().min(1).max(INPUT_LIMITS.mcpNameChars), envName)
+      .refine((value) => boundedRecord(value, INPUT_LIMITS.mcpMapEntries), {
+        message: `must contain at most ${String(INPUT_LIMITS.mcpMapEntries)} entries`,
+      })
+      .optional(),
+    env_vars: z.array(envName).max(INPUT_LIMITS.mcpMapEntries).optional(),
+    startup_timeout_ms: z.number().int().positive().max(3_600_000).optional(),
+    tool_timeout_ms: z.number().int().positive().max(3_600_000).optional(),
+    enabled: z.boolean().optional(),
+    required: z.boolean().optional(),
+    enabled_tools: boundedNames.optional(),
+    disabled_tools: boundedNames.optional(),
+    authentication: z.enum(["on_install", "on_first_use"]).optional(),
   })
   .strict();
 
@@ -100,6 +162,12 @@ interface ServerTransportFields {
   cwd?: string | undefined;
   expandVariables?: boolean | undefined;
   shared?: boolean | undefined;
+  oauth?: unknown;
+  bearer_token_env_var?: string | undefined;
+  env_http_headers?: Record<string, string> | undefined;
+  env_vars?: string[] | undefined;
+  enabled_tools?: string[] | undefined;
+  disabled_tools?: string[] | undefined;
 }
 
 /**
@@ -139,6 +207,15 @@ function refineServerTransport(server: ServerTransportFields, ctx: z.core.$Refin
         message: "servers[].headers is not valid for a 'stdio' transport",
         path: ["headers"],
       });
+    }
+    for (const field of ["oauth", "bearer_token_env_var", "env_http_headers"] as const) {
+      if (server[field] !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          message: `servers[].${field} is not valid for a 'stdio' transport`,
+          path: [field],
+        });
+      }
     }
   } else {
     if (!server.url) {
@@ -189,8 +266,37 @@ function refineServerTransport(server: ServerTransportFields, ctx: z.core.$Refin
         path: ["shared"],
       });
     }
+    if (server.env_vars !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `servers[].env_vars is not valid for a '${server.transport}' transport`,
+        path: ["env_vars"],
+      });
+    }
+  }
+  const overlap = server.enabled_tools?.filter((tool) => server.disabled_tools?.includes(tool));
+  if ((overlap?.length ?? 0) > 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: `servers[].enabled_tools and disabled_tools overlap: ${overlap!.join(", ")}`,
+      path: ["disabled_tools"],
+    });
   }
 }
 
-/** {@link serverBase} with {@link refineServerTransport} applied — the full MCP server descriptor schema. */
-export const serverSchema = serverBase.superRefine(refineServerTransport);
+/** {@link serverBase} with transport inference and {@link refineServerTransport} applied. */
+export const serverSchema = z
+  .preprocess((value) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+    const source = value as Record<string, unknown>;
+    const normalized = { ...source };
+    if (normalized.headers === undefined && normalized.http_headers !== undefined) {
+      normalized.headers = normalized.http_headers;
+    }
+    delete normalized.http_headers;
+    if (normalized.transport === undefined && typeof normalized.url === "string") {
+      normalized.transport = "http";
+    }
+    return normalized;
+  }, serverBase)
+  .superRefine(refineServerTransport);

@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentsPluginsDirs, globalPaths, workspacePaths } from "@clarvis/paths";
 
-import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
+import {
+  createPluginContributions,
+  PLUGIN_SKILL_RESOURCE_LIMITS,
+} from "../../src/plugins/plugin-contributions.ts";
 import {
   PLUGIN_EXECUTABLE_RESOURCE_LIMITS,
   snapshotPluginExecutables,
@@ -74,6 +77,7 @@ describe("plugin contributions", () => {
     expect(loaded.skillRoots(refs("demo"))).toEqual([
       {
         path: join(globalPaths(globalDir).pluginsDir, "demo", "skills"),
+        executionRoot: join(globalPaths(globalDir).pluginsDir, "demo"),
         scope: "user",
         source: "plugin:demo",
       },
@@ -120,7 +124,7 @@ describe("plugin contributions", () => {
           hooks?: { event: string; command: string }[];
         }
       ).hooks,
-    ).toEqual([{ event: "run_start", command: "check" }]);
+    ).toMatchObject([{ event: "run_start", command: "check" }]);
   });
 
   it("qualifies same-named MCP servers once and preserves provider provenance", () => {
@@ -221,6 +225,52 @@ describe("plugin contributions", () => {
     );
   });
 
+  it("streams large binary and text resources into the exact skill snapshot", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "large-resources", {}, { skill: true });
+    const resources = join(dir, "skills", "guide", "references");
+    mkdirSync(resources, { recursive: true });
+    const binary = join(resources, "font.woff2");
+    const text = join(resources, "manual.md");
+    writeFileSync(binary, "");
+    truncateSync(binary, 512 * 1024);
+    writeFileSync(text, "x".repeat(75_000));
+    const loaded = contributions();
+
+    expect(loaded.pin(refs("large-resources"))[0]?.skills).toEqual(["guide"]);
+    writeFileSync(text, "y".repeat(75_000));
+    expect(() => loaded.assertUnchanged(refs("large-resources"))).toThrow(
+      /selected plugin content changed/,
+    );
+  });
+
+  it("withholds plugin skills when one resource exceeds the streaming file bound", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "huge-resource", {}, { skill: true });
+    const resources = join(dir, "skills", "guide", "assets");
+    mkdirSync(resources, { recursive: true });
+    const archive = join(resources, "archive.bin");
+    writeFileSync(archive, "");
+    truncateSync(archive, PLUGIN_SKILL_RESOURCE_LIMITS.fileBytes + 1);
+
+    const loaded = contributions();
+    expect(loaded.pin(refs("huge-resource"))[0]?.skills).toEqual([]);
+    expect(loaded.skillRoots(refs("huge-resource"))).toEqual([]);
+  });
+
+  it("withholds plugin skills when their resources exceed the aggregate snapshot bound", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "huge-snapshot", {}, { skill: true });
+    const resources = join(dir, "skills", "guide", "assets");
+    mkdirSync(resources, { recursive: true });
+    for (let index = 0; index < 5; index += 1) {
+      const asset = join(resources, `asset-${String(index)}.bin`);
+      writeFileSync(asset, "");
+      truncateSync(asset, 7 * 1024 * 1024);
+    }
+
+    const loaded = contributions();
+    expect(loaded.pin(refs("huge-snapshot"))[0]?.skills).toEqual([]);
+    expect(loaded.skillRoots(refs("huge-snapshot"))).toEqual([]);
+  });
+
   it("hashes a canonical list of per-file digests instead of an ambiguous byte stream", () => {
     const dir = install(globalPaths(globalDir).pluginsDir, "framed", {}, { skill: true });
     const resources = join(dir, "skills", "guide", "references");
@@ -276,6 +326,21 @@ describe("plugin contributions", () => {
 
     writeFileSync(sidecar, "short-description: Second presentation\n");
     const after = loaded.snapshot(refs("presented"))[0]!.digest;
+
+    expect(after).not.toBe(before);
+  });
+
+  it("fingerprints sidecar-derived MCP dependencies", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "dependent", {}, { skill: true });
+    const agents = join(dir, "skills", "guide", "agents");
+    mkdirSync(agents, { recursive: true });
+    const sidecar = join(agents, "openai.yaml");
+    writeFileSync(sidecar, "dependencies:\n  tools:\n    - type: mcp\n      value: docs\n");
+    const loaded = contributions();
+    const before = loaded.snapshot(refs("dependent"))[0]!.digest;
+
+    writeFileSync(sidecar, "dependencies:\n  tools:\n    - type: mcp\n      value: search\n");
+    const after = loaded.snapshot(refs("dependent"))[0]!.digest;
 
     expect(after).not.toBe(before);
   });
@@ -530,6 +595,7 @@ describe("plugin contributions", () => {
     expect(loaded.skillRoots(selected)).toEqual([
       {
         path: join(dir, "skills"),
+        executionRoot: dir,
         scope: "user",
         source: "plugin:codex-kit",
       },

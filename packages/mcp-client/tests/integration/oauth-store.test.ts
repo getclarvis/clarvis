@@ -32,7 +32,7 @@ describe("persistent MCP OAuth credential store", () => {
     expect(await store.readRecord(KEY_A)).toBeUndefined();
 
     await store.mutateRecord(KEY_A, () => ({
-      redirect_url: "http://127.0.0.1:53682/oauth/callback",
+      redirect_url: "http://127.0.0.1:53682/oauth/callback/HQzf9vGZLq0h",
       client_information: { client_id: "client-1" },
       tokens: {
         access_token: "access-secret",
@@ -43,7 +43,7 @@ describe("persistent MCP OAuth credential store", () => {
     }));
 
     expect(await store.readRecord(KEY_A)).toEqual({
-      redirect_url: "http://127.0.0.1:53682/oauth/callback",
+      redirect_url: "http://127.0.0.1:53682/oauth/callback/HQzf9vGZLq0h",
       client_information: { client_id: "client-1" },
       tokens: {
         access_token: "access-secret",
@@ -56,6 +56,31 @@ describe("persistent MCP OAuth credential store", () => {
       expect((await stat(file)).mode & 0o777).toBe(0o600);
       expect((await stat(join(file, ".."))).mode & 0o777).toBe(0o700);
     }
+  });
+
+  it("accepts secure registered callbacks and rejects credentialed or public plaintext URLs", async () => {
+    const { store } = await temporaryStore();
+    await store.mutateRecord(KEY_A, () => ({
+      redirect_url: "https://clarvis.example/oauth/callback",
+      updated_at: 1,
+    }));
+    expect(await store.readRecord(KEY_A)).toEqual({
+      redirect_url: "https://clarvis.example/oauth/callback",
+      updated_at: 1,
+    });
+
+    await expect(
+      store.mutateRecord(KEY_B, () => ({
+        redirect_url: "http://example.com/oauth/callback",
+        updated_at: 2,
+      })),
+    ).rejects.toThrow("invalid MCP OAuth credential record");
+    await expect(
+      store.mutateRecord(KEY_B, () => ({
+        redirect_url: "https://user:secret@clarvis.example/oauth/callback",
+        updated_at: 2,
+      })),
+    ).rejects.toThrow("invalid MCP OAuth credential record");
   });
 
   it("refuses to read or overwrite a malformed credential document", async () => {

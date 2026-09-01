@@ -1,6 +1,6 @@
 import { statSync } from "node:fs";
 import path from "node:path";
-import { readBoundedPrefix, readBoundedText } from "./bounded-read.ts";
+import { readBoundedPrefix, readBoundedText, readBoundedTextChunk } from "./bounded-read.ts";
 import { levelEnabled, type Logger } from "@clarvis/capability";
 import { SkillError } from "./errors.ts";
 import { causeOf, warn } from "./lib/log.ts";
@@ -26,6 +26,7 @@ import {
   MAX_SKILL_NAME_CHARS,
   MAX_SKILL_RESOURCE_BYTES,
   MAX_SKILL_RESOURCE_CHARS,
+  MAX_SKILL_RESOURCE_FILE_BYTES,
   MAX_SKILL_SHORT_DESCRIPTION_CHARS,
   MAX_SKILLS,
   MAX_SKILLS_PER_ROOT,
@@ -515,12 +516,14 @@ function buildResolvedSkill(
     ...(rawTools === undefined ? {} : { allowedTools }),
     userInvocable: frontmatter["user-invocable"] ?? true,
     ...(sidecar?.catalogSuppressed === true ? { catalogSuppressed: true } : {}),
+    ...(sidecar?.dependencies === undefined ? {} : { dependencies: sidecar.dependencies }),
     ...(presentation === undefined ? {} : { presentation }),
     ...(parsed.defaulted.length > 0 ? { defaulted: parsed.defaulted } : {}),
     scope: root.scope,
     source: root.source,
     root: root.path,
     dir,
+    ...(root.executionRoot === undefined ? {} : { executionRoot: dir }),
     path: file,
   };
   let loaded = false;
@@ -709,7 +712,14 @@ function makeRegistry(byName: Map<string, ResolvedSkill>, config: SkillConfig): 
   };
   return {
     list(): SkillInfo[] {
-      return [...byName.values()].map((s) => s.info).sort((a, b) => a.name.localeCompare(b.name));
+      return [...byName.values()]
+        .map(({ info }) => ({
+          ...info,
+          ...(info.shadowed === undefined
+            ? {}
+            : { shadowed: info.shadowed.map((shadowed) => ({ ...shadowed })) }),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
     },
     get(name: string): SkillContent | undefined {
       const skill = byName.get(name);
@@ -735,6 +745,18 @@ function makeRegistry(byName: Map<string, ResolvedSkill>, config: SkillConfig): 
       return readBoundedText(abs, {
         maxBytes: MAX_SKILL_RESOURCE_BYTES,
         maxChars: MAX_SKILL_RESOURCE_CHARS,
+        code: "invalid_input",
+        label: "skill resource",
+        logger: config.logger,
+      });
+    },
+    readResourceChunk(name: string, rel: string, offset = 0, maxChars = MAX_SKILL_RESOURCE_CHARS) {
+      const abs = resourcePath(name, rel);
+      return readBoundedTextChunk(abs, {
+        offset,
+        maxBytes: MAX_SKILL_RESOURCE_BYTES,
+        maxFileBytes: MAX_SKILL_RESOURCE_FILE_BYTES,
+        maxChars: Math.min(maxChars, MAX_SKILL_RESOURCE_CHARS),
         code: "invalid_input",
         label: "skill resource",
         logger: config.logger,

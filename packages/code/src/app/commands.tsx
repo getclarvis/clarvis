@@ -67,7 +67,12 @@ import type { SessionCatalogItem } from "../views/config/SessionsHub.tsx";
 import { SETTINGS_ITEMS } from "../views/config/hub-items.ts";
 import { lazyView } from "../views/config/lazy-view.tsx";
 import { createPluginsStore, type PluginView } from "../adapters/plugins.ts";
-import { addMarketplaceSource, createMarketplaceAdapter } from "../adapters/marketplace.ts";
+import {
+  addMarketplaceSource,
+  createMarketplaceAdapter,
+  marketplaceInstallSource,
+  type MarketplaceListing,
+} from "../adapters/marketplace.ts";
 import { errorText } from "../adapters/errors.ts";
 import type { HintTone } from "../views/hint.ts";
 import type { SessionId, SessionMeta } from "../adapters/session-store.ts";
@@ -832,6 +837,36 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     }
   };
 
+  const installListingAndActivate = async (
+    listing: MarketplaceListing,
+    source: "agents" | "clarvis",
+  ): Promise<string> => {
+    const environment = await marketplaceInstallPreflight();
+    const installed = await pluginsStore.installSource(marketplaceInstallSource(listing), source);
+    const ref = refOf(installed);
+    let membershipAccepted = false;
+    try {
+      await persistPluginMembership(environment, ref, true);
+      membershipAccepted = true;
+      const reconnect = await deps.reconnectBackend();
+      if (!reconnect.ok) {
+        await pluginsStore.reload();
+        return `installed ${ref.scope}/${ref.source}/${ref.name}; activation takes effect after /reconnect (${reconnect.message})`;
+      }
+      await pluginsStore.reload();
+      const active = pluginsStore.list().find((plugin) => samePluginRef(refOf(plugin), ref));
+      const current = await deps.environments.current();
+      return active?.enabled
+        ? `installed and activated ${ref.scope}/${ref.source}/${ref.name} in ${current.id}`
+        : `installed ${ref.scope}/${ref.source}/${ref.name}; ${current.id} is degraded and did not activate it`;
+    } catch (error) {
+      if (membershipAccepted) throw error;
+      await deps.plugins.uninstall(ref).catch(() => undefined);
+      await pluginsStore.reload().catch(() => undefined);
+      throw error;
+    }
+  };
+
   const updatePlugin = async (plugin: PluginView): Promise<string> => {
     const ref = refOf(plugin);
     const blocked = await selectedLifecycleBlock(ref);
@@ -1001,7 +1036,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           plugins: store.list,
           environment,
           loading,
-          install: (listing) => installAndActivatePlugin(listing.source, "agents", listing.path),
+          install: (listing) => installListingAndActivate(listing, "agents"),
           installUrl: (url, source) => installAndActivatePlugin(url, source),
           configure: (plugin) =>
             detachObserved(
@@ -1689,7 +1724,8 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           sources,
           loading,
           loadError,
-          install: (listing, source) => pluginsStore.install(listing.source, listing.path, source),
+          install: (listing, source) =>
+            pluginsStore.installSource(marketplaceInstallSource(listing), source),
           refresh: async (refreshInventory = false) => {
             market.refresh();
             await refresh(refreshInventory);

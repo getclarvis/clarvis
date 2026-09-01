@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import {
   agentsMarketplaceFile,
   agentsMarketplaceFiles,
@@ -13,6 +13,7 @@ import type { SettingsAdapter } from "./settings.ts";
 import { diagnosticEvent } from "../core/diagnostic-events.ts";
 import { gitCloneAsync, validateGitUrl } from "./plugin-install.ts";
 import { zodIssueSummary } from "./zod-summary.ts";
+import type { PluginInstallSource } from "@clarvis/protocol";
 
 /**
  * The ceiling on a marketplace document, matching the plugin manifest ceiling.
@@ -65,6 +66,11 @@ function documentsIn(root: string): string[] {
   return [join(root, MARKETPLACE_FILE), agentsMarketplaceFile(root)];
 }
 
+/** Root against which one marketplace document resolves `source.path`. */
+function marketplaceRoot(file: string): string {
+  return isAgentsMarketplaceFile(file) ? dirname(dirname(dirname(file))) : dirname(file);
+}
+
 /**
  * Errnos that mean "this path does not exist yet", and nothing worse.
  *
@@ -95,9 +101,9 @@ function errnoOf(error: unknown): string | undefined {
  *   all read as "contained" — and `target` comes from the marketplace document,
  *   so its author could make the resolution fail cheaply (a symlink cycle, an
  *   overlong path) and thereby delete the containment note about their own
- *   listing. The exposure was never installation: `validateGitUrl` refuses a
- *   local path outright and the listing is already `installable: false`. It was
- *   the note, and a note an untrusted party can suppress is not a note.
+ *   listing. Local listings are installable after this check, so an
+ *   indeterminate answer must fail closed before the listing is projected into
+ *   the kernel's local install-source contract.
  *
  *   Failing to resolve `root` is decisive in the other direction: with no
  *   boundary established, nothing can be shown to be inside it.
@@ -137,15 +143,16 @@ function reportContainmentUnknown(error: unknown): void {
  *
  * @param root - the directory the document was read from.
  * @param marketplace - the parsed catalog, annotated in place.
- * @remarks Only ever adds a note: a local listing is already not installable, so
- *   this is the evidence the operator needs, not a gate.
+ * @remarks A contained local listing is installable. An escaping or unresolved
+ *   path is marked non-installable and annotated before it reaches the browser.
  */
 function confineLocalSources(root: string, marketplace: Marketplace): void {
   const realRoot = realpathSync(root);
   for (const entry of marketplace.plugins) {
-    if (entry.installable) continue;
+    if (entry.sourceType !== "local") continue;
     const target = resolve(root, entry.source);
     if (staysInside(realRoot, target)) continue;
+    entry.installable = false;
     entry.notes = [
       ...entry.notes,
       `listing '${entry.name}': its local source resolves outside the marketplace root`,
@@ -185,7 +192,7 @@ function readMarketplace(file: string): Marketplace {
   if (!parsed.success) {
     throw new Error(`its ${MARKETPLACE_FILE} is invalid: ${zodIssueSummary(parsed.error)}`);
   }
-  confineLocalSources(dirname(file), parsed.data);
+  confineLocalSources(marketplaceRoot(file), parsed.data);
   return parsed.data;
 }
 
@@ -221,7 +228,16 @@ async function fetchMarketplace(url: string): Promise<Marketplace> {
     if (found === undefined) {
       throw new Error(`that repository has no ${MARKETPLACE_FILE} at its root`);
     }
-    return readMarketplace(found);
+    const marketplace = readMarketplace(found);
+    for (const entry of marketplace.plugins) {
+      if (entry.sourceType !== "local" || !entry.installable) continue;
+      const local = resolve(marketplaceRoot(found), entry.source);
+      const subdir = relative(checkout, local).split(sep).join("/");
+      entry.sourceType = "git";
+      entry.source = safe;
+      entry.path = subdir;
+    }
+    return marketplace;
   } finally {
     rmSync(staging, { recursive: true, force: true });
   }
@@ -264,8 +280,16 @@ export function createMarketplaceAdapter(deps: {
 
   const every = (): string[] => [...new Set([...defaults, ...deps.urls(), ...discovered])];
 
-  const read = async (id: string): Promise<Marketplace> =>
-    isAgentsMarketplaceFile(id) ? readMarketplace(id) : fetchMarketplace(id);
+  const read = async (id: string): Promise<Marketplace> => {
+    if (!isAgentsMarketplaceFile(id)) return fetchMarketplace(id);
+    const marketplace = readMarketplace(id);
+    for (const entry of marketplace.plugins) {
+      if (entry.sourceType !== "local" || !entry.installable) continue;
+      entry.source = resolve(marketplaceRoot(id), entry.source);
+      delete entry.path;
+    }
+    return marketplace;
+  };
 
   return {
     sources: () => every().map((url) => results.get(url) ?? { url }),
@@ -307,6 +331,30 @@ export function createMarketplaceAdapter(deps: {
       results.clear();
       discovered = [];
     },
+  };
+}
+
+/** Project one tolerant marketplace listing into the strict kernel fetch contract. */
+export function marketplaceInstallSource(listing: MarketplaceListing): PluginInstallSource {
+  if (listing.sourceType === "local") {
+    return { kind: "local", path: listing.source, expected_name: listing.name };
+  }
+  if (listing.sourceType === "npm") {
+    return {
+      kind: "npm",
+      package: listing.source,
+      expected_name: listing.name,
+      ...(listing.version === undefined ? {} : { version: listing.version }),
+      ...(listing.registry === undefined ? {} : { registry: listing.registry }),
+    };
+  }
+  return {
+    kind: "git",
+    url: listing.source,
+    expected_name: listing.name,
+    ...(listing.path === undefined ? {} : { subdir: listing.path }),
+    ...(listing.ref === undefined ? {} : { ref: listing.ref }),
+    ...(listing.sha === undefined ? {} : { sha: listing.sha }),
   };
 }
 

@@ -384,7 +384,7 @@ describe("Agent Plugins v1 package", () => {
 describe("foreign manifest fields", () => {
   it("accepts an author object and keeps the name", () => {
     write("plugin.json", { ...base, author: { name: "Jesse", email: "j@example.com" } });
-    expect(resolve().manifest?.author).toBe("Jesse");
+    expect(resolve().manifest?.author).toEqual({ name: "Jesse", email: "j@example.com" });
   });
 
   it("installs on name alone", () => {
@@ -408,15 +408,18 @@ describe("foreign manifest fields", () => {
     write("plugin.json", { ...base, mcpServer: {}, license: "MIT" });
     const { notes } = resolve();
     expect(notes[0]).toContain("did you mean 'mcpServers'?");
-    expect(notes.join(" ")).toContain("does not act on: license");
-    expect(notes.join(" ")).not.toContain("does not act on: license, mcpServer");
+    expect(notes.join(" ")).not.toContain("does not act on: license");
+    expect(notes.join(" ")).not.toContain("mcpServer, license");
   });
 
-  it("installs despite informational keys, and names them", () => {
+  it("preserves publisher and discovery metadata", () => {
     write("plugin.json", { ...base, license: "MIT", homepage: "https://example.com" });
     const { manifest, notes } = resolve();
     expect(manifest?.name).toBe("demo");
-    expect(notes.join(" ")).toContain("homepage, license");
+    expect(manifest?.license).toBe("MIT");
+    expect(manifest?.homepage).toBe("https://example.com");
+    expect(notes.join(" ")).not.toContain("homepage");
+    expect(notes.join(" ")).not.toContain("license");
   });
 
   it("scans the skills location the manifest names, silently", () => {
@@ -535,6 +538,36 @@ describe("mcpServers named as a companion document", () => {
     expect(notes.join(" ")).not.toContain("mcpServers");
   });
 
+  it("reads direct and snake-wrapped maps and normalizes portable remote OAuth fields", () => {
+    write("plugin.json", { ...base, mcpServers: "./.mcp.json" });
+    write(".mcp.json", {
+      $schema: "https://example.invalid/mcp.schema.json",
+      remote: {
+        url: "https://mcp.example.test/mcp",
+        oauth: {
+          clientId: "registered-client",
+          callbackUrl: "http://127.0.0.1/callback/registered",
+          callbackPort: 4321,
+          clientMetadataUrl: "https://clarvis.example/oauth/client.json",
+        },
+      },
+    });
+    const direct = resolve().manifest?.mcpServers?.remote;
+    expect(direct).toMatchObject({
+      type: "http",
+      url: "https://mcp.example.test/mcp",
+      oauth: {
+        client_id: "registered-client",
+        callback_url: "http://127.0.0.1/callback/registered",
+        callback_port: 4321,
+        client_metadata_url: "https://clarvis.example/oauth/client.json",
+      },
+    });
+
+    write(".mcp.json", { mcp_servers: { docs: { command: "docs-mcp" } } });
+    expect(resolve().manifest?.mcpServers?.docs?.command).toBe("docs-mcp");
+  });
+
   it("discovers .mcp.json by convention when the selected manifest names no document", () => {
     write("plugin.json", base);
     write(".mcp.json", companion);
@@ -598,7 +631,7 @@ describe("mcpServers named as a companion document", () => {
     write(".mcp.json", { servers: {} });
     const { error, notes } = resolve();
     expect(error).toBeUndefined();
-    expect(notes.join(" ")).toContain("declares no 'mcpServers' object");
+    expect(notes.join(" ")).toContain("declares no 'mcpServers'/'mcp_servers' object");
   });
 
   it("degrades a companion that is not a JSON object at all", () => {
@@ -658,7 +691,7 @@ describe("combined external plugin layout", () => {
       notes: [],
     });
     expect(manifest?.mcpServers?.charts?.command).toBe("atlas-mcp");
-    expect(manifest?.hooks).toEqual([
+    expect(manifest?.hooks).toMatchObject([
       {
         event: "pre_tool_use",
         command: "guard",
@@ -676,13 +709,42 @@ describe("presentation metadata and keys with no equivalent here", () => {
     icon: "./assets/atlas.svg",
   };
 
-  it("reads a display name and a short description, and stops calling the key unacted on", () => {
-    write("plugin.json", { ...base, interface: block });
+  it("reads the complete install-surface presentation block", () => {
+    write("plugin.json", {
+      ...base,
+      interface: {
+        ...block,
+        longDescription: "A longer description.",
+        developerName: "Atlas Labs",
+        category: "Productivity",
+        capabilities: ["Read", "Write"],
+        websiteURL: "https://atlas.example",
+        privacyPolicyURL: "https://atlas.example/privacy",
+        termsOfServiceURL: "https://atlas.example/terms",
+        defaultPrompt: ["Draw a chart"],
+        brandColor: "#10A37F",
+        composerIcon: "./assets/icon.png",
+        logo: "./assets/logo.png",
+        screenshots: ["./assets/screenshot.png"],
+      },
+    });
     const { presentation, notes, error } = resolve();
     expect(error).toBeUndefined();
     expect(presentation).toEqual({
       displayName: "Atlas Tools",
       shortDescription: "Charts and maps for a workspace.",
+      longDescription: "A longer description.",
+      developerName: "Atlas Labs",
+      category: "Productivity",
+      capabilities: ["Read", "Write"],
+      websiteURL: "https://atlas.example",
+      privacyPolicyURL: "https://atlas.example/privacy",
+      termsOfServiceURL: "https://atlas.example/terms",
+      defaultPrompt: ["Draw a chart"],
+      brandColor: "#10a37f",
+      composerIcon: "./assets/icon.png",
+      logo: "./assets/logo.png",
+      screenshots: ["./assets/screenshot.png"],
     });
     expect(notes.join(" ")).not.toContain("interface");
   });
@@ -713,7 +775,7 @@ describe("presentation metadata and keys with no equivalent here", () => {
     write("plugin.json", { ...base, interface: { icon: "./assets/atlas.svg" } });
     const { presentation, notes } = resolve();
     expect(presentation).toBeUndefined();
-    expect(notes.join(" ")).toContain("no display name or short description");
+    expect(notes.join(" ")).toContain("no supported display metadata");
   });
 
   it("ignores a blank display name rather than showing an empty row", () => {
@@ -776,10 +838,14 @@ describe("a committed manifest in another host's dialect", () => {
     const { manifest, error, notes, presentation } = resolveIn(dir);
     expect(error).toBeUndefined();
     expect(manifest?.name).toBe("atlas");
-    expect(manifest?.author).toBe("A. Author");
+    expect(manifest?.author).toEqual({
+      name: "A. Author",
+      email: "author@example.invalid",
+    });
+    expect(manifest?.license).toBe("MIT");
     expect(manifest?.mcpServers?.charts?.command).toBe("atlas-mcp");
     expect(presentation?.displayName).toBe("Atlas Tools");
-    expect(notes.join(" ")).toContain("does not act on: apps, license");
+    expect(notes.join(" ")).toContain("does not act on: apps");
   });
 
   it("resolves the same manifest from a shape-matched host directory", () => {
@@ -808,6 +874,141 @@ describe("a committed manifest in another host's dialect", () => {
 });
 
 describe("MCP server entries a manifest carries", () => {
+  it("maps whole borrowed userConfig env references onto Clarvis env/key names", () => {
+    write(".claude-plugin/plugin.json", {
+      ...base,
+      userConfig: {
+        grafana_url: { type: "string", required: true },
+        grafana_token: { type: "string", required: true, sensitive: true },
+      },
+    });
+    write(".mcp.json", {
+      mcpServers: {
+        grafana: {
+          command: "docker",
+          env: {
+            GRAFANA_URL: "${user_config.grafana_url}",
+            GRAFANA_SERVICE_ACCOUNT_TOKEN: "${user_config.grafana_token}",
+          },
+        },
+      },
+    });
+
+    const { manifest, error, notes } = resolve();
+    expect(error).toBeUndefined();
+    expect(manifest?.mcpServers?.grafana?.env).toEqual({
+      GRAFANA_URL: "${GRAFANA_URL}",
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: "${GRAFANA_SERVICE_ACCOUNT_TOKEN}",
+    });
+    expect(notes.join(" ")).not.toContain("userConfig");
+  });
+
+  it("withholds only an MCP carrying an unsafe borrowed userConfig reference", () => {
+    write("plugin.json", {
+      ...base,
+      userConfig: { token: { type: "string", sensitive: true } },
+      mcpServers: {
+        safe: { command: "safe" },
+        embedded: { command: "bad", env: { TOKEN: "Bearer ${user_config.token}" } },
+        missing: { command: "bad", env: { TOKEN: "${user_config.unknown}" } },
+      },
+    });
+
+    const { manifest, error, notes } = resolve();
+    expect(error).toBeUndefined();
+    expect(Object.keys(manifest?.mcpServers ?? {})).toEqual(["safe"]);
+    expect(notes.join(" ")).toContain("'embedded' is not contributed");
+    expect(notes.join(" ")).toContain("'missing' is not contributed");
+    expect(notes.join(" ")).not.toContain("Bearer");
+  });
+
+  it("fails closed when a borrowed userConfig reference has no declaration", () => {
+    write(".foreign-plugin/plugin.json", {
+      ...base,
+      mcpServers: {
+        safe: { command: "safe" },
+        missing: { command: "bad", env: { TOKEN: "${user_config.token}" } },
+      },
+    });
+
+    const { manifest, notes } = resolve();
+    expect(Object.keys(manifest?.mcpServers ?? {})).toEqual(["safe"]);
+    expect(notes.join(" ")).toContain("undeclared userConfig key 'token'");
+  });
+
+  it("withholds userConfig references outside stdio environment values", () => {
+    write(".foreign-plugin/plugin.json", {
+      ...base,
+      userConfig: { token: { type: "string", sensitive: true } },
+      mcpServers: {
+        safe: { command: "safe" },
+        argv: { command: "bad", args: ["${user_config.token}"] },
+        header: {
+          type: "http",
+          url: "https://example.com",
+          headers: { X: "${user_config.token}" },
+        },
+      },
+    });
+
+    const { manifest, notes } = resolve();
+    expect(Object.keys(manifest?.mcpServers ?? {})).toEqual(["safe"]);
+    expect(notes.join(" ")).toContain("unsupported field 'args'");
+    expect(notes.join(" ")).toContain("unsupported field 'headers'");
+  });
+
+  it("bounds borrowed userConfig reference inspection and withholds only that MCP", () => {
+    write(".foreign-plugin/plugin.json", {
+      ...base,
+      mcpServers: {
+        safe: { command: "safe" },
+        excessive: { command: "bad", args: Array.from({ length: 20_001 }, () => "x") },
+      },
+    });
+
+    const { manifest, notes } = resolve();
+    expect(Object.keys(manifest?.mcpServers ?? {})).toEqual(["safe"]);
+    expect(notes.join(" ")).toContain("unsupported field 'args'");
+  });
+
+  it("withholds a userConfig mapping whose server disables variable expansion", () => {
+    write(".foreign-plugin/plugin.json", {
+      ...base,
+      userConfig: { token: { type: "string" } },
+      mcpServers: {
+        literal: {
+          command: "bad",
+          expandVariables: false,
+          env: { TOKEN: "${user_config.token}" },
+        },
+      },
+    });
+
+    const { manifest, notes } = resolve();
+    expect(manifest?.mcpServers).toBeUndefined();
+    expect(notes.join(" ")).toContain("disables variable expansion");
+  });
+
+  it("requires string-shaped definitions and reports an oversized userConfig block", () => {
+    write(".foreign-plugin/plugin.json", {
+      ...base,
+      userConfig: Object.fromEntries([
+        ["token", null],
+        ...Array.from({ length: 128 }, (_, index) => [
+          `extra_${String(index)}`,
+          { type: "string" },
+        ]),
+      ]),
+      mcpServers: {
+        invalid: { command: "bad", env: { TOKEN: "${user_config.token}" } },
+      },
+    });
+
+    const { manifest, notes } = resolve();
+    expect(manifest?.mcpServers).toBeUndefined();
+    expect(notes.join(" ")).toContain("exceeds the 128-entry compatibility limit");
+  });
+
   it("ignores a configuration key this host gives no meaning to", () => {
     write("plugin.json", {
       ...base,
@@ -880,7 +1081,7 @@ describe("hooks written in the external dialect", () => {
     write("plugin.json", base);
     write("hooks/hooks.json", sessionStart);
     const { manifest, notes } = resolve();
-    expect(manifest?.hooks).toEqual([
+    expect(manifest?.hooks).toMatchObject([
       { event: "session_start", command: `"${join(root, "hooks/go")}" session-start` },
     ]);
     expect(notes.join(" ")).toContain("matcher 'startup|clear|compact' ignored");
@@ -1094,7 +1295,7 @@ describe("hooks written in the external dialect", () => {
       ...base,
       hooks: { PreToolUse: [{ matcher: "shell", hooks: [{ command: "check" }] }] },
     });
-    expect(resolve().manifest?.hooks).toEqual([
+    expect(resolve().manifest?.hooks).toMatchObject([
       { event: "pre_tool_use", command: "check", match: { tool: ["shell"] } },
     ]);
   });
@@ -1113,7 +1314,9 @@ describe("hooks written in the external dialect", () => {
       write("plugin.json", { ...base, hooks: inline });
       write("hooks/hooks.json", sessionStart);
       const { manifest, notes } = resolve();
-      expect(manifest?.hooks).toEqual([{ event: "post_tool_use", command: "from-the-manifest" }]);
+      expect(manifest?.hooks).toMatchObject([
+        { event: "post_tool_use", command: "from-the-manifest" },
+      ]);
       expect(notes.join(" ")).toContain("not read — the manifest declares its own hooks");
     });
 
@@ -1156,7 +1359,7 @@ describe("hooks written in the external dialect", () => {
         hooks: { sessionStart: [{ command: "./hooks/go session-start" }] },
       });
       const { manifest, notes } = resolve();
-      expect(manifest?.hooks).toEqual([
+      expect(manifest?.hooks).toMatchObject([
         { event: "session_start", command: `"${join(root, "hooks/go")}" session-start` },
       ]);
       expect(notes).toEqual([]);
@@ -1172,7 +1375,7 @@ describe("hooks written in the external dialect", () => {
 
   it("keeps a native Clarvis hooks array untouched", () => {
     write("plugin.json", { ...base, hooks: [{ event: "run_start", command: "echo hi" }] });
-    expect(resolve().manifest?.hooks).toEqual([{ event: "run_start", command: "echo hi" }]);
+    expect(resolve().manifest?.hooks).toMatchObject([{ event: "run_start", command: "echo hi" }]);
   });
 
   it("keeps the plugin when its declared hooks file is missing, contributing no hooks", () => {
@@ -1228,7 +1431,7 @@ describe("hooks written in the external dialect", () => {
     write("hooks/b.json", { hooks: { Stop: [{ hooks: [{ command: "two" }] }] } });
     const { manifest, error } = resolve();
     expect(error).toBeUndefined();
-    expect(manifest?.hooks).toEqual([
+    expect(manifest?.hooks).toMatchObject([
       { event: "session_start", command: "one" },
       { event: "pre_finalize", command: "two" },
     ]);
@@ -1239,7 +1442,7 @@ describe("hooks written in the external dialect", () => {
     write("hooks/a.json", { hooks: { SessionStart: [{ hooks: [{ command: "one" }] }] } });
     const { manifest, error, notes } = resolve();
     expect(error).toBeUndefined();
-    expect(manifest?.hooks).toEqual([{ event: "session_start", command: "one" }]);
+    expect(manifest?.hooks).toMatchObject([{ event: "session_start", command: "one" }]);
     expect(notes.join(" ")).toContain("gone.json");
   });
 
@@ -1401,7 +1604,7 @@ describe("convertHooksDocument", () => {
     expect(hooks.every((h) => hookSchema.safeParse(h).success)).toBe(true);
   });
 
-  it("skips an entry that is not a command, and notes an async request it cannot honour", () => {
+  it("skips an unsupported entry and preserves an async command", () => {
     const { hooks, notes } = convertHooksDocument(
       {
         Stop: [
@@ -1415,9 +1618,58 @@ describe("convertHooksDocument", () => {
       },
       "/plugins/demo",
     );
-    expect(hooks).toEqual([{ event: "pre_finalize", command: "y" }]);
+    expect(hooks).toEqual([{ event: "pre_finalize", command: "y", async: true }]);
     expect(notes.join(" ")).toContain("type 'http'");
-    expect(notes.join(" ")).toContain("async");
+    expect(notes.join(" ")).not.toContain("async");
+  });
+
+  it("converts MCP hooks and complete command lifecycle fields", () => {
+    const { hooks, notes } = convertHooksDocument(
+      {
+        PostToolUse: [
+          {
+            hooks: [
+              {
+                type: "mcp_tool",
+                server: "review",
+                tool: "record",
+                input: { name: "${tool_name}" },
+                timeout: 2,
+              },
+              {
+                type: "command",
+                command: "record",
+                commandWindows: "record.exe",
+                statusMessage: "Recording result",
+                additionalContextLimit: 2048,
+              },
+            ],
+          },
+        ],
+      },
+      "/plugins/demo",
+      { pluginName: "demo", pluginMcpServers: ["review"], pluginDataDir: "/data/demo" },
+    );
+
+    expect(hooks).toEqual([
+      {
+        event: "post_tool_use",
+        type: "mcp_tool",
+        command: "",
+        server: "demo:review",
+        tool: "record",
+        input: { name: "${tool_name}" },
+        timeout_ms: 2_000,
+      },
+      {
+        event: "post_tool_use",
+        command: "record",
+        command_windows: "record.exe",
+        status_message: "Recording result",
+        additional_context_limit: 2048,
+      },
+    ]);
+    expect(notes).toEqual([]);
   });
 });
 
@@ -1572,7 +1824,7 @@ describe("borrowed relative hook commands", () => {
     });
 
     expect(locationRead()).toBe(".beta-plugin/plugin.json");
-    expect(resolve().manifest?.hooks).toEqual([
+    expect(resolve().manifest?.hooks).toMatchObject([
       {
         event: "session_start",
         command: `"${join(root, "hooks/run-hook.cmd")}" session-start`,

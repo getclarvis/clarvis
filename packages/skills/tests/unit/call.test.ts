@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { handleLoadSkillCall, LOAD_SKILL_TOOL_NAME, loadSkillTool } from "../../src/capability.ts";
 import { makeTrace } from "../helpers/capability-fakes.ts";
 import { call, fakeSkills, validateArgs } from "../helpers/call-fixtures.ts";
+import { makeContent } from "../helpers/skill-fixtures.ts";
 
 function toolCallDetail(trace: ReturnType<typeof makeTrace>): unknown {
   return trace.entries().find((entry) => entry.kind === "tool_call")?.detail;
@@ -143,6 +144,8 @@ describe("handleLoadSkillCall", () => {
     });
     expect(res.error).toBe(false);
     expect(res.text).toContain("ALPHA BODY");
+    expect(res.text).toContain("Skill directory: /roots/skills/alpha");
+    expect(res.text).not.toContain("Package execution root");
     expect(res.text).toContain("scripts/run.sh (scripts)");
     const detail = toolCallDetail(trace);
     expect(detail).toMatchObject({
@@ -166,6 +169,22 @@ describe("handleLoadSkillCall", () => {
     });
     expect(res.text).toContain("(this skill has an empty body)");
     expect(res.text).not.toContain("Bundled resources");
+  });
+
+  it("shows the guarded helper hint only for a host-approved execution root", () => {
+    const res = handleLoadSkillCall({
+      call: call({ arguments: { name: "alpha" } }),
+      skills: fakeSkills({
+        loadSkill: () => makeContent("alpha", { executionRoot: "/roots/skills/alpha" }),
+      }),
+      trace: makeTrace(),
+      agent: "subagent",
+      iteration: 1,
+      validateArgs,
+    });
+    expect(res.text).toContain("Package execution root: /roots/skills/alpha");
+    expect(res.text).toContain("normal shell tool");
+    expect(res.text).toContain("native sandbox");
   });
 
   it("loads the skill body when resource names a sentinel or the skill's own manifest", () => {
@@ -213,6 +232,72 @@ describe("handleLoadSkillCall", () => {
       expect(res.error).toBe(true);
       expect(res.text).toContain("InputValidationError");
     }
+  });
+
+  it("rejects an offset without a resource", () => {
+    const res = handleLoadSkillCall({
+      call: call({ arguments: { name: "alpha", offset: 1 } }),
+      skills: fakeSkills(),
+      trace: makeTrace(),
+      agent: "subagent",
+      iteration: 1,
+      validateArgs,
+    });
+    expect(res.error).toBe(true);
+    expect(res.text).toContain("offset requires a bundled resource path");
+  });
+
+  it("rejects a resource offset past the end", () => {
+    const res = handleLoadSkillCall({
+      call: call({ arguments: { name: "alpha", resource: "notes.md", offset: 4 } }),
+      skills: fakeSkills({
+        readResourceChunk: () => {
+          throw new Error("offset 4 is past the end");
+        },
+      }),
+      trace: makeTrace(),
+      agent: "subagent",
+      iteration: 1,
+      validateArgs,
+    });
+    expect(res.error).toBe(true);
+    expect(res.text).toContain("past the end");
+  });
+
+  it("refuses an unbounded or non-progressing chunk returned by an embedder", () => {
+    for (const readResourceChunk of [
+      () => ({ text: "x".repeat(50_001), offset: 0, nextOffset: 1, totalBytes: 2 }),
+      () => ({ text: "x", offset: 0, nextOffset: 0, totalBytes: 2 }),
+      () => ({ text: "x", offset: 1, totalBytes: 2 }),
+      () => ({ text: "", offset: 0, totalBytes: -1 }),
+      () => ({ text: "x", offset: 0, nextOffset: 2, totalBytes: 3 }),
+      () => ({ text: "x", offset: 0, nextOffset: 1, totalBytes: 1 }),
+      () => ({ text: "x", offset: 0, totalBytes: 2 }),
+    ]) {
+      const res = handleLoadSkillCall({
+        call: call({ arguments: { name: "alpha", resource: "notes.md" } }),
+        skills: fakeSkills({ readResourceChunk }),
+        trace: makeTrace(),
+        agent: "subagent",
+        iteration: 1,
+        validateArgs,
+      });
+      expect(res.error).toBe(true);
+      expect(res.text).toContain("provider");
+    }
+  });
+
+  it("does not reinterpret a byte cursor through a legacy whole-text provider", () => {
+    const res = handleLoadSkillCall({
+      call: call({ arguments: { name: "alpha", resource: "notes.md", offset: 1 } }),
+      skills: fakeSkills({ readResource: () => "éclair" }),
+      trace: makeTrace(),
+      agent: "subagent",
+      iteration: 1,
+      validateArgs,
+    });
+    expect(res.error).toBe(true);
+    expect(res.text).toContain("does not support byte-offset resource pages");
   });
 
   it("lists '(none)' when an unknown skill is requested against an empty catalog", () => {

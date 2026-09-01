@@ -14,6 +14,7 @@
  * same reason.
  */
 import { z } from "zod";
+import type { PortKey } from "./services.ts";
 
 /** Registry name of the hooks capability. */
 export const HOOKS_CAPABILITY_NAME = "hooks";
@@ -37,6 +38,8 @@ export const GATE_HOOK_EVENTS = [
 export const OBSERVER_HOOK_EVENTS = [
   "run_start",
   "run_end",
+  "post_compact",
+  "subagent_start",
   "subagent_complete",
   "model_call_error",
   "budget_exhausted",
@@ -104,6 +107,8 @@ export const EXTERNAL_HOOK_EVENT_NAMES: Readonly<Record<string, string>> = {
   pre_compact: "PreCompact",
   session_start: "SessionStart",
   run_end: "SessionEnd",
+  post_compact: "PostCompact",
+  subagent_start: "SubagentStart",
   subagent_complete: "SubagentStop",
   pre_finalize: "Stop",
   user_steer: "UserPromptSubmit",
@@ -249,6 +254,16 @@ export const MAX_HOOK_MATCH_PATTERNS = 64;
 export const MAX_HOOK_PATTERN_CHARS = 2_048;
 export const MAX_HOOK_TIMEOUT_MS = 60_000;
 
+/** Direct MCP call surface used by `mcp_tool` hooks without entering model dispatch. */
+export interface McpHookToolPort {
+  call(server: string, tool: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
+}
+
+/** Run-scoped capability port populated after MCP startup. */
+export const MCP_HOOK_TOOL_PORT: PortKey<McpHookToolPort> = {
+  id: "hooks.mcp_tool",
+};
+
 /**
  * Schema for one workspace hook entry in settings.json / a plugin manifest.
  *
@@ -260,6 +275,7 @@ export const MAX_HOOK_TIMEOUT_MS = 60_000;
  */
 export const hookSchema = z
   .object({
+    type: z.enum(["command", "mcp_tool"]).optional(),
     event: z
       .enum(HOOK_EVENTS, {
         error: `hooks[].event must be one of: ${HOOK_EVENTS.join(", ")}`,
@@ -317,11 +333,21 @@ export const hookSchema = z
         "Optional filter: restricts the hook by tool name pattern(s) and/or argument " +
           "regexes. Only valid for the tool events pre_tool_use and post_tool_use.",
       ),
-    command: z
-      .string()
-      .min(1, "hooks[].command must be a non-empty string")
-      .max(MAX_HOOK_COMMAND_CHARS)
-      .describe("Shell command to execute when the hook fires."),
+    command: z.string().max(MAX_HOOK_COMMAND_CHARS).default(""),
+    command_windows: z.string().min(1).max(MAX_HOOK_COMMAND_CHARS).optional(),
+    async: z.boolean().optional(),
+    status_message: z.string().min(1).max(512).optional(),
+    additional_context_limit: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(64 * 1024)
+      .optional(),
+    server: z.string().min(1).max(256).optional(),
+    tool: z.string().min(1).max(256).optional(),
+    input: z.unknown().optional(),
+    plugin_root: z.string().min(1).max(32_768).optional(),
+    plugin_data: z.string().min(1).max(32_768).optional(),
     timeout_ms: z
       .number()
       .int()
@@ -352,6 +378,27 @@ export const hookSchema = z
   })
   .strict()
   .superRefine((hook, ctx) => {
+    if ((hook.type ?? "command") === "command" && hook.command.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["command"],
+        message: "hooks[].command must be a non-empty string for command hooks",
+      });
+    }
+    if (hook.type === "mcp_tool" && (hook.server === undefined || hook.tool === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        path: [hook.server === undefined ? "server" : "tool"],
+        message: "hooks[] mcp_tool entries require server and tool",
+      });
+    }
+    if (hook.type === "mcp_tool" && hook.on_failure !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["on_failure"],
+        message: "hooks[] mcp_tool failures are always non-blocking",
+      });
+    }
     if (hook.match !== undefined && !TOOL_SCOPED_EVENTS.has(hook.event)) {
       ctx.addIssue({
         code: "custom",

@@ -38,6 +38,9 @@ function listing(over: Partial<MarketplaceListing> = {}): MarketplaceListing {
     displayName: "Context7",
     description: "Up-to-date documentation through MCP",
     source: "https://github.com/upstash/context7.git",
+    sourceType: "git",
+    installation: "AVAILABLE",
+    authentication: "ON_FIRST_USE",
     marketplaceUrl: "https://github.com/getclarvis/marketplace.git",
     marketplace: "Clarvis Marketplace",
     installable: true,
@@ -614,7 +617,7 @@ test("shows workspace approval, degraded issues and reconnect recovery in the gu
   for (let index = 0; index < 6; index += 1) mounted.press("pagedown");
   await rendered.renderOnce();
   frame = rendered.captureCharFrame();
-  expect(frame).toContain("selected plugin enters as one complete unit");
+  expect(frame).toContain("Global installed plugins already carry installation");
 
   mounted.press("return");
   await settle(rendered, () => rendered.captureCharFrame().includes("Environment saved"));

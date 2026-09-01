@@ -330,7 +330,7 @@ test("a long Environment delta scrolls while decisions remain visible at 80x24",
   await rendered.renderOnce();
   frame = rendered.captureCharFrame();
   expect(frame).toContain("Workspace trust");
-  expect(frame).toContain("exact workspace executable fingerprint");
+  expect(frame).toContain("Global installed plugins need no additional approval");
   expect(frame).toContain("[y] apply and reconnect");
   expect(frame).toContain("[n] keep current");
   rendered.renderer.destroy();

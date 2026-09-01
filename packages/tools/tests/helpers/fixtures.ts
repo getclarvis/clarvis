@@ -78,6 +78,7 @@ export function makeConfig(root: string, overrides: Partial<ServerConfig> = {}):
     maxMonitors: DEFAULT_MAX_MONITORS,
     regexScanBudgetMs: DEFAULT_REGEX_SCAN_BUDGET_MS,
     ripgrepAvailable: false,
+    skillExecutionRoots: [],
     readOnly: false,
     confineToWorkspace: true,
     stateRoot: workspaceStatePaths(root).root,

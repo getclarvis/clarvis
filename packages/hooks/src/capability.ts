@@ -29,6 +29,7 @@ import {
   CONTEXT_HOOK_EVENTS,
   GATE_HOOK_EVENTS,
   HOOKS_CAPABILITY_NAME,
+  MCP_HOOK_TOOL_PORT,
   NOOP_LOGGER,
   PROMPT_HOOK_EVENTS,
   type CompactionContribution,
@@ -74,6 +75,8 @@ const EVENT_METHOD: Record<GateEvent | ObserverEvent | CompactionEvent, keyof Li
   pre_delegate_task: "preDelegateTask",
   run_start: "onRunStart",
   run_end: "onRunEnd",
+  post_compact: "onPostCompact",
+  subagent_start: "onSubagentStart",
   subagent_complete: "onSubagentComplete",
   pre_compact: "onPreCompact",
   model_call_error: "onModelCallError",
@@ -378,6 +381,11 @@ export function createWorkspaceHooksCapability(opts: WorkspaceHooksOptions): Cap
         baseEnv: filtered.env,
         logger,
         sessionId: ctx.executionId,
+        callMcpTool: (server, tool, input, signal) => {
+          const port = ctx.services.get(MCP_HOOK_TOOL_PORT);
+          if (port === undefined) throw new Error("MCP tools are not available at this hook event");
+          return port.call(server, tool, input, signal);
+        },
       });
 
       const lifecycle = compileWorkspaceHooks(hooks, runner, ctx.signal);

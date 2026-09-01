@@ -7,7 +7,9 @@ import { withoutGitRepositoryEnvironment } from "@clarvis/kernel/local";
 import {
   addMarketplaceSource,
   createMarketplaceAdapter,
+  marketplaceInstallSource,
   OFFICIAL_MARKETPLACE_URL,
+  type MarketplaceListing,
 } from "../../src/adapters/marketplace.ts";
 import { recordDiagnostics } from "../helpers/recording-diagnostics.ts";
 
@@ -104,6 +106,75 @@ test("listings: carries the subdir path so a same-repo plugin installs from it",
   const a = adapter({ urls: () => [url], installed: () => [] });
   await a.load();
   expect(a.listings()[0]!.path).toBe("plugins/brainstorm");
+});
+
+test("listings: rewrites an installable repository-local source into that repository and subdir", async () => {
+  const url = marketplaceRepo({
+    name: "mono",
+    plugins: [
+      {
+        name: "brainstorm",
+        source: { source: "local", path: "plugins/brainstorm" },
+        description: "b",
+      },
+    ],
+  });
+  const repo = url.replace("file://", "");
+  mkdirSync(join(repo, "plugins", "brainstorm"), { recursive: true });
+  writeFileSync(join(repo, "plugins", "brainstorm", "README.md"), "plugin");
+  runGit(repo, "add", "-A");
+  runGit(repo, "commit", "-qm", "plugin");
+
+  const a = adapter({ urls: () => [url], installed: () => [] });
+  await a.load();
+  expect(a.listings()[0]).toMatchObject({
+    sourceType: "git",
+    source: url,
+    path: "plugins/brainstorm",
+    installable: true,
+  });
+});
+
+test("marketplaceInstallSource projects local, npm, and pinned git inventory targets", () => {
+  expect(
+    marketplaceInstallSource({
+      name: "local-plugin",
+      sourceType: "local",
+      source: "/plugins/local",
+    } as MarketplaceListing),
+  ).toEqual({ kind: "local", path: "/plugins/local", expected_name: "local-plugin" });
+  expect(
+    marketplaceInstallSource({
+      name: "npm-plugin",
+      sourceType: "npm",
+      source: "@scope/plugin",
+      version: "1.2.3",
+      registry: "https://registry.npmjs.org",
+    } as MarketplaceListing),
+  ).toEqual({
+    kind: "npm",
+    package: "@scope/plugin",
+    expected_name: "npm-plugin",
+    version: "1.2.3",
+    registry: "https://registry.npmjs.org",
+  });
+  expect(
+    marketplaceInstallSource({
+      name: "git-plugin",
+      sourceType: "git",
+      source: "https://example.invalid/plugin.git",
+      path: "plugins/demo",
+      ref: "main",
+      sha: "abc123",
+    } as MarketplaceListing),
+  ).toEqual({
+    kind: "git",
+    url: "https://example.invalid/plugin.git",
+    expected_name: "git-plugin",
+    subdir: "plugins/demo",
+    ref: "main",
+    sha: "abc123",
+  });
 });
 
 test("listings: flags what is already installed", async () => {
@@ -336,7 +407,7 @@ test("a local source resolving outside the marketplace root is named, after real
       { name: "ghost", source: { source: "local", path: "plugins/ghost" }, description: "d" },
     ],
   });
-  const plugins = join(dirname(file), "plugins");
+  const plugins = join(root, "plugins");
   mkdirSync(join(plugins, "inside"), { recursive: true });
   symlinkSync(outside, join(plugins, "escapee"), "dir");
   const a = adapter({ urls: () => [], installed: () => [], agentsCatalogs: () => [file] });
@@ -349,7 +420,8 @@ test("a local source resolving outside the marketplace root is named, after real
   const byName = new Map(a.listings().map((l) => [l.name, l]));
   expect(byName.get("escapee")!.notes.join(" ")).toContain("outside the marketplace root");
   expect(byName.get("inside")!.notes.join(" ")).not.toContain("outside the marketplace root");
-  expect(byName.get("inside")!.installable).toBe(false);
+  expect(byName.get("inside")!.installable).toBe(true);
+  expect(byName.get("inside")!.source).toBe(join(root, "plugins", "inside"));
   // A path that does not exist yet is the case the "contained" answer was
   // written for, and it is not a diagnostic: there is nothing to escape into.
   expect(byName.get("ghost")!.notes.join(" ")).not.toContain("outside the marketplace root");
@@ -364,7 +436,7 @@ test("a local source whose containment cannot be decided is refused, not assumed
       { name: "cycle", source: { source: "local", path: "plugins/cycle" }, description: "d" },
     ],
   });
-  const plugins = join(dirname(file), "plugins");
+  const plugins = join(root, "plugins");
   mkdirSync(plugins, { recursive: true });
   // A symlink cycle makes realpath fail ELOOP. The target comes from the
   // marketplace document, so its author can produce this at will — which is

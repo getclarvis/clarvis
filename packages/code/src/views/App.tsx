@@ -61,7 +61,7 @@ import type { TranscriptStore, TranscriptToolNode } from "../adapters/store.ts";
 import type { ActivityStore, UsageActivity } from "../adapters/activity-store.ts";
 import type { SessionId, SessionMeta } from "../adapters/session-store.ts";
 import type { PromptHistory } from "../core/prompt-history.ts";
-import type { RunHost } from "../run-host.ts";
+import type { McpStartupNotice, RunHost } from "../run-host.ts";
 import type { TasksController } from "../features/tasks/controller.ts";
 import type { SessionCatalogItem } from "./config/SessionsHub.tsx";
 import { createInteraction, type InteractionEffects } from "../keys/interaction.ts";
@@ -208,6 +208,8 @@ export interface AppRunControls {
   sessionUsageBaseline: Accessor<UsageActivity | null>;
   /** The current (or last) workflow's live tree; null when not a workflow. */
   workflowActivity: Accessor<WorkflowActivity | null>;
+  /** Latest live-only MCP startup warning, displayed once outside conversation history. */
+  mcpStartupNotice?: Accessor<McpStartupNotice | null>;
   bang: (cmd: string) => boolean;
   localBusy: () => boolean;
   /** True while context compaction is awaiting hooks or a summary model call. */
@@ -320,6 +322,19 @@ export function App(props: AppProps): JSX.Element {
   const releaseSyntaxStyles = bindSyntaxStyleRenderer(props.shell.renderer);
   onCleanup(releaseSyntaxStyles);
   const { hint, notify } = createHintState();
+  let shownMcpStartupNotice = 0;
+  createEffect(() => {
+    const notice = props.run.mcpStartupNotice?.();
+    if (notice === undefined || notice === null || notice.sequence === shownMcpStartupNotice)
+      return;
+    shownMcpStartupNotice = notice.sequence;
+    notify(
+      `MCP unavailable for this run ${glyph("emDash")} ${notice.servers
+        .map((server) => `${server.name}: ${server.reason}`)
+        .join("; ")}`,
+      "warn",
+    );
+  });
   const memoryPressure = createMemoryPressureController({
     limitBytes: tuiRssLimitBytes(process.env.CLARVIS_TUI_RSS_LIMIT_MB),
     isRunActive: props.run.active,

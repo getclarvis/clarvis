@@ -26,6 +26,7 @@ function deferred<T>(): Deferred<T> {
 interface HandleOptions {
   listTools?: (params: unknown, options: unknown) => unknown;
   callTool?: (call: unknown, resultSchema: unknown, options: unknown) => unknown;
+  instructions?: string;
   onClose?: () => void;
 }
 
@@ -40,6 +41,7 @@ function handle(options: HandleOptions = {}): MCPClientHandle {
         options.callTool?.(call, resultSchema, requestOptions) ?? {
           content: [{ type: "text", text: "ok" }],
         },
+      getInstructions: () => options.instructions,
       getServerCapabilities: () => ({}),
       ping: async () => {},
     } as any,
@@ -153,6 +155,14 @@ describe("openConnection connection boundary", () => {
     );
 
     expect(authorizationWait).toBe("background");
+    await opened.conn.close();
+  });
+
+  it("retains bounded initialize instructions on the opened connection", async () => {
+    const opened = await open(async () => handle({ instructions: `  ${"🧭".repeat(9_000)}  ` }));
+
+    expect(Array.from(opened.conn.instructions ?? "")).toHaveLength(8_192);
+    expect(opened.conn.instructions?.startsWith("🧭")).toBe(true);
     await opened.conn.close();
   });
 

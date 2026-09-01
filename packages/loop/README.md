@@ -102,7 +102,10 @@ every declared server failed terminally; any pending/deferred server keeps the e
 
 `rawBody` is validated into a `RunRequest`; the exact provider, profile, budget
 and orchestration fields are defined by the exported API types. Hosts normally
-assemble this request from their own configuration surface.
+assemble this request from their own configuration surface. Direct requests receive the same MCP
+enablement normalization as settings-derived requests: entries carrying `enabled: false` are removed
+before duplicate checks, connection acquisition, automatic-tool composition, and skill dependency
+filtering.
 
 `openai-codex` and `xai-grok` are strict subscription kinds: request/settings validation rejects an
 API-key variable, base URL, arbitrary headers, or arbitrary body on either. Different profiles in
@@ -143,7 +146,12 @@ Built-ins cover:
   and admitted by that run's native tools; a verified directory created through an explicit absolute
   POSIX `mktemp -d` template joins the same run-owned set, and every member is removed after the run
   record is persisted;
-- skills;
+- skills, including package-scoped helper execution for roots the host explicitly approves: the
+  loop passes only each selected skill's own directory to command tools, never executes a helper on
+  selection, and relies on `@clarvis/tools` to protect it from native mutations and mount it
+  read-only when a native sandbox is active;
+- bounded MCP initialization instructions, grouped by server and added as a system section for the
+  entry agent and spawned subagents after the connection pool opens;
 - user elicitation;
 - lifecycle hooks;
 - exact user skill-command expansion observers, carried as host-derived request context and fired

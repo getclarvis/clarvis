@@ -15,8 +15,8 @@ export function effectiveMcpServerSettings(
 /** Convert the current effective declarations into the engine/pool shape. */
 export function effectiveMcpServers(configStore: ConfigStore): Record<string, McpServerConfig> {
   return Object.fromEntries(
-    Object.entries(effectiveMcpServerSettings(configStore.readSettings())).map(
-      ([name, declaration]) => [name, settingsServerToEngine(name, declaration)],
-    ),
+    Object.entries(effectiveMcpServerSettings(configStore.readSettings()))
+      .filter(([, declaration]) => declaration.enabled !== false)
+      .map(([name, declaration]) => [name, settingsServerToEngine(name, declaration)]),
   );
 }

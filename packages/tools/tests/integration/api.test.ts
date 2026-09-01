@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createAgentTools, currentShellFlavor } from "../../src/index.ts";
 import { makeWorkspace, cleanup, write, resultText, posixShell } from "../helpers/fixtures.ts";
 import { expectedToolNames } from "../helpers/tool-surface.ts";
-import { mkdtempSync, readFileSync, realpathSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -65,6 +65,67 @@ describe("createAgentTools (library API)", () => {
     } finally {
       cleanup(temporaryRoot);
     }
+  });
+
+  it("admits a selected package only as a command working directory", async () => {
+    const packageRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-skill-package-")));
+    try {
+      write(packageRoot, "helper.txt", "packaged");
+      const t = createAgentTools({
+        workspaceRoot: root,
+        skillExecutionRoots: [packageRoot],
+        probeRipgrep: () => false,
+      });
+      const ran = await t.callTool("shell", {
+        command:
+          currentShellFlavor() === "powershell"
+            ? "[Console]::Out.Write((Get-Content helper.txt -Raw))"
+            : 'printf %s "$(cat helper.txt)"',
+        cwd: packageRoot,
+      });
+      expect(ran.isError).toBe(false);
+      expect(JSON.parse(resultText(ran.content)).stdout).toBe("packaged");
+
+      const writeAttempt = await t.callTool("write_file", {
+        path: join(packageRoot, "changed.txt"),
+        content: "no",
+      });
+      expect(writeAttempt.isError).toBe(true);
+      expect(JSON.parse(resultText(writeAttempt.content))).toMatchObject({ error: "path_escape" });
+    } finally {
+      cleanup(packageRoot);
+    }
+  });
+
+  it("protects a selected package under the workspace from native mutations", async () => {
+    const packageRoot = join(root, ".agents", "skills", "demo");
+    mkdirSync(packageRoot, { recursive: true });
+    const t = createAgentTools({
+      workspaceRoot: root,
+      skillExecutionRoots: [packageRoot],
+      probeRipgrep: () => false,
+    });
+
+    const writeAttempt = await t.callTool("write_file", {
+      path: join(packageRoot, "changed.txt"),
+      content: "no",
+    });
+    expect(writeAttempt.isError).toBe(true);
+    expect(JSON.parse(resultText(writeAttempt.content))).toMatchObject({ error: "path_escape" });
+
+    write(packageRoot, "protected.txt", "unchanged");
+    const recursiveAttempt = await t.callTool("replace", {
+      path: join(root, ".agents"),
+      glob: "**/*.txt",
+      pattern: "unchanged",
+      replacement: "changed",
+      dry_run: false,
+    });
+    expect(recursiveAttempt.isError).toBe(true);
+    expect(JSON.parse(resultText(recursiveAttempt.content))).toMatchObject({
+      error: "path_escape",
+    });
+    expect(readFileSync(join(packageRoot, "protected.txt"), "utf8")).toBe("unchanged");
   });
 
   it.skipIf(!posixShell)(

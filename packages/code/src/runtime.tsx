@@ -1223,6 +1223,7 @@ async function runApp(
     startedAt: () => runHost.runStartedAt(),
     sessionUsageBaseline: () => sessionUsage(runHost.sessionUsageBaseline()),
     workflowActivity: () => runHost.workflowActivity(),
+    mcpStartupNotice: () => runHost.mcpStartupNotice(),
     bang: (cmd) => runHost.runBangCommand(cmd),
     localBusy: () => runHost.bashActive(),
     compacting: () => runHost.compactionActive(),

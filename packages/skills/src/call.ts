@@ -8,6 +8,7 @@ import {
   loadSkillTool,
   type SkillsProvider,
 } from "./tool.ts";
+import { MAX_SKILL_RESOURCE_FILE_BYTES } from "./limits.ts";
 
 /**
  * The result of a `load_skill` call: the model-facing `text` (the skill body,
@@ -42,6 +43,45 @@ function isSkillBodyResource(name: string, resource: string): boolean {
   return segments.at(-1) === "SKILL.md" && segments.at(-2) === name;
 }
 
+function validateResourceChunk(
+  chunk: ReturnType<NonNullable<SkillsProvider["readResourceChunk"]>>,
+  requestedOffset: number,
+  maxChars: number,
+): string | undefined {
+  if (!Number.isSafeInteger(chunk.offset) || chunk.offset !== requestedOffset) {
+    return "provider returned a mismatched resource offset";
+  }
+  if (
+    !Number.isSafeInteger(chunk.totalBytes) ||
+    chunk.totalBytes < 0 ||
+    chunk.totalBytes > MAX_SKILL_RESOURCE_FILE_BYTES ||
+    chunk.offset > chunk.totalBytes
+  ) {
+    return "provider returned an invalid resource size";
+  }
+  if (chunk.text.length > maxChars) return "provider exceeded the resource character bound";
+  const decodedEnd = chunk.offset + Buffer.byteLength(chunk.text, "utf8");
+  if (decodedEnd > chunk.totalBytes) return "provider returned text past the resource size";
+  if (chunk.nextOffset !== undefined) {
+    if (
+      !Number.isSafeInteger(chunk.nextOffset) ||
+      chunk.nextOffset <= chunk.offset ||
+      chunk.nextOffset > chunk.totalBytes
+    ) {
+      return "provider returned an invalid resource continuation offset";
+    }
+    if (chunk.nextOffset !== decodedEnd) {
+      return "provider returned a continuation offset that does not match its text";
+    }
+    if (decodedEnd === chunk.totalBytes) {
+      return "provider returned a redundant continuation offset at the resource end";
+    }
+  } else if (decodedEnd !== chunk.totalBytes) {
+    return "provider omitted a required resource continuation offset";
+  }
+  return undefined;
+}
+
 /**
  * Execute a `load_skill` call: validate arguments, then return either the named
  * skill's full body (plus a resource listing) or, when `resource` is given, that
@@ -73,7 +113,11 @@ export function handleLoadSkillCall(args: {
   validateArgs?: ToolArgValidate;
 }): LoadSkillCallResult {
   const { call, skills } = args;
-  const maxChars = args.maxResourceChars ?? SKILL_RESOURCE_MAX_CHARS;
+  const requestedMaxChars = args.maxResourceChars ?? SKILL_RESOURCE_MAX_CHARS;
+  const maxChars =
+    Number.isFinite(requestedMaxChars) && requestedMaxChars >= 2
+      ? Math.min(Math.trunc(requestedMaxChars), SKILL_RESOURCE_MAX_CHARS)
+      : SKILL_RESOURCE_MAX_CHARS;
   const envelope = openCallEnvelope({
     call,
     name: LOAD_SKILL_TOOL_NAME,
@@ -90,7 +134,15 @@ export function handleLoadSkillCall(args: {
   const ok = (text: string): LoadSkillCallResult => ({ text: envelope.ok(text), error: false });
 
   if (envelope.invalid !== null) return fail(envelope.invalid);
-  const { name, resource: rawResource } = call.arguments as { name: string; resource?: string };
+  const {
+    name,
+    resource: rawResource,
+    offset: rawOffset,
+  } = call.arguments as {
+    name: string;
+    resource?: string;
+    offset?: number;
+  };
   // Some providers materialize an optional string as a directory sentinel or repeat the
   // catalog path to the skill's own SKILL.md. Neither addresses a bundled resource: both mean
   // the tool's primary operation, loading the skill body.
@@ -99,11 +151,42 @@ export function handleLoadSkillCall(args: {
     trimmedResource !== undefined && !isSkillBodyResource(name, trimmedResource)
       ? trimmedResource
       : undefined;
+  if (rawOffset !== undefined && resource === undefined) {
+    return fail("offset requires a bundled resource path.");
+  }
   envelope.start();
 
   if (resource !== undefined) {
     if (!skills.listSkills().some((skill) => skill.name === name)) {
       return fail(`unknown skill '${name}'. Available skills: ${availableNames(skills)}.`);
+    }
+    const offset = rawOffset ?? 0;
+    if (skills.readResourceChunk !== undefined) {
+      try {
+        const chunk = skills.readResourceChunk(name, resource, offset, maxChars);
+        const invalidChunk = validateResourceChunk(chunk, offset, maxChars);
+        if (invalidChunk !== undefined) throw new Error(invalidChunk);
+        const continuation =
+          chunk.nextOffset === undefined
+            ? ""
+            : `\n\n[resource continues; call load_skill with the same name and resource and offset=${String(
+                chunk.nextOffset,
+              )}]`;
+        return ok(
+          `Resource '${resource}' of skill '${name}' (bytes ${String(chunk.offset)}-${String(
+            chunk.nextOffset ?? chunk.totalBytes,
+          )} of ${String(chunk.totalBytes)}):\n\n${chunk.text}${continuation}`,
+        );
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        return fail(`could not read resource '${resource}' of skill '${name}': ${reason}`);
+      }
+    }
+    if (offset !== 0) {
+      return fail(
+        `could not continue resource '${resource}' of skill '${name}': this provider does not ` +
+          "support byte-offset resource pages.",
+      );
     }
     let text: string;
     try {
@@ -112,11 +195,16 @@ export function handleLoadSkillCall(args: {
       const reason = err instanceof Error ? err.message : String(err);
       return fail(`could not read resource '${resource}' of skill '${name}': ${reason}`);
     }
-    const capped =
-      text.length > maxChars
-        ? `${text.slice(0, maxChars)}\n\n[resource truncated at ${maxChars} characters]`
-        : text;
-    return ok(`Resource '${resource}' of skill '${name}':\n\n${capped}`);
+    const end = Math.min(maxChars, text.length);
+    const continuation =
+      end < text.length
+        ? "\n\n[resource truncated; this provider does not support byte-offset continuation]"
+        : "";
+    return ok(
+      `Resource '${resource}' of skill '${name}' (characters 0-${String(end)} of ${String(
+        text.length,
+      )}):\n\n${text.slice(0, end)}${continuation}`,
+    );
   }
 
   let content: ReturnType<SkillsProvider["loadSkill"]>;
@@ -131,7 +219,18 @@ export function handleLoadSkillCall(args: {
   }
 
   const body = content.body.length > 0 ? content.body : "(this skill has an empty body)";
+  const executionHint =
+    content.executionRoot === undefined
+      ? ""
+      : `Package execution root: ${content.executionRoot}\n` +
+        "Run bundled helpers through the normal shell tool so its command guard applies. " +
+        "When a native sandbox is active, the package root is mounted read-only.\n";
   return ok(
-    `Skill '${content.name}' — ${content.description}\n\n${body}${renderResourceList(content.resources)}`,
+    `Skill '${content.name}' — ${content.description}\n\n` +
+      `Skill directory: ${content.dir}\n` +
+      "Resolve bundled relative paths from that directory.\n" +
+      executionHint +
+      "\n" +
+      `${body}${renderResourceList(content.resources)}`,
   );
 }

@@ -51,7 +51,18 @@ interface Harness {
   records: Record<string, unknown>[];
 }
 
-function harness(over: { child?: FakeChild; baseEnv?: Record<string, string> } = {}): Harness {
+function harness(
+  over: {
+    child?: FakeChild;
+    baseEnv?: Record<string, string>;
+    callMcpTool?: (
+      server: string,
+      tool: string,
+      input: unknown,
+      signal?: AbortSignal,
+    ) => Promise<unknown>;
+  } = {},
+): Harness {
   const child = over.child ?? new FakeChild();
   const calls: SpawnCall[] = [];
   const { logger, warnings, records } = recorder();
@@ -63,6 +74,7 @@ function harness(over: { child?: FakeChild; baseEnv?: Record<string, string> } =
     resolveShell: () => POSIX_SHELL,
     ownProcessGroup: () => true,
     killTree: () => true,
+    ...(over.callMcpTool === undefined ? {} : { callMcpTool: over.callMcpTool }),
   });
   return { runner, child, calls, warnings, records };
 }
@@ -124,6 +136,238 @@ describe("select", () => {
 });
 
 describe("run", () => {
+  test("calls an MCP hook directly and interpolates structured event fields", async () => {
+    const calls: unknown[][] = [];
+    const h = harness({
+      callMcpTool: async (...args) => {
+        calls.push(args);
+        return { ok: true };
+      },
+    });
+    const result = await h.runner.run(
+      {
+        event: "pre_tool_use",
+        type: "mcp_tool",
+        command: "",
+        server: "demo:review",
+        tool: "inspect",
+        input: {
+          command: "${tool_input.command}",
+          message: "tool=${tool_name}",
+          whole: "${tool_input}",
+        },
+      },
+      invocation({
+        data: { tool_name: "shell", tool_input: { command: "git status", limit: 5 } },
+      }),
+    );
+
+    expect(result).toMatchObject({ ok: true, outcome: { kind: "pass" } });
+    expect(calls[0]?.slice(0, 3)).toEqual([
+      "demo:review",
+      "inspect",
+      {
+        command: "git status",
+        message: "tool=shell",
+        whole: { command: "git status", limit: 5 },
+      },
+    ]);
+    expect(calls[0]?.[3]).toBeInstanceOf(AbortSignal);
+  });
+
+  test("bounds recursive MCP input interpolation and drops missing or unserializable fields", async () => {
+    const calls: unknown[][] = [];
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    let nested: unknown = "leaf";
+    for (let depth = 0; depth < 34; depth += 1) nested = [nested];
+    const h = harness({
+      callMcpTool: async (...args) => {
+        calls.push(args);
+        return { ok: true };
+      },
+    });
+
+    await h.runner.run(
+      {
+        event: "pre_tool_use",
+        type: "mcp_tool",
+        command: "",
+        server: "demo",
+        tool: "inspect",
+        input: {
+          missing: "x=${missing.path}",
+          primitive: "n=${count}",
+          circular: "c=${circular}",
+          list: ["${name}", nested],
+          literal: null,
+        },
+      },
+      invocation({ data: { name: "hook", count: 2, circular } }),
+    );
+
+    const interpolated = calls[0]?.[2] as Record<string, unknown>;
+    expect(interpolated).toMatchObject({
+      missing: "x=",
+      primitive: "n=2",
+      circular: "c=",
+      literal: null,
+    });
+    const list = interpolated.list as unknown[];
+    expect(list[0]).toBe("hook");
+    let bounded = list[1];
+    let boundedDepth = 0;
+    while (Array.isArray(bounded)) {
+      bounded = bounded[0];
+      boundedDepth += 1;
+    }
+    expect(boundedDepth).toBeLessThan(34);
+    expect(bounded).toBeNull();
+  });
+
+  test("rejects an MCP hook when its direct executor or coordinates are absent", async () => {
+    const h = harness();
+    for (const hook of [
+      { event: "pre_tool_use", type: "mcp_tool", command: "", server: "demo", tool: "x" },
+      { event: "pre_tool_use", type: "mcp_tool", command: "", tool: "x" },
+      { event: "pre_tool_use", type: "mcp_tool", command: "", server: "demo" },
+    ] satisfies HookSpec[]) {
+      expect(await h.runner.run(hook, invocation())).toMatchObject({
+        ok: false,
+        failure: { kind: "spawn_failed" },
+      });
+    }
+  });
+
+  test("classifies an aborted MCP hook as cancellation", async () => {
+    const h = harness({
+      callMcpTool: async (_server, _tool, _input, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
+        }),
+    });
+    const controller = new AbortController();
+    const pending = h.runner.run(
+      { event: "pre_tool_use", type: "mcp_tool", command: "", server: "demo", tool: "x" },
+      invocation(),
+      controller.signal,
+    );
+    controller.abort();
+    const result = await pending;
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.failure.kind).toBe("aborted");
+  });
+
+  test("applies the command-hook verdict contract to MCP structured content", async () => {
+    const h = harness({
+      callMcpTool: async () => ({
+        ok: true,
+        data: { structuredContent: { decision: "block", reason: "unsafe patch" } },
+      }),
+    });
+    const result = await h.runner.run(
+      { event: "pre_tool_use", type: "mcp_tool", command: "", server: "scan", tool: "patch" },
+      invocation(),
+    );
+    expect(result).toMatchObject({ ok: true, outcome: { kind: "deny", message: "unsafe patch" } });
+  });
+
+  test("reads MCP text content and ignores non-text content entries", async () => {
+    const h = harness({
+      callMcpTool: async () => ({
+        ok: true,
+        data: {
+          content: [null, [], { type: "image", data: "ignored" }, { type: "text", text: "" }],
+        },
+      }),
+    });
+    expect(
+      await h.runner.run(
+        { event: "run_start", type: "mcp_tool", command: "", server: "demo", tool: "x" },
+        invocation({ event: "run_start", gate: false }),
+      ),
+    ).toMatchObject({ ok: true, outcome: { kind: "pass" } });
+  });
+
+  test("classifies every malformed MCP response shape without throwing", async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const results: unknown[] = [
+      null,
+      [],
+      { ok: false },
+      { ok: true, data: 42 },
+      { ok: true, data: { structuredContent: circular } },
+      { ok: true, data: circular },
+    ];
+    for (const response of results) {
+      const h = harness({ callMcpTool: async () => response });
+      expect(
+        (
+          await h.runner.run(
+            { event: "pre_tool_use", type: "mcp_tool", command: "", server: "demo", tool: "x" },
+            invocation(),
+          )
+        ).ok,
+      ).toBe(false);
+    }
+  });
+
+  test("classifies an MCP timeout separately from an ordinary executor rejection", async () => {
+    const timed = harness({
+      callMcpTool: async (_server, _tool, _input, signal) =>
+        new Promise((_resolve, reject) => {
+          signal?.addEventListener("abort", () => reject(new Error("late")), { once: true });
+        }),
+    });
+    const timeout = await timed.runner.run(
+      {
+        event: "pre_tool_use",
+        type: "mcp_tool",
+        command: "",
+        server: "demo",
+        tool: "x",
+        timeout_ms: 1,
+      },
+      invocation(),
+    );
+    expect(timeout).toMatchObject({ ok: false, failure: { kind: "timeout" } });
+
+    const rejected = harness({
+      callMcpTool: async () => {
+        throw "offline";
+      },
+    });
+    expect(
+      await rejected.runner.run(
+        { event: "pre_tool_use", type: "mcp_tool", command: "", server: "demo", tool: "x" },
+        invocation(),
+      ),
+    ).toMatchObject({ ok: false, failure: { kind: "exit_nonzero", message: "offline" } });
+  });
+
+  test("fails open when the MCP facade reports a tool error", async () => {
+    const h = harness({
+      callMcpTool: async () => ({
+        ok: false,
+        error: { code: "mcp_runtime_error", message: "scanner unavailable" },
+      }),
+    });
+    const hook: HookSpec = {
+      event: "pre_tool_use",
+      type: "mcp_tool",
+      command: "",
+      server: "scan",
+      tool: "patch",
+    };
+    const result = await h.runner.run(hook, invocation());
+    expect(result).toMatchObject({
+      ok: false,
+      failure: { kind: "exit_nonzero", message: "scanner unavailable" },
+    });
+    expect(h.runner.resolve(result, invocation())).toEqual({ kind: "pass" });
+  });
+
   test("parses a verdict from stdout", async () => {
     const h = harness();
     const result = await runOnce(h, { event: "pre_tool_use", command: "x" }, invocation(), (c) => {
@@ -279,6 +523,105 @@ describe("run", () => {
       CLARVIS_WORKSPACE_ROOT: "/ws",
       CLARVIS_HOOK_TOOL: "shell",
     });
+  });
+
+  test("publishes plugin root and writable data paths to bundled command hooks", async () => {
+    const h = harness();
+    await runOnce(
+      h,
+      {
+        event: "pre_tool_use",
+        command: "x",
+        plugin_root: "/plugins/demo",
+        plugin_data: "/data/demo",
+      },
+      invocation(),
+      (child) => child.finish(0),
+    );
+    expect(h.calls[0]?.options.env).toMatchObject({
+      PLUGIN_ROOT: "/plugins/demo",
+      PLUGIN_DATA: "/data/demo",
+      CODEX_PLUGIN_ROOT: "/plugins/demo",
+      CODEX_PLUGIN_DATA: "/data/demo",
+    });
+  });
+
+  test("starts an async command without waiting for its verdict", async () => {
+    const h = harness();
+    const result = await h.runner.run(
+      { event: "post_tool_use", command: "notify", async: true },
+      invocation({ event: "post_tool_use", gate: false }),
+    );
+    expect(result).toMatchObject({ ok: true, outcome: { kind: "pass" }, durationMs: 0 });
+    expect(h.calls).toHaveLength(1);
+    h.child.finish(0);
+    await tick();
+  });
+
+  test("bounds concurrent async hooks and starts the queued command after one settles", async () => {
+    const children: FakeChild[] = [];
+    const calls: SpawnCall[] = [];
+    const runner = createHookRunner({
+      workspaceRoot: "/ws",
+      baseEnv: {},
+      spawn: fakeSpawn(() => {
+        const child = new FakeChild();
+        children.push(child);
+        return child;
+      }, calls),
+      resolveShell: () => POSIX_SHELL,
+      ownProcessGroup: () => true,
+      killTree: () => true,
+    });
+
+    for (let index = 0; index < 9; index += 1) {
+      await runner.run(
+        { event: "post_tool_use", command: `notify-${String(index)}`, async: true },
+        invocation({ event: "post_tool_use", gate: false }),
+      );
+    }
+    expect(calls).toHaveLength(8);
+    children[0]?.finish(0);
+    await tick();
+    expect(calls).toHaveLength(9);
+    for (const child of children.slice(1)) child.finish(0);
+    await tick();
+  });
+
+  test("observes an unexpected async hook rejection", async () => {
+    const runner = createHookRunner({
+      workspaceRoot: "/ws",
+      baseEnv: {},
+      resolveShell: () => {
+        throw new Error("shell lookup failed");
+      },
+    });
+    expect(
+      await runner.run(
+        { event: "post_tool_use", command: "notify", async: true },
+        invocation({ event: "post_tool_use", gate: false }),
+      ),
+    ).toMatchObject({ ok: true, outcome: { kind: "pass" } });
+    await tick();
+  });
+
+  test("keeps SessionEnd synchronous even when its source declares async", async () => {
+    const h = harness();
+    let settled = false;
+    const pending = h.runner
+      .run(
+        { event: "run_end", command: "notify", async: true },
+        invocation({ event: "run_end", gate: false }),
+      )
+      .then((result) => {
+        settled = true;
+        return result;
+      });
+    await tick();
+    expect(h.calls).toHaveLength(1);
+    expect(settled).toBe(false);
+    h.child.finish(0);
+    expect(await pending).toMatchObject({ ok: true, outcome: { kind: "pass" } });
   });
 
   test("omits the tool variable where there is no tool", async () => {

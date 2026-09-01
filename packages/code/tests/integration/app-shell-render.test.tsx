@@ -329,6 +329,7 @@ function defaultProps(overrides: {
   store?: ReturnType<typeof createTranscriptStore>;
   activity?: ReturnType<typeof createActivityStore>;
   workflowActivity?: AppProps["run"]["workflowActivity"];
+  mcpStartupNotice?: AppProps["run"]["mcpStartupNotice"];
 }) {
   return (renderer: ReturnType<typeof useRenderer>): AppProps => {
     const store = overrides.store ?? createTranscriptStore();
@@ -368,6 +369,9 @@ function defaultProps(overrides: {
         startedAt: () => (overrides.active?.() ? Date.now() - 5000 : null),
         sessionUsageBaseline: overrides.sessionUsageBaseline ?? (() => null),
         workflowActivity: overrides.workflowActivity ?? (() => null),
+        ...(overrides.mcpStartupNotice === undefined
+          ? {}
+          : { mcpStartupNotice: overrides.mcpStartupNotice }),
         bang: () => true,
         localBusy: () => false,
         registerDraftRestore: () => {},
@@ -457,7 +461,7 @@ const CHANGED_WORKSPACE_ENVIRONMENT: ResolvedEnvironment = {
   },
 };
 
-test("a changed executable workspace opens the approval question before the shell", async () => {
+test("a changed executable workspace opens approval after app hydration without a slash", async () => {
   let approvals = 0;
   const settingsKnobs = () => ({
     workspaceTrust: "changed" as const,
@@ -478,11 +482,29 @@ test("a changed executable workspace opens the approval question before the shel
   );
   const approval = await captureUntil(t, "This workspace's executable snapshot changed.");
   expect(approval).toContain("MCP servers");
+  expect(approval).toContain("Every repository-owned plugin in the current snapshot");
   expect(approval).toContain("[n] no, review and remove");
   expect(approvals).toBe(0);
   press(t, "return");
   for (let index = 0; index < 20 && approvals === 0; index += 1) await t.renderOnce();
   expect(approvals).toBe(1);
+  t.renderer.destroy();
+});
+
+test("a live MCP startup failure appears once as a transient warning outside the transcript", async () => {
+  const store = createTranscriptStore();
+  const [notice, setNotice] =
+    createSignal<ReturnType<NonNullable<AppProps["run"]["mcpStartupNotice"]>>>(null);
+  const t = await mountApp(defaultProps({ store, mcpStartupNotice: notice }));
+
+  setNotice({
+    sequence: 1,
+    servers: [{ name: "docs", reason: "missing DOCS_TOKEN" }],
+  });
+  const frame = await captureUntil(t, "MCP unavailable for this run");
+  expect(frame).toContain("docs: missing DOCS_TOKEN");
+  expect(store.nodes.some((node) => node.text.includes("missing DOCS_TOKEN"))).toBe(false);
+
   t.renderer.destroy();
 });
 

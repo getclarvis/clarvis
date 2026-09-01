@@ -644,6 +644,7 @@ export type RunEvent =
    * this reports fidelity of the *live* view, not data loss.
    */
   | { type: "events_dropped"; at: Timestamp; dropped: number }
+  /** Persisted run telemetry for MCPs omitted from an otherwise runnable pool; presentation is client-owned. */
   | { type: "mcp_degraded"; at: Timestamp; servers: { name: string; reason: string }[] };
 
 /** Structured command context on a `guard_confirm` elicitation. */

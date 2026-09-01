@@ -57,7 +57,7 @@ describe("hookSchema — event groups", () => {
 
   it("requires a non-empty command", () => {
     expect(issues({ event: "run_start", command: "" })[0]?.message).toBe(
-      "hooks[].command must be a non-empty string",
+      "hooks[].command must be a non-empty string for command hooks",
     );
   });
 
@@ -68,6 +68,34 @@ describe("hookSchema — event groups", () => {
         command: "x".repeat(MAX_HOOK_COMMAND_CHARS + 1),
       }).success,
     ).toBe(false);
+  });
+
+  it("requires the server and tool coordinates for direct MCP hooks", () => {
+    const withoutServer = issues({ event: "run_start", type: "mcp_tool", tool: "notify" });
+    expect(withoutServer[0]).toEqual({
+      path: "server",
+      message: "hooks[] mcp_tool entries require server and tool",
+    });
+
+    const withoutTool = issues({ event: "run_start", type: "mcp_tool", server: "alerts" });
+    expect(withoutTool[0]).toEqual({
+      path: "tool",
+      message: "hooks[] mcp_tool entries require server and tool",
+    });
+  });
+
+  it("keeps direct MCP hook failures non-blocking", () => {
+    const found = issues({
+      event: "pre_tool_use",
+      type: "mcp_tool",
+      server: "review",
+      tool: "inspect",
+      on_failure: "deny",
+    });
+    expect(found[0]).toEqual({
+      path: "on_failure",
+      message: "hooks[] mcp_tool failures are always non-blocking",
+    });
   });
 });
 

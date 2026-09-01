@@ -66,9 +66,22 @@ installations and standalone skills; `builtin:default` is immutable builtin acti
 `.agents/plugins` and `.clarvis/plugins` are equally representable. Selection and clear
 mutations require scope-bound delta previews. Guided composition reads the qualified installed
 inventory, resolves a complete draft, and applies its definition plus selection through one
-single-use preview token; the service still never installs anything. The full format, selection
-precedence, snapshot and trust contract is in
+single-use preview token; the service still never installs anything. Global operator-owned plugins
+need no workspace approval, while `requires_workspace_trust` identifies a target carrying
+repository-owned `scope: "workspace"` plugins when their single workspace-wide inventory
+fingerprint is not trusted. The full format, selection precedence, snapshot and trust contract is in
 [`hosts/environments.md`](../../specs/hosts/environments.md).
+
+Marketplace installation uses `PluginInstallSource`, a closed union for Git (optional subdirectory,
+ref or SHA), confined local directories, and npm packages (optional version and credential-free
+HTTPS registry). A source may carry `expected_name`, binding a marketplace listing to the installed
+manifest identity and supplying a stable name only when a foreign manifest omits one.
+`PluginService.installSource` keeps source interpretation on the client/catalog side and fetch policy
+in the kernel. `PluginView.updateable` distinguishes managed Git origins from local, npm, workspace,
+and unmanaged installations. `PluginView` preserves the original manifest
+publisher/legal/discovery fields and the complete install-surface `interface` projection; it never
+substitutes Clarvis as author. `SkillSummary.dependencies` exposes bounded MCP requirements read
+from a skill sidecar.
 
 `StorageService` never returns file paths, credential contents or credential sizes. Its cleanup
 surface accepts only `temporary` and `cache`, supports dry-run previews, and leaves durable history,

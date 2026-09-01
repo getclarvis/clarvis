@@ -16,7 +16,18 @@ type MappedSettingsKey =
   | "cwd"
   | "expandVariables"
   | "shared"
-  | "resources";
+  | "resources"
+  | "oauth"
+  | "bearer_token_env_var"
+  | "env_http_headers"
+  | "env_vars"
+  | "startup_timeout_sec"
+  | "tool_timeout_sec"
+  | "enabled"
+  | "required"
+  | "enabled_tools"
+  | "disabled_tools"
+  | "authentication";
 
 /**
  * Compile-time drift guard: only type-checks while every key of
@@ -65,5 +76,22 @@ export function settingsServerToEngine(name: string, entry: McpServerSettings): 
     ...(entry.expandVariables !== undefined ? { expandVariables: entry.expandVariables } : {}),
     ...(entry.shared !== undefined ? { shared: entry.shared } : {}),
     ...(entry.resources !== undefined ? { resources: entry.resources } : {}),
+    ...(entry.oauth !== undefined ? { oauth: entry.oauth } : {}),
+    ...(entry.bearer_token_env_var !== undefined
+      ? { bearer_token_env_var: entry.bearer_token_env_var }
+      : {}),
+    ...(entry.env_http_headers !== undefined ? { env_http_headers: entry.env_http_headers } : {}),
+    ...(entry.env_vars !== undefined ? { env_vars: entry.env_vars } : {}),
+    ...(entry.startup_timeout_sec !== undefined
+      ? { startup_timeout_ms: Math.round(entry.startup_timeout_sec * 1000) }
+      : {}),
+    ...(entry.tool_timeout_sec !== undefined
+      ? { tool_timeout_ms: Math.round(entry.tool_timeout_sec * 1000) }
+      : {}),
+    ...(entry.enabled !== undefined ? { enabled: entry.enabled } : {}),
+    ...(entry.required !== undefined ? { required: entry.required } : {}),
+    ...(entry.enabled_tools !== undefined ? { enabled_tools: entry.enabled_tools } : {}),
+    ...(entry.disabled_tools !== undefined ? { disabled_tools: entry.disabled_tools } : {}),
+    ...(entry.authentication !== undefined ? { authentication: entry.authentication } : {}),
   };
 }

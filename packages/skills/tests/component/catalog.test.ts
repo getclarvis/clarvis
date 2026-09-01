@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { renderSkillCatalog } from "../../src/catalog/index.ts";
+import { MAX_SKILL_CATALOG_CHARS, renderSkillCatalog } from "../../src/catalog/index.ts";
 import { makeInfo } from "../helpers/fixtures.ts";
 
 describe("renderSkillCatalog", () => {
@@ -10,8 +10,8 @@ describe("renderSkillCatalog", () => {
     ]);
     expect(text).toBe(
       "# Available skills\n\n" +
-        "- **git-commit** — Create a commit\n" +
-        "- **pdf** — Extract text from PDFs\n",
+        "- **git-commit** — Create a commit (path: /roots/skills/git-commit/SKILL.md)\n" +
+        "- **pdf** — Extract text from PDFs (path: /roots/skills/pdf/SKILL.md)\n",
     );
   });
 
@@ -24,7 +24,9 @@ describe("renderSkillCatalog", () => {
       makeInfo({ name: "listed", description: "shown" }),
       makeInfo({ name: "withheld", description: "hidden", catalogSuppressed: true }),
     ]);
-    expect(text).toBe("# Available skills\n\n- **listed** — shown\n");
+    expect(text).toBe(
+      "# Available skills\n\n" + "- **listed** — shown (path: /roots/skills/listed/SKILL.md)\n",
+    );
   });
 
   it("lists a skill that is merely not user-invocable", () => {
@@ -44,5 +46,43 @@ describe("renderSkillCatalog", () => {
     const skills = [makeInfo({ name: "b" }), makeInfo({ name: "a" })];
     renderSkillCatalog(skills);
     expect(skills.map((s) => s.name)).toEqual(["b", "a"]);
+  });
+
+  it("keeps one hundred compact entries addressable inside the catalog bound", () => {
+    const skills = Array.from({ length: 100 }, (_, index) =>
+      makeInfo({
+        name: `skill-${String(index).padStart(3, "0")}`,
+        description: "A very detailed description. ".repeat(20),
+      }),
+    );
+
+    const text = renderSkillCatalog(skills);
+
+    expect(text.length).toBeLessThanOrEqual(MAX_SKILL_CATALOG_CHARS);
+    expect(text).not.toContain("additional skills omitted from this bounded catalog");
+    expect(text).toContain("**skill-099**");
+    expect(text).not.toContain("A very detailed description");
+  });
+
+  it("drops descriptions before omitting a deterministic tail within the catalog bound", () => {
+    const skills = Array.from({ length: 200 }, (_, index) =>
+      makeInfo({
+        name: `skill-${String(index).padStart(3, "0")}`,
+        description: "A very detailed description. ".repeat(20),
+      }),
+    );
+
+    const text = renderSkillCatalog(skills);
+
+    expect(text.length).toBeLessThanOrEqual(MAX_SKILL_CATALOG_CHARS);
+    expect(text).toContain("additional skills omitted from this bounded catalog");
+    expect(text).toContain("**skill-000**");
+    expect(text).not.toContain("A very detailed description");
+    expect(text).not.toContain("**skill-199**");
+  });
+
+  it("returns no partial entry when one compact line alone exceeds the hard bound", () => {
+    const oversized = "x".repeat(MAX_SKILL_CATALOG_CHARS);
+    expect(renderSkillCatalog([makeInfo({ name: oversized, path: `/${oversized}` })])).toBe("");
   });
 });

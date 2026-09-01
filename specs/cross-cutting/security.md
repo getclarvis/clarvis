@@ -35,10 +35,12 @@ code and none of them a sandbox:
    returns path, size, content, provider or token metadata (`CredentialFilePosture` in
    `packages/protocol/src/storage.ts`; `credentialPosture` in
    `packages/kernel/src/storage/storage-service.ts`).
-5. **Workspace trust** — a cloned repository's `.clarvis/settings.json`, agent files, and
-   plugin-activating Environment definitions are repository-authored executable surfaces. Risky
-   settings and agent files are withheld, and workspace Environment plugins stay inactive, until
-   the operator approves the exact current fingerprint
+5. **Workspace trust** — a cloned repository's `.clarvis/settings.json`, agent files, and complete
+   inventory of `scope: "workspace"` plugins are repository-authored executable surfaces. Risky
+   settings and agent files are withheld, and selected workspace-owned plugins stay inactive, until
+   the operator approves the exact current fingerprint once. That approval covers every repository
+   plugin rather than requiring one decision per plugin or Environment. Global plugins are
+   operator-owned installations and require no second workspace approval
    (`packages/kernel/src/config/workspace-trust.ts`,
    `packages/kernel/src/environments/environment-manager.ts`).
 
@@ -303,11 +305,14 @@ sorts object keys recursively and drops `undefined` (`:154-164`, `:239-240`). Th
 | --- | --- |
 | `settings` | only the declared risk fields, keyed by their `WORKSPACE_RISK_FIELDS` name (`:192-215`) |
 | `agents` | `{ name, digest: "sha256:<hex>" }` per `.clarvis/agents/*.md`, sorted by name (`:166-175`) |
-| `extensions` | selected workspace Environment ref, exact definition revision, and qualified plugin allow-list, when that definition activates plugins |
+| `extensions` | every installed `scope: "workspace"` plugin as an exact qualified ref plus atomic contribution digest, sorted canonically, when non-empty |
 
 A workspace with none of the three yields `undefined` — it is **inert** and never prompted about
 (`workspaceExecutableSurface` in `packages/kernel/src/config/workspace-trust.ts`). Environment
-definitions that select standalone skills only do not enter this executable surface.
+Environment definitions and global plugin selections do not enter this executable surface. The
+workspace plugin inventory does so before selection. Code resolves it after the lightweight startup
+composer has painted, keeps repository plugins inactive in the meantime, and then asks automatically
+when the complete TUI receives the verdict.
 
 ### 3.4 Risk fields
 
@@ -397,14 +402,15 @@ merely-unreadable child (`0o000` directory) is admitted so its own errno surface
 ### 4.2 Which tools confine, and against which roots
 
 Every tool passes `config.confineToWorkspace` as the `confine` argument and admits
-`config.temporaryRoots`. Only the state-root addition differs:
+`config.temporaryRoots`. State artifacts and selected skill execution roots are the only narrower
+additions:
 
 | Tool | `alsoAllow` | Site |
 | --- | --- | --- |
 | `read_file` | `[config.stateRoot, ...config.temporaryRoots]`; guard analysis also admits an exact verified state spill | `packages/tools/src/tools/read-file.ts`, `packages/tools/src/guard/context.ts` |
 | `read_files` | `[config.stateRoot, ...config.temporaryRoots]`; guard analysis also admits exact verified state spills | `packages/tools/src/tools/read-files.ts`, `packages/tools/src/guard/context.ts` |
 | every other native file tool | `config.temporaryRoots` | see the `resolvePath(` call in each `packages/tools/src/tools/*.ts` |
-| `shell`, `monitor_start` guard analysis | `config.temporaryRoots`; only when a sandbox is configured, each exact verified state spill is also admitted and mounted read-only | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/state-artifacts.ts` |
+| `shell`, `monitor_start` guard analysis | `config.temporaryRoots` plus exact host-selected `config.skillExecutionRoots`; only when a sandbox is configured, each exact verified state spill is also admitted and mounted read-only | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/state-artifacts.ts` |
 
 The state-root widening remains reachable from exactly two call sites, both read-only. Temporary
 roots are different: the loop creates one owner-only scratch directory per run, passes that exact
@@ -419,6 +425,15 @@ generic `/tmp` or a pre-existing match. Production:
 `packages/loop/tests/integration/command-guard-wiring.test.ts`,
 `packages/tools/tests/integration/api.test.ts`, and
 `packages/tools/tests/integration/guard-dispatch.test.ts`.
+
+Skill execution roots are canonical directories exposed only by selected skills whose host root
+opted into helper execution. They widen command path and `cwd` admission, while the dispatcher
+denies every native file mutation beneath them. A native sandbox mounts them read-only; without one,
+`shell` and `monitor_start` remain ordinary secret-scrubbed host processes, so the root is not an
+immutability claim. Production: `packages/skills/src/registry.ts`,
+`packages/loop/src/runtime/build-run-deps.ts`, `packages/tools/src/config.ts`, and
+`packages/tools/src/core.ts`. Tests: `packages/skills/tests/integration/api.test.ts` and
+`packages/tools/tests/integration/api.test.ts`.
 
 The spill files state-root widening exists for are written by
 `createToolSpill` (`packages/loop/src/runtime/context/tool-spill.ts:41-61`) and by `shell`'s
@@ -561,7 +576,8 @@ denylist is derived from exactly this run's credentials"* (`packages/hooks/src/c
 | --- | --- | --- |
 | Clarvis-owned Git selecting a repository | `withoutGitRepositoryEnvironment(inherited)` — preserve ordinary/transport inputs, remove Git's complete repository-local set and `GIT_CEILING_DIRECTORIES` before `cwd`, `-C`, or a clone destination selects the repository | helper `packages/paths/src/git-environment.ts`; plugin fetch `packages/kernel/src/adapters/git/plugin-fetcher.ts`; plugin metadata `packages/kernel/src/adapters/filesystem/plugin-repository.ts`; memory workspace probe `packages/memory/src/workspace-state.ts`; client clone `packages/code/src/adapters/plugin-install.ts`; guarded host fallback `packages/tools/src/tools/host-vcs.ts` |
 | `host_vcs` argv fallback | `withoutGitRepositoryEnvironment(process.env)`, then remove `secretEnvNames`, disable prompts, hooks, and Git external protocols; ordinary host environment and credential transport remain | `packages/tools/src/tools/host-vcs.ts` (`hostEnvironment`) |
-| stdio MCP child | `{ ...getDefaultEnvironment(), ...server.env }` — values are normally interpolated, but remain literal when a portable adapter sets `expandVariables: false`; the caller's environment is **never** the base | `buildTransport` in `packages/mcp-client/src/client.ts` |
+| stdio MCP child | `{ ...getDefaultEnvironment(), ...server.env }` — authored values are normally interpolated, but remain literal when a portable adapter sets `expandVariables: false`; the caller's environment is **never** the base | `buildTransport` in `packages/mcp-client/src/client.ts` |
+| remote MCP request headers | authored headers follow `expandVariables`; `bearer_token_env_var` and `env_http_headers` always resolve their explicitly named values and the resulting headers remain confined to the configured resource origin | `buildTransport` in `packages/mcp-client/src/client.ts`; `createMCPRemoteFetch` in `packages/mcp-client/src/remote-fetch.ts` |
 | `shell` / `monitor` command (unsandboxed) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted | `packages/tools/src/sandbox.ts` (`withoutSecrets`, applied by `sandboxCommand`) |
 | capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts:76-84`, `:163` |
 
@@ -604,7 +620,7 @@ Verdict computation, recomputed on every call (`packages/kernel/src/config/file-
 | State | Condition | Effect on the merge / agents |
 | --- | --- | --- |
 | `inert` | `workspaceTrustFingerprint(...) === undefined` | nothing withheld |
-| `unapproved` | no entry for this key (`packages/kernel/src/config/workspace-trust.ts:325`) | risk fields stripped; workspace agent files and Environment plugins withheld |
+| `unapproved` | no entry for this key (`packages/kernel/src/config/workspace-trust.ts:325`) | risk fields stripped; workspace agent files and `scope: "workspace"` Environment plugins withheld; global installed plugins remain admitted |
 | `trusted` | some recorded entry equals the current fingerprint (`:326-328`) | nothing withheld |
 | `changed` | entries exist but none matches; reports the most recent as `approved` (`:329`) | withheld, same as `unapproved` |
 
@@ -624,8 +640,9 @@ Transitions:
 
 An explicit approve/revoke is refused with `conflict` while any run is active, before the trust file
 is changed. At an idle boundary, `resolveActive` recomposes the selected workspace Environment (and
-workspace-derived `builtin:default`) so approval admits its plugin units and revocation withholds
-them immediately (`assertWorkspaceTrustTransitionAllowed` and `resolveActive` in
+workspace-derived `builtin:default`) so approval admits its workspace-owned plugin units and
+revocation withholds those units immediately; global installed plugins are unaffected
+(`assertWorkspaceTrustTransitionAllowed` and `resolveActive` in
 `packages/kernel/src/environments/environment-manager.ts`; the idle/active transition case in
 `packages/kernel/tests/integration/environment-manager.test.ts` and the pre-write storage case in
 `packages/kernel/tests/integration/workspace-trust.test.ts`).
@@ -727,12 +744,14 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 4. **Case folding is Windows-only.** `forCompare` folds only when `caseInsensitive`, whose default is
    `process.platform === "win32"`. Production `packages/tools/src/lib/paths.ts:77-79`, `:137`; pinned
    `packages/tools/tests/integration/paths.test.ts:78-99`.
-5. **Only the two read tools widen confinement to the state root; every tool may use only the exact
-   configured run temporary roots.** State machinery therefore remains read-only, while scratch
+5. **Only the two read tools widen confinement to the state root; every native file tool may use only
+   the exact configured run temporary roots, and command tools may additionally address exact
+   host-approved skill execution roots.** State machinery therefore remains read-only, while scratch
    created through `$TMPDIR` or a verified explicit `mktemp -d` template is usable by later native
-   calls and unrelated `/tmp` remains refused.
+   calls and unrelated `/tmp` remains refused. Selected skill roots are denied to native mutation.
    Production: `packages/tools/src/tools/read-file.ts`, `read-files.ts`, every other `resolvePath(`
-   call site, and `packages/tools/src/lib/files.ts`. Pinned by
+   call site, `packages/tools/src/lib/files.ts`, `packages/tools/src/guard/context.ts`, and
+   `packages/tools/src/core.ts`. Pinned by
    `packages/tools/tests/integration/api.test.ts` and `guard-dispatch.test.ts`.
 6. **A model-facing refusal never names the bypass.** No runtime string under `packages/tools/src`
    matches the remediation shape. Production `packages/tools/src/lib/paths.ts:160-166`; pinned
@@ -952,15 +971,19 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/mcp-client/src/client.ts:414-438`; pinned
     `packages/mcp-client/tests/unit/remote-fetch.test.ts:7-95,141-167`.
 
-55. **A plugin-activating workspace Environment is trusted by exact definition bytes and qualified
-    `{ scope, source, name }` plugin references; hook definitions are part of that atomic plugin
-    snapshot.** Production:
+55. **A workspace Environment activates operator-owned global plugins without another workspace
+    approval. Every installed `scope: "workspace"` plugin enters one content-addressed workspace
+    fingerprint before selection; approving it once covers all repository plugins and Environment
+    switches until that inventory changes. Hook definitions remain part of each atomic plugin
+    digest.** Production:
     `workspaceTrustSurface`, `preview`, and `select` in
     `packages/kernel/src/environments/environment-manager.ts`, folded through
     `WorkspaceExecutableSurface.extensions` in
     `packages/kernel/src/config/workspace-trust.ts`. Test:
-    `packages/kernel/tests/integration/environment-manager.test.ts` (approval, matching reconnect
-    fingerprint, and invalidation after definition change) and
+    `packages/kernel/tests/integration/environment-manager.test.ts` (complete pre-selection
+    inventory, content invalidation, global-plugin activation without workspace approval,
+    mixed-scope partial admission, one-approval Environment switching, and matching reconnect
+    fingerprint) and
     `packages/kernel/tests/integration/workspace-trust.test.ts` (extension surface changes the trust
     hash and is reported as withheld `environment` until approved).
 
@@ -975,6 +998,36 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     in `packages/kernel/tests/integration/plugin-manifest.test.ts` plus literal-placeholder cases in
     `packages/mcp-client/tests/component/transport-builder.test.ts`.
 
+57. **Skill helper execution is explicit, package-scoped and never automatic.** Only a root carrying
+    host execution approval yields an `executionRoot`, the value exposed for one skill is that
+    skill's own directory, and selecting it merely configures command confinement. Native mutations
+    are refused; a native sandbox mounts it read-only; an unsandboxed command retains normal host
+    rights and is not mislabeled isolated. Production: `packages/skills/src/registry.ts`,
+    `packages/loop/src/runtime/build-run-deps.ts`, `packages/tools/src/config.ts`, and
+    `packages/tools/src/core.ts`. Test: `packages/skills/tests/integration/api.test.ts` and
+    `packages/tools/tests/integration/api.test.ts`.
+
+58. **Borrowed `userConfig` is a name mapping, never a secret import.** Only a shape-matched borrowed
+    manifest may map a whole `${user_config.key}` string in a stdio server's `env` to the destination
+    `${DEST_ENV}` name. The declaration must be `type: "string"`, the block is capped at 128 entries,
+    recursive inspection is bounded, and defaults/sensitive values are never consumed or logged.
+    Embedded, undeclared, native-dialect, disabled-expansion, argv/cwd/url/header, or structurally
+    excessive uses withhold only that MCP. Production: `resolveBorrowedUserConfig` in
+    `packages/kernel/src/plugins/plugin-manifest.ts`. Test:
+    `packages/kernel/tests/integration/plugin-manifest.test.ts`.
+
+59. **A marketplace cannot redirect an install to a different plugin identity or a source the
+    kernel will deterministically refuse.** Catalog parsing and acquisition share transport,
+    selector, and npm-source validation. Each install carries the listing's expected name; a
+    declared mismatch is refused, while an unnamed supported foreign manifest may use that stable
+    marketplace identity. Production: `pluginGitUrlIssue`, `pluginGitSelectorIssue`, and
+    `pluginNpmSourceIssue` in `packages/loop/src/settings/marketplace-schema.ts`,
+    `marketplaceInstallSource` in `packages/code/src/adapters/marketplace.ts`, and `installPrepared`
+    in `packages/kernel/src/plugins/plugin-service.ts`. Test:
+    `packages/loop/tests/unit/marketplace-schema.test.ts`,
+    `packages/code/tests/integration/marketplace.test.ts`, and
+    `packages/kernel/tests/integration/plugin-service.test.ts`.
+
 ## 6. Failure modes and degradation
 
 | Condition | Handler | Outcome |
@@ -983,11 +1036,14 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 | Containment unprovable (unresolvable symlink) | `packages/tools/src/lib/paths.ts:216` → `:142` | same `path_escape`, logged with `reason: "unresolvable"` |
 | Path swapped between check and open | `packages/tools/src/lib/files.ts:137-144` | `path_escape`, `"Path changed while it was being opened"` |
 | `realpath`/`stat` failure during that check | `packages/tools/src/lib/files.ts:125-127` | mapped through `fsError` |
+| Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
+| Unsafe or unsupported borrowed `userConfig` reference | `resolveBorrowedUserConfig` in `packages/kernel/src/plugins/plugin-manifest.ts` | only the affected MCP is withheld; safe sibling contributions survive |
 | Write target is a symlink | `packages/tools/src/lib/atomic.ts:111-115` | `ToolError("invalid_input")`, `"Refusing to write through a symlink"` |
 | Atomic write fails after creating a parent | `packages/tools/src/lib/atomic.ts:143-146` | the created directory is removed best-effort, then rethrow |
 | Batch commit fails mid-way | `packages/tools/src/lib/atomic.ts:283-288` (doc) / `:288` | rolled back; a failed undo becomes `io_error` naming the unrestorable originals |
 | Oversized tool result cannot be spilled | `packages/loop/src/runtime/context/tool-spill.ts:49-58`, `packages/tools/src/lib/output.ts:395-406` | degrades to a truncation marker naming no file; the run continues |
-| Unset `${VAR}` in an interpolation-enabled MCP `env`/`headers` or a provider header | `packages/capability/src/env-interpolate.ts:78` | `MissingEnvVarsError` naming the distinct variables; portable literal mode does not enter this path |
+| Unset `${VAR}` in an interpolation-enabled MCP `env`/`headers`, an environment-backed MCP credential, or a provider header | `resolveStringMap` in `packages/capability/src/env-interpolate.ts` | `MissingEnvVarsError` naming the distinct variables; portable literal mode skips only authored MCP maps, not explicit environment-backed credential declarations |
+| Marketplace source fails shared transport, selector, npm, or expected-name validation | `readSource` in `packages/loop/src/settings/marketplace-schema.ts`; `installPrepared` in `packages/kernel/src/plugins/plugin-service.ts` | listing remains visible but non-installable when acquisition is impossible; a staged identity mismatch is refused before inventory mutation |
 | Forbidden provider body key, validation path | `packages/loop/src/validation/request/provider-rules.ts:43-48` | `ValidationError("invalid_provider_config")` — hard failure with a diagnostic |
 | Forbidden provider body key, adapter path | `packages/llm/src/openai-compatible-request.ts:186` | **silently dropped** |
 | `keys.json` missing | `packages/kernel/src/secrets/secret-store.ts:79` | `{ values: {} }` — tolerated |

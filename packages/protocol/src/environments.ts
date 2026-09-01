@@ -156,6 +156,7 @@ export interface EnvironmentPreview {
   target: ResolvedEnvironment;
   delta: EnvironmentDelta;
   token: string;
+  /** Whether workspace-owned plugins need their single workspace-wide inventory approval. */
   requires_workspace_trust: boolean;
 }
 

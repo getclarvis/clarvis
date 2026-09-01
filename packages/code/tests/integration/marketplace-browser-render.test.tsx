@@ -13,6 +13,9 @@ function listing(over: Partial<MarketplaceListing> = {}): MarketplaceListing {
     name: "demo-plugin",
     displayName: "Demo Plugin",
     source: "https://example.invalid/demo.git",
+    sourceType: "git",
+    installation: "AVAILABLE",
+    authentication: "ON_FIRST_USE",
     description: "demo listing",
     installable: true,
     notes: [],
@@ -33,6 +36,7 @@ function plugin(over: Partial<PluginView> = {}): PluginView {
     dir: "/plugins/demo-plugin",
     enabled: true,
     installSource: "https://example.invalid/demo.git",
+    updateable: true,
     revision: "abc123",
     contributions: {
       agents: ["researcher"],
@@ -185,6 +189,51 @@ test("installed inventory and full lifecycle details live in Marketplace", async
   rendered.renderer.destroy();
 });
 
+test("installed plugin details render the complete publisher and presentation metadata", async () => {
+  const mounted = mount({
+    plugins: [
+      plugin({
+        shortDescription: "Short summary",
+        longDescription: "Long description for operators.",
+        author: {
+          name: "Atlas Labs",
+          email: "plugins@atlas.example",
+          url: "https://atlas.example/team",
+        },
+        developerName: "Atlas Plugin Team",
+        license: "MIT",
+        homepage: "https://atlas.example/plugin",
+        repository: "https://github.com/atlas/plugin",
+        keywords: ["charts", "maps"],
+        category: "Productivity",
+        capabilities: ["Read", "Write"],
+        websiteURL: "https://atlas.example",
+        privacyPolicyURL: "https://atlas.example/privacy",
+        termsOfServiceURL: "https://atlas.example/terms",
+        brandColor: "#336699",
+        composerIcon: "./assets/icon.png",
+        logo: "./assets/logo.svg",
+        screenshots: ["./assets/screen.png"],
+        defaultPrompt: ["Draw a chart"],
+      }),
+    ],
+  });
+  const rendered = await openRender(
+    (() => MarketplaceBrowser(mounted.host, mounted.deps)) as never,
+    { width: 150, height: 60 },
+  );
+  await rendered.renderOnce();
+  mounted.press("return");
+  await rendered.renderOnce();
+  const frame = rendered.captureCharFrame();
+
+  expect(frame).toContain("Atlas Labs <plugins@atlas.example>");
+  expect(frame).toContain("https://github.com/atlas/plugin");
+  expect(frame).toContain("https://atlas.example/privacy");
+  expect(frame).toContain("Draw a chart");
+  rendered.renderer.destroy();
+});
+
 test("uninstall immediately replaces the active row with its available listing", async () => {
   const [plugins, setPlugins] = createSignal([plugin()]);
   const mounted = mount({
@@ -222,7 +271,14 @@ test("uninstall immediately replaces the active row with its available listing",
 
 test("locally installed plugins remain manageable without a marketplace listing", async () => {
   const mounted = mount({
-    plugins: [plugin({ name: "local-only", displayName: "Local Only", installSource: undefined })],
+    plugins: [
+      plugin({
+        name: "local-only",
+        displayName: "Local Only",
+        installSource: undefined,
+        updateable: false,
+      }),
+    ],
   });
   const rendered = await openRender(
     (() => MarketplaceBrowser(mounted.host, mounted.deps)) as never,
@@ -241,13 +297,32 @@ test("locally installed plugins remain manageable without a marketplace listing"
   rendered.renderer.destroy();
 });
 
-test("unavailable local entries open an explanation instead of installing", async () => {
+test("local and npm installations do not offer an update action", async () => {
+  for (const installSource of ["local:/plugins/local-only", "npm:@scope/local-only@1.0.0"]) {
+    const mounted = mount({
+      plugins: [plugin({ name: "local-only", installSource, updateable: false })],
+    });
+    const rendered = await openRender(
+      (() => MarketplaceBrowser(mounted.host, mounted.deps)) as never,
+      { width: 100, height: 24 },
+    );
+    await rendered.renderOnce();
+    mounted.press("return");
+    await rendered.renderOnce();
+    expect(rendered.captureCharFrame()).not.toContain("u update");
+    mounted.press("u");
+    await rendered.renderOnce();
+    expect(mounted.updated).toEqual([]);
+    rendered.renderer.destroy();
+  }
+});
+
+test("unavailable entries open an explanation instead of installing", async () => {
   const mounted = mount({
     listings: [
       listing({
         source: "./plugins/demo-plugin",
         installable: false,
-        notes: ["local sources stay with their marketplace checkout"],
       }),
     ],
   });
@@ -260,7 +335,6 @@ test("unavailable local entries open an explanation instead of installing", asyn
   await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("This source cannot be installed by the current host");
-  expect(frame).toContain("local sources stay with their marketplace checkout");
   expect(mounted.installed).toEqual([]);
   rendered.renderer.destroy();
 });

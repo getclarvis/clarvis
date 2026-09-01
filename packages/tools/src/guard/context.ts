@@ -89,6 +89,7 @@ export function buildGuardContext(
     }
     if (typeof args.cwd === "string") paths.push(resolveCandidate(args.cwd, root, pathOptions));
   } else if (COMMAND_TOOLS.has(tool)) {
+    const commandRoots = [...config.temporaryRoots, ...config.skillExecutionRoots];
     if (typeof args.command === "string") {
       shell = analyzeShell(args.command, dialect);
       for (const p of shell.paths) {
@@ -96,12 +97,14 @@ export function buildGuardContext(
         const artifact = readableStateArtifactPath(resolved, config.stateRoot);
         const alsoAllow =
           artifact === undefined || config.sandbox === undefined
-            ? config.temporaryRoots
-            : [...config.temporaryRoots, artifact];
+            ? commandRoots
+            : [...commandRoots, artifact];
         paths.push(resolveCandidate(p, root, { shell: true, alsoAllow }));
       }
     }
-    if (typeof args.cwd === "string") paths.push(resolveCandidate(args.cwd, root, pathOptions));
+    if (typeof args.cwd === "string") {
+      paths.push(resolveCandidate(args.cwd, root, { alsoAllow: commandRoots }));
+    }
   } else if (tool === "apply_patch") {
     if (typeof args.patch === "string") {
       for (const p of patchPaths(args.patch)) paths.push(resolveCandidate(p, root, pathOptions));

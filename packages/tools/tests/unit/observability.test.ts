@@ -70,6 +70,7 @@ describe("tools.config_resolved", () => {
       sandbox_availability: "optional",
       read_only: true,
       confined: false,
+      skill_execution_roots: 0,
       platform: process.platform,
     });
   });

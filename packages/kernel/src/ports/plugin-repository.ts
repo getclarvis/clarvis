@@ -82,7 +82,21 @@ export interface PluginRepository {
 /** Git checkout/update port used by plugin orchestration. */
 export interface PluginFetcher {
   /** Clone and select a plugin root from a source. */
-  fetch(source: string, subdir?: string, signal?: AbortSignal): Promise<PreparedPlugin>;
+  fetch(
+    source: string,
+    subdir?: string,
+    signal?: AbortSignal,
+    selector?: { ref?: string; sha?: string },
+  ): Promise<PreparedPlugin>;
+  /** Copy a local marketplace plugin into an isolated staging directory. */
+  fetchLocal?(source: string, signal?: AbortSignal): Promise<PreparedPlugin>;
+  /** Resolve and unpack an npm package without running lifecycle scripts. */
+  fetchNpm?(
+    packageName: string,
+    version?: string,
+    registry?: string,
+    signal?: AbortSignal,
+  ): Promise<PreparedPlugin>;
   /** Fetch and reset an existing Git checkout. */
   update(plugin: InstalledPlugin, signal?: AbortSignal): Promise<PreparedPlugin | void>;
 }

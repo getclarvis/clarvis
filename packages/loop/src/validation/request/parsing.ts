@@ -117,5 +117,8 @@ export function parseRunRequest(raw: unknown, registry?: CapabilityRegistry): Pa
     const code = classifyIssue(issue);
     throw new ValidationError(code, issue.message, { path: issue.path });
   }
-  return parsed.data;
+  return {
+    ...parsed.data,
+    servers: parsed.data.servers.filter((server) => server.enabled !== false),
+  };
 }

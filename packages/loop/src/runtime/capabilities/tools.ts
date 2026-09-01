@@ -73,6 +73,8 @@ export type SandboxResolver = (ctx: RunCapabilityContext) => ResolvedSandboxSett
  *   this and gets the previous behaviour.
  */
 export type SecretNamesResolver = (ctx: RunCapabilityContext) => readonly string[];
+/** Host port returning package roots required by the run's selected skills. */
+export type SkillExecutionRootsResolver = (ctx: RunCapabilityContext) => readonly string[];
 
 /** Host-supplied ports for the tools capability: how it resolves the run's
  * guard, sandbox and credential names. All optional; omitting one runs
@@ -81,6 +83,7 @@ export interface AgentToolsCapabilityOptions {
   resolveGuard?: GuardResolver;
   resolveSandbox?: SandboxResolver;
   resolveSecretNames?: SecretNamesResolver;
+  resolveSkillExecutionRoots?: SkillExecutionRootsResolver;
 }
 
 /**
@@ -131,11 +134,13 @@ export function createAgentToolsCapability(opts?: AgentToolsCapabilityOptions): 
       const statePaths = workspaceStatePaths(ctx.workspaceRoot);
       const temporaryRoot = statePaths.runTempDir(ctx.executionId);
       mkdirSync(temporaryRoot, { recursive: true, mode: DIR_MODE });
+      const skillExecutionRoots = opts?.resolveSkillExecutionRoots?.(ctx) ?? [];
       return createAgentToolsRunCapability(
         ctx,
         resolution,
         sandbox?.enabled === false ? undefined : sandbox,
         opts?.resolveSecretNames?.(ctx) ?? [],
+        skillExecutionRoots,
         temporaryRoot,
         () => {
           for (const dir of [statePaths.runDir(ctx.executionId), statePaths.runsDir]) {
@@ -162,6 +167,7 @@ function createAgentToolsRunCapability(
   resolution: GuardResolution | undefined,
   sandbox: ResolvedSandboxSettings | undefined,
   secretEnvNames: readonly string[],
+  skillExecutionRoots: readonly string[],
   temporaryRoot: string,
   removeEmptyRunDirs: () => void,
 ): RunCapability {
@@ -209,6 +215,7 @@ function createAgentToolsRunCapability(
         canExec: caps.canExec,
         confineToWorkspace: ctx.env.CLARVIS_AGENT_TOOLS_CONFINE,
         temporaryRoots: [temporaryRoot],
+        skillExecutionRoots,
         onTemporaryRootRegistered: (root) => temporaryRoots.add(root),
         ...(ctx.logger !== undefined ? { logger: ctx.logger } : {}),
         ...(secretEnvNames.length > 0 ? { secretEnvNames } : {}),

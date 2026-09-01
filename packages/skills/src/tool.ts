@@ -1,3 +1,5 @@
+import type { BoundedTextChunk } from "./bounded-read.ts";
+import { MAX_SKILL_RESOURCE_FILE_BYTES } from "./limits.ts";
 import type { SkillContent, SkillInfo } from "./types.ts";
 import { renderSkillCatalog } from "./catalog/index.ts";
 import type { NamespacedTool } from "@clarvis/capability";
@@ -23,6 +25,12 @@ export interface SkillsProvider {
   listSkills(): SkillInfo[];
   loadSkill(name: string): SkillContent | undefined;
   readResource(name: string, rel: string): string;
+  readResourceChunk?(
+    name: string,
+    rel: string,
+    offset?: number,
+    maxChars?: number,
+  ): BoundedTextChunk;
 }
 
 /**
@@ -57,6 +65,14 @@ export const loadSkillTool: NamespacedTool = {
           "A bundled file's exact relative path, listed by a previous load_skill response. Omit " +
           "this field to load SKILL.md; do not send SKILL.md, a catalog path, an empty value, '.', " +
           "'./', or '/'.",
+      },
+      offset: {
+        type: "integer",
+        minimum: 0,
+        maximum: MAX_SKILL_RESOURCE_FILE_BYTES,
+        description:
+          "Byte offset for continuing a large UTF-8 text resource. Use only with resource and " +
+          "copy the next offset from the previous response.",
       },
     },
     required: ["name"],

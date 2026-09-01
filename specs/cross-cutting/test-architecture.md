@@ -1191,13 +1191,13 @@ already ends its own chain in `.catch(() => {})` (`packages/capability/src/tasks
     drives the whole 530-line reader through `marketplaceSchema`, its only runtime export, to 100%
     of its functions and lines. It exercises what the entry had named — the
     `MAX_LISTINGS`/`MAX_NOTES`/`MAX_LISTED_KEYS` truncations and the notes they emit, both default
-    strings, a local source read but never offered for install, and the suggestion `typoBudget`
-    withholds from a short key at the same edit distance it allows a long one — plus every source
-    dialect, the drop-one-listing-never-the-collection rule, and the alternate spellings a foreign
-    dialect writes a summary and a display name under. Six deliberate mutations of the module (each
-    of the three bounds, a local source made installable, both defaults, and `typoBudget` replaced
-    by a constant) each failed only the tests naming that rule. `NO_COUNTER_ALLOWLIST` now holds
-    nothing but the three permanent reasons.
+    strings, bounded and confined local-source normalization, and the suggestion `typoBudget`
+    withholds from a short key at the same edit distance it allows a long one — plus every supported
+    source dialect, the drop-one-listing-never-the-collection rule, and the alternate spellings a
+    foreign dialect writes a summary and a display name under. The original local-source rejection
+    assertion was replaced when local marketplace entries became installable on 2026-08-31; current
+    mutation confidence is owned by that focused suite rather than the historical six-mutation
+    count. `NO_COUNTER_ALLOWLIST` now holds nothing but the three permanent reasons.
 
 11. **Coverage figures from an existing LCOV artifact can be stale.** ~~Whether the per-package
     reports are current with `HEAD` is not determinable.~~ **Resolved 2026-08-22**: it is

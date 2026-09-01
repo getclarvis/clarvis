@@ -86,7 +86,7 @@ const TRANSCRIPT_EVENT_POLICY = {
   memory_ingest: { surface: "status", authority: "none", commit: "never" },
   capability_event: { surface: "frontier", authority: "terminal", commit: "point" },
   events_dropped: { surface: "frontier", authority: "terminal", commit: "point" },
-  mcp_degraded: { surface: "frontier", authority: "terminal", commit: "point" },
+  mcp_degraded: { surface: "status", authority: "none", commit: "never" },
 } as const satisfies Record<RunEvent["type"], TranscriptEventPolicy>;
 
 /** Compatibility phase carried by every semantically committed batch. */

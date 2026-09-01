@@ -15,6 +15,8 @@ export function makeInfo(overrides: Partial<SkillInfo> = {}): SkillInfo {
     source: overrides.source ?? "clarvis",
     root: overrides.root ?? "/roots/skills",
     dir: overrides.dir ?? `/roots/skills/${name}`,
+    ...(overrides.executionRoot === undefined ? {} : { executionRoot: overrides.executionRoot }),
+    ...(overrides.dependencies === undefined ? {} : { dependencies: overrides.dependencies }),
     path: overrides.path ?? `/roots/skills/${name}/SKILL.md`,
     ...(overrides.allowedTools !== undefined ? { allowedTools: overrides.allowedTools } : {}),
     ...(overrides.shadowed !== undefined ? { shadowed: overrides.shadowed } : {}),

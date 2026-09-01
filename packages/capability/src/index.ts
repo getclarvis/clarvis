@@ -87,9 +87,10 @@ export {
   EXTERNAL_HOOK_TOOL_NAMES,
   EXTERNAL_TOOLS_WITHOUT_COUNTERPART,
   normalizeToolName,
+  MCP_HOOK_TOOL_PORT,
   hookSchema,
 } from "./hooks-config.ts";
-export type { HookConfig } from "./hooks-config.ts";
+export type { HookConfig, McpHookToolPort } from "./hooks-config.ts";
 export { openCallEnvelope } from "./call-envelope.ts";
 export type { CallEnvelopeArgs, CallEnvelope } from "./call-envelope.ts";
 export { memoizeByOwner, sharedFallback } from "./per-owner.ts";
@@ -160,6 +161,7 @@ export type {
   LiveMessage,
   ToolTransport,
   AgentRole,
+  McpOAuthConfig,
   McpServerConfig,
   ProviderKind,
   PromptCacheMode,
@@ -189,8 +191,10 @@ export type {
   PreDelegateTaskContext,
   RunStartContext,
   RunEndContext,
+  SubagentStartContext,
   SubagentCompleteContext,
   PreCompactContext,
+  PostCompactContext,
   CompactionContribution,
   ModelCallErrorContext,
   BudgetExhaustedContext,

@@ -157,10 +157,24 @@ source, lifecycle, capabilities, executables and active Environment state. The b
 written to settings, and loading its listings does not install or activate a plugin. A second Enter
 on an available detail is one composed consent: install the complete plugin, select its exact ref in
 the current Environment, reconnect, and verify it remains active after reload. Hooks are part of
-that atomic plugin unit and have no independent approval screen. Update and uninstall are guarded at
+that atomic plugin unit and have no independent approval screen or additional workspace approval;
+repository-owned `scope: "workspace"` checkouts are covered together by one proactive workspace
+approval. The lightweight startup composer paints without waiting for inventory hashing or trust;
+repository plugins stay inactive until the complete app receives the resolved verdict and opens the
+approval modal automatically, without a slash command. Update and uninstall are guarded at
 the idle boundary. Workspace-owned checkouts are edited in their repository, and linked external
-checkouts remain visible and activatable but never offer the managed update action. Environment selects
-only already-installed extensions. The guided flow obtains the complete exact
+checkouts remain visible and activatable but never offer the managed update action. The kernel's
+explicit `updateable` projection also suppresses Update for local and npm installs rather than
+offering an operation that will be refused. Environment selects only already-installed extensions.
+Marketplace entries may install from Git
+repositories/subdirectories (optionally pinned by ref or SHA), confined local directories, or npm
+packages fetched without lifecycle scripts. Each install carries the listing name and refuses an
+explicitly different manifest identity; an unnamed foreign manifest uses that listing name as its
+stable install identity. The browser shows `AVAILABLE`, `INSTALLED_BY_DEFAULT`,
+`NOT_AVAILABLE`, `ON_INSTALL`, and `ON_FIRST_USE` policy metadata without treating catalog load as
+installation. Plugin detail preserves the original publisher, license, repository/legal links,
+category, capabilities, prompts, brand and asset paths; Clarvis never replaces the declared author
+with its own contributors. The guided flow obtains the complete exact
 inventory from `EnvironmentService.inventory()` and commits a definition plus local selection only
 through `previewComposition`/`applyComposition`; a changed definition, selection document, or
 resolved contribution invalidates the review before either write. Its immutable `builtin:default` uses exact
@@ -180,9 +194,10 @@ Interactive Code and local `--print` kernels also provide the operating-system b
 by remote MCP OAuth. The authorization coordinator still validates the destination and loopback
 callback; this adapter grants only the host action of opening the already validated URL. Remote
 kernel clients and server hosts do not inherit that local authority. Opening the browser never holds
-an interactive run: the challenged MCP is shown as degraded and stays inactive for that run while
-authorization continues in the background. Ignoring the page leaves the composer and model run
-usable; completing it stores the token for a later run.
+an interactive run: the challenged MCP stays inactive for that run while authorization continues in
+the background, and its sanitized reason appears once in a transient TUI warning rather than the
+conversation transcript. Ignoring the page leaves the composer and model run usable; completing it
+stores the token for a later run.
 After onboarding, `/model` is the only surface that changes `default_model`, and `/effort` is the
 only surface that changes its `default_reasoning_effort`. They write only their own setting in the
 selected global/workspace scope. Providers owns credentials and the available-model set, while
@@ -1078,6 +1093,11 @@ conclusions had to be withdrawn over it.
 The repository's [Clarvis performance validation
 skill](../../.agents/skills/clarvis-performance-validation/SKILL.md) owns the future clean-versus-
 marketplace A/B, real-PTY run, ignored-OAuth, skill/MCP/subagent, hashing-drift and cleanup checklist.
+
+An MCP that cannot connect while a run opens its tool pool remains represented by the persisted
+`mcp_degraded` diagnostic event, but Code does not publish that event into conversation history. The
+live shell shows each newly observed `{ server, reason }` failure once as a transient warning; replay
+and resume do not repeat it.
 
 `bun run bench:code-overlays` runs the renderer lifecycle soak. Every named case and default
 120x32/80x24 size gets a fresh process, warm-up, forced-GC batch samples and RSS/PSS/private-dirty plus live renderable, renderer

@@ -78,6 +78,12 @@ resolution, so it does not create a second naming or precedence system. The kern
 mechanism to pass custom Environment skill selections without making this package understand
 Environments.
 
+`executionRoot` is a separate, host-controlled opt-in. When present on a root, discovery exposes
+only each selected skill's own directory as that skill's `executionRoot`; it never exposes the
+broader collection or package directory. `load_skill` always identifies the skill directory for
+relative resource paths and emits the helper-execution hint only for this opted-in field. Execution
+still goes through the normal shell command guard and native sandbox policy.
+
 Call `refresh()` after the filesystem changes. `resourcePath(name, rel)` resolves
 a resource while enforcing that it stays inside the selected skill directory.
 
@@ -85,7 +91,7 @@ a resource while enforcing that it stays inside the selected skill directory.
 
 | Entry                        | Contents                                                                                                       |
 | ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `@clarvis/skills`            | discovery/loading, bounded resource enumeration, and snapshot file/resource limits                            |
+| `@clarvis/skills`            | discovery/loading, bounded resource enumeration, and snapshot file/resource limits                             |
 | `@clarvis/skills/catalog`    | `renderSkillCatalog`: catalog metadata → a compact Markdown block for a prompt                                 |
 | `@clarvis/skills/capability` | the loop adapter: `createSkillsCapability`, the `load_skill` tool and its handler, plugin bootstrap resolution |
 
@@ -100,12 +106,29 @@ eager configuration path may reach it, or `builtins.skills = false` would still
 load this package on every import of the engine. The loop reaches it through a
 dynamic import instead.
 
-The root also exports `enumerateResources`, `readBoundedBytes`, its option/reader types, and the
-bounded skill file/resource byte and character limits. `readBoundedBytes` opens once, sizes the
-opened descriptor, allocates only that bounded size, requires the complete read, and probes for
-growth before returning exact bytes. The kernel uses those exact primitives when hashing a plugin
-skill snapshot, so identity and later disclosure walk and read the same admitted resource surface
-instead of maintaining a second scanner.
+`renderSkillCatalog` includes the exact `SKILL.md` path with each name and description and never
+emits more than 8,000 characters. When a full catalog exceeds that bound, it first removes
+descriptions, then omits a deterministic tail. The capability filters a skill whose
+`agents/openai.yaml` declares `dependencies.tools` entries of `type: mcp` unless the run carries
+that MCP server (including its plugin-qualified form), while the protocol/UI retain the dependency
+metadata for diagnosis.
+
+The root also exports `enumerateResources`, `readBoundedBytes`, `readBoundedTextChunk`,
+`hashBoundedFile`, their option/result types, and the bounded skill file/resource limits. The legacy
+whole-resource read remains capped at 256 KiB and 50 000 decoded characters. A chunked read admits a
+complete regular file of at most 8 MiB, but returns one UTF-8 page of at most 256 KiB and 50 000
+characters; its continuation cursor is a byte offset and never splits a UTF-8 sequence or surrogate
+pair. `load_skill` validates every chunk returned by a provider and fails closed on a mismatched,
+unbounded, non-progressing or inexact cursor. A legacy provider without chunk support can serve only
+offset zero and never reinterprets the byte cursor as a character index.
+
+`hashBoundedFile` streams raw bytes through a fixed buffer, without decoding or retaining the whole
+file, and refuses a resource larger than the caller's bound. Kernel skill snapshots apply the public
+8 MiB per-file limit and a distinct 32 MiB aggregate resource budget. This lets binary resources
+participate in identity while keeping model-facing text disclosure and snapshot memory accounting
+independently bounded. Their canonical catalog projection also includes `dependencies.tools`, so a
+sidecar change that alters model-visible skill availability invalidates both plugin and standalone
+skill snapshots even though the `agents/` sidecar directory is not a model-readable resource.
 
 `LOAD_SKILL_TOOL_NAME` is owned only here. `createSkillsCapability` derives its
 `reservedWireNames` and `toolEffects` from the canonical `loadSkillTool`
@@ -159,7 +182,7 @@ addressed to whichever runtime loads the skill, rather than to the model. The
 first `.yaml`/`.yml` file in it is read as a **sidecar**. Nothing is matched by
 filename: any file of that shape, in that directory, is the candidate.
 
-It contributes two things, kept apart on purpose:
+It contributes three things, kept apart on purpose:
 
 - **Presentation** — `SkillInfo.presentation`: a display name, a short
   description, per-theme icon paths, a brand colour and a starter prompt. Each
@@ -169,6 +192,9 @@ It contributes two things, kept apart on purpose:
 - **Catalog suppression** — `SkillInfo.catalogSuppressed`: the skill is withheld
   from the catalog injected into a run's context, while staying explicitly
   loadable by name through `load_skill`.
+- **Tool dependencies** — bounded `dependencies.tools` entries whose `type` is `mcp`, including
+  their server value and optional description/transport/URL. Unsupported dependency kinds remain
+  inert sidecar data rather than widening execution authority.
 
 Catalog suppression is **not** `user-invocable`, and the two must not be folded
 together. `user-invocable` filters the slash listing a _user_ chooses from;
@@ -194,9 +220,10 @@ All filesystem tiers are hard-bounded before content allocation: configured
 roots, directory entries, manifests per root, merged catalog size, manifest
 bytes/characters and frontmatter prefix size. Resource disclosure additionally
 bounds traversal depth, visited entries/directories, returned files and the
-bytes/characters read from one resource. A directory that exceeds its entry cap
-is dropped as a whole, avoiding an order-dependent partial scan; non-strict
-discovery warns when a catalog bound drops input.
+bytes/characters returned in one page, the complete file admitted for paging and
+the aggregate resource bytes admitted to a snapshot. A directory that exceeds
+its entry cap is dropped as a whole, avoiding an order-dependent partial scan;
+non-strict discovery warns when a catalog bound drops input.
 
 ## Diagnostics
 

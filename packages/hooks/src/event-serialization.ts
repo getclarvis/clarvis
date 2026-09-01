@@ -6,11 +6,13 @@ import type {
   HookConfig,
   ModelCallErrorContext,
   PreCompactContext,
+  PostCompactContext,
   PreDelegateTaskContext,
   PreFinalizeContext,
   RunEndContext,
   RunStartContext,
   SubagentCompleteContext,
+  SubagentStartContext,
   UserSteerContext,
 } from "@clarvis/capability";
 import {
@@ -74,6 +76,8 @@ type HookContextByEvent = {
   pre_delegate_task: PreDelegateTaskContext;
   run_start: RunStartContext;
   run_end: RunEndContext;
+  post_compact: PostCompactContext;
+  subagent_start: SubagentStartContext;
   subagent_complete: SubagentCompleteContext;
   pre_compact: PreCompactContext;
   model_call_error: ModelCallErrorContext;
@@ -173,6 +177,19 @@ const SERIALIZE = {
     error_code: c.errorCode,
     iterations_used: c.iterationsUsed,
     elapsed_ms: c.elapsedMs,
+  }),
+  post_compact: (c: PostCompactContext) => ({
+    agent: c.agent,
+    subagent_instance_id: c.subagentInstanceId,
+    operation: c.operation,
+    freed_chars: c.freedChars,
+    kept_chars: c.keptChars,
+  }),
+  subagent_start: (c: SubagentStartContext) => ({
+    subagent_instance_id: c.subagentInstanceId,
+    profile: c.profile,
+    model: c.model,
+    task: clampText(c.task),
   }),
   subagent_complete: (c: SubagentCompleteContext) => ({
     subagent_instance_id: c.subagentInstanceId,

@@ -95,6 +95,7 @@ every handler above consumes them directly.
 | `regexScanBudgetMs` | `5000` (`packages/tools/src/config.ts:159`) | `packages/tools/src/config.ts:69` (approx.) | packages/tools/src/tools/replace.ts:201 (`createScanBudget`) |
 | `confineToWorkspace` | `true` default (`packages/tools/src/config.ts:332`) | `packages/tools/src/config.ts:78` | every `resolvePath` call in every handler above |
 | `readOnly` | `false` default (`packages/tools/src/config.ts:331`) | `packages/tools/src/config.ts:75` | gates tool visibility upstream ([tools-contract-and-dispatch](tools-contract.md)); observed effect: `packages/tools/tests/integration/replace.test.ts:263-268` shows `readOnly: true` making `replace` answer `not_found`, as if the tool did not exist |
+| `skillExecutionRoots` | `[]` | `RuntimeConfig.skillExecutionRoots` in `packages/tools/src/config.ts` | the central dispatcher refuses every native source/destination below a selected skill package before any handler runs |
 
 ## 3. Data and formats
 
@@ -469,6 +470,16 @@ lock-ordering deadlock between them.
     Test: `packages/tools/tests/integration/edit-file.test.ts:103-112` ("BUG-07", line terminators),
     `:114-123` ("preserves a UTF-8 BOM through an edit").
 
+13. **A selected skill package is immutable to native mutation tools.** Before guard review or
+    handler dispatch, `protectSkillPackages` extracts every path through `buildGuardContext` and
+    applies `assertOutsideRoots` to `write_file`, `edit_file`, `multi_edit`, `apply_patch`, `replace`,
+    `move`, `copy`, `mkdir`, and `remove`. This applies even if the skill directory is nested under
+    the writable workspace. Because `replace` recursively traverses its scope, it additionally
+    rejects an ancestor that contains a protected root; a scope such as `.agents` cannot rewrite a
+    selected `.agents/skills/<name>` package indirectly. Command execution has the separate posture
+    defined by the shell and sandbox contracts. Production: `packages/tools/src/core.ts` and
+    `packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/api.test.ts`.
+
 13. **`move`/`copy` refuse when either endpoint is a symlink**, checked before any stat or filesystem
     mutation; `replace` refuses the same way on a non-dry-run commit, through the shared
     `applyOpsAtomic` → `validateTargets` path rather than its own explicit check.
@@ -549,6 +560,7 @@ lock-ordering deadlock between them.
 | Rename source is directory | `not_a_file` | `packages/tools/src/lib/atomic.ts:238-240` | fails hard |
 | Rename destination already exists | `invalid_input` | `packages/tools/src/lib/atomic.ts:248-252` | fails hard |
 | File over `maxFileBytes` | `too_large` | delegated to `readTextFile`/`readEditableFile` (owned by [tools-read-and-search](tools-read-and-search.md)) | fails hard |
+| Native mutation targets a selected skill package | `path_escape` | `protectSkillPackages` in `packages/tools/src/core.ts` | fails before guard/handler; nothing is changed |
 | `replace` scope exceeds `maxTraversalEntries` | `too_large` | `packages/tools/src/tools/replace.ts:84-90` | fails hard, nothing written |
 | `replace` aggregate mutation exceeds `maxMutationBytes` | `too_large` | `packages/tools/src/tools/replace.ts:224-230` | fails hard, nothing written |
 | `replace` regex budget exhausted | `timeout` | `packages/tools/src/tools/replace.ts:205-212` | fails hard rather than applying a partial codemod (explicit design choice per `packages/tools/src/tools/replace.ts:117-119`) |

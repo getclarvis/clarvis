@@ -24,10 +24,27 @@ const MATRIX: { label: string; raw: unknown }[] = [
       expandVariables: false,
       shared: true,
       resources: false,
+      env_vars: ["PATH"],
+      startup_timeout_sec: 20,
+      tool_timeout_sec: 45,
+      enabled: true,
+      required: true,
+      enabled_tools: ["read"],
+      disabled_tools: ["write"],
+      authentication: "on_first_use",
     },
   },
   { label: "type omitted", raw: { command: "npx" } },
-  { label: "http", raw: { type: "http", url: "https://example.test/mcp" } },
+  {
+    label: "http",
+    raw: {
+      type: "http",
+      url: "https://example.test/mcp",
+      oauth: { client_id: "registered-client" },
+      bearer_token_env_var: "MCP_TOKEN",
+      env_http_headers: { "X-Region": "MCP_REGION" },
+    },
+  },
   {
     label: "sse with headers",
     raw: { type: "sse", url: "https://example.test/sse", headers: { Auth: "${A}" } },
@@ -88,15 +105,54 @@ describe("settingsServerToEngine", () => {
       expandVariables: false,
       shared: true,
       resources: false,
+      env_vars: ["PATH"],
+      startup_timeout_sec: 20,
+      tool_timeout_sec: 45,
+      enabled: true,
+      required: true,
+      enabled_tools: ["read"],
+      disabled_tools: ["write"],
+      authentication: "on_first_use",
     });
-    const remote = parse({ type: "http", url: "https://example.test/mcp", headers: { A: "1" } });
-    const carried = new Set([
+    const remote = parse({
+      type: "http",
+      url: "https://example.test/mcp",
+      headers: { A: "1" },
+      oauth: { client_id: "registered-client" },
+      bearer_token_env_var: "MCP_TOKEN",
+      env_http_headers: { "X-Region": "MCP_REGION" },
+    });
+    const mapped = [
       ...Object.keys(settingsServerToEngine("fs", full)),
       ...Object.keys(settingsServerToEngine("fs", remote)),
+    ];
+    const carried = new Set([
+      ...mapped,
       "type",
+      ...(mapped.includes("startup_timeout_ms") ? ["startup_timeout_sec"] : []),
+      ...(mapped.includes("tool_timeout_ms") ? ["tool_timeout_sec"] : []),
     ]);
     for (const key of Object.keys(mcpServerSettingsSchema.shape)) {
       expect({ key, carried: carried.has(key) }).toEqual({ key, carried: true });
     }
+  });
+
+  it("rejects OAuth callback queries in settings and direct run declarations", () => {
+    const callback = "http://127.0.0.1/callback?tenant=acme";
+    expect(
+      mcpServerSettingsSchema.safeParse({
+        type: "http",
+        url: "https://example.test/mcp",
+        oauth: { callback_url: callback },
+      }).success,
+    ).toBe(false);
+    expect(
+      serverSchema.safeParse({
+        name: "docs",
+        transport: "http",
+        url: "https://example.test/mcp",
+        oauth: { callback_url: callback },
+      }).success,
+    ).toBe(false);
   });
 });

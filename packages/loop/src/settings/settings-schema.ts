@@ -36,6 +36,79 @@ const boundedMcpValues = z
     message: `must contain at most ${String(INPUT_LIMITS.mcpMapEntries)} entries`,
   });
 
+const mcpEnvName = z
+  .string()
+  .min(1)
+  .max(INPUT_LIMITS.mcpNameChars)
+  .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "must be an environment-variable name");
+
+const boundedMcpNames = z
+  .array(z.string().min(1).max(INPUT_LIMITS.mcpNameChars))
+  .max(INPUT_LIMITS.mcpMapEntries)
+  .transform((values) => [...new Set(values)]);
+
+const mcpOAuthSchema = z
+  .preprocess(
+    (value) => {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+      const source = value as Record<string, unknown>;
+      return {
+        client_id: source.client_id ?? source.clientId,
+        callback_url: source.callback_url ?? source.callbackUrl,
+        callback_port: source.callback_port ?? source.callbackPort,
+        client_metadata_url: source.client_metadata_url ?? source.clientMetadataUrl,
+      };
+    },
+    z
+      .object({
+        client_id: z.string().min(1).max(INPUT_LIMITS.mcpValueChars).optional(),
+        callback_url: z
+          .string()
+          .url()
+          .max(INPUT_LIMITS.mcpValueChars)
+          .refine((raw) => {
+            const url = new URL(raw);
+            return (
+              (url.protocol === "https:" ||
+                (url.protocol === "http:" &&
+                  ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname.toLowerCase()))) &&
+              url.pathname !== "/" &&
+              url.username.length === 0 &&
+              url.password.length === 0 &&
+              url.search.length === 0 &&
+              url.hash.length === 0
+            );
+          }, "must be an HTTPS or loopback HTTP callback URL with a non-root path and no query or fragment")
+          .optional(),
+        callback_port: z.number().int().min(0).max(65_535).optional(),
+        client_metadata_url: z
+          .string()
+          .url()
+          .max(INPUT_LIMITS.mcpValueChars)
+          .refine((raw) => {
+            const url = new URL(raw);
+            return url.protocol === "https:" && url.pathname !== "/";
+          }, "must be an HTTPS URL with a non-root path")
+          .optional(),
+      })
+      .strict(),
+  )
+  .optional();
+
+function inferMcpTransport(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const source = value as Record<string, unknown>;
+  const normalized = { ...source };
+  if (normalized.headers === undefined && normalized.http_headers !== undefined) {
+    normalized.headers = normalized.http_headers;
+  }
+  delete normalized.http_headers;
+  if (normalized.type === undefined && typeof normalized.url === "string") {
+    normalized.type = "http";
+  }
+  return normalized;
+}
+
 /**
  * A validated plugin name: a lowercase filesystem-safe token that doubles as a
  * directory name and namespace prefix. Dots are accepted for Agent Plugin
@@ -127,6 +200,22 @@ const mcpServerBase = z
           "'resources' capability, the engine auto-attaches synthetic '<server>.list_resources' " +
           "and '<server>.read_resource' tools. Set false to suppress them. Default on.",
       ),
+    oauth: mcpOAuthSchema,
+    bearer_token_env_var: mcpEnvName.optional(),
+    env_http_headers: z
+      .record(z.string().min(1).max(INPUT_LIMITS.mcpNameChars), mcpEnvName)
+      .refine((value) => boundedRecord(value, INPUT_LIMITS.mcpMapEntries), {
+        message: `must contain at most ${String(INPUT_LIMITS.mcpMapEntries)} entries`,
+      })
+      .optional(),
+    env_vars: z.array(mcpEnvName).max(INPUT_LIMITS.mcpMapEntries).optional(),
+    startup_timeout_sec: z.number().positive().max(3_600).optional(),
+    tool_timeout_sec: z.number().positive().max(3_600).optional(),
+    enabled: z.boolean().optional(),
+    required: z.boolean().optional(),
+    enabled_tools: boundedMcpNames.optional(),
+    disabled_tools: boundedMcpNames.optional(),
+    authentication: z.enum(["on_install", "on_first_use"]).optional(),
   })
   .strip();
 
@@ -161,6 +250,15 @@ function refineMcpServer(server: z.infer<typeof mcpServerBase>, ctx: z.core.$Ref
         message: "mcpServers[].headers is not valid for a 'stdio' transport",
         path: ["headers"],
       });
+    }
+    for (const field of ["oauth", "bearer_token_env_var", "env_http_headers"] as const) {
+      if (server[field] !== undefined) {
+        ctx.addIssue({
+          code: "custom",
+          message: `mcpServers[].${field} is not valid for a 'stdio' transport`,
+          path: [field],
+        });
+      }
     }
   } else {
     if (!server.url) {
@@ -211,6 +309,21 @@ function refineMcpServer(server: z.infer<typeof mcpServerBase>, ctx: z.core.$Ref
         path: ["shared"],
       });
     }
+    if (server.env_vars !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: `mcpServers[].env_vars is not valid for a '${server.type}' transport`,
+        path: ["env_vars"],
+      });
+    }
+  }
+  const overlap = server.enabled_tools?.filter((tool) => server.disabled_tools?.includes(tool));
+  if ((overlap?.length ?? 0) > 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: `mcpServers[].enabled_tools and disabled_tools overlap: ${overlap!.join(", ")}`,
+      path: ["disabled_tools"],
+    });
   }
 }
 
@@ -242,7 +355,9 @@ export const mcpServerSettingsSchema = mcpServerBase.strict().superRefine(refine
  * What a key *means* elsewhere is not knowable here, and acting on a guess is
  * how a plugin ends up doing something its author never asked this host to do.
  */
-export const mcpServerPluginSchema = mcpServerBase.superRefine(refineMcpServer);
+export const mcpServerPluginSchema = z
+  .preprocess(inferMcpTransport, mcpServerBase)
+  .superRefine(refineMcpServer);
 
 /** Exact identity of one plugin installation in settings. */
 export const pluginRefField = z

@@ -50,6 +50,7 @@ export function createRecordingKernelServices(invoked: string[]): KernelServices
     plugins: {
       list: record("plugins.list"),
       install: record("plugins.install"),
+      installSource: record("plugins.installSource"),
       update: record("plugins.update"),
       uninstall: record("plugins.uninstall"),
     },

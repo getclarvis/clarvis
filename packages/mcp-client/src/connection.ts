@@ -41,6 +41,7 @@ export const DEFAULT_HEALTH_PING_INTERVAL_MS = 30_000;
 export const DEFAULT_MAX_TOOL_CATALOG_ENTRIES = 2_048;
 export const DEFAULT_MAX_TOOL_CATALOG_BYTES = 8 * 1024 * 1024;
 export const MAX_TOOL_CATALOG_PAGES = 50;
+const MAX_MCP_SERVER_INSTRUCTIONS_CHARS = 8_192;
 
 function boundedCatalogLimit(value: number, hardMaximum: number): number {
   if (!Number.isFinite(value)) return hardMaximum;
@@ -215,6 +216,21 @@ export async function openConnection({
     }
   }
 
+  const readInstructions = (handle.client as { getInstructions?: () => string | undefined })
+    .getInstructions;
+  const advertisedInstructions = readInstructions?.call(handle.client)?.trim();
+  const instructions = advertisedInstructions
+    ? Array.from(advertisedInstructions).slice(0, MAX_MCP_SERVER_INSTRUCTIONS_CHARS).join("")
+    : undefined;
+
+  const enabledTools = server.enabled_tools ? new Set(server.enabled_tools) : undefined;
+  const disabledTools = server.disabled_tools ? new Set(server.disabled_tools) : undefined;
+  toolsList = toolsList.filter(
+    (tool) =>
+      (enabledTools === undefined || enabledTools.has(tool.name)) &&
+      (disabledTools === undefined || !disabledTools.has(tool.name)),
+  );
+
   const session = createResilientSession({
     initialHandle: handle,
     reconnect: connect,
@@ -234,6 +250,7 @@ export async function openConnection({
   const conn: MCPConnection = {
     name: server.name,
     transport: server.transport,
+    ...(instructions === undefined ? {} : { instructions }),
     get status(): MCPStatus {
       return session.status;
     },

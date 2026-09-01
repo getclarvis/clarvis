@@ -352,6 +352,9 @@ function fakePluginService(): PluginService {
     install: async () => {
       throw new Error("plugin installation belongs to MarketplaceBrowser tests");
     },
+    installSource: async () => {
+      throw new Error("plugin installation belongs to MarketplaceBrowser tests");
+    },
     update: async () => {
       throw new Error("plugin updates belong to Marketplace tests");
     },
@@ -461,6 +464,10 @@ test("Marketplace install atomically activates the plugin and stays active after
   const plugins: PluginService = {
     list: async () => (installed ? [view()] : []),
     install: async () => {
+      installed = true;
+      return view();
+    },
+    installSource: async () => {
       installed = true;
       return view();
     },

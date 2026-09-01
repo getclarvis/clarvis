@@ -249,6 +249,27 @@ function buildCompactionThunk(
     const requests = core.compactionSource?.drain() ?? [];
     const requested = requests.length > 0;
     const scheduledNeeded = ctx.needsCompaction();
+    const observed = async (
+      event: CompactionEvent | undefined,
+    ): Promise<CompactionEvent | undefined> => {
+      if (event !== undefined) {
+        await fireObservers(
+          core.hooks,
+          "onPostCompact",
+          {
+            agent: event.agent,
+            ...(event.subagent_instance_id === undefined
+              ? {}
+              : { subagentInstanceId: event.subagent_instance_id }),
+            operation: event.operation,
+            ...(event.freed_chars === undefined ? {} : { freedChars: event.freed_chars }),
+            ...(event.kept_chars === undefined ? {} : { keptChars: event.kept_chars }),
+          },
+          core.logger,
+        );
+      }
+      return event;
+    };
     if (requested || scheduledNeeded) {
       runtime.trace.signal("compaction_started", {
         agent: core.agent,
@@ -290,10 +311,12 @@ function buildCompactionThunk(
     };
 
     if (!requested) {
-      return runCompaction({
-        ...args,
-        ...(contributions.length > 0 ? { contributions } : {}),
-      });
+      return observed(
+        await runCompaction({
+          ...args,
+          ...(contributions.length > 0 ? { contributions } : {}),
+        }),
+      );
     }
 
     const userContributions = requests.flatMap((entry): CompactionContribution[] => {
@@ -323,7 +346,7 @@ function buildCompactionThunk(
     }
     if (userContributions.length > 0 && core.compactionPrompt === undefined) {
       recordSkipped("summarization_disabled");
-      return scheduledNeeded ? ctx.compact() : undefined;
+      return observed(scheduledNeeded ? ctx.compact() : undefined);
     }
 
     const outcome = await attemptCompaction({
@@ -336,15 +359,15 @@ function buildCompactionThunk(
       const userContributionCount = outcome.appliedContributions.filter(
         (contribution) => contribution.source === "user",
       ).length;
-      return {
+      return observed({
         ...outcome.event,
         requested: true,
         ...(userContributionCount > 0 ? { user_contribution_count: userContributionCount } : {}),
-      };
+      });
     }
 
     recordSkipped(outcome.reason);
-    return scheduledNeeded ? ctx.compact() : undefined;
+    return observed(scheduledNeeded ? ctx.compact() : undefined);
   };
 }
 

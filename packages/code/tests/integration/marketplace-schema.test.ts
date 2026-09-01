@@ -155,13 +155,13 @@ test("marketplaceSchema: an oversized catalog is truncated with a note, never re
   expect(catalog.notes.join(" ")).toContain("only the first 1000");
 });
 
-test("marketplaceSchema: a relative-path source parses but is never installable", () => {
+test("marketplaceSchema: a confined relative-path source is installable", () => {
   const catalog = read({
     ...happy,
     plugins: [{ name: "beside", source: "./plugins/beside", description: "d" }],
   });
-  expect(catalog.plugins[0]!.installable).toBe(false);
-  expect(catalog.plugins[0]!.notes.join(" ")).toContain("installs a plugin from git only");
+  expect(catalog.plugins[0]!.sourceType).toBe("local");
+  expect(catalog.plugins[0]!.installable).toBe(true);
 });
 
 test("marketplaceSchema: an object source descriptor parses and names its path", () => {
@@ -172,7 +172,7 @@ test("marketplaceSchema: an object source descriptor parses and names its path",
     ],
   });
   expect(catalog.plugins[0]!.source).toBe("./plugins/beside");
-  expect(catalog.plugins[0]!.installable).toBe(false);
+  expect(catalog.plugins[0]!.installable).toBe(true);
 });
 
 test("marketplaceSchema: a source kind with no fetcher degrades the listing, it does not throw", () => {
@@ -238,12 +238,12 @@ test("the foreign catalog's root presentation block is reported, never acted on"
   expect(notes).toContain("keys Clarvis does not act on: metadata, owner");
 });
 
-test("reports a foreign entry's policy block, but not the block it read a value out of", () => {
+test("reads a foreign entry's policy block and its presentation", () => {
   const catalog = read(foreignCatalog());
   const reviewkit = catalog.plugins.find((p) => p.name === "reviewkit")!;
   const notes = reviewkit.notes.join(" ");
 
-  expect(notes).toContain("keys Clarvis does not act on: policy");
+  expect(reviewkit.installation).toBe("AVAILABLE");
   expect(notes).not.toContain("does not act on: interface");
 });
 
@@ -263,16 +263,16 @@ test("a foreign listing with no description keeps its place, taking its summary 
   expect(shipper.displayName).toBe("Shipper");
 });
 
-test("only the foreign catalog's git-backed listings are installable", () => {
+test("the foreign catalog's git-backed and confined local listings are installable", () => {
   const catalog = read(foreignCatalog());
   const installable = catalog.plugins.filter((p) => p.installable).map((p) => p.name);
-  expect(installable).toEqual(["reviewkit", "docs"]);
+  expect(installable).toEqual(["reviewkit", "notekeeper", "shipper", "docs"]);
 });
 
 test("the foreign catalog reads its categories as presentation, and nothing more", () => {
   const catalog = read(foreignCatalog());
   expect(catalog.plugins.find((p) => p.name === "notekeeper")!.category).toBe("writing");
-  expect(catalog.plugins.find((p) => p.name === "notekeeper")!.installable).toBe(false);
+  expect(catalog.plugins.find((p) => p.name === "notekeeper")!.installable).toBe(true);
 });
 
 test("corrupting one foreign listing costs exactly that listing", () => {

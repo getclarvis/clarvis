@@ -118,9 +118,10 @@ Enter on an installed detail opens the Environment composer primed with that exa
 confirms that an update may change skills, MCP servers, hooks, or executable services before the
 kernel update/recompose path runs. `d` confirms uninstall, first removes active Environment
 membership and reconnects, then removes the checkout. Workspace-owned checkouts must be edited in
-the repository rather than deleted or updated through the host. A linked external checkout is also
-visible and activatable, but its absent managed install source suppresses `u`; kernel fetch and
-replacement boundaries independently reject an attempted update.
+the repository rather than deleted or updated through the host. The kernel projects updateability
+explicitly: only a global plugin with a managed Git origin exposes `u`; linked external, local-copy,
+npm, workspace, and otherwise unmanaged installs remain visible and activatable but suppress the
+action. Kernel fetch and replacement boundaries independently reject an attempted update.
 
 Selected plugin update/uninstall is refused while a run is active. A run keeps the content snapshot
 and fingerprint captured at its start; no list refresh, update, trust transition, or Environment
@@ -146,14 +147,34 @@ The Add Marketplace collection accepts a Git repository that publishes `marketpl
 `.agents/marketplace.json`. `g` remains the explicit direct-plugin Git path and asks which compatible
 inventory convention owns the checkout.
 
+Marketplace entries may resolve to Git (including subdirectory plus ref/SHA selectors), a confined
+local directory, or npm (optional version and credential-free HTTPS registry). The browser carries
+the normalized `PluginInstallSource`, including the listing's `expected_name`, to
+`KernelClient.plugins.installSource`; it never sends a raw catalog object to the kernel. The kernel
+rejects a declared manifest-name mismatch and supplies the expected listing identity only when a
+supported foreign manifest omits its own name. The reader applies the same transport, selector, and
+npm-source checks as acquisition before it exposes an install action. A local entry discovered from
+disk is realpath-confined before its install action is enabled. A confined local entry inside a
+remotely cloned catalog is rewritten to that repository URL plus checkout-relative subdirectory
+because the browse checkout is deleted.
+`NOT_AVAILABLE` suppresses install; `INSTALLED_BY_DEFAULT` and `ON_INSTALL` remain visible policy
+metadata but do not mutate state during catalog load.
+
+Listing and installed-plugin details preserve the original publisher, legal/discovery fields and
+complete bounded presentation metadata. Display/developer names never replace the manifest author.
+
 A failed source remains visible in All and in its own collection without erasing successful
 catalogs. Refresh clears cached fetch results and retries every exact URL.
 
-- **Production:** `OFFICIAL_MARKETPLACE_URL`, `createMarketplaceAdapter`, and
-  `addMarketplaceSource` in `packages/code/src/adapters/marketplace.ts`; `addMarketplaceView` and
-  `currentSourceError` in `MarketplaceBrowser`.
-- **Test:** `packages/code/tests/integration/marketplace.test.ts` and
-  `packages/code/tests/integration/marketplace-browser-render.test.tsx`.
+- **Production:** `OFFICIAL_MARKETPLACE_URL`, `createMarketplaceAdapter`,
+  `marketplaceInstallSource`, and `addMarketplaceSource` in
+  `packages/code/src/adapters/marketplace.ts`; `installAndActivatePlugin` in
+  `packages/code/src/app/commands.tsx`; `addMarketplaceView` and `currentSourceError` in
+  `MarketplaceBrowser`.
+- **Test:** `packages/code/tests/integration/marketplace.test.ts`,
+  `packages/loop/tests/unit/marketplace-schema.test.ts`, and
+  `packages/code/tests/integration/app-commands.test.tsx`
+  and `packages/code/tests/integration/marketplace-browser-render.test.tsx`.
 
 ## 4. Environment administration
 
@@ -179,14 +200,20 @@ and elapsed time, so it remains visible when the exact delta is taller than the 
 
 Plugin installation is explicit consent for that plugin's declared unit. Workspace trust is a
 different boundary: cloning or entering a workspace can expose executable settings and selected
-workspace plugin content that the operator did not just install.
+`scope: "workspace"` plugin content that the operator did not install. A global plugin installed
+through the TUI is already approved by that action and receives no additional workspace approval
+when an Environment selects it. In a mixed Environment it remains active even while a
+repository-owned sibling is withheld.
 
 When the workspace trust verdict is `unapproved` or `changed`, Code proactively opens the Workspace
-approval question before the ordinary shell. It names the exact Environment id and fingerprint,
-counts affected plugins/MCP/hooks, and lists withheld risk categories. Enter approves that exact
-snapshot while idle; `n` keeps it blocked and opens `/extensions` so the operator can remove content;
-Escape keeps it blocked. `/workspace-trust` is the later fallback for reopening or revoking this
-decision, not the primary onboarding path.
+approval question as soon as the complete app receives the kernel's resolved trust state, without
+waiting for a slash command. The lightweight startup composer and its first paint do not wait for
+plugin inventory hashing; repository plugins remain inactive during that interval. The workspace
+fingerprint covers every repository-owned plugin checkout, including those not selected by the
+current Environment. Enter approves that complete inventory once; no per-plugin or per-Environment
+approval follows while its bytes remain unchanged. `n` keeps it blocked and opens `/extensions` so
+the operator can remove content; Escape keeps it blocked. `/workspace-trust` is the later fallback
+for reopening or revoking this decision, not the primary onboarding path.
 
 Approving or revoking trust cannot occur during a run. An idle transition recomposes the selected
 Environment before future runs. Code refreshes the run client's cached Environment identity from
@@ -199,8 +226,8 @@ never silently falls back to a broader Environment.
   `workspace.trust.prompt` in `packages/code/src/app/commands.tsx`; trust transition enforcement in
   `packages/kernel/src/environments/environment-manager.ts`; `mutateTrust` in
   `packages/code/src/adapters/kernel-run-client.ts`.
-- **Test:** `packages/code/tests/integration/app-shell-render.test.tsx` (proactive changed-workspace
-  prompt), `packages/code/tests/component/kernel-run-client.test.ts` (post-transition identity
+- **Test:** `packages/code/tests/integration/app-shell-render.test.tsx` (post-hydration proactive
+  changed-workspace prompt), `packages/code/tests/component/kernel-run-client.test.ts` (post-transition identity
   refresh), and `packages/kernel/tests/integration/environment-manager.test.ts` (idle recompose and
   active-run refusal).
 
@@ -239,8 +266,10 @@ layers, and key-layer registrations after warm-up. The extension-composer soak s
    Environment refs. Test: marketplace collection and same-name origin cases.
 3. **EXT-3 — focused install is atomic consent and activation.** A successful Marketplace install
    selects the exact returned plugin, reconnects, and stays active after reload, with no hook review
-   gate. Production: `installAndActivatePlugin` and `pluginSettingsContributions`. Test:
-   `app-commands.test.tsx` and `plugin-contributions.test.ts`.
+   or workspace-approval gate. Production: `installAndActivatePlugin`,
+   `workspaceTargetNeedsApproval`, and `pluginSettingsContributions`. Test: `app-commands.test.tsx`,
+   the operator-installed global-plugin case in `environment-manager.test.ts`, and
+   `plugin-contributions.test.ts`.
 4. **EXT-4 — an in-flight run is immutable.** Selected content update/uninstall, trust transitions,
    and Environment changes wait for an idle boundary. Production: plugin and Environment kernel
    lifecycle guards. Test: kernel plugin-service and environment-manager integration suites.

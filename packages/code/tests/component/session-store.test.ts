@@ -15,6 +15,7 @@ import {
   uncachedInput,
   uuidv7,
   type SessionMeta,
+  type SessionTotals,
 } from "../../src/adapters/session-store.ts";
 
 function fakeSessions(seed: Session[] = []): SessionService & { store: Map<string, Session> } {
@@ -102,6 +103,13 @@ test("metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)", (
     ended_at: 2,
   });
   expect(wire.totals).toEqual({ input: 10, output: 5, cached: 2, cost_usd: 0.01 });
+  expect(sessionToMeta(wire, "clarvis")).toEqual(m);
+});
+
+test("an unknown cache split stays absent across the persisted session boundary", () => {
+  const m = meta({ totals: { input: 10, output: 5 } });
+  const wire = metaToSession(m);
+  expect(wire.totals).toEqual({ input: 10, output: 5 });
   expect(sessionToMeta(wire, "clarvis")).toEqual(m);
 });
 
@@ -475,9 +483,30 @@ test("addUsageToTotals sums by_agent", () => {
   expect(totals).toEqual({ input: 13, output: 5, cached: 2 });
 });
 
+test("flat usage makes the cumulative cache split unknown instead of fabricating zero", () => {
+  const totals: SessionTotals = { input: 10, output: 4, cached: 2 };
+  addUsageToTotals(totals, {
+    iterations: 1,
+    elapsed_ms: 5,
+    input_tokens: 3,
+    output_tokens: 1,
+  });
+  expect(totals).toEqual({ input: 13, output: 5 });
+
+  addUsageToTotals(totals, {
+    iterations: 1,
+    elapsed_ms: 5,
+    input_tokens: 2,
+    output_tokens: 1,
+    cached_tokens: 0,
+  });
+  expect(totals).toEqual({ input: 15, output: 6 });
+});
+
 test("the input a session reports having read excludes what the cache served", () => {
   expect(uncachedInput({ input: 13, output: 5, cached: 2 })).toBe(11);
   expect(uncachedInput({ input: 0, output: 0, cached: 0 })).toBe(0);
+  expect(uncachedInput({ input: 13, output: 5 })).toBe(13);
 });
 
 test("a cached count above the gross input floors at zero rather than going negative", () => {

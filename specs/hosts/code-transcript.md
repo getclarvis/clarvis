@@ -1069,11 +1069,18 @@ time or iteration. Wide terminals show the Session token totals and cache percen
 subtracts the reported cache hit, while
 `Cache hit` divides cached tokens by gross input before that subtraction; the same projection helper
 uses one run's values when its owner is `Run` and cumulative values when its owner is `Session`.
+While active, cumulative Session usage is the frozen full-session baseline captured by `runManaged`
+plus only `ActivityStore.currentUsage`; the mounted resident-window aggregate is never substituted,
+so a folded turn cannot disappear from the number and a prior turn cannot be counted twice. Both
+operands must carry a cache split for the sum to carry one. A numeric zero is measured; if either
+operand is unknown, `In` remains gross and `Cache hit` is omitted before and after settlement.
 Production:
-`packages/code/src/views/App.tsx` (`leadActivityDetail`, `footerRunStrip`) and
+`packages/code/src/run-host.ts` (`sessionUsageBaseline`, `runManaged`),
+`packages/code/src/adapters/activity-store.ts` (`currentUsage`),
+`packages/code/src/views/App.tsx` (`activeSessionUsage`, `leadActivityDetail`, `footerRunStrip`) and
 `packages/code/src/features/run/status-presenter.ts` (`runStripText`). Tests:
-`packages/code/tests/integration/app-shell-render.test.tsx` ("an active run seats its live metadata
-beside working and keeps the session footer stable") and
+`packages/code/tests/integration/app-shell-render.test.tsx` (full baseline plus current delta,
+measured zero, and missing-detail continuity) and
 `packages/code/tests/unit/run-status.test.ts` (scope-proportional cache percentage and "the run strip
 keeps cumulative session tokens before and after a run settles").
 

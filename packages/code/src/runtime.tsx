@@ -102,7 +102,7 @@ import {
 } from "./app/workspace-runtime.ts";
 import { createKernelCapabilitiesClient } from "./adapters/kernel-capabilities-client.ts";
 import { applyEvent, createTranscriptStore, type TranscriptStore } from "./adapters/store.ts";
-import { createActivityStore } from "./adapters/activity-store.ts";
+import { createActivityStore, type UsageActivity } from "./adapters/activity-store.ts";
 import type { BackendProbe } from "./onboarding/doctor.ts";
 import { createConnectionState, connectionProbe } from "./adapters/connection-state.ts";
 import { runFatalBoot } from "./views/FatalBoot.tsx";
@@ -1115,6 +1115,17 @@ async function runApp(
     return `${uncachedInput(totals)}${glyph("arrowRight")}${totals.output} tok`;
   }
 
+  /** Preserve whether the session's cache split is measured or unknown at the view boundary. */
+  function sessionUsage(totals: SessionTotals | null | undefined): UsageActivity | null {
+    return totals == null
+      ? null
+      : {
+          input: totals.input,
+          output: totals.output,
+          ...(totals.cached !== undefined ? { cached: totals.cached } : {}),
+        };
+  }
+
   function sessionCostLine(): string {
     const totals = runHost.sessionMeta()?.totals;
     return totals?.costUsd === undefined ? "" : formatCostUsd(totals.costUsd);
@@ -1210,6 +1221,7 @@ async function runApp(
     physicalActive: () => runHost.physicalWorkActive(),
     memory: () => runHost.memory(),
     startedAt: () => runHost.runStartedAt(),
+    sessionUsageBaseline: () => sessionUsage(runHost.sessionUsageBaseline()),
     workflowActivity: () => runHost.workflowActivity(),
     bang: (cmd) => runHost.runBangCommand(cmd),
     localBusy: () => runHost.bashActive(),
@@ -1243,12 +1255,7 @@ async function runApp(
     export: exportSession,
     statusLine,
     costLine: sessionCostLine,
-    usage: () => {
-      const totals = runHost.sessionMeta()?.totals;
-      return totals === undefined
-        ? null
-        : { input: totals.input, output: totals.output, cached: totals.cached };
-    },
+    usage: () => sessionUsage(runHost.sessionMeta()?.totals),
   };
   async function refreshModels(): Promise<{ providers: number; models: number }> {
     const cat = await runClient.models.refresh();

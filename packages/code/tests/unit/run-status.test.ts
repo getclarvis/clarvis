@@ -164,6 +164,9 @@ test("cache hit percentage omits an empty denominator and bounds malformed provi
   expect(runStripText({ ...shared, usage: { input: 10, output: 5, cached: 40 } })).toBe(
     "Run  In 0 · Out 5 · Cache hit 100%",
   );
+  expect(runStripText({ ...shared, usage: { input: 10, output: 5, cached: 0 } })).toBe(
+    "Run  In 10 · Out 5 · Cache hit 0%",
+  );
 });
 
 test("the run strip keeps cumulative session cost without duplicating run token counts", () => {

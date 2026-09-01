@@ -54,6 +54,7 @@ whether a late callback still owns the surface it wants to write to
 | `memory()` | `Record<string, number \| boolean>` — host-owned sampled-memory counters | `packages/code/src/run-host.ts` (`RunHost`) |
 | `runStatus` / `setRunStatus` | `Accessor<string>` / `Setter<string>` | `:120`, `:121` |
 | `runStartedAt` | `Accessor<number \| null>` — current *or last* run's start, `null` before any | `:123` |
+| `sessionUsageBaseline` | `Accessor<SessionTotals \| null>` — full persisted totals frozen immediately before the active run | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`) |
 | `workflowActivity` | `Accessor<WorkflowActivity \| null>` — current or last workflow's tree | `:126` |
 | `ownsExecution` | `(executionId: string) => boolean` | `:128` |
 | `onEvent` | `(event: RunEvent, source: EventSource, executionId?: string) => void` | `:129` |
@@ -228,7 +229,7 @@ Declared at `packages/code/src/adapters/session-store.ts:51`.
 | `turns` | `TurnRef[]` | |
 | `lastEnvironment` | `EnvironmentRunRef?` | newest turn's extension snapshot, retained by catalog-only projections |
 | `turnCount` | `number?` | present *only* on a catalog-only summary (`packages/code/src/adapters/session-store.ts:63`, `:279`) |
-| `totals` | `SessionTotals` `{input, output, cached, costUsd?}` | `:20` |
+| `totals` | `SessionTotals` `{input, output, cached?, costUsd?}`; absent `cached` means an incomplete split, numeric zero means measured zero | `packages/code/src/adapters/session-store.ts` (`SessionTotals`) |
 | `pending` | `Message[]?` | unflushed observations (`:61`) |
 
 `TurnRef` is the required discriminated union `ConversationTurnRef | TranscriptTurnRef`. Both variants
@@ -356,7 +357,8 @@ Every run shape (`submitTurn`, `submitSkillRun`, `workOnTask`) goes through it.
 | enter | capture `ownershipEpoch = runOwnershipEpoch` | `:487` |
 | enter | `transcript = store.openRun(id)`; `sink = teeSink(transcript, activity.openRun())` | `:490`, `:491` |
 | enter | `currentSink = {executionId, sink, transcript}`; `cancelRequested = false`; `currentStatusExecId = executionId`; `memoryStatusBase = null` | `:492`–`:496` |
-| enter | `diagnosticBind({execution_id})`; `setRunActive(true)`; `setRunStartedAt(Date.now())`; initial status; `attention.setTitle("running")` | `:497`–`:501` |
+| enter | clone `sess.meta()?.totals` into `sessionUsageBaseline` before the run can settle or mutate those totals | `packages/code/src/run-host.ts` (`runManaged`, `sessionUsageBaseline`) |
+| enter | `diagnosticBind({execution_id})`; `setRunActive(true)`; `setRunStartedAt(Date.now())`; initial status; `attention.setTitle("running")` | `packages/code/src/run-host.ts` (`runManaged`) |
 | enter | open `currentSettlement`, the semantic-reconciliation gate that does not extend `runActive` | `packages/code/src/run-host.ts` (`runManaged`, `currentSettlement`) |
 | handle | `setHandle` records an independent physical-work lease and attaches its release to `handle.closed` | `packages/code/src/run-host.ts` (`runManaged`) |
 | resolve | ownership re-check (`session !== sess \|\| epoch mismatch` ⇒ return) | `:507` |
@@ -752,19 +754,26 @@ dropped) but **skips any id with a live write lane**, re-appending it to the LRU
 
 ### 4.18 `ActivityStore` (`packages/code/src/adapters/activity-store.ts:90`)
 
-`openRun` (`:153`) takes no execution id — see §8 — and returns a `RunSink` with per-run counters
-(`runInput`/`runOutput`/`runCached`) that are subtracted back out of the process totals on a re-open
-or a reconcile (`resetRunUsage`, `:160`).
+`openRun` takes no execution id — see §8 — and returns a `RunSink` with per-run counters
+(`runInput`/`runOutput`/`runCached` plus missing-split count) that are subtracted back out of the
+resident process totals on a re-open or reconcile. `usage` is that mounted-run aggregate;
+`currentUsage` belongs only to the most recent sink that received a **live** `run_started`, so a
+rehydrated turn can never masquerade as the active delta. `runManaged` opens that sink with
+`{current: true}`, claiming an explicit zero delta before `runActive` paints; stale usage from the
+previous run therefore has no frame in which to be added again. A cache value, including zero, is emitted
+only while every positive-input iteration in that scope reported the split; the first omission
+deletes the optional field until that run is reset.
 
 | Span/event | Effect | Line |
 |---|---|---|
-| `run` / `run_started` | reset subagents and plan, reset this run's usage, remember `lead_model` | `:165`–`:172` |
+| sink open with `{current: true}` | claim `currentUsage` immediately as measured zero before the run paints | `packages/code/src/adapters/activity-store.ts` (`openRun`), `packages/code/src/run-host.ts` (`runManaged`) |
+| `run` / `run_started` | reset subagents and plan, reset this run's usage, remember `lead_model`; a live source also claims `currentUsage` ownership | `packages/code/src/adapters/activity-store.ts` (`openRun`) |
 | `subagent` / `delegation_created` | upsert by `delegation_id`, write title + profile | `:174`–`:186` |
 | `subagent` / `delegation_started` | status `running`, model, `startedAt` | `:190`–`:202` |
 | `event` / any `plan_*` | fold through `reducePlanProjection`; note that a plan event appeared during a reconcile | `:205`–`:214` |
 | `run` / `run_ended` | every still-`running`/`spawned` subagent becomes `done` or `error` by `reason === "completed"` | `:218`–`:226` |
 | `subagent` / `delegation_completed\|failed` | status from `subagentCompletedOk`, `endedAt`, `retainSummary` | `:228`–`:243` |
-| `iteration` / `iteration_completed` | accumulate tokens; `agent === "lead"` sets `context = {used: input, model: leadModel}`, otherwise credit the subagent | `:245`–`:265` |
+| `iteration` / `iteration_completed` | accumulate gross tokens and cache-detail completeness; update `currentUsage` only for its live owner; `agent === "lead"` sets gross context, otherwise credit the subagent | `packages/code/src/adapters/activity-store.ts` (`openRun`) |
 | `beginReconcile` | snapshot the plan, wipe subagents/plan, reset usage | `:268`–`:276` |
 | `endReconcile` | **restore the pre-reconcile plan** unless the replay produced a plan event of its own | `:278`–`:287` |
 
@@ -1247,6 +1256,17 @@ The following are derived directly from this document's own source and its tests
     Environment differs from the persisted turn"), plus
     `packages/code/tests/component/kernel-run-client.test.ts` (trust transitions refresh the
     process-pinned identity).
+
+61. **Active cumulative usage has one complete owner scope: the persisted full-session baseline
+    captured before the run plus that run's live delta.** Resident transcript replays contribute to
+    `ActivityStore.usage` for diagnostics but never claim `currentUsage`, so folding or reopening a
+    session cannot change the footer total. The current sink claims a zero delta before first paint,
+    so the previous run cannot flash twice. A missing cache split remains absent in both scopes;
+    numeric zero remains a measured value. Production: `packages/code/src/run-host.ts`
+    (`sessionUsageBaseline`, `runManaged`) and `packages/code/src/adapters/activity-store.ts`
+    (`UsageActivity`, `ActivityStore`, `createActivityStore`). Tests:
+    `packages/code/tests/component/run-host.test.ts` (successive pre-run baselines) and
+    `packages/code/tests/unit/budget.test.ts` (measured zero, missing detail and replay ownership).
 
 ## 6. Failure modes and degradation
 

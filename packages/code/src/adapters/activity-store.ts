@@ -38,16 +38,16 @@ interface SubagentActivity {
   summary?: string;
 }
 
-/** Total token usage accumulated across every run currently mounted in this session projection. */
+/** Token usage for one projection scope. */
 export interface UsageActivity {
   input: number;
   output: number;
   /**
    * How much of `input` the provider served from its prefix cache.
    *
-   * @remarks Absent when nothing was cached, or when the provider reports no
-   *   split at all — the run strip then has only the gross figure to state, and
-   *   says so by showing it unqualified.
+   * @remarks A numeric zero is a measured zero. Absent means at least one
+   *   positive-input iteration in this scope did not report the split, so the
+   *   run strip has only the gross figure to state.
    */
   cached?: number;
 }
@@ -64,19 +64,21 @@ export interface ContextActivity {
  * {@link ActivityStore.openRun}.
  *
  * @remarks One projection, not one per run: subagent and plan surfaces show *the*
- *   current run, while usage remains cumulative across its mounted run sinks for
- *   the session footer. {@link ActivityStore.openRun} therefore takes no execution
- *   id — it used to accept one and ignore it, which read as a per-run guarantee the
- *   store does not make. Two sinks open at once fold into the same activity state;
- *   {@link TranscriptStore.openRun}, which really is keyed by execution, is the one
- *   that keeps its parameter.
+ *   current run. {@link ActivityStore.usage} remains cumulative across mounted
+ *   run sinks for diagnostics, while {@link ActivityStore.currentUsage} is only
+ *   the latest live run and can be combined with a persisted session baseline.
+ *   Replayed resident turns never become that live owner. Two sinks open at once
+ *   still fold into the cumulative activity state; {@link TranscriptStore.openRun},
+ *   which really is keyed by execution, is the one that keeps its parameter.
  */
 export interface ActivityStore {
   subagents: SubagentActivity[];
   plan: PlanActivity | null;
   usage: UsageActivity | null;
+  currentUsage: UsageActivity | null;
   context: ContextActivity | null;
-  openRun(): RunSink;
+  /** Open one sink; `current` claims an empty live delta before its first event arrives. */
+  openRun(options?: { current?: boolean }): RunSink;
   clear(): void;
 }
 
@@ -84,6 +86,7 @@ interface ActivityState {
   subagents: SubagentActivity[];
   plan: PlanActivity | null;
   usage: UsageActivity | null;
+  currentUsage: UsageActivity | null;
   context: ContextActivity | null;
 }
 
@@ -93,6 +96,7 @@ export function createActivityStore(): ActivityStore {
     subagents: [],
     plan: null,
     usage: null,
+    currentUsage: null,
     context: null,
   });
   const subagentSeeds = createSubagentRegistry();
@@ -101,24 +105,28 @@ export function createActivityStore(): ActivityStore {
   let totalInput = 0;
   let totalOutput = 0;
   let totalCached = 0;
+  let totalUnknownCacheSplits = 0;
+  let currentRunKey: symbol | undefined;
   let leadModel: string | undefined;
 
   function syncUsage(): void {
     setState("usage", {
       input: totalInput,
       output: totalOutput,
-      ...(totalCached > 0 ? { cached: totalCached } : {}),
+      cached: totalUnknownCacheSplits === 0 ? totalCached : undefined,
     });
   }
 
   function clearAll(): void {
-    setState({ subagents: [], plan: null, usage: null, context: null });
+    setState({ subagents: [], plan: null, usage: null, currentUsage: null, context: null });
     subagentSeeds.clear();
     summaryIndexes.length = 0;
     summarized.clear();
     totalInput = 0;
     totalOutput = 0;
     totalCached = 0;
+    totalUnknownCacheSplits = 0;
+    currentRunKey = undefined;
     leadModel = undefined;
   }
 
@@ -151,31 +159,53 @@ export function createActivityStore(): ActivityStore {
     }
   }
 
-  function openRun(): RunSink {
+  function openRun(options: { current?: boolean } = {}): RunSink {
+    const runKey = Symbol();
     let planBeforeReconcile: PlanActivity | null = null;
     let sawPlanDuringReconcile = false;
     let runInput = 0;
     let runOutput = 0;
     let runCached = 0;
+    let runUnknownCacheSplits = 0;
+
+    const syncCurrentUsage = (): void => {
+      if (currentRunKey !== runKey) return;
+      setState("currentUsage", {
+        input: runInput,
+        output: runOutput,
+        cached: runUnknownCacheSplits === 0 ? runCached : undefined,
+      });
+    };
+
+    if (options.current === true) {
+      currentRunKey = runKey;
+      syncCurrentUsage();
+    }
 
     const resetRunUsage = (): void => {
       totalInput = Math.max(0, totalInput - runInput);
       totalOutput = Math.max(0, totalOutput - runOutput);
       totalCached = Math.max(0, totalCached - runCached);
+      totalUnknownCacheSplits = Math.max(0, totalUnknownCacheSplits - runUnknownCacheSplits);
       runInput = 0;
       runOutput = 0;
       runCached = 0;
+      runUnknownCacheSplits = 0;
       syncUsage();
     };
 
     return {
-      open(span: EventSpan, event: RunEvent) {
+      open(span: EventSpan, event: RunEvent, source) {
         if (span.kind === "run" && event.type === "run_started") {
           setState({ subagents: [], plan: null });
           subagentSeeds.clear();
           summaryIndexes.length = 0;
           summarized.clear();
           resetRunUsage();
+          if (source === "live") {
+            currentRunKey = runKey;
+            syncCurrentUsage();
+          }
           if (event.lead_model) leadModel = event.lead_model;
           return;
         }
@@ -222,7 +252,7 @@ export function createActivityStore(): ActivityStore {
         }
       },
 
-      close(span: EventSpan, event: RunEvent) {
+      close(span: EventSpan, event: RunEvent, source) {
         if (span.kind === "run" && event.type === "run_ended") {
           const ok = event.reason === "completed";
           state.subagents.forEach((w, i) => {
@@ -255,10 +285,13 @@ export function createActivityStore(): ActivityStore {
           runInput += tokens.input;
           runOutput += tokens.output;
           runCached += tokens.cached;
+          if (event.cached_tokens === undefined && tokens.input > 0) runUnknownCacheSplits += 1;
           totalInput += tokens.input;
           totalOutput += tokens.output;
           totalCached += tokens.cached;
+          if (event.cached_tokens === undefined && tokens.input > 0) totalUnknownCacheSplits += 1;
           syncUsage();
+          if (source === "live") syncCurrentUsage();
           if (event.agent === "lead") {
             setState("context", { used: tokens.input, model: leadModel });
           } else if (event.subagent_id !== undefined) {
@@ -305,6 +338,9 @@ export function createActivityStore(): ActivityStore {
     },
     get usage() {
       return state.usage;
+    },
+    get currentUsage() {
+      return state.currentUsage;
     },
     get context() {
       return state.context;

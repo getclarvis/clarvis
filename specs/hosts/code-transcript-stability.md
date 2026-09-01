@@ -293,13 +293,20 @@ During a run, `LeadActivityLine` owns phase, elapsed time, iteration and the act
 footer keeps Context plus cumulative Session token totals, cache-hit percentage and cost during the
 run and retains them after settlement. The cache percentage is scoped to the same Run or Session
 owner as its token totals and divides cached tokens by gross input, not by the already-net `In`
-display.
+display. During a run the Session owner is one frozen full-session baseline plus only the current
+live run delta; resident transcript replays are never an accounting source. A numeric cached zero is
+measured, while any missing positive-input split makes the complete scope unknown: the footer keeps
+gross `In` and omits the percentage during the run and after settlement.
 Slash autocomplete replaces the activity line while its popup owns that band. Production:
-`packages/code/src/views/App.tsx` (`leadActivityPhase`, `leadActivityDetail`, `inputPopupOpen`,
-`footerRunStrip`) and `packages/code/src/features/run/status-presenter.ts` (`runStripText`). Tests:
+`packages/code/src/run-host.ts` (`sessionUsageBaseline`, `runManaged`),
+`packages/code/src/adapters/activity-store.ts` (`currentUsage`),
+`packages/code/src/views/App.tsx` (`activeSessionUsage`, `leadActivityPhase`, `leadActivityDetail`,
+`inputPopupOpen`, `footerRunStrip`) and `packages/code/src/features/run/status-presenter.ts`
+(`runStripText`). Tests:
 `packages/code/tests/integration/app-shell-render.test.tsx` (active-run metadata, autocomplete
-replacement and Plan-free footer cases) and `packages/code/tests/unit/run-status.test.ts` (session
-tokens, owner-scoped cache percentage and settlement continuity).
+replacement, Plan-free footer, baseline/delta ownership and missing-cache cases) and
+`packages/code/tests/unit/run-status.test.ts` (session tokens, owner-scoped cache percentage and
+settlement continuity).
 
 The tool-row exception is identity-closed: `spawn_subagent`, `delegate_task`, `agent_list`,
 `agent_poll`, `agent_stop`, `agent_steer`, `await_agents`, `run_leader`, `run_workflow`, `run_round`,
@@ -893,14 +900,19 @@ activity remains visible in a running tool row and in `LeadActivityLine`. That c
 owns phase plus active-run elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt; slash autocomplete
 replaces it while open. The footer instead preserves Context plus cumulative Session token totals,
 cache-hit percentage and cost before and after settlement, without `Running` or iteration. Plan
-state remains exclusive to the Sidebar and `Ctrl+P` surface and contributes no footer summary.
+state remains exclusive to the Sidebar and `Ctrl+P` surface and contributes no footer summary. The
+active total is the full pre-run Session snapshot plus the current live delta, never the resident
+transcript aggregate; missing cache detail remains missing across that sum and settlement, while a
+reported zero remains visible as `0%`.
 Production: `BlockView`, `App`
-(`leadActivityDetail`, `inputPopupOpen`, `footerRunStrip`, `compactActivityStrip`), `runStripText` and
+(`activeSessionUsage`, `leadActivityDetail`, `inputPopupOpen`, `footerRunStrip`,
+`compactActivityStrip`), `RunHost.sessionUsageBaseline`, `ActivityStore.currentUsage`, `runStripText` and
 `LeadActivityLine`. Tests:
 `packages/code/tests/integration/markdown-render-contract.test.tsx` (static streaming marker) and
 `packages/code/tests/integration/app-shell-render.test.tsx` (active-run detail ownership,
 autocomplete replacement, Plan staying absent from the footer across terminal and later run state,
-and a second active turn retaining exactly the same cumulative usage at settlement), plus
+and the baseline/delta plus known/unknown cache cases retaining exactly the same honest cumulative
+usage at settlement), plus
 `packages/code/tests/unit/run-status.test.ts` (Session tokens and scope-proportional cache percentage
 before and after settle).
 

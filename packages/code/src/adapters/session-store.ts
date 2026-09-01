@@ -21,7 +21,8 @@ export type NodeStatus = "pending" | "running" | "done" | "error" | "cancelled" 
 export interface SessionTotals {
   input: number;
   output: number;
-  cached: number;
+  /** Absent when any contributing positive-input run omitted its cache split. */
+  cached?: number;
   costUsd?: number;
 }
 
@@ -206,7 +207,9 @@ export function redactTurnError(
  * tokens separately when `priceFor` resolves a cost for its model.
  *
  * @param totals - the totals to mutate in place.
- * @param usage - the run's usage, broken down by agent; a no-op if absent.
+ * @param usage - the run's usage; a no-op if absent. Per-agent detail is
+ *   preferred for model-aware pricing, with flat totals as a compatibility
+ *   fallback.
  * @param priceFor - resolves a model's {@link CatalogCost}, if priced.
  */
 export function addUsageToTotals(
@@ -214,11 +217,21 @@ export function addUsageToTotals(
   usage: RunUsage | undefined,
   priceFor?: (model: string) => CatalogCost | undefined,
 ): void {
-  if (!usage?.by_agent) return;
+  if (!usage) return;
+  if (usage.by_agent === undefined) {
+    const input = usage.input_tokens ?? 0;
+    totals.input += input;
+    totals.output += usage.output_tokens ?? 0;
+    if (totals.cached !== undefined) {
+      if (usage.cached_tokens !== undefined) totals.cached += usage.cached_tokens;
+      else if (input > 0) delete totals.cached;
+    }
+    return;
+  }
   for (const a of usage.by_agent) {
     totals.input += a.input_tokens;
     totals.output += a.output_tokens;
-    totals.cached += a.cached_tokens;
+    if (totals.cached !== undefined) totals.cached += a.cached_tokens;
     const cost = priceFor?.(a.model);
     if (!cost) continue;
     const cacheRead = cost.cache_read ?? cost.input;
@@ -236,16 +249,19 @@ export function addUsageToTotals(
 }
 
 /**
- * The input tokens a session's provider actually had to read: every input token
- * it reported, less the ones its prefix cache served.
+ * The input tokens a session's provider actually had to read when its complete
+ * cache split is known, otherwise its gross reported input.
  *
  * @remarks {@link SessionTotals.input} is the gross count, cache hits included,
  * because pricing needs the two priced apart. Every surface that answers "how
  * much did this session read" states this net figure instead, so the number on
- * screen tracks the work rather than the bill.
+ * screen tracks the work rather than the bill. An absent
+ * {@link SessionTotals.cached} means at least one contributing run omitted the
+ * split, so subtracting the known subset would understate the input; the gross
+ * total is the only honest display in that case.
  */
 export function uncachedInput(totals: SessionTotals): number {
-  return Math.max(0, totals.input - totals.cached);
+  return totals.cached === undefined ? totals.input : Math.max(0, totals.input - totals.cached);
 }
 
 /** Format a USD amount for display: 2 decimals at or above $1, else 4. */
@@ -364,7 +380,7 @@ export function metaToSession(m: SessionMeta): Session {
     totals: {
       input: m.totals.input,
       output: m.totals.output,
-      cached: m.totals.cached,
+      ...(m.totals.cached !== undefined ? { cached: m.totals.cached } : {}),
       ...(m.totals.costUsd !== undefined ? { cost_usd: m.totals.costUsd } : {}),
     },
     ...(m.pending !== undefined ? { pending: m.pending } : {}),
@@ -401,7 +417,7 @@ export function sessionToMeta(s: Session, owner: string): SessionMeta {
     totals: {
       input: s.totals.input,
       output: s.totals.output,
-      cached: s.totals.cached,
+      ...(s.totals.cached !== undefined ? { cached: s.totals.cached } : {}),
       ...(s.totals.cost_usd !== undefined ? { costUsd: s.totals.cost_usd } : {}),
     },
     ...(s.pending !== undefined ? { pending: s.pending } : {}),
@@ -426,7 +442,7 @@ function sessionSummaryToMeta(s: SessionSummary, owner: string): SessionMeta {
     totals: {
       input: s.totals.input,
       output: s.totals.output,
-      cached: s.totals.cached,
+      ...(s.totals.cached !== undefined ? { cached: s.totals.cached } : {}),
       ...(s.totals.cost_usd !== undefined ? { costUsd: s.totals.cost_usd } : {}),
     },
   };

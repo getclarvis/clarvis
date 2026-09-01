@@ -241,10 +241,7 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
       }
     }
     if (!counted.has(stored.execution_id)) {
-      const usage = stored.result?.usage;
-      meta.totals.input += usage?.input_tokens ?? 0;
-      meta.totals.output += usage?.output_tokens ?? 0;
-      meta.totals.cached += usage?.cached_tokens ?? 0;
+      addUsageToTotals(meta.totals, stored.result?.usage, deps.priceFor);
       counted.add(stored.execution_id);
     }
     meta.updatedAt = now();

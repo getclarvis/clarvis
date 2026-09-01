@@ -105,7 +105,15 @@ interface SessionSummary {                // packages/protocol/src/sessions.ts:7
   turn_count: number; last_status?: SessionTurnStatus;
   last_environment?: EnvironmentRunRef; totals: SessionTotals;
 }
+interface SessionTotals {
+  input: number; output: number; cached?: number; cost_usd?: number;
+}
 ```
+
+`cached` has evidence semantics: a number, including zero, is the complete measured cache-read
+total; absence means at least one positive-input contribution omitted the split. Production:
+`packages/protocol/src/sessions.ts` (`SessionTotals`). Test:
+`packages/protocol/tests/contract/public-contract.fixture.ts` (`unknownCacheSessionTotals`).
 
 ### `createSessionService` options (`packages/kernel/src/sessions/session-service.ts:335-342`)
 
@@ -196,6 +204,12 @@ two representations at the storage boundary:
   source has it (spread-guarded, e.g. `...(t.executionId !== undefined ? { executionId: ... } : {})`).
   Pinned round-trip: "metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)"
   (`packages/code/tests/component/session-store.test.ts:73-91`).
+- **Cache-detail absence survives both conversion directions.** `metaToSession`, `sessionToMeta` and
+  `sessionSummaryToMeta` include `cached` only when their source includes it; no boundary replaces
+  missing detail with zero. Production: `packages/code/src/adapters/session-store.ts`
+  (`metaToSession`, `sessionToMeta`, `sessionSummaryToMeta`). Test:
+  `packages/code/tests/component/session-store.test.ts` ("an unknown cache split stays absent across
+  the persisted session boundary").
 - **`TurnRef.kind` / `SessionTurn.kind` is mandatory and semantic.** The code-side `TurnRef` is the
   discriminated union `ConversationTurnRef | TranscriptTurnRef`; `metaToSession` writes its kind and
   `sessionToMeta` validates it through `persistedTurnKind`. Missing or unknown values from a stale
@@ -646,19 +660,21 @@ belong here rather than only in §3:
   and the stored in-memory value is the same bounded value later serialized to disk. Test:
   `packages/code/tests/component/session-store.test.ts` (`redactTurnError` masking, newline, bound,
   and opt-out cases) and `packages/code/tests/component/session.test.ts` (producer persistence).
-- **`addUsageToTotals(totals, usage, priceFor?)`** (`packages/code/src/adapters/session-store.ts:177-201`) is the sole path that
-  mutates a session's `totals`: for each agent in `usage.by_agent` it adds raw input/output/cached
-  counts unconditionally, and — only when `priceFor` resolves a `CatalogCost` for that agent's model —
-  accumulates `totals.costUsd` by pricing **fresh** input (gross input minus cached, floored at zero)
+- **`addUsageToTotals(totals, usage, priceFor?)`** is the sole path that mutates a session's
+  `totals`: per-agent detail adds raw input/output/cached counts, while a flat-only compatibility
+  result adds its input/output and permanently removes `cached` when positive input omitted the
+  split. Once unknown, later known runs cannot turn the partial cached subset back into a complete
+  total. Only when `priceFor` resolves a `CatalogCost` for a detailed agent does it
+  accumulate `totals.costUsd` by pricing **fresh** input (gross input minus cached, floored at zero)
   at the model's input rate, cached tokens at its `cache_read` rate (falling back to `input`), and
   cache-write tokens at its `cache_write` rate (falling back to `input`) — so a cached token is never
-  billed at both the input and cache-read rate. `uncachedInput(totals)` (`packages/code/src/adapters/session-store.ts:212-214`)
-  is the display-side counterpart: `Math.max(0, totals.input - totals.cached)`, the net figure every
-  "how much did this session read" surface uses instead of the gross `totals.input`. Pinned by
-  "addUsageToTotals sums by_agent" (`packages/code/tests/component/session-store.test.ts:360-387`), "the input a session reports
-  having read excludes what the cache served" (`:391-395`), "a cached count above the gross input
-  floors at zero rather than going negative" (`:396-399`), and "cost does not double-charge cached
-  tokens (fresh input at input rate, cached only at cache_read)" (`:400-421`).
+  billed at both the input and cache-read rate. `uncachedInput(totals)` is the display-side
+  counterpart: it subtracts only a complete numeric cached total; otherwise it returns gross input.
+  Production: `packages/code/src/adapters/session-store.ts` (`addUsageToTotals`, `uncachedInput`) and
+  `packages/code/src/adapters/session.ts` (`finishTurn`, `reconcile`). Tests:
+  `packages/code/tests/component/session-store.test.ts` (per-agent sums, flat unknown split, net/gross
+  display and cost cases) and `packages/code/tests/component/session.test.ts` (missing split at live
+  settlement and stored reconciliation).
 - **`redactPreview(text, opts?)`** (`packages/code/src/adapters/session-store.ts:118-124`) is what produces every persisted
   `Session.title` and `SessionTurn.user_preview` (called from `beginTurn` above): it takes only
   `text`'s first line, masks secret-shaped substrings via `sanitizeText` (unless `redact: false`), and
@@ -850,6 +866,18 @@ continuation base.
     `packages/code/tests/component/session.test.ts` ("transcript-only runs are canonical without
     becoming continuation context", "resumeSession renders transcript-only runs without adding them
     to continuation").
+
+21. **Session cache totals never turn missing telemetry into a zero hit rate.** `cached: 0` means
+    every contributing positive-input run reported a measured zero; an omitted split removes the
+    optional cumulative field permanently, survives persistence/resume, makes `uncachedInput` return
+    gross input, and suppresses any derived rate. Production:
+    `packages/protocol/src/sessions.ts` (`SessionTotals`),
+    `packages/code/src/adapters/session-store.ts` (`SessionTotals`, `addUsageToTotals`,
+    `uncachedInput`, session converters), and `packages/code/src/adapters/session.ts` (`finishTurn`,
+    `reconcile`). Tests: `packages/protocol/tests/contract/public-contract.fixture.ts`
+    (`unknownCacheSessionTotals`), `packages/code/tests/component/session-store.test.ts` (unknown
+    split persistence and aggregation), and `packages/code/tests/component/session.test.ts` (live
+    settlement and stored reconciliation without cache detail).
 
 ## 6. Failure modes and degradation
 

@@ -172,6 +172,7 @@ const sidebarActivity = {
   })),
   plan: null,
   usage: { input: 240_000, output: 32_000 },
+  currentUsage: null,
   context: { used: 80_000, model: "provider/model" },
   openRun: () => ({}) as never,
   clear: () => {},

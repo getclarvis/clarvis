@@ -108,7 +108,7 @@ function wire(
 function stored(
   execId: string,
   status: "completed" | "error",
-  tokens: [number, number, number],
+  tokens: [number, number, number?],
   parts: {
     messages?: Message[];
     result?: string;
@@ -140,7 +140,7 @@ function stored(
         elapsed_ms: 1,
         input_tokens: tokens[0],
         output_tokens: tokens[1],
-        cached_tokens: tokens[2],
+        ...(tokens[2] !== undefined ? { cached_tokens: tokens[2] } : {}),
       },
     },
   };
@@ -266,6 +266,21 @@ test("createSession accumulates a multi-turn Message[] and totals", () => {
   expect(s.messages().length).toBe(3);
   s.endTurn(wire("exec_2", "completed", "ok", usage(5, 2, 1)));
   expect(s.meta()?.totals).toEqual({ input: 15, output: 6, cached: 1 });
+});
+
+test("settlement preserves a missing cache split as unknown", () => {
+  const store = fakeStore();
+  const s = createSession({ store, owner: "clarvis", project: "prj_test", workspace: "/ws" });
+  s.beginTurn("hi", "exec_unknown");
+  s.endTurn(
+    wire("exec_unknown", "completed", "ok", {
+      iterations: 1,
+      elapsed_ms: 1,
+      input_tokens: 10,
+      output_tokens: 4,
+    }),
+  );
+  expect(s.meta()?.totals).toEqual({ input: 10, output: 4 });
 });
 
 test("releaseHistory drops only the reconstructible message chain and restoreHistory rearms it", () => {
@@ -426,6 +441,15 @@ test("reconcile counts a turn whose endTurn had no envelope (error path)", () =>
   s.reconcile(stored("exec_9", "error", [7, 0, 0]));
   expect(s.meta()?.totals.input).toBe(7);
   expect(s.meta()?.turns[0]?.status).toBe("error");
+});
+
+test("reconcile does not collapse an absent persisted cache split to zero", () => {
+  const store = fakeStore();
+  const s = createSession({ store, owner: "clarvis", project: "prj_test", workspace: "/ws" });
+  s.beginTurn("boom", "exec_unknown");
+  s.endTurn(undefined);
+  s.reconcile(stored("exec_unknown", "completed", [7, 2]));
+  expect(s.meta()?.totals).toEqual({ input: 7, output: 2 });
 });
 
 test("resumeSession rehydrates from the last available trace and flags degraded turns", async () => {

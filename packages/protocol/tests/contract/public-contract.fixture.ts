@@ -17,6 +17,7 @@ import type {
   RunService,
   SecretService,
   SessionService,
+  SessionTotals,
   SettingsRepairPlan,
   SkillsService,
   StartRunParams,
@@ -33,6 +34,11 @@ const capabilities = {
   agent_tools: true,
   tasks: true,
 } satisfies KernelCapabilities;
+
+const unknownCacheSessionTotals = {
+  input: 12_000,
+  output: 800,
+} satisfies SessionTotals;
 
 const project = { id: "project-1", label: "Example" } satisfies ProjectRef;
 const workspace = {
@@ -213,3 +219,4 @@ void client;
 void repairPlan;
 void createTask;
 void transport;
+void unknownCacheSessionTotals;

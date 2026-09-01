@@ -857,22 +857,29 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   a slow filesystem cannot retain the quadratic sequence of every growing turn list. At most eight
   idle complete session documents stay cached; older entries demote to catalog summaries and reload
   only when selected.
-- Session token totals are maintained incrementally across mounted runs; reconciliation subtracts
-  and rebuilds only that run, so a new streamed iteration never rescans the complete session history
-  or adds settled history to a cumulative live total a second time.
-- The canonical footer keeps gross Context plus cumulative `Session` input/output and cost available
-  before and after a run settles (token totals appear in the wide band). It does not repeat
+- Persisted Session token totals are maintained incrementally once per settled run. During a run,
+  the footer combines a frozen full-session baseline with only `ActivityStore.currentUsage`; the
+  separate resident-window aggregate never substitutes for the complete session or double-counts
+  settled history after more than 20 turns. The new live sink claims a zero delta before first paint,
+  so the previous run cannot briefly appear twice while `run_started` is still in flight.
+- The canonical footer keeps gross Context plus cumulative `Session` input/output, prompt-cache hit
+  percentage and cost available before and after a run settles (token totals and cache percentage
+  appear in the wide band). It does not repeat
   `Running`, elapsed time or iteration there; those live-run facts sit beside `thinking`/`working`
   immediately above the composer. `/status` and Sessions expose the same session-level totals for
   explicit inspection.
-- **Every token count on screen reports input the provider had to read** — the gross prompt less
+- **Every `In` token count on screen reports input the provider had to read** — the gross prompt less
   what its prefix cache served (`uncachedInput`, and the run strip's own subtraction from
-  `UsageActivity.cached`). Pricing keeps the gross figure, because a cache hit still costs a
-  reduced rate; the count beside it answers a different question, and on a long session the two
-  differ by an order of magnitude. `Context` is the one figure that stays gross: a cached prefix
-  still occupies the window. The per-iteration split reaches the client on
-  `iteration_completed.cached_tokens`, which is optional — absent, the strip states the gross
-  number rather than guessing.
+  `UsageActivity.cached`). The adjacent `Cache hit` percentage uses `cached / gross input`, scoped
+  independently to the projected Run or cumulative Session; it never divides by the already-net
+  `In` value. Pricing keeps the gross figure, because a cache hit still costs a reduced rate; the
+  count beside it answers a different question, and on a long session the two differ by an order of
+  magnitude. `Context` is the one figure that stays gross: a cached prefix still occupies the
+  window. The per-iteration split reaches the client on
+  `iteration_completed.cached_tokens`, which is optional. A numeric zero is a measured zero; if any
+  positive-input contribution omits the split, `cached` remains absent through live aggregation,
+  session persistence and resume. The strip then states gross `In` and omits `Cache hit` rather than
+  subtracting a known subset or guessing `0%`.
 - The activity sidebar does not retain a second copy of each full delegated brief. It keeps at most
   64 terminal summaries of 512 characters; complete child task and result detail remains in that
   child's explicitly selected isolated transcript and in the persisted run.

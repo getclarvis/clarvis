@@ -46,6 +46,7 @@ import {
   type SessionId,
   type SessionMeta,
   type SessionStore,
+  type SessionTotals,
 } from "./adapters/session-store.ts";
 import type { Attention } from "./core/attention.ts";
 import { memoryNoticeStatus, plainStatusLine, type StatusLine } from "./core/run-status.ts";
@@ -129,6 +130,8 @@ export interface RunHost {
   setRunStatus: Setter<string>;
   /** Epoch ms of the current (or last) managed run's start; null before any run. */
   runStartedAt: Accessor<number | null>;
+  /** Persisted session totals captured immediately before the active run. */
+  sessionUsageBaseline: Accessor<SessionTotals | null>;
   /** The current (or last) workflow's live tree, folded from its manager's
    * structural events; `null` when the active/last run was not a workflow. */
   workflowActivity: Accessor<WorkflowActivity | null>;
@@ -349,6 +352,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setRunStatus(presentStatus(line));
   };
   const [runStartedAt, setRunStartedAt] = createSignal<number | null>(null);
+  const [sessionUsageBaseline, setSessionUsageBaseline] = createSignal<SessionTotals | null>(null);
   const [workflowActivity, setWorkflowActivity] = createSignal<WorkflowActivity | null>(null);
   /** Set to the active workflow's manager execution id while a workflow is
    * in flight (live events only); null for a plain run. Gates whether `onEvent`
@@ -547,6 +551,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     diagnosticBind({ execution_id: undefined });
     setRunActive(false);
     setCompactionActive(false);
+    setSessionUsageBaseline(null);
     deps.attention?.setTitle(null);
   }
 
@@ -583,12 +588,14 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const ownershipEpoch = runOwnershipEpoch;
     const attention = deps.attention;
     const transcript = store.openRun(executionId);
-    const sink = teeSink(transcript, activity.openRun());
+    const sink = teeSink(transcript, activity.openRun({ current: true }));
     currentSink = { executionId, sink, transcript };
     cancelRequested = false;
     currentStatusExecId = executionId;
     memoryStatusBase = null;
     diagnosticBind({ execution_id: executionId });
+    const baseline = sess.meta()?.totals;
+    setSessionUsageBaseline(baseline === undefined ? null : { ...baseline });
     setRunActive(true);
     setCompactionActive(false);
     setRunStartedAt(Date.now());
@@ -1438,6 +1445,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     runStatus,
     setRunStatus,
     runStartedAt,
+    sessionUsageBaseline,
     workflowActivity,
     ownsExecution: (executionId) => currentSink?.executionId === executionId,
     onEvent,

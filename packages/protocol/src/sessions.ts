@@ -28,8 +28,14 @@ export interface SessionTotals {
   input: number;
   /** Total output (completion) tokens. */
   output: number;
-  /** Total tokens served from the provider's prompt cache. */
-  cached: number;
+  /**
+   * Total tokens served from the provider's prompt cache.
+   *
+   * @remarks Absent when any contributing run did not report the cache split.
+   *   A numeric zero therefore means a measured zero rather than missing
+   *   telemetry.
+   */
+  cached?: number;
   /** Estimated spend in US dollars, when pricing is known. */
   cost_usd?: number;
 }

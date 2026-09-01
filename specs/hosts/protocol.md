@@ -55,7 +55,7 @@ All 19 source files, each opened directly:
 | `plans.ts` | 197 | `PlansService`, `PlanDocumentDto`, `PlanTaskDto`, `PlanRef` |
 | `workflows.ts` | 101 | `WorkflowsService`, `WorkflowNode`, `WorkflowSummary`/`WorkflowDetail` |
 | `skills.ts` | 104 | `SkillsService`, `SkillSummary`, `SkillProvenance`, `SkillPresentation` |
-| `sessions.ts` | 126 | `SessionService`, `Session`, `SessionSummary`, `SessionTurn` and their Environment snapshot identity |
+| `sessions.ts` | 137 | `SessionService`, `Session`, `SessionSummary`, `SessionTurn`, cache-detail-aware `SessionTotals` and Environment snapshot identity |
 | `tasks.ts` | 223 | `TasksService`, all `Task*Dto` shapes, `ActiveTaskRequestDto`/`ActiveTaskBindingDto` |
 | `storage.ts` | 62 | `StorageService`, bounded inventory DTOs and cleanup request/result shapes |
 | `transport.ts` | 68 | `KernelTransport`, `KernelRequestOptions`, `KernelAbortSignal` |
@@ -281,6 +281,13 @@ run — the kernel routes it as a workflow when the entry agent profile carries 
 | `get` | `(id: string) => Promise<Session \| null>` | `packages/protocol/src/sessions.ts:105` |
 | `save` | `(session: Session) => Promise<void>` | `packages/protocol/src/sessions.ts:112` |
 | `delete` | `(id: string) => Promise<boolean>` | `packages/protocol/src/sessions.ts:120` |
+
+Both `Session` and `SessionSummary` carry `SessionTotals` as
+`{ input: number; output: number; cached?: number; cost_usd?: number }`. `cached` is present only
+when every contributing positive-input run reported its cache split; numeric `0` is therefore a
+measured zero, while absence means a client cannot honestly subtract cached input or derive a hit
+rate. Production: `packages/protocol/src/sessions.ts` (`SessionTotals`). Test:
+`packages/protocol/tests/contract/public-contract.fixture.ts` (`unknownCacheSessionTotals`).
 
 #### `StorageService` (`packages/protocol/src/storage.ts`)
 

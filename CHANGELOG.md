@@ -5,7 +5,7 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
-## [0.0.3-beta] - 2026-08-30
+## [0.0.3-beta] - 2026-09-01
 
 ### Added
 
@@ -15,6 +15,9 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   and CI coverage alongside the Linux Bubblewrap backend.
 - A source-development installer provides the `clarvis-develop` launcher for running the current
   checkout without replacing a managed release installation.
+- Extension compatibility now accepts portable MCP declarations, pre-registered OAuth client
+  discovery, MCP-backed hooks and skill resources, plus confined local, Git subdirectory, and npm
+  marketplace sources.
 
 ### Changed
 
@@ -24,6 +27,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   background so an unanswered authorization flow does not block run admission.
 - Plan controls use a simpler command workflow, and Escape navigation dismisses replaceable overlays
   immediately.
+- Run and session usage footers now show the prompt-cache hit percentage beside input and output
+  totals while preserving settled values across later activity.
 
 ### Fixed
 
@@ -40,6 +45,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
   host shell, while Linux sandbox enforcement remains fail-closed.
 - Environment snapshots are revalidated at run admission and recorded with their exact identities so
   workspace or marketplace drift cannot silently change an approved run.
+- Marketplace npm installs disable lifecycle scripts, while refs, registries, subdirectories, paths,
+  and bounded extension payloads are validated before admission.
 
 ## [0.0.2-beta] - 2026-08-27
 

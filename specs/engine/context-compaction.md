@@ -105,10 +105,10 @@ export-map entrypoint may match `compaction|live-context|live-entry`
 ### Model-facing surface
 
 This subsystem defines no tool the model calls directly. Its only end-user-triggerable entry point
-is the **`/compact`** slash command (`packages/code/src/app/commands.tsx:285-303`), which runs
-`deps.onCompactRun(request)` — wired in `packages/code/src/views/App.tsx:689-690` to
+is the **`/compact`** slash command (`packages/code/src/app/commands.tsx:367-385`), which runs
+`deps.onCompactRun(request)` — wired in `packages/code/src/views/App.tsx:930-932` to
 `props.run.compact(request)`, the `RunHandle.compact(request?: string): Promise<void>` method
-declared on the protocol (`packages/protocol/src/runs.ts:707-712`). The kernel's
+declared on the protocol (`packages/protocol/src/runs.ts:716-721`). The kernel's
 `createManagedRunWithRuntime` implements it by pushing onto a `CompactionQueue`
 (`packages/kernel/src/runs/managed-run.ts:331-335`, `packages/kernel/src/runs/compaction-queue.ts:14-35`).
 
@@ -117,14 +117,14 @@ agent turn:
 
 | Surface | Shape | Behavior / evidence |
 | --- | --- | --- |
-| `RunService.compact` | `(execution_id, request?, { mechanical_target_tokens? }?) => Promise<RunCompactionResult>` | queues an active run; for a settled run, either runs guided forced compaction or mechanically fits the persisted `final_context` to the requested model window (`packages/protocol/src/runs.ts:751-756`, `packages/kernel/src/runs/run-service.ts:167-263`) |
-| `RunCompactionResult` | `queued`, `compacted { freed_chars, usage }`, or `skipped { reason }` | `packages/protocol/src/runs.ts:173-198` |
-| `RunService.context` | `(execution_id, target_window_tokens?) => { estimated_tokens, has_context, high_water_tokens?, requires_compaction? }` | estimates the private persisted snapshot without returning its content (`packages/protocol/src/runs.ts:758-768`, `packages/kernel/src/runs/run-service.ts:264-290`) |
+| `RunService.compact` | `(execution_id, request?, { mechanical_target_tokens? }?) => Promise<RunCompactionResult>` | queues an active run; for a settled run, either runs guided forced compaction or mechanically fits the persisted `final_context` to the requested model window (`packages/protocol/src/runs.ts:767-772`, `packages/kernel/src/runs/run-service.ts:162-260`) |
+| `RunCompactionResult` | `queued`, `compacted { freed_chars, usage }`, or `skipped { reason }` | `packages/protocol/src/runs.ts:174-199` |
+| `RunService.context` | `(execution_id, target_window_tokens?) => { estimated_tokens, has_context, high_water_tokens?, requires_compaction? }` | estimates the private persisted snapshot without returning its content (`packages/protocol/src/runs.ts:774-784`, `packages/kernel/src/runs/run-service.ts:261-290`) |
 
 `mechanical_target_tokens` is allowed only for a settled run and must be a positive safe integer.
 The fitting path performs no model call and reports zero usage; guided settled compaction reuses the
 stored run request/profile and persists the replacement plus any summary usage
-(`packages/kernel/src/runs/run-service.ts:172-262`).
+(`packages/kernel/src/runs/run-service.ts:162-260`).
 
 ### Wire/trace shapes
 
@@ -132,14 +132,14 @@ stored run request/profile and persists the replacement plus any summary usage
 | --- | --- | --- |
 | `CompactionRequest` | `{ request?: string }` | `packages/capability/src/api.ts:61` |
 | `CompactionSource` | `{ drain(): CompactionRequest[]; close?(): void }` | `packages/capability/src/api.ts:66` |
-| `CompactionContribution` | `{ source: string; text: string }` | `packages/capability/src/api.ts:592` |
-| `PreCompactContext` | `{ agent, subagentInstanceId?, estimatedTokens }` | `packages/capability/src/api.ts:571` |
+| `CompactionContribution` | `{ source: string; text: string }` | `packages/capability/src/api.ts:695-707` |
+| `PreCompactContext` | `{ agent, subagentInstanceId?, estimatedTokens }` | `packages/capability/src/api.ts:665-669` |
 | `CompactionStartedDetail` | live-only pass start `{ agent, subagent_instance_id?, mode }` | `packages/capability/src/trace-kinds.ts` (`CompactionStartedDetail`) |
 | `CompactionDetail` (= `CompactionEvent`) | trace payload for a completed pass | `packages/capability/src/trace-kinds.ts:294` |
 | `CompactionSkippedDetail` | trace payload for a skipped explicit request | `packages/capability/src/trace-kinds.ts:324` |
 | protocol `RunEvent` variant `"compaction_started"` | `Attributed & { type; mode: "scheduled" | "forced" }`, live-only | `packages/protocol/src/runs.ts` (`RunEvent`) |
 | protocol `RunEvent` variant `"compaction"` | `Attributed & { type; operation; fallback_reason?; freed_chars?; contribution_count?; requested?; user_contribution_count? }` | `packages/protocol/src/runs.ts` (`RunEvent`) |
-| protocol `RunEvent` variant `"compaction_skipped"` | `Attributed & { type; reason }` | `packages/protocol/src/runs.ts:541-549` |
+| protocol `RunEvent` variant `"compaction_skipped"` | `Attributed & { type; reason }` | `packages/protocol/src/runs.ts:587-595` |
 
 ### Settings / environment defaults consumed
 
@@ -157,7 +157,7 @@ sibling module — see §7) but shaping every `CompactionConfig` this subsystem 
 | `CLARVIS_COMPACTION_LLM_TIMEOUT_MS` | `120000` | `packages/capability/src/env.ts` (`envSchema`) |
 
 Per-agent frontmatter override shape, `CompactionConfigInput`
-(`packages/capability/src/api.ts:275-282`): `enabled?`, `context_fraction?`, `target_fraction?`,
+(`packages/capability/src/api.ts:346-354`): `enabled?`, `context_fraction?`, `target_fraction?`,
 `max_result_chars?`, `preserve_recent_tokens?`, `prompt?`, `prompt_mode?: "summarize" | "none"`.
 
 ## 3. Data and formats
@@ -478,18 +478,19 @@ new array is shorter than the durable boundary) is reported as a `prefix_break` 
 
 | Step | Function | File:line |
 | --- | --- | --- |
-| User types `/compact [request]` | `run.compact` action | `packages/code/src/app/commands.tsx:285-303` |
-| TUI calls the run handle | `onCompactRun` → `props.run.compact` | `packages/code/src/views/App.tsx:689-690` |
+| User types `/compact [request]` | `run.compact` action | `packages/code/src/app/commands.tsx:367-385` |
+| TUI calls the run handle | `onCompactRun` → `props.run.compact` | `packages/code/src/views/App.tsx:930-932` |
 | Kernel pushes onto the queue | `RunHandle.compact` | `packages/kernel/src/runs/managed-run.ts:331-335` |
 | Queue accepts/rejects | `CompactionQueue.push` | `packages/kernel/src/runs/compaction-queue.ts:18-22` |
-| Loop drains at iteration preamble | `buildCompactionThunk`'s returned thunk | `packages/loop/src/runtime/loop/loop.ts:243` |
+| Loop drains at iteration preamble | `buildCompactionThunk`'s returned thunk | built at `packages/loop/src/runtime/loop/loop.ts:242-248`, invoked at `:913` |
 | Loop announces real pipeline start | `trace.signal("compaction_started", ...)` | `packages/loop/src/runtime/loop/loop.ts` (`buildCompactionThunk`) |
-| Contributions gathered if a request or scheduled need exists | `collectCompactionContributions` | `packages/loop/src/runtime/loop/lifecycle-hooks.ts:315-340` |
+| Contributions gathered if a request or scheduled need exists | `collectCompactionContributions` | `packages/loop/src/runtime/loop/lifecycle-hooks.ts:317-342` |
 | Policy applied | `attemptCompaction`/`runCompaction` | `packages/loop/src/runtime/context/llm-compaction.ts:394,480` |
+| Every produced event is projected to `onPostCompact` observers before it is returned | `observed` inside `buildCompactionThunk` | `packages/loop/src/runtime/loop/loop.ts:252-272` |
 | Thunk's returned event recorded to trace | `runIterationPreamble` | `packages/loop/src/runtime/loop/loop-iteration.ts:49-50` |
-| A truncation event from `appendToolMessage` recorded separately | inline in the tool-dispatch loop, gated by `willTruncateToolResult`/`core.spillToolResult` | `packages/loop/src/runtime/loop/loop.ts:805-820` |
+| A truncation event from `appendToolMessage` recorded separately | inline in the tool-dispatch loop, gated by `willTruncateToolResult`/`core.spillToolResult` | `packages/loop/src/runtime/loop/loop.ts:843-857` |
 
-`buildCompactionThunk` (`packages/loop/src/runtime/loop/loop.ts:236-334`) is the orchestration point: it drains
+`buildCompactionThunk` (`packages/loop/src/runtime/loop/loop.ts:242-372`) is the orchestration point: it drains
 `core.compactionSource` (an optional `CompactionSource`, `packages/loop/src/runtime/loop/loop.ts:118`), determines whether a
 scheduled pass is needed via `ctx.needsCompaction()`, and fires `onPreCompact` hooks only if any
 hook declares one **and** (a request was made or scheduled compaction is needed). The resulting
@@ -497,26 +498,36 @@ pipeline first emits `compaction_started` with `mode: "forced"` or `"scheduled"`
 `TracePort.signal`. That signal is observable before any hook or model wait but is never persisted;
 the terminal outcome remains the replay authority. The resulting
 hook contributions are folded into **both** branches below identically — the unrequested/scheduled
-call to `runCompaction` (`...(contributions.length > 0 ? { contributions } : {})`, `packages/loop/src/runtime/loop/loop.ts:277-281`)
+call to `runCompaction` (`...(contributions.length > 0 ? { contributions } : {})`, `packages/loop/src/runtime/loop/loop.ts:313-319`)
 and the forced call to `attemptCompaction` (`[...contributions, ...userContributions]`,
-`packages/loop/src/runtime/loop/loop.ts:318`) — so a registered `onPreCompact` hook shapes an ordinary automatic pass exactly as
+`packages/loop/src/runtime/loop/loop.ts:352-357`) — so a registered `onPreCompact` hook shapes an ordinary automatic pass exactly as
 much as an explicit `/compact` request, whenever a scheduled need independently exists.
+
+Every non-`undefined` `CompactionEvent` then passes through the thunk's `observed` wrapper before the
+iteration records it. The `onPostCompact` observer receives the event's `agent`, optional
+`subagent_instance_id`, `operation`, `freed_chars`, and `kept_chars` projected to the lifecycle
+context's camel-case fields. A skipped pass that produces no event fires no post observer; as with
+every `fireObservers` call, a throwing observer is warned and swallowed. Production:
+`packages/loop/src/runtime/loop/loop.ts:252-272,313-370` and
+`packages/loop/src/runtime/loop/lifecycle-hooks.ts:263-299`. The hook compiler and payload are pinned
+at `packages/hooks/tests/component/capability.test.ts:376-392`; no loop test independently pins that
+`buildCompactionThunk` invokes the observer.
 
 If nothing was requested this iteration, the thunk always calls `runCompaction` (mechanical
 fallback always allowed). For an explicit request the three skip/fallback branches are distinct,
 not one shared rule:
 
 - `!core.compaction.enabled` → `compaction_skipped` reason `"disabled"`, returned **unconditionally**
-  — no fallback to mechanical eviction even when `scheduledNeeded` is true (`packages/loop/src/runtime/loop/loop.ts:305-307`).
+  — no fallback to mechanical eviction even when `scheduledNeeded` is true (`packages/loop/src/runtime/loop/loop.ts:343-345`).
 - the user supplied text but the agent has no `compactionPrompt` → `compaction_skipped` reason
   `"summarization_disabled"`, falling back to `ctx.compact()` **only if** `scheduledNeeded`, else
-  `undefined` (`packages/loop/src/runtime/loop/loop.ts:309-312`).
+  `undefined` (`packages/loop/src/runtime/loop/loop.ts:347-350`).
 - otherwise, `attemptCompaction` is called in `"forced"` mode with `fallbackOnFailure:
   userContributions.length === 0` — an explicit request carrying user text disables the mechanical
   safety net for that pass, so only an empty forced request (queued with no text of its own) still
   falls back on a summarizer failure (CTX-07). Whichever reason `attemptCompaction` itself produces
   (`nothing_to_compact`/`summarization_failed`/`summary_not_effective`) is recorded skipped and then
-  **also** falls back only if `scheduledNeeded` (`packages/loop/src/runtime/loop/loop.ts:331-332`).
+  **also** falls back only if `scheduledNeeded` (`packages/loop/src/runtime/loop/loop.ts:369-370`).
 
 ### 4.14 `attemptCompaction` (`packages/loop/src/runtime/context/llm-compaction.ts:394-465`)
 
@@ -552,7 +563,7 @@ not one shared rule:
    returned event, but only when `appliedContributions.length > 0` (`packages/loop/src/runtime/context/llm-compaction.ts:444-452`).
    `user_contribution_count` and `requested: true` are **not** set here — they are stamped
    afterward by `buildCompactionThunk`, and only on the forced/`/compact` path, by filtering
-   `outcome.appliedContributions` down to `source === "user"` (`packages/loop/src/runtime/loop/loop.ts:320-328`).
+   `outcome.appliedContributions` down to `source === "user"` (`packages/loop/src/runtime/loop/loop.ts:358-366`).
 
 ### 4.15 Occupancy estimation (`packages/loop/src/runtime/context/compaction-selection.ts:50-57, 121-126`)
 
@@ -580,14 +591,14 @@ overflowDiagnostic: (original) =>
   `exceeds the model context window (${core.compaction.windowTokens} tokens); ` +
   `eviction cannot recover. Provider error: ${original.message}`,
 ```
-(`packages/loop/src/runtime/loop/loop.ts:927-935`).
+(`packages/loop/src/runtime/loop/loop.ts:965-973`).
 
 On a `context_overflow` `ProviderError`, `callModelWithRecovery` calls `evict()` and retries, up to
 `MAX_OVERFLOW_RECOVERIES = 3` times per model call (`packages/loop/src/runtime/loop/loop-iteration.ts:7`, `packages/loop/src/runtime/loop/model-call.ts:96-107`),
 rebuilding the whole `LLMCallParams` — including a freshly recomputed `cacheBreakpoints()` — via
 `rebuild()` on every retry (`packages/loop/src/runtime/loop/model-call.ts:105`). `reachWatch.observeOverflow` and
 `ctx.forceEvictOldest()` are co-invoked from that one `evict` closure, over the same
-`ctx.estimateTokens()` reading (`packages/loop/src/runtime/loop/loop.ts:927-930`); a successful eviction is traced as an ordinary
+`ctx.estimateTokens()` reading (`packages/loop/src/runtime/loop/loop.ts:965-973`); a successful eviction is traced as an ordinary
 `"compaction"` event (`packages/loop/src/runtime/loop/model-call.ts:102-103`).
 
 If `evict()` returns `undefined` — no candidates left, or `!core.compaction.enabled` (§4.9) —
@@ -679,7 +690,7 @@ the old anchor", "adopts a summary that stopped for any other reason").
 **CTX-07.** An explicit, user-requested compaction whose summarizer fails is reported
 `compaction_skipped`, never silently downgraded to blind mechanical eviction, unless the request
 carried no user contribution text.
-Production: `packages/loop/src/runtime/loop/loop.ts:303-327` (`fallbackOnFailure: userContributions
+Production: `packages/loop/src/runtime/loop/loop.ts:343-357` (`fallbackOnFailure: userContributions
 .length === 0`).
 Test: `packages/loop/tests/unit/llm-compaction.test.ts:360-393` ("keeps the context intact when an
 instructed forced summary fails", "keeps the context intact when an instructed forced summary would
@@ -689,7 +700,7 @@ not shrink it").
 replace it — enforced by argument shape (`buildCompactionMessages` takes `prompt` and
 `contributions` as separate parameters with no path by which one assigns to the other) and by the
 message layout (base prompt always emitted first, whole).
-Production: `packages/loop/src/runtime/context/llm-compaction.ts:188-210`; type-level guarantee at `packages/capability/src/api.ts:592-602`.
+Production: `packages/loop/src/runtime/context/llm-compaction.ts:188-210`; type-level guarantee at `packages/capability/src/api.ts:680-707`.
 Test: `packages/loop/tests/unit/compaction-contributions.test.ts:29-49` ("the base prompt is never
 replaced").
 
@@ -708,7 +719,7 @@ eviction until the target model's high-water mark is met; retained entries, incl
 provider continuation metadata, remain structurally identical. Production:
 `compactStoredContext`, `fitStoredContextToWindow`, and `estimateStoredContextTokens` in
 `packages/loop/src/runtime/context/stored-context-compaction.ts`; persistence and active/settled
-routing at `packages/kernel/src/runs/run-service.ts:167-263`. Test:
+routing at `packages/kernel/src/runs/run-service.ts:162-260`. Test:
 `packages/loop/tests/unit/stored-context-compaction.test.ts` and
 `packages/kernel/tests/unit/run-service-lifecycle.test.ts:104-140`.
 
@@ -738,7 +749,7 @@ below the automatic threshold and appends user text after hooks") and
 | Summarizer call throws, run **not** aborted | Logged at `warn` (`compaction.summarizer_failed`), falls back to mechanical eviction tagged `fallback_reason: "summarization_failed"` (scheduled path) or reports `"summarization_failed"` (forced path with no fallback) | `packages/loop/src/runtime/context/llm-compaction.ts` (`attemptCompaction`) |
 | Summarizer call throws, run **is** aborted (`signal.aborted`) | Rethrown — never masked as a compaction failure | `packages/loop/src/runtime/context/llm-compaction.ts:459` |
 | Adopted summary would not shrink the span, or exceeds the anchor ceiling | `"summary_not_effective"`, same fallback/skip split | `packages/loop/src/runtime/context/llm-compaction.ts:440-457` |
-| `onPreCompact` hook throws | Swallowed; logged `hook.pre_compact_failed`; that hook contributes nothing, others still run | `packages/loop/src/runtime/loop/lifecycle-hooks.ts:315-340` |
+| `onPreCompact` hook throws | Swallowed; logged `hook.pre_compact_failed`; that hook contributes nothing, others still run | `packages/loop/src/runtime/loop/lifecycle-hooks.ts:317-342` |
 | A `CompactionContribution.text` is not a string | Silently skipped (never trusted) | `packages/loop/src/runtime/context/llm-compaction.ts:150` |
 | Contributions overflow `CONTRIBUTIONS_BLOCK_MAX_CHARS` (12,000) | Lowest-precedence (earliest) contributions dropped first, in reverse-select-then-restore-order | `packages/loop/src/runtime/context/llm-compaction.ts:145-164` |
 | A single contribution exceeds `CONTRIBUTION_MAX_CHARS` (4,000) | Clamped (`.slice`), not dropped | `packages/loop/src/runtime/context/llm-compaction.ts:151` |
@@ -746,12 +757,12 @@ below the automatic threshold and appends user text after hooks") and
 | A declared `context_window_tokens` is larger than what the provider actually accepts | `compaction.unreachable` warned once per agent loop, from a `context_overflow` observed *below* the high-water mark — a diagnosis only, never a clamp | `packages/loop/src/runtime/loop/compaction-reach.ts:46-70` (adjacent module; consumes `CompactionConfig` from this subsystem) |
 | `target_fraction` set equal to (or above) `context_fraction` | Guarded upstream, not here: `resolveSubagentProfiles` clamps `targetFraction` to stay `MIN_COMPACTION_HYSTERESIS` (0.2) below `fraction` | `packages/loop/src/runtime/subagents/subagent-profiles.ts:129-179` (out of this document's module list; see §7) |
 | `compact()`/`forceEvictOldest()` find nothing eligible | Returns `undefined`; caller treats as "nothing to do", never an error | `packages/loop/src/runtime/context/live-context.ts:329-331, 346-352` |
-| `forceEvictOldest()` returns `undefined` inside the mid-call overflow retry loop (nothing left to evict, or `!core.compaction.enabled`) | `callModelWithRecovery` throws a synthesized terminal `context_overflow` `ProviderError` naming `windowTokens`/`estimateTokens`, rather than retrying further (§4.16) | `packages/loop/src/runtime/loop/model-call.ts:108-115`, `packages/loop/src/runtime/loop/loop.ts:927-935` |
+| `forceEvictOldest()` returns `undefined` inside the mid-call overflow retry loop (nothing left to evict, or `!core.compaction.enabled`) | `callModelWithRecovery` throws a synthesized terminal `context_overflow` `ProviderError` naming `windowTokens`/`estimateTokens`, rather than retrying further (§4.16) | `packages/loop/src/runtime/loop/model-call.ts:108-115`, `packages/loop/src/runtime/loop/loop.ts:965-973` |
 | `/compact` pushed after the run has already settled | `CompactionQueue.push` returns `false` (the queue was `close()`d); `RunHandle.compact` throws `kernelError("not_found", "run '<id>' is no longer active")` rather than silently dropping the request. Two independent producers call `close()`: the run's settlement `finally` block, and the engine's own teardown | `packages/kernel/src/runs/managed-run.ts:317-335`; `packages/loop/src/runtime/loop/run-agent.ts:629-634` |
-| `RunService.compact` receives `mechanical_target_tokens` for an active run | `invalid_request`: mechanical context fitting requires a settled run | `packages/kernel/src/runs/run-service.ts:179-185`; transport duplicates the same live-handle guard at `packages/kernel/src/transport/server.ts:570-588` |
-| `mechanical_target_tokens` or `target_window_tokens` is not a positive safe integer | `invalid_request`; no context is read or replaced | `packages/kernel/src/runs/run-service.ts:172-178,264-270` |
-| Settled run has no `final_context` | `{ status: "skipped", reason: "no_context" }` | `packages/kernel/src/runs/run-service.ts:187-191` |
-| Mechanical fitting cannot reach the target high-water mark without dropping protected context | `{ status: "skipped", reason: "cannot_fit" }`; persisted context is unchanged | `packages/loop/src/runtime/context/stored-context-compaction.ts:90-106`, persistence only after a compacted result at `packages/kernel/src/runs/run-service.ts:192-214` |
+| `RunService.compact` receives `mechanical_target_tokens` for an active run | `invalid_request`: mechanical context fitting requires a settled run | `packages/kernel/src/runs/run-service.ts:174-180`; transport duplicates the same live-handle guard at `packages/kernel/src/transport/server.ts:569-588` |
+| `mechanical_target_tokens` or `target_window_tokens` is not a positive safe integer | `invalid_request`; no context is read or replaced | `packages/kernel/src/runs/run-service.ts:167-173,261-267` |
+| Settled run has no `final_context` | `{ status: "skipped", reason: "no_context" }` | `packages/kernel/src/runs/run-service.ts:182-185` |
+| Mechanical fitting cannot reach the target high-water mark without dropping protected context | `{ status: "skipped", reason: "cannot_fit" }`; persisted context is unchanged | `packages/loop/src/runtime/context/stored-context-compaction.ts:90-106`, persistence only after a compacted result at `packages/kernel/src/runs/run-service.ts:187-210` |
 | `needsCompaction()` on a disabled config | `false` (selector short-circuits on `!config.enabled`) | `packages/loop/src/runtime/context/compaction-selection.ts:95` |
 | Continuation hydrates a snapshot from an older, unbounded runtime (oversized inline images) | `enforceToolImageBudget()` runs once at construction, before any method is exposed, to bound it retroactively | `packages/loop/src/runtime/context/live-context.ts:138-140` |
 
@@ -796,9 +807,9 @@ never the ability to write one, so the context itself cannot fail on I/O).
   `context-compaction.ts` facade (`packages/loop/src/runtime/loop/loop.ts:16-21`), and `attemptCompaction`/`runCompaction` plus
   `CompactionAnchor` (type-only) from `llm-compaction.ts` directly (`packages/loop/src/runtime/loop/loop.ts:23-24`). This is a
   runtime edge: `d.ctx` (a `LiveContext`) is read and mutated on every iteration
-  (`buildModelCall`, `packages/loop/src/runtime/loop/loop.ts:386-437`), and `buildCompactionThunk`'s returned closure is invoked
+  (`buildModelCall`, `packages/loop/src/runtime/loop/loop.ts:424-475`), and `buildCompactionThunk`'s returned closure is invoked
   from the iteration preamble (`compact: buildCompactionThunk(core, d)` — cited above as the call
-  site at `packages/loop/src/runtime/loop/loop.ts:875`).
+  site at `packages/loop/src/runtime/loop/loop.ts:913`).
 - `packages/loop/src/runtime/loop/model-call.ts` — `callModelWithRecovery`'s `evict`/`rebuild`
   hooks are `LiveContext.forceEvictOldest()`'s sole production caller and `buildModelCall`'s sole
   reason to be re-invoked mid-call (§4.16); it imports `CompactionEvent` (type-only) to trace what
@@ -853,10 +864,10 @@ never the ability to write one, so the context itself cannot fail on I/O).
   throw in the source), so it is recorded only as a structural observation, not a confirmed
   defect.
 - **The exact behavior of `pre_compact` as an *external*-dialect hook event** (its wire shape, the
-  `{"kind":"context","text":...}` verdict format mentioned at `packages/capability/src/hooks-config.ts:50-58`,
+  `{"kind":"context","text":...}` verdict format mentioned at `packages/capability/src/hooks-config.ts:53-61`,
   and how a foreign-authored hook's output is normalized into a `CompactionContribution`) is the
   [hooks-execution](../execution/hooks.md) document's territory; what is confirmed here is only that `COMPACTION_HOOK_EVENTS = ["pre_compact"]`
-  exists (`packages/capability/src/hooks-config.ts:59`) and that `collectCompactionContributions` is this subsystem's
+  exists (`packages/capability/src/hooks-config.ts:62`) and that `collectCompactionContributions` is this subsystem's
   consuming edge, not the hook dispatch mechanism itself.
 - **The ledger/budget arithmetic `TokenLedger.consume` performs** (how `usage` translates into a
   spent/remaining figure, escalation, or budget-exceeded signaling) is explicitly

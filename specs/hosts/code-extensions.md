@@ -267,7 +267,7 @@ layers, and key-layer registrations after warm-up. The extension-composer soak s
 3. **EXT-3 — focused install is atomic consent and activation.** A successful Marketplace install
    selects the exact returned plugin, reconnects, and stays active after reload, with no hook review
    or workspace-approval gate. Production: `installAndActivatePlugin`,
-   `workspaceTargetNeedsApproval`, and `pluginSettingsContributions`. Test: `app-commands.test.tsx`,
+   `workspaceTargetNeedsApproval`, and `PluginContributions.settingsScopes`. Test: `app-commands.test.tsx`,
    the operator-installed global-plugin case in `environment-manager.test.ts`, and
    `plugin-contributions.test.ts`.
 4. **EXT-4 — an in-flight run is immutable.** Selected content update/uninstall, trust transitions,

@@ -27,7 +27,7 @@ static text (`packages/code/src/ui/patterns/list-navigation.ts:29-43`,
 or moves back one semantic screen, while Ctrl+C exclusively owns run cancellation and app
 quit. Terminals can deliver repeated packets while the cancel binding is held, so
 `createInteraction` retains a 1-second repeat-metadata window for the current `run.cancel` binding;
-Escape never enters that timing path (`packages/code/src/keys/interaction.ts:356-386`).
+Escape never enters that timing path (`packages/code/src/keys/interaction.ts:415-445`).
 
 `ui/patterns/**` is the reusable, content-agnostic half: list navigation, a level's key
 layer (nav + verbs + escape), the footer's action projection and width budget, and a
@@ -43,10 +43,10 @@ what a `when` clause means (`when-dsl.ts`), how a key label is formatted
 
 | Export | Signature | Cite |
 |---|---|---|
-| `LAYER` | `{ INPUT:500, LIST:810, VITAL:900, OVERLAY:950, TRANSIENT:955, MODAL:960, CONFIRM:970 }` | `packages/code/src/keys/keyspec.ts:20-28` |
+| `LAYER` | `{ INPUT = 500, LIST = 810, VITAL = 900, OVERLAY = 950, TRANSIENT = 955, MODAL = 960, CONFIRM = 970 }` | `packages/code/src/keys/keyspec.ts:20-28` |
 | `compactKey(token, opts?)` | `(string, {clientPlatform?}) => string` | `packages/code/src/keys/keyspec.ts` (`compactKey`) |
-| `compactSequence(parts)` | `(readonly {display}[]) => string` | `packages/code/src/keys/keyspec.ts:92-94` |
-| `commandKeyLabel(keymap, command, opts?)` | `=> string \| undefined` | `packages/code/src/keys/keyspec.ts:107-120` |
+| `compactSequence(parts)` | `(readonly {display}[]) => string` | `packages/code/src/keys/keyspec.ts:94-96` |
+| `commandKeyLabel(keymap, command, opts?)` | `=> string \| undefined` | `packages/code/src/keys/keyspec.ts:109-122` |
 | `PROMPT_EDITING_KEYS` | `PromptKeyRow[]` (prompt editor's chords, dock-registered and OpenTUI built-in) | `packages/code/src/keys/keyspec.ts` (`PROMPT_EDITING_KEYS`) |
 | `promptKeyLabel(command)` | `(string) => string` | `packages/code/src/keys/keyspec.ts` (`promptKeyLabel`) |
 
@@ -152,7 +152,7 @@ independent once-per-run sidebar reveals").
 | `KeyboardEnvironment` | the effective, non-sensitive facts (`transport`, `runtimePlatform`, `terminal`, `protocol`, `multiplexer`, `modifiers`, `baseLayout`, `profile`, `clientPlatform?`) | `packages/code/src/keys/keyboard-profile.ts:14-24` |
 | `KeyboardEnvironmentConfig` | persisted per-environment record (`profile`, `clientPlatform?`, `verdicts?`, `bindings?`) | `packages/code/src/keys/keyboard-profile.ts:27-34` |
 | `KeyboardEnvironmentInput` | `{remote, runtimePlatform, terminal?, kittyKeyboard, multiplexer?, host}` — inputs collected from OpenTUI without retaining raw input or host identity; the shape `defaultKeyboardProfile`, `buildKeyboardEnvironment` and `keyboardEnvironmentId` all take | `packages/code/src/keys/keyboard-profile.ts:43-50` |
-| `KeyboardConfig` | `{version:1, environments: Record<string, KeyboardEnvironmentConfig>}` | `packages/code/src/keys/keyboard-profile.ts:37-40` |
+| `KeyboardConfig` | `{ version = 1, environments: Record<string, KeyboardEnvironmentConfig> }` | `packages/code/src/keys/keyboard-profile.ts:37-40` |
 | `BindingCandidate` | `{key, minimumProfile?, requires?}` | `packages/code/src/keys/keyboard-profile.ts:53-57` |
 | `KeyboardBindingIssue` | `{command, key?, message, shadows?}` | `packages/code/src/keys/keyboard-profile.ts:60-74` |
 | `normalizeKeyboardConfig(value)` | tolerant reader of the versioned block | `packages/code/src/keys/keyboard-profile.ts:103-141` |
@@ -161,20 +161,20 @@ independent once-per-run sidebar reveals").
 | `keyboardEnvironmentId(input)` | 24-hex-char stable id from 5 dimensions | `packages/code/src/keys/keyboard-profile.ts:206-215` |
 | `resolveCommandBindings(command, candidates, environment, overrides?)` | overrides → supported enhanced → portable | `packages/code/src/keys/keyboard-profile.ts:235-253` |
 | `validateManualBindings(bindings, commands, normalizeKey?, defaultBindings?)` | shadow/unknown/empty/syntax checks against manual overrides and effective defaults | `packages/code/src/keys/keyboard-profile.ts` (`validateManualBindings`) |
-| `applyManualBindingEdit(opts)` | folds one edit into a stored record | `packages/code/src/keys/keyboard-profile.ts:415-444` |
+| `applyManualBindingEdit(opts)` | folds one edit into a stored record | `packages/code/src/keys/keyboard-profile.ts:445-483` |
 | `effectiveClientPlatform(environment)` | human-readable client convention, never guessed for `ssh` | `packages/code/src/keys/keyboard-profile.ts`, `effectiveClientPlatform` |
 
 ### 2.7 `keys/interaction.ts` — the wired keymap
 
 | Export | Signature | Cite |
 |---|---|---|
-| `OverlayKind` | `"none" \| "agentPicker" \| "diff" \| "plan" \| (string & {})` | `packages/code/src/keys/interaction.ts:33` |
-| `InteractionEffects` | callbacks (`cancelRun`, `dismissTopOverlay`, `scrollTranscript`, …) the built-in commands dispatch into | `packages/code/src/keys/interaction.ts:36-68` |
-| `Interaction` | the handle: `keymap`, `renderer`, `pushOverlayContext`/`popOverlayContext`, `setModalContext`, `keyboardEnvironment`, `keyboardEnvironmentId`, `configureKeyboard`, `dispose` | `packages/code/src/keys/interaction.ts:71-82` |
+| `OverlayKind` | `"none" \| "agentPicker" \| "diff" \| "plan" \| (string & {})` | `packages/code/src/keys/interaction.ts:40` |
+| `InteractionEffects` | callbacks (`cancelRun`, `dismissTopOverlay`, `scrollTranscript`, …) the built-in commands dispatch into | `packages/code/src/keys/interaction.ts:43-75` |
+| `Interaction` | the handle: `keymap`, `renderer`, `pushOverlayContext`/`popOverlayContext`, `setModalContext`, `keyboardEnvironment`, `keyboardEnvironmentId`, `configureKeyboard`, `dispose` | `packages/code/src/keys/interaction.ts:78-89` |
 | `DEFAULT_BINDING_CANDIDATES` | 15 commands → candidate lists | `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`) |
 | `DEFAULT_WHEN` | 11 commands → `"overlay==none"`; `plan.open` → `"overlay in (none, plan)"` | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`) |
-| `buildVitalBindings(defaults, defaultWhen)` | expands a command→key(s) table into bindings, stamping `modal:"none"` unless in `MODAL_LIVE_COMMANDS` | `packages/code/src/keys/interaction.ts:181-197` |
-| `resolvedVitalBindings(platformName, environment, overrides?)` | resolves every vital command's key(s) for one environment; drops `app.suspend` on `win32` | `packages/code/src/keys/interaction.ts:224-241` |
+| `buildVitalBindings(defaults, defaultWhen)` | expands a command→key(s) table into bindings, stamping `modal:"none"` unless in `MODAL_LIVE_COMMANDS` | `packages/code/src/keys/interaction.ts:191-207` |
+| `resolvedVitalBindings(platformName, environment, overrides?)` | resolves every vital command's key(s) for one environment; drops `app.suspend` on `win32` | `packages/code/src/keys/interaction.ts:234-251` |
 | `createInteraction(renderer, platform, effects, initialKeyboardConfig?)` | builds and wires the whole keymap, returns `Interaction` | `packages/code/src/keys/interaction.ts`, `createInteraction` |
 
 ### 2.8 `ui/patterns/**`
@@ -185,9 +185,9 @@ independent once-per-run sidebar reveals").
 | `bind-level-keys.ts` | `bindLevelKeys(opts)` — reactively registers/unregisters a level's key layer | `packages/code/src/ui/patterns/bind-level-keys.ts:18-34` |
 | `level-keys.ts` | `VerbSpec`, `PanelVerbName`, `PANEL_VERBS`, `verb(name, run, when?)`, `LevelSpec`, `registerLevel(keymap, spec, priority?)`; re-exports `LAYER`/`compactKey`/`compactSequence`/`commandKeyLabel`/`PROMPT_EDITING_KEYS`/`promptKeyLabel` from `keyspec.ts` | `packages/code/src/ui/patterns/level-keys.ts:19,25-108` |
 | `list-navigation.ts` | `clampListIndex`, `ListNavOptions`, `registerListNav(keymap, opts)`, `followSelection(scroll, idPrefix, index)`, `registerScrollKeys(keymap, scroll, priority?, reservedKeys?)` | `packages/code/src/ui/patterns/list-navigation.ts:20,25,61,180,200` |
-| `level-host.tsx` | `LevelView` (title, body, when?, readOnly?), `LevelHost<PickerSpec>(props)` | `packages/code/src/ui/patterns/level-host.tsx:12-58` |
-| `view-frame.tsx` | `ViewFrame(props)` | `packages/code/src/ui/patterns/view-frame.tsx:28-115` |
-| `navigation-bar.tsx` | `NavigationBar(props)`, `InteractionNavigationBar(props)` | `packages/code/src/ui/patterns/navigation-bar.tsx:25,78` |
+| `level-host.tsx` | `LevelView` (title, body, when?, readOnly?), `LevelHost<PickerSpec>(props)` | `packages/code/src/ui/patterns/level-host.tsx:12-64` |
+| `view-frame.tsx` | `ViewFrame(props)` | `packages/code/src/ui/patterns/view-frame.tsx:36-140` |
+| `navigation-bar.tsx` | `NavigationBar(props)`, `InteractionNavigationBar(props)` | `packages/code/src/ui/patterns/navigation-bar.tsx:25-51,85-104` |
 | `active-actions.ts` | `ActiveAction`, `projectActiveActions(keys, client?)`, `actionSegment(action)`, `budgetFooterActions(actions, width, measure?)` | `packages/code/src/ui/patterns/active-actions.ts:8,44,80,177` |
 | `selectable-list.tsx` | `SelectableList<T>(props)` | `packages/code/src/ui/patterns/selectable-list.tsx:27-98` |
 | `map-editor.tsx` | `MapValueKind`, `MapFieldEditor`, `MapLevelStack`, `MapSuggestion`, `MapEditorSpec`, `MapRow`, `isMapNode`, `readAt`, `pruneEmpty`, `updateAt`, `formatMapValue`, `mapRows`, `parseMapValue`, `MapEditor`, `createMapEditor(deps)` | see `map-editor.tsx` throughout |
@@ -196,7 +196,7 @@ independent once-per-run sidebar reveals").
 
 Product vocabulary (`UiLifecycle`, `uiLifecycle`, `lifecycleLabel`, `MarkerMeaning`,
 `markerText`, `SettingPresentation`, `settingSummary`, `EntitySummary`, `ScopedUsage`,
-`scopedUsageText`) — `packages/code/src/ui/presentation.ts:1-182`. This module has **no coupling to keys/**
+`scopedUsageText`) — `packages/code/src/ui/presentation.ts:1-186`. This module has **no coupling to keys/**
 at all; it is content-agnostic formatting shared by settings screens (delegated to
 [hosts/code-settings-panels.md](code-settings-panels.md) / [hosts/code-domain-hubs.md](code-domain-hubs.md)).
 
@@ -204,10 +204,10 @@ at all; it is content-agnostic formatting shared by settings screens (delegated 
 
 | Export | Signature | Cite |
 |---|---|---|
-| `FooterStatusTone` | `HintTone \| "running"` | `packages/code/src/views/Footer.tsx:10` |
+| `FooterStatusTone` | `HintTone \| "running"` | `packages/code/src/views/Footer.tsx:11` |
 | `LeadActivityPhase`, `LeadActivityLine(props)` | one-row `ready`/`thinking`/`working` owner with optional run detail, replaced while composer autocomplete owns the band | `packages/code/src/views/Footer.tsx` |
-| `HintToast(props)` | overlay-safe notify surface | `packages/code/src/views/Footer.tsx:32-52` |
-| `Footer(props)` | `{hint, status?, runStrip?, navigation?: JSX.Element, compact?}` | `packages/code/src/views/Footer.tsx:62-123` |
+| `HintToast(props)` | overlay-safe notify surface | `packages/code/src/views/Footer.tsx:36-56` |
+| `Footer(props)` | `{hint, status?, runStrip?, navigation?: JSX.Element, compact?}` | `packages/code/src/views/Footer.tsx:114-175` |
 | `HintTone` | = `NoticeTone` | `packages/code/src/views/hint.ts:6` |
 | `HintState` | `{hint: Accessor<{text,tone}>, notify}` | `packages/code/src/views/hint.ts:9-12` |
 | `createHintState(clock?)` | self-clearing (4s) hint signal | `packages/code/src/views/hint.ts:30-51` |
@@ -216,7 +216,7 @@ at all; it is content-agnostic formatting shared by settings screens (delegated 
 
 `KeyboardView(host, deps)` — the settings screen for the keyboard profile, manual
 bindings and the capability diagnostic. `deps: {code: CodeConfigStore, notify, startDiagnostic?}`
-(`packages/code/src/views/config/KeyboardView.tsx:250-253`).
+(`packages/code/src/views/config/KeyboardView.tsx:255-258`).
 
 ### 2.12 `adapters/provider-secrets.ts` — scope note
 
@@ -299,7 +299,7 @@ verdicts. Pinned: `packages/code/tests/unit/keyboard-profile.test.ts:81-92` (a p
 
 Modified arrows (`ctrl+up`/`ctrl+down`) are portable — "plain xterm", not gated — while
 `alt+…` candidates carry `minimumProfile:"enhanced"` because Alt is the modifier terminals
-actually intercept (`packages/code/src/keys/interaction.ts:86-97`; pinned `packages/code/tests/integration/interaction.test.ts:222-227`).
+actually intercept (`packages/code/src/keys/interaction.ts:93-104`; pinned `packages/code/tests/integration/interaction.test.ts:221-226`).
 
 The transcript scroll commands dispatch row intent through `App.scrollTranscript`, which delegates
 to `CommittedHistory.scrollBy` whenever committed history is mounted. That handle clamps page input
@@ -332,10 +332,10 @@ For an `enhanced` environment with all modifiers `"supported"` (no manual overri
 (`packages/code/src/keys/keyboard-profile.ts:243-252`), so a resolved enhanced candidate is always listed before
 a portable one — `plan.open`'s enhanced `alt+p` precedes its portable `ctrl+p`. A single
 resolved key collapses to a bare string; two or more become an array
-(`packages/code/src/keys/interaction.ts:233-234`). A command whose every candidate resolves away (e.g. all
+(`packages/code/src/keys/interaction.ts:243-244`). A command whose every candidate resolves away (e.g. all
 `enhanced`-only candidates on a `portable` profile) is **absent from the map entirely**
 — `resolveCommandBindings` returns `[]` and the command gets no key at all
-(`packages/code/src/keys/interaction.ts:87-93`).
+(`packages/code/src/keys/interaction.ts:94-100`).
 
 ### 3.5 `KeyboardBindingIssue` and `applyManualBindingEdit`'s output shapes
 
@@ -351,7 +351,7 @@ owns that protected default — `{command:"safety.picker", key:"escape", message
 (pinned by `packages/code/tests/unit/keyboard-profile.test.ts`, "the edited command's own issues still block the write"). The same shadow rule holds for an
 alias spelling of a protected action's key (`escape`/`esc`/`Esc`/`ESC` all refused against
 `app.escape`), though that test only asserts the message contains `"shadows app.escape"`,
-not the full issue object (`packages/code/tests/unit/keyboard-profile.test.ts:322-336`).
+not the full issue object (`packages/code/tests/unit/keyboard-profile.test.ts:393-407`).
 A strict-prefix collision is refused too: `escape x` and `esc x` report
 `"binding has an ambiguous prefix with app.escape"`. Without that rule, a timeout-based resolver
 could make the protected exact action feel frozen; with Clarvis's exact-first resolver, the longer
@@ -392,18 +392,18 @@ Pinned: `packages/code/tests/unit/keyspec.test.ts:93-108` (`verb("delete", ...)`
 
 ### 4.1 `createInteraction` boot sequence
 
-1. `createDefaultOpenTuiKeymap(renderer)` builds the base OpenTUI keymap (`packages/code/src/keys/interaction.ts:360`).
+1. `createDefaultOpenTuiKeymap(renderer)` builds the base OpenTUI keymap (`packages/code/src/keys/interaction.ts:419`).
 2. Window-close-gesture tracking is installed as two `intercept("key", …)` hooks at
    `priority: Number.MAX_SAFE_INTEGER - 1` — one on press, one on release
-   (`packages/code/src/keys/interaction.ts:401-407`). See §4.3.
+   (`packages/code/src/keys/interaction.ts:460-466`). See §4.3.
 3. An unnamed-key guard is installed at `priority: Number.MAX_SAFE_INTEGER` (press and
    release) that recovers a bare Escape from its raw wire bytes (`U+001B` /
    `U+001B U+001B`) and consumes every other unnamed event before OpenTUI's strict
-   resolver can throw on it (`packages/code/src/keys/interaction.ts:419-443`).
+   resolver can throw on it (`packages/code/src/keys/interaction.ts:478-511`).
 4. A `dispatch` diagnostic counter fires on every `binding-execute`/`binding-reject`,
    reading `event.command` as the string name or literally `"inline-handler"` when the
    fired binding's `cmd` was a bare function rather than a registered command name
-   (`packages/code/src/keys/interaction.ts:428-436`).
+   (`packages/code/src/keys/interaction.ts:487-495`).
 5. Clarvis registers an exact-first disambiguation resolver plus four OpenTUI addons:
    Escape-clears-pending-sequence (`preventDefault:false` — a half-typed chord must still fall
    through to Back/Close), Backspace-pops-pending-sequence, base-layout fallback, and dead-binding
@@ -419,16 +419,16 @@ Pinned: `packages/code/tests/unit/keyspec.test.ts:93-108` (`verb("delete", ...)`
    `packages/code/src/keys/interaction.ts`, plus `consumePointerEvent` and the switching
    `SurfacePortal` in `packages/code/src/views/App.tsx`.
 7. `registerWhenField`, `registerUiActionFields`, and a `modal` binding field (only the
-   literal string `"none"` is a legal value) are registered (`packages/code/src/keys/interaction.ts:473-480`).
+   literal string `"none"` is a legal value) are registered (`packages/code/src/keys/interaction.ts:541-548`).
 8. The keyboard environment is computed once from the platform/keymap host metadata
-   (`keyboardInput`) and stamped into two signals (`packages/code/src/keys/interaction.ts:482-487`).
+   (`keyboardInput`) and stamped into two signals (`packages/code/src/keys/interaction.ts:550-555`).
 9. `overlay`/`autocomplete` context defaults are seeded (`"none"`, `false`) and `modal`
-   is seeded `"none"` (`packages/code/src/keys/interaction.ts:489-494`).
+   is seeded `"none"` (`packages/code/src/keys/interaction.ts:557-562`).
 10. A separate, larger command list — 16 entries on any platform but `win32` (15 there,
-    since `app.suspend` is conditionally omitted, `packages/code/src/keys/interaction.ts:547`) — is constructed via
+    since `app.suspend` is conditionally omitted, `packages/code/src/keys/interaction.ts:615`) — is constructed via
     `command(name, run, meta)`, which merges `ACTION_PROJECTION[name]` under any explicit
     `meta` and is registered, with **no bindings at all**, as one layer:
-    `keymap.registerLayer({ commands })` (`packages/code/src/keys/interaction.ts:501-617`). This is not the same
+    `keymap.registerLayer({ commands })` (`packages/code/src/keys/interaction.ts:569-685`). This is not the same
     set as `DEFAULT_BINDING_CANDIDATES`: it omits `agent.picker`, `controls.open` and
     `plan.open` (which have no `command()` registration in this file — only key
     candidates) and adds `transcript.loadEarlier`, which has no entry in
@@ -441,39 +441,39 @@ Pinned: `packages/code/tests/unit/keyspec.test.ts:93-108` (`verb("delete", ...)`
 11. `configureKeyboard(initialKeyboardConfig)` computes the effective environment, validates
     any stored manual overrides (silently discarding one that fails
     `keymap.parseKeySequence`), builds the vital-binding layer via `buildVitalBindings` +
-    `resolvedVitalBindings`, and registers it at `LAYER.VITAL` (`packages/code/src/keys/interaction.ts:620-655`).
+    `resolvedVitalBindings`, and registers it at `LAYER.VITAL` (`packages/code/src/keys/interaction.ts:688-723`).
 12. A `SIGCONT` listener resumes the platform; `registerUnresolvedCommandWarnings` is
     deferred one microtask so cross-feature bindings are assessed against the *complete*
     command registry once the app finishes composing feature commands
-    (`packages/code/src/keys/interaction.ts:657-666`).
+    (`packages/code/src/keys/interaction.ts:725-734`).
 13. `renderer.once("destroy", dispose)` ties the whole wiring's teardown to renderer
     destruction (`packages/code/src/keys/interaction.ts`, `createInteraction.dispose`).
 
 ### 4.2 `configureKeyboard` re-resolution (called again whenever the environment or config changes)
 
 1. Recompute `KeyboardEnvironmentInput` from the live platform/keymap and its id
-   (`packages/code/src/keys/interaction.ts:621-622`).
+   (`packages/code/src/keys/interaction.ts:689-690`).
 2. Look up the saved `KeyboardEnvironmentConfig` for that id; `buildKeyboardEnvironment`
-   folds it over the host-derived guesses (`packages/code/src/keys/interaction.ts:623-624`).
+   folds it over the host-derived guesses (`packages/code/src/keys/interaction.ts:691-692`).
 3. **Only** while `environment.profile === "manual"` are stored `bindings` even considered
-   (`packages/code/src/keys/interaction.ts:630`) — a manual map stored under a different profile is presented in
-   the UI as *stored but inactive* rather than applied (`packages/code/src/views/config/KeyboardView.tsx:472-476`,
-   the `overridesActive` memo at `packages/code/src/views/config/KeyboardView.tsx:304`).
+   (`packages/code/src/keys/interaction.ts:698`) — a manual map stored under a different profile is presented in
+   the UI as *stored but inactive* rather than applied (`packages/code/src/views/config/KeyboardView.tsx:478-482`,
+   the `overridesActive` memo at `packages/code/src/views/config/KeyboardView.tsx:309`).
 4. Each candidate override is filtered to commands that are either in
    `DEFAULT_BINDING_CANDIDATES` or currently registered, and re-parsed through
    `keymap.parseKeySequence`; a parse failure is silently dropped from *activation* (it
-   stays visible in the Keyboard settings screen) (`packages/code/src/keys/interaction.ts:629-643`).
+   stays visible in the Keyboard settings screen) (`packages/code/src/keys/interaction.ts:697-711`).
 5. `buildVitalBindings(resolvedVitalBindings(...), DEFAULT_WHEN)` produces the vital
    layer; the previous vital layer is torn down first (`offVital?.()`), then the new one
-   registered at `LAYER.VITAL` (`packages/code/src/keys/interaction.ts:644-649`).
+   registered at `LAYER.VITAL` (`packages/code/src/keys/interaction.ts:712-717`).
 6. Both keyboard signals are updated, and `keyboard.profile`/`keyboard.environment` are
    written into the keymap's own data store (readable by any binding's `when`)
-   (`packages/code/src/keys/interaction.ts:650-654`).
+   (`packages/code/src/keys/interaction.ts:718-722`).
 
 ### 4.3 The run-cancel repeat gesture
 
 `trackWindowPress` runs on every key press at near-max priority
-(`packages/code/src/keys/interaction.ts:361-386`). `windowOwnsKey` means
+(`packages/code/src/keys/interaction.ts:420-445`). `windowOwnsKey` means
 `overlayStack.length > 0 || modal !== "none"`.
 
 | Condition | Effect |
@@ -490,7 +490,7 @@ to clear input or navigate one level, including rapid consecutive presses.
 current registered single-stroke `run.cancel` binding, so rebinding transfers repeat protection and
 physical Ctrl+C no longer receives special treatment. Repeat ownership is pinned at
 `packages/code/tests/integration/interaction.test.ts`; rapid Escape navigation is
-pinned at `packages/code/tests/integration/app-shell-render.test.tsx:605-628`.
+pinned at `packages/code/tests/integration/app-shell-render.test.tsx:729-752`.
 
 ### 4.4 `registerLevel` — a level's key layer (nav/scroll, verbs, guards, escape)
 
@@ -604,7 +604,7 @@ signals (`diagnostic`, `bindingMode`):
 `bindLevelKeys({register, editor, suspend})` suspends the level-list registration
 whenever `bindingMode()` **or** `diagnostic()` is true, so the diagnostic's own layer
 (registered separately at `LAYER.CONFIRM+10`, above `LAYER.MODAL`) never competes with it
-(`packages/code/src/views/config/KeyboardView.tsx:439-446`).
+(`packages/code/src/views/config/KeyboardView.tsx:445-452`).
 
 The profile-list row's own state is more than nav/verbs/escape: `profileState(profile)`
 labels each row `"Active"` (matches the live environment), `"Recommended"` (matches
@@ -612,29 +612,29 @@ labels each row `"Active"` (matches the live environment), `"Recommended"` (matc
 non-`"enhanced"` profile `"Available"`, else (for `"enhanced"`) `"Unavailable: modified
 keys are intercepted"` if any modifier verdict is `"unsupported"`, `"Run diagnostic to
 verify modified keys"` if the protocol is `"legacy"`, else `"Available"`
-(`packages/code/src/views/config/KeyboardView.tsx:259-266`). The manual-bindings sublevel's `stableCommands()` filters
+(`packages/code/src/views/config/KeyboardView.tsx:264-271`). The manual-bindings sublevel's `stableCommands()` filters
 `keymap.getCommands({visibility:"registered"})` to entries whose `uiSurfaces` include
 `"full-help"` and whose name does **not** match
 `/^(ui\.|confirm\.|editor\.|autocomplete\.|elicit\.)/` — internal/editor-only commands
-never appear as editable bindings (`packages/code/src/views/config/KeyboardView.tsx:278-291`). `cycleClient()` rotates
+never appear as editable bindings (`packages/code/src/views/config/KeyboardView.tsx:283-296`). `cycleClient()` rotates
 the stored `clientPlatform` through `undefined → "macos" → "windows" → "linux" →
-undefined` (`packages/code/src/views/config/KeyboardView.tsx:318-330`). `editBinding()` splits the entered text on `,`,
+undefined` (`packages/code/src/views/config/KeyboardView.tsx:323-335`). `editBinding()` splits the entered text on `,`,
 trims and drops empty entries, validates each against `keymap.parseKeySequence`
 (collecting failures as `invalidKeys`), normalizes each parsed key's display form for
 shadow and protected-prefix comparison, then folds the whole edit through `applyManualBindingEdit` before
-writing or deleting the `bindings` map entry (`packages/code/src/views/config/KeyboardView.tsx:348-378`). Pinned:
+writing or deleting the `bindings` map entry (`packages/code/src/views/config/KeyboardView.tsx:353-384`). Pinned:
 `packages/code/tests/integration/keyboard-view-render.test.tsx:89-124` ("selects profiles, cycles the
 client convention, and resets") and `:129-164` ("manual bindings shows stable commands...").
 
 `KeyboardDiagnostic` runs 4 probes in sequence (`ctrl+k`, `alt/option+k`, `super/cmd+k`,
-"layout-stable K") (`packages/code/src/views/config/KeyboardView.tsx:53-70`); each keypress is intercepted at
+"layout-stable K") (`packages/code/src/views/config/KeyboardView.tsx:54-71`); each keypress is intercepted at
 `LAYER.CONFIRM+20`, `ctx.consume()`d unconditionally so no destination opens underneath,
-and recorded as `"supported"` only if it matches the probe (`packages/code/src/views/config/KeyboardView.tsx:187-208`).
+and recorded as `"supported"` only if it matches the probe (`packages/code/src/views/config/KeyboardView.tsx:188-209`).
 `save()` recommends `enhanced` only if the protocol is `kitty` **and** no verdict is
 `"unsupported"`; if the environment's stored profile is already `manual`, the
 recommendation is computed but **not applied** — only the verdicts are merged in, so a
 user's authored overrides are never silently switched off by running the diagnostic
-(`packages/code/src/views/config/KeyboardView.tsx:107-130`).
+(`packages/code/src/views/config/KeyboardView.tsx:108-131`).
 
 ### 4.9 `registerListNav` and `registerScrollKeys` — the full key schemes
 
@@ -679,28 +679,28 @@ Cmd only for an explicit Mac client").
 
 ### 4.11 From the live keymap to the rendered footer text
 
-`NavigationBar` (`packages/code/src/ui/patterns/navigation-bar.tsx:25-42`) is the live wiring the rest of
+`NavigationBar` (`packages/code/src/ui/patterns/navigation-bar.tsx:25-47`) is the live wiring the rest of
 this document's mechanisms feed: `useActiveActions` (`packages/code/src/ui/patterns/navigation-bar.tsx:17-20`) reads
 `keymap.getActiveKeys({ includeBindings: true, includeMetadata: true })` through
 `useKeymapSelector` (a reactive subscription), pipes the result through
 `projectActiveActions`, then through
 `budgetFooterActions` for the current width, and joins the surviving actions with
 `actionSegment` into one text node. `InteractionNavigationBar`
-(`packages/code/src/ui/patterns/navigation-bar.tsx:78-93`) is the self-contained wrapper `ViewFrame` and others mount:
+(`packages/code/src/ui/patterns/navigation-bar.tsx:85-102`) is the self-contained wrapper `ViewFrame` and others mount:
 it renders **nothing** (`null as never`) when the supplied `interaction.keymap` lacks a
 `getActiveKeys` function — the guard that keeps a test double without a real keymap from
 throwing here.
 
 ### 4.12 `ViewFrame`'s own action filter and badge states
 
-`ViewFrame` (`packages/code/src/ui/patterns/view-frame.tsx:106-111`) always mounts
+`ViewFrame` (`packages/code/src/ui/patterns/view-frame.tsx:115-122`) always mounts
 `InteractionNavigationBar` with an `actionFilter` that unconditionally excludes
 `run.cancel` (`action.id !== "run.cancel"`) ahead of any filter the caller supplies — a
 level's own footer never re-advertises the global cancel action. Its title row shows one
 of four mutually exclusive states, in order: the scope badge (default), `"Read-only" +
 readOnlyReason` when `props.readOnly` or `props.mode === "read-only"`, `"Monitor"` when
 `props.mode === "monitor"`, or no badge at all when `props.unscoped` is true
-(`packages/code/src/ui/patterns/view-frame.tsx:61-78`).
+(`packages/code/src/ui/patterns/view-frame.tsx:70-87`).
 
 ### 4.13 `bindLevelKeys` — stable lifecycle suppression
 
@@ -716,7 +716,7 @@ owner cleanup unregisters the final layer (`packages/code/src/ui/patterns/bind-l
 
 ### 4.14 `LevelHost`'s active-level selection
 
-`LevelHost` (`packages/code/src/ui/patterns/level-host.tsx:38-41`) selects the active `LevelView` as the
+`LevelHost` (`packages/code/src/ui/patterns/level-host.tsx:38-42`) selects the active `LevelView` as the
 first one in `props.levels` whose own `when()` returns true; failing that, the one whose
 index equals the host's current depth. A `when`-matched level can therefore win out of
 depth order — used to show a different body at the same depth once some local screen
@@ -729,10 +729,10 @@ render and the single `CatalogPicker` mount driven by the host's own picker sign
 ### 4.15 `Footer`'s navigation-suppression precedence, and `HintToast`
 
 `Footer` shows its `navigation` prop only when **both** the current hint text is empty
-**and** `props.compact?.()` is false (`packages/code/src/views/Footer.tsx:85-91`) — a live hint or compact
+**and** `props.compact?.()` is false (`packages/code/src/views/Footer.tsx:137-143`) — a live hint or compact
 mode silently hides every action the keymap projection generated, so a screen that hints
 frequently or renders compact never shows its footer's action segments at that moment.
-`HintToast` (`packages/code/src/views/Footer.tsx:26-31,32-52`) is a second, independent copy of the hint line,
+`HintToast` (`packages/code/src/views/Footer.tsx:29-55`) is a second, independent copy of the hint line,
 absolutely positioned above the float layer (`zIndex: FLOAT_Z + 1`): it exists because a
 floating overlay's full-bleed scrim otherwise paints over the in-flow footer, so a
 `notify()` raised while a picker or other overlay is open would land on a buried row.
@@ -777,16 +777,16 @@ hint followed by an action verb, or a literal `glyph("return")` reference). Navi
 hints are generated from the live keymap (§4.6, `active-actions.ts`), never hand-written
 per screen. The three exemptions are principled: `FatalBoot` runs before the shared
 keymap exists; `KeyboardView`'s diagnostic probe labels (`"Press Ctrl+K"`, etc.,
-`packages/code/src/views/config/KeyboardView.tsx:230`) are *inputs under test*, not navigation instructions; `keyspec.ts`
+`packages/code/src/views/config/KeyboardView.tsx:235`) are *inputs under test*, not navigation instructions; `keyspec.ts`
 is the one file that legitimately declares the prompt-editing chord table
-(`PROMPT_EDITING_KEYS`, `packages/code/src/keys/keyspec.ts:131-154`), consumed by `InputDock`.
+(`PROMPT_EDITING_KEYS`, `packages/code/src/keys/keyspec.ts:137-160`), consumed by `InputDock`.
 Test: `packages/code/tests/architecture/tui-navigation-boundary.test.ts:33-55`.
 
 **INV-256.** `views/Footer.tsx`, `views/PageFrame.tsx` and `ui/patterns/view-frame.tsx`
 declare the action-projection props (`navigation?: JSX.Element` on `Footer`
-— `packages/code/src/views/Footer.tsx:67`; `interaction: Interaction` on `PageFrame` — confirmed at
+— `packages/code/src/views/Footer.tsx:119`; `interaction: Interaction` on `PageFrame` — confirmed at
 `packages/code/src/views/PageFrame.tsx:19`; `InteractionNavigationBar` used inside `ViewFrame` —
-`packages/code/src/ui/patterns/view-frame.tsx:106-111`) and none of the old static key-hint props (`keyHint?:`,
+`packages/code/src/ui/patterns/view-frame.tsx:115-122`) and none of the old static key-hint props (`keyHint?:`,
 `hint?: string`, `footer: string`). Test:
 `packages/code/tests/architecture/tui-navigation-boundary.test.ts:57-67`.
 
@@ -794,7 +794,7 @@ declare the action-projection props (`navigation?: JSX.Element` on `Footer`
 with a local `{ key: "ctrl+c", cmd: ... }`: Escape belongs to the current screen's clear/back
 action, while Ctrl+C remains exclusively bound to global `run.cancel`. Directly witnessed
 inside this document's scope at `packages/code/src/ui/patterns/level-keys.ts:201-203` and
-`packages/code/src/views/config/KeyboardView.tsx:182-184`. The repository-wide architecture
+`packages/code/src/views/config/KeyboardView.tsx:183-185`. The repository-wide architecture
 test scans every source file so overlays, editors, confirmations and mounted views cannot
 reintroduce a local Ctrl+C owner.
 Test: `packages/code/tests/architecture/tui-navigation-boundary.test.ts:69-81`.
@@ -810,7 +810,7 @@ Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES
 
 **INV-D2.** A protected action (`app.escape`, `run.cancel`) can be **rebound** but
 never explicitly **unbound**: an empty `keys` array for either action in `validateManualBindings` always reports `"protected action
-cannot be unbound"`. Production: `packages/code/src/keys/keyboard-profile.ts:77-84,356-359`. Test:
+cannot be unbound"`. Production: `packages/code/src/keys/keyboard-profile.ts:77-82,366-373`. Test:
 `packages/code/tests/unit/keyboard-profile.test.ts:229-251`.
 
 **INV-D3.** A manual-binding shadow or protected-prefix check is refused independently of persisted
@@ -836,16 +836,16 @@ prefix of a manual sequence").
 **INV-D4.** The shadowing comparison is over a **canonical** key spelling, not a raw
 lower-cased string: `esc` and `escape` (and every pair in `KEY_ALIASES`) must compare
 equal, or an ordinary command can take a protected action's key by spelling it the other
-way. Production: `packages/code/src/keys/keyboard-profile.ts:284-330`. Test:
-`packages/code/tests/unit/keyboard-profile.test.ts:280-317,322-336`.
+way. Production: `packages/code/src/keys/keyboard-profile.ts:284-338,342-347,381-384`. Test:
+`packages/code/tests/unit/keyboard-profile.test.ts:279-304,392-406`.
 
 **INV-D5.** Stored manual `bindings` apply **only** while the environment's stored
 `profile` is exactly `"manual"`; under any other profile they are inert, and the UI must
 present them as *stored but inactive* rather than *active*. Production:
-`packages/code/src/keys/interaction.ts:629-631` (`configureKeyboard`'s override loop reads
+`packages/code/src/keys/interaction.ts:647-660` (`configureKeyboard`'s override loop reads
 `saved?.bindings` only inside the ternary's `"manual"` branch);
-`packages/code/src/views/config/KeyboardView.tsx:295-308` (`overridesActive` memo). Test:
-`packages/code/tests/integration/keyboard-view-render.test.tsx:165-210` (both the
+`packages/code/src/views/config/KeyboardView.tsx:296-305` (`overridesActive` memo). Test:
+`packages/code/tests/integration/keyboard-view-render.test.tsx:165-209` (both the
 "presented as active only under manual" and "marked off under another profile" cases).
 
 **INV-D6.** `keyboardEnvironmentId` never hashes the terminal's version, only its name —
@@ -899,10 +899,11 @@ attachments and emit `"Draft cleared"`. If nothing needs clearing, Escape is a
 no-op; it never calls run cancellation or quit. Conversely, global `run.cancel` on Ctrl+C first
 cancels an active run and otherwise enters the quit gate without clearing the draft, and remains
 active while overlays and elicitation modals are open.
-Production: `packages/code/src/keys/interaction.ts:484-516`; the complete draft predicate and
-clear effect are wired at `packages/code/src/views/App.tsx:373-390`.
-Tests: `packages/code/tests/integration/interaction.test.ts:325-477,726-743`; full-shell paths are
-pinned at `packages/code/tests/integration/app-shell-render.test.tsx:1028-1093,1123-1175,1586-1596`.
+Production: `packages/code/src/keys/interaction.ts:559-567`; the complete draft predicate and
+clear effect are wired at `packages/code/src/views/App.tsx:598-602`.
+Tests: `packages/code/tests/integration/interaction.test.ts:484-531`, `:865-881`; full-shell paths are
+pinned at `packages/code/tests/integration/app-shell-render.test.tsx:729-752`, `:1649-1665`,
+`:2070-2104`, `:2298-2326`, and `:2762-2783`.
 
 **INV-D13.** `Ctrl+S` is the portable binding for the internal `safety.picker` action, `Alt+S` is its
 enhanced-path accelerator, and both are inactive while another overlay is open. A direct iTerm
@@ -961,21 +962,21 @@ live Lead frontier").
 
 | Situation | Handling | Cite |
 |---|---|---|
-| A manual override's key fails `keymap.parseKeySequence` | Silently excluded from the *active* vital-binding layer; remains visible (as a stored, inactive entry) in Keyboard settings | `packages/code/src/keys/interaction.ts:637-643` |
+| A manual override's key fails `keymap.parseKeySequence` | Silently excluded from the *active* vital-binding layer; remains visible (as a stored, inactive entry) in Keyboard settings | `packages/code/src/keys/interaction.ts:647-660` |
 | A hand-edited manual sequence extends an active exact binding | The exact command runs synchronously and the longer sequence is unreachable in that context; the Keyboard editor refuses protected-prefix conflicts before persistence | `registerImmediateExactDisambiguation` in `packages/code/src/keys/interaction.ts`; `validateManualBindings` in `packages/code/src/keys/keyboard-profile.ts`; tests `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/unit/keyboard-profile.test.ts` |
-| A stale manual-binding entry names a command no longer registered (e.g. an MCP prompt whose server left `settings.json`) | Reported as `"unknown command"` **only if the edited command itself**; does not block clearing or editing any other entry | `packages/code/src/keys/keyboard-profile.ts:392-397,430-434`; test `packages/code/tests/unit/keyboard-profile.test.ts:121-146` |
+| A stale manual-binding entry names a command no longer registered (e.g. an MCP prompt whose server left `settings.json`) | Reported as `"unknown command"` **only if the edited command itself**; does not block clearing or editing any other entry | `packages/code/src/keys/keyboard-profile.ts:361-364,422-436,460-471`; test `packages/code/tests/unit/keyboard-profile.test.ts:122-148` |
 | A `when` clause names an unrecognized `ContextKey`, is empty, or uses unsupported grammar | `parseWhen`/`compileWhen` throw synchronously — a fail-closed error, not a silently-ignored clause | `packages/code/src/keys/when-dsl.ts:16-21,29-38,63-68` |
-| A binding-field or layer-field value has the wrong shape (`uiSurfaces` not an array of strings, `hintPriority` not a finite number, `essential` not boolean, `modal` not the literal `"none"`) | Throws synchronously at registration time | `packages/code/src/keys/actions.ts:37-65`, `packages/code/src/keys/interaction.ts:475-479` |
-| A command's `enabled` predicate throws while `entries()` computes `canAct` | Caught; a diagnostic counter fires (`command.enabled.threw`); `canAct()` **fails open** (`true`) — a broken predicate leaves the command reachable rather than hiding its slash route | `packages/code/src/keys/commands.ts:551-561`; test `packages/code/tests/unit/commands.test.ts:562-597` |
-| An action/view `run()` throws synchronously, or its returned promise rejects | Funnelled into `ui.commandFailed(name, error)` either way — never an unhandled rejection | `packages/code/src/keys/commands.ts:399-405`; test `packages/code/tests/unit/commands.test.ts:295-327` |
-| A duplicate command name, or a slash token another command already owns, is registered | Throws immediately (`register`/`registerAction` roll back the partially-inserted registry entry before rethrowing) | `packages/code/src/keys/commands.ts:357-373`; test `packages/code/tests/unit/commands.test.ts:225-251` |
-| A key event arrives with an empty `name` (observed as parser residue after Escape closes a view) | Recovered as `escape` if the raw wire bytes are exactly `U+001B`/`U+001B U+001B`; every other unnamed event is consumed before OpenTUI's strict resolver can throw on it | `packages/code/src/keys/interaction.ts:408-436`; test `packages/code/tests/integration/interaction.test.ts:479-522` |
+| A command-field or binding-field value has the wrong shape (`uiSurfaces` not an array of strings, `hintPriority` not a finite number, `essential` not boolean, `modal` not the literal `"none"`) | Throws synchronously at registration time | `packages/code/src/keys/actions.ts:35-65`, `packages/code/src/keys/interaction.ts:516-523` |
+| A command's `enabled` predicate throws while `entries()` computes `canAct` | Caught; a diagnostic counter fires (`command.enabled.threw`); `canAct()` **fails open** (`true`) — a broken predicate leaves the command reachable rather than hiding its slash route | `packages/code/src/keys/commands.ts:530-540`; test `packages/code/tests/unit/commands.test.ts:624-659` |
+| An action/view `run()` throws synchronously, or its returned promise rejects | Funnelled into `ui.commandFailed(name, error)` either way — never an unhandled rejection | `packages/code/src/keys/commands.ts:379-392`; test `packages/code/tests/unit/commands.test.ts:357-388` |
+| A duplicate command name, or a slash token another command already owns, is registered | Throws immediately (`register`/`registerAction` roll back the partially-inserted registry entry before rethrowing) | `packages/code/src/keys/commands.ts:344-376`; test `packages/code/tests/unit/commands.test.ts:287-312` |
+| A key event arrives with an empty `name` (observed as parser residue after Escape closes a view) | Recovered as `escape` if the raw wire bytes are exactly `U+001B`/`U+001B U+001B`; every other unnamed event is consumed before OpenTUI's strict resolver can throw on it | `packages/code/src/keys/interaction.ts:453-477`; test `packages/code/tests/integration/interaction.test.ts:535-583` |
 | A press, release, or raw-input callback was queued before renderer teardown and runs after the host is destroyed | The lifecycle-safe OpenTUI host drops it before keymap dispatch; teardown emits no `Cannot use a keymap after its host was destroyed` error | `packages/code/src/keys/interaction.ts` (`createLifecycleSafeKeymap`); test `packages/code/tests/integration/interaction.test.ts` ("queued input is inert after the renderer destroys its keymap host") |
 | The workspace runtime is being replaced (`effects.interactionBlocked?.()===true`) | Every key except unmodified Escape is consumed at max intercept priority, including a modified Escape rebound to a modal-live command; a nearly transparent full-bleed portal consumes mouse and scroll input while the mounted page or picker stays visible, and plain Escape can still navigate the active view immediately | `offInteractionBlocker` in `packages/code/src/keys/interaction.ts`; `consumePointerEvent` and the switching `SurfacePortal` in `packages/code/src/views/App.tsx`; tests in `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/integration/app-shell-render.test.tsx` |
 | A pending elicitation modal (`setModalContext("elicitation")`) | Every vital binding **except** `MODAL_LIVE_COMMANDS` (`run.cancel`, `app.suspend`, the four `transcript.scroll*`) is inert; those six stay live (read-only navigation and escape hatches only) | `packages/code/src/keys/interaction.ts` (`MODAL_LIVE_COMMANDS`, `buildVitalBindings`); test `packages/code/tests/integration/interaction.test.ts` ("a pending modal keeps scrolling, suspend and cancel, and withholds the rest") |
 | An overlay is on the stack | The 11 `overlay==none` commands in `DEFAULT_WHEN` go dark. On the `plan` overlay only, `plan.open` remains active: the same shortcut closes current-plan detail and returns to the transcript. There is no history-origin route. `app.escape`, `run.cancel` and `app.suspend` have no overlay gate, so the cancel binding still cancels the run or enters quit. | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`), `packages/code/src/views/overlays/PlanOverlay.tsx` (`plan.escape`); tests `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/integration/app-shell-render.test.tsx` |
-| `normalizeKeyboardConfig` is handed malformed/future JSON (wrong version, non-object environments, junk verdicts) | Tolerantly degrades: unrecognized top-level shape → empty config; a malformed per-environment entry is skipped entirely; unrecognized verdict/binding entries inside an otherwise-valid entry are dropped individually | `packages/code/src/keys/keyboard-profile.ts:103-141`; test `packages/code/tests/unit/keyboard-profile.test.ts:252-` (`normalizeKeyboardConfig tolerates future and malformed UI data`) |
-| `app.suspend` on `win32` | The command is not registered at all (no `SIGTSTP`/job control to return from), and its binding candidate is skipped by `resolvedVitalBindings` so the keymap's own dead-binding warning never fires on an orphaned key | `packages/code/src/keys/interaction.ts:214-218,231,547-560`; test `packages/code/tests/integration/interaction.test.ts:176-184` |
+| `normalizeKeyboardConfig` is handed malformed/future JSON (wrong version, non-object environments, junk verdicts) | Tolerantly degrades: unrecognized top-level shape → empty config; a malformed per-environment entry is skipped entirely; unrecognized verdict/binding entries inside an otherwise-valid entry are dropped individually | `packages/code/src/keys/keyboard-profile.ts:100-139`; test `packages/code/tests/unit/keyboard-profile.test.ts:251-277` (`normalizeKeyboardConfig tolerates future and malformed UI data`) |
+| `app.suspend` on `win32` | The command is not registered at all (no `SIGTSTP`/job control to return from), and its binding candidate is skipped by `resolvedVitalBindings` so the keymap's own dead-binding warning never fires on an orphaned key | `packages/code/src/keys/interaction.ts:207-235,575-588`; test `packages/code/tests/integration/interaction.test.ts:166-173` |
 
 ## 7. Coupling
 
@@ -983,10 +984,10 @@ live Lead frontier").
 
 | Dependency | Why | Direction |
 |---|---|---|
-| `@opentui/keymap` (+ `/opentui`, `/addons`, `/addons/opentui`, `/solid`) | The entire binding/layer/command/context machinery this document wires — `Keymap`, `Command`, `Binding`, `ActiveKey`, `BindingFieldContext`, addons | static value import, external package (`packages/code/src/keys/interaction.ts:2-11`, `packages/code/src/ui/patterns/navigation-bar.tsx:3`) |
+| `@opentui/keymap` (+ `/opentui`, `/addons`, `/addons/opentui`, `/solid`) | The entire binding/layer/command/context machinery this document wires — `Keymap`, `Command`, `Binding`, `ActiveKey`, `BindingFieldContext`, addons | static value import, external package (`packages/code/src/keys/interaction.ts:3-14`, `packages/code/src/ui/patterns/navigation-bar.tsx:3`) |
 | `@opentui/core` | `KeyEvent`, `Renderable`, `ScrollBoxRenderable`, `CliRenderer` types throughout | static, mostly type-only |
 | `solid-js` | `createSignal`/`createEffect`/`createMemo`/`batch`/reactivity primitives | static value import |
-| `../adapters/platform.ts` (`Platform`) | suspend/resume/capabilities probing feeding `keyboardInput` | static, type + value (`packages/code/src/keys/interaction.ts:13,199-210`) — **out of this document's scope** |
+| `../adapters/platform.ts` (`Platform`) | suspend/resume/capabilities probing feeding `keyboardInput` | static, type + value (`packages/code/src/keys/interaction.ts:15,194-204`) — **out of this document's scope** |
 | `../theme/{tokens,glyphs,tone}.ts` | `ViewFrame`'s rendering | static value import — **out of scope**, delegated to [hosts/code-theme.md](code-theme.md) |
 | `../core/fuzzy.ts`, `../core/diagnostic-events.ts` | `commands.ts` entry filtering and failure/diagnostic counters | static value import — **out of scope** |
 | `../ui/primitives/index.ts` (`ScopeBadge`, `SelectableRow`, `EmptyHint`, `ErrorBanner`, `LoadingHint`) | rendering rows/badges in `view-frame.tsx`, `selectable-list.tsx`, `map-editor.tsx` | static value import — **out of scope**, delegated to [hosts/code-theme.md](code-theme.md) |
@@ -997,10 +998,10 @@ live Lead frontier").
 `ui/patterns/map-editor.tsx`'s own doc comment states the constraint explicitly: "written
 against the *structure* of a field editor and a level stack rather than against
 `views/config`, both because `src/ui/**` may not import `views/`" (`packages/code/src/ui/patterns/map-editor.tsx:5-9`).
-`packages/code/tests/architecture/architecture-boundary.test.ts:99-106` enforces that `edgesUnder("ui")`
+`packages/code/tests/architecture/architecture-boundary.test.ts:157-164` enforces that `edgesUnder("ui")`
 never imports `@clarvis/kernel`, `adapters/`, or `features/` — but **does not itself list
 `views` as forbidden for the `ui` layer** (only for `adapters`, at
-`packages/code/tests/architecture/architecture-boundary.test.ts:91-97`). In the actual tree no `ui/**` file imports
+`packages/code/tests/architecture/architecture-boundary.test.ts:149-155`). In the actual tree no `ui/**` file imports
 `views/**` (`grep` over `src/ui/` for `from "../views` / `from "../../views` returns
 nothing), so the comment's stronger claim currently holds in practice, but it is **not
 directly test-enforced for the `ui` layer** — see §8. `MapFieldEditor`, `NoticeTone`, and
@@ -1029,7 +1030,7 @@ contract **by shape** without either module importing the other.
   respectively — a genuine runtime dependency of `ui/patterns` on `keys/`.
 - `keys/interaction.ts` imports `type { Platform }` from `../adapters/platform.ts` — the
   reverse direction would be a cycle (`adapters/` sits below `keys/` in the layer test);
-  `packages/code/tests/architecture/architecture-boundary.test.ts:91-97` enforces `adapters` never importing `ui`/`views`,
+  `packages/code/tests/architecture/architecture-boundary.test.ts:149-155` enforces `adapters` never importing `ui`/`views`,
   which combined with `keys` importing only `type Platform` keeps the graph acyclic.
 - `tui-navigation-boundary.test.ts` is what forces INV-254 through INV-257 to hold across
   the **whole** `src/` tree, not just this document's files — a violation anywhere (including
@@ -1054,9 +1055,9 @@ contract **by shape** without either module importing the other.
 
 - **The "`ui/` may not import `views/`" rule is a comment, not a test assertion for the
   `ui` layer.** `packages/code/src/ui/patterns/map-editor.tsx:5-9` states it in prose; `architecture-boundary.test.ts`'s
-  `ui`-layer check (`packages/code/tests/architecture/architecture-boundary.test.ts:99-106`) only forbids
+  `ui`-layer check (`packages/code/tests/architecture/architecture-boundary.test.ts:157-164`) only forbids
   `@clarvis/kernel`, `adapters`, and `features` — `views` is checked as a forbidden target
-  only for the **`adapters`** layer (`packages/code/tests/architecture/architecture-boundary.test.ts:91-97`), not for `ui`.
+  only for the **`adapters`** layer (`packages/code/tests/architecture/architecture-boundary.test.ts:149-155`), not for `ui`.
   In the current tree no `ui/**` file actually imports `views/**`, so the stronger claim
   holds in practice, but nothing would fail the build if it stopped holding. This is an
   unpinned invariant, distinct from — and narrower coverage than — the four INV-254–257

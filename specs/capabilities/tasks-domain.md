@@ -629,7 +629,7 @@ lint rule cited in this package's own config) beyond this one test file plus the
   `probeWith`'s *return value* — `providerInstanceId: wire.provider_instance_id` (the payload field,
   `:419`) — is exactly what `TaskProviderFactory` then threads as `capabilities.providerInstanceId`
   into every later call's `expectedProviderInstanceId`
-  (`packages/kernel/src/tasks/task-provider-factory.ts:294-304`, `packages/tasks/src/mcp-provider.ts:443`).
+  (`packages/kernel/src/tasks/task-provider-factory.ts:295-305`, `packages/tasks/src/mcp-provider.ts:443`).
   So the payload-sourced value, once validated once against the envelope at bind time, becomes the
   sole external "expected" identity for every subsequent envelope check on that binding — the
   cross-check exists precisely because the very first call has no other value to validate the

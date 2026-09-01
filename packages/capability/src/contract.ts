@@ -3,7 +3,7 @@
  * agent tools, …) packages everything it adds to a run behind one interface, and
  * the engine composes a list instead of knowing each feature by name.
  *
- * Three lifecycle levels, narrowing at each step:
+ * Four lifecycle levels, narrowing at each step:
  *
  *   Capability            process-lifetime (or per-run for session-bound hosts)
  *     └─ forRun(ctx)  →   RunCapability | null      per-run gate + activation

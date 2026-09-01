@@ -178,7 +178,8 @@ interface Loadable {
  *   operator-enabled plugin names. Before an Environment is pinned, contribution
  *   files are discovered per call; afterwards the admitted manifests and agents
  *   remain immutable and any content drift is rejected until reconnect. Hook
- *   approvals remain live because they are independent authorization state.
+ *   Workspace settings-hook approvals remain live because they are independent
+ *   authorization state; a selected plugin's own hooks stay in its atomic snapshot.
  * @remarks Reads the filesystem synchronously and never consults settings itself,
  *   so it can be folded into the config store's settings merge without recursing
  *   through `readSettings()`. Repeated exact references are de-duplicated; the

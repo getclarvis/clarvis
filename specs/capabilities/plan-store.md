@@ -287,10 +287,10 @@ and trailing `-` trimmed, truncated to 48 chars, falling back to `plan` when emp
 
 | Path | Owner | Line |
 | --- | --- | --- |
-| `<ws>/.clarvis/plans/` | default plans root | `packages/plan/src/file-repository.ts:228` → `packages/paths/src/workspace.ts:115` |
-| `<ws>/.clarvis/owners/<segment>/plans/` | per-owner root passed as `root` | `packages/paths/src/workspace.ts:118`, used at `packages/kernel/src/owner-scoped-file-stores.ts:52` |
-| `<global>/state/workspaces/<segment>/plans/` | lockfile directory (default) | `packages/plan/src/file-repository.ts:231` → `packages/paths/src/workspace-state.ts:182` |
-| `<global>/state/workspaces/<segment>/owners/<segment>/plans/` | per-owner lock dir | `packages/paths/src/workspace-state.ts:186`, used at `packages/kernel/src/owner-scoped-file-stores.ts:53` |
+| `<ws>/.clarvis/plans/` | default plans root | `packages/plan/src/file-repository.ts:228` → `packages/paths/src/workspace.ts:118` |
+| `<ws>/.clarvis/owners/<segment>/plans/` | per-owner root passed as `root` | `packages/paths/src/workspace.ts:121`, used at `packages/kernel/src/owner-scoped-file-stores.ts:52` |
+| `<global>/state/workspaces/<segment>/plans/` | lockfile directory (default) | `packages/plan/src/file-repository.ts:231` → `packages/paths/src/workspace-state.ts:186` |
+| `<global>/state/workspaces/<segment>/owners/<segment>/plans/` | per-owner lock dir | `packages/paths/src/workspace-state.ts:190`, used at `packages/kernel/src/owner-scoped-file-stores.ts:53` |
 
 Modes: root `0o700`, plan file `0o600`, lock directory `0o700` (`packages/plan/src/file-repository.ts:302`, `:374`,
 `:217`), pinned at `packages/plan/tests/integration/file-repository.test.ts:196` and
@@ -811,7 +811,7 @@ to `planStoreConformance()` also constrains `src/provider.ts` (that provider is
   Tracing every call site between a `.list()` caller and `PlanRepositoryTx.list` in this repository —
   `PlanStore.list` (`packages/plan/src/store.ts:367-368`, forwards `input` unchanged),
   `PlanService.list` (`packages/plan/src/service.ts:37`, forwards `input` unchanged), and the kernel's
-  `plans.list` operation (`packages/kernel/src/transport/operations.ts:419-423`, forwards `p.input`
+  `plans.list` operation (`packages/kernel/src/transport/operations.ts:604-609`, forwards `p.input`
   unchanged) — none of them clamps, bounds, or even reads `limit` before handing the query on. The
   clamp exists in exactly one place per adapter, inside the adapter itself, and both known adapters
   implement it identically: `Math.min(MAX_LIMIT, Math.max(1, query.limit ?? DEFAULT_LIMIT))` with

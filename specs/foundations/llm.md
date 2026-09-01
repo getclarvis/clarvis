@@ -28,7 +28,7 @@ body and one unterminated SSE event before an SDK parser can retain them. (e) A 
 
 The package has no `zod` dependency and defines no settings schema
 (`packages/llm/package.json:47-54`); it is configured entirely through function arguments handed to
-it by `@clarvis/loop`'s `buildRunDeps` (`packages/loop/src/runtime/build-run-deps.ts:425-446`).
+it by `@clarvis/loop`'s `buildRunDeps` (`packages/loop/src/runtime/build-run-deps.ts:453-474`).
 
 ---
 
@@ -119,10 +119,10 @@ citation is locatable by symbol, not only by line.
 | Variable | Read at | Effect |
 |---|---|---|
 | `CLARVIS_STREAM_DEBUG` | `packages/llm/src/stream-metrics.ts:102` | when non-empty, `streamMetrics()` returns a JSONL file sink instead of the no-op |
-| *(any name)* | `packages/llm/src/ai-sdk-adapter.ts:250` | `process.env[name]` is the **default** credential/header resolver when `AiSdkProviderConfig.resolveRegistryKey` is absent |
+| *(any name)* | `packages/llm/src/ai-sdk-adapter.ts:272` | `process.env[name]` is the **default** credential/header resolver when `AiSdkProviderConfig.resolveRegistryKey` is absent |
 
 There is no other environment read in `packages/llm/src`. The provider timeouts, retry budget and
-transport bounds arrive as arguments from the host (`packages/loop/src/runtime/build-run-deps.ts:425-446`).
+transport bounds arrive as arguments from the host (`packages/loop/src/runtime/build-run-deps.ts:453-474`).
 
 ---
 
@@ -210,8 +210,8 @@ cache record's fields and how each is derived (`packages/llm/src/ai-sdk/request-
 | `session_pinned` | the `x-session-id` header was emitted (openai-compatible + key) |
 | `ttl?` | `params.promptCacheTtl` |
 
-A no-provider call produces exactly
-`{ marked:"none", requested_breakpoints:0, applied_breakpoints:0, walked_back:false, system_marked:false, cache_key_sent:false, session_pinned:false }`
+A no-provider call produces exactly `marked: "none"`, both breakpoint counts equal to zero, and
+`walked_back`, `system_marked`, `cache_key_sent`, and `session_pinned` all false
 — pinned by `packages/llm/tests/unit/observability.test.ts:434-445`.
 
 ### 3.4 The `openai-compatible` cache-marker sentinel
@@ -701,16 +701,16 @@ against cycles.
 
 ### 4.16 Decorator composition, as the host wires it
 
-`packages/loop/src/runtime/build-run-deps.ts:425-446` builds, innermost first:
+`packages/loop/src/runtime/build-run-deps.ts:453-474` builds, innermost first:
 
 ```
-createAiSdkProvider(...)                       :391
-  → withModelCallAdmission(provider, gate)     :403
-  → withCallLogging(..., logger)               :403
-  → withTransportRetry(..., {...})             :402
+createAiSdkProvider(...)                       :453
+  → withModelCallAdmission(provider, gate)     :466
+  → withCallLogging(..., logger)               :466
+  → withTransportRetry(..., {...})             :465
 ```
 
-and `packages/loop/src/runtime/execute-run.ts:394` wraps that again per run with
+and `packages/loop/src/runtime/execute-run.ts:398` wraps that again per run with
 `withPromptCacheDefaults(deps.llm, { promptCacheKey, promptCacheTtl })`. This places retry
 **outside** logging, which is exactly the arrangement `attemptsByParams` depends on
 (`packages/llm/src/logging-llm-provider.ts:44-50`), and admission **inside** logging, so each
@@ -1052,7 +1052,7 @@ no mechanical guard exists.
 **LLM-51.** `@clarvis/llm` carries a **100% functions / 100% lines** coverage floor and has no
 `NO_COUNTER_ALLOWLIST` entry, so every file in `src/` must appear in the LCOV report.
 Production: `tooling/checks/coverage.ts:32`; the absence of an `llm` key in
-`NO_COUNTER_ALLOWLIST` (`tooling/checks/coverage.ts:72-203`).
+`NO_COUNTER_ALLOWLIST` (`tooling/checks/coverage.ts:72-205`).
 Test: the coverage script itself, run by `bun run test:coverage`.
 
 **LLM-52.** Every package test script carries `--timeout 60000`.
@@ -1190,14 +1190,14 @@ takes one value import, `contentToText`, at `:3`).
   settings, and `parseModelRef`/`resolveProvider` — belongs to
   [model-catalog-and-provider-resolution](../hosts/model-catalog.md). This package consumes the resolved value only.
 - **Where admission, retry budget and timeouts are wired into a run**, and the `CLARVIS_*` env
-  values that set them (`packages/loop/src/runtime/build-run-deps.ts:426-445`), belong to
+  values that set them (`packages/loop/src/runtime/build-run-deps.ts:453-474`), belong to
   [loop-budgets-clocks-and-guards](../engine/budgets-and-guards.md).
 
 ---
 
 ## 8. Open questions
 
-1. **LLM-9 is unpinned.** `maxRetries: 0` (`packages/llm/src/ai-sdk-adapter.ts:400`) is what makes
+1. **LLM-9 is unpinned.** `maxRetries: 0` (`packages/llm/src/ai-sdk-adapter.ts:462`) is what makes
    `withTransportRetry` the sole retry authority, and no test asserts it. Deleting the line would
    double-retry every transient failure silently, with a green suite. No indirect assertion has
    been found (attempt counting in `packages/llm/tests/component/ai-sdk-adapter.test.ts` uses a

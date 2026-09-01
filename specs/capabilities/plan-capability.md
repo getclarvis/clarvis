@@ -41,9 +41,9 @@ That claim is about grants, not about every path into `mode`: a trusted plugin c
 `capabilityRunPolicies.plans.skills[skill]` (`packages/capability/src/capability-run-policies.ts:9-14`)
 for a skill it packages, and when a run is entered through that skill *and* the operator has selected
 that same plugin as the Plans provider, the kernel folds the declared mode over the settings block's
-`mode` for that one run — `skillPlansMode` (`packages/kernel/src/file-kernel.ts:638-648`,
-`packages/kernel/src/plugins/plugin-contributions.ts:429-431`) is read in the settings assembler
-(`packages/kernel/src/runs/settings-assembler.ts:368-374,436-445`) and only ever loses to an explicit
+`mode` for that one run — `skillPlansMode` (`packages/kernel/src/file-kernel.ts:629-639`,
+`packages/kernel/src/plugins/plugin-contributions.ts:738-744`) is read in the settings assembler
+(`packages/kernel/src/runs/settings-assembler.ts:399-406,491-506`) and only ever loses to an explicit
 `plans` param on the run request itself, never to the settings block. This bypasses `pluginContributable:
 false` on `plansSettingsSpec` (`packages/plan/src/settings.ts:90`) entirely, because it never goes
 through the settings merge that flag governs. The mechanism, its parsing and its precedence belong to
@@ -243,7 +243,7 @@ projection (`packages/capability/src/contract.ts:354`; unwrapped events "stay in
 | Kind | Emitted at | Detail |
 | --- | --- | --- |
 | `plan_created` | `packages/plan/src/capability/orchestration.ts:662`–`671` (on a `create_plan` call) | `planProjection(document)` |
-| `plan_updated` | `packages/plan/src/capability/orchestration.ts:662`–`671`; also `packages/plan/src/capability/index.ts:252` (`change: "recovery"`), `packages/plan/src/capability/index.ts:284` (`change: "status"`), `packages/plan/src/capability/orchestration.ts:681`–`681` (task-port writes) | `{ change, ...planProjection(document) }` |
+| `plan_updated` | `packages/plan/src/capability/orchestration.ts:662`–`671`; also `packages/plan/src/capability/index.ts:252` (`change: "recovery"`), `packages/plan/src/capability/index.ts:284` (`change: "status"`), `packages/plan/src/capability/orchestration.ts:681` (task-port writes) | `{ change, ...planProjection(document) }` |
 | `plan_removed` | `packages/plan/src/capability/index.ts:242` (run start), `packages/plan/src/capability/index.ts:316` (retention discard), `packages/plan/src/capability/orchestration.ts:651`–`652` (a tool call discovered the removal) | `removedPlanProjection(missing)` or a flat id/path/revision/spec_revision object |
 | `plan_review_requested` | `packages/plan/src/capability/orchestration.ts` (`presentPlanReviewGate`, `plan_review_requested` branch) | `planProjection(presented)` |
 | `plan_review_resolved` | `packages/plan/src/capability/orchestration.ts` (`presentPlanReviewGate`, approval, change-request, and cancellation branches) | `{ outcome: "approved" \| "changes_requested" \| "cancelled", ...planProjection }` |
@@ -257,13 +257,13 @@ The kernel's `capabilityEventToProto` validates the detail against a **closed** 
 "Internal plan events also carry objective/context fields. Stripping them here avoids either widening
 the closed protocol DTO or rejecting an otherwise valid plan update"
 (`packages/kernel/src/runs/map-events.ts:104`–`108`). The protocol `PlanProjection` therefore has no `objective`/`context`/
-`validation` (`packages/protocol/src/runs.ts:231`–`255`).
+`validation` (`packages/protocol/src/runs.ts:269`–`285`).
 
 All five map to `live("capability", ["capability_channel"])` in the kernel's event policy
 (`packages/kernel/src/runs/event-policy.ts:78`–`82`) — i.e. none is persisted to the engine trace.
 
 `PlanUpdateChange` has four members — `content`, `task`, `status`, `recovery`
-(`packages/protocol/src/runs.ts:268`, mirrored at `packages/kernel/src/runs/map-events.ts:122`),
+(`packages/protocol/src/runs.ts:271`, mirrored at `packages/kernel/src/runs/map-events.ts:122`),
 exactly the set this capability produces. It carried three more — `approval`, `retention`,
 `external_edit` — that nothing ever emitted; they have been removed from both.
 
@@ -286,7 +286,7 @@ kind the planning capability records, not one the engine does" (`packages/capabi
 The trace record on a plan tool call is load-bearing rather than decorative: the TSDoc says plan
 calls "reached the trace" through no dispatcher, so "`create_plan` and `transition_plan_task` were
 absent from the persisted trace entirely while being present in the run's own context"
-(`packages/plan/src/capability/orchestration.ts:626`–`626`). Pinned by
+(`packages/plan/src/capability/orchestration.ts:626`). Pinned by
 `packages/plan/tests/component/plan-orchestration.test.ts:287`–`301`.
 
 ### 3.5 Tool result payloads
@@ -493,7 +493,7 @@ real revision.
 
 ### 4.7 Per-iteration and per-session state
 
-`SessionState` persists across iterations (`packages/plan/src/capability/orchestration.ts:219`–`219`); `IterState` is rebuilt
+`SessionState` persists across iterations (`packages/plan/src/capability/orchestration.ts:219`); `IterState` is rebuilt
 each `beforeIteration` by `freshIter()` (`packages/plan/src/capability/orchestration.ts:253`).
 
 `hooks.beforeIteration` does exactly two things: reset `iter` and call `publishPlanContext()`
@@ -530,7 +530,7 @@ status alone "can state the exact opposite of what the runtime enforces"
 
 The tombstone case has its own parallel pair, `missingPlanHeader`/`missingPlanSpecBlock`
 (composed by `missingPlanCanonicalState`, `packages/plan/src/capability/canonical-state.ts:33`–`58`), which
-`publishPlanContext` (`packages/plan/src/capability/orchestration.ts:312`–`315`) and `anchor()` (`packages/plan/src/capability/orchestration.ts:722`–`722`)
+`publishPlanContext` (`packages/plan/src/capability/orchestration.ts:312`–`315`) and `anchor()` (`packages/plan/src/capability/orchestration.ts:722`)
 switch to in place of the live pair once the plan is gone. Their content carries a safety
 instruction the live header never needs: "Do not reuse any earlier expected_revision,
 expected_digest or expected_spec_digest values" (`packages/plan/src/capability/canonical-state.ts:43`), because the tombstone
@@ -538,7 +538,7 @@ supersedes every earlier copy of the plan the model may still be holding CAS val
 
 `anchor()` returns `{ label: "Current plan", body: planCanonicalState(document, planReview) }`,
 or `{ label: "Plan unavailable", … }` for a tombstone, or `undefined`
-(`packages/plan/src/capability/orchestration.ts:722`–`722`).
+(`packages/plan/src/capability/orchestration.ts:722`).
 
 ### 4.9 `PlanSession.reconcile` — the continuation path
 
@@ -669,7 +669,7 @@ methods — `packages/plan/tests/component/delegation-plan-port.test.ts:24`, `:3
 
 The orchestration layers three more members onto it (`packages/plan/src/capability/orchestration.ts:691`–`705`):
 
-- **`beforeSpawn(taskId)`** first calls `ensurePlanReviewGate()` (`packages/plan/src/capability/orchestration.ts:550`–`550`),
+- **`beforeSpawn(taskId)`** first calls `ensurePlanReviewGate()` (`packages/plan/src/capability/orchestration.ts:550`),
   then refuses a duplicate `task_id` already in `iter.spawnedTaskIds` this batch
   (`duplicateBatchTaskId`), then refuses while the current spec stands rejected
   (`planNotApprovedRejection(session.rejectionFeedback, "spawn sub-agents again")`,
@@ -717,14 +717,14 @@ at `packages/capability/src/env.ts:107`, `:68`).
 `file-kernel.ts` composes it with a settings-reading `loadPlanProvider` (`:651`–`657`), a plugin
 locator scoped to `PLANS_CAPABILITY_NAME` (`:660`–`667`), and the shared executable port
 (`:674`–`681`), then hands `planning.planFactory` to `createInProcessKernel` (`:958`).
-`packages/kernel/src/kernel.ts:446` builds the per-owner `PlansService` from
+`packages/kernel/src/kernel.ts:522` builds the per-owner `PlansService` from
 `() => planFactory.storeFor(scope.owner)` — the same factory the capability holds, so a run and the
 control plane read one provider store (`packages/plan/src/capability/index.ts:79`–`80`).
 
-`plansBlockToParam` (`packages/kernel/src/runs/settings-assembler.ts:139`–`141`) projects the
+`plansBlockToParam` (`packages/kernel/src/runs/settings-assembler.ts:146`–`162`) projects the
 settings block onto the request param. `retention` is always **materialized** —
 "an absent or malformed value becomes `PLANS_DEFAULTS.retention` rather than being dropped"
-(`packages/kernel/src/runs/settings-assembler.ts:130-149`) — and an unrecognized `mode` falls back to the default rather
+(`packages/kernel/src/runs/settings-assembler.ts:138-157`) — and an unrecognized `mode` falls back to the default rather
 than disabling planning silently (`:143-149`).
 
 ---
@@ -749,7 +749,7 @@ Numbered; each carries the production line and the pinning test.
 
 4. **A continuation from a different provider is refused unless the plan was completed.**
    `packages/plan/src/capability/index.ts:159`–`167` throws `PlanProviderMismatchError` (`code: "plan_provider_mismatch"`,
-   `packages/plan/src/provider.ts:60`–`60`) for an unfinished ref, and drops a `completed` one.
+   `packages/plan/src/provider.ts:60`) for an unfinished ref, and drops a `completed` one.
    Pinned: `packages/plan/tests/component/plan-capability-gating.test.ts:176`–`237` (both branches).
 
 5. **Only the entry agent gets planning.** `forAgent` returns `null` when `!scope.entry` —
@@ -790,7 +790,7 @@ Numbered; each carries the production line and the pinning test.
     Pinned: `packages/plan/tests/component/plan-orchestration.test.ts:542`–`575` (11 `changes_requested` events, then terminal).
 
 13. **A review run that never authors a plan is nudged once, then terminated `plan_review_unreviewed`.**
-    `packages/plan/src/capability/orchestration.ts:519`–`519`, terminal built at `:436`–`436`.
+    `packages/plan/src/capability/orchestration.ts:519`, terminal built at `:436`.
     Pinned: `packages/plan/tests/component/plan-orchestration.test.ts:527`–`541`.
 
 14. **An approval on a text-only finalize nudges rather than passing.**
@@ -992,7 +992,7 @@ Numbered; each carries the production line and the pinning test.
 
 52. **The kernel's plans service refuses cleanly when planning is unconfigured.**
     `active()` throws `kernelError("capability_disabled", …)` when `options.resolve` is absent —
-    `packages/kernel/src/plans/plans-service.ts:66`–`66`. **Unpinned** in this document's scope.
+    `packages/kernel/src/plans/plans-service.ts:66`. **Unpinned** in this document's scope.
 
 53. **`plansSettingsSpec` is registered at module load, before any settings file is read.**
     `packages/kernel/src/config/capability-registry.ts:23`, with the reason at `:13`–`:17`.
@@ -1100,7 +1100,7 @@ still supplies a fallback rather than crashing (`packages/plan/src/capability/in
 | `@clarvis/kernel` | value import of `PLANS_DEFAULTS` for the run-request assembler | `packages/kernel/src/runs/settings-assembler.ts:1` |
 | `@clarvis/kernel` | value import of `PLANS_CAPABILITY_NAME` for the `capability_state` key | `packages/kernel/src/runs/plan-ref.ts:1` |
 | `@clarvis/kernel` | value imports of `PlanService`, `renderPlan`, `PlanProviderUnavailableError` | `packages/kernel/src/plans/plans-service.ts:1`–`7` |
-| `@clarvis/code` | value import of `PLANS_DEFAULTS` re-exported through `@clarvis/kernel/config:55` | `packages/code/src/onboarding/seed-plans.ts:1`, `packages/code/src/adapters/settings.ts:9` |
+| `@clarvis/code` | value import of `PLANS_DEFAULTS` re-exported through `packages/kernel/src/config.ts:55` | `packages/code/src/onboarding/seed-plans.ts:1`, `packages/code/src/adapters/settings.ts:9` |
 | `@clarvis/loop` (delegation) | **structural only** — consumes a `TaskTrackingPort` from the service registry, never naming this package | `packages/capability/src/task-tracking-port.ts:66`; planning publishes under the same key at `packages/plan/src/capability/task-port.ts:69` |
 
 The delegation edge is the one worth naming as *deliberately* structural: the entry TSDoc says
@@ -1112,7 +1112,7 @@ what keeps the dependency edge pointing one way" (`packages/plan/src/capability/
 - **Capability fold order.** `order: -100` (`packages/plan/src/capability/index.ts:232`) is consumed by `orderCapabilities`
   (`packages/loop/src/runtime/capability-order.ts:14`), called at
   `packages/loop/src/runtime/entry-inputs.ts:208` and
-  `packages/loop/src/runtime/orchestrator.ts:235`. The contract states the consequence: "planning's
+  `packages/loop/src/runtime/orchestrator.ts:241`. The contract states the consequence: "planning's
   review blocker has to be consulted before the coding toolset and before the MCP catch-all or it
   guards nothing" (`packages/capability/src/contract.ts:225`–`228`). The loop test pins the exact
   plans-shaped ordering by sorting `plans` at `-100` ahead of default-order capabilities
@@ -1172,7 +1172,7 @@ deliberately.
 
 **`PLAN_REVIEW_ELICIT_KIND` has one owner and one pinned duplicate.** The constant is declared in
 `@clarvis/capability` (`packages/capability/src/elicit.ts:68`, exported at
-`packages/capability/src/index.ts:252`) and read here (`packages/plan/src/capability/review-gate.ts:52`).
+`packages/capability/src/index.ts:258`) and read here (`packages/plan/src/capability/review-gate.ts:52`).
 `@clarvis/code` cannot import it — it depends on `@clarvis/kernel`, `@clarvis/protocol` and
 `@clarvis/paths` only — so it declares its own at
 `packages/code/src/adapters/elicit-types.ts:17` and uses that at
@@ -1185,7 +1185,7 @@ the elicit `kind` unions in `@clarvis/protocol`, `@clarvis/capability` and `@cla
 absent, `buildPlansOrchestration` computes
 `const planReview = deps.planReviewAsk !== undefined` → `false` (`packages/plan/src/capability/orchestration.ts:296`), so the
 blocker and gate stand down entirely. In practice the loop
-refuses such a run first — `packages/loop/src/runtime/execute-run.ts:299`–`324` throws
+refuses such a run first — `packages/loop/src/runtime/execute-run.ts:306-312` throws
 `ValidationError("elicitation_not_supported", …)` when a capability needs the human and no elicit
 exists — but **nothing in `@clarvis/plan` closes this**, and no test in the plan package covers a
 `review` run built without an elicit. Whether the plan package intends to rely on the loop's check is

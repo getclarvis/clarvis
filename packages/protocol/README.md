@@ -141,11 +141,9 @@ interface KernelTransport {
 The framing is JSON-RPC-shaped, but the methods use Clarvis's own vocabulary. This is not MCP.
 Stdio, HTTP and WebSocket transports can implement the same interface without changing a UI.
 
-`KernelRequestOptions` carries `signal` and an optional, opaque `correlationId`. The latter is
-purely informational: both sides may log it verbatim, nothing interprets it, and a transport that
-cannot carry it drops it — so nothing may depend on its arrival. It exists so a host's diagnostic
-record can be joined to the kernel's without relying on a shared clock, for the requests that are
-not runs; `execution_id` already covers the ones that are.
+`KernelRequestOptions` carries only an optional `signal`. Cancellation is local transport metadata;
+the concrete transport decides how to interrupt the request without serializing the signal into the
+wire parameters.
 
 Wire contract 2 is negotiated exactly in the opening hello. Unknown versions and malformed or
 extra envelope fields fail closed. Stdio uses strict newline-delimited frames capped at 8 MiB and a

@@ -88,14 +88,14 @@ every handler above consumes them directly.
 
 | Field | Default | Definition | Consumed at |
 |---|---|---|---|
-| `maxFileBytes` | `20_000_000` (`packages/tools/src/config.ts:130`) | `packages/tools/src/config.ts:26` | packages/tools/src/tools/edit-file.ts:43, apply-patch.ts (`readEditableFile`), packages/tools/src/tools/replace.ts:214 |
-| `maxMutationBytes` | `64 * 1024 * 1024` (`packages/tools/src/config.ts:136`) | `packages/tools/src/config.ts:35` | packages/tools/src/tools/replace.ts:224 |
-| `maxDiffInputBytes` | `8 * 1024 * 1024` (`packages/tools/src/config.ts:138`) | `packages/tools/src/config.ts:38` | packages/tools/src/tools/write-file.ts:107, packages/tools/src/tools/edit-file.ts:58, packages/tools/src/tools/replace.ts:241/263 |
-| `maxTraversalEntries` | `50_000` (`packages/tools/src/config.ts:134`) | `packages/tools/src/config.ts:32` | packages/tools/src/tools/replace.ts:82 (`scopeFiles`) |
-| `regexScanBudgetMs` | `5000` (`packages/tools/src/config.ts:159`) | `packages/tools/src/config.ts:69` (approx.) | packages/tools/src/tools/replace.ts:201 (`createScanBudget`) |
-| `confineToWorkspace` | `true` default (`packages/tools/src/config.ts:332`) | `packages/tools/src/config.ts:78` | every `resolvePath` call in every handler above |
-| `readOnly` | `false` default (`packages/tools/src/config.ts:331`) | `packages/tools/src/config.ts:75` | gates tool visibility upstream ([tools-contract-and-dispatch](tools-contract.md)); observed effect: `packages/tools/tests/integration/replace.test.ts:263-268` shows `readOnly: true` making `replace` answer `not_found`, as if the tool did not exist |
-| `skillExecutionRoots` | `[]` | `RuntimeConfig.skillExecutionRoots` in `packages/tools/src/config.ts` | the central dispatcher refuses every native source/destination below a selected skill package before any handler runs |
+| `maxFileBytes` | `20_000_000` (`DEFAULT_MAX_FILE_BYTES`, `packages/tools/src/config.ts:141-142`) | `packages/tools/src/config.ts:26` | packages/tools/src/tools/edit-file.ts:43, apply-patch.ts (`readEditableFile`), packages/tools/src/tools/replace.ts:214 |
+| `maxMutationBytes` | `64 * 1024 * 1024` (`DEFAULT_MAX_MUTATION_BYTES`, `packages/tools/src/config.ts:147-148`) | `packages/tools/src/config.ts:35` | packages/tools/src/tools/replace.ts:224 |
+| `maxDiffInputBytes` | `8 * 1024 * 1024` (`DEFAULT_MAX_DIFF_INPUT_BYTES`, `packages/tools/src/config.ts:149-150`) | `packages/tools/src/config.ts:38` | packages/tools/src/tools/write-file.ts:107, packages/tools/src/tools/edit-file.ts:58, packages/tools/src/tools/replace.ts:241/263 |
+| `maxTraversalEntries` | `50_000` (`DEFAULT_MAX_TRAVERSAL_ENTRIES`, `packages/tools/src/config.ts:145-146`) | `packages/tools/src/config.ts:32` | packages/tools/src/tools/replace.ts:82 (`scopeFiles`) |
+| `regexScanBudgetMs` | `5000` (`DEFAULT_REGEX_SCAN_BUDGET_MS`, `packages/tools/src/config.ts:161-171`) | `packages/tools/src/config.ts:69` | packages/tools/src/tools/replace.ts:201 (`createScanBudget`) |
+| `confineToWorkspace` | `true` default (`packages/tools/src/config.ts:351-354`) | `packages/tools/src/config.ts:78` | every `resolvePath` call in every handler above |
+| `readOnly` | `false` default (`packages/tools/src/config.ts:351-353`) | `packages/tools/src/config.ts:75` | gates tool visibility upstream ([tools-contract-and-dispatch](tools-contract.md)); observed effect: `packages/tools/tests/integration/replace.test.ts:263-268` shows `readOnly: true` making `replace` answer `not_found`, as if the tool did not exist |
+| `skillExecutionRoots` | `[]` | `RuntimeConfig.skillExecutionRoots` at `packages/tools/src/config.ts:94-95`; normalized in `resolveConfig` | the central dispatcher refuses every native source/destination below a selected skill package before any handler runs |
 
 ## 3. Data and formats
 
@@ -247,7 +247,7 @@ A `null` slot instead throws an uncaught `TypeError` (`spec.old_string` on `null
 wrapped as a `ToolError` (pinned by `packages/tools/tests/integration/multi-edit.test.ts:136-139`, "surfaces a TypeError when an edit
 entry is malformed") — it propagates as the generic non-`ToolError` case in Section 6's failure table.
 
-### 4.3 `apply_patch` (`packages/tools/src/tools/apply-patch.ts:316-392`, core in `applyParsed:413-587`)
+### 4.3 `apply_patch` (`packages/tools/src/tools/apply-patch.ts:316-392`, core in `packages/tools/src/tools/apply-patch.ts:413-587`)
 
 1. Detect `*** Begin Patch` after tolerating leading whitespace and parse it with `parseModelPatch`;
    otherwise use
@@ -480,7 +480,7 @@ lock-ordering deadlock between them.
     defined by the shell and sandbox contracts. Production: `packages/tools/src/core.ts` and
     `packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/api.test.ts`.
 
-13. **`move`/`copy` refuse when either endpoint is a symlink**, checked before any stat or filesystem
+14. **`move`/`copy` refuse when either endpoint is a symlink**, checked before any stat or filesystem
     mutation; `replace` refuses the same way on a non-dry-run commit, through the shared
     `applyOpsAtomic` → `validateTargets` path rather than its own explicit check.
     Production: `packages/tools/src/tools/move.ts:77-78`, `packages/tools/src/tools/copy.ts:78-79`
@@ -491,25 +491,25 @@ lock-ordering deadlock between them.
     `packages/tools/tests/integration/replace.test.ts:196-208` ("refuses to write through a symlink,
     leaving the target intact").
 
-14. **`move`/`copy` refuse an existing destination unless `overwrite: true`; an existing destination
+15. **`move`/`copy` refuse an existing destination unless `overwrite: true`; an existing destination
     that is a directory is refused regardless of `overwrite`.**
     Production: `packages/tools/src/tools/move.ts:92-112`, `packages/tools/src/tools/copy.ts:93-113`.
     Test: `packages/tools/tests/integration/move.test.ts:55-78,93-102`,
     `packages/tools/tests/integration/copy.test.ts:64-83,98-107`.
 
-15. **`copy` preserves the source's permission mode (low 9 bits) on the copy**, and is binary-safe
+16. **`copy` preserves the source's permission mode (low 9 bits) on the copy**, and is binary-safe
     (byte-identical).
     Production: `packages/tools/src/tools/copy.ts:117-121` (`chmod(tmp, srcStat.mode & 0o777)`).
     Test: `packages/tools/tests/integration/copy.test.ts:40-47` (binary-safe),
     `:55-60` (mode preserved, `skipIf(!modeBitsEnforced)`).
 
-16. **`mkdir` is idempotent**: creating an already-existing directory succeeds and reports so, rather
+17. **`mkdir` is idempotent**: creating an already-existing directory succeeds and reports so, rather
     than erroring.
     Production: `packages/tools/src/tools/mkdir.ts:48-64` (Node's recursive `mkdir` returns
     `undefined` when nothing new was created).
     Test: `packages/tools/tests/integration/mkdir.test.ts:32-37`.
 
-17. **`remove` operates only on regular files**, never directories, and never through a symlink — the
+18. **`remove` operates only on regular files**, never directories, and never through a symlink — the
     symlink guard is enforced by the shared `applyOpsAtomic` path even though `remove.ts` itself only
     `lstat`s.
     Production: `packages/tools/src/tools/remove.ts:45-59`; symlink guard at
@@ -518,13 +518,13 @@ lock-ordering deadlock between them.
     Test: `packages/tools/tests/integration/remove.test.ts:41-47` (directory),
     `:49-57` (symlink).
 
-18. **Concurrent calls against the same absolute path are serialized in call order and never lose an
+19. **Concurrent calls against the same absolute path are serialized in call order and never lose an
     update**; a rejection from one holder does not wedge the next.
     Production: `packages/tools/src/lib/atomic.ts:36-48`.
     Test: `packages/tools/tests/integration/edit-file.test.ts:176-186` ("serializes concurrent edits
     to the same file without lost updates").
 
-19. **`withFileLocks` locks a set of paths in one fixed sorted order**, so two callers requesting
+20. **`withFileLocks` locks a set of paths in one fixed sorted order**, so two callers requesting
     overlapping path sets can never deadlock against each other by acquiring in opposite orders.
     Production: `packages/tools/src/lib/atomic.ts:59-62`.
     Test: ~~unpinned — no test in this document's scope constructs two concurrent multi-path lock acquisitions to
@@ -536,7 +536,7 @@ lock-ordering deadlock between them.
     2 s, which is what a real hold-and-wait cycle looks like here — the promise chain never settles
     and nothing else would ever time it out.
 
-20. **A batch commit fsyncs every directory it touched, and best-effort removes every backup/temp file
+21. **A batch commit fsyncs every directory it touched, and best-effort removes every backup/temp file
     it created, on both the success and (for created directories) the failure path.**
     Production: `packages/tools/src/lib/atomic.ts:404-422` (success), `:423-426` (failure — created
     dirs only).
@@ -598,8 +598,8 @@ re-exported from any of the package's four public entrypoints (`.`, `./guard`, `
 `./sandbox`), each of them an internal-only `lib/*.ts` module
 including `lib/atomic.ts`. A host (`@clarvis/loop`, `@clarvis/kernel`) reaches these tools only by
 their wire names through dispatch; which of those names a host UI renders as a "mutation" is
-`@clarvis/code`'s `MUTATION_TOOLS` set (`packages/code/src/adapters/tool-identity.ts:63`, whose
-twelve members are pinned name by name at `packages/code/tests/unit/tool-identity.test.ts:53`).
+`@clarvis/code`'s `MUTATION_TOOLS` set (`packages/code/src/adapters/tool-identity.ts:92`, whose
+twelve members are pinned name by name at `packages/code/tests/unit/tool-identity.test.ts:61`).
 That set is a transcript-rendering concern and not a grant boundary — its only two readers collapse
 an oversize diff behind a chip (`packages/code/src/views/tools/mutation-gate.ts:100`) and stop a
 mutation call folding into a run of reads (`packages/code/src/views/tool-groups.ts:42`) — so the
@@ -615,7 +615,7 @@ exclusively through the registry and tool dispatch, which is [tools-contract-and
   order) is stated in the function's own TSDoc (`packages/tools/src/lib/atomic.ts:56-58`) and is used by every multi-path
   mutation tool (`apply_patch`, `replace`, `move`, `copy`), but no test in this document's scope constructs two
   concurrent calls with overlapping, oppositely-ordered path sets to prove the property empirically —
-  see invariant 18.~~ **Resolved 2026-08-22**, see invariant 18: the deadlock is real and reproducible,
+  see invariant 20.~~ **Resolved 2026-08-22**, see invariant 20: the deadlock is real and reproducible,
   and the guard now fails loudly instead of hanging. This was a gap to flag, not fill: the parent-directory TOCTOU threat model this
   locking discipline does *not* address is explicitly delegated to [security-confinement-and-redaction](../cross-cutting/security.md),
   and is out of bounds here. **Recorded 2026-08-22**: that threat model is
@@ -629,14 +629,14 @@ exclusively through the registry and tool dispatch, which is [tools-contract-and
   in the project-level known-issues list for `fsError`'s `io_error` fallback; no source or test file
   in the monorepo names the missing errno — `ENOTDIR` is the only code `fsError` maps to `not_a_file`
   alongside `EISDIR` (`packages/tools/src/errors.ts:103`).
-  - `posixShell` (`packages/tools/tests/helpers/fixtures.ts:203`) and `modeBitsEnforced`
-    (`packages/tools/tests/helpers/fixtures.ts:190`) are the two predicates this subsystem's own tests use to suppress
+  - `posixShell` (`packages/tools/tests/helpers/fixtures.ts:204`) and `modeBitsEnforced`
+    (`packages/tools/tests/helpers/fixtures.ts:191`) are the two predicates this subsystem's own tests use to suppress
     platform-specific assertions: `modeBitsEnforced` is `false` on `win32` or when running as root
     (mode bits are either not enforced or ignored), and gates every "preserves mode"/"reports io_error
     under read-only …" test across write_file, edit_file, apply_patch, move, copy, mkdir and remove;
     `posixShell` is `false` on `win32` and gates only the one `apply_patch` ENOTDIR-mapping test above.
     Both predicates and their rationale are documented in the fixtures file itself
-    (`packages/tools/tests/helpers/fixtures.ts:181-203`), not derived independently here.
+    (`packages/tools/tests/helpers/fixtures.ts:182-204`), not derived independently here.
 - **Whether a `rename`'s `fromBackup` restoration path in `commitWithRollback` can itself partially
   succeed** (i.e. the `to` removal in the reverse-order undo at `packages/tools/src/lib/atomic.ts:343` succeeds but the
   `renameForTools(rec.fromBackup, from)` on the same line-group fails) is exercised by the test suite

@@ -28,12 +28,12 @@ a local UI may open a validated authorization URL, while an intentionally headle
 callback and receives an explicit interactive-authorization failure only when a remote server actually
 challenges. OAuth credentials never enter settings, run requests, protocol DTOs or model context.
 
-Production: `packages/kernel/src/file-kernel.ts:93-145`, `:656-677`;
-`packages/paths/src/global.ts:108-120`.
+Production: `packages/kernel/src/file-kernel.ts:99-153`, `:702-723`;
+`packages/paths/src/global.ts:109-123`.
 
 Test of the composed coordinator/store behavior:
-`packages/mcp-client/tests/integration/oauth-transport.test.ts:197-251` and
-`packages/mcp-client/tests/integration/oauth-store.test.ts:29-137`. The Code host's browser authority
+`packages/mcp-client/tests/integration/oauth-transport.test.ts:230-488` and
+`packages/mcp-client/tests/integration/oauth-store.test.ts:29-162`. The Code host's browser authority
 is documented and tested in [code-bootstrap.md](code-bootstrap.md).
 
 The `builtins` switchboard names `tools`, `skills`, `hooks`, and `tasks`. Memory and planning have
@@ -45,7 +45,7 @@ resolves the installed inventory before the config store is constructed, then su
 exact active-plugin selector and workspace executable trust surface. The resulting snapshot is
 pinned for the lifetime of this file kernel; selection changes require reconstruction.
 
-Production: `packages/kernel/src/file-kernel.ts:357-378`, `:593`, `:813`, `:857`;
+Production: `packages/kernel/src/file-kernel.ts:362-383`, `:613`, `:834`, `:878`;
 `packages/kernel/src/environments/environment-manager.ts` (`resolveActive`).
 
 Test: `packages/kernel/tests/integration/environment-manager.test.ts`.
@@ -141,9 +141,9 @@ lifecycle; the kernel owns the file location and browser-opening authority.
 
 Production: `packages/kernel/src/owner-scoped-file-stores.ts`;
 `packages/kernel/src/application/workspace-housekeeping.ts`;
-`packages/kernel/src/file-kernel.ts:656-677`;
-`packages/loop/src/runtime/build-run-deps.ts:386-427`, `:577-594`;
-`packages/paths/src/global.ts:108-120`.
+`packages/kernel/src/file-kernel.ts:702-724`;
+`packages/loop/src/runtime/build-run-deps.ts:410-451`, `:621-638`;
+`packages/paths/src/global.ts:109-125`.
 
 Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 

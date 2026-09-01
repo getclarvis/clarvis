@@ -26,7 +26,7 @@ against a one-entry baseline (`tooling/checks/source-policy.ts:7`). **Coverage h
 `tooling/checks/coverage.ts` sums each package's LCOV counters against a per-package floor *and*
 separately requires that every `src` module produced an `SF:` record at all, so a floor cannot be
 held over a denominator that is missing files nothing imports
-(`tooling/checks/coverage.ts:57-71`, `:316-341`).
+(`tooling/checks/coverage.ts:57-71`, `:318-343`).
 
 The whole thing runs sequentially, fail-fast, from one npm script: `check:pre-commit` is a seven-link
 `&&` chain (`package.json`, `scripts.check:pre-commit`).
@@ -82,9 +82,9 @@ architecture · component · contract · e2e · integration · unit
 |---|---|---|
 | `findModuleMockCalls(file, source)` | `→ {file, line, column}[]` | `tooling/lib/source-policy.ts:22` |
 | `findUnclassifiedTestFiles(files)` | `string[] → string[]` | `tooling/lib/source-policy.ts:64` |
-| `readOwnSourceCoverage(packageName, root?)` | `→ {functions, lines, measured:Set<string>}` | `tooling/checks/coverage.ts:234` |
-| `findUnmeasuredSources(packageName, measured, root?)` | `→ {unmeasured, runtimeExports, stale}` | `tooling/checks/coverage.ts:317` |
-| `checkCoverage(root?)` | `→ Promise<void>`, throws `AggregateError` | `tooling/checks/coverage.ts:401` |
+| `readOwnSourceCoverage(packageName, root?)` | `→ {functions, lines, measured:Set<string>}` | `tooling/checks/coverage.ts:236` |
+| `findUnmeasuredSources(packageName, measured, root?)` | `→ {unmeasured, runtimeExports, stale}` | `tooling/checks/coverage.ts:319` |
+| `checkCoverage(root?)` | `→ Promise<void>`, throws `AggregateError` | `tooling/checks/coverage.ts:403` |
 | `pythonSourcePaths(paths)` | `string[] → string[]`, sorted `.py` / `.pyi` / `.pyw` matches | `tooling/checks/bun-sources.ts:8` |
 | `repositoryPaths(root)` | `→ string[]`, tracked plus unignored existing paths | `tooling/checks/bun-sources.ts:13` |
 | `countLines(text)` | `string → number`, without inventing a line after a final newline | `tooling/lib/spec-hygiene.ts`, `countLines` |
@@ -97,7 +97,7 @@ architecture · component · contract · e2e · integration · unit
 
 The checker logic is safely importable from a test in both cases, but the two scripts get there by
 different mechanisms. `coverage.ts` self-invokes only when it *is* `process.argv[1]`
-(`tooling/checks/coverage.ts:377-380`), a single-file guard, so importing that same file from a test
+(`tooling/checks/coverage.ts:379-382`), a single-file guard, so importing that same file from a test
 does not run the check. `package-graph.ts` has no such guard at all — its 28 lines call
 `analyzePackageGraph`/`checkDocument`/`renderMarkdown` unconditionally the moment the file is loaded
 (`tooling/checks/package-graph.ts:1-28`) — so it must never be imported from a test. Its "dual
@@ -264,7 +264,7 @@ file: `helpers` (16 packages) and `fixtures` (5). Three loose non-test modules s
 ### 3.2 The LCOV subset `coverage.ts` consumes
 
 Records are split on the literal `end_of_record` and only four numeric fields are read, via
-`field()` (`tooling/checks/coverage.ts:228-231`, `:250-264`):
+`field()` (`tooling/checks/coverage.ts:230-233`, `:252-266`):
 
 | Field | Meaning in the aggregate |
 |---|---|
@@ -285,7 +285,7 @@ end_of_record
 ```
 
 That is `linesFound === 0`, which for a `TYPE_ONLY_PACKAGES` member short-circuits to a synthetic
-`{functions: 1, lines: 1}` (`tooling/checks/coverage.ts:260-264`) — protocol's reported 100 % is by
+`{functions: 1, lines: 1}` (`tooling/checks/coverage.ts:262-266`) — protocol's reported 100 % is by
 declaration, not by measurement.
 
 Bun 1.4 assigns a distinct LCOV line to a multiline `catch` token even when the handler body runs.
@@ -321,7 +321,7 @@ floor without lowering a threshold.
 
 Three packages share the lowest function floor at 0.90: `mcp-client`, `memory` and `server`.
 
-Output line format is fixed (`tooling/checks/coverage.ts:409-413`):
+Output line format is fixed (`tooling/checks/coverage.ts:411-415`):
 
 ```
 loop       functions 99.07% (min 96.00%) pass; lines 98.98% (min 98.00%) pass
@@ -330,7 +330,7 @@ loop       functions 99.07% (min 96.00%) pass; lines 98.98% (min 98.00%) pass
 ### 3.4 `NO_COUNTER_ALLOWLIST`
 
 A map from short package name to package-relative `src/` paths that are permitted to produce no
-LCOV record (`tooling/checks/coverage.ts:75-196`). Its own comment names three legitimate,
+LCOV record (`tooling/checks/coverage.ts:75-198`). Its own comment names three legitimate,
 permanent reasons — a type-only module, a pure re-export barrel, and an executable entry point a
 test cannot import without starting the process it boots (`tooling/checks/coverage.ts:63-66`) — and
 records that a fourth, `GRANDFATHERED`, was never legitimate and no longer has any entry
@@ -355,24 +355,24 @@ records that a fourth, `GRANDFATHERED`, was never legitimate and no longer has a
 The **barrel** reason turns on the *form* of the re-exports rather than on the word. All four `loop`
 entries are the package's entry-point barrels, and each spells its statements as a named list —
 `export { VERSION } from "./version.ts"` (`packages/loop/src/lib.ts:200`),
-`export { ownerFromWorkspace } from "./workspace.ts"` (`packages/loop/src/host.ts:73`) — which is the
+`export { ownerFromWorkspace } from "./workspace.ts"` (`packages/loop/src/host.ts:78`) — which is the
 shape the allowlist's own comment says "emits no counters of its own"
-(`tooling/checks/coverage.ts:121-122`). The package's three *internal* barrels are absent from the list
+(`tooling/checks/coverage.ts:122-123`). The package's three *internal* barrels are absent from the list
 and pass anyway: `packages/loop/src/runtime/budget/index.ts:7-9`,
 `packages/loop/src/runtime/guards/index.ts:9-12` and `packages/loop/src/runtime/support/index.ts:9-14`
 spell theirs `export *`, and every one of them is imported by tests
 (`packages/loop/tests/unit/budget.test.ts:6`, `packages/loop/tests/unit/doom-loop-guard.test.ts:2`,
 `packages/loop/tests/unit/stringify.test.ts:2`). Since `findUnmeasuredSources` fails any `src` module
-that neither produced an `SF:` record nor is named on the list (`tooling/checks/coverage.ts:326-327`),
+that neither produced an `SF:` record nor is named on the list (`tooling/checks/coverage.ts:328-329`),
 their staying off it is the gate's own evidence that an `export *` line does carry a counter where a
 named re-export does not.
 
-Five packages have **no** key at all and fall through `?? []` (`tooling/checks/coverage.ts:314`):
+Five packages have **no** key at all and fall through `?? []` (`tooling/checks/coverage.ts:316`):
 `llm`, `mcp-client`, `paths`, `plan`, `protocol`. ~~Three GRANDFATHERED entries remain.~~ ~~**One
 remains** as of 2026-08-22~~ — **none remain**, as of 2026-08-22; see §8 item 10.
 
 The `server/src/bin.ts` entry carries the longest justification in the file
-(`tooling/checks/coverage.ts:143-161`): its behaviour *is* tested, by real subprocess tests, but
+(`tooling/checks/coverage.ts:144-162`): its behaviour *is* tested, by real subprocess tests, but
 "Bun's coverage instrumentation only sees code running inside the `bun test` process itself, so a
 subprocess contributes no counters here no matter how thoroughly it is tested". The same
 cross-reference is written from the other side, in the test:
@@ -419,7 +419,7 @@ allowlisted.
 `@clarvis/protocol` is the outlier: its `test`, `test:coverage` and `test:contract` are all
 `tsc -p tsconfig.json` (`packages/protocol/package.json`), i.e. its contract suite is a type-check
 over `tests/contract/public-contract.fixture.ts`, a file of `satisfies` assertions against the
-public DTOs (`packages/protocol/tests/contract/public-contract.fixture.ts:1-37`).
+public DTOs (`packages/protocol/tests/contract/public-contract.fixture.ts:1-44`).
 
 Every `bun test` script in the repository carries `--timeout 60000`; `workflows` additionally
 carries `--isolate` (`packages/workflows/package.json`). `loop` deliberately uses Bun's
@@ -510,7 +510,7 @@ Current state: the script exits 0, and a repo-wide search for `mock.module`, `vi
 ### 4.3 `coverage.ts`
 
 For each of the 18 entries in `PACKAGE_THRESHOLDS`, in object order
-(`tooling/checks/coverage.ts:404`):
+(`tooling/checks/coverage.ts:406`):
 
 1. `readOwnSourceCoverage` reads `packages/<pkg>/coverage/lcov.info` with a bare `readFile`. On
    `ENOENT` it rethrows *unless* the package is in `TYPE_ONLY_PACKAGES`, in which case it first
@@ -813,34 +813,34 @@ only the owner-specific default").
    (tests and tooling reach `moduleMockFiles` only). **Unpinned.**
 
 5. **INV-307 — every `src` module of every non-type-only package produces an `SF:` LCOV record, or
-   is named in `NO_COUNTER_ALLOWLIST` with a reason.** Rule: `tooling/checks/coverage.ts:317-393`, failure at
+   is named in `NO_COUNTER_ALLOWLIST` with a reason.** Rule: `tooling/checks/coverage.ts:319-395`, failure at
    `:345-351`. The stated mechanism it defends against is at `:38-42`: "A module that NO test file
    imports is absent from LCOV entirely rather than present at 0% — it contributes to neither
    numerator nor denominator". Partially pinned by
    `tooling/tests/unit/coverage.test.ts:41-48`.
 
 6. **INV-307 (tolerance half) — a stale allowlist entry is reported but never fails the check.** Rule:
-   `tooling/checks/coverage.ts:340` (computation) and `:445-462` (log, not failure, with the
+   `tooling/checks/coverage.ts:342` (computation) and `:447-464` (log, not failure, with the
    in-file reason). **Unpinned.**
 
 7. **INV-307 (type-only half) — a package declared type-only may contain no runtime export, and a
-   stale LCOV record does not excuse one.** Rule: `tooling/checks/coverage.ts:327-331` (the type-only branch ignores
+   stale LCOV record does not excuse one.** Rule: `tooling/checks/coverage.ts:329-333` (the type-only branch ignores
    `measured` entirely) + `:354-359`. Pinned by `tooling/tests/unit/coverage.test.ts:41-48`
    ("still reports runtime exports even when stale LCOV names the module") and by `:50-63`
    (interfaces and `export type * from` are accepted).
 
 8. **INV-307 (absent-report half) — an absent `coverage/lcov.info` is tolerated only for a
-   `TYPE_ONLY_PACKAGES` member, and only when the package's `src/` really exists.** Rule: `tooling/checks/coverage.ts:239-247`. Pinned by
+   `TYPE_ONLY_PACKAGES` member, and only when the package's `src/` really exists.** Rule: `tooling/checks/coverage.ts:241-249`. Pinned by
    `tooling/tests/unit/coverage.test.ts:25-32` (protocol tolerated, kernel rejects with `ENOENT`)
    and `:34-39` (a missing type-only package still throws `ENOENT`).
 
 9. **INV-306 (hard-error half) — an LCOV report that names own-source files but reports zero lines
-   is a hard error for a non-type-only package.** Rule: `tooling/checks/coverage.ts:260-264`, message
+   is a hard error for a non-type-only package.** Rule: `tooling/checks/coverage.ts:262-266`, message
    `"<pkg>: LCOV report contains no own-source line data"`. **Unpinned** by a test; relied upon in
    prose by `tooling/ci/retry-code-coverage.sh:25-28`.
 
 10. **INV-306 (own-source half) — only `src/`-relative `SF:` records enter a package's ratios; a
-    workspace dependency's source cannot.** Rule: `tooling/checks/coverage.ts:251-256`, reinforced by
+    workspace dependency's source cannot.** Rule: `tooling/checks/coverage.ts:253-258`, reinforced by
     `coveragePathIgnorePatterns = ["../**"]` in all 18 package bunfigs. ~~**Unpinned.**~~
     **Pinned 2026-08-22 on its reinforcement half**: `checkPackageHarness` fails any package bunfig
     whose `[test] coveragePathIgnorePatterns` omits `"../**"`, naming the consequence — "workspace
@@ -1007,12 +1007,12 @@ only the owner-specific default").
 |---|---|---|
 | Any task-intent violation | `tooling/checks/source-policy.ts:65-72` | all violations printed under `Task-intent violations:`, `process.exitCode = 1`. Never first-failure-only. |
 | A package directory has no `src`/`tests`/`scripts` | `tooling/checks/source-policy.ts:27-29`, `:36-38` | `ENOENT` swallowed; any other error rethrows |
-| Missing `coverage/lcov.info`, non-type-only package | `tooling/checks/coverage.ts:239-243` | raw `ENOENT` propagates out of `checkCoverage` — an unhandled rejection, not an `AggregateError` |
-| Missing report **and** missing `src/`, type-only package | `tooling/checks/coverage.ts:245` | `readdir` throws `ENOENT`; pinned by `tooling/tests/unit/coverage.test.ts:34-39` |
-| Empty own-source report, non-type-only | `tooling/checks/coverage.ts:271` | `Error: <pkg>: LCOV report contains no own-source line data` |
+| Missing `coverage/lcov.info`, non-type-only package | `tooling/checks/coverage.ts:241-245` | raw `ENOENT` propagates out of `checkCoverage` — an unhandled rejection, not an `AggregateError` |
+| Missing report **and** missing `src/`, type-only package | `tooling/checks/coverage.ts:247` | `readdir` throws `ENOENT`; pinned by `tooling/tests/unit/coverage.test.ts:34-39` |
+| Empty own-source report, non-type-only | `tooling/checks/coverage.ts:273` | `Error: <pkg>: LCOV report contains no own-source line data` |
 | Floor breach, unmeasured module, or type-only runtime export | `tooling/checks/coverage.ts` (`checkCoverage`, failure collection and final `AggregateError`) | collected across **all** packages, then one `AggregateError` — the run does not stop at the first bad package |
 | Stale allowlist entry | `tooling/checks/coverage.ts` (`staleEntries`) | **tolerated**: printed as an informational line, exit code unaffected |
-| Package with zero functions in LCOV | `tooling/checks/coverage.ts:275` | scored `1` rather than dividing by zero |
+| Package with zero functions in LCOV | `tooling/checks/coverage.ts:277` | scored `1` rather than dividing by zero |
 | Stream-metrics drift | `tooling/tests/architecture/stream-metrics-drift.test.ts`, "the two production stream metrics implementations stay token-identical" | its `expect(...).toBe(...)` fails through Bun's normal test reporter; the test has no custom stderr or `process.exitCode` path |
 | Normalizer admits an unrelated token difference | `tooling/tests/architecture/stream-metrics-drift.test.ts`, "the normalizer permits only the owner-specific default" | its negative-control expectation fails through Bun's normal test reporter |
 | Package-graph violations | `tooling/checks/package-graph.ts:23-28` | the Markdown table is still printed on stdout, violations on stderr, `exitCode = 1` |
@@ -1054,10 +1054,10 @@ lets these four repository-tooling modules import it from the repository root.
 - **Every commit**, through `.githooks/pre-commit:7` → `package.json`
   (`scripts.check:pre-commit`).
 - **CI's linux job**, which runs `bun run lint` (hence `lint:intent`) and
-  `bash tooling/ci/retry-code-coverage.sh` (`.github/workflows/ci.yml:60`, `:69`). CI job layout belongs to
+  `bash tooling/ci/retry-code-coverage.sh` (`.github/workflows/ci.yml:70`, `:79`). CI job layout belongs to
   *build-tooling-ci-and-platform*.
 - **Every package's `test:coverage` script**, which must write `coverage/lcov.info` where
-  `readOwnSourceCoverage` expects it (`tooling/checks/coverage.ts:236`), i.e. the `coverageDir`
+  `readOwnSourceCoverage` expects it (`tooling/checks/coverage.ts:238`), i.e. the `coverageDir`
   setting in each package's `bunfig.toml` is part of this contract.
 - **Five packages' `./testing` exports**, which are consumed across package boundaries and therefore
   ride the ordinary `exports`/dependency rules `package-graph.ts` enforces: `loop`, `memory`,

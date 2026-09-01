@@ -83,7 +83,7 @@ and `toModelMessages`. Tests: `packages/loop/tests/unit/context-snapshot.test.ts
 | Field | Type/bounds | Default | File:line |
 |---|---|---|---|
 | `prompt_cache_key` | string, 1–512 chars, optional | `execution_id` | `packages/loop/src/validation/request/request-schema.ts:35-46` |
-| `prompt_cache_ttl` | `"5m" \| "1h"`, optional | `"1h"` if `humanParkLikely`, else `"5m"` | `packages/loop/src/validation/request/request-schema.ts:57-66`, `packages/loop/src/runtime/execute-run.ts:344` |
+| `prompt_cache_ttl` | `"5m" \| "1h"`, optional | `"1h"` if `humanParkLikely`, else `"5m"` | `packages/loop/src/validation/request/request-schema.ts:57-66`, `packages/loop/src/runtime/execute-run.ts:347` |
 
 Both fields validate through `runRequestSchema`; a Zod issue on either path classifies as
 `invalid_prompt_cache_key`/`invalid_prompt_cache_ttl` (`packages/loop/src/validation/request/parsing.ts:16-21`),
@@ -107,12 +107,12 @@ both declared `ErrorCode` members (`packages/capability/src/run.ts:195-196`).
 
 ```ts
 promptCacheKey?: string;
-promptCacheTtl?: PromptCacheTtl;           // "5m" | "1h" — packages/capability/src/api.ts:347
+promptCacheTtl?: PromptCacheTtl;           // "5m" | "1h" — packages/capability/src/api.ts:443
 cacheBreakpoints?: readonly number[];      // indices into `messages`, oldest first
 ```
 
 `cacheBreakpoints` is supplied by the loop from `LiveContext.cacheBreakpoints()`
-(`packages/loop/src/runtime/loop/loop.ts:395-402`), filtered to non-negative indices:
+(`packages/loop/src/runtime/loop/loop.ts:424-442`), filtered to non-negative indices:
 
 ```ts
 const breakpoints = d.ctx.cacheBreakpoints();               // { stable, prior }
@@ -131,7 +131,7 @@ Reproduced from `packages/capability/src/llm-port.ts:130-138` (documented there,
 | `"off"` | no breakpoints | nothing |
 | absent | cache breakpoints | nothing |
 
-`PromptCacheMode = "explicit" \| "implicit" \| "off"` — `packages/capability/src/api.ts:163`. How a
+`PromptCacheMode = "explicit" \| "implicit" \| "off"` — `packages/capability/src/api.ts:217-232`. How a
 model's mode is resolved from the catalog is out of scope here ([hosts/model-catalog.md](../hosts/model-catalog.md)).
 
 ### 3.3 `RequestCacheDiagnostics` — what one assembled request decided
@@ -157,7 +157,7 @@ Logged as `llm.cache.request` (debug) and, when a requested breakpoint failed to
 
 ### 3.4 `ContextSnapshotEntry` — the persisted, restorable transcript shape
 
-`packages/capability/src/run.ts:382-398`:
+`packages/capability/src/run.ts:384-400`:
 
 ```ts
 interface ContextSnapshotEntry {
@@ -213,22 +213,22 @@ with `session_id === prompt_cache_key` on every turn and `headers["x-session-id"
 
 ### 4.1 Where the request-level cache key and TTL come from (per run)
 
-1. `executeRun` mints or reuses `executionId` (`packages/loop/src/runtime/execute-run.ts:315-323`).
-2. `promptCacheKey = parsed.prompt_cache_key ?? executionId` — `packages/loop/src/runtime/execute-run.ts:343`.
+1. `executeRun` mints or reuses `executionId` (`packages/loop/src/runtime/execute-run.ts:318-326`).
+2. `promptCacheKey = parsed.prompt_cache_key ?? executionId` — `packages/loop/src/runtime/execute-run.ts:346`.
 3. `promptCacheTtl = parsed.prompt_cache_ttl ?? (shape.humanParkLikely ? "1h" : "5m")` —
-   `packages/loop/src/runtime/execute-run.ts:344`. `humanParkLikely` is true when the entry agent has
+   `packages/loop/src/runtime/execute-run.ts:347`. `humanParkLikely` is true when the entry agent has
    `ask_user` granted (or a capability needs a human) and `elicit_wait_ms !== 0`
    (`packages/loop/src/validation/request/run-shape.ts:20-28`). For a kernel-mediated run this
    fallback often never gets to fire: `@clarvis/kernel`'s `createSettingsRunAssembler` independently
    defaults `prompt_cache_ttl` to `"1h"` whenever `guardParksOnHuman(params.guard_mode, merged.guard,
    params.guard_judge !== undefined)` is true — i.e. the effective guard mode routes bash
    confirmations to a human — before the request ever reaches `runRequestSchema`/`executeRun`
-   (`packages/kernel/src/runs/settings-assembler.ts:433-439`, `guardParksOnHuman` at
+   (`packages/kernel/src/runs/settings-assembler.ts:455-461`, `guardParksOnHuman` at
    `packages/kernel/src/guard/resolver.ts:66-87`, whose own doc comment states "the loop cannot derive
    this itself because guard mode is resolved from host settings it never sees"). This is a second,
    independent TTL default, ahead of and separate from `humanParkLikely`'s.
 4. `deps.llm` is wrapped once, for the whole run: `withPromptCacheDefaults(deps.llm, { promptCacheKey,
-   promptCacheTtl })` — `packages/loop/src/runtime/execute-run.ts:394`. Every model call in the run —
+   promptCacheTtl })` — `packages/loop/src/runtime/execute-run.ts:398`. Every model call in the run —
    lead, retries, compaction, and every sub-agent spawned by `delegate_task` (which reuses `base.llm` /
    `ctx.llm` unchanged: `packages/loop/src/runtime/subagents/delegate-task.ts:488,565`) — flows through
    this one decorator instance, so all of them share one `promptCacheKey`/`promptCacheTtl` pair unless a
@@ -243,8 +243,8 @@ affinity ACROSS a conversation's `continue_from` turns, pass your own stable val
 `execution_id` default changes per turn and does not carry over"
 (`packages/loop/src/validation/request/request-schema.ts:28-46`). `@clarvis/code` supplies that stable
 value: it sets `promptCacheKey = sess.meta()?.id` — the session id, not a fresh execution id — on every
-turn it starts (`packages/code/src/run-host.ts:619,667,692,761,773,817,833`). Neither
-`@clarvis/kernel`'s `packages/kernel/src/runs/settings-assembler.ts:433-435` nor `packages/kernel/src/workflows/workflows-service.ts:354-356,470-472` derive or
+turn it starts (`packages/code/src/run-host.ts:784,832,857,924,938,985,1000`). Neither
+`@clarvis/kernel`'s `packages/kernel/src/runs/settings-assembler.ts:471-473` nor `packages/kernel/src/workflows/workflows-service.ts:372-374,495-497` derive or
 override `prompt_cache_key`; they only forward whatever the caller supplied.
 
 ### 4.2 Assembling one request (`buildRequestOptions`)
@@ -311,7 +311,7 @@ to the true end and is never inside the durable prefix. `removeAt`/`replace` rep
 ### 4.5 Runtime detection of a broken prefix (in-band, on every model call)
 
 `CachePrefixWatch` (`packages/loop/src/runtime/loop/iteration-metrics.ts:105-123`), one instance per
-agent loop (`packages/loop/src/runtime/loop/loop.ts:859`), folds each iteration's `cached_tokens`:
+agent loop (`packages/loop/src/runtime/loop/loop.ts:886-898`), folds each iteration's `cached_tokens`:
 
 | Prior `cached_tokens` | This iteration's `cached_tokens` | `observe()` returns | Effect |
 |---|---|---|---|
@@ -377,9 +377,10 @@ derived directly from the code by this document and are not in the catalogue.
 identical across every iteration of one run: the same `JSON.stringify(tools)`, the same tool ordering
 (not incidental Set/Map iteration order), and the same rendered system message content.
 Production: `packages/loop/src/runtime/entry-seed.ts:142-149` (system head built once per run from
-inputs that do not change turn to turn); the tool array is part of `LoopDerived`, computed once per
-`runAgentLoop` invocation (`packages/loop/src/runtime/loop/loop.ts:848`) and passed unchanged to every
-`buildModelCall` (`:379-411`).
+inputs that do not change turn to turn); `runAgent` assembles the tool array once
+(`packages/loop/src/runtime/loop/run-agent.ts:316-324`) and passes it once into `runAgentLoop`
+(`:503-507`), whose `buildModelCall` reads that same `d.tools` on every iteration
+(`packages/loop/src/runtime/loop/loop.ts:424-442`).
 Test: `packages/loop/tests/integration/prefix-invariants.test.ts:68` (tool definitions),
 `:77` (tool order), `:87` (system head).
 
@@ -515,12 +516,12 @@ Test: `packages/loop/tests/unit/prefix-break.test.ts:158-173` (image budget repo
 | `prompt_cache_key` fails schema (empty or >512 chars) | `ValidationError` classified `invalid_prompt_cache_key`; run never starts | `packages/loop/src/validation/request/parsing.ts:16-18`, `packages/capability/src/run.ts:195` |
 | `prompt_cache_ttl` not `"5m"`/`"1h"` | `ValidationError` classified `invalid_prompt_cache_ttl` | `packages/loop/src/validation/request/parsing.ts:20-21`, `packages/capability/src/run.ts:196` |
 | A requested Anthropic/openai-compatible-explicit breakpoint lands on an unmarkable message (`tool` role, or an assistant turn holding only tool-calls) | Walked back to the newest markable index rather than dropped; if it collapses onto another target's index, `applied_breakpoints` reports fewer than requested | `packages/llm/src/ai-sdk/request-options.ts:341-374, 403-429` |
-| Every requested breakpoint fails to land (`applied_breakpoints === 0`) or two collapse to one | `llm.cache.breakpoint_lost` logged at `warn` regardless of the configured log level | `packages/llm/src/ai-sdk-adapter.ts:310-324`; unconditional-`warn` pinned at `packages/llm/tests/component/ai-sdk-adapter-observability.test.ts:296-300` (nearby, "warns even when debug is off") |
+| Every requested breakpoint fails to land (`applied_breakpoints === 0`) or two collapse to one | `llm.cache.breakpoint_lost` logged at `warn` regardless of the configured log level | `packages/llm/src/ai-sdk-adapter.ts:380-400`; unconditional-`warn` pinned at `packages/llm/tests/component/ai-sdk-adapter-observability.test.ts:298-310` ("warns even when debug is off") |
 | A durable transcript entry is mutated/removed/repositioned in place | `context.prefix_break` at `warn` (or `debug` for the two priced causes) — this is a report, not a refusal; the mutation still proceeds | `packages/loop/src/runtime/context/live-entry-store.ts:143-159` |
-| The provider serves a shorter cached prefix than the previous iteration | `iteration.cache` escalates to `warn`; the run itself is unaffected — this is observability only, no retry or abort | `packages/loop/src/runtime/loop/iteration-metrics.ts:228-241` |
+| The provider serves a shorter cached prefix than the previous iteration | `iteration.cache` escalates to `warn`; the run itself is unaffected — this is observability only, no retry or abort | `packages/loop/src/runtime/loop/iteration-metrics.ts:228-257` |
 | A configured header template references an unset env var | `ProviderError` (kind `"client"`) thrown eagerly rather than left to retry as transient | `packages/llm/src/openai-compatible-request.ts:251-267` |
 | `cfg.baseUrl` missing for an openai-compatible provider | `ProviderError` (kind `"client"`) at client construction | `packages/llm/src/openai-compatible-request.ts:223-227` |
-| A logger below `debug` | `llm.cache.request`/`llm.request.tuning` are not built at all (guarded by `levelEnabled`) — the diagnostics cost nothing when discarded | `packages/llm/src/ai-sdk-adapter.ts:339-340`; pinned at `packages/llm/tests/component/ai-sdk-adapter-observability.test.ts:226-233` |
+| A logger below `debug` | `llm.cache.request`/`llm.request.tuning` are not built at all (guarded by `levelEnabled`) — the diagnostics cost nothing when discarded | `packages/llm/src/ai-sdk-adapter.ts:400-407`; pinned at `packages/llm/tests/component/ai-sdk-adapter-observability.test.ts:225-233` |
 | No logger bound to a `LiveContext` scope | `context.prefix_break`/silence — normalized to `NOOP_LOGGER`, never throws | `packages/loop/src/runtime/context/compaction-contracts.ts:47-50`, pinned at `packages/loop/tests/unit/prefix-break.test.ts:224-227` |
 
 Nothing in this subsystem retries a broken prefix or refuses a call because of one: every mechanism
@@ -541,21 +542,21 @@ top, which reject the run request before any call is made.
   order" per its own doc comment (`:51`). A capability cannot bypass it because `LiveContext` (the type
   every capability and the loop itself holds) exposes no other way to mutate `entries`.
 - **`buildModelCall` (loop) is the sole producer of `cacheBreakpoints` for an `LLMCallParams`.**
-  `packages/loop/src/runtime/loop/loop.ts:395-402` reads `LiveContext.cacheBreakpoints()` once per
+  `packages/loop/src/runtime/loop/loop.ts:424-442` reads `LiveContext.cacheBreakpoints()` once per
   call and forwards at most two indices; `@clarvis/llm` never computes a breakpoint itself, it only
   decides — per `ResolvedProviderConfig.promptCache` — whether and how to act on the ones it is given.
 - **`execute-run.ts` is the sole place the run-level `promptCacheKey`/`promptCacheTtl` pair is
-  bound to `deps.llm`** (`packages/loop/src/runtime/execute-run.ts:361-362,412`); every
+  bound to `deps.llm`** (`packages/loop/src/runtime/execute-run.ts:346-347,398`); every
   downstream collaborator — the lead loop, a delegated sub-agent, compaction's own summarization calls
   — receives the **same wrapped provider instance**, so none of them can diverge on TTL/key without an
   explicit per-call override. It is not, however, the sole place a *default* for either field is
   computed: `@clarvis/kernel`'s `createSettingsRunAssembler` independently defaults
   `prompt_cache_ttl` to `"1h"` via `guardParksOnHuman` ahead of `executeRun`'s own `humanParkLikely`
-  fallback (`packages/kernel/src/runs/settings-assembler.ts:433-439`,
+  fallback (`packages/kernel/src/runs/settings-assembler.ts:455-461`,
   `packages/kernel/src/guard/resolver.ts:66-87`) — see §4.1 point 3.
 - **`@clarvis/code` is what actually achieves cross-turn session affinity**, by supplying
   `prompt_cache_key = sess.meta()?.id` on every `startRun` call
-  (`packages/code/src/run-host.ts:619,667,692,761,773,817,833`). The loop and kernel are agnostic to
+  (`packages/code/src/run-host.ts:784,832,857,924,938,985,1000`). The loop and kernel are agnostic to
   this: `@clarvis/kernel`'s `settings-assembler.ts` and `workflows-service.ts` only forward whatever
   `prompt_cache_key` a caller supplied — the session-scoping behavior belongs entirely to the TUI host,
   not to any package this document's scope otherwise covers.

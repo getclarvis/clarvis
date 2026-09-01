@@ -27,7 +27,7 @@ script wrapping a real database — can stand in for a capability's built-in sto
 single long-lived subprocess pool for this protocol
 (`packages/kernel/src/capability-executables/session-manager.ts`), shared by both memory and plans.
 A plugin may *offer* such an executable in its manifest (`capabilityExecutables:` —
-`packages/loop/src/settings/plugin-schema.ts:75-80`), but only an operator's own settings selects it
+`packages/loop/src/settings/plugin-schema.ts:90-95`), but only an operator's own settings selects it
 for a capability (`packages/memory/src/provider-registry.ts:64-72`,
 `packages/plan/src/provider.ts:25-29`) — installing or enabling a plugin never activates its
 provider by itself.
@@ -72,7 +72,7 @@ for the subprocess case itself.
 | `CapabilityExecutableSessionManagerOptions` | `packages/kernel/src/capability-executables/session-manager.ts:42-46` | `{ environment, platform?, logger? }` |
 | `CapabilityExecutableSessionManager` | `packages/kernel/src/capability-executables/session-manager.ts:49-51` | `CapabilityExecutablePort & { close(): Promise<void> }` |
 
-Re-exported from `@clarvis/kernel/local` (`packages/kernel/src/local.ts:36-39`); not on the kernel's
+Re-exported from `@clarvis/kernel/local` (`packages/kernel/src/local.ts:44-47`); not on the kernel's
 default `.` export.
 
 ### 2c. Memory's provider surface — `packages/memory/src/provider-registry.ts`, `provider.ts`
@@ -137,9 +137,9 @@ Settings-visible `memory.provider` shapes (`packages/memory/src/schemas.ts:72-13
 ### 2e. Plugin manifest contribution — `packages/loop/src/settings/plugin-schema.ts`
 
 `pluginManifestSchema` carries `capabilityExecutables: capabilityExecutablesSchema.optional()`
-(`packages/loop/src/settings/plugin-schema.ts:75-80`), keyed by Clarvis capability name (`"memory"`, `"plans"`). Read by the
+(`packages/loop/src/settings/plugin-schema.ts:90-95`), keyed by Clarvis capability name (`"memory"`, `"plans"`). Read by the
 kernel's `PluginContributions.locateCapabilityExecutable(enabled, capability, plugin)`
-(`packages/kernel/src/plugins/plugin-contributions.ts:67-72`, implemented at `:413-426`).
+(`packages/kernel/src/plugins/plugin-contributions.ts:102-106`, implemented at `:724-736`).
 
 ### 2f. `code`'s adapter and panel
 
@@ -579,32 +579,33 @@ document's scope — see §8.
 - `MemoryPluginPort`/`PlanPluginPort` are likewise declared inside `@clarvis/memory`/`@clarvis/plan`
   themselves (`packages/memory/src/provider-registry.ts:84-95`, `packages/plan/src/provider.ts:25-29`), not shared from
   `@clarvis/capability` — each package owns its own narrow locate-shape, and the kernel's
-  `PluginContributions.locateCapabilityExecutable` (`packages/kernel/src/plugins/plugin-contributions.ts:67-72`) satisfies both
+  `PluginContributions.locateCapabilityExecutable` (`packages/kernel/src/plugins/plugin-contributions.ts:102-106`) satisfies both
   structurally.
 
 **Depended on by:**
 - `@clarvis/kernel`'s `file-kernel.ts` constructs exactly **one**
   `createCapabilityExecutableSessionManager` instance per kernel
-  (`packages/kernel/src/file-kernel.ts:423-425`) and passes it as `executablePort` to *both*
-  `createPlanningRuntime` (`:675-676`, via `packages/kernel/src/plans/planning-runtime.ts:44,60-61`)
+  (`packages/kernel/src/file-kernel.ts:474-476`) and passes it as `executablePort` to *both*
+  `createPlanningRuntime` (`:44-60`, via `packages/kernel/src/plans/planning-runtime.ts:61,60-61`)
   and `createMemoryFactory` (`:870-871`) — one subprocess pool serves both capabilities, keyed apart
   by the `capability` field in `CapabilityExecutableSessionInput` (§3e).
 - `@clarvis/kernel`'s `PluginContributions.locateCapabilityExecutable`
-  (`packages/kernel/src/plugins/plugin-contributions.ts:413-426`) is the sole implementer of both
+  (`packages/kernel/src/plugins/plugin-contributions.ts:724-736`) is the sole implementer of both
   `MemoryPluginPort`/`PlanPluginPort`'s `locate`, reading `manifest.capabilityExecutables?.[capability]`
-  off a plugin already checked for being **enabled** (`:409-411`) and **installed** (`:412-414`) — plugin
+  off a plugin already selected as **enabled** (`:725-730`) and resolved through the installed,
+  readable contribution path (`loadableOf`, `:331-380`) — plugin
   installation/enabling itself is out of this document's scope (delegated to
   [hosts/plugins.md](../hosts/plugins.md)).
 - `@clarvis/code`'s `capability-providers.ts` and `CapabilityProvidersPanel.tsx` consume only the
   **wire projection** of a plugin's offer (`PluginCapabilityExecutable` —
-  `packages/protocol/src/plugins.ts:10-15`, built by
-  `packages/kernel/src/plugins/plugin-service.ts:124-137`). That projection's per-capability entries
-  (`capabilityExecutablesOf`, `packages/kernel/src/plugins/plugin-service.ts:125-137`) and the human-readable `$ plugin:capability
-  <argv>` detail line (`executablesOf`, `:107-122`) each re-apply the declaration's `platforms`
+  `packages/protocol/src/plugins.ts:44-50`, built by
+  `packages/kernel/src/plugins/plugin-service.ts:149-163,285`). That projection's per-capability entries
+  (`capabilityExecutablesOf`, `packages/kernel/src/plugins/plugin-service.ts:149-163`) and the human-readable `$ plugin:capability
+  <argv>` detail line (`executablesOf`, `:124-145`) each re-apply the declaration's `platforms`
   override themselves — but, unlike `resolveCapabilityExecutable` (§3a), only for `command`/`args`;
-  neither function touches `env` (`:114-119`, `:130-135`). The TUI never imports
+  neither function touches `env` (`:137-143`, `:153-160`). The TUI never imports
   `@clarvis/capability`'s executable types nor talks to a live session; it edits settings JSON only.
-- Within `@clarvis/memory` itself, `MemoryFactory.providerFor` (`packages/memory/src/factory.ts:456-472`)
+- Within `@clarvis/memory` itself, `MemoryFactory.providerFor` (`packages/memory/src/factory.ts:459-475`)
   is the one caller that invokes `resolveMemoryProvider` outside the registry's own tests, and it is
   **not memoized**: every call re-resolves the declared provider from scratch — including, for an
   `executable`/`plugin` kind, a fresh `createExecutableMemoryProvider` call — so a new `MemoryProvider`
@@ -632,7 +633,7 @@ document's scope — see §8.
   something in `@clarvis/kernel` outside `capability-executables/`) performs that substitution is
   outside this document's scope.
 - **Whether a capability executable's declared `env` values are folded into the hooks subprocess
-  credential denylist.** `packages/kernel/src/file-kernel.ts:520-534` (`loadSecretNames`) derives the
+  credential denylist.** `packages/kernel/src/file-kernel.ts:571-585` (`loadSecretNames`) derives the
   denylist from `keys.json`, `providers[].api_key_env`, and provider/model `headers` only — it never
   reads `manifest.capabilityExecutables` or a workspace's `memory.provider`/`plans.provider` blocks.
   Given that a capability executable's `env` can itself carry a `${VAR}` reference to a real secret
@@ -640,7 +641,8 @@ document's scope — see §8.
   not established by the code this document's scope covers — it belongs to [execution/hooks.md](../execution/hooks.md) and/or
   [cross-cutting/security.md](../cross-cutting/security.md) to confirm or refute.
 - **The kernel-side `PluginContributions.locateCapabilityExecutable`'s full trust/installation
-  logic** (`packages/kernel/src/plugins/plugin-contributions.ts:413-426`, e.g. what `dirFor`/`loadableOf`/`enabled.includes` do)
+  logic** (`packages/kernel/src/plugins/plugin-contributions.ts:331-380,723-736`, e.g. what
+  `dirFor`/`loadableOf`/the enabled selection do)
   is delegated to [hosts/plugins.md](../hosts/plugins.md) per this document's scope; only the shape of what it returns
   to memory/plan (`{root, declaration} | {error}`) is covered here.
 - **What "Plans v1 allows one owner" implies for a later v2** was stated only as a code comment and

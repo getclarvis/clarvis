@@ -14,10 +14,10 @@ the next run (`RunControlsPanel`). Planning review itself is toggled by `/plan`,
 
 The views are thin. Everything that is not painting is pushed either into a **feature controller**
 (`src/features/{agents,tasks}/controller.ts`) — pure orchestration with no presentation
-imports (`packages/code/tests/architecture/architecture-boundary.test.ts:109`) — or into an
+imports (`packages/code/tests/architecture/architecture-boundary.test.ts:167`) — or into an
 **adapter** (`src/adapters/{agent-files,agents-store,agents,memory-mode,effort-levels}.ts`) which may
 not import `ui/` or `views/` at all
-(`packages/code/tests/architecture/architecture-boundary.test.ts:91`). Three shared feature helpers
+(`packages/code/tests/architecture/architecture-boundary.test.ts:149`). Three shared feature helpers
 sit beside them: `features/issues.ts` (validation issue projection), `features/dispose-guard.ts`
 (event emission gated on controller teardown, `packages/code/src/features/dispose-guard.ts:17`), and
 `features/run/status-presenter.ts`, which turns the framework-free status structures in
@@ -36,18 +36,18 @@ writes cross `KernelClient.tasks`" (`packages/code/src/views/config/TasksHub.tsx
 ### 2.1 Registered commands
 
 Every hub is registered as a *view* command. The name/title/surface/parent tuple is a pinned contract
-(`packages/code/tests/component/command-composition.test.ts:218`, asserted at `:241`).
+(`packages/code/tests/component/command-composition.test.ts:235-255`, asserted at `:257-264`).
 
 | Command | Title | Slash | Surface | Parent | Registered at |
 |---|---|---|---|---|---|
 | `agents.open` | Agents | — | `internal` | `settings` | `packages/code/src/features/agents/commands.ts:22` |
-| `tasks.open` | Tasks | `/tasks` | `slash` | — | `packages/code/src/app/commands.tsx:201` |
-| `sessions.open` | Sessions | `/sessions` | `slash` | `sessions` | `packages/code/src/app/commands.tsx:422` |
-| `workflows.open` | Workflows | `/workflow` | `slash` | — | `packages/code/src/app/commands.tsx:451` |
+| `tasks.open` | Tasks | `/tasks` | `slash` | — | `packages/code/src/app/commands.tsx:258` |
+| `sessions.open` | Sessions | `/sessions` | `slash` | `sessions` | `packages/code/src/app/commands.tsx:502` |
+| `workflows.open` | Workflows | `/workflow` | `slash` | — | `packages/code/src/app/commands.tsx:534` |
 | `controls.open` | Run controls | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`controls.open`) |
 | `memory.config` | Memory settings | — | `internal` | `settings` | `packages/code/src/app/commands.tsx` (`memory.config`) |
 
-`tasks.open` alone carries `enabled: deps.tasks.available` (`packages/code/src/app/commands.tsx:208`);
+`tasks.open` alone carries `enabled: deps.tasks.available` (`packages/code/src/app/commands.tsx:264`);
 the other five are unconditionally registered.
 
 ### 2.2 View entry points
@@ -81,7 +81,7 @@ pending-operation warning (`packages/code/src/views/config/WorkflowsHub.tsx:44`)
 | `presentAgentsEvent(event: AgentsEvent): Notice` | total switch over 13 event variants | `packages/code/src/features/agents/events.ts:28` |
 | `registerAgentsCommands(commands, deps)` | registers `agents.open` | `packages/code/src/features/agents/commands.ts:21` |
 | `createTasksController(deps): TasksController` | read passthroughs + four idempotency-guarded mutations + `workBlocked`/`workOnTask` | `packages/code/src/features/tasks/controller.ts:172` |
-| `presentStatusLine`, `memoryNoticeText`, `progressStatusText`, `liveRunStatusLine`, `RunStripInput`, `runOutcomeLabel`, `runStripText` | run-status glyph projections | `packages/code/src/features/run/status-presenter.ts:14`, `:19`, `:24`, `:29`, `:33`, `:58`, `:74` |
+| `presentStatusLine`, `memoryNoticeText`, `progressStatusText`, `liveRunStatusLine`, `RunStripInput`, `runOutcomeLabel`, `runStripText` | run-status glyph projections | `packages/code/src/features/run/status-presenter.ts:13`, `:18`, `:23`, `:28`, `:32`, `:58`, `:87` |
 
 ### 2.4 Adapters owned by this document
 
@@ -381,7 +381,7 @@ stored in `refreshAbort`; the previous one is aborted first (`:225`). If
 `{ state: "not_configured", writes: "disabled", reason: "Tasks are disabled in this host." }` and
 clears everything without touching the service (`:233`). Otherwise it fetches `status()`; a non-`ready`
 state clears capabilities/containers/rows and sets a fault unless the state is `not_configured`
-(`:247`). On `ready` it fetches `capabilities()` and `listContainers({limit:100})` in parallel (`:258`),
+(`:247`). On `ready` it fetches `capabilities()` and `listContainers({ limit: 100 })` in parallel (`:258`),
 prefers the currently selected container or `deps.defaultContainer()` when the provider still lists it
 (`:265`), then `search()`. Every write to state is gated on `isCurrentRefresh(controller)` (`:201`).
 
@@ -589,7 +589,7 @@ scope that actually supplied the persisted value (`settingSource("guard")`, itse
 has since diverged from that persisted value, in which case it reads `"session"` — the same
 inherited-scope-vs-session-override distinction the memory panel's `Source` badge makes (invariant
 47), applied here to the guard mode instead of the memory block. Pinned by
-`packages/code/tests/integration/run-controls-render.test.tsx:258` ("command review separates an
+`packages/code/tests/integration/run-controls-render.test.tsx:262` ("command review separates an
 inherited scoped value from a session override").
 
 `applyMemory` (`:233`) never writes settings. It sets the session mode and then reports one of three
@@ -621,20 +621,20 @@ specific to these files.
    Holds for `features/agents/controller.ts` and `features/tasks/controller.ts` — verify by their import blocks
    (`packages/code/src/features/agents/controller.ts:1`,
    `packages/code/src/features/tasks/controller.ts:1`).
-   Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:109`.
+   Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:167`.
    Note the rule is scoped to the filename `controller.ts`: `features/agents/events.ts` does import
    `theme/glyphs.ts` (`packages/code/src/features/agents/events.ts:1`) and `features/agents/commands.ts`
    imports `views/config/AgentsPanel.tsx` (`packages/code/src/features/agents/commands.ts:7`).
 
 2. **`src/adapters/**` never imports `ui/` or `views/`.** `agent-files.ts`, `agents-store.ts`,
    `agents.ts`, `memory-mode.ts`, `effort-levels.ts` all comply (see their import headers).
-   Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:91`.
+   Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:149`.
 
 3. **`AgentsPanel.tsx` and `RunControlsPanel.tsx` contain no non-ASCII character outside comments** —
    every rendered glyph goes through `glyph()`.
    Production: `packages/code/src/views/config/AgentsPanel.tsx:7`,
    `packages/code/src/views/config/RunControlsPanel.tsx:7`.
-   Pinned: `packages/code/tests/architecture/ascii-source-boundary.test.ts:9`, `:14`, `:29`.
+   Pinned: `packages/code/tests/architecture/ascii-source-boundary.test.ts:9`, `:13`, `:28`.
    `WorkflowsHub.tsx` is also in the swept list (`:17`). `TasksHub`, `SessionsHub`,
    `MemoryConfigPanel` is **not** — see §8.
 
@@ -709,7 +709,7 @@ specific to these files.
     run: the seven `tasks.*` grants `@clarvis/tasks` registers (`packages/tasks/src/toolset.ts:12-18`)
     are real, semantically valid grants once that capability is wired in — accepted by
     `requireKnownGrants` and enumerated by `ConfigService.knownGrants()`
-    (`packages/kernel/src/kernel.ts:691-712`) — yet have no `GrantSpec` row here at all, so the
+    (`packages/kernel/src/kernel.ts:784-805`) — yet have no `GrantSpec` row here at all, so the
     picker never offers them; a profile carrying one renders only via `grantBadges`' raw-id
     fallback. `grantSchema` itself (the zod schema, not its `.options` aid) syntactically accepts
     any non-empty string, so "covers every grant `grantSchema` accepts" is true of neither the
@@ -776,101 +776,100 @@ specific to these files.
     service at all.** Production: `packages/code/src/views/config/TasksHub.tsx:233`.
     Pinned: `packages/code/tests/integration/tasks-hub-render.test.tsx:659`.
 
-37. **Workflow polling is single-flight, coalesces ticks into one trailing refresh, and stops on
+30. **Workflow polling is single-flight, coalesces ticks into one trailing refresh, and stops on
     teardown.** Production: `packages/code/src/views/config/WorkflowsHub.tsx:315`, `:337`, `:396`.
     Pinned: `packages/code/tests/integration/workflows-hub-render.test.tsx:206` (asserts `maxActive`
     stays 1 and no further call is made after `renderer.destroy()`).
 
-38. **A refresh that never settles becomes visible rather than silent, and stays one physical
+31. **A refresh that never settles becomes visible rather than silent, and stays one physical
     request.** Production: `packages/code/src/views/config/WorkflowsHub.tsx:332`.
     Pinned: `packages/code/tests/integration/workflows-hub-render.test.tsx:257`.
 
-39. **A failed refresh preserves the last good state at every level.**
+32. **A failed refresh preserves the last good state at every level.**
     Production: `packages/code/src/views/config/WorkflowsHub.tsx:151`, `:272`, `:294`.
     Pinned: `packages/code/tests/integration/workflows-hub-render.test.tsx:170` (list), `:846`
     (tree), `:870` (node); the initial-load failure case at `:159`.
 
-40. **The live projection is merged only when it belongs to the workflow on screen.**
+33. **The live projection is merged only when it belongs to the workflow on screen.**
     Production: `packages/code/src/views/config/WorkflowsHub.tsx:160`.
     Pinned: `packages/code/tests/integration/workflows-hub-render.test.tsx:349`.
 
-41. **`[t]` (open task) is bound only for a `leader` node carrying a `task`, and never fetches the
+34. **`[t]` (open task) is bound only for a `leader` node carrying a `task`, and never fetches the
     run.** Production: `packages/code/src/views/config/WorkflowsHub.tsx:381`, `:459`.
     Pinned: `packages/code/tests/integration/workflows-hub-render.test.tsx:701`, `:733`.
 
-42. **A workflow delete is confirmed by name, and `[d]` is unbound without a `delete` dependency or a
+35. **A workflow delete is confirmed by name, and `[d]` is unbound without a `delete` dependency or a
     selected row.** Production: `packages/code/src/views/config/WorkflowsHub.tsx:411`, `:486`.
     Pinned: `packages/code/tests/integration/workflows-hub-render.test.tsx:764`, `:774`, `:788`,
     `:805`.
 
-43. **Ordinary prose is never reinterpreted as a structured workflow result.**
+36. **Ordinary prose is never reinterpreted as a structured workflow result.**
     Production: `packages/code/src/views/config/workflow-result.ts:126`.
     Pinned: `packages/code/tests/unit/workflow-result.test.ts:37`.
 
-44. **A cyclic result object fails explicitly (`TypeError("cyclic workflow result")`) rather than
+37. **A cyclic result object fails explicitly (`TypeError("cyclic workflow result")`) rather than
     recursing forever.** Production: `packages/code/src/views/config/workflow-result.ts:45`, `:67`.
     Pinned: `packages/code/tests/unit/workflow-result.test.ts:43`.
 
-45. **Deleting a session re-clamps the selection so a row stays marked.**
+38. **Deleting a session re-clamps the selection so a row stays marked.**
     Production: `packages/code/src/views/config/SessionsHub.tsx:101`, with the in-source account of
     the defect at `:98`.
     Pinned: `packages/code/tests/integration/sessions-hub-render.test.tsx:106`.
 
-46. **A session whose workspace is unavailable can be neither resumed nor deleted.**
+39. **A session whose workspace is unavailable can be neither resumed nor deleted.**
     Production: `packages/code/src/views/config/SessionsHub.tsx:73`, `:83`, and the activate guard at
     `:115`. Pinned: `packages/code/tests/integration/sessions-hub-render.test.tsx:136`.
 
-47. **The memory panel's `Source` badge names the scope whose value actually won the merge, not the
+40. **The memory panel's `Source` badge names the scope whose value actually won the merge, not the
     scope on screen.** Production: `packages/code/src/views/config/MemoryConfigPanel.tsx:92`, with the
-    defect it replaced described at `:85`.
     Pinned: `packages/code/tests/integration/memory-config-render.test.tsx:376`.
 
-48. **Creating a memory block copies the effective block and forces `enabled: true`.**
+41. **Creating a memory block copies the effective block and forces `enabled: true`.**
     Production: `packages/code/src/views/config/MemoryConfigPanel.tsx:116`.
     Pinned: `packages/code/tests/integration/memory-config-render.test.tsx:150`.
 
-49. **The session toggle is inert while no memory block is configured, and says so.**
+42. **The session toggle is inert while no memory block is configured, and says so.**
     Production: `packages/code/src/views/config/MemoryConfigPanel.tsx:146`.
     Pinned: `packages/code/tests/integration/memory-config-render.test.tsx:211`.
 
-50. **A save whose block is enabled but whose extraction model does not resolve warns that memory will
+43. **A save whose block is enabled but whose extraction model does not resolve warns that memory will
     not learn.** Production: `packages/code/src/views/config/MemoryConfigPanel.tsx:102`.
     Pinned: `packages/code/tests/integration/memory-config-render.test.tsx:332`, and the equivalent
     warning on the session toggle at `:94`.
 
-51. **`configured()` only becomes true again after an explicit `refresh()` — settings files are not
+44. **`configured()` only becomes true again after an explicit `refresh()` — settings files are not
     reactive.** Production: `packages/code/src/adapters/memory-mode.ts:34`, `:50`.
     Pinned: `packages/code/tests/unit/memory-mode.test.ts:56`.
 
-52. **The Run-controls memory row changes only the session store, never settings.**
+45. **The Run-controls memory row changes only the session store, never settings.**
     Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyMemory`).
-    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:183`.
+    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:187`.
 
-53. **A direct guard-mode write and a named safety preset both preserve the effective allow/deny
+46. **A direct guard-mode write and a named safety preset both preserve the effective allow/deny
     policy; a workspace with no local lists carries forward the global lists.** Production:
     `packages/code/src/features/run/safety-presets.ts` (`applySafetyPreset`, `scopedGuardPolicy`) for
     presets and `packages/code/src/views/config/RunControlsPanel.tsx` (`guardPolicyForWrite`,
     `applyGuard`) for direct guard writes. Pinned: `packages/code/tests/unit/safety-presets.test.ts`
     and `packages/code/tests/integration/run-controls-render.test.tsx`.
 
-54. **`auto` without a resolvable judge model persists `on`, not a misleading `auto`.**
+47. **`auto` without a resolvable judge model persists `on`, not a misleading `auto`.**
     Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`).
-    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:230`.
+    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:234`.
 
-55. **Run Controls contains no planning-mode selector; completed-plan retention is its only editable
+48. **Run Controls contains no planning-mode selector; completed-plan retention is its only editable
     plan row.** Planning review belongs to `/plan`. Production:
     `packages/code/src/views/config/RunControlsPanel.tsx` (`activate`, `body`). Pinned:
     `packages/code/tests/integration/run-controls-render.test.tsx` ("Run controls exposes retention
     without a planning-mode control").
 
-56. **A completed-plan retention write preserves mode, pending-task nudges and provider while
+49. **A completed-plan retention write preserves mode, pending-task nudges and provider while
     targeting the selected scope.** Production:
     `packages/code/src/views/config/RunControlsPanel.tsx` (`applyPlanRetention`) and
     `packages/code/src/adapters/settings.ts` (`patchPlansSettings`). Pinned:
     `packages/code/tests/integration/run-controls-render.test.tsx` (global/provider and workspace
     preservation cases).
 
-57. **Every safety-preset selector shares one six-choice vocabulary and one application path; a
+50. **Every safety-preset selector shares one six-choice vocabulary and one application path; a
     preset that discards custom sandbox tuning asks first and carries `toolchains` across. `judged`
     means sandbox off plus guard auto, with an explicit direct-host confirmation and user fallback
     when the judge cannot resolve.** Production:
@@ -882,37 +881,37 @@ specific to these files.
     `packages/code/tests/integration/run-controls-render.test.tsx`, and
     `packages/code/tests/integration/safety-preset-picker-render.test.tsx`.
 
-58. **A settled run's outcome label is classified only from the segment before the first separator.**
+51. **A settled run's outcome label is classified only from the segment before the first separator.**
     Production: `packages/code/src/features/run/status-presenter.ts:59`, with the in-source account of
     the defect at `:51`.
     Pinned: `packages/code/tests/unit/qa-fixes.test.ts:39`.
 
-59. **The run strip reports *uncached* input tokens and *gross* context.**
-    Production: `packages/code/src/features/run/status-presenter.ts:75`, `:97`.
-    Pinned: `packages/code/tests/unit/run-status.test.ts:81` and following cases.
+52. **The run strip reports *uncached* input tokens and *gross* context.**
+    Production: `packages/code/src/features/run/status-presenter.ts:87-102`.
+    Pinned: `packages/code/tests/unit/run-status.test.ts:79-115`.
 
-60. **`recommendedReasoningEffort` never returns `off` and breaks a distance tie toward the higher
+53. **`recommendedReasoningEffort` never returns `off` and breaks a distance tie toward the higher
     level.** Production: `packages/code/src/adapters/effort-levels.ts:36`, `:39`.
     Pinned: `packages/code/tests/unit/effort-levels.test.ts:76`.
 
-61. **A model the catalog knows lacks `reasoning` yields an empty effort list, while an unknown model
+54. **A model the catalog knows lacks `reasoning` yields an empty effort list, while an unknown model
     yields `undefined`.** Production: `packages/code/src/adapters/effort-levels.ts:24`, `:28`.
     Pinned indirectly: `packages/code/tests/integration/agents-panel-render.test.tsx:414`
     ("reasoning support notes distinguish unsupported and unknown capabilities").
 
-62. **`saveWarningsNote` pluralizes and names the first warning.**
+55. **`saveWarningsNote` pluralizes and names the first warning.**
     Production: `packages/code/src/features/issues.ts:101`.
     Pinned: `packages/code/tests/unit/issues.test.ts:4`.
 
-63. **`presentAgentsEvent` handles every `AgentsEvent` variant.**
+56. **`presentAgentsEvent` handles every `AgentsEvent` variant.**
     Production: `packages/code/src/features/agents/events.ts:28`.
     Pinned: `packages/code/tests/unit/agents-events.test.ts:89` — the file names it an
     "exhaustiveness canary".
 
-64. **The six hubs' command metadata (name, title, surface, parent) is a pinned contract and each
+57. **The six hubs' command metadata (name, title, surface, parent) is a pinned contract and each
     has exactly one registered factory.**
     Production: the registration sites in §2.1.
-    Pinned: `packages/code/tests/component/command-composition.test.ts:218`, asserted at `:241`.
+    Pinned: `packages/code/tests/component/command-composition.test.ts:235-255`, asserted at `:257-264`.
 
 ## 6. Failure modes and degradation
 
@@ -974,8 +973,8 @@ edge to the kernel. `TasksController` is a structural `ReturnType<>` alias
 |---|---|---|
 | `src/app/commands.tsx` | five of the six views + their deps | `packages/code/src/app/commands.tsx`; Agents is registered by `src/features/agents/commands.ts` |
 | `src/features/agents/commands.ts` | `AgentsPanel` | `packages/code/src/features/agents/commands.ts:7` |
-| `src/views/App.tsx` | `SessionCatalogItem` (type) | `packages/code/src/views/App.tsx:40` |
-| `src/views/App.tsx` | `runStripText` | `packages/code/src/views/App.tsx:1014` |
+| `src/views/App.tsx` | `SessionCatalogItem` (type) | `packages/code/src/views/App.tsx:66` |
+| `src/views/App.tsx` | `runStripText` | `packages/code/src/views/App.tsx:86` |
 | `src/runtime.tsx` | `progressStatusText`, `presentStatusLine` | `packages/code/src/runtime.tsx` (`runApp`, `buildRunHost`) |
 | `src/views/overlays/ProfilePicker.tsx` | `deriveAgentShape`, `grantBadges` | `packages/code/src/views/overlays/ProfilePicker.tsx:5` |
 | `src/adapters/active-agent.ts` | `profileView`, `deriveAgentShape` | `packages/code/src/adapters/active-agent.ts:4` |
@@ -1052,7 +1051,7 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 
 6. **`AgentsStore.reload`'s epoch guard (invariant 16) is unpinned.** No test in
    `packages/code/tests` interleaves two reloads. Likewise unpinned: the custom-sandbox confirmation
-   branch in `RunControlsPanel.applyPreset` (invariant 57), and the `start`-intent exclusion
+   branch in `RunControlsPanel.applyPreset` (invariant 50), and the `start`-intent exclusion
    (invariant 26) as a direct assertion.
 
 7. **`GrantId` is a closed union in `packages/code/src/adapters/agents.ts:5`, but the panel writes it through

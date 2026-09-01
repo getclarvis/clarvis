@@ -10,7 +10,7 @@ engine. A capability composes through a fixed four-level chain —
 `Capability.forRun(ctx)` → `RunCapability.forAgent(scope)` → `AgentCapability.attach(bc)` →
 `AgentLoopContribution` (`packages/capability/src/contract.ts:9-11`) — and the engine's own job is
 to assemble the deps a host needs (`buildExecuteRunDeps`,
-`packages/loop/src/runtime/build-run-deps.ts:344`), fold what activates for one run
+`packages/loop/src/runtime/build-run-deps.ts:362`), fold what activates for one run
 (`orchestrator.ts`, `compose.ts`), and expose the whole seam through five narrow public
 entrypoints so a host never has an "internal" back door into the package
 (`packages/loop/package.json:28-55`).
@@ -37,7 +37,7 @@ no-feature-names,no-internal-entrypoint,builtin-capability-names}.test.ts`).
 |---|---|---|
 | `.` | `src/lib.ts` | Curated main API: `executeRun`, `buildExecuteRunDeps`, `createHostModelCallAdmission`/`createHostExtensionAdmission` (the two host-gate factories, `packages/loop/src/lib.ts:21-34`, re-exporting `packages/loop/src/runtime/build-run-deps.ts:42-94`), the capability contract types, `createAskUserCapability`, providers, trace/message/error types, `VERSION`. No optional-package value import (`packages/loop/src/lib.ts:1-210`; two `type`-only imports of `@clarvis/skills`/`@clarvis/skills/capability` at lines 19-20, erased at compile time). |
 | `./capabilities/tools` | `src/capabilities-tools.ts` | The opt-in tools capability, guard analyzers, and `@clarvis/tools`/`@clarvis/tools/sandbox` re-exports. The **one** entry deliberately outside the optional-free rule — choosing it opts into loading `@clarvis/tools` (`packages/loop/src/capabilities-tools.ts:1-8`). |
-| `./host` | `src/host.ts` | ~35 re-exported symbols across ten unrelated concerns — see §2.1a; the surface `@clarvis/kernel` builds config on top of (`packages/loop/src/host.ts:1-87`). |
+| `./host` | `src/host.ts` | Host-facing re-exports across the groups in §2.1a; the surface `@clarvis/kernel` builds config on top of (`packages/loop/src/host.ts:1-104`). |
 | `./workflows` | `src/workflows.ts` | Exactly one export, `createElicitSerializer` — the narrow adapter `@clarvis/workflows` needs; supervision (`registerBackgroundChild` etc.) was deliberately moved out to `@clarvis/supervision` (`packages/loop/src/workflows.ts:1-14`). |
 | `./testing` | `src/testing/index.ts` | Mock LLM/MCP, engine-owned real-loop test infrastructure, and `validateBody`, for integration tests (`packages/loop/src/testing/index.ts`, exports). |
 
@@ -53,9 +53,9 @@ the re-export from `packages/loop/src/lib.ts`; no package outside `@clarvis/loop
 `VERSION` suite in `packages/loop/tests/unit/version.test.ts` pins it to the root manifest and to a
 plain SemVer-shaped string a consumer can put on a wire.
 
-### 2.1a `./host`'s re-export groups (`packages/loop/src/host.ts:1-87`)
+### 2.1a `./host`'s re-export groups (`packages/loop/src/host.ts:1-104`)
 
-`host.ts` re-exports roughly 35 symbols across ten unrelated concerns, each a thin pass-through to
+`host.ts` re-exports the symbols below as thin pass-throughs to
 its owning module (no logic of its own lives in `host.ts`). No other document in this corpus
 enumerates the whole surface — [loop-request-and-settings-schema](request-and-settings-schema.md) §2.3
 accounts only for the ten config symbols the kernel reads through it — so it is enumerated here
@@ -64,58 +64,59 @@ rather than left thin:
 | Group | Symbols | Source |
 |---|---|---|
 | Agent frontmatter | `agentFrontmatterSchema`, `agentPromptOf`, `normalizeTools`, `splitAgentFrontmatter`, `AgentFrontmatter` | `settings/agent-frontmatter.js` (`packages/loop/src/host.ts:8-14`) |
-| Marketplace manifest | `marketplaceSchema`, `Marketplace`, `MarketplaceEntry` | `settings/marketplace-schema.js` (`packages/loop/src/host.ts:15-19`) |
-| Plugin-agent files | `parsePluginManifest`, `readPluginAgentFiles`, `PluginAgentFile`, `PluginAgentFilesResult` | `settings/plugin-agents.js` (`packages/loop/src/host.ts:20-25`) |
-| Plugin resource limits | `PLUGIN_RESOURCE_LIMITS`, `readBoundedPluginText`, `BoundedPluginTextResult` | `settings/plugin-resources.js` (`packages/loop/src/host.ts:26-30`) |
-| Plugin-manifest schema/typos | `pluginSettingsFragment`, `suspectedManifestTypos`, `unknownManifestKeys`, `PluginManifest`, `SuspectedManifestTypo` | `settings/plugin-schema.js` (`packages/loop/src/host.ts:31-37`) |
-| Settings merge | `mergeProviders`, `mergeSettings`, `SettingsScope` | `settings/settings-merge.js` (`packages/loop/src/host.ts:38`) |
-| Capability settings | `readCapabilitySettings`, `settingsSchemaFor` | `settings/capability-settings.js` (`packages/loop/src/host.ts:39`) |
-| Settings schema | `mcpServerSettingsSchema`, `mcpServerPluginSchema`, `settingsSchema`, `McpServerSettings`, `SettingsFile`, plus `settingsServerToEngine` | `settings/settings-schema.js`, `settings/engine-server.js` (`packages/loop/src/host.ts:40-47`) |
-| Guard/sandbox config | `defaultGuardMode`, `GuardConfig`, `ResolvedSandboxSettings`, `SandboxSettings` | `runtime/capabilities/tools-settings.js` (`packages/loop/src/host.ts:48-52`) |
-| Request-schema helpers | `parseModelRef`, `resolveProvider`, `providerConfigSchema`, `grantSchema`, `BUILTIN_GRANT_NAMES`, `profileReadinessIssues`, `ReadinessIssue`, `ReadinessProfile` | `@clarvis/capability`, `validation/request-schema.js`, `validation/request/grant-registry.js`, `validation/profile-readiness.js` (`packages/loop/src/host.ts:53-61`) |
-| Wire names / misc helpers | `deriveEventSpan`, `EventSpan`, `CONTROL_PLANE_TOOL_NAMES`, `SUBMIT_RESULT_TOOL_NAME`, `boundPromise`, `contentToText`, `errorText`, `isWellFormedHttpUrl`, `readJsonFile`, `ownerFromWorkspace`, `loadEnv` | various (`packages/loop/src/host.ts:62-74`) |
-| Extension admission | `createExtensionAdmissionController`, `ExtensionCallUnavailableError`, `ExtensionAdmissionController`, `ExtensionAdmissionOptions`, `ExtensionAdmissionSnapshot`, `MCPStatus`, `NamespacedTool`, `ToolTransport`, `SkillRootInput`, `PluginBootstrapSkill` | `@clarvis/capability`, `./runtime/build-run-deps.ts`, `./runtime/capabilities/skills-settings.ts` (`packages/loop/src/host.ts:75-87`) |
+| Marketplace manifest | `marketplaceSchema`, `pluginGitSelectorIssue`, `pluginGitUrlIssue`, `pluginNpmSourceIssue`, `Marketplace`, `MarketplaceEntry` | `settings/marketplace-schema.js` (`packages/loop/src/host.ts:15-22`) |
+| Plugin-agent files | `parsePluginManifest`, `readPluginAgentFiles`, `PluginAgentFile`, `PluginAgentFilesResult` | `settings/plugin-agents.js` (`packages/loop/src/host.ts:23-28`) |
+| Plugin resource limits | `PLUGIN_RESOURCE_LIMITS`, `readBoundedPluginText`, `BoundedPluginTextResult` | `settings/plugin-resources.js` (`packages/loop/src/host.ts:29-33`) |
+| Plugin-manifest schema/typos | `pluginSettingsFragment`, `suspectedManifestTypos`, `unknownManifestKeys`, `PluginManifest`, `SuspectedManifestTypo` | `settings/plugin-schema.js` (`packages/loop/src/host.ts:34-40`) |
+| Settings merge | `mergeProviders`, `mergeSettings`, `SettingsScope` | `settings/settings-merge.js` (`packages/loop/src/host.ts:41`) |
+| Capability settings | `readCapabilitySettings`, `settingsSchemaFor` | `settings/capability-settings.js` (`packages/loop/src/host.ts:42`) |
+| Settings schema | `mcpServerSettingsSchema`, `mcpServerPluginSchema`, `pluginNameField`, `pluginRefField`, `settingsSchema`, `McpServerSettings`, `SettingsFile`, plus `settingsServerToEngine` | `settings/settings-schema.js`, `settings/engine-server.js` (`packages/loop/src/host.ts:43-52`) |
+| Guard/sandbox config | `defaultGuardMode`, `GuardConfig`, `ResolvedSandboxSettings`, `SandboxSettings` | `runtime/capabilities/tools-settings.js` (`packages/loop/src/host.ts:53-57`) |
+| Request-schema helpers | `parseModelRef`, `resolveProvider`, `providerConfigSchema`, `grantSchema`, `BUILTIN_GRANT_NAMES`, `profileReadinessIssues`, `ReadinessIssue`, `ReadinessProfile` | `@clarvis/capability`, `validation/request-schema.js`, `validation/request/grant-registry.js`, `validation/profile-readiness.js` (`packages/loop/src/host.ts:58-66`) |
+| Wire names / misc helpers | `deriveEventSpan`, `EventSpan`, `CONTROL_PLANE_TOOL_NAMES`, `SUBMIT_RESULT_TOOL_NAME`, `boundPromise`, `contentToText`, `errorText`, `isWellFormedHttpUrl`, `readJsonFile`, `ownerFromWorkspace`, `loadEnv` | various (`packages/loop/src/host.ts:67-79`) |
+| Extension admission / run-deps construction | `createExtensionAdmissionController`, `ExtensionCallUnavailableError`, `ExtensionAdmissionController`, `ExtensionAdmissionOptions`, `ExtensionAdmissionSnapshot`, `MCPStatus`, `NamespacedTool`, `ToolTransport`, `buildExecuteRunDeps`, `createHostExtensionAdmission`, `createHostModelCallAdmission`, `hooksEffective`, `BuildRunDepsOptions`, `BuiltRunDeps`, `HostExtensionAdmission`, `HostModelCallAdmission`, `SkillRootInput`, `PluginBootstrapSkill` | `@clarvis/capability`, `./runtime/build-run-deps.ts`, `./runtime/capabilities/skills-settings.ts` (`packages/loop/src/host.ts:80-102`) |
+| Host logging / product version | `createLogger`, `CreateLoggerOptions`, `Logger`, `VERSION` | `./logger.ts`, `./version.ts` (`packages/loop/src/host.ts:103-104`) |
 
 One symbol in the last-but-one group is not this package's at all, and passes through a second
 pass-through to get here. `ownerFromWorkspace` reaches `host.ts` from `./workspace.ts`
-(`packages/loop/src/host.ts:73`), which is a four-line module whose single statement re-exports it
+(`packages/loop/src/host.ts:78`), which is a four-line module whose single statement re-exports it
 from `@clarvis/paths` (`packages/loop/src/workspace.ts:4`) — named there as the shared filesystem leaf
 every writer of `.clarvis` sources its path helpers from (`packages/loop/src/workspace.ts:1-3`). The
 engine adds nothing: the implementation is `packages/paths/src/roots.ts:124`, owned by
 [paths-and-directory-vocabulary](../foundations/paths.md). Nothing takes it by this route. All
-consumers import it straight from `@clarvis/paths` instead — `packages/kernel/src/file-kernel.ts:80`,
-`packages/kernel/src/kernel.ts:12`, `packages/code/src/adapters/workspace-client-manager.ts:4`, and
+consumers import it straight from `@clarvis/paths` instead — `packages/kernel/src/file-kernel.ts:84`,
+`packages/kernel/src/kernel.ts:12`, `packages/code/src/adapters/workspace-client-manager.ts:5`, and
 the kernel's own re-export at `packages/kernel/src/bootstrap.ts:13` — so the `./host` path is a
 published surface with no importer, not a seam anything depends on.
 
-### 2.2 `buildExecuteRunDeps` (`packages/loop/src/runtime/build-run-deps.ts:344`)
+### 2.2 `buildExecuteRunDeps` (`packages/loop/src/runtime/build-run-deps.ts:362`)
 
 ```ts
 buildExecuteRunDeps(options: BuildRunDepsOptions): Promise<BuiltRunDeps>
 ```
 
-`BuildRunDepsOptions` (`packages/loop/src/runtime/build-run-deps.ts:114-170`):
+`BuildRunDepsOptions` (`packages/loop/src/runtime/build-run-deps.ts:114-173`):
 
 | Field | Type | Purpose |
 |---|---|---|
 | `env` | `EnvConfig` | validated environment (from `@clarvis/capability`'s `loadEnv`) |
 | `environment?` | `RuntimeEnvironment` | raw env for provider credentials/MCP interpolation/child processes; defaults to `process.env` |
 | `logger` | `Logger` | required; per-component sub-loggers derived from it |
-| `workspaceRoot` | `string` | must be non-blank or the call throws (`packages/loop/src/runtime/build-run-deps.ts:365-367`) |
+| `workspaceRoot` | `string` | must be non-blank or the call throws (`packages/loop/src/runtime/build-run-deps.ts:384-386`) |
 | `traceDir?` | `string` | overrides the resolved trace store's directory |
-| `extraSkillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[])` | array form is static; function form is re-read (and rescanned only on signature change) every call (`packages/loop/src/runtime/build-run-deps.ts:186-237`) |
-| `skillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[])` | exact host-resolved roots; suppresses automatic standard-root appending, including for an intentional empty array, and is mutually exclusive with `extraSkillRoots` (`packages/loop/src/runtime/build-run-deps.ts:120-124`, `:372-376`) |
-| `skillBootstraps?` | `() => readonly PluginBootstrapSkill[]` | function-only, so a plugin enabled after deps were built still takes effect (`packages/loop/src/runtime/build-run-deps.ts:124-126`) |
-| `resolveHooks?` | `(ctx) => readonly HookConfig[] \| undefined` | host port for workspace hooks; omitted entirely means no hook ever runs (`packages/loop/src/runtime/build-run-deps.ts:127-131`) |
+| `extraSkillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[])` | array form is static; function form is re-read (and rescanned only on signature change) every call (`packages/loop/src/runtime/build-run-deps.ts:203-255`) |
+| `skillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[])` | exact host-resolved roots; suppresses automatic standard-root appending, including for an intentional empty array, and is mutually exclusive with `extraSkillRoots` (`packages/loop/src/runtime/build-run-deps.ts:121-124`, `:387-390`) |
+| `skillBootstraps?` | `() => readonly PluginBootstrapSkill[]` | function-only, so a plugin enabled after deps were built still takes effect (`packages/loop/src/runtime/build-run-deps.ts:127-129`) |
+| `resolveHooks?` | `(ctx) => readonly HookConfig[] \| undefined` | host port for workspace hooks; omitted entirely means no hook ever runs (`packages/loop/src/runtime/build-run-deps.ts:130-134`) |
 | `hookCredentialNames?` | `() => readonly string[]` | forwarded to the hooks capability's env denylist |
 | `resolveGuard?`, `resolveSandbox?`, `resolveSecretNames?` | host ports for the tools capability | |
-| `builtins?` | `BuiltinCapabilityToggles` | `{ tools?, skills?, hooks? }`, each defaults **on** (`packages/loop/src/runtime/build-run-deps.ts:96-106`) |
+| `builtins?` | `BuiltinCapabilityToggles` | `{ tools?, skills?, hooks? }`, each defaults **on** (`packages/loop/src/runtime/build-run-deps.ts:149-151`, `:401-403`) |
 | `capabilities?` | `Capability[]` | embedder/host capabilities, registered **after** the built-ins |
 | `onConnectionEvent?` | `ConnectionEventSink` | pooled-connection health transitions |
-| `mcpAuthorization?` | `MCPAuthorizationOptions` | persistent browser OAuth for remote MCP transports; absent means no auth provider is constructed (`packages/loop/src/runtime/build-run-deps.ts:155-156`, `:386-397`) |
-| `modelCallAdmission?`, `extensionAdmission?` | host-shared physical gates | if supplied, `dispose()` does not close them (`packages/loop/src/runtime/build-run-deps.ts:583-594`) |
+| `mcpAuthorization?` | `MCPAuthorizationOptions` | persistent browser OAuth for remote MCP transports; absent means no auth provider is constructed (`packages/loop/src/runtime/build-run-deps.ts:158-159`, `:410-421`) |
+| `modelCallAdmission?`, `extensionAdmission?` | host-shared physical gates | if supplied, `dispose()` does not close them (`packages/loop/src/runtime/build-run-deps.ts:627-638`) |
 
-Return shape `BuiltRunDeps` (`packages/loop/src/runtime/build-run-deps.ts:245-257`): `deps: ExecuteRunDeps`, `resolved:
+Return shape `BuiltRunDeps` (`packages/loop/src/runtime/build-run-deps.ts:263-275`): `deps: ExecuteRunDeps`, `resolved:
 ResolvedTraceStore`, `skills?: SkillsProvider`, `modelCallAdmission`, `extensionAdmission`,
 `dispose(): Promise<void>`.
 
@@ -129,7 +130,7 @@ functions plus everything already named there. Each takes a narrow `Pick<EnvConf
 `CLARVIS_MAX_CONCURRENT_EXTENSION_RUN_END_CALLS`, `CLARVIS_MAX_CONCURRENT_EXTENSION_CALLS_PER_OPERATION`,
 `CLARVIS_LOG`, `CLARVIS_LOG_LEVEL`) plus an optional `Logger`, and construct the same
 `HostModelCallAdmission`/`HostExtensionAdmission` gate `buildExecuteRunDeps` builds internally when
-the caller supplies none (`packages/loop/src/runtime/build-run-deps.ts:437-440`) — the point being that a host owning several
+the caller supplies none (`packages/loop/src/runtime/build-run-deps.ts:461-464`) — the point being that a host owning several
 kernels can build one gate once and inject it into every `buildExecuteRunDeps` call so the ceiling is
 shared rather than per-kernel.
 
@@ -143,7 +144,7 @@ close them").
 
 ### 2.3 The three feature flags and their environment gates
 
-Computed once per call (`packages/loop/src/runtime/build-run-deps.ts:377-379`):
+Computed once per call (`packages/loop/src/runtime/build-run-deps.ts:401-403`):
 
 ```ts
 const useTools = builtins?.tools !== false;
@@ -154,18 +155,18 @@ const useHooks = hooksEffective(builtins?.hooks, env.CLARVIS_HOOKS_ENABLED, reso
 | Flag | Gated by | Environment default |
 |---|---|---|
 | `useTools` | `builtins.tools` only | n/a |
-| `useSkills` | `builtins.skills`; **additionally** re-checked against `env.CLARVIS_SKILLS_ENABLED` at the dynamic-import call site (`packages/loop/src/runtime/build-run-deps.ts:453,443`) | `CLARVIS_SKILLS_ENABLED` defaults `true` (`packages/capability/src/env.ts:114`) |
+| `useSkills` | `builtins.skills`; **additionally** re-checked against `env.CLARVIS_SKILLS_ENABLED` at the dynamic-import call site (`packages/loop/src/runtime/build-run-deps.ts:402`, `:477-485`) | `CLARVIS_SKILLS_ENABLED` defaults `true` (`packages/capability/src/env.ts:114`) |
 | `useHooks` | `builtins.hooks` **and** `env.CLARVIS_HOOKS_ENABLED` **and** a supplied `resolveHooks` | `CLARVIS_HOOKS_ENABLED` defaults `true` (`packages/capability/src/env.ts:115`) |
 
 `useHooks` is triple-gated; `useSkills`'s guard is checked twice (once to decide whether to log
 "disabled", once at the actual `import()` call), so a caller setting `builtins.skills = true` but
-`CLARVIS_SKILLS_ENABLED=false` still gets no package load (`packages/loop/src/runtime/build-run-deps.ts:453-461`).
+`CLARVIS_SKILLS_ENABLED=false` still gets no package load (`packages/loop/src/runtime/build-run-deps.ts:477-485`).
 `CLARVIS_AGENT_TOOLS_ENABLED` is a **different**, per-run gate consulted inside the tools
-capability's own `forRun` (`packages/loop/src/runtime/capabilities/tools.ts:125`), not by
+capability's own `forRun` (`packages/loop/src/runtime/capabilities/tools.ts:128`), not by
 `buildExecuteRunDeps` — a capability's per-run gate is distinct from the build-time toggle that
 decides whether its package is even imported.
 
-### 2.4 `importOptional` — the one dynamic-import chokepoint (`packages/loop/src/runtime/build-run-deps.ts:262-289`)
+### 2.4 `importOptional` — the one dynamic-import chokepoint (`packages/loop/src/runtime/build-run-deps.ts:280-307`)
 
 ```ts
 async function importOptional<T>(pkg: string, feature: string, logger: Logger,
@@ -174,13 +175,13 @@ async function importOptional<T>(pkg: string, feature: string, logger: Logger,
 
 Awaits `load()` (the real `import(...)` call), logs `{event:"optional_package", outcome:"loaded"|
 "load_failed"}` and, on failure, throws an actionable `Error` built at this seam
-(`packages/loop/src/runtime/build-run-deps.ts:276-287`) — naming both the package to install and the
+(`packages/loop/src/runtime/build-run-deps.ts:294-305`) — naming both the package to install and the
 `builtins.<feature>=false` opt-out, never a raw `ModuleNotFoundError`.
 
 `optional_package` has a **third** `outcome`, `"disabled"`, emitted not by `importOptional` but by
-the separate `reportBuiltinDisabled(logger, pkg, feature)` (`packages/loop/src/runtime/build-run-deps.ts:299-304`) whenever
+the separate `reportBuiltinDisabled(logger, pkg, feature)` (`packages/loop/src/runtime/build-run-deps.ts:317-322`) whenever
 `useSkills`/`useHooks`/`useTools` is false — one call site per built-in
-(`packages/loop/src/runtime/build-run-deps.ts:453-455,481-482`). So the full outcome enum a reader must know to interpret this
+(`packages/loop/src/runtime/build-run-deps.ts:477-478,524-525`). So the full outcome enum a reader must know to interpret this
 event is `"loaded"|"load_failed"|"disabled"`: turning a built-in off produces its own distinct
 logged outcome, not simply the absence of a log line.
 
@@ -192,11 +193,11 @@ fifth is a local module:
 
 | Call | Line | Guard |
 |---|---|---|
-| `import("@clarvis/skills")` | `packages/loop/src/runtime/build-run-deps.ts:461` | `if (useSkills && env.CLARVIS_SKILLS_ENABLED)` |
-| `import("@clarvis/hooks/capability")` | `packages/loop/src/runtime/build-run-deps.ts:501` | `if (useHooks)` |
-| `import("@clarvis/tools")` | `packages/loop/src/runtime/build-run-deps.ts:516` | `if (useTools)` |
-| `import("./capabilities/tools.ts")` | `packages/loop/src/runtime/build-run-deps.ts:538` | `if (useTools)` (local dynamic import, not a `@clarvis/*` specifier) |
-| `import("@clarvis/skills/capability")` | `packages/loop/src/runtime/build-run-deps.ts:554` | `if (useSkills)` |
+| `import("@clarvis/skills")` | `packages/loop/src/runtime/build-run-deps.ts:485` | `if (useSkills && env.CLARVIS_SKILLS_ENABLED)` |
+| `import("@clarvis/hooks/capability")` | `packages/loop/src/runtime/build-run-deps.ts:531` | `if (useHooks)` |
+| `import("@clarvis/tools")` | `packages/loop/src/runtime/build-run-deps.ts:547` | `if (useTools)` |
+| `import("./capabilities/tools.ts")` | `packages/loop/src/runtime/build-run-deps.ts:569` | `if (useTools)` (local dynamic import, not a `@clarvis/*` specifier) |
+| `import("@clarvis/skills/capability")` | `packages/loop/src/runtime/build-run-deps.ts:598` | `if (useSkills)` |
 
 ### 2.5 Capability-composition helpers
 
@@ -205,7 +206,7 @@ fifth is a local module:
 | `orderCapabilities` | `packages/loop/src/runtime/capability-order.ts:14` | stable-sorts activated `RunCapability[]` ascending by `order` (default `0`); registration order preserved among equal orders |
 | `collectCapabilityToolMetadata` | `packages/loop/src/runtime/capability-tool-metadata.ts:23` | folds every **registered** `Capability`'s `reservedWireNames`/`toolEffects` (last-wins on effects) regardless of whether it activates this run |
 | `projected` (re-export) | `packages/loop/src/runtime/capability-event.ts:5` | re-exports `@clarvis/capability`'s `projected` under one stable engine-side import path |
-| `BUILTIN_CAPABILITY_NAMES` | `packages/loop/src/runtime/orchestrator.ts:134-138` | `{ tools: "tools", skills: "skills", hooks: HOOKS_CAPABILITY_NAME }` — a hand-duplicated literal (see §5, INV-068) |
+| `BUILTIN_CAPABILITY_NAMES` | `packages/loop/src/runtime/orchestrator.ts:140-144` | `{ tools: "tools", skills: "skills", hooks: HOOKS_CAPABILITY_NAME }` — a hand-duplicated literal (see §5, INV-068) |
 | `foldContributions` | `packages/capability/src/compose.ts:83` | merges per-agent `AgentLoopContribution[]` into tools/handlers/gates/anchor/forcedChoice/outputBudget/hooks — owned by `@clarvis/capability`, delegated to [capability-contract-and-vocabulary](../foundations/capability.md) |
 
 `collectCapabilityToolMetadata`'s last-wins effect merge is a deliberate contrast, not an
@@ -268,8 +269,8 @@ export const CAPABILITY_REQUEST_PARAM_KEYS: readonly string[] =
   requestParamKeys(BUILTIN_SETTINGS_SPECS);
 ```
 
-Every one of `settings-schema.ts` (`packages/loop/src/settings/settings-schema.ts:3,273`), `settings-merge.ts`
-(`packages/loop/src/settings/settings-merge.ts:7,126`), `plugin-schema.ts` (`packages/loop/src/settings/plugin-schema.ts:4-5,88,166`),
+Every one of `settings-schema.ts` (`packages/loop/src/settings/settings-schema.ts:3,421`), `settings-merge.ts`
+(`packages/loop/src/settings/settings-merge.ts:7,143-150`), `plugin-schema.ts` (`packages/loop/src/settings/plugin-schema.ts:4-5,103,181`),
 `request-schema.ts` (`packages/loop/src/validation/request/request-schema.ts:8,224`) and `capability-settings.ts`
 (reads `settingsSchemaFor`/`readCapabilitySettings`, `packages/loop/src/settings/capability-settings.ts:42,84`)
 compose from this one module and never touch a per-feature module directly — this is the "adding a
@@ -327,7 +328,7 @@ Given `seedMarkers: ["<cap-block>"]`:
 - A newly-active capability's block (marker not carried by the continuation) is appended **after**
   the restored history (`packages/loop/tests/unit/entry-seed-markers.test.ts:138-151`).
 
-### 3.5 `run.composed` log line (`packages/loop/src/runtime/orchestrator.ts:501-530`)
+### 3.5 `run.composed` log line (`packages/loop/src/runtime/orchestrator.ts:519-548`)
 
 ```json
 {
@@ -345,48 +346,48 @@ Given `seedMarkers: ["<cap-block>"]`:
 
 `capabilities` is in **activation order** (`runCapabilities`, already sorted by
 `orderCapabilities`) — dispatch order, because a capability's handlers shadow every later one's
-(`packages/loop/src/runtime/orchestrator.ts:499-503`).
+(`packages/loop/src/runtime/orchestrator.ts:515-519`).
 
 ## 4. Behavior
 
-### 4.1 `buildExecuteRunDeps` assembly order (`packages/loop/src/runtime/build-run-deps.ts:344-595`)
+### 4.1 `buildExecuteRunDeps` assembly order (`packages/loop/src/runtime/build-run-deps.ts:362-640`)
 
-1. Reject a blank `workspaceRoot` (`:357-359`).
-2. Compute per-component sub-loggers and set the paths-package logger (`:360-368`).
-3. Compute `useTools`/`useSkills`/`useHooks` (`:369-371`).
-4. Resolve the trace store (`:373-376`).
+1. Reject a blank `workspaceRoot` and mutually-exclusive skill root inputs (`:384-390`).
+2. Compute per-component sub-loggers and set the paths-package logger (`:392-400`).
+3. Compute `useTools`/`useSkills`/`useHooks` (`:401-403`).
+4. Resolve the trace store (`:405-408`).
 5. If `mcpAuthorization` is present, build one OAuth coordinator; inject it into the MCP client
-   factory, then build the connection manager (`:386-427`). This stays independent of the optional
+   factory, then build the connection manager (`:410-451`). This stays independent of the optional
    feature-package imports: `@clarvis/mcp-client` is an ordinary engine dependency.
-6. Build the retrying/logging/admission-wrapped AI SDK provider (`:416-437`).
+6. Build the retrying/logging/admission-wrapped AI SDK provider (`:453-474`).
 7. **Skills** (only if `useSkills && env.CLARVIS_SKILLS_ENABLED`): dynamically import
    `@clarvis/skills`, then either build a static `SkillsProvider` from an array `skillRoots` /
    `extraSkillRoots` or wrap a function form in `dynamicSkills` (memoized-by-signature rescanning,
-   `packages/loop/src/runtime/build-run-deps.ts:186-237`); a discovery failure degrades to "no skills" (initial) or the
+   `packages/loop/src/runtime/build-run-deps.ts:203-255`); a discovery failure degrades to "no skills" (initial) or the
    last good scan (rescans), never a thrown error. Exact `skillRoots` are used as-is; only the
-   additional-root form receives the four standard roots (`:472-485`). An exact empty root set
+   additional-root form receives the four standard roots (`:480-520`). An exact empty root set
    yields an intentional empty provider without a discovery warning (`emptySkillsProvider` and
    `dynamicSkills`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:283`).
 8. Build an empty `capabilities: Capability[]` array and a fresh `capabilityRegistry`.
 9. **Hooks** (only if `useHooks`): dynamically import `@clarvis/hooks/capability`, push
-   `createWorkspaceHooksCapability({...})` **first** (`:483-497`).
+   `createWorkspaceHooksCapability({...})` **first** (`:526-540`).
 10. **Tools** (only if `useTools`): dynamically import `@clarvis/tools` to install its warning
     sink (mapping tool warnings onto the host logger by level), then dynamically import
     `./capabilities/tools.ts` and push `createAgentToolsCapability({...})` **second**. When skills
     exist, the injected `resolveSkillExecutionRoots` takes a fresh cloned skill list, selects only
     entries carrying explicit `executionRoot`, de-duplicates those exact skill directories, and
-    passes them to each run's toolsets (`buildExecuteRunDeps` and `createAgentToolsCapability`).
-11. Push `createAskUserCapability()` **unconditionally, third** (`:535`) — ask-user is the one
+    passes them to each run's toolsets (`packages/loop/src/runtime/build-run-deps.ts:541-590`).
+11. Push `createAskUserCapability()` **unconditionally, third** (`:592`) — ask-user is the one
     built-in with **no** `builtins.*` toggle and no package-import gate at all; it is gated entirely
     downstream, at `forRun` on the entry profile's `ask_user` grant and at `forAgent` on
     `scope.entry` (non-entry/spawned agents and a scope missing `elicit`/`clock` get `null`)
     (`packages/loop/src/runtime/capabilities/ask-user.ts:34-49`).
 12. **Skills capability** (only if `useSkills`): dynamically import `@clarvis/skills/capability`
-    and push `createSkillsCapability(skills, {...bootstraps})` **fourth** (`:536-549`).
-13. Push every embedder-supplied `capabilities` entry **last, in caller order** (`:550`).
+    and push `createSkillsCapability(skills, {...bootstraps})` **fourth** (`:593-606`).
+13. Push every embedder-supplied `capabilities` entry **last, in caller order** (`:607`).
 14. Assemble `ExecuteRunDeps` and return `{ deps, resolved, skills, modelCallAdmission,
     extensionAdmission, dispose }`. Disposal settles both the connection pool and the OAuth callback
-    coordinator before closing only the admission gates this call created (`:577-594`).
+    coordinator before closing only the admission gates this call created (`:609-638`).
 
 So the **registration order** built-in capabilities always arrive in is: `hooks` (if enabled) →
 `tools` (if enabled) → `ask-user` (always) → `skills` (if enabled) → host-supplied extras. This is
@@ -394,31 +395,31 @@ the order `foldContributions` later folds contributions in when none declares an
 (§2.5), and it is also the order `reportRunComposition`'s `capabilities` array reflects
 (§3.5) for any run whose activation does not reorder them via `RunCapability.order`.
 
-### 4.2 Per-run activation (`packages/loop/src/runtime/orchestrator.ts`, `~ln 205-395`)
+### 4.2 Per-run activation (`packages/loop/src/runtime/orchestrator.ts:188-344`)
 
 1. `allCapabilities = deps.capabilities ?? []` — the **full registered list**
-   (`packages/loop/src/runtime/orchestrator.ts:190`).
+   (`packages/loop/src/runtime/orchestrator.ts:196`).
 2. `capabilityToolMetadata = collectCapabilityToolMetadata(allCapabilities)` — reserved names/tool
-   effects computed over **registration**, not activation (`:191`).
+   effects computed over **registration**, not activation (`:197`).
 3. Concurrently, for each registered capability, call `capability.forRun(ctx)` under a bounded wall
    budget `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` (default `5000`ms, `packages/capability/src/env.ts:153`);
    a timeout or an `ExtensionCallUnavailableError` (host's extension gate saturated) both resolve to
-   `null` for this run, logged, not thrown (`packages/loop/src/runtime/orchestrator.ts:233-285`).
-4. Every non-null activation is wrapped by `admittedRunCapability` (`packages/loop/src/runtime/extension-admission.ts:122-180`),
+   `null` for this run, logged, not thrown (`packages/loop/src/runtime/orchestrator.ts:239-294`).
+4. Every non-null activation is wrapped by `admittedRunCapability` (`packages/loop/src/runtime/extension-admission.ts:138-196`),
    which re-routes `seedBlock`/`onRunEnd`/`finalizeRun`/every lifecycle-hook method through the
    host's `ExtensionAdmissionController`, keyed by the capability's **name** (not object identity, so
    a host that reconstructs the object every run does not bypass the per-operation ceiling —
-   `packages/loop/src/runtime/extension-admission.ts:116-121`). Every wrapped call is admitted on the `"normal"` lane **except**
+   `packages/loop/src/runtime/extension-admission.ts:132-137`). Every wrapped call is admitted on the `"normal"` lane **except**
    `onRunEnd` (both the lifecycle-hook form, `packages/loop/src/runtime/extension-admission.ts:69`, and the `RunCapability`
-   form, `:166`) and `finalizeRun` (`:174`), which are admitted on the distinct `"run_end"` lane —
+   form, `:182`) and `finalizeRun` (`:190`), which are admitted on the distinct `"run_end"` lane —
    so a saturated `"normal"` gate cannot block the calls a run's teardown depends on.
 5. `runCapabilities = orderCapabilities(<filtered, admitted, non-null activations>)`
-   (`packages/loop/src/runtime/orchestrator.ts:235-305`); `hooks = runCapabilities.flatMap(c => c.lifecycle ?? [])`
-   (`:306`).
+   (`packages/loop/src/runtime/orchestrator.ts:241-311`); `hooks = runCapabilities.flatMap(c => c.lifecycle ?? [])`
+   (`:312`).
 6. `seedBlocks` are computed by calling each **activated** capability's `seedBlock()` under the same
-   setup-timeout budget, a timeout dropping the block with a warning (`packages/loop/src/runtime/orchestrator.ts:307-329`).
+   setup-timeout budget, a timeout dropping the block with a warning (`packages/loop/src/runtime/orchestrator.ts:313-341`).
 7. `seedMarkers = allCapabilities.map(c => c.seedMarker).filter(...)` — over the **registered**
-   set, not the activated one (`packages/loop/src/runtime/orchestrator.ts:336-338`) — matching the contract's own rationale
+   set, not the activated one (`packages/loop/src/runtime/orchestrator.ts:342-344`) — matching the contract's own rationale
    (§3.3).
 8. `reportRunComposition` logs `run.composed` at `info` (§3.5).
 9. `buildEntrySeed` (`packages/loop/src/runtime/entry-seed.ts:126-186`) consumes `seedBlocks`/`seedMarkers` to compose the
@@ -434,7 +435,7 @@ the section. Production: `renderMcpInstructions` and `createMcpInstructionsRunCa
 `packages/loop/src/runtime/orchestrator.ts`. Test:
 `packages/loop/tests/unit/mcp-instructions.test.ts`.
 
-### 4.3 Per-agent fold (`packages/loop/src/runtime/loop/run-agent.ts`, `~ln 296-420`)
+### 4.3 Per-agent fold (`packages/loop/src/runtime/loop/run-agent.ts:297-419`)
 
 1. `contributions = (input.agentCapabilities ?? []).map(c => c.attach(bc))` (`:297-299`).
 2. `folded = foldContributions(contributions)` (`:300`, `@clarvis/capability`'s `packages/capability/src/compose.ts:83`) —
@@ -463,7 +464,7 @@ only identity — `FinalizeGate` carries no name, `packages/loop/src/runtime/loo
 - `forceToolOnNudge` is resolved as `entryProfile.orchestration?.force_tool_on_nudge ??
   deps.env.CLARVIS_DEFAULT_FORCE_TOOL_ON_NUDGE` (`packages/loop/src/runtime/entry-inputs.ts:255-257`);
   the field itself is `OrchestrationConfigInput.force_tool_on_nudge`
-  (`packages/capability/src/api.ts:296-307`, whose own doc comment states the same loop-not-capability
+  (`packages/capability/src/api.ts:369-378`, whose own doc comment states the same loop-not-capability
   rationale: "a property of the agent's own loop, applied by the loop rather than by whichever
   capability raised the nudge"); the env default is `boolFromEnv(true)`
   (`packages/capability/src/env.ts:106`). It is a **loop-level** property applied to every gate's
@@ -477,7 +478,7 @@ only identity — `FinalizeGate` carries no name, `packages/loop/src/runtime/loo
 
 ## 5. Invariants
 
-**INV-068.** `BUILTIN_CAPABILITY_NAMES` (`packages/loop/src/runtime/orchestrator.ts:134-138`) is a
+**INV-068.** `BUILTIN_CAPABILITY_NAMES` (`packages/loop/src/runtime/orchestrator.ts:140-144`) is a
 hand-duplicated literal — the orchestrator sits on the engine's eager configuration path and cannot
 statically import `@clarvis/loop/capabilities/tools` or `@clarvis/skills/capability` (both
 optional-package-reaching) without dragging an optional package onto that path — and it must equal,
@@ -519,8 +520,8 @@ Test: `packages/loop/tests/architecture/optional-package-loading.test.ts:221`.
 **INV-080.** `runtime/build-run-deps.ts` runtime-loads `@clarvis/hooks/capability`, `@clarvis/skills`,
 and `@clarvis/skills/capability` only through dynamic `import("...")` calls; its static references to
 the two skills packages are explicitly `import type` and are erased — e.g.
-`@clarvis/skills` itself at `packages/loop/src/runtime/build-run-deps.ts:461` and
-`@clarvis/skills/capability` at `:541`. The sibling `runtime/capabilities/skills-settings.ts:50` stays
+`@clarvis/skills` itself at `packages/loop/src/runtime/build-run-deps.ts:2` and
+`@clarvis/skills/capability` at `:35`. The sibling `runtime/capabilities/skills-settings.ts:50` stays
 off this path too: it re-exports `PluginBootstrapSkill` with `export type`, which the compiler erases,
 by its own doc comment's account (`:47-49`) "the whole point of this module is that nothing on the
 eager configuration path loads the optional `@clarvis/skills` package, and a value import would."
@@ -544,7 +545,7 @@ Test: not a separate assertion; stated in `packages/loop/tests/architecture/no-f
 `@clarvis/workflows` is out of scope.
 
 **INV-CC-01.** (Locally derived; the number `INV-084` is already taken by
-[prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md), `specs/cross-cutting/prompt-cache.md:369`, for an unrelated
+[prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md), `specs/cross-cutting/prompt-cache.md:376`, for an unrelated
 byte-identical-request-head rule.) `HARD_PACKAGES` and `OPTIONAL_PACKAGES` — the two package frontiers
 `optional-package-loading.test.ts` walks from — are themselves **derived from the engine's own
 manifest** (its `dependencies` and `optionalDependencies` blocks) rather than hand-listed, are
@@ -552,7 +553,7 @@ disjoint, and together equal the engine's complete `@clarvis/*` dependency set.
 Test: `packages/loop/tests/architecture/optional-package-loading.test.ts:179-189`.
 
 **INV-CC-02.** (Locally derived; the number `INV-085` is likewise already taken by
-[prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md), `specs/cross-cutting/prompt-cache.md:379`.) The `settings-specs.ts` walk that proves INV-076 is not vacuous: it actually reaches
+[prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md), `specs/cross-cutting/prompt-cache.md:387`.) The `settings-specs.ts` walk that proves INV-076 is not vacuous: it actually reaches
 `hooks.ts`, `tools-settings.ts` and `skills-settings.ts`, and crosses **into** `@clarvis/capability`'s
 own source (more than 5 files under `capability/`) and `@clarvis/supervision`'s own source (more than
 1 file under `supervision/`) rather than stopping at either package's barrel — the direct structural
@@ -566,7 +567,7 @@ their own:**
   *registered* capability, never only the activated subset**, so a gated-off capability's tool
   names stay reserved and its seed marker still strips a stale continuation entry. Production:
   `packages/capability/src/contract.ts:138-150`;
-  `packages/loop/src/runtime/orchestrator.ts:190-191,336-338`. Test:
+  `packages/loop/src/runtime/orchestrator.ts:196-197,342-344`. Test:
   `packages/loop/tests/unit/entry-seed-markers.test.ts:118-136`
   ("still drops a block whose capability is no longer active").
 - **Skill discovery approval does not become plugin-root execution.** The tools resolver receives
@@ -600,27 +601,27 @@ their own:**
   field independently, including `pluginContributable: true` alone.
 - **`importOptional` is the only load seam for an enabled built-in's failed optional-package load**;
   its inline error always names both the package and the `builtins.<feature>=false` opt-out.
-  Production: `packages/loop/src/runtime/build-run-deps.ts:262-289`. Unpinned by a dedicated
+  Production: `packages/loop/src/runtime/build-run-deps.ts:280-307`. Unpinned by a dedicated
   negative test in this document's scope (no test simulates a missing optional package).
 
 ## 6. Failure modes and degradation
 
 | Condition | Effect | Cite |
 |---|---|---|
-| Enabled built-in's optional package fails to `import()` | `buildExecuteRunDeps` **throws** an actionable `Error` naming the package and the opt-out | `packages/loop/src/runtime/build-run-deps.ts:262-289` |
-| `workspaceRoot` blank | `buildExecuteRunDeps` throws before touching any built-in | `packages/loop/src/runtime/build-run-deps.ts:365-367`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:~312-318` |
-| Both `skillRoots` and `extraSkillRoots` supplied | `buildExecuteRunDeps` throws before optional package construction | `packages/loop/src/runtime/build-run-deps.ts:372-376` |
+| Enabled built-in's optional package fails to `import()` | `buildExecuteRunDeps` **throws** an actionable `Error` naming the package and the opt-out | `packages/loop/src/runtime/build-run-deps.ts:280-307` |
+| `workspaceRoot` blank | `buildExecuteRunDeps` throws before touching any built-in | `packages/loop/src/runtime/build-run-deps.ts:384-386`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:361-369` |
+| Both `skillRoots` and `extraSkillRoots` supplied | `buildExecuteRunDeps` throws before optional package construction | `packages/loop/src/runtime/build-run-deps.ts:387-390` |
 | Exact `skillRoots` resolves to `[]` | An intentional empty provider is returned without a warning or standard-root fallback | `emptySkillsProvider`, `packages/loop/src/runtime/build-run-deps.ts`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:283` |
-| Skill discovery throws (initial, array roots) | Skills disabled for these deps; warned, not thrown | `packages/loop/src/runtime/build-run-deps.ts:487-498` |
-| Skill discovery throws (function roots, rescan) | Falls back to last good scan, or an empty provider on first failure | `dynamicSkills`, `packages/loop/src/runtime/build-run-deps.ts:186-237`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:~325-347` |
-| Root provider function throws | Treated as "no roots" for that rescan, logged at `debug` | `packages/loop/src/runtime/build-run-deps.ts:200-212` |
-| Workspace path does not resolve at all | Skills come back `undefined` rather than throwing | test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:~309-320` |
-| A capability's `forRun` exceeds `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | Activation resolves `null` for this run; warned | `packages/loop/src/runtime/orchestrator.ts:263-285` |
-| A capability's `forRun` throws `ExtensionCallUnavailableError` (host gate saturated) | Activation resolves `null`; warned, not thrown | `packages/loop/src/runtime/orchestrator.ts:263-274` |
-| A capability's `seedBlock()` exceeds its setup budget | Block omitted from the seed; warned | `packages/loop/src/runtime/orchestrator.ts:307-329` |
-| A capability's extension-admitted `seedBlock` hits a saturated host gate | The block degrades to `undefined`; logged `capability.extension_saturated` | `packages/loop/src/runtime/extension-admission.ts:137-155`; test `packages/loop/tests/unit/extension-admission.test.ts:132-185` |
-| A capability's extension-admitted lifecycle method, `onRunEnd`, or `finalizeRun` hits a saturated host gate | The `ExtensionCallUnavailableError` propagates to the owning caller; this wrapper supplies no fallback | `packages/loop/src/runtime/extension-admission.ts:24-111,162-177` |
-| A capability's `finalizeRun` throws or exceeds `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | Its state slot is omitted from the run record; the run itself is unaffected | `packages/loop/src/runtime/execute-run.ts:192-242` |
+| Skill discovery throws (initial, array roots) | Skills disabled for these deps; warned, not thrown | `packages/loop/src/runtime/build-run-deps.ts:507-518` |
+| Skill discovery throws (function roots, rescan) | Falls back to last good scan, or an empty provider on first failure | `dynamicSkills`, `packages/loop/src/runtime/build-run-deps.ts:203-255`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:371-394` |
+| Root provider function throws | Treated as "no roots" for that rescan, logged at `debug` | `packages/loop/src/runtime/build-run-deps.ts:212-226` |
+| Workspace path does not resolve at all | Skills come back `undefined` rather than throwing | test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:348-359` |
+| A capability's `forRun` exceeds `CLARVIS_CAPABILITY_SETUP_TIMEOUT_MS` | Activation resolves `null` for this run; warned | `packages/loop/src/runtime/orchestrator.ts:283-293` |
+| A capability's `forRun` throws `ExtensionCallUnavailableError` (host gate saturated) | Activation resolves `null`; warned, not thrown | `packages/loop/src/runtime/orchestrator.ts:270-281` |
+| A capability's `seedBlock()` exceeds its setup budget | Block omitted from the seed; warned | `packages/loop/src/runtime/orchestrator.ts:313-341` |
+| A capability's extension-admitted `seedBlock` hits a saturated host gate | The block degrades to `undefined`; logged `capability.extension_saturated` | `packages/loop/src/runtime/extension-admission.ts:153-171`; test `packages/loop/tests/unit/extension-admission.test.ts:132-185` |
+| A capability's extension-admitted lifecycle method, `onRunEnd`, or `finalizeRun` hits a saturated host gate | The `ExtensionCallUnavailableError` propagates to the owning caller; this wrapper supplies no fallback | `packages/loop/src/runtime/extension-admission.ts:24-127,178-193` |
+| A capability's `finalizeRun` throws or exceeds `CLARVIS_CAPABILITY_RUN_END_TIMEOUT_MS` | Its state slot is omitted from the run record; the run itself is unaffected | `packages/loop/src/runtime/execute-run.ts:196-247` |
 | Two contributions declare the same tool wire name | `foldContributions` **throws** synchronously | `packages/capability/src/compose.ts:97-102` |
 | More than one contribution supplies `anchor` or `forcedChoice` | `foldContributions` throws (per its own doc comment, `packages/capability/src/compose.ts:72-81`) | `packages/capability/src/compose.ts:112,118` |
 | A registered `CapabilitySettingsSpec.key` collides with a built-in block | `settingsSchemaFor` throws at schema-build time | `packages/loop/src/settings/capability-settings.ts:46-51` |
@@ -660,7 +661,7 @@ their own:**
 
 - **No test in this document's scope exercises `importOptional`'s thrown-error path directly**
   (e.g. by simulating a failed `import()` of `@clarvis/tools`) — its behavior is verified by direct
-  reading of `packages/loop/src/runtime/build-run-deps.ts:262-289` rather than by a dedicated negative test.
+  reading of `packages/loop/src/runtime/build-run-deps.ts:280-307` rather than by a dedicated negative test.
 - **Per-capability behavior of `tools`, `skills`, `hooks`, `ask-user`, `agents`/supervision, and
   `delegation`** is intentionally not detailed here beyond what is needed to explain the composition
   machinery — their own `RunCapability`/`AgentCapability` semantics and tool schemas belong to

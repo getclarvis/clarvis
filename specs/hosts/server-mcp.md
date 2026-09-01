@@ -73,7 +73,7 @@ Deliberately **absent**: `guard_mode`, `guard_judge`, `prompt_cache_key`,
 `prompt_cache_ttl` (as caller input) — see Invariant 5 and the remark at
 `packages/server/src/mcp/tools.ts:47-57`. `task` is absent too — it names no field of
 `runInputShape` (`packages/server/src/mcp/tools.ts:58-72`), and
-`packages/server/tests/architecture/tool-surface.test.ts:35` asserts it out of the tool's
+`packages/server/tests/architecture/tool-surface.test.ts:43` asserts it out of the tool's
 listed input schema.
 
 ### 2.3 `clarvis_run` output (`runOutputShape`, `packages/server/src/mcp/tools.ts:98-107`)
@@ -91,7 +91,7 @@ listed input schema.
 
 Deliberately **absent** from output: `active_task` — it names no field of
 `runOutputShape` (`packages/server/src/mcp/tools.ts:98-107`), asserted by
-`packages/server/tests/architecture/tool-surface.test.ts:36`.
+`packages/server/tests/architecture/tool-surface.test.ts:44`.
 
 ### 2.4 Posture block (`postureShape`, `packages/server/src/mcp/tools.ts:75-81`, output field `packages/server/src/mcp/tools.ts:105`)
 
@@ -684,7 +684,7 @@ nothing more.
 Production: `packages/server/src/mcp/server.ts:128,174,184,194` are the only four
 `server.registerTool` call sites in the file, and `packages/server/src/mcp/tools.ts:10-15` is the
 only place `TOOL_NAMES` is declared.
-Test: `packages/server/tests/architecture/tool-surface.test.ts:17-24`.
+Test: `packages/server/tests/architecture/tool-surface.test.ts:25-32`.
 
 **Invariant 5 (INV-242).** The `clarvis_run` tool's input/output schemas omit
 every caller-controlled policy or local-only field: `guard_mode`,
@@ -696,7 +696,7 @@ named fields appears. The remark at `packages/server/src/mcp/tools.ts:47-57` sta
 for `guard_mode`/`guard_judge`/`prompt_cache_key` explicitly (the guard
 omission "is the whole protection," and `prompt_cache_key` "becomes a
 cross-owner cache-poisoning vector once owners share a kernel").
-Test: `packages/server/tests/architecture/tool-surface.test.ts:26-34`.
+Test: `packages/server/tests/architecture/tool-surface.test.ts:34-42`.
 
 **Invariant 5a.** The production executable's MCP `serverInfo.version` equals the single
 root-owned product version. Production: `packages/server/src/version.ts` (`PRODUCT_VERSION`) and
@@ -756,6 +756,12 @@ Production: `packages/server/src/mcp/notify.ts:395-403` (the `victim === -1` bra
 triggering event is itself non-droppable).
 Test: `packages/server/tests/unit/notify.test.ts:424-441` ("wedges instead of
 growing without bound when structural events saturate the buffer").
+
+**Invariant 12 (INV-SM19).** A live `compaction_started` event projects to an `info` notification
+labeled `context compaction started`, so a default-threshold MCP client receives positive progress
+before the model-backed compaction can block on provider latency.
+Production: `viewOf`, `packages/server/src/mcp/event-view.ts:118-119`.
+Test: `packages/server/tests/unit/event-view.test.ts:309-312`.
 
 ## 6. Failure modes and degradation
 
@@ -880,7 +886,7 @@ file's declarations (`:7` field, `:42,58` parameters).
   (§ method) but `cancelAll`'s call sites in `bin.ts`'s shutdown path were not
   opened, since `bin.ts` is outside this document's `src/mcp`, `src/host`,
   `src/health` scope; the SIGTERM/SIGINT wiring that reaches it is at
-  `packages/server/src/bin.ts:393-394` and is outside this document's scope.
+  `packages/server/src/bin.ts:394-395` and is outside this document's scope.
 - **The precise set of MCP logging levels versus MCP's full level vocabulary
   interaction** — `packages/server/src/mcp/event-view.ts:17-26` defines eight `ALL_LEVELS` including
   `critical`/`alert`/`emergency`, which `LogLevel` (five values, `:5`) never
@@ -889,14 +895,3 @@ file's declarations (`:7` field, `:42,58` parameters).
   something the code states a rationale for — `meetsThreshold`'s clamp
   (`:31`, `Math.min(idx, LEVEL_RANK.error)`) simply treats any level above
   `error` as equivalent to `error` for filtering purposes.
-
-## 9. Compaction progress invariant
-
-**INV-SM19.** A live `compaction_started` event projects to an `info` notification labeled
-`context compaction started`, so a default-threshold MCP client receives positive progress before
-the model-backed compaction can block on provider latency. The terminal event remains structured and
-retains any `fallback_reason` supplied by the kernel.
-
-Production: `viewOf`, `packages/server/src/mcp/event-view.ts` (`case "compaction_started"`).
-
-Test: `packages/server/tests/unit/event-view.test.ts` (`projects compaction_started`).

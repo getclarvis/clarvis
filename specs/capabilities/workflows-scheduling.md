@@ -9,7 +9,7 @@
 (**leaders**). The manager never calls `executeRun` itself: it calls one of four model-facing tools,
 and the package registers each leader as a background child in the run's supervision registry, runs
 it through `runLeader` (`packages/workflows/src/run-leader.ts:52`), meters its output tokens against
-a workflow-child ledger (`packages/workflows/src/ledger.ts:72`), and bounds how many run at once with a
+a workflow-child ledger (`packages/workflows/src/ledger.ts:71`), and bounds how many run at once with a
 FIFO semaphore (`packages/workflows/src/concurrency.ts:11`).
 
 The four tools sit on a ladder of how much structure the caller supplies: `run_leader` starts one
@@ -22,17 +22,17 @@ compiles a workflow document the workspace ships into exactly the round sequence
 (`packages/workflows/src/run-workflow.ts:31`, `:294`).
 
 `run_leader`, `run_work_items`, and `run_round` answer **immediately** with an agent handle or a wave
-plan (`packages/workflows/src/capability.ts:359`, `packages/workflows/src/work-items.ts:417`,
+plan (`packages/workflows/src/capability.ts:355`, `packages/workflows/src/work-items.ts:417`,
 `packages/workflows/src/run-round.ts:920-924`). `run_workflow` first awaits its mandatory interactive
 review; after approval it starts the same background round driver and returns a normal result verdict,
 never a deferred one (`packages/workflows/src/run-workflow.ts:261-301`). The work continues on a task
-the registry adopts (`packages/workflows/src/capability.ts:357`,
+the registry adopts (`packages/workflows/src/capability.ts:353`,
 `packages/workflows/src/work-items.ts:415`, `packages/workflows/src/run-round.ts:997`). The
 three-level topology (Manager → Leaders →
 Sub-agents) is fixed by two structural gates rather than a depth counter: only an **entry** agent
 carrying the `workflow` grant is contributed the tools
-(`packages/workflows/src/capability.ts:102`), and a leader's request is assembled without that grant
-by the host (`packages/workflows/src/types.ts:53-57`).
+(`packages/workflows/src/capability.ts:103`), and a leader's request is assembled without that grant
+by the host (`packages/workflows/src/types.ts:53-59`).
 
 ## 2. Surface
 
@@ -47,25 +47,25 @@ by the host (`packages/workflows/src/types.ts:53-57`).
 `run-round.ts`, `work-items.ts`, `dispatch.ts`, `schedule.ts`, `rounds.ts`, `interpolate.ts`,
 `log.ts`, `schedule-log.ts` and `result-text.ts` export symbols but are reachable only from **inside**
 the package: `packages/workflows/package.json` resolves no subpath to them. `capability.ts` is what
-reaches them (`packages/workflows/src/capability.ts:32,38-43`).
+reaches them (`packages/workflows/src/capability.ts:32,38-44`).
 
 ### 2.2 Exported values in scope for this document
 
 | Export | Signature / value | Defined |
 |---|---|---|
-| `createWorkflowsCapability` | `(ctx: WorkflowCtx) => Capability` | `packages/workflows/src/capability.ts:75` |
-| `WORKFLOW_GRANT` | `"workflow"` | `packages/workflows/src/capability.ts:54` |
+| `createWorkflowsCapability` | `(ctx: WorkflowCtx) => Capability` | `packages/workflows/src/capability.ts:76` |
+| `WORKFLOW_GRANT` | `"workflow"` | `packages/workflows/src/capability.ts:55` |
 | `WORKFLOWS_CAPABILITY_NAME` | `"workflows"` (re-exported from settings by `packages/workflows/src/index.ts:69-75`) | `packages/workflows/src/settings.ts:25` |
 | `runLeader` | `(spec, ctx, runId?, heldReservation?) => Promise<LeaderResult>` | `packages/workflows/src/run-leader.ts:52` |
-| `createWorkflowLedger` | `(total: number \| null) => WorkflowLedger` | `packages/workflows/src/ledger.ts:72` |
+| `createWorkflowLedger` | `(total: number \| null) => WorkflowLedger` | `packages/workflows/src/ledger.ts:71` |
 | `createWorkflowSemaphore` | `= createSemaphore` from `@clarvis/capability` | `packages/workflows/src/concurrency.ts:11` |
 | `buildRunLeaderTool` / `RUN_LEADER_TOOL_NAME` | `(profiles?) => NamespacedTool` / `"run_leader"` | `packages/workflows/src/tool.ts:47`, `packages/workflows/src/tool.ts:11` |
 | `WORKFLOW_LIMITS` | frozen numeric ceilings | `packages/workflows/src/limits.ts:11` |
 | `WORKFLOWS_DEFAULTS`, `WORKFLOWS_MAX_CONCURRENCY`, `WORKFLOWS_SETTINGS_FIELDS`, `workflowsSettingsSpec`, `managerLiveChildrenFloor` | settings block | `packages/workflows/src/settings.ts:73,36,96,111,62` |
 | `recordWorkflowTrace`, `WORKFLOW_TRACE_KINDS`, `WORKFLOW_PERSISTED_TRACE_PROJECTORS`, the three `is*` guards | trace vocabulary | `packages/workflows/src/trace-events.ts:198,13,223,117,134,151` |
 
-Internal but load-bearing: `beginDispatch` (`packages/workflows/src/dispatch.ts:195`), `describeQueued` (`packages/workflows/src/dispatch.ts:423`),
-`reportSettled` (`packages/workflows/src/dispatch.ts:617`), `startRounds` (`packages/workflows/src/run-round.ts:939`), `scheduleWorkItems`
+Internal but load-bearing: `beginDispatch` (`packages/workflows/src/dispatch.ts:196`), `describeQueued` (`packages/workflows/src/dispatch.ts:424`),
+`reportSettled` (`packages/workflows/src/dispatch.ts:618`), `startRounds` (`packages/workflows/src/run-round.ts:939`), `scheduleWorkItems`
 (`packages/workflows/src/schedule.ts:178`), `toWorkItem` / `workItemBrief` (`packages/workflows/src/work-items.ts:170,281`), `interpolate` /
 `placeholders` (`packages/workflows/src/interpolate.ts:39,64`), and the pure round vocabulary in `rounds.ts`. The other three
 tools' wire-name constants are internal in the same way `RUN_LEADER_TOOL_NAME` would be if `tool.ts`
@@ -124,10 +124,10 @@ when the workspace ships no workflow documents (`packages/workflows/src/run-work
 | Field | Value | Line |
 |---|---|---|
 | `name` | `"workflows"` | `packages/workflows/src/capability.ts:136` |
-| `grants` | `[{ name: "workflow", entryCanSpawn: true }]` | `packages/workflows/src/capability.ts:137`, `:57` |
+| `grants` | `[{ name: "workflow", entryCanSpawn: true }]` | `packages/workflows/src/capability.ts:137`, `:58` |
 | `persistedTraceProjectors` | the three workflow projectors | `packages/workflows/src/capability.ts:138` |
-| `reservedWireNames` | the contributed tools' wire names | `packages/workflows/src/capability.ts:85`, `:139` |
-| `toolEffects` | every contributed tool → `"spawn_run"` | `packages/workflows/src/capability.ts:95-97`, `:140` |
+| `reservedWireNames` | the contributed tools' wire names | `packages/workflows/src/capability.ts:86`, `:139` |
+| `toolEffects` | every contributed tool → `"spawn_run"` | `packages/workflows/src/capability.ts:96-98`, `:140` |
 | `forRun(runCtx)` | `null` when `services.get(AGENT_REGISTRY_PORT)` is absent | `packages/workflows/src/capability.ts:141-155` |
 
 ### 2.5 Settings
@@ -147,7 +147,7 @@ service, "never by the loop from a run-request field" (`packages/workflows/src/s
 `managerLiveChildrenFloor(maxConcurrency)` (`packages/workflows/src/settings.ts:71`) returns
 `min(AGENTS_MAX_LIVE_CHILDREN, floor(max(1, maxConcurrency)) + 4)`, the 4 being
 `MANAGER_REGISTRY_HEADROOM` (`packages/workflows/src/settings.ts:57`). At the default concurrency it equals the supervision
-default exactly (`packages/workflows/tests/unit/settings.test.ts:30-34`).
+default exactly (`packages/workflows/tests/unit/settings.test.ts:31-35`).
 
 ## 3. Data and formats
 
@@ -178,8 +178,8 @@ by every parser here.
 
 | Identifier | Form | Produced at |
 |---|---|---|
-| leader `runId` | whatever `ctx.runDeps.generateExecutionId()` returns | `packages/workflows/src/capability.ts:244`, `packages/workflows/src/dispatch.ts:595` |
-| agent handle id | `ag_` + 8 hex, minted by the supervision registry | asserted `packages/workflows/tests/component/run-leader.test.ts:233` |
+| leader `runId` | whatever `ctx.runDeps.generateExecutionId()` returns | `packages/workflows/src/capability.ts:222`, `packages/workflows/src/dispatch.ts:596` |
+| agent handle id | `ag_` + 8 hex, minted by the supervision registry | asserted `packages/workflows/tests/component/run-leader.test.ts:239` |
 | dispatch unit `key` (work items) | the work item's own `id` | `packages/workflows/src/work-items.ts:295-296` |
 | dispatch unit `key` (rounds) | `` `${round.id}[${itemIndex}]${fanout>1 ? "#"+(replica+1) : ""}` `` | `packages/workflows/src/run-round.ts:590,593` |
 | round `id` | must match `/^[A-Za-z0-9._-]+$/u` | `packages/workflows/src/run-round.ts:114`, enforced `packages/workflows/src/run-round.ts:269-278` |
@@ -246,9 +246,9 @@ The projectors add an absolute timestamp — `started_at` / `completed_at` from
 (`packages/workflows/src/run-round.ts:512-514`); the map is `{discovery, findings, verdict}` (`packages/workflows/src/schemas.ts:218-222`). Pinned:
 `packages/workflows/tests/component/run-round.test.ts:710-723`.
 
-### 3.7 The dispatch unit and outcome (`packages/workflows/src/dispatch.ts:61-186`)
+### 3.7 The dispatch unit and outcome (`packages/workflows/src/dispatch.ts:62-187`)
 
-`DispatchUnit` (`packages/workflows/src/dispatch.ts:61-79`) is what the two batched dispatchers,
+`DispatchUnit` (`packages/workflows/src/dispatch.ts:62-80`) is what the two batched dispatchers,
 `run_work_items` and `run_round`, build and hand to the shared machinery. The ad-hoc `run_leader`
 path has its own single-child handler and does not use `beginDispatch`:
 
@@ -265,20 +265,20 @@ path has its own single-child handler and does not use `beginDispatch`:
 | `replica?` | `number` | zero-based replica position for this item |
 | `replicaCount?` | `number` | |
 
-`DispatchStatus` (`packages/workflows/src/dispatch.ts:82-83`) is the closed six-value union every unit settles into:
+`DispatchStatus` (`packages/workflows/src/dispatch.ts:83-84`) is the closed six-value union every unit settles into:
 `completed | failed | cancelled | blocked | budget_exhausted | unregistered`. `DispatchOutcome`
-(`packages/workflows/src/dispatch.ts:86-91`) pairs one back with its unit: `{ key: string; status: DispatchStatus; result:
+(`packages/workflows/src/dispatch.ts:87-92`) pairs one back with its unit: `{ key: string; status: DispatchStatus; result:
 unknown }`, where `result` is the leader's own result, structured when `expectSchema` was set.
-`DispatchGate` (`packages/workflows/src/dispatch.ts:110`) is `(unit: DispatchUnit) => { blocked: string } | null` — the
+`DispatchGate` (`packages/workflows/src/dispatch.ts:111`) is `(unit: DispatchUnit) => { blocked: string } | null` — the
 per-unit blocker function `run_work_items` and `run_round` each build from their own dependency
-tracking (§4.6, §4.8). `DispatchSession` (`packages/workflows/src/dispatch.ts:143-186`) is the object `beginDispatch` returns:
+tracking (§4.6, §4.8). `DispatchSession` (`packages/workflows/src/dispatch.ts:144-187`) is the object `beginDispatch` returns:
 `anchorId`, `pendingHandles()`, `queuedCount()`, `run(gate?)`, `cancelled()`, `advance(units)`, and
 `end(summary)` — the API §4.4 describes by behavior.
 
 ### 3.8 Leader result text (`packages/workflows/src/result-text.ts:9-27`)
 
 `describeLeaderResult(result: LeaderResult)` is the single projection of a finished leader's outcome
-into the text a manager reads, shared by `run_leader` (`packages/workflows/src/capability.ts:316`) and by both
+into the text a manager reads, shared by `run_leader` (`packages/workflows/src/capability.ts:312`) and by both
 `run_work_items` and `run_round`, which reach it through `dispatch.ts`'s `runOne` (`packages/workflows/src/dispatch.ts:765`).
 Its rule, in order: an `error` on the `LeaderResult` wins outright, rendered as `result.error.message`;
 otherwise the raw `result.result` is projected by `stringifyResult` — a plain string passes through
@@ -291,10 +291,10 @@ falling back to the literal `"[unserializable result]"` if that throws (`package
 
 1. `createWorkflowsCapability(ctx)` builds all four tool descriptors up front — `run_leader`,
    `run_work_items`, `run_round`, and `run_workflow` only if `buildRunWorkflowTool(workflows)`
-   returned non-null (`packages/workflows/src/capability.ts:76-84`). `ctx.workflowDefs ?? []` is the workflow list
-   (`packages/workflows/src/capability.ts:79`).
+   returned non-null (`packages/workflows/src/capability.ts:77-85`). `ctx.workflowDefs ?? []` is the workflow list
+   (`packages/workflows/src/capability.ts:80`).
 2. `reservedWireNames` and `toolEffects` are derived from that same array
-   (`packages/workflows/src/capability.ts:85`, `:95-97`), so the reserved set grows with the tool set rather than being
+   (`packages/workflows/src/capability.ts:86`, `:96-98`), so the reserved set grows with the tool set rather than being
    spelled twice.
 3. `forRun(runCtx)` looks up `AGENT_REGISTRY_PORT` on the run's service registry
    (`packages/workflows/src/capability.ts:142`). Absent → one `warn` (`event: "workflow.capability_inactive"`,
@@ -315,7 +315,7 @@ falling back to the literal `"[unserializable result]"` if that throws (`package
 | non-entry (sub-agent) | none | `ctx.ledger` | `debug reason=not_entry` (`packages/workflows/src/capability.ts:179`) |
 | run with no registry | capability is `null` | — | `warn reason=no_registry` (`packages/workflows/src/capability.ts:144`) |
 
-Pinned: `packages/workflows/tests/component/capability.test.ts:51-64`, `:19-27`,
+Pinned: `packages/workflows/tests/component/capability.test.ts:51-64` (`"keeps the manager on its session budget while carrying the leader budget to descendants"`), `:19-27`,
 `packages/workflows/tests/component/observability.test.ts:141-157`.
 
 ### 4.2 `run_leader` — one ad-hoc leader
@@ -363,82 +363,82 @@ the second's spend.
 
 | Step | Effect | Line |
 |---|---|---|
-| reservation | uses `heldReservation` or takes one; `null` → `budget_exhausted` with `EMPTY_USAGE`, no assemble, no run | `packages/workflows/src/run-leader.ts:59-67`, `:21` |
-| assemble | `ctx.assemble(spec, {parentRunId: ctx.managerRunId})`, then `execution_id` is overwritten with `runId` | `packages/workflows/src/run-leader.ts:69-70` |
-| channels | `elicitForLeader(runId)`, `steerForLeader(runId)`, `onLeaderEvent` wrapped to tag the run id | `packages/workflows/src/run-leader.ts:71-75` |
-| execute | `ctx.runDeps.executeRun({rawBody, owner, deps, externalSignal: ctx.signal, capabilities:[budget-only capability]})` | `packages/workflows/src/run-leader.ts:93-102` |
-| account | `reservation.reconcile(response.usage)` | `packages/workflows/src/run-leader.ts:103` |
-| project | `status === "error"` → `LeaderResult.error = {code,message}`; otherwise status/result/usage passed through | `packages/workflows/src/run-leader.ts:104-113` |
-| fault | a thrown `executeRun` is caught, logged at `error` with a stack, and returned as `status:"error"`, `code:"leader_run_failed"` | `packages/workflows/src/run-leader.ts:114-126` |
-| always | `reservation.release()` | `packages/workflows/src/run-leader.ts:127-129` |
+| reservation | uses `heldReservation` or takes one; `null` → `budget_exhausted` with `EMPTY_USAGE`, no assemble, no run | `packages/workflows/src/run-leader.ts:59-68`, `:21` |
+| assemble | `ctx.assemble(spec, {parentRunId: ctx.managerRunId})`, then `execution_id` is overwritten with `runId` | `packages/workflows/src/run-leader.ts:70-71` |
+| channels | `elicitForLeader(runId)`, `steerForLeader(runId)`, `onLeaderEvent` wrapped to tag the run id | `packages/workflows/src/run-leader.ts:72-76` |
+| execute | `ctx.runDeps.executeRun({rawBody, owner, deps, externalSignal: ctx.signal, capabilities:[budget-only capability]})` | `packages/workflows/src/run-leader.ts:94-103` |
+| account | `reservation.reconcile(response.usage)` | `packages/workflows/src/run-leader.ts:104` |
+| project | `status === "error"` → `LeaderResult.error = {code,message}`; otherwise status/result/usage passed through | `packages/workflows/src/run-leader.ts:105-114` |
+| fault | a thrown `executeRun` is caught, logged at `error` with a stack, and returned as `status:"error"`, `code:"leader_run_failed"` | `packages/workflows/src/run-leader.ts:115-127` |
+| always | `reservation.release()` | `packages/workflows/src/run-leader.ts:128-130` |
 
 The capability list a leader run receives is **replaced**, not extended: exactly one tool-free
-capability carrying the reservation as its `outputBudget` (`packages/workflows/src/run-leader.ts:24-35`, `:98`).
+capability carrying the reservation as its `outputBudget` (`packages/workflows/src/run-leader.ts:24-35`, `:99`).
 
 ### 4.4 The dispatch session — batches, backlog and the baton
 
-`beginDispatch(deps, first)` (`packages/workflows/src/dispatch.ts:195`) registers the first batch and returns `null` when
+`beginDispatch(deps, first)` (`packages/workflows/src/dispatch.ts:196`) registers the first batch and returns `null` when
 the registry admitted **none** of it, after a `warn` `workflow.dispatch_refused`
-(`packages/workflows/src/dispatch.ts:201-216`). Otherwise it binds the session logger to the first handle's id as
+(`packages/workflows/src/dispatch.ts:202-217`). Otherwise it binds the session logger to the first handle's id as
 `dispatch_id` and emits `info` `workflow.dispatch_begun` with `units`/`registered`/`queued`
-(`packages/workflows/src/dispatch.ts:217-228`).
+(`packages/workflows/src/dispatch.ts:218-229`).
 
-`register` (`packages/workflows/src/dispatch.ts:438`) stops at the **first** refusal and pushes the whole tail to
-`backlog`, preserving the caller's order (`packages/workflows/src/dispatch.ts:444-455`); on an already-aborted run every
-unit becomes an entry with `spawn: null` instead (`packages/workflows/src/dispatch.ts:441-444`), which is what makes
+`register` (`packages/workflows/src/dispatch.ts:439`) stops at the **first** refusal and pushes the whole tail to
+`backlog`, preserving the caller's order (`packages/workflows/src/dispatch.ts:445-456`); on an already-aborted run every
+unit becomes an entry with `spawn: null` instead (`packages/workflows/src/dispatch.ts:442-445`), which is what makes
 `beginDispatch` return `null` rather than a session whose queue can never drain.
 
-`run(gate?)` (`packages/workflows/src/dispatch.ts:248`) then:
+`run(gate?)` (`packages/workflows/src/dispatch.ts:249`) then:
 
-1. takes the pending batch and resets `pending` to empty (`packages/workflows/src/dispatch.ts:249-250`);
-2. starts every registered entry via `start` → `runOne` (`packages/workflows/src/dispatch.ts:276-290`, `:311`);
+1. takes the pending batch and resets `pending` to empty (`packages/workflows/src/dispatch.ts:250-251`);
+2. starts every registered entry via `start` → `runOne` (`packages/workflows/src/dispatch.ts:277-291`, `:312`);
 3. `pump()` registers and starts backlog units while the registry admits them
-   (`packages/workflows/src/dispatch.ts:299-309`), stopping on `stopped()`;
+   (`packages/workflows/src/dispatch.ts:300-310`), stopping on `stopped()`;
 4. joins in-flight tasks in a loop, and when its own units have all settled but backlog remains,
-   calls `waitForCapacity` and retries (`packages/workflows/src/dispatch.ts:327-353`);
+   calls `waitForCapacity` and retries (`packages/workflows/src/dispatch.ts:328-354`);
 5. writes `cancelled` (if stopped) or `unregistered` for whatever backlog remains
-   (`packages/workflows/src/dispatch.ts:354-361`);
-6. hands its last held handle to the session-level `baton` (`packages/workflows/src/dispatch.ts:362`).
+   (`packages/workflows/src/dispatch.ts:355-362`);
+6. hands its last held handle to the session-level `baton` (`packages/workflows/src/dispatch.ts:363`).
 
 **The baton.** `finish(settle)` decrements `outstanding` and settles immediately while other units
-of this batch are live; the last one is *held* rather than settled (`packages/workflows/src/dispatch.ts:265-273`). The
+of this batch are live; the last one is *held* rather than settled (`packages/workflows/src/dispatch.ts:266-274`). The
 decrement happens in `finish` rather than when the task resolves, because two units settling in the
 same tick would otherwise both read the pre-decrement count and both settle
-(`packages/workflows/src/dispatch.ts:258-263`). `advance(units)` registers the next batch and releases the previous baton
-**only if the new batch actually got a handle** (`packages/workflows/src/dispatch.ts:387-392`). `end(summary)` releases the
-final baton, appending the summary to that child's result (`packages/workflows/src/dispatch.ts:406-409`,
-`packages/workflows/src/dispatch.ts:658-662`).
+(`packages/workflows/src/dispatch.ts:259-264`). `advance(units)` registers the next batch and releases the previous baton
+**only if the new batch actually got a handle** (`packages/workflows/src/dispatch.ts:388-393`). `end(summary)` releases the
+final baton, appending the summary to that child's result (`packages/workflows/src/dispatch.ts:407-410`,
+`packages/workflows/src/dispatch.ts:659-663`).
 
 Inside `pump` the order is stated as load-bearing: register the replacement, *then* release the held
 handle, *then* start the unit — because a unit the gate blocks settles synchronously and would
-otherwise overwrite the held settle (`packages/workflows/src/dispatch.ts:291-298`, `:300-308`).
+otherwise overwrite the held settle (`packages/workflows/src/dispatch.ts:292-299`, `:301-309`).
 
-**Capacity waiting.** `waitForCapacity` (`packages/workflows/src/dispatch.ts:529`) computes `foreignLive =
+**Capacity waiting.** `waitForCapacity` (`packages/workflows/src/dispatch.ts:530`) computes `foreignLive =
 agents.liveCount() - oursLive` where `oursLive` counts this batch's held handle *and* the previous
-batch's baton (`packages/workflows/src/dispatch.ts:343`, `:537-538`). `foreignLive <= 0` → `false`, i.e. the refusal is
-structural and the tail is reported `unregistered` (`packages/workflows/src/dispatch.ts:538`). Otherwise it sleeps
-`min(500, 25 · 2^min(attempt,10))` ms, resolving early on abort (`packages/workflows/src/dispatch.ts:539`, `:462-465`,
-`:473-483`). There is deliberately **no deadline** (`packages/workflows/src/dispatch.ts:518-522`); instead the poll is
+batch's baton (`packages/workflows/src/dispatch.ts:344`, `:538-539`). `foreignLive <= 0` → `false`, i.e. the refusal is
+structural and the tail is reported `unregistered` (`packages/workflows/src/dispatch.ts:539`). Otherwise it sleeps
+`min(500, 25 · 2^min(attempt,10))` ms, resolving early on abort (`packages/workflows/src/dispatch.ts:540`, `:463-466`,
+`:473-483`). There is deliberately **no deadline** (`packages/workflows/src/dispatch.ts:519-523`); instead the poll is
 sampled at `debug` and a single `info` `workflow.capacity_stalled` fires once past
-`CAPACITY_STALL_MS` = 5000 (`packages/workflows/src/dispatch.ts:486`, `:564-583`).
+`CAPACITY_STALL_MS` = 5000 (`packages/workflows/src/dispatch.ts:487`, `:565-584`).
 
 State table for one unit's slot, as `run` sees it:
 
 | State | Event | Next | Effect |
 |---|---|---|---|
-| registered | task settles, `outstanding > 0` | settled | `settle()` frees a registry slot (`packages/workflows/src/dispatch.ts:267-269`) |
-| registered | task settles, last of batch | held (baton) | previous `held` released, this one kept (`packages/workflows/src/dispatch.ts:271-272`) |
-| backlog | a settlement freed a slot | registered | `pump` registers + starts it (`packages/workflows/src/dispatch.ts:300-307`) |
-| backlog | registry full, foreign children live | backlog | poll + retry (`packages/workflows/src/dispatch.ts:344-352`) |
-| backlog | registry full, only our batons live | outcome `unregistered` | (`packages/workflows/src/dispatch.ts:538`, `:354-360`) |
-| backlog | `stopped()` | outcome `cancelled` | (`packages/workflows/src/dispatch.ts:356`) |
-| held | `advance(next)` registers ≥ 1 | settled | baton released (`packages/workflows/src/dispatch.ts:387-390`) |
-| held | `advance(next)` registers 0 | held | baton kept (`packages/workflows/src/dispatch.ts:389`) |
-| held | `end(summary)` | settled with summary | (`packages/workflows/src/dispatch.ts:406-408`) |
+| registered | task settles, `outstanding > 0` | settled | `settle()` frees a registry slot (`packages/workflows/src/dispatch.ts:268-270`) |
+| registered | task settles, last of batch | held (baton) | previous `held` released, this one kept (`packages/workflows/src/dispatch.ts:272-273`) |
+| backlog | a settlement freed a slot | registered | `pump` registers + starts it (`packages/workflows/src/dispatch.ts:301-308`) |
+| backlog | registry full, foreign children live | backlog | poll + retry (`packages/workflows/src/dispatch.ts:345-353`) |
+| backlog | registry full, only our batons live | outcome `unregistered` | (`packages/workflows/src/dispatch.ts:539`, `:355-361`) |
+| backlog | `stopped()` | outcome `cancelled` | (`packages/workflows/src/dispatch.ts:357`) |
+| held | `advance(next)` registers ≥ 1 | settled | baton released (`packages/workflows/src/dispatch.ts:388-391`) |
+| held | `advance(next)` registers 0 | held | baton kept (`packages/workflows/src/dispatch.ts:390`) |
+| held | `end(summary)` | settled with summary | (`packages/workflows/src/dispatch.ts:407-409`) |
 
 `advance` on a stopped dispatch registers nothing at all, emits `warn`
 `workflow.dispatch_halted` with `queued_dropped`, and empties `pending`
-(`packages/workflows/src/dispatch.ts:372-383`).
+(`packages/workflows/src/dispatch.ts:373-384`).
 
 ### 4.5 `runOne` — one unit's life (`runOne` in `packages/workflows/src/dispatch.ts`)
 
@@ -661,13 +661,13 @@ format and the catalogue that fills `ctx.workflowDefs` are **workflows-documents
 
 | Tool | Parser | Notable rules |
 |---|---|---|
-| `run_leader` | `parseLeaderSpec` (`packages/workflows/src/capability.ts:383`) | non-object → error; `prompt` required non-empty ≤ `textChars`; `title` ≤ `TASK_TITLE_MAX*2` then re-validated by `parseTaskTitle` — **no fallback to the prompt** (`packages/workflows/src/tool.ts:17-21`); `profile` non-empty ≤ `identifierChars`; `expect_schema` accepted as any non-null object |
+| `run_leader` | `parseLeaderSpec` (`packages/workflows/src/capability.ts:379`) | non-object → error; `prompt` required non-empty ≤ `textChars`; `title` ≤ `TASK_TITLE_MAX*2` then re-validated by `parseTaskTitle` — **no fallback to the prompt** (`packages/workflows/src/tool.ts:17-21`); `profile` non-empty ≤ `identifierChars`; `expect_schema` accepted as any non-null object |
 | `run_work_items` | `parseWorkItemsCall` (`packages/workflows/src/work-items.ts:208`) → `toWorkItem` (`:170`) | every item is fully validated; the *rendered* brief is checked against `textChars` after the prefix is applied (`packages/workflows/src/work-items.ts:261-270`) |
 | `run_round` | `parseRoundCall` (`packages/workflows/src/run-round.ts:470`) → `parseRound` (`:265`), `parseRepeat` (`:371`), `parseArgs` (`:438`) | round ids must be unique within the call (`packages/workflows/src/run-round.ts:488-490`); `repeat.rounds` must name rounds declared in the same call (`packages/workflows/src/run-round.ts:379-390`) |
 | `run_workflow` | `parseCall` (`packages/workflows/src/run-workflow.ts:180`) | `args` must be a non-array object; property names and string values bounded |
 
 Every parse failure becomes a **non-terminal** `{kind:"result", progress:false}` prefixed
-`Tool '<name>' result: …` (`packages/workflows/src/capability.ts:372-378`, `packages/workflows/src/work-items.ts:429-435`,
+`Tool '<name>' result: …` (`packages/workflows/src/capability.ts:368-374`, `packages/workflows/src/work-items.ts:429-435`,
 `packages/workflows/src/run-round.ts:1284-1290`, `packages/workflows/src/run-workflow.ts:307-312`) — the manager is told what was wrong and keeps
 its turn.
 
@@ -709,14 +709,14 @@ All records go through the `Logger` port carried on `ctx.deps.logger`, normalize
 | `event` | Level | Emitted at |
 |---|---|---|
 | `workflow.capability_inactive` | warn / debug | `packages/workflows/src/capability.ts:144`, `:179`, `:185` |
-| `workflow.budget_exhausted` | warn | `packages/workflows/src/capability.ts:227`, `packages/workflows/src/dispatch.ts:678` |
-| `workflow.leader_started` | debug (guarded by `levelEnabled`) | `packages/workflows/src/run-leader.ts:76-92` |
-| `workflow.leader_settled` | info / warn | `packages/workflows/src/dispatch.ts:617-628` |
-| `workflow.leader_faulted` | error (carries `stack`, `cause`) | `packages/workflows/src/capability.ts:327`, `packages/workflows/src/run-leader.ts:116`, `packages/workflows/src/dispatch.ts:776` |
+| `workflow.budget_exhausted` | warn | `packages/workflows/src/capability.ts:264`, `packages/workflows/src/dispatch.ts:708` |
+| `workflow.leader_started` | debug (guarded by `levelEnabled`) | `packages/workflows/src/run-leader.ts:77-93` |
+| `workflow.leader_settled` | info / warn | `packages/workflows/src/dispatch.ts:618-629` |
+| `workflow.leader_faulted` | error (carries `stack`, `cause`) | `packages/workflows/src/capability.ts:323`, `packages/workflows/src/run-leader.ts:117`, `packages/workflows/src/dispatch.ts:776` |
 | `workflow.trace_sink_failed` | error | `packages/workflows/src/dispatch.ts:787-795` |
-| `workflow.dispatch_begun` / `_refused` / `_halted` | info / warn / warn | `packages/workflows/src/dispatch.ts:218`, `:206`, `:376` |
-| `workflow.wave_advanced` | debug | `packages/workflows/src/dispatch.ts:394` |
-| `workflow.capacity_wait` / `_stalled` | debug (sampled) / info (once) | `packages/workflows/src/dispatch.ts:576`, `:583` |
+| `workflow.dispatch_begun` / `_refused` / `_halted` | info / warn / warn | `packages/workflows/src/dispatch.ts:219`, `:207`, `:377` |
+| `workflow.wave_advanced` | debug | `packages/workflows/src/dispatch.ts:395` |
+| `workflow.capacity_wait` / `_stalled` | debug (sampled) / info (once) | `packages/workflows/src/dispatch.ts:577`, `:584` |
 | `workflow.schedule_derived` / `_refused` | debug / warn | `packages/workflows/src/schedule-log.ts:32`, `:54` |
 | `workflow.round_planned` / `_skipped` / `_folded` | info / warn / debug | `packages/workflows/src/run-round.ts:1020`, `:1045`, `:1078` |
 | `workflow.driver_faulted` | error | `packages/workflows/src/run-round.ts:1268` |
@@ -758,8 +758,8 @@ semaphore, sums usage, and records the tree edges`).
 **INV-W5 (INV-177).** A queued acquisition whose `AbortSignal` fires rejects with the abort's error
 instead of hanging. Production: `packages/capability/src/semaphore.ts:55-67`. Test:
 `packages/workflows/tests/contract/concurrency.test.ts:26-33`. The workflow-side consequence — the
-child settles `stopped`, not `failed` — is at `packages/workflows/src/capability.ts:319-325` and
-`packages/workflows/src/dispatch.ts:702-709`, pinned by
+child settles `stopped`, not `failed` — is at `packages/workflows/src/capability.ts:315-321` and
+`packages/workflows/src/dispatch.ts:685-691`, pinned by
 `packages/workflows/tests/component/work-items.test.ts:482-500`.
 
 **INV-W6.** Only an **entry** agent carrying the `workflow` grant is contributed the spawn tools;
@@ -769,7 +769,7 @@ workflow-child ledger and no tools. Production: `createWorkflowsCapability` in
 (`keeps the manager on its session budget while carrying the leader budget to descendants`).
 
 **INV-W7.** Every contributed spawn tool's `ToolEffect` is `spawn_run`, never `control`. Production:
-`packages/workflows/src/capability.ts:95-97`. Test:
+`packages/workflows/src/capability.ts:96-98`. Test:
 `packages/workflows/tests/component/capability.test.ts:43-47`.
 
 **INV-W8.** A run publishing no supervision registry yields `forRun === null`; there is no
@@ -777,8 +777,8 @@ synchronous fallback path. Production: `packages/workflows/src/capability.ts:141
 `packages/workflows/tests/component/capability.test.ts:19-27`.
 
 **INV-W9.** Every spawn tool answers with `kind: "result"`, never `deferred`. Production:
-`packages/workflows/src/capability.ts:359-366`, `packages/workflows/src/work-items.ts:417-423`, `packages/workflows/src/run-round.ts:920-924`.
-Test: `packages/workflows/tests/component/run-leader.test.ts:231-234` (asserts the verdict kind and
+`packages/workflows/src/capability.ts:355-362`, `packages/workflows/src/work-items.ts:417-423`, `packages/workflows/src/run-round.ts:920-924`.
+Test: `packages/workflows/tests/component/run-leader.test.ts:237-240` (asserts the verdict kind and
 the `ag_` handle in the text).
 
 **INV-W10.** Registry refusal precedes ledger reservation, so a leader the registry cannot admit
@@ -787,39 +787,39 @@ Test: `packages/workflows/tests/component/capability.test.ts` (`refuses to spawn
 no room for another live child`, with `ledger.remaining()` unchanged).
 
 **INV-W11.** The sum of live reservations plus settled spend can never exceed a bounded ledger's
-`total`, whatever the batch size. Production: `packages/workflows/src/ledger.ts:167-173`, `:75-76`.
+`total`, whatever the batch size. Production: `packages/workflows/src/ledger.ts:166-172`, `:74-75`.
 Test: `packages/workflows/tests/unit/ledger.test.ts:105-121`;
-`packages/workflows/tests/component/run-leader.test.ts:341-378`.
+`packages/workflows/tests/component/run-leader.test.ts:348-390`.
 
 **INV-W12.** `beginDispatch` returns `null` when the registry admits none of the first batch, so a
 tool refuses outright rather than starting what it cannot finish. Production:
-`packages/workflows/src/dispatch.ts:201-216`. Test:
-`packages/workflows/tests/component/dispatch.test.ts:97-111`;
+`packages/workflows/src/dispatch.ts:202-217`. Test:
+`packages/workflows/tests/component/dispatch.test.ts:98-112`;
 `packages/workflows/tests/component/work-items.test.ts:306-310`;
 `packages/workflows/tests/component/run-round.test.ts:600-604`.
 
 **INV-W13.** A batch's outcome count always equals its unit count, however narrow the registry —
 queued units are registered as slots free, never dropped. Production:
-`packages/workflows/src/dispatch.ts:299-309`, `:327-353`, `:354-361`. Test:
-`packages/workflows/tests/component/dispatch.test.ts:163-173`;
+`packages/workflows/src/dispatch.ts:300-310`, `:328-354`, `:355-362`. Test:
+`packages/workflows/tests/component/dispatch.test.ts:164-174`;
 `packages/workflows/tests/component/run-round.test.ts:1198-1206`.
 
 **INV-W14 (the baton).** The live-child count reaches zero only at the very end of a dispatch, across
-wave *and* round boundaries. Production: `packages/workflows/src/dispatch.ts:265-273`, `:387-392`,
+wave *and* round boundaries. Production: `packages/workflows/src/dispatch.ts:266-274`, `:388-393`,
 `:406-409`. Test: `packages/workflows/tests/component/work-items.test.ts:538-568` (asserts the exact
 register/settle interleaving); `packages/workflows/tests/component/run-round.test.ts:1134-1171`;
 `:1208-1217`; `:1314-1346`.
 
 **INV-W15.** The baton is released only when the next batch actually got a handle. Production:
-`packages/workflows/src/dispatch.ts:387-390`. Test:
+`packages/workflows/src/dispatch.ts:388-391`. Test:
 `packages/workflows/tests/component/run-round.test.ts:1314-1346` (a round the registry cannot admit
 still leaves the live count above zero, and the summary still lands).
 
 **INV-W16.** A cancellation stops the dispatch scheduling anything further; queued units are reported
-`cancelled` rather than started. Production: `packages/workflows/src/dispatch.ts:301` (`stopped()` in
+`cancelled` rather than started. Production: `packages/workflows/src/dispatch.ts:302` (`stopped()` in
 `pump`), `:356`, `:372-383`. Test:
 `packages/workflows/tests/component/run-round.test.ts:1219-1236`;
-`packages/workflows/tests/component/dispatch.test.ts:113-128`;
+`packages/workflows/tests/component/dispatch.test.ts:114-129`;
 `packages/workflows/tests/component/work-items.test.ts:390-400`.
 
 **INV-W17.** A cancelled leader stops an automatic repeat block instead of spawning a replacement.
@@ -907,27 +907,27 @@ stopping rule. Production: `packages/workflows/src/run-round.ts:223` (schema `re
 
 **INV-W34.** The `workflows` settings block is `strict`, `lastWins`, not plugin-contributable, and
 exposes no per-run request param. Production: `packages/workflows/src/settings.ts:102`, `:120-125`.
-Test: `packages/workflows/tests/unit/settings.test.ts:12-27` pins the schema's bounds and defaults;
+Test: `packages/workflows/tests/unit/settings.test.ts:12-28` pins the schema's bounds and defaults;
 **the absence of a request param is unpinned in this package** (no test asserts
 `workflowsSettingsSpec.requestParams === undefined`).
 
 **INV-W35.** `managerLiveChildrenFloor` never exceeds `AGENTS_MAX_LIVE_CHILDREN`, equals the
 supervision default at the default concurrency, and floors nonsensical input to the value for 1.
 Production: `packages/workflows/src/settings.ts:71-74`. Test:
-`packages/workflows/tests/unit/settings.test.ts:29-50`. The host applies it as a *floor*, keeping a
-deliberately higher operator value: `packages/kernel/src/workflows/workflows-service.ts:706-717`.
+`packages/workflows/tests/unit/settings.test.ts:30-51`. The host applies it as a *floor*, keeping a
+deliberately higher operator value: `packages/kernel/src/workflows/workflows-service.ts:764-775`.
 
 **INV-W36.** A `run_leader` title is required and never derived from the prompt. Production:
-`packages/workflows/src/capability.ts:398-402`. Test:
-`packages/workflows/tests/component/run-leader.test.ts:539`, `:556`.
+`packages/workflows/src/capability.ts:394-398`. Test:
+`packages/workflows/tests/component/run-leader.test.ts:551`, `:568`.
 
 **INV-W37.** A workflow trace projector rejects a detail that fails its guard by throwing rather than
 emitting a partial event. Production: `packages/workflows/src/trace-events.ts:193-195`, used at
 `:227-229`, `:249-251`, `:264-266`. Test: `packages/workflows/tests/unit/trace-events.test.ts:30ff`.
 
 **INV-W38 (unpinned).** `describeQueued` is the only sentence telling the manager that units missing
-from the handle list are waiting rather than skipped (`packages/workflows/src/dispatch.ts:416-421`,
-`:423-426`). Its *text* is pinned (`packages/workflows/tests/component/dispatch.test.ts:176-184`) and its presence in
+from the handle list are waiting rather than skipped (`packages/workflows/src/dispatch.ts:417-422`,
+`:423-426`). Its *text* is pinned (`packages/workflows/tests/component/dispatch.test.ts:206-214`) and its presence in
 the `run_work_items` answer is pinned
 (`packages/workflows/tests/component/work-items.test.ts:369-377`), but nothing pins its presence in the `run_round`
 answer built at `packages/workflows/src/run-round.ts:863`.
@@ -936,14 +936,14 @@ answer built at `packages/workflows/src/run-round.ts:863`.
 
 | Situation | Handling | Cite |
 |---|---|---|
-| malformed tool arguments | non-terminal textual result naming the field; nothing registered, nothing spent | `packages/workflows/src/capability.ts:221-223`, `packages/workflows/src/work-items.ts:355`, `packages/workflows/src/run-round.ts:911`, `packages/workflows/src/run-workflow.ts:241` |
+| malformed tool arguments | non-terminal textual result naming the field; nothing registered, nothing spent | `packages/workflows/src/capability.ts:218-220`, `packages/workflows/src/work-items.ts:355`, `packages/workflows/src/run-round.ts:911`, `packages/workflows/src/run-workflow.ts:241` |
 | tree budget exhausted at `run_leader` | after semaphore admission: `warn`, `onBudgetExhausted`, registered handle settles `failed`, no model call | `buildRunLeaderHandler` in `packages/workflows/src/capability.ts`; test `packages/workflows/tests/component/capability.test.ts` (`settles an admitted leader failed when the tree budget is exhausted`) |
 | tree budget exhausted mid-batch | after semaphore admission: latch; this unit and every later one skipped `budget_exhausted`; later rounds reported `skipped (the token budget was exhausted)` | `runOne` in `packages/workflows/src/dispatch.ts`, `runRounds` in `packages/workflows/src/run-round.ts` |
-| registry sealed / at ceiling on the first batch | tool refuses outright with "too many child agents are already running" | `packages/workflows/src/dispatch.ts:205-216`, `packages/workflows/src/work-items.ts:371-378`, `packages/workflows/src/run-round.ts:969-976` |
-| registry full mid-batch, foreign children live | poll with exponential backoff (25 ms → 500 ms), **no deadline**; one `info` stall record after 5 s | `packages/workflows/src/dispatch.ts:539`, `:564-583` |
-| registry full mid-batch, only our own batons live | remaining units reported `unregistered` rather than waiting forever | `packages/workflows/src/dispatch.ts:538`, `:354-360`; test `packages/workflows/tests/component/dispatch.test.ts:150-161` |
-| leader `executeRun` throws | caught in `runLeader`; `status:"error"`, `code:"leader_run_failed"`; the stack exists only in the log | `packages/workflows/src/run-leader.ts:114-126` |
-| leader task throws outside `runLeader` | `workflow.leader_faulted`, a `workflow_run_failed` edge, child settles `failed` | `packages/workflows/src/capability.ts:318-340`, `packages/workflows/src/dispatch.ts:774-798` |
+| registry sealed / at ceiling on the first batch | tool refuses outright with "too many child agents are already running" | `packages/workflows/src/dispatch.ts:206-217`, `packages/workflows/src/work-items.ts:371-378`, `packages/workflows/src/run-round.ts:969-976` |
+| registry full mid-batch, foreign children live | poll with exponential backoff (25 ms → 500 ms), **no deadline**; one `info` stall record after 5 s | `packages/workflows/src/dispatch.ts:540`, `:565-584` |
+| registry full mid-batch, only our own batons live | remaining units reported `unregistered` rather than waiting forever | `packages/workflows/src/dispatch.ts:539`, `:355-361`; test `packages/workflows/tests/component/dispatch.test.ts:151-162` |
+| leader `executeRun` throws | caught in `runLeader`; `status:"error"`, `code:"leader_run_failed"`; the stack exists only in the log | `packages/workflows/src/run-leader.ts:115-127` |
+| leader task throws outside `runLeader` | `workflow.leader_faulted`, a `workflow_run_failed` edge, child settles `failed` | `packages/workflows/src/capability.ts:314-336`, `packages/workflows/src/dispatch.ts:774-798` |
 | trace sink throws while recording the failure edge | `workflow.trace_sink_failed` at `error`; the durable record is knowingly missing that edge; the unit still settles | `packages/workflows/src/dispatch.ts:787-795` |
 | a round cannot be planned | `workflow.round_skipped` + one clause of the batch summary; the sequence continues | `packages/workflows/src/run-round.ts:1214-1219` |
 | a round's `when` guard is empty | skipped and named (`'<path>' is empty`) | `packages/workflows/src/run-round.ts:1207-1211`; first-round case is a hard refusal `packages/workflows/src/run-round.ts:955-960` |
@@ -973,7 +973,7 @@ widens a mutator to unscoped (`packages/workflows/src/schedule.ts:243`) — visi
 | `yaml` | runtime | declared in `package.json`; used by `artifact.ts` (delegated document) |
 
 The engine dependency is deliberately narrowed further at runtime by `WorkflowRunDeps`
-(`packages/workflows/src/types.ts:69-72`): only `generateExecutionId` and `executeRun`. A host supplies the real
+(`packages/workflows/src/types.ts:71-74`): only `generateExecutionId` and `executeRun`. A host supplies the real
 implementation; every test in this package supplies a per-context fake instead of mocking a module
 (`packages/workflows/tests/helpers/workflow.ts:22-36`).
 
@@ -988,7 +988,7 @@ depend on a leaf (`packages/loop/src/workflows.ts:8-12`).
 |---|---|---|
 | `@clarvis/kernel` — capability registry | registers `workflowsSettingsSpec` at module load | `packages/kernel/src/config/capability-registry.ts:5`, `:24` |
 | `@clarvis/kernel` — kernel | accepts `WORKFLOW_GRANT` as a runnable grant and reads the block's defaults | `packages/kernel/src/kernel.ts` (`createInProcessKernel`'s `knownGrants`, `readWorkflowsSettings`) |
-| `@clarvis/kernel` — workflows service | constructs semaphore, ledger and the capability; applies `managerLiveChildrenFloor` | `packages/kernel/src/workflows/workflows-service.ts:230-231`, `:459`, `:706` |
+| `@clarvis/kernel` — workflows service | constructs semaphore, ledger and the capability; applies `managerLiveChildrenFloor` | `packages/kernel/src/workflows/workflows-service.ts:246-247`, `:483`, `:764` |
 | `@clarvis/kernel` — event mapping | consumes the trace-event guards/types | `packages/kernel/src/runs/map-events.ts:19` |
 | `@clarvis/kernel` — workflow policy | `LeaderProfileInfo` (type-only) | `packages/kernel/src/application/workflow-policy.ts:2` |
 
@@ -1001,8 +1001,8 @@ package-name scan, on the stated ground that `@clarvis/loop/workflows` is the sa
 entry.
 
 The capability is injected into a **manager's** `executeRun` only, never into shared run deps: the
-kernel comments state that at `packages/kernel/src/kernel.ts:707-710`, and the grant is stripped from
-leader profiles by the workflows service (`packages/kernel/src/workflows/workflows-service.ts:719-720`
+kernel comments state that at `packages/kernel/src/kernel.ts:800-803`, and the grant is stripped from
+leader profiles by the workflows service (`packages/kernel/src/workflows/workflows-service.ts:777-778`
 — function docstring "Remove the `workflow` grant from every profile so a leader can never become a
 [manager]"). The construction of `WorkflowCtx` itself belongs to the sibling document
 **workflows-documents-and-service**.
@@ -1010,26 +1010,26 @@ leader profiles by the workflows service (`packages/kernel/src/workflows/workflo
 ## 8. Open questions
 
 - **`ExecuteRunDeps.capabilities` vs `ExecuteRunArgs.capabilities` for leaders.** `runLeader` passes
-  the budget-only capability on the per-call `capabilities` array (`packages/workflows/src/run-leader.ts:98`) while handing
+  the budget-only capability on the per-call `capabilities` array (`packages/workflows/src/run-leader.ts:99`) while handing
   `ctx.deps` through unchanged. Whether the host's `deps.capabilities` are *also* active for a leader
   run is decided in the loop's composition, which is outside this document's scope; the debug
-  record at `packages/workflows/src/run-leader.ts:86-88` implies they are ("the capabilities named here are the whole
+  record at `packages/workflows/src/run-leader.ts:87-89` implies they are ("the capabilities named here are the whole
   surface it gets"), but that is prose, not a verified mechanism.
 - **Why background is the only mode.** `packages/workflows/src/capability.ts:10-14` asserts it and gives a rationale, and
-  `packages/workflows/tests/component/run-leader.test.ts:231-232` fails with a message about a deferred verdict — but no
+  `packages/workflows/tests/component/run-leader.test.ts:237-238` fails with a message about a deferred verdict — but no
   test in this package measures the manager's latency, so the claim that a deferred verdict is joined
   by `runDispatch`'s `finally` (`packages/workflows/src/capability.ts:195-197`) is unverified from this package's code. The
   loop-side dispatch belongs to another document.
 - **`WorkflowCtx.workflowDefs` provenance.** The type says the host supplies loaded definitions and
-  "this package never reads a root itself" (`packages/workflows/src/types.ts:100-106`); the loader in `artifact.ts` and the
+  "this package never reads a root itself" (`packages/workflows/src/types.ts:102-108`); the loader in `artifact.ts` and the
   kernel service that calls it belong to **workflows-documents-and-service**.
 - **`ExecuteRunOutcome.response.status` domain.** `LeaderStatus` (`packages/workflows/src/types.ts:33-34`) enumerates six
-  statuses and `runLeader` passes `response.status` through verbatim (`packages/workflows/src/run-leader.ts:113`); the loop's
+  statuses and `runLeader` passes `response.status` through verbatim (`packages/workflows/src/run-leader.ts:114`); the loop's
   `RunResponse` is outside this document's scope, so whether the two sets coincide is unconfirmed.
 - **`elicitWithClockPause` semantics.** Used at `packages/workflows/src/run-workflow.ts:261`; its clock-pause behaviour is
   the elicitation document's.
 - **`AgentRegistryPort.liveCount()` counting rules.** `waitForCapacity` subtracts `oursLive` from it
-  (`packages/workflows/src/dispatch.ts:537`) and treats the remainder as foreign. What exactly the registry counts as live
+  (`packages/workflows/src/dispatch.ts:538`) and treats the remainder as foreign. What exactly the registry counts as live
   (adopted tasks? retained children?) is [foundations/supervision.md](../foundations/supervision.md)'s.
 - **Unpinned invariants.** (a) `workflowsSettingsSpec` exposing no `requestParams` is
   asserted nowhere in this package (§5 INV-W34). (b) `describeQueued`'s appearance in the `run_round`

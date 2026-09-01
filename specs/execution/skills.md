@@ -10,23 +10,23 @@ that catalog in three tiers: **list** (name + description metadata), **get** (bo
 bundled resources), **resource/readResource** (one confined file)
 and **readResourceChunk** (one byte-addressed UTF-8 page of a larger confined file)
 (`SkillRegistry` in `packages/skills/src/types.ts`). The tiering is the point — the run's system
-prompt receives only names and one-line descriptions (`packages/skills/src/catalog/index.ts:32`),
+prompt receives only names and one-line descriptions (`packages/skills/src/catalog/index.ts:35-54`),
 and the model pulls a body on demand through the `load_skill` tool
-(`packages/skills/src/tool.ts:33`).
+(`packages/skills/src/tool.ts:41-80`).
 
 The package also ships the second half of the feature: the loop **capability** that gates the catalog
 on an env flag and a per-agent grant, renders the system-prompt section, and dispatches `load_skill`
 (`packages/skills/src/capability.ts:86`). Its `SkillsProvider` port
-(`packages/skills/src/tool.ts:22`) is the only surface hosts consume, which is what lets the kernel
+(`packages/skills/src/tool.ts:24`) is the only surface hosts consume, which is what lets the kernel
 adapt a scanned catalog into the protocol `SkillsService` for slash-commands
 (`packages/kernel/src/skills/skills-service.ts:30`) without either side knowing the other's
 internals.
 
 Everything the reader does is bounded and degrading. Roots, per-root manifests, distinct skills,
 directory entries, nesting depth, file bytes, decoded characters, resource counts and sidecar size
-each carry a hard cap (`packages/skills/src/limits.ts:2`–`:73`), and a manifest written in a dialect
+each carry a hard cap (`packages/skills/src/limits.ts:2`–`:77`), and a manifest written in a dialect
 Clarvis cannot fully read is repaired or partially defaulted rather than deleted
-(`packages/skills/src/parse.ts:64`, `packages/skills/src/parse.ts:169`,
+(`packages/skills/src/parse.ts:66`, `packages/skills/src/parse.ts:171`,
 `packages/skills/src/schema.ts:57`).
 
 ---
@@ -48,11 +48,11 @@ Declared in `packages/skills/package.json:25`–`:42`; every entry resolves to `
 
 | Export | Signature / shape | Source |
 | --- | --- | --- |
-| `createAgentSkills(options)` | `(AgentSkillsOptions) => AgentSkills` | `packages/skills/src/index.ts:47` |
+| `createAgentSkills(options)` | `(AgentSkillsOptions) => AgentSkills` | `packages/skills/src/index.ts:56` |
 | `AgentSkills` | `{ config; listSkills(); loadSkill(name); resourcePath(name, rel); readResource(name, rel); readResourceChunk(name, rel, offset?, maxChars?); refresh() }` | `packages/skills/src/index.ts` |
 | `discoverSkills(config)` | `(SkillConfig) => SkillRegistry` | `packages/skills/src/core.ts:15` |
 | `resolveConfig(options)` | `(AgentSkillsOptions) => SkillConfig` | `packages/skills/src/config.ts:82` |
-| `normalizeTools(tools)` | `(string[] \| string \| undefined) => string[]` | `packages/skills/src/parse.ts:279` |
+| `normalizeTools(tools)` | `(string[] \| string \| undefined) => string[]` | `packages/skills/src/parse.ts:290` |
 | `ParsedSkill` | type only | `packages/skills/src/parse.ts:16` |
 | `clarvisSkillRoots(opts?)` | `(ClarvisSkillRootsOptions) => SkillRootInput[]` | `packages/skills/src/preset.ts:32` |
 | `MAX_SKILL_ROOTS` | `32` | `packages/skills/src/limits.ts:2` |
@@ -63,13 +63,13 @@ Declared in `packages/skills/package.json:25`–`:42`; every entry resolves to `
 | bounded read/hash types | `BoundedReadOptions`, `BoundedTextChunkOptions`, `BoundedTextChunk`, `BoundedFileDigest`, `DescriptorReader` | `packages/skills/src/bounded-read.ts` |
 | snapshot file/resource limits | `MAX_SKILL_FILE_BYTES`, `MAX_SKILL_FILE_CHARS`, `MAX_SKILL_RESOURCE_BYTES`, `MAX_SKILL_RESOURCE_CHARS`, `MAX_SKILL_RESOURCE_FILE_BYTES`, `MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` | `packages/skills/src/limits.ts` |
 | `ErrorCode` | type only — the closed union of error codes | `packages/skills/src/errors.ts:6` |
-| re-exports from `@clarvis/paths` | `resolveWorkspaceDir`, `resolveAgainst`, `expandHome` | `packages/skills/src/index.ts:66` |
+| re-exports from `@clarvis/paths` | `resolveWorkspaceDir`, `resolveAgainst`, `expandHome` | `packages/skills/src/index.ts:77` |
 
 The parser, the sidecar reader, the path guard, the frontmatter schema and both error values are
 **not** on this entry. They exist and are used throughout the package, but reaching them requires
-importing a module rather than the entrypoint: `parseSkill` (`packages/skills/src/parse.ts:267`),
-`readSkillSidecar` / `SkillSidecar` (`packages/skills/src/sidecar.ts:286`, `:25`),
-`findSkillSidecar` (`packages/skills/src/scan.ts:161`), `resolveResourcePath`
+importing a module rather than the entrypoint: `parseSkill` (`packages/skills/src/parse.ts:278`),
+`readSkillSidecar` / `SkillSidecar` (`packages/skills/src/sidecar.ts:320`, `:26`),
+`findSkillSidecar` (`packages/skills/src/scan.ts:212`), `resolveResourcePath`
 (`packages/skills/src/paths.ts:25`), `skillFrontmatterSchema` (`packages/skills/src/schema.ts:95`),
 `SkillError` / `fsError` (`packages/skills/src/errors.ts:20`, `:48`), `StartupError`
 (`packages/skills/src/config.ts:19`) and the two defaults `DEFAULT_STRICT` / `DEFAULT_FOLLOW_SYMLINKS`
@@ -97,11 +97,11 @@ is a contract" (`packages/skills/src/lib/log.ts:34`–`:36`).
 | `USE_SKILLS_GRANT` | `"use_skills"` | `packages/skills/src/capability.ts:55` |
 | `createSkillsCapability(provider?, options?)` | `=> Capability` | `packages/skills/src/capability.ts:86` |
 | `SkillsCapabilityOptions.bootstraps` | `() => readonly PluginBootstrapSkill[]` | `packages/skills/src/capability.ts:72` |
-| `LOAD_SKILL_TOOL_NAME` | `"load_skill"` | `packages/skills/src/tool.ts:13` |
-| `SKILL_RESOURCE_MAX_CHARS` | `50_000` | `packages/skills/src/tool.ts:16` |
-| `loadSkillTool` | `NamespacedTool` (see schema below) | `packages/skills/src/tool.ts:33` |
-| `renderSkillsSection(catalog, bootstraps?)` | `=> string` | `packages/skills/src/tool.ts:106` |
-| `handleLoadSkillCall(args)` | `=> LoadSkillCallResult` (synchronous) | `packages/skills/src/call.ts:65` |
+| `LOAD_SKILL_TOOL_NAME` | `"load_skill"` | `packages/skills/src/tool.ts:15` |
+| `SKILL_RESOURCE_MAX_CHARS` | `50_000` | `packages/skills/src/tool.ts:18` |
+| `loadSkillTool` | `NamespacedTool` (see schema below) | `packages/skills/src/tool.ts:41` |
+| `renderSkillsSection(catalog, bootstraps?)` | `=> string` | `packages/skills/src/tool.ts:122` |
+| `handleLoadSkillCall(args)` | `=> LoadSkillCallResult` (synchronous) | `packages/skills/src/call.ts:105` |
 | `SkillsProvider` | `{ listSkills; loadSkill; readResource; readResourceChunk? }` | `packages/skills/src/tool.ts` |
 | `resolveBootstrapSkills(args)` | `=> ResolvedBootstrapSkill[]` | `packages/skills/src/bootstrap.ts:104` |
 | `BOOTSTRAP_SKILL_MAX_CHARS` | `20_000` | `packages/skills/src/bootstrap.ts:19` |
@@ -157,14 +157,14 @@ and skipped" (the `foreign_root`/`not_found`/etc. gates of §4.13).
 
 | Type | Fields | Source |
 | --- | --- | --- |
-| `SkillsService` | `list(): Promise<SkillSummary[]>`, `getPrompt(name, args?): Promise<Message[]>` | `packages/protocol/src/skills.ts:91` |
-| `SkillSummary` | `name`, `description`, `agent?`, `arguments?`, `provenance?`, `presentation?`, `plansMode?` | `packages/protocol/src/skills.ts:69` |
+| `SkillsService` | `list(): Promise<SkillSummary[]>`, `getPrompt(name, args?): Promise<Message[]>` | `packages/protocol/src/skills.ts:102` |
+| `SkillSummary` | `name`, `description`, `agent?`, `arguments?`, `provenance?`, `presentation?`, `plansMode?` | `packages/protocol/src/skills.ts:78` |
 | `SkillArgument` | `name`, `description?`, `required?` | `packages/protocol/src/skills.ts:13` |
 | `SkillProvenance` | `scope: "user" \| "workspace"`, `source?`, `author?` | `packages/protocol/src/skills.ts:29` |
 | `SkillPresentation` | `displayName?`, `shortDescription?`, `icons?`, `color?`, `starterPrompt?` | `packages/protocol/src/skills.ts:55` |
 | `SkillIconSet` | `light?`, `dark?` | `packages/protocol/src/skills.ts:40` |
 
-`KernelClient.skills` is one of the aggregated services (`packages/protocol/src/client.ts:80`).
+`KernelClient.skills` is one of the aggregated services (`packages/protocol/src/client.ts:83`).
 
 ---
 
@@ -174,9 +174,9 @@ and skipped" (the `foreign_root`/`not_found`/etc. gates of §4.13).
 
 A skill is a **directory** containing a file whose lowercased name is `skill.md`
 (`packages/skills/src/scan.ts:23`, matched case-insensitively at
-`packages/skills/src/scan.ts:139`; pinned at `packages/skills/tests/integration/scan.test.ts:82`).
+`packages/skills/src/scan.ts:172`-`:183`; pinned at `packages/skills/tests/integration/scan.test.ts:82`).
 Everything else under that directory is resources, except the top-level `agents/` directory
-(`packages/skills/src/scan.ts:297`).
+(`packages/skills/src/scan.ts:361`).
 
 ```
 <root>/
@@ -191,8 +191,8 @@ Everything else under that directory is resources, except the top-level `agents/
   <group-dir>/<skill-name>/SKILL.md   # grouping directories are descended through
 ```
 
-Resource `kind` comes from the first path segment only (`packages/skills/src/scan.ts:404`); `rel` is
-always POSIX-separated (`packages/skills/src/scan.ts:416`).
+Resource `kind` comes from the first path segment only (`packages/skills/src/scan.ts:468`); `rel` is
+always POSIX-separated (`packages/skills/src/scan.ts:480`).
 
 ### 3.2 `SKILL.md` frontmatter
 
@@ -211,7 +211,7 @@ Validated fields (`packages/skills/src/schema.ts:95`):
 | `version` | string | — | `.catch(undefined)` |
 | `license` | string | — | `.catch(undefined)` |
 | `argument-hint` | string **or** `string[]`, joined with `", "` | — | `.catch(undefined)` |
-| `user-invocable` | boolean | — | defaults to `true` at `packages/skills/src/registry.ts:493` |
+| `user-invocable` | boolean | — | defaults to `true` at `packages/skills/src/registry.ts:517` |
 | `allowed-tools` / `tools` | `string[]` (≤128 entries, ≤256 chars each) **or** comma-separated string | `packages/skills/src/schema.ts:10` | **no `.catch`** — an unreadable value fails the manifest |
 | any other key | passthrough, retained on `SkillInfo.metadata` | — | — |
 
@@ -255,10 +255,10 @@ Diff the two lockfiles and report what moved.
 ### 3.3 Harness sidecar (`agents/*.yaml`)
 
 Matched by shape, not filename: the first `.yaml`/`.yml` file by sorted name directly inside
-`agents/` (`packages/skills/src/scan.ts:46`, `:161`–`:183`). It is a YAML **mapping**; anything else
-degrades to "no sidecar" (`packages/skills/src/sidecar.ts:330`).
+`agents/` (`packages/skills/src/scan.ts:43`, `:212`–`:249`). It is a YAML **mapping**; anything else
+degrades to "no sidecar" (`packages/skills/src/sidecar.ts:366`).
 
-Accepted key spellings per concept (`packages/skills/src/sidecar.ts:40`–`:80`):
+Accepted key spellings per concept (`packages/skills/src/sidecar.ts:74`–`:114`):
 
 | Concept | Keys | Result |
 | --- | --- | --- |
@@ -273,7 +273,7 @@ Accepted key spellings per concept (`packages/skills/src/sidecar.ts:40`–`:80`)
 | catalog suppression | `allow-implicit-invocation`/… (inverted) or `hide-from-catalog`/`hidden` | boolean |
 | MCP tool dependencies | `dependencies.tools[]` entries with `type: mcp`, `value`, optional `description`/`transport`/`url` | at most 64 bounded entries |
 
-`readCatalogSuppressed` (`packages/skills/src/sidecar.ts:211`–`:219`) has a real precedence order
+`readCatalogSuppressed` (`packages/skills/src/sidecar.ts:245`–`:253`) has a real precedence order
 the table above does not show: it tries the **policy block first, then the root** mapping, and
 *within* each block it checks `implicit-invocation` (in any spelling) before `hide-from-catalog` —
 whichever concept is found first in a given block decides outright, and the other concept in that
@@ -306,12 +306,12 @@ policy:
 
 ### 3.4 In-memory shapes
 
-`SkillInfo` (`packages/skills/src/types.ts:119`): `name`, `description`, `metadata`,
+`SkillInfo` (`packages/skills/src/types.ts:154`): `name`, `description`, `metadata`,
 `allowedTools?`, `userInvocable`, `catalogSuppressed?`, `presentation?`, `dependencies?`, `defaulted?`, `scope`,
 `source`, `root`, `dir`, `executionRoot?`, `path`, `shadowed?`. `SkillContent` extends it with `body`
-and `resources` (`packages/skills/src/types.ts:173`). `ResolvedSkill` is `{ info, body }` where `body`
-may be a lazy getter (`packages/skills/src/types.ts:184`, implemented at
-`packages/skills/src/registry.ts:505`).
+and `resources` (`packages/skills/src/types.ts:212-216`). `ResolvedSkill` is `{ info, body }` where
+`body` may be a lazy getter (`packages/skills/src/types.ts:218-226`, implemented at
+`packages/skills/src/registry.ts:529-545`).
 
 `SkillRootInput.executionRoot` is a host approval flag, not the path ultimately disclosed. When it
 is present, `buildResolvedSkill` records that discovered skill's own `dir` as
@@ -321,16 +321,16 @@ field. Production: `normalizeRoot` in `packages/skills/src/config.ts` and `build
 (`exposes only the selected skill directory when its root approves helper execution`).
 
 `ShadowedSkill` records only `source`, `scope`, `root`, `dir`
-(`packages/skills/src/types.ts:104`, projected at `packages/skills/src/registry.ts:323`).
+(`packages/skills/src/types.ts:139-147`, projected at `packages/skills/src/registry.ts:329-335`).
 
 ### 3.5 Identifiers
 
 The skill **name** is the lookup key, the merge identity and the slash-command name
-(`packages/skills/src/types.ts:120`, `packages/protocol/src/skills.ts:71`). There is no generated id
+(`packages/skills/src/types.ts:154-157`, `packages/protocol/src/skills.ts:78-80`). There is no generated id
 anywhere in this subsystem. When a name has to be supplied it comes from the directory basename with
 unsupported characters collapsed to `-`, edge separators stripped, truncated to 128 chars, falling
-back to the literal `"skill"` (`packages/skills/src/registry.ts:58`–`:84`; pinned at
-`packages/skills/tests/integration/sidecar.test.ts:296`).
+back to the literal `"skill"` (`packages/skills/src/registry.ts:60`, `:83`–`:90`; pinned at
+`packages/skills/tests/integration/sidecar.test.ts:307`).
 
 ### 3.6 Limits table
 
@@ -354,17 +354,17 @@ back to the literal `"skill"` (`packages/skills/src/registry.ts:58`–`:84`; pin
 | `MAX_SKILL_RESOURCE_CHARS` | 50 000 | `:53` |
 | `MAX_SKILL_RESOURCE_FILE_BYTES` | 8 388 608 (8 MiB) | `packages/skills/src/limits.ts` |
 | `MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` | 33 554 432 (32 MiB) | `packages/skills/src/limits.ts` |
-| `MAX_SKILL_SIDECAR_BYTES` | 16 384 | `:56` |
-| `MAX_SKILL_SIDECAR_CHARS` | 8 000 | `:58` |
-| `MAX_SKILL_LABEL_CHARS` | 128 | `:60` |
-| `MAX_SKILL_SHORT_DESCRIPTION_CHARS` | 512 | `:62` |
-| `MAX_SKILL_STARTER_PROMPT_CHARS` | 4 000 | `:64` |
-| `MAX_SKILL_ICON_PATH_CHARS` | 512 | `:66` |
+| `MAX_SKILL_SIDECAR_BYTES` | 16 384 | `:60` |
+| `MAX_SKILL_SIDECAR_CHARS` | 8 000 | `:62` |
+| `MAX_SKILL_LABEL_CHARS` | 128 | `:64` |
+| `MAX_SKILL_SHORT_DESCRIPTION_CHARS` | 512 | `:66` |
+| `MAX_SKILL_STARTER_PROMPT_CHARS` | 4 000 | `:68` |
+| `MAX_SKILL_ICON_PATH_CHARS` | 512 | `:70` |
 | `MAX_SKILL_CATALOG_CHARS` | 8 000 | `packages/skills/src/catalog/index.ts` |
-| `MAX_SKILL_NAME_CHARS` / `MAX_SKILL_AGENT_CHARS` | 128 | `:69`, `:70` |
-| `MAX_SKILL_DESCRIPTION_CHARS` | 1 024 | `:71` |
-| `MAX_SKILL_TOOLS` / `MAX_SKILL_TOOL_CHARS` | 128 / 256 | `:72`, `:73` |
-| `SKILL_RESOURCE_MAX_CHARS` (maximum characters in one tool page) | 50 000 | `packages/skills/src/tool.ts:16` |
+| `MAX_SKILL_NAME_CHARS` / `MAX_SKILL_AGENT_CHARS` | 128 | `:90`, `:91` |
+| `MAX_SKILL_DESCRIPTION_CHARS` | 1 024 | `:92` |
+| `MAX_SKILL_TOOLS` / `MAX_SKILL_TOOL_CHARS` | 128 / 256 | `:93`, `:94` |
+| `SKILL_RESOURCE_MAX_CHARS` (maximum characters in one tool page) | 50 000 | `packages/skills/src/tool.ts:18` |
 | `BOOTSTRAP_SKILL_MAX_CHARS` / run budget | 20 000 / 40 000 | `packages/skills/src/bootstrap.ts:19`, `:29` |
 
 ---
@@ -377,19 +377,19 @@ back to the literal `"skill"` (`packages/skills/src/registry.ts:58`–`:84`; pin
    `resolveWorkspaceDir(workspace, cwd, home)` (`packages/skills/src/config.ts:83`–`:85`).
 2. If `workspace` was given explicitly, `validateDir` stats it and throws `StartupError` when it is
    missing or not a directory, emitting `skills.workspace.unreadable` at `debug` first
-   (`packages/skills/src/config.ts:135`–`:148`).
+   (`packages/skills/src/config.ts:162`–`:175`).
 3. Empty `roots` ⇒ `StartupError` (`:94`); more than `MAX_SKILL_ROOTS` ⇒ `StartupError` naming both
-   counts (`:96`–`:101`; pinned at `packages/skills/tests/unit/config.test.ts:56`).
+   counts (`:96`–`:101`; pinned at `packages/skills/tests/unit/config.test.ts:97`).
 4. Each root is normalized: path resolved against workspace + `~`, `scope` defaults to `"workspace"`,
    `source` to `""`, and an optional `include` list is validated, de-duplicated and sorted
-   (`packages/skills/src/config.ts:119`–`:139`). An absent list means full discovery; an empty list
+   (`packages/skills/src/config.ts:119`–`:144`). An absent list means full discovery; an empty list
    admits nothing.
 
 `createAgentSkills` scans once at construction; `AgentSkills.refresh()` re-scans every configured
 root from disk and **replaces** the in-memory registry wholesale, so additions, content
 modifications and removals are all reflected on the next call — nothing is diffed or merged
-against the previous scan (`packages/skills/src/index.ts:56`–`:58`). Pinned:
-`packages/skills/tests/integration/api.test.ts:63`–`:80` ("refreshes additions, modifications and
+against the previous scan (`packages/skills/src/index.ts:67`–`:69`). Pinned:
+`packages/skills/tests/integration/api.test.ts:68`–`:96` ("refreshes additions, modifications and
 removals from disk").
 
 ### 4.2 Root order
@@ -409,11 +409,11 @@ The `.agents` half of this ordering is an interop rule — see
 The engine prepends any host-supplied `extraSkillRoots` **before** these four, so plugin roots sit at
 the lowest precedence of all. A host-supplied `skillRoots` is instead an exact resolved set and
 suppresses automatic appending of the standard four roots
-(`packages/loop/src/runtime/build-run-deps.ts:472-485`). The two options are mutually exclusive
-(`:372-376`). Plugin root
+(`packages/loop/src/runtime/build-run-deps.ts:481-502`). The two options are mutually exclusive
+(`:387-390`). Plugin root
 construction belongs to [`specs/hosts/plugins.md`](../hosts/plugins.md); what
 matters here is only that they arrive as `SkillRootInput[]` with `source: "plugin:<name>"`
-(`packages/kernel/src/plugins/plugin-contributions.ts:352`–`:355`).
+(`packages/kernel/src/plugins/plugin-contributions.ts:658-664`).
 
 ### 4.3 Scanning one root (`listSkillDirs`)
 
@@ -444,32 +444,32 @@ grouping, multi-level nesting, nesting-bound, width-bound and early-stop cases.
 
 ### 4.4 Building one skill (`buildResolvedSkill`)
 
-Order matters and is fixed (`packages/skills/src/registry.ts:433`–`:539`):
+Order matters and is fixed (`packages/skills/src/registry.ts:452`–`:573`):
 
 1. **Bounded prefix read** of `SKILL.md`: at most `MAX_SKILL_FRONTMATTER_BYTES`, refusing the file
-   outright if its complete size exceeds `MAX_SKILL_FILE_BYTES` (`:441`–`:447`, implemented at
-   `packages/skills/src/bounded-read.ts:53`–`:56`).
-2. **Sidecar** located and read (`:449`–`:450`).
+   outright if its complete size exceeds `MAX_SKILL_FILE_BYTES` (`:460`–`:466`, implemented at
+   `packages/skills/src/bounded-read.ts:333`–`:336`).
+2. **Sidecar** located and read (`:468`–`:469`).
 3. **Defaults computed** — name from the directory, description from the sidecar's short description
-   or `"(no description supplied)"` (`:451`–`:454`).
+   or `"(no description supplied)"` (`:470`–`:473`).
 4. **Frontmatter parsed with defaults**: split fence → YAML parse (with flat-mapping repair) →
    character cap → fill unusable required fields → zod validate
-   (`packages/skills/src/parse.ts:223`–`:232`).
+   (`packages/skills/src/parse.ts:225`–`:242`).
 5. **Warnings**: a declared name that differs from the directory name warns but is *not* corrected,
-   and is skipped when the name was supplied by Clarvis (`:460`–`:466`; pinned at
+   and is skipped when the name was supplied by Clarvis (`:477`–`:486`; pinned at
    `packages/skills/tests/integration/malformed.test.ts:88` and
-   `packages/skills/tests/integration/sidecar.test.ts:285`). Every supplied field warns and emits
-   `skill.field_defaulted` recording only its **length** (`:467`–`:474`; pinned at
+   `packages/skills/tests/integration/sidecar.test.ts:296`). Every supplied field warns and emits
+   `skill.field_defaulted` recording only its **length** (`:487`–`:494`; pinned at
    `packages/skills/tests/integration/diagnostics.test.ts:97`).
 6. **Description resolution**: the manifest's own description wins; the short description (sidecar
    first, then the manifest's `metadata.short-description`/`short_description`) is used **only** when
-   `description` was defaulted (`:476`–`:481`, `:95`–`:104`).
+   `description` was defaulted (`:496`–`:501`, `:101`–`:109`).
 7. **Info assembled**: `allowedTools` from `allowed-tools` ?? `tools`; `userInvocable` defaults
    `true`; `catalogSuppressed` set only when the sidecar says so; `metadata` carries the frontmatter
-   with the resolved `description` overwritten (`:487`–`:502`).
+   with the resolved `description` overwritten (`:507`–`:528`).
 8. **Body getter**: lazy, memoized after the first read, and it **re-parses and re-validates** the
    whole file; a name that changed since discovery emits `skill.name_changed` and throws
-   (`:505`–`:538`; pinned at `packages/skills/tests/integration/bounds.test.ts:60`, `:78`).
+   (`:529`–`:573`; pinned at `packages/skills/tests/integration/bounds.test.ts:60`, `:78`).
 
 ### 4.5 Merging (`buildRegistry`)
 
@@ -481,43 +481,43 @@ for each root (ascending precedence):
     else                        -> catalog overflow (see below)
 ```
 
-`packages/skills/src/registry.ts:126`–`:152`.
+`packages/skills/src/registry.ts:132`–`:158`.
 
 **Intra-root** duplicates are resolved *before* cross-root merging, first-seen wins (directory sort
 order), with a warning or — under `strict` — a `duplicate_skill` throw
-(`packages/skills/src/registry.ts:382`–`:399`; pinned at
+(`packages/skills/src/registry.ts:401`–`:418`; pinned at
 `packages/skills/tests/integration/malformed.test.ts:62`, `:77`).
 
 **Cross-root** collisions call `mergeWinner`, which keeps the winner and accumulates the full shadow
 chain `[…winner.shadowed, loser, …loser.shadowed]`, and warns with `skill.shadowed` naming the
-winning origin and every losing one (`packages/skills/src/registry.ts:285`–`:302`; pinned at
+winning origin and every losing one (`packages/skills/src/registry.ts:291`–`:308`; pinned at
 `packages/skills/tests/integration/discovery.test.ts:50` and
 `packages/skills/tests/integration/diagnostics.test.ts:61`).
 
 **Catalog overflow** at `MAX_SKILLS`: under `strict` it throws; otherwise it counts a drop, logs
 `skill.rejected` with reason `catalog_overflow`, and — if the newcomer's name sorts *before* the
 currently largest retained name — evicts that largest and inserts the newcomer
-(`packages/skills/src/registry.ts:137`–`:151`, `:264`–`:270`). One warning is emitted after the whole
-pass, not per skill (`:154`–`:159`). Pinned at
+(`packages/skills/src/registry.ts:143`–`:157`, `:270`–`:276`). One warning is emitted after the whole
+pass, not per skill (`:160`–`:164`). Pinned at
 `packages/skills/tests/integration/bounds.test.ts:152`.
 
 ### 4.6 Registry state machine (`makeRegistry`)
 
 | Operation | Input state | Result | Line |
 | --- | --- | --- | --- |
-| `list()` | any | every `info`, sorted by name | `packages/skills/src/registry.ts:594` |
-| `get(name)` | unknown name | `undefined` | `:599` |
-| `get(name)` | known, body readable | `{ …info, body, resources }` + `skill.body_disclosed` debug record | `:600`–`:611` |
-| `get(name)` | known, manifest renamed on disk | throws `invalid_skill` "refresh required" | `:517`–`:532` |
-| `resource(name, rel)` | unknown skill | `SkillError not_found` | `:562` |
+| `list()` | any | every `info`, sorted by name | `packages/skills/src/registry.ts:714-723` |
+| `get(name)` | unknown name | `undefined` | `:724-726` |
+| `get(name)` | known, body readable | `{ …info, body, resources }` + `skill.body_disclosed` debug record | `:727`–`:738` |
+| `get(name)` | known, manifest renamed on disk | throws `invalid_skill` "refresh required" from the lazy body getter | `:551`–`:566` |
+| `resource(name, rel)` | unknown skill | `SkillError not_found` | `:680-684` |
 | `resource(name, rel)` | `rel` empty / absolute | `SkillError invalid_input` | `packages/skills/src/paths.ts:31`, `:34` |
 | `resource(name, rel)` | resolves outside the skill dir | `SkillError path_escape` | `packages/skills/src/paths.ts:40` |
-| `resource(name, rel)` | inside `agents/` (lexically **or** after realpath) | `SkillError not_found` — deliberately indistinguishable from absent | `packages/skills/src/registry.ts:566`–`:571` |
-| `resource(name, rel)` | cannot be stat'd | `not_found` + `skill.resource_missing` debug | `:572`–`:584` |
-| `resource(name, rel)` | not a regular file | `SkillError not_a_file` | `:585` |
-| `readResource(name, rel)` | as above, then bounded read at 256 KiB / 50 000 chars | text or `invalid_input` size error | `:616`–`:625` |
+| `resource(name, rel)` | inside `agents/` (lexically **or** after realpath) | `SkillError not_found` — deliberately indistinguishable from absent | `packages/skills/src/registry.ts:685-691` |
+| `resource(name, rel)` | cannot be stat'd | `not_found` + `skill.resource_missing` debug | `:692`–`:704` |
+| `resource(name, rel)` | not a regular file | `SkillError not_a_file` | `:705-710` |
+| `readResource(name, rel)` | as above, then bounded read at 256 KiB / 50 000 chars | text or `invalid_input` size error | `:743`–`:751` |
 | `readResourceChunk(name, rel, offset?, maxChars?)` | as above, complete file at most 8 MiB, then one page at most 256 KiB / 50 000 chars | `BoundedTextChunk` with byte cursor, or fail-closed `invalid_input` | `makeRegistry` in `packages/skills/src/registry.ts` |
-| `size` | any | live map size | `:626` |
+| `size` | any | live map size | `:765`-`:767` |
 
 Pinned: the three resource outcomes at
 `packages/skills/tests/integration/registry-resource.test.ts:18`; harness-directory refusal
@@ -546,41 +546,41 @@ content`) and `packages/kernel/tests/integration/plugin-contributions.test.ts` (
 and text resources into the exact skill snapshot` and the per-file resource bound).
 
 Depth-first with a `realpath`-keyed `visited` set, so a symlink cycle back into the skill terminates
-(`packages/skills/src/scan.ts:247`, `:263`–`:265`; pinned at
+(`packages/skills/src/scan.ts:311`, `:327`–`:329`; pinned at
 `packages/skills/tests/integration/symlink.test.ts:72`). Exclusions and budgets, in the order the
 loop applies them:
 
 | Rule | Effect | Line |
 | --- | --- | --- |
-| `visited.size >= MAX_SKILL_RESOURCE_DIRECTORIES` | warn, stop the whole walk | `:246`–`:254` |
-| entry budget exhausted (before opening) | warn, stop | `:260`–`:269` |
-| entry budget exceeded (after listing) | warn, stop | `:276`–`:284` |
-| top-level `agents/` | skipped whole | `:290` |
-| symlink that escapes the skill dir | warn + `skill.resource_skipped` `escaping_symlink` | `:291`–`:295` |
-| top-level `SKILL.md` | skipped | `:297` |
-| `out.length >= MAX_SKILL_RESOURCES` | warn, return what is collected | `:298`–`:306` |
-| directory deeper than `MAX_SKILL_RESOURCE_DEPTH` | warn, skip | `:309`–`:317` |
-| final | sort by `rel` | `:325` |
+| `visited.size >= MAX_SKILL_RESOURCE_DIRECTORIES` | warn, stop the whole walk | `:316`–`:325` |
+| entry budget exhausted (before opening) | warn, stop | `:331`–`:340` |
+| entry budget exceeded (after listing) | warn, stop | `:347`–`:355` |
+| top-level `agents/` | skipped whole | `:361` |
+| symlink that escapes the skill dir | warn + `skill.resource_skipped` `escaping_symlink` | `:362`–`:365` |
+| top-level `SKILL.md` | skipped | `:368` |
+| `out.length >= MAX_SKILL_RESOURCES` | warn, return what is collected | `:369`–`:376` |
+| directory deeper than `MAX_SKILL_RESOURCE_DEPTH` | warn, skip | `:380`–`:387` |
+| final | sort by `rel` | `:396` |
 
 `escapesRoot` returns `false` for `ENOENT` (so a dangling link falls through to the accurate
 "dangling symlink" warning) and `true` for every **other** realpath failure, because `stat` needs
 less permission than `realpath` and an unresolvable link out of the skill would otherwise be
-published (`packages/skills/src/scan.ts:386`–`:394`; pinned at
-`packages/skills/tests/integration/scan.test.ts:176`).
+published (`packages/skills/src/scan.ts:450`–`:458`; pinned at
+`packages/skills/tests/integration/scan.test.ts:248`).
 
 `safeRealpath` is a separate, more permissive fallback used only to compute a **cycle-detection
 key**: it resolves a path with `realpathSync.native` and, on any failure, falls back to the
 unresolved path itself rather than treating the failure as an escape, logging
-`skill.realpath_failed` at `debug` (`packages/skills/src/scan.ts:495`–`:504`). It backs four call
-sites — the resource-enumeration root and its walk (`:241`, `:256`), the sidecar lookup
-(`packages/skills/src/scan.ts:167`) and the harness-directory probe (`:209`) — and is distinct
+`skill.realpath_failed` at `debug` (`packages/skills/src/scan.ts:559`–`:568`). It backs five call
+sites — package confinement (`:98`), sidecar lookup (`:218`), the harness-directory probe (`:273`),
+and the resource-enumeration root and its walk (`:312`, `:327`) — and is distinct
 from the escape check above: it never rejects anything, it only decides what a symlink cycle is
 keyed by when the "true" path cannot be determined.
 
 ### 4.8 YAML repair path
 
 `parseFrontmatterDocument` tries a strict `yaml` parse with `maxAliasCount: 32`
-(`packages/skills/src/parse.ts:121`). **Only on failure** does `reparseFlatMapping` run
+(`packages/skills/src/parse.ts:123`). **Only on failure** does `reparseFlatMapping` run
 (`:122`–`:126`, `:169`–`:191`):
 
 | Line shape | Handling |
@@ -601,24 +601,24 @@ This is what keeps `description: Five phases: detect, contain, diagnose.` readab
 
 Each of `name`, `description` is checked **individually** against its own schema; a field that is
 absent *or present-but-unusable* is replaced by the caller's stand-in and recorded in `defaulted`
-(`packages/skills/src/parse.ts:64`–`:79`, `:41`–`:47`). Everything else still validates normally, so
+(`packages/skills/src/parse.ts:66`–`:81`, `:43`–`:49`). Everything else still validates normally, so
 a manifest with no frontmatter at all becomes a skill named after its directory with the neutral
-placeholder description (`packages/skills/tests/integration/sidecar.test.ts:302`).
+placeholder description (`packages/skills/tests/integration/sidecar.test.ts:313`).
 
 ### 4.10 Capability activation
 
 | Stage | Condition | Result | Line |
 | --- | --- | --- | --- |
 | `forRun(ctx)` | `!ctx.env.CLARVIS_SKILLS_ENABLED` **or** no provider | `null` — capability inert | `packages/skills/src/capability.ts:96` |
-| `systemSection(id)` | agent lacks `use_skills` | `undefined`, and nothing is scanned | `:117`, `:163`–`:167` |
-| `systemSection(id)` | catalog empty | `undefined` | `:119` |
-| `systemSection(id)` | catalog non-empty but every entry suppressed **and** no bootstraps | `undefined` (rendered section is `""`) | `:167`, `packages/skills/src/tool.ts:112` |
-| `forAgent(scope)` | same grant + non-empty-catalog test | `null` or an `AgentCapability` | `:169`–`:180` |
-| `attach(bc)` | — | one tool (`load_skill`), one handler, `advertised: false` | `:172`–`:177` |
+| `systemSection(id)` | agent lacks `use_skills` | `undefined`, and nothing is scanned | `:128-131`, `:175-179` |
+| `systemSection(id)` | catalog empty after dependency filtering | `undefined` | `:125-131` |
+| `systemSection(id)` | catalog non-empty but every entry suppressed **and** no bootstraps | `undefined` (rendered section is `""`) | `:179`, `packages/skills/src/tool.ts:128` |
+| `forAgent(scope)` | same grant + non-empty-catalog test | `null` or an `AgentCapability` | `:181-192` |
+| `attach(bc)` | — | one tool (`load_skill`), one handler, `advertised: false` | `:184-189` |
 
-The catalog is scanned **once per run** and memoized (`:115`), and the bootstraps are resolved at
+The dependency-filtered catalog is scanned **once per run** and memoized (`:114-131`), and the bootstraps are resolved at
 most once behind an explicit boolean flag rather than `??=`, so "no valid bootstrap" does not
-re-resolve and re-warn on every agent spawn (`:122`–`:153`). Pinned at
+re-resolve and re-warn on every agent spawn (`:134-165`). Pinned at
 `packages/skills/tests/component/capability.test.ts:114` (one `bootstraps()` call, two loads, one
 warning, identical section for lead and spawned agent) and `:139` (an ungranted agent triggers zero
 scans, zero loads, zero warnings).
@@ -627,8 +627,8 @@ scans, zero loads, zero warnings).
 
 `renderSkillsSection` emits, in order: each bootstrap body wrapped as
 `# Plugin instructions … <plugin_instructions>…</plugin_instructions>`
-(`packages/skills/src/tool.ts:77`–`:85`), then the catalog block, then the call-`load_skill`
-instruction (`:106`–`:121`). The catalog block is `# Available skills` plus one
+(`packages/skills/src/tool.ts:93`–`:101`), then the catalog block, then the call-`load_skill`
+instruction (`:122`–`:137`). The catalog block is `# Available skills` plus one
 `- **name** — description (path: /absolute/SKILL.md)` line per non-suppressed skill, sorted by name,
 and never exceeds 8,000 characters. On overflow it first drops every description while retaining
 name and exact manifest path, then omits a deterministic tail with a bounded notice. It is the empty
@@ -636,22 +636,22 @@ string when nothing is listable (`renderSkillCatalog` in
 `packages/skills/src/catalog/index.ts`). Test: `packages/skills/tests/component/catalog.test.ts`.
 When the catalog renders
 empty the trailing instruction goes with it and only the bootstrap heads remain
-(`packages/skills/src/tool.ts:112`; pinned at
+(`packages/skills/src/tool.ts:128`; pinned at
 `packages/skills/tests/integration/sidecar.test.ts:149`).
 
 ### 4.12 `load_skill` dispatch
 
-`handleLoadSkillCall` (`packages/skills/src/call.ts:65`):
+`handleLoadSkillCall` (`packages/skills/src/call.ts:105`):
 
 1. `openCallEnvelope` validates the arguments against `loadSkillTool.inputSchema` with the
    host-injected validator; an invalid call is reported as a failed `tool_call` and no
-   `tool_call_started` is recorded (`:77`–`:92`; pinned at
-   `packages/skills/tests/unit/call.test.ts:32`).
+   `tool_call_started` is recorded (`:121`–`:136`; pinned at
+   `packages/skills/tests/unit/call.test.ts:33`).
 2. `resource` is trimmed; a value meaning "the skill's own body" — `""`, `.`, `./`, `/`, `SKILL.md`,
    `./SKILL.md`, or any path ending `<name>/SKILL.md` after backslash normalization — is dropped and
-   the call becomes a body load (`:38`–`:43`, `:97`–`:101`; pinned at
-   `packages/skills/tests/unit/call.test.ts:171`).
-3. `envelope.start()` records `tool_call_started` (`:102`).
+   the call becomes a body load (`:39`–`:44`, `:146`–`:153`; pinned at
+   `packages/skills/tests/unit/call.test.ts:190`).
+3. `envelope.start()` records `tool_call_started` (`:157`).
 4. **Resource branch**: the skill's existence is checked against `listSkills()` *before* any read.
    A provider with `readResourceChunk` receives the requested byte offset and at most 50 000 output
    characters. `validateResourceChunk` rejects a mismatched offset, a total over 8 MiB, too much
@@ -667,8 +667,8 @@ empty the trailing instruction goes with it and only the bootstrap heads remain
    `packages/skills/tests/integration/call-resource.test.ts` (page continuation and body-loader
    isolation).
 5. **Body branch**: `loadSkill(name)`; a throw becomes `could not load skill '<name>'`, `undefined`
-   becomes `unknown skill '<name>'. Available skills: …` (`:122`–`:131`). An empty body renders
-   `(this skill has an empty body)` (`:133`).
+   becomes `unknown skill '<name>'. Available skills: …` (`:210-218`). An empty body renders
+   `(this skill has an empty body)` (`:221`).
 6. The body result always identifies `Skill directory: <dir>` as the base for bundled relative
    paths. It adds `Package execution root: <executionRoot>` and guarded-shell/native-sandbox guidance
    only when the host-approved field exists, then renders the body and resource listing. Production:
@@ -677,7 +677,7 @@ empty the trailing instruction goes with it and only the bootstrap heads remain
    execution root`).
 
 The capability wrapper turns the result into `{ kind: "result", text, progress: !error }`
-(`packages/skills/src/capability.ts:205`).
+(`packages/skills/src/capability.ts:217`).
 
 ### 4.13 Plugin bootstrap resolution
 
@@ -706,27 +706,27 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
 
 `buildExecuteRunDeps` (`packages/loop/src/runtime/build-run-deps.ts`):
 
-- `useSkills = builtins?.skills !== false` (`:370`).
+- `useSkills = builtins?.skills !== false` (`:402`).
 - With `useSkills && CLARVIS_SKILLS_ENABLED`, `@clarvis/skills` is loaded through a **dynamic**
   `import()` and `createAgentSkills` is built over the exact `skillRoots` when supplied, otherwise
   `[...extraRoots, ...clarvisSkillRoots()]`, with
   the package's prose warnings routed into the structured logger as
-  `skills.discovery_warning` (`:443`–`:460`).
+  `skills.discovery_warning` (`:480`–`:502`).
 - A function-valued `skillRoots` or `extraSkillRoots` produces `dynamicSkills`, which re-reads the roots on every
   provider access, re-scans only when the roots' JSON signature changes, and falls back to the last
   good scan (or an empty provider that throws `"skills are unavailable"` on resource access) when a
-  rescan throws (`:179`–`:230`).
+  rescan throws (`:203`–`:251`).
 - An initial scan failure logs `skills.discovery_failed` and leaves `skills` undefined rather than
-  failing the deps (`:464`–`:475`).
+  failing the deps (`:507`–`:518`).
 - The capability is registered whenever `useSkills`, even with an undefined provider, so the grant,
-  the reserved wire name and the tool effect stay stable (`:536`–`:549`).
+  the reserved wire name and the tool effect stay stable (`:593`–`:606`).
 
 ### 4.15 Kernel adaptation
 
 `createSkillsService` (`packages/kernel/src/skills/skills-service.ts:30`):
 
 - `list()` filters on `userInvocable` **alone**; catalog suppression is deliberately not consulted
-  (`:50`–`:52`, `:41`–`:44`; pinned at `packages/kernel/tests/component/skills-service.test.ts:344`).
+  (`:50`–`:52`, `:41`–`:44`; pinned at `packages/kernel/tests/component/skills-service.test.ts:382`).
 - `SkillsServiceConfig` (`packages/kernel/src/skills/skills-service.ts:14`–`:19`) takes, beside the
   `skills` provider, an optional `skillPlansMode(skill)` callback returning a trusted, per-skill
   `PlansMode` override; `list()` calls it for every skill (`:63`–`:66`) to populate
@@ -745,9 +745,9 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
 - `presentation` is **re-read field by field** from whatever the provider supplied rather than
   forwarded, and an icon path that is absolute, drive-qualified or contains `..` after backslash
   normalization is dropped (`packages/kernel/src/skills/render-skill-prompt.ts:139`–`:155`,
-  `:169`–`:187`; pinned at `packages/kernel/tests/component/skills-service.test.ts:290`).
+  `:169`–`:187`; pinned at `packages/kernel/tests/component/skills-service.test.ts:328`).
 - `getPrompt(name, args)` throws kernel `not_found` for an unknown or non-invocable skill and
-  otherwise returns one `user` message from `renderSkillPrompt` (`:97`–`:108`).
+  otherwise returns one `user` message from `renderSkillPrompt` (`:104`–`:115`).
 
 `renderSkillPrompt` (`packages/kernel/src/skills/render-skill-prompt.ts:211`):
 
@@ -758,23 +758,23 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
 
 The single-pass replacer function exists because a string replacement would expand `$$`, `$&`,
 `` $` `` and `$'` inside the caller's task (`:34`–`:43`); pinned at
-`packages/kernel/tests/component/skills-service.test.ts:171` and `:185`.
+`packages/kernel/tests/component/skills-service.test.ts:178` and `:192`.
 
 `skillEntryAgent` reads the top-level `agent` field and decides whether a `/name` invocation becomes
-its own run or is injected into the current turn (`:79`–`:84`). It **does not govern the
+its own run or is injected into the current turn (`:86`–`:91`). It **does not govern the
 model-facing `load_skill` tool**, which serves a skill's body into whichever run/agent called it and
 never consults this field at all — "a skill naming an agent therefore runs on it when a user types
 `/name`, and in the caller's own turn when an agent loads it mid-run"
 (`packages/kernel/src/skills/render-skill-prompt.ts:74`–`:77`). The run-request side of that decision
-is `resolveSkillRun` in `packages/kernel/src/runs/settings-assembler.ts:89`; skill-driven agent
+is `resolveSkillRun` in `packages/kernel/src/runs/settings-assembler.ts:97`; skill-driven agent
 routing itself belongs to [`specs/capabilities/workflows-service.md`](../capabilities/workflows-service.md).
 
 The one `SkillsProvider` the host builds is threaded three ways by `createInProcessKernel`: into
-`createSettingsRunAssembler`'s `skills` option (`packages/kernel/src/kernel.ts:288`, for
+`createSettingsRunAssembler`'s `skills` option (`packages/kernel/src/kernel.ts:363`, for
 `resolveSkillRun` above), into `createSkillsService` (`:705`, this section), and into
 `createAgentWorkflowPolicy` (`:296`, delegated). The same construction also derives
 `KernelCapabilities.skills` from whether a provider was actually wired —
-`skills: opts.skillsProvider !== undefined` (`packages/kernel/src/kernel.ts:754`) — rather than
+`skills: opts.skillsProvider !== undefined` (`packages/kernel/src/kernel.ts:874`) — rather than
 leaving it at `DEFAULT_KERNEL_CAPABILITIES.skills`'s static `false` (`:250`–`:256`).
 
 ---
@@ -785,27 +785,27 @@ The invariants below are derived directly from this document's own source and te
 to this document.
 
 1. **A directory holding a `SKILL.md` is a skill and its subtree is never re-scanned.**
-   `packages/skills/src/scan.ts:109`–`:114`. Pinned:
-   `packages/skills/tests/integration/scan.test.ts:51`.
+   `packages/skills/src/scan.ts:104`–`:107`, `:142`–`:146`. Pinned:
+   `packages/skills/tests/integration/scan.test.ts:58`.
 2. **Grouping directories are descended through, bounded by depth and by probe count.**
-   `packages/skills/src/scan.ts:99`–`:115`. Pinned:
-   `packages/skills/tests/integration/scan.test.ts:29`, `:41`, `:46`, `:57`.
-3. **`SKILL.md` is matched case-insensitively.** `packages/skills/src/scan.ts:139`. Pinned:
-   `packages/skills/tests/integration/scan.test.ts:82`.
+   `packages/skills/src/scan.ts:109`–`:150`. Pinned:
+   `packages/skills/tests/integration/scan.test.ts:36`, `:48`, `:53`, `:64`.
+3. **`SKILL.md` is matched case-insensitively.** `packages/skills/src/scan.ts:172`–`:183`. Pinned:
+   `packages/skills/tests/integration/scan.test.ts:126`.
 4. **Cross-root precedence is last-root-wins, and the loser chain is retained in full on the
-   winner.** `packages/skills/src/registry.ts:285`–`:301`. Pinned:
+   winner.** `packages/skills/src/registry.ts:291`–`:307`. Pinned:
    `packages/skills/tests/integration/discovery.test.ts:50` (four roots, three shadowed origins in
    descending precedence), `:58`–`:83` (two arbitrary roots, last-root-wins).
 5. **Intra-root duplicates are first-seen-wins (directory-sort order) and are resolved before any
-   cross-root merge.** `packages/skills/src/registry.ts:382`–`:399`. Pinned:
+   cross-root merge.** `packages/skills/src/registry.ts:401`–`:418`. Pinned:
    `packages/skills/tests/integration/malformed.test.ts:62`.
 6. **`strict` converts every non-fatal discovery outcome into a throw**: parse failure, intra-root
    duplicate, per-root manifest overflow, catalog overflow.
-   `packages/skills/src/registry.ts:137`, `:356`, `:376`, `:384`. Pinned:
+   `packages/skills/src/registry.ts:143`, `:374`, `:394`, `:403`. Pinned:
    `packages/skills/tests/integration/malformed.test.ts:57`, `:77`,
    `packages/skills/tests/integration/bounds.test.ts:182`, `:189`.
 7. **A malformed sidecar never removes the skill that carries it, not even under `strict`.**
-   `packages/skills/src/sidecar.ts:286`–`:296` (nothing throws). Pinned:
+   `packages/skills/src/sidecar.ts:320`–`:332` (nothing throws). Pinned:
    `packages/skills/tests/integration/sidecar.test.ts:210`, `:223`.
 8. **No purely presentational frontmatter field can delete a skill** — `version`, `license` and
    `argument-hint` carry `.catch(undefined)`, as `agent` does.
@@ -815,45 +815,45 @@ to this document.
    what the skill may do. `packages/skills/src/schema.ts:79`–`:81`. Pinned:
    `packages/skills/tests/unit/schema.test.ts:115`.
 10. **A missing or unusable `name`/`description` is supplied, not fatal, and the substitution is
-    recorded on `SkillInfo.defaulted`.** `packages/skills/src/parse.ts:64`–`:79`,
-    `packages/skills/src/registry.ts:451`–`:474`. Pinned:
-    `packages/skills/tests/integration/sidecar.test.ts:252`, `:261`, `:269`, `:281`, `:289`.
+    recorded on `SkillInfo.defaulted`.** `packages/skills/src/parse.ts:66`–`:81`,
+    `packages/skills/src/registry.ts:470`–`:494`. Pinned:
+    `packages/skills/tests/integration/sidecar.test.ts:263`, `:272`, `:280`, `:292`, `:300`.
 11. **The supplied description is never invented from the directory name**; it is the sidecar's short
     description or the fixed placeholder `"(no description supplied)"`.
-    `packages/skills/src/registry.ts:55`, `:453`. Pinned:
-    `packages/skills/tests/integration/sidecar.test.ts:269`.
+    `packages/skills/src/registry.ts:57`, `:472`. Pinned:
+    `packages/skills/tests/integration/sidecar.test.ts:280`.
 12. **A frontmatter `name` that disagrees with the directory name is warned about, never corrected**,
     and the warning is suppressed when Clarvis supplied the name itself.
-    `packages/skills/src/registry.ts:460`–`:466`. Pinned:
+    `packages/skills/src/registry.ts:480`–`:486`. Pinned:
     `packages/skills/tests/integration/malformed.test.ts:88`,
-    `packages/skills/tests/integration/sidecar.test.ts:285`.
+    `packages/skills/tests/integration/sidecar.test.ts:296`.
 13. **Bodies are not retained at discovery; the first `get()` reads the file, and later `get()`s
-    serve the memoized text.** `packages/skills/src/registry.ts:503`–`:538`. Pinned:
+    serve the memoized text.** `packages/skills/src/registry.ts:529`–`:572`. Pinned:
     `packages/skills/tests/integration/bounds.test.ts:60`.
 14. **A manifest whose `name` changed after cataloguing is refused rather than paired with a stale
-    identity.** `packages/skills/src/registry.ts:517`–`:532`. Pinned:
+    identity.** `packages/skills/src/registry.ts:551`–`:566`. Pinned:
     `packages/skills/tests/integration/bounds.test.ts:78`,
     `packages/skills/tests/integration/diagnostics.test.ts:128`.
 15. **The harness-config directory (`agents/`) is withheld from resource enumeration and from
     resource resolution, checked both lexically and after `realpath`, and a request for it is
     reported `not_found` rather than a more specific code.**
-    `packages/skills/src/scan.ts:201`–`:211`, `packages/skills/src/scan.ts:297`,
-    `packages/skills/src/registry.ts:566`–`:571`. Pinned:
+    `packages/skills/src/scan.ts:265`–`:274`, `packages/skills/src/scan.ts:361`,
+    `packages/skills/src/registry.ts:686`–`:691`. Pinned:
     `packages/skills/tests/integration/sidecar.test.ts:184`, `:193`, `:201`.
 16. **Nothing from a sidecar reaches a model-facing surface, with one recorded exception**: a
     borrowed short description used as a defaulted `description`.
-    `packages/skills/src/registry.ts:476`–`:481`, `packages/skills/src/types.ts:63`–`:80`. Pinned:
+    `packages/skills/src/registry.ts:496`–`:501`, `packages/skills/src/types.ts:88`–`:105`. Pinned:
     `packages/skills/tests/integration/sidecar.test.ts:160`, `:165` (a fixed list of sidecar-only
     strings must not appear in the catalog, the section, or a `load_skill` result).
 17. **`catalogSuppressed` and `userInvocable` are independent axes.** Suppression is applied in
-    exactly one place — `renderSkillCatalog` (`packages/skills/src/catalog/index.ts:28`) — and
+    exactly one place — `renderSkillCatalog` (`packages/skills/src/catalog/index.ts:36`) — and
     `userInvocable` is applied in exactly one other — `SkillsService.list`
     (`packages/kernel/src/skills/skills-service.ts:51`). Pinned:
-    `packages/skills/tests/component/catalog.test.ts:22`, `:30`,
+    `packages/skills/tests/component/catalog.test.ts:22`, `:32`,
     `packages/skills/tests/integration/sidecar.test.ts:119`, `:125`,
-    `packages/kernel/tests/component/skills-service.test.ts:344`.
+    `packages/kernel/tests/component/skills-service.test.ts:382`.
 18. **A suppressed skill stays in the registry and stays loadable by name.**
-    `packages/skills/src/capability.ts:160`–`:162` (the tool is not withheld with the section).
+    `packages/skills/src/capability.ts:172`–`:174` (the tool is not withheld with the section).
     Pinned: `packages/skills/tests/integration/sidecar.test.ts:139`.
 18a. **A skill's declared MCP dependencies are non-authoritative catalog requirements, not grants.**
     They never add a server or tool; the per-run catalog only removes a skill whose declared server
@@ -870,10 +870,10 @@ to this document.
     prefix of the skill directory does not pass.** `packages/skills/src/paths.ts:39`. Pinned:
     `packages/skills/tests/integration/paths.test.ts:71`.
 21. **A symlink whose target cannot be `realpath`ed for any reason other than absence counts as
-    escaping.** `packages/skills/src/scan.ts:391`. Pinned:
-    `packages/skills/tests/integration/scan.test.ts:176`.
+    escaping.** `packages/skills/src/scan.ts:455`. Pinned:
+    `packages/skills/tests/integration/scan.test.ts:248`.
 22. **Resource traversal terminates on cycles**, keyed by real path.
-    `packages/skills/src/scan.ts:263`–`:265`. Pinned:
+    `packages/skills/src/scan.ts:327`–`:329`. Pinned:
     `packages/skills/tests/integration/symlink.test.ts:72`.
 23. **Every file read is bounded on the opened descriptor.** Complete text/byte reads are bounded by
     complete size before allocation. `readBoundedTextChunk` admits at most 8 MiB per file but
@@ -887,60 +887,60 @@ to this document.
     `packages/skills/tests/unit/bounded-read.test.ts` (UTF-8 cursor/boundary, growth, short-read and
     binary-hash cases).
 24. **A directory with more entries than `MAX_SKILL_DIRECTORY_ENTRIES` contributes nothing at all**,
-    rather than a truncated listing. `packages/skills/src/scan.ts:451`–`:459`. Pinned:
+    rather than a truncated listing. `packages/skills/src/scan.ts:515`–`:523`. Pinned:
     `packages/skills/tests/integration/bounds.test.ts:203`.
 25. **`resolveConfig` refuses more than `MAX_SKILL_ROOTS` roots before any root-scanning
     filesystem work — but not before all of it.** When an explicit `workspace` option is
-    given, `validateDir`'s `statSync` (`packages/skills/src/config.ts:89`–`:91`, `:138`) runs
+    given, `validateDir`'s `statSync` (`packages/skills/src/config.ts:89`–`:91`, `:165`) runs
     first and can itself throw `StartupError`; only then are the empty-roots check (`:93`–`:95`)
     and the `MAX_SKILL_ROOTS` ceiling (`:96`–`:101`) reached. The ordering is: workspace
     validation (if `workspace` was supplied), then the roots-count check, then per-root
     scanning. `packages/skills/src/config.ts:89`–`:101`. Pinned:
-    `packages/skills/tests/unit/config.test.ts:56`,
+    `packages/skills/tests/unit/config.test.ts:97`,
     `packages/skills/tests/integration/bounds.test.ts:44` (the latter passes a real, existing
     workspace via `makeWorkspace()`, so it demonstrates the ceiling is checked before
     root-scanning I/O, not before the workspace stat).
 26. **The strict YAML repair runs only after a strict parse has already failed, and gives up unless
-    every line is a flat `key: value`.** `packages/skills/src/parse.ts:122`–`:130`, `:169`–`:191`.
+    every line is a flat `key: value`.** `packages/skills/src/parse.ts:124`–`:132`, `:171`–`:193`.
     Pinned: `packages/skills/tests/unit/parse.test.ts:127`, `:154`, `:160`.
 27. **The skills capability is inert without both the env flag and a provider**, and registration is
     unconditional so grant/reservation/effect metadata never changes.
-    `packages/skills/src/capability.ts:96`, `packages/loop/src/runtime/build-run-deps.ts:549-562`.
+    `packages/skills/src/capability.ts:96`, `packages/loop/src/runtime/build-run-deps.ts:593-606`.
     Pinned: `packages/skills/tests/component/capability.test.ts:95`,
     `packages/loop/tests/integration/skills-grant-gating.test.ts:105`, `:161`.
 28. **Neither the catalog section nor the `load_skill` tool reaches an agent without the
     `use_skills` grant, and an ungranted agent triggers no scan at all.**
-    `packages/skills/src/capability.ts:116`–`:120`, `:169`. Pinned:
+    `packages/skills/src/capability.ts:128`–`:132`, `:181`. Pinned:
     `packages/skills/tests/component/capability.test.ts:139`,
     `packages/loop/tests/integration/skills-grant-gating.test.ts:85`.
 29. **An empty catalog yields neither the section nor the tool**, even with the grant.
-    `packages/skills/src/capability.ts:119`, `:170`. Pinned:
+    `packages/skills/src/capability.ts:131`, `:182`. Pinned:
     `packages/skills/tests/component/capability.test.ts:177`,
     `packages/loop/tests/integration/skills-grant-gating.test.ts:133`.
 30. **The catalog is scanned once per run and the same listing serves the entry agent and every
-    spawned sub-agent.** `packages/skills/src/capability.ts:114`–`:115`. Pinned:
+    spawned sub-agent.** `packages/skills/src/capability.ts:125-131`. Pinned:
     `packages/skills/tests/component/capability.test.ts:114` (`second === first`, one `bootstraps()`
     call).
 31. **`load_skill` is contributed unadvertised**, i.e. `advertised: false` on the contribution.
-    `packages/skills/src/capability.ts:176`. Pinned:
-    `packages/skills/tests/component/capability.test.ts:198`.
+    `packages/skills/src/capability.ts:188`. Pinned:
+    `packages/skills/tests/component/capability.test.ts:239`.
 32. **`load_skill` validates against its own declared schema and refuses to run when the host wires
-    no validator.** `packages/skills/src/call.ts:86`–`:87`. Pinned:
-    `packages/skills/tests/unit/call.test.ts:11`, `:265`.
+    no validator.** `packages/skills/src/call.ts:121-136`. Pinned:
+    `packages/skills/tests/unit/call.test.ts:12`, `:350`.
 33. **A `resource` argument that actually names the skill's own manifest or a directory sentinel is
     treated as a body load, and no resource read is attempted.**
-    `packages/skills/src/call.ts:38`–`:43`, `:97`–`:101`. Pinned:
-    `packages/skills/tests/unit/call.test.ts:171` (nine spellings, zero reads).
+    `packages/skills/src/call.ts:39-44`, `:149-153`. Pinned:
+    `packages/skills/tests/unit/call.test.ts:190` (nine spellings, zero reads).
 34. **A resource request for an unknown skill is rejected before any read.**
-    `packages/skills/src/call.ts:105`. Pinned: `packages/skills/tests/unit/call.test.ts:94`.
+    `packages/skills/src/call.ts:159-162`. Pinned: `packages/skills/tests/unit/call.test.ts:95`.
 35. **`load_skill`'s resource branch never calls `loadSkill`** — it is a materially separate
     code path from the body branch, not a variant of it, and reads a resource "without loading
-    or retaining the skill body." `packages/skills/src/call.ts:105`–`:119` (only the body branch
-    at `:122` calls `loadSkill`). Pinned:
+    or retaining the skill body." `packages/skills/src/call.ts:159-208` (only the body branch at
+    `:210-218` calls `loadSkill`). Pinned:
     `packages/skills/tests/integration/call-resource.test.ts:37`–`:49`.
 36. **A `load_skill` failure is a non-progressing tool result, never a throw.**
-    `packages/skills/src/capability.ts:205`, `packages/skills/src/call.ts:89`. Pinned:
-    `packages/skills/tests/component/capability.test.ts:215`.
+    `packages/skills/src/capability.ts:217`, `packages/skills/src/call.ts:133`. Pinned:
+    `packages/skills/tests/component/capability.test.ts:256`.
 37. **A bootstrap is admitted only when the resolved skill's `root` matches one of the declaring
     plugin's own declared roots.** `packages/skills/src/bootstrap.ts:131`. Pinned:
     `packages/skills/tests/unit/bootstrap.test.ts:65`, `:183`, `:192`.
@@ -952,39 +952,39 @@ to this document.
     `packages/skills/src/bootstrap.ts:120`–`:125`. Pinned:
     `packages/skills/tests/unit/bootstrap.test.ts:91`.
 40. **A host `bootstraps()` port that throws degrades the run to a plain catalog.**
-    `packages/skills/src/capability.ts:139`–`:145`. Pinned:
+    `packages/skills/src/capability.ts:151`–`:157`. Pinned:
     `packages/skills/tests/component/capability.test.ts:159`.
 41. **Bootstrap bodies are rendered before the catalog**, and with no bootstraps the section is
-    byte-identical to the catalog form. `packages/skills/src/tool.ts:111`–`:121`. Pinned:
+    byte-identical to the catalog form. `packages/skills/src/tool.ts:127`–`:137`. Pinned:
     `packages/skills/tests/unit/tool.test.ts:45`, `:53`.
 42. **`renderSkillCatalog` does not mutate its input.** It sorts a filtered copy
-    (`packages/skills/src/catalog/index.ts:28`–`:32`). Pinned:
-    `packages/skills/tests/component/catalog.test.ts:43`.
+    (`packages/skills/src/catalog/index.ts:35-40`). Pinned:
+    `packages/skills/tests/component/catalog.test.ts:45`.
 43. **Argument-placeholder substitution happens in a single pass with a replacer function**, so a
     task containing `$$`/`$&`/`` $` ``/`$'` or the other placeholder is inserted verbatim.
     `packages/kernel/src/skills/render-skill-prompt.ts:229`. Pinned:
-    `packages/kernel/tests/component/skills-service.test.ts:171`, `:185`.
+    `packages/kernel/tests/component/skills-service.test.ts:178`, `:192`.
 44. **A missing task substitutes as the empty string on the placeholder path, and as the fallback
     sentence only on the no-placeholder path.**
     `packages/kernel/src/skills/render-skill-prompt.ts:229`, `:247`. Pinned:
-    `packages/kernel/tests/component/skills-service.test.ts:190`, `:126`.
+    `packages/kernel/tests/component/skills-service.test.ts:197`, `:133`.
 45. **`getPrompt` rejects an unknown or non-user-invocable skill with kernel `not_found`.**
-    `packages/kernel/src/skills/skills-service.ts:99`–`:101`. Pinned:
-    `packages/kernel/tests/component/skills-service.test.ts:361`.
+    `packages/kernel/src/skills/skills-service.ts:100`–`:102`. Pinned:
+    `packages/kernel/tests/component/skills-service.test.ts:399`.
 46. **`skillEntryAgent` reads only the *top-level* `agent` field**, not the nested `metadata` bucket.
     `packages/kernel/src/skills/render-skill-prompt.ts:80`. Pinned:
-    `packages/kernel/tests/component/skills-service.test.ts:62` (a nested `metadata.agent` yields
+    `packages/kernel/tests/component/skills-service.test.ts:69` (a nested `metadata.agent` yields
     `undefined`).
 47. **The kernel re-validates provider-supplied icon paths rather than trusting the DTO.**
     `packages/kernel/src/skills/render-skill-prompt.ts:139`–`:145`. Pinned:
-    `packages/kernel/tests/component/skills-service.test.ts:290`.
+    `packages/kernel/tests/component/skills-service.test.ts:328`.
 48. **No diagnostic record carries a skill's content**: `skill.field_defaulted` logs a character
     count, `skill.body_disclosed` logs sizes.
-    `packages/skills/src/registry.ts:258`, `:602`–`:609`. Pinned:
+    `packages/skills/src/registry.ts:264`, `:729`–`:736`. Pinned:
     `packages/skills/tests/integration/diagnostics.test.ts:97`, `:114`.
 49. **Repeating diagnostic sites are guarded by `levelEnabled` before the bindings object is
-    allocated.** `packages/skills/src/scan.ts:356`, `packages/skills/src/registry.ts:231`, `:256`,
-    `:194`. *Unpinned* — no test asserts the guard itself.
+    allocated.** `packages/skills/src/scan.ts:420`, `packages/skills/src/registry.ts:237`, `:262`,
+    `:195`. *Unpinned* — no test asserts the guard itself.
 50. **The engine reaches `@clarvis/skills` only through a dynamic `import()`** (INV-076/INV-080) —
     full statement owned by
     [engine/capability-composition.md](../engine/capability-composition.md) §5.
@@ -1009,9 +1009,9 @@ to this document.
 
 | Type | Where raised | Codes |
 | --- | --- | --- |
-| `StartupError` | `resolveConfig` only | no roots; too many roots; workspace missing / not a directory (`packages/skills/src/config.ts:94`, `:97`, `:144`, `:147`) |
+| `StartupError` | `resolveConfig` only | no roots; too many roots; workspace missing / not a directory (`packages/skills/src/config.ts:94`, `:97`, `:171`, `:174`) |
 | `SkillError` | everywhere else | `invalid_skill`, `duplicate_skill`, `not_found`, `not_a_file`, `path_escape`, `invalid_input`, `io_error` (`packages/skills/src/errors.ts:6`) |
-| kernel `not_found` | `SkillsService.getPrompt`, `resolveSkillRun` | `packages/kernel/src/skills/skills-service.ts:100`, `packages/kernel/src/runs/settings-assembler.ts:95` |
+| kernel `not_found` | `SkillsService.getPrompt`, `resolveSkillRun` | `packages/kernel/src/skills/skills-service.ts:101`, `packages/kernel/src/runs/settings-assembler.ts:103` |
 
 `fsError` maps `ENOENT → not_found`, `EISDIR`/`ENOTDIR → not_a_file`, everything else → `io_error`
 with the original errno in the message (`packages/skills/src/errors.ts:48`–`:55`; pinned at
@@ -1021,19 +1021,19 @@ with the original errno in the message (`packages/skills/src/errors.ts:48`–`:5
 
 | Situation | Non-strict outcome | Strict outcome |
 | --- | --- | --- |
-| root does not exist / unreadable | empty listing + `skill.dir_unreadable` debug (`packages/skills/src/scan.ts:462`–`:467`) | same — this one is never fatal |
-| directory over the entry cap | that directory drops whole, warn (`:444`) | same |
-| manifest parse failure | warn `skipping <file>: <cause>`, `skill.rejected` reason `parse`, skill omitted (`packages/skills/src/registry.ts:376`–`:380`) | rethrow |
-| intra-root duplicate | warn, later one dropped (`:391`) | `duplicate_skill` throw |
-| >256 manifests in one root | warn, first 256 by directory order (`:363`–`:369`) | `invalid_skill` throw |
-| >512 distinct skills | warn once, largest-name eviction (`:144`–`:158`) | `invalid_skill` throw |
-| dangling symlink (dir, manifest or resource) | warn "skipping dangling symlink", `skill.resource_skipped` `dangling` (`packages/skills/src/scan.ts:546`, `:560`) | same |
-| escaping resource symlink | warn "escaping skill dir", entry omitted (`:292`) | same |
-| escaping sidecar symlink | warn "skipping skill sidecar escaping skill dir", no sidecar (`:168`–`:173`) | same |
-| unreadable / unparseable / non-mapping sidecar | warn + `skill.sidecar_invalid` (`unreadable` / `unparseable` / `not_a_mapping`), skill loads without presentation and without suppression (`packages/skills/src/sidecar.ts:335`, `:367`) | same |
-| non-YAML file in `agents/` | ignored silently (extension filter, `packages/skills/src/scan.ts:171`) | same |
+| root does not exist / unreadable | empty listing + `skill.dir_unreadable` debug (`packages/skills/src/scan.ts:526`–`:531`) | same — this one is never fatal |
+| directory over the entry cap | that directory drops whole, warn (`packages/skills/src/scan.ts:515`–`:523`) | same |
+| manifest parse failure | warn `skipping <file>: <cause>`, `skill.rejected` reason `parse`, skill omitted (`packages/skills/src/registry.ts:394`–`:398`) | rethrow |
+| intra-root duplicate | warn, later one dropped (`packages/skills/src/registry.ts:401`–`:418`) | `duplicate_skill` throw |
+| >256 manifests in one root | warn, first 256 by directory order (`packages/skills/src/registry.ts:359`–`:389`) | `invalid_skill` throw |
+| >512 distinct skills | warn once, largest-name eviction (`packages/skills/src/registry.ts:139`–`:164`) | `invalid_skill` throw |
+| dangling symlink (dir, manifest or resource) | warn "skipping dangling symlink", `skill.resource_skipped` `dangling` (`packages/skills/src/scan.ts:610`, `:624`) | same |
+| escaping resource symlink | warn "escaping skill dir", entry omitted (`packages/skills/src/scan.ts:362`–`:365`) | same |
+| escaping sidecar symlink | warn "skipping skill sidecar escaping skill dir", no sidecar (`packages/skills/src/scan.ts:238`–`:246`) | same |
+| unreadable / unparseable / non-mapping sidecar | warn + `skill.sidecar_invalid` (`unreadable` / `unparseable` / `not_a_mapping`), skill loads without presentation and without suppression (`packages/skills/src/sidecar.ts:371`, `:403`) | same |
+| non-YAML file in `agents/` | ignored silently (extension filter, `packages/skills/src/scan.ts:219`–`:235`) | same |
 | body over the char cap | `get()` throws `invalid_skill` at disclosure time, catalog entry survives (`packages/skills/tests/integration/bounds.test.ts:138`) | same |
-| oversized resource | `readResource` throws with `fields.dimension` = `bytes`/`characters` (`packages/skills/src/bounded-read.ts:55`, `:78`) | same |
+| oversized resource | `readResource` throws with `fields.dimension` = `bytes`/`characters` (`packages/skills/src/bounded-read.ts:102`–`:106`, `:333`–`:336`) | same |
 | chunked resource exceeds 8 MiB, cursor is not a UTF-8 byte boundary, or file changes while read | `readResourceChunk` throws `invalid_input`; no partial page is returned (`readBoundedTextChunk` in `packages/skills/src/bounded-read.ts`) | same |
 | chunk provider reports an invalid size/offset/continuation | `load_skill` returns a failed tool result (`validateResourceChunk` in `packages/skills/src/call.ts`) | same |
 | legacy provider receives `offset > 0` | `load_skill` refuses continuation; it never slices decoded text using the byte cursor (`handleLoadSkillCall` in `packages/skills/src/call.ts`) | same |
@@ -1046,7 +1046,7 @@ Every `buildRegistry` pass ends by emitting one aggregate record — the only al
 diagnostic for a whole discovery pass — at `info`, guarded by `levelEnabled(config.logger,
 "info")`: `skills.discovered` with fields `roots`, `skills` (final catalog size), `shadowed`
 (sum of each surviving skill's shadow-chain length), `defaulted` (skills carrying at least one
-supplied field), `dropped` and `ms` (`packages/skills/src/registry.ts:188`–`:209`). Its message —
+supplied field), `dropped` and `ms` (`packages/skills/src/registry.ts:194`–`:215`). Its message —
 "skill discovery finished; this catalog is what every agent in the run is offered" — is the one
 line that names the whole pass's outcome.
 
@@ -1055,30 +1055,30 @@ line that names the whole pass's outcome.
 | Situation | Outcome | Source |
 | --- | --- | --- |
 | `CLARVIS_SKILLS_ENABLED` false, or no provider | capability `forRun` returns `null`; the run has no section and no tool | `packages/skills/src/capability.ts:96` |
-| `builtins.skills = false` | package never loaded; `reportBuiltinDisabled` debug record | `packages/loop/src/runtime/build-run-deps.ts:377-379,440-448` |
-| initial `createAgentSkills` throws | `skills.discovery_failed` (`scope: "initial"`), deps built without skills | `:464`–`:475` |
-| rescan throws (dynamic roots) | `skills.discovery_failed` (`scope: "rescan"`), last good scan served; if there was none, an empty provider whose resource methods throw `"skills are unavailable"` | `:209`–`:224` |
-| root provider throws | treated as no extra roots, `skills.roots_unavailable` debug | `:193`–`:205` |
-| `bootstraps()` throws | `bootstrap_skills_unavailable` warn, run degrades to the plain catalog | `packages/skills/src/capability.ts:141`–`:144` |
-| plugin panel cannot read a plugin's skills | `skillNamesOf` returns `{ names: [], notes: [] }` on any throw; per-skill rejection notes are capped and summarized | `packages/kernel/src/plugins/plugin-service.ts:217`–`:239` |
+| `builtins.skills = false` | package never loaded; `reportBuiltinDisabled` debug record | `packages/loop/src/runtime/build-run-deps.ts:401-403,477-485` |
+| initial `createAgentSkills` throws | `skills.discovery_failed` (`scope: "initial"`), deps built without skills | `:487-518` |
+| rescan throws (dynamic roots) | `skills.discovery_failed` (`scope: "rescan"`), last good scan served; if there was none, an empty provider whose resource methods throw `"skills are unavailable"` | `:227-244` |
+| root provider throws | treated as no extra roots, `skills.roots_unavailable` debug | `:212-226` |
+| `bootstraps()` throws | `bootstrap_skills_unavailable` warn, run degrades to the plain catalog | `packages/skills/src/capability.ts:153`–`:156` |
+| plugin panel cannot read a plugin's skills | `skillNamesOf` returns `{ names: [], notes: [] }` on any throw; per-skill rejection notes are capped and summarized | `packages/kernel/src/plugins/plugin-service.ts:243`–`:265` |
 
 ### 6.5 Retries and timeouts
 
 There are none in this subsystem. Every operation is synchronous filesystem work; `refresh()` is the
-only re-read and it is caller-driven (`packages/skills/src/index.ts:56`). `dynamicSkills`'s
-signature-based memo is a cache, not a retry (`packages/loop/src/runtime/build-run-deps.ts:183-218`).
+only re-read and it is caller-driven (`packages/skills/src/index.ts:67`). `dynamicSkills`'s
+signature-based memo is a cache, not a retry (`packages/loop/src/runtime/build-run-deps.ts:203-244`).
 
 ### 6.6 Silently tolerated
 
 - A non-YAML file in `agents/` (§6.2).
 - A presentation value that is over its cap is **discarded, not truncated**, so a field can never
-  become a prefix of what its author wrote (`packages/skills/src/sidecar.ts:115`).
+  become a prefix of what its author wrote (`packages/skills/src/sidecar.ts:149`).
 - A colour in a notation other than 3-/6-digit hex is dropped with no record
-  (`packages/skills/src/sidecar.ts:172`).
+  (`packages/skills/src/sidecar.ts:206`).
 - An icon path that is absolute, drive-qualified, backslash-separated or contains `..` is dropped
-  with no record (`packages/skills/src/sidecar.ts:135`–`:137`).
+  with no record (`packages/skills/src/sidecar.ts:169`–`:171`).
 - `metadataShortDescription` silently ignores a bucket that is not an object, a value that is not a
-  string, and one over 512 chars (`packages/skills/src/registry.ts:96`–`:102`).
+  string, and one over 512 chars (`packages/skills/src/registry.ts:102`–`:108`).
 
 ---
 
@@ -1102,12 +1102,12 @@ alone.
 
 | Consumer | Edge | Static or dynamic |
 | --- | --- | --- |
-| `@clarvis/loop` | `import type { AgentSkills, SkillRootInput }`, `import type { SkillsProvider }` (`packages/loop/src/runtime/build-run-deps.ts:2`, `:30`); `export type` re-exports (`packages/loop/src/lib.ts:19`–`:20`); `export type { PluginBootstrapSkill }` (`packages/loop/src/runtime/capabilities/skills-settings.ts:50`) | **type-only** — erased |
+| `@clarvis/loop` | `import type { AgentSkills, SkillRootInput }`, `import type { SkillsProvider }` (`packages/loop/src/runtime/build-run-deps.ts:2`, `:35`); `export type` re-exports (`packages/loop/src/lib.ts:19`–`:20`); `export type { PluginBootstrapSkill }` (`packages/loop/src/runtime/capabilities/skills-settings.ts:50`) | **type-only** — erased |
 | `@clarvis/loop` | `import("@clarvis/skills")` and `import("@clarvis/skills/capability")` inside `buildExecuteRunDeps` (`:448`, `:541`) | **dynamic** value import, deliberately |
-| `@clarvis/kernel` | `createAgentSkills` for the plugin panel's skill listing (`packages/kernel/src/plugins/plugin-service.ts:8`) | static value |
+| `@clarvis/kernel` | `createAgentSkills` for the plugin panel's skill listing (`packages/kernel/src/plugins/plugin-service.ts:12`) | static value |
 | `@clarvis/kernel` | `MAX_SKILL_ROOTS`, `enumerateResources`, `hashBoundedFile`, and the public per-file/aggregate resource limits to bound and fingerprint plugin and Environment skill surfaces (`packages/kernel/src/plugins/plugin-contributions.ts`, `packages/kernel/src/environments/environment-manager.ts`) | static value |
 | `@clarvis/kernel` | `SkillsProvider` type via `@clarvis/loop` (`packages/kernel/src/skills/skills-service.ts:1`) | type-only |
-| `@clarvis/code` | reaches skills only through `KernelClient.skills` (`packages/code/src/adapters/kernel-run-client.ts:429`–`:430`, `packages/code/src/adapters/kernel-capabilities-client.ts:30`) | protocol only |
+| `@clarvis/code` | reaches skills only through `KernelClient.skills` (`packages/code/src/adapters/kernel-run-client.ts:456-459`, `packages/code/src/adapters/kernel-capabilities-client.ts:30`) | protocol only |
 
 The direction is forced two ways. The **type-only / dynamic split** is what keeps `builtins.skills =
 false` meaningful: `skills-settings.ts` states that a *value* import there would make
@@ -1122,7 +1122,7 @@ never boot an engine.
 
 `LOAD_SKILL_TOOL_NAME` is owned only by this package; the capability derives its reservation and
 `control` effect from `loadSkillTool` so the engine needs neither the name nor a mirror
-(`packages/skills/src/tool.ts:9`–`:13`, `packages/skills/src/capability.ts:58`–`:62`). The engine
+(`packages/skills/src/tool.ts:11`–`:15`, `packages/skills/src/capability.ts:58`–`:62`). The engine
 does keep a duplicate of the capability *name* it cannot statically import, pinned against drift
 by `packages/loop/tests/architecture/builtin-capability-names.test.ts:18` and owned by
 [engine/capability-composition.md](../engine/capability-composition.md).
@@ -1131,8 +1131,8 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts:18` and ow
 
 `@clarvis/loop` has its own `normalizeTools` for **agent** frontmatter
 (`packages/loop/src/settings/agent-frontmatter.ts:10`), exported through `packages/loop/src/host.ts:11` and used by
-`packages/kernel/src/runs/settings-assembler.ts:264`. It is a different function from
-`packages/skills/src/parse.ts:279`; only the fence splitter was actually shared
+`packages/kernel/src/runs/settings-assembler.ts:279`. It is a different function from
+`packages/skills/src/parse.ts:290`; only the fence splitter was actually shared
 (`packages/capability/src/frontmatter-fence.ts:2`–`:12`).
 
 ---
@@ -1147,26 +1147,25 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts:18` and ow
    package's, not the live `@clarvis/tools` symbols of the same names. None is re-exported from
    `packages/skills/src/index.ts`, so `@clarvis/skills` does not publish them; `HARNESS_CONFIG_DIR`
    (`packages/skills/src/scan.ts:43`) is not exported at module level either. `splitFrontmatter`
-   (`packages/skills/src/parse.ts:102`) is in the same position and is exercised only by
+   (`packages/skills/src/parse.ts:104`) is in the same position and is exercised only by
    `packages/skills/tests/unit/parse.test.ts:2`. What the source does **not** say is whether the
    package-internal ones are meant to become public again or to be inlined at their single call
    sites.
-2. **The per-root overflow counter under-reports.** `scanRoot` calls `listSkillDirs` without a
-   `maximumSkills` argument (`packages/skills/src/registry.ts:351`), so the default
-   `MAX_SKILLS_PER_ROOT + 1` applies (`packages/skills/src/scan.ts:82`) and the scan stops at 257
+2. **The per-root overflow counter under-reports.** `scanRoot` calls `listSkillDirs` with the fixed
+   ceiling `MAX_SKILLS_PER_ROOT + 1` (`packages/skills/src/registry.ts:359`–`:369`), so the scan stops at 257
    candidates. `stats.dropped += candidates.length - MAX_SKILLS_PER_ROOT`
-   (`packages/skills/src/registry.ts:364`) therefore always adds exactly `1`, and the strict error's
-   `actual` field is capped at 257 (`:359`), regardless of how many manifests the root really holds.
+   (`packages/skills/src/registry.ts:382`) therefore always adds exactly `1`, and the strict error's
+   `actual` field is capped at 257 (`:377`), regardless of how many manifests the root really holds.
    Nothing states whether that is intended.
 3. **Catalog-overflow eviction is only approximately "the first 512 by name".** The warning text says
-   "retaining the first 512 by name" (`packages/skills/src/registry.ts:155`), but the algorithm
-   evicts the currently largest name only when the arriving name sorts before it (`:148`–`:151`),
+   "retaining the first 512 by name" (`packages/skills/src/registry.ts:161`), but the algorithm
+   evicts the currently largest name only when the arriving name sorts before it (`:149`–`:152`),
    which depends on arrival order across roots. The test asserts only that a small name is retained
    and a large one is not (`packages/skills/tests/integration/bounds.test.ts:178`–`:179`).
 4. **`defaultWarnSink` writes directly to `process.stderr`** (`packages/skills/src/lib/log.ts:10`)
    and is the default for every entry point that takes diagnostics
-   (`packages/skills/src/lib/log.ts:46`). The loop always overrides it with a logger-routing sink
-   (`packages/loop/src/runtime/build-run-deps.ts:467-471`), but `packages/kernel/src/plugins/plugin-service.ts:219`
+   (`packages/skills/src/lib/log.ts:46`). The loop supplies a per-instance logger-routing sink
+   (`packages/loop/src/runtime/build-run-deps.ts:491-502`), while `packages/kernel/src/plugins/plugin-service.ts:246-252`
    supplies its own and `createAgentSkills` called without one falls back to stderr. Whether the
    stderr default is intended to remain reachable is not determinable.
 5. **Why the first `.yaml`/`.yml` by sorted name wins when several harness sidecars exist is
@@ -1178,12 +1177,13 @@ by `packages/loop/tests/architecture/builtin-capability-names.test.ts:18` and ow
    `@clarvis/code` question, not answered here.
 7. **Delegated to sibling documents, deliberately not re-derived here:** the `.agents` precedence
    rule as an interop contract; plugin skill-root construction, the plugin budget and manifest
-   parsing (`packages/kernel/src/plugins/plugin-manifest.ts:162`,
-   `packages/kernel/src/plugins/plugin-contributions.ts:315`); and skill-driven agent routing through
+   parsing (`pluginSkillScanRoots` in `packages/kernel/src/plugins/plugin-manifest.ts:230`,
+   `PLUGIN_SKILL_ROOT_BUDGET` and `skillRoots` in
+   `packages/kernel/src/plugins/plugin-contributions.ts:204,606-666`); and skill-driven agent routing through
    `createAgentWorkflowPolicy.isManagerRun` and `resolveSkillRun`
-   (`packages/kernel/src/runs/settings-assembler.ts:89`).
+   (`packages/kernel/src/runs/settings-assembler.ts:97`).
 8. **Windows behaviour of this package is unverified by any job in this document's scope.** The scanner uses
    `node:path` throughout and normalizes to POSIX separators for `rel`
-   (`packages/skills/src/scan.ts:416`), but `packages/skills/package.json` is not referenced by any
+   (`packages/skills/src/scan.ts:480`), but `packages/skills/package.json` is not referenced by any
    Windows-scoped CI configuration in scope, and several tests use `symlinkSync` unconditionally
    (e.g. `packages/skills/tests/integration/symlink.test.ts:40`).

@@ -51,7 +51,7 @@ than an Environment domain object. (`skillRoots` in
 (`KernelClient.environments`, `packages/protocol/src/client.ts:68`). The in-process kernel accepts an injected service and gives
 embedders an immutable builtin-only fallback (`createBuiltinEnvironmentService` in
 `packages/kernel/src/kernel.ts:267`); the file kernel supplies the file-backed manager
-(`packages/kernel/src/file-kernel.ts:357`, `:857`). The same fourteen operations are generated for local
+(`packages/kernel/src/file-kernel.ts:362`, `:878`). The same fourteen operations are generated for local
 and remote clients by the shared operation catalog (`ENVIRONMENT_OPERATIONS` entries in
 `packages/kernel/src/transport/operations.ts`).
 
@@ -134,10 +134,10 @@ cooperating Clarvis processes cannot both win a stale write (`underLease`, `unde
 Every run carries only `{ id, fingerprint }` under opaque `host_metadata.environment`; trace
 journals, recovered records, JSON records, protocol run results, session turns, and bounded session
 summaries preserve that pair. (`EnvironmentRunRef` in `packages/protocol/src/environments.ts:136`;
-`hostMetadata` composition in `packages/kernel/src/file-kernel.ts:813`; record persistence in
+`hostMetadata` composition in `packages/kernel/src/file-kernel.ts:834`; record persistence in
 `packages/trace/src/{record-builder,journal,json-trace-store}.ts`; result projection in
 `storedToDetail` in `packages/kernel/src/runs/map-result.ts:164`; session summary projection in
-`packages/kernel/src/sessions/session-service.ts:255`.) Host metadata is sanitized before durable
+`packages/kernel/src/sessions/session-service.ts:276`.) Host metadata is sanitized before durable
 storage and does not carry the Environment definition or secrets
 (`packages/trace/src/json-trace-store.ts:805`).
 
@@ -173,8 +173,8 @@ Environments emit only active, atomically captured winners with exact `include` 
 inactive skills never re-enter through a broad root. `@clarvis/skills` normalizes that list and
 filters after manifest resolution, so precedence and manifest-name validation remain unchanged
 (`skillRoots` in `packages/kernel/src/environments/environment-manager.ts`;
-`normalizeInclude`, `packages/skills/src/config.ts:129`; `scanRoot`,
-`packages/skills/src/registry.ts:349`). Plugin skill roots are admitted only through active plugins,
+`normalizeInclude`, `packages/skills/src/config.ts:143-151`; `scanRoot`,
+`packages/skills/src/registry.ts:355-369`). Plugin skill roots are admitted only through active plugins,
 and a plugin's agents, MCP servers, capability executables, hooks, and skills are one activation
 unit (`pluginInventory` in `packages/kernel/src/environments/environment-manager.ts`). Active
 plugin MCP servers are attached independently of authored agent tool lists and marked `auto_tools`;
@@ -300,7 +300,7 @@ the same Environment remain admitted
 `packages/kernel/src/config/workspace-trust.ts`). A selection may still carry the workspace approval
 when the proactive question was declined, and an approval failure restores the exact prior selection
 bytes. Plugin hooks are part of the selected plugin unit rather than a second approval projection
-(`EnvironmentService.select`, `restoreSelection`, and `pluginSettingsContributions`; test
+(`EnvironmentService.select`, `restoreSelection`, and `PluginContributions.settingsScopes`; test
 `packages/kernel/tests/integration/environment-manager.test.ts` "restores the prior selection").
 
 Approving or revoking workspace trust recomposes the selected workspace (or `builtin:default`
@@ -315,9 +315,9 @@ trust operation resolves to the caller (`mutateTrust` in
 When a saved session resumes under a different `{ id, fingerprint }`, Code preserves the session,
 adds a visible warning, and marks the status instead of pretending continuity under the same
 extension snapshot (Environment comparison in `resumeSession`,
-`packages/code/src/run-host.ts:1282`). Newly started turns are
+`packages/code/src/run-host.ts:1387-1407`). Newly started turns are
 stamped with the current process snapshot (`createSession.beginTurn`,
-`packages/code/src/adapters/session.ts:122`).
+`packages/code/src/adapters/session.ts:156-174`).
 
 ## 5. Invariants
 
@@ -328,7 +328,7 @@ only the installed inventory. Plugin lifecycle remains on `PluginService`.
 
 - **Production:** `pluginInventory` in
   `packages/kernel/src/environments/environment-manager.ts`; `EnvironmentService` in
-  `packages/protocol/src/environments.ts:178` has no install operation.
+  `packages/protocol/src/environments.ts:198-251` has no install operation.
 - **Test:** `packages/kernel/tests/integration/environment-manager.test.ts` constructs all four
   inventories before exact activation and proves an unrelated install stays inactive.
 
@@ -410,11 +410,11 @@ durable host metadata is sanitized.
 - **Production:** `executeRun` host metadata in `packages/loop/src/runtime/execute-run.ts:300`;
   `buildRecord` in `packages/trace/src/record-builder.ts:38`; `storedToDetail` in
   `packages/kernel/src/runs/map-result.ts:164`; session projection in
-  `packages/code/src/adapters/session-store.ts:334`.
+  `packages/code/src/adapters/session-store.ts:374`.
 - **Test:** `packages/loop/tests/component/execute-run.test.ts:53`,
   `packages/trace/tests/integration/json-trace-store.test.ts:193`,
   `packages/kernel/tests/unit/map-result.test.ts`, and
-  `packages/code/tests/component/session-store.test.ts:98` cover the four seams and redaction.
+  `packages/code/tests/component/session-store.test.ts:139` cover the four seams and redaction.
 
 ### INV-320 — The loop and skills package do not own Environment policy
 
@@ -422,7 +422,7 @@ The loop accepts opaque host metadata and resolved roots; the skills package onl
 root filters. Neither imports the kernel Environment manager or protocol service.
 
 - **Production:** `HostRunDeps.hostMetadata` in `packages/loop/src/runtime/execute-run.ts:76` and
-  `SkillRootInput.include` in `packages/skills/src/types.ts:28`.
+  `SkillRootInput.include` in `packages/skills/src/types.ts:29`.
 - **Test:** `packages/loop/tests/component/execute-run.test.ts:53`,
   `packages/skills/tests/integration/discovery.test.ts:86`, and the existing optional-package
   architecture suites under `packages/loop/tests/architecture/`.
@@ -539,7 +539,7 @@ degraded Environment to an empty list (`fullDetail` and `normalBody` in
 The package dependency graph is unchanged: the feature uses existing `kernel -> protocol|paths|skills|loop|trace`
 and `code -> kernel|protocol|paths` edges. The loop's optional `skills` dependency remains behind its
 existing lazy capability boundary; Environment resolution happens in the file-backed host before run
-construction (`packages/kernel/src/file-kernel.ts:357-374`, `:590-593`).
+construction (`packages/kernel/src/file-kernel.ts:362-379`, `:610-613`).
 
 ## 8. Open questions
 

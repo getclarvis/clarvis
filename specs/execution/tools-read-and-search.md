@@ -16,7 +16,7 @@ bounded in bytes, in files touched, in directory entries retained, and — for t
 scanner — in regular-expression CPU time. When confinement is enabled, every path is proven to stay
 under the workspace or an explicitly admitted run-owned temporary root; `read_file` and `read_files`
 also admit the machine-local state root so the model can read a spill it was handed
-(`packages/tools/src/lib/paths.ts:53-62`, `packages/tools/src/config.ts:89-98`). Content reads routed
+(`packages/tools/src/lib/paths.ts:53-62`, `packages/tools/src/config.ts:89-101`). Content reads routed
 through `readRawFile` re-establish that proof against the *open descriptor* rather than trusting only
 the pathname (`packages/tools/src/lib/files.ts:121-153`, `:226-278`).
 
@@ -48,11 +48,11 @@ part reaches a model belongs to **vision-prepass-and-image-routing**.
 | `tree` | no | — | `path` (`"."`), `depth` (0 → 4), `respect_gitignore` (`true`) | `packages/tools/src/tools/tree.ts:193` |
 
 `bounded: true` tells the dispatcher not to re-clamp the handler's text
-(`packages/tools/src/tools/types.ts:43`, applied at `packages/tools/src/core.ts:51-58`). The other six
+(`packages/tools/src/tools/types.ts:43`, applied at `packages/tools/src/core.ts:79-85`). The other six
 are re-clamped to `config.maxOutputBytes` on the way out.
 
 Schema defaults are materialised by Ajv with `useDefaults: true` before the handler runs
-(`packages/tools/src/core.ts:23`), which is why each handler reads e.g. `args.respect_gitignore` as a
+(`packages/tools/src/core.ts:49`), which is why each handler reads e.g. `args.respect_gitignore` as a
 plain `boolean` (`packages/tools/src/tools/glob.ts:67`).
 
 ### 2.2 The supporting library (package-internal)
@@ -98,17 +98,17 @@ Resolution and validation belong to tools-contract-and-dispatch; the fields cons
 
 | Key | Default | Where it bites |
 | --- | --- | --- |
-| `maxOutputBytes` | `131072` (`packages/tools/src/config.ts:135`) | every rendered result; the `rg` stream cap is this × 8 (`packages/tools/src/lib/rg.ts:102`, `:233`) |
-| `maxFileBytes` | `20_000_000` (`packages/tools/src/config.ts:139`) | every text/raw read; also passed to `rg --max-filesize` (`packages/tools/src/lib/rg.ts:203`) |
-| `maxImageBytes` | `5_000_000` (`packages/tools/src/config.ts:141`) | `read_image` only (`packages/tools/src/tools/read-image.ts:52`) |
-| `maxTraversalEntries` | `50_000` (`packages/tools/src/config.ts:143`) | `list_dir`, `glob`, `tree`, and the grep file walk |
-| `maxDiffInputBytes` | `8 * 1024 * 1024` (`packages/tools/src/config.ts:147`) | `diff` combined operand size (`packages/tools/src/tools/diff.ts:70`) |
-| `regexScanBudgetMs` | `5000` (`packages/tools/src/config.ts:168`) | in-process grep only (`packages/tools/src/lib/rg.ts:374`) |
-| `ripgrepAvailable` | probed by `rg --version` (`packages/tools/src/config.ts:184-191`) | grep engine choice (`packages/tools/src/lib/rg.ts:164`) |
-| `confineToWorkspace` | `true` (`packages/tools/src/config.ts:346`) | path confinement **and** grep engine choice |
-| `stateRoot` | `workspaceStatePaths(workspaceRoot).root` (`packages/tools/src/config.ts:446`) | extra read root, passed by `read_file`/`read_files` only |
-| `temporaryRoots` | `[]` (`packages/tools/src/config.ts:347`) | extra confined roots admitted by all nine tools; the list may grow after a verified shell-created `mktemp -d` (`:359-371`) |
-| `readOnly` | `false` (`packages/tools/src/config.ts:345`) | selects the nine-tool surface (`packages/tools/src/core.ts:179`) |
+| `maxOutputBytes` | `131072` (`packages/tools/src/config.ts:138`) | every rendered result; the `rg` stream cap is this × 8 (`packages/tools/src/lib/rg.ts:102`, `:233`) |
+| `maxFileBytes` | `20_000_000` (`packages/tools/src/config.ts:142`) | every text/raw read; also passed to `rg --max-filesize` (`packages/tools/src/lib/rg.ts:203`) |
+| `maxImageBytes` | `5_000_000` (`packages/tools/src/config.ts:144`) | `read_image` only (`packages/tools/src/tools/read-image.ts:52`) |
+| `maxTraversalEntries` | `50_000` (`packages/tools/src/config.ts:146`) | `list_dir`, `glob`, `tree`, and the grep file walk |
+| `maxDiffInputBytes` | `8 * 1024 * 1024` (`packages/tools/src/config.ts:150`) | `diff` combined operand size (`packages/tools/src/tools/diff.ts:70`) |
+| `regexScanBudgetMs` | `5000` (`packages/tools/src/config.ts:171`) | in-process grep only (`packages/tools/src/lib/rg.ts:374`) |
+| `ripgrepAvailable` | probed by `rg --version` (`packages/tools/src/config.ts:187-194`) | grep engine choice (`packages/tools/src/lib/rg.ts:164`) |
+| `confineToWorkspace` | `true` (`packages/tools/src/config.ts:353`) | path confinement **and** grep engine choice |
+| `stateRoot` | `workspaceStatePaths(workspaceRoot).root` (`packages/tools/src/config.ts:503`) | extra read root, passed by `read_file`/`read_files` only |
+| `temporaryRoots` | `[]` (`packages/tools/src/config.ts:354`) | extra confined roots admitted by all nine tools; the list may grow after a verified shell-created `mktemp -d` (`:405-417`) |
+| `readOnly` | `false` (`packages/tools/src/config.ts:352`) | selects the nine-tool surface (`packages/tools/src/core.ts:233`) |
 
 ## 3. Data and formats
 
@@ -274,7 +274,7 @@ dropped (`:307`) — which is how a non-UTF-8 filename disappears from the resul
    passing as a child of `C:\Proj` (`:101-103`).
 3. `canonicalizeAllowingMissing` walks up until `realpathSync.native` succeeds, then re-appends the
    unresolved tail; if a *skipped* segment is itself a symlink it returns `undefined` and the caller
-   refuses (`packages/tools/src/lib/paths.ts:210-222`).
+   refuses (`packages/tools/src/lib/paths.ts:248-260`).
 4. On refusal a `debug` record `tools.path_refused` is emitted with `input`, `reason`
    (`unresolvable` | `outside_root`) and `allow_roots_count`, then a `path_escape` `ToolError` is
    thrown (`packages/tools/src/lib/paths.ts:151-166`).
@@ -541,13 +541,13 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 
 | # | Rule | Production | Pinned by |
 | --- | --- | --- | --- |
-| **INV-041** | Ripgrep must be installed wherever this suite runs. A missing `rg` is a CI *environment* gap, not a grep-vs-ripgrep behavioural difference: the parity suite `skipIf`s itself away without it, so a missing binary would silently delete the entire parity contract instead of failing it. Under `process.env.CI` the guard asserts `rg` is present. | engine choice at `packages/tools/src/lib/rg.ts:164`; probe at `packages/tools/src/config.ts:184-191` | `packages/tools/tests/contract/grep-parity.test.ts:15` ("ripgrep must be installed in CI (TEST-01)") |
+| **INV-041** | Ripgrep must be installed wherever this suite runs. A missing `rg` is a CI *environment* gap, not a grep-vs-ripgrep behavioural difference: the parity suite `skipIf`s itself away without it, so a missing binary would silently delete the entire parity contract instead of failing it. Under `process.env.CI` the guard asserts `rg` is present. | engine choice at `packages/tools/src/lib/rg.ts:164`; probe at `packages/tools/src/config.ts:187-194` | `packages/tools/tests/contract/grep-parity.test.ts:15` ("ripgrep must be installed in CI (TEST-01)") |
 | **RS-1 (INV-300)** | For the same request, the ripgrep engine and the in-process engine return the **same tool output** — across all three output modes, glob forms, regex metacharacters, `ignore_case`, symmetric and asymmetric context, multiline (dot-all, `^`/`$` anchors, coalescing, pagination), `maxFileBytes` skipping, and hidden/`.git`/nested/parent `.gitignore` handling. | `packages/tools/src/lib/rg.ts:174-181` | `packages/tools/tests/contract/grep-parity.test.ts:44-223` |
 | **RS-2** (the precondition INV-300 depends on) | A **confined directory** grep never spawns ripgrep, however available `rg` is. (Consequence: the parity suite can only compare the two engines with `confineToWorkspace: false`.) | `packages/tools/src/lib/rg.ts:164` | ~~indirectly — every parity case builds `withRg()` as `{ ripgrepAvailable: true, confineToWorkspace: false }` (`packages/tools/tests/contract/grep-parity.test.ts:40`); no test asserts the refusal directly (**partially unpinned**)~~ **pinned 2026-08-22**: `packages/tools/tests/unit/observability.test.ts` asserts the chosen engine on the `tools.grep_path` diagnostic across all four combinations of `ripgrepAvailable` × `confineToWorkspace`, plus the single-confined-file case where ripgrep *is* used |
 | **RS-3** | The read-only tool surface is exactly nine tools, derived from the single `readOnly` bit in `toolDescriptors` — never a second list. | `packages/tools/src/tools/registry.ts:42-81` | `packages/tools/tests/component/tool-surface.test.ts:33`; `packages/tools/tests/component/read-only.test.ts:32-44` |
-| **RS-4** | A tool hidden by the read-only surface and a name that never existed fail identically (`not_found`), so the surface leaks no information about what was withheld. | `packages/tools/src/core.ts:179-182` | `packages/tools/tests/component/read-only.test.ts:46-57` |
+| **RS-4** | A tool hidden by the read-only surface and a name that never existed fail identically (`not_found`), so the surface leaks no information about what was withheld. | `packages/tools/src/core.ts:233-236` | `packages/tools/tests/component/read-only.test.ts:46-57` |
 | **RS-5** | A read-only session leaves the workspace byte-identical. | the nine handlers perform no write syscall | `packages/tools/tests/component/read-only.test.ts:76-86` |
-| **RS-6** | The four text read/search tools behave identically under a full and a read-only config. | `packages/tools/src/core.ts:179` (surface only gates *presence*) | `packages/tools/tests/component/read-only.test.ts:59-74` |
+| **RS-6** | The four text read/search tools behave identically under a full and a read-only config. | `packages/tools/src/core.ts:233` (surface only gates *presence*) | `packages/tools/tests/component/read-only.test.ts:59-74` |
 | **RS-7** | "No results" is a **success**, not an error: `(no matches)` for `grep`/`glob`, `(empty directory)` for `list_dir`, `(no entries)` for `tree`, `(empty file)` for `read_file`, `(no differences)` for `diff`. | `packages/tools/src/tools/grep.ts:238`, `packages/tools/src/tools/glob.ts:98`, `packages/tools/src/tools/list-dir.ts:93`, `packages/tools/src/tools/tree.ts:247`, `packages/tools/src/tools/read-file.ts:86`, `packages/tools/src/tools/diff.ts:66` | `packages/tools/tests/integration/grep.test.ts:62-66`, `packages/tools/tests/integration/glob.test.ts:68-73`, `packages/tools/tests/integration/list-dir.test.ts:51-56`, `packages/tools/tests/integration/tree.test.ts:65-70`, `packages/tools/tests/integration/read-file.test.ts:200-209`, `packages/tools/tests/integration/diff.test.ts:34-39` |
 | **RS-8** | A truncated *scan* always reports incompleteness even when the page is non-empty, and it is never combined with the pagination footer. | `packages/tools/src/tools/grep.ts:351-365` | `packages/tools/tests/integration/grep.test.ts:122-129` (asserts the `offset` hint is absent) |
 | **RS-9** | An exhausted regex budget, a capped directory walk and a hit output cap produce **three different** warnings; the budget warning names the pattern and never says "output cap", and the walk warning says narrowing the pattern will not help. | `packages/tools/src/tools/grep.ts:352-362` | `packages/tools/tests/integration/rg.test.ts:160-166`, `packages/tools/tests/integration/grep.test.ts:181-199` |
@@ -569,7 +569,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-25** | Only `read_file` and `read_files` admit `config.stateRoot`; every read tool separately admits the exact `temporaryRoots`, and nothing receives the state root merely because temporary scratch is enabled. | `packages/tools/src/tools/read-file.ts:67-71`, `packages/tools/src/tools/read-files.ts:106-110` vs. the `config.temporaryRoots` argument in the other seven handlers | `packages/tools/tests/unit/read-confinement-allowance.test.ts` pins the state-root half; `packages/tools/tests/integration/api.test.ts`, "lets native tools read scratch created by shell inside the run-owned temporary root", pins one configured temporary root while refusing the generic system temp root |
 | **RS-26** | The `path_escape` refusal never tells the model how to lift the boundary; it states the boundary is fixed before the run. | `packages/tools/src/lib/paths.ts:160-166` | `packages/tools/tests/architecture/no-bypass-hints.test.ts:76-84` (and `:86-90`, which proves the detector recognises the old wording) |
 | **RS-27** | Confinement folds case on Windows only, compares canonicalised forms on both sides, and requires a `root + sep` prefix so a sibling whose name merely starts with the root's is refused. | `packages/tools/src/lib/paths.ts:137-149` | `packages/tools/tests/integration/paths.test.ts:78-99` |
-| **RS-28** | A path that cannot be canonicalised *because a skipped segment is a symlink* is refused, not admitted — otherwise a `0o311` link out of the workspace would be writable. | `packages/tools/src/lib/paths.ts:216` | `packages/tools/tests/integration/paths.test.ts:155-166` |
+| **RS-28** | A path that cannot be canonicalised *because a skipped segment is a symlink* is refused, not admitted — otherwise a `0o311` link out of the workspace would be writable. | `packages/tools/src/lib/paths.ts:254` | `packages/tools/tests/integration/paths.test.ts:155-166` |
 | **RS-29** | `displayPath` is always forward-slashed, including on Windows, because it is model-facing text and not a filesystem argument. | `packages/tools/src/lib/paths.ts:54-61` | `packages/tools/tests/integration/paths.test.ts:57-60` |
 | **RS-30** | A `tree` level that hit its dirent cap marks the output incomplete but does **not** stop the walk; only the global entry/byte budget does. | `packages/tools/src/tools/tree.ts:150-157` vs. `:174` | `packages/tools/tests/integration/tree.test.ts:146-162` |
 | **RS-31** | A directory holding exactly `maxTraversalEntries` is not reported as truncated; one extra dirent is consumed solely to tell the two apart. | `packages/tools/src/tools/tree.ts:50-53` | `packages/tools/tests/integration/tree.test.ts:118-144` |
@@ -589,7 +589,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-45** | `blockSpan` extends a matched span to swallow the following line's newline when `oldString` itself ends in `\n` — except when the matched block is the text's final line, where there is no following newline to swallow. | `packages/tools/src/lib/match-cascade.ts:89-101` | `packages/tools/tests/unit/match-cascade.test.ts:66-74` ("extends the span to include the trailing newline"), `:76-82` ("does not over-extend when old ends in newline but the block is the final line") |
 | **RS-46** | `scanLineBlocks` treats a sparse-array hole in either the haystack window or the needle as an empty string (`eq(hay[i+j] ?? "", need[j] ?? "")`), rather than skipping it or throwing. | `packages/tools/src/lib/match-cascade.ts:61` | `packages/tools/tests/unit/match-cascade.test.ts:29-34` ("treats a hole in the haystack window as an empty line"), `:36-39` ("treats a hole in the needle as an empty line") |
 | **RS-47 (INV-302)** | Both grep engines apply `maxFileBytes` identically **and in both directions**: a file over the ceiling is skipped in a directory search (a small sibling still matches), and naming that same oversized file directly yields `(no matches)` on both paths rather than an error. | `packages/tools/src/lib/rg.ts:203` (`--max-filesize`); `:147-161` (the single-file `readRawFile` bound, whose failure resolves to an empty result rather than a throw) | `packages/tools/tests/contract/grep-parity.test.ts:179-203` |
-| **RS-48** | A run-owned temporary root is a narrow additional confinement root for native observation: a file created there by `shell` is searchable by `grep`, while the parent host temp directory remains `path_escape`. A verified explicit `mktemp -d /tmp/name-XXXXXX` result is added to the same live list for later calls. | `packages/tools/src/config.ts:347-371`; all nine handlers' `resolvePath` calls; `packages/tools/src/lib/files.ts:47-62` | `packages/tools/tests/integration/api.test.ts`, "lets native tools read scratch created by shell inside the run-owned temporary root" and "adopts an explicit mktemp directory created by this shell call"; `packages/tools/tests/integration/guard-dispatch.test.ts`, "treats the configured run temporary root as confined without widening generic /tmp" |
+| **RS-48** | A run-owned temporary root is a narrow additional confinement root for native observation: a file created there by `shell` is searchable by `grep`, while the parent host temp directory remains `path_escape`. A verified explicit `mktemp -d /tmp/name-XXXXXX` result is added to the same live list for later calls. | `packages/tools/src/config.ts:354-417`; all nine handlers' `resolvePath` calls; `packages/tools/src/lib/files.ts:47-62` | `packages/tools/tests/integration/api.test.ts`, "lets native tools read scratch created by shell inside the run-owned temporary root" and "adopts an explicit mktemp directory created by this shell call"; `packages/tools/tests/integration/guard-dispatch.test.ts`, "treats the configured run temporary root as confined without widening generic /tmp" |
 
 ## 6. Failure modes and degradation
 
@@ -598,7 +598,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 All are members of the package's closed `ErrorCode` union
 (`packages/tools/src/errors.ts:8-26`) and are serialised in-band as
 `{"error":"<code>","message":"…", …fields}` by the dispatcher
-(`packages/tools/src/errors.ts:67`, `packages/tools/src/core.ts:47-49`) — a read tool never throws
+(`packages/tools/src/errors.ts:67`, `packages/tools/src/core.ts:75-77`) — a read tool never throws
 out of `dispatch`.
 
 | Code | Raised by | Cause |
@@ -609,7 +609,7 @@ out of `dispatch`.
 | `not_an_image` | `packages/tools/src/tools/read-image.ts:58` | magic bytes match no supported format |
 | `too_large` | `packages/tools/src/lib/files.ts:87-99`, `packages/tools/src/tools/diff.ts:71` | file over `maxFileBytes`/`maxImageBytes`, or diff inputs over `maxDiffInputBytes` |
 | `invalid_input` | `packages/tools/src/tools/read-file.ts:91`/`:102`, `packages/tools/src/tools/glob.ts:82`, `packages/tools/src/lib/rg.ts:250`/`:316`/`:368` | offset 0 / past EOF, unusable glob pattern, ripgrep usage error, uncompilable JS regex |
-| `path_escape` | `packages/tools/src/lib/paths.ts:160`, `packages/tools/src/lib/files.ts:138` | target outside every permitted root, or the opened object is not the one the path named |
+| `path_escape` | `packages/tools/src/lib/paths.ts:159-192`, `packages/tools/src/lib/files.ts:138` | target outside every permitted root, or the opened object is not the one the path named |
 | `timeout` | `packages/tools/src/tools/diff.ts:94` | `createTwoFilesPatch` returned `undefined` at 2000 ms |
 | `io_error` | `packages/tools/src/errors.ts:115` | any errno the mapping does not recognise |
 
@@ -625,7 +625,7 @@ error"}` with the real stack going to the warn sink (`packages/tools/src/errors.
 
 | Situation | Degradation | Handler |
 | --- | --- | --- |
-| `rg` not on `PATH` (probe throws or non-zero) | every grep runs in process; no error, no warning to the model | `packages/tools/src/config.ts:175-190` |
+| `rg` not on `PATH` (probe throws or non-zero) | every grep runs in process; no error, no warning to the model | `packages/tools/src/config.ts:187-193` |
 | single-file grep target oversized / binary / FIFO / unreadable | empty result, reported as `(no matches)` | `packages/tools/src/lib/rg.ts:147-161` |
 | a file in an in-process directory grep that `readTextBuffer` cannot read | skipped (`if (!decoded) continue`) | `packages/tools/src/lib/rg.ts:391` |
 | a `list_dir` entry whose `stat` fails | reported as a size-0 non-directory | `packages/tools/src/tools/list-dir.ts:81-83` |
@@ -658,7 +658,7 @@ error"}` with the real stack going to the warn sink (`packages/tools/src/errors.
 | `maxOutputBytes` | in-process grep accumulation | `truncated`, scan stops before the next file (`packages/tools/src/lib/rg.ts:436`) |
 | `maxOutputBytes × 8` | ripgrep raw JSON stream | child `SIGKILL`ed, `truncated` (`packages/tools/src/lib/rg.ts:233-242`, `:296-308`) |
 | `maxOutputBytes` | grep page rendering | head-truncated by `bound`, "page exceeded … and was cut" footer |
-| `maxOutputBytes` | any non-`bounded` tool's text parts | head-truncated by the dispatcher (`packages/tools/src/core.ts:57`) |
+| `maxOutputBytes` | any non-`bounded` tool's text parts | head-truncated by the dispatcher (`packages/tools/src/core.ts:79-85`) |
 | `maxTraversalEntries` | `list_dir`, `glob`, `tree`, grep's file walk | truncation footer / `truncated` flag; grep additionally sets `walkCapped` and says so in its own words |
 | `maxDiffInputBytes` | `diff` | `too_large` |
 | `regexScanBudgetMs` | in-process grep | `truncated` + `budgetExhausted`, pattern-specific warning |
@@ -680,12 +680,12 @@ at `packages/tools/src/tools/types.ts:58` and none of them declare it). `listFil
 | --- | --- | --- |
 | `@clarvis/paths` → `INTERNAL_IGNORE_PATTERNS` | runtime, static | `packages/tools/src/lib/ignore.ts:6`, `:129` — the built-in ignore seed is not spelled here |
 | `@clarvis/paths` → `resolveCommand` | runtime, static | `packages/tools/src/lib/rg.ts:11`, `:226`, `:277` — `rg` is resolved against `PATH` once and memoised (`packages/paths/src/which.ts:100-111`) |
-| `@clarvis/paths` → `workspaceStatePaths` | runtime, static | `packages/tools/src/config.ts:7`, `:446` — supplies `stateRoot` |
+| `@clarvis/paths` → `workspaceStatePaths` | runtime, static | `packages/tools/src/config.ts:7`, `:503` — supplies `stateRoot` |
 | `ignore` (npm) | runtime, `createRequire` | `packages/tools/src/lib/ignore.ts:9` |
 | `picomatch` (npm) | runtime, `createRequire` | `packages/tools/src/lib/files.ts:14`, `:328` |
 | `diff` (npm) | runtime, static | `packages/tools/src/tools/diff.ts:1`; `packages/tools/src/lib/unified-diff.ts:1`; `packages/tools/src/lib/text.ts:1` |
-| `ajv` (npm) | runtime, `createRequire` | `packages/tools/src/core.ts:21` — schema defaulting/coercion happens before any handler runs |
-| `rg` binary | runtime, `spawn`/`Bun.spawn` | `packages/tools/src/lib/rg.ts:226`, `:277`; probed at `packages/tools/src/config.ts:177` |
+| `ajv` (npm) | runtime, `createRequire` | `packages/tools/src/core.ts:47` — schema defaulting/coercion happens before any handler runs |
+| `rg` binary | runtime, `spawn`/`Bun.spawn` | `packages/tools/src/lib/rg.ts:226`, `:277`; probed at `packages/tools/src/config.ts:187-193` |
 | Bun's `Bun.spawn` | runtime, **hard Bun coupling** | `packages/tools/src/lib/rg.ts:277` — the single-file snapshot path uses Bun's native subprocess API because "Bun's Node-compatible `child_process` currently closes a piped stdin before queued writes reach the child" (`packages/tools/src/lib/rg.ts:265-267`) |
 
 The package's manifest declares exactly `@clarvis/paths`, `ajv`, `diff`, `ignore`, `picomatch`
@@ -735,7 +735,7 @@ The direction is one-way and structural: `@clarvis/tools` imports nothing from `
    for confined directories would keep the whole suite green.
 3. ~~**The `stateRoot` read allowance (RS-25) is untested in both packages.** `rg -n stateRoot` over
    `packages/tools/tests` returns only the fixture default
-   (`packages/tools/tests/helpers/fixtures.ts:82`), and `packages/loop/tests/integration/tool-spill.test.ts`
+   (`packages/tools/tests/helpers/fixtures.ts:83`), and `packages/loop/tests/integration/tool-spill.test.ts`
    contains no `read_file` round-trip. The one behaviour the widening exists for — a model reading back
    a spilled result — has no executable evidence.~~ **Resolved 2026-08-22** in `@clarvis/tools`, which
    is where the allowance lives: a state root that is a genuine sibling of the workspace, a file

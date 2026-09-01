@@ -8,14 +8,14 @@
 `packages/code/src/run-host.ts` is the stateful bridge between a UI shell and the kernel's run stream.
 It owns the in-flight `RunHandle`, the active `Session`, the status line, terminal attention cues, the
 resident-turn window over the transcript, and the derived workflow projection. Its constructor
-`createRunHost` (`packages/code/src/run-host.ts:305`) returns a `RunHost`
-(`packages/code/src/run-host.ts:117`) whose members every shell surface — the composer, the footer,
+`createRunHost` (`packages/code/src/run-host.ts:329`) returns a `RunHost`
+(`packages/code/src/run-host.ts:127`) whose members every shell surface — the composer, the footer,
 the sidebar, the export command — drives.
 
 Below it sit two families of module. One is the *backend adapter*:
 `packages/code/src/adapters/kernel-run-client.ts` wraps a `KernelClient` (`@clarvis/protocol`) and
 presents `startRun → RunHandle`, `steer`, `compact`, `getRun`, `deleteRun`, `listProfiles`, plus thin
-pass-throughs for the remaining kernel services (`packages/code/src/adapters/kernel-run-client.ts:64`).
+pass-throughs for the remaining kernel services (`packages/code/src/adapters/kernel-run-client.ts:447-588`).
 `packages/code/src/adapters/workspace-client-manager.ts` sits under *that*, owning the process's one
 pinned file kernel; `open` accepts only that workspace, returns a no-op `release`, and `invalidate`
 rebuilds the same kernel (`WorkspaceClientManager`). The other family is the *projection
@@ -39,103 +39,104 @@ The recurring problem the code solves is **ownership across asynchrony**. A run'
 `^C`, a session switch and a backend reconnect all arrive on independent schedules. Nearly every guard
 in `run-host.ts` is an identity check — an execution id, a session object, an epoch counter — deciding
 whether a late callback still owns the surface it wants to write to
-(`packages/code/src/run-host.ts:372`, `:391`, `:525`, `:533`, `:552`, `:1172`, `:1231`).
+(`packages/code/src/run-host.ts:415`, `:456`, `:639`, `:669`, `:681`, `:697`, `:709`, `:1343`,
+`:1374`, `:1377`, `:1427`).
 
 ## 2. Surface
 
-### 2.1 `RunHost` (`packages/code/src/run-host.ts:117`)
+### 2.1 `RunHost` (`packages/code/src/run-host.ts:127`)
 
 | Member | Signature | Line |
 |---|---|---|
 | `runActive` | `Accessor<boolean>` — true only while the current run accepts interactive control; post-run stream delivery does not keep it true | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`) |
-| `bashActive` | `Accessor<boolean>` | `:119` |
+| `bashActive` | `Accessor<boolean>` | `:130` |
 | `compactionActive` | `Accessor<boolean>` — live compaction pipeline state | `packages/code/src/run-host.ts` (`RunHost`) |
 | `physicalWorkActive` | `Accessor<boolean>` — remains true until every run handle and local command settles | `packages/code/src/run-host.ts` (`RunHost`) |
 | `memory()` | `Record<string, number \| boolean>` — host-owned sampled-memory counters | `packages/code/src/run-host.ts` (`RunHost`) |
-| `runStatus` / `setRunStatus` | `Accessor<string>` / `Setter<string>` | `:120`, `:121` |
-| `runStartedAt` | `Accessor<number \| null>` — current *or last* run's start, `null` before any | `:123` |
+| `runStatus` / `setRunStatus` | `Accessor<string>` / `Setter<string>` | `:137`, `:138` |
+| `runStartedAt` | `Accessor<number \| null>` — current *or last* run's start, `null` before any | `:140` |
 | `sessionUsageBaseline` | `Accessor<SessionTotals \| null>` — full persisted totals frozen immediately before the active run | `packages/code/src/run-host.ts` (`RunHost`, `runManaged`) |
-| `workflowActivity` | `Accessor<WorkflowActivity \| null>` — current or last workflow's tree | `:126` |
-| `ownsExecution` | `(executionId: string) => boolean` | `:128` |
-| `onEvent` | `(event: RunEvent, source: EventSource, executionId?: string) => void` | `:129` |
-| `onMemoryIngest` | `(notice: MemoryIngestNotice) => void` | `:139` |
-| `cancelCurrentRun` | `() => boolean` — whether the keypress was consumed | `:140` |
-| `compactCurrentRun` | `(request?: string) => Promise<void>` | `:141` |
+| `workflowActivity` | `Accessor<WorkflowActivity \| null>` — current or last workflow's tree | `:145` |
+| `ownsExecution` | `(executionId: string) => boolean` | `:149` |
+| `onEvent` | `(event: RunEvent, source: EventSource, executionId?: string) => void` | `:150` |
+| `onMemoryIngest` | `(notice: MemoryIngestNotice) => void` | `:160` |
+| `cancelCurrentRun` | `() => boolean` — whether the keypress was consumed | `:161` |
+| `compactCurrentRun` | `(request?: string) => Promise<void>` | `:162` |
 | `inspectCurrentContext` | `(targetWindowTokens: number) => ReturnType<KernelRunClient["context"]> \| null` | `packages/code/src/run-host.ts` (`RunHost`) |
 | `fitCurrentContext` | `(targetWindowTokens: number) => Promise<CompactResult \| null>` | `packages/code/src/run-host.ts` (`RunHost`) |
-| `teardownRuns` | `() => void` | `:142` |
-| `submitTurn` | `(content: MessageContent, display?: string) => Promise<void>` | `:143` |
-| `submitPromptTurn` | `(messages, display?, skill?: {name, task?, plansMode?}) => void` | `:144` |
-| `submitSkillRun` | `(name, task, agent) => Promise<void>` | `:150` |
-| `workOnTask` | `(ref: TaskRefDto, profile: string) => Promise<void>` | `:152` |
-| `runBangCommand` | `(cmd: string) => boolean` — whether the command was accepted | `:153` |
-| `clearSession` | `(opts?: { flush?: boolean }) => void` | `:154` |
-| `loadSessionMeta` | `(meta: SessionMeta) => Promise<void>` | `:155` |
-| `resumeSessionById` | `(id: SessionId) => Promise<void>` | `:156` |
-| `exportNodeBatches` | `() => AsyncIterable<readonly TranscriptNode[]>` | `:175` |
-| `sessionMeta` / `setSessionProfile` / `flushSession` | session accessors | `:176`–`:178` |
-| `registerDraftRestore` | `(fn: (text, content?) => void) => void` | `:179` |
+| `teardownRuns` | `() => void` | `:165` |
+| `submitTurn` | `(content: MessageContent, display?: string) => Promise<void>` | `:166` |
+| `submitPromptTurn` | `(messages, display?, skill?: {name, task?, plansMode?}) => void` | `:167`–`:171` |
+| `submitSkillRun` | `(name, task, agent) => Promise<void>` | `:173` |
+| `workOnTask` | `(ref: TaskRefDto, profile: string) => Promise<void>` | `:175` |
+| `runBangCommand` | `(cmd: string) => boolean` — whether the command was accepted | `:176` |
+| `clearSession` | `(opts?: { flush?: boolean }) => void` | `:177` |
+| `loadSessionMeta` | `(meta: SessionMeta) => Promise<void>` | `:178` |
+| `resumeSessionById` | `(id: SessionId) => Promise<void>` | `:179` |
+| `exportNodeBatches` | `() => AsyncIterable<readonly TranscriptNode[]>` | `:198` |
+| `sessionMeta` / `setSessionProfile` / `flushSession` | session accessors | `:199`–`:201` |
+| `registerDraftRestore` | `(fn: (text, content?) => void) => void` | `:202` |
 
 The public `submitTurn` declares **two** parameters; the implementation takes a third `skill`
-argument (`packages/code/src/run-host.ts:568`) reachable only through `submitPromptTurn`
-(`packages/code/src/run-host.ts:744`).
+argument (`packages/code/src/run-host.ts:723`) reachable only through `submitPromptTurn`
+(`packages/code/src/run-host.ts:891-905`).
 
-Exported constants: `RESIDENT_TRANSCRIPT_TURN_LIMIT = 20` (`packages/code/src/run-host.ts:202`).
-Module-private: `EXPORT_BATCH_NODE_LIMIT = 128` (`:182`) and `EXPORT_INCOMPLETE_PREFIX` (`:185`).
+Exported constants: `RESIDENT_TRANSCRIPT_TURN_LIMIT = 20` (`packages/code/src/run-host.ts:225`).
+Module-private: `EXPORT_BATCH_NODE_LIMIT = 128` (`:214`) and `EXPORT_INCOMPLETE_PREFIX` (`:226-227`).
 
-### 2.2 `RunHostDeps` (`packages/code/src/run-host.ts:66`)
+### 2.2 `RunHostDeps` (`packages/code/src/run-host.ts:67-112`)
 
 | Field | Type | Required | Line |
 |---|---|---|---|
-| `store` | `TranscriptStore` | yes | `:67` |
-| `activity` | `ActivityStore` | yes | `:68` |
-| `sessionStore` | `SessionStore` | yes | `:69` |
-| `history` | `PromptHistory` | yes | `:70` |
-| `client` | `Pick<KernelRunClient, "startRun"\|"steer"\|"compact"\|"getRun"\|"files"> & Partial<Pick<KernelRunClient, "context">>` | yes | `packages/code/src/run-host.ts` (`RunHostDeps.client`) |
-| `elicit` | `Pick<ElicitSlot, "cancelPending">` | yes | `:72` |
-| `owner` / `project` / `workspaceId` / `workspace` | `string` | yes | `:73`–`:76` |
-| `priceFor` | `(model) => CatalogCost \| undefined` | yes | `:77` |
-| `activeProfile` / `setActiveProfile` | agent selection | yes | `:78`, `:79` |
-| `guardMode` / `judgePayload` / `memoryMode` | run policy | yes | `:80`–`:82` |
-| `plansMode` | `() => PlanMode` | no | `:85` |
-| `planProviderKey` | `() => string \| undefined` | no | `:88` |
-| `isManagerProfile` | `() => boolean` — the `workflow` grant | no | `:94` |
-| `attention` | `Pick<Attention, "notify"\|"setTitle"\|"away">` | no | `:96` |
-| `runBash` | `typeof runLocalBash` — tests only | no | `:98` |
-| `presentStatus` | `(line: StatusLine) => string` | no | `:100` |
-| `describeToolCall` | `TranscriptStoreDeps["describeToolCall"]` | no | `:110` |
+| `store` | `TranscriptStore` | yes | `:68` |
+| `activity` | `ActivityStore` | yes | `:69` |
+| `sessionStore` | `SessionStore` | yes | `:70` |
+| `history` | `PromptHistory` | yes | `:71` |
+| `client` | `Pick<KernelRunClient, "startRun"\|"steer"\|"compact"\|"getRun"\|"files"> & Partial<Pick<KernelRunClient, "context"\|"currentEnvironment">>` | yes | `packages/code/src/run-host.ts:72-73` |
+| `elicit` | `Pick<ElicitSlot, "cancelPending">` | yes | `:74` |
+| `owner` / `project` / `workspaceId` / `workspace` | `string` | yes | `:75-78` |
+| `priceFor` | `(model) => CatalogCost \| undefined` | yes | `:79` |
+| `activeProfile` / `setActiveProfile` | agent selection | yes | `:80-81` |
+| `guardMode` / `judgePayload` / `memoryMode` | run policy | yes | `:82-84` |
+| `plansMode` | `() => PlanMode` | no | `:87` |
+| `planProviderKey` | `() => string \| undefined` | no | `:90` |
+| `isManagerProfile` | `() => boolean` — the `workflow` grant | no | `:96` |
+| `attention` | `Pick<Attention, "notify"\|"setTitle"\|"away">` | no | `:98` |
+| `runBash` | `typeof runLocalBash` — tests only | no | `:100` |
+| `presentStatus` | `(line: StatusLine) => string` | no | `:102` |
+| `describeToolCall` | `TranscriptStoreDeps["describeToolCall"]` | no | `:111` |
 
-`isManagerProfile`'s own TSDoc (`:89`–`:93`) states its scope precisely: it drives only local UI (arming
+`isManagerProfile`'s own TSDoc (`:91-95`) states its scope precisely: it drives only local UI (arming
 the workflow-tree projection) and keeps the manager on the full-message path; "routing itself is the
 kernel's decision by grant, not a client toggle" — the flag never causes `code` to route a run as a
 workflow, it only tracks that the kernel already will.
 
-Defaults applied at construction: `runBash ?? runLocalBash` (`:301`) and
-`presentStatus ?? plainStatusLine` (`:302`).
+Defaults applied at construction: `runBash ?? runLocalBash` (`:343`) and
+`presentStatus ?? plainStatusLine` (`:344`).
 
-### 2.3 `KernelRunClient` (`packages/code/src/adapters/kernel-run-client.ts:64`)
+### 2.3 `KernelRunClient` (`packages/code/src/adapters/kernel-run-client.ts:68`)
 
 Constructed by `createKernelRunClient(deps: KernelRunClientDeps)`
-(`packages/code/src/adapters/kernel-run-client.ts:148`). Deps: `createKernel: () => Promise<KernelClient>`,
-optional `prepareReconnect`, and `callbacks` (`:111`).
+(`packages/code/src/adapters/kernel-run-client.ts:163`). Deps: `createKernel: () => Promise<KernelClient>`,
+optional `prepareReconnect`, and `callbacks` (`:126-133`).
 
 | Member | Kind | Line |
 |---|---|---|
-| `project` / `workspace` | getters that throw when disconnected | `:65`, `:66`, impl `:512`, `:515` |
-| `capabilities` | getter, survives a reconnect window | `:67`, impl `:173` |
-| `connect` / `reconnect` / `dispose` | lifecycle | `:68`, `:69`, `:107`, impl `:181`, `:193`, `:186` |
-| `listProfiles(prefetched?)` | `Promise<ProfileInfo[]>` | `:71`, impl `:199` |
-| `startRun(input: StartRunInput)` | `RunHandle` (synchronous) | `:77`, impl `:363` |
-| `steer({executionId, message, profile?})` | `Promise<SteerResult>` | `:80`, impl `:368` |
+| `project` / `workspace` | getters that throw when disconnected | `:69`, `:70`, impl `:558-563` |
+| `capabilities` | getter, survives a reconnect window | `:71`, impl `:189-195`, `:555-557` |
+| `connect` / `reconnect` / `dispose` | lifecycle | `:72`, `:73`, `:122`, impl `:197-215` |
+| `listProfiles(prefetched?)` | `Promise<ProfileInfo[]>` | `:75-77`, impl `:225-237` |
+| `startRun(input: StartRunInput)` | `RunHandle` (synchronous) | `:81`, impl `:392-395` |
+| `steer({executionId, message, profile?})` | `Promise<SteerResult>` | `:84-88`, impl `:397-409` |
 | `compact({executionId, request?, mechanicalTargetTokens?})` | `Promise<CompactResult>` | `packages/code/src/adapters/kernel-run-client.ts` (`KernelRunClient.compact`) |
 | `context(executionId, targetWindowTokens?)` | `ReturnType<RunService["context"]>` | `packages/code/src/adapters/kernel-run-client.ts` (`KernelRunClient.context`) |
-| `getRun(executionId)` | `Promise<RunDetail \| null>` | `:86`, impl `:397` |
-| `deleteRun(executionId)` | `Promise<boolean>` | `:87`, impl `:406` |
+| `getRun(executionId)` | `Promise<RunDetail \| null>` | `:95`, impl `:428-435` |
+| `deleteRun(executionId)` | `Promise<boolean>` | `:96`, impl `:437-445` |
 | `plans` | current-plan `read` only; no retained-plan administration | `packages/code/src/adapters/kernel-run-client.ts` (`KernelRunClient.plans`, `plans`) |
 | `workflows` `skills` `config` `secrets` `models` `providerAuth` `files` `sessions` `plugins` `environments` `tasks` `storage` | thin per-method pass-throughs to `requireKernel()` | `packages/code/src/adapters/kernel-run-client.ts` (`createKernelRunClient`) |
 | `currentEnvironment()` | the process-pinned `{id, fingerprint}` captured during `connect()` and refreshed after idle trust recomposition | `packages/code/src/adapters/kernel-run-client.ts` (`connect`, `mutateTrust`, `currentEnvironment`) |
 
-`KernelRunClientCallbacks` (`:56`): `onEvent(event, source, executionId)`, optional
+`KernelRunClientCallbacks` (`:60-65`): `onEvent(event, source, executionId)`, optional
 `onProgress(progress, executionId)`, `onMemoryIngest(notice)`, `onElicit(params) => Promise<ElicitResult>`.
 
 ### 2.4 Other exported surfaces in scope
@@ -145,7 +146,7 @@ optional `prepareReconnect`, and `callbacks` (`:111`).
 | `adapters/run-types.ts` | `ProfileInfo`, `StartRunInput`, `RunHandle`, `SteerResult`, `CompactResult`; re-exports `MemoryIngestNotice`, `RunProgress` from `core/run-types.ts` | `:13`, `:32`, `:48`, `:57`, `:65`, `:10` |
 | `adapters/run-reducers.ts` | `subagentCompletedOk`, `iterationTokens`, `SubagentRegistry`, `createSubagentRegistry`; re-exports `PlanTaskActivity` | `:7`, `:19`, `:38`, `:47`, `:2` |
 | `adapters/activity-store.ts` | `ActivityStore`, `createActivityStore`, `UsageActivity`, `ContextActivity`, `SubagentStatus`, `ACTIVITY_SUBAGENT_SUMMARY_MAX_CHARS` (512), `ACTIVITY_SUBAGENT_SUMMARIES_MAX` (64) | `:66`, `:83`, `:42`, `:56`, `:11`, `:14`, `:16` |
-| `adapters/session.ts` | `Session`, `SessionDeps`, `SessionInit`, `createSession`, `isContinuationUnavailable`, `buildSkillRunDigest`, `buildRecoveredContext`, `ResumedSession`, `ResumeDeps`, `ResumeOptions`, `resumeSession`, `deleteSession`, `SESSION_RESUME_MAX_PAYLOAD_CHARS` | `:41`, `:60`, `:69`, `:92`, `:81`, `:256`, `:289`, `:340`, `:359`, `:390`, `:493`, `:659`, `:398` |
+| `adapters/session.ts` | `Session`, `SessionDeps`, `SessionInit`, `createSession`, `isContinuationUnavailable`, `buildSkillRunDigest`, `buildRecoveredContext`, `ResumedSession`, `ResumeDeps`, `ResumeOptions`, `resumeSession`, `deleteSession`, `SESSION_RESUME_MAX_PAYLOAD_CHARS` | `:43`, `:74`, `:85`, `:108`, `:97`, `:338`, `:371`, `:422`, `:441`, `:472`, `:585`, `:760`, `:480` |
 | `adapters/session-store.ts` | `SessionId`, `NodeStatus`, `SessionTotals`, `TurnRef`, `SessionMeta`, `runStatusToNode`, `uuidv7`, `redactPreview`, `TURN_ERROR_MAX_CHARS` (2000), `redactTurnError`, `addUsageToTotals`, `uncachedInput`, `formatCostUsd`, `SessionStore`, `MAX_RESIDENT_FULL_SESSIONS` (8), `listSessionsForWorkspace`, `metaToSession`, `sessionToMeta`, `sessionSummaryToMeta`, `sessionTurnCount`, `loadSessions`, `createSessionStore` | `packages/code/src/adapters/session-store.ts` |
 | `adapters/active-agent.ts` | `ActiveAgentStore`, `ActiveAgentDeps`, `AutomaticAgentCandidate`, `automaticAgentFallback`, `createActiveAgentStore` | `:16`, `:36`, `:46`, `:62`, `:77` |
 | `adapters/connection-state.ts` | `ConnectionState`, `ConnectionStore`, `createConnectionState`, `connectionLabel`, `connectionProbe` | `:10`, `:16`, `:22`, `:30`, `:42` |
@@ -159,8 +160,8 @@ optional `prepareReconnect`, and `callbacks` (`:111`).
 `hasKernelErrorCode` narrows **structurally** (`typeof error === "object" && error !== null && "code" in
 error && (error as { code?: unknown }).code === code`, `packages/code/src/adapters/kernel-errors.ts:8-13`)
 rather than by `instanceof` against a concrete `KernelError` class, which is what lets it classify a
-transported error too: `KernelRunClient.getRun`/`.deleteRun` (`:401`, `:411`) apply it to whatever the
-current `KernelClient` throws, and `packages/code/tests/component/kernel-run-client.test.ts:570-576`
+transported error too: `KernelRunClient.getRun`/`.deleteRun` (`:428-445`) apply it to whatever the
+current `KernelClient` throws, and `packages/code/tests/component/kernel-run-client.test.ts:616-622`
 constructs the failure as a plain `Object.assign(new Error(...), { code: "not_found" })` — named
 "transported `not_found` errors are classified structurally" — precisely because a remote kernel (a
 future stdio/HTTP transport) would reconstitute its thrown error that way, not as the original class
@@ -169,11 +170,11 @@ instance. The same helper and the same test shape are reused outside this scope:
 it for the identical `not_found`-to-`null` pattern; this document is its one description, since
 `kernel-run-client.ts` is its heaviest caller (three of the module's five call sites).
 
-### 2.5 `StartRunInput` → wire mapping (`toStartParams`, `packages/code/src/adapters/kernel-run-client.ts:122`)
+### 2.5 `StartRunInput` → wire mapping (`toStartParams`, `packages/code/src/adapters/kernel-run-client.ts:137-160`)
 
 | `StartRunInput` field | Wire `StartRunParams` field | Emitted when |
 |---|---|---|
-| `executionId` | `execution_id` | always (defaulted at `:364`) |
+| `executionId` | `execution_id` | always (defaulted at `:393`) |
 | `messages` | `messages` | always, `?? []` |
 | `profile` | `agent` | truthy |
 | `continueFrom` | `continue_from` | truthy |
@@ -185,7 +186,7 @@ it for the identical `not_found`-to-`null` pattern; this document is its one des
 | `task` | `task` | truthy |
 | `skill` | `skill` | truthy |
 
-`workspace` is *not* a start parameter — `packages/code/tests/component/kernel-run-client.test.ts:222`
+`workspace` is *not* a start parameter — `packages/code/tests/component/kernel-run-client.test.ts:268`
 asserts `expect(captured).not.toHaveProperty("workspace")`.
 
 ### 2.6 Environment variables read in this scope
@@ -193,7 +194,7 @@ asserts `expect(captured).not.toHaveProperty("workspace")`.
 | Variable | Read at | Meaning |
 |---|---|---|
 | `CLARVIS_STREAM_DEBUG` | `packages/code/src/adapters/stream-metrics.ts:104` | JSONL path for the streaming counters; unset ⇒ no-op sink |
-| `CLARVIS_TUI_RSS_LIMIT_MB` | `packages/code/src/views/App.tsx:206` via `tuiRssLimitBytes` (`packages/code/src/adapters/memory-pressure.ts:102`) | RSS fuse limit in MiB; `0` disables |
+| `CLARVIS_TUI_RSS_LIMIT_MB` | `packages/code/src/views/App.tsx:338-340` via `tuiRssLimitBytes` (`packages/code/src/adapters/memory-pressure.ts:102`) | RSS fuse limit in MiB; `0` disables |
 
 ## 3. Data and formats
 
@@ -201,36 +202,36 @@ asserts `expect(captured).not.toHaveProperty("workspace")`.
 
 | Id | Shape | Generated at |
 |---|---|---|
-| execution id | `"exec_" + crypto.randomUUID()` | `packages/code/src/run-host.ts:620`, `:775`, `:827`; and as a fallback in `packages/code/src/adapters/kernel-run-client.ts:364` |
-| session id | UUIDv7 — 48-bit ms timestamp in bytes 0–5, `crypto.getRandomValues` over 6–15, version nibble `0x7`, variant bits `0b10` | `packages/code/src/adapters/session-store.ts:86` |
-| transcript user-node key | `"user:" + userSeq++` | `packages/code/src/adapters/store.ts:768` |
-| transcript notice key | `"notice:" + noticeSeq++` | `packages/code/src/adapters/store.ts:810` |
-| local-bash node key | `"local:" + localSeq++` | `packages/code/src/adapters/store.ts:863` |
-| run-scoped node key | `` `${execId}::${spanId}` `` | `packages/code/src/adapters/store.ts:950`, tool form at `:639` |
-| folded-prefix node key | the literal `"transcript:folded-prefix"` | `packages/code/src/adapters/store.ts:818` |
-| run-failure node key | `` `${execId}::run-failed:${error.code}` `` | `packages/code/src/adapters/store.ts:801` |
+| execution id | `"exec_" + crypto.randomUUID()` | `packages/code/src/run-host.ts:771`, `:921`, `:977`; and as a fallback in `packages/code/src/adapters/kernel-run-client.ts:393` |
+| session id | UUIDv7 — 48-bit ms timestamp in bytes 0–5, `crypto.getRandomValues` over 6–15, version nibble `0x7`, variant bits `0b10` | `packages/code/src/adapters/session-store.ts:122` |
+| transcript user-node key | `"user:" + userSeq++` | `packages/code/src/adapters/store.ts:858` |
+| transcript notice key | `"notice:" + noticeSeq++` | `packages/code/src/adapters/store.ts:901` |
+| local-bash node key | `"local:" + localSeq++` | `packages/code/src/adapters/store.ts:983` |
+| run-scoped node key | `` `${execId}::${spanId}` `` | `packages/code/src/adapters/store.ts:1081-1083`, tool form at `:739` |
+| folded-prefix node key | the literal `"transcript:folded-prefix"` | `packages/code/src/adapters/store.ts:909` |
+| run-failure node key | `` `${execId}::run-failed:${error.code}` `` | `packages/code/src/adapters/store.ts:893-908` |
 
 `uuidv7`'s version/variant bits are pinned by
-`packages/code/tests/component/session-store.test.ts:68`.
+`packages/code/tests/component/session-store.test.ts:75-80`.
 
 ### 3.2 `SessionMeta` — the persisted session record
 
-Declared at `packages/code/src/adapters/session-store.ts:51`.
+Declared at `packages/code/src/adapters/session-store.ts:69-87`.
 
 | Field | Type | Note |
 |---|---|---|
 | `id` | `SessionId` | UUIDv7 |
-| `title` | `string` | `redactPreview(firstUserText, { max: 80 })` (`packages/code/src/adapters/session.ts:119`) |
-| `projectId` | `string?` | required before persistence; `metaToSession` throws without it (`packages/code/src/adapters/session-store.ts:295`) |
-| `workspace` | `string` | the workspace **id**, from `RunHostDeps.workspaceId` (`packages/code/src/run-host.ts:615`) |
+| `title` | `string` | `redactPreview(firstUserText, { max: 80 })` (`packages/code/src/adapters/session.ts:139-153`) |
+| `projectId` | `string?` | required before persistence; `metaToSession` throws without it (`packages/code/src/adapters/session-store.ts:359-365`) |
+| `workspace` | `string` | the workspace **id**, from `RunHostDeps.workspaceId` (`packages/code/src/run-host.ts:392-397`) |
 | `owner` | `string` | |
 | `createdAt` / `updatedAt` | `number` (epoch ms) | |
 | `profile` | `string?` | agent name |
 | `turns` | `TurnRef[]` | |
 | `lastEnvironment` | `EnvironmentRunRef?` | newest turn's extension snapshot, retained by catalog-only projections |
-| `turnCount` | `number?` | present *only* on a catalog-only summary (`packages/code/src/adapters/session-store.ts:63`, `:279`) |
+| `turnCount` | `number?` | present *only* on a catalog-only summary (`packages/code/src/adapters/session-store.ts:84`, `:503-520`) |
 | `totals` | `SessionTotals` `{input, output, cached?, costUsd?}`; absent `cached` means an incomplete split, numeric zero means measured zero | `packages/code/src/adapters/session-store.ts` (`SessionTotals`) |
-| `pending` | `Message[]?` | unflushed observations (`:61`) |
+| `pending` | `Message[]?` | unflushed observations (`:86`) |
 
 `TurnRef` is the required discriminated union `ConversationTurnRef | TranscriptTurnRef`. Both variants
 carry
@@ -297,81 +298,81 @@ emits a record with empty `counts`/`rates` — pinned by
 
 ## 4. Behavior
 
-### 4.1 `submitTurn` — the ordinary turn (`packages/code/src/run-host.ts:568`)
+### 4.1 `submitTurn` — the ordinary turn (`packages/code/src/run-host.ts:720-889`)
 
-1. Read `deps.activeProfile()`; empty ⇒ status `"no backend yet"` and return (`:555`–`:559`).
-2. Compute `draftText = display ?? composerText(content)` (`:560`, helper at `:228` — the composer
+1. Read `deps.activeProfile()`; empty ⇒ status `"no backend yet"` and return (`:725-729`).
+2. Compute `draftText = display ?? composerText(content)` (`:730`, helper at `:269-277` — the composer
    text keeps only `type: "text"` parts).
-3. Resolve `@`-mention images through `buildContent`/`appendMentionImages` (`:562`–`:566`). A
+3. Resolve `@`-mention images through `buildContent`/`appendMentionImages` (`:732-736`). A
    `MentionImageError` sets the status to the error's message, calls `draftRestore` with the original
-   draft, and returns **before any session or run state is created** (`:568`–`:571`); any other error
-   rethrows (`:568`).
-4. **If a run is already interactively active**: this is a *steer*, not a new turn (`:573`). An optimistic
+   draft, and returns **before any session or run state is created** (`:737-741`); any other error
+   rethrows (`:738`).
+4. **If a run is already interactively active**: this is a *steer*, not a new turn (`:743-745`). An optimistic
    `queueSteer` annotation is added only if the current sink is that execution's
-   (`:575`–`:578`); `client.steer` is awaited; a non-`"steered"` status rolls the annotation back and
+   (`:746-750`); `client.steer` is awaited; a non-`"steered"` status rolls the annotation back and
    shows the raw status; a throw rolls it back, sets `"steer failed — message restored to the input"`
-   and restores the draft (`:579`–`:591`). Returns. A run whose `done` result has settled is no
+   and restores the draft (`:751-764`). Returns. A run whose `done` result has settled is no
    longer active here even when `closed` is still waiting on post-run memory events.
 5. If `done` has settled but stored-run reconciliation is still finishing, await that semantic
    settlement and re-check `runActive`; the message is retained for a new turn and is never sent to
    the settled handle's steer queue. Production: `packages/code/src/run-host.ts` (`submitTurn`,
    `currentSettlement`). Test: `packages/code/tests/component/run-host.test.ts` ("done releases
    interactive ownership before the post-run event stream closes").
-6. Otherwise create the session if absent (`loadEpoch += 1`, `createSession`) (`:594`–`:600`).
+6. Otherwise create the session if absent (`loadEpoch += 1`, `createSession`) (`:766-769`).
 7. Mint `executionId`, snapshot `messagesBeforeTurn`, append the user node
-   (`store.appendUserMessage`) (`:601`–`:604`).
+   (`store.appendUserMessage`) (`:771-773`).
 8. If the effective plans mode is `"review"` (`skill?.plansMode ?? deps.plansMode?.()`), append a
-   plan-approval notice to the transcript (`:605`–`:612`).
+   plan-approval notice to the transcript (`:774-781`).
 9. `sess.beginTurn(msg, executionId)` stamps the process-pinned Environment identity on the new turn,
    mirrors it to `SessionMeta.lastEnvironment`, and returns the **continuation base** — the previous
    turn's execution id. Production: `packages/code/src/adapters/session.ts` (`beginTurn`). Test:
    `packages/code/tests/component/session.test.ts` ("beginTurn stamps the selected Environment and
    reconcile adopts the persisted run snapshot").
-10. `rememberResidentTurn` records the turn and folds the oldest when over the limit (`:614`).
+10. `rememberResidentTurn` records the turn and folds the oldest when over the limit (`:783`).
 11. Collect `promptCacheKey = sess.meta()?.id`, `guardMode`, `judgePayload(guardMode)`, and `memory`
-    only when the mode is `"off"` (`:619`–`:626`).
-12. `workflowRunId = executionId; setWorkflowActivity(null)` (`:629`, `:630`).
-13. Run through `runManaged` (`:671`): a continuation start when `continueFrom && !isManager`
+    only when the mode is `"off"` (`:784-790`).
+12. `workflowRunId = executionId; setWorkflowActivity(null)` (`:794-795`).
+13. Run through `runManaged` (`:836-888`): a continuation start when `continueFrom && !isManager`
     (sending only `[...pending, {role:"user", content: msg}]`), otherwise a full start
-    (`:676`–`:696`).
+    (`:840-861`).
 14. On a `continuation_unavailable` failure that was not cancelled, await `handle.closed`, set
     `"context expired — rebuilding from history…"`, and re-start full with a rebuilt history
-    (`:699`–`:710`).
-15. `afterRun: sess.endTurn(envelope)` (`:713`). `onStored`: `sess.reconcile(stored)`,
+    (`:863-875`).
+15. `afterRun: sess.endTurn(envelope)` (`:878`). `onStored`: `sess.reconcile(stored)`,
     `replayRunEvents(sink, stored)`, and `sess.releaseHistory()` when a trace exists, including for a
-    manager (`:714`–`:718`). `onError`: `sess.endTurn(undefined)` and a `"cancelled"` /
-    `"run error: …"` status (`:719`–`:722`).
+    manager (`:879-883`). `onError`: `sess.endTurn(undefined)` and a `"cancelled"` /
+    `"run error: …"` status (`:884-887`).
 
-`fullRequestMessages` (`:631`) rebuilds a released history by calling `resumeSession` over
+`fullRequestMessages` (`:796-818`) rebuilds a released history by calling `resumeSession` over
 `meta.turns.slice(0, -1)` with `renderWindow: 0`; a degraded rebuild throws
-`"cannot rebuild full history: N persisted run trace(s) is/are unavailable"` (`:645`–`:648`), which
+`"cannot rebuild full history: N persisted run trace(s) is/are unavailable"` (`:810-813`), which
 surfaces as a run-error status rather than an incomplete request —
-`packages/code/tests/component/run-host.test.ts:1299`.
+`packages/code/tests/component/run-host.test.ts:1530-1564`.
 
-### 4.2 `runManaged` — the single funnel (`packages/code/src/run-host.ts:496`)
+### 4.2 `runManaged` — the single funnel (`packages/code/src/run-host.ts:602-718`)
 
 Every run shape (`submitTurn`, `submitSkillRun`, `workOnTask`) goes through it.
 
 | Phase | Effect | Line |
 |---|---|---|
-| enter | capture `ownershipEpoch = runOwnershipEpoch` | `:487` |
-| enter | `transcript = store.openRun(id)`; `sink = teeSink(transcript, activity.openRun())` | `:490`, `:491` |
-| enter | `currentSink = {executionId, sink, transcript}`; `cancelRequested = false`; `currentStatusExecId = executionId`; `memoryStatusBase = null` | `:492`–`:496` |
+| enter | capture `ownershipEpoch = runOwnershipEpoch` | `:612` |
+| enter | `transcript = store.openRun(id)`; `sink = teeSink(transcript, activity.openRun({current:true}))` | `:614-615` |
+| enter | `currentSink = {executionId, sink, transcript}`; `cancelRequested = false`; `currentStatusExecId = executionId`; `memoryStatusBase = null` | `:616-619` |
 | enter | clone `sess.meta()?.totals` into `sessionUsageBaseline` before the run can settle or mutate those totals | `packages/code/src/run-host.ts` (`runManaged`, `sessionUsageBaseline`) |
 | enter | `diagnosticBind({execution_id})`; `setRunActive(true)`; `setRunStartedAt(Date.now())`; initial status; `attention.setTitle("running")` | `packages/code/src/run-host.ts` (`runManaged`) |
 | enter | open `currentSettlement`, the semantic-reconciliation gate that does not extend `runActive` | `packages/code/src/run-host.ts` (`runManaged`, `currentSettlement`) |
 | handle | `setHandle` records an independent physical-work lease and attaches its release to `handle.closed` | `packages/code/src/run-host.ts` (`runManaged`) |
-| resolve | ownership re-check (`session !== sess \|\| epoch mismatch` ⇒ return) | `:507` |
+| resolve | ownership re-check (`session !== sess \|\| epoch mismatch` ⇒ return) | `:669` |
 | resolve | `afterRun?`; publish the outcome status; release interactive handle/title/`runActive`; replay any held ingest notice | `packages/code/src/run-host.ts` (`runManaged`, `releaseInteractiveOwnership`) |
-| resolve | `client.getRun(executionId)`; on throw, `store.settleRun(id, status === "completed")` | `:508`–`:513` |
-| resolve | ownership re-check again, then `onStored(envelope, stored, sink)` | `:515`, `:516` |
-| resolve | `store.appendRunFailure` when the envelope failed with an error | `:517`, `:518` |
+| resolve | `client.getRun(executionId)`; on throw, `store.settleRun(id, status === "completed")` | `:673-680` |
+| resolve | ownership re-check again, then `onStored(envelope, stored, sink)` | `:681-682` |
+| resolve | `store.appendRunFailure` when the envelope failed with an error | `:683-684` |
 | resolve | `attention.notify` when not cancelled and away | `packages/code/src/run-host.ts` (`runManaged`) |
-| reject | `onError(e)`; `store.settleRun(id)`; `attention.notify("run failed")` when not cancelled and away | `:522`–`:527` |
+| reject | `onError(e)`; `store.settleRun(id)`; `attention.notify("run failed")` when not cancelled and away | `:696-707` |
 | finally | idempotently release interactive ownership on an error path; clear the diagnostic binding and sink; resolve `currentSettlement` without awaiting `closed` | `packages/code/src/run-host.ts` (`runManaged`, `releaseInteractiveOwnership`) |
-| finally | `elicit.cancelPending()` unconditionally | `:546` |
+| finally | `elicit.cancelPending()` unconditionally | `:708-716` |
 
-`runOutcomeStatus` (`:272`) renders `"failed — <message>"` for a failed envelope carrying an error,
+`runOutcomeStatus` (`:314-319`) renders `"failed — <message>"` for a failed envelope carrying an error,
 otherwise `envelope?.status ?? "done"`.
 
 Interactive ownership ends as soon as the result has updated the session and outcome status, before
@@ -385,16 +386,16 @@ unwinding, without leaving the composer in steer mode. Production: `packages/cod
 `packages/code/tests/component/run-host.test.ts` ("done releases interactive ownership before the
 post-run event stream closes" and "forced teardown keeps the physical run lease until closed").
 
-### 4.3 `submitSkillRun` (`packages/code/src/run-host.ts:761`)
+### 4.3 `submitSkillRun` (`packages/code/src/run-host.ts:908-958`)
 
 Unlike `submitTurn`, an active run makes `submitSkillRun` **refuse outright** rather than steer:
-`if (runActive()) { setStatus(["busy", …, "finish the current run first"]); return; }` (`:744`–`:747`),
-pinned by `packages/code/tests/component/run-host.test.ts:1518` ("submitSkillRun: refuses to start
+`if (runActive()) { setStatus(["busy", …, "finish the current run first"]); return; }` (`:909-914`),
+pinned by `packages/code/tests/component/run-host.test.ts:1788-1799` ("submitSkillRun: refuses to start
 while a run is already active").
 
-1. `profile = deps.activeProfile()` (`:748`); if there is no session yet, create one with
-   `{ profile: profile || undefined }` (`:749`–`:755`) — note the `|| undefined`, not the bare
-   `{profile}` `submitTurn` uses (`:598`), so an empty active profile is stored as absent rather than
+1. `profile = deps.activeProfile()` (`:915`); if there is no session yet, create one with
+   `{ profile: profile || undefined }` (`:916-920`) — note the `|| undefined`, not the bare
+   `{profile}` `submitTurn` uses (`:766-769`), so an empty active profile is stored as absent rather than
    as `""`.
 2. Mint `executionId`, build the label `` `/${name} ${task}` `` (or bare `` `/${name}` `` when `task`
    is blank), append the user node, persist it through `sess.beginTranscriptTurn(label, executionId)`
@@ -402,11 +403,11 @@ while a run is already active").
    append the skill's internal prompt to model history or advance the session's conversation
    continuation base.
 3. `client.startRun` is composed inline — `guardMode: skillGuardMode, ...deps.judgePayload(skillGuardMode),
-   ...(skillMemoryMode === "off" ? {memory: skillMemoryMode} : {})` (`:769`–`:777`) — rather than
+   ...(skillMemoryMode === "off" ? {memory: skillMemoryMode} : {})` (`:927-941`) — rather than
    through the intermediate `guardArgs` object `submitTurn` builds once and spreads at its call sites
-   (`:622`–`:626`). The composed fields are the same shape either way: `guardMode` always present,
+   (`:784-791`). The composed fields are the same shape either way: `guardMode` always present,
    `memory` only when the mode is `"off"`.
-4. Run through `runManaged` with `run` calling `client.startRun({ skill: {name, task}, … })` (`:764`–`:780`).
+4. Run through `runManaged` with `run` calling `client.startRun({ skill: {name, task}, … })` (`:929-957`).
 5. `afterRun` calls `sess.endTranscriptTurn(envelope)`, which settles the matching transcript-kind
    turn without appending its assistant result to conversation history. `onStored` never calls
    `sess.reconcile` or `sess.releaseHistory` — it only replays the run's events and appends
@@ -418,92 +419,95 @@ while a run is already active").
    agent, appends its digest, and settles") and `packages/code/tests/component/session.test.ts`
    ("transcript-only runs are canonical without becoming continuation context").
 
-### 4.4 `workOnTask` (`packages/code/src/run-host.ts:809`)
+### 4.4 `workOnTask` (`packages/code/src/run-host.ts:960-1019`)
 
-1. Refuses when `runActive() || bashActive()` (`:792`–`:795`) or when `profile.trim().length === 0`
-   (`:796`–`:799`), each with its own status message.
-2. Calls `clearSession()` **unconditionally** (`:800`) — every existing session, its turns and any
+1. Refuses when `runActive() || bashActive()` (`:961-966`) or when `profile.trim().length === 0`
+   (`:967-970`), each with its own status message.
+2. Calls `clearSession()` **unconditionally** (`:971`) — every existing session, its turns and any
    folded-prefix notice are discarded before the task-bound run starts; there is no path that preserves
    prior session state alongside a task run.
 3. `deps.setActiveProfile(profile)`, bumps `loadEpoch`, sets `sessionTask = {id: ref.id, provider_key:
-   ref.provider_key, mode: "work"}`, and creates a fresh `Session` with `{profile}` (`:801`–`:807`).
+   ref.provider_key, mode: "work"}`, and creates a fresh `Session` with `{profile}` (`:972-976`).
 4. Mints `executionId` and a **fixed** instruction message — `` `Work on task ${ref.id} in the current
    workspace. Read the active task context, call start_task explicitly when that tool is available and
    you are ready to begin, and keep every review or completion transition explicit.` `` — displayed as
-   `` `Work on task ${ref.id}` `` (`:809`–`:813`), pinned by
-   `packages/code/tests/component/run-host.test.ts:1401` ("Work on task starts a fresh current-workspace
+   `` `Work on task ${ref.id}` `` (`:977-984`), pinned by
+   `packages/code/tests/component/run-host.test.ts:1640-1666` ("Work on task starts a fresh current-workspace
    run with only task identity and provider key").
 5. `sess.beginTurn`, `rememberResidentTurn`, arms `workflowRunId`/`workflowActivity` exactly as
-   `submitTurn` does (`:815`–`:822`), then runs through `runManaged` sending the session's full message
-   chain (`sess.messages()`) plus `task: sessionTask` (`:823`–`:840`). `afterRun`/`onStored`/`onError`
-   mirror `submitTurn`'s manager-aware `reconcile`/`releaseHistory` handling (`:841`–`:850`).
+   `submitTurn` does (`:982-989`), then runs through `runManaged` sending the session's full message
+   chain (`sess.messages()`) plus `task: sessionTask` (`:990-1007`). `afterRun`/`onStored`/`onError`
+   mirror `submitTurn`'s `reconcile`/`releaseHistory` handling (`:1008-1017`).
 
 ### 4.5 Cancellation
 
-`cancelCurrentRun` (`packages/code/src/run-host.ts:413`) is a two-target function:
+`cancelCurrentRun` (`packages/code/src/run-host.ts:478-503`) is a two-target function:
 
 | Situation | Result | Line |
 |---|---|---|
-| a `!bash` job is in flight and not yet aborted | abort it, status `"! cancelling…"`, return `true` | `:396`–`:404` |
-| a `!bash` job whose `AbortController` already fired | return `false` (so a second `^C` belongs to the quit gate) | `:400` |
-| no handle, or `!runActive()`, or `cancelRequested` already | return `false`, status untouched | `:410` |
-| otherwise | `cancelRequested = true`, status `"cancelling…"`, `handle.cancel()`, return `true` | `:411`–`:419` |
-| `handle.cancel()` rejects while still the current handle and active | reset `cancelRequested = false`, status `"cancel request failed — <text>"` | `:414`–`:418` |
+| a `!bash` job is in flight and not yet aborted | abort it, status `"! cancelling…"`, return `true` | `:479-487` |
+| a `!bash` job whose `AbortController` already fired | return `false` (so a second `^C` belongs to the quit gate) | `:483` |
+| no handle, or `!runActive()`, or `cancelRequested` already | return `false`, status untouched | `:493` |
+| otherwise | `cancelRequested = true`, status `"cancelling…"`, `handle.cancel()`, return `true` | `:494-502` |
+| `handle.cancel()` rejects while still the current handle and active | reset `cancelRequested = false`, status `"cancel request failed — <text>"` | `:497-500` |
 
 The `!runActive()` guard is what stops a `^C` landing in the settle instant from permanently
-relabelling a completed run — `packages/code/tests/component/run-host.test.ts:612`.
+relabelling a completed run — `packages/code/tests/component/run-host.test.ts:709-725`.
 
-`teardownRuns` (`:442`) is the hard form: it bumps `runOwnershipEpoch`, aborts bash, cancels the
+`teardownRuns` (`:560-580`) is the hard form: it bumps `runOwnershipEpoch`, aborts bash, cancels the
 handle with `cancelRequested = true`, clears `currentSink`/`currentHandle`/`workflowRunId`/
-`currentStatusExecId`/`heldIngest`, sets `runActive(false)` and resets the terminal title (`:443`–`:455`).
+`currentStatusExecId`/`heldIngest`, sets `runActive(false)` and resets the terminal title (`:561-580`).
 It is what `runtime.tsx` supplies as the memory fuse's `forceStopRun`
 (`packages/code/src/runtime.tsx`, `runControls.forceStop`, consumed by
 `packages/code/src/views/App.tsx`).
 
 Unlike `runManaged`'s `finally`, `teardownRuns` does **not** await the handle's `closed` or `done`: the
-cancel is fire-and-forget — `void currentHandle.cancel().catch(() => undefined)` (`:444`–`:446`) — so a
+cancel is fire-and-forget — `void currentHandle.cancel().catch(() => undefined)` (`:566-568`) — so a
 straggling run can go on executing (and delivering events) after `teardownRuns` returns. What stops
 those late deliveries from touching UI state is `runManaged`'s own ownership-epoch check (invariant 5),
 not anything in `teardownRuns` itself.
 
-### 4.6 Event routing (`onEvent`, `packages/code/src/run-host.ts:369`)
+### 4.6 Event routing (`onEvent`, `packages/code/src/run-host.ts:411-444`)
 
-Everything happens inside one Solid `batch` (`:352`).
+Everything happens inside one Solid `batch` (`:412-443`).
 
 | Condition | Effect | Line |
 |---|---|---|
-| `currentSink` exists and (`executionId === undefined` or it matches) | `applyEvent(target.sink, event, source)` | `:354`, `:355` |
-| `source === "live"`, `workflowRunId !== null`, event is a workflow-projection event, and the id matches (or is absent) | fold into `workflowActivity` via `reduceWorkflowProjection` | `:356`–`:359` |
+| `currentSink` exists and (`executionId === undefined` or it matches) | `applyEvent(target.sink, event, source)` | `:413-418` |
+| `source === "live"`, `workflowRunId !== null`, event is a workflow-projection event, and the id matches (or is absent) | fold into `workflowActivity` via `reduceWorkflowProjection` | `:439-442` |
 
-`isWorkflowProjectionEvent` (`:326`) admits `workflow_run_started`, `workflow_title_updated`,
+`isWorkflowProjectionEvent` (`:377-385`) admits `workflow_run_started`, `workflow_title_updated`,
 `workflow_run_progress`, `workflow_run_completed`, `workflow_run_failed`, `run_ended`.
 
-### 4.7 Memory-ingest status composition (`onMemoryIngest`, `packages/code/src/run-host.ts:390`)
+### 4.7 Memory-ingest status composition (`onMemoryIngest`, `packages/code/src/run-host.ts:455-476`)
 
-Three module-scoped variables carry the state: `memoryStatusBase` (`:363`), `heldIngest` (`:364`),
-`currentStatusExecId` (`:370`).
+Three closure-scoped variables carry the state: `memoryStatusBase` (`:446`), `heldIngest` (`:447`),
+`currentStatusExecId` (`:453`).
 
 | (state, event) | → (state, effect) | Line |
 |---|---|---|
-| any, notice whose `execution_id !== currentStatusExecId` | dropped, no display change | `:373` |
-| run or bash active | `heldIngest = notice`, `memoryStatusBase = null`; nothing shown | `:374`–`:378` |
-| idle, `isIngestPending(phase)` (`started`/`queued`) | capture the base if unset, render `base · <segment>` | `:379`–`:389` |
-| idle, terminal phase (`done`/`failed`/`blocked`) | render `(memoryStatusBase ?? runStatus()) · <segment>`, then clear the base | `:390`–`:393` |
-| a held notice whose run releases the line in `runManaged`'s `finally` | replayed through `onMemoryIngest` | `:540`–`:544` |
+| any, notice whose `execution_id !== currentStatusExecId` | dropped, no display change | `:456` |
+| run or bash active | `heldIngest = notice`, `memoryStatusBase = null`; nothing shown | `:457-460` |
+| idle, `memoryIngestIsPending(phase)` (`started`/`queued`) | capture the base if unset, render `base · <segment>` | `:462-471` |
+| idle, terminal phase (`done`/`failed`/`blocked`) | render `(memoryStatusBase ?? runStatus()) · <segment>`, then clear the base | `:473-475` |
+| a held notice whose run releases interactive ownership | replayed through `onMemoryIngest` | `:647-650` |
 
-`isIngestPending` is imported from `@clarvis/kernel/policy` (`packages/code/src/run-host.ts:10`,
-defined at `packages/kernel/src/runs/memory-ingest-phase.ts:23`) — the same partition the kernel uses
-to decide whether a run's stream stays open.
+`memoryIngestIsPending` is imported from the code adapter
+(`packages/code/src/run-host.ts:10`, `packages/code/src/adapters/event-span.ts:9-11`), which delegates
+to `isIngestPending` from `@clarvis/kernel/policy`
+(`packages/kernel/src/runs/memory-ingest-phase.ts:23`) — the same partition the kernel uses to decide
+whether a run's stream stays open.
 
-### 4.8 `runBangCommand` (`packages/code/src/run-host.ts:872`)
+### 4.8 `runBangCommand` (`packages/code/src/run-host.ts:1021-1063`)
 
-Refuses when `bashActive()` (`:855`–`:858`), lazily creates a session (`:859`–`:865`), opens the
-transcript's local-bash node (`store.beginLocalBash`, `:867`), installs an `AbortController`, sets
+Refuses while semantic reconciliation is pending or when `bashActive()` (`:1022-1026`), lazily
+creates a session (`:1027-1031`), opens the transcript's local-bash node (`store.beginLocalBash`,
+`:1032`), installs an `AbortController`, sets
 `bashActive`, status `"! running…"`, and runs `runBash(cmd, {cwd: workspace, signal})` through
-`detachObserved` (`:868`–`:896`). On settle it finishes the transcript node, appends a `"user"`-role
-observation to the session **only if the session is still the same object** (`:878`), and updates the
-status only if both the controller and the session are still current (`:879`–`:887`). Terminal status
-words: `"! cancelled"`, `"! timed out"`, `` `! exit ${exitCode ?? "?"}` `` (`:881`–`:885`).
+`detachObserved` (`:1037-1061`). On settle it finishes the transcript node, appends a `"user"`-role
+observation to the session **only if the session is still the same object** (`:1043`), and updates the
+status only if both the controller and the session are still current (`:1044-1052`). Terminal status
+words: `"! cancelled"`, `"! timed out"`, `` `! exit ${exitCode ?? "?"}` `` (`:1046-1050`).
 
 ### 4.9 Resident-turn folding
 
@@ -540,15 +544,15 @@ internal state and is described by
 `packages/code/tests/unit/transcript-publication.test.ts` (discard-release and staged-flush
 retention cases) and `packages/code/tests/unit/store-status.test.ts` (repeated 20-turn plateau).
 
-### 4.10 `exportNodeBatches` (`packages/code/src/run-host.ts:973`)
+### 4.10 `exportNodeBatches` (`packages/code/src/run-host.ts:1125-1309`)
 
 Creates a **scratch** `TranscriptStore` in its own `createRoot`, with every retention cap raised to
-`Number.MAX_SAFE_INTEGER` (`:958`–`:968`).
+`Number.MAX_SAFE_INTEGER` (`:1126-1140`).
 
 | Case | Behavior | Line |
 |---|---|---|
-| no folded turns and no released prose | yields `store.nodes` itself (identity), then done | `:1071`–`:1074` |
-| no folded turns but released prose present | yields through `exportResidentNodes` | `:1076` |
+| no folded turns and no released prose | yields `store.nodes` itself (identity), then done | `:1243-1248` |
+| no folded turns but released prose present | yields through `exportResidentNodes` | `:1249-1250` |
 | folded turns present | lazily index `session.meta().turns[0..foldedTurnCount)`, rebuild and yield one canonical turn at a time, then stream the live window from `store.nodes.slice(foldedPrefix)` | `packages/code/src/run-host.ts` (`exportNodeBatches`) |
 
 The host deliberately retains only `foldedTurnCount`, not a parallel `foldedTurns[]`. When export
@@ -562,50 +566,50 @@ reads the canonical turn index one item at a time", "transcript-only skill runs 
 canonical export index", and "folded turns are yielded one at a time before the bounded live
 window").
 
-`exportResidentNodes` (`:972`) walks nodes, and for each released-prose node
-(`isReleasedProse`, `:240`) resolves the source execution id (`sourceExecutionId`, `:247` — the
+`exportResidentNodes` (`:1142-1241`) walks nodes, and for each released-prose node
+(`isReleasedProse`, `:282-286`) resolves the source execution id (`sourceExecutionId`, `:289-292` — the
 `sourceExecutionId` field for a `user` node, otherwise the key prefix before `"::"`), lazily
-`loadPersisted`es that run once (`:981`), and substitutes:
+`loadPersisted`es that run once (`:1151-1173`), and substitutes:
 
 | Failure | Replacement text | Line |
 |---|---|---|
-| no execution id | `"no persisted run identifies this block"` | `:1006` |
-| fetch threw | `` `run ${id} could not be fetched` `` | `:1014` |
-| fetch returned `null` | `` `run ${id} is no longer retained` `` | `:1016` |
-| user node, no recoverable prompt | `` `run ${id} has no recoverable prompt` `` | `:1021` |
-| user node, `sourceTextFingerprint` mismatch | `` `run ${id}'s persisted prompt does not match this displayed block` `` | `:1030` |
-| assistant/reasoning node absent or itself released | `` `run ${id} has no recoverable ${kind} block` `` | `:1051` |
+| no execution id | `"no persisted run identifies this block"` | `:1177-1180` |
+| fetch threw | `` `run ${id} could not be fetched` `` | `:1186-1187` |
+| fetch returned `null` | `` `run ${id} is no longer retained` `` | `:1188-1189` |
+| user node, no recoverable prompt | `` `run ${id} has no recoverable prompt` `` | `:1190-1196` |
+| user node, `sourceTextFingerprint` mismatch | `` `run ${id}'s persisted prompt does not match this displayed block` `` | `:1198-1206` |
+| assistant/reasoning node absent or itself released | `` `run ${id} has no recoverable ${kind} block` `` | `:1217-1227` |
 
-each prefixed by `EXPORT_INCOMPLETE_PREFIX` (`:185`, `incompleteExportNode` at `:253`). Batches are
-flushed every `EXPORT_BATCH_NODE_LIMIT` nodes (`:1062`).
+each prefixed by `EXPORT_INCOMPLETE_PREFIX` (`:226-227`, `incompleteExportNode` at `:295-301`). Batches are
+flushed every `EXPORT_BATCH_NODE_LIMIT` nodes (`:1234-1240`).
 
 The fingerprint check is real: a `/skill` user node shows the rendered command while the persisted
 prompt is the skill body, so exporting the persisted content would silently substitute a different
-prompt — `packages/code/tests/component/run-host-export.test.ts:204`.
+prompt — `packages/code/tests/component/run-host-export.test.ts:205`.
 
-### 4.11 `clearSession` (`packages/code/src/run-host.ts:959`)
+### 4.11 `clearSession` (`packages/code/src/run-host.ts:1111-1123`)
 
 `clearSession(opts?: {flush?: boolean})` bumps `loadEpoch`, calls `teardownRuns()`, then — **flush is
-the default**: `if (opts?.flush !== false) session?.flush()` (`:944`), so a caller must pass
+the default**: `if (opts?.flush !== false) session?.flush()` (`:1114`), so a caller must pass
 `{flush: false}` explicitly to skip persisting the outgoing session — drops `session`/`sessionTask`,
 clears `store`/`activity`, resets `foldedTurnCount`/`residentTurns`/`foldedPrefix` to `0`/empty/`0`, and
 sets status to `["idle"]`. `loadSessionMeta` and `workOnTask` both rely on this full reset before
 installing their own session state.
 
-### 4.12 `loadSessionMeta` (`packages/code/src/run-host.ts:1141`)
+### 4.12 `loadSessionMeta` (`packages/code/src/run-host.ts:1311-1416`)
 
 1. `epoch = ++loadEpoch`; `teardownRuns()`; `session?.flush()`; drop session/task; clear both stores
-   and the fold bookkeeping (`:1124`–`:1133`).
+   and the fold bookkeeping (`:1312-1321`).
 2. `windowStart = max(0, meta.turns.length - RESIDENT_TRANSCRIPT_TURN_LIMIT)`. When positive,
    `foldedTurnCount = windowStart`, one folded notice is appended and `foldedPrefix = 1`. The older
    turn metadata stays only in canonical `meta.turns`; it is not copied into another host array.
 3. `resumeSession(meta, {getRun, currentPlanProviderKey, renderTurn}, {renderWindow: 20})`
-   (`:1147`–`:1174`). `renderTurn` drops anything whose epoch has moved on or whose index is before
-   `windowStart` (`:1154`), otherwise appends the user node, records the resident turn, replays the
+   (`:1335-1372`). `renderTurn` drops anything whose epoch has moved on or whose index is before
+   `windowStart` (`:1341-1343`), otherwise appends the user node, records the resident turn, replays the
    turn's events into `teeSink(store.openRun, activity.openRun)` and appends a **recovery notice**
-   with tone `"warn"` when the record was rebuilt from a damaged journal (`:1162`–`:1170`).
-4. Post-resume epoch check (`:1179`), then `sessionTask = resumed.activeTask` and a fresh `Session`
-   seeded with `historyComplete: resumed.degraded.length === 0` (`:1180`–`:1189`).
+   with tone `"warn"` when the record was rebuilt from a damaged journal (`:1356-1368`).
+4. Post-resume epoch check (`:1377`), then `sessionTask = resumed.activeTask` and a fresh `Session`
+   seeded with `historyComplete: resumed.degraded.length === 0` (`:1378-1384`).
 5. `history.seed(seeds)`. The seed array starts from `meta.turns[0..foldedTurnCount)`, adding the
    stored redacted `userPreview` only for `kind: "conversation"`; transcript-only turns never enter
    prompt history. For each resident turn `resumeSession` renders, `renderTurn` likewise pushes
@@ -624,40 +628,40 @@ installing their own session state.
    (`loadSessionMeta`). Test: `packages/code/tests/component/run-host.test.ts`
    ("loadSessionMeta warns when the active Environment differs from the persisted turn").
 
-`recoveryNotice` (`:210`) names both counts: `"partial record — this turn was rebuilt from a damaged
+`recoveryNotice` (`:245-256`) names both counts: `"partial record — this turn was rebuilt from a damaged
 journal after a crash: N journal lines lost, M tool results synthesized. The run happened; this record
-of it is incomplete."`, singularised per count (`:214`, `:218`).
+of it is incomplete."`, singularised per count (`:247-254`).
 
-`resumeSessionById` (`:1207`) loads the meta through `sessionStore.load`, guards its own
-`requestEpoch` around the await, and reports `"session not found"` / `"resume failed: …"` (`:1208`–`:1221`).
+`resumeSessionById` (`:1418-1433`) loads the meta through `sessionStore.load`, guards its own
+`requestEpoch` around the await, and reports `"session not found"` / `"resume failed: …"` (`:1419-1432`).
 
-### 4.13 `resumeSession` (`packages/code/src/adapters/session.ts:504`)
+### 4.13 `resumeSession` (`packages/code/src/adapters/session.ts:585-752`)
 
-The message-chain rebuild is a **backwards** walk in batches of `FETCH_CONCURRENCY = 6` (`:448`):
+The message-chain rebuild is a **backwards** walk in batches of `FETCH_CONCURRENCY = 6` (`:540`):
 
-1. `reserveHistory(meta.pending ?? [], null)` charges the persisted observations first (`:534`).
+1. `reserveHistory(meta.pending ?? [], null)` charges the persisted observations first (`:626`).
 2. `while (cursor >= 0 && !foundReset)`: build a batch of up to 6 descending indexes and
-   `fetchBatch(batch, retainHistory = true)` (`:581`–`:585`).
+   `fetchBatch(batch, retainHistory = true)` (`:675-684`).
 3. Inside a batch, each fetched `RunDetail` is immediately *projected* to
-   `{continueFrom?, userContent?, history?, events?, recovery?}` (`:562`–`:572`), and the `RunDetail`
+   `{continueFrom?, userContent?, history?, events?, recovery?}` (`:648-666`), and the `RunDetail`
    itself is released — pinned with `WeakRef` + `Bun.gc(true)` at
-   `packages/code/tests/component/session.test.ts:667`.
-4. A turn with no `continue_from` sets `foundReset` and `resetIdx` (`:574`–`:576`); the walk stops at
+   `packages/code/tests/component/session.test.ts:892-947`.
+4. A turn with no `continue_from` sets `foundReset` and `resetIdx` (`:667-670`); the walk stops at
    the next batch boundary, so up to 5 extra fetches happen.
 5. Turns inside the visual window but before `resetIdx` are fetched in a second pass with
-   `retainHistory = false` (`:587`–`:591`).
-6. The render loop (`:597`) accumulates the chain: at or after `resetIdx`, a `continueFrom` turn
+   `retainHistory = false` (`:686-691`).
+6. The render loop (`:697-742`) accumulates the chain: at or after `resetIdx`, a `continueFrom` turn
    **appends** its messages while a non-`continueFrom` turn **replaces** the accumulation outright
-   (`:606`, `:607`).
+   (`:703-709`).
 
-Budget enforcement is incremental and pre-allocation: `reserveHistory` (`:510`) counts messages
-against `SESSION_RESUME_MAX_MESSAGES = 10_000` (`:399`) and characters against
-`SESSION_RESUME_MAX_PAYLOAD_CHARS = 16_000_000` (`:398`), throwing `SessionResumeLimitError`
-(`:403`) — `{ code: "resource_exhausted", reason: "session_resume_history_limit", dimension, limit }` —
-before the next batch is fetched. `packages/code/tests/component/session.test.ts:724` asserts exactly
+Budget enforcement is incremental and pre-allocation: `reserveHistory` (`:602-621`) counts messages
+against `SESSION_RESUME_MAX_MESSAGES = 10_000` (`:481`) and characters against
+`SESSION_RESUME_MAX_PAYLOAD_CHARS = 16_000_000` (`:480`), throwing `SessionResumeLimitError`
+(`:485-499`) — `{ code: "resource_exhausted", reason: "session_resume_history_limit", dimension, limit }` —
+before the next batch is fetched. `packages/code/tests/component/session.test.ts:949-979` asserts exactly
 18 fetches (three batches) and **zero** renders on that path.
 
-Degradation classification (`:622`–`:627`):
+Degradation classification (`:722-734`):
 
 | Turn state | `reason` |
 |---|---|
@@ -666,10 +670,10 @@ Degradation classification (`:622`–`:627`):
 | no `executionId` | `"trace_unavailable"` |
 
 A turn never fetched at all (outside both the chain walk and the window) renders `collapsed: true` and
-counts toward `collapsed`, never `degraded` (`:635`–`:640`) —
-`packages/code/tests/component/session.test.ts:590` pins that the two totals never overlap.
+counts toward `collapsed`, never `degraded` (`:735-741`) —
+`packages/code/tests/component/session.test.ts:815-833` pins that the two totals never overlap.
 
-### 4.14 `Session` (`packages/code/src/adapters/session.ts:93`)
+### 4.14 `Session` (`packages/code/src/adapters/session.ts:108-325`)
 
 | Method | Effect | Line |
 |---|---|---|
@@ -678,54 +682,54 @@ counts toward `collapsed`, never `degraded` (`:635`–`:640`) —
 | `endTurn(envelope)` | settles the matching conversation turn, appends the assistant reply, and folds usage into totals once | `packages/code/src/adapters/session.ts` (`endTurn`, `finishTurn`) |
 | `endTranscriptTurn(envelope)` | settles the matching transcript turn and totals without appending its result to model history | `packages/code/src/adapters/session.ts` (`endTranscriptTurn`, `finishTurn`) |
 | `reconcile(stored)` | re-maps status, adopts the persisted run's Environment identity when present, and adds usage if the id was not already counted | `packages/code/src/adapters/session.ts` (`reconcile`) |
-| `setProfile(name)` | no-ops when `!meta \|\| meta.profile === name`; otherwise updates `meta.profile`/`meta.updatedAt` and saves | `:184`–`:189` |
-| `appendObservation(content, role="assistant")` | pushes into `history` **and** `pending`, mirrors `pending` into `meta` and saves | `:191`–`:203` |
-| `takePending()` | drains `pending` and deletes `meta.pending` | `:205`–`:213` |
-| `flush()` | persists `meta` if present; a no-op with no session yet | `:215`–`:217` |
-| `releaseHistory()` | empties `history` and sets `historyComplete = false` | `:219`–`:222` |
-| `restoreHistory(messages)` | splices in a rebuilt chain and sets `historyComplete = true` | `:224`–`:227` |
+| `setProfile(name)` | no-ops when `!meta \|\| meta.profile === name`; otherwise updates `meta.profile`/`meta.updatedAt` and saves | `:251-256` |
+| `appendObservation(content, role="assistant")` | pushes into `history` **and** `pending`, mirrors `pending` into `meta` and saves | `:258-270` |
+| `takePending()` | drains `pending` and deletes `meta.pending` | `:272-279` |
+| `flush()` | persists `meta` if present; a no-op with no session yet | `:282-284` |
+| `releaseHistory()` | empties `history` and sets `historyComplete = false` | `:286-289` |
+| `restoreHistory(messages)` | splices in a rebuilt chain and sets `historyComplete = true` | `:291-294` |
 
 `lastTurnFor` searches backwards for the requested `kind` and, when supplied, exact `executionId`; it
 returns `undefined` rather than falling back to a turn of another kind or id.
 
-`runStatusToNode` (`packages/code/src/adapters/session-store.ts:72`): `completed→done`, `cancelled→cancelled`,
+`runStatusToNode` (`packages/code/src/adapters/session-store.ts:108-121`): `completed→done`, `cancelled→cancelled`,
 `running→running`, everything else `→ error` — except `endedReason === "soft_limit_declined"`, which
 maps to `cancelled`.
 
-### 4.15 `buildSkillRunDigest` / `buildRecoveredContext` (`packages/code/src/adapters/session.ts:257`, `:289`)
+### 4.15 `buildSkillRunDigest` / `buildRecoveredContext` (`packages/code/src/adapters/session.ts:338`, `:371`)
 
 `buildSkillRunDigest(name, agent, envelope, stored, selectedPlanProviderKey?)` is what
-`submitSkillRun`'s `onStored` appends as an observation (`packages/code/src/run-host.ts:801`–`:803`). It builds the tag
-`` `[/${name} → ${agent}${execId ? \`, exec ${execId}\` : ""}]` `` (`:264`), then resolves the body
+`submitSkillRun`'s `onStored` appends as an observation (`packages/code/src/run-host.ts:947-951`). It builds the tag
+`` `[/${name} → ${agent}${execId ? \`, exec ${execId}\` : ""}]` `` (`packages/code/src/adapters/session.ts:345-346`), then resolves the body
 through a fallback chain: the live envelope's or stored run's textual result
-(`resultToContent(envelope ?? stored?.result)`, `:265`–`:266`); failing that, `buildRecoveredContext`'s
-salvage from the stored run's events, when a `stored` detail exists (`:267`–`:271`); failing that, a
-bare `` `${status} with no textual result.` `` line (`:274`–`:276`).
+(`resultToContent(envelope ?? stored?.result)`, `:347-348`); failing that, `buildRecoveredContext`'s
+salvage from the stored run's events, when a `stored` detail exists (`:349-353`); failing that, a
+bare `` `${status} with no textual result.` `` line (`:354-358`).
 
 `buildRecoveredContext(events, planRef?, selectedPlanProviderKey?)` reconstructs what an interrupted
 run should not force the next turn to redo, in up to two sections: **decisions** — every accepted
 `elicitation_resolved` event with a non-empty string answer, rendered `` `${question} → ${answer}` ``
-(`:296`–`:306`) — and **plan status**, present only when `planRef` exists and is not `completed`
-(`:308`); it always names the plan's provider/id/revision and, when `selectedPlanProviderKey` differs
+(`:378-387`) — and **plan status**, present only when `planRef` exists and is not `completed`
+(`:390-403`); it always names the plan's provider/id/revision and, when `selectedPlanProviderKey` differs
 from `planRef.provider_key`, tells the reader to re-select `planRef.provider_key` before `read_plan`
-can resolve the document, rather than simply pointing at `read_plan` (`:308`–`:322`). The function's
-own TSDoc (`:282`–`:288`) states the plan is deliberately **not** reconstructed from events, because
+can resolve the document, rather than simply pointing at `read_plan` (`:390-403`). The function's
+own TSDoc (`:363-370`) states the plan is deliberately **not** reconstructed from events, because
 plan documents never enter the trace — the salvage points at the provider's authoritative state
 instead of a stale snapshot. `buildRecoveredContext` returns `null` when neither section applies
-(`:324`), and is also used by `resumeSession`'s history rebuild for a degraded turn
-(`packages/code/src/adapters/session.ts:568`–`:568`).
+(`:406`), and is also used by `resumeSession`'s history rebuild
+(`packages/code/src/adapters/session.ts:648-653`).
 
-### 4.16 `deleteSession` (`packages/code/src/adapters/session.ts:670`)
+### 4.16 `deleteSession` (`packages/code/src/adapters/session.ts:760-772`)
 
 `deleteSession(meta, store, deleteRun)` cascades a session delete: for every turn carrying an
-`executionId`, it awaits `deleteRun(executionId)` and records `{executionId, deleted}` (`:665`–`:668`),
-then deletes the session record itself via `store.delete(meta.owner, meta.id)` (`:669`), returning
+`executionId`, it awaits `deleteRun(executionId)` and records `{executionId, deleted}` (`:765-768`),
+then deletes the session record itself via `store.delete(meta.id)` (`:770`), returning
 `{session: boolean, traces: {executionId, deleted}[]}`. Trace deletion happens before the session
 record's, and a turn with no `executionId` contributes no trace entry. Pinned:
-`packages/code/tests/component/session.test.ts:963` ("deleteSession removes the session file and
+`packages/code/tests/component/session.test.ts:1197-1226` ("deleteSession removes the session file and
 cascades delete_run per turn").
 
-### 4.17 `createSessionStore` (`packages/code/src/adapters/session-store.ts:396`)
+### 4.17 `createSessionStore` (`packages/code/src/adapters/session-store.ts:464`)
 
 An in-memory cache (`:303`) plus one **write lane per session id** (`:310`).
 
@@ -746,13 +750,13 @@ document as it enters the cache. See §8.
 `lane.pending`. The drain loop deletes the lane **inside the same async continuation** that observed an
 empty queue (`:386`–`:395`), not from a chained `.finally()` — the difference is a microtask window
 where a save can populate a lane about to be deleted, pinned by
-`packages/code/tests/component/session-store.test.ts:181`.
+`packages/code/tests/component/session-store.test.ts:277`.
 
 The full-document LRU: `MAX_RESIDENT_FULL_SESSIONS = 8` (`:188`); `demoteOldFullSessions` (`:329`)
 rewrites an evicted entry into a summary (`turns: []`, `turnCount: current.turns.length`, `pending`
 dropped) but **skips any id with a live write lane**, re-appending it to the LRU (`:334`–`:337`).
 
-### 4.18 `ActivityStore` (`packages/code/src/adapters/activity-store.ts:90`)
+### 4.18 `ActivityStore` (`packages/code/src/adapters/activity-store.ts:94`)
 
 `openRun` takes no execution id — see §8 — and returns a `RunSink` with per-run counters
 (`runInput`/`runOutput`/`runCached` plus missing-split count) that are subtracted back out of the
@@ -781,7 +785,7 @@ deletes the optional field until that run is reset.
 (`ACTIVITY_SUMMARY_TRUNCATED_NOTICE`, declared `:17`) and keeps at most 64 summarised subagents in a
 FIFO, deleting the `summary` field of the evicted ones (`:136`–`:143`).
 
-### 4.19 `KernelRunClient` run lifecycle (`driveHandle`, `packages/code/src/adapters/kernel-run-client.ts:335`)
+### 4.19 `KernelRunClient` run lifecycle (`driveHandle`, `packages/code/src/adapters/kernel-run-client.ts:352`)
 
 ```
 startRun ──> live.set(executionId, handleP)
@@ -794,7 +798,7 @@ startRun ──> live.set(executionId, handleP)
 
 (`:336`–`:353`). `pumpEvents` (`:295`) diverts every `memory_ingest` event to `onMemoryIngest` and
 `continue`s — it never reaches `onEvent`, pinned at
-`packages/code/tests/component/kernel-run-client.test.ts:271`. Everything else goes to
+`packages/code/tests/component/kernel-run-client.test.ts:317`. Everything else goes to
 `onEvent(event, "live", executionId)` and then to the progress emitter.
 
 `wireElicit(handle)` (`:270`–`:293`) is the elicitation bridge `started` installs on every handle
@@ -806,7 +810,7 @@ else `{action: "decline"}` (`:281`); a thrown handler is caught by `reportElicit
 `{action: "cancel"}` instead (`:279`–`:282`, `:265`). The result is mapped back to an
 `ElicitationResponse` — `id: req.id`, `action: result.action`, `content: result.content` only when
 present (`:285`–`:289`) — and sent via `handle.respond(response)` (`:290`). Both directions are
-pinned by `packages/code/tests/component/kernel-run-client.test.ts:390` ("elicitation bridges
+pinned by `packages/code/tests/component/kernel-run-client.test.ts:436` ("elicitation bridges
 request→UI→respond") and `:513` ("a guard_confirm's structured command detail reaches the UI params",
 which proves a `guard_confirm`'s `detail: {command, cwd, reason}` reaches `onElicit` verbatim).
 
@@ -822,12 +826,12 @@ increasing `counter`:
 
 `steer` (`:368`) looks the run up in `live`; an unknown id answers `{status: "unknown", execution_id}`
 without touching the kernel. Because the map holds a *promise*, a steer issued while the handle is
-still starting simply awaits it — `packages/code/tests/component/kernel-run-client.test.ts:319`. Before
+still starting simply awaits it — `packages/code/tests/component/kernel-run-client.test.ts:365`. Before
 calling `handle.steer`, a `MessageContent` string is passed through unchanged while any other content
 is wrapped as `{role: "user", content: input.message}` (`:376`–`:377`). On success `steer` always
 returns `accepted: 1` — a fixed literal, not a count the kernel reports back
 (`` return {status: "steered", execution_id: input.executionId, accepted: 1} ``, `:378`) — pinned
-exactly by `packages/code/tests/component/kernel-run-client.test.ts:308`
+exactly by `packages/code/tests/component/kernel-run-client.test.ts:354`
 (`expect(res).toEqual({status: "steered", execution_id: "exec_2", accepted: 1})`); nothing in this
 scope reflects how many messages the kernel actually queued.
 
@@ -843,9 +847,10 @@ compaction event or `run_ended` clears it. A settled `/compact` has no live even
 promise settles. Replay is ignored. `App` includes this accessor in the shared spinner clock and
 passes `Compacting context…` through `Footer.status`, reusing the canonical running status surface.
 
-`reconnect` (`:193`) is strictly `dispose() → prepareReconnect?.() → connect()`; the ordering is
-asserted as the literal array `["create:1", "close:1", "evict", "create:2"]` at
-`packages/code/tests/component/kernel-run-client.test.ts:651`.
+`reconnect` (`packages/code/src/adapters/kernel-run-client.ts:211-215`) is strictly
+`dispose() → prepareReconnect?.() → connect()`; the asserted order is create generation 1, close
+generation 1, evict, then create generation 2
+(`packages/code/tests/component/kernel-run-client.test.ts:801-823`).
 
 ### 4.20 `execution-safety` derivations (`packages/code/src/adapters/execution-safety.ts`)
 
@@ -932,16 +937,17 @@ The following are derived directly from this document's own source and its tests
 
 1. **A run event only reaches the transcript sink whose execution it names.** `onEvent` writes only
    when `executionId === undefined || target.executionId === executionId`
-   (`packages/code/src/run-host.ts:372`). Pinned: `packages/code/tests/component/run-host.test.ts:227`.
+   (`packages/code/src/run-host.ts:413-418`). Pinned:
+   `packages/code/tests/component/run-host.test.ts:256-279`.
 
 2. **Only live events feed the workflow projection.** The fold is gated on `source === "live"`
-   (`packages/code/src/run-host.ts:374`), so a rehydration replay never mutates `workflowActivity`.
-   Pinned: `packages/code/tests/component/run-host.test.ts:348`.
+   (`packages/code/src/run-host.ts:418`, `:439-442`), so a rehydration replay never mutates
+   `workflowActivity`. Pinned: `packages/code/tests/component/run-host.test.ts:445-467`.
 
 3. **A plain (non-manager) run leaves `workflowActivity` null.** `workflowRunId` is only set on the
-   `submitTurn`/`workOnTask` paths (`packages/code/src/run-host.ts:647`, `:839`) and the projection is
-   still gated by the event predicate (`:326`). Pinned:
-   `packages/code/tests/component/run-host.test.ts:372`.
+   `submitTurn`/`workOnTask` paths (`packages/code/src/run-host.ts:794-795`, `:988-989`) and the
+   projection is still gated by the event predicate (`:377-385`). Pinned:
+   `packages/code/tests/component/run-host.test.ts:469-478`.
 
 4. **A settled result releases interactive ownership before its post-run event stream closes.**
    `runManaged` clears `currentHandle`, title and `runActive` after `done` without awaiting `closed`.
@@ -952,50 +958,51 @@ The following are derived directly from this document's own source and its tests
    `physicalHandles`) and `packages/code/src/adapters/kernel-run-client.ts` (`driveHandle`). Test:
    `packages/code/tests/component/run-host.test.ts` ("done releases interactive ownership before the
    post-run event stream closes") and
-   `packages/code/tests/component/kernel-run-client.test.ts:160`.
+   `packages/code/tests/component/kernel-run-client.test.ts:206`.
 
 5. **A settle only writes back if the session object and the ownership epoch are both unchanged.**
-   Three checks: `packages/code/src/run-host.ts:525`, `:533`, `:541`, plus the sink-identity check in
-   `finally` (`:534`). Pinned: `packages/code/tests/component/run-host.test.ts:1886` (a torn-down run
-   settling after the next one started emits no attention cue) and `:702`.
+   Three checks: `packages/code/src/run-host.ts:669`, `:681`, `:697`, plus the ownership/sink check in
+   `finally` (`:709`). Pinned: `packages/code/tests/component/run-host.test.ts:2229-2251` (a torn-down
+   run settling after the next one started emits no attention cue) and `:888-920`.
 
 6. **A cancel request is refused once the run is no longer active, and refused twice in a row.**
    `if (!currentHandle || !runActive() || cancelRequested) return false`
-   (`packages/code/src/run-host.ts:428`). Pinned:
-   `packages/code/tests/component/run-host.test.ts:612` and `:596`.
+   (`packages/code/src/run-host.ts:493`). Pinned:
+   `packages/code/tests/component/run-host.test.ts:693-725`.
 
 7. **A failed `handle.cancel()` re-arms cancellation instead of leaving the run un-cancellable.**
-   `cancelRequested = false` in the catch (`packages/code/src/run-host.ts:434`). Pinned:
-   `packages/code/tests/component/run-host.test.ts:630` (`attempts` reaches 2).
+   `cancelRequested = false` in the catch (`packages/code/src/run-host.ts:497-500`). Pinned:
+   `packages/code/tests/component/run-host.test.ts:727-745` (`cancelCurrentRun()` succeeds again).
 
 8. **A memory-ingest notice whose `execution_id` is not the status line's current owner never touches
-   the display.** `packages/code/src/run-host.ts:391`. Pinned:
-   `packages/code/tests/component/run-host.test.ts:526`.
+   the display.** `packages/code/src/run-host.ts:456`. Pinned:
+   `packages/code/tests/component/run-host.test.ts:623-661`.
 
 9. **A pending memory phase composes onto a retained base so a later terminal phase replaces rather
    than concatenates.** `memoryStatusBase` is captured only when null, and cleared on a terminal phase
-   (`packages/code/src/run-host.ts:398`, `:409`). Pinned:
-   `packages/code/tests/component/run-host.test.ts:428` and `:457`.
+   (`packages/code/src/run-host.ts:462-475`). Pinned:
+   `packages/code/tests/component/run-host.test.ts:498-586`.
 
 10. **A notice arriving while a run or a `!bash` job owns the line is held, not dropped, and replayed
-    once that run releases it.** `heldIngest` (`packages/code/src/run-host.ts:393`) is replayed in
-    `runManaged`'s `finally` only when the id matches (`:540`–`:544`). Pinned:
-    `packages/code/tests/component/run-host.test.ts:491`.
+    once that run releases it.** `heldIngest` (`packages/code/src/run-host.ts:447`) is replayed by
+    `releaseInteractiveOwnership` only when the id matches (`:647-650`). Pinned:
+    `packages/code/tests/component/run-host.test.ts:588-609`.
 
 11. **`memory: "off"` is sent on the wire; `memory: "on"` is omitted.** The spread is conditional
-    (`packages/code/src/run-host.ts:643`, `:794`, `:854`) and `toStartParams` only emits truthy fields
-    (`packages/code/src/adapters/kernel-run-client.ts:140`). Pinned:
-    `packages/code/tests/component/run-host.test.ts:383`.
+    (`packages/code/src/run-host.ts:790`, `:941`, `:1003`) and `toStartParams` only emits truthy fields
+    (`packages/code/src/adapters/kernel-run-client.ts:155`). Pinned:
+    `packages/code/tests/component/run-host.test.ts:480-496`.
 
 12. **A `continuation_unavailable` envelope retries once as a full run, and only when the run was not
-    cancelled.** `packages/code/src/run-host.ts:717`. Pinned:
-    `packages/code/tests/component/run-host.test.ts:1205`.
+    cancelled.** `packages/code/src/run-host.ts:863-875`. Pinned:
+    `packages/code/tests/component/run-host.test.ts:1436-1465`.
 
 13. **A released history is never retried as a silently partial full request.** `fullRequestMessages`
-    throws when any trace is unavailable (`packages/code/src/run-host.ts:663`); `resumeSession` refuses
-    an oversized chain with `SessionResumeLimitError` (`packages/code/src/adapters/session.ts:404`).
-    Pinned: `packages/code/tests/component/run-host.test.ts:1299` and `:1740`,
-    `packages/code/tests/component/session.test.ts:724`.
+    throws when any trace is unavailable (`packages/code/src/run-host.ts:796-813`); `resumeSession`
+    refuses an oversized chain with `SessionResumeLimitError`
+    (`packages/code/src/adapters/session.ts:485-499`, `:602-620`). Pinned:
+    `packages/code/tests/component/run-host.test.ts:1530-1564`, `:2070-2101`, and
+    `packages/code/tests/component/session.test.ts:949-979`.
 
 14. **History is released only after the run's trace is durably readable, for ordinary and manager
     profiles alike.** A manager still sends a complete chain: the next manager request first rebuilds
@@ -1005,18 +1012,18 @@ The following are derived directly from this document's own source and its tests
     rebuild the complete chain for the next turn").
 
 15. **A manager run always sends its complete message chain, never a `continue_from` delta.** The
-    ternary at `packages/code/src/run-host.ts:695` sends full whenever `isManager`. Pinned:
-    `packages/code/tests/component/run-host.test.ts:1335`, `:1365`.
+    ternary at `packages/code/src/run-host.ts:841-861` sends full whenever `isManager`. Pinned:
+    `packages/code/tests/component/run-host.test.ts:1566-1638`.
 
 16. **`Work on task` carries only `{id, provider_key, mode}` — never a workspace or repository.**
-    `packages/code/src/run-host.ts:821`, and `toStartParams` passes `task` through verbatim
-    (`packages/code/src/adapters/kernel-run-client.ts:142`). Pinned:
-    `packages/code/tests/component/run-host.test.ts:1401`.
+    `packages/code/src/run-host.ts:974`, and `toStartParams` passes `task` through verbatim
+    (`packages/code/src/adapters/kernel-run-client.ts:157`). Pinned:
+    `packages/code/tests/component/run-host.test.ts:1640-1666`.
 
 17. **The resumed active-task binding survives a continuation fallback.** `sessionTask` is set from
-    `resumed.activeTask` (`packages/code/src/run-host.ts:1198`) and spread into both the continuation
-    and the full retry (`:668`, `:693`). Pinned:
-    `packages/code/tests/component/run-host.test.ts:1429`.
+    `resumed.activeTask` (`packages/code/src/run-host.ts:1378`) and spread into both the continuation
+    and full-start paths (`:833`, `:858`, `:872`). Pinned:
+    `packages/code/tests/component/run-host.test.ts:1668-1726`.
 
 18. **`residentTurns` never exceeds 20, and every successful structural fold produces exactly one
     frozen prefix notice.** The ordinary fold leaves 20 refs; if its boundary is refused, a
@@ -1036,8 +1043,8 @@ The following are derived directly from this document's own source and its tests
     boundaries without mutating the transcript").
 
 20. **An export never fails because of one missing trace.** Every fetch failure becomes a node or a
-    notice (`packages/code/src/run-host.ts:1032`, `:1113`–`:1127`). Pinned:
-    `packages/code/tests/component/run-host-export.test.ts:302` and `:319`.
+    notice (`packages/code/src/run-host.ts:1157-1162`, `:1186-1189`, `:1273-1282`). Pinned:
+    `packages/code/tests/component/run-host-export.test.ts:484-510`, `:572-586`.
 
 21. **An export lazily indexes canonical `SessionMeta.turns` and yields one folded turn at a time, so
     a second copy of the session is never resident.** Production: `packages/code/src/run-host.ts`
@@ -1046,13 +1053,13 @@ The following are derived directly from this document's own source and its tests
     time before the bounded live window").
 
 22. **A session that still fits the resident window exports `store.nodes` itself, refetching nothing.**
-    `packages/code/src/run-host.ts:1089`–`:1092`. Pinned by object identity at
-    `packages/code/tests/component/run-host-export.test.ts:161` and by the read count at `:279`
+    `packages/code/src/run-host.ts:1243-1250`. Pinned by object identity at
+    `packages/code/tests/component/run-host-export.test.ts:158-165` and by the read count at `:240-305`
     (exactly 5 reads for 5 folded turns).
 
 23. **A released user block is never exported using a persisted prompt that does not match what was
-    displayed.** The `sourceTextFingerprint` comparison at `packages/code/src/run-host.ts:1045`.
-    Pinned: `packages/code/tests/component/run-host-export.test.ts:204`.
+    displayed.** The `sourceTextFingerprint` comparison at `packages/code/src/run-host.ts:1198-1207`.
+    Pinned: `packages/code/tests/component/run-host-export.test.ts:205-222`.
 
 24. **Prompt-history seeding includes conversation turns only: resident conversations use rehydrated
     content and folded conversations use their canonical, already-redacted preview; transcript-only
@@ -1061,66 +1068,68 @@ The following are derived directly from this document's own source and its tests
     seeds prompt history from the rehydrated user content, not userPreview").
 
 25. **`memory_ingest` is status-line material and never enters the transcript.**
-    `packages/code/src/adapters/kernel-run-client.ts:299`–`:302`. Pinned:
-    `packages/code/tests/component/kernel-run-client.test.ts:271`.
+    `packages/code/src/adapters/kernel-run-client.ts:321-330`. Pinned:
+    `packages/code/tests/component/kernel-run-client.test.ts:325-352`.
 
 26. **`capabilities` is readable across the reconnect window, but still throws before the first
     connect.** `currentCapabilities` returns `lastCapabilities` when the kernel is gone
-    (`packages/code/src/adapters/kernel-run-client.ts:173`–`:178`). Pinned:
-    `packages/code/tests/component/kernel-run-client.test.ts:656` and `:683`.
+    (`packages/code/src/adapters/kernel-run-client.ts:189-195`). Pinned:
+    `packages/code/tests/component/kernel-run-client.test.ts:825-855`.
 
 27. **Reconnect evicts the released host kernel before opening the replacement.**
-    `dispose(); prepareReconnect?.(); connect()` (`packages/code/src/adapters/kernel-run-client.ts:193`).
-    Pinned: `packages/code/tests/component/kernel-run-client.test.ts:632`.
+    `dispose(); prepareReconnect?.(); connect()` (`packages/code/src/adapters/kernel-run-client.ts:211-215`).
+    Pinned: `packages/code/tests/component/kernel-run-client.test.ts:801-823`.
 
 28. **A run's usage is counted at most once per execution id.** `counted` set in `endTurn`
-    (`packages/code/src/adapters/session.ts:156`) and `reconcile`
-    (`packages/code/src/adapters/session.ts:174`). Pinned:
-    `packages/code/tests/component/session.test.ts:272`, `:281`, and
+    (`packages/code/src/adapters/session.ts:204`) and `reconcile`
+    (`packages/code/src/adapters/session.ts:223`). Pinned:
+    `packages/code/tests/component/session.test.ts:316`, `:325`, and
     `packages/code/tests/component/run-host.test.ts:189` (`totals` equals exactly one run's).
 
 29. **Session writes are coalesced last-write-wins per id.** `enqueue`
-    (`packages/code/src/adapters/session-store.ts:464`) retains only the newest not-yet-started
-    mutation. Pinned: `packages/code/tests/component/session-store.test.ts:146` (1,000 saves → 2
+    (`packages/code/src/adapters/session-store.ts:532`) retains only the newest not-yet-started
+    mutation. Pinned: `packages/code/tests/component/session-store.test.ts:238` (1,000 saves → 2
     physical writes, `"0"` then `"999"`).
 
 30. **The lane is deleted in the same async continuation that observed an empty queue.**
-    `packages/code/src/adapters/session-store.ts:490`. Pinned:
-    `packages/code/tests/component/session-store.test.ts:181`.
+    `packages/code/src/adapters/session-store.ts:558`. Pinned:
+    `packages/code/tests/component/session-store.test.ts:277`.
 
 31. **At most 8 complete session documents stay resident, and a session with a live write lane is
-    never demoted.** `MAX_RESIDENT_FULL_SESSIONS` (`packages/code/src/adapters/session-store.ts:250`),
-    lane skip at `:334`. Pinned: `packages/code/tests/component/session-store.test.ts:209` and `:244`.
+    never demoted.** `MAX_RESIDENT_FULL_SESSIONS` (`packages/code/src/adapters/session-store.ts:299-308`),
+    lane skip at `:503-520`. Pinned:
+    `packages/code/tests/component/session-store.test.ts:307-373`.
 
 32. **A session preview is redacted on its first line and *before* truncation.**
-    `packages/code/src/adapters/session-store.ts:102`–`:124`, using `sanitizeText` re-exported from
-    `@clarvis/kernel/policy` (`:9`). Pinned: `packages/code/tests/component/session-store.test.ts:319`,
-    `:332`, `:356`.
+    `packages/code/src/adapters/session-store.ts:138-160`, using `sanitizeText` re-exported from
+    `@clarvis/kernel/policy` (`:10`). Pinned:
+    `packages/code/tests/component/session-store.test.ts:417-456`.
 
 33. **`session-store.ts` is one of the fourteen files bound by the ASCII-source rule** (INV-247) —
     full statement owned by [hosts/code-theme.md](code-theme.md) §5. Every glyph in it goes
-    through `glyph()` (`packages/code/src/adapters/session-store.ts:10`, used at `:118`).
+    through `glyph()` (`packages/code/src/adapters/session-store.ts:11`, used at `:158`).
 
 34. **`resumeSession` releases each batch's `RunDetail` objects before fetching the next batch, and
     never exceeds 6 concurrent fetches.** Projection happens inside `fetchBatch`
-    (`packages/code/src/adapters/session.ts:573`); `FETCH_CONCURRENCY = 6` (`:458`). Pinned:
-    `packages/code/tests/component/session.test.ts:667` (WeakRef + `Bun.gc(true)`).
+    (`packages/code/src/adapters/session.ts:628-673`); `FETCH_CONCURRENCY = 6` (`:540`). Pinned:
+    `packages/code/tests/component/session.test.ts:892-947` (WeakRef + `Bun.gc(true)`).
 
 35. **A collapsed turn and a degraded turn are counted in exactly one bucket each.**
-    `packages/code/src/adapters/session.ts:612`, `:638`, `:645`. Pinned:
-    `packages/code/tests/component/session.test.ts:576` and `:590`.
+    `packages/code/src/adapters/session.ts:693-749`. Pinned:
+    `packages/code/tests/component/session.test.ts:815-834`.
 
 36. **`resumeSession` does not mutate a fetched run's own `messages` array.** The chain is rebuilt with
-    spreads (`packages/code/src/adapters/session.ts:617`, `:617`). Pinned:
-    `packages/code/tests/component/session.test.ts:757`.
+    spreads (`packages/code/src/adapters/session.ts:648-661,703-709`). Pinned:
+    `packages/code/tests/component/session.test.ts:982-994`.
 
 37. **A plan projection survives an end-of-run reconcile unless the replay carried a newer plan
-    event.** `packages/code/src/adapters/activity-store.ts:290` (activity) and
-    `packages/code/src/adapters/store.ts:1453`–`:1470` (transcript). Pinned:
+    event.** `packages/code/src/adapters/activity-store.ts:324` (activity) and
+    `packages/code/src/adapters/store.ts:1680`–`:1704` (transcript). Pinned:
     `packages/code/tests/unit/run-end-reconcile.test.ts:155`.
 
 38. **One live event, however many store writes it makes, propagates once.** `onEvent`'s `batch`
-    (`packages/code/src/run-host.ts:370`) and `settleRun`'s (`packages/code/src/adapters/store.ts:905`).
+    (`packages/code/src/run-host.ts:412-443`) and `settleRun`'s
+    (`packages/code/src/adapters/store.ts:1036-1052`).
     Pinned: `packages/code/tests/component/reactive-batching.test.ts:83` and `:118`.
 
 39. **The RSS fuse never exits the process; a trip cancels once and leaves an explicitly recoverable
@@ -1180,20 +1189,20 @@ The following are derived directly from this document's own source and its tests
 
 50. **A safety preset is reported only on an exact canonical match; anything else is `"custom"`.**
     `packages/code/src/adapters/execution-safety.ts:129`–`:134`. Pinned:
-    `packages/code/tests/unit/execution-safety.test.ts:50`.
+    `packages/code/tests/unit/execution-safety.test.ts:38`.
 
 51. **`@clarvis/code`'s adapters never import from `ui/` or `views/`** (INV-244) — full statement
     owned by [hosts/code-bootstrap.md](code-bootstrap.md) §5. This is why
     `TranscriptStoreDeps.describeToolCall` is injected rather than imported
-    (`packages/code/src/adapters/store.ts:269`–`:278`).
+    (`packages/code/src/adapters/store.ts:321`–`:330`).
 
 52. **Every `@clarvis/kernel` import in this scope uses one of the six sanctioned entrypoints**
     (INV-251) — full statement owned by [hosts/code-bootstrap.md](code-bootstrap.md) §5. In
-    scope: `@clarvis/kernel/policy` (`packages/code/src/run-host.ts:10`,
-    `packages/code/src/adapters/session-store.ts:9`), `@clarvis/kernel/config`
+    scope: `@clarvis/kernel/policy` (`packages/code/src/adapters/event-span.ts:1-6`,
+    `packages/code/src/adapters/session-store.ts:10`), `@clarvis/kernel/config`
     (`packages/code/src/adapters/kernel-run-client.ts:1`,
     `packages/code/src/adapters/execution-safety.ts:1`), `@clarvis/kernel/bootstrap`
-    (`packages/code/src/adapters/workspace-client-manager.ts:1`).
+    (`packages/code/src/adapters/workspace-client-manager.ts:1-4,11-13`).
 
 53. **`WorkspaceClientManager.open` only opens the process-pinned workspace and its `release` is an
     idempotent no-op.** The manager owns the one kernel lifetime; `invalidate` rebuilds that same
@@ -1211,9 +1220,9 @@ The following are derived directly from this document's own source and its tests
     filesystem adapter.
 
 55. **`metaToSession` refuses a session with no project identity.**
-    `packages/code/src/adapters/session-store.ts:295` throws
+    `packages/code/src/adapters/session-store.ts:354` throws
     `"session project identity is required"`. Effectively pinned only indirectly through
-    `packages/code/tests/component/session-store.test.ts:73`, which always supplies one — the throw
+    `packages/code/tests/component/session-store.test.ts:78`, which always supplies one — the throw
     itself is unpinned.
 
 56. **`settingsForPreset` is the declared inverse of `deriveSafetyPreset` over the six canonical
@@ -1223,10 +1232,10 @@ The following are derived directly from this document's own source and its tests
 
 57. **An elicitation's structured `detail` reaches the UI only when the kernel sent one, and the
     kernel is always answered, even when no handler is registered or the handler throws.**
-    `wireElicit` (`packages/code/src/adapters/kernel-run-client.ts:270`–`:293`) spreads `detail` only
+    `wireElicit` (`packages/code/src/adapters/kernel-run-client.ts:287`–`:310`) spreads `detail` only
     if `req.detail !== undefined` (`:276`), falls back to `{action:"decline"}` with no `onElicit`
     (`:281`), and to `{action:"cancel"}` on a thrown handler (`:265`, `:279`–`:282`). Pinned:
-    `packages/code/tests/component/kernel-run-client.test.ts:390`, `:424`, `:513`.
+    `packages/code/tests/component/kernel-run-client.test.ts:436`, `:470`, `:559`.
 
 58. **The active-agent list uses the kernel-owned display order, so `/agent` and Settings > Agents
     present the fleet identically: shipped order first, then custom names alphabetically.**
@@ -1272,35 +1281,35 @@ The following are derived directly from this document's own source and its tests
 
 | Failure | Handler | Outcome |
 |---|---|---|
-| `@`-mention image too large / unreadable | `MentionImageError` catch, `packages/code/src/run-host.ts:586` | status = the error message, draft restored, **no session or run created** (`packages/code/tests/component/run-host.test.ts:1111`) |
-| non-`MentionImageError` during content build | rethrown, `packages/code/src/run-host.ts:586` | propagates to the caller |
-| `client.steer` rejects | `packages/code/src/run-host.ts:605` | queued annotation rolled back, draft restored, status `"steer failed — message restored to the input"` |
-| `client.steer` returns a non-`"steered"` status | `:581` | annotation rolled back, raw status shown |
-| steer against an unknown execution id | `packages/code/src/adapters/kernel-run-client.ts:374` | `{status:"unknown", execution_id}` without a kernel call |
-| `handle.cancel()` rejects | `packages/code/src/run-host.ts:434` | run stays active, `cancelRequested` re-armed, status names the transport error |
+| `@`-mention image too large / unreadable | `MentionImageError` catch, `packages/code/src/run-host.ts:737-741` | status = the error message, draft restored, **no session or run created** (`packages/code/tests/component/run-host.test.ts:1342-1398`) |
+| non-`MentionImageError` during content build | rethrown, `packages/code/src/run-host.ts:738` | propagates to the caller |
+| `client.steer` rejects | `packages/code/src/run-host.ts:751-763` | queued annotation rolled back, draft restored, status `"steer failed — message restored to the input"` |
+| `client.steer` returns a non-`"steered"` status | `:751-758` | annotation rolled back, raw status shown |
+| steer against an unknown execution id | `packages/code/src/adapters/kernel-run-client.ts:391` | `{status:"unknown", execution_id}` without a kernel call |
+| `handle.cancel()` rejects | `packages/code/src/run-host.ts:497-500` | run stays active, `cancelRequested` re-armed, status names the transport error |
 | compact with no session turn | `compactCurrentRun` in `packages/code/src/run-host.ts` | `"no session context to compact"`, no call issued |
 | compact latest settled turn | `compactCurrentRun` in `packages/code/src/run-host.ts` | persisted `final_context` is replaced and status reports freed characters |
 | active compaction start is replayed or belongs to another execution | `onEvent` ownership/source guard in `packages/code/src/run-host.ts` | ignored; no stale spinner is revived |
 | confirmed model fit cannot reach its target | `fitCurrentContext` + `ModelView.choose` | model remains unchanged and the failure reason is shown |
-| compact throws anything else | `packages/code/src/run-host.ts:456` | status `"compaction failed: <text>"` |
-| `client.getRun` rejects after a completed run | `packages/code/src/run-host.ts:529` | `store.settleRun(id, ok)` runs anyway; the turn stays `done` and totals stand (`packages/code/tests/component/run-host.test.ts:1009`) |
-| run rejects before any model call | `onError` + `store.settleRun(id)` (`:524`, `:525`) | spinners settle, session turn marked `error` |
-| run fails with an envelope error | `store.appendRunFailure` (`:518`, impl `packages/code/src/adapters/store.ts:791`) | one error node per distinct `(execId, code)`, suppressed if the same rendered text is already present |
-| the kernel event stream throws mid-iteration | `reportStreamInterrupted` → `diagnosticEvent("run.stream.interrupted", …, "warn")` (`packages/code/src/adapters/kernel-run-client.ts:307`, `:320`) | `done` still resolves; later events are silently missing from the transcript (stated in the TSDoc `@remarks` at `:316`–`:318`) |
+| compact throws anything else | `packages/code/src/run-host.ts:538-540` | status `"compaction failed: <text>"` |
+| `client.getRun` rejects after a completed run | `packages/code/src/run-host.ts:673-680` | `store.settleRun(id, ok)` runs anyway; the turn stays `done` and totals stand (`packages/code/tests/component/run-host.test.ts:1240-1283`) |
+| run rejects before any model call | `onError` + `store.settleRun(id)` (`:696-706`) | spinners settle, session turn marked `error` |
+| run fails with an envelope error | `store.appendRunFailure` (`:683-684`, impl `packages/code/src/adapters/store.ts:893-908`) | one error node per distinct `(execId, code)`, suppressed if the same rendered text is already present |
+| the kernel event stream throws mid-iteration | `reportStreamInterrupted` → `diagnosticEvent("run.stream.interrupted", …, "warn")` (`packages/code/src/adapters/kernel-run-client.ts:321-348`) | `done` still resolves; later events are silently missing from the transcript (stated in the TSDoc `@remarks` at `:337-345`) |
 | `handle.closed` rejects | `reportCloseFailure` → `diagnosticEvent("run.close.failed", …, "debug")` in `packages/code/src/adapters/kernel-run-client.ts` (`reportCloseFailure`) | swallowed after the independent physical-lifecycle observer records the failure |
-| an elicitation handler throws | `reportElicitFailure` → `diagnosticEvent("elicit.handler.failed", …, "warn")` and answers `{action:"cancel"}` (`packages/code/src/adapters/kernel-run-client.ts:265`) | the kernel is always answered; the defect is distinguishable from a user dismissal only in the diagnostic record |
-| no `onElicit` callback registered | `packages/code/src/adapters/kernel-run-client.ts:281` | answers `{action:"decline"}` |
-| an operation issued before `connect()` | `requireKernel()` throws `"kernel run client is not connected"` (`packages/code/src/adapters/kernel-run-client.ts:154`) | hard failure — except `capabilities`, which returns the last descriptor (`:173`) |
-| `getRun`/`deleteRun` hit a kernel `not_found` | `hasKernelErrorCode` (`packages/code/src/adapters/kernel-errors.ts:4-14`, called at `packages/code/src/adapters/kernel-run-client.ts:401`, `:411`) | `null` / `false` respectively; any other error rethrows |
-| a session write fails | `opts.onError?.(\`session ${kind} failed: ${message}\`)` (`packages/code/src/adapters/session-store.ts:482`) | the cache keeps the optimistic value; the lane continues draining |
+| an elicitation handler throws | `reportElicitFailure` → `diagnosticEvent("elicit.handler.failed", …, "warn")` and answers `{action:"cancel"}` (`packages/code/src/adapters/kernel-run-client.ts:282`) | the kernel is always answered; the defect is distinguishable from a user dismissal only in the diagnostic record |
+| no `onElicit` callback registered | `packages/code/src/adapters/kernel-run-client.ts:298` | answers `{action:"decline"}` |
+| an operation issued before `connect()` | `requireKernel()` throws `"kernel run client is not connected"` (`packages/code/src/adapters/kernel-run-client.ts:170-173`) | hard failure — except `capabilities`, which returns the last descriptor (`:189-195`) |
+| `getRun`/`deleteRun` hit a kernel `not_found` | `hasKernelErrorCode` (`packages/code/src/adapters/kernel-errors.ts:4-14`, called at `packages/code/src/adapters/kernel-run-client.ts:428-445`) | `null` / `false` respectively; any other error rethrows |
+| a session write fails | `opts.onError?.(\`session ${kind} failed: ${message}\`)` (`packages/code/src/adapters/session-store.ts:550`) | the cache keeps the optimistic value; the lane continues draining |
 | a full session turn has missing/unknown `kind` | `packages/code/src/adapters/session-store.ts` (`persistedTurnKind`, called by `sessionToMeta`) | load/resume rejects instead of guessing continuation semantics; catalog summaries remain listable until the full document is loaded |
-| `sessions.get` returns `null` for a cached id | `packages/code/src/adapters/session-store.ts:507`–`:512` | cache entry and LRU slot are evicted, `load` returns `null` |
-| a resumed turn's trace is gone | classified `interrupted` / `trace_pruned` / `trace_unavailable` (`packages/code/src/adapters/session.ts:633`) | the turn renders from `userPreview` with a `degraded` marker; the count shows in the status (`packages/code/src/run-host.ts:1215`) |
-| a resumed run was rebuilt from a damaged journal | `recovery` passed beside the events (`packages/code/src/adapters/session.ts:580`), notice at `packages/code/src/run-host.ts:1187` | the events **are** shown, with a `"warn"` partial-record notice above them |
-| resumed history exceeds 16 M chars or 10 k messages | `SessionResumeLimitError` (`packages/code/src/adapters/session.ts:404`) | the whole resume rejects; **nothing renders** (`packages/code/tests/component/session.test.ts:724`) |
-| a resume is superseded by `clearSession`/another load | `loadEpoch` guards at `packages/code/src/run-host.ts:1172`, `:1194`, `:1197` | the stale resume writes nothing; status stays `"idle"` (`packages/code/tests/component/run-host.test.ts:919`) |
+| `sessions.get` returns `null` for a cached id | `packages/code/src/adapters/session-store.ts:575`–`:580` | cache entry and LRU slot are evicted, `load` returns `null` |
+| a resumed turn's trace is gone | classified `interrupted` / `trace_pruned` / `trace_unavailable` (`packages/code/src/adapters/session.ts:722-734`) | the turn renders from `userPreview` with a `degraded` marker; the count shows in the status (`packages/code/src/run-host.ts:1408-1414`) |
+| a resumed run was rebuilt from a damaged journal | `recovery` passed beside the events (`packages/code/src/adapters/session.ts:662-665`, `:711-720`), notice at `packages/code/src/run-host.ts:1356-1368` | the events **are** shown, with a `"warn"` partial-record notice above them |
+| resumed history exceeds 16 M chars or 10 k messages | `SessionResumeLimitError` (`packages/code/src/adapters/session.ts:485-499`, `:602-620`) | the whole resume rejects; **nothing renders** (`packages/code/tests/component/session.test.ts:949-979`) |
+| a resume is superseded by `clearSession`/another load | `loadEpoch` guards at `packages/code/src/run-host.ts:1312`, `:1343`, `:1374`, `:1377` | the stale resume writes nothing; status stays `"idle"` (`packages/code/tests/component/run-host.test.ts:2189-2227`) |
 | resumed session's newest Environment differs from the connected kernel | `packages/code/src/run-host.ts` (`loadSessionMeta`) | resume succeeds without rewriting history; a warning names the previous/current ids and fingerprint prefixes, and status includes `Environment changed` |
-| an export's `getRun` throws or returns `null` | `packages/code/src/run-host.ts:1032`, `:1034`, `:1103`, `:1115` | replaced by an `EXPORT INCOMPLETE`/`folded — …` node; the export completes |
+| an export's `getRun` throws or returns `null` | `packages/code/src/run-host.ts:1157-1163`, `:1186-1189`, `:1273-1282` | replaced by an `EXPORT INCOMPLETE`/`folded — …` node; the export completes |
 | prompt-history file missing or unreadable | `catch` returning `{entries: [], compact: false}` (`packages/code/src/adapters/file-prompt-history.ts:37`) | history starts empty |
 | a corrupt prompt-history JSON line | skipped (`packages/code/src/adapters/file-prompt-history.ts:55`) | remaining usable history survives |
 | `stream-metrics` path unwritable | `try {} catch {}` around `appendFileSync` (`packages/code/src/adapters/stream-metrics.ts:57`) | instrumentation silently disabled for that write |
@@ -1314,11 +1323,11 @@ The following are derived directly from this document's own source and its tests
 
 | Target | Importer | Forced by |
 |---|---|---|
-| `@clarvis/kernel/policy` | `packages/code/src/run-host.ts:10` (`isIngestPending`), `packages/code/src/adapters/session-store.ts:9` (`sanitizeText`) | value imports; both are shared classification rules with a single kernel owner |
+| `@clarvis/kernel/policy` | `packages/code/src/adapters/event-span.ts:1-10` (`isIngestPending` behind `memoryIngestIsPending`), `packages/code/src/adapters/session-store.ts:9` (`sanitizeText`) | value imports; both are shared classification rules with a single kernel owner |
 | `@clarvis/kernel/config` | `packages/code/src/adapters/kernel-run-client.ts:1` (`resolveAgentsByName`), `packages/code/src/adapters/execution-safety.ts:1` (`parseModelRef`, `PLANS_DEFAULTS`) | value imports |
 | `@clarvis/kernel/bootstrap` | `packages/code/src/adapters/workspace-client-manager.ts` (`loadFileKernelFactory`) | type-only options plus a dynamic value import; `WorkspaceClientManager` owns one pinned file kernel without adding bootstrap to the eager startup graph |
 | `@clarvis/paths` | `packages/code/src/adapters/file-prompt-history.ts:1` (`DIR_MODE`, `FILE_MODE`, `workspaceStatePaths`) | value import — the only place in this scope that names a path |
-| `solid-js` / `solid-js/store` | `packages/code/src/run-host.ts:1`, `packages/code/src/adapters/store.ts:1`,`:2`, `packages/code/src/adapters/activity-store.ts:1`, `packages/code/src/adapters/active-agent.ts:1`, `packages/code/src/adapters/connection-state.ts:1` | reactive primitives; `batch` is load-bearing (invariant 38) |
+| `solid-js` / `solid-js/store` | `packages/code/src/run-host.ts:1`, `packages/code/src/adapters/store.ts:1-2`, `packages/code/src/adapters/activity-store.ts:1`, `packages/code/src/adapters/active-agent.ts:1`, `packages/code/src/adapters/connection-state.ts:1` | reactive primitives; `batch` is load-bearing (invariant 38) |
 | `node:crypto` | `packages/code/src/adapters/store.ts:3` (`createHash` for `transcriptTextFingerprint`) | value import |
 | `node:fs` | `packages/code/src/adapters/file-prompt-history.ts:2`, `packages/code/src/adapters/stream-metrics.ts:1` | value imports |
 
@@ -1337,7 +1346,7 @@ The following are derived directly from this document's own source and its tests
 | `packages/code/src/runtime.tsx` | one `createKernelRunClient` for the pinned workspace, with `prepareReconnect` bound to `workspaceManager.invalidate` | `createWorkspaceRunClient` |
 | `packages/code/src/runtime.tsx` and `packages/code/src/startup-foundation.ts` | `WorkspaceClientManager.create`; ordinary run may prepare it while the complete runtime chunk loads | `bootSilentSessionStore`, `runApp`, `prepareStartupFoundation` |
 | `packages/code/src/runtime.tsx` | `createSessionStore`, `createTranscriptStore`, `createActivityStore`, `createConnectionState`, `createFilePromptHistory`, `createActiveAgentStore` | `runApp` |
-| `packages/code/src/views/App.tsx` | `createMemoryPressureController` + `tuiRssLimitBytes`, wired to `run.active` / `run.cancel` / `run.forceStop` / `backend.reconnect` | `:79`, `:81`, `:205`–`:212` |
+| `packages/code/src/views/App.tsx` | `createMemoryPressureController` + `tuiRssLimitBytes`, wired to `run.active` / `run.cancel` / `run.forceStop` / `backend.reconnect` | `:99-104`, `:338-345` |
 | `packages/code/src/runtime.tsx` | `runHost.teardownRuns()` supplied as the fuse's `forceStop` | `runControls.forceStop` |
 
 ### 7.4 The layering constraint
@@ -1345,16 +1354,16 @@ The following are derived directly from this document's own source and its tests
 Three architecture tests hold the direction:
 
 - `adapters/` must not import `ui/` or `views/` —
-  `packages/code/tests/architecture/architecture-boundary.test.ts:91`. This forces
-  `describeToolCall` into `TranscriptStoreDeps` (`packages/code/src/adapters/store.ts:278`) and thence into `RunHostDeps`
-  (`packages/code/src/run-host.ts:110`) rather than being imported from `views/`.
+  `packages/code/tests/architecture/architecture-boundary.test.ts:149`. This forces
+  `describeToolCall` into `TranscriptStoreDeps` (`packages/code/src/adapters/store.ts:311-344`) and thence into `RunHostDeps`
+  (`packages/code/src/run-host.ts:103-111`) rather than being imported from `views/`.
 - `core/` must not import `adapters/`, `solid-js`, `@clarvis/kernel` or `@clarvis/paths` —
-  `packages/code/tests/architecture/architecture-boundary.test.ts:72`. This is why `RunProgress`
+  `packages/code/tests/architecture/architecture-boundary.test.ts:128`. This is why `RunProgress`
   and `MemoryIngestNotice` live in `core/run-types.ts` and are merely re-exported from
   `packages/code/src/adapters/run-types.ts:10`, and why `PromptHistory` is a `core` interface with a `file-prompt-history`
   adapter behind its `PromptHistoryPersistence` port (`packages/code/src/core/prompt-history.ts:35`).
 - Only six `@clarvis/kernel` entrypoints, and no lower package —
-  `packages/code/tests/architecture/dependency-boundary.test.ts:73`, `:89`.
+  `packages/code/tests/architecture/dependency-boundary.test.ts:74`, `:90`.
 
 ### 7.5 Coverage policy touching this scope
 
@@ -1369,36 +1378,38 @@ application lifecycle work (`tooling/checks/coverage.ts`, `NO_COUNTER_ALLOWLIST.
   right and understated: **both** legs of the conversion dropped it, `metaToSession` on the way out
   and `sessionToMeta` on the way back, so fixing either alone would not have round-tripped. The
   unanswerable half is now answered too — the wire `Session` turn had no slot, and nothing validates
-  a turn's members either: `isSession` (`packages/kernel/src/sessions/session-service.ts:17`–`:29`)
+  a turn's members either: `isSession` (`packages/kernel/src/sessions/session-service.ts:17`–`:30`)
   checks identity and `Array.isArray(turns)`, there is no schema for the document, and the transport
   passes it opaquely. So an added key is not rejected on read, and a corrupt one is not caught. Both
-  legs now carry `error` (`packages/code/src/adapters/session-store.ts:294`, `:323`), the read side
+  legs now carry `error` (`packages/code/src/adapters/session-store.ts:353`, `:384`), the read side
   validates the `{code, message}` shape (`persistedTurnError`, `:284`), and the value is masked and
   bounded at the producer (`redactTurnError`, `:155`, applied at
-  `packages/code/src/adapters/session.ts:151`) rather than inside the converter — which keeps the
+  `packages/code/src/adapters/session.ts:199`) rather than inside the converter — which keeps the
   in-memory and on-disk values identical and honours the existing `redactPreviews: false` opt-out.
   The bound is load-bearing rather than tidy: this is the first provider free text written into a
   session document, and one unbounded message could push it past `SESSION_MAX_BYTES`, after which
   the store swallows the throw and silently stops persisting that session for the rest of its life.
 - **`RunHost.submitTurn`'s declared arity is 2 but the implementation's is 3.** The `skill` parameter
-  (`packages/code/src/run-host.ts:571`) is reachable only through `submitPromptTurn` (`:744`). Whether the interface
+  (`packages/code/src/run-host.ts:723`) is reachable only through `submitPromptTurn` (`:891-905`). Whether the interface
   narrowing is deliberate encapsulation or an oversight is not stated in the source.
 - **`packages/code/tests/unit/active-agent.test.ts:12` is named "prefers runnable coder"** but the
   production preference is `marshall` (`packages/code/src/adapters/active-agent.ts:75`); the fixture contains no `marshall`, so
   the assertion is really testing the alphabetically-first-Lead branch. The test name and the code
   disagree; the source does not settle which is stale.
-- ~~**`ActivityStore.openRun` ignores its `execId` argument.**~~ **Resolved the same way:** it takes
-  none (`packages/code/src/adapters/activity-store.ts:78`, `:153`). The projection genuinely is
+- ~~**`ActivityStore.openRun` ignores its `execId` argument.**~~ **Resolved at the type boundary:** it
+  accepts only an optional `{ current?: boolean }` selector and no execution id
+  (`packages/code/src/adapters/activity-store.ts:74-82,162-183`). The projection genuinely is
   process-global — it feeds the sidebar and status surfaces, which show *the* current run — so two
-  sinks open at once still fold into one subagent/plan/usage state, and nothing in the store enforces
-  otherwise. What changed is that the signature no longer implies they would not.
+  sinks open at once still fold into one cumulative subagent/plan/usage state; `current: true` only
+  claims ownership of the live-run usage delta. The signature no longer implies per-execution
+  isolation.
   `TranscriptStore.openRun` keeps its parameter, because it really is keyed by execution: it
-  namespaces every node key with it (`packages/code/src/adapters/store.ts:949`-`:950`).
+  namespaces every node key with it (`packages/code/src/adapters/store.ts:1081-1083`).
 - **`ConnectionStore` and `connectionLabel` have no producer in this document's scope.** `runtime.tsx` calls
   `conn.set(...)` (`:830`, `:1079`, `:1087`), but which header component consumes `connectionLabel`
   belongs to [hosts/code-bootstrap.md](code-bootstrap.md).
 - **Delegated, deliberately:** transcript node kinds, segmentation, the tool-body hydration window and
-  the reconcile ordering algorithm (`packages/code/src/adapters/store.ts:595`–`:758`, `:1447`–`:1495`) belong to
+  the reconcile ordering algorithm (`packages/code/src/adapters/store.ts:685`–`:848`, `:1673`–`:1729`) belong to
   [hosts/code-transcript.md](code-transcript.md); the kernel-side session record format, cursor paging and
   rehydration event mapping belong to [hosts/sessions.md](sessions.md); the `stream-metrics`
   duplicate-drift rule and the coverage-floor machinery belong to [cross-cutting/test-architecture.md](../cross-cutting/test-architecture.md).

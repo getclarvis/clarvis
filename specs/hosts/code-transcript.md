@@ -24,9 +24,9 @@ Within that scope it owns four concerns that are visible in the code as four sep
 1. **Framework-free projection** (`src/core/transcript/**`) — the node type union
    (`packages/code/src/core/transcript/types.ts:151`), the presenter strings a node renders as
    (`packages/code/src/core/transcript/presenters.ts:34`), the bounded display projection of a tool call's payload
-   (`packages/code/src/core/transcript/tool-display.ts:200`), and prefix-stable Markdown segmentation of a streaming assistant reply
+   (`packages/code/src/core/transcript/tool-display.ts:202-249`), and prefix-stable Markdown segmentation of a streaming assistant reply
    (`packages/code/src/core/transcript/segment.ts:129`, `packages/code/src/core/transcript/segment.ts:178`). Nothing here imports Solid or OpenTUI — an architecture test
-   enforces that (`packages/code/tests/architecture/architecture-boundary.test.ts:72`).
+   enforces that (`packages/code/tests/architecture/architecture-boundary.test.ts:128`).
 2. **View-state derivation** (`src/views/transcript-{state,completion}.ts`, `tool-groups.ts`,
    `subagent-sections.ts`, `block-focus.ts`) — choosing the Lead-only main projection or one
    explicitly selected sub-agent's isolated projection, regrouping that current projection
@@ -34,7 +34,7 @@ Within that scope it owns four concerns that are visible in the code as four sep
    (`packages/code/src/views/tool-groups.ts:37`), and tracking fold overrides and keyboard focus
    (`packages/code/src/views/block-focus.ts:36`, `packages/code/src/views/block-focus.ts:73`).
 3. **Rendering** (`src/views/blocks.tsx`, `src/views/tools/**`, `Prose.tsx`, `spinner.ts`,
-   `truncate.ts`) — one Solid component per node kind (`packages/code/src/views/blocks.tsx:563`), a per-tool renderer
+   `truncate.ts`) — one Solid component per node kind (`packages/code/src/views/blocks.tsx:564`), a per-tool renderer
    registry (`packages/code/src/views/tools/registry.tsx:727`), a one-line argument signature (`packages/code/src/views/tools/signature.ts:86`), and a
    line-count gate that collapses an oversized delegated mutation behind a `+N −M` chip while the
    run lead's mutations stay visible (`isLeadMutation` and `isOversizeMutation` in
@@ -73,14 +73,14 @@ owned by [code-transcript-stability.md](code-transcript-stability.md).
 | `visionNoticeText`, `softLimitNoticeText` | fn | `packages/code/src/core/transcript/presenters.ts:97`, `:109` |
 | `steerNoticeText`, `steerQueuedNoticeText`, `steerUndeliveredNoticeText` | fn | `packages/code/src/core/transcript/presenters.ts:119`, `:135`, `:148` |
 | `subagentFocusToast(title): string` | fn | `packages/code/src/core/transcript/presenters.ts:153` |
-| `projectTranscriptToolDisplay`, `TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS`, `TRANSCRIPT_TOOL_DISPLAY_SHORTENED_NOTICE`, `TranscriptToolDisplayProjection` | fn/const/type | `packages/code/src/core/transcript/tool-display.ts:200`, `:5`, `:8`, `:26` |
+| `projectTranscriptToolDisplay`, `TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS`, `TRANSCRIPT_TOOL_DISPLAY_SHORTENED_NOTICE`, `TranscriptToolDisplayProjection` | fn/const/type | `packages/code/src/core/transcript/tool-display.ts:202-249`, `:5`, `:8`, `:28` |
 | `IncrementalMarkdownSegmenter`, `IncrementalMarkdownSegments`, `StableMarkdownSegment`, `MarkdownSegments` | class/types | `packages/code/src/core/transcript/segment.ts:178`, `:53`, `:46`, `:34` |
 
 Exported from their modules but **not** re-exported through the barrel:
 `TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS` (`packages/code/src/core/transcript/presenters.ts:5`), `TRANSCRIPT_PROSE_RELEASED_DISPLAY`
 (`packages/code/src/core/transcript/presenters.ts:8`), `TRANSCRIPT_MOUNTED_TEXT_SHORTENED_NOTICE` (`packages/code/src/core/transcript/presenters.ts:12`),
-`transcriptDisplayTextChars` (`packages/code/src/core/transcript/presenters.ts:20`), `transcriptToolMountedTextChars`
-(`packages/code/src/core/transcript/tool-display.ts:250`), `segmentMarkdown` (`packages/code/src/core/transcript/segment.ts:129`) and the four segmentation constants
+`transcriptDisplayTextChars` (`packages/code/src/core/transcript/presenters.ts:20`),
+`segmentMarkdown` (`packages/code/src/core/transcript/segment.ts:129`) and the four segmentation constants
 (`packages/code/src/core/transcript/segment.ts:9`, `:22`, `:25`, `:28`).
 
 ### 2.2 `adapters/tool-identity.ts`
@@ -89,10 +89,10 @@ Exported from their modules but **not** re-exported through the barrel:
 |---|---|---|
 | `toolIdentity` | `(mcpName?: string, toolName?: string) => string` | `:11` |
 | `toolLabel` | `(mcpName?: string, toolName?: string) => string` | `:29` |
-| `isTranscriptExternalOrchestrationTool` | `(mcpName?: string, toolName?: string) => boolean` | `:61` |
-| `toolDisplayLabel` | `(mcpName?: string, toolName?: string) => string` | `:69` |
-| `MUTATION_TOOLS` | `Set<string>` | `:85` |
-| `isMutationTool` | `(mcpName?: string, toolName?: string) => boolean` | `:97` |
+| `isTranscriptExternalOrchestrationTool` | `(mcpName?: string, toolName?: string) => boolean` | `packages/code/src/adapters/tool-identity.ts:68-73` |
+| `toolDisplayLabel` | `(mcpName?: string, toolName?: string) => string` | `packages/code/src/adapters/tool-identity.ts:75-83` |
+| `MUTATION_TOOLS` | `Set<string>` | `packages/code/src/adapters/tool-identity.ts:85-95` |
+| `isMutationTool` | `(mcpName?: string, toolName?: string) => boolean` | `packages/code/src/adapters/tool-identity.ts:97-106` |
 
 `MUTATION_TOOLS` is `FILE_MUTATING_TOOL_NAMES` (imported from `@clarvis/kernel/policy`,
 `packages/code/src/adapters/tool-identity.ts:1`) unioned with the literal `["write_memory","edit_memory","delete_memory"]`
@@ -253,7 +253,7 @@ elapsedMs? }` (`packages/code/src/core/transcript/types.ts:18`).
 
 `NodeStatus = "running" | "ok" | "error" | "pending"` (`packages/code/src/core/transcript/types.ts:15`).
 
-`packages/code/src/adapters/store.ts:33` re-derives `TranscriptNode` by replacing the plan variant's `tasks` with
+`packages/code/src/adapters/store.ts:40` re-derives `TranscriptNode` by replacing the plan variant's `tasks` with
 `PlanTaskActivity[]`; every view module imports the node types from `adapters/store.ts`, not from
 core (e.g. `packages/code/src/views/blocks.tsx:8`, `packages/code/src/views/tool-groups.ts:1`,
 `packages/code/src/views/transcript-state.ts:3`).
@@ -264,16 +264,16 @@ Keys are strings with meaning encoded as prefixes. Three consumers parse them:
 
 | Pattern | Meaning | Read at |
 |---|---|---|
-| `<execId>::<span_id>` | a node belonging to run `execId` | `packages/code/src/views/transcript-state.ts:120`, `packages/code/src/views/transcript-completion.ts:4`, `packages/code/src/views/subagent-sections.ts:31` |
-| `<execId>::run` | that run's terminal marker | `packages/code/src/views/transcript-state.ts:122` |
+| `<execId>::<span_id>` | a node belonging to run `execId` | `packages/code/src/views/transcript-state.ts:109`, `packages/code/src/views/transcript-completion.ts:4`, `packages/code/src/views/subagent-sections.ts:31` |
+| `<execId>::run` | that run's terminal marker | `packages/code/src/views/transcript-state.ts:111` |
 | `user:<n>` | a locally sequenced user message | produced by `packages/code/src/adapters/store.ts` (`addUser`) |
-| `local:<n>` | a locally-appended `!bash` node | `packages/code/src/views/subagent-sections.ts:68`, produced at `packages/code/src/adapters/store.ts:863` |
+| `local:<n>` | a locally-appended `!bash` node | `packages/code/src/views/subagent-sections.ts:68`, produced at `packages/code/src/adapters/store.ts:983` |
 
 The `<span_id>` half comes from `deriveRunEventSpan` in the kernel
 (`packages/kernel/src/runs/run-event-span.ts:49`), re-exported through `packages/code/src/adapters/event-span.ts:1`:
 `"run"`, `lead:<n>`, `<subagentId>:<n>`, `subagent:<delegationId>`, `workflow:<runId>`, or a tool
 `call_id` — with `tool_call` falling back to `` `${agent}:tool` `` when it carries no `call_id`
-(`packages/kernel/src/runs/run-event-span.ts:93`, mirrored at `packages/code/src/adapters/store.ts:639`).
+(`packages/kernel/src/runs/run-event-span.ts:93`, mirrored at `packages/code/src/adapters/store.ts:729`).
 
 ### 3.3 The bounded tool-display projection
 
@@ -296,7 +296,7 @@ Sentinels written into the projection: `"... [shortened]"` (`:15`),
 (`:178`–`:179`); it supports bounded accounting and is **not** mounted as a standalone JSON panel.
 The projected object is still passed to compact signatures and curated renderers. It is created with
 `Object.create(null)` (`:129`), so prototype-shaped keys such as `__proto__` land as inert own data —
-pinned at `packages/code/tests/unit/tool-display.test.ts:81`.
+pinned at `packages/code/tests/unit/tool-display.test.ts:75`.
 
 `mountedTextChars` is a conservative estimate, not a measurement:
 `min(512 KiB, argsText + min(argsText, 74) + result + diff + error + (truncated ? notice.length : 0))`
@@ -443,11 +443,11 @@ eviction prunes it immediately, independently of which Lead/child projection is 
 Two ordering helpers remain specified and unit-tested for callers that construct state without
 `preserveOrder`, but the publisher now decides production committed order before first visibility.
 
-`withRunMarkersLast` (`packages/code/src/views/transcript-state.ts:114`) moves each `<exec>::run` node **after** the last
+`withRunMarkersLast` (`packages/code/src/views/transcript-state.ts:103`) moves each `<exec>::run` node **after** the last
 node sharing its `<exec>::` prefix. It returns the input array unchanged when nothing moves
 (`:125`), which `packages/code/tests/unit/run-marker-order.test.ts:19` pins with `toBe`. The reason is stated in
 the code: events for work that had already finished can land after `run_ended`, most visibly on a
-cancellation (`packages/code/src/views/transcript-state.ts:101`–`:106`). It is a projection rather than a store mutation
+cancellation (`packages/code/src/views/transcript-state.ts:90`–`:95`). It is a projection rather than a store mutation
 because the store guarantees node identity across a reconcile (`:108`–`:112`).
 
 `completionBeforeFinalAnswer` (`packages/code/src/views/transcript-completion.ts:14`) moves a run node
@@ -494,12 +494,12 @@ falls back to the card or `"running"`.
 
 The lead header carries `order: -1`, an empty `title`, `lead: true`, the run's status and its
 tool-call count (`packages/code/src/views/subagent-sections.ts:163`–`:170`); `SectionHead` renders it as
-`model · N tool calls` (`packages/code/src/views/blocks.tsx:520`, `:534`) — pinned at
+`model · N tool calls` (`packages/code/src/views/blocks.tsx:527-544`) — pinned at
 `packages/code/tests/integration/lead-presentation.test.tsx:137`.
 
 `SectionHead`'s folded-count label is deliberately different for the two branches: a lead's number is
 tool calls, a sub-agent section's is hidden entries, and the code states they "must not share a word"
-(`packages/code/src/views/blocks.tsx:488`–`:501`).
+(`packages/code/src/views/blocks.tsx:488`–`:505`).
 The chevron on either branch is a real affordance: clicking the section header toggles its anchor;
 an inactive physical measurement owner cannot run that callback.
 
@@ -546,16 +546,16 @@ catch a read (`:102`).
 ### 4.6 Fold state and focus
 
 Three inputs decide whether a block's body shows, resolved by `collapsed()` in
-`BlockView` (`packages/code/src/views/blocks.tsx:579-585`):
+`BlockView` (`packages/code/src/views/blocks.tsx:583-589`):
 
 1. an explicit per-key `BlockOverride` (`"expanded"` / `"collapsed"`) — wins outright;
 2. a lead mutation remains expanded;
 3. `forceExpand()` (the transcript-wide "expand all");
 4. `defaultFolded()` supplied by the host, falling back to a `collapsed` field that is not part of
-   `TranscriptNode` (`packages/code/src/views/blocks.tsx:585`).
+   `TranscriptNode` (`packages/code/src/views/blocks.tsx:589`).
 
 `fullBody()` — whether ordinary arguments/results render unclamped — is deliberately **not** keyed on `forceExpand`
-(`packages/code/src/views/blocks.tsx:597`–`:607`): only an explicit per-block or per-head `"expanded"` override lifts the
+(`packages/code/src/views/blocks.tsx:608`–`:618`): only an explicit per-block or per-head `"expanded"` override lifts the
 ten-line cap. `packages/code/tests/integration/tool-clamp.test.tsx:26` mounts every fixture with
 `forceExpand={() => true}` and `:37` still expects the cap. Lead mutations use the separate
 `ungatedMutationBody` flag, so their diff/content crosses the 40-line mutation gate without also
@@ -584,23 +584,24 @@ Pinned at `packages/code/tests/unit/block-focus.test.ts:59` and
 unrecognised (`:114`) — pinned at `packages/code/tests/unit/block-focus.test.ts:101`.
 
 `createTranscriptState` calls `deps.rehydrate?.(key)` on **every** toggle, expand or collapse
-(`packages/code/src/views/transcript-state.ts:198`), and the doc states why: the store no-ops on a node that still has its
+(`packages/code/src/views/transcript-state.ts:201-213`), and the doc states why: the store no-ops on a node that still has its
 body, so deciding here would duplicate that check against a fold state being changed
-(`packages/code/src/views/transcript-state.ts:41`–`:47`).
+(`packages/code/src/views/transcript-state.ts:39`–`:45`).
 
 Two self-healing effects: a `selectedSubagent` that vanished from the roster is cleared
-(`packages/code/src/views/transcript-state.ts:176`), and a `focusedKey` no longer in `focusables()` is cleared (`:192`).
+(`packages/code/src/views/transcript-state.ts:191-194`), and a `focusedKey` no longer in `focusables()`
+is cleared (`packages/code/src/views/transcript-state.ts:196-199`).
 
 ### 4.7 Sub-agent selection
 
 | Action | Behaviour | Line |
 |---|---|---|
-| `toggleSubagent(id)` with `id` already selected | clear selection, return to Lead and notify `"showing Lead transcript"` | `:204`–`:208` |
-| `toggleSubagent(id)` otherwise | select, notify `subagentFocusToast(title \|\| id)` | `:210`–`:212` |
-| `cycleSubagent()` with an empty roster | clear, notify `"no sub-agents to focus"` | `:214`–`:219` |
-| `cycleSubagent()` otherwise | advance through the roster sorted ascending by `order`, wrapping past the end to `null` | `:221`–`:229` |
+| `toggleSubagent(id)` with `id` already selected | clear selection, return to Lead and notify `"showing Lead transcript"` | `packages/code/src/views/transcript-state.ts:234-239` |
+| `toggleSubagent(id)` otherwise | select, notify `subagentFocusToast(title \|\| id)` | `packages/code/src/views/transcript-state.ts:240-243` |
+| `cycleSubagent()` with an empty roster | clear, notify `"no sub-agents to focus"` | `packages/code/src/views/transcript-state.ts:244-250` |
+| `cycleSubagent()` otherwise | advance through the roster sorted ascending by `order`, wrapping past the end to `null` | `packages/code/src/views/transcript-state.ts:245,251-259` |
 
-Pinned at `packages/code/tests/unit/transcript-state.test.ts:37`, `:57`, `:113`, `:140`.
+Pinned at `packages/code/tests/unit/transcript-state.test.ts:41`, `:61`, `:117`, `:144`.
 
 Pointer selection follows the same path. A Sidebar agent row calls only `onSelectSubagent`, which
 `TranscriptRegion` wires to `toggleSubagent`; it does not call `onOpenDetail`, even for a settled
@@ -620,11 +621,11 @@ collapse across Lead/reselection).
 `focusBlock(delta)` (`:282`–`:289`) notifies `"nothing to focus"` and returns `null` when `nextFocus`
 finds nothing (an empty `focusables()` list), else sets and returns the new focused key.
 `clearFocus()` (`:291`–`:295`) is a no-op returning `false` when nothing is focused, else clears focus
-and returns `true`. Pinned at `packages/code/tests/unit/transcript-state.test.ts:207`–`:227`.
+and returns `true`. Pinned at `packages/code/tests/unit/transcript-state.test.ts:349`–`:369`.
 
 `toggleExpandOrBlock()` (`:274`) toggles the focused block when one is focused, otherwise flips
 `expandAll` and notifies `"blocks expanded"` or `""` (`:281`) — the empty string on the second flip
-is asserted at `packages/code/tests/unit/transcript-state.test.ts:182`.
+is asserted at `packages/code/tests/unit/transcript-state.test.ts:324`.
 
 `pickDiffNode()` (`:297`) prefers the focused node when it is in
 `DIFF_TOOLS = {apply_patch, edit_file, multi_edit, write_file, diff, replace}`
@@ -632,7 +633,7 @@ is asserted at `packages/code/tests/unit/transcript-state.test.ts:182`.
 **backwards** — i.e. over the full semantic/detail source, not physical residency. A dehydrated pick
 triggers `rehydrate` and is still
 returned, so the overlay fills in rather than silently opening an older diff (`:300`–`:309`). Pinned
-at `packages/code/tests/unit/transcript-state.test.ts:293` and
+at `packages/code/tests/unit/transcript-state.test.ts:476` and
 `packages/code/tests/unit/transcript-window-state.test.ts` (`pickDiffNode` case).
 
 ### 4.8 Assistant Markdown segmentation
@@ -754,10 +755,10 @@ generic fallback at `packages/code/tests/integration/tool-destripe-render.test.t
 
 `trueMutationStats` (`packages/code/src/views/blocks.tsx:175`) prefers the resident `node.mutation` and only falls back to
 computing `mutationStats` from the raw args/diff — never from `display()`, which is bounded
-(`:132`–`:138`). Pinned at `packages/code/tests/integration/transcript-region-render.test.tsx:236`: a 4,000-line
+(`:175`–`:185`). Pinned at `packages/code/tests/integration/transcript-region-render.test.tsx:496-522`: a 4,000-line
 diff exceeding 64 KiB must still chip as `+4000`.
 
-`hidden()` (`packages/code/src/views/blocks.tsx:625-628`) hides a group `member` unless the group is expanded **or** the member
+`hidden()` (`packages/code/src/views/blocks.tsx:636-639`) hides a group `member` unless the group is expanded **or** the member
 carries `warn` — an errored member stays hidden, pinned at
 `packages/code/tests/integration/tool-groups-render.test.tsx:78` (`expect(out).not.toContain("boom")`).
 
@@ -787,7 +788,7 @@ when a `sectionHeader` is present) sits **outside** its `border={["left"]}`, so 
 section header's leading blank row is not painted with the rail glyph — pinned at
 `packages/code/tests/integration/subagent-rail-render.test.tsx:47`–`:77`.
 
-Per-kind bodies (`packages/code/src/views/blocks.tsx:662`–`:879`): `user` gets a `userBandBg()` band with a rail glyph
+Per-kind bodies (`packages/code/src/views/blocks.tsx:673`–`:896`): `user` gets a `userBandBg()` band with a rail glyph
 (`:630`); `reasoning` renders nothing at all when collapsed (`:650`) — pinned at
 `packages/code/tests/integration/reasoning-hidden-render.test.tsx:32`; `thinking` is a spinner plus animated dots
 (`:664`); `assistant` uses one static bullet plus segmented Markdown in both running and terminal
@@ -800,7 +801,7 @@ when `planReview` is set, and, only when not collapsed, chooses among three guid
 `planDiscarded` says `"Plan was deleted after success, as configured"`; another
 `planRemoved` says `"The backing record is unavailable; restore it or create a replacement plan"`;
 an available plan says `"Open plan for the full objective, task list and review history"`
-(`packages/code/src/views/blocks.tsx:805-823`). Thus retention cleanup remains neutral while an
+(`packages/code/src/views/blocks.tsx:822-840`). Thus retention cleanup remains neutral while an
 unexpected loss stays actionable;
 `annotation` colors by `tone` (`:790`); `error` prints the agent label and the error text (`:807`);
 `run` prints the outcome word, elapsed time and — on a non-`ok` run — a `Next:` line naming only
@@ -964,7 +965,7 @@ discard reports `"C/N completed · History discarded"`; another removed plan rep
 its status is `completed` and `"Unavailable"` otherwise (`:51`–`:63`). A state word is appended for
 an available plan's five known statuses (`:64`–`:70`), and `revision N` when revision exceeds 1
 (`:71`). `store.ts` projects the strict predicate into `planDiscarded` alongside `planRemoved`
-(`packages/code/src/adapters/store.ts:1198-1218`).
+(`packages/code/src/adapters/store.ts:1320-1354`).
 
 `reduceWorkflowProjection` (`packages/code/src/adapters/workflow-projection.ts:71`):
 
@@ -1136,7 +1137,7 @@ session — a message the user is entitled to read as delivered when it never wa
 `views/Sidebar.tsx` is the optional inspector column beside the transcript. It holds no run state of
 its own — only a scroll handle and a per-mount handle table: everything it paints comes from the two
 projections of section 4.12, `PlanActivity` and `WorkflowActivity`, plus `ActivityStore.subagents`.
-Its own TSDoc states the scope rule (`packages/code/src/views/Sidebar.tsx:278`): it is a
+Its own TSDoc states the scope rule (`packages/code/src/views/Sidebar.tsx:293`): it is a
 *summary-only* inspector. Complete child tools and answers live in the explicitly selected isolated
 transcript; workflow activity remains structure/status in the footer strip and Sidebar and never
 becomes transcript content.
@@ -1187,7 +1188,7 @@ distinct `Last result` section, and a footer hint. For an expected discard,
 the muted meta is `Completed · C/N completed · history discarded` and the muted footer is
 `Plan deleted after success`; only another removed plan gets `Unavailable · plan file
 unavailable` plus the red `Restore the plan file or create a replacement` recovery action
-(`packages/code/src/views/Sidebar.tsx:128-166,216-230`). `planProgress` otherwise reports
+(`packages/code/src/views/Sidebar.tsx:183-216,321-338`). `planProgress` otherwise reports
 `N task(s) proposed` while `awaiting_approval`, and `C/N completed`. Each task row takes its glyph and colour
 from `taskTone` (`packages/code/src/views/blocks.tsx:79`), called from
 `packages/code/src/views/Sidebar.tsx` — except the current one, which is drawn with the accent
@@ -1208,7 +1209,7 @@ or by the red restore action for an unexpected removal (`packages/code/src/views
 `packages/code/tests/integration/sidebar-render.test.tsx`.
 
 **`planTaskWindow` — a bounded slice that always contains the active task.**
-`PLAN_SIDEBAR_TASK_LIMIT` is 12 (`packages/code/src/views/Sidebar.tsx:17`). The window centres on
+`PLAN_SIDEBAR_TASK_LIMIT` is 12 (`packages/code/src/views/Sidebar.tsx:18`). The window centres on
 `currentPlanTask(plan)`, falling back to the last task when the plan has no current one
 (`:30`–`:31`), then clamps `start` so the window never runs past either end (`:32`–`:36`). It
 returns entries carrying their **absolute** index — which is what makes the row ids
@@ -1231,7 +1232,7 @@ the transcript tail when the sidebar is closed") and
 intent).
 
 **Parallel work.** Leaders come straight from the workflow projection: every node with `kind ===
-"leader"`, ordered by `startedAt` (`packages/code/src/views/Sidebar.tsx:309`–`:315`). Each row
+"leader"`, ordered by `startedAt` (`packages/code/src/views/Sidebar.tsx:324`–`:330`). Each row
 prints a synthetic `L1`, `L2`, … handle, `cleanTitle(node.title)` — first non-blank line, whitespace
 collapsed (`:70`) — and a muted `status · elapsed · N iterations` line, where each of the last two
 segments is omitted when it has no value (`:343`–`:345`). The header meta counts the leaders and
@@ -1277,7 +1278,7 @@ finished selected agent labelled `Running`. Pinned by
 `packages/code/tests/unit/block-focus.test.ts` and
 `packages/code/tests/integration/transcript-region-render.test.tsx`.
 
-**Elapsed times are bounded.** `displayElapsed` (`packages/code/src/views/Sidebar.tsx:45`) defers to
+**Elapsed times are bounded.** `displayElapsed` (`packages/code/src/views/Sidebar.tsx:46`) defers to
 `formatElapsed`, but returns the empty string for a negative span or one over
 `MAX_DISPLAY_ELAPSED_MS = 7 days` (`:16`, `:48`) — a clock skew or a bogus `startedAt` shows nothing
 rather than an absurd duration. A sub-agent row shows elapsed **only while running**
@@ -1285,7 +1286,7 @@ rather than an absurd duration. A sub-agent row shows elapsed **only while runni
 `tickNow()` (section 4.14), which is what re-renders them.
 
 **`contextMeter` is exported, tested, and mounted nowhere.**
-(`packages/code/src/views/Sidebar.tsx:58`) It computes `frac` — clamped to 1, and 0 when the window
+(`packages/code/src/views/Sidebar.tsx:59`) It computes `frac` — clamped to 1, and 0 when the window
 is 0 — `filled` over `CONTEXT_WIDTH = 16` (`:15`), a three-band colour (`tokens.del` at ≥ 0.9,
 `tokens.warn` at ≥ 0.7, else `tokens.add`, `:65`), a rounded `pct`, and a `used/window · pct%` label
 built from `compactTokens`, which switches to `k` at a thousand and `M` at a million (`:51`–`:55`).
@@ -1303,29 +1304,29 @@ Each is stated as a rule, the production site it is about, and the test that pin
 **INV-260.** `toolIdentity(mcpName, toolName)` resolves to whichever slot holds the name — the
 `toolName` slot for a namespaced call, the `mcpName` slot for a builtin, `""` when both are absent.
 Production `packages/code/src/adapters/tool-identity.ts:11`. Test
-`packages/code/tests/unit/tool-identity.test.ts:10`.
+`packages/code/tests/unit/tool-identity.test.ts:11`.
 
 **INV-261.** `toolLabel` renders `server:tool` for a namespaced call and the bare name for a builtin,
 never a dangling colon and never a literal `undefined:name` — including the transitional case where a
 streaming placeholder knows the tool name but not yet its server. Production
-`packages/code/src/adapters/tool-identity.ts:29` (both slots are guarded, `:30`). Tests
-`packages/code/tests/unit/tool-identity.test.ts:25` and `:31`.
+`packages/code/src/adapters/tool-identity.ts:29-32`. Tests
+`packages/code/tests/unit/tool-identity.test.ts:33-44`.
 
 **INV-262.** `isMutationTool` resolves through the same identity rule as `toolIdentity`, and treats
 `write_memory`/`edit_memory`/`delete_memory` as mutations while treating
 `read_memory`/`list_memories`/`grep_memories` as non-mutations. Production
-`packages/code/src/adapters/tool-identity.ts:75` over the set at `:63`. Tests
-`packages/code/tests/unit/tool-identity.test.ts:38` and `:44`. The consequence this protects is the
+`packages/code/src/adapters/tool-identity.ts:85-105`. Tests
+`packages/code/tests/unit/tool-identity.test.ts:46-59`. The consequence this protects is the
 grouping pass: a memory write must not fold into a run of reads —
 `packages/code/tests/unit/tool-groups.test.ts:88`.
 
 **INV-263.** `MUTATION_TOOLS` has an exact, exhaustive membership: `write_file`, `edit_file`,
-`multi_edit`, `apply_patch`, `replace`, `move`, `copy`, `mkdir`, `remove`, `write_memory`,
+`multi_edit`, `apply_patch`, `host_vcs`, `replace`, `move`, `copy`, `mkdir`, `remove`, `write_memory`,
 `edit_memory`, `delete_memory`. Because the file half is derived from
 `@clarvis/loop`'s registry (`packages/loop/src/runtime/tools/builtin/names.ts:50`), a registry change
 alters this set — and must therefore be a visible diff to the pinning test. Production
-`packages/code/src/adapters/tool-identity.ts:63`. Test
-`packages/code/tests/unit/tool-identity.test.ts:53`.
+`packages/code/src/adapters/tool-identity.ts:85-95`. Test
+`packages/code/tests/unit/tool-identity.test.ts:61-79`.
 
 **INV-T01.** `sealed.join("") + tail` reconstructs the segmenter's input exactly, for every input
 shape and every `min`. Production `packages/code/src/core/transcript/segment.ts:129` (declared at
@@ -1358,25 +1359,25 @@ Production `packages/code/src/core/transcript/segment.ts:265`, `:275`, `:243`. T
 
 **INV-T06.** A tool node's `args`, `result`, `diff` and `error` reach a renderer only through
 `projectTranscriptToolDisplay`; each independent string is capped at 64 KiB and the persisted node is
-left complete. Production `packages/code/src/core/transcript/tool-display.ts:200`, called at
-`packages/code/src/views/blocks.tsx:263`. Test
-`packages/code/tests/unit/tool-display.test.ts:30` (asserts `node.result` is untouched).
+left complete. Production `packages/code/src/core/transcript/tool-display.ts:202-249`, called at
+`packages/code/src/views/blocks.tsx:267-269`. Test
+`packages/code/tests/unit/tool-display.test.ts:24` (asserts `node.result` is untouched).
 
 **INV-T07.** Argument projection never invokes an accessor: every value is read through
 `Object.getOwnPropertyDescriptor` and a non-data descriptor becomes the literal
 `"[accessor omitted]"`. Production
-`packages/code/src/core/transcript/tool-display.ts:118` and `:140`. Test
-`packages/code/tests/unit/tool-display.test.ts:64` (asserts zero getter invocations).
+`packages/code/src/core/transcript/tool-display.ts:120-147`. Test
+`packages/code/tests/unit/tool-display.test.ts:58` (asserts zero getter invocations).
 
 **INV-T08.** The cycle guard tracks the current **path**, not every object visited: a value shared by
 two keys is projected twice and does not raise the "display shortened" banner, while a genuine cycle
-is still caught. Production `packages/code/src/core/transcript/tool-display.ts:104`, `:125`, `:147`.
-Tests `packages/code/tests/unit/tool-display.test.ts:94` and `:109`.
+is still caught. Production `packages/code/src/core/transcript/tool-display.ts:91-110,120-150`.
+Tests `packages/code/tests/unit/tool-display.test.ts:88-112`.
 
 **INV-T09.** The projection is memoised per node by the identities of `args`, `result`, `diff` and
 `error`, so immutable publication and block rendering share one computation. Production
-`packages/code/src/core/transcript/tool-display.ts:204`–`:213`, `:239`. Test
-`packages/code/tests/unit/tool-display.test.ts:39` (`toBe` on a repeated call).
+`packages/code/src/core/transcript/tool-display.ts:202-214,232-249`. Test
+`packages/code/tests/unit/tool-display.test.ts:24-35` (`toBe` on a repeated call).
 
 **INV-T10.** `semanticNodes` exposes exactly one complete ordered projection: nodes without a
 `subagentId` for the Lead-only main transcript — including typed delegation lifecycle markers — or
@@ -1419,7 +1420,7 @@ or semantic node source, so a currently unmounted diff remains reachable. Produc
 
 **INV-T16.** `withRunMarkersLast` returns its input array untouched when no marker moves, and
 otherwise emits every node exactly once. Production
-`packages/code/src/views/transcript-state.ts:125`, `:129`–`:135`. Tests
+`packages/code/src/views/transcript-state.ts:114`, `:118`–`:124`. Tests
 `packages/code/tests/unit/run-marker-order.test.ts:19` (`toBe`) and `:50`.
 
 **INV-T17.** `computeGroupedNodes`, `computeToolGroups` and `computeFocusables` read none of `text`,
@@ -1450,14 +1451,14 @@ are keyboard-focusable. Production `packages/code/src/views/block-focus.ts:43`, 
 
 **INV-T21.** "Expand all" unfolds blocks but does **not** lift a body's ten-line clamp; only an
 explicit per-block or per-head `"expanded"` override does. Production
-`packages/code/src/views/blocks.tsx:605` (rule stated at `:595`–`:604`). Test
+`packages/code/src/views/blocks.tsx:616` (rule stated at `:606`–`:615`). Test
 `packages/code/tests/integration/tool-clamp.test.tsx:26`, which mounts every fixture with
 `forceExpand={() => true}`, while `:37` still expects the ten-line cap and its `… +N lines` footer.
 
 **INV-T22.** A mutation's chip counts the call's **real** payload, never the 64 KiB display
 projection. Production `packages/code/src/views/blocks.tsx:175` (prefers `node.mutation`) and
 `packages/code/src/views/tools/registry.tsx:201`–`:203` (`gateStats` prefers `call.mutation`). Test
-`packages/code/tests/integration/transcript-region-render.test.tsx:236` (a >64 KiB diff must chip as
+`packages/code/tests/integration/transcript-region-render.test.tsx:482` (a >64 KiB diff must chip as
 `+4000`).
 
 **INV-T23.** A collapsed mutation's stats come from the diff/content the body would render, not from
@@ -1519,7 +1520,7 @@ and disappears the instant the call closes. Production
 `packages/code/tests/integration/tool-live-tail-render.test.tsx:29`, `:39`, `:45`.
 
 **INV-T32.** A group `member` stays hidden while the group is collapsed unless it carries `warn` — an
-errored member is hidden too. Production `packages/code/src/views/blocks.tsx:625`–`:628`. Test
+errored member is hidden too. Production `packages/code/src/views/blocks.tsx:636`–`:639`. Test
 `packages/code/tests/integration/tool-groups-render.test.tsx:78`.
 
 **INV-T33.** A collapsed group head lists at most 6 member signatures, then a `moreChip`. Each shown
@@ -1546,7 +1547,7 @@ Production: `packages/code/src/views/blocks.tsx` (`BlockView`),
 **INV-T36.** Released prose wins over truncation: a node carrying `proseReleased` renders the
 `/export` recovery sentence rather than its retained text, even when `textTruncated` is also set.
 Production `packages/code/src/core/transcript/presenters.ts:34`–`:35` (documented at `:25`–`:32`).
-Test `packages/code/tests/integration/markdown-render-contract.test.tsx:80`.
+Test `packages/code/tests/integration/markdown-render-contract.test.tsx:82`.
 
 **INV-T37.** One prose node's mounted text is bounded at 512 KiB, and every tool display projection
 reports mounted text within the same aggregate ceiling before OpenTUI receives it. Physical row
@@ -1595,16 +1596,15 @@ same rule from the test side (`:5`–`:14`).
 **INV-T44.** The sidebar's plan section mounts a **bounded** slice of the task list that always
 contains the current task: at most `PLAN_SIDEBAR_TASK_LIMIT = 12` rows, centred on
 `currentPlanTask`, with the remainder reported as `↑ N earlier tasks` / `↓ N later tasks` rather
-than mounted. Production `packages/code/src/views/Sidebar.tsx:20` (limit at `:17`, clamp at
-`:32`–`:36`, the two counts at `:165` and `:208`). Test
-`packages/code/tests/integration/sidebar-render.test.tsx:525`, which asserts both the window's own
+than mounted. Production `packages/code/src/views/Sidebar.tsx:17-43,218-220,281-284`. Test
+`packages/code/tests/integration/sidebar-render.test.tsx:668-695`, which asserts both the window's own
 shape and that a 50-task plan paints `Task 30` with the first task absent from the frame.
 
 **INV-T45.** The sidebar carries no run totals. A sub-agent's `input`/`output` token counts and the
 run's context and usage figures are held by the same `ActivityStore` the sidebar reads
-(`packages/code/src/adapters/activity-store.ts:33`–`:34`, `:76`–`:77`) and are rendered by none of
-its rows — `contextMeter` exists (`packages/code/src/views/Sidebar.tsx:58`) but no `src` module calls
-it. Test `packages/code/tests/integration/sidebar-render.test.tsx:264`, which mounts a store carrying
+(`packages/code/src/adapters/activity-store.ts:33`–`:34`, `:77`–`:79`) and are rendered by none of
+its rows — `contextMeter` exists (`packages/code/src/views/Sidebar.tsx:59`) but no `src` module calls
+it. Test `packages/code/tests/integration/sidebar-render.test.tsx:353`, which mounts a store carrying
 both and asserts the frame contains neither "context" nor "tokens".
 
 **INV-T46.** A removed plan is neutral retention history iff its last projection says all three of
@@ -1612,19 +1612,19 @@ both and asserts the frame contains neither "context" nor "tokens".
 unavailable/recovery state. Sidebar and transcript block consume that distinction; the footer never
 projects Plan state.
 Production: `packages/code/src/adapters/plan-projection.ts:43-48`,
-`packages/code/src/adapters/store.ts:1198-1218`, `packages/code/src/views/Sidebar.tsx:128-166,221-280`,
-and `packages/code/src/views/blocks.tsx:817-823`. Tests:
+`packages/code/src/adapters/store.ts:1337-1365`, `packages/code/src/views/Sidebar.tsx:136-158`,
+`:200-285`, `:321-337`, and `packages/code/src/views/blocks.tsx:893-915`. Tests:
 `packages/code/tests/unit/plan-projection.test.ts:164-216`,
-`packages/code/tests/unit/store-status.test.ts:391-430`,
-`packages/code/tests/integration/sidebar-render.test.tsx:489-616`, and
+`packages/code/tests/unit/store-status.test.ts:847-887`,
+`packages/code/tests/integration/sidebar-render.test.tsx:558-665`, and
 `packages/code/tests/integration/plan-block-render.test.tsx:61-76`.
 
 **INV-T47.** Expanded tool calls never mount a generic `Arguments` label or raw argument JSON.
 Projected arguments feed the bounded one-line signature and the identity-specific result renderer;
 Markdown export adds the complete bounded, renderer-safe projection plus an explicit shortening marker,
 so auditability does not require mounting raw JSON in the live transcript. Production
-`packages/code/src/views/blocks.tsx:263-395`, with the only mounted sections after the header at
-`:350-395`. Tests `packages/code/tests/integration/tool-destripe-render.test.tsx:112-159` cover both a
+`packages/code/src/views/blocks.tsx:259-413`, with the only mounted sections after the header at
+`:365-409`. Tests `packages/code/tests/integration/tool-destripe-render.test.tsx:135-181` cover both a
 curated shell renderer and the generic fallback, asserting useful output and signatures remain while
 JSON key/value presentation is absent.
 
@@ -1783,16 +1783,16 @@ Markdown never gives rows back when parsing conceals syntax").
 | `JSON.stringify` throws while formatting a signature value | caught, falls back to `String(v)` | `packages/code/src/views/tools/signature.ts:69`–`:73` |
 | A truncate target is `null`/`undefined` | treated as `""` — "a config field the user has cleared cannot throw out of a render pass" | `packages/code/src/views/truncate.ts:16`, `:7`–`:9` |
 | `max <= ellipsis.length` in a truncate | returns a truncated ellipsis rather than throwing | `packages/code/src/views/truncate.ts:19`, `:39` |
-| Argument payload needed by a curated renderer exceeds a budget (chars / nodes / depth) | `truncated: true` plus a sentinel in the bounded projection; the block paints `TRANSCRIPT_TOOL_DISPLAY_SHORTENED_NOTICE` without mounting raw JSON | `packages/code/src/core/transcript/tool-display.ts:95`, `:113`, `:132`; `packages/code/src/views/blocks.tsx:384-395` |
-| Duplicate projected keys after key truncation | disambiguated with `#2`, `#3`, … and flagged `truncated` | `packages/code/src/core/transcript/tool-display.ts:74`–`:77`, `:138` |
-| Non-finite number in arguments | projected as `null` | `packages/code/src/core/transcript/tool-display.ts:101` |
+| Argument payload needed by a curated renderer exceeds a budget (chars / nodes / depth) | `truncated: true` plus a sentinel in the bounded projection; the block paints `TRANSCRIPT_TOOL_DISPLAY_SHORTENED_NOTICE` without mounting raw JSON | `packages/code/src/core/transcript/tool-display.ts:91-150`; `packages/code/src/views/blocks.tsx:399-410` |
+| Duplicate projected keys after key truncation | disambiguated with `#2`, `#3`, … and flagged `truncated` | `packages/code/src/core/transcript/tool-display.ts:70-79,139-147` |
+| Non-finite number in arguments | projected as `null` | `packages/code/src/core/transcript/tool-display.ts:101-105` |
 | A single node's text exceeds 512 KiB | truncated with `TRANSCRIPT_MOUNTED_TEXT_SHORTENED_NOTICE` appended | `packages/code/src/core/transcript/presenters.ts:36`–`:39` |
 | A streamed reply outgrows the segmenter's bounds | forced plain, `simplified: true`, with an explanatory line above a settled reply | `packages/code/src/core/transcript/segment.ts:265`, `:275`; `packages/code/src/views/blocks.tsx:431` |
-| A tool block's body was dropped by the retention window | `dehydrated` is set; expanding calls `deps.rehydrate` and, if the refill fails, `hydrationNotice` is shown | `packages/code/src/views/blocks.tsx:361-367`; `packages/code/src/views/transcript-state.ts:198` |
+| A tool block's body was dropped by the retention window | `dehydrated` is set; expanding calls `deps.rehydrate` and, if the refill fails, `hydrationNotice` is shown | `packages/code/src/views/blocks.tsx:376-382`; `packages/code/src/views/transcript-state.ts:201-213` |
 | A dehydrated node still needs a header | the resident `signature` and `mutation` fields carry the collapsed header and chip; the type docs state this is "tens of bytes against the tens of kilobytes" | `packages/code/src/core/transcript/types.ts:86`–`:99`; `packages/code/src/views/blocks.tsx:314`, `:177` |
 | A stale plan event arrives after a newer one | dropped by the revision guard | `packages/code/src/adapters/plan-projection.ts:94` |
 | A plan removal arrives for a plan never seen | an explicit "Plan unavailable / failed / removed" projection is synthesized rather than nothing | `packages/code/src/adapters/plan-projection.ts:97` |
-| Retention deletes a completed `discard` plan | projected history stays completed and muted; the UI confirms configured cleanup rather than requesting recovery | `packages/code/src/adapters/plan-projection.ts:43-48`; `packages/code/src/views/Sidebar.tsx:161-166,221-230` |
+| Retention deletes a completed `discard` plan | projected history stays completed and muted; the UI confirms configured cleanup rather than requesting recovery | `packages/code/src/adapters/plan-projection.ts:43-48`; `packages/code/src/views/Sidebar.tsx:183-216,321-338` |
 | A workflow terminal event arrives before any leader seeded the tree | `run_ended` returns `current` unchanged; `workflow_title_updated` returns `null` | `packages/code/src/adapters/workflow-projection.ts:90`, `:80` |
 | A workflow progress/terminal event names an unknown leader | a minimal leader node is synthesized in place | `packages/code/src/adapters/workflow-projection.ts:132`, `:152` |
 | A selected sub-agent transcript has a body but no `subagent` card | the first body node stays visible as the isolated identity anchor and later entries fold behind it. Live roster status is resolved through any body node carrying `subagentId`; only an absent live status falls back to `"running"` | `packages/code/src/views/subagent-sections.ts` (`rosterStatus`, `emitSection`) |
@@ -1815,8 +1815,8 @@ Degradation that is **silent by design**: a tool whose result the parser cannot 
 |---|---|---|
 | `views/**` → `core/transcript/**` | runtime | value imports at `packages/code/src/views/blocks.tsx:17` and `packages/code/src/views/transcript-state.ts:4` |
 | `core/transcript/**` → `core/marks.ts` | runtime | `packages/code/src/core/transcript/presenters.ts:1` — the only import in the whole core-transcript tree |
-| `core/**` ↛ `solid-js` / `@opentui/*` / `adapters` / `theme` / `ui` / `views` | forbidden | `packages/code/tests/architecture/architecture-boundary.test.ts:72` |
-| `adapters/**` ↛ `ui` / `views` | forbidden | `packages/code/tests/architecture/architecture-boundary.test.ts:91` |
+| `core/**` ↛ `solid-js` / `@opentui/*` / `adapters` / `theme` / `ui` / `views` | forbidden | `packages/code/tests/architecture/architecture-boundary.test.ts:128` |
+| `adapters/**` ↛ `ui` / `views` | forbidden | `packages/code/tests/architecture/architecture-boundary.test.ts:149` |
 | `adapters/tool-identity.ts` → `@clarvis/kernel/policy` | runtime, value | `packages/code/src/adapters/tool-identity.ts:1`; the kernel entrypoint is one of the six sanctioned ones (INV-251) |
 | `adapters/event-span.ts` → `@clarvis/kernel/policy` | runtime re-export + type | `packages/code/src/adapters/event-span.ts:1` |
 | `adapters/{plan,workflow}-projection.ts` → `@clarvis/protocol` | **type-only** | `packages/code/src/adapters/plan-projection.ts:1`, `packages/code/src/adapters/workflow-projection.ts:1` (`import type`) |
@@ -1825,22 +1825,22 @@ Degradation that is **silent by design**: a tool whose result the parser cannot 
 | `views/**` → `theme/{tokens,glyphs,tone,syntax,surfaces}` | runtime | `packages/code/src/views/blocks.tsx:3`–`:7`, `packages/code/src/views/tools/registry.tsx:3`–`:5`, `packages/code/src/views/tools/mutation-gate.ts:3`, `packages/code/src/views/truncate.ts:1`, `packages/code/src/views/spinner.ts:2` |
 | `theme/glyphs.ts` → `core/marks.ts` | runtime | `packages/code/src/theme/glyphs.ts:2`; the theme wraps the core table in a Solid signal so an ascii toggle re-renders (`packages/code/src/theme/glyphs.ts:16`–`:21`) |
 | `views/tools/**` → `adapters/{tool-identity,tool-parsers}` | runtime | `packages/code/src/views/tools/registry.tsx:7`, `:23`; `packages/code/src/views/tools/mutation-gate.ts:1`, `:2`; `packages/code/src/views/tools/signature.ts:1` |
-| `adapters/store.ts` → `views/**` | **forbidden** | why `describeToolCall` is injected at the composition root instead of imported (`packages/code/src/adapters/store.ts:274`–`:276`, wired in `packages/code/src/runtime.tsx`, `describeToolCall`) |
+| `adapters/store.ts` → `views/**` | **forbidden** | why `describeToolCall` is injected at the composition root instead of imported (`packages/code/src/adapters/store.ts:326`–`:328`, wired in `packages/code/src/runtime.tsx`, `describeToolCall`) |
 
 ### 7.2 The store seam
 
 `adapters/store.ts` is the *producer* of everything this subsystem reads, and belongs to a sibling
 document. Four concrete couplings matter here:
 
-1. **Node types.** Views import `TranscriptNode` from `packages/code/src/adapters/store.ts:33`, which re-derives the
+1. **Node types.** Views import `TranscriptNode` from `packages/code/src/adapters/store.ts:40`, which re-derives the
    core union with a concrete `PlanTaskActivity[]` for the plan variant.
-2. **`rawToolArguments`** (`packages/code/src/adapters/store.ts:58`) unwraps Solid's `$RAW` before the display
+2. **`rawToolArguments`** (`packages/code/src/adapters/store.ts:65`) unwraps Solid's `$RAW` before the display
    projector sees the arguments, because a store proxy exposes every field as an accessor and the
-   projector deliberately refuses accessors (`packages/code/src/adapters/store.ts:48`–`:57`, and INV-T07 above).
-3. **`describeToolCall`** (`packages/code/src/adapters/store.ts:278`, implemented in
+   projector deliberately refuses accessors (`packages/code/src/adapters/store.ts:55`–`:64`, and INV-T07 above).
+3. **`describeToolCall`** (`packages/code/src/adapters/store.ts:330`, implemented in
    `packages/code/src/runtime.tsx`) is the injection that
    lets the store keep a resident `signature` and `mutation` on each tool node without importing
-   `views/`. It is called on `tool_call` close (`packages/code/src/adapters/store.ts:1369`).
+   `views/`. It is called on `tool_call` close (`packages/code/src/adapters/store.ts:1585`).
 4. **`defaultFolded`** (backed by `foldDefaults`) supplies `toggleOverride` and is captured into each
    immutable publication batch before history renders it. It is set on tool close from the call's
    success and on local shell close.
@@ -1887,11 +1887,11 @@ flush at 60 KB against a 33 ms frame (`packages/code/src/views/blocks.tsx:415`�
 ~0.5 ms plain versus ~50 ms parsed (`packages/code/src/core/transcript/segment.ts:11`–`:21`) — so the absence elsewhere is an absence,
 not a convention.
 
-**The `collapsed` fixture-fallback claim is overstated.** Both `packages/code/src/views/blocks.tsx:555`–`:561` and
+**The `collapsed` fixture-fallback claim is overstated.** Both `packages/code/src/views/blocks.tsx:556`–`:562` and
 `packages/code/src/views/block-focus.ts:66`–`:71` state that "`showcase.test.ts` guards that a real store-derived node never
 carries" a `collapsed` field. The only occurrence in that file is
 `packages/code/tests/component/showcase.test.ts:528`, a single assertion about one `subagent` node in
-one error scenario. It is not a general guard, so the production fallbacks at `packages/code/src/views/blocks.tsx:579` and
+one error scenario. It is not a general guard, so the production fallbacks at `packages/code/src/views/blocks.tsx:583` and
 `packages/code/src/views/block-focus.ts:93` are protected by a comment rather than by a test.
 
 ~~**`hiddenBodyLines` does not special-case `monitor_list`.**~~ **Resolved:** it does now.
@@ -1941,7 +1941,7 @@ concept; its consumers are outside this document.
 `blocks.tsx` — the run block prints only the outcome word and elapsed time (`:821`–`:844`), and the
 subagent block prints only its brief (`:751`). Nor does the sidebar render them: it holds the same
 figures through `ActivityStore` and paints none of them (INV-T45). A leader row's `N iterations`
-(`packages/code/src/views/Sidebar.tsx:344`) is the one counter any of these surfaces prints, and it
+(`packages/code/src/views/Sidebar.tsx:420-435`) is the one counter any of these surfaces prints, and it
 comes from the workflow projection rather than from a transcript node. Whether the node fields have
 any renderer at all is still not determinable: nothing this document or the sidebar reads consumes them.
 

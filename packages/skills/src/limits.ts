@@ -51,6 +51,10 @@ export const MAX_SKILL_RESOURCES = 1_024;
 export const MAX_SKILL_RESOURCE_BYTES = 256 * 1024;
 /** Maximum decoded characters read through `readResource`. */
 export const MAX_SKILL_RESOURCE_CHARS = 50_000;
+/** Maximum complete size of a resource retained for chunked disclosure or exact snapshots. */
+export const MAX_SKILL_RESOURCE_FILE_BYTES = 8 * 1024 * 1024;
+/** Maximum aggregate resource bytes retained in one skill snapshot. */
+export const MAX_SKILL_RESOURCE_SNAPSHOT_BYTES = 32 * 1024 * 1024;
 
 /** Maximum on-disk size of one harness-directed sidecar. */
 export const MAX_SKILL_SIDECAR_BYTES = 16 * 1024;

@@ -111,8 +111,20 @@ function createSkillsRunCapability(
   options: SkillsCapabilityOptions,
   ctx: RunCapabilityContext,
 ): RunCapability {
+  const availableMcpServers = new Set(ctx.request.servers.map((server) => server.name));
+  const dependenciesAvailable = (skill: SkillInfo): boolean => {
+    const plugin = skill.source.startsWith("plugin:")
+      ? skill.source.slice("plugin:".length)
+      : undefined;
+    return (skill.dependencies ?? []).every(
+      (dependency) =>
+        availableMcpServers.has(dependency.value) ||
+        (plugin !== undefined && availableMcpServers.has(`${plugin}:${dependency.value}`)),
+    );
+  };
   let catalog: SkillInfo[] | undefined;
-  const listOnce = (): SkillInfo[] => (catalog ??= provider.listSkills());
+  const listOnce = (): SkillInfo[] =>
+    (catalog ??= provider.listSkills().filter(dependenciesAvailable));
   const catalogFor = (grants: readonly string[]): SkillInfo[] | undefined => {
     if (!grants.includes(USE_SKILLS_GRANT)) return undefined;
     const listed = listOnce();

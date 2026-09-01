@@ -158,14 +158,21 @@ A registry entry carries `fullName` (`"<mcpName>.<toolName>"`), `wireName` (the 
 
 ### 3.2 Wire-name sanitization (delegated mechanism, `@clarvis/mcp-client`)
 
-`toWireToolName(fullName, used, onRename?)` (`packages/mcp-client/src/registry.ts:30-42`) replaces
-every character outside `[A-Za-z0-9_-]` with `_`, then appends `_1`, `_2`, … until the candidate is
-absent from `used`. `used` is pre-seeded with `[...RESERVED_WIRE_NAMES, ...capabilityReserved]`
-(`packages/loop/src/runtime/tools/mcp-registry.ts:37`), so an MCP tool `submit.result` sanitizing to `submit_result` is renamed to
-`submit_result_1` rather than colliding with the built-in — this is the mechanism behind INV-057/058.
-A rename fires the `onRename` callback, which the registry builder logs as
-`mcp.registry.renamed` with `reason: "reserved" | "collision"`
-(`packages/mcp-client/src/registry.ts:82-95`).
+`makeRegistry` in `packages/mcp-client/src/registry.ts` first counts provider-local names
+case-insensitively and reserves every spelling that matches `[A-Za-z0-9_-]+`, occurs exactly once,
+and is absent case-insensitively from `[...RESERVED_WIRE_NAMES, ...capabilityReserved]` supplied by
+`buildRegistry` in `packages/loop/src/runtime/tools/mcp-registry.ts`. Those tools keep their exact
+provider-local name. Reserving the entire eligible set before allocating fallbacks makes ownership
+independent of entry order: a namespaced fallback cannot take a unique local spelling that appears
+later in the pool.
+
+Duplicate or case-colliding, invalid, and host-reserved local names use
+`toWireToolName(fullName, used, onRename?)` in `packages/mcp-client/src/registry.ts`. It sanitizes the
+dotted `mcpName.toolName` to `[A-Za-z0-9_-]` and appends `_1`, `_2`, … until the fallback is unused
+case-insensitively. `mcp.registry.renamed` reports each fallback with
+`reason: "invalid" | "reserved" | "collision"`. The model-facing `wireName` may therefore be a
+preserved local name or a namespaced fallback, while dotted `fullName` remains the canonical and
+resolvable identity.
 
 ### 3.3 `output_schema` size ceilings
 
@@ -249,9 +256,12 @@ throws inside the reporter itself (`:117-121`).
    `CapabilityToolMetadata` the entry agent used — collection of that metadata
    (`collectCapabilityToolMetadata`, `packages/loop/src/runtime/capability-tool-metadata.ts:23-33`) is
    owned by [loop-capability-composition](capability-composition.md).
-4. Inside `@clarvis/mcp-client`'s `makeRegistry` (`packages/mcp-client/src/registry.ts:64-129`),
-   every tool across every entry gets a wire name via `toWireToolName` seeded with the reserved set,
-   and is indexed by exact wire name, exact full name, and (first-wins) lowercased form of either.
+4. Inside `@clarvis/mcp-client`'s `makeRegistry` (`packages/mcp-client/src/registry.ts`), the first
+   pass reserves every safe, case-insensitively unique, non-host-reserved provider-local name. The
+   allocation pass preserves those exact names and sends every duplicate/case-colliding, invalid,
+   or reserved local name through `toWireToolName`'s sanitized namespaced fallback. Every tool is
+   indexed by exact wire name, exact dotted full name, and the first lowercased form of either;
+   dotted `fullName` remains canonical.
 
 ### 4.2 `openToolPool` — acquiring the pool and validating it against profiles
 
@@ -465,7 +475,7 @@ can reclassify `shell` as `read` (`:49-56`, pinned by `packages/loop/tests/unit/
 | INV-055 | An `output_schema` exceeding `OUTPUT_SCHEMA_LIMITS` (containers, depth, single-string length) is rejected before Ajv compiles it, as is a cyclic graph or an accessor-backed property. | `packages/loop/src/runtime/tools/result-contract.ts:43-101` | `packages/loop/tests/unit/result-contract.test.ts:119-149` |
 | INV-056 | A non-`Error` thrown during schema compilation is coalesced via `String(err)` into a `ValidationError`, not propagated raw. | `packages/loop/src/runtime/tools/result-contract.ts:131-137` | `packages/loop/tests/unit/result-contract.test.ts:152-173` |
 | INV-057 | `RESERVED_WIRE_NAMES` is *derived from* (not hand-copied alongside) `BUILTIN_WIRE_NAMES` concatenated with `AGENT_TOOL_WIRE_NAMES` — the two lists must literally be the same array. | `packages/loop/src/runtime/tools/wire-names.ts:119-122` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:32-34` |
-| INV-058 | An MCP tool sanitizing to a built-in's wire name (`submit_result`, `ask_user`, `read_file`, `delegate_task`) never takes it — the built-in keeps the name; the MCP tool is still resolvable by its dotted `mcp.tool` address. | `packages/loop/src/runtime/tools/mcp-registry.ts:37`, `packages/mcp-client/src/registry.ts:30-42` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:36-48` |
+| INV-058 | A wire-safe, case-insensitively unique, non-host-reserved MCP local name is preserved exactly. Eligible locals are reserved before fallbacks, making their ownership independent of entry order. Duplicate/case-colliding, invalid, or reserved locals use a sanitized namespaced fallback; a built-in name such as `submit_result`, `ask_user`, `read_file`, or `delegate_task` is never taken, and dotted `mcp.tool` remains canonical and resolvable. | `buildRegistry` in `packages/loop/src/runtime/tools/mcp-registry.ts`; `makeRegistry` and `toWireToolName` in `packages/mcp-client/src/registry.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` (`"an MCP extension tool named … never takes the built-in's name"`); `packages/mcp-client/tests/unit/registry.test.ts` (`"preserves a unique provider-safe local name for skill/tool compatibility"`, `"falls back to namespaced names when local names collide across servers"`, and `"reserves a unique local name before allocating colliding namespaced fallbacks"`) |
 | INV-059 | A capability's tool metadata (`reservedWireNames`, `toolEffects`) is collected from **every registered capability**, including one whose `forRun()` returns `null` for this run — declaration is independent of activation. | `packages/loop/src/runtime/capability-tool-metadata.ts:23-33` (owned by [loop-capability-composition](capability-composition.md)) | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:74-81` |
 | INV-060 | An MCP tool colliding with a *capability's* reserved name is blocked the same way, once passed through `buildRegistry`; without passing it, the engine alone provides no such protection. | `packages/loop/src/runtime/tools/mcp-registry.ts:33-37` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:83-93`, `:102-108` |
 | INV-061 | A tool-effect classifier built from declared `toolEffects` answers the declared effect for a declared name and `"unknown"` for any undeclared name. | `packages/loop/src/runtime/tools/tool-effect.ts:57-67` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:95-100` |

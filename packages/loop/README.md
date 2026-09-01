@@ -143,7 +143,12 @@ Built-ins cover:
   and admitted by that run's native tools; a verified directory created through an explicit absolute
   POSIX `mktemp -d` template joins the same run-owned set, and every member is removed after the run
   record is persisted;
-- skills;
+- skills, including package-scoped helper execution for roots the host explicitly approves: the
+  loop passes only each selected skill's own directory to command tools, never executes a helper on
+  selection, and relies on `@clarvis/tools` to protect it from native mutations and mount it
+  read-only when a native sandbox is active;
+- bounded MCP initialization instructions, grouped by server and added as a system section for the
+  entry agent and spawned subagents after the connection pool opens;
 - user elicitation;
 - lifecycle hooks;
 - exact user skill-command expansion observers, carried as host-derived request context and fired

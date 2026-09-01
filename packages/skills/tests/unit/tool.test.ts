@@ -9,7 +9,7 @@ describe("loadSkillTool definition", () => {
     expect(loadSkillTool.toolName).toBe(LOAD_SKILL_TOOL_NAME);
   });
 
-  it("requires name and offers an optional resource", () => {
+  it("requires name and offers an optional resource continuation cursor", () => {
     const schema = loadSkillTool.inputSchema as {
       required: string[];
       additionalProperties: boolean;
@@ -17,7 +17,7 @@ describe("loadSkillTool definition", () => {
     };
     expect(schema.required).toEqual(["name"]);
     expect(schema.additionalProperties).toBe(false);
-    expect(Object.keys(schema.properties)).toEqual(["name", "resource"]);
+    expect(Object.keys(schema.properties)).toEqual(["name", "resource", "offset"]);
   });
 
   it("tells the model to omit resource when loading the skill body", () => {

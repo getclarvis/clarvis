@@ -1,3 +1,4 @@
+import type { BoundedTextChunk } from "./bounded-read.ts";
 import type { SkillFrontmatter } from "./schema.ts";
 
 /**
@@ -34,6 +35,8 @@ export interface SkillRoot {
   validation?: "compatible" | "agent-skills";
   /** Filesystem-resolved package boundary that discovered paths may not escape. */
   confinementRoot?: string;
+  /** Host approval for skills under this root to expose their own directory for execution. */
+  executionRoot?: string;
 }
 
 /**
@@ -56,6 +59,8 @@ export interface SkillRootInput {
   validation?: "compatible" | "agent-skills";
   /** Optional package boundary; resolved like {@link SkillRootInput.path}. */
   confinementRoot?: string;
+  /** Optional host approval for discovered skills to expose their own directory to commands. */
+  executionRoot?: string;
 }
 
 /**
@@ -108,6 +113,16 @@ export interface SkillPresentation {
   icons?: SkillIcons;
   color?: string;
   starterPrompt?: string;
+}
+
+/** One external tool dependency declared by a skill's harness sidecar. */
+export interface SkillToolDependency {
+  type: "mcp";
+  /** MCP server identity expected by the skill. */
+  value: string;
+  description?: string;
+  transport?: string;
+  url?: string;
 }
 
 /**
@@ -165,6 +180,8 @@ export interface SkillInfo {
    * manifest nor a sidecar carried any presentation field.
    */
   presentation?: SkillPresentation;
+  /** MCP servers the skill needs before it can be offered in the model catalog. */
+  dependencies?: SkillToolDependency[];
   /**
    * The required catalog fields Clarvis supplied for this skill because the
    * manifest carried no usable value; absent when everything was authored.
@@ -176,6 +193,8 @@ export interface SkillInfo {
   root: string;
   /** Absolute path of the skill's own directory. */
   dir: string;
+  /** Host-approved skill directory for bundled helper execution. */
+  executionRoot?: string;
   /** Absolute path of the skill's `SKILL.md` file. */
   path: string;
   /**
@@ -226,6 +245,13 @@ export interface SkillRegistry {
   resource(name: string, rel: string): string;
   /** Read one confined bundled resource as UTF-8 text. */
   readResource(name: string, rel: string): string;
+  /** Read one bounded UTF-8 page of a confined bundled resource. */
+  readResourceChunk(
+    name: string,
+    rel: string,
+    offset?: number,
+    maxChars?: number,
+  ): BoundedTextChunk;
   /** Number of distinct merged skills. */
   readonly size: number;
 }

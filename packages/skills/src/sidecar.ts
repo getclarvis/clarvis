@@ -9,23 +9,57 @@ import {
   MAX_SKILL_SIDECAR_CHARS,
   MAX_SKILL_STARTER_PROMPT_CHARS,
 } from "./limits.ts";
-import type { SkillIcons, SkillPresentation } from "./types.ts";
+import type { SkillIcons, SkillPresentation, SkillToolDependency } from "./types.ts";
 
 /**
- * What a harness-directed sidecar contributes to a skill: presentation metadata
- * and the catalog-suppression axis.
+ * What a harness-directed sidecar contributes to a skill: presentation metadata,
+ * MCP tool dependencies, and the catalog-suppression axis.
  *
  * @remarks
- * Both are read by the harness and are never rendered to the model. The two
- * gating axes stay separate: `catalogSuppressed` withholds the skill from the
- * catalog injected into a run's context while leaving it explicitly loadable,
- * whereas frontmatter's `user-invocable` filters the slash listing a user sees.
- * A skill may carry either, both, or neither.
+ * These fields are read by the harness and are never rendered verbatim to the
+ * model. The two gating axes stay separate: `catalogSuppressed` withholds the
+ * skill from the catalog injected into a run's context while leaving it
+ * explicitly loadable, whereas frontmatter's `user-invocable` filters the slash
+ * listing a user sees. Dependencies filter implicit availability without
+ * changing either axis.
  */
 export interface SkillSidecar {
   presentation?: SkillPresentation;
+  dependencies?: SkillToolDependency[];
   /** Whether the skill is withheld from the model-facing catalog. */
   catalogSuppressed: boolean;
+}
+
+const MAX_SKILL_TOOL_DEPENDENCIES = 64;
+const MAX_SKILL_DEPENDENCY_VALUE_CHARS = 256;
+
+function readToolDependencies(root: Record<string, unknown>): SkillToolDependency[] | undefined {
+  const dependencies = root.dependencies;
+  if (typeof dependencies !== "object" || dependencies === null || Array.isArray(dependencies)) {
+    return undefined;
+  }
+  const tools = (dependencies as Record<string, unknown>).tools;
+  if (!Array.isArray(tools)) return undefined;
+  const parsed = tools.slice(0, MAX_SKILL_TOOL_DEPENDENCIES).flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return [];
+    const record = entry as Record<string, unknown>;
+    if (record.type !== "mcp") return [];
+    const value = boundedText(record.value, MAX_SKILL_DEPENDENCY_VALUE_CHARS);
+    if (value === undefined) return [];
+    const description = boundedText(record.description, MAX_SKILL_SHORT_DESCRIPTION_CHARS);
+    const transport = boundedText(record.transport, MAX_SKILL_LABEL_CHARS);
+    const url = boundedText(record.url, MAX_SKILL_DEPENDENCY_VALUE_CHARS);
+    return [
+      {
+        type: "mcp" as const,
+        value,
+        ...(description === undefined ? {} : { description }),
+        ...(transport === undefined ? {} : { transport }),
+        ...(url === undefined ? {} : { url }),
+      },
+    ];
+  });
+  return parsed.length > 0 ? parsed : undefined;
 }
 
 /**
@@ -290,8 +324,10 @@ export function readSkillSidecar(
   const root = loadSidecarDocument(file, diagnostics);
   if (root === undefined) return undefined;
   const presentation = readPresentation(root);
+  const dependencies = readToolDependencies(root);
   return {
     ...(presentation === undefined ? {} : { presentation }),
+    ...(dependencies === undefined ? {} : { dependencies }),
     catalogSuppressed: readCatalogSuppressed(root),
   };
 }

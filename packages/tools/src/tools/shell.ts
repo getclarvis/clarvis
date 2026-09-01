@@ -186,7 +186,7 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
             cwdArg,
             config.workspaceRoot,
             config.confineToWorkspace,
-            config.temporaryRoots,
+            [...config.temporaryRoots, ...config.skillExecutionRoots],
             config.logger,
           )
         : config.workspaceRoot;

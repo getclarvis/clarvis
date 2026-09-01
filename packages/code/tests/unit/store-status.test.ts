@@ -89,6 +89,20 @@ test("run totals are not doubled when a stored-trace replay follows the live str
   expect(run.toolCalls).toBe(1);
 });
 
+test("MCP degradation is retained as run telemetry but never becomes transcript content", () => {
+  const store = replayStore([
+    ev({ type: "run_started", at: 0 }),
+    ev({
+      type: "mcp_degraded",
+      at: 1,
+      servers: [{ name: "docs", reason: "missing DOCS_TOKEN" }],
+    }),
+  ]);
+
+  expect(store.nodes.some((node) => node.text.includes("missing DOCS_TOKEN"))).toBe(false);
+  expect(store.publicationBatches).toHaveLength(0);
+});
+
 test("settleRun sweeps leftover running nodes when a run is cancelled or lost", () => {
   createRoot(() => {
     const store = createTranscriptStore();

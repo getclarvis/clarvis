@@ -183,6 +183,15 @@ persisted profile remains unchanged (`createSettingsRunAssembler`, `addAutomatic
 hooks enter with that same atomic contribution; workspace-authored executable content remains gated
 by the workspace fingerprint approval described below.
 
+An admitted plugin skill root carries host approval for bundled-helper execution, but approval is
+projected per discovered skill: `buildResolvedSkill` exposes only that skill's exact `dir` as
+`SkillInfo.executionRoot`, never the collection root or plugin checkout. The loop consumes those
+exact skill directories when it resolves command execution roots. Production: `skillRoots` in
+`packages/kernel/src/plugins/plugin-contributions.ts`, `buildResolvedSkill` in
+`packages/skills/src/registry.ts`, and `resolveSkillExecutionRoots` composition in
+`packages/loop/src/runtime/build-run-deps.ts`. Test: "exposes only the selected skill directory when
+its root approves helper execution" in `packages/skills/tests/integration/api.test.ts`.
+
 An exact empty root set is intentional: the loop exposes an empty skills provider without appending
 standard roots and without reporting a discovery failure. This keeps a custom Environment with no
 standalone or plugin skills truly empty (`emptySkillsProvider` and `dynamicSkills` in
@@ -198,14 +207,18 @@ definition produces `invalid` (`resolved` in
 No state silently substitutes `builtin:default`.
 
 `resolveActive` pins one contribution snapshot for the process. Each active plugin digest covers its
-resolved manifest (including MCP/hook companion semantics), bounded agent files, the raw bytes of
-packaged skill manifests/resources under the skills package's own limits, install record, resolved source revision, and every directly referenced
-package-local MCP, hook, or capability process file's content, size, executable mode, and relative
-path. If any skill in one plugin cannot be captured, that plugin's whole skill-root surface is
-withheld so a constant unavailable sentinel cannot mask sibling drift; independently valid
-non-skill contributions remain. The process-file surface is capped at 256 files, 8 MiB per file, and 32 MiB per plugin
-(`snapshotPluginExecutables`, `snapshot`, and `pin` in `packages/kernel/src/plugins`; `identity` and
-`resolveActive` in `packages/kernel/src/environments/environment-manager.ts`). Ordinary settings,
+resolved manifest (including MCP/hook companion semantics), bounded agent files, packaged skill
+manifests, install record, resolved source revision, and every directly referenced package-local
+MCP, hook, or capability process file's content, size, executable mode, and relative path. Packaged
+skill resources are hashed as streamed raw bytes by `hashBoundedFile`, capped at 8 MiB per file and
+32 MiB aggregate across the plugin; the canonical identity records relative path, digest, byte
+count, and executable mode. If any skill in one plugin cannot be captured, that plugin's whole
+skill-root surface is withheld so a constant unavailable sentinel cannot mask sibling drift;
+independently valid non-skill contributions remain. The process-file surface separately remains
+capped at 256 files, 8 MiB per file, and 32 MiB per plugin (`PLUGIN_SKILL_RESOURCE_LIMITS`,
+`skillSurface`, `snapshotPluginExecutables`, `snapshot`, and `pin` in
+`packages/kernel/src/plugins`; `identity` and `resolveActive` in
+`packages/kernel/src/environments/environment-manager.ts`). Ordinary settings,
 MCP and agent projections reuse those pinned parsed loadables and perform only an exact selection
 check. Skill-root projections repeat exact selected-content validation at the lazy read boundary.
 Immediately before each run
@@ -213,8 +226,10 @@ lease, `EnvironmentManager.assertRunSnapshot` rehashes all selected plugin and s
 bytes. Drift rejects that run with `unavailable` until reconnect, before any executable contribution
 can enter execution under the old fingerprint. Capability executable location retains its own full
 check at the executable boundary. Selected standalone skill digests cover effective catalog
-metadata, the manifest, and every bounded resource body; their full drift check occurs both at run
-admission and every `skillRoots` projection. The fingerprint
+metadata and the manifest; `standaloneCatalog` hashes each resource through the same raw streaming
+`hashBoundedFile` path, with the same 8 MiB per-file limit and a 32 MiB aggregate limit per
+standalone skill. Their full drift check occurs both at run admission and every `skillRoots`
+projection. The fingerprint
 also covers the qualified Environment id, definition revision, status, issues, and applicable trust
 state/fingerprint. Hook definitions are part of the plugin manifest digest, but independent
 hook-approval state is excluded from Environment identity. Selection mutations return
@@ -262,16 +277,23 @@ If that unchanged target is untrusted, the global write neither activates it nor
 `restoreSelection` in `packages/kernel/src/environments/environment-manager.ts`; composition cases
 in `packages/kernel/tests/integration/environment-manager.test.ts`).
 
-A selected workspace definition containing plugins enters the existing workspace executable
-surface with its reference, exact definition revision, and qualified plugin list. Any file change
-therefore changes the workspace-trust fingerprint and requires a fresh approval before those plugins
-become active. A verdict for the currently selected workspace Environment never authorizes switching
-to another executable Environment; the target selection receives its own approval
+The workspace executable surface inventories every installed `scope: "workspace"` plugin from both
+repository-owned conventions, whether the current Environment selects it yet or not. Each entry
+contains its exact qualified ref and atomic contribution digest. A global plugin lives in an
+operator-owned inventory: installing it through the TUI is its approval, and selecting it from a
+workspace Environment requires no additional workspace approval. Repository-owned plugins are
+different: after the first-paint composer, Code asks automatically as soon as the complete app has
+the resolved trust state. Repository plugins stay inactive while that state is resolving. The one
+verdict covers the complete workspace fingerprint, every inventoried workspace plugin and every later Environment selection while their bytes
+remain unchanged; there is no per-plugin or per-Environment approval. Adding, removing, repairing,
+or changing a repository plugin changes the workspace fingerprint and returns the verdict to
+`changed`. Until approval, only selected workspace-owned plugins remain inactive; global plugins in
+the same Environment remain admitted
 (`workspaceTrustSurface` and `workspaceTargetNeedsApproval` in
 `packages/kernel/src/environments/environment-manager.ts`; `workspaceExecutableSurface` in
-`packages/kernel/src/config/workspace-trust.ts`). The selection write and trust approval are one
-recoverable operation: an approval failure restores the exact prior selection bytes. Plugin hooks
-are part of the selected plugin unit rather than a second approval projection
+`packages/kernel/src/config/workspace-trust.ts`). A selection may still carry the workspace approval
+when the proactive question was declined, and an approval failure restores the exact prior selection
+bytes. Plugin hooks are part of the selected plugin unit rather than a second approval projection
 (`EnvironmentService.select`, `restoreSelection`, and `pluginSettingsContributions`; test
 `packages/kernel/tests/integration/environment-manager.test.ts` "restores the prior selection").
 
@@ -333,32 +355,43 @@ bytes, contribution drift is rejected at every foreground and memory-indexer run
 and an already running kernel retains its original fingerprint. Exact lazy skill catalog, body, and
 resource reads repeat full selected-content validation rather than falling back to a last-good scan;
 only atomically captured plugin skill surfaces and exact builtin/custom standalone includes reach
-the runtime. Read-only/control-plane projections use the pinned parse and cannot consume drifted bytes. Trust
+the runtime. Skill resources enter that identity through raw streaming hashes capped at 8 MiB per
+file and 32 MiB aggregate (per plugin for packaged skills, per skill for standalone inventory), and
+an approved plugin root exposes only each discovered skill directory for helper execution.
+Read-only/control-plane projections use the pinned parse and cannot consume drifted bytes. Trust
 transitions may recompose only at an idle boundary.
 
 - **Production:** `PluginContributions.pin`, `assertUnchanged`,
-  `snapshotPluginExecutables`, `EnvironmentManager.assertRunSnapshot`,
+  `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,
+  `standaloneCatalog`, `EnvironmentManager.assertRunSnapshot`,
   `assertPinnedStandaloneSkills`, `EnvironmentManager.skillRoots`, `withRunLease`, the memory
   factory's host executor, pinned `resolveActive`, revision CAS,
-  and preview fingerprint comparison in `packages/kernel/src`.
-- **Test:** the stale-preview, global-precedence, contribution-fingerprint, and trust-transition
+  and preview fingerprint comparison in `packages/kernel/src`; `hashBoundedFile` and the two
+  `MAX_SKILL_RESOURCE_*` snapshot limits in `packages/skills/src`.
+- **Test:** the stale-preview, global-precedence, contribution-fingerprint, standalone-resource
+  drift, and trust-transition
   cases in `packages/kernel/tests/integration/environment-manager.test.ts`, including process-file
   fingerprint drift; the MCP/hook/capability process-file drift cases in
-  `packages/kernel/tests/integration/plugin-contributions.test.ts`, including invalid-sibling
-  withholding; builtin exact-root filtering in `environment-manager.test.ts`; lazy exact-root rejection in
-  `packages/loop/tests/integration/execute-run-entrypoints.test.ts`; the run-lease helper and memory
-  factory executor tests; and the selected lifecycle case
-  in `packages/kernel/tests/integration/run-service.smoke.test.ts`.
+  `packages/kernel/tests/integration/plugin-contributions.test.ts`, including invalid-sibling and
+  aggregate-resource withholding; standalone aggregate-resource withholding and builtin exact-root
+  filtering in `environment-manager.test.ts`;
+  lazy exact-root rejection in `packages/loop/tests/integration/execute-run-entrypoints.test.ts`;
+  the run-lease helper and memory factory executor tests; and the selected lifecycle case in
+  `packages/kernel/tests/integration/run-service.smoke.test.ts`.
 
 ### INV-318 — Workspace executable activation participates in workspace trust
 
-A repository-authored Environment with plugins is inactive until its current executable surface is
-trusted; selection can approve only the exact previewed fingerprint.
+All repository-owned `scope: "workspace"` plugins share one content-addressed workspace approval,
+including installed checkouts not yet selected by an Environment. Code asks proactively at session
+start. Global plugins installed into operator-owned inventories are already consented and remain
+outside this gate.
 
 - **Production:** `workspaceTrustSurface`, `preview`, `select`, and
   `assertWorkspaceTrustTransitionAllowed` in
   `packages/kernel/src/environments/environment-manager.ts` and the file config store.
-- **Test:** the preview/approval, switching, and idle trust-recomposition cases in
+- **Test:** the complete pre-selection inventory fingerprint, global-plugin-without-workspace-
+  approval, mixed-scope partial-admission, one-approval Environment switching, proactive Code prompt,
+  and idle trust-recomposition cases in
   `packages/kernel/tests/integration/environment-manager.test.ts`; the extension-surface case in
   `packages/kernel/tests/integration/workspace-trust.test.ts` pins file changes to the trust hash and
   proves active-run rejection occurs before the trust store is changed.
@@ -459,7 +492,7 @@ and cannot remove bytes other than the revision the caller inspected.
 | Invalid JSON/schema/scope | `invalid`, `invalid_selection` or `invalid_definition`; no fallback. |
 | Missing plugin or skill | `degraded` with the exact qualified missing reference; healthy selected entries remain active. |
 | Invalid plugin manifest | `degraded`; that plugin is present but inactive. |
-| Workspace trust absent | `degraded`, `workspace_untrusted`; selected workspace Environment plugins are inactive. |
+| Workspace trust absent | `degraded`, `workspace_untrusted`; selected `scope: "workspace"` plugins are inactive. Global installed plugins do not require this verdict. |
 | Definition changed after read or another Clarvis writer holds its definition/catalog lease | revision-bound mutation returns `conflict`. |
 | Definition catalog reached 128 definitions or 256 entries | `create` returns `resource_exhausted`; no partial file is written. |
 | Existing target is unreadable or non-regular | `create` returns `unavailable` and never replaces it. |

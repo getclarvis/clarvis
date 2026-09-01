@@ -22,6 +22,12 @@ export interface PluginInstallTarget {
   source: PluginSource;
 }
 
+/** A normalized marketplace source the kernel can fetch without dialect inference. */
+export type PluginInstallSource =
+  | { kind: "git"; url: string; subdir?: string; ref?: string; sha?: string }
+  | { kind: "local"; path: string }
+  | { kind: "npm"; package: string; version?: string; registry?: string };
+
 /** One external executable a plugin offers to a named capability. */
 export interface PluginCapabilityExecutable {
   capability: string;
@@ -53,6 +59,13 @@ export interface PluginContributions {
   executables: string[];
 }
 
+/** Publisher identity declared by the plugin itself. */
+export interface PluginAuthor {
+  name: string;
+  email?: string;
+  url?: string;
+}
+
 /** Installed plugin as presented to the UI. */
 export interface PluginView {
   name: string;
@@ -65,6 +78,12 @@ export interface PluginView {
   enabled: boolean;
   version?: string;
   description?: string;
+  /** Publisher and discovery metadata, preserved from the installed manifest. */
+  author?: PluginAuthor;
+  homepage?: string;
+  repository?: string;
+  license?: string;
+  keywords?: string[];
   /**
    * A name the manifest asks to be shown under, in place of the directory name.
    *
@@ -75,6 +94,18 @@ export interface PluginView {
   display_name?: string;
   /** A one-line summary the manifest offers for the plugin list; display data only. */
   short_description?: string;
+  long_description?: string;
+  developer_name?: string;
+  category?: string;
+  capabilities?: string[];
+  website_url?: string;
+  privacy_policy_url?: string;
+  terms_of_service_url?: string;
+  default_prompt?: string[];
+  brand_color?: string;
+  composer_icon?: string;
+  logo?: string;
+  screenshots?: string[];
   /** Recorded Git origin for a managed install, including a selected subdirectory. */
   install_source?: string;
   /** Resolved Git revision of the installed checkout. */
@@ -110,6 +141,9 @@ export interface PluginService {
    * @returns The newly installed plugin view.
    */
   install(url: string, subdir?: string, target?: PluginInstallTarget): Promise<PluginView>;
+
+  /** Install one normalized local, Git, or npm marketplace source. */
+  installSource(source: PluginInstallSource, target?: PluginInstallTarget): Promise<PluginView>;
 
   /**
    * Update a Git-installed plugin to origin HEAD. Repository-root plugins reset

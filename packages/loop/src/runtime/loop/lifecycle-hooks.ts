@@ -57,7 +57,9 @@ function boundedHookCall<T>(
 type ObserverMethod =
   | "onRunStart"
   | "onRunEnd"
+  | "onSubagentStart"
   | "onSubagentComplete"
+  | "onPostCompact"
   | "onModelCallError"
   | "onBudgetExhausted"
   | "onUserSteer";

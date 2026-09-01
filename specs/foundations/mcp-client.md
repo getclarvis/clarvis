@@ -10,7 +10,8 @@ client and one of three transports (`packages/mcp-client/src/client.ts:345`), wr
 a self-healing session that reconnects, health-pings and trips a circuit breaker
 (`packages/mcp-client/src/resilient-session.ts:105`), pools shareable connections behind refcounted
 leases with an idle TTL (`packages/mcp-client/src/connection-manager.ts:469`), and projects each
-server's tools into collision-free wire names (`packages/mcp-client/src/registry.ts:148`). For
+server's tools into collision-free wire names (`makeRegistry` in
+`packages/mcp-client/src/registry.ts`). For
 remote HTTP/SSE servers it also coordinates SDK OAuth through an interactive browser callback and a
 private persistent credential store (`packages/mcp-client/src/oauth.ts:187-210`,
 `packages/mcp-client/src/oauth-store.ts:199-247`).
@@ -57,7 +58,7 @@ is a pure re-export list (`packages/mcp-client/src/index.ts:18-116`).
 | Symbol | Kind | Defined at | Value / shape |
 |---|---|---|---|
 | `openConnection` | fn | `packages/mcp-client/src/connection.ts:105` | `(OpenConnectionOptions) => Promise<OpenedConnection>` |
-| `OpenedConnection` | type | `packages/mcp-client/src/connection.ts:50` | `{ conn: MCPConnection; tools: NamespacedToolDescriptor[] }` |
+| `OpenedConnection` | type | `packages/mcp-client/src/connection.ts` | `{ conn: MCPConnection; tools: NamespacedToolDescriptor[] }`; `conn.instructions?` carries bounded initialize guidance |
 | `NamespacedToolDescriptor` | type | `packages/mcp-client/src/connection.ts:43` | `{ name; description?; inputSchema: Record<string, unknown>; kind?: ResourceToolKind }` |
 | `MCPConnectionFailedError` | class | `packages/mcp-client/src/connection.ts:55` | `code: "mcp_connection_failed"`, `mcpName`, `transport` |
 | `PoolScope` | type | `packages/mcp-client/src/connection.ts:67` | `{ workspace: string; owner: string }` |
@@ -101,12 +102,12 @@ catalog bounds, `onEvent` and `logger`.
 
 | Symbol | Kind | Defined at | Value / shape |
 |---|---|---|---|
-| `toWireToolName` | fn | `packages/mcp-client/src/registry.ts:30` | `(fullName, used: Set<string>, onRename?) => string` |
-| `buildRegistry` | fn | `packages/mcp-client/src/registry.ts:148` | `(entries, reserved: readonly string[], options?: { logger }) => NamespacedRegistry` |
-| `poolToolNames` | fn | `packages/mcp-client/src/registry.ts:168` | `(entries) => string[]` of `mcpName.toolName` |
-| `selectTools` | fn | `packages/mcp-client/src/registry.ts:181` | `(entries, names?) => RegistryEntry[]` |
-| `RegistryEntry` | type | `packages/mcp-client/src/registry.ts:49` | `{ conn: MCPConnection; tools: NamespacedToolDescriptor[] }` |
-| `NamespacedRegistry` | type | re-exported at `packages/mcp-client/src/registry.ts:11` | defined in `packages/capability/src/run.ts:142` |
+| `toWireToolName` | fn | `packages/mcp-client/src/registry.ts` (`toWireToolName`) | `(fullName, used: Set<string>, onRename?) => string` |
+| `buildRegistry` | fn | `packages/mcp-client/src/registry.ts` (`buildRegistry`) | `(entries, reserved: readonly string[], options?: { logger }) => NamespacedRegistry` |
+| `poolToolNames` | fn | `packages/mcp-client/src/registry.ts` (`poolToolNames`) | `(entries) => string[]` of `mcpName.toolName` |
+| `selectTools` | fn | `packages/mcp-client/src/registry.ts` (`selectTools`) | `(entries, names?) => RegistryEntry[]` |
+| `RegistryEntry` | type | `packages/mcp-client/src/registry.ts` (`RegistryEntry`) | `{ conn: MCPConnection; tools: NamespacedToolDescriptor[] }` |
+| `NamespacedRegistry` | type | re-exported by `packages/mcp-client/src/registry.ts` | defined by `NamespacedRegistry` in `packages/capability/src/run.ts` |
 | `isMcpRequestTimeout` | fn | `packages/mcp-client/src/errors.ts:11` | `(err: unknown) => boolean` |
 | `isMcpProtocolError` | fn | `packages/mcp-client/src/errors.ts:37` | `(err: unknown) => boolean` |
 | `mcpSpawnArgv` | fn | `packages/mcp-client/src/bun-stdio-client.ts:38` | `(command, args, platform = process.platform) => { argv: string[]; verbatim: boolean }` |
@@ -125,7 +126,7 @@ catalog bounds, `onEvent` and `logger`.
 | `DEFAULT_MAX_RESOURCE_CATALOG_ENTRIES` | const | `packages/mcp-client/src/resources.ts:8` | `5_000` |
 | `DEFAULT_MAX_RESOURCE_CATALOG_BYTES` | const | `packages/mcp-client/src/resources.ts:9` | `4 * 1024 * 1024` |
 | `MAX_RESOURCE_CATALOG_PAGES` | const | `packages/mcp-client/src/resources.ts:7` | `50` |
-| `BuildRegistryOptions` | type | `packages/mcp-client/src/registry.ts:157` | `{ logger? }` — where a wire-name rename is reported (`:157-161`) |
+| `BuildRegistryOptions` | type | `packages/mcp-client/src/registry.ts` (`BuildRegistryOptions`) | `{ logger? }` — where a wire-name fallback is reported |
 | `createServerStderrForwarder` | fn | `packages/mcp-client/src/server-stderr.ts:52` | `(options) => ServerStderrForwarder` |
 | `drainStderrStream` | fn | `packages/mcp-client/src/server-stderr.ts:116` | `(stream, forwarder) => void` |
 | `DEFAULT_SERVER_STDERR_MAX_BYTES` | const | `packages/mcp-client/src/server-stderr.ts:5` | `64 * 1024` |
@@ -195,14 +196,12 @@ their owned sources.
 
 ### 3.2 The stdio child's environment
 
-`{ ...getDefaultEnvironment(), ...customEnv }` — the SDK's fixed safe base with the server's own
-conditionally interpolated `env` block layered on top (`buildTransport` in
-`packages/mcp-client/src/client.ts`). The caller's `environment` is used for
-`${VAR}` lookup only, never handed to the child. Four tests pin the consequence: a server declaring
-no `env` sees none of the host's variables, a server declaring an unrelated `env` still sees none,
-an explicitly interpolated value does arrive, and the child's key set is identical whether the caller
-passed `process.env` or an injected map
-(`packages/mcp-client/tests/unit/mcp-transport-env.test.ts:33-63`).
+`{ ...getDefaultEnvironment(), ...forwardedEnv, ...customEnv }` — the SDK's fixed safe base, only
+the host keys explicitly named by `env_vars`, and the server's own conditionally interpolated `env`
+block. The caller's remaining environment is used for `${VAR}` lookup only, never handed wholesale
+to the child. Production: `resolveForwardedEnvironment` and `buildTransport` in
+`packages/mcp-client/src/client.ts`. Test: the environment-forwarding cases in
+`packages/mcp-client/tests/unit/mcp-transport-env.test.ts`.
 
 ### 3.3 `${VAR}` interpolation
 
@@ -219,19 +218,40 @@ are copied literally. This is the portable Agent Plugin seam: its adapter has al
 `PLUGIN_ROOT`/`PLUGIN_DATA`, and a second general `${VAR}` pass would violate that format. Pinned by
 `packages/mcp-client/tests/component/transport-builder.test.ts` (literal portable placeholders).
 
+Remote declarations may additionally derive `Authorization: Bearer <value>` from
+`bearer_token_env_var` and arbitrary header values from `env_http_headers`. Missing variables fail
+before the transport is built, and resolved values remain confined to the resource origin by
+`createMCPRemoteFetch`. Production: `remoteHeaders` and `buildTransport` in
+`packages/mcp-client/src/client.ts`. Test: the environment-backed header cases in
+`packages/mcp-client/tests/component/transport-builder.test.ts`.
+
 ### 3.4 Wire tool names
 
-`toWireToolName` replaces every character outside `[A-Za-z0-9_-]` with `_` and then appends `_1`,
-`_2`, … until the name is unused (`packages/mcp-client/src/registry.ts:35-41`). The uniqueness set is
-pre-seeded with the caller's `reserved` list (`packages/mcp-client/src/registry.ts:76`). Concretely, with
-`reserved = ["submit_result","ask_user","load_skill","read_file"]`, a server named `load` exposing a
-tool `skill` is offered as `load_skill_1`
-(`packages/mcp-client/tests/unit/registry.test.ts:233-238`); with `reserved = []` the same input
-yields `load_skill` (`:240-246`).
+`makeRegistry` performs name allocation in two passes (`packages/mcp-client/src/registry.ts`,
+`makeRegistry`). The first pass counts provider-local names case-insensitively and reserves every
+local spelling that matches `[A-Za-z0-9_-]+`, occurs exactly once, and does not collide
+case-insensitively with the caller's host-reserved names. Every such tool keeps that exact local
+spelling as its model-facing `wireName`. Reserving the complete eligible set before any fallback is
+allocated prevents a namespaced fallback from taking a later local name, so reversing connection
+order cannot change which provider owns that local spelling. The registry test
+`"reserves a unique local name before allocating colliding namespaced fallbacks"` runs both orders
+and pins that rule (`packages/mcp-client/tests/unit/registry.test.ts`).
+
+A duplicate or case-colliding local name, a spelling outside the safe character set, or a
+host-reserved local name falls back to the dotted `mcpName.toolName` projected by
+`toWireToolName` (`packages/mcp-client/src/registry.ts`, `toWireToolName`). That projection replaces
+every character outside `[A-Za-z0-9_-]` with `_` and appends `_1`, `_2`, … until unused,
+case-insensitively. A unique safe local name therefore remains `diagram_create_mermaid`; two servers
+offering `search`/`SEARCH` receive namespaced fallbacks. The tests
+`"preserves a unique provider-safe local name for skill/tool compatibility"` and
+`"falls back to namespaced names when local names collide across servers"` pin both branches
+(`packages/mcp-client/tests/unit/registry.test.ts`).
 
 Each tool is indexed four ways — exact wire name, dotted `mcpName.toolName`, and the lowercased form
-of each, first-wins on lowercase collision (`packages/mcp-client/src/registry.ts:113-118`). `NamespacedTool`
-(`packages/capability/src/run.ts:365`) carries both `fullName` and `wireName`.
+of each, first-wins on lowercase collision (`packages/mcp-client/src/registry.ts`, `makeRegistry`).
+`NamespacedTool` (`packages/capability/src/run.ts`, `NamespacedTool`) carries both `fullName` and
+`wireName`; the dotted `fullName` remains the canonical identity and is resolvable regardless of
+which model-facing spelling was allocated.
 
 ### 3.5 `ConnectionEvent`
 
@@ -337,8 +357,11 @@ whole UTF-8 document at 1 MiB (`:116-125`, `:231-240`).
 
 The record key is SHA-256 over the workspace, owner and canonical resource URL separated by NUL
 bytes (`packages/mcp-client/src/oauth.ts:161-170`); none of those raw identities or the credentials
-appear as JSON keys. The callback URL, when stored, must be the exact loopback form
-`http://127.0.0.1:<port>/oauth/callback` (`packages/mcp-client/src/oauth-store.ts:19-20,59-68`).
+appear as JSON keys. The callback URL, when stored, must be credential-free HTTPS or
+credential-free loopback HTTP with an explicit port; query strings and fragments are refused. The
+path may be the configured callback path or its stable server-specific suffix. Production:
+`validRedirect` in `packages/mcp-client/src/oauth-store.ts`. Test: redirect validation in
+`packages/mcp-client/tests/integration/oauth-store.test.ts`.
 The default host path is `<global>/state/mcp-oauth.json`
 (`packages/paths/src/global.ts:25,118`).
 
@@ -431,8 +454,12 @@ Order, from `packages/mcp-client/src/connection.ts:125`:
 5. If `resourcesEnabled` **and** `server.resources !== false`, probe the resource catalog and append
    the two synthetic descriptors (`:172-182`). Any throw here is caught and logged at `warn` as
    `mcp.resources.probe_failed`; the connection survives without resource tools (`:183-188`).
-6. Create the resilient session (`:191-205`).
-7. Build the `MCPConnection` façade (`:207-238`): `status` delegates to the session, `callTool` runs
+6. Read, trim and bound the server's initialize `instructions` to 8,192 Unicode code points.
+   Production: `openConnection` and `MAX_MCP_SERVER_INSTRUCTIONS_CHARS` in
+   `packages/mcp-client/src/connection.ts`. Test: `packages/mcp-client/tests/component/connection.test.ts`
+   (`retains bounded initialize instructions on the opened connection`).
+7. Create the resilient session (`:191-205`).
+8. Build the `MCPConnection` façade (`:207-238`): `status` delegates to the session, `callTool` runs
    through `session.invoke` with `interpretCallResult`, `readResource` through `session.invoke` with
    `resourceReadResult`, and `listResources` answers **synchronously from the catalog captured at open
    time**, never touching the session (`:226-228`).
@@ -760,10 +787,13 @@ and the replacement character released for a dangling sequence at end (`:200-207
 
 ### 4.13 Building the registry
 
-`makeRegistry` (`packages/mcp-client/src/registry.ts:66`) walks entries in order, assigns each tool a wire name from the
-seeded `used` set, warns on every rename with `reason: "reserved" | "collision"` decided by whether
-the *base* name was in the reserved set (`:82-95`), and builds the four indexes. `resolve` tries
-exact wire name → exact full name → lowercased either (`:124-128`). `allUnavailable` is `false` when
+`makeRegistry` (`packages/mcp-client/src/registry.ts`) first derives the case-insensitive local-name
+counts and reserves all unique, safe, non-host-reserved local spellings. Its allocation pass keeps
+those exact names and sends every duplicate/case-colliding, invalid, or reserved local name through
+the sanitized namespaced fallback in `toWireToolName`. A fallback emits `mcp.registry.renamed` with
+`reason: "invalid" | "reserved" | "collision"`; a suffix collision is reported by
+`toWireToolName`'s rename callback. `resolve` then tries exact wire name → exact dotted full name →
+lowercased either, preserving `fullName` as the canonical identity. `allUnavailable` is `false` when
 there are no connections and otherwise requires **every** connection to be `unavailable` (`:129-132`)
 — the test comments on why: "One healthy server is enough for the pool to be usable — 'all' is the
 whole predicate, and an `.some` written here would strand a run whose other servers are fine"
@@ -772,19 +802,30 @@ whole predicate, and an `.some` written here would strand a run whose other serv
 ### 4.14 Interactive remote OAuth and durable credentials
 
 `createMCPAuthorizationCoordinator` validates the callback port and a positive finite human timeout,
-then clamps that timeout to 30 minutes (`packages/mcp-client/src/oauth.ts:187-203`). Its listener
-binds only `127.0.0.1`, prefers port 53682 and falls back to an ephemeral port only when the preferred
-one is occupied (`:257-300`). The only accepted request is `GET /oauth/callback`; state and code have
-explicit bounds, state is compared timing-safely, and the HTML response never includes either value
-(`:109-141`, `:212-255`).
+then clamps that timeout to 30 minutes. A portless `http://127.0.0.1/<path>` receives the actual
+listener port; other loopback names require an explicit matching port. Configured HTTPS callbacks
+are accepted for an ingress/proxy and bind locally on the selected port. The listener accepts only
+the path selected for that session, bounds state/code, compares state timing-safely, and never
+reflects either value into HTML. Production: `ensureServer`, `withCallbackId`, and `handleCallback`
+in `packages/mcp-client/src/oauth.ts`. Test: the callback configuration and state cases in
+`packages/mcp-client/tests/integration/oauth.test.ts`.
 
-One session implements the SDK's `OAuthClientProvider`: stored client registration/tokens are reused
-only when their redirect URL still matches, SDK client metadata requests authorization-code plus
-refresh-token grants, and changes are persisted through the credential store. Each interactive flow
+One session implements the SDK's `OAuthClientProvider`: a configured `client_id` is preferred as a
+pre-registered public client; a configured public HTTPS `client_metadata_url` is exposed for CIMD;
+otherwise the SDK may use dynamic registration. Clarvis does not depend on a vendor-hosted CIMD
+document, so automatic CIMD requires the operator or plugin to supply that URL. Stored registration
+and tokens are reused only when their redirect URL still matches, SDK client metadata requests
+authorization-code plus refresh-token grants, and changes are persisted through the credential
+store. Each interactive flow
 gets a fresh 32-byte state and verifier; concurrent SDK requests share the already-open browser flow,
 and the opened URL is paired with its own PKCE verifier even when starts overlap. Completion clears
 that flow so a later challenge on the same connection starts cleanly
-(`packages/mcp-client/src/oauth.ts:303-480`). Before browser opening, the authorization URL must be
+(`packages/mcp-client/src/oauth.ts`). Callback selection distinguishes pre-registered versus
+dynamic clients and issuer-bound versus non-issuer responses: an eligible configured callback is
+reused; otherwise a stable server-specific callback suffix is appended or the pre-registered client
+falls back to the default loopback callback. When authorization metadata supplies an issuer, any
+returned `iss` must match; when issuer-bound responses are advertised, `iss` is required. Before
+browser opening, the authorization URL must be
 HTTPS or loopback HTTP; a missing, throwing or false-returning host opener fails explicitly
 (`:362-410`). `finishAuthorization`
 waits for the matching callback with cancellation and a separate human deadline, exchanges the code
@@ -848,9 +889,9 @@ Pinned: `packages/mcp-client/tests/integration/sdk-elicitation-surface.test.ts:6
 fixture at `packages/mcp-client/tests/fixtures/mcp-server.ts:6-21`).
 
 **MCP-01.** `buildRegistry` takes `reserved` as a **required** positional parameter; a host cannot
-forget it by omission. Production: `packages/mcp-client/src/registry.ts:148-154`.
-Pinned: `packages/mcp-client/tests/unit/registry.test.ts:233-246` (a reserved name forces `_1`;
-an empty reserved list does not).
+forget it by omission. Production: `buildRegistry` in `packages/mcp-client/src/registry.ts`.
+Pinned: the `"registry — the host's reserved names are honoured, whatever they are"` cases in
+`packages/mcp-client/tests/unit/registry.test.ts`.
 
 **MCP-02.** A stdio child's environment is `getDefaultEnvironment()` plus the server's own
 interpolated `env`, and never the caller's environment — regardless of whether the caller passed
@@ -984,8 +1025,10 @@ suppression notice. Production: `packages/mcp-client/src/server-stderr.ts:60-85`
 Pinned: `packages/mcp-client/tests/unit/server-stderr.test.ts:89-104`.
 
 **MCP-24.** `allUnavailable()` is `false` for an empty registry and requires every connection to be
-`unavailable` otherwise. Production: `packages/mcp-client/src/registry.ts:129-132`.
-Pinned: `packages/mcp-client/tests/unit/registry.test.ts:89-110`.
+`unavailable` otherwise. Production: `makeRegistry` in
+`packages/mcp-client/src/registry.ts`. Pinned: the `"allUnavailable is true only when EVERY
+connection is unavailable"` and empty-registry cases in
+`packages/mcp-client/tests/unit/registry.test.ts`.
 
 **MCP-25.** The connection façade's `listResources` never reaches the server: it answers from the
 catalog captured at open time. Production: `packages/mcp-client/src/connection.ts:226-228`.
@@ -998,10 +1041,12 @@ resource URL)` tuple and represented only by its SHA-256 digest. Production:
 `packages/mcp-client/src/oauth.ts:161-170`. Pinned:
 `packages/mcp-client/tests/integration/oauth.test.ts:56-67`.
 
-**MCP-27.** A callback code is accepted only at the loopback callback path with the matching random
-256-bit state; neither state nor code is reflected to the browser. Production:
-`packages/mcp-client/src/oauth.ts:109-141,212-255,316-324`. Pinned:
-`packages/mcp-client/tests/integration/oauth.test.ts:69-102`.
+**MCP-27.** A callback code is accepted only at the session-selected callback path with the matching
+random 256-bit state; neither state nor code is reflected to the browser. A known issuer is checked
+whenever `iss` is supplied and is required when authorization metadata advertises issuer-bound
+responses. Production: `handleCallback`, `issuerMetadata`, and `redirectToAuthorization` in
+`packages/mcp-client/src/oauth.ts`. Test: the state and issuer cases in
+`packages/mcp-client/tests/integration/oauth.test.ts`.
 
 **MCP-28.** Every OAuth fetch target, redirect and browser URL is HTTPS, except that HTTP is
 permitted on a loopback host; validation happens before the request/open. A headless host fails
@@ -1077,6 +1122,17 @@ its idempotent close tracked in that same grace. Production: `createPhysicalConn
 (completion outcome, retained limits, consecutive/abort races, immediate degradation, truthful
 queue diagnostics, and bounded shutdown).
 
+**MCP-37.** A provider-local MCP tool name is preserved exactly when it is wire-safe,
+case-insensitively unique, and not host-reserved. All eligible local names are reserved before any
+duplicate/case-colliding, invalid, or reserved name receives a sanitized namespaced fallback, so a
+fallback cannot steal a unique local name and changing entry order cannot change its owner. The
+dotted `fullName` remains canonical and resolvable for every branch. Production: `makeRegistry` and
+`toWireToolName` in `packages/mcp-client/src/registry.ts`. Test: the
+`"preserves a unique provider-safe local name for skill/tool compatibility"`,
+`"falls back to namespaced names when local names collide across servers"`,
+`"reserves a unique local name before allocating colliding namespaced fallbacks"`, and reserved-name
+cases in `packages/mcp-client/tests/unit/registry.test.ts`.
+
 ## 6. Failure modes and degradation
 
 ### 6.1 Error types
@@ -1107,7 +1163,7 @@ queue diagnostics, and bounded shutdown).
 | `resources/templates/list` throws | `packages/mcp-client/src/resources.ts:129-139` | `debug mcp.resources.templates_failed`; `resourceTemplates: []` |
 | server reports no identity | `packages/mcp-client/src/connection.ts:344-353` | the identity fields are simply absent from `mcp.connect.ok` — read defensively "because {@link MCPClientFactory} is a substitution seam" (`:339-342`) |
 | a `ConnectionEvent` sink throws | `packages/mcp-client/src/resilient-session.ts:155-164` | swallowed |
-| a wire name is already taken | `packages/mcp-client/src/registry.ts:82-95` | the tool is offered under a suffixed name and warned: "a call by its original name will not reach this server" |
+| a local name is duplicated/case-colliding, invalid, or host-reserved | `makeRegistry` / `toWireToolName` in `packages/mcp-client/src/registry.ts` | the tool is offered under a sanitized namespaced fallback, suffixed when necessary; `mcp.registry.renamed` reports `reason: "invalid" | "reserved" | "collision"` |
 | a server writes megabytes to stderr | `packages/mcp-client/src/server-stderr.ts:62-66` | one suppression line, rest dropped |
 | an unterminated stderr line grows past 8 KiB | `packages/mcp-client/src/server-stderr.ts:81-84` | released as a line of its own |
 | a stdout frame ends with a lone `\r` or is empty | `packages/mcp-client/src/bun-stdio-client.ts:253-254` | skipped, no message emitted |
@@ -1167,7 +1223,7 @@ tools are offered" (`packages/mcp-client/src/connection.ts:251-255`) — *is* ac
 | `mcp.health.ping_failed` | debug | `packages/mcp-client/src/resilient-session.ts:259-270` |
 | `mcp.timeout_streak` | warn | `packages/mcp-client/src/resilient-session.ts:337-347` |
 | `mcp.call.done` | debug (sampled) | `packages/mcp-client/src/resilient-session.ts:370-381` |
-| `mcp.registry.renamed` | warn | `packages/mcp-client/src/registry.ts:85` |
+| `mcp.registry.renamed` | warn | `makeRegistry` in `packages/mcp-client/src/registry.ts` |
 | `mcp.pool.connect_queued` | debug (sampled) | `packages/mcp-client/src/connection-manager.ts:345` |
 | `mcp.pool.relay_dropped` | warn | `packages/mcp-client/src/connection-manager.ts:545` |
 | `mcp.pool.limit` | warn | `packages/mcp-client/src/connection-manager.ts:569` |
@@ -1216,7 +1272,8 @@ call). The consequence: a `ToolResult` error message that reaches the model is *
 The type contracts it implements structurally, all owned by `@clarvis/capability`: `MCPConnection`
 (`packages/capability/src/run.ts:348`) built at `packages/mcp-client/src/connection.ts:207`; `ToolResult`
 (`packages/capability/src/run.ts:327`) produced throughout `tool-results.ts`; `NamespacedRegistry`
-(`packages/capability/src/run.ts:142`) built at `packages/mcp-client/src/registry.ts:122`; `McpServerConfig`
+(`NamespacedRegistry` in `packages/capability/src/run.ts`) built by `makeRegistry` in
+`packages/mcp-client/src/registry.ts`; `McpServerConfig`
 (`packages/capability/src/api.ts:132`) consumed at `packages/mcp-client/src/client.ts:345`; `Logger`
 (`packages/capability/src/log.ts`) as the single diagnostic channel. This package has **no
 `zod`** dependency (`packages/mcp-client/package.json:41-45`) — the only schema work it performs is
@@ -1230,7 +1287,8 @@ through the SDK's own schemas.
 | `@clarvis/kernel` | **dev**Dependency only | `packages/kernel/package.json:73-75`; no `src/` file in kernel imports it |
 
 The one-directional edge is enforced structurally rather than by a test *in this package*: `reserved`
-is a required parameter of `buildRegistry` (`packages/mcp-client/src/registry.ts:149`), and the
+is a required parameter of `buildRegistry` (`packages/mcp-client/src/registry.ts`,
+`buildRegistry`), and the
 engine binds its own vocabulary in its own module — `buildRegistryWith(entries, [...RESERVED_WIRE_NAMES, ...capabilityReserved])`
 (`packages/loop/src/runtime/tools/mcp-registry.ts:37`). That file's comment records the reason: "The
 MCP client takes the reserved set as an argument because it does not know the host's tool vocabulary

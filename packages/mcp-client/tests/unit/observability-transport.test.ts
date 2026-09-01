@@ -179,7 +179,7 @@ describe("registry rename observability", () => {
   it("reports a tool renamed because a reserved host name took its place", () => {
     const recording = createRecordingLogger();
     buildRegistry(
-      [{ conn: connection("fs"), tools: [{ name: "file", inputSchema: {} }] }],
+      [{ conn: connection("docs"), tools: [{ name: "fs_file", inputSchema: {} }] }],
       ["fs_file"],
       { logger: recording.logger },
     );
@@ -187,10 +187,10 @@ describe("registry rename observability", () => {
     const renamed = recording.first("mcp.registry.renamed");
     expect(renamed?.level).toBe("warn");
     expect(renamed?.fields).toMatchObject({
-      mcp: "fs",
-      tool: "file",
-      full_name: "fs.file",
-      wire_name: "fs_file_1",
+      mcp: "docs",
+      tool: "fs_file",
+      full_name: "docs.fs_file",
+      wire_name: "docs_fs_file",
       reason: "reserved",
     });
   });
@@ -200,13 +200,13 @@ describe("registry rename observability", () => {
     buildRegistry(
       [
         { conn: connection("docs"), tools: [{ name: "a.b", inputSchema: {} }] },
-        { conn: connection("docs"), tools: [{ name: "a_b", inputSchema: {} }] },
+        { conn: connection("docs"), tools: [{ name: "a?b", inputSchema: {} }] },
       ],
       [],
       { logger: recording.logger },
     );
 
-    expect(recording.first("mcp.registry.renamed")?.fields).toMatchObject({
+    expect(recording.all("mcp.registry.renamed")[1]?.fields).toMatchObject({
       wire_name: "docs_a_b_1",
       reason: "collision",
     });

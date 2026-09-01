@@ -271,6 +271,58 @@ test("a late event from another execution cannot enter the current run's sink", 
   dispose();
 });
 
+test("live MCP startup failures emit one session notice per server and reason, never on replay", async () => {
+  const { host, store, runs, dispose } = mount();
+  const turn = host.submitTurn("use available tools");
+  await flush();
+  const executionId = runs[0]!.handle.executionId;
+  const failure = ev({
+    type: "mcp_degraded",
+    at: 1,
+    servers: [{ name: "docs", reason: "missing DOCS_TOKEN" }],
+  });
+
+  host.onEvent(failure, "live", executionId);
+  expect(host.mcpStartupNotice()).toEqual({
+    sequence: 1,
+    servers: [{ name: "docs", reason: "missing DOCS_TOKEN" }],
+  });
+  expect(store.nodes.some((node) => node.text.includes("missing DOCS_TOKEN"))).toBe(false);
+
+  host.onEvent(failure, "live", executionId);
+  host.onEvent(
+    ev({
+      type: "mcp_degraded",
+      at: 2,
+      servers: [{ name: "browser", reason: "authorization pending" }],
+    }),
+    "replay",
+    executionId,
+  );
+  expect(host.mcpStartupNotice()?.sequence).toBe(1);
+
+  host.onEvent(
+    ev({
+      type: "mcp_degraded",
+      at: 3,
+      servers: [
+        { name: "docs", reason: "missing DOCS_TOKEN" },
+        { name: "browser", reason: "authorization pending" },
+      ],
+    }),
+    "live",
+    executionId,
+  );
+  expect(host.mcpStartupNotice()).toEqual({
+    sequence: 2,
+    servers: [{ name: "browser", reason: "authorization pending" }],
+  });
+
+  runs[0]!.resolve(completed(executionId));
+  await turn;
+  dispose();
+});
+
 test("done releases interactive ownership before the post-run event stream closes", async () => {
   let resolveClosed!: () => void;
   const closed = new Promise<void>((resolve) => {

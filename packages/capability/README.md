@@ -32,12 +32,16 @@ author needs: the request and settings vocabulary, the ports, the trace kinds, a
 | `@clarvis/capability/ports` | `ContextPort`, `TracePort`, `Logger`, `Elicit`, `AgentRegistryPort`, `LLMProvider`                                                                                   |
 | `@clarvis/capability/trace` | `BuiltinTraceKind`, `TraceKind`, `TraceDetailMap`, `TraceDetailFor`, `TraceEvent`, persisted trace projector types/registry, `ExecutionRecord`                       |
 
-`McpServerConfig` carries an optional stdio `cwd` and an `expandVariables` policy. The latter
-defaults to true in consumers; portable package adapters may set it false after applying their own
-format-limited placeholder expansion, preserving literal package data across the engine/client seam.
-The engine-only `auto_tools` flag is host composition rather than transport configuration: after a
-server connects, every tool it advertised joins every agent's effective MCP allow-list for that run,
-without changing the persisted profile.
+`McpServerConfig` carries the complete normalized MCP seam shared by settings, plugin manifests and
+direct run requests. In addition to transport fields, that includes stdio `cwd`/`env_vars`, remote
+Bearer and environment-backed headers, per-server startup/tool timeouts, enabled/required state,
+tool allow/deny lists, authentication timing, and OAuth pre-registration (`client_id`, callback
+URL/port, and an optional HTTPS CIMD URL). `expandVariables` defaults to true in consumers;
+portable package adapters may set it false after applying their own format-limited placeholder
+expansion. The engine-only `auto_tools` flag remains host composition rather than transport
+configuration: after a server connects, every tool it advertised joins every agent's effective MCP
+allow-list for that run without changing the persisted profile. `MCPConnection.instructions`
+carries bounded initialization guidance back across the same leaf contract.
 
 ## Test ownership
 

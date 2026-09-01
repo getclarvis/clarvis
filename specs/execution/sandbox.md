@@ -108,6 +108,16 @@ tools mechanism is built. Production: `packages/loop/src/runtime/capabilities/to
 `packages/loop/tests/unit/settings-merge.test.ts`, `settings-schema.test.ts`, and
 `packages/loop/tests/integration/sandbox-host-policy.test.ts`.
 
+Selected skill package roots are not sandbox settings and cannot be authored as `extra_paths` by a
+plugin. The skills registry exposes an execution root only for a host-approved root, the loop
+collects only those selected skill directories, and `@clarvis/tools` validates at most 512 canonical
+directories before merging them into the already-resolved `readOnlyPaths`. A filesystem root, the
+workspace itself, an ancestor containing the workspace, a missing entry, or a non-directory fails
+toolset construction. Production: `buildExecuteRunDeps` in
+`packages/loop/src/runtime/build-run-deps.ts` and `resolveConfig` in
+`packages/tools/src/config.ts`. Tests: `packages/skills/tests/integration/api.test.ts` and
+`packages/tools/tests/integration/config.test.ts`.
+
 `"bubblewrap"` is not a compatibility spelling. This pre-release format changed to `"native"` so a
 portable settings document does not claim a Linux backend on macOS. A stale block fails the strict
 settings schema and must be edited; no migration reader silently changes user-authored configuration.
@@ -437,11 +447,14 @@ parameters; the static profile never contains a workspace/runtime path.
   with matching filesystem and network policy`).
 
 **INV-S5 — Declared read-only roots win below a writable workspace.** Bubblewrap mounts them after
-the workspace; Seatbelt emits a final write deny.
+the workspace; Seatbelt emits a final write deny. The resolved list includes host-approved selected
+skill package roots, including a skill directory nested beneath the workspace.
 
-- Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`, `seatbeltPolicy`).
+- Production: `packages/tools/src/config.ts` (`resolveConfig`) and
+  `packages/tools/src/sandbox.ts` (`sandboxCommand`, `seatbeltPolicy`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`mounts a nested read-only path after the
-  writable workspace`, Seatbelt profile test).
+  writable workspace`, Seatbelt profile test) and
+  `packages/tools/tests/integration/config.test.ts` (skill-root merge).
 
 **INV-S6 — Provider secrets are absent by default on every branch.** Native backends start from
 `minimalEnv`; bare/optional paths subtract `secretEnvNames` from a copy without mutating
@@ -516,6 +529,7 @@ therefore cannot trigger platform installers, tool initialization, or user-contr
 | Optional backend unavailable | Warn `tools.sandbox_unavailable`; run scrubbed bare command |
 | Required backend unavailable | `ToolError("io_error")`; no command spawn |
 | Relative, broad, canonically broad, or workspace-containing mechanism path | `ToolError("invalid_input")` |
+| Invalid, overly broad, missing, non-directory, or more than 512 selected skill execution roots | `StartupError`; no toolset is returned |
 | Missing configured extra path | Omitted from resolved roots and surfaced unavailable in inspection |
 | A discovered entrypoint would prompt, initialize, or mutate the host when launched | Inspection does not launch it; path status remains passive |
 | Sandbox inspection request rejects in `code` | Panel shows the error; Run controls retains checking state |

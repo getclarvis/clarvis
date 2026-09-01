@@ -110,6 +110,14 @@ export interface RunHostDeps {
   describeToolCall?: TranscriptStoreDeps["describeToolCall"];
 }
 
+/** One live-only MCP startup warning that the TUI may show outside the transcript. */
+export interface McpStartupNotice {
+  /** Monotonic session-local identity used to display this notice once. */
+  sequence: number;
+  /** Newly observed server failures, already sanitized by the run protocol. */
+  servers: ReadonlyArray<{ name: string; reason: string }>;
+}
+
 /**
  * The stateful bridge a UI shell (interactive or headless) drives to submit,
  * steer and cancel turns, manage the active session, and read back run and
@@ -132,6 +140,8 @@ export interface RunHost {
   /** The current (or last) workflow's live tree, folded from its manager's
    * structural events; `null` when the active/last run was not a workflow. */
   workflowActivity: Accessor<WorkflowActivity | null>;
+  /** Latest unique live MCP startup failure; replay never repopulates it. */
+  mcpStartupNotice: Accessor<McpStartupNotice | null>;
   /** Whether `executionId` currently owns the live transcript/progress surface. */
   ownsExecution(executionId: string): boolean;
   onEvent(event: RunEvent, source: EventSource, executionId?: string): void;
@@ -350,6 +360,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
   };
   const [runStartedAt, setRunStartedAt] = createSignal<number | null>(null);
   const [workflowActivity, setWorkflowActivity] = createSignal<WorkflowActivity | null>(null);
+  const [mcpStartupNotice, setMcpStartupNotice] = createSignal<McpStartupNotice | null>(null);
+  const seenMcpStartupFailures = new Set<string>();
+  let mcpStartupNoticeSequence = 0;
   /** Set to the active workflow's manager execution id while a workflow is
    * in flight (live events only); null for a plain run. Gates whether `onEvent`
    * also folds the event into `workflowActivity`. */
@@ -399,6 +412,17 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       if (ownsSurface) {
         applyEvent(target.sink, event, source);
         if (source === "live") {
+          if (event.type === "mcp_degraded") {
+            const servers = event.servers.filter((server) => {
+              const key = `${server.name}\0${server.reason}`;
+              if (seenMcpStartupFailures.has(key)) return false;
+              seenMcpStartupFailures.add(key);
+              return true;
+            });
+            if (servers.length > 0) {
+              setMcpStartupNotice({ sequence: ++mcpStartupNoticeSequence, servers });
+            }
+          }
           if (event.type === "compaction_started") setCompactionActive(true);
           else if (
             event.type === "compaction" ||
@@ -1439,6 +1463,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     setRunStatus,
     runStartedAt,
     workflowActivity,
+    mcpStartupNotice,
     ownsExecution: (executionId) => currentSink?.executionId === executionId,
     onEvent,
     onMemoryIngest,

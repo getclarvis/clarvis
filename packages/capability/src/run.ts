@@ -349,6 +349,8 @@ export interface MCPConnection {
   name: string;
   transport: ToolTransport;
   status: MCPStatus;
+  /** Bounded server-provided guidance returned by the MCP initialize handshake. */
+  instructions?: string;
   callTool(toolName: string, args: unknown, signal?: AbortSignal): Promise<ToolResult>;
   listResources?(signal?: AbortSignal): Promise<ToolResult>;
   readResource?(uri: string, signal?: AbortSignal): Promise<ToolResult>;

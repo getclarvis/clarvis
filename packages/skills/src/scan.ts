@@ -217,7 +217,20 @@ export function findSkillSidecar(
   const harnessDir = path.join(dir, HARNESS_CONFIG_DIR);
   const rootReal = safeRealpath(dir, diagnostics);
   const listed = readDirectoryBounded(harnessDir, MAX_SKILL_DIRECTORY_ENTRIES, diagnostics);
-  for (const entry of listed.entries) {
+  const candidates = listed.entries
+    .filter((entry) =>
+      SIDECAR_EXTENSIONS.some((extension) => entry.name.toLowerCase().endsWith(extension)),
+    )
+    .sort((left, right) => {
+      const rank = (name: string): number => {
+        const lowered = name.toLowerCase();
+        if (lowered === "openai.yaml") return 0;
+        if (lowered === "openai.yml") return 1;
+        return 2;
+      };
+      return rank(left.name) - rank(right.name) || left.name.localeCompare(right.name);
+    });
+  for (const entry of candidates) {
     const lowered = entry.name.toLowerCase();
     if (!SIDECAR_EXTENSIONS.some((extension) => lowered.endsWith(extension))) continue;
     const full = path.join(harnessDir, entry.name);

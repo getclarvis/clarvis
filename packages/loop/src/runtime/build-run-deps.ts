@@ -247,6 +247,11 @@ function dynamicSkills(
     listSkills: () => ensure().listSkills(),
     loadSkill: (name) => ensure().loadSkill(name),
     readResource: (name, rel) => ensure().readResource(name, rel),
+    readResourceChunk: (name, rel, offset, maxChars) =>
+      ensure().readResourceChunk?.(name, rel, offset, maxChars) ??
+      (() => {
+        throw new Error("chunked skill resources are unavailable");
+      })(),
   };
 }
 
@@ -534,6 +539,7 @@ export async function buildExecuteRunDeps({
     );
   }
   if (useTools) {
+    const selectedSkills = skills;
     const { setWarnSink } = await importOptional(
       "@clarvis/tools",
       "tools",
@@ -567,6 +573,19 @@ export async function buildExecuteRunDeps({
         ...(resolveGuard !== undefined ? { resolveGuard } : {}),
         ...(resolveSandbox !== undefined ? { resolveSandbox } : {}),
         ...(resolveSecretNames !== undefined ? { resolveSecretNames } : {}),
+        ...(selectedSkills === undefined
+          ? {}
+          : {
+              resolveSkillExecutionRoots: () => [
+                ...new Set(
+                  selectedSkills
+                    .listSkills()
+                    .flatMap((skill) =>
+                      skill.executionRoot === undefined ? [] : [skill.executionRoot],
+                    ),
+                ),
+              ],
+            }),
       }),
     );
   }

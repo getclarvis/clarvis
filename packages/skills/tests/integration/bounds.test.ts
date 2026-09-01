@@ -344,4 +344,29 @@ describe("skills hard bounds", () => {
       cleanup(workspace);
     }
   });
+
+  it("reads a large text resource incrementally while the legacy whole read stays bounded", () => {
+    const workspace = makeWorkspace();
+    try {
+      const root = path.join(workspace, "skills");
+      const dir = writeSkill(root, "paged", {
+        resources: { "references/manual.md": "x" },
+      });
+      const manual = path.join(dir, "references", "manual.md");
+      writeFileSync(manual, "a".repeat(MAX_SKILL_RESOURCE_CHARS) + "SECOND PAGE");
+      const found = registry(workspace, root);
+
+      expect(() => found.readResource("paged", "references/manual.md")).toThrow(
+        /maximum characters/,
+      );
+      const first = found.readResourceChunk("paged", "references/manual.md");
+      expect(first.text).toHaveLength(MAX_SKILL_RESOURCE_CHARS);
+      expect(first.nextOffset).toBe(MAX_SKILL_RESOURCE_CHARS);
+      const second = found.readResourceChunk("paged", "references/manual.md", first.nextOffset);
+      expect(second.text).toBe("SECOND PAGE");
+      expect(second.nextOffset).toBeUndefined();
+    } finally {
+      cleanup(workspace);
+    }
+  });
 });

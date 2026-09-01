@@ -139,7 +139,7 @@ describe("parsePluginManifest resource boundary", () => {
   it("returns the normalized manifest after both boundaries accept it", () => {
     expect(parsePluginManifest('{"name":"bounded-plugin","author":{"name":"Clarvis"}}')).toEqual({
       ok: true,
-      manifest: { name: "bounded-plugin", author: "Clarvis" },
+      manifest: { name: "bounded-plugin", author: { name: "Clarvis" } },
     });
   });
 });

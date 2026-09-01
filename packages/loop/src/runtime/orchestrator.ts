@@ -42,7 +42,11 @@ import type {
   RunCapability,
   RunCapabilityContext,
 } from "@clarvis/capability";
-import { createCapabilityRequestView, createCapabilityServices } from "@clarvis/capability";
+import {
+  createCapabilityRequestView,
+  createCapabilityServices,
+  MCP_HOOK_TOOL_PORT,
+} from "@clarvis/capability";
 import { TOOL_EFFECT_PORT } from "@clarvis/capability";
 import { orderCapabilities } from "./capability-order.ts";
 import { collectCapabilityToolMetadata } from "./capability-tool-metadata.ts";
@@ -50,6 +54,7 @@ import { createToolEffectPort } from "./tools/tool-effect.ts";
 import { createEntryInput } from "./entry-inputs.ts";
 import { buildElicitRelay } from "./elicit-relay.ts";
 import { openToolPool } from "./open-tool-pool.ts";
+import { createMcpInstructionsRunCapability } from "./mcp-instructions.ts";
 import { addAutomaticMcpTools } from "./tools/automatic-mcp-tools.ts";
 import { deriveRunShape, resolveConfig, type RunShape } from "./run-shape.ts";
 import { loopResultToResponse } from "./run-response-mapping.ts";
@@ -456,10 +461,20 @@ export async function runOrchestrator(
   });
   if (!poolResult.ok) return await wrap(poolResult.response);
   const opened = poolResult.opened;
+  services.provide(MCP_HOOK_TOOL_PORT, {
+    async call(server, tool, input, signal): Promise<unknown> {
+      const connection = opened.find((entry) => entry.conn.name === server);
+      if (connection === undefined) throw new Error(`MCP server '${server}' is not active`);
+      return connection.conn.callTool(tool, input, signal);
+    },
+  });
   if (poolResult.degraded.length > 0) {
     traceHandle.record("mcp_degraded", { servers: poolResult.degraded });
   }
   addAutomaticMcpTools(request.servers, opened, shape.fullRegistry.values());
+  const mcpInstructions = createMcpInstructionsRunCapability(opened);
+  const promptCapabilities =
+    mcpInstructions === undefined ? runCapabilities : [...runCapabilities, mcpInstructions];
 
   try {
     const outcome = await runEntryAgent({
@@ -471,7 +486,7 @@ export async function runOrchestrator(
       shape,
       opened,
       clockHolder,
-      runCapabilities,
+      runCapabilities: promptCapabilities,
       seedBlocks,
       seedMarkers,
       capabilityReserved: capabilityToolMetadata.reservedWireNames,

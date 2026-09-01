@@ -125,9 +125,20 @@ const OBSERVER_ONLY = new Set<string>(OBSERVER_HOOK_EVENTS);
 const hookEntrySchema = z
   .object({
     type: z.string().min(1).optional(),
-    command: z.string().min(1),
+    command: z.string().min(1).optional(),
+    commandWindows: z.string().min(1).optional(),
     timeout: z.number().positive().optional(),
     async: z.boolean().optional(),
+    statusMessage: z.string().min(1).max(512).optional(),
+    additionalContextLimit: z
+      .number()
+      .int()
+      .nonnegative()
+      .max(64 * 1024)
+      .optional(),
+    server: z.string().min(1).max(256).optional(),
+    tool: z.string().min(1).max(256).optional(),
+    input: z.unknown().optional(),
   })
   .loose();
 
@@ -343,6 +354,8 @@ export interface HooksConversionOptions {
   pluginName?: string;
   /** MCP server names that survived this plugin's manifest resolution. */
   pluginMcpServers?: readonly string[];
+  /** Persistent data directory dedicated to this installed plugin. */
+  pluginDataDir?: string;
 }
 
 function pluginMcpTool(
@@ -599,18 +612,56 @@ export function convertHooksDocument(
         );
       }
       for (const entry of group.hooks) {
-        if (entry.type !== undefined && entry.type !== "command") {
+        if (entry.type !== undefined && entry.type !== "command" && entry.type !== "mcp_tool") {
           notes.push(`hooks: ${sourceEvent} entry of type '${entry.type}' is not supported`);
           continue;
         }
-        if (entry.async === true) {
-          notes.push(`hooks: ${sourceEvent} entry asks to run async — Clarvis awaits every hook`);
+        const type = entry.type === "mcp_tool" ? "mcp_tool" : "command";
+        if (type === "command" && entry.command === undefined) {
+          notes.push(`hooks: ${sourceEvent} command entry has no command — it is skipped`);
+          continue;
+        }
+        if (type === "mcp_tool" && (entry.server === undefined || entry.tool === undefined)) {
+          notes.push(`hooks: ${sourceEvent} mcp_tool entry has no server/tool — it is skipped`);
+          continue;
+        }
+        if (type === "mcp_tool" && event === "run_end") {
+          notes.push(`hooks: ${sourceEvent} mcp_tool entries do not run during SessionEnd`);
+          continue;
         }
         const timeout = translateTimeout(entry.timeout, sourceEvent);
         if (timeout.note !== undefined) notes.push(timeout.note);
         hooks.push({
           event: event as HookConfig["event"],
-          command: resolveRelativeCommand(substituteRoot(entry.command, pluginRoot), pluginRoot),
+          ...(type === "mcp_tool" ? { type } : {}),
+          command:
+            type === "command"
+              ? resolveRelativeCommand(substituteRoot(entry.command ?? "", pluginRoot), pluginRoot)
+              : "",
+          ...(entry.commandWindows === undefined
+            ? {}
+            : {
+                command_windows: resolveRelativeCommand(
+                  substituteRoot(entry.commandWindows, pluginRoot),
+                  pluginRoot,
+                ),
+              }),
+          ...(entry.async === true ? { async: true } : {}),
+          ...(entry.statusMessage === undefined ? {} : { status_message: entry.statusMessage }),
+          ...(entry.additionalContextLimit === undefined
+            ? {}
+            : { additional_context_limit: entry.additionalContextLimit }),
+          ...(entry.server === undefined
+            ? {}
+            : {
+                server:
+                  options?.pluginName !== undefined &&
+                  options.pluginMcpServers?.includes(entry.server) === true
+                    ? `${options.pluginName}:${entry.server}`
+                    : entry.server,
+              }),
+          ...(entry.tool === undefined ? {} : { tool: entry.tool }),
+          ...(entry.input === undefined ? {} : { input: entry.input }),
           ...(match !== null ? { match } : {}),
           ...(timeout.timeout_ms !== undefined ? { timeout_ms: timeout.timeout_ms } : {}),
         });

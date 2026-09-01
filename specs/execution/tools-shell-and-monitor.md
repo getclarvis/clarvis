@@ -104,6 +104,7 @@ Not exported from any entrypoint (internal to `tools/monitor.ts`/`lib/monitor.ts
 | `maxMonitors` | `DEFAULT_MAX_MONITORS` | `32` | `:53`, `:157` |
 | `stateRoot` | — | (derived) | `:80-89`, resolved at `:446` |
 | `temporaryRoots` | — | `[]` | `:91-92`, resolved at `:347-358` |
+| `skillExecutionRoots` | — | `[]` | host-selected, canonical package directories; validated by `resolveConfig` |
 | `gitMetadataPaths` | — | discovered once from a validated linked worktree | `:94-95`, resolved at `:329` |
 | `registerTemporaryRoot` | — | closure over the live `temporaryRoots` list | `:97-98`, built at `:359-371` |
 | `logger` | — | `NOOP_TOOLS_LOGGER` when unset | `:100-110`, resolved at `:330` |
@@ -232,6 +233,10 @@ is needed.
    spec. Production: `packages/tools/src/config.ts:329`,
    `packages/tools/src/tools/shell.ts:241-250`. Test:
    `packages/tools/tests/integration/sandbox.test.ts` (linked-worktree metadata mount posture).
+   The same confinement admits `cwd` and analyzed command paths below a selected
+   `RuntimeConfig.skillExecutionRoots` entry. A native sandbox mounts each such root read-only;
+   without a sandbox this is only path admission plus normal guard/secret filtering, not an
+   immutability guarantee for the spawned host process. No selection event spawns a command.
 4. Two `CaptureSink`s are created, one per stream, sharing `captureCap = max(config.maxOutputBytes,
    MAX_CAPTURE_FLOOR)` (`MAX_CAPTURE_FLOOR = 8 * 1024 * 1024`, `:37`, `:274`) and `inlineLimit =
    max(config.maxShellOutputBytes, CAPTURE_INLINE_FLOOR)` (`:275`). A sink accumulates in an in-memory
@@ -296,6 +301,8 @@ oversized batch", "swallows a throwing emit").
    `exitCaptureWrapper(command, host.flavor)` (`:256`).
    The same request carries `config.gitMetadataPaths` and the first run-owned temporary root, exactly
    as the blocking `shell` path does (`packages/tools/src/tools/monitor.ts:261-271`).
+   It also carries the same selected skill roots and therefore has the same sandboxed-read-only versus
+   unsandboxed-host-process distinction as `shell`.
 4. Open the log file for append (`openSync(lp, "a")`), spawn with
    `stdio: ["ignore", fd, fd]` and `env: { ...spec.options.env, MON_EXIT: ep }`, `detached:
    ownProcessGroup()` (`:258-290`). The fd is closed in the parent immediately after spawn (`:296`);
@@ -594,6 +601,13 @@ side has silently failed.
     Test: unpinned by a dedicated bounded-vs-unbounded comparison test in this document's scope; the truncation
     behavior itself is exercised in `packages/tools/tests/integration/output.test.ts:200-212`, but
     without a control case that disables `bounded` to show the dispatcher would otherwise re-clamp.
+
+22. **Selected skill package roots widen command path/cwd admission, not automatic execution or bare
+    host isolation.** `buildGuardContext` adds only the exact roots for `shell` and `monitor_start`;
+    `resolveConfig` adds them to sandbox read-only mounts. If no native sandbox is active, the child
+    remains an ordinary secret-scrubbed host process and can write whatever its operating-system
+    identity permits. Production: `packages/tools/src/guard/context.ts`, `config.ts`, `tools/shell.ts`,
+    and `tools/monitor.ts`. Tests: `packages/tools/tests/integration/api.test.ts` and `config.test.ts`.
 
 ## 6. Failure modes and degradation
 

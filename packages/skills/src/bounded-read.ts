@@ -1,4 +1,5 @@
-import { closeSync, fstatSync, openSync, readSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { closeSync, constants, fstatSync, openSync, readSync, realpathSync } from "node:fs";
 import type { Logger } from "@clarvis/capability";
 import { SkillError, fsError } from "./errors.ts";
 import { closeQuietly } from "./lib/log.ts";
@@ -21,6 +22,43 @@ export type DescriptorReader = (
   length: number,
   position: number,
 ) => number;
+
+/** One bounded page of a larger UTF-8 resource. */
+export interface BoundedTextChunk {
+  text: string;
+  offset: number;
+  nextOffset?: number;
+  totalBytes: number;
+}
+
+/** Limits and cursor for {@link readBoundedTextChunk}. */
+export interface BoundedTextChunkOptions extends BoundedReadOptions {
+  offset: number;
+  maxFileBytes: number;
+  maxChars: number;
+}
+
+/** Exact raw-byte identity of one bounded regular file. */
+export interface BoundedFileDigest {
+  digest: string;
+  bytes: number;
+  mode: number;
+}
+
+function requireIntegerBound(
+  value: number,
+  minimum: number,
+  field: string,
+  options: Pick<BoundedReadOptions, "code" | "label">,
+): void {
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    throw new SkillError(
+      options.code,
+      `${options.label} ${field} must be an integer of at least ${String(minimum)}`,
+      { field, value },
+    );
+  }
+}
 
 function tooLarge(
   file: string,
@@ -90,6 +128,193 @@ export function readBoundedBytes(
     }
   }
   return bytes;
+}
+
+/**
+ * Read one UTF-8 page without allocating or decoding the complete resource.
+ *
+ * @remarks The cursor is a byte offset returned by the preceding page. An authored
+ * cursor that starts inside a UTF-8 sequence is rejected, and the page ends only
+ * after a complete sequence so chaining cursors never corrupts a character.
+ */
+export function readBoundedTextChunk(
+  file: string,
+  options: BoundedTextChunkOptions,
+  reader: DescriptorReader = readSync,
+): BoundedTextChunk {
+  requireIntegerBound(options.offset, 0, "offset", options);
+  requireIntegerBound(options.maxBytes, 4, "maxBytes", options);
+  requireIntegerBound(options.maxFileBytes, 1, "maxFileBytes", options);
+  requireIntegerBound(options.maxChars, 2, "maxChars", options);
+  let descriptor: number | undefined;
+  try {
+    const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+    descriptor = openSync(
+      realpathSync.native(file),
+      constants.O_RDONLY | constants.O_NONBLOCK | noFollow,
+    );
+    const stat = fstatSync(descriptor);
+    if (!stat.isFile()) {
+      throw new SkillError("not_a_file", `Path is not a regular file: ${file}`, { path: file });
+    }
+    if (stat.size > options.maxFileBytes) {
+      throw tooLarge(file, "bytes", stat.size, options.maxFileBytes, options);
+    }
+    if (options.offset > stat.size) {
+      throw new SkillError(
+        options.code,
+        `${options.label} '${file}' offset ${String(options.offset)} is past the end`,
+        { path: file, offset: options.offset, total: stat.size },
+      );
+    }
+    if (options.offset === stat.size) {
+      const probe = Buffer.allocUnsafe(1);
+      if (reader(descriptor, probe, 0, 1, stat.size) !== 0) {
+        throw new SkillError(
+          options.code,
+          `${options.label} '${file}' changed while it was being read`,
+          { path: file },
+        );
+      }
+      return { text: "", offset: options.offset, totalBytes: stat.size };
+    }
+    const requested = Math.min(options.maxBytes, stat.size - options.offset);
+    const buffer = Buffer.allocUnsafe(requested);
+    let bytes = 0;
+    while (bytes < requested) {
+      const count = reader(descriptor, buffer, bytes, requested - bytes, options.offset + bytes);
+      if (count === 0) break;
+      bytes += count;
+    }
+    if (bytes !== requested) {
+      throw new SkillError(
+        options.code,
+        `${options.label} '${file}' changed while it was being read`,
+        { path: file },
+      );
+    }
+    if ((buffer[0]! & 0xc0) === 0x80) {
+      throw new SkillError(options.code, `${options.label} '${file}' has an invalid UTF-8 cursor`, {
+        path: file,
+        offset: options.offset,
+      });
+    }
+    const reachesEnd = options.offset + requested === stat.size;
+    let prefixBytes = requested;
+    let decoded: string | undefined;
+    for (let trim = 0; trim <= (reachesEnd ? 0 : 3); trim += 1) {
+      try {
+        decoded = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+          buffer.subarray(0, requested - trim),
+        );
+        prefixBytes = requested - trim;
+        break;
+      } catch {}
+    }
+    if (decoded === undefined) {
+      throw new SkillError(options.code, `${options.label} '${file}' is not valid UTF-8`, {
+        path: file,
+      });
+    }
+    if (reachesEnd) {
+      const probe = Buffer.allocUnsafe(1);
+      if (reader(descriptor, probe, 0, 1, stat.size) !== 0) {
+        throw new SkillError(
+          options.code,
+          `${options.label} '${file}' changed while it was being read`,
+          { path: file },
+        );
+      }
+    }
+    let text = decoded.slice(0, options.maxChars);
+    const tail = text.charCodeAt(text.length - 1);
+    if (tail >= 0xd800 && tail <= 0xdbff) text = text.slice(0, -1);
+    const consumedBytes =
+      text.length === decoded.length ? prefixBytes : Buffer.byteLength(text, "utf8");
+    const next = options.offset + consumedBytes;
+    return {
+      text,
+      offset: options.offset,
+      ...(next < stat.size ? { nextOffset: next } : {}),
+      totalBytes: stat.size,
+    };
+  } catch (error) {
+    if (error instanceof SkillError) throw error;
+    throw fsError(error as NodeJS.ErrnoException, file);
+  } finally {
+    const opened = descriptor;
+    if (opened !== undefined) {
+      closeQuietly(
+        () => {
+          closeSync(opened);
+        },
+        options.logger,
+        { path: file },
+      );
+    }
+  }
+}
+
+/** Hash one regular file through a fixed buffer without decoding or retaining its contents. */
+export function hashBoundedFile(
+  file: string,
+  options: Omit<BoundedReadOptions, "maxChars">,
+  reader: DescriptorReader = readSync,
+): BoundedFileDigest {
+  requireIntegerBound(options.maxBytes, 1, "maxBytes", options);
+  let descriptor: number | undefined;
+  try {
+    const noFollow = typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : 0;
+    descriptor = openSync(
+      realpathSync.native(file),
+      constants.O_RDONLY | constants.O_NONBLOCK | noFollow,
+    );
+    const stat = fstatSync(descriptor);
+    if (!stat.isFile()) {
+      throw new SkillError("not_a_file", `Path is not a regular file: ${file}`, { path: file });
+    }
+    if (stat.size > options.maxBytes) {
+      throw tooLarge(file, "bytes", stat.size, options.maxBytes, options);
+    }
+    const hash = createHash("sha256");
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    let bytes = 0;
+    for (;;) {
+      const count = reader(descriptor, buffer, 0, buffer.length, bytes);
+      if (count === 0) break;
+      bytes += count;
+      if (bytes > options.maxBytes) {
+        throw tooLarge(file, "bytes", bytes, options.maxBytes, options);
+      }
+      hash.update(buffer.subarray(0, count));
+    }
+    if (bytes !== stat.size) {
+      throw new SkillError(
+        options.code,
+        `${options.label} '${file}' changed while it was being read`,
+        { path: file },
+      );
+    }
+    return {
+      digest: `sha256:${hash.digest("hex")}`,
+      bytes,
+      mode: stat.mode & 0o777,
+    };
+  } catch (error) {
+    if (error instanceof SkillError) throw error;
+    throw fsError(error as NodeJS.ErrnoException, file);
+  } finally {
+    const opened = descriptor;
+    if (opened !== undefined) {
+      closeQuietly(
+        () => {
+          closeSync(opened);
+        },
+        options.logger,
+        { path: file },
+      );
+    }
+  }
 }
 
 function readFromFile(

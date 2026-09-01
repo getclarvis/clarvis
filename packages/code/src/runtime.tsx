@@ -1211,6 +1211,7 @@ async function runApp(
     memory: () => runHost.memory(),
     startedAt: () => runHost.runStartedAt(),
     workflowActivity: () => runHost.workflowActivity(),
+    mcpStartupNotice: () => runHost.mcpStartupNotice(),
     bang: (cmd) => runHost.runBangCommand(cmd),
     localBusy: () => runHost.bashActive(),
     compacting: () => runHost.compactionActive(),

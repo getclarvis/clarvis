@@ -106,6 +106,49 @@ describe("readSkillSidecar", () => {
     });
   });
 
+  describe("tool dependencies", () => {
+    it("reads bounded MCP dependency metadata and ignores unsupported entries", () => {
+      const sidecar = read(
+        [
+          "dependencies:",
+          "  tools:",
+          "    - type: mcp",
+          "      value: docs",
+          "      description: Documentation search",
+          "      transport: http",
+          "      url: https://docs.example/mcp",
+          "    - type: shell",
+          "      value: ignored",
+          "    - nope",
+          "    - []",
+          "    - type: mcp",
+          "      value: '   '",
+        ].join("\n"),
+      );
+
+      expect(sidecar?.dependencies).toEqual([
+        {
+          type: "mcp",
+          value: "docs",
+          description: "Documentation search",
+          transport: "http",
+          url: "https://docs.example/mcp",
+        },
+      ]);
+    });
+
+    it("omits dependencies when the block, tools list, or every entry is unusable", () => {
+      for (const source of [
+        "dependencies: nope",
+        "dependencies: []",
+        "dependencies:\n  tools: nope",
+        "dependencies:\n  tools:\n    - type: shell\n      value: x",
+      ]) {
+        expect(read(source)?.dependencies).toBeUndefined();
+      }
+    });
+  });
+
   describe("icons", () => {
     it("serves both themes from a single path", () => {
       expect(read("icon: ./assets/one.svg")?.presentation?.icons).toEqual({

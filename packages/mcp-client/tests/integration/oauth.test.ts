@@ -125,6 +125,93 @@ describe("MCP OAuth authorization coordinator", () => {
     expect(await third.provider.tokens()).toBeUndefined();
   });
 
+  it("prefers a pre-registered client and exposes a configured CIMD URL", async () => {
+    const auth = await coordinator();
+    const session = await auth.session(SCOPE, SERVER_URL, {
+      client_id: "pre-registered-client",
+      client_metadata_url: "https://clarvis.example/oauth/client.json",
+    });
+
+    expect(await session.provider.clientInformation()).toEqual({
+      client_id: "pre-registered-client",
+    });
+    expect(session.provider.clientMetadataUrl).toBe("https://clarvis.example/oauth/client.json");
+  });
+
+  it("selects callback paths from registration mode and issuer support", async () => {
+    const auth = await coordinator();
+    const issuerAware = {
+      authorizationServerUrl: "https://login.example.test",
+      authorizationServerMetadata: {
+        issuer: "https://login.example.test",
+        authorization_endpoint: "https://login.example.test/authorize",
+        token_endpoint: "https://login.example.test/token",
+        response_types_supported: ["code"],
+        authorization_response_iss_parameter_supported: true,
+      },
+    };
+
+    const dynamicLegacy = await auth.session(SCOPE, `${SERVER_URL}/dynamic-legacy`, {
+      callback_url: "http://127.0.0.1/dynamic",
+    });
+    expect(new URL(String(dynamicLegacy.provider.redirectUrl)).pathname).toMatch(
+      /^\/dynamic\/[A-Za-z0-9_-]{12}$/,
+    );
+
+    const dynamicIssuer = await auth.session(SCOPE, `${SERVER_URL}/dynamic-issuer`, {
+      callback_url: "http://127.0.0.1/dynamic-issuer",
+    });
+    await dynamicIssuer.provider.saveDiscoveryState?.(issuerAware);
+    expect(new URL(String(dynamicIssuer.provider.redirectUrl)).pathname).toBe("/dynamic-issuer");
+
+    const registeredLegacy = await auth.session(SCOPE, `${SERVER_URL}/registered-legacy`, {
+      client_id: "registered-client",
+      callback_url: "http://127.0.0.1/registered",
+    });
+    expect(new URL(String(registeredLegacy.provider.redirectUrl)).pathname).toMatch(
+      /^\/callback\/[A-Za-z0-9_-]{12}$/,
+    );
+
+    const registeredIssuer = await auth.session(SCOPE, `${SERVER_URL}/registered-issuer`, {
+      client_id: "registered-client",
+      callback_url: "http://127.0.0.1/registered-issuer",
+    });
+    await registeredIssuer.provider.saveDiscoveryState?.(issuerAware);
+    expect(new URL(String(registeredIssuer.provider.redirectUrl)).pathname).toBe(
+      "/registered-issuer",
+    );
+  });
+
+  it("requires the matching issuer when the authorization server advertises issuer responses", async () => {
+    const auth = await coordinator(async () => true);
+    const session = await auth.session(SCOPE, SERVER_URL, {
+      client_id: "pre-registered-client",
+      callback_url: "http://127.0.0.1/callback",
+    });
+    await session.provider.saveDiscoveryState?.({
+      authorizationServerUrl: "https://login.example.test",
+      authorizationServerMetadata: {
+        issuer: "https://login.example.test",
+        authorization_endpoint: "https://login.example.test/authorize",
+        token_endpoint: "https://login.example.test/token",
+        response_types_supported: ["code"],
+        authorization_response_iss_parameter_supported: true,
+      },
+    });
+    const state = String(await session.provider.state?.());
+    await session.provider.saveCodeVerifier("private-verifier");
+    await session.provider.redirectToAuthorization(new URL("https://login.example.test/authorize"));
+    const finishing = session.finishAuthorization({ finishAuth: async () => {} });
+    const rejected = finishing.catch((error: unknown) => error);
+    const callback = new URL(String(session.provider.redirectUrl));
+    callback.searchParams.set("state", state);
+    callback.searchParams.set("code", "usable-code");
+    callback.searchParams.set("iss", "https://attacker.example.test");
+
+    expect((await fetch(callback)).status).toBe(400);
+    expect(await rejected).toBeInstanceOf(MCPAuthorizationFailedError);
+  });
+
   it("fails explicitly when the host cannot open an authorization page", async () => {
     const auth = await coordinator();
     const session = await auth.session(SCOPE, SERVER_URL);

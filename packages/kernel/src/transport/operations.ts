@@ -321,6 +321,16 @@ export const OPERATIONS = {
           p.target as Parameters<PluginService["install"]>[2],
         ),
     },
+    installSource: {
+      method: "plugins.installSource",
+      metadata: write("plugins"),
+      encode: (source, target) => ({ source, target }),
+      invoke: (services, p) =>
+        services.plugins.installSource(
+          p.source as Parameters<PluginService["installSource"]>[0],
+          p.target as Parameters<PluginService["installSource"]>[1],
+        ),
+    },
     update: {
       method: "plugins.update",
       metadata: write("plugins"),

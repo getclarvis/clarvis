@@ -250,7 +250,7 @@ describe("buildMcpHandler", () => {
     expect(verdict.kind).toBe("result");
     if (verdict.kind === "result") {
       expect(verdict.text).toContain("Unknown tool 'nope'");
-      expect(verdict.text).toContain("srv_tool");
+      expect(verdict.text).toContain("Available tools: tool");
     }
   });
 });

@@ -275,7 +275,8 @@ linked into the shared .agents inventory" and "refuses a linked Git checkout").
 | `name` | `pluginNameField` — **the only required key** | `:46` |
 | `version` | non-empty string, optional | `pluginManifestSchema` in `packages/loop/src/settings/plugin-schema.ts` |
 | `description` | non-empty string, optional | `:55` |
-| `author` | string **or** `{ name, … }.loose()`, transformed to the name | `:60`, field `:15-21` |
+| `author` | string or `{ name, email?, url? }.loose()`, normalized to that publisher object without replacing its identity | `authorField` |
+| `homepage`, `repository`, `license`, `keywords` | bounded publisher/discovery metadata, optional | `pluginManifestSchema` |
 | `mcpServers` | `record(string, mcpServerPluginSchema)` — or a path string, resolved before validation | `:65` |
 | `capabilityExecutables` | `capabilityExecutablesSchema` | `:75` |
 | `capabilityRunPolicies` | `capabilityRunPoliciesSchema` | `:81` |
@@ -283,9 +284,11 @@ linked into the shared .agents inventory" and "refuses a linked Git checkout").
 | `bootstrapSkill` | `string().min(1)` | `packages/loop/src/runtime/capabilities/skills-settings.ts:39-41` |
 | `guard`, `sandbox` | `z.undefined()` with an explanatory error — **forbidden** | `packages/loop/src/runtime/capabilities/tools-settings.ts:181-189` |
 
-`pluginNameField` is `^[a-z0-9_-]+$`, non-empty, and refuses `__proto__` / `constructor` /
-`prototype` (`packages/loop/src/settings/settings-schema.ts:44-55`, reserved set at `:28`). Its
-error string states the reason: those "corrupt the trust map instead of storing an approval" (`:53`).
+`pluginNameField` accepts lowercase alphanumerics separated by `.`, `_`, or `-`, refuses ambiguous
+repeated `--`/`..`, edge punctuation, and `__proto__` / `constructor` / `prototype`. Its error string
+states the reason for the reserved names: those corrupt the trust map instead of storing an
+approval. Production: `pluginNameField` in `packages/loop/src/settings/settings-schema.ts`. Test:
+plugin-name cases in `packages/loop/tests/unit/plugin-schema.test.ts`.
 
 `skills` is deliberately **not** a schema key — it is read directly off the raw document by
 `pluginSkillRoots` (`packages/kernel/src/plugins/plugin-manifest.ts:853`) and then excluded from the
@@ -333,6 +336,30 @@ Manifest-relative paths are resolved from `.codex-plugin/` and confined to the p
 package is installable in either `.agents/plugins` or `.clarvis/plugins` inventory. Test:
 `packages/kernel/tests/integration/plugin-contributions.test.ts` (the `codex-kit` fixture).
 
+#### 3.2.2 Borrowed-host `userConfig`
+
+`resolveBorrowedUserConfig` translates one deliberately narrow compatibility shape. The selected
+manifest must be a shape-matched `.<host>-plugin/plugin.json`; its `userConfig` must have at most 128
+entries, and a referenced definition is eligible only when it is an object whose `type` is exactly
+`"string"`. The referenced key itself must match `[A-Za-z0-9_.-]{1,128}`. Other definition fields
+are not authority: Clarvis never reads or persists a supplied default, secret, or sensitivity
+marker.
+
+Only a whole string value `${user_config.key}` in a stdio server's `env` map is translated. If that
+entry is authored under destination `DEST_ENV`, the normalized value is `${DEST_ENV}` so the normal
+Clarvis environment/key resolution supplies the value at connection time. The source key is a
+shape check, not a new secret namespace. A reference embedded in a larger string, placed in argv,
+headers, or another field, carried by a non-string environment value, made from a native manifest,
+mapped to an invalid environment name, or paired with `expandVariables: false` fails closed for that
+MCP server. An undeclared/non-string definition and a block over 128 entries have the same
+per-server outcome. Every healthy sibling MCP and every non-MCP contribution remains present.
+
+Production: `containsBorrowedUserConfigReference` and `resolveBorrowedUserConfig`, called by
+`resolvePluginManifest` before `sanitizeMcpServers`, in
+`packages/kernel/src/plugins/plugin-manifest.ts`. Test: the borrowed `userConfig` cases under "MCP
+server entries a manifest carries" in
+`packages/kernel/tests/integration/plugin-manifest.test.ts`.
+
 ### 3.3 Resource limits
 
 `PLUGIN_RESOURCE_LIMITS` (`packages/loop/src/settings/plugin-resources.ts:11-24`):
@@ -367,6 +394,17 @@ overspending "does not cost the last plugin its skills, it costs the workspace a
 roots `clarvisSkillRoots` actually returns (`.agents` and `.clarvis`, user and workspace scope each,
 `packages/skills/src/preset.ts:40-45`), so that adding a host root cannot silently narrow the plugin
 budget in the same release.
+
+Packaged skill-resource identity has a separate raw-byte budget:
+`PLUGIN_SKILL_RESOURCE_LIMITS.fileBytes` is 8 MiB per resource and
+`PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes` is 32 MiB across all skills contributed by one plugin.
+`skillSurface` feeds each regular file through `hashBoundedFile`, which streams raw bytes into
+SHA-256 from one opened descriptor and records digest, byte count, and executable mode without
+decoding or retaining the complete resource. The values come from
+`MAX_SKILL_RESOURCE_FILE_BYTES` and `MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` in
+`packages/skills/src/limits.ts`. Test: the large binary/text, per-file-bound, and aggregate-bound
+cases in `packages/kernel/tests/integration/plugin-contributions.test.ts` and `hashBoundedFile`
+cases in `packages/skills/tests/unit/bounded-read.test.ts`.
 
 An authored list may contain more than four locations. `compactSkillRoots` collapses direct-skill
 siblings to their parent only when the list exhausts every real child directory and the parent has
@@ -404,12 +442,13 @@ rather than mutating eligibility under an unchanged identity (`pluginContentDige
 
 Root keys acted on: `name`, `description`, `displayName`, `plugins`
 (`packages/loop/src/settings/marketplace-schema.ts:96-101`). Listing keys acted on: `name`, `source`,
-`path`, `description`, `homepage`, `displayName`, `category` (`:85-93`).
+`path`, `description`, `homepage`, `displayName`, `category`, `policy` and `interface`
+(`KNOWN_ENTRY_KEYS` in `packages/loop/src/settings/marketplace-schema.ts`).
 
-`MarketplaceEntry` (`:302-321`) carries `name`, `source`, `path?`, `description`, `homepage?`,
-`displayName?`, `category?`, `installable`, `notes`. The docstring: "A listing is a pointer, never a
-grant of trust: everything on it is display data, and `installable` is the only field that gates an
-action" (`:298-301`).
+`MarketplaceEntry` carries normalized source identity (`sourceType`, optional `path`/`ref`/`sha` or
+`version`/`registry`), `installation`/`authentication` policy, presentation fields, `installable`
+and notes. The docstring states that a listing is a pointer, never a grant of trust; the selected
+source is validated again by the kernel install boundary.
 
 Defaults supplied rather than refused: `DEFAULT_MARKETPLACE_NAME = "unnamed marketplace"` (`:18`),
 `DEFAULT_ENTRY_DESCRIPTION = "no description provided by this marketplace"` (`:21`). Bounds:
@@ -455,28 +494,29 @@ candidate, and non-matching dot-directories.
 `normalizeAgentManifest` applies the strict portable contract described in §3.2.1. Every other
 manifest follows the native/borrowed-host normalization below, in order:
 
-| # | Step | Function | Line |
+| # | Step | Function | Evidence |
 |---|---|---|---|
-| 0 | byte ceiling on the raw text | inline | `:944-948` |
-| 1 | `JSON.parse`; refuse a non-object | inline | `:950-958` |
-| 2 | compute `PluginDirs` (root + selected manifest directory) | `pluginDirsFor` | `:961`, def `:407-413` |
-| 3 | inline declared or conventional `mcpServers` | `resolveMcpServers` | `:963`, def `:763-778` |
-| 4 | drop unusable `mcpServers` entries | `sanitizeMcpServers` | `:964`, def `:798-820` |
-| 5 | derive the surviving server names and effective host-owned plugin identity | inline | `:965-977` |
-| 6 | resolve `hooks` from exactly one source, translating MCP matchers with that identity | `resolveHooks` | `:978-983`, def `:650-687` |
-| 7 | take `interface` off and read display metadata | `resolvePresentation` | `:984-985`, def `:840-864` |
-| 8 | supply `name` from the directory, `description` from the short description | `supplyDefaults` | `:986`, def `:898-922` |
-| 9 | note suspected misspellings | `suspectedManifestTypos` | `:989-992` |
-| 10 | note the `skills` declaration's own problems | `pluginSkillRoots(...).notes` | `:994` |
-| 11 | note remaining unknown keys, excluding `skills` and the misspelled ones | `unknownManifestKeys` | `:996-1002` |
-| 12 | validate the rewritten document | `parsePluginManifest` | `:1004-1018` |
+| 0 | byte ceiling on the raw text | inline | `resolvePluginManifest` |
+| 1 | `JSON.parse`; refuse a non-object | inline | `resolvePluginManifest` |
+| 2 | compute `PluginDirs` (root + selected manifest directory) | `pluginDirsFor` | call in `resolvePluginManifest` |
+| 3 | inline declared or conventional `mcpServers` | `resolveMcpServers` | call in `resolvePluginManifest` |
+| 4 | translate safe borrowed-host `userConfig` environment references and drop only an offending server | `resolveBorrowedUserConfig` | call in `resolvePluginManifest` |
+| 5 | drop otherwise unusable `mcpServers` entries | `sanitizeMcpServers` | call in `resolvePluginManifest` |
+| 6 | derive the surviving server names and effective host-owned plugin identity | inline | `resolvePluginManifest` |
+| 7 | resolve `hooks` from exactly one source, translating MCP matchers with that identity | `resolveHooks` | call in `resolvePluginManifest` |
+| 8 | take `interface` off and read display metadata | `resolvePresentation` | call in `resolvePluginManifest` |
+| 9 | supply `name` from the directory, `description` from the short description | `supplyDefaults` | call in `resolvePluginManifest` |
+| 10 | note suspected misspellings | `suspectedManifestTypos` | call in `resolvePluginManifest` |
+| 11 | note the `skills` declaration's own problems | `pluginSkillRoots(...).notes` | call in `resolvePluginManifest` |
+| 12 | note remaining unknown keys, excluding `skills` and the misspelled ones | `unknownManifestKeys` | call in `resolvePluginManifest` |
+| 13 | validate the rewritten document | `parsePluginManifest` | call in `resolvePluginManifest` |
 
 Note ordering is a stated contract: "Suspected misspellings come first. They are the only entries
 that describe a mistake rather than a difference" (`:385-387`); pinned at
 `packages/kernel/tests/integration/plugin-manifest.test.ts:128-134`, which asserts `notes[0]` is the "did you mean" line and that the
 misspelled key does **not** also appear in the foreign-key list.
 
-Steps 3–8 mutate the parsed document **in place** before step 12 validates it. That is what keeps
+Steps 3–9 mutate the parsed document **in place** before step 13 validates it. That is what keeps
 `PluginManifest["hooks"]` a plain array whatever dialect it arrived in
 (`packages/kernel/src/plugins/hook-dialects.ts:21-24`). Resolving MCP before hooks is also
 load-bearing: it lets a translated hook target the exact `<plugin>:<server>.<tool>` identity that
@@ -533,15 +573,30 @@ For `format: "agent-plugin-v1"`, `pluginSkillScanRoots` keeps the resolved fixed
 `discovery: "immediate"`, `manifestName: "exact"`, `validation: "agent-skills"`, and the package
 confinement root. Native and borrowed-host manifests retain the flexible behavior in the table.
 
+Execution approval is deliberately narrower than scanning approval. `skillRoots` marks an admitted
+plugin root as eligible for bundled-helper execution, but `buildResolvedSkill` treats that marker as
+permission to publish only the discovered skill's exact `dir` as `SkillInfo.executionRoot`. The
+collection root and plugin checkout never become the execution root merely because they contain an
+approved skill. Production: `skillRoots` in
+`packages/kernel/src/plugins/plugin-contributions.ts` and `buildResolvedSkill` in
+`packages/skills/src/registry.ts`. Test: "exposes only the selected skill directory when its root
+approves helper execution" in `packages/skills/tests/integration/api.test.ts`.
+
 ### 4.5 `mcpServers` — path inlining and per-entry sanitizing
 
-`resolveMcpServers` (`packages/kernel/src/plugins/plugin-manifest.ts:763-778`) accepts an inline map
-unchanged, inlines the document named by a string declaration, or — when the key is absent — probes
-`.mcp.json` and then `mcp.json`. A missing conventional file moves to the next name; a malformed one
-adds a note and still moves to the next (`:715-778`). Any selected companion is resolved beside the
-manifest first and then at the plugin root, read under `manifestBytes`, required to contain an
-`mcpServers` object and re-serialized with the manifest before it is accepted (`:728-760`). This
-prevents a small companion from making the final manifest exceed its resource ceiling.
+`resolveMcpServers` accepts an inline map, inlines the document named by a string declaration, or —
+when the key is absent — probes `.mcp.json` and then `mcp.json`. A missing conventional file moves
+to the next name; a malformed one adds a note and still moves to the next. Any selected companion is
+resolved beside the manifest first and then at the plugin root, read under `manifestBytes`, and
+re-serialized with the manifest before it is accepted. Its server map may be direct or wrapped under
+`mcpServers`/`mcp_servers`; `$schema` is ignored. A URL without `type` normalizes to streamable HTTP,
+`http_headers` normalizes to `headers`, and OAuth accepts both snake_case and portable camelCase
+`clientId`/`callbackUrl`/`callbackPort`/`clientMetadataUrl`. This prevents a small companion from
+making the final manifest exceed its resource ceiling while admitting the portable `.mcp.json`
+dialects Clarvis consumes. Production: `companionServerMap` and `resolveMcpServers` in
+`packages/kernel/src/plugins/plugin-manifest.ts`, plus `inferMcpTransport` and `mcpOAuthSchema` in
+`packages/loop/src/settings/settings-schema.ts`. Test: companion-map and portable OAuth cases in
+`packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
 Declared paths and conventional discovery are pinned at
 `packages/kernel/tests/integration/plugin-manifest.test.ts:260-360`; the combined-layout regression
@@ -704,11 +759,15 @@ bypass the dialect converter and remain byte-for-byte as declared. Pinned at
 
 ### 4.7 Presentation and supplied defaults
 
-`resolvePresentation` (`:721-745`) consumes the `interface` key (`delete` at `:727`) so it stops
-being reported as unacted-on, reads `displayName` and `shortDescription` after trimming, and notes a
-block that is not an object or that carries neither field. Everything else in the block (icons,
-colours) is dropped silently — "it is not a directive" (`:717-719`). Pinned at
-`packages/kernel/tests/integration/plugin-manifest.test.ts:294-345`.
+`resolvePresentation` consumes the `interface` key so it stops being reported as unacted-on and
+reads the complete bounded install-surface presentation bucket: display/short/long descriptions,
+developer, category, capabilities, website/privacy/terms URLs, default prompts, brand colour,
+composer icon, logo and screenshots. Asset paths are confined lexical relative paths and the colour
+must be six-digit hex; malformed presentation costs only that metadata. Production:
+`resolvePresentation`, `displayText`, `displayTextList`, and `displayAssetPath` in
+`packages/kernel/src/plugins/plugin-manifest.ts`. Test: `reads the complete install-surface
+presentation block` and degradation cases in
+`packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
 `supplyDefaults` (`:779-803`) fills `name` from `basename(dir)` — but only if that basename would
 itself validate, checked by round-tripping it through `parsePluginManifest` (`derivableName`,
@@ -749,11 +808,13 @@ namespaces remain plugin-name based.
 #### 4.8.1 Per-contribution behaviour
 
 `pin` resolves the qualified selection once, retains the parsed loadables, and records one digest
-per plugin. Skill identity hashes each bounded `SKILL.md` and resource from one opened descriptor,
-then hashes a canonical list of relative paths and per-file digests. It also includes effective
-catalog metadata so a sidecar-derived description/presentation change cannot preserve identity.
-Manifest byte and character caps and resource byte/character caps are the exact limits exported by
-`@clarvis/skills`; ambiguous concatenation and pre-read path `stat` are not snapshot boundaries.
+per plugin. Skill identity hashes each bounded `SKILL.md`; every resource is streamed as raw bytes
+through `hashBoundedFile`, with an 8 MiB per-file ceiling and a 32 MiB aggregate ceiling across the
+plugin, then a canonical list records relative path, digest, byte count, and executable mode. It also
+includes effective catalog metadata so a sidecar-derived description/presentation change cannot
+preserve identity. Manifest byte/character caps and resource snapshot caps are the exact limits
+exported by `@clarvis/skills`; ambiguous concatenation, text decoding of binary resources, complete
+resource retention, and pre-read path `stat` are not snapshot boundaries.
 Ordinary captured projections verify the requested selection and reuse pinned loadables.
 `assertUnchanged` fully revalidates at run admission, while `skillRoots` repeats the same full check
 at lazy catalog/body/resource access so changed bytes cannot be read under the admitted digest.
@@ -768,7 +829,9 @@ file framing, manifest limits, sidecar metadata, and lazy/run-boundary drift cas
 - **`skillRoots`** (`:310-353`) filters declared roots to those that `statSync` says are directories,
   reports a plugin with none, then spends the shared 24-root budget, truncating and reporting when a
   plugin does not fit. `installScope: "workspace"` maps to skills-scope `"workspace"`, `"global"` to
-  `"user"` (`:349`); `source` is `plugin:<name>` (`:350`). Pinned:
+  `"user"` (`:349`); `source` is `plugin:<name>` (`:350`). It also carries the host approval marker
+  that `buildResolvedSkill` narrows to each discovered skill directory before exposing
+  `SkillInfo.executionRoot`; it does not approve the collection or package root. Pinned:
   `packages/kernel/tests/integration/plugin-contributions.test.ts:55-68`, and end-to-end through the kernel at
   `packages/kernel/tests/integration/plugin-skills-install.test.ts:92-101`, which asserts that every
   contributed skill retains global scope and `plugin:<install-name>` provenance.
@@ -837,6 +900,20 @@ declare `false` and cannot add a plugin-manifest surface.
 at `packages/kernel/tests/integration/plugin-service.test.ts:448-458`, which installs `plugins/brainstorm` from a repo and asserts the
 installed tree carries neither `.git` nor `plugins/`.
 
+`installSource` is the normalized marketplace entrypoint and accepts three source families through
+`PluginInstallSource`: Git URL with optional confined subdirectory and exclusive `ref`/`sha`, a
+local directory, or an npm package with optional version and credential-free HTTPS registry. Git
+selectors are passed as argv and validated against option/ref injection. Local installs copy into a
+private staging tree, reject symlinks and special entries, and cap depth (32), file count (10,000)
+and bytes (128 MiB). npm uses `npm install --ignore-scripts --no-audit --no-fund` without a lockfile,
+then moves the resolved package and dependencies into the staging plugin tree; package/version and
+registry inputs are validated before spawn. Every family then passes through the same manifest
+inspection and atomic repository install boundary. Production: `installSource` in
+`packages/kernel/src/plugins/plugin-service.ts`, `validateSelector`, `copyPluginTree`, `fetchLocal`,
+and `fetchNpm` in `packages/kernel/src/adapters/git/plugin-fetcher.ts`. Test: `installSource` cases
+in `packages/kernel/tests/integration/plugin-service.test.ts` and normalized-source cases in
+`packages/loop/tests/unit/marketplace-schema.test.ts`.
+
 Managed lifecycle is global-only for both sources. Workspace `.agents/plugins` and
 `.clarvis/plugins` directories are visible and activatable, but update/uninstall refuses them because
 the repository owns those trees. Removing or replacing a checkout does not remove its persistent
@@ -892,6 +969,13 @@ for the byte-identical `@clarvis/code` copy, at `packages/code/tests/integration
 four inventories and therefore retains every same-named installation. `enabled` is an exact
 `{ scope, source, name }` membership test against the pinned Environment. Notes are
 `[...manifestNotes, ...skillNotes]`.
+The view preserves the original manifest publisher and discovery fields (`author`, `homepage`,
+`repository`, `license`, `keywords`) and the complete bounded presentation bucket. The installed
+directory/effective plugin name remains the runtime identity; `display_name` and `developer_name`
+never overwrite the author or namespace. Production: `viewFor` in
+`packages/kernel/src/plugins/plugin-service.ts` and `PluginView` in
+`packages/protocol/src/plugins.ts`. Test: publisher and complete-presentation cases in
+`packages/kernel/tests/integration/{plugin-manifest,plugin-service}.test.ts`.
 `skillNamesOf` (`:204-241`) runs the **same** `createAgentSkills` scan a run would, over the same
 roots, and keeps the catalog's warnings: the docstring records that the panel used to list every
 child directory with a `SKILL.md`, which "disagreed by one skill on the first real plugin they were
@@ -941,15 +1025,20 @@ capability executable in sorted capability order" — two capabilities declared 
 - `listings()` de-duplicates on `url \0 name`, so two marketplaces offering the same plugin name both
   appear (`:273-280`, pinned `packages/code/tests/integration/marketplace.test.ts:182-207`), and sorts by name (`:288`).
 
-`readMarketplace` (`:163-188`) applies the 2 MiB ceiling before reading, then
-`confineLocalSources(dirname(file), catalog)` (`:141-152`), which adds a note — never a gate — for a
-non-installable listing whose `resolve(root, entry.source)` leaves `realpath(root)`.
+`readMarketplace` applies the 2 MiB ceiling before reading, then
+`confineLocalSources(marketplaceRoot(file), catalog)`. A confined local listing remains installable;
+an escaping or indeterminate target is marked non-installable and receives a note before it reaches
+the browser. For a cloned remote catalog, a confined local entry is projected back to the catalog's
+Git URL plus checkout-relative subdirectory so installation does not refer to the deleted scratch
+checkout. For a discovered on-disk catalog, it becomes an absolute local install source.
+Production: `readMarketplace`, `confineLocalSources`, `fetchMarketplace`, and `read` in
+`packages/code/src/adapters/marketplace.ts`. Test: local containment and remote-local projection in
+`packages/code/tests/integration/marketplace.test.ts`.
 
-`staysInside` (`:103-114`) answers `true` only for `ENOENT`/`ENOTDIR`; every other `realpath` failure
+`staysInside` answers `true` only for `ENOENT`/`ENOTDIR`; every other `realpath` failure
 answers `false` **and** emits `marketplace.containment.unknown` at `warn`. The docstring names the
-attack it closes: the target comes from the marketplace document, "so its author could make the
-resolution fail cheaply (a symlink cycle, an overlong path) and thereby delete the containment note
-about their own listing… a note an untrusted party can suppress is not a note" (`:84-92`). Pinned at
+attack it closes: the target comes from the marketplace document, so an indeterminate realpath must
+fail closed before the listing enters the local install-source contract. Pinned at
 `packages/code/tests/integration/marketplace.test.ts:328-392`, including an `ELOOP` symlink cycle asserting exactly one diagnostic.
 
 ### 4.14 Marketplace document reading (`readMarketplaceDocument`)
@@ -977,11 +1066,22 @@ description keeps its place, taking its summary or its category".
 |---|---|---|---|
 | string matching `^[A-Za-z]…://` or `user@host:` | as written | `true` | — |
 | string that is not a relative subpath | as written | `false` | "would resolve outside the marketplace root" |
-| any other string | as written | `false` | `LOCAL_SOURCE_NOTE` |
-| `{ source: "local", path }`, path relative | `path` | `false` | `LOCAL_SOURCE_NOTE` |
+| any other string | as written, `sourceType: local` | `true` pending realpath confinement | — |
+| `{ source: "local", path }`, path relative | `path`, `sourceType: local` | `true` pending realpath confinement | — |
 | `{ source: "local" }`, no path | `"local"` | `false` | "names a local source with no path" |
 | `{ source: "local", path }`, path escapes | `path` | `false` | "would resolve outside the marketplace root" |
+| `{ source: "url", url, ref?/sha? }` | URL, `sourceType: git` | `true` when URL and selector are valid | invalid URL or conflicting selector |
+| `{ source: "git-subdir", url, path, ref?/sha? }` | URL + confined subdirectory, `sourceType: git` | `true` when complete | missing/escaping path or invalid selector |
+| `{ source: "npm", package, version?, registry? }` | package, `sourceType: npm` | `true` when package/version/HTTPS registry are safe | invalid package, path-like version, or unsafe registry |
 | `{ source: <other kind> }` | `path ?? kind` | `false` | "names source kind '<kind>', which Clarvis has no fetcher for" |
+
+`policy.installation` accepts `AVAILABLE`, `INSTALLED_BY_DEFAULT`, and `NOT_AVAILABLE`;
+`policy.authentication` accepts `ON_INSTALL` and `ON_FIRST_USE`. These values are retained as
+catalog policy, not treated as authorization: `NOT_AVAILABLE` suppresses installation, while the
+other values do not auto-install or auto-authenticate during catalog loading. Production:
+`readSource` and `readEntry` in `packages/loop/src/settings/marketplace-schema.ts`. Test:
+`normalizes git-subdir selectors and npm packages` and `reads install and authentication policy`
+in `packages/loop/tests/unit/marketplace-schema.test.ts`.
 
 A `path` that is present but unreadable additionally forces `installable: false` and drops the field
 (`:386-392`), pinned at `packages/code/tests/integration/marketplace-schema.test.ts:93-110` and `:351-363`.
@@ -1242,14 +1342,17 @@ All of the following are derived directly from this document's own source and te
     drift cases in
     `packages/kernel/tests/integration/{environment-manager,plugin-contributions}.test.ts`.
 
-44b. **Packaged-skill identity is unambiguous and runtime admission is atomic.** Snapshot reads use
-    one opened descriptor with fixed allocation, enforce manifest/resource byte and character caps,
-    and hash canonical relative paths plus per-file digests and effective sidecar metadata. A partial
-    capture contributes no plugin skill roots. Production: `readBoundedBytes` in `@clarvis/skills`
-    and `snapshotFileDigest`, `skillSurface`, `contributionSnapshot`, and `skillRoots` in
+44b. **Packaged-skill identity is unambiguous and runtime admission is atomic.** Skill-manifest
+    snapshot reads use one opened descriptor with fixed allocation; resource identity streams raw
+    bytes through `hashBoundedFile` under an 8 MiB per-file and 32 MiB per-plugin aggregate bound.
+    The canonical record includes relative path, digest, byte count, executable mode, and effective
+    sidecar metadata. A partial capture contributes no plugin skill roots. Production:
+    `readBoundedBytes` and `hashBoundedFile` in `@clarvis/skills`, plus
+    `PLUGIN_SKILL_RESOURCE_LIMITS`, `snapshotFileDigest`, `skillSurface`, `contributionSnapshot`, and
+    `skillRoots` in
     `packages/kernel/src/plugins/plugin-contributions.ts`. Test:
     `packages/skills/tests/unit/bounded-read.test.ts` and the canonical framing, manifest limit,
-    sidecar, invalid-sibling, and lazy drift cases in
+    sidecar, invalid-sibling, aggregate-bound, and lazy drift cases in
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
 45. **A plugin cannot enable another plugin.** Custom Environments are complete external
@@ -1383,14 +1486,19 @@ All of the following are derived directly from this document's own source and te
     `packages/code/tests/integration/marketplace-schema.test.ts:278-286`.
 
 64. **A listing carries no executable surface — hooks or servers written on one are notes only.**
-    `readEntry` copies only the seven known fields (`packages/loop/src/settings/marketplace-schema.ts:420-432`). Pinned:
+    `readEntry` copies only normalized source, policy, and presentation fields; executable
+    contributions come only from the installed manifest. Production: `readEntry` in
+    `packages/loop/src/settings/marketplace-schema.ts`. Pinned:
     `packages/code/tests/integration/marketplace-schema.test.ts:64-72`.
 
-65. **Only a git-fetchable source is `installable`; a local source parses, is shown, and is never
-    offered.** `readSource` (`packages/loop/src/settings/marketplace-schema.ts:258-293`), plus the UI gate on activation
-    (`packages/code/src/views/config/MarketplaceBrowser.tsx:132`). Pinned:
-    `packages/code/tests/integration/marketplace-schema.test.ts:158-221`, `:266-270`, and behaviourally at
-    `packages/code/tests/integration/marketplace-browser-render.test.tsx:144-180`.
+65. **Git, confined local, and validated npm sources are installable; dialects without a fetcher and
+    unsafe selectors remain visible but cannot be activated.** Production: `readSource` in
+    `packages/loop/src/settings/marketplace-schema.ts`, `confineLocalSources` and
+    `marketplaceInstallSource` in `packages/code/src/adapters/marketplace.ts`, and `installSource` in
+    `packages/kernel/src/plugins/plugin-service.ts`. Test:
+    `packages/loop/tests/unit/marketplace-schema.test.ts`,
+    `packages/code/tests/integration/marketplace.test.ts`, and
+    `packages/kernel/tests/integration/plugin-service.test.ts`.
 
 66. **A key a value was actually read out of stops being reported as one Clarvis does not act on.**
     `actedKeys` (`packages/loop/src/settings/marketplace-schema.ts:442-448`) applied at `:417` and `:502`. Pinned:
@@ -1496,6 +1604,34 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/tests/unit/plugin-runtime.test.ts`, and
     `packages/mcp-client/tests/component/transport-builder.test.ts`.
 
+85. **Borrowed-host `userConfig` is a shape check, not a secret store.** Only a whole
+    `${user_config.key}` string in a stdio `env` entry is accepted, only when a shape-matched borrowed
+    manifest declares a `[A-Za-z0-9_.-]{1,128}` key with `type: "string"` inside a block of at most
+    128 entries. Destination `DEST_ENV` becomes `${DEST_ENV}` for Clarvis's existing environment/key lookup; defaults and
+    secret metadata are never consumed. Native use, `expandVariables: false`, embedded/non-env
+    references, and invalid definitions withhold only that MCP server and preserve healthy siblings.
+    Production: `containsBorrowedUserConfigReference`, `resolveBorrowedUserConfig`, and
+    `resolvePluginManifest` in `packages/kernel/src/plugins/plugin-manifest.ts`. Test: the borrowed
+    `userConfig` cases in `packages/kernel/tests/integration/plugin-manifest.test.ts`.
+
+86. **Publisher identity is preserved from the installed manifest.** A string author becomes
+    `{ name }`; an object retains its authored name/email/URL. Neither Clarvis contributors nor
+    presentation `developerName` replaces it. Production: `authorField` in
+    `packages/loop/src/settings/plugin-schema.ts` and `viewFor` in
+    `packages/kernel/src/plugins/plugin-service.ts`. Test: author/publisher cases in
+    `packages/kernel/tests/integration/{plugin-manifest,plugin-service}.test.ts`.
+87. **Every install source is staged and inspected before entering managed inventory.** Git
+    selectors, local copy bounds/symlink refusal, and npm `--ignore-scripts` are source-specific
+    acquisition policy; manifest identity and atomic repository install are shared. Production:
+    `installSource` and `createGitPluginFetcher`. Test: `installSource` cases in
+    `packages/kernel/tests/integration/plugin-service.test.ts`.
+88. **Marketplace install/authentication policy is descriptive until an explicit install action.**
+    Catalog load never auto-installs or opens OAuth; `NOT_AVAILABLE` alone suppresses the action.
+    Production: `readEntry` in `packages/loop/src/settings/marketplace-schema.ts` and
+    `installAndActivatePlugin` in `packages/code/src/app/commands.tsx`. Test: policy cases in
+    `packages/loop/tests/unit/marketplace-schema.test.ts` and explicit install cases in
+    `packages/code/tests/integration/app-commands.test.tsx`.
+
 ## 6. Failure modes and degradation
 
 ### 6.1 Manifest resolution — what is fatal to the *plugin*
@@ -1515,7 +1651,8 @@ Common parse failures and dialect-level manifest validation set `ResolvedPluginM
 Everything else — an absent hooks file, non-JSON hooks, an unrecognized hooks shape, a hooks path
 outside the plugin, an oversized hooks document, a missing/unusable/oversized declared or
 conventional native `mcpServers` companion, a portable `mcp.json` top-level failure,
-an unusable individual server entry, an unreadable presentation block, an unscannable `skills`
+an unusable individual server entry (including a rejected borrowed-host `userConfig` reference),
+an unreadable presentation block, an unscannable `skills`
 location, unknown or misspelled keys — becomes a note. Each is pinned in
 `packages/kernel/tests/integration/plugin-manifest.test.ts` (§5 invariants 14, 17, 19, 21).
 
@@ -1562,8 +1699,8 @@ contributes no roots — but still contributes agents, hooks and MCP servers (`:
 ### 6.5 Silently tolerated
 
 - Non-`.md` files under `agents/` are ignored (`packages/loop/src/settings/plugin-agents.ts:104`).
-- `interface` keys beyond `displayName`/`shortDescription` are dropped with no note
-  (`packages/kernel/src/plugins/plugin-manifest.ts:717-719`).
+- `interface` keys beyond the bounded presentation bucket recognized by `resolvePresentation` are
+  dropped with no note (`packages/kernel/src/plugins/plugin-manifest.ts`).
 - `mcpServerPluginSchema` drops unknown per-server keys without a note
   (`packages/loop/src/settings/settings-schema.ts:216-219`) — the *entry* is noted only when the refinement rejects it.
 - Duplicate skill-root declarations are de-duplicated with no note (`packages/kernel/src/plugins/plugin-manifest.ts:195`).

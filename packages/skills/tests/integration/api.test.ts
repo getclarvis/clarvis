@@ -58,6 +58,11 @@ describe("createAgentSkills public facade", () => {
       path.join(root, "pdf", "references", "spec.md"),
     );
     expect(skills.readResource("pdf", "references/spec.md")).toBe("spec");
+    expect(skills.readResourceChunk("pdf", "references/spec.md", 1, 3)).toEqual({
+      text: "pec",
+      offset: 1,
+      totalBytes: 4,
+    });
   });
 
   it("refreshes additions, modifications and removals from disk", () => {
@@ -76,5 +81,16 @@ describe("createAgentSkills public facade", () => {
     skills.refresh();
     expect(skills.listSkills().map((skill) => skill.name)).toEqual(["new-one"]);
     expect(skills.loadSkill("temporary")).toBeUndefined();
+  });
+
+  it("exposes only the selected skill directory when its root approves helper execution", () => {
+    const root = skillsRoot(workspace, "clarvis");
+    writeSkill(root, "executable", { resources: { "scripts/run.sh": "exit 0" } });
+    const skills = createAgentSkills({
+      workspace,
+      roots: [{ path: root, executionRoot: root }],
+    });
+
+    expect(skills.listSkills()[0]?.executionRoot).toBe(path.join(root, "executable"));
   });
 });

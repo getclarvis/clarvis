@@ -20,7 +20,7 @@ public symbol has one thematic owner; the root is not a compatibility barrel for
 | `@clarvis/kernel/config`    | config stores/schemas, agents, models, plugins, workflows and settings composition         |
 | `@clarvis/kernel/policy`    | guard, sanitization, tool identity, event mapping/policy/spans and ingest state            |
 | `@clarvis/kernel/local`     | shell/process/executable helpers and local filesystem/git adapters                         |
-| `@clarvis/kernel/logger`    | logger constructor and types without loading file-kernel bootstrap                        |
+| `@clarvis/kernel/logger`    | logger constructor and types without loading file-kernel bootstrap                         |
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > may change during the beta period.
@@ -106,8 +106,12 @@ standalone-skill discovery; a custom definition is a complete qualified allow-li
 inherits that builtin activation list. Plugin identity is always `{ scope, source, name }`, where
 `source` distinguishes `.agents/plugins` from `.clarvis/plugins`; no same-name install shadows or
 substitutes for another. Workspace
-definitions are shareable authored files, selections stay machine-local, workspace plugin
-activation participates in workspace trust, and selection/definition changes require reconnect.
+definitions are shareable authored files, selections stay machine-local, and selection/definition
+changes require reconnect. Global plugins live in operator-owned inventories and need no additional
+workspace approval after installation. Every `scope: "workspace"` plugin checkout enters one
+workspace-wide trust fingerprint whether selected yet or not; approving that fingerprint once
+covers all of them. In a mixed Environment, global plugins remain active while an unapproved
+workspace-owned sibling stays withheld.
 The first catalog read materializes an absent global `environments/` directory with the private
 directory mode; it treats an absent workspace catalog as empty without creating repository content.
 Preview tokens resolve the target through normal workspace-over-global precedence and bind both
@@ -118,12 +122,14 @@ authored fingerprint, and effective fingerprint; `applyComposition` revalidates 
 definition plus selection as one recoverable transaction. Trust-write failure restores both prior
 documents, while an unchanged workspace selection shadowing a global-default write is neither
 activated nor newly approved. The pinned fingerprint includes resolved plugin manifests and
-companion declarations, agent files, canonical per-file digests of bounded packaged-skill
-manifest/resource bytes plus effective sidecar-derived catalog metadata, and the content, size, mode,
-and package-relative path of every directly referenced package-local MCP, hook, or capability
-process file, plus selected standalone skill bodies/resources. Process-file admission is bounded per
-file, per plugin, and by file count. Ordinary contribution projections reuse the pinned parsed
-snapshot instead of rescanning and rehashing every accessor. Immediately before every foreground or
+companion declarations, agent files, bounded packaged-skill manifests, canonical raw-streamed
+resource digests plus effective sidecar-derived catalog metadata, and the content, size, mode, and
+package-relative path of every directly referenced package-local MCP, hook, or capability process
+file, plus selected standalone skill bodies and raw-streamed resources. Skill resources are capped
+at 8 MiB per file and 32 MiB aggregate per packaged plugin or standalone skill; process-file
+admission is bounded separately per file, per plugin, and by file count. Ordinary contribution
+projections reuse the pinned parsed snapshot instead of rescanning and rehashing every accessor.
+Immediately before every foreground or
 memory-indexer run lease is admitted, the kernel rehashes the complete selected contribution
 surface; exact lazy skill catalog/body/resource access repeats that full check at its read boundary.
 Builtin and custom standalone roots carry exact `include` lists for only the skills captured in that
@@ -226,8 +232,24 @@ outside the Clarvis process and may be written in any language; see
 Packaged capability services are authorized by installation, Environment selection and provider
 selection. A selected plugin is one atomic extension unit: its agents, skills, MCP servers, hook
 declarations and capability executables become eligible together. Installing from Code's focused
-Marketplace is the explicit consent action; workspace trust remains a separate exact-snapshot gate
-for executable content inherited by entering or changing a workspace.
+Marketplace is the explicit consent action, so a globally installed plugin needs no additional
+workspace approval when a workspace Environment selects it. Workspace trust remains a separate
+exact-snapshot gate for the complete inventory of executable plugin content inherited from
+`scope: "workspace"` checkouts. One workspace approval covers that whole inventory rather than each
+plugin or Environment separately.
+
+`PluginService.installSource` admits three marketplace fetch forms. Git sources may select a
+confined subdirectory and one validated ref or full SHA; local directories are copied into managed
+inventory under file/count/depth bounds with symlinks and special entries refused; npm packages are
+installed into staging with lifecycle scripts, audits and funding requests disabled before the
+validated plugin is atomically installed. Manifest views preserve the upstream `author`, homepage,
+repository, license, keywords, and complete bounded `interface` metadata. Those fields are display
+data only and never become execution authority.
+
+Plugin `.mcp.json` companions accept a direct server map or a wrapper under `mcpServers` or
+`mcp_servers`. HTTP entries infer their transport from `url`; `http_headers` normalizes to
+`headers`; OAuth camelCase fields normalize to the engine's snake_case seam. Invalid individual MCP
+entries are withheld without removing healthy siblings or the plugin's non-MCP contributions.
 
 Every kernel Git operation that selects a plugin checkout through a clone destination, `cwd`, or `-C`
 removes Git's repository-local environment first. A kernel launched by a parent repository's hook
@@ -259,10 +281,28 @@ document from another host starts a command with `./` or `.\`, the dialect adapt
 executable to the plugin's install root; the hook process still runs with the workspace as its
 working directory.
 
+For a shape-matched borrowed-host manifest, `resolveBorrowedUserConfig` recognizes at most 128
+`userConfig` definitions whose `type` is exactly `"string"`; a referenced key is 1–128 characters
+from `[A-Za-z0-9_.-]`. It translates only a whole stdio
+environment value `${user_config.key}` on destination `DEST_ENV` into `${DEST_ENV}`, delegating the
+actual value to Clarvis's existing environment/key lookup. It never consumes a manifest default or
+secret/sensitivity metadata. Embedded, argv/header, non-string, undeclared, native-manifest, or
+`expandVariables: false` uses withhold only the offending MCP server and preserve its siblings and
+the rest of the plugin.
+
 A manifest's `skills` locations may name collection directories or individual skill directories.
 Before enforcing the four-effective-root limit, the kernel collapses an exhaustive list of direct
 siblings to its parent collection only when no undeclared directory or symlink could become visible.
 The shared 24-root plugin budget remains unchanged.
+
+Skill helper execution is approved per discovered skill directory, never for its collection or the
+whole plugin checkout: plugin roots carry the host approval marker, and `buildResolvedSkill`
+publishes that skill's own `dir` as its `executionRoot`. Skill-resource fingerprints use
+`hashBoundedFile` to stream raw bytes into SHA-256 without decoding or retaining the complete file,
+capped by `MAX_SKILL_RESOURCE_FILE_BYTES` at 8 MiB per resource and
+`MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` at 32 MiB aggregate. The aggregate is per plugin for packaged
+skills (`PLUGIN_SKILL_RESOURCE_LIMITS`) and per skill for standalone Environment inventory
+(`standaloneCatalog`).
 
 Plugins may also package a per-skill Plans mode. The kernel applies it only when the skill originates
 from the enabled plugin and that plugin is the selected Plans provider; explicit run parameters take

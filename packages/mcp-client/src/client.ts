@@ -273,7 +273,7 @@ export function createMCPClientFactory(
       throw new Error(`server '${server.name}': remote OAuth requires a connection scope`);
     }
 
-    const key = authorization.key(opts.scope, server.url);
+    const key = authorization.key(opts.scope, server.url, server.oauth);
     const authorize = (
       onWaitStart: (() => void) | undefined,
       onWaitEnd: (() => void) | undefined,
@@ -288,6 +288,7 @@ export function createMCPClientFactory(
           const session: MCPAuthorizationSession = await authorization.session(
             opts.scope!,
             server.url!,
+            server.oauth,
           );
           const boundary: AuthorizationBoundary = [session, key, server.name];
           const first = buildClient(session.provider);
@@ -420,6 +421,12 @@ export function buildTransport(
         ? { ...server.env }
         : resolveStringMap(server.env, environment)
       : undefined;
+    const forwardedEnv = Object.fromEntries(
+      (server.env_vars ?? []).flatMap((name) => {
+        const value = environment[name];
+        return value === undefined ? [] : [[name, value]];
+      }),
+    );
     const cwd = server.cwd ?? defaultCwd;
     const forwarder =
       limits.onServerStderr === undefined
@@ -434,7 +441,7 @@ export function buildTransport(
     const parameters = {
       command: server.command,
       args: server.args ?? [],
-      env: { ...getDefaultEnvironment(), ...customEnv },
+      env: { ...getDefaultEnvironment(), ...forwardedEnv, ...customEnv },
       ...(cwd !== undefined ? { cwd } : {}),
       ...(limits.maxStdioFrameBytes !== undefined
         ? { maxFrameBytes: limits.maxStdioFrameBytes }
@@ -467,11 +474,24 @@ export function buildTransport(
     throw new Error(`server '${server.name}': url is required for ${server.transport} transport`);
   }
   const url = new URL(server.url);
-  const headers = server.headers
-    ? server.expandVariables === false
-      ? { ...server.headers }
-      : resolveStringMap(server.headers, environment)
-    : undefined;
+  const referencedHeaders: Record<string, string> = {
+    ...Object.fromEntries(
+      Object.entries(server.env_http_headers ?? {}).map(([header, envName]) => [
+        header,
+        `\${${envName}}`,
+      ]),
+    ),
+    ...(server.bearer_token_env_var === undefined
+      ? {}
+      : { Authorization: `Bearer \${${server.bearer_token_env_var}}` }),
+    ...(server.headers ?? {}),
+  };
+  const headers =
+    Object.keys(referencedHeaders).length > 0
+      ? server.expandVariables === false
+        ? referencedHeaders
+        : resolveStringMap(referencedHeaders, environment)
+      : undefined;
   const remoteFetch = createMCPRemoteFetch({
     resourceUrl: url,
     authorization: limits.authProvider !== undefined,

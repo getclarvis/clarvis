@@ -192,6 +192,33 @@ export function assertWithinWorkspace(
   );
 }
 
+/** Refuse a native mutation whose canonical target falls inside a host-protected root. */
+export function assertOutsideRoots(
+  abs: string,
+  protectedRoots: readonly string[],
+  input: string,
+): void {
+  const target = canonicalizeAllowingMissing(abs);
+  if (target === undefined) {
+    throw new ToolError("path_escape", `Path could not be safely resolved: ${input}.`, {
+      path: input,
+    });
+  }
+  const targetReal = forCompare(target, process.platform === "win32");
+  for (const candidate of protectedRoots) {
+    const root = canonicalizeAllowingMissing(candidate);
+    if (root === undefined) continue;
+    const rootReal = forCompare(root, process.platform === "win32");
+    if (targetReal === rootReal || targetReal.startsWith(rootReal + path.sep)) {
+      throw new ToolError(
+        "path_escape",
+        `Path targets an enabled skill package and cannot be changed by native file tools: ${input}.`,
+        { path: input },
+      );
+    }
+  }
+}
+
 /**
  * Resolve `p` to its real (symlink-free) path, or `undefined` when it cannot be
  * `realpath`ed for any reason — it does not exist, or a component of it is not

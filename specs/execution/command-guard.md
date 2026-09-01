@@ -385,7 +385,7 @@ tool family, and an unrecognized tool yields no paths and no shell facts (`packa
 | Family | Members | Extraction | Line |
 | --- | --- | --- | --- |
 | guarded host fallback | `host_vcs` | render `program` plus each string argv member with display-safe quoting into `args.command`, analyze that display command, and resolve `args.cwd` with plain fs semantics | `packages/tools/src/guard/context.ts` |
-| command tools | `shell`, `monitor_start` | `analyzeShell(args.command)`, each reported path resolved with **shell semantics** (tilde expansion); when a sandbox is configured, an existing verified spill is admitted as that exact read-only-mounted file; unsandboxed commands do not receive the exception; `args.cwd` is added with plain fs semantics | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/state-artifacts.ts` |
+| command tools | `shell`, `monitor_start` | `analyzeShell(args.command)`, each reported path resolved with **shell semantics** (tilde expansion) against workspace, scratch and exact host-selected skill roots; when a sandbox is configured, an existing verified spill is admitted as that exact read-only-mounted file; unsandboxed commands do not receive the spill exception; `args.cwd` is added with plain fs semantics against the same workspace/scratch/skill roots | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/state-artifacts.ts` |
 | patch | `apply_patch` | `patchPaths(args.patch)` — raw unified `---`/`+++` plus model-envelope Update/Add/Delete/Move headers, `/dev/null` dropped, `a/`/`b/` prefixes stripped, deduped first-seen | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
 | src/dest | `move`, `copy` | `args.source`, `args.destination` | `:23`, `:66`-`:68` |
 | list | `read_files` | every string in `args.paths` | `:69`-`:74` |
@@ -465,6 +465,13 @@ directory. The guard adds only that exact file to read-only `read_file`/`read_fi
 too. Production:
 `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/guard/context.ts`. Test:
 `packages/tools/tests/integration/guard-dispatch.test.ts`.
+
+Skill execution roots are a separate host-approved class. Command analysis admits only the exact
+canonical directories reported by selected skills; they are not added to native file-tool roots and
+selection never launches a process. Guard approval also does not make an unsandboxed host process
+read-only. Production: `buildGuardContext` in `packages/tools/src/guard/context.ts` and
+`buildExecuteRunDeps` in `packages/loop/src/runtime/build-run-deps.ts`. Test:
+`packages/tools/tests/integration/api.test.ts`.
 
 The boundary regex has a documented failure it exists to prevent: a bare `\benv\b` matched the
 `env` inside `.env`, "which was merely noisy while undecidable meant `ask`, and becomes a wrong
@@ -1076,6 +1083,14 @@ broken.
     `packages/code/src/views/config/RunControlsPanel.tsx` (`guardPolicyForWrite`, `applyPreset`,
     `applyGuard`). Test: `packages/code/tests/integration/run-controls-render.test.tsx` (direct-mode,
     reviewed-global, and reviewed-workspace policy-retention cases).
+
+57. **A selected skill's execution approval widens command analysis only to that skill directory.**
+    The guard sees shell paths and `cwd` beneath exact `skillExecutionRoots`; native mutation remains
+    separately denied and an unsandboxed child retains ordinary host filesystem rights. Production:
+    `packages/tools/src/guard/context.ts`, `packages/tools/src/core.ts`, and
+    `packages/loop/src/runtime/build-run-deps.ts`. Test:
+    `packages/tools/tests/integration/api.test.ts` and
+    `packages/skills/tests/integration/api.test.ts`.
 
 ---
 

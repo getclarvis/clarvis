@@ -14,11 +14,11 @@ specified in [`engine/tool-dispatch.md`](../../specs/engine/tool-dispatch.md).
 | `BunStdioClientTransport`                       | a stdio transport written for Bun                                               |
 | `openConnection`                                | one self-healing connection: reconnect, health ping, consecutive-timeout streak |
 | `createConnectionManager`                       | the pool over connections, with idle TTL and owner scoping                      |
-| `buildRegistry`, `selectTools`, `poolToolNames` | the namespaced tool registry                                                    |
+| `buildRegistry`, `selectTools`, `poolToolNames` | collision-safe tool registry with dotted canonical identities                   |
 | `interpolateEnv`                                | `${VAR}` expansion in a server's `env` and `headers` when enabled               |
 | `createMCPAuthorizationCoordinator`             | browser OAuth, loopback callback, PKCE and per-resource serialization           |
 | `createMcpOAuthCredentialStore`                 | bounded, private persistence for registrations and tokens                       |
-| `MCPAuthorizationWait`, pending/deferred errors | blocking/embedder and non-blocking run authorization/admission policy            |
+| `MCPAuthorizationWait`, pending/deferred errors | blocking/embedder and non-blocking run authorization/admission policy           |
 | `CLIENT_NAME`, `VERSION`                        | MCP handshake identity using the root Clarvis product version                   |
 
 It depends on `@clarvis/capability` (the `MCPConnection` / `NamespacedRegistry`
@@ -33,6 +33,13 @@ second, broader Clarvis interpolation pass. The pool key includes this flag. It 
 `auto_tools`: that flag changes the loop's run-level admission after discovery, not the physical
 server, transport, or catalog that this package pools.
 
+For stdio, `env_vars` forwards only named host variables in addition to the explicit `env` map. For
+remote transports, `bearer_token_env_var` and `env_http_headers` resolve credentials at connection
+time without persisting their values. `startup_timeout_ms` and `tool_timeout_ms` override the pool
+defaults per server; `enabled_tools` is applied first and `disabled_tools` afterward. The bounded
+`instructions` returned by `initialize` is retained on the opened connection for the engine to
+place beside the server's tools.
+
 ## It does not know the engine
 
 `@clarvis/loop` depends on this package, never the reverse. The one edge that
@@ -41,6 +48,16 @@ wire names to keep an MCP tool from shadowing `submit_result` or `read_file`.
 Those names are now a **required argument**: required rather than defaulted,
 because a host that forgot them would silently reintroduce the shadowing the
 parameter exists to prevent, and nothing would report it.
+
+The registry assigns model-facing names in two passes. It first counts provider-local tool names
+case-insensitively and reserves every local name that uses only `[A-Za-z0-9_-]`, occurs exactly
+once, and is not reserved by the host. Those tools keep their exact local name, which lets a skill
+call a provider by the spelling that provider documents. Duplicate, case-colliding, invalid, or
+host-reserved local names instead use a sanitized `mcpName.toolName` fallback, suffixed when needed.
+Reserving all eligible local names before allocating any fallback makes the result independent of
+connection order. The dotted `fullName` remains the canonical identity and remains resolvable even
+when the model sees a local or sanitized fallback. Every fallback emits `mcp.registry.renamed` with
+`reason: "invalid" | "reserved" | "collision"` through the supplied logger.
 
 Tool _dispatch_ — routing a model's call to a connection, with guards, trace and
 the result envelope — stays in the engine. This package knows how to talk to a
@@ -54,8 +71,10 @@ idempotency key.
 
 ## Remote OAuth
 
-HTTP and SSE transports use the SDK's protected-resource discovery, dynamic client registration,
-PKCE, token exchange and refresh flow when a server requires OAuth. One coordinator owns a
+HTTP and SSE transports use the SDK's protected-resource discovery, CIMD when an HTTPS
+`client_metadata_url` is configured, dynamic client registration when available, PKCE, token
+exchange and refresh flow when a server requires OAuth. A configured `client_id` takes precedence
+over both registration methods. One coordinator owns a
 loopback-only callback listener and serializes authorization by the hash of `(workspace, owner,
 canonical resource URL)`, so overlapping runs do not race one credential record. The host supplies
 the browser opener; an intentionally headless host omits it and receives
@@ -64,9 +83,20 @@ the browser opener; an intentionally headless host omits it and receives
 Every OAuth discovery, registration, token, browser, and redirect destination must use HTTPS,
 except for HTTP on a loopback host. Headers configured for the MCP resource are attached only to
 resource requests on that origin; OAuth exchanges do not inherit them, even when both services share
-an origin, and an SDK-defined authorization header always wins. The callback accepts only
-`GET /oauth/callback`, validates a 256-bit state with a timing-safe comparison, bounds callback
-fields, and never renders a code or state into its response.
+an origin, and an SDK-defined authorization header always wins. Callback routes are the configured
+path or that path plus the stable server-specific callback id. The listener validates both route
+and 256-bit state, validates `iss` whenever supplied and requires the matching issuer when the
+authorization server advertises issuer-bound responses, bounds callback fields, and never renders a
+code or state into its response. A portless `http://127.0.0.1/...` callback receives the active
+listener port; other loopback names need an explicit matching port. HTTPS callback URLs are allowed
+for a configured ingress/proxy, while plaintext non-loopback callbacks are refused.
+
+Callback selection follows the interoperable matrix: dynamic registration with issuer support may
+reuse the configured callback; without issuer support it appends the callback id. A pre-registered
+client reuses an issuer-bound callback or an already id-suffixed callback, otherwise it falls back
+to the global/default loopback callback with the id appended. The configured callback itself is not
+rewritten. Clarvis does not depend on a vendor-hosted CIMD document: a plugin or host that needs CIMD
+must supply its public `client_metadata_url`.
 
 An authorization challenge may arrive during the handshake, catalog discovery, a tool/resource
 request, or a health probe. Clarvis completes the SDK-started browser flow and repeats only the

@@ -605,6 +605,10 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     `packages/code/tests/architecture/architecture-boundary.test.ts`, and
     `packages/code/tooling/artifact/smoke.ts` (complete paint and deferred catalogue).
 
+    Workspace-plugin inventory hashing and its automatic trust modal are full-runtime work after the
+    startup composer has painted. Repository plugins remain inactive until that resolution completes;
+    neither trust computation nor the modal is an admission dependency for first paint.
+
 The near-250 ms and below-500 ms functional startup targets are review criteria on a comparable
 named host, not cross-platform invariants. No invariant currently sets an absolute complete-app or
 healthy-idle RSS target. The overlay runner

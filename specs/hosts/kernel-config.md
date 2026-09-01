@@ -213,9 +213,11 @@ The fingerprint is `sha256:` + hex over `JSON.stringify(canonical(surface))`, wh
 `{ settings?, agents?, extensions? }` (`WorkspaceExecutableSurface` in
 `packages/kernel/src/config/workspace-trust.ts:193-200`), agents sorted by name with per-file
 `sha256:` digests. `extensions` is supplied by the Environment manager only when a workspace
-definition activates plugins; it includes the exact definition reference, revision, and qualified
-plugin allow-list. Consequently editing that definition invalidates an earlier approval even if
-`settings.json` and agent files are unchanged.
+contains repository-owned plugins; it includes every installed `scope: "workspace"` plugin's exact
+qualified ref and atomic contribution digest, whether selected by an Environment yet or not.
+Consequently adding, removing, repairing, or changing any repository plugin invalidates the single
+workspace approval even if `settings.json` and agent files are unchanged. Environment switches do
+not require another approval while that inventory remains unchanged.
 
 ### 3.6 `WORKSPACE_RISK_FIELDS` (`packages/kernel/src/config/workspace-trust.ts:37`)
 
@@ -473,7 +475,7 @@ output keeps first-occurrence order (`:61`, `:66`).
 
 | State | Event | Next | Effect |
 | --- | --- | --- | --- |
-| any | workspace declares no risky field, agent file, or plugin-activating Environment surface | `inert` | nothing withheld |
+| any | workspace declares no risky field, agent file, or installed `scope: "workspace"` plugin | `inert` | nothing withheld |
 | `unapproved` | `getSettings()` | `unapproved` | risky fields withheld, raw file still on `scopes.workspace` (`:81`, `:92`) |
 | `unapproved` | `approveWorkspace()` | `trusted` | fields merge; `withheld_workspace_fields` absent (`:134`) |
 | `trusted` | the approved file is edited on disk | `changed` | fields withheld again (`:146`) |
@@ -660,13 +662,14 @@ Each entry: **rule** — production anchor — test anchor.
     whether the agent is listed, only whether the repository's file overlays it.
 
 21. **Approval binds to the surface, not to the path.** The fingerprint covers the risky settings,
-    agent file digests, *and* a plugin-activating workspace Environment definition and selection
+    agent file digests, *and* every installed `scope: "workspace"` plugin's qualified ref and atomic
+    contribution digest before Environment selection. Global operator-owned plugins do not enter this surface
     (`WorkspaceExecutableSurface` and `workspaceExecutableSurface` in
     `packages/kernel/src/config/workspace-trust.ts`) and the verdict is recomputed per call
     (`packages/kernel/src/config/file-config-store.ts:508`). The withheld projection names that
-    extension surface as `environment` until trusted. Pinned:
-    `packages/kernel/tests/integration/workspace-trust.test.ts` ("binds approval to the selected
-    workspace Environment definition").
+    extension surface as `environment` until trusted. Pinned by the complete pre-selection inventory
+    and content-drift case in `packages/kernel/tests/integration/environment-manager.test.ts`, plus
+    the extension-surface hashing case in `workspace-trust.test.ts`.
 
 22. **The trust key is the resolved realpath.** `canonicalWorkspaceKey` (`packages/kernel/src/config/workspace-trust.ts:284`)
     with a `try/catch` falling back to the input. **Unpinned** — no test exercises a symlinked

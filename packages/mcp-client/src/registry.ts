@@ -33,9 +33,10 @@ export function toWireToolName(
   onRename?: (base: string, wireName: string) => void,
 ): string {
   const base = fullName.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const occupied = new Set([...used].map((name) => name.toLowerCase()));
   let candidate = base;
   let i = 1;
-  while (used.has(candidate)) {
+  while (occupied.has(candidate.toLowerCase())) {
     candidate = `${base}_${i++}`;
   }
   used.add(candidate);
@@ -68,31 +69,78 @@ function makeRegistry(
   reserved: readonly string[],
   logger: Logger,
 ): NamespacedRegistry {
-  const reservedNames = new Set(reserved);
+  const reservedLower = new Set(reserved.map((name) => name.toLowerCase()));
   const tools: NamespacedTool[] = [];
   const byWireName = new Map<string, Resolved>();
   const byFullName = new Map<string, Resolved>();
   const byLowerName = new Map<string, Resolved>();
   const usedWireNames = new Set<string>(reserved);
   const conns: MCPConnection[] = entries.map((e) => e.conn);
+  const localNameCounts = new Map<string, number>();
+  for (const entry of entries) {
+    for (const tool of entry.tools) {
+      const key = tool.name.toLowerCase();
+      localNameCounts.set(key, (localNameCounts.get(key) ?? 0) + 1);
+    }
+  }
+  const localReservations = new Set<string>();
+  for (const entry of entries) {
+    for (const tool of entry.tools) {
+      const localLower = tool.name.toLowerCase();
+      if (
+        /^[a-zA-Z0-9_-]+$/.test(tool.name) &&
+        localNameCounts.get(localLower) === 1 &&
+        !reservedLower.has(localLower)
+      ) {
+        localReservations.add(tool.name);
+      }
+    }
+  }
+  for (const name of localReservations) usedWireNames.add(name);
 
   for (const { conn, tools: toolList } of entries) {
     for (const t of toolList) {
       const fullName = `${conn.name}.${t.name}`;
-      const wireName = toWireToolName(fullName, usedWireNames, (base, chosen) => {
+      const localLower = t.name.toLowerCase();
+      const localSafe = /^[a-zA-Z0-9_-]+$/.test(t.name);
+      const useLocal =
+        localSafe && localNameCounts.get(localLower) === 1 && !reservedLower.has(localLower);
+      let collisionRenamed = false;
+      const wireName = useLocal
+        ? t.name
+        : toWireToolName(fullName, usedWireNames, (base, chosen) => {
+            collisionRenamed = true;
+            logger.warn(
+              {
+                event: "mcp.registry.renamed",
+                mcp: conn.name,
+                tool: t.name,
+                full_name: fullName,
+                wire_name: chosen,
+                reason: reservedLower.has(base.toLowerCase()) ? "reserved" : "collision",
+              },
+              "mcp tool's wire name was already taken, so the model is offered it under a " +
+                "suffixed name; a call by its original name will not reach this server",
+            );
+          });
+      if (!useLocal && !collisionRenamed) {
         logger.warn(
           {
             event: "mcp.registry.renamed",
             mcp: conn.name,
             tool: t.name,
             full_name: fullName,
-            wire_name: chosen,
-            reason: reservedNames.has(base) ? "reserved" : "collision",
+            wire_name: wireName,
+            reason: !localSafe
+              ? "invalid"
+              : reservedLower.has(localLower)
+                ? "reserved"
+                : "collision",
           },
-          "mcp tool's wire name was already taken, so the model is offered it under a suffixed " +
-            "name; a call by its original name will not reach this server",
+          "mcp tool's local name cannot be offered safely, so the model is offered its " +
+            "namespaced form",
         );
-      });
+      }
       const namespaced: NamespacedTool = {
         fullName,
         wireName,

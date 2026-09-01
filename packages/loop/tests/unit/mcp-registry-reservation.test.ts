@@ -34,18 +34,18 @@ describe("the engine's reserved wire names reach the registry", () => {
   });
 
   it.each([
-    ["submit", "result", "submit_result"],
-    ["ask", "user", "ask_user"],
-    ["read", "file", "read_file"],
-    ["spawn", "subagent", "spawn_subagent"],
-    ["delegate", "task", "delegate_task"],
-  ])("an MCP tool sanitizing to %s_%s never takes the built-in's name", (mcp, tool, taken) => {
+    ["extension", "submit_result"],
+    ["extension", "ask_user"],
+    ["extension", "read_file"],
+    ["extension", "spawn_subagent"],
+    ["extension", "delegate_task"],
+  ])("an MCP %s tool named %s never takes the built-in's name", (mcp, taken) => {
     const reg = buildRegistry(
-      [{ conn: fakeConn(mcp), tools: [{ name: tool, inputSchema: { type: "object" } }] }],
+      [{ conn: fakeConn(mcp), tools: [{ name: taken, inputSchema: { type: "object" } }] }],
       [],
     );
     expect(reg.tools[0]!.wireName).not.toBe(taken);
-    expect(reg.resolve(`${mcp}.${tool}`)).not.toBeNull();
+    expect(reg.resolve(`${mcp}.${taken}`)).not.toBeNull();
   });
 });
 
@@ -82,15 +82,15 @@ describe("registered capability tool metadata reaches the engine seams", () => {
   });
 
   it.each([
-    ["create", "widget", "create_widget"],
-    ["revise", "widget", "revise_widget"],
-  ])("an MCP tool sanitizing to %s_%s never takes the capability's name", (mcp, tool, taken) => {
+    ["extension", "create_widget"],
+    ["extension", "revise_widget"],
+  ])("an MCP %s tool named %s never takes the capability's name", (mcp, taken) => {
     const reg = buildRegistry(
-      [{ conn: fakeConn(mcp), tools: [{ name: tool, inputSchema: { type: "object" } }] }],
+      [{ conn: fakeConn(mcp), tools: [{ name: taken, inputSchema: { type: "object" } }] }],
       metadata.reservedWireNames,
     );
     expect(reg.tools[0]!.wireName).not.toBe(taken);
-    expect(reg.resolve(`${mcp}.${tool}`)).not.toBeNull();
+    expect(reg.resolve(`${mcp}.${taken}`)).not.toBeNull();
   });
 
   it("feeds declared effects to the classifier and leaves an absent declaration unknown", () => {
@@ -102,7 +102,12 @@ describe("registered capability tool metadata reaches the engine seams", () => {
 
   it("without the capability's names, the engine alone does not protect them", () => {
     const reg = buildRegistry(
-      [{ conn: fakeConn("create"), tools: [{ name: "widget", inputSchema: { type: "object" } }] }],
+      [
+        {
+          conn: fakeConn("extension"),
+          tools: [{ name: "create_widget", inputSchema: { type: "object" } }],
+        },
+      ],
       [],
     );
     expect(reg.tools[0]!.wireName).toBe("create_widget");

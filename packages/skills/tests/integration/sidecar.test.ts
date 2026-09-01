@@ -246,6 +246,17 @@ describe("harness-directed skill sidecar", () => {
       const local = discover(path.dirname(dir));
       expect(local.list()[0]?.presentation).toBeUndefined();
     });
+
+    it("prefers the canonical OpenAI sidecar names deterministically", () => {
+      const dir = writeTempSkill("ranked-sidecar", {});
+      mkdirSync(path.join(dir, "agents"), { recursive: true });
+      writeFileSync(path.join(dir, "agents", "harness.yaml"), "display-name: Harness\n");
+      writeFileSync(path.join(dir, "agents", "openai.yml"), "display-name: OpenAI YML\n");
+      writeFileSync(path.join(dir, "agents", "openai.yaml"), "display-name: OpenAI YAML\n");
+
+      const local = discover(path.dirname(dir));
+      expect(local.list()[0]?.presentation?.displayName).toBe("OpenAI YAML");
+    });
   });
 
   describe("required fields Clarvis supplies", () => {

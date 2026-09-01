@@ -140,6 +140,12 @@ set by `runner.ts`'s `run` beside the caller-supplied filtered `baseEnv`
 | `CLARVIS_HOOK_TOOL` | present only when `inv.candidate` exists |
 | `CLARVIS_HOOK_TOOL_FULL_NAME` | the stable dotted MCP identity when it differs from the wire name |
 
+A bundled plugin command additionally receives canonical `PLUGIN_ROOT`/`PLUGIN_DATA` and the
+`CODEX_PLUGIN_ROOT`/`CODEX_PLUGIN_DATA` compatibility aliases. They are attached after credential
+filtering and contain paths, never credentials. Production: the command environment in
+`createHookRunner` (`packages/hooks/src/runner.ts`). Test:
+`packages/hooks/tests/component/runner.test.ts` (`publishes plugin root and writable data paths`).
+
 ## 3. Data and formats
 
 ### 3.1 One configured hook (`HookConfig` / `HookSpec`)
@@ -151,17 +157,24 @@ set by `runner.ts`'s `run` beside the caller-supplied filtered `baseEnv`
        | "budget_exhausted" | "user_steer" | "session_start" | "pre_compact"
        | "user_prompt_expansion",
   match?: { tool?: string | string[], args?: Record<string, string> },
-  command: string,          // max 8192 chars
-  timeout_ms?: number,       // 1..60000
+  type?: "command" | "mcp_tool",
+  command: string,                    // command hooks; max 8192 chars
+  command_windows?: string,
+  async?: boolean,
+  status_message?: string,            // bounded display metadata
+  additional_context_limit?: number,  // 0..65536 captured chars
+  server?: string, tool?: string, input?: unknown, // mcp_tool hooks
+  timeout_ms?: number,                // 1..60000
   on_failure?: "pass" | "deny",
 }
 ```
-Schema at `packages/capability/src/hooks-config.ts:261-407`. Cross-field rules enforced by
-`superRefine` (`:354-403`): `match` only valid for `pre_tool_use`/`post_tool_use` and must set
+Schema at `packages/capability/src/hooks-config.ts`, `hookSchema`. Cross-field rules enforced by
+its `superRefine`: `match` is valid only for `pre_tool_use`/`post_tool_use` and must set
 `tool` and/or `args`; every `match.args` value must compile as a `RegExp`; `on_failure` is rejected
 outright on the two "offering" events (`session_start`, `pre_compact` — "a hook that offers text
-and fails simply contributes nothing", `:391-392`); `on_failure: "deny"` is rejected on any other
-observer event.
+and fails simply contributes nothing"); `on_failure: "deny"` is rejected on any other observer
+event; an `mcp_tool` requires `server` and `tool` and cannot declare failure policy because its
+failure is always non-blocking.
 
 ### 3.2 The stdin payload — flat, foreign-dialect identity fields
 
@@ -343,15 +356,20 @@ passes only `denyExact`).
    (`:281-290`).
 3. For each selected spec, `runner.run(spec, inv, signal)`:
    a. builds the stdin payload (§3.2) and the injected env (§2.6);
-   b. calls `runHookCommand` (`packages/hooks/src/subprocess.ts:376`) which spawns the host shell, writes stdin, bounds
+   b. for an `mcp_tool`, resolves the already-open server/tool through `MCP_HOOK_TOOL_PORT`,
+      recursively expands `${field.path}` values from the event payload, calls it directly, and
+      applies the same output verdict parser without entering ordinary tool dispatch;
+   c. for a command hook, selects `command_windows` on Windows and otherwise `command`, then calls
+      `runHookCommand` (`packages/hooks/src/subprocess.ts:376`) which spawns the host shell, writes stdin, bounds
       stdout/stderr, bounds the wall clock, and never rejects (§4.4);
-   c. `classify(res, inv)` (`packages/hooks/src/runner.ts:124-162`) turns the `SubprocessResult` into either a
+   d. `classify(res, inv)` (`packages/hooks/src/runner.ts:124-162`) turns the `SubprocessResult` into either a
       `HookFailure` or a `HookOutcome`, in this precedence: `aborted` > `timedOut` > `spawnError` >
       (gate + exit code 2 + no signal ⇒ `deny`) > (non-zero exit or signalled ⇒ `exit_nonzero`) >
       `parseHookStdout` of stdout;
-   d. logs `hooks.command_failed` (warn) on failure or `hooks.verdict` (info for `deny`/`rewrite`,
+   e. logs `hooks.command_failed`/`hooks.mcp_failed` (warn) on failure or `hooks.verdict` (info for `deny`/`rewrite`,
       debug otherwise) on success (`:320-354`);
-   e. returns a `HookResult` — never throws.
+   f. returns a `HookResult` — never throws. An async command returns `pass` immediately and enters
+      the runner's bounded background queue; `run_end` remains synchronous even when authored async.
 4. `runner.resolve(result, inv)` (`packages/hooks/src/runner.ts:360-369`) folds the result into the `HookOutcome` the
    host actually acts on:
    - a successful non-gate `deny` downgrades to `pass` (an observer event can never block);
@@ -424,6 +442,27 @@ which predate the naming). Only the methods with a configured spec are ever defi
 object (`:180-189`), and the function returns `undefined` when nothing gate/observer/compaction-shaped
 is configured (`:191`; test: "returns undefined when nothing gate- or observer-shaped is
 configured", `packages/hooks/tests/component/capability.test.ts:56-62`).
+
+#### Portable lifecycle and direct MCP execution
+
+`createHookRunner` caps active async command hooks at `MAX_BACKGROUND_HOOKS = 8`; excess work waits
+in FIFO order. Async output is not a verdict for the current event. `run_end`/`SessionEnd` always
+waits so shutdown does not discard the command. `additional_context_limit` narrows stdout capture;
+zero keeps the host default. `status_message` is retained as display metadata but is not injected
+into the transcript. Production: `scheduleBackground` and `run` in
+`packages/hooks/src/runner.ts`. Test: async, SessionEnd and plugin-environment cases in
+`packages/hooks/tests/component/runner.test.ts`.
+
+An `mcp_tool` hook calls the run-scoped `MCP_HOOK_TOOL_PORT` populated only after the MCP pool opens.
+It does not traverse the model's tool dispatcher and therefore cannot recursively fire tool hooks.
+MCP absence, tool failure, cancellation and timeout become ordinary `HookResult` failures; schema
+policy makes them fail open. Portable SessionEnd MCP entries are skipped during dialect conversion.
+Production: `MCP_HOOK_TOOL_PORT` in `packages/capability/src/hooks-config.ts`, its provider in
+`packages/loop/src/runtime/orchestrator.ts`, `createWorkspaceHooksCapability` in
+`packages/hooks/src/capability.ts`, and `convertHooksDocument` in
+`packages/kernel/src/plugins/hook-dialects.ts`. Test: direct MCP cases in
+`packages/hooks/tests/component/runner.test.ts` and conversion cases in
+`packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
 ### 4.4 `runHookCommand` — spawn/bound/kill state machine
 
@@ -764,6 +803,21 @@ The following invariants govern the behaviour covered above.
     Pinned: `packages/hooks/tests/component/capability.test.ts:413-453`,
     `packages/hooks/tests/unit/match.test.ts:43-54`, and
     `packages/loop/tests/unit/tool-hooks.test.ts:172-212`.
+25. **Async command hooks cannot accumulate unbounded live processes, and SessionEnd is never
+    detached.** Production: `MAX_BACKGROUND_HOOKS`, `scheduleBackground`, and `run` in
+    `packages/hooks/src/runner.ts`. Test: async and SessionEnd cases in
+    `packages/hooks/tests/component/runner.test.ts`.
+26. **Plugin hook paths are explicit environment data, not authority.** Only the resolved plugin
+    root and writable data directory become `PLUGIN_*`/`CODEX_PLUGIN_*`; the base environment still
+    passes through per-run credential filtering. Production: `resolveHooks` in
+    `packages/kernel/src/plugins/plugin-manifest.ts`, `filterHookEnv` in
+    `packages/hooks/src/capability.ts`, and `createHookRunner` in `packages/hooks/src/runner.ts`.
+    Test: plugin environment cases in `packages/hooks/tests/component/runner.test.ts`.
+27. **Direct MCP hooks do not recursively trigger tool hooks and cannot fail closed.** They call the
+    run-scoped connection façade, not model dispatch, and `hookSchema` rejects `on_failure` for
+    `mcp_tool`. Production: `MCP_HOOK_TOOL_PORT`, `createWorkspaceHooksCapability`, and
+    `createHookRunner`. Test: direct MCP cases in
+    `packages/hooks/tests/component/runner.test.ts`.
 
 ## 6. Failure modes and degradation
 

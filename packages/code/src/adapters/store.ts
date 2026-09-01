@@ -1482,17 +1482,6 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             tone: "warn",
             text: `${event.dropped} incremental live event${event.dropped === 1 ? " was" : "s were"} dropped; terminal tool results and assistant responses remain authoritative.`,
           }));
-        } else if (event.type === "mcp_degraded") {
-          const detail = event.servers
-            .map((server) => `${server.name}: ${server.reason}`)
-            .join("; ");
-          const bounded = boundTranscriptText(`MCP degraded — ${detail}`);
-          upsert(ns(`mcp-degraded:${annSeq++}`), () => ({
-            kind: "annotation",
-            status: "error",
-            tone: "warn",
-            text: bounded.text,
-          }));
         }
         publisher.observe(execId, span, event, source);
       },

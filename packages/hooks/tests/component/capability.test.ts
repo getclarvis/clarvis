@@ -9,7 +9,11 @@ import {
   runUserPromptExpansionHooks,
 } from "../../src/capability.ts";
 import type { HookConfig } from "@clarvis/capability";
-import { HOOKS_CAPABILITY_NAME } from "@clarvis/capability";
+import {
+  createCapabilityServices,
+  HOOKS_CAPABILITY_NAME,
+  MCP_HOOK_TOOL_PORT,
+} from "@clarvis/capability";
 import type { LifecycleHook } from "@clarvis/capability";
 import { CONFIG, context } from "../helpers/capability.ts";
 
@@ -84,6 +88,8 @@ describe("compileWorkspaceHooks", () => {
       "pre_delegate_task",
       "run_start",
       "run_end",
+      "post_compact",
+      "subagent_start",
       "subagent_complete",
       "pre_compact",
       "model_call_error",
@@ -102,6 +108,8 @@ describe("compileWorkspaceHooks", () => {
         "preDelegateTask",
         "onRunStart",
         "onRunEnd",
+        "onPostCompact",
+        "onSubagentStart",
         "onSubagentComplete",
         "onPreCompact",
         "onModelCallError",
@@ -364,6 +372,40 @@ describe("the payload a hook receives", () => {
         }),
       ),
     ).toEqual({ status: "completed", error_code: undefined, iterations_used: 4, elapsed_ms: 90 });
+
+    expect(
+      await payloadFor("post_compact", async (h) =>
+        h.onPostCompact?.({
+          agent: "subagent",
+          subagentInstanceId: "sa-1",
+          operation: "summarization",
+          freedChars: 120,
+          keptChars: 80,
+        }),
+      ),
+    ).toEqual({
+      agent: "subagent",
+      subagent_instance_id: "sa-1",
+      operation: "summarization",
+      freed_chars: 120,
+      kept_chars: 80,
+    });
+
+    expect(
+      await payloadFor("subagent_start", async (h) =>
+        h.onSubagentStart?.({
+          subagentInstanceId: "sa-2",
+          profile: "reviewer",
+          model: "provider:model",
+          task: "inspect",
+        }),
+      ),
+    ).toEqual({
+      subagent_instance_id: "sa-2",
+      profile: "reviewer",
+      model: "provider:model",
+      task: "inspect",
+    });
 
     expect(
       await payloadFor("subagent_complete", async (h) =>
@@ -726,6 +768,53 @@ describe("createWorkspaceHooksCapability", () => {
     });
     const activation = await capability.forRun(context());
     expect(await activation?.seedBlock?.()).toBeUndefined();
+  });
+
+  it("routes direct MCP hooks through the run-scoped tool port", async () => {
+    const calls: unknown[][] = [];
+    const services = createCapabilityServices();
+    services.provide(MCP_HOOK_TOOL_PORT, {
+      call: async (...args) => {
+        calls.push(args);
+        return { ok: true };
+      },
+    });
+    const capability = createWorkspaceHooksCapability({
+      resolveHooks: () => [
+        CONFIG({
+          event: "run_start",
+          type: "mcp_tool",
+          command: "",
+          server: "alerts",
+          tool: "notify",
+          input: { mode: "${mode}" },
+        }),
+      ],
+      environment: {},
+    });
+    const activation = await capability.forRun(context({ services }));
+    await activation?.lifecycle?.[0]?.onRunStart?.({ mode: "solo", entry: "lead" });
+
+    expect(calls[0]?.slice(0, 3)).toEqual(["alerts", "notify", { mode: "solo" }]);
+  });
+
+  it("keeps a direct MCP hook non-blocking when the run has no MCP tool port", async () => {
+    const capability = createWorkspaceHooksCapability({
+      resolveHooks: () => [
+        CONFIG({
+          event: "pre_tool_use",
+          type: "mcp_tool",
+          command: "",
+          server: "review",
+          tool: "inspect",
+        }),
+      ],
+      environment: {},
+    });
+    const activation = await capability.forRun(context());
+    await expect(
+      activation?.lifecycle?.[0]?.beforeToolUse?.({ tool: "shell", arguments: {} }),
+    ).resolves.toEqual({ kind: "pass" });
   });
 });
 

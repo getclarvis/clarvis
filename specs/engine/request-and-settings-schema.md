@@ -204,25 +204,26 @@ provider-published `reasoning_efforts`, `prompt_cache` (`"explicit"|"implicit"|"
 validates non-empty strings but does not interpret their vocabulary
 (`packages/loop/src/validation/request/provider-schemas.ts:75-80`).
 
-One MCP server (`serverSchema`, `packages/loop/src/validation/request/server-schemas.ts:183`):
-`name`, `transport` (default `"stdio"`), plus a transport-conditional set enforced by
-`refineServerTransport` (`packages/loop/src/validation/request/server-schemas.ts:107`): `stdio`
-requires `command` and forbids `url`/`headers`; `http`/`sse` requires a well-formed `url` and forbids
-`command`/`args`/`env`/`cwd`/`shared`. Three further optional fields carry their own semantics beyond
-being transport-conditional (`packages/loop/src/validation/request/server-schemas.ts:59-77`, mirrored
-identically on the settings side): `expandVariables` defaults to true and lets portable Agent Plugin
-adapters disable Clarvis's ordinary `${VAR}` expansion after performing their format-owned
-`PLUGIN_ROOT`/`PLUGIN_DATA` pass; `shared`
-opts a `stdio` server into one pooled subprocess reused across overlapping and sequential runs — and
-because that subprocess outlives any single run, it never advertises the MCP `elicitation`
-capability, so a server that authenticates by asking must not set it; `resources` (default on) opts
-*out* of the engine's synthetic `<server>.list_resources`/`<server>.read_resource` tools that are
-otherwise auto-attached when the server advertises the MCP `resources` capability; `auto_tools`
-(default false) is host composition, not transport policy, and admits every tool the server actually
-advertises to every effective agent in this run. The request's `profiles[].tools` arrays and any
-persisted profiles remain unchanged. Production: `serverSchema` and `addAutomaticMcpTools`. Test:
-`packages/loop/tests/unit/automatic-mcp-tools.test.ts` and the "host-composed automatic server
-tools" case in `packages/loop/tests/integration/open-tool-pool.test.ts`.
+One MCP server (`serverSchema`, `packages/loop/src/validation/request/server-schemas.ts`): `name`,
+`transport` (default `"stdio"`), plus a transport-conditional set enforced by
+`refineServerTransport`: `stdio` requires `command` and forbids `url`/`headers`/remote credentials;
+`http`/`sse` requires a well-formed `url` and forbids
+`command`/`args`/`env`/`cwd`/`shared`/`env_vars`. A URL-only entry infers `http`, and
+`http_headers` normalizes to `headers`, matching portable `.mcp.json` declarations.
+
+The remaining optional surface is carried into `McpServerConfig`: `expandVariables`,
+`shared`, `resources`, `auto_tools`, OAuth (`client_id`, `callback_url`, `callback_port`, and HTTPS
+`client_metadata_url`), `bearer_token_env_var`, `env_http_headers`, `env_vars`, per-server startup
+and tool timeouts, `enabled`, `required`, `enabled_tools`, `disabled_tools`, and `authentication`.
+The allow and deny lists may not overlap. `expandVariables` lets portable Agent Plugin adapters
+disable Clarvis's ordinary `${VAR}` expansion after their format-owned `PLUGIN_ROOT`/`PLUGIN_DATA`
+pass. `shared` opts a `stdio` server into one pooled subprocess reused across runs and therefore
+suppresses elicitation. `resources` (default on) controls synthetic resource tools. `auto_tools`
+(default false) admits every retained advertised tool to every effective agent in the run without
+mutating authored profiles. Production: `serverSchema`, `refineServerTransport`, and
+`addAutomaticMcpTools`. Test: `packages/loop/tests/unit/settings-schema.test.ts`,
+`packages/loop/tests/unit/engine-server.test.ts`, `packages/loop/tests/unit/automatic-mcp-tools.test.ts`,
+and `packages/loop/tests/integration/open-tool-pool.test.ts`.
 
 ### 3.2 `settings.json` shape
 
@@ -246,14 +247,15 @@ custom Environment is a complete allow-list resolved by the kernel and never ove
 `settings.json`. Consequently an `environments`/`environment` key in settings remains an unknown
 top-level key and is rejected by this strict schema.
 
-`pluginNameField` (`packages/loop/src/settings/settings-schema.ts:44-55`) refines the `^[a-z0-9_-]+$`
-plugin-name regex against `RESERVED_PLUGIN_NAMES = {"__proto__","constructor","prototype"}`; the
-field's own doc comment states why: as an object key, one of those three "corrupt[s] the trust map
-instead of storing an approval."
+`pluginNameField` (`packages/loop/src/settings/settings-schema.ts`) accepts lowercase names bounded
+by alphanumeric characters with `.`, `_`, or `-` separators, rejects repeated `--`/`..`, path
+separators, edge punctuation, and `RESERVED_PLUGIN_NAMES =
+{"__proto__","constructor","prototype"}`. The last three would corrupt the trust map instead of
+storing an approval.
 
-`mcpServerBase` (`packages/loop/src/settings/settings-schema.ts:62-114`) is itself built with
+`mcpServerBase` (`packages/loop/src/settings/settings-schema.ts`) is itself built with
 `.strip()`, not `.strict()`. `mcpServerSettingsSchema` re-adds `.strict()` for `settings.json`
-(`:197`), but `mcpServerPluginSchema` (`:221`) inherits the base's `.strip()` — a **third** tolerance
+but `mcpServerPluginSchema` inherits the base's `.strip()` — a **third** tolerance
 mode for an unrecognized key, distinct from both `agentFrontmatterSchema`'s "carried through" (§3.3)
 and `settingsSchema`'s "rejected": a plugin-manifest MCP entry silently **drops** a key this host
 gives no meaning to, rather than carrying or rejecting it. The schema's own doc comment
@@ -263,11 +265,12 @@ have, and failing the whole entry over one of them "did not withhold a server; i
 manifest, and with it the plugin's agents, hooks and skills" — measured, per the same comment, at 24
 of 196 catalog plugins and 82 skills broken by the stricter rule.
 
-`mcpServerSettingsSchema` spells the transport field `type` (not `transport`); the bridge
-`settingsServerToEngine` (`packages/loop/src/settings/engine-server.ts`) renames it on the way to the
-engine's flat `McpServerConfig` array and carries both an explicit `cwd` and `expandVariables`
-without reinterpretation; when `cwd` is absent, the client factory applies its workspace-rooted
-default.
+`mcpServerSettingsSchema` spells the transport field `type` (not `transport`), infers `http` when a
+URL is present without a type, normalizes `http_headers`, and accepts snake_case or camelCase OAuth
+keys. The bridge `settingsServerToEngine` (`packages/loop/src/settings/engine-server.ts`) renames
+`type`, converts timeout seconds to engine milliseconds, and carries every remaining declared field
+without reinterpretation; its compile-time drift lock fails if a schema key is not mapped. When
+`cwd` is absent, the client factory applies its workspace-rooted default.
 
 ### 3.3 Agent frontmatter document
 
@@ -685,8 +688,9 @@ Test: `packages/loop/tests/unit/settings-merge.test.ts:168-181`.
 
 **H.** `settingsServerToEngine` carries a fourth, sibling drift lock of the same family as INV-048's:
 `_engineServerDriftLock` only type-checks while `MapperCoversSettings` holds — every key of
-`McpServerSettings` is one of the mapper's own `MappedSettingsKey` union (`"type" | "command" |
-"args" | "url" | "headers" | "env" | "shared" | "resources"`). Its own doc comment states what it
+`McpServerSettings` is one of the mapper's own `MappedSettingsKey` union (transport, process,
+credential, OAuth, timeout, enablement, tool-filter, and authentication-policy fields). Its own doc
+comment states what it
 would silently miss without this: "a key added to the settings schema and forgotten here would
 otherwise be dropped in silence on the way to the engine — which is exactly how the
 `type`/`transport` mismatch survived from the initial commit."

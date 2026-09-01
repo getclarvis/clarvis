@@ -3,7 +3,11 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from "node:net";
 
 import type { PoolScope } from "./connection.ts";
-import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
+import type { McpOAuthConfig } from "@clarvis/capability";
+import type {
+  OAuthClientProvider,
+  OAuthDiscoveryState,
+} from "@modelcontextprotocol/sdk/client/auth.js";
 import type { OAuthClientMetadata } from "@modelcontextprotocol/sdk/shared/auth.js";
 import { CLIENT_NAME, VERSION } from "./version.ts";
 import {
@@ -12,8 +16,8 @@ import {
   type McpOAuthRecord,
 } from "./oauth-store.ts";
 
-/** Stable loopback port preferred so dynamic client registrations survive restarts. */
-export const DEFAULT_MCP_OAUTH_CALLBACK_PORT = 53_682;
+/** An ephemeral listener is the safe default for loopback OAuth callbacks. */
+export const DEFAULT_MCP_OAUTH_CALLBACK_PORT = 0;
 /** Maximum time a run waits for a person to finish browser authorization. */
 export const DEFAULT_MCP_OAUTH_AUTHORIZATION_TIMEOUT_MS = 5 * 60_000;
 const MAX_CALLBACK_URL_CHARS = 16 * 1024;
@@ -60,6 +64,10 @@ export interface MCPAuthorizationOptions {
   openAuthorizationUrl?: (url: string) => Promise<boolean>;
   /** Preferred loopback callback port. Zero requests an ephemeral test/dev port. */
   callbackPort?: number;
+  /** Global callback base used when one server does not declare its own. */
+  callbackUrl?: string;
+  /** Public HTTPS client-metadata document used when a server advertises CIMD. */
+  clientMetadataUrl?: string;
   authorizationTimeoutMs?: number;
   /** Store seam used by deterministic tests. */
   store?: McpOAuthCredentialStore;
@@ -79,8 +87,12 @@ export interface MCPAuthorizationSession {
 
 /** Long-lived callback listener and credential authority shared by one client factory. */
 export interface MCPAuthorizationCoordinator {
-  key(scope: PoolScope, serverUrl: string): string;
-  session(scope: PoolScope, serverUrl: string): Promise<MCPAuthorizationSession>;
+  key(scope: PoolScope, serverUrl: string, oauth?: McpOAuthConfig): string;
+  session(
+    scope: PoolScope,
+    serverUrl: string,
+    oauth?: McpOAuthConfig,
+  ): Promise<MCPAuthorizationSession>;
   runExclusive<T>(
     key: string,
     signal: AbortSignal | undefined,
@@ -93,6 +105,9 @@ export interface MCPAuthorizationCoordinator {
 
 interface PendingCallback {
   state: string;
+  pathname: string;
+  expectedIssuer?: string;
+  issuerRequired: boolean;
   resolve(code: string): void;
   reject(error: Error): void;
 }
@@ -170,7 +185,7 @@ function waitAbortable<T>(promise: Promise<T>, signal: AbortSignal | undefined):
   });
 }
 
-function recordKey(scope: PoolScope, serverUrl: string): string {
+function recordKey(scope: PoolScope, serverUrl: string, oauth?: McpOAuthConfig): string {
   const resource = new URL(serverUrl).href;
   return createHash("sha256")
     .update(scope.workspace)
@@ -178,7 +193,26 @@ function recordKey(scope: PoolScope, serverUrl: string): string {
     .update(scope.owner)
     .update("\0")
     .update(resource)
+    .update("\0")
+    .update(
+      JSON.stringify({
+        client_id: oauth?.client_id ?? null,
+        callback_url: oauth?.callback_url ?? null,
+        callback_port: oauth?.callback_port ?? null,
+        client_metadata_url: oauth?.client_metadata_url ?? null,
+      }),
+    )
     .digest("hex");
+}
+
+function callbackId(serverUrl: string): string {
+  return createHash("sha256").update(new URL(serverUrl).href).digest("base64url").slice(0, 12);
+}
+
+function withCallbackId(raw: string, id: string): string {
+  const url = new URL(raw);
+  url.pathname = `${url.pathname.replace(/\/$/, "")}/${id}`;
+  return url.href;
 }
 /** Whether an OAuth network or browser destination uses HTTPS or loopback HTTP. */
 export function oauthUrlIsSecure(url: URL): boolean {
@@ -194,7 +228,8 @@ export function oauthUrlIsSecure(url: URL): boolean {
  *
  * @remarks Authorization URLs, states, codes, tokens, client secrets and token
  * responses never cross the logging boundary. The listener accepts only the
- * fixed loopback path and validates a 256-bit state before resolving a flow.
+ * session's selected callback path and validates a 256-bit state before
+ * resolving a flow.
  */
 export function createMCPAuthorizationCoordinator(
   options: MCPAuthorizationOptions,
@@ -215,9 +250,8 @@ export function createMCPAuthorizationCoordinator(
   );
   const pending = new Map<string, PendingCallback>();
   const tails = new Map<string, Promise<void>>();
-  let callbackServer: Server | undefined;
-  let callbackUrl: string | undefined;
-  let startPromise: Promise<string> | undefined;
+  const callbackServers = new Set<Server>();
+  const listenerStarts = new Map<string, Promise<number>>();
   let closePromise: Promise<void> | undefined;
   let closed = false;
 
@@ -228,13 +262,9 @@ export function createMCPAuthorizationCoordinator(
     }
     let url: URL;
     try {
-      url = new URL(req.url, callbackUrl ?? "http://127.0.0.1");
+      url = new URL(req.url, "http://127.0.0.1");
     } catch {
       failurePage(res);
-      return;
-    }
-    if (url.pathname !== "/oauth/callback") {
-      failurePage(res, 404);
       return;
     }
     const state = url.searchParams.get("state") ?? "";
@@ -242,12 +272,26 @@ export function createMCPAuthorizationCoordinator(
       failurePage(res);
       return;
     }
-    const found = [...pending.values()].find((entry) => stateMatches(entry.state, state));
+    const found = [...pending.values()].find(
+      (entry) => entry.pathname === url.pathname && stateMatches(entry.state, state),
+    );
     if (found === undefined) {
       failurePage(res);
       return;
     }
     pending.delete(found.state);
+    const receivedIssuer = url.searchParams.get("iss");
+    if (
+      found.expectedIssuer !== undefined &&
+      (receivedIssuer !== null || found.issuerRequired) &&
+      receivedIssuer !== found.expectedIssuer
+    ) {
+      found.reject(
+        new MCPAuthorizationFailedError("The authorization callback issuer did not match."),
+      );
+      failurePage(res);
+      return;
+    }
     const oauthError = url.searchParams.get("error");
     if (oauthError !== null) {
       found.reject(new MCPAuthorizationFailedError("The authorization server declined access."));
@@ -266,7 +310,7 @@ export function createMCPAuthorizationCoordinator(
     successPage(res);
   };
 
-  const listen = (server: Server, port: number): Promise<void> =>
+  const listen = (server: Server, port: number, host: string): Promise<void> =>
     new Promise<void>((resolve, reject) => {
       const onError = (error: Error): void => {
         server.removeListener("listening", onListening);
@@ -278,52 +322,132 @@ export function createMCPAuthorizationCoordinator(
       };
       server.once("error", onError);
       server.once("listening", onListening);
-      server.listen(port, "127.0.0.1");
+      server.listen(port, host);
     });
 
-  const ensureServer = async (): Promise<string> => {
-    if (callbackUrl !== undefined) return callbackUrl;
+  const ensureServer = async (
+    oauth?: McpOAuthConfig,
+  ): Promise<{ callbackBase: string; configuredCallback?: string; listenerPort: number }> => {
     if (closed) throw new MCPAuthorizationFailedError("MCP OAuth coordinator is closed.");
-    startPromise ??= (async () => {
+    const configuredCallback = oauth?.callback_url ?? options.callbackUrl;
+    const baseUrl = new URL(
+      configuredCallback ?? options.callbackUrl ?? "http://127.0.0.1/callback",
+    );
+    if (
+      !oauthUrlIsSecure(baseUrl) ||
+      baseUrl.username.length > 0 ||
+      baseUrl.password.length > 0 ||
+      baseUrl.hash.length > 0
+    ) {
+      throw new Error(
+        "MCP OAuth callback URL must use HTTPS or loopback HTTP without credentials.",
+      );
+    }
+    const hostname = baseUrl.hostname;
+    const local = ["127.0.0.1", "localhost", "[::1]"].includes(hostname.toLowerCase());
+    const bindHost = local ? (hostname === "[::1]" ? "::1" : "127.0.0.1") : "0.0.0.0";
+    const requestedPort = oauth?.callback_port ?? preferredPort;
+    if (!Number.isInteger(requestedPort) || requestedPort < 0 || requestedPort > 65_535) {
+      throw new Error("MCP OAuth callback port must be an integer from 0 through 65535.");
+    }
+    if (local && baseUrl.port.length > 0 && Number(baseUrl.port) !== requestedPort) {
+      throw new Error(
+        "A loopback OAuth callback URL with an explicit port requires the same callback_port.",
+      );
+    }
+    if (local && baseUrl.port.length === 0 && hostname !== "127.0.0.1") {
+      throw new Error("Only http://127.0.0.1 supports a portless loopback OAuth callback URL.");
+    }
+    const listenerKey = `${bindHost}\0${String(requestedPort)}`;
+    let start = listenerStarts.get(listenerKey);
+    start ??= (async () => {
       const server = createServer(handleCallback);
-      callbackServer = server;
+      callbackServers.add(server);
       try {
-        await listen(server, preferredPort);
+        await listen(server, requestedPort, bindHost);
       } catch (error) {
-        if (preferredPort === 0 || (error as NodeJS.ErrnoException | null)?.code !== "EADDRINUSE") {
-          throw error;
-        }
-        await listen(server, 0);
+        callbackServers.delete(server);
+        throw error;
       }
       const address = server.address() as AddressInfo | null;
       if (address === null) throw new Error("MCP OAuth callback listener has no address");
-      callbackUrl = `http://127.0.0.1:${String(address.port)}/oauth/callback`;
-      return callbackUrl;
+      return address.port;
     })();
-    let started: string;
+    listenerStarts.set(listenerKey, start);
+    let actualPort: number;
     try {
-      started = await startPromise;
+      actualPort = await start;
     } catch (error) {
-      startPromise = undefined;
-      callbackServer = undefined;
+      if (listenerStarts.get(listenerKey) === start) listenerStarts.delete(listenerKey);
       throw error;
     }
     if (closed) throw new MCPAuthorizationFailedError("MCP OAuth coordinator is closed.");
-    return started;
+    if (local && baseUrl.hostname === "127.0.0.1" && baseUrl.port.length === 0) {
+      baseUrl.port = String(actualPort);
+    }
+    return {
+      callbackBase: baseUrl.href,
+      ...(configuredCallback === undefined ? {} : { configuredCallback: baseUrl.href }),
+      listenerPort: actualPort,
+    };
   };
 
   const makeSession = async (
     scope: PoolScope,
     serverUrl: string,
+    oauth?: McpOAuthConfig,
   ): Promise<MCPAuthorizationSession> => {
-    const redirectUrl = await ensureServer();
-    const key = recordKey(scope, serverUrl);
+    const callback = await ensureServer(oauth);
+    const key = recordKey(scope, serverUrl, oauth);
     const stored = await store.readRecord(key);
     if (closed) throw new MCPAuthorizationFailedError("MCP OAuth coordinator is closed.");
-    let clientInformation =
-      stored?.redirect_url === redirectUrl ? stored.client_information : undefined;
+    const configuredClient =
+      oauth?.client_id === undefined ? undefined : { client_id: oauth.client_id };
+    const id = callbackId(serverUrl);
+    let savedClientInformation: McpOAuthRecord["client_information"];
     let tokens = stored?.tokens;
     let flow: AuthorizationFlow | undefined;
+    let discoveryState: OAuthDiscoveryState | undefined;
+
+    const issuerMetadata = (): {
+      supported: boolean;
+      issuer?: string;
+    } => {
+      const metadata = discoveryState?.authorizationServerMetadata as
+        | ({ issuer?: unknown; authorization_response_iss_parameter_supported?: unknown } & Record<
+            string,
+            unknown
+          >)
+        | undefined;
+      const supported = metadata?.authorization_response_iss_parameter_supported === true;
+      const issuer = typeof metadata?.issuer === "string" ? metadata.issuer : undefined;
+      if (supported && issuer === undefined) {
+        throw new MCPAuthorizationFailedError(
+          "The authorization server advertised issuer-bound responses without an issuer.",
+        );
+      }
+      return { supported, ...(issuer === undefined ? {} : { issuer }) };
+    };
+
+    const redirectUrl = (): string => {
+      const { supported } = issuerMetadata();
+      const configured = callback.configuredCallback;
+      if (configuredClient !== undefined && configured === undefined) {
+        return withCallbackId(callback.callbackBase, id);
+      }
+      if (configured !== undefined && configuredClient === undefined) {
+        return supported ? configured : withCallbackId(configured, id);
+      }
+      if (configured !== undefined && configuredClient !== undefined) {
+        if (supported || new URL(configured).pathname.endsWith(`/${id}`)) return configured;
+        const fallback = new URL(options.callbackUrl ?? "http://127.0.0.1/callback");
+        if (fallback.hostname === "127.0.0.1" && fallback.port.length === 0) {
+          fallback.port = String(callback.listenerPort);
+        }
+        return withCallbackId(fallback.href, id);
+      }
+      return withCallbackId(callback.callbackBase, id);
+    };
 
     const activeFlow = (): AuthorizationFlow => {
       flow ??= {
@@ -339,28 +463,38 @@ export function createMCPAuthorizationCoordinator(
       await store.mutateRecord(key, (current) => ({
         ...(current ?? { updated_at: Date.now() }),
         ...change,
-        redirect_url: redirectUrl,
+        redirect_url: redirectUrl(),
         updated_at: Date.now(),
       }));
     };
 
-    const clientMetadata: OAuthClientMetadata = {
+    const clientMetadata = (): OAuthClientMetadata => ({
       client_name: CLIENT_NAME,
-      redirect_uris: [redirectUrl],
+      redirect_uris: [redirectUrl()],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
       software_id: "getclarvis/clarvis",
       software_version: VERSION,
-    };
+    });
 
     const provider: OAuthClientProvider = {
-      redirectUrl,
-      clientMetadata,
+      get redirectUrl(): string {
+        return redirectUrl();
+      },
+      ...((oauth?.client_metadata_url ?? options.clientMetadataUrl)
+        ? { clientMetadataUrl: oauth?.client_metadata_url ?? options.clientMetadataUrl }
+        : {}),
+      get clientMetadata(): OAuthClientMetadata {
+        return clientMetadata();
+      },
       state: () => activeFlow().state,
-      clientInformation: () => clientInformation,
+      clientInformation: () =>
+        configuredClient ??
+        savedClientInformation ??
+        (stored?.redirect_url === redirectUrl() ? stored.client_information : undefined),
       async saveClientInformation(value): Promise<void> {
-        clientInformation = value;
+        savedClientInformation = value;
         await persist({ client_information: value });
       },
       tokens: () => tokens,
@@ -368,7 +502,9 @@ export function createMCPAuthorizationCoordinator(
         tokens = value;
         await persist({
           tokens: value,
-          ...(clientInformation === undefined ? {} : { client_information: clientInformation }),
+          ...(savedClientInformation === undefined
+            ? {}
+            : { client_information: savedClientInformation }),
         });
       },
       async redirectToAuthorization(authorizationUrl): Promise<void> {
@@ -397,8 +533,13 @@ export function createMCPAuthorizationCoordinator(
         current.codeVerifiers.clear();
         delete current.latestCodeVerifier;
         current.redirected = true;
+        const { issuer: expectedIssuer, supported } = issuerMetadata();
+        const currentRedirect = redirectUrl();
         pending.set(current.state, {
           state: current.state,
+          pathname: new URL(currentRedirect).pathname,
+          ...(expectedIssuer === undefined ? {} : { expectedIssuer }),
+          issuerRequired: supported,
           resolve: (code) => current.callback.resolve(code),
           reject: (error) => current.callback.reject(error),
         });
@@ -442,7 +583,8 @@ export function createMCPAuthorizationCoordinator(
           return;
         }
         if (kind === "tokens" || kind === "all") tokens = undefined;
-        if (kind === "client" || kind === "all") clientInformation = undefined;
+        if (kind === "client" || kind === "all") savedClientInformation = undefined;
+        if (kind === "discovery" || kind === "all") discoveryState = undefined;
         if (kind === "discovery") return;
         await store.mutateRecord(key, (current) => {
           if (current === undefined) return undefined;
@@ -454,6 +596,10 @@ export function createMCPAuthorizationCoordinator(
             : next;
         });
       },
+      saveDiscoveryState(value): void {
+        discoveryState = value;
+      },
+      discoveryState: () => discoveryState,
     };
 
     return {
@@ -534,17 +680,21 @@ export function createMCPAuthorizationCoordinator(
         const error = new MCPAuthorizationFailedError("MCP OAuth authorization was cancelled.");
         for (const entry of pending.values()) entry.reject(error);
         pending.clear();
-        const starting = startPromise;
-        if (starting !== undefined) {
-          try {
-            await starting;
-          } catch {}
-        }
-        const server = callbackServer;
-        callbackServer = undefined;
-        callbackUrl = undefined;
-        if (server === undefined || !server.listening) return;
-        await new Promise<void>((resolve) => server.close(() => resolve()));
+        await Promise.allSettled(listenerStarts.values());
+        await Promise.all(
+          [...callbackServers].map(
+            (server) =>
+              new Promise<void>((resolve) => {
+                if (!server.listening) {
+                  resolve();
+                  return;
+                }
+                server.close(() => resolve());
+              }),
+          ),
+        );
+        callbackServers.clear();
+        listenerStarts.clear();
       })();
       return closePromise;
     },

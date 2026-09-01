@@ -65,6 +65,15 @@ export interface SkillPresentation {
   starterPrompt?: string;
 }
 
+/** One MCP dependency declared by a skill's portable sidecar. */
+export interface SkillToolDependency {
+  type: "mcp";
+  value: string;
+  description?: string;
+  transport?: string;
+  url?: string;
+}
+
 /** List projection of a skill. */
 export interface SkillSummary {
   /** Skill name; the slash-command a UI exposes it under. */
@@ -83,6 +92,8 @@ export interface SkillSummary {
   provenance?: SkillProvenance;
   /** How the skill asks to be presented; absent when it declares nothing. */
   presentation?: SkillPresentation;
+  /** External MCP tools the skill declares it needs. */
+  dependencies?: SkillToolDependency[];
   /** Trusted effective Plans override for this skill run, when one applies. */
   plansMode?: PlansMode;
 }

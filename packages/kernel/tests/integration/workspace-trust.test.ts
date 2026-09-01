@@ -214,13 +214,16 @@ describe("approval lifts the withholding", () => {
     expect((await config.getSettings()).workspace_trust?.state).toBe("inert");
   });
 
-  it("binds approval to the selected workspace Environment definition", async () => {
+  it("binds one approval to the complete repository plugin inventory", async () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-wstrust-environment-"));
     const globalDir = join(root, "global");
     let extensions: unknown = {
-      environment: { scope: "workspace", name: "project" },
-      definition_revision: "sha256:first",
-      plugins: [{ scope: "workspace", source: "clarvis", name: "runner" }],
+      plugins: [
+        {
+          ref: { scope: "workspace", source: "clarvis", name: "runner" },
+          digest: "sha256:first",
+        },
+      ],
     };
     const config = createConfigService(
       createFileConfigStore({
@@ -239,11 +242,11 @@ describe("approval lifts the withholding", () => {
     expect((await config.approveWorkspace()).workspace_trust?.state).toBe("trusted");
     expect((await config.getSettings()).withheld_workspace_fields).toBeUndefined();
     extensions = {
-      environment: { scope: "workspace", name: "project" },
-      definition_revision: "sha256:changed",
       plugins: [
-        { scope: "workspace", source: "clarvis", name: "runner" },
-        { scope: "global", source: "clarvis", name: "browser" },
+        {
+          ref: { scope: "workspace", source: "clarvis", name: "runner" },
+          digest: "sha256:changed",
+        },
       ],
     };
     const changed = await config.getSettings();
@@ -263,9 +266,12 @@ describe("approval lifts the withholding", () => {
         environment: {
           resolvePlugins: () => [],
           workspaceTrustSurface: () => ({
-            environment: { scope: "workspace", name: "project" },
-            definition_revision: "sha256:project",
-            plugins: [{ scope: "workspace", source: "clarvis", name: "runner" }],
+            plugins: [
+              {
+                ref: { scope: "workspace", source: "clarvis", name: "runner" },
+                digest: "sha256:runner",
+              },
+            ],
           }),
           assertWorkspaceTrustTransitionAllowed: () => {
             if (running) throw kernelError("conflict", "finish active runs first");

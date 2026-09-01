@@ -8,9 +8,11 @@
 `@clarvis/skills` turns directories of `SKILL.md` files into a merged, in-memory catalog and serves
 that catalog in three tiers: **list** (name + description metadata), **get** (body + enumerated
 bundled resources), **resource/readResource** (one confined file)
-(`packages/skills/src/types.ts:194`). The tiering is the point — the run's system prompt receives
-only names and one-line descriptions (`packages/skills/src/catalog/index.ts:32`), and the model pulls
-a body on demand through the `load_skill` tool (`packages/skills/src/tool.ts:33`).
+and **readResourceChunk** (one byte-addressed UTF-8 page of a larger confined file)
+(`SkillRegistry` in `packages/skills/src/types.ts`). The tiering is the point — the run's system
+prompt receives only names and one-line descriptions (`packages/skills/src/catalog/index.ts:32`),
+and the model pulls a body on demand through the `load_skill` tool
+(`packages/skills/src/tool.ts:33`).
 
 The package also ships the second half of the feature: the loop **capability** that gates the catalog
 on an env flag and a per-agent grant, renders the system-prompt section, and dispatches `load_skill`
@@ -35,7 +37,7 @@ Clarvis cannot fully read is repaired or partially defaulted rather than deleted
 
 | Subpath | File | Contents |
 | --- | --- | --- |
-| `.` | `packages/skills/src/index.ts` | discovery facade, config resolution, bounded resource enumeration/raw descriptor reads, snapshot limits, preset roots, diagnostics and types |
+| `.` | `packages/skills/src/index.ts` | discovery facade, config resolution, bounded resource enumeration, full/chunked reads, streaming hashes, snapshot limits, preset roots, diagnostics and types |
 | `./catalog` | `packages/skills/src/catalog/index.ts` | `renderSkillCatalog` only — one function, one parameter |
 | `./capability` | `packages/skills/src/capability.ts` | loop capability, `load_skill` tool + handler, bootstrap resolution, `SkillsProvider` |
 
@@ -47,7 +49,7 @@ Declared in `packages/skills/package.json:25`–`:42`; every entry resolves to `
 | Export | Signature / shape | Source |
 | --- | --- | --- |
 | `createAgentSkills(options)` | `(AgentSkillsOptions) => AgentSkills` | `packages/skills/src/index.ts:47` |
-| `AgentSkills` | `{ config; listSkills(); loadSkill(name); resourcePath(name, rel); readResource(name, rel); refresh() }` | `packages/skills/src/index.ts:12` |
+| `AgentSkills` | `{ config; listSkills(); loadSkill(name); resourcePath(name, rel); readResource(name, rel); readResourceChunk(name, rel, offset?, maxChars?); refresh() }` | `packages/skills/src/index.ts` |
 | `discoverSkills(config)` | `(SkillConfig) => SkillRegistry` | `packages/skills/src/core.ts:15` |
 | `resolveConfig(options)` | `(AgentSkillsOptions) => SkillConfig` | `packages/skills/src/config.ts:82` |
 | `normalizeTools(tools)` | `(string[] \| string \| undefined) => string[]` | `packages/skills/src/parse.ts:279` |
@@ -56,8 +58,10 @@ Declared in `packages/skills/package.json:25`–`:42`; every entry resolves to `
 | `MAX_SKILL_ROOTS` | `32` | `packages/skills/src/limits.ts:2` |
 | `enumerateResources(dir, followSymlinks, config)` | bounded `ResourceEntry[]` walk used by disclosure and snapshot consumers | `packages/skills/src/scan.ts` |
 | `readBoundedBytes(file, options, reader?)` | exact `Buffer` read from one opened descriptor behind byte and optional character limits | `packages/skills/src/bounded-read.ts` |
-| `BoundedReadOptions`, `DescriptorReader` | host/test types for the bounded descriptor reader | `packages/skills/src/bounded-read.ts` |
-| snapshot file/resource limits | `MAX_SKILL_FILE_BYTES`, `MAX_SKILL_FILE_CHARS`, `MAX_SKILL_RESOURCE_BYTES`, `MAX_SKILL_RESOURCE_CHARS` | `packages/skills/src/limits.ts` |
+| `readBoundedTextChunk(file, options, reader?)` | one UTF-8 page whose cursor and continuation are byte offsets | `packages/skills/src/bounded-read.ts` |
+| `hashBoundedFile(file, options, reader?)` | streaming SHA-256 identity of one bounded regular file, without text decoding | `packages/skills/src/bounded-read.ts` |
+| bounded read/hash types | `BoundedReadOptions`, `BoundedTextChunkOptions`, `BoundedTextChunk`, `BoundedFileDigest`, `DescriptorReader` | `packages/skills/src/bounded-read.ts` |
+| snapshot file/resource limits | `MAX_SKILL_FILE_BYTES`, `MAX_SKILL_FILE_CHARS`, `MAX_SKILL_RESOURCE_BYTES`, `MAX_SKILL_RESOURCE_CHARS`, `MAX_SKILL_RESOURCE_FILE_BYTES`, `MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` | `packages/skills/src/limits.ts` |
 | `ErrorCode` | type only — the closed union of error codes | `packages/skills/src/errors.ts:6` |
 | re-exports from `@clarvis/paths` | `resolveWorkspaceDir`, `resolveAgainst`, `expandHome` | `packages/skills/src/index.ts:66` |
 
@@ -98,7 +102,7 @@ is a contract" (`packages/skills/src/lib/log.ts:34`–`:36`).
 | `loadSkillTool` | `NamespacedTool` (see schema below) | `packages/skills/src/tool.ts:33` |
 | `renderSkillsSection(catalog, bootstraps?)` | `=> string` | `packages/skills/src/tool.ts:106` |
 | `handleLoadSkillCall(args)` | `=> LoadSkillCallResult` (synchronous) | `packages/skills/src/call.ts:65` |
-| `SkillsProvider` | `{ listSkills; loadSkill; readResource }` | `packages/skills/src/tool.ts:22` |
+| `SkillsProvider` | `{ listSkills; loadSkill; readResource; readResourceChunk? }` | `packages/skills/src/tool.ts` |
 | `resolveBootstrapSkills(args)` | `=> ResolvedBootstrapSkill[]` | `packages/skills/src/bootstrap.ts:104` |
 | `BOOTSTRAP_SKILL_MAX_CHARS` | `20_000` | `packages/skills/src/bootstrap.ts:19` |
 | `BOOTSTRAP_SKILLS_RUN_BUDGET_CHARS` | `40_000` | `packages/skills/src/bootstrap.ts:29` |
@@ -113,11 +117,16 @@ Capability metadata is derived from the tool descriptor rather than spelled twic
 ```
 { type: "object", additionalProperties: false,
   properties: { name: { type: "string", minLength: 1 },
-                resource: { type: "string", minLength: 1 } },
+                resource: { type: "string", minLength: 1 },
+                offset: { type: "integer", minimum: 0, maximum: 8388608 } },
   required: ["name"] }
 ```
 
-`packages/skills/src/tool.ts:44`–`:63`; pinned at `packages/skills/tests/unit/tool.test.ts:18`–`:20`.
+`offset` is valid only with `resource`, is measured in bytes, and callers copy it from the preceding
+page rather than deriving it from decoded text. Production: `loadSkillTool` in
+`packages/skills/src/tool.ts` and `handleLoadSkillCall` in `packages/skills/src/call.ts`. Test:
+`packages/skills/tests/unit/tool.test.ts` (schema) and `packages/skills/tests/unit/call.test.ts`
+(`offset requires a bundled resource path`).
 
 ### 2.5 Settings / plugin-manifest key (owned by the engine, not this package)
 
@@ -262,6 +271,7 @@ Accepted key spellings per concept (`packages/skills/src/sidecar.ts:40`–`:80`)
 | presentation block | `interface`, `presentation`, `display`, `ui` | block first, root as per-field fallback |
 | policy block | `policy`, `invocation` | consulted before the root |
 | catalog suppression | `allow-implicit-invocation`/… (inverted) or `hide-from-catalog`/`hidden` | boolean |
+| MCP tool dependencies | `dependencies.tools[]` entries with `type: mcp`, `value`, optional `description`/`transport`/`url` | at most 64 bounded entries |
 
 `readCatalogSuppressed` (`packages/skills/src/sidecar.ts:211`–`:219`) has a real precedence order
 the table above does not show: it tries the **policy block first, then the root** mapping, and
@@ -270,6 +280,15 @@ whichever concept is found first in a given block decides outright, and the othe
 same block is never consulted. Only when the policy block mentions neither concept does the root
 block get a turn. So a policy-level `implicit-invocation: false` wins over a root-level
 `hidden: false` even though both are present; the two concepts are never merged.
+
+`readToolDependencies` accepts only `type: "mcp"`, bounds each string and ignores malformed or
+unsupported entries without removing the skill. The resulting `SkillInfo.dependencies` is retained
+by the protocol catalog; per-run capability activation keeps a skill only when every named server is
+present either directly or under that skill's `plugin:<name>` namespace. Production:
+`readToolDependencies` in `packages/skills/src/sidecar.ts` and `dependenciesAvailable` in
+`packages/skills/src/capability.ts`. Test: dependency cases in
+`packages/skills/tests/integration/sidecar.test.ts` and
+`packages/kernel/tests/component/skills-service.test.ts`.
 
 Fixture (`packages/skills/tests/fixtures/foreign-skills/presented/agents/harness.yaml:1`):
 
@@ -288,10 +307,18 @@ policy:
 ### 3.4 In-memory shapes
 
 `SkillInfo` (`packages/skills/src/types.ts:119`): `name`, `description`, `metadata`,
-`allowedTools?`, `userInvocable`, `catalogSuppressed?`, `presentation?`, `defaulted?`, `scope`,
-`source`, `root`, `dir`, `path`, `shadowed?`. `SkillContent` extends it with `body` and `resources`
-(`packages/skills/src/types.ts:173`). `ResolvedSkill` is `{ info, body }` where `body` may be a lazy
-getter (`packages/skills/src/types.ts:184`, implemented at `packages/skills/src/registry.ts:505`).
+`allowedTools?`, `userInvocable`, `catalogSuppressed?`, `presentation?`, `dependencies?`, `defaulted?`, `scope`,
+`source`, `root`, `dir`, `executionRoot?`, `path`, `shadowed?`. `SkillContent` extends it with `body`
+and `resources` (`packages/skills/src/types.ts:173`). `ResolvedSkill` is `{ info, body }` where `body`
+may be a lazy getter (`packages/skills/src/types.ts:184`, implemented at
+`packages/skills/src/registry.ts:505`).
+
+`SkillRootInput.executionRoot` is a host approval flag, not the path ultimately disclosed. When it
+is present, `buildResolvedSkill` records that discovered skill's own `dir` as
+`SkillInfo.executionRoot`; the collection root or package boundary is never exposed through this
+field. Production: `normalizeRoot` in `packages/skills/src/config.ts` and `buildResolvedSkill` in
+`packages/skills/src/registry.ts`. Test: `packages/skills/tests/integration/api.test.ts`
+(`exposes only the selected skill directory when its root approves helper execution`).
 
 `ShadowedSkill` records only `source`, `scope`, `root`, `dir`
 (`packages/skills/src/types.ts:104`, projected at `packages/skills/src/registry.ts:323`).
@@ -325,16 +352,19 @@ back to the literal `"skill"` (`packages/skills/src/registry.ts:58`–`:84`; pin
 | `MAX_SKILL_RESOURCES` | 1 024 | `:49` |
 | `MAX_SKILL_RESOURCE_BYTES` | 262 144 | `:51` |
 | `MAX_SKILL_RESOURCE_CHARS` | 50 000 | `:53` |
+| `MAX_SKILL_RESOURCE_FILE_BYTES` | 8 388 608 (8 MiB) | `packages/skills/src/limits.ts` |
+| `MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` | 33 554 432 (32 MiB) | `packages/skills/src/limits.ts` |
 | `MAX_SKILL_SIDECAR_BYTES` | 16 384 | `:56` |
 | `MAX_SKILL_SIDECAR_CHARS` | 8 000 | `:58` |
 | `MAX_SKILL_LABEL_CHARS` | 128 | `:60` |
 | `MAX_SKILL_SHORT_DESCRIPTION_CHARS` | 512 | `:62` |
 | `MAX_SKILL_STARTER_PROMPT_CHARS` | 4 000 | `:64` |
 | `MAX_SKILL_ICON_PATH_CHARS` | 512 | `:66` |
+| `MAX_SKILL_CATALOG_CHARS` | 8 000 | `packages/skills/src/catalog/index.ts` |
 | `MAX_SKILL_NAME_CHARS` / `MAX_SKILL_AGENT_CHARS` | 128 | `:69`, `:70` |
 | `MAX_SKILL_DESCRIPTION_CHARS` | 1 024 | `:71` |
 | `MAX_SKILL_TOOLS` / `MAX_SKILL_TOOL_CHARS` | 128 / 256 | `:72`, `:73` |
-| `SKILL_RESOURCE_MAX_CHARS` (tool-side truncation) | 50 000 | `packages/skills/src/tool.ts:16` |
+| `SKILL_RESOURCE_MAX_CHARS` (maximum characters in one tool page) | 50 000 | `packages/skills/src/tool.ts:16` |
 | `BOOTSTRAP_SKILL_MAX_CHARS` / run budget | 20 000 / 40 000 | `packages/skills/src/bootstrap.ts:19`, `:29` |
 
 ---
@@ -486,6 +516,7 @@ pass, not per skill (`:154`–`:159`). Pinned at
 | `resource(name, rel)` | cannot be stat'd | `not_found` + `skill.resource_missing` debug | `:572`–`:584` |
 | `resource(name, rel)` | not a regular file | `SkillError not_a_file` | `:585` |
 | `readResource(name, rel)` | as above, then bounded read at 256 KiB / 50 000 chars | text or `invalid_input` size error | `:616`–`:625` |
+| `readResourceChunk(name, rel, offset?, maxChars?)` | as above, complete file at most 8 MiB, then one page at most 256 KiB / 50 000 chars | `BoundedTextChunk` with byte cursor, or fail-closed `invalid_input` | `makeRegistry` in `packages/skills/src/registry.ts` |
 | `size` | any | live map size | `:626` |
 
 Pinned: the three resource outcomes at
@@ -500,13 +531,19 @@ the admitted resource surface use the same symlink, depth, entry and resource-co
 registry instead of implementing a divergent second walk. The function still owns no host or
 Environment semantics.
 
-Snapshot consumers pair that walk with exported `readBoundedBytes`. It opens the path once, applies
-`fstat` to that descriptor, allocates no more than the admitted complete-file size, rejects a short
-read or one-byte growth probe, optionally enforces decoded character length, and returns the exact
-raw bytes. Replacement after open therefore cannot switch the inode being read, and growth cannot
-turn a bounded snapshot into an unbounded allocation. Production:
-`readBoundedBytes`/`readFromFile` in `packages/skills/src/bounded-read.ts`. Test:
-`packages/skills/tests/unit/bounded-read.test.ts` (exact bytes, growth, and short-read canaries).
+Snapshot consumers pair that walk with exported `hashBoundedFile`. It opens the canonical path once,
+applies `fstat` to that descriptor, streams raw bytes through a fixed 64 KiB buffer, rejects a file
+over 8 MiB or one that changes while read, and returns its SHA-256 digest, exact byte count and mode.
+It does not decode binary resources or retain a complete file allocation. Kernel snapshot consumers
+sum those exact byte counts and reject their captured skill surface after 32 MiB of resource
+content; the per-file and aggregate budgets are deliberately distinct. Production:
+`hashBoundedFile` in `packages/skills/src/bounded-read.ts`, `skillSurface` inside
+`createPluginContributions` in `packages/kernel/src/plugins/plugin-contributions.ts`, and the
+`loadDigest` callback inside `createEnvironmentManager` in
+`packages/kernel/src/environments/environment-manager.ts`. Test:
+`packages/skills/tests/unit/bounded-read.test.ts` (`hashes bounded raw bytes without decoding binary
+content`) and `packages/kernel/tests/integration/plugin-contributions.test.ts` (`streams large binary
+and text resources into the exact skill snapshot` and the per-file resource bound).
 
 Depth-first with a `realpath`-keyed `visited` set, so a symlink cycle back into the skill terminates
 (`packages/skills/src/scan.ts:247`, `:263`–`:265`; pinned at
@@ -592,8 +629,12 @@ scans, zero loads, zero warnings).
 `# Plugin instructions … <plugin_instructions>…</plugin_instructions>`
 (`packages/skills/src/tool.ts:77`–`:85`), then the catalog block, then the call-`load_skill`
 instruction (`:106`–`:121`). The catalog block is `# Available skills` plus one
-`- **name** — description` line per non-suppressed skill, sorted by name, and the empty string when
-nothing is listable (`packages/skills/src/catalog/index.ts:28`–`:33`). When the catalog renders
+`- **name** — description (path: /absolute/SKILL.md)` line per non-suppressed skill, sorted by name,
+and never exceeds 8,000 characters. On overflow it first drops every description while retaining
+name and exact manifest path, then omits a deterministic tail with a bounded notice. It is the empty
+string when nothing is listable (`renderSkillCatalog` in
+`packages/skills/src/catalog/index.ts`). Test: `packages/skills/tests/component/catalog.test.ts`.
+When the catalog renders
 empty the trailing instruction goes with it and only the bootstrap heads remain
 (`packages/skills/src/tool.ts:112`; pinned at
 `packages/skills/tests/integration/sidecar.test.ts:149`).
@@ -611,22 +652,29 @@ empty the trailing instruction goes with it and only the bootstrap heads remain
    the call becomes a body load (`:38`–`:43`, `:97`–`:101`; pinned at
    `packages/skills/tests/unit/call.test.ts:171`).
 3. `envelope.start()` records `tool_call_started` (`:102`).
-4. **Resource branch**: the skill's existence is checked against `listSkills()` *before* any read
-   (`:105`; pinned at `packages/skills/tests/unit/call.test.ts:94`, which asserts zero reads), then
-   `readResource`; a throw from `readResource` is caught and rendered as
-   `could not read resource '<resource>' of skill '<name>': <reason>` — distinct from the
-   unknown-skill message above and from the truncation case below (`:114`–`:118`). Output over
-   `maxResourceChars` (default 50 000) is truncated with an explicit
-   `[resource truncated at N characters]` marker (`:115`–`:119`). The resource branch never calls
-   `loadSkill` at all — it reads a resource without loading or retaining the skill body, a
-   materially separate code path from the body branch below (`packages/skills/src/call.ts:105`–`:119`;
-   pinned at `packages/skills/tests/integration/call-resource.test.ts:37`–`:49`, which throws inside
-   a fake `loadSkill` to prove it is never reached).
+4. **Resource branch**: the skill's existence is checked against `listSkills()` *before* any read.
+   A provider with `readResourceChunk` receives the requested byte offset and at most 50 000 output
+   characters. `validateResourceChunk` rejects a mismatched offset, a total over 8 MiB, too much
+   text, a non-progressing or out-of-range continuation, or a continuation that does not exactly
+   equal the UTF-8 byte length returned. A provider without chunk support is retained for embedder
+   compatibility only: it may serve offset zero through `readResource`, with an explicit truncation
+   marker when needed, and every offset above zero is refused rather than treated as a character
+   index. Throws and invalid chunks become `could not read resource ...` failures. The resource
+   branch never calls `loadSkill`. Production: `validateResourceChunk` and `handleLoadSkillCall` in
+   `packages/skills/src/call.ts`. Test: `packages/skills/tests/unit/call.test.ts` (`refuses an
+   unbounded or non-progressing chunk returned by an embedder` and `does not reinterpret a byte
+   cursor through a legacy whole-text provider`) plus
+   `packages/skills/tests/integration/call-resource.test.ts` (page continuation and body-loader
+   isolation).
 5. **Body branch**: `loadSkill(name)`; a throw becomes `could not load skill '<name>'`, `undefined`
    becomes `unknown skill '<name>'. Available skills: …` (`:122`–`:131`). An empty body renders
    `(this skill has an empty body)` (`:133`).
-6. The result text is `Skill '<name>' — <description>\n\n<body>` plus a bundled-resource listing when
-   the skill has resources (`:134`–`:136`, `:31`–`:35`).
+6. The body result always identifies `Skill directory: <dir>` as the base for bundled relative
+   paths. It adds `Package execution root: <executionRoot>` and guarded-shell/native-sandbox guidance
+   only when the host-approved field exists, then renders the body and resource listing. Production:
+   `handleLoadSkillCall` in `packages/skills/src/call.ts`. Test:
+   `packages/skills/tests/unit/call.test.ts` (`shows the guarded helper hint only for a host-approved
+   execution root`).
 
 The capability wrapper turns the result into `{ kind: "result", text, progress: !error }`
 (`packages/skills/src/capability.ts:205`).
@@ -807,6 +855,14 @@ to this document.
 18. **A suppressed skill stays in the registry and stays loadable by name.**
     `packages/skills/src/capability.ts:160`–`:162` (the tool is not withheld with the section).
     Pinned: `packages/skills/tests/integration/sidecar.test.ts:139`.
+18a. **A skill's declared MCP dependencies are non-authoritative catalog requirements, not grants.**
+    They never add a server or tool; the per-run catalog only removes a skill whose declared server
+    is absent, while the protocol retains the metadata for diagnosis. Production:
+    `readToolDependencies` in `packages/skills/src/sidecar.ts`, `dependenciesAvailable` in
+    `packages/skills/src/capability.ts`, and `SkillsService.list` in
+    `packages/kernel/src/skills/skills-service.ts`. Test:
+    `packages/skills/tests/integration/sidecar.test.ts` and
+    `packages/kernel/tests/component/skills-service.test.ts`.
 19. **Every resource path is confined to the skill directory, symlink-aware, with a `..`-tolerant
     canonicalization for not-yet-existing tails.** `packages/skills/src/paths.ts:25`–`:45`,
     `:85`–`:96`. Pinned: `packages/skills/tests/integration/paths.test.ts:55`, `:60`, `:71`.
@@ -819,13 +875,17 @@ to this document.
 22. **Resource traversal terminates on cycles**, keyed by real path.
     `packages/skills/src/scan.ts:263`–`:265`. Pinned:
     `packages/skills/tests/integration/symlink.test.ts:72`.
-23. **Every file read is bounded on the opened descriptor — by complete size in bytes before
-    allocation and, for text surfaces, by decoded characters after.** Complete reads refuse both a
-    short read and bytes found after `fstat`'s size as "changed while it was being read"; snapshot
-    consumers may retain the exact returned bytes. Production: `readBoundedText`,
-    `readBoundedBytes`, and `readFromFile` in `packages/skills/src/bounded-read.ts`. Pinned:
-    `packages/skills/tests/integration/bounds.test.ts:96`, `:138`, `:320`,
-    `packages/skills/tests/unit/bounded-read.test.ts`.
+23. **Every file read is bounded on the opened descriptor.** Complete text/byte reads are bounded by
+    complete size before allocation. `readBoundedTextChunk` admits at most 8 MiB per file but
+    allocates and decodes at most 256 KiB per page, treats its cursor as bytes, and never emits half
+    of a UTF-8 sequence or surrogate pair. `hashBoundedFile` streams raw bytes through a fixed buffer
+    rather than allocating or decoding the complete resource. Short reads, growth, invalid UTF-8 and
+    invalid cursors fail closed. Production: `readBoundedText`, `readBoundedBytes`,
+    `readBoundedTextChunk`, `hashBoundedFile`, and `readFromFile` in
+    `packages/skills/src/bounded-read.ts`. Test: `packages/skills/tests/integration/bounds.test.ts`
+    (`reads a large text resource incrementally while the legacy whole read stays bounded`) and
+    `packages/skills/tests/unit/bounded-read.test.ts` (UTF-8 cursor/boundary, growth, short-read and
+    binary-hash cases).
 24. **A directory with more entries than `MAX_SKILL_DIRECTORY_ENTRIES` contributes nothing at all**,
     rather than a truncated listing. `packages/skills/src/scan.ts:451`–`:459`. Pinned:
     `packages/skills/tests/integration/bounds.test.ts:203`.
@@ -974,6 +1034,9 @@ with the original errno in the message (`packages/skills/src/errors.ts:48`–`:5
 | non-YAML file in `agents/` | ignored silently (extension filter, `packages/skills/src/scan.ts:171`) | same |
 | body over the char cap | `get()` throws `invalid_skill` at disclosure time, catalog entry survives (`packages/skills/tests/integration/bounds.test.ts:138`) | same |
 | oversized resource | `readResource` throws with `fields.dimension` = `bytes`/`characters` (`packages/skills/src/bounded-read.ts:55`, `:78`) | same |
+| chunked resource exceeds 8 MiB, cursor is not a UTF-8 byte boundary, or file changes while read | `readResourceChunk` throws `invalid_input`; no partial page is returned (`readBoundedTextChunk` in `packages/skills/src/bounded-read.ts`) | same |
+| chunk provider reports an invalid size/offset/continuation | `load_skill` returns a failed tool result (`validateResourceChunk` in `packages/skills/src/call.ts`) | same |
+| legacy provider receives `offset > 0` | `load_skill` refuses continuation; it never slices decoded text using the byte cursor (`handleLoadSkillCall` in `packages/skills/src/call.ts`) | same |
 | descriptor fails to close | `skill.handle_close_failed` debug, read result unaffected (`packages/skills/src/lib/log.ts:80`) | same |
 | `realpath` fails during containment | falls back to lexical compare and warns `skill.path_unresolved` at **warn** level, because a lexical check cannot see through a symlink (`packages/skills/src/paths.ts:63`) | same |
 
@@ -1042,7 +1105,7 @@ alone.
 | `@clarvis/loop` | `import type { AgentSkills, SkillRootInput }`, `import type { SkillsProvider }` (`packages/loop/src/runtime/build-run-deps.ts:2`, `:30`); `export type` re-exports (`packages/loop/src/lib.ts:19`–`:20`); `export type { PluginBootstrapSkill }` (`packages/loop/src/runtime/capabilities/skills-settings.ts:50`) | **type-only** — erased |
 | `@clarvis/loop` | `import("@clarvis/skills")` and `import("@clarvis/skills/capability")` inside `buildExecuteRunDeps` (`:448`, `:541`) | **dynamic** value import, deliberately |
 | `@clarvis/kernel` | `createAgentSkills` for the plugin panel's skill listing (`packages/kernel/src/plugins/plugin-service.ts:8`) | static value |
-| `@clarvis/kernel` | `MAX_SKILL_ROOTS`, `enumerateResources`, `readBoundedBytes`, and the public file/resource limits to bound and hash the plugin skill surface (`packages/kernel/src/plugins/plugin-contributions.ts`) | static value |
+| `@clarvis/kernel` | `MAX_SKILL_ROOTS`, `enumerateResources`, `hashBoundedFile`, and the public per-file/aggregate resource limits to bound and fingerprint plugin and Environment skill surfaces (`packages/kernel/src/plugins/plugin-contributions.ts`, `packages/kernel/src/environments/environment-manager.ts`) | static value |
 | `@clarvis/kernel` | `SkillsProvider` type via `@clarvis/loop` (`packages/kernel/src/skills/skills-service.ts:1`) | type-only |
 | `@clarvis/code` | reaches skills only through `KernelClient.skills` (`packages/code/src/adapters/kernel-run-client.ts:429`–`:430`, `packages/code/src/adapters/kernel-capabilities-client.ts:30`) | protocol only |
 

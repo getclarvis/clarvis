@@ -142,6 +142,18 @@ export type LiveMessage =
 /** Transport an MCP server speaks: `stdio`, streamable `http`, or `sse`. */
 export type ToolTransport = "stdio" | "http" | "sse";
 
+/** Public-client OAuth settings attached to one remote MCP server. */
+export interface McpOAuthConfig {
+  /** Pre-registered public client id. Omit to use CIMD or dynamic registration. */
+  client_id?: string;
+  /** Exact loopback redirect URI registered for this client. */
+  callback_url?: string;
+  /** Stable loopback port used when {@link callback_url} is absent. */
+  callback_port?: number;
+  /** HTTPS client metadata document used for URL-based client identification (CIMD). */
+  client_metadata_url?: string;
+}
+
 /** Which role an agent plays in the run topology: the `lead` or a `subagent`. */
 export type AgentRole = "lead" | "subagent";
 
@@ -170,6 +182,28 @@ export interface McpServerConfig {
   shared?: boolean;
   resources?: boolean;
   auto_tools?: boolean;
+  /** OAuth public-client identity and callback policy for a remote server. */
+  oauth?: McpOAuthConfig;
+  /** Environment variable whose value is sent as the remote Bearer credential. */
+  bearer_token_env_var?: string;
+  /** Header names mapped to environment-variable names for a remote server. */
+  env_http_headers?: Record<string, string>;
+  /** Host environment variables explicitly forwarded to a stdio child. */
+  env_vars?: string[];
+  /** Per-server connection deadline, in milliseconds. */
+  startup_timeout_ms?: number;
+  /** Per-server request deadline, in milliseconds. */
+  tool_timeout_ms?: number;
+  /** Whether this declaration participates in a run. Defaults to true. */
+  enabled?: boolean;
+  /** Whether failure to connect is terminal instead of a degraded run. */
+  required?: boolean;
+  /** Server-local tools retained from discovery. */
+  enabled_tools?: string[];
+  /** Server-local tools removed from discovery. */
+  disabled_tools?: string[];
+  /** Whether an installer should authorize now or defer until the first connection. */
+  authentication?: "on_install" | "on_first_use";
 }
 
 /** Which physical adapter and billing boundary a provider maps to. */
@@ -615,11 +649,28 @@ export interface SubagentCompleteContext {
   result: string;
 }
 
+/** Context passed just before a delegated sub-agent begins execution. */
+export interface SubagentStartContext {
+  subagentInstanceId: string;
+  profile: string;
+  model: string;
+  task: string;
+}
+
 /** Context passed to an `onPreCompact` hook: which `agent` is about to compact and the `estimatedTokens` in its context. */
 export interface PreCompactContext {
   agent: AgentRole;
   subagentInstanceId?: string;
   estimatedTokens: number;
+}
+
+/** Context passed after a compaction operation has completed. */
+export interface PostCompactContext {
+  agent: AgentRole;
+  subagentInstanceId?: string;
+  operation: "eviction" | "truncation" | "summarization";
+  freedChars?: number;
+  keptChars?: number;
 }
 
 /**
@@ -692,7 +743,9 @@ export interface LifecycleHook {
 
   onRunStart?: (context: RunStartContext) => Promise<void>;
   onRunEnd?: (context: RunEndContext) => Promise<void>;
+  onSubagentStart?: (context: SubagentStartContext) => Promise<void>;
   onSubagentComplete?: (context: SubagentCompleteContext) => Promise<void>;
+  onPostCompact?: (context: PostCompactContext) => Promise<void>;
   /**
    * Fires immediately before an agent compacts, and may return
    * {@link CompactionContribution}s folded into that pass's summarization

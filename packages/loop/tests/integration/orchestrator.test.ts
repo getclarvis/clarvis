@@ -799,7 +799,7 @@ describe("tool elicitation relay without a run signal", () => {
     signal?: AbortSignal,
   ): Promise<{ status: string; kinds: string[]; calls: MockLLM["calls"] }> {
     const llm = new MockLLM({
-      script: [{ toolCalls: [{ name: "guard_guard_tool", arguments: {} }] }, { text: "done" }],
+      script: [{ toolCalls: [{ name: "guard_tool", arguments: {} }] }, { text: "done" }],
     });
     const elicit: Elicit = async (): Promise<ElicitRawResult> => ({
       action: "accept",

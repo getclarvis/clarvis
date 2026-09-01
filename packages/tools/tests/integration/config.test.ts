@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdirSync, realpathSync } from "node:fs";
+import { join } from "node:path";
 import { resolveConfig, StartupError } from "../../src/config.ts";
 import { cleanup, makeWorkspace, write } from "../helpers/fixtures.ts";
 
@@ -40,6 +42,7 @@ describe("runtime config", () => {
       readOnly: false,
       confineToWorkspace: true,
       temporaryRoots: [],
+      skillExecutionRoots: [],
       gitMetadataPaths: [],
     });
   });
@@ -112,6 +115,28 @@ describe("runtime config", () => {
     expect(() =>
       resolveConfig({ workspaceRoot: root, temporaryRoots: [write(root, "scratch.txt", "x")] }),
     ).toThrow(/Temporary root is not a directory/);
+  });
+
+  it("canonicalizes skill execution roots and mounts them read-only in the native sandbox", () => {
+    const packageRoot = join(root, "plugin");
+    mkdirSync(packageRoot);
+    const config = resolveConfig({
+      workspaceRoot: root,
+      skillExecutionRoots: [packageRoot, packageRoot],
+      sandbox: { type: "native", readOnlyPaths: [root] },
+    });
+
+    expect(config.skillExecutionRoots).toEqual([realpathSync(packageRoot)]);
+    expect(config.sandbox?.readOnlyPaths).toEqual([root, realpathSync(packageRoot)]);
+  });
+
+  it("rejects missing or overly broad skill execution roots as startup errors", () => {
+    expect(() =>
+      resolveConfig({ workspaceRoot: root, skillExecutionRoots: [join(root, "missing")] }),
+    ).toThrow(/Skill execution root does not exist/);
+    expect(() => resolveConfig({ workspaceRoot: root, skillExecutionRoots: [root] })).toThrow(
+      /Skill execution root is too broad/,
+    );
   });
 
   it("rejects invalid numeric limits and an inverted shell timeout range", () => {

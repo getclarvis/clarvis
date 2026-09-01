@@ -91,6 +91,9 @@ export interface RuntimeConfig {
   /** Run-owned scratch roots admitted in addition to the workspace. */
   temporaryRoots: readonly string[];
 
+  /** Host-selected skill directories admitted only to command execution. */
+  skillExecutionRoots: readonly string[];
+
   /** Immutable linked-worktree metadata roots pinned before the agent can mutate the workspace. */
   gitMetadataPaths: readonly string[];
 
@@ -242,6 +245,8 @@ export interface AgentToolsOptions {
   confineToWorkspace?: boolean;
   /** Existing run-owned scratch roots available to every tool in this toolset. */
   temporaryRoots?: readonly string[];
+  /** Host-selected skill directories required by enabled skills. */
+  skillExecutionRoots?: readonly string[];
   /** Host lifecycle hook for a scratch root verified after a shell call. */
   onTemporaryRootRegistered?: (root: string) => void;
 
@@ -317,7 +322,9 @@ export interface AgentToolsOptions {
  * @returns the fully resolved runtime config.
  * @throws {@link StartupError} when `workspaceRoot` is missing, does not exist,
  *   or is not a directory; when any limit falls below its minimum; or when
- *   `shellTimeoutMaxMs` is less than `shellTimeoutMs`.
+ *   `shellTimeoutMaxMs` is less than `shellTimeoutMs`. Skill execution roots
+ *   also fail startup when they are excessive, missing, not directories, or
+ *   broad enough to contain the workspace.
  * @remarks Probe failures never throw - a throwing probe is treated as the
  *   capability being absent (see {@link RuntimeConfig.ripgrepAvailable}).
  */
@@ -356,6 +363,37 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
       throw new StartupError(`Temporary root is not a directory: ${resolved}`);
     return resolved;
   });
+  if ((options.skillExecutionRoots?.length ?? 0) > 512) {
+    throw new StartupError("Agent tools accept at most 512 skill execution roots.");
+  }
+  const skillExecutionRoots = [
+    ...new Set(
+      (options.skillExecutionRoots ?? []).map((root) => {
+        const absolute = path.resolve(root);
+        let resolved: string;
+        try {
+          resolved = realpathSync(absolute);
+          if (!statSync(resolved).isDirectory()) {
+            throw new StartupError(`Skill execution root is not a directory: ${resolved}`);
+          }
+        } catch (error) {
+          if (error instanceof StartupError) throw error;
+          throw new StartupError(`Skill execution root does not exist: ${absolute}`);
+        }
+        const workspaceFromRoot = path.relative(resolved, workspaceRoot);
+        if (
+          resolved === path.parse(resolved).root ||
+          workspaceFromRoot === "" ||
+          (!workspaceFromRoot.startsWith(`..${path.sep}`) &&
+            workspaceFromRoot !== ".." &&
+            !path.isAbsolute(workspaceFromRoot))
+        ) {
+          throw new StartupError(`Skill execution root is too broad: ${resolved}`);
+        }
+        return resolved;
+      }),
+    ),
+  ];
   const registerTemporaryRoot = (root: string): void => {
     const resolved = path.resolve(root);
     const linkStat = lstatSync(resolved);
@@ -379,10 +417,21 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
       sandbox_availability: options.sandbox?.availability ?? null,
       read_only: readOnly,
       confined: confineToWorkspace,
+      skill_execution_roots: skillExecutionRoots.length,
       platform: process.platform,
     },
     "the coding toolset resolved its configuration; these flags decide the surface it advertises",
   );
+
+  const sandbox =
+    options.sandbox === undefined
+      ? undefined
+      : {
+          ...options.sandbox,
+          readOnlyPaths: [
+            ...new Set([...(options.sandbox.readOnlyPaths ?? []), ...skillExecutionRoots]),
+          ],
+        };
 
   return {
     workspaceRoot,
@@ -445,11 +494,12 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
     confineToWorkspace,
     stateRoot: workspaceStatePaths(workspaceRoot).root,
     temporaryRoots,
+    skillExecutionRoots,
     gitMetadataPaths,
     registerTemporaryRoot,
     guard: options.guard,
     elicit: options.elicit,
-    sandbox: options.sandbox,
+    sandbox,
     secretEnvNames: options.secretEnvNames,
   };
 }

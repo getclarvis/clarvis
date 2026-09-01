@@ -166,6 +166,7 @@ copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 |---|---|---|
 | `list` | `() => Promise<PluginView[]>` | `packages/protocol/src/plugins.ts:93` |
 | `install` | `(url, subdir?, target?: { source }) => Promise<PluginView>` | `PluginService.install` |
+| `installSource` | `(source: PluginInstallSource, target?: { source }) => Promise<PluginView>` | `PluginService.installSource` |
 | `update` | `(ref: PluginRef) => Promise<PluginView>` | `PluginService.update` |
 | `uninstall` | `(ref: PluginRef) => Promise<void>` | `PluginService.uninstall` |
 
@@ -187,6 +188,11 @@ copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 | `update` | `(input: EnvironmentDefinitionInput & { expected_revision }) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.update` |
 | `delete` | `(ref, { expected_revision }) => Promise<void>` | `EnvironmentService.delete` |
 | `clone` | `(source, target) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.clone` |
+
+`EnvironmentPreview.requires_workspace_trust` is true only when the effective target selects
+repository-owned `scope: "workspace"` plugins whose exact executable surface is not currently
+trusted. The verdict covers the complete workspace plugin inventory rather than one plugin or
+Environment. Global installed plugins carry operator installation consent and do not set this flag.
 
 The service selects already-installed inventory and has no install operation. `inventory` exposes
 all exact inactive composer candidates. `preview` and
@@ -649,9 +655,19 @@ executables: string[] }` — `hooks` is "count of hook entries (not their names)
 only. A plugin cannot widen what it is allowed to do by describing itself well: trust stays with the
 process-pinned Environment and workspace trust boundary" (`packages/protocol/src/plugins.ts`,
 `PluginView.display_name`).
+`PluginView` also preserves the manifest's `author` object, homepage, repository, license, keywords,
+and the full optional install-surface presentation bucket. `PluginInstallSource` is the closed union
+of `{ kind: "git", url, subdir?, ref?, sha? }`, `{ kind: "local", path }`, and
+`{ kind: "npm", package, version?, registry? }`; source interpretation therefore crosses the wire
+without asking the kernel to re-parse a marketplace dialect.
 `PluginRef` is the strict `{ scope: "global"|"workspace", source: "agents"|"clarvis", name }`
 identity shared by lifecycle, activation, and Environment DTOs; `PluginView.source`
 reports the same filesystem convention and `install_source` is separately reserved for Git origin.
+
+`SkillSummary.dependencies?` carries bounded `SkillToolDependency[]` entries of `type: "mcp"` with
+server `value` and optional descriptive transport/URL fields. It is diagnostic/catalog metadata,
+not a server grant or an installation request. Production: `packages/protocol/src/skills.ts`. Test:
+projection in `packages/kernel/tests/component/skills-service.test.ts`.
 
 `ModelCost` (`packages/protocol/src/models.ts:9-18`): `{ input: number; output: number; cache_read?: number;
 cache_write?: number }` — four price-per-token fields. `CatalogProvider.needs_base_url: boolean`
@@ -806,6 +822,18 @@ The following are derived directly from this package's own source and tests.
    `KernelClient`; runtime behavior is pinned by
    `packages/kernel/tests/integration/environment-manager.test.ts` and owned by
    [Extension Environments](environments.md#5-invariants).
+10. **Marketplace dialect does not cross the kernel protocol boundary.** Clients project a listing
+    into the closed `PluginInstallSource` union; kernels receive an explicit Git/local/npm source and
+    apply acquisition policy there. Production: `PluginInstallSource` and
+    `PluginService.installSource` in `packages/protocol/src/plugins.ts`. Test: service projection and
+    install-source cases in `packages/code/tests/integration/app-commands.test.tsx` and
+    `packages/kernel/tests/integration/plugin-service.test.ts`.
+11. **Publisher identity and skill requirements survive the wire as metadata, never authority.**
+    `PluginView.author` is distinct from presentation developer/display names, and
+    `SkillSummary.dependencies` cannot add an MCP server. Production:
+    `packages/protocol/src/{plugins,skills}.ts`. Test:
+    `packages/kernel/tests/integration/plugin-service.test.ts` and
+    `packages/kernel/tests/component/skills-service.test.ts`.
 
 ## 6. Failure modes and degradation
 
@@ -829,7 +857,7 @@ errors in, and documents on individual methods where a specific code applies:
 | A repository's `settings.json` asked for fields it may not set on its own authority | `SettingsView.withheld_workspace_fields?: readonly string[]` | `packages/protocol/src/config.ts:211-220` |
 | A capability event's own type is not in this protocol version | `capability_event` with `projection`/`truncated` fields rather than a widened `type` | `packages/protocol/src/runs.ts:571-590` |
 | Live event consumer fell behind (backpressure) | `events_dropped` — "emitted at most once... only incremental variants are ever dropped, and their authoritative content still arrives" | `packages/protocol/src/runs.ts:591-600` |
-| MCP servers degraded for this run | `mcp_degraded` event listing `{ name, reason }[]` | `packages/protocol/src/runs.ts:601` |
+| MCP servers degraded for this run | persisted `mcp_degraded` event listing `{ name, reason }[]`; clients may present it ephemerally rather than as conversation content | `packages/protocol/src/runs.ts:601` |
 | A tool call the provider abandoned mid-stream never settles | not modeled by this package at all — the closest adjacent shape, `tool_call_started`, has no corresponding "abandoned" variant; only `tool_call` (`ok: boolean`) is authoritative |
 
 Two properties the package states about *degradation of fidelity* rather than error per se:

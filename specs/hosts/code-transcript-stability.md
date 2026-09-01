@@ -282,11 +282,22 @@ The full-screen implementation follows the supported components instead:
 | `elicitation_resolved`                                                                                                     | terminal question/outcome fact                                                                                             | append once when projected                                                                                                       |
 | `steering_applied`                                                                                                         | settle pending steer                                                                                                       | append delivered outcome once                                                                                                    |
 | `memory_ingest`                                                                                                            | status/footer only                                                                                                         | none                                                                                                                             |
-| `capability_event`, `events_dropped`, `mcp_degraded`                                                                       | bounded immutable point/warning, except generic delegation/workflow capability mirrors, which are suppressed               | append once when eligible; no publication for either orchestration mirror                                                        |
+| `capability_event`, `events_dropped`                                                                                       | bounded immutable point/warning, except generic delegation/workflow capability mirrors, which are suppressed               | append once when eligible; no publication for either orchestration mirror                                                        |
+| `mcp_degraded`                                                                                                             | one transient live TUI warning per newly observed `{ server, reason }`; replay is silent                                    | none; persisted telemetry never becomes conversation history                                                                     |
 | `run_ended`                                                                                                                | close frontier and start reconciliation holdback                                                                           | terminal batch only after `TranscriptRunSink.complete`                                                                           |
 
 This policy does not redefine durability. `RUN_EVENT_POLICY` in the kernel still decides whether an
 event is streamed, persisted or both.
+
+`RunHost.mcpStartupNotice` deduplicates live degradation by server and sanitized reason for the
+process session. `App` projects the latest sequence through its self-clearing hint surface, outside
+the transcript store and immutable publication ledger. Production: `packages/code/src/run-host.ts`
+(`onEvent`, `mcpStartupNotice`), `packages/code/src/views/App.tsx` (MCP notice effect),
+`packages/code/src/adapters/store.ts`, and
+`packages/code/src/adapters/transcript-publication.ts`. Tests:
+`packages/code/tests/component/run-host.test.ts`,
+`packages/code/tests/unit/store-status.test.ts`, and
+`packages/code/tests/integration/app-shell-render.test.tsx`.
 
 The event table's `status/footer` wording does not put run lifecycle beside stable session figures.
 During a run, `LeadActivityLine` owns phase, elapsed time, iteration and the active `run.cancel` binding (`Ctrl+C` by default) to interrupt; the

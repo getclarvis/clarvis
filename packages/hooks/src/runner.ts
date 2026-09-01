@@ -33,6 +33,8 @@ export const HOOK_PROTOCOL_VERSION = 1;
  * individual fields before they reach here; this is the backstop.
  */
 export const MAX_STDIN_BYTES = 256 * 1024;
+/** Maximum background hook commands active in one runner at a time. */
+const MAX_BACKGROUND_HOOKS = 8;
 
 /** Longest stderr excerpt kept on a {@link HookFailure}. */
 const STDERR_TAIL_CHARS = 2_000;
@@ -73,6 +75,10 @@ export interface HookRunnerDeps extends SubprocessDeps {
    *   invented when the host has none.
    */
   readonly sessionId?: string | undefined;
+  /** Direct MCP hook executor supplied by the run after its server pool opens. */
+  readonly callMcpTool?:
+    | ((server: string, tool: string, input: unknown, signal?: AbortSignal) => Promise<unknown>)
+    | undefined;
 }
 
 /** Runs the hooks configured for a workspace. */
@@ -98,6 +104,108 @@ function tail(s: string, max: number): string {
 
 function head(s: string, max: number): string {
   return s.length <= max ? s : `${s.slice(0, max)}...`;
+}
+
+function fieldAt(value: unknown, path: string): unknown {
+  let current = value;
+  for (const segment of path.split(".")) {
+    if (typeof current !== "object" || current === null || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
+}
+
+function interpolateMcpInput(template: unknown, fields: unknown, depth = 0): unknown {
+  if (depth > 32) return null;
+  if (typeof template === "string") {
+    const whole = /^\$\{([A-Za-z0-9_.-]+)\}$/.exec(template);
+    if (whole !== null) return fieldAt(fields, whole[1] ?? "");
+    return template.replaceAll(/\$\{([A-Za-z0-9_.-]+)\}/g, (_match, path: string) => {
+      const value = fieldAt(fields, path);
+      if (value === undefined) return "";
+      if (typeof value === "string") return value;
+      try {
+        return JSON.stringify(value) ?? "";
+      } catch {
+        return "";
+      }
+    });
+  }
+  if (Array.isArray(template)) {
+    return template.map((value) => interpolateMcpInput(value, fields, depth + 1));
+  }
+  if (typeof template !== "object" || template === null) return template;
+  return Object.fromEntries(
+    Object.entries(template as Record<string, unknown>).map(([key, value]) => [
+      key,
+      interpolateMcpInput(value, fields, depth + 1),
+    ]),
+  );
+}
+
+/** Extract the hook-output document returned through Clarvis's MCP facade. */
+function mcpHookOutput(result: unknown): { text?: string; error?: string } {
+  if (typeof result !== "object" || result === null || Array.isArray(result)) {
+    return { error: "the MCP hook returned an invalid transport result" };
+  }
+  const envelope = result as {
+    ok?: unknown;
+    data?: unknown;
+    error?: { message?: unknown };
+  };
+  if (envelope.ok !== true) {
+    return {
+      error:
+        typeof envelope.error?.message === "string"
+          ? envelope.error.message
+          : "the MCP hook tool failed",
+    };
+  }
+  const data = envelope.data;
+  if (data === undefined || data === null) return { text: "" };
+  if (typeof data === "string") return { text: data };
+  if (typeof data !== "object" || Array.isArray(data)) {
+    return { text: JSON.stringify(data) };
+  }
+  const toolResult = data as { structuredContent?: unknown; content?: unknown };
+  if (toolResult.structuredContent !== undefined) {
+    try {
+      return { text: JSON.stringify(toolResult.structuredContent) };
+    } catch {
+      return { error: "the MCP hook returned unserializable structured content" };
+    }
+  }
+  if (Array.isArray(toolResult.content)) {
+    const text = toolResult.content
+      .flatMap((entry) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        !Array.isArray(entry) &&
+        (entry as { type?: unknown }).type === "text" &&
+        typeof (entry as { text?: unknown }).text === "string"
+          ? [(entry as { text: string }).text]
+          : [],
+      )
+      .join("\n");
+    return { text };
+  }
+  try {
+    return { text: JSON.stringify(data) };
+  } catch {
+    return { error: "the MCP hook returned an unserializable result" };
+  }
+}
+
+/** Apply the command-hook output contract to one successful MCP tool response. */
+function classifyMcpResult(result: unknown, inv: HookInvocation): HookFailure | HookOutcome {
+  const output = mcpHookOutput(result);
+  if (output.error !== undefined) return { kind: "exit_nonzero", message: output.error };
+  const parsed = parseHookStdout(output.text ?? "", {
+    truncated: false,
+    allowContext: !inv.gate,
+    allowRewrite: inv.rewritable === true,
+  });
+  return parsed.ok ? parsed.outcome : { kind: "bad_output", message: parsed.reason };
 }
 
 /**
@@ -256,6 +364,21 @@ function stdinPayload(
  */
 export function createHookRunner(deps: HookRunnerDeps): HookRunner {
   const logger = deps.logger ?? NOOP_HOOK_LOGGER;
+  let activeBackgroundHooks = 0;
+  const backgroundQueue: Array<() => void> = [];
+  const scheduleBackground = (task: () => Promise<void>): void => {
+    const start = (): void => {
+      activeBackgroundHooks += 1;
+      void task()
+        .catch(() => undefined)
+        .finally(() => {
+          activeBackgroundHooks -= 1;
+          backgroundQueue.shift()?.();
+        });
+    };
+    if (activeBackgroundHooks < MAX_BACKGROUND_HOOKS) start();
+    else backgroundQueue.push(start);
+  };
   const compiled = new WeakMap<HookSpec, { readonly m: CompiledMatch | undefined }>();
   /**
    * Each selected hook's position in the firing order, recorded by `select` so
@@ -294,26 +417,124 @@ export function createHookRunner(deps: HookRunnerDeps): HookRunner {
     async run(hook, inv, signal) {
       const timeoutMs = hook.timeout_ms ?? inv.defaultTimeoutMs;
       const payload = stdinPayload(inv, deps.workspaceRoot, deps.sessionId);
+      if (hook.type === "mcp_tool") {
+        const started = Date.now();
+        if (
+          deps.callMcpTool === undefined ||
+          hook.server === undefined ||
+          hook.tool === undefined
+        ) {
+          return {
+            ok: false,
+            hook,
+            failure: { kind: "spawn_failed", message: "the MCP hook executor is unavailable" },
+            durationMs: Date.now() - started,
+          };
+        }
+        const controller = new AbortController();
+        const abort = (): void => controller.abort(signal?.reason);
+        signal?.addEventListener("abort", abort, { once: true });
+        const timer = setTimeout(
+          () => controller.abort(new Error("MCP hook timed out")),
+          timeoutMs,
+        );
+        timer.unref?.();
+        try {
+          const response = await deps.callMcpTool(
+            hook.server,
+            hook.tool,
+            interpolateMcpInput(hook.input ?? {}, inv.data),
+            controller.signal,
+          );
+          const verdict = classifyMcpResult(response, inv);
+          if (isFailure(verdict)) {
+            logger.warn(
+              {
+                event: "hooks.mcp_failed",
+                hook_event: hook.event,
+                mcp_server: hook.server,
+                mcp_tool: hook.tool,
+                err_kind: verdict.kind,
+                duration_ms: Date.now() - started,
+              },
+              "MCP hook failed",
+            );
+            return { ok: false, hook, failure: verdict, durationMs: Date.now() - started };
+          }
+          return { ok: true, hook, outcome: verdict, durationMs: Date.now() - started };
+        } catch (error) {
+          return {
+            ok: false,
+            hook,
+            failure: {
+              kind: signal?.aborted
+                ? "aborted"
+                : controller.signal.aborted
+                  ? "timeout"
+                  : "exit_nonzero",
+              message: error instanceof Error ? error.message : String(error),
+            },
+            durationMs: Date.now() - started,
+          };
+        } finally {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
+        }
+      }
+      const command =
+        process.platform === "win32" ? (hook.command_windows ?? hook.command) : hook.command;
+      const environment = {
+        ...deps.baseEnv,
+        ...(hook.plugin_root === undefined
+          ? {}
+          : { CODEX_PLUGIN_ROOT: hook.plugin_root, PLUGIN_ROOT: hook.plugin_root }),
+        ...(hook.plugin_data === undefined
+          ? {}
+          : { CODEX_PLUGIN_DATA: hook.plugin_data, PLUGIN_DATA: hook.plugin_data }),
+        CLARVIS_HOOK_PROTOCOL: String(HOOK_PROTOCOL_VERSION),
+        CLARVIS_HOOK_EVENT: inv.event,
+        CLARVIS_HOOK_GATE: inv.gate ? "1" : "0",
+        CLARVIS_HOOK_TIMEOUT_MS: String(timeoutMs),
+        CLARVIS_WORKSPACE_ROOT: deps.workspaceRoot,
+        ...(inv.candidate !== undefined ? { CLARVIS_HOOK_TOOL: inv.candidate.tool } : {}),
+        ...(inv.candidate?.aliases?.[0] === undefined
+          ? {}
+          : { CLARVIS_HOOK_TOOL_FULL_NAME: inv.candidate.aliases[0] }),
+      };
+      if (hook.async === true && inv.event !== "run_end") {
+        scheduleBackground(async () => {
+          await runHookCommand(
+            {
+              command,
+              cwd: deps.workspaceRoot,
+              env: environment,
+              stdin: payload.text,
+              timeoutMs,
+              killGraceMs: deps.killGraceMs,
+              maxStdoutBytes:
+                hook.additional_context_limit === 0
+                  ? deps.maxStdoutBytes
+                  : (hook.additional_context_limit ?? deps.maxStdoutBytes),
+              signal,
+              diagnostics: { hookEvent: inv.event, dataTruncated: payload.truncated },
+            },
+            deps,
+          );
+        });
+        return { ok: true, hook, outcome: { kind: "pass" }, durationMs: 0 };
+      }
       const res = await runHookCommand(
         {
-          command: hook.command,
+          command,
           cwd: deps.workspaceRoot,
-          env: {
-            ...deps.baseEnv,
-            CLARVIS_HOOK_PROTOCOL: String(HOOK_PROTOCOL_VERSION),
-            CLARVIS_HOOK_EVENT: inv.event,
-            CLARVIS_HOOK_GATE: inv.gate ? "1" : "0",
-            CLARVIS_HOOK_TIMEOUT_MS: String(timeoutMs),
-            CLARVIS_WORKSPACE_ROOT: deps.workspaceRoot,
-            ...(inv.candidate !== undefined ? { CLARVIS_HOOK_TOOL: inv.candidate.tool } : {}),
-            ...(inv.candidate?.aliases?.[0] === undefined
-              ? {}
-              : { CLARVIS_HOOK_TOOL_FULL_NAME: inv.candidate.aliases[0] }),
-          },
+          env: environment,
           stdin: payload.text,
           timeoutMs,
           killGraceMs: deps.killGraceMs,
-          maxStdoutBytes: deps.maxStdoutBytes,
+          maxStdoutBytes:
+            hook.additional_context_limit === 0
+              ? deps.maxStdoutBytes
+              : (hook.additional_context_limit ?? deps.maxStdoutBytes),
           signal,
           diagnostics: { hookEvent: inv.event, dataTruncated: payload.truncated },
         },

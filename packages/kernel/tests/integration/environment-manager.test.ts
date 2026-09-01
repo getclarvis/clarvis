@@ -27,7 +27,7 @@ import type {
 import { createEnvironmentManager } from "../../src/environments/environment-manager.ts";
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
-import { MAX_SKILL_FILE_CHARS } from "@clarvis/skills";
+import { MAX_SKILL_FILE_CHARS, MAX_SKILL_RESOURCE_SNAPSHOT_BYTES } from "@clarvis/skills";
 
 const TRUSTED: WorkspaceTrustVerdict = {
   state: "trusted",
@@ -671,6 +671,119 @@ describe("Environment manager", () => {
     ).toBeFalse();
   });
 
+  it("activates an operator-installed global plugin without approving its workspace Environment", async () => {
+    installPlugin(globalPaths(globalDir).pluginsDir, "context7", {
+      mcpServers: { docs: { command: "context7" } },
+    });
+    const setup = manager();
+    const ref = { scope: "workspace" as const, name: "project" };
+    await create(setup, ref, definition({ plugins: [pluginRef("context7")] }));
+    const target = manager();
+    let approvals = 0;
+    target.bindRuntime({
+      readWorkspaceTrust: () => ({ state: "unapproved" }),
+      approveWorkspace: () => {
+        approvals += 1;
+      },
+    });
+    target.resolveActive([], { state: "unapproved" });
+
+    const preview = await target.service.preview(ref, { selection_scope: "workspace" });
+
+    expect(preview.requires_workspace_trust).toBeFalse();
+    expect(preview.target).toMatchObject({
+      status: "ready",
+      counts: { plugins_active: 1, mcp_servers_active: 1 },
+    });
+    await target.service.select(ref, {
+      selection_scope: "workspace",
+      preview_token: preview.token,
+    });
+    expect(approvals).toBe(0);
+    expect(target.workspaceTrustSurface()).toBeUndefined();
+    expect(manager().resolveActive([], { state: "unapproved" })).toMatchObject({
+      id: "workspace:project",
+      status: "ready",
+      counts: { plugins_active: 1, mcp_servers_active: 1 },
+    });
+  });
+
+  it("fingerprints every repository plugin for one workspace-wide approval before selection", () => {
+    const first = installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {
+      version: "one",
+    });
+    installPlugin(
+      agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} }).workspace,
+      "browser",
+      { version: "one" },
+    );
+    const target = manager();
+
+    const before = target.workspaceTrustSurface();
+    const beforeFingerprint = JSON.stringify(before);
+
+    expect(before).toMatchObject({
+      plugins: [
+        {
+          ref: pluginRef("browser", "workspace", "agents"),
+          digest: expect.stringMatching(/^sha256:/),
+        },
+        {
+          ref: pluginRef("runner", "workspace"),
+          digest: expect.stringMatching(/^sha256:/),
+        },
+      ],
+    });
+    writeFileSync(join(first, "plugin.json"), JSON.stringify({ name: "runner", version: "two" }));
+    expect(JSON.stringify(target.workspaceTrustSurface())).not.toBe(beforeFingerprint);
+  });
+
+  it("keeps global plugins active while a workspace-owned sibling awaits approval", async () => {
+    installPlugin(globalPaths(globalDir).pluginsDir, "context7", {
+      mcpServers: { docs: { command: "context7" } },
+    });
+    installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {
+      mcpServers: { files: { command: "runner" } },
+    });
+    const setup = manager();
+    const ref = { scope: "workspace" as const, name: "mixed" };
+    await create(
+      setup,
+      ref,
+      definition({ plugins: [pluginRef("context7"), pluginRef("runner", "workspace")] }),
+    );
+    const selection = workspaceStatePaths(workspaceRoot, {
+      env: { CLARVIS_HOME: globalDir },
+    }).environmentSelectionFile;
+    mkdirSync(join(selection, ".."), { recursive: true });
+    writeFileSync(selection, JSON.stringify({ schema_version: 1, environment: ref }));
+
+    const target = manager();
+    const resolved = target.resolveActive([], { state: "unapproved" });
+
+    expect(resolved).toMatchObject({
+      status: "degraded",
+      counts: { plugins_active: 1, mcp_servers_active: 1 },
+      issues: [expect.objectContaining({ code: "workspace_untrusted" })],
+    });
+    expect(resolved.plugins).toEqual([
+      expect.objectContaining({ ref: pluginRef("context7"), active: true }),
+      expect.objectContaining({ ref: pluginRef("runner", "workspace"), active: false }),
+    ]);
+    expect(target.workspaceTrustSurface()).toMatchObject({
+      plugins: [
+        {
+          ref: pluginRef("runner", "workspace"),
+          digest: expect.stringMatching(/^sha256:/),
+        },
+      ],
+    });
+    expect(target.resolveActive([], TRUSTED)).toMatchObject({
+      status: "ready",
+      counts: { plugins_active: 2, mcp_servers_active: 2 },
+    });
+  });
+
   it("restores definition and selection bytes when composition trust approval fails", async () => {
     installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner", {});
     const target = manager();
@@ -926,8 +1039,12 @@ describe("Environment manager", () => {
     });
     expect(approvals).toBe(1);
     expect(target.workspaceTrustSurface()).toMatchObject({
-      environment: ref,
-      plugins: [pluginRef("runner", "workspace")],
+      plugins: [
+        {
+          ref: pluginRef("runner", "workspace"),
+          digest: expect.stringMatching(/^sha256:/),
+        },
+      ],
     });
     const reconnected = manager();
     reconnected.bindRuntime({
@@ -1025,6 +1142,30 @@ describe("Environment manager", () => {
     expect(after.fingerprint).not.toBe(before.fingerprint);
   });
 
+  it("withholds a standalone skill whose resources exceed the aggregate snapshot bound", () => {
+    const root = globalPaths(globalDir).skillsDir;
+    writeSkill(root, "huge-snapshot");
+    const resources = join(root, "huge-snapshot", "assets");
+    mkdirSync(resources, { recursive: true });
+    const assetBytes = Math.floor(MAX_SKILL_RESOURCE_SNAPSHOT_BYTES / 5) + 1;
+    for (let index = 0; index < 5; index += 1) {
+      const asset = join(resources, `asset-${String(index)}.bin`);
+      writeFileSync(asset, "");
+      truncateSync(asset, assetBytes);
+    }
+
+    const target = manager();
+    const resolved = target.resolveActive([], TRUSTED);
+
+    expect(resolved.standalone_skills).toEqual([
+      expect.objectContaining({
+        ref: expect.objectContaining({ name: "huge-snapshot" }),
+        active: false,
+      }),
+    ]);
+    expect(target.skillRoots()).toEqual([]);
+  });
+
   it("fingerprints standalone sidecar presentation and rejects lazy catalog drift", () => {
     const root = globalPaths(globalDir).skillsDir;
     writeSkill(root, "presented");
@@ -1076,7 +1217,7 @@ describe("Environment manager", () => {
     ]);
   });
 
-  it("requires a fresh workspace approval when switching between executable Environments", async () => {
+  it("uses one workspace approval when switching between repository-plugin Environments", async () => {
     installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner-a", {});
     installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner-b", {});
     const setup = manager();
@@ -1101,13 +1242,12 @@ describe("Environment manager", () => {
 
     const preview = await target.service.preview(second, { selection_scope: "workspace" });
 
-    expect(preview.requires_workspace_trust).toBeTrue();
+    expect(preview.requires_workspace_trust).toBeFalse();
     await target.service.select(second, {
       selection_scope: "workspace",
       preview_token: preview.token,
-      approve_workspace: true,
     });
-    expect(approvals).toBe(1);
+    expect(approvals).toBe(0);
     expect(manager().resolveActive([], TRUSTED).id).toBe("workspace:second");
   });
 

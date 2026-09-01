@@ -57,10 +57,7 @@ describe("pluginManifestSchema", () => {
   });
 
   it("names every unknown key, sorted, so nothing it ignores stays invisible", () => {
-    expect(unknownManifestKeys({ ...happy, license: "MIT", agents: ["a"] })).toEqual([
-      "agents",
-      "license",
-    ]);
+    expect(unknownManifestKeys({ ...happy, license: "MIT", agents: ["a"] })).toEqual(["agents"]);
     expect(unknownManifestKeys(happy)).toEqual([]);
     expect(unknownManifestKeys("not an object")).toEqual([]);
   });
@@ -91,7 +88,7 @@ describe("pluginManifestSchema", () => {
       displayName: "d",
     };
     expect(suspectedManifestTypos(foreign)).toEqual([]);
-    expect(unknownManifestKeys(foreign)).toHaveLength(9);
+    expect(unknownManifestKeys(foreign)).toHaveLength(5);
   });
 
   it("holds a short key to a tighter budget than a long one", () => {
@@ -112,10 +109,12 @@ describe("pluginManifestSchema", () => {
   it("accepts an author as a string or as the object other hosts write", () => {
     const parse = (author: unknown): unknown =>
       pluginManifestSchema.safeParse({ ...happy, author });
-    expect(pluginManifestSchema.parse({ ...happy, author: "Jesse" }).author).toBe("Jesse");
+    expect(pluginManifestSchema.parse({ ...happy, author: "Jesse" }).author).toEqual({
+      name: "Jesse",
+    });
     expect(
       pluginManifestSchema.parse({ ...happy, author: { name: "Jesse", email: "j@x" } }).author,
-    ).toBe("Jesse");
+    ).toEqual({ name: "Jesse", email: "j@x" });
     expect((parse({ email: "j@x" }) as { success: boolean }).success).toBe(false);
   });
 

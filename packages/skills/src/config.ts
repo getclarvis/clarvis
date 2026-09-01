@@ -122,6 +122,10 @@ function normalizeRoot(input: SkillRootInput, workspaceDir: string, home: string
     input.confinementRoot === undefined
       ? undefined
       : resolveAgainst(workspaceDir, input.confinementRoot, home);
+  const executionRoot =
+    input.executionRoot === undefined
+      ? undefined
+      : resolveAgainst(workspaceDir, input.executionRoot, home);
   return {
     path: resolveAgainst(workspaceDir, input.path, home),
     scope: input.scope ?? "workspace",
@@ -131,6 +135,7 @@ function normalizeRoot(input: SkillRootInput, workspaceDir: string, home: string
     ...(input.manifestName === undefined ? {} : { manifestName: input.manifestName }),
     ...(input.validation === undefined ? {} : { validation: input.validation }),
     ...(confinementRoot === undefined ? {} : { confinementRoot }),
+    ...(executionRoot === undefined ? {} : { executionRoot }),
   };
 }
 

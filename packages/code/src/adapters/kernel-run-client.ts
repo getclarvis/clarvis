@@ -511,6 +511,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   const plugins: PluginService = {
     list: () => requireKernel().plugins.list(),
     install: (url, subdir, target) => requireKernel().plugins.install(url, subdir, target),
+    installSource: (source, target) => requireKernel().plugins.installSource(source, target),
     update: (name) => requireKernel().plugins.update(name),
     uninstall: (name) => requireKernel().plugins.uninstall(name),
   };

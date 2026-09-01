@@ -693,7 +693,8 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
         <Show when={preview.requires_workspace_trust}>
           <SectionHeader label="Workspace trust" />
           <text fg={tokens.warn} wrapMode="word">
-            Continuing approves this exact workspace executable fingerprint.
+            Continuing approves repository-owned plugins at this exact workspace executable
+            fingerprint. Global installed plugins need no additional approval.
           </text>
         </Show>
       </box>

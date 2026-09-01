@@ -519,6 +519,25 @@ export interface PluginPresentation {
   displayName?: string;
   /** A one-line summary, when the manifest carries no `description`. */
   shortDescription?: string;
+  /** Longer install-surface copy supplied by the publisher. */
+  longDescription?: string;
+  /** Publisher name shown on install surfaces. */
+  developerName?: string;
+  /** Marketplace category supplied by the publisher. */
+  category?: string;
+  /** Short human-readable capability labels. */
+  capabilities?: string[];
+  /** Publisher and legal links. */
+  websiteURL?: string;
+  privacyPolicyURL?: string;
+  termsOfServiceURL?: string;
+  /** Suggested prompts shown before a plugin is invoked. */
+  defaultPrompt?: string[];
+  /** Optional visual metadata; none of these paths is executable. */
+  brandColor?: string;
+  composerIcon?: string;
+  logo?: string;
+  screenshots?: string[];
 }
 
 /** The outcome of {@link resolvePluginManifest}. */
@@ -729,12 +748,24 @@ function resolveHooks(
 ): string[] {
   const declared = document.hooks;
   const notes: string[] = [];
+  const withRuntime = (hooks: unknown[]): unknown[] =>
+    hooks.map((hook) =>
+      typeof hook === "object" && hook !== null && !Array.isArray(hook)
+        ? {
+            ...(hook as Record<string, unknown>),
+            plugin_root: dirs.root,
+            ...(conversion.pluginDataDir === undefined
+              ? {}
+              : { plugin_data: conversion.pluginDataDir }),
+          }
+        : hook,
+    );
 
   const fromManifest = harvestDeclared(dirs, declared, conversion);
   notes.push(...fromManifest.notes);
 
   if (fromManifest.hooks.length > 0) {
-    document.hooks = fromManifest.hooks;
+    document.hooks = withRuntime(fromManifest.hooks);
     const shadowed =
       existsSync(conventionHooksPath(dirs)) &&
       !(typeof declared === "string" && isConventionPath(dirs, declared));
@@ -750,7 +781,7 @@ function resolveHooks(
   const fromConvention = harvestConvention(dirs, conversion);
   notes.push(...fromConvention.notes);
   if (fromConvention.hooks.length > 0) {
-    document.hooks = fromConvention.hooks;
+    document.hooks = withRuntime(fromConvention.hooks);
     if (declared !== undefined) {
       notes.push(`hooks: the manifest declares none, so ${HOOKS_CONVENTION_FILE} was read instead`);
     }
@@ -823,9 +854,29 @@ function inlineMcpServersDocument(
     return note("does not hold a JSON object");
   }
 
-  const servers = (source as Record<string, unknown>)[MCP_SERVERS_KEY];
+  const sourceRecord = source as Record<string, unknown>;
+  const wrapped = sourceRecord[MCP_SERVERS_KEY] ?? sourceRecord.mcp_servers;
+  const directEntries = Object.entries(sourceRecord).filter(([key]) => key !== "$schema");
+  const direct =
+    directEntries.length > 0 &&
+    directEntries.every(([, entry]) => {
+      if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return false;
+      const record = entry as Record<string, unknown>;
+      return record.command !== undefined || record.url !== undefined || record.type !== undefined;
+    })
+      ? Object.fromEntries(directEntries)
+      : undefined;
+  const servers =
+    typeof wrapped === "object" && wrapped !== null && !Array.isArray(wrapped) ? wrapped : direct;
   if (typeof servers !== "object" || servers === null || Array.isArray(servers)) {
-    return note(`declares no '${MCP_SERVERS_KEY}' object`);
+    return note(`declares no '${MCP_SERVERS_KEY}'/'mcp_servers' object or direct server map`);
+  }
+  if (
+    Object.values(servers as Record<string, unknown>).some(
+      (entry) => typeof entry !== "object" || entry === null || Array.isArray(entry),
+    )
+  ) {
+    return note(`is neither a direct server map nor a '${MCP_SERVERS_KEY}'/'mcp_servers' wrapper`);
   }
   const projected = { ...document, [MCP_SERVERS_KEY]: servers };
   if (Buffer.byteLength(JSON.stringify(projected), "utf8") > PLUGIN_RESOURCE_LIMITS.manifestBytes) {
@@ -849,6 +900,141 @@ function resolveMcpServers(dirs: PluginDirs, document: Record<string, unknown>):
     notes.push(...result.notes);
     if (result.found) return notes;
   }
+  return notes;
+}
+
+/** Detect a borrowed-config reference behind a bounded iterative object walk. */
+function containsBorrowedUserConfigReference(value: unknown): boolean {
+  const pending: unknown[] = [value];
+  let inspected = 0;
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (typeof current === "string") {
+      if (current.includes("${user_config")) return true;
+      continue;
+    }
+    if (typeof current !== "object" || current === null) continue;
+    const children: unknown[] = Array.isArray(current)
+      ? current
+      : Object.values(current as Record<string, unknown>);
+    inspected += children.length;
+    if (inspected > 20_000) return true;
+    pending.push(...children);
+  }
+  return false;
+}
+
+/**
+ * Translate borrowed-host `userConfig` references onto Clarvis's existing env/key lookup.
+ *
+ * @remarks Only a whole-value `${user_config.key}` inside a stdio server's `env` map is
+ * accepted. It becomes `${DESTINATION_ENV_NAME}`; no default or secret from the manifest is
+ * consumed, persisted, or logged. A malformed or structurally excessive reference withholds only
+ * its server.
+ */
+function resolveBorrowedUserConfig(
+  document: Record<string, unknown>,
+  borrowedDialect: boolean,
+): string[] {
+  const declared = document.userConfig;
+  if (borrowedDialect) delete document.userConfig;
+  const entries =
+    typeof declared === "object" && declared !== null && !Array.isArray(declared)
+      ? Object.entries(declared as Record<string, unknown>)
+      : [];
+  const definitions = new Set(
+    entries
+      .filter(
+        ([, definition]) =>
+          typeof definition === "object" &&
+          definition !== null &&
+          !Array.isArray(definition) &&
+          (definition as Record<string, unknown>).type === "string",
+      )
+      .map(([key]) => key),
+  );
+  const servers = document[MCP_SERVERS_KEY];
+  if (typeof servers !== "object" || servers === null || Array.isArray(servers)) {
+    return declared === undefined
+      ? []
+      : ["userConfig: declared, but no MCP environment references it"];
+  }
+  const notes: string[] = [];
+  if (entries.length > 128) {
+    definitions.clear();
+    notes.push("userConfig: exceeds the 128-entry compatibility limit");
+  }
+  const kept: Record<string, unknown> = {};
+  for (const [serverName, rawServer] of Object.entries(servers as Record<string, unknown>)) {
+    if (typeof rawServer !== "object" || rawServer === null || Array.isArray(rawServer)) {
+      kept[serverName] = rawServer;
+      continue;
+    }
+    const server = { ...(rawServer as Record<string, unknown>) };
+    let error: string | undefined;
+    for (const [field, value] of Object.entries(server)) {
+      if (field !== "env" && containsBorrowedUserConfigReference(value)) {
+        error = `contains a userConfig reference in unsupported field '${field}'`;
+        break;
+      }
+    }
+    if (error !== undefined) {
+      notes.push(`${MCP_SERVERS_KEY}: '${serverName}' is not contributed — ${error}`);
+      continue;
+    }
+    const rawEnv = server.env;
+    if (typeof rawEnv !== "object" || rawEnv === null || Array.isArray(rawEnv)) {
+      if (error === undefined && containsBorrowedUserConfigReference(rawEnv)) {
+        error = "contains a userConfig reference outside a string environment value";
+      }
+      if (error === undefined) kept[serverName] = server;
+      else notes.push(`${MCP_SERVERS_KEY}: '${serverName}' is not contributed — ${error}`);
+      continue;
+    }
+    const env: Record<string, unknown> = { ...(rawEnv as Record<string, unknown>) };
+    for (const [destination, value] of Object.entries(env)) {
+      if (!containsBorrowedUserConfigReference(value)) continue;
+      if (typeof value !== "string") {
+        error = "contains a userConfig reference outside a string environment value";
+        break;
+      }
+      const match = /^\$\{user_config\.([A-Za-z0-9_.-]{1,128})\}$/.exec(value);
+      if (match === null) {
+        error = "contains an embedded or malformed userConfig reference";
+        break;
+      }
+      const key = match[1];
+      if (key === undefined) {
+        error = "contains a userConfig reference without a key";
+        break;
+      }
+      if (!borrowedDialect) {
+        error = "uses userConfig outside a borrowed-host manifest";
+        break;
+      }
+      if (!definitions.has(key)) {
+        error = `references undeclared userConfig key '${key}'`;
+        break;
+      }
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(destination)) {
+        error = `maps userConfig key '${key}' onto invalid environment name '${destination}'`;
+        break;
+      }
+      if (server.expandVariables === false) {
+        error = "disables variable expansion required by its userConfig environment mapping";
+        break;
+      }
+      env[destination] = `\${${destination}}`;
+    }
+    if (error !== undefined) {
+      notes.push(`${MCP_SERVERS_KEY}: '${serverName}' is not contributed — ${error}`);
+      continue;
+    }
+    server.env = env;
+    kept[serverName] = server;
+  }
+  if (Object.keys(kept).length === 0) delete document[MCP_SERVERS_KEY];
+  else document[MCP_SERVERS_KEY] = kept;
   return notes;
 }
 
@@ -896,8 +1082,49 @@ function sanitizeMcpServers(document: Record<string, unknown>): string[] {
 }
 
 /** A manifest string worth showing, or undefined when it says nothing. */
-function displayText(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+function displayText(value: unknown, max = 4_000): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= max ? trimmed : undefined;
+}
+
+/** Read a bounded array of non-empty presentation strings. */
+function displayTextList(value: unknown, maxItems = 32, maxChars = 512): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || value.length > maxItems) return undefined;
+  const strings = value.map((entry) => displayText(entry, maxChars));
+  return strings.every((entry): entry is string => entry !== undefined) ? strings : undefined;
+}
+
+/** Read a safe external HTTP(S) presentation link. */
+function displayUrl(value: unknown): string | undefined {
+  const text = displayText(value);
+  if (text === undefined) return undefined;
+  try {
+    const url = new URL(text);
+    return (url.protocol === "http:" || url.protocol === "https:") &&
+      url.username.length === 0 &&
+      url.password.length === 0
+      ? text
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Read one plugin-relative, non-traversing asset path. */
+function displayAssetPath(value: unknown): string | undefined {
+  const text = displayText(value, 1_024);
+  if (text === undefined || !text.startsWith("./") || text.includes("\\") || text.includes("\0")) {
+    return undefined;
+  }
+  return text.split("/").some((segment) => segment === "..") ? undefined : text;
+}
+
+/** Read an array of plugin-relative visual asset paths. */
+function displayAssetPaths(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 32) return undefined;
+  const paths = value.map(displayAssetPath);
+  return paths.every((entry): entry is string => entry !== undefined) ? paths : undefined;
 }
 
 /**
@@ -907,10 +1134,8 @@ function displayText(value: unknown): string | undefined {
  * @returns the display metadata, and a note when a block was written but held
  *   nothing readable.
  * @remarks The key is consumed rather than left behind, so it stops being
- *   reported as a key Clarvis does not act on — which it no longer is. What the
- *   block carries beyond these two fields (icons, colours, categories) is
- *   dropped silently: it is not a directive, so losing it changes nothing about
- *   what the plugin does.
+ *   reported as a key Clarvis does not act on. Every recognized value remains
+ *   display-only and cannot widen what the plugin may execute.
  */
 function resolvePresentation(document: Record<string, unknown>): {
   presentation?: PluginPresentation;
@@ -924,16 +1149,53 @@ function resolvePresentation(document: Record<string, unknown>): {
     return { notes: [`${PRESENTATION_KEY}: not an object, so nothing was read from it`] };
   }
   const block = declared as Record<string, unknown>;
-  const displayName = displayText(block.displayName);
-  const shortDescription = displayText(block.shortDescription);
-  if (displayName === undefined && shortDescription === undefined) {
-    return { notes: [`${PRESENTATION_KEY}: no display name or short description to read`] };
+  const presentation: PluginPresentation = {
+    ...(displayText(block.displayName, 128) === undefined
+      ? {}
+      : { displayName: displayText(block.displayName, 128) }),
+    ...(displayText(block.shortDescription, 512) === undefined
+      ? {}
+      : { shortDescription: displayText(block.shortDescription, 512) }),
+    ...(displayText(block.longDescription, 4_000) === undefined
+      ? {}
+      : { longDescription: displayText(block.longDescription, 4_000) }),
+    ...(displayText(block.developerName, 256) === undefined
+      ? {}
+      : { developerName: displayText(block.developerName, 256) }),
+    ...(displayText(block.category, 128) === undefined
+      ? {}
+      : { category: displayText(block.category, 128) }),
+    ...(displayTextList(block.capabilities) === undefined
+      ? {}
+      : { capabilities: displayTextList(block.capabilities) }),
+    ...(displayUrl(block.websiteURL) === undefined
+      ? {}
+      : { websiteURL: displayUrl(block.websiteURL) }),
+    ...(displayUrl(block.privacyPolicyURL) === undefined
+      ? {}
+      : { privacyPolicyURL: displayUrl(block.privacyPolicyURL) }),
+    ...(displayUrl(block.termsOfServiceURL) === undefined
+      ? {}
+      : { termsOfServiceURL: displayUrl(block.termsOfServiceURL) }),
+    ...(displayTextList(block.defaultPrompt, 32, 4_000) === undefined
+      ? {}
+      : { defaultPrompt: displayTextList(block.defaultPrompt, 32, 4_000) }),
+    ...(typeof block.brandColor === "string" && /^#[0-9a-f]{6}$/i.test(block.brandColor)
+      ? { brandColor: block.brandColor.toLowerCase() }
+      : {}),
+    ...(displayAssetPath(block.composerIcon) === undefined
+      ? {}
+      : { composerIcon: displayAssetPath(block.composerIcon) }),
+    ...(displayAssetPath(block.logo) === undefined ? {} : { logo: displayAssetPath(block.logo) }),
+    ...(displayAssetPaths(block.screenshots) === undefined
+      ? {}
+      : { screenshots: displayAssetPaths(block.screenshots) }),
+  };
+  if (Object.keys(presentation).length === 0) {
+    return { notes: [`${PRESENTATION_KEY}: no supported display metadata to read`] };
   }
   return {
-    presentation: {
-      ...(displayName === undefined ? {} : { displayName }),
-      ...(shortDescription === undefined ? {} : { shortDescription }),
-    },
+    presentation,
     notes: [],
   };
 }
@@ -1400,7 +1662,11 @@ function normalizeAgentManifest(
       : { description: parsed.data.description }),
     ...(parsed.data.author?.name === undefined || parsed.data.author.name.length === 0
       ? {}
-      : { author: parsed.data.author.name }),
+      : { author: parsed.data.author }),
+    ...(parsed.data.homepage === undefined ? {} : { homepage: parsed.data.homepage }),
+    ...(parsed.data.repository === undefined ? {} : { repository: parsed.data.repository }),
+    ...(parsed.data.license === undefined ? {} : { license: parsed.data.license }),
+    ...(parsed.data.keywords === undefined ? {} : { keywords: parsed.data.keywords }),
     skills,
     ...(Object.keys(mcp.servers).length === 0 ? {} : { mcpServers: mcp.servers }),
   };
@@ -1457,6 +1723,12 @@ export function resolvePluginManifest(
     record = agentPlugin.document;
   } else {
     notes.push(...resolveMcpServers(dirs, record));
+    const manifestHolder = manifestLocation === undefined ? "" : dirname(manifestLocation);
+    const borrowedDialect =
+      manifestHolder !== "" &&
+      manifestHolder !== CLARVIS_MANIFEST_DIR &&
+      HOST_MANIFEST_DIR.test(manifestHolder);
+    notes.push(...resolveBorrowedUserConfig(record, borrowedDialect));
     notes.push(...sanitizeMcpServers(record));
     const pluginMcpServers =
       typeof record[MCP_SERVERS_KEY] === "object" &&
@@ -1475,6 +1747,7 @@ export function resolvePluginManifest(
       ...resolveHooks(dirs, record, {
         ...(pluginName === undefined ? {} : { pluginName }),
         pluginMcpServers,
+        ...(runtime?.dataDir === undefined ? {} : { pluginDataDir: runtime.dataDir }),
       }),
     );
     const resolvedPresentation = resolvePresentation(record);

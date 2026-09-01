@@ -183,6 +183,11 @@ boolean` (selects the surface), `confineToWorkspace: boolean`, `stateRoot: strin
 `temporaryRoots: readonly string[]` (path-confinement
 policy consumed by individual tools, not by `core.ts` itself), `maxOutputBytes` and `maxToolMetaBytes`
 (consumed by `dispatch`'s own bounding step).
+`skillExecutionRoots: readonly string[]` is the separately bounded, canonical set of selected skill
+package directories admitted only to command execution. `dispatch` consumes it before the guard via
+`protectSkillPackages`: native mutation tools may use the normal workspace/scratch surface but may
+not target a protected skill package (`RuntimeConfig`, `protectSkillPackages`, and
+`assertOutsideRoots` in `packages/tools/src`).
 `registerTemporaryRoot(root)` is the validated dynamic half of the same contract: `shell` calls it
 only for a newly-created, owner-controlled directory proven from an explicit system-temp `mktemp -d`
 template; hosts may observe registration to include that root in run-end cleanup.
@@ -251,8 +256,11 @@ throwing probe is treated as `false` rather than propagating
 caller override — `resolveConfig` always derives it as
 `workspaceStatePaths(workspaceRoot).root` (`packages/tools/src/config.ts:446`), which is a value from `@clarvis/paths`
 outside this package's scope. `logger` defaults to `NOOP_TOOLS_LOGGER` when the caller supplies none
-(`packages/tools/src/config.ts:330`). `guard`, `elicit`, `sandbox`, `secretEnvNames` all pass through unchanged from
-`AgentToolsOptions` with no default beyond `undefined` (`packages/tools/src/config.ts:450`-`453`).
+(`packages/tools/src/config.ts:330`). `guard`, `elicit`, and `secretEnvNames` pass through unchanged
+from `AgentToolsOptions` with no default beyond `undefined`. `skillExecutionRoots` defaults empty;
+`resolveConfig` canonicalizes at most 512 existing directories, rejects a filesystem root or a root
+that contains the workspace, and appends them to `sandbox.readOnlyPaths` when a sandbox exists
+(`resolveConfig` in `packages/tools/src/config.ts`).
 
 ### `AgentToolsOptions` (`packages/tools/src/config.ts:234`) vs. `RuntimeConfig` (`packages/tools/src/config.ts:15`)
 
@@ -325,11 +333,14 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
    `assertTimeoutOrder` (`packages/tools/src/config.ts:222`) throws if `shellTimeoutMaxMs < shellTimeoutMs`
    (`packages/tools/src/config.ts:332`-`342`).
 5. Run the ripgrep probe (`runProbe`, swallowing a throw to `false`) and resolve `readOnly` /
-   `confineToWorkspace` (`packages/tools/src/config.ts:344`-`346`).
-6. Emit one `debug` log, `event: "tools.config_resolved"`, naming the flags that "decide the surface
-   it advertises" (`packages/tools/src/config.ts:374`-`385`).
-7. Build and return the `RuntimeConfig` object, `requireMin`-validating every remaining limit inline
-   and deriving `stateRoot` from `@clarvis/paths` (`packages/tools/src/config.ts:387`-`454`).
+   `confineToWorkspace` (`resolveConfig` in `packages/tools/src/config.ts`).
+6. Validate scratch roots, then canonicalize and de-duplicate at most 512 `skillExecutionRoots`.
+   Missing/non-directory entries, the filesystem root, the workspace itself, and any ancestor of the
+   workspace fail startup (`resolveConfig`; pinned by `packages/tools/tests/integration/config.test.ts`).
+7. Emit one `debug` log, `event: "tools.config_resolved"`, including only the count
+   `skill_execution_roots`, never their paths.
+8. Merge those roots into native-sandbox `readOnlyPaths`, then build the `RuntimeConfig`, validating
+   every remaining limit and deriving `stateRoot` from `@clarvis/paths` (`resolveConfig`).
 
 ### `dispatch` (`packages/tools/src/core.ts:200`-`235`), in call order
 
@@ -343,10 +354,15 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
    `{ allErrors: true, useDefaults: true, coerceTypes: true }` (`packages/tools/src/core.ts:23`). On failure, return
    `invalid_input` with `ajv.errorsText(...)` joined by `"; "`, or the literal string `"invalid
    arguments"` if that text is empty (`packages/tools/src/core.ts:212`-`217`).
-3. **Guard.** `applyGuard(name, filled, config)` (detailed below) returns a gate;
+3. **Protect selected skill packages.** For native mutation tools, `protectSkillPackages` extracts
+   every source and destination through the same guard-context parser and refuses a target below any
+   `skillExecutionRoot` with `path_escape`. This applies even when that package is nested beneath the
+   otherwise writable workspace (`packages/tools/src/core.ts`; pinned by
+   `packages/tools/tests/integration/api.test.ts`).
+4. **Guard.** `applyGuard(name, filled, config)` (detailed below) returns a gate;
    its `denied` member short-circuits dispatch and its `review` member is retained
    on the eventual result.
-4. **Execute.** Call `tool.handler(filled, config, signal, hooks)`, `normalizeOutput` its return
+5. **Execute.** Call `tool.handler(filled, config, signal, hooks)`, `normalizeOutput` its return
    value, split `content` into parts if it was a bare string, and return
    `{ isError: false, content: boundParts(...), ...(meta && { meta: boundMeta(...) }) }`
    (`packages/tools/src/core.ts:222`-`230`). A thrown error (from the handler, or a bug anywhere in step 4) is caught and
@@ -461,6 +477,8 @@ number:
 | Unrecognized Node `ErrnoException` code (not `ENOENT`/`EISDIR`/`ENOTDIR`) | mapped to `io_error`; the raw errno is logged at `debug` (`tools.fs_error_unmapped`) since "an unusual errno is an ordinary outcome" | `packages/tools/src/errors.ts:105`-`115` |
 | `resolveConfig` given a missing/non-existent/non-directory `workspaceRoot` | throws `StartupError` synchronously — startup aborts, no degraded config is returned | `packages/tools/src/config.ts:201`-`213` |
 | `resolveConfig` given a limit below its minimum, or an inverted shell timeout range | throws `StartupError` | `packages/tools/src/config.ts:215`-`230`, pinned by `packages/tools/tests/integration/config.test.ts:106`-`141` |
+| `resolveConfig` receives more than 512 skill roots, or a skill root is missing, not a directory, a filesystem root, or contains the workspace | throws `StartupError`; no partial execution surface is returned | `resolveConfig` in `packages/tools/src/config.ts`, pinned by `packages/tools/tests/integration/config.test.ts` |
+| A native mutation targets a selected skill package | `path_escape` before guard or handler; no mutation runs | `protectSkillPackages` in `packages/tools/src/core.ts`, pinned by `packages/tools/tests/integration/api.test.ts` |
 | `resolveConfig`'s ripgrep probe throws | swallowed; `ripgrepAvailable` is set `false`, not propagated as a startup failure | `packages/tools/src/config.ts:193`-`199`, pinned by `packages/tools/tests/integration/config.test.ts:143`-`152` |
 | Tool result's serialized `meta` exceeds `maxToolMetaBytes` | truncated to `{truncated: true, truncation_reason: ...}` plus, for a `diff` field, the longest prefix that still fits | `packages/tools/src/core.ts:60`-`85` |
 | Non-`bounded` tool's text output exceeds `maxOutputBytes` | clamped by `bound()` (sibling concern in `lib/output.ts`), never dropped or errored | `packages/tools/src/core.ts:51`-`58` |

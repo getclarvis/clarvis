@@ -214,9 +214,13 @@ provider-neutral at the loop.
 
 **Providers and models.** `ToolTransport` (`:120`) is `stdio | http | sse`; `AgentRole` (`:123`) is
 `lead | subagent`. `McpServerConfig` names one server, its transport-specific fields, optional stdio
-`cwd`, interpolation policy `expandVariables`, `shared`/`resources` flags, and the host-composition
-flag `auto_tools`. The last flag admits every tool the opened server actually advertises to every
-effective agent for that run; it does not mutate an authored profile or alter transport identity.
+`cwd`, interpolation policy `expandVariables`, `shared`/`resources` flags, OAuth or environment-backed
+remote credentials, explicitly forwarded stdio environment names, per-server timeouts, enablement
+and requiredness, tool allow/deny filters, installer authentication timing, and the host-composition
+flag `auto_tools`. The last flag admits every retained tool the opened server actually advertises to
+every effective agent for that run; it does not mutate an authored profile or alter transport
+identity. `McpOAuthConfig` supports a pre-registered client id, configured callback URL or port, and
+an HTTPS client-metadata URL for CIMD.
 `ProviderKind`
 (`:169-170`) is `openai-compatible | openai | anthropic |
 google | openai-codex | xai-grok`; the final two select renewable subscription billing boundaries

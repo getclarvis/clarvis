@@ -206,6 +206,9 @@ const extensionListings = Array.from({ length: 196 }, (_, index): MarketplaceLis
   displayName: `Extension ${String(index).padStart(3, "0")}`,
   description: `Representative marketplace extension ${index}`,
   source: `https://example.invalid/extension-${index}.git`,
+  sourceType: "git",
+  installation: "AVAILABLE",
+  authentication: "ON_FIRST_USE",
   marketplaceUrl:
     index % 2 === 0
       ? "https://example.invalid/clarvis-marketplace.git"

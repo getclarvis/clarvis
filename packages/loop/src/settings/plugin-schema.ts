@@ -4,18 +4,24 @@ import { capabilityExecutablesSchema, capabilityRunPoliciesSchema } from "@clarv
 import { BUILTIN_SETTINGS_SPECS } from "../runtime/capabilities/settings-specs.ts";
 import { capabilityPluginFields } from "../runtime/capabilities/settings-specs.ts";
 import { mcpServerPluginSchema, pluginNameField, type SettingsFile } from "./settings-schema.ts";
+import { INPUT_LIMITS } from "../validation/input-limits.ts";
 
-/**
- * A manifest's `author`, accepted either as a plain string or as the
- * `{ name, email?, url? }` object every other agent host writes, and normalized
- * to the name so nothing downstream has to know which form was on disk.
- */
+const manifestText = (label: string, max: number = INPUT_LIMITS.mcpValueChars) =>
+  z.string().trim().min(1, `${label} must be a non-empty string`).max(max);
+
+/** A manifest author, normalized without losing the original publisher identity. */
 const authorField = z
   .union([
-    z.string().min(1),
-    z.object({ name: z.string().min(1, "author.name must be a non-empty string") }).loose(),
+    manifestText("author"),
+    z
+      .object({
+        name: manifestText("author.name"),
+        email: manifestText("author.email").optional(),
+        url: manifestText("author.url").optional(),
+      })
+      .loose(),
   ])
-  .transform((value) => (typeof value === "string" ? value : value.name))
+  .transform((value) => (typeof value === "string" ? { name: value } : value))
   .describe("Who wrote the plugin. A string, or a { name, email?, url? } object.");
 
 /**
@@ -24,12 +30,11 @@ const authorField = z
  * plugin-contributable fields (spread in from {@link capabilityPluginFields}).
  *
  * @remarks `.loose()` — an unrecognized key is carried rather than rejected, so a
- *   manifest written for another agent host installs instead of being refused
- *   over `license` or `homepage`. Nothing reads those keys: they are reported by
- *   {@link unknownManifestKeys} and shown to the operator, because a key that is
- *   a *directive* elsewhere (`skills`, `sessionStart`) does nothing here and a
- *   plugin that silently lost half its behaviour is worse than one that refused
- *   to install.
+ *   manifest written for another agent host installs instead of being refused.
+ *   Recognized discovery metadata such as `license` and `homepage` is preserved;
+ *   keys Clarvis cannot act on are reported by {@link unknownManifestKeys} and
+ *   shown to the operator, because a directive that silently lost half its
+ *   behaviour is worse than one that refused to install.
  *
  *   **`dependencies` is not among the keys this schema gives meaning to**, and
  *   was removed rather than kept. It validated an array of plugin names,
@@ -68,6 +73,10 @@ export const pluginManifestSchema = z
       .optional()
       .describe("One line on what this plugin is for."),
     author: authorField.optional(),
+    homepage: manifestText("homepage").optional(),
+    repository: manifestText("repository").optional(),
+    license: manifestText("license", 256).optional(),
+    keywords: z.array(manifestText("keyword", 128)).max(128).optional(),
     mcpServers: z
       .record(z.string().min(1), mcpServerPluginSchema)
       .optional()

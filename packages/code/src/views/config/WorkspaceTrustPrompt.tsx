@@ -24,6 +24,7 @@ export interface WorkspaceTrustPromptDeps {
 const FIELD_LABELS: Readonly<Record<string, string>> = {
   agents: "agents",
   enabledPlugins: "plugin selection",
+  environment: "repository-owned plugins",
   hooks: "hooks",
   marketplaces: "marketplace sources",
   mcpServers: "MCP servers",
@@ -43,10 +44,6 @@ export function WorkspaceTrustPrompt(host: ViewHost, deps: WorkspaceTrustPromptD
 
   const surface = (): string[] => {
     const labels = deps.fields().map((field) => FIELD_LABELS[field] ?? field);
-    const current = environment();
-    if (current?.ref.scope === "workspace" && current.plugins.length > 0) {
-      labels.push("Environment plugins");
-    }
     return [...new Set(labels.length > 0 ? labels : ["workspace agents or extensions"])];
   };
 
@@ -127,24 +124,25 @@ export function WorkspaceTrustPrompt(host: ViewHost, deps: WorkspaceTrustPromptD
             </b>
           </text>
           <text fg={tokens.fg} wrapMode="word" paddingTop={1}>
-            Approve the complete snapshot below? Nothing listed here runs until you say yes.
+            Approve this workspace once? Every repository-owned plugin in the current snapshot is
+            covered automatically. Nothing withheld runs until you say yes.
           </text>
-          <SectionHeader label="Current snapshot" />
+          <SectionHeader label="Current Environment" />
           <Show when={environment() !== undefined}>
             <text fg={tokens.accent2}>{environment()!.id}</text>
             <text fg={tokens.muted} wrapMode="word">
               {`${environment()!.plugins.length} plugins ${glyph("separator")} ${environment()!.standalone_skills.length} standalone skills ${glyph("separator")} ${environment()!.counts.mcp_servers_active} MCP ${glyph("separator")} ${environment()!.counts.hooks_declared} hooks`}
             </text>
             <text fg={tokens.muted} wrapMode="word">
-              {`fingerprint ${environment()!.fingerprint}`}
+              {`Environment fingerprint ${environment()!.fingerprint}`}
             </text>
           </Show>
           <For each={surface()}>
             {(label) => <text fg={tokens.warn}>{`${glyph("warning")} ${label}`}</text>}
           </For>
           <text fg={tokens.accent2} paddingTop={1} wrapMode="word">
-            Enter approves this exact fingerprint. Press n to open Extensions and remove what you do
-            not want.
+            Enter approves the current workspace fingerprint once. Press n to open Extensions and
+            remove what you do not want.
           </text>
           <Show when={failure()}>
             <text fg={tokens.del} paddingTop={1} wrapMode="word">

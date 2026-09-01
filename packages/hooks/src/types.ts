@@ -41,7 +41,17 @@ export interface HookMatch {
  */
 export interface HookSpec {
   readonly event: string;
+  readonly type?: "command" | "mcp_tool" | undefined;
   readonly command: string;
+  readonly command_windows?: string | undefined;
+  readonly async?: boolean | undefined;
+  readonly status_message?: string | undefined;
+  readonly additional_context_limit?: number | undefined;
+  readonly server?: string | undefined;
+  readonly tool?: string | undefined;
+  readonly input?: unknown;
+  readonly plugin_root?: string | undefined;
+  readonly plugin_data?: string | undefined;
   readonly match?: HookMatch | undefined;
   readonly timeout_ms?: number | undefined;
   readonly on_failure?: "pass" | "deny" | undefined;

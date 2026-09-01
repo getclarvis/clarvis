@@ -9,11 +9,6 @@ import {
 const DEFAULT_MARKETPLACE_NAME = "unnamed marketplace";
 const DEFAULT_ENTRY_DESCRIPTION = "no description provided by this marketplace";
 
-/** Why a listing naming a local source is read but never offered for install. */
-const LOCAL_SOURCE_NOTE =
-  "names a local source; Clarvis installs a plugin from git only, so this listing is " +
-  "shown but cannot be installed from here";
-
 /** The reader's own truncation bounds, restated so a change to one fails a test. */
 const MAX_LISTINGS = 1_000;
 const MAX_NOTES = 40;
@@ -66,6 +61,9 @@ describe("marketplaceSchema: the document", () => {
     expect(catalog.plugins[0]).toEqual({
       name: "reviewkit",
       source: "https://github.com/o/reviewkit",
+      sourceType: "git",
+      installation: "AVAILABLE",
+      authentication: "ON_FIRST_USE",
       description: "d",
       installable: true,
       notes: [],
@@ -249,11 +247,14 @@ describe("marketplaceSchema: one listing, tolerated or dropped", () => {
     const entry = only({ hooks: [{ event: "pre_tool_use", command: "rm -rf /" }], guard: "off" });
 
     expect(Object.keys(entry).sort()).toEqual([
+      "authentication",
       "description",
       "installable",
+      "installation",
       "name",
       "notes",
       "source",
+      "sourceType",
     ]);
     expect(entry.notes.join("\n")).toContain("keys Clarvis does not act on: guard, hooks");
   });
@@ -282,12 +283,13 @@ describe("marketplaceSchema: a source, read in each dialect a catalog writes it 
     expect(entry.source).toBe("git@example.invalid:o/a.git");
   });
 
-  it("reads a bare relative source but never offers it for install", () => {
+  it("reads a confined bare relative source as an installable local plugin", () => {
     const entry = only({ name: "beside", source: "./plugins/beside" });
 
     expect(entry.source).toBe("./plugins/beside");
-    expect(entry.installable).toBe(false);
-    expect(entry.notes).toEqual([`listing 'beside' ${LOCAL_SOURCE_NOTE}`]);
+    expect(entry.sourceType).toBe("local");
+    expect(entry.installable).toBe(true);
+    expect(entry.notes).toEqual([]);
   });
 
   it("names a bare source that would resolve outside the marketplace root", () => {
@@ -301,12 +303,13 @@ describe("marketplaceSchema: a source, read in each dialect a catalog writes it 
     }
   });
 
-  it("reads a `local` descriptor, case-insensitively, and never offers it for install", () => {
+  it("reads a confined `local` descriptor case-insensitively", () => {
     for (const kind of ["local", "LOCAL", "  Local  "]) {
       const entry = only({ name: "beside", source: { source: kind, path: "  plugins/beside  " } });
       expect(entry.source).toBe("plugins/beside");
-      expect(entry.installable).toBe(false);
-      expect(entry.notes).toEqual([`listing 'beside' ${LOCAL_SOURCE_NOTE}`]);
+      expect(entry.sourceType).toBe("local");
+      expect(entry.installable).toBe(true);
+      expect(entry.notes).toEqual([]);
     }
   });
 
@@ -335,16 +338,125 @@ describe("marketplaceSchema: a source, read in each dialect a catalog writes it 
     ]);
 
     const withPath = only({ name: "elsewhere", source: { source: "npm", path: "@scope/pkg" } });
-    expect(withPath.source).toBe("@scope/pkg");
+    expect(withPath.source).toBe("npm");
     expect(withPath.installable).toBe(false);
-    expect(withPath.notes.join("\n")).toContain("names source kind 'npm'");
+    expect(withPath.notes.join("\n")).toContain("without a usable package name");
   });
 
   it("carries a descriptor's extra keys without failing over them", () => {
     const entry = only({ name: "beside", source: { source: "local", path: "a", ref: "main" } });
 
     expect(entry.source).toBe("a");
-    expect(entry.notes).toEqual([`listing 'beside' ${LOCAL_SOURCE_NOTE}`]);
+    expect(entry.installable).toBe(true);
+    expect(entry.notes).toEqual([]);
+  });
+
+  it("normalizes git-subdir selectors and npm packages", () => {
+    const git = only({
+      name: "git-plugin",
+      source: {
+        source: "git-subdir",
+        url: "https://github.com/example/plugins.git",
+        path: "plugins/git-plugin",
+        ref: "release",
+      },
+    });
+    expect(git).toMatchObject({
+      sourceType: "git",
+      source: "https://github.com/example/plugins.git",
+      path: "plugins/git-plugin",
+      ref: "release",
+      installable: true,
+    });
+
+    const npm = only({
+      name: "npm-plugin",
+      source: {
+        source: "npm",
+        package: "@example/codex-plugin",
+        version: "^1.2.0",
+        registry: "https://registry.npmjs.org",
+      },
+    });
+    expect(npm).toMatchObject({
+      sourceType: "npm",
+      source: "@example/codex-plugin",
+      version: "^1.2.0",
+      registry: "https://registry.npmjs.org",
+      installable: true,
+    });
+  });
+
+  it("keeps malformed git descriptors visible but non-installable", () => {
+    const cases = [
+      {
+        source: { source: "url" },
+        note: "without a usable git URL",
+      },
+      {
+        source: {
+          source: "url",
+          url: "https://github.com/example/plugins.git",
+          ref: "main",
+          sha: "a".repeat(40),
+        },
+        note: "declares both ref and sha",
+      },
+      {
+        source: {
+          source: "git-subdir",
+          url: "https://github.com/example/plugins.git",
+          path: "../outside",
+        },
+        note: "without a confined relative path",
+      },
+    ];
+
+    for (const candidate of cases) {
+      const entry = only({ name: "git-plugin", source: candidate.source });
+      expect(entry.sourceType).toBe("git");
+      expect(entry.installable).toBe(false);
+      expect(entry.notes.join("\n")).toContain(candidate.note);
+    }
+  });
+
+  it("rejects npm selectors that could escape or carry registry credentials", () => {
+    const cases = [
+      [{ source: "npm" }, "without a usable package name"],
+      [
+        { source: "npm", package: "@example/plugin", version: "https://example.test/pkg" },
+        "looks like a path or URL selector",
+      ],
+      [
+        { source: "npm", package: "@example/plugin", registry: "https://token@example.test" },
+        "not a credential-free HTTPS URL",
+      ],
+      [
+        { source: "npm", package: "@example/plugin", registry: "not-a-url" },
+        "invalid npm registry URL",
+      ],
+    ] as const;
+
+    for (const [source, note] of cases) {
+      const entry = only({ name: "npm-plugin", source });
+      expect(entry.sourceType).toBe("npm");
+      expect(entry.installable).toBe(false);
+      expect(entry.notes.join("\n")).toContain(note);
+    }
+  });
+
+  it("reads install and authentication policy without treating it as authorization", () => {
+    const entry = only({
+      policy: { installation: "INSTALLED_BY_DEFAULT", authentication: "ON_INSTALL" },
+    });
+    expect(entry.installation).toBe("INSTALLED_BY_DEFAULT");
+    expect(entry.authentication).toBe("ON_INSTALL");
+    expect(entry.installable).toBe(true);
+
+    const unavailable = only({
+      policy: { installation: "NOT_AVAILABLE", authentication: "ON_FIRST_USE" },
+    });
+    expect(unavailable.installable).toBe(false);
   });
 });
 
@@ -609,11 +721,11 @@ describe("marketplaceSchema: a whole catalog written in another host's dialect",
     expect(catalog.notes.join("\n")).not.toContain("metadata");
   });
 
-  it("offers only the git-backed listings for install", () => {
+  it("offers the git-backed and confined local listings for install", () => {
     const catalog = read(foreign);
 
     expect(catalog.plugins.filter((entry) => entry.installable).map((entry) => entry.name)).toEqual(
-      ["reviewkit", "docs"],
+      ["reviewkit", "notekeeper", "docs"],
     );
   });
 
@@ -623,7 +735,7 @@ describe("marketplaceSchema: a whole catalog written in another host's dialect",
 
     expect(byName.get("reviewkit")!.description).toBe("Structured review passes over a diff.");
     expect(byName.get("reviewkit")!.displayName).toBe("Review Kit");
-    expect(byName.get("reviewkit")!.notes.join("\n")).toContain("does not act on: policy");
+    expect(byName.get("reviewkit")!.installation).toBe("AVAILABLE");
     expect(byName.get("reviewkit")!.notes.join("\n")).not.toContain("does not act on: interface");
 
     expect(byName.get("notekeeper")!.description).toBe(

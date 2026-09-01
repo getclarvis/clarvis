@@ -51,8 +51,8 @@ independently pins that `shell` and `monitor_start` specifically are never class
 ("they observe and mutate through one entry point").
 
 `shell`'s and every `monitor_*` tool's `inputSchema` is a plain JSON Schema object compiled once by
-Ajv (`packages/tools/src/core.ts:49-51`); `dispatch` validates, defaults and coerces caller arguments
-against it before the handler runs (`packages/tools/src/core.ts:210-217`).
+Ajv (`packages/tools/src/core.ts:49-53`); `dispatch` validates, defaults and coerces caller arguments
+against it before the handler runs (`packages/tools/src/core.ts:238-255`).
 
 ### Exported functions and types (reachable from `.`, `./shell`, or both)
 
@@ -92,7 +92,7 @@ Not exported from any entrypoint (internal to `tools/monitor.ts`/`lib/monitor.ts
 `packages/tools/tests/component/monitor-spawn.test.ts:6` and
 `packages/tools/tests/component/monitor-stop-kill.test.ts:4` import the `create*` factories directly).
 
-### Relevant `RuntimeConfig` fields (`packages/tools/src/config.ts:15-133`)
+### Relevant `RuntimeConfig` fields (`packages/tools/src/config.ts:15-135`)
 
 | Field | Default constant | Default value | File:line |
 |---|---|---|---|
@@ -140,7 +140,7 @@ never collide).
 
 | Path builder | Produces | File:line |
 |---|---|---|
-| `monitorSidecar(id)` | `<state>/local/monitor-<id>.json` | `packages/paths/src/workspace-state.ts:187-188` |
+| `monitorSidecar(id)` | `<state>/local/monitor-<id>.json` | `packages/paths/src/workspace-state.ts:191-192` |
 | `monitorLog(id)` | `<state>/local/monitor-<id>.log` | `:189` |
 | `monitorExit(id)` | `<state>/local/monitor-<id>.exit` | `:190` |
 | `spillFile(token, stream)` | `<state>/local/shell-<token>.<stream>.log` | `:191-192` |
@@ -156,7 +156,7 @@ Both streaming shell capture and generic tool-result spill writers create their 
 `monitorDir(workspaceRoot)` is `workspaceStatePaths(workspaceRoot).localDir`
 (`packages/tools/src/lib/monitor.ts:41-43`); `sidecarPath`/`logPath`/`exitPath` are thin wrappers over
 the same builders (`:46-59`). `isMonitorSidecar` recognizes exactly the `monitor-*.json` shape
-(`packages/paths/src/workspace-state.ts:122-123`) and is what `listSidecars` filters directory entries
+(`packages/paths/src/workspace-state.ts:126-127`) and is what `listSidecars` filters directory entries
 by (`packages/tools/src/lib/monitor.ts:187-188`). None of the three monitor files, nor a shell spill,
 ever lands inside the workspace root — pinned directly:
 `packages/tools/tests/integration/monitor-lib.test.ts:58-62` asserts none of the three built paths
@@ -498,7 +498,7 @@ side has silently failed.
    for a command full of shell metacharacters).
 
 9. **A monitor's exit file, sidecar, and log never resolve inside the workspace root.**
-   Production: `packages/paths/src/workspace-state.ts:174-194` (`localDir` under the global state
+   Production: `packages/paths/src/workspace-state.ts:178-200` (`localDir` under the global state
    root, not the workspace).
    Test: `packages/tools/tests/integration/monitor-lib.test.ts:58-62`; also
    `packages/tools/tests/integration/shell.test.ts:241-252` for a shell spill.
@@ -595,7 +595,7 @@ side has silently failed.
 21. **The dispatcher never re-clamps a `bounded: true` tool's text output to `maxOutputBytes`** — all
     five tools in this subsystem set `bounded: true`, so their own internal bounding (via `bound`,
     `boundOrSpill`, or a `CaptureSink`) is the only truncation that ever applies to them.
-    Production: `packages/tools/src/core.ts:77-81` (`boundParts` returns `parts` unchanged when
+    Production: `packages/tools/src/core.ts:79-85` (`boundParts` returns `parts` unchanged when
     `bounded` is truthy); tool declarations at `packages/tools/src/tools/shell.ts:150`,
     `packages/tools/src/tools/monitor.ts:187`, `:350`, `:453`, `:495`.
     Test: unpinned by a dedicated bounded-vs-unbounded comparison test in this document's scope; the truncation
@@ -647,7 +647,7 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
 - `@clarvis/paths` — `ensureWorkspaceLocalDir`, `workspaceStatePaths`, `isMonitorSidecar` from
   `packages/tools/src/lib/monitor.ts:4`; `executableOnPath` from `packages/tools/src/shell.ts:2`.
   Forced by the paths package being this package's *only* internal `dependencies` entry
-  (`packages/tools/package.json:74-79`); nothing in `lib/monitor.ts` or `shell.ts`
+  (`packages/tools/package.json:79-84`); nothing in `lib/monitor.ts` or `shell.ts`
   spells `.clarvis`/`.agents` directly (that literal is `@clarvis/paths`'s alone, enforced repo-wide
   by `packages/paths/tests/architecture/invariant.test.ts`, outside this document's scope).
 - `../sandbox.ts` (`sandboxCommand`) — both `packages/tools/src/tools/shell.ts:18` and
@@ -659,17 +659,17 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   subsystem only threads a resolved `ShellSpec` into it so the wrapper and the executor can never
   disagree on shell flavor (`packages/tools/src/tools/monitor.ts:255-271`).
 - `../guard/context.ts` (`buildGuardContext`) is used by `core.ts`'s `applyGuard`
-  (`packages/tools/src/core.ts:152-171`), not by `shell.ts`/`monitor.ts` directly — whether a `shell`
+  (`packages/tools/src/core.ts:156-192`), not by `shell.ts`/`monitor.ts` directly — whether a `shell`
   or `monitor_start` call is allowed at all is decided upstream of the handler, by the
   [command-guard-and-approval](command-guard.md) document's machinery. `RuntimeConfig.guard`/`.elicit`
-  (`packages/tools/src/config.ts:103-106`) are the seam; this document's handlers never reference them.
+  (`packages/tools/src/config.ts:115-119`) are the seam; this document's handlers never reference them.
 - `../core.ts`'s `dispatch`/`boundParts` — the dispatcher (not the handler) is what makes `bounded:
-  true` mean "do not re-clamp" (`packages/tools/src/core.ts:77-81`); this document's tools only declare
+  true` mean "do not re-clamp" (`packages/tools/src/core.ts:79-85`); this document's tools only declare
   the flag.
 
 **What depends on this subsystem:**
 
-- `@clarvis/loop` (`packages/loop/src/runtime/build-run-deps.ts:511-530`) dynamically imports
+- `@clarvis/loop` (`packages/loop/src/runtime/build-run-deps.ts:541-564`) dynamically imports
   `@clarvis/tools` and calls `setWarnSink`, bridging the global `warn()` singleton's call sites —
   `bestEffort`'s failures in `lib/tasks.ts`, plus the two named in `lib/log.ts`'s own doc comment as
   the ones with no `RuntimeConfig` in scope: `serializeError` (`packages/tools/src/errors.ts`) and the
@@ -743,6 +743,6 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   into `@clarvis/code`.
 
 - **Whether any host other than `@clarvis/loop` installs a `WarnSink`** — this document's scope shows exactly
-  one call site (`packages/loop/src/runtime/build-run-deps.ts:512-530`); whether `@clarvis/server` or
+  one call site (`packages/loop/src/runtime/build-run-deps.ts:543-564`); whether `@clarvis/server` or
   a bare `createAgentTools` consumer does anything with the default `stderr` sink is not visible from
   this package's own source.

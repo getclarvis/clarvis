@@ -14,10 +14,10 @@ the next run (`RunControlsPanel`). Planning review itself is toggled by `/plan`,
 
 The views are thin. Everything that is not painting is pushed either into a **feature controller**
 (`src/features/{agents,tasks}/controller.ts`) — pure orchestration with no presentation
-imports (`packages/code/tests/architecture/architecture-boundary.test.ts:109`) — or into an
+imports (`packages/code/tests/architecture/architecture-boundary.test.ts:167`) — or into an
 **adapter** (`src/adapters/{agent-files,agents-store,agents,memory-mode,effort-levels}.ts`) which may
 not import `ui/` or `views/` at all
-(`packages/code/tests/architecture/architecture-boundary.test.ts:91`). Three shared feature helpers
+(`packages/code/tests/architecture/architecture-boundary.test.ts:149`). Three shared feature helpers
 sit beside them: `features/issues.ts` (validation issue projection), `features/dispose-guard.ts`
 (event emission gated on controller teardown, `packages/code/src/features/dispose-guard.ts:17`), and
 `features/run/status-presenter.ts`, which turns the framework-free status structures in
@@ -36,7 +36,7 @@ writes cross `KernelClient.tasks`" (`packages/code/src/views/config/TasksHub.tsx
 ### 2.1 Registered commands
 
 Every hub is registered as a *view* command. The name/title/surface/parent tuple is a pinned contract
-(`packages/code/tests/component/command-composition.test.ts:218`, asserted at `:241`).
+(`packages/code/tests/component/command-composition.test.ts:235-255`, asserted at `:257-264`).
 
 | Command | Title | Slash | Surface | Parent | Registered at |
 |---|---|---|---|---|---|
@@ -81,7 +81,7 @@ pending-operation warning (`packages/code/src/views/config/WorkflowsHub.tsx:44`)
 | `presentAgentsEvent(event: AgentsEvent): Notice` | total switch over 13 event variants | `packages/code/src/features/agents/events.ts:28` |
 | `registerAgentsCommands(commands, deps)` | registers `agents.open` | `packages/code/src/features/agents/commands.ts:21` |
 | `createTasksController(deps): TasksController` | read passthroughs + four idempotency-guarded mutations + `workBlocked`/`workOnTask` | `packages/code/src/features/tasks/controller.ts:172` |
-| `presentStatusLine`, `memoryNoticeText`, `progressStatusText`, `liveRunStatusLine`, `RunStripInput`, `runOutcomeLabel`, `runStripText` | run-status glyph projections | `packages/code/src/features/run/status-presenter.ts:14`, `:19`, `:24`, `:29`, `:33`, `:58`, `:74` |
+| `presentStatusLine`, `memoryNoticeText`, `progressStatusText`, `liveRunStatusLine`, `RunStripInput`, `runOutcomeLabel`, `runStripText` | run-status glyph projections | `packages/code/src/features/run/status-presenter.ts:13`, `:18`, `:23`, `:28`, `:32`, `:58`, `:87` |
 
 ### 2.4 Adapters owned by this document
 
@@ -381,7 +381,7 @@ stored in `refreshAbort`; the previous one is aborted first (`:225`). If
 `{ state: "not_configured", writes: "disabled", reason: "Tasks are disabled in this host." }` and
 clears everything without touching the service (`:233`). Otherwise it fetches `status()`; a non-`ready`
 state clears capabilities/containers/rows and sets a fault unless the state is `not_configured`
-(`:247`). On `ready` it fetches `capabilities()` and `listContainers({limit:100})` in parallel (`:258`),
+(`:247`). On `ready` it fetches `capabilities()` and `listContainers({ limit: 100 })` in parallel (`:258`),
 prefers the currently selected container or `deps.defaultContainer()` when the provider still lists it
 (`:265`), then `search()`. Every write to state is gated on `isCurrentRefresh(controller)` (`:201`).
 
@@ -589,7 +589,7 @@ scope that actually supplied the persisted value (`settingSource("guard")`, itse
 has since diverged from that persisted value, in which case it reads `"session"` — the same
 inherited-scope-vs-session-override distinction the memory panel's `Source` badge makes (invariant
 47), applied here to the guard mode instead of the memory block. Pinned by
-`packages/code/tests/integration/run-controls-render.test.tsx:258` ("command review separates an
+`packages/code/tests/integration/run-controls-render.test.tsx:262` ("command review separates an
 inherited scoped value from a session override").
 
 `applyMemory` (`:233`) never writes settings. It sets the session mode and then reports one of three
@@ -621,20 +621,20 @@ specific to these files.
    Holds for `features/agents/controller.ts` and `features/tasks/controller.ts` — verify by their import blocks
    (`packages/code/src/features/agents/controller.ts:1`,
    `packages/code/src/features/tasks/controller.ts:1`).
-   Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:109`.
+   Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:167`.
    Note the rule is scoped to the filename `controller.ts`: `features/agents/events.ts` does import
    `theme/glyphs.ts` (`packages/code/src/features/agents/events.ts:1`) and `features/agents/commands.ts`
    imports `views/config/AgentsPanel.tsx` (`packages/code/src/features/agents/commands.ts:7`).
 
 2. **`src/adapters/**` never imports `ui/` or `views/`.** `agent-files.ts`, `agents-store.ts`,
    `agents.ts`, `memory-mode.ts`, `effort-levels.ts` all comply (see their import headers).
-   Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:91`.
+   Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:149`.
 
 3. **`AgentsPanel.tsx` and `RunControlsPanel.tsx` contain no non-ASCII character outside comments** —
    every rendered glyph goes through `glyph()`.
    Production: `packages/code/src/views/config/AgentsPanel.tsx:7`,
    `packages/code/src/views/config/RunControlsPanel.tsx:7`.
-   Pinned: `packages/code/tests/architecture/ascii-source-boundary.test.ts:9`, `:14`, `:29`.
+   Pinned: `packages/code/tests/architecture/ascii-source-boundary.test.ts:9`, `:13`, `:28`.
    `WorkflowsHub.tsx` is also in the swept list (`:17`). `TasksHub`, `SessionsHub`,
    `MemoryConfigPanel` is **not** — see §8.
 
@@ -709,7 +709,7 @@ specific to these files.
     run: the seven `tasks.*` grants `@clarvis/tasks` registers (`packages/tasks/src/toolset.ts:12-18`)
     are real, semantically valid grants once that capability is wired in — accepted by
     `requireKnownGrants` and enumerated by `ConfigService.knownGrants()`
-    (`packages/kernel/src/kernel.ts:691-712`) — yet have no `GrantSpec` row here at all, so the
+    (`packages/kernel/src/kernel.ts:784-805`) — yet have no `GrantSpec` row here at all, so the
     picker never offers them; a profile carrying one renders only via `grantBadges`' raw-id
     fallback. `grantSchema` itself (the zod schema, not its `.options` aid) syntactically accepts
     any non-empty string, so "covers every grant `grantSchema` accepts" is true of neither the
@@ -843,7 +843,7 @@ specific to these files.
 
 45. **The Run-controls memory row changes only the session store, never settings.**
     Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyMemory`).
-    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:183`.
+    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:187`.
 
 46. **A direct guard-mode write and a named safety preset both preserve the effective allow/deny
     policy; a workspace with no local lists carries forward the global lists.** Production:
@@ -854,7 +854,7 @@ specific to these files.
 
 47. **`auto` without a resolvable judge model persists `on`, not a misleading `auto`.**
     Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`).
-    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:230`.
+    Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:234`.
 
 48. **Run Controls contains no planning-mode selector; completed-plan retention is its only editable
     plan row.** Planning review belongs to `/plan`. Production:
@@ -887,8 +887,8 @@ specific to these files.
     Pinned: `packages/code/tests/unit/qa-fixes.test.ts:39`.
 
 52. **The run strip reports *uncached* input tokens and *gross* context.**
-    Production: `packages/code/src/features/run/status-presenter.ts:75`, `:97`.
-    Pinned: `packages/code/tests/unit/run-status.test.ts:81` and following cases.
+    Production: `packages/code/src/features/run/status-presenter.ts:87-102`.
+    Pinned: `packages/code/tests/unit/run-status.test.ts:79-115`.
 
 53. **`recommendedReasoningEffort` never returns `off` and breaks a distance tie toward the higher
     level.** Production: `packages/code/src/adapters/effort-levels.ts:36`, `:39`.
@@ -911,7 +911,7 @@ specific to these files.
 57. **The six hubs' command metadata (name, title, surface, parent) is a pinned contract and each
     has exactly one registered factory.**
     Production: the registration sites in §2.1.
-    Pinned: `packages/code/tests/component/command-composition.test.ts:218`, asserted at `:241`.
+    Pinned: `packages/code/tests/component/command-composition.test.ts:235-255`, asserted at `:257-264`.
 
 ## 6. Failure modes and degradation
 

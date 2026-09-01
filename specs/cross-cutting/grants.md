@@ -8,8 +8,8 @@
 ## 1. Purpose
 
 A `Grant` is the one string vocabulary an `AgentProfile` uses to ask for a
-capability's behaviour (`packages/capability/src/api.ts:293`). The engine owns
-four such strings itself (`BuiltinGrant`, `packages/capability/src/api.ts:285`);
+capability's behaviour (`packages/capability/src/api.ts:320-326`). The engine owns
+four such strings itself (`BuiltinGrant`, `packages/capability/src/api.ts:317-318`);
 everything else is contributed at boot by whichever capability package wants a
 grant to exist, before any request is validated
 (`packages/capability/src/contract.ts:75-80`, `packages/capability/src/registry.ts:62-72`).
@@ -65,7 +65,7 @@ capability activation).
 | `edit_workspace` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts:317-318` |
 | `run_commands` | engine (`BuiltinGrant`) | no | `packages/capability/src/api.ts:317-318` |
 | `use_skills` | `@clarvis/skills` | no | `packages/skills/src/capability.ts:55,92` |
-| `workflow` | `@clarvis/workflows` | **yes** | `packages/workflows/src/capability.ts:51-59,137` |
+| `workflow` | `@clarvis/workflows` | **yes** | `packages/workflows/src/capability.ts:53-61,137` |
 | `tasks.read` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts:12`, registered `packages/tasks/src/capability.ts:1486` |
 | `tasks.create` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts:13` |
 | `tasks.assign` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts:14` |
@@ -75,7 +75,7 @@ capability activation).
 | `tasks.complete` | `@clarvis/tasks` | no | `packages/tasks/src/toolset.ts:18` |
 
 Only `workflow` sets `entryCanSpawn: true`
-(`packages/workflows/src/capability.ts:51-59`), which is what makes a
+(`packages/workflows/src/capability.ts:52-60`), which is what makes a
 `workflow`-granted entry agent get a supervision registry even with an empty
 `can_spawn` (§4.3). Deep semantics of each capability's own tools (`load_skill`,
 `run_leader` and its
@@ -238,13 +238,13 @@ Tool name strings verified individually at their definitions: `read_file`
    `allCapabilities = [...(deps.capabilities ?? []), ...(capabilities ?? [])]`
    — the host's long-lived registry plus whatever `Capability` objects are
    actually wired into *this* call
-   (`packages/loop/src/runtime/execute-run.ts:305,310-313`). The identical
+   (`packages/loop/src/runtime/execute-run.ts:288-298`). The identical
    `profile.grants` array can therefore validate against one kernel
    construction and be rejected by another that wired fewer capabilities in;
    `runOrchestrator` performs the same flat-map independently when deriving
    `grantDeclarations` for `canSpawnChildren` (§4.3), falling back to it when
    `deps.grantDeclarations` is not precomputed
-   (`packages/loop/src/runtime/orchestrator.ts:207-208`).
+   (`packages/loop/src/runtime/orchestrator.ts:208-209`).
 3. `validateBody` calls `requireKnownGrants(data, registry)` **before**
    `requireEntryShape`/`requireKnownSpawnTargets`/env-ceiling/provider checks
    (`packages/loop/src/validation/request-schema.ts:33-45`) — every grant on
@@ -316,7 +316,7 @@ run's schema never contains them
 (`packages/loop/src/runtime/spawn-shape.ts:14-17`). A non-lead entry (empty
 `can_spawn`) becomes spawn-capable only by carrying a grant some registered
 capability declared `entryCanSpawn: true` for — in this codebase, only
-`workflow` (`packages/workflows/src/capability.ts:51-59`).
+`workflow` (`packages/workflows/src/capability.ts:52-60`).
 
 `createAgentsRunCapability` — the capability that actually contributes the
 five supervision tools — is itself only added to the run's capability list
@@ -366,7 +366,7 @@ without also granting supervision visibility, or vice versa.
 ### 4.5 Entry-only grant: `ask_user`
 
 The ask-user capability gates on the run's **entry** grants (`ctx.entryGrants`, always
-`shape.entryProfile.grants ?? []` — `packages/loop/src/runtime/orchestrator.ts:229`)
+`shape.entryProfile.grants ?? []` — `packages/loop/src/runtime/orchestrator.ts:230`)
 and additionally restrict `forAgent` to `scope.entry === true`, so even a
 sub-agent profile that independently names the grant never receives the tool.
 The internal `forRun`/`forAgent` derivation below goes one level deeper than
@@ -409,7 +409,7 @@ kernel's workflow service carries this out mechanically —
 `stripWorkflowGrant(body)` filters `"workflow"` out of every profile's
 `grants` array on the assembled leader request, called immediately after
 `assembleRunRequest` builds it
-(`packages/kernel/src/workflows/workflows-service.ts:362`, the function itself
+(`packages/kernel/src/workflows/workflows-service.ts:379`, the function itself
 at `:720-729`, doc-commented "so a leader can never become a manager
 (defense-in-depth beyond not injecting the capability into leaders)"). So a
 leader can never itself call `run_leader` or spawn a further workflow level, even if its
@@ -514,14 +514,14 @@ except for this one filtered field — carried `workflow`.
 | A `delegate_task` call names a `profile` not in the spawnable registry | Call rejected: `{ ok: false, message: "unknown profile '<name>'. Registered profiles: …" }` | `packages/loop/src/runtime/subagents/delegate-task.ts:105-112` |
 | `delegate_task` omits `profile`, no usable default | Call rejected: `"profile is required — name the profile this Sub-agent should run as."` | `packages/loop/src/runtime/subagents/delegate-task.ts:118-122` |
 | A tool call names something outside the agent's ceiling-filtered set | `dispatch` returns `{ isError: true, text: "Tool '<name>' is not available to this agent." }` rather than throwing | `packages/loop/src/runtime/tools/builtin/toolset.ts:177-183` |
-| The abort signal fires mid-dispatch | `raceAbort` resolves to `{ isError: true, text: "Tool call aborted (run cancelled)." }`, listener always removed | `packages/loop/src/runtime/tools/builtin/toolset.ts:91-114` |
+| The abort signal fires mid-dispatch | `raceAbort` resolves to `{ isError: true, text: "Tool call aborted (run cancelled)." }`, listener always removed | `packages/loop/src/runtime/tools/builtin/toolset.ts:96-118` |
 
 ## 7. Coupling
 
 - **`@clarvis/capability` is upstream of everything here.** `BuiltinGrant`,
   `Grant`, `CapabilityGrantDeclaration`, `CapabilityRegistry` and
   `activationForScope`/`capabilitiesForScope` all live there
-  (`packages/capability/src/api.ts:285-293`, `packages/capability/src/contract.ts:75-80`,
+  (`packages/capability/src/api.ts:317-326`, `packages/capability/src/contract.ts:75-80`,
   `packages/capability/src/registry.ts`, `packages/capability/src/compose.ts:42-71`), and every consumer (`loop`, `skills`,
   `workflows`, `tasks`) imports the type from it rather than
   redeclaring it — a static, compile-time edge.
@@ -589,7 +589,7 @@ except for this one filtered field — carried `workflow`.
   discovery: `[...BUILTIN_GRANT_NAMES, ...mergedRegistry.grants().map(g =>
   g.name), ...(runDeps.capabilities ?? []).flatMap(c => (c.grants ??
   []).map(g => g.name)), WORKFLOW_GRANT]`
-  (`packages/kernel/src/kernel.ts:691-712`). The trailing hardcoded
+  (`packages/kernel/src/kernel.ts:784-805`). The trailing hardcoded
   `WORKFLOW_GRANT` addendum exists because, per the function's own doc
   comment, "the workflows capability is injected into a manager's `executeRun`
   rather than into `runDeps`, deliberately — only an entry agent carrying this

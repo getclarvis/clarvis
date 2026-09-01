@@ -6,24 +6,24 @@
 ## 1. Purpose
 
 `packages/kernel/src/runs/` is the layer that turns the protocol's `RunService`
-(`packages/protocol/src/runs.ts:706`) into calls on the engine's `executeRun`
-(`packages/kernel/src/runs/run-service.ts:111`), and turns everything the engine and its capabilities
-emit back into the protocol's closed `RunEvent` union (`packages/protocol/src/runs.ts:291`). It owns
+(`packages/protocol/src/runs.ts:759-805`) into calls on the engine's `executeRun`
+(`packages/kernel/src/runs/run-service.ts:114-115`), and turns everything the engine and its capabilities
+emit back into the protocol's closed `RunEvent` union (`packages/protocol/src/runs.ts:328-648`). It owns
 four distinct jobs:
 
 1. **Admission and identity** — assigning or accepting an `execution_id`, refusing a duplicate for the
    same owner before any work starts, and holding that reservation until the last late event has been
-   delivered (`packages/kernel/src/runs/run-service.ts:134-155`).
+    delivered (`packages/kernel/src/runs/run-service.ts:137-160`).
 2. **Request assembly** — reading merged `settings.json` plus the agent markdown records and producing
    the untyped body the engine validates, including the transitive `can_spawn` profile graph, the MCP
    servers those profiles reference, the budget, and the `plans`/`agents` params
-   (`packages/kernel/src/runs/settings-assembler.ts:336-474`).
+   (`packages/kernel/src/runs/settings-assembler.ts:352-496`).
 3. **Run-scoped machinery** — one `RunHandle` per run, owning the buffered event stream, the steering
    and compaction queues, cancellation, the elicitation bridge, the bounded memory-ingest close grace,
    and the drop report (`packages/kernel/src/runs/managed-run.ts:147-336`).
 4. **Projection** — the two mappers `engineEventToProto` (persisted engine trace) and
    `capabilityEventToProto` (live capability channel) (`packages/kernel/src/runs/map-events.ts:389`, `:335`), the result/detail
-   mappers (`packages/kernel/src/runs/map-result.ts:68,98,108,135`), the engine/protocol message conversion
+   mappers (`packages/kernel/src/runs/map-result.ts:86,116,126,153`), the engine/protocol message conversion
    (`packages/kernel/src/runs/map-message.ts:40,50,56`), and the declarative per-event policy table that says which of those
    two paths owns each event and whether it survives a restart (`packages/kernel/src/runs/event-policy.ts:56`).
 
@@ -44,12 +44,12 @@ between them.
 
 | Symbol | Kind | Signature / shape | Source |
 |---|---|---|---|
-| `createRunService` | value | `(cfg: RunServiceConfig) => RunService` | `packages/kernel/src/runs/run-service.ts:93`, re-exported at `packages/kernel/src/index.ts:8` |
-| `RunServiceConfig` | type | see §2.3 | `packages/kernel/src/runs/run-service.ts:28`, `packages/kernel/src/index.ts:9` |
-| `RunRequestAssembler` | type | `(params: StartRunParams & { execution_id: string }) => unknown` | `packages/kernel/src/runs/run-service.ts:25` |
-| `createManagedRun` | value | `(spec: ManagedRunSpec) => RunHandle` | `packages/kernel/src/runs/managed-run.ts:147`, `packages/kernel/src/index.ts:52` |
+| `createRunService` | value | `(cfg: RunServiceConfig) => RunService` | `packages/kernel/src/runs/run-service.ts:95`, re-exported at `packages/kernel/src/index.ts:8` |
+| `RunServiceConfig` | type | see §2.3 | `packages/kernel/src/runs/run-service.ts:30`, `packages/kernel/src/index.ts:9` |
+| `RunRequestAssembler` | type | `(params: StartRunParams & { execution_id: string }) => unknown` | `packages/kernel/src/runs/run-service.ts:27` |
+| `createManagedRun` | value | `(spec: ManagedRunSpec) => RunHandle` | `packages/kernel/src/runs/managed-run.ts:159`, `packages/kernel/src/index.ts:58` |
 | `ManagedRunContext`, `ManagedRunSpec` | type | see §2.4 | `packages/kernel/src/runs/managed-run.ts:28`, `:44` |
-| `createSettingsRunAssembler` | value | `(store: ConfigStore, options?: SettingsAssemblerOptions) => RunRequestAssembler` | `packages/kernel/src/runs/settings-assembler.ts:336`, `packages/kernel/src/index.ts:54` |
+| `createSettingsRunAssembler` | value | `(store: ConfigStore, options?: SettingsAssemblerOptions) => RunRequestAssembler` | `packages/kernel/src/runs/settings-assembler.ts:363`, `packages/kernel/src/index.ts:60` |
 | `SettingsAssemblerOptions` | type | see §2.5 | `packages/kernel/src/runs/settings-assembler.ts:33` |
 
 ### 2.2 Exported from `@clarvis/kernel/policy`
@@ -59,74 +59,74 @@ policy". The runs-owned half:
 
 | Symbol | Kind | Source | Line in `policy.ts` |
 |---|---|---|---|
-| `capabilityEventToProto`, `engineEventToProto` | value | `packages/kernel/src/runs/map-events.ts:343,397` | `:10` |
+| `capabilityEventToProto`, `engineEventToProto` | value | `packages/kernel/src/runs/map-events.ts:335,389` | `:10` |
 | `isIngestPending` | value | `packages/kernel/src/runs/memory-ingest-phase.ts:23` | `:11` |
 | `RUN_EVENT_POLICY` | value | `packages/kernel/src/runs/event-policy.ts:56` | `:12` |
-| `coalesceRunEvents`, `sizeOfRunEvent`, `sizeOfCoalescedRunEvent` | value | `packages/kernel/src/runs/coalesce-events.ts:223,16,172` | `:13-17` |
+| `coalesceRunEvents`, `sizeOfRunEvent`, `sizeOfCoalescedRunEvent` | value | `packages/kernel/src/runs/coalesce-events.ts:223,16,172` | `:16-172` |
 | `RunEventDurability`, `RunEventMapper`, `RunEventPolicy`, `RunEventSource` | type | `packages/kernel/src/runs/event-policy.ts:7,10,13,4` | `:18-23` |
-| `deriveRunEventSpan`, `iterationSpanId` | value | `packages/kernel/src/runs/run-event-span.ts:49,28` | `:24` |
+| `deriveRunEventSpan`, `iterationSpanId` | value | `packages/kernel/src/runs/run-event-span.ts:49,28` | `:28` |
 | `RunEventSpan`, `SpanPhase`, `SpanKind` | type | `packages/kernel/src/runs/run-event-span.ts:10,4,7` | `:25` |
-| `engineResultToProto`, `storedToDetail`, `summaryToProto`, `failedResult` | value | `packages/kernel/src/runs/map-result.ts:68,135,108,98` | `:26-31` |
-| `engineMessagesToProto`, `protoMessagesToEngine`, `protoSteerToEngineContent` | value | `packages/kernel/src/runs/map-message.ts:40,56,50` | `:32-36` |
+| `engineResultToProto`, `storedToDetail`, `summaryToProto`, `failedResult` | value | `packages/kernel/src/runs/map-result.ts:86,153,126,116` | `:26-31` |
+| `engineMessagesToProto`, `protoMessagesToEngine`, `protoSteerToEngineContent` | value | `packages/kernel/src/runs/map-message.ts:40,56,50` | `packages/kernel/src/policy.ts:32-36` |
 
-`packages/kernel/tests/architecture/public-surface.test.ts:12` pins the package to exactly five
-entrypoints (`.`, `./bootstrap`, `./config`, `./local`, `./policy`), so `./policy` is a deliberate,
+`packages/kernel/tests/architecture/public-surface.test.ts:6-20` pins the package to exactly six
+entrypoints (`.`, `./bootstrap`, `./config`, `./local`, `./logger`, `./policy`), so `./policy` is a deliberate,
 named surface rather than a barrel.
 
 Not exported from any entrypoint: `isDroppableRunEvent` and `DEFAULT_RUN_EVENT_BUFFER*`
-(`packages/kernel/src/runs/coalesce-events.ts:265,10,13`) — `packages/kernel/src/transport/client.ts:47` imports
+(`packages/kernel/src/runs/coalesce-events.ts:265,10,13`) — `packages/kernel/src/transport/client.ts:43-50` imports
 `isDroppableRunEvent` by relative path, while `@clarvis/server` re-derives the same verdict from the
 exported table (`packages/server/src/mcp/notify.ts:144`).
 
 Also internal: `createManagedRunWithRuntime`, `ManagedRunRuntime`, `ManagedRunTimer`
-(`packages/kernel/src/runs/managed-run.ts:158,75,64`), marked `@internal` with the stated reason that "hosts configure policy
-through `ManagedRunSpec`, not by replacing the kernel's clock" (`packages/kernel/src/runs/managed-run.ts:70-73`);
+(`packages/kernel/src/runs/managed-run.ts:170,87,76`), marked `@internal` with the stated reason that "hosts configure policy
+through `ManagedRunSpec`, not by replacing the kernel's clock" (`packages/kernel/src/runs/managed-run.ts:80-89`);
 `inspectCoalescedRunEvent` (`packages/kernel/src/runs/coalesce-events.ts:158`); `normalizeRunPagination` (`packages/kernel/src/runs/pagination.ts:8`);
 `createSteerQueue` (`packages/kernel/src/runs/steer-queue.ts:16`).
 
-### 2.3 `RunServiceConfig` (`packages/kernel/src/runs/run-service.ts:28-65`)
+### 2.3 `RunServiceConfig` (`packages/kernel/src/runs/run-service.ts:30-67`)
 
 | Field | Type | Meaning |
 |---|---|---|
-| `deps` | `ExecuteRunDeps` | engine deps; `deps.traceStore` also backs `get`/`list`/`delete` (`:31`, used at `:97`) |
-| `owner` | `string` | owner key every store read/write and `executeRun` call is scoped to (`:33`, `:113`) |
-| `assembleRunRequest` | `RunRequestAssembler` | builds the engine body (`:35`, called at `:110`) |
-| `isManagerRun?` | `(params: StartRunParams) => boolean` | routes to the workflow manager path (`:40`, `:101`) |
-| `runManagerWorkflow?` | `(params & { execution_id }) => RunHandle` | the manager path (`:43`, `:102`) |
-| `ingestGraceMs?` | `number` | sliding post-run wait; defaults to `DEFAULT_INGEST_CLOSE_GRACE_MS` (`:47`, `:96`) |
-| `eventBuffer?` | `EventStreamOptions<RunEvent>` | backpressure overrides, merged field-by-field over kernel defaults (`:60`, `:106`) |
-| `lifecycle?` | `KernelLifecycle` | owns active runs; rejects starts while closing (`:62`, `:108`) |
-| `logger?` | `Logger` | where an unmapped event is reported; defaults `NOOP_LOGGER` (`:64`, `:95`) |
+| `deps` | `ExecuteRunDeps` | engine deps; `deps.traceStore` also backs `get`/`list`/`delete` (`:31-33`, used at `:99`) |
+| `owner` | `string` | owner key every store read/write and `executeRun` call is scoped to (`:34-35`, `:117`) |
+| `assembleRunRequest` | `RunRequestAssembler` | builds the engine body (`:36-37`, called at `:113`) |
+| `isManagerRun?` | `(params: StartRunParams) => boolean` | routes to the workflow manager path (`:38-42`, `:104`) |
+| `runManagerWorkflow?` | `(params & { execution_id }) => RunHandle` | the manager path (`:43-45`, `:105`) |
+| `ingestGraceMs?` | `number` | sliding post-run wait; defaults to `DEFAULT_INGEST_CLOSE_GRACE_MS` (`:46-49`, `:98`) |
+| `eventBuffer?` | `EventStreamOptions<RunEvent>` | backpressure overrides, merged field-by-field over kernel defaults (`:50-62`, used at `:109`) |
+| `lifecycle?` | `KernelLifecycle` | owns active runs; rejects starts while closing (`:63-64`, used at `:111`) |
+| `logger?` | `Logger` | where an unmapped event is reported; defaults `NOOP_LOGGER` (`:65-66`, `:97`) |
 
 ### 2.4 `ManagedRunSpec` / `ManagedRunContext` (`packages/kernel/src/runs/managed-run.ts:28-61`)
 
 `ManagedRunContext` is what the execution callback receives: `executionId`, `signal`, `elicit`,
 `steer`, `compaction`, `emit` (`:30-40`). `ManagedRunSpec` is what a host plugs in: `executionId`,
 `execute(context)`, optional `observe(event)`, `settle(result)`, `eventBuffer`, `ingestGraceMs`,
-`ingestMaxWaitMs`, `lifecycle` (`:45-60`). Two producers use it — `packages/kernel/src/runs/run-service.ts:104` for an
-ordinary run and `packages/kernel/src/workflows/workflows-service.ts:373` for a workflow manager run,
-the latter supplying `observe`/`settle` to maintain its workflow record (`:377-380`).
+`ingestMaxWaitMs`, `lifecycle` (`:45-60`). Two producers use it — `packages/kernel/src/runs/run-service.ts:107-134` for an
+ordinary run and `packages/kernel/src/workflows/workflows-service.ts:394-403` for a workflow manager run,
+the latter supplying `observe`/`settle` to maintain its workflow record (`:399-402`).
 
-### 2.5 `SettingsAssemblerOptions` (`packages/kernel/src/runs/settings-assembler.ts:33-57`)
+### 2.5 `SettingsAssemblerOptions` (`packages/kernel/src/runs/settings-assembler.ts:33-65`)
 
 | Field | Default | Effect |
 |---|---|---|
-| `defaultModel?` | none | model when neither `default_model` nor frontmatter names one (`:35`, `:240-241`) |
-| `defaultIterationLimit?` | `20` | applied when frontmatter omits `iteration_limit` (`:37`, `:253-256`) |
-| `defaultAgent?` | none | entry agent when the request names none (`:39`, `:364`) |
-| `fallbackTokenLimit?` | `160_000_000` (`FALLBACK_TOTAL_TOKEN_LIMIT`, `:109`) | fallback budget size (`:330`) |
-| `fallbackOnExceed?` | `"escalate"` (`FALLBACK_ON_EXCEED`, `:112`) | fallback budget `on_exceed` (`:329`) |
-| `skills?` | none | `SkillsProvider`; without it any `skill` start param is refused (`:54`, `:93-96`) |
-| `skillPlansMode?` | none | trusted Plans-mode override for a skill, keyed by name + root source (`:56`, `:355-362`) |
+| `defaultModel?` | none | model when neither `default_model` nor frontmatter names one (`:35`, `:266-269`) |
+| `defaultIterationLimit?` | `20` | applied when frontmatter omits `iteration_limit` (`:36-38`, `:290-293`) |
+| `defaultAgent?` | none | entry agent when the request names none (`:39-40`, `:408-410`) |
+| `fallbackTokenLimit?` | `160_000_000` (`FALLBACK_TOTAL_TOKEN_LIMIT`, `:129`) | fallback budget size (`:367-370`) |
+| `fallbackOnExceed?` | `"escalate"` (`FALLBACK_ON_EXCEED`, `:132`) | fallback budget `on_exceed` (`:367-370`) |
+| `skills?` | none | `SkillsProvider`; without it any `skill` start param is refused (`:52-54`, `:97-105`) |
+| `skillPlansMode?` | none | trusted Plans-mode override for a skill, keyed by name + root source (`:55-56`, `:400-406`) |
 
 ### 2.6 Protocol shapes this subsystem produces and consumes
 
-`StartRunParams` (`packages/protocol/src/runs.ts:69-114`) is the input; `RunHandle`
-(`:654-703`), `RunResult` (`:162-172`), `RunSummary` (`:202-214`), `RunDetail` (`:235-255`) and
-`RunEvent` (`:291` onward) are the outputs. `RunHandle` has two settle points that are deliberately
+`StartRunParams` (`packages/protocol/src/runs.ts:70-115`) is the input; `RunHandle`
+(`:700-756`), `RunResult` (`:162-172`), `RunSummary` (`:202-214`), `RunDetail` (`:235-255`) and
+`RunEvent` (`:328-648`) are the outputs. `RunHandle` has two settle points that are deliberately
 distinct: `done` "Resolves when execution ends; it does not imply that `events` has closed"
-(`:694`) and `closed` "Resolves after execution and bounded post-run event delivery both finish"
-(`:698`).
+(`:740-741`) and `closed` "Resolves after execution and bounded post-run event delivery both finish"
+(`:750-755`).
 
 Managed and remote handles additionally project the optional `RunHandle.buffered()` counters from
 their event streams. `EventStream.stats()` maintains item count, estimated bytes and dropped count
@@ -140,7 +140,7 @@ counters").
 Consumers must preserve the same distinction. `@clarvis/code` releases composer/steering ownership
 after `done`, while retaining `closed` only as a physical-work lease for the event pump and post-run
 memory notices. Production and test ownership live in
-[`code-run-host.md`](code-run-host.md#42-runmanaged--the-single-funnel-packagescodesrcrun-hostts520).
+[`code-run-host.md`](code-run-host.md#42-runmanaged--the-single-funnel-packagescodesrcrun-hostts602-718).
 
 ## 3. Data and formats
 
@@ -148,7 +148,7 @@ memory notices. Production and test ownership live in
 
 | Identifier | Format | Producer |
 |---|---|---|
-| `execution_id` | `exec_<uuidv4>` when generated | `generateExecutionId` (`packages/trace/src/execution-id.ts:9`), called at `packages/kernel/src/runs/run-service.ts:135` when `params.execution_id` is absent. A client-supplied id is used verbatim. |
+| `execution_id` | `exec_<uuidv4>` when generated | `generateExecutionId` (`packages/trace/src/execution-id.ts:9`), called at `packages/kernel/src/runs/run-service.ts:139` when `params.execution_id` is absent. A client-supplied id is used verbatim. |
 | elicitation id | `<executionId>:elicit:<n>` | `packages/kernel/src/runs/elicit-bridge.ts:51` (delegated document; cited for the id format only) |
 | iteration span id | `lead:<n>`, `<subagentId>:<n>`, or `subagent-unknown:<n>` | `packages/kernel/src/runs/run-event-span.ts:28-35` |
 | tool span id | the event's `call_id`; `<agent>:tool` when a `tool_call` carries none | `packages/kernel/src/runs/run-event-span.ts:88`, `:93` |
@@ -158,46 +158,46 @@ memory notices. Production and test ownership live in
 ### 3.2 The engine run request body
 
 `createSettingsRunAssembler` returns an object literal typed `unknown` (`RunRequestAssembler`,
-`packages/kernel/src/runs/run-service.ts:25`), which the engine then validates. Its keys, in the order the code writes them
-(`packages/kernel/src/runs/settings-assembler.ts:415-472`):
+`packages/kernel/src/runs/run-service.ts:27`), which the engine then validates. Its keys, in the order the code writes them
+(`packages/kernel/src/runs/settings-assembler.ts:453-510`):
 
 | Key | Value | Line |
 |---|---|---|
-| `messages` | `protoMessagesToEngine(params.messages)` then, for a skill run, one appended `{ role: "user", content: skillRun.seed }` | `:431-435` |
-| `providers` | `merged.providers ?? []` | `:436` |
-| `servers` | every active-plugin MCP namespace plus each operator MCP namespace referenced by a profile; plugin entries carry `auto_tools: true` | `createSettingsRunAssembler` in `packages/kernel/src/runs/settings-assembler.ts` |
-| `profiles` | the transitive `can_spawn` closure, deduplicated | `:400-413`, `:438` |
-| `entry` | resolved agent name | `:439` |
-| `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed | `:427-443` |
-| `vision_model` | `merged.default_vision_model`, only when a string | `:444-446` |
-| `execution_id`, `continue_from`, `prompt_cache_key`, `output_schema`, `guard_mode`, `guard_judge`, `memory`, `task` | straight passthrough, present only when the param is | `:447-459`, `:467-468` |
-| `prompt_cache_ttl` | request value, else `"1h"` when `guardParksOnHuman(...)`, else absent | `:452-456` |
-| `hook_user_prompt_expansion` | only for a resolved user-invoked skill; `{ command_name }` is bare for operator/workspace skills and `<plugin>:<skill>` for plugin skills | `:460-466` |
-| `plans` | request value, else settings block with the skill-mode override, else settings block, else absent | `:469-484` |
-| `agents` | present only when `merged.agents` is a non-null object | `:485-487` |
+| `messages` | `protoMessagesToEngine(params.messages)` then, for a skill run, one appended `{ role: "user", content: skillRun.seed }` | `:454-457` |
+| `providers` | `merged.providers ?? []` | `:458` |
+| `servers` | every active-plugin MCP namespace plus each operator MCP namespace referenced by a profile; plugin entries carry `auto_tools: true` | `:432-447`, `:459` |
+| `profiles` | the transitive `can_spawn` closure, deduplicated | `:417-430`, `:460` |
+| `entry` | resolved agent name | `:461` |
+| `budget` | entry-agent frontmatter `budget`, else `merged.budget`, else the fallback, with `on_exceed` completed | `:449-465` |
+| `vision_model` | `merged.default_vision_model`, only when a string | `:466-468` |
+| `execution_id`, `continue_from`, `prompt_cache_key`, `output_schema`, `guard_mode`, `guard_judge`, `memory`, `task` | straight passthrough, present only when the param is | `:469-481`, `:489-490` |
+| `prompt_cache_ttl` | request value, else `"1h"` when `guardParksOnHuman(...)`, else absent | `:474-478` |
+| `hook_user_prompt_expansion` | only for a resolved user-invoked skill; `{ command_name }` is bare for operator/workspace skills and `<plugin>:<skill>` for plugin skills | `:482-488` |
+| `plans` | request value, else settings block with the skill-mode override, else settings block, else absent | `:491-506` |
+| `agents` | present only when `merged.agents` is a non-null object | `:507-509` |
 
 Note what is **not** forwarded: the `skill` key itself never reaches the engine
-(`packages/kernel/src/runs/settings-assembler.ts:332-334`; pinned by `packages/kernel/tests/component/settings-assembler.test.ts:455-467`),
+(`packages/kernel/src/runs/settings-assembler.ts:359-361`; pinned by `packages/kernel/tests/component/settings-assembler.test.ts:548-560`),
 and a `plans` block's `provider` sub-object is stripped by projection
-(`plansBlockToParam`, `:126-142`; pinned at `packages/kernel/tests/component/settings-assembler.test.ts:82-100`).
+(`plansBlockToParam`, `:146-162`; pinned at `packages/kernel/tests/component/settings-assembler.test.ts:133-151`).
 
-An engine `AgentProfile` is built by `buildProfile` (`:231-298`) with required `name`, `model`,
+An engine `AgentProfile` is built by `buildProfile` (`:258-324`) with required `name`, `model`,
 `tools`, `iteration_limit` and twelve conditionally spread optional fields (`grants`, `can_spawn`,
 `default_spawn`, `orchestration`, `base_prompt`, `description`, `reasoning_effort`,
 `reasoning_summary`, `retry`, `compaction`, `stagnation_threshold`, `call_timeout_ms`). For the entry
 profile only, `base_prompt` is the agent prompt followed by the effective global and workspace context
-documents, each rendered as `## Context: <scope>/<filename>` (`:249-261`, `:283`).
+documents, each rendered as `## Context: <scope>/<filename>` (`:276-288`, `:426-427`).
 
 An MCP entry is translated, not forwarded: `toEngineServer` parses with `mcpServerSettingsSchema` and
-converts through `settingsServerToEngine` (`:199-208`). The recorded reason is that
+converts through `settingsServerToEngine` (`:219-235`). The recorded reason is that
 "`settings.json` spells the transport `type` while the engine's strict request schema spells it
 `transport`, so an entry forwarded verbatim is rejected downstream as an unrecognized key and takes
-the whole run with it" (`:191-194`). The docstring continues, immediately after: "Failing here —
+the whole run with it" (`:211-214`). The docstring continues, immediately after: "Failing here —
 loudly, naming the server — is also why a bad entry is never dropped silently: a dropped server
 surfaces much later as `profile '...' lists tool '...', which is not in the tool pool`, which points
-at the agent rather than at the typo" (`:194-197`). The test comment names it as a shipped defect: "P1 lived here …
+at the agent rather than at the typo" (`:214-217`). The test comment names it as a shipped defect: "P1 lived here …
 every run referencing `<server>.<tool>` died in `validateBody` with `unrecognized_keys`"
-(`packages/kernel/tests/component/settings-assembler.test.ts:605-608`), and the round trip is asserted at `:594-600`.
+(`packages/kernel/tests/component/settings-assembler.test.ts:697-701`), and the round trip is asserted at `:715-720`.
 
 ### 3.3 `RUN_EVENT_POLICY` — the per-event matrix
 
@@ -255,9 +255,9 @@ Complete table, transcribed from `:57-93`:
 Read as a live-versus-rehydration matrix: thirteen types are `live_only` and therefore absent from a
 restored session — the three deltas, the five plan events, `memory_ingest`, `capability_event`,
 `events_dropped`, `workflow_title_updated` and `workflow_run_progress`. This is consistent with the
-rehydration path, which reads only `s.trace.events` (`packages/kernel/src/runs/map-result.ts:173`), and with the integration
+rehydration path, which reads only `s.trace.events` (`packages/kernel/src/runs/map-result.ts:193`), and with the integration
 assertion that a stored run has no `tool_output_delta` but does have the closing `tool_call`
-(`packages/kernel/tests/integration/run-service.smoke.test.ts:134-136`).
+(`packages/kernel/tests/integration/run-service.smoke.test.ts:135-137`).
 
 ### 3.4 The `events_dropped` notice
 
@@ -324,7 +324,7 @@ the engine recorded it **and** `a.type !== "vision"` — a vision agent's usage 
 
 ## 4. Behavior
 
-### 4.1 `RunService.start` (`packages/kernel/src/runs/run-service.ts:134-155`)
+### 4.1 `RunService.start` (`packages/kernel/src/runs/run-service.ts:129-150`)
 
 1. `executionId = params.execution_id ?? generateExecutionId()` (`:135`).
 2. Reject with `kernelError("conflict", "run '<id>' already exists for this owner")` if the id is in
@@ -344,7 +344,7 @@ the engine recorded it **and** `a.type !== "vision"` — a vision agent's usage 
 
 Assembly happens **inside** `execute`, not in `start` (`:110`), so an assembly failure (unknown agent,
 malformed MCP entry, no resolvable model) never rejects `start` — it settles `done` as a failed
-result. `packages/kernel/tests/integration/run-service.smoke.test.ts:203-225` pins exactly that: starting with
+result. `packages/kernel/tests/integration/run-service.smoke.test.ts:204-269` pins exactly that: starting with
 `agent: "ghost"` yields a handle whose `done` is `{ status: "failed", error.code: "not_found" }`.
 
 ### 4.1a Settled-context inspection and compaction
@@ -356,7 +356,7 @@ replaces `final_context`. A mechanical target performs no model call and persist
 replacement fits. Production: `createRunService` in `packages/kernel/src/runs/run-service.ts`.
 Test: `packages/kernel/tests/unit/run-service-lifecycle.test.ts`.
 
-### 4.2 Assembly (`packages/kernel/src/runs/settings-assembler.ts:364-472`)
+### 4.2 Assembly (`packages/kernel/src/runs/settings-assembler.ts:380-494`)
 
 Per call, in order:
 
@@ -384,7 +384,7 @@ Per call, in order:
    all three are absent (`:379-382`).
 6. `store.readEffectiveAgent(agentName)`; `not_found` when null (`:383-386`).
 7. Breadth-first walk over `can_spawn` with a `seen` set; a child that resolves to `null` is
-   **skipped, not fatal** (`:391-400`; pinned at `packages/kernel/tests/component/settings-assembler.test.ts:62-77`). Only the first
+   **skipped, not fatal** (`:417-430`; pinned at `packages/kernel/tests/component/settings-assembler.test.ts:70-85`). Only the first
    name is treated as the entry, and only that profile receives the context documents (`:397-398`).
 8. Server selection starts with every namespace returned by `pluginMcpServerNames`, then resolves
    each profile tool against the longest exact registered `<namespace>.` prefix. This preserves
@@ -403,7 +403,7 @@ docstring states the intent — "The user's `/model` and `/effort` defaults are 
 entry profile. A spawned child instead keeps an explicit model or effort from its own profile, falling
 back to those defaults only when it declares none. This distinction lets changing the current run
 model do what the user asked without flattening a heterogeneous sub-agent fleet" (`:223-227`) — and
-`packages/kernel/tests/component/settings-assembler.test.ts:211-232` pins both halves.
+`packages/kernel/tests/component/settings-assembler.test.ts:219-240` pins both halves.
 
 `plansBlockToParam` **materializes** `mode` and `retention`, and additionally carries an optional
 `pending_task_nudges` through when the block's value is a non-negative integer, dropping it otherwise
@@ -421,7 +421,7 @@ ten numeric fields, `AGENTS_FIELDS` (`:145-156`): `buffer_lines`, `buffer_bytes`
 `guardParksOnHuman(params.guard_mode, merged.guard, params.guard_judge !== undefined)`
 (`packages/kernel/src/guard/resolver.ts:80-87`) yields `"1h"`, and nothing is emitted when it is
 false (`:424-428`). The guard predicate returns true for mode `on` and for mode `auto` with no judge
-(`packages/kernel/src/guard/resolver.ts:86`). `packages/kernel/tests/component/settings-assembler.test.ts:536-602` pins all four cases, including that an
+(`packages/kernel/src/guard/resolver.ts:86`). `packages/kernel/tests/component/settings-assembler.test.ts:544-610` pins all four cases, including that an
 unconfigured host derives `"1h"` because the guard defaults to on.
 
 ### 4.3 Managed-run construction (`packages/kernel/src/runs/managed-run.ts:158-336`)
@@ -442,7 +442,7 @@ Order of construction, which matters because later steps capture earlier ones:
 
 `resolveEventBuffer` (`:115-135`) merges each field independently with `??`, so a `0` supplied for
 `maxBuffered` survives (disabling only the count cap and leaving `DEFAULT_RUN_EVENT_BUFFER_BYTES` in
-force — `packages/kernel/src/runs/run-service.ts:53-55` says both caps must be `0` for an unbounded override). `sizeOfCoalesced`
+force — `packages/kernel/src/runs/run-service.ts:47-49` says both caps must be `0` for an unbounded override). `sizeOfCoalesced`
 defaults to `sizeOfCoalescedRunEvent` only when the host supplied neither `sizeOf` nor `coalesce`
 (`:122-126`). Finally the effective `droppable` is wrapped so `events_dropped` can never be a victim
 (`:132-134`).
@@ -495,14 +495,14 @@ settled run beyond one minute" (`:41`). `packages/kernel/tests/unit/managed-run.
 renewal (deadlines 1 080, then 1 110, then 1 170) and `:346-372` pins that renewals stop at the
 absolute deadline (1 100, with `ingestGraceMs: 40, ingestMaxWaitMs: 100`).
 
-### 4.6 Live event fold (`packages/kernel/src/runs/run-service.ts:113-127`)
+### 4.6 Live event fold (`packages/kernel/src/runs/run-service.ts:107-122`)
 
 `executeRun` is given two listeners. `onEvent` maps a `TraceEvent` through `engineEventToProto` and
 `onCapabilityEvent` maps a `CapabilityEvent` through `capabilityEventToProto`; in both cases
 `context.emit(mapped)` runs **only when the mapper returned non-`null`** (`:116-121`). The handle's
 `steer`, `compaction`, `signal` and `elicit` are handed through as the engine's `SteerSource`,
 `CompactionSource`, `externalSignal` and `Elicit` (`:123-126`; engine-side parameter names at
-`packages/loop/src/runtime/execute-run.ts:83-99`). The outcome is converted by
+`packages/loop/src/runtime/execute-run.ts:85-101`). The outcome is converted by
 `engineResultToProto(outcome.executionId, outcome.response)` (`:128`).
 
 ### 4.7 `engineEventToProto` (`packages/kernel/src/runs/map-events.ts:389-671`)
@@ -639,7 +639,7 @@ at `packages/kernel/tests/unit/event-stream.test.ts:339-353`.
 
 `isDroppableRunEvent` reads the table directly (`:265-267`).
 
-### 4.10 Rehydration (`packages/kernel/src/runs/map-result.ts:172-187`)
+### 4.10 Rehydration (`packages/kernel/src/runs/map-result.ts:192-207`)
 
 `rehydrateEvents` maps every persisted trace event through `engineEventToProto` and filters `null`
 away, then always emits one `runs.rehydrated` debug line with `events_total`, `events_mapped`,
@@ -659,7 +659,7 @@ and fewer than 40 lines.
 
 | Operation | Behaviour |
 |---|---|
-| `get(id)` | `store.getById(owner, id)`; `null` gives `kernelError("not_found", …)`; else `storedToDetail(row, logger)` (`packages/kernel/src/runs/run-service.ts:156-160`) |
+| `get(id)` | `store.getById(owner, id)`; `null` gives `kernelError("not_found", …)`; else `storedToDetail(row, logger)` (`packages/kernel/src/runs/run-service.ts:151-155`) |
 | `list(page?)` | `normalizeRunPagination(page)` then `store.list(owner, limit, offset)`, rows through `summaryToProto`; the page echoes the normalized `limit`/`offset` (`:161-165`) |
 | `delete(id)` | `store.deleteById(owner, id)`; `false` gives `not_found` (`:166-169`) |
 
@@ -667,7 +667,7 @@ and fewer than 40 lines.
 (`:5`) and `offset` to `0`, and throws `invalid_request` unless each is a safe integer within
 `[0, MAX_TRACE_LIST_LIMIT]` and `[0, MAX_TRACE_LIST_OFFSET]` (200 and 10 000 —
 `packages/trace/src/json-trace-store.ts:189,191`). Pinned at
-`packages/kernel/tests/integration/run-service.smoke.test.ts:165-170`.
+`packages/kernel/tests/integration/run-service.smoke.test.ts:166-171`.
 
 There is no admin read path beside those three. `TraceStore.listAcrossOwners`
 (`packages/trace/src/trace-store.ts:132`) stays optional on the store port, but nothing under
@@ -733,17 +733,17 @@ before", plus `packages/kernel/tests/unit/managed-run.test.ts:433`.
 
 **INV-R6.** An execution id is refused when it is either live in this process or already persisted for
 this owner, and the refusal is `conflict`, raised before any engine work.
-Production `packages/kernel/src/runs/run-service.ts:136-138`. Test `packages/kernel/tests/integration/run-service.smoke.test.ts:178-201`,
+Production `packages/kernel/src/runs/run-service.ts:131-133`. Test `packages/kernel/tests/integration/run-service.smoke.test.ts:179-202`,
 `packages/kernel/tests/unit/run-service-lifecycle.test.ts:45-49`.
 
 **INV-R7.** The id reservation is released on `handle.closed`, not `handle.done`.
-Production `packages/kernel/src/runs/run-service.ts:149`. Test `packages/kernel/tests/unit/run-service-lifecycle.test.ts:30-57` — a second
+Production `packages/kernel/src/runs/run-service.ts:144`. Test `packages/kernel/tests/unit/run-service-lifecycle.test.ts:30-57` — a second
 start with the same id is rejected after `done` resolves and accepted only after `closed` resolves.
 
 **INV-R8.** Neither mapper ever forwards an unrecognized shape into the closed protocol union; it
 returns `null` and the caller drops it.
-Production `packages/kernel/src/runs/map-events.ts:401,357,365-374,594,677`; drop sites `packages/kernel/src/runs/run-service.ts:117,121` and
-`packages/kernel/src/runs/map-result.ts:173-175`. Test `packages/kernel/tests/unit/map-events.test.ts:285-289,408-428,653-662`. The reason is
+Production `packages/kernel/src/runs/map-events.ts:401,357,365-374,594,677`; drop sites `packages/kernel/src/runs/run-service.ts:120-125` and
+`packages/kernel/src/runs/map-result.ts:193-195`. Test `packages/kernel/tests/unit/map-events.test.ts:285-289,408-428,653-662`. The reason is
 stated at `packages/kernel/src/runs/map-events.ts:45-48`: "It stays a log: what the mapper *returns* is unchanged, because a
 client's event union is closed and forwarding an unrecognized shape into it is the worse failure."
 
@@ -800,8 +800,8 @@ Production `packages/kernel/src/runs/managed-run.ts:240-251`, `:178-192`; consta
 
 **INV-R19.** Assembly and execution failures after reservation settle `done` as a failed `RunResult`;
 they never reject `start`.
-Production `packages/kernel/src/runs/run-service.ts:110` (assembly inside `execute`), `packages/kernel/src/runs/managed-run.ts:296-299`. Test
-`packages/kernel/tests/integration/run-service.smoke.test.ts:203-225`.
+Production `packages/kernel/src/runs/run-service.ts:104` (assembly inside `execute`), `packages/kernel/src/runs/managed-run.ts:296-299`. Test
+`packages/kernel/tests/integration/run-service.smoke.test.ts:204-269`.
 
 **INV-R20.** A `settle` that throws replaces an otherwise-successful result with a failed one.
 Production `packages/kernel/src/runs/managed-run.ts:300-304`. Test `packages/kernel/tests/unit/managed-run.test.ts:139-153`.
@@ -809,7 +809,7 @@ Production `packages/kernel/src/runs/managed-run.ts:300-304`. Test `packages/ker
 **INV-R21.** A kernel that is not `open` refuses to execute, reporting `unavailable` and "kernel is
 closing" through `done` rather than through `start`.
 Production `packages/kernel/src/runs/managed-run.ts:293-294`. Test `packages/kernel/tests/unit/managed-run.test.ts:456-473`,
-`packages/kernel/tests/integration/run-service.smoke.test.ts:250-258`.
+`packages/kernel/tests/integration/run-service.smoke.test.ts:294-302`.
 
 **INV-R22.** Steering and compaction are refused after the run settles, and the two refusals differ:
 `steer` silently no-ops, `compact` throws `not_found`.
@@ -824,16 +824,16 @@ nested under a `request` key, and only the push's boolean result (not the shape)
 `not_found` throw.
 
 **INV-R23.** Run listing and paging are bounded at the kernel boundary, not left to the store.
-Production `packages/kernel/src/runs/pagination.ts:11-22`. Test `packages/kernel/tests/integration/run-service.smoke.test.ts:165-170`.
+Production `packages/kernel/src/runs/pagination.ts:11-22`. Test `packages/kernel/tests/integration/run-service.smoke.test.ts:166-171`.
 
 **INV-R24.** Every trace read and write is owner-scoped; a cross-owner `get` or `delete` reports
 `not_found`.
-Production `packages/kernel/src/runs/run-service.ts:157,163,167` (all pass `owner`). Test
-`packages/kernel/tests/integration/owner-isolation.test.ts:277-289`.
+Production `packages/kernel/src/runs/run-service.ts:291-303` (all three store calls pass `owner`). Test
+`packages/kernel/tests/integration/owner-isolation.test.ts:278-290`.
 
 **INV-R25.** There is no cross-owner read path in this subsystem at all — neither a cross-owner
 `get` nor a cross-owner index.
-Production `packages/kernel/src/runs/run-service.ts:156-169` is the entire read surface and every
+Production `packages/kernel/src/runs/run-service.ts:151-164` is the entire read surface and every
 call passes `owner`; `TraceStore.listAcrossOwners` (`packages/trace/src/trace-store.ts:132`) has no
 caller under `packages/kernel/src/`. Test: unpinned — an absence has none.
 
@@ -847,48 +847,48 @@ Production `packages/kernel/src/runs/map-message.ts:9,18,29-33`. Test `packages/
 
 **INV-R28.** Any stored execution status other than `completed`/`cancelled` collapses to `failed` on
 the wire, in both the stored and the live path.
-Production `packages/kernel/src/runs/map-result.ts:27-31` and `:82-87`; the event-level twin is `packages/kernel/src/runs/map-events.ts:246-250`. Test
+Production `packages/kernel/src/runs/map-result.ts:45-49` and `:100-105`; the event-level twin is `packages/kernel/src/runs/map-events.ts:246-250`. Test
 `packages/kernel/tests/unit/map-events.test.ts:438-443` (`reason: "error"` gives `status: "failed"`).
 
 **INV-R29.** A `RunDetail`'s token totals come from the stored row, overriding whatever the response's
 own usage said.
-Production `packages/kernel/src/runs/map-result.ts:138-143`. Test: unpinned as an override — the totals are exercised only as
-part of the round trip at `packages/kernel/tests/integration/run-service.smoke.test.ts:157-160`, which never
+Production `packages/kernel/src/runs/map-result.ts:156-161`. Test: unpinned as an override — the totals are exercised only as
+part of the round trip at `packages/kernel/tests/integration/run-service.smoke.test.ts:158-161`, which never
 constructs a disagreement.
 
 **INV-R30.** `recovery` is forwarded verbatim when the stored row carries it and the key is absent
 otherwise.
-Production `packages/kernel/src/runs/map-result.ts:154`. Test `packages/kernel/tests/unit/map-result.test.ts:194-210`, including
+Production `packages/kernel/src/runs/map-result.ts:174`. Test `packages/kernel/tests/unit/map-result.test.ts:194-210`, including
 `Object.hasOwn(detail, "recovery") === false`.
 
 **INV-R31.** The `plans` settings block is materialized with defaults for `mode` and `retention`; the
 `agents` block is projected sparsely.
-Production `packages/kernel/src/runs/settings-assembler.ts:138-154` versus `:172-179`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:102-149` and `:167-185`.
+Production `packages/kernel/src/runs/settings-assembler.ts:146-162` versus `:180-187`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:110-157` and `:175-193`.
 
 **INV-R32.** An explicit per-run `plans` param beats a skill's Plans policy, which beats the settings
 block.
-Production `packages/kernel/src/runs/settings-assembler.ts:446-468` (the nested ternary order). Test
-`packages/kernel/tests/component/settings-assembler.test.ts:158-166`, `:377-413`.
+Production `packages/kernel/src/runs/settings-assembler.ts:468-490` (the nested ternary order). Test
+`packages/kernel/tests/component/settings-assembler.test.ts:166-174`, `:385-421`.
 
 **INV-R33.** A skill's declared `agent` overrides the request's `agent`; a skill naming none leaves it
 alone.
-Production `packages/kernel/src/runs/settings-assembler.ts:376` (`skillRun?.agent ?? params.agent ?? …`). Test
-`packages/kernel/tests/component/settings-assembler.test.ts:347-376`.
+Production `packages/kernel/src/runs/settings-assembler.ts:408` (`skillRun?.agent ?? params.agent ?? …`). Test
+`packages/kernel/tests/component/settings-assembler.test.ts:440-469`.
 
 **INV-R34.** The `skill` key is never forwarded to the engine.
-Production `packages/kernel/src/runs/settings-assembler.ts:415-472` — no `skill` key in the returned literal; the stated reason
-is at `:320-322`. Test `packages/kernel/tests/component/settings-assembler.test.ts:455-467`.
+Production `packages/kernel/src/runs/settings-assembler.ts:432-494` — no `skill` key in the returned literal; the stated reason
+is at `:359-361`. Test `packages/kernel/tests/component/settings-assembler.test.ts:548-560`.
 
 **INV-R34a.** Prompt-expansion hook context is emitted exactly for a successfully resolved
 user-invoked skill, and plugin provenance is represented by a generic qualified command name rather
 than by changing the skill seed or forwarding the kernel-only `skill` input.
-Production `packages/kernel/src/runs/settings-assembler.ts:216-223`, `:382-389`, `:460-466`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:540-579`.
+Production `packages/kernel/src/runs/settings-assembler.ts:228-238`, `:399-406`, `:482-488`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:548-587`.
 
 **INV-R35.** A malformed `mcpServers` entry fails the whole assembly by name; it is never dropped.
-Production `packages/kernel/src/runs/settings-assembler.ts:213-218`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:667-674`.
+Production `packages/kernel/src/runs/settings-assembler.ts:225-230`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:675-682`.
 
 **INV-R35a.** Active plugin MCP servers are attached even when every persisted profile has an empty
 MCP tool list, carry `auto_tools: true`, and leave those profile lists unchanged. Operator MCP
@@ -899,25 +899,25 @@ the active-plugin, dotted-namespace, and unreferenced-server cases in
 `packages/kernel/tests/component/settings-assembler.test.ts`.
 
 **INV-R36.** A `can_spawn` target that resolves to no agent is skipped, not fatal.
-Production `packages/kernel/src/runs/settings-assembler.ts:393` (`if (rec === null) continue`). Test
-`packages/kernel/tests/component/settings-assembler.test.ts:58-73`.
+Production `packages/kernel/src/runs/settings-assembler.ts:410` (`if (rec === null) continue`). Test
+`packages/kernel/tests/component/settings-assembler.test.ts:66-81`.
 
 **INV-R37.** The entry profile takes the user's `default_model`/`default_reasoning_effort` first; a
 spawned child takes its own frontmatter first.
-Production `packages/kernel/src/runs/settings-assembler.ts:251-253`, `:259-261`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:211-247`.
+Production `packages/kernel/src/runs/settings-assembler.ts:266-268`, `:274-276`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:219-255`.
 
 **INV-R38.** `prompt_cache_ttl` defaults to `"1h"` exactly when the effective guard mode parks on a
 human, and an explicit request param always wins.
-Production `packages/kernel/src/runs/settings-assembler.ts:436-440`; predicate `packages/kernel/src/guard/resolver.ts:80-87`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:507-603`.
+Production `packages/kernel/src/runs/settings-assembler.ts:458-462`; predicate `packages/kernel/src/guard/resolver.ts:80-87`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:515-611`.
 
 **INV-R39.** `completeBudget` fills in exactly one field: a declared budget missing `on_exceed` gets
 the fallback's `on_exceed` (`{ ...declared, on_exceed: fallback.on_exceed }`). It never supplies a
 missing `total_token_limit` — a budget declared as `{ on_exceed: "stop" }` alone is returned
 unchanged, `total_token_limit` still absent.
-Production `packages/kernel/src/runs/settings-assembler.ts:355-363`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:258-305` (which additionally runs the assembled body
+Production `packages/kernel/src/runs/settings-assembler.ts:371-379`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:266-313` (which additionally runs the assembled body
 through the engine's own `validateBody` at `:276-282`) covers only the missing-`on_exceed` case; no
 test in this subsystem exercises a declared budget missing `total_token_limit`, so whether the
 resulting request validates in that case is not shown here — see §8.
@@ -932,9 +932,9 @@ Production `packages/kernel/src/runs/map-events.ts:57-58`. Test `packages/kernel
 **INV-R42.** Each configured scope contributes at most one context document to the entry profile's
 `base_prompt`: `CLARVIS.md` wins when present, otherwise `AGENTS.md` is the fallback; neither file is
 added to child profiles.
-Production `packages/kernel/src/runs/settings-assembler.ts:261-273,365-368,397-398` plus the selection
-order at `packages/kernel/src/config/file-config-store.ts:991-1003`. Test
-`packages/kernel/tests/component/settings-assembler.test.ts:79-116` covers absence, fallback, and
+Production `packages/kernel/src/runs/settings-assembler.ts:276-288,394-397,426-427` plus the selection
+order at `packages/kernel/src/config/file-config-store.ts:1019-1031`. Test
+`packages/kernel/tests/component/settings-assembler.test.ts:87-124` covers absence, fallback, and
 both candidates present without double injection.
 
 **INV-R43.** `compaction_started` crosses the live engine trace as a strict, non-droppable,
@@ -959,11 +959,11 @@ omission). The persistence half is [INV-319](environments.md#inv-319--execution-
 
 | Condition | Handler | Outcome |
 |---|---|---|
-| duplicate `execution_id` for the owner | `packages/kernel/src/runs/run-service.ts:136-138` | `KernelException("conflict")` thrown from `start`; nothing launched |
-| engine's own in-flight id clash (`ConflictError`) | `packages/loop/src/runtime/execute-run.ts:130-138`, then `toKernelError`'s name match | surfaces inside `execute`, so it lands as a **failed result**; `toKernelError` maps a name containing `Conflict` to `conflict`, everything else to `internal` (`packages/kernel/src/core/errors.ts:57-64`) |
-| unknown agent, unknown skill, no default agent | `packages/kernel/src/runs/settings-assembler.ts:378,370,96` | `not_found` or `invalid_request` **as a failed `RunResult`**, because assembly runs inside `execute` |
-| malformed `mcpServers` entry | `packages/kernel/src/runs/settings-assembler.ts:213-218` | `invalid_request` naming the server key and the zod issue path |
-| agent resolves no model | `packages/kernel/src/runs/settings-assembler.ts:255-258` | `invalid_request`, `"agent '<n>' declares no model and no default_model is set"` |
+| duplicate `execution_id` for the owner | `packages/kernel/src/runs/run-service.ts:131-133` | `KernelException("conflict")` thrown from `start`; nothing launched |
+| engine's own in-flight id clash (`ConflictError`) | `packages/loop/src/runtime/execute-run.ts:132-140`, then `toKernelError`'s name match | surfaces inside `execute`, so it lands as a **failed result**; `toKernelError` maps a name containing `Conflict` to `conflict`, everything else to `internal` (`packages/kernel/src/core/errors.ts:57-64`) |
+| unknown agent, unknown skill, no default agent | `packages/kernel/src/runs/settings-assembler.ts:412-414,103-105,408-410` | `not_found` or `invalid_request` **as a failed `RunResult`**, because assembly runs inside `execute` |
+| malformed `mcpServers` entry | `packages/kernel/src/runs/settings-assembler.ts:225-230` | `invalid_request` naming the server key and the zod issue path |
+| agent resolves no model | `packages/kernel/src/runs/settings-assembler.ts:270-273` | `invalid_request`, `"agent '<n>' declares no model and no default_model is set"` |
 | `execute` throws | `packages/kernel/src/runs/managed-run.ts:297-299` | `failedResult(executionId, toKernelError(error))` |
 | `settle` throws | `packages/kernel/src/runs/managed-run.ts:302-304` | previous result discarded, failed result returned |
 | kernel closing at start | `packages/kernel/src/runs/managed-run.ts:293-294` | `unavailable` / `"kernel is closing"` on `done` |
@@ -978,7 +978,7 @@ omission). The persistence half is [INV-319](environments.md#inv-319--execution-
 | engine event with no protocol projection | `packages/kernel/src/runs/map-events.ts:400,594,677` | dropped; sampled `runs.event.unmapped` debug line |
 | capability event with no `wire` projection | `packages/kernel/src/runs/map-events.ts:347-349` | dropped; `reason: "no_wire_projection"` |
 | capability detail too large, cyclic, or with throwing accessors | `packages/kernel/src/runs/map-events.ts:192-216` | bounded and truncated, never thrown; unserializable becomes the literal `"[unserializable capability event]"` (`:208`) |
-| rehydration loses events | `packages/kernel/src/runs/map-result.ts:176-185` | the run is returned with fewer events plus a `runs.rehydrated` line carrying the delta |
+| rehydration loses events | `packages/kernel/src/runs/map-result.ts:196-205` | the run is returned with fewer events plus a `runs.rehydrated` line carrying the delta |
 | plan or task slot in `capability_state` malformed | `packages/kernel/src/runs/plan-ref.ts:66`, `packages/kernel/src/runs/task-binding.ts:10` (delegated) | field omitted from `RunDetail`, no throw; pinned at `packages/kernel/tests/unit/map-result.test.ts:52-66` and `:92-123` |
 | Environment slot in `host_metadata` malformed | `environmentFromHostMetadata` in `packages/kernel/src/runs/map-result.ts` | `environment` omitted from `RunDetail`; other run data still hydrates |
 
@@ -988,14 +988,14 @@ omission). The persistence half is [INV-319](environments.md#inv-319--execution-
 
 | Dependency | Where | What forces it |
 |---|---|---|
-| `@clarvis/loop` | `packages/kernel/src/runs/run-service.ts:1`, `packages/kernel/src/runs/map-result.ts:1-8` (types), `packages/kernel/src/runs/map-message.ts:1-5` (types), `packages/kernel/src/runs/managed-run.ts:1` (types), `packages/kernel/src/runs/settings-assembler.ts:2-8` | `executeRun` and `generateExecutionId` are runtime values; the engine DTOs (`StoredExecution`, `RunResponse`, `Message`) are type-only. `settings-assembler.ts` additionally takes four **values** from `@clarvis/loop/host`: `agentPromptOf`, `mcpServerSettingsSchema`, `normalizeTools`, `settingsServerToEngine` |
+| `@clarvis/loop` | `packages/kernel/src/runs/run-service.ts:1,114-115,188,212,271`, `packages/kernel/src/runs/map-result.ts:1-8` (types), `packages/kernel/src/runs/map-message.ts:1-5` (types), `packages/kernel/src/runs/managed-run.ts:1` (types), `packages/kernel/src/runs/settings-assembler.ts:2-8` | `executeRun` and the settled-context helpers are runtime values loaded dynamically; the engine DTOs (`ExecuteRunDeps`, `StoredExecution`, `RunResponse`, `Message`) are type-only. `settings-assembler.ts` additionally takes four **values** from `@clarvis/loop/host`: `agentPromptOf`, `mcpServerSettingsSchema`, `normalizeTools`, `settingsServerToEngine` |
 | `@clarvis/protocol` | every file in `runs/` | the closed `RunEvent` union is what `packages/kernel/src/runs/event-policy.ts:94` is `satisfies`-checked against, and what `packages/kernel/src/runs/run-event-span.ts:134` exhausts |
-| `@clarvis/capability` | `packages/kernel/src/runs/map-events.ts:1-13`, `packages/kernel/src/runs/run-service.ts:20`, `packages/kernel/src/runs/map-result.ts:18` | `isBuiltinTraceEvent`, `sanitizeDeep`/`sanitizeText`, `createSampler`, `levelEnabled`, `parseTaskTitle`/`TASK_TITLE_MAX`, `NOOP_LOGGER`; `packages/kernel/src/runs/managed-run.ts:2` also takes `suppressSecondaryRejection` |
+| `@clarvis/capability` | `packages/kernel/src/runs/map-events.ts:1-13`, `packages/kernel/src/runs/run-service.ts:14`, `packages/kernel/src/runs/map-result.ts:18` | `isBuiltinTraceEvent`, `sanitizeDeep`/`sanitizeText`, `createSampler`, `levelEnabled`, `parseTaskTitle`/`TASK_TITLE_MAX`, `NOOP_LOGGER`; `packages/kernel/src/runs/managed-run.ts:2` also takes `suppressSecondaryRejection` |
 | `@clarvis/memory/settings` | `packages/kernel/src/runs/map-events.ts:14` | `MEMORY_CAPABILITY_NAME` and `MEMORY_INGEST_EVENT` — the one capability with a typed, kernel-validated projection |
 | `@clarvis/workflows` | `packages/kernel/src/runs/map-events.ts:16-19` | `isWorkflowPersistedTraceEvent` is the first gate in `engineEventToProto`; the workflows package owns its own trace guard |
 | `@clarvis/plan/settings` | `packages/kernel/src/runs/settings-assembler.ts:1` | `PLANS_DEFAULTS` for the materialized `mode` and `retention` |
 | `@clarvis/plan`, `@clarvis/tasks/*` | `packages/kernel/src/runs/plan-ref.ts:1`, `packages/kernel/src/runs/task-binding.ts:1-2` | capability-state slot names and schema (delegated documents) |
-| `@clarvis/trace` | `packages/kernel/src/runs/pagination.ts:1` | `MAX_TRACE_LIST_LIMIT`/`MAX_TRACE_LIST_OFFSET`; nothing under `runs/` names the `TraceStore` type — `run-service.ts:97` takes the store off `deps.traceStore` |
+| `@clarvis/trace` | `packages/kernel/src/runs/run-service.ts:2`, `packages/kernel/src/runs/pagination.ts:1` | runtime `generateExecutionId` plus `MAX_TRACE_LIST_LIMIT`/`MAX_TRACE_LIST_OFFSET`; nothing under `runs/` names the `TraceStore` type — `packages/kernel/src/runs/run-service.ts:99` takes the store off `deps.traceStore` |
 | kernel-internal | `core/event-stream.ts`, `core/errors.ts`, `core/bounded-json.ts`, `application/lifecycle.ts`, `config/config-store.ts`, `guard/resolver.ts`, `skills/render-skill-prompt.ts` | see the per-file imports cited above |
 
 `settings-assembler.ts` deliberately does **not** import the kernel's settings schema: it declares its
@@ -1006,11 +1006,11 @@ store owns the full schema" (`:17-18`).
 
 | Consumer | Import | Nature |
 |---|---|---|
-| `packages/kernel/src/kernel.ts:35,51` | `createRunService`, `createSettingsRunAssembler` | the composition root; supplies `isManagerRun` and `runManagerWorkflow` from `createAgentWorkflowPolicy` and `createWorkflowsService` (`packages/kernel/src/kernel.ts:299,406-414`) |
-| `packages/kernel/src/workflows/workflows-service.ts:47` | `createManagedRun` | the second producer of a `RunHandle`, with `observe` and `settle` (`:373-380`) |
-| `packages/kernel/src/transport/client.ts:44-49` | `coalesceRunEvents`, `isDroppableRunEvent`, `sizeOfRunEvent`, `DEFAULT_RUN_EVENT_BUFFER*` | the remote client re-applies the same backpressure policy locally (`:416-419`) |
+| `packages/kernel/src/kernel.ts:38,54` | `createRunService`, `createSettingsRunAssembler` | the composition root; supplies `isManagerRun` and `runManagerWorkflow` from `createAgentWorkflowPolicy` and `createWorkflowsService` (`packages/kernel/src/kernel.ts:371,476-495`) |
+| `packages/kernel/src/workflows/workflows-service.ts:45` | `createManagedRun` | the second producer of a `RunHandle`, with `observe` and `settle` (`:394-403`) |
+| `packages/kernel/src/transport/client.ts:43-50` | `coalesceRunEvents`, `isDroppableRunEvent`, `sizeOfRunEvent`, `DEFAULT_RUN_EVENT_BUFFER*` | the remote client re-applies the same backpressure policy locally (`:389-408`) |
 | `packages/server/src/mcp/notify.ts:2-5,144,366-370` | `RUN_EVENT_POLICY`, `coalesceRunEvents`, `sizeOfRunEvent` | MCP notification fan-out reuses the table rather than re-listing droppable types |
-| `packages/server/src/mcp/event-view.ts:1,168,184` | `RUN_EVENT_POLICY`, `coalesceRunEvents` | the coalesce class is read from the table rather than restated (`:162-168`) |
+| `packages/server/src/mcp/event-view.ts:1,168,184` | `RUN_EVENT_POLICY`, `coalesceRunEvents` | the coalesce class is read from the table rather than restated (`:168-184`) |
 | `packages/code/src/adapters/event-span.ts:2` | `deriveRunEventSpan` | the TUI groups its transcript by the kernel's span ids |
 | `packages/kernel/src/index.ts`, focused subpath modules, and `packages/kernel/package.json` | the exported surface | pinned to six entrypoints by `packages/kernel/tests/architecture/public-surface.test.ts` |
 
@@ -1050,8 +1050,8 @@ store owns the full schema" (`:17-18`).
   saturation; the only saturation assertions are at the raw-stream level
   (`packages/kernel/tests/unit/event-stream.test.ts:399-424`).
 - **Whether a budget missing `total_token_limit` (but not `on_exceed`) validates as a run request is
-  not shown by this subsystem.** `completeBudget` (`packages/kernel/src/runs/settings-assembler.ts:355-363`) never fills a
-  missing `total_token_limit` — only a missing `on_exceed` — and `packages/kernel/tests/component/settings-assembler.test.ts:288-298`
+  not shown by this subsystem.** `completeBudget` (`packages/kernel/src/runs/settings-assembler.ts:371-379`) never fills a
+  missing `total_token_limit` — only a missing `on_exceed` — and `packages/kernel/tests/component/settings-assembler.test.ts:296-306`
   shows exactly that: a settings budget of `{ on_exceed: "escalate" }` is assembled with no
   `total_token_limit` key at all. The engine's own request schema treats `total_token_limit` as
   optional (`packages/loop/src/validation/request/request-schema.ts:106-110`) but conditionally
@@ -1061,16 +1061,16 @@ store owns the full schema" (`:17-18`).
   resolves.
 - **The `started_at + elapsed_ms === ended_at` agreement is upheld by writers, never enforced on
   read.** `summaryToProto` computes `ended_at: s.started_at + s.elapsed_ms`
-  (`packages/kernel/src/runs/map-result.ts:114`); `storedToDetail` uses the stored `s.ended_at`
+  (`packages/kernel/src/runs/map-result.ts:132`); `storedToDetail` uses the stored `s.ended_at`
   directly (`:150`). The only two writers of an `ExecutionRecord` — `buildRecord`
-  (`packages/trace/src/record-builder.ts:33-54`, `started_at: input.wallStartedAt`, `ended_at:
+  (`packages/trace/src/record-builder.ts:35-56`, `started_at: input.wallStartedAt`, `ended_at:
   input.wallStartedAt + elapsedMs`, `elapsed_ms: elapsedMs`) and `journalToRecord`'s crash-recovery
-  path (`packages/trace/src/journal-recovery.ts:380-409`, same pattern) — always derive `ended_at`
+  path (`packages/trace/src/journal-recovery.ts:382-411`, same pattern) — always derive `ended_at`
   and `elapsed_ms` from one shared `elapsedMs` anchored to the same stored `started_at`, and no
   writer or update path sets any of the three independently of the other two, so the two functions
   compute the same value two different ways for any row this codebase can produce. But
   `StoredSummary`/`StoredExecution` are read via a raw `JSON.parse(...) as T` cast with
-  no schema validation (`packages/trace/src/json-trace-store.ts:764`, `:1290`, the latter through
+  no schema validation (`packages/trace/src/json-trace-store.ts:764`, `:1293`, the latter through
   `parseStoredJson` at `packages/trace/src/trace-store.ts:15-17`), so a hand-edited
   or foreign-written store file could still make the two values diverge, and nothing would detect it.
 - **`inspectCoalescedRunEvent` is described as "Internal structural diagnostics"**

@@ -123,9 +123,9 @@ ignored (pinned by `packages/supervision/tests/unit/settings.test.ts:21-23`). It
 from the same object: as `AGENTS_SETTINGS_FIELDS.agents` (optional, unfilled when absent — pinned at
 `packages/supervision/tests/unit/settings.test.ts:17-19`) for `settings.json`, and as `AGENTS_REQUEST_PARAMS.agents` (`.partial()`,
 still filling every omitted field from the same defaults — pinned at `packages/supervision/tests/unit/settings.test.ts:52-57`) for a
-run request's `agents` param (`AgentsParam` in `packages/capability/src/api.ts:465-484`). There is
+run request's `agents` param (`AgentsParam` in `packages/capability/src/api.ts:491-519`). There is
 **no on/off field**: the settings comment states the surface follows from whether the run's entry
-agent can spawn at all, not from a flag (`packages/supervision/src/settings.ts:5-8`, `packages/capability/src/api.ts:454`).
+agent can spawn at all, not from a flag (`packages/supervision/src/settings.ts:5-8`, `packages/capability/src/api.ts:494-498`).
 
 `agentsSettingsSpec` registers under key `"agents"`, `merge: "lastWins"`,
 `pluginContributable: false` (`packages/supervision/src/settings.ts:169-175`, pinned at `packages/supervision/tests/unit/settings.test.ts:63-68`) — the

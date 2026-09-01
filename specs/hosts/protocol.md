@@ -29,7 +29,7 @@ signals and an async iterable. Opaque payload escape hatches are typed `unknown`
 The package achieves its "transport-agnostic" claim not just by convention but by construction: it
 declares 196 non-reexport type-level exports across its 18 sibling modules — 151 `export interface`
 declarations (`rg -c "^export interface\\b" packages/protocol/src/*.ts`) plus 45 `export type <Name>
-= ...` aliases (e.g. `packages/protocol/src/common.ts:11`'s `Scope`, `packages/protocol/src/runs.ts:117`'s `RunStatus`, `packages/protocol/src/tasks.ts:3`'s
+= ...` aliases (e.g. `packages/protocol/src/common.ts:11`'s `Scope`, `packages/protocol/src/runs.ts:118`'s `RunStatus`, `packages/protocol/src/tasks.ts:3`'s
 `TaskStageDto`) — and `packages/protocol/src/index.ts:12-29` re-exports all 18 sibling modules with `export type *`.
 TypeScript erases the whole surface at compile time — the package produces **zero runtime values**,
 confirmed independently below (§7).
@@ -70,13 +70,13 @@ Defined in `packages/protocol/src/client.ts`. Aggregates 4 readonly fields, 15 n
 
 | Member | Type | Line |
 |---|---|---|
-| `capabilities` | `KernelCapabilities` | `packages/protocol/src/client.ts:53` |
-| `principal` | `Principal \| undefined` | `packages/protocol/src/client.ts:55` |
-| `project` | `ProjectRef` | `packages/protocol/src/client.ts:57` |
-| `workspace` | `WorkspaceRef` | `packages/protocol/src/client.ts:59` |
-| `runs` | `RunService` | `packages/protocol/src/client.ts:62` |
-| `config` | `ConfigService` | `packages/protocol/src/client.ts:64` |
-| `plugins` | `PluginService` | `packages/protocol/src/client.ts:66` |
+| `capabilities` | `KernelCapabilities` | `packages/protocol/src/client.ts:54` |
+| `principal` | `Principal \| undefined` | `packages/protocol/src/client.ts:56` |
+| `project` | `ProjectRef` | `packages/protocol/src/client.ts:58` |
+| `workspace` | `WorkspaceRef` | `packages/protocol/src/client.ts:60` |
+| `runs` | `RunService` | `packages/protocol/src/client.ts:63` |
+| `config` | `ConfigService` | `packages/protocol/src/client.ts:65` |
+| `plugins` | `PluginService` | `packages/protocol/src/client.ts:69` |
 | `environments` | `EnvironmentService` | `packages/protocol/src/client.ts:68` |
 | `secrets` | `SecretService` | `packages/protocol/src/client.ts:70` |
 | `models` | `ModelCatalogService` | `packages/protocol/src/client.ts:72` |
@@ -91,12 +91,12 @@ Defined in `packages/protocol/src/client.ts`. Aggregates 4 readonly fields, 15 n
 | `storage` | `StorageService` | `packages/protocol/src/client.ts:90` |
 | `close(): Promise<void>` | method | `packages/protocol/src/client.ts:93` |
 
-`KernelCapabilities` (`packages/protocol/src/client.ts:25-36`): `memory`, `skills`, `agent_tools`,
+`KernelCapabilities` (`packages/protocol/src/client.ts:26-37`): `memory`, `skills`, `agent_tools`,
 `tasks` — four booleans and nothing else. Protocol-version negotiation is not part of that
 capability object; the concrete wire owns its separate `CLARVIS_WIRE_VERSION` handshake
 (`packages/kernel/src/transport/wire.ts`).
 
-`ConnectOptions` (`packages/protocol/src/client.ts:39-46`): `workspace?: WorkspaceRef | string`, `auth?: string`,
+`ConnectOptions` (`packages/protocol/src/client.ts:40-47`): `workspace?: WorkspaceRef | string`, `auth?: string`,
 `clientInfo?: { name: string; version?: string }`. Nothing in `client.ts` defines a `connect()`
 function — `ConnectOptions` is a shape a transport-specific connector elsewhere accepts; the type
 alone lives here.
@@ -456,7 +456,7 @@ other value is persisted. This agrees with the protocol comments that call delta
 (`packages/protocol/src/runs.ts:637-646`). `elicitation_resolved` is explicitly the opposite: it is
 persisted "for resume reconstruction; not shown live" (`packages/protocol/src/runs.ts:604`).
 
-### 3.4 `StartRunParams` (`packages/protocol/src/runs.ts:69-114`)
+### 3.4 `StartRunParams` (`packages/protocol/src/runs.ts:70-115`)
 
 | Field | Type | Notes |
 |---|---|---|
@@ -468,7 +468,7 @@ persisted "for resume reconstruction; not shown live" (`packages/protocol/src/ru
 | `prompt_cache_ttl?` | `"5m" \| "1h"` | kernel derives it when omitted (`packages/protocol/src/runs.ts:86-94`) |
 | `guard_mode?` | `GuardMode` | `"off" \| "on" \| "auto"` (`packages/protocol/src/runs.ts:45-46`) |
 | `guard_judge?` | `GuardJudge` | caller-owned judge prompt/model/timeout |
-| `memory?` | `MemoryMode` | `"on" \| "off"` (`packages/protocol/src/runs.ts:60`) |
+| `memory?` | `MemoryMode` | `"on" \| "off"` (`packages/protocol/src/runs.ts:61`) |
 | `plans?` | `PlansMode` | `"off" \| "on" \| "review"` (`packages/protocol/src/runs.ts:63-67`) |
 | `task?` | `ActiveTaskRequestDto` | binds one external task |
 | `skill?` | `{ name: string; task?: string }` | the `/skill` flow |
@@ -523,12 +523,12 @@ revision: "sha256", action: "strip", dropped: ["providers.invalid"] }`), `Create
 ### 3.7 The message/content model (`runs.ts`)
 
 Every `StartRunParams.messages` entry and every `RunDetail.messages` entry is a `Message`
-(`packages/protocol/src/runs.ts:39-42`): `{ role: Role; content: MessageContent }`. `Role` is `"user" | "assistant"`
-(`packages/protocol/src/runs.ts:14`). `MessageContent` (`packages/protocol/src/runs.ts:36`) is `string | ContentPart[]` — plain text, or a
-mixed sequence of parts. `ContentPart` (`packages/protocol/src/runs.ts:33`) is `TextPart | ImagePart`: `TextPart`
-(`packages/protocol/src/runs.ts:17-20`) is `{ type: "text"; text: string }`; `ImagePart` (`packages/protocol/src/runs.ts:23-30`) is `{ type:
+(`packages/protocol/src/runs.ts:40-43`): `{ role: Role; content: MessageContent }`. `Role` is `"user" | "assistant"`
+(`packages/protocol/src/runs.ts:15`). `MessageContent` (`packages/protocol/src/runs.ts:37`) is `string | ContentPart[]` — plain text, or a
+mixed sequence of parts. `ContentPart` (`packages/protocol/src/runs.ts:34`) is `TextPart | ImagePart`: `TextPart`
+(`packages/protocol/src/runs.ts:18-21`) is `{ type: "text"; text: string }`; `ImagePart` (`packages/protocol/src/runs.ts:24-31`) is `{ type:
 "image"; mime: string; data?: string; ref?: string }`, where `data` is inline base64 bytes and
-`ref` is "a workspace-relative ref the kernel resolves" (`packages/protocol/src/runs.ts:28-29`) — the two are alternatives
+`ref` is "a workspace-relative ref the kernel resolves" (`packages/protocol/src/runs.ts:29-30`) — the two are alternatives
 on the same part rather than separate variants.
 
 ### 3.8 Run status, usage and the top-level run DTOs (`runs.ts`)
@@ -544,10 +544,10 @@ on the same part rather than separate variants.
 | `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; active_task?: ActiveTaskBindingDto; environment?: EnvironmentRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts:235-255` |
 
 `PerAgentUsage.role`'s `"vision"` member is not an agent: its own doc comment calls it "the engine's
-image-reading pre-pass, one completion on a model no agent runs on" (`packages/protocol/src/runs.ts:129-131`) — the same
+image-reading pre-pass, one completion on a model no agent runs on" (`packages/protocol/src/runs.ts:130-132`) — the same
 escape-hatch shape as `capability_event`'s open string (§5 invariant 4), applied to cost attribution
 rather than to the event union. `RunUsage.by_agent` is optional because "a live run's final result may
-report per-agent detail... instead" of the flat totals (`packages/protocol/src/runs.ts:149-150`), which are themselves
+report per-agent detail... instead" of the flat totals (`packages/protocol/src/runs.ts:150-151`), which are themselves
 "present on a stored run (`get`)" but optional on a live result.
 
 `EnvironmentRunRef` is deliberately only `{ id, fingerprint }`. `RunDetail.environment`,
@@ -581,7 +581,7 @@ the `RunEvent` union itself. `ElicitationCommandDetail` exists so a client "rend
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts:41-50` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts:59-64` |
 | `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts:67-72` |
-| `MemoryConfig` | `{ enabled?; model?; [k]: unknown }` | `packages/protocol/src/config.ts:180-184` |
+| `MemoryConfig` | `{ enabled?; model?; [k]: unknown }` | `packages/protocol/src/config.ts:181-185` |
 | `SandboxConfig` | `{ type: "native"; enabled?; availability?: "required" \| "optional"; filesystem?; network?; pass_env?; toolchains?: { mode?: "auto" \| "manual"; include?; exclude?; extra_paths?; excluded_paths? } }` | `packages/protocol/src/config.ts` (`SandboxConfig`) |
 | `SandboxToolchainScope` | `"system" \| "auto" \| "global" \| "workspace"` | `packages/protocol/src/config.ts:112` |
 | `SandboxInspection` | `{ backend: { type: "bubblewrap" \| "seatbelt" \| "unsupported"; available; mode: "fresh-proc" \| "host-proc" \| "seatbelt" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts` (`SandboxInspection`) |
@@ -596,28 +596,28 @@ whose §2.3 table row names only the method signature.
 
 ### 3.11 `ConfigService` data shapes II: repair plan and agents (`config.ts`)
 
-`SettingsRepairPlan` (`packages/protocol/src/config.ts:252-266`) is a 2-variant discriminated union on `action`, both variants
+`SettingsRepairPlan` (`packages/protocol/src/config.ts:253-267`) is a 2-variant discriminated union on `action`, both variants
 carrying `scope: Scope` and `revision: string` (the SHA-256 the repair is bound to, per §4 item 4):
 `"strip"` additionally carries `dropped: string[]` — "dotted paths the kernel will remove from
-otherwise parseable JSON" (`packages/protocol/src/config.ts:257`) — and `"reset"` carries `reason: string`, "why no safe
-field-level repair could be produced" (`packages/protocol/src/config.ts:264`). The package's own test fixture exercises the
+otherwise parseable JSON" (`packages/protocol/src/config.ts:258`) — and `"reset"` carries `reason: string`, "why no safe
+field-level repair could be produced" (`packages/protocol/src/config.ts:265`). The package's own test fixture exercises the
 `strip` variant literally: `{ scope: "workspace", revision: "sha256", action: "strip", dropped:
 ["providers.invalid"] }` (`packages/protocol/tests/contract/public-contract.fixture.ts:70-75`).
 
-`AgentBudget` (`packages/protocol/src/config.ts:269-272`) is `{ on_exceed?: string; total_token_limit?: number }`.
-`AgentSummary` (`packages/protocol/src/config.ts:293-312`) is `{ name; scope: Scope | "plugin" | "builtin"; model?;
+`AgentBudget` (`packages/protocol/src/config.ts:270-273`) is `{ on_exceed?: string; total_token_limit?: number }`.
+`AgentSummary` (`packages/protocol/src/config.ts:294-313`) is `{ name; scope: Scope | "plugin" | "builtin"; model?;
 description?; plugin?; grants?: string[]; can_spawn?: string[]; budget?: AgentBudget; overlay?:
 AgentOverlay }` — `grants` being `undefined` specifically means "the frontmatter
-could not be parsed" (`packages/protocol/src/config.ts:303`).
+could not be parsed" (`packages/protocol/src/config.ts:304`).
 
-`SettingsView.known_grants?: readonly string[]` (`packages/protocol/src/config.ts:228-242`) lists "every capability grant an
+`SettingsView.known_grants?: readonly string[]` (`packages/protocol/src/config.ts:229-243`) lists "every capability grant an
 agent profile in this workspace may name" and is populated only by the kernel, "an optional feature
 package contributes its own grant, so the set is a property of what this kernel actually composed"
-(`packages/protocol/src/config.ts:232-234`). Its own remark names the defect that motivated it: a stale `image` grant "left
+(`packages/protocol/src/config.ts:233-235`). Its own remark names the defect that motivated it: a stale `image` grant "left
 by the vision-routing refactor... was reported 'runnable' by Doctor and the agent editor while every
-run in the workspace was rejected before its first model call" (`packages/protocol/src/config.ts:235-238`). Absent when the
+run in the workspace was rejected before its first model call" (`packages/protocol/src/config.ts:236-239`). Absent when the
 kernel did not report it, in which case "a client must then skip the check rather than assume a
-vocabulary" (`packages/protocol/src/config.ts:239-240`).
+vocabulary" (`packages/protocol/src/config.ts:240-241`).
 
 ### 3.12 `MemoryService` health and job DTOs (`memory.ts`)
 
@@ -690,7 +690,7 @@ attached to each method:
 
 1. A client obtains a `KernelClient` (construction is out of scope for this package — see
    `specs/hosts/kernel-transport.md`) whose `capabilities`, `principal`, `project`, `workspace` are
-   populated "at connect time" (`packages/protocol/src/client.ts:52` doc comment on `capabilities`).
+   populated "at connect time" (`packages/protocol/src/client.ts:53` doc comment on `capabilities`).
 2. `runs.start(params)` returns a `RunHandle` immediately; the run's `events` stream, `done` and
    `closed` promises are the three ways a caller observes its outcome (`packages/protocol/src/runs.ts:694-756`).
 3. While a run is live, a caller may call `steer`, `compact`, `cancel`, or `respond` to a pending
@@ -901,7 +901,7 @@ Every consumer reaches it **only as a type import**, verified directly (§5, inv
 | `@clarvis/code` | 0 | 110 source/test files currently import the public barrel, all with `import type` | `packages/code/tests/architecture/dependency-boundary.test.ts` pins `code`'s Clarvis-namespaced manifest dependencies to `@clarvis/kernel`, `@clarvis/paths`, and `@clarvis/protocol` |
 
 Both `code`'s and `server`'s dependency-boundary tests explicitly *permit* `@clarvis/protocol` (it is
-absent from both files' `FORBIDDEN` arrays — `packages/code/tests/architecture/dependency-boundary.test.ts:13-21`,
+absent from both files' `FORBIDDEN` arrays — `packages/code/tests/architecture/dependency-boundary.test.ts:13-22`,
 `packages/server/tests/architecture/dependency-boundary.test.ts:5-11`) while forbidding `@clarvis/loop`
 and every engine-layer package — i.e. the test suite encodes "may depend on protocol, may not depend
 on the engine" as one design, not two.

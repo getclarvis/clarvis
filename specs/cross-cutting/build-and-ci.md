@@ -41,7 +41,7 @@ test can observe**, because the unit suite imports `src/` by path
 mechanisms: pure assertion functions run inside the build itself
 (`packages/code/tooling/artifact/contract.ts`), a unit test over those same functions
 (`packages/code/tests/architecture/artifact-contract.test.ts`), and a PTY boot of the finished
-artifact against a fabricated clean `HOME` (`packages/code/tooling/artifact/smoke.ts:129-144`).
+artifact against a fabricated clean `HOME` (`packages/code/tooling/artifact/smoke.ts:125-140`).
 
 The bundle itself exists for a measured cost, stated in `packages/code/tooling/artifact/build.ts:5-10`: running
 the TUI from source pipes every `.tsx` file through Babel via the OpenTUI Solid plugin on every launch
@@ -118,7 +118,7 @@ that matter:
 | `@clarvis/protocol` | `test` is `bun run test:contract`, which is `tsc -p tsconfig.json` — it runs no `bun test` at all | `packages/protocol/package.json:25-27` |
 | `@clarvis/workflows` | every test script carries `--isolate` | `packages/workflows/package.json:41-47` |
 | `@clarvis/llm`, `@clarvis/loop`, `@clarvis/workflows` | declare `prebuild: bun run clean` | `packages/llm/package.json:35`, `packages/loop/package.json:65`, `packages/workflows/package.json:39` |
-| `@clarvis/kernel`, `@clarvis/protocol`, `@clarvis/server` | `typecheck` is `tsc -p tsconfig.json` with no `--noEmit` flag (their `tsconfig.json` sets `noEmit: true` itself) | `packages/kernel/package.json:45`, `packages/kernel/tsconfig.json:9` |
+| `@clarvis/kernel`, `@clarvis/protocol`, `@clarvis/server` | `typecheck` is `tsc -p tsconfig.json` with no `--noEmit` flag (their `tsconfig.json` sets `noEmit: true` itself) | `packages/kernel/package.json:50`, `packages/kernel/tsconfig.json:9` |
 | `@clarvis/code` | `typecheck` is bare `tsc --noEmit` (no `-p`) | `packages/code/package.json:21` |
 
 Every `bun test` invocation reachable from a package's `test` script carries `--timeout 60000` on the
@@ -214,7 +214,7 @@ Fourteen packages' `eslint.config.js` is exactly one call to that factory (e.g.
 | `workflows` | `no-restricted-imports` banning `@clarvis/loop/internal` | `packages/workflows/eslint.config.js:6-20` |
 | `code` | `eslint-plugin-unicorn` + `unicorn/filename-case` (PascalCase or kebab-case); `no-unsafe-*` and `no-base-to-string` and `require-await` off; a `tests/**/*.{ts,tsx}` block turning off `no-non-null-assertion` and `no-require-imports`; a `src/core/tasks.ts` block re-enabling `no-floating-promises` with `ignoreVoid: true` (the same pattern `@clarvis/capability` uses for its own `src/tasks.ts`); six `no-restricted-imports` layer rules (adapters/core/keys/ui/infrastructure/features) | `packages/code/eslint.config.js:7-184`, tests block `:29-35`, tasks block `:36-41` |
 
-`eslint-plugin-unicorn` is the only package-level lint devDependency (`packages/code/package.json:44-46`).
+`eslint-plugin-unicorn` is the only package-level lint devDependency (`packages/code/package.json:49-51`).
 
 Prettier is one root `.prettierrc.json` — `semi: true`, `singleQuote: false`, `trailingComma: "all"`,
 `printWidth: 100`, `tabWidth: 2`, `arrowParens: "always"` (`.prettierrc.json:1-8`) — and one root
@@ -230,7 +230,7 @@ its `src`, tests, artifact builders and benchmarks,
 `packages/kernel` adds `src/bin.ts` and its Bun-native executable test fixture as entries,
 `packages/protocol` adds
 `tests/contract/public-contract.fixture.ts` as an entry (`:15-17` — that fixture type-imports 24
-protocol names, `packages/protocol/tests/contract/public-contract.fixture.ts:2-25`), and
+protocol names, `packages/protocol/tests/contract/public-contract.fixture.ts:2-27`), and
 `packages/tools` ignores the `rg` binary (`:18-20`).
 
 ### 2.6 Bun test configuration
@@ -270,8 +270,8 @@ NOT add a `schedule:` or `push:` trigger".
 | Variable | Read at | Effect |
 | --- | --- | --- |
 | `CLARVIS_CODE_SOURCE=1` | `packages/code/src/cli.ts:40` | launcher runs `src/index.tsx` instead of `dist/index.js` |
-| `SMOKE_TIMEOUT_MS` | `packages/code/tooling/artifact/smoke.ts:45` | smoke timeout, default `90_000` |
-| `BENCH_N`, `BENCH_POLL_MS`, `BENCH_TIMEOUT_MS`, `BENCH_MAX_LOAD` | `packages/code/tooling/benchmarks/first-paint.ts:40-45` | benchmark sample size, poll, timeout, per-core load refusal (default `0.35`) |
+| `SMOKE_TIMEOUT_MS` | `packages/code/tooling/artifact/smoke.ts:42` | smoke timeout, default `90_000` |
+| `BENCH_N`, `BENCH_POLL_MS`, `BENCH_TIMEOUT_MS`, `BENCH_MAX_LOAD` | `packages/code/tooling/benchmarks/first-paint.ts:43-47` | benchmark sample size, poll, timeout, per-core load refusal (default `0.35`) |
 | `CI` | `packages/tools/tests/contract/grep-parity.test.ts:16` | when set, `rg` must be installed (TEST-01) |
 | `GITHUB_STEP_SUMMARY` | `tooling/ci/retry-code-coverage.sh:43` | retry notes appended when present |
 | `BUN_JSC_useConcurrentGC` / `BUN_JSC_numberOfGCMarkers` / `BUN_JSC_useConcurrentJIT` | `.github/workflows/segfault-canary.yml` (`jobs.canary.steps[name=measure].run`) | canary JSC arms |
@@ -372,7 +372,7 @@ The runtime stage runs **from source**, not from `dist`, and `:79-83` states the
 subsystems through dynamic specifiers, and the provider adapter is a dynamic import — exactly the
 patterns a bundler drops silently."
 
-The image's baked environment (`packages/server/Dockerfile:38-59`) is a documented data format in its
+The image's baked environment (`packages/server/Dockerfile:39-60`) is a documented data format in its
 own right: `NODE_ENV=production`, `CLARVIS_SERVER_HOST=0.0.0.0`,
 `CLARVIS_SERVER_ALLOW_PUBLIC_BIND=1`, `CLARVIS_SERVER_PORT=8080`, `CLARVIS_WORKSPACE_ROOT=/workspace`,
 `CLARVIS_HOME=/config`, `CLARVIS_LOG_LEVEL=info`, `CLARVIS_TRACE_TTL_DAYS=30`,
@@ -420,7 +420,7 @@ URLs scraped from the crash logs.
 `bun install --frozen-lockfile` is run once from the root in every CI job
 (`.github/workflows/ci.yml`, install steps under jobs `linux`, `windows`, and `sandbox-macos`) and inside the Docker `deps` stage
 (`packages/server/Dockerfile:26`). `bunfig.toml:2` sets `linker = "hoisted"`, so `node_modules` is
-symlink-free (stated at `.github/workflows/ci.yml:56-57`).
+symlink-free (stated at `.github/workflows/ci.yml:66-67`).
 
 At runtime under Bun, an internal `@clarvis/x` specifier resolves through that package's `exports`
 `bun` condition, which points at `src/*.ts` — so editing a package's source is immediately visible to
@@ -466,7 +466,7 @@ even during an otherwise source-mapped, non-build `tsc -p tsconfig.json` typeche
   onto sibling **sources** (e.g. `packages/loop/tsconfig.json:7-19`, `packages/kernel/tsconfig.json:11-29`),
   but each package's map omits some of its own declared dependencies: `kernel`'s 18-entry map
   (`packages/kernel/tsconfig.json:11-29`) excludes `@clarvis/capability`, `@clarvis/paths` and
-  `@clarvis/tasks` even though `kernel` depends on all three (`packages/kernel/package.json:57-69`);
+  `@clarvis/tasks` even though `kernel` depends on all three (`packages/kernel/package.json:62-74`);
   `loop`'s 11-entry map (`packages/loop/tsconfig.json:7-19`) excludes `@clarvis/paths`,
   `@clarvis/supervision`, `@clarvis/trace` and `@clarvis/mcp-client` despite depending on all four
   (`packages/loop/package.json:79-85`); `skills`'s single-entry map
@@ -488,11 +488,11 @@ Project references mirror the runtime dependency edges. `packages/kernel/tsconfi
 lists eleven; `packages/loop/tsconfig.build.json:13-41` lists nine (including the three optional
 packages `tools`, `hooks`, `skills`); leaves list one or two.
 
-`@clarvis/code` is typechecked separately by `tsc --noEmit` (`packages/code/package.json:21`) using
+`@clarvis/code` is typechecked separately by `tsc --noEmit` (`packages/code/package.json:25`) using
 `moduleResolution: "bundler"` and 16 source `paths` entries
 (`packages/code/tsconfig.json:22-39`). Those entries include `@clarvis/loop`, `@clarvis/memory`,
 `@clarvis/plan`, `@clarvis/skills`, `@clarvis/tools` — packages the architecture test forbids `code`
-from importing directly (`packages/code/tests/architecture/dependency-boundary.test.ts:13-22`); they
+from importing directly (`packages/code/tests/architecture/dependency-boundary.test.ts:70-84`); they
 are needed because `code`'s `@clarvis/kernel` mapping points at kernel **source**
 (`packages/code/tsconfig.json:23`), whose own imports must then resolve.
 
@@ -607,7 +607,7 @@ Step 4 must follow step 3: `assertLazyProviderChunk` reads the entry from `entry
 `detachSourceMaps` renames files out from under `outdir`. Step 5 must follow step 1, which deletes
 `dist`.
 
-`packages/code/tooling/artifact/smoke.ts:109-183` then:
+`packages/code/tooling/artifact/smoke.ts:105-185` then:
 
 1. Refuses with a build instruction if `dist/index.js` is absent (`:110-112`).
 2. Re-runs **both** artifact assertions against the on-disk directory rather than the build's
@@ -749,14 +749,14 @@ Windows-shaped chunk-path cases).
 **BUILD-4 (INV-259).** The ordinary developer/root artifact keeps its source maps **detached** under
 `dist/maps/`, and must still contain `index.js.map` there; a `.map` beside runtime JS, or a missing
 entrypoint map, is rejected.
-Production: `packages/code/tooling/artifact/contract.ts:18-28` (messages: "source maps must not
-sit beside runtime JavaScript; Bun loads them eagerly" `:23`; "artifact must retain its entrypoint
-source map under dist/maps" `:26`); implemented by `detachSourceMaps`
-(`packages/code/tooling/artifact/build.ts:84-94`).
-Test: `packages/code/tests/architecture/artifact-contract.test.ts:35-51`.
+Production: `packages/code/tooling/artifact/contract.ts:60-71` (messages: "source maps must not
+sit beside runtime JavaScript; Bun loads them eagerly" `:66`; "artifact must retain its entrypoint
+source map under dist/maps" `:69`); implemented by `detachSourceMaps`
+(`packages/code/tooling/artifact/build.ts:113-124`).
+Test: `packages/code/tests/architecture/artifact-contract.test.ts:98-114`.
 
 **BUILD-5.** `Bun.build` for `code` keeps `@opentui/core` and `@opentui/core-*` external.
-Production: `packages/code/tooling/artifact/build.ts:123`. Stated reason at `:120-122`: "Its parser worker and
+Production: `packages/code/tooling/artifact/build.ts:138`. Stated reason at `:135-137`: "Its parser worker and
 grammars are resolved relative to its own entry point; bundling core rewrites that import.meta.url
 and disconnects those assets from their owner." Unpinned — no test asserts the `external` list.
 
@@ -772,54 +772,54 @@ Unpinned by a unit test; the enforcement is the build failing and the smoke fail
 composed root build through its separate bundle phase.
 Production: `tsconfig.json:5-22` lists 17 references, none of them `packages/code`; `packages/code`
 has no `tsconfig.build.json`.
-Pinned indirectly: `tooling/lib/package-graph.ts:473-484` requires the root solution's references to
+Pinned indirectly: `tooling/lib/package-graph.ts:506-528` requires the root solution's references to
 be exactly the set of packages that have a `tsconfig.build.json`, so adding one for `code` without a
 root reference (or vice versa) is an error. That rule is unit-tested at
-`tooling/tests/unit/package-graph.test.ts:228-247`.
+`tooling/tests/unit/package-graph.test.ts:285-304`.
 
 **BUILD-8 (INV-309 d).** A package's `dependencies` + `optionalDependencies` on other workspaces must equal its
 `tsconfig.build.json` `references` set, in both directions.
-Production: `tooling/lib/package-graph.ts:452-460` (errors `"dependency without project reference X"`
+Production: `tooling/lib/package-graph.ts:495-503` (errors `"dependency without project reference X"`
 and `"project reference without runtime dependency X"`).
-Test: `tooling/tests/unit/package-graph.test.ts:228-247`.
+Test: `tooling/tests/unit/package-graph.test.ts:285-304`.
 
 **BUILD-9 (INV-309 f).** A `src` file may not import a subpath the target package's `exports` map does not
 publish, and a type-only import may additionally use a `types`-only condition where a value import may
 not.
-Production: `tooling/lib/package-graph.ts:150-158`, `:396-401`.
-Test: `tooling/tests/unit/package-graph.test.ts:78-88` (unexported subpath),
-`:129-158` (wildcards and type-only conditions), `:90-100` (accepted deep import).
+Production: `tooling/lib/package-graph.ts:149-183,228-230,431-436`.
+Test: `tooling/tests/unit/package-graph.test.ts:135-157` (unexported and accepted deep subpaths),
+`:186-214` (wildcards and type-only conditions).
 
 **BUILD-10 (INV-309 a).** A `src` file may not import its own package's public entrypoint — by package name or by
 a relative path that resolves to it.
-Production: `tooling/lib/package-graph.ts:373-381` and `:414-431`.
-Test: `tooling/tests/unit/package-graph.test.ts:102-110`.
+Production: `tooling/lib/package-graph.ts:403-411` and `:453-469`.
+Test: `tooling/tests/unit/package-graph.test.ts:159-167`.
 
 **BUILD-11 (INV-309 b).** A `src` **value** import of an internal package declared only under `devDependencies` is
 an error; the same import from `tests/` or package `tooling/` is allowed.
-Production: `tooling/lib/package-graph.ts:386-395` (`sourceTree === "src" && !edge.typeOnly`).
-Test: `tooling/tests/unit/package-graph.test.ts:176-209`.
+Production: `tooling/lib/package-graph.ts:421-430` (`sourceTree === "src" && !edge.typeOnly`).
+Test: `tooling/tests/unit/package-graph.test.ts:233-266`.
 A real instance of exactly this pattern: `@clarvis/kernel` declares `@clarvis/mcp-client` under
 `devDependencies` (`packages/kernel/package.json`) and no file in `packages/kernel/src` imports it.
 
 **BUILD-12 (INV-309 g).** No relative import may cross a package root.
-Production: `tooling/lib/package-graph.ts:403-413`.
-Test: `tooling/tests/unit/package-graph.test.ts:249-260`.
+Production: `tooling/lib/package-graph.ts:438-451`.
+Test: `tooling/tests/unit/package-graph.test.ts:306-317`.
 
 **BUILD-13 (INV-309 e).** The declared workspace graph and the compilation graph are both acyclic, and no
 package's `src` contains a value-import module cycle.
-Production: `tooling/lib/package-graph.ts:493-528`.
-Test: `tooling/tests/unit/package-graph.test.ts:211-227` (package cycles), `:112-128` (module cycles, with
+Production: `tooling/lib/package-graph.ts:530-570`.
+Test: `tooling/tests/unit/package-graph.test.ts:268-283` (package cycles), `:169-184` (module cycles, with
 the type-only back edge shown not to count).
 
 **BUILD-14 (INV-310, timeout half).** Every `bun test` invocation reachable from a workspace's
 `test` script carries `--timeout 60000` on the command line rather than in a `bunfig.toml`;
 `@clarvis/protocol` is explicitly type-only and reaches no `bun test` invocation.
 Production: every package manifest, e.g. `packages/capability/package.json:41-44`,
-`packages/code/package.json:25-30`.
+`packages/code/package.json:29-34`.
 Rationale recorded at `bunfig.toml:17-21`.
 Test: `tooling/checks/test-harness.ts` applies `checkPackageHarness` to every workspace manifest, and
-`tooling/tests/unit/test-harness.test.ts:26-53,82-91` pins delegated-script discovery and the missing-timeout
+`tooling/tests/unit/test-harness.test.ts:27-59,99-103` pins delegated-script discovery and the missing-timeout
 failure.
 
 **BUILD-15 (INV-310, preload half).** Every `bunfig.toml` that can be the nearest one to a test run declares
@@ -836,15 +836,15 @@ Production: `bunfig.toml:13`; every non-type-only package bunfig, with
 `tooling/test-runtime/clarvis-home-preload.ts:24-33`, which leaves an already-set value alone and registers an
 `exit` handler to remove the temp root.
 Test: `tooling/checks/test-harness.ts` checks the root bunfig and every package bunfig;
-`tooling/tests/unit/test-harness.test.ts:55-79,93-97,121-134` pins parsing, missing-preload failure, and the
+`tooling/tests/unit/test-harness.test.ts:61-92,105-111,131-143` pins parsing, missing-preload failure, and the
 type-only exception.
 
 **BUILD-16.** `code` reaches `@clarvis/kernel` only through its six published entrypoints and imports
 no lower implementation package, in `src/` **and** `tests/`.
-Production: `packages/code/package.json:33-37` declares exactly `@clarvis/kernel`, `@clarvis/paths`,
+Production: `packages/code/package.json:38-42` declares exactly `@clarvis/kernel`, `@clarvis/paths`,
 `@clarvis/protocol`.
-Test: `packages/code/tests/architecture/dependency-boundary.test.ts:73-87` (entrypoints + eight
-forbidden packages) and `:89-98` (manifest dependency set).
+Test: `packages/code/tests/architecture/dependency-boundary.test.ts:70-84` (entrypoints and role-valid
+packages) and `:86-95` (manifest dependency set).
 
 **BUILD-17.** `src/cli.ts`'s static import closure is exactly
 `{src/cli.ts, src/cli-args.ts, src/cli-entry.ts, ../../package.json}`, and both
@@ -912,10 +912,10 @@ repair: the branch under test is platform-independent code, so the test should b
 (`posixShell`), an enforcement property (`modeBitsEnforced`), a measurement that is undecidable
 (`backgroundSettleIsMeasurable`), or a **named open defect** (`monitorCapturesOutput`) — never a
 blanket platform skip.
-Production: `packages/tools/tests/helpers/fixtures.ts:191` (`modeBitsEnforced`), `:204`
-(`posixShell`), `:282` (`monitorCapturesOutput`), `:305` (`backgroundSettleIsMeasurable`), `:314`
-(`canSymlink`, *probed* rather than derived), `:251` (`nonUtf8FilenamesSupported`, probed because
-it is a filesystem property). `:276-281` states the distinction explicitly: "these tests are
+Production: `packages/tools/tests/helpers/fixtures.ts:189-197` (`modeBitsEnforced`), `:199-210`
+(`posixShell`), `:272-288` (`monitorCapturesOutput`), `:290-311` (`backgroundSettleIsMeasurable`), `:313-330`
+(`canSymlink`, *probed* rather than derived), `:245-270` (`nonUtf8FilenamesSupported`, probed because
+it is a filesystem property). `:284-286` states the distinction explicitly: "these tests are
 suppressed because the product is broken on Windows, not because they do not apply to it."
 
 **BUILD-26 (INV-313).** Every executable and declaration surface derives from the one exact Bun
@@ -1033,16 +1033,16 @@ monorepo`).
 
 | Situation | Handling | Citation |
 | --- | --- | --- |
-| `Bun.build` reports `success: false` | every log written to stderr, then `throw new Error("bun build failed")` — no artifact is left half-written because `dist` was already removed | `packages/code/tooling/artifact/build.ts:128-131`, `:111` |
-| Build emits no entry point | `throw new Error("build emitted no entry point")` | `packages/code/tooling/artifact/build.ts:73` |
+| `Bun.build` reports `success: false` | every log written to stderr, then `throw new Error("bun build failed")` — no artifact is left half-written because `dist` was already removed | `packages/code/tooling/artifact/build.ts:143-146`, `:126` |
+| Build emits no entry point | `throw new Error("build emitted no entry point")` | `packages/code/tooling/artifact/build.ts:74` |
 | Build flattened the lazy chunk | throws, naming which of the two conditions failed | `packages/code/tooling/artifact/contract.ts:9-14` |
 | A source map sits beside runtime JS, or `index.js.map` is missing | throws with the specific message | `packages/code/tooling/artifact/contract.ts:22-27` |
 | An install build emits a source map | throws `installed artifact must not contain source maps: <path>` | `packages/code/tooling/artifact/contract.ts` (`assertInstallArtifact`) |
-| A build asset moved | throws naming the asset, its reader, and the two files to update | `packages/code/tooling/artifact/build.ts:100-104` |
-| Smoke run with no artifact | `throw` with `"run: bun --filter @clarvis/code build"` | `packages/code/tooling/artifact/smoke.ts:110-112` |
-| Smoke fixture already has a models cache | `throw new Error("fixture is not a fresh install: it has a models cache")` — refuses to run rather than measure the wrong branch | `packages/code/tooling/artifact/smoke.ts:132-134` |
-| Smoke boot times out or hits `"failed to start"` | prints stripped screen tail + stderr tail, removes both temp dirs, `exit 1` | `packages/code/tooling/artifact/smoke.ts:146-156`; the failure marker is `packages/code/tooling/artifact/pty.ts:20` |
-| Smoke painted but wrote no `app.boot.painted` | `exit 1` with "`--debug` is the only diagnostic channel a bundled clarvis has" | `packages/code/tooling/artifact/smoke.ts:165-171` |
+| A build asset moved | throws naming the asset, its reader, and the two files to update | `packages/code/tooling/artifact/build.ts:115-119` |
+| Smoke run with no artifact | `throw` with `"run: bun --filter @clarvis/code build"` | `packages/code/tooling/artifact/smoke.ts:106-108` |
+| Smoke fixture already has a models cache | `throw new Error("fixture is not a fresh install: it has a models cache")` — refuses to run rather than measure the wrong branch | `packages/code/tooling/artifact/smoke.ts:128-130` |
+| Smoke boot times out or hits `"failed to start"` | prints stripped screen tail + stderr tail, removes both temp dirs, `exit 1` | `packages/code/tooling/artifact/smoke.ts:165-174`; the failure marker is `packages/code/tooling/artifact/pty.ts:20` |
+| Smoke painted but wrote no `app.boot.painted` | `exit 1` with "`--debug` is the only diagnostic channel a bundled clarvis has" | `packages/code/tooling/artifact/smoke.ts:167-173` |
 | No `script(1)` and no `tmux` | `throw new Error("observing a boot requires either script(1) or tmux to provide a PTY")` | `packages/code/tooling/artifact/pty.ts:182-184` |
 | Bun dies by signal 132/134/139 during CI tests | up to 3 retries of `@clarvis/code` alone; if a retry passes, `coverage:check` is re-run and its status returned | `tooling/ci/retry-code-coverage.sh:55-63` |
 | Bun dies by 130 or 143 | passed straight through, never retried | `tooling/ci/retry-code-coverage.sh:34-39` |
@@ -1054,7 +1054,7 @@ monorepo`).
 | Model catalog file exceeds 8 MiB, or the user cache is corrupt | `readCatalogFile` throws `"model catalog exceeds byte limit"`; a bad cache is silently ignored and the bundled snapshot returned | `packages/kernel/src/models/model-catalog.ts:172`, `:221-222` |
 | Neither models-dev.json candidate exists | `bundlePath()` returns the source-tree path anyway "so the ensuing read reports the location a developer expects" | `packages/kernel/src/models/model-catalog.ts:190-200` |
 | `code`'s temp-home cleanup races a live child | `rmSync` failure swallowed; comment: "a live child may still hold a handle; the OS reaps the temp dir" | `tooling/test-runtime/clarvis-home-preload.ts:30-32` |
-| `chocolatey`-style install reporting success over a no-op | avoided by construction: the Windows ripgrep step verifies the SHA256 and runs the binary in the same step | `.github/workflows/ci.yml:122-137`, `:141-153` |
+| `chocolatey`-style install reporting success over a no-op | avoided by construction: the Windows ripgrep step verifies the SHA256 and runs the binary in the same step | `.github/workflows/ci.yml:125-141` |
 | An explicit line citation to an existing repository file uses line zero, exceeds the target, or inverts a range | `check:specs` reports every invalid citation and exits nonzero; nonexistent illustrative targets are ignored | `tooling/checks/spec-hygiene.ts` (`failedCitations`); `tooling/lib/spec-hygiene.ts` (`resolveLineCitation`) |
 | A Pages workflow, local `docs/` site, or VitePress dependency is reintroduced | the repository-metadata architecture test reports the duplicated ownership surface | `tooling/tests/architecture/repository-metadata.test.ts` (`keeps public-site ownership outside this monorepo`) |
 
@@ -1072,7 +1072,7 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 | `typescript` ^6 | root devDependency; imported as a **library** by four repository-tooling modules (`tooling/lib/source-policy.ts`, `tooling/lib/package-graph.ts`, `tooling/checks/import-extensions.ts`, `tooling/tests/architecture/stream-metrics-drift.test.ts`) and five package architecture tests (three under `packages/code/tests/architecture/`, two under `packages/loop/tests/architecture/`) | static value import |
 | `@opentui/solid/bun-plugin` | `packages/code/tooling/artifact/build.ts:39` — the build cannot produce the artifact without it | static value import |
 | `@clarvis/paths` | `packages/code/tooling/artifact/pty.ts:16` and `packages/code/tooling/artifact/smoke.ts:33` use `globalPaths` so the fixture layout cannot drift from the vocabulary; `tooling/test-runtime/clarvis-home-preload.ts:5` uses `HOME_ENV` | static value import |
-| `docker` | only the `linux` CI job's step 10 (`.github/workflows/ci.yml:66`) | external process |
+| `docker` | only the `linux` CI job's step 10 (`.github/workflows/ci.yml:76`) | external process |
 | `script(1)` or `tmux` | `packages/code/tooling/artifact/pty.ts:118`, `:181` | external process |
 
 **What depends on this subsystem.**
@@ -1114,7 +1114,7 @@ groups, `killTree` and monitor capture belong to **tools-shell-monitor-and-proce
 ## 8. Open questions
 
 1. **Several build-time rules are unpinned.** No test asserts the `external` list
-   (`packages/code/tooling/artifact/build.ts:123`) or the `splitting` option, the
+   (`packages/code/tooling/artifact/build.ts:138`) or the `splitting` option, the
    `.gitattributes` normalization, the canary's least-privilege workflow fields, or any behaviour
    of `tooling/ci/retry-code-coverage.sh`. Each is enforced only by the build or CI failing at the moment it
    is broken. Interactive PTY reproduction belongs to `tui-driver`; the repository owns only the

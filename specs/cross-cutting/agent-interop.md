@@ -44,12 +44,12 @@ degrade rather than guess.
 | `AGENTS_DIR` | `packages/paths/src/constants.ts:18` | the literal `".agents"` — the only place the string exists |
 | `AGENTS_PLUGINS_DIR` | `packages/paths/src/constants.ts:24` | `"plugins"`, the subdirectory a marketplace listing lives under inside `.agents` |
 | `MARKETPLACE_FILE` | `packages/paths/src/constants.ts:27` | `"marketplace.json"` |
-| `agentsSkillsDirs(opts)` | `packages/paths/src/workspace.ts:134` | `{ user, workspace }` — the two `.agents/skills` directories Clarvis reads |
+| `agentsSkillsDirs(opts)` | `packages/paths/src/workspace.ts:137` | `{ user, workspace }` — the two `.agents/skills` directories Clarvis reads |
 | `agentsPluginsDir(root)` | `packages/paths/src/workspace.ts` | one `<root>/.agents/plugins` inventory |
 | `agentsPluginsDirs(opts)` | `packages/paths/src/workspace.ts` | global and workspace `.agents/plugins` inventories |
-| `agentsMarketplaceFile(root)` | `packages/paths/src/workspace.ts:153` | `<root>/.agents/plugins/marketplace.json` |
-| `agentsMarketplaceFiles(opts)` | `packages/paths/src/workspace.ts:163` | the user- and workspace-scoped marketplace documents |
-| `isAgentsMarketplaceFile(candidate)` | `packages/paths/src/workspace.ts:183` | recognizer paired with the builder above |
+| `agentsMarketplaceFile(root)` | `packages/paths/src/workspace.ts:178` | `<root>/.agents/plugins/marketplace.json` |
+| `agentsMarketplaceFiles(opts)` | `packages/paths/src/workspace.ts:188` | the user- and workspace-scoped marketplace documents |
+| `isAgentsMarketplaceFile(candidate)` | `packages/paths/src/workspace.ts:208` | recognizer paired with the builder above |
 
 Ownership is component-specific. Clarvis does not mutate standalone `.agents/skills` or a
 `marketplace.json`, but its managed global plugin lifecycle may atomically create, replace, or
@@ -171,7 +171,7 @@ own helpers `canonicalize` (`packages/skills/src/paths.ts:59-70`) and `canonical
 (`packages/skills/src/paths.ts:85-96`, which walks up to the nearest existing ancestor for a target that
 does not exist yet and re-appends the missing tail). The registry calls the two in sequence —
 `resolveResourcePath` first, its result then passed as `isHarnessConfigPath`'s `abs`
-(`packages/skills/src/registry.ts:568-569`) — so the symlink-aware half of the harness-directory check
+(`packages/skills/src/registry.ts:685-686`) — so the symlink-aware half of the harness-directory check
 in §2.4/§6 is only as strong as this canonicalization.
 
 ### 2.5 MCP server key tolerance in a plugin manifest (`@clarvis/loop` + `@clarvis/kernel`)
@@ -215,10 +215,10 @@ skills and passes exact include filters to @clarvis/skills")
 and `packages/skills/tests/integration/discovery.test.ts` ("admits only exact manifest names from a
 root allowlist").
 
-`SkillRootInput`/`SkillRoot` (`packages/skills/src/types.ts:21-41`) carry `scope: "user" | "workspace"`
+`SkillRootInput`/`SkillRoot` (`packages/skills/src/types.ts:4-51`) carry `scope: "user" | "workspace"`
 and `source: string` (free-form — `"agents"`, `"clarvis"`, or a plugin/marketplace name) purely as
-provenance tags. `scan.ts`'s traversal functions (`listSkillDirs`, `packages/skills/src/scan.ts:78-119`;
-`findSkillFile`, `packages/skills/src/scan.ts:131-144`) take only a `root` path and are root-agnostic:
+provenance tags. `scan.ts`'s traversal functions (`listSkillDirs`, `packages/skills/src/scan.ts:88-154`;
+`findSkillFile`, `packages/skills/src/scan.ts:166-195`) take only a `root` path and are root-agnostic:
 nothing in either function branches on whether a root's `source` is `"agents"` or `"clarvis"`. The
 precedence is entirely a property of **which order the four roots are listed in and folded**, not of
 any different scanning behavior applied to one kind of root.
@@ -333,7 +333,7 @@ manifest. `resolvePluginManifest` receives that effective identity and passes it
 conversion only after the MCP server map has been resolved
 (`packages/kernel/src/plugins/plugin-manifest.ts:1734-1762`). The integration tests pin both
 ordinary owned-server qualification and a manifest whose display name differs from its install name
-(`packages/kernel/tests/integration/plugin-manifest.test.ts:1165-1205`).
+(`packages/kernel/tests/integration/plugin-manifest.test.ts:1135-1206`).
 
 ### 4.2 Building the filter for one matcher (`translateMatcher`, `packages/kernel/src/plugins/hook-dialects.ts:508-534`)
 
@@ -368,7 +368,7 @@ For each `(sourceEvent, groups)` entry of the document's event map:
    `async`, `statusMessage`, `additionalContextLimit`, and the MCP `server`/`tool`/`input` payload are
    preserved in the resulting `HookConfig` (`:634-667`). The integration test pins both an async
    command and the complete command/MCP projections
-   (`packages/kernel/tests/integration/plugin-manifest.test.ts:1607-1673`).
+   (`packages/kernel/tests/integration/plugin-manifest.test.ts:1607-1675`).
 
 ### 4.4 Substituting the plugin-root placeholder (`substituteRoot`, `packages/kernel/src/plugins/hook-dialects.ts:270-319`)
 
@@ -424,23 +424,23 @@ paths, while a native Clarvis hook command remains unchanged.
 A plugin's hooks come from exactly one of two sources — its manifest's own `hooks` key, or the
 `hooks/hooks.json` convention file — never merged (doc comment `:720-744`):
 
-1. `harvestDeclared` runs on whatever the manifest's `hooks` key holds (`:679`).
+1. `harvestDeclared` runs on whatever the manifest's `hooks` key holds (`:766`).
 2. **A declaration only counts when it yields at least one hook.** An empty array (`[]`) or an empty
    object (`{}`) is not "no hooks", it is "zero hooks harvested" — `harvestDeclared` returns `hooks: []`
-   for both — so the `fromManifest.hooks.length > 0` check (`:583`) fails and the code falls through to
-   the convention file at `:597` anyway, because a real plugin was found shipping exactly `"hooks": {}`
+   for both — so the `fromManifest.hooks.length > 0` check (`:769`) fails and the code falls through to
+   the convention file at `:783` anyway, because a real plugin was found shipping exactly `"hooks": {}`
    while its actual commands lived in `hooks/hooks.json`; the naive reading ("the manifest declared
-   hooks, so stop looking") would have silently dropped every one of them (doc comment `:665-669`).
+   hooks, so stop looking") would have silently dropped every one of them (doc comment `:740-744`).
 3. If the manifest's own declaration did yield hooks, and the convention file also exists (and is not
    simply the file the declaration itself named), a note records that the convention file was not read
-   because the manifest's own hooks take precedence (`:682-693`).
+   because the manifest's own hooks take precedence (`:769-780`).
 4. If the manifest declared nothing usable, `harvestConvention` is tried; if it yields hooks and the
    manifest had named something anyway (even if empty), a note records that the convention file was read
-   because the manifest declared none (`:696-703`).
+   because the manifest declared none (`:783-790`).
 5. If neither source yields anything, the manifest's `hooks` key is deleted and no note beyond whatever
-   each harvest already pushed is added (`:706-707`).
+   each harvest already pushed is added (`:793-794`).
 
-Pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts:1031-1079` ("leaves an empty inline
+Pinned at `packages/kernel/tests/integration/plugin-manifest.test.ts:1303-1336` ("leaves an empty inline
 object contributing nothing when there is nothing else", "falls through to the convention when the
 declaration names nothing", "treats an empty native array the same way an empty map is treated").
 
@@ -455,21 +455,21 @@ written for another agent host and may carry a key this one gives no meaning to 
 per-server startup budget) — rejecting the whole entry over one such key used to fail the *manifest*,
 taking the plugin's agents, hooks and skills down with it. Measured on a public catalog of 196 plugins,
 that single rule broke 24 of them and cost 82 skills that had nothing to do with MCP
-(`packages/loop/src/settings/settings-schema.ts:310-327`) — the same shape of measurement the "5 of 39
+(`packages/loop/src/settings/settings-schema.ts:349-351`) — the same shape of measurement the "5 of 39
 names existed" figure the `EXTERNAL_TOOL_NAMES` architecture test uses elsewhere in this document. Unknown
 keys are dropped, not carried forward, so nothing downstream can start treating a foreign key as a
-contract this host never agreed to (`:329-332`).
+contract this host never agreed to (`:337-360`).
 
 When `mcpServers` is absent, the resolver also recognizes companion documents by convention. It tries
 `.mcp.json`, then `mcp.json`; a missing file advances silently, while a malformed first convention is
-noted and the second is still attempted (`packages/kernel/src/plugins/plugin-manifest.ts:796-811`). A
+noted and the second is still attempted (`packages/kernel/src/plugins/plugin-manifest.ts:823-905`). A
 string declaration names one companion directly; an inline object remains inline. Every relative
 companion path is tried beside the selected manifest first when that file exists there, then against
 the plugin root, while both readings remain confined to the plugin root
-(`packages/kernel/src/plugins/plugin-manifest.ts:347-375`). This composes foreign layouts without
+(`packages/kernel/src/plugins/plugin-manifest.ts:418-446`). This composes foreign layouts without
 merging two server maps or making one bad convention hide the next. Tests:
-`packages/kernel/tests/integration/plugin-manifest.test.ts:260-360`, plus the combined skills/MCP/hooks
-layout at `:362-404`.
+`packages/kernel/tests/integration/plugin-manifest.test.ts:529-653`, plus the combined skills/MCP/hooks
+layout at `:661-704`.
 
 `sanitizeMcpServers` (`packages/kernel/src/plugins/plugin-manifest.ts:1061-1084`) is what applies that
 schema **per record**: it parses every entry of the manifest's `mcpServers` map individually, keeps
@@ -502,10 +502,10 @@ This is pinned together by `packages/hooks/tests/component/capability.test.ts:45
 ### 4.8 Skill precedence merge (delegated mechanism, cited for context)
 
 For `builtin:default`, `clarvisSkillRoots` (§3.1) hands its four roots, in ascending order, to `buildRegistry`
-(`packages/skills/src/registry.ts:122`), which scans and merges in one pass: the roots are folded **in
-the order given** (`:127-153`), so a same-named skill from a later root always displaces an earlier one
-through `mergeWinner` (`:286-302`), and the loser is recorded on the winner's `shadowed` chain
-(`:287-291`, projected by `toShadowed` at `:320-331`). Because
+(`packages/skills/src/registry.ts:127`), which scans and merges in one pass: the roots are folded **in
+the order given** (`:132-158`), so a same-named skill from a later root always displaces an earlier one
+through `mergeWinner` (`:291-308`), and the loser is recorded on the winner's `shadowed` chain
+(`:292-296`, projected by `toShadowed` at `:329-335`). Because
 `clarvisSkillRoots` places both `.agents` roots before both `.clarvis` roots, this is the concrete
 mechanism by which "`.agents` always loses to `.clarvis`" holds — but the fold itself is source-
 agnostic (`packages/skills/tests/integration/discovery.test.ts:58-83` exercises it with roots merely
@@ -536,7 +536,7 @@ distinct, so inverting it (as `hook-dialects.ts` does to build `EXTERNAL_HOOK_EV
 information and cannot make two Clarvis events collide onto one lookup key.
 Production: `packages/capability/src/hooks-config.ts:104-116`;
 inversion at `packages/kernel/src/plugins/hook-dialects.ts:52-54`.
-Test: `packages/kernel/tests/integration/plugin-manifest.test.ts:1239-1254` ("round-trips every event
+Test: `packages/kernel/tests/integration/plugin-manifest.test.ts:1554-1569` ("round-trips every event
 the shared correspondence names, in both directions"; "keeps the correspondence one-to-one, so
 inverting it loses nothing").
 
@@ -566,7 +566,7 @@ the sole direct plugin-root writer. The separate literal sweep in
 exact-name filters the host admits, that order is exactly the merge precedence because
 `buildRegistry` folds the roots in the order it is given them and later always displaces earlier.
 Production: `packages/skills/src/preset.ts:32-46`; fold order at
-`packages/skills/src/registry.ts:127-153`.
+`packages/skills/src/registry.ts:132-158`.
 Test: `packages/skills/tests/unit/preset.test.ts:8-19` pins the exact four-element array;
 `packages/skills/tests/integration/discovery.test.ts:58-83` pins last-root-wins in the abstract, and
 `:28-56` composes the two into one end-to-end "`.agents` skill shadowed by `.clarvis` skill of the same
@@ -577,10 +577,10 @@ name" scenario — the winner is the workspace `.clarvis` definition, with `clar
 matches or which events it can act on: an unrepresentable alternative is retained only as a note when
 another exact alternative survives; if nothing exact survives, the whole group is dropped rather than
 falling back to no filter (`packages/kernel/src/plugins/hook-dialects.ts:508-534`, tested at
-`packages/kernel/tests/integration/plugin-manifest.test.ts:796-856`, `:1248-1255`). A timeout past
+`packages/kernel/tests/integration/plugin-manifest.test.ts:1207-1245`, `:1522-1538`). A timeout past
 `MAX_HOOK_TIMEOUT_MS` is clamped down, never rounded up or emitted unbounded
 (`packages/kernel/src/plugins/hook-dialects.ts:94-107`, tested at
-`packages/kernel/tests/integration/plugin-manifest.test.ts:1296-1333`).
+`packages/kernel/tests/integration/plugin-manifest.test.ts:1570-1588`).
 
 **AIN-07** (derived). A malformed or unreadable skill sidecar degrades to "no sidecar" and never
 removes, suppresses, or otherwise changes the catalog status of the skill that carries it.
@@ -593,7 +593,7 @@ malformed fully present in the catalog"), `:219-221` ("reports the malformed sid
 not a manifest's presentation name, and an unrelated server matcher remains unqualified. Production:
 `packages/kernel/src/plugins/hook-dialects.ts:361-382`, `:418-458` and
 `packages/kernel/src/plugins/plugin-manifest.ts:1734-1762`. Test:
-`packages/kernel/tests/integration/plugin-manifest.test.ts:1165-1205`.
+`packages/kernel/tests/integration/plugin-manifest.test.ts:1135-1175`.
 
 **AIN-09** (derived). The external tool spelling is an output projection, not the hook matcher's
 canonical identity: built-ins, skill loads and MCP tools can be emitted in the foreign stdin dialect
@@ -604,9 +604,9 @@ while the same invocation is still matched by its Clarvis wire/full-name candida
 **AIN-10** (derived). `UserPromptExpansion` fires exactly once for a user-invoked skill expansion and
 does not stand in for ordinary prompt submission or a later `load_skill` tool call. Production:
 `packages/capability/src/hooks-config.ts:76-85` and the host request projection in
-`packages/kernel/src/runs/settings-assembler.ts:460-466`. Test:
+`packages/kernel/src/runs/settings-assembler.ts:482-488`. Test:
 `packages/hooks/tests/component/capability.test.ts:662-689` and
-`packages/kernel/tests/component/settings-assembler.test.ts:540-579`.
+`packages/kernel/tests/component/settings-assembler.test.ts:548-587`.
 
 **AIN-11** (derived). A leading relative executable in a translated foreign hook resolves from the
 plugin install root even though the subprocess keeps the workspace as its working directory; a native
@@ -619,30 +619,31 @@ Clarvis hook command is never rewritten by this adapter. Production:
 
 | Situation | What happens | Cited at |
 | --- | --- | --- |
-| Foreign hook event name has no Clarvis counterpart (`Notification`) | Whole event's commands are dropped; one note naming the event | `packages/kernel/src/plugins/hook-dialects.ts:567-572`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1496-1503` |
-| Foreign event maps to a Clarvis event that is observer-only | Commands still run (installed, approved) but a note warns their verdict can never block | `packages/kernel/src/plugins/hook-dialects.ts:580-585`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1505-1512` |
-| One matcher alternative carries syntax this host's glob cannot express | That branch is dropped with a note when an exact branch survives; the group is dropped only when none does | `packages/kernel/src/plugins/hook-dialects.ts:508-534`, `:591-608`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts:1207-1230`, `:1255-1265` |
-| Matcher names only tools with no Clarvis counterpart | Whole group dropped as "no filter is not a filter" | `packages/kernel/src/plugins/hook-dialects.ts:530-532`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1246-1253` |
-| Matcher names a mix of known and unknown tools | Known ones kept, unknown ones named in a note, rest of filter still applies | `packages/kernel/src/plugins/hook-dialects.ts:516-533`, `:602-608`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1237-1244` |
+| Foreign hook event name has no Clarvis counterpart (`Notification`) | Whole event's commands are dropped; one note naming the event | `packages/kernel/src/plugins/hook-dialects.ts:567-572`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1496-1504` |
+| Foreign event maps to a Clarvis event that is observer-only | Commands still run (installed, approved) but a note warns their verdict can never block | `packages/kernel/src/plugins/hook-dialects.ts:580-585`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1505-1513` |
+| One matcher alternative carries syntax this host's glob cannot express | That branch is dropped with a note when an exact branch survives; the group is dropped only when none does | `packages/kernel/src/plugins/hook-dialects.ts:508-534`, `:591-608`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts:1207-1232`, `:1522-1538` |
+| Matcher names only tools with no Clarvis counterpart | Whole group dropped as "no filter is not a filter" | `packages/kernel/src/plugins/hook-dialects.ts:530-532`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1246-1276` |
+| Matcher names a mix of known and unknown tools | Known ones kept, unknown ones named in a note, rest of filter still applies | `packages/kernel/src/plugins/hook-dialects.ts:516-533`, `:602-608`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1237-1245` |
 | Filter set on a non-tool-scoped event | Filter ignored with a note; event still fires unfiltered | `packages/kernel/src/plugins/hook-dialects.ts:609-613` |
 | Hook entry of unsupported `type`, command entry without `command`, or MCP entry without `server`/`tool` | That single entry is skipped with a note; siblings are unaffected | `packages/kernel/src/plugins/hook-dialects.ts:614-627` |
 | `mcp_tool` on `SessionEnd` | Entry is skipped with a note because the MCP pool is no longer available for that lifecycle event | `packages/kernel/src/plugins/hook-dialects.ts:628-630` |
 | `async: true` on a command entry | The flag is preserved; every event except `SessionEnd` schedules bounded background execution and immediately passes, while `SessionEnd` remains synchronous | `packages/kernel/src/plugins/hook-dialects.ts:649`; `packages/hooks/src/runner.ts:504-526`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts:1607-1624`, `packages/hooks/tests/component/runner.test.ts:549-624` |
-| Timeout exceeds `MAX_HOOK_TIMEOUT_MS` | Clamped to the ceiling with a note, never emitted unbounded (which the manifest schema would then refuse for the whole document) | `packages/kernel/src/plugins/hook-dialects.ts:94-107`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1255-1263` |
+| Timeout exceeds `MAX_HOOK_TIMEOUT_MS` | Clamped to the ceiling with a note, never emitted unbounded (which the manifest schema would then refuse for the whole document) | `packages/kernel/src/plugins/hook-dialects.ts:94-107`; test `packages/kernel/tests/integration/plugin-manifest.test.ts:1570-1588` |
 | An MCP server entry in a plugin manifest carries keys this host gives no meaning to | Keys silently dropped, entry kept if otherwise valid (`mcpServerPluginSchema`, the tolerant counterpart of the strict `mcpServerSettingsSchema` used for `settings.json`) | `packages/loop/src/settings/settings-schema.ts:330-360` |
-| An MCP companion is missing or malformed | Missing convention advances to the next name; a malformed convention is noted and the next is still tried; a broken explicit companion withholds only MCP servers | `packages/kernel/src/plugins/plugin-manifest.ts:736-811`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts:260-360` |
-| An MCP server entry is unusable even after that tolerance (e.g. a stdio server naming no command) | Only that entry dropped, with a note; rest of `mcpServers` and the whole plugin survive | `packages/kernel/src/plugins/plugin-manifest.ts:813-854` |
-| A declared/convention hooks document is missing, not JSON, over its byte ceiling, or not a recognizable hooks shape | Manifest keeps loading with no hooks from that source and a note; never an `error` | `packages/kernel/src/plugins/plugin-manifest.ts:484-642`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts:1107-1183` |
-| A skill sidecar is unreadable, unparseable, or not a YAML mapping | Skill keeps its name/description/body; only `presentation`/`dependencies`/`catalogSuppressed` are absent; a warning is logged | `packages/skills/src/sidecar.ts:314-373`; tests `packages/skills/tests/integration/sidecar.test.ts:203-247` |
-| A sidecar's resource escapes the skill directory (via symlink) | Skipped with a warning, same as any other escaping symlink | `packages/skills/src/scan.ts:174-181`; test `packages/skills/tests/integration/sidecar.test.ts:227-238` |
-| A symlink's target cannot be resolved at all — missing (`ENOENT`) versus any other `realpath` failure | Treated oppositely: a *missing* target is **not** counted as escaping (falls through to the separate dangling-link warning, so a symlinked ancestor like a symlinked temp dir does not make every dangling link look like an escape); every *other* resolution failure — e.g. a target that exists but is unreadable — **is** counted as escaping, because the later `stat` needs only search permission where `realpath` needs read on the target | `packages/skills/src/scan.ts:399-406` (`escapesRoot`), doc rule at `:376-398` |
-| The skill's own resource listing would otherwise name a file under `<skill>/agents/` | The top-level harness directory is skipped whole during enumeration — never named to the model in the first place, distinct from the reactive check below | doc rule `packages/skills/src/scan.ts:237-240`; enforced at `:310` |
-| A resource request lexically or (via symlink) actually resolves into `<skill>/agents/` | Reported `not_found`, indistinguishable from a resource that does not exist | `packages/skills/src/registry.ts:568-574`, doc rule at `:558-560` |
-| A required skill frontmatter field (`name`/`description`) is missing or unusable | Supplied from a fallback (directory name / sidecar short-description / neutral placeholder), never fatal; every substitution is warned and recorded on `SkillInfo.defaulted` | `packages/skills/src/parse.ts:49-63`; behavior demonstrated at `packages/skills/tests/integration/sidecar.test.ts:260-307` (delegated in depth to [execution/skills.md](../execution/skills.md)) |
+| An MCP companion is missing or malformed | Missing convention advances to the next name; a malformed convention is noted and the next is still tried; a broken explicit companion withholds only MCP servers | `packages/kernel/src/plugins/plugin-manifest.ts:823-905`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts:529-653` |
+| An MCP server entry is unusable even after that tolerance (e.g. a stdio server naming no command) | Only that entry dropped, with a note; rest of `mcpServers` and the whole plugin survive | `packages/kernel/src/plugins/plugin-manifest.ts:1043-1084` |
+| A declared/convention hooks document is missing, not JSON, over its byte ceiling, or not a recognizable hooks shape | Manifest keeps loading with no hooks from that source and a note; never an `error` | `packages/kernel/src/plugins/plugin-manifest.ts:578-717`; tests `packages/kernel/tests/integration/plugin-manifest.test.ts:1381-1426,1449-1464` |
+| A skill sidecar is unreadable, unparseable, or not a YAML mapping | Skill keeps its name/description/body; only `presentation`/`dependencies`/`catalogSuppressed` are absent; a warning is logged | `packages/skills/src/sidecar.ts:306-378`; test `packages/skills/tests/integration/sidecar.test.ts:210-225` covers the malformed-YAML branch and its non-fatal warning/strict-scan behavior; the unreadable and non-mapping branches have no focused test here |
+| A sidecar's resource escapes the skill directory (via symlink) | Skipped with a warning, same as any other escaping symlink | `packages/skills/src/scan.ts:233-244`; test `packages/skills/tests/integration/sidecar.test.ts:227-238` |
+| A symlink's target cannot be resolved at all — missing (`ENOENT`) versus any other `realpath` failure | Treated oppositely: a *missing* target is **not** counted as escaping (falls through to the separate dangling-link warning, so a symlinked ancestor like a symlinked temp dir does not make every dangling link look like an escape); every *other* resolution failure — e.g. a target that exists but is unreadable — **is** counted as escaping, because the later `stat` needs only search permission where `realpath` needs read on the target | `packages/skills/src/scan.ts:450-457` (`escapesRoot`), doc rule at `:427-449` |
+| The skill's own resource listing would otherwise name a file under `<skill>/agents/` | The top-level harness directory is skipped whole during enumeration — never named to the model in the first place, distinct from the reactive check below | doc rule `packages/skills/src/scan.ts:277-303`; enforced at `:359-362` |
+| A resource request lexically or (via symlink) actually resolves into `<skill>/agents/` | Reported `not_found`, indistinguishable from a resource that does not exist | `packages/skills/src/registry.ts:685-691`, doc rule at `:675-677` |
+| A required skill frontmatter field (`name`/`description`) is missing or unusable | Supplied from a fallback (directory name / sidecar short-description / neutral placeholder), never fatal; every substitution is warned and recorded on `SkillInfo.defaulted` | `packages/skills/src/parse.ts:51-65`; behavior demonstrated at `packages/skills/tests/integration/sidecar.test.ts:260-307` (delegated in depth to [execution/skills.md](../execution/skills.md)) |
 
 Every row above is a **degrade**, not a **fail**: nothing in this document's scope shows a foreign
-dialect document taking down anything wider than the one artifact it could not translate. This mirrors
-the same design language used for plugin manifests generally (`packages/kernel/src/plugins/plugin-manifest.ts:811-828`).
+dialect document taking down anything wider than the one artifact it could not translate. The same
+proportional-failure rule is stated for declared hook files, MCP companion documents, and individual
+MCP entries (`packages/kernel/src/plugins/plugin-manifest.ts:606-625,797-821,1043-1059`).
 
 ## 7. Coupling
 
@@ -711,7 +712,7 @@ the same design language used for plugin manifests generally (`packages/kernel/s
   larger or smaller set — is not derivable from the code; it is asserted as a closed list with no
   visible derivation from an external catalog inside this repository (the "measured against a public
   catalog of 196 plugins" figures at `packages/capability/src/hooks-config.ts:124` and
-  `packages/loop/src/settings/settings-schema.ts:310-311` are cited *inside* the source's own doc
+  `packages/loop/src/settings/settings-schema.ts:349-350` are cited *inside* the source's own doc
   comments as the origin of these numbers, but the catalog itself is not part of this repository and
   this document could not independently verify it).
 - **The plugin manifest's broader per-artifact degradation model** (agents, skills-root directives,

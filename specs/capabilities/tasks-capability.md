@@ -67,7 +67,7 @@ returns nothing); only the three constants re-exported through `packages/tasks/s
 
 | Field | Type | Meaning |
 |---|---|---|
-| `resolver` | `TaskProviderResolver?` | the settings-sensitive selector; the kernel constructs `TaskProviderFactory` at `packages/kernel/src/file-kernel.ts:749-756` and passes it at `:789` |
+| `resolver` | `TaskProviderResolver?` | the settings-sensitive selector; the kernel constructs `TaskProviderFactory` at `packages/kernel/src/file-kernel.ts:795-802` and passes it at `:844-848` |
 | `enabled` | `boolean?` | "Builtin gate. The capability remains registered when false." (`packages/tasks/src/capability.ts:255`) |
 | `logger` | `Logger?` | resolved once to `NOOP_LOGGER` and bound with the run's `execution_id` (`packages/tasks/src/capability.ts:1483`, `:1492`) |
 
@@ -316,7 +316,7 @@ The `idempotency_digest` on a trace entry is the first 16 hex characters of `sha
 | control-plane mutation record key | `sha256(owner \0 requestId \0 operation)` | `packages/kernel/src/tasks/task-service.ts:209-211` |
 | agent actor id | `clarvis-agent:<executionId>:<subagentInstanceId ?? agent>` | `packages/tasks/src/capability.ts:539-546` |
 | confirmation token | `randomUUID()` | `packages/kernel/src/tasks/task-service.ts:768` |
-| provider-factory cache key | `<owner>\0<fingerprint>` | `packages/kernel/src/tasks/task-provider-factory.ts:271` |
+| provider-factory cache key | `<owner>\0<fingerprint>` | `packages/kernel/src/tasks/task-provider-factory.ts:272` |
 
 Review child key steps are literal: `artifact:<index>` (`packages/tasks/src/capability.ts:1374`), `comment` when there is
 exactly one comment part or `comment:<index>` otherwise (`:1395`), and `transition` (`:1433`). Pinned:
@@ -588,7 +588,7 @@ inconsistent state fails at write time rather than at read time.
 
 ### 4.7 Kernel — `TaskProviderFactory.resolve`
 
-`packages/kernel/src/tasks/task-provider-factory.ts:259-355`:
+`packages/kernel/src/tasks/task-provider-factory.ts:260-356`:
 
 1. `enabled === false` → `task_not_configured` (`:264-266`).
 2. `selection(snapshot)` (`:184-238`): read the `tasks` block through `readCapabilitySettings` with
@@ -613,7 +613,7 @@ inconsistent state fails at write time rather than at read time.
      MCP handshake (`:303`), not just the static declaration: two resolutions against the identical
      `settings.json` declaration get different provider keys if the backend reports a different
      instance id (e.g. two tenants behind one URL). Pinned at
-     `packages/kernel/tests/component/task-provider-factory.test.ts:300-313` ("changes provider identity when the backend instance
+     `packages/kernel/tests/component/task-provider-factory.test.ts:302-315` ("changes provider identity when the backend instance
      handshake changes").
    - **private fingerprint** — `digest({ settings, declaration: rawDeclaration, plugin: pluginIdentity,
      resolvedSecretMaterial })` (`:231-236`), where `resolvedSecretMaterial` maps each referenced
@@ -621,13 +621,13 @@ inconsistent state fails at write time rather than at read time.
      by (`:271`).
    The source states the split: *"Public identity retains secret reference names but never resolved
    values. The private cache fingerprint includes resolved material so a secret rotation invalidates
-   sessions."* (`:167-173`). Pinned at `packages/kernel/tests/component/task-provider-factory.test.ts:261-299`: after rotating
+   sessions."* (`:167-173`). Pinned at `packages/kernel/tests/component/task-provider-factory.test.ts:263-301`: after rotating
    `TASK_TOKEN`, the provider **key is unchanged** but the port is acquired a second time, and neither
    secret value appears in the key. The opposite direction also holds: changing the declared server's
    *public* configuration (e.g. its URL) changes the provider key itself — unlike a secret rotation —
    which then rejects a caller still pinned to the old `expectedProviderKey` with
    `task_provider_mismatch`, with no plugin or secret change involved. Pinned at
-   `packages/kernel/tests/component/task-provider-factory.test.ts:109-133` ("resolves live operator settings and rejects a continuation
+   `packages/kernel/tests/component/task-provider-factory.test.ts:111-135` ("resolves live operator settings and rejects a continuation
    key after declaration change").
 4. Sweep expired and over-capacity cache entries (`sweep`, `:240-257`; TTL default 30 000 ms `:47`,
    capacity default 256 `:48`), then check the cache. A cache hit still enforces
@@ -641,7 +641,7 @@ inconsistent state fails at write time rather than at read time.
    rejection to `task_provider_unavailable` with a sanitized message (`:108-116`).
 7. Re-check `expectedProviderKey` after resolution (`:348-353`).
 
-Pinned: single-flight and TTL and per-owner isolation at `packages/kernel/tests/component/task-provider-factory.test.ts:232-259`
+Pinned: single-flight and TTL and per-owner isolation at `packages/kernel/tests/component/task-provider-factory.test.ts:234-261`
 (two concurrent resolves share one probe; a second owner probes separately; a resolve past the TTL
 probes again); cancellation detaching one waiter at `:317-358` (`probes === 1`, the retained caller
 still succeeds); a non-`Error` throw normalized at `:360-380`.
@@ -650,7 +650,7 @@ still succeeds); a non-`Error` throw normalized at `:360-380`.
 (`:358-368`); otherwise it resolves and maps a failure to `incompatible` when the code is
 `task_invalid_response`, `unavailable` otherwise, with a sanitized `reason` (`:388-393`). A
 `task_cancelled` is re-thrown rather than reported as a state (`:379`). Pinned at
-`packages/kernel/tests/component/task-provider-factory.test.ts:173-230`.
+`packages/kernel/tests/component/task-provider-factory.test.ts:175-232`.
 
 ### 4.8 Kernel — `createTaskServerPort`
 
@@ -790,20 +790,20 @@ array copies: `taskRefFromDto` (`:22`), `taskRefDto` (`:26`), `taskActorDto` (`:
 `taskBindingFromCapabilityState` (`packages/kernel/src/runs/task-binding.ts:6-17`) `safeParse`s the
 `"tasks"` slot with `taskRunStateV2Schema` and returns `undefined` on failure — so an *unbound* state
 (which lacks `taskId`) yields no binding at all. It is consumed once, at
-`packages/kernel/src/runs/map-result.ts:145`, producing `RunDetail.active_task`
-(`packages/protocol/src/runs.ts:220`).
+`packages/kernel/src/runs/map-result.ts:163`, producing `RunDetail.active_task`
+(`packages/protocol/src/runs.ts:221`).
 
 ### 4.13 Host composition
 
 `createFileKernel` computes `tasksEnabled = opts.builtins?.tasks !== false`
-(`packages/kernel/src/file-kernel.ts:698`), then, in order: builds the server port over the shared MCP
+(`packages/kernel/src/file-kernel.ts:744`), then, in order: builds the server port over the shared MCP
 `connections` (`:830-832`), builds the factory with the config store, that port, plugin contributions,
 the environment and the `tasks` component logger (`:835-842`), reports the capability (`:876`), and
 folds `createTasksCapability({ resolver: taskProviderFactory, enabled: tasksEnabled, logger:
 tasksLogger })` onto `deps.capabilities` (`:882-886`). The same factory instance is handed to
 `createInProcessKernel` as `taskProviderFactory` (`:940`), where `createTasksService` is constructed
 per owner with `enabled: opts.tasksEnabled !== false && opts.taskProviderFactory !== undefined`
-(`packages/kernel/src/kernel.ts:466-470`) and `KernelCapabilities.tasks` is derived from the same
+(`packages/kernel/src/kernel.ts:542-546`) and `KernelCapabilities.tasks` is derived from the same
 expression (`:749`).
 
 ---
@@ -943,9 +943,9 @@ Test: `packages/tasks/tests/component/capability.test.ts:1101-1160`, `:1162-1205
 key differs from the request's `provider_key` or the prior run's `providerKey` is a
 `task_provider_mismatch`.
 Production: `packages/tasks/src/capability.ts:1566-1571`, `:1573-1582`;
-`packages/kernel/src/tasks/task-provider-factory.ts:275-283`, `:348-353`.
+`packages/kernel/src/tasks/task-provider-factory.ts:276-284`, `:349-354`.
 Test: `packages/tasks/tests/component/capability.test.ts:309-342`;
-`packages/kernel/tests/component/task-provider-factory.test.ts:130-138`.
+`packages/kernel/tests/component/task-provider-factory.test.ts:132-140`.
 
 **INV-T24.** A provider key contains secret *reference names* but never resolved secret values; a secret
 rotation changes the private cache fingerprint (forcing a new probe) without changing the key. The
@@ -954,22 +954,22 @@ for instance) changes the provider key itself, unlike a secret change, and inval
 to the old `expectedProviderKey` with `task_provider_mismatch`. The key is also sensitive to the live
 MCP handshake's `providerInstanceId`, not just static settings — two resolutions of the identical
 declaration diverge if the backend reports a different instance id.
-Production: `packages/kernel/src/tasks/task-provider-factory.ts:210-236` (secret rotation),
+Production: `packages/kernel/src/tasks/task-provider-factory.ts:211-237` (secret rotation),
 `:299-304` (`providerInstanceId` folded into the key).
-Test: `packages/kernel/tests/component/task-provider-factory.test.ts:261-299` (secret rotation),
+Test: `packages/kernel/tests/component/task-provider-factory.test.ts:263-301` (secret rotation),
 `:109-133` (public declaration change), `:300-313` (backend instance handshake change).
 
 **INV-T25.** Plugin *enablement* does not select a Tasks provider — only the `tasks.provider.server`
 setting does; and when the operator declares the server directly, the plugin contribution is ignored for
 identity purposes.
 Production: `packages/kernel/src/tasks/task-provider-factory.ts:125-149`, `:186-188`.
-Test: `packages/kernel/tests/component/task-provider-factory.test.ts:141-171` (an enabled plugin with no
+Test: `packages/kernel/tests/component/task-provider-factory.test.ts:143-173` (an enabled plugin with no
 `tasks` block → `task_not_configured`).
 
 **INV-T26.** Concurrent resolutions for one `<owner, fingerprint>` share one capability probe; a
 cancelled waiter detaches without cancelling the shared work; owners never share a resolution.
-Production: `packages/kernel/src/tasks/task-provider-factory.ts:271`, `:287-347`, `:91-119`.
-Test: `packages/kernel/tests/component/task-provider-factory.test.ts:232-259`, `:317-358`.
+Production: `packages/kernel/src/tasks/task-provider-factory.ts:272`, `:288-348`, `:91-119`.
+Test: `packages/kernel/tests/component/task-provider-factory.test.ts:234-261`, `:319-360`.
 
 **INV-T27.** Every `TaskServerPort.callTool` acquires an owner-scoped MCP lease
 (`poolSharing: "owner"`) and releases it in `finally`; a release failure never replaces the already-known
@@ -1025,7 +1025,7 @@ Test: `packages/kernel/tests/component/task-service.test.ts:398-422`, `:681-723`
 **INV-T36.** `RunDetail.active_task` is projected from the persisted capability state and carries only
 `{ id, provider_key, mode }` — no title, no URL, no revision.
 Production: `packages/kernel/src/runs/task-binding.ts:6-17`; consumed at
-`packages/kernel/src/runs/map-result.ts:145`.
+`packages/kernel/src/runs/map-result.ts:163`.
 Test: **unpinned** — no test in `packages/kernel/tests` exercises `taskBindingFromCapabilityState`
 directly (see §8).
 
@@ -1042,7 +1042,7 @@ Test: **unpinned** in this document's scope.
 **INV-T39.** `writes` defaults to `"disabled"`: an operator who configures a provider but says nothing
 about writes gets a read-only run.
 Production: `packages/tasks/src/settings.ts:45`.
-Test: covered indirectly — `packages/kernel/tests/component/task-provider-factory.test.ts:185-207` uses
+Test: covered indirectly — `packages/kernel/tests/component/task-provider-factory.test.ts:187-209` uses
 a block without `writes` and reports `writes: "enabled"` only because the fixture sets it (`:196`);
 the default itself is **unpinned**.
 
@@ -1093,7 +1093,7 @@ the default itself is **unpinned**.
 | review `unknownSteps`/`attempts`/`contexts` | 64 each | `packages/tasks/src/capability.ts:210`, `:215`, `:220` |
 | seed block | 12 288 bytes | `packages/tasks/src/schemas.ts:22` |
 | provider trace message | 500 chars | `packages/tasks/src/trace.ts:65` |
-| provider-resolution cache | TTL 30 000 ms, 256 entries, LRU by `lastUsedAt` | `packages/kernel/src/tasks/task-provider-factory.ts:47-48`, `:240-257` |
+| provider-resolution cache | TTL 30 000 ms, 256 entries, LRU by `lastUsedAt` | `packages/kernel/src/tasks/task-provider-factory.ts:47-48`, `:241-258` |
 | control-plane previews | TTL 5 min, 256, evicted by earliest expiry | `packages/kernel/src/tasks/task-service.ts:40-41`, `:273-290` |
 | control-plane mutation records | 1 024, completed ones expire after 24 h and are otherwise evicted LRU | `packages/kernel/src/tasks/task-service.ts:42-43`, `:292-308` |
 
@@ -1193,7 +1193,7 @@ Tasks exists; and neither `@clarvis/protocol`'s nor `@clarvis/code`'s `src` may 
 
 4. **`INV-T36` is unpinned.** `taskBindingFromCapabilityState`
    (`packages/kernel/src/runs/task-binding.ts:6`) has no direct test in `packages/kernel/tests`; its
-   only production consumer is `packages/kernel/src/runs/map-result.ts:145`. Its behavior on an
+   only production consumer is `packages/kernel/src/runs/map-result.ts:163`. Its behavior on an
    *unbound* state (returns `undefined`, because `taskRunStateV2Schema` requires `taskId`) is derived
    from the schema, not from a test.
 

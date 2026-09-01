@@ -225,8 +225,8 @@ stops before confirmation. Production:
 `packages/kernel/tests/integration/storage-service.test.ts`.
 
 `registerAppCommands` also builds `openWithReturn(childCmd, returnCmd, scope?)`
-(`packages/code/src/app/commands.tsx:233-241`) — the mechanism behind every `/hub <child>` deep link
-(`hubRoute`, `:269-277`): it opens `childCmd`'s view with a synthetic `parent: {name: returnCmd,
+(`packages/code/src/app/commands.tsx:280-289`) — the mechanism behind every `/hub <child>` deep link
+(`hubRoute`, `:316-332`): it opens `childCmd`'s view with a synthetic `parent: {name: returnCmd,
 factory, scope}` route, so one Escape returns to the hub rather than to the root screen.
 
 ## 3. Data and formats
@@ -239,10 +239,10 @@ factory, scope}` route, so one Escape returns to the hub rather than to the root
 - otherwise a `ContentPart[]`: an optional `{type:"text", text}` (only when `text.trim()` is
   non-empty) followed by one `{type:"image", mime, data}` per staged image, in staging order.
 
-This is exactly the shape `InputDock.composeMessage()` returns (`packages/code/src/views/InputDock.tsx:99-101`) and
+This is exactly the shape `InputDock.composeMessage()` returns (`packages/code/src/views/InputDock.tsx:104-106`) and
 what `onSubmit`/`restoreAttachments` exchange. Downstream, `run-host.ts` ([hosts/code-run-host.md](code-run-host.md)
 item) runs this content through `buildContent`/`appendMentionImages`
-(`packages/code/src/core/attachments.ts:73-101`, called at `packages/code/src/run-host.ts:605-608`) to additionally resolve `@path`
+(`packages/code/src/core/attachments.ts:73-101`, called at `packages/code/src/run-host.ts:730-741`) to additionally resolve `@path`
 image mentions before the turn reaches the model — a separate pass the dock itself never invokes
 (no `buildContent`/`appendMentionImages` import in `InputDock.tsx`).
 
@@ -280,12 +280,12 @@ understate its own size to slip past the budget.
 
 `CompleteItem` (`packages/code/src/views/input/autocomplete.ts:2-9`): `{label, detail?, value, insert?, group?}`.
 `group` is the section-header label rendered once per boundary by `CommandGroupHeader`
-(`packages/code/src/views/input/AutocompletePopup.tsx:106-111`, `headersFor` in
+(`packages/code/src/views/input/AutocompletePopup.tsx:107-130`, `headersFor` in
 `packages/code/src/ui/patterns/windowed-list.tsx`).
 
 `CompleteProvider` (`:11-22`): `{id, trigger, label, kind?, query, onAccept?}`. `kind:"hint"`
 providers are display-only — the popup shows their items but the popup claims no keys, so Enter
-still submits the line (used for argument-hint providers built in `packages/code/src/views/App.tsx:925-942` from
+still submits the line (used for argument-hint providers built in `packages/code/src/views/App.tsx:1048-1065` from
 each command's declared `args`).
 
 `InputDock` lazily mounts autocomplete on its first open and then changes the container's `visible`
@@ -391,7 +391,7 @@ vs. `doc.spec_revision`, deliberately never sharing the label "revision" between
 
 ## 4. Behavior
 
-### Submit dispatch order (`InputDock.submit()`, `packages/code/src/views/InputDock.tsx:116-155`)
+### Submit dispatch order (`InputDock.submit()`, `packages/code/src/views/InputDock.tsx:122-169`)
 
 1. If `text` is blank and there are no attachments, do nothing (`:119`).
 2. If `onSlashCommand` is supplied, `parseSlashCommand(text)` is tried **first, unconditionally**
@@ -422,7 +422,7 @@ maps it positionally with `splitSlashArgs(raw, count)` (`packages/code/src/views
 whitespace-separated token per declared argument, and the last argument takes the entire remainder
 (so a trailing free-text argument keeps its spaces). A required argument left unfilled is reported
 with a warn notification naming it (`mcpEffects.collectArgs`) rather than submitted with a gap.
-Pinned: `packages/code/tests/unit/autocomplete.test.ts:124-135`.
+Pinned: `packages/code/tests/unit/autocomplete.test.ts:132-143`.
 
 ### Composer sizing and history-recall gating (`views/InputDock.tsx`)
 
@@ -442,49 +442,50 @@ priority while it is open), and the draft text is untouched by the toggle — `o
 exposes `expanded`/`closeEditor` explicitly so a caller can query or close it (`:65-70,327-335`).
 While expanded, Escape closes an open autocomplete popup first; only a second Escape (with no popup
 open) collapses the editor (`dismissAutocomplete`/the `escape` binding at `:429-437`). Pinned:
-`packages/code/tests/integration/input-dock-submit.test.tsx:169-232` ("inline composition is height-bounded and
+`packages/code/tests/integration/input-dock-submit.test.tsx:169-262` ("inline composition is height-bounded and
 the expanded Task editor preserves the draft"; "Escape closes autocomplete before collapsing the
 expanded Task editor").
 
 At the root composer, after any top overlay and focused transcript block have had their chance to
 consume Escape, `app.escape` checks the complete composer draft. Any text (including whitespace) or
 staged attachment clears through `clearInputDraft` and reports `"Draft cleared"`; with nothing to clear,
-Escape is a no-op. It never cancels a run or enters quit (`packages/code/src/keys/interaction.ts:496-516`;
-`packages/code/src/views/App.tsx:388-405`). Window-local Escape layers still take priority: an open
+Escape is a no-op. It never cancels a run or enters quit (`packages/code/src/keys/interaction.ts:559-567`;
+`packages/code/src/views/App.tsx:598-602`). Window-local Escape layers still take priority: an open
 autocomplete closes first, and the expanded Task editor collapses before the root command is
 reachable. All of these handlers dispatch without an Escape timer or grace interval. Pinned at the
-command boundary by `packages/code/tests/integration/interaction.test.ts:393-477,739-756` and end to
-end by `packages/code/tests/integration/app-shell-render.test.tsx:1489-1510`.
+command boundary by `packages/code/tests/integration/interaction.test.ts:484-531`, `:865-881` and end to
+end by `packages/code/tests/integration/app-shell-render.test.tsx:729-752`, `:1649-1665`, and
+`:2070-2104`.
 
-### Autocomplete refresh (`refreshAc()`, `packages/code/src/views/InputDock.tsx:256-284`)
+### Autocomplete refresh (`refreshAc()`, `packages/code/src/views/InputDock.tsx:272-301`)
 
-Runs on every `onContentChange` (`:322-326`). Reads `providers()` **once** into a local `list`
-(`:257`), calls `detectTrigger(text, list.map(p => p.trigger))` (`:259-262`), finds the matching
-provider, and — unless `acSuppressed` (set by an explicit dismiss, `:442-446`) — calls
+Runs on every `onContentChange` (`:356-362`). Reads `providers()` **once** into a local `list`
+(`:273`), calls `detectTrigger(text, list.map(p => p.trigger))` (`:275-279`), finds the matching
+provider, and — unless `acSuppressed` (set by an explicit dismiss, `:470-473`) — calls
 `provider.query(term)`, resets the selection index only when the term actually changed
-(`clampIndex` else `0`, `:276`), and opens the popup. A `"hint"` provider opens the popup but never
+(`clampIndex` else `0`, `:292`), and opens the popup. A `"hint"` provider opens the popup but never
 claims the autocomplete key layer (`props.interaction.keymap.setData("autocomplete", !hint)`,
 `:283`), so Enter still submits and Up/Down still walk history while an argument hint is showing.
 A dismiss latches `acSuppressed = true` for as long as the same trigger keeps scanning — `refreshAc`
-only clears it (`:264-268`) once `detectTrigger` finds no hit or no matching provider at all, i.e.
+only clears it (`:280-283`) once `detectTrigger` finds no hit or no matching provider at all, i.e.
 once the trigger token itself is gone (the word is finished, or the trigger character is deleted),
 not on the next keystroke inside the same token.
 
 The `/` provider also projects every hub child as its canonical hierarchical route and matches a
 non-empty term anywhere after the route's leading slash. A child therefore remains a subcommand —
 `Providers` has no standalone `/providers` alias — while `/provider` can still offer
-`/settings/providers` for the user to select (`packages/code/src/views/App.tsx:829-847`). Pinned by
-`packages/code/tests/integration/app-shell-render.test.tsx:625-633`.
+`/settings/providers` for the user to select (`packages/code/src/views/input/command-completion.ts:90-121`). Pinned by
+`packages/code/tests/integration/app-shell-render.test.tsx:699-705`.
 
-### Accept vs. complete (`acceptAc()`/`completeAc()`, `:285-314`)
+### Accept vs. complete (`acceptAc()`/`completeAc()`, `:302-350`)
 
 - `acceptAc()` (Enter, or the popup's own confirm): closes the popup first, then, for a `/`-trigger
   item, replaces the whole buffer with `item.insert ?? ""` and calls `provider.onAccept?.(item)`;
   for a mention-style trigger, splices `trigger+insert` in at the current token via `acceptMention`
   and calls `onAccept`. A plain, argument-less, subcommand-less slash command has `insert === ""`
-  (built that way in `packages/code/src/views/App.tsx:862-868`, outside this document), so pressing Enter on one **clears
+  (built that way in `packages/code/src/views/input/command-completion.ts:151-171`, outside this document), so pressing Enter on one **clears
   the textarea** via `ref.setText("")` and then reaches `commands.runCommand` only through
-  `provider.onAccept` checking `if (item.insert) return;` (`packages/code/src/views/App.tsx:900-912`) — a route that
+  `provider.onAccept` dispatching only when `!item.insert` (`packages/code/src/views/input/command-completion.ts:136-147`) — a route that
   never touches `InputDock.submit()`, `parseSlashCommand`, or `classifySlashSubmit`. Typing the same
   command's full text and pressing Enter with the popup already closed instead goes through
   `submit()` → `parseSlashCommand` → `onSlashCommand`; both end at `commands.runCommand`, by two
@@ -517,13 +518,13 @@ prompt the file no longer has (but the session remembers) is still recovered. Pi
   `"total_bytes"` if existing attachments already sit at the aggregate cap) before spawning the
   clipboard read; the real byte-budget check happens again, with the actual payload, inside
   `addImageAttachment`'s own `attachments.add(...)` call once the image is read.
-- Binary paste (`onPaste`, `:338-352`, wired to `renderer.keyInput.on("paste", …)`): admission is
+- Binary paste (`onPaste`, `:374-388`, wired to `renderer.keyInput.on("paste", …)`): admission is
   checked against the raw byte length **before** the bytes are base64-encoded into a `Buffer`
-  (`:345-349`), so an oversized paste never pays the encoding cost.
-- `restoreAttachments(content)` (`:178-186`): clears the current attachment list, then re-adds only
+  (`:379-386`), so an oversized paste never pays the encoding cost.
+- `restoreAttachments(content)` (`:194-202`): clears the current attachment list, then re-adds only
   the `image` parts of `content` that carry `data`, ignoring anything else — the mechanism a caller
   (`run-host.ts`, via the `onDock` handle) uses to put staged images back after a failed
-  steer/mention-resolution (`packages/code/src/run-host.ts:610-612`).
+  steer/mention-resolution (`packages/code/src/run-host.ts:730-763`).
 
 ### Windowing math (`windowRows`/`windowGroupedRows`, `packages/code/src/ui/patterns/windowed-list.tsx`)
 
@@ -536,7 +537,7 @@ as data but consume no lines.
 `windowGroupedRows` re-derives the window with a shrinking budget (up to 4 attempts) until
 `rows.length + headerCount + indicatorLines <= max`, so a header line never pushes the rendered
 popup past its row budget (proven for the full cross-product of terminal heights and scroll
-positions by `packages/code/tests/unit/autocomplete.test.ts:210-227`). `windowRows` guarantees `rows + indicators
+positions by `packages/code/tests/unit/autocomplete.test.ts:234-251`). `windowRows` guarantees `rows + indicators
 <= max` only from `max >= 3`; below that, `ListPicker`'s `showOverflow()`
 (`packages/code/src/views/overlays/ListPicker.tsx`, `showOverflow`) suppresses the "N more" indicators entirely rather than mounting them
 alongside a `windowRows` result with no room left for them — the selected row is what a reader needs
@@ -621,7 +622,7 @@ Composes up to seven sections (`sections`, `:134-190`), each dropped when empty:
 commands never clutter the reference), **Editing** (`editing()`, `:82-98`, the same
 `EDITING_CATEGORIES` filtered the other direction), **Go to** (destinations from `props.entries()`),
 **Input syntax**, **Mouse**, and **Keyboard environment** (`:141-186`). Pinned:
-`packages/code/tests/integration/help-render.test.tsx:171-204` ("help documents the global keys its own overlay
+`packages/code/tests/integration/help-render.test.tsx:181-216` ("help documents the global keys its own overlay
 deactivates").
 
 ### `DiffViewer` (`views/overlays/DiffViewer.tsx`)
@@ -676,7 +677,7 @@ gates in `PlanOverlay`).
    resolves the `LocalBashResult`.
 
 This function is called from `run-host.ts`'s `runBangCommand` ([hosts/code-run-host.md](code-run-host.md) document,
-`packages/code/src/run-host.ts:928-963`), which is itself the implementation behind `InputDock`'s `onBashCommand` prop
+`packages/code/src/run-host.ts:1021-1063`), which is itself the implementation behind `InputDock`'s `onBashCommand` prop
 (wired at `packages/code/src/runtime.tsx` (`runControls.bang`) and
 `packages/code/src/views/App.tsx` as `props.run.bang`). **No `KernelClient`
 call, no `GuardContext`, and no shell-command analysis happen anywhere on this path** — the command
@@ -693,11 +694,11 @@ settled turn's persisted continuation; an empty session reports that there is no
 (`"/compact remains discoverable while no run is active"`).
 
 1. **Slash-command dispatch is checked before `submissionBlocked`, which is checked before the bang
-   path, which is checked before an ordinary submit.** `packages/code/src/views/InputDock.tsx:120-154`. Pinned:
-   `packages/code/tests/integration/input-dock-submit.test.tsx:285-314` (slash and bang each reach their handler
-   with an image still pending) and `:491-501` (a `submissionBlocked` reason blocks ordinary and bang
+   path, which is checked before an ordinary submit.** `packages/code/src/views/InputDock.tsx:132-166`. Pinned:
+   `packages/code/tests/integration/input-dock-submit.test.tsx:315-344` (slash and bang each reach their handler
+   with an image still pending) and `:525-535` (a `submissionBlocked` reason blocks ordinary and bang
    submission, leaving the draft intact).
-2. **The autocomplete provider list is read at most once per refresh.** `packages/code/src/views/InputDock.tsx:256-262`
+2. **The autocomplete provider list is read at most once per refresh.** `packages/code/src/views/InputDock.tsx:270-276`
    (`providers()` read into a local before use). Pinned:
    `packages/code/tests/integration/autocomplete-provider-reads.test.tsx:60-92` (reads ≤ keystrokes, never 2× per
    refresh).
@@ -706,18 +707,18 @@ settled turn's persisted continuation; an empty session reports that there is no
    argument tail (so `/skill @src/x` completes `@`), then falls back to treating a _registered_
    `/name` prefix as its own trigger, and an unregistered compound head closes the popup rather than
    matching the bare `/`. `packages/code/src/views/input/autocomplete.ts:49-65`. Pinned:
-   `packages/code/tests/unit/autocomplete.test.ts:73-145`.
+   `packages/code/tests/unit/autocomplete.test.ts:81-153`.
 4. **`windowGroupedRows` never renders more than `max` total lines** (rows + group headers + over/
    under indicators), across every item count, group layout, scroll position and budget tested.
    Production: `packages/code/src/ui/patterns/windowed-list.tsx` (`windowGroupedRows`). Test:
    `packages/code/tests/unit/autocomplete.test.ts` (grouped-window cases).
 5. **The autocomplete popup caps at 10 rows regardless of terminal height.**
-   `packages/code/src/views/input/AutocompletePopup.tsx:12` (`MAX_ROWS_CAP`). Pinned:
-   `packages/code/tests/integration/autocomplete-popup-render.test.tsx:71-87`.
+   `packages/code/src/views/input/AutocompletePopup.tsx:13` (`MAX_ROWS_CAP`). Pinned:
+   `packages/code/tests/integration/autocomplete-popup-render.test.tsx:72-88`.
 6. **`slashTokenMatches` scopes the composer's popup ranking to a command's own slash tokens**, never
    to its title, so a typo of one command's slash cannot fuzzy-match a different command's title.
    `packages/code/src/views/input/autocomplete.ts` (`slashTokenMatches`). Pinned (the exact regression the docstring names):
-   `packages/code/tests/unit/autocomplete.test.ts:256-262` (`/hlep` never reaches `/plan-review`).
+   `packages/code/tests/unit/autocomplete.test.ts:290-296` (`/hlep` never reaches `/plan-review`).
 7. **`classifySlashSubmit` gives a registered command precedence over an agent-backed skill with
    the same slash token, then uses the skill as a fallback, and refuses a path-like name
    (`etc/hosts`) as chat rather than "unknown".** Production: `classifySlashSubmit` in
@@ -729,14 +730,14 @@ settled turn's persisted continuation; an empty session reports that there is no
    `attachmentBytes` takes `Math.max(declared, base64DecodedBytes(data))`.
    `packages/code/src/core/attachments.ts:218-223`. Pinned: `packages/code/tests/unit/attachments.test.ts:187-190`.
 9. **Composer image admission is checked before the byte payload is encoded/decoded**, for both
-   clipboard reads and raw pastes. `packages/code/src/views/InputDock.tsx:198,345-349`. Pinned:
-   `packages/code/tests/integration/input-dock-submit.test.tsx:422-430,447-458` ("before base64 composition",
+   clipboard reads and raw pastes. `packages/code/src/views/InputDock.tsx:210-220,374-386`. Pinned:
+   `packages/code/tests/integration/input-dock-submit.test.tsx:480-488,505-516` ("before base64 composition",
    "clipboard image reading is skipped when the composer count is already full").
 10. **Only one clipboard-image read may be in flight; a repeated request while pending is a no-op**,
-    not a second call to the platform. `packages/code/src/views/InputDock.tsx:194-199` (`readingClipboardImage` guard).
-    Pinned: `packages/code/tests/integration/input-dock-submit.test.tsx:234-249`.
+    not a second call to the platform. `packages/code/src/views/InputDock.tsx:204-215` (`readingClipboardImage` guard).
+    Pinned: `packages/code/tests/integration/input-dock-submit.test.tsx:264-279`.
 11. **`restoreAttachments` re-admits only `image` content parts**, clearing the prior list first.
-    `packages/code/src/views/InputDock.tsx:178-186`. Pinned: `packages/code/tests/integration/input-dock-submit.test.tsx:272-283`.
+    `packages/code/src/views/InputDock.tsx:194-201`. Pinned: `packages/code/tests/integration/input-dock-submit.test.tsx:302-313`.
 12. **Prompt history bounds every entry to `MAX_PROMPT_HISTORY_ENTRY_CHARS` (1,000,000 chars) and the
     ring to 1,000 entries**, dropping an oversized entry rather than truncating it into a different
     string. `packages/code/src/core/prompt-history.ts:52-53,67-72,159-161`. Pinned:
@@ -821,9 +822,9 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/tests/integration/profile-picker-render.test.tsx:104-127`.
 31. **While the Task editor is expanded, a first Escape closes an open autocomplete popup; only a
     second Escape (with no popup open) collapses the editor back to the inline composer.**
-    `packages/code/src/views/InputDock.tsx:404-440` (the `escape` binding registered only while `expanded()`, sharing
+    `packages/code/src/views/InputDock.tsx:437-473` (the `escape` binding registered only while `expanded()`, sharing
     the layer with `dismissAutocomplete`). Pinned:
-    `packages/code/tests/integration/input-dock-submit.test.tsx:208-232`.
+    `packages/code/tests/integration/input-dock-submit.test.tsx:238-262`.
 32. **`PromptHistory.prev` stashes the live draft only the first time the cursor steps off the end of
     the ring; `push` no-ops on an immediate repeat of the previous entry; `seed` never re-adds an
     entry already known to the ring, while still recovering one the backing file no longer has.**
@@ -833,7 +834,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     it excludes anything already shown in "Available here", any `EDITING_CATEGORIES` command, and
     any `CHROME_COMMAND`-matching name, so the one screen whose purpose is documenting keys still
     lists a global key the `/help` overlay itself deactivates while open.
-    `packages/code/src/views/overlays/Help.tsx:100-132`. Pinned: `packages/code/tests/integration/help-render.test.tsx:191-204`.
+    `packages/code/src/views/overlays/Help.tsx:100-132`. Pinned: `packages/code/tests/integration/help-render.test.tsx:203-216`.
 34. **`ActivityDetail` renders the original content as scrollable Markdown and owns Escape while
     open; Ctrl+C remains global.** The sidebar/transcript preview is deliberately not the detail source. Production:
     `packages/code/src/views/overlays/ActivityDetail.tsx`; pinned by
@@ -843,10 +844,11 @@ settled turn's persisted continuation; an empty session reports that there is no
     `"Draft cleared"`; with no draft/focus/overlay it does nothing. It never cancels a run or quits.
     Top overlays, focused transcript blocks, autocomplete and the expanded editor keep their
     higher-priority clear/back behavior, while Ctrl+C remains the sole cancel-or-quit key.
-    Production: `packages/code/src/keys/interaction.ts:356-386,496-516`,
-    `packages/code/src/views/App.tsx:388-405`. Pinned synchronously at
-    `packages/code/tests/integration/interaction.test.ts:437-477` and end to end at
-    `packages/code/tests/integration/app-shell-render.test.tsx:627-650,1145-1197,1608-1618`.
+    Production: `packages/code/src/keys/interaction.ts:379-385`, `:559-567`,
+    `packages/code/src/views/App.tsx:598-602`. Pinned synchronously at
+    `packages/code/tests/integration/interaction.test.ts:484-531`, `:865-881`, and end to end at
+    `packages/code/tests/integration/app-shell-render.test.tsx:729-752`, `:1649-1665`,
+    `:2070-2104`, `:2298-2326`, and `:2762-2783`.
 36. **Opening and closing autocomplete reuses one bounded native projection after first use.** It
     keeps exactly ten row/header slots, hides unused slots, continuously scrolls them inside a fixed
     popup frame without `N more` labels and changes the `autocomplete` keymap datum only when its
@@ -968,18 +970,18 @@ the picker only while the complete splash fits`).
 - **Attachment rejection is always surfaced, never silent.** Every `attachments.add(...)`/
   `canAddImage(...)` call whose `AttachmentAdmission.ok` is `false` is routed through
   `notifyAttachmentRejection` → `props.onNotify?.(attachmentAdmissionMessage(admission))`
-  (`packages/code/src/views/InputDock.tsx:157-161`); the rejected image never enters `AttachmentStore`
+  (`packages/code/src/views/InputDock.tsx:171-175`); the rejected image never enters `AttachmentStore`
   (`packages/code/tests/unit/attachments.test.ts:220-235`).
 - **A clipboard read that throws is caught and reported as a plain notification**
   (`"clipboard image read failed"`), guarded by a `disposed` flag so a resolution after the component
-  unmounted is silently dropped rather than calling a stale `onNotify` (`packages/code/src/views/InputDock.tsx:200-213`).
+  unmounted is silently dropped rather than calling a stale `onNotify` (`packages/code/src/views/InputDock.tsx:214-227`).
 - **An unknown `/name` submitted through the host's `onSlashCommand` implementation reports
-  `unknown command: /name` and blocks** (this decision lives in the host — e.g. `packages/code/src/views/App.tsx:798-801`
+  `unknown command: /name` and blocks** (this decision lives in the host — e.g. `packages/code/src/views/App.tsx:1029-1031`
   — not in `InputDock` itself, which only relays the `SlashOutcome`).
 - **A mentioned-image load failure (`MentionImageError`) restores the exact draft text and staged
   attachments** rather than silently dropping the message — this recovery is `run-host.ts`'s
   ([hosts/code-run-host.md](code-run-host.md)), reached through the `onDock.restoreAttachments` handle
-  (`packages/code/src/run-host.ts:609-612`).
+  (`packages/code/src/run-host.ts:730-763`).
 - **`runLocalBash`'s own spawn failure (`proc.on("error", ...)`) still resolves, never rejects**: it
   records `spawnError`, settles with `exitCode: null` and `stderr` falling back to the spawn error's
   message (`packages/code/src/adapters/local-shell.ts:176-179,164-175`). Pinned:
@@ -1054,8 +1056,8 @@ nothing beyond `@clarvis/protocol` types and are themselves leaves within `packa
 
 - **The exact combination of a slash line submitted while `submissionBlocked` is simultaneously
   set** is not exercised by a test in this document's scope. The source shows `onSlashCommand` is invoked
-  unconditionally before the `submissionBlocked` check (`packages/code/src/views/InputDock.tsx:120-134`), and — one
-  layer up, in `packages/code/src/views/App.tsx:770-773` (outside this document) — the concrete `onSlashCommand`
+   unconditionally before the `submissionBlocked` check (`packages/code/src/views/InputDock.tsx:132-150`), and — one
+  layer up, in `packages/code/src/views/App.tsx:996-1004` (outside this document) — the concrete `onSlashCommand`
   implementation applies its own memory-pressure gate per slash name. Whether every other host of
   `InputDock` (there appears to be exactly one, `App.tsx`) relies on this same double-gating, or
   whether a slash command could bypass a blocked-submission reason the plain-text/bang paths would

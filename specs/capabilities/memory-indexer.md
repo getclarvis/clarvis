@@ -20,11 +20,11 @@ An *index pass* is not a single completion. `indexRun` builds a `RunRequest` and
 executor when supplied, otherwise the engine's `executeRun`, so the model edits the wiki through the same
 seven memory tools an agent gets. Two shapes exist. The **isolated** pass runs an inline
 `memory-indexer` profile over a rendered execution digest and *replaces* the host's capability list
-(`packages/memory/src/indexer/run.ts:364`). The **continuation** pass is a `continue_from` of the very
+(`packages/memory/src/indexer/run.ts:379`). The **continuation** pass is a `continue_from` of the very
 run being indexed, appending only a trailing instruction, and *prepends* its capability to the host's
-list (`packages/memory/src/indexer/run.ts:328`). `planPass` chooses between them
-(`packages/memory/src/indexer/run.ts:308`), guided by `continuationBlocker`
-(`packages/memory/src/indexer/request.ts:276`).
+list (`packages/memory/src/indexer/run.ts:332`). `planPass` chooses between them
+(`packages/memory/src/indexer/run.ts:312`), guided by `continuationBlocker`
+(`packages/memory/src/indexer/request.ts:279`).
 
 Around that sit the supporting parts this document owns: the pure retry/give-up policy
 (`packages/memory/src/jobs.ts:93`), the snapshot bounding and redaction
@@ -34,7 +34,7 @@ timer (`packages/memory/src/worker.ts:69`), the per-run settlement broker
 (`packages/memory/src/job-broker.ts:99`), the operator's recording policy
 (`packages/memory/src/recording-policy.ts:67`), the deterministic diagnostics pass
 (`packages/memory/src/health.ts:175`), the process-lived factory that assembles all of it
-(`packages/memory/src/factory.ts:233`), and the kernel-side classification of an ingest notice's phase
+(`packages/memory/src/factory.ts:235`), and the kernel-side classification of an ingest notice's phase
 (`packages/kernel/src/runs/memory-ingest-phase.ts:23`).
 
 ---
@@ -59,7 +59,7 @@ timer (`packages/memory/src/worker.ts:69`), the per-run settlement broker
 | `DEFAULT_RETRY_POLICY` | const | `{ maxAttempts: 5, maxValidateAttempts: 2, baseDelayMs: 30_000, maxDelayMs: 900_000, jitter: Math.random }` | `packages/memory/src/jobs.ts:59` |
 | `DEFAULT_SNAPSHOT_LIMITS` | const | `{ maxToolCalls: 500, maxExcerptChars: 600, maxFinalAnswer: 4000, maxTask: 8000, maxSteering: 20, maxSteeringChars: 400 }` | `packages/memory/src/jobs.ts:186` |
 | `MAX_JOB_HISTORY` | const | `5` | `packages/memory/src/jobs.ts:33` |
-| `MemoryIndexError` | class | `phase`, `terminal`, `indexerRunId`, `code = "memory_index_failed"` | `packages/memory/src/indexer/run.ts:70` |
+| `MemoryIndexError` | class | `phase`, `terminal`, `indexerRunId`, `code = "memory_index_failed"` | `packages/memory/src/indexer/run.ts:71` |
 | `createIndexWorker` | fn | `(opts: MemoryIndexWorkerOptions) => MemoryIndexWorker` | `packages/memory/src/worker.ts:69` |
 | `INDEXER_SYSTEM`, `INDEXER_ITERATION_LIMIT` (12), `INDEXER_TOKEN_LIMIT` (200_000), `MEMORY_INDEXER_AGENT` (`"memory-indexer"`) | consts | isolated-pass prompt and bounds | `packages/memory/src/indexer/request.ts:58,32,42,21` |
 | `health`, `HEALTH_CODES`, `DEFAULT_HEALTH_CONFIG` | fn / consts | §2.4 | `packages/memory/src/health.ts:175,31,100` |
@@ -71,8 +71,8 @@ export list (`packages/memory/src/index.ts:126`).
 
 | Symbol | Signature | Source |
 | --- | --- | --- |
-| `createMemoryFactory` | `(opts: CreateMemoryFactoryOptions) => MemoryFactory` | `packages/memory/src/factory.ts:233` |
-| `MemoryFactory`, `MemoryFactorySettings` | types | `packages/memory/src/factory.ts:123`, `:27` |
+| `createMemoryFactory` | `(opts: CreateMemoryFactoryOptions) => MemoryFactory` | `packages/memory/src/factory.ts:235` |
+| `MemoryFactory`, `MemoryFactorySettings` | types | `packages/memory/src/factory.ts:125`, `:27` |
 | `enqueueFinishedRun` | `(a: {...}) => Promise<void>` (never rejects) | `packages/memory/src/ingest.ts:122` |
 | `MemoryIngestNotice` | type | `packages/memory/src/ingest.ts:12` |
 | `storedExecutionToRunSnapshot`, `firstUserText` | fns | `packages/memory/src/run-snapshot.ts:56`, `:14` |
@@ -83,7 +83,7 @@ Re-export site: `packages/memory/src/capability.ts:42-45`, `:61-67`.
 
 `createIndexerMemoryCapability` and `createIndexingPassCapability`
 (`packages/memory/src/indexer/capability.ts:154`, `:271`), `indexRun`, `planPass`
-(`packages/memory/src/indexer/run.ts:149`, `:308`), `translateDrainSettlement`
+(`packages/memory/src/indexer/run.ts:150`, `:312`), `translateDrainSettlement`
 (`packages/memory/src/ingest.ts:56`) and `createJobRepository`
 (`packages/memory/src/file-store/jobs.ts:69`) are **not** exported from any package entrypoint
 (`packages/memory/package.json:21-48`); they are reached only by this package's own modules and its
@@ -94,18 +94,18 @@ tests. `packages/memory/tests/architecture/file-store-exports.test.ts:7` pins th
 
 | Member | Behaviour | Source |
 | --- | --- | --- |
-| `forOwner(owner)` | resolves only when a model resolves — the worker's entry point | `packages/memory/src/factory.ts:475`, `:348` |
-| `forOwnerControlPlane(owner)` | resolves without a model; `index` then reports `note: "no-indexer"` (a `Memory` built with no `indexer` thunk) | `packages/memory/src/factory.ts:476`, `packages/memory/src/memory.ts:96-105` |
-| `providerFor(owner)` | optional; resolves the declared memory provider | `packages/memory/src/factory.ts:477`, `:456` |
-| `start(owner)` / `poke(owner)` | drive that owner's `MemoryIndexWorker` | `packages/memory/src/factory.ts:478-479` |
-| `stopOwner(owner)` | closes broker subs, stops the worker, evicts caches and store | `packages/memory/src/factory.ts:480` |
-| `stop()` | idempotent, concurrent-safe teardown of every worker | `packages/memory/src/factory.ts:494` |
-| `subscribeToRun(owner, runId, onSettled)` | broker subscription, already translated to `MemoryIngestNotice` | `packages/memory/src/factory.ts:506` |
+| `forOwner(owner)` | resolves only when a model resolves — the worker's entry point | `packages/memory/src/factory.ts:478`, `:351` |
+| `forOwnerControlPlane(owner)` | resolves without a model; `index` then reports `note: "no-indexer"` (a `Memory` built with no `indexer` thunk) | `packages/memory/src/factory.ts:479`, `packages/memory/src/memory.ts:96-105` |
+| `providerFor(owner)` | optional; resolves the declared memory provider | `packages/memory/src/factory.ts:480`, `:459` |
+| `start(owner)` / `poke(owner)` | drive that owner's `MemoryIndexWorker` | `packages/memory/src/factory.ts:481-482` |
+| `stopOwner(owner)` | closes broker subs, stops the worker, evicts caches and store | `packages/memory/src/factory.ts:483` |
+| `stop()` | idempotent, concurrent-safe teardown of every worker | `packages/memory/src/factory.ts:497` |
+| `subscribeToRun(owner, runId, onSettled)` | broker subscription, already translated to `MemoryIngestNotice` | `packages/memory/src/factory.ts:509` |
 
 Construction inputs that matter here: `runDeps` and `passRunDeps` are **thunks**
-(`packages/memory/src/factory.ts:47`, `:56`) — the host's deps object contains the memory capability built *from* this
-factory, so an eager value would be circular (`packages/kernel/src/file-kernel.ts:869-872`).
-`loadPolicy` is a thunk for the same reason edits should take effect next pass (`packages/memory/src/factory.ts:63`).
+(`packages/memory/src/factory.ts:47`, `:58`) — the host's deps object contains the memory capability built *from* this
+factory, so an eager value would be circular (`packages/kernel/src/file-kernel.ts:924-927`).
+`loadPolicy` is a thunk for the same reason edits should take effect next pass (`packages/memory/src/factory.ts:65`).
 
 `MemoryFactory` does not start itself. Kernel construction caches owner services but performs no
 memory inference; the host calls `InProcessKernel.startMemoryRecovery()` after its own paint or
@@ -165,7 +165,7 @@ clamped to `MAX_LIMIT = 100`, and `retryJob(runId)`
 (`packages/kernel/src/memory/memory-service.ts:107,132,151,15`). The wire `MemoryJob` drops the
 snapshot deliberately (`packages/kernel/src/memory/memory-service.ts:23-37`). Transport methods:
 `memory.jobs`, `memory.retryJob`, and health at
-`packages/kernel/src/transport/operations.ts:406,419,422`.
+`packages/kernel/src/transport/operations.ts:577-603`.
 
 ---
 
@@ -200,9 +200,9 @@ interface MemoryIndexJob {
 | `<machineryRoot>/.state/indexed/<encoded>` | the "was indexed" ledger marker; body is `String(at)` | `packages/memory/src/file-store/jobs.ts:101`, `:414` |
 
 `machineryRoot` is `workspaceStatePaths(workspaceRoot).memoryMachineryRoot`
-(`packages/memory/src/factory.ts:240`), i.e. `<state>/…/memory`
-(`packages/paths/src/workspace-state.ts:181`) — outside the wiki at
-`<ws>/.clarvis/memory` (`packages/paths/src/workspace.ts:116`).
+(`packages/memory/src/factory.ts:242`), i.e. `<state>/…/memory`
+(`packages/paths/src/workspace-state.ts:185`) — outside the wiki at
+`<ws>/.clarvis/memory` (`packages/paths/src/workspace.ts:119`).
 
 The filename encoder is deliberately lossy-but-collision-safe: non-`[A-Za-z0-9_-]` characters become
 `_`, the slug is cut at 48 characters, and a 12-hex prefix of `sha256(runId)` is appended
@@ -281,8 +281,8 @@ Each scope is independently truncated to `MEMORY_POLICY_MAX_CHARS` (4000), passe
 `readUtf8PrefixSync` bounded at `MEMORY_STORAGE_LIMITS.prefixBytes` (64 KiB)
 (`packages/memory/src/recording-policy.ts:111-113`, `packages/memory/src/storage-limits.ts:14`). The two files are
 `<global>/memory-policy.md` and `<ws>/.clarvis/memory-policy.md`
-(`packages/paths/src/global.ts:122`, `packages/paths/src/workspace.ts:114`), as wired in
-`packages/kernel/src/file-kernel.ts:873-876`.
+(`packages/paths/src/global.ts:127`, `packages/paths/src/workspace.ts:117`), as wired in
+`packages/kernel/src/file-kernel.ts:928-931`.
 
 ### 3.7 The isolated pass's request
 
@@ -318,16 +318,16 @@ rendered at budgets.digest_tokens * 4 chars>` plus an optional
   budget: { on_exceed: "stop", total_token_limit: continuationTokenLimit(subject) } }
 ```
 
-(`packages/memory/src/indexer/request.ts:368-386`.) `continuationTokenLimit` =
+(`packages/memory/src/indexer/request.ts:380-398`.) `continuationTokenLimit` =
 `ceil(200_000 + (uncached_input / iterations_used) * 12)` where `uncached = max(0, input - cached)`
-(`packages/memory/src/indexer/request.ts:410-415`). Worked examples the tests pin: a run with `input=1000, cached=1000`
+(`packages/memory/src/indexer/request.ts:422-427`). Worked examples the tests pin: a run with `input=1000, cached=1000`
 lands exactly at `INDEXER_TOKEN_LIMIT`
-(`packages/memory/tests/unit/indexer-continuation.test.ts:230`); a run with `input=264_503, cached=0,
-iterations=2` yields a limit above 264_503 (`packages/memory/tests/unit/indexer-continuation.test.ts:221`).
+(`packages/memory/tests/unit/indexer-continuation.test.ts:247`); a run with `input=264_503, cached=0,
+iterations=2` yields a limit above 264_503 (`packages/memory/tests/unit/indexer-continuation.test.ts:238`).
 
 `prompt_cache_key` examples from tests: `"session_42"` → `"session_42_memory"`; no explicit key →
 `"run_subject_memory"`; a 512-char key stays 512 chars and still ends `_memory`
-(`packages/memory/tests/unit/indexer-continuation.test.ts:133,144,154`).
+(`packages/memory/tests/unit/indexer-continuation.test.ts:150,161,171`).
 
 ---
 
@@ -459,7 +459,7 @@ error has ever described" (`packages/memory/src/drain.ts:333-335`).
 
 | # | Step | Code | Outcome on failure |
 | --- | --- | --- | --- |
-| 1 | provider present but read-only | `packages/memory/src/indexer/run.ts:154` | `skipped` report, note `provider-read-only` |
+| 1 | provider present but read-only | `packages/memory/src/indexer/run.ts:155` | `skipped` report, note `provider-read-only` |
 | 2 | `store.exclusive(tx => tx.wasIndexed(run_id))` | `:158` | `skipped`, note `already-indexed` |
 | 3 | `store.recover()` probe, outside any exclusive section | `:167-174` | throws `MemoryIndexError("apply", "memory is awaiting recovery…")` |
 | 4 | `generateExecutionId()`, `planPass(...)` | `:177-186` | — |
@@ -472,31 +472,31 @@ error has ever described" (`packages/memory/src/drain.ts:333-335`).
 
 Step 3's placement is explicit: a frozen tree "would otherwise surface as every mutating tool failing
 inside its own batch, where the tool wrapper turns a throw into an ordinary error result — so the
-model would burn its whole iteration budget on tools that cannot succeed" (`packages/memory/src/indexer/run.ts:162-166`).
+model would burn its whole iteration budget on tools that cannot succeed" (`packages/memory/src/indexer/run.ts:163-167`).
 
 The `declineElicit` constant answers every elicitation with `{ action: "decline" }`
-(`packages/memory/src/indexer/run.ts:132`) so a continuation of a profile carrying `ask_user` passes the engine's
-pre-flight check (`packages/memory/src/indexer/run.ts:118-131`; test
+(`packages/memory/src/indexer/run.ts:133`) so a continuation of a profile carrying `ask_user` passes the engine's
+pre-flight check (`packages/memory/src/indexer/run.ts:119-132`; test
 `packages/memory/tests/integration/continuation-elicitation.test.ts:89`).
 
 Step 9's fence is `before → markIndexed → after`, and `after` is invoked even on the error path
-(`packages/memory/src/indexer/run.ts:231-238`).
+(`packages/memory/src/indexer/run.ts:235-242`).
 
 The final report deduplicates paths, with `deleted` derived from `tool === "delete_memory"` and
-`written` from everything else (`packages/memory/src/indexer/run.ts:249-254`); `skipped` is `mutations.length === 0`, in
-which case `note` is `"nothing-to-record"` (`packages/memory/src/indexer/run.ts:272-273`).
+`written` from everything else (`packages/memory/src/indexer/run.ts:253-258`); `skipped` is `mutations.length === 0`, in
+which case `note` is `"nothing-to-record"` (`packages/memory/src/indexer/run.ts:276-277`).
 
 ### 4.7 Pass selection (`planPass`)
 
 ```
-passDeps === undefined                        → isolated, blocker "no-pass-deps"      (packages/memory/src/indexer/run.ts:351)
-subject = traceStore.getById(owner, run_id)   (packages/memory/src/indexer/run.ts:329)
+passDeps === undefined                        → isolated, blocker "no-pass-deps"      (packages/memory/src/indexer/run.ts:356)
+subject = traceStore.getById(owner, run_id)   (packages/memory/src/indexer/run.ts:334)
 continuationBlocker(subject, modelRef, knownGrants(passDeps)) === null && subject !== null
-                                              → continuation, capability PREPENDED    (packages/memory/src/indexer/run.ts:331-347)
-otherwise                                     → isolated, blocker = that reason       (packages/memory/src/indexer/run.ts:349)
+                                              → continuation, capability PREPENDED    (packages/memory/src/indexer/run.ts:333-351)
+otherwise                                     → isolated, blocker = that reason       (packages/memory/src/indexer/run.ts:354)
 ```
 
-`continuationBlocker` order (`packages/memory/src/indexer/request.ts:280-294`):
+`continuationBlocker` order (`packages/memory/src/indexer/request.ts:284-306`):
 
 | # | Condition | Blocker |
 | --- | --- | --- |
@@ -517,15 +517,15 @@ would fail request validation before the model call. Production:
 `packages/memory/tests/integration/indexer-pass-plan.test.ts` ("falls back when a
 dynamic manager grant is absent from the pass deps").
 
-The 100 000-token floor is `CACHE_EVIDENCE_MIN_INPUT` (`packages/memory/src/indexer/request.ts:257`), and the tests carry
+The 100 000-token floor is `CACHE_EVIDENCE_MIN_INPUT` (`packages/memory/src/indexer/request.ts:258`), and the tests carry
 the measured cases: 5 110 875 input with 0 cached blocks; 2 270 231 with 2 083 456 cached does not;
-8 937 with 0 cached does not (`packages/memory/tests/unit/indexer-continuation.test.ts:191,197,201`).
+8 937 with 0 cached does not (`packages/memory/tests/unit/indexer-continuation.test.ts:208,214,218`).
 
 ### 4.8 The two indexer capability shapes
 
 | Property | isolated (`createIndexerMemoryCapability`) | continuation (`createIndexingPassCapability`) |
 | --- | --- | --- |
-| host capability list | **replaced** (`packages/memory/src/indexer/run.ts:384`) | **prepended** to (`packages/memory/src/indexer/run.ts:341-344`) |
+| host capability list | **replaced** (`packages/memory/src/indexer/run.ts:399`) | **prepended** to (`packages/memory/src/indexer/run.ts:345-348`) |
 | advertised `tools` | the seven wiki tools, read-then-write (`packages/memory/src/capability.ts:175`) | none (`packages/memory/src/capability.ts:294`) |
 | `seedMarker` / `seedBlock` / `systemSection` | none declared here | none declared (`packages/memory/src/capability.ts:262-266`) |
 | handlers | read toolset, write toolset (`packages/memory/src/capability.ts:166-173`) | read, write, **refusal** (`packages/memory/src/capability.ts:285-292`) |
@@ -628,20 +628,20 @@ the stored listener is still the one it created (`packages/memory/src/job-broker
 `indexerFor(owner)` yields an `IndexerRuntime` only when: settings load without throwing, memory is
 not `enabled: false`, a model resolves from `config.model ?? defaultModel`, `runDeps()` yields deps,
 `providersFor` resolves, and the provider resolution is `ok`
-(`packages/memory/src/factory.ts:267-296`). Otherwise `undefined`, which the drain reads as `blocked`
-(`packages/memory/src/types.ts:85-89`).
+(`packages/memory/src/factory.ts:269-299`). Otherwise `undefined`, which the drain reads as `blocked`
+(`packages/memory/src/types.ts:87-91`).
 
 `providersFor` returns the declared array when it already covers the model's provider token; derives
 a single `{ name: token, kind: token }` entry when the token is one of
-`openai-compatible | openai | anthropic | google` (`packages/memory/src/factory.ts:226-231`, `:332`); otherwise warns
-`memory.provider.undeclared` once and returns `undefined` (`packages/memory/src/factory.ts:322-331`).
+`openai-compatible | openai | anthropic | google` (`packages/memory/src/factory.ts:228-233`, `:335`); otherwise warns
+`memory.provider.undeclared` once and returns `undefined` (`packages/memory/src/factory.ts:325-334`).
 
 Caching: stores are memoized per owner in a map the settings signature never touches
-(`packages/memory/src/factory.ts:234-252`, `:212-216`); `Memory` facades are keyed by `owner` (or `no-model:<owner>`)
+(`packages/memory/src/factory.ts:236-254`, `:214-218`); `Memory` facades are keyed by `owner` (or `no-model:<owner>`)
 plus `JSON.stringify([config, modelRef ?? null, providers ?? []])`
-(`packages/memory/src/factory.ts:376-388`); workers live in their own map so a settings edit never leaves a second timer
-on one queue (`packages/memory/src/factory.ts:400`, `:411-422`). `stop()` assigns `stopPromise` before awaiting, deferred
-by one microtask so an abort callback cannot re-enter (`packages/memory/src/factory.ts:494-505`).
+(`packages/memory/src/factory.ts:379-391`); workers live in their own map so a settings edit never leaves a second timer
+on one queue (`packages/memory/src/factory.ts:403`, `:414-425`). `stop()` assigns `stopPromise` before awaiting, deferred
+by one microtask so an abort callback cannot re-enter (`packages/memory/src/factory.ts:497-508`).
 
 ### 4.14 Health
 
@@ -734,14 +734,14 @@ Test: `packages/memory/tests/component/indexing-pass-capability.test.ts:106`.
 **MIX-04.** A continuation's `providers` come from live settings, never from
 `subject.request`, because the trace persists `sanitizeDeep(request)` and `api_key_env` is redacted
 to `"[redacted]"`, which `providerConfigSchema` rejects.
-Production: `packages/memory/src/indexer/request.ts:379`.
+Production: `packages/memory/src/indexer/request.ts:391`.
 Test: `packages/memory/tests/component/continuation-sanitized-trace.test.ts:72`, `:79`, `:90`.
 
 **MIX-05.** A continuation carries `entry`, `profiles` (including grants and tools) and
 `prompt_cache_key` from the indexed run, and changes only `iteration_limit` on the entry profile and
 `budget` — neither of which is on the wire.
-Production: `packages/memory/src/indexer/request.ts:374-385`.
-Test: `packages/memory/tests/unit/indexer-continuation.test.ts:106`, `:121`;
+Production: `packages/memory/src/indexer/request.ts:386-397`.
+Test: `packages/memory/tests/unit/indexer-continuation.test.ts:123`, `:138`;
 `packages/memory/tests/integration/continuation-elicitation.test.ts:100`.
 
 **MIX-06.** `prompt_cache_key` is the indexed run's key (or its id) truncated to 505 chars
@@ -749,13 +749,13 @@ with `_memory` appended, so the composite never exceeds 512 characters. The doc 
 key must diverge from the interactive session's own key rather than reuse it: "sharing the exact
 affinity key let that background branch displace the conversation's hot prefix on providers that
 retain one active prefix per session."
-Production: `packages/memory/src/indexer/request.ts:374`, rationale at `:361-365`.
-Test: `packages/memory/tests/unit/indexer-continuation.test.ts:154`.
+Production: `packages/memory/src/indexer/request.ts:386`, rationale at `:373-377`.
+Test: `packages/memory/tests/unit/indexer-continuation.test.ts:171`.
 
 **MIX-07.** The hot path *prepends* the pass capability to the host's list and the cold
 path *replaces* it with a single-element list.
-Production: `packages/memory/src/indexer/run.ts:341-344`, `:383-394`.
-Test: `packages/memory/tests/integration/indexer-pass-plan.test.ts:91`, `:109`.
+Production: `packages/memory/src/indexer/run.ts:345-348`, `:398-409`.
+Test: `packages/memory/tests/integration/indexer-pass-plan.test.ts:99`, `:117`.
 
 ### Recording policy
 
@@ -773,7 +773,7 @@ Test: `packages/memory/tests/unit/recording-policy.test.ts:56`.
 **INV-118.** The policy reaches the isolated pass only through its own `base_prompt` and the
 continuation only through its trailing message; with no policy configured, the isolated
 `base_prompt` does not contain "OPERATOR RECORDING POLICY".
-Production: `packages/memory/src/indexer/request.ts:222`, `:376`, `:313-315`.
+Production: `packages/memory/src/indexer/request.ts:222`, `:388`, `:325-327`.
 Test: `packages/memory/tests/unit/recording-policy.test.ts:66`, `:77`, `:103`.
 
 **INV-119.** `loadMemoryPolicy` reproduces those rules from real files: personal text precedes
@@ -890,7 +890,7 @@ Test: `packages/memory/src/testing.ts:975`.
 enclosing `store.exclusive` excluded any reclaim between the strict pre-fence and this post-effect
 refresh; it must never be used as a heartbeat or a settlement check.
 Production: `packages/memory/src/file-store/jobs.ts:268-280`; contract note at
-`packages/memory/src/types.ts:363-372`.
+`packages/memory/src/types.ts:365-374`.
 Test: `packages/memory/src/testing.ts:832` shows it succeeding at `at = 20` against a
 `lease_until` of 15.
 
@@ -968,7 +968,7 @@ calls), `:462` (`provider-selection-changed`), `packages/memory/tests/component/
 (`already-indexed`).
 
 **MIX-23.** A pass that ends in `no_progress` is terminal and is never replayed.
-Production: `packages/memory/src/indexer/run.ts:207`.
+Production: `packages/memory/src/indexer/run.ts:211`.
 Test: `packages/memory/tests/component/drain.test.ts:480`.
 
 ### Ingest and the kernel bridge
@@ -1014,13 +1014,13 @@ Test: `packages/memory/tests/component/job-broker.test.ts:135`, `:148`.
 
 **MIX-31.** A workspace with a model but no engine deps still has a fully usable wiki; only
 `index` degrades, reporting `note: "no-indexer"` with zero LLM calls.
-Production: `packages/memory/src/factory.ts:279`, `packages/memory/src/memory.ts:96-105`.
-Test: `packages/memory/tests/component/factory.test.ts:126`.
+Production: `packages/memory/src/factory.ts:281`, `packages/memory/src/memory.ts:96-105`.
+Test: `packages/memory/tests/component/factory.test.ts:127`.
 
 **MIX-32.** A settings change rebuilds the owner's `Memory` facade but never produces a
 second store over the same tree.
-Production: `packages/memory/src/factory.ts:234-252`, `:376-388`.
-Test: `packages/memory/tests/component/factory.test.ts:489`, `:363`.
+Production: `packages/memory/src/factory.ts:236-254`, `:379-391`.
+Test: `packages/memory/tests/component/factory.test.ts:512`, `:386`.
 
 **MIX-33.** `health` never writes: its `tx` is a `Pick` of read methods only, and it works
 against a store exposing nothing but `list`/`read`.
@@ -1071,13 +1071,13 @@ indexer pass through the host-owned run executor`) and
 | --- | --- | --- | --- |
 | No indexer runtime resolves | `packages/memory/src/drain.ts:428` | `blocked`, reason `no_indexer` | job stays `pending`, **no attempt consumed**; log says "the learning is recovered whole once one is configured" (`packages/memory/src/drain.ts:99-101`) |
 | Lease reclaimed mid-pass | `packages/memory/src/drain.ts:526`, `:507` | `blocked`, reason `lease_lost` | "whatever this pass wrote stands, and the claimant decides the rest" (`packages/memory/src/drain.ts:102`) |
-| Tree frozen awaiting recovery | `packages/memory/src/drain.ts:530`; probed at `packages/memory/src/indexer/run.ts:167` | `blocked`, reason `recovery` | claim released, whole pass stops (`packages/memory/src/drain.ts:535`) |
+| Tree frozen awaiting recovery | `packages/memory/src/drain.ts:530`; probed at `packages/memory/src/indexer/run.ts:168` | `blocked`, reason `recovery` | claim released, whole pass stops (`packages/memory/src/drain.ts:535`) |
 | Host aborted the drain | `packages/memory/src/drain.ts:537` | `blocked`, reason `shutdown` | claim released, attempt refunded (`packages/memory/src/drain.ts:539`) |
-| `executeRun` throws | `packages/memory/src/indexer/run.ts:197` | `generate`; terminal iff `ValidationError` | full retry budget unless terminal |
-| Run answered `status: "error"` | `packages/memory/src/indexer/run.ts:206` | `generate`; terminal iff `no_progress` | as above |
-| Run ended non-`completed` (cancelled, `budget_exhausted`, `soft_limit_declined`) | `packages/memory/src/indexer/run.ts:220` | `validate` | 2-attempt budget; the subject is **not** marked indexed (`packages/memory/src/indexer/run.ts:215-219`) |
-| Pyramid still open at run end | `packages/memory/src/indexer/run.ts:224` | `validate` | 2-attempt budget |
-| `markIndexed` failed or the claim was lost first | `packages/memory/src/indexer/run.ts:240-247` | `commit` | full retry budget |
+| `executeRun` throws | `packages/memory/src/indexer/run.ts:201` | `generate`; terminal iff `ValidationError` | full retry budget unless terminal |
+| Run answered `status: "error"` | `packages/memory/src/indexer/run.ts:210` | `generate`; terminal iff `no_progress` | as above |
+| Run ended non-`completed` (cancelled, `budget_exhausted`, `soft_limit_declined`) | `packages/memory/src/indexer/run.ts:224` | `validate` | 2-attempt budget; the subject is **not** marked indexed (`packages/memory/src/indexer/run.ts:219-223`) |
+| Pyramid still open at run end | `packages/memory/src/indexer/run.ts:228` | `validate` | 2-attempt budget |
+| `markIndexed` failed or the claim was lost first | `packages/memory/src/indexer/run.ts:244-251` | `commit` | full retry budget |
 | `MemoryPathError` escaping a tool | `packages/memory/src/drain.ts:342` | `apply`, terminal | fails immediately |
 | Any other untagged throw | `packages/memory/src/drain.ts:343` | `apply`, non-terminal | full retry budget |
 | Retry budget spent | `packages/memory/src/drain.ts:572` | `failed` | `memory.index.gave_up` at **error** level: "what that run could have taught this workspace is lost for good" (`packages/memory/src/drain.ts:582`) |
@@ -1088,9 +1088,9 @@ indexer pass through the host-owned run executor`) and
 | Prune failed | `packages/memory/src/drain.ts:600` | swallowed by `bestEffort` | the pass still reports normally |
 | `onJobSettled` / `onNotice` / broker listener threw | `packages/memory/src/worker.ts:161`, `packages/memory/src/ingest.ts:135`, `packages/memory/src/job-broker.ts:138` | swallowed | never breaks the worker or the publisher |
 | Git probe unavailable | `packages/memory/src/workspace-state.ts:42-58` | `undefined` | snapshot simply carries no `workspace_state`; debug-only log |
-| Provider token neither declared nor built-in | `packages/memory/src/factory.ts:322` | `memory.provider.undeclared` warn, once | runtime resolves `undefined` → job blocked rather than burning retries (`packages/memory/src/factory.ts:311-314`) |
-| Settings unreadable | `packages/memory/src/factory.ts:352`, `:274` | `memory.settings.unreadable` warn | run proceeds with memory off entirely |
-| Neither `memory.model` nor `default_model` | `packages/memory/src/factory.ts:365` | `memory.model.absent` warn, once | `forOwner` → `undefined`; `forOwnerControlPlane` still resolves |
+| Provider token neither declared nor built-in | `packages/memory/src/factory.ts:325` | `memory.provider.undeclared` warn, once | runtime resolves `undefined` → job blocked rather than burning retries (`packages/memory/src/factory.ts:314-317`) |
+| Settings unreadable | `packages/memory/src/factory.ts:355`, `:276` | `memory.settings.unreadable` warn | run proceeds with memory off entirely |
+| Neither `memory.model` nor `default_model` | `packages/memory/src/factory.ts:368` | `memory.model.absent` warn, once | `forOwner` → `undefined`; `forOwnerControlPlane` still resolves |
 
 Bounded reads throughout: a job scan visits at most `MEMORY_STORAGE_LIMITS.scanEntries` (10 000)
 entries and stops once accumulated bytes would exceed `corpusBytes` (32 MiB)
@@ -1099,12 +1099,12 @@ entries and stops once accumulated bytes would exceed `corpusBytes` (32 MiB)
 Log events this subsystem emits, with level: `memory.job.blocked` (info, `packages/memory/src/drain.ts:420`),
 `memory.job.converged` (debug, `packages/memory/src/drain.ts:474`), `memory.index.failed` (warn, `packages/memory/src/drain.ts:555`),
 `memory.index.gave_up` (error, `packages/memory/src/drain.ts:575`), `memory.prune` (debug, `packages/memory/src/drain.ts:612`),
-`memory.index.pass` (info, `packages/memory/src/indexer/run.ts:255`), `memory.drain.pass` (info, `packages/memory/src/worker.ts:99`),
+`memory.index.pass` (info, `packages/memory/src/indexer/run.ts:259`), `memory.drain.pass` (info, `packages/memory/src/worker.ts:99`),
 `memory.drain.failed` (warn, `packages/memory/src/worker.ts:167`), `memory.run.enqueued` (info, `packages/memory/src/ingest.ts:152`),
 `memory.run.enqueue_failed` (warn, `packages/memory/src/ingest.ts:158`), `memory.job.record_corrupt` (warn,
 `packages/memory/src/file-store/jobs.ts:95`), `memory.workspace_state.unavailable` (debug, `packages/memory/src/workspace-state.ts:49-56`),
-`memory.provider.undeclared` (warn, `packages/memory/src/factory.ts:326`), `memory.model.absent` (warn, `packages/memory/src/factory.ts:369`),
-`memory.settings.unreadable` (warn, `packages/memory/src/factory.ts:353`).
+`memory.provider.undeclared` (warn, `packages/memory/src/factory.ts:329`), `memory.model.absent` (warn, `packages/memory/src/factory.ts:372`),
+`memory.settings.unreadable` (warn, `packages/memory/src/factory.ts:356`).
 
 ---
 
@@ -1114,36 +1114,36 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 
 | Depends on | Why the direction is forced | Static/dynamic |
 | --- | --- | --- |
-| `@clarvis/loop` (`executeRun`, `generateExecutionId`, `ExecuteRunDeps`, `StoredExecution`) | an index pass **is** a run — `packages/memory/src/indexer/run.ts:47` value-imports the engine; `packages/memory/package.json:73` lists it as a hard dependency | static, value |
+| `@clarvis/loop` (`executeRun`, `generateExecutionId`, `ExecuteRunDeps`, `StoredExecution`) | an index pass **is** a run — the engine types are imported statically and type-only (`packages/memory/src/indexer/run.ts:47`, `packages/memory/src/indexer/request.ts:18`), while the executable entry is loaded dynamically at `packages/memory/src/indexer/run.ts:178-180`; `packages/memory/package.json:73` lists it as a hard dependency | static type + dynamic value |
 | `@clarvis/loop/host` (`SUBMIT_RESULT_TOOL_NAME`) | the refusal set must contain the exact name the engine dispatches — `packages/memory/src/indexer/capability.ts:26` | static, value |
 | `@clarvis/capability` | `sanitizeDeep`/`sanitizeText` (`packages/memory/src/jobs.ts:13`), `createRateLimiter`/`createSampler`/`bestEffort`/`detachObserved`/`NOOP_LOGGER` (`packages/memory/src/drain.ts:23-30`, `packages/memory/src/worker.ts:14-20`, `packages/memory/src/file-store/jobs.ts:6`), `FinalizeGate` (`packages/memory/src/indexer/pyramid.ts:14`), `handlerBaseOf`/`openCallEnvelope` (`packages/memory/src/indexer/capability.ts:25`) | static, value |
 | `@clarvis/paths` | `workspacePaths`/`workspaceStatePaths` (`packages/memory/src/factory.ts:1`), `writeFileDurable` (`packages/memory/src/file-store/jobs.ts:7`), `ensureWorkspaceSubdir` (`packages/memory/src/file-store/layout.ts:4`) | static, value |
 | `node:crypto` | `randomUUID` for the claim's fencing token (`packages/memory/src/drain.ts:20`), `createHash` for `encodeRunId` (`packages/memory/src/file-store/jobs.ts:1`) | static |
-| the run's trace store | `planPass` reads the subject through `indexer.deps.traceStore.getById(owner, run_id)` (`packages/memory/src/indexer/run.ts:329`) — no direct `@clarvis/trace` import or manifest edge | structural, via `ExecuteRunDeps` from `@clarvis/loop` |
+| the run's trace store | `planPass` reads the subject through `indexer.deps.traceStore.getById(owner, run_id)` (`packages/memory/src/indexer/run.ts:333`) — no direct `@clarvis/trace` import or manifest edge | structural, via `ExecuteRunDeps` from `@clarvis/loop` |
 
 ### 7.2 Inbound
 
 | Consumer | Edge | Source |
 | --- | --- | --- |
-| `@clarvis/kernel` (`file-kernel`) | constructs the factory, supplies `runDeps`/`passRunDeps`/`loadPolicy`/`storeFor`/`serverPort`/`pluginPort`/`executablePort` | `packages/kernel/src/file-kernel.ts:860-882` |
-| `@clarvis/kernel` (`kernel.ts`) | registers `memoryFactory.stop()` on the kernel lifecycle | `packages/kernel/src/kernel.ts:280` |
+| `@clarvis/kernel` (`file-kernel`) | constructs the factory, supplies `runDeps`/`passRunDeps`/`loadPolicy`/`storeFor`/`serverPort`/`pluginPort`/`executablePort` | `packages/kernel/src/file-kernel.ts:914-937` |
+| `@clarvis/kernel` (`kernel.ts`) | registers `memoryFactory.stop()` on the kernel lifecycle | `packages/kernel/src/kernel.ts:355` |
 | `@clarvis/kernel` (`memory-service`) | exposes `health`/`jobs`/`retryJob` over the protocol | `packages/kernel/src/memory/memory-service.ts:107,132,151` |
-| `@clarvis/kernel` (`managed-run`, `run-service`, `workflows-service`) | uses `ingestPendingAfter` / `DEFAULT_INGEST_CLOSE_GRACE_MS` to decide whether a run's stream may close | `packages/kernel/src/runs/managed-run.ts:207`, `packages/kernel/src/runs/run-service.ts:96`, `packages/kernel/src/workflows/workflows-service.ts:155` |
-| `@clarvis/code` | reads `memory_ingest` phases through the kernel's policy export | `packages/kernel/src/policy.ts:11`, consumed at `packages/code/src/run-host.ts:10`, `:410` |
+| `@clarvis/kernel` (`managed-run`, `run-service`, `workflows-service`) | uses `ingestPendingAfter` / `DEFAULT_INGEST_CLOSE_GRACE_MS` to decide whether a run's stream may close | `packages/kernel/src/runs/managed-run.ts:207`, `packages/kernel/src/runs/run-service.ts:90`, `packages/kernel/src/workflows/workflows-service.ts:171` |
+| `@clarvis/code` | reads `memory_ingest` phases through the kernel's policy export | `packages/kernel/src/policy.ts:11`, adapted at `packages/code/src/adapters/event-span.ts:1,8-10` and consumed at `packages/code/src/run-host.ts:10,462` |
 | memory's own run capability | calls `enqueueFinishedRun`, `factory.subscribeToRun`, `factory.poke` in `onRunEnd` | `packages/memory/src/capability.ts:330-350` (`onRunEnd`) |
 
 ### 7.3 What the host, not this package, must compose
 
 `IndexerRuntime.passDeps` must differ from `deps` in exactly two ways, both assembled by the host: the
 workspace-hooks capability is **absent from the list** (not merely inactive), and the memory
-capability carries `enqueueOnRunEnd: false` (`packages/memory/src/types.ts:50-67`). The kernel does
+capability carries `enqueueOnRunEnd: false` (`packages/memory/src/types.ts:52-69`). The kernel does
 precisely that in `composeIndexPassDeps`: it filters both `HOOKS_CAPABILITY_NAME` and the ordinary
 `MEMORY_CAPABILITY_NAME`, preserves every other capability in registration order, then appends
 `createMemoryCapability(memoryFactory, { enqueueOnRunEnd: false })`. `file-kernel.ts` passes the
 fully composed ordinary deps — including tasks — rather than the earlier pre-memory/pre-tasks deps.
 The `absent vs inactive` distinction is stated as load-bearing for seed-block survival
-(`packages/memory/src/types.ts:55-62`; same reasoning restated at
-`packages/kernel/src/memory/pass-deps.ts:18-27`).
+(`packages/memory/src/types.ts:57-64`; same reasoning restated at
+`packages/kernel/src/memory/pass-deps.ts:23-32`).
 Production: `packages/kernel/src/memory/pass-deps.ts` (`composeIndexPassDeps`) and
 `packages/kernel/src/file-kernel.ts` (`passDepsRef.current`). Test:
 `packages/kernel/tests/unit/index-pass-deps.test.ts` pins hooks removal, ordinary-memory
@@ -1154,7 +1154,7 @@ replacement, enqueue suppression, ordering, pass-through and non-mutation.
 ## 8. Open questions
 
 1. **Why `passDeps` must remove hooks rather than deactivate them is asserted, not demonstrated.**
-   Both `packages/memory/src/types.ts:55-62` and `packages/kernel/src/memory/pass-deps.ts:18-27`
+   Both `packages/memory/src/types.ts:57-64` and `packages/kernel/src/memory/pass-deps.ts:23-32`
    describe `buildEntrySeed` dropping a carried block when a registered capability's marker is not
    live, and name `runtime/entry-seed.ts` as the mechanism. That engine module is outside this
    document's scope, and no test in the memory or kernel scope exercises the
@@ -1198,7 +1198,7 @@ replacement, enqueue suppression, ordering, pass-through and non-mutation.
     leak guard — is given as prose in the source and echoed above where the source states it. None of
     it is verifiable from the code itself; where a test carries a measured number (the
     `no-cache-observed` production case at
-    `packages/memory/tests/unit/indexer-continuation.test.ts:191`), the test is cited instead.
+    `packages/memory/tests/unit/indexer-continuation.test.ts:208`), the test is cited instead.
 
 9. **`MemoryBatchCommit.mark_indexed` has a production mechanism and no production producer.**
    `packages/memory/src/file-store.ts:163` and the in-memory adapter replay it, while repository-wide

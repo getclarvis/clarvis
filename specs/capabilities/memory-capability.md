@@ -232,7 +232,7 @@ rather than thrown (packages/kernel/src/memory/memory-server-port.ts:56-79).
 
 ## 3. Data and formats
 
-### 3.1 `MemoryToolResult` (`packages/memory/src/types.ts:147-150`), `MemoryToolDef` (`packages/memory/src/types.ts:157-162`)
+### 3.1 `MemoryToolResult` (`packages/memory/src/types.ts:149-152`), `MemoryToolDef` (`packages/memory/src/types.ts:159-164`)
 
 ```
 interface MemoryToolResult { text: string; isError: boolean }
@@ -281,7 +281,7 @@ that cut off mid-frontmatter is discarded rather than served garbled. On success
 (the seed is always the whole PROFILE index)" (packages/memory/src/seed.ts:49) — retained for future task-aware
 seeding.
 
-### 3.3 `DocFrontmatter` (`packages/memory/src/types.ts:109-128`)
+### 3.3 `DocFrontmatter` (`packages/memory/src/types.ts:111-130`)
 
 ```
 interface DocFrontmatter {
@@ -675,15 +675,15 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
   packages/kernel/src/config/capability-registry.ts:3,22`) from dragging in the whole memory package on every kernel boot,
   independent of `builtins.memory`.
 - `packages/memory/src/factory.ts` (sibling document) constructs `createMemoryCapability` nowhere
-  itself; the **host** does. `packages/kernel/src/file-kernel.ts:891` calls
+  itself; the **host** does. `packages/kernel/src/file-kernel.ts:946` calls
   `createMemoryCapability(memoryFactory)` unconditionally — even with `memoryFactory === undefined`
   — "because the engine collects `seedMarker` from every **registered** capability, active or not,
   which is what strips a stale `<memory>` block from a continuation whose run has memory switched
-  off" (packages/kernel/src/file-kernel.ts:808-813). `packages/kernel/src/memory/pass-deps.ts:39` builds a **second** instance with
+  off" (packages/kernel/src/file-kernel.ts:856-861). `packages/kernel/src/memory/pass-deps.ts:39` builds a **second** instance with
   `{ enqueueOnRunEnd: false }` for the deps an indexing pass continues under, which is exactly the
   scenario INV-091/092 exist to protect.
-- `packages/kernel/src/kernel.ts:445` constructs `createMemoryService({ factory: opts.memoryFactory,
-  owner: scope.owner })` per connection scope, and `packages/kernel/src/kernel.ts:743` reports `memory:
+- `packages/kernel/src/kernel.ts:521` constructs `createMemoryService({ factory: opts.memoryFactory,
+  owner: scope.owner })` per connection scope, and `packages/kernel/src/kernel.ts:863` reports `memory:
   opts.memoryFactory !== undefined` on the capability-availability surface — so the kernel, not this
   package, decides whether a client is told memory exists at all.
 

@@ -155,7 +155,7 @@ All five are handled by **one** `ToolHandler` matching on
 | `profiles[].can_spawn` | `packages/loop/src/runtime/run-shape.ts:79-83` | filters `spawnableRegistry`, i.e. the `profile` enum |
 | `profiles[].default_spawn` | `packages/loop/src/runtime/entry-inputs.ts:180-182` | both child-spawn tools' default `profile` |
 | `profiles[].tools` | `packages/loop/src/runtime/subagents/delegate-task.ts:423-425` | scopes the child's MCP registry |
-| `profiles[].grants` | `packages/loop/src/runtime/subagents/delegate-task.ts:427` | selects the child's inherited capabilities and its built-in coding toolset |
+| `profiles[].grants` | `packages/loop/src/runtime/subagents/delegate-task.ts:427,446` | selects the child's inherited capabilities and its built-in coding toolset |
 | `profiles[].iteration_limit` | `packages/loop/src/runtime/subagents/subagent-profiles.ts:201` (raw key read; the resolved cap is applied by `resolveIterationCap` at `:71`) | the child's hard iteration cap |
 | `agents:` block | `@clarvis/supervision`'s `resolveAgentsLimits`, called at `packages/loop/src/runtime/entry-inputs.ts:210` | registry limits, `await_agents` default, finish-nudge cap |
 | `CLARVIS_MAX_PARALLEL_SUBAGENTS` (env, default `4`) | `packages/loop/src/runtime/orchestrator.ts:608`, `packages/capability/src/env.ts:199` | the fan-out semaphore's permit count |
@@ -204,7 +204,7 @@ The background result text is asserted against `/started ag_[0-9a-f]{8} in the b
 | --- | --- | --- |
 | `delegation_created` | `delegation_id`, `title`, `task`, `tools`, `task_id?`, `profile` | `packages/loop/src/runtime/subagents/delegate-task.ts:400-407` |
 | `delegation_started` | `delegation_id`, `model` | `packages/loop/src/runtime/subagents/build-subagent-input.ts:170-174` (the child's `onStart`) |
-| `delegation_completed` / `delegation_failed` | `delegation_id`, `task_id?`, `status`, `result` | throw path `packages/loop/src/runtime/subagents/delegate-task.ts:661-666`; normal path `:688-694` |
+| `delegation_completed` / `delegation_failed` | `delegation_id`, `task_id?`, `status`, `result` | throw path `packages/loop/src/runtime/subagents/delegate-task.ts:661-666`; normal path `:689-694` |
 | `agent_registered` | `agent_id`, `kind`, `native_id`, `title`, `profile?`, `background: true` | `packages/supervision/src/spawn-child.ts:68-75` |
 | `agent_stopped` | `agent_id`, `reason`, `already_settled` | `packages/loop/src/runtime/capabilities/agents.ts:250-254` |
 | `agent_steered` | `agent_id`, `message`, `delivered` | `packages/loop/src/runtime/capabilities/agents.ts:266` |
@@ -232,14 +232,14 @@ from the event's own `kind`; an unwrapped event stays internal (`packages/capabi
 
 Note the asymmetry with the trace: `delegation_started` reaches the trace from the **child's**
 `onStart` (`packages/loop/src/runtime/subagents/build-subagent-input.ts:170`) but reaches the capability channel from the **parent's**
-`runPreparedSubagent` before the child begins (`packages/loop/src/runtime/subagents/delegate-task.ts:602-625`).
+`runPreparedSubagent` before the child begins (`packages/loop/src/runtime/subagents/delegate-task.ts:602-623`).
 
 ### 3.4 The `onSubagentStart` and `onSubagentComplete` lifecycle-hook observers
 
 Distinct from both tables above, these are workspace-hook **observers**, not trace kinds or
 capability events. `onSubagentStart` fires after the parent emits `delegation_started` and immediately
 before it calls `runSubagent`, carrying `{ subagentInstanceId, profile, model, task }`
-(`packages/loop/src/runtime/subagents/delegate-task.ts:602-625`). `onSubagentComplete` carries
+(`packages/loop/src/runtime/subagents/delegate-task.ts:613-623`). `onSubagentComplete` carries
 `{ subagentInstanceId, status, result }` on both terminal paths. Both differ from
 `preDelegateTask` — which gates the spawn itself and gets its own failure-mode row and invariant
 (16) — because observers only ever inform and a thrown observer is swallowed.
@@ -314,14 +314,14 @@ any is individually interesting:
 ### 4.1 Wiring: who gets a registry, and who gets the tools
 
 1. `runOrchestrator` resolves the profile registry and derives the run shape
-   (`packages/loop/src/runtime/orchestrator.ts:194`, `:200-204`).
+   (`packages/loop/src/runtime/orchestrator.ts:195`, `:201-205`).
 2. It creates the supervision registry **only** when `canSpawnChildren(shape, grantDeclarations)`
-   (`packages/loop/src/runtime/orchestrator.ts:209-218`). That predicate is `shape.isLead || any(entry grant declared
+   (`packages/loop/src/runtime/orchestrator.ts:210-219`). That predicate is `shape.isLead || any(entry grant declared
    `entryCanSpawn`)` (`packages/loop/src/runtime/spawn-shape.ts:22-28`).
 3. The registry, when it exists, is published on the run's service registry under
-   `AGENT_REGISTRY_PORT` (`packages/loop/src/runtime/orchestrator.ts:220`).
+   `AGENT_REGISTRY_PORT` (`packages/loop/src/runtime/orchestrator.ts:221`).
 4. `createSemaphore(env.CLARVIS_MAX_PARALLEL_SUBAGENTS)` bounds the fan-out
-   (`packages/loop/src/runtime/orchestrator.ts:606`), reached through
+   (`packages/loop/src/runtime/orchestrator.ts:608`), reached through
    `packages/loop/src/runtime/support/concurrency.ts:10`, a ten-line re-export of `@clarvis/capability`'s
    `createSemaphore`/`Semaphore` and nothing else. Its own doc comment gives the reason it is not
    just imported directly: "the implementation lives in `@clarvis/capability`: it is pure computation
@@ -335,7 +335,7 @@ any is individually interesting:
    `acquire`/`release` contract — FIFO grant order, an abort signal rejecting a still-queued waiter
    without granting or leaking its slot, and a `release` with no waiter clamped at zero rather than
    going negative — is `@clarvis/capability`'s to define (`packages/capability/src/semaphore.ts:9-30`); this
-   document's own use of it is `delegation.ts:123,144` (`acquire`/`release` around one sub-agent's tool
+   document's own use of it is `delegation.ts:129,150` (`acquire`/`release` around one sub-agent's tool
    loop) and `:304,328` (the same pair guarding the parallel `Promise.all` fan-out).
 5. `createEntryInput` reads the registry back off the services
    (`packages/loop/src/runtime/entry-inputs.ts:172`), and:
@@ -354,7 +354,7 @@ other capability's.
 
 ### 4.2 `spawn_subagent` and `delegate_task`, phase by phase
 
-`spawnHandler.handle` (`packages/loop/src/runtime/delegation.ts:250-332`):
+`spawnHandler.handle` (`packages/loop/src/runtime/delegation.ts:258-347`):
 
 | Step | Action | Cite |
 | --- | --- | --- |
@@ -366,34 +366,34 @@ other capability's.
 | 6 | If `background: true` **and** a registry exists: check `failingStreakExceeded()` (⇒ terminal), else `spawnInBackground` | `packages/loop/src/runtime/delegation.ts:290-295` |
 | 7 | Otherwise return a `deferred` verdict | `packages/loop/src/runtime/delegation.ts:297-331` |
 
-`prepareSpawn` (`packages/loop/src/runtime/subagents/delegate-task.ts:298-428`), in order:
+`prepareSpawn` (`packages/loop/src/runtime/subagents/delegate-task.ts:321-453`), in order:
 
-1. `await ctx.tasks?.reconcile?.()` — so `task_id` validation sees external edits (`:292`).
+1. `await ctx.tasks?.reconcile?.()` — so `task_id` validation sees external edits (`:325`).
 2. `validateDelegateTaskArgs`; a tracked call requires and resolves `task_id`, while an independent
    call ignores it. A failure is prefixed with the actual child-spawn tool name.
 3. If the tracked task carries an `exit`/`exit_condition`, append
    `"\n\nExit condition: <exit>"` to the task, and re-check the 32 768-character ceiling on the
-   **combined** text (`:304-327`). Both the standalone and combined checks produce the same message.
+   **combined** text (`:338-362`). Both the standalone and combined checks produce the same message.
 4. `runVerdictHooks` over every hook's `preDelegateTask`, with `onThrow: "deny"` and
    `timeoutMs = LIFECYCLE_GATE_HOOK_TIMEOUT_MS` (30 000 ms, `packages/loop/src/runtime/loop/lifecycle-hooks.ts:18`)
-   (`:331-351`). A denial is prefixed with the actual child-spawn tool name.
+   (`:364-390`). A denial is prefixed with the actual child-spawn tool name.
    `advise` messages are carried on `PreparedSpawn.adviseMessages`.
-5. `tasks.markSpawned(taskId)` (`:361-363`).
+5. `tasks.markSpawned(taskId)` (`:394-397`).
 6. Mint `subagentInstanceId`, record `delegation_created` on the trace and on the capability channel
-   (`:365-387`).
+   (`:399-421`).
 7. `buildRegistry(selectTools(ctx.opened, selectedProfile.tools), ctx.capabilityReserved ?? [])` —
    the child's MCP registry is the intersection of the open pool with the profile's `tools`
-   (`:389-392`; `selectTools` at `packages/mcp-client/src/registry.ts:229-238`).
+   (`:423-426`; `selectTools` at `packages/mcp-client/src/registry.ts:229-238`).
 8. `ctx.capabilitiesFor?.(selectedProfile.grants)` — the child's inherited run capabilities and
-   their system sections (`:439`).
+   their system sections (`:427`).
 9. `hasBuiltinTools = agentToolsActive(ctx.env, selectedProfile.grants)`
-   (`:458`, `packages/loop/src/runtime/tools/builtin/grants.ts:64-67`).
-10. Map `image_refs` indices onto `ctx.turnImages` (`:393-396`).
+   (`:446`, `packages/loop/src/runtime/tools/builtin/grants.ts:64-67`).
+10. Map `image_refs` indices onto `ctx.turnImages` (`:429-432`).
 
 `runPreparedSubagent` (`packages/loop/src/runtime/subagents/delegate-task.ts:570-754`):
 
 1. Resolve the iteration cap and build a `withAdvise` suffixer that appends
-   `"\n\n[advisor] <m>"` per advise message (`:531-537`).
+   `"\n\n[advisor] <m>"` per advise message (`:585-591`).
 2. Pre-seed a zeroed `usageSink` (`:593-599`), emit `delegation_started` on the capability channel
    (`:602-612`), and fire `onSubagentStart` (`:613-623`).
 3. `runSubagent(buildRunSubagentInput(profile, {...}))` (`:624-646`).
@@ -406,8 +406,8 @@ other capability's.
    (`:695-700`).
 6. Tracker reconciliation (`:702-733`): `error` ⇒ `markFailed` + `delegation_failed` event + early
    return with `failed: true`; `budget_exhausted` ⇒ same; `completed` ⇒ `markReturned?.(taskId,
-   resultText)`. A cancelled run never touches the tracker (`aborted` short-circuits at `:645`). The
-   in-source comment at `:667-671` states the rule: "A completed child has handed work back but
+   resultText)`. A cancelled run never touches the tracker (`aborted` short-circuits at `:702-705`; the throw path has the same guard at `:649-652`). The
+   in-source comment at `:727-731` states the rule: "A completed child has handed work back but
    nothing has judged it yet. Recording that hand-back is the tracker's job; closing the task is not
    — only the parent may close it, through its own transition tool."
 7. Emit the terminal capability event and return (`:735-753`).
@@ -521,7 +521,7 @@ the very first check (`packages/loop/tests/unit/agents-capability.test.ts:308-32
 (`packages/loop/src/runtime/capabilities/agents.ts:513`) — and pushes two run warnings when the report is non-empty: `"<n> child agent(s)
 abandoned when the run finished: …"` and `"<n> steer message(s) to child agent(s) were never
 delivered before the run finished."`. It runs in the loop's `finally`
-(`packages/loop/src/runtime/loop/loop.ts:1113-1114`) and is awaited.
+(`packages/loop/src/runtime/loop/loop.ts:1130-1132`) and is awaited.
 
 ### 4.7 The lead's own persona
 
@@ -591,7 +591,7 @@ than spawning forever (`packages/loop/tests/integration/repeated-spawn-no-progre
 | `cancelled` | `{ status: "cancelled", partialText }` |
 | `error` | `{ status: "error", code: error?.code ?? "empty_response", message: error?.message ?? "Sub-agent terminated with no result." }` |
 
-`mapOutcomeToText` (`packages/loop/src/runtime/subagents/delegate-task.ts:736-746`) renders those for the lead:
+`mapOutcomeToText` (`packages/loop/src/runtime/subagents/delegate-task.ts:761-771`) renders those for the lead:
 
 | Outcome | Lead-facing text |
 | --- | --- |
@@ -602,7 +602,7 @@ than spawning forever (`packages/loop/tests/integration/repeated-spawn-no-progre
 
 ### 4.9 Argument validation
 
-`validateDelegateTaskArgs` (`packages/loop/src/runtime/subagents/delegate-task.ts:87-188`), in order:
+`validateDelegateTaskArgs` (`packages/loop/src/runtime/subagents/delegate-task.ts:92-207`), in order:
 
 1. Non-object ⇒ `"task must be a non-empty string"` (`:91-93`).
 2. `parseDelegateTaskText(obj.task)` — Unicode-character counting with early exit at
@@ -634,7 +634,7 @@ The invariants below are derived directly from this document's own source and it
 1. **A run gets a supervision registry — and therefore the five `agent_*` tools — exactly when its
    entry agent can spawn children.** `shape.isLead` (a non-empty `entry.can_spawn`) or an entry
    grant a capability declared `entryCanSpawn`. Production: `packages/loop/src/runtime/spawn-shape.ts:18-29`,
-   `packages/loop/src/runtime/orchestrator.ts:209-218`. Test: `packages/loop/tests/unit/spawn-shape.test.ts:18-32`.
+   `packages/loop/src/runtime/orchestrator.ts:210-219`. Test: `packages/loop/tests/unit/spawn-shape.test.ts:18-32`.
 
 2. **`agent_*` never attaches to a spawned sub-agent.** `forAgent` returns `null` for any scope with
    `entry !== true`. Production: `packages/loop/src/runtime/capabilities/agents.ts:471-472`. Test:
@@ -693,7 +693,7 @@ The invariants below are derived directly from this document's own source and it
     `packages/loop/src/runtime/capabilities/agents.ts:414-416`. Test: `packages/loop/tests/unit/agents-capability.test.ts:297-306`.
 
 12. **Teardown is awaited and its report is surfaced as run warnings, never dropped.** Production:
-    `packages/loop/src/runtime/capabilities/agents.ts:489-503`; `packages/loop/src/runtime/loop/loop.ts:1113-1114`. Tests:
+    `packages/loop/src/runtime/capabilities/agents.ts:489-503`; `packages/loop/src/runtime/loop/loop.ts:1130-1132`. Tests:
     `packages/loop/tests/unit/agents-capability.test.ts:347-371`.
 
 13. **Consecutive background-child failures terminate the run rather than letting the lead spawn
@@ -710,34 +710,34 @@ The invariants below are derived directly from this document's own source and it
 
 15. **Nothing in the spawn path throws out of the handler.** A `capabilitiesFor` throw, an unknown
     profile, a hook denial and a mid-run throw all become plain results. Production:
-    `packages/loop/src/runtime/delegation.ts:269-286`, `:318-325`; `packages/loop/src/runtime/subagents/delegate-task.ts:309-311`,
-    `:350-355`. Tests: `packages/loop/tests/unit/delegation-handler.test.ts:102-119`, `:180-193`, `:273-312`.
+    `packages/loop/src/runtime/delegation.ts:285-300,318-340`; `packages/loop/src/runtime/subagents/delegate-task.ts:423-427`.
+    Tests: `packages/loop/tests/unit/delegation-handler.test.ts:102-119`, `:180-193`, `:273-312`.
 
 16. **A `preDelegateTask` hook that throws fails closed.** `onThrow: "deny"` with the warning
     "preDelegateTask hook threw; failing closed — spawn denied". Production:
-    `packages/loop/src/runtime/subagents/delegate-task.ts:352-354`; the deny-on-throw branch at
+    `packages/loop/src/runtime/subagents/delegate-task.ts:364-390`; the deny-on-throw branch at
     `packages/loop/src/runtime/loop/lifecycle-hooks.ts:168-170`. ~~**Unpinned** — no test in this
     package exercises a throwing `preDelegateTask`.~~ **Pinned 2026-08-22**:
     `packages/loop/tests/component/lifecycle-delegation-wiring.test.ts` — a throwing hook denies the
     spawn and records no `delegation_created`, and a later passing hook never runs.
 
 17. **A cancelled sub-agent never mutates the tracker.** Both the throw path and the outcome path
-    guard on `ctx.signal?.aborted`. Production: `packages/loop/src/runtime/subagents/delegate-task.ts:624-628`,
-    `:677-680`. ~~**Unpinned.**~~ **Pinned 2026-08-22**: same file, four tests. Each guarded path is
+    guard on `ctx.signal?.aborted`. Production: `packages/loop/src/runtime/subagents/delegate-task.ts:647-652`,
+    `:702-705`. ~~**Unpinned.**~~ **Pinned 2026-08-22**: same file, four tests. Each guarded path is
     paired with a control that aborts nothing and asserts `markFailed` *is* called, so a green run
     means the guard held rather than that the path was never reached. The outcome path is reached by
     an `onSubagentComplete` hook aborting mid-settle, which is the race the guard exists for — the
     observer fires before `aborted` is read.
 
 18. **A completed child is marked `returned`, never closed, by delegation.** Production:
-    `packages/loop/src/runtime/subagents/delegate-task.ts:707`, with the in-source rationale at `:702-706` and the
+    `packages/loop/src/runtime/subagents/delegate-task.ts:732`, with the in-source rationale at `:727-731` and the
     port's own at `packages/capability/src/task-tracking-port.ts:40-54`. **Unpinned in
     `@clarvis/loop`** — `tests/unit/delegation-handler.test.ts`'s fake tracker never reaches the
     completion path (its `llm` is `{}`); the tracker-side test lives in `@clarvis/plan`.
 
 19. **A sub-agent's usage is charged even when its run threw.** The `usageSink` is pre-seeded and
     filled in `runSubagent`'s `finally`, then accumulated on both paths. Production:
-    `packages/loop/src/runtime/subagents/run-subagent.ts:194-202`; `packages/loop/src/runtime/subagents/delegate-task.ts:612`, `:661`.
+    `packages/loop/src/runtime/subagents/run-subagent.ts:194-202`; `packages/loop/src/runtime/subagents/delegate-task.ts:648,686`.
     Test: `packages/loop/tests/integration/lead-subagent-usage.test.ts:114-181` ("a Subagent that errors after
     consuming tokens still contributes to by_agent").
 
@@ -760,7 +760,7 @@ The invariants below are derived directly from this document's own source and it
     `packages/loop/tests/integration/specialized-subagents.test.ts:204-209` and `:148`.
 
 23. **`task` and `task+exit_condition` share one 32 768-character ceiling, measured in Unicode
-    characters.** Production: `packages/loop/src/runtime/subagents/delegate-task.ts:316-337`;
+    characters.** Production: `packages/loop/src/runtime/subagents/delegate-task.ts:338-362`;
     `packages/capability/src/delegate-task.ts:17-33`. Test:
     `packages/loop/tests/unit/delegate-task.test.ts:78-96` (the standalone ceiling). The *combined* check is
     **unpinned**.
@@ -773,7 +773,7 @@ The invariants below are derived directly from this document's own source and it
 
 25. **A sub-agent's MCP registry is the profile's `tools` intersected with the open pool, with the
     engine's and the capabilities' wire names reserved.** Production:
-    `packages/loop/src/runtime/subagents/delegate-task.ts:398-401`; `packages/loop/src/runtime/tools/mcp-registry.ts:33-37`;
+    `packages/loop/src/runtime/subagents/delegate-task.ts:423-426`; `packages/loop/src/runtime/tools/mcp-registry.ts:33-37`;
     `packages/mcp-client/src/registry.ts:229-238`. Test:
     `packages/loop/tests/integration/specialized-subagents.test.ts:156-157` (the child sees `info.lookup` and not
     `info.write`).
@@ -786,7 +786,7 @@ The invariants below are derived directly from this document's own source and it
 
 27. **A profile naming a tool absent from the open pool fails the whole run before any model call,
     as `invalid_profile`.** Production: `packages/loop/src/runtime/subagents/subagent-profiles.ts:253-263`;
-    `packages/loop/src/runtime/open-tool-pool.ts:146-162`. Test: `packages/loop/tests/unit/subagent-profiles.test.ts:438-456`
+    `packages/loop/src/runtime/open-tool-pool.ts:160-176`. Test: `packages/loop/tests/unit/subagent-profiles.test.ts:438-456`
     (the predicate); the run-level refusal is **unpinned here**.
 
 28. **`compaction.target_fraction` can never meet `context_fraction`: a 20 % hysteresis floor is
@@ -815,24 +815,24 @@ The invariants below are derived directly from this document's own source and it
 
 | Condition | Handling | Cite |
 | --- | --- | --- |
-| Non-object / missing / empty `task` or `title` | plain `result`, `progress: false`, message names the field | `packages/loop/src/runtime/subagents/delegate-task.ts:92-99`; `packages/loop/src/runtime/delegation.ts:280-286` |
-| Task (or task + exit condition) over 32 768 chars | plain `result` naming the limit and telling the model to shorten | `packages/loop/src/runtime/subagents/delegate-task.ts:316-337` |
+| Non-object / missing / empty `task` or `title` | plain `result`, `progress: false`, message names the field | `packages/loop/src/runtime/subagents/delegate-task.ts:92-105`; `packages/loop/src/runtime/delegation.ts:285-300` |
+| Task (or task + exit condition) over 32 768 chars | plain `result` naming the limit and telling the model to shorten | `packages/loop/src/runtime/subagents/delegate-task.ts:338-362` |
 | Unknown / missing `profile` when several exist | plain `result` listing registered names | `packages/loop/src/runtime/subagents/delegate-task.ts:105-123` |
 | Missing, unknown, or closed `task_id` on `delegate_task` | plain `result` listing spawnable ids when available and directing independent work to `spawn_subagent` | `packages/loop/src/runtime/subagents/delegate-task.ts` (`validateDelegateTaskArgs`) |
 | Surplus properties on either child-spawn tool | ignored once the known arguments validate; a surplus `task_id` on `spawn_subagent` creates no tracker association | `packages/loop/src/runtime/subagents/lead-tools.ts`; test `packages/loop/tests/unit/delegation-handler.test.ts` |
-| `image_refs` on a blind profile / out of range / no images this turn | plain `result` explaining which | `packages/loop/src/runtime/subagents/delegate-task.ts:146-179` |
+| `image_refs` on a blind profile / out of range / no images this turn | plain `result` explaining which | `packages/loop/src/runtime/subagents/delegate-task.ts:165-197` |
 | `preDelegateTask` hook returns `deny` | `<tool-name> DENIED by a workspace hook: <message>` | `packages/loop/src/runtime/subagents/delegate-task.ts` (`prepareSpawn`) |
-| `preDelegateTask` hook throws or exceeds 30 s | **fails closed** — treated as a denial; a warning is logged under `event: "hook.verdict_failed"` | `packages/loop/src/runtime/subagents/delegate-task.ts:352-356`; `packages/loop/src/runtime/loop/lifecycle-hooks.ts:162-170`, `:17` |
-| `preDelegateTask` returns `rewrite` | **fails closed** as an unsupported rewrite: the spawn is denied, `hook.rewrite_unsupported` is logged, and the refusal message explains that this fire point has no rewritable action | `packages/loop/src/runtime/subagents/delegate-task.ts:339-365` (`rewritable: false`); `packages/loop/src/runtime/loop/lifecycle-hooks.ts:177-185`; test `packages/loop/tests/component/lifecycle-rewrite-refusal.test.ts` |
+| `preDelegateTask` hook throws or exceeds 30 s | **fails closed** — treated as a denial; a warning is logged under `event: "hook.verdict_failed"` | `packages/loop/src/runtime/subagents/delegate-task.ts:364-390`; `packages/loop/src/runtime/loop/lifecycle-hooks.ts:162-170`, `:17` |
+| `preDelegateTask` returns `rewrite` | **fails closed** as an unsupported rewrite: the spawn is denied, `hook.rewrite_unsupported` is logged, and the refusal message explains that this fire point has no rewritable action | `packages/loop/src/runtime/subagents/delegate-task.ts:364-390` (`rewritable: false`); `packages/loop/src/runtime/loop/lifecycle-hooks.ts:177-185`; test `packages/loop/tests/component/lifecycle-rewrite-refusal.test.ts` |
 | `prepareSpawn` throws (e.g. a throwing `capabilitiesFor`) | `Tool '<name>' result: <name> error: <msg>`, `progress: false` | `packages/loop/src/runtime/delegation.ts` (`spawnHandler.handle`) |
 | Tracker `beforeSpawn` ⇒ `refuse` | plain `result` with the tracker's text; **no** `delegation_created` is recorded | `packages/loop/src/runtime/delegation.ts:261-267`; test `packages/loop/tests/unit/delegation-handler.test.ts:335-350` |
 | Tracker `beforeSpawn` ⇒ `terminal` | the agent ends with the tracker's own `AgentResult` | `packages/loop/src/runtime/delegation.ts:260`; test `packages/loop/tests/unit/delegation-handler.test.ts:352-369` |
 | Registry sealed or at `maxLiveChildren` | background spawn refused as a plain `result` telling the model to `await_agents` or `agent_stop` | `packages/loop/src/runtime/delegation.ts:107-114` |
 | `maxConsecutiveFailedChildren` reached | `terminal`, `error.code = "background_children_failing"`, message tells the model to `agent_poll` one and finish with what it has | `packages/loop/src/runtime/delegation.ts:63-76`, `:291-293` |
 | `background: true` with no registry | degrades silently to the inline `deferred` path | `packages/loop/src/runtime/delegation.ts:290`; test `:152-159` |
-| Sub-agent run throws, parent not aborted | `Sub-agent error: <msg>`; tracker `markFailed`; `delegation_failed`; `failed: true` | `packages/loop/src/runtime/subagents/delegate-task.ts:611-658` |
-| Sub-agent run throws, parent aborted | `Sub-agent cancelled.`; tracker untouched; `failed` omitted | `packages/loop/src/runtime/subagents/delegate-task.ts:624-658` |
-| Sub-agent outcome `error` / `budget_exhausted` | rendered with its code/partial text; tracker `markFailed`; `failed: true` | `packages/loop/src/runtime/subagents/delegate-task.ts:661-700`, `:710-728` |
+| Sub-agent run throws, parent not aborted | `Sub-agent error: <msg>`; tracker `markFailed`; `delegation_failed`; `failed: true` | `packages/loop/src/runtime/subagents/delegate-task.ts:647-684` |
+| Sub-agent run throws, parent aborted | `Sub-agent cancelled.`; tracker untouched; `failed` omitted | `packages/loop/src/runtime/subagents/delegate-task.ts:647-684` |
+| Sub-agent outcome `error` / `budget_exhausted` | rendered with its code/partial text; tracker `markFailed`; `failed: true` | `packages/loop/src/runtime/subagents/delegate-task.ts:686-725` |
 | Background child throws or is stopped | `handle.settled({ status: "stopped" \| "failed", … })`; the parent learns of it through a notice at its next `beforeIteration`, or `agent_poll` | `packages/loop/src/runtime/delegation.ts:136-141`; `packages/loop/src/runtime/capabilities/agents.ts:483-487` |
 | `agent_poll` with an invalid `match` regex | `Tool 'agent_poll' result (error): invalid 'match' regex: <why>` | `packages/loop/src/runtime/capabilities/agents.ts:178-187`, `:232-234` |
 | Any `agent_*` with an id the caller does not own | `Tool '<name>' result (error): unknown agent_id "<id>"; call agent_list for the ones you own.` | `packages/loop/src/runtime/capabilities/agents.ts:189-193` |
@@ -878,7 +878,7 @@ The invariants below are derived directly from this document's own source and it
   not delegation's. Forwarding `elicit` means a sub-agent-scoped capability can in principle be
   handed the run's human-elicitation callback through this path.
 - **The supervision registry.** Reached off the run's service registry
-  (`packages/loop/src/runtime/entry-inputs.ts:172`), published by the orchestrator (`packages/loop/src/runtime/orchestrator.ts:220`).
+  (`packages/loop/src/runtime/entry-inputs.ts:172`), published by the orchestrator (`packages/loop/src/runtime/orchestrator.ts:221`).
   `DelegationDeps.agents` is optional and its absence is the *only* thing that makes
   `background: true` degrade rather than fail (`packages/loop/src/runtime/delegation.ts:181-183`).
 
@@ -939,7 +939,7 @@ The invariants below are derived directly from this document's own source and it
    the original brief spawn anyway and was told nothing. Resolving it the other way — threading the
    replacement into the spawn — would have rebuilt at a second site the non-silence the first site
    already provides, so the spawn now **denies** instead: `prepareSpawn`'s sweep passes
-   `rewritable: false` (`packages/loop/src/runtime/subagents/delegate-task.ts:357`), and a `rewrite`
+   `rewritable: false` (`packages/loop/src/runtime/subagents/delegate-task.ts:382`), and a `rewrite`
    arriving there resolves through the same `onThrow: "deny"` path a thrown hook does, carrying
    `UNSUPPORTED_REWRITE_MESSAGE` (`packages/loop/src/runtime/loop/lifecycle-hooks.ts:80`-`:82`,
    refused at `:177`-`:187`). Output a fire point cannot act on is a hook that failed to rule, not a
@@ -947,9 +947,9 @@ The invariants below are derived directly from this document's own source and it
 
    The type system carries the same rule ahead of the runtime. `@clarvis/capability` now splits
    `GateVerdict` — `pass`/`deny`/`advise`, "a lifecycle hook's ruling where the action cannot be
-   rewritten" (`packages/capability/src/api.ts:514`-`:518`) — from `HookVerdict`, which is that plus
-   `rewrite` (`:520`-`:543`). `beforeToolUse` takes the wider type and `afterToolUse`, `preFinalize`
-   and `preDelegateTask` take the narrower one (`:695`-`:698`), so a hook this compiler can see is a
+   rewritten" (`packages/capability/src/api.ts:547-560`) — from `HookVerdict`, which is that plus
+   `rewrite` (`:562-585`). `beforeToolUse` takes the wider type and `afterToolUse`, `preFinalize`
+   and `preDelegateTask` take the narrower one (`:742-746`), so a hook this compiler can see is a
    compile error rather than a verdict computed and then dropped; the runtime refusal covers the
    hooks it cannot see.
 
@@ -959,7 +959,7 @@ The invariants below are derived directly from this document's own source and it
    profile, upstream of the spawn's own
    validation and of the command guard — and does it non-silently, which `preDelegateTask` could
    not: the replacement travels as a new call object so the assistant message already in context
-   keeps what the model sent (`packages/loop/src/runtime/loop/loop.ts:740-757`), the model is told
+   keeps what the model sent (`packages/loop/src/runtime/loop/loop.ts:747-757`), the model is told
    through the `[advisor]` channel, and a dispatch that writes a tool-call record carries
    `arguments_original` beside the executed `arguments`
    (`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:38`-`:50`). All four are

@@ -516,8 +516,8 @@ executing. Production: `acceptAc` in `packages/code/src/views/InputDock.tsx`. Te
 completion cases).
 
 `preferredScope()` is `read("workspace") !== undefined ? "workspace" : "global"`
-(`packages/code/src/app/commands.tsx:259`); its TSDoc states the mechanism it replaced ("This used to test whether
-`<ws>/.clarvis` **existed**", `:240`).
+(`packages/code/src/app/commands.tsx:307-308`); its TSDoc states the mechanism it replaced ("This used to test whether
+`<ws>/.clarvis` **existed**", `:291-305`).
 
 ### 4.5 Providers panel composition
 
@@ -558,7 +558,7 @@ Level selection in `specFor(depth)` — **the map-editor check comes first, befo
 
 The rendered `levels` array passed to `LevelHost` mirrors it: index 0 list, index 1 detail, index 2 the map editor
 guarded by `when: () => maps.active()`, index 3 the model level guarded by
-`when: () => !maps.active() && host.level.depth() >= 2`. `packages/code/src/ui/patterns/level-host.tsx:39` selects the
+`when: () => !maps.active() && host.level.depth() >= 2`. `packages/code/src/ui/patterns/level-host.tsx:40` selects the
 first level whose `when()` is true, else the one whose index equals the depth.
 
 `jumpToIssue` has two branches. At depth 0 it does
@@ -691,7 +691,8 @@ The two catalog memos are deliberately different lookups: `fillHit` uses
 uses `ctrl.catalogModelFor` — the model under **this provider's own name only**
 (`packages/code/src/features/providers/controller.ts:512`). `promptCacheNote()` reads `catalogHit` (`packages/code/src/views/config/providers/model-level.tsx:84`) and prints four
 distinct sentences, including the special case "catalog: explicit ⟩ not derived on this kind" for an
-`openai-compatible` provider (`:87`). Pinned at `packages/code/tests/integration/providers-key-render.test.tsx:969` and `:990`.
+`openai-compatible` provider (`:87`). Pinned at
+`packages/code/tests/integration/providers-key-render.test.tsx:1887-1905` and `:1908-1925`.
 
 When there is no catalog hit, the footer line names `PANEL_VERBS.add.key` rather than a literal
 (`packages/code/src/views/config/providers/model-level.tsx:146`).
@@ -712,8 +713,8 @@ time, builds a reactive `read` and a `write` that routes to `ctrl.setProviderMap
 The map editor has no `close`: it derives its state from the host's level depth
 (`packages/code/src/ui/patterns/map-editor.tsx:280` states the mechanism). The Providers tests exercise this from both
 sides — one escape unwinds one drill inside `body`, and a further escape returns to the provider
-detail (`packages/code/tests/integration/providers-key-render.test.tsx:1104` and `:1107`); escaping a *model's* headers map returns to the
-model level, not the provider's (`:1169`).
+detail (`packages/code/tests/integration/providers-key-render.test.tsx:2020-2029`); escaping a
+*model's* headers map returns to the model level, not the provider's (`:2085-2089`).
 
 Two edge behaviours of the shared map editor bound directly on what a Providers save actually writes:
 `persist()` (`packages/code/src/ui/patterns/map-editor.tsx:358`–`:365`) compares a `JSON.stringify` of the rebuilt root against the
@@ -895,7 +896,7 @@ limit, the effective cell shows `env.tokenDefault`; the kernel's real fallback i
 
 ### 4.13a `createMcpCapabilities` — the live MCP capability bridge
 
-`createMcpCapabilities(deps)` (`packages/code/src/adapters/mcp-capabilities-bridge.ts:87`) holds one
+`createMcpCapabilities(deps)` (`packages/code/src/adapters/mcp-capabilities-bridge.ts:89`) holds one
 Solid signal, `nodes`, and two mutable maps: `registered` (per slash-command key → `{fingerprint,
 off}`) and `skillAgents` (per bare skill name → the agent it runs on, `:88`–`:90`). It is constructed
 once by `packages/code/src/app/commands.tsx` (`mcpCaps`) and fed to both `McpBrowser` (its
@@ -922,7 +923,7 @@ deps.refreshSlowMs})`, repeat while `refreshQueued && !disposed` (`:123`–`:136
 queued *physical* requests, only the `refreshQueued` flag toggles. `diagnosticCount("mcp.refresh.requested")`
 fires on every call (`:117`); `deps.refreshSlowMs` is the seam that shortens `diagnosticAsync`'s
 pending-operation warning (`async.pending`, `core/diagnostic-events.ts:174`) for a test that cannot
-wait out the real default — no production registration site passes it (`app/commands.tsx:1289`
+wait out the real default — no production registration site passes it (`app/commands.tsx:1433`
 omits it), matching the sibling `refreshSlowMs` seam on `WorkflowsHubDeps`
 described in [hosts/code-domain-hubs.md](code-domain-hubs.md) §8 item 10.
 
@@ -1157,7 +1158,7 @@ name, never through `fillModelFromCatalog`'s kind/any fallback, because its resu
 `derivePromptCacheMode` and the prompt-cache note are computed from.
 Production: `packages/code/src/features/providers/controller.ts:512`; consumers `packages/code/src/views/config/providers/model-level.tsx:34`, `:78`, `:84`.
 Test: `packages/code/tests/unit/providers-controller.test.ts:847`; render-side at
-`packages/code/tests/integration/providers-key-render.test.tsx:969`, `:990`.
+`packages/code/tests/integration/providers-key-render.test.tsx:971`, `:992`.
 
 **INV-P11.** `fillFromCatalog` writes at most four fields, in the fixed order context window → max
 output → capabilities → prompt cache, and stamps `prompt_cache` only when the entry has none.
@@ -1208,8 +1209,8 @@ Production: `packages/code/src/ui/patterns/bind-level-keys.ts:26`–`:31`; provi
 
 **INV-P20.** In `ProvidersPanel.specFor`, the map editor's spec wins over every depth-based spec.
 Production: `specFor` in `packages/code/src/views/config/ProvidersPanel.tsx`. Test: exercised indirectly by
-`packages/code/tests/integration/providers-key-render.test.tsx:1048` and `:1082`, which assert map-level verbs (`[a] add`,
-`[d] delete`) and map bodies at depths ≥ 2.
+`packages/code/tests/integration/providers-key-render.test.tsx:1982-1987` and `:2013-2018`, which
+assert map-level verbs (`[a] add`, `[d] delete`) and map bodies at depths ≥ 2.
 
 **INV-P21.** A model referenced by `default_model` or by an agent profile cannot be removed; the
 refusal names the reason.
@@ -1270,12 +1271,12 @@ Production: `packages/code/src/features/providers/request-params.ts:195`. Test: 
 **INV-P32.** A header value may contain any number of well-formed `${VAR}` references; only a residual
 unterminated `${` is refused.
 Production: `packages/code/src/features/providers/request-params.ts:179`. Test: `packages/code/tests/unit/request-params.test.ts:61`; render-side
-`packages/code/tests/integration/providers-key-render.test.tsx:1192`.
+`packages/code/tests/integration/providers-key-render.test.tsx:1194`.
 
 **INV-P33.** A `body` authored on a kind with no request-body seam is warned about where it is
 authored.
 Production: `packages/code/src/features/providers/request-params.ts:227`. Test: `packages/code/tests/unit/request-params.test.ts:79`; render-side
-`packages/code/tests/integration/providers-key-render.test.tsx:1175`.
+`packages/code/tests/integration/providers-key-render.test.tsx:1177`.
 
 **INV-P34.** `DefaultsPanel.save` writes only `default_vision_model` and `budget`.
 Production: `packages/code/src/views/config/DefaultsPanel.tsx:53`. Test:
@@ -1308,7 +1309,7 @@ Production: `packages/code/src/views/config/hub-items.ts`, `packages/code/src/vi
 in flight coalesces onto that same promise and only sets a trailing flag, never starting a second
 physical `listTools`/`listPrompts` pair; a refresh that never settles cannot accumulate queued
 physical requests no matter how many times `refresh()` is called.
-Production: `packages/code/src/adapters/mcp-capabilities-bridge.ts:115`–`:138` (the `refreshActive`
+Production: `packages/code/src/adapters/mcp-capabilities-bridge.ts:117`–`:140` (the `refreshActive`
 guard and `do…while refreshQueued` loop).
 Test: `packages/code/tests/component/mcp-bridge.test.ts:392` ("overlapping refreshes are single-flight
 and coalesce into one trailing response"), `:439` ("a never-settling MCP refresh does not accumulate
@@ -1318,7 +1319,7 @@ physical requests").
 registration order (one throwing teardown does not skip the rest), and a refresh already in flight
 when `dispose()` runs may still complete its physical listing but can no longer register a command or
 publish nodes once it does.
-Production: `packages/code/src/adapters/mcp-capabilities-bridge.ts:210`–`:222` (`dispose`), the
+Production: `packages/code/src/adapters/mcp-capabilities-bridge.ts:212`–`:224` (`dispose`), the
 post-await `disposed || refreshQueued` check in `refreshOnce` (`:109`) and the `!disposed` loop
 condition in `refresh` (`:132`).
 Test: `packages/code/tests/component/mcp-bridge.test.ts:541` ("dispose unregisters commands and
@@ -1327,7 +1328,7 @@ invalidates a refresh still in flight").
 **INV-P41.** A skill or downstream prompt whose reconciled spec is byte-identical (by
 `JSON.stringify`) to what is already registered under its key keeps its existing command and closure;
 only a changed fingerprint disposes the old registration and installs a new one.
-Production: `packages/code/src/adapters/mcp-capabilities-bridge.ts:159`–`:160` (skill branch), `:185`–`:186` (downstream branch).
+Production: `packages/code/src/adapters/mcp-capabilities-bridge.ts:161`–`:162` (skill branch), `:187`–`:188` (downstream branch).
 Test: unpinned — `packages/code/tests/component/mcp-bridge.test.ts:500` ("changed metadata for the
 same skill replaces its command and closure") exercises the *changed* branch only; no test asserts the
 no-op branch when a re-list's spec is unchanged.
@@ -1421,12 +1422,12 @@ cases).
 | Controller disposed mid-save | returns `"ok"` silently and stops before writing secrets or emitting | `packages/code/src/features/providers/controller.ts:569`,`:575`,`:587`,`:600` |
 | Bootstrap save rejects | `detachObserved`'s error arm notifies `Setup failed — <text>`; the panel stays open and **Ctrl+S** retries the staged provider/model through `finishBootstrap` | `saveBootstrap` and the save handler in `packages/code/src/views/config/ProvidersPanel.tsx` |
 | Bootstrap model picker closed with no model | notify "Choose a model to finish setup" (warn); setup does not complete | `openModelPicker` in `packages/code/src/views/config/ProvidersPanel.tsx` |
-| Header/body key or value rejected | the map editor's `rejectKey`/`rejectValue` returns a sentence and the entry is not staged | `packages/code/src/features/providers/request-params.ts:162`, `:177`; render-side `packages/code/tests/integration/providers-key-render.test.tsx:1192` |
+| Header/body key or value rejected | the map editor's `rejectKey`/`rejectValue` returns a sentence and the entry is not staged | `packages/code/src/features/providers/request-params.ts:162`, `:177`; render-side `packages/code/tests/integration/providers-key-render.test.tsx:1194` |
 | Blank API-key submission | notify "empty — key unchanged"; `commit` never runs | `packages/code/src/views/config/key-entry.ts:29` |
 | Non-finite / out-of-range number | notify and keep the editor open (no `clearLayer`, no `setEditing(null)`) | `packages/code/src/views/config/field-editor.tsx:269`–`:281` |
 | MCP refresh rejects | the error is stored in `listError` and rendered as a persistent banner *in place of* the empty state | `packages/code/src/views/config/McpBrowser.tsx:58`; test `packages/code/tests/integration/mcp-browser-render.test.tsx:105` |
 | MCP refresh never settles | `loading` stays true and the loading hint shows, not "no MCP servers" | `packages/code/src/views/config/McpBrowser.tsx:54`; test `:84` |
-| MCP `listTools`/`listPrompts` rejects | `reportListFailure` logs `mcp.list.failed` and substitutes `[]`, so one failing half does not crash the refresh | `packages/code/src/adapters/mcp-capabilities-bridge.ts:82` |
+| MCP `listTools`/`listPrompts` rejects | `reportListFailure` logs `mcp.list.failed` and substitutes `[]`, so one failing half does not crash the refresh | `packages/code/src/adapters/mcp-capabilities-bridge.ts:84` |
 | An `mcpServers` entry fails its schema | dropped silently from the parsed list | `packages/code/src/adapters/mcp-capabilities.ts:69` |
 | Uninstalling a workspace plugin | refused with a notify, no confirm | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`uninstall`) |
 | Environment target is invalid or degraded | preview/detail preserves the exact status and issues; no silent default is shown | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`exactDelta`, `fullDetail`) |
@@ -1471,8 +1472,8 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 - Every config screen reaches the UI toolkit through `views/config/view-host.tsx`, which is the only
   file that names `ui/primitives/index.ts` and `ui/patterns/index.ts` for them (`packages/code/src/views/config/view-host.tsx:21`,
   `:37`). `packages/code/src/views/config/validation.ts:8` plays the same role for `features/issues.ts`.
-- `ProvidersPanel` is constructed by `packages/code/src/features/providers/commands.ts:31`; that module is the seam that
-  decides `bootstrap` from the effective provider count (`:38`). The panel itself never reads settings
+- `ProvidersPanel` is loaded and constructed by `packages/code/src/features/providers/commands.ts:29-46`; that module is the seam that
+  decides `bootstrap` from the effective provider count (`:45`). The panel itself never reads settings
   directly — only `ProvidersDeps.settings` through the controller and `validation()`.
 - `features/providers/controller.ts` has **no** import of anything under `views/`; the view→controller
   edge is one-directional and the controller is exercised headlessly at
@@ -1488,9 +1489,11 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
   reverse never happens, so the pure reconciler has no knowledge of the live bridge built over it.
   `McpBrowser` consumes only the bridge's `McpCapabilities.nodes`/`refresh` (`packages/code/src/app/commands.tsx`, `mcp.browse`), never
   `reconcile` directly, and `McpClientCaps` is implemented in production by
-  `adapters/kernel-capabilities-client.ts:13`; `index.tsx:1217` constructs it as `capabilities`, whose
-  value `AppBackend.client`'s getter re-exposes (`views/App.tsx:166`, `index.tsx:1601`–`:1603`), which
-  `App.tsx:682` passes on as `mcpClient` and `app/commands.tsx:1290` finally hands to
+  `packages/code/src/adapters/kernel-capabilities-client.ts:13-38`;
+  `packages/code/src/runtime.tsx:678` constructs it as `capabilities`, whose value
+  `AppBackend.client`'s getter re-exposes (`packages/code/src/views/App.tsx:261-270`,
+  `packages/code/src/runtime.tsx:1300-1305`), which `packages/code/src/views/App.tsx:900-914` passes on
+  as `mcpClient` and `packages/code/src/app/commands.tsx:1570-1576` finally hands to
   `createMcpCapabilities` as `client`.
 
 ### 7.3 What depends on this subsystem
@@ -1626,12 +1629,13 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
    (`openModelPicker`) from inside its own `onPick`, and its "browse all providers" sentinel row
    flips a local `showAll` signal without ever closing the picker in between (`:82`–`:101`) — again
    something `FieldEditor`'s always-close-after-one-pick contract cannot represent. `bindLevelKeys`
-   (`packages/code/src/ui/patterns/bind-level-keys.ts:24`–`:28`) suppresses the underlying level's own
+   (`packages/code/src/ui/patterns/bind-level-keys.ts:24-30`) suppresses the underlying level's own
    key layer whenever *either* `editor.editing() !== null` *or* the panel's own `suspend: () => picker()
    !== null` (the `bindLevelKeys` call in `ProvidersPanel.tsx`) is true, and `LevelHost` mounts the two as independent optional
-   slots at different tree positions — `editor.editing()`'s `CatalogPicker` inside the active
-   `ViewFrame` (`packages/code/src/ui/patterns/level-host.tsx:47`–`:52`), the panel's `picker`-driven
-   one as a sibling outside it (`:53`–`:55`) — so in practice only one is ever reachable by keyboard at
+   sibling slots outside the active `ViewFrame`: the editor's retained `CatalogPicker` through
+   `PickerInput` (`packages/code/src/ui/patterns/level-host.tsx:63`;
+   `packages/code/src/views/config/field-editor.tsx:577-587`) and the panel's `picker`-driven portal
+   (`packages/code/src/ui/patterns/level-host.tsx:64-70`). In practice only one is ever reachable by keyboard at
    a time even though both are optional props on the same `LevelHost`. The code never states this
    division in one place, but each half's own local reasoning (the `stayOpen`/`counter` fields; the
    chained-picker/`showAll` flow) fully accounts for why the panel could not have routed its pickers

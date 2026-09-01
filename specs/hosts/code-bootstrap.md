@@ -21,7 +21,7 @@ transpiles the 847-file graph and applies the Solid JSX transform through Babel 
 architecture tests exist solely to keep those two properties from regressing
 (`packages/code/tests/architecture/cli-fast-path.test.ts:80-98`).
 
-The second organising constraint is layering. `packages/code/tests/architecture/architecture-boundary.test.ts:71-119`
+The second organising constraint is layering. `packages/code/tests/architecture/architecture-boundary.test.ts:71-220`
 enforces four directional rules among `core/`, `adapters/`, `ui/`, `views/` and `features/**/controller.ts`,
 and `packages/code/tests/architecture/dependency-boundary.test.ts`, "imports only its declared Clarvis
 dependencies and approved kernel entrypoints", confines the package to six
@@ -80,34 +80,34 @@ changed marker. Other workspace state is not in scope. Production:
 and clear removes only the authenticated root`). Release uninstall retains the separate
 state-preserving contract in [Portable distribution](../cross-cutting/distribution-and-updates.md).
 
-### 2.2 Flag table (`FLAGS`, `packages/code/src/cli-args.ts:84-112`)
+### 2.2 Flag table (`FLAGS`, `packages/code/src/cli-args.ts:89-122`)
 
 `FLAGS` is declared as "the single source of truth for the CLI surface: parsing, `--help`, the usage
-line and the README synopsis all derive from this table" (`packages/code/src/cli-args.ts:80-83`).
+line and the README synopsis all derive from this table" (`packages/code/src/cli-args.ts:85-88`).
 
 | Flag | Alias | Value form | Mode-selecting | Description string (verbatim) | Line |
 |---|---|---|---|---|---|
-| `--help` | `-h` | — | yes | `print this help and exit` | `packages/code/src/cli-args.ts:85` |
-| `--version` | — | — | yes | `print the version and exit` | `packages/code/src/cli-args.ts:86` |
-| `--print` | `-p` | `<prompt>` (next token) | yes | `run the prompt headless: stream the reply to stdout, exit 0/1` | `packages/code/src/cli-args.ts:87-93` |
-| `--agent` | — | `<name>` (next token) | no | `agent to run --print as (default: entry agent)` | `packages/code/src/cli-args.ts:94` |
-| `--format` | — | `<text\|md>` (next token) | no | `--print output: text (default) or md transcript` | `packages/code/src/cli-args.ts:95` |
-| `--resume` | — | `<session-id>` (next token) | yes | `resume a saved session` | `packages/code/src/cli-args.ts:96` |
-| `--continue` | — | — | yes | `resume this workspace's most recent session` | `packages/code/src/cli-args.ts:97` |
-| `--list` | — | — | yes | `list saved sessions and exit` | `packages/code/src/cli-args.ts:98` |
-| `--delete` | — | `<session-id>` (next token) | yes | `delete a session and its runs` | `packages/code/src/cli-args.ts:99` |
-| `--refresh-models` | — | — | yes | `refresh the models.dev catalog and exit` | `packages/code/src/cli-args.ts:100` |
+| `--help` | `-h` | — | yes | `print this help and exit` | `packages/code/src/cli-args.ts:90` |
+| `--version` | — | — | yes | `print the version and exit` | `packages/code/src/cli-args.ts:91` |
+| `--print` | `-p` | `<prompt>` (next token) | yes | `run the prompt headless: stream the reply to stdout, exit 0/1` | `packages/code/src/cli-args.ts:92-98` |
+| `--agent` | — | `<name>` (next token) | no | `agent to run --print as (default: entry agent)` | `packages/code/src/cli-args.ts:99` |
+| `--format` | — | `<text\|md>` (next token) | no | `--print output: text (default) or md transcript` | `packages/code/src/cli-args.ts:100` |
+| `--resume` | — | `<session-id>` (next token) | yes | `resume a saved session` | `packages/code/src/cli-args.ts:101` |
+| `--continue` | — | — | yes | `resume this workspace's most recent session` | `packages/code/src/cli-args.ts:102` |
+| `--list` | — | — | yes | `list saved sessions and exit` | `packages/code/src/cli-args.ts:103` |
+| `--delete` | — | `<session-id>` (next token) | yes | `delete a session and its runs` | `packages/code/src/cli-args.ts:104` |
+| `--refresh-models` | — | — | yes | `refresh the models.dev catalog and exit` | `packages/code/src/cli-args.ts:105` |
 | `--update` | — | — | yes | `install the newest eligible Clarvis release and exit` | `packages/code/src/cli-args.ts` (`FLAGS`) |
-| `--ascii` | — | — | no | `render glyphs as plain ascii` | `packages/code/src/cli-args.ts:101` |
+| `--ascii` | — | — | no | `render glyphs as plain ascii` | `packages/code/src/cli-args.ts:106` |
 | `--env` | — | `<environment>` (next token) | no | `select an Environment for this process (scope:name or name)` | `packages/code/src/cli-args.ts:110-113` |
-| `--worktree` | — | optional next token or `=name` | no | `open a dedicated Git worktree; omit name to generate one` | `packages/code/src/cli-args.ts:102-106` |
+| `--worktree` | — | optional next token or `=name` | no | `open a dedicated Git worktree; omit name to generate one` | `packages/code/src/cli-args.ts:107-116` |
 | `--debug` | — | `[=<error\|warn\|info\|debug>]` (inline, optional) | no | `write bounded application diagnostics; --debug=<level>` | `packages/code/src/cli-args.ts` (`FLAGS`) |
 
 `FlagSpec.value` consumes the **next** token and is mandatory; `FlagSpec.inlineValue` is attached with
 `=` and is optional; `FlagSpec.optionalValue` accepts either the next token or an `=` value and also
-permits the bare flag (`packages/code/src/cli-args.ts:60-78`).
+permits the bare flag (`packages/code/src/cli-args.ts:65-83`).
 
-### 2.3 `Mode` (`packages/code/src/cli-args.ts:33-58`)
+### 2.3 `Mode` (`packages/code/src/cli-args.ts:33-63`)
 
 ```ts
 export type WorktreeRequest = true | string;
@@ -136,7 +136,7 @@ selector with highest Environment precedence; it changes no persisted selection.
 [Extension Environments](environments.md). `ascii` reaches only the three interactive variants;
 `update`/`help`/`version`/`usage-error` carry no `debug`
 member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard keys on
-(`packages/code/src/cli-args.ts:146`).
+(`packages/code/src/cli-args.ts:156`).
 
 `InteractiveMode` is the subset `runInteractiveMode` and its internal `runApp` accept:
 `Extract<Mode, { kind: "run" | "resume" | "continue" }>`
@@ -200,7 +200,7 @@ process exit (`packages/code/src/index.tsx`, `main`).
 
 ### 2.5 The five control groups `runtime.tsx` hands `App`
 
-`App` takes exactly seven props (`packages/code/src/views/App.tsx:190-198`): the transcript and
+`App` takes exactly seven props (`packages/code/src/views/App.tsx:239-247`): the transcript and
 activity stores plus five control groups. The process is pinned to one workspace, so these objects
 do not implement runtime worktree switching:
 
@@ -220,8 +220,8 @@ do not implement runtime worktree switching:
 |---|---|---|
 | `CLARVIS_CODE_SOURCE=1` | `packages/code/src/cli.ts:40` | forces the source entry over the bundle |
 | `CLARVIS_INSTALL_ROOT` | `packages/code/src/update/installation.ts` (`managedInstallation`) | authenticates a versioned portable install for explicit self-update |
-| `CLARVIS_CODE_DEBUG` | `packages/code/src/cli-args.ts:147-148` | enables diagnostics unless in `{"", "0", "off", "false", "no"}` (`packages/code/src/cli-args.ts:111`); its value also doubles as a level (`packages/code/src/cli-args.ts:149`) |
-| `CLARVIS_CODE_DEBUG_LEVEL` | `packages/code/src/cli-args.ts:149` | level only; takes precedence over the level read out of `CLARVIS_CODE_DEBUG` |
+| `CLARVIS_CODE_DEBUG` | `packages/code/src/cli-args.ts:157-158` | enables diagnostics unless in `{"", "0", "off", "false", "no"}` (`packages/code/src/cli-args.ts:121`); its value also doubles as a level (`packages/code/src/cli-args.ts:159`) |
+| `CLARVIS_CODE_DEBUG_LEVEL` | `packages/code/src/cli-args.ts:159` | level only; takes precedence over the level read out of `CLARVIS_CODE_DEBUG` |
 | `CLARVIS_OWNER` | `packages/code/src/startup-foundation.ts`, `packages/code/src/runtime.tsx` | passed as `defaultOwner` to `WorkspaceClientManager.create` |
 | `CLARVIS_AGENT_TOOLS_MAX_GRANT` | `packages/code/src/index.tsx` (`runInteractive`) | defaulted (`??=`) to `"exec"` before workspace-kernel construction |
 | `CLARVIS_CODE_DEV` | `packages/code/src/index.tsx` (`runInteractive`) | `dev` flag into `buildRendererConfig`; the runtime passes it to `createPlatform` |
@@ -239,7 +239,7 @@ do not implement runtime worktree switching:
 
 ### 3.2 `--help` output
 
-Assembled in `helpText()` (`packages/code/src/cli-args.ts:169-183`):
+Assembled in `helpText()` (`packages/code/src/cli-args.ts:179-193`):
 
 ```
 clarvis <version> — the Clarvis terminal UI
@@ -254,9 +254,9 @@ flags:
 ```
 
 The usage line comes from `usageText()`, which brackets each flag's alias-or-canonical token plus its
-metavar (`packages/code/src/cli-args.ts:163-166`); `metavar()` renders `" <v>"` for a value flag and
-`"[=<v>]"` for an inline one (`packages/code/src/cli-args.ts:157-160`). The flag column is padded to
-`max(len(invocation)) + 2` (`packages/code/src/cli-args.ts:172`).
+metavar (`packages/code/src/cli-args.ts:173-176`); `metavar()` renders `" <v>"` for a value flag and
+`"[=<v>]"` for an inline one (`packages/code/src/cli-args.ts:167-170`). The flag column is padded to
+`max(len(invocation)) + 2` (`packages/code/src/cli-args.ts:182`).
 
 ### 3.3 The missing-bundle error text (`packages/code/src/cli-entry.ts:40-49`)
 
@@ -272,11 +272,11 @@ The TSDoc states the reason for carrying the fix commands inline: "a missing bun
 the user as a module-resolution failure" (`packages/code/src/cli-entry.ts:33-35`). Every one of those
 four substrings is asserted in `packages/code/tests/unit/cli-entry.test.ts:21-29`.
 
-### 3.4 The non-TTY refusal (`packages/code/src/adapters/platform.ts:201-207`)
+### 3.4 The non-TTY refusal (`packages/code/src/adapters/renderer-bootstrap.ts:122-140`)
 
 ```
 clarvis is an interactive TUI and needs a terminal.
-Headless modes: clarvis --help | --list | --delete <id> | --refresh-models | -p <prompt>
+Headless modes: clarvis --help | --list | --delete <id> | --refresh-models | --update | -p <prompt>
 ```
 
 followed by `process.exit(2)`.
@@ -408,19 +408,19 @@ launcher only performs it" (`packages/code/src/cli-entry.ts:5-8`; the allowlist 
 
 ### 4.2 `parseMode` — tokenising and validation order
 
-`packages/code/src/cli-args.ts:203-281`, in order:
+`packages/code/src/cli-args.ts:213-291`, in order:
 
 1. Build `specOf`: canonical flag → spec, plus alias → spec (`:205-209`).
 2. Scan `argv` left to right; a token not starting with `-` is skipped entirely (`:213`) — this is how
    `--resume 0198c0ff` works and how a bare positional is ignored.
 3. A token containing `=` at index > 0 resolves the prefix; if that spec has no `inlineValue`, it is
    `unknown flag: <whole token>` (`:214-219`). This is why `--verbose=1` reports the full token
-   (`packages/code/tests/unit/cli-args.test.ts:95-97`).
+   (`packages/code/tests/unit/cli-args.test.ts:119-121`).
 4. Otherwise, unknown token → `unknown flag: <tok>` (`:221-222`).
 5. A `value` flag consumes `argv[i+1]`; a missing token, or one starting with `-`, is
    `` `${tok} requires a ${noun(spec.value)} (usage: clarvis ${spec.flag} ${spec.value})` ``
    (`:223-230`). `noun()` strips `<>` and turns `-` into a space (`:190-192`), so `<session-id>`
-   reads as `session id` — the string `packages/code/tests/unit/cli-args.test.ts:191` asserts.
+   reads as `session id` — the string `packages/code/tests/unit/cli-args.test.ts:215` asserts.
 6. `--help` short-circuits, then `--version` (`:236-237`) — both **before** mode-conflict checking,
    so `--list --help` is `help`, not a conflict.
 7. At most one `mode: true` flag; two or more →
@@ -449,7 +449,7 @@ propagation to those modes, and the `--update` incompatibility.
 
 ### 4.3 `resolveDebugRequest` — folding flag and environment
 
-`packages/code/src/cli-args.ts:145-154`:
+`packages/code/src/cli-args.ts:155-164`:
 
 | `mode` has `debug`? | `--debug` present | `CLARVIS_CODE_DEBUG` | Result `enabled` | Result `level` |
 |---|---|---|---|---|
@@ -462,12 +462,12 @@ propagation to those modes, and the `--update` incompatibility.
 | yes | `--debug=warn` | `CLARVIS_CODE_DEBUG_LEVEL=error` | `true` | `"warn"` |
 | yes | no | `CLARVIS_CODE_DEBUG_LEVEL="shout"` only | `false` | `"debug"` |
 
-Every row above is an assertion in `packages/code/tests/unit/cli-args.test.ts:105-137`. Level
+Every row above is an assertion in `packages/code/tests/unit/cli-args.test.ts:129-161`. Level
 precedence is `mode.debug.level ?? debugLevel(CLARVIS_CODE_DEBUG_LEVEL) ?? debugLevel(CLARVIS_CODE_DEBUG) ?? "debug"`
-(`packages/code/src/cli-args.ts:149,152`, default constant at `:108`).
+(`packages/code/src/cli-args.ts:159,152`, default constant at `:162`).
 
 The asymmetry between a bad level on the command line (usage error) and a bad level in the environment
-(silently ignored) is stated at `packages/code/src/cli-args.ts:139-143`: "losing diagnostics to a typo
+(silently ignored) is stated at `packages/code/src/cli-args.ts:149-153`: "losing diagnostics to a typo
 in a wrapper script is worse than recording more than was asked for — while the same typo on the
 command line is a usage error, because a person typed it and is there to read the answer."
 
@@ -755,7 +755,7 @@ teardown.
 
 ### 4.10 Layout breakpoints
 
-`layoutModeFromDims` (`packages/code/src/app/layout.ts:51-56`):
+`layoutModeFromDims` (`packages/code/src/app/layout.ts:53-58`):
 
 | Condition | `LayoutMode` |
 |---|---|
@@ -780,7 +780,7 @@ opts transcript blocks and inline elicitation cards into the full width of the r
 the pane's flex boundary, not a second arithmetic inset, stops them at the sidebar
 (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`). The 200-column shell regression
 pins content beyond the old 110-column cap and no transcript text past the sidebar at
-`packages/code/tests/integration/app-shell-render.test.tsx:1512-1552`.
+`packages/code/tests/integration/app-shell-render.test.tsx:2785-2826`.
 
 There is no stored sidebar preference and no global toggle. `App` owns three independent automatic
 reveal intents: the first live Plan reveals Plan, the first workflow leader reveals Parallel work,
@@ -807,31 +807,31 @@ Two independent mechanisms, both in `App.tsx`:
    Activity Detail or a managed-worktree exit prompt. Its TSDoc states the reason: "An overlay
    opened underneath it painted a shredded card *over* that message — destroying the one instruction
    that could get the user out — so the request is refused here rather than at each opener"
-   (`:334-342`).
+   (`:574-583`).
 2. The floor panel itself is rendered last, absolutely positioned, at `zIndex={FLOAT_Z + 2}`
-   (`packages/code/src/views/App.tsx:1324-1346`), showing `terminal too small` and
+   (`packages/code/src/views/App.tsx:1556-1577`), showing `terminal too small` and
    `needs ${FLOOR_MIN_COLUMNS}x${FLOOR_MIN_ROWS}, have ${w}x${h}` — i.e. `needs 24x6, have …`. The
-   inline comment says this second half stops "one already open from covering the message" (`:1310-1313`).
+    inline comment says this second half stops "one already open from covering the message" (`:1557-1561`).
 
 `packages/code/tests/integration/app-shell-render.test.tsx` mounts at 20×8 and asserts
 `needs 24x6` while the ordinary composer controls remain absent.
 
 ### 4.12 `App`'s own composition order
 
-`App` (`packages/code/src/views/App.tsx:201`) builds, in order: syntax-style binding (`:202-203`), hint state (`:204`), memory
-pressure controller (`:205-238`), terminal dims + layout controller (`:245-260`), transcript state
-(`:261-272`), overlay host (`:301-307`), quit confirm (`:309-315`), the `InteractionEffects` object
-(`:355-473`), `createInteraction` (`:478-483`), `createCommands` (`:546`), and finally
-`registerCodeCommands(...)` (`:638-709`) whose `dispose` is registered on cleanup together with the
-overlay host, commands and interaction (`:711-720`).
+`App` (`packages/code/src/views/App.tsx:321`) builds, in order: syntax-style binding (`:322-323`), hint state (`:324`), memory
+pressure controller (`:338-384`), terminal dims + layout controller (`:392-407`), transcript state
+(`:408-422`), overlay host (`:533-539`), quit confirm (`:541-548`), the `InteractionEffects` object
+(`:595-679`), `createInteraction` (`:684-689`), `createCommands` (`:747-773`), and finally
+`registerCodeCommands(...)` (`:867-956`) whose `dispose` is registered on cleanup together with the
+overlay host, commands and interaction (`:958-967`).
 
 **Quit confirm** (`createQuitConfirm`, `packages/code/src/views/quit-confirm.ts:42-80`) is App's own
-"press again to quit" gate, and `App` wires it at `:309-314` with `isDirtyView: () =>
+"press again to quit" gate, and `App` wires it at `:542-548` with `isDirtyView: () =>
 overlays.viewDirty()`, `isRunActive: () => props.run.active()`, `isDraftNonEmpty: () =>
 (inputEl?.plainText ?? "").trim().length > 0`, `notify` and a `requestFinalQuit` indirection; its
 `.quit` is what `InteractionEffects.quit` calls, and its `.disarm` is called during teardown. The
 gate's own contract type is `QuitConfirm = { quit(opts: { confirm: boolean }): void; disarm(): void
-}` over `QuitConfirmDeps` (`quit-confirm.ts:4-16`).
+}` over `QuitConfirmDeps` (`packages/code/src/views/quit-confirm.ts:4-16`).
 
 `createQuitConfirm`'s own TSDoc states the two calling conventions: `confirm: true` "always arms the
 gate — the first call only notifies and starts a [1500ms] window, and quitting happens on a second
@@ -851,7 +851,7 @@ already-armed prompt (`" (unsaved changes)"` > `" (run active)"` > `" (draft uns
 `deps.notify("")` when it elapses unconfirmed (`:70-74`).
 `packages/code/tests/unit/quit-confirm.test.ts` pins the double-tap arm/confirm cycle, the
 draft-alone-does-not-arm case (line 75), the run-active wording (line 46), and the `/quit`-mid-run
-scenario the TSDoc names (line 64); `packages/code/tests/integration/interaction.test.ts:352` cross-references
+scenario the TSDoc names (line 64); `packages/code/tests/integration/interaction.test.ts:351` cross-references
 the double-tap `^C` path this gate was written for.
 
 `requestFinalQuit` delegates directly to `props.shell.quit` for a normal checkout and performs the
@@ -864,7 +864,7 @@ the dirty-view/live-run gate: it runs only after that gate accepts the quit requ
 providers and agents feature commands into it (`:36-51`), then calls `registerAppCommands(deps)`
 (`:52`), and returns the app wiring with a `dispose` that is idempotent and disposes the app
 registration before the feature scope (`:53-62`). `registerAppCommands` itself opens its own scope and
-shadows the four registration methods so everything it registers lands there (`packages/code/src/app/commands.tsx:173-181`).
+shadows the four registration methods so everything it registers lands there (`packages/code/src/app/commands.tsx:223-231`).
 
 The render tree returned by `App` is, top to bottom: `KeymapProvider` →
 `HeaderRows` → a one-row top rule → the region box holding `OverlayRegion` with `TranscriptRegion` as
@@ -1099,21 +1099,21 @@ Pinned by a self-test: `packages/code/tests/architecture/cli-fast-path.test.ts:1
 **INV-CB-5 (owns INV-243).** No file under `src/core/**` imports `solid-js`, any `@opentui/*`, any
 `@clarvis/kernel*`, `@clarvis/paths`, `node:fs`, `node:fs/promises`, or anything resolving into
 `adapters/`, `infrastructure/`, `theme/`, `ui/` or `views/`.
-Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:72-89`.
+Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:128-147`.
 Note: `src/infrastructure/` does not exist (`packages/code/src/` listing), so that clause is currently
 vacuous.
 
 **INV-CB-6 (owns INV-244).** No file under `src/adapters/**` imports anything resolving into `ui/` or
 `views/`.
-Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:91-97`.
+Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:149-155`.
 
 **INV-CB-7 (owns INV-245).** No file under `src/ui/**` imports `@clarvis/kernel*`, or anything
 resolving into `adapters/` or `features/`.
-Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:99-107`.
+Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:157-165`.
 
 **INV-CB-8 (owns INV-246).** No `src/features/**/controller.ts` imports anything resolving into
 `theme/`, `ui/` or `views/`, nor any specifier ending in `.tsx`.
-Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:109-119`. Three controllers are
+Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts:167-220`. Three controllers are
 in scope: `features/{agents,providers,tasks}/controller.ts`.
 Note the asymmetry with INV-CB-5: the four boundary checks count **type-only** imports as violations —
 the walker at `packages/code/tests/architecture/architecture-boundary.test.ts:36-48` records every `ImportDeclaration` regardless of
@@ -1125,14 +1125,14 @@ not one of the four constrained layers.
 one of the six sanctioned entrypoints (`@clarvis/kernel`, `/bootstrap`, `/config`, `/policy`,
 `/local`, `/logger`), and none of `@clarvis/{capability,loop,memory,plan,tools,skills,tasks,workflows}` appears at
 all.
-Pinned: `packages/code/tests/architecture/dependency-boundary.test.ts:73-87` (entrypoint set `:6-12`,
+Pinned: `packages/code/tests/architecture/dependency-boundary.test.ts:74-88` (entrypoint set `:6-12`,
 forbidden list `:13-22`). The lightweight startup/runtime imports `createLogger` from the narrow
 `@clarvis/kernel/logger` entry; file-kernel construction enters only through a dynamic
 `@clarvis/kernel/bootstrap` import in `WorkspaceClientManager`.
 
 **INV-CB-9a.** The specifier walker behind INV-CB-9 recognizes type-only, re-exported, side-effect and
 dynamic `import()` forms, not just plain value imports.
-Pinned by a self-test: `packages/code/tests/architecture/dependency-boundary.test.ts:55-71` — it feeds
+Pinned by a self-test: `packages/code/tests/architecture/dependency-boundary.test.ts:56-72` — it feeds
 `import type`, `export type`, a bare side-effect `import`, a dynamic `import()` and an `import(...).Foo`
 type-position reference through `importedSpecifiers` and asserts all five specifiers are collected.
 
@@ -1162,44 +1162,43 @@ Pinned: `packages/code/tests/unit/cli-entry.test.ts:21-29`.
 
 **INV-CB-13.** `FLAGS` is the sole source for `--help`, the usage line **and** the package README's CLI
 section — every flag token and every `desc` string appears in all three.
-Production: `packages/code/src/cli-args.ts:68-91, 163-183`.
-Pinned: `packages/code/tests/unit/cli-args.test.ts:206-215` and `:217-223`.
+Production: `packages/code/src/cli-args.ts:86-124,196-216`.
+Pinned: `packages/code/tests/unit/cli-args.test.ts:260-277`.
 
 **INV-CB-14.** At most one `mode: true` flag per invocation; two or more is a usage error naming all of
 them.
-Production: `packages/code/src/cli-args.ts:239-241`.
-Pinned: `packages/code/tests/unit/cli-args.test.ts:171-178`.
+Production: `packages/code/src/cli-args.ts:287-289`.
+Pinned: `packages/code/tests/unit/cli-args.test.ts:225-232`.
 
 **INV-CB-15.** `--agent` and `--format` are legal only alongside `-p/--print`.
-Production: `packages/code/src/cli-args.ts:244-247`.
-Pinned: `packages/code/tests/unit/cli-args.test.ts:161-162`.
+Production: `packages/code/src/cli-args.ts:292-295`.
+Pinned: `packages/code/tests/unit/cli-args.test.ts:210-217`.
 
 **INV-CB-16.** `--help` and `--version` short-circuit before mode-conflict validation, so they can
 never produce a usage error.
-Production: `packages/code/src/cli-args.ts:236-237` (before `:239`).
-Pinned indirectly: `packages/code/tests/unit/cli-args.test.ts:37-39` asserts the bare forms; **no test
+Production: `packages/code/src/cli-args.ts:284-289`.
+Pinned indirectly: `packages/code/tests/unit/cli-args.test.ts:40-42` asserts the bare forms; **no test
 asserts the short-circuit against a conflicting flag** (e.g. `--list --help`). Unpinned in that respect.
 
 **INV-CB-17.** A `--debug=<x>` naming no level is a usage error; the same typo in
 `CLARVIS_CODE_DEBUG_LEVEL` is ignored and the default level stands.
-Production: `packages/code/src/cli-args.ts:252-253` versus `:149` (via `debugLevel`'s `undefined`
-return at `:122-128`).
-Pinned: `packages/code/tests/unit/cli-args.test.ts:89-94` and `:130-133`.
+Production: `packages/code/src/cli-args.ts:305-309` versus `:149-160,178-186`.
+Pinned: `packages/code/tests/unit/cli-args.test.ts:133-152` and `:184-187`.
 
 **INV-CB-18.** The `--debug` flag overrides the environment in both directions: it enables against
 `CLARVIS_CODE_DEBUG=off`, and `--debug=<level>` overrides `CLARVIS_CODE_DEBUG_LEVEL`.
-Production: `packages/code/src/cli-args.ts:151-152`.
-Pinned: `packages/code/tests/unit/cli-args.test.ts:122-129`.
+Production: `packages/code/src/cli-args.ts:169-185`.
+Pinned: `packages/code/tests/unit/cli-args.test.ts:154-183`.
 
 **INV-CB-19.** `update`/`help`/`version`/`usage-error` never open a diagnostic session, whatever the
 environment says, because those `Mode` variants carry no `debug` member.
-Production: `packages/code/src/cli-args.ts:34-44` (union) and `:146` (the `"debug" in mode` guard).
-Pinned: `packages/code/tests/unit/cli-args.test.ts:134-137`.
+Production: `packages/code/src/cli-args.ts:46-64` (union) and `:178-179` (the `"debug" in mode` guard).
+Pinned: `packages/code/tests/unit/cli-args.test.ts:188-191`.
 
 **INV-CB-20.** `--continue` is strict to the current workspace and never falls back to a global most
 recent session.
 Production: `packages/code/src/cli-mode.ts:32` filtering through `listSessionsForWorkspace`
-(`packages/code/src/adapters/session-store.ts:252-255`).
+(`packages/code/src/adapters/session-store.ts:303-306`).
 Pinned: `packages/code/tests/unit/cli-mode.test.ts:38-49`.
 
 **INV-CB-21.** `--print` writes only the lead agent's `text` channel to stdout; sub-agent output and
@@ -1233,7 +1232,7 @@ Pinned: `packages/code/tests/integration/worktree-bootstrap.test.ts` (reopen and
 environment variables; prompts are disabled and output/time are bounded.
 Production: `packages/code/src/bootstrap/worktree.ts:42-85`.
 Pinned for inherited `GIT_INDEX_FILE` isolation:
-`packages/code/tests/integration/worktree-bootstrap.test.ts:42-65`; the argv-only spawn, prompt
+`packages/code/tests/integration/worktree-bootstrap.test.ts:43-66`; the argv-only spawn, prompt
 variables and timeout/output caps are unpinned.
 
 **INV-CB-27.** A callback target is accepted only while it is the published, still-bound target;
@@ -1249,7 +1248,7 @@ than its immutable current workspace (`packages/code/src/adapters/workspace-clie
 Pinned: `packages/code/tests/component/workspace-client-manager.test.ts`.
 
 **INV-CB-29.** The layout floor is 24 columns × 6 rows; below either dimension the mode is `floor`.
-Production: `packages/code/src/app/layout.ts:47-52`.
+Production: `packages/code/src/app/layout.ts:49-54`.
 Pinned: `packages/code/tests/unit/layout.test.ts:34-56`.
 
 **INV-CB-30.** The secondary inspector has three independent automatic reveal intents per execution
@@ -1276,10 +1275,11 @@ degrades rather than overflowing on a 24-column terminal.
 Production: `packages/code/src/app/layout.ts` (`createLayoutController.sidebarWidth`).
 Pinned: `packages/code/tests/unit/layout.test.ts:71-73`.
 
-**INV-CB-32.** At the floor, no overlay may be opened, and the floor message paints above the float
-layer so an already-open overlay cannot cover it.
-Production: `packages/code/src/views/App.tsx:358, 392, 411, 1339`.
-Pinned: `packages/code/tests/integration/app-shell-render.test.tsx:419-431`.
+**INV-CB-32.** At the floor, App refuses Activity Detail and the managed-worktree exit prompt, and
+the floor message paints above the float layer so an already-open overlay cannot cover it.
+Production: `packages/code/src/views/App.tsx:568-571`, `:583`, `:693-703`, `:1556-1577`.
+Pinned only for floor rendering: `packages/code/tests/integration/app-shell-render.test.tsx:641-647`;
+the two opener refusals are unpinned.
 
 **INV-CB-33.** `runFatalBoot` accepts `r` repeatedly until one retry succeeds, ignores keys while a
 retry is in flight, and routes idle `ctrl+c` to `quit`; `q` and Escape are inert. It resolves `false`
@@ -1314,13 +1314,13 @@ a `BODY` line after the header and asserts they land on rows 1 and 2.
 before the feature scope.
 Production: `packages/code/src/app/command-composition.ts:53-62`.
 Unpinned — no test in `packages/code/tests/` calls `registerCodeCommands().dispose()` twice; `App`
-calls it once from `onCleanup` (`packages/code/src/views/App.tsx:732`).
+calls it once from `onCleanup` (`packages/code/src/views/App.tsx:958-967`).
 
 **INV-CB-39.** `src/cli.ts`, `src/index.tsx` and `src/runtime.tsx` are absent from LCOV by design and
 must stay on `NO_COUNTER_ALLOWLIST`: the first two are executable entries, while importing either
 TUI module starts application lifecycle work.
 Production: `tooling/checks/coverage.ts` (`NO_COUNTER_ALLOWLIST.code`).
-Self-pinning: `tooling/checks/coverage.ts:450` reports allowlist entries that are no longer needed.
+Self-pinning: `tooling/checks/coverage.ts:452` reports allowlist entries that are no longer needed.
 
 **INV-CB-40.** `CLARVIS_AGENT_TOOLS_MAX_GRANT` defaults to `"exec"` before any kernel is constructed,
 and only if unset.
@@ -1482,7 +1482,7 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
 | `src/runtime.tsx` | print/session helpers, workspace callbacks, worktree lifecycle, `runFatalBoot`, `App` and its five control interfaces | `packages/code/src/runtime.tsx` |
 | `views/App.tsx` | `createLayoutController`, `FLOOR_MIN_COLUMNS`, `FLOOR_MIN_ROWS` | `packages/code/src/views/App.tsx:92` |
 | `views/StartupComposer.tsx` | `BrandBanner` | `packages/code/src/views/StartupComposer.tsx` |
-| `views/app/TranscriptRegion.tsx` | `Splash` | `packages/code/src/views/app/TranscriptRegion.tsx:16` |
+| `views/app/TranscriptRegion.tsx` | `Splash` | `packages/code/src/views/app/TranscriptRegion.tsx:23` |
 | `views/onboarding/{SetupView,RecoveryView}.tsx` | `BrandBanner`; Setup also uses `firstRunSplashFits` | the corresponding imports in each onboarding view |
 | `views/config/CatalogPicker.tsx` | `BANNER`, `BrandBanner`, `firstRunSplashFits` | the first-run picker intro |
 | `views/overlays/{DiffViewer,PlanOverlay,Help}.tsx` | `PageFrame` | corresponding `PageFrame` imports |
@@ -1496,7 +1496,7 @@ here — a barrel would put this file's imports back on `cli.ts`'s fast path" (`
   `packages/code/tests/architecture/cli-fast-path.test.ts:94-98`; the split exists only to satisfy that.
 - **`views/App.tsx` imports `app/command-composition.ts`, not the reverse** — `command-composition.ts`
   imports only adapter/feature types and `commands.tsx` (`packages/code/src/app/command-composition.ts:1-10`), while
-  `commands.tsx` imports `views/config/*` freely (`packages/code/src/app/commands.tsx:60-77`). No test forbids the reverse
+  `commands.tsx` imports `views/config/*` freely (`packages/code/src/app/commands.tsx:66-68`). No test forbids the reverse
   edge; the four boundary rules do not cover `app/`.
 - **`runtime.tsx` is the only place all complete-app layers meet.** It imports `adapters/`, `core/`,
   `theme/`, `features/`, `app/`, `views/`, `onboarding/` and the narrow kernel logger entry together.
@@ -1525,10 +1525,13 @@ message, a bare string, a number, `null`, `undefined`, a non-`Error` object shap
 `Symbol`) — so a future edit to the kernel's version that this copy does not follow would fail the test
 rather than silently drift.
 
-Its importers span every layer this document's boundary rules separate: `run-host.ts:13`, `runtime.tsx`,
-`views/App.tsx:62`, `views/FatalBoot.tsx:5`, `views/overlay-host.ts:7`, `onboarding/doctor.ts:17`,
-`app/commands.tsx:76`, nine `views/config/*.tsx` screens, `features/{agents,providers}/events.ts:2`, and
-`adapters/{marketplace,plugin-install}.ts:11,1` — all importing the same relative `./errors.ts` (or
+Its importers span every layer this document's boundary rules separate:
+`packages/code/src/run-host.ts:13`, `packages/code/src/runtime.tsx:52`,
+`packages/code/src/views/App.tsx:87`, `packages/code/src/views/FatalBoot.tsx:5`,
+`packages/code/src/views/overlay-host.ts:8`, `packages/code/src/onboarding/doctor.ts:17`,
+`packages/code/src/app/commands.tsx:76`, nine `views/config/*.tsx` screens,
+`packages/code/src/features/agents/events.ts:2`, `packages/code/src/features/providers/events.ts:2`,
+`packages/code/src/adapters/marketplace.ts:11`, and `packages/code/src/adapters/plugin-install.ts:1` — all importing the same relative `./errors.ts` (or
 `../adapters/errors.ts`) sibling rather than reaching past it into the kernel.
 
 ## 8. Open questions
@@ -1558,7 +1561,7 @@ Its importers span every layer this document's boundary rules separate: `run-hos
 4. **The exact `AppCommandDeps` contents and app command registrations** are out of scope
    here — `app/commands.tsx` is 1,394 lines and belongs to the [hosts/code-input-and-overlays.md](code-input-and-overlays.md) document.
    This spec covers only its two exported types, its scope-shadowing construction
-   (`packages/code/src/app/commands.tsx:173-181`) and the composition wrapper.
+   (`packages/code/src/app/commands.tsx:223-231`) and the composition wrapper.
 5. **Run streaming, `run-host.ts`, `kernel-run-client.ts`, `WorkspaceClientManager` and the transcript
    store** are named here only as the objects `runtime.tsx` assembles. Their contracts belong to
    [hosts/code-run-host.md](code-run-host.md).
@@ -1585,12 +1588,12 @@ Its importers span every layer this document's boundary rules separate: `run-hos
     surface.
 12. ~~**`HeaderRowsProps.agentName` is a dead prop.**~~ **Resolved by removal:** the prop is gone.
     `HeaderRowsProps` is now `{ plan: Accessor<HeaderPlan> }` (`packages/code/src/views/HeaderRows.tsx:8`-`:10`) and the
-    call site passes only `plan` (`packages/code/src/views/App.tsx:1092`), which matches what the render
+    call site passes only `plan` (`packages/code/src/views/App.tsx:1269`), which matches what the render
     body (`packages/code/src/views/HeaderRows.tsx:15`-`:68`) ever read. The active-agent name still reaches the row, but
     through `HeaderInput.agentName` → `projectHeader`'s `identity` field
     (`packages/code/src/views/header-projection.ts:13`, `:209`-`:216`), never as a prop.
 12. **`--ascii` combined with a headless mode has no test.** `parseMode` computes `ascii` for every
-    invocation (`packages/code/src/cli-args.ts:249`) but only attaches it to the `run`/`resume`/`continue` variants of
+    invocation (`packages/code/src/cli-args.ts:259`) but only attaches it to the `run`/`resume`/`continue` variants of
     `Mode`; for `--print`/`--list`/`--delete`/`--refresh-models` the value is silently dropped rather
     than rejected the way `--agent`/`--format` are outside `--print`. No test in
     `packages/code/tests/unit/cli-args.test.ts` asserts what `parseMode(["--refresh-models",

@@ -202,7 +202,7 @@ This is a cost decision rather than a style one: every `logger?.debug(...)` is a
 (`tooling/checks/coverage.ts`). One exception is on record: `@clarvis/loop` keeps
 `deps.logger === undefined` meaning *undefined* rather than `NOOP_LOGGER`, because a silence contract is
 pinned and several downstream presence checks read `!== undefined` — substituting a no-op would change
-what those checks mean (`packages/loop/src/runtime/execute-run.ts:336-339`).
+what those checks mean (`packages/loop/src/runtime/execute-run.ts:339-342`).
 
 ## 3. Data and formats
 
@@ -213,7 +213,7 @@ paired with a human sentence naming the *consequence* — never a message prefix
 observed directly in source:
 
 ```ts
-// packages/kernel/src/file-kernel.ts:350-360
+// packages/kernel/src/file-kernel.ts:341-356
 logger.info(
   {
     event: "kernel.boot.started",
@@ -352,7 +352,7 @@ are logged as `*_chars` counts and never as text. The redaction mechanics are in
 
 ### 4.1 Building a host's logger (file-kernel path)
 
-Order of operations in `createFileKernel` (`packages/kernel/src/file-kernel.ts:330-367`):
+Order of operations in `createFileKernel` (`packages/kernel/src/file-kernel.ts:341-418`):
 
 1. Resolve the environment snapshot (`baseEnvironment`, `env`).
 2. Build (or accept) the root `Logger`: `opts.logger ?? createLogger(env.CLARVIS_LOG_LEVEL, {service: SERVICE})`
@@ -375,7 +375,7 @@ Four correlation scopes exist, and each is bound by the layer that owns it: **se
 (`{service, instance_id}`, bound by the factory), **component** (`{component}`, bound where the kernel
 constructs each collaborator), **owner** (`{owner}`, bound in scope policy so every owner service
 inherits it) and **run** (`{execution_id, owner_key_name, mode}`, bound in `executeRun` where the
-execution id is minted — `packages/loop/src/runtime/execute-run.ts:337-340`). Hand a lower layer the
+execution id is minted — `packages/loop/src/runtime/execute-run.ts:340-343`). Hand a lower layer the
 root logger rather than an already-bound child: one binding per scope, applied by the layer that owns
 that scope, or the record carries `component` twice. `@clarvis/mcp-client`'s pool outlives every run,
 so a pooled connection must never bind a run id; its join key is the connection.
@@ -432,7 +432,7 @@ tool call."
 
 ### 4.5 Refusing a logger bound to the kernel's own wire — `serveFileKernelOverStdio`
 
-`packages/kernel/src/serve.ts:102-118`:
+`packages/kernel/src/serve.ts:102-119`:
 
 1. `refuseLoggerOnWire(opts)` runs **before** `createFileKernel` is even called (`:103`).
 2. `loggerDescriptor(opts.logger)` walks the logger's own prototype chain (not just its own symbols,
@@ -503,14 +503,14 @@ kernel side is the other half of the guarantee, not a duplicate of it.
 
 **INV-OBS-3** (derived). A logger writing to the same file descriptor as `serveFileKernelOverStdio`'s
 own NDJSON wire is refused before any kernel resource is constructed.
-- Production: `packages/kernel/src/serve.ts:76-118` (`refuseLoggerOnWire`, called at `:103` before
+- Production: `packages/kernel/src/serve.ts:68-90,102-104` (`refuseLoggerOnWire`, called at `:103` before
   `createFileKernel`).
 - Test: `packages/kernel/tests/integration/serve.test.ts:34-123` — seven cases: a direct
-  `destination:1` logger is rejected (`:35-44`); a `.child()` of one is still rejected, walking the
-  prototype chain (`:45-58`); a grandchild is still rejected (`:59-68`); a `destination:2` (`silent`
+  `destination: 1` logger is rejected (`:35-44`); a `.child()` of one is still rejected, walking the
+  prototype chain (`:45-58`); a grandchild is still rejected (`:59-68`); a `destination: 2` (`silent`
   level) logger and its child are accepted (`:69-79`); a logger sharing an *explicit* `opts.output`'s
   descriptor is rejected — the explicit output in this test is given `fd: 1`, the same descriptor as
-  the default wire, not a descriptor that is not `1` (`:80-91`); a `silent`-level, `destination:1`
+  the default wire, not a descriptor that is not `1` (`:80-91`); a `silent`-level, `destination: 1`
   logger paired with a custom output stream exposing no `fd` is **accepted**, because the wire's own
   descriptor comparison has nothing to compare against and degrades to a no-op rather than a refusal
   — this is the one acceptance case among the seven, not a rejection (`:92-111`); a logger exposing no
@@ -684,8 +684,8 @@ LRU-by-insertion-order structure rather than merely a size-capped one.
   process-wide-slot hazards belong to those packages' own documents and are not described in full here.
 - **Whether `createSampler`/`createRateLimiter` are used correctly (i.e., keyed with enough
   distinguishing identity) at every call site listed in §7** was not verified beyond the two call
-  sites actually read (`packages/mcp-client/src/connection-manager.ts:299`,
-  `packages/workflows/src/dispatch.ts:230,574`). The doc-comment's own warning — "a key of `operation`
+  sites actually read (`packages/mcp-client/src/connection-manager.ts:322`,
+  `packages/workflows/src/dispatch.ts:231,575`). The doc-comment's own warning — "a key of `operation`
   alone collapses two different servers failing the same way into one line naming neither"
   (`packages/capability/src/log.ts:279-282`) — is a design intent, not a verified property of every
   caller.

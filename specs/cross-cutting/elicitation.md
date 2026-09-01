@@ -122,9 +122,9 @@ concern of **kernel-transport-and-wire**; this document stops at the DTO shapes 
 |---|---|---|
 | `ElicitationRelayResult` | `packages/mcp-client/src/client.ts:37-40` | `{ action: "accept"\|"decline"\|"cancel", content? }` |
 | `ElicitationRelay` | `packages/mcp-client/src/client.ts:48-53` | `{ handle(params, signal?): Promise<ElicitationRelayResult> }` |
-| Capability advertisement | `packages/mcp-client/src/client.ts:187-190` | `capabilities: relay ? { elicitation: {} } : {}` — presence of a `relay` is what tells the external server Clarvis can answer |
-| Request handler | `packages/mcp-client/src/client.ts:192-197` | `client.setRequestHandler(ElicitRequestSchema, ...)` forwards `request.params` to `relay.handle` |
-| Pooled connections | `packages/mcp-client/src/client.ts:176` (doc) | opened **without** a relay — no single human to route to for a shared subprocess |
+| Capability advertisement | `packages/mcp-client/src/client.ts:193-202` | `capabilities: relay ? { elicitation: {} } : {}` — presence of a `relay` is what tells the external server Clarvis can answer |
+| Request handler | `packages/mcp-client/src/client.ts:198-202` | `client.setRequestHandler(ElicitRequestSchema, ...)` forwards `request.params` to `relay.handle` |
+| Pooled connections | `packages/mcp-client/src/client.ts:181-183` (doc) | opened **without** a relay — no single human to route to for a shared subprocess |
 | `ConnectionManager`'s enforcement of that rule | `packages/mcp-client/src/connection-manager.ts:669-730` | `openFresh(o, signal, pooled)` opens with `...(o.relay && !pooled ? { relay: o.relay } : {})` — a `relay` handed to a poolable (stdio + `shared`) acquire is silently dropped, never reaching `createMCPClientFactory` |
 | `warnRelayDropped` | `packages/mcp-client/src/connection-manager.ts:635-657` | logs `mcp.pool.relay_dropped` once per **server name** (not per acquire, not per slot) the first time a dropped relay is observed for it |
 
@@ -317,8 +317,8 @@ The configured wait and three wrappers/bounds can participate in one elicitation
 
 | Layer | Bound | Applied by |
 |---|---|---|
-| Configured run wait | `request.elicit_wait_ms ?? CLARVIS_DEFAULT_ELICIT_WAIT_MS` (default 1,800,000 ms) | supplies ordinary `Elicit` call sites and the outer guard-confirmation wrapper (`packages/loop/src/runtime/orchestrator.ts:436`, `packages/loop/src/runtime/capabilities/tools.ts:174,208-211`) |
-| Enforcement | `withElicitWaitBound(elicit, graceMs=1000)` wraps the run's `elicit` once, at orchestrator construction, adding `ELICIT_WAIT_GRACE_MS` (1000 ms) grace so the *outer* bound fires slightly after the transport's own deadline (`packages/loop/src/runtime/tools/ask-user-tool.ts:106-122`, `packages/loop/src/runtime/orchestrator.ts:437-438`) | `boundPromise` (`packages/loop/src/runtime/support/bounded.ts:38`) |
+| Configured run wait | `request.elicit_wait_ms ?? CLARVIS_DEFAULT_ELICIT_WAIT_MS` (default 1,800,000 ms) | supplies ordinary `Elicit` call sites and the outer guard-confirmation wrapper (`packages/loop/src/runtime/orchestrator.ts:437`, `packages/loop/src/runtime/capabilities/tools.ts:174,208-211`) |
+| Enforcement | `withElicitWaitBound(elicit, graceMs=1000)` wraps the run's `elicit` once, at orchestrator construction, adding `ELICIT_WAIT_GRACE_MS` (1000 ms) grace so the *outer* bound fires slightly after the transport's own deadline (`packages/loop/src/runtime/tools/ask-user-tool.ts:106-122`, `packages/loop/src/runtime/orchestrator.ts:438-439`) | `boundPromise` (`packages/loop/src/runtime/support/bounded.ts:38`) |
 | Guard adapter's port-level declaration | `ELICIT_NO_TIMEOUT_MS` = 2,147,483,647 ms (practical "never") plus the run signal | `createGuardElicit` (`packages/kernel/src/guard/guard-elicit.ts:165-168`) |
 | Effective guard-confirmation enforcement | `withGuardElicitWaitBound` wraps the complete guard callback with the configured run wait; timeout, abort, or rejection resolves `false`, while a timely boolean or attributed `GuardElicitAnswer` passes through unchanged | `packages/loop/src/runtime/capabilities/tools.ts:103-115,208-211`; rich-answer test at `packages/loop/tests/unit/guard-elicit-bound.test.ts:32-36` |
 
@@ -385,11 +385,11 @@ is not established in this document's scope (see §8).
 The **remote** kernel client (`packages/kernel/src/transport/client.ts`) repeats the same buffering
 pattern one hop further out, for a client that has not yet called `RunHandle.onElicit` on its own
 handle: `streamingStart` registers the `ClientRun` (with empty `elicitHandlers`/`pendingElicits`)
-**before** awaiting `transport.request(methods.start, ...)` (`packages/kernel/src/transport/client.ts:453-461`), so a
+**before** awaiting `transport.request(methods.start, ...)` (`packages/kernel/src/transport/client.ts:454-462`), so a
 `runElicitation` notification arriving during or immediately after the start round-trip has somewhere
 to land. The `N.runElicitation` observer pushes to `pendingElicits` while `elicitHandlers` is empty,
-and delivers directly once a handler exists (`packages/kernel/src/transport/client.ts:304-308`); `RunHandle.onElicit` on the client
-side then splices and replays the buffer the moment a handler attaches (`packages/kernel/src/transport/client.ts:496-500`). The
+and delivers directly once a handler exists (`packages/kernel/src/transport/client.ts:305-309`); `RunHandle.onElicit` on the client
+side then splices and replays the buffer the moment a handler attaches (`packages/kernel/src/transport/client.ts:497-501`). The
 server side of the same transport wires `handle.onElicit` straight into
 `notifications.notify(N.runElicitation, {request})` (`packages/kernel/src/transport/server.ts:361-365`).
 
@@ -480,15 +480,15 @@ calling `ask(params)` while a previous call is still `pending` first resolves th
 superimposed; the older one is simply superseded. `resolve(result)` clears both the pending resolver
 and the visible `request` signal atomically (`:27-32`). `cancelPending()` resolves whatever is pending
 as `CANCEL_RESULT` — used e.g. when the run itself ends while a question is still open
-(`packages/code/src/run-host.ts:588`).
+(`packages/code/src/run-host.ts:716`).
 
-`kernel-run-client.ts`'s `wireElicit` (`:280-299`) is the piece that turns a protocol
+`kernel-run-client.ts`'s `wireElicit` (`packages/code/src/adapters/kernel-run-client.ts:296-319`) is the piece that turns a protocol
 `ElicitationRequest` into the `ElicitRequestParams` the slot/block consume, and turns the UI's
 `ElicitResult` back into an `ElicitationResponse` sent via `handle.respond`. If the host's own
-`onElicit` callback throws, `reportElicitFailure` (`:267-276`) logs `elicit.handler.failed` and still
+`onElicit` callback throws, `reportElicitFailure` (`:282-294`) logs `elicit.handler.failed` and still
 answers `{action:"cancel"}` — "without this the prompt simply cancels, and the run reads as if the user
 had dismissed it: the defect and the deliberate refusal are indistinguishable in the transcript"
-(comment at `:267-272`).
+(comment at `:282-290`).
 
 ### 4.9 The human `GuardElicit` adapter's action-to-boolean resolution
 
@@ -513,7 +513,7 @@ the entry profile's `"ask_user"` grant, `capabilityNeedsHuman` is `true` when an
 (`askUserGranted || capabilityNeedsHuman`) **excludes** `softMode` and is further gated on
 `request.elicit_wait_ms !== 0` (`:28`); its only consumer is outside this document's scope.
 
-`packages/loop/src/runtime/execute-run.ts:303-310` checks `shape.userInputEnabled` immediately after computing the shape: if it is
+`packages/loop/src/runtime/execute-run.ts:306-313` checks `shape.userInputEnabled` immediately after computing the shape: if it is
 `true` but the host supplied no `elicit` callback at all, the run never starts — it throws
 `ValidationError("elicitation_not_supported", ...)` (`:304-309`) rather than admitting a run that would
 later park on its first question with nothing able to answer it. This is the one place absence of an
@@ -586,7 +586,7 @@ Test: `packages/kernel/tests/unit/elicit-bridge.test.ts:6-21`.
 one hop further out: an `N.runElicitation` notification arriving before the caller's own `RunHandle`
 has an `onElicit` handler attached is queued in `pendingElicits` and flushed in order the moment a
 handler is registered.
-Production: `packages/kernel/src/transport/client.ts:304-308,477-481`.
+Production: `packages/kernel/src/transport/client.ts:293-298,452-457`.
 Test: unpinned in this document's scope — no dedicated remote-client elicit-buffering test was
 opened (see §8).
 
@@ -618,12 +618,12 @@ role and answer channel all permit it").
 | An unknown or already-answered `respond(id, ...)` | `pending.get(id) === undefined` short-circuit (`packages/kernel/src/runs/elicit-bridge.ts:80`, and server's `packages/server/src/mcp/elicitation.ts:274-276`) | no-op / `{accepted:false, note:"no pending question with that id"}` |
 | Server elicitation controller is `dispose()`d with questions outstanding | `dispose()` (`packages/server/src/mcp/elicitation.ts:284-287`) | every pending question is force-auto-declined; `disposed` latches so any later `attach`-delivered question is auto-declined too (`:217-219`) |
 | Server's `relay` posture: `sendRequest` throws (client refuses, disconnects, or answer fails schema validation) | `catch` around `sendRequest` (`packages/server/src/mcp/elicitation.ts:251-253`) | falls back to `autoDecline(request.id)` — a relay failure degrades to a decline, not a stuck run |
-| `code`'s own `onElicit` callback throws | `reportElicitFailure` (`packages/code/src/adapters/kernel-run-client.ts:257-266`) | logs `elicit.handler.failed` (warn) and still answers `{action:"cancel"}` |
+| `code`'s own `onElicit` callback throws | `reportElicitFailure` (`packages/code/src/adapters/kernel-run-client.ts:291-294`) | logs `elicit.handler.failed` (warn) and still answers `{action:"cancel"}` |
 | `code` invoked headlessly (`--prompt`, no interactive UI) | `handle.onElicit` registered in `packages/code/src/runtime.tsx` (`runPrintMode`) | every question is logged to stderr and auto-declined via `handle.respond({id, action:"decline"})` |
 | Elicitation disabled or no `elicit` supplied at all (`shape.userInputEnabled === false`) | `buildElicitRelay`'s `relayEnabled` guard (`packages/loop/src/runtime/elicit-relay.ts:71-77`) | `relay` is `undefined`; `serializedElicit` falls back to the raw (possibly `undefined`) `elicit` — callers that need one and find it absent are a capability-construction concern outside this document |
-| A run needs a human (`shape.userInputEnabled === true`) but no `elicit` callback was supplied at all | `packages/loop/src/runtime/execute-run.ts:303-309`, checked immediately after `deriveRunShape` | the run never starts: throws `ValidationError("elicitation_not_supported", ...)` — the only elicitation failure resolved at request validation rather than per-question (§4.10) |
+| A run needs a human (`shape.userInputEnabled === true`) but no `elicit` callback was supplied at all | `packages/loop/src/runtime/execute-run.ts:301-312`, checked immediately after `deriveRunShape` | the run never starts: throws `ValidationError("elicitation_not_supported", ...)` — the only elicitation failure resolved at request validation rather than per-question (§4.10) |
 | `elicit_wait_ms` request param fails validation | `zodIssueToRequestErrorCode` (`packages/loop/src/validation/request/parsing.ts:42-44`) | `invalid_elicit_wait` request error code |
-| A pooled (stdio + `shared`) MCP connection is acquired with a `relay` | `ConnectionManager`'s `openFresh(o, signal, pooled=true)` (`packages/mcp-client/src/connection-manager.ts:575-576,631`) | the `relay` is dropped — opened `...(o.relay && !pooled ? { relay: o.relay } : {})` — so the connection advertises no `elicitation` capability at all; `warnRelayDropped` (`:545-567`) logs `mcp.pool.relay_dropped` once per server name, not once per acquire |
+| A pooled (stdio + `shared`) MCP connection is acquired with a `relay` | `ConnectionManager`'s `openFresh(o, signal, pooled=true)` (`packages/mcp-client/src/connection-manager.ts:669-740`) | the `relay` is dropped — opened `...(o.relay && !pooled ? { relay: o.relay } : {})` — so the connection advertises no `elicitation` capability at all; `warnRelayDropped` (`:649-657`) logs `mcp.pool.relay_dropped` once per server name, not once per acquire |
 
 ## 7. Coupling
 
@@ -660,7 +660,7 @@ role and answer channel all permit it").
   the only file that actually names `@modelcontextprotocol/sdk` for this concern.
 - `@clarvis/mcp-client`'s `client.ts` is the only place `ElicitRequestSchema`/`ElicitResult` from the
   MCP SDK are named for elicitation (`packages/mcp-client/src/client.ts:12`) — `@clarvis/loop`'s `open-tool-pool.ts` threads an
-  `ElicitationRelay` through to it per connection (`packages/loop/src/runtime/open-tool-pool.ts:1,58,69`), never constructing the
+  `ElicitationRelay` through to it per connection (`packages/loop/src/runtime/open-tool-pool.ts:1,58-66,69-77`), never constructing the
   SDK types itself.
 - `code`'s `adapters/elicit-types.ts` is a deliberately independent local mirror of the protocol shapes
   — "so code carries no `@modelcontextprotocol/sdk` dependency" (`packages/code/src/adapters/elicit-types.ts:1-7`) — with
@@ -681,7 +681,7 @@ role and answer channel all permit it").
 - `code`'s `run-host.ts` and `runtime.tsx` hold the only production `ElicitSlot`
   (`packages/code/src/runtime.tsx`, `runApp`), threading `elicit.ask` into the run callback
   (`packages/code/src/runtime.tsx`, `buildRunHost`), `elicit.cancelPending` into run teardown
-  (`packages/code/src/run-host.ts:620`), and `elicit.resolve` into the App surface
+  (`packages/code/src/run-host.ts:716`), and `elicit.resolve` into the App surface
   (`packages/code/src/runtime.tsx`, `runControls`). Detailed overlay/keyboard rendering of the resulting block is
   **code-input-overlays-and-commands**' concern.
 
@@ -713,7 +713,8 @@ role and answer channel all permit it").
   defined once in `packages/loop/src/runtime/support/bounded.ts:5`, whose own comment states the
   reason directly: "The largest delay a `setTimeout` accepts (2^31 - 1 ms); longer waits are clamped
   to this so the timer fires rather than overflowing to immediate." `boundPromise` clamps any
-  supplied `timeoutMs` to it (`bounded.ts:59-64`, `Math.min(opts.timeoutMs, MAX_TIMER_DELAY_MS)`) for
+  supplied `timeoutMs` to it (`packages/loop/src/runtime/support/bounded.ts:59-64`,
+  `Math.min(opts.timeoutMs, MAX_TIMER_DELAY_MS)`) for
   exactly this reason — Node's `setTimeout` silently misbehaves on delays at or above 2^31.
   `ELICIT_NO_TIMEOUT_MS` in `packages/kernel/src/guard/guard-elicit.ts:27` is the identical constant,
   so wherever a real `setTimeout`-backed bound is involved, this is precisely the "wait as close to
@@ -724,16 +725,19 @@ role and answer channel all permit it").
   (`packages/kernel/src/runs/elicit-bridge.ts:49-66`), **never reads `opts.timeoutMs` at all** — it
   only listens for `opts.signal`'s `abort` event, and starts no timer of its own (already noted in
   §4.2's table). So `createGuardElicit`'s inner `elicit(params, { timeoutMs: ELICIT_NO_TIMEOUT_MS,
-  ... })` (`guard-elicit.ts:147-150`) has the same observable effect as omitting `timeoutMs`
+  ... })` (`packages/kernel/src/guard/guard-elicit.ts:165-168`) has the same observable effect as
+  omitting `timeoutMs`
   **unconditionally**, not just "absent an abort" — the field is dead for every call this bridge ever
   serves, timeout or not.
 
   The *real*, effective wait bound on a guard confirmation is enforced one layer up, in the loop, by
   `withGuardElicitWaitBound` (`packages/loop/src/runtime/capabilities/tools.ts:103-115`), which wraps
   the **whole** `GuardElicit` callback — not the raw `elicit` — in `boundPromise` using the run's own
-  `elicit_wait_ms`/`CLARVIS_DEFAULT_ELICIT_WAIT_MS` (`tools.ts:168`, `202-205`), racing it against
+  `elicit_wait_ms`/`CLARVIS_DEFAULT_ELICIT_WAIT_MS`
+  (`packages/loop/src/runtime/capabilities/tools.ts:174,208-211`), racing it against
   abort exactly as §4.2's "Enforcement" row does for the ask-user path. Its own doc comment states
-  "Only a non-finite `waitMs` is unbounded" (`tools.ts:98`) — confirming this outer wrap, not the
+  "Only a non-finite `waitMs` is unbounded"
+  (`packages/loop/src/runtime/capabilities/tools.ts:97-101`) — confirming this outer wrap, not the
   inner `ELICIT_NO_TIMEOUT_MS`, is where a guard confirmation's real deadline lives.
 
   ~~What remains genuinely unstated by any comment or test: *why* `createGuardElicit` bothers passing

@@ -254,15 +254,16 @@ remaining gap in its open questions rather than letting prose imply a test exist
 "The specs and the code agree" is itself a claim that needs dated, reproducible evidence. The
 current 2026-09-01 snapshot contains 68 subsystem documents (71 Markdown files including this index,
 the known-issues register and the generated coupling report). `extractLineCitations` currently finds
-16,032 distinct explicit citation groups carrying 18,633 cited ranges, and
+16,049 distinct explicit citation groups carrying 18,701 cited ranges, and
 `extractDocumentLinks` finds 610 document links. `bun run check:specs` is the maintained gate over
 their bounds, targets, links and characters; it does not turn those counts into semantic proof.
 
 A prior corpus audit recorded a 142-citation manual stride sample and an adversarial pass over the
 then-current findings register. Those experiments were not repeated as part of the 2026-09-01
 refresh, so their old zero-finding result is historical evidence, not a guarantee about this
-snapshot. Current semantic confidence comes from tracing each changed claim through its owning
-source and tests; future reviews must do the same instead of inheriting the old sample as fact.
+snapshot. This snapshot therefore makes no corpus-wide semantic-verification claim: a changed or
+relied-on citation still has to be traced to its current production symbol and applicable tests
+instead of inheriting the old sample or an in-bounds line number as fact.
 
 **One method note, because it cost real damage to learn.** When source edits move line numbers, do
 not repair `path:LINE` citations with a line delta derived from `git diff`. It is not idempotent —

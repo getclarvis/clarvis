@@ -10,8 +10,8 @@ run's machinery is allowed to *emit*. It has five largely independent halves, al
 code and none of them a sandbox:
 
 1. **Path confinement** — every coding tool resolves a caller-supplied path through one function,
-   `resolvePath` (`packages/tools/src/lib/paths.ts:27`), which proves the canonicalized target sits
-   under the workspace root before the tool touches it. Two read tools additionally admit the
+   `resolvePath`, which delegates the confined branch to the canonical containment proof
+   (`packages/tools/src/lib/paths.ts:53-63,159-193,246-285`) before the tool touches the target. Two read tools additionally admit the
    workspace's machine-state root, because that is where an oversized tool result is spilled and the
    model is handed the path to read it back (`packages/tools/src/config.ts:89`).
 2. **Redaction** — one module, `packages/capability/src/sanitize.ts`, owns every secret pattern in the
@@ -21,9 +21,9 @@ code and none of them a sandbox:
 3. **Environment filtering** — a hook subprocess's environment is built keep-list-first, then filtered
    against a per-run credential denylist derived from that run's own configuration
    (`packages/hooks/src/env.ts:175`); a stdio MCP child gets a fixed safe base plus only what its own
-   `env` block names (`packages/mcp-client/src/client.ts:383`); a shell/monitor command spawned by the
+   `env` block names (`packages/mcp-client/src/client.ts:421-447`); a shell/monitor command spawned by the
    toolset has the host's credential variables deleted from its environment
-   (`packages/tools/src/sandbox.ts:349`); and a Clarvis-owned Git subprocess that selects a repository
+   (`packages/tools/src/sandbox.ts:455`); and a Clarvis-owned Git subprocess that selects a repository
    removes Git's repository-local environment before it starts
    (`packages/paths/src/git-environment.ts`).
 4. **Secret storage** — `keys.json` under the global directory, written `0o600` inside a `0o700`
@@ -47,10 +47,10 @@ code and none of them a sandbox:
 Two properties recur across all five and are worth stating once. First, refusals aimed at the **model**
 never name the escape hatch: `assertWithinWorkspace`'s message states the boundary and closes the futile
 move, and an architecture test scans every tool string for remediation phrasing
-(`packages/tools/src/lib/paths.ts:160`, `packages/tools/tests/architecture/no-bypass-hints.test.ts:81`).
+(`packages/tools/src/lib/paths.ts:186-192`, `packages/tools/tests/architecture/no-bypass-hints.test.ts:81`).
 Second, what a filter withholds is **counted, never named** — the hook filter returns per-rule counts
-and the log line says so explicitly (`packages/hooks/src/env.ts:148`,
-`packages/hooks/src/capability.ts:370`).
+and the log line says so explicitly (`packages/hooks/src/env.ts:148-158,175-200`,
+`packages/hooks/src/capability.ts:370-378`).
 
 Delegated to siblings: server authentication and bind policy
 ([hosts/server-auth.md](../hosts/server-auth.md)), command approval and the guard judge
@@ -87,7 +87,7 @@ Re-exported by `packages/capability/src/index.ts:130-134`. `@clarvis/kernel/poli
 | `resolveStringMap` | `(map, env) => Record<string,string>` (`packages/capability/src/env-interpolate.ts:91`) | reads `NodeJS.ProcessEnv` |
 | `MissingEnvVarsError` | `class … { missing: string[] }` (`packages/capability/src/env-interpolate.ts:19`) | message names the variables, never a value |
 
-Exported at `packages/capability/src/index.ts:278-284`.
+Exported at `packages/capability/src/index.ts:278-286`.
 
 ### 2.3 Forbidden provider body keys
 
@@ -115,7 +115,7 @@ cannot force a literal `null` through this same hatch (`:170-177`).
 | Export | Signature | Behaviour |
 | --- | --- | --- |
 | `resolvePath` | `(input, workspaceRoot, confine = false, alsoAllow: readonly string[] = [], logger) => string` (`packages/tools/src/lib/paths.ts:53-63`) | normalizes/resolves, then asserts when `confine` |
-| `assertWithinWorkspace` | `(abs, workspaceRoot, input, caseInsensitive = process.platform === "win32", alsoAllow = [], logger) => void` (`packages/tools/src/lib/paths.ts:159-166`) | throws `ToolError("path_escape")` |
+| `assertWithinWorkspace` | `(abs, workspaceRoot, input, caseInsensitive = process.platform === "win32", alsoAllow = [], logger) => void` (`packages/tools/src/lib/paths.ts:159-192`) | throws `ToolError("path_escape")` |
 | `displayPath` | `(absPath, workspaceRoot) => string` (`packages/tools/src/lib/paths.ts:77-82`) | `"."`, a forward-slashed relative path, or the absolute path when outside |
 | `readFileOptions` | `(config, alsoAllow = []) => ReadFileOptions` (`packages/tools/src/lib/files.ts:47`) | returns `{}` when confinement is off |
 | `assertNotSymlink` | `(target) => Promise<void>` (`packages/tools/src/lib/atomic.ts:109`) | `ToolError("invalid_input")` on an existing symlink |
@@ -124,15 +124,15 @@ Configuration fields (`packages/tools/src/config.ts`):
 
 | Field | Default | Line |
 | --- | --- | --- |
-| `confineToWorkspace: boolean` | `true` | `:78`, defaulted `:339` |
-| `stateRoot: string` | `workspaceStatePaths(workspaceRoot).root` | `:89`, `:463` |
+| `confineToWorkspace: boolean` | `true` | `:77-78`, defaulted `:353` |
+| `stateRoot: string` | `workspaceStatePaths(workspaceRoot).root` | `:80-89`, `:503` |
 | `temporaryRoots: readonly string[]` | `[]`; each entry must already be a directory | `RuntimeConfig`, `createRuntimeConfig` |
-| `readOnly: boolean` | `false` | `:74`, `:338` |
-| `secretEnvNames?: readonly string[]` | absent | `:125`, `:467` |
+| `readOnly: boolean` | `false` | `:74-75`, `:352` |
+| `secretEnvNames?: readonly string[]` | absent | `:123-134`, `:511` |
 
 The run-level knob is the environment variable `CLARVIS_AGENT_TOOLS_CONFINE`, default `true`
 (`packages/capability/src/env.ts:112`), threaded into the toolset at
-`packages/loop/src/runtime/capabilities/tools.ts:172`.
+`packages/loop/src/runtime/capabilities/tools.ts:212-223`.
 
 Its sibling schema entry is the deployment-wide ceiling `CLARVIS_AGENT_TOOLS_MAX_GRANT: z.enum(["none",
 "read", "edit", "exec"]).default("edit")` (`packages/capability/src/env.ts:98`). `agentToolCaps(grants,
@@ -140,7 +140,7 @@ ceiling)` (`packages/loop/src/runtime/tools/builtin/grants.ts:39-52`) intersects
 requested grants (`read_workspace`/`edit_workspace`/`run_commands`) against this ceiling's rank —
 `none < read < edit < exec` — so the ceiling caps but never widens what a profile can reach; it is
 consulted at `agentToolsActive` (`packages/loop/src/runtime/tools/builtin/grants.ts:66`) and again per agent scope in
-`packages/loop/src/runtime/capabilities/tools.ts:161`.
+`packages/loop/src/runtime/capabilities/tools.ts:205-207`.
 
 ### 2.4.1 Git repository environment filtering — `@clarvis/paths`
 
@@ -151,7 +151,7 @@ preserves transport and credential
 inputs: its boundary is repository routing/storage/config inherited from a parent Git process, not a
 blank or allowlisted child environment. The helper is exported from `@clarvis/paths`
 (`packages/paths/src/index.ts`) and re-exported through `@clarvis/kernel/local` for the TUI's
-existing package boundary (`packages/kernel/src/local.ts:23`).
+existing package boundary (`packages/kernel/src/local.ts:31`).
 
 ### 2.5 Hook environment filtering — `@clarvis/hooks`
 
@@ -179,7 +179,7 @@ Both `filterHookEnv` and `interpolatedNames` are on the package barrel
 | `resolveSecretEnvironment` | `(environment, keyfile, sources) => KernelEnvironment` | `packages/kernel/src/ports/environment.ts:30` |
 
 Wire methods `secrets.listNames` / `secrets.set` / `secrets.delete`, carrying
-`metadata.sensitivity === "secrets"` (`packages/kernel/src/transport/operations.ts:346-365`).
+`metadata.sensitivity === "secrets"` (`packages/kernel/src/transport/operations.ts:468-487`).
 
 ### 2.7 Workspace trust — `@clarvis/kernel`
 
@@ -214,7 +214,7 @@ Constants and helpers in `packages/kernel/src/transport/stdio.ts`: `MAX_ERROR_ME
 | `McpOAuthStoreError` | refuses corrupt, oversized, unreadable and unsafe paths without repair | `packages/mcp-client/src/oauth-store.ts:35-43` |
 
 The file kernel supplies `<global>/state/mcp-oauth.json` and passes a browser opener only when its
-host owns that authority (`packages/kernel/src/file-kernel.ts:702-723`). Tokens, codes, verifier,
+host owns that authority (`packages/kernel/src/file-kernel.ts:718-723`). Tokens, codes, verifier,
 state and client secrets therefore never become settings, request parameters, protocol DTOs or
 diagnostic fields.
 
@@ -260,7 +260,7 @@ Worked examples taken from the tests:
 
 ### 3.2 `keys.json`
 
-Path: `globalPaths(dir).keysFile` = `<global>/keys.json` (`packages/paths/src/global.ts:114`).
+Path: `globalPaths(dir).keysFile` = `<global>/keys.json` (`packages/paths/src/global.ts:119`).
 Schema: `z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().min(1))`
 (`packages/kernel/src/secrets/secret-store.ts:7,10`). Serialized as
 `` `${JSON.stringify(values, null, 2)}\n` `` (`:105`) through `writeFileAtomicSync`, whose defaults are
@@ -282,9 +282,9 @@ missing file yields `{ values: {} }` (`:79`), bad JSON yields `{ values: {}, err
 ### 3.3 `workspace-trust.json`
 
 Path `globalPaths(globalDir).workspaceTrustFile` = `<global>/workspace-trust.json`
-(`packages/paths/src/global.ts:117`). Strict schema: a `workspaces` record from canonical workspace
+(`packages/paths/src/global.ts:126`). Strict schema: a `workspaces` record from canonical workspace
 path to a **non-empty array** of `{ fingerprint: /^sha256:[0-9a-f]{64}$/, approved_at: string }`
-(`packages/kernel/src/config/workspace-trust.ts:244-261`).
+(`packages/kernel/src/config/workspace-trust.ts:248-265`).
 
 ```json
 {
@@ -316,7 +316,7 @@ when the complete TUI receives the verdict.
 
 ### 3.4 Risk fields
 
-`WORKSPACE_RISK_FIELDS` (`packages/kernel/src/config/workspace-trust.ts:37-45`), in order:
+`WORKSPACE_RISK_FIELDS` (`packages/kernel/src/config/workspace-trust.ts:38-46`), in order:
 
 | Field | Detection |
 | --- | --- |
@@ -333,7 +333,7 @@ Stripping removes the whole key for the first four, deletes `tasks` entirely for
 deletes only the `provider` sub-key for `memory`/`plans`, and removes only subscription-backed
 entries from `providers` (`:117-134`). A `memory: { provider: { kind:
 "wiki" }, enabled: true }` survives untouched
-(`packages/kernel/tests/integration/workspace-trust.test.ts:71-77`).
+(`packages/kernel/tests/integration/workspace-trust.test.ts:74-80`).
 
 ### 3.5 The wire error envelope
 
@@ -356,43 +356,43 @@ at 1024 chars (`:73-80`, `:83-106`, `:363`).
 The strict version-1 document maps 64-hex SHA-256 keys to SDK-validated registration/token records;
 the raw workspace, owner and remote resource never appear as keys
 (`packages/mcp-client/src/oauth-store.ts:19-33,87-143`, key derivation at
-`packages/mcp-client/src/oauth.ts:176-185`). It is bounded to 1 MiB, 128 records and 512 KiB per
+`packages/mcp-client/src/oauth.ts:188-205`). It is bounded to 1 MiB, 128 records and 512 KiB per
 record (`packages/mcp-client/src/oauth-store.ts:14-18,118,133-142,248-257`). On POSIX it is written
-`0600` below a `0700` directory (`:206-214,239-241`); malformed data is an error, not an empty
+`0600` below a `0700` directory (`:206-214,256-258`); malformed data is an error, not an empty
 fallback (`:186-197`).
 
 ## 4. Behavior
 
 ### 4.1 Confining one tool path
 
-`resolvePath` (`packages/tools/src/lib/paths.ts:27-37`):
+`resolvePath` (`packages/tools/src/lib/paths.ts:53-63`):
 
-1. `path.isAbsolute(input) ? path.normalize(input) : path.resolve(workspaceRoot, input)` (`:34`).
+1. `path.isAbsolute(input) ? path.normalize(input) : path.resolve(workspaceRoot, input)` (`:60`).
 2. If `confine`, call `assertWithinWorkspace(abs, workspaceRoot, input, undefined, alsoAllow, logger)`
-   (`:35`). Note `caseInsensitive` is passed `undefined`, so the parameter default
-   `process.platform === "win32"` applies (`:135`).
+   (`:61`). Note `caseInsensitive` is passed `undefined`, so the parameter default
+   `process.platform === "win32"` applies (`:163`).
 3. Return the **non-canonicalized** absolute path. The canonical form computed during the check is
    discarded; the tool then operates on the lexical path.
 
-`assertWithinWorkspace` (`:131-165`):
+`assertWithinWorkspace` (`:159-193`):
 
-1. `target = canonicalizeAllowingMissing(abs)` (`:139`).
+1. `target = canonicalizeAllowingMissing(abs)` (`:167`).
 2. For each candidate root in `[workspaceRoot, ...alsoAllow]`, canonicalize it the *same* way, fold
    both sides for case if required, and accept on equality or on `targetReal.startsWith(rootReal +
-   path.sep)` (`:142-147`). The trailing separator is what stops `C:\Projects\x` passing as a child of
-   `C:\Proj` (`:100-102`).
+   path.sep)` (`:170-175`). The trailing separator is what stops `C:\Projects\x` passing as a child of
+   `C:\Proj` (`:127-128`).
 3. Otherwise log `tools.path_refused` with `reason: "unresolvable" | "outside_root"` and an
-   `allow_roots_count`, never the roots themselves (`:149-157`), and throw
-   `ToolError("path_escape", …, { path: input })` (`:158-164`).
+   `allow_roots_count`, never the roots themselves (`:177-185`), and throw
+   `ToolError("path_escape", …, { path: input })` (`:186-192`).
 
-`canonicalizeAllowingMissing` (`:246-258`) walks up from `abs` until `realpathSync.native` succeeds,
+`canonicalizeAllowingMissing` (`:246-285`) walks up from `abs` until `realpathSync.native` succeeds,
 re-appending the skipped tail. Two branches matter:
 
 | Condition | Result | Line |
 | --- | --- | --- |
-| `realpath` succeeds at `cur` | `path.join(real, ...tail)` | `:251` |
-| `cur` is itself a symlink and unresolvable | `undefined` → refusal | `:252` |
-| the walk reaches the filesystem root | `path.normalize(abs)` | `:254` |
+| `realpath` succeeds at `cur` | `path.join(real, ...tail)` | `:278-279` |
+| `cur` is itself a symlink and unresolvable | `undefined` → refusal | `:280` |
+| the walk reaches the filesystem root | `path.normalize(abs)` | `:281-282` |
 
 The `isSymbolicLink` stop is load-bearing and is pinned: a link out of the workspace whose target is
 mode `0o311` cannot be `realpath`ed but *can* be written through, so treating unresolvable as inside
@@ -545,26 +545,28 @@ The per-run `denyExact` is `runCredentialNames(ctx, credentialNames?.() ?? [])`
 
 | Source | Extraction | Line |
 | --- | --- | --- |
-| each provider's `api_key_env` | the name verbatim | `:261` |
-| each provider's `headers` values | `interpolatedNames` | `:262` |
-| each provider **model**'s `headers` values (via `Object.values(provider.models ?? {})`) | `interpolatedNames` | `:263` |
-| each MCP server's `env` and `headers` values | `interpolatedNames` | `:265-267` |
-| `extra` — the host's whole-registry names | verbatim | `:256` |
+| each provider's `api_key_env` | the name verbatim | `:304` |
+| each provider's `headers` values | `interpolatedNames` | `:305` |
+| each provider **model**'s `headers` values (via `Object.values(provider.models ?? {})`) | `interpolatedNames` | `:306` |
+| each MCP server's `env` and `headers` values | `interpolatedNames` | `:308-311` |
+| `extra` — the host's whole-registry names | verbatim | `:299` |
 
 The `extra` half exists because a run's `servers` is narrowed to those some profile grants, while the
-inherited process environment still carries every key the host resolved (`:243-249`). The host supplies
-it as `hookCredentialNames: managedSecretNames` (`packages/kernel/src/file-kernel.ts:785`), a function
+inherited process environment still carries every key the host resolved (`:286-292`). The host supplies
+it as `hookCredentialNames: managedSecretNames` (`packages/kernel/src/file-kernel.ts:717`), a function
 that unions only `keys.json` names with the explicit `opts.keySources` names
-(`packages/kernel/src/file-kernel.ts:428-438`) — **not** provider `api_key_env` or header refs, re-read
-per call. This is a distinct function from `loadSecretNames` (`:519-535`, described in §4.6), which the
+(`packages/kernel/src/file-kernel.ts:425-435`) — **not** provider `api_key_env` or header refs, re-read
+per call. This is a distinct function from `loadSecretNames` (`:500-534`, described in §4.6), which the
 kernel wires as `resolveSecretNames` for the toolset's own `secretEnvNames` and *does* additionally union
 every provider's `api_key_env` and every provider/model header's interpolated names. The two lists are
 therefore built independently, from two different kernel functions, for the two different subprocess
 environments in §4.6 — not the same "whole-registry" computation reused twice.
 
-The filtered environment becomes the runner's `baseEnv` (`packages/hooks/src/capability.ts:370-383`,
-`packages/hooks/src/runner.ts:66`) and each hook spawn layers six `CLARVIS_HOOK_*` /
-`CLARVIS_WORKSPACE_ROOT` variables on top (`packages/hooks/src/runner.ts:484-503`).
+The filtered environment becomes the runner's `baseEnv` (`packages/hooks/src/capability.ts:366-383`,
+`packages/hooks/src/runner.ts:66`). Each hook spawn layers the four fixed `CLARVIS_HOOK_*` variables
+and `CLARVIS_WORKSPACE_ROOT` on top; plugin hooks also receive their root/data under the borrowed and
+native variable names, and tool hooks receive tool/full-name variables when present
+(`packages/hooks/src/runner.ts:484-503`).
 
 Only the counts are logged: `hooks.env_filtered` with `denied_count`, `denied_by_exact`,
 `denied_by_shape` and the message *"the withheld variables are counted and never named, because the
@@ -582,8 +584,8 @@ denylist is derived from exactly this run's credentials"* (`packages/hooks/src/c
 | capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts:76-84`, `:163` |
 
 `secretEnvNames` for the toolset comes from `resolveSecretNames(ctx)`
-(`packages/loop/src/runtime/capabilities/tools.ts:135`), which the file kernel binds to
-`loadSecretNames` (`packages/kernel/src/file-kernel.ts:783`).
+(`packages/loop/src/runtime/capabilities/tools.ts:142`), which the file kernel binds to
+`loadSecretNames` (`packages/kernel/src/file-kernel.ts:715`).
 
 ### 4.7 Resolving secrets into the kernel environment
 
@@ -615,7 +617,7 @@ a pinned source is absent (`packages/code/src/adapters/provider-secrets.ts:14-22
 
 ### 4.9 Workspace trust state machine
 
-Verdict computation, recomputed on every call (`packages/kernel/src/config/file-config-store.ts:508-513`):
+Verdict computation, recomputed on every call (`packages/kernel/src/config/file-config-store.ts:517-529`):
 
 | State | Condition | Effect on the merge / agents |
 | --- | --- | --- |
@@ -625,17 +627,17 @@ Verdict computation, recomputed on every call (`packages/kernel/src/config/file-
 | `changed` | entries exist but none matches; reports the most recent as `approved` (`:329`) | withheld, same as `unapproved` |
 
 An unreadable `workspace-trust.json` yields `{ trust: undefined }`, and `workspaceTrustVerdict` treats
-that as an empty store — i.e. `unapproved`, never `trusted` (`packages/kernel/src/config/workspace-trust.ts:300-306`,
-`:323-325`; stated at `packages/kernel/src/config/file-config-store.ts:505-506`).
+that as an empty store — i.e. `unapproved`, never `trusted` (`packages/kernel/src/config/workspace-trust.ts:307-313`,
+`:323-325`; stated at `packages/kernel/src/config/file-config-store.ts:508-517`).
 
 Transitions:
 
 | State | Event | New state | Effect |
 | --- | --- | --- | --- |
-| any | `approveWorkspace()` | `trusted` | `writeWorkspaceTrust(globalDir, key, fingerprint)` appends the entry if new (`packages/kernel/src/config/workspace-trust.ts:357-360`) |
+| any | `approveWorkspace()` | `trusted` | `writeWorkspaceTrust(globalDir, key, fingerprint)` appends the entry if new (`packages/kernel/src/config/workspace-trust.ts:364-367`) |
 | any | `revokeWorkspace()` | `unapproved` | `delete workspaces[key]` (`:354-355`) |
 | `trusted` | the surface changes | `changed` | withheld again (`packages/kernel/tests/integration/workspace-trust.test.ts:188-199`) |
-| `trusted`/`inert` | operator write through `ConfigService` | re-recorded over the new surface | `withOperatorWrite` (`packages/kernel/src/config/file-config-store.ts:564-575`) |
+| `trusted`/`inert` | operator write through `ConfigService` | re-recorded over the new surface | `withOperatorWrite` (`packages/kernel/src/config/file-config-store.ts:581-592`) |
 | `unapproved`/`changed` | operator write through `ConfigService` | unchanged | `if (!carried) return out` (`:527-528`) |
 
 An explicit approve/revoke is refused with `conflict` while any run is active, before the trust file
@@ -648,8 +650,8 @@ revocation withholds those units immediately; global installed plugins are unaff
 `packages/kernel/tests/integration/workspace-trust.test.ts`).
 
 `writeWorkspaceTrust` throws rather than overwrite when the existing store cannot be parsed
-(`packages/kernel/src/config/workspace-trust.ts:350-352`) — but `withOperatorWrite` swallows that throw, because the settings or
-agent file has already landed by then (`packages/kernel/src/config/file-config-store.ts:569-573`).
+(`packages/kernel/src/config/workspace-trust.ts:357-359`) — but `withOperatorWrite` swallows that throw, because the settings or
+agent file has already landed by then (`packages/kernel/src/config/file-config-store.ts:586-590`).
 
 A workspace Environment preview may approve only the fingerprint it just resolved; changing the
 definition between preview and selection is a conflict. The resulting approval admits the plugin as
@@ -658,7 +660,7 @@ Environment definitions and resolved snapshots never carry secrets. See
 [Extension Environments](../hosts/environments.md#43-preview-composition-trust-and-resume).
 
 Two independent enforcement points read the verdict, and the code says gating only one would leave the
-other open (`packages/kernel/src/config/file-config-store.ts:593-625` for the settings merge;
+other open (`packages/kernel/src/config/file-config-store.ts:610-642` for the settings merge;
 `:903-918` and `:940-950` for agent files, rationale at `:894-898`, `:956-960`).
 
 ### 4.10 An error crossing the wire
@@ -733,17 +735,17 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 1. **A confined tool path is compared canonically on both sides.** `assertWithinWorkspace` resolves the
    target *and* every candidate root through `canonicalizeAllowingMissing` before comparing, so a
    symlink cannot smuggle a target out and a symlinked workspace root does not produce false escapes.
-   Production `packages/tools/src/lib/paths.ts:141-149`; pinned
+   Production `packages/tools/src/lib/paths.ts:167-175`; pinned
    `packages/tools/tests/integration/paths.test.ts:115-146`.
 2. **A path whose containment cannot be proven is refused, not admitted.** When the walk hits a symlink
    it cannot resolve, `canonicalizeAllowingMissing` returns `undefined` and the caller throws.
-   Production `packages/tools/src/lib/paths.ts:254`, `:142`; pinned
+   Production `packages/tools/src/lib/paths.ts:274-285`, `:167-192`; pinned
    `packages/tools/tests/integration/paths.test.ts:155-166` (a `0o311` link target).
 3. **The prefix test requires a separator.** A sibling directory whose name merely starts with the
-   root's is rejected. Production `packages/tools/src/lib/paths.ts:148`; pinned
+   root's is rejected. Production `packages/tools/src/lib/paths.ts:127-128`, `:174`; pinned
    `packages/tools/tests/integration/paths.test.ts:90-93`.
 4. **Case folding is Windows-only.** `forCompare` folds only when `caseInsensitive`, whose default is
-   `process.platform === "win32"`. Production `packages/tools/src/lib/paths.ts:77-79`, `:137`; pinned
+   `process.platform === "win32"`. Production `packages/tools/src/lib/paths.ts:89-105`, `:163`; pinned
    `packages/tools/tests/integration/paths.test.ts:78-99`.
 5. **Only the two read tools widen confinement to the state root; every native file tool may use only
    the exact configured run temporary roots, and command tools may additionally address exact
@@ -755,7 +757,7 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
    `packages/tools/src/core.ts`. Pinned by
    `packages/tools/tests/integration/api.test.ts` and `guard-dispatch.test.ts`.
 6. **A model-facing refusal never names the bypass.** No runtime string under `packages/tools/src`
-   matches the remediation shape. Production `packages/tools/src/lib/paths.ts:160-166`; pinned
+   matches the remediation shape. Production `packages/tools/src/lib/paths.ts:141-157,186-192`; pinned
    `packages/tools/tests/architecture/no-bypass-hints.test.ts:81`, with the guard's own sensitivity
    asserted at `:85` and its specificity at `:95`.
 7. **A read revalidates the opened object against the roots and against the descriptor's identity.**
@@ -830,12 +832,12 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     the log fields.
 27. **The per-run denylist covers a provider's *model*-level headers.** They are reached through
     `Object.values(provider.models ?? {})`; a `for…of` over the record would iterate nothing and throw
-    nothing. Production `packages/hooks/src/capability.ts:306`, hazard stated at `:251-253`.
+    nothing. Production `packages/hooks/src/capability.ts:306`, hazard stated at `:294-296`.
     **Unpinned.**
 28. **A stdio MCP child never inherits the caller's environment.** Its base is
     `getDefaultEnvironment()`, and declaring `env` *adds* to it rather than switching the child from
     "inherit everything" to "inherit a filtered set". Production
-    `packages/mcp-client/src/client.ts:383`; pinned
+    `packages/mcp-client/src/client.ts:421-447`; pinned
     `packages/mcp-client/tests/unit/mcp-transport-env.test.ts:33-63`, including the property that the
     base does not depend on the identity of the caller's env object (`:56-63`).
 29. **A hook subprocess cannot read this run's provider credentials.** Production
@@ -856,39 +858,39 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     **Unpinned** — the test suite covers the read-side error (`:37-43`) but not the refusal.
 33. **`SecretService` exposes names only.** Production `packages/kernel/src/secrets/secret-store.ts:142-144`,
     contract `packages/protocol/src/secrets.ts:14`; pinned
-    `packages/kernel/tests/integration/secret-store.test.ts:45-53`. The TUI adapter holds only names
+    `packages/kernel/tests/integration/secret-store.test.ts:53-61`. The TUI adapter holds only names
     (`packages/code/src/adapters/provider-secrets.ts:32-45`).
 34. **A workspace's risky settings never enter the merge while it is unapproved** — they are withheld
     *before* merging rather than filtered afterwards. Production
-    `packages/kernel/src/config/file-config-store.ts:600-603`; pinned
-    `packages/kernel/tests/integration/workspace-trust.test.ts:281-311`, whose comment records that an
+    `packages/kernel/src/config/file-config-store.ts:617-620`; pinned
+    `packages/kernel/tests/integration/workspace-trust.test.ts:384-423`, whose comment records that an
     earlier post-merge filter compared by object identity and therefore permitted everything it claimed
     to block.
 35. **Every declared risk field is gated, not just `hooks`.** Production
-    `packages/kernel/src/config/workspace-trust.ts:103-115`; pinned
-    `packages/kernel/tests/integration/workspace-trust.test.ts:52-69` (all seven) and `:177-195`.
+    `packages/kernel/src/config/workspace-trust.ts:104-116`; pinned
+    `packages/kernel/tests/integration/workspace-trust.test.ts:54-72` (all eight).
 36. **An untrusted workspace contributes no agent layer**, on both the listing and the effective-agent
-    path. Production `packages/kernel/src/config/file-config-store.ts:886`, `:950` (rationale `:877-881`). **Unpinned** —
+    path. Production `packages/kernel/src/config/file-config-store.ts:914`, `:978` (rationale `:905-909`). **Unpinned** —
     `workspace-trust.test.ts` covers the settings half only.
 37. **An empty risky value is not a declared surface.** `hooks: []` / `mcpServers: {}` leave the
-    workspace `inert`. Production `packages/kernel/src/config/workspace-trust.ts:89-94`; pinned
-    indirectly at `packages/kernel/tests/integration/workspace-trust.test.ts:169-173` for a workspace
+    workspace `inert`. Production `packages/kernel/src/config/workspace-trust.ts:90-95`; pinned
+    indirectly at `packages/kernel/tests/integration/workspace-trust.test.ts:170-174` for a workspace
     with no risky key at all. **The empty-array case itself is unpinned.**
 38. **Approval binds to the surface, not to the path.** Production
-    `packages/kernel/src/config/workspace-trust.ts:326-329`; pinned
-    `packages/kernel/tests/integration/workspace-trust.test.ts:146-157`.
+    `packages/kernel/src/config/workspace-trust.ts:333-336`; pinned
+    `packages/kernel/tests/integration/workspace-trust.test.ts:188-199`.
 39. **An unreadable trust store means "nothing approved".** Production
-    `packages/kernel/src/config/workspace-trust.ts:305`, consumed at
-    `packages/kernel/src/config/file-config-store.ts:512`. **Unpinned.**
+    `packages/kernel/src/config/workspace-trust.ts:312`, consumed at
+    `packages/kernel/src/config/file-config-store.ts:528`. **Unpinned.**
 40. **A trust key is the realpath of the workspace root.** Production
-    `packages/kernel/src/config/workspace-trust.ts:284-290`. **Unpinned.**
+    `packages/kernel/src/config/workspace-trust.ts:290-296`. **Unpinned.**
 41. **An operator write through `ConfigService` carries an existing approval and never creates one.**
-    Production `packages/kernel/src/config/file-config-store.ts:566-568`; pinned
-    `packages/kernel/tests/integration/workspace-trust.test.ts:199-237`.
+    Production `packages/kernel/src/config/file-config-store.ts:583-585`; pinned
+    `packages/kernel/tests/integration/workspace-trust.test.ts:316-353`.
 42. **An agent name is one filename segment.** No separator, no drive/stream separator, no leading dot,
     no `..`, no `:`. Production `packages/kernel/src/config/config-service.ts:65`, `:68`, `:78-86`;
     pinned across all four name-taking methods at
-    `packages/kernel/tests/contract/config-service.test.ts:133-175`, and for the file store at `:177-185`.
+    `packages/kernel/tests/contract/config-service.test.ts:128-187`, and for the file store at `:189-196`.
 43. **A forbidden provider `body` key is refused by the schema *and* stripped by the adapter.**
     Production `packages/loop/src/validation/request/provider-rules.ts:41-49` and
     `packages/llm/src/openai-compatible-request.ts:186`; the constant is pinned against the TUI's
@@ -912,17 +914,17 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     read < edit < exec`, default `edit`); `canMutate`/`canExec` can only be true when the ceiling's
     rank is at least `edit`/`exec` respectively, however the profile is configured. Production
     `packages/capability/src/env.ts:113`, `packages/loop/src/runtime/tools/builtin/grants.ts:11-53`,
-    consulted at `:66` and `packages/loop/src/runtime/capabilities/tools.ts:161`; pinned
+    consulted at `:66` and `packages/loop/src/runtime/capabilities/tools.ts:205-207`; pinned
     `packages/loop/tests/unit/grants.test.ts:37-58`.
 48. **`resolvePath` never returns the canonical form it computes for the confinement check — every
     call site, without exception, gets the lexical (un-symlink-resolved) path back.** `resolvePath`
     itself only ever returns its local `abs` (`path.normalize`/`path.resolve` on the caller's input),
-    on both the confined and unconfined branches (`packages/tools/src/lib/paths.ts:34-36`); the
-    canonical form `assertWithinWorkspace` derives via `canonicalizeAllowingMissing` (`:139`, `:143`)
+    on both the confined and unconfined branches (`packages/tools/src/lib/paths.ts:60-62`); the
+    canonical form `assertWithinWorkspace` derives via `canonicalizeAllowingMissing` (`:167`, `:171`)
     lives entirely inside that function's own stack frame, is compared only as a boolean
-    prefix/equality test (`:145`), and is never returned, assigned to an outer variable, or passed to
+    prefix/equality test (`:174`), and is never returned, assigned to an outer variable, or passed to
     a caller — `canonicalize` and `canonicalizeAllowingMissing` both lack the `export` keyword
-    (`packages/tools/src/lib/paths.ts:174`, `:248`), so no code outside this one file, and nothing the
+    (`packages/tools/src/lib/paths.ts:238`, `:274`), so no code outside this one file, and nothing the
     package's own barrel (`packages/tools/src/index.ts`, which does not re-export `./lib/paths` at
     all) could hand a consumer, could reach that value even if it wanted to. Every tool that turns a `resolvePath` result
     into a filesystem operation — `readRawFile` (`packages/tools/src/lib/files.ts`), and the
@@ -963,14 +965,14 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     state, and reflects neither.** Production `packages/mcp-client/src/oauth.ts:129-161,258-310`;
     pinned `packages/mcp-client/tests/integration/oauth.test.ts:69-102`.
 53. **A corrupt, oversized or symlinked OAuth store is refused and never repaired by overwrite.**
-    Production `packages/mcp-client/src/oauth-store.ts:152-262`; pinned
+    Production `packages/mcp-client/src/oauth-store.ts:152-214,216-264`; pinned
     `packages/mcp-client/tests/integration/oauth-store.test.ts:86-148`.
 54. **A configured MCP resource credential cannot enter an OAuth exchange or overwrite an
     SDK-defined credential.** Resource headers are admitted only for resource requests on the
     configured origin, while OAuth discovery, registration and token traffic stays header-isolated;
     redirect hops are evaluated independently. Production:
     `packages/mcp-client/src/remote-fetch.ts:53-114`, constructed without SDK `requestInit` headers at
-    `packages/mcp-client/src/client.ts:417-447`; pinned
+    `packages/mcp-client/src/client.ts:478-519`; pinned
     `packages/mcp-client/tests/unit/remote-fetch.test.ts:7-95,141-167`.
 
 55. **A workspace Environment activates operator-owned global plugins without another workspace
@@ -1034,8 +1036,8 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 
 | Condition | Handler | Outcome |
 | --- | --- | --- |
-| Confined path outside every root | `packages/tools/src/lib/paths.ts:160` | `ToolError("path_escape")`, `{ path: input }`; message states the boundary is fixed before the run |
-| Containment unprovable (unresolvable symlink) | `packages/tools/src/lib/paths.ts:254` → `:142` | same `path_escape`, logged with `reason: "unresolvable"` |
+| Confined path outside every root | `packages/tools/src/lib/paths.ts:159-192` | `ToolError("path_escape")`, `{ path: input }`; message states the boundary is fixed before the run |
+| Containment unprovable (unresolvable symlink) | `packages/tools/src/lib/paths.ts:274-285` → `:159-192` | same `path_escape`, logged with `reason: "unresolvable"` |
 | Path swapped between check and open | `packages/tools/src/lib/files.ts:137-144` | `path_escape`, `"Path changed while it was being opened"` |
 | `realpath`/`stat` failure during that check | `packages/tools/src/lib/files.ts:125-127` | mapped through `fsError` |
 | Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
@@ -1050,22 +1052,22 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 | Forbidden provider body key, adapter path | `packages/llm/src/openai-compatible-request.ts:186` | **silently dropped** |
 | `keys.json` missing | `packages/kernel/src/secrets/secret-store.ts:79` | `{ values: {} }` — tolerated |
 | `keys.json` unparseable, or valid JSON with a key failing `ENV_VAR_RE` or a value failing `min(1)` | `:82-89` | empty values plus an `error` — `keysFileSchema` is `z.record(...)`, and Zod fails the **whole** parse on any one bad key/value rather than dropping it (verified against the installed `zod@^4.4.3`: `schema.safeParse({GOOD:"v", "1bad-key":"v"})` returns `success:false` with an `"Invalid key in record"` issue), so `parsed.success ? {values:...} : {values:{}, error:...}` (`:86-89`) takes the same empty-plus-error branch as unparseable JSON; `set`/`delete` then throw `"… is invalid (…) — fix it by hand first"` (`:115`, `:120`) |
-| `workspace-trust.json` unparseable, read | `packages/kernel/src/config/workspace-trust.ts:305` | `{ error }`; the verdict degrades to `unapproved` |
+| `workspace-trust.json` unparseable, read | `packages/kernel/src/config/workspace-trust.ts:312` | `{ error }`; the verdict degrades to `unapproved` |
 | `workspace-trust.json` unparseable, write | `:350-352` | throws — refuses to overwrite recorded approvals |
-| …except when carrying an approval across an operator write | `packages/kernel/src/config/file-config-store.ts:569-573` | swallowed: the file already landed, so a phantom failure would be worse |
-| Untrusted workspace | `packages/kernel/src/config/file-config-store.ts:600-603`, `:886`, `:950` | risky fields and agent files withheld; the run proceeds on the operator's config; `withheld_workspace_fields` is reported (`:678`) and the raw scope is still visible (`packages/kernel/tests/integration/workspace-trust.test.ts:92-99`) |
+| …except when carrying an approval across an operator write | `packages/kernel/src/config/file-config-store.ts:586-590` | swallowed: the file already landed, so a phantom failure would be worse |
+| Untrusted workspace | `packages/kernel/src/config/file-config-store.ts:600-603`, `:886`, `:950` | risky fields and agent files withheld; the run proceeds on the operator's config; `withheld_workspace_fields` is reported (`:678`) and the raw scope is still visible (`packages/kernel/tests/integration/workspace-trust.test.ts:134-141`) |
 | Invalid agent name | `packages/kernel/src/config/config-service.ts:81-85` | `kernelError("invalid_request")` before any path is built |
 | Unknown server error code on the wire | `packages/kernel/src/transport/stdio.ts:377` | collapses to `internal` |
 | Error details unserializable/cyclic | `packages/kernel/src/transport/stdio.ts:366-368` | `safeErrorDetails` returns `undefined`; details are simply omitted |
 | Capability event detail unserializable | `packages/kernel/src/runs/map-events.ts:204-206` | `"[unserializable capability event]"`, `truncated: true` |
 | Non-`ToolError` thrown by a handler | `packages/tools/src/errors.ts:69-76` | generic `internal` to the model; the stack only to the warn sink |
-| ripgrep probe throws at config time | `packages/tools/src/config.ts:187-193` | treated as "capability absent" |
+| ripgrep probe throws at config time | `packages/tools/src/config.ts:196-202` | treated as "capability absent" |
 
 Degradations worth naming explicitly, because they are *deliberate* and therefore easy to mistake for
 bugs: a failed spill loses the middle of one tool result rather than the run
 (`packages/loop/src/runtime/context/tool-spill.ts:30-32`); withholding a repository's risky fields
 lets the run proceed rather than refusing to start
-(`packages/kernel/src/config/workspace-trust.ts:73-77`); and the coarse fallback's false positives are
+(`packages/kernel/src/config/workspace-trust.ts:74-78`); and the coarse fallback's false positives are
 real — a 64-hex project id and a full UUID both read as credentials, which is why
 `@clarvis/server` shortens ids to 12 characters before logging
 (`packages/server/src/logging.ts:120-138`, pinned
@@ -1078,19 +1080,19 @@ real — a 64-hex project id and a full UUID both read as credentials, which is 
 | Edge | Kind | What forces it |
 | --- | --- | --- |
 | `@clarvis/hooks` → `@clarvis/capability` | runtime, static | `import { extractEnvRefs } from "@clarvis/capability"` (`packages/hooks/src/env.ts:17`); declared in `packages/hooks/package.json` |
-| `@clarvis/tools` → `@clarvis/paths` | runtime, static | `workspaceStatePaths` for `stateRoot` (`packages/tools/src/config.ts:7`, `:463`); `TMP_GLOB`/`writeFileDurable` in `packages/tools/src/lib/atomic.ts:4` |
+| `@clarvis/tools` → `@clarvis/paths` | runtime, static | `workspaceStatePaths` for `stateRoot` (`packages/tools/src/config.ts:7`, `:503`); `TMP_GLOB`/`writeFileDurable` in `packages/tools/src/lib/atomic.ts:4` |
 | `@clarvis/tools` → *nothing else internal* | — | `packages/tools/package.json` lists only `@clarvis/paths`; the package therefore **cannot** call `sanitize*` |
 | `@clarvis/kernel` → `@clarvis/paths` | runtime, static | `globalPaths(...).keysFile` / `.workspaceTrustFile`, `writeFileAtomicSync` (`packages/kernel/src/secrets/secret-store.ts:3`, `packages/kernel/src/config/workspace-trust.ts:3`) |
 | `@clarvis/kernel` → `@clarvis/protocol` | type-only for `SecretService` | `import type { SecretService }` (`packages/kernel/src/secrets/secret-store.ts:4`) |
 | `@clarvis/kernel/config/workspace-trust` → `@clarvis/loop/host` | runtime, static | `readJsonFile` (`packages/kernel/src/config/workspace-trust.ts:5`) |
-| `@clarvis/code` → canonical redactors | runtime, static | only through `@clarvis/kernel/policy` (`packages/code/src/adapters/session-store.ts:9`, `packages/code/src/adapters/diagnostic-session.ts:12`), pinned by `packages/kernel/tests/component/public-entrypoints.test.ts:22` |
+| `@clarvis/code` → canonical redactors | runtime, static | only through `@clarvis/kernel/policy` (`packages/code/src/adapters/session-store.ts:10`, `packages/code/src/adapters/diagnostic-session.ts:12`), pinned by `packages/kernel/tests/component/public-entrypoints.test.ts:22` |
 | `@clarvis/llm` → `FORBIDDEN_PROVIDER_BODY_KEYS` | runtime, static | `packages/llm/src/openai-compatible-request.ts:17` |
 | `@clarvis/loop` validation → the same constant | runtime, static | `packages/loop/src/validation/request/provider-rules.ts:3` |
 | `@clarvis/trace` → `sanitizeDeep` | runtime, static | `packages/trace/src/json-trace-store.ts:32`, `packages/trace/src/journal.ts:6`, `packages/trace/src/trace-mapper.ts:4`, `packages/trace/src/testing.ts:2` |
-| loop tools capability → `resolveSecretNames` | runtime, injected | optional port on `AgentToolsCapabilityOptions` (`packages/loop/src/runtime/capabilities/tools.ts:82`, called `:135`), bound by the file kernel at `packages/kernel/src/file-kernel.ts:783` |
-| hooks capability → `credentialNames` | runtime, injected | optional callback (`packages/hooks/src/capability.ts:343`, called `:320`) |
+| loop tools capability → `resolveSecretNames` | runtime, injected | optional port on `AgentToolsCapabilityOptions` (`packages/loop/src/runtime/capabilities/tools.ts:82-87`, called `:142`), bound by the file kernel at `packages/kernel/src/file-kernel.ts:715` |
+| hooks capability → `credentialNames` | runtime, injected | optional callback (`packages/hooks/src/capability.ts:343`, called `:367`), bound by the file kernel at `packages/kernel/src/file-kernel.ts:717` |
 | `@clarvis/mcp-client` → `@clarvis/paths` | runtime, static | private modes, local lease and durable replacement for OAuth credentials (`packages/mcp-client/src/oauth-store.ts:12`) |
-| file kernel → MCP authorization | runtime, injected through loop | global store path and optional browser opener (`packages/kernel/src/file-kernel.ts:640-677`; `packages/loop/src/runtime/build-run-deps.ts:391-402`) |
+| file kernel → MCP authorization | runtime, injected through loop | global store path and optional browser opener (`packages/kernel/src/file-kernel.ts:718-723`; `packages/loop/src/runtime/build-run-deps.ts:410-421`) |
 
 ### 7.2 Where redaction is actually applied
 
@@ -1098,15 +1100,15 @@ real — a 64-hex project id and a full UUID both read as credentials, which is 
 | --- | --- | --- |
 | trace event mapping | `sanitizeDeep` (default redactor) | `packages/trace/src/trace-mapper.ts:61` |
 | trace store insert | `sanitizeDeep` over `request`/`response` | `packages/trace/src/json-trace-store.ts:793-794`, `packages/trace/src/testing.ts:50-51` |
-| crash journal header | `sanitizeDeep` over `request` | `packages/trace/src/journal.ts:159` |
+| crash journal header | `sanitizeDeep` over `request` | `packages/trace/src/journal.ts:161` |
 | kernel wire errors | `sanitizeErrorMessage` (inside `terminalSafe`) + `sanitizeDeep` | `packages/kernel/src/transport/stdio.ts:70`, `:354` |
 | kernel run/capability events | `sanitizeText` + `sanitizeDeep` | `packages/kernel/src/runs/map-events.ts:83`, `:203` |
-| kernel task errors | `sanitizeErrorMessage`, `sanitizeDeep` | `packages/kernel/src/tasks/task-service.ts:235`, `:256`; `packages/kernel/src/tasks/task-provider-factory.ts:113`, `:227`, `:392` |
+| kernel task errors | `sanitizeErrorMessage`, `sanitizeDeep` | `packages/kernel/src/tasks/task-service.ts:235`, `:256`; `packages/kernel/src/tasks/task-provider-factory.ts:113`, `:228`, `:393` |
 | loop run result mapping | `sanitizeErrorMessage`, `sanitizeDeep` | `packages/loop/src/runtime/run-response-mapping.ts:54`, `:62-63`, `:69` |
-| memory run snapshot | `sanitizeDeep(run, sanitizeText)` — **before** any bound or write | `packages/memory/src/jobs.ts:224` (rationale `:214-215`); indexer task `packages/memory/src/indexer/run.ts:377` |
+| memory run snapshot | `sanitizeDeep(run, sanitizeText)` — **before** any bound or write | `packages/memory/src/jobs.ts:224` (rationale `:214-215`); indexer task `packages/memory/src/indexer/run.ts:392` |
 | memory tool results / seed / policy / health | `sanitizeText` | `packages/memory/src/tools.ts:41`, `:53`; `packages/memory/src/seed.ts:89`; `packages/memory/src/recording-policy.ts:51`; `packages/memory/src/health.ts:204-205` |
 | MCP client diagnostics | `sanitizeErrorMessage` | `packages/mcp-client/src/{connection,resources,resilient-session}.ts` |
-| `code` session previews | `sanitizeText` on the first line, before truncation | `packages/code/src/adapters/session-store.ts:121` (rationale `:103-110`) |
+| `code` session previews | `sanitizeText` on the first line, before truncation | `packages/code/src/adapters/session-store.ts:157` (rationale `:139-146`) |
 | `code` diagnostics | `sanitizeErrorMessage` + ANSI strip | `packages/code/src/adapters/diagnostic-session.ts:140` |
 | LLM provider errors | `sanitizeErrorMessage` | `packages/llm/src/ai-sdk/errors.ts` |
 
@@ -1119,7 +1121,7 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
 `stripWorkspaceRiskFields` is consumed only by `createFileConfigStore`
 (`packages/kernel/src/config/file-config-store.ts:43-45`, applied once in `operatorLayers` at `:602`), which is what makes
 `file-kernel.ts` able to state that no hook filtering happens at the hook layer any more
-(`packages/kernel/src/file-kernel.ts:544-552`).
+(`packages/kernel/src/file-kernel.ts:595-603`).
 
 ## 8. Open questions
 
@@ -1145,7 +1147,7 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
   capability executable receives every credential the kernel holds, and that whether that is intended
   is the owner's call (`packages/kernel/src/capability-executables/session-manager.ts:52`–`:71`).
   What has not changed is the behaviour or the absence of a test.
-  `packages/mcp-client/src/client.ts:325-338` argues at length for the MCP policy;
+  `packages/mcp-client/src/client.ts:374-387` argues at length for the MCP policy;
   `packages/kernel/src/capability-executables/session-manager.ts:76-84` carries no rationale and no
   test for its environment shape. This is a live divergence, not obviously a bug — a plans/memory
   provider may need credentials — but nothing in the code says which.
@@ -1181,9 +1183,9 @@ the four `sanitizeDeep` call sites in `@clarvis/trace` and the loop's result map
   of workspace trust (36), the empty-array risk value (37), the "unreadable store means unapproved"
   degradation (39), the realpath trust key (40), the env-only log knobs (45), and the `internal`
   collapse of a non-`ToolError` throw (46).
-- **`ALLOW_OUTSIDE_WORKSPACE` does not exist as a knob.** The name survives only in a comment
-  (`packages/tools/src/lib/paths.ts:115`) and in the architecture test's positive/negative fixtures
-  (`packages/tools/tests/architecture/no-bypass-hints.test.ts:87`, `:99`). The real controls are
-  `AgentToolsOptions.confineToWorkspace` (`packages/tools/src/config.ts:236`) and
+- **`ALLOW_OUTSIDE_WORKSPACE` does not exist as a knob.** The name survives only in the architecture
+  test's positive/negative fixtures (`packages/tools/tests/architecture/no-bypass-hints.test.ts:87`,
+  `:99`). The real controls are
+  `AgentToolsOptions.confineToWorkspace` (`packages/tools/src/config.ts:237-245`) and
   `CLARVIS_AGENT_TOOLS_CONFINE` (`packages/capability/src/env.ts:112`). Whether the historical variable
   was ever read is not determinable from the current tree.

@@ -209,7 +209,7 @@ Module-private helpers behind that view (described in §4):
 
 | Flag | Effect | Cite |
 |---|---|---|
-| `--ascii` | boolean flag, no value; carried as `Mode.ascii` on `run`/`resume`/`continue` modes | `packages/code/src/cli-args.ts:85`, `packages/code/src/cli-args.ts:249`, `packages/code/src/cli-args.ts:35-37,269,271,279` |
+| `--ascii` | boolean flag, no value; carried as `Mode.ascii` on `run`/`resume`/`continue` modes | `packages/code/src/cli-args.ts:47-64,108,261-281,305,342-345,358-359` |
 
 ### Settings keys (persistence surface, owned by a sibling document's adapter but read here for shape)
 
@@ -246,7 +246,7 @@ specific: per-mode `overrides` → the active `preset`'s partial layer (`HIGH_CO
 for `"family"`) → the mode's base `FAMILY_DARK`/`FAMILY_LIGHT` table (`packages/code/src/theme/model.ts:215-228`,
 tables at `packages/code/src/theme/model.ts:62-139`). Six additional `subagent-N` tokens come from a **per-preset,
 per-mode ramp** (`SUBAGENT_RAMP`, `packages/code/src/theme/model.ts:141-154`) and are individually nudged to at least
-AA contrast (4.5:1) against the resolved `bg` via `nudgeToAA` before being written into
+AA contrast (4.5-to-1) against the resolved `bg` via `nudgeToAA` before being written into
 `ResolvedTokens` (`packages/code/src/theme/model.ts:223-226`).
 
 **`resolveToken` (singular) and `resolveTokens` (plural) see the two config scopes differently.**
@@ -447,7 +447,7 @@ than a superscript glyph, since `SourceBadge` only special-cases `"shadow"`/`"wo
 ### `--ascii` flag → runtime effect
 
 `--ascii` is parsed as a bare boolean flag into `Mode.ascii` for `run`/`resume`/`continue`
-(`packages/code/src/cli-args.ts:85,249,269,271,279`). Outside this document's primary scope but load-bearing for its
+(`packages/code/src/cli-args.ts:47-64,108,261-281,305,342-345,358-359`). Outside this document's primary scope but load-bearing for its
 effect: `src/index.tsx` applies `mode.ascii` before the startup frame, then `src/runtime.tsx` retains
 it as `asciiFlag` and, in an effect keyed
 on `appearanceRevision`, calls `applyAsciiMode(asciiFlag || input.code.asciiEnabled())`
@@ -503,7 +503,7 @@ its transitions are defined in `adapters/memory-pressure.ts`, outside this docum
    `packages/code/tests/unit/theme-surfaces.test.ts:27-34` (equality/distinctness),
    `packages/code/tests/unit/theme-surfaces.test.ts:36-43` (tracks a dark→light swap).
 
-3. **(Derived) Subagent colors are always nudged to at least AA-large (3:1) contrast against the
+3. **(Derived) Subagent colors are always nudged to at least AA-large (3-to-1) contrast against the
    resolved `bg`, for every preset and mode.** Production: `resolveTokens`'s subagent loop calls
    `nudgeToAA(ov?.[name] ?? ramp[i], out.bg)` unconditionally (`packages/code/src/theme/model.ts:223-226`). Test:
    `packages/code/tests/unit/theme-contrast.test.ts:59-71` ("every subagent ramp entry clears AA-large against its
@@ -622,13 +622,13 @@ its transitions are defined in `adapters/memory-pressure.ts`, outside this docum
 
 - `core/**` is architecturally **forbidden** from importing `theme/**` (or `ui/`, `views/`,
   `adapters/`, `infrastructure/`) — enforced by
-  `packages/code/tests/architecture/architecture-boundary.test.ts:72-89`, which walks every static/dynamic/type-only
+  `packages/code/tests/architecture/architecture-boundary.test.ts:128-147`, which walks every static/dynamic/type-only
   import under `src/core` and fails if any resolves into those layers. This is why `core/marks.ts`
   (this document's mark table) is written with zero Solid/OpenTUI/adapter imports (verified against the
   source: `packages/code/src/core/marks.ts:1-145` imports nothing) — `theme/glyphs.ts` exists specifically to be the
   Solid-aware wrapper `core/**` itself is barred from being.
 - `features/**/controller.ts` files are architecturally **forbidden** from importing `theme/**` (or
-  `ui/`, `views/`, any `.tsx`) — `packages/code/tests/architecture/architecture-boundary.test.ts:109-119`
+  `ui/`, `views/`, any `.tsx`) — `packages/code/tests/architecture/architecture-boundary.test.ts:167-220`
   (INV-246, owned by **code-bootstrap-and-app-shell**). Feature controllers therefore cannot reach into this document's color/glyph API directly;
   any themed rendering they need must happen in a `.tsx` view layered above them.
 - The `ascii-source-boundary` test (`ascii-source-boundary.test.ts`) forces `ThemeView.tsx` to route
@@ -643,8 +643,11 @@ its transitions are defined in `adapters/memory-pressure.ts`, outside this docum
 
 - `views/tools/registry.tsx` imports `diffColorProps`, `filetypeFor`, `syntaxStyle` from
   `theme/syntax.ts` (`packages/code/src/views/tools/registry.tsx:5`, delegated to [hosts/code-transcript.md](code-transcript.md)).
-- `views/App.tsx` imports `bindSyntaxStyleRenderer` and mounts `MemoryPressureBanner`
-  (`packages/code/src/views/App.tsx:77,84,202,1243`; delegated to [hosts/code-bootstrap.md](code-bootstrap.md)).
+- `views/App.tsx` imports and invokes `bindSyntaxStyleRenderer`, and separately owns the memory-pressure
+  controller that it passes into `TranscriptRegion`; `App.tsx` does not import or mount
+  `MemoryPressureBanner` directly
+  (`packages/code/src/views/App.tsx:98-104`, `:322-323`, `:338-360`, `:1318`; delegated to
+  [hosts/code-bootstrap.md](code-bootstrap.md)).
 - `src/runtime.tsx` calls `createTheme`, reads/writes `tokens.bg`, and drives `applyAsciiMode` from the
   combined CLI-flag/persisted-setting value (`packages/code/src/runtime.tsx`,
   `createWorkspaceAdapters`; delegated to

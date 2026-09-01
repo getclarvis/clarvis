@@ -247,7 +247,7 @@ A `null` slot instead throws an uncaught `TypeError` (`spec.old_string` on `null
 wrapped as a `ToolError` (pinned by `packages/tools/tests/integration/multi-edit.test.ts:136-139`, "surfaces a TypeError when an edit
 entry is malformed") — it propagates as the generic non-`ToolError` case in Section 6's failure table.
 
-### 4.3 `apply_patch` (`packages/tools/src/tools/apply-patch.ts:316-392`, core in `applyParsed:413-587`)
+### 4.3 `apply_patch` (`packages/tools/src/tools/apply-patch.ts:316-392`, core in `packages/tools/src/tools/apply-patch.ts:413-587`)
 
 1. Detect `*** Begin Patch` after tolerating leading whitespace and parse it with `parseModelPatch`;
    otherwise use
@@ -598,8 +598,8 @@ re-exported from any of the package's four public entrypoints (`.`, `./guard`, `
 `./sandbox`), each of them an internal-only `lib/*.ts` module
 including `lib/atomic.ts`. A host (`@clarvis/loop`, `@clarvis/kernel`) reaches these tools only by
 their wire names through dispatch; which of those names a host UI renders as a "mutation" is
-`@clarvis/code`'s `MUTATION_TOOLS` set (`packages/code/src/adapters/tool-identity.ts:63`, whose
-twelve members are pinned name by name at `packages/code/tests/unit/tool-identity.test.ts:53`).
+`@clarvis/code`'s `MUTATION_TOOLS` set (`packages/code/src/adapters/tool-identity.ts:92`, whose
+twelve members are pinned name by name at `packages/code/tests/unit/tool-identity.test.ts:61`).
 That set is a transcript-rendering concern and not a grant boundary — its only two readers collapse
 an oversize diff behind a chip (`packages/code/src/views/tools/mutation-gate.ts:100`) and stop a
 mutation call folding into a run of reads (`packages/code/src/views/tool-groups.ts:42`) — so the

@@ -25,7 +25,7 @@ diagnosis is the expensive part and each cost a real hunt; the fix is one line i
 Each is also recorded in its owning spec's §8.
 
 **A `run_ended` event carrying `code` could not cross the kernel wire, and took the connection with
-it.** The protocol declares `code?: string` on `run_ended` (`packages/protocol/src/runs.ts:293-309`)
+it.** The protocol declares `code?: string` on `run_ended` (`packages/protocol/src/runs.ts:296-312`)
 and the engine mapper emits it whenever the trace entry has one, but the client codec's `run_ended`
 schema was `.strict()` over `type`/`at`/`status`/`reason` alone. A strict object rejects the extra
 key, `decodeRunEvent` answers `null`, and `connectKernelClient` reads that as a protocol violation:
@@ -45,23 +45,23 @@ naming the variant and the field. Deleting the new codec line reports
 
 One trap in writing that guard, worth knowing before editing it: `Extract<RunEvent, { type: K }>` is
 the obvious spelling and it is wrong here. One member declares a **union** discriminator —
-`delegation_completed | delegation_failed` (`packages/protocol/src/runs.ts:433`) — and a union is not
+`delegation_completed | delegation_failed` (`packages/protocol/src/runs.ts:436`) — and a union is not
 assignable to one of its own literals, so `Extract` answers `never`, `keyof never` widens to
 `string | number | symbol`, and the guard reports drift on a variant that has none.
 
 **`TurnRef.error` was written and then dropped on the way to disk.** It is populated by `endTurn`
-(`packages/code/src/adapters/session.ts:151`), and **both** legs of the wire conversion dropped it —
+(`packages/code/src/adapters/session.ts:199`), and **both** legs of the wire conversion dropped it —
 `metaToSession` on the way out and `sessionToMeta` on the way back — so a one-sided fix would not
 have round-tripped. A run that failed came back after a reload saying only that it failed, which is
 the exact undiagnosable case the field's own TSDoc describes it as fixing.
 
-Fixed at `packages/code/src/adapters/session-store.ts:294` and `:323`, with the value masked and
-bounded at the **producer** (`redactTurnError`, `:155`) so the in-memory and on-disk values stay
+Fixed in both conversion legs at `packages/code/src/adapters/session-store.ts:370-379` and `:402-414`, with the value masked and
+bounded at the **producer** (`redactTurnError`, `:191-201`) so the in-memory and on-disk values stay
 identical and the existing `redactPreviews: false` opt-out keeps working. The masking is not
 optional: this is the first provider free text Clarvis writes into a session document, and an
 unbounded message could push the document past `SESSION_MAX_BYTES`, after which the store swallows
 the throw and silently stops persisting that session for its whole life. The read path validates the
-`{code, message}` shape (`persistedTurnError`, `:284`) because a session document is the one input
+`{code, message}` shape (`persistedTurnError`, `:350-356`) because a session document is the one input
 here that no schema describes — `isSession` checks identity and `Array.isArray(turns)` and nothing
 else, so an added key is not rejected on read and a corrupt one is not caught either.
 
@@ -368,8 +368,8 @@ cycles with no plateau, so it is a leak rather than allocator arena growth.
 
 **Do not re-diagnose it as a Solid ownership bug.** `@opentui/solid`'s reconciler does call
 `destroyRecursively()` on a removed node (`_removeNode`, on `process.nextTick`), and `useTimeline`
-unregisters its timeline on cleanup. Both were checked in the affected 0.4.3 pin —
-`node_modules/@opentui/solid/index.js:547-568` and `:189-201` — and
+unregisters its timeline on cleanup. Both were checked in the affected 0.4.3 installation's compiled
+`@opentui/solid` bundle — a historical dependency artifact that is not tracked in this repository — and
 `packages/code/src/views/overlays/FloatFrame.tsx:53` is still the `useTimeline` call the second
 theory was about. Re-reading either one buys nothing that has not already been paid for.
 
@@ -383,24 +383,24 @@ much of the list is off-screen.
 
 The fix is `packages/code/src/views/overlays/ListPicker.tsx` (`win`) — it memoizes
 `windowRows(rows(), clamp(sel()), maxVisibleRows())` over the shared implementation at
-`packages/code/src/views/input/autocomplete.ts:169` — budgeted by `maxVisibleRows` at `:148` against
-`floatMaxRows` (`packages/code/src/views/overlays/FloatFrame.tsx:24`), with the indicators at `:233`
-and `:253` gated by `showOverflow` at `:178`. The TSDoc at `:151-165` cites this section by anchor, so
+`packages/code/src/ui/patterns/windowed-list.tsx:15-48` — budgeted by `maxVisibleRows` at
+`packages/code/src/views/overlays/ListPicker.tsx:178-181` against `floatMaxRows`
+(`packages/code/src/views/overlays/FloatFrame.tsx:28`), with the indicators at
+`packages/code/src/views/overlays/ListPicker.tsx:267-290` gated by `showOverflow` at `:209`. The
+TSDoc at `:183-207` cites this section by anchor, so
 **the heading above is load-bearing**: renaming it breaks that citation and the one at
-`packages/code/tests/integration/list-picker-render.test.tsx:217-220`. Three tests pin the behaviour —
-`:216` (120 items, fewer than 30 mounted, "more" painted), `:238` (the window follows the selection),
-`:253` (the wheel keeps mouse parity).
+`packages/code/tests/integration/list-picker-render.test.tsx:251-255`. Three tests pin the behaviour —
+`:251-270` (120 items, fewer than 30 mounted, "more" painted), `:273-286` (the window follows the selection),
+`:288-314` (the wheel keeps mouse parity).
 
 Mouse parity is kept rather than traded away: the container binds `onMouseScroll`
 (`packages/code/src/views/overlays/ListPicker.tsx`, rendered `PickerRow` → `onWheel`) and a wheel notch moves
 the selection, so the window follows it. `@opentui/core`'s `ScrollBox` offers no virtualization
 option, which is why the list is windowed rather than virtualized inside one.
 
-> **Correction, 2026-08-22, to that last sentence only.** `ScrollBoxOptions` in the pinned 0.4.3 does
-> expose `viewportCulling?: boolean`
-> (`node_modules/@opentui/core/renderables/ScrollBox.d.ts:18-32`), and it already defaults to `true`
-> (`node_modules/@opentui/core/index.js:10194`). It is not virtualization and would not have helped:
-> `_getVisibleChildren` (`node_modules/@opentui/core/index.js:9995-10007`) filters which
+> **Correction, 2026-08-22, to that last sentence only.** `ScrollBoxOptions` in the pinned 0.4.3 did
+> expose `viewportCulling?: boolean`, and it already defaulted to `true`. It is not virtualization
+> and would not have helped: `_getVisibleChildren` in that historical, untracked dependency bundle filters which
 > **already-constructed** children get painted, never whether a child is mounted, so it cannot return
 > an allocation made at construction. That it was on for the whole soak and changed nothing is
 > corroborating evidence that the cost is paid at mount. The conclusion — window outside the box —
@@ -518,21 +518,21 @@ unapproved `public-oss-reference` records still fail closed.
 
 **Open, low. The direct fix was tried, measured and reverted.**
 
-`InteractionNavigationBar` (`packages/code/src/ui/patterns/navigation-bar.tsx:78-94`) delegates to
+`InteractionNavigationBar` (`packages/code/src/ui/patterns/navigation-bar.tsx:85-103`) delegates to
 `NavigationBarForInteraction`, which reads `useTerminalDimensions()` and passes
 `width={() => dimensions().width}` down
-(`packages/code/src/ui/patterns/navigation-bar.tsx:51`, `:71`), so the segments are budgeted with
+(`packages/code/src/ui/patterns/navigation-bar.tsx:57`, `:77`), so the segments are budgeted with
 `budgetFooterActions(actions, terminalWidth)`
 (`packages/code/src/ui/patterns/active-actions.ts`, `budgetFooterActions`). That is right for `ViewFrame`
-(`packages/code/src/ui/patterns/view-frame.tsx:106-111`) and `PageFrame`
+(`packages/code/src/ui/patterns/view-frame.tsx:106-123`) and `PageFrame`
 (`packages/code/src/views/PageFrame.tsx:52-54`), which span the terminal, and wrong inside a
 `FloatFrame`: the card is `min(85% of the terminal, 100)` columns
-(`packages/code/src/views/overlays/FloatFrame.tsx:14-17`, `:95-97`), so at 140 columns the card's
+(`packages/code/src/views/overlays/FloatFrame.tsx:14-17`, `:97-99`), so at 140 columns the card's
 content has 96 and the row is measured against 138 — `fits` checks against `width - 2`
 (`packages/code/src/ui/patterns/active-actions.ts`, `budgetFooterActions`). `NavigationBar` renders
-`wrapMode="none"` with no `truncate` (`packages/code/src/ui/patterns/navigation-bar.tsx:40-42`) and
+`wrapMode="none"` with no `truncate` (`packages/code/src/ui/patterns/navigation-bar.tsx:45-47`) and
 the card's navigation slot is a plain `<box flexGrow={1} minWidth={0}>` with no `overflow="hidden"`
-(`packages/code/src/views/overlays/FloatFrame.tsx:110-115`) — unlike the card's own title and footer,
+(`packages/code/src/views/overlays/FloatFrame.tsx:112-117`) — unlike the card's own title and footer,
 which both carry `truncate` (`:103`, `:117`) — so a row that overruns paints through the card's
 border. `ListPicker` is now the remaining consumer
 (`packages/code/src/views/overlays/ListPicker.tsx`, `InteractionNavigationBar`).
@@ -623,7 +623,7 @@ the POSIX side, not the Windows one. `resolveShell()` with no arguments memoizes
 reaching it while `process.platform` reads `win32` pins PowerShell for every later caller —
 `runLocalBash` included, which then tries to spawn the absolute `powershell.exe` path on a POSIX host
 and settles every `!` command as a spawn failure. The TSDoc on `windowsClipboardArgs`
-(`packages/code/src/adapters/platform.ts:66`, function at line 75) records it and the fix: pass the
+(`packages/code/src/adapters/platform.ts:73`, function at line 75) records it and the fix: pass the
 platform explicitly so the call can neither read a poisoned entry nor write one. Production never saw
 it, because `process.platform` is a constant there; the suite did, because the clipboard tests pin
 win32 to exercise that branch. It is worth knowing here because it is evidence about what this path
@@ -894,7 +894,7 @@ The loop-side fix was applied to the one site that had it; the class was not clo
 `packages/kernel/tests/integration/serve.test.ts` builds five `destination: 1` loggers — lines 40,
 50, 61, 87 and 107 — and destroys none of them; its only `afterEach` (line 125) restores
 `CLARVIS_AGENT_TOOLS_ENABLED` and touches no stream. Kernel's `test` script carries no `--isolate`
-(`packages/kernel/package.json:46`), so every file in that suite shares one process, which is
+(`packages/kernel/package.json:51`), so every file in that suite shares one process, which is
 exactly the "large test run" condition the loop test's own remark identifies. Those five sites are
 deliberate — they exist to prove `serveFileKernelOverStdio` refuses a logger bound to its own wire —
 so the repair is to destroy each handle, not to remove the tests. If `epoll_ctl EEXIST` is ever seen
@@ -932,7 +932,7 @@ another reload. One instrumented reproduction recorded 602,837 view-factory cons
 read.
 
 The direct fix invokes mounted view factories under `untrack`, while preserving reactivity in the
-JSX tree each factory returns — `renderMountedView` at `packages/code/src/views/app/OverlayRegion.tsx:12`,
+JSX tree each factory returns — `renderMountedView` at `packages/code/src/views/app/OverlayRegion.tsx:11`,
 with the `untrack` boundary at `:17`. The initial workflow load now belongs to `onMount`
 (`packages/code/src/views/config/WorkflowsHub.tsx:346`), which is what makes the surviving
 construction-time selection read in `reloadOnce` (`:139`) harmless, and workflow polling is
@@ -943,7 +943,7 @@ suppressing that dependency would freeze legitimate UI changes. That rejection s
 tree — no view host, hub menu or picker preview carries an `untrack`; the only other uses are the
 theme token writer, the list-navigation enablement gate and the debug counter in
 `packages/code/src/views/blocks.tsx:67`. MCP capability refresh
-(`packages/code/src/adapters/mcp-capabilities-bridge.ts:115`) also became single-flight after the
+(`packages/code/src/adapters/mcp-capabilities-bridge.ts:117`) also became single-flight after the
 audit found they could retain unbounded pending requests under a slow backend.
 
 The broader audit did find independent amplifiers rather than an alternative explanation for the
@@ -962,16 +962,16 @@ The mitigation is deliberately layered:
   `packages/capability/src/extension-admission.ts:69` on the permit, and
   `packages/code/src/core/diagnostic-events.ts:156` on why `diagnosticAsync` refuses to race the
   operation it observes;
-- streams, response bodies, event queues, transcript windows, restored histories and exports have
-  both item and aggregate-byte budgets (`packages/code/src/adapters/store.ts:84` and `:89`);
+- live transcript output has both line and character caps (`packages/code/src/adapters/store.ts:88-89`),
+  while hydrated tool bodies have independent count and aggregate-byte caps (`:354-374`);
 - plans, workflows, memories, traces, worktrees, plugins, skills and configuration catalogs use
   bounded incremental scans and reject oversized records before materializing or persisting them
   (`packages/kernel/src/workflows/workflow-store.ts:108`, `packages/skills/src/limits.ts:18`);
 - completed runs release transient ingestion and owner-scoped state on absolute deadlines
   (`packages/kernel/src/runs/managed-run.ts:66`);
 - the TUI keeps a bounded viewport, hydrates large details on demand
-  (`packages/code/src/adapters/store.ts:307`), disables production renderer console caching
-  (`packages/code/src/adapters/platform.ts:230`), and exposes a last-resort RSS fuse whose default
+  (`packages/code/src/adapters/store.ts:365`), disables the production renderer console overlay
+  (`packages/code/src/adapters/renderer-bootstrap.ts:163-179`), and exposes a last-resort RSS fuse whose default
   threshold is 2 GiB (`DEFAULT_TUI_RSS_LIMIT_BYTES`,
   `packages/code/src/adapters/memory-pressure.ts`);
 - interactive `--debug` writes bounded, redacted JSONL with lifecycle, memory, command, view and
@@ -987,7 +987,7 @@ provides one for its child processes; ordinary interactive and real-model multi-
 requires host-level process-tree monitoring.
 
 The tests include the exact `OverlayRegion + WorkflowsHub` composition
-(`packages/code/tests/integration/overlay-region-render.test.tsx:224`), factory-construction
+(`packages/code/tests/integration/overlay-region-render.test.tsx:217`), factory-construction
 invariants (`:185`), slow single-flight polling
 (`packages/code/tests/integration/workflows-hub-render.test.tsx:206`), thousand-event refresh storms
 (`packages/code/tests/component/mcp-bridge.test.ts:419` and `:457`, 1,000 queued refreshes each),
@@ -1015,7 +1015,7 @@ The same validation exposed an independent crash-recovery defect: the persisted 
 the old process died. Workflow reads now reconcile a running record only when the matching root trace
 already contains terminal evidence, persist the repaired body and summary, and close only edges that
 are still running — `reconcileRunningWorkflowRecord` at
-`packages/kernel/src/workflows/workflows-service.ts:590`, reached from the read paths through
+`packages/kernel/src/workflows/workflows-service.ts:614`, reached from the read paths through
 `reconcilePersisted` at `:169`. Age and workspace-wide leases are deliberately not used because
 neither proves that this particular execution is dead. The repair is lazy rather than a restart
 sweep, and its residual is documented at the function itself: if the crashed run's journal was never
@@ -1284,13 +1284,13 @@ set, and proves that set has not become redundant. This closes the previously ne
 it does not make the public catalog that motivated the table reproducible inside this repository.
 
 *Correction on the census count.* The report says the 196-plugin figure is "cited four times" and
-names three sites, one of which — `packages/kernel/src/plugins/plugin-manifest.ts:140-145` —
+names three sites, one of which — `packages/kernel/src/plugins/plugin-manifest.ts:145-150` —
 carries a **different** measurement (twenty plugins declaring a non-default skills location, holding
-316 skills, at `:138`) and no `196` anywhere. Four is the right count and the composition is wrong:
-the string appears at `packages/capability/src/hooks-config.ts:124`,
-`packages/loop/src/settings/settings-schema.ts:310`, `packages/skills/src/schema.ts:51` and
-`packages/code/src/views/config/MarketplaceBrowser.tsx:73`. The last two are named nowhere in the
-report.
+316 skills, at `:138`) and no `196` anywhere. In the current source the public-catalog measurement
+appears in three comments: `packages/capability/src/hooks-config.ts:124`,
+`packages/loop/src/settings/settings-schema.ts:349` and `packages/skills/src/schema.ts:51`.
+The former `MarketplaceBrowser` occurrence no longer exists; separate 196-item benchmark and render
+fixtures are synthetic workload sizes, not another citation of the public census.
 
 *What would settle the remaining issue.* The catalog, or a published registry of the foreign dialect.
 Neither is here, so the architecture test can pin internal consistency but cannot prove that the
@@ -1306,7 +1306,7 @@ can observe either.
 *The gap report says "None is reproducible from this tree." That is wrong for two of the claims, and
 they are the two it singles out as most exotic.* Both reproduce from the committed snapshot:
 
-- The "120:1 against a cache read" ratio is exact in-tree arithmetic. `deepseek/deepseek-v4-pro` in
+- The "120-to-1 against a cache read" ratio is exact in-tree arithmetic. `deepseek/deepseek-v4-pro` in
   `packages/kernel/src/data/models-dev.json` carries `input: 0.435` and `cache_read: 0.003625`; the
   quotient is 120 exactly.
 - The router census at `packages/kernel/src/models/model-catalog.ts:498`–`:500` — "642 of the 680
@@ -1324,9 +1324,9 @@ inter-arrival" (`streaming.ts:123`–`:125`), the DeepInfra no-op and Novita lot
 
 *Two defects in the same family that the report does not name.* Both are silent and both are green
 today. `packages/memory/tests/architecture/indexer-surface-identity.test.ts:11` says
-`specs/cross-cutting/prompt-cache.md` "prices that at 120:1"; that document contains no such figure
+`specs/cross-cutting/prompt-cache.md` "prices that at 120-to-1"; that document contains no such figure
 — its only `120` is a line citation at `:301`. And
-`packages/code/tests/integration/providers-key-render.test.tsx:973` restates the Novita spread as a
+`packages/code/tests/integration/providers-key-render.test.tsx:975` restates the Novita spread as a
 "49-92% lottery" where the owning statement at `model-catalog.ts:510` reads 54.6%, 73.0%, 92.5% and
 51.9% — the floor is 51.9, and the restatement has drifted.
 
@@ -1354,9 +1354,9 @@ assistant-text-only shapes of the `"message"` arm are pinned nowhere.
 
 **`MCPClientHandle.protocolVersion` still depends on an SDK call guarantee, but exposes nothing.**
 The capture works by replacing `transport.setProtocolVersion`
-(`packages/mcp-client/src/client.ts:218`–`:223`), and whether the SDK calls that method exactly once,
+(`packages/mcp-client/src/client.ts:224`–`:229`), and whether the SDK calls that method exactly once,
 or at all, is outside this tree. The field is typed `string | undefined` (`:66`) and its one reader
-guards it (`packages/mcp-client/src/connection.ts:369`), so a version that never arrives degrades to
+guards it (`packages/mcp-client/src/connection.ts:397`), so a version that never arrives degrades to
 an absent diagnostic field rather than to anything worse. The half worth pinning is the *forwarding*,
 not the capture: `:235`–`:239` re-binds the original and calls through, which is what keeps
 `mcp-protocol-version` on every post-handshake HTTP request. As of 2026-08-22 a test drives that
@@ -1366,7 +1366,7 @@ against a real SDK client and a real HTTP server
 **A `null` tool result is now determined, and cannot come from the real SDK.** `CallToolResultSchema`
 extends a `z.looseObject` and the response is parsed with `safeParse`, so a `null` payload resolves as
 a rejection and never reaches the mapper. `interpretCallResult` no longer dereferences unguarded:
-`packages/mcp-client/src/tool-results.ts:101`–`:110` returns an `mcp_runtime_error` for a nullish
+`packages/mcp-client/src/tool-results.ts:112`–`:121` returns an `mcp_runtime_error` for a nullish
 result, and the TSDoc at `:85`–`:98` records that the branch defends the `MCPClientFactory`
 substitution seam and **not** the SDK. That distinction is load-bearing — a reader who takes it for
 an SDK guard will reopen the question.
@@ -1424,7 +1424,7 @@ on the supported macOS runner, but cannot turn this private/deprecated OS surfac
 compatibility promise.
 
 **`git`, and a citation the report gets wrong.** It cites
-`packages/code/src/adapters/marketplace.ts:204`–`:212` as "spawns `git` directly through
+`packages/code/src/adapters/marketplace.ts:206`–`:214` as "spawns `git` directly through
 `Bun.spawn`". Those lines are TSDoc `@remarks`, not code, and that module contains no spawn at all:
 it imports `gitCloneAsync` at `:14` and calls it at `:226`, and the spawn is
 `packages/code/src/adapters/plugin-install.ts:112-137`. The substance is right and is already
@@ -1512,14 +1512,15 @@ package defaults to.
 *The report says a dialect change "would break parsing silently at the schema". That is wrong in
 direction, and it misses the half that is genuinely silent.* Measured here on yaml 2.9.0:
 
-- Under `{ version: "1.1" }`, `created_at: 2026-07-27T10:00:00.000Z` resolves to a `Date`.
+- Under `{ version: "1.1" }`, an unquoted `created_at` for 2026-07-27 at 10 UTC resolves to a `Date`.
   `planDocumentSchema.parse` at `format.ts:244` then throws, and the round-trip at
   `packages/plan/tests/unit/plan-format.test.ts:30` goes red. That failure is **loud**, and the
   pre-commit gate catches it.
 - The silent half is `unknown_frontmatter`. `unknownFrontmatterSchema`
   (`packages/plan/src/schemas.ts:109`–`:113`) is `z.record(z.string(), z.unknown())` and accepts
   any value, so a 1.1/1.2 divergence that lands there
-  raises nothing: `owner_note: yes` becomes boolean `true` and `window: 10:30` becomes the number
+  raises nothing: `owner_note: yes` becomes boolean `true` and an unquoted `window` value written as
+  ten-colon-thirty becomes the number
   `630` — both measured — and `renderPlan` writes those back into the user's own plan file. The one
   fixture is `owner_note: hello` (`plan-format.test.ts:25`), which is dialect-insensitive.
 
@@ -1571,7 +1572,7 @@ The active contract is now exact Bun 1.4.0 for executable pins and `>=1.4.0` for
 three CI setup steps and their version/revision evidence, the crash-canary default and its evidence,
 both Docker stages, all workspaces discovered from the root manifest, `@types/bun`, and both the
 declared and resolved lockfile entries. It runs inside `lint:intent` (`package.json:41`), and the nine
-cases in `tooling/tests/unit/bun-version.test.ts:65-134` make every drift class fail independently.
+cases in `tooling/tests/unit/bun-version.test.ts:71-145` make every drift class fail independently.
 
 The old 1.3.11-versus-1.3.14 performance measurements above remain historical evidence, not a claim
 about 1.4. Likewise, fixture prose in `packages/memory/src/testing.ts` and its tests deliberately
@@ -1794,9 +1795,9 @@ with debug logging on now answers the question that CI was previously the only w
 
 Four modules probe whether a pid is alive with a signal-0 `process.kill`, and they split three to
 one on what an unclassifiable errno means. That split is deliberate and each owning spec records the
-direction its site chose (`specs/foundations/paths.md:615`–`:623`,
-`specs/execution/tools-shell-and-monitor.md:277`–`:287`, `specs/capabilities/memory-store.md:436`,
-`specs/foundations/trace.md:706`–`:710`), so it is not the defect. The defect is the **errno
+direction its site chose (`specs/foundations/paths.md:653-661`,
+`specs/execution/tools-shell-and-monitor.md:320-330`, `specs/capabilities/memory-store.md:440-443`,
+`specs/foundations/trace.md:741-744`), so it is not the defect. The defect is the **errno
 spelling** the three fail-open sites share:
 
 | Site | Line | Reads "alive" as |
@@ -1819,7 +1820,7 @@ runner has confirmed it, and none can while CI is dispatch-only.
 errnos. Measured on the pinned Bun on Linux: `process.kill(2147483647, 0)` throws `ESRCH`, but
 `2147483648`, `4294967296` and `1.5` all throw a `TypeError` with `code === "ERR_INVALID_ARG_TYPE"` —
 the probe was never made. All three sites accept the pid from a file with no upper-bound check
-(`packages/trace/src/journal-recovery.ts:115` admits any JSON number,
+(`packages/trace/src/journal-recovery.ts:117` admits any JSON number,
 `packages/memory/src/file-store/lock.ts:72` guards `Number.isInteger(pid) && pid > 0` and no more,
 `packages/tools/src/lib/monitor.ts:117` admits any number in a guard whose own TSDoc says it exists
 "to reject corrupt sidecars"). Under a blanket `!== "ESRCH"` such a file reads as alive forever:
@@ -1831,7 +1832,7 @@ site's chosen direction and loses nothing.
 Note that the existing tests are **vacuous with respect to this**:
 `packages/tools/tests/integration/monitor-lib.test.ts:82`–`:89` and `:91`–`:97` stub `EPERM` → alive
 and `ESRCH` → dead, both already true today, and
-`packages/trace/tests/integration/journal.test.ts:424` uses `pid: 2_147_483_646`, just under the
+`packages/trace/tests/integration/journal.test.ts:452` uses `pid: 2_147_483_646`, just under the
 boundary. Only an `EACCES` case would be non-vacuous.
 
 ### Packages outside the Windows job, and the three different things their surfaces are
@@ -1842,30 +1843,36 @@ packages it does not cover. Re-verified, those five are three different kinds of
 them are not gaps at all.
 
 **A product guarantee that silently does not hold there.** The trace store and the memory tree are
-owner-confined by mode bits: `packages/trace/src/json-trace-store.ts:417`, `:419`, `:422`, `:427`,
-`:598`, `:746`, `packages/trace/src/journal.ts:153`, and, in
-`packages/memory/src/file-store/`, `layout.ts:32`, `journal.ts:119`, `revisions.ts:99` and
-`lock.ts:102`/`:104`. None of those calls *fails* on Windows — `chmodSync` there moves only the
+owner-confined by mode bits: `packages/trace/src/json-trace-store.ts:418`, `:420`, `:423`, `:428`,
+`:599`, `:747`, `packages/trace/src/journal.ts:155`, and
+`packages/memory/src/file-store/layout.ts:32`, `packages/memory/src/file-store/journal.ts:119`,
+`packages/memory/src/file-store/revisions.ts:99` and `packages/memory/src/file-store/lock.ts:102,104`.
+None of those calls *fails* on Windows — `chmodSync` there moves only the
 read-only attribute and `mode` on `mkdirSync`/`openSync` is ignored — so the code is not a
 correctness bug. The confinement simply does not exist. That is a finding about the product, not
 about the tests, and relabelling it as a test problem is how it would get lost.
 
 **Test assertions that would not run.** Six file-mode expectations in `@clarvis/trace` and
 `@clarvis/memory` would fail on Windows and under root alike; the established remedy is a named
-`modeBitsEnforced` predicate wrapping the mode expectation only, never the surrounding test. Eighteen
-`symlinkSync` call sites would fail for want of the privilege: seventeen in `@clarvis/skills`
-(`tests/integration/symlink.test.ts:40,58,76,86,110`, `scan.test.ts:96,149,164,180,195`,
-`diagnostics.test.ts:160,161`, `bounds.test.ts:285,309`, `paths.test.ts:64`,
-`sidecar.test.ts:203,232`) and one in `@clarvis/memory`
-(`tests/integration/file-provider.test.ts:187`); `packages/code/tests/integration/marketplace.test.ts`
-has three more, equally outside the job. Five of the skills sites link a **file**, where the
+`modeBitsEnforced` predicate wrapping the mode expectation only, never the surrounding test. The
+current `@clarvis/skills` tests contain nineteen `symlinkSync` call sites
+(`packages/skills/tests/integration/symlink.test.ts:40,58,76,86,110`,
+`packages/skills/tests/integration/scan.test.ts:99,145,160,221,236,252,267`,
+`packages/skills/tests/integration/diagnostics.test.ts:160,161`,
+`packages/skills/tests/integration/bounds.test.ts:285,309`,
+`packages/skills/tests/integration/paths.test.ts:64`, and
+`packages/skills/tests/integration/sidecar.test.ts:203,232`). Memory now probes file-symlink support
+before its guarded escape test (`packages/memory/tests/integration/file-provider.test.ts:12-24,209-220`);
+`packages/code/tests/integration/marketplace.test.ts:412,445-446` has three more, equally outside the
+Windows job. Several of the skills sites link a **file**, where the
 `"junction"` substitution that `packages/tools/tests/helpers/fixtures.ts:333` and
 `packages/plan/tests/integration/file-repository.test.ts:48` use does not apply — the guard there has
-to be a probe, not a substitution. Two of them (`paths.test.ts:64`, `scan.test.ts:164`) are *escape*
-tests, so guarding them suppresses a security assertion; say so at the point it happens rather than
-letting it pass as routine.
+to be a probe, not a substitution. The escape cases include
+`packages/skills/tests/integration/paths.test.ts:64` and
+`packages/skills/tests/integration/scan.test.ts:236`, so guarding them suppresses a security assertion;
+say so at the point it happens rather than letting it pass as routine.
 
-**Two rows that are not gaps.** `packages/skills/src/scan.ts:429`–`:431` is listed as "POSIX
+**Two rows that are not gaps.** `packages/skills/src/scan.ts:480`–`:482` is listed as "POSIX
 separator normalisation". It is the opposite: `toPosixRel` splits on `path.sep` and joins with `/`,
 which is the platform-*correct* normalisation for a display path and the same idiom `@clarvis/tools`
 uses deliberately. Rewriting it to a bare `path.relative` would make resource paths host-shaped and
@@ -1915,16 +1922,17 @@ call site was reduced to `constants.O_RDONLY`.
 itself is pinned** from Linux, because the parameter is injectable:
 `packages/tools/tests/integration/paths.test.ts:78`–`:84` asserts both directions. What is not
 pinnable here is the drive-letter shape, and the reason is structural rather than neglect: the prefix
-test at `paths.ts:174` uses `path.sep`, a host constant, so on a POSIX host the comparison builds
+test at `packages/tools/src/lib/paths.ts:174` uses `path.sep`, a host constant, so on a POSIX host the comparison builds
 `c:\proj/` and would pass or fail for the wrong reason. The test says so at
 `packages/tools/tests/integration/paths.test.ts:64`–`:68`, and
 `packages/tools/tests/unit/powershell-dialect.test.ts:312`–`:315` says the same about
 `PathFact.withinWorkspace`.
 
-Threading a path flavour through `canonicalizeAllowingMissing` (`paths.ts:236`) and `resolvePath`
-(`:53`) to make this testable was considered and rejected: it replaces a host truth with a parameter
+Threading a path flavour through `canonicalizeAllowingMissing`
+(`packages/tools/src/lib/paths.ts:274`) and `resolvePath` (`:53`) to make this testable was considered
+and rejected: it replaces a host truth with a parameter
 across a confinement boundary, and a caller who could supply `caseInsensitive: false` on Windows
-would have the mirror of the escape `paths.ts:93`–`:96` already records. The honest position is that
+would have the mirror of the escape `packages/tools/src/lib/paths.ts:93-96` already records. The honest position is that
 this one needs the runner.
 
 The gap report groups the `apply_patch` errno with these as runner-blocked. It is not, any more —
@@ -2099,15 +2107,18 @@ below: the measurement as it was taken, then the state of its subject today.
   `tools/{ask-user-tool,builtin/grants,mcp-registry,wire-names}.ts` and `usage.ts`. Three of the
   original targets — `plans/`, `plan/` and `run-shape.ts` — are no longer reached at all. Inward,
   **16 symbols across 8 modules**: `packages/loop/src/runtime/entry-seed.ts:3`,
-  `run-shape.ts:8`, `tools/tool-effect.ts:14`, `entry-inputs.ts:40`/`:42`/`:45`/`:46`/`:47`,
-  `open-tool-pool.ts:10`, `orchestrator.ts:20`, `vision-prepass.ts:8`, plus the package entry
-  `packages/loop/src/lib.ts:44`. The direction of the edges is unchanged, so the package cycle is
+  `packages/loop/src/runtime/run-shape.ts:8`, `packages/loop/src/runtime/tools/tool-effect.ts:15`,
+  `packages/loop/src/runtime/entry-inputs.ts:40,42,45-47`,
+  `packages/loop/src/runtime/open-tool-pool.ts:14`, `packages/loop/src/runtime/orchestrator.ts:20`,
+  `packages/loop/src/runtime/vision-prepass.ts:8`, plus the package entry
+  `packages/loop/src/lib.ts:53`. The direction of the edges is unchanged, so the package cycle is
   unchanged; only its width moved.
 - **The eager configuration path is clear — this obstacle is gone.**
   `packages/loop/src/runtime/capabilities/settings-specs.ts:42-46` now imports
   `AGENTS_REQUEST_PARAMS`, `AGENTS_SETTINGS_FIELDS` and `agentsSettingsSpec` from
   `@clarvis/supervision`, whose owner is `packages/supervision/src/settings.ts:146`, `:157` and
-  `:169`. `BUILTIN_SETTINGS_SPECS` at `settings-specs.ts:44` names none of the delegation modules.
+  `:169`. `BUILTIN_SETTINGS_SPECS` at
+  `packages/loop/src/runtime/capabilities/settings-specs.ts:48-55` names none of the delegation modules.
   Nothing on the configuration path value-imports `capabilities/agents.ts` or
   `capabilities/delegation.ts` any more, so a hypothetical extraction would no longer drag the cycle
   onto the eager path. Do not re-derive this as a live obstacle.
@@ -2132,7 +2143,7 @@ below: the measurement as it was taken, then the state of its subject today.
 - **The test obstacle is unchanged, and re-measures to the same numbers.** 46 test files under
   `packages/loop/tests` name `delegate_task`, `runSubagent`, the capability constructors or the five
   `agent_*` tools, totalling **10,495 LOC**; 33 of them reach `executeRun` directly or through
-  `packages/loop/tests/integration/_helpers.ts:197`. The original 46 files / ~10,900 LOC holds.
+  `packages/loop/tests/integration/_helpers.ts:199`. The original 46 files / ~10,900 LOC holds.
 
 ### What a real extraction would still cost
 
@@ -2163,9 +2174,9 @@ It read well as a lifetime split but made the global tree disagree with the work
 `<ws>/.clarvis/settings.json` and `<ws>/.clarvis/agents/` have always sat at the root.
 
 The two trees still agree, and neither carries a `config/` segment: `globalPaths`
-(`packages/paths/src/global.ts:103`) puts `settings.json` at `:110` and `agents/` at `:105`/`:111`
-directly under the global root, exactly as `workspacePaths` (`packages/paths/src/workspace.ts:100`)
-puts them at `:108` and `:103`/`:109` directly under `<ws>/.clarvis`.
+(`packages/paths/src/global.ts:109`) puts `settings.json` at `:119` and `agents/` at `:113`/`:120`
+directly under the global root, exactly as `workspacePaths` (`packages/paths/src/workspace.ts:102`)
+puts them at `:110` and `:105`/`:111` directly under `<ws>/.clarvis`.
 
 It also broke `bun run smoke` for four days without naming itself: the fixture seeded the old shape,
 the artifact booted to a fleet-less header, and the failure surfaced as a 90-second timeout.
@@ -2177,8 +2188,8 @@ tree, and they are.)_
   of `packages/code/tooling/artifact/smoke.ts` into `makeCleanHome`
   (`packages/code/tooling/artifact/pty.ts:273`), which resolves the layout with
   `globalPaths(undefined, { home })` at `:275` and writes only `paths.settingsFile`. The entry script
-  still exists — root `package.json:69` → `packages/code/package.json:19` — and reaches the layout
-  the same way (`packages/code/tooling/artifact/smoke.ts:132`).
+  still exists — root `package.json:67` → `packages/code/package.json:19` — and reaches the layout
+  the same way (`packages/code/tooling/artifact/smoke.ts:128`).
 - `packages/paths/tests/architecture/invariant.test.ts` scans package `tooling/` as well as `src/` —
   restricting it to `src/` is what let the drift through. The two globs are at `:51`, and the TSDoc
   above them at `:40` still names the artifact smoke and the 90-second timeout as the reason the

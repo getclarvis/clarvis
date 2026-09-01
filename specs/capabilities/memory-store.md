@@ -45,18 +45,18 @@ them.
 
 | Type | Declared at | What it is |
 | --- | --- | --- |
-| `MemoryTx` | `packages/memory/src/types.ts:203` | read / readBounded? / write / delete / list / grep / wasIndexed / markIndexed / version |
-| `MemoryBatch` | `packages/memory/src/types.ts:256` | staging handle: `id`, read, list, `write(rel, content, {derived?})`, delete |
-| `MemoryBatchInput` | `packages/memory/src/types.ts:280` | `{ source: MemoryRevisionSource; commit?: MemoryBatchCommit }` |
-| `MemoryRevisionReader` | `packages/memory/src/types.ts:291` | `list(relPath)`, `read(relPath, revisionId)` |
-| `MemoryUnitOfWork` | `packages/memory/src/types.ts:433` | `MemoryTx` + `revisions` + `jobs` + `batch<T>()` |
-| `MemoryStore` | `packages/memory/src/types.ts:479` | `MemoryTx` + `exclusive<T>()` + `revisions` + `jobs` + `recover()` |
-| `MemoryMutationFence` | `packages/memory/src/types.ts:465` | `before(tx)` / `after(tx)` lease fence around a protected mutation |
+| `MemoryTx` | `packages/memory/src/types.ts:205` | read / readBounded? / write / delete / list / grep / wasIndexed / markIndexed / version |
+| `MemoryBatch` | `packages/memory/src/types.ts:258` | staging handle: `id`, read, list, `write(rel, content, {derived?})`, delete |
+| `MemoryBatchInput` | `packages/memory/src/types.ts:282` | `{ source: MemoryRevisionSource; commit?: MemoryBatchCommit }` |
+| `MemoryRevisionReader` | `packages/memory/src/types.ts:293` | `list(relPath)`, `read(relPath, revisionId)` |
+| `MemoryUnitOfWork` | `packages/memory/src/types.ts:435` | `MemoryTx` + `revisions` + `jobs` + `batch<T>()` |
+| `MemoryStore` | `packages/memory/src/types.ts:481` | `MemoryTx` + `exclusive<T>()` + `revisions` + `jobs` + `recover()` |
+| `MemoryMutationFence` | `packages/memory/src/types.ts:467` | `before(tx)` / `after(tx)` lease fence around a protected mutation |
 | `MemoryClock` | `packages/memory/src/clock.ts:11` | `now()` and `after(ms, fn) => cancel` |
 
 `MemoryUnitOfWork.batch` is the **only** route to recoverable mutation; the doc comment states the
 consequence — "a batch and the reindex that follows it share one exclusive handle" is enforced by
-the type system rather than by convention (`packages/memory/src/types.ts:427`).
+the type system rather than by convention (`packages/memory/src/types.ts:429`).
 
 ### 2.2 Constructors and functions
 
@@ -144,18 +144,18 @@ The `Memory` interface itself (`:65`–`:84`) is the complete host-facing surfac
 
 | Member | Signature | Implemented at | Owner of its behaviour |
 | --- | --- | --- | --- |
-| `index(run)` | `(run: RunSnapshot) => Promise<IndexReport>` | `memory.ts:84` | this document (dispatch) / **memory-indexer-and-jobs** (`indexRun`) |
-| `reindex(tx?)` | reindexes through the supplied transaction when present; otherwise takes `store.exclusive` | `memory-contract.ts:56`, `memory.ts:24-29` | this document — §4.11 |
-| `review()` | `() => Promise<ReviewDigest>` | `memory.ts:29` | this document — §4.11 |
-| `seed(task?)` | `(task?: string) => Promise<string \| null>` | `memory.ts:80`–`:91` | this document (`buildSeed`, `packages/memory/src/seed.ts`) |
-| `query(input)` | `(input: MemoryQueryInput) => Promise<MemoryQueryResult>` | `memory.ts:43`–`:44` | this document — §4.9 |
-| `health()` | `() => Promise<MemoryHealthReport>` | `memory.ts:45`–`:46` | **memory-indexer-and-jobs** (`health.ts`) |
-| `enqueue(run, opts?)` | `(run, {providerKey?}) => Promise<MemoryIndexJob>` | `memory.ts:47`–`:71` | **memory-indexer-and-jobs** (durable job queue) |
-| `drain(opts?)` | `({limit?, signal?, clock?}) => Promise<MemoryDrainReport>` | `memory.ts:62`–`:83` | **memory-indexer-and-jobs** (`drainIndexJobs`) — §4.11 constructs the shared `admitBlocked` rate limiter this delegates through |
-| `jobs(filter?)` | `({state?, limit?}) => Promise<MemoryIndexJob[]>` | `memory.ts:74`–`:85` | **memory-indexer-and-jobs** |
-| `retryJob(runId)` | `(runId: string) => Promise<MemoryIndexJob \| null>` | `memory.ts:76` | **memory-indexer-and-jobs** |
-| `tools` | `MemoryToolDef[]` | `memory.ts:82` | **memory-capability-and-tools** (`createMemoryTools`) |
-| `store` | `MemoryStore` | `memory.ts:77` | this document — the injected port, re-exposed verbatim |
+| `index(run)` | `(run: RunSnapshot) => Promise<IndexReport>` | `packages/memory/src/memory.ts:94`–`:121` | this document (dispatch) / **memory-indexer-and-jobs** (`indexRun`) |
+| `reindex(tx?)` | reindexes through the supplied transaction when present; otherwise takes `store.exclusive` | `memory-contract.ts:56`, `packages/memory/src/memory.ts:24`–`:27` | this document — §4.11 |
+| `review()` | `() => Promise<ReviewDigest>` | `packages/memory/src/memory.ts:29` | this document — §4.11 |
+| `seed(task?)` | `(task?: string) => Promise<string \| null>` | `packages/memory/src/memory.ts:90`–`:91` | this document (`buildSeed`, `packages/memory/src/seed.ts`) |
+| `query(input)` | `(input: MemoryQueryInput) => Promise<MemoryQueryResult>` | `packages/memory/src/memory.ts:43`–`:44` | this document — §4.9 |
+| `health()` | `() => Promise<MemoryHealthReport>` | `packages/memory/src/memory.ts:45`–`:46` | **memory-indexer-and-jobs** (`health.ts`) |
+| `enqueue(run, opts?)` | `(run, {providerKey?}) => Promise<MemoryIndexJob>` | `packages/memory/src/memory.ts:47`–`:70` | **memory-indexer-and-jobs** (durable job queue) |
+| `drain(opts?)` | `({limit?, signal?, clock?}) => Promise<MemoryDrainReport>` | `packages/memory/src/memory.ts:72`–`:83` | **memory-indexer-and-jobs** (`drainIndexJobs`) — §4.11 constructs the shared `admitBlocked` rate limiter this delegates through |
+| `jobs(filter?)` | `({state?, limit?}) => Promise<MemoryIndexJob[]>` | `packages/memory/src/memory.ts:84`–`:85` | **memory-indexer-and-jobs** |
+| `retryJob(runId)` | `(runId: string) => Promise<MemoryIndexJob \| null>` | `packages/memory/src/memory.ts:86` | **memory-indexer-and-jobs** |
+| `tools` | `MemoryToolDef[]` | `packages/memory/src/memory.ts:92` | **memory-capability-and-tools** (`createMemoryTools`) |
+| `store` | `MemoryStore` | `packages/memory/src/memory.ts:87` | this document — the injected port, re-exposed verbatim |
 
 The optional transaction on `Memory.reindex` prevents nested locking: a caller already inside a
 store unit of work passes that handle through to `reindexTree`; an ordinary caller omits it and the
@@ -164,9 +164,9 @@ callback (`packages/memory/src/memory.ts`, `reindex` and `createMemoryTools`).
 
 `index()`'s dispatch is this document's own logic even though the pass it delegates to is not: with no
 `opts.indexer` resolver it returns `{skipped: true, note: "no-indexer", written: [], deleted: [],
-reindexed: false}` rather than throwing (`memory.ts:86`–`:104`), and a thrown `MemoryIndexError` from
+reindexed: false}` rather than throwing (`packages/memory/src/memory.ts:94`–`:104`), and a thrown `MemoryIndexError` from
 `indexRun` is caught and folded into the same shape with `skipped: false` and the error's message as
-`note` (`memory.ts:98`–`:117`); any other thrown error propagates (`memory.ts:108`–`:119`).
+`note` (`packages/memory/src/memory.ts:106`–`:117`); any other thrown error propagates (`packages/memory/src/memory.ts:108`–`:119`).
 
 ---
 
@@ -189,10 +189,10 @@ Bun is pinned to 1.3.14 via mise
 ```
 
 `DocFrontmatter` is `{ description, tags, authority?, pinned?, extra? }`
-(`packages/memory/src/types.ts:109`). `extra` is a `string[]` of unrecognized frontmatter lines kept
+(`packages/memory/src/types.ts:111`). `extra` is a `string[]` of unrecognized frontmatter lines kept
 verbatim and in order, deliberately not a key/value map, "because it round-trips block scalars,
 nested maps and duplicate keys that a map would silently destroy"
-(`packages/memory/src/types.ts:121`).
+(`packages/memory/src/types.ts:123`).
 
 `DocKind` is derived from the basename alone: `PROFILE.md` → `profile`, `TOPIC.md` → `topic`,
 anything else → `memory` (`packages/memory/src/paths.ts:73`).
@@ -239,10 +239,10 @@ which is what keeps them out of `list`, `grep` and `version`
 (`packages/memory/src/file-store/documents.ts:69`).
 
 In the product the two roots are `workspacePaths(ws).memoryRoot` = `<ws>/.clarvis/memory`
-(`packages/paths/src/workspace.ts:116`) and
+(`packages/paths/src/workspace.ts:119`) and
 `workspaceStatePaths(ws).memoryMachineryRoot` = `<global state>/workspaces/<segment>/memory`
-(`packages/paths/src/workspace-state.ts:181`), wired together by the factory
-(`packages/memory/src/factory.ts:238`–`:244`) and, per owner, by the kernel
+(`packages/paths/src/workspace-state.ts:185`), wired together by the factory
+(`packages/memory/src/factory.ts:240`–`:246`) and, per owner, by the kernel
 (`packages/kernel/src/owner-scoped-file-stores.ts:65`).
 
 Permissions: directories `0o700`, files `0o600`, verified on disk
@@ -607,7 +607,7 @@ reject a non-empty subtree beyond the exact scan boundary" (`:166`).
 Per operation:
 
 - `read` → strict bounded read: an oversized on-disk document **throws** rather than reading as
-  absent (`packages/memory/src/file-store/documents.ts:44`, `packages/memory/src/types.ts:207`);
+  absent (`packages/memory/src/file-store/documents.ts:44`, `packages/memory/src/types.ts:209`);
 - `readBounded(rel, maxBytes)` → prefix + `truncated` flag, clamped to `documentBytes`
   (`packages/memory/src/file-store/documents.ts:142`);
 - `write` → refuse over `documentBytes`, then `writeFileAtomic` (temp sibling + rename)
@@ -860,7 +860,7 @@ Production: `packages/memory/src/file-store/layout.ts:19`–`:49` (every machine
 Test: `packages/memory/tests/integration/machinery-split.test.ts:74`, `:91`, and `:110` ("a document
 still round-trips, and its revisions are readable" — ordinary read/write and `revisions.list`/`read`
 work end-to-end across a split root, including across two sequential batches to the same path); the
-kernel-side equivalent at `packages/kernel/tests/architecture/workspace-surface.test.ts:93`.
+kernel-side equivalent at `packages/kernel/tests/architecture/workspace-surface.test.ts:94`.
 
 **MS-13 (INV-141).** Omitting `machineryRoot` defaults it to `root`, keeping a self-contained tree.
 Production: `packages/memory/src/file-store/layout.ts:19`.
@@ -991,7 +991,7 @@ Test: `packages/memory/tests/integration/storage-limits.test.ts:294`, `:310`.
 **MS-34.** An oversized on-disk document is reported explicitly on a direct read; `grep` skips it
 outright, while `list` truncates it to a `prefixBytes` read instead of skipping it. It is never
 mistaken for absence.
-Production: `packages/memory/src/bounded-io.ts:59`, `packages/memory/src/types.ts:207`,
+Production: `packages/memory/src/bounded-io.ts:59`, `packages/memory/src/types.ts:209`,
 `packages/memory/src/file-store/documents.ts:211` (grep), `:168`–`:197` (list).
 Test: `packages/memory/tests/integration/storage-limits.test.ts:54` (asserts `grep` resolves `[]` and
 `list` resolves length 1 for the same oversized document).
@@ -1218,7 +1218,7 @@ There are **no retries and no timeouts** in this layer other than the tree-lock 
 
 | Depends on | What forces it |
 | --- | --- |
-| `@clarvis/paths` | `ensureWorkspaceSubdir` (`packages/memory/src/file-store/layout.ts:4`), `writeFileAtomic` + `isTmpFile` (`packages/memory/src/file-store/documents.ts:6`), `writeFileDurable` (`packages/memory/src/file-store/journal.ts:5`, `packages/memory/src/file-store/revisions.ts:5`, `packages/memory/src/file-store/jobs.ts:7`), and `workspacePaths`/`workspaceStatePaths` in the factory (`packages/memory/src/factory.ts:238`–`:240`) |
+| `@clarvis/paths` | `ensureWorkspaceSubdir` (`packages/memory/src/file-store/layout.ts:4`), `writeFileAtomic` + `isTmpFile` (`packages/memory/src/file-store/documents.ts:6`), `writeFileDurable` (`packages/memory/src/file-store/journal.ts:5`, `packages/memory/src/file-store/revisions.ts:5`, `packages/memory/src/file-store/jobs.ts:7`), and `workspacePaths`/`workspaceStatePaths` in the factory (`packages/memory/src/factory.ts:240`–`:242`) |
 | `@clarvis/capability` | the `Logger` port and its helpers `NOOP_LOGGER`, `levelEnabled`, `createSampler`, `sanitizeErrorMessage`, and the `bestEffort` / `detachObserved` observation pair (`packages/memory/src/file-store/tasks.ts:1`, `packages/memory/src/file-store/lock.ts:3`, `packages/memory/src/reindex.ts:25`, `packages/memory/src/workspace-state.ts:3`) |
 | Node built-ins only | `node:crypto`, `node:fs`, `node:path`, `node:readline`, `node:async_hooks`, `node:child_process` — no third-party runtime dependency reaches this layer |
 
@@ -1227,11 +1227,11 @@ store layer imports it — the frontmatter parser is hand-rolled precisely "to k
 with `zod` as its only runtime dependency" (`packages/memory/src/frontmatter.ts:5`), and the schema
 surface lives in `src/schemas.ts` / `src/settings.ts`. `@clarvis/loop`
 is likewise a package dependency, reached only through `IndexerRuntime`'s `ExecuteRunDeps` **type**
-import (`packages/memory/src/types.ts:13`) — a type-only edge from this layer's point of view.
+import (`packages/memory/src/types.ts:12-14`) — a type-only edge from this layer's point of view.
 
 `@clarvis/paths` is what makes the machinery split possible at all: `memoryRoot` under
-`.clarvis` (`packages/paths/src/workspace.ts:116`) and `memoryMachineryRoot` under the global state
-root (`packages/paths/src/workspace-state.ts:181`) are two different functions, and
+`.clarvis` (`packages/paths/src/workspace.ts:119`) and `memoryMachineryRoot` under the global state
+root (`packages/paths/src/workspace-state.ts:185`) are two different functions, and
 `createFileMemoryStore` takes them as two independent options.
 
 ### 7.2 Internal edges within the package
@@ -1281,11 +1281,11 @@ root (`packages/paths/src/workspace-state.ts:181`) are two different functions, 
 | Consumer | Edge |
 | --- | --- |
 | `packages/memory/src/memory.ts:3` | `createMemory` / `createFileMemory` compose the store into the `Memory` facade |
-| `packages/memory/src/factory.ts:238` | the per-owner factory constructs the default split store and threads `logger` + `lockWarnMs` |
+| `packages/memory/src/factory.ts:240` | the per-owner factory constructs the default split store and threads `logger` + `lockWarnMs` |
 | `packages/memory/src/tools.ts:11` | the model-facing write tools go through `reindexView` over a batch (**sibling document**) |
 | `packages/memory/src/health.ts:14` | health reuses `planReindex` to detect stale navigation |
 | `packages/kernel/src/owner-scoped-file-stores.ts:2`, `:65` | the kernel's public multi-owner composition seam builds one file store per encoded owner segment |
-| `packages/kernel/tests/architecture/workspace-surface.test.ts:93` | the kernel's own test that the working tree receives only markdown |
+| `packages/kernel/tests/architecture/workspace-surface.test.ts:94` | the kernel's own test that the working tree receives only markdown |
 | `packages/kernel/tests/integration/memory-capability.test.ts:21` | the kernel drives the in-memory adapter from `@clarvis/memory/testing` |
 
 The `./testing` subpath export (`packages/memory/package.json`) is what lets another package import
@@ -1298,7 +1298,7 @@ carries `node:assert/strict` and nothing else (`packages/memory/src/testing.ts:1
 
 1. **`readDescription` and `MemoryMutationFence`.** `readDescription` has exactly one production
    caller (`packages/memory/src/tools.ts:337`, sibling document); `MemoryMutationFence`
-   (`packages/memory/src/types.ts:465`) is declared in this layer but implemented and consumed by the
+   (`packages/memory/src/types.ts:467`) is declared in this layer but implemented and consumed by the
    job/drain layer. Both are named here for completeness and specified by the sibling documents.
 
 2. **Durability of the machinery writes is unpinned.** MS-21 states the code calls `writeFileDurable`,
@@ -1308,7 +1308,7 @@ carries `node:assert/strict` and nothing else (`packages/memory/src/testing.ts:1
 
 3. **`poke` is the only backend-capability negotiation left.** Whether other
    backend-specific behaviours (e.g. cross-process durability, which `MemoryStore.recover`'s doc
-   comment mentions at `packages/memory/src/types.ts:503`) were meant to become harness flags is not
+   comment mentions at `packages/memory/src/types.ts:505`) were meant to become harness flags is not
    determinable.
 
 4. **Rationale is largely absent from the code and deliberately not inferred here.** Where a doc

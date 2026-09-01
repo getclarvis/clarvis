@@ -272,8 +272,8 @@ Both auth files live in the Clarvis global root and are named by `@clarvis/paths
 
 | File | Path | Line |
 |---|---|---|
-| enrolment table | `<global>/auth.json` | `packages/paths/src/global.ts:123` |
-| signing key | `<global>/auth-key.json` | `packages/paths/src/global.ts:124` |
+| enrolment table | `<global>/auth.json` | `packages/paths/src/global.ts:128` |
+| signing key | `<global>/auth-key.json` | `packages/paths/src/global.ts:129` |
 
 `createAuthLayer` resolves them with `globalPaths(opts.configDir).authFile` / `.authKeyFile`, and
 `authFile` may be overridden by `CLARVIS_SERVER_AUTH_FILE`
@@ -476,7 +476,7 @@ pins that `stopAccepting()` turns `/readyz` 503 while `/healthz` stays 200.
     (`packages/server/src/bin.ts`, the multi-owner fields in the composition call), `state.ready =
     true`, the guard-allowlist warning fires, `server.boot.ready` is logged, and only then
     `startMemoryRecovery()` releases durable memory-queue recovery.
-13. `SIGTERM`/`SIGINT` are wired to `beginShutdown` (`packages/server/src/bin.ts:393-394`).
+13. `SIGTERM`/`SIGINT` are wired to `beginShutdown` (`packages/server/src/bin.ts:394-395`).
 
 ### 4.2 The bind gate (`packages/server/src/bin.ts:143-170`)
 
@@ -702,7 +702,7 @@ event sequences are pinned by `packages/server/tests/unit/sessions.test.ts:63`, 
 `ServeHandle.close(graceMs = 0)` sets `accepting = false`, stops the sweeper, `store.closeAll("shutdown", graceMs)`
 and `server.stop(true)` (`packages/server/src/http/serve.ts:513-518`).
 
-### 4.10 Graceful shutdown (`beginShutdown`, `packages/server/src/bin.ts:349-391`)
+### 4.10 Graceful shutdown (`beginShutdown`, `packages/server/src/bin.ts:350-392`)
 
 Idempotent via a `shuttingDown` flag (`:350-351`). It logs `server.shutdown.started`, arms an
 unref'd force-exit timer at `drainDelayMs + graceMs + settleMs + 2000` ms
@@ -1122,8 +1122,8 @@ type makes unreachable were removed — see §8 item 1.
 | Session initialization exceeds its deadline | `503 unavailable`; reservation released; a late kernel resolution is released in the background | `packages/server/src/http/serve.ts:415-424`, `packages/server/src/http/request-budget.ts:59-64` |
 | Request aborted mid-initialization | `408 cancelled` | `packages/server/src/http/request-budget.ts:48-54` |
 | Session cap full | `503 resource_exhausted` + `session.capacity_exhausted` warn | `packages/server/src/http/serve.ts:388-396`, `packages/server/src/http/sessions.ts:207` |
-| Shutdown teardown throws | logged `server.shutdown.failed`, process still exits 0 | `packages/server/src/bin.ts:381-389` |
-| Shutdown exceeds its whole budget | `server.shutdown.forced` warn, `process.exit(0)` | `packages/server/src/bin.ts:360-369` |
+| Shutdown teardown throws | logged `server.shutdown.failed`, process still exits 0 | `packages/server/src/bin.ts:382-390` |
+| Shutdown exceeds its whole budget | `server.shutdown.forced` warn, `process.exit(0)` | `packages/server/src/bin.ts:361-370` |
 | Idle session with no live runs | closed by the sweeper | `packages/server/src/http/sessions.ts:274-288` |
 | `closeServer()` rejecting during teardown | swallowed | `packages/server/src/http/sessions.ts:155` |
 
@@ -1135,9 +1135,9 @@ type makes unreachable were removed — see §8 item 1.
 | session idle | 15 min | `packages/server/src/config/env.ts:43` → `packages/server/src/http/serve.ts:190` |
 | run wall clock | 30 min | `packages/server/src/config/env.ts:41` → `packages/server/src/http/serve.ts:176` |
 | run settle grace | 10 s | `packages/server/src/config/env.ts:42` → `packages/server/src/http/serve.ts:177`, used at `packages/server/src/http/sessions.ts:139` |
-| drain delay before close | 5 s | `packages/server/src/config/env.ts:47` → `packages/server/src/bin.ts:353,377` |
-| shutdown grace | 15 s | `packages/server/src/config/env.ts:48` → `packages/server/src/bin.ts:352,379` |
-| force-exit backstop | drain + grace + settle + 2 s | `packages/server/src/bin.ts:368` |
+| drain delay before close | 5 s | `packages/server/src/config/env.ts:47` → `packages/server/src/bin.ts:356,378-380` |
+| shutdown grace | 15 s | `packages/server/src/config/env.ts:48` → `packages/server/src/bin.ts:355,382` |
+| force-exit backstop | drain + grace + settle + 2 s | `packages/server/src/bin.ts:363-373` |
 | attempt window | 60 s | `packages/server/src/auth/issuer.ts:281` |
 | config reload throttle | 1 s | `packages/server/src/auth/auth-config.ts:368` |
 
@@ -1225,20 +1225,20 @@ the container switch and the role allow).
 2. **`guards.ts`'s comment states an ordering `serve.ts` never has; its security conclusion is real
    only in one deployment mode.** The comment at `packages/server/src/http/guards.ts:207` says the
    `rpc_method` field "is set **before** authentication runs", but in `handle` the authentication step
-   is `packages/server/src/http/serve.ts:275-282` (`auth.authenticator.authenticate(request)`) and the
-   body read that sets the field is `:283-290`. This is not merely a stale ordering claim: **the field
+   is `packages/server/src/http/serve.ts:306-315` (`auth.authenticator.authenticate(request)`) and the
+   body read that sets the field is `:317-324`. This is not merely a stale ordering claim: **the field
    is never populated at all for a request that fails authentication.** `authenticate`'s `catch` block
-   returns `authFailure(err, reqId)` immediately (`serve.ts:279`), before the function ever reaches the
+   returns `authFailure(err, reqId)` immediately (`packages/server/src/http/serve.ts:307-313`), before the function ever reaches the
    body-read block, so a rejected caller's log line carries no `rpc_method`. Consequently, whenever
    `--auth` is configured (`auth !== undefined`), a log line that *does* carry `rpc_method` came from a
    request that already held a valid principal — the field's value is never actually "unauthenticated"
    content in that mode; the comment's literal wording is simply wrong there. The comment's wording is
    literally accurate only under `--auth off` (`auth === undefined`): the `if (auth !== undefined)`
-   guard around the `authenticate` call (`serve.ts:275`) is then false and the whole block is skipped, body reading proceeds unconditionally for anyone who can reach the
+   guard around the `authenticate` call (`packages/server/src/http/serve.ts:307`) is then false and the whole block is skipped, body reading proceeds unconditionally for anyone who can reach the
    bind address, and the field genuinely is populated by a literally unauthenticated caller — matching
    what the comment describes. In both modes, the narrower "unvalidated" half of the conclusion still
    holds regardless: `rpcMethodOf` runs on the raw parsed JSON body before any RPC method/schema
-   validation (`serve.ts:290`), so even an authenticated caller's malformed or oversized batch reaches
+   validation (`packages/server/src/http/serve.ts:317-324`), so even an authenticated caller's malformed or oversized batch reaches
    this field uncosted by any shape check. So: the ordering claim is wrong in every configuration: the
    security conclusion is fully true under `--auth off` and half true (the "unvalidated" half only)
    under `--auth on`.
@@ -1267,12 +1267,12 @@ the container switch and the role allow).
    caller replace client-secret verification wholesale, on a public options bag, for no realised
    benefit. `createTokenIssuer` now calls `verifyClientSecret` directly.
 
-6. **`bin.ts` is on the coverage `NO_COUNTER_ALLOWLIST`.** `tooling/checks/coverage.ts:142-159`
+6. **`bin.ts` is on the coverage `NO_COUNTER_ALLOWLIST`.** `tooling/checks/coverage.ts:143-160`
    documents that Bun's instrumentation cannot see a subprocess, so the bind gate's counters come
    from nowhere; the comment names two ways out (extracting the gate into an importable function, or
    running the suite with `--isolate`) and neither has been taken. **Consequence: every non-gate line
    of `bin.ts` — the boot ordering, the shutdown sequencing, the three advisory warnings — is
-   untested.** The shutdown path in particular (`packages/server/src/bin.ts:349-391`) has no test at
+   untested.** The shutdown path in particular (`packages/server/src/bin.ts:350-392`) has no test at
    all in this package.
    **Reviewed 2026-08-22 and left standing.** Both ways out are the operator's call, not a defect to
    close from here: the first is a refactor of the boot module, the second was measured and rejected

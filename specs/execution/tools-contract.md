@@ -79,7 +79,7 @@ own:
 **Verified consumers** (resolving the prior "declared-but-unverified" note — see §8's former entry,
 now removed): `packages/hooks/src/subprocess.ts:21`-`26` imports `killTree`, `ownProcessGroup`,
 `resolveShell`, `shellArgs` and the `ShellSpec` type from `@clarvis/tools/shell`, aliasing all four
-functions with a `default*` prefix. `packages/kernel/src/local.ts:12`-`21` re-exports all seven value
+functions with a `default*` prefix. `packages/kernel/src/local.ts:21`-`29` re-exports all seven value
 symbols and both remaining types (`ShellSpec`, `ShellFlavor`) from `@clarvis/tools/shell` verbatim —
 a consumer this document's own scope had not previously named. `packages/kernel/src/capability-executables/session-manager.ts:15`
 imports only `killTree`/`ownProcessGroup` from it, to tear down a capability-executable's child
@@ -171,7 +171,7 @@ interface ToolInfo {
 }
 ```
 
-`listTools(config)` (`packages/tools/src/core.ts:134`) maps `selectSurface(config.readOnly)` to this shape, dropping the
+`listTools(config)` (`packages/tools/src/core.ts:136`-`:142`) maps `selectSurface(config.readOnly)` to this shape, dropping the
 handler. `selectSurface(readOnly)` (`packages/tools/src/tools/registry.ts:90`) returns `readOnlyTools` when `readOnly` is true,
 else `tools`.
 
@@ -344,7 +344,7 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
 8. Merge those roots into native-sandbox `readOnlyPaths`, then build the `RuntimeConfig`, validating
    every remaining limit and deriving `stateRoot` from `@clarvis/paths` (`resolveConfig`).
 
-### `dispatch` (`packages/tools/src/core.ts:226`-`267`), in call order
+### `dispatch` (`packages/tools/src/core.ts:226`-`266`), in call order
 
 1. **Lookup.** `getTool(name, selectSurface(config.readOnly))` (`packages/tools/src/core.ts:233`). A miss — an unknown
    name, or a write tool name against a read-only surface (`getTool` only searches the surface it is
@@ -368,7 +368,7 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
 5. **Execute.** Call `tool.handler(filled, config, signal, hooks)`, `normalizeOutput` its return
    value, split `content` into parts if it was a bare string, and return
    `{ isError: false, content: boundParts(...), ...(meta && { meta: boundMeta(...) }) }`
-   (`packages/tools/src/core.ts:254`-`262`). A thrown error (from the handler, or a bug anywhere in step 4) is caught and
+   (`packages/tools/src/core.ts:254`-`262`). A thrown error (from the handler, or a bug anywhere in step 5) is caught and
    rendered via `errorResult` (`packages/tools/src/core.ts:263`-`266`) — nothing above this dispatcher ever throws.
 
 ### `applyGuard` (`packages/tools/src/core.ts:156`-`205`)
@@ -414,7 +414,7 @@ no validation, guard or bounding logic runs here.
 | INV-037 | No tool-facing refusal message in `@clarvis/tools`'s source may tell the model how to lift the restriction it just hit (a "set/pass/export/use … to permit/allow/disable/bypass/override" shape, or a `FOO=1 to permit` shape). | `packages/tools/src/lib/paths.ts:162` is the concrete instance the test guards (`assertWithinWorkspace`'s `path_escape` message states the boundary and that it "cannot be changed from within it," but never names `ALLOW_OUTSIDE_WORKSPACE`). | `packages/tools/tests/architecture/no-bypass-hints.test.ts:81` (scans all of `src/`, excluding comments), guarded against a vacuous pass by `:77`-`79` (`sources(SRC).length` must exceed 30) and calibrated both ways: `:85`-`93` proves the regex fires on three known-bad phrasings, `:95`-`103` proves it does not fire on a refusal that merely states the boundary without hinting at how to lift it |
 | INV-038 | `@clarvis/tools` contains no source-code parser: no mention of tree-sitter (any spelling), the removed tool names (`outline`, `check_syntax`), the removed capability-flag identifiers (`treeSitterAvailable`, `probeTreeSitter`, `requiresTreeSitter`, `TREE_SITTER`), or the removed syntax annotation (`syntaxWarnings`, `surface_degraded`) anywhere in its `src/`, `tests/`, `README.md` or `package.json`. | n/a (absence) | `packages/tools/tests/architecture/no-tree-sitter.test.ts:130` (`it.each(FORBIDDEN)`), scanning >80 files (`:127`) |
 | INV-039 | No workspace manifest in the monorepo, and no line of `bun.lock`, names `@vscode/tree-sitter-wasm`; and no package's production `src/` names the removed `check_syntax` tool. | n/a (absence, repo-wide) | `packages/tools/tests/architecture/no-tree-sitter.test.ts:141` (manifests), `:148` (lockfile), `:158` (repo-wide `check_syntax` scan) |
-| INV-040 | `web-tree-sitter` (a distinct npm specifier `@clarvis/code` legitimately depends on for OpenTUI syntax highlighting) is not a substring of, nor contains, the forbidden `@vscode/tree-sitter-wasm`, and `@clarvis/code`'s manifest and the lockfile still declare/install it. | `packages/code/package.json` (asserted by the cited test rather than cited directly) | `packages/tools/tests/architecture/no-tree-sitter.test.ts:178` (substring check), `:183`-`185` (calibration: the word-level `/tree[-_ ]?sitter/i` matcher *does* fire on `web-tree-sitter`, which is why the substring carve-out above is necessary at all rather than redundant), `:187` (still declared/installed) |
+| INV-040 | `web-tree-sitter` (a distinct npm specifier `@clarvis/code` legitimately depends on for OpenTUI syntax highlighting) is not a substring of, nor contains, the forbidden `@vscode/tree-sitter-wasm`, and `@clarvis/code`'s manifest and the lockfile still declare/install it. | `packages/code/package.json` (asserted by the cited test rather than cited directly) | `packages/tools/tests/architecture/no-tree-sitter.test.ts:178` (substring check), `:183`-`185` (calibration: the word-level `/tree[-_ ]?sitter/i` matcher *does* fire on `web-tree-sitter`, which is why the substring carve-out above is necessary at all rather than redundant), `:185` (still declared/installed) |
 | INV-042 | The advertised tool surface is exactly 24 coding tools, 9 of them read-only, and the same set (in the same order) is advertised on every config. | `packages/tools/src/tools/registry.ts:42`-`81` (`toolDescriptors`, `tools`, `readOnlyTools`) | `packages/tools/tests/component/tool-surface.test.ts:32` |
 | INV-043 | Neither the full nor the read-only tool surface advertises `outline` or `check_syntax`. | `packages/tools/src/tools/registry.ts:42`-`67` (absent from `toolDescriptors`) | `packages/tools/tests/component/tool-surface.test.ts:43` |
 | INV-044 | Dispatching a removed tool name (`outline`, `check_syntax`) fails with the exact same `{error: "not_found", message: "Unknown tool: <name>"}` shape as dispatching a name that never existed (`does_not_exist`). | `packages/tools/src/core.ts:233`-`236` (`getTool` miss path, uniform for any unrecognized name) | `packages/tools/tests/component/tool-surface.test.ts:52` |

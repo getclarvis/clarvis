@@ -121,38 +121,38 @@ chose it — is the first thing every other path in this package is derived from
 
 ### 2.4 Global paths (`packages/paths/src/global.ts`)
 
-`globalPaths(root?, opts?)` (`packages/paths/src/global.ts:105`) returns a `GlobalPaths` record
+`globalPaths(root?, opts?)` (`packages/paths/src/global.ts:109`) returns a `GlobalPaths` record
 (`packages/paths/src/global.ts:21`) rooted at `<global>`:
 
 | Field | Path | Line |
 |---|---|---|
-| `root` | `<global>` | `packages/paths/src/global.ts:111` |
-| `state` | `<global>/state` | `packages/paths/src/global.ts:107,112` |
-| `cache` | `<global>/cache` | `packages/paths/src/global.ts:108,113` |
+| `root` | `<global>` | `packages/paths/src/global.ts:115` |
+| `state` | `<global>/state` | `packages/paths/src/global.ts:111,116` |
+| `cache` | `<global>/cache` | `packages/paths/src/global.ts:112,117` |
 | `pluginDataRoot` | `<global>/state/plugin-data` | `GlobalPaths.pluginDataRoot`, `globalPaths` |
-| `settingsFile` | `<global>/settings.json` | `packages/paths/src/global.ts:114` |
-| `agentsDir` | `<global>/agents` | `packages/paths/src/global.ts:109,115` |
-| `keysFile` | `<global>/keys.json` | `packages/paths/src/global.ts:116` |
-| `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts:117` |
-| `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts:118` |
-| `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts:119` |
-| `environmentsDir` | `<global>/environments` | `packages/paths/src/global.ts:124` |
-| `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts:121` |
-| `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts:122` |
-| `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts:123` |
-| `guardJudgeFile` | `<global>/guard-judge.md` | `packages/paths/src/global.ts:124` |
-| `memoryPolicyFile` | `<global>/memory-policy.md` | `packages/paths/src/global.ts:125` |
-| `authFile` | `<global>/auth.json` | `packages/paths/src/global.ts:126` |
-| `authKeyFile` | `<global>/auth-key.json` | `packages/paths/src/global.ts:127` |
-| `sessionsDir` | `<global>/state/sessions` | `packages/paths/src/global.ts:128` |
-| `tracesDir` | `<global>/state/traces` | `packages/paths/src/global.ts:129` |
-| `workflowRecordsDir` | `<global>/state/workflows` | `packages/paths/src/global.ts:130` |
+| `settingsFile` | `<global>/settings.json` | `packages/paths/src/global.ts:119` |
+| `agentsDir` | `<global>/agents` | `packages/paths/src/global.ts:113,120` |
+| `keysFile` | `<global>/keys.json` | `packages/paths/src/global.ts:121` |
+| `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts:122` |
+| `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts:123` |
+| `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts:124` |
+| `environmentsDir` | `<global>/environments` | `packages/paths/src/global.ts:125` |
+| `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts:126` |
+| `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts:127` |
+| `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts:128` |
+| `guardJudgeFile` | `<global>/guard-judge.md` | `packages/paths/src/global.ts:129` |
+| `memoryPolicyFile` | `<global>/memory-policy.md` | `packages/paths/src/global.ts:130` |
+| `authFile` | `<global>/auth.json` | `packages/paths/src/global.ts:131` |
+| `authKeyFile` | `<global>/auth-key.json` | `packages/paths/src/global.ts:132` |
+| `sessionsDir` | `<global>/state/sessions` | `packages/paths/src/global.ts:133` |
+| `tracesDir` | `<global>/state/traces` | `packages/paths/src/global.ts:134` |
+| `workflowRecordsDir` | `<global>/state/workflows` | `packages/paths/src/global.ts:135` |
 | `environmentSelectionFile` | `<global>/state/environment.json` | `packages/paths/src/global.ts:136` |
-| `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts:131` |
-| `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts:132` |
-| `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts:133` |
-| `exportsDirForOwner(owner)` | `<global>/exports/<ownerSegment(owner)>` | `packages/paths/src/global.ts:134` |
-| `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/global.ts:135` |
+| `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts:137` |
+| `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts:138` |
+| `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts:139` |
+| `exportsDirForOwner(owner)` | `<global>/exports/<ownerSegment(owner)>` | `packages/paths/src/global.ts:140` |
+| `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/global.ts:141` |
 
 The module doc explains the placement: "Operator-owned configuration sits at the root, not under
 a `config/` subdirectory" — burying it "made the global tree disagree with the workspace one"
@@ -162,27 +162,27 @@ consequence" (`packages/paths/src/global.ts:17-19`).
 
 ### 2.5 Workspace paths (`packages/paths/src/workspace.ts`)
 
-`workspacePaths(root?, opts?)` (`packages/paths/src/workspace.ts:100`) returns a `WorkspacePaths` record
+`workspacePaths(root?, opts?)` (`packages/paths/src/workspace.ts:102`) returns a `WorkspacePaths` record
 (`packages/paths/src/workspace.ts:35`) rooted at `<ws>/.clarvis`:
 
 | Field | Path | Line |
 |---|---|---|
-| `root` | working tree root | `packages/paths/src/workspace.ts:106` |
-| `clarvisDir` | `<ws>/.clarvis` | `packages/paths/src/workspace.ts:102,107` |
-| `settingsFile` | `<ws>/.clarvis/settings.json` | `packages/paths/src/workspace.ts:108` |
-| `agentsDir` | `<ws>/.clarvis/agents` | `packages/paths/src/workspace.ts:103,109` |
-| `skillsDir` | `<ws>/.clarvis/skills` | `packages/paths/src/workspace.ts:110` |
-| `workflowsDir` | `<ws>/.clarvis/workflows` | `packages/paths/src/workspace.ts:111` |
-| `pluginsDir` | `<ws>/.clarvis/plugins` | `packages/paths/src/workspace.ts:112` |
+| `root` | working tree root | `packages/paths/src/workspace.ts:108` |
+| `clarvisDir` | `<ws>/.clarvis` | `packages/paths/src/workspace.ts:104,109` |
+| `settingsFile` | `<ws>/.clarvis/settings.json` | `packages/paths/src/workspace.ts:110` |
+| `agentsDir` | `<ws>/.clarvis/agents` | `packages/paths/src/workspace.ts:105,111` |
+| `skillsDir` | `<ws>/.clarvis/skills` | `packages/paths/src/workspace.ts:112` |
+| `workflowsDir` | `<ws>/.clarvis/workflows` | `packages/paths/src/workspace.ts:113` |
+| `pluginsDir` | `<ws>/.clarvis/plugins` | `packages/paths/src/workspace.ts:114` |
 | `environmentsDir` | `<ws>/.clarvis/environments` | `packages/paths/src/workspace.ts:115` |
-| `guardJudgeFile` | `<ws>/.clarvis/guard-judge.md` | `packages/paths/src/workspace.ts:113` |
-| `memoryPolicyFile` | `<ws>/.clarvis/memory-policy.md` | `packages/paths/src/workspace.ts:114` |
-| `plansRoot` | `<ws>/.clarvis/plans` | `packages/paths/src/workspace.ts:115` |
-| `memoryRoot` | `<ws>/.clarvis/memory` | `packages/paths/src/workspace.ts:116` |
-| `contextCandidates` | `<ws>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/workspace.ts:117` |
-| `plansRootForOwner(owner)` | `<ws>/.clarvis/owners/<seg>/plans` | `packages/paths/src/workspace.ts:118` |
-| `memoryRootForOwner(owner)` | `<ws>/.clarvis/owners/<seg>/memory` | `packages/paths/src/workspace.ts:119` |
-| `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/workspace.ts:120` |
+| `guardJudgeFile` | `<ws>/.clarvis/guard-judge.md` | `packages/paths/src/workspace.ts:116` |
+| `memoryPolicyFile` | `<ws>/.clarvis/memory-policy.md` | `packages/paths/src/workspace.ts:117` |
+| `plansRoot` | `<ws>/.clarvis/plans` | `packages/paths/src/workspace.ts:118` |
+| `memoryRoot` | `<ws>/.clarvis/memory` | `packages/paths/src/workspace.ts:119` |
+| `contextCandidates` | `<ws>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/workspace.ts:120` |
+| `plansRootForOwner(owner)` | `<ws>/.clarvis/owners/<seg>/plans` | `packages/paths/src/workspace.ts:121` |
+| `memoryRootForOwner(owner)` | `<ws>/.clarvis/owners/<seg>/memory` | `packages/paths/src/workspace.ts:122` |
+| `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/workspace.ts:123` |
 
 Interface doc: "Machinery is deliberately **absent from this type**… The keys are removed rather
 than deprecated so that writing generated bookkeeping into someone's working tree is a compile
@@ -194,42 +194,42 @@ Supporting `.agents` functions (`packages/paths/src/workspace.ts`):
 
 | Symbol | Line | What it returns |
 |---|---|---|
-| `agentsSkillsDirs(opts?)` | `packages/paths/src/workspace.ts:134` | `{ user: <home>/.agents/skills, workspace: <ws>/.agents/skills }` |
+| `agentsSkillsDirs(opts?)` | `packages/paths/src/workspace.ts:137` | `{ user: <home>/.agents/skills, workspace: <ws>/.agents/skills }` |
 | `agentsPluginsDir(root)` | `packages/paths/src/workspace.ts` | `<root>/.agents/plugins` |
 | `agentsPluginsDirs(opts?)` | `packages/paths/src/workspace.ts` | the global and workspace shared plugin inventories |
-| `agentsMarketplaceFile(root)` | `packages/paths/src/workspace.ts:153` | `<root>/.agents/plugins/marketplace.json` |
-| `agentsMarketplaceFiles(opts?)` | `packages/paths/src/workspace.ts:163` | the same, for both `home` and `workspaceRoot` |
-| `isAgentsMarketplaceFile(candidate)` | `packages/paths/src/workspace.ts:183` | predicate matching the last three path segments |
+| `agentsMarketplaceFile(root)` | `packages/paths/src/workspace.ts:178` | `<root>/.agents/plugins/marketplace.json` |
+| `agentsMarketplaceFiles(opts?)` | `packages/paths/src/workspace.ts:188` | the same, for both `home` and `workspaceRoot` |
+| `isAgentsMarketplaceFile(candidate)` | `packages/paths/src/workspace.ts:208` | predicate matching the last three path segments |
 
 ### 2.6 Per-workspace machine state (`packages/paths/src/workspace-state.ts`)
 
-`workspaceStatePaths(root?, opts?)` (`packages/paths/src/workspace-state.ts:171`) returns a `WorkspaceStatePaths`
+`workspaceStatePaths(root?, opts?)` (`packages/paths/src/workspace-state.ts:181`) returns a `WorkspaceStatePaths`
 record (`packages/paths/src/workspace-state.ts:36`) rooted at `<global>/state/workspaces/<segment>`, where
-`segment = ownerSegment(ownerFromWorkspace(root))` (`packages/paths/src/workspace-state.ts:157-159,173`):
+`segment = ownerSegment(ownerFromWorkspace(root))` (`packages/paths/src/workspace-state.ts:167-168,183`):
 
 | Field | Path | Line |
 |---|---|---|
-| `root` | `<global>/state/workspaces/<segment>` | `packages/paths/src/workspace-state.ts:173,177` |
-| `workspaceRoot` | the resolved working tree | `packages/paths/src/workspace-state.ts:178` |
-| `localDir` | `<root>/local` | `packages/paths/src/workspace-state.ts:174,179` |
-| `diagnosticsDir` | `<root>/local/diagnostics` | `packages/paths/src/workspace-state.ts:180` |
-| `memoryMachineryRoot` | `<root>/memory` | `packages/paths/src/workspace-state.ts:181` |
-| `plansLockDir` | `<root>/plans` | `packages/paths/src/workspace-state.ts:182` |
+| `root` | `<global>/state/workspaces/<segment>` | `packages/paths/src/workspace-state.ts:183,189` |
+| `workspaceRoot` | the resolved working tree | `packages/paths/src/workspace-state.ts:182,190` |
+| `localDir` | `<root>/local` | `packages/paths/src/workspace-state.ts:184,191` |
+| `diagnosticsDir` | `<root>/local/diagnostics` | `packages/paths/src/workspace-state.ts:192` |
+| `memoryMachineryRoot` | `<root>/memory` | `packages/paths/src/workspace-state.ts:193` |
+| `plansLockDir` | `<root>/plans` | `packages/paths/src/workspace-state.ts:194` |
 | `pluginDataRoot` | `<root>/plugin-data` | `WorkspaceStatePaths.pluginDataRoot`, `workspaceStatePaths` |
-| `promptHistoryFile` | `<root>/local/prompt-history` | `packages/paths/src/workspace-state.ts:183` |
-| `codeConfigFile` | `<root>/local/code.json` | `packages/paths/src/workspace-state.ts:184` |
-| `environmentSelectionFile` | `<root>/local/environment.json` | `packages/paths/src/workspace-state.ts:195` |
+| `promptHistoryFile` | `<root>/local/prompt-history` | `packages/paths/src/workspace-state.ts:196` |
+| `codeConfigFile` | `<root>/local/code.json` | `packages/paths/src/workspace-state.ts:197` |
+| `environmentSelectionFile` | `<root>/local/environment.json` | `packages/paths/src/workspace-state.ts:198` |
 | `runTempDir(executionId)` | `<root>/local/runs/<ownerSegment(executionId)>/tmp` | `WorkspaceStatePaths.runTempDir`, `workspaceStatePaths` |
-| `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts:185` |
-| `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts:186` |
-| `monitorSidecar(id)` | `<localDir>/monitor-<id>.json` | `packages/paths/src/workspace-state.ts:187-188` |
-| `monitorLog(id)` | `<localDir>/monitor-<id>.log` | `packages/paths/src/workspace-state.ts:189` |
-| `monitorExit(id)` | `<localDir>/monitor-<id>.exit` | `packages/paths/src/workspace-state.ts:190` |
-| `spillFile(token, stream)` | `<localDir>/shell-<token>.<stream>.log` | `packages/paths/src/workspace-state.ts:191-192` |
-| `toolOutputSpill(token)` | `<localDir>/toolout-<token>.txt` | `packages/paths/src/workspace-state.ts:193-194` |
+| `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts:202` |
+| `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts:203` |
+| `monitorSidecar(id)` | `<localDir>/monitor-<id>.json` | `packages/paths/src/workspace-state.ts:204-205` |
+| `monitorLog(id)` | `<localDir>/monitor-<id>.log` | `packages/paths/src/workspace-state.ts:206` |
+| `monitorExit(id)` | `<localDir>/monitor-<id>.exit` | `packages/paths/src/workspace-state.ts:207` |
+| `spillFile(token, stream)` | `<localDir>/shell-<token>.<stream>.log` | `packages/paths/src/workspace-state.ts:208-209` |
+| `toolOutputSpill(token)` | `<localDir>/toolout-<token>.txt` | `packages/paths/src/workspace-state.ts:210-211` |
 
-Predicates paired with the builders above: `isMonitorSidecar(name)` (`packages/paths/src/workspace-state.ts:122`)
-and `isSpillFile(name)` (`packages/paths/src/workspace-state.ts:140`).
+Predicates paired with the builders above: `isMonitorSidecar(name)` (`packages/paths/src/workspace-state.ts:132`)
+and `isSpillFile(name)` (`packages/paths/src/workspace-state.ts:150`).
 
 The `.agents` accessors do not share one blanket write policy. Standalone skills and marketplace
 documents are read-only authored inputs. The managed global plugin lifecycle may mutate exactly one
@@ -241,10 +241,10 @@ written into `.agents/plugins` or `.clarvis/plugins`. Production:
 `packages/paths/tests/architecture/agents-read-only.test.ts` and
 `packages/kernel/tests/unit/plugin-runtime.test.ts`.
 
-Ensure functions: `ensureWorkspaceStateDir(root?, opts?)` (`packages/paths/src/workspace-state.ts:206`) and
-`ensureWorkspaceLocalDir(root?, opts?)` (`packages/paths/src/workspace-state.ts:224`) both `mkdirSync` with
+Ensure functions: `ensureWorkspaceStateDir(root?, opts?)` (`packages/paths/src/workspace-state.ts:223`) and
+`ensureWorkspaceLocalDir(root?, opts?)` (`packages/paths/src/workspace-state.ts:241`) both `mkdirSync` with
 `{ recursive: true, mode: DIR_MODE }` and seed nothing — "Nothing needs ignoring here, because
-nothing here is in a repository." (`packages/paths/src/workspace-state.ts:222`).
+nothing here is in a repository." (`packages/paths/src/workspace-state.ts:237-239`).
 
 ### 2.7 Ensure functions and the workspace `.gitignore` (`packages/paths/src/ensure.ts`)
 
@@ -351,7 +351,7 @@ preservation are pinned by `packages/paths/tests/integration/housekeeping.test.t
 
 ### 2.15 What `index.ts` exports vs. what stays internal
 
-`packages/paths/src/index.ts:25-116` re-exports the full public surface listed above. Two symbols
+`packages/paths/src/index.ts:25-118` re-exports the full public surface listed above. Two symbols
 defined in `diag.ts` — `pathsLogger` (`packages/paths/src/diag.ts:88`) and `announceOnce` (`packages/paths/src/diag.ts:106`) — are
 **not** re-exported from `index.ts`: the diagnostics export block at `packages/paths/src/index.ts:45` exports only
 `NOOP_PATHS_LOGGER`, `setPathsLogger` and the `PathsLogger` type. These two remain
@@ -373,7 +373,7 @@ confirmed by the absence of `zod` from its dependencies (`package.json`, section
 `<ws>/.clarvis` top level, exhaustively enumerated by the allow-list a kernel test drives every
 real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
 `environments`, `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
-(`packages/kernel/tests/architecture/workspace-surface.test.ts:34-45`, INV-192).
+(`packages/kernel/tests/architecture/workspace-surface.test.ts:34-46`, INV-192).
 
 `WORKSPACE_GITIGNORE` content, seeded verbatim (`packages/paths/src/ensure.ts:33`):
 ```
@@ -411,7 +411,7 @@ delegated to [memory-wiki-store](../capabilities/memory-store.md)), `plans/` (lo
 `.gitignore`: this tree is not inside anyone's repository, which is the entire point of it."
 (`packages/paths/src/workspace-state.ts:33-34`). Confirmed present at runtime by the kernel test:
 `inState.some((rel) => rel.startsWith("memory/.state/"))` and `"memory/.history/"`
-(`packages/kernel/tests/architecture/workspace-surface.test.ts:159-164`).
+(`packages/kernel/tests/architecture/workspace-surface.test.ts:160-165`).
 
 Environment definitions are authored content in the global/workspace trees; their global and
 per-workspace selections are generated state. This split makes workspace definitions shareable
@@ -819,23 +819,23 @@ batch writes, `markIndexed`) leaves `<ws>/.clarvis`'s top level containing only 
 fixed allowed set (`.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
 `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`), and every file found under the workspace root is
 inside `.clarvis/`. Test:
-`packages/kernel/tests/architecture/workspace-surface.test.ts:113-122`.
+`packages/kernel/tests/architecture/workspace-surface.test.ts:114-123`.
 
 **INV-193.** Everything generated under `plans/` and `memory/` in that same tree is either a `.md`
 file or a transient atomic-write temp file (recognised by `isTmpFile`) — never raw machinery.
-Test: `packages/kernel/tests/architecture/workspace-surface.test.ts:124-134`.
+Test: `packages/kernel/tests/architecture/workspace-surface.test.ts:125-135`.
 
 **INV-194.** The `.gitignore` seed file is present in `.clarvis` regardless of which writer
 (plans, memory, prompt history, …) creates the directory first. Test:
-`packages/kernel/tests/architecture/workspace-surface.test.ts:142-145`. Prevents (per the test's own docstring,
-`packages/kernel/tests/architecture/workspace-surface.test.ts:137-140`): "`code`'s prompt history fired on the first Enter, before
+`packages/kernel/tests/architecture/workspace-surface.test.ts:143-146`. Prevents (per the test's own docstring,
+`packages/kernel/tests/architecture/workspace-surface.test.ts:138-141`): "`code`'s prompt history fired on the first Enter, before
 any tool had run, through a bare recursive `mkdir` — so the ignore file existed only if some other
 writer happened to go first."
 
 **INV-195.** No file found under `<ws>/.clarvis` ends in `.lock`, and no path segment anywhere
 under it is `.journal`, `.state`, `.history`, or `local` — all of that machinery is confirmed
 instead to exist under the global state root (`memory/.state/`, `memory/.history/` present there).
-Test: `packages/kernel/tests/architecture/workspace-surface.test.ts:147-157` (absence in `.clarvis`), `:159-164` (presence in the
+Test: `packages/kernel/tests/architecture/workspace-surface.test.ts:148-158` (absence in `.clarvis`), `:160-165` (presence in the
 state tree).
 
 ### Further invariants derived directly from the code (unnumbered in the global catalog)
@@ -874,8 +874,8 @@ says so, and names the phase").
 
 **PATHS-F.** Remote MCP registrations and tokens are machine state, not operator-authored settings:
 `globalPaths(root).mcpOAuthFile` is always `<global>/state/mcp-oauth.json`. Production:
-`packages/paths/src/global.ts:21-37,105-118`. Test:
-`packages/paths/tests/component/paths.test.ts:66`.
+`packages/paths/src/global.ts:21-39,109-123`. Test:
+`packages/paths/tests/component/paths.test.ts:68`.
 
 ## 6. Failure modes and degradation
 

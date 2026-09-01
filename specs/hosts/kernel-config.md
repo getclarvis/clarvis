@@ -11,13 +11,13 @@ every host over the kernel: *what does `settings.json` say*, *what agents exist 
 actually run*, and *may this workspace's declarations execute at all*.
 
 The subsystem is split in two layers on purpose. A **`ConfigStore`**
-(`packages/kernel/src/config/config-store.ts:44`) owns raw persistence and is **synchronous**; a
+(`packages/kernel/src/config/config-store.ts:46`) owns raw persistence and is **synchronous**; a
 **`ConfigService`** (`packages/kernel/src/config/config-service.ts:328`) wraps it in the async
 protocol surface and owns all validation — settings are parsed against `kernelSettingsSchema`, agent
 frontmatter against `agentFrontmatterSchema`, agent names against a path guard. The store
 documentation states the division explicitly: "Validation of settings and agent frontmatter is the
-service's job, not the store's" (`packages/kernel/src/config/config-store.ts:42`). Two stores exist:
-file-backed (`packages/kernel/src/config/file-config-store.ts:345`) and in-memory (`packages/kernel/src/config/memory-config-store.ts:43`).
+service's job, not the store's" (`packages/kernel/src/config/config-store.ts:44`). Two stores exist:
+file-backed (`packages/kernel/src/config/file-config-store.ts:354`) and in-memory (`packages/kernel/src/config/memory-config-store.ts:43`).
 
 The agent fleet is shipped **as TypeScript data**, not as files scaffolded into a user's directory:
 `BUILTIN_AGENTS` at `packages/kernel/src/config/builtin-agents/index.ts:25` is the five profiles, and
@@ -36,13 +36,13 @@ runs unchanged (`packages/kernel/src/config/agent-overlay.ts:142`).
 | `createConfigService(store, options?)` | fn | `packages/kernel/src/config/config-service.ts:328` |
 | `createMemoryConfigStore(seed?)` | fn | `packages/kernel/src/config/memory-config-store.ts:43` |
 | `MemoryConfigSeed` | type | `packages/kernel/src/config/memory-config-store.ts:14` |
-| `createFileConfigStore(opts)` | fn | `packages/kernel/src/config/file-config-store.ts:345` |
+| `createFileConfigStore(opts)` | fn | `packages/kernel/src/config/file-config-store.ts:354` |
 | `FileConfigStoreOptions` | type | `packages/kernel/src/config/file-config-store.ts:57` |
 | `kernelSettingsSchema` | value | `packages/kernel/src/config/capability-registry.ts:33` |
 | `SettingsFile` (alias of `KernelSettingsFile`) | type | `packages/kernel/src/config/capability-registry.ts:46` |
-| `WORKSPACE_RISK_FIELDS`, `stripWorkspaceRiskFields` | value/fn | `packages/kernel/src/config/workspace-trust.ts:37`, `:96` |
-| `StrippedWorkspaceSettings`, `WorkspaceRiskField` | types | `packages/kernel/src/config/workspace-trust.ts:54`, `:48` |
-| `ConfigStore`, `SettingsSnapshot`, `AgentOverlay`, `AgentRecord`, `AgentInput`, `ContextRecord` | types | `packages/kernel/src/config/config-store.ts:44,167,201,232,268,281` |
+| `WORKSPACE_RISK_FIELDS`, `stripWorkspaceRiskFields` | value/fn | `packages/kernel/src/config/workspace-trust.ts:38`, `:97` |
+| `StrippedWorkspaceSettings`, `WorkspaceRiskField` | types | `packages/kernel/src/config/workspace-trust.ts:55`, `:49` |
+| `ConfigStore`, `SettingsSnapshot`, `AgentOverlay`, `AgentRecord`, `AgentInput`, `ContextRecord` | types | `packages/kernel/src/config/config-store.ts:46,169,207,238,274,287` |
 | `compareAgentDisplayOrder`, `resolveAgentsByName` | fns | `packages/kernel/src/config/agent-resolution.ts:35`, `:56` |
 | `BUILTIN_AGENTS`, `BUILTIN_AGENT_NAMES`, `DEFAULT_ENTRY_AGENT`, `isBuiltinAgent`, `readBuiltinAgent` | values/fns | `packages/kernel/src/config/builtin-agents/index.ts:25,39,42,58,53` |
 | `BuiltinAgent` | type | `packages/kernel/src/config/builtin-agents/types.ts:10` |
@@ -54,13 +54,13 @@ runs unchanged (`packages/kernel/src/config/agent-overlay.ts:142`).
 
 Not exported from `./config` but exported from their module and imported by tests:
 `MAX_SETTINGS_DOCUMENT_BYTES`, `MAX_AGENT_DOCUMENT_BYTES`, `MAX_AGENT_DOCUMENTS_PER_SCOPE`,
-`MAX_CONTEXT_DOCUMENT_BYTES` (`packages/kernel/src/config/file-config-store.ts:209-214`), `settingsDocumentRevision` and
-`SettingsRevisionConflictError` (`packages/kernel/src/config/config-store.ts:18`, `:23`), `kernelCapabilityRegistry`
+`MAX_CONTEXT_DOCUMENT_BYTES` (`packages/kernel/src/config/file-config-store.ts:218-223`), `settingsDocumentRevision` and
+`SettingsRevisionConflictError` (`packages/kernel/src/config/config-store.ts:20`, `:25`), `kernelCapabilityRegistry`
 (`packages/kernel/src/config/capability-registry.ts:21`), and the workspace-trust internals `workspaceTrustFingerprint`,
 `workspaceTrustVerdict`, `canonicalWorkspaceKey`, `readWorkspaceTrustFile`, `writeWorkspaceTrust`,
-`workspaceTrustSchema` (`packages/kernel/src/config/workspace-trust.ts:233,317,284,300,343,257`).
+`workspaceTrustSchema` (`packages/kernel/src/config/workspace-trust.ts:295,380,347,363,406,320`).
 
-### 2.2 `ConfigService` methods (protocol contract at `packages/protocol/src/config.ts:362`)
+### 2.2 `ConfigService` methods (protocol contract at `packages/protocol/src/config.ts:363`)
 
 | Method | Implementation | Throws (kernel error code) |
 | --- | --- | --- |
@@ -83,12 +83,12 @@ Not exported from `./config` but exported from their module and imported by test
 `createConfigService` takes two optional host collaborators (`packages/kernel/src/config/config-service.ts:27`):
 `inspectSandbox` (absent ⇒ `inspectSandbox()` rejects `unavailable`) and `knownGrants` (absent ⇒
 `SettingsView.known_grants` is left **absent rather than empty**, `packages/kernel/src/config/config-service.ts:338`). The kernel
-supplies both at `packages/kernel/src/kernel.ts:690`. The positive path — a supplied `inspectSandbox`
+supplies both at `packages/kernel/src/kernel.ts:783`. The positive path — a supplied `inspectSandbox`
 resolving through the service — is pinned at
 `packages/kernel/tests/contract/config-service.test.ts:67`; the absent-collaborator path is the one
 cited above at `:450` in Section 6.
 
-### 2.3 `ConfigStore` port (`packages/kernel/src/config/config-store.ts:44`)
+### 2.3 `ConfigStore` port (`packages/kernel/src/config/config-store.ts:46`)
 
 | Member | Signature | Required |
 | --- | --- | --- |
@@ -107,7 +107,7 @@ cited above at `:450` in Section 6.
 | `watch?(listener)` | `→ Unsubscribe` | **optional** (`:160`) |
 
 `mutateSettings` is deliberately non-optional: "Keeping this mandatory prevents a new store from
-silently weakening the service's concurrency guarantee" (`packages/kernel/src/config/config-store.ts:87`).
+silently weakening the service's concurrency guarantee" (`packages/kernel/src/config/config-store.ts:89`).
 
 ### 2.4 `FileConfigStoreOptions` (`packages/kernel/src/config/file-config-store.ts:57`)
 
@@ -143,22 +143,22 @@ lifecycle/settings capability is owned by [worktrees.md](../capabilities/worktre
 
 | Path | Owner | Cap |
 | --- | --- | --- |
-| `<globalDir>/settings.json` | `globalPaths().settingsFile` (`packages/paths/src/global.ts:112`) | 2 MiB (`packages/kernel/src/config/file-config-store.ts:209`) |
-| `<globalDir>/agents/<name>.md` | `globalPaths().agentFile` (`packages/paths/src/global.ts:132`) | 256 KiB each (`:170`) |
-| `<globalDir>/workspace-trust.json` | `globalPaths().workspaceTrustFile` (`packages/paths/src/global.ts:117`) | — |
-| `<globalDir>/CLARVIS.md` then `AGENTS.md` | `globalPaths().contextCandidates` (`packages/paths/src/global.ts:130`) | 2 MiB (`:174`) |
-| `<ws>/.clarvis/settings.json` | `join(workspaceConfigDir, "settings.json")` (`packages/kernel/src/config/file-config-store.ts:353-358`) | 2 MiB |
-| `<ws>/.clarvis/agents/<name>.md` | `join(agentsDir, name + ".md")` (`packages/kernel/src/config/file-config-store.ts:365-369`) | 256 KiB each |
+| `<globalDir>/settings.json` | `globalPaths().settingsFile` (`packages/paths/src/global.ts:119`) | 2 MiB (`packages/kernel/src/config/file-config-store.ts:219`) |
+| `<globalDir>/agents/<name>.md` | `globalPaths().agentFile` (`packages/paths/src/global.ts:141`) | 256 KiB each (`:220`) |
+| `<globalDir>/workspace-trust.json` | `globalPaths().workspaceTrustFile` (`packages/paths/src/global.ts:126`) | — |
+| `<globalDir>/CLARVIS.md` then `AGENTS.md` | `globalPaths().contextCandidates` (`packages/paths/src/global.ts:139`) | 2 MiB (`:224`) |
+| `<ws>/.clarvis/settings.json` | `join(workspaceConfigDir, "settings.json")` (`packages/kernel/src/config/file-config-store.ts:362-367`) | 2 MiB |
+| `<ws>/.clarvis/agents/<name>.md` | `join(agentsDir, name + ".md")` (`packages/kernel/src/config/file-config-store.ts:374-378`) | 256 KiB each |
 | `<ws>/CLARVIS.md` then `AGENTS.md` | `CONTEXT_FILENAMES` (`packages/paths/src/constants.ts:82`) | 2 MiB |
-| `<settings.json>.lock` | settings lease, taken once in `rewriteUnderLease` (`packages/kernel/src/config/file-config-store.ts:800`) | — |
+| `<settings.json>.lock` | settings lease, taken once in `rewriteUnderLease` (`packages/kernel/src/config/file-config-store.ts:827`) | — |
 
 Additional bounds: at most 64 agent documents per scope (`MAX_AGENT_DOCUMENTS_PER_SCOPE`, `:171`), at
 most 256 directory entries examined (`MAX_AGENT_DIRECTORY_ENTRIES`, `:172`), at most 8 MiB of agent
 bytes in aggregate (`MAX_AGENT_DOCUMENTS_TOTAL_BYTES`, `:173`).
 
 Settings are written pretty-printed with a trailing newline: `` `${JSON.stringify(next, null, 2)}\n` ``
-(`packages/kernel/src/config/file-config-store.ts:855`, `:809`). Writes go through `writeFileAtomicSync`
-(`packages/kernel/src/config/file-config-store.ts:389`), i.e. tmp file + `rename` with `DIR_MODE = 0o700`
+(`packages/kernel/src/config/file-config-store.ts:883`, `:836`). Writes go through `writeFileAtomicSync`
+(`packages/kernel/src/config/file-config-store.ts:398`), i.e. tmp file + `rename` with `DIR_MODE = 0o700`
 (`packages/paths/src/constants.ts:40`) and `FILE_MODE = 0o600`
 (`packages/paths/src/constants.ts:52`).
 
@@ -174,22 +174,22 @@ Settings are written pretty-printed with a trailing newline: `` `${JSON.stringif
 <body>
 ```
 
-(`packages/kernel/src/config/file-config-store.ts:957-958`). The written text is immediately re-parsed with `parseAgentFile`
+(`packages/kernel/src/config/file-config-store.ts:985-986`). The written text is immediately re-parsed with `parseAgentFile`
 (`:926`) so the returned record is what a later read would produce. Round-trip pinned at
-`packages/kernel/tests/integration/file-config-store.test.ts:147`.
+`packages/kernel/tests/integration/file-config-store.test.ts:154`.
 
 ### 3.3 Revisions
 
 `settingsDocumentRevision(raw)` is `sha256(...).digest("hex")` over **bytes**
-(`packages/kernel/src/config/config-store.ts:18-20`). The file store hashes the exact file bytes read through a descriptor
-(`packages/kernel/src/config/file-config-store.ts:397-398`), so a malformed byte sequence is compared as written rather than
+(`packages/kernel/src/config/config-store.ts:20-22`). The file store hashes the exact file bytes read through a descriptor
+(`packages/kernel/src/config/file-config-store.ts:406-407`), so a malformed byte sequence is compared as written rather than
 after lossy UTF-8 decoding — pinned by
-`packages/kernel/tests/integration/file-config-store.test.ts:119` ("compares malformed settings by
+`packages/kernel/tests/integration/file-config-store.test.ts:126` ("compares malformed settings by
 original bytes rather than replacement characters", writing `0x80` then `0x81`). The memory store
-hashes `JSON.stringify(current)` instead (`packages/kernel/src/config/memory-config-store.ts:65`, `:89`, `:94`, `:110`). Test
-asserts the hex shape `/^[a-f0-9]{64}$/` at `packages/kernel/tests/integration/file-config-store.test.ts:83`.
+hashes `JSON.stringify(current)` instead (`packages/kernel/src/config/memory-config-store.ts:68`, `:92`, `:97`, `:113`). Test
+asserts the hex shape `/^[a-f0-9]{64}$/` at `packages/kernel/tests/integration/file-config-store.test.ts:90`.
 
-### 3.4 `SettingsRepairPlan` (protocol `packages/protocol/src/config.ts:252`)
+### 3.4 `SettingsRepairPlan` (protocol `packages/protocol/src/config.ts:253`)
 
 Two shapes, both carrying `scope` and `revision`:
 
@@ -198,12 +198,12 @@ Two shapes, both carrying `scope` and `revision`:
 { "scope": "workspace", "revision": "<sha256hex>", "action": "reset", "reason": "settings JSON must be an object" }
 ```
 
-Both examples are literal test expectations (`packages/kernel/tests/contract/config-service.test.ts:282`,
+Both examples are literal test expectations (`packages/kernel/tests/contract/config-service.test.ts:287`,
 `:264`).
 
 ### 3.5 `workspace-trust.json`
 
-Schema at `packages/kernel/src/config/workspace-trust.ts:257`: `{ workspaces: Record<string, Array<{ fingerprint, approved_at }>> }`,
+Schema at `packages/kernel/src/config/workspace-trust.ts:261`: `{ workspaces: Record<string, Array<{ fingerprint, approved_at }>> }`,
 `.strict()`, array `.min(1)`, `fingerprint` matching `/^sha256:[0-9a-f]{64}$/` (`:248`), `approved_at`
 a non-empty string, written as an ISO timestamp (`:347`). Written atomically with 2-space JSON
 (`:363`). The key is the **realpath** of the workspace root (`canonicalWorkspaceKey`, `:284`).
@@ -219,14 +219,14 @@ Consequently adding, removing, repairing, or changing any repository plugin inva
 workspace approval even if `settings.json` and agent files are unchanged. Environment switches do
 not require another approval while that inventory remains unchanged.
 
-### 3.6 `WORKSPACE_RISK_FIELDS` (`packages/kernel/src/config/workspace-trust.ts:37`)
+### 3.6 `WORKSPACE_RISK_FIELDS` (`packages/kernel/src/config/workspace-trust.ts:38`)
 
 `["hooks", "mcpServers", "enabledPlugins", "marketplaces", "memory.provider", "plans.provider",
 "tasks.provider"]`. The first four are stripped when `declaresSomething` is true — i.e. absent, `[]`
 and `{}` do **not** count (`:89-94`). `memory.provider` / `plans.provider` are stripped only when
 `provider.kind` is `"executable"` or `"plugin"` (`:100-101`); `tasks.provider` is stripped (and takes
 the whole `tasks` block with it, `:120`) whenever `tasks.provider` is an object (`:106-112`). Pinned
-by `packages/kernel/tests/integration/workspace-trust.test.ts:52` (covers every field) and `:71`
+by `packages/kernel/tests/integration/workspace-trust.test.ts:54-72` (covers every field) and `:74-80`
 (built-in `kind: "wiki"` / `kind: "markdown"` providers survive).
 
 ### 3.7 The five shipped agents
@@ -250,38 +250,38 @@ silently enlarge every delegated run.
 
 ## 4. Behavior
 
-### 4.1 Reading settings — `snapshot()` (`packages/kernel/src/config/file-config-store.ts:643`)
+### 4.1 Reading settings — `snapshot()` (`packages/kernel/src/config/file-config-store.ts:679-726`)
 
-1. `readScopeSettings("global")` and `readScopeSettings("workspace")` (`:558-559`, inside `operatorLayers`). Each reads the
-   document once through a bounded descriptor (`:353`), `JSON.parse`es it (`:396`), and validates with
-   `kernelSettingsSchema` (`:402`). A failure at any of the three stages produces `{ error }` and
-   **no** `value`, so the scope contributes nothing to the merge (`:387-391`, `:400`, `:411`).
+1. `readScopeSettings("global")` and `readScopeSettings("workspace")` (`:616-617`, inside `operatorLayers`). Each reads the
+   document once through a bounded descriptor (`:403-408`), `JSON.parse`es it (`:445-450`), and validates with
+   `kernelSettingsSchema` (`:452-461`). A failure at any of the three stages produces `{ error }` and
+   **no** `value`, so the scope contributes nothing to the merge (`:432-461`).
 2. If the workspace scope parsed and is **not** trusted, `stripWorkspaceRiskFields` runs and its
-   `settings` half replaces the workspace layer (`:560-563`).
+   `settings` half replaces the workspace layer (`:623-643`).
 3. `enabledRefs` is computed by merging the *operator* scopes only. Every item is already an exact
    `{ scope, source, name }` installation. When the host supplied `environment`, its
    `resolvePlugins(enabledRefs, trust)` applies the pinned Environment; otherwise the exact list is
-   used directly.
+   used directly (`:648-651`, `:683-686`).
 4. `pluginScopes = opts.plugins.settingsScopes(enabledPlugins)` folds only those exact resolved
-   installations. `SettingsSnapshot.active_plugins` reports the same list.
-5. The final merge order is `[...pluginScopes, ...operatorScopes]` (`:611`), and `mergeSettings` takes
+   installations. `SettingsSnapshot.active_plugins` reports the same list (`:687-690`, `:723`).
+5. The final merge order is `[...pluginScopes, ...operatorScopes]` (`:687-690`), and `mergeSettings` takes
    scopes "in ascending precedence (a later scope outranks an earlier one)"
-   (`packages/loop/src/settings/settings-merge.ts:143`). So: **plugin < global < workspace**.
+   (`packages/loop/src/settings/settings-merge.ts:163`). So: **plugin < global < workspace**.
 6. `mcpServerOrigins` walks that same ordered scope list and records the last declaration origin for
    each MCP namespace. The run assembler uses this internal provenance to grant `auto_tools` only
    when the winning declaration is still plugin-owned; a same-name operator override remains
    profile-selected (`mcpServerOrigins` in `file-config-store.ts`; `createSettingsRunAssembler` in
    `packages/kernel/src/runs/settings-assembler.ts`).
-7. `scopes` reports each scope's **raw** parsed value, unstripped (`:598-604`), so a UI can show what
-   was refused. `sources` carries `{scope, path, exists, revision, error?}` per scope (`:606-616`).
+7. `scopes` reports each scope's **raw** parsed value, unstripped (`:691-694`), so a UI can show what
+   was refused. `sources` carries `{scope, path, exists, revision, error?}` per scope (`:695-709`).
 8. `withheld_workspace_fields` is set only when something was actually withheld. In addition to
    risky settings keys it reports the pseudo-field `environment` while a plugin-activating workspace
    Environment is unapproved or changed.
    `workspace_trust` and `active_plugins` are always present on the file store
-   (`packages/kernel/src/config/file-config-store.ts:708-717`).
+   (`packages/kernel/src/config/file-config-store.ts:710-725`).
 
 `mergeSettings` folds only keys that have a strategy plus the registry's spec keys
-(`packages/loop/src/settings/settings-merge.ts:153-160`), so `merged` never carries a key neither the
+(`packages/loop/src/settings/settings-merge.ts:173-180`), so `merged` never carries a key neither the
 engine nor a registered capability owns.
 
 ### 4.2 Writing settings — `updateSettings`
@@ -291,22 +291,22 @@ engine nor a registered capability owns.
 | Service builds a `merge` closure: shallow `{...current, ...patch}`, then `kernelSettingsSchema.safeParse` | `packages/kernel/src/config/config-service.ts:433-440` |
 | Invalid ⇒ throw `invalid_request` carrying `firstIssue` + all Zod issues; nothing is written | `packages/kernel/src/config/config-service.ts:437` |
 | Service calls `store.mutateSettings(scope, expectedRevision, merge)` | `packages/kernel/src/config/config-service.ts:442` |
-| File store: `requireScope`, `mkdirSync(dirname, {recursive, mode: 0o700})`, acquire `<path>.lock` | `packages/kernel/src/config/file-config-store.ts:798-800` |
-| Inside the lease: re-read the document, compare its revision to `expectedRevision`; mismatch ⇒ `SettingsRevisionConflictError` | `packages/kernel/src/config/file-config-store.ts:802-806` |
-| `mutate(settingsFromDocument(document, …))` — the projection reuses the **already-read bytes**, never a second read | `packages/kernel/src/config/file-config-store.ts:869-872`, `:757-773` |
-| Write atomically inside `withOperatorWrite` | `packages/kernel/src/config/file-config-store.ts:807-810` |
-| `lease.release()` in `finally`, then `snapshot()` **after** the write wrapper returns | `packages/kernel/src/config/file-config-store.ts:811-814` |
+| File store: `requireScope`, `mkdirSync(dirname, {recursive, mode: 0o700})`, acquire `<path>.lock` | `packages/kernel/src/config/file-config-store.ts:825-827` |
+| Inside the lease: re-read the document, compare its revision to `expectedRevision`; mismatch ⇒ `SettingsRevisionConflictError` | `packages/kernel/src/config/file-config-store.ts:829-833` |
+| `mutate(settingsFromDocument(document, …))` — the projection reuses the **already-read bytes**, never a second read | `packages/kernel/src/config/file-config-store.ts:897-900`, `:784-800` |
+| Write atomically inside `withOperatorWrite` | `packages/kernel/src/config/file-config-store.ts:834-837` |
+| `lease.release()` in `finally`, then `snapshot()` **after** the write wrapper returns | `packages/kernel/src/config/file-config-store.ts:838-841` |
 | Service catches `SettingsRevisionConflictError` and rethrows `conflict` with `{scope, expectedRevision, actualRevision}` | `packages/kernel/src/config/config-service.ts:444-449` |
 
 The single-read property is pinned by spying on `fs.openSync` and asserting exactly one open of the
-settings path (`packages/kernel/tests/integration/file-config-store.test.ts:333`, `:354`). The
-"mutate sees disk, not a cached view" property is pinned at `:411`. A throwing `mutate` writes nothing
-and leaves no lockfile (`:435`).
+settings path (`packages/kernel/tests/integration/file-config-store.test.ts:400-419`, `:421-442`). The
+"mutate sees disk, not a cached view" property is pinned at `:478-500`. A throwing `mutate` writes nothing
+and leaves no lockfile (`:502-516`).
 
 `settingsFromDocument` deliberately folds an absent / unparsable / schema-invalid document onto `{}`
-(`packages/kernel/src/config/file-config-store.ts:762`, `:768`, `:773`) and logs `kernel.config.document_discarded` in the latter
-two cases. Tests: `packages/kernel/tests/integration/file-config-store.test.ts:377` (absent), `:389` (both invalid forms — and the file
-is left byte-identical because the test's `mutate` throws), `:613` / `:630` (the log).
+(`packages/kernel/src/config/file-config-store.ts:789`, `:795`, `:800`) and logs `kernel.config.document_discarded` in the latter
+two cases. Tests: `packages/kernel/tests/integration/file-config-store.test.ts:444-454` (absent), `:456-476` (both invalid forms — and the file
+is left byte-identical because the test's `mutate` throws), `:680-711` (the two log reasons).
 
 ### 4.3 Repair — `previewSettingsRepair` / `repairSettings`
 
@@ -332,7 +332,7 @@ valid — it throws `conflict` from inside the callback, which abandons the writ
 `SettingsRevisionConflictError` is translated to `conflict` with both revisions (`:363`).
 
 The file store's CAS is the same shape as `mutateSettings`: lock, re-read, compare, `repair(raw)`,
-`withOperatorWrite` + atomic write, release — the shared `rewriteUnderLease` skeleton (`packages/kernel/src/config/file-config-store.ts:793-815`), entered at `:824-828`.
+`withOperatorWrite` + atomic write, release — the shared `rewriteUnderLease` skeleton (`packages/kernel/src/config/file-config-store.ts:820-842`), entered at `:851-855`.
 
 ### 4.4 Agent name guard
 
@@ -353,13 +353,13 @@ with `store.readAgent` and throws `conflict` with `{name, scope, conflictingScop
 there (`:109-113`). Its own docstring records the limitation: "This check-then-write is not atomic
 across processes… Agent writes have no lock/CAS today" (`:97-102`).
 
-Consequences the tests pin (`packages/kernel/tests/contract/config-service.test.ts:373`, run
+Consequences the tests pin (`packages/kernel/tests/contract/config-service.test.ts:385`, run
 `describe.each` over **both** stores):
 
-- writing a name held by the other scope ⇒ `conflict`, and the target is still `not_found` (`:376`);
-- overwriting in the *same* scope is fine (`:388`);
+- writing a name held by the other scope ⇒ `conflict`, and the target is still `not_found` (`:388-398`);
+- overwriting in the *same* scope is fine (`:400-406`);
 - a legacy conflict created by writing directly to the store (bypassing the service) makes **both**
-  copies un-writable through the service, while each stays readable with its own content (`:396`).
+  copies un-writable through the service, while each stays readable with its own content (`:408-422`).
 
 ### 4.6 `renameAgent` (`packages/kernel/src/config/config-service.ts:553`)
 
@@ -367,34 +367,34 @@ Order of checks: name guard on both names → `newName !== oldName` (`invalid_re
 source exists (`not_found`, `:545`) → target free in the same scope (`conflict`, `:549`) → target free
 in the other scope (`conflict`, `:552`). Then **write-new, delete-old** (`:553-557`) — not an atomic
 filesystem transaction; the docstring names the crash residue as "a same-scope leftover, not a new
-cross-scope conflict" (`:533-537`). Tests at `packages/kernel/tests/contract/config-service.test.ts:412`, `:427`, `:438`, `:449`,
-`:456`.
+cross-scope conflict" (`:533-537`). Tests at `packages/kernel/tests/contract/config-service.test.ts:424-437`, `:439-448`, `:450-459`, `:461-466`,
+`:468-474`.
 
 ### 4.7 The three agent reads
 
 | Read | Returns | Used by |
 | --- | --- | --- |
-| `listAgents()` (`packages/kernel/src/config/config-store.ts:104`) | one record per **shipped** name, already resolved through `resolveEffectiveAgent`, plus every non-builtin file record once per scope, plus plugin agents | `ConfigService.listAgents` (`packages/kernel/src/config/config-service.ts:476`), `createAgentWorkflowPolicy` (`packages/kernel/src/application/workflow-policy.ts:45`, `:49`) |
-| `readAgent(scope\|"builtin", name)` (`packages/kernel/src/config/config-store.ts:117`) | one **layer** verbatim, unresolved | `ConfigService.getAgent` (`packages/kernel/src/config/config-service.ts:490`), the cross-scope conflict check (`packages/kernel/src/config/config-service.ts:108`) |
-| `readEffectiveAgent(name)` (`packages/kernel/src/config/config-store.ts:124`) | what a run enters | `createSettingsRunAssembler` (`packages/kernel/src/runs/settings-assembler.ts:380`, `:380`) |
+| `listAgents()` (`packages/kernel/src/config/config-store.ts:106`) | one record per **shipped** name, already resolved through `resolveEffectiveAgent`, plus every non-builtin file record once per scope, plus plugin agents | `ConfigService.listAgents` (`packages/kernel/src/config/config-service.ts:476`), `createAgentWorkflowPolicy` (`packages/kernel/src/application/workflow-policy.ts:45`, `:49`) |
+| `readAgent(scope\|"builtin", name)` (`packages/kernel/src/config/config-store.ts:119`) | one **layer** verbatim, unresolved | `ConfigService.getAgent` (`packages/kernel/src/config/config-service.ts:490`), the cross-scope conflict check (`packages/kernel/src/config/config-service.ts:108`) |
+| `readEffectiveAgent(name)` (`packages/kernel/src/config/config-store.ts:126`) | what a run enters | `createSettingsRunAssembler` (`packages/kernel/src/runs/settings-assembler.ts:412`, `:424`) |
 
 `readAgent` is "deliberately layer-precise rather than effective: an editor must open the bytes the
 user wrote, and the cross-scope conflict check must be able to ask whether a *file* exists"
-(`packages/kernel/src/config/config-store.ts:112-115`). Pinned end-to-end at
+(`packages/kernel/src/config/config-store.ts:114-117`). Pinned end-to-end at
 `packages/kernel/tests/integration/builtin-fleet.test.ts:122` — after an overlay writing only
 `iteration_limit: 80`, `getAgent("global","marshall")` returns exactly `{ iteration_limit: 80 }` and an
 empty body, while `readEffectiveAgent` returns the merged record (`:111-115`).
 
-File-store specifics: `listAgents` skips the workspace scope entirely when untrusted (`:820`); it maps
-`BUILTIN_AGENT_NAMES` through `resolveEffectiveAgent` (`:843-848`) and then appends the non-builtin
-file records (`:849`) and the plugin agents (`:850`). `readAgent` handles `"builtin"` first (`:858`),
-then the file, then — only for a name containing `:` — the plugin contribution (`:864-866`).
-`readEffectiveAgent` routes a `:`-qualified name straight to plugins (`:880-882`) and otherwise
-resolves workspace-over-global, contributing **no** workspace layer when untrusted (`:883-886`).
+File-store specifics: `listAgents` skips the workspace scope entirely when untrusted (`:928-934`); it maps
+`BUILTIN_AGENT_NAMES` through `resolveEffectiveAgent` (`:954-959`) and then appends the non-builtin
+file records (`:960`) and the plugin agents (`:961`). `readAgent` handles `"builtin"` first (`:968-972`),
+then the file, then — only for a name containing `:` — the plugin contribution (`:973-977`).
+`readEffectiveAgent` routes a `:`-qualified name straight to plugins (`:990-993`) and otherwise
+resolves workspace-over-global, contributing **no** workspace layer when untrusted (`:994-997`).
 
 **The service-side projection.** `listAgents()` (`packages/kernel/src/config/config-service.ts:475-476`) maps every
 `store.listAgents()` record through `recordToSummary`, then sorts with
-`compareAgentDisplayOrder`; `getAgent` (`:474-478`) maps the one record `store.readAgent` returns
+`compareAgentDisplayOrder`; `getAgent` (`:488-492`) maps the one record `store.readAgent` returns
 through `recordToDoc`. Both projections lift fields only when present, never as empty defaults:
 
 - `recordToSummary` (`packages/kernel/src/config/config-service.ts:285-301`) spreads `model`, `description`, `plugin`,
@@ -406,8 +406,8 @@ through `recordToDoc`. Both projections lift fields only when present, never as 
 - `recordToDoc` (`packages/kernel/src/config/config-service.ts:304-312`) carries `malformed` through only when the record has
   one (`:296`).
 
-Pinned: `packages/kernel/tests/contract/config-service.test.ts:201` ("projects grants/can_spawn/budget from frontmatter onto the
-summary") and `:221` ("omits grants/can_spawn/budget when the frontmatter declares none").
+Pinned: `packages/kernel/tests/contract/config-service.test.ts:213-231` ("projects grants/can_spawn/budget from frontmatter onto the
+summary") and `:233-242` ("omits grants/can_spawn/budget when the frontmatter declares none").
 
 ### 4.8 Overlay resolution — `resolveEffectiveAgent` (`packages/kernel/src/config/agent-overlay.ts:122`)
 
@@ -456,7 +456,7 @@ output keeps first-occurrence order (`:61`, `:66`).
 
 ### 4.10 Workspace trust state machine
 
-`workspaceTrustVerdict(fingerprint, key, trust)` (`packages/kernel/src/config/workspace-trust.ts:317`):
+`workspaceTrustVerdict(fingerprint, key, trust)` (`packages/kernel/src/config/workspace-trust.ts:324`):
 
 | State of input | Verdict | Where |
 | --- | --- | --- |
@@ -465,10 +465,10 @@ output keeps first-occurrence order (`:61`, `:66`).
 | some entry matches `fingerprint` | `{state:"trusted", fingerprint}` | `:326-328` |
 | entries exist, none match | `{state:"changed", fingerprint, approved: latest.fingerprint}` | `:329` |
 
-`workspaceTrusted` treats `inert` and `trusted` as permitting contribution (`packages/kernel/src/config/file-config-store.ts:518`).
+`workspaceTrusted` treats `inert` and `trusted` as permitting contribution (`packages/kernel/src/config/file-config-store.ts:534`).
 `workspaceVerdict` recomputes on **every call** (`:468-474`), and an unreadable trust store yields
 `unapproved` because `readWorkspaceTrustFile` returns `{error}` with no `trust`
-(`packages/kernel/src/config/workspace-trust.ts:305`) and `workspaceTrustVerdict` sees `undefined`.
+(`packages/kernel/src/config/workspace-trust.ts:312`) and `workspaceTrustVerdict` sees `undefined`.
 
 `(state, event) → (state, effect)` as the tests exercise it
 (`packages/kernel/tests/integration/workspace-trust.test.ts`):
@@ -479,11 +479,11 @@ output keeps first-occurrence order (`:61`, `:66`).
 | `unapproved` | `getSettings()` | `unapproved` | risky fields withheld, raw file still on `scopes.workspace` (`:81`, `:92`) |
 | `unapproved` | `approveWorkspace()` | `trusted` | fields merge; `withheld_workspace_fields` absent (`:134`) |
 | `trusted` | the approved file is edited on disk | `changed` | fields withheld again (`:146`) |
-| `trusted`/`unapproved` | `revokeWorkspace()` | `unapproved` | every approval for the key deleted (`:159`; `packages/kernel/src/config/workspace-trust.ts:354-355`) |
+| `trusted`/`unapproved` | `revokeWorkspace()` | `unapproved` | every approval for the key deleted (`:159`; `packages/kernel/src/config/workspace-trust.ts:417-419`) |
 | `trusted` | operator write through the service | `trusted` | approval re-recorded over the new surface (`:199`) |
 | `unapproved` | operator write through the service | `unapproved` | **no** approval (`:218`) |
 
-`withOperatorWrite` (`packages/kernel/src/config/file-config-store.ts:564`) implements the last two rows: it captures
+`withOperatorWrite` (`packages/kernel/src/config/file-config-store.ts:581`) implements the last two rows: it captures
 `workspaceTrusted(...)` **before** the write and only re-approves if that was already true (`:526-528`).
 Its failure to record the carried approval is swallowed (`:531-533`) — the docstring's stated reason is
 that "the settings or agent file has already been written, so rethrowing… reports a failed save for a
@@ -492,7 +492,7 @@ write that in fact landed" (`:515-521`).
 `approveCurrentSurface(true)` is a no-op when the surface is inert (`:491`), so approving an inert
 workspace writes nothing.
 
-`writeWorkspaceTrust` (`packages/kernel/src/config/workspace-trust.ts:343-364`) also deduplicates on re-approval: when the
+`writeWorkspaceTrust` (`packages/kernel/src/config/workspace-trust.ts:350-371`) also deduplicates on re-approval: when the
 fingerprint being approved already appears among the workspace's recorded entries, `workspaces[key]`
 is left as the existing array rather than getting a new `{fingerprint, approved_at}` record appended
 (`:357-360`, `existing.some(e => e.fingerprint === fingerprint) ? existing : [...existing, ...]`).
@@ -512,94 +512,94 @@ stored array is unchanged (see also Section 8 item 6).
 
 ### 4.12 Reading context — `readContext`/`getContext`
 
-`ConfigStore.readContext(scope)` (`packages/kernel/src/config/config-store.ts:139`) is a full store member with its own
+`ConfigStore.readContext(scope)` (`packages/kernel/src/config/config-store.ts:141`) is a full store member with its own
 resource bound and a first-match-wins candidate order, same as any other read on this port.
 
 - **Candidates.** For `"global"`, `contextCandidates(scope)` is
-  `globalPaths().contextCandidates` (`packages/kernel/src/config/file-config-store.ts:370-372`, sourced from
-  `packages/paths/src/global.ts:130`). For `"workspace"` it is `CONTEXT_FILENAMES.map(name =>
+  `globalPaths().contextCandidates` (`packages/kernel/src/config/file-config-store.ts:379-381`, sourced from
+  `packages/paths/src/global.ts:135`). For `"workspace"` it is `CONTEXT_FILENAMES.map(name =>
   join(opts.workspaceRoot, name))` when a `workspaceRoot` was supplied, else `undefined`
-  (`packages/kernel/src/config/file-config-store.ts:373-376`). `CONTEXT_FILENAMES` is `["CLARVIS.md", "AGENTS.md"]`
+  (`packages/kernel/src/config/file-config-store.ts:382-385`). `CONTEXT_FILENAMES` is `["CLARVIS.md", "AGENTS.md"]`
   (`packages/paths/src/constants.ts:82`) — `CLARVIS.md` is tried first.
 - **First-existing-wins.** `readContext` walks the candidates in order and returns the first
   whose path `existsSync`s, reading it through `readBoundedText` bounded by
-  `MAX_CONTEXT_DOCUMENT_BYTES` (`packages/kernel/src/config/file-config-store.ts:975-984`).
+  `MAX_CONTEXT_DOCUMENT_BYTES` (`packages/kernel/src/config/file-config-store.ts:1003-1012`).
 - **`null` results.** The scope returns `null` outright when it has no candidate list at all —
   the workspace scope with no `workspaceRoot` (`:936-937`) — and also when every candidate was
   checked and none exists (`:945-946`).
 - **`ContextRecord.path`.** The file store's record always carries the matched candidate's path
   (`:940-944`); the memory store's never does — it looks up `context[scope]` directly and returns
-  `{scope, content}` with no `path` (`packages/kernel/src/config/memory-config-store.ts:154-155`), matching the type's own
-  documented asymmetry (`packages/kernel/src/config/config-store.ts:278-279`).
+  `{scope, content}` with no `path` (`packages/kernel/src/config/memory-config-store.ts:157-158`), matching the type's own
+  documented asymmetry (`packages/kernel/src/config/config-store.ts:284-285`).
 - **`ConfigService.getContext`** (`packages/kernel/src/config/config-service.ts:581-583`) is a thin wrapper: `null` passes
   through, otherwise `path` defaults to `""` when the store's record carried none.
 
 The selection is pinned across the config/run boundary by
-`packages/kernel/tests/component/settings-assembler.test.ts:79-116`: no file leaves the agent prompt
+`packages/kernel/tests/component/settings-assembler.test.ts:87-124`: no file leaves the agent prompt
 unchanged, `AGENTS.md` is used as the fallback, and seeding both candidates puts only `CLARVIS.md` in
 the assembled entry profile. The lower-level empty-scope and oversized-file cases remain covered by
-`packages/kernel/tests/integration/file-config-store.test.ts:72-73`, `:177`, and `:334-342`.
+`packages/kernel/tests/integration/file-config-store.test.ts:79-80`, `:184`, and `:375-383`.
 
 ## 5. Invariants
 
 Each entry: **rule** — production anchor — test anchor.
 
 1. **INV-196 — merged settings put the workspace over the global scope, and each scope's own value
-   stays separately visible.** `packages/kernel/src/config/file-config-store.ts:651` orders `[...pluginScopes, global, workspace]`
+   stays separately visible.** `packages/kernel/src/config/file-config-store.ts:687-694` orders `[...pluginScopes, global, workspace]`
    into `mergeSettings`, whose contract is ascending precedence
-   (`packages/loop/src/settings/settings-merge.ts:143`); `scopes` reports raw layers
-   (`packages/kernel/src/config/file-config-store.ts:654`). Pinned: `packages/kernel/tests/contract/config-service.test.ts:13`.
+   (`packages/loop/src/settings/settings-merge.ts:163`); `scopes` reports raw layers
+   (`packages/kernel/src/config/file-config-store.ts:691-694`). Pinned: `packages/kernel/tests/contract/config-service.test.ts:20-37`.
 
 2. **INV-197 — `updateSettings` rejects an invalid patch with `invalid_request` and a stale revision
    with `conflict`, and the stale write never overwrites the concurrent writer.**
    `packages/kernel/src/config/config-service.ts:437`, `:442-449`; the store compares before mutating
-   (`packages/kernel/src/config/file-config-store.ts:802-806`, `packages/kernel/src/config/memory-config-store.ts:109-113`). Pinned:
+   (`packages/kernel/src/config/file-config-store.ts:829-833`, `packages/kernel/src/config/memory-config-store.ts:112-116`). Pinned:
    `packages/kernel/tests/contract/config-service.test.ts:32`, `:39` (the last assertion at `:61` reads back the concurrent writer's
    value).
 
 3. **INV-198 — every name-guarded path rejects a name that could escape the agents directory, and a
    dotted name is accepted on all of them.** `packages/kernel/src/config/config-service.ts:79` (`AGENT_NAME_RE` + `..`), applied
-   at `:475`, `:496`, `:515`, `:540-541`. Pinned: `packages/kernel/tests/contract/config-service.test.ts:101`, `:116`, `:133` — the
-   `:133` table covers traversal, both separators, absolute paths, `C:coder`, `plugin:coder`, a space,
+   at `:475`, `:496`, `:515`, `:540-541`. Pinned: `packages/kernel/tests/contract/config-service.test.ts:113-126`, `:128-143`, `:145-187` — the
+   `:145-187` table covers traversal, both separators, absolute paths, `C:coder`, `plugin:coder`, a space,
    a newline, a NUL, `%2F` and `café`, against all four methods. The basic legal-name round trip these
    guards sit in front of — `writeAgent` → `getAgent` → `listAgents` → `deleteAgent` all succeeding on
-   an ordinary name — is pinned separately at `packages/kernel/tests/contract/config-service.test.ts:80`.
+   an ordinary name — is pinned separately at `packages/kernel/tests/contract/config-service.test.ts:92-111`.
 
 4. **INV-199 — a rejected traversal name never reaches disk.** The guard runs before any store call
-   (`packages/kernel/src/config/config-service.ts:510`). Pinned: `packages/kernel/tests/contract/config-service.test.ts:177` on the **file** store, asserting
+   (`packages/kernel/src/config/config-service.ts:510`). Pinned: `packages/kernel/tests/contract/config-service.test.ts:182` on the **file** store, asserting
    `listAgents()` minus builtins is empty afterward.
 
 5. **INV-200 — unknown agent frontmatter keys survive a write verbatim.** The service validates with
    `agentFrontmatterSchema` but passes `doc.frontmatter` through unchanged
    (`packages/kernel/src/config/config-service.ts:512`, `:516-519`); the schema is `.loose()`
    (`packages/loop/src/settings/agent-frontmatter.ts:128`, documented at `:79`). Pinned:
-   `packages/kernel/tests/contract/config-service.test.ts:186` (`x-house-style`, a nested `presentation` object).
+   `packages/kernel/tests/contract/config-service.test.ts:191` (`x-house-style`, a nested `presentation` object).
 
 6. **INV-201 — an agent name is unique across `global` and `workspace` together, and a pre-existing
    cross-scope duplicate makes both copies un-writable through the service while both stay readable.**
    `packages/kernel/src/config/config-service.ts:106-115`, called at `:511` and `:566`. Pinned:
-   `packages/kernel/tests/contract/config-service.test.ts:373` (`describe.each` over memory **and** file stores), `:376`, `:396`.
+   `packages/kernel/tests/contract/config-service.test.ts:385` (`describe.each` over memory **and** file stores), `:388-398`, `:408-422`.
 
 7. **INV-202 — `renameAgent` moves within a scope; it rejects same-scope and cross-scope collisions
    (leaving the source intact), 404s a missing source, and rejects a rename to the same name.**
-   `packages/kernel/src/config/config-service.ts:556`, `:559`, `:563`, `:566`. Pinned: `packages/kernel/tests/contract/config-service.test.ts:412`, `:427`,
-   `:438`, `:449`, `:456`.
+   `packages/kernel/src/config/config-service.ts:556`, `:559`, `:563`, `:566`. Pinned: `packages/kernel/tests/contract/config-service.test.ts:424-437`, `:439-448`,
+   `:450-459`, `:461-466`, `:468-474`.
 
 8. **INV-203 — repair is CAS-guarded and field-scoped.** `previewSettingsRepair`/`repairSettings` bind
    to the SHA-256 of exact bytes (`packages/kernel/src/config/config-service.ts:350`, `:363`); a source that became valid, or
    changed, is a `conflict` and mutates nothing (`:352`, `:363`). `stripInvalidSettings` removes only
    the invalid leaf and falls back to `reset` past 64 rounds (`:171`, `:189`). Pinned:
-   `packages/kernel/tests/contract/config-service.test.ts:245` (absent source), `:259` (non-object ⇒ reset), `:275` (array member),
-   `:288` (object field, siblings untouched), `:306` (65 invalid members ⇒ reset), `:322` (already
-   valid ⇒ conflict); and on the file store `packages/kernel/tests/integration/file-config-store.test.ts:76`, `:92`, `:105`, `:119`,
+   `packages/kernel/tests/contract/config-service.test.ts:257-269` (absent source), `:271-285` (non-object ⇒ reset), `:287-298` (array member),
+   `:300-316` (object field, siblings untouched), `:318-332` (65 invalid members ⇒ reset), `:334-349` (already
+   valid ⇒ conflict); and on the file store `packages/kernel/tests/integration/file-config-store.test.ts:83`, `:99`, `:112`, `:126`,
    `:133`.
 
 9. **INV-204 — `writeAgent` validates frontmatter before the store is asked to write anything.**
-   `packages/kernel/src/config/config-service.ts:512-515` precedes `:516`. Pinned: `packages/kernel/tests/contract/config-service.test.ts:348` — after a
+   `packages/kernel/src/config/config-service.ts:512-515` precedes `:516`. Pinned: `packages/kernel/tests/contract/config-service.test.ts:360-372` — after a
    rejected `model: 123`, `getAgent` reports `not_found`.
 
 10. **A shipped agent appears exactly once in `listAgents`, already resolved.**
-    `packages/kernel/src/config/file-config-store.ts:909-916` maps `BUILTIN_AGENT_NAMES` through `resolveEffectiveAgent` and then
+    `packages/kernel/src/config/file-config-store.ts:937-944` maps `BUILTIN_AGENT_NAMES` through `resolveEffectiveAgent` and then
     appends only `!isBuiltinAgent` file records. Pinned: `packages/kernel/tests/integration/builtin-fleet.test.ts:119`
     (`listed.filter(a => a.name === "marshall")` has length 1).
 
@@ -627,7 +627,7 @@ Each entry: **rule** — production anchor — test anchor.
     as a workflow"; the reader is `packages/kernel/src/application/workflow-policy.ts:65`.
 
 16. **`admiral`'s prompt embeds the product's own workflow result schemas.** `admiral.ts` body JSON
-    fences. Pinned: `packages/kernel/tests/component/builtin-agents.test.ts:114`, which parses every ```` ```json ```` block from the
+    fences. Pinned: `packages/kernel/tests/component/builtin-agents.test.ts:118`, which parses every ```` ```json ```` block from the
     body, strips `description` fields, and compares against `WORKFLOW_RESULT_SCHEMAS`.
 
 17. **`builtinAgentRecord` hands out a defensive copy of the frontmatter.**
@@ -645,18 +645,19 @@ Each entry: **rule** — production anchor — test anchor.
     Pinned: `packages/kernel/tests/component/agent-overlay.test.ts:126`.
 
 20. **INV-268 — an untrusted workspace contributes neither risky settings nor agent files.**
-    Settings: `packages/kernel/src/config/file-config-store.ts:600-603`. Agents: `listAgents` skips the scope
-    (`:846`), `readEffectiveAgent` passes `null` for the workspace layer (`:910`), and both read the
-    same verdict through `agentFilesTrusted` (`:683`, over `workspaceTrusted` at `:476-479`) —
+    Settings: `packages/kernel/src/config/file-config-store.ts:598-644`. Agents: `listAgents` skips the scope
+    (`:928-934`), `readEffectiveAgent` passes `null` for the workspace layer (`:990-997`), and both read the
+    same verdict through `agentFilesTrusted` (`:760-767`, over `workspaceTrusted` at `:532-536`) —
     deliberately the *same* verdict as the executable settings fields, because "an agent's markdown
-    body becomes a system prompt section verbatim" (`:837-841`). Pinned for settings:
-    `packages/kernel/tests/integration/workspace-trust.test.ts:81`, `:177`, `:281`. **The agent half is pinned too**:
-    `packages/kernel/tests/integration/file-kernel.test.ts:139` seeds `.clarvis/agents/coder.md` on
+    body becomes a system prompt section verbatim" (`:919-926`). Pinned for settings:
+    `packages/kernel/tests/integration/workspace-trust.test.ts:45-72`, `:122-163`, `:175-186`.
+    **The agent half is pinned too**:
+    `packages/kernel/tests/integration/file-kernel.test.ts:105-155` seeds `.clarvis/agents/coder.md` on
     disk and asserts that before `config.approveWorkspace()` the listed `coder` is the **shipped**
     one — `scope: "builtin"`, no `overlay`, not the file's `description` — with
-    `settings.workspace_trust.state === "unapproved"` (`:173-177`), and that after approval the same
+    `settings.workspace_trust.state === "unapproved"` (`:139-143`), and that after approval the same
     name resolves `scope: "workspace"` with `overlay: {scope: "workspace", status: "applied"}` and
-    the file's own description and body (`:180-187`). The test states the reason at `:166-172`: a
+    the file's own description and body (`:145-153`). The test states the reason at `:132-138`: a
     file placed on disk "is indistinguishable from arriving with a clone — so it is withheld until
     approved". `coder` being a shipped name is what makes the assertion sharp: the question is never
     whether the agent is listed, only whether the repository's file overlays it.
@@ -671,42 +672,42 @@ Each entry: **rule** — production anchor — test anchor.
     and content-drift case in `packages/kernel/tests/integration/environment-manager.test.ts`, plus
     the extension-surface hashing case in `workspace-trust.test.ts`.
 
-22. **The trust key is the resolved realpath.** `canonicalWorkspaceKey` (`packages/kernel/src/config/workspace-trust.ts:284`)
+22. **The trust key is the resolved realpath.** `canonicalWorkspaceKey` (`packages/kernel/src/config/workspace-trust.ts:290`)
     with a `try/catch` falling back to the input. **Unpinned** — no test exercises a symlinked
     workspace root.
 
 23. **An unreadable `workspace-trust.json` is never overwritten and never reads as trusted.**
-    `writeWorkspaceTrust` throws rather than clobbering (`packages/kernel/src/config/workspace-trust.ts:350-352`);
+    `writeWorkspaceTrust` throws rather than clobbering (`packages/kernel/src/config/workspace-trust.ts:357-359`);
     `readWorkspaceTrustFile` returns `{error}` with no `trust` (`:305`) so the verdict falls to
     `unapproved`. **Unpinned.**
 
 24. **An empty risky value is not a declared surface.** `declaresSomething` returns `false` for
-    `undefined`, `null`, `[]` and `{}` (`packages/kernel/src/config/workspace-trust.ts:89-94`). Pinned indirectly:
-    `packages/kernel/tests/integration/workspace-trust.test.ts:169` asserts a workspace with only `default_model` is `inert`; the empty
+    `undefined`, `null`, `[]` and `{}` (`packages/kernel/src/config/workspace-trust.ts:90-95`). Pinned indirectly:
+    `packages/kernel/tests/integration/workspace-trust.test.ts:170` asserts a workspace with only `default_model` is `inert`; the empty
     `[]`/`{}` cases themselves are **unpinned**.
 
 25. **`stripWorkspaceRiskFields` never mutates its input and returns the same object when nothing is
-    withheld.** `packages/kernel/src/config/workspace-trust.ts:116`, `:117-134`. Pinned: `packages/kernel/tests/integration/workspace-trust.test.ts:35` (identity)
+    withheld.** `packages/kernel/src/config/workspace-trust.ts:117`, `:118-135`. Pinned: `packages/kernel/tests/integration/workspace-trust.test.ts:36` (identity)
     and `:43` (input `hooks` still present afterward).
 
 26. **The view a write returns reflects the approval that write carried.** `snapshot()` is taken after
-    `withOperatorWrite` returns, never inside it (`packages/kernel/src/config/file-config-store.ts:858`, `:814`). Pinned:
-    `packages/kernel/tests/integration/workspace-trust.test.ts:241`.
+    `withOperatorWrite` returns, never inside it (`packages/kernel/src/config/file-config-store.ts:837-858`). Pinned:
+    `packages/kernel/tests/integration/workspace-trust.test.ts:355-378`.
 
 27. **Settings mutation is serialized by a local lease and derives its input from the bytes whose
-    revision it checked.** `packages/kernel/src/config/file-config-store.ts:798-807`, `:773` (`settingsFromDocument` reuses the
+    revision it checked.** `packages/kernel/src/config/file-config-store.ts:842-853`, `:801-817` (`settingsFromDocument` reuses the
     already-read document; its docstring: "a second read would reintroduce a TOCTOU window inside the
-    settings lease", `:714-715`). Pinned: `packages/kernel/tests/integration/file-config-store.test.ts:333`, `:354`, `:411`, `:435`,
-    `:466` (stale-but-dead holder reclaimed), `:498` (stale-but-live holder not reclaimed, throws
-    `/locked by another process/`), `:530` (release cannot unlink an ABA successor).
+    settings lease", `:797-799`). Pinned: `packages/kernel/tests/integration/file-config-store.test.ts:400-419`, `:421-442`, `:478-500`, `:502-516`,
+    `:533-562` (stale-but-dead holder reclaimed), `:565-594` (stale-but-live holder not reclaimed, throws
+    `/locked by another process/`), `:597-621` (release cannot unlink an ABA successor).
 
 28. **Configuration reads are byte-bounded, and the bound is enforced twice: once before the body is
     read, and once after.** `readBoundedBytes` `fstat`s the descriptor before allocating and throws
-    immediately when the reported size already exceeds `maxBytes` (`packages/kernel/src/config/file-config-store.ts:227-228`).
+    immediately when the reported size already exceeds `maxBytes` (`packages/kernel/src/config/file-config-store.ts:236-237`).
     It then reads at most `maxBytes + 1` bytes and re-checks `total > maxBytes` on what was actually
     read (`:196`) — the function's own doc comment calls this "closing size-race gaps" (`:183`), i.e.
     the second check is what catches a file that grows between the `fstat` and the read, which the
-    pre-check alone cannot see. Pinned: `packages/kernel/tests/integration/file-config-store.test.ts:243` asserts `fs.readSync` is never
+    pre-check alone cannot see. Pinned: `packages/kernel/tests/integration/file-config-store.test.ts:284` asserts `fs.readSync` is never
     called for an oversized sparse settings file (the pre-check); `:283` bounds the agent catalog at
     `MAX_AGENT_DOCUMENTS_PER_SCOPE`; `:296`, `:308`, `:318` cover oversized agent, context and
     agent-write. **No test in this document's scope grows a file between the `fstat` and the read**, so the
@@ -714,23 +715,23 @@ Each entry: **rule** — production anchor — test anchor.
     actual race.
 
 29. **A malformed agent file is loaded leniently *and* reported.** `parseAgentFile` parses lenient,
-    then re-parses strict purely to fill `malformed` (`packages/kernel/src/config/file-config-store.ts:697-704`). Pinned:
-    `packages/kernel/tests/integration/file-config-store.test.ts:261` — `broken.malformed` contains `"malformed YAML frontmatter"`, its
+    then re-parses strict purely to fill `malformed` (`packages/kernel/src/config/file-config-store.ts:740-758`). Pinned:
+    `packages/kernel/tests/integration/file-config-store.test.ts:303-323` — `broken.malformed` contains `"malformed YAML frontmatter"`, its
     `frontmatter` is `{}`, and a healthy sibling has no `malformed`.
 
 30. **A refused settings document is logged, once per minute per distinct fact, on the `Logger`
-    port.** `reportRejected` behind `createRateLimiter()` (`packages/kernel/src/config/file-config-store.ts:102`, `:347`), event
+    port.** `reportRejected` behind `createRateLimiter()` (`packages/kernel/src/config/file-config-store.ts:111`, `:356`), event
     `kernel.config.rejected` at level `error` with `schema: "kernelSettingsSchema"` (`:103`). Pinned:
-    `packages/kernel/tests/integration/file-config-store.test.ts:568` (key + file named), `:583` (`at: "(json)"`), `:592`
-    (`at: "(read)"`), `:604` (five reads ⇒ one record).
+    `packages/kernel/tests/integration/file-config-store.test.ts:635-648` (key + file named), `:650-657` (`at: "(json)"`), `:659-669`
+    (`at: "(read)"`), `:671-678` (five reads ⇒ one record).
 
 31. **A mutation that discards an unreadable document warns, distinguishing `json` from `schema`.**
-    `reportDiscarded` (`packages/kernel/src/config/file-config-store.ts:126`, called at `:767`, `:772`). Pinned:
-    `packages/kernel/tests/integration/file-config-store.test.ts:613`, `:630`.
+    `reportDiscarded` (`packages/kernel/src/config/file-config-store.ts:129-139`, called at `:811`, `:816`). Pinned:
+    `packages/kernel/tests/integration/file-config-store.test.ts:680-711`.
 
 32. **An unreadable agents directory is distinguishable from an empty one.**
-    `reportAgentsUnreadable` (`packages/kernel/src/config/file-config-store.ts:144`, called at `:276`). Pinned:
-    `packages/kernel/tests/integration/file-config-store.test.ts:646` (skips on win32 and as root).
+    `reportAgentsUnreadable` (`packages/kernel/src/config/file-config-store.ts:152-157`, called at `:285-292`). Pinned:
+    `packages/kernel/tests/integration/file-config-store.test.ts:713-725` (skips on win32 and as root).
 
 33. **`kernelSettingsSchema` admits the registered capability blocks that the engine's bare schema
     rejects, and is still strict about anything else.** `packages/kernel/src/config/capability-registry.ts:33` over
@@ -741,7 +742,7 @@ Each entry: **rule** — production anchor — test anchor.
     schema rejected), `:50` (`memory`), `:62` (strict inside `memory`).
 
 34. **A capability settings block round-trips through `updateSettings` to disk and back.**
-    `packages/kernel/src/config/config-service.ts:428` → `packages/kernel/src/config/file-config-store.ts:869`. Pinned:
+    `packages/kernel/src/config/config-service.ts:428` → `packages/kernel/src/config/file-config-store.ts:897`. Pinned:
     `packages/kernel/tests/integration/capability-settings-schema.test.ts:70`, and `:90` pins that patching an unrelated key leaves an
     existing `workflows` block valid.
 
@@ -752,16 +753,16 @@ Each entry: **rule** — production anchor — test anchor.
     rejected" (`packages/kernel/src/config/capability-registry.ts:14-17`). **Unpinned** — no test forces a late registration.
 
 36. **The kernel merges its own registry over a host's rather than falling back to it.**
-    `packages/kernel/src/kernel.ts:316-331`. Pinned:
+    `packages/kernel/src/kernel.ts:391-406`. Pinned:
     `packages/kernel/tests/integration/kernel-capability-registry.test.ts:73` (empty host registry) and
     `:89` (host spec carried alongside), `:126` (host grant preserved).
 
 37. **`known_grants` is absent, not empty, when the host supplied no vocabulary.**
     `packages/kernel/src/config/config-service.ts:340` returns the view unchanged when `knownGrants` is `undefined`. **Unpinned**
-    as a negative; the positive composition is at `packages/kernel/src/kernel.ts:701`.
+    as a negative; the positive composition is at `packages/kernel/src/kernel.ts:794`.
 
 38. **`subscribe` filters to the requested kinds and a store without `watch` yields a no-op
-    unsubscribe.** `packages/kernel/src/config/config-service.ts:595-598`. Pinned: `packages/kernel/tests/contract/config-service.test.ts:232` (an `agents`
+    unsubscribe.** `packages/kernel/src/config/config-service.ts:595-598`. Pinned: `packages/kernel/tests/contract/config-service.test.ts:237` (an `agents`
     subscriber sees only `"agents"`, and nothing after `off()`); the no-op branch is **unpinned**.
 
 39. **`AgentSummary`/`AgentDoc` projection lifts a field only when it is present, never as an empty
@@ -770,8 +771,8 @@ Each entry: **rule** — production anchor — test anchor.
     and `budgetFrom` (`:261-269`) each return `undefined` — not `[]` or `{}` — for anything not of
     the expected shape, so an absent or malformed `grants`/`can_spawn`/`budget` is omitted from the
     summary rather than represented empty. `recordToDoc` (`:290-298`) carries `malformed` through
-    only when the record has one (`:296`). Pinned: `packages/kernel/tests/contract/config-service.test.ts:201` ("projects
-    grants/can_spawn/budget from frontmatter onto the summary"), `:221` ("omits grants/can_spawn/budget
+    only when the record has one (`:296`). Pinned: `packages/kernel/tests/contract/config-service.test.ts:213-231` ("projects
+    grants/can_spawn/budget from frontmatter onto the summary"), `:233-242` ("omits grants/can_spawn/budget
     when the frontmatter declares none").
 
 40. **The shipped leads distinguish independent spawning from tracked delegation.** Marshall uses
@@ -804,29 +805,29 @@ Each entry: **rule** — production anchor — test anchor.
 | Cross-scope name collision | `packages/kernel/src/config/config-service.ts:109` | `conflict` with `{name, scope, conflictingScope}` |
 | Missing agent on `getAgent`/`renameAgent` | `packages/kernel/src/config/config-service.ts:491`, `:561` | `not_found` |
 | No sandbox probe configured | `packages/kernel/src/config/config-service.ts:464` | rejects `unavailable` |
-| Store lacks `setWorkspaceTrust` | `packages/kernel/src/config/config-service.ts:395` | **degrades**: re-reads settings, "the same answer an inert workspace gets" (`:390-392`); pinned on the memory store at `packages/kernel/tests/contract/config-service.test.ts:339` |
+| Store lacks `setWorkspaceTrust` | `packages/kernel/src/config/config-service.ts:395` | **degrades**: re-reads settings, "the same answer an inert workspace gets" (`:390-392`); pinned on the memory store at `packages/kernel/tests/contract/config-service.test.ts:351-358` |
 | Store lacks `watch` | `packages/kernel/src/config/config-service.ts:595` | **degrades** to a no-op unsubscribe |
-| Scope not configured on the file store | `packages/kernel/src/config/file-config-store.ts:743` | plain `Error: config store has no '<scope>' scope configured`; `mutateSettings` throws it **before** taking the lock (`:798`), pinned `packages/kernel/tests/integration/file-config-store.test.ts:451` |
-| Settings lock held by a live holder past 2 s | `packages/kernel/src/config/file-config-store.ts:322` | plain `Error: settings are locked by another process (<path>)` |
-| Settings file > 2 MiB / agent > 256 KiB / context > 2 MiB | `ConfigResourceLimitError` (`packages/kernel/src/config/file-config-store.ts:216`) | on a *read of a snapshot* it becomes the scope's `SettingsSource.error` (`:427-431`); on `readAgent`/`readContext`/`writeAgent` it **throws** |
+| Scope not configured on the file store | `packages/kernel/src/config/file-config-store.ts:786-788` | plain `Error: config store has no '<scope>' scope configured`; `rewriteUnderLease` throws it **before** taking the lock (`:842-844`), pinned `packages/kernel/tests/integration/file-config-store.test.ts:518-531` |
+| Settings lock held by a live holder past 2 s | `packages/kernel/src/config/file-config-store.ts:331` | plain `Error: settings are locked by another process (<path>)` |
+| Settings file > 2 MiB / agent > 256 KiB / context > 2 MiB | `ConfigResourceLimitError` (`packages/kernel/src/config/file-config-store.ts:226-231`) | on a *read of a snapshot* it becomes the scope's `SettingsSource.error` (`:432-441`); on `readAgent`/`readContext`/`writeAgent` it **throws** |
 | Agent directory > 256 entries or > 64 `.md` files | `boundedAgentNames` (`:224`, `:229`) | **silently truncated** with `overflow: true`; `listAgents` (`:843-878`) never reads `page.overflow` at all, so it ignores the flag; `workspaceAgentFiles` turns it into a `<resource-limit>` sentinel that changes the trust fingerprint (`:443-444`) |
-| One agent file unreadable/oversized during `listAgents` | `packages/kernel/src/config/file-config-store.ts:902-903` (`catch { continue; }`) | **silently skipped**, no log |
+| One agent file unreadable/oversized during `listAgents` | `packages/kernel/src/config/file-config-store.ts:930-931` (`catch { continue; }`) | **silently skipped**, no log |
 | Aggregate agent bytes > 8 MiB during `listAgents` | `:860` | `break` out of the current scope's loop only; other scopes continue |
 | Agents directory exists but cannot be enumerated | `:235-242` | returns `{names: [], overflow: false}` **and** logs `kernel.config.agents_unreadable` at `warn` |
 | `settings.json` unparsable or schema-invalid | `readScopeSettings` (`:399-400`, `:410-411`) | the scope contributes nothing; the reason rides on `SettingsSource.error`; logged `kernel.config.rejected` at `error` |
 | Same on a **mutation** path | `settingsFromDocument` (`:722`-`:733`) | folded onto `{}` — the file's keys do not survive the write — logged `kernel.config.document_discarded` at `warn` |
 | Malformed agent YAML | `parseAgentFile` (`:660-664`) | lenient `{}` frontmatter **plus** a `malformed` message; a shipped agent's overlay is refused (`packages/kernel/src/config/agent-overlay.ts:47`) |
-| `workspace-trust.json` unreadable | `readWorkspaceTrustFile` (`:305`) | verdict falls to `unapproved`; `workspaceTrustError()` names it (`packages/kernel/src/config/file-config-store.ts:839`); `writeWorkspaceTrust` refuses to overwrite (`packages/kernel/src/config/workspace-trust.ts:351`) |
-| Recording the carried approval fails after an operator write | `packages/kernel/src/config/file-config-store.ts:571` | **swallowed** — the write already landed |
+| `workspace-trust.json` unreadable | `readWorkspaceTrustFile` (`packages/kernel/src/config/workspace-trust.ts:363-368`) | verdict falls to `unapproved`; `workspaceTrustError()` names it (`packages/kernel/src/config/file-config-store.ts:884`); `writeWorkspaceTrust` refuses to overwrite (`packages/kernel/src/config/workspace-trust.ts:412-415`) |
+| Recording the carried approval fails after an operator write | `packages/kernel/src/config/file-config-store.ts:588` | **swallowed** — the write already landed |
 | A `SettingsRevisionConflictError` or `ConfigResourceLimitError` escaping uncaught | `toKernelError` (`packages/kernel/src/core/errors.ts:52`) | name containing `Conflict` ⇒ `conflict`; `ConfigResourceLimitError` matches neither branch ⇒ `internal`, and `details` is dropped (`:62-63`) |
 
 There are no retries anywhere in this subsystem except the settings-lock acquisition loop, which
-retries every 5 ms up to 2 s (`packages/kernel/src/config/file-config-store.ts:173-184`, `:317-324`) using a blocking
+retries every 5 ms up to 2 s (`packages/kernel/src/config/file-config-store.ts:182-193`, `:326-333`) using a blocking
 `Atomics.wait` (`:258`) because the `ConfigStore` methods are synchronous.
 
 `acquireSettingsLock`'s own doc comment states the lock's scope: "This is local-filesystem,
 same-host coordination. It does not claim distributed locking over NFS or another multi-host shared
-filesystem" (`packages/kernel/src/config/file-config-store.ts:313-314`) — a workspace root that is itself a network mount gets
+filesystem" (`packages/kernel/src/config/file-config-store.ts:322-323`) — a workspace root that is itself a network mount gets
 no cross-host mutual exclusion from this lease.
 
 ## 7. Coupling
@@ -835,14 +836,14 @@ no cross-host mutual exclusion from this lease.
 
 | Target | Kind | Forced by |
 | --- | --- | --- |
-| `@clarvis/protocol` | type-only | `packages/kernel/src/config/config-service.ts:3-17`, `packages/kernel/src/config/config-store.ts:1-8`, `packages/kernel/src/config/agent-resolution.ts:1`, `packages/kernel/src/config/workspace-trust.ts:6` — all `import type` |
+| `@clarvis/protocol` | type-only | `packages/kernel/src/config/config-service.ts:3-17`, `packages/kernel/src/config/config-store.ts:1-9`, `packages/kernel/src/config/agent-resolution.ts:1`, `packages/kernel/src/config/workspace-trust.ts:6` — all `import type` |
 | `@clarvis/loop/host` | **runtime value** | `agentFrontmatterSchema` (`packages/kernel/src/config/config-service.ts:2`, `packages/kernel/src/config/agent-overlay.ts:1`), `settingsSchemaFor` (`packages/kernel/src/config/capability-registry.ts:2`), `splitAgentFrontmatter` + `mergeSettings` (`packages/kernel/src/config/file-config-store.ts:25`, `packages/kernel/src/config/frontmatter.ts:1`), `readJsonFile` (`packages/kernel/src/config/workspace-trust.ts:5`) |
 | `@clarvis/capability` | **runtime value** | `createCapabilityRegistry` (`packages/kernel/src/config/capability-registry.ts:1`), `createRateLimiter`/`NOOP_LOGGER` (`packages/kernel/src/config/file-config-store.ts:2`) |
 | `@clarvis/memory/settings`, `@clarvis/plan/settings`, `@clarvis/workflows`, `@clarvis/tasks/settings` | **runtime value** | the four `register(...)` calls in `packages/kernel/src/config/capability-registry.ts` |
 | `@clarvis/paths` | **runtime value** | `globalPaths`, `workspacePaths`, `ensureWorkspaceDir`, `writeFileAtomicSync`, `acquireLocalLeaseSync`, `CONTEXT_FILENAMES`, `globalRoot` (`packages/kernel/src/config/file-config-store.ts:15-24`, `packages/kernel/src/config/workspace-trust.ts:3`) |
-| `yaml` | **runtime value** | `stringifyYaml` in `writeAgent` (`packages/kernel/src/config/file-config-store.ts:14`, `:957`) |
-| `zod` | **runtime value** | `workspaceTrustSchema` (`packages/kernel/src/config/workspace-trust.ts:4`, `:244-261`) |
-| `node:fs`, `node:path`, `node:crypto` | runtime | `packages/kernel/src/config/file-config-store.ts:3-13`, `packages/kernel/src/config/config-store.ts:9`, `packages/kernel/src/config/workspace-trust.ts:1-2` |
+| `yaml` | **runtime value** | `stringifyYaml` in `writeAgent` (`packages/kernel/src/config/file-config-store.ts:14`, `:985`) |
+| `zod` | **runtime value** | `workspaceTrustSchema` (`packages/kernel/src/config/workspace-trust.ts:4`, `:248-265`) |
+| `node:fs`, `node:path`, `node:crypto` | runtime | `packages/kernel/src/config/file-config-store.ts:3-13`, `packages/kernel/src/config/config-store.ts:10`, `packages/kernel/src/config/workspace-trust.ts:1-2` |
 | `../core/errors.ts` | runtime | `kernelError` (`packages/kernel/src/config/config-service.ts:18`) |
 | `../plugins/plugin-contributions.ts` | type-only | `packages/kernel/src/config/file-config-store.ts:37` (`import type PluginContributions`) |
 
@@ -876,14 +877,14 @@ ceiling, the three failure kinds, and the `missing` flag.
 
 | Consumer | What it takes | Anchor |
 | --- | --- | --- |
-| `kernel.ts` | `createConfigService`, `ConfigStore` type, `kernelCapabilityRegistry` | `packages/kernel/src/kernel.ts:48-49`, `:14`, `:319`, `:327`, `:690` |
-| `file-kernel.ts` | `createFileConfigStore`, `DEFAULT_ENTRY_AGENT`, `SettingsSnapshot` | `packages/kernel/src/file-kernel.ts:46-48` |
-| `runs/settings-assembler.ts` | `AgentRecord`, `ConfigStore`, `readEffectiveAgent` | `packages/kernel/src/runs/settings-assembler.ts:10`, `:364`, `:376` |
+| `kernel.ts` | `createConfigService`, `ConfigStore` type, `kernelCapabilityRegistry` | `packages/kernel/src/kernel.ts:51-52`, `:14`, `:394`, `:402`, `:783` |
+| `file-kernel.ts` | `createFileConfigStore`, `DEFAULT_ENTRY_AGENT`, `SettingsSnapshot` | `packages/kernel/src/file-kernel.ts:50-52` |
+| `runs/settings-assembler.ts` | `AgentRecord`, `ConfigStore`, `readEffectiveAgent` | `packages/kernel/src/runs/settings-assembler.ts:10`, `:364`, `:412,424` |
 | `application/workflow-policy.ts` | `resolveAgentsByName`, `ConfigStore` | `packages/kernel/src/application/workflow-policy.ts:3-4`, `:45`, `:49` |
 | `mcp/effective-servers.ts`, `sandbox/policy.ts`, `tasks/task-provider-factory.ts` | `ConfigStore`/`SettingsSnapshot` types | `:3`, `:7`, `:14` respectively |
-| `plugins/plugin-service.ts` | `parseAgentFrontmatter` | `packages/kernel/src/plugins/plugin-service.ts:26` |
-| `plugins/plugin-contributions.ts` | `AgentRecord` type | `packages/kernel/src/plugins/plugin-contributions.ts:20`; it also implements `settingsScopes`/`agents`/`readAgent` consumed at `packages/kernel/src/config/file-config-store.ts:649`, `:942`, `:957` |
-| `@clarvis/code` | `resolveAgentsByName`, `AgentSummary.overlay.shadowed` | `packages/code/src/adapters/kernel-run-client.ts:202`, `packages/code/src/adapters/agents-store.ts:40-52` |
+| `plugins/plugin-service.ts` | `parseAgentFrontmatter` | `packages/kernel/src/plugins/plugin-service.ts:27`, `:104` |
+| `plugins/plugin-contributions.ts` | `AgentRecord` type | `packages/kernel/src/plugins/plugin-contributions.ts:27`; it also exposes `settingsScopes`/`agents`/`readAgent` (`:94`, `:98`, `:100`), consumed at `packages/kernel/src/config/file-config-store.ts:688`, `:961`, `:976,992` |
+| `@clarvis/code` | `resolveAgentsByName`, `AgentSummary.overlay.shadowed` | `packages/code/src/adapters/kernel-run-client.ts:211`, `packages/code/src/adapters/agents-store.ts:40-52` |
 
 The direction is forced structurally: `config/` imports nothing from `runs/`, `plugins/` (values),
 `workflows/` or `transport/`, and the plugin edge is inverted through the `PluginContributions`
@@ -903,48 +904,48 @@ type-only import plus an injected `opts.plugins` object.
 
 1. ~~**Two doc comments disagree about merge direction.**~~ **Resolved:** the protocol-side comment
    was the stale one and now reads the same direction as the kernel's
-   (`packages/protocol/src/config.ts:203`-`:207`, `packages/kernel/src/config/config-store.ts:168`),
+   (`packages/protocol/src/config.ts:204`-`:208`, `packages/kernel/src/config/config-store.ts:170`),
    which is what the implementation does — `mergeSettings([...pluginScopes, ...operatorScopes], …)`
-   (`packages/kernel/src/config/file-config-store.ts:650`) over layers in ascending precedence
-   (`packages/loop/src/settings/settings-merge.ts:143`). The client author's copy is the one that had
+   (`packages/kernel/src/config/file-config-store.ts:669`) over layers in ascending precedence
+   (`packages/loop/src/settings/settings-merge.ts:163`). The client author's copy is the one that had
    been wrong, which is the reason it was the one corrected.
 
 2. **`SettingsData.mcp_servers` (snake_case, `packages/protocol/src/config.ts:29`) is not the key anything
    writes.** The engine's schema key is `mcpServers`
-   (`packages/loop/src/settings/settings-schema.ts:353`) and that is what
-   `WORKSPACE_RISK_FIELDS` strips (`packages/kernel/src/config/workspace-trust.ts:39`). The snake_case field compiles only
+   (`packages/loop/src/settings/settings-schema.ts:388-397`) and that is what
+   `WORKSPACE_RISK_FIELDS` strips (`packages/kernel/src/config/workspace-trust.ts:40`). The snake_case field compiles only
    because of the interface's index signature (`packages/protocol/src/config.ts:37`). Whether it is dead or a
    planned rename is not stated.
 
 3. **A plugin-shipped agent can never be opened through `ConfigService.getAgent`.** The store supports
-   it (`packages/kernel/src/config/file-config-store.ts:937-950`, and `packages/kernel/tests/integration/file-config-store.test.ts:180` pins the store-level
+   it (`packages/kernel/src/config/file-config-store.ts:965-978`, and `packages/kernel/tests/integration/file-config-store.test.ts:187` pins the store-level
    fallback), but the service's `requireAgentName` rejects any `:` (`packages/kernel/src/config/config-service.ts:79`, and
-   `packages/kernel/tests/contract/config-service.test.ts:151` pins `plugin:coder` as rejected). Whether plugin agents are meant to
+   `packages/kernel/tests/contract/config-service.test.ts:156` pins `plugin:coder` as rejected). Whether plugin agents are meant to
    be readable through some other route is not visible here.
 
 4. **No test covers an untrusted workspace's `agents/` directory.** The gate exists
-   (`packages/kernel/src/config/file-config-store.ts:886`, `:950`) and the docstring at `:938-943` states what it prevents, but
+   (`packages/kernel/src/config/file-config-store.ts:914`, `:978`) and the docstring at `:966-971` states what it prevents, but
    `workspace-trust.test.ts` exercises only settings fields. Likewise nothing exercises the agent-file
-   half of `workspaceTrustFingerprint` (`packages/kernel/src/config/workspace-trust.ts:221`).
+   half of `workspaceTrustFingerprint` (`packages/kernel/src/config/workspace-trust.ts:224`).
 
 5. **`workspace-trust.ts`'s exported helpers have no direct unit tests.**
    `workspaceTrustFingerprint`, `workspaceTrustVerdict`, `canonicalWorkspaceKey`,
    `readWorkspaceTrustFile`, `writeWorkspaceTrust` and `workspaceTrustSchema` are reached only through
    `createFileConfigStore` in `workspace-trust.test.ts`. The `changed` verdict's `approved` field, the
-   `now` injection point (`packages/kernel/src/config/workspace-trust.ts:347`), the symlink canonicalization and the
+   `now` injection point (`packages/kernel/src/config/workspace-trust.ts:354`), the symlink canonicalization and the
    refuse-to-overwrite branch are all unexercised — and so is `writeWorkspaceTrust`'s re-approval
    dedup: re-approving a fingerprint already present in `workspaces[key]` leaves that array
    unchanged rather than appending a duplicate entry (`:357-360`, see also Section 4.10).
 
 6. **`resolveAgentsByName` and `parseAgentFrontmatter` have no kernel test.**
    `resolveAgentsByName` is tested only transitively via `packages/code/tests/integration/doctor.test.ts`;
-   `parseAgentFrontmatter`'s only caller is `packages/kernel/src/plugins/plugin-service.ts:26`. `scopeRank`'s `"builtin"`
+   `parseAgentFrontmatter`'s only caller is `packages/kernel/src/plugins/plugin-service.ts:104`. `scopeRank`'s `"builtin"`
    arm is documented as unreachable in practice ("In practice `builtin` never has to lose this
    comparison", `packages/kernel/src/config/agent-resolution.ts:8`) and nothing tests it.
 
 7. **`stripWorkspaceRiskFields`'s `withheld` order.** The filter preserves `WORKSPACE_RISK_FIELDS`
-   order (`packages/kernel/src/config/workspace-trust.ts:103`) and the "covers every declared risk field" test compares against
-   that same constant (`packages/kernel/tests/integration/workspace-trust.test.ts:67`), so the test cannot detect a reordering of the
+   order (`packages/kernel/src/config/workspace-trust.ts:104`) and the "covers every declared risk field" test compares against
+   that same constant (`packages/kernel/tests/integration/workspace-trust.test.ts:68`), so the test cannot detect a reordering of the
    constant itself. Whether the order is a contract for clients is not stated.
 
 8. **`getAgent("builtin", name)` returns `scope: "builtin"` from the *argument*, not the record.**
@@ -958,13 +959,13 @@ type-only import plus an injected `opts.plugins` object.
     determinable here.
 
 10. **No rationale is recoverable for the specific numeric bounds** — 2 MiB / 256 KiB / 64 / 256 /
-    8 MiB (`packages/kernel/src/config/file-config-store.ts:209-213`), the 64 repair rounds (`packages/kernel/src/config/config-service.ts:171`), or the
+    8 MiB (`packages/kernel/src/config/file-config-store.ts:218-222`), the 64 repair rounds (`packages/kernel/src/config/config-service.ts:171`), or the
     10 s / 2 s / 5 ms lock constants (`:160-166`). The code names what they bound, never why those
     values.
 
 11. **`SETTINGS_LOCK_STALE_MS`'s interaction with `acquireLocalLeaseSync`** is only partly visible:
     the lease's reclaim policy lives in `packages/paths/src/local-lease.ts:1093-1100` and its
     liveness proof is that package's concern. The kernel-side docstring
-    (`packages/kernel/src/config/file-config-store.ts:154-159`) asserts "the shared primitive additionally proves that its
-    same-host process is dead", which `packages/kernel/tests/integration/file-config-store.test.ts:466` / `:498` demonstrate but do not
+    (`packages/kernel/src/config/file-config-store.ts:163-168`) asserts "the shared primitive additionally proves that its
+    same-host process is dead", which `packages/kernel/tests/integration/file-config-store.test.ts:533-562` / `:565-594` demonstrate but do not
     explain.

@@ -91,21 +91,21 @@ Production: `packages/code/src/views/StartupComposer.tsx` (`StartupComposer`). T
 | efficiency advisory         | 512 MiB absolute RSS, 256 MiB growth from baseline and 64 MiB rise over 20 samples; records evidence but does not abort or collect | `packages/code/src/adapters/memory-pressure.ts` (`MEMORY_EFFICIENCY_*`, `publish`)                                                       |
 
 The fuse samples only the TUI process. It does not account for external MCP servers, shell children
-or other process trees (`packages/code/README.md:143-158`).
+or other process trees (`packages/code/README.md:248-267`).
 
 ### 2.3 Resident collection ceilings
 
 | Collection                                     |                                                                              Current ceiling | Source                                                                                                                                                                     |
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| one mutable transcript prose node              |                                                                              2 Mi characters | `packages/code/src/adapters/store.ts:84-90`                                                                                                                                |
-| aggregate mutable transcript prose             |                                                                      64 MiB estimated UTF-16 | `packages/code/src/adapters/store.ts:89-90`, `:349-352`                                                                                                                    |
+| one mutable transcript prose node              |                                                                              2 Mi characters | `packages/code/src/adapters/store.ts:91-117`                                                                                                                               |
+| aggregate mutable transcript prose             |                                                                      64 MiB estimated UTF-16 | `packages/code/src/adapters/store.ts:96-98`, `:448-568`                                                                                                                    |
 | one immutable publication node's mounted prose |                                                                            512 Ki characters | `packages/code/src/adapters/transcript-publication.ts` (`snapshotTranscriptNode`), `packages/code/src/core/transcript/presenters.ts` (`TRANSCRIPT_MOUNTED_TEXT_MAX_CHARS`) |
 | one immutable publication tool field           | 64 Ki characters; arguments additionally use a 40 Ki character/value and 512-node projection | `packages/code/src/core/transcript/tool-display.ts` (`TRANSCRIPT_TOOL_DISPLAY_FIELD_MAX_CHARS`, `projectTranscriptToolDisplay`)                                            |
-| hydrated tool bodies                           |                                                               200 nodes and 64 MiB estimated | `packages/code/src/adapters/store.ts:286-307`, `:596-617`                                                                                                                  |
-| one hydrated tool body                         |                                                                             32 MiB estimated | `packages/code/src/adapters/store.ts:306-307`, `:601-605`                                                                                                                  |
-| visual transcript turns                        |                                                                            20 semantic turns | `packages/code/src/run-host.ts:212-215`, `:997-1005`                                                                                                                        |
-| session resume chain                           |                                            10,000 messages and 16,000,000 payload characters | `packages/code/src/adapters/session.ts:399-400`, `:510-531`                                                                                                                |
-| complete session documents in the client cache |                                                  8, excluding live write lanes from demotion | `packages/code/src/adapters/session-store.ts:250`, `:326-338`                                                                                                              |
+| hydrated tool bodies                           |                                                               200 nodes and 64 MiB estimated | `packages/code/src/adapters/store.ts:354-374`, `:660-716`                                                                                                                  |
+| one hydrated tool body                         |                                                                             32 MiB estimated | `packages/code/src/adapters/store.ts:374`, `:660-703`                                                                                                                      |
+| visual transcript turns                        |                                                                            20 semantic turns | `packages/code/src/run-host.ts:219-225`, `:1087-1109`                                                                                                                       |
+| session resume chain                           |                                            10,000 messages and 16,000,000 payload characters | `packages/code/src/adapters/session.ts:480-481`, `:602-621`                                                                                                                |
+| complete session documents in the client cache |                                                  8, excluding live write lanes from demotion | `packages/code/src/adapters/session-store.ts:308`, `:497-520`                                                                                                              |
 | provider HTTP response                         |                                                                                       32 MiB | `packages/llm/src/ai-sdk/bounded-fetch.ts:4`, `:64-109`                                                                                                                    |
 | MCP HTTP or stdio frame                        |                                                                                       16 MiB | `packages/mcp-client/src/bounded-fetch.ts:6`, `packages/mcp-client/src/bun-stdio-client.ts:112`                                                                            |
 
@@ -127,7 +127,7 @@ frequency and load per core (`packages/code/tooling/benchmarks/first-paint.ts`, 
 
 A number is comparable only when the relevant environment fields and workload match. The runner
 refuses excessive load and marks a batch untrusted when load drifts materially during the run
-(`packages/code/tooling/benchmarks/first-paint.ts:331-360`). A one-sample result, a measurement taken from
+(`packages/code/tooling/benchmarks/first-paint.ts:338-366`). A one-sample result, a measurement taken from
 another cwd, or a direct `dist/index.js --version` comparison against the launcher's fast-path
 `--version` does not support a startup conclusion.
 
@@ -225,8 +225,8 @@ cold route and explicit recheck.
 
 The distributable build enables splitting, keeps OpenTUI package-owned, keeps provider adapters
 behind generated dynamic chunks, and moves development source maps away from runtime JavaScript
-(`packages/code/tooling/artifact/build.ts:20-35`, `:110-135`). These choices reduced the recorded idle Linux
-baseline from roughly 237 MB to 171 MB (`packages/code/README.md:670-678`).
+(`packages/code/tooling/artifact/build.ts:20-35`, `:125-150`). These choices reduced the recorded idle Linux
+baseline from roughly 237 MB to 171 MB (`packages/code/README.md:1070-1080`).
 
 The installed build goes further: `build:install` emits no source maps before the package is linked.
 This keeps offline diagnostic maps in developer/root builds without distributing them through the
@@ -334,7 +334,7 @@ The floating family is larger than the two historically measured entry points:
 | clean-worktree exit prompt            | `App` -> retained `WorktreeExitPrompt` -> `FloatFrame`                      | fixed, small body                                                                                                      | +0.44 MiB PSS/100 in the remount case; no confirmed slope              |
 
 `HintToast` is also conditionally instantiated while any host or transient overlay is open
-(`packages/code/src/views/App.tsx:1299-1301`, `packages/code/src/views/Footer.tsx:34-56`). A full-app
+(`packages/code/src/views/App.tsx:1449-1454`, `packages/code/src/views/Footer.tsx:34-56`). A full-app
 soak must account for it separately from the card under test, even though an empty hint mounts no
 native toast box.
 
@@ -382,7 +382,7 @@ onto these families without measurement:
 - the compact activity drawer mounts a full-bleed scrim and Sidebar, while editor expansion merely
   changes layout properties on the already-mounted input region
   (`packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`'s drawer `SurfaceBoundary`,
-  `packages/code/src/views/App.tsx:1305-1336`).
+  `packages/code/src/views/App.tsx:1455-1514`).
 - Splash, elicitation, terminal-floor and fatal-boot surfaces are conditional, but they are not
   normal high-frequency modal routes. They still belong in control cases because input churn can
   accidentally remount Splash and make an autocomplete measurement invalid
@@ -418,8 +418,8 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
    Test: `packages/code/tests/architecture/cli-fast-path.test.ts:80-98`.
 
 2. **PERF-2: the built artifact keeps the AI SDK/provider adapter behind a generated lazy chunk.**
-   Production: `packages/code/tooling/artifact/build.ts:70-81`, `:115-126`.
-   Test: `packages/code/tests/architecture/artifact-contract.test.ts:11-33`.
+   Production: `packages/code/tooling/artifact/build.ts:71-82`, `:130-141`.
+   Test: `packages/code/tests/architecture/artifact-contract.test.ts:13-49`.
 
 3. **PERF-3: developer source maps remain available away from runtime JavaScript; installed source
    maps are omitted.**
@@ -428,17 +428,17 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
    cases).
 
 4. **PERF-4: transcript prose is bounded per node and across settled resident nodes.**
-   Production: `packages/code/src/adapters/store.ts:84-110`, `:384-470`.
+   Production: `packages/code/src/adapters/store.ts:91-117`, `:448-568`.
    Test: `packages/code/tests/unit/streaming-delta.test.ts:160-220`.
 
 5. **PERF-5: settled hydrated tool bodies obey both count and aggregate-byte limits.**
-   Production: `packages/code/src/adapters/store.ts:286-307`, `:596-617`.
+   Production: `packages/code/src/adapters/store.ts:363-374`, `:660-716`.
    Test: `packages/code/tests/unit/store-hydration.test.ts:98-159`.
 
 6. **PERF-6: a persisted non-manager turn releases reconstructible history and can rebuild it
    lazily when provider continuation is unavailable.**
-   Production: `packages/code/src/run-host.ts:702-792`.
-   Test: `packages/code/tests/component/run-host.test.ts:1321-1392`.
+   Production: `packages/code/src/run-host.ts:796-818`, `:841-882`.
+   Test: `packages/code/tests/component/run-host.test.ts:1467-1528`.
 
 7. **PERF-7: a manager releases durably reconstructible resident history while idle, then rebuilds
    and sends the complete chain rather than using `continue_from`.**
@@ -630,7 +630,7 @@ tree.
 | one transcript prose value is oversized                     | truncate before it enters reactive state                                                                                                                                                | `packages/code/src/adapters/store.ts:103-110`                                                                      |
 | aggregate prose is full                                     | release older settled prose, preserve newest                                                                                                                                            | `packages/code/src/adapters/store.ts:394-470`                                                                      |
 | hydrated tool budget is full                                | dehydrate older bodies; explicit expand can re-fetch within queue limits                                                                                                                | `packages/code/src/adapters/store.ts:596-617`, `:647-758`                                                          |
-| session reconstruction exceeds request-shape limits         | throw `SessionResumeLimitError` before the next batch                                                                                                                                   | `packages/code/src/adapters/session.ts:510-531`                                                                    |
+| session reconstruction exceeds request-shape limits         | throw `SessionResumeLimitError` before the next batch                                                                                                                                   | `packages/code/src/adapters/session.ts:507-528`                                                                    |
 | RSS reaches configured limit                                | cancel, detach after grace if required, block new work and offer recovery                                                                                                               | `packages/code/src/adapters/memory-pressure.ts:193-229`                                                            |
 | overlay soak child starves or grows past its process budget | parent watchdog kills it and fails with the case name and limit                                                                                                                         | `packages/code/tooling/benchmarks/overlays.tsx` (`runParent`)                                                      |
 | interactive event loop is starved outside the soak          | in-process sampler may not run; host/process-tree monitoring is still required                                                                                                          | `specs/known-issues.md` (reactive microtask starvation)                                                            |
@@ -641,7 +641,7 @@ tree.
 - **`code` -> OpenTUI/Solid:** renderer-native allocation, parser preload, reconciler destruction and
   floating renderables determine both first paint and native RSS. OpenTUI remains external to the
   bundle so its worker, grammars and platform package keep correct ownership
-  (`packages/code/tooling/artifact/build.ts:20-23`, `:120-125`).
+  (`packages/code/tooling/artifact/build.ts:20-23`, `:135-140`).
 - **`code` -> `kernel`:** the interactive host constructs an in-process file kernel before mounting
   `<App>`, but kernel bootstrap enters through the exact dynamic factory boundary and may run in
   parallel with the complete runtime import (`packages/code/src/startup-foundation.ts`,
@@ -654,7 +654,7 @@ tree.
   `packages/code/src/app/commands.tsx`, `inspectReadiness`).
 - **`code` -> transcript/session persistence:** visual windows can release presentation data, but a
   future full request may require persisted traces to reconstruct semantic history
-  (`packages/code/src/run-host.ts:705-723`, `packages/code/src/adapters/session.ts:462-509`).
+  (`packages/code/src/run-host.ts:796-818`, `packages/code/src/adapters/session.ts:560-585`, `:628-752`).
 - **`code` -> `llm`/`mcp-client`:** response ceilings bound individual inputs to the transcript but
   are not charged against the same resident budget
   (`packages/llm/src/ai-sdk/bounded-fetch.ts:64-109`,

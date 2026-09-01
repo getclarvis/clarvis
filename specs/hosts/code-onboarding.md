@@ -85,14 +85,14 @@ integration suite behind every claim there.
 
 | Symbol | Shape | Cite |
 |---|---|---|
-| `PlatformCapabilities` | `{revision, keyboard, remote, runtimePlatform, terminal, mouse, clipboard:{osc52}, multiplexer, plain, themeBg, colorDepth}` | `packages/code/src/adapters/platform.ts:17-29` |
-| `Platform` | `{capabilities, onShutdown, shutdown, suspend, resume, copyText, readClipboardImage}` | `packages/code/src/adapters/platform.ts:38-48` |
+| `PlatformCapabilities` | `{revision, keyboard, remote, runtimePlatform, terminal, mouse, clipboard:{osc52}, multiplexer, plain, themeBg, colorDepth}` | `packages/code/src/adapters/platform.ts:25-37` |
+| `Platform` | `{capabilities, onShutdown, shutdown, suspend, resume, copyText, readClipboardImage}` | `packages/code/src/adapters/platform.ts:46-56` |
 | `PlatformOptions` | `{dev?, clipboardProcess?, runtimePlatform?, processEnv?}`; the last three fields are internal test seams | `packages/code/src/adapters/platform.ts` (`PlatformOptions`), `packages/code/src/adapters/renderer-bootstrap.ts` (`RendererBootstrapOptions`) |
 | `assertInteractiveTTY(io?)` | exits process with code `2` and a stderr usage line if stdin/stdout are not a TTY | `packages/code/src/adapters/renderer-bootstrap.ts` |
 | `buildRendererConfig(opts?): CliRendererConfig` | the OpenTUI renderer config `code` boots with | `packages/code/src/adapters/renderer-bootstrap.ts` |
 | `createPlatform(renderer, opts?): Platform` | constructs the adapter around a live `CliRenderer` | `packages/code/src/adapters/platform.ts` (`createPlatform`) |
-| `readClipboardImage(signal?, run?): Promise<ClipboardImage\|null>` | free function, also exposed on `Platform` | `packages/code/src/adapters/platform.ts:158-193` |
-| `WINDOWS_CLIPBOARD_COPY_SCRIPT` | const (exported for tests) | `packages/code/src/adapters/platform.ts:95-97` |
+| `readClipboardImage(signal?, run?): Promise<ClipboardImage\|null>` | free function, also exposed on `Platform` | `packages/code/src/adapters/platform.ts:138-173` |
+| `WINDOWS_CLIPBOARD_COPY_SCRIPT` | const (exported for tests) | `packages/code/src/adapters/platform.ts:98-100` |
 
 ### 2.5 `adapters/clipboard-process.ts`
 
@@ -145,11 +145,11 @@ integration suite behind every claim there.
 
 | Flag / env var | Effect | Cite |
 |---|---|---|
-| `--debug` | enables the session for the current normal application invocation; help/version remain fast paths, usage errors do not open it, and update refuses it | `packages/code/src/cli-args.ts:110-113`, `:274-301`, `:305-335` |
-| `--debug=<error\|warn\|info\|debug>` | enables and sets the floor in one flag | `packages/code/src/cli-args.ts:110-113`, `:293-301` |
-| `CLARVIS_CODE_DEBUG` | env equivalent of `--debug`; any value not in `{"", "0", "off", "false", "no"}` enables it, and if it also names a level it sets the floor | `packages/code/src/cli-args.ts:124-127`, `:168-179` |
-| `CLARVIS_CODE_DEBUG_LEVEL` | env equivalent of `--debug=<level>`, read before falling back to `CLARVIS_CODE_DEBUG`'s own value as a level | `packages/code/src/cli-args.ts:124-127`, `:168-179` |
-| `resolveDebugRequest(mode, env): DebugRequest` | folds flag + env, flag wins in both directions | `packages/code/src/cli-args.ts:168-179` |
+| `--debug` | enables the session for the current normal application invocation; help/version remain fast paths, usage errors do not open it, and update refuses it | `packages/code/src/cli-args.ts:120-123`, `:284-313`, `:325-359` |
+| `--debug=<error\|warn\|info\|debug>` | enables and sets the floor in one flag | `packages/code/src/cli-args.ts:120-123`, `:305-313` |
+| `CLARVIS_CODE_DEBUG` | env equivalent of `--debug`; any value not in `{"", "0", "off", "false", "no"}` enables it, and if it also names a level it sets the floor | `packages/code/src/cli-args.ts:134-137`, `:178-189` |
+| `CLARVIS_CODE_DEBUG_LEVEL` | env equivalent of `--debug=<level>`, read before falling back to `CLARVIS_CODE_DEBUG`'s own value as a level | `packages/code/src/cli-args.ts:134-137`, `:178-189` |
+| `resolveDebugRequest(mode, env): DebugRequest` | folds flag + env, flag wins in both directions | `packages/code/src/cli-args.ts:178-189` |
 
 ### 2.11 `views/onboarding/SetupView.tsx` and `RecoveryView.tsx`
 
@@ -201,7 +201,7 @@ whatever else might be under it in the global file (`buildPatch()` in each seede
 | Seeder | Patch written | Example |
 |---|---|---|
 | `seedMemoryBlock` | `{ memory: { enabled: true } }` — `model` deliberately omitted | `packages/code/src/onboarding/seed-memory.ts:43`, pinned by `packages/code/tests/unit/seed-memory.test.ts:24-26` |
-| `seedPlansBlock` | `{ plans: { ...PLANS_DEFAULTS } }`, where `PLANS_DEFAULTS` (from `@clarvis/kernel/config`) is asserted to include `{mode:"on", retention:"keep"}` | `packages/code/src/onboarding/seed-plans.ts:32`, `packages/code/tests/unit/seed-plans.test.ts:26` |
+| `seedPlansBlock` | `{ plans: { ...PLANS_DEFAULTS } }`, where `PLANS_DEFAULTS` (from `@clarvis/kernel/config`) is asserted to include `{mode:"on", retention:"keep"}` | `packages/code/src/onboarding/seed-plans.ts:33`, `packages/code/tests/unit/seed-plans.test.ts:26` |
 | `seedDefaultAllowlist` | `{ guard: { ...existingGlobalGuardFieldsOnly, type:"shell", allowed_commands:[...POSIX_or_WINDOWS_DEFAULTS] } }` | `packages/code/src/onboarding/seed-default-allowlist.ts`, `seedDefaultAllowlist` |
 
 The allowlist seeder reads the *global* `guard` block only to spread its other fields forward
@@ -222,7 +222,7 @@ and are outside the onboarding subsystem.
 
 **File location and naming.** `<global-state>/workspaces/<segment>/local/diagnostics/code-debug-<ISO
 stamp with `:` replaced by `-`>-<pid>[-N].jsonl`, resolved via `workspaceStatePaths(workspace).diagnosticsDir`
-(`packages/code/src/adapters/diagnostic-session.ts:361-366`; path composition in `packages/paths/src/workspace-state.ts:177-180`).
+(`packages/code/src/adapters/diagnostic-session.ts:361-366`; path composition in `packages/paths/src/workspace-state.ts:181-184`).
 Opened with `wx` (exclusive create) and mode `0o600`; a same-second collision from the same pid retries
 with a numeric suffix up to 100 times (`packages/code/src/adapters/diagnostic-session.ts:254-269`), and the newest `keepFiles - 1`
 files are kept before opening a new one (`retainNewest`, `packages/code/src/adapters/diagnostic-session.ts:243-252`).
@@ -232,7 +232,7 @@ files are kept before opening a new one (`retainNewest`, `packages/code/src/adap
 ```json
 {
   "v": 1,
-  "at": "2026-08-12T12:00:00.000Z",
+  "at": "2026-08-12T12:00:00Z",
   "seq": 3,
   "level": "warn",
   "source": "kernel",
@@ -327,7 +327,7 @@ The 13-gate table, in fixed display order, its severity and default fix:
 | 13 | `diagnostics` | ui, optional | none |
 
 (`packages/code/src/onboarding/doctor.ts:116-524`; order/severity ranking pinned by
-`packages/code/tests/integration/doctor.test.ts:586-592`, which also asserts the array holds no `"tty"` gate.)
+`packages/code/tests/integration/doctor.test.ts:597-603`, which also asserts the array holds no `"tty"` gate.)
 
 ### 3.5 `platform.ts`'s own diagnostic events
 
@@ -379,7 +379,7 @@ stated explicitly, even though it repeats OpenTUI's own default, because it is t
 `requestRender()` runs into; the doc comment above the function (`:190-196`) notes it never binds today
 because `@clarvis/loop`'s `DELTA_BATCH` already holds flushes well under it, but raising either threshold
 would make `maxFps` the visible limiter. `openConsoleOnError` toggling on `opts.dev` is pinned by
-`packages/code/tests/integration/platform-lifecycle.test.ts:125-149`.
+`packages/code/tests/integration/platform-lifecycle.test.ts:125-178`.
 
 ## 4. Behavior
 
@@ -401,9 +401,9 @@ startupRoute(ctx, report):
 ```
 
 This means: a fresh machine with nothing written yet routes to `setup`
-(`packages/code/tests/integration/doctor.test.ts:226-243`); an unset credential on an otherwise-configured provider
-routes to `repair`, not `setup` (`packages/code/tests/integration/doctor.test.ts:336-360`); a corrupt settings file
-always routes to `repair` regardless of provider state (`packages/code/tests/integration/doctor.test.ts:501-518`).
+(`packages/code/tests/integration/doctor.test.ts:231-248`); an unset credential on an otherwise-configured provider
+routes to `repair`, not `setup` (`packages/code/tests/integration/doctor.test.ts:341-365`); a corrupt settings file
+always routes to `repair` regardless of provider state (`packages/code/tests/integration/doctor.test.ts:506-523`).
 
 ### 4.2 Per-gate evaluation, and failure containment
 
@@ -412,7 +412,7 @@ always routes to `repair` regardless of provider state (`packages/code/tests/int
 a `doctor.check.failed` diagnostic event at `error` level carrying `check_id`, the error, and
 `duration_ms`, and (b) substitutes a synthetic `{status:"fail", detail:"check failed: <message>",
 hint:"...run with --debug..."}` result for that one gate only (`packages/code/src/onboarding/doctor.ts:538-566`, pinned by
-`packages/code/tests/integration/doctor.test.ts:520-553`). A throwing gate never aborts `runGates` or corrupts another
+`packages/code/tests/integration/doctor.test.ts:525-564`). A throwing gate never aborts `runGates` or corrupts another
 gate's result.
 
 ### 4.3 Notable gate logic
@@ -421,7 +421,7 @@ gate's result.
   list is actually empty, it hard-fails with `"no agents"`; otherwise it warns on cross-scope name
   conflicts, invalid frontmatter, or a refused customization overlay, listing the first offending
   kind's detail (`packages/code/src/onboarding/doctor.ts`, `GATES` `agents` check). A conflict/invalid finding is reported even when it
-  coexists with the other kind (`packages/code/tests/integration/doctor.test.ts:283-302`), and an unrecognized
+  coexists with the other kind (`packages/code/tests/integration/doctor.test.ts:288-307`), and an unrecognized
   frontmatter key alone does not count as invalid (`:304-319`).
 - **`agents`**'s second phase, run only once the fleet is conflict/invalid/refusal-free, computes
   `agentReadiness(...).issues` per agent and keeps only the subset in `PROFILE_SHAPED_ISSUES`
@@ -430,7 +430,7 @@ gate's result.
   which the `providers`/`default_model` gates already own (`packages/code/src/onboarding/doctor.ts:96-113`, `:184-204`).
 - **`default_model`** resolves a model against providers via `modelResolves`, checking a model's
   provider **and** its declared model name, not the provider name alone
-  (`packages/code/tests/integration/doctor.test.ts:387-405`).
+  (`packages/code/tests/integration/doctor.test.ts:392-410`).
 - **`run_safety`**: with sandboxing enabled but not yet inspected (`sandboxInspection()` is `null`), the
   gate **passes** with a "checking sandbox host" detail rather than warning
   (`packages/code/src/onboarding/doctor.ts:337-343`). Cold command composition deliberately leaves
@@ -449,7 +449,7 @@ gate's result.
   (`packages/code/src/onboarding/doctor.ts`, `memory` and `plans` gate definitions) — only memory's absence is flagged as a warning, plans treats its defaults as a
   healthy state. Its hint routes review changes to `/plan` and retention changes to Run Controls;
   Run Controls no longer edits planning mode. Neither gate ever blocks boot regardless, since both are `ui` severity
-  (`packages/code/tests/integration/doctor.test.ts:649-673` for memory, `:675-699` for plans — the latter asserting
+  (`packages/code/tests/integration/doctor.test.ts:660-684` for memory, `:686-710` for plans — the latter asserting
   `results.plans.status` is `"pass"`, not `"warn"`, on an unconfigured block).
 - **`credentials`** (soft severity): subscription-backed `openai-codex` and `xai-grok` providers are
   checked in declaration order before API-key providers. Missing readiness returns `pass` with
@@ -506,18 +506,18 @@ Native-tool candidate lists, tried **in order** until one succeeds (`exitCode===
 out):
 - copy: darwin→`pbcopy`; win32→PowerShell `Set-Clipboard` via `-EncodedCommand`; `WAYLAND_DISPLAY` set→
   `wl-copy`; `DISPLAY` set→`xclip -selection clipboard` then `xsel --clipboard --input`
-  (`packages/code/src/adapters/platform.ts:98-113`).
+  (`packages/code/src/adapters/platform.ts:105-120`).
 - paste-image: darwin→`pngpaste`; win32→PowerShell `Clipboard.GetImage()`; `WAYLAND_DISPLAY`→`wl-paste
   --type image/png`; `DISPLAY`→`xclip -selection clipboard -t image/png -o` — **`xsel` is never tried for
-  image paste** (`packages/code/src/adapters/platform.ts:156-171`, pinned by `packages/code/tests/integration/platform.test.ts:133-142`). A
+  image paste** (`packages/code/src/adapters/platform.ts:140-155`, pinned by `packages/code/tests/integration/platform.test.ts:133-142`). A
   candidate's output must start with the 8-byte PNG signature or it is rejected as not-an-image
-  (`isPng`, `packages/code/src/adapters/platform.ts:116-143`, `:160`).
+  (`isPng`, `packages/code/src/adapters/platform.ts:123-127`, `:144`).
 
 ### 4.6 Shutdown sequence
 
 `shutdown(reason, err?)` (`packages/code/src/adapters/platform.ts`, `createPlatform`): a second concurrent call short-circuits to
 `restore()` + `process.exit` immediately (`:325-328`, pinned by
-`packages/code/tests/integration/platform-lifecycle.test.ts:359-371`). Otherwise: abort every in-flight clipboard
+`packages/code/tests/integration/platform-lifecycle.test.ts:400-412`). Otherwise: abort every in-flight clipboard
 controller → run every registered `onShutdown` hook in **reverse registration order**, each wrapped so a
 throw/rejection cannot stop the others, capped at `SHUTDOWN_BUDGET_MS` (2000 ms) total → restore the
 terminal (destroy the renderer, swallowing any error) → if not a panic and running over SSH, drain stdin
@@ -634,16 +634,16 @@ calling it synchronously inside the effect. `commands.tsx` wires `ready` to `boo
 "shell"` and `onReady` to `host.close()` (`packages/code/src/app/commands.tsx`, `recovery.open`), so a repair
 that clears every blocking gate (e.g. `repairStartupSettings`'s `recheck()`) dismisses the
 recovery screen with no further keypress — pinned by
-`packages/code/tests/integration/onboarding-render.test.tsx:116-119` ("recovery closes itself once
+`packages/code/tests/integration/onboarding-render.test.tsx:143-146` ("recovery closes itself once
 `ready()` turns true").
 
 ## 5. Invariants
 
 1. **A doctor gate's throw degrades only that gate**, never the whole report. — `packages/code/src/onboarding/doctor.ts:538-566` —
-   pinned by `packages/code/tests/integration/doctor.test.ts:520-553`.
+   pinned by `packages/code/tests/integration/doctor.test.ts:525-564`.
 2. **Boot is blocked exactly when a `hard` gate fails or a `soft` gate is not passing**; `ui`/`comms`
    gates never block. — `packages/code/src/onboarding/doctor.ts:577-582` — pinned by
-   `packages/code/tests/integration/doctor.test.ts:199-224` (all-pass → not blocked) and `:321-334` (soft `warn` →
+   `packages/code/tests/integration/doctor.test.ts:204-229` (all-pass → not blocked) and `:326-339` (soft `warn` →
    blocked).
 3. **Having no on-disk agent files is healthy because the shipped fleet remains effective; an actually
    empty effective fleet hard-fails.** Production: `packages/code/src/onboarding/doctor.ts` (`GATES`
@@ -651,7 +651,7 @@ recovery screen with no further keypress — pinned by
    blocks on config alone — the agent fleet is always there" and "agents gate hard-fails when the
    effective fleet is actually empty").
 4. **`startupRoute` returns `repair` for any corrupt scope, even before checking for missing settings or
-   providers.** — `packages/code/src/onboarding/doctor.ts:597-599` — pinned by `packages/code/tests/integration/doctor.test.ts:501-518`.
+   providers.** — `packages/code/src/onboarding/doctor.ts:597-599` — pinned by `packages/code/tests/integration/doctor.test.ts:506-523`.
 5. **An unset provider credential routes to `repair`, not `setup`**, because providers already exist —
    only their credential is missing. Subscription checks are sequential: missing readiness returns a
    deferred `pass` immediately, while the first known disconnected or unentitled subscription points
@@ -668,7 +668,7 @@ recovery screen with no further keypress — pinned by
    `packages/code/src/onboarding/seed-block-once.ts:53` — pinned by `packages/code/tests/unit/seed-memory.test.ts:35-40`.
 8. **An explicit `enabled:false`/`mode:"off"`/present `allowed_commands` (including an empty array)
    counts as already-configured and is never re-seeded.** — each seeder's `alreadyConfigured` —
-   `packages/code/src/onboarding/seed-memory.ts:42`, `packages/code/src/onboarding/seed-plans.ts:31`, `packages/code/src/onboarding/seed-default-allowlist.ts:58-61` — pinned by
+   `packages/code/src/onboarding/seed-memory.ts:42`, `packages/code/src/onboarding/seed-plans.ts:32`, `packages/code/src/onboarding/seed-default-allowlist.ts:58-61` — pinned by
    `packages/code/tests/unit/seed-memory.test.ts:42-49`, `tests/unit/seed-plans.test.ts` ("never re-seeds over an
    explicit opt-out"), `packages/code/tests/unit/seed-default-allowlist.test.ts:81-89` (empty list is deliberate).
 9. **The default-allowlist seed never carries a workspace's `guard` fields other than
@@ -713,15 +713,15 @@ recovery screen with no further keypress — pinned by
 17. **`--debug` on the command line always enables the session, even when `CLARVIS_CODE_DEBUG=off` is set
     in the environment**, and an explicit `--debug=<level>` always wins over
     `CLARVIS_CODE_DEBUG_LEVEL`/an env-supplied level — the flag wins in both directions. —
-    `packages/code/src/cli-args.ts:136-143`, `:145-153` — pinned by `packages/code/tests/unit/cli-args.test.ts:100-133` ("resolveDebugRequest
+    `packages/code/src/cli-args.ts:165-186` — pinned by `packages/code/tests/unit/cli-args.test.ts:154-187` ("resolveDebugRequest
     folds the environment in, with the flag winning both ways"), though `cli-args.ts` itself belongs to
     [hosts/code-bootstrap.md](code-bootstrap.md) per §8.
 18. **An unrecognized diagnostic level in the *environment* is silently ignored (falls back to
     `debug`), while the same typo on the command line is a usage error.** —
-    `packages/code/src/cli-args.ts:139-143` (remark), `:122-128` (`debugLevel` returns `undefined` on no match), `:253`
+    `packages/code/src/cli-args.ts:169-176` (remark), `:149-160` (`debugLevel` returns `undefined` on no match), `:305-309`
     (`usageError` on an unmatched `--debug=<level>`, directly implementing the command-line half) — pinned
-    by `packages/code/tests/unit/cli-args.test.ts:79-97` (bad `--debug=loud` is a `usage-error` naming the flag) and
-    `:129-132` (an unrecognized `CLARVIS_CODE_DEBUG_LEVEL` silently falls back rather than erroring).
+    by `packages/code/tests/unit/cli-args.test.ts:133-152` (bad `--debug=loud` is a `usage-error` naming the flag) and
+    `:184-187` (an unrecognized `CLARVIS_CODE_DEBUG_LEVEL` silently falls back rather than erroring).
 19. **`installTerminalGuard`'s restore is idempotent**: a second call neither restores twice nor
     re-flushes the buffer. — `packages/code/src/adapters/terminal-guard.ts:104-105` — pinned by
     `packages/code/tests/unit/terminal-guard.test.ts:35-46`.
@@ -734,7 +734,7 @@ recovery screen with no further keypress — pinned by
     succeeded**; over SSH, OSC-52 is tried first and the native tool is skipped when it succeeds. —
     `packages/code/src/adapters/platform.ts` (`copyText`) — pinned by `packages/code/tests/integration/platform-copy.test.ts:68-107`.
 22. **`readClipboardImage` never falls back to `xsel` for image paste**, even though `xsel` is a text-copy
-    candidate. — `packages/code/src/adapters/platform.ts:156-171` — pinned by `packages/code/tests/integration/platform.test.ts:133-142`.
+    candidate. — `packages/code/src/adapters/platform.ts:140-155` — pinned by `packages/code/tests/integration/platform.test.ts:133-142`.
 23. **A clipboard helper process is force-killed (`SIGTERM` then, after `killGraceMs`, `SIGKILL`) on
     timeout, abort, or oversized stdout**, and stdout past `maxStdoutBytes` is truncated rather than
     buffered without bound. — `packages/code/src/adapters/clipboard-process.ts:101-121`, `:144-154` — pinned by
@@ -751,7 +751,7 @@ recovery screen with no further keypress — pinned by
 | A gate's `check()` throws | Caught by `checkGate`; logged as `doctor.check.failed` (error-level diagnostic with `check_id`/`duration_ms`); substitutes a synthetic `fail` result naming the thrown message and hinting `--debug` | `packages/code/src/onboarding/doctor.ts:538-566` |
 | A seeder finds no settings file in either scope | Declines with `reason:"no-settings-file"`, writes nothing | `packages/code/src/onboarding/seed-block-once.ts:51-52` |
 | A seeder finds a corrupt scope | Declines with `reason:"corrupt"`, writes nothing (would fail anyway) | `packages/code/src/onboarding/seed-block-once.ts:50` |
-| Native clipboard tool spawn fails (`ENOENT`, `EPERM`, ...) | Reported as `result.error`, treated as a miss — the next candidate (or OSC-52 fallback) is tried, never a thrown exception reaching `Platform.copyText` | `packages/code/src/adapters/platform.ts:108-113`, pinned `packages/code/tests/integration/platform-lifecycle.test.ts:436-444` |
+| Native clipboard tool spawn fails (`ENOENT`, `EPERM`, ...) | Reported as `result.error`, treated as a miss — the next candidate (or OSC-52 fallback) is tried, never a thrown exception reaching `Platform.copyText` | `packages/code/src/adapters/platform.ts:115-120`, pinned `packages/code/tests/integration/platform-lifecycle.test.ts:491-499` |
 | Clipboard helper hangs | Killed after `timeoutMs` (default 2000 ms); `child.kill` itself throwing is swallowed | `packages/code/src/adapters/clipboard-process.ts:101-121` |
 | `renderer.destroy()`/`suspend()`/`resume()` throws | Swallowed with an empty `catch {}` | `packages/code/src/adapters/platform.ts` (`createPlatform`), pinned `packages/code/tests/integration/platform-lifecycle.test.ts:398-403` |
 | A registered `onShutdown` hook throws or its promise rejects | Wrapped in `Promise.resolve().then(...)`, awaited via `Promise.allSettled`, so one hook's failure never blocks another's | `packages/code/src/adapters/platform.ts` (`createPlatform`), pinned `packages/code/tests/integration/platform-lifecycle.test.ts:280-293` |
@@ -817,8 +817,8 @@ recovery screen with no further keypress — pinned by
   `commands.tsx` (§2.11, §4.11), while their key-binding *machinery* (`LevelSpec`, `bindLevelKeys`,
   `ViewFrame`) belongs to `code-keyboard-and-navigation`.
 - `packages/code/src/app/commands.tsx`'s `/debug` slash command (`applyDebugCommand`,
-  `packages/code/src/app/commands.tsx:317-350` — doc comment `:315-325`, body `:326-348`) is the sole caller of
-  `DebugSessionController.open`/`close`/`status`. Its final branch (`:341-342`) is the "kernel records
+  `packages/code/src/app/commands.tsx:387-420`) is the sole caller of
+  `DebugSessionController.open`/`close`/`status`. Its final branch (`:415-419`) is the "kernel records
   need a relaunch with --debug" notice, fired whenever `open()` did not report a retune.
 
 ## 8. Open questions

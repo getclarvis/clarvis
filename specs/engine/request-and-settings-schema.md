@@ -57,7 +57,7 @@ Barrel: `packages/loop/src/validation/index.ts:5-7` re-exports `ajv`, `profile-r
 `request-schema`. The barrel itself has no package-root export path, and
 `@clarvis/loop`'s bare export (`.` → `src/lib.ts`) re-exports none of these symbols either, so the
 outside world reaches them only through the narrower `@clarvis/loop/host` subpath
-(`packages/loop/src/host.ts:58-64`), which is what `@clarvis/kernel` actually imports (see §7).
+(`packages/loop/src/host.ts:60-66`), which is what `@clarvis/kernel` actually imports (see §7).
 
 ### 2.2 Settings (`src/settings/**`, engine half)
 
@@ -66,13 +66,13 @@ outside world reaches them only through the narrower `@clarvis/loop/host` subpat
 | `settingsSchema` | Zod object, `.strict()` | `packages/loop/src/settings/settings-schema.ts:381-442` |
 | `SettingsFile` | `z.infer<typeof settingsSchema>` | `packages/loop/src/settings/settings-schema.ts:444` |
 | `mcpServerSettingsSchema` | `mcpServerBase.strict().superRefine(refineMcpServer)` | `packages/loop/src/settings/settings-schema.ts:334` |
-| `mcpServerPluginSchema` | `mcpServerBase.superRefine(refineMcpServer)` (no `.strict()`) | `packages/loop/src/settings/settings-schema.ts:358-360` |
+| `mcpServerPluginSchema` | `z.preprocess(inferMcpTransport, mcpServerBase).superRefine(refineMcpServer)` (no `.strict()`) | `packages/loop/src/settings/settings-schema.ts:358-360` |
 | `pluginNameField` | lowercase filesystem-safe token with `.`, `_`, `-`; rejects `--`, `..`, edge separators and 3 reserved names | `packages/loop/src/settings/settings-schema.ts:119-131` |
 | `settingsSchemaFor` | `(registry?: CapabilityRegistry) => z.ZodType<SettingsFile>` | `packages/loop/src/settings/capability-settings.ts:42` |
 | `readCapabilitySettings` | `<T>(settings, spec: CapabilitySettingsSpec) => T \| undefined` | `packages/loop/src/settings/capability-settings.ts:84` |
-| `mergeSettings` | `(scopes: SettingsScope[], registry?) => SettingsFile` | `packages/loop/src/settings/settings-merge.ts:148` |
+| `mergeSettings` | `(scopes: SettingsScope[], registry?) => SettingsFile` | `packages/loop/src/settings/settings-merge.ts:168` |
 | `mergeProviders` | `(...lists: (ProviderConfig[] \| undefined)[]) => ProviderConfig[] \| undefined` | `packages/loop/src/settings/settings-merge.ts:44` |
-| `SETTINGS_MERGE_STRATEGY_KEYS` | `(keyof SettingsFile)[]` | `packages/loop/src/settings/settings-merge.ts:130` |
+| `SETTINGS_MERGE_STRATEGY_KEYS` | `(keyof SettingsFile)[]` | `packages/loop/src/settings/settings-merge.ts:150` |
 | `settingsServerToEngine` | `(name: string, entry: McpServerSettings) => McpServerConfig` | `packages/loop/src/settings/engine-server.ts:66` |
 | `agentFrontmatterSchema` | `agentProfileSchema.omit(...).extend(...).loose()` | `packages/loop/src/settings/agent-frontmatter.ts:97` |
 | `splitAgentFrontmatter` | `(raw: string, mode?: "strict" \| "lenient") => RawAgentFrontmatter` | `packages/loop/src/settings/agent-frontmatter.ts:39` |
@@ -93,10 +93,10 @@ only referenced here as a coupling (§7).
 `packages/kernel/src` returns nothing). Every one of `mergeSettings`, `settingsSchemaFor`,
 `agentFrontmatterSchema`, `profileReadinessIssues`, `readCapabilitySettings`, `BUILTIN_GRANT_NAMES`,
 `splitAgentFrontmatter`, `settingsSchema`, `providerConfigSchema` and `grantSchema` reaches
-`@clarvis/kernel` through the single `@clarvis/loop/host` export (`packages/loop/src/host.ts:1-90`),
+`@clarvis/kernel` through the single `@clarvis/loop/host` export (`packages/loop/src/host.ts:1-104`),
 which is the sanctioned "host composition surface for config, provider, plugin, and sandbox policy"
 (`packages/loop/src/host.ts:2`). `validateBody` itself is **not** re-exported from `host.ts`; it is
-called only from inside the engine (`packages/loop/src/runtime/execute-run.ts:296`) and separately
+called only from inside the engine (`packages/loop/src/runtime/execute-run.ts:298`) and separately
 exposed for tests via `packages/loop/src/testing/index.ts` (`validateBody`).
 
 ## 3. Data and formats
@@ -476,7 +476,7 @@ elicit_wait_ms !== 0`). It is called **twice** for one run: once inside `validat
 (`packages/loop/src/validation/request/identity-rules.ts:45-55`) — purely to get a topology-valid
 `RunShape` for the remaining structural rules — and again by `executeRun` with the real,
 capability-derived `capabilityNeedsHuman` value once every registered capability has been asked
-`requiresUserInput?.(requestView)` (`packages/loop/src/runtime/execute-run.ts:299-301`). Only the
+`requiresUserInput?.(requestView)` (`packages/loop/src/runtime/execute-run.ts:302-304`). Only the
 second `shape` is the one the rest of the run uses.
 
 ### 4.7 Grant admission (`grant-registry.ts`)
@@ -520,7 +520,7 @@ manifest schema is composed statically from the engine's own built-in specs alon
 ignore a registered spec's claim); else extends `settingsSchema` with `{ [spec.key]:
 spec.schema.optional() }` and re-`.strict()`s.
 
-`mergeSettings(scopes, registry?)` (`packages/loop/src/settings/settings-merge.ts:148-163`) folds an
+`mergeSettings(scopes, registry?)` (`packages/loop/src/settings/settings-merge.ts:168-183`) folds an
 ascending-precedence list of `SettingsScope`s (`{ origin, settings }`) key by key through a
 `STRATEGIES` table built once at module load: `CORE_STRATEGIES` for `providers` (union by name, later
 wins — `mergeProviders`), `mcpServers` (shallow record merge, later wins per key —
@@ -528,10 +528,10 @@ wins — `mergeProviders`), `mcpServers` (shallow record merge, later wins per k
 (last-wins), `enabledPlugins` (exact-reference concatenation with duplicate identities removed) and
 `marketplaces` (distinct-string concatenation — first-seen order, later scopes can only add); plus
 one `specStrategy` per entry of `BUILTIN_SETTINGS_SPECS`
-(`packages/loop/src/settings/settings-merge.ts:124-127`); plus, inside `mergeSettings` itself, one
+(`packages/loop/src/settings/settings-merge.ts:143-147`); plus, inside `mergeSettings` itself, one
 more `specStrategy` per **registry**-supplied spec not already in `STRATEGIES`
-(`packages/loop/src/settings/settings-merge.ts:157-161`) — so a capability registered only at runtime
-(not among the engine's built-ins) still merges correctly. `specStrategy` (`:96-106`) collects every
+(`packages/loop/src/settings/settings-merge.ts:177-181`) — so a capability registered only at runtime
+(not among the engine's built-ins) still merges correctly. `specStrategy` (`:117-127`) collects every
 scope defining the key as a `SettingsValueScope`, then either takes the last one (`spec.merge ===
 "lastWins"`) or calls the spec's own custom fold function.
 
@@ -541,7 +541,7 @@ qualified references are rejected. Environment resolution happens after the oper
 layers are read and before plugin settings fragments are folded; no Environment data is introduced
 into this schema or merge table.
 
-A **module-load guard** (`packages/loop/src/settings/settings-merge.ts:132-136`) throws immediately
+A **module-load guard** (`packages/loop/src/settings/settings-merge.ts:152-156`) throws immediately
 if any key of `settingsSchema.shape` lacks an entry in `STRATEGIES` — so a new top-level settings key
 cannot ship without a merge strategy being written for it in the same change.
 
@@ -552,11 +552,11 @@ nothing itself (delegates fence-splitting to `@clarvis/capability`'s `splitFront
 YAML-parses the frontmatter text. `"strict"` mode is the default; `"lenient"` is what every
 production *read/list* path uses so a malformed file still lists (degrading only its frontmatter to
 `{}`, never dropping the agent) — `@clarvis/kernel`'s `parseAgentFile`
-(`packages/kernel/src/config/file-config-store.ts:697`) and its plugin-manifest counterpart
-(`packages/kernel/src/plugins/plugin-contributions.ts:570-581`) both call it with `"lenient"`. The
+(`packages/kernel/src/config/file-config-store.ts:740-741`) and its plugin-manifest counterpart
+(`packages/kernel/src/plugins/plugin-contributions.ts:568-582`) both call it with `"lenient"`. The
 **only** production call in `"strict"` mode anywhere in the monorepo is the same `parseAgentFile`,
 immediately after its lenient parse, wrapped in a `try`/`catch` whose sole purpose is to populate
-`AgentRecord.malformed` as a diagnostic string for listing (`packages/kernel/src/config/file-config-store.ts:699-703`)
+`AgentRecord.malformed` as a diagnostic string for listing (`packages/kernel/src/config/file-config-store.ts:743-748`)
 — the throw is caught and never propagated to reject a write, block a save, or reach an author as an
 error. `agentPromptOf(basePrompt, body)`
 (`packages/loop/src/settings/agent-frontmatter.ts:141-144`) prefers a non-blank trimmed `body` and
@@ -628,8 +628,8 @@ asserts every `require(...)` call is nested inside a function).
 same optional prompt-expansion context, while the kernel adds it only for a successfully resolved,
 user-invoked skill command.
 Production: `packages/loop/src/runtime/capabilities/hooks.ts:35-53`,
-`packages/capability/src/api.ts:473-481`, `packages/kernel/src/runs/settings-assembler.ts:382-389`,
-`:460-466`. Test: `packages/kernel/tests/component/settings-assembler.test.ts:540-579`.
+`packages/capability/src/api.ts:480-488`, `packages/kernel/src/runs/settings-assembler.ts:482-488`.
+Test: `packages/kernel/tests/component/settings-assembler.test.ts:540-579`.
 
 ### Further invariants derived directly from the code (not in the numbered catalog above)
 
@@ -666,8 +666,8 @@ key of `settingsSchema.shape`).
 **E.** A settings-merge module-load guard throws if any key in `settingsSchema.shape` lacks a
 `STRATEGIES` entry, so a new top-level settings field cannot ship without an explicit merge
 strategy.
-Production: `packages/loop/src/settings/settings-merge.ts:132-136`. Test:
-`packages/loop/tests/unit/settings-merge.test.ts:275-280` (asserts
+Production: `packages/loop/src/settings/settings-merge.ts:152-156`. Test:
+`packages/loop/tests/unit/settings-merge.test.ts:282-287` (asserts
 `SETTINGS_MERGE_STRATEGY_KEYS` equals `Object.keys(settingsSchema.shape)`, sorted).
 
 **F.** `enabledPlugins` and `marketplaces` are additive across settings scopes. Marketplaces
@@ -675,7 +675,7 @@ de-duplicate by URL; plugin entries de-duplicate by the complete `{ scope, sourc
 A later scope cannot remove an earlier entry, and first-seen position is preserved.
 Production: `concatDistinct` and `concatDistinctPluginRefs` in
 `packages/loop/src/settings/settings-merge.ts`. Test:
-`packages/loop/tests/unit/settings-merge.test.ts:220-226`.
+`packages/loop/tests/unit/settings-merge.test.ts:225-231`.
 
 This is the builtin activation behavior, not custom Environment semantics. The kernel resolves every
 reference exactly; two selected installations with the same runtime name invalidate the Environment
@@ -689,7 +689,7 @@ result. Production:
 its position in the `scopes` argument order — proven at the settings-merge level even though the
 concrete fold (concatenation with plugin appended last) is owned by the hooks capability's own
 `merge` function, not by this module.
-Test: `packages/loop/tests/unit/settings-merge.test.ts:168-181`.
+Test: `packages/loop/tests/unit/settings-merge.test.ts:173-186`.
 
 **H.** `settingsServerToEngine` carries a fourth, sibling drift lock of the same family as INV-048's:
 `_engineServerDriftLock` only type-checks while `MapperCoversSettings` holds — every key of
@@ -699,7 +699,7 @@ comment states what it
 would silently miss without this: "a key added to the settings schema and forgotten here would
 otherwise be dropped in silence on the way to the engine — which is exactly how the
 `type`/`transport` mismatch survived from the initial commit."
-Production: `packages/loop/src/settings/engine-server.ts:9-37`.
+Production: `packages/loop/src/settings/engine-server.ts:9-46`.
 
 **I.** `compactionSchema`'s `superRefine` enforces two cross-field rules no single field's own type
 expresses: `compaction.target_fraction` must be `<= compaction.context_fraction`, and
@@ -710,7 +710,7 @@ Production: `packages/loop/src/validation/request/profile-schemas.ts:65-86`. Tes
 **J.** A provider model entry accepts `reasoning_efforts` only as an array of non-empty strings and
 retains it through both run-request and settings validation, while the hand-authored `ModelConfig`
 type carries the same optional field.
-Production: `packages/capability/src/api.ts:214-222`;
+Production: `packages/capability/src/api.ts:234-252`;
 `packages/loop/src/validation/request/provider-schemas.ts:75-80`. Test:
 `packages/loop/tests/unit/request-provider-validation.test.ts` (complete provider surface);
 `packages/loop/tests/unit/settings-schema.test.ts` (provider models map).
@@ -730,11 +730,11 @@ Production: `modelField` in `packages/loop/src/validation/request/profile-schema
 | A registered capability's request param collides with an engine field | Plain `Error` (not `ValidationError`) at schema-build time — a host bug, refused before any request is even parsed | `packages/loop/src/validation/request/parsing.ts:100-106` |
 | A registered capability's settings block collides with a built-in block, or claims an unreadable plugin surface | Plain `Error` at `settingsSchemaFor` call time | `packages/loop/src/settings/capability-settings.ts:45-63` |
 | An agent markdown file's frontmatter fence is malformed / YAML fails to parse, in `"lenient"` mode | Degrades to `{}` frontmatter, keeps the file's body — the agent still lists and runs | `packages/loop/src/settings/agent-frontmatter.ts:44-62` |
-| Same failure, in `"strict"` mode | Throws — but the only production caller in `"strict"` mode (`@clarvis/kernel`'s `parseAgentFile`) immediately catches it itself and stores the message on `AgentRecord.malformed` for listing; the throw never reaches an author or blocks a save | `packages/loop/src/settings/agent-frontmatter.ts:45-47`; caught at `packages/kernel/src/config/file-config-store.ts:699-703` |
+| Same failure, in `"strict"` mode | Throws — but the only production caller in `"strict"` mode (`@clarvis/kernel`'s `parseAgentFile`) immediately catches it itself and stores the message on `AgentRecord.malformed` for listing; the throw never reaches an author or blocks a save | `packages/loop/src/settings/agent-frontmatter.ts:45-47`; caught at `packages/kernel/src/config/file-config-store.ts:743-748` |
 | Ajv fails to load (`require("ajv")` throws) | Not handled specially — propagates as a raw exception from `load()`; no fallback validator | `packages/loop/src/validation/ajv.ts:38-47` |
 | Profile readiness check given no `knownGrants` | Silently skips the `unknown_grant` rule entirely (returns no issues for grants) rather than guessing | `packages/loop/src/validation/profile-readiness.ts:173-186` |
 | A subscription provider carries an operator-owned endpoint, credential, header or body field | `ValidationError("invalid_provider_config")` with `reason: "subscription_field_forbidden"` and the first incompatible field in `details.field` | `packages/loop/src/validation/request/provider-rules.ts:111-129` |
-| `mergeSettings` producing a record/list past its `INPUT_LIMITS` bound | Plain `Error` thrown mid-merge (`mergeProviders`, `mergeRecord`, `concatDistinct`) | `packages/loop/src/settings/settings-merge.ts:52-56`, `:65-67`, `:86-88` |
+| `mergeSettings` producing a record/list past its `INPUT_LIMITS` bound | Plain `Error` thrown mid-merge (`mergeProviders`, `mergeRecord`, `concatDistinct`) | `packages/loop/src/settings/settings-merge.ts:52-56`, `:65-67`, `:85-87` |
 | A registered capability's settings block is present in `settings.json` but fails its own `spec.schema` | Raw `z.ZodError` — a third failure shape, neither this subsystem's own `ValidationError` family nor a plain `Error` at schema-composition time, surfaced instead at settings-*read* time | `packages/loop/src/settings/capability-settings.ts:90` |
 
 Nothing in this subsystem retries or times out — it is pure synchronous validation. Most failures are
@@ -754,8 +754,8 @@ schema at settings-read time, a third, uncoded shape the two-way framing above d
   layer every request/settings rule is written against; none of it is optional.
 - `packages/loop/src/runtime/capabilities/settings-specs.ts` — `capabilityRequestParamFields` (spread
   into `runRequestSchema`, `packages/loop/src/validation/request/request-schema.ts:8`, `:224`) and
-  `capabilitySettingsFields`/`BUILTIN_SETTINGS_SPECS` (spread/iterated by `packages/loop/src/settings/settings-schema.ts:3`,`:388`
-  and `packages/loop/src/settings/settings-merge.ts:7`,`:126`). This is a **static, compile-time** coupling: the request and
+  `capabilitySettingsFields`/`BUILTIN_SETTINGS_SPECS` (spread/iterated by `packages/loop/src/settings/settings-schema.ts:3`,`:421`
+  and `packages/loop/src/settings/settings-merge.ts:7`,`:143-150`). This is a **static, compile-time** coupling: the request and
   settings schemas' own inferred types depend on exactly which built-in capabilities exist, which is
   why the drift-lock types (`_runRequestDriftLock` etc.) are meaningful at all. Per-capability content
   behind these consts is owned by other documents (hooks-execution, grants-and-tool-exposure,
@@ -765,7 +765,7 @@ schema at settings-read time, a third, uncoded shape the two-way framing above d
 **Depended on by** (all runtime, via the package's export map — never a raw `src/` path from outside
 the package):
 
-- `packages/loop/src/runtime/execute-run.ts:296` calls `validateBody` directly (same package,
+- `packages/loop/src/runtime/execute-run.ts:298` calls `validateBody` directly (same package,
   internal import) — the one place inside the engine this subsystem's whole request pipeline runs.
 - `@clarvis/kernel` reaches `mergeSettings`, `settingsSchemaFor`, `agentFrontmatterSchema`,
   `profileReadinessIssues`, `readCapabilitySettings`, `BUILTIN_GRANT_NAMES`, `splitAgentFrontmatter`,
@@ -774,7 +774,7 @@ the package):
   `packages/kernel/src` for a direct `validation/`- or `settings/`-path import and finding none. This
   is what forces `host.ts` to exist as a distinct, narrow export subpath rather than the package's
   bare root: `packages/kernel/src/config/capability-registry.ts:33` builds `kernelSettingsSchema =
-  settingsSchemaFor(kernelCapabilityRegistry)`, and `packages/kernel/src/config/file-config-store.ts:580-610`
+  settingsSchemaFor(kernelCapabilityRegistry)`, and `packages/kernel/src/config/file-config-store.ts:597-627`
   is the only caller of `mergeSettings` across scopes in the whole monorepo outside this package's own
   tests.
 

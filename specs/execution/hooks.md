@@ -438,7 +438,7 @@ end: if any rewrite occurred, the verdict is `{ kind: "rewrite", arguments, mess
 advisories as the message); otherwise `{ kind: "advise", message }` if any advisory text
 accumulated, else `{ kind: "pass" }` (`:152-156`).
 
-For an **observer** event (`:166-172`): all selected hooks run concurrently via
+For an **observer** event (`:161-167`): all selected hooks run concurrently via
 `Promise.all(...map(run))`; the method itself returns `void`. Unlike the gate closure, nothing here
 folds the individual runs into one ordered outcome, so invariant #11's "operator always precedes
 plugin" guarantee — meaningful where a fold produces a single verdict or an ordered array — has no
@@ -446,15 +446,15 @@ observable effect at an observer event: the hooks are still *dispatched* in conf
 (`.map` iterates the array in order), but `Promise.all` gives no guarantee about the order in which
 their underlying subprocesses actually complete or log.
 
-For a **compaction** event (`pre_compact`, `:174-186`): every selected hook runs in sequence; each
+For a **compaction** event (`pre_compact`, `:169-181`): every selected hook runs in sequence; each
 successful `context` outcome becomes one `{ source: "hook", text }` `CompactionContribution`,
 collected into an array; anything else (pass, failure, advise, deny) contributes nothing.
 
-`EVENT_METHOD` (`:74-86`) is a **total** record over gate+observer+compaction events mapping each to
+`EVENT_METHOD` (`:71-85`) is a **total** record over gate+observer+compaction events mapping each to
 its `LifecycleHook` method name (mechanical `snake_case`→`onCamelCase` except the two tool events,
 which predate the naming). Only the methods with a configured spec are ever defined on the returned
-object (`:188-197`), and the function returns `undefined` when nothing gate/observer/compaction-shaped
-is configured (`:199`; test: "returns undefined when nothing gate- or observer-shaped is
+object (`:183-194`), and the function returns `undefined` when nothing gate/observer/compaction-shaped
+is configured (`:194`; test: "returns undefined when nothing gate- or observer-shaped is
 configured", `packages/hooks/tests/component/capability.test.ts:60-66`).
 
 #### Portable lifecycle and direct MCP execution
@@ -600,7 +600,7 @@ production runner never throws, but this guard is exercised against a runner dou
 logs a warning instead of propagating (`packages/hooks/src/capability.ts:248-270`; test:
 `packages/hooks/tests/component/capability.test.ts:720-746`, "swallows a throwing context hook
 rather than failing the run"). Returns `undefined` when nothing contributed; otherwise
-`` `${HOOKS_SEED_MARKER}\n${texts.join("\n\n")}\n${HOOKS_SEED_CLOSE}` `` (`:274-275`).
+`` `${HOOKS_SEED_MARKER}\n${texts.join("\n\n")}\n${HOOKS_SEED_CLOSE}` `` (`:269-270`).
 
 Confirmed against a **real** POSIX shell, not just the runner-double above, by
 `packages/hooks/tests/integration/capability-real-subprocess.test.ts`: "wraps every context hook's
@@ -627,7 +627,7 @@ text in one marked seed block", "swallows a failing context hook rather than fai
    first runs the prompt observers and then `buildSeedBlock` (`:396-403`), so a
    context-only config still contributes; a hook-only config contributes `undefined` from
    `seedBlock`, per test `packages/hooks/tests/component/capability.test.ts:764-771`). `forAgent` always returns `null` — no
-   per-agent surface (`:437`; test `packages/hooks/tests/component/capability.test.ts:634-642`).
+   per-agent surface (`:396`-`:404`; test `packages/hooks/tests/component/capability.test.ts:634-642`).
 
 `runUserPromptExpansionHooks` (`packages/hooks/src/capability.ts:197-231`) returns immediately when
 there is no host command context, selects only `PROMPT_HOOK_EVENTS`, fires each selected command,
@@ -635,12 +635,12 @@ and swallows structural runner throws. Tests pin one exact fire with the externa
 qualified generic command, plus zero fires without the context; a rejecting structural runner is
 also swallowed and reported (`packages/hooks/tests/component/capability.test.ts:662-718`). The settings assembler creates that
 context only for a resolved user-invoked skill and omits it for ordinary prompts and model-initiated
-loads (`packages/kernel/src/runs/settings-assembler.ts:460-466`; tests
-`packages/kernel/tests/component/settings-assembler.test.ts:541-599`).
+loads (`packages/kernel/src/runs/settings-assembler.ts:482-488`; tests
+`packages/kernel/tests/component/settings-assembler.test.ts:549-607`).
 
 The `Capability` object itself (returned by `createWorkspaceHooksCapability`, not its activation)
 **always** declares `seedMarker: HOOKS_SEED_MARKER` regardless of whether any hook is configured
-(`:358`), so a stale `<workspace-hooks>` block from a prior run is stripped even on a later run
+(`:358`-`:364`), so a stale `<workspace-hooks>` block from a prior run is stripped even on a later run
 where hooks are configured away entirely (test: "always declares its seed marker, so a stale block
 is stripped even when off", `packages/hooks/tests/component/capability.test.ts:607-613`).
 
@@ -722,7 +722,7 @@ The following invariants govern the behaviour covered above.
    `parse.test.ts`, but no test in this package specifically drives `post_tool_use` through
    `hookInvocationFor` and asserts `rewritable` is false there).
 8. **A rewrite replaces arguments wholesale, never merges them.** Stated at the `HookOutcome` type
-   (`packages/hooks/src/types.ts:152`) and at the loop's own `HookVerdict` (`packages/capability/src/api.ts:529-530`,
+   (`packages/hooks/src/types.ts:152`) and at the loop's own `HookVerdict` (`packages/capability/src/api.ts:536-537`,
    "The replacement is total, not a merge"). Within `compileWorkspaceHooks`, later hooks see the
    replaced arguments and "the last writer wins" (`packages/hooks/src/capability.ts:133`); pinned by
    `packages/hooks/tests/component/capability.test.ts:158-176`.
@@ -787,7 +787,7 @@ The following invariants govern the behaviour covered above.
     (`packages/hooks/src/parse.ts:202`). Pinned by `packages/hooks/tests/unit/parse.test.ts:9-15`.
 19. **Argument-match patterns are tested only against a clamped prefix** (`ARG_MATCH_MAX_CHARS =
     8192`) of the argument's text, to bound regex work against a model-authored value
-    (`packages/hooks/src/match.ts:16-26,156`). Pinned by
+    (`packages/hooks/src/match.ts:16-26,160`). Pinned by
     `packages/hooks/tests/unit/match.test.ts:185-191`.
 20. **A broken `match.args` regex makes the whole filter never fire, rather than being ignored.**
     `compileMatch` sets `broken: true` on a failed compile, and `matchesCandidate` treats a broken
@@ -808,9 +808,9 @@ The following invariants govern the behaviour covered above.
 23. **A prompt-expansion observer fires only for host-supplied user skill-command context, once in
     the seed phase, and can never block the run.** Production:
     `packages/hooks/src/capability.ts:197-231,391-403`; the host supplies it only from a resolved
-    skill invocation at `packages/kernel/src/runs/settings-assembler.ts:460-466`. Pinned:
+    skill invocation at `packages/kernel/src/runs/settings-assembler.ts:482-488`. Pinned:
     `packages/hooks/tests/component/capability.test.ts:662-718` and
-    `packages/kernel/tests/component/settings-assembler.test.ts:541-599`.
+    `packages/kernel/tests/component/settings-assembler.test.ts:549-607`.
 24. **Tool hook matching keeps both wire and canonical identities, while compatible stdin uses the
     external spelling.** Production: `packages/hooks/src/event-serialization.ts:95-124,230-237`,
     `packages/hooks/src/match.ts:145-155`, and `packages/loop/src/runtime/loop/loop.ts:494-508`.
@@ -891,8 +891,7 @@ statically or dynamically — the name occurs there only in TSDoc prose
 
 **Consumed by** `@clarvis/loop`, and only through `./capability`, and only **dynamically**, gated by
 `useHooks = builtins?.hooks !== false && env.CLARVIS_HOOKS_ENABLED && resolveHooks !== undefined`
-(`packages/loop/src/runtime/build-run-deps.ts:357-358,471`, with the
-`() => import("@clarvis/hooks/capability")` thunk at `:488`). The bare `.` entrypoint has **no
+(`packages/loop/src/runtime/build-run-deps.ts:401-403,524-531`). The bare `.` entrypoint has **no
 production consumer anywhere in the repository** — its only importers are this package's own
 integration tests (`packages/hooks/tests/integration/bun-spawn.test.ts:15`,
 `packages/hooks/tests/integration/real-subprocess.test.ts:26`) and one type-only import in the
@@ -914,7 +913,7 @@ i.e. by every import of the engine, whether or not `@clarvis/hooks` is ever load
 **`capability.ts` is a separate export subpath from `.`**, forced by the same reasoning in reverse:
 `.` (the executor) has zero production consumers of its bare form, while `./capability` is the only
 subpath `build-run-deps.ts` ever reaches, and only inside the `useHooks` conditional
-(`packages/hooks/src/capability.ts:10-15`; `packages/loop/src/runtime/build-run-deps.ts:494-501`).
+(`packages/hooks/src/capability.ts:10-15`; `packages/loop/src/runtime/build-run-deps.ts:526-540`).
 
 **`compileWorkspaceHooks`'s "only define methods with a spec" behavior is load-bearing for two
 engine-side fast paths outside this package's scope**: `buildPreFinalizeGate`'s `fastAcceptOk`

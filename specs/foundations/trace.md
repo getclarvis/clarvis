@@ -22,12 +22,12 @@ kinds — `TraceKind` is `BuiltinTraceKind | (string & {})`
 
 The persistence side exists so a run survives its own process. Two independent durable paths run
 concurrently: the batch path (`buildRecord` → `mapTrace` → `TraceStore.insert`, driven from
-`packages/loop/src/runtime/execute-run.ts:422-435`) writes one JSON file at the end of a run, and the
+`packages/loop/src/runtime/execute-run.ts:426-440`) writes one JSON file at the end of a run, and the
 journal path (`RunJournal.append` per durable entry,
 `packages/loop/src/runtime/run-trace.ts:162-166`) writes a `.jsonl` line as each event is recorded.
 When the process dies before the batch path completes, `recoverOrphans` folds the journal into an
-`interrupted` record (`packages/trace/src/json-trace-store.ts:1019`,
-`packages/trace/src/journal-recovery.ts:380`).
+`interrupted` record (`packages/trace/src/json-trace-store.ts:1022`,
+`packages/trace/src/journal-recovery.ts:382`).
 
 ## 2. Surface
 
@@ -181,17 +181,17 @@ not re-enumerated field-by-field here to avoid a second, driftable copy of the s
 | `generateExecutionId` | `() => \`exec_${randomUUID()}\`` | `packages/trace/src/execution-id.ts:8` |
 | `mapEntry` | `(entry, wallStartedAt, projectors?) => TraceEvent \| null` | `packages/trace/src/trace-mapper.ts:55` |
 | `mapTrace` | `(entries, wallStartedAt, projectors?) => Trace` | `packages/trace/src/trace-mapper.ts:530` |
-| `buildRecord` | `(input: BuildRecordInput) => ExecutionRecord` | `packages/trace/src/record-builder.ts:36` |
+| `buildRecord` | `(input: BuildRecordInput) => ExecutionRecord` | `packages/trace/src/record-builder.ts:38` |
 | `capDetail` | `<K extends TraceKind>(kind, detail) => TraceDetailFor<K>` | `packages/trace/src/cap-detail.ts:393` |
 | `truncate` / `truncateTail` | head-cap with marker / tail-cap without | `packages/trace/src/cap-detail.ts:105`, `:118` |
 | `deriveEventSpan` | `(event: TraceEvent) => EventSpan` | `packages/trace/src/event-span.ts:63` |
 | `iterationSpanId` | `(agent, subagentInstanceId, iteration) => string` | `packages/trace/src/event-span.ts:40` |
 | `createJsonTraceStore` | `(opts: JsonTraceStoreOptions) => JournalingTraceStore` | `packages/trace/src/json-trace-store.ts:378` |
 | `resolveTraceStore` | `(opts?) => { store, path }` | `packages/trace/src/trace-store-factory.ts:30` |
-| `createRunJournal` | `(opts: CreateRunJournalOptions) => RunJournal` | `packages/trace/src/journal.ts:130` |
-| `parseJournalChunks` | `(chunks: AsyncIterable<string>, limits) => Promise<JournalParseResult>` | `packages/trace/src/journal-recovery.ts:188` |
-| `repairUnsettledToolCalls` | `(events) => TraceEvent[]` | `packages/trace/src/journal-recovery.ts:254` |
-| `journalToRecord` | `(parsed: JournalParseSuccess) => ExecutionRecord` | `packages/trace/src/journal-recovery.ts:380` |
+| `createRunJournal` | `(opts: CreateRunJournalOptions) => RunJournal` | `packages/trace/src/journal.ts:132` |
+| `parseJournalChunks` | `(chunks: AsyncIterable<string>, limits) => Promise<JournalParseResult>` | `packages/trace/src/journal-recovery.ts:190` |
+| `repairUnsettledToolCalls` | `(events) => TraceEvent[]` | `packages/trace/src/journal-recovery.ts:256` |
+| `journalToRecord` | `(parsed: JournalParseSuccess) => ExecutionRecord` | `packages/trace/src/journal-recovery.ts:382` |
 | `writerStillRunning` | `(header) => boolean` | `packages/trace/src/journal-recovery.ts:69` |
 | `UNCOMPLETED_TOOL_RESULT` | `(name: string) => string` | `packages/trace/src/journal-recovery.ts:17` |
 | `TraceCleanup` | class with `start(intervalMs)`, `stop()`, `runOnce(): number` | `packages/trace/src/cleanup.ts:30` |
@@ -297,14 +297,14 @@ the `PersistenceError` it extends. It is not exported from `index.ts` — a call
 | `id` | `string` | `exec_<uuidv4>` when minted here (`packages/trace/src/execution-id.ts:8`) |
 | `owner_key_name` | `string` | |
 | `status` | `ExecutionStatus` | one of six: `completed`, `budget_exhausted`, `error`, `cancelled`, `soft_limit_declined`, `interrupted` (`packages/capability/src/execution-status.ts:16-23`) |
-| `started_at`, `ended_at`, `elapsed_ms` | `number` | absolute Unix ms; `ended_at = started_at + elapsed_ms` (`packages/trace/src/record-builder.ts:54`) |
+| `started_at`, `ended_at`, `elapsed_ms` | `number` | absolute Unix ms; `ended_at = started_at + elapsed_ms` (`packages/trace/src/record-builder.ts:56`) |
 | `request`, `response` | `RunRequest`, `RunResponse` | stored sanitized (`packages/trace/src/json-trace-store.ts:793-794`) |
 | `trace` | `Trace` | stored **verbatim** (`packages/trace/src/json-trace-store.ts:795`) — its events were sanitized at map time |
-| `total_input_tokens` … `total_cache_write_tokens` | `number` | summed from `response.usage.by_agent` (`packages/trace/src/record-builder.ts:42-47`) |
-| `final_context?` | `ContextSnapshotEntry[]` | omitted when absent (`packages/trace/src/record-builder.ts:63`) |
+| `total_input_tokens` … `total_cache_write_tokens` | `number` | summed from `response.usage.by_agent` (`packages/trace/src/record-builder.ts:44-49`) |
+| `final_context?` | `ContextSnapshotEntry[]` | omitted when absent (`packages/trace/src/record-builder.ts:65`) |
 | `capability_state?` | `Record<string, unknown>` | opaque to the engine (`packages/capability/src/trace-events.ts:517-526`) |
 | `host_metadata?` | `Record<string, unknown>` | opaque host snapshot, sanitized before durable storage (`packages/capability/src/trace-events.ts:541`, `packages/trace/src/json-trace-store.ts:805`) |
-| `recovery?` | `ExecutionRecovery` | present only on a damaged recovery (`packages/trace/src/journal-recovery.ts:416-418`) |
+| `recovery?` | `ExecutionRecovery` | present only on a damaged recovery (`packages/trace/src/journal-recovery.ts:421-423`) |
 
 `ExecutionStatus` has six members, and `interrupted` is documented at
 `packages/capability/src/execution-status.ts:11-12` as "never produced by a live run — only by
@@ -336,7 +336,7 @@ Rooted at `resolve(opts.dir)` (`packages/trace/src/json-trace-store.ts:380`); `r
 (`packages/paths/src/roots.ts:163`): percent-encoding that also escapes `.` (`:139-143`), falling
 back to `h_<sha256hex>` past 200 encoded bytes (`:166-167`). Round-tripped for `".."`, for an owner
 with `/`, and for an over-long id at
-`packages/trace/tests/integration/json-trace-store.test.ts:443`, `:453`, `:459`. Layout and modes
+`packages/trace/tests/integration/json-trace-store.test.ts:462`, `:472`, `:478`. Layout and modes
 pinned at `:415-426`.
 
 Record filenames are matched by `FILE_RE = /^(\d+)\.(.+)\.json$/` (`packages/trace/src/json-trace-store.ts:54`). Two
@@ -345,11 +345,11 @@ than guarded:
 
 - The sidecar suffix is `.summary`, **not** `.summary.json` (`:56-67`) — otherwise it would parse as
   a record whose id segment is `<seg>.summary`. Pinned at
-  `packages/trace/tests/integration/json-trace-store.test.ts:741` ("is not counted as an execution by
+  `packages/trace/tests/integration/json-trace-store.test.ts:760` ("is not counted as an execution by
   list, the index, or deleteOwner").
 - A journal is `.jsonl`, which `FILE_RE` (anchored on `.json$`) cannot match (`:121-127`), so a
   journal never enters the owner index, `list` or `getById`. Pinned at
-  `packages/trace/tests/integration/journal.test.ts:332`.
+  `packages/trace/tests/integration/journal.test.ts:360`.
 
 `.seq` is likewise excluded by `FILE_RE` (`:66`).
 
@@ -485,14 +485,14 @@ Mechanics inside the builtin branches:
 
 ### 4d. `buildRecord`
 
-`packages/trace/src/record-builder.ts:36`: sum `response.usage.by_agent` into four totals (`:42-47`),
+`packages/trace/src/record-builder.ts:38`: sum `response.usage.by_agent` into four totals (`:44-49`),
 take `elapsed_ms` from `usage.elapsed_ms` (`:48`), derive `ended_at = wallStartedAt + elapsed_ms`
 (`:54`), include `final_context`/`capability_state`/`host_metadata` only when supplied (`:63-67`).
 Pinned at `packages/trace/tests/unit/record-builder.test.ts:74`, `:113`, `:148`, `:161`, `:184`.
 
 ### 4e. `insert` on the JSON store
 
-`packages/trace/src/json-trace-store.ts:1205`. A `phase` variable tracks progress and appears in the
+`packages/trace/src/json-trace-store.ts:1208`. A `phase` variable tracks progress and appears in the
 failure log (`:1186`, `:1244-1253`); the three phases are `generation | lease | write` (`:210`).
 
 1. `ensureLocksDir()` (`:1188`).
@@ -568,7 +568,7 @@ The state machine, by (state, event):
 | `deleting(g')` | `ownerIndex` | unchanged | empty index (`:596`) |
 | `deleting(g')` | `recoverOrphans` | unchanged | owner skipped (`:1071`) |
 
-Pinned at `packages/trace/tests/integration/json-trace-store.test.ts:261`, `:290`, `:339`, `:379`.
+Pinned at `packages/trace/tests/integration/json-trace-store.test.ts:280`, `:309`, `:358`, `:398`.
 Lock-prefix disambiguation (an owner segment that is a prefix of another) pinned at `:251`, and rests
 on `ownerSegment` escaping `.` (`packages/paths/src/roots.ts:139-143`).
 
@@ -586,12 +586,12 @@ boundaries, not merely within one process's in-memory lease map.
 (`:566`) reads a small named file; `bumpSeq` (`:574`) writes a fresh `randomUUID()`. The comment at
 `:549-564` states the measurement behind not using `mtime`: "a rapid insert-then-delete (or any two
 mutations close enough in time) collides on the identical reported `mtimeMs` far too often to trust".
-Cross-instance freshness pinned at `packages/trace/tests/integration/json-trace-store.test.ts:574`
+Cross-instance freshness pinned at `packages/trace/tests/integration/json-trace-store.test.ts:593`
 (sees another instance's insert) and `:585` (stops seeing another instance's delete).
 
 `findEntry` (`:612`) answers from the index; on a miss it falls back to a directory scan **only** when
 the index is incomplete (`:616`). Past `maxOwnerIndexEntries` the index is marked `complete = false`
-(`:600-603`, `:1236`) and lookups degrade to the scan; pinned at `packages/trace/tests/integration/json-trace-store.test.ts:477`.
+(`:623-624`, `:1263`) and lookups degrade to the scan; pinned at `packages/trace/tests/integration/json-trace-store.test.ts:553-574`.
 The LRU is bounded by `maxOwnerIndexes` (`cacheOwnerIndex`, `:537-546`).
 
 `cleanup` deletes files directly, never through `deleteById`, so it does not bump `.seq`; instead it
@@ -609,11 +609,11 @@ then stream the directory keeping only the newest `limit + offset` rows in a wor
 sidecars existed have none". `listAcrossOwners` (`:1337`) delegates to `listOwner` when a `filter.owner`
 is given (`:1338`), otherwise walks every owner directory skipping `.locks` (`:1349-1350`).
 
-`sortDescPaginate` (`packages/trace/src/trace-store.ts:270`) sorts by `started_at` descending with a descending-`id`
-tiebreak (`:275-278`); pinned at `packages/trace/tests/integration/json-trace-store.test.ts:470`.
+`sortDescPaginate` (`packages/trace/src/trace-store.ts:287`) sorts by `started_at` descending with a descending-`id`
+tiebreak (`:292-295`); pinned at `packages/trace/tests/integration/json-trace-store.test.ts:546-551`.
 
-`normalizeTracePage` (`:245`) **throws** `PersistenceError` for a non-safe-integer, negative, or
-over-cap limit/offset (`:246-256`); pinned at `packages/trace/tests/integration/json-trace-store.test.ts:501`.
+`normalizeTracePage` (`:268`) **throws** `PersistenceError` for a non-safe-integer, negative, or
+over-cap limit/offset (`:269-279`); pinned at `packages/trace/tests/integration/json-trace-store.test.ts:577-594`.
 
 ### 4i. Journal lifecycle
 
@@ -621,10 +621,10 @@ over-cap limit/offset (`:246-256`); pinned at `packages/trace/tests/integration/
 set keyed `<ownerSeg>/<idSeg>` (`:969-970`), wraps `createRunJournal`, and releases the key on
 `discard()`/`close()` exactly once (`:976-994`).
 
-`createRunJournal` (`packages/trace/src/journal.ts:130`) opens with `openSync(path, "ax", 0o600)` (`:153`) — exclusive;
-the comment at `:116-118` says an `EEXIST` here "is a bug detector rather than a race guard" because
+`createRunJournal` (`packages/trace/src/journal.ts:132`) opens with `openSync(path, "ax", 0o600)` (`:155`) — exclusive;
+the comment at `:120-122` says an `EEXIST` here "is a bug detector rather than a race guard" because
 the store already reserved the id. Refusal to reopen pinned at
-`packages/trace/tests/integration/journal.test.ts:154`; the `0600` mode at `:362`.
+`packages/trace/tests/integration/journal.test.ts:182-194`; the `0600` mode at `:390-394`.
 
 Lines are `writeSync` and **deliberately not `fsync`ed** (`:121-128`): "The failure this guards
 against is *process* death … data handed to `write(2)` survives all three, because it sits in the
@@ -632,24 +632,24 @@ kernel's page cache."
 
 Every method is infallible by contract (`:67-73`). `die()` (`:135`) closes the fd, marks the journal
 dead, and logs **once**; subsequent calls no-op (`:136-137`, `:169`). Pinned at
-`packages/trace/tests/integration/journal.test.ts:97` (unopenable path), `:116` (append after close is
-silent), `:135` (mid-run append failure disables and stays quiet).
+`packages/trace/tests/integration/journal.test.ts:125-142` (unopenable path), `:144-156` (append after close is
+silent), `:163-180` (mid-run append failure disables and stays quiet).
 
 `discard()` (`:176`) closes and unlinks, swallowing errors. `close()` (`:192`) closes without
 unlinking. The loop calls `discard()` immediately after a successful `insert`
-(`packages/loop/src/runtime/execute-run.ts:434-435`) and `close()` in a `finally`
-(`packages/loop/src/runtime/execute-run.ts:498`).
+(`packages/loop/src/runtime/execute-run.ts:439-440`) and `close()` in a `finally`
+(`packages/loop/src/runtime/execute-run.ts:503`).
 
 ### 4j. Journal parsing
 
-`createJournalLineParser` (`packages/trace/src/journal-recovery.ts:134`) drives the package's one
+`createJournalLineParser` (`packages/trace/src/journal-recovery.ts:136`) drives the package's one
 journal parser, `parseJournalChunks` (`:188`), which is streaming and always bounded — there is no
 whole-text, unbounded variant beside it. The three limits are `JournalParseLimits`'s fields —
 `maxChars`, `maxLineChars`, `maxEvents` (`packages/trace/src/journal-recovery.ts:48-51`) — and
 `recoverOrphans`'s call site does not tune them independently:
 `maxChars` and `maxLineChars` are **both** bound to the same constant,
 `MAX_TRACE_RECOVERY_JOURNAL_BYTES`, while only `maxEvents` gets its own,
-`MAX_TRACE_RECOVERY_EVENTS` (`packages/trace/src/json-trace-store.ts:1148-1151`). Per line (`:155`):
+`MAX_TRACE_RECOVERY_EVENTS` (`packages/trace/src/json-trace-store.ts:1152-1156`). Per line (`:155`):
 
 | Input | Outcome | Line |
 |---|---|---|
@@ -679,7 +679,7 @@ version refused), `:45` (trailing partial not counted as damage), `:55` (unknown
 
 ### 4k. `journalToRecord`
 
-`packages/trace/src/journal-recovery.ts:380`:
+`packages/trace/src/journal-recovery.ts:382`:
 
 1. `repairUnsettledToolCalls(parsed.events)` (`:381`) — pair `tool_call_started` against `tool_call`
    by `call_id`, and append a synthetic terminal `tool_call` for every unsettled one, with
@@ -699,12 +699,12 @@ version refused), `:45` (trailing partial not counted as damage), `:55` (unknown
    run still fails. Recovery restores the audit trail and the accounting; it does not restore
    resumability."
 
-Pinned at `packages/trace/tests/unit/journal-recovery.test.ts:181`, `:203`, `:233`, `:251`, `:275`,
+Pinned at `packages/trace/tests/unit/journal-recovery.test.ts:181`, `:226`, `:256`, `:274`, `:298`,
 `:290`, `:308`.
 
 ### 4l. `recoverOrphans`
 
-`packages/trace/src/json-trace-store.ts:1019`. `staleCutoff = Date.now() - TMP_ORPHAN_GRACE_MS`
+`packages/trace/src/json-trace-store.ts:1022`. `staleCutoff = Date.now() - TMP_ORPHAN_GRACE_MS`
 (`:998`). A `scanBudget` of `maxRecoveryScanEntries` is threaded through both `readDirEntries` loops
 (`:1011`, `:1063`, `:1075`).
 
@@ -741,15 +741,15 @@ directory is not a reason to destroy the only surviving copy of a run."
 `writerStillRunning` (`packages/trace/src/journal-recovery.ts:69`) returns `false` for a missing writer or a different
 host (`:71`), `false` for *our own pid* (`:79`, because "a journal this process still holds open is
 already excluded by the store's live set"), and otherwise `kill(pid, 0)` with `EPERM` counted as alive
-(`:81-85`). Pinned at `packages/trace/tests/integration/journal.test.ts:404` (live sibling skipped)
-and `:419` (dead writer recovered).
+(`:81-85`). Pinned at `packages/trace/tests/integration/journal.test.ts:432-445` (live sibling skipped)
+and `:447-460` (dead writer recovered).
 
 Every pass ends by logging `trace.recovery_completed` with the report (`:1169-1179`); pinned at
 `packages/trace/tests/integration/observability.test.ts:294`.
 
 ### 4m. `cleanup`
 
-`packages/trace/src/json-trace-store.ts:1416`. Two cutoffs, deliberately different:
+`packages/trace/src/json-trace-store.ts:1419`. Two cutoffs, deliberately different:
 
 - `cutoffMs` — the caller's retention cutoff, applied to record `started_at` (`:920`) and to journal
   `started_at` (`:936`).
@@ -762,16 +762,16 @@ load-bearing: the caller can
 stop after a fixed number of examined entries, and the generator "resumes at the same cursor on the
 next cleanup interval instead of rescanning an unbounded history synchronously from the beginning".
 The cursor is held in the store-scope `cleanupScan` (`:961`, `:1429-1439`); pinned at
-`packages/trace/tests/integration/json-trace-store.test.ts:555`.
+`packages/trace/tests/integration/json-trace-store.test.ts:574`.
 
 Expired candidates are retained in a newest-first heap bounded by `cleanupBatch` (`:1413-1428`), then
 sorted oldest-first before deletion (`:1440`) — so a bounded batch removes the oldest first; pinned by
 the conformance case at `packages/trace/tests/contract/trace-store-conformance.ts:151` and by
-`packages/trace/tests/integration/json-trace-store.test.ts:533`. A `leases` candidate goes through `reclaimLocalLeaseSync` with
+`packages/trace/tests/integration/json-trace-store.test.ts:552`. A `leases` candidate goes through `reclaimLocalLeaseSync` with
 `staleMs: TMP_ORPHAN_GRACE_MS` (`:1449`), so a lock whose owner process is live is never reclaimed;
-pinned at `packages/trace/tests/integration/json-trace-store.test.ts:208`. A record's sidecar and generation sidecar are unlinked
+pinned at `packages/trace/tests/integration/json-trace-store.test.ts:227`. A record's sidecar and generation sidecar are unlinked
 alongside it and do **not** count against the batch (`:1459-1460`); pinned at
-`packages/trace/tests/integration/json-trace-store.test.ts:763`.
+`packages/trace/tests/integration/json-trace-store.test.ts:782`.
 
 `normalizeCleanupBatch` (`:276`) clamps to `[1, 10_000]` and maps non-finite to `10_000`.
 
@@ -779,7 +779,7 @@ alongside it and do **not** count against the batch (`:1459-1460`); pinned at
 `:140-146` states the consequence of the alternative: sweeping on the grace "would delete precisely the
 set `recoverOrphans` exists to read — leaving the crash record silently unrecoverable for any operator
 who configured a TTL." That test carries an explicit `REGRESSION:` marker at
-`packages/trace/tests/integration/journal.test.ts:371-374` and is pinned at `:376` and `:387`.
+`packages/trace/tests/integration/journal.test.ts:399-402` and is pinned at `:404-413` and `:415-422`.
 
 ### 4n. `TraceCleanup`
 
@@ -840,7 +840,7 @@ Each rule names the production line it is about and the test that pins it.
 
 **T-1 (INV-023).** A record insert is scoped by `(owner, id)`: the same execution id under two
 different owners is legal, a duplicate under the same owner is rejected with `ConflictError`.
-Production: `packages/trace/src/json-trace-store.ts:1215` and `:1227` (the two `findEntry` conflict
+Production: `packages/trace/src/json-trace-store.ts:1220` and `:1232` (the two `findEntry` conflict
 checks, before and under the lease) → `executionIdConflict`
 (`packages/capability/src/errors.ts:103`, whose `code` is `"execution_id_conflict"` at
 `packages/capability/src/errors.ts:51`); memory double at `packages/trace/src/testing.ts:36-42`.
@@ -848,7 +848,7 @@ Pinned: `packages/trace/tests/contract/trace-store-conformance.ts:68` and `:75`,
 backends from `packages/trace/tests/contract/trace-store.test.ts:9` and `:11`.
 
 **T-2 (INV-024).** Listing is owner-scoped, and an owner that never stored anything yields an empty
-result rather than an error. Production: `packages/trace/src/json-trace-store.ts:856` (`listOwner`
+result rather than an error. Production: `packages/trace/src/json-trace-store.ts:859` (`listOwner`
 reads only `ownerDir(owner)`), and `readDirEntries` returns on `ENOENT`/`ENOTDIR`
 (`packages/trace/src/json-trace-store.ts:499-502`). Pinned:
 `packages/trace/tests/contract/trace-store-conformance.ts:58`, `:93`.
@@ -856,31 +856,31 @@ reads only `ownerDir(owner)`), and `readDirEntries` returns on `ENOENT`/`ENOTDIR
 **T-3 (INV-025).** An owner's records list newest-first, and `limit`/`offset` paging leaves `total`
 page-independent. Production: `packages/trace/src/trace-store.ts:270` (`sortDescPaginate`), and
 `total` is incremented over every matching entry before paging
-(`packages/trace/src/json-trace-store.ts:867`). Pinned:
+(`packages/trace/src/json-trace-store.ts:870`). Pinned:
 `packages/trace/tests/contract/trace-store-conformance.ts:101`, `:110`.
 
 **T-4 (INV-026).** A listing's rows never include `request`, `response` or `trace`. Production:
 `recordToSummary` projects exactly nine scalars (`packages/trace/src/trace-store.ts:247-259`), and
-the sidecar holds only that projection (`packages/trace/src/json-trace-store.ts:814`). Pinned:
+the sidecar holds only that projection (`packages/trace/src/json-trace-store.ts:817`). Pinned:
 `packages/trace/tests/contract/trace-store-conformance.ts:117`.
 
 **T-5 (INV-027).** `deleteById` affects only the requesting owner's copy and reports whether a record
-existed. Production: `packages/trace/src/json-trace-store.ts:1299-1302` (`findEntry(owner, id)` first,
+existed. Production: `packages/trace/src/json-trace-store.ts:1302-1305` (`findEntry(owner, id)` first,
 `false` when absent). Pinned: `packages/trace/tests/contract/trace-store-conformance.ts:126`.
 
 **T-6 (INV-028).** A cleanup pass keyed on an age cutoff removes only records older than the cutoff,
 across every owner, and a bounded batch removes the oldest first. Production:
-`packages/trace/src/json-trace-store.ts:942` (`meta.startedAt < cutoffMs`) and `:1462` (`expired.sort`
+`packages/trace/src/json-trace-store.ts:946` (`meta.startedAt < cutoffMs`) and `:1547` (`expired.sort`
 ascending before deletion). Pinned:
 `packages/trace/tests/contract/trace-store-conformance.ts:134`, `:151`.
 
 **T-7 (INV-029).** `deleteOwner` reports the count removed and leaves other owners untouched; an owner
-with nothing stored reports zero. Production: `packages/trace/src/json-trace-store.ts:1335-1341`
+with nothing stored reports zero. Production: `packages/trace/src/json-trace-store.ts:1338-1344`
 (counts only entries of the previous generation in this owner's directory) and `:1323` (removes only
 `ownerDir(owner)`). Pinned: `packages/trace/tests/contract/trace-store-conformance.ts:165`, `:175`.
 
 **T-7a.** `listAcrossOwners` lists across every owner newest-first and, given an exact `owner` filter,
-returns only that owner's rows. Production: `packages/trace/src/json-trace-store.ts:1359-1360`
+returns only that owner's rows. Production: `packages/trace/src/json-trace-store.ts:1362-1363`
 (delegates to `listOwner` when `filter.owner` is given) and `packages/trace/src/trace-store.ts:270` (`sortDescPaginate`,
 shared with the single-owner path). Pinned:
 `packages/trace/tests/contract/trace-store-conformance.ts:179-194`.
@@ -961,75 +961,75 @@ only a genuinely absent payload becomes `{}`. Production: `packages/trace/src/tr
 Pinned: `packages/trace/tests/unit/trace-mapper.test.ts:138`, `:178`, `:200`, `:222`.
 
 **T-23.** The journal is opened exclusively (`"ax"`) at mode `0600` and never reopened. Production:
-`packages/trace/src/journal.ts:153`. Pinned:
-`packages/trace/tests/integration/journal.test.ts:154`, `:362`.
+`packages/trace/src/journal.ts:155`. Pinned:
+`packages/trace/tests/integration/journal.test.ts:182`, `:390`.
 
 **T-24.** No journal method ever throws; a failure disables the journal and is logged exactly once.
-Production: `packages/trace/src/journal.ts:135-150`, `:169`. Pinned:
-`packages/trace/tests/integration/journal.test.ts:97`, `:116`, `:135`.
+Production: `packages/trace/src/journal.ts:137-152`, `:174`. Pinned:
+`packages/trace/tests/integration/journal.test.ts:125`, `:144`, `:163`.
 
 **T-25.** A journal never enters the record namespace — not `list`, not `getById`, not the owner index,
 not `deleteOwner`'s count. Production: `FILE_RE` is anchored on `.json$`
 (`packages/trace/src/json-trace-store.ts:54`), so `.jsonl` cannot match (`:133-139`). Pinned:
-`packages/trace/tests/integration/journal.test.ts:332`.
+`packages/trace/tests/integration/journal.test.ts:360`.
 
 **T-26.** The summary sidecar likewise never enters the record namespace, because its name does not end
 in `.json`. Production: `packages/trace/src/json-trace-store.ts:56-67`, `:132`. Pinned:
-`packages/trace/tests/integration/json-trace-store.test.ts:741`.
+`packages/trace/tests/integration/json-trace-store.test.ts:760`.
 
 **T-27.** The sidecar is written **after** the record's rename, is not `fsync`ed, and every write
-failure is swallowed. Production: `packages/trace/src/json-trace-store.ts:813-814` (order) and
+failure is swallowed. Production: `packages/trace/src/json-trace-store.ts:816-817` (order) and
 `:709-722` (swallow + debug log). Pinned:
 `packages/trace/tests/integration/observability.test.ts:219`, `:230`; the read-side fallback at
-`packages/trace/tests/integration/json-trace-store.test.ts:730`, `:777`, `:786`.
+`packages/trace/tests/integration/json-trace-store.test.ts:749`, `:796`, `:805`.
 
 **T-28.** `list` must be able to serve a row from the full record when no sidecar exists. Production:
-`packages/trace/src/json-trace-store.ts:874-896`. Pinned:
-`packages/trace/tests/integration/json-trace-store.test.ts:718` (identical summary either way),
+`packages/trace/src/json-trace-store.ts:877-899`. Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:737` (identical summary either way),
 `:730` (still lists with the sidecar removed).
 
 **T-29.** `cleanup` ages journals on the retention cutoff, never on the orphan grace. Production:
-`packages/trace/src/json-trace-store.ts:956-959`. Pinned:
-`packages/trace/tests/integration/journal.test.ts:376` (carries an explicit `REGRESSION:` note at
+`packages/trace/src/json-trace-store.ts:959-962`. Pinned:
+`packages/trace/tests/integration/journal.test.ts:404` (carries an explicit `REGRESSION:` note at
 `:371-374`) and `:387`.
 
 **T-30.** `recoverOrphans` skips a journal this process holds open, one younger than the orphan grace,
 one whose record already exists, and one whose writer process is provably alive on this host.
-Production: `packages/trace/src/json-trace-store.ts:1122`, `:1134`, `:1123`, `:1156`;
+Production: `packages/trace/src/json-trace-store.ts:1125`, `:1137`, `:1126`, `:1159`;
 `writerStillRunning` at `packages/trace/src/journal-recovery.ts:69-86`. Pinned:
-`packages/trace/tests/integration/journal.test.ts:216`, `:225`, `:234`, `:404`.
+`packages/trace/tests/integration/journal.test.ts:244`, `:253`, `:262`, `:432`.
 
 **T-31 (INV-276).** An unrecoverable journal is renamed aside, never deleted — `.jsonl.corrupt` for a
 body that would not parse, `.jsonl.oversized` when a size or parse *limit* stopped it — and the host
 boots normally on top of it. Production:
-`packages/trace/src/json-trace-store.ts:1067` (`renameSync`, no `unlink` on the failure path), the two
+`packages/trace/src/json-trace-store.ts:1070` (`renameSync`, no `unlink` on the failure path), the two
 suffixes at `packages/trace/src/journal.ts:24`, `:27`, and the arms that choose between them at
-`packages/trace/src/json-trace-store.ts:1136-1139`, `:1157-1165`. Pinned:
-`packages/trace/tests/integration/journal.test.ts:247` (corrupt header), `:260` (oversized),
+`packages/trace/src/json-trace-store.ts:1139-1142`, `:1160-1168`. Pinned:
+`packages/trace/tests/integration/journal.test.ts:275-286` (corrupt header), `:288-299` (oversized),
 `packages/trace/tests/integration/observability.test.ts:311`, `:326` (failed rename reported); and
-end-to-end through a real host boot at `packages/kernel/tests/integration/file-kernel.test.ts:631`,
+end-to-end through a real host boot at `packages/kernel/tests/integration/file-kernel.test.ts:662`,
 which asserts the `.jsonl` is gone, the `.jsonl.corrupt` sidecar exists, and the kernel still
 serves.
 
 **T-32.** A recovered record carries `status: "interrupted"` and **no `final_context`**. Production:
-`packages/trace/src/journal-recovery.ts:388`, `:405`, and the absence of a `final_context` key in the
+`packages/trace/src/journal-recovery.ts:390`, `:407`, and the absence of a `final_context` key in the
 returned object (`:402-419`). Pinned:
 `packages/trace/tests/unit/journal-recovery.test.ts:181`.
 
 **T-33.** `recovery` is attached only when something was lost or synthesized, so an undamaged recovered
 record is indistinguishable from a normally persisted one. Production:
-`packages/trace/src/journal-recovery.ts:416-418`. Pinned:
-`packages/trace/tests/unit/journal-recovery.test.ts:275`, `:290`, `:308`;
-`packages/trace/tests/integration/journal.test.ts:188`;
+`packages/trace/src/journal-recovery.ts:421-423`. Pinned:
+`packages/trace/tests/unit/journal-recovery.test.ts:298`, `:313`, `:331`;
+`packages/trace/tests/integration/journal.test.ts:216`;
 `packages/trace/tests/integration/observability.test.ts:392` ("stays quiet about a journal that
 recovered intact").
 
 **T-34.** A journal event whose `type` this build does not recognise is retained verbatim. Production:
-`packages/trace/src/journal-recovery.ts:159-167` (only `type: string` is required). Pinned:
+`packages/trace/src/journal-recovery.ts:161-169` (only `type: string` is required). Pinned:
 `packages/trace/tests/unit/journal-recovery.test.ts:55`.
 
 **T-35.** A trailing partial line is not counted as damage; an interior bad line is. Production:
-`packages/trace/src/journal-recovery.ts:156` (`if (!trailing) skipped += 1`). Pinned:
+`packages/trace/src/journal-recovery.ts:158` (`if (!trailing) skipped += 1`). Pinned:
 `packages/trace/tests/unit/journal-recovery.test.ts:45`, `:75`.
 
 **T-36.** `request` and opaque `host_metadata` are stored sanitized while `final_context` and
@@ -1046,38 +1046,38 @@ insert path were to double-sanitize or stop sanitizing at map time.
 **T-38.** A stored record and a stored sidecar are size-checked by `stat` before their body is read.
 Production: `packages/trace/src/json-trace-store.ts:440-456` (`readBoundedUtf8`: `statSync` first,
 then a second `Buffer.byteLength` check after reading). Pinned:
-`packages/trace/tests/integration/json-trace-store.test.ts:673` (sparse oversized record), `:786`
+`packages/trace/tests/integration/json-trace-store.test.ts:778-804` (sparse oversized record), `:891-906`
 (sparse oversized sidecar).
 
 **T-39.** An oversized serialized record is rejected **before** it is published. Production:
-`packages/trace/src/json-trace-store.ts:810-812` (throw before `writeFileDurable` at `:813`). Pinned:
-`packages/trace/tests/integration/json-trace-store.test.ts:649`.
+`packages/trace/src/json-trace-store.ts:813-817` (throw before `writeFileDurable` at `:817`). Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:754-776`.
 
 **T-40.** An unreadable row is dropped from `items` while `total` still counts it, and the drop is
-logged. Production: `packages/trace/src/json-trace-store.ts:884-895` (`continue` after
+logged. Production: `packages/trace/src/json-trace-store.ts:887-898` (`continue` after
 `logRecordUnreadable`). Pinned:
 `packages/trace/tests/integration/observability.test.ts:160`, `:180`, `:200`;
-`packages/trace/tests/integration/json-trace-store.test.ts:597`, `:609`, `:622`.
+`packages/trace/tests/integration/json-trace-store.test.ts:616`, `:628`, `:641`.
 
 **T-41.** Owner-index freshness is guarded by `.seq` content, not directory `mtime`. Production:
 `packages/trace/src/json-trace-store.ts:587-600`, consumed at `:605-614`. Pinned:
-`packages/trace/tests/integration/json-trace-store.test.ts:574`, `:585`.
+`packages/trace/tests/integration/json-trace-store.test.ts:593`, `:604`.
 
 **T-42.** A `deleting` owner is invisible to `list`, to the index, and to recovery; an insert into it
 either waits for a live deleter to finish (by failing) or completes a dead deleter's transaction.
-Production: `packages/trace/src/json-trace-store.ts:863`, `:618`, `:1093`, `:684-714`. Pinned:
-`packages/trace/tests/integration/json-trace-store.test.ts:261`, `:290`, `:339`, `:379` — the `:290`
+Production: `packages/trace/src/json-trace-store.ts:866`, `:618`, `:1096`, `:684-714`. Pinned:
+`packages/trace/tests/integration/json-trace-store.test.ts:337-364`, `:366-413`, `:415-453`, `:455-481` — the `:366-413`
 case spawns a real second OS process (`packages/trace/tests/helpers/owner-delete-insert-worker.ts`)
 so the protocol is verified across process boundaries, not only in-process.
 
 **T-43.** `listAcrossOwners` works when detached from the store object. Production: `listOwner` is a
 free `const`, referenced rather than reached through `this`
-(`packages/trace/src/json-trace-store.ts:856`, `:1297`, `:1360`); the reason is stated at `:819-823`.
-Pinned: `packages/trace/tests/integration/json-trace-store.test.ts:634`.
+(`packages/trace/src/json-trace-store.ts:859`, `:1300`, `:1363`); the reason is stated at `:822-826`.
+Pinned: `packages/trace/tests/integration/json-trace-store.test.ts:653`.
 
 **T-44.** `list` refuses an out-of-range page rather than allocating for it. Production:
 `normalizeTracePage` throws `PersistenceError` (`packages/trace/src/json-trace-store.ts:267-278`).
-Pinned: `packages/trace/tests/integration/json-trace-store.test.ts:501`.
+Pinned: `packages/trace/tests/integration/json-trace-store.test.ts:520`.
 
 **T-45.** `TraceCleanup` with `ttlDays: 0` is a total no-op and its timer never keeps the process
 alive. Production: `packages/trace/src/cleanup.ts:42`, `:75`, `:50` (`unref`). Pinned:
@@ -1112,30 +1112,30 @@ material. Production: `JournalHeader.host_metadata`, `journalToRecord`,
 
 | Situation | Behaviour | Handler |
 |---|---|---|
-| duplicate id for an owner | `ConflictError` (`code: "execution_id_conflict"`) rejected from `insert` | `packages/trace/src/json-trace-store.ts:1216`, `:1228`; `packages/capability/src/errors.ts:103` |
-| a concurrent inserter holds the id lock | same `ConflictError` — the lease is non-waiting (`waitMs: 0`) | `packages/trace/src/json-trace-store.ts:1219-1223` |
-| a *stale* orphan id lock (crash) | reclaimed inline via `staleMs: TMP_ORPHAN_GRACE_MS`, insert proceeds | `packages/trace/src/json-trace-store.ts:1220` |
-| serialized record over `maxRecordBytes` | `TraceFileTooLargeError extends PersistenceError` before any write | `packages/trace/src/json-trace-store.ts:251-260`, `:810` |
-| stored record body corrupt on `getById` | `PersistenceError` naming the id, thrown | `packages/trace/src/trace-store.ts:15-24`; `packages/trace/src/json-trace-store.ts:1290` |
-| stored record body corrupt on `list` | dropped from the page, `total` unchanged, `trace.record_unreadable` warn | `packages/trace/src/json-trace-store.ts:891-895` |
-| stored record oversized on `list` | same, `reason: "too_large"` | `packages/trace/src/json-trace-store.ts:884-887` |
-| record missing under the row (`ENOENT`) | silently skipped | `packages/trace/src/json-trace-store.ts:888` |
+| duplicate id for an owner | `ConflictError` (`code: "execution_id_conflict"`) rejected from `insert` | `packages/trace/src/json-trace-store.ts:1219`, `:1231`; `packages/capability/src/errors.ts:103` |
+| a concurrent inserter holds the id lock | same `ConflictError` — the lease is non-waiting (`waitMs: 0`) | `packages/trace/src/json-trace-store.ts:1222-1226` |
+| a *stale* orphan id lock (crash) | reclaimed inline via `staleMs: TMP_ORPHAN_GRACE_MS`, insert proceeds | `packages/trace/src/json-trace-store.ts:1223` |
+| serialized record over `maxRecordBytes` | `TraceFileTooLargeError extends PersistenceError` before any write | `packages/trace/src/json-trace-store.ts:251-260`, `:813` |
+| stored record body corrupt on `getById` | `PersistenceError` naming the id, thrown | `packages/trace/src/trace-store.ts:15-24`; `packages/trace/src/json-trace-store.ts:1293` |
+| stored record body corrupt on `list` | dropped from the page, `total` unchanged, `trace.record_unreadable` warn | `packages/trace/src/json-trace-store.ts:894-898` |
+| stored record oversized on `list` | same, `reason: "too_large"` | `packages/trace/src/json-trace-store.ts:887-890` |
+| record missing under the row (`ENOENT`) | silently skipped | `packages/trace/src/json-trace-store.ts:891` |
 | sidecar missing / corrupt / oversized | falls back to the full record; no log on read | `packages/trace/src/json-trace-store.ts:761-768` |
 | sidecar cannot be written | swallowed, `trace.sidecar_write_failed` at **debug** | `packages/trace/src/json-trace-store.ts:731-744` |
-| owner deletion racing an insert | `PersistenceError("… was deleted while execution … was being persisted")`, partial record rolled back | `packages/trace/src/json-trace-store.ts:1232-1248` |
-| owner deletion racing another deletion | `PersistenceError("… deletion is in progress.")` | `packages/trace/src/json-trace-store.ts:674-675`, `:696`, `:1322` |
-| owner index outgrows `maxOwnerIndexEntries` | marked incomplete, lookups fall back to a directory scan, `trace.owner_index_evicted` at debug | `packages/trace/src/json-trace-store.ts:622-625`, `:1256-1260`, `:551-557` |
+| owner deletion racing an insert | `PersistenceError("… was deleted while execution … was being persisted")`, partial record rolled back | `packages/trace/src/json-trace-store.ts:1235-1251` |
+| owner deletion racing another deletion | `PersistenceError("… deletion is in progress.")` | `packages/trace/src/json-trace-store.ts:674-675`, `:696`, `:1325` |
+| owner index outgrows `maxOwnerIndexEntries` | marked incomplete, lookups fall back to a directory scan, `trace.owner_index_evicted` at debug | `packages/trace/src/json-trace-store.ts:622-625`, `:1259-1263`, `:551-557` |
 | more than `maxOwnerIndexes` owners | LRU eviction, same debug log | `packages/trace/src/json-trace-store.ts:559-568` |
-| any insert failure | `trace.insert_failed` **error** log carrying the `phase`, then re-thrown | `packages/trace/src/json-trace-store.ts:1265-1276` |
-| journal path unopenable | journal disabled, one warn, run continues without crash recovery | `packages/trace/src/journal.ts:146-149`, `:164` |
-| journal append fails mid-run | journal disabled, one warn, subsequent appends no-op | `packages/trace/src/journal.ts:172-174` |
-| journal header unparseable at recovery | renamed `.jsonl.corrupt`, `trace.journal_quarantined` warn | `packages/trace/src/json-trace-store.ts:1157-1165` |
-| journal exceeds a parse limit | renamed `.jsonl.oversized`, same warn with `reason: "limit"` | `packages/trace/src/json-trace-store.ts:1157-1165` |
-| journal file exceeds `MAX_TRACE_RECOVERY_JOURNAL_BYTES` | quarantined `.jsonl.oversized` **without reading the body** | `packages/trace/src/json-trace-store.ts:1136-1139` |
-| quarantine rename itself fails | counted anyway, warn says it "stays in place and is re-examined on every start" | `packages/trace/src/json-trace-store.ts:1065-1084` |
-| a recovery budget runs out | `exhausted: true`, `trace.recovery_budget_exhausted` warn naming which bound, remaining journals left on disk | `packages/trace/src/json-trace-store.ts:1035-1051` |
-| recovered record is incomplete | `recovery` on the record **and** `trace.journal_recovery_degraded` warn | `packages/trace/src/journal-recovery.ts:416`; `packages/trace/src/json-trace-store.ts:1174-1187` |
-| `insert` of a recovered record throws | that journal is skipped and left on disk | `packages/trace/src/json-trace-store.ts:1168-1173` |
+| any insert failure | `trace.insert_failed` **error** log carrying the `phase`, then re-thrown | `packages/trace/src/json-trace-store.ts:1268-1279` |
+| journal path unopenable | journal disabled, one warn, run continues without crash recovery | `packages/trace/src/journal.ts:148-151`, `:169` |
+| journal append fails mid-run | journal disabled, one warn, subsequent appends no-op | `packages/trace/src/journal.ts:177-179` |
+| journal header unparseable at recovery | renamed `.jsonl.corrupt`, `trace.journal_quarantined` warn | `packages/trace/src/json-trace-store.ts:1160-1168` |
+| journal exceeds a parse limit | renamed `.jsonl.oversized`, same warn with `reason: "limit"` | `packages/trace/src/json-trace-store.ts:1160-1168` |
+| journal file exceeds `MAX_TRACE_RECOVERY_JOURNAL_BYTES` | quarantined `.jsonl.oversized` **without reading the body** | `packages/trace/src/json-trace-store.ts:1139-1142` |
+| quarantine rename itself fails | counted anyway, warn says it "stays in place and is re-examined on every start" | `packages/trace/src/json-trace-store.ts:1068-1087` |
+| a recovery budget runs out | `exhausted: true`, `trace.recovery_budget_exhausted` warn naming which bound, remaining journals left on disk | `packages/trace/src/json-trace-store.ts:1038-1054` |
+| recovered record is incomplete | `recovery` on the record **and** `trace.journal_recovery_degraded` warn | `packages/trace/src/journal-recovery.ts:421`; `packages/trace/src/json-trace-store.ts:1177-1190` |
+| `insert` of a recovered record throws | that journal is skipped and left on disk | `packages/trace/src/json-trace-store.ts:1171-1176` |
 | `cleanup` throws inside `TraceCleanup` | caught, logged, count so far returned, retried next interval | `packages/trace/src/cleanup.ts:124-130` |
 | `cleanup` backlog exceeds the pass cap | warn naming `max_passes`/`max_entries`; backlog left for the next interval | `packages/trace/src/cleanup.ts:100-110` |
 | `list` limit/offset out of range | `PersistenceError`, thrown | `packages/trace/src/json-trace-store.ts:268-278` |
@@ -1144,9 +1144,9 @@ material. Production: `JournalHeader.host_metadata`, `journalToRecord`,
 Two degradations are worth naming as *policy* rather than mechanics, because the code states them:
 
 - **The journal is best effort and must never fail a run.** `RunJournal`'s contract at
-  `packages/trace/src/journal.ts:67-73`: "A run must never fail because its journal did — the journal
+  `packages/trace/src/journal.ts:69-75`: "A run must never fail because its journal did — the journal
   is a best-effort improvement over losing the run entirely, not a new way to lose it."
-- **Recovery restores the audit trail, not resumability.** `packages/trace/src/journal-recovery.ts:373-378`
+- **Recovery restores the audit trail, not resumability.** `packages/trace/src/journal-recovery.ts:375-380`
   and `packages/trace/src/trace-store.ts:183-186`.
 
 ## 7. Coupling
@@ -1171,12 +1171,12 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
 
 | Consumer | What it takes | Line |
 |---|---|---|
-| `loop` | `createTrace` + `TraceHandle` for the run's recorder | `packages/loop/src/runtime/orchestrator.ts:22-23`, `:348` |
+| `loop` | `createTrace` + `TraceHandle` for the run's recorder | `packages/loop/src/runtime/orchestrator.ts:22-23`, `:349` |
 | `loop` | `mapEntry` in the live/journal bridge | `packages/loop/src/runtime/run-trace.ts:7`, `:164` |
 | `loop` | `generateExecutionId`, `mapTrace`, `buildRecord`, `TraceStore`, `RunJournal` in `executeRun` | `packages/loop/src/runtime/execute-run.ts:7-19` |
 | `loop` | `resolveTraceStore` in `buildExecuteRunDeps` | `packages/loop/src/runtime/build-run-deps.ts:16` |
-| `loop` | re-exports `TraceStore`, `TraceCleanup`, `generateExecutionId`, `ResolvedTraceStore` from `lib.ts`, and `deriveEventSpan`/`EventSpan` from `host.ts` | `packages/loop/src/lib.ts:26`, `:82-85`; `packages/loop/src/host.ts:65` |
-| `kernel` | `TraceCleanup` + `TraceStore` in file-kernel composition | `packages/kernel/src/file-kernel.ts:42` |
+| `loop` | re-exports `TraceStore`, `TraceCleanup`, `generateExecutionId`, `ResolvedTraceStore` from `lib.ts`, and `deriveEventSpan`/`EventSpan` from `host.ts` | `packages/loop/src/lib.ts:35`, `:91-94`; `packages/loop/src/host.ts:67` |
+| `kernel` | `TraceCleanup` + `TraceStore` in file-kernel composition | `packages/kernel/src/file-kernel.ts:46` |
 | `kernel` | `MAX_TRACE_LIST_LIMIT` / `MAX_TRACE_LIST_OFFSET` for run pagination | `packages/kernel/src/runs/pagination.ts:1` |
 
 ### What forces the direction
@@ -1201,7 +1201,7 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
 - **Which events reach a client and with what durability** — [kernel-run-service-and-events](../hosts/kernel-runs.md). This
   package produces `TraceEvent`s; the kernel decides which become protocol `RunEvent`s.
 - **Boot-time orchestration of `recoverOrphans` and `TraceCleanup.start`** —
-  [kernel-composition-and-lifecycle](../hosts/kernel-composition.md). `packages/kernel/src/file-kernel.ts:42` is the call site.
+  [kernel-composition-and-lifecycle](../hosts/kernel-composition.md). `packages/kernel/src/file-kernel.ts:46` is the call site.
 - **The trace-vs-log rule and the logging vocabulary** — [observability-and-diagnostics](../cross-cutting/observability.md). The event
   names this package emits (`trace.insert_failed`, `trace.record_unreadable`,
   `trace.sidecar_write_failed`, `trace.owner_index_evicted`, `trace.journal_quarantined`,
@@ -1258,6 +1258,6 @@ Only two packages declare it: `@clarvis/loop` and `@clarvis/kernel` (their packa
   — the code states the mechanism and not the derivation, and none is invented here.
 - **Windows.** `@clarvis/trace` is not in the Windows CI job: it runs `@clarvis/paths`,
   `@clarvis/tools` and `@clarvis/plan` only
-  (`.github/workflows/ci.yml:152-155`). `process.kill(pid, 0)` (`packages/trace/src/journal-recovery.ts:81`) and the file-mode assertions
-  (`packages/trace/src/json-trace-store.ts:414-424`; `packages/trace/src/journal.ts:153`) are POSIX-shaped; whether they behave as specified
+  (`.github/workflows/ci.yml:165-171`). `process.kill(pid, 0)` (`packages/trace/src/journal-recovery.ts:81`) and the file-mode assertions
+  (`packages/trace/src/json-trace-store.ts:414-424`; `packages/trace/src/journal.ts:155`) are POSIX-shaped; whether they behave as specified
   on Windows is unverified from this repository.

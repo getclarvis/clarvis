@@ -366,6 +366,14 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
   if ((options.skillExecutionRoots?.length ?? 0) > 512) {
     throw new StartupError("Agent tools accept at most 512 skill execution roots.");
   }
+  let canonicalWorkspaceRoot = workspaceRoot;
+  if ((options.skillExecutionRoots?.length ?? 0) > 0) {
+    try {
+      canonicalWorkspaceRoot = realpathSync(workspaceRoot);
+    } catch {
+      throw new StartupError(`Workspace root cannot be canonicalized: ${workspaceRoot}`);
+    }
+  }
   const skillExecutionRoots = [
     ...new Set(
       (options.skillExecutionRoots ?? []).map((root) => {
@@ -380,7 +388,7 @@ export function resolveConfig(options: AgentToolsOptions): RuntimeConfig {
           if (error instanceof StartupError) throw error;
           throw new StartupError(`Skill execution root does not exist: ${absolute}`);
         }
-        const workspaceFromRoot = path.relative(resolved, workspaceRoot);
+        const workspaceFromRoot = path.relative(resolved, canonicalWorkspaceRoot);
         if (
           resolved === path.parse(resolved).root ||
           workspaceFromRoot === "" ||

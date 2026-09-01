@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { resolveConfig, StartupError } from "../../src/config.ts";
-import { cleanup, makeWorkspace, write } from "../helpers/fixtures.ts";
+import { canSymlink, cleanup, makeSymlink, makeWorkspace, write } from "../helpers/fixtures.ts";
 
 const noProbe = () => false;
 
@@ -138,6 +138,20 @@ describe("runtime config", () => {
       /Skill execution root is too broad/,
     );
   });
+
+  it.skipIf(!canSymlink)(
+    "rejects a skill root containing the workspace through an authored path alias",
+    () => {
+      const actual = join(root, "actual");
+      const alias = join(root, "alias");
+      mkdirSync(actual);
+      makeSymlink(actual, alias, "dir");
+
+      expect(() => resolveConfig({ workspaceRoot: alias, skillExecutionRoots: [actual] })).toThrow(
+        /Skill execution root is too broad/,
+      );
+    },
+  );
 
   it("rejects invalid numeric limits and an inverted shell timeout range", () => {
     for (const options of [

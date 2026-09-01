@@ -113,7 +113,8 @@ plugin. The skills registry exposes an execution root only for a host-approved r
 collects only those selected skill directories, and `@clarvis/tools` validates at most 512 canonical
 directories before merging them into the already-resolved `readOnlyPaths`. A filesystem root, the
 workspace itself, an ancestor containing the workspace, a missing entry, or a non-directory fails
-toolset construction. Production: `buildExecuteRunDeps` in
+toolset construction. The ancestor check canonicalizes both the skill root and workspace, including
+platform aliases such as macOS `/var` → `/private/var`. Production: `buildExecuteRunDeps` in
 `packages/loop/src/runtime/build-run-deps.ts` and `resolveConfig` in
 `packages/tools/src/config.ts`. Tests: `packages/skills/tests/integration/api.test.ts` and
 `packages/tools/tests/integration/config.test.ts`.

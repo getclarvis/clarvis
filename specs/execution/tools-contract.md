@@ -336,7 +336,9 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
    `confineToWorkspace` (`resolveConfig` in `packages/tools/src/config.ts`).
 6. Validate scratch roots, then canonicalize and de-duplicate at most 512 `skillExecutionRoots`.
    Missing/non-directory entries, the filesystem root, the workspace itself, and any ancestor of the
-   workspace fail startup (`resolveConfig`; pinned by `packages/tools/tests/integration/config.test.ts`).
+   workspace fail startup. Both sides of the containment comparison use their filesystem-canonical
+   identity, so authored platform aliases cannot bypass the broad-root refusal (`resolveConfig`;
+   pinned by `packages/tools/tests/integration/config.test.ts`).
 7. Emit one `debug` log, `event: "tools.config_resolved"`, including only the count
    `skill_execution_roots`, never their paths.
 8. Merge those roots into native-sandbox `readOnlyPaths`, then build the `RuntimeConfig`, validating

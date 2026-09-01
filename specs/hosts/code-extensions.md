@@ -118,9 +118,10 @@ Enter on an installed detail opens the Environment composer primed with that exa
 confirms that an update may change skills, MCP servers, hooks, or executable services before the
 kernel update/recompose path runs. `d` confirms uninstall, first removes active Environment
 membership and reconnects, then removes the checkout. Workspace-owned checkouts must be edited in
-the repository rather than deleted or updated through the host. A linked external checkout is also
-visible and activatable, but its absent managed install source suppresses `u`; kernel fetch and
-replacement boundaries independently reject an attempted update.
+the repository rather than deleted or updated through the host. The kernel projects updateability
+explicitly: only a global plugin with a managed Git origin exposes `u`; linked external, local-copy,
+npm, workspace, and otherwise unmanaged installs remain visible and activatable but suppress the
+action. Kernel fetch and replacement boundaries independently reject an attempted update.
 
 Selected plugin update/uninstall is refused while a run is active. A run keeps the content snapshot
 and fingerprint captured at its start; no list refresh, update, trust transition, or Environment
@@ -148,10 +149,14 @@ inventory convention owns the checkout.
 
 Marketplace entries may resolve to Git (including subdirectory plus ref/SHA selectors), a confined
 local directory, or npm (optional version and credential-free HTTPS registry). The browser carries
-the normalized `PluginInstallSource` to `KernelClient.plugins.installSource`; it never sends a raw
-catalog object to the kernel. A local entry discovered from disk is realpath-confined before its
-install action is enabled. A confined local entry inside a remotely cloned catalog is rewritten to
-that repository URL plus checkout-relative subdirectory because the browse checkout is deleted.
+the normalized `PluginInstallSource`, including the listing's `expected_name`, to
+`KernelClient.plugins.installSource`; it never sends a raw catalog object to the kernel. The kernel
+rejects a declared manifest-name mismatch and supplies the expected listing identity only when a
+supported foreign manifest omits its own name. The reader applies the same transport, selector, and
+npm-source checks as acquisition before it exposes an install action. A local entry discovered from
+disk is realpath-confined before its install action is enabled. A confined local entry inside a
+remotely cloned catalog is rewritten to that repository URL plus checkout-relative subdirectory
+because the browse checkout is deleted.
 `NOT_AVAILABLE` suppresses install; `INSTALLED_BY_DEFAULT` and `ON_INSTALL` remain visible policy
 metadata but do not mutate state during catalog load.
 
@@ -167,7 +172,7 @@ catalogs. Refresh clears cached fetch results and retries every exact URL.
   `packages/code/src/app/commands.tsx`; `addMarketplaceView` and `currentSourceError` in
   `MarketplaceBrowser`.
 - **Test:** `packages/code/tests/integration/marketplace.test.ts`,
-  `packages/code/tests/integration/marketplace-schema.test.ts`, and
+  `packages/loop/tests/unit/marketplace-schema.test.ts`, and
   `packages/code/tests/integration/app-commands.test.tsx`
   and `packages/code/tests/integration/marketplace-browser-render.test.tsx`.
 

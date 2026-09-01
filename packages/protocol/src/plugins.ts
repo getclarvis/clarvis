@@ -24,9 +24,22 @@ export interface PluginInstallTarget {
 
 /** A normalized marketplace source the kernel can fetch without dialect inference. */
 export type PluginInstallSource =
-  | { kind: "git"; url: string; subdir?: string; ref?: string; sha?: string }
-  | { kind: "local"; path: string }
-  | { kind: "npm"; package: string; version?: string; registry?: string };
+  | {
+      kind: "git";
+      url: string;
+      subdir?: string;
+      ref?: string;
+      sha?: string;
+      expected_name?: string;
+    }
+  | { kind: "local"; path: string; expected_name?: string }
+  | {
+      kind: "npm";
+      package: string;
+      version?: string;
+      registry?: string;
+      expected_name?: string;
+    };
 
 /** One external executable a plugin offers to a named capability. */
 export interface PluginCapabilityExecutable {
@@ -110,6 +123,8 @@ export interface PluginView {
   install_source?: string;
   /** Resolved Git revision of the installed checkout. */
   revision?: string;
+  /** Whether this exact installation has a managed Git checkout that can be updated. */
+  updateable?: boolean;
   /** Present when `plugin.json` is missing/invalid (the plugin will not load). */
   error?: string;
   /**

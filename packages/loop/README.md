@@ -102,7 +102,10 @@ every declared server failed terminally; any pending/deferred server keeps the e
 
 `rawBody` is validated into a `RunRequest`; the exact provider, profile, budget
 and orchestration fields are defined by the exported API types. Hosts normally
-assemble this request from their own configuration surface.
+assemble this request from their own configuration surface. Direct requests receive the same MCP
+enablement normalization as settings-derived requests: entries carrying `enabled: false` are removed
+before duplicate checks, connection acquisition, automatic-tool composition, and skill dependency
+filtering.
 
 `openai-codex` and `xai-grok` are strict subscription kinds: request/settings validation rejects an
 API-key variable, base URL, arbitrary headers, or arbitrary body on either. Different profiles in

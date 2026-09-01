@@ -63,6 +63,7 @@ export interface PluginView {
   screenshots?: string[];
   installSource?: string;
   revision?: string;
+  updateable?: boolean;
   error?: string;
   /** What the manifest declares that Clarvis does not act on; never fatal. */
   notes?: string[];
@@ -100,6 +101,7 @@ export function toPluginView(p: ProtoPluginView): PluginView {
     ...(p.screenshots !== undefined ? { screenshots: p.screenshots } : {}),
     ...(p.install_source !== undefined ? { installSource: p.install_source } : {}),
     ...(p.revision !== undefined ? { revision: p.revision } : {}),
+    ...(p.updateable !== undefined ? { updateable: p.updateable } : {}),
     ...(p.error !== undefined ? { error: p.error } : {}),
     ...(p.notes !== undefined && p.notes.length > 0 ? { notes: p.notes } : {}),
     contributions: {

@@ -576,7 +576,8 @@ denylist is derived from exactly this run's credentials"* (`packages/hooks/src/c
 | --- | --- | --- |
 | Clarvis-owned Git selecting a repository | `withoutGitRepositoryEnvironment(inherited)` — preserve ordinary/transport inputs, remove Git's complete repository-local set and `GIT_CEILING_DIRECTORIES` before `cwd`, `-C`, or a clone destination selects the repository | helper `packages/paths/src/git-environment.ts`; plugin fetch `packages/kernel/src/adapters/git/plugin-fetcher.ts`; plugin metadata `packages/kernel/src/adapters/filesystem/plugin-repository.ts`; memory workspace probe `packages/memory/src/workspace-state.ts`; client clone `packages/code/src/adapters/plugin-install.ts`; guarded host fallback `packages/tools/src/tools/host-vcs.ts` |
 | `host_vcs` argv fallback | `withoutGitRepositoryEnvironment(process.env)`, then remove `secretEnvNames`, disable prompts, hooks, and Git external protocols; ordinary host environment and credential transport remain | `packages/tools/src/tools/host-vcs.ts` (`hostEnvironment`) |
-| stdio MCP child | `{ ...getDefaultEnvironment(), ...server.env }` — values are normally interpolated, but remain literal when a portable adapter sets `expandVariables: false`; the caller's environment is **never** the base | `buildTransport` in `packages/mcp-client/src/client.ts` |
+| stdio MCP child | `{ ...getDefaultEnvironment(), ...server.env }` — authored values are normally interpolated, but remain literal when a portable adapter sets `expandVariables: false`; the caller's environment is **never** the base | `buildTransport` in `packages/mcp-client/src/client.ts` |
+| remote MCP request headers | authored headers follow `expandVariables`; `bearer_token_env_var` and `env_http_headers` always resolve their explicitly named values and the resulting headers remain confined to the configured resource origin | `buildTransport` in `packages/mcp-client/src/client.ts`; `createMCPRemoteFetch` in `packages/mcp-client/src/remote-fetch.ts` |
 | `shell` / `monitor` command (unsandboxed) | `withoutSecrets(process.env, secretEnvNames)` — a copy with the named keys deleted | `packages/tools/src/sandbox.ts` (`withoutSecrets`, applied by `sandboxCommand`) |
 | capability executable (plans/memory/tasks provider) | `{ ...inherited, ...additions }` — the **whole** kernel environment plus the declaration's interpolated `env` | `packages/kernel/src/capability-executables/session-manager.ts:76-84`, `:163` |
 
@@ -1015,6 +1016,18 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/kernel/src/plugins/plugin-manifest.ts`. Test:
     `packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
+59. **A marketplace cannot redirect an install to a different plugin identity or a source the
+    kernel will deterministically refuse.** Catalog parsing and acquisition share transport,
+    selector, and npm-source validation. Each install carries the listing's expected name; a
+    declared mismatch is refused, while an unnamed supported foreign manifest may use that stable
+    marketplace identity. Production: `pluginGitUrlIssue`, `pluginGitSelectorIssue`, and
+    `pluginNpmSourceIssue` in `packages/loop/src/settings/marketplace-schema.ts`,
+    `marketplaceInstallSource` in `packages/code/src/adapters/marketplace.ts`, and `installPrepared`
+    in `packages/kernel/src/plugins/plugin-service.ts`. Test:
+    `packages/loop/tests/unit/marketplace-schema.test.ts`,
+    `packages/code/tests/integration/marketplace.test.ts`, and
+    `packages/kernel/tests/integration/plugin-service.test.ts`.
+
 ## 6. Failure modes and degradation
 
 | Condition | Handler | Outcome |
@@ -1029,7 +1042,8 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 | Atomic write fails after creating a parent | `packages/tools/src/lib/atomic.ts:143-146` | the created directory is removed best-effort, then rethrow |
 | Batch commit fails mid-way | `packages/tools/src/lib/atomic.ts:283-288` (doc) / `:288` | rolled back; a failed undo becomes `io_error` naming the unrestorable originals |
 | Oversized tool result cannot be spilled | `packages/loop/src/runtime/context/tool-spill.ts:49-58`, `packages/tools/src/lib/output.ts:395-406` | degrades to a truncation marker naming no file; the run continues |
-| Unset `${VAR}` in an interpolation-enabled MCP `env`/`headers` or a provider header | `packages/capability/src/env-interpolate.ts:78` | `MissingEnvVarsError` naming the distinct variables; portable literal mode does not enter this path |
+| Unset `${VAR}` in an interpolation-enabled MCP `env`/`headers`, an environment-backed MCP credential, or a provider header | `resolveStringMap` in `packages/capability/src/env-interpolate.ts` | `MissingEnvVarsError` naming the distinct variables; portable literal mode skips only authored MCP maps, not explicit environment-backed credential declarations |
+| Marketplace source fails shared transport, selector, npm, or expected-name validation | `readSource` in `packages/loop/src/settings/marketplace-schema.ts`; `installPrepared` in `packages/kernel/src/plugins/plugin-service.ts` | listing remains visible but non-installable when acquisition is impossible; a staged identity mismatch is refused before inventory mutation |
 | Forbidden provider body key, validation path | `packages/loop/src/validation/request/provider-rules.ts:43-48` | `ValidationError("invalid_provider_config")` — hard failure with a diagnostic |
 | Forbidden provider body key, adapter path | `packages/llm/src/openai-compatible-request.ts:186` | **silently dropped** |
 | `keys.json` missing | `packages/kernel/src/secrets/secret-store.ts:79` | `{ values: {} }` — tolerated |

@@ -38,9 +38,11 @@ Bearer and environment-backed headers, per-server startup/tool timeouts, enabled
 tool allow/deny lists, authentication timing, and OAuth pre-registration (`client_id`, callback
 URL/port, and an optional HTTPS CIMD URL). `expandVariables` defaults to true in consumers;
 portable package adapters may set it false after applying their own format-limited placeholder
-expansion. The engine-only `auto_tools` flag remains host composition rather than transport
-configuration: after a server connects, every tool it advertised joins every agent's effective MCP
-allow-list for that run without changing the persisted profile. `MCPConnection.instructions`
+expansion; environment-backed credential fields remain explicit references and are always resolved.
+An `enabled: false` declaration is removed by run parsing before pool or skill-capability composition.
+The engine-only `auto_tools` flag remains host composition rather than transport configuration:
+after a server connects, every tool it advertised joins every agent's effective MCP allow-list for
+that run without changing the persisted profile. `MCPConnection.instructions`
 carries bounded initialization guidance back across the same leaf contract.
 
 ## Test ownership

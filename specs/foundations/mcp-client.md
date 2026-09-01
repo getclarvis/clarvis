@@ -212,18 +212,22 @@ By default, both `env` and `headers` go through `resolveStringMap(map, environme
 `String.replace`, so `"Bearer ${TOKEN}"` resolves to `Bearer <value>`
 (`packages/capability/src/env-interpolate.ts:48`). An end-to-end test over a real HTTP listener
 asserts the resolved value reaches the wire and the literal `${` never does
-(`packages/mcp-client/tests/integration/remote-transport.test.ts:64-65`), and that an absent variable
-fails the connection before any request is made (`:72-80`). With `expandVariables: false`, the maps
-are copied literally. This is the portable Agent Plugin seam: its adapter has already expanded only
-`PLUGIN_ROOT`/`PLUGIN_DATA`, and a second general `${VAR}` pass would violate that format. Pinned by
-`packages/mcp-client/tests/component/transport-builder.test.ts` (literal portable placeholders).
+(`packages/mcp-client/tests/integration/remote-transport.test.ts`), and that an absent variable
+fails the connection before any request is made. With `expandVariables: false`, the maps authored
+directly as `env`/`headers` are copied literally. This is the portable Agent Plugin seam: its adapter
+has already expanded only `PLUGIN_ROOT`/`PLUGIN_DATA`, and a second general `${VAR}` pass would
+violate that format. Declarative `bearer_token_env_var` and `env_http_headers` are not authored
+placeholder text and always resolve their named variables, even under that flag. Pinned by
+`packages/mcp-client/tests/component/transport-builder.test.ts` (literal portable placeholders) and
+`packages/mcp-client/tests/integration/remote-transport.test.ts` (resolved declarative credentials
+beside a literal authored header).
 
 Remote declarations may additionally derive `Authorization: Bearer <value>` from
 `bearer_token_env_var` and arbitrary header values from `env_http_headers`. Missing variables fail
 before the transport is built, and resolved values remain confined to the resource origin by
-`createMCPRemoteFetch`. Production: `remoteHeaders` and `buildTransport` in
+`createMCPRemoteFetch`. Production: `buildTransport` in
 `packages/mcp-client/src/client.ts`. Test: the environment-backed header cases in
-`packages/mcp-client/tests/component/transport-builder.test.ts`.
+`packages/mcp-client/tests/integration/remote-transport.test.ts`.
 
 ### 3.4 Wire tool names
 
@@ -362,6 +366,10 @@ credential-free loopback HTTP with an explicit port; query strings and fragments
 path may be the configured callback path or its stable server-specific suffix. Production:
 `validRedirect` in `packages/mcp-client/src/oauth-store.ts`. Test: redirect validation in
 `packages/mcp-client/tests/integration/oauth-store.test.ts`.
+The settings and direct-request schemas enforce the same no-query/no-fragment shape before a browser
+flow can start. Production: `mcpOAuthSchema` in `packages/loop/src/settings/settings-schema.ts` and
+`oauthSchema` in `packages/loop/src/validation/request/server-schemas.ts`. Test:
+`packages/loop/tests/unit/engine-server.test.ts`.
 The default host path is `<global>/state/mcp-oauth.json`
 (`packages/paths/src/global.ts:25,118`).
 
@@ -901,11 +909,13 @@ Pinned: `packages/mcp-client/tests/unit/mcp-transport-env.test.ts:33-63` (four c
 **MCP-03.** With the default interpolation policy, an unresolved `${VAR}` in `env` or `headers`
 fails connection construction before any byte reaches the server; the literal `${…}` is never
 transmitted. With `expandVariables: false`, the literal is intentionally preserved because the
-owning portable adapter has already performed its narrower expansion.
-Production: `packages/mcp-client/src/client.ts:367`, `:415` →
-`packages/capability/src/env-interpolate.ts:78`.
-Pinned: `packages/mcp-client/tests/component/transport-builder.test.ts:50-60`, `:109-119`, and over a
-real socket at `packages/mcp-client/tests/integration/remote-transport.test.ts:52-80`.
+owning portable adapter has already performed its narrower expansion. Environment-backed credential
+declarations are the exception: `bearer_token_env_var` and `env_http_headers` always resolve the
+named environment values and never transmit synthesized `${VAR}` text. Production: `buildTransport`
+in `packages/mcp-client/src/client.ts` and `resolveStringMap` in
+`packages/capability/src/env-interpolate.ts`. Pinned:
+`packages/mcp-client/tests/component/transport-builder.test.ts` and the real-socket cases in
+`packages/mcp-client/tests/integration/remote-transport.test.ts`.
 
 **MCP-04.** An MCP protocol error (`InvalidRequest`, `MethodNotFound`, `InvalidParams`,
 `InternalError`, `ParseError`) is a per-call failure: it never reconnects, never advances a streak,

@@ -242,7 +242,11 @@ plugin or Environment separately.
 confined subdirectory and one validated ref or full SHA; local directories are copied into managed
 inventory under file/count/depth bounds with symlinks and special entries refused; npm packages are
 installed into staging with lifecycle scripts, audits and funding requests disabled before the
-validated plugin is atomically installed. Manifest views preserve the upstream `author`, homepage,
+validated plugin is atomically installed. Catalog installs carry the listing name as an expected
+identity: an explicitly named manifest must match it, while a foreign manifest with no name receives
+that stable identity instead of a generic staging basename. Direct installs with no expected identity
+must declare a name. The view reports managed updateability separately; local/npm and unmanaged
+installs cannot surface a Git update action. Manifest views preserve the upstream `author`, homepage,
 repository, license, keywords, and complete bounded `interface` metadata. Those fields are display
 data only and never become execution authority.
 

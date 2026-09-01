@@ -769,12 +769,16 @@ must be six-digit hex; malformed presentation costs only that metadata. Producti
 presentation block` and degradation cases in
 `packages/kernel/tests/integration/plugin-manifest.test.ts`.
 
-`supplyDefaults` (`:779-803`) fills `name` from `basename(dir)` — but only if that basename would
-itself validate, checked by round-tripping it through `parsePluginManifest` (`derivableName`,
-`:757-760`) — and `description` from the presentation block's `shortDescription`. Both emit a note.
-Nothing else is supplied: "A description is only ever *moved*, never invented" (`:773-776`). Pinned
-at `packages/kernel/tests/integration/plugin-manifest.test.ts:347-390`, including the case where the directory could never be a legal
-name (`.staging-1`) and the schema error stands.
+`supplyDefaults` fills a missing `name` from the host-owned effective install identity when one was
+provided, otherwise from `basename(dir)` — but only if that candidate validates through
+`parsePluginManifest` — and fills `description` from the presentation block's `shortDescription`.
+Both emit a note. Existing installed foreign layouts therefore retain their directory identity;
+marketplace staging can use the listing identity instead of the generic staging basename. Nothing
+else is supplied: "A description is only ever *moved*, never invented". Production:
+`supplyDefaults`, `derivableName`, and `ResolvedPluginManifest.nameSource` in
+`packages/kernel/src/plugins/plugin-manifest.ts`. Test:
+`packages/kernel/tests/integration/plugin-manifest.test.ts` and the stable/mismatched install-name
+cases in `packages/kernel/tests/integration/plugin-service.test.ts`.
 
 ### 4.8 Loading a plugin for a run — `loadableOf`
 
@@ -811,8 +815,9 @@ namespaces remain plugin-name based.
 per plugin. Skill identity hashes each bounded `SKILL.md`; every resource is streamed as raw bytes
 through `hashBoundedFile`, with an 8 MiB per-file ceiling and a 32 MiB aggregate ceiling across the
 plugin, then a canonical list records relative path, digest, byte count, and executable mode. It also
-includes effective catalog metadata so a sidecar-derived description/presentation change cannot
-preserve identity. Manifest byte/character caps and resource snapshot caps are the exact limits
+includes effective catalog metadata, including MCP tool dependencies, so a sidecar-derived
+description, presentation, or availability change cannot preserve identity. Manifest byte/character
+caps and resource snapshot caps are the exact limits
 exported by `@clarvis/skills`; ambiguous concatenation, text decoding of binary resources, complete
 resource retention, and pre-read path `stat` are not snapshot boundaries.
 Ordinary captured projections verify the requested selection and reuse pinned loadables.
@@ -1340,7 +1345,8 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/src/plugins/plugin-executable-snapshot.ts` and `contributionSnapshot` in
     `packages/kernel/src/plugins/plugin-contributions.ts`. Test: the process-file fingerprint and
     drift cases in
-    `packages/kernel/tests/integration/{environment-manager,plugin-contributions}.test.ts`.
+    `packages/kernel/tests/integration/environment-manager.test.ts` and
+    `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
 44b. **Packaged-skill identity is unambiguous and runtime admission is atomic.** Skill-manifest
     snapshot reads use one opened descriptor with fixed allocation; resource identity streams raw
@@ -1491,9 +1497,12 @@ All of the following are derived directly from this document's own source and te
     `packages/loop/src/settings/marketplace-schema.ts`. Pinned:
     `packages/code/tests/integration/marketplace-schema.test.ts:64-72`.
 
-65. **Git, confined local, and validated npm sources are installable; dialects without a fetcher and
-    unsafe selectors remain visible but cannot be activated.** Production: `readSource` in
-    `packages/loop/src/settings/marketplace-schema.ts`, `confineLocalSources` and
+65. **Git, confined local, and validated npm sources are installable; dialects without a fetcher,
+    transports the kernel refuses, and unsafe selectors remain visible but cannot be activated.**
+    Git URL/ref/SHA and npm validation is shared by the tolerant reader and strict installer, so
+    `installable: true` cannot describe a source the kernel will deterministically reject.
+    Production: `readSource`, `pluginGitUrlIssue`, `pluginGitSelectorIssue`, and
+    `pluginNpmSourceIssue` in `packages/loop/src/settings/marketplace-schema.ts`, `confineLocalSources` and
     `marketplaceInstallSource` in `packages/code/src/adapters/marketplace.ts`, and `installSource` in
     `packages/kernel/src/plugins/plugin-service.ts`. Test:
     `packages/loop/tests/unit/marketplace-schema.test.ts`,
@@ -1622,8 +1631,12 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/tests/integration/{plugin-manifest,plugin-service}.test.ts`.
 87. **Every install source is staged and inspected before entering managed inventory.** Git
     selectors, local copy bounds/symlink refusal, and npm `--ignore-scripts` are source-specific
-    acquisition policy; manifest identity and atomic repository install are shared. Production:
-    `installSource` and `createGitPluginFetcher`. Test: `installSource` cases in
+    acquisition policy; manifest identity and atomic repository install are shared. A marketplace
+    source carries `expected_name`: a declared manifest name must match, an unnamed foreign manifest
+    receives that stable identity, and an install without either is refused rather than inheriting a
+    generic staging basename. Production: `marketplaceInstallSource`, `installPrepared`,
+    `installSource`, and `createGitPluginFetcher`. Test: identity and source cases in
+    `packages/code/tests/integration/marketplace.test.ts` and
     `packages/kernel/tests/integration/plugin-service.test.ts`.
 88. **Marketplace install/authentication policy is descriptive until an explicit install action.**
     Catalog load never auto-installs or opens OAuth; `NOT_AVAILABLE` alone suppresses the action.
@@ -1631,6 +1644,13 @@ All of the following are derived directly from this document's own source and te
     `installAndActivatePlugin` in `packages/code/src/app/commands.tsx`. Test: policy cases in
     `packages/loop/tests/unit/marketplace-schema.test.ts` and explicit install cases in
     `packages/code/tests/integration/app-commands.test.tsx`.
+
+89. **Managed updateability is an installed-state fact, not an inference from catalog presence.**
+    `PluginView.updateable` is true only for a global Git origin the service can update; workspace,
+    local, npm, and unmanaged installs suppress the TUI action. Production: `viewFor` in
+    `packages/kernel/src/plugins/plugin-service.ts`, protocol/UI projection, and
+    `MarketplaceBrowser`. Test: `packages/kernel/tests/integration/plugin-service.test.ts` and
+    `packages/code/tests/integration/marketplace-browser-render.test.tsx`.
 
 ## 6. Failure modes and degradation
 
@@ -1669,7 +1689,7 @@ contributes no roots — but still contributes agents, hooks and MCP servers (`:
 
 | Code | Raised by | Line |
 |---|---|---|
-| `invalid_request` | manifest unusable at install; update naming a different plugin; subdir escaping the checkout; subdir not a directory; not installed from git; install-record over budget; name already installed | `packages/kernel/src/plugins/plugin-service.ts:390`, `:418`; `packages/kernel/src/adapters/git/plugin-fetcher.ts:72-79`, `:164`; `packages/kernel/src/adapters/filesystem/plugin-repository.ts:31-34`, `:189-192` |
+| `invalid_request` | manifest unusable or unstably named at install; marketplace/manifest name mismatch; update naming a different plugin; subdir escaping the checkout; invalid URL/ref/SHA/npm selector; subdir not a directory; not installed from git; install-record over budget; name already installed | `installPrepared`, `installSource`, and `update` in `packages/kernel/src/plugins/plugin-service.ts`; `packages/kernel/src/adapters/git/plugin-fetcher.ts`; `packages/kernel/src/adapters/filesystem/plugin-repository.ts` |
 | `not_found` | update/uninstall of a plugin not installed globally | `packages/kernel/src/plugins/plugin-service.ts` |
 | `conflict` | selected plugin update/uninstall overlaps an active run or another selected-plugin mutation | `withSelectedMutation` in `packages/kernel/src/kernel.ts` |
 | `unavailable` | a selected plugin changed successfully and the stale kernel has not reconnected | selected-plugin guard in `withOwnerRunLease` in `packages/kernel/src/kernel.ts` |

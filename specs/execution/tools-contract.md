@@ -186,8 +186,8 @@ policy consumed by individual tools, not by `core.ts` itself), `maxOutputBytes` 
 `skillExecutionRoots: readonly string[]` is the separately bounded, canonical set of selected skill
 package directories admitted only to command execution. `dispatch` consumes it before the guard via
 `protectSkillPackages`: native mutation tools may use the normal workspace/scratch surface but may
-not target a protected skill package (`RuntimeConfig`, `protectSkillPackages`, and
-`assertOutsideRoots` in `packages/tools/src`).
+not target a protected skill package, and recursive `replace` may not target an ancestor containing
+one (`RuntimeConfig`, `protectSkillPackages`, and `assertOutsideRoots` in `packages/tools/src`).
 `registerTemporaryRoot(root)` is the validated dynamic half of the same contract: `shell` calls it
 only for a newly-created, owner-controlled directory proven from an explicit system-temp `mktemp -d`
 template; hosts may observe registration to include that root in run-end cleanup.
@@ -358,8 +358,9 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
    arguments"` if that text is empty (`packages/tools/src/core.ts:212`-`217`).
 3. **Protect selected skill packages.** For native mutation tools, `protectSkillPackages` extracts
    every source and destination through the same guard-context parser and refuses a target below any
-   `skillExecutionRoot` with `path_escape`. This applies even when that package is nested beneath the
-   otherwise writable workspace (`packages/tools/src/core.ts`; pinned by
+   `skillExecutionRoot` with `path_escape`. Recursive `replace` also refuses an ancestor scope that
+   contains a protected root. This applies even when that package is nested beneath the otherwise
+   writable workspace (`packages/tools/src/core.ts`; pinned by
    `packages/tools/tests/integration/api.test.ts`).
 4. **Guard.** `applyGuard(name, filled, config)` (detailed below) returns a gate;
    its `denied` member short-circuits dispatch and its `review` member is retained
@@ -480,7 +481,7 @@ number:
 | `resolveConfig` given a missing/non-existent/non-directory `workspaceRoot` | throws `StartupError` synchronously — startup aborts, no degraded config is returned | `packages/tools/src/config.ts:201`-`213` |
 | `resolveConfig` given a limit below its minimum, or an inverted shell timeout range | throws `StartupError` | `packages/tools/src/config.ts:215`-`230`, pinned by `packages/tools/tests/integration/config.test.ts:106`-`141` |
 | `resolveConfig` receives more than 512 skill roots, or a skill root is missing, not a directory, a filesystem root, or contains the workspace | throws `StartupError`; no partial execution surface is returned | `resolveConfig` in `packages/tools/src/config.ts`, pinned by `packages/tools/tests/integration/config.test.ts` |
-| A native mutation targets a selected skill package | `path_escape` before guard or handler; no mutation runs | `protectSkillPackages` in `packages/tools/src/core.ts`, pinned by `packages/tools/tests/integration/api.test.ts` |
+| A native mutation targets a selected skill package, or recursive `replace` scopes over one | `path_escape` before guard or handler; no mutation runs | `protectSkillPackages` in `packages/tools/src/core.ts`, pinned by `packages/tools/tests/integration/api.test.ts` |
 | `resolveConfig`'s ripgrep probe throws | swallowed; `ripgrepAvailable` is set `false`, not propagated as a startup failure | `packages/tools/src/config.ts:193`-`199`, pinned by `packages/tools/tests/integration/config.test.ts:143`-`152` |
 | Tool result's serialized `meta` exceeds `maxToolMetaBytes` | truncated to `{truncated: true, truncation_reason: ...}` plus, for a `diff` field, the longest prefix that still fits | `packages/tools/src/core.ts:60`-`85` |
 | Non-`bounded` tool's text output exceeds `maxOutputBytes` | clamped by `bound()` (sibling concern in `lib/output.ts`), never dropped or errored | `packages/tools/src/core.ts:51`-`58` |

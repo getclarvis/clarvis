@@ -393,6 +393,8 @@ export function createMCPClientFactory(
  * `environment` and throw {@link MissingEnvVarsError} when unset unless
  * `server.expandVariables === false`; that mode preserves package-owned literal
  * values after a portable format adapter has performed its own bounded expansion.
+ * It does not apply to `bearer_token_env_var` or `env_http_headers`: those fields
+ * explicitly name credentials to resolve and are never transmitted as `${VAR}` text.
  */
 export function buildTransport(
   server: McpServerConfig,
@@ -474,7 +476,7 @@ export function buildTransport(
     throw new Error(`server '${server.name}': url is required for ${server.transport} transport`);
   }
   const url = new URL(server.url);
-  const referencedHeaders: Record<string, string> = {
+  const environmentBackedHeaders: Record<string, string> = {
     ...Object.fromEntries(
       Object.entries(server.env_http_headers ?? {}).map(([header, envName]) => [
         header,
@@ -484,18 +486,18 @@ export function buildTransport(
     ...(server.bearer_token_env_var === undefined
       ? {}
       : { Authorization: `Bearer \${${server.bearer_token_env_var}}` }),
-    ...(server.headers ?? {}),
   };
-  const headers =
-    Object.keys(referencedHeaders).length > 0
-      ? server.expandVariables === false
-        ? referencedHeaders
-        : resolveStringMap(referencedHeaders, environment)
-      : undefined;
+  const authoredHeaders = server.headers ?? {};
+  const headers = {
+    ...resolveStringMap(environmentBackedHeaders, environment),
+    ...(server.expandVariables === false
+      ? authoredHeaders
+      : resolveStringMap(authoredHeaders, environment)),
+  };
   const remoteFetch = createMCPRemoteFetch({
     resourceUrl: url,
     authorization: limits.authProvider !== undefined,
-    ...(headers ? { headers } : {}),
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
   });
   const boundedFetch: FetchLike = createMCPBoundedFetch({
     mcpName: server.name,

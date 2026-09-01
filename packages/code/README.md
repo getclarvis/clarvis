@@ -163,10 +163,14 @@ approval. The lightweight startup composer paints without waiting for inventory 
 repository plugins stay inactive until the complete app receives the resolved verdict and opens the
 approval modal automatically, without a slash command. Update and uninstall are guarded at
 the idle boundary. Workspace-owned checkouts are edited in their repository, and linked external
-checkouts remain visible and activatable but never offer the managed update action. Environment selects
-only already-installed extensions. Marketplace entries may install from Git
+checkouts remain visible and activatable but never offer the managed update action. The kernel's
+explicit `updateable` projection also suppresses Update for local and npm installs rather than
+offering an operation that will be refused. Environment selects only already-installed extensions.
+Marketplace entries may install from Git
 repositories/subdirectories (optionally pinned by ref or SHA), confined local directories, or npm
-packages fetched without lifecycle scripts. The browser shows `AVAILABLE`, `INSTALLED_BY_DEFAULT`,
+packages fetched without lifecycle scripts. Each install carries the listing name and refuses an
+explicitly different manifest identity; an unnamed foreign manifest uses that listing name as its
+stable install identity. The browser shows `AVAILABLE`, `INSTALLED_BY_DEFAULT`,
 `NOT_AVAILABLE`, `ON_INSTALL`, and `ON_FIRST_USE` policy metadata without treating catalog load as
 installation. Plugin detail preserves the original publisher, license, repository/legal links,
 category, capabilities, prompts, brand and asset paths; Clarvis never replaces the declared author

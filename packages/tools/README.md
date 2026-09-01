@@ -136,11 +136,13 @@ neither a filesystem root nor a root that contains the workspace. The containmen
 the canonical identities of both paths, so platform aliases such as macOS `/var` → `/private/var`
 cannot disguise the workspace as a separate child. Command path analysis and `cwd` confinement admit
 only those exact package roots. Native file-mutation tools still reject every target beneath them,
-including when a package sits below the workspace. With a native sandbox the same roots are mounted
-read-only. Without one, commands are ordinary secret-scrubbed host processes: the guard still
-reviews them, but this option is not a filesystem-immutability boundary and a command can modify
-files its operating-system identity may write. Nothing here executes a helper merely because its
-skill was selected.
+including when a package sits below the workspace. The recursive `replace` tool also rejects an
+ancestor scope that contains one of those packages; otherwise walking `.agents`, for example, could
+rewrite protected descendants without naming them directly. With a native sandbox the same roots
+are mounted read-only. Without one, commands are ordinary secret-scrubbed host processes: the guard
+still reviews them, but this option is not a filesystem-immutability boundary and a command can
+modify files its operating-system identity may write. Nothing here executes a helper merely because
+its skill was selected.
 
 A host may additionally pass existing `temporaryRoots`. These are narrow,
 host-owned scratch roots, not a general filesystem escape: every native tool

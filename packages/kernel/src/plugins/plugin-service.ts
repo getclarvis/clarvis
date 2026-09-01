@@ -1,6 +1,9 @@
 import {
   agentFrontmatterSchema,
+  pluginGitSelectorIssue,
+  pluginGitUrlIssue,
   pluginNameField,
+  pluginNpmSourceIssue,
   type PluginAgentFile,
   type PluginManifest,
 } from "@clarvis/loop/host";
@@ -36,15 +39,6 @@ import type {
 import { effectivePluginMcpName } from "./plugin-contributions.ts";
 import { pluginDataDir } from "./plugin-runtime.ts";
 
-/**
- * A source naming a place on this filesystem rather than a repository to clone.
- *
- * @remarks A marketplace may list a plugin that lives beside it on disk. Reading
- *   that listing is supported; installing from it is not, and saying so plainly
- *   is better than letting it fall through to the generic refusal.
- */
-const LOCAL_PATH_RE = /^(?:[.~]{1,2}[/\\]|\/|[A-Za-z]:[/\\])/;
-
 /** Human-readable exact identity for diagnostics. */
 function pluginRefLabel(ref: PluginRef): string {
   return `${ref.scope}/${ref.source}/${ref.name}`;
@@ -75,33 +69,20 @@ function checkedPluginRef(value: unknown): PluginRef {
  */
 export function validateGitUrl(raw: string): string {
   const url = raw.trim();
-  if (url.length === 0) throw new Error("a git URL is required");
-  if (url.startsWith("-"))
-    throw new Error(`refusing '${url}': a URL starting with '-' would be read by git as a flag`);
-  if (/ext::/i.test(url))
-    throw new Error(`refusing '${url}': git's ext:: transport runs an arbitrary command`);
-  if (LOCAL_PATH_RE.test(url))
-    throw new Error(
-      `refusing '${url}': that names a local path, and Clarvis installs a plugin from git. ` +
-        `Use https://, ssh (user@host:path), or file:// for a local checkout.`,
-    );
-  if (/^(?:http|git):\/\//i.test(url))
-    throw new Error(
-      `refusing '${url}': ${url.slice(0, url.indexOf(":"))}:// is unauthenticated cleartext, so ` +
-        `anyone on the path can swap the code you are about to install. Use https:// or ssh.`,
-    );
-  const ssh = /^(?:ssh:\/\/)?[A-Za-z0-9._-]+@[A-Za-z0-9._-]+[:/][A-Za-z0-9._~/-]+$/;
-  if (/^(?:https|file):\/\//i.test(url) || ssh.test(url)) return url;
-  throw new Error(
-    `refusing '${url}': install from https://, ssh (user@host:path), or file:// for a local checkout`,
-  );
+  const issue = pluginGitUrlIssue(url);
+  if (issue !== undefined) throw new Error(issue);
+  return url;
 }
 
 /**
  * Resolve one repository snapshot's manifest, following whatever it expresses in
  * another host's dialect; see {@link resolvePluginManifest}.
  */
-function readManifest(plugin: StagedPlugin, dataDir?: string): ResolvedPluginManifest {
+function readManifest(
+  plugin: StagedPlugin,
+  dataDir?: string,
+  effectiveName = plugin.name,
+): ResolvedPluginManifest {
   if (plugin.manifestError !== undefined) {
     return { error: plugin.manifestError, notes: [] };
   }
@@ -112,7 +93,7 @@ function readManifest(plugin: StagedPlugin, dataDir?: string): ResolvedPluginMan
     plugin.dir,
     plugin.manifestRaw,
     plugin.manifestLocation,
-    plugin.name,
+    effectiveName,
     dataDir === undefined ? undefined : { dataDir },
   );
 }
@@ -426,6 +407,11 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
       ...(presentation?.screenshots !== undefined ? { screenshots: presentation.screenshots } : {}),
       ...(plugin.origin !== undefined ? { install_source: plugin.origin } : {}),
       ...(plugin.revision !== undefined ? { revision: plugin.revision } : {}),
+      updateable:
+        plugin.ref.scope === "global" &&
+        plugin.origin !== undefined &&
+        !plugin.origin.startsWith("local:") &&
+        !plugin.origin.startsWith("npm:"),
       ...(error ? { error } : {}),
       ...(notes.length > 0 ? { notes } : {}),
       contributions: contributionsOf(plugin.name, skills.names, manifest, plugin.agentFiles),
@@ -478,6 +464,7 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
   async function installPrepared(
     prepare: (signal: AbortSignal) => Promise<Awaited<ReturnType<PluginFetcher["fetch"]>>>,
     target: { source: "agents" | "clarvis" },
+    expectedName?: string,
   ): Promise<PluginView> {
     const abort = new AbortController();
     const release = opts.lifecycle?.register({ close: () => abort.abort() });
@@ -485,8 +472,20 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
     try {
       prepared = await prepare(abort.signal);
       const inspected = await repository.inspect(prepared.root);
-      const { manifest, error } = readManifest(inspected);
+      const { manifest, error, nameSource } = readManifest(inspected, undefined, expectedName);
       if (!manifest) throw kernelError("invalid_request", `refusing to install: ${error}`);
+      if (expectedName === undefined && nameSource !== "declared") {
+        throw kernelError(
+          "invalid_request",
+          "refusing to install: the plugin manifest declares no stable name",
+        );
+      }
+      if (expectedName !== undefined && manifest.name !== expectedName) {
+        throw kernelError(
+          "invalid_request",
+          `refusing to install marketplace plugin '${expectedName}': manifest names '${manifest.name}'`,
+        );
+      }
       return viewFor(
         await repository.install(prepared.root, manifest.name, target.source, prepared),
         await currentEnabledKeys(),
@@ -498,42 +497,8 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
   }
 
   function checkedNpmSource(source: PluginInstallSource & { kind: "npm" }): void {
-    if (
-      !/^(?:@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/i.test(
-        source.package,
-      )
-    ) {
-      throw kernelError("invalid_request", "invalid npm plugin package name");
-    }
-    if (
-      source.version !== undefined &&
-      (source.version.length > 256 ||
-        source.version.startsWith("-") ||
-        /[\0\r\n/\\]/.test(source.version) ||
-        source.version.includes("://"))
-    ) {
-      throw kernelError("invalid_request", "invalid npm plugin version");
-    }
-    if (source.registry !== undefined) {
-      let registry: URL;
-      try {
-        registry = new URL(source.registry);
-      } catch {
-        throw kernelError("invalid_request", "invalid npm registry URL");
-      }
-      if (
-        registry.protocol !== "https:" ||
-        registry.username !== "" ||
-        registry.password !== "" ||
-        registry.search !== "" ||
-        registry.hash !== ""
-      ) {
-        throw kernelError(
-          "invalid_request",
-          "npm registries must use HTTPS without embedded credentials",
-        );
-      }
-    }
+    const issue = pluginNpmSourceIssue(source);
+    if (issue !== undefined) throw kernelError("invalid_request", issue);
   }
 
   return {
@@ -561,6 +526,14 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
       if (typeof source !== "object" || source === null || Array.isArray(source)) {
         throw kernelError("invalid_request", "invalid plugin install source");
       }
+      const parsedExpectedName = pluginNameField.safeParse(source.expected_name);
+      if (source.expected_name !== undefined && !parsedExpectedName.success) {
+        throw kernelError("invalid_request", "invalid expected marketplace plugin name");
+      }
+      const expectedName =
+        source.expected_name === undefined || !parsedExpectedName.success
+          ? undefined
+          : parsedExpectedName.data;
       if (source.kind === "git") {
         if (
           typeof source.url !== "string" ||
@@ -571,6 +544,11 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
           throw kernelError("invalid_request", "invalid git plugin source");
         }
         const safe = validateGitUrl(source.url);
+        const selectorIssue = pluginGitSelectorIssue({
+          ...(source.ref === undefined ? {} : { ref: source.ref }),
+          ...(source.sha === undefined ? {} : { sha: source.sha }),
+        });
+        if (selectorIssue !== undefined) throw kernelError("invalid_request", selectorIssue);
         return installPrepared(
           (signal) =>
             fetcher.fetch(safe, source.subdir, signal, {
@@ -578,6 +556,7 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
               ...(source.sha === undefined ? {} : { sha: source.sha }),
             }),
           target,
+          expectedName,
         );
       }
       if (source.kind === "local") {
@@ -592,7 +571,11 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
         if (fetcher.fetchLocal === undefined) {
           throw kernelError("unavailable", "this host cannot install local marketplace plugins");
         }
-        return installPrepared((signal) => fetcher.fetchLocal!(source.path, signal), target);
+        return installPrepared(
+          (signal) => fetcher.fetchLocal!(source.path, signal),
+          target,
+          expectedName,
+        );
       }
       if (source.kind === "npm") {
         if (
@@ -609,6 +592,7 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
         return installPrepared(
           (signal) => fetcher.fetchNpm!(source.package, source.version, source.registry, signal),
           target,
+          expectedName,
         );
       }
       throw kernelError("invalid_request", "unsupported plugin install source");
@@ -641,7 +625,7 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
           if (prepared !== undefined) {
             const replacement = prepared;
             const inspected = await repository.inspect(replacement.root);
-            const { manifest, error } = readManifest(inspected);
+            const { manifest, error } = readManifest(inspected, undefined, ref.name);
             if (manifest?.name !== ref.name) {
               throw kernelError(
                 "invalid_request",

@@ -126,7 +126,9 @@ offset zero and never reinterprets the byte cursor as a character index.
 file, and refuses a resource larger than the caller's bound. Kernel skill snapshots apply the public
 8 MiB per-file limit and a distinct 32 MiB aggregate resource budget. This lets binary resources
 participate in identity while keeping model-facing text disclosure and snapshot memory accounting
-independently bounded.
+independently bounded. Their canonical catalog projection also includes `dependencies.tools`, so a
+sidecar change that alters model-visible skill availability invalidates both plugin and standalone
+skill snapshots even though the `agents/` sidecar directory is not a model-readable resource.
 
 `LOAD_SKILL_TOOL_NAME` is owned only here. `createSkillsCapability` derives its
 `reservedWireNames` and `toolEffects` from the canonical `loadSkillTool`

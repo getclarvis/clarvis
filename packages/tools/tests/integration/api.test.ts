@@ -112,6 +112,20 @@ describe("createAgentTools (library API)", () => {
     });
     expect(writeAttempt.isError).toBe(true);
     expect(JSON.parse(resultText(writeAttempt.content))).toMatchObject({ error: "path_escape" });
+
+    write(packageRoot, "protected.txt", "unchanged");
+    const recursiveAttempt = await t.callTool("replace", {
+      path: join(root, ".agents"),
+      glob: "**/*.txt",
+      pattern: "unchanged",
+      replacement: "changed",
+      dry_run: false,
+    });
+    expect(recursiveAttempt.isError).toBe(true);
+    expect(JSON.parse(resultText(recursiveAttempt.content))).toMatchObject({
+      error: "path_escape",
+    });
+    expect(readFileSync(join(packageRoot, "protected.txt"), "utf8")).toBe("unchanged");
   });
 
   it.skipIf(!posixShell)(

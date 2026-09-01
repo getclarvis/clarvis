@@ -546,6 +546,8 @@ export interface ResolvedPluginManifest {
   manifest?: PluginManifest;
   /** Dialect whose discovery and runtime rules produced the validated manifest. */
   format?: "native" | "agent-plugin-v1";
+  /** Whether the author declared the runtime name or the host supplied its stable install identity. */
+  nameSource?: "declared" | "derived";
   /** Why the manifest could not be used. */
   error?: string;
   /** What the manifest asks to be shown as; see {@link PluginPresentation}. */
@@ -1222,11 +1224,12 @@ function derivableName(dir: string): string | undefined {
  * @param dir - the plugin's install directory.
  * @param document - the JSON-parsed manifest, mutated in place.
  * @param presentation - display metadata already taken off the manifest.
+ * @param effectivePluginName - stable host-owned identity, when already known.
  * @returns one note per field supplied, so a reader can tell what the author
  *   wrote from what this host filled in.
  * @remarks
  * `name` is the one field the normalized manifest cannot do without. For an
- * existing install, the directory is the host-owned runtime namespace and is
+ * existing install or marketplace action, the host-owned runtime namespace is
  * therefore a safe source when a foreign manifest omits the field. A description
  * is only ever *moved*, never invented: the
  * presentation block's own summary is the plugin author's sentence about their
@@ -1237,14 +1240,19 @@ function supplyDefaults(
   dir: string,
   document: Record<string, unknown>,
   presentation: PluginPresentation | undefined,
+  effectivePluginName?: string,
 ): string[] {
   const notes: string[] = [];
 
   if (displayText(document.name) === undefined) {
-    const derived = derivableName(dir);
+    const derived =
+      effectivePluginName !== undefined &&
+      parsePluginManifest(JSON.stringify({ name: effectivePluginName })).ok
+        ? effectivePluginName
+        : derivableName(dir);
     if (derived !== undefined) {
       document.name = derived;
-      notes.push(`name: not declared — using the install directory's name, '${derived}'`);
+      notes.push(`name: not declared — using the host-owned install identity, '${derived}'`);
     }
   }
 
@@ -1714,6 +1722,7 @@ export function resolvePluginManifest(
   const dirs = pluginDirsFor(dir, manifestLocation);
   const notes: string[] = [];
   let presentation: PluginPresentation | undefined;
+  let nameSource: "declared" | "derived" = "declared";
   const agentPlugin = normalizeAgentManifest(dir, manifestLocation, record, runtime);
   if (agentPlugin !== undefined) {
     notes.push(...agentPlugin.notes);
@@ -1737,6 +1746,7 @@ export function resolvePluginManifest(
         ? Object.keys(record[MCP_SERVERS_KEY])
         : [];
     const declaredPluginName = displayText(record.name);
+    nameSource = declaredPluginName === undefined ? "derived" : "declared";
     const pluginName =
       effectivePluginName ??
       (declaredPluginName !== undefined &&
@@ -1753,7 +1763,7 @@ export function resolvePluginManifest(
     const resolvedPresentation = resolvePresentation(record);
     presentation = resolvedPresentation.presentation;
     notes.push(...resolvedPresentation.notes);
-    notes.push(...supplyDefaults(dir, record, presentation));
+    notes.push(...supplyDefaults(dir, record, presentation, effectivePluginName));
   }
   const shown = presentation === undefined ? {} : { presentation };
 
@@ -1789,6 +1799,7 @@ export function resolvePluginManifest(
   return {
     manifest: parsed.manifest,
     format: agentPlugin === undefined ? "native" : "agent-plugin-v1",
+    nameSource,
     notes,
     ...shown,
   };

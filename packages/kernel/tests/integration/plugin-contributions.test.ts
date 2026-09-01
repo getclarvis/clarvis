@@ -330,6 +330,21 @@ describe("plugin contributions", () => {
     expect(after).not.toBe(before);
   });
 
+  it("fingerprints sidecar-derived MCP dependencies", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "dependent", {}, { skill: true });
+    const agents = join(dir, "skills", "guide", "agents");
+    mkdirSync(agents, { recursive: true });
+    const sidecar = join(agents, "openai.yaml");
+    writeFileSync(sidecar, "dependencies:\n  tools:\n    - type: mcp\n      value: docs\n");
+    const loaded = contributions();
+    const before = loaded.snapshot(refs("dependent"))[0]!.digest;
+
+    writeFileSync(sidecar, "dependencies:\n  tools:\n    - type: mcp\n      value: search\n");
+    const after = loaded.snapshot(refs("dependent"))[0]!.digest;
+
+    expect(after).not.toBe(before);
+  });
+
   it("keeps the rest of a plugin when its companion server document is unusable", () => {
     const dir = install(
       globalPaths(globalDir).pluginsDir,

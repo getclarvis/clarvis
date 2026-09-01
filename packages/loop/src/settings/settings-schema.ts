@@ -75,9 +75,10 @@ const mcpOAuthSchema = z
               url.pathname !== "/" &&
               url.username.length === 0 &&
               url.password.length === 0 &&
+              url.search.length === 0 &&
               url.hash.length === 0
             );
-          }, "must be an HTTPS or loopback HTTP callback URL with a non-root path")
+          }, "must be an HTTPS or loopback HTTP callback URL with a non-root path and no query or fragment")
           .optional(),
         callback_port: z.number().int().min(0).max(65_535).optional(),
         client_metadata_url: z

@@ -264,15 +264,26 @@ describe("marketplaceSchema: a source, read in each dialect a catalog writes it 
   it("keeps a bare source carrying an explicit transport installable", () => {
     for (const source of [
       "https://github.com/o/a.git",
-      "http://example.invalid/a",
       "ssh://git@example.invalid/o/b.git",
       "file:///tmp/c",
-      "git+ssh://git@example.invalid/o/d.git",
     ]) {
       const entry = only({ source });
       expect(entry.installable).toBe(true);
       expect(entry.source).toBe(source);
       expect(entry.notes).toEqual([]);
+    }
+  });
+
+  it("keeps Git transports rejected by the installer visible but non-installable", () => {
+    for (const source of [
+      "http://example.invalid/a",
+      "git://example.invalid/a",
+      "git+ssh://git@example.invalid/o/d.git",
+    ]) {
+      const entry = only({ source });
+      expect(entry.sourceType).toBe("git");
+      expect(entry.installable).toBe(false);
+      expect(entry.notes.join("\n")).toContain("refusing");
     }
   });
 
@@ -400,7 +411,15 @@ describe("marketplaceSchema: a source, read in each dialect a catalog writes it 
           ref: "main",
           sha: "a".repeat(40),
         },
-        note: "declares both ref and sha",
+        note: "cannot declare both ref and sha",
+      },
+      {
+        source: {
+          source: "url",
+          url: "https://github.com/example/plugins.git",
+          ref: "--upload-pack=evil",
+        },
+        note: "invalid plugin git ref",
       },
       {
         source: {
@@ -425,11 +444,11 @@ describe("marketplaceSchema: a source, read in each dialect a catalog writes it 
       [{ source: "npm" }, "without a usable package name"],
       [
         { source: "npm", package: "@example/plugin", version: "https://example.test/pkg" },
-        "looks like a path or URL selector",
+        "invalid npm plugin version",
       ],
       [
         { source: "npm", package: "@example/plugin", registry: "https://token@example.test" },
-        "not a credential-free HTTPS URL",
+        "must use HTTPS without embedded credentials",
       ],
       [
         { source: "npm", package: "@example/plugin", registry: "not-a-url" },

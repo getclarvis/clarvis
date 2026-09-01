@@ -77,6 +77,107 @@ const TRANSPORT_SOURCE_RE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 /** A source string in scp-like ssh spelling, e.g. `user@host:path`. */
 const SSH_SOURCE_RE = /^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:/;
 
+/** A source naming a local filesystem path rather than a Git transport. */
+const LOCAL_GIT_PATH_RE = /^(?:[.~]{1,2}[/\\]|\/|[A-Za-z]:[/\\])/;
+
+/**
+ * Return why a Git source cannot cross the marketplace/install boundary.
+ *
+ * @remarks Shared by the tolerant marketplace reader and strict kernel
+ * installer so the UI never offers an action the kernel will deterministically
+ * reject.
+ */
+export function pluginGitUrlIssue(raw: string): string | undefined {
+  const url = raw.trim();
+  if (url.length === 0) return "a git URL is required";
+  if (url.startsWith("-")) {
+    return `refusing '${url}': a URL starting with '-' would be read by git as a flag`;
+  }
+  if (/ext::/i.test(url))
+    return `refusing '${url}': git's ext:: transport runs an arbitrary command`;
+  if (LOCAL_GIT_PATH_RE.test(url)) {
+    return (
+      `refusing '${url}': that names a local path, and Clarvis installs a plugin from git. ` +
+      "Use https://, ssh (user@host:path), or file:// for a local checkout."
+    );
+  }
+  if (/^(?:http|git):\/\//i.test(url)) {
+    return (
+      `refusing '${url}': ${url.slice(0, url.indexOf(":"))}:// is unauthenticated cleartext, so ` +
+      "anyone on the path can swap the code you are about to install. Use https:// or ssh."
+    );
+  }
+  const ssh = /^(?:ssh:\/\/)?[A-Za-z0-9._-]+@[A-Za-z0-9._-]+[:/][A-Za-z0-9._~/-]+$/;
+  if (/^(?:https|file):\/\//i.test(url) || ssh.test(url)) return undefined;
+  return `refusing '${url}': install from https://, ssh (user@host:path), or file:// for a local checkout`;
+}
+
+/** Return why a Git ref/SHA selector cannot be passed to the installer. */
+export function pluginGitSelectorIssue(selector: {
+  ref?: string;
+  sha?: string;
+}): string | undefined {
+  if (selector.ref !== undefined && selector.sha !== undefined) {
+    return "a plugin source cannot declare both ref and sha";
+  }
+  if (
+    selector.ref !== undefined &&
+    (selector.ref.length > 512 ||
+      selector.ref.startsWith("-") ||
+      /[\0-\x20~^:?*\\]/.test(selector.ref) ||
+      selector.ref.includes("..") ||
+      selector.ref.includes("@{"))
+  ) {
+    return "invalid plugin git ref";
+  }
+  if (selector.sha !== undefined && !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(selector.sha)) {
+    return "invalid plugin git sha";
+  }
+  return undefined;
+}
+
+/** Return why an npm source cannot be handed to the script-free package fetcher. */
+export function pluginNpmSourceIssue(source: {
+  package: string;
+  version?: string;
+  registry?: string;
+}): string | undefined {
+  if (
+    !/^(?:@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/i.test(
+      source.package,
+    )
+  ) {
+    return "invalid npm plugin package name";
+  }
+  if (
+    source.version !== undefined &&
+    (source.version.length > 256 ||
+      source.version.startsWith("-") ||
+      /[\0\r\n/\\]/.test(source.version) ||
+      source.version.includes("://"))
+  ) {
+    return "invalid npm plugin version";
+  }
+  if (source.registry !== undefined) {
+    let registry: URL;
+    try {
+      registry = new URL(source.registry);
+    } catch {
+      return "invalid npm registry URL";
+    }
+    if (
+      registry.protocol !== "https:" ||
+      registry.username !== "" ||
+      registry.password !== "" ||
+      registry.search !== "" ||
+      registry.hash !== ""
+    ) {
+      return "npm registries must use HTTPS without embedded credentials";
+    }
+  }
+  return undefined;
+}
+
 /** The keys {@link readEntry} gives meaning to. */
 const KNOWN_ENTRY_KEYS: ReadonlySet<string> = new Set([
   "name",
@@ -264,7 +365,13 @@ function readSource(raw: string | z.infer<typeof sourceDescriptorSchema>): Sourc
   if (typeof raw === "string") {
     const value = raw.trim();
     if (TRANSPORT_SOURCE_RE.test(value) || SSH_SOURCE_RE.test(value)) {
-      return { source: value, kind: "git", installable: true };
+      const issue = pluginGitUrlIssue(value);
+      return {
+        source: value,
+        kind: "git",
+        installable: issue === undefined,
+        ...(issue === undefined ? {} : { note: issue }),
+      };
     }
     if (!isRelativeSubpath(value)) {
       return {
@@ -307,12 +414,13 @@ function readSource(raw: string | z.infer<typeof sourceDescriptorSchema>): Sourc
         note: `names source kind '${kind}' without a usable git URL`,
       };
     }
-    if (raw.ref !== undefined && raw.sha !== undefined) {
+    const urlIssue = pluginGitUrlIssue(url);
+    if (urlIssue !== undefined) {
       return {
         source: url,
         kind: "git",
         installable: false,
-        note: "declares both ref and sha; choose exactly one git selector",
+        note: urlIssue,
       };
     }
     if (kind === "git-subdir" && (path === undefined || !isRelativeSubpath(path))) {
@@ -323,44 +431,32 @@ function readSource(raw: string | z.infer<typeof sourceDescriptorSchema>): Sourc
         note: "names a git-subdir source without a confined relative path",
       };
     }
+    const selectorIssue = pluginGitSelectorIssue({
+      ...(raw.ref === undefined ? {} : { ref: raw.ref.trim() }),
+      ...(raw.sha === undefined ? {} : { sha: raw.sha }),
+    });
     return {
       source: url,
       kind: "git",
       ...(path === undefined ? {} : { path }),
       ...(raw.ref === undefined ? {} : { ref: raw.ref.trim() }),
       ...(raw.sha === undefined ? {} : { sha: raw.sha.toLowerCase() }),
-      installable: true,
+      installable: selectorIssue === undefined,
+      ...(selectorIssue === undefined ? {} : { note: selectorIssue }),
     };
   }
   if (kind === "npm") {
     const packageName = raw.package?.trim();
-    const validPackage = /^(?:@[a-z0-9._~-]+\/)?[a-z0-9._~-]+$/i;
     const version = raw.version?.trim();
     const registry = raw.registry?.trim();
-    let invalid: string | undefined;
-    if (packageName === undefined || !validPackage.test(packageName)) {
-      invalid = "names an npm source without a usable package name";
-    } else if (
-      version !== undefined &&
-      (version.includes("/") || version.includes("\\") || version.includes("://"))
-    ) {
-      invalid = "uses an npm version that looks like a path or URL selector";
-    } else if (registry !== undefined) {
-      try {
-        const url = new URL(registry);
-        if (
-          url.protocol !== "https:" ||
-          url.username.length > 0 ||
-          url.password.length > 0 ||
-          url.search.length > 0 ||
-          url.hash.length > 0
-        ) {
-          invalid = "uses an npm registry that is not a credential-free HTTPS URL";
-        }
-      } catch {
-        invalid = "uses an invalid npm registry URL";
-      }
-    }
+    const invalid =
+      packageName === undefined
+        ? "names an npm source without a usable package name"
+        : pluginNpmSourceIssue({
+            package: packageName,
+            ...(version === undefined ? {} : { version }),
+            ...(registry === undefined ? {} : { registry }),
+          });
     return {
       source: packageName ?? kind,
       kind: "npm",

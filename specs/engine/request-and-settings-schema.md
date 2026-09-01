@@ -215,15 +215,20 @@ The remaining optional surface is carried into `McpServerConfig`: `expandVariabl
 `shared`, `resources`, `auto_tools`, OAuth (`client_id`, `callback_url`, `callback_port`, and HTTPS
 `client_metadata_url`), `bearer_token_env_var`, `env_http_headers`, `env_vars`, per-server startup
 and tool timeouts, `enabled`, `required`, `enabled_tools`, `disabled_tools`, and `authentication`.
-The allow and deny lists may not overlap. `expandVariables` lets portable Agent Plugin adapters
-disable Clarvis's ordinary `${VAR}` expansion after their format-owned `PLUGIN_ROOT`/`PLUGIN_DATA`
+The allow and deny lists may not overlap. A configured `callback_url` may not carry a query or
+fragment, matching the redirect accepted by the OAuth credential store. `expandVariables` lets
+portable Agent Plugin adapters disable Clarvis's ordinary `${VAR}` expansion after their
+format-owned `PLUGIN_ROOT`/`PLUGIN_DATA`
 pass. `shared` opts a `stdio` server into one pooled subprocess reused across runs and therefore
 suppresses elicitation. `resources` (default on) controls synthetic resource tools. `auto_tools`
 (default false) admits every retained advertised tool to every effective agent in the run without
-mutating authored profiles. Production: `serverSchema`, `refineServerTransport`, and
-`addAutomaticMcpTools`. Test: `packages/loop/tests/unit/settings-schema.test.ts`,
+mutating authored profiles. Direct requests normalize `enabled: false` declarations out before
+duplicate-name checks, tool-pool acquisition, and skill dependency evaluation, just as the
+settings-derived path does. Production: `serverSchema`, `refineServerTransport`, `parseRunRequest`,
+and `addAutomaticMcpTools`. Test: `packages/loop/tests/unit/settings-schema.test.ts`,
 `packages/loop/tests/unit/engine-server.test.ts`, `packages/loop/tests/unit/automatic-mcp-tools.test.ts`,
-and `packages/loop/tests/integration/open-tool-pool.test.ts`.
+`packages/loop/tests/unit/request-parsing.test.ts`, and
+`packages/loop/tests/integration/open-tool-pool.test.ts`.
 
 ### 3.2 `settings.json` shape
 

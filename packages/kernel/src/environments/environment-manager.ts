@@ -755,6 +755,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
                   allowed_tools: info.allowedTools,
                   user_invocable: info.userInvocable,
                   catalog_suppressed: info.catalogSuppressed,
+                  dependencies: info.dependencies,
                   presentation: info.presentation,
                   defaulted: info.defaulted,
                 },

@@ -1183,6 +1183,23 @@ describe("Environment manager", () => {
     expect(after.fingerprint).not.toBe(before.fingerprint);
   });
 
+  it("fingerprints standalone MCP dependencies and rejects their lazy drift", () => {
+    const root = globalPaths(globalDir).skillsDir;
+    writeSkill(root, "dependent");
+    const agents = join(root, "dependent", "agents");
+    mkdirSync(agents, { recursive: true });
+    const sidecar = join(agents, "openai.yaml");
+    writeFileSync(sidecar, "dependencies:\n  tools:\n    - type: mcp\n      value: docs\n");
+    const target = manager();
+    const before = target.resolveActive([], TRUSTED);
+
+    writeFileSync(sidecar, "dependencies:\n  tools:\n    - type: mcp\n      value: search\n");
+
+    expect(() => target.skillRoots()).toThrow(/reconnect the kernel/);
+    const after = manager().resolveActive([], TRUSTED);
+    expect(after.fingerprint).not.toBe(before.fingerprint);
+  });
+
   it("returns exact builtin roots that exclude a standalone skill that was not captured", () => {
     const root = globalPaths(globalDir).skillsDir;
     writeSkill(root, "valid");

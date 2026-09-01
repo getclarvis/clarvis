@@ -177,7 +177,11 @@ export interface McpServerConfig {
   headers?: Record<string, string>;
   env?: Record<string, string>;
   cwd?: string;
-  /** Expand Clarvis `${VAR}` references in env/headers; false preserves literal package data. */
+  /**
+   * Expand Clarvis `${VAR}` references in authored env/headers; false preserves
+   * literal package data. Declarative credential fields still resolve their
+   * named environment variables.
+   */
   expandVariables?: boolean;
   shared?: boolean;
   resources?: boolean;
@@ -194,7 +198,7 @@ export interface McpServerConfig {
   startup_timeout_ms?: number;
   /** Per-server request deadline, in milliseconds. */
   tool_timeout_ms?: number;
-  /** Whether this declaration participates in a run. Defaults to true. */
+  /** Whether this declaration participates in a run. False is removed before composition. */
   enabled?: boolean;
   /** Whether failure to connect is terminal instead of a degraded run. */
   required?: boolean;

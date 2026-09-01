@@ -192,11 +192,18 @@ export function assertWithinWorkspace(
   );
 }
 
-/** Refuse a native mutation whose canonical target falls inside a host-protected root. */
+/**
+ * Refuse a native mutation whose canonical target overlaps a host-protected root.
+ *
+ * @param rejectAncestors - Also rejects a target that contains a protected root.
+ *   Recursive callers must enable this because traversing an otherwise writable
+ *   ancestor would still let them mutate the protected package below it.
+ */
 export function assertOutsideRoots(
   abs: string,
   protectedRoots: readonly string[],
   input: string,
+  rejectAncestors = false,
 ): void {
   const target = canonicalizeAllowingMissing(abs);
   if (target === undefined) {
@@ -209,7 +216,11 @@ export function assertOutsideRoots(
     const root = canonicalizeAllowingMissing(candidate);
     if (root === undefined) continue;
     const rootReal = forCompare(root, process.platform === "win32");
-    if (targetReal === rootReal || targetReal.startsWith(rootReal + path.sep)) {
+    if (
+      targetReal === rootReal ||
+      targetReal.startsWith(rootReal + path.sep) ||
+      (rejectAncestors && rootReal.startsWith(targetReal + path.sep))
+    ) {
       throw new ToolError(
         "path_escape",
         `Path targets an enabled skill package and cannot be changed by native file tools: ${input}.`,

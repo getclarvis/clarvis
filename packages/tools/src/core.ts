@@ -31,7 +31,7 @@ function protectSkillPackages(
   if (!NATIVE_MUTATION_TOOLS.has(name) || config.skillExecutionRoots.length === 0) return;
   const context = buildGuardContext(name, args, config);
   for (const fact of context.paths) {
-    assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw);
+    assertOutsideRoots(fact.resolved, config.skillExecutionRoots, fact.raw, name === "replace");
   }
 }
 

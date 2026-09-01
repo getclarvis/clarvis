@@ -430,7 +430,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
               return (
                 plugin !== undefined &&
                 plugin.scope === "global" &&
-                plugin.installSource !== undefined &&
+                plugin.updateable === true &&
                 operation() === undefined
               );
             },

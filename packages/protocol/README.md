@@ -74,8 +74,11 @@ fingerprint is not trusted. The full format, selection precedence, snapshot and 
 
 Marketplace installation uses `PluginInstallSource`, a closed union for Git (optional subdirectory,
 ref or SHA), confined local directories, and npm packages (optional version and credential-free
-HTTPS registry). `PluginService.installSource` keeps source interpretation on the client/catalog
-side and fetch policy in the kernel. `PluginView` preserves the original manifest
+HTTPS registry). A source may carry `expected_name`, binding a marketplace listing to the installed
+manifest identity and supplying a stable name only when a foreign manifest omits one.
+`PluginService.installSource` keeps source interpretation on the client/catalog side and fetch policy
+in the kernel. `PluginView.updateable` distinguishes managed Git origins from local, npm, workspace,
+and unmanaged installations. `PluginView` preserves the original manifest
 publisher/legal/discovery fields and the complete install-surface `interface` projection; it never
 substitutes Clarvis as author. `SkillSummary.dependencies` exposes bounded MCP requirements read
 from a skill sidecar.

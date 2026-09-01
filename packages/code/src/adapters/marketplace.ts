@@ -336,11 +336,14 @@ export function createMarketplaceAdapter(deps: {
 
 /** Project one tolerant marketplace listing into the strict kernel fetch contract. */
 export function marketplaceInstallSource(listing: MarketplaceListing): PluginInstallSource {
-  if (listing.sourceType === "local") return { kind: "local", path: listing.source };
+  if (listing.sourceType === "local") {
+    return { kind: "local", path: listing.source, expected_name: listing.name };
+  }
   if (listing.sourceType === "npm") {
     return {
       kind: "npm",
       package: listing.source,
+      expected_name: listing.name,
       ...(listing.version === undefined ? {} : { version: listing.version }),
       ...(listing.registry === undefined ? {} : { registry: listing.registry }),
     };
@@ -348,6 +351,7 @@ export function marketplaceInstallSource(listing: MarketplaceListing): PluginIns
   return {
     kind: "git",
     url: listing.source,
+    expected_name: listing.name,
     ...(listing.path === undefined ? {} : { subdir: listing.path }),
     ...(listing.ref === undefined ? {} : { ref: listing.ref }),
     ...(listing.sha === undefined ? {} : { sha: listing.sha }),

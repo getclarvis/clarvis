@@ -36,6 +36,7 @@ function plugin(over: Partial<PluginView> = {}): PluginView {
     dir: "/plugins/demo-plugin",
     enabled: true,
     installSource: "https://example.invalid/demo.git",
+    updateable: true,
     revision: "abc123",
     contributions: {
       agents: ["researcher"],
@@ -270,7 +271,14 @@ test("uninstall immediately replaces the active row with its available listing",
 
 test("locally installed plugins remain manageable without a marketplace listing", async () => {
   const mounted = mount({
-    plugins: [plugin({ name: "local-only", displayName: "Local Only", installSource: undefined })],
+    plugins: [
+      plugin({
+        name: "local-only",
+        displayName: "Local Only",
+        installSource: undefined,
+        updateable: false,
+      }),
+    ],
   });
   const rendered = await openRender(
     (() => MarketplaceBrowser(mounted.host, mounted.deps)) as never,
@@ -287,6 +295,26 @@ test("locally installed plugins remain manageable without a marketplace listing"
   expect(mounted.updated).toEqual([]);
   expect(rendered.captureCharFrame()).not.toContain("Update local-only?");
   rendered.renderer.destroy();
+});
+
+test("local and npm installations do not offer an update action", async () => {
+  for (const installSource of ["local:/plugins/local-only", "npm:@scope/local-only@1.0.0"]) {
+    const mounted = mount({
+      plugins: [plugin({ name: "local-only", installSource, updateable: false })],
+    });
+    const rendered = await openRender(
+      (() => MarketplaceBrowser(mounted.host, mounted.deps)) as never,
+      { width: 100, height: 24 },
+    );
+    await rendered.renderOnce();
+    mounted.press("return");
+    await rendered.renderOnce();
+    expect(rendered.captureCharFrame()).not.toContain("u update");
+    mounted.press("u");
+    await rendered.renderOnce();
+    expect(mounted.updated).toEqual([]);
+    rendered.renderer.destroy();
+  }
 });
 
 test("unavailable entries open an explanation instead of installing", async () => {

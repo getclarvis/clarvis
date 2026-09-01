@@ -138,12 +138,14 @@ test("listings: rewrites an installable repository-local source into that reposi
 test("marketplaceInstallSource projects local, npm, and pinned git inventory targets", () => {
   expect(
     marketplaceInstallSource({
+      name: "local-plugin",
       sourceType: "local",
       source: "/plugins/local",
     } as MarketplaceListing),
-  ).toEqual({ kind: "local", path: "/plugins/local" });
+  ).toEqual({ kind: "local", path: "/plugins/local", expected_name: "local-plugin" });
   expect(
     marketplaceInstallSource({
+      name: "npm-plugin",
       sourceType: "npm",
       source: "@scope/plugin",
       version: "1.2.3",
@@ -152,11 +154,13 @@ test("marketplaceInstallSource projects local, npm, and pinned git inventory tar
   ).toEqual({
     kind: "npm",
     package: "@scope/plugin",
+    expected_name: "npm-plugin",
     version: "1.2.3",
     registry: "https://registry.npmjs.org",
   });
   expect(
     marketplaceInstallSource({
+      name: "git-plugin",
       sourceType: "git",
       source: "https://example.invalid/plugin.git",
       path: "plugins/demo",
@@ -166,6 +170,7 @@ test("marketplaceInstallSource projects local, npm, and pinned git inventory tar
   ).toEqual({
     kind: "git",
     url: "https://example.invalid/plugin.git",
+    expected_name: "git-plugin",
     subdir: "plugins/demo",
     ref: "main",
     sha: "abc123",

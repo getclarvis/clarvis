@@ -136,4 +136,23 @@ describe("settingsServerToEngine", () => {
       expect({ key, carried: carried.has(key) }).toEqual({ key, carried: true });
     }
   });
+
+  it("rejects OAuth callback queries in settings and direct run declarations", () => {
+    const callback = "http://127.0.0.1/callback?tenant=acme";
+    expect(
+      mcpServerSettingsSchema.safeParse({
+        type: "http",
+        url: "https://example.test/mcp",
+        oauth: { callback_url: callback },
+      }).success,
+    ).toBe(false);
+    expect(
+      serverSchema.safeParse({
+        name: "docs",
+        transport: "http",
+        url: "https://example.test/mcp",
+        oauth: { callback_url: callback },
+      }).success,
+    ).toBe(false);
+  });
 });

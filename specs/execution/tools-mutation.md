@@ -474,8 +474,10 @@ lock-ordering deadlock between them.
     handler dispatch, `protectSkillPackages` extracts every path through `buildGuardContext` and
     applies `assertOutsideRoots` to `write_file`, `edit_file`, `multi_edit`, `apply_patch`, `replace`,
     `move`, `copy`, `mkdir`, and `remove`. This applies even if the skill directory is nested under
-    the writable workspace; command execution has the separate posture defined by the shell and
-    sandbox contracts. Production: `packages/tools/src/core.ts` and
+    the writable workspace. Because `replace` recursively traverses its scope, it additionally
+    rejects an ancestor that contains a protected root; a scope such as `.agents` cannot rewrite a
+    selected `.agents/skills/<name>` package indirectly. Command execution has the separate posture
+    defined by the shell and sandbox contracts. Production: `packages/tools/src/core.ts` and
     `packages/tools/src/lib/paths.ts`. Test: `packages/tools/tests/integration/api.test.ts`.
 
 13. **`move`/`copy` refuse when either endpoint is a symlink**, checked before any stat or filesystem

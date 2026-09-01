@@ -226,10 +226,16 @@ lease, `EnvironmentManager.assertRunSnapshot` rehashes all selected plugin and s
 bytes. Drift rejects that run with `unavailable` until reconnect, before any executable contribution
 can enter execution under the old fingerprint. Capability executable location retains its own full
 check at the executable boundary. Selected standalone skill digests cover effective catalog
-metadata and the manifest; `standaloneCatalog` hashes each resource through the same raw streaming
+metadata — including sidecar MCP tool dependencies that decide catalog availability — and the
+manifest; `standaloneCatalog` hashes each resource through the same raw streaming
 `hashBoundedFile` path, with the same 8 MiB per-file limit and a 32 MiB aggregate limit per
 standalone skill. Their full drift check occurs both at run admission and every `skillRoots`
-projection. The fingerprint
+projection. Plugin skill digests include the same dependency projection. Production:
+`standaloneCatalog` in `packages/kernel/src/environments/environment-manager.ts` and `skillSurface`
+in `packages/kernel/src/plugins/plugin-contributions.ts`. Test: the standalone and plugin dependency
+drift cases in `packages/kernel/tests/integration/environment-manager.test.ts` and
+`packages/kernel/tests/integration/plugin-contributions.test.ts`.
+The fingerprint
 also covers the qualified Environment id, definition revision, status, issues, and applicable trust
 state/fingerprint. Hook definitions are part of the plugin manifest digest, but independent
 hook-approval state is excluded from Environment identity. Selection mutations return

@@ -78,6 +78,18 @@ describe("request parsing", () => {
 
     expect(() => parseRunRequest(VALID_REQUEST, registry)).toThrow("collides with a built-in");
   });
+
+  test("removes disabled MCP declarations from the executable request", () => {
+    const parsed = parseRunRequest({
+      ...VALID_REQUEST,
+      servers: [
+        { name: "off", transport: "stdio", command: "must-not-run", enabled: false },
+        { name: "on", transport: "stdio", command: "run", enabled: true },
+      ],
+    });
+
+    expect(parsed.servers.map((server) => server.name)).toEqual(["on"]);
+  });
 });
 
 /**

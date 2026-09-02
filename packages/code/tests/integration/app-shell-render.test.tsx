@@ -434,7 +434,7 @@ test("the complete composer adopts the draft typed during startup", async () => 
   t.renderer.destroy();
 });
 
-const CHANGED_WORKSPACE_ENVIRONMENT: ResolvedExtensionProfile = {
+const CHANGED_WORKSPACE_EXTENSION_PROFILE: ResolvedExtensionProfile = {
   id: "workspace:project",
   ref: { scope: "workspace", name: "project" },
   immutable: false,
@@ -469,7 +469,7 @@ test("a changed executable workspace opens approval after app hydration without 
   let approvals = 0;
   const settingsKnobs = () => ({
     workspaceTrust: "changed" as const,
-    withheldWorkspaceFields: ["mcpServers", "hooks"],
+    withheldWorkspaceFields: ["extension_profile", "mcpServers", "hooks"],
     setWorkspaceTrust: async (approve: boolean) => {
       if (approve) approvals += 1;
     },
@@ -479,12 +479,14 @@ test("a changed executable workspace opens approval after app hydration without 
       settingsKnobs,
       backend: baseBackend({
         extensionProfiles: {
-          current: async () => CHANGED_WORKSPACE_ENVIRONMENT,
+          current: async () => CHANGED_WORKSPACE_EXTENSION_PROFILE,
         } as AppBackend["extensionProfiles"],
       }),
     }),
   );
   const approval = await captureUntil(t, "This workspace's executable snapshot changed.");
+  expect(approval).toContain("repository-owned plugins");
+  expect(approval).not.toContain("extension_profile");
   expect(approval).toContain("MCP servers");
   expect(approval).toContain("Every repository-owned plugin in the current snapshot");
   expect(approval).toContain("[n] no, review and remove");

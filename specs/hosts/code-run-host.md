@@ -226,7 +226,7 @@ Declared at `packages/code/src/adapters/session-store.ts:69-87`.
 | `workspace` | `string` | the workspace **id**, from `RunHostDeps.workspaceId` (`packages/code/src/run-host.ts:392-397`) |
 | `owner` | `string` | |
 | `createdAt` / `updatedAt` | `number` (epoch ms) | |
-| `profile` | `string?` | agent name |
+| `agentProfile` | `string?` | Agent Profile name |
 | `turns` | `TurnRef[]` | |
 | `lastExtensionProfile` | `ExtensionProfileRunRef?` | newest turn's extension snapshot, retained by catalog-only projections |
 | `turnCount` | `number?` | present *only* on a catalog-only summary (`packages/code/src/adapters/session-store.ts:84`, `:503-520`) |
@@ -393,10 +393,10 @@ Unlike `submitTurn`, an active run makes `submitSkillRun` **refuse outright** ra
 pinned by `packages/code/tests/component/run-host.test.ts:1788-1799` ("submitSkillRun: refuses to start
 while a run is already active").
 
-1. `profile = deps.activeProfile()` (`:915`); this is the active Agent Profile, and if there is no session yet, create one with
-   `{ profile: profile || undefined }` (`:916-920`) — note the `|| undefined`, not the bare
-   `{profile}` `submitTurn` uses (`:766-769`), so an empty active profile is stored as absent rather than
-   as `""`.
+1. `profile = deps.activeProfile()` (`:915`); this is the active Agent Profile, and if there is no
+   session yet, create one with `{ agentProfile: profile || undefined }` (`:916-920`) — note the
+   `|| undefined`, not the bare `{ agentProfile: profile }` `submitTurn` uses (`:766-769`), so an empty
+   active profile is stored as absent rather than as `""`.
 2. Mint `executionId`, build the label `` `/${name} ${task}` `` (or bare `` `/${name}` `` when `task`
    is blank), append the user node, persist it through `sess.beginTranscriptTurn(label, executionId)`
    and call `rememberResidentTurn`. `beginTranscriptTurn` writes `kind: "transcript"` but does not
@@ -427,7 +427,8 @@ while a run is already active").
    folded-prefix notice are discarded before the task-bound run starts; there is no path that preserves
    prior session state alongside a task run.
 3. `deps.setActiveProfile(profile)`, bumps `loadEpoch`, sets `sessionTask = {id: ref.id, provider_key:
-   ref.provider_key, mode: "work"}`, and creates a fresh `Session` with `{profile}` (`:972-976`).
+   ref.provider_key, mode: "work"}`, and creates a fresh `Session` with `{ agentProfile: profile }`
+   (`:972-976`).
 4. Mints `executionId` and a **fixed** instruction message — `` `Work on task ${ref.id} in the current
    workspace. Read the active task context, call start_task explicitly when that tool is available and
    you are ready to begin, and keep every review or completion transition explicit.` `` — displayed as

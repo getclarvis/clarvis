@@ -24,7 +24,7 @@ export interface WorkspaceTrustPromptDeps {
 const FIELD_LABELS: Readonly<Record<string, string>> = {
   agents: "agents",
   enabledPlugins: "plugin selection",
-  extensionProfile: "repository-owned plugins",
+  extension_profile: "repository-owned plugins",
   hooks: "hooks",
   marketplaces: "marketplace sources",
   mcpServers: "MCP servers",

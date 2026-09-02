@@ -297,23 +297,120 @@ describe("buildExecuteRunDeps", () => {
     }
   });
 
-  it("fails closed when an exact Environment skill-root snapshot drifts lazily", async () => {
+  it("keeps foreground skill access available when a function-valued root provider fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "clarvis-dynamic-roots-"));
+    const skillDir = join(dir, "guide");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      "---\nname: guide\ndescription: guide\n---\n\nGuide body.\n",
+    );
     let drifted = false;
     const built = await buildExecuteRunDeps({
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
       logger: createLogger("silent"),
-      workspaceRoot: process.cwd(),
+      workspaceRoot: dir,
       skillRoots: () => {
         if (drifted) throw new Error("Environment contribution drifted");
-        return [];
+        return [{ path: dir, include: ["guide"] }];
       },
     });
     try {
-      expect(built.skills?.listSkills()).toEqual([]);
+      expect(built.skills?.loadSkill("guide")?.body).toBe("Guide body.");
       drifted = true;
-      expect(() => built.skills?.loadSkill("anything")).toThrow(/contribution drifted/);
+      expect(built.skills?.loadSkill("guide")?.body).toBe("Guide body.");
     } finally {
       await built.dispose();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("disables snapshot skills without blocking deps construction when pinned roots fail", async () => {
+    const logger = createLogger("silent");
+    const warnSpy = vi.spyOn(logger, "warn");
+    const built = await buildExecuteRunDeps({
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      logger,
+      workspaceRoot: process.cwd(),
+      skillRoots: {
+        roots: () => {
+          throw new Error("pinned roots unavailable");
+        },
+        observe: () => {
+          throw new Error("unreachable");
+        },
+        available: () => true,
+      },
+    });
+    try {
+      expect(built.skills).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "skills.discovery_failed", scope: "snapshot" }),
+        expect.any(String),
+      );
+    } finally {
+      await built.dispose();
+    }
+  });
+
+  it("captures exact roots once and withdraws drifted skills without rescanning", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "clarvis-snapshot-roots-"));
+    const skillDir = join(dir, "guide");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      "---\nname: guide\ndescription: guide\n---\n\nGuide body.\n",
+    );
+    writeFileSync(join(skillDir, "reference.md"), "reference\n");
+    let rootsCalls = 0;
+    let observed = 0;
+    let available = true;
+    const built = await buildExecuteRunDeps({
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      logger: createLogger("silent"),
+      workspaceRoot: dir,
+      skillRoots: {
+        roots: () => {
+          rootsCalls += 1;
+          return [{ path: dir, include: ["guide"] }];
+        },
+        observe: (skills) => {
+          observed += 1;
+          expect(skills.map((skill) => skill.name)).toEqual(["guide"]);
+        },
+        available: () => available,
+      },
+    });
+    try {
+      expect(built.skills!.listSkills().map((skill) => skill.name)).toEqual(["guide"]);
+      writeFileSync(
+        join(skillDir, "SKILL.md"),
+        "---\nname: guide\ndescription: changed\n---\n\nChanged body.\n",
+      );
+      expect(built.skills!.loadSkill("guide")?.body).toContain("Guide body.");
+      expect(built.skills!.readResource("guide", "reference.md")).toBe("reference\n");
+      expect(built.skills!.readResourceChunk!("guide", "reference.md", 0, 4).text).toBe("refe");
+      writeFileSync(join(skillDir, "injected.md"), "not snapshotted\n");
+      expect(() => built.skills!.readResource("guide", "injected.md")).toThrow(
+        /not part of the process snapshot/,
+      );
+      expect(() => built.skills!.readResourceChunk!("guide", "injected.md", 0, 4)).toThrow(
+        /not part of the process snapshot/,
+      );
+      available = false;
+      expect(built.skills!.listSkills()).toEqual([]);
+      expect(built.skills!.loadSkill("guide")).toBeUndefined();
+      expect(() => built.skills!.readResource("guide", "reference.md")).toThrow(
+        /process snapshot changed/,
+      );
+      expect(() => built.skills!.readResourceChunk!("guide", "reference.md", 0, 4)).toThrow(
+        /process snapshot changed/,
+      );
+      expect(rootsCalls).toBe(1);
+      expect(observed).toBe(1);
+    } finally {
+      await built.dispose();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
@@ -369,10 +466,10 @@ describe("buildExecuteRunDeps", () => {
   });
 
   it("falls back to an unavailable skills seam (rather than throwing) when a dynamic provider's roots can't be scanned", async () => {
-    const warnings: unknown[] = [];
+    const diagnostics: unknown[] = [];
     const logger = createLogger("silent");
-    const warnSpy = vi.spyOn(logger, "warn").mockImplementation((...args: unknown[]) => {
-      warnings.push(args);
+    const debugSpy = vi.spyOn(logger, "debug").mockImplementation((...args: unknown[]) => {
+      diagnostics.push(args);
     });
     const built = await buildExecuteRunDeps({
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
@@ -386,8 +483,11 @@ describe("buildExecuteRunDeps", () => {
       expect(built.skills!.listSkills()).toEqual([]);
       expect(built.skills!.loadSkill("anything")).toBeUndefined();
       expect(() => built.skills!.readResource("anything", "rel")).toThrow(/skills are unavailable/);
-      expect(warnSpy).toHaveBeenCalled();
-      expect(warnings.length).toBeGreaterThan(0);
+      expect(() => built.skills!.readResourceChunk!("anything", "rel", 0, 4)).toThrow(
+        /skills are unavailable/,
+      );
+      expect(debugSpy).toHaveBeenCalled();
+      expect(diagnostics.length).toBeGreaterThan(0);
     } finally {
       await built.dispose();
     }

@@ -24,10 +24,18 @@ import type {
   PluginRef,
   WorkspaceTrustVerdict,
 } from "@clarvis/protocol";
-import { createEnvironmentManager } from "../../src/environments/environment-manager.ts";
+import {
+  createEnvironmentManager,
+  type EnvironmentManagerOptions,
+  type EnvironmentSkillDriftNotice,
+} from "../../src/environments/environment-manager.ts";
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
-import { MAX_SKILL_FILE_CHARS, MAX_SKILL_RESOURCE_SNAPSHOT_BYTES } from "@clarvis/skills";
+import {
+  createAgentSkills,
+  MAX_SKILL_FILE_CHARS,
+  MAX_SKILL_RESOURCE_SNAPSHOT_BYTES,
+} from "@clarvis/skills";
 
 const TRUSTED: WorkspaceTrustVerdict = {
   state: "trusted",
@@ -84,7 +92,11 @@ describe("Environment manager", () => {
 
   afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-  function manager(cliSelection?: string, logger?: RecordingLogger) {
+  function manager(
+    cliSelection?: string,
+    logger?: RecordingLogger,
+    monitor: Pick<EnvironmentManagerOptions, "onSkillDrift" | "watchSkillPath"> = {},
+  ) {
     return createEnvironmentManager({
       globalDir,
       workspaceRoot,
@@ -97,6 +109,7 @@ describe("Environment manager", () => {
       }),
       ...(logger === undefined ? {} : { logger }),
       ...(cliSelection === undefined ? {} : { cliSelection }),
+      ...monitor,
     });
   }
 
@@ -722,20 +735,18 @@ describe("Environment manager", () => {
     const before = target.workspaceTrustSurface();
     const beforeFingerprint = JSON.stringify(before);
 
-    expect(before).toMatchObject({
-      plugins: [
-        {
-          ref: pluginRef("browser", "workspace", "agents"),
-          digest: expect.stringMatching(/^sha256:/),
-        },
-        {
-          ref: pluginRef("runner", "workspace"),
-          digest: expect.stringMatching(/^sha256:/),
-        },
-      ],
-    });
+    const plugins = (before as { plugins: { ref: ReturnType<typeof pluginRef>; digest: string }[] })
+      .plugins;
+    expect(plugins.map((plugin) => plugin.ref)).toEqual([
+      pluginRef("browser", "workspace", "agents"),
+      pluginRef("runner", "workspace"),
+    ]);
+    expect(plugins.every((plugin) => /^sha256:/.test(plugin.digest))).toBeTrue();
     writeFileSync(join(first, "plugin.json"), JSON.stringify({ name: "runner", version: "two" }));
-    expect(JSON.stringify(target.workspaceTrustSurface())).not.toBe(beforeFingerprint);
+    expect(JSON.stringify(target.workspaceTrustSurface())).toBe(beforeFingerprint);
+    expect(JSON.stringify(target.workspaceTrustSurface({ refresh: true }))).not.toBe(
+      beforeFingerprint,
+    );
   });
 
   it("keeps global plugins active while a workspace-owned sibling awaits approval", async () => {
@@ -1126,20 +1137,90 @@ describe("Environment manager", () => {
     expect(afterProcess.fingerprint).not.toBe(afterSkill.fingerprint);
   });
 
-  it("fingerprints standalone skill resources and rejects their drift until reconnect", () => {
+  it("withdraws a drifted standalone skill asynchronously without changing run admission", () => {
     const root = globalPaths(globalDir).skillsDir;
     writeSkill(root, "research");
     const resource = join(root, "research", "reference.md");
     writeFileSync(resource, "version one\n");
-    const target = manager();
+    let signalDrift!: () => void;
+    let watcherClosed = false;
+    const notices: EnvironmentSkillDriftNotice[] = [];
+    const target = manager(undefined, undefined, {
+      onSkillDrift: (notice) => notices.push(notice),
+      watchSkillPath: (_path, onChange) => {
+        signalDrift = onChange;
+        return { close: () => (watcherClosed = true) };
+      },
+    });
     const before = target.resolveActive([], TRUSTED);
+    const skills = createAgentSkills({ workspace: workspaceRoot, roots: target.skillRoots() });
+    const catalog = skills.listSkills();
+    target.observeSkillCatalog(catalog.flatMap((skill) => skills.loadSkill(skill.name) ?? []));
 
     writeFileSync(resource, "version two\n");
+    signalDrift();
 
-    expect(() => target.skillRoots()).toThrow(/reconnect the kernel/);
-    expect(() => target.assertRunSnapshot()).toThrow(/reconnect the kernel/);
+    expect(target.skillRoots()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: root })]),
+    );
+    expect(target.skillAvailable(catalog[0]!)).toBeFalse();
+    expect(notices).toEqual([
+      expect.objectContaining({ name: "research", source: "clarvis", path: expect.any(String) }),
+    ]);
+    expect(watcherClosed).toBeTrue();
     const after = manager().resolveActive([], TRUSTED);
     expect(after.fingerprint).not.toBe(before.fingerprint);
+    target.close();
+  });
+
+  it("contains a failing host drift notice after withdrawing the changed skill", () => {
+    const root = globalPaths(globalDir).skillsDir;
+    writeSkill(root, "research");
+    let signalDrift!: () => void;
+    const logger = recordingLogger();
+    const target = manager(undefined, logger, {
+      onSkillDrift: () => {
+        throw new Error("notice transport closed");
+      },
+      watchSkillPath: (_path, onChange) => {
+        signalDrift = onChange;
+        return { close: () => undefined };
+      },
+    });
+    target.resolveActive([], TRUSTED);
+    const skills = createAgentSkills({ workspace: workspaceRoot, roots: target.skillRoots() });
+    const catalog = skills.listSkills();
+    target.observeSkillCatalog(catalog.flatMap((skill) => skills.loadSkill(skill.name) ?? []));
+
+    expect(() => signalDrift()).not.toThrow();
+    expect(target.skillAvailable(catalog[0]!)).toBeFalse();
+    expect(logger.events("kernel.environment.skill_drift_notice_failed")).toEqual([
+      expect.objectContaining({ skill: "research", cause: "notice transport closed" }),
+    ]);
+    target.close();
+  });
+
+  it("keeps a skill available when its asynchronous monitor cannot start", () => {
+    const root = globalPaths(globalDir).skillsDir;
+    writeSkill(root, "research");
+    const logger = recordingLogger();
+    const target = manager(undefined, logger, {
+      watchSkillPath: () => {
+        throw new Error("watch service unavailable");
+      },
+    });
+    target.resolveActive([], TRUSTED);
+    const skills = createAgentSkills({ workspace: workspaceRoot, roots: target.skillRoots() });
+    const catalog = skills.listSkills();
+
+    expect(() =>
+      target.observeSkillCatalog(catalog.flatMap((skill) => skills.loadSkill(skill.name) ?? [])),
+    ).not.toThrow();
+    expect(target.skillAvailable(catalog[0]!)).toBeTrue();
+    expect(logger.events("kernel.environment.skill_watch_unavailable")).toEqual([
+      expect.objectContaining({ skill: "research", cause: "watch service unavailable" }),
+    ]);
+    target.close();
   });
 
   it("withholds a standalone skill whose resources exceed the aggregate snapshot bound", () => {
@@ -1166,7 +1247,7 @@ describe("Environment manager", () => {
     expect(target.skillRoots()).toEqual([]);
   });
 
-  it("fingerprints standalone sidecar presentation and rejects lazy catalog drift", () => {
+  it("fingerprints standalone sidecar presentation while keeping pinned roots stable", () => {
     const root = globalPaths(globalDir).skillsDir;
     writeSkill(root, "presented");
     const agents = join(root, "presented", "agents");
@@ -1178,12 +1259,14 @@ describe("Environment manager", () => {
 
     writeFileSync(sidecar, "short-description: Second presentation\n");
 
-    expect(() => target.skillRoots()).toThrow(/reconnect the kernel/);
+    expect(target.skillRoots()).toEqual([
+      expect.objectContaining({ path: root, include: ["presented"] }),
+    ]);
     const after = manager().resolveActive([], TRUSTED);
     expect(after.fingerprint).not.toBe(before.fingerprint);
   });
 
-  it("fingerprints standalone MCP dependencies and rejects their lazy drift", () => {
+  it("fingerprints standalone MCP dependencies while keeping pinned roots stable", () => {
     const root = globalPaths(globalDir).skillsDir;
     writeSkill(root, "dependent");
     const agents = join(root, "dependent", "agents");
@@ -1195,7 +1278,9 @@ describe("Environment manager", () => {
 
     writeFileSync(sidecar, "dependencies:\n  tools:\n    - type: mcp\n      value: search\n");
 
-    expect(() => target.skillRoots()).toThrow(/reconnect the kernel/);
+    expect(target.skillRoots()).toEqual([
+      expect.objectContaining({ path: root, include: ["dependent"] }),
+    ]);
     const after = manager().resolveActive([], TRUSTED);
     expect(after.fingerprint).not.toBe(before.fingerprint);
   });

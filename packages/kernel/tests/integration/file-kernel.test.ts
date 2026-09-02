@@ -328,7 +328,7 @@ describe("createFileKernel — skills roots from plugins", () => {
     await kernel.close();
   });
 
-  it("rejects plugin skill drift when a run is admitted, not on the boot projection path", async () => {
+  it("withdraws plugin skill drift without rejecting the next run", async () => {
     const ws = seedWorkspace();
     const globalDir = join(ws, "global");
     const pluginDir = join(globalPaths(globalDir).pluginsDir, "handbook");
@@ -342,20 +342,48 @@ describe("createFileKernel — skills roots from plugins", () => {
     seedFile(join(pluginDir, "plugin.json"), JSON.stringify({ name: "handbook" }));
     seedFile(skillFile, "---\nname: guide\ndescription: first\n---\n\nfirst\n");
 
+    let reportDrift!: (notice: { name: string }) => void;
+    const drift = new Promise<{ name: string }>((resolve) => {
+      reportDrift = resolve;
+    });
+    const logger = recordingLogger();
     const kernel = await createFileKernel({
       workspaceRoot: ws,
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
       traceDir: join(ws, "traces"),
       globalDir,
+      onEnvironmentDrift: (notice) => {
+        if (notice.kind === "skill") reportDrift(notice);
+      },
+      logger,
     });
-    expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBe(true);
+    try {
+      expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBe(true);
+      expect(logger.events("kernel.environment.skill_watch_unavailable")).toEqual([]);
+      const discoveriesBeforeRun = logger.events("skills.discovered").length;
+      const unreadableBeforeRun = logger.events("skill.dir_unreadable").length;
 
-    writeFileSync(skillFile, "---\nname: guide\ndescription: second\n---\n\nsecond\n");
-    await expect(
-      kernel.runs.start({ messages: [{ role: "user", content: "hi" }], agent: "coder" }),
-    ).rejects.toThrow(/selected plugin content changed.*reconnect the kernel/);
+      writeFileSync(skillFile, "---\nname: guide\ndescription: second\n---\n\nsecond\n");
+      const notice = await Promise.race([
+        drift,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("skill drift watcher did not fire")), 2_000),
+        ),
+      ]);
+      expect(notice.name).toBe("guide");
+      expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBe(false);
 
-    await kernel.close();
+      const handle = await kernel.runs.start({
+        messages: [{ role: "user", content: "hi" }],
+        agent: "coder",
+      });
+      await handle.done;
+      await handle.closed;
+      expect(logger.events("skills.discovered").slice(discoveriesBeforeRun)).toEqual([]);
+      expect(logger.events("skill.dir_unreadable").slice(unreadableBeforeRun)).toEqual([]);
+    } finally {
+      await kernel.close();
+    }
   });
 });
 

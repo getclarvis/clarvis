@@ -716,6 +716,15 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
   provider access, re-scans only when the roots' JSON signature changes, and falls back to the last
   good scan (or an empty provider that throws `"skills are unavailable"` on resource access) when a
   rescan throws (`:203`–`:251`).
+- A `SkillRootSnapshotProvider` instead produces `snapshotSkills`: roots are consumed once while
+  dependencies are built, catalog bodies are materialized once, resources are limited to the
+  captured relative-path allow-list, and later calls only test the host's memory-only
+  `available(skill)` predicate. A withdrawn skill disappears from the catalog, returns no body, and
+  refuses resource reads without rebuilding the registry or rejecting a run. Production:
+  `SkillRootSnapshotProvider` and `snapshotSkills` in
+  `packages/loop/src/runtime/build-run-deps.ts`. Test: `captures exact roots once and withdraws
+  drifted skills without rescanning` in
+  `packages/loop/tests/integration/execute-run-entrypoints.test.ts`.
 - An initial scan failure logs `skills.discovery_failed` and leaves `skills` undefined rather than
   failing the deps (`:507`–`:518`).
 - The capability is registered whenever `useSkills`, even with an undefined provider, so the grant,
@@ -1058,15 +1067,18 @@ line that names the whole pass's outcome.
 | `builtins.skills = false` | package never loaded; `reportBuiltinDisabled` debug record | `packages/loop/src/runtime/build-run-deps.ts:401-403,477-485` |
 | initial `createAgentSkills` throws | `skills.discovery_failed` (`scope: "initial"`), deps built without skills | `:487-518` |
 | rescan throws (dynamic roots) | `skills.discovery_failed` (`scope: "rescan"`), last good scan served; if there was none, an empty provider whose resource methods throw `"skills are unavailable"` | `:227-244` |
-| root provider throws | treated as no extra roots, `skills.roots_unavailable` debug | `:212-226` |
+| root provider throws | last good scan (or empty provider) remains active; `skills.roots_unavailable` debug | `dynamicSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
+| a process-pinned skill is marked unavailable by its host | omitted from listings/body loads; resource reads fail as unavailable; no rescan or run rejection | `snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
 | `bootstraps()` throws | `bootstrap_skills_unavailable` warn, run degrades to the plain catalog | `packages/skills/src/capability.ts:153`–`:156` |
 | plugin panel cannot read a plugin's skills | `skillNamesOf` returns `{ names: [], notes: [] }` on any throw; per-skill rejection notes are capped and summarized | `packages/kernel/src/plugins/plugin-service.ts:243`–`:265` |
 
 ### 6.5 Retries and timeouts
 
-There are none in this subsystem. Every operation is synchronous filesystem work; `refresh()` is the
-only re-read and it is caller-driven (`packages/skills/src/index.ts:67`). `dynamicSkills`'s
-signature-based memo is a cache, not a retry (`packages/loop/src/runtime/build-run-deps.ts:203-244`).
+There are none inside `@clarvis/skills`. Its operations are synchronous filesystem work; `refresh()`
+is the only package-owned re-read and it is caller-driven (`packages/skills/src/index.ts`).
+`dynamicSkills`'s signature memo is a cache, not a retry. The kernel's process-pinned adapter is a
+host concern: it materializes bodies once and uses asynchronous stat monitoring outside this package
+to drive the adapter's memory-only availability predicate.
 
 ### 6.6 Silently tolerated
 

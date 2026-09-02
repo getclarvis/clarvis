@@ -183,7 +183,7 @@ describe("plugin contributions", () => {
     ]);
   });
 
-  it("serves captured projections but rejects lazy skill access and run admission after drift", () => {
+  it("serves captured projections while retaining explicit drift diagnostics", () => {
     const dir = install(globalPaths(globalDir).pluginsDir, "atlas", {
       mcpServers: "./.mcp.json",
     });
@@ -193,7 +193,8 @@ describe("plugin contributions", () => {
       JSON.stringify({ mcpServers: { charts: { command: "atlas-mcp-v1" } } }),
     );
     const loaded = contributions();
-    loaded.pin(refs("atlas"));
+    const pinnedDigest = loaded.pin(refs("atlas"))[0]!.digest;
+    const pinnedRoots = loaded.skillRoots(refs("atlas"));
 
     expect(loaded.mcpServers(refs("atlas"))[0]?.declaration.command).toBe("atlas-mcp-v1");
     expect(() => loaded.mcpServers([])).toThrow(/active plugin selection changed/);
@@ -205,24 +206,38 @@ describe("plugin contributions", () => {
     expect(loaded.settingsScopes(refs("atlas"))).toHaveLength(1);
     expect(loaded.mcpServers(refs("atlas"))[0]?.declaration.command).toBe("atlas-mcp-v1");
     expect(loaded.agents(refs("atlas"))).toEqual([]);
-    expect(() => loaded.skillRoots(refs("atlas"))).toThrow(/reconnect the kernel/);
-    expect(() => loaded.assertUnchanged(refs("atlas"))).toThrow(/reconnect the kernel/);
+    expect(loaded.skillRoots(refs("atlas"))).toEqual(pinnedRoots);
+    expect(loaded.snapshot(refs("atlas"))[0]!.digest).not.toBe(pinnedDigest);
   });
 
-  it("rejects drift in a selected skill resource", () => {
+  it("projects pinned skill roots without a second content validation", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "handbook", {}, { skill: true });
+    const loaded = contributions();
+    loaded.pin(refs("handbook"));
+    const before = loaded.pinnedSkillRoots(refs("handbook"));
+
+    writeFileSync(
+      join(dir, "skills", "guide", "SKILL.md"),
+      "---\nname: guide\ndescription: changed\n---\n\nchanged\n",
+    );
+
+    expect(loaded.pinnedSkillRoots(refs("handbook"))).toEqual(before);
+    expect(loaded.skillRoots(refs("handbook"))).toEqual(before);
+  });
+
+  it("keeps the pinned skill projection while a fresh diagnostic snapshot sees resource drift", () => {
     const dir = install(globalPaths(globalDir).pluginsDir, "handbook", {}, { skill: true });
     const resources = join(dir, "skills", "guide", "references");
     mkdirSync(resources, { recursive: true });
     const reference = join(resources, "runtime.md");
     writeFileSync(reference, "runtime v1\n");
     const loaded = contributions();
-    loaded.pin(refs("handbook"));
+    const pinnedDigest = loaded.pin(refs("handbook"))[0]!.digest;
+    const pinnedRoots = loaded.skillRoots(refs("handbook"));
 
     writeFileSync(reference, "runtime v2\n");
-    expect(() => loaded.skillRoots(refs("handbook"))).toThrow(/selected plugin content changed/);
-    expect(() => loaded.assertUnchanged(refs("handbook"))).toThrow(
-      /selected plugin content changed/,
-    );
+    expect(loaded.skillRoots(refs("handbook"))).toEqual(pinnedRoots);
+    expect(loaded.snapshot(refs("handbook"))[0]!.digest).not.toBe(pinnedDigest);
   });
 
   it("streams large binary and text resources into the exact skill snapshot", () => {
@@ -236,11 +251,10 @@ describe("plugin contributions", () => {
     writeFileSync(text, "x".repeat(75_000));
     const loaded = contributions();
 
-    expect(loaded.pin(refs("large-resources"))[0]?.skills).toEqual(["guide"]);
+    const pinned = loaded.pin(refs("large-resources"))[0]!;
+    expect(pinned.skills).toEqual(["guide"]);
     writeFileSync(text, "y".repeat(75_000));
-    expect(() => loaded.assertUnchanged(refs("large-resources"))).toThrow(
-      /selected plugin content changed/,
-    );
+    expect(loaded.snapshot(refs("large-resources"))[0]!.digest).not.toBe(pinned.digest);
   });
 
   it("withholds plugin skills when one resource exceeds the streaming file bound", () => {
@@ -385,7 +399,7 @@ describe("plugin contributions", () => {
     });
   });
 
-  it("rejects drift in package-local MCP, hook, and capability process files", () => {
+  it("detects package-local process-file drift only in a fresh diagnostic snapshot", () => {
     const dir = join(globalPaths(globalDir).pluginsDir, "runtime");
     install(globalPaths(globalDir).pluginsDir, "runtime", {
       mcpServers: {
@@ -416,18 +430,94 @@ describe("plugin contributions", () => {
     ];
     for (const entry of cases) {
       const loaded = contributions();
-      loaded.pin(refs("runtime"));
+      const pinnedDigest = loaded.pin(refs("runtime"))[0]!.digest;
       writeFileSync(join(dir, entry.file), `${entry.file}:v2\n`);
-      if (entry.file === "provider.py") {
-        expect(() => entry.read(loaded)).toThrow(/selected plugin content changed/);
-      } else {
-        expect(() => entry.read(loaded)).not.toThrow();
-        expect(() => loaded.assertUnchanged(refs("runtime"))).toThrow(
-          /selected plugin content changed/,
-        );
-      }
+      expect(() => entry.read(loaded)).not.toThrow();
+      expect(loaded.snapshot(refs("runtime"))[0]!.digest).not.toBe(pinnedDigest);
       writeFileSync(join(dir, entry.file), `${entry.file}:v1\n`);
     }
+  });
+
+  it("withdraws drifted executable projections through the asynchronous runtime latch", () => {
+    const dir = join(globalPaths(globalDir).pluginsDir, "runtime-latch");
+    install(globalPaths(globalDir).pluginsDir, "runtime-latch", {
+      mcpServers: {
+        docs: { command: "python3", args: ["./server.py"], cwd: dir },
+      },
+      hooks: [{ event: "run_start", command: `python3 "${join(dir, "hook.py")}"` }],
+      capabilityExecutables: {
+        memory: { command: "python3", args: ["./provider.py"] },
+      },
+    });
+    for (const file of ["server.py", "hook.py", "provider.py"]) {
+      writeFileSync(join(dir, file), `${file}:v1\n`);
+    }
+    const changes = new Map<string, () => void>();
+    const notices: { plugin: string; path: string }[] = [];
+    const loaded = createPluginContributions({
+      globalDir,
+      home,
+      workspaceRoot,
+      onRuntimeDrift: (notice) => notices.push(notice),
+      watchRuntimePath: (path, onChange) => {
+        changes.set(path, onChange);
+        return { close: () => undefined };
+      },
+    });
+    loaded.pin(refs("runtime-latch"));
+    expect(loaded.mcpServers(refs("runtime-latch"))).toHaveLength(1);
+    expect(loaded.settingsScopes(refs("runtime-latch"))).toHaveLength(1);
+
+    changes.get(join(dir, "provider.py"))!();
+
+    expect(notices).toEqual([{ plugin: "runtime-latch", path: join(dir, "provider.py") }]);
+    expect(loaded.mcpServers(refs("runtime-latch"))).toEqual([]);
+    expect(loaded.settingsScopes(refs("runtime-latch"))).toEqual([]);
+    expect(
+      loaded.locateCapabilityExecutable(refs("runtime-latch"), "memory", "runtime-latch"),
+    ).toEqual({
+      error:
+        "plugin 'runtime-latch' changed on disk; its executable contributions are withheld until reconnect",
+    });
+    loaded.close();
+  });
+
+  it("contains a failing host notice after withdrawing a drifted plugin runtime", () => {
+    const dir = join(globalPaths(globalDir).pluginsDir, "runtime-notice");
+    install(globalPaths(globalDir).pluginsDir, "runtime-notice", {
+      capabilityExecutables: {
+        memory: { command: "python3", args: ["./provider.py"] },
+      },
+    });
+    writeFileSync(join(dir, "provider.py"), "v1\n");
+    let signalDrift!: () => void;
+    const logger = recordingLogger();
+    const loaded = createPluginContributions({
+      globalDir,
+      home,
+      workspaceRoot,
+      logger,
+      onRuntimeDrift: () => {
+        throw new Error("notice transport closed");
+      },
+      watchRuntimePath: (_path, onChange) => {
+        signalDrift = onChange;
+        return { close: () => undefined };
+      },
+    });
+    loaded.pin(refs("runtime-notice"));
+
+    expect(() => signalDrift()).not.toThrow();
+    expect(
+      loaded.locateCapabilityExecutable(refs("runtime-notice"), "memory", "runtime-notice"),
+    ).toEqual({
+      error:
+        "plugin 'runtime-notice' changed on disk; its executable contributions are withheld until reconnect",
+    });
+    expect(logger.events("kernel.plugin.runtime_drift_notice_failed")).toEqual([
+      expect.objectContaining({ plugin: "runtime-notice", cause: "notice transport closed" }),
+    ]);
+    loaded.close();
   });
 
   it("omits a plugin whose referenced process file exceeds the executable byte bound", () => {

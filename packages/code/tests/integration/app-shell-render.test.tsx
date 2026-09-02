@@ -330,6 +330,7 @@ function defaultProps(overrides: {
   activity?: ReturnType<typeof createActivityStore>;
   workflowActivity?: AppProps["run"]["workflowActivity"];
   mcpStartupNotice?: AppProps["run"]["mcpStartupNotice"];
+  environmentDriftNotice?: AppProps["run"]["environmentDriftNotice"];
 }) {
   return (renderer: ReturnType<typeof useRenderer>): AppProps => {
     const store = overrides.store ?? createTranscriptStore();
@@ -372,6 +373,9 @@ function defaultProps(overrides: {
         ...(overrides.mcpStartupNotice === undefined
           ? {}
           : { mcpStartupNotice: overrides.mcpStartupNotice }),
+        ...(overrides.environmentDriftNotice === undefined
+          ? {}
+          : { environmentDriftNotice: overrides.environmentDriftNotice }),
         bang: () => true,
         localBusy: () => false,
         registerDraftRestore: () => {},
@@ -504,6 +508,25 @@ test("a live MCP startup failure appears once as a transient warning outside the
   const frame = await captureUntil(t, "MCP unavailable for this run");
   expect(frame).toContain("docs: missing DOCS_TOKEN");
   expect(store.nodes.some((node) => node.text.includes("missing DOCS_TOKEN"))).toBe(false);
+
+  t.renderer.destroy();
+});
+
+test("skill drift is a transient warning while the conversation remains untouched", async () => {
+  const store = createTranscriptStore();
+  const [notice, setNotice] =
+    createSignal<ReturnType<NonNullable<AppProps["run"]["environmentDriftNotice"]>>>(null);
+  const t = await mountApp(defaultProps({ store, environmentDriftNotice: notice }));
+
+  setNotice({ sequence: 1, kind: "skill", name: "release-notes", source: "clarvis" });
+  const frame = await captureUntil(t, "was withheld from runs until reconnect");
+  expect(frame).toContain("release-notes");
+  expect(store.nodes.some((node) => node.text.includes("release-notes"))).toBe(false);
+
+  setNotice({ sequence: 2, kind: "plugin_runtime", name: "handbook" });
+  const pluginFrame = await captureUntil(t, "changed executable files");
+  expect(pluginFrame).toContain("handbook");
+  expect(store.nodes.some((node) => node.text.includes("handbook"))).toBe(false);
 
   t.renderer.destroy();
 });

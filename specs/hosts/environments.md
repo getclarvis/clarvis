@@ -220,21 +220,36 @@ capped at 256 files, 8 MiB per file, and 32 MiB per plugin (`PLUGIN_SKILL_RESOUR
 `packages/kernel/src/plugins`; `identity` and `resolveActive` in
 `packages/kernel/src/environments/environment-manager.ts`). Ordinary settings,
 MCP and agent projections reuse those pinned parsed loadables and perform only an exact selection
-check. Skill-root projections repeat exact selected-content validation at the lazy read boundary.
-Immediately before each run
-lease, `EnvironmentManager.assertRunSnapshot` rehashes all selected plugin and standalone-skill
-bytes. Drift rejects that run with `unavailable` until reconnect, before any executable contribution
-can enter execution under the old fingerprint. Capability executable location retains its own full
-check at the executable boundary. Selected standalone skill digests cover effective catalog
+check. Skill roots are projected from the pinned parse without another filesystem pass. The file
+kernel supplies them through `SkillRootSnapshotProvider`; `snapshotSkills` consumes those roots once
+while run dependencies are constructed, materializes catalog metadata and bodies, and records the
+initial resource-path allow-list. Run admission then acquires only its in-memory lease: it performs no
+skill discovery, filesystem traversal, or hashing.
+
+After the registry is captured, `EnvironmentManager.observeSkillCatalog` uses `watchFile` polling on
+the admitted manifests and resources. This maintenance is asynchronous and outside every run. Its
+callback only marks the affected skill directory unavailable and publishes `onSkillDrift`; it does
+not recompute an Environment, fail the kernel, or reject work. `snapshotSkills` immediately filters a
+latched skill from catalog/body access and refuses its resources. Code relays the notice through
+`WorkspaceClientManager.subscribeEnvironmentDrift` and renders a transient warning outside transcript
+history. The next run continues with every unaffected skill. A reconnect is the explicit operation
+that captures the changed version. Package-local executable files use the same asynchronous model:
+`observeRuntimeFiles` withdraws the plugin's MCP/hook/capability projections through
+`runtimeAvailable`, without a run-admission or capability-location rehash. Selected standalone skill
+digests cover effective catalog
 metadata — including sidecar MCP tool dependencies that decide catalog availability — and the
 manifest; `standaloneCatalog` hashes each resource through the same raw streaming
 `hashBoundedFile` path, with the same 8 MiB per-file limit and a 32 MiB aggregate limit per
-standalone skill. Their full drift check occurs both at run admission and every `skillRoots`
-projection. Plugin skill digests include the same dependency projection. Production:
-`standaloneCatalog` in `packages/kernel/src/environments/environment-manager.ts` and `skillSurface`
-in `packages/kernel/src/plugins/plugin-contributions.ts`. Test: the standalone and plugin dependency
-drift cases in `packages/kernel/tests/integration/environment-manager.test.ts` and
-`packages/kernel/tests/integration/plugin-contributions.test.ts`.
+standalone skill. Plugin skill digests include the same dependency projection. Those digests define
+the version recorded by the process fingerprint; later sidecar changes do not alter the in-memory
+catalog, and later manifest/resource changes cause withdrawal when the asynchronous monitor observes
+them. Production: `standaloneCatalog`, `pinnedSkillRoots`, `observeSkillCatalog`, and
+`skillAvailable` in `packages/kernel/src/environments/environment-manager.ts`; `skillSurface` and
+`pinnedSkillRoots` in `packages/kernel/src/plugins/plugin-contributions.ts`; `snapshotSkills` in
+`packages/loop/src/runtime/build-run-deps.ts`. Test: asynchronous withdrawal in
+`packages/kernel/tests/integration/environment-manager.test.ts`, end-to-end non-blocking admission in
+`packages/kernel/tests/integration/file-kernel.test.ts`, and one-shot provider filtering in
+`packages/loop/tests/integration/execute-run-entrypoints.test.ts`.
 The fingerprint
 also covers the qualified Environment id, definition revision, status, issues, and applicable trust
 state/fingerprint. Hook definitions are part of the plugin manifest digest, but independent
@@ -290,10 +305,13 @@ operator-owned inventory: installing it through the TUI is its approval, and sel
 workspace Environment requires no additional workspace approval. Repository-owned plugins are
 different: after the first-paint composer, Code asks automatically as soon as the complete app has
 the resolved trust state. Repository plugins stay inactive while that state is resolving. The one
-verdict covers the complete workspace fingerprint, every inventoried workspace plugin and every later Environment selection while their bytes
-remain unchanged; there is no per-plugin or per-Environment approval. Adding, removing, repairing,
-or changing a repository plugin changes the workspace fingerprint and returns the verdict to
-`changed`. Until approval, only selected workspace-owned plugins remain inactive; global plugins in
+verdict covers the complete workspace fingerprint, every inventoried workspace plugin and every
+later Environment selection while their bytes remain unchanged; there is no per-plugin or
+per-Environment approval. Adding, removing, repairing, or changing a repository plugin is observed
+by a fresh explicit approval or the next kernel connection, which changes the workspace fingerprint
+and returns the verdict to `changed`. Ordinary settings reads reuse the process-captured trust
+surface and never walk that inventory in front of a run. Until approval, only selected
+workspace-owned plugins remain inactive; global plugins in
 the same Environment remain admitted
 (`workspaceTrustSurface` and `workspaceTargetNeedsApproval` in
 `packages/kernel/src/environments/environment-manager.ts`; `workspaceExecutableSurface` in
@@ -357,31 +375,38 @@ falls back to builtin.
 ### INV-317 — A kernel uses one immutable resolved snapshot
 
 Definition/selection changes require reconnection; a stale preview cannot authorize different
-bytes, contribution drift is rejected at every foreground and memory-indexer run-admission boundary,
-and an already running kernel retains its original fingerprint. Exact lazy skill catalog, body, and
-resource reads repeat full selected-content validation rather than falling back to a last-good scan;
-only atomically captured plugin skill surfaces and exact builtin/custom standalone includes reach
-the runtime. Skill resources enter that identity through raw streaming hashes capped at 8 MiB per
-file and 32 MiB aggregate (per plugin for packaged skills, per skill for standalone inventory), and
-an approved plugin root exposes only each discovered skill directory for helper execution.
-Read-only/control-plane projections use the pinned parse and cannot consume drifted bytes. Trust
-transitions may recompose only at an idle boundary.
+bytes, and an already running kernel retains its original fingerprint. Run admission is deliberately
+independent of extension filesystem size: it does not discover, stat, or hash skills. Only atomically
+captured plugin skill surfaces and exact builtin/custom standalone includes enter the one registry
+built for that process; catalog bodies are materialized there, and resource names are constrained to
+that captured allow-list. Asynchronous manifest/resource monitoring may withdraw one changed skill
+by flipping a memory latch. Withdrawal never makes the Environment or run admission unavailable;
+Code informs the user outside transcript history, unaffected skills continue, and reconnect captures
+the changed version. Skill resources enter initial identity through raw streaming hashes capped at
+8 MiB per file and 32 MiB aggregate (per plugin for packaged skills, per skill for standalone
+inventory), and an approved plugin root exposes only each discovered skill directory for helper
+execution. Read-only/control-plane projections use the pinned parse. Trust transitions may recompose
+only at an idle boundary; explicit approval refreshes the trust surface before recording consent,
+while ordinary settings reads reuse its cached process snapshot.
 
-- **Production:** `PluginContributions.pin`, `assertUnchanged`,
+- **Production:** `PluginContributions.pin`, `pinnedSkillRoots`,
   `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,
-  `standaloneCatalog`, `EnvironmentManager.assertRunSnapshot`,
-  `assertPinnedStandaloneSkills`, `EnvironmentManager.skillRoots`, `withRunLease`, the memory
-  factory's host executor, pinned `resolveActive`, revision CAS,
+  `standaloneCatalog`, `EnvironmentManager.observeSkillCatalog`,
+  `EnvironmentManager.skillAvailable`, `SkillRootSnapshotProvider`, `snapshotSkills`, `withRunLease`,
+  the memory factory's host executor, pinned `resolveActive`, revision CAS,
   and preview fingerprint comparison in `packages/kernel/src`; `hashBoundedFile` and the two
   `MAX_SKILL_RESOURCE_*` snapshot limits in `packages/skills/src`.
 - **Test:** the stale-preview, global-precedence, contribution-fingerprint, standalone-resource
-  drift, and trust-transition
+  withdrawal, and trust-transition
   cases in `packages/kernel/tests/integration/environment-manager.test.ts`, including process-file
   fingerprint drift; the MCP/hook/capability process-file drift cases in
   `packages/kernel/tests/integration/plugin-contributions.test.ts`, including invalid-sibling and
   aggregate-resource withholding; standalone aggregate-resource withholding and builtin exact-root
   filtering in `environment-manager.test.ts`;
-  lazy exact-root rejection in `packages/loop/tests/integration/execute-run-entrypoints.test.ts`;
+  one-shot exact-root capture and withdrawal in
+  `packages/loop/tests/integration/execute-run-entrypoints.test.ts`; run admission after drift in
+  `packages/kernel/tests/integration/file-kernel.test.ts`; the transient Code notice in
+  `packages/code/tests/integration/app-shell-render.test.tsx`;
   the run-lease helper and memory factory executor tests; and the selected lifecycle case in
   `packages/kernel/tests/integration/run-service.smoke.test.ts`.
 
@@ -392,15 +417,15 @@ including installed checkouts not yet selected by an Environment. Code asks proa
 start. Global plugins installed into operator-owned inventories are already consented and remain
 outside this gate.
 
-- **Production:** `workspaceTrustSurface`, `preview`, `select`, and
+- **Production:** cached and explicit-refresh paths in `workspaceTrustSurface`, `preview`, `select`, and
   `assertWorkspaceTrustTransitionAllowed` in
   `packages/kernel/src/environments/environment-manager.ts` and the file config store.
 - **Test:** the complete pre-selection inventory fingerprint, global-plugin-without-workspace-
   approval, mixed-scope partial-admission, one-approval Environment switching, proactive Code prompt,
   and idle trust-recomposition cases in
   `packages/kernel/tests/integration/environment-manager.test.ts`; the extension-surface case in
-  `packages/kernel/tests/integration/workspace-trust.test.ts` pins file changes to the trust hash and
-  proves active-run rejection occurs before the trust store is changed.
+  `packages/kernel/tests/integration/workspace-trust.test.ts` pins explicit-refresh changes to the
+  trust hash and proves active-run rejection occurs before the trust store is changed.
 
 ### INV-319 — Execution history identifies its extension snapshot without secrets
 
@@ -509,9 +534,9 @@ and cannot remove bytes other than the revision the caller inspected.
 | Malformed service input from an embedder or transport | `invalid_request`; no path is constructed or file touched. |
 | Workspace approval storage fails after a selection write | the exact prior selection is restored and the approval error is returned. |
 | Workspace approval storage fails during composition | the exact prior definition and selection are restored and the approval error is returned. |
-| Selected plugin or standalone-skill content changes after snapshot resolution | control-plane projections remain pinned; the next run is refused at lease admission with `unavailable`, reconnect is required, and no changed contribution executes under the old fingerprint. |
+| A selected skill manifest or captured resource changes after snapshot resolution | the asynchronous monitor withdraws that skill when observed, Code shows an informational transient warning, unaffected skills remain available, and runs are never rejected or delayed; reconnect captures the new version. |
 | Workspace trust changes or selected plugin update/uninstall is requested during a run | `conflict`; the trust store and selected checkout remain unchanged. |
-| A selected plugin update/uninstall completed but the kernel was not reconnected | new runs return `unavailable`; management remains available for reconnect/diagnosis. |
+| A selected plugin update/uninstall completed but the kernel was not reconnected | the old parsed process snapshot remains active; changed monitored skills are withdrawn when observed, and reconnect activates the new selection bytes. |
 | Global definition catalog is absent | listing creates it with private directory permissions and continues with `builtin:default`. |
 | Workspace definition catalog is absent | listing treats it as empty and does not create repository content. |
 | Definition directory or file exceeds a resource bound | list/get reports an invalid entry; it never returns a partial silently usable definition. |

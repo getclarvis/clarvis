@@ -812,11 +812,23 @@ used by the run (`aws-core`, `context7`, `expo`, `mattpocock-skills`, `observabi
 validation made Environment readiness take about 32.9 seconds. The same filesystem was being parsed
 and cryptographically hashed through multiple projections.
 
-The correction pins the parsed contribution snapshot for control-plane projections and performs one
-full raw-byte revalidation at run admission. Warm individual plugin snapshots then completed within
-about 235 ms and the combined nine-plugin Environment resolved in about 330 ms; kernel readiness was
-about 391 ms. A byte-mutation integration case proves that admission still fails closed, so the
-reduction is not a metadata-only shortcut.
+The first correction pinned the parsed contribution snapshot for control-plane projections but kept
+one full raw-byte revalidation at run admission. Warm individual plugin snapshots then completed
+within about 235 ms and the combined nine-plugin Environment resolved in about 330 ms; kernel
+readiness was about 391 ms. That design removed duplicate control-plane scans but still put
+plugin-count-dependent synchronous filesystem/hash work directly after `prompt.send`.
+
+The 2026-09-01 follow-up removes snapshot validation from run admission entirely. The exact skill
+roots are consumed once while kernel run dependencies are built, bodies are materialized then, and
+the admitted resource paths become a fixed allow-list. Asynchronous `watchFile` maintenance flips a
+memory-only availability latch when an admitted manifest/resource drifts; the skill is withheld and
+Code renders an informational warning, while the user's run continues. Production:
+`acquireEnvironmentRunLease` and `pluginSkillRoots` in `packages/kernel/src/file-kernel.ts`,
+`observeSkillCatalog` in `packages/kernel/src/environments/environment-manager.ts`, and
+`snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts`. Tests: `withdraws plugin skill
+drift without rejecting the next run` in `packages/kernel/tests/integration/file-kernel.test.ts` and
+`skill drift is a transient warning while the conversation remains untouched` in
+`packages/code/tests/integration/app-shell-render.test.tsx`.
 
 The same fixture exposed a separate human-time wait: missing Expo and Supabase OAuth held initial
 connection acquisition for about 302 seconds each, producing a roughly seven-minute run. Background
@@ -938,8 +950,10 @@ the strict complete-app 500 ms goal remains unmet.
    and ignored OAuth; long-manager and multi-run process-tree soaks remain intentionally
    user-controlled external measurements.
 10. **Remove plugin-count and human-time waits from run admission.** **Implemented:** contribution
-    projections reuse a pinned parsed snapshot, run admission performs one exact raw-byte rehash, and
-    an OAuth challenge degrades only that MCP while its browser flow continues in the background.
+    projections and skill bodies are captured once while the kernel is built; run admission performs
+    no skill discovery or raw-byte rehash. Asynchronous drift monitoring withdraws only the changed
+    skill and informs Code without blocking the run. An OAuth challenge likewise degrades only that
+    MCP while its browser flow continues in the background.
 
 ### 8.3 Acceptance and review gates
 

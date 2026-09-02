@@ -1,5 +1,5 @@
 import { sanitizeErrorMessage } from "@clarvis/capability";
-import type { SkillRootInput } from "@clarvis/skills";
+import type { SkillContent, SkillInfo, SkillRootInput } from "@clarvis/skills";
 
 export type { SkillRootInput };
 import type { EnvConfig, ExtensionAdmissionController, HookConfig } from "@clarvis/capability";
@@ -106,6 +106,20 @@ export interface BuiltinCapabilityToggles {
 }
 
 /**
+ * Host-owned immutable skill-root snapshot used by long-lived run dependencies.
+ *
+ * @remarks `roots` is consumed exactly once while the run dependencies are
+ * constructed. `observe` installs non-blocking host monitoring for the admitted
+ * catalog, while `available` is a process-local predicate used to withdraw a skill
+ * after drift without rescanning or rejecting a run.
+ */
+export interface SkillRootSnapshotProvider {
+  roots(): SkillRootInput[];
+  observe(skills: readonly SkillContent[]): void;
+  available(skill: SkillInfo): boolean;
+}
+
+/**
  * The host-supplied options for {@link buildExecuteRunDeps}: the environment and
  * logger, the workspace root, and the optional ports that wire up the tools
  * guard/sandbox, extra skill roots, built-in toggles, embedder capabilities
@@ -119,7 +133,7 @@ export interface BuildRunDepsOptions {
   workspaceRoot: string;
   traceDir?: string;
   /** Exact host-resolved roots. When supplied, the four standard roots are not appended. */
-  skillRoots?: SkillRootInput[] | (() => SkillRootInput[]);
+  skillRoots?: SkillRootInput[] | (() => SkillRootInput[]) | SkillRootSnapshotProvider;
   /** Additional roots appended ahead of the four standard Clarvis roots. */
   extraSkillRoots?: SkillRootInput[] | (() => SkillRootInput[]);
   /** Plugin-declared bootstrap skills, in `enabledPlugins` order. Function-only
@@ -172,7 +186,9 @@ export interface BuildRunDepsOptions {
   }>;
 }
 
-type SkillsSeam = SkillsProvider;
+type SkillsSeam = SkillsProvider & {
+  readResourceChunk: NonNullable<SkillsProvider["readResourceChunk"]>;
+};
 
 /** Empty exact skill catalogue used when a host intentionally selects no roots. */
 function emptySkillsProvider(): SkillsSeam {
@@ -181,6 +197,84 @@ function emptySkillsProvider(): SkillsSeam {
     loadSkill: () => undefined,
     readResource: () => {
       throw new Error("skills are unavailable");
+    },
+    readResourceChunk: () => {
+      throw new Error("skills are unavailable");
+    },
+  };
+}
+
+/**
+ * Build one immutable skill registry and filter it through a host-owned drift latch.
+ *
+ * @remarks Catalog metadata and bodies are materialized during dependency construction,
+ * never from run admission. A later watcher event only changes the process-local predicate:
+ * the affected skill disappears from listings and body/resource reads are refused,
+ * while unrelated skills and the run itself continue.
+ */
+function snapshotSkills(
+  build: (roots: SkillRootInput[]) => SkillsSeam,
+  provider: SkillRootSnapshotProvider,
+  logger: Logger,
+): SkillsSeam {
+  const inner = build(provider.roots());
+  const discovered = inner.listSkills();
+  const catalog: SkillInfo[] = [];
+  const content = new Map<string, SkillContent>();
+  for (const info of discovered) {
+    try {
+      const loaded = inner.loadSkill(info.name);
+      if (loaded === undefined) continue;
+      catalog.push(info);
+      content.set(info.name, loaded);
+    } catch (err) {
+      logger.warn(
+        {
+          event: "skills.snapshot_body_unavailable",
+          skill: info.name,
+          cause: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+        },
+        "a skill body could not enter the process snapshot and was withheld",
+      );
+    }
+  }
+  provider.observe([...content.values()]);
+  const infoByName = new Map(catalog.map((info) => [info.name, info] as const));
+  const resourcesByName = new Map(
+    [...content].map(([name, loaded]) => [
+      name,
+      new Set(loaded.resources.map((resource) => resource.rel)),
+    ]),
+  );
+  const requireAvailable = (name: string): SkillInfo => {
+    const info = infoByName.get(name);
+    if (info === undefined || !provider.available(info)) {
+      throw new Error(
+        `skill '${name}' is unavailable because its process snapshot changed; reconnect to load the new version`,
+      );
+    }
+    return info;
+  };
+  return {
+    listSkills: () => catalog.filter((info) => provider.available(info)),
+    loadSkill: (name) => {
+      const info = infoByName.get(name);
+      if (info === undefined || !provider.available(info)) return undefined;
+      return content.get(name);
+    },
+    readResource: (name, rel) => {
+      requireAvailable(name);
+      if (resourcesByName.get(name)?.has(rel) !== true) {
+        throw new Error(`skill resource '${rel}' is not part of the process snapshot`);
+      }
+      return inner.readResource(name, rel);
+    },
+    readResourceChunk: (name, rel, offset, maxChars) => {
+      requireAvailable(name);
+      if (resourcesByName.get(name)?.has(rel) !== true) {
+        throw new Error(`skill resource '${rel}' is not part of the process snapshot`);
+      }
+      return inner.readResourceChunk(name, rel, offset, maxChars);
     },
   };
 }
@@ -192,19 +286,16 @@ function emptySkillsProvider(): SkillsSeam {
  * @param build - constructs a skills provider from the current resolved roots.
  * @param provider - returns the current extra skill roots (called per access).
  * @param logger - receives a warning when a rescan fails.
- * @param failClosed - propagate provider failures for an exact host snapshot.
  * @returns a {@link SkillsProvider} that serves from a memoized scan, falling back
- *   to the last good scan (or an empty provider) if non-exact discovery throws.
+ *   to the last good scan (or an empty provider) if discovery throws.
  * @remarks The roots' JSON is the cache signature; a matching signature reuses the
- *   prior scan. An extra-root `provider()` throw is treated as no roots, while an
- *   exact Environment provider throws so lazy catalog/body/resource reads cannot
- *   consume changed bytes under an admitted fingerprint.
+ *   prior scan. A `provider()` throw is treated as no new roots; it never rejects
+ *   the foreground operation that happened to ask for skills.
  */
 function dynamicSkills(
   build: (extra: SkillRootInput[]) => SkillsSeam,
   provider: () => SkillRootInput[],
   logger: Logger,
-  failClosed: boolean,
 ): SkillsSeam {
   let sig: string | undefined;
   let inner: SkillsSeam | undefined;
@@ -214,15 +305,14 @@ function dynamicSkills(
     try {
       roots = provider();
     } catch (err) {
-      if (failClosed) throw err;
-      roots = [];
       logger.debug(
         {
           event: "skills.roots_unavailable",
           cause: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
         },
-        "the host's skill-root provider threw; this rescan sees no extra roots",
+        "the host's skill-root provider threw; serving skills from the last good scan",
       );
+      return inner ?? empty;
     }
     const nextSig = JSON.stringify(roots);
     if (inner !== undefined && nextSig === sig) return inner;
@@ -248,11 +338,15 @@ function dynamicSkills(
     loadSkill: (name) => ensure().loadSkill(name),
     readResource: (name, rel) => ensure().readResource(name, rel),
     readResourceChunk: (name, rel, offset, maxChars) =>
-      ensure().readResourceChunk?.(name, rel, offset, maxChars) ??
-      (() => {
-        throw new Error("chunked skill resources are unavailable");
-      })(),
+      ensure().readResourceChunk(name, rel, offset, maxChars),
   };
+}
+
+/** Narrow a configured exact-root source without treating root arrays as providers. */
+function isSkillRootSnapshotProvider(
+  value: BuildRunDepsOptions["skillRoots"] | undefined,
+): value is SkillRootSnapshotProvider {
+  return value !== undefined && !Array.isArray(value) && typeof value !== "function";
 }
 
 /**
@@ -501,8 +595,21 @@ export async function buildExecuteRunDeps({
             logger,
           });
     const configuredRoots = skillRoots ?? extraSkillRoots;
-    if (typeof configuredRoots === "function") {
-      skills = dynamicSkills(build, configuredRoots, logger, exactRoots);
+    if (isSkillRootSnapshotProvider(configuredRoots)) {
+      try {
+        skills = snapshotSkills(build, configuredRoots, logger);
+      } catch (err) {
+        logger.warn(
+          {
+            event: "skills.discovery_failed",
+            scope: "snapshot",
+            cause: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+          },
+          "skill snapshot construction failed; skills are disabled for these deps",
+        );
+      }
+    } else if (typeof configuredRoots === "function") {
+      skills = dynamicSkills(build, configuredRoots, logger);
     } else {
       try {
         skills = build(configuredRoots ?? []);

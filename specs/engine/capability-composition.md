@@ -105,7 +105,7 @@ buildExecuteRunDeps(options: BuildRunDepsOptions): Promise<BuiltRunDeps>
 | `workspaceRoot` | `string` | must be non-blank or the call throws (`packages/loop/src/runtime/build-run-deps.ts:384-386`) |
 | `traceDir?` | `string` | overrides the resolved trace store's directory |
 | `extraSkillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[])` | array form is static; function form is re-read (and rescanned only on signature change) every call (`packages/loop/src/runtime/build-run-deps.ts:203-255`) |
-| `skillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[])` | exact host-resolved roots; suppresses automatic standard-root appending, including for an intentional empty array, and is mutually exclusive with `extraSkillRoots` (`packages/loop/src/runtime/build-run-deps.ts:121-124`, `:387-390`) |
+| `skillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[]) \| SkillRootSnapshotProvider` | exact host-resolved roots; suppresses automatic standard-root appending, including for an intentional empty array, and is mutually exclusive with `extraSkillRoots`. The snapshot-provider form consumes roots and materializes bodies once during dependency construction, then filters availability through a memory-only host predicate (`SkillRootSnapshotProvider`, `snapshotSkills`, and `buildExecuteRunDeps` in `packages/loop/src/runtime/build-run-deps.ts`) |
 | `skillBootstraps?` | `() => readonly PluginBootstrapSkill[]` | function-only, so a plugin enabled after deps were built still takes effect (`packages/loop/src/runtime/build-run-deps.ts:127-129`) |
 | `resolveHooks?` | `(ctx) => readonly HookConfig[] \| undefined` | host port for workspace hooks; omitted entirely means no hook ever runs (`packages/loop/src/runtime/build-run-deps.ts:130-134`) |
 | `hookCredentialNames?` | `() => readonly string[]` | forwarded to the hooks capability's env denylist |
@@ -361,13 +361,17 @@ Given `seedMarkers: ["<cap-block>"]`:
    feature-package imports: `@clarvis/mcp-client` is an ordinary engine dependency.
 6. Build the retrying/logging/admission-wrapped AI SDK provider (`:453-474`).
 7. **Skills** (only if `useSkills && env.CLARVIS_SKILLS_ENABLED`): dynamically import
-   `@clarvis/skills`, then either build a static `SkillsProvider` from an array `skillRoots` /
-   `extraSkillRoots` or wrap a function form in `dynamicSkills` (memoized-by-signature rescanning,
-   `packages/loop/src/runtime/build-run-deps.ts:203-255`); a discovery failure degrades to "no skills" (initial) or the
-   last good scan (rescans), never a thrown error. Exact `skillRoots` are used as-is; only the
-   additional-root form receives the four standard roots (`:480-520`). An exact empty root set
-   yields an intentional empty provider without a discovery warning (`emptySkillsProvider` and
-   `dynamicSkills`; test `packages/loop/tests/integration/execute-run-entrypoints.test.ts:283`).
+   `@clarvis/skills`, then build a static provider from an array, wrap a function form in
+   `dynamicSkills`, or build one process-pinned provider through `snapshotSkills`. The last form
+   consumes roots once, materializes admitted bodies before any run, restricts resources to the
+   captured allow-list, and consults only `available(skill)` thereafter; it never rescans at run
+   admission. Function forms retain memoized-by-signature rescanning and last-good degradation.
+   Exact `skillRoots` are used as-is; only the additional-root form receives the four standard roots
+   (`SkillRootSnapshotProvider`, `snapshotSkills`, `dynamicSkills`, and `buildExecuteRunDeps` in
+   `packages/loop/src/runtime/build-run-deps.ts`). An exact empty root set yields an intentional
+   empty provider without a discovery warning (`emptySkillsProvider`; test `treats an exact empty
+   skill-root set as an intentional empty Environment` in
+   `packages/loop/tests/integration/execute-run-entrypoints.test.ts`).
 8. Build an empty `capabilities: Capability[]` array and a fresh `capabilityRegistry`.
 9. **Hooks** (only if `useHooks`): dynamically import `@clarvis/hooks/capability`, push
    `createWorkspaceHooksCapability({...})` **first** (`:526-540`).

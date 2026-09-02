@@ -149,7 +149,10 @@ Built-ins cover:
 - skills, including package-scoped helper execution for roots the host explicitly approves: the
   loop passes only each selected skill's own directory to command tools, never executes a helper on
   selection, and relies on `@clarvis/tools` to protect it from native mutations and mount it
-  read-only when a native sandbox is active;
+  read-only when a native sandbox is active. A host may supply `SkillRootSnapshotProvider`: those
+  roots are consumed once at dependency construction, bodies are materialized once, and a
+  memory-only availability predicate withdraws asynchronously detected drift without rescanning or
+  rejecting a run;
 - bounded MCP initialization instructions, grouped by server and added as a system section for the
   entry agent and spawned subagents after the connection pool opens;
 - user elicitation;

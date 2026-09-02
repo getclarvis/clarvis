@@ -1099,6 +1099,14 @@ An MCP that cannot connect while a run opens its tool pool remains represented b
 live shell shows each newly observed `{ server, reason }` failure once as a transient warning; replay
 and resume do not repeat it.
 
+The file kernel handles skill drift on the same non-conversational surface. It monitors the
+process-pinned skill manifests/resources outside run admission; when one changes, that skill is
+withheld until reconnect and Code shows `Skill '<name>' changed on disk and was withheld from runs
+until reconnect` as a transient warning. The user message and the next run continue normally, and
+the notice is never written into transcript history. A selected plugin whose captured executable
+files drift receives the parallel `Plugin '<name>' changed executable files` warning while its
+runtime MCP/hook/capability projections are withheld.
+
 `bun run bench:code-overlays` runs the renderer lifecycle soak. Every named case and default
 120x32/80x24 size gets a fresh process, warm-up, forced-GC batch samples and RSS/PSS/private-dirty plus live renderable, renderer
 lifecycle-pass, key-layer and cumulative layer-registration counters. Set

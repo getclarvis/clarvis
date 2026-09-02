@@ -19,7 +19,7 @@ The unifying problem is turning one line of typed text into one of four dispatch
 chat message, a `/slash` command, a `!shell` command, or a `@mention`/attachment — while a single
 popup (`AutocompletePopup`) and a family of generic list/card primitives (`FloatFrame`,
 `ListPicker`, `PickerRow`, `ChoiceRows`, `FilterField`) serve every place in the app that needs a
-searchable, keyboard-navigable, windowed list: the agent/profile picker and the slash-command popup
+searchable, keyboard-navigable, windowed list: the Agent Profile picker and the slash-command popup
 share the same windowing math
 (`windowRows`/`windowGroupedRows` in `ui/patterns/windowed-list.tsx`) rather than each re-deriving it.
 
@@ -167,7 +167,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `FilterField(props)`                                 | Auto-focused single-line filter input, reports term via `onTerm`                                                                                                        | `packages/code/src/views/overlays/FilterField.tsx:14-48`                                                                                                              |
 | `ListPicker<T>(props)`                               | Generic filterable/scrollable/windowed picker inside a `FloatFrame`; an optional fixed `intro` declares its responsive `introRows` cost                                 | `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`)                                                                                                      |
 | `ListPickerVerb<T>`                                  | shared `PanelVerbName` or one-off `{key,label,run,when?}`                                                                                                               | `:33-35`                                                                                                                                                              |
-| `ProfilePicker(props)`                               | `ListPicker` of agent profiles + a nested default-scope `ListPicker`                                                                                                    | `packages/code/src/views/overlays/ProfilePicker.tsx:53-186`                                                                                                           |
+| `AgentProfilePicker(props)`                               | `ListPicker` of Agent Profiles + a nested default-scope `ListPicker`                                                                                                    | `packages/code/src/views/overlays/AgentProfilePicker.tsx:53-186`                                                                                                           |
 | `SafetyPresetPicker(props)`                          | Lazy retained `ListPicker` over the six canonical execution postures, with armed confirmation for direct-host choices                                                   | `packages/code/src/views/overlays/SafetyPresetPicker.tsx` (`SafetyPresetPicker`)                                                                                      |
 | `Help(props)`                                        | Full-page live-projected key/action/destination reference with stable indexed rows                                                                                      | `packages/code/src/views/overlays/Help.tsx` (`Help`)                                                                                                                  |
 | `DiffViewer(props)`                                  | Full-screen page rendering one transcript tool node's diff via the tool registry; an optional active accessor gates retained key layers                                 | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`)                                                                                                      |
@@ -575,12 +575,12 @@ An optional `active` accessor gates both the picker's own key layer and its
 `FilterField`'s focus: while `active` reads `false`, the registration effect tears down the
 layer (`off?.()`, no `registerLevel` call) instead of registering it, and `FilterField` blurs its
 input rather than stealing focus (`packages/code/src/views/overlays/FilterField.tsx:20-29`) — so a picker stacked
-_underneath_ another one (e.g. `ProfilePicker`'s scope chooser over its agent list) claims no keys
+_underneath_ another one (e.g. `AgentProfilePicker`'s scope chooser over its agent list) claims no keys
 and no focus while it is hidden, without being unmounted.
 
-### `ProfilePicker` (`views/overlays/ProfilePicker.tsx`)
+### `AgentProfilePicker` (`views/overlays/AgentProfilePicker.tsx`)
 
-A `ListPicker` of agent profiles behind a `Show/keyed` toggle over a second, nested `ListPicker`:
+A `ListPicker` of Agent Profiles behind a `Show/keyed` toggle over a second, nested `ListPicker`:
 pressing `s` on a selected row (a `verbs` entry, `:103`) opens a scope chooser over
 `DEFAULT_SCOPE_CHOICES` (`{global, workspace}`, `:36-47`); confirming a scope calls
 `onSetDefault(name, scope)` and, on success, returns to the agent list; pressing `x` inside the
@@ -590,11 +590,11 @@ the agent list without effect. A workspace default wins over a global one
 (`MODEL_COL_COLLAPSED`) when no listed profile declares its own model, redistributing its width to
 the grants column (`modelWidth`/`grantsWidth`, `:83-85`); a profile `isRunnable?.() === false` still
 renders as a selectable row, styled `tokens.warn` and suffixed `" · not runnable"` rather than
-hidden or disabled (`:81,115-121`). Pinned: `packages/code/tests/integration/profile-picker-render.test.tsx:75-136`
+hidden or disabled (`:81,115-121`). Pinned: `packages/code/tests/integration/agent-profile-picker-render.test.tsx:75-136`
 (opening with the active agent selected, the scope chooser opening/setting/clearing a default, and
 mouse-press select+confirm).
 
-The supplied profile list comes from `ActiveAgentStore.list`, which applies the kernel-owned
+The supplied Agent Profile list comes from `ActiveAgentStore.list`, which applies the kernel-owned
 `compareAgentDisplayOrder`: shipped agents stay in their product order and custom agents follow by
 name, matching Settings > Agents (`packages/code/src/adapters/active-agent.ts:85-88`). Pinned by
 `packages/code/tests/unit/active-agent.test.ts` (`"agent list uses the same canonical presentation
@@ -815,11 +815,11 @@ settled turn's persisted continuation; an empty session reports that there is no
     contains no such call). **Unpinned by an automated test** — this is an absence-of-a-call
     property, not directly assertable from the outside; verified here only from the function
     and its call sites.
-30. **`ProfilePicker`'s scope chooser is a fully reversible round trip**: opening it (`s`) never
+30. **`AgentProfilePicker`'s scope chooser is a fully reversible round trip**: opening it (`s`) never
     mutates a default by itself, `escLabel="back"`/`onClose` return to the agent list with no
     default changed, and a successful `onSetDefault`/`onClearDefault` is what closes it back to the
-    agent list — never the reverse. `packages/code/src/views/overlays/ProfilePicker.tsx:103,144-157`. Pinned:
-    `packages/code/tests/integration/profile-picker-render.test.tsx:104-127`.
+    agent list — never the reverse. `packages/code/src/views/overlays/AgentProfilePicker.tsx:103,144-157`. Pinned:
+    `packages/code/tests/integration/agent-profile-picker-render.test.tsx:104-127`.
 31. **While the Task editor is expanded, a first Escape closes an open autocomplete popup; only a
     second Escape (with no popup open) collapses the editor back to the inline composer.**
     `packages/code/src/views/InputDock.tsx:437-473` (the `escape` binding registered only while `expanded()`, sharing
@@ -881,7 +881,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     Test: `packages/code/tests/unit/overlay-host.test.ts` and
     `packages/code/tests/integration/overlay-region-render.test.tsx`.
 39. **High-churn picker and drawer trees mount lazily once, then hide without owning inactive
-    keys.** Profile Picker, Catalog Picker and the narrow activity drawer retain their renderer trees
+    keys.** Agent Profile Picker, Catalog Picker and the narrow activity drawer retain their renderer trees
     only after first use. A retained catalog resets its filter and cursor whenever the active picker
     spec changes. Production: `packages/code/src/ui/patterns/surface-lifecycle.tsx`
     (`SurfaceBoundary`), `packages/code/src/views/App.tsx` (agent-picker boundary),
@@ -1021,7 +1021,7 @@ the picker only while the complete splash fits`).
   `packages/code/src/adapters/local-shell.ts:2` reuses the exact shell-dialect resolver the kernel's own tools use, so
   `!` never diverges in _which_ shell binary/flavor runs, only in forcing `bash` over bare `sh`.
 - `@clarvis/protocol` — `MessageContent`, `PlanDocumentDto`/`PlansService`, `Scope` — the wire types
-  `InputDock` composes and `PlanOverlay`/`ProfilePicker`
+  `InputDock` composes and `PlanOverlay`/`AgentProfilePicker`
   render against.
 - `adapters/activity-store.ts`, `adapters/execution-safety.ts`, `views/blocks.tsx`,
   `ui/presentation.ts`, `views/Prose.tsx`, `views/config/view-host.tsx` — all owned by sibling documents
@@ -1073,8 +1073,8 @@ nothing beyond `@clarvis/protocol` types and are themselves leaves within `packa
   `./local`, the host process/shell adapter surface, which is precisely what keeps `!` from diverging
   from the shell the agent's own commands run through. The test asserts that distinction — exactly one
   kernel import, and it is `/local` — rather than a blanket absence that would have been false.
-- **`ProfilePicker`'s comment** ("Offering a profile that cannot run, with nothing said, is invariant
-  2 read backwards" — `packages/code/src/views/overlays/ProfilePicker.tsx:62-66`) references a numbered invariant list
+- **`AgentProfilePicker`'s comment** ("Offering a profile that cannot run, with nothing said, is invariant
+  2 read backwards" — `packages/code/src/views/overlays/AgentProfilePicker.tsx:62-66`) references a numbered invariant list
   the source itself never names. The claim is recorded verbatim as evidence of intent, but which list
   its "invariant 2" belongs to is not resolved here.
 - **Whether `keys/commands.ts`'s registry (`createCommands`, tested in

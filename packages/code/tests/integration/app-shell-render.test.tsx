@@ -8,7 +8,7 @@ import type {
   MemoryService,
   ModelCatalog,
   PluginService,
-  ResolvedEnvironment,
+  ResolvedExtensionProfile,
   RunDetail,
   WorkflowsService,
 } from "@clarvis/protocol";
@@ -330,7 +330,7 @@ function defaultProps(overrides: {
   activity?: ReturnType<typeof createActivityStore>;
   workflowActivity?: AppProps["run"]["workflowActivity"];
   mcpStartupNotice?: AppProps["run"]["mcpStartupNotice"];
-  environmentDriftNotice?: AppProps["run"]["environmentDriftNotice"];
+  extensionProfileDriftNotice?: AppProps["run"]["extensionProfileDriftNotice"];
 }) {
   return (renderer: ReturnType<typeof useRenderer>): AppProps => {
     const store = overrides.store ?? createTranscriptStore();
@@ -373,9 +373,9 @@ function defaultProps(overrides: {
         ...(overrides.mcpStartupNotice === undefined
           ? {}
           : { mcpStartupNotice: overrides.mcpStartupNotice }),
-        ...(overrides.environmentDriftNotice === undefined
+        ...(overrides.extensionProfileDriftNotice === undefined
           ? {}
-          : { environmentDriftNotice: overrides.environmentDriftNotice }),
+          : { extensionProfileDriftNotice: overrides.extensionProfileDriftNotice }),
         bang: () => true,
         localBusy: () => false,
         registerDraftRestore: () => {},
@@ -434,7 +434,7 @@ test("the complete composer adopts the draft typed during startup", async () => 
   t.renderer.destroy();
 });
 
-const CHANGED_WORKSPACE_ENVIRONMENT: ResolvedEnvironment = {
+const CHANGED_WORKSPACE_EXTENSION_PROFILE: ResolvedExtensionProfile = {
   id: "workspace:project",
   ref: { scope: "workspace", name: "project" },
   immutable: false,
@@ -469,7 +469,7 @@ test("a changed executable workspace opens approval after app hydration without 
   let approvals = 0;
   const settingsKnobs = () => ({
     workspaceTrust: "changed" as const,
-    withheldWorkspaceFields: ["mcpServers", "hooks"],
+    withheldWorkspaceFields: ["extension_profile", "mcpServers", "hooks"],
     setWorkspaceTrust: async (approve: boolean) => {
       if (approve) approvals += 1;
     },
@@ -478,13 +478,15 @@ test("a changed executable workspace opens approval after app hydration without 
     defaultProps({
       settingsKnobs,
       backend: baseBackend({
-        environments: {
-          current: async () => CHANGED_WORKSPACE_ENVIRONMENT,
-        } as AppBackend["environments"],
+        extensionProfiles: {
+          current: async () => CHANGED_WORKSPACE_EXTENSION_PROFILE,
+        } as AppBackend["extensionProfiles"],
       }),
     }),
   );
   const approval = await captureUntil(t, "This workspace's executable snapshot changed.");
+  expect(approval).toContain("repository-owned plugins");
+  expect(approval).not.toContain("extension_profile");
   expect(approval).toContain("MCP servers");
   expect(approval).toContain("Every repository-owned plugin in the current snapshot");
   expect(approval).toContain("[n] no, review and remove");
@@ -515,8 +517,8 @@ test("a live MCP startup failure appears once as a transient warning outside the
 test("skill drift is a transient warning while the conversation remains untouched", async () => {
   const store = createTranscriptStore();
   const [notice, setNotice] =
-    createSignal<ReturnType<NonNullable<AppProps["run"]["environmentDriftNotice"]>>>(null);
-  const t = await mountApp(defaultProps({ store, environmentDriftNotice: notice }));
+    createSignal<ReturnType<NonNullable<AppProps["run"]["extensionProfileDriftNotice"]>>>(null);
+  const t = await mountApp(defaultProps({ store, extensionProfileDriftNotice: notice }));
 
   setNotice({ sequence: 1, kind: "skill", name: "release-notes", source: "clarvis" });
   const frame = await captureUntil(t, "was withheld from runs until reconnect");
@@ -861,7 +863,7 @@ test("Keyboard settings persists a profile and a normalized diagnostic for this 
 
   press(t, "up");
   press(t, "return");
-  await captureUntil(t, "keyboard profile: portable");
+  await captureUntil(t, "Keyboard Profile: portable");
   expect(writes.at(-1)?.value).toMatchObject({ profile: "portable" });
 
   press(t, "d");
@@ -887,7 +889,7 @@ test("Keyboard settings persists a profile and a normalized diagnostic for this 
   t.renderer.destroy();
 });
 
-test("agentName falls back to 'no agent' when there is no active profile", async () => {
+test("agentName falls back to 'no agent' when there is no active Agent Profile", async () => {
   const t = await mountApp(
     defaultProps({ agents: fakeAgents({ active: () => "", view: () => undefined }) }),
   );
@@ -903,11 +905,11 @@ test("no safe automatic entry agent keeps the agent picker modal until a choice 
     list: () => [{ name: "runner", grants: [], canSpawn: [] }],
   });
   const t = await mountApp(defaultProps({ agents }));
-  const out = await captureUntil(t, "Select agent");
+  const out = await captureUntil(t, "Select Agent Profile");
   expect(out).toContain("runner");
   press(t, "escape");
   await t.renderOnce();
-  const reopened = await captureUntil(t, "Select agent");
+  const reopened = await captureUntil(t, "Select Agent Profile");
   expect(reopened).toContain("runner");
   t.renderer.destroy();
 });
@@ -1281,7 +1283,7 @@ test("a workspace switch blocks picker mouse actions", async () => {
   const t = await mountApp(defaultProps({ agents, switching }));
   await captureUntil(t, "New task");
   press(t, "tab", { shift: true });
-  await captureUntil(t, "Select agent");
+  await captureUntil(t, "Select Agent Profile");
 
   setSwitching(true);
   await t.renderOnce();
@@ -1293,7 +1295,7 @@ test("a workspace switch blocks picker mouse actions", async () => {
   await t.mockMouse.click(x, y);
   await t.renderOnce();
   expect(activated).toEqual([]);
-  expect(t.captureCharFrame()).toContain("Select agent");
+  expect(t.captureCharFrame()).toContain("Select Agent Profile");
 
   setSwitching(false);
   await t.renderOnce();
@@ -1327,8 +1329,8 @@ test("agent picker overlay opens on /agent and closes on escape", async () => {
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  const out = await captureUntil(t, "Select agent");
-  expect(out).toContain("Select agent");
+  const out = await captureUntil(t, "Select Agent Profile");
+  expect(out).toContain("Select Agent Profile");
   press(t, "escape");
   const back = await captureUntil(t, "New task");
   expect(back).toContain("New task");
@@ -2740,10 +2742,10 @@ test("a pending elicitation dismisses a clean overlay so the question becomes vi
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  await captureUntil(t, "Select agent");
+  await captureUntil(t, "Select Agent Profile");
   setElicit({ message: "allow this command?", kind: "guard_confirm" });
   const out = await captureUntil(t, "allow this command?");
-  expect(out).not.toContain("Select agent");
+  expect(out).not.toContain("Select Agent Profile");
   t.renderer.destroy();
 });
 

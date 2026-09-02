@@ -313,10 +313,10 @@ ignored.
 `result` from `engineResultToProto`, then usage token totals **overwritten** from the stored row's
 `total_input_tokens`/`total_output_tokens`/`total_cached_tokens` (`:154-161`), `plan_ref` from
 `capability_state` (delegated; `packages/kernel/src/runs/plan-ref.ts:62`), `active_task` likewise (`packages/kernel/src/runs/task-binding.ts:6`),
-`environment` validated from opaque `host_metadata.environment`, `recovery` forwarded verbatim when
+`extension_profile` validated from opaque `host_metadata.extension_profile`, `recovery` forwarded verbatim when
 present, `messages` via `engineMessagesToProto`, and `events` via `rehydrateEvents`.
 
-`environmentFromHostMetadata` accepts only a qualified Environment id and a lowercase SHA-256
+`extensionProfileFromHostMetadata` accepts only a qualified Extension Profile id and a lowercase SHA-256
 fingerprint, then projects exactly those two strings (`packages/kernel/src/runs/map-result.ts:25-41`).
 Malformed or extra host metadata is not reflected into the protocol DTO.
 
@@ -955,12 +955,12 @@ Production: `packages/kernel/src/runs/map-events.ts` (`engineEventToProto`),
 `packages/kernel/tests/contract/transport-codecs.test.ts` ("preserves compaction lifecycle and
 fallback attribution").
 
-**INV-R44.** A hydrated run exposes an Environment only when durable host metadata contains exactly
+**INV-R44.** A hydrated run exposes an Extension Profile only when durable host metadata contains exactly
 a valid qualified id and SHA-256 fingerprint; it never projects arbitrary host metadata.
-Production: `environmentFromHostMetadata` and `storedToDetail` in
+Production: `extensionProfileFromHostMetadata` and `storedToDetail` in
 `packages/kernel/src/runs/map-result.ts`. Test:
-`packages/kernel/tests/unit/map-result.test.ts` (valid Environment projection and malformed metadata
-omission). The persistence half is [INV-319](environments.md#inv-319--execution-history-identifies-its-extension-snapshot-without-secrets).
+`packages/kernel/tests/unit/map-result.test.ts` (valid Extension Profile projection and malformed metadata
+omission). The persistence half is [INV-319](extension-profiles.md#inv-319--execution-history-identifies-its-extension-snapshot-without-secrets).
 
 **INV-R45.** `workflow_sequence_state` is a strict, non-droppable, live-only workflow event and a
 point on the manager run span. Its runtime codec admits only the six statuses and strict field
@@ -999,7 +999,7 @@ contract`). Durable checkpoint ownership remains with `WorkflowRecord.sequence`,
 | capability detail too large, cyclic, or with throwing accessors | `packages/kernel/src/runs/map-events.ts:192-216` | bounded and truncated, never thrown; unserializable becomes the literal `"[unserializable capability event]"` (`:208`) |
 | rehydration loses events | `packages/kernel/src/runs/map-result.ts:196-205` | the run is returned with fewer events plus a `runs.rehydrated` line carrying the delta |
 | plan or task slot in `capability_state` malformed | `packages/kernel/src/runs/plan-ref.ts:66`, `packages/kernel/src/runs/task-binding.ts:10` (delegated) | field omitted from `RunDetail`, no throw; pinned at `packages/kernel/tests/unit/map-result.test.ts:52-66` and `:92-123` |
-| Environment slot in `host_metadata` malformed | `environmentFromHostMetadata` in `packages/kernel/src/runs/map-result.ts` | `environment` omitted from `RunDetail`; other run data still hydrates |
+| Extension Profile slot in `host_metadata` malformed | `extensionProfileFromHostMetadata` in `packages/kernel/src/runs/map-result.ts` | `extension_profile` omitted from `RunDetail`; other run data still hydrates |
 
 ## 7. Coupling
 

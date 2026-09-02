@@ -33,7 +33,7 @@ Escape never enters that timing path (`packages/code/src/keys/interaction.ts:415
 layer (nav + verbs + escape), the footer's action projection and width budget, and a
 generic map editor. `keys/**` is the vocabulary half: what a command *is* (`actions.ts`),
 what a `when` clause means (`when-dsl.ts`), how a key label is formatted
-(`keyspec.ts`), how one physical terminal is classified into a keyboard profile
+(`keyspec.ts`), how one physical terminal is classified into a Keyboard Profile
 (`keyboard-profile.ts`), the command registry (`commands.ts`) and the one
 `createInteraction` call that wires the whole keymap (`interaction.ts`).
 
@@ -214,7 +214,7 @@ at all; it is content-agnostic formatting shared by settings screens (delegated 
 
 ### 2.11 `views/config/KeyboardView.tsx`
 
-`KeyboardView(host, deps)` — the settings screen for the keyboard profile, manual
+`KeyboardView(host, deps)` — the settings screen for the Keyboard Profile, manual
 bindings and the capability diagnostic. `deps: {code: CodeConfigStore, notify, startDiagnostic?}`
 (`packages/code/src/views/config/KeyboardView.tsx:255-258`).
 
@@ -597,7 +597,7 @@ signals (`diagnostic`, `bindingMode`):
 
 | State | `nav` count/index | Verbs (key→label) | `escape` |
 |---|---|---|---|
-| profile list (default) | `PROFILES.length` / `selected` | `b`→manual bindings, `d`→diagnostic, `c`→client convention, `x`→reset automatic | `run: host.close()` |
+| Keyboard Profile list (default) | `PROFILES.length` / `selected` | `b`→manual bindings, `d`→diagnostic, `c`→client convention, `x`→reset automatic | `run: host.close()` |
 | manual bindings (`bindingMode()`) | `stableCommands().length` / `bindingIndex` | (none) | `run: closeBindings` (pops one level, clears `bindingMode`) |
 | diagnostic (`diagnostic()`) | its own `registerLayer` at `LAYER.CONFIRM+10`, not a `LevelSpec` | `u`→mark unavailable, `s`→save (enabled only once `done()`) | `escape`/`ctrl+c` → `onClose` |
 
@@ -802,7 +802,7 @@ Test: `packages/code/tests/architecture/tui-navigation-boundary.test.ts:69-81`.
 ### Further invariants derived directly from the code in this document's scope
 
 **INV-D1.** A command whose every `BindingCandidate` requires `minimumProfile:"enhanced"`
-and the active profile is `"portable"` has **no key binding at all** —
+and the active Keyboard Profile is `"portable"` has **no key binding at all** —
 `resolveCommandBindings` returns `[]` for it and `resolvedVitalBindings` omits it from the
 output map. Such actions retain an equivalent mouse, slash, hub, or other portable route.
 Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`),

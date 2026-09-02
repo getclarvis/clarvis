@@ -25,7 +25,7 @@ export interface StartupComposerHandoff {
  * Preserve startup input unless the complete runtime can admit its queued submission now.
  *
  * @param snapshot - Single-consumer snapshot from the startup composer.
- * @param runnable - Whether the active profile can start a run in this runtime.
+ * @param runnable - Whether the active Agent Profile can start a run in this runtime.
  * @returns Either one admitted submission or one exact draft for the complete composer.
  */
 export function resolveStartupComposerHandoff(

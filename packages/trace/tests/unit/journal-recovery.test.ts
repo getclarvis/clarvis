@@ -201,8 +201,8 @@ describe("journalToRecord", () => {
   });
 
   it("restores host metadata from a crash journal", async () => {
-    const environment = {
-      environment: {
+    const extensionProfileMetadata = {
+      extension_profile: {
         id: "global:research",
         fingerprint: `sha256:${"b".repeat(64)}`,
       },
@@ -210,9 +210,9 @@ describe("journalToRecord", () => {
     const parsed = await parseWhole(
       [
         JSON.stringify({
-          ...journalHeader("exec-environment"),
+          ...journalHeader("exec-extension-profile"),
           v: JOURNAL_VERSION,
-          host_metadata: environment,
+          host_metadata: extensionProfileMetadata,
         }),
         JSON.stringify(leadIteration(1, 1, 1)),
         "",
@@ -220,7 +220,7 @@ describe("journalToRecord", () => {
     );
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(journalToRecord(parsed).host_metadata).toEqual(environment);
+    expect(journalToRecord(parsed).host_metadata).toEqual(extensionProfileMetadata);
   });
 
   it("rolls subagent iterations up per model and counts distinct instances", async () => {

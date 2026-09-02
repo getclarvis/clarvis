@@ -15,7 +15,7 @@ import {
 } from "../helpers/recording-kernel-services.ts";
 
 const HELLO = {
-  wire_version: 2,
+  wire_version: 3,
   capabilities: {
     memory: false,
     skills: false,
@@ -144,7 +144,7 @@ describe("transport operation descriptors", () => {
     expect(invoked).toEqual(ORDINARY_OPERATIONS.map((operation) => operation.method));
   });
 
-  it("classifies every Environment operation as plugin-sensitive with exact read/write access", () => {
+  it("classifies every Extension Profile operation as plugin-sensitive with exact read/write access", () => {
     const expected = {
       list: "read",
       current: "read",
@@ -163,16 +163,16 @@ describe("transport operation descriptors", () => {
     } as const;
 
     for (const [name, access] of Object.entries(expected)) {
-      expect(OPERATIONS.environments[name as keyof typeof expected].metadata).toEqual({
+      expect(OPERATIONS.extensionProfiles[name as keyof typeof expected].metadata).toEqual({
         access,
         sensitivity: "plugins",
       });
     }
   });
 
-  it("binds an Environment preview request to its persisted selection scope", () => {
+  it("binds an Extension Profile preview request to its persisted selection scope", () => {
     expect(
-      OPERATIONS.environments.preview.encode(
+      OPERATIONS.extensionProfiles.preview.encode(
         { scope: "global", name: "research" },
         { selection_scope: "workspace" },
       ),

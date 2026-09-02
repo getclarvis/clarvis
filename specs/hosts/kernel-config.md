@@ -117,7 +117,7 @@ silently weakening the service's concurrency guarantee" (`packages/kernel/src/co
 | `globalDir?` | defaults to `globalRoot()` (`:308`) |
 | `workspaceConfigDir?` | explicit override of the `.clarvis` default (`:310`) |
 | `plugins?` | `PluginContributions`; folds plugin settings fragments and `<plugin>:<agent>` files (`:609`, `:876`) |
-| `environment?` | host-owned exact plugin resolver plus workspace Environment trust surface; omitted hosts use the already-exact merged `enabledPlugins` references (`packages/kernel/src/config/file-config-store.ts:72-79`) |
+| `extensionProfile?` | host-owned exact plugin resolver plus workspace Extension Profile trust surface; omitted hosts use the already-exact merged `enabledPlugins` references (`packages/kernel/src/config/file-config-store.ts:72-79`) |
 | `logger?` | defaults to `NOOP_LOGGER` (`:306`) |
 
 ### 2.5 Settings schema composition
@@ -189,7 +189,7 @@ original bytes rather than replacement characters", writing `0x80` then `0x81`).
 hashes `JSON.stringify(current)` instead (`packages/kernel/src/config/memory-config-store.ts:68`, `:92`, `:97`, `:113`). Test
 asserts the hex shape `/^[a-f0-9]{64}$/` at `packages/kernel/tests/integration/file-config-store.test.ts:90`.
 
-### 3.4 `SettingsRepairPlan` (protocol `packages/protocol/src/config.ts:253`)
+### 3.4 `SettingsRepairPlan` (protocol `packages/protocol/src/config.ts`, symbol `SettingsRepairPlan`)
 
 Two shapes, both carrying `scope` and `revision`:
 
@@ -212,11 +212,11 @@ The fingerprint is `sha256:` + hex over `JSON.stringify(canonical(surface))`, wh
 `canonical` sorts object keys recursively and drops `undefined` (`:154-164`) and the surface is
 `{ settings?, agents?, extensions? }` (`WorkspaceExecutableSurface` in
 `packages/kernel/src/config/workspace-trust.ts:193-200`), agents sorted by name with per-file
-`sha256:` digests. `extensions` is supplied by the Environment manager only when a workspace
+`sha256:` digests. `extensions` is supplied by the Extension Profile manager only when a workspace
 contains repository-owned plugins; it includes every installed `scope: "workspace"` plugin's exact
-qualified ref and atomic contribution digest, whether selected by an Environment yet or not.
+qualified ref and atomic contribution digest, whether selected by an Extension Profile yet or not.
 Consequently adding, removing, repairing, or changing any repository plugin invalidates the single
-workspace approval even if `settings.json` and agent files are unchanged. Environment switches do
+workspace approval even if `settings.json` and agent files are unchanged. Extension Profile switches do
 not require another approval while that inventory remains unchanged.
 
 ### 3.6 `WORKSPACE_RISK_FIELDS` (`packages/kernel/src/config/workspace-trust.ts:38`)
@@ -259,8 +259,8 @@ silently enlarge every delegated run.
 2. If the workspace scope parsed and is **not** trusted, `stripWorkspaceRiskFields` runs and its
    `settings` half replaces the workspace layer (`:623-643`).
 3. `enabledRefs` is computed by merging the *operator* scopes only. Every item is already an exact
-   `{ scope, source, name }` installation. When the host supplied `environment`, its
-   `resolvePlugins(enabledRefs, trust)` applies the pinned Environment; otherwise the exact list is
+   `{ scope, source, name }` installation. When the host supplied `extensionProfile`, its
+   `resolvePlugins(enabledRefs, trust)` applies the pinned Extension Profile; otherwise the exact list is
    used directly (`:648-651`, `:683-686`).
 4. `pluginScopes = opts.plugins.settingsScopes(enabledPlugins)` folds only those exact resolved
    installations. `SettingsSnapshot.active_plugins` reports the same list (`:687-690`, `:723`).
@@ -275,8 +275,8 @@ silently enlarge every delegated run.
 7. `scopes` reports each scope's **raw** parsed value, unstripped (`:691-694`), so a UI can show what
    was refused. `sources` carries `{scope, path, exists, revision, error?}` per scope (`:695-709`).
 8. `withheld_workspace_fields` is set only when something was actually withheld. In addition to
-   risky settings keys it reports the pseudo-field `environment` while a plugin-activating workspace
-   Environment is unapproved or changed.
+   risky settings keys it reports the pseudo-field `extension_profile` while a plugin-activating workspace
+   Extension Profile is unapproved or changed.
    `workspace_trust` and `active_plugins` are always present on the file store
    (`packages/kernel/src/config/file-config-store.ts:710-725`).
 
@@ -664,12 +664,12 @@ Each entry: **rule** — production anchor — test anchor.
 
 21. **Approval binds to the surface, not to the path.** The fingerprint covers the risky settings,
     agent file digests, *and* every installed `scope: "workspace"` plugin's qualified ref and atomic
-    contribution digest before Environment selection. Global operator-owned plugins do not enter this surface
+    contribution digest before Extension Profile selection. Global operator-owned plugins do not enter this surface
     (`WorkspaceExecutableSurface` and `workspaceExecutableSurface` in
     `packages/kernel/src/config/workspace-trust.ts`) and the verdict is recomputed per call
     (`packages/kernel/src/config/file-config-store.ts:508`). The withheld projection names that
-    extension surface as `environment` until trusted. Pinned by the complete pre-selection inventory
-    and content-drift case in `packages/kernel/tests/integration/environment-manager.test.ts`, plus
+    extension surface as `extension_profile` until trusted. Pinned by the complete pre-selection inventory
+    and content-drift case in `packages/kernel/tests/integration/extension-profile-manager.test.ts`, plus
     the extension-surface hashing case in `workspace-trust.test.ts`.
 
 22. **The trust key is the resolved realpath.** `canonicalWorkspaceKey` (`packages/kernel/src/config/workspace-trust.ts:290`)
@@ -793,14 +793,14 @@ Each entry: **rule** — production anchor — test anchor.
     (`body`). Test: `packages/kernel/tests/component/builtin-agents.test.ts` (`owns every next-round
     decision and keeps generic demonstrations one-round`).
 
-42. **Environment plugin selection is exact and feeds every plugin contribution consumer from one
+42. **Extension Profile plugin selection is exact and feeds every plugin contribution consumer from one
     resolved list.** `snapshot().active_plugins`, plugin settings fragments, plugin agents, and the
     file kernel's other plugin contribution lookups all use qualified `{ scope, source, name }`
-    references. There is no name-only fallback when no Environment collaborator is supplied.
+    references. There is no name-only fallback when no Extension Profile collaborator is supplied.
     Production: `packages/kernel/src/config/file-config-store.ts:650-684`,
     `packages/kernel/src/plugins/plugin-contributions.ts` (`settingsScopes`), and
     `packages/kernel/src/file-kernel.ts`. Test:
-    `packages/kernel/tests/integration/environment-manager.test.ts` (same-name exact scope/source)
+    `packages/kernel/tests/integration/extension-profile-manager.test.ts` (same-name exact scope/source)
     and `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
 ## 6. Failure modes and degradation
@@ -923,7 +923,7 @@ type-only import plus an injected `opts.plugins` object.
    writes.** The engine's schema key is `mcpServers`
    (`packages/loop/src/settings/settings-schema.ts:388-397`) and that is what
    `WORKSPACE_RISK_FIELDS` strips (`packages/kernel/src/config/workspace-trust.ts:40`). The snake_case field compiles only
-   because of the interface's index signature (`packages/protocol/src/config.ts:37`). Whether it is dead or a
+   because of the interface's index signature (`packages/protocol/src/config.ts:35`). Whether it is dead or a
    planned rename is not stated.
 
 3. **A plugin-shipped agent can never be opened through `ConfigService.getAgent`.** The store supports

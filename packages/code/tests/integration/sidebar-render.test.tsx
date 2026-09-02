@@ -374,7 +374,7 @@ test("the selected sub-agent exposes its profile and bounded terminal failure su
 
   const selected = await mount(a, { width: 44, selected: () => "reviewer-id" });
   const selectedFrame = selected.captureCharFrame();
-  expect(selectedFrame).toContain("Profile security-reviewer");
+  expect(selectedFrame).toContain("Agent Profile security-reviewer");
   expect(selectedFrame.replace(/[│\s]+/g, " ")).toContain("Failed: Typecheck");
   selected.renderer.destroy();
 });

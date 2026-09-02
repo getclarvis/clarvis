@@ -1,6 +1,6 @@
 import type { JSX } from "solid-js";
 import { createSignal, For, onMount, Show } from "solid-js";
-import type { ResolvedEnvironment } from "@clarvis/protocol";
+import type { ResolvedExtensionProfile } from "@clarvis/protocol";
 
 import type { WorkspaceTrustState } from "../../adapters/settings.ts";
 import { detachObserved } from "../../core/tasks.ts";
@@ -15,7 +15,7 @@ import { bindLevelKeys, SectionHeader, ViewFrame } from "./view-host.tsx";
 export interface WorkspaceTrustPromptDeps {
   state: () => WorkspaceTrustState;
   fields: () => readonly string[];
-  environment: () => Promise<ResolvedEnvironment>;
+  extensionProfile: () => Promise<ResolvedExtensionProfile>;
   approve: () => Promise<void>;
   review: () => void;
   notify: (message: string, tone?: "success" | "warn" | "error") => void;
@@ -24,7 +24,7 @@ export interface WorkspaceTrustPromptDeps {
 const FIELD_LABELS: Readonly<Record<string, string>> = {
   agents: "agents",
   enabledPlugins: "plugin selection",
-  environment: "repository-owned plugins",
+  extension_profile: "repository-owned plugins",
   hooks: "hooks",
   marketplaces: "marketplace sources",
   mcpServers: "MCP servers",
@@ -32,14 +32,16 @@ const FIELD_LABELS: Readonly<Record<string, string>> = {
 
 /** Proactive yes/review gate for a new or changed executable workspace snapshot. */
 export function WorkspaceTrustPrompt(host: ViewHost, deps: WorkspaceTrustPromptDeps): JSX.Element {
-  const [environment, setEnvironment] = createSignal<ResolvedEnvironment>();
+  const [extensionProfile, setExtensionProfile] = createSignal<ResolvedExtensionProfile>();
   const [busy, setBusy] = createSignal(false);
   const [startedAt, setStartedAt] = createSignal<number>();
   const [failure, setFailure] = createSignal<string>();
 
   useSpinnerClock(() => busy() && host.active());
   onMount(() => {
-    detachObserved("workspace_trust_environment", () => deps.environment().then(setEnvironment));
+    detachObserved("workspace_trust_extension_profile", () =>
+      deps.extensionProfile().then(setExtensionProfile),
+    );
   });
 
   const surface = (): string[] => {
@@ -127,14 +129,14 @@ export function WorkspaceTrustPrompt(host: ViewHost, deps: WorkspaceTrustPromptD
             Approve this workspace once? Every repository-owned plugin in the current snapshot is
             covered automatically. Nothing withheld runs until you say yes.
           </text>
-          <SectionHeader label="Current Environment" />
-          <Show when={environment() !== undefined}>
-            <text fg={tokens.accent2}>{environment()!.id}</text>
+          <SectionHeader label="Current Extension Profile" />
+          <Show when={extensionProfile() !== undefined}>
+            <text fg={tokens.accent2}>{extensionProfile()!.id}</text>
             <text fg={tokens.muted} wrapMode="word">
-              {`${environment()!.plugins.length} plugins ${glyph("separator")} ${environment()!.standalone_skills.length} standalone skills ${glyph("separator")} ${environment()!.counts.mcp_servers_active} MCP ${glyph("separator")} ${environment()!.counts.hooks_declared} hooks`}
+              {`${extensionProfile()!.plugins.length} plugins ${glyph("separator")} ${extensionProfile()!.standalone_skills.length} standalone skills ${glyph("separator")} ${extensionProfile()!.counts.mcp_servers_active} MCP ${glyph("separator")} ${extensionProfile()!.counts.hooks_declared} hooks`}
             </text>
             <text fg={tokens.muted} wrapMode="word">
-              {`Environment fingerprint ${environment()!.fingerprint}`}
+              {`Extension Profile fingerprint ${extensionProfile()!.fingerprint}`}
             </text>
           </Show>
           <For each={surface()}>

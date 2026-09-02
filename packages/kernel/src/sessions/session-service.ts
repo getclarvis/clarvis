@@ -270,10 +270,12 @@ function toSummary(session: Session): SessionSummary {
     workspace: session.workspace,
     created_at: session.created_at,
     updated_at: session.updated_at,
-    ...(session.profile === undefined ? {} : { profile: session.profile }),
+    ...(session.agent_profile === undefined ? {} : { agent_profile: session.agent_profile }),
     turn_count: session.turns.length,
     ...(last === undefined ? {} : { last_status: last.status }),
-    ...(last?.environment === undefined ? {} : { last_environment: last.environment }),
+    ...(last?.extension_profile === undefined
+      ? {}
+      : { last_extension_profile: last.extension_profile }),
     totals: session.totals,
   };
 }

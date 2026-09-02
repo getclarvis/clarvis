@@ -16,8 +16,8 @@ test("the header label derives from the phase and never says 'mcp'", () => {
   expect(connectionLabel({ phase: "connecting" })).toBe("connecting…");
   expect(connectionLabel({ phase: "connecting", detail: "reconnecting" })).toBe("reconnecting…");
   expect(connectionLabel({ phase: "ready" })).toBe("connected");
-  expect(connectionLabel({ phase: "ready", detail: "no profiles" })).toBe(
-    "connected (no profiles)",
+  expect(connectionLabel({ phase: "ready", detail: "no Agent Profiles" })).toBe(
+    "connected (no Agent Profiles)",
   );
   const failed = connectionLabel({ phase: "failed", detail: "boom" });
   expect(failed).toContain("backend");

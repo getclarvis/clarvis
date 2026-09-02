@@ -250,8 +250,8 @@ test("a declared server with no live capabilities explains why", async () => {
   press("return");
   await t.renderOnce();
   const frame = t.captureCharFrame();
-  expect(frame).toContain("configured for the current Environment");
-  expect(frame).toContain("live capabilities appear after the server connects or is first used");
+  expect(frame).toContain("configured for the current Extension Profile");
+  expect(frame).toContain("capabilities appear after connection or first use");
   t.renderer.destroy();
 });
 

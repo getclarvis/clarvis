@@ -35,7 +35,7 @@ export const SETTINGS_ITEMS = [
   {
     id: "keyboard",
     label: "Keyboard",
-    desc: "Portable, enhanced and manual terminal profiles",
+    desc: "Portable, enhanced and manual Keyboard Profiles",
     cmd: "keyboard.open",
   },
   {

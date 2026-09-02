@@ -15,7 +15,7 @@ Discovery, parsing, precedence, and progressive disclosure are specified in
 contributions are specified in
 [`cross-cutting/agent-interop.md`](../../specs/cross-cutting/agent-interop.md) and
 [`hosts/plugins.md`](../../specs/hosts/plugins.md). Host-selected exact roots are specified by
-[`hosts/environments.md`](../../specs/hosts/environments.md).
+[`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md).
 
 ## How it works
 
@@ -75,8 +75,8 @@ const skills = createAgentSkills({
 A root may also carry `include`, an exact allow-list of resolved manifest names. An absent list
 preserves full discovery; an empty list admits nothing. Filtering happens after normal manifest
 resolution, so it does not create a second naming or precedence system. The kernel uses this generic
-mechanism to pass custom Environment skill selections without making this package understand
-Environments.
+mechanism to pass custom Extension Profile skill selections without making this package understand
+Extension Profiles.
 
 `executionRoot` is a separate, host-controlled opt-in. When present on a root, discovery exposes
 only each selected skill's own directory as that skill's `executionRoot`; it never exposes the

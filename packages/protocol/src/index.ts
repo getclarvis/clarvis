@@ -13,7 +13,7 @@ export type * from "./common.ts";
 export type * from "./runs.ts";
 export type * from "./config.ts";
 export type * from "./plugins.ts";
-export type * from "./environments.ts";
+export type * from "./extension-profiles.ts";
 export type * from "./secrets.ts";
 export type * from "./models.ts";
 export type * from "./provider-auth.ts";

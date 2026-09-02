@@ -12,7 +12,7 @@ const UNKNOWN_SHAPE: AgentShape = {
 
 /**
  * Reactive view of the currently selected agent profile, derived from the
- * merged profile list and the session/default fallback.
+ * merged Agent Profile list and the session/default fallback.
  */
 export interface ActiveAgentStore {
   active: Accessor<string>;
@@ -77,9 +77,32 @@ export function automaticAgentFallback(
   );
 }
 
+/** The state update required when a changing catalog invalidates the active Agent Profile. */
+export interface ActiveAgentCatalogTransition {
+  name: string;
+  persist: boolean;
+}
+
+/**
+ * Decide whether a changed Agent Profile catalog requires a fallback and session persistence.
+ *
+ * @remarks The initial empty selection is resolved without writing session state. Once a real
+ * selection disappears, however, any available replacement must become both the reactive and
+ * persisted session Agent Profile.
+ */
+export function activeAgentCatalogTransition(
+  current: string,
+  names: readonly string[],
+  resolve: () => string,
+): ActiveAgentCatalogTransition | undefined {
+  if (current && names.includes(current)) return undefined;
+  const name = resolve();
+  return { name, persist: Boolean(current && name && name !== current) };
+}
+
 /**
  * Builds an {@link ActiveAgentStore} that keeps the active agent name valid as
- * the profile list changes, falling back through session profile then
+ * the Agent Profile list changes, falling back through session profile then
  * configured default, runnable `marshall`, then the first runnable Lead.
  */
 export function createActiveAgentStore(deps: ActiveAgentDeps): ActiveAgentStore {
@@ -106,7 +129,10 @@ export function createActiveAgentStore(deps: ActiveAgentDeps): ActiveAgentStore 
   createEffect(() => {
     const names = list().map((v) => v.name);
     const current = active();
-    if (!current || !names.includes(current)) setActiveSignal(resolveActive());
+    const transition = activeAgentCatalogTransition(current, names, resolveActive);
+    if (!transition) return;
+    setActiveSignal(transition.name);
+    if (transition.persist) deps.persistActive(transition.name);
   });
 
   const view = createMemo(() => list().find((v) => v.name === active()));

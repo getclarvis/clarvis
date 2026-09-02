@@ -45,7 +45,7 @@ export interface CreateMemoryFactoryOptions {
    * every run's learning until deps are wired.
    */
   runDeps?: () => ExecuteRunDeps | undefined;
-  /** Host-owned executor for lifecycle and Environment admission around every indexer pass. */
+  /** Host-owned executor for lifecycle and Extension Profile admission around every indexer pass. */
   executeRun?: (args: ExecuteRunArgs) => Promise<ExecuteRunOutcome>;
   /**
    * The engine deps a pass uses when it continues the run it indexes.

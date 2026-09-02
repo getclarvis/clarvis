@@ -39,10 +39,10 @@ code and none of them a sandbox:
    inventory of `scope: "workspace"` plugins are repository-authored executable surfaces. Risky
    settings and agent files are withheld, and selected workspace-owned plugins stay inactive, until
    the operator approves the exact current fingerprint once. That approval covers every repository
-   plugin rather than requiring one decision per plugin or Environment. Global plugins are
+   plugin rather than requiring one decision per plugin or Extension Profile. Global plugins are
    operator-owned installations and require no second workspace approval
    (`packages/kernel/src/config/workspace-trust.ts`,
-   `packages/kernel/src/environments/environment-manager.ts`).
+   `packages/kernel/src/extension-profiles/extension-profile-manager.ts`).
 
 Two properties recur across all five and are worth stating once. First, refusals aimed at the **model**
 never name the escape hatch: `assertWithinWorkspace`'s message states the boundary and closes the futile
@@ -179,7 +179,8 @@ Both `filterHookEnv` and `interpolatedNames` are on the package barrel
 | `resolveSecretEnvironment` | `(environment, keyfile, sources) => KernelEnvironment` | `packages/kernel/src/ports/environment.ts:30` |
 
 Wire methods `secrets.listNames` / `secrets.set` / `secrets.delete`, carrying
-`metadata.sensitivity === "secrets"` (`packages/kernel/src/transport/operations.ts:468-487`).
+`metadata.sensitivity === "secrets"` (`OPERATIONS.secrets` in
+`packages/kernel/src/transport/operations.ts`).
 
 ### 2.7 Workspace trust — `@clarvis/kernel`
 
@@ -308,8 +309,8 @@ sorts object keys recursively and drops `undefined` (`:154-164`, `:239-240`). Th
 | `extensions` | every installed `scope: "workspace"` plugin as an exact qualified ref plus atomic contribution digest, sorted canonically, when non-empty |
 
 A workspace with none of the three yields `undefined` — it is **inert** and never prompted about
-(`workspaceExecutableSurface` in `packages/kernel/src/config/workspace-trust.ts`). Environment
-Environment definitions and global plugin selections do not enter this executable surface. The
+(`workspaceExecutableSurface` in `packages/kernel/src/config/workspace-trust.ts`). Extension Profile
+Extension Profile definitions and global plugin selections do not enter this executable surface. The
 workspace plugin inventory does so before selection. Code resolves it after the lightweight startup
 composer has painted, keeps repository plugins inactive in the meantime, and then asks automatically
 when the complete TUI receives the verdict.
@@ -622,7 +623,7 @@ Verdict computation, recomputed on every call (`packages/kernel/src/config/file-
 | State | Condition | Effect on the merge / agents |
 | --- | --- | --- |
 | `inert` | `workspaceTrustFingerprint(...) === undefined` | nothing withheld |
-| `unapproved` | no entry for this key (`packages/kernel/src/config/workspace-trust.ts:325`) | risk fields stripped; workspace agent files and `scope: "workspace"` Environment plugins withheld; global installed plugins remain admitted |
+| `unapproved` | no entry for this key (`packages/kernel/src/config/workspace-trust.ts:325`) | risk fields stripped; workspace agent files and `scope: "workspace"` Extension Profile plugins withheld; global installed plugins remain admitted |
 | `trusted` | some recorded entry equals the current fingerprint (`:326-328`) | nothing withheld |
 | `changed` | entries exist but none matches; reports the most recent as `approved` (`:329`) | withheld, same as `unapproved` |
 
@@ -641,23 +642,23 @@ Transitions:
 | `unapproved`/`changed` | operator write through `ConfigService` | unchanged | `if (!carried) return out` (`:527-528`) |
 
 An explicit approve/revoke is refused with `conflict` while any run is active, before the trust file
-is changed. At an idle boundary, `resolveActive` recomposes the selected workspace Environment (and
+is changed. At an idle boundary, `resolveActive` recomposes the selected workspace Extension Profile (and
 workspace-derived `builtin:default`) so approval admits its workspace-owned plugin units and
 revocation withholds those units immediately; global installed plugins are unaffected
 (`assertWorkspaceTrustTransitionAllowed` and `resolveActive` in
-`packages/kernel/src/environments/environment-manager.ts`; the idle/active transition case in
-`packages/kernel/tests/integration/environment-manager.test.ts` and the pre-write storage case in
+`packages/kernel/src/extension-profiles/extension-profile-manager.ts`; the idle/active transition case in
+`packages/kernel/tests/integration/extension-profile-manager.test.ts` and the pre-write storage case in
 `packages/kernel/tests/integration/workspace-trust.test.ts`).
 
 `writeWorkspaceTrust` throws rather than overwrite when the existing store cannot be parsed
 (`packages/kernel/src/config/workspace-trust.ts:357-359`) — but `withOperatorWrite` swallows that throw, because the settings or
 agent file has already landed by then (`packages/kernel/src/config/file-config-store.ts:586-590`).
 
-A workspace Environment preview may approve only the fingerprint it just resolved; changing the
+A workspace Extension Profile preview may approve only the fingerprint it just resolved; changing the
 definition between preview and selection is a conflict. The resulting approval admits the plugin as
 an atomic unit, including its normalized hooks. There is no mutable per-hook approval projection.
-Environment definitions and resolved snapshots never carry secrets. See
-[Extension Environments](../hosts/environments.md#43-preview-composition-trust-and-resume).
+Extension Profile definitions and resolved snapshots never carry secrets. See
+[Extension Profiles](../hosts/extension-profiles.md#43-preview-composition-trust-and-resume).
 
 Two independent enforcement points read the verdict, and the code says gating only one would leave the
 other open (`packages/kernel/src/config/file-config-store.ts:610-642` for the settings merge;
@@ -975,21 +976,21 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/mcp-client/src/client.ts:478-519`; pinned
     `packages/mcp-client/tests/unit/remote-fetch.test.ts:7-95,141-167`.
 
-55. **A workspace Environment activates operator-owned global plugins without another workspace
+55. **A workspace Extension Profile activates operator-owned global plugins without another workspace
     approval. Every installed `scope: "workspace"` plugin enters one content-addressed workspace
-    fingerprint before selection; approving it once covers all repository plugins and Environment
+    fingerprint before selection; approving it once covers all repository plugins and Extension Profile
     switches until that inventory changes. Hook definitions remain part of each atomic plugin
     digest.** Production:
     `workspaceTrustSurface`, `preview`, and `select` in
-    `packages/kernel/src/environments/environment-manager.ts`, folded through
+    `packages/kernel/src/extension-profiles/extension-profile-manager.ts`, folded through
     `WorkspaceExecutableSurface.extensions` in
     `packages/kernel/src/config/workspace-trust.ts`. Test:
-    `packages/kernel/tests/integration/environment-manager.test.ts` (complete pre-selection
+    `packages/kernel/tests/integration/extension-profile-manager.test.ts` (complete pre-selection
     inventory, content invalidation, global-plugin activation without workspace approval,
-    mixed-scope partial admission, one-approval Environment switching, and matching reconnect
+    mixed-scope partial admission, one-approval Extension Profile switching, and matching reconnect
     fingerprint) and
     `packages/kernel/tests/integration/workspace-trust.test.ts` (extension surface changes the trust
-    hash and is reported as withheld `environment` until approved).
+    hash and is reported as withheld `extension_profile` until approved).
 
 56. **Portable Agent Plugin process paths remain package- or client-state-confined.** A relative
     executable must resolve to a real file inside `PLUGIN_ROOT`; `cwd` may be rooted only in
@@ -1085,7 +1086,7 @@ real — a 64-hex project id and a full UUID both read as credentials, which is 
 | `@clarvis/kernel` → `@clarvis/paths` | runtime, static | `globalPaths(...).keysFile` / `.workspaceTrustFile`, `writeFileAtomicSync` (`packages/kernel/src/secrets/secret-store.ts:3`, `packages/kernel/src/config/workspace-trust.ts:3`) |
 | `@clarvis/kernel` → `@clarvis/protocol` | type-only for `SecretService` | `import type { SecretService }` (`packages/kernel/src/secrets/secret-store.ts:4`) |
 | `@clarvis/kernel/config/workspace-trust` → `@clarvis/loop/host` | runtime, static | `readJsonFile` (`packages/kernel/src/config/workspace-trust.ts:5`) |
-| `@clarvis/code` → canonical redactors | runtime, static | only through `@clarvis/kernel/policy` (`packages/code/src/adapters/session-store.ts:10`, `packages/code/src/adapters/diagnostic-session.ts:12`), pinned by `packages/kernel/tests/component/public-entrypoints.test.ts:22` |
+| `@clarvis/code` → canonical redactors | runtime, static | only through `@clarvis/kernel/policy` (the `sanitizeText` import in `packages/code/src/adapters/session-store.ts` and `packages/code/src/adapters/diagnostic-session.ts`), pinned by `packages/kernel/tests/component/public-entrypoints.test.ts:22` |
 | `@clarvis/llm` → `FORBIDDEN_PROVIDER_BODY_KEYS` | runtime, static | `packages/llm/src/openai-compatible-request.ts:17` |
 | `@clarvis/loop` validation → the same constant | runtime, static | `packages/loop/src/validation/request/provider-rules.ts:3` |
 | `@clarvis/trace` → `sanitizeDeep` | runtime, static | `packages/trace/src/json-trace-store.ts:32`, `packages/trace/src/journal.ts:6`, `packages/trace/src/trace-mapper.ts:4`, `packages/trace/src/testing.ts:2` |
@@ -1108,7 +1109,7 @@ real — a 64-hex project id and a full UUID both read as credentials, which is 
 | memory run snapshot | `sanitizeDeep(run, sanitizeText)` — **before** any bound or write | `packages/memory/src/jobs.ts:224` (rationale `:214-215`); indexer task `packages/memory/src/indexer/run.ts:392` |
 | memory tool results / seed / policy / health | `sanitizeText` | `packages/memory/src/tools.ts:41`, `:53`; `packages/memory/src/seed.ts:89`; `packages/memory/src/recording-policy.ts:51`; `packages/memory/src/health.ts:204-205` |
 | MCP client diagnostics | `sanitizeErrorMessage` | `packages/mcp-client/src/{connection,resources,resilient-session}.ts` |
-| `code` session previews | `sanitizeText` on the first line, before truncation | `packages/code/src/adapters/session-store.ts:157` (rationale `:139-146`) |
+| `code` session previews | `sanitizeText` on the first line, before truncation | `redactPreview` in `packages/code/src/adapters/session-store.ts` |
 | `code` diagnostics | `sanitizeErrorMessage` + ANSI strip | `packages/code/src/adapters/diagnostic-session.ts:140` |
 | LLM provider errors | `sanitizeErrorMessage` | `packages/llm/src/ai-sdk/errors.ts` |
 

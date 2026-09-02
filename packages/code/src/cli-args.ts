@@ -33,12 +33,12 @@ export interface DebugRequest {
 /** A launch-time request for a dedicated Git worktree. `true` asks Clarvis to name it. */
 export type WorktreeRequest = true | string;
 
-interface EnvironmentMode {
-  /** Environment selected for this process, with CLI precedence. */
-  environmentSelector?: string;
+interface ExtensionProfileMode {
+  /** Extension Profile selected for this process, with CLI precedence. */
+  extensionProfileSelector?: string;
 }
 
-interface WorkspaceMode extends EnvironmentMode {
+interface WorkspaceMode extends ExtensionProfileMode {
   /** Resolve this invocation into a dedicated worktree before any host service boots. */
   worktree?: WorktreeRequest;
 }
@@ -57,7 +57,7 @@ export type Mode =
     } & WorkspaceMode)
   | ({ kind: "list"; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "delete"; id: SessionId; debug: DebugFlag } & WorkspaceMode)
-  | ({ kind: "refresh-models"; debug: DebugFlag } & EnvironmentMode)
+  | ({ kind: "refresh-models"; debug: DebugFlag } & ExtensionProfileMode)
   | { kind: "update" }
   | { kind: "help" }
   | { kind: "version" }
@@ -107,9 +107,9 @@ export const FLAGS: readonly FlagSpec[] = [
   { flag: "--update", desc: "install the newest eligible Clarvis release and exit", mode: true },
   { flag: "--ascii", desc: "render glyphs as plain ascii" },
   {
-    flag: "--env",
-    value: "<environment>",
-    desc: "select an Environment for this process (scope:name or name)",
+    flag: "--extension-profile",
+    value: "<selector>",
+    desc: "select an Extension Profile for this process (scope:name or name)",
   },
   {
     flag: "--worktree",
@@ -294,7 +294,7 @@ export function parseMode(argv: string[]): Mode {
       `${seen.has("--agent") ? "--agent" : "--format"} applies only with -p/--print`,
     );
   if (mode === "--update") {
-    const incompatible = ["--ascii", "--worktree", "--env", "--debug"].find((flag) =>
+    const incompatible = ["--ascii", "--worktree", "--extension-profile", "--debug"].find((flag) =>
       seen.has(flag),
     );
     if (incompatible !== undefined) {
@@ -312,15 +312,15 @@ export function parseMode(argv: string[]): Mode {
     ...(debugFlagLevel === undefined ? {} : { level: debugFlagLevel }),
   };
   const rawWorktree = seen.get("--worktree");
-  const environmentSelector = seen.get("--env");
+  const extensionProfileSelector = seen.get("--extension-profile");
   const selectedWorkspace: WorkspaceMode =
-    rawWorktree === undefined && environmentSelector === undefined
+    rawWorktree === undefined && extensionProfileSelector === undefined
       ? {}
       : {
           ...(rawWorktree === undefined
             ? {}
             : { worktree: rawWorktree === "" ? true : rawWorktree }),
-          ...(environmentSelector === undefined ? {} : { environmentSelector }),
+          ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
         };
   switch (mode) {
     case "--print": {
@@ -351,7 +351,7 @@ export function parseMode(argv: string[]): Mode {
       return {
         kind: "refresh-models",
         debug,
-        ...(environmentSelector === undefined ? {} : { environmentSelector }),
+        ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
       };
     case "--update":
       return { kind: "update" };

@@ -507,7 +507,7 @@ export function Sidebar(props: {
                     </Show>
                     <Show when={selected() && (agent.profile ?? agent.model)}>
                       <text fg={tokens.muted} wrapMode="word" selectable={false}>
-                        {`Profile ${agent.profile ?? "default"}${agent.model ? ` ${glyph("separator")} ${agent.model}` : ""}`}
+                        {`Agent Profile ${agent.profile ?? "default"}${agent.model ? ` ${glyph("separator")} ${agent.model}` : ""}`}
                       </text>
                     </Show>
                   </box>

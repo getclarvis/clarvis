@@ -1,12 +1,16 @@
 import { expect, test } from "bun:test";
-import type { EnvironmentRef, EnvironmentService, ResolvedEnvironment } from "@clarvis/protocol";
+import type {
+  ExtensionProfileRef,
+  ExtensionProfileService,
+  ResolvedExtensionProfile,
+} from "@clarvis/protocol";
 import type { Interaction } from "../../src/keys/interaction.ts";
-import { EnvironmentBrowser } from "../../src/views/config/EnvironmentBrowser.tsx";
+import { ExtensionProfileBrowser } from "../../src/views/config/ExtensionProfileBrowser.tsx";
 import { createViewHost } from "../../src/views/config/view-host.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 
-function resolved(ref: EnvironmentRef, current = false): ResolvedEnvironment {
+function resolved(ref: ExtensionProfileRef, current = false): ResolvedExtensionProfile {
   const research = ref.name === "research";
   return {
     id: `${ref.scope}:${ref.name}`,
@@ -186,11 +190,11 @@ test("renders diagnostics and previews the exact delta before selecting", async 
       deleted.push(`${ref.scope}:${ref.name}:${options.expected_revision}`);
     },
     clone: async () => ({ ref: research.ref, immutable: false }),
-  } satisfies EnvironmentService;
+  } satisfies ExtensionProfileService;
   const rendered = await openRender(
     (() =>
-      EnvironmentBrowser(host, {
-        environments: service,
+      ExtensionProfileBrowser(host, {
+        extensionProfiles: service,
         reconnect: async () => ({ ok: true, message: "ok" }),
         runActive: () => false,
         notify: (message) => notifications.push(message),
@@ -252,7 +256,7 @@ test("renders diagnostics and previews the exact delta before selecting", async 
   rendered.renderer.destroy();
 });
 
-test("a long Environment delta scrolls while decisions remain visible at 80x24", async () => {
+test("a long Extension Profile delta scrolls while decisions remain visible at 80x24", async () => {
   const { keymap, press } = createFakeKeymap();
   const { host } = createViewHost({
     interaction: { keymap } as unknown as Interaction,
@@ -305,11 +309,11 @@ test("a long Environment delta scrolls while decisions remain visible at 80x24",
     update: async () => ({ ref: research.ref, immutable: false }),
     delete: async () => {},
     clone: async () => ({ ref: research.ref, immutable: false }),
-  } satisfies EnvironmentService;
+  } satisfies ExtensionProfileService;
   const rendered = await openRender(
     (() =>
-      EnvironmentBrowser(host, {
-        environments: service,
+      ExtensionProfileBrowser(host, {
+        extensionProfiles: service,
         reconnect: async () => ({ ok: true, message: "ok" }),
         runActive: () => false,
         notify: () => {},
@@ -336,7 +340,7 @@ test("a long Environment delta scrolls while decisions remain visible at 80x24",
   rendered.renderer.destroy();
 });
 
-test("deletes an inactive custom Environment only after revision-bound confirmation", async () => {
+test("deletes an inactive custom Extension Profile only after revision-bound confirmation", async () => {
   const { keymap, press } = createFakeKeymap();
   const { host } = createViewHost({
     interaction: { keymap } as unknown as Interaction,
@@ -389,11 +393,11 @@ test("deletes an inactive custom Environment only after revision-bound confirmat
     clone: async () => {
       throw new Error("not used");
     },
-  } satisfies EnvironmentService;
+  } satisfies ExtensionProfileService;
   const rendered = await openRender(
     (() =>
-      EnvironmentBrowser(host, {
-        environments: service,
+      ExtensionProfileBrowser(host, {
+        extensionProfiles: service,
         reconnect: async () => ({ ok: true, message: "ok" }),
         runActive: () => false,
         notify: () => {},
@@ -403,7 +407,7 @@ test("deletes an inactive custom Environment only after revision-bound confirmat
   );
   await settle(rendered, () => {
     const frame = rendered.captureCharFrame();
-    return frame.includes("global:research") && !frame.includes("Loading Environments");
+    return frame.includes("global:research") && !frame.includes("Loading Extension Profiles");
   });
   press("down");
   press("d");
@@ -416,7 +420,7 @@ test("deletes an inactive custom Environment only after revision-bound confirmat
   rendered.renderer.destroy();
 });
 
-test("keeps Environment load failures visible until a successful retry", async () => {
+test("keeps Extension Profile load failures visible until a successful retry", async () => {
   const { keymap, press } = createFakeKeymap();
   const { host } = createViewHost({
     interaction: { keymap } as unknown as Interaction,
@@ -430,7 +434,7 @@ test("keeps Environment load failures visible until a successful retry", async (
     list: async () => {
       attempts += 1;
       if (attempts === 1) {
-        throw new Error("ENOENT: no such file or directory, scandir '/tmp/environments'");
+        throw new Error("ENOENT: no such file or directory, scandir '/tmp/extension-profiles'");
       }
       return [{ ref: builtin.ref, immutable: true }];
     },
@@ -467,11 +471,11 @@ test("keeps Environment load failures visible until a successful retry", async (
     clone: async () => {
       throw new Error("not used");
     },
-  } satisfies EnvironmentService;
+  } satisfies ExtensionProfileService;
   const rendered = await openRender(
     (() =>
-      EnvironmentBrowser(host, {
-        environments: service,
+      ExtensionProfileBrowser(host, {
+        extensionProfiles: service,
         reconnect: async () => ({ ok: true, message: "ok" }),
         runActive: () => false,
         notify: (message) => notifications.push(message),
@@ -481,20 +485,22 @@ test("keeps Environment load failures visible until a successful retry", async (
   );
 
   await settle(rendered, () =>
-    rendered.captureCharFrame().includes("Environment catalog unavailable"),
+    rendered.captureCharFrame().includes("Extension Profile catalog unavailable"),
   );
   for (let index = 0; index < 5; index += 1) await rendered.renderOnce();
   let frame = rendered.captureCharFrame();
-  expect(frame).toContain("Environment catalog unavailable");
+  expect(frame).toContain("Extension Profile catalog unavailable");
   expect(frame).toContain("r retries");
   expect(frame).toContain("ENOENT");
-  expect(notifications).toEqual(["ENOENT: no such file or directory, scandir '/tmp/environments'"]);
+  expect(notifications).toEqual([
+    "ENOENT: no such file or directory, scandir '/tmp/extension-profiles'",
+  ]);
 
   press("r");
   await settle(rendered, () => rendered.captureCharFrame().includes("builtin:default"));
   frame = rendered.captureCharFrame();
   expect(attempts).toBe(2);
   expect(frame).toContain("builtin:default");
-  expect(frame).not.toContain("Environment catalog unavailable");
+  expect(frame).not.toContain("Extension Profile catalog unavailable");
   rendered.renderer.destroy();
 });

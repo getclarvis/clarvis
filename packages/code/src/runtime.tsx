@@ -131,7 +131,7 @@ import type { BootShell } from "./boot-shell.ts";
 import { resolveStartupComposerHandoff } from "./views/StartupComposer.tsx";
 
 let workspace = workspaceRoot();
-let environmentSelector: string | undefined;
+let extensionProfileSelector: string | undefined;
 
 const ownerOverride = process.env.CLARVIS_OWNER;
 
@@ -176,7 +176,7 @@ async function bootSilentSessionStore(): Promise<{
     workspaceRoot: workspace,
     globalDir: globalRoot(),
     ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
-    ...(environmentSelector === undefined ? {} : { environmentSelector }),
+    ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
     logger: activeDiagnosticLogger() ?? createLogger("silent"),
   });
   const owner = manager.defaultOwner;
@@ -239,7 +239,7 @@ async function runPrintMode(opts: {
     globalDir: printDirs.global.root,
     keySources: code.keySources(),
     memory: true,
-    ...(environmentSelector === undefined ? {} : { environmentSelector }),
+    ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
     logger: activeDiagnosticLogger() ?? createLogger("silent"),
     openMcpAuthorizationUrl: openPublicUrl,
   });
@@ -383,7 +383,7 @@ async function runRefreshMode(): Promise<never> {
     const kernel = await createFileKernel({
       workspaceRoot: workspace,
       globalDir: globalRoot(),
-      ...(environmentSelector === undefined ? {} : { environmentSelector }),
+      ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
       logger: activeDiagnosticLogger() ?? createLogger("silent"),
     });
     const cat = await kernel.models.refresh();
@@ -498,8 +498,8 @@ async function runApp(
     }
   };
   const attention = createAttention(renderer);
-  let environmentDriftSequence = 0;
-  const [environmentDriftNotice, setEnvironmentDriftNotice] = createSignal<{
+  let extensionProfileDriftSequence = 0;
+  const [extensionProfileDriftNotice, setExtensionProfileDriftNotice] = createSignal<{
     sequence: number;
     kind: "skill" | "plugin_runtime";
     name: string;
@@ -514,7 +514,7 @@ async function runApp(
         globalDir: globalRoot(),
         ...(ownerOverride === undefined ? {} : { defaultOwner: ownerOverride }),
         memory: true,
-        ...(environmentSelector === undefined ? {} : { environmentSelector }),
+        ...(extensionProfileSelector === undefined ? {} : { extensionProfileSelector }),
         logger: diagnostics?.logger ?? createLogger("silent"),
         openMcpAuthorizationUrl: openPublicUrl,
         keySources: (() => {
@@ -532,15 +532,17 @@ async function runApp(
         })(),
       }),
   );
-  const unsubscribeEnvironmentDrift = workspaceManager.subscribeEnvironmentDrift((notice) => {
-    setEnvironmentDriftNotice({
-      sequence: ++environmentDriftSequence,
-      kind: notice.kind,
-      name: notice.kind === "skill" ? notice.name : notice.plugin,
-      ...(notice.kind === "skill" ? { source: notice.source } : {}),
-    });
-  });
-  platform.onShutdown(unsubscribeEnvironmentDrift);
+  const unsubscribeExtensionProfileDrift = workspaceManager.subscribeExtensionProfileDrift(
+    (notice) => {
+      setExtensionProfileDriftNotice({
+        sequence: ++extensionProfileDriftSequence,
+        kind: notice.kind,
+        name: notice.kind === "skill" ? notice.name : notice.plugin,
+        ...(notice.kind === "skill" ? { source: notice.source } : {}),
+      });
+    },
+  );
+  platform.onShutdown(unsubscribeExtensionProfileDrift);
   const owner = workspaceManager.defaultOwner;
   const activeWorkspace = workspaceManager.current;
   const activeWorkspacePath = activeWorkspace.path ?? workspace;
@@ -699,7 +701,7 @@ async function runApp(
     agentFiles: AgentFile[];
     agentConflicts: string[];
     sessions: SessionStore;
-    /** The one agent listing this boot made, so the profile catalogue can reuse it. */
+    /** The one agent listing this boot made, so the Agent Profile catalogue can reuse it. */
     agentSummaries: Awaited<ReturnType<KernelRunClient["config"]["listAgents"]>>;
   }
 
@@ -770,7 +772,7 @@ async function runApp(
     const nextKeys = await diagnosticAsync("boot.keys", () => createKeysAdapter(client.secrets));
     /**
      * One agent listing for the whole boot. The settings adapter, the agent-file
-     * snapshot and the profile catalogue each used to fetch their own, so a cold
+     * snapshot and the Agent Profile catalogue each used to fetch their own, so a cold
      * start read the fleet from disk three times over.
      */
     bootPhase = "agents";
@@ -864,7 +866,9 @@ async function runApp(
     });
   setProfiles(bootProfiles);
   conn.set(
-    bootProfiles.length === 0 ? { phase: "ready", detail: "no profiles" } : { phase: "ready" },
+    bootProfiles.length === 0
+      ? { phase: "ready", detail: "no Agent Profiles" }
+      : { phase: "ready" },
   );
   const workspaceFiles = createWorkspaceFiles(runClient.files);
 
@@ -906,7 +910,7 @@ async function runApp(
       const nextAgents = createActiveAgentStore({
         profiles: input.profiles,
         code: input.code,
-        sessionProfile: () => input.runtimeHost()?.sessionMeta()?.profile,
+        sessionProfile: () => input.runtimeHost()?.sessionMeta()?.agentProfile,
         persistActive: (name) => input.runtimeHost()?.setSessionProfile(name),
         isRunnable: (name) => {
           const file = nextAgentFiles.list().find((candidate) => candidate.name === name);
@@ -1095,7 +1099,9 @@ async function runApp(
       await agentFiles.reload();
       const profs = await runClient.listProfiles();
       setProfiles(profs);
-      conn.set(profs.length === 0 ? { phase: "ready", detail: "no profiles" } : { phase: "ready" });
+      conn.set(
+        profs.length === 0 ? { phase: "ready", detail: "no Agent Profiles" } : { phase: "ready" },
+      );
       return { ok: true, message: "backend reconnected " + glyph("emDash") + " keys applied" };
     } catch (e) {
       conn.set({ phase: "failed", detail: errorText(e) });
@@ -1106,7 +1112,7 @@ async function runApp(
     }
   }
 
-  /** Reload agent files and the kernel-resolved runtime profile catalogue together. */
+  /** Reload agent files and the kernel-resolved Agent Profile catalogue together. */
   async function refreshAgentProfiles(): Promise<void> {
     await agentFiles.reload();
     setProfiles(await runClient.listProfiles());
@@ -1240,7 +1246,7 @@ async function runApp(
     sessionUsageBaseline: () => sessionUsage(runHost.sessionUsageBaseline()),
     workflowActivity: () => runHost.workflowActivity(),
     mcpStartupNotice: () => runHost.mcpStartupNotice(),
-    environmentDriftNotice,
+    extensionProfileDriftNotice,
     bang: (cmd) => runHost.runBangCommand(cmd),
     localBusy: () => runHost.bashActive(),
     compacting: () => runHost.compactionActive(),
@@ -1336,8 +1342,8 @@ async function runApp(
     get plugins() {
       return runClient.plugins;
     },
-    get environments() {
-      return runClient.environments;
+    get extensionProfiles() {
+      return runClient.extensionProfiles;
     },
     get skills() {
       return runClient.skills;
@@ -1417,7 +1423,7 @@ export async function runInteractiveMode(
   bootShell: BootShell,
   preparedWorkspaceManager?: Promise<WorkspaceClientManager>,
 ): Promise<void> {
-  environmentSelector = mode.environmentSelector;
+  extensionProfileSelector = mode.extensionProfileSelector;
   let selectedWorktree: WorktreeBootstrapResult | undefined;
   if (mode.worktree !== undefined) {
     const { bootstrapWorktree } = await import("./bootstrap/worktree.ts");
@@ -1431,7 +1437,7 @@ export async function runInteractiveMode(
 
 /** Continue a non-interactive invocation after the lightweight CLI argument fast path. */
 export async function runHeadlessMode(mode: HeadlessMode): Promise<void> {
-  environmentSelector = mode.environmentSelector;
+  extensionProfileSelector = mode.extensionProfileSelector;
   if ("worktree" in mode && mode.worktree !== undefined) {
     const { bootstrapWorktree } = await import("./bootstrap/worktree.ts");
     const selected = await bootstrapWorktree(workspace, mode.worktree);

@@ -39,7 +39,7 @@ export interface IndexerRuntime {
   deps: ExecuteRunDeps;
   modelRef: string;
   providers: readonly ProviderConfig[];
-  /** Host-owned execution boundary for lifecycle and Environment admission around every pass. */
+  /** Host-owned execution boundary for lifecycle and Extension Profile admission around every pass. */
   executeRun?: (args: ExecuteRunArgs) => Promise<ExecuteRunOutcome>;
   /** Same memory provider selected for the run being learned from. */
   memoryProvider?: MemoryProvider;

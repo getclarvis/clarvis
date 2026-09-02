@@ -811,7 +811,7 @@ to `planStoreConformance()` also constrains `src/provider.ts` (that provider is
   Tracing every call site between a `.list()` caller and `PlanRepositoryTx.list` in this repository —
   `PlanStore.list` (`packages/plan/src/store.ts:367-368`, forwards `input` unchanged),
   `PlanService.list` (`packages/plan/src/service.ts:37`, forwards `input` unchanged), and the kernel's
-  `plans.list` operation (`packages/kernel/src/transport/operations.ts:604-609`, forwards `p.input`
+  `plans.list` operation (`OPERATIONS.plans.list` in `packages/kernel/src/transport/operations.ts`, forwards `p.input`
   unchanged) — none of them clamps, bounds, or even reads `limit` before handing the query on. The
   clamp exists in exactly one place per adapter, inside the adapter itself, and both known adapters
   implement it identically: `Math.min(MAX_LIMIT, Math.max(1, query.limit ?? DEFAULT_LIMIT))` with

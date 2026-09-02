@@ -46,7 +46,7 @@ import type { ConnectionState } from "../adapters/connection-state.ts";
 import type { McpClientCaps } from "../adapters/mcp-capabilities-bridge.ts";
 import type {
   ModelCatalogService,
-  EnvironmentService,
+  ExtensionProfileService,
   PlansService,
   PluginService,
   ProviderAuthService,
@@ -88,7 +88,7 @@ import { errorText } from "../adapters/errors.ts";
 import { Footer, HintToast, LeadActivityLine, type LeadActivityPhase } from "./Footer.tsx";
 import { FLOAT_Z } from "./overlays/FloatFrame.tsx";
 import { InputDock, type SlashOutcome } from "./InputDock.tsx";
-import { ProfilePicker, type AgentDefaults } from "./overlays/ProfilePicker.tsx";
+import { AgentProfilePicker, type AgentDefaults } from "./overlays/AgentProfilePicker.tsx";
 import { createLayoutController, FLOOR_MIN_COLUMNS, FLOOR_MIN_ROWS } from "../app/layout.ts";
 import { OverlayRegion, overlayFallbackActive } from "./app/OverlayRegion.tsx";
 import { TranscriptRegion } from "./app/TranscriptRegion.tsx";
@@ -211,7 +211,7 @@ export interface AppRunControls {
   /** Latest live-only MCP startup warning, displayed once outside conversation history. */
   mcpStartupNotice?: Accessor<McpStartupNotice | null>;
   /** Latest extension contribution withdrawn after asynchronous on-disk drift detection. */
-  environmentDriftNotice?: Accessor<{
+  extensionProfileDriftNotice?: Accessor<{
     sequence: number;
     kind: "skill" | "plugin_runtime";
     name: string;
@@ -276,7 +276,7 @@ export interface AppBackend {
   workflows: WorkflowsService;
   getRun: (id: string) => Promise<RunDetail | null>;
   plugins: PluginService;
-  environments: EnvironmentService;
+  extensionProfiles: ExtensionProfileService;
   skills: SkillsService;
   tasks: TasksController;
   storage: StorageService;
@@ -342,12 +342,16 @@ export function App(props: AppProps): JSX.Element {
       "warn",
     );
   });
-  let shownEnvironmentDriftNotice = 0;
+  let shownExtensionProfileDriftNotice = 0;
   createEffect(() => {
-    const notice = props.run.environmentDriftNotice?.();
-    if (notice === undefined || notice === null || notice.sequence === shownEnvironmentDriftNotice)
+    const notice = props.run.extensionProfileDriftNotice?.();
+    if (
+      notice === undefined ||
+      notice === null ||
+      notice.sequence === shownExtensionProfileDriftNotice
+    )
       return;
-    shownEnvironmentDriftNotice = notice.sequence;
+    shownExtensionProfileDriftNotice = notice.sequence;
     notify(
       notice.kind === "skill"
         ? `Skill '${notice.name}' changed on disk and was withheld from runs until reconnect ` +
@@ -938,7 +942,7 @@ export function App(props: AppProps): JSX.Element {
       ? {}
       : { afterPaint: (task: () => void) => props.shell.afterPaint!(task) }),
     plugins: props.backend.plugins,
-    environments: props.backend.environments,
+    extensionProfiles: props.backend.extensionProfiles,
     skills: props.backend.skills,
     tasks: props.backend.tasks,
     storage: props.backend.storage,
@@ -1349,7 +1353,7 @@ export function App(props: AppProps): JSX.Element {
           placement="portal"
         >
           {(lifecycle) => (
-            <ProfilePicker
+            <AgentProfilePicker
               interaction={interaction}
               enabled={lifecycle.active}
               list={props.fleet.agents.list}

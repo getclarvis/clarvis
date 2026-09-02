@@ -15,7 +15,7 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
 ## 2. Construction
 
 `createFileKernel(options)` resolves process environment and paths, discovers the workspace identity,
-creates the extension Environment manager, opens configuration and secrets, builds
+creates the Extension Profile manager, opens configuration and secrets, builds
 planning/memory/task/workflow dependencies, constructs the
 in-process kernel, recovers persisted runs, and installs workspace housekeeping. A construction
 failure unwinds already-created resources before rethrowing. It does not start durable memory-index
@@ -40,15 +40,15 @@ The `builtins` switchboard names `tools`, `skills`, `hooks`, and `tasks`. Memory
 their own explicit options. Worktrees are not a runtime builtin: Code selects a checkout before this
 function runs.
 
-`CreateFileKernelOptions.environmentSelector` is the process-local Environment selector. The manager
+`CreateFileKernelOptions.extensionProfileSelector` is the process-local Extension Profile selector. The manager
 resolves the installed inventory before the config store is constructed, then supplies the store's
 exact active-plugin selector and workspace executable trust surface. The resulting snapshot is
 pinned for the lifetime of this file kernel; selection changes require reconstruction.
 
 Production: `packages/kernel/src/file-kernel.ts:362-383`, `:613`, `:834`, `:878`;
-`packages/kernel/src/environments/environment-manager.ts` (`resolveActive`).
+`packages/kernel/src/extension-profiles/extension-profile-manager.ts` (`resolveActive`).
 
-Test: `packages/kernel/tests/integration/environment-manager.test.ts`.
+Test: `packages/kernel/tests/integration/extension-profile-manager.test.ts`.
 
 Production: `packages/kernel/src/file-kernel.ts` (`CreateFileKernelOptions`, `createFileKernel`);
 `packages/kernel/src/application/lifecycle.ts`.
@@ -79,7 +79,7 @@ Test: `packages/kernel/tests/integration/git-workspace.test.ts`;
 ## 4. Kernel services
 
 The in-process kernel exposes project/workspace identity and owner-scoped services for runs,
-configuration, plugins, Environments, secrets, model catalogs, provider authentication, workspace
+configuration, plugins, Extension Profiles, secrets, model catalogs, provider authentication, workspace
 files, memory, plans, workflows, skills, sessions, tasks, and storage. These are control-plane services; model tool
 surfaces are composed separately by the loop capabilities.
 
@@ -99,10 +99,10 @@ skills, hooks, memory, planning, workflows, and tasks only when their owning pol
 Optional package values do not enter the eager settings/import path contrary to the capability
 composition boundary.
 
-The Environment manager narrows plugin contributions before settings, agents, MCP servers, hooks,
+The Extension Profile manager narrows plugin contributions before settings, agents, MCP servers, hooks,
 capability executables, and plugin skill roots are composed. Standalone skill selection is passed as
 resolved `SkillRootInput` entries with exact `include` lists. The loop receives those roots and the
-opaque `{ id, fingerprint }` run metadata; it does not import Environment policy.
+opaque `{ id, fingerprint }` run metadata; it does not import Extension Profile policy.
 
 The tools capability receives the selected workspace, sandbox policy, guard resolver, run-owned
 temporary roots, and secret environment names. The kernel guard makes `host_vcs` an ordinary ask:
@@ -112,16 +112,16 @@ Workflow leaders are separate auxiliary runs. `auxiliaryWorkflowRunDeps` removes
 capability and leader assembly forces `memory: "off"`; the primary manager remains the workflow's
 single memory-producing run.
 
-Foreground runs and every physical memory-indexer pass share one Environment admission function.
+Foreground runs and every physical memory-indexer pass share one Extension Profile admission function.
 The file host injects a memory executor that acquires the immutable snapshot lease immediately
 before calling `executeRun` and releases it in `finally`; durable retries therefore revalidate even
-when no foreground handle remains. Production: `acquireEnvironmentRunLease` and
-`executeEnvironmentRun` in `packages/kernel/src/file-kernel.ts`, plus `withRunLease` in
+when no foreground handle remains. Production: `acquireExtensionProfileRunLease` and
+`executeExtensionProfileRun` in `packages/kernel/src/file-kernel.ts`, plus `withRunLease` in
 `packages/kernel/src/runs/run-lease.ts`. Test: `packages/kernel/tests/unit/run-lease.test.ts` and
 `packages/memory/tests/component/factory.test.ts`.
 
 Production: `packages/kernel/src/config/capability-registry.ts`;
-`packages/kernel/src/file-kernel.ts`; `packages/kernel/src/environments/environment-manager.ts`;
+`packages/kernel/src/file-kernel.ts`; `packages/kernel/src/extension-profiles/extension-profile-manager.ts`;
 `packages/kernel/src/guard/resolver.ts`.
 
 Test: `packages/kernel/tests/integration/file-kernel.test.ts`;
@@ -177,18 +177,18 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
    Test: `packages/kernel/tests/integration/owner-isolation.test.ts` (`starts durable memory recovery
    only after the host releases boot`).
 
-7. **One file kernel composes one immutable resolved extension Environment.** Mutating a definition
+7. **One file kernel composes one immutable resolved Extension Profile.** Mutating a definition
    or persisted selection cannot change its active plugins, skill roots, run metadata, or
-   fingerprint; a host must reconnect. Production: `createEnvironmentManager` and `resolveActive` in
-   `packages/kernel/src/environments/environment-manager.ts`; composition in
+   fingerprint; a host must reconnect. Production: `createExtensionProfileManager` and `resolveActive` in
+   `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; composition in
    `packages/kernel/src/file-kernel.ts`. Test:
-   `packages/kernel/tests/integration/environment-manager.test.ts` (`pins the active snapshot until
-   reconnect`). The full contract is [Extension Environments](environments.md#5-invariants).
+   `packages/kernel/tests/integration/extension-profile-manager.test.ts` (`pins the active snapshot until
+   reconnect`). The full contract is [Extension Profiles](extension-profiles.md#5-invariants).
 
 8. **Every physical run owned by the file kernel, including a delayed memory-indexer continuation,
-   acquires the same immutable Environment lease.** Admission validates before execution and release
-   runs after success or failure. Production: `acquireEnvironmentRunLease` and
-   `executeEnvironmentRun` in `packages/kernel/src/file-kernel.ts`; `withRunLease` in
+   acquires the same immutable Extension Profile lease.** Admission validates before execution and release
+   runs after success or failure. Production: `acquireExtensionProfileRunLease` and
+   `executeExtensionProfileRun` in `packages/kernel/src/file-kernel.ts`; `withRunLease` in
    `packages/kernel/src/runs/run-lease.ts`. Test:
    `packages/kernel/tests/unit/run-lease.test.ts` and
    `packages/memory/tests/component/factory.test.ts`.
@@ -199,8 +199,8 @@ Test: `packages/kernel/tests/integration/file-kernel.test.ts`.
 | --- | --- |
 | Git discovery is unavailable | deterministic canonical-path identity fallback |
 | Config/plugin scope is invalid | rejected scope is reported; valid scopes continue |
-| Environment selection or definition is invalid | kernel remains fail-closed on that invalid Environment; no builtin fallback is activated |
-| Selected Environment inventory is missing or untrusted | kernel boots with a `degraded` resolved snapshot and only healthy, trusted selected contributions activate |
+| Extension Profile selection or definition is invalid | kernel remains fail-closed on that invalid Extension Profile; no builtin fallback is activated |
+| Selected Extension Profile inventory is missing or untrusted | kernel boots with a `degraded` resolved snapshot and only healthy, trusted selected contributions activate |
 | A remote MCP server requires interactive OAuth and the host supplied no browser opener | explicit `MCPInteractiveAuthorizationUnavailableError`; the URL is not opened implicitly and no credential is moved through the protocol |
 | OAuth callback, state, authorization URL or persisted store is invalid | authorization fails with a bounded typed error; unrelated plugin contributions and local MCP transports remain available |
 | Orphan recovery fails | warning and degraded recovery count; kernel continues booting |

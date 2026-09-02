@@ -34,7 +34,7 @@ export interface MarketplaceBrowserDeps {
   listings: () => MarketplaceListing[];
   sources: () => MarketplaceSource[];
   plugins: () => PluginView[];
-  environment: () => string | undefined;
+  extensionProfile: () => string | undefined;
   loading: () => boolean;
   install: (listing: MarketplaceListing) => Promise<string>;
   installUrl: (url: string, source: PluginSource) => Promise<string>;
@@ -88,8 +88,8 @@ function rowLifecycle(row: MarketplaceRow): string {
   if (row.plugin.error !== undefined)
     return `Unavailable ${glyph("separator")} ${pluginId(row.plugin)}`;
   return row.plugin.enabled
-    ? `Active ${glyph("separator")} current Environment`
-    : `Installed ${glyph("separator")} not in current Environment`;
+    ? `Active ${glyph("separator")} current Extension Profile`
+    : `Installed ${glyph("separator")} not in current Extension Profile`;
 }
 
 function contributionSummary(plugin: PluginView): string {
@@ -147,7 +147,7 @@ function sortRows(rows: MarketplaceRow[]): MarketplaceRow[] {
   });
 }
 
-/** Two-dimensional marketplace browser with Environment-aware plugin lifecycle. */
+/** Two-dimensional marketplace browser with Extension Profile-aware plugin lifecycle. */
 export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps): JSX.Element {
   const dimensions = useTerminalDimensions();
   const editor = createFieldEditor(host.interaction, host.active);
@@ -397,7 +397,9 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
             id: "marketplace.detail.primary",
             key: "return",
             label:
-              selected()?.kind === "listing" ? "install and activate" : "configure Environment",
+              selected()?.kind === "listing"
+                ? "install and activate"
+                : "configure Extension Profile",
             run: runDetailPrimary,
             when: () => {
               const row = selected();
@@ -411,9 +413,9 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
             essential: true,
           },
           {
-            id: "marketplace.environment.configure",
+            id: "marketplace.extension-profile.configure",
             key: "e",
-            label: "configure Environment",
+            label: "configure Extension Profile",
             run: () => {
               const plugin = selectedPlugin();
               if (plugin !== undefined) deps.configure(plugin);
@@ -643,20 +645,20 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
             {plugin.description}
           </text>
         </Show>
-        <SectionHeader label="Environment" />
+        <SectionHeader label="Extension Profile" />
         <text
           fg={plugin.error ? tokens.del : plugin.enabled ? tokens.add : tokens.warn}
           wrapMode="word"
         >
           {plugin.error ??
             (plugin.enabled
-              ? `Active in ${deps.environment() ?? "the current Environment"}`
-              : `Installed, but not selected by ${deps.environment() ?? "the current Environment"}`)}
+              ? `Active in ${deps.extensionProfile() ?? "the current Extension Profile"}`
+              : `Installed, but not selected by ${deps.extensionProfile() ?? "the current Extension Profile"}`)}
         </text>
         <text fg={tokens.muted} wrapMode="word">
           {plugin.enabled
-            ? "Enter opens the Environment composer."
-            : "Enter adds this exact plugin origin through the Environment composer."}
+            ? "Enter opens the Extension Profile composer."
+            : "Enter adds this exact plugin origin through the Extension Profile composer."}
         </text>
         <text fg={tokens.muted}>{`inventory  ${plugin.scope}/${plugin.source}`}</text>
         <Show when={plugin.version}>
@@ -821,7 +823,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         <SectionHeader label="Install" />
         <text fg={listing.installable ? tokens.accent2 : tokens.muted} wrapMode="word">
           {listing.installable
-            ? `Enter installs the plugin and adds it to ${deps.environment() ?? "the current Environment"}.`
+            ? `Enter installs the plugin and adds it to ${deps.extensionProfile() ?? "the current Extension Profile"}.`
             : "This source cannot be installed by the current host."}
         </text>
         <text fg={tokens.muted} wrapMode="word">
@@ -890,8 +892,8 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
       host={host}
       title="Plugins"
       unscoped
-      purpose="Browse marketplaces and compose the current Environment"
-      mutationContract="Install approves the complete plugin and activates it through the current Environment"
+      purpose="Browse marketplaces and compose the current Extension Profile"
+      mutationContract="Install approves the complete plugin and activates it in that Extension Profile"
       footerStatus={footerStatus}
     >
       <Show when={currentSourceError()}>
@@ -900,7 +902,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
         />
       </Show>
       <text fg={tokens.muted} flexShrink={0} wrapMode="none" truncate>
-        {`${activeCount()} active ${glyph("separator")} ${deps.plugins().length} installed ${glyph("separator")} ${available()} available ${glyph("separator")} Environment ${deps.environment() ?? "loading"}`}
+        {`${activeCount()} active ${glyph("separator")} ${deps.plugins().length} installed ${glyph("separator")} ${available()} available ${glyph("separator")} Extension Profile ${deps.extensionProfile() ?? "loading"}`}
       </text>
       {collectionBar()}
       <Show when={currentCollection().kind !== "add"}>

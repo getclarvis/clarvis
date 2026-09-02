@@ -3,8 +3,8 @@ import type {
   ConfigService,
   ElicitationRequest,
   ElicitationResponse,
-  EnvironmentRunRef,
-  EnvironmentService,
+  ExtensionProfileRunRef,
+  ExtensionProfileService,
   KernelClient,
   KernelCapabilities,
   Message as ProtoMessage,
@@ -112,10 +112,10 @@ export interface KernelRunClient {
   readonly sessions: SessionService;
   /** Install/manage plugins and exact hook reviews (server-side). */
   readonly plugins: PluginService;
-  /** Environment definitions, resolution diagnostics, previews, and selection. */
-  readonly environments: EnvironmentService;
-  /** Process-pinned Environment identity used to stamp newly started session turns. */
-  currentEnvironment(): EnvironmentRunRef | undefined;
+  /** Extension Profile definitions, resolution diagnostics, previews, and selection. */
+  readonly extensionProfiles: ExtensionProfileService;
+  /** Process-pinned Extension Profile identity used to stamp newly started session turns. */
+  currentExtensionProfile(): ExtensionProfileRunRef | undefined;
   /** Provider-neutral external task control plane. */
   readonly tasks: TasksService;
   readonly storage: StorageService;
@@ -164,7 +164,7 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   const { createKernel, callbacks } = deps;
   let kernel: KernelClient | undefined;
   let lastCapabilities: KernelCapabilities | undefined;
-  let lastEnvironment: EnvironmentRunRef | undefined;
+  let lastExtensionProfile: ExtensionProfileRunRef | undefined;
   const live = new Map<string, Promise<ProtoRunHandle>>();
 
   function requireKernel(): KernelClient {
@@ -197,8 +197,8 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   async function connect(): Promise<void> {
     if (!kernel) kernel = await createKernel();
     lastCapabilities = kernel.capabilities;
-    const environment = await kernel.environments.current();
-    lastEnvironment = { id: environment.id, fingerprint: environment.fingerprint };
+    const extensionProfile = await kernel.extensionProfiles.current();
+    lastExtensionProfile = { id: extensionProfile.id, fingerprint: extensionProfile.fingerprint };
   }
 
   async function dispose(): Promise<void> {
@@ -217,8 +217,8 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
   /** Apply an idle trust mutation and refresh the process snapshot identity it recomposed. */
   async function mutateTrust<T>(mutation: () => Promise<T>): Promise<T> {
     const result = await mutation();
-    const environment = await requireKernel().environments.current();
-    lastEnvironment = { id: environment.id, fingerprint: environment.fingerprint };
+    const extensionProfile = await requireKernel().extensionProfiles.current();
+    lastExtensionProfile = { id: extensionProfile.id, fingerprint: extensionProfile.fingerprint };
     return result;
   }
 
@@ -515,22 +515,23 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     update: (name) => requireKernel().plugins.update(name),
     uninstall: (name) => requireKernel().plugins.uninstall(name),
   };
-  const environments: EnvironmentService = {
-    list: () => requireKernel().environments.list(),
-    current: () => requireKernel().environments.current(),
-    get: (ref) => requireKernel().environments.get(ref),
-    inventory: () => requireKernel().environments.inventory(),
-    preview: (ref, options) => requireKernel().environments.preview(ref, options),
-    previewClear: (scope) => requireKernel().environments.previewClear(scope),
-    previewComposition: (input) => requireKernel().environments.previewComposition(input),
-    select: (ref, options) => requireKernel().environments.select(ref, options),
-    clearSelection: (scope, options) => requireKernel().environments.clearSelection(scope, options),
+  const extensionProfiles: ExtensionProfileService = {
+    list: () => requireKernel().extensionProfiles.list(),
+    current: () => requireKernel().extensionProfiles.current(),
+    get: (ref) => requireKernel().extensionProfiles.get(ref),
+    inventory: () => requireKernel().extensionProfiles.inventory(),
+    preview: (ref, options) => requireKernel().extensionProfiles.preview(ref, options),
+    previewClear: (scope) => requireKernel().extensionProfiles.previewClear(scope),
+    previewComposition: (input) => requireKernel().extensionProfiles.previewComposition(input),
+    select: (ref, options) => requireKernel().extensionProfiles.select(ref, options),
+    clearSelection: (scope, options) =>
+      requireKernel().extensionProfiles.clearSelection(scope, options),
     applyComposition: (input, options) =>
-      requireKernel().environments.applyComposition(input, options),
-    create: (input) => requireKernel().environments.create(input),
-    update: (input) => requireKernel().environments.update(input),
-    delete: (ref, options) => requireKernel().environments.delete(ref, options),
-    clone: (source, target) => requireKernel().environments.clone(source, target),
+      requireKernel().extensionProfiles.applyComposition(input, options),
+    create: (input) => requireKernel().extensionProfiles.create(input),
+    update: (input) => requireKernel().extensionProfiles.update(input),
+    delete: (ref, options) => requireKernel().extensionProfiles.delete(ref, options),
+    clone: (source, target) => requireKernel().extensionProfiles.clone(source, target),
   };
   const tasks: TasksService = {
     status: (options) => requireKernel().tasks.status(options),
@@ -580,8 +581,8 @@ export function createKernelRunClient(deps: KernelRunClientDeps): KernelRunClien
     files,
     sessions,
     plugins,
-    environments,
-    currentEnvironment: () => lastEnvironment,
+    extensionProfiles,
+    currentExtensionProfile: () => lastExtensionProfile,
     tasks,
     storage,
     dispose,

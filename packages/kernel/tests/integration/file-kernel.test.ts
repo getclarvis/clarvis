@@ -358,14 +358,14 @@ describe("createFileKernel — skills roots from plugins", () => {
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
       traceDir: join(ws, "traces"),
       globalDir,
-      onEnvironmentDrift: (notice) => {
+      onExtensionProfileDrift: (notice) => {
         if (notice.kind === "skill") reportDrift(notice);
       },
       logger,
     });
     try {
       expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBe(true);
-      expect(logger.events("kernel.environment.skill_watch_unavailable")).toEqual([]);
+      expect(logger.events("kernel.extension_profile.skill_watch_unavailable")).toEqual([]);
       const discoveriesBeforeRun = logger.events("skills.discovered").length;
       const unreadableBeforeRun = logger.events("skill.dir_unreadable").length;
 
@@ -431,7 +431,7 @@ describe("createFileKernel — skills roots from plugins", () => {
       "---\nname: guide\ndescription: guide\n---\n\nTrusted guide.\n",
     );
     seedFile(
-      join(workspacePaths(ws).environmentsDir, "project.json"),
+      join(workspacePaths(ws).extensionProfilesDir, "project.json"),
       JSON.stringify({
         schema_version: 1,
         plugins: [{ scope: "workspace", source: "clarvis", name: "handbook" }],
@@ -439,10 +439,10 @@ describe("createFileKernel — skills roots from plugins", () => {
       }),
     );
     seedFile(
-      workspaceStatePaths(ws, { env: { CLARVIS_HOME: globalDir } }).environmentSelectionFile,
+      workspaceStatePaths(ws, { env: { CLARVIS_HOME: globalDir } }).extensionProfileSelectionFile,
       JSON.stringify({
         schema_version: 1,
-        environment: { scope: "workspace", name: "project" },
+        extension_profile: { scope: "workspace", name: "project" },
       }),
     );
 

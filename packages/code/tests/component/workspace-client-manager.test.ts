@@ -36,7 +36,7 @@ describe("WorkspaceClientManager", () => {
         kind: "run",
         ascii: false,
         debug: { enabled: false },
-        environmentSelector: "builtin:default",
+        extensionProfileSelector: "builtin:default",
       });
       expect(manager.current.path).toBe(realpathSync(workspace));
       expect(manager.defaultOwner).toBe("startup-owner");

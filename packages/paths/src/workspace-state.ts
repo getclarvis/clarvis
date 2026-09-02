@@ -53,8 +53,8 @@ export interface WorkspaceStatePaths {
   promptHistoryFile: string;
   /** The terminal UI's workspace-scoped preferences. */
   codeConfigFile: string;
-  /** Machine-local Environment selection for this workspace. */
-  environmentSelectionFile: string;
+  /** Machine-local Extension Profile selection for this workspace. */
+  extensionProfileSelectionFile: string;
   /** Parent directory containing every run-owned scratch directory. */
   runsDir: string;
   /** One run's scratch container, removed after its final temporary root. */
@@ -195,7 +195,7 @@ export function workspaceStatePaths(root?: string, opts?: RootOptions): Workspac
     pluginDataRoot: join(base, "plugin-data"),
     promptHistoryFile: join(localDir, "prompt-history"),
     codeConfigFile: join(localDir, "code.json"),
-    environmentSelectionFile: join(localDir, "environment.json"),
+    extensionProfileSelectionFile: join(localDir, "extension-profile.json"),
     runsDir,
     runDir,
     runTempDir: (executionId: string) => join(runDir(executionId), "tmp"),

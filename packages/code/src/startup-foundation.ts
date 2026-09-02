@@ -21,9 +21,9 @@ export function prepareStartupFoundation(mode: RunMode): Promise<WorkspaceClient
     globalDir: dirs.global.root,
     keySources: readStartupKeySources(dirs),
     memory: true,
-    ...(mode.environmentSelector === undefined
+    ...(mode.extensionProfileSelector === undefined
       ? {}
-      : { environmentSelector: mode.environmentSelector }),
+      : { extensionProfileSelector: mode.extensionProfileSelector }),
     ...(owner === undefined ? {} : { defaultOwner: owner }),
     logger: createLogger("silent"),
     openMcpAuthorizationUrl: openPublicUrl,

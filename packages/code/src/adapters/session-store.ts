@@ -1,5 +1,5 @@
 import type {
-  EnvironmentRunRef,
+  ExtensionProfileRunRef,
   Message,
   RunStatus,
   RunUsage,
@@ -53,14 +53,14 @@ interface TurnRefBase {
 export interface ConversationTurnRef extends TurnRefBase {
   kind: "conversation";
   /** Extension snapshot pinned when this turn began. */
-  environment?: EnvironmentRunRef;
+  extensionProfile?: ExtensionProfileRunRef;
 }
 
 /** A separately-invoked run rendered in the transcript but excluded from continuation. */
 export interface TranscriptTurnRef extends TurnRefBase {
   kind: "transcript";
   /** Extension snapshot pinned when this transcript-only run began. */
-  environment?: EnvironmentRunRef;
+  extensionProfile?: ExtensionProfileRunRef;
 }
 
 /** One canonical persisted transcript turn within a session. */
@@ -76,29 +76,29 @@ export interface SessionMeta {
   owner: string;
   createdAt: number;
   updatedAt: number;
-  profile?: string;
+  agentProfile?: string;
   turns: TurnRef[];
-  /** Environment on the newest turn, retained by bounded catalog projections. */
-  lastEnvironment?: EnvironmentRunRef;
+  /** Extension Profile on the newest turn, retained by bounded catalog projections. */
+  lastExtensionProfile?: ExtensionProfileRunRef;
   /** Catalog-only count when the full turn index has not been loaded yet. */
   turnCount?: number;
   totals: SessionTotals;
   pending?: Message[];
 }
 
-/** Accept only the minimal Environment identity the kernel itself emits. */
-function persistedEnvironment(value: unknown): EnvironmentRunRef | undefined {
+/** Accept only the minimal Extension Profile identity the kernel itself emits. */
+function persistedExtensionProfile(value: unknown): ExtensionProfileRunRef | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const environment = value as Record<string, unknown>;
+  const extensionProfile = value as Record<string, unknown>;
   if (
-    typeof environment.id !== "string" ||
-    !/^(?:builtin|global|workspace):(?!\.{1,2}$)[A-Za-z0-9._-]{1,128}$/.test(environment.id) ||
-    typeof environment.fingerprint !== "string" ||
-    !/^sha256:[0-9a-f]{64}$/.test(environment.fingerprint)
+    typeof extensionProfile.id !== "string" ||
+    !/^(?:builtin|global|workspace):(?!\.{1,2}$)[A-Za-z0-9._-]{1,128}$/.test(extensionProfile.id) ||
+    typeof extensionProfile.fingerprint !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/.test(extensionProfile.fingerprint)
   ) {
     return undefined;
   }
-  return { id: environment.id, fingerprint: environment.fingerprint };
+  return { id: extensionProfile.id, fingerprint: extensionProfile.fingerprint };
 }
 
 /**
@@ -366,12 +366,12 @@ export function metaToSession(m: SessionMeta): Session {
     workspace: m.workspace,
     created_at: m.createdAt,
     updated_at: m.updatedAt,
-    ...(m.profile !== undefined ? { profile: m.profile } : {}),
+    ...(m.agentProfile !== undefined ? { agent_profile: m.agentProfile } : {}),
     turns: m.turns.map((t): PersistedSessionTurn => ({
       kind: t.kind,
       user_preview: t.userPreview,
       ...(t.executionId !== undefined ? { execution_id: t.executionId } : {}),
-      ...(t.environment !== undefined ? { environment: t.environment } : {}),
+      ...(t.extensionProfile !== undefined ? { extension_profile: t.extensionProfile } : {}),
       status: t.status,
       ...(t.startedAt !== undefined ? { started_at: t.startedAt } : {}),
       ...(t.endedAt !== undefined ? { ended_at: t.endedAt } : {}),
@@ -389,7 +389,7 @@ export function metaToSession(m: SessionMeta): Session {
 
 /** Adapt a protocol wire {@link Session} back into the UI's {@link SessionMeta}, tagged with `owner`. */
 export function sessionToMeta(s: Session, owner: string): SessionMeta {
-  const lastEnvironment = persistedEnvironment(s.turns.at(-1)?.environment);
+  const lastExtensionProfile = persistedExtensionProfile(s.turns.at(-1)?.extension_profile);
   return {
     id: s.id,
     title: s.title,
@@ -398,22 +398,22 @@ export function sessionToMeta(s: Session, owner: string): SessionMeta {
     owner,
     createdAt: s.created_at,
     updatedAt: s.updated_at,
-    ...(s.profile !== undefined ? { profile: s.profile } : {}),
+    ...(s.agent_profile !== undefined ? { agentProfile: s.agent_profile } : {}),
     turns: s.turns.map((t): TurnRef => {
       const error = persistedTurnError(t);
-      const environment = persistedEnvironment(t.environment);
+      const extensionProfile = persistedExtensionProfile(t.extension_profile);
       return {
         kind: persistedTurnKind(t),
         userPreview: t.user_preview,
         ...(t.execution_id !== undefined ? { executionId: t.execution_id } : {}),
-        ...(environment !== undefined ? { environment } : {}),
+        ...(extensionProfile !== undefined ? { extensionProfile } : {}),
         status: t.status,
         ...(t.started_at !== undefined ? { startedAt: t.started_at } : {}),
         ...(t.ended_at !== undefined ? { endedAt: t.ended_at } : {}),
         ...(error !== undefined ? { error } : {}),
       };
     }),
-    ...(lastEnvironment === undefined ? {} : { lastEnvironment }),
+    ...(lastExtensionProfile === undefined ? {} : { lastExtensionProfile }),
     totals: {
       input: s.totals.input,
       output: s.totals.output,
@@ -426,7 +426,7 @@ export function sessionToMeta(s: Session, owner: string): SessionMeta {
 
 /** Adapt the bounded catalog projection without pretending its turns are loaded. */
 function sessionSummaryToMeta(s: SessionSummary, owner: string): SessionMeta {
-  const lastEnvironment = persistedEnvironment(s.last_environment);
+  const lastExtensionProfile = persistedExtensionProfile(s.last_extension_profile);
   return {
     id: s.id,
     title: s.title,
@@ -435,10 +435,10 @@ function sessionSummaryToMeta(s: SessionSummary, owner: string): SessionMeta {
     owner,
     createdAt: s.created_at,
     updatedAt: s.updated_at,
-    ...(s.profile !== undefined ? { profile: s.profile } : {}),
+    ...(s.agent_profile !== undefined ? { agentProfile: s.agent_profile } : {}),
     turns: [],
     turnCount: s.turn_count,
-    ...(lastEnvironment !== undefined ? { lastEnvironment } : {}),
+    ...(lastExtensionProfile !== undefined ? { lastExtensionProfile } : {}),
     totals: {
       input: s.totals.input,
       output: s.totals.output,

@@ -19,16 +19,16 @@ import {
   workspaceStatePaths,
 } from "@clarvis/paths";
 import type {
-  EnvironmentDefinition,
-  EnvironmentRef,
+  ExtensionProfileDefinition,
+  ExtensionProfileRef,
   PluginRef,
   WorkspaceTrustVerdict,
 } from "@clarvis/protocol";
 import {
-  createEnvironmentManager,
-  type EnvironmentManagerOptions,
-  type EnvironmentSkillDriftNotice,
-} from "../../src/environments/environment-manager.ts";
+  createExtensionProfileManager,
+  type ExtensionProfileManagerOptions,
+  type ExtensionProfileSkillDriftNotice,
+} from "../../src/extension-profiles/extension-profile-manager.ts";
 import { createPluginContributions } from "../../src/plugins/plugin-contributions.ts";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
 import {
@@ -43,8 +43,8 @@ const TRUSTED: WorkspaceTrustVerdict = {
 };
 
 function definition(
-  values: Partial<Omit<EnvironmentDefinition, "schema_version">> = {},
-): EnvironmentDefinition {
+  values: Partial<Omit<ExtensionProfileDefinition, "schema_version">> = {},
+): ExtensionProfileDefinition {
   return {
     schema_version: 1,
     plugins: [],
@@ -77,13 +77,13 @@ function writeSkill(root: string, name: string): void {
   );
 }
 
-describe("Environment manager", () => {
+describe("Extension Profile manager", () => {
   let root: string;
   let globalDir: string;
   let workspaceRoot: string;
 
   beforeEach(() => {
-    root = mkdtempSync(join(tmpdir(), "clarvis-environment-"));
+    root = mkdtempSync(join(tmpdir(), "clarvis-extension-profile-"));
     globalDir = join(root, "global");
     workspaceRoot = join(root, "workspace");
     mkdirSync(globalDir, { recursive: true });
@@ -95,9 +95,9 @@ describe("Environment manager", () => {
   function manager(
     cliSelection?: string,
     logger?: RecordingLogger,
-    monitor: Pick<EnvironmentManagerOptions, "onSkillDrift" | "watchSkillPath"> = {},
+    monitor: Pick<ExtensionProfileManagerOptions, "onSkillDrift" | "watchSkillPath"> = {},
   ) {
-    return createEnvironmentManager({
+    return createExtensionProfileManager({
       globalDir,
       workspaceRoot,
       home: join(root, "home"),
@@ -116,7 +116,7 @@ describe("Environment manager", () => {
   async function create(
     target: ReturnType<typeof manager>,
     ref: { scope: "global" | "workspace"; name: string },
-    value: EnvironmentDefinition,
+    value: ExtensionProfileDefinition,
   ): Promise<void> {
     await target.service.create({ ref, definition: value });
   }
@@ -124,8 +124,8 @@ describe("Environment manager", () => {
   it("keeps builtin:default virtual, immutable, and exactly qualified", async () => {
     installPlugin(globalPaths(globalDir).pluginsDir, "same", { version: "1.0.0" });
     installPlugin(workspacePaths(workspaceRoot).pluginsDir, "same", { version: "2.0.0" });
-    writeSkill(globalPaths(globalDir).skillsDir, "environment-global-skill");
-    writeSkill(workspacePaths(workspaceRoot).skillsDir, "environment-workspace-skill");
+    writeSkill(globalPaths(globalDir).skillsDir, "extension-profile-global-skill");
+    writeSkill(workspacePaths(workspaceRoot).skillsDir, "extension-profile-workspace-skill");
     const target = manager();
 
     const current = target.resolveActive([pluginRef("same", "workspace")], TRUSTED);
@@ -143,7 +143,10 @@ describe("Environment manager", () => {
       active: true,
     });
     expect(current.standalone_skills.map((skill) => skill.ref.name)).toEqual(
-      expect.arrayContaining(["environment-global-skill", "environment-workspace-skill"]),
+      expect.arrayContaining([
+        "extension-profile-global-skill",
+        "extension-profile-workspace-skill",
+      ]),
     );
     expect((await target.service.list())[0]).toEqual({
       ref: { scope: "builtin", name: "default" },
@@ -153,8 +156,8 @@ describe("Environment manager", () => {
 
   it("materializes an empty global catalog without writing into the workspace", async () => {
     const target = manager();
-    const globalCatalog = globalPaths(globalDir).environmentsDir;
-    const workspaceCatalog = workspacePaths(workspaceRoot).environmentsDir;
+    const globalCatalog = globalPaths(globalDir).extensionProfilesDir;
+    const workspaceCatalog = workspacePaths(workspaceRoot).extensionProfilesDir;
     expect(existsSync(globalCatalog)).toBeFalse();
     expect(existsSync(workspaceCatalog)).toBeFalse();
 
@@ -167,7 +170,7 @@ describe("Environment manager", () => {
     expect(existsSync(workspaceCatalog)).toBeFalse();
   });
 
-  it("activates a configured .agents plugin in builtin:default without a custom Environment", () => {
+  it("activates a configured .agents plugin in builtin:default without a custom Extension Profile", () => {
     const agents = agentsPluginsDirs({ home: join(root, "home"), cwd: workspaceRoot, env: {} });
     installPlugin(agents.user, "portable", { version: "agent-v1" });
     const selected = pluginRef("portable", "global", "agents");
@@ -434,7 +437,7 @@ describe("Environment manager", () => {
     installPlugin(globalPaths(globalDir).pluginsDir, "default-only", {});
     const selection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     mkdirSync(join(selection, ".."), { recursive: true });
     writeFileSync(selection, "not json");
     const target = manager();
@@ -448,13 +451,13 @@ describe("Environment manager", () => {
   });
 
   it("diagnoses an unknown persisted builtin without falling back or aborting boot", () => {
-    const selection = globalPaths(globalDir).environmentSelectionFile;
+    const selection = globalPaths(globalDir).extensionProfileSelectionFile;
     mkdirSync(join(selection, ".."), { recursive: true });
     writeFileSync(
       selection,
       JSON.stringify({
         schema_version: 1,
-        environment: { scope: "builtin", name: "future" },
+        extension_profile: { scope: "builtin", name: "future" },
       }),
     );
 
@@ -463,7 +466,7 @@ describe("Environment manager", () => {
     expect(current.status).toBe("invalid");
     expect(current.selection_origin).toBe("global");
     expect(current.issues).toEqual([
-      { code: "invalid_selection", message: "unknown builtin Environment 'future'" },
+      { code: "invalid_selection", message: "unknown builtin Extension Profile 'future'" },
     ]);
   });
 
@@ -471,7 +474,7 @@ describe("Environment manager", () => {
     const setup = manager();
     await create(setup, { scope: "global", name: "research" }, definition());
     const workspaceDefinition = join(
-      workspacePaths(workspaceRoot).environmentsDir,
+      workspacePaths(workspaceRoot).extensionProfilesDir,
       "research.json",
     );
     mkdirSync(join(workspaceDefinition, ".."), { recursive: true });
@@ -493,24 +496,24 @@ describe("Environment manager", () => {
     ] as const) {
       await create(setup, { scope, name }, definition({ description: name }));
     }
-    const globalSelection = globalPaths(globalDir).environmentSelectionFile;
+    const globalSelection = globalPaths(globalDir).extensionProfileSelectionFile;
     const workspaceSelection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     mkdirSync(join(globalSelection, ".."), { recursive: true });
     mkdirSync(join(workspaceSelection, ".."), { recursive: true });
     writeFileSync(
       globalSelection,
       JSON.stringify({
         schema_version: 1,
-        environment: { scope: "global", name: "operator" },
+        extension_profile: { scope: "global", name: "operator" },
       }),
     );
     writeFileSync(
       workspaceSelection,
       JSON.stringify({
         schema_version: 1,
-        environment: { scope: "global", name: "local" },
+        extension_profile: { scope: "global", name: "local" },
       }),
     );
 
@@ -518,6 +521,69 @@ describe("Environment manager", () => {
     expect(manager("global:command").resolveActive([], TRUSTED).id).toBe("global:command");
     rmSync(workspaceSelection);
     expect(manager().resolveActive([], TRUSTED).id).toBe("global:operator");
+  });
+
+  it("enforces selection scope and CLI pinning across every management preview", async () => {
+    const workspaceRef = { scope: "workspace" as const, name: "project" };
+    const target = manager();
+    target.resolveActive([], TRUSTED);
+
+    await expect(
+      target.service.preview(workspaceRef, { selection_scope: "global" }),
+    ).rejects.toMatchObject({
+      code: "invalid_request",
+      message: "a global selection cannot point at a workspace Extension Profile",
+    });
+    await expect(
+      target.service.previewComposition({
+        ref: workspaceRef,
+        expected_revision: null,
+        selection_scope: "global",
+        definition: definition(),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+
+    const globalSelection = globalPaths(globalDir).extensionProfileSelectionFile;
+    mkdirSync(join(globalSelection, ".."), { recursive: true });
+    writeFileSync(
+      globalSelection,
+      JSON.stringify({ schema_version: 1, extension_profile: workspaceRef }),
+    );
+    expect(manager().resolveActive([], TRUSTED)).toMatchObject({
+      status: "invalid",
+      issues: [
+        {
+          code: "invalid_selection",
+          message: "a global selection cannot point at a workspace Extension Profile",
+        },
+      ],
+    });
+    rmSync(globalSelection);
+
+    const pinned = manager("builtin:default");
+    pinned.resolveActive([], TRUSTED);
+    const globalRef = { scope: "global" as const, name: "draft" };
+    const conflict = {
+      code: "conflict",
+      message: "the active --extension-profile override cannot be changed by this process",
+    };
+    await expect(
+      pinned.service.preview(globalRef, { selection_scope: "workspace" }),
+    ).rejects.toMatchObject(conflict);
+    await expect(pinned.service.previewClear("workspace")).rejects.toMatchObject(conflict);
+    await expect(
+      pinned.service.previewComposition({
+        ref: globalRef,
+        expected_revision: null,
+        selection_scope: "workspace",
+        definition: definition(),
+      }),
+    ).rejects.toMatchObject(conflict);
+    await expect(
+      pinned.service.clearSelection("workspace", {
+        preview_token: "00000000-0000-4000-8000-000000000000",
+      }),
+    ).rejects.toMatchObject(conflict);
   });
 
   it("pins the current snapshot and rejects a stale preview token with CAS semantics", async () => {
@@ -553,11 +619,14 @@ describe("Environment manager", () => {
     const revisionPreview = await target.service.preview(ref, { selection_scope: "workspace" });
     const workspaceSelection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     mkdirSync(join(workspaceSelection, ".."), { recursive: true });
     writeFileSync(
       workspaceSelection,
-      JSON.stringify({ schema_version: 1, environment: { scope: "builtin", name: "default" } }),
+      JSON.stringify({
+        schema_version: 1,
+        extension_profile: { scope: "builtin", name: "default" },
+      }),
     );
     await expect(
       target.service.select(ref, {
@@ -603,7 +672,9 @@ describe("Environment manager", () => {
     expect(preview.target.id).toBe("global:research");
     expect(preview.delta.plugins_entering).toEqual([pluginRef("context7")]);
     expect(preview.delta.mcp_servers_entering).toEqual(["context7:docs"]);
-    expect(existsSync(join(globalPaths(globalDir).environmentsDir, "research.json"))).toBeFalse();
+    expect(
+      existsSync(join(globalPaths(globalDir).extensionProfilesDir, "research.json")),
+    ).toBeFalse();
 
     const applied = await target.service.applyComposition(input, {
       preview_token: preview.token,
@@ -644,11 +715,11 @@ describe("Environment manager", () => {
       target.service.applyComposition(input, { preview_token: preview.token }),
     ).rejects.toMatchObject({ code: "conflict" });
 
-    expect(existsSync(join(globalPaths(globalDir).environmentsDir, "drift.json"))).toBeFalse();
+    expect(existsSync(join(globalPaths(globalDir).extensionProfilesDir, "drift.json"))).toBeFalse();
     expect(
       existsSync(
         workspaceStatePaths(workspaceRoot, { env: { CLARVIS_HOME: globalDir } })
-          .environmentSelectionFile,
+          .extensionProfileSelectionFile,
       ),
     ).toBeFalse();
   });
@@ -679,12 +750,12 @@ describe("Environment manager", () => {
     expect(
       existsSync(
         workspaceStatePaths(workspaceRoot, { env: { CLARVIS_HOME: globalDir } })
-          .environmentSelectionFile,
+          .extensionProfileSelectionFile,
       ),
     ).toBeFalse();
   });
 
-  it("activates an operator-installed global plugin without approving its workspace Environment", async () => {
+  it("activates an operator-installed global plugin without approving its workspace Extension Profile", async () => {
     installPlugin(globalPaths(globalDir).pluginsDir, "context7", {
       mcpServers: { docs: { command: "context7" } },
     });
@@ -765,9 +836,9 @@ describe("Environment manager", () => {
     );
     const selection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     mkdirSync(join(selection, ".."), { recursive: true });
-    writeFileSync(selection, JSON.stringify({ schema_version: 1, environment: ref }));
+    writeFileSync(selection, JSON.stringify({ schema_version: 1, extension_profile: ref }));
 
     const target = manager();
     const resolved = target.resolveActive([], { state: "unapproved" });
@@ -822,12 +893,12 @@ describe("Environment manager", () => {
     ).rejects.toThrow("approval store unavailable");
 
     expect(
-      existsSync(join(workspacePaths(workspaceRoot).environmentsDir, "project.json")),
+      existsSync(join(workspacePaths(workspaceRoot).extensionProfilesDir, "project.json")),
     ).toBeFalse();
     expect(
       existsSync(
         workspaceStatePaths(workspaceRoot, { env: { CLARVIS_HOME: globalDir } })
-          .environmentSelectionFile,
+          .extensionProfileSelectionFile,
       ),
     ).toBeFalse();
   });
@@ -838,9 +909,9 @@ describe("Environment manager", () => {
     await create(setup, local, definition({ description: "local" }));
     const selection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     mkdirSync(join(selection, ".."), { recursive: true });
-    writeFileSync(selection, JSON.stringify({ schema_version: 1, environment: local }));
+    writeFileSync(selection, JSON.stringify({ schema_version: 1, extension_profile: local }));
     const target = manager();
     target.resolveActive([], TRUSTED);
     const input = {
@@ -878,9 +949,12 @@ describe("Environment manager", () => {
     await create(setup, local, definition({ plugins: [pluginRef("runner", "workspace")] }));
     const workspaceSelection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     mkdirSync(join(workspaceSelection, ".."), { recursive: true });
-    writeFileSync(workspaceSelection, JSON.stringify({ schema_version: 1, environment: local }));
+    writeFileSync(
+      workspaceSelection,
+      JSON.stringify({ schema_version: 1, extension_profile: local }),
+    );
     const target = manager();
     const unapproved: WorkspaceTrustVerdict = { state: "unapproved" };
     target.bindRuntime({
@@ -921,9 +995,12 @@ describe("Environment manager", () => {
     );
     const workspaceSelection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     mkdirSync(join(workspaceSelection, ".."), { recursive: true });
-    writeFileSync(workspaceSelection, JSON.stringify({ schema_version: 1, environment: local }));
+    writeFileSync(
+      workspaceSelection,
+      JSON.stringify({ schema_version: 1, extension_profile: local }),
+    );
     const target = manager();
     const unapproved: WorkspaceTrustVerdict = {
       state: "unapproved",
@@ -948,7 +1025,7 @@ describe("Environment manager", () => {
     expect(preview.delta.plugins_leaving).toEqual([]);
     writeFileSync(
       workspaceSelection,
-      `${JSON.stringify({ schema_version: 1, environment: local }, null, 2)}\n`,
+      `${JSON.stringify({ schema_version: 1, extension_profile: local }, null, 2)}\n`,
     );
     await expect(
       target.service.select(operator, {
@@ -973,24 +1050,24 @@ describe("Environment manager", () => {
       definition({ description: "operator" }),
     );
     await create(setup, { scope: "global", name: "local" }, definition({ description: "local" }));
-    const globalSelection = globalPaths(globalDir).environmentSelectionFile;
+    const globalSelection = globalPaths(globalDir).extensionProfileSelectionFile;
     const workspaceSelection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     mkdirSync(join(globalSelection, ".."), { recursive: true });
     mkdirSync(join(workspaceSelection, ".."), { recursive: true });
     writeFileSync(
       globalSelection,
       JSON.stringify({
         schema_version: 1,
-        environment: { scope: "global", name: "operator" },
+        extension_profile: { scope: "global", name: "operator" },
       }),
     );
     writeFileSync(
       workspaceSelection,
       JSON.stringify({
         schema_version: 1,
-        environment: { scope: "global", name: "local" },
+        extension_profile: { scope: "global", name: "local" },
       }),
     );
     const target = manager();
@@ -1004,7 +1081,7 @@ describe("Environment manager", () => {
     const staleBytes = await target.service.previewClear("workspace");
     writeFileSync(
       workspaceSelection,
-      `${JSON.stringify({ schema_version: 1, environment: { scope: "global", name: "local" } }, null, 2)}\n`,
+      `${JSON.stringify({ schema_version: 1, extension_profile: { scope: "global", name: "local" } }, null, 2)}\n`,
     );
     await expect(
       target.service.clearSelection("workspace", { preview_token: staleBytes.token }),
@@ -1074,9 +1151,9 @@ describe("Environment manager", () => {
     await create(setup, ref, definition({ plugins: [pluginRef("runner", "workspace")] }));
     const selection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     mkdirSync(join(selection, ".."), { recursive: true });
-    writeFileSync(selection, JSON.stringify({ schema_version: 1, environment: ref }));
+    writeFileSync(selection, JSON.stringify({ schema_version: 1, extension_profile: ref }));
     let running = false;
     let trust: WorkspaceTrustVerdict = {
       state: "unapproved",
@@ -1144,7 +1221,7 @@ describe("Environment manager", () => {
     writeFileSync(resource, "version one\n");
     let signalDrift!: () => void;
     let watcherClosed = false;
-    const notices: EnvironmentSkillDriftNotice[] = [];
+    const notices: ExtensionProfileSkillDriftNotice[] = [];
     const target = manager(undefined, undefined, {
       onSkillDrift: (notice) => notices.push(notice),
       watchSkillPath: (_path, onChange) => {
@@ -1178,7 +1255,7 @@ describe("Environment manager", () => {
     writeSkill(skillRoot, "research");
     const manifest = join(skillRoot, "research", "SKILL.md");
     let armed = false;
-    const notices: EnvironmentSkillDriftNotice[] = [];
+    const notices: ExtensionProfileSkillDriftNotice[] = [];
     const target = manager(undefined, undefined, {
       onSkillDrift: (notice) => notices.push(notice),
       watchSkillPath: (_path, _onChange) => {
@@ -1216,7 +1293,7 @@ describe("Environment manager", () => {
     mkdirSync(join(sidecar, ".."), { recursive: true });
     writeFileSync(sidecar, "short-description: First presentation\n");
     let watchedSidecar = false;
-    const notices: EnvironmentSkillDriftNotice[] = [];
+    const notices: ExtensionProfileSkillDriftNotice[] = [];
     const target = manager(undefined, undefined, {
       onSkillDrift: (notice) => notices.push(notice),
       watchSkillPath: (path, _onChange) => {
@@ -1264,7 +1341,7 @@ describe("Environment manager", () => {
 
     expect(() => signalDrift()).not.toThrow();
     expect(target.skillAvailable(catalog[0]!)).toBeFalse();
-    expect(logger.events("kernel.environment.skill_drift_notice_failed")).toEqual([
+    expect(logger.events("kernel.extension_profile.skill_drift_notice_failed")).toEqual([
       expect.objectContaining({ skill: "research", cause: "notice transport closed" }),
     ]);
     target.close();
@@ -1287,7 +1364,7 @@ describe("Environment manager", () => {
       target.observeSkillCatalog(catalog.flatMap((skill) => skills.loadSkill(skill.name) ?? [])),
     ).not.toThrow();
     expect(target.skillAvailable(catalog[0]!)).toBeTrue();
-    expect(logger.events("kernel.environment.skill_watch_unavailable")).toEqual([
+    expect(logger.events("kernel.extension_profile.skill_watch_unavailable")).toEqual([
       expect.objectContaining({ skill: "research", cause: "watch service unavailable" }),
     ]);
     target.close();
@@ -1389,7 +1466,7 @@ describe("Environment manager", () => {
     ]);
   });
 
-  it("uses one workspace approval when switching between repository-plugin Environments", async () => {
+  it("uses one workspace approval when switching between repository-plugin Extension Profiles", async () => {
     installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner-a", {});
     installPlugin(workspacePaths(workspaceRoot).pluginsDir, "runner-b", {});
     const setup = manager();
@@ -1399,9 +1476,9 @@ describe("Environment manager", () => {
     await create(setup, second, definition({ plugins: [pluginRef("runner-b", "workspace")] }));
     const selection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     mkdirSync(join(selection, ".."), { recursive: true });
-    writeFileSync(selection, JSON.stringify({ schema_version: 1, environment: first }));
+    writeFileSync(selection, JSON.stringify({ schema_version: 1, extension_profile: first }));
     const target = manager();
     let approvals = 0;
     target.bindRuntime({
@@ -1448,7 +1525,7 @@ describe("Environment manager", () => {
 
     const selection = workspaceStatePaths(workspaceRoot, {
       env: { CLARVIS_HOME: globalDir },
-    }).environmentSelectionFile;
+    }).extensionProfileSelectionFile;
     expect(existsSync(selection)).toBeFalse();
     expect(manager().resolveActive([], TRUSTED).id).toBe("builtin:default");
   });
@@ -1497,7 +1574,7 @@ describe("Environment manager", () => {
     expect(cloned.definition?.plugins).toEqual([pluginRef("global-plugin")]);
   });
 
-  it("clones builtin:default rather than the currently selected custom Environment", async () => {
+  it("clones builtin:default rather than the currently selected custom Extension Profile", async () => {
     installPlugin(globalPaths(globalDir).pluginsDir, "legacy", {});
     const setup = manager();
     await create(setup, { scope: "global", name: "custom" }, definition());
@@ -1516,7 +1593,7 @@ describe("Environment manager", () => {
     const target = manager();
     const ref = { scope: "global" as const, name: "leased" };
     const created = await target.service.create({ ref, definition: definition() });
-    const path = join(globalPaths(globalDir).environmentsDir, "leased.json");
+    const path = join(globalPaths(globalDir).extensionProfilesDir, "leased.json");
     const lease = acquireLocalLeaseSync(`${path}.lock`, { staleMs: 60_000 });
     expect(lease).not.toBeNull();
     try {
@@ -1539,7 +1616,7 @@ describe("Environment manager", () => {
     expect(updated.definition?.description).toBe("written");
   });
 
-  it("deletes only an inactive authored Environment at its exact revision", async () => {
+  it("deletes only an inactive authored Extension Profile at its exact revision", async () => {
     const setup = manager();
     const removable = { scope: "global" as const, name: "removable" };
     const selected = { scope: "global" as const, name: "selected" };
@@ -1567,13 +1644,48 @@ describe("Environment manager", () => {
     active.resolveActive([], TRUSTED);
     await expect(
       active.service.delete(selected, { expected_revision: selectedView.revision! }),
-    ).rejects.toThrow("select another Environment and reconnect");
+    ).rejects.toThrow("select another Extension Profile and reconnect");
     expect((await active.service.get(selected)).description).toBe("keep me");
+  });
+
+  it("fails closed for duplicate definitions, selected deletes, and invalid clone sources", async () => {
+    const target = manager();
+    const ref = { scope: "global" as const, name: "guarded" };
+    const created = await target.service.create({ ref, definition: definition() });
+
+    await expect(
+      target.service.create({ ref, definition: definition({ description: "replacement" }) }),
+    ).rejects.toMatchObject({
+      code: "conflict",
+      message: "Extension Profile 'global:guarded' already exists",
+    });
+
+    const selection = globalPaths(globalDir).extensionProfileSelectionFile;
+    mkdirSync(join(selection, ".."), { recursive: true });
+    writeFileSync(selection, JSON.stringify({ schema_version: 1, extension_profile: ref }));
+    await expect(
+      target.service.delete(ref, { expected_revision: created.revision! }),
+    ).rejects.toThrow("is selected for global");
+
+    writeFileSync(selection, "not json");
+    await expect(
+      target.service.delete(ref, { expected_revision: created.revision! }),
+    ).rejects.toThrow("global Extension Profile selection must be repaired");
+    rmSync(selection);
+
+    const broken = join(globalPaths(globalDir).extensionProfilesDir, "broken.json");
+    writeFileSync(broken, "not json");
+    await expect(
+      target.service.clone({ scope: "global", name: "broken" }, { scope: "global", name: "clone" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(() => manager("remote:guarded").resolveActive([], TRUSTED)).toThrow(
+      "unknown Extension Profile scope 'remote'",
+    );
   });
 
   it("serializes catalog creates and enforces both catalog resource bounds", async () => {
     const target = manager();
-    const dir = globalPaths(globalDir).environmentsDir;
+    const dir = globalPaths(globalDir).extensionProfilesDir;
     const catalogLease = acquireLocalLeaseSync(`${dir}.lock`, { staleMs: 60_000 });
     expect(catalogLease).not.toBeNull();
     try {
@@ -1609,8 +1721,8 @@ describe("Environment manager", () => {
       }),
     );
 
-    const oversized = join(workspacePaths(workspaceRoot).environmentsDir, "oversized.json");
-    mkdirSync(workspacePaths(workspaceRoot).environmentsDir, { recursive: true });
+    const oversized = join(workspacePaths(workspaceRoot).extensionProfilesDir, "oversized.json");
+    mkdirSync(workspacePaths(workspaceRoot).extensionProfilesDir, { recursive: true });
     writeFileSync(oversized, " ");
     truncateSync(oversized, 1024 * 1024 + 1);
     expect(await target.service.get({ scope: "workspace", name: "oversized" })).toMatchObject({
@@ -1624,7 +1736,7 @@ describe("Environment manager", () => {
   });
 
   it("never replaces an existing definition entry it cannot read safely", async () => {
-    const path = join(globalPaths(globalDir).environmentsDir, "occupied.json");
+    const path = join(globalPaths(globalDir).extensionProfilesDir, "occupied.json");
     mkdirSync(path, { recursive: true });
     writeFileSync(join(path, "sentinel"), "keep");
 
@@ -1637,7 +1749,7 @@ describe("Environment manager", () => {
     expect(existsSync(join(path, "sentinel"))).toBeTrue();
   });
 
-  it("activates plugin hooks atomically with their Environment membership", async () => {
+  it("activates plugin hooks atomically with their Extension Profile membership", async () => {
     const hook = { event: "run_start" as const, command: "echo ready" };
     installPlugin(globalPaths(globalDir).pluginsDir, "hooked", { hooks: [hook] });
     const setup = manager();
@@ -1669,11 +1781,11 @@ describe("Environment manager", () => {
     await expect(
       target.service.select({ scope: "builtin", name: "default" }, undefined as never),
     ).rejects.toMatchObject({ code: "invalid_request" });
-    expect(existsSync(globalPaths(globalDir).environmentsDir)).toBeFalse();
+    expect(existsSync(globalPaths(globalDir).extensionProfilesDir)).toBeFalse();
   });
 
-  it("preserves exact reference identity in Environment ids", () => {
-    const refs: EnvironmentRef[] = [
+  it("preserves exact reference identity in Extension Profile ids", () => {
+    const refs: ExtensionProfileRef[] = [
       { scope: "builtin", name: "default" },
       { scope: "global", name: "research" },
       { scope: "workspace", name: "research" },

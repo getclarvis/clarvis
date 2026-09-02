@@ -1,7 +1,7 @@
 import type {
   createFileKernel as CreateFileKernel,
   CreateFileKernelOptions,
-  EnvironmentDriftNotice,
+  ExtensionProfileDriftNotice,
 } from "@clarvis/kernel/bootstrap";
 import { ownerFromWorkspace } from "@clarvis/paths";
 import type { KernelClient, WorkspaceRef } from "@clarvis/protocol";
@@ -9,9 +9,9 @@ import type { KernelClient, WorkspaceRef } from "@clarvis/protocol";
 type FileKernelFactory = typeof CreateFileKernel;
 type ManagedFileKernel = Awaited<ReturnType<FileKernelFactory>>;
 
-interface EnvironmentDriftChannel {
-  latest?: EnvironmentDriftNotice;
-  listeners: Set<(notice: EnvironmentDriftNotice) => void>;
+interface ExtensionProfileDriftChannel {
+  latest?: ExtensionProfileDriftNotice;
+  listeners: Set<(notice: ExtensionProfileDriftNotice) => void>;
 }
 
 export async function loadFileKernelFactory(): Promise<FileKernelFactory> {
@@ -44,21 +44,21 @@ export class WorkspaceClientManager {
     private readonly options: WorkspaceClientOptions,
     readonly defaultOwner: string,
     private readonly createKernel: FileKernelFactory,
-    private readonly environmentDrift: EnvironmentDriftChannel,
+    private readonly extensionProfileDrift: ExtensionProfileDriftChannel,
   ) {}
 
   static async create(options: WorkspaceClientOptions): Promise<WorkspaceClientManager> {
     const createFileKernel = await loadFileKernelFactory();
     const defaultOwner = options.defaultOwner ?? ownerFromWorkspace(options.workspaceRoot);
-    const environmentDrift: EnvironmentDriftChannel = { listeners: new Set() };
-    const originalEnvironmentDrift = options.onEnvironmentDrift;
+    const extensionProfileDrift: ExtensionProfileDriftChannel = { listeners: new Set() };
+    const originalExtensionProfileDrift = options.onExtensionProfileDrift;
     const resolved = {
       ...options,
       defaultOwner,
-      onEnvironmentDrift: (notice: EnvironmentDriftNotice): void => {
-        environmentDrift.latest = notice;
-        originalEnvironmentDrift?.(notice);
-        for (const listener of environmentDrift.listeners) listener(notice);
+      onExtensionProfileDrift: (notice: ExtensionProfileDriftNotice): void => {
+        extensionProfileDrift.latest = notice;
+        originalExtensionProfileDrift?.(notice);
+        for (const listener of extensionProfileDrift.listeners) listener(notice);
       },
     };
     return new WorkspaceClientManager(
@@ -66,7 +66,7 @@ export class WorkspaceClientManager {
       resolved,
       defaultOwner,
       createFileKernel,
-      environmentDrift,
+      extensionProfileDrift,
     );
   }
 
@@ -93,11 +93,14 @@ export class WorkspaceClientManager {
   }
 
   /** Subscribe to non-blocking extension withdrawal notices, replaying the latest one. */
-  subscribeEnvironmentDrift(listener: (notice: EnvironmentDriftNotice) => void): () => void {
+  subscribeExtensionProfileDrift(
+    listener: (notice: ExtensionProfileDriftNotice) => void,
+  ): () => void {
     if (this.closed) return () => {};
-    this.environmentDrift.listeners.add(listener);
-    if (this.environmentDrift.latest !== undefined) listener(this.environmentDrift.latest);
-    return () => this.environmentDrift.listeners.delete(listener);
+    this.extensionProfileDrift.listeners.add(listener);
+    if (this.extensionProfileDrift.latest !== undefined)
+      listener(this.extensionProfileDrift.latest);
+    return () => this.extensionProfileDrift.listeners.delete(listener);
   }
 
   /** Rebuild the same workspace kernel during an explicit backend reconnect. */
@@ -112,6 +115,6 @@ export class WorkspaceClientManager {
     if (this.closed) return;
     this.closed = true;
     await this.kernel.close();
-    this.environmentDrift.listeners.clear();
+    this.extensionProfileDrift.listeners.clear();
   }
 }

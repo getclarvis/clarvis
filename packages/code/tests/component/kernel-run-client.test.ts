@@ -91,7 +91,7 @@ interface KernelOver {
   capabilities?: Partial<KernelClient["capabilities"]>;
   approveWorkspace?: KernelClient["config"]["approveWorkspace"];
   revokeWorkspace?: KernelClient["config"]["revokeWorkspace"];
-  currentEnvironment?: KernelClient["environments"]["current"];
+  currentExtensionProfile?: KernelClient["extensionProfiles"]["current"];
 }
 
 /**
@@ -134,14 +134,14 @@ function fakeKernel(over: KernelOver): KernelClient {
       approveWorkspace: over.approveWorkspace ?? (async () => ({}) as never),
       revokeWorkspace: over.revokeWorkspace ?? (async () => ({}) as never),
     } as KernelClient["config"],
-    environments: {
+    extensionProfiles: {
       current:
-        over.currentEnvironment ??
+        over.currentExtensionProfile ??
         (async () => ({
           id: "builtin:default",
           fingerprint: `sha256:${"0".repeat(64)}`,
         })),
-    } as KernelClient["environments"],
+    } as KernelClient["extensionProfiles"],
     ...(over.tasks === undefined ? {} : { tasks: over.tasks }),
     ...(over.capabilities === undefined ? {} : { capabilities: over.capabilities }),
     close: async () => {},
@@ -160,20 +160,20 @@ function client(over: KernelOver, cbOver: Partial<KernelRunClientCallbacks> = {}
   return { c, events, progress };
 }
 
-test("connect exposes the process-pinned Environment identity", async () => {
+test("connect exposes the process-pinned Extension Profile identity", async () => {
   const { c } = client({});
   await c.connect();
-  expect(c.currentEnvironment()).toEqual({
+  expect(c.currentExtensionProfile()).toEqual({
     id: "builtin:default",
     fingerprint: `sha256:${"0".repeat(64)}`,
   });
   await c.dispose();
 });
 
-test("workspace trust transitions refresh the process-pinned Environment identity", async () => {
+test("workspace trust transitions refresh the process-pinned Extension Profile identity", async () => {
   let fingerprint = `sha256:${"1".repeat(64)}`;
   const { c } = client({
-    currentEnvironment: async () => ({ id: "workspace:project", fingerprint }) as never,
+    currentExtensionProfile: async () => ({ id: "workspace:project", fingerprint }) as never,
     approveWorkspace: async () => {
       fingerprint = `sha256:${"2".repeat(64)}`;
       return {} as never;
@@ -186,10 +186,10 @@ test("workspace trust transitions refresh the process-pinned Environment identit
   await c.connect();
 
   await c.config.approveWorkspace();
-  expect(c.currentEnvironment()?.fingerprint).toBe(`sha256:${"2".repeat(64)}`);
+  expect(c.currentExtensionProfile()?.fingerprint).toBe(`sha256:${"2".repeat(64)}`);
 
   await c.config.revokeWorkspace();
-  expect(c.currentEnvironment()?.fingerprint).toBe(`sha256:${"3".repeat(64)}`);
+  expect(c.currentExtensionProfile()?.fingerprint).toBe(`sha256:${"3".repeat(64)}`);
   await c.dispose();
 });
 

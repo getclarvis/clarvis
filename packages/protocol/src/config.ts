@@ -31,8 +31,6 @@ export interface SettingsData {
   sandbox?: SandboxConfig;
   memory?: MemoryConfig;
   budget?: unknown;
-  /** Inline agent profiles (vs. file-based agents under `.clarvis/agents`). */
-  profiles?: Record<string, unknown>;
   /** Forward-compatible: the kernel owns the exhaustive schema. */
   [block: string]: unknown;
 }

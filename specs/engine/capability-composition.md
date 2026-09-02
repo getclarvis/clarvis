@@ -371,7 +371,7 @@ Given `seedMarkers: ["<cap-block>"]`:
    (`SkillRootSnapshotProvider`, `snapshotSkills`, `dynamicSkills`, and `buildExecuteRunDeps` in
    `packages/loop/src/runtime/build-run-deps.ts`). An exact empty root set yields an intentional
    empty provider without a discovery warning (`emptySkillsProvider`; test `treats an exact empty
-   skill-root set as an intentional empty Environment` in
+   skill-root set as an intentional empty Extension Profile` in
    `packages/loop/tests/integration/execute-run-entrypoints.test.ts`).
 8. Build an empty `capabilities: Capability[]` array and a fresh `capabilityRegistry`.
 9. **Hooks** (only if `useHooks`): dynamically import `@clarvis/hooks/capability`, push

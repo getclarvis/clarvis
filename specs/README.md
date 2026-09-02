@@ -33,7 +33,7 @@ cannot be written as a requirement or checked against a line of source. That is 
 separate document.
 
 **The corpus carries no date of its own, so the table below is its timestamp.** These are the
-numbers the tree held when it was last refreshed (2026-09-01). If they no longer match, the tree has
+numbers the tree held when it was last refreshed (2026-09-02). If they no longer match, the tree has
 moved since the corpus was last checked against it, and the further it has drifted the more of the
 corpus's untested statements are worth re-checking. Regenerate them rather than trusting them:
 
@@ -45,24 +45,24 @@ find packages/<pkg>/tests -type f -name '*.test.ts*' | wc -l
 
 | Package | `src` lines | `src` files | test files |
 |---|---|---|---|
-| `code` | 59,441 | 249 | 237 |
-| `kernel` | 31,532 | 114 | 85 |
-| `loop` | 21,517 | 139 | 235 |
+| `code` | 59,652 | 249 | 237 |
+| `kernel` | 32,247 | 114 | 85 |
+| `loop` | 21,669 | 139 | 235 |
 | `memory` | 13,654 | 65 | 59 |
 | `tools` | 12,750 | 66 | 71 |
 | `capability` | 8,038 | 51 | 34 |
 | `plan` | 7,013 | 26 | 24 |
-| `workflows` | 6,464 | 27 | 23 |
-| `server` | 6,451 | 37 | 38 |
+| `workflows` | 7,181 | 28 | 24 |
+| `server` | 6,460 | 37 | 38 |
 | `mcp-client` | 5,309 | 16 | 28 |
-| `skills` | 4,348 | 20 | 25 |
+| `skills` | 4,363 | 20 | 25 |
 | `trace` | 4,205 | 15 | 16 |
 | `llm` | 4,020 | 18 | 19 |
 | `tasks` | 3,797 | 13 | 6 |
-| `paths` | 3,281 | 14 | 14 |
-| `protocol` | 3,269 | 19 | 0 |
+| `protocol` | 3,307 | 19 | 0 |
+| `paths` | 3,282 | 14 | 14 |
 | `hooks` | 2,750 | 9 | 11 |
-| `supervision` | 1,537 | 10 | 9 |
+| `supervision` | 1,566 | 10 | 9 |
 
 ## How to read a spec
 
@@ -165,7 +165,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`kernel-config.md`](hosts/kernel-config.md) | The synchronous config store under the async config service, `kernelSettingsSchema` validation, the shipped agent fleet as TypeScript data, and field-by-field overlays | `kernel`, `protocol` |
 | [`kernel-runs.md`](hosts/kernel-runs.md) | Admission and execution identity, request assembly from settings plus agent records, the run-scoped handle with its queues, and the two mappers that project events into the protocol union | `kernel`, `protocol` |
 | [`kernel-transport.md`](hosts/kernel-transport.md) | The JSON-RPC-shaped wire with Clarvis's own vocabulary: one operations table both halves are built from, stdio framing, the loopback seam and inbound run-event re-validation | `kernel`, `protocol` |
-| [`environments.md`](hosts/environments.md) | Deterministic activation snapshots over already-installed plugins and standalone skills: exact scopes, selection precedence, trust, deltas, fingerprints, and session/trace identity | `kernel`, `protocol`, `paths`, `skills`, `loop`, `trace`, `code` |
+| [`extension-profiles.md`](hosts/extension-profiles.md) | Deterministic activation snapshots over already-installed plugins and standalone skills: exact scopes, selection precedence, trust, deltas, fingerprints, and session/trace identity | `kernel`, `protocol`, `paths`, `skills`, `loop`, `trace`, `code` |
 | [`storage.md`](hosts/storage.md) | Metadata-only inventory of Clarvis-owned local state, confirmed cleanup of disposable artifacts, spill/run-scratch housekeeping and session-safe trace retention | `kernel`, `protocol`, `paths`, `trace`, `loop`, `code` |
 | [`plugins.md`](hosts/plugins.md) | Reading a `plugin.json`, translating foreign dialects, degrading one artifact at a time, and normalized Git/local/npm marketplace installation | `kernel`, `loop`, `code` |
 | [`model-catalog.md`](hosts/model-catalog.md) | The shipped models.dev snapshot, `provider/model` ref parsing and provider resolution, pricing, reasoning-effort floors and where a model's cache mode is derived | `kernel`, `capability`, `code` |
@@ -180,7 +180,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`code-transcript-stability.md`](hosts/code-transcript-stability.md) | Immutable publication batches, exhaustive event disposition, syntax-ready physical row markers, native-scroll lazy residency, the continuous mutable tail and replay equivalence | `code` |
 | [`code-input-and-overlays.md`](hosts/code-input-and-overlays.md) | The composer and its completion popup, the shared floating-card and windowed-list primitives, plan/history overlays, and the `!bash` escape hatch | `code` |
 | [`code-domain-hubs.md`](hosts/code-domain-hubs.md) | The six full-screen domain views (agents, tasks, workflows, sessions, memory, run controls) and the controller/adapter layering that keeps them thin | `code` |
-| [`code-extensions.md`](hosts/code-extensions.md) | The five-step Extensions setup, unified exact catalog, capability review, preview-bound Environment composition and retained-list performance contract | `code`, `kernel`, `protocol`, `skills` |
+| [`code-extensions.md`](hosts/code-extensions.md) | The five-step Extensions setup, unified exact catalog, capability review, preview-bound Extension Profile composition and retained-list performance contract | `code`, `kernel`, `protocol`, `skills` |
 | [`code-settings-panels.md`](hosts/code-settings-panels.md) | The configuration surface: the view host with its scope toggle and dirty latch, the single-slot field editor, and the provider/model and extension-browser screens | `code` |
 | [`code-keyboard.md`](hosts/code-keyboard.md) | Capability-gated key candidates over `@opentui/keymap`, and generating every footer segment, help row and hint from that one live declaration | `code` |
 | [`code-theme.md`](hosts/code-theme.md) | The design-token layer: token resolution to hex, derived surface washes, syntax colors, and the paired ASCII rendering of every non-ASCII glyph | `code` |
@@ -252,14 +252,14 @@ remaining gap in its open questions rather than letting prose imply a test exist
 ### What the corpus was measured to be worth
 
 "The specs and the code agree" is itself a claim that needs dated, reproducible evidence. The
-current 2026-09-01 snapshot contains 68 subsystem documents (71 Markdown files including this index,
+current 2026-09-02 snapshot contains 68 subsystem documents (71 Markdown files including this index,
 the known-issues register and the generated coupling report). `extractLineCitations` currently finds
-16,049 distinct explicit citation groups carrying 18,701 cited ranges, and
-`extractDocumentLinks` finds 610 document links. `bun run check:specs` is the maintained gate over
+15,126 distinct explicit citation groups carrying 17,614 cited ranges, and
+`extractDocumentLinks` finds 611 document links. `bun run check:specs` is the maintained gate over
 their bounds, targets, links and characters; it does not turn those counts into semantic proof.
 
 A prior corpus audit recorded a 142-citation manual stride sample and an adversarial pass over the
-then-current findings register. Those experiments were not repeated as part of the 2026-09-01
+then-current findings register. Those experiments were not repeated as part of the 2026-09-02
 refresh, so their old zero-finding result is historical evidence, not a guarantee about this
 snapshot. This snapshot therefore makes no corpus-wide semantic-verification claim: a changed or
 relied-on citation still has to be traced to its current production symbol and applicable tests

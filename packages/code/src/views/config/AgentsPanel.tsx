@@ -682,7 +682,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
               summary: `${fm.description ? "custom description" : "not set"} ${glyph("separator")} ${d.scope} ${glyph("separator")} next run`,
               configured: fm.description ? "custom description" : "not set",
               effective: fm.description ? "Custom description active" : "No description",
-              source: `${d.scope} agent profile`,
+              source: `${d.scope} Agent Profile`,
               applies: "next run",
               mutation: "staged",
             }}
@@ -700,7 +700,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
               label: "Sub-agent model",
               configured: fm.model ?? "inherit",
               effective: fm.model ?? settings.effective().default_model ?? "No model configured",
-              source: fm.model ? `${d.scope} agent profile` : "effective settings",
+              source: fm.model ? `${d.scope} Agent Profile` : "effective settings",
               applies: "when spawned",
               mutation: "staged",
             }}
@@ -723,7 +723,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
                 tier === "exec" && RANK.exec > RANK[env.maxGrant]
                   ? `${env.maxGrant} (host ceiling)`
                   : grantsValue,
-              source: `${d.scope} agent profile`,
+              source: `${d.scope} Agent Profile`,
               applies: "next run",
               mutation: "staged",
             }}
@@ -736,7 +736,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
               label: "Can delegate to",
               configured: (fm.can_spawn ?? []).join(", ") || "none",
               effective: (fm.can_spawn ?? []).join(", ") || "No delegation",
-              source: `${d.scope} agent profile`,
+              source: `${d.scope} Agent Profile`,
               applies: "next run",
               mutation: "staged",
             }}
@@ -754,7 +754,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
               label: "Default delegate",
               configured: fm.default_spawn ?? "not set",
               effective: fm.default_spawn ?? "Choose when delegating",
-              source: `${d.scope} agent profile`,
+              source: `${d.scope} Agent Profile`,
               applies: "next run",
               mutation: "staged",
             }}
@@ -773,7 +773,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
               label: "Iteration limit",
               configured: fm.iteration_limit == null ? "inherit" : String(fm.iteration_limit),
               effective: String(fm.iteration_limit ?? env.iterationDefault),
-              source: fm.iteration_limit == null ? "host environment" : `${d.scope} agent profile`,
+              source: fm.iteration_limit == null ? "host environment" : `${d.scope} Agent Profile`,
               applies: "next run",
               mutation: "staged",
             }}
@@ -789,7 +789,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
                 fm.reasoning_effort ??
                 settings.effective().default_reasoning_effort ??
                 "Provider default",
-              source: fm.reasoning_effort ? `${d.scope} agent profile` : "effective settings",
+              source: fm.reasoning_effort ? `${d.scope} Agent Profile` : "effective settings",
               applies: "when spawned",
               mutation: "staged",
             }}
@@ -807,7 +807,7 @@ export function AgentsPanel(host: ViewHost, deps: AgentsDeps): JSX.Element {
               label: "Instructions",
               configured: d.body ? "custom instructions" : "none",
               effective: d.body ? "Custom instructions active" : "No additional instructions",
-              source: `${d.scope} agent profile`,
+              source: `${d.scope} Agent Profile`,
               applies: "next run",
               mutation: "staged",
             }}

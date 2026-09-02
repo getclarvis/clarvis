@@ -215,7 +215,7 @@ describe("approval lifts the withholding", () => {
   });
 
   it("binds one approval to the complete repository plugin inventory", async () => {
-    const root = mkdtempSync(join(tmpdir(), "clarvis-wstrust-environment-"));
+    const root = mkdtempSync(join(tmpdir(), "clarvis-wstrust-extension-profile-"));
     const globalDir = join(root, "global");
     let extensions: unknown = {
       plugins: [
@@ -230,7 +230,7 @@ describe("approval lifts the withholding", () => {
       createFileConfigStore({
         workspaceRoot: root,
         globalDir,
-        environment: {
+        extensionProfile: {
           resolvePlugins: () => [],
           workspaceTrustSurface: (options) => {
             surfaceReads.push(options?.refresh);
@@ -242,7 +242,7 @@ describe("approval lifts the withholding", () => {
 
     const unapproved = await config.getSettings();
     expect(unapproved.workspace_trust?.state).toBe("unapproved");
-    expect(unapproved.withheld_workspace_fields).toEqual(["environment"]);
+    expect(unapproved.withheld_workspace_fields).toEqual(["extension_profile"]);
     expect((await config.approveWorkspace()).workspace_trust?.state).toBe("trusted");
     expect(surfaceReads).toContain(true);
     expect((await config.getSettings()).withheld_workspace_fields).toBeUndefined();
@@ -256,11 +256,11 @@ describe("approval lifts the withholding", () => {
     };
     const changed = await config.getSettings();
     expect(changed.workspace_trust?.state).toBe("changed");
-    expect(changed.withheld_workspace_fields).toEqual(["environment"]);
+    expect(changed.withheld_workspace_fields).toEqual(["extension_profile"]);
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("refuses Environment trust transitions before mutating the trust store during a run", async () => {
+  it("refuses Extension Profile trust transitions before mutating the trust store during a run", async () => {
     const root = mkdtempSync(join(tmpdir(), "clarvis-wstrust-active-"));
     const globalDir = join(root, "global");
     let running = true;
@@ -268,7 +268,7 @@ describe("approval lifts the withholding", () => {
       createFileConfigStore({
         workspaceRoot: root,
         globalDir,
-        environment: {
+        extensionProfile: {
           resolvePlugins: () => [],
           workspaceTrustSurface: () => ({
             plugins: [

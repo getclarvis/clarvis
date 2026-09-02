@@ -244,12 +244,12 @@ request's `budgetSchema` — see §4.4), `...capabilitySettingsFields` (built-in
 `AGENT_TOOLS_SETTINGS_FIELDS` at `packages/loop/src/runtime/capabilities/tools-settings.ts:143-149`
 is what contributes both `guard` and `sandbox`), `marketplaces?`, `enabledPlugins?`.
 
-An extension Environment is deliberately **not** part of `SettingsFile`: definitions and selections
+An Extension Profile is deliberately **not** part of `SettingsFile`: definitions and selections
 have their own strict JSON contracts and paths, owned by
-[Extension Environments](../hosts/environments.md). The loop continues to validate and merge
+[Extension Profiles](../hosts/extension-profiles.md). The loop continues to validate and merge
 `enabledPlugins` because `builtin:default` uses it as its exact activation list; a
-custom Environment is a complete allow-list resolved by the kernel and never overlays or copies
-`settings.json`. Consequently an `environments`/`environment` key in settings remains an unknown
+custom Extension Profile is a complete allow-list resolved by the kernel and never overlays or copies
+`settings.json`. Consequently an `extensionProfiles`/`extensionProfile` key in settings remains an unknown
 top-level key and is rejected by this strict schema.
 
 `pluginNameField` (`packages/loop/src/settings/settings-schema.ts`) accepts lowercase names bounded
@@ -537,8 +537,8 @@ scope defining the key as a `SettingsValueScope`, then either takes the last one
 
 The concatenated `enabledPlugins` result feeds only `builtin:default`. Each entry is the strict
 object `{ scope: "global"|"workspace", source: "agents"|"clarvis", name }`; strings and partially
-qualified references are rejected. Environment resolution happens after the operator settings
-layers are read and before plugin settings fragments are folded; no Environment data is introduced
+qualified references are rejected. Extension Profile resolution happens after the operator settings
+layers are read and before plugin settings fragments are folded; no Extension Profile data is introduced
 into this schema or merge table.
 
 A **module-load guard** (`packages/loop/src/settings/settings-merge.ts:152-156`) throws immediately
@@ -677,13 +677,13 @@ Production: `concatDistinct` and `concatDistinctPluginRefs` in
 `packages/loop/src/settings/settings-merge.ts`. Test:
 `packages/loop/tests/unit/settings-merge.test.ts:225-231`.
 
-This is the builtin activation behavior, not custom Environment semantics. The kernel resolves every
-reference exactly; two selected installations with the same runtime name invalidate the Environment
-instead of applying source/scope precedence. Custom Environment allow-lists never use this merge
+This is the builtin activation behavior, not custom Extension Profile semantics. The kernel resolves every
+reference exactly; two selected installations with the same runtime name invalidate the Extension Profile
+instead of applying source/scope precedence. Custom Extension Profile allow-lists never use this merge
 result. Production:
-`packages/kernel/src/environments/environment-manager.ts` (`resolved`) and
+`packages/kernel/src/extension-profiles/extension-profile-manager.ts` (`resolved`) and
 `packages/kernel/src/config/file-config-store.ts` (`snapshot`). Test:
-`packages/kernel/tests/integration/environment-manager.test.ts`.
+`packages/kernel/tests/integration/extension-profile-manager.test.ts`.
 
 **G.** A plugin-origin `hooks` scope is always merged **after** every operator scope regardless of
 its position in the `scopes` argument order — proven at the settings-merge level even though the

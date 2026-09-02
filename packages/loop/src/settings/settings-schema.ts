@@ -435,7 +435,7 @@ export const settingsSchema = z
       .describe(
         "Exact plugin installations to enable in builtin:default. Duplicate exact references " +
           "are removed while distinct installations with the same runtime name make the " +
-          "resolved Environment invalid.",
+          "resolved Extension Profile invalid.",
       ),
   })
   .strict();

@@ -197,8 +197,8 @@ persisted vocabulary, but they cannot replace the engine's canonical on-disk eve
 
 `ExecutionRecord.host_metadata` is a deliberately opaque, optional host-owned snapshot annotation.
 The loop and trace packages carry and sanitize it without learning its schema; the file kernel uses
-that seam to persist the active extension Environment's `{ id, fingerprint }`. The Environment
-contract is owned by [`hosts/environments.md`](../../specs/hosts/environments.md), not by this leaf.
+that seam to persist the active Extension Profile's `{ id, fingerprint }`. The Extension Profile
+contract is owned by [`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md), not by this leaf.
 
 ## Vocabulary it owns, and why it is here rather than elsewhere
 

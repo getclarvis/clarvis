@@ -7,7 +7,7 @@ export { RunControlsPanel } from "./config/RunControlsPanel.tsx";
 export { ModelView } from "./config/ModelView.tsx";
 export { EffortView } from "./config/EffortView.tsx";
 export { DefaultsPanel } from "./config/DefaultsPanel.tsx";
-export { EnvironmentBrowser } from "./config/EnvironmentBrowser.tsx";
+export { ExtensionProfileBrowser } from "./config/ExtensionProfileBrowser.tsx";
 export { WorkspaceTrustPrompt } from "./config/WorkspaceTrustPrompt.tsx";
 export { CapabilityProvidersPanel } from "./config/CapabilityProvidersPanel.tsx";
 export { MarketplaceBrowser } from "./config/MarketplaceBrowser.tsx";

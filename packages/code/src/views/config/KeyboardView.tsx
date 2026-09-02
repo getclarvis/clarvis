@@ -153,7 +153,7 @@ function KeyboardDiagnostic(props: {
         uiCommand({
           id: "keyboard.diagnostic.save",
           title: "Save diagnostic",
-          description: "Save only capability verdicts and the recommended profile",
+          description: "Save only capability verdicts and the recommended Keyboard Profile",
           category: "primary",
           surfaces: ["footer"],
           footerLabel: "save",
@@ -313,7 +313,7 @@ export function KeyboardView(
     const id = host.interaction.keyboardEnvironmentId();
     const current = deps.code.keyboardConfig().environments[id];
     deps.code.writeKeyboardEnvironment(id, { ...(current ?? {}), profile });
-    deps.notify(`keyboard profile: ${profile}`);
+    deps.notify(`Keyboard Profile: ${profile}`);
   };
 
   const cycleClient = (): void => {
@@ -332,7 +332,7 @@ export function KeyboardView(
 
   const reset = (): void => {
     deps.code.writeKeyboardEnvironment(host.interaction.keyboardEnvironmentId(), undefined);
-    deps.notify("keyboard profile reset to automatic");
+    deps.notify("Keyboard Profile reset to automatic");
   };
 
   const openBindings = (): void => {
@@ -408,7 +408,7 @@ export function KeyboardView(
             index: selected,
             setIndex: setSelected,
             showArrows: true,
-            activate: { label: "use profile", run: saveProfile },
+            activate: { label: "use Keyboard Profile", run: saveProfile },
           },
           verbs: [
             {
@@ -452,7 +452,7 @@ export function KeyboardView(
       host={host}
       title="Keyboard"
       purpose="UI-local keyboard compatibility"
-      mutationContract="Use profile changes this terminal environment immediately"
+      mutationContract="Use Keyboard Profile changes this terminal environment immediately"
     >
       <Show
         when={!diagnostic()}
@@ -474,7 +474,7 @@ export function KeyboardView(
               <box flexDirection="column" flexGrow={1}>
                 <Show when={!overridesActive() && storedOverrideCount() > 0}>
                   <text fg={tokens.warn}>
-                    {`${glyph("warning")} ${storedOverrideCount()} override${storedOverrideCount() === 1 ? "" : "s"} stored but inactive ${glyph("emDash")} they apply only under the Manual profile.`}
+                    {`${glyph("warning")} ${storedOverrideCount()} override${storedOverrideCount() === 1 ? "" : "s"} stored but inactive ${glyph("emDash")} they apply only under the Manual Keyboard Profile.`}
                   </text>
                 </Show>
                 <SelectableList

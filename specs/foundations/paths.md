@@ -136,7 +136,7 @@ chose it — is the first thing every other path in this package is derived from
 | `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts:122` |
 | `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts:123` |
 | `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts:124` |
-| `environmentsDir` | `<global>/environments` | `packages/paths/src/global.ts:125` |
+| `extensionProfilesDir` | `<global>/extension-profiles` | `packages/paths/src/global.ts:125` |
 | `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts:126` |
 | `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts:127` |
 | `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts:128` |
@@ -147,7 +147,7 @@ chose it — is the first thing every other path in this package is derived from
 | `sessionsDir` | `<global>/state/sessions` | `packages/paths/src/global.ts:133` |
 | `tracesDir` | `<global>/state/traces` | `packages/paths/src/global.ts:134` |
 | `workflowRecordsDir` | `<global>/state/workflows` | `packages/paths/src/global.ts:135` |
-| `environmentSelectionFile` | `<global>/state/environment.json` | `packages/paths/src/global.ts:136` |
+| `extensionProfileSelectionFile` | `<global>/state/extension-profile.json` | `packages/paths/src/global.ts:136` |
 | `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts:137` |
 | `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts:138` |
 | `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts:139` |
@@ -174,7 +174,7 @@ consequence" (`packages/paths/src/global.ts:17-19`).
 | `skillsDir` | `<ws>/.clarvis/skills` | `packages/paths/src/workspace.ts:112` |
 | `workflowsDir` | `<ws>/.clarvis/workflows` | `packages/paths/src/workspace.ts:113` |
 | `pluginsDir` | `<ws>/.clarvis/plugins` | `packages/paths/src/workspace.ts:114` |
-| `environmentsDir` | `<ws>/.clarvis/environments` | `packages/paths/src/workspace.ts:115` |
+| `extensionProfilesDir` | `<ws>/.clarvis/extension-profiles` | `packages/paths/src/workspace.ts:115` |
 | `guardJudgeFile` | `<ws>/.clarvis/guard-judge.md` | `packages/paths/src/workspace.ts:116` |
 | `memoryPolicyFile` | `<ws>/.clarvis/memory-policy.md` | `packages/paths/src/workspace.ts:117` |
 | `plansRoot` | `<ws>/.clarvis/plans` | `packages/paths/src/workspace.ts:118` |
@@ -218,7 +218,7 @@ record (`packages/paths/src/workspace-state.ts:36`) rooted at `<global>/state/wo
 | `pluginDataRoot` | `<root>/plugin-data` | `WorkspaceStatePaths.pluginDataRoot`, `workspaceStatePaths` |
 | `promptHistoryFile` | `<root>/local/prompt-history` | `packages/paths/src/workspace-state.ts:196` |
 | `codeConfigFile` | `<root>/local/code.json` | `packages/paths/src/workspace-state.ts:197` |
-| `environmentSelectionFile` | `<root>/local/environment.json` | `packages/paths/src/workspace-state.ts:198` |
+| `extensionProfileSelectionFile` | `<root>/local/extension-profile.json` | `packages/paths/src/workspace-state.ts:198` |
 | `runTempDir(executionId)` | `<root>/local/runs/<ownerSegment(executionId)>/tmp` | `WorkspaceStatePaths.runTempDir`, `workspaceStatePaths` |
 | `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts:202` |
 | `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts:203` |
@@ -372,7 +372,7 @@ confirmed by the absence of `zod` from its dependencies (`package.json`, section
 
 `<ws>/.clarvis` top level, exhaustively enumerated by the allow-list a kernel test drives every
 real writer against: `.gitignore`, `settings.json`, `agents`, `skills`, `workflows`, `plugins`,
-`environments`, `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
+`extension-profiles`, `guard-judge.md`, `plans`, `memory`, `owners`, `worktrees`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts:34-46`, INV-192).
 
 `WORKSPACE_GITIGNORE` content, seeded verbatim (`packages/paths/src/ensure.ts:33`):
@@ -394,17 +394,17 @@ hand-edited file with the seeded template. Production: `ensureWorkspaceDir` and 
 ### 3.2 The global tree
 
 `<global>` = `$CLARVIS_HOME` or `<home>/.clarvis` (`packages/paths/src/roots.ts:71-87`). Beneath it:
-operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `plugins/`, `environments/`,
+operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `plugins/`, `extension-profiles/`,
 `workspace-trust.json`, `skills/`, `workflows/`, `guard-judge.md`,
 `memory-policy.md`, `auth.json`, `auth-key.json`), and generated state under `state/`
-(`sessions/`, `traces/`, `workflows/` [records], `environment.json`, `code.json`, private remote-MCP OAuth credentials)
+(`sessions/`, `traces/`, `workflows/` [records], `extension-profile.json`, `code.json`, private remote-MCP OAuth credentials)
 and `cache/` (`models-dev.json`)
 — see the table in §2.4.
 
 ### 3.3 Per-workspace machine state tree
 
 `<global>/state/workspaces/<segment>/`, where `segment = ownerSegment(ownerFromWorkspace(root))`
-(`packages/paths/src/workspace-state.ts:157-159,173`). Under it: `local/` (prompt history, `code.json`, `environment.json`, `diagnostics/`,
+(`packages/paths/src/workspace-state.ts:157-159,173`). Under it: `local/` (prompt history, `code.json`, `extension-profile.json`, `diagnostics/`,
 monitor sidecars/logs/exits, shell spills, tool-output spills), `memory/` (the wiki's machinery —
 delegated to [memory-wiki-store](../capabilities/memory-store.md)), `plans/` (lockfiles — delegated to plan's own spec), and
 `owners/<seg>/{memory,plans}` for a multi-owner deployment. "Nothing here is seeded with a
@@ -413,18 +413,18 @@ delegated to [memory-wiki-store](../capabilities/memory-store.md)), `plans/` (lo
 `inState.some((rel) => rel.startsWith("memory/.state/"))` and `"memory/.history/"`
 (`packages/kernel/tests/architecture/workspace-surface.test.ts:160-165`).
 
-Environment definitions are authored content in the global/workspace trees; their global and
+Extension Profile definitions are authored content in the global/workspace trees; their global and
 per-workspace selections are generated state. This split makes workspace definitions shareable
 without making repository checkout an activation action. The format and precedence belong to
-[`hosts/environments.md`](../hosts/environments.md). Production: `GlobalPaths.environmentsDir`,
-`GlobalPaths.environmentSelectionFile`, `WorkspacePaths.environmentsDir`, and
-`WorkspaceStatePaths.environmentSelectionFile`. The kernel materializes the global authored
+[`hosts/extension-profiles.md`](../hosts/extension-profiles.md). Production: `GlobalPaths.extensionProfilesDir`,
+`GlobalPaths.extensionProfileSelectionFile`, `WorkspacePaths.extensionProfilesDir`, and
+`WorkspaceStatePaths.extensionProfileSelectionFile`. The kernel materializes the global authored
 catalog on first list but deliberately does not materialize the workspace authored catalog during
 a read; that lifecycle is owned by `missingDefinitionCatalog` and `list` in
-`packages/kernel/src/environments/environment-manager.ts`. Test:
+`packages/kernel/src/extension-profiles/extension-profile-manager.ts`. Test:
 `packages/paths/tests/component/paths.test.ts:52-70`, `:113`,
 `packages/paths/tests/component/workspace-state.test.ts:106`, and
-`packages/kernel/tests/integration/environment-manager.test.ts` ("materializes an empty global
+`packages/kernel/tests/integration/extension-profile-manager.test.ts` ("materializes an empty global
 catalog without writing into the workspace").
 
 ### 3.4 Owner-id and segment encoding

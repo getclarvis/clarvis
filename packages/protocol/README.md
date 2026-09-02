@@ -43,7 +43,7 @@ services:
 | -------------- | -------------------------------------------------------------------------------------- |
 | `runs`         | Start, stream, steer, compact live or settled context, inspect and delete runs.        |
 | `config`       | Settings, agent documents and context documents.                                       |
-| `environments` | Exact inventory, definition, composition preview and selection of active extensions.   |
+| `extensionProfiles` | Exact inventory, definition, composition preview and selection of active extensions. |
 | `plugins`      | Installed plugins, atomic contributions, capability services and lifecycle operations. |
 | `secrets`      | Server-side provider secret names and writes.                                          |
 | `models`       | Model metadata and pricing catalog.                                                    |
@@ -60,7 +60,7 @@ services:
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
 
-`EnvironmentService` is the control plane for deterministic activation of already-installed
+`ExtensionProfileService` is the control plane for deterministic activation of already-installed
 extensions. Custom definitions are complete allow-lists of exact `{ scope, source, name }` plugin
 installations and standalone skills; `builtin:default` is immutable builtin activation behavior.
 `.agents/plugins` and `.clarvis/plugins` are equally representable. Selection and clear
@@ -70,7 +70,7 @@ single-use preview token; the service still never installs anything. Global oper
 need no workspace approval, while `requires_workspace_trust` identifies a target carrying
 repository-owned `scope: "workspace"` plugins when their single workspace-wide inventory
 fingerprint is not trusted. The full format, selection precedence, snapshot and trust contract is in
-[`hosts/environments.md`](../../specs/hosts/environments.md).
+[`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md).
 
 Marketplace installation uses `PluginInstallSource`, a closed union for Git (optional subdirectory,
 ref or SHA), confined local directories, and npm packages (optional version and credential-free
@@ -151,7 +151,7 @@ Stdio, HTTP and WebSocket transports can implement the same interface without ch
 the concrete transport decides how to interrupt the request without serializing the signal into the
 wire parameters.
 
-Wire contract 2 is negotiated exactly in the opening hello. Unknown versions and malformed or
+Wire contract 3 is negotiated exactly in the opening hello. Unknown versions and malformed or
 extra envelope fields fail closed. Stdio uses strict newline-delimited frames capped at 8 MiB and a
 serialized bounded writer; malformed JSON, oversized frames and stalled/backpressured output close
 the connection instead of being skipped.

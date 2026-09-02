@@ -84,27 +84,27 @@ test("parseMode: --worktree selects a launch workspace with an optional name", (
   });
 });
 
-test("parseMode: --env pins an Environment across interactive and headless kernels", () => {
-  expect(parseMode(["--env", "workspace:research"])).toEqual({
+test("parseMode: --extension-profile pins an Extension Profile across interactive and headless kernels", () => {
+  expect(parseMode(["--extension-profile", "workspace:research"])).toEqual({
     kind: "run",
     ascii: false,
     debug: { enabled: false },
-    environmentSelector: "workspace:research",
+    extensionProfileSelector: "workspace:research",
   });
-  expect(parseMode(["--list", "--env", "minimal"])).toEqual({
+  expect(parseMode(["--list", "--extension-profile", "minimal"])).toEqual({
     kind: "list",
     debug: { enabled: false },
-    environmentSelector: "minimal",
+    extensionProfileSelector: "minimal",
   });
-  expect(parseMode(["--refresh-models", "--env", "global:research"])).toEqual({
+  expect(parseMode(["--refresh-models", "--extension-profile", "global:research"])).toEqual({
     kind: "refresh-models",
     debug: { enabled: false },
-    environmentSelector: "global:research",
+    extensionProfileSelector: "global:research",
   });
-  expect(parseMode(["--env"]).kind).toBe("usage-error");
-  expect(parseMode(["--update", "--env", "minimal"])).toEqual({
+  expect(parseMode(["--extension-profile"]).kind).toBe("usage-error");
+  expect(parseMode(["--update", "--extension-profile", "minimal"])).toEqual({
     kind: "usage-error",
-    message: "--env does not apply with --update",
+    message: "--extension-profile does not apply with --update",
   });
 });
 

@@ -174,8 +174,8 @@ describe("buildRecord", () => {
   });
 
   it("carries opaque host metadata into the immutable execution snapshot", () => {
-    const environment = {
-      environment: {
+    const extensionProfileMetadata = {
+      extension_profile: {
         id: "global:research",
         fingerprint: `sha256:${"a".repeat(64)}`,
       },
@@ -187,8 +187,8 @@ describe("buildRecord", () => {
       response: response([lead()]),
       trace: { events: [] },
       wallStartedAt: 0,
-      hostMetadata: environment,
+      hostMetadata: extensionProfileMetadata,
     });
-    expect(record.host_metadata).toEqual(environment);
+    expect(record.host_metadata).toEqual(extensionProfileMetadata);
   });
 });

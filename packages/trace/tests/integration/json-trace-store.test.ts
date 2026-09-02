@@ -190,7 +190,7 @@ describe("json-trace-store — persisted continuation payload", () => {
   });
 
   it("round-trips sanitized host metadata with the execution snapshot", async () => {
-    const environment = {
+    const extensionProfile = {
       id: "global:research",
       fingerprint: `sha256:${"a".repeat(64)}`,
     };
@@ -198,12 +198,15 @@ describe("json-trace-store — persisted continuation payload", () => {
       makeExecutionRecord({
         id: "exec_host_metadata",
         owner_key_name: "alice",
-        host_metadata: { environment, api_token: "sk-proj-ABCDEFGH12345678" },
+        host_metadata: {
+          extension_profile: extensionProfile,
+          api_token: "sk-proj-ABCDEFGH12345678",
+        },
       }),
     );
 
     const got = store.getById("alice", "exec_host_metadata")!;
-    expect(got.host_metadata?.environment).toEqual(environment);
+    expect(got.host_metadata?.extension_profile).toEqual(extensionProfile);
     expect(JSON.stringify(got.host_metadata)).not.toContain("sk-proj-ABCDEFGH12345678");
   });
 

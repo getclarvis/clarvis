@@ -139,7 +139,7 @@ const DELETE_RUN_TOOL_NAME = "delete_run";
 const LIST_PROFILES_TOOL_NAME = "list_profiles";
 
 /**
- * The control-plane tool names (run lifecycle + profile listing) — a distinct
+ * The control-plane tool names (run lifecycle + Agent Profile listing) — a distinct
  * surface from the in-run built-in and coding tools.
  */
 export const CONTROL_PLANE_TOOL_NAMES: readonly string[] = [

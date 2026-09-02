@@ -25,7 +25,7 @@ import {
   type PlanStore,
 } from "@clarvis/plan";
 import { createPlanningRuntime } from "./plans/planning-runtime.ts";
-import type { EnvironmentPluginRef, RunEvent } from "@clarvis/protocol";
+import type { ExtensionProfilePluginRef, RunEvent } from "@clarvis/protocol";
 import {
   buildExecuteRunDeps,
   hooksEffective,
@@ -95,9 +95,9 @@ import { SubscriptionManager } from "./subscriptions/manager.ts";
 import { createFileSubscriptionStore } from "./subscriptions/store.ts";
 import { createModelCatalogService } from "./models/model-catalog.ts";
 import {
-  createEnvironmentManager,
-  type EnvironmentSkillDriftNotice,
-} from "./environments/environment-manager.ts";
+  createExtensionProfileManager,
+  type ExtensionProfileSkillDriftNotice,
+} from "./extension-profiles/extension-profile-manager.ts";
 import { withRunLease } from "./runs/run-lease.ts";
 
 /**
@@ -124,8 +124,8 @@ export interface CreateFileKernelOptions {
   traceDir?: string;
   /** Global Clarvis dir for config/secrets/models/sessions; defaults to the standard global root. */
   globalDir?: string;
-  /** Process-local Environment override (`scope:name`); never persisted. */
-  environmentSelector?: string;
+  /** Process-local Extension Profile override (`scope:name`); never persisted. */
+  extensionProfileSelector?: string;
   /** Default model id; falls back to `CLARVIS_DEFAULT_MODEL` in the environment. */
   defaultModel?: string;
   /** Enables the memory subsystem when `true`; otherwise memory is inert. */
@@ -174,12 +174,12 @@ export interface CreateFileKernelOptions {
     tasks?: boolean;
   };
   /** Reports an extension contribution withdrawn by asynchronous drift monitoring. */
-  onEnvironmentDrift?: (notice: EnvironmentDriftNotice) => void;
+  onExtensionProfileDrift?: (notice: ExtensionProfileDriftNotice) => void;
 }
 
 /** Informational drift projected to hosts without changing run availability. */
-export type EnvironmentDriftNotice =
-  | ({ kind: "skill" } & EnvironmentSkillDriftNotice)
+export type ExtensionProfileDriftNotice =
+  | ({ kind: "skill" } & ExtensionProfileSkillDriftNotice)
   | ({ kind: "plugin_runtime" } & PluginRuntimeDriftNotice);
 
 /**
@@ -187,8 +187,8 @@ export type EnvironmentDriftNotice =
  *
  * @remarks `workspaceHooks` is not on {@link InProcessKernel} because trust here
  * is a property of *files on this machine*, which only a file-backed host has.
- * The same verdict also covers the selected workspace Environment's executable
- * extension surface. Environment selection has an explicit approval flow; this
+ * The same verdict also covers the selected workspace Extension Profile's executable
+ * extension surface. Extension Profile selection has an explicit approval flow; this
  * host-only API remains the way to approve or revoke workspace settings hooks.
  */
 export interface FileKernel extends InProcessKernel {
@@ -245,7 +245,7 @@ function reportConfigScopes(
 ): void {
   const merged = snapshot.merged as Record<string, unknown>;
   const enabled = Array.isArray(merged.enabledPlugins)
-    ? (merged.enabledPlugins as EnvironmentPluginRef[])
+    ? (merged.enabledPlugins as ExtensionProfilePluginRef[])
     : [];
   const active = snapshot.active_plugins ?? enabled;
   const presence = (scope: "global" | "workspace"): boolean =>
@@ -370,62 +370,64 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const pluginContributions = createPluginContributions({
     globalDir,
     workspaceRoot: opts.workspaceRoot,
-    ...(opts.onEnvironmentDrift === undefined
+    ...(opts.onExtensionProfileDrift === undefined
       ? {}
       : {
           onRuntimeDrift: (notice: PluginRuntimeDriftNotice) =>
-            opts.onEnvironmentDrift?.({ kind: "plugin_runtime", ...notice }),
+            opts.onExtensionProfileDrift?.({ kind: "plugin_runtime", ...notice }),
         }),
     logger: componentLogger("plugins"),
   });
-  const environmentManager = createEnvironmentManager({
+  const extensionProfileManager = createExtensionProfileManager({
     globalDir,
     workspaceRoot: opts.workspaceRoot,
     pluginContributions,
-    ...(opts.environmentSelector === undefined ? {} : { cliSelection: opts.environmentSelector }),
-    ...(opts.onEnvironmentDrift === undefined
+    ...(opts.extensionProfileSelector === undefined
+      ? {}
+      : { cliSelection: opts.extensionProfileSelector }),
+    ...(opts.onExtensionProfileDrift === undefined
       ? {}
       : {
-          onSkillDrift: (notice: EnvironmentSkillDriftNotice) =>
-            opts.onEnvironmentDrift?.({ kind: "skill", ...notice }),
+          onSkillDrift: (notice: ExtensionProfileSkillDriftNotice) =>
+            opts.onExtensionProfileDrift?.({ kind: "skill", ...notice }),
         }),
-    logger: componentLogger("environment"),
+    logger: componentLogger("extension_profile"),
   });
-  let environmentRunRefs = 0;
+  let extensionProfileRunRefs = 0;
   const configStore = createFileConfigStore({
     workspaceRoot: opts.workspaceRoot,
     globalDir,
     plugins: pluginContributions,
-    environment: {
+    extensionProfile: {
       resolvePlugins: (enabledPlugins, trust) =>
-        environmentManager
+        extensionProfileManager
           .resolveActive(enabledPlugins, trust)
           .plugins.filter((plugin) => plugin.active)
           .map((plugin) => plugin.ref),
-      workspaceTrustSurface: (options) => environmentManager.workspaceTrustSurface(options),
+      workspaceTrustSurface: (options) => extensionProfileManager.workspaceTrustSurface(options),
       assertWorkspaceTrustTransitionAllowed: () =>
-        environmentManager.assertWorkspaceTrustTransitionAllowed(),
+        extensionProfileManager.assertWorkspaceTrustTransitionAllowed(),
     },
     logger: componentLogger("config"),
   });
-  environmentManager.bindRuntime({
+  extensionProfileManager.bindRuntime({
     readWorkspaceTrust: () => configStore.readSettings().workspace_trust ?? { state: "inert" },
     approveWorkspace: () => {
       configStore.setWorkspaceTrust?.(true);
     },
-    hasActiveRuns: () => environmentRunRefs > 0,
+    hasActiveRuns: () => extensionProfileRunRefs > 0,
   });
-  const acquireEnvironmentRunLease = (): (() => void) => {
-    environmentRunRefs += 1;
+  const acquireExtensionProfileRunLease = (): (() => void) => {
+    extensionProfileRunRefs += 1;
     let released = false;
     return (): void => {
       if (released) return;
       released = true;
-      environmentRunRefs = Math.max(0, environmentRunRefs - 1);
+      extensionProfileRunRefs = Math.max(0, extensionProfileRunRefs - 1);
     };
   };
-  const executeEnvironmentRun = (args: ExecuteRunArgs): Promise<ExecuteRunOutcome> =>
-    withRunLease(acquireEnvironmentRunLease, async () => {
+  const executeExtensionProfileRun = (args: ExecuteRunArgs): Promise<ExecuteRunOutcome> =>
+    withRunLease(acquireExtensionProfileRunLease, async () => {
       const { executeRun } = await import("@clarvis/loop");
       return await executeRun(args);
     });
@@ -635,15 +637,15 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
   };
 
-  /** Exact plugin installations pinned by the process Environment snapshot. */
+  /** Exact plugin installations pinned by the process Extension Profile snapshot. */
   const activePluginRefs = () => configStore.readSettings().active_plugins ?? [];
 
   const pluginSkillRoots: SkillRootSnapshotProvider = {
-    roots: () => environmentManager.pinnedSkillRoots(),
-    observe: (skills) => environmentManager.observeSkillCatalog(skills),
-    verify: (skills) => environmentManager.verifySkillCatalog(skills),
-    available: (skill) => environmentManager.skillAvailable(skill),
-    onRootsChanged: (listener) => environmentManager.onSkillRootsChanged(listener),
+    roots: () => extensionProfileManager.pinnedSkillRoots(),
+    observe: (skills) => extensionProfileManager.observeSkillCatalog(skills),
+    verify: (skills) => extensionProfileManager.verifySkillCatalog(skills),
+    available: (skill) => extensionProfileManager.skillAvailable(skill),
+    onRootsChanged: (listener) => extensionProfileManager.onSkillRootsChanged(listener),
   };
 
   const pluginSkillBootstraps = (): PluginBootstrapSkill[] =>
@@ -766,7 +768,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     ...(opts.traceDir !== undefined ? { traceDir: opts.traceDir } : {}),
     ...(opts.onConnectionEvent !== undefined ? { onConnectionEvent: opts.onConnectionEvent } : {}),
   }).catch(async (error: unknown) => {
-    environmentManager.close();
+    extensionProfileManager.close();
     pluginContributions.close();
     await Promise.allSettled([
       capabilityExecutables.close(),
@@ -845,7 +847,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
         // value would be circular. By the time a pass resolves it, `deps` is
         // assigned.
         runDeps: () => depsRef.current,
-        executeRun: executeEnvironmentRun,
+        executeRun: executeExtensionProfileRun,
         passRunDeps: () => passDepsRef.current,
         loadPolicy: () =>
           loadMemoryPolicy({
@@ -867,7 +869,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   reportCapability(logger, "tasks", tasksEnabled, tasksEnabled ? "host_default" : "host_disabled");
   const deps: ExecuteRunDeps = {
     ...built.deps,
-    hostMetadata: () => ({ environment: environmentManager.runRef() }),
+    hostMetadata: () => ({ extension_profile: extensionProfileManager.runRef() }),
     capabilities: [
       ...(built.deps.capabilities ?? []),
       createMemoryCapability(memoryFactory),
@@ -911,8 +913,8 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       project: gitWorkspace.project,
       workspace: gitWorkspace.workspace,
       configStore,
-      environmentService: environmentManager.service,
-      activePlugins: () => environmentManager.activePlugins(),
+      extensionProfileService: extensionProfileManager.service,
+      activePlugins: () => extensionProfileManager.activePlugins(),
       assemblerOptions: {
         ...(defaultModel !== undefined ? { defaultModel } : {}),
         defaultAgent: DEFAULT_ENTRY_AGENT,
@@ -944,11 +946,11 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       environment: environment.values,
       taskProviderFactory,
       tasksEnabled,
-      acquireRunLease: acquireEnvironmentRunLease,
+      acquireRunLease: acquireExtensionProfileRunLease,
       dispose: async (): Promise<void> => {
         cleanup.stop();
         await housekeeping.stop();
-        environmentManager.close();
+        extensionProfileManager.close();
         pluginContributions.close();
         try {
           await capabilityExecutables.close();
@@ -964,7 +966,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   } catch (error) {
     cleanup.stop();
     await housekeeping.stop();
-    environmentManager.close();
+    extensionProfileManager.close();
     pluginContributions.close();
     await Promise.allSettled([
       capabilityExecutables.close(),

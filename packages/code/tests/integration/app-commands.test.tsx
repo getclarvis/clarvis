@@ -24,11 +24,11 @@ import type { AgentsStore } from "../../src/adapters/agents-store.ts";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import { createViewHost } from "../../src/views/config/view-host.tsx";
 import type {
-  EnvironmentService,
+  ExtensionProfileService,
   PluginRef,
   PluginService,
   PluginView,
-  ResolvedEnvironment,
+  ResolvedExtensionProfile,
   SkillsService,
 } from "@clarvis/protocol";
 import { TOKEN_ORDER } from "../../src/theme/model.ts";
@@ -225,7 +225,7 @@ function baseDeps(
       reload: async () => {},
     } satisfies AgentsStore,
     plugins: fakePluginService(),
-    environments: {} as never,
+    extensionProfiles: {} as never,
     skills: { list: async () => [], getPrompt: async () => [] },
     marketplaceDefaultUrls: [],
     code: fakeCode(),
@@ -362,7 +362,7 @@ function fakePluginService(): PluginService {
   };
 }
 
-test("plugin lifecycle recomposes only an exact selected Environment contribution", async () => {
+test("plugin lifecycle recomposes only an exact selected Extension Profile contribution", async () => {
   const selected = {
     id: "global:research",
     status: "ready",
@@ -424,7 +424,7 @@ test("plugin lifecycle recomposes only an exact selected Environment contributio
     await selectedPluginLifecycleBlock(
       {
         current: async () => {
-          throw new Error("an idle run must not read the Environment");
+          throw new Error("an idle run must not read the Extension Profile");
         },
       },
       () => false,
@@ -476,7 +476,7 @@ test("Marketplace install atomically activates the plugin and stays active after
       installed = false;
     },
   };
-  const current = async (): Promise<ResolvedEnvironment> => {
+  const current = async (): Promise<ResolvedExtensionProfile> => {
     const active = installed && view().enabled;
     return {
       id: "builtin:default",
@@ -528,7 +528,7 @@ test("Marketplace install atomically activates the plugin and stays active after
   const mounted = harness({
     plugins,
     settings,
-    environments: { current } as EnvironmentService,
+    extensionProfiles: { current } as ExtensionProfileService,
     reconnectBackend: async () => {
       reconnects += 1;
       return { ok: true, message: "ok" };
@@ -1289,7 +1289,7 @@ test("Extensions coalesces repeated refreshes and never overlaps catalog loads",
     active -= 1;
     return { plugins: [], standalone_skills: [] };
   };
-  const environment: ResolvedEnvironment = {
+  const extensionProfile: ResolvedExtensionProfile = {
     id: "builtin:default",
     ref: { scope: "builtin", name: "default" },
     immutable: true,
@@ -1307,13 +1307,13 @@ test("Extensions coalesces repeated refreshes and never overlaps catalog loads",
       hooks_declared: 0,
     },
   };
-  const environments = {
-    list: async () => [{ ref: environment.ref, immutable: true }],
-    current: async () => environment,
-    get: async () => environment,
+  const extensionProfiles = {
+    list: async () => [{ ref: extensionProfile.ref, immutable: true }],
+    current: async () => extensionProfile,
+    get: async () => extensionProfile,
     inventory: loadInventory,
-  } as unknown as EnvironmentService;
-  const mounted = harness({ environments, skills });
+  } as unknown as ExtensionProfileService;
+  const mounted = harness({ extensionProfiles, skills });
   const view = mountInteractiveView(mounted.commands, "extensions.open");
   const rendered = await openRender(() => view.factory(view.host), { width: 120, height: 30 });
   try {

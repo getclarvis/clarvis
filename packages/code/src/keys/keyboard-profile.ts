@@ -270,7 +270,7 @@ function looksLikeKeySequence(value: string): boolean {
  * @param commands - the commands currently registered on the keymap.
  * @param normalizeKey - canonical form of one key sequence, for the
  *   shadowing comparison; defaults to trim + lower-case.
- * @param defaultBindings - every binding resolved from the active profile;
+ * @param defaultBindings - every binding resolved from the active Keyboard Profile;
  *   a command with a manual override has its default omitted.
  * @returns every issue found, across the whole map.
  * @remarks `normalizeKey` is what makes the shadowing rule mean anything. The
@@ -413,7 +413,7 @@ export function validateManualBindings(
  * @param opts.keys - its new key sequences; empty clears the override.
  * @param opts.knownCommands - commands currently registered on the keymap.
  * @param opts.invalidKeys - keys the keymap refused to parse, reported as-is.
- * @param opts.defaultBindings - every binding resolved from the active profile
+ * @param opts.defaultBindings - every binding resolved from the active Keyboard Profile
  *   before manual overrides are applied.
  * @returns the record to write, or the issues that block the write.
  * @remarks Two rules live here rather than at the call site, because both are

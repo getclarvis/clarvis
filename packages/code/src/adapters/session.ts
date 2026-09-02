@@ -1,6 +1,6 @@
 import type {
   ActiveTaskBindingDto,
-  EnvironmentRunRef,
+  ExtensionProfileRunRef,
   Message,
   MessageContent,
   PlanRef,
@@ -64,7 +64,7 @@ export interface Session {
   /** Settle the newest matching transcript-only turn without appending an assistant message. */
   endTranscriptTurn(envelope: RunResult | undefined): void;
   reconcile(stored: RunDetail | null): void;
-  setProfile(name: string): void;
+  setAgentProfile(name: string): void;
   appendObservation(content: MessageContent, role?: "user" | "assistant"): void;
   takePending(): Message[];
   flush(): void;
@@ -77,15 +77,15 @@ export interface SessionDeps {
   project: string;
   workspace: string;
   priceFor?: (model: string) => CatalogCost | undefined;
-  /** Process-pinned Environment identity for each newly started turn. */
-  environment?: () => EnvironmentRunRef | undefined;
+  /** Process-pinned Extension Profile identity for each newly started turn. */
+  extensionProfile?: () => ExtensionProfileRunRef | undefined;
 }
 
 /** Initial state to seed a {@link Session} from — an existing session's metadata and history. */
 export interface SessionInit {
   meta?: SessionMeta;
   messages?: Message[];
-  profile?: string;
+  agentProfile?: string;
   redactPreviews?: boolean;
   /** Whether `messages` is a complete full-wire chain. A degraded resume may
    * still display and continue from its newest trace, but must not use that
@@ -103,7 +103,7 @@ export function isContinuationUnavailable(envelope: RunResult | undefined): bool
  * the session's metadata to `deps.store` after every mutation.
  *
  * @param deps - the backing store, owner, workspace, and optional pricing lookup.
- * @param init - existing metadata/history/profile to resume from, if any.
+ * @param init - existing metadata/history/Agent Profile to resume from, if any.
  */
 export function createSession(deps: SessionDeps, init: SessionInit = {}): Session {
   let meta: SessionMeta | null = init.meta ?? null;
@@ -146,7 +146,7 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
       owner: deps.owner,
       createdAt: ts,
       updatedAt: ts,
-      profile: init.profile,
+      agentProfile: init.agentProfile,
       turns: [],
       totals: { input: 0, output: 0, cached: 0 },
     };
@@ -158,17 +158,17 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
     const base = continuationBase;
     const current = ensureMeta(contentToText(content), ts);
     history.push({ role: "user", content });
-    const environment = deps.environment?.();
+    const extensionProfile = deps.extensionProfile?.();
     current.turns.push({
       kind: "conversation",
       userPreview: redactPreview(contentToText(content), { redact }),
       executionId,
-      ...(environment !== undefined ? { environment } : {}),
+      ...(extensionProfile !== undefined ? { extensionProfile } : {}),
       status: "running",
       startedAt: ts,
     });
     continuationBase = executionId;
-    if (environment !== undefined) current.lastEnvironment = environment;
+    if (extensionProfile !== undefined) current.lastExtensionProfile = extensionProfile;
     current.updatedAt = ts;
     deps.store.save(current);
     return base;
@@ -177,16 +177,16 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
   function beginTranscriptTurn(display: string, executionId: string): void {
     const ts = now();
     const current = ensureMeta(display, ts);
-    const environment = deps.environment?.();
+    const extensionProfile = deps.extensionProfile?.();
     current.turns.push({
       kind: "transcript",
       userPreview: redactPreview(display, { redact }),
       executionId,
-      ...(environment !== undefined ? { environment } : {}),
+      ...(extensionProfile !== undefined ? { extensionProfile } : {}),
       status: "running",
       startedAt: ts,
     });
-    if (environment !== undefined) current.lastEnvironment = environment;
+    if (extensionProfile !== undefined) current.lastExtensionProfile = extensionProfile;
     current.updatedAt = ts;
     deps.store.save(current);
   }
@@ -235,9 +235,9 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
     if (turn) {
       turn.status = runStatusToNode(stored.status, stored.result?.ended_reason);
       if (stored.ended_at !== undefined) turn.endedAt = stored.ended_at;
-      if (stored.environment !== undefined) {
-        turn.environment = stored.environment;
-        meta.lastEnvironment = stored.environment;
+      if (stored.extension_profile !== undefined) {
+        turn.extensionProfile = stored.extension_profile;
+        meta.lastExtensionProfile = stored.extension_profile;
       }
     }
     if (!counted.has(stored.execution_id)) {
@@ -248,9 +248,9 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
     deps.store.save(meta);
   }
 
-  function setProfile(name: string): void {
-    if (!meta || meta.profile === name) return;
-    meta.profile = name;
+  function setAgentProfile(name: string): void {
+    if (!meta || meta.agentProfile === name) return;
+    meta.agentProfile = name;
     meta.updatedAt = now();
     deps.store.save(meta);
   }
@@ -317,7 +317,7 @@ export function createSession(deps: SessionDeps, init: SessionInit = {}): Sessio
     beginTranscriptTurn,
     endTranscriptTurn,
     reconcile,
-    setProfile,
+    setAgentProfile,
     appendObservation,
     takePending,
     flush,

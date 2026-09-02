@@ -51,7 +51,7 @@ describe("globalPaths", () => {
     expect(p.keysFile).toBe(join(GLOBAL, "keys.json"));
     expect(p.subscriptionsFile).toBe(join(GLOBAL, "subscriptions.json"));
     expect(p.pluginsDir).toBe(join(GLOBAL, "plugins"));
-    expect(p.environmentsDir).toBe(join(GLOBAL, "environments"));
+    expect(p.extensionProfilesDir).toBe(join(GLOBAL, "extension-profiles"));
     expect(p.workspaceTrustFile).toBe(join(GLOBAL, "workspace-trust.json"));
     expect(p.skillsDir).toBe(join(GLOBAL, "skills"));
     expect(p.guardJudgeFile).toBe(join(GLOBAL, "guard-judge.md"));
@@ -69,7 +69,7 @@ describe("globalPaths", () => {
     expect(p.pluginDataRoot).toBe(join(p.state, "plugin-data"));
     expect(p.workflowsDir).toBe(join(p.root, "workflows"));
     expect(p.codeConfigFile).toBe(join(p.state, "code.json"));
-    expect(p.environmentSelectionFile).toBe(join(p.state, "environment.json"));
+    expect(p.extensionProfileSelectionFile).toBe(join(p.state, "extension-profile.json"));
     expect(p.modelsCacheFile).toBe(join(p.cache, "models-dev.json"));
   });
 
@@ -112,7 +112,7 @@ describe("workspacePaths", () => {
     expect(p.agentsDir).toBe(join(p.clarvisDir, "agents"));
     expect(p.skillsDir).toBe(join(p.clarvisDir, "skills"));
     expect(p.pluginsDir).toBe(join(p.clarvisDir, "plugins"));
-    expect(p.environmentsDir).toBe(join(p.clarvisDir, "environments"));
+    expect(p.extensionProfilesDir).toBe(join(p.clarvisDir, "extension-profiles"));
     expect(p.guardJudgeFile).toBe(join(p.clarvisDir, "guard-judge.md"));
     expect(p.memoryPolicyFile).toBe(join(p.clarvisDir, "memory-policy.md"));
     expect(p.plansRoot).toBe(join(p.clarvisDir, "plans"));
@@ -131,7 +131,7 @@ describe("workspacePaths", () => {
       "diagnosticsDir",
       "promptHistoryFile",
       "codeConfigFile",
-      "environmentSelectionFile",
+      "extensionProfileSelectionFile",
       "monitorSidecar",
       "monitorLog",
       "monitorExit",
@@ -151,7 +151,7 @@ describe("workspacePaths", () => {
       p.skillsDir,
       p.workflowsDir,
       p.pluginsDir,
-      p.environmentsDir,
+      p.extensionProfilesDir,
       p.guardJudgeFile,
       p.memoryPolicyFile,
       p.plansRoot,

@@ -1,7 +1,7 @@
 # The kernel wire: framing, methods, codecs, client and server
 
 > Implemented at `packages/kernel/src/transport/**`. Every claim below is anchored to a file and
-> line. Open questions are collected in the final section.
+> symbol or exact range. Open questions are collected in the final section.
 
 ## 1. Purpose
 
@@ -19,14 +19,15 @@ schema registry.
 The design property the modules exist to hold is that a method string is spelled **once**. `M` in
 `wire.ts` is not a literal table: every entry reads its value out of `OPERATIONS` or
 `SPECIAL_OPERATIONS` (`packages/kernel/src/transport/wire.ts:27-60`), and both the client proxy
-(`createServiceProxy`, `packages/kernel/src/transport/operations.ts:921-938`) and the server dispatch map (`packages/kernel/src/transport/server.ts:328`) are built
+(`createServiceProxy` in `packages/kernel/src/transport/operations.ts`) and the server dispatch map (`packages/kernel/src/transport/server.ts:328`) are built
 from that same catalog. A wire name therefore cannot drift between the two halves.
 
 The second property is that both directions of the boundary are treated as untrusted. Inbound frames
 go through a strict structural decoder that returns `null` rather than coercing
 (`packages/kernel/src/transport/stdio.ts:126-162`); inbound run events go through per-discriminator `zod` schemas that are all
 `.strict()` (`RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts`); inbound request parameter envelopes are checked against
-the key set the operation's own encoder produces (`packages/kernel/src/transport/operations.ts:896-917`); and an error travelling
+the key set the operation's own encoder produces (`decodeOperationParams` in
+`packages/kernel/src/transport/operations.ts`); and an error travelling
 outbound is size-bounded, control-character-stripped and secret-redacted before it is serialized
 (`packages/kernel/src/transport/stdio.ts:349-381`).
 
@@ -46,12 +47,12 @@ Re-exported by `packages/kernel/src/index.ts:58-87`:
 | `createStdioTransport(io, logger?)` | value | `packages/kernel/src/transport/stdio.ts:405` | Client-side NDJSON transport |
 | `serveKernelOverStdio(server, io, logger?)` | value | `packages/kernel/src/transport/stdio.ts:528` | Server-side NDJSON pump |
 | `WIRE_METHODS` (`M`), `WIRE_NOTIFICATIONS` (`N`) | values | `packages/kernel/src/transport/wire.ts:27,70` | Named method / notification constants |
-| `KERNEL_OPERATIONS` (`OPERATIONS`), `SPECIAL_OPERATIONS`, `KNOWN_METHODS` | values | `packages/kernel/src/transport/operations.ts:150,856,889-892` | The operation catalog |
-| `KernelOperation`, `KernelOperationMetadata`, `KernelServices` | types | `packages/kernel/src/transport/operations.ts:51,43,23` | Catalog shapes |
+| `KERNEL_OPERATIONS` (`OPERATIONS`), `SPECIAL_OPERATIONS`, `KNOWN_METHODS` | values | `packages/kernel/src/transport/operations.ts` (same-named symbols) | The operation catalog |
+| `KernelOperation`, `KernelOperationMetadata`, `KernelServices` | types | `packages/kernel/src/transport/operations.ts` (same-named symbols) | Catalog shapes |
 
 Exported from their module but **not** re-exported by `src/index.ts`: `CLARVIS_WIRE_VERSION`
 (`packages/kernel/src/transport/wire.ts:15`), `MAX_WIRE_FRAME_BYTES` and `decodeFrame` (`packages/kernel/src/transport/stdio.ts:42,126`), `ORDINARY_OPERATIONS`,
-`decodeOperationParams`, `createServiceProxy` (`packages/kernel/src/transport/operations.ts:870,900-917,921-938`), `decodeRunEvent`
+`decodeOperationParams`, `createServiceProxy` (`packages/kernel/src/transport/operations.ts`, same-named symbols), `decodeRunEvent`
 (`packages/kernel/src/transport/run-event-codec.ts`). The tests reach them by relative path
 (`packages/kernel/tests/contract/stdio-codec.test.ts:5-10`, `packages/kernel/tests/contract/transport-codecs.test.ts:3-14`).
 
@@ -76,27 +77,25 @@ close(): Promise<void>
 
 ### 2.3 The operation catalog
 
-`KernelOperation` (`packages/kernel/src/transport/operations.ts:49-64`) has five members: `method` (the sole declaration of the
-wire name, `:49`), `metadata` (`:51`), `encode(...args)` producing the named parameter envelope
-(`:53`), an optional `requestOptions(...args)` extracting transport-only metadata that must not be
-serialized (`:55`), and `invoke(services, params, signal?)` calling the matching service method
-(`:57-61`).
+`KernelOperation` in `packages/kernel/src/transport/operations.ts` has five members: `method` (the
+sole declaration of the wire name), `metadata`, `encode(...args)` producing the named parameter
+envelope, an optional `requestOptions(...args)` extracting transport-only metadata that must not be
+serialized, and `invoke(services, params, signal?)` calling the matching service method.
 
 `KernelOperationMetadata` is `{ access: "read" | "write"; sensitivity?: "files" | "plugins" |
 "secrets" | "provider_auth" | "tasks" }` (`KernelOperationMetadata` in
-`packages/kernel/src/transport/operations.ts`), built by the `read()`/`write()` helpers
-at `packages/kernel/src/transport/operations.ts:99-107`.
+`packages/kernel/src/transport/operations.ts`), built by the `read()`/`write()` helpers in that file.
 
-`serviceOperations<Service, Excluded>` (`packages/kernel/src/transport/operations.ts:87-97`) is the type-level completeness device:
+`serviceOperations<Service, Excluded>` in `packages/kernel/src/transport/operations.ts` is the type-level completeness device:
 `ServiceOperations` maps **every** async method key of the service (minus explicit exclusions) to an
 operation whose argument tuple and result are inferred from the service method
-(`packages/kernel/src/transport/operations.ts:66-84`). `runs` excludes `"start"` and `"compact"`;
+(`OperationFor` and `ServiceOperations` in the same file). `runs` excludes `"start"` and `"compact"`;
 `config.subscribe` is not an async method so it is excluded by the
-`AsyncMethodKeys` filter itself (`packages/kernel/src/transport/operations.ts:66-70`). The two run
+`AsyncMethodKeys` filter itself. The two run
 methods use the special streaming/control operation path.
 
-**93 request methods exist**: 85 ordinary plus 8 special, flattened into `KNOWN_METHODS`.
-Ordinary counts per service: runs 4, config 14, plugins 7, environments 13, secrets 3, models 4,
+**92 request methods exist**: 84 ordinary plus 8 special, flattened into `KNOWN_METHODS`.
+Ordinary counts per service: runs 4, config 14, plugins 5, extensionProfiles 14, secrets 3, models 4,
 provider-auth 5, files 3, memory 4, plans 4, workflows 3, skills 2, sessions 5, tasks 12, storage 2. There is no
 worktree service or worktree operation: checkout selection happens before kernel construction.
 Production: `packages/kernel/src/transport/operations.ts` (`OPERATIONS`, `SPECIAL_OPERATIONS`,
@@ -116,13 +115,13 @@ The 8 special operations and their metadata:
 | `config.subscribe` | read | — |
 | `config.unsubscribe` | read | — |
 
-`M` names 30 of the 93 (`packages/kernel/src/transport/wire.ts`); the rest are reached only through the service proxies. The
+`M` names 30 of the 92 (`packages/kernel/src/transport/wire.ts`); the rest are reached only through the service proxies. The
 whole DTO vocabulary each method carries belongs to **protocol-kernel-contract**.
 
-The 85 ordinary operations' individual `access`/`sensitivity` pairing is declared by
+The 84 ordinary operations' individual `access`/`sensitivity` pairing is declared by
 `OPERATIONS` in `packages/kernel/src/transport/operations.ts`.
-Six service groups carry a `sensitivity` tag on every operation (`plugins`, `environments`,
-`secrets`, `providerAuth`, `files`, `tasks`). Environments deliberately shares the `plugins`
+Six service groups carry a `sensitivity` tag on every operation (`plugins`, `extensionProfiles`,
+`secrets`, `providerAuth`, `files`, `tasks`). Extension Profiles deliberately shares the `plugins`
 sensitivity because selecting or editing one changes the active executable extension set. Models uses `provider_auth` only for its two entitled-catalog
 operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workflows`, `skills`,
 `sessions`, `storage`) never carry one:
@@ -151,20 +150,20 @@ operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workfl
 | plugins | `plugins.install` | write | `plugins` |
 | plugins | `plugins.update` | write | `plugins` |
 | plugins | `plugins.uninstall` | write | `plugins` |
-| environments | `environments.list` | read | `plugins` |
-| environments | `environments.current` | read | `plugins` |
-| environments | `environments.get` | read | `plugins` |
-| environments | `environments.inventory` | read | `plugins` |
-| environments | `environments.preview` | read | `plugins` |
-| environments | `environments.previewClear` | read | `plugins` |
-| environments | `environments.previewComposition` | read | `plugins` |
-| environments | `environments.select` | write | `plugins` |
-| environments | `environments.clearSelection` | write | `plugins` |
-| environments | `environments.applyComposition` | write | `plugins` |
-| environments | `environments.create` | write | `plugins` |
-| environments | `environments.update` | write | `plugins` |
-| environments | `environments.delete` | write | `plugins` |
-| environments | `environments.clone` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.list` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.current` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.get` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.inventory` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.preview` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.previewClear` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.previewComposition` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.select` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.clearSelection` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.applyComposition` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.create` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.update` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.delete` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.clone` | write | `plugins` |
 | secrets | `secrets.listNames` | read | `secrets` |
 | secrets | `secrets.set` | write | `secrets` |
 | secrets | `secrets.delete` | write | `secrets` |
@@ -315,11 +314,13 @@ Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-cod
 
 ### 3.4 Handshake payloads
 
-`HelloParams` = `{ wire_version: 2; clientInfo?: { name, version? }; workspace?: string; auth?:
-string }` (`packages/kernel/src/transport/wire.ts:85-94`). `CLARVIS_WIRE_VERSION = 2` (`packages/kernel/src/transport/wire.ts:15`).
+`HelloParams` = `{ wire_version: 3; clientInfo?: { name, version? }; workspace?: string; auth?:
+string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 3`
+(`packages/kernel/src/transport/wire.ts`, `CLARVIS_WIRE_VERSION`).
 
-`HelloResult` = `{ wire_version: 2; capabilities: KernelCapabilities; project: ProjectRef;
-workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts:103-109`). A concrete instance appears in
+`HelloResult` = `{ wire_version: 3; capabilities: KernelCapabilities; project: ProjectRef;
+workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts`,
+`HelloResult`). A concrete instance appears in
 `packages/kernel/tests/contract/transport-codecs.test.ts:16-33`.
 
 ### 3.5 Request ids
@@ -368,7 +369,7 @@ In the order the function runs (`packages/kernel/src/transport/client.ts:144-409
    the **original** error (`:370-380`).
 6. On a structurally invalid result: same teardown, then throw
    `` `kernel selected an invalid or unsupported Clarvis wire contract '${selected}'` `` (`:381-408`).
-   The checks are `hasOnly` over the five permitted keys, `wire_version === 2`, `capabilities` /
+   The checks are `hasOnly` over the five permitted keys, `wire_version === 3`, `capabilities` /
    `project` / `workspace` objects, string `project.id`, `workspace.id`, `workspace.projectId`,
    `workspace.label`, a `workspace.kind` in `primary | external_worktree`, and a
    `principal` that, if present, is an object with a string `id`.
@@ -414,7 +415,7 @@ A method not in this table (there is none among the eight special operations) wo
 allowed set, rejecting any key at all (`packages/kernel/src/transport/server.ts:342-344`).
 
 `hello` (`:471-515`): one-shot (`helloStarted` → `invalid_request` "hello has already started on this
-connection", `:472-478`); `wire_version !== 2` → `unsupported` (`:479-484`); malformed identity
+connection", `:472-478`); `wire_version !== 3` → `unsupported` (`:479-484`); malformed identity
 fields → `invalid_request` "hello has invalid identity parameters" (`:485-497`); then
 `resolveConnection` (or the default context built at `:289-293`); if the connection closed while
 resolving, the resolved context's `close?.()` is called and `unavailable` is thrown (`:502-505`);
@@ -466,7 +467,7 @@ its steer/compact/cancel/respond dispatch through the same `runs.*` special-oper
 (`packages/kernel/src/transport/server.ts:300-308`, `:549-590`). The client side is symmetric: `streamingStart` (§4.4) is the same function a
 workflow's start goes through, "since the kernel routes a manager run through `runs.start`"
 (`packages/kernel/src/transport/client.ts:367-380`, `:485-496`). Only `workflows.get`/`workflows.list`/`workflows.delete` remain
-workflow-specific operations (`packages/kernel/src/transport/operations.ts:634-658`) — everything else a workflow needs (event
+workflow-specific operations (`OPERATIONS.workflows` in `packages/kernel/src/transport/operations.ts`) — everything else a workflow needs (event
 streaming, elicitation, steer/compact/cancel/respond) is the run machinery this section and §4.4-4.5
 document, unmodified.
 
@@ -708,16 +709,17 @@ Test: `packages/kernel/tests/contract/transport-codecs.test.ts:114-125`.
 
 **INV-217.** `KNOWN_METHODS` holds no duplicate, and every ordinary operation's `invoke` genuinely
 reaches the matching service method in catalog order.
-Production: `packages/kernel/src/transport/operations.ts:149-853`, each operation's `invoke`, and
-`ORDINARY_OPERATIONS`/`KNOWN_METHODS` at `:869-892`.
+Production: `OPERATIONS`, each operation's `invoke`, and `ORDINARY_OPERATIONS`/`KNOWN_METHODS` in
+`packages/kernel/src/transport/operations.ts`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts:129-145` (each fake service method throws
 `RECORDED_OPERATION`, `packages/kernel/tests/helpers/recording-kernel-services.ts:5,16-19`).
 
 **INV-218.** A transport-level cancellation signal reaches the signal-aware service call for
 `sessions.listPage` and `workflows.list` unchanged — via a locally-cast widened method signature that
 never appears on the public wire `SessionService` contract.
-Production: `listSessionPage` `packages/kernel/src/transport/operations.ts:121-132`, `listWorkflows` `packages/kernel/src/transport/operations.ts:134-147`,
-wired at `packages/kernel/src/transport/operations.ts:677-688` and `:641-650`.
+Production: `listSessionPage` and `listWorkflows` in
+`packages/kernel/src/transport/operations.ts`, wired at `OPERATIONS.sessions.listPage` and
+`OPERATIONS.workflows.list`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts:185-211` (session and workflow catalog
 cases); `packages/kernel/tests/integration/session-service.test.ts:168-183` corroborates from the
 service side — the session service itself honors an aborted signal mid-scan, not merely relays it.
@@ -760,7 +762,7 @@ Test: `packages/kernel/tests/contract/transport-codecs.test.ts:376-442`.
 **INV-T1.** A wire method name is declared exactly once, in `KernelOperation.method`; `M` reads its
 values from the catalog rather than restating them.
 Production: `packages/kernel/src/transport/wire.ts:27-60` (every value is an `OPERATIONS.*.method` or `SPECIAL_OPERATIONS.*.method`),
-`packages/kernel/src/transport/operations.ts:50-51`. Pinned indirectly by the uniqueness assertion at
+`KernelOperation.method` in `packages/kernel/src/transport/operations.ts`. Pinned indirectly by the uniqueness assertion at
 `packages/kernel/tests/contract/transport-codecs.test.ts:130`; no test asserts that `M` cannot contain a literal.
 
 **INV-T2.** The `res` error envelope's `code` set is pinned to the protocol union at compile time.
@@ -783,7 +785,7 @@ checkpoint contract`).
 **INV-T4.** A request parameter envelope may carry no key the operation's own encoder does not
 produce; the allowed key set is derived once per operation by invoking `encode` with `undefined`
 placeholders and memoized in a `WeakMap`.
-Production: `decodeOperationParams` `packages/kernel/src/transport/operations.ts:896-917`, enforced at `packages/kernel/src/transport/server.ts:461-480`.
+Production: `decodeOperationParams` in `packages/kernel/src/transport/operations.ts`, enforced at `packages/kernel/src/transport/server.ts:461-480`.
 Test: `packages/kernel/tests/integration/transport.test.ts:433-447` (`listAgents` with `{ unexpected: true }` →
 `invalid_request`).
 
@@ -802,8 +804,8 @@ not re-run `resolveConnection`.
 Production: `helloStarted` `packages/kernel/src/transport/server.ts:472-478`.
 Test: `packages/kernel/tests/integration/transport.test.ts:401-433` (asserts `resolutions === 1`).
 
-**INV-T8.** A `hello` whose `wire_version` is missing or not `2` is `unsupported`.
-Production: `packages/kernel/src/transport/server.ts:479-484`.
+**INV-T8.** A `hello` whose `wire_version` is missing or not `3` is `unsupported`.
+Production: `packages/kernel/src/transport/server.ts` (`createKernelServer`).
 Test: `packages/kernel/tests/integration/transport.test.ts:449-459`.
 
 **INV-T9.** `hello` identity fields are validated before `resolveConnection` runs.
@@ -878,23 +880,23 @@ bound to its own wire", …)`. The composition around it belongs to the kernel-b
 
 **INV-T21.** A Tasks operation's client-supplied `AbortSignal` is extracted by the operation's own
 `requestOptions`, not by widening the parameter envelope: `taskRequestOptions` turns a caller's
-`{ signal }` into the transport `request`'s third argument (`packages/kernel/src/transport/operations.ts:109-115`), wired on every
-one of the twelve Tasks operations (`packages/kernel/src/transport/operations.ts:720,727,734,745,756,764,775,786,797,808,819,830`).
+`{ signal }` into the transport `request`'s third argument, wired on every operation under
+`OPERATIONS.tasks` in `packages/kernel/src/transport/operations.ts`.
 This is distinct from INV-218's mechanism, under which `sessions.listPage`/`workflows.list` thread a
 signal into `invoke` server-side with no client-side `requestOptions` involved at all. Opaque
 cursor/id fields inside a Tasks operation's `input` (e.g. `next_cursor`) pass through the wire
 unmodified.
-Production: `taskRequestOptions` `packages/kernel/src/transport/operations.ts:109-115`.
+Production: `taskRequestOptions` in `packages/kernel/src/transport/operations.ts`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts:445-483` — `tasks.create`'s `request_id`/
 `provider_key` round-trip byte-for-byte, and `tasks.search` both preserves an opaque `next_cursor`
 and forwards a caller's `AbortSignal` as `options: { signal }` on the wire request.
 
-**INV-T22.** Every Environment service method is an ordinary operation and is classified with
+**INV-T22.** Every Extension Profile service method is an ordinary operation and is classified with
 `sensitivity: "plugins"`; observation methods are reads, while selection and definition mutations
 are writes. This lets a remote host apply the same executable-extension authorization boundary to
-plugins and Environments without inspecting payloads. Production:
-`packages/kernel/src/transport/operations.ts` (`OPERATIONS.environments`). Test:
-`packages/kernel/tests/contract/transport-codecs.test.ts` ("classifies every Environment operation
+plugins and Extension Profiles without inspecting payloads. Production:
+`packages/kernel/src/transport/operations.ts` (`OPERATIONS.extensionProfiles`). Test:
+`packages/kernel/tests/contract/transport-codecs.test.ts` ("classifies every Extension Profile operation
 as plugin-sensitive with exact read/write access").
 
 ## 6. Failure modes and degradation
@@ -914,7 +916,7 @@ as plugin-sensitive with exact read/write access").
 | `invalid_request` | `packages/kernel/src/transport/server.ts:474`, `:496` | second `hello`, or bad identity fields |
 | `invalid_request` | `packages/kernel/src/transport/server.ts`, `M.runsCompact`; `packages/kernel/src/runs/run-service.ts`, `createRunService`'s `compact` | mechanical target supplied for a connection-live run, or a non-positive/non-integer target supplied after delegation |
 | `invalid_request` | `packages/kernel/src/transport/server.ts:606` | unknown method |
-| `unsupported` | `packages/kernel/src/transport/server.ts:481` | `wire_version` not 2 |
+| `unsupported` | `packages/kernel/src/transport/server.ts` (`createKernelServer`) | `wire_version` not 3 |
 | `conflict` | `packages/kernel/src/transport/server.ts` (config subscribe case) | duplicate subscription id |
 | `conflict` | `packages/kernel/src/transport/client.ts:430` | duplicate live execution id, client-side |
 | `not_found` | `packages/kernel/src/transport/server.ts`, `liveOrThrow` | steer/cancel/respond target absent or result-settled on this connection |
@@ -993,8 +995,8 @@ sole exerciser is INV-T11's test (`packages/kernel/tests/integration/transport.t
 current single-workspace host builds `createFileKernel` directly and has no project-host connection
 resolver (`packages/code/src/adapters/workspace-client-manager.ts:32-62`).
 `KernelOperationMetadata.sensitivity`, the marker that would let a policy tell `secrets.*` from
-`models.get`, is written by the `read()` / `write()` helpers
-(`packages/kernel/src/transport/operations.ts:99-107`) and carried onto `KernelAuthorizationContext`
+`models.get`, is written by the `read()` / `write()` helpers in
+`packages/kernel/src/transport/operations.ts` and carried onto `KernelAuthorizationContext`
 (`packages/kernel/src/transport/server.ts:235`) — and read by nothing. No `src` file in any package
 branches on it.
 
@@ -1015,9 +1017,9 @@ caller it never identified. What is unbuilt is the seam's readiness, not a live 
 the owner's decision and remains open.
 
 **What `secrets.set` carries.** The catalog's most sensitive operation puts the raw value straight
-into the wire parameter object — `encode: (name, value) => ({ name, value })`
-(`packages/kernel/src/transport/operations.ts:478`) — and `invoke` hands both to
-`services.secrets.set` (`:479`), which reaches `createFileSecretStore`'s `set`
+into the wire parameter object — `encode: (name, value) => ({ name, value })` in
+`OPERATIONS.secrets.set` — and `invoke` hands both to `services.secrets.set`, which reaches
+`createFileSecretStore`'s `set`
 (`packages/kernel/src/secrets/secret-store.ts:111-117`) and rewrites the whole file through
 `writeFileAtomicSync` (`:104-106`) at `0o600` inside a `0o700` directory
 (`packages/paths/src/constants.ts:52`, `:40`). No redaction touches it: `sanitizeDeep`/`terminalSafe`
@@ -1035,7 +1037,7 @@ scoped to: "Values only ever flow client → kernel; listing returns names, neve
 travel over the transport on `set`. That is fine over local stdio (same user/host); a hosted kernel
 needs TLS plus at-rest protection" (`packages/protocol/src/secrets.ts:4-9`). The catalog matches the
 first half — `listNames` / `set` / `delete` and no `get`
-(`packages/kernel/src/transport/operations.ts:468-487`) — so a peer that can write a secret still
+(`OPERATIONS.secrets` in `packages/kernel/src/transport/operations.ts`) — so a peer that can write a secret still
 cannot read one back over the wire.
 
 The second half holds because the wire has exactly one production host. `serveFileKernelOverStdio`
@@ -1071,7 +1073,7 @@ nothing in the tree builds yet.
 
 | Target | Kind | Forced by |
 | --- | --- | --- |
-| `@clarvis/protocol` (`KernelTransport`, `KernelClient`, all service interfaces, `RunEvent`, `KernelError*`) | type-only | `packages/kernel/src/transport/operations.ts:1-19`, `packages/kernel/src/transport/client.ts:4-29`, `packages/kernel/src/transport/server.ts:1-11`, `packages/kernel/src/transport/stdio.ts:3`, `packages/kernel/src/transport/wire.ts:1-11`, `packages/kernel/src/transport/loopback.ts:1`, `packages/kernel/src/transport/run-event-codec.ts:1` — every one is `import type` |
+| `@clarvis/protocol` (`KernelTransport`, `KernelClient`, all service interfaces, `RunEvent`, `KernelError*`) | type-only | imports in `packages/kernel/src/transport/operations.ts`, `packages/kernel/src/transport/client.ts`, `packages/kernel/src/transport/server.ts`, `packages/kernel/src/transport/stdio.ts`, `packages/kernel/src/transport/wire.ts`, `packages/kernel/src/transport/loopback.ts`, and `packages/kernel/src/transport/run-event-codec.ts` — every one is `import type` |
 | `zod` | runtime | `packages/kernel/src/transport/run-event-codec.ts:2` — the only third-party runtime dependency in `transport/` |
 | `@clarvis/capability` (`NOOP_LOGGER`, `Logger`, `sanitizeDeep`, `sanitizeErrorMessage`, `detachObserved`, `suppressSecondaryRejection`) | runtime | `packages/kernel/src/transport/stdio.ts:2`, `packages/kernel/src/transport/server.ts:13`, `packages/kernel/src/transport/client.ts:2`, `packages/kernel/src/transport/loopback.ts:2` |
 | `node:crypto` (`randomUUID`) | runtime | `packages/kernel/src/transport/client.ts:1` |
@@ -1084,9 +1086,9 @@ nothing in the tree builds yet.
 | `../kernel.ts` (`InProcessKernel`) | **type-only** | `packages/kernel/src/transport/server.ts:12` — the kernel instance arrives as an argument, so `server.ts` holds no runtime edge to kernel composition |
 
 `operations.ts` imports the fifteen service interfaces purely as types and derives `KernelServices`
-as a `Pick` of `KernelClient` (`packages/kernel/src/transport/operations.ts:22-38`). That `Pick` is the type constraint that forces
+as a `Pick` of `KernelClient` (`KernelServices` in `packages/kernel/src/transport/operations.ts`). That `Pick` is the type constraint that forces
 the catalog to stay exhaustive: `serviceOperations<Service>` demands an entry for every async method
-of the service it is given (`packages/kernel/src/transport/operations.ts:82-97`).
+of the service it is given (`ServiceOperations` and `serviceOperations` in the same file).
 
 ### 7.2 Inbound (what depends on this subsystem)
 
@@ -1216,9 +1218,9 @@ unexamined.
 `unavailable`) but not the log record.
 
 **`decodeOperationParams` validates only the key set** — it checks no required key is missing and no
-value's type (`packages/kernel/src/transport/operations.ts:900-917`); `invoke` then casts
-(`packages/kernel/src/transport/operations.ts:154` and throughout). The TSDoc's claim that "domain
-services remain responsible for their nested DTOs" (`:896-899`) is not merely asserted: it is verified true
+value's type; `invoke` then casts (`decodeOperationParams` and `OPERATIONS` in
+`packages/kernel/src/transport/operations.ts`). The function's TSDoc claim that "domain services
+remain responsible for their nested DTOs" is not merely asserted: it is verified true
 for at least two representative operations, one on each side of the read/write split. `runs.start`'s
 `invoke` passes the cast params straight into `startReserved` → `assembleRunRequest` →
 `executeRun({ rawBody, … })` (`packages/kernel/src/runs/run-service.ts:103-107`), and `executeRun` calls

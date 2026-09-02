@@ -13,7 +13,7 @@
 
 import type { CursorPage, CursorPagination, Timestamp } from "./common.ts";
 import type { Message } from "./runs.ts";
-import type { EnvironmentRunRef } from "./environments.ts";
+import type { ExtensionProfileRunRef } from "./extension-profiles.ts";
 
 /** Lifecycle status of one turn in a session. */
 export type SessionTurnStatus =
@@ -51,8 +51,8 @@ export interface SessionTurn {
    * where the transcript lives. Absent for a turn that produced no run.
    */
   execution_id?: string;
-  /** Extension Environment snapshot under which this turn started. */
-  environment?: EnvironmentRunRef;
+  /** Extension Profile snapshot under which this turn started. */
+  extension_profile?: ExtensionProfileRunRef;
   status: SessionTurnStatus;
   /** Epoch-ms start; absent until the turn begins. See {@link Timestamp}. */
   started_at?: Timestamp;
@@ -76,8 +76,8 @@ export interface Session {
   created_at: Timestamp;
   /** Epoch-ms last-activity time; sessions list newest-updated first. */
   updated_at: Timestamp;
-  /** Id of the agent profile the session runs under, when pinned. */
-  profile?: string;
+  /** Id of the Agent Profile the session runs under, when pinned. */
+  agent_profile?: string;
   /** The conversation's turns in order; each may point at a run. */
   turns: SessionTurn[];
   totals: SessionTotals;
@@ -96,11 +96,12 @@ export interface SessionSummary {
   workspace: string;
   created_at: Timestamp;
   updated_at: Timestamp;
-  profile?: string;
+  /** Id of the Agent Profile the session runs under, when pinned. */
+  agent_profile?: string;
   turn_count: number;
   last_status?: SessionTurnStatus;
-  /** Environment stamped on the newest turn, when known. */
-  last_environment?: EnvironmentRunRef;
+  /** Extension Profile stamped on the newest turn, when known. */
+  last_extension_profile?: ExtensionProfileRunRef;
   totals: SessionTotals;
 }
 

@@ -6,7 +6,7 @@
 ## 1. Purpose
 
 `@clarvis/code` renders six full-screen "domain hub" views on top of the kernel's protocol
-services. Each one owns one domain the terminal user manipulates directly: authoring agent profiles
+services. Each one owns one domain the terminal user manipulates directly: authoring Agent Profiles
 (`AgentsPanel`), browsing and acting on external tasks (`TasksHub`), inspecting a workflow's manager→leader tree and each node's result
 (`WorkflowsHub`), resuming or deleting saved sessions (`SessionsHub`), configuring the workspace
 memory block (`MemoryConfigPanel`), and setting the safety/guard/memory/plan-retention posture for
@@ -990,7 +990,7 @@ edge to the kernel. `TasksController` is a structural `ReturnType<>` alias
 | `src/views/App.tsx` | `SessionCatalogItem` (type) | `packages/code/src/views/App.tsx:66` |
 | `src/views/App.tsx` | `runStripText` | `packages/code/src/views/App.tsx:86` |
 | `src/runtime.tsx` | `progressStatusText`, `presentStatusLine` | `packages/code/src/runtime.tsx` (`runApp`, `buildRunHost`) |
-| `src/views/overlays/ProfilePicker.tsx` | `deriveAgentShape`, `grantBadges` | `packages/code/src/views/overlays/ProfilePicker.tsx:5` |
+| `src/views/overlays/AgentProfilePicker.tsx` | `deriveAgentShape`, `grantBadges` | `packages/code/src/views/overlays/AgentProfilePicker.tsx:5` |
 | `src/adapters/active-agent.ts` | `profileView`, `deriveAgentShape` | `packages/code/src/adapters/active-agent.ts:4` |
 | `src/features/providers/controller.ts` | `createDisposeGuard` | `packages/code/src/features/providers/controller.ts:20` |
 | `src/views/config/validation.ts` | `issueSet`, `mapProviderIssues` from `features/issues.ts` | `packages/code/src/views/config/validation.ts:8` |

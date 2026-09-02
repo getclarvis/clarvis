@@ -88,7 +88,7 @@ export interface RunHostDeps {
   /** Static identity of the selected plan provider, when it can be known
    * without resolving or importing provider code. */
   planProviderKey?: () => string | undefined;
-  /** True when the active profile carries the `workflow` grant, so the kernel will
+  /** True when the active Agent Profile carries the `workflow` grant, so the kernel will
    * route its run as a workflow (a manager fanning out leader runs). Used only to
    * drive local UI (arm the tree projection) and to keep the manager on the
    * full-message path — routing itself is the kernel's decision by grant, not a

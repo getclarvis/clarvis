@@ -6,7 +6,7 @@
 ## 1. Purpose
 
 `@clarvis/code` renders six full-screen "domain hub" views on top of the kernel's protocol
-services. Each one owns one domain the terminal user manipulates directly: authoring agent profiles
+services. Each one owns one domain the terminal user manipulates directly: authoring Agent Profiles
 (`AgentsPanel`), browsing and acting on external tasks (`TasksHub`), inspecting a workflow's manager→leader tree and each node's result
 (`WorkflowsHub`), resuming or deleting saved sessions (`SessionsHub`), configuring the workspace
 memory block (`MemoryConfigPanel`), and setting the safety/guard/memory/plan-retention posture for

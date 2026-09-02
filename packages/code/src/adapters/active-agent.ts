@@ -12,7 +12,7 @@ const UNKNOWN_SHAPE: AgentShape = {
 
 /**
  * Reactive view of the currently selected agent profile, derived from the
- * merged profile list and the session/default fallback.
+ * merged Agent Profile list and the session/default fallback.
  */
 export interface ActiveAgentStore {
   active: Accessor<string>;
@@ -79,7 +79,7 @@ export function automaticAgentFallback(
 
 /**
  * Builds an {@link ActiveAgentStore} that keeps the active agent name valid as
- * the profile list changes, falling back through session profile then
+ * the Agent Profile list changes, falling back through session profile then
  * configured default, runnable `marshall`, then the first runnable Lead.
  */
 export function createActiveAgentStore(deps: ActiveAgentDeps): ActiveAgentStore {

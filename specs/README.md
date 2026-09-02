@@ -33,7 +33,7 @@ cannot be written as a requirement or checked against a line of source. That is 
 separate document.
 
 **The corpus carries no date of its own, so the table below is its timestamp.** These are the
-numbers the tree held when it was last refreshed (2026-09-01). If they no longer match, the tree has
+numbers the tree held when it was last refreshed (2026-09-02). If they no longer match, the tree has
 moved since the corpus was last checked against it, and the further it has drifted the more of the
 corpus's untested statements are worth re-checking. Regenerate them rather than trusting them:
 
@@ -45,24 +45,24 @@ find packages/<pkg>/tests -type f -name '*.test.ts*' | wc -l
 
 | Package | `src` lines | `src` files | test files |
 |---|---|---|---|
-| `code` | 59,441 | 249 | 237 |
-| `kernel` | 31,532 | 114 | 85 |
-| `loop` | 21,517 | 139 | 235 |
+| `code` | 59,652 | 249 | 237 |
+| `kernel` | 32,247 | 114 | 85 |
+| `loop` | 21,669 | 139 | 235 |
 | `memory` | 13,654 | 65 | 59 |
 | `tools` | 12,750 | 66 | 71 |
 | `capability` | 8,038 | 51 | 34 |
 | `plan` | 7,013 | 26 | 24 |
-| `workflows` | 6,464 | 27 | 23 |
-| `server` | 6,451 | 37 | 38 |
+| `workflows` | 7,181 | 28 | 24 |
+| `server` | 6,460 | 37 | 38 |
 | `mcp-client` | 5,309 | 16 | 28 |
-| `skills` | 4,348 | 20 | 25 |
+| `skills` | 4,363 | 20 | 25 |
 | `trace` | 4,205 | 15 | 16 |
 | `llm` | 4,020 | 18 | 19 |
 | `tasks` | 3,797 | 13 | 6 |
-| `paths` | 3,281 | 14 | 14 |
-| `protocol` | 3,269 | 19 | 0 |
+| `protocol` | 3,307 | 19 | 0 |
+| `paths` | 3,282 | 14 | 14 |
 | `hooks` | 2,750 | 9 | 11 |
-| `supervision` | 1,537 | 10 | 9 |
+| `supervision` | 1,566 | 10 | 9 |
 
 ## How to read a spec
 
@@ -252,14 +252,14 @@ remaining gap in its open questions rather than letting prose imply a test exist
 ### What the corpus was measured to be worth
 
 "The specs and the code agree" is itself a claim that needs dated, reproducible evidence. The
-current 2026-09-01 snapshot contains 68 subsystem documents (71 Markdown files including this index,
+current 2026-09-02 snapshot contains 68 subsystem documents (71 Markdown files including this index,
 the known-issues register and the generated coupling report). `extractLineCitations` currently finds
-16,049 distinct explicit citation groups carrying 18,701 cited ranges, and
-`extractDocumentLinks` finds 610 document links. `bun run check:specs` is the maintained gate over
+15,126 distinct explicit citation groups carrying 17,614 cited ranges, and
+`extractDocumentLinks` finds 611 document links. `bun run check:specs` is the maintained gate over
 their bounds, targets, links and characters; it does not turn those counts into semantic proof.
 
 A prior corpus audit recorded a 142-citation manual stride sample and an adversarial pass over the
-then-current findings register. Those experiments were not repeated as part of the 2026-09-01
+then-current findings register. Those experiments were not repeated as part of the 2026-09-02
 refresh, so their old zero-finding result is historical evidence, not a guarantee about this
 snapshot. This snapshot therefore makes no corpus-wide semantic-verification claim: a changed or
 relied-on citation still has to be traced to its current production symbol and applicable tests

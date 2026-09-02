@@ -189,7 +189,7 @@ original bytes rather than replacement characters", writing `0x80` then `0x81`).
 hashes `JSON.stringify(current)` instead (`packages/kernel/src/config/memory-config-store.ts:68`, `:92`, `:97`, `:113`). Test
 asserts the hex shape `/^[a-f0-9]{64}$/` at `packages/kernel/tests/integration/file-config-store.test.ts:90`.
 
-### 3.4 `SettingsRepairPlan` (protocol `packages/protocol/src/config.ts:253`)
+### 3.4 `SettingsRepairPlan` (protocol `packages/protocol/src/config.ts`, symbol `SettingsRepairPlan`)
 
 Two shapes, both carrying `scope` and `revision`:
 
@@ -923,7 +923,7 @@ type-only import plus an injected `opts.plugins` object.
    writes.** The engine's schema key is `mcpServers`
    (`packages/loop/src/settings/settings-schema.ts:388-397`) and that is what
    `WORKSPACE_RISK_FIELDS` strips (`packages/kernel/src/config/workspace-trust.ts:40`). The snake_case field compiles only
-   because of the interface's index signature (`packages/protocol/src/config.ts:37`). Whether it is dead or a
+   because of the interface's index signature (`packages/protocol/src/config.ts:35`). Whether it is dead or a
    planned rename is not stated.
 
 3. **A plugin-shipped agent can never be opened through `ConfigService.getAgent`.** The store supports

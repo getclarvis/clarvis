@@ -167,7 +167,7 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `FilterField(props)`                                 | Auto-focused single-line filter input, reports term via `onTerm`                                                                                                        | `packages/code/src/views/overlays/FilterField.tsx:14-48`                                                                                                              |
 | `ListPicker<T>(props)`                               | Generic filterable/scrollable/windowed picker inside a `FloatFrame`; an optional fixed `intro` declares its responsive `introRows` cost                                 | `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`)                                                                                                      |
 | `ListPickerVerb<T>`                                  | shared `PanelVerbName` or one-off `{key,label,run,when?}`                                                                                                               | `:33-35`                                                                                                                                                              |
-| `AgentProfilePicker(props)`                               | `ListPicker` of agent profiles + a nested default-scope `ListPicker`                                                                                                    | `packages/code/src/views/overlays/AgentProfilePicker.tsx:53-186`                                                                                                           |
+| `AgentProfilePicker(props)`                               | `ListPicker` of Agent Profiles + a nested default-scope `ListPicker`                                                                                                    | `packages/code/src/views/overlays/AgentProfilePicker.tsx:53-186`                                                                                                           |
 | `SafetyPresetPicker(props)`                          | Lazy retained `ListPicker` over the six canonical execution postures, with armed confirmation for direct-host choices                                                   | `packages/code/src/views/overlays/SafetyPresetPicker.tsx` (`SafetyPresetPicker`)                                                                                      |
 | `Help(props)`                                        | Full-page live-projected key/action/destination reference with stable indexed rows                                                                                      | `packages/code/src/views/overlays/Help.tsx` (`Help`)                                                                                                                  |
 | `DiffViewer(props)`                                  | Full-screen page rendering one transcript tool node's diff via the tool registry; an optional active accessor gates retained key layers                                 | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`)                                                                                                      |
@@ -580,7 +580,7 @@ and no focus while it is hidden, without being unmounted.
 
 ### `AgentProfilePicker` (`views/overlays/AgentProfilePicker.tsx`)
 
-A `ListPicker` of agent profiles behind a `Show/keyed` toggle over a second, nested `ListPicker`:
+A `ListPicker` of Agent Profiles behind a `Show/keyed` toggle over a second, nested `ListPicker`:
 pressing `s` on a selected row (a `verbs` entry, `:103`) opens a scope chooser over
 `DEFAULT_SCOPE_CHOICES` (`{global, workspace}`, `:36-47`); confirming a scope calls
 `onSetDefault(name, scope)` and, on success, returns to the agent list; pressing `x` inside the
@@ -594,7 +594,7 @@ hidden or disabled (`:81,115-121`). Pinned: `packages/code/tests/integration/age
 (opening with the active agent selected, the scope chooser opening/setting/clearing a default, and
 mouse-press select+confirm).
 
-The supplied profile list comes from `ActiveAgentStore.list`, which applies the kernel-owned
+The supplied Agent Profile list comes from `ActiveAgentStore.list`, which applies the kernel-owned
 `compareAgentDisplayOrder`: shipped agents stay in their product order and custom agents follow by
 name, matching Settings > Agents (`packages/code/src/adapters/active-agent.ts:85-88`). Pinned by
 `packages/code/tests/unit/active-agent.test.ts` (`"agent list uses the same canonical presentation

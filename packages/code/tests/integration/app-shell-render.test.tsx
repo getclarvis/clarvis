@@ -330,7 +330,7 @@ function defaultProps(overrides: {
   activity?: ReturnType<typeof createActivityStore>;
   workflowActivity?: AppProps["run"]["workflowActivity"];
   mcpStartupNotice?: AppProps["run"]["mcpStartupNotice"];
-  environmentDriftNotice?: AppProps["run"]["environmentDriftNotice"];
+  extensionProfileDriftNotice?: AppProps["run"]["extensionProfileDriftNotice"];
 }) {
   return (renderer: ReturnType<typeof useRenderer>): AppProps => {
     const store = overrides.store ?? createTranscriptStore();
@@ -373,9 +373,9 @@ function defaultProps(overrides: {
         ...(overrides.mcpStartupNotice === undefined
           ? {}
           : { mcpStartupNotice: overrides.mcpStartupNotice }),
-        ...(overrides.environmentDriftNotice === undefined
+        ...(overrides.extensionProfileDriftNotice === undefined
           ? {}
-          : { environmentDriftNotice: overrides.environmentDriftNotice }),
+          : { extensionProfileDriftNotice: overrides.extensionProfileDriftNotice }),
         bang: () => true,
         localBusy: () => false,
         registerDraftRestore: () => {},
@@ -517,8 +517,8 @@ test("a live MCP startup failure appears once as a transient warning outside the
 test("skill drift is a transient warning while the conversation remains untouched", async () => {
   const store = createTranscriptStore();
   const [notice, setNotice] =
-    createSignal<ReturnType<NonNullable<AppProps["run"]["environmentDriftNotice"]>>>(null);
-  const t = await mountApp(defaultProps({ store, environmentDriftNotice: notice }));
+    createSignal<ReturnType<NonNullable<AppProps["run"]["extensionProfileDriftNotice"]>>>(null);
+  const t = await mountApp(defaultProps({ store, extensionProfileDriftNotice: notice }));
 
   setNotice({ sequence: 1, kind: "skill", name: "release-notes", source: "clarvis" });
   const frame = await captureUntil(t, "was withheld from runs until reconnect");
@@ -863,7 +863,7 @@ test("Keyboard settings persists a profile and a normalized diagnostic for this 
 
   press(t, "up");
   press(t, "return");
-  await captureUntil(t, "keyboard profile: portable");
+  await captureUntil(t, "Keyboard Profile: portable");
   expect(writes.at(-1)?.value).toMatchObject({ profile: "portable" });
 
   press(t, "d");
@@ -889,7 +889,7 @@ test("Keyboard settings persists a profile and a normalized diagnostic for this 
   t.renderer.destroy();
 });
 
-test("agentName falls back to 'no agent' when there is no active profile", async () => {
+test("agentName falls back to 'no agent' when there is no active Agent Profile", async () => {
   const t = await mountApp(
     defaultProps({ agents: fakeAgents({ active: () => "", view: () => undefined }) }),
   );

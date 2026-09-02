@@ -138,7 +138,7 @@ summaries preserve that pair. (`ExtensionProfileRunRef` in `packages/protocol/sr
 `hostMetadata` composition in `packages/kernel/src/file-kernel.ts:834`; record persistence in
 `packages/trace/src/{record-builder,journal,json-trace-store}.ts`; result projection in
 `storedToDetail` in `packages/kernel/src/runs/map-result.ts:164`; session summary projection in
-`packages/kernel/src/sessions/session-service.ts:276`.) Host metadata is sanitized before durable
+`toSummary` in `packages/kernel/src/sessions/session-service.ts`.) Host metadata is sanitized before durable
 storage and does not carry the Extension Profile definition or secrets
 (`packages/trace/src/json-trace-store.ts:805`).
 
@@ -352,8 +352,8 @@ When a saved session resumes under a different `{ id, fingerprint }`, Code prese
 adds a visible warning, and marks the status instead of pretending continuity under the same
 extension snapshot (Extension Profile comparison in `resumeSession`,
 `packages/code/src/run-host.ts:1387-1407`). Newly started turns are
-stamped with the current process snapshot (`createSession.beginTurn`,
-`packages/code/src/adapters/session.ts:156-174`).
+stamped with the current process snapshot (`createSession.beginTurn` in
+`packages/code/src/adapters/session.ts`).
 
 ## 5. Invariants
 
@@ -364,7 +364,7 @@ only the installed inventory. Plugin lifecycle remains on `PluginService`.
 
 - **Production:** `pluginInventory` in
   `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `ExtensionProfileService` in
-  `packages/protocol/src/extension-profiles.ts:198-251` has no install operation.
+  `packages/protocol/src/extension-profiles.ts` has no install operation.
 - **Test:** `packages/kernel/tests/integration/extension-profile-manager.test.ts` constructs all four
   inventories before exact activation and proves an unrelated install stays inactive.
 
@@ -459,8 +459,8 @@ durable host metadata is sanitized.
 
 - **Production:** `executeRun` host metadata in `packages/loop/src/runtime/execute-run.ts:300`;
   `buildRecord` in `packages/trace/src/record-builder.ts:38`; `storedToDetail` in
-  `packages/kernel/src/runs/map-result.ts:164`; session projection in
-  `packages/code/src/adapters/session-store.ts:374`.
+  `packages/kernel/src/runs/map-result.ts:164`; session projection in `metaToSession` in
+  `packages/code/src/adapters/session-store.ts`.
 - **Test:** `packages/loop/tests/component/execute-run.test.ts:53`,
   `packages/trace/tests/integration/json-trace-store.test.ts:193`,
   `packages/kernel/tests/unit/map-result.test.ts`, and

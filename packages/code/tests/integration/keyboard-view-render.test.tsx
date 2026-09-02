@@ -111,14 +111,14 @@ test("keyboard settings selects profiles, cycles the client convention, and rese
   mounted.press("down");
   mounted.press("return");
   expect(mounted.writes.at(-1)).toMatchObject({ profile: "enhanced" });
-  expect(mounted.notices.at(-1)).toBe("keyboard profile: enhanced");
+  expect(mounted.notices.at(-1)).toBe("Keyboard Profile: enhanced");
 
   mounted.press("c");
   expect(mounted.writes.at(-1)).toMatchObject({ clientPlatform: "macos" });
 
   mounted.press("x");
   expect(mounted.writes.at(-1)).toBeUndefined();
-  expect(mounted.notices.at(-1)).toBe("keyboard profile reset to automatic");
+  expect(mounted.notices.at(-1)).toBe("Keyboard Profile reset to automatic");
 
   mounted.press("escape");
   expect(mounted.closed).toEqual([true]);
@@ -202,7 +202,7 @@ test("a stored override under another profile is marked off rather than shown as
   await t.renderOnce();
   const frame = t.captureCharFrame();
   expect(frame).toContain("1 override stored but inactive");
-  expect(frame).toContain("only under the Manual profile");
+  expect(frame).toContain("only under the Manual Keyboard Profile");
   expect(frame).toContain("f8 (off)");
   mounted.controls.dispose();
   t.renderer.destroy();

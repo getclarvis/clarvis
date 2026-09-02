@@ -179,7 +179,8 @@ Both `filterHookEnv` and `interpolatedNames` are on the package barrel
 | `resolveSecretEnvironment` | `(environment, keyfile, sources) => KernelEnvironment` | `packages/kernel/src/ports/environment.ts:30` |
 
 Wire methods `secrets.listNames` / `secrets.set` / `secrets.delete`, carrying
-`metadata.sensitivity === "secrets"` (`packages/kernel/src/transport/operations.ts:468-487`).
+`metadata.sensitivity === "secrets"` (`OPERATIONS.secrets` in
+`packages/kernel/src/transport/operations.ts`).
 
 ### 2.7 Workspace trust — `@clarvis/kernel`
 
@@ -1085,7 +1086,7 @@ real — a 64-hex project id and a full UUID both read as credentials, which is 
 | `@clarvis/kernel` → `@clarvis/paths` | runtime, static | `globalPaths(...).keysFile` / `.workspaceTrustFile`, `writeFileAtomicSync` (`packages/kernel/src/secrets/secret-store.ts:3`, `packages/kernel/src/config/workspace-trust.ts:3`) |
 | `@clarvis/kernel` → `@clarvis/protocol` | type-only for `SecretService` | `import type { SecretService }` (`packages/kernel/src/secrets/secret-store.ts:4`) |
 | `@clarvis/kernel/config/workspace-trust` → `@clarvis/loop/host` | runtime, static | `readJsonFile` (`packages/kernel/src/config/workspace-trust.ts:5`) |
-| `@clarvis/code` → canonical redactors | runtime, static | only through `@clarvis/kernel/policy` (`packages/code/src/adapters/session-store.ts:10`, `packages/code/src/adapters/diagnostic-session.ts:12`), pinned by `packages/kernel/tests/component/public-entrypoints.test.ts:22` |
+| `@clarvis/code` → canonical redactors | runtime, static | only through `@clarvis/kernel/policy` (the `sanitizeText` import in `packages/code/src/adapters/session-store.ts` and `packages/code/src/adapters/diagnostic-session.ts`), pinned by `packages/kernel/tests/component/public-entrypoints.test.ts:22` |
 | `@clarvis/llm` → `FORBIDDEN_PROVIDER_BODY_KEYS` | runtime, static | `packages/llm/src/openai-compatible-request.ts:17` |
 | `@clarvis/loop` validation → the same constant | runtime, static | `packages/loop/src/validation/request/provider-rules.ts:3` |
 | `@clarvis/trace` → `sanitizeDeep` | runtime, static | `packages/trace/src/json-trace-store.ts:32`, `packages/trace/src/journal.ts:6`, `packages/trace/src/trace-mapper.ts:4`, `packages/trace/src/testing.ts:2` |
@@ -1108,7 +1109,7 @@ real — a 64-hex project id and a full UUID both read as credentials, which is 
 | memory run snapshot | `sanitizeDeep(run, sanitizeText)` — **before** any bound or write | `packages/memory/src/jobs.ts:224` (rationale `:214-215`); indexer task `packages/memory/src/indexer/run.ts:392` |
 | memory tool results / seed / policy / health | `sanitizeText` | `packages/memory/src/tools.ts:41`, `:53`; `packages/memory/src/seed.ts:89`; `packages/memory/src/recording-policy.ts:51`; `packages/memory/src/health.ts:204-205` |
 | MCP client diagnostics | `sanitizeErrorMessage` | `packages/mcp-client/src/{connection,resources,resilient-session}.ts` |
-| `code` session previews | `sanitizeText` on the first line, before truncation | `packages/code/src/adapters/session-store.ts:157` (rationale `:139-146`) |
+| `code` session previews | `sanitizeText` on the first line, before truncation | `redactPreview` in `packages/code/src/adapters/session-store.ts` |
 | `code` diagnostics | `sanitizeErrorMessage` + ANSI strip | `packages/code/src/adapters/diagnostic-session.ts:140` |
 | LLM provider errors | `sanitizeErrorMessage` | `packages/llm/src/ai-sdk/errors.ts` |
 

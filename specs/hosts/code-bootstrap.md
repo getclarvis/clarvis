@@ -99,7 +99,7 @@ line and the README synopsis all derive from this table" (`packages/code/src/cli
 | `--refresh-models` | — | — | yes | `refresh the models.dev catalog and exit` | `packages/code/src/cli-args.ts:105` |
 | `--update` | — | — | yes | `install the newest eligible Clarvis release and exit` | `packages/code/src/cli-args.ts` (`FLAGS`) |
 | `--ascii` | — | — | no | `render glyphs as plain ascii` | `packages/code/src/cli-args.ts:106` |
-| `--extension-profile` | — | `<profile>` (next token) | no | `select an Extension Profile for this process (scope:name or name)` | `packages/code/src/cli-args.ts:110-114` |
+| `--extension-profile` | — | `<selector>` (next token) | no | `select an Extension Profile for this process (scope:name or name)` | `packages/code/src/cli-args.ts` (`FLAGS`) |
 | `--worktree` | — | optional next token or `=name` | no | `open a dedicated Git worktree; omit name to generate one` | `packages/code/src/cli-args.ts:107-116` |
 | `--debug` | — | `[=<error\|warn\|info\|debug>]` (inline, optional) | no | `write bounded application diagnostics; --debug=<level>` | `packages/code/src/cli-args.ts` (`FLAGS`) |
 
@@ -554,9 +554,9 @@ terminal result."
 | 2 | after renderer idle, capture `shellElapsedMs`; start the runtime import and, for ordinary `run`, the workspace foundation in parallel | `runInteractive`; `prepareStartupFoundation` in `packages/code/src/startup-foundation.ts` |
 | 3 | the runtime opens diagnostics, records `app.boot.begin` plus the captured `app.boot.shell-painted`, and preflights resume/continue while the bootstrap owner remains active; it then creates the complete platform and transfers Ctrl+C ownership while retaining exit/key teardown through full-app mount | `BootShell.handoffRendererLifecycle`; `runApp` in `packages/code/src/runtime.tsx` |
 | 4 | use the prepared `WorkspaceClientManager` or create one; establish immutable workspace identity and construct stores/config/history/capabilities | `runApp`; `WorkspaceClientManager.create` |
-| 5 | load the foundation without reading models.dev, then list profiles, resolve the branch and bind the run host | `runApp`, `loadFoundation` |
-| 6 | take the startup snapshot exactly once; an Enter submission starts immediately through `runHost.submitTurn` before full-app mount only when the active profile is runnable | `StartupComposerState.take`; `resolveStartupComposerHandoff`; `startup_submit` in `runApp` |
-| 7 | replace the startup root with `<App>`; an unsent draft or a submission that had no runnable profile becomes exact `initialDraft`; release bootstrap key/exit ownership only after mount; emit mounted/painted diagnostics | `BootShell.mount`; `AppProps.initialDraft`; `releaseBootRendererLifecycle` |
+| 5 | load the foundation without reading models.dev, then list Agent Profiles, resolve the branch and bind the run host | `runApp`, `loadFoundation` |
+| 6 | take the startup snapshot exactly once; an Enter submission starts immediately through `runHost.submitTurn` before full-app mount only when the active Agent Profile is runnable | `StartupComposerState.take`; `resolveStartupComposerHandoff`; `startup_submit` in `runApp` |
+| 7 | replace the startup root with `<App>`; an unsent draft or a submission that had no runnable Agent Profile becomes exact `initialDraft`; release bootstrap key/exit ownership only after mount; emit mounted/painted diagnostics | `BootShell.mount`; `AppProps.initialDraft`; `releaseBootRendererLifecycle` |
 | 8 | after `app.boot.painted`, release memory recovery and Markdown warm-up; resume/continue restore saved content after parser warm-up | `runApp` |
 
 `StartupComposer` is not a decorative progress placeholder. In `run` mode it owns a real focused
@@ -569,7 +569,7 @@ Its centre uses the shared `BrandBanner`: the complete eight-row splash appears 
 the standard compact wordmark appears below either threshold. The startup-only connection status
 does not invent the not-yet-resolved agent/model line or advertise complete-app shortcuts.
 Replacing the root cannot lose an unsent draft or an accepted task: the latter either starts on a
-runnable profile or returns as exact composer text. Resume/continue render the same
+runnable Agent Profile or returns as exact composer text. Resume/continue render the same
 bounded frame with input disabled. Production: `createStartupComposerState` and `StartupComposer` in
 `packages/code/src/views/StartupComposer.tsx`, `BootShell` in `packages/code/src/boot-shell.ts`, and
 the handoff in `packages/code/src/index.tsx` and `packages/code/src/runtime.tsx`. Test:
@@ -653,7 +653,7 @@ its own unit; [cross-cutting/test-architecture.md](../cross-cutting/test-archite
 satisfied by the enclosing `try`" (`:667-669`).
 
 One agent listing serves the whole boot; `:698-705` records that "The settings adapter, the agent-file
-snapshot and the profile catalogue each used to fetch their own, so a cold start read the fleet from
+snapshot and the Agent Profile catalogue each used to fetch their own, so a cold start read the fleet from
 disk three times over."
 
 The models catalogue is temporally lazy, not merely unawaited. `loadFoundation` never calls
@@ -1042,7 +1042,7 @@ current run client. No temporary client or cross-workspace branch exists.
 **`reconnectBackend`** (`packages/code/src/runtime.tsx`, `reconnectBackend`): refuses immediately, with no reconnect
 attempt, while a run is active (`"run in progress " + glyph("emDash") + " cancel it before reconnecting"`). Otherwise it sets
 connection state to `connecting`, calls `runClient.reconnect()`, then reloads keys, settings and agent
-files and re-lists profiles, sets connection to `ready` (with detail `"no profiles"` when the list is
+files and re-lists Agent Profiles, sets connection to `ready` (with detail `"no Agent Profiles"` when the list is
 empty), and returns `{ ok: true, message: "backend reconnected " + glyph("emDash") + " keys applied" }`
 (`:1015-1024`). A throw anywhere in that sequence sets connection to `failed` and returns
 `` { ok: false, message: `reconnect failed ${glyph("emDash")} restart clarvis (${errorText(e)})` } ``
@@ -1197,8 +1197,8 @@ Pinned: `packages/code/tests/unit/cli-args.test.ts:188-191`.
 
 **INV-CB-20.** `--continue` is strict to the current workspace and never falls back to a global most
 recent session.
-Production: `packages/code/src/cli-mode.ts:32` filtering through `listSessionsForWorkspace`
-(`packages/code/src/adapters/session-store.ts:303-306`).
+Production: `packages/code/src/cli-mode.ts:32` filtering through `listSessionsForWorkspace` in
+`packages/code/src/adapters/session-store.ts`.
 Pinned: `packages/code/tests/unit/cli-mode.test.ts:38-49`.
 
 **INV-CB-21.** `--print` writes only the lead agent's `text` channel to stdout; sub-agent output and
@@ -1374,9 +1374,9 @@ complete keymap mount. Exit, every platform-supported catchable OpenTUI default 
 and a failing resume/continue preflight cannot leave raw mode or the alternate screen behind;
 `SIGKILL` is inherently uncatchable. Ownership transfers to the platform without a gap, and
 FatalBoot has priority over the temporary Ctrl+C owner. A startup submission starts only when the
-active profile is runnable, otherwise its exact bytes become the complete composer's draft.
+active Agent Profile is runnable, otherwise its exact bytes become the complete composer's draft.
 The first platform shutdown hook latches boot shutdown before releasing the terminal; `runApp`
-checks that latch before starting and immediately after awaiting profile discovery, so neither
+checks that latch before starting and immediately after awaiting Agent Profile discovery, so neither
 startup submission nor complete-app mount can begin after shutdown wins the boot race.
 Production: `installBootRendererLifecycle` in
 `packages/code/src/adapters/renderer-bootstrap.ts`, `runInteractive` in

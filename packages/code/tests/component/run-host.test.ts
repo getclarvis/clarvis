@@ -1331,7 +1331,7 @@ test("attention cues: session teardown mid-run resets the title itself (the run'
   dispose();
 });
 
-test("submitTurn with no active profile: says so and starts no run", async () => {
+test("submitTurn with no active Agent Profile: says so and starts no run", async () => {
   const { host, runs, dispose } = mount({ activeProfile: () => "" });
   await host.submitTurn("hello");
   expect(runs).toHaveLength(0);
@@ -2158,7 +2158,7 @@ test("resumeSessionById: a resume failure (e.g. a dropped connection) is caught 
   dispose();
 });
 
-test("resumeSessionById: a valid id resumes the session, syncing the active profile", async () => {
+test("resumeSessionById: a valid id resumes the session, syncing the active Agent Profile", async () => {
   const sessions = fakeSessionStore();
   const meta: SessionMeta = {
     id: "session-z",

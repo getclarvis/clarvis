@@ -49,19 +49,20 @@ the obvious spelling and it is wrong here. One member declares a **union** discr
 assignable to one of its own literals, so `Extract` answers `never`, `keyof never` widens to
 `string | number | symbol`, and the guard reports drift on a variant that has none.
 
-**`TurnRef.error` was written and then dropped on the way to disk.** It is populated by `endTurn`
-(`packages/code/src/adapters/session.ts:199`), and **both** legs of the wire conversion dropped it —
+**`TurnRef.error` was written and then dropped on the way to disk.** It is populated by `endTurn` in
+`createSession` (`packages/code/src/adapters/session.ts`), and **both** legs of the wire conversion dropped it —
 `metaToSession` on the way out and `sessionToMeta` on the way back — so a one-sided fix would not
 have round-tripped. A run that failed came back after a reload saying only that it failed, which is
 the exact undiagnosable case the field's own TSDoc describes it as fixing.
 
-Fixed in both conversion legs at `packages/code/src/adapters/session-store.ts:370-379` and `:402-414`, with the value masked and
-bounded at the **producer** (`redactTurnError`, `:191-201`) so the in-memory and on-disk values stay
+Fixed in both conversion legs (`metaToSession` and `sessionToMeta` in
+`packages/code/src/adapters/session-store.ts`), with the value masked and bounded at the
+**producer** (`redactTurnError` in that file) so the in-memory and on-disk values stay
 identical and the existing `redactPreviews: false` opt-out keeps working. The masking is not
 optional: this is the first provider free text Clarvis writes into a session document, and an
 unbounded message could push the document past `SESSION_MAX_BYTES`, after which the store swallows
 the throw and silently stops persisting that session for its whole life. The read path validates the
-`{code, message}` shape (`persistedTurnError`, `:350-356`) because a session document is the one input
+`{code, message}` shape (`persistedTurnError` in that file) because a session document is the one input
 here that no schema describes — `isSession` checks identity and `Array.isArray(turns)` and nothing
 else, so an added key is not rejected on read and a corrupt one is not caught either.
 

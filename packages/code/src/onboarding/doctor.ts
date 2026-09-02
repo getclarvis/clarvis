@@ -523,7 +523,7 @@ export const GATES: Gate[] = [
           detail: "unreachable",
           hint: "the kernel did not respond " + glyph("emDash") + " reconnect the backend",
         };
-      return { status: "pass", detail: `${b.profileCount ?? 0} profiles` };
+      return { status: "pass", detail: `${b.profileCount ?? 0} Agent Profiles` };
     },
   },
   {

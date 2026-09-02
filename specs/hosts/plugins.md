@@ -172,8 +172,8 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 | `notes?` | `string[]` | what the manifest declares that this kernel does not act on |
 | `contributions` | `PluginContributions` | the projected contribution summary above |
 
-Wire methods and their read/write metadata are in
-`packages/kernel/src/transport/operations.ts:306-347`:
+Wire methods and their read/write metadata are in `OPERATIONS.plugins` in
+`packages/kernel/src/transport/operations.ts`:
 
 | Method | Params | Metadata |
 |---|---|---|
@@ -1845,7 +1845,7 @@ translated from" (`:44-46`).
 | `packages/kernel/src/file-kernel.ts:624-670,768-829,886-893` | `skillPlansMode`, `locateCapabilityExecutable` for Plans and Memory plugin providers | |
 | `packages/kernel/src/tasks/task-provider-factory.ts:202-222` | `mcpServers` for provider identity | |
 | `packages/kernel/src/kernel.ts:808-844` | `createPluginService` | |
-| `packages/kernel/src/transport/operations.ts:306-348` | the five wire methods | |
+| `OPERATIONS.plugins` in `packages/kernel/src/transport/operations.ts` | the five wire methods | |
 | `packages/code/src/app/commands.tsx` (`pluginsStore`, plugin/marketplace/extension view registrations, `installAndActivatePlugin`) | the store, the three browsers and the adapter | |
 
 **`createPluginContributions` and `createPluginService` are two separately constructed object

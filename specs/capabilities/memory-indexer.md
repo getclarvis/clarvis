@@ -165,7 +165,7 @@ clamped to `MAX_LIMIT = 100`, and `retryJob(runId)`
 (`packages/kernel/src/memory/memory-service.ts:107,132,151,15`). The wire `MemoryJob` drops the
 snapshot deliberately (`packages/kernel/src/memory/memory-service.ts:23-37`). Transport methods:
 `memory.jobs`, `memory.retryJob`, and health at
-`packages/kernel/src/transport/operations.ts:577-603`.
+`OPERATIONS.memory` in `packages/kernel/src/transport/operations.ts`.
 
 ---
 

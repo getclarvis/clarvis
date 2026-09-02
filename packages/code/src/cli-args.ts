@@ -108,7 +108,7 @@ export const FLAGS: readonly FlagSpec[] = [
   { flag: "--ascii", desc: "render glyphs as plain ascii" },
   {
     flag: "--extension-profile",
-    value: "<profile>",
+    value: "<selector>",
     desc: "select an Extension Profile for this process (scope:name or name)",
   },
   {

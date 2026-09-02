@@ -168,7 +168,7 @@ test("the startup composer preserves an unsent draft and keeps resume locked", a
   resume.renderer.destroy();
 });
 
-test("startup handoff submits only to a runnable profile and otherwise restores exact input", () => {
+test("startup handoff submits only to a runnable Agent Profile and otherwise restores exact input", () => {
   const queued = { draft: "queued task", submission: "queued task" };
   expect(resolveStartupComposerHandoff(queued, true)).toEqual({ submission: "queued task" });
   expect(resolveStartupComposerHandoff(queued, false)).toEqual({ initialDraft: "queued task" });

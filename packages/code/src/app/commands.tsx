@@ -1136,7 +1136,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   commands.registerView({
     name: "keyboard.open",
     title: "Keyboard",
-    desc: "Keyboard profiles, terminal compatibility and diagnostics",
+    desc: "Keyboard Profiles, terminal compatibility and diagnostics",
     surface: "internal",
     group: "navigate",
     parent: "settings",
@@ -1348,7 +1348,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         await deps.refreshAgentProfiles();
       }
       if (!deps.agents.list().some((agent) => agent.name === DEFAULT_AGENT_NAME))
-        throw new Error(`the ${DEFAULT_AGENT_NAME} profile did not become available`);
+        throw new Error(`the ${DEFAULT_AGENT_NAME} Agent Profile did not become available`);
       deps.agents.setDefault(DEFAULT_AGENT_NAME, "global");
       deps.agents.setActive(DEFAULT_AGENT_NAME);
       recheck();

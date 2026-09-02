@@ -75,7 +75,8 @@ configuration surface), and again as `parseModelRef` from `@clarvis/capability`
 (`packages/protocol/src/client.ts:72`; `packages/kernel/src/kernel.ts:131`), constructed at kernel
 boot as `createModelCatalogService(globalDir, logger)` (`packages/kernel/src/kernel.ts:805`) and
 exposed over the transport under operation key `models`
-(`packages/kernel/src/transport/operations.ts:488-517`, `packages/kernel/src/transport/client.ts:560`).
+(`OPERATIONS.models` in `packages/kernel/src/transport/operations.ts`,
+`packages/kernel/src/transport/client.ts:560`).
 
 ### 2.3 `@clarvis/capability` exports
 

@@ -6,7 +6,7 @@ import { modelField } from "./request-schema.ts";
  * run, pairing a machine-readable {@link ReadinessCode} with a human message.
  *
  * @remarks Advisory only — these mirror the hard {@link validateBody} rules so a
- *   UI can flag an unrunnable profile ahead of time, without duplicating the
+ *   UI can flag an unrunnable Agent Profile ahead of time, without duplicating the
  *   loop's error codes.
  */
 export interface ReadinessIssue {

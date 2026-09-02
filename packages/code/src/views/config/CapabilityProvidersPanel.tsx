@@ -984,7 +984,7 @@ export function CapabilityProvidersPanel(
           kind="enum"
           value={shown.writes ?? "disabled"}
           selected={taskSel() === 2}
-          note="operator gate; profile grants remain required"
+          note="operator gate; Agent Profile grants remain required"
           noteFg={shown.writes === "enabled" ? tokens.warn : tokens.muted}
         />
         <DetailLines

@@ -104,8 +104,8 @@ or other process trees (`packages/code/README.md:248-267`).
 | hydrated tool bodies                           |                                                               200 nodes and 64 MiB estimated | `packages/code/src/adapters/store.ts:354-374`, `:660-716`                                                                                                                  |
 | one hydrated tool body                         |                                                                             32 MiB estimated | `packages/code/src/adapters/store.ts:374`, `:660-703`                                                                                                                      |
 | visual transcript turns                        |                                                                            20 semantic turns | `packages/code/src/run-host.ts:219-225`, `:1087-1109`                                                                                                                       |
-| session resume chain                           |                                            10,000 messages and 16,000,000 payload characters | `packages/code/src/adapters/session.ts:480-481`, `:602-621`                                                                                                                |
-| complete session documents in the client cache |                                                  8, excluding live write lanes from demotion | `packages/code/src/adapters/session-store.ts:308`, `:497-520`                                                                                                              |
+| session resume chain                           |                                            10,000 messages and 16,000,000 payload characters | `SESSION_RESUME_MAX_MESSAGES`, `SESSION_RESUME_MAX_PAYLOAD_CHARS`, and `resumeSession` in `packages/code/src/adapters/session.ts`                                          |
+| complete session documents in the client cache |                                                  8, excluding live write lanes from demotion | `MAX_RESIDENT_FULL_SESSIONS` and `demoteOldFullSessions` in `packages/code/src/adapters/session-store.ts`                                                                   |
 | provider HTTP response                         |                                                                                       32 MiB | `packages/llm/src/ai-sdk/bounded-fetch.ts:4`, `:64-109`                                                                                                                    |
 | MCP HTTP or stdio frame                        |                                                                                       16 MiB | `packages/mcp-client/src/bounded-fetch.ts:6`, `packages/mcp-client/src/bun-stdio-client.ts:112`                                                                            |
 
@@ -183,7 +183,7 @@ the built artifact for every other mode (`packages/code/src/cli.ts`, `main`). In
    the foundation without calling models.dev or subscription entitlement;
 4. constructs stores, the run host and command routing while the startup input remains usable;
 5. takes the startup snapshot once and submits an accepted task before mounting `<App>` only when
-   the active profile is runnable; otherwise the exact accepted submission or unsent draft becomes
+   the active Agent Profile is runnable; otherwise the exact accepted submission or unsent draft becomes
    `App.initialDraft`;
 6. mounts the complete application, emits `app.boot.painted`, releases after-paint work and only then
    starts Markdown parser warm-up; restored session content awaits the warm-up.
@@ -630,7 +630,7 @@ tree.
 | one transcript prose value is oversized                     | truncate before it enters reactive state                                                                                                                                                | `packages/code/src/adapters/store.ts:103-110`                                                                      |
 | aggregate prose is full                                     | release older settled prose, preserve newest                                                                                                                                            | `packages/code/src/adapters/store.ts:394-470`                                                                      |
 | hydrated tool budget is full                                | dehydrate older bodies; explicit expand can re-fetch within queue limits                                                                                                                | `packages/code/src/adapters/store.ts:596-617`, `:647-758`                                                          |
-| session reconstruction exceeds request-shape limits         | throw `SessionResumeLimitError` before the next batch                                                                                                                                   | `packages/code/src/adapters/session.ts:507-528`                                                                    |
+| session reconstruction exceeds request-shape limits         | throw `SessionResumeLimitError` before the next batch                                                                                                                                   | `SessionResumeLimitError` and `resumeSession` in `packages/code/src/adapters/session.ts`                           |
 | RSS reaches configured limit                                | cancel, detach after grace if required, block new work and offer recovery                                                                                                               | `packages/code/src/adapters/memory-pressure.ts:193-229`                                                            |
 | overlay soak child starves or grows past its process budget | parent watchdog kills it and fails with the case name and limit                                                                                                                         | `packages/code/tooling/benchmarks/overlays.tsx` (`runParent`)                                                      |
 | interactive event loop is starved outside the soak          | in-process sampler may not run; host/process-tree monitoring is still required                                                                                                          | `specs/known-issues.md` (reactive microtask starvation)                                                            |
@@ -654,7 +654,8 @@ tree.
   `packages/code/src/app/commands.tsx`, `inspectReadiness`).
 - **`code` -> transcript/session persistence:** visual windows can release presentation data, but a
   future full request may require persisted traces to reconstruct semantic history
-  (`packages/code/src/run-host.ts:796-818`, `packages/code/src/adapters/session.ts:560-585`, `:628-752`).
+  (`releaseHistory` use in `packages/code/src/run-host.ts`; `resumeSession` in
+  `packages/code/src/adapters/session.ts`).
 - **`code` -> `llm`/`mcp-client`:** response ceilings bound individual inputs to the transcript but
   are not charged against the same resident budget
   (`packages/llm/src/ai-sdk/bounded-fetch.ts:64-109`,

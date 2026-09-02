@@ -893,7 +893,7 @@ export function MarketplaceBrowser(host: ViewHost, deps: MarketplaceBrowserDeps)
       title="Plugins"
       unscoped
       purpose="Browse marketplaces and compose the current Extension Profile"
-      mutationContract="Install approves the complete plugin and activates it through the current Extension Profile"
+      mutationContract="Install approves the complete plugin and activates it in that Extension Profile"
       footerStatus={footerStatus}
     >
       <Show when={currentSourceError()}>

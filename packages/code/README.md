@@ -263,7 +263,7 @@ are enabled by an explicit project-owner product decision; this records Clarvis'
 public protocol references, not provider endorsement. Each starts a cancellable device flow, keeps
 the public URL/code only in the mounted view, then loads that account's entitled catalog and writes
 the ordinary global provider/model shape. Both subscriptions may remain connected at once, and
-different agent profiles may select either provider. Subscription detail omits API-key, base-URL,
+different Agent Profiles may select either provider. Subscription detail omits API-key, base-URL,
 header and body fields and instead offers connect, reauthenticate, or confirmed disconnect.
 Its `add models` action reloads the authenticated entitled catalog instead of falling back to the
 public models.dev provider-name picker.
@@ -356,7 +356,7 @@ syntax, editing commands and the effective terminal path. F1 has no built-in act
 footer segment. Slash commands and configuration hubs remain the searchable routes to destinations
 and actions.
 
-`Ctrl+S` opens the canonical safety-preset picker on every keyboard profile; `Alt+S` remains an
+`Ctrl+S` opens the canonical safety-preset picker on every Keyboard Profile; `Alt+S` remains an
 enhanced-path accelerator. In a direct iTerm session on macOS, Clarvis requests Kitty's all-key and
 associated-text reports so Option+S remains identifiable even when the profile leaves Option in its
 normal text-producing mode. iTerm's standalone modifier-state packets are consumed before OpenTUI
@@ -436,7 +436,7 @@ portable behavior. A remote server's operating system is never presented as the 
 Settings > Keyboard can select portable/enhanced/manual behavior, set the client-side modifier
 convention and override any stable named action. Protected Help, back and cancel
 actions may be rebound but not left empty or placed on either side of a strict-prefix conflict with
-the active profile's effective defaults or another manual override. Validation uses both commands in
+the active Keyboard Profile's effective defaults or another manual override. Validation uses both commands in
 the conflict, so persisted binding order cannot make an unreachable protected route acceptable.
 Whenever an exact action and a longer sequence are both active, the exact action dispatches
 synchronously; Clarvis never waits on a key-sequence timeout. Keyless actions are labelled `no
@@ -539,7 +539,7 @@ exists to make that possible and its runtime graph is itself plus the root
 an import creeps in and puts the whole module graph back on that path.
 
 ```text
-usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--extension-profile <profile>]
+usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--extension-profile <selector>]
                     [--format <text|md>]
                     [--resume <session-id>] [--continue] [--list] [--delete <session-id>]
                     [--refresh-models] [--update] [--ascii] [--worktree [name]]
@@ -549,7 +549,7 @@ usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--extension-prof
   --version                   print the version and exit
   -p, --print <prompt>        run the prompt headless: stream the reply to stdout, exit 0/1
   --agent <name>              agent to run --print as (default: entry agent)
-  --extension-profile <profile>  select an Extension Profile for this process (scope:name or name)
+  --extension-profile <selector> select an Extension Profile for this process (scope:name or name)
   --format <text|md>          --print output: text (default) or md transcript
   --resume <session-id>       resume a saved session
   --continue                  resume this workspace's most recent session
@@ -919,7 +919,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - Execution-memory review and curation.
 - Provider-backed task board, detail and current-workspace **Work on task** flow.
 - Provider, model, plugin and MCP-server configuration.
-- Contextual action Help, slash-command discovery and per-terminal keyboard profiles.
+- Contextual action Help, slash-command discovery and per-terminal Keyboard Profiles.
 - Local `!bash` commands and workspace attachments. The composer admits at most four images,
   5 MiB each and 10 MiB aggregate. Binary clipboard input is rejected before base64 expansion;
   workspace images resolved from `@path` are checked against the same per-item and aggregate limits

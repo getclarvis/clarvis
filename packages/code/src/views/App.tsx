@@ -211,7 +211,7 @@ export interface AppRunControls {
   /** Latest live-only MCP startup warning, displayed once outside conversation history. */
   mcpStartupNotice?: Accessor<McpStartupNotice | null>;
   /** Latest extension contribution withdrawn after asynchronous on-disk drift detection. */
-  environmentDriftNotice?: Accessor<{
+  extensionProfileDriftNotice?: Accessor<{
     sequence: number;
     kind: "skill" | "plugin_runtime";
     name: string;
@@ -344,7 +344,7 @@ export function App(props: AppProps): JSX.Element {
   });
   let shownExtensionProfileDriftNotice = 0;
   createEffect(() => {
-    const notice = props.run.environmentDriftNotice?.();
+    const notice = props.run.extensionProfileDriftNotice?.();
     if (
       notice === undefined ||
       notice === null ||

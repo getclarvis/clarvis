@@ -53,6 +53,11 @@ describe("createAgentSkills public facade", () => {
         expect.objectContaining({ rel: "references/spec.md" }),
         expect.objectContaining({ rel: "scripts/extract.py" }),
       ],
+      identityFiles: [
+        path.join(root, "pdf", "SKILL.md"),
+        path.join(root, "pdf", "references", "spec.md"),
+        path.join(root, "pdf", "scripts", "extract.py"),
+      ],
     });
     expect(skills.resourcePath("pdf", "references/spec.md")).toBe(
       path.join(root, "pdf", "references", "spec.md"),

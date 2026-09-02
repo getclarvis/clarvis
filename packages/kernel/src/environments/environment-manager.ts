@@ -7,6 +7,8 @@ import {
   opendirSync,
   readSync,
   rmSync,
+  unwatchFile,
+  watchFile,
 } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -25,6 +27,8 @@ import {
   hashBoundedFile,
   MAX_SKILL_RESOURCE_FILE_BYTES,
   MAX_SKILL_RESOURCE_SNAPSHOT_BYTES,
+  type SkillContent,
+  type SkillInfo,
   type SkillRootInput,
 } from "@clarvis/skills";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
@@ -233,6 +237,19 @@ export interface EnvironmentRuntimeBinding {
   hasActiveRuns?(): boolean;
 }
 
+/** One pinned skill withdrawn after its directory changes on disk. */
+export interface EnvironmentSkillDriftNotice {
+  name: string;
+  scope: SkillInfo["scope"];
+  source: SkillInfo["source"];
+  path: string;
+}
+
+/** Minimal watcher handle used by the Environment's asynchronous drift monitor. */
+interface SkillPathWatcher {
+  close(): void;
+}
+
 /** File-backed Environment manager options. */
 export interface EnvironmentManagerOptions {
   globalDir: string;
@@ -242,6 +259,10 @@ export interface EnvironmentManagerOptions {
   home?: string;
   cliSelection?: string;
   logger?: Logger;
+  /** Inform a host that one skill was withdrawn from the pinned runtime catalog. */
+  onSkillDrift?: (notice: EnvironmentSkillDriftNotice) => void;
+  /** Injectable watcher seam for deterministic tests. */
+  watchSkillPath?: (path: string, onChange: () => void) => SkillPathWatcher;
 }
 
 /** Stable qualified string identity used in traces, sessions and diagnostics. */
@@ -515,10 +536,15 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
   ): ResolvedEnvironment;
   activePlugins(): EnvironmentPluginRef[];
   skillRoots(): SkillRootInput[];
-  assertRunSnapshot(): void;
+  pinnedSkillRoots(): SkillRootInput[];
+  observeSkillCatalog(skills: readonly SkillContent[]): void;
+  verifySkillCatalog(skills: readonly SkillContent[]): void;
+  skillAvailable(skill: SkillInfo): boolean;
+  onSkillRootsChanged(listener: () => void): () => void;
   runRef(): EnvironmentRunRef;
-  workspaceTrustSurface(): unknown;
+  workspaceTrustSurface(options?: { refresh?: boolean }): unknown;
   assertWorkspaceTrustTransitionAllowed(): void;
+  close(): void;
 } {
   const logger = options.logger ?? NOOP_LOGGER;
   const global = globalPaths(options.globalDir);
@@ -536,6 +562,31 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
   let pinned: ResolvedEnvironment | undefined;
   let pinnedEnabled: readonly EnvironmentPluginRef[] = [];
   let pinnedTrust: WorkspaceTrustVerdict = { state: "inert" };
+  const driftedSkillDirs = new Set<string>();
+  const skillWatchers = new Map<string, SkillPathWatcher[]>();
+  const skillRootListeners = new Set<() => void>();
+  let workspaceTrustSurfaceCaptured = false;
+  let capturedWorkspaceTrustSurface: unknown;
+  let closed = false;
+  const watchSkillPath =
+    options.watchSkillPath ??
+    ((path: string, onChange: () => void): SkillPathWatcher => {
+      const listener = (
+        current: { mtimeMs: number; ctimeMs: number; size: number; mode: number },
+        previous: { mtimeMs: number; ctimeMs: number; size: number; mode: number },
+      ): void => {
+        if (
+          current.mtimeMs === previous.mtimeMs &&
+          current.ctimeMs === previous.ctimeMs &&
+          current.size === previous.size &&
+          current.mode === previous.mode
+        )
+          return;
+        onChange();
+      };
+      watchFile(path, { persistent: false, interval: 1_000 }, listener);
+      return { close: () => unwatchFile(path, listener) };
+    });
 
   const definitionDir = (scope: Scope): string =>
     scope === "global" ? global.environmentsDir : workspace.environmentsDir;
@@ -1216,41 +1267,10 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
   const activePlugins = (): EnvironmentPluginRef[] =>
     (pinned?.plugins ?? []).filter((plugin) => plugin.active).map((plugin) => plugin.ref);
 
-  /** Refuse selected standalone-skill drift before returning filesystem-backed roots. */
-  const assertPinnedStandaloneSkills = (): void => {
-    if (pinned === undefined) return;
-    const expected = pinned.standalone_skills
-      .filter((skill) => skill.active)
-      .map((skill) => ({ ref: skill.ref, digest: skill.digest }));
-    const inventory = standaloneInventory(
-      pinned.ref.scope === "builtin" ? undefined : expected.map((skill) => skill.ref),
-    );
-    const currentByRef = new Map(
-      inventory.map((entry) => [
-        `${entry.ref.scope}\0${entry.ref.source}\0${entry.ref.name}`,
-        entry,
-      ]),
-    );
-    const selected =
-      pinned.ref.scope === "builtin"
-        ? defaultStandaloneSelection(inventory)
-        : expected.map((skill) => skill.ref);
-    const current = selected.map((ref) => {
-      const entry = currentByRef.get(`${ref.scope}\0${ref.source}\0${ref.name}`);
-      return { ref, digest: entry?.digest };
-    });
-    if (fingerprintOf(current) !== fingerprintOf(expected)) {
-      throw kernelError(
-        "unavailable",
-        "selected standalone skill content changed after the Environment snapshot was pinned; reconnect the kernel",
-      );
-    }
-  };
-
-  const skillRoots = (): SkillRootInput[] => {
+  /** Project roots from the pinned snapshot without touching filesystem state. */
+  const pinnedSkillRoots = (): SkillRootInput[] => {
     if (pinned === undefined) throw kernelError("unavailable", "Environment has not been resolved");
-    assertPinnedStandaloneSkills();
-    const pluginRoots = options.pluginContributions.skillRoots(activePlugins());
+    const pluginRoots = options.pluginContributions.pinnedSkillRoots(activePlugins());
     const selected = pinned.standalone_skills
       .filter((skill) => skill.active)
       .map((skill) => skill.ref);
@@ -1264,41 +1284,188 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     return [...pluginRoots, ...exact];
   };
 
-  /** Revalidate every selected filesystem contribution before admitting a new run. */
-  const assertRunSnapshot = (): void => {
+  const skillRoots = (): SkillRootInput[] => pinnedSkillRoots();
+
+  /** Release monitors for a catalog that is about to be replaced at an idle trust boundary. */
+  const resetSkillMonitoring = (): void => {
+    for (const watchers of skillWatchers.values()) {
+      for (const watcher of watchers) watcher.close();
+    }
+    skillWatchers.clear();
+    driftedSkillDirs.clear();
+  };
+
+  /**
+   * Watch each admitted skill directory after one exact catalog capture.
+   *
+   * @remarks Watch callbacks only flip an in-memory latch and publish a notice.
+   * They never rescan, hash, or mutate run admission. A changed skill remains
+   * withdrawn until an explicit snapshot replacement captures new bytes.
+   */
+  const withdrawSkill = (skill: SkillInfo): void => {
+    if (closed || driftedSkillDirs.has(skill.dir)) return;
+    driftedSkillDirs.add(skill.dir);
+    for (const watcher of skillWatchers.get(skill.dir) ?? []) watcher.close();
+    skillWatchers.delete(skill.dir);
+    logger.warn(
+      {
+        event: "kernel.environment.skill_drift",
+        skill: skill.name,
+        scope: skill.scope,
+        source: skill.source,
+        path: skill.path,
+      },
+      "a changed skill was withdrawn from the process snapshot; runs remain available",
+    );
+    try {
+      options.onSkillDrift?.({
+        name: skill.name,
+        scope: skill.scope,
+        source: skill.source,
+        path: skill.path,
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          event: "kernel.environment.skill_drift_notice_failed",
+          skill: skill.name,
+          cause: error instanceof Error ? error.message : String(error),
+        },
+        "the host's skill drift notice callback failed",
+      );
+    }
+  };
+
+  const observeSkillCatalog = (skills: readonly SkillContent[]): void => {
+    if (closed) return;
+    for (const skill of skills) {
+      if (skillWatchers.has(skill.dir)) continue;
+      const onChange = (): void => withdrawSkill(skill);
+      const paths = new Set<string>(
+        skill.identityFiles ?? [skill.path, ...skill.resources.map((resource) => resource.path)],
+      );
+      const watchers: SkillPathWatcher[] = [];
+      let lastError: unknown;
+      for (const path of paths) {
+        try {
+          watchers.push(watchSkillPath(path, onChange));
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      if (watchers.length > 0) {
+        skillWatchers.set(skill.dir, watchers);
+      } else {
+        logger.warn(
+          {
+            event: "kernel.environment.skill_watch_unavailable",
+            skill: skill.name,
+            path: skill.dir,
+            cause: lastError instanceof Error ? lastError.message : String(lastError),
+          },
+          "live skill drift monitoring is unavailable for one pinned skill",
+        );
+      }
+    }
+  };
+
+  const skillAvailable = (skill: SkillInfo): boolean => !driftedSkillDirs.has(skill.dir);
+
+  /** Re-read admitted skill identities after watchers are armed and compare them with the pin. */
+  const verifySkillCatalog = (skills: readonly SkillContent[]): void => {
     if (pinned === undefined) throw kernelError("unavailable", "Environment has not been resolved");
-    options.pluginContributions.assertUnchanged(activePlugins());
-    assertPinnedStandaloneSkills();
+    for (const skill of options.pluginContributions.verifyPinnedSkillCatalog(skills)) {
+      withdrawSkill(skill);
+    }
+    const selected = pinned.standalone_skills
+      .filter((skill) => skill.active)
+      .map((skill) => skill.ref);
+    const expected = new Map(
+      pinned.standalone_skills
+        .filter((skill) => skill.active && skill.digest !== undefined)
+        .map((skill) => [
+          `${skill.ref.scope}\0${skill.ref.source}\0${skill.ref.name}`,
+          skill.digest!,
+        ]),
+    );
+    const current = new Map(
+      standaloneInventory(selected).map((skill) => [
+        `${skill.ref.scope}\0${skill.ref.source}\0${skill.ref.name}`,
+        skill.digest,
+      ]),
+    );
+    for (const skill of skills) {
+      if (skill.source.startsWith("plugin:")) continue;
+      const key = `${skill.scope}\0${skill.source}\0${skill.name}`;
+      const pinnedDigest = expected.get(key);
+      if (pinnedDigest === undefined || current.get(key) !== pinnedDigest) withdrawSkill(skill);
+    }
+  };
+
+  /** Subscribe to idle trust recompositions that replace the exact skill-root set. */
+  const onSkillRootsChanged = (listener: () => void): (() => void) => {
+    if (closed) return () => undefined;
+    skillRootListeners.add(listener);
+    return () => skillRootListeners.delete(listener);
+  };
+
+  /** Replace subscribers synchronously while no run can observe the old trust catalog. */
+  const publishSkillRootsChanged = (): void => {
+    resetSkillMonitoring();
+    for (const listener of [...skillRootListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        logger.warn(
+          {
+            event: "kernel.environment.skill_recomposition_failed",
+            cause: error instanceof Error ? error.message : String(error),
+          },
+          "a skill catalog subscriber failed during an idle trust recomposition",
+        );
+      }
+    }
   };
 
   /**
    * Capture the complete bounded repository-plugin inventory for workspace trust.
    *
    * This is resolved by the kernel after Code's lightweight startup composer has
-   * painted. Invalid checkouts remain represented with a null digest so repairing,
-   * adding, removing, or changing any repository plugin invalidates the one
-   * workspace-wide verdict before that plugin can be selected.
+   * painted, then reused without filesystem work on ordinary settings reads. An
+   * explicit approval refreshes it before recording trust; reconnect captures a
+   * new process snapshot. Invalid checkouts remain represented with a null digest.
    */
-  const workspaceTrustSurface = (): unknown => {
+  const workspaceTrustSurface = (request?: { refresh?: boolean }): unknown => {
+    if (workspaceTrustSurfaceCaptured && request?.refresh !== true) {
+      return capturedWorkspaceTrustSurface;
+    }
     const plugins = pluginInventory()
       .map((entry) => entry.view)
       .filter((plugin) => plugin.ref.scope === "workspace")
       .sort((left, right) => pluginRefId(left.ref).localeCompare(pluginRefId(right.ref)));
-    if (plugins.length === 0) return undefined;
-    const snapshots = new Map(
-      options.pluginContributions
-        .snapshot(plugins.map((plugin) => plugin.ref))
-        .map((snapshot) => [pluginRefId(snapshot.ref), snapshot] as const),
-    );
-    return {
-      plugins: plugins.map((plugin) => {
-        const snapshot = snapshots.get(pluginRefId(plugin.ref));
-        return {
-          ref: plugin.ref,
-          digest: snapshot?.digest ?? null,
-        };
-      }),
-    };
+    capturedWorkspaceTrustSurface =
+      plugins.length === 0
+        ? undefined
+        : (() => {
+            const snapshots = new Map(
+              options.pluginContributions
+                .snapshot(plugins.map((plugin) => plugin.ref))
+                .map((snapshot) => [pluginRefId(snapshot.ref), snapshot] as const),
+            );
+            return Object.freeze({
+              plugins: Object.freeze(
+                plugins.map((plugin) => {
+                  const snapshot = snapshots.get(pluginRefId(plugin.ref));
+                  return Object.freeze({
+                    ref: Object.freeze({ ...plugin.ref }),
+                    digest: snapshot?.digest ?? null,
+                  });
+                }),
+              ),
+            });
+          })();
+    workspaceTrustSurfaceCaptured = true;
+    return capturedWorkspaceTrustSurface;
   };
 
   const assertWorkspaceTrustTransitionAllowed = (): void => {
@@ -2054,6 +2221,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
           false,
           true,
         );
+        publishSkillRootsChanged();
         return pinned;
       }
       const startedAt = Date.now();
@@ -2076,7 +2244,11 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     },
     activePlugins,
     skillRoots,
-    assertRunSnapshot,
+    pinnedSkillRoots,
+    observeSkillCatalog,
+    verifySkillCatalog,
+    skillAvailable,
+    onSkillRootsChanged,
     runRef() {
       if (pinned === undefined)
         throw kernelError("unavailable", "Environment has not been resolved");
@@ -2084,5 +2256,11 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     },
     workspaceTrustSurface,
     assertWorkspaceTrustTransitionAllowed,
+    close() {
+      if (closed) return;
+      closed = true;
+      resetSkillMonitoring();
+      skillRootListeners.clear();
+    },
   };
 }

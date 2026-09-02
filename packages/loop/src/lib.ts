@@ -29,6 +29,7 @@ export type {
   BuiltRunDeps,
   HostExtensionAdmission,
   HostModelCallAdmission,
+  SkillRootSnapshotProvider,
   SkillRootInput,
 } from "./runtime/build-run-deps.ts";
 export type { PluginBootstrapSkill } from "./runtime/capabilities/skills-settings.ts";

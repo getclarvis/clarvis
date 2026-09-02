@@ -498,6 +498,13 @@ async function runApp(
     }
   };
   const attention = createAttention(renderer);
+  let environmentDriftSequence = 0;
+  const [environmentDriftNotice, setEnvironmentDriftNotice] = createSignal<{
+    sequence: number;
+    kind: "skill" | "plugin_runtime";
+    name: string;
+    source?: string;
+  } | null>(null);
   const workspaceManager = await diagnosticAsync(
     "boot.workspace-manager",
     () =>
@@ -525,6 +532,15 @@ async function runApp(
         })(),
       }),
   );
+  const unsubscribeEnvironmentDrift = workspaceManager.subscribeEnvironmentDrift((notice) => {
+    setEnvironmentDriftNotice({
+      sequence: ++environmentDriftSequence,
+      kind: notice.kind,
+      name: notice.kind === "skill" ? notice.name : notice.plugin,
+      ...(notice.kind === "skill" ? { source: notice.source } : {}),
+    });
+  });
+  platform.onShutdown(unsubscribeEnvironmentDrift);
   const owner = workspaceManager.defaultOwner;
   const activeWorkspace = workspaceManager.current;
   const activeWorkspacePath = activeWorkspace.path ?? workspace;
@@ -1224,6 +1240,7 @@ async function runApp(
     sessionUsageBaseline: () => sessionUsage(runHost.sessionUsageBaseline()),
     workflowActivity: () => runHost.workflowActivity(),
     mcpStartupNotice: () => runHost.mcpStartupNotice(),
+    environmentDriftNotice,
     bang: (cmd) => runHost.runBangCommand(cmd),
     localBusy: () => runHost.bashActive(),
     compacting: () => runHost.compactionActive(),

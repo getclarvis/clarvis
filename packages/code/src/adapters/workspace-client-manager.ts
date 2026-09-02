@@ -1,12 +1,18 @@
 import type {
   createFileKernel as CreateFileKernel,
   CreateFileKernelOptions,
+  EnvironmentDriftNotice,
 } from "@clarvis/kernel/bootstrap";
 import { ownerFromWorkspace } from "@clarvis/paths";
 import type { KernelClient, WorkspaceRef } from "@clarvis/protocol";
 
 type FileKernelFactory = typeof CreateFileKernel;
 type ManagedFileKernel = Awaited<ReturnType<FileKernelFactory>>;
+
+interface EnvironmentDriftChannel {
+  latest?: EnvironmentDriftNotice;
+  listeners: Set<(notice: EnvironmentDriftNotice) => void>;
+}
 
 export async function loadFileKernelFactory(): Promise<FileKernelFactory> {
   const loaded = await import("@clarvis/kernel/bootstrap");
@@ -38,17 +44,29 @@ export class WorkspaceClientManager {
     private readonly options: WorkspaceClientOptions,
     readonly defaultOwner: string,
     private readonly createKernel: FileKernelFactory,
+    private readonly environmentDrift: EnvironmentDriftChannel,
   ) {}
 
   static async create(options: WorkspaceClientOptions): Promise<WorkspaceClientManager> {
     const createFileKernel = await loadFileKernelFactory();
     const defaultOwner = options.defaultOwner ?? ownerFromWorkspace(options.workspaceRoot);
-    const resolved = { ...options, defaultOwner };
+    const environmentDrift: EnvironmentDriftChannel = { listeners: new Set() };
+    const originalEnvironmentDrift = options.onEnvironmentDrift;
+    const resolved = {
+      ...options,
+      defaultOwner,
+      onEnvironmentDrift: (notice: EnvironmentDriftNotice): void => {
+        environmentDrift.latest = notice;
+        originalEnvironmentDrift?.(notice);
+        for (const listener of environmentDrift.listeners) listener(notice);
+      },
+    };
     return new WorkspaceClientManager(
       await createFileKernel(resolved),
       resolved,
       defaultOwner,
       createFileKernel,
+      environmentDrift,
     );
   }
 
@@ -74,6 +92,14 @@ export class WorkspaceClientManager {
     this.kernel.startMemoryRecovery();
   }
 
+  /** Subscribe to non-blocking extension withdrawal notices, replaying the latest one. */
+  subscribeEnvironmentDrift(listener: (notice: EnvironmentDriftNotice) => void): () => void {
+    if (this.closed) return () => {};
+    this.environmentDrift.listeners.add(listener);
+    if (this.environmentDrift.latest !== undefined) listener(this.environmentDrift.latest);
+    return () => this.environmentDrift.listeners.delete(listener);
+  }
+
   /** Rebuild the same workspace kernel during an explicit backend reconnect. */
   async invalidate(workspaceId: string): Promise<void> {
     if (workspaceId !== this.current.id) throw new Error("this process is pinned to one workspace");
@@ -86,5 +112,6 @@ export class WorkspaceClientManager {
     if (this.closed) return;
     this.closed = true;
     await this.kernel.close();
+    this.environmentDrift.listeners.clear();
   }
 }

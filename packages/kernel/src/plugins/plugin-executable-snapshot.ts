@@ -35,8 +35,14 @@ function canonicalPath(path: string): string {
   return path.split(sep).join("/");
 }
 
+/** One declared package path and the regular file it resolved to while being pinned. */
+interface ConfinedFile {
+  declared: string;
+  target: string;
+}
+
 /** Resolve an existing regular file only when its real target remains inside the package root. */
-function confinedFile(root: string, candidate: string): string | undefined {
+function confinedFile(root: string, candidate: string): ConfinedFile | undefined {
   try {
     const target = realpathSync(candidate);
     const comparableRoot = process.platform === "win32" ? root.toLowerCase() : root;
@@ -44,7 +50,7 @@ function confinedFile(root: string, candidate: string): string | undefined {
     if (comparableTarget !== comparableRoot && !comparableTarget.startsWith(comparableRoot + sep)) {
       return undefined;
     }
-    return statSync(target).isFile() ? target : undefined;
+    return statSync(target).isFile() ? { declared: candidate, target } : undefined;
   } catch {
     return undefined;
   }
@@ -65,8 +71,17 @@ function confinedDirectory(root: string, candidate: string): string | undefined 
   }
 }
 
+/** Whether a token explicitly names a path instead of a command or opaque argument. */
+function isExplicitPath(token: string): boolean {
+  return isAbsolute(token) || token.startsWith(".") || token.includes("/") || token.includes("\\");
+}
+
 /** Turn one argv token into a package-local file candidate when its execution base is known. */
-function argvFile(root: string, base: string | undefined, token: string): string | undefined {
+function argvFile(
+  root: string,
+  base: string | undefined,
+  token: string,
+): ConfinedFile | { error: string } | undefined {
   if (token.length === 0 || token.includes("\0") || token.startsWith("-")) return undefined;
   if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(token)) return undefined;
   const candidate = isAbsolute(token)
@@ -74,7 +89,17 @@ function argvFile(root: string, base: string | undefined, token: string): string
     : base === undefined
       ? undefined
       : resolve(base, token);
-  return candidate === undefined ? undefined : confinedFile(root, candidate);
+  if (candidate === undefined) return undefined;
+  const resolved = confinedFile(root, candidate);
+  if (resolved !== undefined) return resolved;
+  if (!isExplicitPath(token)) return undefined;
+  const relativeCandidate = relative(root, candidate);
+  const inside =
+    relativeCandidate === "" ||
+    (!relativeCandidate.startsWith(`..${sep}`) && relativeCandidate !== "..");
+  return inside
+    ? { error: `declared package-local executable '${token}' is not a confined regular file` }
+    : undefined;
 }
 
 /** Extract shell words conservatively so absolute package paths in hook commands can be identified. */
@@ -157,10 +182,16 @@ export function snapshotPluginExecutables(
   } catch (error) {
     return { ok: false, error: `plugin root could not be resolved: ${(error as Error).message}` };
   }
-  const candidates = new Set<string>();
+  const candidates = new Map<string, ConfinedFile>();
+  let invalidCandidate: string | undefined;
   const add = (base: string | undefined, token: string): void => {
     const candidate = argvFile(root, base, token);
-    if (candidate !== undefined) candidates.add(candidate);
+    if (candidate === undefined) return;
+    if ("error" in candidate) {
+      invalidCandidate ??= candidate.error;
+      return;
+    }
+    candidates.set(candidate.declared, candidate);
   };
 
   for (const server of Object.values(manifest.mcpServers ?? {})) {
@@ -188,8 +219,11 @@ export function snapshotPluginExecutables(
     }
   }
 
-  const paths = [...candidates].sort((left, right) => left.localeCompare(right));
-  if (paths.length > PLUGIN_EXECUTABLE_RESOURCE_LIMITS.files) {
+  if (invalidCandidate !== undefined) return { ok: false, error: invalidCandidate };
+  const filesToHash = [...candidates.values()].sort((left, right) =>
+    left.declared.localeCompare(right.declared),
+  );
+  if (filesToHash.length > PLUGIN_EXECUTABLE_RESOURCE_LIMITS.files) {
     return {
       ok: false,
       error:
@@ -199,8 +233,8 @@ export function snapshotPluginExecutables(
   }
   const files: PluginExecutableFileSnapshot[] = [];
   let aggregateBytes = 0;
-  for (const path of paths) {
-    const hashed = hashFile(path);
+  for (const candidate of filesToHash) {
+    const hashed = hashFile(candidate.target);
     if ("error" in hashed) return { ok: false, error: hashed.error };
     aggregateBytes += hashed.bytes;
     if (aggregateBytes > PLUGIN_EXECUTABLE_RESOURCE_LIMITS.aggregateBytes) {
@@ -211,7 +245,7 @@ export function snapshotPluginExecutables(
           `${String(PLUGIN_EXECUTABLE_RESOURCE_LIMITS.aggregateBytes)}-byte aggregate limit`,
       };
     }
-    files.push({ ...hashed, path: canonicalPath(relative(root, hashed.path)) });
+    files.push({ ...hashed, path: canonicalPath(relative(root, candidate.declared)) });
   }
   return { ok: true, files };
 }

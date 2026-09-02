@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { statSync } from "node:fs";
+import { statSync, unwatchFile, watchFile } from "node:fs";
 import { join } from "node:path";
 import {
   pluginSettingsFragment,
@@ -37,6 +37,9 @@ import {
   enumerateResources,
   hashBoundedFile,
   readBoundedBytes,
+  type SkillContent,
+  type SkillInfo,
+  type SkillResource,
   MAX_SKILL_FILE_BYTES,
   MAX_SKILL_FILE_CHARS,
   MAX_SKILL_RESOURCE_FILE_BYTES,
@@ -60,6 +63,16 @@ export const PLUGIN_SKILL_RESOURCE_LIMITS = Object.freeze({
 
 type PluginSelection = readonly EnvironmentPluginRef[];
 
+/** One selected plugin whose package-local executable surface changed on disk. */
+export interface PluginRuntimeDriftNotice {
+  plugin: string;
+  path: string;
+}
+
+interface PluginRuntimeWatcher {
+  close(): void;
+}
+
 /**
  * Turns installed + enabled plugins into the inputs a run consumes: skill roots,
  * settings fragments (hooks / mcpServers / capability blocks), and agent records.
@@ -76,10 +89,10 @@ export interface PluginContributions {
   snapshot(enabled: PluginSelection): readonly PluginContributionSnapshot[];
   /** Capture the exact contribution bytes selected for this kernel process. */
   pin(enabled: PluginSelection): readonly PluginContributionSnapshot[];
-  /** Reject selected contribution drift at the boundary before a new run starts. */
-  assertUnchanged(enabled: PluginSelection): void;
-  /** Skill roots for enabled + loadable plugins. */
+  /** Skill roots for enabled + loadable plugins, or the process-pinned projection after pinning. */
   skillRoots(enabled: PluginSelection): SkillRootInput[];
+  /** Already-pinned skill roots without a filesystem validation. */
+  pinnedSkillRoots(enabled: PluginSelection): SkillRootInput[];
   /**
    * Bootstrap skills declared by enabled + loadable plugins, in `enabled` order.
    *
@@ -110,6 +123,10 @@ export interface PluginContributions {
     plugin: string,
     skill: string,
   ): CapabilitySkillPlansMode | undefined;
+  /** Return captured skills whose bytes no longer match the exact process-pinned contribution. */
+  verifyPinnedSkillCatalog(skills: readonly SkillContent[]): readonly SkillContent[];
+  /** Release asynchronous executable-file monitors owned by this contribution snapshot. */
+  close(): void;
 }
 
 /** Immutable projection captured from one loadable plugin contribution. */
@@ -177,7 +194,8 @@ interface Loadable {
  * @returns a {@link PluginContributions} whose every method is passed the
  *   operator-enabled plugin names. Before an Environment is pinned, contribution
  *   files are discovered per call; afterwards the admitted manifests and agents
- *   remain immutable and any content drift is rejected until reconnect. Hook
+ *   remain immutable while asynchronous monitors withdraw changed executable
+ *   projections until reconnect. Hook
  *   Workspace settings-hook approvals remain live because they are independent
  *   authorization state; a selected plugin's own hooks stay in its atomic snapshot.
  * @remarks Reads the filesystem synchronously and never consults settings itself,
@@ -210,8 +228,49 @@ export function createPluginContributions(opts: {
   workspaceRoot?: string;
   /** Where a plugin dropped from the catalog is reported. */
   logger?: Logger;
+  /** Inform the host that executable contributions from one plugin were withdrawn. */
+  onRuntimeDrift?: (notice: PluginRuntimeDriftNotice) => void;
+  /** Injectable asynchronous path monitor for deterministic tests. */
+  watchRuntimePath?: (path: string, onChange: () => void) => PluginRuntimeWatcher;
 }): PluginContributions {
   const logger = opts.logger ?? NOOP_LOGGER;
+  const watchRuntimePath =
+    opts.watchRuntimePath ??
+    ((path: string, onChange: () => void): PluginRuntimeWatcher => {
+      const listener = (
+        current: {
+          mtimeMs: number;
+          ctimeMs: number;
+          size: number;
+          mode: number;
+          ino: number;
+          dev: number;
+        },
+        previous: {
+          mtimeMs: number;
+          ctimeMs: number;
+          size: number;
+          mode: number;
+          ino: number;
+          dev: number;
+        },
+      ): void => {
+        if (
+          current.mtimeMs === previous.mtimeMs &&
+          current.ctimeMs === previous.ctimeMs &&
+          current.size === previous.size &&
+          current.mode === previous.mode &&
+          current.ino === previous.ino &&
+          current.dev === previous.dev
+        )
+          return;
+        onChange();
+      };
+      watchFile(path, { persistent: false, interval: 1_000 }, listener);
+      return { close: () => unwatchFile(path, listener) };
+    });
+  const runtimeWatchers = new Map<string, PluginRuntimeWatcher[]>();
+  const driftedRuntime = new Set<string>();
   /**
    * Report a plugin the operator enabled that contributes nothing.
    *
@@ -412,6 +471,56 @@ export function createPluginContributions(opts: {
       )
       .digest("hex")}`;
 
+  const capturedSkillSurfaces = new WeakMap<
+    PluginContributionSnapshot,
+    readonly ({ name: string; digest: string } | { unavailable: true })[]
+  >();
+
+  /** Hash one discovered skill through the canonical record used by contribution pinning. */
+  const skillDigest = (
+    info: SkillInfo,
+    resources: readonly SkillResource[],
+    aggregate: { bytes: number },
+  ): string =>
+    digest({
+      manifest: snapshotFileDigest(info.path, MAX_SKILL_FILE_BYTES, MAX_SKILL_FILE_CHARS),
+      catalog: {
+        name: info.name,
+        description: info.description,
+        metadata: info.metadata,
+        allowed_tools: info.allowedTools,
+        user_invocable: info.userInvocable,
+        catalog_suppressed: info.catalogSuppressed,
+        dependencies: info.dependencies,
+        presentation: info.presentation,
+        defaulted: info.defaulted,
+      },
+      resources: [...resources]
+        .sort((left, right) => left.rel.localeCompare(right.rel))
+        .map((resource) => {
+          const snapshot = hashBoundedFile(resource.path, {
+            maxBytes: PLUGIN_SKILL_RESOURCE_LIMITS.fileBytes,
+            code: "invalid_skill",
+            label: "plugin skill resource",
+            logger,
+          });
+          aggregate.bytes += snapshot.bytes;
+          if (aggregate.bytes > PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes) {
+            throw new Error(
+              `plugin skill resources exceed the ${String(
+                PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes,
+              )}-byte aggregate limit`,
+            );
+          }
+          return {
+            rel: resource.rel,
+            digest: snapshot.digest,
+            bytes: snapshot.bytes,
+            mode: snapshot.mode,
+          };
+        }),
+    });
+
   const skillSurface = (
     plugin: Loadable,
   ): ({ name: string; digest: string } | { unavailable: true })[] => {
@@ -423,7 +532,7 @@ export function createPluginContributions(opts: {
     );
     if (roots.length === 0) return [];
     try {
-      let aggregateResourceBytes = 0;
+      const aggregate = { bytes: 0 };
       const skills = createAgentSkills({
         workspace: plugin.dir,
         roots,
@@ -432,52 +541,14 @@ export function createPluginContributions(opts: {
       });
       return skills
         .listSkills()
-        .map((info) => {
-          const resources = enumerateResources(
-            info.dir,
-            skills.config.followSymlinks,
-            skills.config,
-          ).map((resource) => {
-            const snapshot = hashBoundedFile(resource.path, {
-              maxBytes: PLUGIN_SKILL_RESOURCE_LIMITS.fileBytes,
-              code: "invalid_skill",
-              label: "plugin skill resource",
-              logger,
-            });
-            aggregateResourceBytes += snapshot.bytes;
-            if (aggregateResourceBytes > PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes) {
-              throw new Error(
-                `plugin skill resources exceed the ${String(
-                  PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes,
-                )}-byte aggregate limit`,
-              );
-            }
-            return {
-              rel: resource.rel,
-              digest: snapshot.digest,
-              bytes: snapshot.bytes,
-              mode: snapshot.mode,
-            };
-          });
-          return {
-            name: info.name,
-            digest: digest({
-              manifest: snapshotFileDigest(info.path, MAX_SKILL_FILE_BYTES, MAX_SKILL_FILE_CHARS),
-              catalog: {
-                name: info.name,
-                description: info.description,
-                metadata: info.metadata,
-                allowed_tools: info.allowedTools,
-                user_invocable: info.userInvocable,
-                catalog_suppressed: info.catalogSuppressed,
-                dependencies: info.dependencies,
-                presentation: info.presentation,
-                defaulted: info.defaulted,
-              },
-              resources,
-            }),
-          };
-        })
+        .map((info) => ({
+          name: info.name,
+          digest: skillDigest(
+            info,
+            enumerateResources(info.dir, skills.config.followSymlinks, skills.config),
+            aggregate,
+          ),
+        }))
         .sort((left, right) => left.name.localeCompare(right.name));
     } catch {
       return [{ unavailable: true }];
@@ -516,6 +587,7 @@ export function createPluginContributions(opts: {
     if (skills.some((skill) => "unavailable" in skill)) {
       unavailableSkillSnapshots.add(snapshot);
     }
+    capturedSkillSurfaces.set(snapshot, skills);
     return snapshot;
   };
 
@@ -525,6 +597,8 @@ export function createPluginContributions(opts: {
         refs: readonly EnvironmentPluginRef[];
         loadables: readonly Loadable[];
         snapshots: readonly PluginContributionSnapshot[];
+        skillRoots: readonly SkillRootInput[];
+        skillDigests: ReadonlyMap<string, string>;
       }
     | undefined;
 
@@ -543,27 +617,144 @@ export function createPluginContributions(opts: {
     }
   };
 
-  const assertPinnedSnapshot = (enabled: PluginSelection): void => {
-    assertPinnedSelection(enabled);
-    if (pinned === undefined) return;
-    const current = freshLoadables(pinned.refs);
-    const currentSnapshots = current.map(contributionSnapshot);
-    const currentDigests = Object.fromEntries(
-      currentSnapshots.map((snapshot) => [refId(snapshot.ref), snapshot.digest]),
-    );
-    const pinnedDigests = Object.fromEntries(
-      pinned.snapshots.map((snapshot) => [refId(snapshot.ref), snapshot.digest]),
-    );
-    if (JSON.stringify(currentDigests) !== JSON.stringify(pinnedDigests)) {
-      throw kernelError(
-        "unavailable",
-        "selected plugin content changed after the Environment snapshot was pinned; reconnect the kernel",
-      );
+  const captureSnapshots = (loadable: readonly Loadable[]): readonly PluginContributionSnapshot[] =>
+    Object.freeze(loadable.map(contributionSnapshot));
+
+  const closeRuntimeWatchers = (): void => {
+    for (const watchers of runtimeWatchers.values()) {
+      for (const watcher of watchers) watcher.close();
+    }
+    runtimeWatchers.clear();
+  };
+
+  /** Monitor only bytes that a later process launch could otherwise reread from disk. */
+  const observeRuntimeFiles = (loadables: readonly Loadable[]): void => {
+    closeRuntimeWatchers();
+    driftedRuntime.clear();
+    for (const plugin of loadables) {
+      const key = refId(plugin.ref);
+      const watchers: PluginRuntimeWatcher[] = [];
+      const onChange = (path: string): void => {
+        if (driftedRuntime.has(key)) return;
+        driftedRuntime.add(key);
+        for (const watcher of runtimeWatchers.get(key) ?? []) watcher.close();
+        runtimeWatchers.delete(key);
+        logger.warn(
+          {
+            event: "kernel.plugin.runtime_drift",
+            plugin: plugin.name,
+            scope: plugin.ref.scope,
+            source: plugin.ref.source,
+            path,
+          },
+          "changed plugin runtime files were withdrawn; runs remain available",
+        );
+        try {
+          opts.onRuntimeDrift?.({ plugin: plugin.name, path });
+        } catch (error) {
+          logger.warn(
+            {
+              event: "kernel.plugin.runtime_drift_notice_failed",
+              plugin: plugin.name,
+              cause: error instanceof Error ? error.message : String(error),
+            },
+            "the host's plugin drift notice callback failed",
+          );
+        }
+      };
+      for (const file of plugin.executableFiles) {
+        const path = join(plugin.dir, file.path);
+        try {
+          watchers.push(watchRuntimePath(path, () => onChange(path)));
+        } catch (error) {
+          logger.warn(
+            {
+              event: "kernel.plugin.runtime_watch_unavailable",
+              plugin: plugin.name,
+              path,
+              cause: error instanceof Error ? error.message : String(error),
+            },
+            "live plugin runtime drift monitoring is unavailable for one file",
+          );
+        }
+      }
+      if (watchers.length > 0) runtimeWatchers.set(key, watchers);
     }
   };
 
-  const captureSnapshots = (loadable: readonly Loadable[]): readonly PluginContributionSnapshot[] =>
-    Object.freeze(loadable.map(contributionSnapshot));
+  const runtimeAvailable = (plugin: Loadable): boolean => !driftedRuntime.has(refId(plugin.ref));
+
+  /** Project roots once from the same loadables and snapshots the Environment pins. */
+  const projectSkillRoots = (
+    selectedLoadables: readonly Loadable[],
+    snapshots: readonly PluginContributionSnapshot[],
+  ): SkillRootInput[] => {
+    const snapshotsByRef = new Map(snapshots.map((snapshot) => [refId(snapshot.ref), snapshot]));
+    let budget = PLUGIN_SKILL_ROOT_BUDGET;
+    return selectedLoadables.flatMap((plugin) => {
+      const snapshot = snapshotsByRef.get(refId(plugin.ref));
+      if (snapshot === undefined || unavailableSkillSnapshots.has(snapshot)) {
+        skipped(
+          plugin.ref,
+          "skills",
+          "the selected skill surface could not be captured atomically",
+        );
+        return [];
+      }
+      const declared = skillsDirsOf(plugin);
+      let refused: string | undefined;
+      const present = declared.filter((path) => {
+        try {
+          return statSync(path).isDirectory();
+        } catch (error) {
+          refused ??= error instanceof Error ? error.message : String(error);
+          return false;
+        }
+      });
+      if (present.length === 0) {
+        skipped(
+          plugin.ref,
+          "skills",
+          refused ?? `none of ${String(declared.length)} declared skill roots is a directory`,
+        );
+        return [];
+      }
+      if (budget <= 0) {
+        skipped(plugin.ref, "skills", "the run's plugin skill-root budget is spent");
+        return [];
+      }
+      const admitted = present.slice(0, budget);
+      if (admitted.length < present.length) {
+        skipped(
+          plugin.ref,
+          "skills",
+          `only ${String(admitted.length)} of ${String(present.length)} skill roots fit the ` +
+            "run's plugin budget",
+        );
+      }
+      budget -= admitted.length;
+      const scanRoots = new Map(
+        pluginSkillScanRoots(
+          plugin.dir,
+          plugin.manifest.skills,
+          plugin.manifestLocation,
+          plugin.format,
+        ).map((root) => [root.path, root]),
+      );
+      return admitted.map((path) => ({
+        ...scanRoots.get(path),
+        path,
+        executionRoot: plugin.dir,
+        scope: plugin.ref.scope === "workspace" ? ("workspace" as const) : ("user" as const),
+        source: `plugin:${plugin.name}`,
+      }));
+    });
+  };
+  const copySkillRoots = (roots: readonly SkillRootInput[]): SkillRootInput[] =>
+    roots.map((root) => ({
+      ...root,
+      ...(root.include === undefined ? {} : { include: [...root.include] }),
+    }));
 
   /** Parse a plugin agent's markdown into an {@link AgentRecord} qualified as
    * `<plugin>:<agent>` with scope `plugin`, lifting `model`/`description` from the
@@ -591,79 +782,44 @@ export function createPluginContributions(opts: {
       const captured = freshLoadables(enabled);
       const snapshots = captureSnapshots(captured);
       const refs = captured.map((plugin) => plugin.ref);
+      const skillRoots = projectSkillRoots(captured, snapshots);
+      const skillDigests = new Map<string, string>();
+      for (const snapshot of snapshots) {
+        const scope = snapshot.ref.scope === "workspace" ? "workspace" : "user";
+        for (const skill of capturedSkillSurfaces.get(snapshot) ?? []) {
+          if ("name" in skill) {
+            skillDigests.set(`${scope}\0plugin:${snapshot.ref.name}\0${skill.name}`, skill.digest);
+          }
+        }
+      }
       pinned = {
         selection: selectionId(refs),
         refs,
         loadables: captured,
         snapshots,
+        skillRoots: Object.freeze(skillRoots),
+        skillDigests,
       };
+      observeRuntimeFiles(captured);
       return snapshots;
     },
 
-    assertUnchanged(enabled) {
-      assertPinnedSnapshot(enabled);
+    skillRoots(enabled) {
+      assertPinnedSelection(enabled);
+      if (pinned !== undefined && pinned.selection === selectionId(enabled)) {
+        return copySkillRoots(pinned.skillRoots);
+      }
+      const selectedLoadables = loadables(enabled);
+      const snapshots = captureSnapshots(selectedLoadables);
+      return projectSkillRoots(selectedLoadables, snapshots);
     },
 
-    skillRoots(enabled) {
-      assertPinnedSnapshot(enabled);
-      const selectedLoadables = loadables(enabled);
-      const snapshots =
-        pinned !== undefined && pinned.selection === selectionId(enabled)
-          ? pinned.snapshots
-          : captureSnapshots(selectedLoadables);
-      const snapshotsByRef = new Map(snapshots.map((snapshot) => [refId(snapshot.ref), snapshot]));
-      let budget = PLUGIN_SKILL_ROOT_BUDGET;
-      return selectedLoadables.flatMap((p) => {
-        const snapshot = snapshotsByRef.get(refId(p.ref));
-        if (snapshot === undefined || unavailableSkillSnapshots.has(snapshot)) {
-          skipped(p.ref, "skills", "the selected skill surface could not be captured atomically");
-          return [];
-        }
-        const declared = skillsDirsOf(p);
-        let refused: string | undefined;
-        const present = declared.filter((path) => {
-          try {
-            return statSync(path).isDirectory();
-          } catch (error) {
-            refused ??= error instanceof Error ? error.message : String(error);
-            return false;
-          }
-        });
-        if (present.length === 0) {
-          skipped(
-            p.ref,
-            "skills",
-            refused ?? `none of ${String(declared.length)} declared skill roots is a directory`,
-          );
-          return [];
-        }
-        if (budget <= 0) {
-          skipped(p.ref, "skills", "the run's plugin skill-root budget is spent");
-          return [];
-        }
-        const admitted = present.slice(0, budget);
-        if (admitted.length < present.length) {
-          skipped(
-            p.ref,
-            "skills",
-            `only ${String(admitted.length)} of ${String(present.length)} skill roots fit the ` +
-              "run's plugin budget",
-          );
-        }
-        budget -= admitted.length;
-        const scanRoots = new Map(
-          pluginSkillScanRoots(p.dir, p.manifest.skills, p.manifestLocation, p.format).map(
-            (root) => [root.path, root],
-          ),
-        );
-        return admitted.map((path) => ({
-          ...scanRoots.get(path),
-          path,
-          executionRoot: p.dir,
-          scope: p.ref.scope === "workspace" ? ("workspace" as const) : ("user" as const),
-          source: `plugin:${p.name}`,
-        }));
-      });
+    pinnedSkillRoots(enabled) {
+      assertPinnedSelection(enabled);
+      if (pinned === undefined) {
+        throw kernelError("unavailable", "plugin contribution snapshot has not been pinned");
+      }
+      return copySkillRoots(pinned.skillRoots);
     },
 
     skillBootstraps(enabled) {
@@ -677,24 +833,26 @@ export function createPluginContributions(opts: {
 
     settingsScopes(enabled) {
       assertPinnedSelection(enabled);
-      return loadables(enabled).map((p) => {
-        const settings = pluginSettingsFragment(p.manifest);
-        const namespacedServers = Object.fromEntries(
-          resolvedMcpServers(p).map((server) => [server.effectiveName, server.declaration]),
-        );
-        return {
-          origin: "plugin" as const,
-          settings: {
-            ...settings,
-            ...(p.manifest.mcpServers === undefined ? {} : { mcpServers: namespacedServers }),
-          },
-        };
-      });
+      return loadables(enabled)
+        .filter(runtimeAvailable)
+        .map((p) => {
+          const settings = pluginSettingsFragment(p.manifest);
+          const namespacedServers = Object.fromEntries(
+            resolvedMcpServers(p).map((server) => [server.effectiveName, server.declaration]),
+          );
+          return {
+            origin: "plugin" as const,
+            settings: {
+              ...settings,
+              ...(p.manifest.mcpServers === undefined ? {} : { mcpServers: namespacedServers }),
+            },
+          };
+        });
     },
 
     mcpServers(enabled) {
       assertPinnedSelection(enabled);
-      return loadables(enabled).flatMap(resolvedMcpServers);
+      return loadables(enabled).filter(runtimeAvailable).flatMap(resolvedMcpServers);
     },
 
     agents(enabled) {
@@ -722,13 +880,18 @@ export function createPluginContributions(opts: {
     },
 
     locateCapabilityExecutable(enabled, capability, plugin) {
-      assertPinnedSnapshot(enabled);
+      assertPinnedSelection(enabled);
       const ref = enabled.find((candidate) => candidate.name === plugin);
       if (ref === undefined) {
         return { error: `plugin '${plugin}' is not enabled for this workspace` };
       }
       const l = loadables(enabled).find((candidate) => refId(candidate.ref) === refId(ref));
       if (l === undefined) return { error: `plugin '${plugin}' has no readable manifest` };
+      if (!runtimeAvailable(l)) {
+        return {
+          error: `plugin '${plugin}' changed on disk; its executable contributions are withheld until reconnect`,
+        };
+      }
       const declared = l.manifest.capabilityExecutables?.[capability];
       if (declared === undefined) {
         return { error: `plugin '${plugin}' offers no capability executable '${capability}'` };
@@ -740,8 +903,36 @@ export function createPluginContributions(opts: {
       assertPinnedSelection(enabled);
       const ref = enabled.find((candidate) => candidate.name === plugin);
       if (ref === undefined) return undefined;
-      return loadables(enabled).find((candidate) => refId(candidate.ref) === refId(ref))?.manifest
-        .capabilityRunPolicies?.plans?.skills[skill];
+      const loadable = loadables(enabled).find((candidate) => refId(candidate.ref) === refId(ref));
+      if (loadable === undefined || !runtimeAvailable(loadable)) return undefined;
+      return loadable.manifest.capabilityRunPolicies?.plans?.skills[skill];
+    },
+
+    verifyPinnedSkillCatalog(skills) {
+      if (pinned === undefined) {
+        throw kernelError("unavailable", "plugin contribution snapshot has not been pinned");
+      }
+      const current = new Map<string, string>();
+      for (const plugin of pinned.loadables) {
+        const scope = plugin.ref.scope === "workspace" ? "workspace" : "user";
+        for (const skill of skillSurface(plugin)) {
+          if ("name" in skill) {
+            current.set(`${scope}\0plugin:${plugin.name}\0${skill.name}`, skill.digest);
+          }
+        }
+      }
+      const changed: SkillContent[] = [];
+      for (const skill of skills) {
+        if (!skill.source.startsWith("plugin:")) continue;
+        const key = `${skill.scope}\0${skill.source}\0${skill.name}`;
+        const expected = pinned.skillDigests.get(key);
+        if (expected === undefined || current.get(key) !== expected) changed.push(skill);
+      }
+      return changed;
+    },
+
+    close() {
+      closeRuntimeWatchers();
     },
   };
 }

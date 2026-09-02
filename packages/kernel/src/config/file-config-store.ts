@@ -75,7 +75,7 @@ export interface FileConfigStoreOptions {
       enabledPlugins: readonly EnvironmentPluginRef[],
       trust: WorkspaceTrustVerdict,
     ): readonly EnvironmentPluginRef[];
-    workspaceTrustSurface(): unknown;
+    workspaceTrustSurface(options?: { refresh?: boolean }): unknown;
     assertWorkspaceTrustTransitionAllowed?(): void;
   };
   /**
@@ -508,10 +508,9 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
   /**
    * Whether this workspace's executable surface has been approved.
    *
-   * @returns the verdict, recomputed on every call so an edit to the repository's
-   *   `.clarvis/` takes effect without a restart — and so that editing an
-   *   approved file flips the verdict back to `changed` rather than riding the
-   *   old approval.
+   * @returns the verdict, recomputed on every call from settings and workspace
+   *   agents. The Environment's extension surface is process-cached so ordinary
+   *   reads never walk plugin files; an explicit approval refreshes that surface.
    * @remarks An unreadable trust store yields `unapproved`, never `trusted`: the
    *   failure mode of a corrupt approvals file must be "nothing is approved".
    */
@@ -544,7 +543,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     const fingerprint = workspaceTrustFingerprint(
       readScopeSettings("workspace").value,
       workspaceAgentFiles(),
-      opts.environment?.workspaceTrustSurface(),
+      opts.environment?.workspaceTrustSurface({ refresh: true }),
     );
     if (fingerprint === undefined && approve) return;
     const key = trustKey();

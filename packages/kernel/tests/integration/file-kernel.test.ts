@@ -16,7 +16,13 @@ import {
   createKernelEnvironment,
   resolveSecretEnvironment,
 } from "../../src/bootstrap.ts";
-import { globalPaths, ownerSegment, workspaceScopeKey } from "@clarvis/paths";
+import {
+  globalPaths,
+  ownerSegment,
+  workspacePaths,
+  workspaceScopeKey,
+  workspaceStatePaths,
+} from "@clarvis/paths";
 import { discoverGitWorkspace } from "../../src/git-workspace.ts";
 import { recordingLogger } from "../helpers/logger.ts";
 
@@ -328,7 +334,7 @@ describe("createFileKernel — skills roots from plugins", () => {
     await kernel.close();
   });
 
-  it("rejects plugin skill drift when a run is admitted, not on the boot projection path", async () => {
+  it("withdraws plugin skill drift without rejecting the next run", async () => {
     const ws = seedWorkspace();
     const globalDir = join(ws, "global");
     const pluginDir = join(globalPaths(globalDir).pluginsDir, "handbook");
@@ -342,20 +348,121 @@ describe("createFileKernel — skills roots from plugins", () => {
     seedFile(join(pluginDir, "plugin.json"), JSON.stringify({ name: "handbook" }));
     seedFile(skillFile, "---\nname: guide\ndescription: first\n---\n\nfirst\n");
 
+    let reportDrift!: (notice: { name: string }) => void;
+    const drift = new Promise<{ name: string }>((resolve) => {
+      reportDrift = resolve;
+    });
+    const logger = recordingLogger();
+    const kernel = await createFileKernel({
+      workspaceRoot: ws,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      traceDir: join(ws, "traces"),
+      globalDir,
+      onEnvironmentDrift: (notice) => {
+        if (notice.kind === "skill") reportDrift(notice);
+      },
+      logger,
+    });
+    try {
+      expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBe(true);
+      expect(logger.events("kernel.environment.skill_watch_unavailable")).toEqual([]);
+      const discoveriesBeforeRun = logger.events("skills.discovered").length;
+      const unreadableBeforeRun = logger.events("skill.dir_unreadable").length;
+
+      writeFileSync(skillFile, "---\nname: guide\ndescription: second\n---\n\nsecond\n");
+      const notice = await Promise.race([
+        drift,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("skill drift watcher did not fire")), 2_000),
+        ),
+      ]);
+      expect(notice.name).toBe("guide");
+      expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBe(false);
+
+      const handle = await kernel.runs.start({
+        messages: [{ role: "user", content: "hi" }],
+        agent: "coder",
+      });
+      await handle.done;
+      await handle.closed;
+      expect(logger.events("skills.discovered").slice(discoveriesBeforeRun)).toEqual([]);
+      expect(logger.events("skill.dir_unreadable").slice(unreadableBeforeRun)).toEqual([]);
+    } finally {
+      await kernel.close();
+    }
+  });
+
+  it("refreshes repository plugin bytes before recording workspace approval", async () => {
+    const ws = seedWorkspace();
+    const globalDir = join(ws, "global");
+    const pluginManifest = join(workspacePaths(ws).pluginsDir, "runner", "plugin.json");
+    seedFile(pluginManifest, JSON.stringify({ name: "runner", version: "one" }));
+    const first = await createFileKernel({
+      workspaceRoot: ws,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      traceDir: join(ws, "traces-first"),
+      globalDir,
+    });
+    expect((await first.config.getSettings()).workspace_trust?.state).toBe("unapproved");
+    writeFileSync(pluginManifest, JSON.stringify({ name: "runner", version: "two" }));
+    expect((await first.config.approveWorkspace()).workspace_trust?.state).toBe("trusted");
+    await first.close();
+
+    const reconnected = await createFileKernel({
+      workspaceRoot: ws,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      traceDir: join(ws, "traces-second"),
+      globalDir,
+    });
+    try {
+      expect((await reconnected.config.getSettings()).workspace_trust?.state).toBe("trusted");
+    } finally {
+      await reconnected.close();
+    }
+  });
+
+  it("atomically adds and revokes plugin skills when workspace trust recomposes", async () => {
+    const ws = seedWorkspace();
+    const globalDir = join(ws, "global");
+    const pluginDir = join(workspacePaths(ws).pluginsDir, "handbook");
+    seedFile(join(pluginDir, "plugin.json"), JSON.stringify({ name: "handbook" }));
+    seedFile(
+      join(pluginDir, "skills", "guide", "SKILL.md"),
+      "---\nname: guide\ndescription: guide\n---\n\nTrusted guide.\n",
+    );
+    seedFile(
+      join(workspacePaths(ws).environmentsDir, "project.json"),
+      JSON.stringify({
+        schema_version: 1,
+        plugins: [{ scope: "workspace", source: "clarvis", name: "handbook" }],
+        skills: [],
+      }),
+    );
+    seedFile(
+      workspaceStatePaths(ws, { env: { CLARVIS_HOME: globalDir } }).environmentSelectionFile,
+      JSON.stringify({
+        schema_version: 1,
+        environment: { scope: "workspace", name: "project" },
+      }),
+    );
+
     const kernel = await createFileKernel({
       workspaceRoot: ws,
       env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
       traceDir: join(ws, "traces"),
       globalDir,
     });
-    expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBe(true);
-
-    writeFileSync(skillFile, "---\nname: guide\ndescription: second\n---\n\nsecond\n");
-    await expect(
-      kernel.runs.start({ messages: [{ role: "user", content: "hi" }], agent: "coder" }),
-    ).rejects.toThrow(/selected plugin content changed.*reconnect the kernel/);
-
-    await kernel.close();
+    try {
+      expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBeFalse();
+      await kernel.config.approveWorkspace();
+      expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBeTrue();
+      expect((await kernel.skills.getPrompt("guide"))[0]?.content).toContain("Trusted guide.");
+      await kernel.config.revokeWorkspace();
+      expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBeFalse();
+      await expect(kernel.skills.getPrompt("guide")).rejects.toMatchObject({ code: "not_found" });
+    } finally {
+      await kernel.close();
+    }
   });
 });
 

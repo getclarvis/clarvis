@@ -225,13 +225,17 @@ describe("approval lifts the withholding", () => {
         },
       ],
     };
+    const surfaceReads: (boolean | undefined)[] = [];
     const config = createConfigService(
       createFileConfigStore({
         workspaceRoot: root,
         globalDir,
         environment: {
           resolvePlugins: () => [],
-          workspaceTrustSurface: () => extensions,
+          workspaceTrustSurface: (options) => {
+            surfaceReads.push(options?.refresh);
+            return extensions;
+          },
         },
       }),
     );
@@ -240,6 +244,7 @@ describe("approval lifts the withholding", () => {
     expect(unapproved.workspace_trust?.state).toBe("unapproved");
     expect(unapproved.withheld_workspace_fields).toEqual(["environment"]);
     expect((await config.approveWorkspace()).workspace_trust?.state).toBe("trusted");
+    expect(surfaceReads).toContain(true);
     expect((await config.getSettings()).withheld_workspace_fields).toBeUndefined();
     extensions = {
       plugins: [

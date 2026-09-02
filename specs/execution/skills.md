@@ -309,9 +309,14 @@ policy:
 `SkillInfo` (`packages/skills/src/types.ts:154`): `name`, `description`, `metadata`,
 `allowedTools?`, `userInvocable`, `catalogSuppressed?`, `presentation?`, `dependencies?`, `defaulted?`, `scope`,
 `source`, `root`, `dir`, `executionRoot?`, `path`, `shadowed?`. `SkillContent` extends it with `body`
-and `resources` (`packages/skills/src/types.ts:212-216`). `ResolvedSkill` is `{ info, body }` where
-`body` may be a lazy getter (`packages/skills/src/types.ts:218-226`, implemented at
-`packages/skills/src/registry.ts:529-545`).
+and `resources`, plus optional `identityFiles`: absolute manifest, selected-sidecar, and resource
+paths whose bytes produced the effective content and allow-list. The sidecar path is identity-only
+and does not become a readable resource (`SkillContent` in `packages/skills/src/types.ts` and
+`SkillRegistry.get` in `packages/skills/src/registry.ts`). `ResolvedSkill` retains the selected
+sidecar path internally so the public disclosure can identify it without exposing its contents.
+Test: `createAgentSkills public facade` in `packages/skills/tests/integration/api.test.ts` and the
+post-watch sidecar verification case in
+`packages/kernel/tests/integration/environment-manager.test.ts`.
 
 `SkillRootInput.executionRoot` is a host approval flag, not the path ultimately disclosed. When it
 is present, `buildResolvedSkill` records that discovered skill's own `dir` as
@@ -716,6 +721,17 @@ merge and the bootstrap is then refused as `foreign_root` — the source states 
   provider access, re-scans only when the roots' JSON signature changes, and falls back to the last
   good scan (or an empty provider that throws `"skills are unavailable"` on resource access) when a
   rescan throws (`:203`–`:251`).
+- A `SkillRootSnapshotProvider` instead produces `snapshotSkills`: roots are consumed while
+  dependencies are built, catalog bodies are materialized, resources are limited to the captured
+  relative-path allow-list, and the host arms identity-file monitoring before verifying those bytes
+  against its pin. Later calls only test the host's memory-only `available(skill)` predicate. A
+  withdrawn skill disappears from the catalog, returns no body, and refuses resource reads without
+  rebuilding the registry or rejecting a run. An optional idle trust-change subscription atomically
+  replaces the complete captured provider; it is never consulted by run admission. Production:
+  `SkillRootSnapshotProvider` and `snapshotSkills` in
+  `packages/loop/src/runtime/build-run-deps.ts`. Test: exact root capture, observe-before-verify,
+  withdrawal, and idle trust replacement in
+  `packages/loop/tests/integration/execute-run-entrypoints.test.ts`.
 - An initial scan failure logs `skills.discovery_failed` and leaves `skills` undefined rather than
   failing the deps (`:507`–`:518`).
 - The capability is registered whenever `useSkills`, even with an undefined provider, so the grant,
@@ -1058,15 +1074,20 @@ line that names the whole pass's outcome.
 | `builtins.skills = false` | package never loaded; `reportBuiltinDisabled` debug record | `packages/loop/src/runtime/build-run-deps.ts:401-403,477-485` |
 | initial `createAgentSkills` throws | `skills.discovery_failed` (`scope: "initial"`), deps built without skills | `:487-518` |
 | rescan throws (dynamic roots) | `skills.discovery_failed` (`scope: "rescan"`), last good scan served; if there was none, an empty provider whose resource methods throw `"skills are unavailable"` | `:227-244` |
-| root provider throws | treated as no extra roots, `skills.roots_unavailable` debug | `:212-226` |
+| root provider throws | last good scan (or empty provider) remains active; `skills.roots_unavailable` debug | `dynamicSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
+| a process-pinned skill is marked unavailable by its host | omitted from listings/body loads; resource reads fail as unavailable; no rescan or run rejection | `snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
+| a capture-window digest check marks one process-pinned skill unavailable | the same informational withdrawal applies; unrelated skills remain available and dependency construction succeeds | `verifySkillCatalog` in `packages/kernel/src/environments/environment-manager.ts` and `snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
+| an idle trust-catalog replacement cannot be captured | exact catalog becomes unavailable and `skills.snapshot_recomposition_failed` is logged; no stale trust catalog remains and no run-admission scan occurs | `snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
 | `bootstraps()` throws | `bootstrap_skills_unavailable` warn, run degrades to the plain catalog | `packages/skills/src/capability.ts:153`–`:156` |
 | plugin panel cannot read a plugin's skills | `skillNamesOf` returns `{ names: [], notes: [] }` on any throw; per-skill rejection notes are capped and summarized | `packages/kernel/src/plugins/plugin-service.ts:243`–`:265` |
 
 ### 6.5 Retries and timeouts
 
-There are none in this subsystem. Every operation is synchronous filesystem work; `refresh()` is the
-only re-read and it is caller-driven (`packages/skills/src/index.ts:67`). `dynamicSkills`'s
-signature-based memo is a cache, not a retry (`packages/loop/src/runtime/build-run-deps.ts:203-244`).
+There are none inside `@clarvis/skills`. Its operations are synchronous filesystem work; `refresh()`
+is the only package-owned re-read and it is caller-driven (`packages/skills/src/index.ts`).
+`dynamicSkills`'s signature memo is a cache, not a retry. The kernel's process-pinned adapter is a
+host concern: it materializes bodies once and uses asynchronous stat monitoring outside this package
+to drive the adapter's memory-only availability predicate.
 
 ### 6.6 Silently tolerated
 

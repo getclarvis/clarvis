@@ -1,6 +1,7 @@
 /** File-backed kernel bootstrap and stdio hosting. */
 export { createFileKernel } from "./file-kernel.ts";
-export type { CreateFileKernelOptions } from "./file-kernel.ts";
+export type { CreateFileKernelOptions, EnvironmentDriftNotice } from "./file-kernel.ts";
+export type { EnvironmentSkillDriftNotice } from "./environments/environment-manager.ts";
 export { createOwnerScopedFileStores } from "./owner-scoped-file-stores.ts";
 export type {
   CreateOwnerScopedFileStoresOptions,

@@ -210,6 +210,13 @@ export interface AppRunControls {
   workflowActivity: Accessor<WorkflowActivity | null>;
   /** Latest live-only MCP startup warning, displayed once outside conversation history. */
   mcpStartupNotice?: Accessor<McpStartupNotice | null>;
+  /** Latest extension contribution withdrawn after asynchronous on-disk drift detection. */
+  environmentDriftNotice?: Accessor<{
+    sequence: number;
+    kind: "skill" | "plugin_runtime";
+    name: string;
+    source?: string;
+  } | null>;
   bang: (cmd: string) => boolean;
   localBusy: () => boolean;
   /** True while context compaction is awaiting hooks or a summary model call. */
@@ -332,6 +339,21 @@ export function App(props: AppProps): JSX.Element {
       `MCP unavailable for this run ${glyph("emDash")} ${notice.servers
         .map((server) => `${server.name}: ${server.reason}`)
         .join("; ")}`,
+      "warn",
+    );
+  });
+  let shownEnvironmentDriftNotice = 0;
+  createEffect(() => {
+    const notice = props.run.environmentDriftNotice?.();
+    if (notice === undefined || notice === null || notice.sequence === shownEnvironmentDriftNotice)
+      return;
+    shownEnvironmentDriftNotice = notice.sequence;
+    notify(
+      notice.kind === "skill"
+        ? `Skill '${notice.name}' changed on disk and was withheld from runs until reconnect ` +
+            `(${notice.source ?? "unknown"})`
+        : `Plugin '${notice.name}' changed executable files; its runtime contributions were ` +
+            "withheld until reconnect",
       "warn",
     );
   });

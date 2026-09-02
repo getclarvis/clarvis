@@ -254,6 +254,24 @@ describe("manager fan-out via the run_leader handler", () => {
     expect(leaderCount.remaining()).toBe(1);
   });
 
+  test("counts and settles an accepted child when its registration trace throws", async () => {
+    const leaderCount = createWorkflowLeaderCount(1);
+    const runDeps = workflowRunDeps(() => Promise.resolve(completed("not reached", 1)));
+    const ctx = makeCtx({ leaderCount, runDeps });
+    const t = testRunCtx();
+    const run = await createWorkflowsCapability(ctx).forRun(t.runCtx);
+    const handler = run!.forAgent(scope())!.attach(throwingBc("agent_registered").bc).handlers![0]!;
+
+    expect(() => handler.handle(runLeaderCall({ title: "leader", prompt: "A" }), 0)).toThrow(
+      "trace sink exploded",
+    );
+    expect(leaderCount.started()).toBe(1);
+    expect(leaderCount.remaining()).toBe(0);
+    expect(t.registry.liveCount()).toBe(0);
+    expect(t.registry.list()).toMatchObject([{ status: "failed" }]);
+    expect(runDeps.calls).toHaveLength(0);
+  });
+
   test("refuses an ad-hoc spawn after the manager reaches its cumulative leader ceiling", async () => {
     const runDeps = workflowRunDeps(() => Promise.resolve(completed("ok", 1)));
     const ctx = makeCtx({

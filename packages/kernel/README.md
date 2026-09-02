@@ -537,7 +537,10 @@ The same record persists the latest manager-owned round checkpoint. Every transi
 `workflow_sequence_state` and updates `WorkflowDetail.sequence`, including `awaiting_manager` with
 its revision and proposed next round. The event is structural and non-droppable in the run stream;
 the persisted projection lets the Workflows tree show the decision point after the live stream is
-gone. Legacy and ad-hoc-only records simply omit the field.
+gone. If the manager is cancelled, fails or is crash-reconciled while that sequence is still
+`running_round` or `awaiting_manager`, the terminal snapshot closes it as `cancelled` or `failed`,
+increments its revision and removes the impossible next-round proposal. A defensive completed exit
+closes the same impossible state as `stopped`. Legacy and ad-hoc-only records simply omit the field.
 
 Executable workflow definitions are resolved separately for every manager run. The kernel starts
 with the `audit`, `implement` and `research` definitions exported by `@clarvis/workflows`, then applies

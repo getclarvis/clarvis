@@ -147,6 +147,30 @@ describe("beginDispatch", () => {
     expect(leaderCount.remaining()).toBe(1);
   });
 
+  test("counts and settles every accepted registration when the trace sink throws mid-batch", () => {
+    const registry = createAgentRegistry({ limits: LIMITS });
+    const leaderCount = createWorkflowLeaderCount(2);
+    const ctx = makeCtx({ leaderCount });
+    const { bc } = recordingBc();
+    const record = bc.trace.record.bind(bc.trace);
+    let registrations = 0;
+    bc.trace.record = (kind: string, detail: unknown): void => {
+      if (kind === "agent_registered") {
+        registrations += 1;
+        if (registrations === 2) throw new Error("registration trace failed");
+      }
+      record(kind, detail);
+    };
+
+    expect(() =>
+      beginDispatch({ ctx, bc, clock: undefined, agents: registry }, [unit("a"), unit("b")], 2),
+    ).toThrow("registration trace failed");
+    expect(registry.liveCount()).toBe(0);
+    expect(registry.list()).toMatchObject([{ status: "failed" }, { status: "failed" }]);
+    expect(leaderCount.started()).toBe(2);
+    expect(leaderCount.remaining()).toBe(0);
+  });
+
   test("refuses outright when the run was already aborted", () => {
     const s = session([unit("a")]);
     s.controller.abort();

@@ -346,13 +346,16 @@ In `buildRunLeaderHandler.handle` (`packages/workflows/src/capability.ts`), sync
 2. `ctx.leaderCount.reserve(1)` atomically admits the ad-hoc leader. Exhaustion returns a
    non-progressing `max_total_leaders` refusal before an id or supervision handle exists.
 3. `runId = ctx.runDeps.generateExecutionId()`.
-4. `registerBackgroundChild(agents, bc.trace, {kind:"leader", nativeId:runId, title, profile?})`.
-   `null` (registry sealed or at its ceiling) answers "too many child agents are already running";
-   the unconsumed cumulative reservation is released and no token-ledger reservation has been taken,
-   pinned by
+4. `registerBackgroundChild(agents, bc.trace, {kind:"leader", nativeId:runId, title, profile?},
+   onRegistered)`; `onRegistered` consumes the cumulative slot immediately after registry
+   acceptance and before `agent_registered` trace publication. `null` (registry sealed or at its
+   ceiling) answers "too many child agents are already running"; the unconsumed cumulative
+   reservation is released and no token-ledger reservation has been taken, pinned by
    `packages/workflows/tests/component/capability.test.ts` (`refuses to spawn when the registry has
    no room without reserving ledger headroom`).
-5. Successful registration consumes the single cumulative slot. Completion never returns it.
+5. Registry acceptance permanently consumes the single cumulative slot. Completion never returns
+   it; if trace publication throws, the supervision helper settles the accepted handle before
+   rethrowing and the consumed lifetime count remains charged.
 6. A per-leader `WorkflowCtx` clone is built: bound logger, `signal = AbortSignal.any([ctx.signal,
    controller.signal])`, a `steerForLeader` that returns this child's steer queue for its own id, and
    an `onLeaderEvent` that ingests matching events into the handle *and* forwards outward.
@@ -638,7 +641,9 @@ joined as `rounds finished — <round>; <round>; …`.
   second finalization without a decision is interpreted as `stop` and passes; finalization can never
   mean implicit continuation.
 - A driver or registration fault logs `workflow.driver_faulted`, transitions the sequence to
-  `failed`, and always calls `session.end` for an existing dispatch so the held handle settles.
+  `failed`, and always calls `session.end` for an existing dispatch. `end` settles both a held baton
+  and registrations still pending before the driver started, so running-state publication failure
+  cannot strand a live supervision handle.
 
 Production: `createRoundCoordinator`, `drainRound`, `buildWorkflowStatusHandler`, and
 `buildWorkflowDecideHandler` in `packages/workflows/src/run-round.ts`. Tests:
@@ -1018,14 +1023,19 @@ nudges; the second means stop and spawns nothing. Production: `RoundCoordinator.
 Test: `packages/workflows/tests/component/run-round.test.ts` (`finalization nudges once, then means
 stop instead of implicit continuation`).
 
-**INV-W44.** A setup fault cannot leak cumulative admission or a supervision handle. An ad-hoc
-registration fault releases its unconsumed one-slot reservation; a batch fault after a successfully
-registered prefix aborts, settles and closes that prefix, releases the unconsumed tail, and still
-counts the prefix as leaders that were in fact registered. Production: `buildRunLeaderHandler`,
-`register`, and `abandonRegistered`. Test:
+**INV-W44.** A setup fault cannot leak cumulative admission or a supervision handle. Faults before
+registry acceptance release the unconsumed reservation. Every accepted handle consumes its lifetime
+slot before trace publication; if that publication fails, the current handle and any accepted batch
+prefix are aborted, settled and closed while only the unconsumed tail is released. A round-state
+publication fault likewise terminalizes the sequence and ends the undispatched session, settling its
+pending handles. Production: `buildRunLeaderHandler`, `registerOne`, `register`,
+`abandonRegistered`, `DispatchSession.end`, and `launch` inside `createRoundCoordinator`. Tests:
 `packages/workflows/tests/component/run-leader.test.ts` (`releases cumulative admission when child
-registration throws`) and `packages/workflows/tests/component/dispatch.test.ts` (`settles an
-already-registered prefix when a later registration throws`).
+registration throws`; `counts and settles an accepted child when its registration trace throws`),
+`packages/workflows/tests/component/dispatch.test.ts` (`settles an already-registered prefix when a
+later registration throws`; `counts and settles every accepted registration when the trace sink
+throws mid-batch`), and `packages/workflows/tests/component/run-round.test.ts` (`a running-state
+publication fault terminalizes the sequence and its undispatched session`).
 
 **INV-W45.** One manager may own at most one non-terminal round sequence. A second `run_round` or
 `run_workflow` call is refused in both `running_round` and `awaiting_manager`, and a terminal stop
@@ -1040,7 +1050,8 @@ owns at most one active round sequence`).
 | malformed tool arguments | non-terminal textual result naming the field; nothing registered, nothing spent | each tool handler's parser-before-admission branch |
 | cumulative leader limit reached by `run_leader` | refuses before generating/registering a child | `buildRunLeaderHandler`; component test `refuses an ad-hoc spawn after the manager reaches its cumulative leader ceiling` |
 | a complete work-item batch or authorized round exceeds remaining cumulative capacity | refuses atomically; zero children from that unit; a round checkpoint and revision remain unchanged | `beginDispatch`, `launch` inside `createRoundCoordinator`; atomic cap component tests |
-| child setup throws before any ad-hoc registration, or after a batch prefix registered | releases every unconsumed cumulative slot; a registered prefix is aborted/settled/closed and remains counted as registration history | `buildRunLeaderHandler`, `register`, `abandonRegistered`; setup-fault component tests |
+| child setup throws before registry acceptance, or producer accounting / trace publication throws after acceptance | releases every unconsumed cumulative slot; every accepted handle is aborted/settled/closed and remains counted as registration history | `buildRunLeaderHandler`, `registerOne`, `register`, `registerBackgroundChild`; setup-fault component tests |
+| `running_round` state publication throws after the first handle was registered | sequence becomes `failed`; `DispatchSession.end` settles every not-yet-run pending handle and releases only unconsumed reservation tail | `launch` in `createRoundCoordinator`, `DispatchSession.end`; component test `a running-state publication fault terminalizes the sequence and its undispatched session` |
 | tree budget exhausted at `run_leader` | after semaphore admission: `warn`, `onBudgetExhausted`, registered handle settles `failed`, no model call | `buildRunLeaderHandler` in `packages/workflows/src/capability.ts`; test `packages/workflows/tests/component/capability.test.ts` (`settles an admitted leader failed when the tree budget is exhausted`) |
 | tree budget exhausted mid-batch | after semaphore admission: latch; this unit and every later one skipped `budget_exhausted`; the controlled sequence becomes `failed` and proposes no later round | `runOne`, `advance` inside `createRoundCoordinator` |
 | registry sealed / at ceiling on the first batch | tool refuses outright with "too many child agents are already running" | `beginDispatch` plus the null-session branches in the batch/round handlers |

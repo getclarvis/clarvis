@@ -393,6 +393,9 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
       closeManagerEdge(record.edges, managerRunId, status, endedAt);
       const aggregateStatus = finalWorkflowStatus(status, budgetExhausted, record.edges);
       record.status = aggregateStatus;
+      if (record.sequence !== undefined) {
+        record.sequence = terminalWorkflowSequence(record.sequence, status);
+      }
       closeRunningEdges(record.edges, aggregateStatus, endedAt);
       persist();
       saves.flush();
@@ -637,6 +640,45 @@ export interface WorkflowTerminalEvidence {
 }
 
 /**
+ * Close a manager-owned sequence that can no longer receive an Admiral decision.
+ *
+ * @remarks A normal completed manager already passes the coordinator finish gate,
+ * which turns an awaiting checkpoint into `stopped`. This is the run-end backstop
+ * for cancellation, failure, crash reconciliation and any future exit path that
+ * bypasses that gate. Terminal coordinator snapshots preserve their own outcome.
+ */
+function terminalWorkflowSequence(
+  sequence: WorkflowSequenceRecord,
+  managerStatus: RunStatus,
+): WorkflowSequenceRecord {
+  if (sequence.status !== "running_round" && sequence.status !== "awaiting_manager") {
+    return sequence;
+  }
+  const status =
+    managerStatus === "cancelled"
+      ? "cancelled"
+      : managerStatus === "completed"
+        ? "stopped"
+        : "failed";
+  const reason =
+    status === "cancelled"
+      ? "the Admiral run was cancelled before the sequence reached a terminal decision"
+      : status === "stopped"
+        ? "the Admiral finished without authorizing the sequence to continue"
+        : "the Admiral run failed before the sequence reached a terminal decision";
+  return boundedWorkflowSequence({
+    session_id: sequence.session_id,
+    status,
+    revision: sequence.revision + 1,
+    ...(sequence.round_id === undefined ? {} : { round_id: sequence.round_id }),
+    ...(sequence.pass === undefined ? {} : { pass: sequence.pass }),
+    leaders_started: sequence.leaders_started,
+    max_total_leaders: sequence.max_total_leaders,
+    reason,
+  });
+}
+
+/**
  * Reconcile a still-running workflow record only when its root trace is already terminal.
  *
  * A fresh record is returned when repaired so a failed persistence retry cannot partially mutate
@@ -660,6 +702,9 @@ export function reconcileRunningWorkflowRecord(
     edges: record.edges.map((edge) => ({ ...edge })),
   };
   closeManagerEdge(repaired.edges, repaired.root_run_id, status, evidence.ended_at);
+  if (repaired.sequence !== undefined) {
+    repaired.sequence = terminalWorkflowSequence(repaired.sequence, status);
+  }
   const aggregateStatus = finalWorkflowStatus(status, false, repaired.edges);
   repaired.status = aggregateStatus;
   closeRunningEdges(repaired.edges, aggregateStatus, evidence.ended_at);

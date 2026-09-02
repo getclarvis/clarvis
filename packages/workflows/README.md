@@ -135,7 +135,9 @@ These are safety ceilings, not fan-out tuning. `max_concurrency` controls how ma
 run at once; `max_total_leaders` controls how many leaders the manager may register cumulatively
 across every tool call and round (default 32, configurable to 255). An ad-hoc leader reserves one
 slot; a work-item batch and a round reserve their complete leader count atomically. If the complete
-unit does not fit, it registers zero children and leaves an awaiting checkpoint unchanged.
+unit does not fit, it registers zero children and leaves an awaiting checkpoint unchanged. Once the
+supervision registry accepts a leader, that registration is counted before its trace is published;
+a trace failure settles the accepted handle but never refunds its lifetime slot.
 
 Catalogue discovery uses directory handles and examines entries incrementally; it never asks the
 filesystem to materialize a complete root. The entry, workflow and aggregate-source ceilings are
@@ -211,7 +213,9 @@ the workflow detail vocabulary.
   peak overlap against the live-child ceiling is exactly one handle. There is one implementation
   rather than two because getting it wrong is invisible. The baton is deliberately released when a
   semantic round ends: zero live leaders at `awaiting_manager` is the control checkpoint, not a hole
-  the engine may fill automatically.
+  the engine may fill automatically. Ending a session before its driver starts also settles every
+  already-registered pending handle, so a failed running-state publication cannot strand the
+  manager behind an invisible child.
 - **A batch wider than the registry is queued, never dropped.** A round allocates `items × fanout`
   units, which reaches the hundreds, while the live-child ceiling is a couple of dozen — so the
   session registers what the registry admits and holds the rest in a backlog, registering and

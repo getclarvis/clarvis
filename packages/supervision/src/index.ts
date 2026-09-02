@@ -53,6 +53,10 @@ export {
   agentsSettingsSpec,
 } from "./settings.ts";
 export { registerBackgroundChild } from "./spawn-child.ts";
-export type { BackgroundChildSpec, BackgroundChildSpawn } from "./spawn-child.ts";
+export type {
+  BackgroundChildRegistered,
+  BackgroundChildSpec,
+  BackgroundChildSpawn,
+} from "./spawn-child.ts";
 export { createSteerQueue } from "./steer-queue.ts";
 export type { SteerQueue } from "./steer-queue.ts";

@@ -1450,7 +1450,19 @@ export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
     sequence.status = "running_round";
     sequence.current = pointer;
     sequence.next = undefined;
-    publish(sequence);
+    try {
+      publish(sequence);
+    } catch (error) {
+      reportDriverFault(sequence, round, pointer, error);
+      const reason = error instanceof Error ? error.message : String(error);
+      let summary = `sequence '${sequence.id}' failed: ${reason}`;
+      try {
+        summary = terminal(sequence, "failed", reason);
+      } finally {
+        session.end(summary);
+      }
+      return { text: summary, progress: true, error: true };
+    }
 
     const driver = (async (): Promise<void> => {
       let summary = "";

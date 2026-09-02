@@ -1016,6 +1016,77 @@ describe("WorkflowsService", () => {
     await kernel.close();
   });
 
+  it("terminalizes an awaiting Admiral checkpoint when the manager is cancelled", async () => {
+    const kernel = makeKernel(
+      [],
+      [
+        {
+          name: "manager",
+          when: IS_MANAGER,
+          script: [
+            {
+              toolCalls: [
+                {
+                  name: "run_round",
+                  arguments: {
+                    rounds: [
+                      {
+                        id: "first",
+                        title: "First round",
+                        type: "free",
+                        over: "once",
+                        brief: "run first",
+                      },
+                      {
+                        id: "second",
+                        title: "Second round",
+                        type: "free",
+                        over: "once",
+                        brief: "run second",
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { text: "must not authorize the second round", delayMs: 5_000 },
+          ],
+        },
+        {
+          name: "leader",
+          when: (params) => !IS_MANAGER(params),
+          script: [{ text: "first result" }],
+        },
+      ],
+    );
+    const handle = await kernel.runs.start({
+      messages: [{ role: "user", content: "cancel at the checkpoint" }],
+      agent: "manager",
+    });
+    let cancelledAtCheckpoint = false;
+    for await (const event of handle.events) {
+      if (event.type !== "workflow_sequence_state" || event.status !== "awaiting_manager") continue;
+      cancelledAtCheckpoint = true;
+      await handle.cancel();
+    }
+
+    expect(cancelledAtCheckpoint).toBe(true);
+    expect((await handle.done).status).toBe("cancelled");
+    const detail = await kernel.workflows.get(handle.execution_id);
+    expect(detail.sequence).toMatchObject({
+      session_id: "wfseq-1",
+      status: "cancelled",
+      revision: 2,
+      round_id: "first",
+      leaders_started: 1,
+      max_total_leaders: 32,
+    });
+    expect(detail.sequence?.next_round_id).toBeUndefined();
+    expect(detail.sequence?.next_pass).toBeUndefined();
+    await kernel.close();
+  });
+
   it("forwards one external task binding to both workflow manager and leaders", async () => {
     const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-task-"));
     const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-task-global-"));

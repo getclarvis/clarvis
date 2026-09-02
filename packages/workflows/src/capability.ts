@@ -255,14 +255,22 @@ function buildRunLeaderHandler(
       }
       let runId: string;
       let spawned: ReturnType<typeof registerBackgroundChild>;
+      let admissionConsumed = false;
       try {
         runId = ctx.runDeps.generateExecutionId();
-        spawned = registerBackgroundChild(agents, bc.trace, {
-          kind: "leader",
-          nativeId: runId,
-          title: spec.title,
-          ...(spec.profile !== undefined ? { profile: spec.profile } : {}),
-        });
+        spawned = registerBackgroundChild(
+          agents,
+          bc.trace,
+          {
+            kind: "leader",
+            nativeId: runId,
+            title: spec.title,
+            ...(spec.profile !== undefined ? { profile: spec.profile } : {}),
+          },
+          () => {
+            admissionConsumed = admission.consume();
+          },
+        );
       } catch (error) {
         admission.release();
         throw error;
@@ -276,7 +284,7 @@ function buildRunLeaderHandler(
           ),
         );
       }
-      if (!admission.consume()) {
+      if (!admissionConsumed) {
         admission.release();
         spawned.controller.abort("workflow cumulative leader admission was exhausted");
         spawned.handle.settled({ status: "failed", result: "leader admission was exhausted" });

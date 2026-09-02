@@ -501,9 +501,11 @@ manager as its leader profile.
 6. `settle(result)` / `finalize(status)`: closes the manager edge with its own run status, then uses
    `finalWorkflowStatus` for the aggregate. A completed manager still yields a failed workflow when
    any leader is non-completed or a reservation refusal set `onBudgetExhausted`; remaining leader
-   edges close with that aggregate status. It persists and **synchronously flushes** the coalesced
-   save queue, so a terminal snapshot is guaranteed on disk before the run handle's `done`/`closed`
-   resolves.
+   edges close with that aggregate status. If the stored sequence is still `running_round` or
+   `awaiting_manager`, `terminalWorkflowSequence` increments its revision, removes the impossible
+   proposal, and maps manager cancellation to `cancelled`, failure to `failed`, or a defensive
+   completed exit to `stopped`. It persists and **synchronously flushes** the coalesced save queue,
+   so a terminal snapshot is guaranteed on disk before the run handle's `done`/`closed` resolves.
 
 ### 4.6 `raiseLiveChildrenCeiling`
 
@@ -608,7 +610,9 @@ evidence or for an already terminal record`); otherwise it maps
 `evidence.status` onto a `RunStatus` (`completed→completed`, `cancelled→cancelled`, anything else
 →`failed`), returns a **fresh** record with cloned edges, and closes
 every still-`"running"` edge to that status/`ended_at` — "so a failed persistence retry cannot
-partially mutate an in-memory store" (its TSDoc).
+partially mutate an in-memory store" (its TSDoc). The same repair terminalizes a non-terminal
+sequence through `terminalWorkflowSequence`, so crash recovery cannot preserve an Admiral decision
+that no live manager can make.
 
 Every projection to the wire — `recordToSummary`, `edgeToNode` and `storedSummaryToSummary` —
 collapses its own status string through `statusOf(raw)` (§2): `"completed"`, `"cancelled"` and
@@ -827,6 +831,17 @@ and `isWorkflowRecord` in `packages/kernel/src/workflows/workflow-store.ts`. Tes
 `packages/kernel/tests/integration/workflows-service.test.ts` (`rejects a persisted workflow whose
 Admiral checkpoint has an invalid shape`).
 
+**INV-W12.** A terminal manager record cannot retain a non-terminal round sequence. Normal
+settlement and terminal-trace reconciliation both map `running_round`/`awaiting_manager` to
+`cancelled` when the manager was cancelled, `failed` when it failed, or defensively `stopped` when it
+completed without the coordinator gate; they increment the revision and remove `next_round_id` /
+`next_pass`. Existing terminal sequence outcomes are preserved. Production:
+`terminalWorkflowSequence`, `finalize`, and `reconcileRunningWorkflowRecord` in
+`packages/kernel/src/workflows/workflows-service.ts`. Tests:
+`packages/kernel/tests/unit/workflows-service.test.ts` (`maps terminal root evidence and closes only
+edges still running`) and `packages/kernel/tests/integration/workflows-service.test.ts`
+(`terminalizes an awaiting Admiral checkpoint when the manager is cancelled`).
+
 ### From the fully-read `workflows-service` integration suite
 
 INV-182 – INV-185 above are this suite's headline rules.
@@ -896,10 +911,11 @@ scan`).
 
 **INV-284.** A crash-orphaned `running` record is reconciled **only from a terminal root trace**: one
 whose root run's trace is terminal is rewritten to that status and `ended_at` with every still-running
-edge closed to it; one whose root run has no terminal trace is left alone. The repair is persisted to
-the record *and* its summary, and a reconciling `list()` performs exactly one full-record read — for
-the record it repairs and no other, because everything else is answered from summaries. A failed save
-still returns the truthful projection for that read and leaves the record retryable.
+edge closed to it and any non-terminal sequence terminalized; one whose root run has no terminal
+trace is left alone. The repair is persisted to the record *and* its summary, and a reconciling
+`list()` performs exactly one full-record read — for the record it repairs and no other, because
+everything else is answered from summaries. A failed save still returns the truthful projection for
+that read and leaves the record retryable.
 Production: `reconcileRunningWorkflowRecord`, `closeRunningEdges`, `readTerminalEvidence`, and
 `reconcilePersisted` in `packages/kernel/src/workflows/workflows-service.ts`.
 Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`reconciles crash-orphaned
@@ -954,14 +970,17 @@ Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`flushes on
 snapshot before done and closed settle`).
 
 **INV-289.** Cancelling mid-fan-out settles the tree: after `handle.done`, every node of the persisted
-workflow has a non-`running` status. The test records (`:1091-1099`) that it is an end-to-end smoke
+workflow has a non-`running` status. Cancelling with no live leader at an `awaiting_manager`
+checkpoint also terminalizes the persisted sequence as `cancelled` and removes its proposal. The
+mid-fan-out test records (`:1091-1099`) that it is an end-to-end smoke
 test of cancellation rather than a regression test for `closeRunningEdges`, whose "leftover running
 edge" branch this scenario never reaches.
-Production: `finalize` and the `closeRunningEdges` TSDoc in
+Production: `finalize`, `terminalWorkflowSequence`, and the `closeRunningEdges` TSDoc in
 `packages/kernel/src/workflows/workflows-service.ts` — notably the backstop does **not** help after a
 hard process crash, where only INV-284's reconciliation can.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`cancelling mid-fan-out never
-crashes or hangs, and settles into a sane, non-'running' final state`).
+Tests: `packages/kernel/tests/integration/workflows-service.test.ts` (`cancelling mid-fan-out never
+crashes or hangs, and settles into a sane, non-'running' final state`; `terminalizes an awaiting
+Admiral checkpoint when the manager is cancelled`).
 
 **INV-290.** A manager stays reachable while its leaders run: a steer delivered mid-fan-out reaches the
 manager's *next* turn, carrying the steer text, while both leaders are still parked. The test names the
@@ -1012,6 +1031,7 @@ is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLe
 | A coalesced background save throws | Reported to `onBackgroundError`; the timer callback itself never throws; the record stays dirty for the next `request()`/`flush()` to retry | `createWorkflowSaveQueue` |
 | `reconcilePersisted`'s trace-store read throws | Caught, logged as `warn`, treated as "no evidence" (record stays `"running"` as read) | `readTerminalEvidence` in `packages/kernel/src/workflows/workflows-service.ts` |
 | `reconcilePersisted`'s repair-save throws | Caught, logged as `warn`; the **truthful** repaired projection is still returned to *this* caller, but the persisted record is left `"running"` for a future retry | `reconcilePersisted` in `packages/kernel/src/workflows/workflows-service.ts` |
+| Manager cancellation/failure or terminal-trace reconciliation occurs while its sequence is `running_round` / `awaiting_manager` | Terminal snapshot replaces the impossible checkpoint, increments its revision and removes the next-round proposal | `terminalWorkflowSequence`, called by `finalize` and `reconcileRunningWorkflowRecord`; INV-W12 tests |
 | `generateWorkflowTitle`'s model call fails, times out, or returns malformed/oversized/multiline metadata | Caught or validated away to `null`; the manager keeps its provisional `"Workflow <id>"` title; a warning is logged naming the reason | `packages/kernel/src/workflows/workflow-title.ts:99-113`; `packages/kernel/tests/unit/workflow-title.test.ts:86-104` |
 | The manager's own profile is missing from `request.profiles`, or there is no user message to title | `generateWorkflowTitle` returns `null` with **no** provider call at all | `packages/kernel/src/workflows/workflow-title.ts:58-63`; `packages/kernel/tests/unit/workflow-title.test.ts:152-165` |
 | More than `WORKFLOW_MAX_EDGES` (256) leader edges would be recorded | Further `workflow_run_started` events are dropped; the manager edge's `reason` gets one (idempotent) truncation notice; on-disk `boundedWorkflowRecord` also slices/marks at write time as a second line of defense | the `workflow_run_started` branch of `observe`; `boundedWorkflowRecord` and `markWorkflowEdgesTruncated` |

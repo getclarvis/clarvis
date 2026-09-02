@@ -183,7 +183,8 @@ export interface DispatchSession {
    * exists to close.
    */
   advance(units: readonly DispatchUnit[]): void;
-  /** Release the final baton, letting the live-child count reach zero. */
+  /** Settle any not-yet-run registration, release the final baton and return
+   * every unconsumed cumulative reservation. */
   end(summary: string): void;
 }
 
@@ -429,6 +430,12 @@ export function beginDispatch(
     },
     end(summary: string): void {
       try {
+        const notStarted = pending.entries;
+        pending = emptyBatch();
+        abandonRegistered(
+          notStarted,
+          summary || "workflow dispatch ended before its registered leaders started",
+        );
         baton?.(summary);
         baton = undefined;
       } finally {
@@ -650,14 +657,22 @@ function registerOne(
   admission: WorkflowLeaderReservation,
 ): Registered | null {
   const runId = deps.ctx.runDeps.generateExecutionId();
-  const spawn = registerBackgroundChild(deps.agents, deps.bc.trace, {
-    kind: "leader",
-    nativeId: runId,
-    title: unit.title,
-    ...(unit.profile !== undefined ? { profile: unit.profile } : {}),
-  });
+  let admissionConsumed = false;
+  const spawn = registerBackgroundChild(
+    deps.agents,
+    deps.bc.trace,
+    {
+      kind: "leader",
+      nativeId: runId,
+      title: unit.title,
+      ...(unit.profile !== undefined ? { profile: unit.profile } : {}),
+    },
+    () => {
+      admissionConsumed = admission.consume();
+    },
+  );
   if (spawn === null) return null;
-  if (!admission.consume()) {
+  if (!admissionConsumed) {
     spawn.controller.abort("workflow cumulative leader admission was exhausted");
     spawn.handle.settled({
       status: "failed",

@@ -56,8 +56,8 @@ workspace declare an edge back in, so nothing later in the build order reaches i
 | `AGENTS_SETTINGS_FIELDS` | const | `packages/supervision/src/settings.ts:146` | the `agents:` `settings.json` field map |
 | `AGENTS_REQUEST_PARAMS` | const | `packages/supervision/src/settings.ts:157` | the per-run `agents` override field map |
 | `agentsSettingsSpec` | const | `packages/supervision/src/settings.ts:169` | the `CapabilitySettingsSpec` registration entry |
-| `registerBackgroundChild` | fn | `packages/supervision/src/spawn-child.ts:46` | shared register-a-background-child skeleton |
-| `BackgroundChildSpec`, `BackgroundChildSpawn` | type | `packages/supervision/src/spawn-child.ts:18,28` | spec in / three handles out |
+| `registerBackgroundChild` | fn | `packages/supervision/src/spawn-child.ts` | shared register-a-background-child skeleton |
+| `BackgroundChildSpec`, `BackgroundChildSpawn`, `BackgroundChildRegistered` | type | `packages/supervision/src/spawn-child.ts` | spec in / three handles out / optional producer-accounting callback |
 | `createSteerQueue` | fn | `packages/supervision/src/steer-queue.ts:31` | builds an empty `SteerQueue` |
 | `SteerQueue` | type | `packages/supervision/src/steer-queue.ts:15` | `SteerSource` extended with `push`/`undrained`/`close` |
 
@@ -202,7 +202,7 @@ truncated head once the caller has caught up past the drop").
 ### 3.7 Trace record kinds this package reads or writes
 
 `registerBackgroundChild` writes exactly one trace kind, `agent_registered`
-(`packages/supervision/src/spawn-child.ts:68-76`), whose detail shape (`AgentRegisteredDetail`) is declared once in
+(`registerBackgroundChild` in `packages/supervision/src/spawn-child.ts`), whose detail shape (`AgentRegisteredDetail`) is declared once in
 `@clarvis/capability`: `agent_id`, `kind: "subagent" | "leader"`, `native_id`, `title`, optional
 `profile`, `background: boolean` (`packages/capability/src/trace-kinds.ts:585-592,663`). Three sibling
 kinds — `agent_stopped`, `agent_steered`, `agent_finish_nudge` — are declared in the same open
@@ -387,7 +387,7 @@ is explicitly passed through `suppressSecondaryRejection` so the same rejection 
 surface as an unhandled rejection on the `tasks` set's cleanup `.finally()` (`packages/supervision/src/registry.ts:433-447`;
 pinned `packages/supervision/tests/component/registry.test.ts:513-518`, `:592-604`).
 
-### 4.11 `registerBackgroundChild` (`packages/supervision/src/spawn-child.ts:46-78`)
+### 4.11 `registerBackgroundChild` (`packages/supervision/src/spawn-child.ts`)
 
 The shared skeleton both `delegate_task` and `run_leader` call into:
 
@@ -395,12 +395,20 @@ The shared skeleton both `delegate_task` and `run_leader` call into:
 2. Call `agents.register(...)` with a `control` object wired to them: `stop` aborts the controller
    with `new Error(reason)` as the abort reason (`:59-61`), `steer` pushes onto the queue (`:62`),
    `undrained` reports `steerQueue.undrained().length` (`:63`).
-3. If `register` returned `null`, return `null` and record nothing (`:66`; pinned
+3. If `register` returned `null`, return `null` and record nothing (pinned
    `packages/supervision/tests/component/spawn-child.test.ts:109-121`) — "a producer must treat `null` as 'do not spawn'" (doc comment
-   `packages/supervision/src/spawn-child.ts:43-44`).
-4. Otherwise record one `agent_registered` trace entry with `background: true` (`:68-75`), omitting
-   `profile` entirely (not as `undefined`) when the spec carried none (pinned
-   `packages/supervision/tests/component/spawn-child.test.ts:99-107`), and return `{ handle, controller, steerQueue }` (`:77`).
+   on `registerBackgroundChild`).
+4. Otherwise invoke the optional `onRegistered` callback with the three handles, then record one
+   `agent_registered` trace entry with `background: true`, omitting `profile` entirely (not as
+   `undefined`) when the spec carried none, and return `{ handle, controller, steerQueue }`.
+5. If producer accounting or trace publication throws after registry acceptance, abort the
+   controller, settle the handle `failed`, close its steer queue and rethrow the original error. The
+   child is therefore no longer live or adoptable when the producer's catch runs.
+
+Production: `registerBackgroundChild` in `packages/supervision/src/spawn-child.ts`. Tests:
+`packages/supervision/tests/component/spawn-child.test.ts` (`omits profile entirely rather than
+registering it as undefined`; `commits producer accounting before trace publication and abandons
+the child if it throws`).
 
 ### 4.12 Buffer append and eviction (`packages/supervision/src/buffer.ts:103-215`)
 
@@ -498,10 +506,14 @@ The invariants below are derived directly from this package's own code and tests
     a partial override merges field-by-field over the product defaults rather than replacing the
     whole block** — including that an explicit `0` is honoured rather than read as "unset".
     Production: `packages/supervision/src/limits.ts:22-38`. Test: `packages/supervision/tests/unit/limits.test.ts:29-46`.
-15. **`registerBackgroundChild` records the `agent_registered` trace entry, and omits `profile`
-    entirely (not as `undefined`), if and only if the registry actually accepted the registration** —
-    a declined registration (registry returns `null`) records nothing. Production:
-    `packages/supervision/src/spawn-child.ts:64-76`. Test: `packages/supervision/tests/component/spawn-child.test.ts:60-121`.
+15. **`registerBackgroundChild` makes registry acceptance atomic with producer accounting and trace
+    publication.** A declined registration records and accounts nothing; an accepted registration
+    invokes `onRegistered` before `agent_registered`, omits an absent `profile`, and any callback or
+    trace failure leaves the handle settled rather than live and unadopted. Production:
+    `registerBackgroundChild` in `packages/supervision/src/spawn-child.ts`. Test:
+    `packages/supervision/tests/component/spawn-child.test.ts` (`returns null and records nothing
+    when the registry declines`; `commits producer accounting before trace publication and abandons
+    the child if it throws`).
 16. **A closed `SteerQueue` still allows an already-queued message to be drained** — closing never
     discards what a child could still take, it only refuses new pushes. Production:
     `packages/supervision/src/steer-queue.ts:30-50` (`push` checks `closed`; `drain` is unconditional). Test:
@@ -513,6 +525,7 @@ The invariants below are derived directly from this package's own code and tests
 |---|---|---|
 | Registration while sealed | `null` return, `agents.spawn_refused` debug log, reason `"sealed"` | `packages/supervision/src/registry.ts:397-400` |
 | Registration at the live-children ceiling | `null` return, same log, reason `"at_capacity"` | `:401-404` |
+| Producer accounting or `agent_registered` trace publication throws after registry acceptance | Accepted child is aborted, settled `failed` and closed, then the original error is rethrown; no live unadopted handle remains | `registerBackgroundChild`; component test `commits producer accounting before trace publication and abandons the child if it throws` |
 | `poll`/`stop`/`steer`/`has` on an unknown id | `null` (or `false` for `has`) — courtesy, not a throw, because a grandchild's id structurally cannot exist in this registry (doc comment `packages/supervision/src/registry.ts:5-9`) | `:474-476,496-498,519-521,444` |
 | `waitAny` naming an id this registry never tracked | rejects the returned promise with `UnknownAgentError` (`code: "unknown_agent"`) | `packages/supervision/src/registry.ts:128-134,534-538` |
 | A child's `control.stop`/`control.steer` port throws | caught, logged as `agents.stop_port_threw` (phase `"stop"` or `"teardown"`), the child is settled regardless of the throw | `packages/supervision/src/registry.ts:294-304,501-506,626-630` |
@@ -526,9 +539,10 @@ The invariants below are derived directly from this package's own code and tests
 | A normal multi-line eviction under a tight byte cap, no oversized line involved | the byte bound evicts oldest-first and keeps at least the newest line | `packages/supervision/src/buffer.ts:116-133` (test: `packages/supervision/tests/unit/buffer.test.ts:152-161`) |
 | `maxBytes === 0` on append | the whole ring is cleared and the offset still advances — the child produces no readable output but the stream stays consistent | `packages/supervision/src/buffer.ts:139-146` |
 
-Nothing in this package retries a failed operation; every failure path above resolves synchronously
-to a courtesy value (`null`, a refusal object, or a settled/logged state) rather than raising to its
-caller, with the sole thrown type being `UnknownAgentError` from an explicit `waitAny` miss.
+Nothing in this package retries a failed operation. Registry/control failures resolve synchronously
+to a courtesy value (`null`, a refusal object, or a settled/logged state); an explicit `waitAny`
+miss rejects with `UnknownAgentError`, and a producer callback or trace-sink exception is rethrown
+only after its accepted child has been made terminal.
 
 ## 7. Coupling
 
@@ -566,7 +580,7 @@ its doc comment states only the identical part (build control plumbing, register
 record `agent_registered`) is extracted, because what each producer does with the resulting task
 (semaphore, compute-clock region, the run itself, its `settled()` mapping, producer-specific trace
 events) differs enough that forcing it through a shared callback "would be more abstraction than the
-duplication it replaces" (`packages/supervision/src/spawn-child.ts:6-12`). One such left-out responsibility is closing the
+duplication it replaces" (module TSDoc in `packages/supervision/src/spawn-child.ts`). One such left-out responsibility is closing the
 `SteerQueue` itself: `SteerQueue.close()`'s own doc comment describes "closing on settle"
 (`packages/supervision/src/steer-queue.ts:25-26`), but no call site inside `@clarvis/supervision`'s `src/` ever invokes
 `close()` — settling a `ChildRecord` (`packages/supervision/src/registry.ts:345-368`) never touches the queue. Closing the
@@ -579,7 +593,8 @@ queue is left to whichever producer holds the `BackgroundChildSpawn.steerQueue` 
   are declared in the same open union as `agent_registered`
   (`packages/capability/src/trace-kinds.ts:44-46,664-666`), but nothing in
   `packages/supervision/src/**` writes them — `registerBackgroundChild` is the package's only
-  `trace.record` call, and it emits `agent_registered` alone (`packages/supervision/src/spawn-child.ts:68-76`). Their
+  `trace.record` call, and it emits `agent_registered` alone (`registerBackgroundChild` in
+  `packages/supervision/src/spawn-child.ts`). Their
   producer belongs to a consumer of this registry (most likely [loop-delegation-and-subagents](../engine/delegation-and-subagents.md) or
   [workflows-scheduling-and-spawn](../capabilities/workflows-scheduling.md)), out of this document's scope.
 - **Where `AgentsLimits.awaitTimeoutMs` and `.finishNudges` are actually consumed.** Both are resolved

@@ -620,6 +620,42 @@ describe("run_round — Admiral checkpoints", () => {
     expect(run.registrations).toBe(0);
   });
 
+  test("a running-state publication fault terminalizes the sequence and its undispatched session", async () => {
+    let threw = false;
+    const leaderCount = createWorkflowLeaderCount(1);
+    const h = await harness(
+      undefined,
+      {
+        leaderCount,
+        onSequenceState: (state) => {
+          if (!threw && state.status === "running_round") {
+            threw = true;
+            throw new Error("running projection failed");
+          }
+        },
+      },
+      {},
+      false,
+    );
+
+    const result = await h.handle({ rounds: [DISCOVER] });
+
+    expect(result).toMatchObject({
+      progress: false,
+      text: expect.stringContaining("running projection failed"),
+    });
+    expect(h.states.at(-1)).toMatchObject({
+      status: "failed",
+      reason: "running projection failed",
+    });
+    expect(h.run.registrations).toBe(1);
+    expect(h.run.agents.liveCount()).toBe(0);
+    expect(h.run.liveAfterSettle.at(-1)).toBe(0);
+    expect(leaderCount.started()).toBe(1);
+    expect(leaderCount.remaining()).toBe(0);
+    expect(h.briefs).toEqual([]);
+  });
+
   test("a checkpoint publication fault fails the active driver and releases its handle", async () => {
     let threw = false;
     const h = await harness(

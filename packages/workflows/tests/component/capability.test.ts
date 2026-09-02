@@ -8,7 +8,11 @@ import {
 } from "../../src/capability.ts";
 import { createWorkflowLedger } from "../../src/ledger.ts";
 import { RUN_LEADER_TOOL_NAME } from "../../src/tool.ts";
-import { RUN_ROUND_TOOL_NAME } from "../../src/run-round.ts";
+import {
+  RUN_ROUND_TOOL_NAME,
+  WORKFLOW_DECIDE_TOOL_NAME,
+  WORKFLOW_STATUS_TOOL_NAME,
+} from "../../src/run-round.ts";
 import { RUN_WORK_ITEMS_TOOL_NAME } from "../../src/work-items.ts";
 import type { LeaderSpec } from "../../src/types.ts";
 import { makeCtx, recordingBc, runLeaderCall, scope, testRunCtx } from "../helpers/workflow.ts";
@@ -36,6 +40,8 @@ describe("workflows capability", () => {
       RUN_LEADER_TOOL_NAME,
       RUN_WORK_ITEMS_TOOL_NAME,
       RUN_ROUND_TOOL_NAME,
+      WORKFLOW_STATUS_TOOL_NAME,
+      WORKFLOW_DECIDE_TOOL_NAME,
     ]);
     /* `spawn_run`, not `control`: a leader is a separate run with a profile the
        manager names and `plans` forced off, so a gate that trusts `control` to
@@ -44,6 +50,8 @@ describe("workflows capability", () => {
       [RUN_LEADER_TOOL_NAME]: "spawn_run",
       [RUN_WORK_ITEMS_TOOL_NAME]: "spawn_run",
       [RUN_ROUND_TOOL_NAME]: "spawn_run",
+      [WORKFLOW_STATUS_TOOL_NAME]: "control",
+      [WORKFLOW_DECIDE_TOOL_NAME]: "spawn_run",
     });
     expect(await capability.forRun(RUN_CTX)).not.toBeNull();
   });
@@ -70,8 +78,11 @@ describe("workflows capability", () => {
       RUN_LEADER_TOOL_NAME,
       RUN_WORK_ITEMS_TOOL_NAME,
       RUN_ROUND_TOOL_NAME,
+      WORKFLOW_STATUS_TOOL_NAME,
+      WORKFLOW_DECIDE_TOOL_NAME,
     ]);
-    expect(contribution.handlers).toHaveLength(3);
+    expect(contribution.handlers).toHaveLength(5);
+    expect(contribution.gates).toHaveLength(1);
     expect(contribution.advertised).toBe(true);
   });
 

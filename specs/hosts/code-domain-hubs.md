@@ -467,6 +467,14 @@ something is running** — the open node's status, else the open workflow's stat
 live `status` mapped `running→running`, `ok→completed`, anything else→`failed` (`:174`), and the merged
 list is re-sorted by `started_at ?? 0` (`:191`).
 
+**Sequence checkpoint.** When `WorkflowDetail.sequence` exists, the tree level renders one bounded
+line above the nodes. `awaiting_manager` is warning-toned and names `Awaiting Admiral`, the CAS
+revision and proposed next round; every other status names current round/session and cumulative
+`leaders_started/max_total_leaders`. Legacy/ad-hoc-only records omit the line. Production:
+`packages/code/src/views/config/WorkflowsHub.tsx` (the `detail()?.sequence` block). Test:
+`packages/code/tests/integration/workflows-hub-render.test.tsx` (`the persisted tree names an
+awaiting-Admiral checkpoint and proposed round`).
+
 **Node page (`NodePage`, `:48`).** `mode: "result"` carries a `RunDetail | null` fetched by
 `deps.getRun`; `mode: "task"` carries only the node meta and renders `meta.task` or the fallback "Task
 unavailable for this legacy workflow" (`:203`). `[t]` is bound only when the selected node is a
@@ -793,6 +801,12 @@ specific to these files.
 33. **The live projection is merged only when it belongs to the workflow on screen.**
     Production: `packages/code/src/views/config/WorkflowsHub.tsx:160`.
     Pinned: `packages/code/tests/integration/workflows-hub-render.test.tsx:349`.
+
+33a. **A persisted `awaiting_manager` checkpoint remains visible even when no leader is live.**
+    It names the exact revision and proposed round rather than inferring continuation from tree
+    shape. Production: `WorkflowsHub` (`detail()?.sequence`). Pinned:
+    `packages/code/tests/integration/workflows-hub-render.test.tsx` (`the persisted tree names an
+    awaiting-Admiral checkpoint and proposed round`).
 
 34. **`[t]` (open task) is bound only for a `leader` node carrying a `task`, and never fetches the
     run.** Production: `packages/code/src/views/config/WorkflowsHub.tsx:381`, `:459`.

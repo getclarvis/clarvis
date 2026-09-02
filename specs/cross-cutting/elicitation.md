@@ -89,11 +89,11 @@ see **command-guard-and-approval**. This document covers only how the guard's ye
 
 | Symbol | Location | Shape |
 |---|---|---|
-| `ElicitationCommandDetail` | `packages/protocol/src/runs.ts:650-660` | `{ command, cwd, reason, warning? }` |
-| `ElicitationRequest` | `packages/protocol/src/runs.ts:662-682` | `{ id, execution_id, kind, prompt, schema?, detail? }` |
-| `ElicitationResponse` | `packages/protocol/src/runs.ts:684-692` | `{ id, action: "accept"\|"decline"\|"cancel", content? }` |
-| `RunHandle.respond(response)` | `packages/protocol/src/runs.ts:726-731` | answers a pending elicitation |
-| `RunHandle.onElicit(handler)` | `packages/protocol/src/runs.ts:733-738` | registers a handler for engine-raised questions |
+| `ElicitationCommandDetail` | `ElicitationCommandDetail` in `packages/protocol/src/runs.ts` | `{ command, cwd, reason, warning? }` |
+| `ElicitationRequest` | `ElicitationRequest` in `packages/protocol/src/runs.ts` | `{ id, execution_id, kind, prompt, schema?, detail? }` |
+| `ElicitationResponse` | `ElicitationResponse` in `packages/protocol/src/runs.ts` | `{ id, action: "accept"\|"decline"\|"cancel", content? }` |
+| `RunHandle.respond(response)` | `RunHandle.respond` in `packages/protocol/src/runs.ts` | answers a pending elicitation |
+| `RunHandle.onElicit(handler)` | `RunHandle.onElicit` in `packages/protocol/src/runs.ts` | registers a handler for engine-raised questions |
 | `RunEvent` variant `elicitation_requested` | mapped at `packages/kernel/src/runs/map-events.ts:658-666` | `{ type, at, agent?, subagent_id?, question, options? }` |
 | `RunEvent` variant `elicitation_resolved` | mapped at `packages/kernel/src/runs/map-events.ts:667-677` | `{ type, at, agent, subagent_id?, question, outcome, answer?, options? }` |
 
@@ -150,7 +150,7 @@ concern of **kernel-transport-and-wire**; this document stops at the DTO shapes 
 | `missingRequired` | `packages/code/src/adapters/elicitation.ts:180-189` | names of required fields left blank, or non-numeric for a `number` field |
 | `buildContent`/`acceptResult` | `packages/code/src/adapters/elicitation.ts:199-222` | coerces raw form values into an elicitation's `content`; wraps it as an `accept` `ElicitResult` |
 | `DECLINE_RESULT`/`CANCEL_RESULT` | `packages/code/src/adapters/elicitation.ts:225-227` | the shared `decline`/`cancel` `ElicitResult` constants |
-| `ElicitBlock` | `packages/code/src/views/ElicitBlock.tsx:48` | the modal-style renderer; detailed rendering/keyboard behaviour is **code-input-overlays-and-commands**' concern. One exception worth noting here because it touches `acceptResult`/`DECLINE_RESULT` directly: in `mode: "url"`, `accept()` (`packages/code/src/views/ElicitBlock.tsx:147-150`) resolves `DECLINE_RESULT` rather than an accept, regardless of how it was invoked (footer command or the `return` key binding) — the URL variant has nothing for the model to receive as an answer |
+| `ElicitBlock` | `ElicitBlock` in `packages/code/src/views/ElicitBlock.tsx` | the modal-style renderer; detailed rendering/keyboard behaviour is **code-input-overlays-and-commands**' concern. One exception worth noting here because it touches `acceptResult`/`DECLINE_RESULT` directly: in `mode: "url"`, `accept()` resolves `DECLINE_RESULT` rather than an accept, regardless of how it was invoked (footer command or the `return` key binding) — the URL variant has nothing for the model to receive as an answer |
 
 ## 3. Data and formats
 
@@ -247,8 +247,10 @@ is untouched.
 `initialValues(fields, choiceInitialSelection)` (`:150-175`) seeds each field's starting string value.
 Its `ChoiceInitialSelection` parameter defaults to `"first"` (a `select`/`boolean` field with no
 `default` starts on its first option), but a caller may pass `"none"` to leave every choice field blank
-instead — the mechanism documented here is only that the parameter exists and which fields it affects;
-which callers choose which mode is `code`'s own UI wiring, out of scope for this document.
+instead. `ElicitBlock` passes `"none"` for both `plan_review` and `workflow_review`; an untouched
+confirmation therefore reports the required field as missing instead of accepting whichever enum
+member happens to be first. As a second fail-safe, `buildRunWorkflowHandler` authors the workflow
+decision enum as `["cancel", "run"]` and treats every non-`run`/no-response outcome as cancellation.
 `missingRequired(fields, values)` (`:180-189`) names every required field that is blank, or, for a
 `number`-kind field, non-numeric. `buildContent(fields, values)` (`:199-217`) coerces raw string values
 into the typed `content` object a response carries: a blank value is omitted from `content` entirely
@@ -480,7 +482,7 @@ calling `ask(params)` while a previous call is still `pending` first resolves th
 superimposed; the older one is simply superseded. `resolve(result)` clears both the pending resolver
 and the visible `request` signal atomically (`:27-32`). `cancelPending()` resolves whatever is pending
 as `CANCEL_RESULT` — used e.g. when the run itself ends while a question is still open
-(`packages/code/src/run-host.ts:716`).
+(the `runManaged` `finally` block in `createRunHost`).
 
 `kernel-run-client.ts`'s `wireElicit` (`packages/code/src/adapters/kernel-run-client.ts:296-319`) is the piece that turns a protocol
 `ElicitationRequest` into the `ElicitRequestParams` the slot/block consume, and turns the UI's
@@ -604,6 +606,16 @@ Production: `packages/server/src/mcp/elicitation.ts:82-93`.
 Test: `packages/server/tests/unit/elicitation.test.ts:91` ("relays guard approval only when operator,
 role and answer channel all permit it").
 
+**ELI-08.** A workflow preflight has no implicit affirmative path. The TUI begins with no selected
+decision; the wire schema places `cancel` before `run`; only an explicitly submitted `run` starts the
+first round, while decline, cancel, timeout and an absent channel spawn no leader.
+Production: `packages/code/src/views/ElicitBlock.tsx` (`initialValues` call) and
+`buildRunWorkflowHandler` in `packages/workflows/src/run-workflow.ts`.
+Test: `packages/code/tests/integration/elicit-block-render.test.tsx` (`a workflow_review is an
+explicit preflight with a safe before-start promise`) and
+`packages/workflows/tests/component/run-workflow.test.ts` (declined,
+unavailable and timed-out preflights start nothing).
+
 ## 6. Failure modes and degradation
 
 | Failure | Where handled | Result |
@@ -618,6 +630,7 @@ role and answer channel all permit it").
 | An unknown or already-answered `respond(id, ...)` | `pending.get(id) === undefined` short-circuit (`packages/kernel/src/runs/elicit-bridge.ts:80`, and server's `packages/server/src/mcp/elicitation.ts:274-276`) | no-op / `{accepted:false, note:"no pending question with that id"}` |
 | Server elicitation controller is `dispose()`d with questions outstanding | `dispose()` (`packages/server/src/mcp/elicitation.ts:284-287`) | every pending question is force-auto-declined; `disposed` latches so any later `attach`-delivered question is auto-declined too (`:217-219`) |
 | Server's `relay` posture: `sendRequest` throws (client refuses, disconnects, or answer fails schema validation) | `catch` around `sendRequest` (`packages/server/src/mcp/elicitation.ts:251-253`) | falls back to `autoDecline(request.id)` — a relay failure degrades to a decline, not a stuck run |
+| Workflow review is untouched, declined, cancelled, times out, or has no interactive channel | `ElicitBlock` leaves the choice blank; `buildRunWorkflowHandler` accepts only explicit `decision === "run"` | workflow is not started; zero leaders registered |
 | `code`'s own `onElicit` callback throws | `reportElicitFailure` (`packages/code/src/adapters/kernel-run-client.ts:291-294`) | logs `elicit.handler.failed` (warn) and still answers `{action:"cancel"}` |
 | `code` invoked headlessly (`--prompt`, no interactive UI) | `handle.onElicit` registered in `packages/code/src/runtime.tsx` (`runPrintMode`) | every question is logged to stderr and auto-declined via `handle.respond({id, action:"decline"})` |
 | Elicitation disabled or no `elicit` supplied at all (`shape.userInputEnabled === false`) | `buildElicitRelay`'s `relayEnabled` guard (`packages/loop/src/runtime/elicit-relay.ts:71-77`) | `relay` is `undefined`; `serializedElicit` falls back to the raw (possibly `undefined`) `elicit` — callers that need one and find it absent are a capability-construction concern outside this document |
@@ -681,7 +694,7 @@ role and answer channel all permit it").
 - `code`'s `run-host.ts` and `runtime.tsx` hold the only production `ElicitSlot`
   (`packages/code/src/runtime.tsx`, `runApp`), threading `elicit.ask` into the run callback
   (`packages/code/src/runtime.tsx`, `buildRunHost`), `elicit.cancelPending` into run teardown
-  (`packages/code/src/run-host.ts:716`), and `elicit.resolve` into the App surface
+  (`runManaged` in `packages/code/src/run-host.ts`), and `elicit.resolve` into the App surface
   (`packages/code/src/runtime.tsx`, `runControls`). Detailed overlay/keyboard rendering of the resulting block is
   **code-input-overlays-and-commands**' concern.
 

@@ -298,7 +298,7 @@ hub renders" (`:40-41`), and every export beyond `formatSessionRow` itself — `
 so [code-domain-hubs](code-domain-hubs.md)'s `SessionsHub`
 (`packages/code/src/views/config/SessionsHub.tsx:13-20`, importing all six) can render its own rows
 to this same column format rather than re-deriving it; `WorkflowsHub`
-(`packages/code/src/views/config/WorkflowsHub.tsx:23`) reuses only `relTime`, for its own
+(`WorkflowsHub` reuses only `relTime`), for its own
 last-updated timestamps.
 
 `relTime(ms, now)` (`:6-14`) buckets the clamped-non-negative delta as seconds under a minute,
@@ -783,7 +783,7 @@ pins content beyond the old 110-column cap and no transcript text past the sideb
 `packages/code/tests/integration/app-shell-render.test.tsx:2785-2826`.
 
 There is no stored sidebar preference and no global toggle. `App` owns three independent automatic
-reveal intents: the first live Plan reveals Plan, the first workflow leader reveals Parallel work,
+reveal intents: the first live Plan reveals Plan, the first workflow state/leader reveals Parallel work,
 and the first typed delegation reveals Agents once for that execution context. Each intent preserves
 the Lead transcript selection and never opens `ActivityDetail`. Escape or scrim close dismisses the
 intent that opened the surface, so later updates of that kind cannot reopen it; the first event for a
@@ -1252,7 +1252,7 @@ Production: `packages/code/src/app/layout.ts:49-54`.
 Pinned: `packages/code/tests/unit/layout.test.ts:34-56`.
 
 **INV-CB-30.** The secondary inspector has three independent automatic reveal intents per execution
-context: the first live Plan reveals Plan, the first workflow leader reveals Parallel work, and the
+context: the first live Plan reveals Plan, the first workflow state/leader reveals Parallel work, and the
 first visible sub-agent reveals Agents. Each preserves `Lead transcript` selection and leaves
 `ActivityDetail` closed. An explicit close is sticky for later updates of the intent that opened the
 surface; the first event for a different section may still reveal it, and a new execution context

@@ -72,6 +72,7 @@ export const RUN_EVENT_POLICY = {
   delegation_failed: persisted("engine", ["engine_trace", "capability_channel"]),
   workflow_run_started: persisted("engine", ["engine_trace", "workflow"]),
   workflow_title_updated: live("workflow", ["workflow"]),
+  workflow_sequence_state: live("workflow", ["workflow"]),
   workflow_run_progress: live("workflow", ["workflow"]),
   workflow_run_completed: persisted("engine", ["engine_trace", "workflow"]),
   workflow_run_failed: persisted("engine", ["engine_trace", "workflow"]),

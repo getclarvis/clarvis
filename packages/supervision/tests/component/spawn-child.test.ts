@@ -8,7 +8,7 @@ import type {
   TracePort,
 } from "@clarvis/capability";
 
-import { registerBackgroundChild } from "../../src/spawn-child.ts";
+import { registerBackgroundChild, type BackgroundChildSpawn } from "../../src/spawn-child.ts";
 
 interface Recorded {
   kind: TraceKind;
@@ -118,6 +118,42 @@ describe("registerBackgroundChild", () => {
 
     expect(spawn).toBeNull();
     expect(tr.entries).toEqual([]);
+  });
+
+  it("commits producer accounting before trace publication and abandons the child if it throws", () => {
+    let settlement: Parameters<AgentHandle["settled"]>[0] | undefined;
+    const agents = registry({
+      ...handleFor("ag_00000003"),
+      settled(value) {
+        settlement = value;
+      },
+    });
+    let accounted = false;
+    const captured: { value?: BackgroundChildSpawn } = {};
+    const tr = trace();
+    tr.record = (): never => {
+      expect(accounted).toBe(true);
+      throw new Error("trace publication failed");
+    };
+
+    expect(() =>
+      registerBackgroundChild(
+        agents,
+        tr,
+        { kind: "leader", nativeId: "run_3", title: "atomic registration" },
+        (spawn) => {
+          accounted = true;
+          captured.value = spawn;
+        },
+      ),
+    ).toThrow("trace publication failed");
+
+    expect(captured.value?.controller.signal.aborted).toBe(true);
+    expect(captured.value?.steerQueue.push({ content: "too late" })).toBe(false);
+    expect(settlement).toEqual({
+      status: "failed",
+      result: "background child registration failed before adoption",
+    });
   });
 
   it("aborts with the stop reason and reports undrained steers through the control port", () => {

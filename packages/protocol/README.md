@@ -106,6 +106,12 @@ lists and trees, while a leader's optional `task` is the complete instruction sh
 event replaces the manager's provisional execution-id label when the parallel metadata call returns;
 the workflow store persists that title, so list/get do not depend on replaying the live event.
 
+`WorkflowDetail.sequence` is the latest durable Admiral-controlled round checkpoint. It distinguishes
+`running_round` from `awaiting_manager`, carries a compare-and-set `revision`, the current and
+proposed round/pass, and cumulative `leaders_started/max_total_leaders`. The matching
+`workflow_sequence_state` run event updates the live projection immediately. The field is optional
+for legacy records and workflows that used only ad-hoc leaders.
+
 ### Revision-bound settings writes and repair
 
 Every `SettingsSource` carries the SHA-256 revision of the exact source bytes, or `null` when the

@@ -78,6 +78,8 @@ export function deriveRunEventSpan(ev: RunEvent): RunEventSpan {
       return { span_id: `workflow:${ev.run_id}`, phase: "start", kind: "subagent" };
     case "workflow_title_updated":
       return { span_id: `workflow:${ev.run_id}`, phase: "point", kind: "event" };
+    case "workflow_sequence_state":
+      return { span_id: `workflow:${ev.run_id}`, phase: "point", kind: "event" };
     case "workflow_run_completed":
     case "workflow_run_failed":
       return { span_id: `workflow:${ev.run_id}`, phase: "end", kind: "subagent" };

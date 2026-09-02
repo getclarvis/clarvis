@@ -2,7 +2,7 @@
 
 > Implemented at `packages/workflows/src/{artifact,builtin-workflows/*,schemas,types}.ts` and
 > `packages/kernel/src/{workflows/*,application/workflow-policy.ts}`. Every claim below is anchored
-> to a file and line. Open questions are collected in the final section.
+> to production/test symbols. Open questions are collected in the final section.
 
 ## 1. Purpose
 
@@ -29,7 +29,7 @@ Three concerns sit here:
 The types in `packages/workflows/src/types.ts` are the seam between these two halves and the
 scheduling engine: `WorkflowCtx`, `LeaderSpec` and `LeaderResult` are what the scheduling capability
 (out of scope here) consumes, and what this document's `WorkflowsService` constructs once per manager
-run (`packages/kernel/src/workflows/workflows-service.ts:465-482`).
+run (the `WorkflowCtx` construction in `createWorkflowsService`).
 
 ## 2. Surface
 
@@ -69,29 +69,30 @@ run (`packages/kernel/src/workflows/workflows-service.ts:465-482`).
 | `LeaderResult` | interface | `packages/workflows/src/types.ts:41-47` | `{runId, status, result, usage, error?}` |
 | `LeaderRequestAssembler` | type | `packages/workflows/src/types.ts:61` | `(spec, {parentRunId}) => RunRequest`; MUST strip the `workflow` grant and force `plans: "off"` plus `memory: "off"` (`packages/workflows/src/types.ts:53-59`) |
 | `WorkflowRunDeps` | interface | `packages/workflows/src/types.ts:71-74` | `{generateExecutionId(), executeRun(args)}` — the loop surface a workflow needs |
-| `WorkflowCtx` | interface | `packages/workflows/src/types.ts` | Workflow context: `deps`, `runDeps`, `owner`, `semaphore`, `ledger`, `maxConcurrency`, `assemble`, `managerRunId`, `signal`, `leaderProfiles?`, `workflowDefs?`, `elicitForLeader?`, `onLeaderEvent?`, `onBudgetExhausted?`, `steerForLeader?` |
+| `WorkflowCtx` | interface | `packages/workflows/src/types.ts` | Workflow context: execution deps, semaphore, token ledger, cumulative `leaderCount`, manager identity, assembler/signals/catalogue, and optional leader/sequence callbacks including `onSequenceState` |
+| `WorkflowSequenceState` / `WorkflowSequenceStatus` | interface/type | `packages/workflows/src/types.ts` | Internal camel-case checkpoint snapshot and its six-state lifecycle; the kernel maps it to persisted/wire snake case |
 
 ### `@clarvis/kernel` — `packages/kernel/src/workflows/*`
 
 | Symbol | Kind | Location | Contract |
 |---|---|---|---|
-| `createWorkflowsService(cfg)` | function | `packages/kernel/src/workflows/workflows-service.ts:170` | Builds `KernelWorkflowsService` |
-| `WorkflowsRuntimeSettings` | interface | `packages/kernel/src/workflows/workflows-service.ts:73-76` | `{max_concurrency, budget_tokens}` — the resolved `workflows` fan-out settings; manager designation is the `workflow` grant, never a field here |
-| `WorkflowsServiceConfig` | interface | `packages/kernel/src/workflows/workflows-service.ts:79-117` | `deps`, `owner`, `workspace`, `globalConfigDir?`, `assembleRunRequest`, `store`, `readSettings`, `leaderProfiles?`, `resolveLeaderDefault?`, `ingestGraceMs?`, `eventBuffer?`, `lifecycle?`, `persistenceDelayMs?`, `persistenceRuntime?` |
-| `KernelWorkflowsService` | interface | `packages/kernel/src/workflows/workflows-service.ts:124-130` | Extends protocol `WorkflowsService` with `list(page, scan)` (cancellable) and `runManagerWorkflow(params): RunHandle` — deliberately **not** on the protocol interface |
-| `reconcileRunningWorkflowRecord(record, evidence)` | function | `packages/kernel/src/workflows/workflows-service.ts:614-636` | Pure repair function, exported for direct unit testing |
-| `closeRunningEdges(edges, status, endedAt)` | function | `packages/kernel/src/workflows/workflows-service.ts:694-700` | Closes every `"running"` edge in place |
-| `freshLeaderProgress()` / `LeaderProgress` | function/interface | `packages/kernel/src/workflows/workflows-service.ts:702-716` | Per-leader tally accumulator |
-| `isLeaderEntryIteration(event, acc)` | function | `packages/kernel/src/workflows/workflows-service.ts:740-747` | Order-independent entry-vs-delegated-child attribution |
-| `statusOf(raw)` | function | `packages/kernel/src/workflows/workflows-service.ts:790-795` | Collapses a persisted/edge status string onto a protocol `RunStatus`: `completed`/`cancelled`/`running` pass through, everything else (including a legacy or corrupted value) collapses to `failed` |
-| `createWorkflowStore(opts)` | function | `packages/kernel/src/workflows/workflow-store.ts:432` | Builds a `FileWorkflowStore` |
-| `WorkflowStore` | interface | `packages/kernel/src/workflows/workflow-store.ts:87-97` | `save`, `get`, `list`, `listPage?` (**optional** — "custom legacy stores may omit it", `:92`), `delete` |
-| `FileWorkflowStore` | interface | `packages/kernel/src/workflows/workflow-store.ts:100-103` | Extends `WorkflowStore` with `listPage` **required** — the standard file-backed implementation always exposes it |
-| `WorkflowRecordPage` | interface | `packages/kernel/src/workflows/workflow-store.ts:69-74` | `{items, total, limit, offset}` — `listPage`'s return shape |
-| `WorkflowPageRequest` | interface | `packages/kernel/src/workflows/workflow-store.ts:76-79` | `{limit?, offset?}` — `listPage`'s input |
-| `WorkflowPageScanOptions` | interface | `packages/kernel/src/workflows/workflow-store.ts:82-84` | `{signal?}` — transport-owned cancellation for a scan |
-| `WorkflowRecord` / `WorkflowEdge` / `WorkflowRecordSummary` | interfaces | `packages/kernel/src/workflows/workflow-store.ts:9-67` | On-disk shapes, see §3 |
-| `truncateWorkflowText`, `boundedWorkflowEdge`, `markWorkflowEdgesTruncated`, `createWorkflowSaveQueue`, `normalizeWorkflowPage` | functions | `packages/kernel/src/workflows/workflow-store.ts:126,154,191,387,354` | Bounding and coalescing primitives |
+| `createWorkflowsService(cfg)` | function | named export in `packages/kernel/src/workflows/workflows-service.ts` | Builds `KernelWorkflowsService` |
+| `WorkflowsRuntimeSettings` | interface | `packages/kernel/src/workflows/workflows-service.ts` | `{max_concurrency, max_total_leaders, budget_tokens}` — resolved fan-out settings; manager designation is the `workflow` grant, never a field here |
+| `WorkflowsServiceConfig` | interface | named export in `packages/kernel/src/workflows/workflows-service.ts` | `deps`, `owner`, `workspace`, `globalConfigDir?`, `assembleRunRequest`, `store`, `readSettings`, `leaderProfiles?`, `resolveLeaderDefault?`, `ingestGraceMs?`, `eventBuffer?`, `lifecycle?`, `persistenceDelayMs?`, `persistenceRuntime?` |
+| `KernelWorkflowsService` | interface | named export in `packages/kernel/src/workflows/workflows-service.ts` | Extends protocol `WorkflowsService` with `list(page, scan)` (cancellable) and `runManagerWorkflow(params): RunHandle` — deliberately **not** on the protocol interface |
+| `reconcileRunningWorkflowRecord(record, evidence)` | function | named export in `packages/kernel/src/workflows/workflows-service.ts` | Pure repair function, exported for direct unit testing |
+| `closeRunningEdges(edges, status, endedAt)` | function | named export in `packages/kernel/src/workflows/workflows-service.ts` | Closes every `"running"` edge in place |
+| `freshLeaderProgress()` / `LeaderProgress` | function/interface | named exports in `packages/kernel/src/workflows/workflows-service.ts` | Per-leader tally accumulator |
+| `isLeaderEntryIteration(event, acc)` | function | named export in `packages/kernel/src/workflows/workflows-service.ts` | Order-independent entry-vs-delegated-child attribution |
+| `statusOf(raw)` | function | internal symbol in `packages/kernel/src/workflows/workflows-service.ts` | Collapses a persisted/edge status string onto a protocol `RunStatus`: `completed`/`cancelled`/`running` pass through, everything else (including a legacy or corrupted value) collapses to `failed` |
+| `createWorkflowStore(opts)` | function | named export in `packages/kernel/src/workflows/workflow-store.ts` | Builds a `FileWorkflowStore` |
+| `WorkflowStore` | interface | named export in `packages/kernel/src/workflows/workflow-store.ts` | `save`, `get`, `list`, `listPage?` (**optional** — custom legacy stores may omit it), `delete` |
+| `FileWorkflowStore` | interface | named export in `packages/kernel/src/workflows/workflow-store.ts` | Extends `WorkflowStore` with `listPage` **required** — the standard file-backed implementation always exposes it |
+| `WorkflowRecordPage` | interface | named export in `packages/kernel/src/workflows/workflow-store.ts` | `{items, total, limit, offset}` — `listPage`'s return shape |
+| `WorkflowPageRequest` | interface | named export in `packages/kernel/src/workflows/workflow-store.ts` | `{limit?, offset?}` — `listPage`'s input |
+| `WorkflowPageScanOptions` | interface | named export in `packages/kernel/src/workflows/workflow-store.ts` | `{signal?}` — transport-owned cancellation for a scan |
+| `WorkflowRecord` / `WorkflowEdge` / `WorkflowSequenceRecord` / `WorkflowRecordSummary` | interfaces | `packages/kernel/src/workflows/workflow-store.ts` | On-disk shapes, see §3 |
+| `truncateWorkflowText`, `boundedWorkflowEdge`, `boundedWorkflowSequence`, `markWorkflowEdgesTruncated`, `createWorkflowSaveQueue`, `normalizeWorkflowPage` | functions | `packages/kernel/src/workflows/workflow-store.ts` | Bounding and coalescing primitives |
 | `generateWorkflowTitle(input)` | function | `packages/kernel/src/workflows/workflow-title.ts:57` | Best-effort semantic title via a forced tool call |
 | `WORKFLOW_TITLE_TIMEOUT_MS` | const | `packages/kernel/src/workflows/workflow-title.ts:14` | `10_000` |
 | `createAgentWorkflowPolicy(store, skills?)` | function | `packages/kernel/src/application/workflow-policy.ts:38` | Builds `AgentWorkflowPolicy` |
@@ -101,10 +102,11 @@ run (`packages/kernel/src/workflows/workflows-service.ts:465-482`).
 
 | Symbol | Location | Shape |
 |---|---|---|
-| `WorkflowNode` | `packages/protocol/src/workflows.ts:25-47` | `run_id, parent_run_id?, kind ("manager"\|"leader"), profile?, title, task?, round_id?, pass?, item_index?, replica?, replica_count?, error?, reason?, status, started_at?, ended_at?` |
-| `WorkflowSummary` | `packages/protocol/src/workflows.ts:50-60` | `execution_id, status, title?, workspace?, created_at, updated_at, leader_count` |
-| `WorkflowDetail` | `packages/protocol/src/workflows.ts:64-66` | `WorkflowSummary & { nodes: WorkflowNode[] }` |
-| `WorkflowsService` | `packages/protocol/src/workflows.ts:79-101` | `get(id)`, `list(page?)`, `delete(id)` — no `start`; a workflow starts through `RunService.start` |
+| `WorkflowNode` | named export in `packages/protocol/src/workflows.ts` | `run_id, parent_run_id?, kind ("manager"\|"leader"), profile?, title, task?, round_id?, pass?, item_index?, replica?, replica_count?, error?, reason?, status, started_at?, ended_at?` |
+| `WorkflowSummary` | named export in `packages/protocol/src/workflows.ts` | `execution_id, status, title?, workspace?, created_at, updated_at, leader_count` |
+| `WorkflowSequence` / `WorkflowSequenceStatus` | `packages/protocol/src/workflows.ts` | Latest durable round checkpoint: identity, six-state status, CAS revision, current/proposed round/pass, cumulative leader count, optional reason |
+| `WorkflowDetail` | `packages/protocol/src/workflows.ts` | `WorkflowSummary & { nodes: WorkflowNode[], sequence?: WorkflowSequence }` |
+| `WorkflowsService` | named export in `packages/protocol/src/workflows.ts` | `get(id)`, `list(page?)`, `delete(id)` — no `start`; a workflow starts through `RunService.start` |
 
 ### Kernel routing wire-up (`packages/kernel/src/kernel.ts`, `packages/kernel/src/runs/run-service.ts`)
 
@@ -124,12 +126,13 @@ distinct from the hub UI's own rendering/layout (`src/views/config/WorkflowsHub.
 
 | Symbol | Kind | Location | Contract |
 |---|---|---|---|
-| `WorkflowNodeStatus` | type | `packages/code/src/adapters/workflow-projection.ts:4` | `"running" \| "ok" \| "error" \| "cancelled"` |
-| `WorkflowNodeActivity` | interface | `packages/code/src/adapters/workflow-projection.ts:7-30` | One node (manager or leader): identity/position fields, `status`, `startedAt?`/`endedAt?`, live `iterations?`/`inputTokens?`/`outputTokens?`, `error?`, `reason?` |
-| `WorkflowActivity` | interface | `packages/code/src/adapters/workflow-projection.ts:41-45` | `{root, nodes}` — the whole live tree, keyed by run id |
-| `WorkflowProjectionEvent` | type | `packages/code/src/adapters/workflow-projection.ts:50-60` | The six `RunEvent` variants this projection folds: the five `workflow_run_*`/`workflow_title_updated` events plus the manager's own `run_ended` |
-| `reduceWorkflowProjection(current, event)` | function | `packages/code/src/adapters/workflow-projection.ts:71-74` | The one reducer feeding the Workflow view, the header chip and the sidebar — structure and status only, never transcript content |
-| `workflowLeaderCounts(activity)` | function | `packages/code/src/adapters/workflow-projection.ts:170-181` | `{total, running}` leaders, for the header chip |
+| `WorkflowNodeStatus` | type | named export in `packages/code/src/adapters/workflow-projection.ts` | `"running" \| "ok" \| "error" \| "cancelled"` |
+| `WorkflowNodeActivity` | interface | named export in `packages/code/src/adapters/workflow-projection.ts` | One node (manager or leader): identity/position fields, `status`, `startedAt?`/`endedAt?`, live `iterations?`/`inputTokens?`/`outputTokens?`, `error?`, `reason?` |
+| `WorkflowSequenceActivity` | interface | `packages/code/src/adapters/workflow-projection.ts` | Camel-case live projection of the latest sequence checkpoint |
+| `WorkflowActivity` | interface | `packages/code/src/adapters/workflow-projection.ts` | `{root, nodes, sequence?}` — the whole live tree/checkpoint, keyed by run id |
+| `WorkflowProjectionEvent` | type | `packages/code/src/adapters/workflow-projection.ts` | Leader/title/progress events, `workflow_sequence_state`, and the manager's own `run_ended` |
+| `reduceWorkflowProjection(current, event)` | function | named export in `packages/code/src/adapters/workflow-projection.ts` | The one reducer feeding the Workflow view, the header chip and the sidebar — structure and status only, never transcript content |
+| `workflowLeaderCounts(activity)` | function | named export in `packages/code/src/adapters/workflow-projection.ts` | `{total, running}` leaders, for the header chip |
 
 ## 3. Data and formats
 
@@ -204,10 +207,11 @@ interface WorkflowRecord {
   created_at: number;
   updated_at: number;
   edges: WorkflowEdge[];           // ≤ WORKFLOW_MAX_EDGES (256)
-  output_tokens: number;              // ledger.spent(), output-only (packages/kernel/src/workflows/workflow-store.ts:44-56)
+  sequence?: WorkflowSequenceRecord; // latest Admiral checkpoint; absent for legacy/ad-hoc-only
+  output_tokens: number;              // ledger.spent(), output-only
 }
 ```
-(`packages/kernel/src/workflows/workflow-store.ts:35-56`)
+(`WorkflowRecord` in `packages/kernel/src/workflows/workflow-store.ts`)
 
 ```ts
 interface WorkflowEdge {
@@ -224,11 +228,28 @@ interface WorkflowEdge {
   started_at?: number; ended_at?: number;
 }
 ```
-(`packages/kernel/src/workflows/workflow-store.ts:9-27`)
+(`WorkflowEdge` in `packages/kernel/src/workflows/workflow-store.ts`)
+
+```ts
+interface WorkflowSequenceRecord {
+  session_id: string;
+  status: "running_round" | "awaiting_manager" | "completed" | "stopped" | "failed" | "cancelled";
+  revision: number;
+  round_id?: string; pass?: number;
+  next_round_id?: string; next_pass?: number;
+  leaders_started: number;
+  max_total_leaders: number;
+  reason?: string;
+}
+```
+
+`boundedWorkflowSequence` UTF-8-bounds the session/round identifiers and reason before both live
+assignment and persistence. The sequence is a latest-state projection, not a decision history; each
+transition replaces the prior value.
 
 Disk layout, per owner: `<state-root>/workflows/<ownerSegment(owner)>/<ownerSegment(id)>.json` (the
 full record) and a sibling `<ownerSegment(id)>.summary.json` sidecar
-(`packages/kernel/src/workflows/workflow-store.ts:433,435-441`), under `globalPaths(dir).workflowRecordsDir`
+(the path construction in `createWorkflowStore`), under `globalPaths(dir).workflowRecordsDir`
 (`packages/paths/src/global.ts:77,135`) — distinct from the *authored* documents directory,
 `globalPaths().workflowsDir` / `workspacePaths().workflowsDir`
 (`packages/paths/src/global.ts:56,128`, `packages/paths/src/workspace.ts:47,113`), which holds optional
@@ -236,60 +257,62 @@ operator-authored overrides at `<ws>/.clarvis/workflows/` beside `agents/` and `
 workflow definitions have no filesystem location.
 
 Hard byte ceilings enforced on write, both throwing a `kernelError("resource_exhausted", …)`:
-- one summary sidecar ≤ `WORKFLOW_SUMMARY_MAX_BYTES` = 8 KiB (`packages/kernel/src/workflows/workflow-store.ts:119,453-459`)
-- one full record ≤ `WORKFLOW_RECORD_MAX_BYTES` = 8 MiB (`packages/kernel/src/workflows/workflow-store.ts:113,461-472`)
+- one summary sidecar ≤ `WORKFLOW_SUMMARY_MAX_BYTES` = 8 KiB (`serializeSummary`)
+- one full record ≤ `WORKFLOW_RECORD_MAX_BYTES` = 8 MiB (`serializeRecord`)
 
 A save that would exceed either ceiling is rejected **before** any write happens, and `store.get`
 returns `null` for that id afterward (proven by
-`packages/kernel/tests/integration/workflows-service.test.ts:338-353` for the summary bound and
-`:355-363` for the record bound).
+`packages/kernel/tests/integration/workflows-service.test.ts` in `rejects a new record and skips a
+legacy one when its summary cannot fit 8 KiB` and `rejects a workflow body before writing when it
+exceeds the record byte budget`).
 
-Truncation (`truncateWorkflowText`, `packages/kernel/src/workflows/workflow-store.ts:126-151`) is a binary search over UTF-8 byte
+Truncation (`truncateWorkflowText`) is a binary search over UTF-8 byte
 length that backs off one further code unit when it would otherwise split a UTF-16 surrogate pair
-(`packages/kernel/src/workflows/workflow-store.ts:140-149`, proven by
-`packages/kernel/tests/integration/workflows-service.test.ts:365-383`), always appending the literal
+(the function's bounded slice, proven by
+`packages/kernel/tests/integration/workflows-service.test.ts` in `backs up from a UTF-16 split so
+truncation never persists half a surrogate pair`), always appending the literal
 marker `WORKFLOW_TRUNCATION_MARKER = "[truncated by Clarvis: workflow persistence limit]"`
-(`packages/kernel/src/workflows/workflow-store.ts:106`).
+(`WORKFLOW_TRUNCATION_MARKER`).
 
 `WORKFLOW_MAX_EDGES` overflow: once `record.edges.length >= WORKFLOW_MAX_EDGES` a further
 `workflow_run_started` is dropped and `markWorkflowEdgesTruncated` appends a notice onto the
-**manager** edge's `reason` (idempotently — it checks whether the marker is already present)
-(`packages/kernel/src/workflows/workflow-store.ts:190-200`, live-side check at `packages/kernel/src/workflows/workflows-service.ts:303-307`).
+**manager** edge's `reason` (idempotently — it checks whether the marker is already present).
+Production: `markWorkflowEdgesTruncated` and the edge-cap branch of the service's `observe`.
 
 ### 3.4 Legacy full-list bounds (`store.list()`)
 
 `list()` throws `resource_exhausted` past `LEGACY_LIST_MAX` = 200 records or
 `LEGACY_LIST_MAX_BYTES` = 32 MiB of aggregate file size, directing the caller to `listPage()`
-instead (`packages/kernel/src/workflows/workflow-store.ts:120-121,560-577`, proven by
-`packages/kernel/tests/integration/workflows-service.test.ts:244` `expect(() => store.list()).toThrow("use listPage()")`).
+instead (the `list` implementation returned by `createWorkflowStore`, proven by
+`packages/kernel/tests/integration/workflows-service.test.ts` in `pages a large catalog from bounded
+sidecars without parsing workflow bodies`).
 
 ### 3.5 `listPage` — bounded top-K over sidecars, never opening a full record body
 
-`listPage(page, scan)` walks every `<id>.json` entry (skipping `.summary.json` files,
-`packages/kernel/src/workflows/workflow-store.ts:493`), reads each sidecar (falling back to opportunistically regenerating a
-missing/legacy sidecar from the full record, `packages/kernel/src/workflows/workflow-store.ts:503-538`), and retains only the
-`limit+offset` best summaries in a worst-first binary heap (`retainSummary`,
-`packages/kernel/src/workflows/workflow-store.ts:276-342`) ordered by `compareSummaries` — `updated_at` descending, `id` descending
-as tiebreak (`packages/kernel/src/workflows/workflow-store.ts:271-273`). It yields to the event loop every `WORKFLOW_SCAN_BATCH`
-(64) entries or `WORKFLOW_SCAN_BATCH_BYTES` (512 KiB) inspected
-(`packages/kernel/src/workflows/workflow-store.ts:122-123,609-613`), checking `scan.signal` for cancellation both before the loop
-and after each yield (`assertScanActive`, `packages/kernel/src/workflows/workflow-store.ts:348-352,599,601,611`). Page bounds:
-`limit` 1..200, `offset` 0..2,000, both integers, else `invalid_request`
-(`normalizeWorkflowPage`, `packages/kernel/src/workflows/workflow-store.ts:354-367`).
+`listPage(page, scan)` walks every `<id>.json` entry while `recordEntries` skips
+`.summary.json` files, then `readSummary` reads each sidecar and opportunistically regenerates a
+missing/legacy sidecar from the full record. It retains only the `limit+offset` best summaries in a
+worst-first binary heap (`retainSummary`) ordered by `compareSummaries` — `updated_at` descending,
+`id` descending as tiebreak. It yields to the event loop every `WORKFLOW_SCAN_BATCH` (64) entries or
+`WORKFLOW_SCAN_BATCH_BYTES` (512 KiB) inspected, checking `scan.signal` through
+`assertScanActive` both before the loop and after each yield. These symbols and the `listPage`
+implementation returned by `createWorkflowStore` live in
+`packages/kernel/src/workflows/workflow-store.ts`. Page bounds are normalized by
+`normalizeWorkflowPage`: `limit` 1..200, `offset` 0..2,000, both integers, else
+`invalid_request`.
 
-`readSummary`'s opportunistic regeneration (`packages/kernel/src/workflows/workflow-store.ts:503-538`) is not only for a
-pre-existing legacy record: `save()` (see §3.3) unlinks the old summary sidecar **before** writing
-the new record body and the new summary (`packages/kernel/src/workflows/workflow-store.ts:541-549`), so a process death between
-those two writes leaves a record file on disk with no summary sidecar at all — the identical shape a
-hand-authored legacy record has. The same opportunistic-regeneration path in `readSummary` recovers
-both cases; there is no separate recovery mechanism for a save interrupted mid-flight.
+`readSummary`'s opportunistic regeneration is not only for a pre-existing legacy record: `save()`
+(see §3.3) unlinks the old summary sidecar **before** writing the new record body and the new summary,
+so a process death between those two writes leaves a record file on disk with no summary sidecar at
+all — the identical shape a hand-authored legacy record has. The `readSummary` and `save`
+implementations returned by `createWorkflowStore` recover both cases; there is no separate recovery
+mechanism for a save interrupted mid-flight.
 
 ### 3.6 Identifiers
 
 A workflow's id **is** its manager run's execution id (`record.id === record.root_run_id ===
-managerRunId`, `packages/kernel/src/workflows/workflows-service.ts:243,257-260,407-411`) — there is no separate workflow identifier.
-`generateExecutionId` (from `@clarvis/loop`, out of scope) produces it when the caller supplies
-none (`packages/kernel/src/workflows/workflows-service.ts:242`).
+managerRunId` in `runManagerWorkflow`) — there is no separate workflow identifier.
+`generateExecutionId` (from `@clarvis/loop`, out of scope) produces it when the caller supplies none.
 
 ### 3.7 The title-generation tool contract (`packages/kernel/src/workflows/workflow-title.ts:16-30,75-89`)
 
@@ -406,22 +429,22 @@ accepting either a bare string or the first element of an array, else `undefined
 carrying the `workflow` grant itself (`packages/kernel/src/application/workflow-policy.ts:48-57`) — a manager cannot select another
 manager as its leader profile.
 
-### 4.5 Executing a manager turn — `runManagerWorkflow` (`packages/kernel/src/workflows/workflows-service.ts:239-540`)
+### 4.5 Executing a manager turn — `runManagerWorkflow`
 
 1. Resolve `settings = cfg.readSettings()`; derive `managerRunId` (caller-supplied or generated);
-   build a `WorkflowSemaphore` (max concurrency) and `WorkflowLedger` (token budget) — both owned by
-   the scheduling document, only constructed here (`packages/kernel/src/workflows/workflows-service.ts:240-247`).
+   build a `WorkflowSemaphore` (live concurrency), `WorkflowLedger` (token budget), and
+   `WorkflowLeaderCount` (cumulative `max_total_leaders`) — all owned by the scheduling document and
+   constructed once here for the complete manager lifetime.
 2. Save an initial `WorkflowRecord` with a single `"manager"` edge in `"running"` status and a
-   provisional title `"Workflow <first 8 chars of exec id>"` (`provisionalWorkflowTitle`,
-   `packages/kernel/src/workflows/workflows-service.ts:798-801`) **before** the run itself starts
-   (`packages/kernel/src/workflows/workflows-service.ts:250-276`).
+   provisional title `"Workflow <first 8 chars of exec id>"` (`provisionalWorkflowTitle`) **before**
+   the run itself starts.
 3. Build a coalescing save queue (`createWorkflowSaveQueue`, §4.7) and an `observe(event)` reducer
-   that folds four event types into the in-memory `record` and schedules a coalesced persist
-   (`packages/kernel/src/workflows/workflows-service.ts:300-357`):
+   inside `runManagerWorkflow` that folds four event types into the in-memory `record` and schedules
+   a coalesced persist:
    - `workflow_run_started` → append a new `"leader"` edge (or truncate-mark if over
      `WORKFLOW_MAX_EDGES`);
    - `workflow_title_updated` → replace `record.title` and the manager edge's own `title` (kept in
-     sync, `packages/kernel/src/workflows/workflows-service.ts:327-329`);
+     sync);
    - `workflow_run_completed` / `workflow_run_failed` → close that edge's `status`/`ended_at`, and on
      failure additionally set `edge.error` and a truncated `edge.reason`.
 4. `assembleLeader` (the `LeaderRequestAssembler` passed into `WorkflowCtx.assemble`) resolves the
@@ -429,55 +452,62 @@ manager as its leader profile.
    (`packages/kernel/src/workflows/workflows-service.ts`, `assembleLeader`), forces `plans: "off"`
    and `memory: "off"`, forwards `output_schema`, `guard_mode`, `guard_judge`, `task`,
    `prompt_cache_key`/`ttl` from the manager's own params when present, runs the result through the shared `assembleRunRequest`, then calls
-   `stripWorkflowGrant` on every profile in the assembled body (`packages/kernel/src/workflows/workflows-service.ts:359-381,
-   720-728`) — defense-in-depth beyond simply not injecting the workflows capability into a leader.
+   `stripWorkflowGrant` on every profile in the assembled body — defense-in-depth beyond simply not
+   injecting the workflows capability into a leader.
    The same `params.task` binding (an external Tasks-capability `{id, provider_key, mode}`) is also
-   forwarded, byte-identical, into the manager's own assembled body at `:467` — so an external task
-   bound at workflow start reaches both the manager's own run and every leader it spawns, not only
-   one or the other (proven by
-   `packages/kernel/tests/integration/workflows-service.test.ts:897-956` "forwards one external task
-   binding to both workflow manager and leaders", asserting `assembled.map(p => p.task)` equals
+   forwarded, byte-identical, into the manager's own assembled body — so an external task bound at
+   workflow start reaches both the manager's own run and every leader it spawns, not only one or the
+   other (proven by
+   `packages/kernel/tests/integration/workflows-service.test.ts` in `forwards one external task
+   binding to both workflow manager and leaders`, asserting `assembled.map(p => p.task)` equals
    `[task, task]`).
 5. `execute(context)` (the body `createManagedRun` invokes):
    - Calls `auxiliaryWorkflowRunDeps(deps)` to remove the memory capability, then clones those deps
      with a logger bound to `{component: "workflows", workflow_id: managerRunId}` when a logger
      exists — "the one place a workflow's correlation can
-     be bound, because it is the one place the tree's identity is known" (`:388-391`).
+     be bound, because it is the one place the tree's identity is known" (the `execute` body in
+     `runManagerWorkflow`).
    - Builds an elicit mux over `context.elicit` (owned by scheduling document).
    - Builds `onLeaderEvent`, which recognizes and ignores workflow-owned persisted events
      (`isWorkflowPersistedTraceEvent`) before narrowing to engine built-ins, tallies
      `delegation_created` into `delegatedIds`, and on `iteration_completed` accumulates per-leader
      `input`/`output`/`iterations` and emits a live `workflow_run_progress` event
-     (`packages/kernel/src/workflows/workflows-service.ts:427-464`).
-   - Constructs the one `WorkflowCtx` for the whole tree (`packages/kernel/src/workflows/workflows-service.ts:465-482`), including
+     (`onLeaderEvent` inside `runManagerWorkflow`).
+   - Constructs the one `WorkflowCtx` for the whole tree, including the shared cumulative leader
+     count and an `onSequenceState` callback. That callback bounds and replaces `record.sequence`,
+     requests a coalesced persist, and emits a structural `workflow_sequence_state` `RunEvent` with
+     the same state for live clients. This event is emitted for running, awaiting and terminal
+     transitions; it is not reconstructed from leader trace edges.
+   - The context also includes
      `workflowDefs: readWorkflowDefs()` — a per-run closure over `loadWorkflows([globalPaths(cfg.globalConfigDir).workflowsDir,
      workspacePaths(cfg.workspace).workflowsDir])` (ascending precedence, so a workspace document
      overrides a same-named global one), called **fresh on every manager run rather than cached**
      across runs: "so authoring a workflow does not need a restart — the same instinct `refresh()`
-     serves in `@clarvis/skills`" (doc comment, `packages/kernel/src/workflows/workflows-service.ts:216-223`; the call site is
-     `:457`). Every entry in `registry.errors` is logged as a `warn` and excluded, never thrown
-     (`:211-219`, INV-184). The trade-off is that every manager run pays a full filesystem scan of
+     serves in `@clarvis/skills`" (the `readWorkflowDefs` TSDoc and its call from
+     `runManagerWorkflow`). Every entry in `registry.errors` is logged as a `warn` and excluded,
+     never thrown (INV-184). The trade-off is that every manager run pays a full filesystem scan of
      both roots, however small the catalogue.
    - `createWorkflowsCapability(workflowContext)` (scheduling document).
    - Assembles the manager's own run request via the same `assembleRunRequest`, then calls
      `raiseLiveChildrenCeiling` (§4.6).
    - Kicks off `generateWorkflowTitle` (§4.8) **concurrently** with the manager's `executeRun`, via
-     `Promise.allSettled` (`packages/kernel/src/workflows/workflows-service.ts:502-537`) — the manager does not wait on the title
-     call.
+     `Promise.allSettled` in `runManagerWorkflow` — the manager does not wait on the title call.
    - The manager's `executeRun` is called with the workflows capability injected
      (`capabilities: [workflowsCap]`) and both `onEvent`/`onCapabilityEvent` mapping to
-     `context.emit` (`packages/kernel/src/workflows/workflows-service.ts:516-533`; the mapping functions themselves belong to
+     `context.emit` (the mapping functions themselves belong to
      [hosts/kernel-runs.md](../hosts/kernel-runs.md)).
    - `run.status === "rejected"` re-throws; else the manager's engine result is mapped to a protocol
      `RunResult` via `engineResultToProto` (out of scope).
 6. `settle(result)` / `finalize(status)`: closes the manager edge with its own run status, then uses
    `finalWorkflowStatus` for the aggregate. A completed manager still yields a failed workflow when
    any leader is non-completed or a reservation refusal set `onBudgetExhausted`; remaining leader
-   edges close with that aggregate status. It persists and **synchronously flushes** the coalesced
-   save queue, so a terminal snapshot is guaranteed on disk before the run handle's `done`/`closed`
-   resolves.
+   edges close with that aggregate status. If the stored sequence is still `running_round` or
+   `awaiting_manager`, `terminalWorkflowSequence` increments its revision, removes the impossible
+   proposal, and maps manager cancellation to `cancelled`, failure to `failed`, or a defensive
+   completed exit to `stopped`. It persists and **synchronously flushes** the coalesced save queue,
+   so a terminal snapshot is guaranteed on disk before the run handle's `done`/`closed` resolves.
 
-### 4.6 `raiseLiveChildrenCeiling` (`packages/kernel/src/workflows/workflows-service.ts:784-797`)
+### 4.6 `raiseLiveChildrenCeiling`
 
 Two independent bounds gate how wide a fan-out gets: the workflow semaphore (admits
 `max_concurrency` leaders at once) and the supervision registry's `agents.max_live_children`
@@ -485,44 +515,46 @@ Two independent bounds gate how wide a fan-out gets: the workflow semaphore (adm
 body's `agents.max_live_children` to `managerLiveChildrenFloor(maxConcurrency)` (owned by the
 scheduling document) **only if** the operator's own configured value is not already higher — "an
 operator who deliberately raised the supervision ceiling keeps their value"
-(`packages/kernel/src/workflows/workflows-service.ts:775-796`). Proven by
-`packages/kernel/tests/integration/workflows-service.test.ts:959-995` ("raises the manager's live-children
-ceiling to what its leader concurrency needs").
+(`raiseLiveChildrenCeiling` in `packages/kernel/src/workflows/workflows-service.ts`). Proven by
+`packages/kernel/tests/integration/workflows-service.test.ts` (`raises the manager's live-children
+ceiling to what its leader concurrency needs`).
 
-### 4.6a `isLeaderEntryIteration` — attributing a leader's own turns (`packages/kernel/src/workflows/workflows-service.ts:739-768`)
+### 4.6a `isLeaderEntryIteration` — attributing a leader's own turns
 
 A leader is whichever profile the manager named, and a *sub-agent role* profile (`explorer`,
 `coder`, …) runs its leader in `subagent-only` mode — so its own turns arrive tagged
 `agent: "subagent"`, never `agent: "lead"`. Counting only `agent === "lead"` therefore left every
 such leader reporting zero iterations forever, which the UI renders as a permanent "loading…" beside
 a leader that is in fact working, while its token totals climb (doc comment,
-`packages/kernel/src/workflows/workflows-service.ts:728-734`). A leader can *also* delegate in normal `"lead"` mode, and its
+`LeaderProgress` in `packages/kernel/src/workflows/workflows-service.ts`). A leader can *also*
+delegate in normal `"lead"` mode, and its
 delegated child's own `subagent_iteration` can arrive **before** the leader's first
 `lead_iteration` — so "first `subagent_id` seen" is not a safe way to spot the entry agent either
-(`:676-679`). `isLeaderEntryIteration(event, acc)` resolves this order-independently: `agent ===
-"lead"` is always the entry; otherwise a `subagent`-tagged turn belongs to the entry **iff** its
-`subagent_id` was never announced by a `delegation_created` event, tracked in `acc.delegatedIds`
-(`:682-689`).
-Test: `packages/kernel/tests/unit/workflows-service.test.ts:17` ("never attributes a delegated
-child's turns to the entry, regardless of arrival order") and `:28` ("always attributes an
-agent:'lead' turn to the entry"); `packages/kernel/tests/integration/workflows-service.test.ts:686-728`
-("reports a subagent-role leader's progress: its turns are not tagged 'lead'").
+(`isLeaderEntryIteration` TSDoc). `isLeaderEntryIteration(event, acc)` resolves this
+order-independently: `agent === "lead"` is always the entry; otherwise a `subagent`-tagged turn
+belongs to the entry **iff** its `subagent_id` was never announced by a `delegation_created` event,
+tracked in `acc.delegatedIds`.
+Tests: `packages/kernel/tests/unit/workflows-service.test.ts` (`never attributes a delegated child's
+turns to the entry, regardless of arrival order`; `always attributes an agent:'lead' turn to the
+entry`) and `packages/kernel/tests/integration/workflows-service.test.ts` (`reports a subagent-role
+leader's progress: its turns are not tagged 'lead'`).
 
-### 4.7 Coalesced persistence — `createWorkflowSaveQueue` (`packages/kernel/src/workflows/workflow-store.ts:387-426`)
+### 4.7 Coalesced persistence — `createWorkflowSaveQueue`
 
 `request()` marks `dirty = true` and schedules exactly one timer (default delay
 `WORKFLOW_PERSIST_DELAY_MS` = 50 ms, clamped to `[0, 1000]` if overridden,
-`packages/kernel/src/workflows/workflow-store.ts:394-397`) if none is already pending; repeated calls before the timer fires are
-free. `flush()` cancels any pending timer and saves synchronously if dirty. A background save that
-throws is reported to `onBackgroundError` rather than propagating out of the timer callback
-(`packages/kernel/src/workflows/workflow-store.ts:411-417`). Proven by
-`packages/kernel/tests/unit/workflows-service.test.ts:147-211` (200 event requests collapse to 1
-scheduled timer + 1 fire, then a second batch collapses to a second save, for 2 total saves) and
-`:188-211` (a throwing `save()` never escapes the timer, and is reported once). The service-level
+the `delayMs` normalization in `createWorkflowSaveQueue`) if none is already pending; repeated calls
+before the timer fires are free. `flush()` cancels any pending timer and saves synchronously if
+dirty. A background save that throws is reported to `onBackgroundError` rather than propagating out
+of the timer callback. Proven by
+`packages/kernel/tests/unit/workflows-service.test.ts` (`turns hundreds of event requests into
+bounded snapshot count and bytes`; `reports a background save failure without letting the timer
+callback throw`). The service-level
 recovery path is pinned at
-`packages/kernel/tests/integration/workflows-service.test.ts:998-1088`: a failed background save is
-warned, the next request schedules another attempt, and terminal `flush()` still persists a complete
-snapshot before the handle settles.
+`packages/kernel/tests/integration/workflows-service.test.ts` (`flushes one coalesced terminal
+snapshot before done and closed settle`): a failed background save is warned, the next request
+schedules another attempt, and terminal `flush()` still persists a complete snapshot before the
+handle settles.
 
 ### 4.8 Semantic title generation — `generateWorkflowTitle` (`packages/kernel/src/workflows/workflow-title.ts:57-114`)
 
@@ -547,47 +579,49 @@ snapshot before the handle settles.
 6. Any thrown error (provider unavailable, timeout, etc.) is caught, logged, and also resolves to
    `null` (`packages/kernel/src/workflows/workflow-title.ts:107-112`).
 7. On success the caller (`runManagerWorkflow`) emits `workflow_title_updated`
-   (`packages/kernel/src/workflows/workflows-service.ts:507-514`), which `observe()` folds into both `record.title` and the
-   manager edge's own `title` (`packages/kernel/src/workflows/workflows-service.ts:326-330`).
+   from its `titleTask`, which `observe()` folds into both `record.title` and the manager edge's own
+   `title`.
 
-### 4.9 Reading back — `get`/`list`/`delete` and reconciliation (`packages/kernel/src/workflows/workflows-service.ts:542-599`)
+### 4.9 Reading back — `get`/`list`/`delete` and reconciliation
 
 `get(id)` reads the store, throws `not_found` if absent, else runs `reconcilePersisted` before
-projecting to `WorkflowDetail` (`:520-523`). `reconcilePersisted` (`:169-199`) is a no-op unless
+projecting to `WorkflowDetail`. `reconcilePersisted` is a no-op unless
 `record.status === "running"`; when running, it reads terminal trace evidence for the *root* run
-(`deps.traceStore.getById(owner, record.root_run_id)`, swallowing a read failure to a logged warning
-and `null`, `:157-167`), calls the pure `reconcileRunningWorkflowRecord`, and — only if that produced
+(`readTerminalEvidence` swallows a read failure to a logged warning and `null`), calls the pure
+`reconcileRunningWorkflowRecord`, and — only if that produced
 a genuinely different object — persists the repair and logs
-`"reconciled a running workflow from its terminal root trace"` (`:176-198`). A persist failure here
+`"reconciled a running workflow from its terminal root trace"`. A persist failure here
 is itself swallowed to a warning; the **truthful** (repaired) projection is still returned to this
-caller, but the on-disk record stays `"running"` for the next reader to retry (`:180-187`).
+caller, but the on-disk record stays `"running"` for the next reader to retry.
 
 `list(page, scan)` prefers the store's optimized `listPage` when present. For each summary already
 `!== "running"`, it is projected directly from the bounded sidecar without opening the full record
-(`storedSummaryToSummary`, `:781-791`) — a genuine cost optimization, since most live summaries have
-no terminal trace yet. For a `"running"` summary, terminal evidence is looked up first and only a
-`store.get` (a full-body read) happens if evidence exists; the evidence is passed straight through to
+(`storedSummaryToSummary`) — a genuine cost optimization, since most live summaries have no terminal
+trace yet. For a `"running"` summary, terminal evidence is looked up first and only a `store.get` (a
+full-body read) happens if evidence exists; the evidence is passed straight through to
 `reconcilePersisted` when the summary's `id` equals the record's own `root_run_id`, else recomputed
-(`:536-558`). When the store has no `listPage`, the legacy path reconciles every returned full
-record (`:565-569`).
+(the `list` implementation returned by `createWorkflowsService`). When the store has no `listPage`,
+the legacy path reconciles every returned full record.
 
-`reconcileRunningWorkflowRecord(record, evidence)` (`packages/kernel/src/workflows/workflows-service.ts:614-636`) is pure: absent
+`reconcileRunningWorkflowRecord(record, evidence)` is pure: absent
 evidence or an already-terminal record return the **same object reference** (identity-preserving,
-proven by `packages/kernel/tests/unit/workflows-service.test.ts:136-143`); otherwise it maps
+proven by `packages/kernel/tests/unit/workflows-service.test.ts` in `does nothing without terminal
+evidence or for an already terminal record`); otherwise it maps
 `evidence.status` onto a `RunStatus` (`completed→completed`, `cancelled→cancelled`, anything else
-→`failed`, `packages/kernel/src/workflows/workflows-service.ts:618-624`), returns a **fresh** record with cloned edges, and closes
+→`failed`), returns a **fresh** record with cloned edges, and closes
 every still-`"running"` edge to that status/`ended_at` — "so a failed persistence retry cannot
-partially mutate an in-memory store" (`:586-587`).
+partially mutate an in-memory store" (its TSDoc). The same repair terminalizes a non-terminal
+sequence through `terminalWorkflowSequence`, so crash recovery cannot preserve an Admiral decision
+that no live manager can make.
 
-Every projection to the wire — `recordToSummary` (`:768-780`), `edgeToNode` (`:746-765`) and
-`storedSummaryToSummary` (`:781-791`) — collapses its own status string through `statusOf(raw)`
-(`packages/kernel/src/workflows/workflows-service.ts:790-795`, §2): `"completed"`, `"cancelled"` and `"running"` pass through
-unchanged, and **anything else collapses to `"failed"`** — so a legacy or hand-corrupted status
-string on disk reads as a failed run rather than as an error.
+Every projection to the wire — `recordToSummary`, `edgeToNode` and `storedSummaryToSummary` —
+collapses its own status string through `statusOf(raw)` (§2): `"completed"`, `"cancelled"` and
+`"running"` pass through unchanged, and **anything else collapses to `"failed"`** — so a legacy or
+hand-corrupted status string on disk reads as a failed run rather than as an error.
 
-### 4.10 `closeRunningEdges` — the backstop, not the primary mechanism (`packages/kernel/src/workflows/workflows-service.ts:638-700`)
+### 4.10 `closeRunningEdges` — the backstop, not the primary mechanism
 
-The doc comment on this function (`:616-635`) is itself load-bearing evidence about ordering: it
+The doc comment on this function is itself load-bearing evidence about ordering: it
 used to be pure defense-in-depth on the argument that a dispatch's `finally` block could not let a
 run finish while a `run_leader` call was still unsettled — an argument the comment says "no longer
 holds" once `run_leader` became background-only (a leader's task moves to the supervision registry
@@ -600,45 +634,55 @@ than before." It explicitly does **not** help after a hard process crash — a t
 `"running"` record can only be repaired by §4.9's reconciliation pass on the next `get`/`list`, "which
 does not exist" as a proactive restart-time sweep.
 
-### 4.11 Client-side projection — `reduceWorkflowProjection` (`packages/code/src/adapters/workflow-projection.ts:71-166`)
+### 4.11 Client-side projection — `reduceWorkflowProjection`
 
 The reducer folds one `WorkflowProjectionEvent` at a time into a `WorkflowActivity | null`, and is the
-single feed for the Workflow view, the header chip and the sidebar (doc comment,
-`packages/code/src/adapters/workflow-projection.ts:29-37`). Per event type:
+single feed for the Workflow view, the header chip and the sidebar (`WorkflowActivity` and the
+`reduceWorkflowProjection` TSDoc in `packages/code/src/adapters/workflow-projection.ts`). Per event
+type:
 
 - **`workflow_title_updated`** never invents a tree: it returns the input unchanged (`current`, which
   may be `null`) when `current === null`, and otherwise only updates the existing manager node's
   title, preserving whatever lifecycle status that node already reached
-  (`packages/code/src/adapters/workflow-projection.ts:75-88`) — "a metadata-only event must not invent a live tree: it can arrive
-  after a manager-only run has already ended, when no later terminal event exists to close a newly
-  seeded root" (comment, `:76-78`; proven by `packages/code/tests/unit/workflow-projection.test.ts:146-156`
-  "does not invent a running tree from a title event alone").
+  (`workflow_title_updated` branch of `reduceWorkflowProjection`) — "a metadata-only event must not
+  invent a live tree: it can arrive after a manager-only run has already ended, when no later
+  terminal event exists to close a newly seeded root". Test:
+  `packages/code/tests/unit/workflow-projection.test.ts` (`does not invent a running tree from a
+  title event alone`).
+- **`workflow_sequence_state`** may seed a manager-only activity even when no leader exists, then
+  replaces only `activity.sequence` with the wire state mapped to camel case. Existing nodes are
+  preserved. This lets `awaiting_manager` remain visible after the authorized round's last handle
+  settles. Production: `reduceWorkflowProjection`; test:
+  `packages/code/tests/unit/workflow-projection.test.ts` (`projects an awaiting-Admiral checkpoint
+  even when no leader is currently live`).
 - **`run_ended`** closes the manager root node's status (`ok`/`cancelled`/`error`, derived from
   `event.reason`) and stamps `endedAt`, but only if a tree already exists and the root node is present
   — a `run_ended` arriving before any leader has seeded the tree is a no-op returning `current`
-  unchanged (`packages/code/src/adapters/workflow-projection.ts:89-101`; proven by `packages/code/tests/unit/workflow-projection.test.ts:157-163` "run_ended
-  closes the manager root node", `:164-169` "run_ended preserves a cancelled manager root", and
-  `:170-181` "ignores run_ended before any leader has seeded the tree").
+  unchanged (`run_ended` branch of `reduceWorkflowProjection`). Tests:
+  `packages/code/tests/unit/workflow-projection.test.ts` (`run_ended closes the manager root node`;
+  `run_ended preserves a cancelled manager root`; `ignores run_ended before any leader has seeded
+  the tree`).
 - **`workflow_run_started`** seeds the tree the first time any leader event arrives: if `current` is
   `null`, the manager (root) node is created from that event's own `parent_run_id` as part of `base`
-  before the leader node itself is added (`packages/code/src/adapters/workflow-projection.ts:103-128`; proven by
-  `packages/code/tests/unit/workflow-projection.test.ts:30-44` "seeds the manager root from the first leader's parent and adds
-  the leader").
+  before the leader node itself is added (`workflow_run_started` branch of
+  `reduceWorkflowProjection`). Test: `packages/code/tests/unit/workflow-projection.test.ts` (`seeds
+  the manager root from the first leader's parent and adds the leader`).
 - **`workflow_run_progress`** folds `iterations`/`input_tokens`/`output_tokens` into the named leader
-  node without touching its `status` — the node stays `"running"` (`packages/code/src/adapters/workflow-projection.ts:129-142`;
-  proven by `packages/code/tests/unit/workflow-projection.test.ts:116-134` "folds workflow_run_progress into a leader's live
-  iterations and tokens, staying running").
+  node without touching its `status` — the node stays `"running"` (`workflow_run_progress` branch of
+  `reduceWorkflowProjection`). Test: `packages/code/tests/unit/workflow-projection.test.ts` (`folds
+  workflow_run_progress into a leader's live iterations and tokens, staying running`).
 - **`workflow_run_completed`/`workflow_run_failed`** set the leader's terminal status: `"ok"` on
   completion, and on the other two either `"cancelled"` (when `event.status === "cancelled"`) or
   `"error"` — cancellation is preserved as its own status rather than rendered as an error
-  (`packages/code/src/adapters/workflow-projection.ts:143-166`; proven by `packages/code/tests/unit/workflow-projection.test.ts:76-101` "closes leaders on
-  completion and failure, tracking the running count" and `:102-115` "preserves cancellation instead of
-  presenting a stopped leader as failed"). A `workflow_run_failed` additionally carries `error`/`reason`
-  onto the node (`packages/code/tests/unit/workflow-projection.test.ts:45-75` "keeps authored round context and a terminal
-  failure reason on the live leader").
+  (`workflow_run_completed`/`workflow_run_failed` branch of `reduceWorkflowProjection`). Tests:
+  `packages/code/tests/unit/workflow-projection.test.ts` (`closes leaders on completion and failure,
+  tracking the running count`; `preserves cancellation instead of presenting a stopped leader as
+  failed`). A `workflow_run_failed` additionally carries `error`/`reason` onto the node (same test
+  file, `keeps authored round context and a terminal failure reason on the live leader`).
 
-`workflowLeaderCounts` (`packages/code/src/adapters/workflow-projection.ts:170-181`) is a pure derived tally — total leaders and
-how many are still `"running"` — read by the header chip; it is not itself part of the reducer.
+`workflowLeaderCounts` in `packages/code/src/adapters/workflow-projection.ts` is a pure derived
+tally — total leaders and how many are still `"running"` — read by the header chip; it is not itself
+part of the reducer.
 
 ## 5. Invariants
 
@@ -648,28 +692,28 @@ persisted and rehydratable via `get`.
 Production: `packages/kernel/src/runs/run-service.ts:95-96` (the `isManagerRun` gate before
 `runManagerWorkflow` is even called) and `packages/kernel/src/application/workflow-policy.ts:59-66`
 (the grant check itself).
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:585-601` ("does NOT route a run
-whose entry profile lacks the workflow grant (no record)"), `:603-633` ("routes a manager-grant run
-through runs.start, persists the record, and rehydrates it via get").
+Tests: `packages/kernel/tests/integration/workflows-service.test.ts` (`does NOT route a run whose
+entry profile lacks the workflow grant (no record)`; `routes a manager-grant run through runs.start,
+persists the record, and rehydrates it via get`).
 
 **INV-183.** `WorkflowsService` is owner-scoped: `forOwner(other).workflows` is isolated from the
 default owner's workflow catalog, and `forOwner` itself is memoized (repeated calls for the same
 owner return the same service instance).
-Production: `packages/kernel/src/workflows/workflow-store.ts:433` (`createWorkflowStore` keys its
-on-disk directory by `ownerSegment(opts.owner)`) and `packages/kernel/src/kernel.ts:466-495`
+Production: `createWorkflowStore` in `packages/kernel/src/workflows/workflow-store.ts` keys its
+on-disk directory by `ownerSegment(opts.owner)`, and `packages/kernel/src/kernel.ts:466-495`
 (`buildOwner` constructs one `createWorkflowsService` per `stateOwner`, and `forOwner`/`acquireOwner`
 cache the resulting `OwnerScopedKernel` — the caching mechanism itself belongs to
 [hosts/kernel-runs.md](../hosts/kernel-runs.md), cited here only as the production site this invariant depends on).
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:1134-1164` ("is owner-scoped:
-forOwner(other).workflows is isolated from the default owner's, and forOwner is memoized").
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`is owner-scoped:
+forOwner(other).workflows is isolated from the default owner's, and forOwner is memoized`).
 
 **INV-184.** A malformed workflow document discovered on disk is reported as a diagnostic without
 failing the run that happened to find it or removing a same-named built-in definition.
 Production: `packages/workflows/src/artifact.ts:474-480` (a per-directory `loadWorkflowWithBudget`
 failure is pushed to `errors[]`, not thrown, unless it is a catalogue-wide
-`WorkflowCatalogLimitError`) and `packages/kernel/src/workflows/workflows-service.ts:227-237`
-(`readWorkflowDefs` logs each `registry.errors` entry as a warning, then resolves every successfully
-loaded definition over `BUILTIN_WORKFLOWS`).
+`WorkflowCatalogLimitError`) and `readWorkflowDefs` in
+`packages/kernel/src/workflows/workflows-service.ts` (logs each `registry.errors` entry as a
+warning, then resolves every successfully loaded definition over `BUILTIN_WORKFLOWS`).
 Test: `packages/kernel/tests/integration/workflows-service.test.ts` ("reports a malformed workflow
 document without failing the run that found it").
 
@@ -717,15 +761,21 @@ Test: `packages/workflows/tests/integration/artifact.test.ts:327-339`, `:355-367
 **INV-W4.** A workflow record or summary that would exceed its byte ceiling (8 MiB record / 8 KiB
 summary) is rejected before any write, and the record remains absent (`store.get` returns `null`)
 rather than partially written.
-Production: `packages/kernel/src/workflows/workflow-store.ts:453-459,468-470`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:338-353,355-363`.
+Production: `serializeSummary` and `serializeRecord` in
+`packages/kernel/src/workflows/workflow-store.ts`.
+Tests: `packages/kernel/tests/integration/workflows-service.test.ts` (`rejects a new record and skips
+a legacy one when its summary cannot fit 8 KiB`; `rejects a workflow body before writing when it
+exceeds the record byte budget`).
 
 **INV-W5.** `reconcileRunningWorkflowRecord` returns the exact same object reference when there is
 nothing to repair (no evidence, or the record is already terminal), and a fresh object with cloned
 edges otherwise — so a caller can safely use reference equality to decide whether a persist is
 needed.
-Production: `packages/kernel/src/workflows/workflows-service.ts:615-636`.
-Test: `packages/kernel/tests/unit/workflows-service.test.ts:111-143` (`expect(repaired).not.toBe(original)` and both identity-preserving branches).
+Production: `reconcileRunningWorkflowRecord` in
+`packages/kernel/src/workflows/workflows-service.ts`.
+Tests: `packages/kernel/tests/unit/workflows-service.test.ts` (`maps terminal root evidence and
+closes only edges still running`; `does nothing without terminal evidence or for an already terminal
+record`).
 
 **INV-W6.** The manager's `run_leader` request assembly always strips the `workflow` grant from
 every profile and forces `plans: "off"` plus `memory: "off"`, regardless of what the base assembler
@@ -742,16 +792,55 @@ whenever `agent === "lead"`, or whenever it is `agent === "subagent"` but that t
 was never previously announced by a `delegation_created` event for that leader — order-independent,
 regardless of whether a delegated child's own iteration arrives before or after the leader's first
 `"lead"` turn.
-Production: `packages/kernel/src/workflows/workflows-service.ts:739-768` (§4.6a).
-Test: `packages/kernel/tests/unit/workflows-service.test.ts:17-31`;
-`packages/kernel/tests/integration/workflows-service.test.ts:686-728`.
+Production: `isLeaderEntryIteration` in
+`packages/kernel/src/workflows/workflows-service.ts` (§4.6a).
+Tests: `packages/kernel/tests/unit/workflows-service.test.ts` (`never attributes a delegated child's
+turns to the entry, regardless of arrival order`; `always attributes an agent:'lead' turn to the
+entry`); `packages/kernel/tests/integration/workflows-service.test.ts` (`reports a subagent-role
+leader's progress: its turns are not tagged 'lead'`).
 
 **INV-W8.** An external task binding (`params.task`) supplied to a manager run travels unchanged into
 both the manager's own assembled run body and every leader body `assembleLeader` produces — a
 workflow does not fragment a single bound task across the tree.
-Production: `packages/kernel/src/workflows/workflows-service.ts:371,492`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:897-956` ("forwards one external
-task binding to both workflow manager and leaders").
+Production: `assembleLeader` and the manager request assembly in `runManagerWorkflow`, both in
+`packages/kernel/src/workflows/workflows-service.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`forwards one external task
+binding to both workflow manager and leaders`).
+
+**INV-W9.** Every coordinator transition is emitted live and the latest bounded state is persisted
+on the workflow record. Live and durable projections carry the same session, status, revision,
+round/pass and cumulative leader fields. Production: `WorkflowCtx.onSequenceState` construction in
+`runManagerWorkflow`, `boundedWorkflowSequence`, and `recordToDetail`. Test:
+`packages/kernel/tests/integration/workflows-service.test.ts` (`emits and persists every
+Admiral-controlled round checkpoint`).
+
+**INV-W10.** A checkpoint is visible without a live leader: the code projection may seed a
+manager-only workflow activity from `workflow_sequence_state`, and both the Sidebar and persisted
+Workflows tree render `awaiting_manager`. Production: `reduceWorkflowProjection`, `Sidebar`, and
+`WorkflowsHub`. Tests: `packages/code/tests/unit/workflow-projection.test.ts` (`projects an
+awaiting-Admiral checkpoint even when no leader is currently live`),
+`packages/code/tests/integration/sidebar-render.test.tsx` (`an idle round checkpoint remains visible
+as awaiting the Admiral`), and `packages/code/tests/integration/workflows-hub-render.test.tsx` (`the
+persisted tree names an awaiting-Admiral checkpoint and proposed round`).
+
+**INV-W11.** The optional persisted checkpoint is runtime-validated before projection: its status is
+closed, revision/pass/count fields are non-negative integers, the lifetime limit is positive, and
+`leaders_started` cannot exceed it. A malformed checkpoint invalidates the containing full record
+instead of being projected as authoritative manager state. Production: `isWorkflowSequenceRecord`
+and `isWorkflowRecord` in `packages/kernel/src/workflows/workflow-store.ts`. Test:
+`packages/kernel/tests/integration/workflows-service.test.ts` (`rejects a persisted workflow whose
+Admiral checkpoint has an invalid shape`).
+
+**INV-W12.** A terminal manager record cannot retain a non-terminal round sequence. Normal
+settlement and terminal-trace reconciliation both map `running_round`/`awaiting_manager` to
+`cancelled` when the manager was cancelled, `failed` when it failed, or defensively `stopped` when it
+completed without the coordinator gate; they increment the revision and remove `next_round_id` /
+`next_pass`. Existing terminal sequence outcomes are preserved. Production:
+`terminalWorkflowSequence`, `finalize`, and `reconcileRunningWorkflowRecord` in
+`packages/kernel/src/workflows/workflows-service.ts`. Tests:
+`packages/kernel/tests/unit/workflows-service.test.ts` (`maps terminal root evidence and closes only
+edges still running`) and `packages/kernel/tests/integration/workflows-service.test.ts`
+(`terminalizes an awaiting Admiral checkpoint when the manager is cancelled`).
 
 ### From the fully-read `workflows-service` integration suite
 
@@ -762,73 +851,87 @@ workflow tree — and the second is `WorkflowsService`.
 **INV-277.** The store round-trips a record and lists newest-`updated_at`-first with an `id`
 tie-break; a missing owner directory reads as an empty catalog rather than an error; `get` of an
 absent or deleted id is `null`; and `delete` reports whether anything was actually removed.
-Production: `packages/kernel/src/workflows/workflow-store.ts:585-587`, `:621-632`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:187-198`.
+Production: the `save`, `get`, `list`, and `delete` implementations returned by
+`createWorkflowStore` in `packages/kernel/src/workflows/workflow-store.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`round-trips a record and lists
+newest-first, tolerating a missing dir`).
 
 **INV-278.** `listPage` reads only the bounded `<id>.summary.json` sidecars on the normal path, never
 the workflow bodies, and genuinely yields to the event loop while scanning. A 513-record catalog whose
 every *body* is deliberately unparseable still pages correctly and reports `total: 513` — which is what
 proves the bodies are not being read.
-Production: `packages/kernel/src/workflows/workflow-store.ts:493` (the scan skips `*.summary.json`),
-`:504-537` (`readSummary` prefers the sidecar), `:606-610` (`yieldToEventLoop` per
-`WORKFLOW_SCAN_BATCH` entries or `WORKFLOW_SCAN_BATCH_BYTES`).
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:200-245`, with the
-still-unsettled-after-one-macrotask assertion at `:226-231`.
+Production: `recordEntries` skips `*.summary.json`, `readSummary` prefers the sidecar, and the
+`listPage` implementation returned by `createWorkflowStore` calls `yieldToEventLoop` per
+`WORKFLOW_SCAN_BATCH` entries or `WORKFLOW_SCAN_BATCH_BYTES` in
+`packages/kernel/src/workflows/workflow-store.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`pages a large catalog from
+bounded sidecars without parsing workflow bodies`).
 
 **INV-279.** The catalog's two read paths are bounded in opposite ways and neither degrades silently.
 `listPage` rejects `invalid_request` for a `limit` outside `[1, 200]` — a non-integer or `Infinity`
 included — and for an `offset` above `WORKFLOW_PAGE_MAX_OFFSET` (2,000). The unbounded `list()` refuses
 outright with `resource_exhausted`, "use listPage()", past 200 full records or 32 MiB of them. (The
 *byte-ceiling* rejections at save time are a different rule, INV-W4.)
-Production: `packages/kernel/src/workflows/workflow-store.ts:359-367`, `:116-117`, `:120-121`,
-`:558-578`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:200-245`, assertions `:238-244`.
+Production: `normalizeWorkflowPage`, `FileWorkflowStore`, and the `list` implementation returned by
+`createWorkflowStore` in `packages/kernel/src/workflows/workflow-store.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`pages a large catalog from
+bounded sidecars without parsing workflow bodies`).
 
 **INV-280.** A record found without its sidecar is repaired opportunistically on the read path — the
 derived summary is written back, inside a `try` because "the authoritative record remains readable" —
 and `delete` removes the sidecar together with the record.
-Production: `packages/kernel/src/workflows/workflow-store.ts:518-537`, `:621-626`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:247-258`.
+Production: `readSummary` and the `delete` implementation returned by `createWorkflowStore` in
+`packages/kernel/src/workflows/workflow-store.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`repairs a legacy sidecar and
+deletes it with the authoritative record`).
 
 **INV-281.** Persistence bounds are applied at save time and are **visible**: at most
 `WORKFLOW_MAX_EDGES` (256) edges survive and the manager edge's `reason` is stamped with an explicit
 omission notice naming the count; `title`, `task`, `error.message` and `reason` are each truncated to
 their own byte ceiling (16 KiB / 4 KiB / 4 KiB) with `WORKFLOW_TRUNCATION_MARKER` naming which field
 was cut; and the serialized body stays inside `WORKFLOW_RECORD_MAX_BYTES`.
-Production: `packages/kernel/src/workflows/workflow-store.ts:106-113`, `:125-151`, `:190-200`,
-`:203-217`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:260-296`.
+Production: `boundedWorkflowRecord`, `boundedWorkflowEdge`, `truncateWorkflowText`, and
+`markWorkflowEdgesTruncated` in `packages/kernel/src/workflows/workflow-store.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`caps edges and large
+task/error/reason strings with an explicit marker`).
 
 **INV-282.** Truncation backs up from a UTF-16 split, so a surrogate pair is never halved: when the
 byte budget lands between a high and a low surrogate the cut moves back one code unit.
-Production: `packages/kernel/src/workflows/workflow-store.ts:139-150`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:365-383`.
+Production: `truncateWorkflowText` in `packages/kernel/src/workflows/workflow-store.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`backs up from a UTF-16 split
+so truncation never persists half a surrogate pair`).
 
 **INV-283.** An already-aborted `AbortSignal` rejects a catalog scan with `cancelled` **before any
 record is read**, and the same cancellation passes straight through `WorkflowsService.list`.
-Production: `packages/kernel/src/workflows/workflow-store.ts:352-357` (`assertScanActive`), checked
-once before the loop at `:599` and again per entry at `:601`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:326-336` (store), `:387-407` (service).
+Production: `assertScanActive` and the `listPage` implementation returned by `createWorkflowStore`
+in `packages/kernel/src/workflows/workflow-store.ts`.
+Tests: `packages/kernel/tests/integration/workflows-service.test.ts` (`rejects an already-cancelled
+catalog scan before reading a record`; `passes catalog cancellation through to the file-store
+scan`).
 
 **INV-284.** A crash-orphaned `running` record is reconciled **only from a terminal root trace**: one
 whose root run's trace is terminal is rewritten to that status and `ended_at` with every still-running
-edge closed to it; one whose root run has no terminal trace is left alone. The repair is persisted to
-the record *and* its summary, and a reconciling `list()` performs exactly one full-record read — for
-the record it repairs and no other, because everything else is answered from summaries. A failed save
-still returns the truthful projection for that read and leaves the record retryable.
-Production: `packages/kernel/src/workflows/workflows-service.ts:614-636`, `:694`, `:185-214`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:409-583`, with the one-read assertion
-at `:494-501` and the persisted-to-both assertion at `:502-506`.
+edge closed to it and any non-terminal sequence terminalized; one whose root run has no terminal
+trace is left alone. The repair is persisted to the record *and* its summary, and a reconciling
+`list()` performs exactly one full-record read — for the record it repairs and no other, because
+everything else is answered from summaries. A failed save still returns the truthful projection for
+that read and leaves the record retryable.
+Production: `reconcileRunningWorkflowRecord`, `closeRunningEdges`, `readTerminalEvidence`, and
+`reconcilePersisted` in `packages/kernel/src/workflows/workflows-service.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`reconciles crash-orphaned
+running records only from terminal root traces`).
 
 **INV-285.** A workflow's semantic title is generated **out of band**. The manager run starts while the
 title call is still in flight and `get` reports the provisional `Workflow <id-prefix>` title until it
 lands; the real title then arrives as a live `workflow_title_updated` event and is folded into both the
 record and the manager edge.
-Production: `packages/kernel/src/workflows/workflows-service.ts:502-515` (the title task runs beside
-`executeRun` and emits rather than blocking), `:739-743` (`provisionalWorkflowTitle`), `:309-313`;
+Production: the `titleTask`/`runTask` pair in `runManagerWorkflow`, `provisionalWorkflowTitle`, and
+the `workflow_title_updated` branch of `observe` in
+`packages/kernel/src/workflows/workflows-service.ts`;
 `packages/kernel/src/runs/event-policy.ts:74` classifies the event `live`, so it never reaches the
 trace.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:635-685`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`starts the manager while
+semantic title generation is still in flight`).
 
 **INV-286.** A `run_leader` call that names no `profile` resolves to the manager profile's
 `default_spawn` — never to the manager's own profile, and never failing with "no agent given" — and the
@@ -836,10 +939,11 @@ spawn is recorded as a second node in the tree: one `workflow_run_started` / `wo
 pair sharing a `run_id`, whose `parent_run_id` is the manager's run, plus live `workflow_run_progress`
 while it works. The persisted record then shows exactly one `leader` edge carrying that title and task,
 and `leader_count` is 1.
-Production: `packages/kernel/src/workflows/workflows-service.ts:360`
-(`spec.profile ?? cfg.resolveLeaderDefault?.(params.agent) ?? params.agent`), the option's own TSDoc at
-`:98-101`, the edge appended at `:284-308`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:822-895`.
+Production: `assembleLeader`, `WorkflowsServiceConfig.resolveLeaderDefault`, and the
+`workflow_run_started` branch of `observe` in
+`packages/kernel/src/workflows/workflows-service.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`fans out a leader via
+run_leader and records it as a second tree node`).
 
 **INV-287.** A manager's live-children ceiling is raised to what its configured leader concurrency
 needs: the assembled manager body carries
@@ -847,9 +951,10 @@ needs: the assembled manager body carries
 `max_concurrency`, and an operator value already above the floor is kept rather than overwritten. The
 test states the failure: "Without this the semaphore would admit twelve leaders and the supervision
 registry would refuse to register them past its own default of eight."
-Production: `packages/kernel/src/workflows/workflows-service.ts:784-796`, called at `:502`;
-`packages/workflows/src/settings.ts:71-74`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:959-995`.
+Production: `raiseLiveChildrenCeiling`, called by `runManagerWorkflow`;
+`managerLiveChildrenFloor` in `packages/workflows/src/settings.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`raises the manager's
+live-children ceiling to what its leader concurrency needs`).
 
 **INV-288.** Workflow persistence is coalesced onto delayed saves plus one synchronous terminal
 flush, and the terminal snapshot lands **before** `done` and `closed` settle. A failed background
@@ -857,37 +962,46 @@ save is warned rather than escaping its timer, leaves the record dirty, and is r
 request; terminal `flush()` remains authoritative. In the injected-failure integration run this is
 two scheduled timers, one cancel and three `store.save` attempts; the flushed record is terminal and
 no edge is left `running`.
-Production: `packages/kernel/src/workflows/workflow-store.ts:386-424` (`request()` is a no-op while a
-timer is pending; `flush()` cancels it and saves synchronously);
-`packages/kernel/src/workflows/workflows-service.ts:279-293`, `:384-392`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:998-1088` (failed background save,
-warning, retry, terminal flush and settled handles).
+Production: `createWorkflowSaveQueue` (`request()` is a no-op while a timer is pending; `flush()`
+cancels it and saves synchronously) in `packages/kernel/src/workflows/workflow-store.ts`, plus
+`persistSnapshot`, `persist`, and `finalize` in
+`packages/kernel/src/workflows/workflows-service.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`flushes one coalesced terminal
+snapshot before done and closed settle`).
 
 **INV-289.** Cancelling mid-fan-out settles the tree: after `handle.done`, every node of the persisted
-workflow has a non-`running` status. The test records (`:1091-1099`) that it is an end-to-end smoke
+workflow has a non-`running` status. Cancelling with no live leader at an `awaiting_manager`
+checkpoint also terminalizes the persisted sequence as `cancelled` and removes its proposal. The
+mid-fan-out test records (`:1091-1099`) that it is an end-to-end smoke
 test of cancellation rather than a regression test for `closeRunningEdges`, whose "leftover running
 edge" branch this scenario never reaches.
-Production: `packages/kernel/src/workflows/workflows-service.ts:384-392`; the backstop's own limits
-are documented at `:611-635` — notably that it does **not** help after a hard process crash, where
-only INV-284's reconciliation can.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:1090-1132`.
+Production: `finalize`, `terminalWorkflowSequence`, and the `closeRunningEdges` TSDoc in
+`packages/kernel/src/workflows/workflows-service.ts` — notably the backstop does **not** help after a
+hard process crash, where only INV-284's reconciliation can.
+Tests: `packages/kernel/tests/integration/workflows-service.test.ts` (`cancelling mid-fan-out never
+crashes or hangs, and settles into a sane, non-'running' final state`; `terminalizes an awaiting
+Admiral checkpoint when the manager is cancelled`).
 
 **INV-290.** A manager stays reachable while its leaders run: a steer delivered mid-fan-out reaches the
 manager's *next* turn, carrying the steer text, while both leaders are still parked. The test names the
 defect: "Before background spawn the manager sat inside its dispatch until the slowest leader returned,
 and the steer waited out the whole fan-out."
 Production: the leader spawn is a background `spawn_run`
-(`packages/kernel/src/workflows/workflows-service.ts:360-383` assembles it and hands back a handle);
+(`assembleLeader` in `packages/kernel/src/workflows/workflows-service.ts` assembles it; the workflow
+runtime hands back a handle);
 the engine-side rule this depends on belongs to `@clarvis/loop`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:730-821`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`delivers a steer to the manager
+while its leaders are still running`).
 
 **INV-291.** A leader whose profile declares no `can_spawn` runs in subagent-only mode, and its
 progress is still reported: `workflow_run_progress` arrives with `iterations >= 1` and
 `output_tokens > 0` even though that leader's turns are tagged `subagent` rather than `lead`. This is
 the reporting half of INV-W7's attribution rule; the test states what counting only `"lead"` cost —
 "a permanent 'loading…' beside a leader that was working".
-Production: `packages/kernel/src/workflows/workflows-service.ts:718-747`.
-Test: `packages/kernel/tests/integration/workflows-service.test.ts:686-729`.
+Production: `onLeaderEvent` and `isLeaderEntryIteration` in
+`packages/kernel/src/workflows/workflows-service.ts`.
+Test: `packages/kernel/tests/integration/workflows-service.test.ts` (`reports a subagent-role
+leader's progress: its turns are not tagged 'lead'`).
 
 **INV-292.** Manager status and aggregate workflow status are distinct. A completed manager edge
 stays completed, but the workflow is failed when any leader edge is non-completed or the child
@@ -904,22 +1018,23 @@ is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLe
 
 | Failure | Handling | Cite |
 |---|---|---|
-| Any structural defect in one `WORKFLOW.md` (bad frontmatter, name/dir mismatch, bad selector/accept/repeat, duplicate round id, oversized field) | Collected as one `WorkflowLoadError {dir, message}`; that directory contributes no workflow; every other directory in the scan is unaffected | `packages/workflows/src/artifact.ts:474-480`; `packages/kernel/src/workflows/workflows-service.ts:233-235` logs each as `warn` |
+| Any structural defect in one `WORKFLOW.md` (bad frontmatter, name/dir mismatch, bad selector/accept/repeat, duplicate round id, oversized field) | Collected as one `WorkflowLoadError {dir, message}`; that directory contributes no workflow; every other directory in the scan is unaffected | `packages/workflows/src/artifact.ts:474-480`; `readWorkflowDefs` in `packages/kernel/src/workflows/workflows-service.ts` logs each as `warn` |
 | A workflow root exists but is unreadable (permission denied, not a directory, I/O fault) | Recorded as an error naming the root; contributes no workflows from it | `packages/workflows/src/artifact.ts:431-440` |
 | A workflow root does not exist (`ENOENT`) | Silent — this is the ordinary "no workflows authored" case, not an error | `packages/workflows/src/artifact.ts:424,432-433` |
 | Catalogue-wide resource ceiling exceeded (roots / entries / workflow dirs / aggregate bytes) | Whole scan aborts atomically to zero workflows + one error | `packages/workflows/src/artifact.ts:452-462,483-489` |
-| A `listPage`/`list` scan's `AbortSignal` fires mid-scan | Throws `kernelError("cancelled", …)` at the next checkpoint (before the loop, and after every batch yield) | `packages/kernel/src/workflows/workflow-store.ts:348-352,599,601,611` |
-| A workflow record/summary exceeds its byte ceiling on save | `kernelError("resource_exhausted", …)` thrown before any write; existing on-disk state (if any) is untouched | `packages/kernel/src/workflows/workflow-store.ts:456,469` |
-| A legacy on-disk record whose regenerated summary would itself exceed 8 KiB (`serializeSummary` throws inside `readSummary`) | Silently excluded from `listPage()` entirely — absent from `items` **and** uncounted in `total`; no error surfaced to the caller | `packages/kernel/src/workflows/workflow-store.ts:515,526-531,603-606`; `packages/kernel/tests/integration/workflows-service.test.ts:338-353` ("rejects a new record and skips a legacy one when its summary cannot fit 8 KiB") |
-| An on-disk record file that is oversized (> 8 MiB, `WORKFLOW_RECORD_MAX_BYTES`) or parses as JSON but fails the `isWorkflowRecord` shape guard | `readOne` returns `null`; `store.get(id)`/every full-record read is indistinguishable from "no such workflow" — no warning logged, no diagnostic anywhere on this path | `packages/kernel/src/workflows/workflow-store.ts:443-451` (`isWorkflowRecord` at `:232-250`) |
-| A legacy full-body `list()` scan exceeds 200 records or 32 MiB | `kernelError("resource_exhausted", …)`, directing the caller to `listPage()` | `packages/kernel/src/workflows/workflow-store.ts:560-563,573-577` |
-| A field would exceed its persisted-text byte ceiling (title/task/error/reason) | Silently truncated with an explicit, human-visible marker appended — never a hard failure | `packages/kernel/src/workflows/workflow-store.ts:126-151,154-188` |
-| A coalesced background save throws | Reported to `onBackgroundError`; the timer callback itself never throws; the record stays dirty for the next `request()`/`flush()` to retry | `packages/kernel/src/workflows/workflow-store.ts:411-417` |
-| `reconcilePersisted`'s trace-store read throws | Caught, logged as `warn`, treated as "no evidence" (record stays `"running"` as read) | `packages/kernel/src/workflows/workflows-service.ts:173-182` |
-| `reconcilePersisted`'s repair-save throws | Caught, logged as `warn`; the **truthful** repaired projection is still returned to *this* caller, but the persisted record is left `"running"` for a future retry | `packages/kernel/src/workflows/workflows-service.ts:194-203` |
+| A `listPage`/`list` scan's `AbortSignal` fires mid-scan | Throws `kernelError("cancelled", …)` at the next checkpoint (before the loop, and after every batch yield) | `assertScanActive` and the `listPage` implementation returned by `createWorkflowStore` |
+| A workflow record/summary exceeds its byte ceiling on save | `kernelError("resource_exhausted", …)` thrown before any write; existing on-disk state (if any) is untouched | `serializeSummary` and `serializeRecord` in `packages/kernel/src/workflows/workflow-store.ts` |
+| A legacy on-disk record whose regenerated summary would itself exceed 8 KiB (`serializeSummary` throws inside `readSummary`) | Silently excluded from `listPage()` entirely — absent from `items` **and** uncounted in `total`; no error surfaced to the caller | `readSummary` in `packages/kernel/src/workflows/workflow-store.ts`; `packages/kernel/tests/integration/workflows-service.test.ts` (`rejects a new record and skips a legacy one when its summary cannot fit 8 KiB`) |
+| An on-disk record file that is oversized (> 8 MiB, `WORKFLOW_RECORD_MAX_BYTES`) or parses as JSON but fails the `isWorkflowRecord` shape guard, including an invalid optional Admiral checkpoint | `readOne` returns `null`; `store.get(id)`/every full-record read is indistinguishable from "no such workflow" — no warning logged, no diagnostic anywhere on this path | `readOne`, `isWorkflowRecord`, and `isWorkflowSequenceRecord` in `packages/kernel/src/workflows/workflow-store.ts`; `packages/kernel/tests/integration/workflows-service.test.ts` (`rejects a persisted workflow whose Admiral checkpoint has an invalid shape`) |
+| A legacy full-body `list()` scan exceeds 200 records or 32 MiB | `kernelError("resource_exhausted", …)`, directing the caller to `listPage()` | the `list` implementation returned by `createWorkflowStore` |
+| A field would exceed its persisted-text byte ceiling (title/task/error/reason) | Silently truncated with an explicit, human-visible marker appended — never a hard failure | `truncateWorkflowText`, `boundedWorkflowEdge`, and `boundedWorkflowSequence` |
+| A coalesced background save throws | Reported to `onBackgroundError`; the timer callback itself never throws; the record stays dirty for the next `request()`/`flush()` to retry | `createWorkflowSaveQueue` |
+| `reconcilePersisted`'s trace-store read throws | Caught, logged as `warn`, treated as "no evidence" (record stays `"running"` as read) | `readTerminalEvidence` in `packages/kernel/src/workflows/workflows-service.ts` |
+| `reconcilePersisted`'s repair-save throws | Caught, logged as `warn`; the **truthful** repaired projection is still returned to *this* caller, but the persisted record is left `"running"` for a future retry | `reconcilePersisted` in `packages/kernel/src/workflows/workflows-service.ts` |
+| Manager cancellation/failure or terminal-trace reconciliation occurs while its sequence is `running_round` / `awaiting_manager` | Terminal snapshot replaces the impossible checkpoint, increments its revision and removes the next-round proposal | `terminalWorkflowSequence`, called by `finalize` and `reconcileRunningWorkflowRecord`; INV-W12 tests |
 | `generateWorkflowTitle`'s model call fails, times out, or returns malformed/oversized/multiline metadata | Caught or validated away to `null`; the manager keeps its provisional `"Workflow <id>"` title; a warning is logged naming the reason | `packages/kernel/src/workflows/workflow-title.ts:99-113`; `packages/kernel/tests/unit/workflow-title.test.ts:86-104` |
 | The manager's own profile is missing from `request.profiles`, or there is no user message to title | `generateWorkflowTitle` returns `null` with **no** provider call at all | `packages/kernel/src/workflows/workflow-title.ts:58-63`; `packages/kernel/tests/unit/workflow-title.test.ts:152-165` |
-| More than `WORKFLOW_MAX_EDGES` (256) leader edges would be recorded | Further `workflow_run_started` events are dropped; the manager edge's `reason` gets one (idempotent) truncation notice; on-disk `boundedWorkflowRecord` also slices/marks at write time as a second line of defense | `packages/kernel/src/workflows/workflows-service.ts:304-307`; `packages/kernel/src/workflows/workflow-store.ts:191-200,203-217` |
+| More than `WORKFLOW_MAX_EDGES` (256) leader edges would be recorded | Further `workflow_run_started` events are dropped; the manager edge's `reason` gets one (idempotent) truncation notice; on-disk `boundedWorkflowRecord` also slices/marks at write time as a second line of defense | the `workflow_run_started` branch of `observe`; `boundedWorkflowRecord` and `markWorkflowEdgesTruncated` |
 | A skill named in `params.skill` cannot be loaded (`skills?.loadSkill` returns `undefined`) | `isManagerRun` falls back to `params.agent` alone | `packages/kernel/src/application/workflow-policy.ts:60-64`; `packages/kernel/tests/unit/workflow-policy.test.ts:80-92` |
 
 ## 7. Coupling
@@ -940,8 +1055,8 @@ is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLe
   `managerLiveChildrenFloor`, and the `WorkflowCtx`/`WorkflowRunDeps`/`LeaderRequestAssembler`/
   `LeaderProfileInfo` types (`packages/kernel/src/workflows/workflows-service.ts:12-23`) — all of these belong to the
   scheduling-and-spawn document; this document only *constructs* them once per manager run.
-- `@clarvis/protocol` — the `WorkflowsService`, `WorkflowDetail`, `WorkflowNode`, `WorkflowSummary`,
-  `RunHandle`, `RunEvent`, `RunStatus`, `StartRunParams`, `Page`, `Pagination` DTOs
+- `@clarvis/protocol` — the `WorkflowsService`, `WorkflowDetail`, `WorkflowNode`, `WorkflowSequence`,
+  `WorkflowSummary`, `RunHandle`, `RunEvent`, `RunStatus`, `StartRunParams`, `Page`, `Pagination` DTOs
   (`packages/kernel/src/workflows/workflows-service.ts:25-37`).
 - Sibling kernel modules — `../core/errors.ts` (`kernelError`), `../runs/map-events.ts`
   (`capabilityEventToProto`, `engineEventToProto` — owned by [hosts/kernel-runs.md](../hosts/kernel-runs.md)),
@@ -962,7 +1077,7 @@ is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLe
   so a host that never wires it (e.g. a test double) simply never routes anything as a workflow.
 - `packages/kernel/src/config.ts`/`packages/kernel/src/index.ts` re-export `WORKFLOW_RESULT_SCHEMAS`
   etc. from `@clarvis/workflows`'s `./schemas` entry to a shipped `admiral` agent template
-  (`packages/kernel/src/config/builtin-agents/admiral.ts:289-420`); a component test
+  (`body` in `packages/kernel/src/config/builtin-agents/admiral.ts`); a component test
   (`packages/kernel/tests/component/builtin-agents.test.ts:116-125`) fails if the two drift apart —
   this is the forcing mechanism keeping the prompt's inlined schemas in sync with the code's.
 - `packages/code`'s `src/adapters/workflow-projection.ts` (§2, §4.11) consumes the protocol
@@ -1024,5 +1139,5 @@ scheduling loop that reads `WorkflowCtx.semaphore`/`.ledger`/`.assemble` lives i
   consumes are confirmed, but its rendering and interaction behavior are not described here.
 - No test in scope asserts what happens when `cfg.globalConfigDir` is omitted from
   `WorkflowsServiceConfig` beyond the doc comment "Omitted in tests, where only the workspace root
-  matters" (`packages/kernel/src/workflows/workflows-service.ts:87-88`) — i.e., whether a production host could legally omit it is
+  matters" (`WorkflowsServiceConfig.readSettings`) — i.e., whether a production host could legally omit it is
   not verified by a test in this document's scope (`packages/kernel/src/kernel.ts:479` always supplies it in practice).

@@ -921,15 +921,20 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
  */
 function readWorkflowsSettings(store: ConfigStore): WorkflowsRuntimeSettings {
   const merged = store.readSettings().merged as Record<string, unknown>;
-  const block = readCapabilitySettings<{ max_concurrency?: number; budget_tokens?: number | null }>(
-    merged,
-    workflowsSettingsSpec,
-  );
+  const block = readCapabilitySettings<{
+    max_concurrency?: number;
+    max_total_leaders?: number;
+    budget_tokens?: number | null;
+  }>(merged, workflowsSettingsSpec);
   return {
     max_concurrency:
       typeof block?.max_concurrency === "number"
         ? block.max_concurrency
         : WORKFLOWS_DEFAULTS.max_concurrency,
+    max_total_leaders:
+      typeof block?.max_total_leaders === "number"
+        ? block.max_total_leaders
+        : WORKFLOWS_DEFAULTS.max_total_leaders,
     budget_tokens:
       block?.budget_tokens === undefined ? WORKFLOWS_DEFAULTS.budget_tokens : block.budget_tokens,
   };

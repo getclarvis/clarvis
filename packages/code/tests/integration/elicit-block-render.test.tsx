@@ -107,7 +107,7 @@ const WORKFLOW_REVIEW: ElicitRequestParams = {
     "Workflow: exhaustive-review\nRounds: discover → inspect → verify\nEstimated leaders: 6\n\nNo leader has been launched yet.",
   requestedSchema: {
     type: "object",
-    properties: { decision: { type: "string", enum: ["run", "cancel"] } },
+    properties: { decision: { type: "string", enum: ["cancel", "run"] } },
     required: ["decision"],
   },
 };
@@ -124,14 +124,18 @@ test("a workflow_review is an explicit preflight with a safe before-start promis
   expect(out).toContain("do not run");
 });
 
-test("workflow preflight submits only the decision the user highlighted", async () => {
+test("workflow preflight has no default and submits only an explicitly highlighted decision", async () => {
   const run = await mountKeyed(WORKFLOW_REVIEW);
+  run.press("return");
+  expect(run.resolved).toEqual([]);
+  expect(run.notices).toEqual(["answer required: decision"]);
+  run.press("2");
   run.press("return");
   expect(run.resolved).toEqual([{ action: "accept", content: { decision: "run" } }]);
   run.t.renderer.destroy();
 
   const cancel = await mountKeyed(WORKFLOW_REVIEW);
-  cancel.press("down");
+  cancel.press("1");
   cancel.press("return");
   expect(cancel.resolved).toEqual([{ action: "accept", content: { decision: "cancel" } }]);
   cancel.t.renderer.destroy();

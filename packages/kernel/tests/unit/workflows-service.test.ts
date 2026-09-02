@@ -118,6 +118,17 @@ describe("reconcileRunningWorkflowRecord", () => {
       ["error", "failed"],
     ] as const) {
       const original = runningRecord();
+      original.sequence = {
+        session_id: "wfseq-1",
+        status: "awaiting_manager",
+        revision: 1,
+        round_id: "discover",
+        pass: 0,
+        next_round_id: "verify",
+        next_pass: 0,
+        leaders_started: 1,
+        max_total_leaders: 4,
+      };
       const repaired = reconcileRunningWorkflowRecord(original, {
         status: traceStatus,
         ended_at: 50,
@@ -128,8 +139,19 @@ describe("reconcileRunningWorkflowRecord", () => {
       expect(repaired.edges[0]).toMatchObject({ status: workflowStatus, ended_at: 50 });
       expect(repaired.edges[1]).toMatchObject({ status: "completed", ended_at: 8 });
       expect(repaired.edges[2]).toMatchObject({ status: aggregate, ended_at: 50 });
+      expect(repaired.sequence).toMatchObject({
+        status: traceStatus === "completed" ? "stopped" : workflowStatus,
+        revision: 2,
+      });
+      expect(repaired.sequence?.next_round_id).toBeUndefined();
+      expect(repaired.sequence?.next_pass).toBeUndefined();
       expect(original.status).toBe("running");
       expect(original.edges[0]?.status).toBe("running");
+      expect(original.sequence).toMatchObject({
+        status: "awaiting_manager",
+        revision: 1,
+        next_round_id: "verify",
+      });
     }
   });
 

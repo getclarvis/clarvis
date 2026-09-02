@@ -41,7 +41,7 @@ Within that scope it owns four concerns that are visible in the code as four sep
    `packages/code/src/views/tools/mutation-gate.ts`).
 4. **Identity** (`adapters/tool-identity.ts`) — the single rule for "which name is this call",
    used by the renderer registry, the signature table, the grouping pass and the mutation gate alike
-   (`packages/code/src/adapters/tool-identity.ts:11`).
+   (`toolIdentity` in `packages/code/src/adapters/tool-identity.ts`).
 
 Beside those four sits the transcript's persistent companion chrome — the responsive Sidebar, the
 bounded agent/workflow footer strip and the composer-adjacent Lead activity band. Plan activity
@@ -85,14 +85,14 @@ Exported from their modules but **not** re-exported through the barrel:
 
 ### 2.2 `adapters/tool-identity.ts`
 
-| Symbol | Signature | Line |
+| Symbol | Signature | Declaration |
 |---|---|---|
-| `toolIdentity` | `(mcpName?: string, toolName?: string) => string` | `:11` |
-| `toolLabel` | `(mcpName?: string, toolName?: string) => string` | `:29` |
-| `isTranscriptExternalOrchestrationTool` | `(mcpName?: string, toolName?: string) => boolean` | `packages/code/src/adapters/tool-identity.ts:68-73` |
-| `toolDisplayLabel` | `(mcpName?: string, toolName?: string) => string` | `packages/code/src/adapters/tool-identity.ts:75-83` |
-| `MUTATION_TOOLS` | `Set<string>` | `packages/code/src/adapters/tool-identity.ts:85-95` |
-| `isMutationTool` | `(mcpName?: string, toolName?: string) => boolean` | `packages/code/src/adapters/tool-identity.ts:97-106` |
+| `toolIdentity` | `(mcpName?: string, toolName?: string) => string` | `toolIdentity` |
+| `toolLabel` | `(mcpName?: string, toolName?: string) => string` | `toolLabel` |
+| `isTranscriptExternalOrchestrationTool` | `(mcpName?: string, toolName?: string) => boolean` | `isTranscriptExternalOrchestrationTool` |
+| `toolDisplayLabel` | `(mcpName?: string, toolName?: string) => string` | `toolDisplayLabel` |
+| `MUTATION_TOOLS` | `Set<string>` | `MUTATION_TOOLS` |
+| `isMutationTool` | `(mcpName?: string, toolName?: string) => boolean` | `isMutationTool` |
 
 `MUTATION_TOOLS` is `FILE_MUTATING_TOOL_NAMES` (imported from `@clarvis/kernel/policy`,
 `packages/code/src/adapters/tool-identity.ts:1`) unioned with the literal `["write_memory","edit_memory","delete_memory"]`
@@ -104,10 +104,11 @@ exec ceiling independently classifies and filters it as a command runner.
 
 `toolDisplayLabel` is distinct from `toolLabel`: when both `mcpName` and `toolName` are present it
 returns the raw `server:tool` unchanged, otherwise it resolves `toolIdentity` through
-the 9-entry `BUILTIN_TOOL_LABELS` table (`:34`–`:44`) — `await_agents` → "Wait for agents",
+the 11-entry `BUILTIN_TOOL_LABELS` table — `await_agents` → "Wait for agents",
 `agent_poll` → "Check agent", `agent_steer` → "Steer agent", `agent_stop` → "Stop agent",
 `delegate_task` → "Delegate task", `run_leader` → "Start workflow leader", `run_workflow` → "Run
-workflow", `run_round` → "Run workflow rounds", `run_work_items` → "Run work items" — falling back to
+workflow", `run_round` → "Run workflow rounds", `run_work_items` → "Run work items",
+`workflow_status` → "Check workflow", `workflow_decide` → "Decide workflow" — falling back to
 the bare identity for anything not in the table. This is what remaps the engine's internal
 orchestration-tool names to product-facing labels while leaving a real MCP call's `server:tool`
 identity untouched. Test: `packages/code/tests/unit/tool-identity.test.ts` ("toolDisplayLabel
@@ -116,7 +117,7 @@ translates orchestration internals but preserves MCP identity").
 Those labels do not grant a Lead-owned orchestration call transcript visibility. The closed
 supervision/orchestration set — `spawn_subagent`, `delegate_task`, `agent_list`, `agent_poll`,
 `agent_stop`, `agent_steer`, `await_agents`, `run_leader`, `run_workflow`, `run_round`,
-`run_work_items` — is suppressed from the Lead projection before a composing, started,
+`run_work_items`, `workflow_status`, `workflow_decide` — is suppressed from the Lead projection before a composing, started,
 streaming-output or terminal tool row can become a frontier candidate or publication batch. Thus
 even temporary copy such as `Wait for agents starting…` is invalid in the Lead transcript. Ordinary
 Lead `thinking`/`working` state is not a tool row and remains eligible for the fixed activity line
@@ -269,11 +270,12 @@ Keys are strings with meaning encoded as prefixes. Three consumers parse them:
 | `user:<n>` | a locally sequenced user message | produced by `packages/code/src/adapters/store.ts` (`addUser`) |
 | `local:<n>` | a locally-appended `!bash` node | `packages/code/src/views/subagent-sections.ts:68`, produced at `packages/code/src/adapters/store.ts:983` |
 
-The `<span_id>` half comes from `deriveRunEventSpan` in the kernel
-(`packages/kernel/src/runs/run-event-span.ts:49`), re-exported through `packages/code/src/adapters/event-span.ts:1`:
+The `<span_id>` half comes from `deriveRunEventSpan` in the kernel, re-exported through
+`packages/code/src/adapters/event-span.ts:1`:
 `"run"`, `lead:<n>`, `<subagentId>:<n>`, `subagent:<delegationId>`, `workflow:<runId>`, or a tool
 `call_id` — with `tool_call` falling back to `` `${agent}:tool` `` when it carries no `call_id`
-(`packages/kernel/src/runs/run-event-span.ts:93`, mirrored at `packages/code/src/adapters/store.ts:729`).
+(the `tool_call` branch of `deriveRunEventSpan`, mirrored at
+`packages/code/src/adapters/store.ts:729`).
 
 ### 3.3 The bounded tool-display projection
 
@@ -967,30 +969,32 @@ an available plan's five known statuses (`:64`–`:70`), and `revision N` when r
 (`:71`). `store.ts` projects the strict predicate into `planDiscarded` alongside `planRemoved`
 (`packages/code/src/adapters/store.ts:1320-1354`).
 
-`reduceWorkflowProjection` (`packages/code/src/adapters/workflow-projection.ts:71`):
+`reduceWorkflowProjection` in `packages/code/src/adapters/workflow-projection.ts`:
 
-| Event | Behaviour | Line |
+| Event | Behaviour | Reducer branch |
 |---|---|---|
-| `workflow_title_updated` with `current === null` | return `null` — a metadata event must not invent a live tree | `:80` |
-| `workflow_title_updated` otherwise | update the named node's title, preserving its lifecycle | `:81`–`:87` |
-| `run_ended` with `current === null` or no root node | return `current` | `:90`, `:92` |
-| `run_ended` otherwise | close the root: `completed → ok`, `cancelled → cancelled`, else `error` | `:96`–`:98` |
-| `workflow_run_started` | seed the manager root from `parent_run_id` if absent (`:103`), add the leader with round/pass/item/replica context | `:114`–`:128` |
-| `workflow_run_progress` | fold `iterations`, `input_tokens`, `output_tokens` onto the leader, keeping it running | `:129`–`:142` |
-| `workflow_run_completed` / `_failed` | close the leader (`ok` / `cancelled` / `error`), carrying `error` and `reason` for a failure | `:143`–`:163` |
+| `workflow_title_updated` with `current === null` | return `null` — a metadata event must not invent a live tree | `workflow_title_updated` |
+| `workflow_title_updated` otherwise | update the named node's title, preserving its lifecycle | `workflow_title_updated` |
+| `workflow_sequence_state` | seed a manager-only activity if needed and replace its latest sequence checkpoint without touching nodes | `workflow_sequence_state` |
+| `run_ended` with `current === null` or no root node | return `current` | `run_ended` |
+| `run_ended` otherwise | close the root: `completed → ok`, `cancelled → cancelled`, else `error` | `run_ended` |
+| `workflow_run_started` | seed the manager root from `parent_run_id` if absent, add the leader with round/pass/item/replica context | `workflow_run_started` |
+| `workflow_run_progress` | fold `iterations`, `input_tokens`, `output_tokens` onto the leader, keeping it running | `workflow_run_progress` |
+| `workflow_run_completed` / `_failed` | close the leader (`ok` / `cancelled` / `error`), carrying `error` and `reason` for a failure | terminal workflow branch |
 
-Pinned across `tests/unit/workflow-projection.test.ts` — root seeding at `:30`, cancellation
-preservation at `:102` and `:164`, the no-invented-tree rule at `:146`, and the ignore-early-`run_ended`
-rule at `:170`.
+Pinned across `packages/code/tests/unit/workflow-projection.test.ts`: `seeds the manager root from
+the first leader's parent and adds the leader`; `projects an awaiting-Admiral checkpoint even when no
+leader is currently live`; the cancellation cases; `does not invent a running tree from a title
+event alone`; and `ignores run_ended before any leader has seeded the tree`.
 
-`WorkflowNodeActivity` (`packages/code/src/adapters/workflow-projection.ts:7`–`:28`) carries, beyond status and token counts,
+`WorkflowNodeActivity` in `packages/code/src/adapters/workflow-projection.ts` carries, beyond status and token counts,
 the context fields that place one node in the larger workflow tree: `roundId`, `pass`, `itemIndex`,
 `replica`, `replicaCount` (populated by `workflow_run_started`, above), plus `error` and `reason` on a
-closed, non-`ok` leader. The type's own doc comment (`:30`–`:36`) states one reducer feeds three
-surfaces — the dedicated Workflow view, the header chip, and the sidebar — carrying "structure and
-status only, never content".
+closed, non-`ok` leader. `WorkflowActivity`'s doc comment states that one reducer feeds three
+surfaces — the dedicated Workflow view, the header chip, and the sidebar — carrying structure and
+status only, never content.
 
-`workflowLeaderCounts(activity)` (`:170`–`:181`) counts the leaders under a workflow tree and how many
+`workflowLeaderCounts(activity)` counts the leaders under a workflow tree and how many
 of them are still `running`, for the header chip.
 
 ### 4.13 Markdown export
@@ -1137,7 +1141,7 @@ session — a message the user is entitled to read as delivered when it never wa
 `views/Sidebar.tsx` is the optional inspector column beside the transcript. It holds no run state of
 its own — only a scroll handle and a per-mount handle table: everything it paints comes from the two
 projections of section 4.12, `PlanActivity` and `WorkflowActivity`, plus `ActivityStore.subagents`.
-Its own TSDoc states the scope rule (`packages/code/src/views/Sidebar.tsx:293`): it is a
+Its own TSDoc states the scope rule (`Sidebar` in `packages/code/src/views/Sidebar.tsx`): it is a
 *summary-only* inspector. Complete child tools and answers live in the explicitly selected isolated
 transcript; workflow activity remains structure/status in the footer strip and Sidebar and never
 becomes transcript content.
@@ -1148,7 +1152,7 @@ split column when `layout.secondaryMode()` is `"split"`
 absolute drawer when it is `"drawer"`. No `PlanStrip` or other live pane is mounted below history:
 the Sidebar owns compact plan detail, `Ctrl+P` owns the full plan, and Plan contributes nothing to
 `compactActivityStrip` (`packages/code/src/views/App.tsx`). App owns three
-independent execution-scoped automatic intents: the first live Plan, first workflow leader and first
+independent execution-scoped automatic intents: the first live Plan, first workflow state/leader and first
 typed delegation open the same combined Sidebar and reveal `Plan`, `Parallel work` or `Agents`.
 `/activity plan`, `/activity workflow` and `/activity agents` may explicitly reopen a chosen section;
 bare `/activity` chooses the first available one. A pointer intent remains available later when the
@@ -1179,7 +1183,7 @@ border whose colour is `tokens.accent` while `props.focused()` and `tokens.muted
 sits at `zIndex={1}`. The body is a single ScrollBox holding up to three section-owner boxes — Plan,
 Parallel work, Agents — each introduced by `SectionHeader`. `SidebarRevealIntent` identifies the
 section and execution context; after layout, `Sidebar` asks the native ScrollBox to reveal that whole
-owner. When `hasContent()` — a plan, at least one leader or at least one sub-agent — is false, the
+owner. When `hasContent()` — a plan, at least one leader, a sequence checkpoint or at least one sub-agent — is false, the
 entire body is the one line `No run activity to inspect`.
 
 **Plan section.** `PlanSummary` (`packages/code/src/views/Sidebar.tsx`, `PlanSummary`) renders a bold
@@ -1188,17 +1192,17 @@ distinct `Last result` section, and a footer hint. For an expected discard,
 the muted meta is `Completed · C/N completed · history discarded` and the muted footer is
 `Plan deleted after success`; only another removed plan gets `Unavailable · plan file
 unavailable` plus the red `Restore the plan file or create a replacement` recovery action
-(`packages/code/src/views/Sidebar.tsx:183-216,321-338`). `planProgress` otherwise reports
+(`PlanSummary` in `packages/code/src/views/Sidebar.tsx`). `planProgress` otherwise reports
 `N task(s) proposed` while `awaiting_approval`, and `C/N completed`. Each task row takes its glyph and colour
 from `taskTone` (`packages/code/src/views/blocks.tsx:79`), called from
 `packages/code/src/views/Sidebar.tsx` — except the current one, which is drawn with the accent
 chevron and selection background instead — but only while the plan is neither removed nor terminal.
 Every row also prints a lifecycle label (`Done`, `Running`, `Failed`, `Skipped`, `Returned`, `Next`,
 or `Recorded`), so task state never depends on colour alone. The
-source states the defect that rule fixes in its one surviving line comment (`:179`–`:181`): "A
+source states the defect that rule fixes in `PlanSummary`'s one surviving line comment: "A
 completed plan has no active task. Retaining the chevron on its final task made a finished plan look
-like it was still executing." A task's `assignee` is appended to its title when present
-(`:192`–`:196`), the `Exit: …` condition is shown for the active task alone (`:198`–`:202`),
+like it was still executing." `PlanSummary` appends a task's `assignee` to its title when present and
+shows the `Exit: …` condition for the active task alone;
 `lastOutcome` scans the task list **backwards** for the newest
 `done`/`failed`/`returned`/`abandoned` task and prints its `error`, else `result`, else `reason`,
 else its lifecycle word. `Last result` renders only a bounded `activityPreview`; clicking it opens the
@@ -1209,16 +1213,14 @@ or by the red restore action for an unexpected removal (`packages/code/src/views
 `packages/code/tests/integration/sidebar-render.test.tsx`.
 
 **`planTaskWindow` — a bounded slice that always contains the active task.**
-`PLAN_SIDEBAR_TASK_LIMIT` is 12 (`packages/code/src/views/Sidebar.tsx:18`). The window centres on
-`currentPlanTask(plan)`, falling back to the last task when the plan has no current one
-(`:30`–`:31`), then clamps `start` so the window never runs past either end (`:32`–`:36`). It
+`PLAN_SIDEBAR_TASK_LIMIT` is 12 (`packages/code/src/views/Sidebar.tsx`). The window centres on
+`currentPlanTask(plan)`, falling back to the last task when the plan has no current one, then clamps
+`start` so the window never runs past either end. It
 returns entries carrying their **absolute** index — which is what makes the row ids
 `sidebar-plan-<index>` stable — plus `hiddenBefore`/`hiddenAfter`, rendered as `↑ N earlier tasks`
-(`:165`–`:169`) and `↓ N later tasks` (`:208`–`:212`), and `currentIndex`. Three separate mechanisms
-keep the current row on screen: `followSelection(scrollEl, "sidebar-plan-", currentIndex)` (`:153`,
-over `packages/code/src/ui/patterns/list-navigation.ts:180`), a `queueMicrotask` on mount (`:154`),
-and the scrollbox's `onSizeChange` (`:173`). The scrollbox itself is height-clamped to 4–16 rows
-(`:172`).
+and `↓ N later tasks`, and `currentIndex`. `PlanSummary` keeps the current row on screen through
+`followSelection(scrollEl, "sidebar-plan-", currentIndex)`, a mount microtask, and the scrollbox's
+`onSizeChange`; the scrollbox itself is height-clamped to 4–16 rows.
 
 **Plan access outside the Sidebar.** The first live Plan may reveal the Sidebar once for its
 execution. After that surface is explicitly closed, later Plan updates cannot reopen it
@@ -1232,12 +1234,19 @@ the transcript tail when the sidebar is closed") and
 intent).
 
 **Parallel work.** Leaders come straight from the workflow projection: every node with `kind ===
-"leader"`, ordered by `startedAt` (`packages/code/src/views/Sidebar.tsx:324`–`:330`). Each row
+"leader"`, ordered by `startedAt` (the workflow block in `Sidebar`). Each row
 prints a synthetic `L1`, `L2`, … handle, `cleanTitle(node.title)` — first non-blank line, whitespace
-collapsed (`:70`) — and a muted `status · elapsed · N iterations` line, where each of the last two
-segments is omitted when it has no value (`:343`–`:345`). The header meta counts the leaders and
-singularizes (`:328`–`:332`). Leader handles are derived directly from the current sorted projection;
-there is no retained id ledger across runs.
+collapsed — and a muted `status · elapsed · N iterations` line, where each of the last two segments
+is omitted when it has no value. The header meta counts and singularizes the leaders. Leader handles
+are derived directly from the current sorted projection; there is no retained id ledger across runs.
+
+The same section may exist with no leader row when `WorkflowActivity.sequence` is present. An
+`awaiting_manager` sequence changes the header meta to `awaiting Admiral` and renders
+`Checkpoint r<revision>: next <round>` above the roster; other statuses render their current
+round/session. This intentionally survives the last leader settling at a semantic checkpoint.
+Production: `Sidebar` (`hasContent`, workflow `Show`, sequence line). Test:
+`packages/code/tests/integration/sidebar-render.test.tsx` (`an idle round checkpoint remains visible
+as awaiting the Admiral`).
 
 **Agents.** The header meta starts with `subagentProgress(...).label` and appends `· N failed` when
 needed. `subagentProgress` counts `done` and `error` as *settled*, `running` separately, `error` as
@@ -1265,8 +1274,8 @@ individual agent is.
 **`activityPreview` / `rosterSummary` — one plain line, deliberately.**
 `activityPreview` owns Markdown stripping, whitespace collapse and bounded ellipsis; `rosterSummary`
 delegates to it for compatibility. An absent input, or one that strips to nothing, yields
-`undefined`. Their TSDoc gives the reason
-(`:75`–`:82`): the sidebar is "a navigation and status surface, not a second Markdown reader", and
+`undefined`. `rosterSummary`'s TSDoc gives the reason: the sidebar is "a navigation and status
+surface, not a second Markdown reader", and
 keeping this to one stripped line prevents a worker's table, code fence or long final answer from
 competing with the selected isolated transcript where that result can be read in context.
 
@@ -1278,18 +1287,17 @@ finished selected agent labelled `Running`. Pinned by
 `packages/code/tests/unit/block-focus.test.ts` and
 `packages/code/tests/integration/transcript-region-render.test.tsx`.
 
-**Elapsed times are bounded.** `displayElapsed` (`packages/code/src/views/Sidebar.tsx:46`) defers to
+**Elapsed times are bounded.** `displayElapsed` in `packages/code/src/views/Sidebar.tsx` defers to
 `formatElapsed`, but returns the empty string for a negative span or one over
-`MAX_DISPLAY_ELAPSED_MS = 7 days` (`:16`, `:48`) — a clock skew or a bogus `startedAt` shows nothing
-rather than an absurd duration. A sub-agent row shows elapsed **only while running**
-(`:369`–`:370`); a leader row shows it live or frozen at `endedAt` (`:335`–`:336`). Both read
-`tickNow()` (section 4.14), which is what re-renders them.
+`MAX_DISPLAY_ELAPSED_MS = 7 days` — a clock skew or a bogus `startedAt` shows nothing rather than an
+absurd duration. The `Sidebar` component shows a sub-agent's elapsed time **only while running** and
+a leader's live or frozen at `endedAt`. Both read `tickNow()` (section 4.14), which is what
+re-renders them.
 
-**`contextMeter` is exported, tested, and mounted nowhere.**
-(`packages/code/src/views/Sidebar.tsx:59`) It computes `frac` — clamped to 1, and 0 when the window
-is 0 — `filled` over `CONTEXT_WIDTH = 16` (`:15`), a three-band colour (`tokens.del` at ≥ 0.9,
-`tokens.warn` at ≥ 0.7, else `tokens.add`, `:65`), a rounded `pct`, and a `used/window · pct%` label
-built from `compactTokens`, which switches to `k` at a thousand and `M` at a million (`:51`–`:55`).
+**`contextMeter` is exported, tested, and mounted nowhere.** It computes `frac` — clamped to 1, and
+0 when the window is 0 — `filled` over `CONTEXT_WIDTH = 16`, a three-band colour (`tokens.del` at ≥
+0.9, `tokens.warn` at ≥ 0.7, else `tokens.add`), a rounded `pct`, and a `used/window · pct%` label
+built from `compactTokens`, which switches to `k` at a thousand and `M` at a million.
 No module under `packages/code/src` calls it, and the `contextWindow` accessor the component
 declares and `TranscriptRegion` supplies (`packages/code/src/views/Sidebar.tsx`, `Sidebar`;
 `packages/code/src/views/app/TranscriptRegion.tsx`, `TranscriptRegion`) is never read in the body. Its only
@@ -1303,19 +1311,19 @@ Each is stated as a rule, the production site it is about, and the test that pin
 
 **INV-260.** `toolIdentity(mcpName, toolName)` resolves to whichever slot holds the name — the
 `toolName` slot for a namespaced call, the `mcpName` slot for a builtin, `""` when both are absent.
-Production `packages/code/src/adapters/tool-identity.ts:11`. Test
+Production: `toolIdentity` in `packages/code/src/adapters/tool-identity.ts`. Test
 `packages/code/tests/unit/tool-identity.test.ts:11`.
 
 **INV-261.** `toolLabel` renders `server:tool` for a namespaced call and the bare name for a builtin,
 never a dangling colon and never a literal `undefined:name` — including the transitional case where a
-streaming placeholder knows the tool name but not yet its server. Production
-`packages/code/src/adapters/tool-identity.ts:29-32`. Tests
+streaming placeholder knows the tool name but not yet its server. Production: `toolLabel` in
+`packages/code/src/adapters/tool-identity.ts`. Tests
 `packages/code/tests/unit/tool-identity.test.ts:33-44`.
 
 **INV-262.** `isMutationTool` resolves through the same identity rule as `toolIdentity`, and treats
 `write_memory`/`edit_memory`/`delete_memory` as mutations while treating
-`read_memory`/`list_memories`/`grep_memories` as non-mutations. Production
-`packages/code/src/adapters/tool-identity.ts:85-105`. Tests
+`read_memory`/`list_memories`/`grep_memories` as non-mutations. Production: `isMutationTool` and
+`MUTATION_TOOLS` in `packages/code/src/adapters/tool-identity.ts`. Tests
 `packages/code/tests/unit/tool-identity.test.ts:46-59`. The consequence this protects is the
 grouping pass: a memory write must not fold into a run of reads —
 `packages/code/tests/unit/tool-groups.test.ts:88`.
@@ -1324,8 +1332,8 @@ grouping pass: a memory write must not fold into a run of reads —
 `multi_edit`, `apply_patch`, `host_vcs`, `replace`, `move`, `copy`, `mkdir`, `remove`, `write_memory`,
 `edit_memory`, `delete_memory`. Because the file half is derived from
 `@clarvis/loop`'s registry (`packages/loop/src/runtime/tools/builtin/names.ts:50`), a registry change
-alters this set — and must therefore be a visible diff to the pinning test. Production
-`packages/code/src/adapters/tool-identity.ts:85-95`. Test
+alters this set — and must therefore be a visible diff to the pinning test. Production:
+`MUTATION_TOOLS` in `packages/code/src/adapters/tool-identity.ts`. Test
 `packages/code/tests/unit/tool-identity.test.ts:61-79`.
 
 **INV-T01.** `sealed.join("") + tail` reconstructs the segmenter's input exactly, for every input
@@ -1564,14 +1572,15 @@ the current projection by identity. Production
 `packages/code/tests/unit/plan-projection.test.ts:218` (`toBe`).
 
 **INV-T39.** A `workflow_title_updated` arriving with no existing tree returns `null` rather than
-seeding a manager node that nothing will ever close. Production
-`packages/code/src/adapters/workflow-projection.ts:80`. Test
-`packages/code/tests/unit/workflow-projection.test.ts:146`.
+seeding a manager node that nothing will ever close. Production: the `workflow_title_updated`
+branch of `reduceWorkflowProjection`. Test: `packages/code/tests/unit/workflow-projection.test.ts`
+(`does not invent a running tree from a title event alone`).
 
 **INV-T40.** A cancelled workflow node is reported as `cancelled`, never folded into `error` — for
-both a leader and the manager root. Production
-`packages/code/src/adapters/workflow-projection.ts:97`, `:147`. Tests
-`packages/code/tests/unit/workflow-projection.test.ts:102` and `:164`.
+both a leader and the manager root. Production: the `run_ended` and terminal workflow branches of
+`reduceWorkflowProjection`. Tests: `packages/code/tests/unit/workflow-projection.test.ts`
+(`preserves cancellation instead of presenting a stopped leader as failed`; `run_ended preserves a
+cancelled manager root`).
 
 **INV-T41.** This document's slice of `src/core/**` (`core/transcript/**`, `core/marks.ts`,
 `core/run-status.ts`, `core/attention.ts`, `core/format-elapsed.ts`) complies with the whole-package
@@ -1596,14 +1605,15 @@ same rule from the test side (`:5`–`:14`).
 **INV-T44.** The sidebar's plan section mounts a **bounded** slice of the task list that always
 contains the current task: at most `PLAN_SIDEBAR_TASK_LIMIT = 12` rows, centred on
 `currentPlanTask`, with the remainder reported as `↑ N earlier tasks` / `↓ N later tasks` rather
-than mounted. Production `packages/code/src/views/Sidebar.tsx:17-43,218-220,281-284`. Test
+than mounted. Production: `PLAN_SIDEBAR_TASK_LIMIT`, `planTaskWindow`, and `PlanSummary` in
+`packages/code/src/views/Sidebar.tsx`. Test
 `packages/code/tests/integration/sidebar-render.test.tsx:668-695`, which asserts both the window's own
 shape and that a 50-task plan paints `Task 30` with the first task absent from the frame.
 
 **INV-T45.** The sidebar carries no run totals. A sub-agent's `input`/`output` token counts and the
 run's context and usage figures are held by the same `ActivityStore` the sidebar reads
 (`packages/code/src/adapters/activity-store.ts:33`–`:34`, `:77`–`:79`) and are rendered by none of
-its rows — `contextMeter` exists (`packages/code/src/views/Sidebar.tsx:59`) but no `src` module calls
+its rows — `contextMeter` exists in `packages/code/src/views/Sidebar.tsx` but no `src` module calls
 it. Test `packages/code/tests/integration/sidebar-render.test.tsx:353`, which mounts a store carrying
 both and asserts the frame contains neither "context" nor "tokens".
 
@@ -1612,8 +1622,8 @@ both and asserts the frame contains neither "context" nor "tokens".
 unavailable/recovery state. Sidebar and transcript block consume that distinction; the footer never
 projects Plan state.
 Production: `packages/code/src/adapters/plan-projection.ts:43-48`,
-`packages/code/src/adapters/store.ts:1337-1365`, `packages/code/src/views/Sidebar.tsx:136-158`,
-`:200-285`, `:321-337`, and `packages/code/src/views/blocks.tsx:893-915`. Tests:
+`packages/code/src/adapters/store.ts:1337-1365`, `PlanSummary` in
+`packages/code/src/views/Sidebar.tsx`, and `packages/code/src/views/blocks.tsx:893-915`. Tests:
 `packages/code/tests/unit/plan-projection.test.ts:164-216`,
 `packages/code/tests/unit/store-status.test.ts:847-887`,
 `packages/code/tests/integration/sidebar-render.test.tsx:558-665`, and
@@ -1633,7 +1643,7 @@ JSON key/value presentation is absent.
 or Plan/workflow pane in the Lead transcript. The footer retains bounded agent/workflow activity
 beside canonical Context/Session state and reopens the surface on click, while Plan contributes no
 footer text. `/activity [plan|workflow|agents]` explicitly reopens any available section after
-Escape. The first live Plan, first workflow leader and first delegation own independent
+Escape. The first live Plan, first workflow state/leader and first delegation own independent
 once-per-execution automatic intents that
 open/reveal their whole section. Closing one is sticky only for repeated events of that intent; the
 first event for another section may reopen and reorient the Sidebar. The Agents intent keeps `Lead
@@ -1705,7 +1715,8 @@ Production: `Sidebar` (`leaders`, both roster loops). Test:
 
 **INV-T54.** The Lead transcript suppresses provider tool rows for the closed supervision and
 orchestration identity set `spawn_subagent`, `delegate_task`, `agent_list`, `agent_poll`, `agent_stop`,
-`agent_steer`, `await_agents`, `run_leader`, `run_workflow`, `run_round`, `run_work_items`.
+`agent_steer`, `await_agents`, `run_leader`, `run_workflow`, `run_round`, `run_work_items`,
+`workflow_status`, `workflow_decide`.
 Suppression covers `tool_input_delta`, `tool_call_started`, `tool_output_delta` and terminal
 `tool_call`, so no composing placeholder, running row, output tail, group or settled block can flash
 before disappearing. Exactly two typed delegation markers remain; workflow state remains outside
@@ -1792,13 +1803,13 @@ Markdown never gives rows back when parsing conceals syntax").
 | A dehydrated node still needs a header | the resident `signature` and `mutation` fields carry the collapsed header and chip; the type docs state this is "tens of bytes against the tens of kilobytes" | `packages/code/src/core/transcript/types.ts:86`–`:99`; `packages/code/src/views/blocks.tsx:314`, `:177` |
 | A stale plan event arrives after a newer one | dropped by the revision guard | `packages/code/src/adapters/plan-projection.ts:94` |
 | A plan removal arrives for a plan never seen | an explicit "Plan unavailable / failed / removed" projection is synthesized rather than nothing | `packages/code/src/adapters/plan-projection.ts:97` |
-| Retention deletes a completed `discard` plan | projected history stays completed and muted; the UI confirms configured cleanup rather than requesting recovery | `packages/code/src/adapters/plan-projection.ts:43-48`; `packages/code/src/views/Sidebar.tsx:183-216,321-338` |
-| A workflow terminal event arrives before any leader seeded the tree | `run_ended` returns `current` unchanged; `workflow_title_updated` returns `null` | `packages/code/src/adapters/workflow-projection.ts:90`, `:80` |
-| A workflow progress/terminal event names an unknown leader | a minimal leader node is synthesized in place | `packages/code/src/adapters/workflow-projection.ts:132`, `:152` |
+| Retention deletes a completed `discard` plan | projected history stays completed and muted; the UI confirms configured cleanup rather than requesting recovery | `packages/code/src/adapters/plan-projection.ts:43-48`; `PlanSummary` in `packages/code/src/views/Sidebar.tsx` |
+| A workflow terminal event arrives before any leader seeded the tree | `run_ended` returns `current` unchanged; `workflow_title_updated` returns `null` | the matching branches of `reduceWorkflowProjection` |
+| A workflow progress/terminal event names an unknown leader | a minimal leader node is synthesized in place | the matching branches of `reduceWorkflowProjection` |
 | A selected sub-agent transcript has a body but no `subagent` card | the first body node stays visible as the isolated identity anchor and later entries fold behind it. Live roster status is resolved through any body node carrying `subagentId`; only an absent live status falls back to `"running"` | `packages/code/src/views/subagent-sections.ts` (`rosterStatus`, `emitSection`) |
 | A run produced only delegated work and no Lead answer/tool | the Lead transcript contains only each delegation's frozen spawned and settled markers; selecting one worker reveals only that worker's retained body and expands its card-backed section on first explicit selection | `packages/code/src/views/transcript-state.ts` (`visibleNodes`, first-selection anchor expansion), `packages/code/src/views/subagent-sections.ts` (`emitSection`) |
 | The terminal reports no capabilities (headless / test renderer) | every attention cue no-ops; `away()` returns `true` so the terminal decides | `packages/code/src/core/attention.ts:47`, `:51`, `:55` |
-| A `RunEvent` type is added without a span mapping | compile-time exhaustiveness error, not a runtime path | `packages/kernel/src/runs/run-event-span.ts:133`–`:136` |
+| A `RunEvent` type is added without a span mapping | compile-time exhaustiveness error, not a runtime path | the exhaustive default in `deriveRunEventSpan` |
 
 Degradation that is **silent by design**: a tool whose result the parser cannot read still renders
 (as generic text), and grouping/focus keep working on a dehydrated node because they read only
@@ -1941,7 +1952,7 @@ concept; its consumers are outside this document.
 `blocks.tsx` — the run block prints only the outcome word and elapsed time (`:821`–`:844`), and the
 subagent block prints only its brief (`:751`). Nor does the sidebar render them: it holds the same
 figures through `ActivityStore` and paints none of them (INV-T45). A leader row's `N iterations`
-(`packages/code/src/views/Sidebar.tsx:420-435`) is the one counter any of these surfaces prints, and it
+(the workflow block in `Sidebar`) is the one counter any of these surfaces prints, and it
 comes from the workflow projection rather than from a transcript node. Whether the node fields have
 any renderer at all is still not determinable: nothing this document or the sidebar reads consumes them.
 

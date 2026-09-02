@@ -195,6 +195,23 @@ describe("viewOf", () => {
     ],
     [
       {
+        type: "workflow_sequence_state",
+        at: AT,
+        run_id: "p1",
+        session_id: "wfseq-1",
+        status: "awaiting_manager",
+        revision: 1,
+        round_id: "first",
+        pass: 0,
+        next_round_id: "second",
+        next_pass: 0,
+        leaders_started: 1,
+        max_total_leaders: 32,
+      },
+      { level: "notice", logger: "clarvis.workflow", label: "workflow awaiting Admiral" },
+    ],
+    [
+      {
         type: "workflow_run_completed",
         at: AT,
         run_id: "r1",

@@ -42,6 +42,35 @@ test("seeds the manager root from the first leader's parent and adds the leader"
   expect(leader.status).toBe("running");
 });
 
+test("projects an awaiting-Admiral checkpoint even when no leader is currently live", () => {
+  let activity = reduceWorkflowProjection(null, {
+    type: "workflow_sequence_state",
+    at: 2,
+    run_id: "mgr",
+    session_id: "wfseq-1",
+    status: "awaiting_manager",
+    revision: 3,
+    round_id: "discover",
+    pass: 0,
+    next_round_id: "verify",
+    next_pass: 0,
+    leaders_started: 4,
+    max_total_leaders: 32,
+  });
+  expect(activity?.root).toBe("mgr");
+  expect(activity?.sequence).toMatchObject({
+    status: "awaiting_manager",
+    revision: 3,
+    nextRoundId: "verify",
+    leadersStarted: 4,
+    maxTotalLeaders: 32,
+  });
+
+  activity = reduceWorkflowProjection(activity, started("leader-5", "mgr", "verify"));
+  expect(activity?.sequence?.status).toBe("awaiting_manager");
+  expect(activity?.nodes.get("leader-5")?.status).toBe("running");
+});
+
 test("keeps authored round context and a terminal failure reason on the live leader", () => {
   let activity = reduceWorkflowProjection(null, {
     ...started("leader-1", "mgr", "verify"),

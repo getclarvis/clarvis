@@ -7,7 +7,11 @@ import { scrollbarOptions, selectionBg } from "../theme/surfaces.ts";
 import { borderChars, glyph } from "../theme/glyphs.ts";
 import type { ActivityStore, PlanActivity } from "../adapters/activity-store.ts";
 import { currentPlanTask, isExpectedPlanDiscard, isLivePlan } from "../adapters/plan-projection.ts";
-import type { WorkflowActivity, WorkflowNodeActivity } from "../adapters/workflow-projection.ts";
+import type {
+  WorkflowActivity,
+  WorkflowNodeActivity,
+  WorkflowSequenceActivity,
+} from "../adapters/workflow-projection.ts";
 import { formatElapsed, tickNow } from "./spinner.ts";
 import { lifecycleLabel, uiLifecycle } from "../ui/presentation.ts";
 import { followSelection } from "../ui/patterns/list-navigation.ts";
@@ -363,7 +367,10 @@ export function Sidebar(props: {
       .sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
   };
   const hasContent = (): boolean =>
-    props.activity.plan !== null || leaders().length > 0 || props.activity.subagents.length > 0;
+    props.activity.plan !== null ||
+    leaders().length > 0 ||
+    props.workflow?.()?.sequence !== undefined ||
+    props.activity.subagents.length > 0;
   const progress = () => subagentProgress(props.activity.subagents);
   const progressLabel = (): string =>
     `${progress().label}${progress().failed > 0 ? ` ${glyph("separator")} ${progress().failed} failed` : ""}`;
@@ -374,7 +381,7 @@ export function Sidebar(props: {
       reveal.section === "plan"
         ? props.activity.plan !== null
         : reveal.section === "workflow"
-          ? leaders().length > 0
+          ? leaders().length > 0 || props.workflow?.()?.sequence !== undefined
           : props.activity.subagents.length > 0;
     if (!available) return;
     const revealAfterLayout = (): void => {
@@ -411,13 +418,28 @@ export function Sidebar(props: {
             <PlanSummary plan={() => props.activity.plan!} onOpenDetail={props.onOpenDetail} />
           </box>
         </Show>
-        <Show when={leaders().length > 0}>
+        <Show when={leaders().length > 0 || props.workflow?.()?.sequence !== undefined}>
           <box id="sidebar-section-workflow" flexDirection="column">
             <SectionHeader
               label="Parallel work"
-              meta={`${leaders().length} ${leaders().length === 1 ? "leader" : "leaders"}`}
+              meta={
+                props.workflow?.()?.sequence?.status === "awaiting_manager"
+                  ? "awaiting Admiral"
+                  : `${leaders().length} ${leaders().length === 1 ? "leader" : "leaders"}`
+              }
               pad
             />
+            <Show when={props.workflow?.()?.sequence}>
+              {(sequence: Accessor<WorkflowSequenceActivity>) => (
+                <text wrapMode="word" selectable={false}>
+                  <span style={{ fg: tokens.muted }}>
+                    {sequence().status === "awaiting_manager"
+                      ? `Checkpoint r${sequence().revision}: next ${sequence().nextRoundId ?? "round"}`
+                      : `${sequence().status}: ${sequence().roundId ?? sequence().sessionId}`}
+                  </span>
+                </text>
+              )}
+            </Show>
             <For each={leaders()}>
               {(node, index) => {
                 const elapsed = (): string =>

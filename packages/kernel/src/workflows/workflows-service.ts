@@ -13,6 +13,7 @@ import {
   createElicitMux,
   createWorkflowSemaphore,
   createWorkflowLedger,
+  createWorkflowLeaderCount,
   createWorkflowsCapability,
   isWorkflowPersistedTraceEvent,
   managerLiveChildrenFloor,
@@ -33,6 +34,7 @@ import type {
   StartRunParams,
   WorkflowDetail,
   WorkflowNode,
+  WorkflowSequence,
   WorkflowSummary,
   WorkflowsService,
 } from "@clarvis/protocol";
@@ -50,6 +52,7 @@ import {
   WORKFLOW_MAX_TITLE_BYTES,
   WORKFLOW_PAGE_DEFAULT,
   boundedWorkflowEdge,
+  boundedWorkflowSequence,
   createWorkflowSaveQueue,
   markWorkflowEdgesTruncated,
   normalizeWorkflowPage,
@@ -59,6 +62,7 @@ import {
   type WorkflowPageScanOptions,
   type WorkflowRecord,
   type WorkflowRecordSummary,
+  type WorkflowSequenceRecord,
   type WorkflowStore,
 } from "./workflow-store.ts";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
@@ -73,6 +77,7 @@ const WORKFLOW_RUN_DEPS = {
  * Manager designation is the `workflow` grant, not a field here. */
 export interface WorkflowsRuntimeSettings {
   max_concurrency: number;
+  max_total_leaders: number;
   budget_tokens: number | null;
 }
 
@@ -243,9 +248,11 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
     const managerRunId = params.execution_id ?? generateExecutionId();
 
     const maxConcurrency = settings.max_concurrency;
+    const maxTotalLeaders = settings.max_total_leaders;
     const budgetTokens = settings.budget_tokens;
     const semaphore = createWorkflowSemaphore(maxConcurrency);
     const ledger = createWorkflowLedger(budgetTokens);
+    const leaderCount = createWorkflowLeaderCount(maxTotalLeaders);
     let budgetExhausted = false;
 
     const startedAt = Date.now();
@@ -386,6 +393,9 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
       closeManagerEdge(record.edges, managerRunId, status, endedAt);
       const aggregateStatus = finalWorkflowStatus(status, budgetExhausted, record.edges);
       record.status = aggregateStatus;
+      if (record.sequence !== undefined) {
+        record.sequence = terminalWorkflowSequence(record.sequence, status);
+      }
       closeRunningEdges(record.edges, aggregateStatus, endedAt);
       persist();
       saves.flush();
@@ -469,6 +479,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           owner,
           semaphore,
           ledger,
+          leaderCount,
           maxConcurrency,
           assemble: assembleLeader,
           managerRunId,
@@ -477,6 +488,28 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           onLeaderEvent,
           onBudgetExhausted: () => {
             budgetExhausted = true;
+          },
+          onSequenceState: (state) => {
+            const sequence: WorkflowSequenceRecord = boundedWorkflowSequence({
+              session_id: state.sessionId,
+              status: state.status,
+              revision: state.revision,
+              ...(state.roundId === undefined ? {} : { round_id: state.roundId }),
+              ...(state.pass === undefined ? {} : { pass: state.pass }),
+              ...(state.nextRoundId === undefined ? {} : { next_round_id: state.nextRoundId }),
+              ...(state.nextPass === undefined ? {} : { next_pass: state.nextPass }),
+              leaders_started: state.leadersStarted,
+              max_total_leaders: state.maxTotalLeaders,
+              ...(state.reason === undefined ? {} : { reason: state.reason }),
+            });
+            record.sequence = sequence;
+            persist();
+            context.emit({
+              type: "workflow_sequence_state",
+              at: Date.now(),
+              run_id: managerRunId,
+              ...sequence,
+            });
           },
           ...(cfg.leaderProfiles !== undefined ? { leaderProfiles: cfg.leaderProfiles() } : {}),
           workflowDefs: readWorkflowDefs(),
@@ -607,6 +640,45 @@ export interface WorkflowTerminalEvidence {
 }
 
 /**
+ * Close a manager-owned sequence that can no longer receive an Admiral decision.
+ *
+ * @remarks A normal completed manager already passes the coordinator finish gate,
+ * which turns an awaiting checkpoint into `stopped`. This is the run-end backstop
+ * for cancellation, failure, crash reconciliation and any future exit path that
+ * bypasses that gate. Terminal coordinator snapshots preserve their own outcome.
+ */
+function terminalWorkflowSequence(
+  sequence: WorkflowSequenceRecord,
+  managerStatus: RunStatus,
+): WorkflowSequenceRecord {
+  if (sequence.status !== "running_round" && sequence.status !== "awaiting_manager") {
+    return sequence;
+  }
+  const status =
+    managerStatus === "cancelled"
+      ? "cancelled"
+      : managerStatus === "completed"
+        ? "stopped"
+        : "failed";
+  const reason =
+    status === "cancelled"
+      ? "the Admiral run was cancelled before the sequence reached a terminal decision"
+      : status === "stopped"
+        ? "the Admiral finished without authorizing the sequence to continue"
+        : "the Admiral run failed before the sequence reached a terminal decision";
+  return boundedWorkflowSequence({
+    session_id: sequence.session_id,
+    status,
+    revision: sequence.revision + 1,
+    ...(sequence.round_id === undefined ? {} : { round_id: sequence.round_id }),
+    ...(sequence.pass === undefined ? {} : { pass: sequence.pass }),
+    leaders_started: sequence.leaders_started,
+    max_total_leaders: sequence.max_total_leaders,
+    reason,
+  });
+}
+
+/**
  * Reconcile a still-running workflow record only when its root trace is already terminal.
  *
  * A fresh record is returned when repaired so a failed persistence retry cannot partially mutate
@@ -630,6 +702,9 @@ export function reconcileRunningWorkflowRecord(
     edges: record.edges.map((edge) => ({ ...edge })),
   };
   closeManagerEdge(repaired.edges, repaired.root_run_id, status, evidence.ended_at);
+  if (repaired.sequence !== undefined) {
+    repaired.sequence = terminalWorkflowSequence(repaired.sequence, status);
+  }
   const aggregateStatus = finalWorkflowStatus(status, false, repaired.edges);
   repaired.status = aggregateStatus;
   closeRunningEdges(repaired.edges, aggregateStatus, evidence.ended_at);
@@ -875,5 +950,11 @@ function storedSummaryToSummary(summary: WorkflowRecordSummary): WorkflowSummary
 
 /** Project a persisted record to a protocol {@link WorkflowDetail} (summary + nodes). */
 function recordToDetail(record: WorkflowRecord): WorkflowDetail {
-  return { ...recordToSummary(record), nodes: record.edges.map(edgeToNode) };
+  return {
+    ...recordToSummary(record),
+    nodes: record.edges.map(edgeToNode),
+    ...(record.sequence === undefined
+      ? {}
+      : { sequence: record.sequence satisfies WorkflowSequence }),
+  };
 }

@@ -17,6 +17,24 @@ import type { RunStatus } from "./runs.ts";
 /** Whether a workflow node is the manager (root) or a spawned leader. */
 export type WorkflowNodeKind = "manager" | "leader";
 
+/** Manager-controlled lifecycle of one authored round sequence. */
+export type WorkflowSequenceStatus =
+  "running_round" | "awaiting_manager" | "completed" | "stopped" | "failed" | "cancelled";
+
+/** Latest durable checkpoint for a round sequence. */
+export interface WorkflowSequence {
+  session_id: string;
+  status: WorkflowSequenceStatus;
+  revision: number;
+  round_id?: string;
+  pass?: number;
+  next_round_id?: string;
+  next_pass?: number;
+  leaders_started: number;
+  max_total_leaders: number;
+  reason?: string;
+}
+
 /**
  * One node in a workflow tree: the manager or a leader. Sub-agents are NOT nodes
  * here — they belong to a leader's own run and surface when that run is opened via
@@ -63,6 +81,8 @@ export interface WorkflowSummary {
  * (manager + leaders). */
 export interface WorkflowDetail extends WorkflowSummary {
   nodes: WorkflowNode[];
+  /** Latest round/checkpoint state, absent for legacy and ad-hoc-only workflows. */
+  sequence?: WorkflowSequence;
 }
 
 /**

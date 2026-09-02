@@ -231,6 +231,16 @@ two representations at the storage boundary:
   Production: `packages/code/src/adapters/session-store.ts` (`metaToSession`, `sessionToMeta`,
   `sessionSummaryToMeta`). Test: `packages/code/tests/component/session-store.test.ts`
   ("Extension Profile identity round-trips on turns and bounded summaries").
+- **`SessionMeta.agentProfile` names the live session's effective Agent Profile.** An explicit picker
+  selection persists it, and if Extension Profile recomposition removes that Agent Profile, the active
+  agent store persists its safe available fallback rather than leaving the removed name in resume
+  metadata. Production: `packages/code/src/adapters/active-agent.ts`
+  (`activeAgentCatalogTransition`, `createActiveAgentStore`),
+  `packages/code/src/run-host.ts` (`setSessionProfile`), and
+  `packages/code/src/adapters/session.ts` (`setAgentProfile`). Test:
+  `packages/code/tests/unit/active-agent.test.ts` ("an invalidated active agent fallback is persisted,
+  but initial resolution is not") and `packages/code/tests/component/session.test.ts`
+  ("setAgentProfile persists only a changed Agent Profile on an established session").
 - **`TurnRef.error`** (`packages/code/src/adapters/session-store.ts`, `{ code: string; message: string }`)
   has no declared counterpart in the protocol `SessionTurn` DTO listed above (§2), but it is
   intentionally persisted through a local `PersistedSessionTurn` widening. `metaToSession` writes

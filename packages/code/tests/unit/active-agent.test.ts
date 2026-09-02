@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import { createRoot, createSignal } from "solid-js";
-import { automaticAgentFallback, createActiveAgentStore } from "../../src/adapters/active-agent.ts";
+import {
+  activeAgentCatalogTransition,
+  automaticAgentFallback,
+  createActiveAgentStore,
+} from "../../src/adapters/active-agent.ts";
 import type { ProfileInfo } from "../../src/adapters/run-types.ts";
 
 const profile = (name: string, lead = false): ProfileInfo => ({
@@ -62,6 +66,24 @@ test("automatic fallback never promotes a headless-only fleet", () => {
       { name: "explorer", isLead: false },
     ]),
   ).toBe("");
+});
+
+test("an invalidated active agent fallback is persisted, but initial resolution is not", () => {
+  expect(
+    activeAgentCatalogTransition("planner", ["planner", "runner"], () => "runner"),
+  ).toBeUndefined();
+  expect(activeAgentCatalogTransition("", ["runner"], () => "runner")).toEqual({
+    name: "runner",
+    persist: false,
+  });
+  expect(activeAgentCatalogTransition("planner", ["runner"], () => "runner")).toEqual({
+    name: "runner",
+    persist: true,
+  });
+  expect(activeAgentCatalogTransition("planner", [], () => "")).toEqual({
+    name: "",
+    persist: false,
+  });
 });
 
 test("active agent resolves session, valid default and safe fallback in that order", () => {

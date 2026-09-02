@@ -157,6 +157,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   let disposed = false;
   let draftGeneration = 0;
   let applyDetached = false;
+  let wasActive = host.active();
 
   onCleanup(() => {
     disposed = true;
@@ -180,6 +181,16 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   };
 
   const report = (error: unknown): void => deps.notify(errorText(error), "warn");
+
+  createEffect(() => {
+    const active = host.active();
+    const returnedFromChild = active && !wasActive;
+    wasActive = active;
+    if (returnedFromChild) {
+      detachObserved("extensions_return_refresh", () => deps.refresh(true), report);
+    }
+  });
+
   const selectedCount = (): number => {
     const definition = draft()?.definition;
     return (definition?.plugins.length ?? 0) + (definition?.skills.length ?? 0);

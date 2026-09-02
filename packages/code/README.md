@@ -186,7 +186,9 @@ selection is always local machine state. The Extension Profile browser shows res
 creation/customization into the guided composer, retains direct selection/clear diagnostics, and
 can revision-safely delete an inactive custom definition. A process-local `--extension-profile`
 keeps persisted selection controls read-only. A failed Extension Profile catalog reload remains visible
-inside the browser, with `r` retry, instead of surviving only as a transient footer notification. See
+inside the browser, with `r` retry, instead of surviving only as a transient footer notification. When a
+retained child returns after changing the active snapshot, the Extensions hub immediately starts a full
+reload of its summary and counts; no manual close and reopen is required. See
 [`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md) for activation semantics and
 [`hosts/code-extensions.md`](../../specs/hosts/code-extensions.md) for the interactive catalog and
 lifecycle experience.
@@ -297,7 +299,9 @@ over global when both are set. Its list follows the same presentation order as S
 the shipped fleet order above, then custom agents by name. On startup, an explicit valid default is respected; otherwise `code`
 chooses a runnable `marshall`, then the first runnable Lead in presentation order. A headless/sub-agent
 persona is never selected merely because its file was listed first. If neither safe fallback exists,
-the TUI opens the agent picker and headless mode requires `--agent` or a configured default.
+the TUI opens the agent picker and headless mode requires `--agent` or a configured default. If an
+Extension Profile recompose removes the current session agent, the same safe fallback is selected and
+persisted as that session's Agent Profile before its next run.
 
 The settings adapter is backed exclusively by `KernelClient.config`. It keeps a
 cached `SettingsView`, but does not open or parse the source paths the kernel

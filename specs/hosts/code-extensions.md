@@ -187,13 +187,19 @@ deletion is danger-confirmed and revision-bound. The active Extension Profile, a
 `--extension-profile`, or an entry without a safe expected revision cannot be deleted from Code.
 
 Selection preview uses normal precedence. Apply and reconnect status stays footer-right with spinner
-and elapsed time, so it remains visible when the exact delta is taller than the viewport.
+and elapsed time, so it remains visible when the exact delta is taller than the viewport. The retained
+Extensions hub starts a full refresh of its current profile, definitions, plugin inventory, and marketplace
+projection whenever a child view returns. Guided composition remains disabled while that refresh is
+loading; after it settles, the active id and contribution counts reflect the new snapshot without a manual
+close and reopen.
 
-- **Production:** `ExtensionProfileBrowser` in
-  `packages/code/src/views/config/ExtensionProfileBrowser.tsx`; `ExtensionProfileService.delete` in
+- **Production:** `ExtensionProfileBrowser` and `ExtensionsHub` in
+  `packages/code/src/views/config/`; the `extensions.open` refresh coordinator in
+  `packages/code/src/app/commands.tsx`; `ExtensionProfileService.delete` in
   `packages/protocol/src/extension-profiles.ts` and
   `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.
-- **Test:** `packages/code/tests/integration/extension-profile-browser-render.test.tsx` and
+- **Test:** `packages/code/tests/integration/extension-profile-browser-render.test.tsx`,
+  `packages/code/tests/integration/extensions-hub-render.test.tsx`, and
   `packages/kernel/tests/integration/extension-profile-manager.test.ts`.
 
 ## 5. Trust and changed content
@@ -281,6 +287,13 @@ layers, and key-layer registrations after warm-up. The extension-composer soak s
    filesystem scan, network fetch, per-row timer allocation, or key-layer registration after warm-up.
    Production: retained list, shared spinner clock, explicit reload. Test:
    `marketplace-collections-retained-196-listings`.
+7. **EXT-7 — returning from a retained child refreshes the hub.** A child may mutate Extension Profile
+   selection, installed inventory, or MCP state while the hub stays mounted underneath it. Reactivation
+   starts a full reload before another guided composition can begin. Production:
+   `packages/code/src/views/config/ExtensionsHub.tsx` (`ExtensionsHub`) and
+   `packages/code/src/app/commands.tsx` (`extensions.open` refresh coordinator). Test:
+   `packages/code/tests/integration/extensions-hub-render.test.tsx` ("a retained Extensions hub
+   refreshes when a child returns").
 
 ## 8. Non-goals
 

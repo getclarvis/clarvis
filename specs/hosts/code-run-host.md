@@ -1176,9 +1176,13 @@ The following are derived directly from this document's own source and its tests
     `""`).
 
 47. **The active agent resolves the session's Agent Profile → runnable configured default → automatic
-    fallback, and re-resolves whenever the Agent Profile list stops containing the current name.**
-    `packages/code/src/adapters/active-agent.ts:87`–`:107`. Pinned:
-    `packages/code/tests/unit/active-agent.test.ts:67`, `:107`.
+    fallback, and re-resolves whenever the Agent Profile list stops containing the current name. When
+    that invalidated current name falls back to another available Agent Profile, the replacement is
+    persisted into the live session so resume metadata continues to name the agent that will execute
+    the conversation.** Production: `packages/code/src/adapters/active-agent.ts`
+    (`activeAgentCatalogTransition`, `createActiveAgentStore`) and `packages/code/src/run-host.ts`
+    (`setSessionProfile`). Test: `packages/code/tests/unit/active-agent.test.ts` ("an invalidated active
+    agent fallback is persisted, but initial resolution is not").
 
 48. **The connection label is a projection and never a channel** — the doctor probe derives from the
     same `ConnectionState` (`packages/code/src/adapters/connection-state.ts:30`, `:42`), and the

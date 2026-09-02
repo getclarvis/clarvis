@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createSignal, type Accessor } from "solid-js";
 import type {
   ExtensionProfileCompositionInput,
   ExtensionProfileCompositionPreview,
@@ -186,6 +187,8 @@ function mount(
     requiresWorkspaceTrust?: boolean;
     previewIssue?: boolean;
     reconnectResult?: { ok: boolean; message: string };
+    active?: Accessor<boolean>;
+    refresh?: (inventory?: boolean) => Promise<void>;
   } = {},
 ) {
   const harness = createFakeKeymap();
@@ -197,6 +200,7 @@ function mount(
   const applied: ExtensionProfileCompositionInput[] = [];
   const { host } = createViewHost({
     interaction: { keymap: harness.keymap } as unknown as Interaction,
+    ...(options.active === undefined ? {} : { active: options.active }),
     close: () => closed.push("closed"),
     dispatch: () => {},
   });
@@ -334,7 +338,7 @@ function mount(
       inventory = { ...inventory, plugins: [...inventory.plugins, context7Inventory(source)] };
       return plugin;
     },
-    refresh: async () => {},
+    refresh: options.refresh ?? (async () => {}),
     reconnect: async () => options.reconnectResult ?? { ok: true, message: "connected" },
     runActive: () => options.runActive === true,
     notify: (message) => notifications.push(message),
@@ -355,6 +359,30 @@ function mount(
     closed,
   };
 }
+
+test("a retained Extensions hub refreshes when a child returns", async () => {
+  const [active, setActive] = createSignal(true);
+  const refreshes: Array<boolean | undefined> = [];
+  const mounted = mount({
+    active,
+    refresh: async (inventory) => {
+      refreshes.push(inventory);
+    },
+  });
+  const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
+    width: 120,
+    height: 32,
+  });
+  await rendered.renderOnce();
+  expect(refreshes).toEqual([]);
+
+  setActive(false);
+  await rendered.renderOnce();
+  setActive(true);
+  await settle(rendered, () => refreshes.length === 1);
+  expect(refreshes).toEqual([true]);
+  rendered.renderer.destroy();
+});
 
 async function settle(
   rendered: Awaited<ReturnType<typeof openRender>>,

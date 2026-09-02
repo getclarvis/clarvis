@@ -9,6 +9,7 @@ import {
 import type { ExecuteRunOutcome } from "@clarvis/loop";
 import { createWorkflowsCapability } from "../../src/capability.ts";
 import { createWorkflowLedger } from "../../src/ledger.ts";
+import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
 import { WORKFLOW_LIMITS } from "../../src/limits.ts";
 import { runLeader } from "../../src/run-leader.ts";
 import type { LeaderSpec } from "../../src/types.ts";
@@ -200,6 +201,98 @@ describe("runLeader", () => {
 });
 
 describe("manager fan-out via the run_leader handler", () => {
+  test("settles a registered child when its held cumulative admission is lost", async () => {
+    const runDeps = workflowRunDeps(() => Promise.resolve(completed("not reached", 1)));
+    const t = testRunCtx();
+    const run = await createWorkflowsCapability(
+      makeCtx({
+        runDeps,
+        leaderCount: {
+          limit: 1,
+          started: () => 0,
+          remaining: () => 1,
+          reserve: () => ({
+            consume: () => false,
+            release: () => undefined,
+            remaining: () => 1,
+          }),
+        },
+      }),
+    ).forRun(t.runCtx);
+    const handler = run!.forAgent(scope())!.attach(recordingBc().bc).handlers![0]!;
+
+    const result = await handler.handle(runLeaderCall({ title: "leader", prompt: "A" }), 0);
+
+    expect(result).toMatchObject({
+      kind: "result",
+      progress: false,
+      text: expect.stringContaining("cumulative admission failed"),
+    });
+    expect(t.registry.list()).toMatchObject([{ status: "failed" }]);
+    expect(t.registry.liveCount()).toBe(0);
+    expect(runDeps.calls).toHaveLength(0);
+  });
+
+  test("releases cumulative admission when child registration throws", async () => {
+    const leaderCount = createWorkflowLeaderCount(1);
+    const ctx = makeCtx({
+      leaderCount,
+      runDeps: {
+        generateExecutionId: (): never => {
+          throw new Error("id source failed");
+        },
+        executeRun: () => Promise.resolve(completed("not reached", 1)),
+      },
+    });
+    const run = await createWorkflowsCapability(ctx).forRun(testRunCtx().runCtx);
+    const handler = run!.forAgent(scope())!.attach(recordingBc().bc).handlers![0]!;
+
+    expect(() => handler.handle(runLeaderCall({ title: "leader", prompt: "A" }), 0)).toThrow(
+      "id source failed",
+    );
+    expect(leaderCount.started()).toBe(0);
+    expect(leaderCount.remaining()).toBe(1);
+  });
+
+  test("counts and settles an accepted child when its registration trace throws", async () => {
+    const leaderCount = createWorkflowLeaderCount(1);
+    const runDeps = workflowRunDeps(() => Promise.resolve(completed("not reached", 1)));
+    const ctx = makeCtx({ leaderCount, runDeps });
+    const t = testRunCtx();
+    const run = await createWorkflowsCapability(ctx).forRun(t.runCtx);
+    const handler = run!.forAgent(scope())!.attach(throwingBc("agent_registered").bc).handlers![0]!;
+
+    expect(() => handler.handle(runLeaderCall({ title: "leader", prompt: "A" }), 0)).toThrow(
+      "trace sink exploded",
+    );
+    expect(leaderCount.started()).toBe(1);
+    expect(leaderCount.remaining()).toBe(0);
+    expect(t.registry.liveCount()).toBe(0);
+    expect(t.registry.list()).toMatchObject([{ status: "failed" }]);
+    expect(runDeps.calls).toHaveLength(0);
+  });
+
+  test("refuses an ad-hoc spawn after the manager reaches its cumulative leader ceiling", async () => {
+    const runDeps = workflowRunDeps(() => Promise.resolve(completed("ok", 1)));
+    const ctx = makeCtx({
+      runDeps,
+      assemble: leaderAssembler,
+      leaderCount: createWorkflowLeaderCount(1),
+    });
+    const t = testRunCtx();
+    const run = await createWorkflowsCapability(ctx).forRun(t.runCtx);
+    const handler = run!.forAgent(scope())!.attach(recordingBc().bc).handlers![0]!;
+
+    const first = await handler.handle(runLeaderCall({ title: "leader", prompt: "A" }), 0);
+    const second = await handler.handle(runLeaderCall({ title: "leader", prompt: "B" }), 0);
+    if (first.kind !== "result" || second.kind !== "result") throw new Error("expected results");
+    expect(first.progress).toBe(true);
+    expect(second.progress).toBe(false);
+    expect(second.text).toContain("max_total_leaders");
+    await t.settle();
+    expect(runDeps.calls).toHaveLength(1);
+  });
+
   test("bounds concurrent leaders by the semaphore, sums usage, and records the tree edges", async () => {
     let active = 0;
     let maxActive = 0;

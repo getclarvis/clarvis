@@ -272,6 +272,27 @@ describe("remote run codec", () => {
     expect(decodeRunEvent(fallback)).toEqual(fallback);
   });
 
+  it("preserves the workflow round checkpoint contract", () => {
+    const event = {
+      type: "workflow_sequence_state",
+      at: 16,
+      run_id: "manager",
+      session_id: "wfseq-1",
+      status: "awaiting_manager",
+      revision: 2,
+      round_id: "review",
+      pass: 0,
+      next_round_id: "verify",
+      next_pass: 0,
+      leaders_started: 7,
+      max_total_leaders: 32,
+    } as const;
+    expect(decodeRunEvent(event)).toEqual(event);
+    expect(decodeRunEvent({ ...event, revision: -1 })).toBeNull();
+    expect(decodeRunEvent({ ...event, next_pass: 0.5 })).toBeNull();
+    expect(decodeRunEvent({ ...event, leaders_started: 33 })).toBeNull();
+  });
+
   it("settles the result independently and keeps accepting events until stream_end", async () => {
     const transport = new FakeTransport();
     const client = await connectKernelClient(transport);

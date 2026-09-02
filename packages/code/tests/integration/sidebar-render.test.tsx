@@ -163,6 +163,34 @@ test("parallel-work metadata stays on one line at the minimum inspector width", 
   t.renderer.destroy();
 });
 
+test("an idle round checkpoint remains visible as awaiting the Admiral", async () => {
+  const workflow: WorkflowActivity = {
+    root: "manager-run",
+    nodes: new Map([
+      [
+        "manager-run",
+        { runId: "manager-run", kind: "manager", title: "Manager", status: "running" },
+      ],
+    ]),
+    sequence: {
+      sessionId: "wfseq-1",
+      status: "awaiting_manager",
+      revision: 2,
+      roundId: "review",
+      pass: 0,
+      nextRoundId: "verify",
+      nextPass: 0,
+      leadersStarted: 4,
+      maxTotalLeaders: 32,
+    },
+  };
+  const t = await mount(activity({}), { width: 38, workflow: () => workflow });
+  const out = t.captureCharFrame();
+  expect(out).toContain("awaiting Admiral");
+  expect(out).toContain("Checkpoint r2: next verify");
+  t.renderer.destroy();
+});
+
 test("workflow leaders and sub-agents use separate run-local handle namespaces", async () => {
   const workflowOf = (suffix: string): WorkflowActivity => ({
     root: `manager-${suffix}`,

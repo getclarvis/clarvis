@@ -9,13 +9,13 @@
  * registers the declaration before it parses `settings.json`. Unlike the
  * built-in capabilities, `workflows` is **not** constructed in `build-run-deps`
  * — it needs a per-workflow context (semaphore, ledger, leader assembler) that
- * only the host's workflow service can supply, so this block exists only to turn
- * the feature on for a workspace and to bound its fan-out.
+ * only the host's workflow service can supply, so this block exists only to bound
+ * that service's fan-out.
  *
  * @remarks Manager designation is a per-profile concern, not a block here: only
  *   an agent profile carrying the `workflow` {@link import("@clarvis/capability").Grant | Grant}
- *   becomes a manager. This block is the workspace on/off switch plus the
- *   concurrency and token bounds the fan-out runs under.
+ *   becomes a manager. This block is not an on/off switch; it supplies the live,
+ *   cumulative and token bounds the fan-out runs under.
  */
 import { z } from "zod";
 import type { CapabilitySettingsSpec } from "@clarvis/capability";
@@ -34,6 +34,9 @@ export const WORKFLOWS_CAPABILITY_NAME = "workflows";
  * {@link AGENTS_MAX_LIVE_CHILDREN} is {@link MANAGER_REGISTRY_HEADROOM}.
  */
 export const WORKFLOWS_MAX_CONCURRENCY = 20;
+
+/** Absolute cumulative leader ceiling accepted by the settings contract. */
+export const WORKFLOWS_MAX_TOTAL_LEADERS = 255;
 
 /**
  * Live-child slots a manager needs on top of its running leaders.
@@ -81,14 +84,15 @@ export function managerLiveChildrenFloor(maxConcurrency: number): number {
  */
 export const WORKFLOWS_DEFAULTS = {
   max_concurrency: 4,
+  max_total_leaders: 32,
   budget_tokens: 640_000_000,
 } as const;
 
-/** The `workflows:` settings block: `max_concurrency` (the leader-wide cap on
- * concurrently running leaders) and `budget_tokens` (an optional output-token
- * ceiling summed across leader runs; `null` means unbounded). Manager
- * designation is not a field here — it is the `workflow` grant on the entry
- * agent profile. */
+/** The `workflows:` settings block: `max_concurrency` (the leader-wide live
+ * cap), `max_total_leaders` (the cumulative registration cap), and
+ * `budget_tokens` (an optional output-token ceiling summed across leader runs;
+ * `null` means unbounded). Manager designation is not a field here — it is the
+ * `workflow` grant on the entry agent profile. */
 const workflowsConfigSchema = z
   .object({
     max_concurrency: z
@@ -97,6 +101,12 @@ const workflowsConfigSchema = z
       .positive()
       .max(WORKFLOWS_MAX_CONCURRENCY)
       .default(WORKFLOWS_DEFAULTS.max_concurrency),
+    max_total_leaders: z
+      .number()
+      .int()
+      .positive()
+      .max(WORKFLOWS_MAX_TOTAL_LEADERS)
+      .default(WORKFLOWS_DEFAULTS.max_total_leaders),
     budget_tokens: z.number().int().positive().nullable().default(WORKFLOWS_DEFAULTS.budget_tokens),
   })
   .strict();
@@ -106,7 +116,7 @@ export const WORKFLOWS_SETTINGS_FIELDS = {
   workflows: workflowsConfigSchema
     .optional()
     .describe(
-      "Workflow-manager fan-out tuning (max_concurrency, budget_tokens). A run is a workflow when " +
+      "Workflow-manager fan-out tuning (max_concurrency, max_total_leaders, budget_tokens). A run is a workflow when " +
         "its entry agent profile carries the 'workflow' grant — there is no separate on/off switch.",
     ),
 };

@@ -1,6 +1,6 @@
 /**
- * The `run_round` tool: execute a sequence of declared rounds, with the runtime
- * deriving the fan-out, the barriers and the convergence.
+ * The `run_round` tool: execute explicitly authorized declared rounds, with the
+ * runtime deriving each round's fan-out and internal barriers.
  *
  * @remarks A round declares what it *consumes* (`over`), and the barrier follows
  * from that: `each` flows one leader per item, `all` collapses the set into one
@@ -15,6 +15,8 @@ import type {
   AgentBuildContext,
   AgentRegistryPort,
   ComputeClock,
+  FinalizeGate,
+  GateOutcome,
   HandlerVerdict,
   Logger,
   NamespacedTool,
@@ -58,11 +60,15 @@ import {
 import { scheduleWorkItems } from "./schedule.ts";
 import { WORKFLOW_RESULT_SCHEMAS } from "./schemas.ts";
 import type { LeaderProfileInfo } from "./tool.ts";
-import type { WorkflowCtx } from "./types.ts";
+import type { WorkflowCtx, WorkflowSequenceState, WorkflowSequenceStatus } from "./types.ts";
 import { toWorkItem, workItemBrief } from "./work-items.ts";
 
 /** The `run_round` wire/tool name. */
 export const RUN_ROUND_TOOL_NAME = "run_round";
+/** Inspect the manager-owned checkpoint of the active round sequence. */
+export const WORKFLOW_STATUS_TOOL_NAME = "workflow_status";
+/** Explicitly continue or stop a manager-owned round sequence. */
+export const WORKFLOW_DECIDE_TOOL_NAME = "workflow_decide";
 
 const RUN_ROUND_DESCRIPTION =
   "Run a sequence of declared rounds. Each round says what it consumes — 'once', " +
@@ -70,7 +76,68 @@ const RUN_ROUND_DESCRIPTION =
   "the waiting: 'each' starts one leader per item, 'all' hands the whole set to one leader. Later " +
   "rounds read earlier rounds' structured results by name, so routing decisions (which findings " +
   "need verification, which gaps remain) are made by the leader that had the context, not " +
-  "re-derived by you. Returns immediately; collect the leaders with await_agents or agent_poll.";
+  "re-derived by you. Only the first round starts: after every round the sequence pauses at a " +
+  "checkpoint until the Admiral calls workflow_decide. Returns immediately; collect the leaders " +
+  "with await_agents or agent_poll.";
+
+/** Build the read-only checkpoint inspection tool. */
+export function buildWorkflowStatusTool(): NamespacedTool {
+  return {
+    fullName: WORKFLOW_STATUS_TOOL_NAME,
+    wireName: WORKFLOW_STATUS_TOOL_NAME,
+    mcpName: "",
+    toolName: WORKFLOW_STATUS_TOOL_NAME,
+    description:
+      "Inspect the active or named workflow round sequence: its revision, current state, proposed " +
+      "next round, and cumulative leader capacity. This tool never starts work.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        session_id: {
+          type: "string",
+          minLength: 1,
+          maxLength: WORKFLOW_LIMITS.identifierChars,
+          description: "OPTIONAL — omit to inspect the active or most recent sequence.",
+        },
+      },
+    },
+  };
+}
+
+/** Build the compare-and-set checkpoint decision tool. */
+export function buildWorkflowDecideTool(): NamespacedTool {
+  return {
+    fullName: WORKFLOW_DECIDE_TOOL_NAME,
+    wireName: WORKFLOW_DECIDE_TOOL_NAME,
+    mcpName: "",
+    toolName: WORKFLOW_DECIDE_TOOL_NAME,
+    description:
+      "At an awaiting_manager checkpoint, explicitly continue exactly the proposed next round or " +
+      "stop the sequence. Supply the revision returned by workflow_status; stale or duplicate " +
+      "decisions are refused before any leader is spawned.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["session_id", "revision", "decision", "reason"],
+      properties: {
+        session_id: {
+          type: "string",
+          minLength: 1,
+          maxLength: WORKFLOW_LIMITS.identifierChars,
+        },
+        revision: { type: "integer", minimum: 1 },
+        decision: { enum: ["continue", "stop"] },
+        reason: {
+          type: "string",
+          minLength: 1,
+          maxLength: WORKFLOW_LIMITS.textChars,
+          description: "Why another round is needed, or why the sequence should stop now.",
+        },
+      },
+    },
+  };
+}
 
 /** A round as it arrives on the wire, with the compact selector/accept forms. */
 export interface RoundInput {
@@ -845,6 +912,7 @@ function producedItems(state: WorkflowState, block: RepeatSpec): unknown[] {
 /** Render the plan handed back the moment the rounds start. */
 function describePlan(
   call: RoundCall,
+  sessionId: string,
   first: RoundInput,
   handles: ReadonlyMap<string, string>,
   queued: number,
@@ -855,14 +923,16 @@ function describePlan(
   const repeat =
     call.repeat === undefined
       ? ""
-      : ` Then [${call.repeat.rounds.join(", ")}] repeat until dry, at most ` +
+      : ` Repeat passes over [${call.repeat.rounds.join(", ")}] are proposals only, capped at ` +
         `${String(call.repeat.max_rounds)} passes.`;
   return (
-    `running ${String(call.rounds.length)} round(s): ${shape}.${repeat} ` +
+    `started sequence '${sessionId}' with ${String(call.rounds.length)} authored round(s): ` +
+    `${shape}.${repeat} ` +
     `Round '${first.id}' is running now: ${[...handles.values()].join(", ")}.` +
     `${describeQueued(queued)} ` +
     "Keep working, then collect them with await_agents (to wait) or agent_poll (to look). " +
-    "Do not finish until they have returned."
+    "When this round returns, inspect its checkpoint with workflow_status and explicitly use " +
+    "workflow_decide. No later round starts automatically."
   );
 }
 
@@ -881,7 +951,7 @@ function fanoutNote(round: RoundInput): string {
   return round.fanout > 1 ? ` ×${String(round.fanout)}` : "";
 }
 
-/** Render the tally the last child of the sequence carries back. */
+/** Render the cumulative tally the last child of an authorized round carries back. */
 function describeSummary(reports: readonly RoundReport[]): string {
   const parts = reports.map((report) => {
     if (report.skipped !== undefined) return `${report.id}: skipped (${report.skipped})`;
@@ -899,15 +969,16 @@ function describeSummary(reports: readonly RoundReport[]): string {
  *
  * @remarks The first round is planned and registered synchronously so the call
  *   can refuse outright — an unresolvable selector or an unrenderable brief is a
- *   mistake to report, not something to start and abandon halfway. Every later
- *   round is registered by the driver through the same dispatch session, which is
- *   what keeps the live-child count off zero across round boundaries.
+ *   mistake to report, not something to start and abandon halfway. The
+ *   coordinator then pauses at every authored or repeat boundary; only an
+ *   explicit compare-and-set decision registers the proposed next round.
  */
 export function buildRunRoundHandler(
   ctx: WorkflowCtx,
   bc: AgentBuildContext,
   clock: ComputeClock | undefined,
   agents: AgentRegistryPort,
+  coordinator: RoundCoordinator,
 ): ToolHandler {
   const deps: DispatchDeps = { ctx, bc, clock, agents };
   return {
@@ -915,7 +986,7 @@ export function buildRunRoundHandler(
     handle(call): Promise<HandlerVerdict> {
       const parsed = parseRoundCall(call.arguments);
       if ("error" in parsed) return Promise.resolve(verdict(parsed.error));
-      const started = startRounds(deps, parsed.call);
+      const started = startRounds(deps, parsed.call, coordinator);
       if ("error" in started) return Promise.resolve(verdict(started.error));
       return Promise.resolve({
         kind: "result",
@@ -927,75 +998,21 @@ export function buildRunRoundHandler(
 }
 
 /**
- * Validate a round sequence, register its first round and hand the rest to a
- * background driver.
+ * Validate a round sequence and register only its first round.
  *
  * @returns the plan text to answer the tool call with, or the reason the sequence
  *   cannot start.
  * @remarks Shared by `run_round` and `run_workflow`: a workflow document is a
  *   round sequence that was authored rather than composed in a turn, so there is
- *   one executor and one set of guarantees behind both.
+ *   one executor and one set of guarantees behind both. Later rounds remain
+ *   proposals until the shared manager coordinator authorizes them.
  */
 export function startRounds(
   deps: DispatchDeps,
   call: RoundCall,
+  coordinator: RoundCoordinator = createRoundCoordinator(deps.ctx),
 ): { text: string } | { error: string } {
-  const logger = workflowLogger(deps.ctx);
-  const boundsError = roundCallBoundsError(call);
-  if (boundsError !== null) return { error: boundsError };
-  const state: WorkflowState = { rounds: {} };
-  const first = call.rounds[0]!;
-  if (first.over.kind !== "once") {
-    return {
-      error:
-        `the first round '${first.id}' must be 'once': there is no earlier round for it to ` +
-        "consume. Scout with a discovery round, then have later rounds read it by name.",
-    };
-  }
-  if (first.when !== undefined && !whenSatisfied(state, first.when)) {
-    reportRoundSkipped(logger, first.id, 0, `'${first.when}' is empty`);
-    return {
-      error: `the first round '${first.id}' is guarded on '${first.when}', which is empty.`,
-    };
-  }
-  const planned = planRound(first, state, call.args, 0, logger);
-  if ("error" in planned) {
-    reportRoundSkipped(logger, first.id, 0, planned.error);
-    return { error: planned.error };
-  }
-  reportRoundPlanned(logger, first, 0, planned, selectedItems(first, state).length);
-  const [firstWave = [], ...laterWaves] = planned.waves;
-
-  const session = beginDispatch(deps, firstWave);
-  if (session === null) {
-    return {
-      error:
-        "not starting these rounds — too many child agents are already running. Wait with " +
-        "await_agents or end one with agent_stop, then try again.",
-    };
-  }
-  /**
-   * The round-1 handles and the queued tail, read before the driver starts.
-   *
-   * @remarks Both reads must happen here: the driver's first `run` takes the
-   * pending batch, so a later read reports an empty queue.
-   */
-  const handles = session.pendingHandles();
-  const queued = session.queuedCount();
-  const driver = runRounds(
-    session,
-    call,
-    state,
-    {
-      first,
-      firstItems: selectedItems(first, state),
-      laterWaves,
-      prereqs: planned.prereqs,
-    },
-    logger,
-  );
-  deps.agents.adopt(session.anchorId, driver);
-  return { text: describePlan(call, first, handles, queued) };
+  return coordinator.start(deps, call);
 }
 
 /**
@@ -1103,78 +1120,214 @@ function selectedItems(round: RoundInput, state: WorkflowState): readonly unknow
   return "items" in picked ? picked.items : [];
 }
 
-/**
- * The driver task: finish the started round, then run the rest, then repeat.
- *
- * @remarks The summary is the only report the manager gets, and the held handle
- *   is the only thing keeping the run from finishing on top of this driver. A
- *   throw anywhere above must strand neither: `agents.adopt` swallows the
- *   rejection, so an unsettled baton would block `await_agents` until teardown.
- */
-async function runRounds(
-  session: DispatchSession,
-  call: RoundCall,
-  state: WorkflowState,
-  started: {
-    first: RoundInput;
-    firstItems: readonly unknown[];
-    laterWaves: PlannedUnit[][];
-    prereqs: ReadonlyMap<string, Prerequisite[]>;
-  },
-  logger: Logger,
-): Promise<void> {
-  const reports: RoundReport[] = [];
-  let budgetExhausted = false;
-  let cancelled = false;
+/** A position in the authored initial sequence or one candidate repeat pass. */
+interface RoundPointer {
+  kind: "initial" | "repeat";
+  index: number;
+  pass: number;
+}
 
-  /**
-   * Run a round's waves, holding each unit against the prerequisites its work
-   * item declared.
-   *
-   * @remarks Wave ordering alone is not the guarantee: an item whose dependency
-   *   failed must not be dispatched, or the shipped `implement` workflow would
-   *   build on top of a step that never landed.
-   */
-  const drain = async (
-    waves: PlannedUnit[][],
-    prereqs: ReadonlyMap<string, Prerequisite[]>,
-  ): Promise<DispatchOutcome[]> => {
-    const collected: DispatchOutcome[] = [];
-    const done = new Map<string, DispatchStatus>();
-    const gate = (unit: DispatchUnit): { blocked: string } | null => {
-      const blocker = (prereqs.get(unit.key) ?? []).find((p) => done.get(p.key) !== "completed");
-      return blocker === undefined ? null : { blocked: `'${blocker.id}' did not finish` };
-    };
-    const take = (outcomes: readonly DispatchOutcome[]): void => {
-      for (const outcome of outcomes) {
-        collected.push(outcome);
-        done.set(outcome.key, outcome.status);
-        if (outcome.status === "cancelled") cancelled = true;
-      }
-    };
-    for (const wave of waves) {
-      take(await session.run(gate));
-      if (cancelled) break;
-      session.advance(wave);
+/** Mutable state owned by the Admiral for one explicitly controlled sequence. */
+interface RoundSequence {
+  id: string;
+  deps: DispatchDeps;
+  call: RoundCall;
+  state: WorkflowState;
+  reports: RoundReport[];
+  status: WorkflowSequenceStatus;
+  revision: number;
+  current?: RoundPointer;
+  next?: RoundPointer;
+  seen?: ReadonlySet<string>;
+  dryRounds: number;
+  budgetExhausted: boolean;
+  reason?: string;
+}
+
+/** Result shared by start/status/decision handlers. */
+interface CoordinatorResult {
+  text: string;
+  progress: boolean;
+  error?: true;
+}
+
+/** Arguments accepted by the compare-and-set decision operation. */
+interface WorkflowDecision {
+  sessionId: string;
+  revision: number;
+  decision: "continue" | "stop";
+  reason: string;
+}
+
+/** Per-manager authority over authored round boundaries. */
+export interface RoundCoordinator {
+  start(deps: DispatchDeps, call: RoundCall): { text: string } | { error: string };
+  status(sessionId?: string): CoordinatorResult;
+  decide(decision: WorkflowDecision): CoordinatorResult;
+  finalizeGate(): FinalizeGate;
+}
+
+/** Resolve a pointer to its authored round. */
+function pointedRound(sequence: RoundSequence, pointer: RoundPointer): RoundInput | undefined {
+  if (pointer.kind === "initial") return sequence.call.rounds[pointer.index];
+  const id = sequence.call.repeat?.rounds[pointer.index];
+  return id === undefined ? undefined : sequence.call.rounds.find((round) => round.id === id);
+}
+
+/** Drain every wave inside one already-authorized semantic round. */
+async function drainRound(
+  session: DispatchSession,
+  waves: readonly PlannedUnit[][],
+  prereqs: ReadonlyMap<string, Prerequisite[]>,
+): Promise<{ outcomes: DispatchOutcome[]; cancelled: boolean }> {
+  const outcomes: DispatchOutcome[] = [];
+  const done = new Map<string, DispatchStatus>();
+  let cancelled = false;
+  const gate = (unit: DispatchUnit): { blocked: string } | null => {
+    const blocker = (prereqs.get(unit.key) ?? []).find((p) => done.get(p.key) !== "completed");
+    return blocker === undefined ? null : { blocked: `'${blocker.id}' did not finish` };
+  };
+  const take = (batch: readonly DispatchOutcome[]): void => {
+    for (const outcome of batch) {
+      outcomes.push(outcome);
+      done.set(outcome.key, outcome.status);
+      if (outcome.status === "cancelled") cancelled = true;
     }
-    if (!cancelled) take(await session.run(gate));
-    return collected;
+  };
+  for (const wave of waves) {
+    take(await session.run(gate));
+    if (cancelled) break;
+    session.advance(wave);
+  }
+  if (!cancelled) take(await session.run(gate));
+  return { outcomes, cancelled };
+}
+
+/** Build the one coordinator shared by every workflow tool on a manager run. */
+export function createRoundCoordinator(ctx: WorkflowCtx): RoundCoordinator {
+  const sequences = new Map<string, RoundSequence>();
+  let activeId: string | undefined;
+  let latestId: string | undefined;
+  let nextId = 0;
+  let finalizeNudge = "";
+
+  const snapshot = (sequence: RoundSequence): WorkflowSequenceState => {
+    const current =
+      sequence.current === undefined ? undefined : pointedRound(sequence, sequence.current);
+    const next = sequence.next === undefined ? undefined : pointedRound(sequence, sequence.next);
+    return {
+      sessionId: sequence.id,
+      status: sequence.status,
+      revision: sequence.revision,
+      ...(current === undefined ? {} : { roundId: current.id, pass: sequence.current?.pass }),
+      ...(next === undefined ? {} : { nextRoundId: next.id, nextPass: sequence.next?.pass }),
+      leadersStarted: ctx.leaderCount.started(),
+      maxTotalLeaders: ctx.leaderCount.limit,
+      ...(sequence.reason === undefined ? {} : { reason: sequence.reason }),
+    };
   };
 
-  const finishRound = (
+  const publish = (sequence: RoundSequence): void => {
+    ctx.onSequenceState?.(snapshot(sequence));
+  };
+
+  const terminal = (
+    sequence: RoundSequence,
+    status: Extract<WorkflowSequenceStatus, "completed" | "stopped" | "failed" | "cancelled">,
+    reason: string,
+  ): string => {
+    sequence.status = status;
+    sequence.reason = reason;
+    sequence.next = undefined;
+    sequence.revision += 1;
+    if (activeId === sequence.id) activeId = undefined;
+    publish(sequence);
+    return `sequence '${sequence.id}' ${status}: ${reason}`;
+  };
+
+  const nextAfter = (sequence: RoundSequence, pointer: RoundPointer): RoundPointer | null => {
+    if (pointer.kind === "initial") {
+      if (pointer.index + 1 < sequence.call.rounds.length) {
+        return { kind: "initial", index: pointer.index + 1, pass: 0 };
+      }
+      const block = sequence.call.repeat;
+      if (block === undefined) return null;
+      sequence.seen = admitNew(
+        producedItems(sequence.state, block),
+        block.dedupe_by,
+        new Set(),
+      ).seen;
+      const stop = nextRepeat(block, {
+        roundsRun: 0,
+        dryRounds: sequence.dryRounds,
+        budgetExhausted: sequence.budgetExhausted,
+      });
+      return stop.done ? null : { kind: "repeat", index: 0, pass: 1 };
+    }
+
+    const block = sequence.call.repeat;
+    if (block === undefined) return null;
+    if (pointer.index + 1 < block.rounds.length) {
+      return { kind: "repeat", index: pointer.index + 1, pass: pointer.pass };
+    }
+    const admitted = admitNew(
+      producedItems(sequence.state, block),
+      block.dedupe_by,
+      sequence.seen ?? new Set(),
+    );
+    sequence.seen = admitted.seen;
+    sequence.dryRounds = admitted.fresh.length === 0 ? sequence.dryRounds + 1 : 0;
+    const stop = nextRepeat(block, {
+      roundsRun: pointer.pass,
+      dryRounds: sequence.dryRounds,
+      budgetExhausted: sequence.budgetExhausted,
+    });
+    if (stop.done) {
+      sequence.reason = `repeat stopped: ${stop.reason}`;
+      return null;
+    }
+    return { kind: "repeat", index: 0, pass: pointer.pass + 1 };
+  };
+
+  const advance = (sequence: RoundSequence, pointer: RoundPointer): string => {
+    if (sequence.budgetExhausted) {
+      return terminal(sequence, "failed", "the workflow token budget was exhausted");
+    }
+    const next = nextAfter(sequence, pointer);
+    if (next === null) {
+      return terminal(sequence, "completed", sequence.reason ?? "all authorized rounds finished");
+    }
+    sequence.status = "awaiting_manager";
+    sequence.next = next;
+    sequence.reason = undefined;
+    sequence.revision += 1;
+    publish(sequence);
+    const proposed = pointedRound(sequence, next);
+    return (
+      `sequence '${sequence.id}' is awaiting the Admiral at revision ` +
+      `${String(sequence.revision)}; proposed next round '${proposed?.id ?? "unknown"}' ` +
+      `(pass ${String(next.pass)}). Use workflow_status, then workflow_decide. ` +
+      "No leader will start automatically."
+    );
+  };
+
+  const fold = (
+    sequence: RoundSequence,
     round: RoundInput,
     items: readonly unknown[],
     outcomes: readonly DispatchOutcome[],
   ): void => {
-    if (outcomes.some((o) => o.status === "budget_exhausted")) budgetExhausted = true;
+    if (outcomes.some((outcome) => outcome.status === "budget_exhausted")) {
+      sequence.budgetExhausted = true;
+    }
     const folded = foldRound(round, items, outcomes);
-    state.rounds[round.id] = folded;
+    sequence.state.rounds[round.id] = folded;
     const decisions =
       round.accept === undefined
         ? undefined
         : (folded as { accepted: unknown[]; rejected: unknown[] });
-    reportRoundFolded(logger, round, folded, outcomes, decisions);
-    reports.push({
+    reportRoundFolded(workflowLogger(sequence.deps.ctx), round, folded, outcomes, decisions);
+    sequence.reports.push({
       id: round.id,
       leaders: outcomes.length,
       ...(decisions === undefined
@@ -1183,101 +1336,396 @@ async function runRounds(
     });
   };
 
-  /**
-   * Run a sequence of rounds in order, folding each into the shared state.
-   *
-   * @remarks No cancellation check belongs beside the `session.advance` below:
-   * every `session.run` in this driver goes through `drain`'s `take`, so a
-   * cancelled outcome has already set `cancelled` and this loop's own guard
-   * caught it. `advance` refuses to register on a stopped dispatch regardless.
-   *
-   * Every `continue` here is a round that never ran, and the manager learns
-   * about it only as one clause of the summary string the last child carries
-   * back — so a planning failure in round 7 of 9 is a fragment of a sentence.
-   * Each one therefore also emits `workflow.round_skipped`.
-   */
-  const runFrom = async (rounds: readonly RoundInput[], pass: number): Promise<void> => {
-    for (const round of rounds) {
-      if (cancelled) break;
-      if (budgetExhausted) {
-        reportRoundSkipped(logger, round.id, pass, "the token budget was exhausted");
-        reports.push({ id: round.id, leaders: 0, skipped: "the token budget was exhausted" });
-        continue;
-      }
-      if (round.when !== undefined && !whenSatisfied(state, round.when)) {
-        reportRoundSkipped(logger, round.id, pass, `'${round.when}' is empty`);
-        reports.push({ id: round.id, leaders: 0, skipped: `'${round.when}' is empty` });
-        continue;
-      }
-      const planned = planRound(round, state, call.args, pass, logger);
-      if ("error" in planned) {
-        reportRoundSkipped(logger, round.id, pass, planned.error);
-        reports.push({ id: round.id, leaders: 0, skipped: planned.error });
-        continue;
-      }
-      const items = selectedItems(round, state);
-      reportRoundPlanned(logger, round, pass, planned, items.length);
-      const [head, ...rest] = planned.waves;
-      if (head === undefined) {
-        reportRoundSkipped(logger, round.id, pass, "it selected no items");
-        reports.push({ id: round.id, leaders: 0, skipped: "it selected no items" });
-        continue;
-      }
-      session.advance(head);
-      finishRound(round, items, await drain(rest, planned.prereqs));
-    }
+  const skip = (
+    sequence: RoundSequence,
+    pointer: RoundPointer,
+    reason: string,
+  ): CoordinatorResult => {
+    const round = pointedRound(sequence, pointer);
+    if (round === undefined)
+      return { text: terminal(sequence, "failed", "round not found"), progress: true };
+    reportRoundSkipped(workflowLogger(sequence.deps.ctx), round.id, pointer.pass, reason);
+    sequence.reports.push({ id: round.id, leaders: 0, skipped: reason });
+    sequence.current = pointer;
+    sequence.next = undefined;
+    sequence.reason = undefined;
+    const transition = advance(sequence, pointer);
+    return {
+      text: `authorized round '${round.id}' was skipped (${reason}). ${transition}`,
+      progress: true,
+    };
   };
 
-  try {
-    finishRound(
-      started.first,
-      started.firstItems,
-      await drain(started.laterWaves, started.prereqs),
-    );
-    if (!cancelled) await runFrom(call.rounds.slice(1), 0);
-
-    const block = call.repeat;
-    if (block !== undefined && !cancelled) {
-      const byId = new Map(call.rounds.map((r) => [r.id, r]));
-      let seen: ReadonlySet<string> = new Set(
-        admitNew(producedItems(state, block), block.dedupe_by, new Set()).seen,
-      );
-      let dryRounds = 0;
-      for (let pass = 0; ; pass += 1) {
-        const stop = nextRepeat(block, { roundsRun: pass, dryRounds, budgetExhausted });
-        if (stop.done) {
-          reportRoundSkipped(logger, "repeat", pass + 1, `stopped: ${stop.reason}`);
-          reports.push({ id: "repeat", leaders: 0, skipped: `stopped: ${stop.reason}` });
-          break;
-        }
-        await runFrom(
-          block.rounds.map((id) => byId.get(id)).filter((r) => r !== undefined),
-          pass + 1,
-        );
-        if (cancelled) break;
-        const admitted = admitNew(producedItems(state, block), block.dedupe_by, seen);
-        seen = admitted.seen;
-        dryRounds = admitted.fresh.length === 0 ? dryRounds + 1 : 0;
-      }
-    }
-    if (cancelled) {
-      reportRoundSkipped(logger, "workflow", 0, "stopped after cancellation");
-      reports.push({ id: "workflow", leaders: 0, skipped: "stopped after cancellation" });
-    }
-  } catch (err) {
-    logger.error(
+  const reportDriverFault = (
+    sequence: RoundSequence,
+    round: RoundInput,
+    pointer: RoundPointer,
+    error: unknown,
+  ): void => {
+    workflowLogger(sequence.deps.ctx).error(
       {
         event: "workflow.driver_faulted",
-        rounds_done: reports.length,
-        reports: reports.map((report) => `${report.id}:${String(report.leaders)}`).join(","),
-        ...faultFields(err),
+        round_id: round.id,
+        pass: pointer.pass,
+        rounds_done: sequence.reports.length,
+        reports: sequence.reports
+          .map((report) => `${report.id}:${String(report.leaders)}`)
+          .join(","),
+        ...faultFields(error),
       },
-      "the round driver threw, so no further round runs; without this the throw reaches agents.adopt and is reduced to an agent id with no round",
+      "the authorized round driver faulted; the sequence is failed and cannot spawn another round",
     );
-    throw err;
-  } finally {
-    session.end(describeSummary(reports));
-  }
+  };
+
+  const launch = (
+    sequence: RoundSequence,
+    pointer: RoundPointer,
+    first: boolean,
+  ): CoordinatorResult => {
+    const logger = workflowLogger(sequence.deps.ctx);
+    const round = pointedRound(sequence, pointer);
+    if (round === undefined) {
+      return {
+        text: terminal(sequence, "failed", "the proposed round no longer exists"),
+        progress: true,
+        error: true,
+      };
+    }
+    if (round.when !== undefined && !whenSatisfied(sequence.state, round.when)) {
+      const reason = `'${round.when}' is empty`;
+      if (first) {
+        reportRoundSkipped(logger, round.id, pointer.pass, reason);
+        return {
+          text: `the first round '${round.id}' is guarded on ${reason}.`,
+          progress: false,
+          error: true,
+        };
+      }
+      return skip(sequence, pointer, reason);
+    }
+    const planned = planRound(round, sequence.state, sequence.call.args, pointer.pass, logger);
+    if ("error" in planned) {
+      reportRoundSkipped(logger, round.id, pointer.pass, planned.error);
+      if (first) return { text: planned.error, progress: false, error: true };
+      return skip(sequence, pointer, planned.error);
+    }
+    const items = selectedItems(round, sequence.state);
+    const [head, ...laterWaves] = planned.waves;
+    if (head === undefined) {
+      if (first)
+        return {
+          text: `the first round '${round.id}' selected no items.`,
+          progress: false,
+          error: true,
+        };
+      return skip(sequence, pointer, "it selected no items");
+    }
+    const units = planned.waves.reduce((total, wave) => total + wave.length, 0);
+    const remaining = sequence.deps.ctx.leaderCount.remaining();
+    reportRoundPlanned(logger, round, pointer.pass, planned, items.length);
+    let session: DispatchSession | null;
+    try {
+      session = beginDispatch(sequence.deps, head, units);
+    } catch (error) {
+      reportDriverFault(sequence, round, pointer, error);
+      return {
+        text: terminal(sequence, "failed", error instanceof Error ? error.message : String(error)),
+        progress: true,
+        error: true,
+      };
+    }
+    if (session === null) {
+      const text =
+        units > remaining
+          ? `not starting round '${round.id}' — its ${String(units)} leaders exceed the ` +
+            `${String(remaining)} cumulative slot(s) remaining (max_total_leaders=` +
+            `${String(sequence.deps.ctx.leaderCount.limit)}). The checkpoint is unchanged.`
+          : `not starting round '${round.id}' — too many child agents are already running. ` +
+            "Wait with await_agents or end one with agent_stop, then retry the same revision.";
+      return { text, progress: false, error: true };
+    }
+
+    const handles = session.pendingHandles();
+    const queued = session.queuedCount();
+    sequence.status = "running_round";
+    sequence.current = pointer;
+    sequence.next = undefined;
+    try {
+      publish(sequence);
+    } catch (error) {
+      reportDriverFault(sequence, round, pointer, error);
+      const reason = error instanceof Error ? error.message : String(error);
+      let summary = `sequence '${sequence.id}' failed: ${reason}`;
+      try {
+        summary = terminal(sequence, "failed", reason);
+      } finally {
+        session.end(summary);
+      }
+      return { text: summary, progress: true, error: true };
+    }
+
+    const driver = (async (): Promise<void> => {
+      let summary = "";
+      try {
+        const drained = await drainRound(session, laterWaves, planned.prereqs);
+        fold(sequence, round, items, drained.outcomes);
+        sequence.reason = undefined;
+        const transition = drained.cancelled
+          ? terminal(
+              sequence,
+              "cancelled",
+              "stopped after cancellation; no later round was proposed",
+            )
+          : advance(sequence, pointer);
+        summary = `${describeSummary(sequence.reports)}. ` + transition;
+      } catch (err) {
+        reportDriverFault(sequence, round, pointer, err);
+        summary = terminal(sequence, "failed", err instanceof Error ? err.message : String(err));
+      } finally {
+        session.end(summary);
+      }
+    })();
+    sequence.deps.agents.adopt(session.anchorId, driver);
+
+    return {
+      text: first
+        ? describePlan(sequence.call, sequence.id, round, handles, queued)
+        : `continued sequence '${sequence.id}' at revision ${String(sequence.revision)}. ` +
+          `Round '${round.id}' (pass ${String(pointer.pass)}) is running now: ` +
+          `${[...handles.values()].join(", ")}.${describeQueued(queued)} No later round will ` +
+          "start without another workflow_decide call.",
+      progress: true,
+    };
+  };
+
+  const find = (sessionId?: string): RoundSequence | undefined => {
+    const id = sessionId ?? activeId ?? latestId;
+    return id === undefined ? undefined : sequences.get(id);
+  };
+
+  const coordinator: RoundCoordinator = {
+    start(deps, call) {
+      const boundsError = roundCallBoundsError(call);
+      if (boundsError !== null) return { error: boundsError };
+      const active = activeId === undefined ? undefined : sequences.get(activeId);
+      if (active !== undefined) {
+        return {
+          error:
+            `sequence '${active.id}' is ${active.status}; inspect it with workflow_status and ` +
+            "continue or stop it before starting another round sequence.",
+        };
+      }
+      const first = call.rounds[0]!;
+      if (first.over.kind !== "once") {
+        return {
+          error:
+            `the first round '${first.id}' must be 'once': there is no earlier round for it to ` +
+            "consume. Scout with a discovery round, then have later rounds read it by name.",
+        };
+      }
+      const sequence: RoundSequence = {
+        id: `wfseq-${String(++nextId)}`,
+        deps,
+        call,
+        state: { rounds: {} },
+        reports: [],
+        status: "running_round",
+        revision: 0,
+        dryRounds: 0,
+        budgetExhausted: false,
+      };
+      const result = launch(sequence, { kind: "initial", index: 0, pass: 0 }, true);
+      if (result.error === true) return { error: result.text };
+      sequences.set(sequence.id, sequence);
+      activeId = sequence.id;
+      latestId = sequence.id;
+      return { text: result.text };
+    },
+    status(sessionId) {
+      const sequence = find(sessionId);
+      if (sequence === undefined) {
+        return {
+          text: "no workflow round sequence exists for this manager run.",
+          progress: false,
+          error: true,
+        };
+      }
+      const state = snapshot(sequence);
+      const next =
+        state.nextRoundId === undefined
+          ? "none"
+          : `'${state.nextRoundId}' (pass ${String(state.nextPass ?? 0)})`;
+      return {
+        text:
+          `sequence '${state.sessionId}': status=${state.status}, revision=${String(state.revision)}, ` +
+          `current=${state.roundId ?? "none"}, proposed_next=${next}, leaders_started=` +
+          `${String(state.leadersStarted)}/${String(state.maxTotalLeaders)}, remaining=` +
+          `${String(ctx.leaderCount.remaining())}${state.reason === undefined ? "" : `, reason=${state.reason}`}.`,
+        progress: false,
+      };
+    },
+    decide(decision) {
+      const sequence = sequences.get(decision.sessionId);
+      if (sequence === undefined) {
+        return { text: `unknown sequence '${decision.sessionId}'.`, progress: false, error: true };
+      }
+      if (sequence.status !== "awaiting_manager" || sequence.next === undefined) {
+        return {
+          text: `sequence '${sequence.id}' is ${sequence.status}, not awaiting_manager; no leader was spawned.`,
+          progress: false,
+          error: true,
+        };
+      }
+      if (decision.revision !== sequence.revision) {
+        return {
+          text:
+            `stale decision for sequence '${sequence.id}': expected revision ` +
+            `${String(sequence.revision)}, got ${String(decision.revision)}. No leader was spawned.`,
+          progress: false,
+          error: true,
+        };
+      }
+      if (decision.decision === "stop") {
+        return {
+          text: terminal(sequence, "stopped", `Admiral stopped it: ${decision.reason}`),
+          progress: true,
+        };
+      }
+      const priorReason = sequence.reason;
+      sequence.reason = `Admiral continued it: ${decision.reason}`;
+      const launched = launch(sequence, sequence.next, false);
+      if (launched.error === true && sequence.status === "awaiting_manager") {
+        sequence.reason = priorReason;
+      }
+      return launched;
+    },
+    finalizeGate(): FinalizeGate {
+      return {
+        fastAcceptOk: () => {
+          const sequence = activeId === undefined ? undefined : sequences.get(activeId);
+          return sequence?.status !== "awaiting_manager";
+        },
+        check(): Promise<GateOutcome> {
+          const sequence = activeId === undefined ? undefined : sequences.get(activeId);
+          if (sequence === undefined || sequence.status !== "awaiting_manager") {
+            return Promise.resolve({ kind: "pass" });
+          }
+          const key = `${sequence.id}:${String(sequence.revision)}`;
+          if (finalizeNudge !== key) {
+            finalizeNudge = key;
+            return Promise.resolve({
+              kind: "nudge",
+              note:
+                `Workflow sequence '${sequence.id}' is awaiting your decision at revision ` +
+                `${String(sequence.revision)}. Inspect it with workflow_status, then call ` +
+                "workflow_decide with continue or stop. If you finalize again without deciding, " +
+                "Clarvis treats that finalization as stop and spawns nothing.",
+            });
+          }
+          terminal(
+            sequence,
+            "stopped",
+            "the Admiral finalized after one checkpoint nudge, so the pending continuation was declined",
+          );
+          return Promise.resolve({ kind: "pass" });
+        },
+      };
+    },
+  };
+  return coordinator;
+}
+
+/** Build the checkpoint inspection handler. */
+export function buildWorkflowStatusHandler(coordinator: RoundCoordinator): ToolHandler {
+  return {
+    matches: (call) => call.name === WORKFLOW_STATUS_TOOL_NAME,
+    handle(call): Promise<HandlerVerdict> {
+      const raw = call.arguments;
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+        return Promise.resolve(
+          controlVerdict(WORKFLOW_STATUS_TOOL_NAME, "expected an object.", false),
+        );
+      }
+      const sessionId = (raw as Record<string, unknown>).session_id;
+      if (
+        sessionId !== undefined &&
+        (!isBoundedWorkflowString(sessionId, WORKFLOW_LIMITS.identifierChars) ||
+          sessionId.length === 0)
+      ) {
+        return Promise.resolve(
+          controlVerdict(
+            WORKFLOW_STATUS_TOOL_NAME,
+            "'session_id' must be a bounded non-empty string.",
+            false,
+          ),
+        );
+      }
+      const result = coordinator.status(typeof sessionId === "string" ? sessionId : undefined);
+      return Promise.resolve(
+        controlVerdict(WORKFLOW_STATUS_TOOL_NAME, result.text, result.progress),
+      );
+    },
+  };
+}
+
+/** Build the explicit compare-and-set decision handler. */
+export function buildWorkflowDecideHandler(coordinator: RoundCoordinator): ToolHandler {
+  return {
+    matches: (call) => call.name === WORKFLOW_DECIDE_TOOL_NAME,
+    handle(call): Promise<HandlerVerdict> {
+      const raw = call.arguments;
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+        return Promise.resolve(
+          controlVerdict(WORKFLOW_DECIDE_TOOL_NAME, "expected an object.", false),
+        );
+      }
+      const record = raw as Record<string, unknown>;
+      if (
+        !isBoundedWorkflowString(record.session_id, WORKFLOW_LIMITS.identifierChars) ||
+        record.session_id.length === 0
+      ) {
+        return Promise.resolve(
+          controlVerdict(WORKFLOW_DECIDE_TOOL_NAME, "'session_id' is required.", false),
+        );
+      }
+      if (!Number.isInteger(record.revision) || Number(record.revision) < 1) {
+        return Promise.resolve(
+          controlVerdict(
+            WORKFLOW_DECIDE_TOOL_NAME,
+            "'revision' must be a positive integer.",
+            false,
+          ),
+        );
+      }
+      if (record.decision !== "continue" && record.decision !== "stop") {
+        return Promise.resolve(
+          controlVerdict(WORKFLOW_DECIDE_TOOL_NAME, "'decision' must be continue or stop.", false),
+        );
+      }
+      if (
+        !isBoundedWorkflowString(record.reason, WORKFLOW_LIMITS.textChars) ||
+        record.reason.trim().length === 0
+      ) {
+        return Promise.resolve(
+          controlVerdict(WORKFLOW_DECIDE_TOOL_NAME, "'reason' is required.", false),
+        );
+      }
+      const result = coordinator.decide({
+        sessionId: record.session_id,
+        revision: Number(record.revision),
+        decision: record.decision,
+        reason: record.reason,
+      });
+      return Promise.resolve(
+        controlVerdict(WORKFLOW_DECIDE_TOOL_NAME, result.text, result.progress),
+      );
+    },
+  };
+}
+
+/** Prefix a workflow control result without claiming model progress on inspection/refusal. */
+function controlVerdict(tool: string, text: string, progress: boolean): HandlerVerdict {
+  return { kind: "result", text: `Tool '${tool}' result: ${text}`, progress };
 }
 
 /** A non-terminal, immediate textual verdict prefixed as a `run_round` result. */

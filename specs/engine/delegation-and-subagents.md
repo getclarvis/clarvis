@@ -205,7 +205,7 @@ The background result text is asserted against `/started ag_[0-9a-f]{8} in the b
 | `delegation_created` | `delegation_id`, `title`, `task`, `tools`, `task_id?`, `profile` | `packages/loop/src/runtime/subagents/delegate-task.ts:400-407` |
 | `delegation_started` | `delegation_id`, `model` | `packages/loop/src/runtime/subagents/build-subagent-input.ts:170-174` (the child's `onStart`) |
 | `delegation_completed` / `delegation_failed` | `delegation_id`, `task_id?`, `status`, `result` | throw path `packages/loop/src/runtime/subagents/delegate-task.ts:661-666`; normal path `:689-694` |
-| `agent_registered` | `agent_id`, `kind`, `native_id`, `title`, `profile?`, `background: true` | `packages/supervision/src/spawn-child.ts:68-75` |
+| `agent_registered` | `agent_id`, `kind`, `native_id`, `title`, `profile?`, `background: true` | `registerBackgroundChild` in `packages/supervision/src/spawn-child.ts` |
 | `agent_stopped` | `agent_id`, `reason`, `already_settled` | `packages/loop/src/runtime/capabilities/agents.ts:250-254` |
 | `agent_steered` | `agent_id`, `message`, `delivered` | `packages/loop/src/runtime/capabilities/agents.ts:266` |
 | `agent_finish_nudge` | `outcome` (`"nudged"`/`"terminated"`), `live_agent_ids`, `nudge_index`, `progressed` | `packages/loop/src/runtime/capabilities/agents.ts:419-424`, `:433-438` |
@@ -441,7 +441,9 @@ An **inline sub-agent has no steer channel**: `spawnCtx` (`packages/loop/src/run
 1. `registerBackgroundChild(agents, bc.trace, { kind: "subagent", nativeId: subagentInstanceId,
    title: prepared.subagentTask, profile: selectedProfile.name })` (`:100-105`). That helper creates
    the `AbortController` and steer queue, registers the handle, and records `agent_registered`
-   (`packages/supervision/src/spawn-child.ts:51-77`).
+   (`registerBackgroundChild` in `packages/supervision/src/spawn-child.ts`). If trace publication
+   throws after registry acceptance, the helper aborts, settles and closes that handle before the
+   error returns to this handler; no unadopted child remains live.
 2. `null` (registry sealed or at capacity) ⇒ plain `result`, `progress: false`:
    `"Tool '<name>' result: not spawned — too many child agents are already running. Wait with
    await_agents or end one with agent_stop, then try again."` (`:107-114`).
@@ -828,6 +830,7 @@ The invariants below are derived directly from this document's own source and it
 | Tracker `beforeSpawn` ⇒ `refuse` | plain `result` with the tracker's text; **no** `delegation_created` is recorded | `packages/loop/src/runtime/delegation.ts:261-267`; test `packages/loop/tests/unit/delegation-handler.test.ts:335-350` |
 | Tracker `beforeSpawn` ⇒ `terminal` | the agent ends with the tracker's own `AgentResult` | `packages/loop/src/runtime/delegation.ts:260`; test `packages/loop/tests/unit/delegation-handler.test.ts:352-369` |
 | Registry sealed or at `maxLiveChildren` | background spawn refused as a plain `result` telling the model to `await_agents` or `agent_stop` | `packages/loop/src/runtime/delegation.ts:107-114` |
+| `agent_registered` trace publication throws after background registry acceptance | the shared helper aborts, settles and closes the accepted child, then rethrows; the tool fails without leaking a live unadopted child | `registerBackgroundChild` in `packages/supervision/src/spawn-child.ts`; `packages/supervision/tests/component/spawn-child.test.ts` (`commits producer accounting before trace publication and abandons the child if it throws`) |
 | `maxConsecutiveFailedChildren` reached | `terminal`, `error.code = "background_children_failing"`, message tells the model to `agent_poll` one and finish with what it has | `packages/loop/src/runtime/delegation.ts:63-76`, `:291-293` |
 | `background: true` with no registry | degrades silently to the inline `deferred` path | `packages/loop/src/runtime/delegation.ts:290`; test `:152-159` |
 | Sub-agent run throws, parent not aborted | `Sub-agent error: <msg>`; tracker `markFailed`; `delegation_failed`; `failed: true` | `packages/loop/src/runtime/subagents/delegate-task.ts:647-684` |

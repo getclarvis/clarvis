@@ -95,9 +95,9 @@ export function ElicitBlock(props: {
    */
   const suppressProse = createMemo(() => isPlanReview && planSummary() !== null);
 
-  // A plan gate authorizes work. Unlike an ordinary choice question, it must
-  // not silently choose a verdict from enum order: select first, then confirm.
-  const init = initialValues(fields, isPlanReview ? "none" : "first");
+  // A plan or workflow gate authorizes work. Unlike an ordinary choice question,
+  // it must not silently choose a verdict from enum order: select first, then confirm.
+  const init = initialValues(fields, isPlanReview || isWorkflowReview ? "none" : "first");
   const [values, setValues] = createSignal<Record<string, string>>(init);
   const [active, setActive] = createSignal(0);
   const inputs: Record<string, InputRenderable> = {};

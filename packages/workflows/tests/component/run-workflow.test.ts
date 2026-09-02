@@ -99,7 +99,7 @@ async function harness(
   defs = WORKFLOWS,
   maxLiveChildren = 16,
   execute?: (prompt: string) => Promise<ExecuteRunOutcome>,
-  approval: "run" | "cancel" | "none" | "timeout" = "run",
+  approval: "run" | "cancel" | "none" | "timeout" = "cancel",
 ): Promise<{
   handle: (args: Record<string, unknown>) => Promise<{ text: string; progress: boolean }>;
   briefs: string[];
@@ -290,8 +290,11 @@ describe("run_workflow — explain costs nothing and runs nothing", () => {
 
 describe("run_workflow — running one", () => {
   test("starts the first round, interpolates the declared args, and carries the synthesis", async () => {
-    const h = await harness(WORKFLOWS, 16, () =>
-      Promise.resolve(completed({ scope: "s", evidence: [], work_items: [], unknowns: [] })),
+    const h = await harness(
+      WORKFLOWS,
+      16,
+      () => Promise.resolve(completed({ scope: "s", evidence: [], work_items: [], unknowns: [] })),
+      "run",
     );
     const verdict = await h.handle({ name: "audit", args: { subject: "the parser" } });
 

@@ -44,6 +44,11 @@ positionally, and everything about the child in a `BackgroundChildSpec` — `nat
 because it is the child's own id in its native space (a `subagent_instance_id` for a sub-agent, a
 `run_id` for a leader) and the registry maps its trace back through it.
 
+An optional fourth `onRegistered` callback commits producer-owned accounting at the exact registry
+acceptance boundary, before the trace is published. If that callback or the trace sink throws, the
+helper aborts, settles and closes the accepted child before rethrowing; a producer can never lose a
+live, unadopted handle between registration and `agents.adopt`.
+
 ```ts
 import {
   createAgentRegistry,

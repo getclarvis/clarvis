@@ -9,6 +9,7 @@ import type { ExecuteRunArgs, ExecuteRunDeps, ExecuteRunOutcome } from "@clarvis
 import type { WorkflowDefinition } from "./artifact.ts";
 import type { WorkflowSemaphore } from "./concurrency.ts";
 import type { WorkflowLedger } from "./ledger.ts";
+import type { WorkflowLeaderCount } from "./leader-count.ts";
 import type { LeaderProfileInfo } from "./tool.ts";
 
 /**
@@ -73,6 +74,24 @@ export interface WorkflowRunDeps {
   executeRun(args: ExecuteRunArgs): Promise<ExecuteRunOutcome>;
 }
 
+/** Manager-visible lifecycle of one explicitly controlled round sequence. */
+export type WorkflowSequenceStatus =
+  "running_round" | "awaiting_manager" | "completed" | "stopped" | "failed" | "cancelled";
+
+/** Latest persisted/live checkpoint of a round sequence. */
+export interface WorkflowSequenceState {
+  sessionId: string;
+  status: WorkflowSequenceStatus;
+  revision: number;
+  roundId?: string;
+  pass?: number;
+  nextRoundId?: string;
+  nextPass?: number;
+  leadersStarted: number;
+  maxTotalLeaders: number;
+  reason?: string;
+}
+
 /**
  * The tree-wide context, created once per workflow (on the manager run) and shared
  * with every leader spawn.
@@ -89,6 +108,8 @@ export interface WorkflowCtx {
   owner: string;
   semaphore: WorkflowSemaphore;
   ledger: WorkflowLedger;
+  /** Cumulative, manager-lifetime admission shared by every leader tool. */
+  leaderCount: WorkflowLeaderCount;
   /** The run's concurrency cap (the same limit `semaphore` enforces), passed to
    * {@link WorkflowLedger.reserve} so a budget reservation is sized fairly. */
   maxConcurrency: number;
@@ -115,6 +136,8 @@ export interface WorkflowCtx {
   /** Marks the workflow incomplete when a leader could not start for lack of
    * output-token headroom. */
   onBudgetExhausted?: () => void;
+  /** Publishes the latest round-sequence checkpoint to the owning host. */
+  onSequenceState?: (state: WorkflowSequenceState) => void;
   /**
    * Supplies a leader's own steer channel, so its manager can redirect it
    * mid-flight through `agent_steer`.

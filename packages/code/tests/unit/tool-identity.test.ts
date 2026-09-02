@@ -20,12 +20,16 @@ test("toolDisplayLabel translates orchestration internals but preserves MCP iden
   expect(toolDisplayLabel(undefined, "run_workflow")).toBe("Run workflow");
   expect(toolDisplayLabel(undefined, "run_round")).toBe("Run workflow rounds");
   expect(toolDisplayLabel(undefined, "run_work_items")).toBe("Run work items");
+  expect(toolDisplayLabel(undefined, "workflow_status")).toBe("Check workflow");
+  expect(toolDisplayLabel(undefined, "workflow_decide")).toBe("Decide workflow");
   expect(toolDisplayLabel("github", "search_code")).toBe("github:search_code");
 });
 
 test("transcript orchestration identity matches only bare builtins, never an MCP leaf collision", () => {
   expect(isTranscriptExternalOrchestrationTool("await_agents", "")).toBe(true);
   expect(isTranscriptExternalOrchestrationTool("await_agents", undefined)).toBe(true);
+  expect(isTranscriptExternalOrchestrationTool("workflow_status", undefined)).toBe(true);
+  expect(isTranscriptExternalOrchestrationTool("workflow_decide", undefined)).toBe(true);
   expect(isTranscriptExternalOrchestrationTool("server", "await_agents")).toBe(false);
   expect(isTranscriptExternalOrchestrationTool("server_await_agents", undefined)).toBe(false);
 });

@@ -4,7 +4,7 @@ import type { WorkflowDefinition } from "../artifact.ts";
 export const RESEARCH_WORKFLOW = {
   name: "research",
   description:
-    "Break a question into independent lines of enquiry, sweep them in parallel, verify the load-bearing claims, and keep going while each pass still finds something new.",
+    "Break a question into independent lines of enquiry, sweep them in parallel, verify the load-bearing claims, and propose another pass only while it could still add something new.",
   args: ["question"],
   rounds: [
     {
@@ -103,7 +103,8 @@ answer wrong?"
   nobody covered?
 - What is being assumed rather than established?
 - Where a gap turns out to hide something real, return it as a finding with cited evidence, exactly
-  as an investigation round would; it becomes the next pass's work.
+  as an investigation round would; the Admiral uses it to decide whether a separate pass is worth
+  authorizing.
 - Leave in \`coverage_gaps\` what genuinely remains unknown. This is the caveat the final answer has
   to carry, so make it accurate rather than reassuring.
 - Do not modify the workspace.`,

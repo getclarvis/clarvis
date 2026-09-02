@@ -25,6 +25,8 @@ import type {
   TasksService,
   WorkspaceRef,
   WorkspaceService,
+  WorkflowDetail,
+  WorkflowSequence,
   WorkflowsService,
 } from "../../src/index.ts";
 
@@ -88,6 +90,28 @@ const runDetail = {
   messages: startParams.messages,
   events: [textDelta],
 } satisfies RunDetail;
+
+const workflowSequence = {
+  session_id: "wfseq-1",
+  status: "awaiting_manager",
+  revision: 1,
+  round_id: "discover",
+  pass: 0,
+  next_round_id: "verify",
+  next_pass: 0,
+  leaders_started: 1,
+  max_total_leaders: 32,
+} satisfies WorkflowSequence;
+
+const workflowDetail = {
+  execution_id: "run-1",
+  status: "running",
+  created_at: 1,
+  updated_at: 2,
+  leader_count: 1,
+  nodes: [],
+  sequence: workflowSequence,
+} satisfies WorkflowDetail;
 
 async function* events(): AsyncGenerator<RunEvent> {
   yield textDelta;
@@ -220,3 +244,4 @@ void repairPlan;
 void createTask;
 void transport;
 void unknownCacheSessionTotals;
+void workflowDetail;

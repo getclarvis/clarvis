@@ -6,9 +6,9 @@
 ## 1. Purpose
 
 `packages/kernel/src/runs/` is the layer that turns the protocol's `RunService`
-(`packages/protocol/src/runs.ts:759-805`) into calls on the engine's `executeRun`
+(`RunService` in `packages/protocol/src/runs.ts`) into calls on the engine's `executeRun`
 (`packages/kernel/src/runs/run-service.ts:114-115`), and turns everything the engine and its capabilities
-emit back into the protocol's closed `RunEvent` union (`packages/protocol/src/runs.ts:328-648`). It owns
+emit back into the protocol's closed `RunEvent` union (`packages/protocol/src/runs.ts`, `RunEvent`). It owns
 four distinct jobs:
 
 1. **Admission and identity** — assigning or accepting an `execution_id`, refusing a duplicate for the
@@ -25,7 +25,7 @@ four distinct jobs:
    `capabilityEventToProto` (live capability channel) (`packages/kernel/src/runs/map-events.ts:389`, `:335`), the result/detail
    mappers (`packages/kernel/src/runs/map-result.ts:86,116,126,153`), the engine/protocol message conversion
    (`packages/kernel/src/runs/map-message.ts:40,50,56`), and the declarative per-event policy table that says which of those
-   two paths owns each event and whether it survives a restart (`packages/kernel/src/runs/event-policy.ts:56`).
+   two paths owns each event and whether it survives a restart (`RUN_EVENT_POLICY`).
 
 `RUN_EVENT_POLICY` is a transport/durability policy, not a TUI publication policy. Code classifies
 the resulting closed `RunEvent` union again for live-frontier versus committed-history ownership in
@@ -61,11 +61,11 @@ policy". The runs-owned half:
 |---|---|---|---|
 | `capabilityEventToProto`, `engineEventToProto` | value | `packages/kernel/src/runs/map-events.ts:335,389` | `:10` |
 | `isIngestPending` | value | `packages/kernel/src/runs/memory-ingest-phase.ts:23` | `:11` |
-| `RUN_EVENT_POLICY` | value | `packages/kernel/src/runs/event-policy.ts:56` | `:12` |
+| `RUN_EVENT_POLICY` | value | `packages/kernel/src/runs/event-policy.ts` | `:12` |
 | `coalesceRunEvents`, `sizeOfRunEvent`, `sizeOfCoalescedRunEvent` | value | `packages/kernel/src/runs/coalesce-events.ts:223,16,172` | `:16-172` |
 | `RunEventDurability`, `RunEventMapper`, `RunEventPolicy`, `RunEventSource` | type | `packages/kernel/src/runs/event-policy.ts:7,10,13,4` | `:18-23` |
-| `deriveRunEventSpan`, `iterationSpanId` | value | `packages/kernel/src/runs/run-event-span.ts:49,28` | `:28` |
-| `RunEventSpan`, `SpanPhase`, `SpanKind` | type | `packages/kernel/src/runs/run-event-span.ts:10,4,7` | `:25` |
+| `deriveRunEventSpan`, `iterationSpanId` | value | `packages/kernel/src/runs/run-event-span.ts` | `:28` |
+| `RunEventSpan`, `SpanPhase`, `SpanKind` | type | `packages/kernel/src/runs/run-event-span.ts` | `:25` |
 | `engineResultToProto`, `storedToDetail`, `summaryToProto`, `failedResult` | value | `packages/kernel/src/runs/map-result.ts:86,153,126,116` | `:26-31` |
 | `engineMessagesToProto`, `protoMessagesToEngine`, `protoSteerToEngineContent` | value | `packages/kernel/src/runs/map-message.ts:40,56,50` | `packages/kernel/src/policy.ts:32-36` |
 
@@ -104,8 +104,9 @@ through `ManagedRunSpec`, not by replacing the kernel's clock" (`packages/kernel
 `steer`, `compaction`, `emit` (`:30-40`). `ManagedRunSpec` is what a host plugs in: `executionId`,
 `execute(context)`, optional `observe(event)`, `settle(result)`, `eventBuffer`, `ingestGraceMs`,
 `ingestMaxWaitMs`, `lifecycle` (`:45-60`). Two producers use it — `packages/kernel/src/runs/run-service.ts:107-134` for an
-ordinary run and `packages/kernel/src/workflows/workflows-service.ts:394-403` for a workflow manager run,
-the latter supplying `observe`/`settle` to maintain its workflow record (`:399-402`).
+ordinary run and `runManagerWorkflow` in
+`packages/kernel/src/workflows/workflows-service.ts` for a workflow manager run, the latter supplying
+`observe`/`settle` to maintain its workflow record.
 
 ### 2.5 `SettingsAssemblerOptions` (`packages/kernel/src/runs/settings-assembler.ts:33-65`)
 
@@ -123,7 +124,7 @@ the latter supplying `observe`/`settle` to maintain its workflow record (`:399-4
 
 `StartRunParams` (`packages/protocol/src/runs.ts:70-115`) is the input; `RunHandle`
 (`:700-756`), `RunResult` (`:162-172`), `RunSummary` (`:202-214`), `RunDetail` (`:235-255`) and
-`RunEvent` (`:328-648`) are the outputs. `RunHandle` has two settle points that are deliberately
+`RunEvent` is the output union. `RunHandle` has two settle points that are deliberately
 distinct: `done` "Resolves when execution ends; it does not imply that `events` has closed"
 (`:740-741`) and `closed` "Resolves after execution and bounded post-run event delivery both finish"
 (`:750-755`).
@@ -150,10 +151,10 @@ memory notices. Production and test ownership live in
 |---|---|---|
 | `execution_id` | `exec_<uuidv4>` when generated | `generateExecutionId` (`packages/trace/src/execution-id.ts:9`), called at `packages/kernel/src/runs/run-service.ts:139` when `params.execution_id` is absent. A client-supplied id is used verbatim. |
 | elicitation id | `<executionId>:elicit:<n>` | `packages/kernel/src/runs/elicit-bridge.ts:51` (delegated document; cited for the id format only) |
-| iteration span id | `lead:<n>`, `<subagentId>:<n>`, or `subagent-unknown:<n>` | `packages/kernel/src/runs/run-event-span.ts:28-35` |
-| tool span id | the event's `call_id`; `<agent>:tool` when a `tool_call` carries none | `packages/kernel/src/runs/run-event-span.ts:88`, `:93` |
-| sub-agent span id | `subagent:<delegation_id>` | `packages/kernel/src/runs/run-event-span.ts:70-75` |
-| workflow span id | `workflow:<run_id>` | `packages/kernel/src/runs/run-event-span.ts:78-85` |
+| iteration span id | `lead:<n>`, `<subagentId>:<n>`, or `subagent-unknown:<n>` | `iterationSpanId` |
+| tool span id | the event's `call_id`; `<agent>:tool` when a `tool_call` carries none | `deriveRunEventSpan` |
+| sub-agent span id | `subagent:<delegation_id>` | `deriveRunEventSpan` |
+| workflow span id | `workflow:<run_id>` | `deriveRunEventSpan` |
 
 ### 3.2 The engine run request body
 
@@ -201,7 +202,7 @@ every run referencing `<server>.<tool>` died in `validateBody` with `unrecognize
 
 ### 3.3 `RUN_EVENT_POLICY` — the per-event matrix
 
-`packages/kernel/src/runs/event-policy.ts:56-94` is a `const` object with
+`RUN_EVENT_POLICY` in `packages/kernel/src/runs/event-policy.ts` is a `const` object with
 `satisfies Record<RunEvent["type"], RunEventPolicy>` (`:94`). Its stated mechanism: the `satisfies`
 clause "makes every protocol event addition fail compilation until its replay and drop behavior is
 classified" (`:53-54`). Each entry carries `sources`, `durability`, `mapper`, `coalesce`, `droppable`
@@ -231,6 +232,7 @@ Complete table, transcribed from `:57-93`:
 | `delegation_failed` | engine_trace, capability_channel | persisted | engine | false | false |
 | `workflow_run_started` | engine_trace, workflow | persisted | engine | false | false |
 | `workflow_title_updated` | workflow | live_only | **workflow** | false | false |
+| `workflow_sequence_state` | workflow | live_only | **workflow** | false | false |
 | `workflow_run_progress` | workflow | live_only | **workflow** | false | false |
 | `workflow_run_completed` | engine_trace, workflow | persisted | engine | false | false |
 | `workflow_run_failed` | engine_trace, workflow | persisted | engine | false | false |
@@ -252,9 +254,10 @@ Complete table, transcribed from `:57-93`:
 | `events_dropped` | **kernel_derived** | live_only | **managed_run** | false | false |
 | `mcp_degraded` | engine_trace | persisted | engine | false | false |
 
-Read as a live-versus-rehydration matrix: thirteen types are `live_only` and therefore absent from a
-restored session — the three deltas, the five plan events, `memory_ingest`, `capability_event`,
-`events_dropped`, `workflow_title_updated` and `workflow_run_progress`. This is consistent with the
+Read as a live-versus-rehydration matrix: fifteen types are `live_only` and therefore absent from a
+restored run journal — the three deltas, three workflow state/metadata/progress events, five plan
+events, `compaction_started`, `memory_ingest`, `capability_event`, and `events_dropped`. The latest
+workflow sequence state remains separately durable in the workflow store. This is consistent with the
 rehydration path, which reads only `s.trace.events` (`packages/kernel/src/runs/map-result.ts:193`), and with the integration
 assertion that a stored run has no `tool_output_delta` but does have the closing `tool_call`
 (`packages/kernel/tests/integration/run-service.smoke.test.ts:135-137`).
@@ -674,7 +677,7 @@ There is no admin read path beside those three. `TraceStore.listAcrossOwners`
 `packages/kernel/src/runs/` calls it, so every read this subsystem performs is keyed under one
 `owner`.
 
-### 4.12 Span derivation (`packages/kernel/src/runs/run-event-span.ts:49-137`)
+### 4.12 Span derivation (`deriveRunEventSpan`)
 
 `deriveRunEventSpan` is a total function over the protocol union with a `default` arm that is a
 compile-time `never` check (`:133-136`). Highlights: run start/end frame the `"run"` span
@@ -688,8 +691,9 @@ including all five plan events, `memory_ingest`, `capability_event` and `events_
 `SpanKind` (`:7`) has no `"workflow"` member — the `workflow:<run_id>` span id (§3.1) is only an id
 convention layered on the existing kinds, not a distinct category. `workflow_run_started` opens and
 `workflow_run_completed`/`workflow_run_failed` close a span of kind `subagent` (`:77-78`, `:81-83`);
-`workflow_run_progress` is a `point` of kind `subagent` on that same span (`:84-85`); only
-`workflow_title_updated` is a `point` of kind `event` (`:79-80`).
+`workflow_run_progress` is a `point` of kind `subagent` on that same span; both
+`workflow_title_updated` and `workflow_sequence_state` are `point`s of kind `event` on the manager
+run span.
 
 `iterationSpanId` isolates an id-less sub-agent event rather than letting it claim the lead's span,
 and states the reason: "claiming `lead:N` for it would interleave its text with the lead's own
@@ -703,21 +707,23 @@ Each entry: the rule, the production anchor, the test anchor (or "unpinned").
 **INV-R1 (owns INV-228).** `RUN_EVENT_POLICY` marks exactly three event types droppable —
 `text_delta`, `tool_input_delta`, `tool_output_delta` — and every droppable entry also declares a
 non-`false` `coalesce` class.
-Production `packages/kernel/src/runs/event-policy.ts:63,64,66`. Test `packages/kernel/tests/unit/event-policy.test.ts:5-18`, whose comment
+Production: `RUN_EVENT_POLICY`. Test: `packages/kernel/tests/unit/event-policy.test.ts`, whose comment
 gives the justification: "the two content deltas are superseded by an authoritative terminal event,
 and `tool_input_delta` carries a cumulative count, so the next one restates it in full" (`:11-13`).
 
 **INV-R2 (owns INV-229).** `run_started` is `durability: "persisted"`; `plan_created` comes only from
 `capability_channel`, is `live_only`, and maps via the `capability` mapper; `events_dropped` is
 `kernel_derived` / `live_only` / `managed_run` and non-droppable; `workflow_title_updated` is
-`workflow` / `live_only` / `workflow` and non-droppable; `compaction_started` is
+`workflow` / `live_only` / `workflow` and non-droppable; `workflow_sequence_state` has the same
+classification; `compaction_started` is
 `engine_trace` / `live_only` / `engine` and non-droppable.
 Production: `packages/kernel/src/runs/event-policy.ts` (`RUN_EVENT_POLICY`). Test:
 `packages/kernel/tests/unit/event-policy.test.ts` ("makes replay gaps and derived terminal reporting
 explicit").
 
 **INV-R3.** Adding a member to the protocol `RunEvent` union without classifying it fails compilation.
-Production: `as const satisfies Record<RunEvent["type"], RunEventPolicy>`, `packages/kernel/src/runs/event-policy.ts:94`.
+Production: `RUN_EVENT_POLICY` uses
+`as const satisfies Record<RunEvent["type"], RunEventPolicy>`.
 Test: unpinned by a runtime test — it is a type-level guarantee only.
 
 **INV-R4.** An `events_dropped` notice is never itself dropped, whatever `droppable` predicate a host
@@ -923,7 +929,8 @@ test in this subsystem exercises a declared budget missing `total_token_limit`, 
 resulting request validates in that case is not shown here — see §8.
 
 **INV-R40.** `deriveRunEventSpan` is total over the protocol union, enforced by a `never` assignment.
-Production `packages/kernel/src/runs/run-event-span.ts:133-136`. Test `packages/kernel/tests/unit/run-event-span.test.ts:299-304`, which
+Production: the exhaustive default in `deriveRunEventSpan`. Test:
+`packages/kernel/tests/unit/run-event-span.test.ts`, which
 documents the arm as "compile-time-only" by asserting the bogus input is returned unchanged.
 
 **INV-R41.** An unmapped-event report is sampled and costs nothing below `debug`.
@@ -954,6 +961,18 @@ Production: `environmentFromHostMetadata` and `storedToDetail` in
 `packages/kernel/src/runs/map-result.ts`. Test:
 `packages/kernel/tests/unit/map-result.test.ts` (valid Environment projection and malformed metadata
 omission). The persistence half is [INV-319](environments.md#inv-319--execution-history-identifies-its-extension-snapshot-without-secrets).
+
+**INV-R45.** `workflow_sequence_state` is a strict, non-droppable, live-only workflow event and a
+point on the manager run span. Its runtime codec admits only the six statuses and strict field
+shape; revision/pass/count fields are non-negative integers, the lifetime limit is positive, and
+the started count cannot exceed it. It cannot enter the generic capability envelope or silently
+disappear under backpressure.
+Production: `RUN_EVENT_POLICY`, `RUN_EVENT_SCHEMAS`, and `runEventSpan`.
+Test: `packages/kernel/tests/unit/event-policy.test.ts`,
+`packages/kernel/tests/unit/run-event-span.test.ts`, and
+`packages/kernel/tests/contract/transport-codecs.test.ts` (`preserves the workflow round checkpoint
+contract`). Durable checkpoint ownership remains with `WorkflowRecord.sequence`, specified in
+[workflows-service.md](../capabilities/workflows-service.md).
 
 ## 6. Failure modes and degradation
 
@@ -989,7 +1008,7 @@ omission). The persistence half is [INV-319](environments.md#inv-319--execution-
 | Dependency | Where | What forces it |
 |---|---|---|
 | `@clarvis/loop` | `packages/kernel/src/runs/run-service.ts:1,114-115,188,212,271`, `packages/kernel/src/runs/map-result.ts:1-8` (types), `packages/kernel/src/runs/map-message.ts:1-5` (types), `packages/kernel/src/runs/managed-run.ts:1` (types), `packages/kernel/src/runs/settings-assembler.ts:2-8` | `executeRun` and the settled-context helpers are runtime values loaded dynamically; the engine DTOs (`ExecuteRunDeps`, `StoredExecution`, `RunResponse`, `Message`) are type-only. `settings-assembler.ts` additionally takes four **values** from `@clarvis/loop/host`: `agentPromptOf`, `mcpServerSettingsSchema`, `normalizeTools`, `settingsServerToEngine` |
-| `@clarvis/protocol` | every file in `runs/` | the closed `RunEvent` union is what `packages/kernel/src/runs/event-policy.ts:94` is `satisfies`-checked against, and what `packages/kernel/src/runs/run-event-span.ts:134` exhausts |
+| `@clarvis/protocol` | every file in `runs/` | the closed `RunEvent` union is what `RUN_EVENT_POLICY` is `satisfies`-checked against, and what `deriveRunEventSpan` exhausts |
 | `@clarvis/capability` | `packages/kernel/src/runs/map-events.ts:1-13`, `packages/kernel/src/runs/run-service.ts:14`, `packages/kernel/src/runs/map-result.ts:18` | `isBuiltinTraceEvent`, `sanitizeDeep`/`sanitizeText`, `createSampler`, `levelEnabled`, `parseTaskTitle`/`TASK_TITLE_MAX`, `NOOP_LOGGER`; `packages/kernel/src/runs/managed-run.ts:2` also takes `suppressSecondaryRejection` |
 | `@clarvis/memory/settings` | `packages/kernel/src/runs/map-events.ts:14` | `MEMORY_CAPABILITY_NAME` and `MEMORY_INGEST_EVENT` — the one capability with a typed, kernel-validated projection |
 | `@clarvis/workflows` | `packages/kernel/src/runs/map-events.ts:16-19` | `isWorkflowPersistedTraceEvent` is the first gate in `engineEventToProto`; the workflows package owns its own trace guard |
@@ -1007,7 +1026,7 @@ store owns the full schema" (`:17-18`).
 | Consumer | Import | Nature |
 |---|---|---|
 | `packages/kernel/src/kernel.ts:38,54` | `createRunService`, `createSettingsRunAssembler` | the composition root; supplies `isManagerRun` and `runManagerWorkflow` from `createAgentWorkflowPolicy` and `createWorkflowsService` (`packages/kernel/src/kernel.ts:371,476-495`) |
-| `packages/kernel/src/workflows/workflows-service.ts:45` | `createManagedRun` | the second producer of a `RunHandle`, with `observe` and `settle` (`:394-403`) |
+| `packages/kernel/src/workflows/workflows-service.ts` | `createManagedRun` | `runManagerWorkflow` is the second producer of a `RunHandle`, with `observe` and `settle` |
 | `packages/kernel/src/transport/client.ts:43-50` | `coalesceRunEvents`, `isDroppableRunEvent`, `sizeOfRunEvent`, `DEFAULT_RUN_EVENT_BUFFER*` | the remote client re-applies the same backpressure policy locally (`:389-408`) |
 | `packages/server/src/mcp/notify.ts:2-5,144,366-370` | `RUN_EVENT_POLICY`, `coalesceRunEvents`, `sizeOfRunEvent` | MCP notification fan-out reuses the table rather than re-listing droppable types |
 | `packages/server/src/mcp/event-view.ts:1,168,184` | `RUN_EVENT_POLICY`, `coalesceRunEvents` | the coalesce class is read from the table rather than restated (`:168-184`) |

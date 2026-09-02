@@ -25,7 +25,7 @@ from that same catalog. A wire name therefore cannot drift between the two halve
 The second property is that both directions of the boundary are treated as untrusted. Inbound frames
 go through a strict structural decoder that returns `null` rather than coercing
 (`packages/kernel/src/transport/stdio.ts:126-162`); inbound run events go through per-discriminator `zod` schemas that are all
-`.strict()` (`packages/kernel/src/transport/run-event-codec.ts:76-410`); inbound request parameter envelopes are checked against
+`.strict()` (`RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts`); inbound request parameter envelopes are checked against
 the key set the operation's own encoder produces (`packages/kernel/src/transport/operations.ts:896-917`); and an error travelling
 outbound is size-bounded, control-character-stripped and secret-redacted before it is serialized
 (`packages/kernel/src/transport/stdio.ts:349-381`).
@@ -52,7 +52,7 @@ Re-exported by `packages/kernel/src/index.ts:58-87`:
 Exported from their module but **not** re-exported by `src/index.ts`: `CLARVIS_WIRE_VERSION`
 (`packages/kernel/src/transport/wire.ts:15`), `MAX_WIRE_FRAME_BYTES` and `decodeFrame` (`packages/kernel/src/transport/stdio.ts:42,126`), `ORDINARY_OPERATIONS`,
 `decodeOperationParams`, `createServiceProxy` (`packages/kernel/src/transport/operations.ts:870,900-917,921-938`), `decodeRunEvent`
-(`packages/kernel/src/transport/run-event-codec.ts:413`). The tests reach them by relative path
+(`packages/kernel/src/transport/run-event-codec.ts`). The tests reach them by relative path
 (`packages/kernel/tests/contract/stdio-codec.test.ts:5-10`, `packages/kernel/tests/contract/transport-codecs.test.ts:3-14`).
 
 `RemoteKernel.listAgents()` (`packages/kernel/src/transport/client.ts:67-69`) is documented on the interface as "a convenience
@@ -333,8 +333,8 @@ randomUUID()` (`packages/kernel/src/transport/client.ts:381`). Config subscripti
 
 ### 3.6 The run-event registry
 
-`RUN_EVENT_SCHEMAS` (`packages/kernel/src/transport/run-event-codec.ts:76-427`) holds **38** entries, one per `RunEvent`
-discriminator, closed by `satisfies Record<RunEvent["type"], z.ZodType>` (`:409`). Shared fragments:
+`RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts` holds **39** entries, one per `RunEvent`
+discriminator, closed by `satisfies Record<RunEvent["type"], z.ZodType>`. Shared fragments:
 `attributed` = `{ at, agent, subagent_id? }` (`:8-12`), `planProjection` (`:30-39`), `planTask`
 (`:15-27`), `memoryIngestDetail` as a five-phase discriminated union (`:41-67`). Every object schema
 is `.strict()`.
@@ -343,11 +343,11 @@ The complete discriminator list: `run_started`, `run_ended`, `iteration_started`
 `iteration_completed`, `tool_call_started`, `tool_call`, `tool_output_delta`, `tool_input_delta`,
 `reasoning`, `text_delta`, `model_error`, `model_retry`, `delegation_created`, `delegation_started`,
 `delegation_completed`, `delegation_failed`, `workflow_run_started`, `workflow_title_updated`,
-`workflow_run_progress`, `workflow_run_completed`, `workflow_run_failed`, `plan_created`,
+`workflow_sequence_state`, `workflow_run_progress`, `workflow_run_completed`, `workflow_run_failed`, `plan_created`,
 `plan_updated`, `plan_removed`, `plan_review_requested`, `plan_review_resolved`, `soft_limit_check`,
 `compaction_started`, `compaction`, `vision_analysis`, `compaction_skipped`, `elicitation_requested`,
 `elicitation_resolved`, `steering_applied`, `memory_ingest`, `capability_event`, `events_dropped`,
-`mcp_degraded` (`packages/kernel/src/transport/run-event-codec.ts:77-409`). *Which* events exist and why belongs to
+`mcp_degraded` (`RUN_EVENT_SCHEMAS`). *Which* events exist and why belongs to
 **kernel-run-service-and-events**.
 
 ## 4. Behavior
@@ -753,7 +753,7 @@ Test: `packages/kernel/tests/contract/transport-codecs.test.ts:362-374`.
 "protocol violation" message and closes the transport — for a bad field type, an incomplete
 required-field set, and an inherited object key (`toString`, `constructor`, `__proto__`) used as the
 discriminator.
-Production: `decodeRunEvent` `packages/kernel/src/transport/run-event-codec.ts:413-423` (the `Object.hasOwn` guard at `:418` is
+Production: `decodeRunEvent` in `packages/kernel/src/transport/run-event-codec.ts` (its `Object.hasOwn` guard is
 what rejects inherited keys), `protocolViolation` `packages/kernel/src/transport/client.ts:210-221`.
 Test: `packages/kernel/tests/contract/transport-codecs.test.ts:376-442`.
 
@@ -768,8 +768,17 @@ Production: `packages/kernel/src/transport/stdio.ts:49-61` (`satisfies Record<Ke
 `packages/protocol/src/common.ts:87-98`. Compile-time only; unpinned by a test.
 
 **INV-T3.** `RUN_EVENT_SCHEMAS` must carry an entry for every `RunEvent` discriminator.
-Production: `packages/kernel/src/transport/run-event-codec.ts:410` (`satisfies Record<RunEvent["type"], z.ZodType>`). Compile-time
+Production: `RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts`
+(`satisfies Record<RunEvent["type"], z.ZodType>`). Compile-time
 only — it constrains the **keys**, not the payload shape (see §8).
+
+**INV-T3a.** The workflow checkpoint event is strict on both keys and values: its status is one of
+the six protocol states; revision, pass and count fields are non-negative integers; the lifetime
+limit is positive and not below the started count; current/proposed round/pass and reason are
+optional; extra fields are rejected.
+Production: `RUN_EVENT_SCHEMAS.workflow_sequence_state`.
+Test: `packages/kernel/tests/contract/transport-codecs.test.ts` (`preserves the workflow round
+checkpoint contract`).
 
 **INV-T4.** A request parameter envelope may carry no key the operation's own encoder does not
 produce; the allowed key set is derived once per operation by invoking `encode` with `undefined`
@@ -1110,29 +1119,29 @@ of the service it is given (`packages/kernel/src/transport/operations.ts:82-97`)
 
 ~~**A confirmed schema drift: `run_ended.code` is rejected by the client codec.**~~ **Resolved
 2026-08-22.** The diagnosis held exactly as written. The protocol declared `code?: string`
-(`packages/protocol/src/runs.ts:296-312`), the kernel's engine mapper emitted it whenever the trace
+(`run_ended` in `RunEvent`), the kernel's engine mapper emitted it whenever the trace
 entry carried one (`packages/kernel/src/runs/map-events.ts:403-409`), and
 `RUN_EVENT_SCHEMAS.run_ended` was `.strict()` over `type/at/status/reason` alone — so a failed run's
 error code decoded to `null`, the client read that as a protocol violation, and one field nobody had
-ever round-tripped settled every live run `unavailable` and closed the transport. The schema now
-declares `code: text.optional()` (`packages/kernel/src/transport/run-event-codec.ts:91`), and
+ever round-tripped settled every live run `unavailable` and closed the transport. The
+`RUN_EVENT_SCHEMAS.run_ended` schema now declares `code: text.optional()`, and
 `packages/kernel/tests/contract/transport-codecs.test.ts:377` — "carries a failed run's error code
 instead of killing the connection" — holds both halves: the event survives `decodeRunEvent`
 unchanged, and the transport's `closeCount` stays `0`. The field's own remark now states what it is
-for (`packages/protocol/src/runs.ts:301-310`): a resumed session is rebuilt from the persisted trace
+for (`run_ended.code` in `RunEvent`): a resumed session is rebuilt from the persisted trace
 alone, so without it a run that failed came back saying only that it had failed. **Why** it reached
 the protocol without the codec is still not in the code, and no longer needs to be.
 
 The sentence of the original that is now false — deliberately — is "the compiler cannot see this". It
 could not, because `satisfies Record<RunEvent["type"], z.ZodType>`
-(`packages/kernel/src/transport/run-event-codec.ts:410`) constrains the table's key set and never a
-payload's shape. `CodecFieldDrift` (`:455`-`:467`, reasoning at `:443`-`:454`) now compares every
+on `RUN_EVENT_SCHEMAS` constrains the table's key set and never a payload's shape.
+`CodecFieldDrift` now compares every
 variant's declared field names against its schema's inferred ones in **both** directions, and
-`AssertNoDrift` (`:469`, instantiated at `:470`) fails to compile on any mismatch, naming the variant
+`AssertNoDrift` fails to compile on any mismatch, naming the variant
 and the drifted field. A field added to `RunEvent` and forgotten in the codec — or the reverse — is a
 build error rather than a session that ends the first time the field appears on the wire.
 
-The trap for whoever edits that type next is recorded at the type itself (`:425`-`:434`).
+The trap for whoever edits that type next is recorded on `RunEventVariant`.
 `Extract<RunEvent, { type: K }>` is the obvious spelling of "the variant whose discriminator is `K`"
 and it is the wrong one: a member may declare a *union* discriminator, a union is not assignable to
 one of its own literals, so `Extract` answers `never`, `keyof never` widens to
@@ -1140,8 +1149,8 @@ one of its own literals, so `Extract` answers `never`, `keyof never` widens to
 (`:435`-`:441`) asks instead whether `K` is one of the member's own types, which is the question that
 survives a shared member. One correction to that remark, which names two such members: `RunEvent`
 carries exactly one today — `delegation_completed | delegation_failed`
-(`packages/protocol/src/runs.ts:436`). The "workflow pair" it also names does not exist; every
-`workflow_*` member declares a single literal (`:442`, `:457`, `:470`, `:480`, `:487`), and the codec
+(`RunEvent` in `packages/protocol/src/runs.ts`). The "workflow pair" it also names does not exist; every
+`workflow_*` member declares a single literal, and the codec
 gives each its own schema. The trap is real and the guard is right to avoid `Extract`; only the
 count is off.
 
@@ -1169,14 +1178,14 @@ work, not a fact this corpus can settle today.
 **Validation depth across the five notifications tracks whether each payload's type is closed, not an
 arbitrary asymmetry.** `run.event` is validated by a strict `zod` discriminated-union schema because
 `RunEvent`'s variants are a closed set with no open member
-(`packages/kernel/src/transport/run-event-codec.ts:413` decoding the type at `packages/protocol/src/runs.ts`'s closed
+(`decodeRunEvent` decoding the type at `packages/protocol/src/runs.ts`'s closed
 `RunEvent` union). `config.change` applies `hasOnly` to its nested payload because `ConfigChange` is a
 closed, fixed-key shape over a closed enum (`ConfigChangeKind`, `packages/protocol/src/config.ts`).
 `run.elicitation` applies `hasOnly` only at the top level and checks four scalar fields of `request`
 without constraining its key set (`packages/kernel/src/transport/client.ts:292-301`) precisely because `ElicitationRequest`
 is declared open on purpose: `kind` is `"ask_user" | "guard_confirm" | "plan_review" | "workflow_review"
 | (string & {})`, documented "so a kernel may add kinds without a protocol bump"
-(`packages/protocol/src/runs.ts:619-626`), and `schema` is `JsonSchema = Record<string, unknown>`, documented "a JSON
+(`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`), and `schema` is `JsonSchema = Record<string, unknown>`, documented "a JSON
 Schema passed through opaquely" (`packages/protocol/src/common.ts:82-83`). Applying a closed `hasOnly` to `request`
 today would reject a future `kind`'s legitimate extra fields, defeating the exact extensibility `kind`
 was made open for — so the omission is the correct reading, not an arbitrary weakening.
@@ -1184,11 +1193,11 @@ was made open for — so the omission is the correct reading, not an arbitrary w
 ~~**One narrower residual is not explained by either the open-`kind` or opaque-`schema` reasoning:
 `ElicitationRequest.detail` gets no structural check at all — not even `isRecord`.**~~ **Resolved
 2026-08-22.** The residual was correctly identified, and the argument for closing it was weaker than
-the case deserved. `detail` (`ElicitationCommandDetail`, `packages/protocol/src/runs.ts:607-616`,
+the case deserved. `detail` (`ElicitationCommandDetail` in `packages/protocol/src/runs.ts`, carrying
 `command`/`cwd`/`reason`/`warning?`) shares neither property that keeps the request around it open,
 so a nested `hasOnly` costs nothing in forward-compatibility — but "it costs nothing" is not why it
-has to be there. `detail` is what a human reads when approving a command, and clients are told to
-render it directly rather than parse `prompt` (`:629-634`), so a `detail` whose `command` is absent
+has to be there. `detail` is what a human reads when approving a command, and its TSDoc tells clients
+to render it directly rather than parse `prompt`, so a `detail` whose `command` is absent
 or not a string reaches an approval dialog as `undefined` and the approval is then given for a
 command nobody was shown. That is the reasoning now recorded at `isCommandDetail`
 (`packages/kernel/src/transport/client.ts:273-283`), which checks the closed key set and every

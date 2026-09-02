@@ -4,7 +4,7 @@ import type { WorkflowDefinition } from "../artifact.ts";
 export const AUDIT_WORKFLOW = {
   name: "audit",
   description:
-    "Map a subject, review it through independent lenses, verify the consequential findings adversarially, and close the coverage gaps.",
+    "Map a subject, review it through independent lenses, verify consequential findings adversarially, close coverage gaps, and leave every additional pass to an explicit Admiral decision.",
   args: ["subject"],
   rounds: [
     {

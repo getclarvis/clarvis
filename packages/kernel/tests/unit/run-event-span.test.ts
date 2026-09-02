@@ -191,6 +191,21 @@ describe("deriveRunEventSpan (RunEvent → span)", () => {
 
     expect(
       deriveRunEventSpan({
+        type: "workflow_sequence_state",
+        at: 1,
+        run_id: "p1",
+        session_id: "wfseq-1",
+        status: "awaiting_manager",
+        revision: 1,
+        next_round_id: "verify",
+        next_pass: 0,
+        leaders_started: 1,
+        max_total_leaders: 32,
+      }),
+    ).toEqual({ span_id: "workflow:p1", phase: "point", kind: "event" });
+
+    expect(
+      deriveRunEventSpan({
         type: "workflow_run_progress",
         at: 1,
         run_id: "w1",

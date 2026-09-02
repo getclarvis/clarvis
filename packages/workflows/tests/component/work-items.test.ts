@@ -12,6 +12,7 @@ import type { ExecuteRunArgs, ExecuteRunOutcome } from "@clarvis/loop";
 import { createAgentRegistry } from "@clarvis/supervision";
 import { createWorkflowsCapability } from "../../src/capability.ts";
 import { createWorkflowLedger } from "../../src/ledger.ts";
+import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
 import { WORKFLOW_LIMITS } from "../../src/limits.ts";
 import type { WorkItem } from "../../src/schedule.ts";
 import type { LeaderSpec, WorkflowRunDeps } from "../../src/types.ts";
@@ -217,6 +218,17 @@ describe("run_work_items — calls it refuses without dispatching anything", () 
     expect(verdict.progress).toBe(false);
     expect(h.run.registrations).toBe(0);
     expect(h.run.events).toEqual([]);
+  });
+
+  test("refuses a whole batch atomically when it exceeds cumulative leader capacity", async () => {
+    const count = createWorkflowLeaderCount(2);
+    const h = await harness(undefined, { leaderCount: count });
+    const verdict = await h.handle({ items: [item("a"), item("b"), item("c")] });
+    expect(verdict.progress).toBe(false);
+    expect(verdict.text).toContain("cumulative slot");
+    expect(h.run.registrations).toBe(0);
+    expect(count.started()).toBe(0);
+    expect(count.remaining()).toBe(2);
   });
 
   test("propagates a scheduling failure instead of guessing", async () => {

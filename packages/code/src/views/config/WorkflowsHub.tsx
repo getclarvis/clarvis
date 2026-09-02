@@ -1,4 +1,4 @@
-import type { JSX } from "solid-js";
+import type { Accessor, JSX } from "solid-js";
 import { detachObserved } from "../../core/tasks.ts";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ScrollBoxRenderable } from "@opentui/core";
@@ -11,6 +11,7 @@ import type {
   WorkflowDetail,
   WorkflowNode,
   WorkflowSummary,
+  WorkflowSequence,
 } from "@clarvis/protocol";
 import { tokens } from "../../theme/tokens.ts";
 import { glyph } from "../../theme/glyphs.ts";
@@ -564,6 +565,18 @@ export function WorkflowsHub(host: ViewHost, deps: WorkflowsHubDeps): JSX.Elemen
       </Show>
 
       <Show when={inTree()}>
+        <Show when={detail()?.sequence}>
+          {(sequence: Accessor<WorkflowSequence>) => (
+            <text
+              flexShrink={0}
+              fg={sequence().status === "awaiting_manager" ? tokens.warn : tokens.muted}
+            >
+              {sequence().status === "awaiting_manager"
+                ? `Awaiting Admiral ${glyph("separator")} revision ${sequence().revision} ${glyph("separator")} next ${sequence().next_round_id ?? "round"}`
+                : `${sequence().status} ${glyph("separator")} ${sequence().round_id ?? sequence().session_id} ${glyph("separator")} leaders ${sequence().leaders_started}/${sequence().max_total_leaders}`}
+            </text>
+          )}
+        </Show>
         <SelectableList<WorkflowNode>
           each={treeNodes}
           sel={treeSel}

@@ -44,7 +44,7 @@ All 19 source files, each opened directly:
 |---|---|---|
 | `index.ts` | 29 | Barrel: `export type *` from the 18 modules below |
 | `common.ts` | 109 | `Scope`, `Principal`, `ProjectRef`, `WorkspaceRef`, `Pagination`/`Page`, `CursorPagination`/`CursorPage`, `Timestamp`, `JsonSchema`, `KernelErrorCode`, `KernelError`, `Unsubscribe` |
-| `runs.ts` | 806 | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (38-value discriminated union), messages, usage, Environment identity, guard/memory/plans modes, elicitation types |
+| `runs.ts` | 823 | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (39-value discriminated union), messages, usage, Environment identity, guard/memory/plans modes, elicitation types |
 | `config.ts` | 491 | `ConfigService`, `SettingsData`/`SettingsView` (incl. `WorkspaceTrustVerdict`, `known_grants`), the `SandboxConfig`/`SandboxInspection` doctor cluster, `SettingsRepairPlan` (2-variant union), `AgentSummary`/`AgentDoc`/`AgentOverlay`/`AgentBudget`, context docs — see §3.10/§3.11 |
 | `plugins.ts` | 177 | `PluginService`, `PluginView`, `PluginContributions`, normalized install sources and atomic lifecycle DTOs |
 | `environments.ts` | 251 | `EnvironmentService`, exact inventory and plugin/skill references, definitions, composition previews, resolved snapshots, deltas, diagnostics, deletion, and persisted run identity |
@@ -54,7 +54,7 @@ All 19 source files, each opened directly:
 | `workspace.ts` | 44 | `WorkspaceService`, `WorkspaceEntry` |
 | `memory.ts` | 209 | `MemoryService`, health/reindex/jobs DTOs, `MemoryIngestDetail` |
 | `plans.ts` | 197 | `PlansService`, `PlanDocumentDto`, `PlanTaskDto`, `PlanRef` |
-| `workflows.ts` | 101 | `WorkflowsService`, `WorkflowNode`, `WorkflowSummary`/`WorkflowDetail` |
+| `workflows.ts` | 121 | `WorkflowsService`, `WorkflowNode`, `WorkflowSequence`, `WorkflowSummary`/`WorkflowDetail` |
 | `skills.ts` | 115 | `SkillsService`, `SkillSummary`, `SkillProvenance`, `SkillPresentation`, `SkillToolDependency` |
 | `sessions.ts` | 137 | `SessionService`, `Session`, `SessionSummary`, `SessionTurn`, cache-detail-aware `SessionTotals` and Environment snapshot identity |
 | `tasks.ts` | 223 | `TasksService`, all `Task*Dto` shapes, `ActiveTaskRequestDto`/`ActiveTaskBindingDto` |
@@ -105,36 +105,36 @@ alone lives here.
 
 Every signature below is the one declared in its file.
 
-#### `RunService` (`packages/protocol/src/runs.ts:758-806`)
+#### `RunService` (`packages/protocol/src/runs.ts`)
 
-| Method | Signature | Line |
+| Method | Signature | Declaration |
 |---|---|---|
-| `start` | `(params: StartRunParams) => Promise<RunHandle>` | `packages/protocol/src/runs.ts:765` |
-| `compact` | `(execution_id, request?, options?) => Promise<RunCompactionResult>` | `packages/protocol/src/runs.ts:768-772` |
-| `context` | `(execution_id, target_window_tokens?) => Promise<context estimate>` | `packages/protocol/src/runs.ts:775-784` |
-| `get` | `(execution_id: string) => Promise<RunDetail>` | `packages/protocol/src/runs.ts:791` |
-| `list` | `(page?: Pagination) => Promise<Page<RunSummary>>` | `packages/protocol/src/runs.ts:798` |
-| `delete` | `(execution_id: string) => Promise<void>` | `packages/protocol/src/runs.ts:805` |
+| `start` | `(params: StartRunParams) => Promise<RunHandle>` | `RunService.start` |
+| `compact` | `(execution_id, request?, options?) => Promise<RunCompactionResult>` | `RunService.compact` |
+| `context` | `(execution_id, target_window_tokens?) => Promise<context estimate>` | `RunService.context` |
+| `get` | `(execution_id: string) => Promise<RunDetail>` | `RunService.get` |
+| `list` | `(page?: Pagination) => Promise<Page<RunSummary>>` | `RunService.list` |
+| `delete` | `(execution_id: string) => Promise<void>` | `RunService.delete` |
 
-`RunHandle` (`packages/protocol/src/runs.ts:694-756`), the live object `start` returns:
+`RunHandle` in `packages/protocol/src/runs.ts`, the live object `start` returns:
 
-| Member | Signature | Line |
+| Member | Signature | Declaration |
 |---|---|---|
-| `execution_id` | `readonly string` | `packages/protocol/src/runs.ts:701` |
-| `events` | `readonly AsyncIterable<RunEvent>` | `packages/protocol/src/runs.ts:707` |
-| `steer` | `(message: Message \| string) => Promise<void>` | `packages/protocol/src/runs.ts:714` |
-| `compact` | `(request?: string) => Promise<void>` | `packages/protocol/src/runs.ts:721` |
-| `cancel` | `() => Promise<void>` | `packages/protocol/src/runs.ts:724` |
-| `respond` | `(response: ElicitationResponse) => Promise<void>` | `packages/protocol/src/runs.ts:731` |
-| `onElicit` | `(handler: (req: ElicitationRequest) => void) => void` | `packages/protocol/src/runs.ts:738` |
-| `done` | `readonly Promise<RunResult>` | `packages/protocol/src/runs.ts:741` |
-| `buffered?` | `() => { buffered_items; buffered_bytes; dropped }` | `packages/protocol/src/runs.ts:744-748` |
-| `closed` | `readonly Promise<void>` | `packages/protocol/src/runs.ts:755` |
+| `execution_id` | `readonly string` | `RunHandle.execution_id` |
+| `events` | `readonly AsyncIterable<RunEvent>` | `RunHandle.events` |
+| `steer` | `(message: Message \| string) => Promise<void>` | `RunHandle.steer` |
+| `compact` | `(request?: string) => Promise<void>` | `RunHandle.compact` |
+| `cancel` | `() => Promise<void>` | `RunHandle.cancel` |
+| `respond` | `(response: ElicitationResponse) => Promise<void>` | `RunHandle.respond` |
+| `onElicit` | `(handler: (req: ElicitationRequest) => void) => void` | `RunHandle.onElicit` |
+| `done` | `readonly Promise<RunResult>` | `RunHandle.done` |
+| `buffered?` | `() => { buffered_items; buffered_bytes; dropped }` | `RunHandle.buffered` |
+| `closed` | `readonly Promise<void>` | `RunHandle.closed` |
 
-`done` resolves when execution ends and "does not imply that `events` has closed" (`packages/protocol/src/runs.ts:740`);
-`closed` resolves only "after execution and bounded post-run event delivery both finish"
-(`packages/protocol/src/runs.ts:750-755`) — the doc comment states this exists so a host can key a lifecycle lease off it
-"without becoming a second consumer of the single-consumer `RunHandle.events` stream" (`packages/protocol/src/runs.ts:751-753`).
+`done` resolves when execution ends and does not imply that `events` has closed; `closed` resolves
+only after execution and bounded post-run event delivery both finish. The `RunHandle.done` and
+`RunHandle.closed` doc comments state that this lets a host key a lifecycle lease off `closed`
+without becoming a second consumer of the single-consumer `RunHandle.events` stream.
 The optional `buffered()` member exposes O(1) local queue counters for bounded diagnostics. Its
 absence remains valid for transports that cannot report them, and reading it neither consumes nor
 copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
@@ -257,18 +257,20 @@ not configured (`packages/protocol/src/memory.ts:9-10`).
 `delete`'s doc comment: "throws when the plan is still live (`active` or `awaiting_approval`); only
 terminal plans may be deleted" (`packages/protocol/src/plans.ts:169-170`).
 
-#### `WorkflowsService` (`packages/protocol/src/workflows.ts:79-101`)
+#### `WorkflowsService` (`packages/protocol/src/workflows.ts`)
 
-| Method | Signature | Line |
+| Method | Signature | Declaration |
 |---|---|---|
-| `get` | `(id: string) => Promise<WorkflowDetail>` | `packages/protocol/src/workflows.ts:85` |
-| `list` | `(page?: Pagination) => Promise<Page<WorkflowSummary>>` | `packages/protocol/src/workflows.ts:92` |
-| `delete` | `(id: string) => Promise<void>` | `packages/protocol/src/workflows.ts:100` |
+| `get` | `(id: string) => Promise<WorkflowDetail>` | `WorkflowsService.get` |
+| `list` | `(page?: Pagination) => Promise<Page<WorkflowSummary>>` | `WorkflowsService.list` |
+| `delete` | `(id: string) => Promise<void>` | `WorkflowsService.delete` |
 
-No `start` method: the doc comment states "a workflow is started through `RunService.start` like any
-run — the kernel routes it as a workflow when the entry agent profile carries the `workflow` grant"
-(`packages/protocol/src/workflows.ts:71-74`). This service adds only "the tree structure (the edges + a rollup)"
-(`packages/protocol/src/workflows.ts:11-12`) over runs that are individually reachable through `RunService.get`.
+No `start` method: the `WorkflowsService` doc comment states that a workflow is started through
+`RunService.start` like any run — the kernel routes it as a workflow when the entry agent profile
+carries the `workflow` grant. This service adds only the tree structure (the edges plus a rollup)
+over runs that are individually reachable through `RunService.get`.
+`WorkflowDetail.sequence` optionally adds the latest durable Admiral-controlled round checkpoint;
+absence means a legacy record or a workflow that used no controlled round sequence.
 
 #### `SkillsService` (`packages/protocol/src/skills.ts:102-115`)
 
@@ -384,12 +386,12 @@ not the same declared type.
 `KernelError` (`packages/protocol/src/common.ts:101-106`) wraps a code with a `message: string` and optional `details:
 unknown` ("machine detail — validation issues, provider error, …", `packages/protocol/src/common.ts:104`).
 
-### 3.3 `RunEvent` — the 38-variant discriminated union
+### 3.3 `RunEvent` — the 39-variant discriminated union
 
-Defined at `packages/protocol/src/runs.ts:328-648` as one large union type. Every variant, its distinguishing fields, and
-line:
+Defined as `RunEvent` in `packages/protocol/src/runs.ts`, one large union type. Every variant and its
+distinguishing fields:
 
-| `type` | Extra fields (beyond `at`/attribution) | Line |
+| `type` | Extra fields (beyond `at`/attribution) | Source |
 |---|---|---|
 | `run_started` | `lead_model?`, `subagent_model?` | `packages/protocol/src/runs.ts:329` |
 | `run_ended` | `status`, `reason?`, `code?` | `packages/protocol/src/runs.ts:330-346` |
@@ -416,45 +418,46 @@ terminal shell auto-guard verdict"` in
 | `delegation_completed` \| `delegation_failed` | `delegation_id`, `task_id?`, `status`, `summary?` | `packages/protocol/src/runs.ts:473-481` |
 | `workflow_run_started` | `run_id`, `parent_run_id`, `profile?`, `title`, `task`, `round_id?`, `pass?`, `item_index?`, `replica?`, `replica_count?` | `packages/protocol/src/runs.ts:482-495` |
 | `workflow_title_updated` | `run_id`, `title` | `packages/protocol/src/runs.ts:496-502` |
-| `workflow_run_progress` | `run_id`, `parent_run_id`, `iterations`, `input_tokens`, `output_tokens`, `cached_tokens?` | `packages/protocol/src/runs.ts:503-519` |
-| `workflow_run_completed` | `run_id`, `parent_run_id`, `status` | `packages/protocol/src/runs.ts:520-526` |
-| `workflow_run_failed` | `run_id`, `parent_run_id`, `status`, `error?` | `packages/protocol/src/runs.ts:527-534` |
-| `plan_created` | `PlanProjection` fields | `packages/protocol/src/runs.ts:535` |
-| `plan_updated` | `change: PlanUpdateChange` + `PlanProjection` fields | `packages/protocol/src/runs.ts:536` |
+| `workflow_sequence_state` | `run_id`, `session_id`, six-state `status`, `revision`, current/proposed round/pass, `leaders_started`, `max_total_leaders`, `reason?` | `RunEvent` in `packages/protocol/src/runs.ts` |
+| `workflow_run_progress` | `run_id`, `parent_run_id`, `iterations`, `input_tokens`, `output_tokens`, `cached_tokens?` | `RunEvent` |
+| `workflow_run_completed` | `run_id`, `parent_run_id`, `status` | `RunEvent` |
+| `workflow_run_failed` | `run_id`, `parent_run_id`, `status`, `error?` | `RunEvent` |
+| `plan_created` | `PlanProjection` fields | `RunEvent` |
+| `plan_updated` | `change: PlanUpdateChange` + `PlanProjection` fields | `RunEvent` |
 | — `PlanUpdateChange`'s 4 values | `content` (objective/context/tasks body edit) · `task` (a task marker/detail change) · `status` (the plan's status changed) · `recovery` (state restored on continuation) — all glossed at the type's own doc comment | `packages/protocol/src/runs.ts:287-298` |
-| `plan_removed` | `id`, `path?`, `revision`, `spec_revision` + partial `PlanProjection` | `packages/protocol/src/runs.ts:537-544` |
-| `plan_review_requested` | `PlanProjection` fields | `packages/protocol/src/runs.ts:545` |
-| `plan_review_resolved` | `outcome: "approved" \| "changes_requested" \| "cancelled"` + `PlanProjection` fields | `packages/protocol/src/runs.ts:546-550` |
-| `soft_limit_check` | `dimension: "tokens" \| "iterations"`, `used`, `limit`, `outcome` | `packages/protocol/src/runs.ts:551-558` |
-| `compaction_started` | `mode: "scheduled" \| "forced"` | `packages/protocol/src/runs.ts:559-562` |
-| `compaction` | `operation`, `fallback_reason?`, `freed_chars?`, `contribution_count?`, `requested?: true`, `user_contribution_count?` | `packages/protocol/src/runs.ts:563-571` |
-| `vision_analysis` | `model`, `image_count`, `status: "completed" \| "failed"`, `result` | `packages/protocol/src/runs.ts:579-586` |
-| `compaction_skipped` | `reason` (5-member union) | `packages/protocol/src/runs.ts:587-595` |
-| `elicitation_requested` | `agent?`, `subagent_id?`, `question`, `options?` | `packages/protocol/src/runs.ts:596-603` |
-| `elicitation_resolved` | `agent?`, `subagent_id?`, `question`, `outcome`, `answer?`, `options?` | `packages/protocol/src/runs.ts:604-614` |
-| `steering_applied` | `message` | `packages/protocol/src/runs.ts:615` |
-| `memory_ingest` | `detail: MemoryIngestDetail` | `packages/protocol/src/runs.ts:616` |
-| `capability_event` | `capability`, `kind`, `projection`, `detail?`, `truncated` | `packages/protocol/src/runs.ts:627-636` |
-| `events_dropped` | `dropped` | `packages/protocol/src/runs.ts:646` |
-| `mcp_degraded` | `servers: { name; reason }[]` | `packages/protocol/src/runs.ts:648` |
+| `plan_removed` | `id`, `path?`, `revision`, `spec_revision` + partial `PlanProjection` | `RunEvent` |
+| `plan_review_requested` | `PlanProjection` fields | `RunEvent` |
+| `plan_review_resolved` | `outcome: "approved" \| "changes_requested" \| "cancelled"` + `PlanProjection` fields | `RunEvent` |
+| `soft_limit_check` | `dimension: "tokens" \| "iterations"`, `used`, `limit`, `outcome` | `RunEvent` |
+| `compaction_started` | `mode: "scheduled" \| "forced"` | `RunEvent` |
+| `compaction` | `operation`, `fallback_reason?`, `freed_chars?`, `contribution_count?`, `requested?: true`, `user_contribution_count?` | `RunEvent` |
+| `vision_analysis` | `model`, `image_count`, `status: "completed" \| "failed"`, `result` | `RunEvent` |
+| `compaction_skipped` | `reason` (5-member union) | `RunEvent` |
+| `elicitation_requested` | `agent?`, `subagent_id?`, `question`, `options?` | `RunEvent` |
+| `elicitation_resolved` | `agent?`, `subagent_id?`, `question`, `outcome`, `answer?`, `options?` | `RunEvent` |
+| `steering_applied` | `message` | `RunEvent` |
+| `memory_ingest` | `detail: MemoryIngestDetail` | `RunEvent` |
+| `capability_event` | `capability`, `kind`, `projection`, `detail?`, `truncated` | `RunEvent` |
+| `events_dropped` | `dropped` | `RunEvent` |
+| `mcp_degraded` | `servers: { name; reason }[]` | `RunEvent` |
 
-Counted directly from the union source (`sed -n '328,648p' packages/protocol/src/runs.ts | rg -c '^  \|'`):
-the union has exactly **37 top-level alternation arms**. Of those, 36 each declare exactly one `type`
+Counted directly from the union source, the union has exactly **38 top-level alternation arms**. Of
+those, 37 each declare exactly one `type`
 string literal, and one arm declares two — `type: "delegation_completed" | "delegation_failed"`
 (`packages/protocol/src/runs.ts:474`) covers both `delegation_completed` and `delegation_failed` in a single object shape,
-since the two share every other field. 36 + 2 = **38 distinct `type` values**, which is exactly the
+since the two share every other field. 37 + 2 = **39 distinct `type` values**, which is exactly the
 set the table above enumerates.
 
 Durability is not inferable from the union alone. The kernel's exhaustive `RUN_EVENT_POLICY`, checked
-with `satisfies Record<RunEvent["type"], RunEventPolicy>`, currently marks 14 values live-only:
+with `satisfies Record<RunEvent["type"], RunEventPolicy>`, currently marks 15 values live-only:
 `tool_output_delta`, `tool_input_delta`, `text_delta`, `workflow_title_updated`,
-`workflow_run_progress`, all five plan events, `compaction_started`, `memory_ingest`,
+`workflow_sequence_state`, `workflow_run_progress`, all five plan events, `compaction_started`, `memory_ingest`,
 `capability_event`, and `events_dropped` (`packages/kernel/src/runs/event-policy.ts:50-95`). Every
 other value is persisted. This agrees with the protocol comments that call deltas streamed-only
 (`packages/protocol/src/runs.ts:392-405`), workflow title/progress live-only
-(`packages/protocol/src/runs.ts:496-509`), and `events_dropped` streamed-only
-(`packages/protocol/src/runs.ts:637-646`). `elicitation_resolved` is explicitly the opposite: it is
-persisted "for resume reconstruction; not shown live" (`packages/protocol/src/runs.ts:604`).
+(`workflow_title_updated`/`workflow_run_progress` variants), and `events_dropped` streamed-only.
+`elicitation_resolved` is explicitly the opposite: its `RunEvent` doc comment says it is persisted
+for resume reconstruction and not shown live.
 
 ### 3.4 `StartRunParams` (`packages/protocol/src/runs.ts:70-115`)
 
@@ -557,20 +560,21 @@ serializing a definition, settings, or secrets (`packages/protocol/src/environme
 
 ### 3.9 Elicitation types (`runs.ts`)
 
-| Type | Shape | Line |
+| Type | Shape | Declaration |
 |---|---|---|
-| `ElicitationCommandDetail` | `{ command: string; cwd: string; reason: string; warning? }` | `packages/protocol/src/runs.ts:650-660` |
-| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; detail?: ElicitationCommandDetail }` | `packages/protocol/src/runs.ts:662-682` |
-| `ElicitationResponse` | `{ id; action: "accept" \| "decline" \| "cancel"; content? }` | `packages/protocol/src/runs.ts:684-692` |
+| `ElicitationCommandDetail` | `{ command: string; cwd: string; reason: string; warning? }` | `ElicitationCommandDetail` |
+| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; detail?: ElicitationCommandDetail }` | `ElicitationRequest` |
+| `ElicitationResponse` | `{ id; action: "accept" \| "decline" \| "cancel"; content? }` | `ElicitationResponse` |
 
 `ElicitationRequest.kind` is a 4-member union — `"ask_user"` (a free question), `"guard_confirm"` (a
 command awaiting approval), `"plan_review"` (a proposed plan awaiting approval), `"workflow_review"`
 (an installed workflow preflight) — plus a deliberately open `(string & {})` escape, "so a kernel may
-add kinds without a protocol bump" (`packages/protocol/src/runs.ts:666-673`). This is structurally the same open/closed
-pattern already noted for `capability_event` in §5 invariant 4, applied to elicitation instead of to
-the `RunEvent` union itself. `ElicitationCommandDetail` exists so a client "render[s] this directly
+add kinds without a protocol bump" (`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`).
+This is structurally the same open/closed pattern already noted for `capability_event` in §5
+invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
+`ElicitationCommandDetail` exists so a client "render[s] this directly
 (e.g. as highlighted code) and never parse[s] `prompt`, which stays the human-readable fallback"
-(`packages/protocol/src/runs.ts:676-681`).
+(`ElicitationCommandDetail` in `packages/protocol/src/runs.ts`).
 
 ### 3.10 `ConfigService` data shapes I: settings and sandbox (`config.ts`)
 
@@ -692,11 +696,12 @@ attached to each method:
    `specs/hosts/kernel-transport.md`) whose `capabilities`, `principal`, `project`, `workspace` are
    populated "at connect time" (`packages/protocol/src/client.ts:53` doc comment on `capabilities`).
 2. `runs.start(params)` returns a `RunHandle` immediately; the run's `events` stream, `done` and
-   `closed` promises are the three ways a caller observes its outcome (`packages/protocol/src/runs.ts:694-756`).
+   `closed` promises are the three ways a caller observes its outcome (`RunHandle` in
+   `packages/protocol/src/runs.ts`).
 3. While a run is live, a caller may call `steer`, `compact`, `cancel`, or `respond` to a pending
-   elicitation on the same `RunHandle` (`packages/protocol/src/runs.ts:709-738`) — these are the only mutating operations
-   scoped to one in-flight run; everything else in `KernelClient` is either a service-level CRUD call
-   or a `subscribe`.
+   elicitation on the same `RunHandle` — these are the only mutating operations scoped to one
+   in-flight run; everything else in `KernelClient` is either a service-level CRUD call or a
+   `subscribe`.
 4. `ConfigService.updateSettings` and `repairSettings` both take an `expectedRevision`
    (`packages/protocol/src/config.ts:415-419`, `:380`) — the doc comment on `updateSettings` states "a mismatch is a typed
    conflict and never overwrites the concurrent edit" (`packages/protocol/src/config.ts:411-413`), and `repairSettings`
@@ -779,12 +784,12 @@ The following are derived directly from this package's own source and tests.
    `KernelServices` as a `Pick<KernelClient, ...>` naming the same 15 service keys
    (minus the 4 identity fields, which are not "services").
 
-4. **`RunEvent` is closed to exactly 38 named variants; an open/unknown capability event is carried
+4. **`RunEvent` is closed to exactly 39 named variants; an open/unknown capability event is carried
    through the single `capability_event` escape variant rather than by widening the union.**
-   Production: the union at `packages/protocol/src/runs.ts:328-648`; the escape variant's own doc comment: "Capability event
-   names are deliberately open at the capability boundary, while this discriminated union is
-   deliberately closed for clients... an extension cannot make an exhaustive protocol switch crash at
-   runtime" (`packages/protocol/src/runs.ts:617-636`). The numeric count is unpinned by this package's
+   Production: `RunEvent` in `packages/protocol/src/runs.ts`; the `capability_event` variant's own
+   doc comment says capability event names are deliberately open at the capability boundary while
+   this discriminated union stays closed for clients, so an extension cannot make an exhaustive
+   protocol switch crash at runtime. The numeric count is unpinned by this package's
    own tests (the fixture exercises one variant, `text_delta`,
    `packages/protocol/tests/contract/public-contract.fixture.ts:60-68`), but the kernel's exhaustive
    `RUN_EVENT_POLICY` makes a new discriminator fail typechecking until its source, durability,
@@ -801,8 +806,9 @@ The following are derived directly from this package's own source and tests.
 6. **`PlansService.list`/`SessionService.listPage` use opaque-cursor paging; `RunService.list`/
    `WorkflowsService.list` use offset/limit paging — the two families are never interchanged.**
    Production: `packages/protocol/src/plans.ts:144` (`PlanListInput.cursor?`, `packages/protocol/src/plans.ts:116`), `packages/protocol/src/sessions.ts:110`
-   (`CursorPagination`, `packages/protocol/src/common.ts:69-72`) versus `packages/protocol/src/runs.ts:798` and `packages/protocol/src/workflows.ts:92` (both
-   `Pagination`, `packages/protocol/src/common.ts:55-58`). No cited rationale beyond the type comment "for stores whose
+   (`CursorPagination`, `packages/protocol/src/common.ts:69-72`) versus `RunService.list` and
+   `WorkflowsService.list` (both `Pagination`, `packages/protocol/src/common.ts:55-58`). No cited
+   rationale beyond the type comment "for stores whose
    contents change over time" (`packages/protocol/src/common.ts:68`); unpinned by any test in this package.
 
 7. **Compaction start is an explicit `RunEvent` rather than inferred from a later outcome.**
@@ -843,6 +849,16 @@ The following are derived directly from this package's own source and tests.
     `packages/protocol/src/{plugins,skills}.ts`. Test:
     `packages/kernel/tests/integration/plugin-service.test.ts` and
     `packages/kernel/tests/component/skills-service.test.ts`.
+12. **The workflow checkpoint uses the same closed shape live and at rest.**
+    `workflow_sequence_state` and `WorkflowSequence` carry the same six-state lifecycle, CAS
+    revision, current/proposed round/pass and cumulative leader counters; `WorkflowDetail.sequence`
+    is optional only for legacy/ad-hoc-only records. The live event is classified non-droppable but
+    live-only because the workflow store, not the run journal, owns durable recovery.
+    Production: `RunEvent` in `packages/protocol/src/runs.ts`, `WorkflowSequence` in
+    `packages/protocol/src/workflows.ts`, and `RUN_EVENT_POLICY`.
+    Test: `packages/kernel/tests/contract/transport-codecs.test.ts` (`preserves the workflow round
+    checkpoint contract`) and `packages/kernel/tests/integration/workflows-service.test.ts` (`emits
+    and persists every Admiral-controlled round checkpoint`).
 
 ## 6. Failure modes and degradation
 
@@ -856,7 +872,7 @@ errors in, and documents on individual methods where a specific code applies:
 | Memory not configured on this kernel | `capability_disabled` (implied by `KernelErrorCode`, applied per `packages/protocol/src/memory.ts:9-10`'s doc comment "the methods reject with a `capability_disabled` / memory-disabled `KernelError`") | `packages/protocol/src/memory.ts:9-10` |
 | Deleting a plan that is still `active`/`awaiting_approval` | throws (unspecified which `KernelErrorCode`, but the method's own doc says "throws when the plan is still live") | `packages/protocol/src/plans.ts:169-170` |
 | A run ended on a failure | `RunResult.error?: { code: string; message: string }`, "present only on a `failed` run" | `packages/protocol/src/runs.ts:170-171` |
-| A workflow leader failed | `workflow_run_failed`'s `error?: { code; message }` | `packages/protocol/src/runs.ts:527-534` |
+| A workflow leader failed | `workflow_run_failed`'s `error?: { code; message }` | `RunEvent` in `packages/protocol/src/runs.ts` |
 | A run was rebuilt from a damaged crash journal | `RunDetail.recovery?: RunRecovery` — `skipped_lines` and `synthesized_tool_calls` counts, "present ... only when something was actually lost or synthesized, so its absence means the record is intact" | `packages/protocol/src/runs.ts:216-232`, `:251-255` |
 | A settings scope file exists but fails to parse/validate | `SettingsSource.error?: string` — "the UI shows this instead of silently treating the scope as empty" | `packages/protocol/src/config.ts:188-198` |
 | An Environment selection or definition is invalid | `ResolvedEnvironment.status: "invalid"` plus typed `EnvironmentIssue[]`; no fallback is represented | `EnvironmentStatus`, `EnvironmentIssue`, and `ResolvedEnvironment` in `packages/protocol/src/environments.ts` |
@@ -864,9 +880,9 @@ errors in, and documents on individual methods where a specific code applies:
 | An agent config file's frontmatter fails to parse | `AgentDoc.malformed?: string` — "the `frontmatter` above is then the lenient fallback (`{}`), not the file's real content" | `packages/protocol/src/config.ts:316-332` |
 | An agent config file overlaying a shipped agent is unusable | `AgentOverlay.status: "rejected"` + `reason` — "the shipped default runs unchanged" | `packages/protocol/src/config.ts:284-290` |
 | A repository's `settings.json` asked for fields it may not set on its own authority | `SettingsView.withheld_workspace_fields?: readonly string[]` | `packages/protocol/src/config.ts:202-243` |
-| A capability event's own type is not in this protocol version | `capability_event` with `projection`/`truncated` fields rather than a widened `type` | `packages/protocol/src/runs.ts:617-636` |
-| Live event consumer fell behind (backpressure) | `events_dropped` — "emitted at most once... only incremental variants are ever dropped, and their authoritative content still arrives" | `packages/protocol/src/runs.ts:637-646` |
-| MCP servers degraded for this run | persisted `mcp_degraded` event listing `{ name, reason }[]`; clients may present it ephemerally rather than as conversation content | `packages/protocol/src/runs.ts:647-648` |
+| A capability event's own type is not in this protocol version | `capability_event` with `projection`/`truncated` fields rather than a widened `type` | `RunEvent.capability_event` |
+| Live event consumer fell behind (backpressure) | `events_dropped` — "emitted at most once... only incremental variants are ever dropped, and their authoritative content still arrives" | `RunEvent.events_dropped` |
+| MCP servers degraded for this run | persisted `mcp_degraded` event listing `{ name, reason }[]`; clients may present it ephemerally rather than as conversation content | `RunEvent.mcp_degraded` |
 | A tool call the provider abandoned mid-stream never settles | not modeled by this package at all — the closest adjacent shape, `tool_call_started`, has no corresponding "abandoned" variant; only `tool_call` (`ok: boolean`) is authoritative |
 
 Two properties the package states about *degradation of fidelity* rather than error per se:
@@ -874,7 +890,7 @@ Two properties the package states about *degradation of fidelity* rather than er
 - `events_dropped`'s own comment: dropping only ever affects incremental/live-only variants, and "the
   authoritative content still arrives — a `tool_call` carries its tool's full output and
   `iteration_completed.response` the final assistant text — so this reports fidelity of the *live*
-  view, not data loss" (`packages/protocol/src/runs.ts:637-644`).
+  view, not data loss" (`events_dropped` in `RunEvent`).
 - `RunRecovery`'s own comment: "counts only: the skipped lines themselves never cross the wire"
   (`packages/protocol/src/runs.ts:216-223`) — a client is told *how much* was lost, never *what*.
 
@@ -936,7 +952,7 @@ on the engine" as one design, not two.
   most methods simply return `Promise<T>` with no declared error type, so a client cannot know from
   the type alone which of the 11 codes a given call might raise. This is presumably resolved by
   kernel-side documentation/behavior outside this document's scope.
-- **The numeric `RunEvent` count is not pinned as 38.** No protocol-package test counts union arms,
+- **The numeric `RunEvent` count is not pinned as 39.** No protocol-package test counts union arms,
   and its fixture constructs only `text_delta` (`packages/protocol/tests/contract/public-contract.fixture.ts:60-68`).
   Growth is nevertheless not silent inside the kernel: `RUN_EVENT_POLICY` exhaustively keys
   `RunEvent["type"]`, so a new value must first receive source, durability, mapping and backpressure

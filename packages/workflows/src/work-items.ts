@@ -367,8 +367,19 @@ export function buildRunWorkItemsHandler(
         return Promise.resolve(verdict("'items' was empty; there is nothing to run."));
       }
 
-      const session = beginDispatch(deps, unitsForWave(firstWave, parsed.call));
+      const totalUnits = schedule.waves.reduce((total, wave) => total + wave.items.length, 0);
+      const remaining = ctx.leaderCount.remaining();
+      const session = beginDispatch(deps, unitsForWave(firstWave, parsed.call), totalUnits);
       if (session === null) {
+        if (totalUnits > remaining) {
+          return Promise.resolve(
+            verdict(
+              `not starting this batch — its ${String(totalUnits)} leaders exceed the ` +
+                `${String(remaining)} cumulative slot(s) remaining (max_total_leaders=` +
+                `${String(ctx.leaderCount.limit)}). Reduce the batch or finish this workflow.`,
+            ),
+          );
+        }
         return Promise.resolve(
           verdict(
             "not starting this batch — too many child agents are already running. Wait with " +
@@ -396,21 +407,24 @@ export function buildRunWorkItemsHandler(
           return blocker === undefined ? null : { blocked: `'${blocker}' did not finish` };
         };
 
-        for (const wave of laterWaves) {
-          for (const outcome of await session.run(gate)) {
-            outcomes.push(outcome);
-            done.set(outcome.key, outcome.status);
+        try {
+          for (const wave of laterWaves) {
+            for (const outcome of await session.run(gate)) {
+              outcomes.push(outcome);
+              done.set(outcome.key, outcome.status);
+            }
+            if (session.cancelled()) break;
+            session.advance(unitsForWave(wave, parsed.call));
           }
-          if (session.cancelled()) break;
-          session.advance(unitsForWave(wave, parsed.call));
-        }
-        if (!session.cancelled()) {
-          for (const outcome of await session.run(gate)) {
-            outcomes.push(outcome);
-            done.set(outcome.key, outcome.status);
+          if (!session.cancelled()) {
+            for (const outcome of await session.run(gate)) {
+              outcomes.push(outcome);
+              done.set(outcome.key, outcome.status);
+            }
           }
+        } finally {
+          session.end(describeSummary(outcomes));
         }
-        session.end(describeSummary(outcomes));
       })();
       agents.adopt(session.anchorId, driver);
 

@@ -130,20 +130,24 @@ at 8 MiB per file and 32 MiB aggregate per packaged plugin or standalone skill; 
 admission is bounded separately per file, per plugin, and by file count. Ordinary contribution
 projections reuse the pinned parsed snapshot instead of rescanning and rehashing every accessor.
 Run admission never revalidates that filesystem snapshot. The kernel gives the loop a
-`SkillRootSnapshotProvider`; its roots are consumed once while run dependencies are built, catalog
+`SkillRootSnapshotProvider`; its roots are consumed while run dependencies are built, catalog
 metadata and bodies are materialized then, and resource paths are restricted to that initial
-allow-list. `EnvironmentManager.observeSkillCatalog` polls the admitted manifest/resource paths
-asynchronously. A changed skill flips an in-memory availability latch, is withheld from subsequent
-catalog/body/resource access until reconnect, and emits `onSkillDrift` for an informational host UI;
-it never rejects or delays a run. Builtin and custom standalone roots carry exact `include` lists for
-only the skills captured in that snapshot. If any packaged skill in a plugin cannot be captured
-within its bounds, that plugin's entire skill-root surface is withheld while its independently valid
-non-skill contributions remain. `PluginContributions.observeRuntimeFiles` applies the same
-asynchronous latch to captured package-local MCP, hook, and capability executable files; detected
-drift removes those executable projections without a full snapshot check in run admission.
-Workspace-trust
-transitions recompose that extension snapshot only while no run is active, and selected plugin
-update/uninstall leaves the old parsed process snapshot in use until reconnect.
+allow-list. Monitoring is armed for every identity file, including the selected sidecar, before a
+post-capture digest comparison. A mismatch flips the same in-memory availability latch, withholds the
+affected skill, and emits `onSkillDrift` for an informational host UI instead of failing dependency
+construction or delaying a run. `EnvironmentManager.observeSkillCatalog` then polls those paths
+asynchronously; later drift has the same non-blocking withdrawal behavior. Builtin and custom
+standalone roots carry exact `include` lists for only the skills captured in that snapshot. If any
+packaged skill in a plugin cannot be captured within its bounds, that plugin's entire skill-root
+surface is withheld while its independently valid non-skill contributions remain.
+`PluginContributions.observeRuntimeFiles` applies the same asynchronous latch to captured
+package-local MCP, hook, and capability executable files. An explicitly local executable declaration
+must resolve to a confined regular file at pin time; symlinks are monitored by their declaration path,
+and later replacement withdraws the executable projections without a run-admission rehash.
+Workspace-trust transitions recompose the extension snapshot and atomically replace the loop's exact
+skill catalog only while no run is active. Approval refreshes the trust surface through the production
+file-kernel adapter before consent is recorded. Selected plugin update/uninstall still leaves the old
+parsed process snapshot in use until reconnect.
 Every run records the resolved Environment id and fingerprint. An MCP namespace whose winning
 declaration still comes from an active plugin is attached to every run and marked `auto_tools`: its
 discovered tools become available to every effective agent for that run even when the persisted

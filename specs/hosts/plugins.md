@@ -849,12 +849,16 @@ exported by `@clarvis/skills`; ambiguous concatenation, text decoding of binary 
 resource retention, and pre-read path `stat` are not snapshot boundaries.
 Ordinary captured projections verify the requested selection and reuse pinned loadables.
 `skillRoots` and `pinnedSkillRoots` reuse the process-pinned root projection without a filesystem
-pass. `snapshot` remains available to management and diagnostics when a caller explicitly needs a
-fresh identity; run admission and lazy catalog/body/resource access never invoke it.
+pass. After the loop materializes bodies, `verifyPinnedSkillCatalog` recomputes the bounded plugin
+skill identity against the pin while monitoring is already armed; capture-window drift is withdrawn
+through the host's memory latch instead of admitting changed instructions. `snapshot` remains
+available to management and diagnostics when a caller explicitly needs a fresh identity; run
+admission and lazy catalog/body/resource access never invoke it.
 If any packaged skill cannot be captured under those bounds, the digest records an unavailable
 surface and `skillRoots` withholds every skill root for that plugin. Other valid contribution kinds
 remain active, but no valid sibling skill stays readable behind a constant error sentinel.
-Production: `skillSurface`, `assertPinnedSelection`, `pin`, `skillRoots`, and `pinnedSkillRoots` in
+Production: `skillSurface`, `assertPinnedSelection`, `pin`, `skillRoots`, `pinnedSkillRoots`, and
+`verifyPinnedSkillCatalog` in
 `packages/kernel/src/plugins/plugin-contributions.ts`. Test:
 `packages/kernel/tests/integration/plugin-contributions.test.ts` (captured projections, canonical
 file framing, manifest limits, sidecar metadata, pinned projections, and fresh diagnostic snapshots).
@@ -1372,16 +1376,20 @@ All of the following are derived directly from this document's own source and te
     Environment, without making filesystem size a run-admission cost.** Every
     `PluginContributions` method takes the resolved selection; `pin` captures its exact loadables and
     digest, and ordinary captured projections reject selection changes. Skill roots are projected
-    once into `snapshotSkills`, which materializes bodies and fixes the resource allow-list before a
-    run. `observeSkillCatalog` asynchronously withdraws a changed manifest/resource through a
-    memory latch. `observeRuntimeFiles` separately monitors package-local executable files; once one
+    into `snapshotSkills`, which materializes bodies and fixes the resource allow-list before a run;
+    an idle trust transition may atomically replace that exact catalog. `observeSkillCatalog` arms
+    monitoring for the manifest, selected sidecar, and resources before `verifySkillCatalog` compares
+    captured identity with the process pin. Capture-window or later drift withdraws the skill through
+    a memory latch and publishes the informational host notice. `observeRuntimeFiles` separately
+    monitors package-local executable declarations; once one
     changes, `settingsScopes`/`mcpServers` omit that plugin's executable declarations and capability
     location returns an informational unavailable result until reconnect. Neither path rescans or
     rejects a run. A plugin whose skill surface cannot be captured initially still withholds that
     whole surface. Production: `PluginContributions.pin`, `pinnedSkillRoots`,
-    `observeRuntimeFiles`, and `runtimeAvailable` in
+    `observeRuntimeFiles`, `verifyPinnedSkillCatalog`, and `runtimeAvailable` in
     `packages/kernel/src/plugins/plugin-contributions.ts`; `EnvironmentManager.observeSkillCatalog`
-    in `packages/kernel/src/environments/environment-manager.ts`; `acquireEnvironmentRunLease` and
+    and `EnvironmentManager.verifySkillCatalog` in
+    `packages/kernel/src/environments/environment-manager.ts`; `acquireEnvironmentRunLease` and
     `pluginSkillRoots` in `packages/kernel/src/file-kernel.ts`; and `snapshotSkills` in
     `packages/loop/src/runtime/build-run-deps.ts`. Test:
     `packages/kernel/tests/integration/{environment-manager,plugin-contributions,file-kernel}.test.ts`,
@@ -1391,7 +1399,11 @@ All of the following are derived directly from this document's own source and te
 44a. **Every directly referenced package-local process file is part of the plugin snapshot.**
     `snapshotPluginExecutables` resolves confined regular files from MCP stdio argv/cwd, the current
     platform capability argv, and translated absolute hook words; it hashes content and executable
-    mode under bounded file, count, and aggregate budgets. Production:
+    mode under bounded file, count, and aggregate budgets. An explicitly local declaration that is
+    absent or does not resolve to a confined regular file rejects that plugin snapshot. The runtime
+    monitor binds the declaration path rather than only its resolved target and compares inode/device
+    identity, so creating an absent file later or retargeting a symlink cannot launch unpinned bytes.
+    Production:
     `packages/kernel/src/plugins/plugin-executable-snapshot.ts` and `contributionSnapshot` in
     `packages/kernel/src/plugins/plugin-contributions.ts`. Test: the process-file fingerprint and
     drift cases in
@@ -1402,13 +1414,15 @@ All of the following are derived directly from this document's own source and te
     snapshot reads use one opened descriptor with fixed allocation; resource identity streams raw
     bytes through `hashBoundedFile` under an 8 MiB per-file and 32 MiB per-plugin aggregate bound.
     The canonical record includes relative path, digest, byte count, executable mode, and effective
-    sidecar metadata. A partial capture contributes no plugin skill roots. Production:
+    sidecar metadata. `SkillContent.identityFiles` carries the selected sidecar beside the manifest
+    and resources so monitoring covers every effective byte before post-capture verification. A
+    partial capture contributes no plugin skill roots. Production:
     `readBoundedBytes` and `hashBoundedFile` in `@clarvis/skills`, plus
-    `PLUGIN_SKILL_RESOURCE_LIMITS`, `snapshotFileDigest`, `skillSurface`, `contributionSnapshot`, and
-    `skillRoots` in
+    `PLUGIN_SKILL_RESOURCE_LIMITS`, `snapshotFileDigest`, `skillSurface`, `contributionSnapshot`,
+    `verifyPinnedSkillCatalog`, and `skillRoots` in
     `packages/kernel/src/plugins/plugin-contributions.ts`. Test:
     `packages/skills/tests/unit/bounded-read.test.ts` and the canonical framing, manifest limit,
-    sidecar, invalid-sibling, aggregate-bound, and lazy drift cases in
+    sidecar, post-watch verification, invalid-sibling, aggregate-bound, and lazy drift cases in
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
 45. **A plugin cannot enable another plugin.** Custom Environments are complete external

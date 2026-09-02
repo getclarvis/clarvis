@@ -402,7 +402,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
           .resolveActive(enabledPlugins, trust)
           .plugins.filter((plugin) => plugin.active)
           .map((plugin) => plugin.ref),
-      workspaceTrustSurface: () => environmentManager.workspaceTrustSurface(),
+      workspaceTrustSurface: (options) => environmentManager.workspaceTrustSurface(options),
       assertWorkspaceTrustTransitionAllowed: () =>
         environmentManager.assertWorkspaceTrustTransitionAllowed(),
     },
@@ -641,7 +641,9 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   const pluginSkillRoots: SkillRootSnapshotProvider = {
     roots: () => environmentManager.pinnedSkillRoots(),
     observe: (skills) => environmentManager.observeSkillCatalog(skills),
+    verify: (skills) => environmentManager.verifySkillCatalog(skills),
     available: (skill) => environmentManager.skillAvailable(skill),
+    onRootsChanged: (listener) => environmentManager.onSkillRootsChanged(listener),
   };
 
   const pluginSkillBootstraps = (): PluginBootstrapSkill[] =>

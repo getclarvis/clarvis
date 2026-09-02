@@ -206,10 +206,12 @@ definition produces `invalid` (`resolved` in
 `packages/kernel/src/environments/environment-manager.ts`).
 No state silently substitutes `builtin:default`.
 
-`resolveActive` pins one contribution snapshot for the process. Each active plugin digest covers its
-resolved manifest (including MCP/hook companion semantics), bounded agent files, packaged skill
-manifests, install record, resolved source revision, and every directly referenced package-local
-MCP, hook, or capability process file's content, size, executable mode, and relative path. Packaged
+`resolveActive` pins one contribution snapshot for the process, except that an idle workspace-trust
+transition deliberately recomposes the selected trust-dependent contribution set. Each active
+plugin digest covers its resolved manifest (including MCP/hook companion semantics), bounded agent
+files, packaged skill manifests, install record, resolved source revision, and every directly
+referenced package-local MCP, hook, or capability process file's content, size, executable mode, and
+relative path. Packaged
 skill resources are hashed as streamed raw bytes by `hashBoundedFile`, capped at 8 MiB per file and
 32 MiB aggregate across the plugin; the canonical identity records relative path, digest, byte
 count, and executable mode. If any skill in one plugin cannot be captured, that plugin's whole
@@ -221,34 +223,45 @@ capped at 256 files, 8 MiB per file, and 32 MiB per plugin (`PLUGIN_SKILL_RESOUR
 `packages/kernel/src/environments/environment-manager.ts`). Ordinary settings,
 MCP and agent projections reuse those pinned parsed loadables and perform only an exact selection
 check. Skill roots are projected from the pinned parse without another filesystem pass. The file
-kernel supplies them through `SkillRootSnapshotProvider`; `snapshotSkills` consumes those roots once
-while run dependencies are constructed, materializes catalog metadata and bodies, and records the
-initial resource-path allow-list. Run admission then acquires only its in-memory lease: it performs no
-skill discovery, filesystem traversal, or hashing.
+kernel supplies them through `SkillRootSnapshotProvider`; `snapshotSkills` consumes those roots while
+run dependencies are constructed, materializes catalog metadata and bodies, and records the initial
+resource-path allow-list. An idle trust recomposition is the only event that publishes a replacement
+root set to that provider. Run admission then acquires only its in-memory lease: it performs no skill
+discovery, filesystem traversal, or hashing.
 
-After the registry is captured, `EnvironmentManager.observeSkillCatalog` uses `watchFile` polling on
-the admitted manifests and resources. This maintenance is asynchronous and outside every run. Its
-callback only marks the affected skill directory unavailable and publishes `onSkillDrift`; it does
-not recompute an Environment, fail the kernel, or reject work. `snapshotSkills` immediately filters a
-latched skill from catalog/body access and refuses its resources. Code relays the notice through
+After the registry is captured, `EnvironmentManager.observeSkillCatalog` arms `watchFile` polling on
+every admitted identity file: manifest, selected sidecar, and resources. Before the capture becomes
+visible, `verifySkillCatalog` re-reads the bounded identities and compares them with the pinned
+digests. A mismatch in that interval uses the same memory latch and `onSkillDrift` notice as a later
+watch callback; it withholds only the affected skill and does not fail dependency construction. The
+ongoing maintenance is asynchronous and outside every run. Its callback does not recompute an
+Environment, fail the kernel, or reject work. `snapshotSkills` immediately filters a latched skill
+from catalog/body access and refuses its resources. Code relays the notice through
 `WorkspaceClientManager.subscribeEnvironmentDrift` and renders a transient warning outside transcript
 history. The next run continues with every unaffected skill. A reconnect is the explicit operation
-that captures the changed version. Package-local executable files use the same asynchronous model:
+that captures the changed version, while an idle trust transition atomically replaces the catalog
+with the new trust-dependent roots. Package-local executable files use the same asynchronous model:
 `observeRuntimeFiles` withdraws the plugin's MCP/hook/capability projections through
-`runtimeAvailable`, without a run-admission or capability-location rehash. Selected standalone skill
+`runtimeAvailable`, without a run-admission or capability-location rehash. Explicitly local
+declarations that are absent or do not resolve to a confined regular file are rejected during pin;
+watchers bind the declaration path and compare inode/device identity as well as metadata so symlink
+retargeting cannot preserve availability. Selected standalone skill
 digests cover effective catalog
 metadata — including sidecar MCP tool dependencies that decide catalog availability — and the
 manifest; `standaloneCatalog` hashes each resource through the same raw streaming
 `hashBoundedFile` path, with the same 8 MiB per-file limit and a 32 MiB aggregate limit per
 standalone skill. Plugin skill digests include the same dependency projection. Those digests define
 the version recorded by the process fingerprint; later sidecar changes do not alter the in-memory
-catalog, and later manifest/resource changes cause withdrawal when the asynchronous monitor observes
-them. Production: `standaloneCatalog`, `pinnedSkillRoots`, `observeSkillCatalog`, and
-`skillAvailable` in `packages/kernel/src/environments/environment-manager.ts`; `skillSurface` and
-`pinnedSkillRoots` in `packages/kernel/src/plugins/plugin-contributions.ts`; `snapshotSkills` in
+catalog, and later identity-file changes cause withdrawal when the asynchronous monitor observes
+them. Production: `standaloneCatalog`, `pinnedSkillRoots`, `observeSkillCatalog`,
+`verifySkillCatalog`, `skillAvailable`, and `onSkillRootsChanged` in
+`packages/kernel/src/environments/environment-manager.ts`; `skillSurface`,
+`verifyPinnedSkillCatalog`, and `pinnedSkillRoots` in
+`packages/kernel/src/plugins/plugin-contributions.ts`; `snapshotSkills` in
 `packages/loop/src/runtime/build-run-deps.ts`. Test: asynchronous withdrawal in
 `packages/kernel/tests/integration/environment-manager.test.ts`, end-to-end non-blocking admission in
-`packages/kernel/tests/integration/file-kernel.test.ts`, and one-shot provider filtering in
+`packages/kernel/tests/integration/file-kernel.test.ts`, and exact provider filtering and idle trust
+replacement in
 `packages/loop/tests/integration/execute-run-entrypoints.test.ts`.
 The fingerprint
 also covers the qualified Environment id, definition revision, status, issues, and applicable trust
@@ -322,10 +335,14 @@ bytes. Plugin hooks are part of the selected plugin unit rather than a second ap
 `packages/kernel/tests/integration/environment-manager.test.ts` "restores the prior selection").
 
 Approving or revoking workspace trust recomposes the selected workspace (or `builtin:default`
-workspace-derived) plugin set immediately when the kernel is idle. The same transition returns
+workspace-derived) plugin set and atomically replaces its exact skill catalog when the kernel is
+idle. The same transition returns
 `conflict` while a run is active, before the trust store is changed, so no in-flight snapshot gains
 or retains executable contributions under a different verdict
 (`assertWorkspaceTrustTransitionAllowed` and the trust-transition branch of `resolveActive`).
+`approveWorkspace` requests a fresh surface and the production file-kernel adapter forwards that
+request to `EnvironmentManager.workspaceTrustSurface`, so consent cannot record a previously cached
+plugin digest.
 Code then reads `EnvironmentService.current()` and replaces its process snapshot cache before the
 trust operation resolves to the caller (`mutateTrust` in
 `packages/code/src/adapters/kernel-run-client.ts`).
@@ -375,24 +392,29 @@ falls back to builtin.
 ### INV-317 — A kernel uses one immutable resolved snapshot
 
 Definition/selection changes require reconnection; a stale preview cannot authorize different
-bytes, and an already running kernel retains its original fingerprint. Run admission is deliberately
+bytes, and an already running kernel retains its original fingerprint except for the explicit idle
+trust recomposition. Run admission is deliberately
 independent of extension filesystem size: it does not discover, stat, or hash skills. Only atomically
 captured plugin skill surfaces and exact builtin/custom standalone includes enter the one registry
-built for that process; catalog bodies are materialized there, and resource names are constrained to
-that captured allow-list. Asynchronous manifest/resource monitoring may withdraw one changed skill
-by flipping a memory latch. Withdrawal never makes the Environment or run admission unavailable;
-Code informs the user outside transcript history, unaffected skills continue, and reconnect captures
-the changed version. Skill resources enter initial identity through raw streaming hashes capped at
-8 MiB per file and 32 MiB aggregate (per plugin for packaged skills, per skill for standalone
-inventory), and an approved plugin root exposes only each discovered skill directory for helper
-execution. Read-only/control-plane projections use the pinned parse. Trust transitions may recompose
-only at an idle boundary; explicit approval refreshes the trust surface before recording consent,
-while ordinary settings reads reuse its cached process snapshot.
+owned by the dependencies; catalog bodies are materialized there, and resource names are constrained
+to that captured allow-list. The host arms monitoring for manifest, selected sidecar, and resources
+before verifying the capture against the pin. A capture-window mismatch or later asynchronous change
+withdraws one skill by flipping a memory latch. Withdrawal never makes the Environment or run
+admission unavailable; Code informs the user outside transcript history, unaffected skills continue,
+and reconnect captures the changed version. Skill resources enter initial identity through raw
+streaming hashes capped at 8 MiB per file and 32 MiB aggregate (per plugin for packaged skills, per
+skill for standalone inventory), and an approved plugin root exposes only each discovered skill
+directory for helper execution. Read-only/control-plane projections use the pinned parse. Trust transitions may recompose
+only at an idle boundary and synchronously replace the exact skill catalog; explicit approval
+refreshes the trust surface through the file-kernel adapter before recording consent, while ordinary
+settings reads reuse its cached process snapshot.
 
 - **Production:** `PluginContributions.pin`, `pinnedSkillRoots`,
   `PLUGIN_SKILL_RESOURCE_LIMITS`, `skillSurface`, `hashBoundedFile`, `snapshotPluginExecutables`,
   `standaloneCatalog`, `EnvironmentManager.observeSkillCatalog`,
-  `EnvironmentManager.skillAvailable`, `SkillRootSnapshotProvider`, `snapshotSkills`, `withRunLease`,
+  `EnvironmentManager.verifySkillCatalog`, `EnvironmentManager.skillAvailable`,
+  `EnvironmentManager.onSkillRootsChanged`, `PluginContributions.verifyPinnedSkillCatalog`,
+  `SkillRootSnapshotProvider`, `snapshotSkills`, `withRunLease`,
   the memory factory's host executor, pinned `resolveActive`, revision CAS,
   and preview fingerprint comparison in `packages/kernel/src`; `hashBoundedFile` and the two
   `MAX_SKILL_RESOURCE_*` snapshot limits in `packages/skills/src`.
@@ -403,7 +425,7 @@ while ordinary settings reads reuse its cached process snapshot.
   `packages/kernel/tests/integration/plugin-contributions.test.ts`, including invalid-sibling and
   aggregate-resource withholding; standalone aggregate-resource withholding and builtin exact-root
   filtering in `environment-manager.test.ts`;
-  one-shot exact-root capture and withdrawal in
+  exact-root capture, post-watch verification, idle trust replacement, and withdrawal in
   `packages/loop/tests/integration/execute-run-entrypoints.test.ts`; run admission after drift in
   `packages/kernel/tests/integration/file-kernel.test.ts`; the transient Code notice in
   `packages/code/tests/integration/app-shell-render.test.tsx`;
@@ -417,12 +439,14 @@ including installed checkouts not yet selected by an Environment. Code asks proa
 start. Global plugins installed into operator-owned inventories are already consented and remain
 outside this gate.
 
-- **Production:** cached and explicit-refresh paths in `workspaceTrustSurface`, `preview`, `select`, and
-  `assertWorkspaceTrustTransitionAllowed` in
-  `packages/kernel/src/environments/environment-manager.ts` and the file config store.
+- **Production:** cached and explicit-refresh paths in `workspaceTrustSurface`, `preview`, `select`,
+  `assertWorkspaceTrustTransitionAllowed`, and `onSkillRootsChanged` in
+  `packages/kernel/src/environments/environment-manager.ts`; option forwarding in
+  `packages/kernel/src/file-kernel.ts`; and the file config store approval adapter.
 - **Test:** the complete pre-selection inventory fingerprint, global-plugin-without-workspace-
   approval, mixed-scope partial-admission, one-approval Environment switching, proactive Code prompt,
-  and idle trust-recomposition cases in
+  idle trust-recomposition, approval-refresh forwarding, and trust-driven skill-catalog replacement
+  cases in
   `packages/kernel/tests/integration/environment-manager.test.ts`; the extension-surface case in
   `packages/kernel/tests/integration/workspace-trust.test.ts` pins explicit-refresh changes to the
   trust hash and proves active-run rejection occurs before the trust store is changed.

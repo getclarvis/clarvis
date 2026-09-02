@@ -538,7 +538,9 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
   skillRoots(): SkillRootInput[];
   pinnedSkillRoots(): SkillRootInput[];
   observeSkillCatalog(skills: readonly SkillContent[]): void;
+  verifySkillCatalog(skills: readonly SkillContent[]): void;
   skillAvailable(skill: SkillInfo): boolean;
+  onSkillRootsChanged(listener: () => void): () => void;
   runRef(): EnvironmentRunRef;
   workspaceTrustSurface(options?: { refresh?: boolean }): unknown;
   assertWorkspaceTrustTransitionAllowed(): void;
@@ -562,6 +564,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
   let pinnedTrust: WorkspaceTrustVerdict = { state: "inert" };
   const driftedSkillDirs = new Set<string>();
   const skillWatchers = new Map<string, SkillPathWatcher[]>();
+  const skillRootListeners = new Set<() => void>();
   let workspaceTrustSurfaceCaptured = false;
   let capturedWorkspaceTrustSurface: unknown;
   let closed = false;
@@ -1283,54 +1286,64 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
 
   const skillRoots = (): SkillRootInput[] => pinnedSkillRoots();
 
+  /** Release monitors for a catalog that is about to be replaced at an idle trust boundary. */
+  const resetSkillMonitoring = (): void => {
+    for (const watchers of skillWatchers.values()) {
+      for (const watcher of watchers) watcher.close();
+    }
+    skillWatchers.clear();
+    driftedSkillDirs.clear();
+  };
+
   /**
-   * Watch each admitted skill directory after its one process-local scan.
+   * Watch each admitted skill directory after one exact catalog capture.
    *
    * @remarks Watch callbacks only flip an in-memory latch and publish a notice.
    * They never rescan, hash, or mutate run admission. A changed skill remains
-   * withdrawn until the kernel reconnects and captures a new snapshot.
+   * withdrawn until an explicit snapshot replacement captures new bytes.
    */
+  const withdrawSkill = (skill: SkillInfo): void => {
+    if (closed || driftedSkillDirs.has(skill.dir)) return;
+    driftedSkillDirs.add(skill.dir);
+    for (const watcher of skillWatchers.get(skill.dir) ?? []) watcher.close();
+    skillWatchers.delete(skill.dir);
+    logger.warn(
+      {
+        event: "kernel.environment.skill_drift",
+        skill: skill.name,
+        scope: skill.scope,
+        source: skill.source,
+        path: skill.path,
+      },
+      "a changed skill was withdrawn from the process snapshot; runs remain available",
+    );
+    try {
+      options.onSkillDrift?.({
+        name: skill.name,
+        scope: skill.scope,
+        source: skill.source,
+        path: skill.path,
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          event: "kernel.environment.skill_drift_notice_failed",
+          skill: skill.name,
+          cause: error instanceof Error ? error.message : String(error),
+        },
+        "the host's skill drift notice callback failed",
+      );
+    }
+  };
+
   const observeSkillCatalog = (skills: readonly SkillContent[]): void => {
     if (closed) return;
     for (const skill of skills) {
       if (skillWatchers.has(skill.dir)) continue;
-      const onChange = (): void => {
-        if (closed || driftedSkillDirs.has(skill.dir)) return;
-        driftedSkillDirs.add(skill.dir);
-        for (const watcher of skillWatchers.get(skill.dir) ?? []) watcher.close();
-        skillWatchers.delete(skill.dir);
-        logger.warn(
-          {
-            event: "kernel.environment.skill_drift",
-            skill: skill.name,
-            scope: skill.scope,
-            source: skill.source,
-            path: skill.path,
-          },
-          "a changed skill was withdrawn from the process snapshot; runs remain available",
-        );
-        try {
-          options.onSkillDrift?.({
-            name: skill.name,
-            scope: skill.scope,
-            source: skill.source,
-            path: skill.path,
-          });
-        } catch (error) {
-          logger.warn(
-            {
-              event: "kernel.environment.skill_drift_notice_failed",
-              skill: skill.name,
-              cause: error instanceof Error ? error.message : String(error),
-            },
-            "the host's skill drift notice callback failed",
-          );
-        }
-      };
-      const paths = new Set<string>([
-        skill.path,
-        ...skill.resources.map((resource) => resource.path),
-      ]);
+      const onChange = (): void => withdrawSkill(skill);
+      const paths = new Set<string>(
+        skill.identityFiles ?? [skill.path, ...skill.resources.map((resource) => resource.path)],
+      );
       const watchers: SkillPathWatcher[] = [];
       let lastError: unknown;
       for (const path of paths) {
@@ -1357,6 +1370,62 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
   };
 
   const skillAvailable = (skill: SkillInfo): boolean => !driftedSkillDirs.has(skill.dir);
+
+  /** Re-read admitted skill identities after watchers are armed and compare them with the pin. */
+  const verifySkillCatalog = (skills: readonly SkillContent[]): void => {
+    if (pinned === undefined) throw kernelError("unavailable", "Environment has not been resolved");
+    for (const skill of options.pluginContributions.verifyPinnedSkillCatalog(skills)) {
+      withdrawSkill(skill);
+    }
+    const selected = pinned.standalone_skills
+      .filter((skill) => skill.active)
+      .map((skill) => skill.ref);
+    const expected = new Map(
+      pinned.standalone_skills
+        .filter((skill) => skill.active && skill.digest !== undefined)
+        .map((skill) => [
+          `${skill.ref.scope}\0${skill.ref.source}\0${skill.ref.name}`,
+          skill.digest!,
+        ]),
+    );
+    const current = new Map(
+      standaloneInventory(selected).map((skill) => [
+        `${skill.ref.scope}\0${skill.ref.source}\0${skill.ref.name}`,
+        skill.digest,
+      ]),
+    );
+    for (const skill of skills) {
+      if (skill.source.startsWith("plugin:")) continue;
+      const key = `${skill.scope}\0${skill.source}\0${skill.name}`;
+      const pinnedDigest = expected.get(key);
+      if (pinnedDigest === undefined || current.get(key) !== pinnedDigest) withdrawSkill(skill);
+    }
+  };
+
+  /** Subscribe to idle trust recompositions that replace the exact skill-root set. */
+  const onSkillRootsChanged = (listener: () => void): (() => void) => {
+    if (closed) return () => undefined;
+    skillRootListeners.add(listener);
+    return () => skillRootListeners.delete(listener);
+  };
+
+  /** Replace subscribers synchronously while no run can observe the old trust catalog. */
+  const publishSkillRootsChanged = (): void => {
+    resetSkillMonitoring();
+    for (const listener of [...skillRootListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        logger.warn(
+          {
+            event: "kernel.environment.skill_recomposition_failed",
+            cause: error instanceof Error ? error.message : String(error),
+          },
+          "a skill catalog subscriber failed during an idle trust recomposition",
+        );
+      }
+    }
+  };
 
   /**
    * Capture the complete bounded repository-plugin inventory for workspace trust.
@@ -2152,6 +2221,7 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
           false,
           true,
         );
+        publishSkillRootsChanged();
         return pinned;
       }
       const startedAt = Date.now();
@@ -2176,7 +2246,9 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     skillRoots,
     pinnedSkillRoots,
     observeSkillCatalog,
+    verifySkillCatalog,
     skillAvailable,
+    onSkillRootsChanged,
     runRef() {
       if (pinned === undefined)
         throw kernelError("unavailable", "Environment has not been resolved");
@@ -2187,10 +2259,8 @@ export function createEnvironmentManager(options: EnvironmentManagerOptions): {
     close() {
       if (closed) return;
       closed = true;
-      for (const watchers of skillWatchers.values()) {
-        for (const watcher of watchers) watcher.close();
-      }
-      skillWatchers.clear();
+      resetSkillMonitoring();
+      skillRootListeners.clear();
     },
   };
 }

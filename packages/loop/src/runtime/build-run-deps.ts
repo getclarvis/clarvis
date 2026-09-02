@@ -108,15 +108,17 @@ export interface BuiltinCapabilityToggles {
 /**
  * Host-owned immutable skill-root snapshot used by long-lived run dependencies.
  *
- * @remarks `roots` is consumed exactly once while the run dependencies are
- * constructed. `observe` installs non-blocking host monitoring for the admitted
- * catalog, while `available` is a process-local predicate used to withdraw a skill
- * after drift without rescanning or rejecting a run.
+ * @remarks `roots` is consumed while run dependencies are constructed and again
+ * only when the host publishes an idle trust recomposition. `observe` arms
+ * non-blocking monitoring before `verify` compares the captured bytes with the
+ * host pin. `available` then withdraws drift without rescanning or rejecting a run.
  */
 export interface SkillRootSnapshotProvider {
   roots(): SkillRootInput[];
   observe(skills: readonly SkillContent[]): void;
+  verify(skills: readonly SkillContent[]): void;
   available(skill: SkillInfo): boolean;
+  onRootsChanged?(listener: () => void): () => void;
 }
 
 /**
@@ -190,6 +192,8 @@ type SkillsSeam = SkillsProvider & {
   readResourceChunk: NonNullable<SkillsProvider["readResourceChunk"]>;
 };
 
+type SnapshotSkillsSeam = SkillsSeam & { close(): void };
+
 /** Empty exact skill catalogue used when a host intentionally selects no roots. */
 function emptySkillsProvider(): SkillsSeam {
   return {
@@ -216,65 +220,100 @@ function snapshotSkills(
   build: (roots: SkillRootInput[]) => SkillsSeam,
   provider: SkillRootSnapshotProvider,
   logger: Logger,
-): SkillsSeam {
-  const inner = build(provider.roots());
-  const discovered = inner.listSkills();
-  const catalog: SkillInfo[] = [];
-  const content = new Map<string, SkillContent>();
-  for (const info of discovered) {
-    try {
-      const loaded = inner.loadSkill(info.name);
-      if (loaded === undefined) continue;
-      catalog.push(info);
-      content.set(info.name, loaded);
-    } catch (err) {
-      logger.warn(
-        {
-          event: "skills.snapshot_body_unavailable",
-          skill: info.name,
-          cause: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
-        },
-        "a skill body could not enter the process snapshot and was withheld",
-      );
+): SnapshotSkillsSeam {
+  const capture = (): SkillsSeam => {
+    const inner = build(provider.roots());
+    const discovered = inner.listSkills();
+    const catalog: SkillInfo[] = [];
+    const content = new Map<string, SkillContent>();
+    for (const info of discovered) {
+      try {
+        const loaded = inner.loadSkill(info.name);
+        if (loaded === undefined) continue;
+        catalog.push(info);
+        content.set(info.name, loaded);
+      } catch (err) {
+        logger.warn(
+          {
+            event: "skills.snapshot_body_unavailable",
+            skill: info.name,
+            cause: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+          },
+          "a skill body could not enter the process snapshot and was withheld",
+        );
+      }
     }
-  }
-  provider.observe([...content.values()]);
-  const infoByName = new Map(catalog.map((info) => [info.name, info] as const));
-  const resourcesByName = new Map(
-    [...content].map(([name, loaded]) => [
-      name,
-      new Set(loaded.resources.map((resource) => resource.rel)),
-    ]),
-  );
-  const requireAvailable = (name: string): SkillInfo => {
-    const info = infoByName.get(name);
-    if (info === undefined || !provider.available(info)) {
-      throw new Error(
-        `skill '${name}' is unavailable because its process snapshot changed; reconnect to load the new version`,
-      );
-    }
-    return info;
-  };
-  return {
-    listSkills: () => catalog.filter((info) => provider.available(info)),
-    loadSkill: (name) => {
+    const captured = [...content.values()];
+    provider.observe(captured);
+    provider.verify(captured);
+    const infoByName = new Map(catalog.map((info) => [info.name, info] as const));
+    const resourcesByName = new Map(
+      [...content].map(([name, loaded]) => [
+        name,
+        new Set(loaded.resources.map((resource) => resource.rel)),
+      ]),
+    );
+    const requireAvailable = (name: string): SkillInfo => {
       const info = infoByName.get(name);
-      if (info === undefined || !provider.available(info)) return undefined;
-      return content.get(name);
-    },
-    readResource: (name, rel) => {
-      requireAvailable(name);
-      if (resourcesByName.get(name)?.has(rel) !== true) {
-        throw new Error(`skill resource '${rel}' is not part of the process snapshot`);
+      if (info === undefined || !provider.available(info)) {
+        throw new Error(
+          `skill '${name}' is unavailable because its process snapshot changed; reconnect to load the new version`,
+        );
       }
-      return inner.readResource(name, rel);
-    },
-    readResourceChunk: (name, rel, offset, maxChars) => {
-      requireAvailable(name);
-      if (resourcesByName.get(name)?.has(rel) !== true) {
-        throw new Error(`skill resource '${rel}' is not part of the process snapshot`);
+      return info;
+    };
+    return {
+      listSkills: () => catalog.filter((info) => provider.available(info)),
+      loadSkill: (name) => {
+        const info = infoByName.get(name);
+        if (info === undefined || !provider.available(info)) return undefined;
+        return content.get(name);
+      },
+      readResource: (name, rel) => {
+        requireAvailable(name);
+        if (resourcesByName.get(name)?.has(rel) !== true) {
+          throw new Error(`skill resource '${rel}' is not part of the process snapshot`);
+        }
+        return inner.readResource(name, rel);
+      },
+      readResourceChunk: (name, rel, offset, maxChars) => {
+        requireAvailable(name);
+        if (resourcesByName.get(name)?.has(rel) !== true) {
+          throw new Error(`skill resource '${rel}' is not part of the process snapshot`);
+        }
+        return inner.readResourceChunk(name, rel, offset, maxChars);
+      },
+    };
+  };
+
+  let current = capture();
+  let closed = false;
+  const unsubscribe =
+    provider.onRootsChanged?.(() => {
+      if (closed) return;
+      try {
+        current = capture();
+      } catch (err) {
+        current = emptySkillsProvider();
+        logger.warn(
+          {
+            event: "skills.snapshot_recomposition_failed",
+            cause: sanitizeErrorMessage(err instanceof Error ? err.message : String(err)),
+          },
+          "the idle trust recomposition could not capture skills; the catalog was withheld",
+        );
       }
-      return inner.readResourceChunk(name, rel, offset, maxChars);
+    }) ?? (() => undefined);
+  return {
+    listSkills: () => current.listSkills(),
+    loadSkill: (name) => current.loadSkill(name),
+    readResource: (name, rel) => current.readResource(name, rel),
+    readResourceChunk: (name, rel, offset, maxChars) =>
+      current.readResourceChunk(name, rel, offset, maxChars),
+    close: () => {
+      if (closed) return;
+      closed = true;
+      unsubscribe();
     },
   };
 }
@@ -568,6 +607,7 @@ export async function buildExecuteRunDeps({
   );
 
   let skills: SkillsProvider | undefined;
+  let closeSkillSnapshot = (): void => undefined;
   if (!(useSkills && env.CLARVIS_SKILLS_ENABLED)) {
     reportBuiltinDisabled(logger, "@clarvis/skills", "skills");
   }
@@ -597,7 +637,9 @@ export async function buildExecuteRunDeps({
     const configuredRoots = skillRoots ?? extraSkillRoots;
     if (isSkillRootSnapshotProvider(configuredRoots)) {
       try {
-        skills = snapshotSkills(build, configuredRoots, logger);
+        const snapshot = snapshotSkills(build, configuredRoots, logger);
+        skills = snapshot;
+        closeSkillSnapshot = () => snapshot.close();
       } catch (err) {
         logger.warn(
           {
@@ -732,6 +774,7 @@ export async function buildExecuteRunDeps({
     modelCallAdmission,
     extensionAdmission,
     dispose: async () => {
+      closeSkillSnapshot();
       const closed = await Promise.allSettled([
         connections.closeAll(),
         authorization?.close() ?? Promise.resolve(),

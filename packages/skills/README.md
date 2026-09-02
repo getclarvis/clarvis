@@ -129,6 +129,10 @@ participate in identity while keeping model-facing text disclosure and snapshot 
 independently bounded. Their canonical catalog projection also includes `dependencies.tools`, so a
 sidecar change that alters model-visible skill availability invalidates both plugin and standalone
 skill snapshots even though the `agents/` sidecar directory is not a model-readable resource.
+`SkillRegistry.get` exposes the absolute `identityFiles` that produced the effective content: the
+manifest, selected sidecar when present, and enumerated resources. A host can arm asynchronous
+monitoring for that exact set before comparing the captured catalog with its pinned digest; the
+sidecar remains unavailable through the resource API.
 
 `LOAD_SKILL_TOOL_NAME` is owned only here. `createSkillsCapability` derives its
 `reservedWireNames` and `toolEffects` from the canonical `loadSkillTool`

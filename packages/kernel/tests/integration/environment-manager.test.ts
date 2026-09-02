@@ -1173,6 +1173,76 @@ describe("Environment manager", () => {
     target.close();
   });
 
+  it("verifies pinned skill bytes after arming their asynchronous monitors", () => {
+    const skillRoot = globalPaths(globalDir).skillsDir;
+    writeSkill(skillRoot, "research");
+    const manifest = join(skillRoot, "research", "SKILL.md");
+    let armed = false;
+    const notices: EnvironmentSkillDriftNotice[] = [];
+    const target = manager(undefined, undefined, {
+      onSkillDrift: (notice) => notices.push(notice),
+      watchSkillPath: (_path, _onChange) => {
+        if (!armed) {
+          armed = true;
+          writeFileSync(
+            manifest,
+            "---\nname: research\ndescription: changed\n---\n\nChanged after capture.\n",
+          );
+        }
+        return { close: () => undefined };
+      },
+    });
+    target.resolveActive([], TRUSTED);
+    const registry = createAgentSkills({
+      workspace: workspaceRoot,
+      roots: target.pinnedSkillRoots(),
+    });
+    const captured = registry.listSkills().flatMap((skill) => registry.loadSkill(skill.name) ?? []);
+
+    target.observeSkillCatalog(captured);
+
+    expect(armed).toBeTrue();
+    target.verifySkillCatalog(captured);
+    expect(target.skillAvailable(captured[0]!)).toBeFalse();
+    expect(notices).toEqual([expect.objectContaining({ name: "research", path: manifest })]);
+    target.close();
+  });
+
+  it("includes effective sidecar bytes in post-watch plugin skill verification", () => {
+    const pluginDir = installPlugin(globalPaths(globalDir).pluginsDir, "atlas");
+    const skillRoot = join(pluginDir, "skills");
+    writeSkill(skillRoot, "atlas-guide");
+    const sidecar = join(skillRoot, "atlas-guide", "agents", "openai.yaml");
+    mkdirSync(join(sidecar, ".."), { recursive: true });
+    writeFileSync(sidecar, "short-description: First presentation\n");
+    let watchedSidecar = false;
+    const notices: EnvironmentSkillDriftNotice[] = [];
+    const target = manager(undefined, undefined, {
+      onSkillDrift: (notice) => notices.push(notice),
+      watchSkillPath: (path, _onChange) => {
+        if (path === sidecar) {
+          watchedSidecar = true;
+          writeFileSync(sidecar, "short-description: Changed presentation\n");
+        }
+        return { close: () => undefined };
+      },
+    });
+    target.resolveActive([pluginRef("atlas")], TRUSTED);
+    const registry = createAgentSkills({
+      workspace: workspaceRoot,
+      roots: target.pinnedSkillRoots(),
+    });
+    const captured = registry.listSkills().flatMap((skill) => registry.loadSkill(skill.name) ?? []);
+
+    target.observeSkillCatalog(captured);
+
+    expect(watchedSidecar).toBeTrue();
+    target.verifySkillCatalog(captured);
+    expect(target.skillAvailable(captured[0]!)).toBeFalse();
+    expect(notices).toEqual([expect.objectContaining({ name: "atlas-guide" })]);
+    target.close();
+  });
+
   it("contains a failing host drift notice after withdrawing the changed skill", () => {
     const root = globalPaths(globalDir).skillsDir;
     writeSkill(root, "research");

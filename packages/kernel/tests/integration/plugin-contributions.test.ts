@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { agentsPluginsDirs, globalPaths, workspacePaths } from "@clarvis/paths";
@@ -544,6 +544,59 @@ describe("plugin contributions", () => {
       error: expect.stringContaining("plugin root could not be resolved"),
     });
   });
+
+  it("rejects an explicitly local executable path that is absent while pinning", () => {
+    const dir = install(globalPaths(globalDir).pluginsDir, "missing-runtime", {});
+
+    expect(
+      snapshotPluginExecutables(dir, {
+        name: "missing-runtime",
+        capabilityExecutables: {
+          memory: { command: "python3", args: ["./provider.py"], env: {}, timeout_ms: 30_000 },
+        },
+      } as PluginManifest),
+    ).toEqual({
+      ok: false,
+      error: "declared package-local executable './provider.py' is not a confined regular file",
+    });
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "pins and watches the declared symlink name rather than only its resolved target",
+    () => {
+      const dir = install(globalPaths(globalDir).pluginsDir, "linked-runtime", {
+        capabilityExecutables: {
+          memory: { command: "python3", args: ["./provider.py"] },
+        },
+      });
+      writeFileSync(join(dir, "provider-v1.py"), "v1\n");
+      symlinkSync("provider-v1.py", join(dir, "provider.py"));
+      expect(
+        snapshotPluginExecutables(dir, {
+          name: "linked-runtime",
+          capabilityExecutables: {
+            memory: { command: "python3", args: ["./provider.py"], env: {}, timeout_ms: 30_000 },
+          },
+        } as PluginManifest),
+      ).toMatchObject({ ok: true, files: [{ path: "provider.py" }] });
+
+      const watched: string[] = [];
+      const loaded = createPluginContributions({
+        globalDir,
+        home,
+        workspaceRoot,
+        watchRuntimePath: (path) => {
+          watched.push(path);
+          return { close: () => undefined };
+        },
+      });
+      loaded.pin(refs("linked-runtime"));
+
+      expect(watched).toContain(join(dir, "provider.py"));
+      expect(watched).not.toContain(join(dir, "provider-v1.py"));
+      loaded.close();
+    },
+  );
 
   it("ignores process paths and working directories outside the package", () => {
     const dir = install(globalPaths(globalDir).pluginsDir, "confined", {});

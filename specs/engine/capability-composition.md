@@ -105,7 +105,7 @@ buildExecuteRunDeps(options: BuildRunDepsOptions): Promise<BuiltRunDeps>
 | `workspaceRoot` | `string` | must be non-blank or the call throws (`packages/loop/src/runtime/build-run-deps.ts:384-386`) |
 | `traceDir?` | `string` | overrides the resolved trace store's directory |
 | `extraSkillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[])` | array form is static; function form is re-read (and rescanned only on signature change) every call (`packages/loop/src/runtime/build-run-deps.ts:203-255`) |
-| `skillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[]) \| SkillRootSnapshotProvider` | exact host-resolved roots; suppresses automatic standard-root appending, including for an intentional empty array, and is mutually exclusive with `extraSkillRoots`. The snapshot-provider form consumes roots and materializes bodies once during dependency construction, then filters availability through a memory-only host predicate (`SkillRootSnapshotProvider`, `snapshotSkills`, and `buildExecuteRunDeps` in `packages/loop/src/runtime/build-run-deps.ts`) |
+| `skillRoots?` | `SkillRootInput[] \| (() => SkillRootInput[]) \| SkillRootSnapshotProvider` | exact host-resolved roots; suppresses automatic standard-root appending, including for an intentional empty array, and is mutually exclusive with `extraSkillRoots`. The snapshot-provider form materializes bodies during dependency construction, arms host monitoring before verification, filters availability through a memory-only predicate, and may atomically replace the exact catalog only on an idle host-published trust event (`SkillRootSnapshotProvider`, `snapshotSkills`, and `buildExecuteRunDeps` in `packages/loop/src/runtime/build-run-deps.ts`) |
 | `skillBootstraps?` | `() => readonly PluginBootstrapSkill[]` | function-only, so a plugin enabled after deps were built still takes effect (`packages/loop/src/runtime/build-run-deps.ts:127-129`) |
 | `resolveHooks?` | `(ctx) => readonly HookConfig[] \| undefined` | host port for workspace hooks; omitted entirely means no hook ever runs (`packages/loop/src/runtime/build-run-deps.ts:130-134`) |
 | `hookCredentialNames?` | `() => readonly string[]` | forwarded to the hooks capability's env denylist |
@@ -362,9 +362,10 @@ Given `seedMarkers: ["<cap-block>"]`:
 6. Build the retrying/logging/admission-wrapped AI SDK provider (`:453-474`).
 7. **Skills** (only if `useSkills && env.CLARVIS_SKILLS_ENABLED`): dynamically import
    `@clarvis/skills`, then build a static provider from an array, wrap a function form in
-   `dynamicSkills`, or build one process-pinned provider through `snapshotSkills`. The last form
-   consumes roots once, materializes admitted bodies before any run, restricts resources to the
-   captured allow-list, and consults only `available(skill)` thereafter; it never rescans at run
+   `dynamicSkills`, or build one host-pinned provider through `snapshotSkills`. The last form
+   materializes admitted bodies before any run, restricts resources to the captured allow-list, arms
+   host monitoring before verification, and consults only `available(skill)` thereafter. An idle
+   host-published trust event may replace the whole exact provider, but it never rescans at run
    admission. Function forms retain memoized-by-signature rescanning and last-good degradation.
    Exact `skillRoots` are used as-is; only the additional-root form receives the four standard roots
    (`SkillRootSnapshotProvider`, `snapshotSkills`, `dynamicSkills`, and `buildExecuteRunDeps` in

@@ -37,6 +37,9 @@ import {
   enumerateResources,
   hashBoundedFile,
   readBoundedBytes,
+  type SkillContent,
+  type SkillInfo,
+  type SkillResource,
   MAX_SKILL_FILE_BYTES,
   MAX_SKILL_FILE_CHARS,
   MAX_SKILL_RESOURCE_FILE_BYTES,
@@ -120,6 +123,8 @@ export interface PluginContributions {
     plugin: string,
     skill: string,
   ): CapabilitySkillPlansMode | undefined;
+  /** Return captured skills whose bytes no longer match the exact process-pinned contribution. */
+  verifyPinnedSkillCatalog(skills: readonly SkillContent[]): readonly SkillContent[];
   /** Release asynchronous executable-file monitors owned by this contribution snapshot. */
   close(): void;
 }
@@ -233,14 +238,30 @@ export function createPluginContributions(opts: {
     opts.watchRuntimePath ??
     ((path: string, onChange: () => void): PluginRuntimeWatcher => {
       const listener = (
-        current: { mtimeMs: number; ctimeMs: number; size: number; mode: number },
-        previous: { mtimeMs: number; ctimeMs: number; size: number; mode: number },
+        current: {
+          mtimeMs: number;
+          ctimeMs: number;
+          size: number;
+          mode: number;
+          ino: number;
+          dev: number;
+        },
+        previous: {
+          mtimeMs: number;
+          ctimeMs: number;
+          size: number;
+          mode: number;
+          ino: number;
+          dev: number;
+        },
       ): void => {
         if (
           current.mtimeMs === previous.mtimeMs &&
           current.ctimeMs === previous.ctimeMs &&
           current.size === previous.size &&
-          current.mode === previous.mode
+          current.mode === previous.mode &&
+          current.ino === previous.ino &&
+          current.dev === previous.dev
         )
           return;
         onChange();
@@ -450,6 +471,56 @@ export function createPluginContributions(opts: {
       )
       .digest("hex")}`;
 
+  const capturedSkillSurfaces = new WeakMap<
+    PluginContributionSnapshot,
+    readonly ({ name: string; digest: string } | { unavailable: true })[]
+  >();
+
+  /** Hash one discovered skill through the canonical record used by contribution pinning. */
+  const skillDigest = (
+    info: SkillInfo,
+    resources: readonly SkillResource[],
+    aggregate: { bytes: number },
+  ): string =>
+    digest({
+      manifest: snapshotFileDigest(info.path, MAX_SKILL_FILE_BYTES, MAX_SKILL_FILE_CHARS),
+      catalog: {
+        name: info.name,
+        description: info.description,
+        metadata: info.metadata,
+        allowed_tools: info.allowedTools,
+        user_invocable: info.userInvocable,
+        catalog_suppressed: info.catalogSuppressed,
+        dependencies: info.dependencies,
+        presentation: info.presentation,
+        defaulted: info.defaulted,
+      },
+      resources: [...resources]
+        .sort((left, right) => left.rel.localeCompare(right.rel))
+        .map((resource) => {
+          const snapshot = hashBoundedFile(resource.path, {
+            maxBytes: PLUGIN_SKILL_RESOURCE_LIMITS.fileBytes,
+            code: "invalid_skill",
+            label: "plugin skill resource",
+            logger,
+          });
+          aggregate.bytes += snapshot.bytes;
+          if (aggregate.bytes > PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes) {
+            throw new Error(
+              `plugin skill resources exceed the ${String(
+                PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes,
+              )}-byte aggregate limit`,
+            );
+          }
+          return {
+            rel: resource.rel,
+            digest: snapshot.digest,
+            bytes: snapshot.bytes,
+            mode: snapshot.mode,
+          };
+        }),
+    });
+
   const skillSurface = (
     plugin: Loadable,
   ): ({ name: string; digest: string } | { unavailable: true })[] => {
@@ -461,7 +532,7 @@ export function createPluginContributions(opts: {
     );
     if (roots.length === 0) return [];
     try {
-      let aggregateResourceBytes = 0;
+      const aggregate = { bytes: 0 };
       const skills = createAgentSkills({
         workspace: plugin.dir,
         roots,
@@ -470,52 +541,14 @@ export function createPluginContributions(opts: {
       });
       return skills
         .listSkills()
-        .map((info) => {
-          const resources = enumerateResources(
-            info.dir,
-            skills.config.followSymlinks,
-            skills.config,
-          ).map((resource) => {
-            const snapshot = hashBoundedFile(resource.path, {
-              maxBytes: PLUGIN_SKILL_RESOURCE_LIMITS.fileBytes,
-              code: "invalid_skill",
-              label: "plugin skill resource",
-              logger,
-            });
-            aggregateResourceBytes += snapshot.bytes;
-            if (aggregateResourceBytes > PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes) {
-              throw new Error(
-                `plugin skill resources exceed the ${String(
-                  PLUGIN_SKILL_RESOURCE_LIMITS.aggregateBytes,
-                )}-byte aggregate limit`,
-              );
-            }
-            return {
-              rel: resource.rel,
-              digest: snapshot.digest,
-              bytes: snapshot.bytes,
-              mode: snapshot.mode,
-            };
-          });
-          return {
-            name: info.name,
-            digest: digest({
-              manifest: snapshotFileDigest(info.path, MAX_SKILL_FILE_BYTES, MAX_SKILL_FILE_CHARS),
-              catalog: {
-                name: info.name,
-                description: info.description,
-                metadata: info.metadata,
-                allowed_tools: info.allowedTools,
-                user_invocable: info.userInvocable,
-                catalog_suppressed: info.catalogSuppressed,
-                dependencies: info.dependencies,
-                presentation: info.presentation,
-                defaulted: info.defaulted,
-              },
-              resources,
-            }),
-          };
-        })
+        .map((info) => ({
+          name: info.name,
+          digest: skillDigest(
+            info,
+            enumerateResources(info.dir, skills.config.followSymlinks, skills.config),
+            aggregate,
+          ),
+        }))
         .sort((left, right) => left.name.localeCompare(right.name));
     } catch {
       return [{ unavailable: true }];
@@ -554,6 +587,7 @@ export function createPluginContributions(opts: {
     if (skills.some((skill) => "unavailable" in skill)) {
       unavailableSkillSnapshots.add(snapshot);
     }
+    capturedSkillSurfaces.set(snapshot, skills);
     return snapshot;
   };
 
@@ -564,6 +598,7 @@ export function createPluginContributions(opts: {
         loadables: readonly Loadable[];
         snapshots: readonly PluginContributionSnapshot[];
         skillRoots: readonly SkillRootInput[];
+        skillDigests: ReadonlyMap<string, string>;
       }
     | undefined;
 
@@ -748,12 +783,22 @@ export function createPluginContributions(opts: {
       const snapshots = captureSnapshots(captured);
       const refs = captured.map((plugin) => plugin.ref);
       const skillRoots = projectSkillRoots(captured, snapshots);
+      const skillDigests = new Map<string, string>();
+      for (const snapshot of snapshots) {
+        const scope = snapshot.ref.scope === "workspace" ? "workspace" : "user";
+        for (const skill of capturedSkillSurfaces.get(snapshot) ?? []) {
+          if ("name" in skill) {
+            skillDigests.set(`${scope}\0plugin:${snapshot.ref.name}\0${skill.name}`, skill.digest);
+          }
+        }
+      }
       pinned = {
         selection: selectionId(refs),
         refs,
         loadables: captured,
         snapshots,
         skillRoots: Object.freeze(skillRoots),
+        skillDigests,
       };
       observeRuntimeFiles(captured);
       return snapshots;
@@ -861,6 +906,29 @@ export function createPluginContributions(opts: {
       const loadable = loadables(enabled).find((candidate) => refId(candidate.ref) === refId(ref));
       if (loadable === undefined || !runtimeAvailable(loadable)) return undefined;
       return loadable.manifest.capabilityRunPolicies?.plans?.skills[skill];
+    },
+
+    verifyPinnedSkillCatalog(skills) {
+      if (pinned === undefined) {
+        throw kernelError("unavailable", "plugin contribution snapshot has not been pinned");
+      }
+      const current = new Map<string, string>();
+      for (const plugin of pinned.loadables) {
+        const scope = plugin.ref.scope === "workspace" ? "workspace" : "user";
+        for (const skill of skillSurface(plugin)) {
+          if ("name" in skill) {
+            current.set(`${scope}\0plugin:${plugin.name}\0${skill.name}`, skill.digest);
+          }
+        }
+      }
+      const changed: SkillContent[] = [];
+      for (const skill of skills) {
+        if (!skill.source.startsWith("plugin:")) continue;
+        const key = `${skill.scope}\0${skill.source}\0${skill.name}`;
+        const expected = pinned.skillDigests.get(key);
+        if (expected === undefined || current.get(key) !== expected) changed.push(skill);
+      }
+      return changed;
     },
 
     close() {

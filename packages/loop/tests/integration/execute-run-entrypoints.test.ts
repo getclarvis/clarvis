@@ -339,6 +339,9 @@ describe("buildExecuteRunDeps", () => {
         observe: () => {
           throw new Error("unreachable");
         },
+        verify: () => {
+          throw new Error("unreachable");
+        },
         available: () => true,
       },
     });
@@ -378,6 +381,7 @@ describe("buildExecuteRunDeps", () => {
           observed += 1;
           expect(skills.map((skill) => skill.name)).toEqual(["guide"]);
         },
+        verify: () => undefined,
         available: () => available,
       },
     });
@@ -408,6 +412,135 @@ describe("buildExecuteRunDeps", () => {
       );
       expect(rootsCalls).toBe(1);
       expect(observed).toBe(1);
+    } finally {
+      await built.dispose();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("withholds capture-window drift without failing dependency construction", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "clarvis-snapshot-verify-"));
+    const skillDir = join(dir, "guide");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      "---\nname: guide\ndescription: guide\n---\n\nGuide body.\n",
+    );
+    let available = true;
+    const phases: string[] = [];
+    const built = await buildExecuteRunDeps({
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      logger: createLogger("silent"),
+      workspaceRoot: dir,
+      skillRoots: {
+        roots: () => [{ path: dir, include: ["guide"] }],
+        observe: () => phases.push("observe"),
+        verify: () => {
+          phases.push("verify");
+          available = false;
+        },
+        available: () => available,
+      },
+    });
+    try {
+      expect(phases).toEqual(["observe", "verify"]);
+      expect(built.skills!.listSkills()).toEqual([]);
+      expect(built.skills!.loadSkill("guide")).toBeUndefined();
+    } finally {
+      await built.dispose();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("replaces the exact skill catalog only when the host publishes an idle trust change", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "clarvis-trust-skill-roots-"));
+    const first = join(dir, "first");
+    const second = join(dir, "second");
+    for (const [root, name] of [
+      [first, "guide"],
+      [second, "approved"],
+    ] as const) {
+      mkdirSync(join(root, name), { recursive: true });
+      writeFileSync(
+        join(root, name, "SKILL.md"),
+        `---\nname: ${name}\ndescription: ${name}\n---\n\n${name} body.\n`,
+      );
+    }
+    let roots = [{ path: first, include: ["guide"] }];
+    let publish!: () => void;
+    const phases: string[] = [];
+    const built = await buildExecuteRunDeps({
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      logger: createLogger("silent"),
+      workspaceRoot: dir,
+      skillRoots: {
+        roots: () => roots,
+        observe: () => phases.push("observe"),
+        verify: () => phases.push("verify"),
+        available: () => true,
+        onRootsChanged: (listener) => {
+          publish = listener;
+          return () => undefined;
+        },
+      },
+    });
+    try {
+      expect(built.skills!.listSkills().map((skill) => skill.name)).toEqual(["guide"]);
+      roots = [{ path: second, include: ["approved"] }];
+      expect(built.skills!.listSkills().map((skill) => skill.name)).toEqual(["guide"]);
+
+      publish();
+
+      expect(built.skills!.listSkills().map((skill) => skill.name)).toEqual(["approved"]);
+      expect(built.skills!.loadSkill("guide")).toBeUndefined();
+      expect(phases).toEqual(["observe", "verify", "observe", "verify"]);
+    } finally {
+      await built.dispose();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("withholds the catalog when an idle trust replacement cannot be captured", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "clarvis-failed-trust-skill-roots-"));
+    const skillDir = join(dir, "guide");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(
+      join(skillDir, "SKILL.md"),
+      "---\nname: guide\ndescription: guide\n---\n\nGuide body.\n",
+    );
+    let failReplacement = false;
+    let publish!: () => void;
+    const logger = createLogger("silent");
+    const warnSpy = vi.spyOn(logger, "warn");
+    const built = await buildExecuteRunDeps({
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      logger,
+      workspaceRoot: dir,
+      skillRoots: {
+        roots: () => {
+          if (failReplacement) throw new Error("replacement roots unavailable");
+          return [{ path: dir, include: ["guide"] }];
+        },
+        observe: () => undefined,
+        verify: () => undefined,
+        available: () => true,
+        onRootsChanged: (listener) => {
+          publish = listener;
+          return () => undefined;
+        },
+      },
+    });
+    try {
+      expect(built.skills!.listSkills().map((skill) => skill.name)).toEqual(["guide"]);
+      failReplacement = true;
+
+      publish();
+
+      expect(built.skills!.listSkills()).toEqual([]);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ event: "skills.snapshot_recomposition_failed" }),
+        expect.any(String),
+      );
     } finally {
       await built.dispose();
       rmSync(dir, { recursive: true, force: true });

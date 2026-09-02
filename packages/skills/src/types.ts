@@ -213,6 +213,8 @@ export interface SkillContent extends SkillInfo {
   /** The `SKILL.md` body (frontmatter stripped, trimmed). */
   body: string;
   resources: SkillResource[];
+  /** Files whose bytes produced this effective body, catalog metadata, or resource allow-list. */
+  identityFiles?: string[];
 }
 
 /**
@@ -223,6 +225,8 @@ export interface SkillContent extends SkillInfo {
 export interface ResolvedSkill {
   info: SkillInfo;
   body: string;
+  /** Harness sidecar that contributed effective metadata, when one was selected. */
+  sidecarPath?: string;
 }
 
 /**

@@ -316,6 +316,7 @@ function origin(info: Pick<SkillInfo, "root" | "scope" | "source">): Record<stri
 function withInfo(skill: ResolvedSkill, info: SkillInfo): ResolvedSkill {
   return {
     info,
+    ...(skill.sidecarPath === undefined ? {} : { sidecarPath: skill.sidecarPath }),
     get body(): string {
       return skill.body;
     },
@@ -530,6 +531,7 @@ function buildResolvedSkill(
   let cachedBody = "";
   return {
     info,
+    ...(sidecarFile === undefined ? {} : { sidecarPath: sidecarFile }),
     get body(): string {
       if (!loaded) {
         const raw = readBoundedText(file, {
@@ -735,7 +737,16 @@ function makeRegistry(byName: Map<string, ResolvedSkill>, config: SkillConfig): 
         },
         "a skill's body and resource listing were disclosed to the caller",
       );
-      return { ...skill.info, body, resources };
+      return {
+        ...skill.info,
+        body,
+        resources,
+        identityFiles: [
+          skill.info.path,
+          ...(skill.sidecarPath === undefined ? [] : [skill.sidecarPath]),
+          ...resources.map((resource) => resource.path),
+        ],
+      };
     },
     resource(name: string, rel: string): string {
       return resourcePath(name, rel);

@@ -16,7 +16,13 @@ import {
   createKernelEnvironment,
   resolveSecretEnvironment,
 } from "../../src/bootstrap.ts";
-import { globalPaths, ownerSegment, workspaceScopeKey } from "@clarvis/paths";
+import {
+  globalPaths,
+  ownerSegment,
+  workspacePaths,
+  workspaceScopeKey,
+  workspaceStatePaths,
+} from "@clarvis/paths";
 import { discoverGitWorkspace } from "../../src/git-workspace.ts";
 import { recordingLogger } from "../helpers/logger.ts";
 
@@ -381,6 +387,79 @@ describe("createFileKernel — skills roots from plugins", () => {
       await handle.closed;
       expect(logger.events("skills.discovered").slice(discoveriesBeforeRun)).toEqual([]);
       expect(logger.events("skill.dir_unreadable").slice(unreadableBeforeRun)).toEqual([]);
+    } finally {
+      await kernel.close();
+    }
+  });
+
+  it("refreshes repository plugin bytes before recording workspace approval", async () => {
+    const ws = seedWorkspace();
+    const globalDir = join(ws, "global");
+    const pluginManifest = join(workspacePaths(ws).pluginsDir, "runner", "plugin.json");
+    seedFile(pluginManifest, JSON.stringify({ name: "runner", version: "one" }));
+    const first = await createFileKernel({
+      workspaceRoot: ws,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      traceDir: join(ws, "traces-first"),
+      globalDir,
+    });
+    expect((await first.config.getSettings()).workspace_trust?.state).toBe("unapproved");
+    writeFileSync(pluginManifest, JSON.stringify({ name: "runner", version: "two" }));
+    expect((await first.config.approveWorkspace()).workspace_trust?.state).toBe("trusted");
+    await first.close();
+
+    const reconnected = await createFileKernel({
+      workspaceRoot: ws,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      traceDir: join(ws, "traces-second"),
+      globalDir,
+    });
+    try {
+      expect((await reconnected.config.getSettings()).workspace_trust?.state).toBe("trusted");
+    } finally {
+      await reconnected.close();
+    }
+  });
+
+  it("atomically adds and revokes plugin skills when workspace trust recomposes", async () => {
+    const ws = seedWorkspace();
+    const globalDir = join(ws, "global");
+    const pluginDir = join(workspacePaths(ws).pluginsDir, "handbook");
+    seedFile(join(pluginDir, "plugin.json"), JSON.stringify({ name: "handbook" }));
+    seedFile(
+      join(pluginDir, "skills", "guide", "SKILL.md"),
+      "---\nname: guide\ndescription: guide\n---\n\nTrusted guide.\n",
+    );
+    seedFile(
+      join(workspacePaths(ws).environmentsDir, "project.json"),
+      JSON.stringify({
+        schema_version: 1,
+        plugins: [{ scope: "workspace", source: "clarvis", name: "handbook" }],
+        skills: [],
+      }),
+    );
+    seedFile(
+      workspaceStatePaths(ws, { env: { CLARVIS_HOME: globalDir } }).environmentSelectionFile,
+      JSON.stringify({
+        schema_version: 1,
+        environment: { scope: "workspace", name: "project" },
+      }),
+    );
+
+    const kernel = await createFileKernel({
+      workspaceRoot: ws,
+      env: loadEnv({ CLARVIS_LOG_LEVEL: "silent" }),
+      traceDir: join(ws, "traces"),
+      globalDir,
+    });
+    try {
+      expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBeFalse();
+      await kernel.config.approveWorkspace();
+      expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBeTrue();
+      expect((await kernel.skills.getPrompt("guide"))[0]?.content).toContain("Trusted guide.");
+      await kernel.config.revokeWorkspace();
+      expect((await kernel.skills.list()).some((skill) => skill.name === "guide")).toBeFalse();
+      await expect(kernel.skills.getPrompt("guide")).rejects.toMatchObject({ code: "not_found" });
     } finally {
       await kernel.close();
     }

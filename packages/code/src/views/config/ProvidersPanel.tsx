@@ -553,7 +553,7 @@ export function ProvidersPanel(host: ViewHost, deps: ProvidersDeps): JSX.Element
       onClose: () => {
         setPicker(null);
         if (choosingFirstModel) {
-          deps.notify("Choose a model to finish setup", "warn");
+          host.close();
           return;
         }
         if (!config) return;

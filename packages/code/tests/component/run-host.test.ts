@@ -1004,9 +1004,12 @@ test("steer failure restores the draft and says so in the status", async () => {
   expect(host.runStatus()).toContain("restored");
   expect(
     store.nodes.some(
-      (node) => node.kind === "annotation" && node.text.includes("steer me somewhere"),
+      (node) =>
+        node.kind === "annotation" &&
+        node.text.includes("Steer not delivered") &&
+        node.text.includes("steer me somewhere"),
     ),
-  ).toBe(false);
+  ).toBe(true);
 
   steerImpl.fn = async () => ({ status: "steered" });
   await host.submitTurn("second steer");

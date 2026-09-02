@@ -344,6 +344,11 @@ Run elicitation is buffered until a client registers `RunHandle.onElicit`.
 Questions raised during startup therefore survive the asynchronous
 `runs.start` boundary.
 
+`RunHandle.steer` acknowledges a message only after the loop drains it from the run-scoped steering
+source. If the run closes first, the pending call rejects with `not_found`; a host can therefore
+distinguish applied steering from an accepted-but-undelivered queue entry and restore the user's
+input.
+
 Managed and remote run handles expose their bounded event stream's current item, estimated-byte and
 dropped-event counters through the protocol's optional `buffered()` diagnostic surface. The stream
 maintains these values incrementally, so a memory ledger does not walk or duplicate the queue.
@@ -684,7 +689,8 @@ The suite is classified by its primary boundary while the architecture migration
   runtime; the kernel test suite does not require a second language runtime. Helpers are not test
   entrypoints and own no behavior matrix.
 
-`tests/unit/managed-run.test.ts` is the single owner of run-handle buffering, steering, explicit
+`tests/unit/managed-run.test.ts` is the single owner of run-handle buffering, drain-acknowledged
+steering and close-before-drain refusal, explicit
 compaction, cancellation, elicitation replay, memory-ingest grace/renewal, dropped-event reporting
 and lifecycle admission. The ordinary run and workflow-manager integrations intentionally do not repeat that
 matrix; they retain only their distinct loop/service wiring smokes. The managed-run clock seam is an

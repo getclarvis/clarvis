@@ -19,6 +19,10 @@ export function createProviderListLevel(ctx: ProvidersViewContext): {
   openAdd: () => void;
 } {
   const { ctrl, providers, sel, setSel } = ctx;
+  const closePicker = (): void => {
+    ctx.setPicker(null);
+    if (ctx.bootstrap) ctx.host.close();
+  };
 
   const defaultProviderName = (): string | undefined => {
     const dm = ctrl.effectiveDefaultModel();
@@ -66,7 +70,7 @@ export function createProviderListLevel(ctx: ProvidersViewContext): {
           ctx.setPicker(null);
           addBlank();
         },
-        onClose: () => ctx.setPicker(null),
+        onClose: closePicker,
         onPick: (id) => {
           if (id === "openai-codex" || id === "xai-grok") {
             ctx.setPicker(null);
@@ -100,7 +104,7 @@ export function createProviderListLevel(ctx: ProvidersViewContext): {
         ctx.setPicker(null);
         addBlank();
       },
-      onClose: () => ctx.setPicker(null),
+      onClose: closePicker,
       onPick: (id) => {
         if (id === "openai-codex" || id === "xai-grok") {
           ctx.setPicker(null);

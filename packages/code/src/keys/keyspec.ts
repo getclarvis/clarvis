@@ -121,7 +121,10 @@ export function commandKeyLabel(
 export interface PromptKeyRow {
   /** Dock-registered command name; absent rows document OpenTUI's built-in editor chords. */
   command?: string;
+  /** Keys safe on legacy terminals, multiplexers and SSH paths. */
   keys: string[];
+  /** Extra keys registered only by the Enhanced keyboard profile. */
+  enhancedKeys?: string[];
   desc: string;
 }
 
@@ -130,8 +133,9 @@ export const PROMPT_EDITING_KEYS: PromptKeyRow[] = [
   { command: "prompt.send", keys: ["return", "kpenter"], desc: "send (numpad Enter too)" },
   {
     command: "prompt.newline",
-    keys: ["ctrl+j", "shift+return"],
-    desc: "insert a newline",
+    keys: ["ctrl+j"],
+    enhancedKeys: ["shift+return"],
+    desc: "insert a newline; Ctrl+J is portable",
   },
   {
     command: "prompt.historyPrev",
@@ -159,5 +163,7 @@ export const PROMPT_EDITING_KEYS: PromptKeyRow[] = [
 export function promptKeyLabel(command: string): string {
   const row = PROMPT_EDITING_KEYS.find((r) => r.command === command);
   if (!row) return "";
-  return [...new Set(row.keys.map((key) => compactKey(key)))].join(" / ");
+  return [
+    ...new Set([...row.keys, ...(row.enhancedKeys ?? [])].map((key) => compactKey(key))),
+  ].join(" / ");
 }

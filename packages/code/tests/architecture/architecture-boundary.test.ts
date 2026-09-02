@@ -125,6 +125,14 @@ describe("code's internal architecture", () => {
     expect(terminal).toBeGreaterThan(lifecycle);
   });
 
+  it("preflights resume and continue before creating the renderer", () => {
+    const source = readFileSync(join(SRC, "index.tsx"), "utf8");
+    const preflight = source.indexOf("await runtime.prepareInteractiveMode(mode)");
+    const renderer = source.indexOf("const renderer = await createCliRenderer");
+    expect(preflight).toBeGreaterThanOrEqual(0);
+    expect(renderer).toBeGreaterThan(preflight);
+  });
+
   it("confines concrete kernel imports to composition and adapter boundaries", () => {
     const offenders = sourceFiles(SRC).flatMap((file) => {
       const relativeFile = relative(SRC, file).split(sep).join("/");

@@ -311,7 +311,10 @@ emits a record with empty `counts`/`rates` — pinned by
    `queueSteer` annotation is added only if the current sink is that execution's
    (`:746-750`); `client.steer` is awaited; a non-`"steered"` status rolls the annotation back and
    shows the raw status; a throw rolls it back, sets `"steer failed — message restored to the input"`
-   and restores the draft (`:751-764`). Returns. A run whose `done` result has settled is no
+   and restores the draft (`:751-764`). Kernel success means the loop drained the steering message;
+   a run that closes first rejects the call, restores the draft and leaves one visible
+   `Steer not delivered` receipt. That live-only failure receipt survives the stored-trace
+   reconciliation pass. Returns. A run whose `done` result has settled is no
    longer active here even when `closed` is still waiting on post-run memory events.
 5. If `done` has settled but stored-run reconciliation is still finishing, await that semantic
    settlement and re-check `runActive`; the message is retained for a new turn and is never sent to
@@ -832,12 +835,13 @@ increasing `counter`:
 without touching the kernel. Because the map holds a *promise*, a steer issued while the handle is
 still starting simply awaits it — `packages/code/tests/component/kernel-run-client.test.ts:365`. Before
 calling `handle.steer`, a `MessageContent` string is passed through unchanged while any other content
-is wrapped as `{role: "user", content: input.message}` (`:376`–`:377`). On success `steer` always
-returns `accepted: 1` — a fixed literal, not a count the kernel reports back
+is wrapped as `{role: "user", content: input.message}` (`:376`–`:377`). `handle.steer` settles only
+after the kernel loop drains that content; close-before-drain rejects instead of producing a false
+success. On success the adapter returns `accepted: 1` — a fixed literal describing that one
+drain-acknowledged request, not a count the kernel reports back
 (`` return {status: "steered", execution_id: input.executionId, accepted: 1} ``, `:378`) — pinned
 exactly by `packages/code/tests/component/kernel-run-client.test.ts:354`
-(`expect(res).toEqual({status: "steered", execution_id: "exec_2", accepted: 1})`); nothing in this
-scope reflects how many messages the kernel actually queued.
+(`expect(res).toEqual({status: "steered", execution_id: "exec_2", accepted: 1})`).
 
 `compact` routes through the owner-scoped `RunService`, so it can queue an active run or rewrite a
 settled run's persisted continuation. `compactCurrentRun` targets the active execution when present,
@@ -1291,7 +1295,7 @@ The following are derived directly from this document's own source and its tests
 |---|---|---|
 | `@`-mention image too large / unreadable | `MentionImageError` catch, `packages/code/src/run-host.ts:737-741` | status = the error message, draft restored, **no session or run created** (`packages/code/tests/component/run-host.test.ts:1342-1398`) |
 | non-`MentionImageError` during content build | rethrown, `packages/code/src/run-host.ts:738` | propagates to the caller |
-| `client.steer` rejects | `packages/code/src/run-host.ts:751-763` | queued annotation rolled back, draft restored, status `"steer failed — message restored to the input"` |
+| `client.steer` rejects, including close-before-drain | `packages/code/src/run-host.ts` (`submitTurn`) and `packages/code/src/adapters/store.ts` (`queueSteer`, `endReconcile`) | draft restored, status `"steer failed — message restored to the input"`; if run settlement already promoted the receipt, one `Steer not delivered` warning survives reconciliation |
 | `client.steer` returns a non-`"steered"` status | `:751-758` | annotation rolled back, raw status shown |
 | steer against an unknown execution id | `packages/code/src/adapters/kernel-run-client.ts:391` | `{status:"unknown", execution_id}` without a kernel call |
 | `handle.cancel()` rejects | `packages/code/src/run-host.ts:497-500` | run stays active, `cancelRequested` re-armed, status names the transport error |

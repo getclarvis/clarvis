@@ -484,7 +484,8 @@ to drain.
 | `help` | stdout `helpText()`, exit 0 | not imported |
 | `version` | stdout `versionText()`, exit 0 | not imported |
 | `update` | dynamic `runUpdateCommand` | updater only |
-| `resume` / `continue` / `run` | `runInteractive(mode)` paints `StartupComposer`, then dynamically calls `runInteractiveMode` | imported after startup input paint |
+| `resume` / `continue` | `runInteractive(mode)` calls `prepareInteractiveMode` before creating OpenTUI; only a valid session continues into `StartupComposer` and `runInteractiveMode` | runtime imported for terminal-free preflight |
+| `run` | `runInteractive(mode)` paints `StartupComposer`, then dynamically calls `runInteractiveMode` | imported after startup input paint |
 | `print` / `refresh-models` / `list` / `delete` | dynamic `runHeadlessMode(mode)` | imported on demand |
 
 Interactive worktree bootstrap, diagnostics and Extension Profile selection are continued by
@@ -550,9 +551,9 @@ terminal result."
 
 | # | Step | Production |
 |---|---|---|
-| 1 | the thin entry validates TTY/SSH/ASCII policy, creates OpenTUI, immediately installs bootstrap teardown ownership, and mounts a focused `StartupComposer` | `runInteractive` in `packages/code/src/index.tsx`; `installBootRendererLifecycle` in `packages/code/src/adapters/renderer-bootstrap.ts`; `packages/code/src/views/StartupComposer.tsx` |
+| 1 | the thin entry validates TTY/SSH/ASCII policy; resume/continue resolve worktree identity and session existence before any renderer call; a valid invocation then creates OpenTUI, immediately installs bootstrap teardown ownership, and mounts a focused `StartupComposer` | `runInteractive` in `packages/code/src/index.tsx`; `prepareInteractiveMode` in `packages/code/src/runtime.tsx`; `installBootRendererLifecycle` in `packages/code/src/adapters/renderer-bootstrap.ts`; `packages/code/src/views/StartupComposer.tsx` |
 | 2 | after renderer idle, capture `shellElapsedMs`; start the runtime import and, for ordinary `run`, the workspace foundation in parallel | `runInteractive`; `prepareStartupFoundation` in `packages/code/src/startup-foundation.ts` |
-| 3 | the runtime opens diagnostics, records `app.boot.begin` plus the captured `app.boot.shell-painted`, and preflights resume/continue while the bootstrap owner remains active; it then creates the complete platform and transfers Ctrl+C ownership while retaining exit/key teardown through full-app mount | `BootShell.handoffRendererLifecycle`; `runApp` in `packages/code/src/runtime.tsx` |
+| 3 | the runtime opens diagnostics, records `app.boot.begin` plus the captured `app.boot.shell-painted`, then creates the complete platform and transfers Ctrl+C ownership while retaining exit/key teardown through full-app mount | `BootShell.handoffRendererLifecycle`; `runApp` in `packages/code/src/runtime.tsx` |
 | 4 | use the prepared `WorkspaceClientManager` or create one; establish immutable workspace identity and construct stores/config/history/capabilities | `runApp`; `WorkspaceClientManager.create` |
 | 5 | load the foundation without reading models.dev, then list Agent Profiles, resolve the branch and bind the run host | `runApp`, `loadFoundation` |
 | 6 | take the startup snapshot exactly once; an Enter submission starts immediately through `runHost.submitTurn` before full-app mount only when the active Agent Profile is runnable | `StartupComposerState.take`; `resolveStartupComposerHandoff`; `startup_submit` in `runApp` |
@@ -949,6 +950,11 @@ terminal cannot fit it. Production: `packages/code/src/views/onboarding/SetupVie
 `packages/code/tests/integration/onboarding-render.test.tsx`,
 `packages/code/tests/integration/catalog-picker-render.test.tsx`, and
 `packages/code/tests/integration/providers-key-render.test.tsx` (both bootstrap picker steps).
+One Escape from either bootstrap provider or model picker closes that picker back to setup without
+saving the staged controller choice. Production:
+`packages/code/src/views/config/providers/list-level.tsx` (`closePicker`) and
+`packages/code/src/views/config/ProvidersPanel.tsx` (first-model `onClose`). Test:
+`packages/code/tests/integration/providers-key-render.test.tsx` (first-run Escape for both pickers).
 
 `HeaderRows` (`packages/code/src/views/HeaderRows.tsx:15-68`) renders exactly one `height={1}` row: brand wordmark,
 workspace chip, optional identity chip, an `Index` over status chips, a `flexGrow` spacer, then
@@ -1369,9 +1375,11 @@ exposes global-state and managed-temporary deletion only through explicit `--cle
 `packages/code/tests/unit/development-install.test.ts` (launcher execution, ownership, cleanup, and
 shell-delegation cases).
 
-**INV-CB-45.** Renderer teardown has an owner from the first post-creation instruction through the
-complete keymap mount. Exit, every platform-supported catchable OpenTUI default signal, raw Ctrl+C,
-and a failing resume/continue preflight cannot leave raw mode or the alternate screen behind;
+**INV-CB-45.** Resume/continue session preflight finishes before OpenTUI renderer creation, so a
+missing session never enters raw mode or the alternate screen. Once renderer creation begins,
+teardown has an owner from the first post-creation instruction through the complete keymap mount.
+Exit, every platform-supported catchable OpenTUI default signal and raw Ctrl+C cannot leave raw mode
+or the alternate screen behind;
 `SIGKILL` is inherently uncatchable. Ownership transfers to the platform without a gap, and
 FatalBoot has priority over the temporary Ctrl+C owner. A startup submission starts only when the
 active Agent Profile is runnable, otherwise its exact bytes become the complete composer's draft.
@@ -1380,7 +1388,8 @@ checks that latch before starting and immediately after awaiting Agent Profile d
 startup submission nor complete-app mount can begin after shutdown wins the boot race.
 Production: `installBootRendererLifecycle` in
 `packages/code/src/adapters/renderer-bootstrap.ts`, `runInteractive` in
-`packages/code/src/index.tsx`, `resolveStartupComposerHandoff` in
+`packages/code/src/index.tsx`, `prepareInteractiveMode` in `packages/code/src/runtime.tsx`,
+`resolveStartupComposerHandoff` in
 `packages/code/src/views/StartupComposer.tsx`, and `runApp` in
 `packages/code/src/runtime.tsx`. Test:
 `packages/code/tests/unit/renderer-bootstrap-lifecycle.test.ts`,
@@ -1413,8 +1422,8 @@ Pinned: `packages/code/tests/integration/worktree-bootstrap.test.ts` and
 | Unknown flag / missing value / mode conflict / bad `--print` prompt or format | `usage-error` mode in the lightweight entry; the complete runtime is not imported | stderr `<message>\n<usage>`, exit 1 | `packages/code/src/cli.ts`, `packages/code/src/index.tsx` (`main`) |
 | `--extension-profile` names an invalid or missing Extension Profile | kernel creation/current resolution fails closed or exposes the invalid snapshot; no builtin fallback is substituted | invocation fails or the interactive diagnostics view shows the exact issue | [Extension Profiles](extension-profiles.md#6-failure-modes-and-degradation) |
 | stdout or stdin is not a TTY in an interactive mode | guidance naming every headless mode | exit 2 | `packages/code/src/adapters/renderer-bootstrap.ts` (`assertInteractiveTTY`) |
-| `--resume <id>` names no session | `session not found: <id> — run clarvis --list` | exit 1 | `packages/code/src/runtime.tsx` (`assertSessionExists`) |
-| `--continue` with no session in this workspace | `no session to continue in this workspace — run clarvis --list` | exit 1 | `packages/code/src/runtime.tsx` (`assertSessionExists`) |
+| `--resume <id>` names no session | terminal-free `prepareInteractiveMode` reports `session not found: <id> — run clarvis --list` before renderer creation | exit 1 | `packages/code/src/runtime.tsx` (`prepareInteractiveMode`, `assertSessionExists`); `packages/code/src/index.tsx` (`runInteractive`) |
+| `--continue` with no session in this workspace | terminal-free `prepareInteractiveMode` reports `no session to continue in this workspace — run clarvis --list` before renderer creation | exit 1 | `packages/code/src/runtime.tsx` (`prepareInteractiveMode`, `assertSessionExists`); `packages/code/src/index.tsx` (`runInteractive`) |
 | `--delete <id>` names no session | `session not found: <id>` | exit 1 | `packages/code/src/runtime.tsx` (`runDeleteMode`) |
 | `--delete` trace deletion fails per run | per-execution `try/catch` returning `false`; counted in the summary as `okTraces/total` | exit 0 regardless | `packages/code/src/runtime.tsx` (`runDeleteMode`) |
 | `--refresh-models` throws | `refresh failed: <text>` | exit 1 | `packages/code/src/runtime.tsx` (`runRefreshMode`) |

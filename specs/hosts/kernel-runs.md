@@ -817,10 +817,15 @@ closing" through `done` rather than through `start`.
 Production `packages/kernel/src/runs/managed-run.ts:293-294`. Test `packages/kernel/tests/unit/managed-run.test.ts:456-473`,
 `packages/kernel/tests/integration/run-service.smoke.test.ts:294-302`.
 
-**INV-R22.** Steering and compaction are refused after the run settles, and the two refusals differ:
-`steer` silently no-ops, `compact` throws `not_found`.
-Production `packages/kernel/src/runs/steer-queue.ts:21` (`if (!closed)`), `packages/kernel/src/runs/compaction-queue.ts:19` (returns `false`) feeding
-`packages/kernel/src/runs/managed-run.ts:319-322` (throws). Test `packages/kernel/tests/unit/managed-run.test.ts:189-191`.
+**INV-R22.** Steering is acknowledged only when the loop drains the message. If the run closes
+before that drain, or steering begins after settlement, `steer` throws `not_found`; `compact` also
+throws `not_found` after settlement. A protocol success therefore cannot mean only that a transient
+queue accepted data.
+Production: `packages/kernel/src/runs/steer-queue.ts` (`push`, `drain`, `close`),
+`packages/kernel/src/runs/managed-run.ts` (`RunHandle.steer`, `RunHandle.compact`), and
+`packages/kernel/src/runs/compaction-queue.ts` (`push`). Tests:
+`packages/kernel/tests/unit/run-control-queues.test.ts` (drain acknowledgement and close refusal) and
+`packages/kernel/tests/unit/managed-run.test.ts` (close-before-drain and post-settlement refusal).
 
 Both queues also expose `undrained()`, which inspects queued-but-not-yet-drained messages without
 consuming them (`packages/kernel/src/runs/steer-queue.ts:12,31-33`; `packages/kernel/src/runs/compaction-queue.ts:10,31-33`). The handle's `compact`
@@ -991,7 +996,7 @@ contract`). Durable checkpoint ownership remains with `WorkflowRecord.sequence`,
 | buffer full, droppable victims available | `packages/kernel/src/core/event-stream.ts:155-163` | oldest droppable evicted, `droppedCount` incremented; a terminal `events_dropped` notice reports the total |
 | memory-ingest notice never arrives | `packages/kernel/src/runs/managed-run.ts:240-262` | stream closes after the sliding grace, bounded by the absolute deadline |
 | `compact()` after settle | `packages/kernel/src/runs/managed-run.ts:319-322` | `not_found` / `"run '<id>' is no longer active"` |
-| `steer()` after settle | `packages/kernel/src/runs/steer-queue.ts:21` | silently ignored |
+| `steer()` after settle or while an undrained message loses the run | `packages/kernel/src/runs/steer-queue.ts` (`push`, `close`) and `packages/kernel/src/runs/managed-run.ts` (`RunHandle.steer`) | `not_found` / `"run '<id>' is no longer accepting steering"` |
 | `respond()` with an unknown id | `packages/kernel/src/runs/elicit-bridge.ts:79-80` (delegated) | silently ignored |
 | pagination out of range | `packages/kernel/src/runs/pagination.ts:11-22` | `invalid_request` naming the bound |
 | engine event with no protocol projection | `packages/kernel/src/runs/map-events.ts:400,594,677` | dropped; sampled `runs.event.unmapped` debug line |

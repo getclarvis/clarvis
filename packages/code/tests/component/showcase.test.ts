@@ -391,7 +391,7 @@ test("transcript: a queued steer becomes delivered in place and stays singular a
     const sink = store.openRun("exec_1");
     applyRunEvents(sink, [ev({ type: "run_started", at: 1 })], "live");
 
-    const rollback = sink.queueSteer!("prefer the async API");
+    const receipt = sink.queueSteer!("prefer the async API");
     expect(store.nodes.filter((node) => node.kind === "annotation")).toHaveLength(1);
     expect(store.nodes[0]!.text).toContain("Steer queued");
 
@@ -402,7 +402,7 @@ test("transcript: a queued steer becomes delivered in place and stays singular a
       message: "prefer the async API",
     });
     applyRunEvents(sink, [applied], "live");
-    rollback();
+    receipt.discard();
 
     let steers = store.nodes.filter(
       (node) => node.kind === "annotation" && node.text.includes("prefer the async API"),
@@ -445,6 +445,55 @@ test("transcript: a steer the run never applied settles instead of reading queue
     )!;
     expect(steer.text).toContain("Steer not delivered");
     expect(steer.status).not.toBe("pending");
+
+    sink.beginReconcile();
+    applyRunEvents(
+      sink,
+      [
+        ev({ type: "run_started", at: 1 }),
+        ev({ type: "run_ended", status: "cancelled", at: 2, reason: "cancelled" }),
+      ],
+      "replay",
+    );
+    sink.endReconcile();
+    const reconciled = store.nodes.filter(
+      (node) => node.kind === "annotation" && node.text.includes("prefer the async API"),
+    );
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]!.text).toContain("Steer not delivered");
+    dispose();
+  });
+});
+
+test("transcript: a rejected steer stays visible when rejection beats run_ended", () => {
+  createRoot((dispose) => {
+    const store = createTranscriptStore();
+    const sink = store.openRun("exec_1");
+    applyRunEvents(sink, [ev({ type: "run_started", at: 1 })], "live");
+
+    const receipt = sink.queueSteer!("preserve this correction");
+    receipt.fail();
+    applyRunEvents(
+      sink,
+      [ev({ type: "run_ended", status: "completed", at: 2, reason: "completed" })],
+      "live",
+    );
+    sink.beginReconcile();
+    applyRunEvents(
+      sink,
+      [
+        ev({ type: "run_started", at: 1 }),
+        ev({ type: "run_ended", status: "completed", at: 2, reason: "completed" }),
+      ],
+      "replay",
+    );
+    sink.endReconcile();
+
+    const warnings = store.nodes.filter(
+      (node) => node.kind === "annotation" && node.text.includes("preserve this correction"),
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.text).toContain("Steer not delivered");
     dispose();
   });
 });

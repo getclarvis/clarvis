@@ -55,8 +55,11 @@ prints a key routes through it, so one binding can never read `meta+r` in one pl
 `alt+r` in another (`packages/code/src/keys/keyspec.ts`, `compactKey`). It is idempotent (feeding an
 already-compact label back in returns it unchanged — pinned at
 `packages/code/tests/unit/keyspec.test.ts` (`compactKey: already-compact labels pass through unchanged`)).
-For the composer, unmodified Return/numpad Enter owns `prompt.send`, while both Ctrl+J and
-Shift+Return own `prompt.newline`. `compactKey` preserves the `shift+` prefix for a rendered
+For the composer, unmodified Return/numpad Enter owns `prompt.send`, while Ctrl+J owns the portable
+`prompt.newline` chord. Enhanced keyboard profiles additionally register Shift+Return. Portable
+profiles do not register or advertise Shift+Return because a legacy terminal, SSH path or
+multiplexer may collapse it to ordinary Return before Clarvis can distinguish it. `compactKey`
+preserves the `shift+` prefix for a rendered
 non-character key such as Return, including when Help formats the already-compact `shift+↵` label a
 second time, so newline cannot look identical to send. Test:
 `packages/code/tests/integration/help-render.test.tsx` (newline label in Help).
@@ -940,8 +943,10 @@ Production: `packages/code/src/keys/interaction.ts` (`createLifecycleSafeKeymap`
 `packages/code/tests/integration/interaction.test.ts` ("queued input is inert after the renderer
 destroys its keymap host").
 
-**INV-D15.** Unmodified Return and numpad Enter submit the composer; Ctrl+J and Shift+Return insert
-a newline without submission, and the displayed Shift+Return label retains its modifier even after
+**INV-D15.** Unmodified Return and numpad Enter submit the composer; Ctrl+J inserts a newline on
+every keyboard profile, while Shift+Return does so only on the Enhanced profile. Portable does not
+register the shifted chord when its transport may erase the modifier. The displayed Shift+Return
+label retains its modifier even after
 an already-compact `shift+↵` label is formatted again. Every accepted explicit model submission —
 ordinary submit, steer, MCP prompt or skill — made while reading older history or a selected child
 first returns selection and scroll ownership to the current Lead tail. Background transcript,
@@ -951,8 +956,8 @@ Production: `packages/code/src/keys/keyspec.ts` (`PROMPT_EDITING_KEYS`, `compact
 `packages/code/src/views/App.tsx` (`submitFromLeadTail`). Tests:
 `packages/code/tests/unit/keyspec.test.ts` (`PROMPT_EDITING_KEYS`, compact-label idempotence),
 `packages/code/tests/integration/help-render.test.tsx` (newline label), and
-`packages/code/tests/integration/input-dock-submit.test.tsx` ("Shift+Enter and Ctrl+J insert
-newlines without submitting the draft") and
+`packages/code/tests/integration/input-dock-submit.test.tsx` (Enhanced Shift+Enter and Ctrl+J,
+plus portable Ctrl+J-only registration) and
 `packages/code/tests/integration/app-shell-render.test.tsx` ("normal submit and steer return an old
 reader to the Lead tail while background events do not", "model-backed prompt and skill submit also
 return an old reader to the Lead tail", and "returning from a child sidebar transcript restores the
@@ -962,6 +967,7 @@ live Lead frontier").
 
 | Situation | Handling | Cite |
 |---|---|---|
+| Terminal, SSH path or multiplexer erases Shift from Return | Portable profile does not register or advertise Shift+Return because the resulting packet is indistinguishable from submit; Ctrl+J remains the newline chord. Enhanced can register Shift+Return only after its capability probe succeeds | `packages/code/src/keys/keyspec.ts` (`PromptKeyRow.enhancedKeys`), `packages/code/src/views/InputDock.tsx` (profile-gated textarea bindings), and `packages/code/tests/integration/input-dock-submit.test.tsx` |
 | A manual override's key fails `keymap.parseKeySequence` | Silently excluded from the *active* vital-binding layer; remains visible (as a stored, inactive entry) in Keyboard settings | `packages/code/src/keys/interaction.ts:647-660` |
 | A hand-edited manual sequence extends an active exact binding | The exact command runs synchronously and the longer sequence is unreachable in that context; the Keyboard editor refuses protected-prefix conflicts before persistence | `registerImmediateExactDisambiguation` in `packages/code/src/keys/interaction.ts`; `validateManualBindings` in `packages/code/src/keys/keyboard-profile.ts`; tests `packages/code/tests/integration/interaction.test.ts` and `packages/code/tests/unit/keyboard-profile.test.ts` |
 | A stale manual-binding entry names a command no longer registered (e.g. an MCP prompt whose server left `settings.json`) | Reported as `"unknown command"` **only if the edited command itself**; does not block clearing or editing any other entry | `packages/code/src/keys/keyboard-profile.ts:361-364,422-436,460-471`; test `packages/code/tests/unit/keyboard-profile.test.ts:122-148` |

@@ -327,6 +327,24 @@ worse for Profile (+11.42), Catalog (+8.01), drawer (+25.13), and empty Workflow
 100, 200, 0, and 200 registrations respectively. Negative endpoint deltas reflect collection of
 warm-up arenas; they are not close-time memory savings.
 
+### 2026-09-02 product-E2E overlay warm-up correction
+
+The current-source TUI product audit reproduced two apparent production-policy failures on macOS
+with Bun 1.4.0 and OpenTUI 0.5.9: the retained 100-row Catalog Picker measured 31–40 MiB RSS/100,
+and the guard elicitation case hovered just above the 5 MiB/100 ceiling. Deterministic ownership
+remained bounded in both cases. Longer discarded prefixes showed finite OpenTUI/native allocator
+arena warm-up rather than a continuing post-warm-up owner slope, so the cases now declare their own
+220- and 400-cycle warm-ups while preserving the global ten-cycle default, the 100 measured cycles,
+the two-size matrix and the exact 5 MiB gate.
+
+The final Catalog matrix measured 2.12 MiB RSS/100 at 120x32 and 1.39 at 80x24, with zero
+renderable, lifecycle-pass, live-key-layer and registration deltas. Two consecutive final
+elicitation matrices measured 2.00–2.79 at 120x32 and 3.20–3.59 at 80x24; each returned renderables,
+lifecycle passes and live key layers to baseline. Its +100 cumulative registrations are expected:
+the control deliberately mounts 100 distinct requests, one layer each, and no layer remains live.
+Production: `packages/code/tooling/benchmarks/overlays.tsx`
+(`catalog-picker-retained-100-rows`, `elicit-guard-confirm`, `runParent`).
+
 ### 2026-08-25 current-memory regression: slash, scroll and former F1
 
 **Resolved as allocation churn, with retained ownership still bounded.** Repeatedly typing and

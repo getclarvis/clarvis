@@ -4,14 +4,18 @@ import { createCompactionQueue } from "../../src/runs/compaction-queue.ts";
 import { createSteerQueue } from "../../src/runs/steer-queue.ts";
 
 describe("run control queues", () => {
-  test("steering exposes, drains, and then closes its pending messages", () => {
+  test("steering acknowledges only drained messages and refuses pending work on close", async () => {
     const queue = createSteerQueue();
     const message = { content: "focus here", at: 1 } as never;
-    queue.push(message);
+    const delivered = queue.push(message);
     expect(queue.undrained()).toEqual([message]);
     expect(queue.drain()).toEqual([message]);
+    expect(await delivered).toBe(true);
+
+    const rejected = queue.push(message);
     queue.close();
-    queue.push(message);
+    expect(await rejected).toBe(false);
+    expect(await queue.push(message)).toBe(false);
     expect(queue.undrained()).toEqual([]);
   });
 

@@ -196,14 +196,22 @@ export interface RunSink extends SpanSink {
    * Add an immediate steer acknowledgement that the later
    * `steering_applied` event updates in place.
    *
-   * @returns a rollback for a steer request the kernel rejected. Once the
-   *   steer has been delivered, the rollback is a no-op.
+   * @returns controls that either discard a synchronously refused request or
+   *   retain a visible failure receipt when delivery could not complete.
    */
-  queueSteer?(message: string): () => void;
+  queueSteer?(message: string): QueuedSteerReceipt;
   /** Opens a reconciliation pass: everything applied until endReconcile is a replay. */
   beginReconcile(): void;
   /** Closes the pass, dropping whatever the replay did not regenerate. */
   endReconcile(): void;
+}
+
+/** Client-owned controls for one optimistic steering receipt. */
+export interface QueuedSteerReceipt {
+  /** Removes a request the server refused before accepting it as steering. */
+  discard(): void;
+  /** Promotes a rejected delivery to a reconciliation-stable warning. */
+  fail(): void;
 }
 
 /** Run sink whose transcript publisher is closed only after host reconciliation completes. */
@@ -1141,6 +1149,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     let leadSteerSeq = 0;
     let attributedSteerSeq = 0;
     const pendingSteerKeys: { key: string; message: string }[] = [];
+    const undeliveredSteerKeys = new Set<string>();
     const pendingElicitations: { key: string; question: string }[] = [];
     let runStartedAt: number | undefined;
     let leadInput = 0;
@@ -1148,10 +1157,20 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
     let completed = false;
     const missingSubagentAttribution = (event: RunEvent): boolean =>
       "agent" in event && event.agent === "subagent" && event.subagent_id === undefined;
+    const markSteerUndelivered = (key: string, message: string): void => {
+      const steerIndex = indexOfKey.get(key);
+      if (steerIndex === undefined) return;
+      undeliveredSteerKeys.add(key);
+      patchKind(steerIndex, "annotation", (node) => {
+        node.status = "error";
+        node.tone = "warn";
+        node.text = steerUndeliveredNoticeText(message);
+      });
+    };
 
     const sink: TranscriptRunSink = {
       queueSteer(message) {
-        if (completed) return () => {};
+        if (completed) return { discard() {}, fail() {} };
         const key = ns(`steer:lead:${leadSteerSeq++}`);
         pendingSteerKeys.push({ key, message });
         upsert(key, () => ({
@@ -1160,11 +1179,18 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           tone: "accent",
           text: steerQueuedNoticeText(message),
         }));
-        return () => {
-          const pendingIndex = pendingSteerKeys.findIndex((entry) => entry.key === key);
-          if (pendingIndex === -1) return;
-          pendingSteerKeys.splice(pendingIndex, 1);
-          remove(key);
+        return {
+          discard() {
+            const pendingIndex = pendingSteerKeys.findIndex((entry) => entry.key === key);
+            if (pendingIndex === -1) return;
+            pendingSteerKeys.splice(pendingIndex, 1);
+            remove(key);
+          },
+          fail() {
+            const pendingIndex = pendingSteerKeys.findIndex((entry) => entry.key === key);
+            if (pendingIndex !== -1) pendingSteerKeys.splice(pendingIndex, 1);
+            markSteerUndelivered(key, message);
+          },
         };
       },
 
@@ -1448,6 +1474,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             event.agent === "lead"
               ? (pendingSteerKeys.shift()?.key ?? ns(`steer:lead:${leadSteerSeq++}`))
               : ns(`steer:attributed:${attributedSteerSeq++}`);
+          undeliveredSteerKeys.delete(key);
           const index = upsert(key, () => ({
             kind: "annotation",
             status: "ok",
@@ -1621,13 +1648,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
           // pending was accepted by the kernel and never delivered; left alone
           // it reads "Steer queued" for the rest of the session.
           for (const pendingSteer of pendingSteerKeys.splice(0)) {
-            const steerIndex = indexOfKey.get(pendingSteer.key);
-            if (steerIndex === undefined) continue;
-            patchKind(steerIndex, "annotation", (node) => {
-              node.status = "error";
-              node.tone = "warn";
-              node.text = steerUndeliveredNoticeText(pendingSteer.message);
-            });
+            markSteerUndelivered(pendingSteer.key, pendingSteer.message);
           }
           const transientAnnotations = state.nodes
             .filter(
@@ -1702,25 +1723,32 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
         }
         const prefix = `${execId}::`;
         const planKey = ns("plan");
-        if (plan !== null && indexOfKey.has(planKey) && !pass.seen.has(planKey)) {
-          // Plan capability events are intentionally live-only, so the stored
-          // trace replay cannot regenerate this node. Retain the live plan at
-          // its prior transcript position while still pruning all other
-          // transient nodes the replay did not produce.
+        const liveOnlyKeys = new Set<string>([
+          ...(plan !== null && indexOfKey.has(planKey) ? [planKey] : []),
+          ...[...undeliveredSteerKeys].filter((key) => indexOfKey.has(key)),
+        ]);
+        if (liveOnlyKeys.size > 0) {
+          // Plan capability events and a client-owned failed steering receipt
+          // are intentionally live-only, so the stored trace cannot recreate
+          // them. Merge each one back at its prior transcript position while
+          // still pruning every other transient node absent from replay.
           const currentRunKeys = state.nodes
             .filter((node) => node.key.startsWith(prefix))
             .map((node) => node.key);
-          const oldPlanIndex = currentRunKeys.indexOf(planKey);
-          let insertionIndex = pass.keys.length;
-          for (let i = oldPlanIndex + 1; i < currentRunKeys.length; i += 1) {
-            const nextIndex = pass.keys.indexOf(currentRunKeys[i]!);
-            if (nextIndex !== -1) {
-              insertionIndex = nextIndex;
-              break;
+          for (let oldIndex = 0; oldIndex < currentRunKeys.length; oldIndex += 1) {
+            const key = currentRunKeys[oldIndex]!;
+            if (!liveOnlyKeys.has(key) || pass.seen.has(key)) continue;
+            let insertionIndex = pass.keys.length;
+            for (let i = oldIndex + 1; i < currentRunKeys.length; i += 1) {
+              const nextIndex = pass.keys.indexOf(currentRunKeys[i]!);
+              if (nextIndex !== -1) {
+                insertionIndex = nextIndex;
+                break;
+              }
             }
+            pass.keys.splice(insertionIndex, 0, key);
+            pass.seen.add(key);
           }
-          pass.keys.splice(insertionIndex, 0, planKey);
-          pass.seen.add(planKey);
         }
         const rank = new Map(pass.keys.map((k, i) => [k, i]));
         const survivors = state.nodes

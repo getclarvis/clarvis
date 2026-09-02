@@ -245,8 +245,9 @@ empty conversation. Enter begins the focused provider/model picker; the flow mak
 model the default and asks for its credential without ever rendering the secret. After saving,
 Clarvis seeds its ordinary planning, memory and command-review defaults, reloads the live Agent Profile
 catalogue, selects `marshall`, and shows one Ready screen. No agent or workflow file is written at
-any point; the default fleet and workflow catalogue are built into the kernel. Canceling either picker returns to setup with the
-staged choice unsaved. Opening `/settings/providers` later keeps the ordinary multi-provider and
+any point; the default fleet and workflow catalogue are built into the kernel. One **Escape** from
+either picker closes the bootstrap picker and returns to setup with the staged choice unsaved.
+Opening `/settings/providers` later keeps the ordinary multi-provider and
 multi-model editor.
 The complete eight-row Clarvis splash stays visible from Welcome through both the provider and model
 pickers when the terminal is at least 76 columns by 24 rows. That shared threshold accounts for the
@@ -928,17 +929,27 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   5 MiB each and 10 MiB aggregate. Binary clipboard input is rejected before base64 expansion;
   workspace images resolved from `@path` are checked against the same per-item and aggregate limits
   before a run or steer request starts.
-- The composer sends with unmodified Enter, inserts a newline with either Shift+Enter or Ctrl+J,
-  and grows from visual soft wraps as well as explicit newlines up to its bounded inline height.
+- The composer sends with unmodified Enter and inserts a newline with Ctrl+J on every keyboard
+  profile. Enhanced profiles also accept Shift+Enter; portable profiles do not advertise that chord
+  because legacy terminals and multiplexers can erase its modifier before Clarvis receives it. The
+  composer grows from visual soft wraps as well as explicit newlines up to its bounded inline height.
   Unbroken long tokens wrap by character, so continuing to type never hides the draft prefix.
 
 Steering submitted while a run is still starting waits for the kernel handle
-instead of being dropped. Once the run result settles, the composer immediately
+instead of being dropped. A successful steering response now means the loop drained the message,
+not merely that an in-memory queue accepted it. If the run settles before that drain, the draft is
+restored and the transcript keeps one visible `Steer not delivered` receipt through stored-trace
+reconciliation. Once the run result settles, the composer immediately
 leaves steer mode and a subsequent message starts a new turn. Post-run memory
 indexing may keep the event stream physically open and continue updating the
 status line, but it never keeps the footer `Running` or routes user input to the
 settled run. Likewise, completion of a cancelled `!bash` job from an outgoing
 session cannot overwrite the current session's status.
+
+The retained Catalog Picker and elicitation soak cases discard 220 and 400 finite warm-up cycles,
+respectively, before the measured 100-cycle window. Their 5 MiB/100 production ceiling and
+deterministic owner-balance gates are unchanged; the larger per-case warm-up isolates steady-state
+retention from OpenTUI/native allocator arena growth during initial traversal.
 
 `/compact` performs a forced pass while retaining the configured recent tail. During a run it queues
 the pass before the next model call. After a run it rewrites that run's persisted `final_context`

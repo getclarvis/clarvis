@@ -784,7 +784,16 @@ Each entry: **rule** — production anchor — test anchor.
     `packages/kernel/tests/component/builtin-agents.test.ts` (`uses separate tools` and
     `may spawn a narrow Sub-agent`).
 
-41. **Environment plugin selection is exact and feeds every plugin contribution consumer from one
+41. **The shipped Admiral owns continuation across workflow round boundaries.** Its prompt requires
+    `workflow_status` followed by a revision-matched `workflow_decide` after each authored round,
+    treats repeat passes as proposals rather than runtime commands, and directs a generic workflow
+    demonstration to the smallest one-round smoke shape instead of inferring `research` or `audit`.
+    It also treats `max_total_leaders` as a lifetime guardrail, never a target to refill through a
+    different spawn tool. Production: `packages/kernel/src/config/builtin-agents/admiral.ts`
+    (`body`). Test: `packages/kernel/tests/component/builtin-agents.test.ts` (`owns every next-round
+    decision and keeps generic demonstrations one-round`).
+
+42. **Environment plugin selection is exact and feeds every plugin contribution consumer from one
     resolved list.** `snapshot().active_plugins`, plugin settings fragments, plugin agents, and the
     file kernel's other plugin contribution lookups all use qualified `{ scope, source, name }`
     references. There is no name-only fallback when no Environment collaborator is supplied.

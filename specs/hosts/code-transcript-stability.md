@@ -32,7 +32,7 @@ Unknown history has a load boundary, never a guessed spacer.
 Explicit presentation actions remain distinct from background mutation. Scrolling across a lazy-load
 boundary, folding, opening detail, selecting a sub-agent, changing ASCII mode, opening/closing the
 Sidebar and resizing the terminal may change which immutable owners are mounted or invalidate their
-geometry. The first live Plan, first workflow leader and first delegation each own one independent,
+geometry. The first live Plan, first workflow state/leader and first delegation each own one independent,
 execution-scoped automatic Sidebar reveal with the same anchor requirement. Repeated events for the
 same section cannot flap the layout after an explicit close; the first event for another section may
 still reopen and reorient the combined Sidebar. Escape makes only that repeated automatic intent
@@ -273,7 +273,7 @@ The full-screen implementation follows the supported components instead:
 | `delegation_created`                                                                                                       | register child semantics and Sidebar/footer state; the first delegation may open/reveal Agents once for this execution     | append one friendly frozen Lead-owned `spawned` marker                                                                           |
 | `delegation_started`                                                                                                       | update child/Sidebar/footer running state                                                                                  | none; it cannot create or mutate a Lead marker                                                                                   |
 | `delegation_completed`, `delegation_failed`                                                                                | close child activity and retain its terminal semantics                                                                     | append one separate friendly frozen Lead-owned `completed`/`failed` marker; freeze the child section for its isolated transcript |
-| `workflow_run_started`, `workflow_title_updated`, `workflow_run_progress`, `workflow_run_completed`, `workflow_run_failed` | Sidebar or compact footer activity strip; the first projected leader may open/reveal Parallel work once for this execution | no history row                                                                                                                   |
+| `workflow_run_started`, `workflow_title_updated`, `workflow_sequence_state`, `workflow_run_progress`, `workflow_run_completed`, `workflow_run_failed` | Sidebar or compact footer activity strip; the first projected state/leader may open/reveal Parallel work once for this execution | no history row                                                                                                                   |
 | `plan_created`, `plan_updated`, `plan_removed`, `plan_review_requested`, `plan_review_resolved`                            | Sidebar, `Ctrl+P` and pending review; the first live Plan may open/reveal Plan once for this execution; no footer summary   | no mutable plan singleton in either transcript flow                                                                              |
 | `soft_limit_check`                                                                                                         | terminal annotation candidate                                                                                              | append once                                                                                                                      |
 | `compaction_started`                                                                                                       | status/frontier progress                                                                                                   | none                                                                                                                             |
@@ -321,7 +321,7 @@ settlement continuity).
 
 The tool-row exception is identity-closed: `spawn_subagent`, `delegate_task`, `agent_list`,
 `agent_poll`, `agent_stop`, `agent_steer`, `await_agents`, `run_leader`, `run_workflow`, `run_round`,
-`run_work_items`. It applies to every provider tool phase, including the quiet composing placeholder
+`run_work_items`, `workflow_status`, `workflow_decide`. It applies to every provider tool phase, including the quiet composing placeholder
 that otherwise renders copy such as `Wait for agents starting…`. Suppression is presentation policy,
 not loss of lifecycle: typed delegation events still append exactly the two frozen markers, workflow
 events still update Sidebar/footer, ordinary Lead `thinking`/`working` remains visible in the fixed
@@ -560,7 +560,7 @@ enabled, including bold attributes. Production: `StableMarkdown` (`liveHeightFlo
 `packages/code/tests/integration/transcript-scrollbox-render.test.tsx` ("bottom-following streaming
 Markdown never gives rows back when parsing conceals syntax").
 
-The Sidebar is outside this flow. Its first live Plan, first workflow leader and first delegation
+The Sidebar is outside this flow. Its first live Plan, first workflow state/leader and first delegation
 establish three independent execution-scoped automatic intents. Each opens the same responsive
 surface and reveals its own `Plan`, `Parallel work` or `Agents` section while
 `createLayoutController.secondaryMode` chooses a wide split or compact drawer. The Agents intent
@@ -854,7 +854,7 @@ owner identity).
 **INV-TP27.** Lead-owned provider tool plumbing for supervision, spawn/delegation and workflow
 orchestration is transcript-silent at every event phase. The exact identities are `spawn_subagent`,
 `delegate_task`, `agent_list`, `agent_poll`, `agent_stop`, `agent_steer`, `await_agents`, `run_leader`,
-`run_workflow`, `run_round`, `run_work_items`; composing, started, output and terminal events create
+`run_workflow`, `run_round`, `run_work_items`, `workflow_status`, `workflow_decide`; composing, started, output and terminal events create
 neither frontier candidates nor publication batches. This cannot remove ordinary Lead
 `thinking`/`working` in the fixed activity line, either typed delegation marker, Sidebar/footer
 state, or child-attributed tools

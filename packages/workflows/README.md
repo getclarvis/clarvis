@@ -25,22 +25,24 @@ result schemas, persistence, tree projection, and routing are specified in
 
 ## Entry points
 
-| Entry                         | Contents                                                                                                                                                                                                                          |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@clarvis/workflows`          | `createWorkflowsCapability`, `WORKFLOW_GRANT`, `BUILTIN_WORKFLOWS`, `resolveWorkflowDefinitions`, the ledger, the semaphore, the elicit mux, `runLeader`, workflow trace detail/projector/narrowing APIs, `workflowsSettingsSpec` |
-| `@clarvis/workflows/schemas`  | the zod schemas for the workflow document and the discovery/result payloads                                                                                                                                                       |
-| `@clarvis/workflows/artifact` | `loadWorkflows` and the `WORKFLOW.md` loader                                                                                                                                                                                      |
+| Entry                         | Contents                                                                                                                                                                                                                                             |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@clarvis/workflows`          | `createWorkflowsCapability`, `WORKFLOW_GRANT`, `BUILTIN_WORKFLOWS`, `resolveWorkflowDefinitions`, the ledger, cumulative leader counter, semaphore, elicit mux, `runLeader`, workflow trace detail/projector/narrowing APIs, `workflowsSettingsSpec` |
+| `@clarvis/workflows/schemas`  | the zod schemas for the workflow document and the discovery/result payloads                                                                                                                                                                          |
+| `@clarvis/workflows/artifact` | `loadWorkflows` and the `WORKFLOW.md` loader                                                                                                                                                                                                         |
 
-## The four tools
+## The workflow tools
 
 In ascending order of how much structure they assume:
 
-| Tool             | Runs                                           |
-| ---------------- | ---------------------------------------------- |
-| `run_leader`     | one leader, ad hoc                             |
-| `run_work_items` | a whole decomposition, scheduled into waves    |
-| `run_round`      | a sequence of rounds composed in the turn      |
-| `run_workflow`   | a built-in or operator-authored round sequence |
+| Tool              | Effect                                                              |
+| ----------------- | ------------------------------------------------------------------- |
+| `run_leader`      | starts one ad-hoc leader                                            |
+| `run_work_items`  | starts a whole decomposition, scheduled into internal waves         |
+| `run_round`       | starts the first round of a manager-controlled round sequence       |
+| `workflow_status` | inspects the active or latest sequence without starting work        |
+| `workflow_decide` | explicitly continues its exact proposed round or stops the sequence |
+| `run_workflow`    | reviews, then starts a built-in or operator-authored round sequence |
 
 `run_workflow` is **not contributed at all** when the host supplies no definitions, so the model never
 sees a tool whose only argument has no legal value. Clarvis's kernel always supplies the built-in
@@ -89,13 +91,24 @@ Rounds read each other by name, with array fields concatenated across a round's 
 what makes `each(review.findings where needs_verification)` route on the judgement of the leader that
 held the evidence, rather than on the manager re-reading five reports twenty iterations later.
 
+Only the first round starts from `run_round` or an approved `run_workflow`. When its internal waves
+finish, the sequence becomes `awaiting_manager`; the Admiral must inspect the checkpoint and call
+`workflow_decide` with the current `session_id` and `revision`. A matching `continue` starts exactly
+the proposed round, while `stop`, a stale revision, a duplicate decision, or ordinary finalization
+starts none. Only one round sequence may be active for a manager at a time.
+
+This boundary is deliberately different from a wave boundary. Dependency waves _inside one already
+authorized round_ drain automatically. Authored next rounds and repeat passes never do. The
+compare-and-set revision makes retries safe: a repeated delivery cannot launch the same round twice.
+
 Two more round mechanics:
 
 - **`fanout` + `accept`** is adversarial verification as a mechanism. A replica that died counts
   **against** the rule and stays in the denominator — otherwise "two of three verifiers crashed"
   reads as unanimous confirmation.
-- **`repeat`** owns loop-until-dry, deduplicating against **everything seen** rather than against
-  what survived verification. The other way round never converges.
+- **`repeat`** computes whether another pass is useful, deduplicating against **everything seen**
+  rather than against what survived verification. Every candidate pass is still only a checkpoint
+  proposal; the Admiral decides whether it runs.
 
 ## Hard shape bounds
 
@@ -119,9 +132,12 @@ and the programmatic parsers, so a caller cannot bypass a schema by invoking the
 | catalogue aggregate source      |      16 MiB |
 
 These are safety ceilings, not fan-out tuning. `max_concurrency` controls how many admitted leaders
-run at once; it cannot make an oversized graph safe because planning allocates the graph before the
-semaphore is reached. Oversized inputs therefore fail as a non-progressing tool result and register
-zero children.
+run at once; `max_total_leaders` controls how many leaders the manager may register cumulatively
+across every tool call and round (default 32, configurable to 255). An ad-hoc leader reserves one
+slot; a work-item batch and a round reserve their complete leader count atomically. If the complete
+unit does not fit, it registers zero children and leaves an awaiting checkpoint unchanged. Once the
+supervision registry accepts a leader, that registration is counted before its trace is published;
+a trace failure settles the accepted handle but never refunds its lifetime slot.
 
 Catalogue discovery uses directory handles and examines entries incrementally; it never asks the
 filesystem to materialize a complete root. The entry, workflow and aggregate-source ceilings are
@@ -188,14 +204,18 @@ the workflow detail vocabulary.
   predecessor. The admitted set still reserves before any model call, keeping concurrent dispatch
   atomic against the leader budget. The manager/Admiral is deliberately absent from that ledger and
   remains on the primary session budget.
-- **Every batched tool holds a baton across batch boundaries** (`src/dispatch.ts`, the one
-  implementation both `run_work_items` and `run_round` run on). The loop's finish gate accepts a lone
+- **Every batched tool holds a baton across wave boundaries inside one authorized dispatch**
+  (`src/dispatch.ts`, the one implementation both `run_work_items` and `run_round` run on). The loop's finish gate accepts a lone
   `submit_result` whenever `registry.liveCount() === 0`, so a driver that lets its live-child count
-  touch zero between waves lets the manager finish on top of a half-run graph — and the
+  touch zero between internal waves lets the manager finish on top of a half-run graph — and the
   `registry.seal()` that follows then refuses every remaining registration **silently**. The session
   settles all but one handle of a finished batch, registers the next batch, then settles the last;
   peak overlap against the live-child ceiling is exactly one handle. There is one implementation
-  rather than two because getting it wrong is invisible.
+  rather than two because getting it wrong is invisible. The baton is deliberately released when a
+  semantic round ends: zero live leaders at `awaiting_manager` is the control checkpoint, not a hole
+  the engine may fill automatically. Ending a session before its driver starts also settles every
+  already-registered pending handle, so a failed running-state publication cannot strand the
+  manager behind an invisible child.
 - **A batch wider than the registry is queued, never dropped.** A round allocates `items × fanout`
   units, which reaches the hundreds, while the live-child ceiling is a couple of dozen — so the
   session registers what the registry admits and holds the rest in a backlog, registering and
@@ -206,7 +226,8 @@ the workflow detail vocabulary.
   count now always equals its unit count. A unit still queued when the dispatch is cancelled is
   reported `cancelled` rather than started.
 - **A deliberate leader cancellation stops automatic scheduling for that dispatch.** The current
-  wave may finish unwinding, but no later wave or `repeat` pass is registered. A control-plane stop
+  wave may finish unwinding, but no later wave is registered and the round sequence becomes
+  terminal rather than proposing a replacement. A control-plane stop
   must reduce work; silently replacing cancelled leaders with a fresh batch contradicts the user's
   action and can make an otherwise complete manager run fail with `agents_unfinished`.
 - **Elicitation is muxed tree-wide** (`src/elicit-mux.ts`). The loop serializes prompts per run, but
@@ -220,6 +241,10 @@ the workflow detail vocabulary.
   over-60-code-point labels are actionable errors rather than prompts silently promoted to labels or
   oversized labels silently clipped. A leader used to be registered under its entire prompt, so a
   fan-out listed several children each labelled with a full task brief.
+- **Cumulative admission is tree-wide and atomic.** `WorkflowLeaderCount` belongs to one manager
+  run and is shared by all workflow tools. It counts successful supervision registrations for the
+  lifetime of that manager; completion does not refund a slot. Whole batches and rounds reserve
+  before their first registration, so exhaustion cannot create a half-spawned semantic unit.
 - **The three leader lifecycle trace kinds are contributed here, not built into the engine.** Their
   projectors preserve the established persisted property order and shape, and invalid detail fails
   explicitly rather than producing a malformed typed event.
@@ -227,7 +252,8 @@ the workflow detail vocabulary.
 ## Settings
 
 The `workflows:` block is pure fan-out tuning — `max_concurrency` (default `4`, maximum `20`, the
-leader-wide cap on concurrently running leaders) and `budget_tokens` (default `640000000`, with explicit
+leader-wide cap on concurrently running leaders), `max_total_leaders` (default `32`, maximum `255`,
+the cumulative registration cap for one manager), and `budget_tokens` (default `640000000`, with explicit
 `null` as the opt-out, an output-token ceiling summed across auxiliary leader runs). At the default
 concurrency this is four 160-million-token child shares, deliberately larger in aggregate than the
 manager's independent 160-million-token primary session budget. That ceiling
@@ -273,6 +299,7 @@ descriptor and bypass a TUI host's silencing.
 | warn/debug   | `workflow.capability_inactive`                            | which topology gate refused an agent the workflow tools                       |
 | info         | `workflow.dispatch_begun`                                 | a batch's width, ceiling, budget and queue                                    |
 | warn         | `workflow.dispatch_refused`                               | the registry admitted none of a batch                                         |
+| warn         | `workflow.leader_limit_refused`                           | a complete batch/round exceeded cumulative leader capacity                    |
 | debug        | `workflow.wave_advanced`                                  | the next wave registered, and whether the baton was released                  |
 | warn         | `workflow.dispatch_halted`                                | a cancellation stopped all later scheduling, and what was dropped             |
 | debug / info | `workflow.capacity_wait` / `workflow.capacity_stalled`    | the deadline-free wait on a foreign child, sampled, then named once after 5 s |
@@ -318,8 +345,9 @@ There is no logging field in the `workflows:` settings block, and there will not
 
 ## Where the rest lives
 
-`WorkflowCtx` — the tree-wide semaphore, the token `WorkflowLedger`, the leader-request assembler,
-the elicit mux and the narrow `WorkflowRunDeps` execution port — is built by the kernel in
+`WorkflowCtx` — the tree-wide semaphore, token `WorkflowLedger`, cumulative `WorkflowLeaderCount`,
+leader-request assembler, elicit mux, sequence-state callback and narrow `WorkflowRunDeps`
+execution port — is built by the kernel in
 `packages/kernel/src/workflows/workflows-service.ts`. The kernel binds that port to the loop's real
 `executeRun` and `generateExecutionId`; tests bind a per-context fake instead of replacing the
 process-wide loop module.
@@ -341,7 +369,8 @@ The suite is classified by its primary effect boundary:
 - `tests/component/` owns workflow orchestration over real package internals with per-context fakes
   for `WorkflowRunDeps`: capability activation, `run_leader`, `run_work_items`, `run_round` and
   `run_workflow`. Those cases prove representative composition, argument/result propagation, ledger
-  and registry reservation, failure propagation, and the load-bearing wave baton; they do not replay
+  and registry reservation, cumulative admission, Admiral checkpoints/CAS decisions, failure
+  propagation, and the load-bearing wave baton; they do not replay
   the pure selector, acceptance, repetition or conflict matrices.
   Component workflow definitions come from `tests/helpers/definitions.ts`; `unit/builtin-workflows.test.ts`
   owns the shipped catalogue and override-resolution contract.

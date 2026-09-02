@@ -29,6 +29,20 @@ export interface WorkflowNodeActivity {
   reason?: string;
 }
 
+/** Latest manager-owned round checkpoint shown beside the leader tree. */
+export interface WorkflowSequenceActivity {
+  sessionId: string;
+  status: "running_round" | "awaiting_manager" | "completed" | "stopped" | "failed" | "cancelled";
+  revision: number;
+  roundId?: string;
+  pass?: number;
+  nextRoundId?: string;
+  nextPass?: number;
+  leadersStarted: number;
+  maxTotalLeaders: number;
+  reason?: string;
+}
+
 /**
  * The live model of a workflow tree, folded from the manager run's structural
  * event stream.
@@ -43,6 +57,8 @@ export interface WorkflowActivity {
   root: string;
   /** Every node keyed by run id: the manager plus each leader. */
   nodes: Map<string, WorkflowNodeActivity>;
+  /** Latest explicit round/decision state. */
+  sequence?: WorkflowSequenceActivity;
 }
 
 /** The events this projection folds: the `workflow_run_*` edges plus the manager's
@@ -53,6 +69,7 @@ export type WorkflowProjectionEvent = Extract<
     type:
       | "workflow_run_started"
       | "workflow_title_updated"
+      | "workflow_sequence_state"
       | "workflow_run_progress"
       | "workflow_run_completed"
       | "workflow_run_failed"
@@ -84,7 +101,33 @@ export function reduceWorkflowProjection(
       ...(root ?? { runId: event.run_id, kind: "manager", status: "running" }),
       title: event.title,
     });
-    return { root: current.root, nodes };
+    return { ...current, nodes };
+  }
+  if (event.type === "workflow_sequence_state") {
+    const base: WorkflowActivity = current ?? {
+      root: event.run_id,
+      nodes: new Map([
+        [
+          event.run_id,
+          { runId: event.run_id, kind: "manager", title: "manager", status: "running" },
+        ],
+      ]),
+    };
+    return {
+      ...base,
+      sequence: {
+        sessionId: event.session_id,
+        status: event.status,
+        revision: event.revision,
+        ...(event.round_id === undefined ? {} : { roundId: event.round_id }),
+        ...(event.pass === undefined ? {} : { pass: event.pass }),
+        ...(event.next_round_id === undefined ? {} : { nextRoundId: event.next_round_id }),
+        ...(event.next_pass === undefined ? {} : { nextPass: event.next_pass }),
+        leadersStarted: event.leaders_started,
+        maxTotalLeaders: event.max_total_leaders,
+        ...(event.reason === undefined ? {} : { reason: event.reason }),
+      },
+    };
   }
   if (event.type === "run_ended") {
     if (current === null) return current;
@@ -97,7 +140,7 @@ export function reduceWorkflowProjection(
         event.reason === "completed" ? "ok" : event.reason === "cancelled" ? "cancelled" : "error",
       endedAt: event.at,
     });
-    return { root: current.root, nodes };
+    return { ...current, nodes };
   }
 
   const base: WorkflowActivity = current ?? {
@@ -163,7 +206,7 @@ export function reduceWorkflowProjection(
     });
   }
 
-  return { root: base.root, nodes };
+  return { ...base, nodes };
 }
 
 /** Count the leaders under a workflow and how many are still running (for the chip). */

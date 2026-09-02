@@ -387,7 +387,7 @@ role" and a facade-level authorization refusal must not be flattened into
 | `notifications/progress` | `notify.ts` `deliver` (`:261-268`), `heartbeat()` (`:418-434`) | per-event progress ticks and periodic heartbeats, only when the tool call carried a `progressToken` |
 | `logging/setLevel` (request, not notification) | `packages/server/src/mcp/server.ts:119-123` | sets the session's `level` variable read by `getLevel()` |
 
-### 3.9 `viewOf` event projection (`packages/server/src/mcp/event-view.ts:49-156`)
+### 3.9 `viewOf` event projection (`viewOf` in `packages/server/src/mcp/event-view.ts`)
 
 Every `RunEvent` variant is projected to `{level, logger,
 label}`. Most resolve to `info` (`run_started`, `run_ended`,
@@ -401,19 +401,20 @@ label}`. Most resolve to `info` (`run_started`, `run_ended`,
 `memory_ingest`, `capability_event`). The non-default mappings, which decide
 what a `logging/setLevel`-filtered client actually sees:
 
-| `RunEvent.type` | Level | Line |
+| `RunEvent.type` | Level | Source |
 |---|---|---|
-| `tool_call` | `info` if `event.ok`, else `warning` | `:65-70` |
-| `model_error` | `warning` | `:79-80` |
-| `plan_review_requested` | `notice` | `:108-109` |
-| `elicitation_requested` | `notice` | `:112-113` |
-| `soft_limit_check` | `notice` | `:116-117` |
-| `compaction_skipped` | `warning` | `:120-125` |
-| `vision_analysis` | `info` if `status === "completed"`, else `warning` | `:126-134` |
-| `events_dropped` | `warning` | `:145-146` |
-| `mcp_degraded` | `warning` | `:147-148` |
+| `tool_call` | `info` if `event.ok`, else `warning` | `viewOf` |
+| `model_error` | `warning` | `viewOf` |
+| `workflow_sequence_state` | `notice` while `awaiting_manager`, otherwise `debug` | `viewOf` |
+| `plan_review_requested` | `notice` | `viewOf` |
+| `elicitation_requested` | `notice` | `viewOf` |
+| `soft_limit_check` | `notice` | `viewOf` |
+| `compaction_skipped` | `warning` | `viewOf` |
+| `vision_analysis` | `info` if `status === "completed"`, else `warning` | `viewOf` |
+| `events_dropped` | `warning` | `viewOf` |
+| `mcp_degraded` | `warning` | `viewOf` |
 
-The `switch` closes with an exhaustive `never` default (`:151-154`), so a
+The `switch` in `viewOf` closes with an exhaustive `never` default, so a
 `RunEvent` variant added upstream without a matching `case` here fails to
 compile rather than silently defaulting to `info`.
 
@@ -422,6 +423,11 @@ client at the default logging threshold must see that a potentially long context
 even if it does not request routine terminal diagnostics. The terminal event itself carries the
 operation and any summarization fallback reason in its structured `data`; `viewOf` does not flatten
 those fields into the progress label.
+
+`workflow_sequence_state` is similarly elevated only at the decision boundary: an
+`awaiting_manager` checkpoint is `notice` and labeled `workflow awaiting Admiral`, while running and
+terminal sequence snapshots stay at `debug`. The complete revision and proposed-round fields remain
+in the structured event rather than being flattened into the label.
 
 ## 4. Behavior
 
@@ -760,8 +766,14 @@ growing without bound when structural events saturate the buffer").
 **Invariant 12 (INV-SM19).** A live `compaction_started` event projects to an `info` notification
 labeled `context compaction started`, so a default-threshold MCP client receives positive progress
 before the model-backed compaction can block on provider latency.
-Production: `viewOf`, `packages/server/src/mcp/event-view.ts:118-119`.
-Test: `packages/server/tests/unit/event-view.test.ts:309-312`.
+Production: `viewOf` in `packages/server/src/mcp/event-view.ts`.
+Test: `packages/server/tests/unit/event-view.test.ts` (`viewOf` case for
+`compaction_started`).
+
+**Invariant 13 (INV-SM20).** A `workflow_sequence_state` checkpoint is visible to a default-threshold
+MCP client as a `notice` exactly while it is `awaiting_manager`; the other lifecycle snapshots remain
+`debug`. Production: `viewOf` in `packages/server/src/mcp/event-view.ts`. Test: the
+`workflow_sequence_state` case in `packages/server/tests/unit/event-view.test.ts`.
 
 ## 6. Failure modes and degradation
 
@@ -795,7 +807,7 @@ Test: `packages/server/tests/unit/event-view.test.ts:309-312`.
   `packages/server/src/mcp/notify.ts:1-6` and `packages/server/src/mcp/event-view.ts:1`. This is the mechanism that
   keeps event-droppability/coalescing policy defined once in the kernel
   rather than duplicated here; `mergeKeyOf`'s own comment
-  (`packages/server/src/mcp/event-view.ts:158-166`) states "which event types are eligible is read
+  (`mergeKeyOf` in `packages/server/src/mcp/event-view.ts`) states "which event types are eligible is read
   from kernel's `RUN_EVENT_POLICY` rather than re-listed here."
 - `@clarvis/kernel/bootstrap`, type-only, for `ConnectionEvent`/
   `ConnectionEventSink` (`packages/server/src/health/connection-health.ts:2`) — the health

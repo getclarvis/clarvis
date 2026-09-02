@@ -36,6 +36,12 @@ describe("run event policy", () => {
       mapper: "workflow",
       droppable: false,
     });
+    expect(RUN_EVENT_POLICY.workflow_sequence_state).toMatchObject({
+      sources: ["workflow"],
+      durability: "live_only",
+      mapper: "workflow",
+      droppable: false,
+    });
     expect(RUN_EVENT_POLICY.compaction_started).toMatchObject({
       sources: ["engine_trace"],
       durability: "live_only",

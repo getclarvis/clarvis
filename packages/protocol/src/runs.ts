@@ -501,6 +501,23 @@ export type RunEvent =
       title: string;
     }
   | {
+      /** Live projection of the latest Admiral-controlled round checkpoint. */
+      type: "workflow_sequence_state";
+      at: Timestamp;
+      run_id: string;
+      session_id: string;
+      status:
+        "running_round" | "awaiting_manager" | "completed" | "stopped" | "failed" | "cancelled";
+      revision: number;
+      round_id?: string;
+      pass?: number;
+      next_round_id?: string;
+      next_pass?: number;
+      leaders_started: number;
+      max_total_leaders: number;
+      reason?: string;
+    }
+  | {
       /**
        * Live per-leader progress for the workflow tree: cumulative iteration count
        * and token usage summed across the leader's own run (its lead loop plus any

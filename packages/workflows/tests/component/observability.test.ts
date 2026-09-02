@@ -8,7 +8,7 @@ import { beginDispatch, type DispatchDeps, type DispatchUnit } from "../../src/d
 import { createElicitMux } from "../../src/elicit-mux.ts";
 import { createWorkflowLedger } from "../../src/ledger.ts";
 import { runLeader } from "../../src/run-leader.ts";
-import { startRounds } from "../../src/run-round.ts";
+import { createRoundCoordinator, startRounds, type RoundCall } from "../../src/run-round.ts";
 import { RUN_WORK_ITEMS_TOOL_NAME } from "../../src/work-items.ts";
 import { RUN_LEADER_TOOL_NAME } from "../../src/tool.ts";
 import type { WorkflowCtx } from "../../src/types.ts";
@@ -93,6 +93,7 @@ function dispatchHarness(
     ctx?: Partial<WorkflowCtx>;
     deps?: Partial<DispatchDeps>;
     trace?: (kind: string) => void;
+    totalUnits?: number;
   } = {},
 ) {
   const log = recordingLogger("debug");
@@ -118,7 +119,13 @@ function dispatchHarness(
     agents: registry,
     ...over.deps,
   };
-  return { log, controller, registry, deps, dispatch: beginDispatch(deps, units) };
+  return {
+    log,
+    controller,
+    registry,
+    deps,
+    dispatch: beginDispatch(deps, units, over.totalUnits ?? units.length),
+  };
 }
 
 describe("workflow.capability_inactive — the three topology gates", () => {
@@ -353,7 +360,7 @@ describe("dispatch — a batch's own lifecycle", () => {
   });
 
   test("advancing to the next wave says whether the baton was released", async () => {
-    const h = dispatchHarness([unit("a")]);
+    const h = dispatchHarness([unit("a")], { totalUnits: 2 });
     await h.dispatch!.run();
     h.dispatch!.advance([unit("b", { roundId: "build", pass: 0 })]);
     await h.dispatch!.run();
@@ -472,17 +479,32 @@ describe("run_round — planning, skipping and folding", () => {
         registry.adopt(id, task);
       },
     };
+    const states: Parameters<NonNullable<WorkflowCtx["onSequenceState"]>>[0][] = [];
     const ctx = makeCtx({
       deps: depsWith(log),
       runDeps: workflowRunDeps(over.execute ?? (() => completed({ findings: ["x"] }))),
       assemble: (spec): RunRequest => requestWithPrompt(spec.prompt),
+      onSequenceState: (state) => states.push(state),
     });
     const { bc } = recordingBc();
+    const deps = { ctx, bc, clock: undefined, agents } as DispatchDeps;
+    const coordinator = createRoundCoordinator(ctx);
     return {
       log,
-      deps: { ctx, bc, clock: undefined, agents } as DispatchDeps,
+      deps,
+      start: (call: RoundCall) => startRounds(deps, call, coordinator),
       settle: async (): Promise<void> => {
-        await Promise.allSettled([...tasks]);
+        for (;;) {
+          await Promise.allSettled([...tasks]);
+          const state = states.at(-1);
+          if (state?.status !== "awaiting_manager") return;
+          coordinator.decide({
+            sessionId: state.sessionId,
+            revision: state.revision,
+            decision: "continue",
+            reason: "observability test authorizes the next asserted round",
+          });
+        }
       },
     };
   };
@@ -498,7 +520,7 @@ describe("run_round — planning, skipping and folding", () => {
 
   test("a round states its whole fan-out before it costs anything", async () => {
     const h = roundsHarness();
-    const started = startRounds(h.deps, { rounds: [DISCOVER], args: {} });
+    const started = h.start({ rounds: [DISCOVER], args: {} });
     expect(started).toHaveProperty("text");
     await h.settle();
 
@@ -518,7 +540,7 @@ describe("run_round — planning, skipping and folding", () => {
 
   test("a folded round names its shape, so a prose reply is not silently an array", async () => {
     const h = roundsHarness({ execute: () => completed("just prose") });
-    startRounds(h.deps, { rounds: [DISCOVER], args: {} });
+    h.start({ rounds: [DISCOVER], args: {} });
     await h.settle();
 
     const folded = h.log.one("workflow.round_folded");
@@ -533,7 +555,7 @@ describe("run_round — planning, skipping and folding", () => {
 
   test("a round guarded on an empty field is reported as skipped, not just summarized", async () => {
     const h = roundsHarness();
-    startRounds(h.deps, {
+    h.start({
       rounds: [
         DISCOVER,
         {
@@ -561,7 +583,7 @@ describe("run_round — planning, skipping and folding", () => {
 
   test("a first round whose guard is empty reports the skip on the refusal path too", () => {
     const h = roundsHarness();
-    const started = startRounds(h.deps, {
+    const started = h.start({
       rounds: [{ ...DISCOVER, when: "nothing.here" }],
       args: {},
     });
@@ -582,9 +604,11 @@ describe("run_round — planning, skipping and folding", () => {
         registry.adopt(id, task);
       },
     };
+    const states: Parameters<NonNullable<WorkflowCtx["onSequenceState"]>>[0][] = [];
     const ctx = makeCtx({
       deps: depsWith(log),
       assemble: (spec): RunRequest => requestWithPrompt(spec.prompt),
+      onSequenceState: (state) => states.push(state),
       runDeps: {
         generateExecutionId: (): string => {
           ids += 1;
@@ -596,22 +620,35 @@ describe("run_round — planning, skipping and folding", () => {
     });
     const { bc } = recordingBc();
     const deps = { ctx, bc, clock: undefined, agents } as DispatchDeps;
+    const coordinator = createRoundCoordinator(ctx);
 
-    startRounds(deps, {
-      rounds: [
-        DISCOVER,
-        {
-          id: "verify",
-          title: "Verify",
-          type: "verdict" as const,
-          over: { kind: "once" } as const,
-          brief: "Check it.",
-          fanout: 1,
-        },
-      ],
-      args: {},
-    });
+    startRounds(
+      deps,
+      {
+        rounds: [
+          DISCOVER,
+          {
+            id: "verify",
+            title: "Verify",
+            type: "verdict" as const,
+            over: { kind: "once" } as const,
+            brief: "Check it.",
+            fanout: 1,
+          },
+        ],
+        args: {},
+      },
+      coordinator,
+    );
     await Promise.allSettled([...tasks]);
+    const checkpoint = states.at(-1)!;
+    expect(checkpoint.status).toBe("awaiting_manager");
+    coordinator.decide({
+      sessionId: checkpoint.sessionId,
+      revision: checkpoint.revision,
+      decision: "continue",
+      reason: "exercise the next-round registration fault",
+    });
 
     const faulted = log.one("workflow.driver_faulted");
     expect(faulted.level).toBe("error");

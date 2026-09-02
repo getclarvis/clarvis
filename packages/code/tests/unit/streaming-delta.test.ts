@@ -446,6 +446,8 @@ const transcriptExternalOrchestrationTools = [
   "run_workflow",
   "run_round",
   "run_work_items",
+  "workflow_status",
+  "workflow_decide",
 ] as const;
 
 test("a tool call the model is still composing gets a node before the call exists", () => {

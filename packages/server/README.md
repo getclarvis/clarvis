@@ -211,6 +211,10 @@ Long context compaction is visible as an `info` progress notification when it st
 event reports whether the context was summarized or mechanically evicted, including the fallback
 reason when summarization failed or did not reduce the context enough.
 
+An Admiral-controlled workflow checkpoint is emitted at `notice` while it is awaiting a next-round
+decision. Its structured event carries the sequence revision and proposed round; other sequence
+transitions remain `debug` diagnostics.
+
 ## Questions the run asks
 
 A run can ask a human — `ask_user`, a command-guard confirmation, a plan-review gate, a soft budget

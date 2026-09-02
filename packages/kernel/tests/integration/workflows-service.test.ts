@@ -257,6 +257,30 @@ describe("WorkflowStore (file-backed)", () => {
     expect(existsSync(join(ownerDir, "legacy.summary.json"))).toBe(false);
   });
 
+  it("rejects a persisted workflow whose Admiral checkpoint has an invalid shape", () => {
+    const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-sequence-"));
+    const ownerDir = join(globalPaths(dir).workflowRecordsDir, "o");
+    mkdirSync(ownerDir, { recursive: true });
+    writeFileSync(
+      join(ownerDir, "invalid-sequence.json"),
+      JSON.stringify({
+        ...record("invalid-sequence", 42),
+        sequence: {
+          session_id: "wfseq-1",
+          status: "awaiting_manager",
+          revision: "1",
+          next_round_id: "review",
+          next_pass: 0,
+          leaders_started: 1,
+          max_total_leaders: 32,
+        },
+      }),
+    );
+    const store = createWorkflowStore({ dir, owner: "o" });
+
+    expect(store.get("invalid-sequence")).toBeNull();
+  });
+
   it("caps edges and large task/error/reason strings with an explicit marker", () => {
     const dir = mkdtempSync(join(tmpdir(), "clarvis-wfstore-bounds-"));
     const store = createWorkflowStore({ dir, owner: "o" });
@@ -395,7 +419,7 @@ describe("WorkflowsService", () => {
       globalConfigDir,
       assembleRunRequest: createSettingsRunAssembler(seededConfig()),
       store: createWorkflowStore({ dir: globalConfigDir, owner: "kernel-test" }),
-      readSettings: () => ({ max_concurrency: 2, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
     });
     const controller = new AbortController();
     controller.abort();
@@ -479,7 +503,7 @@ describe("WorkflowsService", () => {
       globalConfigDir,
       assembleRunRequest: createSettingsRunAssembler(seededConfig()),
       store: observedStore,
-      readSettings: () => ({ max_concurrency: 2, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
     });
 
     const detail = await workflows.get("repair-get");
@@ -512,7 +536,7 @@ describe("WorkflowsService", () => {
       globalConfigDir,
       assembleRunRequest: createSettingsRunAssembler(seededConfig()),
       store: { ...observedStore, listPage: undefined } as WorkflowStore,
-      readSettings: () => ({ max_concurrency: 2, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
     });
     expect((await fallback.list()).items).toHaveLength(3);
 
@@ -533,7 +557,7 @@ describe("WorkflowsService", () => {
       globalConfigDir,
       assembleRunRequest: createSettingsRunAssembler(seededConfig()),
       store,
-      readSettings: () => ({ max_concurrency: 2, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
     });
     expect((await unreadableTrace.get("still-live")).status).toBe("running");
 
@@ -554,7 +578,7 @@ describe("WorkflowsService", () => {
           throw new Error("store read-only");
         },
       },
-      readSettings: () => ({ max_concurrency: 2, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
     });
     expect((await unsavableRepair.get("unsavable")).status).toBe("cancelled");
 
@@ -571,7 +595,7 @@ describe("WorkflowsService", () => {
           return store.get(id);
         },
       },
-      readSettings: () => ({ max_concurrency: 2, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
     });
     expect(
       (await unreadableRecord.list()).items.find(
@@ -894,6 +918,175 @@ describe("WorkflowsService", () => {
     await kernel.close();
   });
 
+  it("emits and persists every Admiral-controlled round checkpoint", async () => {
+    const kernel = makeKernel(
+      [],
+      [
+        {
+          name: "manager",
+          when: IS_MANAGER,
+          script: [
+            {
+              toolCalls: [
+                {
+                  name: "run_round",
+                  arguments: {
+                    rounds: [
+                      {
+                        id: "first",
+                        title: "First round",
+                        type: "free",
+                        over: "once",
+                        brief: "run first",
+                      },
+                      {
+                        id: "second",
+                        title: "Second round",
+                        type: "free",
+                        over: "once",
+                        brief: "run second",
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { toolCalls: [{ name: "workflow_status", arguments: { session_id: "wfseq-1" } }] },
+            {
+              toolCalls: [
+                {
+                  name: "workflow_decide",
+                  arguments: {
+                    session_id: "wfseq-1",
+                    revision: 1,
+                    decision: "continue",
+                    reason: "the second round is explicitly required by this integration test",
+                  },
+                },
+              ],
+            },
+            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { text: "manager synthesis" },
+          ],
+        },
+        {
+          name: "leaders",
+          when: (params) => !IS_MANAGER(params),
+          script: [{ text: "first result" }, { text: "second result" }],
+        },
+      ],
+    );
+    const handle = await kernel.runs.start({
+      messages: [{ role: "user", content: "run the controlled sequence" }],
+      agent: "manager",
+    });
+    const events: RunEvent[] = [];
+    for await (const event of handle.events) events.push(event);
+    expect((await handle.done).status).toBe("completed");
+
+    const states = events.filter(
+      (event): event is Extract<RunEvent, { type: "workflow_sequence_state" }> =>
+        event.type === "workflow_sequence_state",
+    );
+    expect(states.map((state) => state.status)).toEqual([
+      "running_round",
+      "awaiting_manager",
+      "running_round",
+      "completed",
+    ]);
+    expect(states[1]).toMatchObject({
+      session_id: "wfseq-1",
+      revision: 1,
+      next_round_id: "second",
+      leaders_started: 1,
+      max_total_leaders: 32,
+    });
+
+    const detail = await kernel.workflows.get(handle.execution_id);
+    expect(detail.sequence).toMatchObject({
+      session_id: "wfseq-1",
+      status: "completed",
+      revision: 2,
+      round_id: "second",
+      leaders_started: 2,
+      max_total_leaders: 32,
+    });
+    expect(detail.leader_count).toBe(2);
+    await kernel.close();
+  });
+
+  it("terminalizes an awaiting Admiral checkpoint when the manager is cancelled", async () => {
+    const kernel = makeKernel(
+      [],
+      [
+        {
+          name: "manager",
+          when: IS_MANAGER,
+          script: [
+            {
+              toolCalls: [
+                {
+                  name: "run_round",
+                  arguments: {
+                    rounds: [
+                      {
+                        id: "first",
+                        title: "First round",
+                        type: "free",
+                        over: "once",
+                        brief: "run first",
+                      },
+                      {
+                        id: "second",
+                        title: "Second round",
+                        type: "free",
+                        over: "once",
+                        brief: "run second",
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+            { toolCalls: [{ name: "await_agents", arguments: {} }] },
+            { text: "must not authorize the second round", delayMs: 5_000 },
+          ],
+        },
+        {
+          name: "leader",
+          when: (params) => !IS_MANAGER(params),
+          script: [{ text: "first result" }],
+        },
+      ],
+    );
+    const handle = await kernel.runs.start({
+      messages: [{ role: "user", content: "cancel at the checkpoint" }],
+      agent: "manager",
+    });
+    let cancelledAtCheckpoint = false;
+    for await (const event of handle.events) {
+      if (event.type !== "workflow_sequence_state" || event.status !== "awaiting_manager") continue;
+      cancelledAtCheckpoint = true;
+      await handle.cancel();
+    }
+
+    expect(cancelledAtCheckpoint).toBe(true);
+    expect((await handle.done).status).toBe("cancelled");
+    const detail = await kernel.workflows.get(handle.execution_id);
+    expect(detail.sequence).toMatchObject({
+      session_id: "wfseq-1",
+      status: "cancelled",
+      revision: 2,
+      round_id: "first",
+      leaders_started: 1,
+      max_total_leaders: 32,
+    });
+    expect(detail.sequence?.next_round_id).toBeUndefined();
+    expect(detail.sequence?.next_pass).toBeUndefined();
+    await kernel.close();
+  });
+
   it("forwards one external task binding to both workflow manager and leaders", async () => {
     const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-task-"));
     const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-task-global-"));
@@ -935,7 +1128,7 @@ describe("WorkflowsService", () => {
         return baseAssembler(params);
       },
       store: createWorkflowStore({ dir: storeDir, owner: "kernel-test" }),
-      readSettings: () => ({ max_concurrency: 2, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
       resolveLeaderDefault: () => "leader",
     });
     const task = {
@@ -978,7 +1171,7 @@ describe("WorkflowsService", () => {
         return body;
       },
       store: createWorkflowStore({ dir: storeDir, owner: "kernel-test" }),
-      readSettings: () => ({ max_concurrency: 12, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 12, max_total_leaders: 32, budget_tokens: null }),
     });
 
     const result = await workflows.runManagerWorkflow({
@@ -1042,7 +1235,7 @@ describe("WorkflowsService", () => {
           backing.save(record);
         },
       },
-      readSettings: () => ({ max_concurrency: 2, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
       resolveLeaderDefault: () => "leader",
       persistenceDelayMs: 1_000,
       persistenceRuntime: {
@@ -1202,7 +1395,7 @@ Say what was found.
       workspace: ws,
       assembleRunRequest: createSettingsRunAssembler(seededConfig()),
       store: createWorkflowStore({ dir: storeDir, owner: "kernel-test" }),
-      readSettings: () => ({ max_concurrency: 2, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
     });
 
     const result = await workflows.runManagerWorkflow({
@@ -1245,7 +1438,7 @@ Say what was found.
       workspace: ws,
       assembleRunRequest: createSettingsRunAssembler(seededConfig()),
       store: createWorkflowStore({ dir: storeDir, owner: "kernel-test" }),
-      readSettings: () => ({ max_concurrency: 2, budget_tokens: null }),
+      readSettings: () => ({ max_concurrency: 2, max_total_leaders: 32, budget_tokens: null }),
     });
 
     const result = await workflows.runManagerWorkflow({

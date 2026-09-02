@@ -3,6 +3,7 @@ import type {
   AgentHandle,
   AgentRegistration,
   AgentRegistryPort,
+  FinalizeGate,
   LLMToolCall,
   RunCapabilityContext,
   RunRequest,
@@ -13,16 +14,19 @@ import type { ExecuteRunOutcome } from "@clarvis/loop";
 import { createAgentRegistry } from "@clarvis/supervision";
 import { createWorkflowsCapability } from "../../src/capability.ts";
 import { createWorkflowLedger } from "../../src/ledger.ts";
+import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
 import { WORKFLOW_LIMITS } from "../../src/limits.ts";
 import {
   buildRunRoundTool,
+  createRoundCoordinator,
   RUN_ROUND_TOOL_NAME,
   startRounds,
+  WORKFLOW_DECIDE_TOOL_NAME,
+  WORKFLOW_STATUS_TOOL_NAME,
   type RoundCall,
   type RoundInput,
 } from "../../src/run-round.ts";
-import type { LeaderSpec } from "../../src/types.ts";
-import type { WorkflowRunDeps } from "../../src/types.ts";
+import type { LeaderSpec, WorkflowRunDeps, WorkflowSequenceState } from "../../src/types.ts";
 import {
   makeCtx,
   promptFrom,
@@ -151,15 +155,24 @@ async function harness(
   execute?: (prompt: string) => Promise<ExecuteRunOutcome>,
   ctxOver: Parameters<typeof makeCtx>[0] = {},
   limits: Partial<AgentsLimits> = {},
+  autoContinue = true,
 ): Promise<{
   handle: (args: Record<string, unknown>) => Promise<{ text: string; progress: boolean }>;
+  status: (args?: Record<string, unknown>) => Promise<{ text: string; progress: boolean }>;
+  decide: (args: Record<string, unknown>) => Promise<{ text: string; progress: boolean }>;
   briefs: string[];
   specs: LeaderSpec[];
-  run: ReturnType<typeof runCtx>;
+  run: ReturnType<typeof runCtx> & { settleOne: () => Promise<void> };
   records: Array<{ kind: string; detail: unknown }>;
+  states: WorkflowSequenceState[];
+  decisionTexts: string[];
+  gate: FinalizeGate;
 }> {
   const specs: LeaderSpec[] = [];
   const briefs: string[] = [];
+  const states: WorkflowSequenceState[] = [];
+  const decisionTexts: string[] = [];
+  const outerSequenceState = ctxOver.onSequenceState;
   const ctx = makeCtx({
     assemble: (spec) => {
       specs.push(spec);
@@ -168,11 +181,54 @@ async function harness(
     },
     ...(execute !== undefined ? { runDeps: promptRunDeps(execute) } : {}),
     ...ctxOver,
+    onSequenceState: (state) => {
+      states.push(state);
+      outerSequenceState?.(state);
+    },
   });
-  const run = runCtx(limits);
-  const capability = await createWorkflowsCapability(ctx).forRun(run.runCtx);
+  const baseRun = runCtx(limits);
+  const capability = await createWorkflowsCapability(ctx).forRun(baseRun.runCtx);
   const { bc, records } = recordingBc();
-  const handler = capability!.forAgent(scope())!.attach(bc).handlers![2]!;
+  const contribution = capability!.forAgent(scope())!.attach(bc);
+  const handler = contribution.handlers![2]!;
+  const statusHandler = contribution.handlers![3]!;
+  const decisionHandler = contribution.handlers![4]!;
+  const settleOne = baseRun.settle;
+  const decide = async (args: Record<string, unknown>) => {
+    const call: LLMToolCall = {
+      id: "decision",
+      name: WORKFLOW_DECIDE_TOOL_NAME,
+      arguments: args,
+    };
+    const verdict = await decisionHandler.handle(call, 0);
+    if (verdict.kind !== "result") throw new Error(`expected a result, got ${verdict.kind}`);
+    decisionTexts.push(verdict.text);
+    return { text: verdict.text, progress: verdict.progress };
+  };
+  const status = async (args: Record<string, unknown> = {}) => {
+    const call: LLMToolCall = { id: "status", name: WORKFLOW_STATUS_TOOL_NAME, arguments: args };
+    const verdict = await statusHandler.handle(call, 0);
+    if (verdict.kind !== "result") throw new Error(`expected a result, got ${verdict.kind}`);
+    return { text: verdict.text, progress: verdict.progress };
+  };
+  const run = Object.assign(baseRun, {
+    settleOne,
+    settle: async (): Promise<void> => {
+      await settleOne();
+      if (!autoContinue) return;
+      for (;;) {
+        const state = states.at(-1);
+        if (state?.status !== "awaiting_manager") return;
+        await decide({
+          session_id: state.sessionId,
+          revision: state.revision,
+          decision: "continue",
+          reason: "test Admiral authorizes the next asserted round",
+        });
+        await settleOne();
+      }
+    },
+  });
   return {
     handle: async (args) => {
       const call: LLMToolCall = { id: "call", name: RUN_ROUND_TOOL_NAME, arguments: args };
@@ -180,10 +236,15 @@ async function harness(
       if (verdict.kind !== "result") throw new Error(`expected a result, got ${verdict.kind}`);
       return { text: verdict.text, progress: verdict.progress };
     },
+    status,
+    decide,
     briefs,
     specs,
     run,
     records,
+    states,
+    decisionTexts,
+    gate: contribution.gates![0]!,
   };
 }
 
@@ -194,6 +255,433 @@ const DISCOVER = {
   over: "once",
   brief: "Map the work.",
 };
+
+describe("run_round — Admiral checkpoints", () => {
+  const TWO_ROUNDS = {
+    rounds: [
+      { id: "map", title: "Map", type: "free", over: "once", brief: "Map." },
+      {
+        id: "inspect",
+        title: "Inspect {{item.name}}",
+        type: "free",
+        over: "each(map.items)",
+        brief: "Inspect {{item.name}}.",
+      },
+    ],
+  };
+
+  test("finishing a round only creates a checkpoint; a matching decision starts exactly one next round", async () => {
+    const h = await harness(
+      (prompt) =>
+        Promise.resolve(
+          prompt === "Map." ? completed({ items: [{ name: "a" }] }) : completed("ok"),
+        ),
+      {},
+      {},
+      false,
+    );
+    const started = await h.handle(TWO_ROUNDS);
+    expect(started.text).toContain("No later round starts automatically");
+    await h.run.settleOne();
+
+    expect(h.briefs).toEqual(["Map."]);
+    expect(h.run.registrations).toBe(1);
+    expect(h.states.at(-1)).toMatchObject({
+      status: "awaiting_manager",
+      revision: 1,
+      nextRoundId: "inspect",
+    });
+    expect((await h.status()).text).toContain("proposed_next='inspect'");
+
+    const stale = await h.decide({
+      session_id: "wfseq-1",
+      revision: 2,
+      decision: "continue",
+      reason: "stale duplicate",
+    });
+    expect(stale.text).toContain("stale decision");
+    expect(h.run.registrations).toBe(1);
+
+    const continued = await h.decide({
+      session_id: "wfseq-1",
+      revision: 1,
+      decision: "continue",
+      reason: "the map contains one item that still needs inspection",
+    });
+    expect(continued.progress).toBe(true);
+    expect(h.run.registrations).toBe(2);
+    await h.run.settleOne();
+    expect(h.briefs).toEqual(["Map.", "Inspect a."]);
+    expect(h.states.at(-1)?.status).toBe("completed");
+
+    const duplicate = await h.decide({
+      session_id: "wfseq-1",
+      revision: 1,
+      decision: "continue",
+      reason: "duplicate delivery",
+    });
+    expect(duplicate.text).toContain("not awaiting_manager");
+    expect(h.run.registrations).toBe(2);
+  });
+
+  test("stop declines the proposal and never registers its leaders", async () => {
+    const h = await harness(
+      () => Promise.resolve(completed({ items: [{ name: "a" }] })),
+      {},
+      {},
+      false,
+    );
+    await h.handle(TWO_ROUNDS);
+    await h.run.settleOne();
+    const stopped = await h.decide({
+      session_id: "wfseq-1",
+      revision: 1,
+      decision: "stop",
+      reason: "the demonstration has already proved the flow",
+    });
+    expect(stopped.text).toContain("stopped");
+    expect(h.run.registrations).toBe(1);
+    expect(h.states.at(-1)?.status).toBe("stopped");
+  });
+
+  test("one manager owns at most one active round sequence", async () => {
+    const h = await harness(
+      () => Promise.resolve(completed({ items: [{ name: "a" }] })),
+      {},
+      {},
+      false,
+    );
+    await h.handle(TWO_ROUNDS);
+
+    const whileRunning = await h.handle({ rounds: [DISCOVER] });
+    expect(whileRunning.text).toContain("is running_round");
+    expect(h.run.registrations).toBe(1);
+
+    await h.run.settleOne();
+    const whileAwaiting = await h.handle({ rounds: [DISCOVER] });
+    expect(whileAwaiting.text).toContain("is awaiting_manager");
+    expect(h.run.registrations).toBe(1);
+
+    const checkpoint = h.states.at(-1)!;
+    await h.decide({
+      session_id: checkpoint.sessionId,
+      revision: checkpoint.revision,
+      decision: "stop",
+      reason: "release the manager-owned sequence",
+    });
+    const restarted = await h.handle({ rounds: [DISCOVER] });
+    expect(restarted.text).toContain("wfseq-2");
+    expect(h.run.registrations).toBe(2);
+    await h.run.settleOne();
+  });
+
+  test("repeat is a proposed pass and remains idle until the Admiral continues it", async () => {
+    const h = await harness(
+      () => Promise.resolve(completed({ findings: [{ claim: "same" }], coverage_gaps: [] })),
+      {},
+      {},
+      false,
+    );
+    await h.handle({
+      rounds: [
+        { id: "research", title: "Research", type: "findings", over: "once", brief: "Research." },
+      ],
+      repeat: { rounds: ["research"], dedupe_by: ["claim"], max_rounds: 4, dry_rounds: 1 },
+    });
+    await h.run.settleOne();
+    expect(h.run.registrations).toBe(1);
+    expect(h.states.at(-1)).toMatchObject({
+      status: "awaiting_manager",
+      nextRoundId: "research",
+      nextPass: 1,
+    });
+
+    await h.decide({
+      session_id: "wfseq-1",
+      revision: 1,
+      decision: "continue",
+      reason: "one controlled convergence pass is justified",
+    });
+    await h.run.settleOne();
+    expect(h.run.registrations).toBe(2);
+    expect(h.states.at(-1)).toMatchObject({
+      status: "completed",
+      reason: "repeat stopped: dry_rounds",
+    });
+  });
+
+  test("a round that exceeds the remaining cumulative limit is refused atomically", async () => {
+    const h = await harness(
+      () => Promise.resolve(completed({ items: [{ name: "a" }, { name: "b" }] })),
+      { leaderCount: createWorkflowLeaderCount(2) },
+      {},
+      false,
+    );
+    await h.handle(TWO_ROUNDS);
+    await h.run.settleOne();
+    const refused = await h.decide({
+      session_id: "wfseq-1",
+      revision: 1,
+      decision: "continue",
+      reason: "inspect both items",
+    });
+    expect(refused.text).toContain("cumulative slot");
+    expect(h.run.registrations).toBe(1);
+    expect(h.states.at(-1)).toMatchObject({ status: "awaiting_manager", revision: 1 });
+    expect((await h.status()).text).not.toContain("Admiral continued it");
+  });
+
+  test("an authorized later round with no selected items is skipped without a spawn", async () => {
+    const h = await harness(() => Promise.resolve(completed({ items: [] })));
+
+    await h.handle(TWO_ROUNDS);
+    await h.run.settle();
+
+    expect(h.run.registrations).toBe(1);
+    expect(h.decisionTexts.join("\n")).toContain("selected no items");
+    expect(h.states.at(-1)?.status).toBe("completed");
+  });
+
+  test("finalization nudges once, then means stop instead of implicit continuation", async () => {
+    const h = await harness(
+      () => Promise.resolve(completed({ items: [{ name: "a" }] })),
+      {},
+      {},
+      false,
+    );
+    expect(h.gate.fastAcceptOk!()).toBe(true);
+    expect(await h.gate.check({ mode: "text", text: "done" })).toEqual({ kind: "pass" });
+    await h.handle(TWO_ROUNDS);
+    await h.run.settleOne();
+    expect(h.gate.fastAcceptOk!()).toBe(false);
+    expect(await h.gate.check({ mode: "text", text: "done" })).toMatchObject({ kind: "nudge" });
+    expect(await h.gate.check({ mode: "text", text: "done" })).toEqual({ kind: "pass" });
+    expect(h.run.registrations).toBe(1);
+    expect(h.states.at(-1)?.status).toBe("stopped");
+  });
+
+  test("status and decisions fail closed when no sequence exists", async () => {
+    const h = await harness(undefined, {}, {}, false);
+
+    expect((await h.status()).text).toContain("no workflow round sequence exists");
+    expect(
+      (
+        await h.decide({
+          session_id: "wfseq-missing",
+          revision: 1,
+          decision: "stop",
+          reason: "there is no such sequence",
+        })
+      ).text,
+    ).toContain("unknown sequence");
+  });
+
+  test("control handlers reject malformed checkpoint operations before consulting state", async () => {
+    const h = await harness(undefined, {}, {}, false);
+    const statusCases: Array<[unknown, string]> = [
+      ["not-an-object", "expected an object"],
+      [{ session_id: "" }, "bounded non-empty string"],
+    ];
+    for (const [args, expected] of statusCases) {
+      expect((await h.status(args as Record<string, unknown>)).text).toContain(expected);
+    }
+
+    const decisionCases: Array<[unknown, string]> = [
+      ["not-an-object", "expected an object"],
+      [
+        { session_id: "", revision: 1, decision: "stop", reason: "because" },
+        "'session_id' is required",
+      ],
+      [
+        { session_id: "wfseq-1", revision: 0, decision: "stop", reason: "because" },
+        "'revision' must be a positive integer",
+      ],
+      [
+        { session_id: "wfseq-1", revision: 1, decision: "later", reason: "because" },
+        "'decision' must be continue or stop",
+      ],
+      [
+        { session_id: "wfseq-1", revision: 1, decision: "stop", reason: "" },
+        "'reason' is required",
+      ],
+    ];
+    for (const [args, expected] of decisionCases) {
+      expect((await h.decide(args as Record<string, unknown>)).text).toContain(expected);
+    }
+  });
+
+  test("a multi-round repeat proposes each boundary and can require another pass", async () => {
+    let result = 0;
+    const h = await harness((prompt) =>
+      Promise.resolve(
+        completed({
+          findings: [{ claim: `${prompt}-${String(++result)}` }],
+          coverage_gaps: [],
+        }),
+      ),
+    );
+    await h.handle({
+      rounds: [
+        { id: "left", title: "Left", type: "findings", over: "once", brief: "Left." },
+        { id: "right", title: "Right", type: "findings", over: "once", brief: "Right." },
+      ],
+      repeat: {
+        rounds: ["left", "right"],
+        dedupe_by: ["claim"],
+        max_rounds: 2,
+        dry_rounds: 1,
+      },
+    });
+
+    await h.run.settle();
+
+    expect(h.run.registrations).toBe(6);
+    expect(h.states.at(-1)).toMatchObject({
+      status: "completed",
+      reason: "repeat stopped: max_rounds",
+    });
+    expect(h.decisionTexts.filter((text) => text.includes("continued sequence"))).toHaveLength(5);
+  });
+
+  test("a proposed round that disappears is failed instead of being treated as completed", async () => {
+    const run = runCtx();
+    const ctx = makeCtx({
+      runDeps: workflowRunDeps(() => Promise.resolve(completed("ok"))),
+      assemble: assembler,
+    });
+    const coordinator = createRoundCoordinator(ctx);
+    const rounds: RoundInput[] = [
+      {
+        id: "first",
+        title: "First",
+        type: "free",
+        over: { kind: "once" },
+        brief: "First.",
+        fanout: 1,
+      },
+      {
+        id: "second",
+        title: "Second",
+        type: "free",
+        over: { kind: "once" },
+        brief: "Second.",
+        fanout: 1,
+      },
+    ];
+    expect(
+      startRounds(
+        { ctx, bc: recordingBc().bc, clock: undefined, agents: run.agents },
+        { rounds, args: {} },
+        coordinator,
+      ),
+    ).toEqual({ text: expect.stringContaining("wfseq-1") });
+    await run.settle();
+    expect(coordinator.status()).toMatchObject({
+      text: expect.stringContaining("awaiting_manager"),
+    });
+
+    rounds.pop();
+    expect(
+      coordinator.decide({
+        sessionId: "wfseq-1",
+        revision: 1,
+        decision: "continue",
+        reason: "continue the retained proposal",
+      }),
+    ).toMatchObject({
+      text: expect.stringContaining("proposed round no longer exists"),
+      progress: true,
+      error: true,
+    });
+  });
+
+  test("the programmatic executor refuses a first round whose admitted fanout becomes empty", () => {
+    let fanoutReads = 0;
+    const unstable: RoundInput = {
+      id: "unstable",
+      title: "Unstable",
+      type: "free",
+      over: { kind: "once" },
+      brief: "Unstable.",
+      get fanout() {
+        fanoutReads += 1;
+        return fanoutReads <= 3 ? 1 : 0;
+      },
+    };
+    const run = runCtx();
+    const ctx = makeCtx();
+
+    expect(
+      startRounds(
+        { ctx, bc: recordingBc().bc, clock: undefined, agents: run.agents },
+        { rounds: [unstable], args: {} },
+      ),
+    ).toEqual({ error: "the first round 'unstable' selected no items." });
+    expect(run.registrations).toBe(0);
+  });
+
+  test("a running-state publication fault terminalizes the sequence and its undispatched session", async () => {
+    let threw = false;
+    const leaderCount = createWorkflowLeaderCount(1);
+    const h = await harness(
+      undefined,
+      {
+        leaderCount,
+        onSequenceState: (state) => {
+          if (!threw && state.status === "running_round") {
+            threw = true;
+            throw new Error("running projection failed");
+          }
+        },
+      },
+      {},
+      false,
+    );
+
+    const result = await h.handle({ rounds: [DISCOVER] });
+
+    expect(result).toMatchObject({
+      progress: false,
+      text: expect.stringContaining("running projection failed"),
+    });
+    expect(h.states.at(-1)).toMatchObject({
+      status: "failed",
+      reason: "running projection failed",
+    });
+    expect(h.run.registrations).toBe(1);
+    expect(h.run.agents.liveCount()).toBe(0);
+    expect(h.run.liveAfterSettle.at(-1)).toBe(0);
+    expect(leaderCount.started()).toBe(1);
+    expect(leaderCount.remaining()).toBe(0);
+    expect(h.briefs).toEqual([]);
+  });
+
+  test("a checkpoint publication fault fails the active driver and releases its handle", async () => {
+    let threw = false;
+    const h = await harness(
+      () => Promise.resolve(completed({ items: [{ name: "a" }] })),
+      {
+        onSequenceState: (state) => {
+          if (!threw && state.status === "awaiting_manager") {
+            threw = true;
+            throw new Error("checkpoint projection failed");
+          }
+        },
+      },
+      {},
+      false,
+    );
+
+    await h.handle(TWO_ROUNDS);
+    await h.run.settleOne();
+
+    expect(h.states.at(-1)).toMatchObject({
+      status: "failed",
+      reason: "checkpoint projection failed",
+    });
+    expect(h.run.liveAfterSettle.at(-1)).toBe(0);
+  });
+});
 
 describe("run_round — the tool schema", () => {
   test("requires rounds and offers a profile selector only when profiles exist", () => {
@@ -233,9 +721,22 @@ describe("run_round — the tool schema", () => {
 describe("run_round — dispatch selection", () => {
   test("the handler claims run_round calls and nothing else", async () => {
     const run = await createWorkflowsCapability(makeCtx()).forRun(runCtx().runCtx);
-    const handler = run!.forAgent(scope())!.attach(recordingBc().bc).handlers![2]!;
+    const handlers = run!.forAgent(scope())!.attach(recordingBc().bc).handlers!;
+    const handler = handlers[2]!;
     expect(handler.matches({ name: RUN_ROUND_TOOL_NAME, arguments: {} } as never)).toBe(true);
     expect(handler.matches({ name: "run_leader", arguments: {} } as never)).toBe(false);
+    expect(handlers[3]!.matches({ name: WORKFLOW_STATUS_TOOL_NAME, arguments: {} } as never)).toBe(
+      true,
+    );
+    expect(handlers[3]!.matches({ name: WORKFLOW_DECIDE_TOOL_NAME, arguments: {} } as never)).toBe(
+      false,
+    );
+    expect(handlers[4]!.matches({ name: WORKFLOW_DECIDE_TOOL_NAME, arguments: {} } as never)).toBe(
+      true,
+    );
+    expect(handlers[4]!.matches({ name: WORKFLOW_STATUS_TOOL_NAME, arguments: {} } as never)).toBe(
+      false,
+    );
   });
 });
 
@@ -936,8 +1437,8 @@ describe("run_round — skipping, budget and repeat", () => {
       ],
     });
     await h.run.settle();
-    expect(h.run.settlements.at(-1)).toContain("work: skipped");
-    expect(h.run.settlements.at(-1)).toContain("duplicate_id");
+    expect(h.decisionTexts.join("\n")).toContain("work");
+    expect(h.decisionTexts.join("\n")).toContain("duplicate_id");
   });
 
   test("free-text results from several leaders are kept side by side, not merged", async () => {
@@ -1037,7 +1538,8 @@ describe("run_round — skipping, budget and repeat", () => {
       ],
     });
     await h.run.settle();
-    expect(h.run.settlements.at(-1)).toContain("two: skipped");
+    expect(h.decisionTexts.join("\n")).toContain("two");
+    expect(h.decisionTexts.join("\n")).toContain("did not resolve");
   });
 
   test("a later round refuses a retained source larger than the fan-out bound", async () => {
@@ -1065,12 +1567,12 @@ describe("run_round — skipping, budget and repeat", () => {
     await h.run.settle();
 
     expect(h.briefs).toEqual(["Produce items."]);
-    expect(h.run.settlements.at(-1)).toContain(
+    expect(h.decisionTexts.join("\n")).toContain(
       `contains ${String(WORKFLOW_LIMITS.workItems + 1)} items`,
     );
   });
 
-  test("once the ledger refuses, the remaining rounds are skipped and named", async () => {
+  test("once the ledger refuses, the sequence fails without starting another round", async () => {
     const h = await harness(() => Promise.resolve(completed({ findings: [], coverage_gaps: [] })), {
       ledger: createWorkflowLedger(0),
     });
@@ -1081,7 +1583,9 @@ describe("run_round — skipping, budget and repeat", () => {
       ],
     });
     await h.run.settle();
-    expect(h.run.settlements.at(-1)).toContain("two: skipped (the token budget was exhausted)");
+    expect(h.briefs).toEqual([]);
+    expect(h.states.at(-1)?.status).toBe("failed");
+    expect(h.run.settlements.at(-1)).toContain("token budget was exhausted");
   });
 
   test("a repeat block stops once a pass produces nothing new", async () => {
@@ -1101,10 +1605,13 @@ describe("run_round — skipping, budget and repeat", () => {
       repeat: { rounds: ["review"], dedupe_by: ["claim"], max_rounds: 5, dry_rounds: 1 },
     });
     await h.run.settle();
-    expect(h.run.settlements.at(-1)).toContain("repeat: skipped (stopped: dry_rounds)");
+    expect(h.states.at(-1)).toMatchObject({
+      status: "completed",
+      reason: "repeat stopped: dry_rounds",
+    });
   });
 
-  test("a cancelled leader stops the automatic repeat instead of spawning a replacement", async () => {
+  test("a cancelled leader stops the repeat candidate instead of proposing a replacement", async () => {
     let calls = 0;
     const h = await harness(() => {
       calls += 1;
@@ -1126,12 +1633,13 @@ describe("run_round — skipping, budget and repeat", () => {
 
     expect(calls).toBe(1);
     expect(h.run.registrations).toBe(1);
-    expect(h.run.settlements.at(-1)).toContain("workflow: skipped (stopped after cancellation)");
+    expect(h.states.at(-1)?.status).toBe("cancelled");
+    expect(h.run.settlements.at(-1)).toContain("stopped after cancellation");
   });
 });
 
-describe("run_round — the wave-boundary baton spans rounds too", () => {
-  test("the live-child count only reaches zero at the very end", async () => {
+describe("run_round — the wave-boundary baton ends at a manager checkpoint", () => {
+  test("the live-child count reaches zero between semantic rounds", async () => {
     const h = await harness((prompt) =>
       Promise.resolve(
         prompt.startsWith("Map")
@@ -1167,9 +1675,7 @@ describe("run_round — the wave-boundary baton spans rounds too", () => {
     });
     await h.run.settle();
     const counts = h.run.liveAfterSettle;
-    expect(counts).toHaveLength(2);
-    expect(counts.slice(0, -1).every((n) => n > 0)).toBe(true);
-    expect(counts.at(-1)).toBe(0);
+    expect(counts).toEqual([0, 0]);
   });
 });
 
@@ -1205,14 +1711,15 @@ describe("run_round — a batch wider than the registry is queued, not dropped",
     expect(h.run.settlements.at(-1)).toContain("review: 6 leader(s)");
   });
 
-  test("the live-child count still only reaches zero at the very end", async () => {
+  test("the baton spans a wide round's internal queue but not its preceding checkpoint", async () => {
     const h = await harness(sixItems, {}, { maxLiveChildren: 3 });
     await h.handle(SIX_ITEMS);
     await h.run.settle();
 
     const counts = h.run.liveAfterSettle;
     expect(counts).toHaveLength(7);
-    expect(counts.slice(0, -1).every((n) => n > 0)).toBe(true);
+    expect(counts[0]).toBe(0);
+    expect(counts.slice(1, -1).every((n) => n > 0)).toBe(true);
     expect(counts.at(-1)).toBe(0);
   });
 
@@ -1311,7 +1818,7 @@ describe("run_round — defects the review caught", () => {
     expect(h.run.settlements.some((s) => s.includes("'a' did not finish"))).toBe(true);
   });
 
-  test("a round the registry cannot admit leaves the live count above zero and still reports", async () => {
+  test("releasing the checkpoint baton lets the next round use a one-slot registry", async () => {
     const h = await harness(
       (prompt) =>
         Promise.resolve(
@@ -1336,12 +1843,9 @@ describe("run_round — defects the review caught", () => {
     });
     await h.run.settle();
 
-    // The second round could not register (the baton holds the only slot). The
-    // baton must not be released for it, or the manager may finish mid-sequence.
     const counts = h.run.liveAfterSettle;
-    expect(counts.slice(0, -1).every((n) => n > 0)).toBe(true);
-    expect(counts.at(-1)).toBe(0);
-    // And the summary still lands, rather than the driver going quiet.
+    expect(counts).toEqual([0, 0]);
+    expect(h.briefs).toHaveLength(2);
     expect(h.run.settlements.at(-1)).toContain("rounds finished");
   });
 

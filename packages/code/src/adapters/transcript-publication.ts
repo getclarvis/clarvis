@@ -67,6 +67,7 @@ const TRANSCRIPT_EVENT_POLICY = {
   },
   workflow_run_started: { surface: "frontier", authority: "incremental", commit: "never" },
   workflow_title_updated: { surface: "frontier", authority: "incremental", commit: "never" },
+  workflow_sequence_state: { surface: "frontier", authority: "incremental", commit: "never" },
   workflow_run_progress: { surface: "frontier", authority: "incremental", commit: "never" },
   workflow_run_completed: { surface: "frontier", authority: "terminal", commit: "never" },
   workflow_run_failed: { surface: "frontier", authority: "terminal", commit: "never" },
@@ -488,6 +489,7 @@ export class TranscriptPublisher {
       case "delegation_started":
       case "workflow_run_started":
       case "workflow_title_updated":
+      case "workflow_sequence_state":
       case "workflow_run_progress":
       case "workflow_run_completed":
       case "workflow_run_failed":

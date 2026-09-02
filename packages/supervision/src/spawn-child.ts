@@ -31,6 +31,9 @@ export interface BackgroundChildSpawn {
   steerQueue: SteerQueue;
 }
 
+/** Producer-side accounting committed at the registry-acceptance boundary. */
+export type BackgroundChildRegistered = (spawn: BackgroundChildSpawn) => void;
+
 /**
  * Register a background child with the supervision registry.
  *
@@ -38,6 +41,9 @@ export interface BackgroundChildSpawn {
  * @param trace - the registering agent's trace, for the `agent_registered`
  *   record.
  * @param spec - what to register.
+ * @param onRegistered - optional producer accounting invoked after registry
+ *   acceptance and before trace publication. If it or the trace sink throws,
+ *   the accepted child is aborted, settled and closed before the error escapes.
  * @returns the child's {@link AgentHandle} plus the fresh `AbortController`
  *   and {@link SteerQueue} wired into its `control`, or `null` when the
  *   registry declined (sealed or at its live-children ceiling) — a producer
@@ -47,6 +53,7 @@ export function registerBackgroundChild(
   agents: AgentRegistryPort,
   trace: TracePort,
   spec: BackgroundChildSpec,
+  onRegistered?: BackgroundChildRegistered,
 ): BackgroundChildSpawn | null {
   const controller = new AbortController();
   const steerQueue = createSteerQueue();
@@ -65,14 +72,32 @@ export function registerBackgroundChild(
   });
   if (handle === null) return null;
 
-  trace.record("agent_registered", {
-    agent_id: handle.id,
-    kind: spec.kind,
-    native_id: spec.nativeId,
-    title: spec.title,
-    ...(spec.profile !== undefined ? { profile: spec.profile } : {}),
-    background: true,
-  });
+  const spawn = { handle, controller, steerQueue };
+  try {
+    onRegistered?.(spawn);
+    trace.record("agent_registered", {
+      agent_id: handle.id,
+      kind: spec.kind,
+      native_id: spec.nativeId,
+      title: spec.title,
+      ...(spec.profile !== undefined ? { profile: spec.profile } : {}),
+      background: true,
+    });
+  } catch (error) {
+    try {
+      controller.abort(error);
+    } catch {}
+    try {
+      handle.settled({
+        status: "failed",
+        result: "background child registration failed before adoption",
+      });
+    } catch {}
+    try {
+      steerQueue.close();
+    } catch {}
+    throw error;
+  }
 
-  return { handle, controller, steerQueue };
+  return spawn;
 }

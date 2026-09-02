@@ -424,6 +424,38 @@ test("the tree merges live leaders and exposes their round, item, and replica co
   t.renderer.destroy();
 });
 
+test("the persisted tree names an awaiting-Admiral checkpoint and proposed round", async () => {
+  const { host, press, deps } = mount({
+    rows: [summary({ execution_id: "wf-1", status: "running" })],
+    get: () =>
+      Promise.resolve(
+        detail({
+          execution_id: "wf-1",
+          status: "running",
+          nodes: [node({ run_id: "wf-1", status: "running" })],
+          sequence: {
+            session_id: "wfseq-1",
+            status: "awaiting_manager",
+            revision: 3,
+            round_id: "review",
+            pass: 0,
+            next_round_id: "verify",
+            next_pass: 0,
+            leaders_started: 5,
+            max_total_leaders: 32,
+          },
+        }),
+      ),
+  });
+  const t = await openRender((() => WorkflowsHub(host, deps)) as never, { width: 90, height: 24 });
+  await tick();
+  await t.renderOnce();
+  press("return");
+  await captureUntil(t, "Awaiting Admiral");
+  expect(t.captureCharFrame()).toContain("next verify");
+  t.renderer.destroy();
+});
+
 test("the 80-column workflow tree stacks metadata and keeps Back visible", async () => {
   const { host, press, deps } = mount({ rows: [summary({ execution_id: "wf-1" })] });
   const t = await openRender((() => WorkflowsHub(host, deps)) as never, {

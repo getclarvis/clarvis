@@ -9,6 +9,7 @@ import {
   type DispatchUnit,
 } from "../../src/dispatch.ts";
 import { createWorkflowLedger } from "../../src/ledger.ts";
+import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
 import { makeCtx, recordingBc, requestWithPrompt, workflowRunDeps } from "../helpers/workflow.ts";
 
 const LIMITS: AgentsLimits = {
@@ -95,6 +96,57 @@ function session(
 }
 
 describe("beginDispatch", () => {
+  test("abandons a registered child when its atomic reservation cannot be consumed", () => {
+    const registry = createAgentRegistry({ limits: LIMITS });
+    const ctx = makeCtx({
+      leaderCount: {
+        limit: 1,
+        started: () => 0,
+        remaining: () => 1,
+        reserve: () => ({
+          consume: () => false,
+          release: () => undefined,
+          remaining: () => 1,
+        }),
+      },
+    });
+
+    expect(
+      beginDispatch({ ctx, bc: recordingBc().bc, clock: undefined, agents: registry }, [unit("a")]),
+    ).toBeNull();
+    expect(registry.list()).toMatchObject([{ status: "failed" }]);
+    expect(registry.liveCount()).toBe(0);
+  });
+
+  test("settles an already-registered prefix when a later registration throws", () => {
+    let ids = 0;
+    const registry = createAgentRegistry({ limits: LIMITS });
+    const leaderCount = createWorkflowLeaderCount(2);
+    const ctx = makeCtx({
+      leaderCount,
+      runDeps: {
+        generateExecutionId: (): string => {
+          ids += 1;
+          if (ids === 2) throw new Error("id source failed");
+          return `leader-${String(ids)}`;
+        },
+        executeRun: completed,
+      },
+    });
+
+    expect(() =>
+      beginDispatch(
+        { ctx, bc: recordingBc().bc, clock: undefined, agents: registry },
+        [unit("a"), unit("b")],
+        2,
+      ),
+    ).toThrow("id source failed");
+    expect(registry.liveCount()).toBe(0);
+    expect(registry.list()).toMatchObject([{ status: "failed" }]);
+    expect(leaderCount.started()).toBe(1);
+    expect(leaderCount.remaining()).toBe(1);
+  });
+
   test("refuses outright when the run was already aborted", () => {
     const s = session([unit("a")]);
     s.controller.abort();

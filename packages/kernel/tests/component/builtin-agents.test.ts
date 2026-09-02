@@ -124,6 +124,15 @@ describe("the shipped admiral agent", () => {
     expect(ADMIRAL.body).toContain("preflight before any leader starts");
   });
 
+  test("owns every next-round decision and keeps generic demonstrations one-round", () => {
+    expect(ADMIRAL.body).toContain("`workflow_status`");
+    expect(ADMIRAL.body).toContain("`workflow_decide`");
+    expect(ADMIRAL.body).toContain("never crosses into the next authored round");
+    expect(ADMIRAL.body).toContain("convergence rule says another pass is eligible");
+    expect(ADMIRAL.body).toContain("A generic demonstration is not a research request");
+    expect(ADMIRAL.body).toContain("max_total_leaders");
+  });
+
   test("the prompt's schemas are the product's schemas, so the two cannot drift apart", () => {
     const shipped = Object.values(WORKFLOW_RESULT_SCHEMAS);
     const blocks = jsonBlocks(ADMIRAL.body).map(structure);

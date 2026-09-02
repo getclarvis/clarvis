@@ -378,6 +378,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     return (
       event.type === "workflow_run_started" ||
       event.type === "workflow_title_updated" ||
+      event.type === "workflow_sequence_state" ||
       event.type === "workflow_run_progress" ||
       event.type === "workflow_run_completed" ||
       event.type === "workflow_run_failed" ||

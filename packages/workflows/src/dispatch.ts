@@ -47,6 +47,7 @@ import { bind, createSampler, levelEnabled } from "@clarvis/capability";
 import { registerBackgroundChild } from "@clarvis/supervision";
 import type { BackgroundChildSpawn } from "@clarvis/supervision";
 import type { WorkflowReservation } from "./ledger.ts";
+import type { WorkflowLeaderReservation } from "./leader-count.ts";
 import { faultFields, outputTokensOf, withBoundLogger, workflowLogger } from "./log.ts";
 import { describeLeaderResult } from "./result-text.ts";
 import {
@@ -196,13 +197,35 @@ export interface DispatchSession {
 export function beginDispatch(
   deps: DispatchDeps,
   first: readonly DispatchUnit[],
+  totalUnits = first.length,
 ): DispatchSession | null {
   const rootLogger = workflowLogger(deps.ctx);
-  let pending = register(deps, first);
+  const admission = deps.ctx.leaderCount.reserve(totalUnits);
+  if (admission === null) {
+    rootLogger.warn(
+      {
+        event: "workflow.leader_limit_refused",
+        requested: totalUnits,
+        started: deps.ctx.leaderCount.started(),
+        remaining: deps.ctx.leaderCount.remaining(),
+        max_total_leaders: deps.ctx.leaderCount.limit,
+      },
+      "the complete batch does not fit the manager's cumulative leader limit, so none of it is registered",
+    );
+    return null;
+  }
+  let pending: Batch;
+  try {
+    pending = register(deps, first, admission);
+  } catch (error) {
+    admission.release();
+    throw error;
+  }
   const anchor = pending.entries.find(
     (entry): entry is Registered & { spawn: BackgroundChildSpawn } => entry.spawn !== null,
   );
   if (anchor === undefined) {
+    admission.release();
     const live = deps.agents.liveCount();
     rootLogger.warn(
       {
@@ -299,7 +322,7 @@ export function beginDispatch(
        */
       const pump = (): void => {
         while (backlog.length > 0 && !stopped()) {
-          const entry = registerOne(deps, backlog[0]!);
+          const entry = registerOne(deps, backlog[0]!, admission);
           if (entry === null) return;
           backlog.shift();
           outstanding += 1;
@@ -366,7 +389,7 @@ export function beginDispatch(
     cancelled: () => cancellationObserved,
     /**
      * @remarks A deliberate stop is a control-plane intervention. Do not answer
-     * it by silently scheduling the next wave or repeat pass; the manager can
+     * it by silently scheduling the next wave; the manager can
      * start more work explicitly if that is still wanted.
      */
     advance(units: readonly DispatchUnit[]): void {
@@ -377,12 +400,12 @@ export function beginDispatch(
             reason: "cancelled",
             queued_dropped: units.length + pending.backlog.length,
           },
-          "a leader in this dispatch was cancelled, so no later wave or repeat pass is scheduled and the units named here never start",
+          "a leader in this dispatch was cancelled, so no later wave is scheduled and the units named here never start",
         );
         pending = emptyBatch();
         return;
       }
-      const next = register(deps, units);
+      const next = register(deps, units, admission);
       const registered = next.entries.filter((entry) => entry.spawn !== null).length;
       const batonReleased = registered > 0;
       if (batonReleased) {
@@ -405,8 +428,12 @@ export function beginDispatch(
       );
     },
     end(summary: string): void {
-      baton?.(summary);
-      baton = undefined;
+      try {
+        baton?.(summary);
+        baton = undefined;
+      } finally {
+        admission.release();
+      }
     },
   };
 }
@@ -436,27 +463,52 @@ export function describeQueued(queued: number): string {
  * entry rather than queued, so {@link beginDispatch} still refuses outright
  * instead of returning a session whose queue can never drain.
  */
-function register(deps: DispatchDeps, units: readonly DispatchUnit[]): Batch {
+function register(
+  deps: DispatchDeps,
+  units: readonly DispatchUnit[],
+  admission: WorkflowLeaderReservation,
+): Batch {
   const batch = emptyBatch();
   let full = false;
-  for (const unit of units) {
-    if (deps.ctx.signal.aborted) {
-      batch.entries.push({ unit, runId: deps.ctx.runDeps.generateExecutionId(), spawn: null });
-      continue;
+  try {
+    for (const unit of units) {
+      if (deps.ctx.signal.aborted) {
+        batch.entries.push({ unit, runId: deps.ctx.runDeps.generateExecutionId(), spawn: null });
+        continue;
+      }
+      if (full) {
+        batch.backlog.push(unit);
+        continue;
+      }
+      const entry = registerOne(deps, unit, admission);
+      if (entry === null) {
+        full = true;
+        batch.backlog.push(unit);
+        continue;
+      }
+      batch.entries.push(entry);
     }
-    if (full) {
-      batch.backlog.push(unit);
-      continue;
-    }
-    const entry = registerOne(deps, unit);
-    if (entry === null) {
-      full = true;
-      batch.backlog.push(unit);
-      continue;
-    }
-    batch.entries.push(entry);
+  } catch (error) {
+    abandonRegistered(batch.entries, "workflow batch registration failed");
+    throw error;
   }
   return batch;
+}
+
+/** Settle every handle registered before a later unit made the batch fail. */
+function abandonRegistered(entries: readonly Registered[], reason: string): void {
+  for (const entry of entries) {
+    if (entry.spawn === null) continue;
+    try {
+      entry.spawn.controller.abort(reason);
+    } catch {}
+    try {
+      entry.spawn.handle.settled({ status: "failed", result: reason });
+    } catch {}
+    try {
+      entry.spawn.steerQueue.close();
+    } catch {}
+  }
 }
 
 /** First retry delay while waiting for a registry slot outside this batch. */
@@ -592,7 +644,11 @@ function reportCapacityWait(
  * @returns the registered unit, or `null` when the registry is sealed or at its
  *   live-children ceiling — which is a "not yet", not a "never".
  */
-function registerOne(deps: DispatchDeps, unit: DispatchUnit): Registered | null {
+function registerOne(
+  deps: DispatchDeps,
+  unit: DispatchUnit,
+  admission: WorkflowLeaderReservation,
+): Registered | null {
   const runId = deps.ctx.runDeps.generateExecutionId();
   const spawn = registerBackgroundChild(deps.agents, deps.bc.trace, {
     kind: "leader",
@@ -600,7 +656,17 @@ function registerOne(deps: DispatchDeps, unit: DispatchUnit): Registered | null 
     title: unit.title,
     ...(unit.profile !== undefined ? { profile: unit.profile } : {}),
   });
-  return spawn === null ? null : { unit, runId, spawn };
+  if (spawn === null) return null;
+  if (!admission.consume()) {
+    spawn.controller.abort("workflow cumulative leader admission was exhausted");
+    spawn.handle.settled({
+      status: "failed",
+      result: "leader was not started because its atomic admission was exhausted",
+    });
+    spawn.steerQueue.close();
+    return null;
+  }
+  return { unit, runId, spawn };
 }
 
 /**

@@ -533,6 +533,12 @@ snapshots are coalesced over 50 ms instead of synchronously serializing the grow
 and the terminal snapshot is synchronously flushed from managed-run settlement before `done` and
 `closed` can finish.
 
+The same record persists the latest manager-owned round checkpoint. Every transition emits
+`workflow_sequence_state` and updates `WorkflowDetail.sequence`, including `awaiting_manager` with
+its revision and proposed next round. The event is structural and non-droppable in the run stream;
+the persisted projection lets the Workflows tree show the decision point after the live stream is
+gone. Legacy and ad-hoc-only records simply omit the field.
+
 Executable workflow definitions are resolved separately for every manager run. The kernel starts
 with the `audit`, `implement` and `research` definitions exported by `@clarvis/workflows`, then applies
 valid global and workspace documents by name. Effective precedence is
@@ -546,6 +552,12 @@ unfinished edge, or refused leader reservation makes the aggregate workflow reco
 preserving the manager edge's own completed status. Because the manager's `workflow` capability is
 injected only for that primary run, its later memory pass uses the isolated digest path instead of
 trying an invalid continuation with an undeclared grant.
+
+The service also constructs one cumulative leader counter per manager from
+`workflows.max_total_leaders`. It is shared by ad-hoc leaders, work-item batches and round sequences;
+completion does not refund capacity. The workflow capability's per-run coordinator starts only the
+first authored round, exposes the checkpoint tools to Admiral, and requires a revision-matched
+decision before each later authored round or repeat pass.
 
 A settled run no longer remains leased for the memory indexer's multi-minute retry schedule. Its
 event stream waits five idle seconds for the usual immediate terminal notice, renews only within a

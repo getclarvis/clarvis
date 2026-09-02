@@ -4,6 +4,7 @@ import {
   managerLiveChildrenFloor,
   WORKFLOWS_DEFAULTS,
   WORKFLOWS_MAX_CONCURRENCY,
+  WORKFLOWS_MAX_TOTAL_LEADERS,
   WORKFLOWS_SETTINGS_FIELDS,
 } from "../../src/settings.ts";
 
@@ -18,9 +19,18 @@ describe("the workflows settings block", () => {
     expect(() => block.parse({ max_concurrency: 0 })).toThrow();
   });
 
+  test("bounds the cumulative lifetime leader count independently of concurrency", () => {
+    expect(block.parse({ max_total_leaders: WORKFLOWS_MAX_TOTAL_LEADERS })).toMatchObject({
+      max_total_leaders: WORKFLOWS_MAX_TOTAL_LEADERS,
+    });
+    expect(() => block.parse({ max_total_leaders: WORKFLOWS_MAX_TOTAL_LEADERS + 1 })).toThrow();
+    expect(() => block.parse({ max_total_leaders: 0 })).toThrow();
+  });
+
   test("an omitted block still carries the product defaults", () => {
     expect(block.parse({})).toEqual({
       max_concurrency: WORKFLOWS_DEFAULTS.max_concurrency,
+      max_total_leaders: WORKFLOWS_DEFAULTS.max_total_leaders,
       budget_tokens: WORKFLOWS_DEFAULTS.budget_tokens,
     });
     expect(WORKFLOWS_DEFAULTS.budget_tokens).toBe(640_000_000);

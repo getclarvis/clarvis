@@ -94,6 +94,15 @@ export function viewOf(event: RunEvent): EventView {
       return { level: "info", logger: "clarvis.workflow", label: "leader started" };
     case "workflow_title_updated":
       return { level: "debug", logger: "clarvis.workflow", label: "workflow titled" };
+    case "workflow_sequence_state":
+      return {
+        level: event.status === "awaiting_manager" ? "notice" : "debug",
+        logger: "clarvis.workflow",
+        label:
+          event.status === "awaiting_manager"
+            ? "workflow awaiting Admiral"
+            : `workflow ${event.status}`,
+      };
     case "workflow_run_completed":
     case "workflow_run_failed":
       return { level: "info", logger: "clarvis.workflow", label: `leader ${event.status}` };

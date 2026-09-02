@@ -13,6 +13,7 @@ import {
   createElicitMux,
   createWorkflowSemaphore,
   createWorkflowLedger,
+  createWorkflowLeaderCount,
   createWorkflowsCapability,
   isWorkflowPersistedTraceEvent,
   managerLiveChildrenFloor,
@@ -33,6 +34,7 @@ import type {
   StartRunParams,
   WorkflowDetail,
   WorkflowNode,
+  WorkflowSequence,
   WorkflowSummary,
   WorkflowsService,
 } from "@clarvis/protocol";
@@ -50,6 +52,7 @@ import {
   WORKFLOW_MAX_TITLE_BYTES,
   WORKFLOW_PAGE_DEFAULT,
   boundedWorkflowEdge,
+  boundedWorkflowSequence,
   createWorkflowSaveQueue,
   markWorkflowEdgesTruncated,
   normalizeWorkflowPage,
@@ -59,6 +62,7 @@ import {
   type WorkflowPageScanOptions,
   type WorkflowRecord,
   type WorkflowRecordSummary,
+  type WorkflowSequenceRecord,
   type WorkflowStore,
 } from "./workflow-store.ts";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
@@ -73,6 +77,7 @@ const WORKFLOW_RUN_DEPS = {
  * Manager designation is the `workflow` grant, not a field here. */
 export interface WorkflowsRuntimeSettings {
   max_concurrency: number;
+  max_total_leaders: number;
   budget_tokens: number | null;
 }
 
@@ -243,9 +248,11 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
     const managerRunId = params.execution_id ?? generateExecutionId();
 
     const maxConcurrency = settings.max_concurrency;
+    const maxTotalLeaders = settings.max_total_leaders;
     const budgetTokens = settings.budget_tokens;
     const semaphore = createWorkflowSemaphore(maxConcurrency);
     const ledger = createWorkflowLedger(budgetTokens);
+    const leaderCount = createWorkflowLeaderCount(maxTotalLeaders);
     let budgetExhausted = false;
 
     const startedAt = Date.now();
@@ -469,6 +476,7 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           owner,
           semaphore,
           ledger,
+          leaderCount,
           maxConcurrency,
           assemble: assembleLeader,
           managerRunId,
@@ -477,6 +485,28 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           onLeaderEvent,
           onBudgetExhausted: () => {
             budgetExhausted = true;
+          },
+          onSequenceState: (state) => {
+            const sequence: WorkflowSequenceRecord = boundedWorkflowSequence({
+              session_id: state.sessionId,
+              status: state.status,
+              revision: state.revision,
+              ...(state.roundId === undefined ? {} : { round_id: state.roundId }),
+              ...(state.pass === undefined ? {} : { pass: state.pass }),
+              ...(state.nextRoundId === undefined ? {} : { next_round_id: state.nextRoundId }),
+              ...(state.nextPass === undefined ? {} : { next_pass: state.nextPass }),
+              leaders_started: state.leadersStarted,
+              max_total_leaders: state.maxTotalLeaders,
+              ...(state.reason === undefined ? {} : { reason: state.reason }),
+            });
+            record.sequence = sequence;
+            persist();
+            context.emit({
+              type: "workflow_sequence_state",
+              at: Date.now(),
+              run_id: managerRunId,
+              ...sequence,
+            });
           },
           ...(cfg.leaderProfiles !== undefined ? { leaderProfiles: cfg.leaderProfiles() } : {}),
           workflowDefs: readWorkflowDefs(),
@@ -875,5 +905,11 @@ function storedSummaryToSummary(summary: WorkflowRecordSummary): WorkflowSummary
 
 /** Project a persisted record to a protocol {@link WorkflowDetail} (summary + nodes). */
 function recordToDetail(record: WorkflowRecord): WorkflowDetail {
-  return { ...recordToSummary(record), nodes: record.edges.map(edgeToNode) };
+  return {
+    ...recordToSummary(record),
+    nodes: record.edges.map(edgeToNode),
+    ...(record.sequence === undefined
+      ? {}
+      : { sequence: record.sequence satisfies WorkflowSequence }),
+  };
 }

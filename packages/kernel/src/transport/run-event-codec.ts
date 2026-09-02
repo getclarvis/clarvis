@@ -2,6 +2,8 @@ import type { RunEvent } from "@clarvis/protocol";
 import { z } from "zod";
 
 const finite = z.number().finite();
+const nonnegativeInteger = z.number().int().nonnegative();
+const positiveInteger = z.number().int().positive();
 const text = z.string();
 const runStatus = z.enum(["running", "completed", "failed", "cancelled"]);
 const agent = z.enum(["lead", "subagent"]);
@@ -256,6 +258,31 @@ const RUN_EVENT_SCHEMAS = {
   workflow_title_updated: z
     .object({ type: z.literal("workflow_title_updated"), at: finite, run_id: text, title: text })
     .strict(),
+  workflow_sequence_state: z
+    .object({
+      type: z.literal("workflow_sequence_state"),
+      at: finite,
+      run_id: text,
+      session_id: text,
+      status: z.enum([
+        "running_round",
+        "awaiting_manager",
+        "completed",
+        "stopped",
+        "failed",
+        "cancelled",
+      ]),
+      revision: nonnegativeInteger,
+      round_id: text.optional(),
+      pass: nonnegativeInteger.optional(),
+      next_round_id: text.optional(),
+      next_pass: nonnegativeInteger.optional(),
+      leaders_started: nonnegativeInteger,
+      max_total_leaders: positiveInteger,
+      reason: text.optional(),
+    })
+    .strict()
+    .refine((event) => event.leaders_started <= event.max_total_leaders),
   workflow_run_progress: z
     .object({
       type: z.literal("workflow_run_progress"),

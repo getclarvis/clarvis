@@ -37,7 +37,16 @@ import { isBoundedWorkflowString, WORKFLOW_LIMITS } from "./limits.ts";
 export { WORKFLOWS_CAPABILITY_NAME } from "./settings.ts";
 import { WORKFLOWS_CAPABILITY_NAME } from "./settings.ts";
 import { runLeader } from "./run-leader.ts";
-import { buildRunRoundHandler, buildRunRoundTool } from "./run-round.ts";
+import {
+  buildRunRoundHandler,
+  buildRunRoundTool,
+  buildWorkflowDecideHandler,
+  buildWorkflowDecideTool,
+  buildWorkflowStatusHandler,
+  buildWorkflowStatusTool,
+  createRoundCoordinator,
+  WORKFLOW_STATUS_TOOL_NAME,
+} from "./run-round.ts";
 import { buildRunWorkflowHandler, buildRunWorkflowTool } from "./run-workflow.ts";
 import { buildRunLeaderTool, RUN_LEADER_TOOL_NAME } from "./tool.ts";
 import type { LeaderSpec, WorkflowCtx } from "./types.ts";
@@ -77,15 +86,18 @@ export function createWorkflowsCapability(ctx: WorkflowCtx): Capability {
   const tool = buildRunLeaderTool(ctx.leaderProfiles);
   const workItemsTool = buildRunWorkItemsTool(ctx.leaderProfiles);
   const roundTool = buildRunRoundTool(ctx.leaderProfiles);
+  const statusTool = buildWorkflowStatusTool();
+  const decideTool = buildWorkflowDecideTool();
   const workflows = ctx.workflowDefs ?? [];
   const workflowTool = buildRunWorkflowTool(workflows);
   const capabilityTools =
     workflowTool === null
-      ? [tool, workItemsTool, roundTool]
-      : [tool, workItemsTool, roundTool, workflowTool];
+      ? [tool, workItemsTool, roundTool, statusTool, decideTool]
+      : [tool, workItemsTool, roundTool, statusTool, decideTool, workflowTool];
   const reservedWireNames = capabilityTools.map((candidate) => candidate.wireName);
   /**
-   * Every spawn tool is `spawn_run`, not `control`.
+   * Every operation that can register a leader is `spawn_run`; the read-only
+   * checkpoint status tool is `control`.
    *
    * @remarks A leader is a separate `executeRun` carrying a profile the manager
    *   names and running with `plans` forced off, so nothing the manager is
@@ -94,44 +106,57 @@ export function createWorkflowsCapability(ctx: WorkflowCtx): Capability {
    *   whole wave of leaders before a plan existed.
    */
   const toolEffects = Object.fromEntries(
-    capabilityTools.map((candidate) => [candidate.wireName, "spawn_run"] as const),
+    capabilityTools.map(
+      (candidate) =>
+        [
+          candidate.wireName,
+          candidate.wireName === WORKFLOW_STATUS_TOOL_NAME ? "control" : "spawn_run",
+        ] as const,
+    ),
   );
   const logger = workflowLogger(ctx);
-  const runCapabilityFor = (agents: AgentRegistryPort): RunCapability => ({
-    name: WORKFLOWS_CAPABILITY_NAME,
-    forAgent(scope: AgentScope): AgentCapability | null {
-      const manager = scope.entry && scope.grants.includes(WORKFLOW_GRANT);
-      if (!manager) reportInactive(logger, scope);
-      const clock = scope.clock;
-      return {
-        attach(bc: AgentBuildContext): AgentLoopContribution {
-          if (!manager) return { outputBudget: ctx.ledger };
-          return {
-            tools: capabilityTools,
-            handlers: [
-              buildRunLeaderHandler(ctx, bc, clock, agents),
-              buildRunWorkItemsHandler(ctx, bc, clock, agents),
-              buildRunRoundHandler(ctx, bc, clock, agents),
-              ...(workflowTool === null
-                ? []
-                : [
-                    buildRunWorkflowHandler(
-                      ctx,
-                      bc,
-                      clock,
-                      agents,
-                      workflows,
-                      scope.elicit,
-                      scope.signal,
-                    ),
-                  ]),
-            ],
-            advertised: true,
-          };
-        },
-      };
-    },
-  });
+  const runCapabilityFor = (agents: AgentRegistryPort): RunCapability => {
+    const coordinator = createRoundCoordinator(ctx);
+    return {
+      name: WORKFLOWS_CAPABILITY_NAME,
+      forAgent(scope: AgentScope): AgentCapability | null {
+        const manager = scope.entry && scope.grants.includes(WORKFLOW_GRANT);
+        if (!manager) reportInactive(logger, scope);
+        const clock = scope.clock;
+        return {
+          attach(bc: AgentBuildContext): AgentLoopContribution {
+            if (!manager) return { outputBudget: ctx.ledger };
+            return {
+              tools: capabilityTools,
+              handlers: [
+                buildRunLeaderHandler(ctx, bc, clock, agents),
+                buildRunWorkItemsHandler(ctx, bc, clock, agents),
+                buildRunRoundHandler(ctx, bc, clock, agents, coordinator),
+                buildWorkflowStatusHandler(coordinator),
+                buildWorkflowDecideHandler(coordinator),
+                ...(workflowTool === null
+                  ? []
+                  : [
+                      buildRunWorkflowHandler(
+                        ctx,
+                        bc,
+                        clock,
+                        agents,
+                        workflows,
+                        scope.elicit,
+                        scope.signal,
+                        coordinator,
+                      ),
+                    ]),
+              ],
+              gates: [coordinator.finalizeGate()],
+              advertised: true,
+            };
+          },
+        };
+      },
+    };
+  };
   return {
     name: WORKFLOWS_CAPABILITY_NAME,
     grants: [WORKFLOW_GRANT_DECLARATION],
@@ -219,14 +244,31 @@ function buildRunLeaderHandler(
         return Promise.resolve(verdict(`run_leader error: ${parsed.error}`));
       }
       const spec = parsed.spec;
-      const runId = ctx.runDeps.generateExecutionId();
-      const spawned = registerBackgroundChild(agents, bc.trace, {
-        kind: "leader",
-        nativeId: runId,
-        title: spec.title,
-        ...(spec.profile !== undefined ? { profile: spec.profile } : {}),
-      });
+      const admission = ctx.leaderCount.reserve(1);
+      if (admission === null) {
+        return Promise.resolve(
+          verdict(
+            "not spawning this leader — the manager has reached its cumulative " +
+              `max_total_leaders limit (${String(ctx.leaderCount.limit)}).`,
+          ),
+        );
+      }
+      let runId: string;
+      let spawned: ReturnType<typeof registerBackgroundChild>;
+      try {
+        runId = ctx.runDeps.generateExecutionId();
+        spawned = registerBackgroundChild(agents, bc.trace, {
+          kind: "leader",
+          nativeId: runId,
+          title: spec.title,
+          ...(spec.profile !== undefined ? { profile: spec.profile } : {}),
+        });
+      } catch (error) {
+        admission.release();
+        throw error;
+      }
       if (spawned === null) {
+        admission.release();
         return Promise.resolve(
           verdict(
             "not spawning this leader — too many child agents are already running. Wait with " +
@@ -234,6 +276,14 @@ function buildRunLeaderHandler(
           ),
         );
       }
+      if (!admission.consume()) {
+        admission.release();
+        spawned.controller.abort("workflow cumulative leader admission was exhausted");
+        spawned.handle.settled({ status: "failed", result: "leader admission was exhausted" });
+        spawned.steerQueue.close();
+        return Promise.resolve(verdict("not spawning this leader — cumulative admission failed."));
+      }
+      admission.release();
       const { handle, controller, steerQueue } = spawned;
       const correlation = { leader_run_id: runId, agent_id: handle.id };
       const leaderLogger = bind(logger, correlation);

@@ -10,9 +10,10 @@
  * The package is a library above the loop and below any host: it exposes the
  * capability the host injects into a manager run ({@link createWorkflowsCapability}),
  * the leader primitive ({@link runLeader}), the tree budget ({@link createWorkflowLedger}),
- * and the elicitation multiplexer ({@link createElicitMux}). It has no dependency on
+ * the cumulative registration bound ({@link createWorkflowLeaderCount}), and the elicitation
+ * multiplexer ({@link createElicitMux}). It has no dependency on
  * `@clarvis/kernel`; a host supplies the {@link WorkflowCtx} (engine deps, the narrow
- * {@link WorkflowRunDeps} execution port, semaphore, ledger and leader assembler).
+ * {@link WorkflowRunDeps} execution port, semaphore, ledger, leader count and assembler).
  *
  * Shared agent, run, tool, trace and elicitation contracts are consumed directly
  * from `@clarvis/capability`; the loop dependency is limited to execution and its
@@ -22,6 +23,8 @@ export { runLeader } from "./run-leader.ts";
 export { createWorkflowsCapability, WORKFLOW_GRANT } from "./capability.ts";
 export { createWorkflowLedger } from "./ledger.ts";
 export type { WorkflowLedger } from "./ledger.ts";
+export { createWorkflowLeaderCount } from "./leader-count.ts";
+export type { WorkflowLeaderCount, WorkflowLeaderReservation } from "./leader-count.ts";
 export { buildRunLeaderTool, RUN_LEADER_TOOL_NAME } from "./tool.ts";
 export type { LeaderProfileInfo } from "./tool.ts";
 export { createElicitMux } from "./elicit-mux.ts";
@@ -48,6 +51,8 @@ export type {
   LeaderStatus,
   WorkflowCtx,
   WorkflowRunDeps,
+  WorkflowSequenceState,
+  WorkflowSequenceStatus,
 } from "./types.ts";
 export {
   isWorkflowPersistedTraceEvent,
@@ -75,6 +80,7 @@ export {
   managerLiveChildrenFloor,
   WORKFLOWS_DEFAULTS,
   WORKFLOWS_MAX_CONCURRENCY,
+  WORKFLOWS_MAX_TOTAL_LEADERS,
   WORKFLOWS_SETTINGS_FIELDS,
   workflowsSettingsSpec,
 } from "./settings.ts";

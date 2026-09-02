@@ -11,6 +11,7 @@ import type { ExecuteRunArgs, ExecuteRunOutcome } from "@clarvis/loop";
 import { AGENT_REGISTRY_PORT } from "@clarvis/supervision";
 import { WORKFLOW_GRANT } from "../../src/capability.ts";
 import { createWorkflowLedger } from "../../src/ledger.ts";
+import { createWorkflowLeaderCount } from "../../src/leader-count.ts";
 import type { WorkflowCtx, WorkflowRunDeps } from "../../src/types.ts";
 
 /** A per-test workflow execution fake. Calls and id allocation are owned by the
@@ -44,6 +45,7 @@ export function makeCtx(overrides: Partial<WorkflowCtx> = {}): WorkflowCtx {
     owner: "owner",
     semaphore: createSemaphore(4),
     ledger: createWorkflowLedger(null),
+    leaderCount: createWorkflowLeaderCount(32),
     maxConcurrency: 4,
     assemble: () => ({}) as RunRequest,
     managerRunId: "manager-1",

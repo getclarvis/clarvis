@@ -41,6 +41,8 @@ const BUILTIN_TOOL_LABELS: Readonly<Record<string, string>> = {
   run_workflow: "Run workflow",
   run_round: "Run workflow rounds",
   run_work_items: "Run work items",
+  workflow_status: "Check workflow",
+  workflow_decide: "Decide workflow",
 };
 
 const TRANSCRIPT_EXTERNAL_ORCHESTRATION_TOOLS = new Set([
@@ -55,6 +57,8 @@ const TRANSCRIPT_EXTERNAL_ORCHESTRATION_TOOLS = new Set([
   "run_workflow",
   "run_round",
   "run_work_items",
+  "workflow_status",
+  "workflow_decide",
 ]);
 
 /**

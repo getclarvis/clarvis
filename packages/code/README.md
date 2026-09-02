@@ -365,7 +365,7 @@ as Meta/Esc+ for the enhanced accelerator; a literal `ß` from a legacy path rem
 while `Ctrl+S` keeps the picker reachable. The picker is loaded on first use, retained after that
 first mount, and reuses the same preset application policy as Run controls. There is no global
 physical sidebar-toggle binding; `/activity [plan|workflow|agents]` is the contextual reopen command.
-The first live Plan, first workflow leader and first typed delegation each own an independent,
+The first live Plan, first workflow state/leader and first typed delegation each own an independent,
 once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents
 sections. Those reveals keep the Lead transcript selected and never open result detail. Closing the
 split or drawer dismisses the intent that opened it, so later updates of that kind do not reopen it
@@ -401,7 +401,14 @@ through an OpenTUI host after it has been destroyed.
 The Workflows tree follows the same contextual-action contract. Rows show the persisted short task
 title rather than the first line of the full prompt. `Enter` opens the selected node's result; `T`
 appears only for a leader whose complete task is available and opens that task on a separate detail
-page. The manager and legacy records without a persisted task do not advertise or bind `T`.
+page. The manager and legacy records without a persisted task do not advertise or bind `T`. Above
+the tree, the latest persisted sequence state names an `awaiting_manager` checkpoint, its revision
+and proposed next round. The live Parallel work section shows the same checkpoint even when no
+leader remains live, so an Admiral decision cannot disappear with the last child.
+
+A `workflow_review` prompt begins with the safe `cancel` enum value and no preselected UI answer.
+The user must deliberately select and confirm `run`; Enter on an untouched prompt cannot launch a
+workflow by enum order.
 
 When a current plan is available, `Ctrl+P` is the portable route to its full detail and `Alt+P`
 remains an enhanced alternative. Retained completed, failed and canceled plans stay reachable as
@@ -740,7 +747,8 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - Provider tool plumbing for Lead-owned supervision, spawning/delegation and workflow orchestration
   is also transcript-silent in every phase. Composing, started, streaming-output and terminal rows for
   `spawn_subagent`, `delegate_task`, `agent_list`, `agent_poll`, `agent_stop`, `agent_steer`,
-  `await_agents`, `run_leader`, `run_workflow`, `run_round` and `run_work_items` never mount in the
+  `await_agents`, `run_leader`, `run_workflow`, `run_round`, `run_work_items`, `workflow_status` and
+  `workflow_decide` never mount in the
   Lead transcript; this includes transient copy such as `Wait for agents starting…`. Typed delegation
   events remain the sole owner of the two lifecycle markers, while workflow state remains
   Sidebar/footer-only. Ordinary Lead `thinking`/`working` state occupies one fixed activity line
@@ -748,7 +756,7 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   available only in that child's selected transcript.
 - The combined activity Sidebar has one responsive owner: a wide split or compact drawer. It has
   three independent, once-per-execution automatic reveal intents: the first live Plan reveals
-  **Plan**, the first workflow leader reveals **Parallel work**, and the first delegation reveals
+  **Plan**, the first workflow state or leader reveals **Parallel work**, and the first delegation reveals
   **Agents** while Lead remains selected. Repeated updates of the same kind do not flap the layout;
   closing an automatically revealed section is sticky for that intent, while the first event for a
   different section may still reopen and reorient the Sidebar. Each section is one native ScrollBox

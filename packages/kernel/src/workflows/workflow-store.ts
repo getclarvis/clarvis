@@ -26,6 +26,20 @@ export interface WorkflowEdge {
   ended_at?: number;
 }
 
+/** Latest durable manager decision point for an authored round sequence. */
+export interface WorkflowSequenceRecord {
+  session_id: string;
+  status: "running_round" | "awaiting_manager" | "completed" | "stopped" | "failed" | "cancelled";
+  revision: number;
+  round_id?: string;
+  pass?: number;
+  next_round_id?: string;
+  next_pass?: number;
+  leaders_started: number;
+  max_total_leaders: number;
+  reason?: string;
+}
+
 /**
  * The persisted record of one workflow: its identity, the manager status, the tree
  * edges (manager + leaders), and a rolled-up token total. Deliberately NOT the run
@@ -41,6 +55,8 @@ export interface WorkflowRecord {
   created_at: number;
   updated_at: number;
   edges: WorkflowEdge[];
+  /** Latest checkpoint; absent on legacy records and workflows using only ad-hoc leaders. */
+  sequence?: WorkflowSequenceRecord;
   /**
    * Output tokens spent across the whole tree, as the workflow ledger counted
    * them.
@@ -110,6 +126,7 @@ export const WORKFLOW_MAX_TASK_BYTES = 16 * 1024;
 export const WORKFLOW_MAX_ERROR_BYTES = 4 * 1024;
 export const WORKFLOW_MAX_REASON_BYTES = 4 * 1024;
 export const WORKFLOW_MAX_TITLE_BYTES = 1024;
+const WORKFLOW_MAX_SEQUENCE_ID_BYTES = 1024;
 export const WORKFLOW_RECORD_MAX_BYTES = 8 * 1024 * 1024;
 export const WORKFLOW_PAGE_DEFAULT = 20;
 const WORKFLOW_PAGE_MAX = 200;
@@ -187,6 +204,38 @@ export function boundedWorkflowEdge(edge: WorkflowEdge): WorkflowEdge {
   };
 }
 
+/** Canonical bounded checkpoint used by live observation and file writes. */
+export function boundedWorkflowSequence(sequence: WorkflowSequenceRecord): WorkflowSequenceRecord {
+  return {
+    session_id: truncateWorkflowText(
+      sequence.session_id,
+      WORKFLOW_MAX_SEQUENCE_ID_BYTES,
+      "sequence id",
+    ),
+    status: sequence.status,
+    revision: sequence.revision,
+    ...(sequence.round_id === undefined
+      ? {}
+      : { round_id: truncateWorkflowText(sequence.round_id, 1024, "round id") }),
+    ...(sequence.pass === undefined ? {} : { pass: sequence.pass }),
+    ...(sequence.next_round_id === undefined
+      ? {}
+      : { next_round_id: truncateWorkflowText(sequence.next_round_id, 1024, "next round id") }),
+    ...(sequence.next_pass === undefined ? {} : { next_pass: sequence.next_pass }),
+    leaders_started: sequence.leaders_started,
+    max_total_leaders: sequence.max_total_leaders,
+    ...(sequence.reason === undefined
+      ? {}
+      : {
+          reason: truncateWorkflowText(
+            sequence.reason,
+            WORKFLOW_MAX_REASON_BYTES,
+            "sequence reason",
+          ),
+        }),
+  };
+}
+
 /** Mark the manager edge when additional leaders cannot fit the bounded tree. */
 export function markWorkflowEdgesTruncated(record: WorkflowRecord): void {
   const root = record.edges.find((edge) => edge.kind === "manager");
@@ -210,6 +259,9 @@ function boundedWorkflowRecord(record: WorkflowRecord): WorkflowRecord {
     created_at: record.created_at,
     updated_at: record.updated_at,
     edges: record.edges.slice(0, WORKFLOW_MAX_EDGES).map(boundedWorkflowEdge),
+    ...(record.sequence === undefined
+      ? {}
+      : { sequence: boundedWorkflowSequence(record.sequence) }),
     output_tokens: record.output_tokens,
   };
   if (record.edges.length > WORKFLOW_MAX_EDGES) markWorkflowEdgesTruncated(bounded);
@@ -228,6 +280,39 @@ function recordToSummary(record: WorkflowRecord): WorkflowRecordSummary {
   };
 }
 
+/** Narrow a persisted checkpoint before it reaches the bounded projection. */
+function isWorkflowSequenceRecord(value: unknown): value is WorkflowSequenceRecord {
+  const sequence = value as WorkflowSequenceRecord | null;
+  const optionalString = (field: unknown): boolean =>
+    field === undefined || typeof field === "string";
+  const optionalIndex = (field: unknown): boolean =>
+    field === undefined || (Number.isInteger(field) && Number(field) >= 0);
+  return (
+    sequence !== null &&
+    typeof sequence === "object" &&
+    typeof sequence.session_id === "string" &&
+    sequence.session_id.length > 0 &&
+    (sequence.status === "running_round" ||
+      sequence.status === "awaiting_manager" ||
+      sequence.status === "completed" ||
+      sequence.status === "stopped" ||
+      sequence.status === "failed" ||
+      sequence.status === "cancelled") &&
+    Number.isInteger(sequence.revision) &&
+    sequence.revision >= 0 &&
+    optionalString(sequence.round_id) &&
+    optionalIndex(sequence.pass) &&
+    optionalString(sequence.next_round_id) &&
+    optionalIndex(sequence.next_pass) &&
+    Number.isInteger(sequence.leaders_started) &&
+    sequence.leaders_started >= 0 &&
+    Number.isInteger(sequence.max_total_leaders) &&
+    sequence.max_total_leaders >= 1 &&
+    sequence.leaders_started <= sequence.max_total_leaders &&
+    optionalString(sequence.reason)
+  );
+}
+
 /** Narrow arbitrary parsed JSON to a {@link WorkflowRecord} by shape. */
 function isWorkflowRecord(value: unknown): value is WorkflowRecord {
   const record = value as WorkflowRecord | null;
@@ -244,6 +329,7 @@ function isWorkflowRecord(value: unknown): value is WorkflowRecord {
     typeof record.updated_at === "number" &&
     Number.isFinite(record.updated_at) &&
     Array.isArray(record.edges) &&
+    (record.sequence === undefined || isWorkflowSequenceRecord(record.sequence)) &&
     typeof record.output_tokens === "number" &&
     Number.isFinite(record.output_tokens)
   );

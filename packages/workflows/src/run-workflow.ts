@@ -25,7 +25,12 @@ import { elicitWithClockPause } from "@clarvis/capability";
 import type { WorkflowDefinition } from "./artifact.ts";
 import type { DispatchDeps } from "./dispatch.ts";
 import { isBoundedWorkflowString, WORKFLOW_LIMITS } from "./limits.ts";
-import { startRounds, type RoundCall, type RoundInput } from "./run-round.ts";
+import {
+  startRounds,
+  type RoundCall,
+  type RoundCoordinator,
+  type RoundInput,
+} from "./run-round.ts";
 import type { WorkflowCtx } from "./types.ts";
 
 /** The `run_workflow` wire/tool name. */
@@ -232,6 +237,7 @@ export function buildRunWorkflowHandler(
   workflows: readonly WorkflowDefinition[],
   elicit?: Elicit,
   signal?: AbortSignal,
+  coordinator?: RoundCoordinator,
 ): ToolHandler {
   const deps: DispatchDeps = { ctx, bc, clock, agents };
   const byName = new Map(workflows.map((w) => [w.name, w]));
@@ -274,7 +280,7 @@ export function buildRunWorkflowHandler(
                 properties: {
                   decision: {
                     type: "string",
-                    enum: ["run", "cancel"],
+                    enum: ["cancel", "run"],
                     description: "Run this workflow or leave the run unchanged.",
                   },
                 },
@@ -292,11 +298,13 @@ export function buildRunWorkflowHandler(
       if (decision !== "run") {
         return verdict(`workflow '${workflow.name}' was not started.`, false);
       }
-      const started = startRounds(deps, compiled.call);
+      const started = startRounds(deps, compiled.call, coordinator);
       if ("error" in started) return verdict(started.error, false);
       return verdict(
         `running workflow '${workflow.name}'. ${started.text}\n\n` +
-          `When every round has returned, synthesize the result as this workflow asks:\n` +
+          "At every checkpoint, decide whether the evidence justifies the proposed next round; " +
+          "the runtime will not continue it for you. When the sequence is completed or stopped, " +
+          `synthesize the result as this workflow asks:\n` +
           workflow.synthesis,
         true,
       );

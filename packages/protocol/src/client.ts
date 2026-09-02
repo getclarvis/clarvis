@@ -21,7 +21,7 @@ import type { SessionService } from "./sessions.ts";
 import type { TasksService } from "./tasks.ts";
 import type { ProviderAuthService } from "./provider-auth.ts";
 import type { StorageService } from "./storage.ts";
-import type { EnvironmentService } from "./environments.ts";
+import type { ExtensionProfileService } from "./extension-profiles.ts";
 
 /** Features and versions a kernel advertises to a freshly connected client. */
 export interface KernelCapabilities {
@@ -64,8 +64,8 @@ export interface KernelClient {
   readonly config: ConfigService;
   /** Install/manage plugins and review unmanaged hooks. */
   readonly plugins: PluginService;
-  /** Select and diagnose deterministic extension Environments. */
-  readonly environments: EnvironmentService;
+  /** Select and diagnose deterministic Extension Profiles. */
+  readonly extensionProfiles: ExtensionProfileService;
   /** Server-side API keys / provider secrets. */
   readonly secrets: SecretService;
   /** Model and pricing catalog. */

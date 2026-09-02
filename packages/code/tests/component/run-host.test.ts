@@ -2026,16 +2026,16 @@ test("loadSessionMeta: an intact turn gets no partial-record notice", async () =
   dispose();
 });
 
-test("loadSessionMeta warns when the active Environment differs from the persisted turn", async () => {
+test("loadSessionMeta warns when the active Extension Profile differs from the persisted turn", async () => {
   const client = fakeClient();
-  client.client.currentEnvironment = () => ({
+  client.client.currentExtensionProfile = () => ({
     id: "global:research",
     fingerprint: `sha256:${"b".repeat(64)}`,
   });
   client.getRunImpl.fn = () => Promise.resolve(null);
   const { host, store, dispose } = mount({ client: client.client });
   const meta: SessionMeta = {
-    id: "session-environment-change",
+    id: "session-extensionProfile-change",
     title: "t",
     workspace: "/tmp",
     owner: "test-owner",
@@ -2046,24 +2046,24 @@ test("loadSessionMeta warns when the active Environment differs from the persist
         kind: "conversation",
         userPreview: "old",
         executionId: "exec_old",
-        environment: { id: "workspace:project", fingerprint: `sha256:${"a".repeat(64)}` },
+        extensionProfile: { id: "workspace:project", fingerprint: `sha256:${"a".repeat(64)}` },
         status: "done",
       },
     ],
-    lastEnvironment: { id: "workspace:project", fingerprint: `sha256:${"a".repeat(64)}` },
+    lastExtensionProfile: { id: "workspace:project", fingerprint: `sha256:${"a".repeat(64)}` },
     totals: { input: 0, output: 0, cached: 0 },
   };
 
   await host.loadSessionMeta(meta);
 
-  expect(host.runStatus()).toContain("Environment changed");
+  expect(host.runStatus()).toContain("Extension Profile changed");
   const notice = store.nodes.find(
-    (node) => node.kind === "annotation" && node.text.includes("Environment changed"),
+    (node) => node.kind === "annotation" && node.text.includes("Extension Profile changed"),
   );
   expect(notice).toBeDefined();
   expect(notice!.text).toContain("workspace:project (aaaaaaaa)");
   expect(notice!.text).toContain("global:research (bbbbbbbb)");
-  expect(host.sessionMeta()?.lastEnvironment).toEqual(meta.lastEnvironment);
+  expect(host.sessionMeta()?.lastExtensionProfile).toEqual(meta.lastExtensionProfile);
   dispose();
 });
 
@@ -2167,7 +2167,7 @@ test("resumeSessionById: a valid id resumes the session, syncing the active prof
     owner: "test-owner",
     createdAt: 1,
     updatedAt: 1,
-    profile: "reviewer",
+    agentProfile: "reviewer",
     turns: [{ kind: "conversation", userPreview: "old", executionId: "exec_z", status: "done" }],
     totals: { input: 0, output: 0, cached: 0 },
   };

@@ -244,9 +244,9 @@ A host supplies or builds:
 
 A host may also supply `HostRunDeps.hostMetadata`, an opaque snapshot evaluated once per run and
 carried into its journal and final execution record. The loop does not inspect the value. The file
-kernel uses it for extension Environment identity and supplies only already-resolved skill roots, so
-Environment discovery and trust remain host policy. See
-[`hosts/environments.md`](../../specs/hosts/environments.md).
+kernel uses it for Extension Profile identity and supplies only already-resolved skill roots, so
+Extension Profile discovery and trust remain host policy. See
+[`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md).
 
 `buildExecuteRunDeps` provides the standard local wiring. `executeRun` returns
 the execution ID and final response while emitting detailed trace events during

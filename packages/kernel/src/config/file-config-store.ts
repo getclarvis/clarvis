@@ -23,7 +23,7 @@ import {
   writeFileAtomicSync,
 } from "@clarvis/paths";
 import { mergeSettings, splitAgentFrontmatter, type SettingsScope } from "@clarvis/loop/host";
-import type { EnvironmentPluginRef, WorkspaceTrustVerdict } from "@clarvis/protocol";
+import type { ExtensionProfilePluginRef, WorkspaceTrustVerdict } from "@clarvis/protocol";
 import type { Scope, SettingsData, SettingsSource } from "@clarvis/protocol";
 import {
   SettingsRevisionConflictError,
@@ -69,12 +69,12 @@ export interface FileConfigStoreOptions {
    * tests and non-plugin hosts.
    */
   plugins?: PluginContributions;
-  /** Host-owned extension Environment resolver; the loop never sees this concept. */
-  environment?: {
+  /** Host-owned Extension Profile resolver; the loop never sees this concept. */
+  extensionProfile?: {
     resolvePlugins(
-      enabledPlugins: readonly EnvironmentPluginRef[],
+      enabledPlugins: readonly ExtensionProfilePluginRef[],
       trust: WorkspaceTrustVerdict,
-    ): readonly EnvironmentPluginRef[];
+    ): readonly ExtensionProfilePluginRef[];
     workspaceTrustSurface(options?: { refresh?: boolean }): unknown;
     assertWorkspaceTrustTransitionAllowed?(): void;
   };
@@ -509,14 +509,14 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
    * Whether this workspace's executable surface has been approved.
    *
    * @returns the verdict, recomputed on every call from settings and workspace
-   *   agents. The Environment's extension surface is process-cached so ordinary
+   *   agents. The Extension Profile's extension surface is process-cached so ordinary
    *   reads never walk plugin files; an explicit approval refreshes that surface.
    * @remarks An unreadable trust store yields `unapproved`, never `trusted`: the
    *   failure mode of a corrupt approvals file must be "nothing is approved".
    */
   const workspaceVerdict = (
     settings: SettingsData | undefined,
-    extensionSurface: unknown = opts.environment?.workspaceTrustSurface(),
+    extensionSurface: unknown = opts.extensionProfile?.workspaceTrustSurface(),
   ): WorkspaceTrustVerdict => {
     const fingerprint = workspaceTrustFingerprint(
       settings,
@@ -543,7 +543,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     const fingerprint = workspaceTrustFingerprint(
       readScopeSettings("workspace").value,
       workspaceAgentFiles(),
-      opts.environment?.workspaceTrustSurface({ refresh: true }),
+      opts.extensionProfile?.workspaceTrustSurface({ refresh: true }),
     );
     if (fingerprint === undefined && approve) return;
     const key = trustKey();
@@ -644,10 +644,10 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
   };
 
   /** Exact enabled plugin references from one merge of the operator layers. */
-  const enabledPluginRefs = (scopes: SettingsScope[]): EnvironmentPluginRef[] => {
+  const enabledPluginRefs = (scopes: SettingsScope[]): ExtensionProfilePluginRef[] => {
     const enabled = (mergeSettings(scopes, kernelCapabilityRegistry) as unknown as SettingsData)
       .enabledPlugins;
-    return Array.isArray(enabled) ? (enabled as EnvironmentPluginRef[]) : [];
+    return Array.isArray(enabled) ? (enabled as ExtensionProfilePluginRef[]) : [];
   };
 
   /** Winning declaration origin for each shallow-merged MCP namespace. */
@@ -661,12 +661,13 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     return origins;
   };
 
-  /** The exact Environment-qualified plugin refs allowed to contribute agents. */
-  const operatorEnabled = (): readonly EnvironmentPluginRef[] => snapshot().active_plugins ?? [];
+  /** The exact Extension Profile-qualified plugin refs allowed to contribute agents. */
+  const operatorEnabled = (): readonly ExtensionProfilePluginRef[] =>
+    snapshot().active_plugins ?? [];
 
   /**
    * Compute the current {@link SettingsSnapshot}: merge plugin fragments (for the
-   * active Environment plugins) under the operator `global` then `workspace` layers, expose
+   * active Extension Profile plugins) under the operator `global` then `workspace` layers, expose
    * each scope's raw contents, and report per-scope {@link SettingsSource} provenance
    * (including any parse error).
    *
@@ -680,9 +681,9 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
     const global = g.value;
     const workspace = w.value;
     const enabledRefs = enabledPluginRefs(operatorScopes);
-    const extensionSurface = opts.environment?.workspaceTrustSurface();
+    const extensionSurface = opts.extensionProfile?.workspaceTrustSurface();
     const trust = workspaceVerdict(workspace, extensionSurface);
-    const enabledPlugins = opts.environment?.resolvePlugins(enabledRefs, trust) ?? enabledRefs;
+    const enabledPlugins = opts.extensionProfile?.resolvePlugins(enabledRefs, trust) ?? enabledRefs;
     const pluginScopes =
       opts.plugins !== undefined ? opts.plugins.settingsScopes(enabledPlugins) : [];
     const mergeScopes = [...pluginScopes, ...operatorScopes];
@@ -710,7 +711,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
       ...(gated?.withheld ?? []),
       ...(extensionSurface !== undefined &&
       (trust.state === "unapproved" || trust.state === "changed")
-        ? ["environment"]
+        ? ["extension_profile"]
         : []),
     ];
     return {
@@ -876,7 +877,7 @@ export function createFileConfigStore(opts: FileConfigStoreOptions): ConfigStore
      * covers exactly what the operator was shown and nothing later.
      */
     setWorkspaceTrust: (approve: boolean) => {
-      opts.environment?.assertWorkspaceTrustTransitionAllowed?.();
+      opts.extensionProfile?.assertWorkspaceTrustTransitionAllowed?.();
       approveCurrentSurface(approve);
       return snapshot();
     },

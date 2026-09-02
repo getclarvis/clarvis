@@ -25,7 +25,7 @@ import {
   workspacePaths,
 } from "@clarvis/paths";
 import type { AgentRecord } from "../config/config-store.ts";
-import type { EnvironmentPluginRef, PluginSource, Scope } from "@clarvis/protocol";
+import type { ExtensionProfilePluginRef, PluginSource, Scope } from "@clarvis/protocol";
 import {
   pluginSkillRoots,
   pluginSkillScanRoots,
@@ -61,7 +61,7 @@ export const PLUGIN_SKILL_RESOURCE_LIMITS = Object.freeze({
   aggregateBytes: MAX_SKILL_RESOURCE_SNAPSHOT_BYTES,
 });
 
-type PluginSelection = readonly EnvironmentPluginRef[];
+type PluginSelection = readonly ExtensionProfilePluginRef[];
 
 /** One selected plugin whose package-local executable surface changed on disk. */
 export interface PluginRuntimeDriftNotice {
@@ -77,7 +77,7 @@ interface PluginRuntimeWatcher {
  * Turns installed + enabled plugins into the inputs a run consumes: skill roots,
  * settings fragments (hooks / mcpServers / capability blocks), and agent records.
  *
- * Installation and explicit Environment selection authorize every contribution
+ * Installation and explicit Extension Profile selection authorize every contribution
  * from the plugin as one atomic unit, including its normalized hooks.
  *
  * Every method takes exact operator-enabled plugin references as an argument
@@ -131,7 +131,7 @@ export interface PluginContributions {
 
 /** Immutable projection captured from one loadable plugin contribution. */
 export interface PluginContributionSnapshot {
-  ref: EnvironmentPluginRef;
+  ref: ExtensionProfilePluginRef;
   digest: string;
   version?: string;
   revision?: string;
@@ -163,7 +163,7 @@ interface Loadable {
   /** The plugin name used as the runtime namespace. */
   name: string;
   /** Exact inventory identity selected by the operator. */
-  ref: EnvironmentPluginRef;
+  ref: ExtensionProfilePluginRef;
   /** Absolute install directory the plugin resolved to. */
   dir: string;
   /** Exact selected manifest source admitted with its normalized projection. */
@@ -192,7 +192,7 @@ interface Loadable {
  *   from which all exact `.agents/plugins` and `.clarvis/plugins` inventories are
  *   derived.
  * @returns a {@link PluginContributions} whose every method is passed the
- *   operator-enabled plugin names. Before an Environment is pinned, contribution
+ *   operator-enabled plugin names. Before an Extension Profile is pinned, contribution
  *   files are discovered per call; afterwards the admitted manifests and agents
  *   remain immutable while asynchronous monitors withdraw changed executable
  *   projections until reconnect. Hook
@@ -201,7 +201,7 @@ interface Loadable {
  * @remarks Reads the filesystem synchronously and never consults settings itself,
  *   so it can be folded into the config store's settings merge without recursing
  *   through `readSettings()`. Repeated exact references are de-duplicated; the
- *   Environment resolver rejects two different installations sharing a runtime
+ *   Extension Profile resolver rejects two different installations sharing a runtime
  *   plugin name before this loader is called.
  */
 /**
@@ -284,7 +284,7 @@ export function createPluginContributions(opts: {
    *   the same silent `undefined`.
    */
   const skipped = (
-    plugin: EnvironmentPluginRef,
+    plugin: ExtensionProfilePluginRef,
     phase: "manifest" | "dir" | "skills" | "agents" | "install_record" | "executables",
     cause: string,
   ): void => {
@@ -319,7 +319,8 @@ export function createPluginContributions(opts: {
         ]),
   ];
 
-  const refId = (ref: EnvironmentPluginRef): string => `${ref.scope}:${ref.source}:${ref.name}`;
+  const refId = (ref: ExtensionProfilePluginRef): string =>
+    `${ref.scope}:${ref.source}:${ref.name}`;
   const selectionId = (enabled: PluginSelection): string => enabled.map(refId).join("\0");
   const canonical = (value: unknown): unknown => {
     if (Array.isArray(value)) return value.map(canonical);
@@ -337,7 +338,7 @@ export function createPluginContributions(opts: {
       .digest("hex")}`;
 
   /** Exact install root and directory selected by one qualified reference. */
-  const dirFor = (ref: EnvironmentPluginRef): { dir: string } | undefined => {
+  const dirFor = (ref: ExtensionProfilePluginRef): { dir: string } | undefined => {
     const root = installRoots.find(
       (candidate) => candidate.scope === ref.scope && candidate.source === ref.source,
     );
@@ -388,7 +389,7 @@ export function createPluginContributions(opts: {
 
   /** Resolve one plugin to a {@link Loadable}, or undefined when it is not
    * installed or has no readable/parseable `plugin.json`. */
-  function loadableOf(ref: EnvironmentPluginRef): Loadable | undefined {
+  function loadableOf(ref: ExtensionProfilePluginRef): Loadable | undefined {
     const name = ref.name;
     const found = dirFor(ref);
     if (found === undefined) {
@@ -594,7 +595,7 @@ export function createPluginContributions(opts: {
   let pinned:
     | {
         selection: string;
-        refs: readonly EnvironmentPluginRef[];
+        refs: readonly ExtensionProfilePluginRef[];
         loadables: readonly Loadable[];
         snapshots: readonly PluginContributionSnapshot[];
         skillRoots: readonly SkillRootInput[];
@@ -612,7 +613,7 @@ export function createPluginContributions(opts: {
     if (pinned.selection !== selectionId(enabled)) {
       throw kernelError(
         "unavailable",
-        "active plugin selection changed after the Environment snapshot was pinned; reconnect the kernel",
+        "active plugin selection changed after the Extension Profile snapshot was pinned; reconnect the kernel",
       );
     }
   };
@@ -684,7 +685,7 @@ export function createPluginContributions(opts: {
 
   const runtimeAvailable = (plugin: Loadable): boolean => !driftedRuntime.has(refId(plugin.ref));
 
-  /** Project roots once from the same loadables and snapshots the Environment pins. */
+  /** Project roots once from the same loadables and snapshots the Extension Profile pins. */
   const projectSkillRoots = (
     selectedLoadables: readonly Loadable[],
     snapshots: readonly PluginContributionSnapshot[],

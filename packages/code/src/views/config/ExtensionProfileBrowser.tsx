@@ -3,13 +3,13 @@ import { createEffect, createMemo, createSignal, For, onMount, Show } from "soli
 import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
 import type {
-  EnvironmentDefinitionView,
-  EnvironmentInventory,
-  EnvironmentPreview,
-  EnvironmentRef,
-  EnvironmentService,
+  ExtensionProfileDefinitionView,
+  ExtensionProfileInventory,
+  ExtensionProfilePreview,
+  ExtensionProfileRef,
+  ExtensionProfileService,
   PluginRef,
-  ResolvedEnvironment,
+  ResolvedExtensionProfile,
 } from "@clarvis/protocol";
 import { errorText } from "../../adapters/errors.ts";
 import { detachObserved } from "../../core/tasks.ts";
@@ -33,29 +33,29 @@ import {
   ViewFrame,
 } from "./view-host.tsx";
 
-/** Host actions used by the Environment control plane. */
-export interface EnvironmentBrowserDeps {
-  environments: EnvironmentService;
+/** Host actions used by the Extension Profile control plane. */
+export interface ExtensionProfileBrowserDeps {
+  extensionProfiles: ExtensionProfileService;
   reconnect: () => Promise<{ ok: boolean; message: string }>;
   runActive: () => boolean;
   notify: (message: string, tone?: "success" | "warn" | "error") => void;
-  configure: (ref?: EnvironmentRef) => void;
+  configure: (ref?: ExtensionProfileRef) => void;
 }
 
 type PendingPreview =
   | {
       kind: "select";
       scope: "global" | "workspace";
-      ref: EnvironmentRef;
-      preview: EnvironmentPreview;
+      ref: ExtensionProfileRef;
+      preview: ExtensionProfilePreview;
     }
   | {
       kind: "clear";
       scope: "global" | "workspace";
-      preview: EnvironmentPreview;
+      preview: ExtensionProfilePreview;
     };
 
-function id(ref: EnvironmentRef): string {
+function id(ref: ExtensionProfileRef): string {
   return `${ref.scope}:${ref.name}`;
 }
 
@@ -63,25 +63,25 @@ function pluginId(ref: PluginRef): string {
   return `${ref.scope}/${ref.source}/${ref.name}`;
 }
 
-function definitionHaystack(environment: EnvironmentDefinitionView): string {
+function definitionHaystack(extensionProfile: ExtensionProfileDefinitionView): string {
   return [
-    id(environment.ref),
-    environment.definition?.description,
-    environment.definition?.plugins.map(pluginId).join(" "),
-    environment.definition?.skills
+    id(extensionProfile.ref),
+    extensionProfile.definition?.description,
+    extensionProfile.definition?.plugins.map(pluginId).join(" "),
+    extensionProfile.definition?.skills
       .map((skill) => `${skill.scope}/${skill.source}/${skill.name}`)
       .join(" "),
-    environment.error,
+    extensionProfile.error,
   ]
     .filter(Boolean)
     .join(" ");
 }
 
-function environmentSummary(
-  environment: ResolvedEnvironment,
-  inventory: EnvironmentInventory | undefined,
+function extensionProfileSummary(
+  extensionProfile: ResolvedExtensionProfile,
+  inventory: ExtensionProfileInventory | undefined,
 ): string {
-  const counts = environment.counts;
+  const counts = extensionProfile.counts;
   const skills = counts.standalone_skills_active + counts.plugin_skills_active;
   const discovered =
     inventory === undefined
@@ -98,14 +98,17 @@ function pendingMessage(action: PendingPreview): string {
   return `Review before clearing the ${action.scope} selection.`;
 }
 
-/** Browse, diagnose, configure, preview and select extension Environments. */
-export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps): JSX.Element {
+/** Browse, diagnose, configure, preview and select Extension Profiles. */
+export function ExtensionProfileBrowser(
+  host: ViewHost,
+  deps: ExtensionProfileBrowserDeps,
+): JSX.Element {
   const dimensions = useTerminalDimensions();
   const editor = createFieldEditor(host.interaction, host.active);
-  const [definitions, setDefinitions] = createSignal<EnvironmentDefinitionView[]>([]);
-  const [current, setCurrent] = createSignal<ResolvedEnvironment>();
-  const [inventory, setInventory] = createSignal<EnvironmentInventory>();
-  const [detail, setDetail] = createSignal<ResolvedEnvironment>();
+  const [definitions, setDefinitions] = createSignal<ExtensionProfileDefinitionView[]>([]);
+  const [current, setCurrent] = createSignal<ResolvedExtensionProfile>();
+  const [inventory, setInventory] = createSignal<ExtensionProfileInventory>();
+  const [detail, setDetail] = createSignal<ResolvedExtensionProfile>();
   const [term, setTerm] = createSignal("");
   const [sel, setSel] = createSignal(0);
   const [busy, setBusy] = createSignal<string>();
@@ -121,7 +124,7 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
     const value = term().trim();
     return value === "" ? definitions() : fuzzyFilter(definitions(), value, definitionHaystack);
   });
-  const selected = (): EnvironmentDefinitionView | undefined =>
+  const selected = (): ExtensionProfileDefinitionView | undefined =>
     rows()[clampListIndex(sel(), rows().length)];
   const selectionMutable = (): boolean => current()?.selection_origin !== "cli";
   const maxLines = (): number => Math.max(1, dimensions().height - 10 - (loadError() ? 2 : 0));
@@ -133,9 +136,9 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
   const reload = async (): Promise<void> => {
     try {
       const [nextDefinitions, nextCurrent, nextInventory] = await Promise.all([
-        deps.environments.list(),
-        deps.environments.current(),
-        deps.environments.inventory(),
+        deps.extensionProfiles.list(),
+        deps.extensionProfiles.current(),
+        deps.extensionProfiles.inventory(),
       ]);
       setDefinitions(nextDefinitions);
       setCurrent(nextCurrent);
@@ -169,16 +172,20 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
   const previewSelection = (scope: "global" | "workspace"): void => {
     const target = selected();
     if (target === undefined || deps.runActive() || !selectionMutable()) return;
-    act("environment_preview_select", "Preparing activation preview", async () => {
-      const preview = await deps.environments.preview(target.ref, { selection_scope: scope });
+    act("extension_profile_preview_select", "Preparing activation preview", async () => {
+      const preview = await deps.extensionProfiles.preview(target.ref, { selection_scope: scope });
       setPending({ kind: "select", scope, ref: target.ref, preview });
     });
   };
 
   const previewClear = (scope: "global" | "workspace"): void => {
     if (deps.runActive() || !selectionMutable()) return;
-    act(`environment_preview_clear_${scope}`, "Preparing selection preview", async () => {
-      setPending({ kind: "clear", scope, preview: await deps.environments.previewClear(scope) });
+    act(`extension_profile_preview_clear_${scope}`, "Preparing selection preview", async () => {
+      setPending({
+        kind: "clear",
+        scope,
+        preview: await deps.extensionProfiles.previewClear(scope),
+      });
     });
   };
 
@@ -186,21 +193,21 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
     const action = pending();
     if (action === undefined || deps.runActive()) return;
     setPending(undefined);
-    act("environment_apply_preview", "Applying Environment selection", async () => {
+    act("extension_profile_apply_preview", "Applying Extension Profile selection", async () => {
       if (action.kind === "select") {
-        await deps.environments.select(action.ref, {
+        await deps.extensionProfiles.select(action.ref, {
           selection_scope: action.scope,
           preview_token: action.preview.token,
           ...(action.preview.requires_workspace_trust ? { approve_workspace: true } : {}),
         });
       } else {
-        await deps.environments.clearSelection(action.scope, {
+        await deps.extensionProfiles.clearSelection(action.scope, {
           preview_token: action.preview.token,
         });
       }
       setBusy("Reconnecting the kernel");
       const reconnected = await deps.reconnect();
-      setBusy("Refreshing Environments");
+      setBusy("Refreshing Extension Profiles");
       await reload();
       const actionLabel =
         action.kind === "select"
@@ -243,7 +250,7 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
       busy() !== undefined
     )
       return;
-    detachObserved("environment_delete_confirm", () =>
+    detachObserved("extension_profile_delete_confirm", () =>
       host
         .confirm({
           message: `Delete ${id(target.ref)}?`,
@@ -256,8 +263,8 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
         })
         .then((approved) => {
           if (!approved) return;
-          act("environment_delete", `Deleting ${id(target.ref)}`, async () => {
-            await deps.environments.delete(
+          act("extension_profile_delete", `Deleting ${id(target.ref)}`, async () => {
+            await deps.extensionProfiles.delete(
               target.ref as { scope: "global" | "workspace"; name: string },
               {
                 expected_revision: target.revision!,
@@ -285,15 +292,15 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
     }
     const epoch = ++detailEpoch;
     detachObserved(
-      "environment_detail",
+      "extension_profile_detail",
       async () => {
-        const resolved = await deps.environments.get(ref);
+        const resolved = await deps.extensionProfiles.get(ref);
         if (epoch === detailEpoch) setDetail(resolved);
       },
       report,
     );
   });
-  onMount(() => act("environments_reload", "Loading Environments", reload));
+  onMount(() => act("extension_profiles_reload", "Loading Extension Profiles", reload));
 
   const spec = (): LevelSpec => {
     if (pending() !== undefined) {
@@ -301,7 +308,7 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
         scroll: () => previewScroll,
         verbs: [
           {
-            id: "environment.preview.apply",
+            id: "extension_profile.preview.apply",
             key: "y",
             label: "apply and reconnect",
             run: applyPending,
@@ -311,7 +318,7 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
             essential: true,
           },
           {
-            id: "environment.preview.cancel",
+            id: "extension_profile.preview.cancel",
             key: "n",
             label: "keep current",
             run: () => setPending(undefined),
@@ -336,7 +343,7 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
           },
           {
             key: "d",
-            label: "delete Environment",
+            label: "delete Extension Profile",
             run: deleteSelected,
             when: () =>
               selected()?.immutable === false &&
@@ -345,7 +352,7 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
               busy() === undefined,
           },
         ],
-        escape: { label: "back to Environments", run: () => setDetailOpen(false) },
+        escape: { label: "back to Extension Profiles", run: () => setDetailOpen(false) },
       };
     }
     return {
@@ -362,17 +369,18 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
       },
       verbs: [
         {
-          id: "environment.search",
+          id: "extension_profile.search",
           key: "/",
           label: "search",
-          run: () => editor.start("search Environments", term(), setTerm, { alwaysCommit: true }),
+          run: () =>
+            editor.start("search Extension Profiles", term(), setTerm, { alwaysCommit: true }),
           hintGroup: "navigation",
           hintPriority: 75,
         },
         {
           key: "r",
           label: "refresh",
-          run: () => act("environments_reload", "Refreshing Environments", reload),
+          run: () => act("extension_profiles_reload", "Refreshing Extension Profiles", reload),
         },
         {
           key: "w",
@@ -396,7 +404,7 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
         },
         {
           key: "n",
-          label: "new guided Environment",
+          label: "new guided Extension Profile",
           when: () => busy() === undefined,
           run: () => deps.configure(),
         },
@@ -414,7 +422,7 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
         },
         {
           key: "d",
-          label: "delete Environment",
+          label: "delete Extension Profile",
           when: () =>
             selected()?.immutable === false &&
             selected()?.revision !== undefined &&
@@ -473,21 +481,21 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
               >{`  ${glyph("arrowUp")} ${overflow.count()} more`}</text>
             )}
             row={(slot) => {
-              const environment = slot.item;
+              const extensionProfile = slot.item;
               const active = (): boolean =>
-                environment() !== undefined && current()?.id === id(environment()!.ref);
+                extensionProfile() !== undefined && current()?.id === id(extensionProfile()!.ref);
               return (
                 <SelectableRow selected={slot.selected()} visible={slot.visible()}>
                   <span style={{ fg: active() ? tone("ok").fg : tokens.muted }}>
                     {`${active() ? tone("ok").glyph : " "} `}
                   </span>
                   <span style={{ fg: tokens.fg }}>
-                    {environment() === undefined ? "" : id(environment()!.ref)}
+                    {extensionProfile() === undefined ? "" : id(extensionProfile()!.ref)}
                   </span>
-                  <span style={{ fg: environment()?.error ? tokens.del : tokens.muted }}>
-                    {environment() === undefined
+                  <span style={{ fg: extensionProfile()?.error ? tokens.del : tokens.muted }}>
+                    {extensionProfile() === undefined
                       ? ""
-                      : `${environment()!.immutable ? "  builtin" : ""}${environment()!.error ? "  invalid" : ""}`}
+                      : `${extensionProfile()!.immutable ? "  builtin" : ""}${extensionProfile()!.error ? "  invalid" : ""}`}
                   </span>
                 </SelectableRow>
               );
@@ -504,12 +512,12 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
           <EmptyHint
             text={
               busy()
-                ? "Loading Environments"
+                ? "Loading Extension Profiles"
                 : loadError()
-                  ? "Environment catalog unavailable"
+                  ? "Extension Profile catalog unavailable"
                   : term()
                     ? `No matches for "${term()}"`
-                    : "No Environments found"
+                    : "No Extension Profiles found"
             }
             hint={
               loadError()
@@ -525,24 +533,28 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
   }
 
   function compactPreview(): JSX.Element {
-    const environment = detail();
-    if (environment === undefined) return <LoadingHint text="Resolving Environment" />;
+    const extensionProfile = detail();
+    if (extensionProfile === undefined) return <LoadingHint text="Resolving Extension Profile" />;
     const state = tone(
-      environment.status === "ready" ? "ok" : environment.status === "degraded" ? "warn" : "error",
+      extensionProfile.status === "ready"
+        ? "ok"
+        : extensionProfile.status === "degraded"
+          ? "warn"
+          : "error",
     );
     return (
       <box flexDirection="column" paddingLeft={1} overflow="hidden">
         <text fg={tokens.accent} wrapMode="word">
-          <b>{environment.id}</b>
+          <b>{extensionProfile.id}</b>
         </text>
-        <Show when={environment.description}>
+        <Show when={extensionProfile.description}>
           <text fg={tokens.fg} wrapMode="word">
-            {environment.description}
+            {extensionProfile.description}
           </text>
         </Show>
-        <text fg={state.fg} paddingTop={1}>{`${state.glyph} ${environment.status}`}</text>
+        <text fg={state.fg} paddingTop={1}>{`${state.glyph} ${extensionProfile.status}`}</text>
         <text fg={tokens.muted} wrapMode="word">
-          {environmentSummary(environment, inventory())}
+          {extensionProfileSummary(extensionProfile, inventory())}
         </text>
         <text fg={tokens.accent2} wrapMode="word">
           Enter opens the full snapshot. e configures it step by step. w/g previews activation.
@@ -552,9 +564,9 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
   }
 
   function fullDetail(): JSX.Element {
-    const environment = detail();
-    if (environment === undefined) return <LoadingHint text="Resolving Environment" />;
-    const counts = environment.counts;
+    const extensionProfile = detail();
+    if (extensionProfile === undefined) return <LoadingHint text="Resolving Extension Profile" />;
+    const counts = extensionProfile.counts;
     const catalog = inventory();
     const installed = catalog?.plugins.length ?? "…";
     const discovered =
@@ -563,21 +575,25 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
         : catalog.standalone_skills.length +
           catalog.plugins.reduce((total, plugin) => total + plugin.skills.length, 0);
     const state = tone(
-      environment.status === "ready" ? "ok" : environment.status === "degraded" ? "warn" : "error",
+      extensionProfile.status === "ready"
+        ? "ok"
+        : extensionProfile.status === "degraded"
+          ? "warn"
+          : "error",
     );
     return (
       <box flexDirection="column">
         <text fg={tokens.accent} wrapMode="word">
-          <b>{environment.id}</b>
+          <b>{extensionProfile.id}</b>
         </text>
-        <Show when={environment.description}>
+        <Show when={extensionProfile.description}>
           <text fg={tokens.fg} wrapMode="word">
-            {environment.description}
+            {extensionProfile.description}
           </text>
         </Show>
         <SectionHeader label="Overview" />
-        <text fg={state.fg}>{`${state.glyph} ${environment.status}`}</text>
-        <text fg={tokens.muted}>{`selected by  ${environment.selection_origin}`}</text>
+        <text fg={state.fg}>{`${state.glyph} ${extensionProfile.status}`}</text>
+        <text fg={tokens.muted}>{`selected by  ${extensionProfile.selection_origin}`}</text>
         <text
           fg={tokens.fg}
         >{`plugins      ${counts.plugins_active} active / ${installed} installed`}</text>
@@ -589,10 +605,10 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
           fg={tokens.muted}
         >{`hooks        ${counts.hooks_declared} active with selected plugins`}</text>
         <SectionHeader label="Plugins" />
-        <Show when={environment.plugins.length === 0}>
+        <Show when={extensionProfile.plugins.length === 0}>
           <text fg={tokens.muted}>none</text>
         </Show>
-        <For each={environment.plugins}>
+        <For each={extensionProfile.plugins}>
           {(plugin) => (
             <>
               <text fg={plugin.active ? tokens.add : tokens.warn} wrapMode="word">
@@ -617,26 +633,29 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
           )}
         </For>
         <SectionHeader label="Standalone skills" />
-        <Show when={environment.standalone_skills.length === 0}>
+        <Show when={extensionProfile.standalone_skills.length === 0}>
           <text fg={tokens.muted}>none</text>
         </Show>
-        <For each={environment.standalone_skills}>
+        <For each={extensionProfile.standalone_skills}>
           {(skill) => (
             <text fg={skill.active ? tokens.add : tokens.warn} wrapMode="word">
               {`${skill.active ? tone("ok").glyph : tone("warn").glyph} ${skill.ref.scope}/${skill.ref.source}/${skill.ref.name}${skill.error ? ` ${glyph("separator")} ${skill.error}` : ""}`}
             </text>
           )}
         </For>
-        <Show when={environment.issues.length > 0}>
+        <Show when={extensionProfile.issues.length > 0}>
           <SectionHeader label="Issues" />
-          <For each={environment.issues}>
+          <For each={extensionProfile.issues}>
             {(issue) => (
               <text fg={tokens.del} wrapMode="word">{`${issue.code}: ${issue.message}`}</text>
             )}
           </For>
         </Show>
         <SectionHeader label="Snapshot identity" />
-        <text fg={tokens.muted} wrapMode="word">{`fingerprint ${environment.fingerprint}`}</text>
+        <text
+          fg={tokens.muted}
+          wrapMode="word"
+        >{`fingerprint ${extensionProfile.fingerprint}`}</text>
       </box>
     );
   }
@@ -733,19 +752,19 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
   return (
     <ViewFrame
       host={host}
-      title="Environment"
+      title="Extension Profile"
       unscoped
       purpose="Select an exact extension snapshot for future runs"
       mutationContract="Every change previews the complete delta before reconnect"
       footerStatus={footerStatus}
     >
       <Show when={current()}>
-        {(value: () => ResolvedEnvironment) => (
+        {(value: () => ResolvedExtensionProfile) => (
           <text fg={tokens.muted} flexShrink={0} wrapMode="none" truncate>
             <span style={{ fg: value().status === "ready" ? tokens.add : tokens.warn }}>
               {`${tone(value().status === "ready" ? "ok" : "warn").glyph} ${value().id}`}
             </span>
-            {`  ${environmentSummary(value(), inventory())} ${glyph("separator")} ${value().status}`}
+            {`  ${extensionProfileSummary(value(), inventory())} ${glyph("separator")} ${value().status}`}
           </text>
         )}
       </Show>
@@ -753,7 +772,7 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
         {(message: () => string) => (
           <box flexDirection="column" flexShrink={0}>
             <text fg={tokens.del} wrapMode="none" truncate>
-              {`${tone("error").glyph} Environment catalog unavailable`}
+              {`${tone("error").glyph} Extension Profile catalog unavailable`}
             </text>
             <text
               fg={tokens.muted}
@@ -790,7 +809,7 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
               {pendingMessage(action())}
             </text>
             <text fg={tokens.accent2} flexShrink={0}>
-              y applies and reconnects; n or Esc keeps the current Environment.
+              y applies and reconnects; n or Esc keeps the current Extension Profile.
             </text>
             <scrollbox
               ref={(element: ScrollBoxRenderable) => (previewScroll = element)}
@@ -805,13 +824,13 @@ export function EnvironmentBrowser(host: ViewHost, deps: EnvironmentBrowserDeps)
       </Show>
       <Show when={deps.runActive()}>
         <text fg={tokens.warn} flexShrink={0}>
-          Finish the active run before changing Environment.
+          Finish the active run before changing Extension Profile.
         </text>
       </Show>
       <Show when={current()?.selection_origin === "cli"}>
         <text fg={tokens.warn} flexShrink={0} wrapMode="word">
-          The active --env override is process-local; restart without it to change persisted
-          selection.
+          The active --extension-profile override is process-local; restart without it to change
+          persisted selection.
         </text>
       </Show>
       <Show when={editor.editing()}>{editor.EditInput()}</Show>

@@ -156,7 +156,7 @@ function harness(): {
     agents: { active: () => "", view: () => undefined, list: () => [] } as never,
     agentFiles: { list: () => [], conflicts: () => [] } as never,
     plugins: {} as never,
-    environments: {} as never,
+    extensionProfiles: {} as never,
     skills: { list: async () => [], getPrompt: async () => [] },
     code,
     memoryMode: {

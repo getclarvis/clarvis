@@ -6,10 +6,10 @@ import { createTestKeymap } from "@opentui/keymap/testing";
 import { createSignal, For, onCleanup, Show, type Accessor, type JSX } from "solid-js";
 import type { BaseRenderable } from "@opentui/core";
 import type {
-  EnvironmentDefinition,
-  EnvironmentInventory,
-  EnvironmentService,
-  ResolvedEnvironment,
+  ExtensionProfileDefinition,
+  ExtensionProfileInventory,
+  ExtensionProfileService,
+  ResolvedExtensionProfile,
 } from "@clarvis/protocol";
 import { FloatFrame } from "../../src/views/overlays/FloatFrame.tsx";
 import { AutocompletePopup } from "../../src/views/input/AutocompletePopup.tsx";
@@ -17,7 +17,7 @@ import { PageFrame } from "../../src/views/PageFrame.tsx";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import { ActivityDetail } from "../../src/views/overlays/ActivityDetail.tsx";
 import { WorktreeExitPrompt } from "../../src/views/overlays/WorktreeExitPrompt.tsx";
-import { ProfilePicker } from "../../src/views/overlays/ProfilePicker.tsx";
+import { AgentProfilePicker } from "../../src/views/overlays/AgentProfilePicker.tsx";
 import { SafetyPresetPicker } from "../../src/views/overlays/SafetyPresetPicker.tsx";
 import { CatalogPicker } from "../../src/views/config/CatalogPicker.tsx";
 import { ElicitBlock } from "../../src/views/ElicitBlock.tsx";
@@ -240,7 +240,7 @@ const extensionPlugins = Array.from({ length: 24 }, (_, index): PluginView => ({
   },
 }));
 
-const extensionSkills: EnvironmentInventory["standalone_skills"] = Array.from(
+const extensionSkills: ExtensionProfileInventory["standalone_skills"] = Array.from(
   { length: 50 },
   (_, index) => ({
     ref: {
@@ -254,14 +254,14 @@ const extensionSkills: EnvironmentInventory["standalone_skills"] = Array.from(
   }),
 );
 
-const extensionDefinition: EnvironmentDefinition = {
+const extensionDefinition: ExtensionProfileDefinition = {
   schema_version: 1,
-  description: "Representative soak Environment",
+  description: "Representative soak Extension Profile",
   plugins: [],
   skills: [],
 };
 
-const extensionInventory: EnvironmentInventory = {
+const extensionInventory: ExtensionProfileInventory = {
   plugins: extensionPlugins.map((plugin) => ({
     ref: { scope: plugin.scope, source: plugin.source, name: plugin.name },
     active: false,
@@ -278,14 +278,14 @@ const extensionInventory: EnvironmentInventory = {
   standalone_skills: extensionSkills,
 };
 
-const emptyExtensionInventory: EnvironmentInventory = {
+const emptyExtensionInventory: ExtensionProfileInventory = {
   plugins: [],
   standalone_skills: [],
 };
 
 const pendingPluginInstall = new Promise<PluginView>(() => {});
 
-const extensionEnvironment: ResolvedEnvironment = {
+const extensionProfile: ResolvedExtensionProfile = {
   id: "global:benchmark",
   ref: { scope: "global", name: "benchmark" },
   immutable: false,
@@ -306,18 +306,18 @@ const extensionEnvironment: ResolvedEnvironment = {
   },
 };
 
-const extensionEnvironmentService: EnvironmentService = {
+const extensionProfileService: ExtensionProfileService = {
   list: async () => [
     { ref: { scope: "builtin", name: "default" }, immutable: true },
     {
-      ref: extensionEnvironment.ref,
+      ref: extensionProfile.ref,
       immutable: false,
       definition: extensionDefinition,
-      revision: extensionEnvironment.definition_revision,
+      revision: extensionProfile.definition_revision,
     },
   ],
-  current: async () => extensionEnvironment,
-  get: async () => extensionEnvironment,
+  current: async () => extensionProfile,
+  get: async () => extensionProfile,
   inventory: async () => extensionInventory,
   preview: async () => {
     throw new Error("not reached");
@@ -363,18 +363,18 @@ function ExtensionsCatalogPage(props: {
   });
   onCleanup(() => controls.dispose());
   return ExtensionsHub(host, {
-    environments: extensionEnvironmentService,
+    extensionProfiles: extensionProfileService,
     definitions: () => [
       { ref: { scope: "builtin", name: "default" }, immutable: true },
       {
-        ref: extensionEnvironment.ref,
+        ref: extensionProfile.ref,
         immutable: false,
         definition: extensionDefinition,
-        revision: extensionEnvironment.definition_revision,
+        revision: extensionProfile.definition_revision,
       },
     ],
     inventory: () => (props.pendingInstall ? emptyExtensionInventory : extensionInventory),
-    current: () => extensionEnvironment,
+    current: () => extensionProfile,
     listings: () => (props.pendingInstall ? [extensionListings[24]!] : extensionListings),
     sources: () => [{ url: "https://github.com/getclarvis/marketplace.git" }],
     loading: () => false,
@@ -386,7 +386,7 @@ function ExtensionsCatalogPage(props: {
     runActive: () => false,
     notify: () => {},
     openChild: () => {},
-    initialEnvironment: extensionEnvironment.ref,
+    initialExtensionProfile: extensionProfile.ref,
   });
 }
 
@@ -413,7 +413,7 @@ function MarketplacePage(props: { active: Accessor<boolean> }): JSX.Element {
     listings: () => extensionListings,
     sources: () => marketplaceSources,
     plugins: () => extensionPlugins,
-    environment: () => extensionEnvironment.id,
+    extensionProfile: () => extensionProfile.id,
     loading: () => false,
     install: async () => "installed",
     installUrl: async () => "installed",
@@ -570,11 +570,11 @@ const cases: SoakCase[] = [
     ),
   },
   {
-    name: "profile-picker-30-agents",
+    name: "agent-profile-picker-30-agents",
     portal: true,
     render: (open) => (
       <Show when={open()}>
-        <ProfilePicker
+        <AgentProfilePicker
           interaction={fakeInteraction}
           list={() => profiles}
           active={() => "agent-0"}
@@ -587,12 +587,12 @@ const cases: SoakCase[] = [
     ),
   },
   {
-    name: "profile-picker-retained-30-agents",
+    name: "agent-profile-picker-retained-30-agents",
     portal: true,
     render: (open) => (
       <SurfaceBoundary active={open} retention="retain-one">
         {(lifecycle) => (
-          <ProfilePicker
+          <AgentProfilePicker
             interaction={fakeInteraction}
             enabled={lifecycle.active}
             list={() => profiles}
@@ -826,7 +826,7 @@ const PRODUCTION_CASES = new Set([
   "autocomplete-retained-scroll-10-rows",
   "activity-detail-200-markdown-sections",
   "worktree-exit-prompt",
-  "profile-picker-retained-30-agents",
+  "agent-profile-picker-retained-30-agents",
   "safety-preset-picker-retained",
   "catalog-picker-retained-100-rows",
   "elicit-guard-confirm",

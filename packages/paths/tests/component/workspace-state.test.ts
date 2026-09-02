@@ -71,7 +71,7 @@ describe("workspaceStatePaths", () => {
       p.pluginDataRoot,
       p.promptHistoryFile,
       p.codeConfigFile,
-      p.environmentSelectionFile,
+      p.extensionProfileSelectionFile,
       p.runsDir,
       p.runDir("run/with separators"),
       p.runTempDir("run/with separators"),
@@ -105,7 +105,7 @@ describe("workspaceStatePaths", () => {
     expect(p.pluginDataRoot).toBe(join(p.root, "plugin-data"));
     expect(p.promptHistoryFile).toBe(join(p.localDir, "prompt-history"));
     expect(p.codeConfigFile).toBe(join(p.localDir, "code.json"));
-    expect(p.environmentSelectionFile).toBe(join(p.localDir, "environment.json"));
+    expect(p.extensionProfileSelectionFile).toBe(join(p.localDir, "extension-profile.json"));
     expect(p.runsDir).toBe(join(p.localDir, "runs"));
     expect(p.runDir("run/with separators")).toBe(
       join(p.runsDir, ownerSegment("run/with separators")),

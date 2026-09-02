@@ -1151,8 +1151,8 @@ Every way a run reaches its terminal `RunResponse`:
     the crash journal header and final execution record** (INV-319). Production:
     `packages/loop/src/runtime/execute-run.ts:300`, `:386-391`, `:426-436`. Test:
     `packages/loop/tests/component/execute-run.test.ts:53-75`. The loop does not import or validate the
-    Environment DTO stored there; that host contract belongs to
-    [`hosts/environments.md`](../hosts/environments.md).
+    Extension Profile DTO stored there; that host contract belongs to
+    [`hosts/extension-profiles.md`](../hosts/extension-profiles.md).
 
 ## 6. Failure modes and degradation
 

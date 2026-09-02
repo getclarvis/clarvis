@@ -1,40 +1,40 @@
 # Extensions journey and plugin marketplace
 
-> Owned by `@clarvis/code`, with installation and Environment transactions implemented by
+> Owned by `@clarvis/code`, with installation and Extension Profile transactions implemented by
 > `@clarvis/kernel` behind `@clarvis/protocol`. The exact plugin and snapshot contracts remain in
-> [plugins.md](plugins.md) and [environments.md](environments.md).
+> [plugins.md](plugins.md) and [extension-profiles.md](extension-profiles.md).
 
 ## 1. Purpose
 
 Extensions are one product journey with distinct authorities: marketplaces advertise sources,
-`PluginService` owns installed inventory, and `EnvironmentService` owns the exact active snapshot.
+`PluginService` owns installed inventory, and `ExtensionProfileService` owns the exact active snapshot.
 Code presents those authorities together without collapsing their persisted contracts.
 
 There are two deliberate entry modes:
 
-- `/extensions` is the only public slash route. It opens the guided five-step Environment composer.
-- its home exposes internal Environments, Plugins, and MCP surfaces for focused inspection and
+- `/extensions` is the only public slash route. It opens the guided five-step Extension Profile composer.
+- its home exposes internal Extension Profiles, Plugins, and MCP surfaces for focused inspection and
   maintenance. They are return-stack children, not public `/extensions/...` commands.
 
 The Plugins surface replaces the former split Marketplace, installed Plugins, and Hook approval
 screens. A plugin is an atomic extension: its agents, skills, MCP servers, hooks, and capability
 executables are selected and consented together.
 
-- **Production:** `ExtensionsHub`, `MarketplaceBrowser`, `EnvironmentBrowser`, and `McpBrowser` in
+- **Production:** `ExtensionsHub`, `MarketplaceBrowser`, `ExtensionProfileBrowser`, and `McpBrowser` in
   `packages/code/src/views/config/`; registrations `extensions`, `marketplace.open`,
-  `environments.open`, and `mcp.browse` in `packages/code/src/app/commands.tsx`.
+  `extension-profiles.open`, and `mcp.browse` in `packages/code/src/app/commands.tsx`.
 - **Test:** `packages/code/tests/integration/app-commands.test.tsx` (single public route and factory
   composition) and `packages/code/tests/integration/app-shell-render.test.tsx` (exact route and
   return-stack cases).
 
-## 2. Guided Environment composer
+## 2. Guided Extension Profile composer
 
 The composer follows the decision-first structure of first boot:
 
 | Step | Decision | Persistent effect |
 | --- | --- | --- |
 | 1 — Scope | workspace-local selection or global default | none while staged |
-| 2 — Environment | edit, clone, or create a definition | none while staged |
+| 2 — Extension Profile | edit, clone, or create a definition | none while staged |
 | 3 — Plugins and skills | exact plugin origins and standalone skills | a marketplace checkout may be installed; membership stays staged |
 | 4 — Capabilities | inspect agents, skills, MCP, hooks, and executables | exact preview token only |
 | 5 — Apply | inspect the complete delta and reconnect | definition, selection, trust when required, then reconnect |
@@ -44,12 +44,12 @@ The draft is a complete allow-list, never an overlay. Same-name alternatives kee
 are not individual toggles; standalone skills are.
 
 Installing from inside Step 3 persists the checkout because that operation has its own explicit
-consent, but it does not bypass the Environment draft. The operator is already editing a complete
+consent, but it does not bypass the Extension Profile draft. The operator is already editing a complete
 snapshot, so the installed plugin enters only when Step 5 applies the reviewed composition. Closing
 the wizard never silently uninstalls that checkout.
 
 Escape always means back. Escape from a retained picker finishes that choice; Escape from an edited
-Environment asks before discarding the draft. Preview and install keep running when Escape returns to
+Extension Profile asks before discarding the draft. Preview and install keep running when Escape returns to
 the previous level, and an installed checkout is staged only if the draft that started it still
 exists. Apply is already committed work: Escape closes Extensions immediately while apply,
 reconnect, refresh, and the final notification finish in the background. Escape never cancels or
@@ -57,8 +57,8 @@ waits for one of those operations. No `b`, `y`, or hidden Escape alias duplicate
 
 - **Production:** `ExtensionSetupDraft`, `replaceDraft`, `openExtensionPicker`, `installAndStage`,
   `resolveReview`, `apply`, the pending-operation key layer, `backFromExtensions`, and `spec` in
-  `packages/code/src/views/config/ExtensionsHub.tsx`; `EnvironmentService.previewComposition` and
-  `applyComposition` in `packages/protocol/src/environments.ts`.
+  `packages/code/src/views/config/ExtensionsHub.tsx`; `ExtensionProfileService.previewComposition` and
+  `applyComposition` in `packages/protocol/src/extension-profiles.ts`.
 - **Test:** `packages/code/tests/integration/extensions-hub-render.test.tsx` (complete journey,
   discard confirmation, pending preview/install/apply Escape, install staging, origin replacement,
   long delta, and active-run cases).
@@ -97,26 +97,26 @@ slots; a catalog never mounts one renderable or timer per plugin.
 ### 3.2 Detail and lifecycle
 
 The list never installs on its first Enter. Detail names the source and lifecycle, and for installed
-plugins shows the exact inventory origin, active Environment state, declared capabilities,
+plugins shows the exact inventory origin, active Extension Profile state, declared capabilities,
 executables, revision, and path.
 
 An available listing's second Enter is one composed intent:
 
 1. install a marketplace checkout into the shared `.agents/plugins` inventory, while direct Git
    installation keeps the explicit `.agents/plugins` or `.clarvis/plugins` choice;
-2. add that exact returned ref to the current custom Environment, or to the builtin selection
+2. add that exact returned ref to the current custom Extension Profile, or to the builtin selection
    settings that define `builtin:default`;
 3. reconnect at an idle boundary;
-4. reload installed inventory and render it green only if the resolved Environment reports it
+4. reload installed inventory and render it green only if the resolved Extension Profile reports it
    active.
 
 That action is the consent for the complete plugin. It does not open a second plugin or hook approval
 screen. A failed membership write removes the just-installed checkout; a failed reconnect keeps the
 persisted membership and reports that `/reconnect` is still required.
 
-Enter on an installed detail opens the Environment composer primed with that exact plugin. `u`
+Enter on an installed detail opens the Extension Profile composer primed with that exact plugin. `u`
 confirms that an update may change skills, MCP servers, hooks, or executable services before the
-kernel update/recompose path runs. `d` confirms uninstall, first removes active Environment
+kernel update/recompose path runs. `d` confirms uninstall, first removes active Extension Profile
 membership and reconnects, then removes the checkout. Workspace-owned checkouts must be edited in
 the repository rather than deleted or updated through the host. The kernel projects updateability
 explicitly: only a global plugin with a managed Git origin exposes `u`; linked external, local-copy,
@@ -124,7 +124,7 @@ npm, workspace, and otherwise unmanaged installs remain visible and activatable 
 action. Kernel fetch and replacement boundaries independently reject an attempted update.
 
 Selected plugin update/uninstall is refused while a run is active. A run keeps the content snapshot
-and fingerprint captured at its start; no list refresh, update, trust transition, or Environment
+and fingerprint captured at its start; no list refresh, update, trust transition, or Extension Profile
 change mutates it.
 
 - **Production:** `installAndActivatePlugin`, `persistPluginMembership`, `updatePlugin`,
@@ -176,25 +176,25 @@ catalogs. Refresh clears cached fetch results and retries every exact URL.
   `packages/code/tests/integration/app-commands.test.tsx`
   and `packages/code/tests/integration/marketplace-browser-render.test.tsx`.
 
-## 4. Environment administration
+## 4. Extension Profile administration
 
-The Environment browser is diagnostics and lifecycle administration, not a second composer. It
+The Extension Profile browser is diagnostics and lifecycle administration, not a second composer. It
 lists builtin/global/workspace definitions, exact status and fingerprint, counts, issues, selected
 plugins and standalone skills. Creating, cloning, or configuring returns into the guided composer.
 
-`builtin:default` is immutable. An inactive custom Environment with a known revision exposes `d`;
-deletion is danger-confirmed and revision-bound. The active Environment, an Environment selected by
-`--env`, or an entry without a safe expected revision cannot be deleted from Code.
+`builtin:default` is immutable. An inactive custom Extension Profile with a known revision exposes `d`;
+deletion is danger-confirmed and revision-bound. The active Extension Profile, an Extension Profile selected by
+`--extension-profile`, or an entry without a safe expected revision cannot be deleted from Code.
 
 Selection preview uses normal precedence. Apply and reconnect status stays footer-right with spinner
 and elapsed time, so it remains visible when the exact delta is taller than the viewport.
 
-- **Production:** `EnvironmentBrowser` in
-  `packages/code/src/views/config/EnvironmentBrowser.tsx`; `EnvironmentService.delete` in
-  `packages/protocol/src/environments.ts` and
-  `packages/kernel/src/environments/environment-manager.ts`.
-- **Test:** `packages/code/tests/integration/environment-browser-render.test.tsx` and
-  `packages/kernel/tests/integration/environment-manager.test.ts`.
+- **Production:** `ExtensionProfileBrowser` in
+  `packages/code/src/views/config/ExtensionProfileBrowser.tsx`; `ExtensionProfileService.delete` in
+  `packages/protocol/src/extension-profiles.ts` and
+  `packages/kernel/src/extension-profiles/extension-profile-manager.ts`.
+- **Test:** `packages/code/tests/integration/extension-profile-browser-render.test.tsx` and
+  `packages/kernel/tests/integration/extension-profile-manager.test.ts`.
 
 ## 5. Trust and changed content
 
@@ -202,7 +202,7 @@ Plugin installation is explicit consent for that plugin's declared unit. Workspa
 different boundary: cloning or entering a workspace can expose executable settings and selected
 `scope: "workspace"` plugin content that the operator did not install. A global plugin installed
 through the TUI is already approved by that action and receives no additional workspace approval
-when an Environment selects it. In a mixed Environment it remains active even while a
+when an Extension Profile selects it. In a mixed Extension Profile it remains active even while a
 repository-owned sibling is withheld.
 
 When the workspace trust verdict is `unapproved` or `changed`, Code proactively opens the Workspace
@@ -210,25 +210,25 @@ approval question as soon as the complete app receives the kernel's resolved tru
 waiting for a slash command. The lightweight startup composer and its first paint do not wait for
 plugin inventory hashing; repository plugins remain inactive during that interval. The workspace
 fingerprint covers every repository-owned plugin checkout, including those not selected by the
-current Environment. Enter approves that complete inventory once; no per-plugin or per-Environment
+current Extension Profile. Enter approves that complete inventory once; no per-plugin or per-Extension Profile
 approval follows while its bytes remain unchanged. `n` keeps it blocked and opens `/extensions` so
 the operator can remove content; Escape keeps it blocked. `/workspace-trust` is the later fallback
 for reopening or revoking this decision, not the primary onboarding path.
 
 Approving or revoking trust cannot occur during a run. An idle transition recomposes the selected
-Environment before future runs. Code refreshes the run client's cached Environment identity from
-`EnvironmentService.current()` before the mutation promise resolves, so the next turn and resume
+Extension Profile before future runs. Code refreshes the run client's cached Extension Profile identity from
+`ExtensionProfileService.current()` before the mutation promise resolves, so the next turn and resume
 comparison use the recomposed fingerprint without waiting for reconnect. A changed fingerprint
-never silently falls back to a broader Environment.
+never silently falls back to a broader Extension Profile.
 
 - **Production:** `WorkspaceTrustPrompt` in
   `packages/code/src/views/config/WorkspaceTrustPrompt.tsx`; startup routing and
   `workspace.trust.prompt` in `packages/code/src/app/commands.tsx`; trust transition enforcement in
-  `packages/kernel/src/environments/environment-manager.ts`; `mutateTrust` in
+  `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `mutateTrust` in
   `packages/code/src/adapters/kernel-run-client.ts`.
 - **Test:** `packages/code/tests/integration/app-shell-render.test.tsx` (post-hydration proactive
   changed-workspace prompt), `packages/code/tests/component/kernel-run-client.test.ts` (post-transition identity
-  refresh), and `packages/kernel/tests/integration/environment-manager.test.ts` (idle recompose and
+  refresh), and `packages/kernel/tests/integration/extension-profile-manager.test.ts` (idle recompose and
   active-run refusal).
 
 ## 6. Progress and responsive behavior
@@ -239,7 +239,7 @@ content may also explain the phase, but no operation depends on a transient noti
 off-screen last row. Local mutation keys are gated while work is pending.
 
 At 80×24 the collection window, selected row or detail, and footer decision remain visible. Detail
-and long Environment review bodies scroll independently. Marketplace source loads, Environment
+and long Extension Profile review bodies scroll independently. Marketplace source loads, Extension Profile
 inventory, and plugin scans run only on initial load or explicit refresh, never on arrow movement.
 
 The production collection soak warms the retained renderer, then performs 100 right/left collection
@@ -248,7 +248,7 @@ layers, and key-layer registrations after warm-up. The extension-composer soak s
 196 retained rows and a pending install.
 
 - **Production:** `footerStatus` and `useSpinnerClock` in `MarketplaceBrowser`,
-  `EnvironmentBrowser`, `ExtensionsHub`, and `WorkspaceTrustPrompt`; benchmark cases in
+  `ExtensionProfileBrowser`, `ExtensionsHub`, and `WorkspaceTrustPrompt`; benchmark cases in
   `packages/code/tooling/benchmarks/overlays.tsx`.
 - **Test:** `marketplace-collections-retained-196-listings`,
   `extensions-setup-retained-196-listings`, and `extensions-setup-pending-install` through
@@ -261,21 +261,21 @@ layers, and key-layer registrations after warm-up. The extension-composer soak s
    `packages/code/src/app/commands.tsx`. Test: `app-commands.test.tsx` and
    `app-shell-render.test.tsx`.
 2. **EXT-2 — exact source identity.** Marketplace collection identity uses the catalog URL; plugin
-   and Environment identity uses `scope/source/name`. Presentation names cannot redirect either.
+   and Extension Profile identity uses `scope/source/name`. Presentation names cannot redirect either.
    Production: `MarketplaceListing.marketplaceUrl`, `MarketplaceCollection.id`, and protocol
-   Environment refs. Test: marketplace collection and same-name origin cases.
+   Extension Profile refs. Test: marketplace collection and same-name origin cases.
 3. **EXT-3 — focused install is atomic consent and activation.** A successful Marketplace install
    selects the exact returned plugin, reconnects, and stays active after reload, with no hook review
    or workspace-approval gate. Production: `installAndActivatePlugin`,
    `workspaceTargetNeedsApproval`, and `PluginContributions.settingsScopes`. Test: `app-commands.test.tsx`,
-   the operator-installed global-plugin case in `environment-manager.test.ts`, and
+   the operator-installed global-plugin case in `extension-profile-manager.test.ts`, and
    `plugin-contributions.test.ts`.
 4. **EXT-4 — an in-flight run is immutable.** Selected content update/uninstall, trust transitions,
-   and Environment changes wait for an idle boundary. Production: plugin and Environment kernel
-   lifecycle guards. Test: kernel plugin-service and environment-manager integration suites.
+   and Extension Profile changes wait for an idle boundary. Production: plugin and Extension Profile kernel
+   lifecycle guards. Test: kernel plugin-service and Extension Profile manager integration suites.
 5. **EXT-5 — errors fail visibly.** Missing definitions, degraded exact refs, failed marketplace
    sources, and reconnect failure never substitute `builtin:default` or paint inactive inventory as
-   active. Production: Environment resolver and Code error/status projections. Test: focused Code
+   active. Production: Extension Profile resolver and Code error/status projections. Test: focused Code
    and kernel integration suites.
 6. **EXT-6 — bounded retained navigation.** Marketplace row and collection movement performs no
    filesystem scan, network fetch, per-row timer allocation, or key-layer registration after warm-up.
@@ -284,6 +284,6 @@ layers, and key-layer registrations after warm-up. The extension-composer soak s
 
 ## 8. Non-goals
 
-Environment definitions do not own model/provider choice, agent profiles, grants, sandbox, guard,
+Extension Profile definitions do not own model/provider choice, agent profiles, grants, sandbox, guard,
 memory, secrets, plugin versions, inheritance, or per-contribution masks. Marketplace ranking,
 pagination, signed publisher identity, and automatic remote updates remain outside this iteration.

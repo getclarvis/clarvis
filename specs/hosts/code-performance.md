@@ -327,7 +327,7 @@ The floating family is larger than the two historically measured entry points:
 
 | Surface                               | Mount path                                                                  | Variable allocation risk                                                                                               | Current evidence                                                       |
 | ------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| agent picker and default-scope picker | `App` -> retained `ProfilePicker` -> `ListPicker` -> `FloatFrame`           | windowed agent rows, preview and optional second picker                                                                | remount +12.71; retained -0.23 MiB PSS/100                             |
+| agent picker and default-scope picker | `App` -> retained `AgentProfilePicker` -> `ListPicker` -> `FloatFrame`           | windowed agent rows, preview and optional second picker                                                                | remount +12.71; retained -0.23 MiB PSS/100                             |
 | safety preset picker                  | `App` -> lazy retained `SafetyPresetPicker` -> `ListPicker` -> `FloatFrame` | six fixed rows, one preview and an armed confirmation                                                                  | +1.56 MiB PSS/100 at 120x32; +1.28 at 80x24; zero owner deltas         |
 | provider/model/enum picker            | config view -> retained `CatalogPicker` -> `ListPicker` -> `FloatFrame`     | windowed rows, fuzzy-highlight spans, optional input, and a fixed nine-row first-run splash intro only when 76×24 fits | remount +14.26; retained -1.49 MiB PSS/100 (pre-intro measurement)     |
 | activity detail                       | `App` -> retained `ActivityDetail` -> `FloatFrame`                          | Markdown block count and parser-native renderables; payload is cleared on close                                        | -16.92 MiB PSS/100 in the 200-section remount case; no confirmed slope |
@@ -718,11 +718,11 @@ It also demonstrated that a low fixed fuse can never rearm when 70% of its limit
 idle RSS.
 
 The expanded fresh-process runner then exercised real production components at 120x32. The first
-100-cycle screen identified four high remount cases: Context Help +21.32, Profile Picker +13.39,
+100-cycle screen identified four high remount cases: Context Help +21.32, Agent Profile Picker +13.39,
 Catalog Picker +16.68 and the 64-agent activity drawer +30.38 MiB PSS/100. Activity Detail with 200
 Markdown sections (-16.92), Worktree Exit (+0.44), elicitation guard (+2.25), HintToast (-4.25) and
 Splash (+1.63) did not show the same positive slope. Three-hundred-cycle confirmation measured
-Context Help +19.54, Profile Picker +12.71, Catalog Picker +14.26 and the drawer +19.15 MiB PSS/100.
+Context Help +19.54, Agent Profile Picker +12.71, Catalog Picker +14.26 and the drawer +19.15 MiB PSS/100.
 The corresponding retained variants were +0.72, -0.23, -1.49 and +0.13 MiB/100. Renderable counts
 returned to baseline and JS heap decreased, locating the high remount slopes in renderer/native
 lifecycle residue rather than reachable Solid objects.
@@ -735,7 +735,7 @@ An empty and one-row `FloatFrame` measured +1.30 and +1.21 MiB PSS/100 respectiv
 reduction, but +5.77 is still growth and narrowly misses the proposed 5 MiB criterion; the F1
 residual was left open at this measurement stage and is addressed by the 2026-08-25 follow-up below.
 
-The retained Profile Picker, Catalog Picker and drawer variants are flat after forced collection and
+The retained Agent Profile Picker, Catalog Picker and drawer variants are flat after forced collection and
 are now used lazily after first open. Their full-process immediate samples can still rise before the
 runtime reclaims native arenas; retention is a leak correction, not a promise that the instantaneous
 RSS number falls on close.
@@ -809,12 +809,12 @@ An isolated profile installed all nine plugins present in the pinned official ma
 used by the run (`aws-core`, `context7`, `expo`, `mattpocock-skills`, `observability`, `pulumi`,
 `supabase`, `superpowers`, `terraform`). Its selected contribution surface contained 138
 `SKILL.md` files and 722 Markdown files. Before attribution, repeated semantic contribution
-validation made Environment readiness take about 32.9 seconds. The same filesystem was being parsed
+validation made Extension Profile readiness take about 32.9 seconds. The same filesystem was being parsed
 and cryptographically hashed through multiple projections.
 
 The first correction pinned the parsed contribution snapshot for control-plane projections but kept
 one full raw-byte revalidation at run admission. Warm individual plugin snapshots then completed
-within about 235 ms and the combined nine-plugin Environment resolved in about 330 ms; kernel
+within about 235 ms and the combined nine-plugin Extension Profile resolved in about 330 ms; kernel
 readiness was about 391 ms. That design removed duplicate control-plane scans but still put
 plugin-count-dependent synchronous filesystem/hash work directly after `prompt.send`.
 
@@ -823,8 +823,8 @@ roots are consumed once while kernel run dependencies are built, bodies are mate
 the admitted resource paths become a fixed allow-list. Asynchronous `watchFile` maintenance flips a
 memory-only availability latch when an admitted manifest/resource drifts; the skill is withheld and
 Code renders an informational warning, while the user's run continues. Production:
-`acquireEnvironmentRunLease` and `pluginSkillRoots` in `packages/kernel/src/file-kernel.ts`,
-`observeSkillCatalog` in `packages/kernel/src/environments/environment-manager.ts`, and
+`acquireExtensionProfileRunLease` and `pluginSkillRoots` in `packages/kernel/src/file-kernel.ts`,
+`observeSkillCatalog` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts`, and
 `snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts`. Tests: `withdraws plugin skill
 drift without rejecting the next run` in `packages/kernel/tests/integration/file-kernel.test.ts` and
 `skill drift is a transient warning while the conversation remains untouched` in
@@ -918,7 +918,7 @@ the strict complete-app 500 ms goal remains unmet.
    `loadFoundation` does not call `client.models.get()`; a catalog-bearing view crosses the
    single-flight `ensureModelsCatalog` boundary.
 3. **Close every overlay leak demonstrated by the matrix in section 8.4 — implemented for the
-   current matrix.** Retained autocomplete, Plan/Diff, Profile Picker, Catalog Picker and activity
+   current matrix.** Retained autocomplete, Plan/Diff, Agent Profile Picker, Catalog Picker and activity
    drawer lifecycles close their controlled slopes. The former Context Help surface was first bounded
    and retained, then removed with its F1 route; `/help` now owns Help without a floating tree. Small
    fixed modals were measured and left disposable because they did not
@@ -987,7 +987,7 @@ autocomplete, full-region pages and drawer lifecycle unguarded.
 The correction followed the attribution order and was widened beyond F1:
 
 1. `bench:code-overlays` added fresh-process post-GC controls plus production Context Help,
-   Activity Detail, Worktree Exit, Profile Picker, Catalog Picker, elicitation, drawer, HintToast,
+   Activity Detail, Worktree Exit, Agent Profile Picker, Catalog Picker, elicitation, drawer, HintToast,
    Splash and empty Workflows cases alongside primitive, autocomplete and `PageFrame` cases.
 2. `@opentui/core`, `@opentui/keymap` and `@opentui/solid` moved together from 0.4.3 to 0.5.7. The
    30-row primitive changed from the historical row-proportional slope to +0.77 MiB PSS per 100
@@ -995,7 +995,7 @@ The correction followed the attribution order and was widened beyond F1:
    exposed larger lifecycle amplifiers that the primitive-only result did not predict.
 3. `SurfaceBoundary` now owns lazy construction, `dispose-on-close`/`retain-one`, activation identity,
    root-portal placement, focus release and stale-async guards. Every root-Portal surface uses
-   `retain-one`; Profile Picker, every Catalog Picker and the narrow activity drawer do the same in
+   `retain-one`; Agent Profile Picker, every Catalog Picker and the narrow activity drawer do the same in
    their respective hosts. The component-local `*Mounted` latches and retained-spec proxy are gone.
    Inactive key layers use stable reactive matchers, and a catalog resets filter and cursor state
    when its spec changes.
@@ -1073,7 +1073,7 @@ negative:
 | autocomplete remount / retained                       |         +4.41 / +0.60 |                                           0 / 0 |
 | former Context Help remount / retained                |         +3.27 / -2.04 |                                         100 / 0 |
 | former Context Help retained with reprojected actions |                 -2.11 |                                               0 |
-| Profile Picker remount / retained                     |        +11.42 / -1.65 |                                         100 / 0 |
+| Agent Profile Picker remount / retained                     |        +11.42 / -1.65 |                                         100 / 0 |
 | retained Safety Preset Picker                         |                 +1.56 |                                               0 |
 | Catalog Picker remount / retained                     |         +8.01 / -1.53 |                                         200 / 0 |
 | 64-agent drawer remount / retained                    |        +25.13 / -1.46 |                                           0 / 0 |
@@ -1092,7 +1092,7 @@ reduce the noisy 40-cycle remount projections, so those samples do not justify a
 to native composition. Compact-terminal coverage, the parent RSS/time watchdog, production-policy
 threshold and current production consumer set are implemented. Exact timeline counts and real-model
 multi-run process-tree sampling remain future measurement work. The implemented correction closes
-the demonstrated Profile Picker, Catalog Picker, drawer and Plan/autocomplete slopes. The former
+the demonstrated Agent Profile Picker, Catalog Picker, drawer and Plan/autocomplete slopes. The former
 Context Help slope is historical because that production surface no longer exists. This does not
 make the non-overlay candidate values in section 8.3 release gates.
 
@@ -1117,7 +1117,7 @@ Run every row below independently so one surface cannot inherit another's retain
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | controls               | no overlay; draft mutation with Splash held either mounted or unmounted; empty `HintToast` lifecycle                   |
 | `FloatFrame` primitive | empty fixed-size frame; frame with fixed row counts of 1, 10 and 30                                                    |
-| `ProfilePicker`        | primary agent list; default-scope second step; empty and maximum practical lists                                       |
+| `AgentProfilePicker`        | primary agent list; default-scope second step; empty and maximum practical lists                                       |
 | `SafetyPresetPicker`   | six-row retained picker; direct-host armed-confirmation path                                                           |
 | `CatalogPicker`        | compact enum; filtered provider/model catalog; empty/manual row; maximum visible window                                |
 | `ActivityDetail`       | short plain text; long Markdown with code blocks and lists                                                             |
@@ -1145,7 +1145,7 @@ outer card is insufficient if variable children are still destroyed on every cyc
 
 1. The former Context Help was windowed by visible rows before the product surface was retired; it
    is no longer a production consumer or required soak case.
-2. Move both `ProfilePicker` stages, `SafetyPresetPicker`, and every `CatalogPicker` caller onto the
+2. Move both `AgentProfilePicker` stages, `SafetyPresetPicker`, and every `CatalogPicker` caller onto the
    persistent host. Keep a fixed number of row slots and update their cells/previews rather than
    recreating native rows.
 3. Give `ActivityDetail` a bounded Markdown projection or a full-page reader if Markdown blocks
@@ -1226,7 +1226,7 @@ than another family of component-local booleans:
 4. **Keep allocation bounds separate.** A stable-slot/window projection owns list virtualization.
    `overflow="hidden"` and ScrollBox viewport culling remain paint/layout controls and must not be
    described as allocation bounds. Retained surfaces declare a finite native-row/renderable budget.
-5. **Migrate by measured policy.** Autocomplete, every root-Portal float, Profile Picker, Catalog
+5. **Migrate by measured policy.** Autocomplete, every root-Portal float, Agent Profile Picker, Catalog
    Picker, Plan, Diff and the narrow activity drawer use `retain-one`; bounded floats gate inactive
    keys and Activity Detail clears its document payload on close. Configuration parents retain only
    while present in their existing stack and dispose on pop. Elicitation, Splash, HintToast and

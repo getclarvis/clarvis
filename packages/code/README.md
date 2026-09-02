@@ -134,7 +134,7 @@ complete document contract.
 The onboarding and configuration views can configure providers and secrets, select models, manage
 memory, inspect MCP tool servers, and manage extensions. `/extensions` is the only public extension
 route. It uses the same guided decision pattern as first boot: choose workspace/global selection
-scope, choose or stage an Environment, search exact plugin and standalone-skill inventory, review
+scope, choose or stage an Extension Profile, search exact plugin and standalone-skill inventory, review
 every resulting agent/skill/MCP/hook/executable contribution, then apply one preview-bound delta and
 reconnect. Each decision exposes one key per outcome: Enter advances or applies and Escape finishes
 the multi-select or walks back, asking before an edited draft is discarded. Install, exact
@@ -143,7 +143,7 @@ real host phases and suspend mutation keys until the operation settles, while Es
 Leaving an install or preview returns immediately without cancelling its background work; once Apply
 has started, Escape closes Extensions while apply, reconnect, refresh and the final notification
 continue. Large catalogs use bounded retained rows, review bodies scroll independently from their
-decisions, and the optional splash disappears on compact terminals. Internal Environments, Plugins
+decisions, and the optional splash disappears on compact terminals. Internal Extension Profiles, Plugins
 and MCP children remain available from that home and return to it with Escape; they are not nested
 slash commands. `/tasks` remains a standalone workspace surface.
 Capability services display their effective argv and packaged per-skill Plans policy in the
@@ -153,10 +153,10 @@ The Plugins child includes `https://github.com/getclarvis/marketplace.git` as a 
 before any configured or discovered catalog. Its retained collection bar moves with left/right
 through All, Installed, each exact marketplace URL, Workspace, and Add Marketplace; up/down moves
 through plugins and `/` searches only the current collection. Enter opens a dedicated detail with
-source, lifecycle, capabilities, executables and active Environment state. The built-in URL is not
+source, lifecycle, capabilities, executables and active Extension Profile state. The built-in URL is not
 written to settings, and loading its listings does not install or activate a plugin. A second Enter
 on an available detail is one composed consent: install the complete plugin, select its exact ref in
-the current Environment, reconnect, and verify it remains active after reload. Hooks are part of
+the current Extension Profile, reconnect, and verify it remains active after reload. Hooks are part of
 that atomic plugin unit and have no independent approval screen or additional workspace approval;
 repository-owned `scope: "workspace"` checkouts are covered together by one proactive workspace
 approval. The lightweight startup composer paints without waiting for inventory hashing or trust;
@@ -165,7 +165,7 @@ approval modal automatically, without a slash command. Update and uninstall are 
 the idle boundary. Workspace-owned checkouts are edited in their repository, and linked external
 checkouts remain visible and activatable but never offer the managed update action. The kernel's
 explicit `updateable` projection also suppresses Update for local and npm installs rather than
-offering an operation that will be refused. Environment selects only already-installed extensions.
+offering an operation that will be refused. Extension Profile selects only already-installed extensions.
 Marketplace entries may install from Git
 repositories/subdirectories (optionally pinned by ref or SHA), confined local directories, or npm
 packages fetched without lifecycle scripts. Each install carries the listing name and refuses an
@@ -175,19 +175,19 @@ stable install identity. The browser shows `AVAILABLE`, `INSTALLED_BY_DEFAULT`,
 installation. Plugin detail preserves the original publisher, license, repository/legal links,
 category, capabilities, prompts, brand and asset paths; Clarvis never replaces the declared author
 with its own contributors. The guided flow obtains the complete exact
-inventory from `EnvironmentService.inventory()` and commits a definition plus local selection only
+inventory from `ExtensionProfileService.inventory()` and commits a definition plus local selection only
 through `previewComposition`/`applyComposition`; a changed definition, selection document, or
 resolved contribution invalidates the review before either write. Its immutable `builtin:default` uses exact
-`enabledPlugins` refs and four-root skill behavior; custom Environments are complete allow-lists of
+`enabledPlugins` refs and four-root skill behavior; custom Extension Profiles are complete allow-lists of
 exact `{ scope, source, name }` plugins and standalone skills. `.agents/plugins` and
 `.clarvis/plugins` participate equally; the install picker defaults to the shared `.agents` global
-inventory. Definitions may be shared from `.clarvis/environments`, but the active workspace
-selection is always local machine state. The Environment browser shows resolution status, routes
+inventory. Definitions may be shared from `.clarvis/extension-profiles`, but the active workspace
+selection is always local machine state. The Extension Profile browser shows resolution status, routes
 creation/customization into the guided composer, retains direct selection/clear diagnostics, and
-can revision-safely delete an inactive custom definition. A process-local `--env`
-keeps persisted selection controls read-only. A failed Environment catalog reload remains visible
+can revision-safely delete an inactive custom definition. A process-local `--extension-profile`
+keeps persisted selection controls read-only. A failed Extension Profile catalog reload remains visible
 inside the browser, with `r` retry, instead of surviving only as a transient footer notification. See
-[`hosts/environments.md`](../../specs/hosts/environments.md) for activation semantics and
+[`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md) for activation semantics and
 [`hosts/code-extensions.md`](../../specs/hosts/code-extensions.md) for the interactive catalog and
 lifecycle experience.
 Interactive Code and local `--print` kernels also provide the operating-system browser opener used
@@ -202,9 +202,9 @@ After onboarding, `/model` is the only surface that changes `default_model`, and
 only surface that changes its `default_reasoning_effort`. They write only their own setting in the
 selected global/workspace scope. Providers owns credentials and the available-model set, while
 Settings > Defaults owns vision and budget defaults; none can overwrite the model/effort choice.
-Those user defaults are authoritative for the run's Lead even when its selected agent profile
+Those user defaults are authoritative for the run's Lead even when its selected Agent Profile
 declares another model or effort. A spawned Sub-agent keeps the model and effort explicitly
-declared by its own profile, falling back to the user defaults only when it declares none.
+declared by its own Agent Profile, falling back to the user defaults only when it declares none.
 Settings > Defaults shows the effective host token default when no settings layer declares one; it
 does not label the run unlimited while the kernel still applies its environment fallback.
 Editing a shipped agent in `/settings` → agents writes a **customization**, not a copy: only the
@@ -222,7 +222,7 @@ narrower or shorter frame uses the shared one-line wordmark, and an extremely sh
 only the branded header. The connection status remains startup-specific instead of claiming an
 agent, model or complete-app shortcut before those values exist. In `run` mode the user can type
 immediately; Enter stores the exact submission outside renderer ownership. As soon as the run host
-exists with a runnable active profile, that queued task starts before complete-app hydration, and the
+exists with a runnable active Agent Profile, that queued task starts before complete-app hydration, and the
 resulting store/events survive the root handoff. If provider/agent setup is not runnable yet, the
 accepted text is restored as the full composer's exact draft instead of disappearing. An unsent draft
 uses the same handoff. Resume/continue keep startup input locked until their saved session is restored.
@@ -241,7 +241,7 @@ benchmark's individual markers.
 On the first interactive launch, startup opens a branded Clarvis setup rather than Doctor or an
 empty conversation. Enter begins the focused provider/model picker; the flow makes the selected
 model the default and asks for its credential without ever rendering the secret. After saving,
-Clarvis seeds its ordinary planning, memory and command-review defaults, reloads the live profile
+Clarvis seeds its ordinary planning, memory and command-review defaults, reloads the live Agent Profile
 catalogue, selects `marshall`, and shows one Ready screen. No agent or workflow file is written at
 any point; the default fleet and workflow catalogue are built into the kernel. Canceling either picker returns to setup with the
 staged choice unsaved. Opening `/settings/providers` later keeps the ordinary multi-provider and
@@ -539,7 +539,7 @@ exists to make that possible and its runtime graph is itself plus the root
 an import creeps in and puts the whole module graph back on that path.
 
 ```text
-usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--env <environment>]
+usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--extension-profile <profile>]
                     [--format <text|md>]
                     [--resume <session-id>] [--continue] [--list] [--delete <session-id>]
                     [--refresh-models] [--update] [--ascii] [--worktree [name]]
@@ -549,7 +549,7 @@ usage: clarvis [-h] [--version] [-p <prompt>] [--agent <name>] [--env <environme
   --version                   print the version and exit
   -p, --print <prompt>        run the prompt headless: stream the reply to stdout, exit 0/1
   --agent <name>              agent to run --print as (default: entry agent)
-  --env <environment>         select an Environment for this process (scope:name or name)
+  --extension-profile <profile>  select an Extension Profile for this process (scope:name or name)
   --format <text|md>          --print output: text (default) or md transcript
   --resume <session-id>       resume a saved session
   --continue                  resume this workspace's most recent session
@@ -657,7 +657,7 @@ resumes a session of the current workspace.
 
 Sessions and runs are persisted through kernel services. The UI can resume a
 specific session or continue the most recently used one.
-Each turn stores the process-pinned Environment id and fingerprint. Resuming under a different
+Each turn stores the process-pinned Extension Profile id and fingerprint. Resuming under a different
 snapshot remains allowed, but the transcript and status line warn about the mismatch before the next
 run starts.
 
@@ -684,7 +684,7 @@ Settings saves are serialized by the adapter and carry the exact source revision
 kernel. Another process editing the same scope produces an explicit conflict; Code never retries by
 blindly overwriting the newer source. Reloads, workspace-trust changes and repairs share that same
 state-publication queue, so an older slow response cannot replace a newer cached view or agent list.
-After an idle workspace-trust approval or revocation recomposes the kernel Environment, the run
+After an idle workspace-trust approval or revocation recomposes the kernel Extension Profile, the run
 client refreshes its cached `{id, fingerprint}` immediately; the next turn and resume comparison
 therefore use the post-transition snapshot without requiring a reconnect.
 
@@ -708,7 +708,7 @@ refresh. Native state, assignee and an active Clarvis claim remain separate; `co
 shown as `claim not enforced`. A provider failure, conflict or unknown mutation outcome is never
 rendered as an empty board.
 
-`Work on task` opens the ordinary agent/profile picker and starts a run in the current workspace with
+`Work on task` opens the ordinary Agent Profile picker and starts a run in the current workspace with
 only the external task ID and provider key. It never follows a task URL, changes worktree, or accepts
 a repository/path from provider data. Returning from a run refreshes from the external source of
 truth. Opening a task in work mode does not itself mutate the backend: the agent must call
@@ -1127,7 +1127,7 @@ or key-layer counts do not balance; the corresponding limits are configurable th
 elicitation, Splash, HintToast and an empty configuration page, not only primitive frames. The current
 lifecycle keeps the transcript shell mounted, paused and input-inert behind every full-region
 configuration, Workflow, Plan and Diff page. Diff and Plan are lazily retained after first use;
-configuration frames remain bounded by their stack and dispose when popped. Profile Picker, Safety
+configuration frames remain bounded by their stack and dispose when popped. Agent Profile Picker, Safety
 Preset Picker, Catalog Picker, the narrow drawer and a bounded ten-slot autocomplete projection are
 also retained lazily.
 The autocomplete cases cover both visibility churn and a retained ten-row scrolling mutation; both

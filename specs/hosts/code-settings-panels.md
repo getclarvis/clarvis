@@ -9,7 +9,7 @@
 
 This subsystem is the **configuration surface of `@clarvis/code`**: the shared machinery every
 configuration screen is built from, plus the screens that edit providers and models. The unified
-Extensions catalog and its focused Environment, plugin, marketplace and MCP experiences are owned by
+Extensions catalog and its focused Extension Profile, plugin, marketplace and MCP experiences are owned by
 [code-extensions.md](code-extensions.md).
 
 The shared machinery is three things. `createViewHost` builds the `ViewHost` object a screen is handed
@@ -145,8 +145,8 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `controls` | Run controls | `controls.open` |
 
 `ExtensionsHub` is a five-step guided setup rather than a `HubMenu`. `/extensions` is its only slash
-route; internal Environments, Plugins, and MCP children open from the intro and return through the
-view stack. Its scope, Environment, exact catalog, capability review, Apply sequence, and focused
+route; internal Extension Profiles, Plugins, and MCP children open from the intro and return through the
+view stack. Its scope, Extension Profile, exact catalog, capability review, Apply sequence, and focused
 children are specified in [code-extensions.md](code-extensions.md)
 (`packages/code/src/views/config/ExtensionsHub.tsx`, `ExtensionsHub`).
 
@@ -158,8 +158,8 @@ children are specified in [code-extensions.md](code-extensions.md)
 | `ProvidersPanel(host, deps)` | `ProvidersDeps { settings, keys, code, notify, catalog, modelsService?, providerAuth?, copyText?, openUrl?, bootstrap?, onBootstrapComplete? }` | `packages/code/src/views/config/ProvidersPanel.tsx` (`ProvidersDeps`) |
 | `DefaultsPanel(host, deps)` | `DefaultsDeps { settings, env, notify }` | `packages/code/src/views/config/DefaultsPanel.tsx:20` |
 | `McpBrowser(host, deps)` | `McpBrowserDeps { nodes, refresh, editConfig, notify }` | `packages/code/src/views/config/McpBrowser.tsx:22` |
-| `EnvironmentBrowser(host, deps)` | `EnvironmentBrowserDeps { environments, reconnect, runActive, notify, configure }` | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`EnvironmentBrowserDeps`) |
-| `MarketplaceBrowser(host, deps)` | `MarketplaceBrowserDeps { listings, sources, plugins, environment, loading, install, installUrl, configure, update, uninstall, refresh, addSource, notify }` | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`MarketplaceBrowserDeps`) |
+| `ExtensionProfileBrowser(host, deps)` | `ExtensionProfileBrowserDeps { extensionProfiles, reconnect, runActive, notify, configure }` | `packages/code/src/views/config/ExtensionProfileBrowser.tsx` (`ExtensionProfileBrowserDeps`) |
+| `MarketplaceBrowser(host, deps)` | `MarketplaceBrowserDeps { listings, sources, plugins, extensionProfile, loading, install, installUrl, configure, update, uninstall, refresh, addSource, notify }` | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`MarketplaceBrowserDeps`) |
 
 ### 2.8 Providers levels (private modules, no package entrypoint)
 
@@ -1006,12 +1006,12 @@ arguments").
 
 ### 4.14a Guided Extensions setup and focused browsers
 
-The five-step setup, its focused Environment/Plugins/MCP browsers,
+The five-step setup, its focused Extension Profile/Plugins/MCP browsers,
 composition transaction, exact scrollable previews, and responsive/performance rules are specified in
 [code-extensions.md](code-extensions.md). This document retains only the shared `ViewHost`, field
 editor and key-binding machinery those views consume
 (`packages/code/src/views/config/ExtensionsHub.tsx`, `ExtensionsHub`;
-`packages/code/src/views/config/EnvironmentBrowser.tsx`, `EnvironmentBrowser`;
+`packages/code/src/views/config/ExtensionProfileBrowser.tsx`, `ExtensionProfileBrowser`;
 `packages/code/src/views/config/MarketplaceBrowser.tsx`, `MarketplaceBrowser`).
 
 ### 4.16 Settings adapter
@@ -1380,14 +1380,14 @@ Production: `showDevice` and `clearDevice` in
 `packages/code/tests/integration/providers-key-render.test.tsx` (pending and successful in-place
 clipboard/browser feedback).
 
-**INV-P48.** An Environment selection is never applied from the browser without an exact preview
+**INV-P48.** An Extension Profile selection is never applied from the browser without an exact preview
 and explicit confirmation, never while a run is active, and never reported active until backend
 reconnection succeeds. Production: `applyPending` in
-`packages/code/src/views/config/EnvironmentBrowser.tsx`. Test:
-`packages/code/tests/integration/environment-browser-render.test.tsx`.
+`packages/code/src/views/config/ExtensionProfileBrowser.tsx`. Test:
+`packages/code/tests/integration/extension-profile-browser-render.test.tsx`.
 
-**INV-P49.** The focused Plugins browser never toggles raw settings directly. Its Environment action
-passes the exact selected installation and current Environment to the guided composer; focused
+**INV-P49.** The focused Plugins browser never toggles raw settings directly. Its Extension Profile action
+passes the exact selected installation and current Extension Profile to the guided composer; focused
 Marketplace install composes installation, exact membership and reconnect as one consent action.
 Production: `MarketplaceBrowser` and `marketplace.open` in
 `packages/code/src/app/commands.tsx`. Test:
@@ -1430,11 +1430,11 @@ cases).
 | MCP `listTools`/`listPrompts` rejects | `reportListFailure` logs `mcp.list.failed` and substitutes `[]`, so one failing half does not crash the refresh | `packages/code/src/adapters/mcp-capabilities-bridge.ts:84` |
 | An `mcpServers` entry fails its schema | dropped silently from the parsed list | `packages/code/src/adapters/mcp-capabilities.ts:69` |
 | Uninstalling a workspace plugin | refused with a notify, no confirm | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`uninstall`) |
-| Environment target is invalid or degraded | preview/detail preserves the exact status and issues; no silent default is shown | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`exactDelta`, `fullDetail`) |
-| Environment changes while a run is active | all selection/clear verbs are hidden and the view says to finish the run first | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`runActive`) |
-| Preview expires or target revision changes | `select` rejects; the browser reports the conflict and leaves the current kernel active | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`applyPending`); [Environment failure modes](environments.md#6-failure-modes-and-degradation) |
-| Composition preview expires or definition/inventory/selection drifts | `applyComposition` rejects; the guided setup retains the draft, returns to capability review, and writes no substitute | `packages/code/src/views/config/ExtensionsHub.tsx` (`apply`); [Environment failure modes](environments.md#6-failure-modes-and-degradation) |
-| Backend reconnect fails after selection | selection remains persisted; warning tells the operator to run `/reconnect`, never claims the target is active | `packages/code/src/views/config/EnvironmentBrowser.tsx` (`applyPending`) |
+| Extension Profile target is invalid or degraded | preview/detail preserves the exact status and issues; no silent default is shown | `packages/code/src/views/config/ExtensionProfileBrowser.tsx` (`exactDelta`, `fullDetail`) |
+| Extension Profile changes while a run is active | all selection/clear verbs are hidden and the view says to finish the run first | `packages/code/src/views/config/ExtensionProfileBrowser.tsx` (`runActive`) |
+| Preview expires or target revision changes | `select` rejects; the browser reports the conflict and leaves the current kernel active | `packages/code/src/views/config/ExtensionProfileBrowser.tsx` (`applyPending`); [Extension Profile failure modes](extension-profiles.md#6-failure-modes-and-degradation) |
+| Composition preview expires or definition/inventory/selection drifts | `applyComposition` rejects; the guided setup retains the draft, returns to capability review, and writes no substitute | `packages/code/src/views/config/ExtensionsHub.tsx` (`apply`); [Extension Profile failure modes](extension-profiles.md#6-failure-modes-and-degradation) |
+| Backend reconnect fails after selection | selection remains persisted; warning tells the operator to run `/reconnect`, never claims the target is active | `packages/code/src/views/config/ExtensionProfileBrowser.tsx` (`applyPending`) |
 | A marketplace source failed to fetch | Plugins keeps successful listings and renders the failed source in All and its exact source collection; guided setup keeps exact installed inventory and reports the failed-source count | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`currentSourceError`); `packages/code/src/views/config/ExtensionsHub.tsx` (`setupIntro`) |
 | No marketplace listing is available | the current collection renders a dedicated empty state and points to left/right or Add Marketplace recovery | `packages/code/src/views/config/MarketplaceBrowser.tsx` (`list`) |
 | Target scope's `settings.json` unparsable | `write` throws "…is invalid (…) — fix it by hand before saving" after recording `settings.save.rejected` with `reason: "unparsable"` | `packages/code/src/adapters/settings.ts:392` |
@@ -1457,7 +1457,7 @@ cases).
 | `adapters/mcp-capabilities.ts` | `@clarvis/kernel/config` (`mcpServerSettingsSchema`), `@clarvis/kernel/policy` (`CONTROL_PLANE_TOOL_NAMES`) | runtime, static | `:2`, `:3` |
 | `adapters/settings.ts` | `@clarvis/kernel/config` (`kernelSettingsSchema`, `mergeProviders`, `mergeSettings`, `parseModelRef`, `isWellFormedHttpUrl`, `PLANS_DEFAULTS`) | runtime, static | `packages/code/src/adapters/settings.ts:3` |
 | `adapters/settings.ts` | `@clarvis/protocol` (`ConfigService`, `SettingsData`, `SettingsRepairPlan`, `SandboxInspection`) | type-only | `packages/code/src/adapters/settings.ts:13` |
-| `EnvironmentBrowser.tsx` | `@clarvis/protocol` (`EnvironmentService` and Environment DTOs) | type-only | `packages/code/src/views/config/EnvironmentBrowser.tsx:5-13` |
+| `ExtensionProfileBrowser.tsx` | `@clarvis/protocol` (`ExtensionProfileService` and Extension Profile DTOs) | type-only | `packages/code/src/views/config/ExtensionProfileBrowser.tsx:5-13` |
 | `adapters/models-catalog.ts` | `@clarvis/protocol` catalog DTOs + `@clarvis/kernel/config` `parseModelRef` | runtime + type | `packages/code/src/adapters/models-catalog.ts:1`, `:2` |
 
 Every one of those is one of the six sanctioned kernel entrypoints (INV-251) — full statement owned
@@ -1499,7 +1499,7 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 ### 7.3 What depends on this subsystem
 
 - `app/commands.tsx` registers every screen here as a view command and owns their dependency wiring:
-  `defaults.open`, `environments.open`, `plugins.open`, `hooks.open`, `marketplace.open`
+  `defaults.open`, `extension-profiles.open`, `plugins.open`, `hooks.open`, `marketplace.open`
   (`:786`), `mcp.browse` (`:1304`), `settings.open` (`:918`), `extensions.open` (`:1327`).
 - `views/overlay-host.ts` depends on `ViewHostControls`' exact shape — `runSave`, `scopeBound`,
   `escape`, `dispose` (`packages/code/src/views/overlay-host.ts:176`–`:257`).
@@ -1517,8 +1517,8 @@ by [hosts/code-bootstrap.md](code-bootstrap.md) §5.
 - **Extension product experience** — guided discovery, exact composition, capability review,
   responsive detail and the focused browsers are owned by
   [code-extensions.md](code-extensions.md). Plugin install mechanics remain in
-  [plugins.md](plugins.md); Environment resolution, formats, trust and snapshot identity remain in
-  [environments.md](environments.md).
+  [plugins.md](plugins.md); Extension Profile resolution, formats, trust and snapshot identity remain in
+  [extension-profiles.md](extension-profiles.md).
 - **Domain hubs** — [hosts/code-domain-hubs.md](code-domain-hubs.md).
 - **Key registration, layers, footer projection** — `keys/**` and `ui/patterns/**`:
   [hosts/code-keyboard.md](code-keyboard.md). `LevelSpec`, `registerLevel`, `verb`, `PANEL_VERBS`,

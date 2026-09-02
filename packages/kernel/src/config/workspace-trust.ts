@@ -196,7 +196,7 @@ export interface WorkspaceExecutableSurface {
   settings?: Record<string, unknown>;
   /** Name-sorted digests of the workspace's `.clarvis/agents/*.md`. */
   agents?: WorkspaceAgentSurface[];
-  /** Workspace Environment selection/definition surface that activates plugins. */
+  /** Workspace Extension Profile selection/definition surface that activates plugins. */
   extensions?: unknown;
 }
 

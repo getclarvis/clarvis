@@ -44,10 +44,10 @@ All 19 source files, each opened directly:
 |---|---|---|
 | `index.ts` | 29 | Barrel: `export type *` from the 18 modules below |
 | `common.ts` | 109 | `Scope`, `Principal`, `ProjectRef`, `WorkspaceRef`, `Pagination`/`Page`, `CursorPagination`/`CursorPage`, `Timestamp`, `JsonSchema`, `KernelErrorCode`, `KernelError`, `Unsubscribe` |
-| `runs.ts` | 823 | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (39-value discriminated union), messages, usage, Environment identity, guard/memory/plans modes, elicitation types |
+| `runs.ts` | 823 | `RunService`, `RunHandle`, `StartRunParams`, `RunEvent` (39-value discriminated union), messages, usage, Extension Profile identity, guard/memory/plans modes, elicitation types |
 | `config.ts` | 491 | `ConfigService`, `SettingsData`/`SettingsView` (incl. `WorkspaceTrustVerdict`, `known_grants`), the `SandboxConfig`/`SandboxInspection` doctor cluster, `SettingsRepairPlan` (2-variant union), `AgentSummary`/`AgentDoc`/`AgentOverlay`/`AgentBudget`, context docs — see §3.10/§3.11 |
 | `plugins.ts` | 177 | `PluginService`, `PluginView`, `PluginContributions`, normalized install sources and atomic lifecycle DTOs |
-| `environments.ts` | 251 | `EnvironmentService`, exact inventory and plugin/skill references, definitions, composition previews, resolved snapshots, deltas, diagnostics, deletion, and persisted run identity |
+| `extension-profiles.ts` | 251 | `ExtensionProfileService`, exact inventory and plugin/skill references, definitions, composition previews, resolved snapshots, deltas, diagnostics, deletion, and persisted run identity |
 | `secrets.ts` | 31 | `SecretService` |
 | `models.ts` | 82 | `ModelCatalogService`, `ModelCatalog`, `CatalogProvider`, `CatalogModel` |
 | `provider-auth.ts` | 43 | token-free subscription schemes, states, device authorization and `ProviderAuthService` |
@@ -56,7 +56,7 @@ All 19 source files, each opened directly:
 | `plans.ts` | 197 | `PlansService`, `PlanDocumentDto`, `PlanTaskDto`, `PlanRef` |
 | `workflows.ts` | 121 | `WorkflowsService`, `WorkflowNode`, `WorkflowSequence`, `WorkflowSummary`/`WorkflowDetail` |
 | `skills.ts` | 115 | `SkillsService`, `SkillSummary`, `SkillProvenance`, `SkillPresentation`, `SkillToolDependency` |
-| `sessions.ts` | 137 | `SessionService`, `Session`, `SessionSummary`, `SessionTurn`, cache-detail-aware `SessionTotals` and Environment snapshot identity |
+| `sessions.ts` | 137 | `SessionService`, `Session`, `SessionSummary`, `SessionTurn`, cache-detail-aware `SessionTotals`, Agent Profile binding, and Extension Profile snapshot identity |
 | `tasks.ts` | 223 | `TasksService`, all `Task*Dto` shapes, `ActiveTaskRequestDto`/`ActiveTaskBindingDto` |
 | `storage.ts` | 62 | `StorageService`, bounded inventory DTOs and cleanup request/result shapes |
 | `transport.ts` | 68 | `KernelTransport`, `KernelRequestOptions`, `KernelAbortSignal` |
@@ -77,7 +77,7 @@ Defined in `packages/protocol/src/client.ts`. Aggregates 4 readonly fields, 15 n
 | `runs` | `RunService` | `packages/protocol/src/client.ts:63` |
 | `config` | `ConfigService` | `packages/protocol/src/client.ts:65` |
 | `plugins` | `PluginService` | `packages/protocol/src/client.ts:69` |
-| `environments` | `EnvironmentService` | `packages/protocol/src/client.ts:68` |
+| `extensionProfiles` | `ExtensionProfileService` | `packages/protocol/src/client.ts:68` |
 | `secrets` | `SecretService` | `packages/protocol/src/client.ts:70` |
 | `models` | `ModelCatalogService` | `packages/protocol/src/client.ts:72` |
 | `providerAuth` | `ProviderAuthService` | `packages/protocol/src/client.ts:74` |
@@ -139,25 +139,25 @@ The optional `buffered()` member exposes O(1) local queue counters for bounded d
 absence remains valid for transports that cannot report them, and reading it neither consumes nor
 copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 
-#### `ConfigService` (`packages/protocol/src/config.ts:363-491`)
+#### `ConfigService` (`packages/protocol/src/config.ts:361-489`)
 
 | Method | Signature | Line |
 |---|---|---|
-| `getSettings` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts:365` |
-| `previewSettingsRepair` | `(scope: Scope) => Promise<SettingsRepairPlan \| null>` | `packages/protocol/src/config.ts:372` |
-| `repairSettings` | `(scope: Scope, expectedRevision: string) => Promise<SettingsView>` | `packages/protocol/src/config.ts:380` |
-| `approveWorkspace` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts:394` |
-| `revokeWorkspace` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts:401` |
-| `workspaceTrustError` | `() => Promise<string \| null>` | `packages/protocol/src/config.ts:404` |
-| `updateSettings` | `(scope, patch: Partial<SettingsData>, expectedRevision: string \| null) => Promise<SettingsView>` | `packages/protocol/src/config.ts:415-419` |
-| `inspectSandbox` | `(options?: { refresh?: boolean }) => Promise<SandboxInspection>` | `packages/protocol/src/config.ts:422` |
-| `listAgents` | `() => Promise<AgentSummary[]>` | `packages/protocol/src/config.ts:431` |
-| `getAgent` | `(scope: Scope \| "builtin", name: string) => Promise<AgentDoc>` | `packages/protocol/src/config.ts:443` |
-| `writeAgent` | `(scope, name, doc: AgentWrite) => Promise<AgentSummary>` | `packages/protocol/src/config.ts:452` |
-| `deleteAgent` | `(scope, name) => Promise<void>` | `packages/protocol/src/config.ts:460` |
-| `renameAgent` | `(scope, oldName, newName) => Promise<AgentSummary>` | `packages/protocol/src/config.ts:470` |
-| `getContext` | `(scope) => Promise<ContextDoc \| null>` | `packages/protocol/src/config.ts:477` |
-| `subscribe` | `(kinds: ConfigChangeKind[], listener) => Unsubscribe` | `packages/protocol/src/config.ts:490` |
+| `getSettings` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts:363` |
+| `previewSettingsRepair` | `(scope: Scope) => Promise<SettingsRepairPlan \| null>` | `packages/protocol/src/config.ts:370` |
+| `repairSettings` | `(scope: Scope, expectedRevision: string) => Promise<SettingsView>` | `packages/protocol/src/config.ts:378` |
+| `approveWorkspace` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts:392` |
+| `revokeWorkspace` | `() => Promise<SettingsView>` | `packages/protocol/src/config.ts:399` |
+| `workspaceTrustError` | `() => Promise<string \| null>` | `packages/protocol/src/config.ts:402` |
+| `updateSettings` | `(scope, patch: Partial<SettingsData>, expectedRevision: string \| null) => Promise<SettingsView>` | `packages/protocol/src/config.ts:413-417` |
+| `inspectSandbox` | `(options?: { refresh?: boolean }) => Promise<SandboxInspection>` | `packages/protocol/src/config.ts:420` |
+| `listAgents` | `() => Promise<AgentSummary[]>` | `packages/protocol/src/config.ts:429` |
+| `getAgent` | `(scope: Scope \| "builtin", name: string) => Promise<AgentDoc>` | `packages/protocol/src/config.ts:441` |
+| `writeAgent` | `(scope, name, doc: AgentWrite) => Promise<AgentSummary>` | `packages/protocol/src/config.ts:450` |
+| `deleteAgent` | `(scope, name) => Promise<void>` | `packages/protocol/src/config.ts:458` |
+| `renameAgent` | `(scope, oldName, newName) => Promise<AgentSummary>` | `packages/protocol/src/config.ts:468` |
+| `getContext` | `(scope) => Promise<ContextDoc \| null>` | `packages/protocol/src/config.ts:475` |
+| `subscribe` | `(kinds: ConfigChangeKind[], listener) => Unsubscribe` | `packages/protocol/src/config.ts:488` |
 
 #### `PluginService` (`packages/protocol/src/plugins.ts:143-176`)
 
@@ -169,29 +169,29 @@ copies `events` (`packages/protocol/src/runs.ts`, `RunHandle.buffered`).
 | `update` | `(ref: PluginRef) => Promise<PluginView>` | `PluginService.update` |
 | `uninstall` | `(ref: PluginRef) => Promise<void>` | `PluginService.uninstall` |
 
-#### `EnvironmentService` (`packages/protocol/src/environments.ts`, symbol `EnvironmentService`)
+#### `ExtensionProfileService` (`packages/protocol/src/extension-profiles.ts`, symbol `ExtensionProfileService`)
 
 | Method | Signature | Line |
 |---|---|---|
-| `list` | `() => Promise<EnvironmentDefinitionView[]>` | `EnvironmentService.list` |
-| `current` | `() => Promise<ResolvedEnvironment>` | `EnvironmentService.current` |
-| `get` | `(ref: EnvironmentRef) => Promise<ResolvedEnvironment>` | `EnvironmentService.get` |
-| `inventory` | `() => Promise<EnvironmentInventory>` | `EnvironmentService.inventory` |
-| `preview` | `(ref, { selection_scope }) => Promise<EnvironmentPreview>` | `EnvironmentService.preview` |
-| `previewClear` | `(scope: EnvironmentSelectionScope) => Promise<EnvironmentPreview>` | `EnvironmentService.previewClear` |
-| `previewComposition` | `(input: EnvironmentCompositionInput) => Promise<EnvironmentCompositionPreview>` | `EnvironmentService.previewComposition` |
-| `select` | `(ref, { selection_scope, preview_token, approve_workspace? }) => Promise<EnvironmentApplyResult>` | `EnvironmentService.select` |
-| `clearSelection` | `(scope, { preview_token }) => Promise<EnvironmentApplyResult>` | `EnvironmentService.clearSelection` |
-| `applyComposition` | `(input, { preview_token, approve_workspace? }) => Promise<EnvironmentCompositionApplyResult>` | `EnvironmentService.applyComposition` |
-| `create` | `(input: EnvironmentDefinitionInput) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.create` |
-| `update` | `(input: EnvironmentDefinitionInput & { expected_revision }) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.update` |
-| `delete` | `(ref, { expected_revision }) => Promise<void>` | `EnvironmentService.delete` |
-| `clone` | `(source, target) => Promise<EnvironmentDefinitionView>` | `EnvironmentService.clone` |
+| `list` | `() => Promise<ExtensionProfileDefinitionView[]>` | `ExtensionProfileService.list` |
+| `current` | `() => Promise<ResolvedExtensionProfile>` | `ExtensionProfileService.current` |
+| `get` | `(ref: ExtensionProfileRef) => Promise<ResolvedExtensionProfile>` | `ExtensionProfileService.get` |
+| `inventory` | `() => Promise<ExtensionProfileInventory>` | `ExtensionProfileService.inventory` |
+| `preview` | `(ref, { selection_scope }) => Promise<ExtensionProfilePreview>` | `ExtensionProfileService.preview` |
+| `previewClear` | `(scope: ExtensionProfileSelectionScope) => Promise<ExtensionProfilePreview>` | `ExtensionProfileService.previewClear` |
+| `previewComposition` | `(input: ExtensionProfileCompositionInput) => Promise<ExtensionProfileCompositionPreview>` | `ExtensionProfileService.previewComposition` |
+| `select` | `(ref, { selection_scope, preview_token, approve_workspace? }) => Promise<ExtensionProfileApplyResult>` | `ExtensionProfileService.select` |
+| `clearSelection` | `(scope, { preview_token }) => Promise<ExtensionProfileApplyResult>` | `ExtensionProfileService.clearSelection` |
+| `applyComposition` | `(input, { preview_token, approve_workspace? }) => Promise<ExtensionProfileCompositionApplyResult>` | `ExtensionProfileService.applyComposition` |
+| `create` | `(input: ExtensionProfileDefinitionInput) => Promise<ExtensionProfileDefinitionView>` | `ExtensionProfileService.create` |
+| `update` | `(input: ExtensionProfileDefinitionInput & { expected_revision }) => Promise<ExtensionProfileDefinitionView>` | `ExtensionProfileService.update` |
+| `delete` | `(ref, { expected_revision }) => Promise<void>` | `ExtensionProfileService.delete` |
+| `clone` | `(source, target) => Promise<ExtensionProfileDefinitionView>` | `ExtensionProfileService.clone` |
 
-`EnvironmentPreview.requires_workspace_trust` is true only when the effective target selects
+`ExtensionProfilePreview.requires_workspace_trust` is true only when the effective target selects
 repository-owned `scope: "workspace"` plugins whose exact executable surface is not currently
 trusted. The verdict covers the complete workspace plugin inventory rather than one plugin or
-Environment. Global installed plugins carry operator installation consent and do not set this flag.
+Extension Profile. Global installed plugins carry operator installation consent and do not set this flag.
 
 The service selects already-installed inventory and has no install operation. `inventory` exposes
 all exact inactive composer candidates. `preview` and
@@ -200,7 +200,7 @@ all exact inactive composer candidates. `preview` and
 persisted mutation to that preview. `previewComposition`/`applyComposition` bind a complete
 definition and its intended selection to the same reviewed authored/effective fingerprints. The full behavioral and
 trust contract is owned by
-[Extension Environments](environments.md).
+[Extension Profiles](extension-profiles.md).
 
 #### `SecretService` (`packages/protocol/src/secrets.ts:13-31`)
 
@@ -465,7 +465,7 @@ for resume reconstruction and not shown live.
 |---|---|---|
 | `execution_id?` | `string` | "Client-chosen id for idempotency + continuation; the kernel echoes it" (`packages/protocol/src/runs.ts:71-72`) |
 | `messages` | `Message[]` | required |
-| `agent?` | `string` | "the kernel translates it to the engine's profile/entry concept" (`packages/protocol/src/runs.ts:74-80`) |
+| `agent?` | `string` | Agent Profile id; "the kernel translates it to the engine's profile/entry concept" (`packages/protocol/src/runs.ts:74-80`) |
 | `continue_from?` | `string` | resume / steer-after-end |
 | `prompt_cache_key?` | `string` | provider prompt-cache hint |
 | `prompt_cache_ttl?` | `"5m" \| "1h"` | kernel derives it when omitted (`packages/protocol/src/runs.ts:86-94`) |
@@ -544,7 +544,7 @@ on the same part rather than separate variants.
 | `RunUsage` | `{ iterations; elapsed_ms; input_tokens?; output_tokens?; cached_tokens?; by_agent?: PerAgentUsage[]; warnings? }` | `packages/protocol/src/runs.ts:145-159` |
 | `RunResult` | `{ execution_id; status: RunStatus; result?; ended_reason?; usage?: RunUsage; error?: { code; message } }` | `packages/protocol/src/runs.ts:161-172` |
 | `RunSummary` | `{ execution_id; owner?; status; created_at; ended_at? }` | `packages/protocol/src/runs.ts:201-214` |
-| `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; active_task?: ActiveTaskBindingDto; environment?: EnvironmentRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts:235-255` |
+| `RunDetail` (extends `RunSummary`) | `+ messages: Message[]; events: RunEvent[]; result?: RunResult; continue_from?; plan_ref?: PlanRef; active_task?: ActiveTaskBindingDto; extension_profile?: ExtensionProfileRunRef; recovery?: RunRecovery` | `packages/protocol/src/runs.ts:235-255` |
 
 `PerAgentUsage.role`'s `"vision"` member is not an agent: its own doc comment calls it "the engine's
 image-reading pre-pass, one completion on a model no agent runs on" (`packages/protocol/src/runs.ts:130-132`) — the same
@@ -553,9 +553,9 @@ rather than to the event union. `RunUsage.by_agent` is optional because "a live 
 report per-agent detail... instead" of the flat totals (`packages/protocol/src/runs.ts:150-151`), which are themselves
 "present on a stored run (`get`)" but optional on a live result.
 
-`EnvironmentRunRef` is deliberately only `{ id, fingerprint }`. `RunDetail.environment`,
-`SessionTurn.environment`, and `SessionSummary.last_environment` retain that identity without
-serializing a definition, settings, or secrets (`packages/protocol/src/environments.ts:136-138`,
+`ExtensionProfileRunRef` is deliberately only `{ id, fingerprint }`. `RunDetail.extension_profile`,
+`SessionTurn.extension_profile`, and `SessionSummary.last_extension_profile` retain that identity without
+serializing a definition, settings, or secrets (`packages/protocol/src/extension-profiles.ts:136-138`,
 `packages/protocol/src/runs.ts:249-250`, `packages/protocol/src/sessions.ts:54-55`, `:102-103`).
 
 ### 3.9 Elicitation types (`runs.ts`)
@@ -581,7 +581,7 @@ invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 | Type | Shape | Line |
 |---|---|---|
 | `WorkspaceTrustVerdict` | `{ state: "inert" \| "unapproved" \| "trusted" \| "changed"; fingerprint?; approved? }` | `packages/protocol/src/config.ts:11-15` |
-| `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; memory?: MemoryConfig; budget?; profiles?: Record<string, unknown>; [block: string]: unknown }` | `packages/protocol/src/config.ts:23-38` |
+| `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `packages/protocol/src/config.ts:23-38` |
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts:41-50` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts:59-64` |
 | `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts:67-72` |
@@ -664,7 +664,7 @@ executables: string[] }` — `hooks` is "count of hook entries (not their names)
 "concrete commands this plugin would run... pre-formatted for display" (`packages/protocol/src/plugins.ts:59-72`).
 `PluginView.display_name`/`short_description` (`packages/protocol/src/plugins.ts:100-109`) are documented as "display data
 only. A plugin cannot widen what it is allowed to do by describing itself well: trust stays with the
-process-pinned Environment and workspace trust boundary" (`packages/protocol/src/plugins.ts`,
+process-pinned Extension Profile and workspace trust boundary" (`packages/protocol/src/plugins.ts`,
 `PluginView.display_name`).
 `PluginView` also preserves the manifest's `author` object, homepage, repository, license, keywords,
 and the full optional install-surface presentation bucket. `PluginInstallSource` is the closed union
@@ -673,7 +673,7 @@ of `{ kind: "git", url, subdir?, ref?, sha?, expected_name? }`,
 `{ kind: "npm", package, version?, registry?, expected_name? }`; source interpretation therefore crosses the wire
 without asking the kernel to re-parse a marketplace dialect.
 `PluginRef` is the strict `{ scope: "global"|"workspace", source: "agents"|"clarvis", name }`
-identity shared by lifecycle, activation, and Environment DTOs; `PluginView.source`
+identity shared by lifecycle, activation, and Extension Profile DTOs; `PluginView.source`
 reports the same filesystem convention and `install_source` is separately reserved for Git origin.
 
 `SkillSummary.dependencies?` carries bounded `SkillToolDependency[]` entries of `type: "mcp"` with
@@ -769,7 +769,7 @@ The following are derived directly from this package's own source and tests.
 
 3. **`KernelClient` aggregates exactly 15 named services, not more or fewer.**
    Production: `packages/protocol/src/client.ts` — `runs`, `config`, `plugins`, `secrets`, `models`, `providerAuth`, `files`, `memory`,
-   `plans`, `workflows`, `skills`, `sessions`, `tasks`, `storage`, `environments` (15 fields, plus 4
+   `plans`, `workflows`, `skills`, `sessions`, `tasks`, `storage`, `extensionProfiles` (15 fields, plus 4
    readonly identity fields and `close()`).
    Test: `packages/protocol/tests/contract/public-contract.fixture.ts:196-216` constructs a literal
    `satisfies KernelClient` naming every one of the 15 services plus `capabilities`/`project`/
@@ -827,16 +827,16 @@ The following are derived directly from this package's own source and tests.
    declarations in two files; unpinned by a test in this package (the CAS mechanics are plan-package
    territory — see `specs/hosts/protocol.md` §8 delegation note and the sibling plan-capability document).
 
-9. **Environment selection and composition are preview-bound, while execution history carries only
-   its minimal identity.** `EnvironmentService.select`, `.clearSelection`, and
+9. **Extension Profile selection and composition are preview-bound, while execution history carries only
+   its minimal identity.** `ExtensionProfileService.select`, `.clearSelection`, and
    `.applyComposition` require `preview_token`; composition and definition updates require an exact
-   expected revision, and `EnvironmentRunRef` contains only `id` and `fingerprint`.
-   Production: `EnvironmentRunRef`, `EnvironmentCompositionInput`, and `EnvironmentService` in
-   `packages/protocol/src/environments.ts`. Test:
+   expected revision, and `ExtensionProfileRunRef` contains only `id` and `fingerprint`.
+   Production: `ExtensionProfileRunRef`, `ExtensionProfileCompositionInput`, and `ExtensionProfileService` in
+   `packages/protocol/src/extension-profiles.ts`. Test:
    `packages/protocol/tests/contract/public-contract.fixture.ts:196-216` compile-pins the service on
    `KernelClient`; runtime behavior is pinned by
-   `packages/kernel/tests/integration/environment-manager.test.ts` and owned by
-   [Extension Environments](environments.md#5-invariants).
+   `packages/kernel/tests/integration/extension-profile-manager.test.ts` and owned by
+   [Extension Profiles](extension-profiles.md#5-invariants).
 10. **Marketplace dialect does not cross the kernel protocol boundary.** Clients project a listing
     into the closed `PluginInstallSource` union; kernels receive an explicit Git/local/npm source and
     apply acquisition policy there. Production: `PluginInstallSource` and
@@ -875,8 +875,8 @@ errors in, and documents on individual methods where a specific code applies:
 | A workflow leader failed | `workflow_run_failed`'s `error?: { code; message }` | `RunEvent` in `packages/protocol/src/runs.ts` |
 | A run was rebuilt from a damaged crash journal | `RunDetail.recovery?: RunRecovery` — `skipped_lines` and `synthesized_tool_calls` counts, "present ... only when something was actually lost or synthesized, so its absence means the record is intact" | `packages/protocol/src/runs.ts:216-232`, `:251-255` |
 | A settings scope file exists but fails to parse/validate | `SettingsSource.error?: string` — "the UI shows this instead of silently treating the scope as empty" | `packages/protocol/src/config.ts:188-198` |
-| An Environment selection or definition is invalid | `ResolvedEnvironment.status: "invalid"` plus typed `EnvironmentIssue[]`; no fallback is represented | `EnvironmentStatus`, `EnvironmentIssue`, and `ResolvedEnvironment` in `packages/protocol/src/environments.ts` |
-| An Environment reference is missing or a workspace executable surface is untrusted | `status: "degraded"` plus the exact `missing_plugin`, `missing_skill`, or `workspace_untrusted` issue | `EnvironmentIssueCode` in `packages/protocol/src/environments.ts` |
+| An Extension Profile selection or definition is invalid | `ResolvedExtensionProfile.status: "invalid"` plus typed `ExtensionProfileIssue[]`; no fallback is represented | `ExtensionProfileStatus`, `ExtensionProfileIssue`, and `ResolvedExtensionProfile` in `packages/protocol/src/extension-profiles.ts` |
+| An Extension Profile reference is missing or a workspace executable surface is untrusted | `status: "degraded"` plus the exact `missing_plugin`, `missing_skill`, or `workspace_untrusted` issue | `ExtensionProfileIssueCode` in `packages/protocol/src/extension-profiles.ts` |
 | An agent config file's frontmatter fails to parse | `AgentDoc.malformed?: string` — "the `frontmatter` above is then the lenient fallback (`{}`), not the file's real content" | `packages/protocol/src/config.ts:316-332` |
 | An agent config file overlaying a shipped agent is unusable | `AgentOverlay.status: "rejected"` + `reason` — "the shipped default runs unchanged" | `packages/protocol/src/config.ts:284-290` |
 | A repository's `settings.json` asked for fields it may not set on its own authority | `SettingsView.withheld_workspace_fields?: readonly string[]` | `packages/protocol/src/config.ts:202-243` |
@@ -902,7 +902,7 @@ Nothing. `packages/protocol/package.json` has no `dependencies`/`devDependencies
 `optionalDependencies`/`peerDependencies` key at all (`packages/protocol/package.json:1-33`, read in
 full — no such key appears). Its own `.ts` files import nothing from any other package; every
 `import type` among its 19 files points at a sibling module inside `packages/protocol/src/`
-(`packages/protocol/src/{client,config,environments,memory,models,plugins,runs,sessions,skills,tasks,workflows}.ts`).
+(`packages/protocol/src/{client,config,extension-profiles,memory,models,plugins,runs,sessions,skills,tasks,workflows}.ts`).
 The remaining eight modules import nothing; `index.ts` only type-reexports siblings. There is no
 cross-package source import in this package.
 

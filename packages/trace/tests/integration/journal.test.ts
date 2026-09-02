@@ -88,13 +88,13 @@ describe("createRunJournal", () => {
   });
 
   it("sanitizes and stamps host metadata beside the request", () => {
-    const path = join(dir, "environment.jsonl");
+    const path = join(dir, "extension-profile.jsonl");
     const journal = createRunJournal({
       path,
       header: {
-        ...header("exec-environment"),
+        ...header("exec-extension-profile"),
         host_metadata: {
-          environment: {
+          extension_profile: {
             id: "workspace:research",
             fingerprint: `sha256:${"a".repeat(64)}`,
           },
@@ -106,7 +106,7 @@ describe("createRunJournal", () => {
     const persisted = JSON.parse(readFileSync(path, "utf8")) as {
       host_metadata: Record<string, unknown>;
     };
-    expect(persisted.host_metadata.environment).toEqual({
+    expect(persisted.host_metadata.extension_profile).toEqual({
       id: "workspace:research",
       fingerprint: `sha256:${"a".repeat(64)}`,
     });

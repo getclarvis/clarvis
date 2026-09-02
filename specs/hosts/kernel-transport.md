@@ -95,8 +95,8 @@ operation whose argument tuple and result are inferred from the service method
 `AsyncMethodKeys` filter itself (`packages/kernel/src/transport/operations.ts:66-70`). The two run
 methods use the special streaming/control operation path.
 
-**93 request methods exist**: 85 ordinary plus 8 special, flattened into `KNOWN_METHODS`.
-Ordinary counts per service: runs 4, config 14, plugins 7, environments 13, secrets 3, models 4,
+**92 request methods exist**: 84 ordinary plus 8 special, flattened into `KNOWN_METHODS`.
+Ordinary counts per service: runs 4, config 14, plugins 5, extensionProfiles 14, secrets 3, models 4,
 provider-auth 5, files 3, memory 4, plans 4, workflows 3, skills 2, sessions 5, tasks 12, storage 2. There is no
 worktree service or worktree operation: checkout selection happens before kernel construction.
 Production: `packages/kernel/src/transport/operations.ts` (`OPERATIONS`, `SPECIAL_OPERATIONS`,
@@ -119,10 +119,10 @@ The 8 special operations and their metadata:
 `M` names 30 of the 93 (`packages/kernel/src/transport/wire.ts`); the rest are reached only through the service proxies. The
 whole DTO vocabulary each method carries belongs to **protocol-kernel-contract**.
 
-The 85 ordinary operations' individual `access`/`sensitivity` pairing is declared by
+The 84 ordinary operations' individual `access`/`sensitivity` pairing is declared by
 `OPERATIONS` in `packages/kernel/src/transport/operations.ts`.
-Six service groups carry a `sensitivity` tag on every operation (`plugins`, `environments`,
-`secrets`, `providerAuth`, `files`, `tasks`). Environments deliberately shares the `plugins`
+Six service groups carry a `sensitivity` tag on every operation (`plugins`, `extensionProfiles`,
+`secrets`, `providerAuth`, `files`, `tasks`). Extension Profiles deliberately shares the `plugins`
 sensitivity because selecting or editing one changes the active executable extension set. Models uses `provider_auth` only for its two entitled-catalog
 operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workflows`, `skills`,
 `sessions`, `storage`) never carry one:
@@ -151,20 +151,20 @@ operations; the other eight groups (`runs`, `config`, `memory`, `plans`, `workfl
 | plugins | `plugins.install` | write | `plugins` |
 | plugins | `plugins.update` | write | `plugins` |
 | plugins | `plugins.uninstall` | write | `plugins` |
-| environments | `environments.list` | read | `plugins` |
-| environments | `environments.current` | read | `plugins` |
-| environments | `environments.get` | read | `plugins` |
-| environments | `environments.inventory` | read | `plugins` |
-| environments | `environments.preview` | read | `plugins` |
-| environments | `environments.previewClear` | read | `plugins` |
-| environments | `environments.previewComposition` | read | `plugins` |
-| environments | `environments.select` | write | `plugins` |
-| environments | `environments.clearSelection` | write | `plugins` |
-| environments | `environments.applyComposition` | write | `plugins` |
-| environments | `environments.create` | write | `plugins` |
-| environments | `environments.update` | write | `plugins` |
-| environments | `environments.delete` | write | `plugins` |
-| environments | `environments.clone` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.list` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.current` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.get` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.inventory` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.preview` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.previewClear` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.previewComposition` | read | `plugins` |
+| extensionProfiles | `extensionProfiles.select` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.clearSelection` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.applyComposition` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.create` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.update` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.delete` | write | `plugins` |
+| extensionProfiles | `extensionProfiles.clone` | write | `plugins` |
 | secrets | `secrets.listNames` | read | `secrets` |
 | secrets | `secrets.set` | write | `secrets` |
 | secrets | `secrets.delete` | write | `secrets` |
@@ -315,11 +315,13 @@ Real frames, from the reassembly test (`packages/kernel/tests/contract/stdio-cod
 
 ### 3.4 Handshake payloads
 
-`HelloParams` = `{ wire_version: 2; clientInfo?: { name, version? }; workspace?: string; auth?:
-string }` (`packages/kernel/src/transport/wire.ts:85-94`). `CLARVIS_WIRE_VERSION = 2` (`packages/kernel/src/transport/wire.ts:15`).
+`HelloParams` = `{ wire_version: 3; clientInfo?: { name, version? }; workspace?: string; auth?:
+string }` (`packages/kernel/src/transport/wire.ts`, `HelloParams`). `CLARVIS_WIRE_VERSION = 3`
+(`packages/kernel/src/transport/wire.ts`, `CLARVIS_WIRE_VERSION`).
 
-`HelloResult` = `{ wire_version: 2; capabilities: KernelCapabilities; project: ProjectRef;
-workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts:103-109`). A concrete instance appears in
+`HelloResult` = `{ wire_version: 3; capabilities: KernelCapabilities; project: ProjectRef;
+workspace: WorkspaceRef; principal?: Principal }` (`packages/kernel/src/transport/wire.ts`,
+`HelloResult`). A concrete instance appears in
 `packages/kernel/tests/contract/transport-codecs.test.ts:16-33`.
 
 ### 3.5 Request ids
@@ -368,7 +370,7 @@ In the order the function runs (`packages/kernel/src/transport/client.ts:144-409
    the **original** error (`:370-380`).
 6. On a structurally invalid result: same teardown, then throw
    `` `kernel selected an invalid or unsupported Clarvis wire contract '${selected}'` `` (`:381-408`).
-   The checks are `hasOnly` over the five permitted keys, `wire_version === 2`, `capabilities` /
+   The checks are `hasOnly` over the five permitted keys, `wire_version === 3`, `capabilities` /
    `project` / `workspace` objects, string `project.id`, `workspace.id`, `workspace.projectId`,
    `workspace.label`, a `workspace.kind` in `primary | external_worktree`, and a
    `principal` that, if present, is an object with a string `id`.
@@ -414,7 +416,7 @@ A method not in this table (there is none among the eight special operations) wo
 allowed set, rejecting any key at all (`packages/kernel/src/transport/server.ts:342-344`).
 
 `hello` (`:471-515`): one-shot (`helloStarted` → `invalid_request` "hello has already started on this
-connection", `:472-478`); `wire_version !== 2` → `unsupported` (`:479-484`); malformed identity
+connection", `:472-478`); `wire_version !== 3` → `unsupported` (`:479-484`); malformed identity
 fields → `invalid_request` "hello has invalid identity parameters" (`:485-497`); then
 `resolveConnection` (or the default context built at `:289-293`); if the connection closed while
 resolving, the resolved context's `close?.()` is called and `unavailable` is thrown (`:502-505`);
@@ -802,8 +804,8 @@ not re-run `resolveConnection`.
 Production: `helloStarted` `packages/kernel/src/transport/server.ts:472-478`.
 Test: `packages/kernel/tests/integration/transport.test.ts:401-433` (asserts `resolutions === 1`).
 
-**INV-T8.** A `hello` whose `wire_version` is missing or not `2` is `unsupported`.
-Production: `packages/kernel/src/transport/server.ts:479-484`.
+**INV-T8.** A `hello` whose `wire_version` is missing or not `3` is `unsupported`.
+Production: `packages/kernel/src/transport/server.ts` (`createKernelServer`).
 Test: `packages/kernel/tests/integration/transport.test.ts:449-459`.
 
 **INV-T9.** `hello` identity fields are validated before `resolveConnection` runs.
@@ -889,12 +891,12 @@ Test: `packages/kernel/tests/contract/transport-codecs.test.ts:445-483` — `tas
 `provider_key` round-trip byte-for-byte, and `tasks.search` both preserves an opaque `next_cursor`
 and forwards a caller's `AbortSignal` as `options: { signal }` on the wire request.
 
-**INV-T22.** Every Environment service method is an ordinary operation and is classified with
+**INV-T22.** Every Extension Profile service method is an ordinary operation and is classified with
 `sensitivity: "plugins"`; observation methods are reads, while selection and definition mutations
 are writes. This lets a remote host apply the same executable-extension authorization boundary to
-plugins and Environments without inspecting payloads. Production:
-`packages/kernel/src/transport/operations.ts` (`OPERATIONS.environments`). Test:
-`packages/kernel/tests/contract/transport-codecs.test.ts` ("classifies every Environment operation
+plugins and Extension Profiles without inspecting payloads. Production:
+`packages/kernel/src/transport/operations.ts` (`OPERATIONS.extensionProfiles`). Test:
+`packages/kernel/tests/contract/transport-codecs.test.ts` ("classifies every Extension Profile operation
 as plugin-sensitive with exact read/write access").
 
 ## 6. Failure modes and degradation
@@ -914,7 +916,7 @@ as plugin-sensitive with exact read/write access").
 | `invalid_request` | `packages/kernel/src/transport/server.ts:474`, `:496` | second `hello`, or bad identity fields |
 | `invalid_request` | `packages/kernel/src/transport/server.ts`, `M.runsCompact`; `packages/kernel/src/runs/run-service.ts`, `createRunService`'s `compact` | mechanical target supplied for a connection-live run, or a non-positive/non-integer target supplied after delegation |
 | `invalid_request` | `packages/kernel/src/transport/server.ts:606` | unknown method |
-| `unsupported` | `packages/kernel/src/transport/server.ts:481` | `wire_version` not 2 |
+| `unsupported` | `packages/kernel/src/transport/server.ts` (`createKernelServer`) | `wire_version` not 3 |
 | `conflict` | `packages/kernel/src/transport/server.ts` (config subscribe case) | duplicate subscription id |
 | `conflict` | `packages/kernel/src/transport/client.ts:430` | duplicate live execution id, client-side |
 | `not_found` | `packages/kernel/src/transport/server.ts`, `liveOrThrow` | steer/cancel/respond target absent or result-settled on this connection |

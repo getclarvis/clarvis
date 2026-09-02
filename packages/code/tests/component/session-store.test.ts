@@ -34,14 +34,14 @@ function fakeSessions(seed: Session[] = []): SessionService & { store: Map<strin
           workspace: session.workspace,
           created_at: session.created_at,
           updated_at: session.updated_at,
-          ...(session.profile === undefined ? {} : { profile: session.profile }),
+          ...(session.agent_profile === undefined ? {} : { agent_profile: session.agent_profile }),
           turn_count: session.turns.length,
           ...(session.turns.at(-1)?.status === undefined
             ? {}
             : { last_status: session.turns.at(-1)!.status }),
-          ...(session.turns.at(-1)?.environment === undefined
+          ...(session.turns.at(-1)?.extension_profile === undefined
             ? {}
-            : { last_environment: session.turns.at(-1)!.environment }),
+            : { last_extension_profile: session.turns.at(-1)!.extension_profile }),
           totals: session.totals,
         })),
         ...(start + limit < sorted.length ? { next_cursor: String(start + limit) } : {}),
@@ -65,9 +65,11 @@ function meta(over: Partial<SessionMeta> = {}): SessionMeta {
     owner: over.owner ?? "clarvis",
     createdAt: over.createdAt ?? 1000,
     updatedAt: over.updatedAt ?? 1000,
-    profile: over.profile,
+    agentProfile: over.agentProfile,
     turns: over.turns ?? [],
-    ...(over.lastEnvironment === undefined ? {} : { lastEnvironment: over.lastEnvironment }),
+    ...(over.lastExtensionProfile === undefined
+      ? {}
+      : { lastExtensionProfile: over.lastExtensionProfile }),
     totals: over.totals ?? { input: 0, output: 0, cached: 0 },
   };
 }
@@ -79,7 +81,7 @@ test("uuidv7 has version 7 and variant bits", () => {
 
 test("metaToSession <-> sessionToMeta round-trips (camelCase <-> snake_case)", () => {
   const m = meta({
-    profile: "coder",
+    agentProfile: "coder",
     turns: [
       {
         kind: "conversation",
@@ -136,8 +138,8 @@ test("transcript-only turn identity is persisted and stale undiscriminated turns
   expect(() => sessionToMeta(wire, "clarvis")).toThrow("session turn kind is required");
 });
 
-test("Environment identity round-trips on turns and bounded summaries", async () => {
-  const environment = {
+test("Extension Profile identity round-trips on turns and bounded summaries", async () => {
+  const extensionProfile = {
     id: "workspace:research",
     fingerprint: `sha256:${"a".repeat(64)}`,
   };
@@ -147,34 +149,34 @@ test("Environment identity round-trips on turns and bounded summaries", async ()
         kind: "conversation",
         userPreview: "hi",
         executionId: "exec_1",
-        environment,
+        extensionProfile,
         status: "done",
       },
     ],
-    lastEnvironment: environment,
+    lastExtensionProfile: extensionProfile,
   });
   const wire = metaToSession(m);
-  expect(wire.turns[0]?.environment).toEqual(environment);
+  expect(wire.turns[0]?.extension_profile).toEqual(extensionProfile);
   expect(sessionToMeta(wire, "clarvis")).toEqual(m);
 
   const [summary] = await loadSessions(fakeSessions([wire]), "clarvis");
-  expect(summary?.lastEnvironment).toEqual(environment);
+  expect(summary?.lastExtensionProfile).toEqual(extensionProfile);
 });
 
-test("malformed persisted Environment identity is ignored at both session boundaries", async () => {
+test("malformed persisted Extension Profile identity is ignored at both session boundaries", async () => {
   const wire = metaToSession(
     meta({
       turns: [{ kind: "conversation", userPreview: "hi", executionId: "exec_1", status: "done" }],
     }),
   );
-  (wire.turns[0] as unknown as { environment: unknown }).environment = {
+  (wire.turns[0] as unknown as { extension_profile: unknown }).extension_profile = {
     id: "workspace:research",
     fingerprint: "not-a-digest",
   };
 
-  expect(sessionToMeta(wire, "clarvis").turns[0]?.environment).toBeUndefined();
+  expect(sessionToMeta(wire, "clarvis").turns[0]?.extensionProfile).toBeUndefined();
   const [summary] = await loadSessions(fakeSessions([wire]), "clarvis");
-  expect(summary?.lastEnvironment).toBeUndefined();
+  expect(summary?.lastExtensionProfile).toBeUndefined();
 });
 
 test("facade: save/list/get/delete over the cache, persisting to the service", async () => {

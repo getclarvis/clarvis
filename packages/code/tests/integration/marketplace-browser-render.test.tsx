@@ -88,7 +88,7 @@ function mount(opts: {
     listings,
     sources: () => opts.sources ?? [],
     plugins,
-    environment: () => "global:research",
+    extensionProfile: () => "global:research",
     loading: () => opts.loading ?? false,
     install:
       opts.install ??
@@ -171,7 +171,7 @@ test("installed inventory and full lifecycle details live in Marketplace", async
   await rendered.renderOnce();
   let frame = rendered.captureCharFrame();
   expect(frame).toContain("1 active");
-  expect(frame).toContain("Active · current Environment");
+  expect(frame).toContain("Active · current Extension Profile");
   expect(frame).not.toContain("1 available");
   mounted.press("return");
   await rendered.renderOnce();
@@ -265,7 +265,7 @@ test("uninstall immediately replaces the active row with its available listing",
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("1 available");
   expect(frame).toContain("Enter → view plugin details");
-  expect(frame).not.toContain("Active · current Environment");
+  expect(frame).not.toContain("Active · current Extension Profile");
   rendered.renderer.destroy();
 });
 

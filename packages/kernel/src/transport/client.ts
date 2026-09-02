@@ -25,7 +25,7 @@ import type {
   StorageService,
   WorkflowsService,
   WorkspaceService,
-  EnvironmentService,
+  ExtensionProfileService,
 } from "@clarvis/protocol";
 import { createEventStream, type EventStream } from "../core/event-stream.ts";
 import {
@@ -536,7 +536,10 @@ export async function connectKernelClient(
   const plans = createServiceProxy<PlansService>(transport, OPERATIONS.plans);
   const workflows = createServiceProxy<WorkflowsService>(transport, OPERATIONS.workflows);
   const plugins = createServiceProxy<PluginService>(transport, OPERATIONS.plugins);
-  const environments = createServiceProxy<EnvironmentService>(transport, OPERATIONS.environments);
+  const extensionProfiles = createServiceProxy<ExtensionProfileService>(
+    transport,
+    OPERATIONS.extensionProfiles,
+  );
   const secrets = createServiceProxy<SecretService>(transport, OPERATIONS.secrets);
   const models = createServiceProxy<ModelCatalogService>(transport, OPERATIONS.models);
   const providerAuth = createServiceProxy<ProviderAuthService>(transport, OPERATIONS.providerAuth);
@@ -555,7 +558,7 @@ export async function connectKernelClient(
     runs,
     config,
     plugins,
-    environments,
+    extensionProfiles,
     secrets,
     models,
     providerAuth,

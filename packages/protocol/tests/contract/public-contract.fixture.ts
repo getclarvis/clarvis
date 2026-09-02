@@ -1,7 +1,7 @@
 import type {
   ConfigService,
   CreateTaskDto,
-  EnvironmentService,
+  ExtensionProfileService,
   KernelCapabilities,
   KernelClient,
   KernelTransport,
@@ -204,7 +204,7 @@ const transport = {
 } satisfies KernelTransport;
 
 declare const config: ConfigService;
-declare const environments: EnvironmentService;
+declare const extensionProfiles: ExtensionProfileService;
 declare const plugins: PluginService;
 declare const models: ModelCatalogService;
 declare const providerAuth: ProviderAuthService;
@@ -223,7 +223,7 @@ const client = {
   workspace,
   runs,
   config,
-  environments,
+  extensionProfiles,
   plugins,
   secrets,
   models,

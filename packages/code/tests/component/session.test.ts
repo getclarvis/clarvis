@@ -116,7 +116,7 @@ function stored(
     planRef?: PlanRef;
     continueFrom?: string;
     activeTask?: ActiveTaskBindingDto;
-    environment?: { id: string; fingerprint: string };
+    extensionProfile?: { id: string; fingerprint: string };
   } = {},
 ): RunDetail {
   const runStatus = status === "error" ? "failed" : "completed";
@@ -130,7 +130,7 @@ function stored(
     events: parts.events ?? [],
     ...(parts.planRef ? { plan_ref: parts.planRef } : {}),
     ...(parts.activeTask ? { active_task: parts.activeTask } : {}),
-    ...(parts.environment ? { environment: parts.environment } : {}),
+    ...(parts.extensionProfile ? { extension_profile: parts.extensionProfile } : {}),
     result: {
       execution_id: execId,
       status: runStatus,
@@ -154,7 +154,7 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   return { promise, resolve };
 }
 
-test("a turn snapshots its Environment and reconciliation trusts the persisted run", () => {
+test("a turn snapshots its Extension Profile and reconciliation trusts the persisted run", () => {
   const store = fakeStore();
   const initial = {
     id: "global:research",
@@ -169,16 +169,20 @@ test("a turn snapshots its Environment and reconciliation trusts the persisted r
     owner: "clarvis",
     project: "prj_test",
     workspace: "/ws",
-    environment: () => initial,
+    extensionProfile: () => initial,
   });
 
-  s.beginTurn("hi", "exec_environment");
-  expect(s.meta()?.turns[0]?.environment).toEqual(initial);
-  expect(s.meta()?.lastEnvironment).toEqual(initial);
+  s.beginTurn("hi", "exec_extension_profile");
+  expect(s.meta()?.turns[0]?.extensionProfile).toEqual(initial);
+  expect(s.meta()?.lastExtensionProfile).toEqual(initial);
 
-  s.reconcile(stored("exec_environment", "completed", [0, 0, 0], { environment: persisted }));
-  expect(s.meta()?.turns[0]?.environment).toEqual(persisted);
-  expect(s.meta()?.lastEnvironment).toEqual(persisted);
+  s.reconcile(
+    stored("exec_extension_profile", "completed", [0, 0, 0], {
+      extensionProfile: persisted,
+    }),
+  );
+  expect(s.meta()?.turns[0]?.extensionProfile).toEqual(persisted);
+  expect(s.meta()?.lastExtensionProfile).toEqual(persisted);
 });
 
 test("a failed turn records why, and a later success clears it", () => {
@@ -189,7 +193,7 @@ test("a failed turn records why, and a later success clears it", () => {
   const store = fakeStore();
   const s = createSession(
     { store, owner: "clarvis", project: "prj_test", workspace: "/ws" },
-    { profile: "answerer" },
+    { agentProfile: "answerer" },
   );
   s.beginTurn("hi", "exec_1");
   s.endTurn(wire("exec_1", "error", "", usage(1, 0, 0)));
@@ -245,13 +249,13 @@ test("createSession accumulates a multi-turn Message[] and totals", () => {
   const store = fakeStore();
   const s = createSession(
     { store, owner: "clarvis", project: "prj_test", workspace: "/ws" },
-    { profile: "answerer" },
+    { agentProfile: "answerer" },
   );
 
   s.beginTurn("hi", "exec_1");
   expect(s.messages()).toEqual([{ role: "user", content: "hi" }]);
   expect(s.meta()?.title).toBe("hi");
-  expect(s.meta()?.profile).toBe("answerer");
+  expect(s.meta()?.agentProfile).toBe("answerer");
   expect(s.meta()?.turns[0]?.status).toBe("running");
 
   s.endTurn(wire("exec_1", "completed", "hello there", usage(10, 4, 0)));
@@ -327,20 +331,20 @@ test("beginTurn returns the previous turn's executionId as the continuation base
   expect(s.beginTurn("third", "exec_3")).toBe("exec_2");
 });
 
-test("setProfile persists only a changed profile on an established session", () => {
+test("setAgentProfile persists only a changed Agent Profile on an established session", () => {
   const store = fakeStore();
   const s = createSession({ store, owner: "clarvis", project: "prj_test", workspace: "/ws" });
 
-  s.setProfile("before-first-turn");
+  s.setAgentProfile("before-first-turn");
   expect(store.snapshots).toHaveLength(0);
 
   s.beginTurn("first", "exec_1");
   const afterBegin = store.snapshots.length;
-  s.setProfile("reviewer");
-  expect(s.meta()?.profile).toBe("reviewer");
+  s.setAgentProfile("reviewer");
+  expect(s.meta()?.agentProfile).toBe("reviewer");
   expect(store.snapshots).toHaveLength(afterBegin + 1);
 
-  s.setProfile("reviewer");
+  s.setAgentProfile("reviewer");
   expect(store.snapshots).toHaveLength(afterBegin + 1);
 });
 
@@ -997,7 +1001,7 @@ test("appendObservation buffers a framed digest into history without becoming th
   const store = fakeStore();
   const s = createSession(
     { store, owner: "clarvis", project: "prj_test", workspace: "/ws" },
-    { profile: "coder" },
+    { agentProfile: "coder" },
   );
   s.beginTurn("hi", "exec_1");
   s.endTurn(wire("exec_1", "completed", "a", usage(1, 1, 0)));
@@ -1019,7 +1023,7 @@ test("pending observations survive quit/resume via the persisted meta", () => {
   const store = fakeStore();
   const s = createSession(
     { store, owner: "clarvis", project: "prj_test", workspace: "/ws" },
-    { profile: "coder" },
+    { agentProfile: "coder" },
   );
   s.beginTurn("hi", "exec_1");
   s.endTurn(wire("exec_1", "completed", "a", usage(1, 1, 0)));
@@ -1050,7 +1054,7 @@ test("appendObservation with a user role queues a user message for the next run"
   const store = fakeStore();
   const s = createSession(
     { store, owner: "clarvis", project: "prj_test", workspace: "/ws" },
-    { profile: "coder" },
+    { agentProfile: "coder" },
   );
   s.beginTurn("hi", "exec_1");
   s.endTurn(wire("exec_1", "completed", "a", usage(1, 1, 0)));

@@ -12,8 +12,10 @@ turns, each optionally pointing at a run (`execution_id`) whose full transcript 
 service, plus running token/cost totals and any not-yet-delivered "pending" observations
 (`packages/protocol/src/sessions.ts:84-88`). The session document itself never carries the
 transcript — only enough to look up and re-render it. Each turn may also carry the id and fingerprint
-of the resolved [Extension Environment](environments.md) under which it began; this is historical
-identity, not a request to reactivate that Environment during resume.
+of the resolved [Extension Profile](extension-profiles.md) under which it began; this is historical
+identity, not a request to reactivate that Extension Profile during resume.
+The top-level `agent_profile`, by contrast, names the Agent Profile that executes the conversation;
+it does not select extensions and is not interchangeable with `extension_profile`.
 
 Two problems this subsystem solves:
 
@@ -89,21 +91,21 @@ methods onto `requireKernel().sessions`, exposed on the client at `sessions`
 ```ts
 interface Session {                       // packages/protocol/src/sessions.ts:68
   id: string; title: string; project_id: string; workspace: string;
-  created_at: Timestamp; updated_at: Timestamp; profile?: string;
+  created_at: Timestamp; updated_at: Timestamp; agent_profile?: string;
   turns: SessionTurn[]; totals: SessionTotals; pending?: Message[];
 }
 interface SessionTurn {                   // packages/protocol/src/sessions.ts:44
   kind: "conversation"|"transcript";
   user_preview: string; execution_id?: string;
-  environment?: EnvironmentRunRef;
+  extension_profile?: ExtensionProfileRunRef;
   status: "pending"|"running"|"done"|"error"|"cancelled"|"interrupted";
   started_at?: Timestamp; ended_at?: Timestamp;
 }
 interface SessionSummary {                // packages/protocol/src/sessions.ts:92 — never carries turns/pending
   id: string; title: string; project_id: string; workspace: string;
-  created_at: Timestamp; updated_at: Timestamp; profile?: string;
+  created_at: Timestamp; updated_at: Timestamp; agent_profile?: string;
   turn_count: number; last_status?: SessionTurnStatus;
-  last_environment?: EnvironmentRunRef; totals: SessionTotals;
+  last_extension_profile?: ExtensionProfileRunRef; totals: SessionTotals;
 }
 interface SessionTotals {
   input: number; output: number; cached?: number; cost_usd?: number;
@@ -219,13 +221,13 @@ two representations at the storage boundary:
   `TranscriptTurnRef`, `TurnRef`, `persistedTurnKind`, `metaToSession`, `sessionToMeta`). Test:
   `packages/code/tests/component/session-store.test.ts` ("transcript-only turn identity is persisted
   and stale undiscriminated turns are rejected").
-- **`TurnRef.environment` / `SessionMeta.lastEnvironment`** preserve the resolved Environment id and
+- **`TurnRef.extensionProfile` / `SessionMeta.lastExtensionProfile`** preserve the resolved Extension Profile id and
   fingerprint without embedding its definition, plugins, skills, or secrets. `metaToSession` and
   `sessionToMeta` round-trip the turn field; `sessionSummaryToMeta` retains
-  `SessionSummary.last_environment` even though its bounded projection deliberately omits `turns`.
+  `SessionSummary.last_extension_profile` even though its bounded projection deliberately omits `turns`.
   Production: `packages/code/src/adapters/session-store.ts` (`metaToSession`, `sessionToMeta`,
   `sessionSummaryToMeta`). Test: `packages/code/tests/component/session-store.test.ts`
-  ("Environment identity round-trips on turns and bounded summaries").
+  ("Extension Profile identity round-trips on turns and bounded summaries").
 - **`TurnRef.error`** (`packages/code/src/adapters/session-store.ts`, `{ code: string; message: string }`)
   has no declared counterpart in the protocol `SessionTurn` DTO listed above (§2), but it is
   intentionally persisted through a local `PersistedSessionTurn` widening. `metaToSession` writes
@@ -841,16 +843,16 @@ continuation base.
     malformed-value rejection, and sanitizer/bound cases) and
     `packages/code/tests/component/session.test.ts` (failed-turn producer cases).
 
-19. **Environment history is snapshot identity, never implicit activation.** A full session turn
+19. **Extension Profile history is snapshot identity, never implicit activation.** A full session turn
     persists only `{id, fingerprint}`; the bounded sidecar projects the newest value as
-    `last_environment`; loading or resuming the session does not select that Environment. A host may
+    `last_extension_profile`; loading or resuming the session does not select that Extension Profile. A host may
     compare it with its current snapshot and warn, as [code-run-host.md](code-run-host.md) specifies.
     Production: `packages/protocol/src/sessions.ts` (`SessionTurn`, `SessionSummary`),
     `packages/kernel/src/sessions/session-service.ts` (`toSummary`), and
     `packages/code/src/adapters/session-store.ts` (`metaToSession`, `sessionToMeta`,
     `sessionSummaryToMeta`). Test: `packages/kernel/tests/integration/session-service.test.ts`
-    ("projects the newest Environment identity into the bounded summary") and
-    `packages/code/tests/component/session-store.test.ts` ("Environment identity round-trips on
+    ("projects the newest Extension Profile identity into the bounded summary") and
+    `packages/code/tests/component/session-store.test.ts` ("Extension Profile identity round-trips on
     turns and bounded summaries").
 
 20. **Every persisted turn has an explicit continuation role; stale undiscriminated turns are
@@ -899,7 +901,7 @@ continuation base.
 | `delete(id)` on an already-deleted session | Returns `false`; the (already-absent) summary unlink error is separately swallowed | `packages/kernel/src/sessions/session-service.ts:710-722` |
 | A turn's run trace is gone by the time `resumeSession` looks for it | Turn is rendered `degraded` with a reason distinguishing `interrupted`/`trace_pruned`/`trace_unavailable`; the session as a whole still resumes | `packages/code/src/adapters/session.ts:628-640,693-742` |
 | A turn's `RunDetail` was reconstructed from a damaged crash journal | Turn replays normally; `recovery` counts are surfaced beside its (possibly incomplete) events, never withheld | `packages/code/src/adapters/session.ts:642-665,711-721` |
-| Newest persisted Environment differs from the active kernel snapshot | Session data remains readable and resume continues; the TUI surfaces the mismatch without changing either snapshot | [code-run-host.md](code-run-host.md) (`loadSessionMeta`) |
+| Newest persisted Extension Profile differs from the active kernel snapshot | Session data remains readable and resume continues; the TUI surfaces the mismatch without changing either snapshot | [code-run-host.md](code-run-host.md) (`loadSessionMeta`) |
 | Resume history exceeds message/char limits | Hard failure (`SessionResumeLimitError`, `code: "resource_exhausted"`) before rendering anything, rather than truncating context silently | `packages/code/src/adapters/session.ts:477-510,602-626` |
 | An individual trace-delete resolves `false` (e.g. `not_found`) during `deleteSession` | Recorded as `{ executionId, deleted: false }`; the cascade continues and the session record is still deleted | `packages/code/src/adapters/session.ts:754-771`; `packages/code/tests/component/session.test.ts` ("records a missing trace") |
 | An individual trace-delete *rejects* during `deleteSession`, and the caller's `deleteRun` does not catch it | The rejection propagates out of `deleteSession`; the cascade stops and the session record is **not** deleted | `deleteSession` in `packages/code/src/adapters/session.ts` (no try/catch), TUI `sessionControls.delete` in `packages/code/src/runtime.tsx`, `deleteRun` in `packages/code/src/adapters/kernel-run-client.ts`, and `packages/code/tests/component/session.test.ts` ("preserves the session") |

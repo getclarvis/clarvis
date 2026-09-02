@@ -210,30 +210,30 @@ describe("storedToDetail — the recovery counts of a partially recovered run", 
   });
 });
 
-describe("storedToDetail — Environment identity sourced from host metadata", () => {
+describe("storedToDetail — Extension Profile identity sourced from host metadata", () => {
   it("projects a valid id and SHA-256 fingerprint", () => {
     const stored = baseStoredExecution();
     stored.host_metadata = {
-      environment: {
+      extension_profile: {
         id: "workspace:research",
         fingerprint: `sha256:${"a".repeat(64)}`,
       },
     };
-    expect(storedToDetail(stored).environment).toEqual({
+    expect(storedToDetail(stored).extension_profile).toEqual({
       id: "workspace:research",
       fingerprint: `sha256:${"a".repeat(64)}`,
     });
   });
 
   it("drops malformed or unknown host metadata without affecting the run", () => {
-    for (const environment of [
+    for (const extensionProfile of [
       { id: "research", fingerprint: `sha256:${"a".repeat(64)}` },
       { id: "workspace:research", fingerprint: "not-a-digest" },
       { id: "workspace:../research", fingerprint: `sha256:${"a".repeat(64)}` },
     ]) {
       const stored = baseStoredExecution();
-      stored.host_metadata = { environment };
-      expect(storedToDetail(stored).environment).toBeUndefined();
+      stored.host_metadata = { extension_profile: extensionProfile };
+      expect(storedToDetail(stored).extension_profile).toBeUndefined();
     }
   });
 });

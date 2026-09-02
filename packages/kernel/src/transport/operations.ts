@@ -15,7 +15,7 @@ import type {
   TasksService,
   WorkspaceService,
   WorkflowsService,
-  EnvironmentService,
+  ExtensionProfileService,
 } from "@clarvis/protocol";
 import type { KernelTransport } from "@clarvis/protocol";
 
@@ -25,7 +25,7 @@ export type KernelServices = Pick<
   | "runs"
   | "config"
   | "plugins"
-  | "environments"
+  | "extensionProfiles"
   | "secrets"
   | "models"
   | "providerAuth"
@@ -346,122 +346,126 @@ export const OPERATIONS = {
         services.plugins.uninstall(p.ref as Parameters<PluginService["uninstall"]>[0]),
     },
   }),
-  environments: serviceOperations<EnvironmentService>({
+  extensionProfiles: serviceOperations<ExtensionProfileService>({
     list: {
-      method: "environments.list",
+      method: "extensionProfiles.list",
       metadata: read("plugins"),
       encode: () => ({}),
-      invoke: (services) => services.environments.list(),
+      invoke: (services) => services.extensionProfiles.list(),
     },
     current: {
-      method: "environments.current",
+      method: "extensionProfiles.current",
       metadata: read("plugins"),
       encode: () => ({}),
-      invoke: (services) => services.environments.current(),
+      invoke: (services) => services.extensionProfiles.current(),
     },
     get: {
-      method: "environments.get",
+      method: "extensionProfiles.get",
       metadata: read("plugins"),
       encode: (ref) => ({ ref }),
       invoke: (services, p) =>
-        services.environments.get(p.ref as Parameters<EnvironmentService["get"]>[0]),
+        services.extensionProfiles.get(p.ref as Parameters<ExtensionProfileService["get"]>[0]),
     },
     inventory: {
-      method: "environments.inventory",
+      method: "extensionProfiles.inventory",
       metadata: read("plugins"),
       encode: () => ({}),
-      invoke: (services) => services.environments.inventory(),
+      invoke: (services) => services.extensionProfiles.inventory(),
     },
     preview: {
-      method: "environments.preview",
+      method: "extensionProfiles.preview",
       metadata: read("plugins"),
       encode: (ref, options) => ({ ref, options }),
       invoke: (services, p) =>
-        services.environments.preview(
-          p.ref as Parameters<EnvironmentService["preview"]>[0],
-          p.options as Parameters<EnvironmentService["preview"]>[1],
+        services.extensionProfiles.preview(
+          p.ref as Parameters<ExtensionProfileService["preview"]>[0],
+          p.options as Parameters<ExtensionProfileService["preview"]>[1],
         ),
     },
     previewClear: {
-      method: "environments.previewClear",
+      method: "extensionProfiles.previewClear",
       metadata: read("plugins"),
       encode: (scope) => ({ scope }),
       invoke: (services, p) =>
-        services.environments.previewClear(
-          p.scope as Parameters<EnvironmentService["previewClear"]>[0],
+        services.extensionProfiles.previewClear(
+          p.scope as Parameters<ExtensionProfileService["previewClear"]>[0],
         ),
     },
     previewComposition: {
-      method: "environments.previewComposition",
+      method: "extensionProfiles.previewComposition",
       metadata: read("plugins"),
       encode: (input) => ({ input }),
       invoke: (services, p) =>
-        services.environments.previewComposition(
-          p.input as Parameters<EnvironmentService["previewComposition"]>[0],
+        services.extensionProfiles.previewComposition(
+          p.input as Parameters<ExtensionProfileService["previewComposition"]>[0],
         ),
     },
     select: {
-      method: "environments.select",
+      method: "extensionProfiles.select",
       metadata: write("plugins"),
       encode: (ref, options) => ({ ref, options }),
       invoke: (services, p) =>
-        services.environments.select(
-          p.ref as Parameters<EnvironmentService["select"]>[0],
-          p.options as Parameters<EnvironmentService["select"]>[1],
+        services.extensionProfiles.select(
+          p.ref as Parameters<ExtensionProfileService["select"]>[0],
+          p.options as Parameters<ExtensionProfileService["select"]>[1],
         ),
     },
     clearSelection: {
-      method: "environments.clearSelection",
+      method: "extensionProfiles.clearSelection",
       metadata: write("plugins"),
       encode: (scope, options) => ({ scope, options }),
       invoke: (services, p) =>
-        services.environments.clearSelection(
-          p.scope as Parameters<EnvironmentService["clearSelection"]>[0],
-          p.options as Parameters<EnvironmentService["clearSelection"]>[1],
+        services.extensionProfiles.clearSelection(
+          p.scope as Parameters<ExtensionProfileService["clearSelection"]>[0],
+          p.options as Parameters<ExtensionProfileService["clearSelection"]>[1],
         ),
     },
     applyComposition: {
-      method: "environments.applyComposition",
+      method: "extensionProfiles.applyComposition",
       metadata: write("plugins"),
       encode: (input, options) => ({ input, options }),
       invoke: (services, p) =>
-        services.environments.applyComposition(
-          p.input as Parameters<EnvironmentService["applyComposition"]>[0],
-          p.options as Parameters<EnvironmentService["applyComposition"]>[1],
+        services.extensionProfiles.applyComposition(
+          p.input as Parameters<ExtensionProfileService["applyComposition"]>[0],
+          p.options as Parameters<ExtensionProfileService["applyComposition"]>[1],
         ),
     },
     create: {
-      method: "environments.create",
+      method: "extensionProfiles.create",
       metadata: write("plugins"),
       encode: (input) => ({ input }),
       invoke: (services, p) =>
-        services.environments.create(p.input as Parameters<EnvironmentService["create"]>[0]),
+        services.extensionProfiles.create(
+          p.input as Parameters<ExtensionProfileService["create"]>[0],
+        ),
     },
     update: {
-      method: "environments.update",
+      method: "extensionProfiles.update",
       metadata: write("plugins"),
       encode: (input) => ({ input }),
       invoke: (services, p) =>
-        services.environments.update(p.input as Parameters<EnvironmentService["update"]>[0]),
+        services.extensionProfiles.update(
+          p.input as Parameters<ExtensionProfileService["update"]>[0],
+        ),
     },
     delete: {
-      method: "environments.delete",
+      method: "extensionProfiles.delete",
       metadata: write("plugins"),
       encode: (ref, options) => ({ ref, options }),
       invoke: (services, p) =>
-        services.environments.delete(
-          p.ref as Parameters<EnvironmentService["delete"]>[0],
-          p.options as Parameters<EnvironmentService["delete"]>[1],
+        services.extensionProfiles.delete(
+          p.ref as Parameters<ExtensionProfileService["delete"]>[0],
+          p.options as Parameters<ExtensionProfileService["delete"]>[1],
         ),
     },
     clone: {
-      method: "environments.clone",
+      method: "extensionProfiles.clone",
       metadata: write("plugins"),
       encode: (source, target) => ({ source, target }),
       invoke: (services, p) =>
-        services.environments.clone(
-          p.source as Parameters<EnvironmentService["clone"]>[0],
-          p.target as Parameters<EnvironmentService["clone"]>[1],
+        services.extensionProfiles.clone(
+          p.source as Parameters<ExtensionProfileService["clone"]>[0],
+          p.target as Parameters<ExtensionProfileService["clone"]>[1],
         ),
     },
   }),
@@ -871,7 +875,7 @@ export const ORDINARY_OPERATIONS: readonly AnyOperation[] = [
   ...Object.values(OPERATIONS.runs),
   ...Object.values(OPERATIONS.config),
   ...Object.values(OPERATIONS.plugins),
-  ...Object.values(OPERATIONS.environments),
+  ...Object.values(OPERATIONS.extensionProfiles),
   ...Object.values(OPERATIONS.secrets),
   ...Object.values(OPERATIONS.models),
   ...Object.values(OPERATIONS.providerAuth),

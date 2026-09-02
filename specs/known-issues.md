@@ -224,7 +224,7 @@ leader failure and reservation refusal.
 
 **Resolved at the Clarvis lifecycle boundary on 2026-08-24.** The coordinated OpenTUI 0.5.7 upgrade
 removed the historical row-proportional primitive slope. Production-component soaks then found
-larger remount residue in Context Help, Profile Picker, Catalog Picker and the activity drawer.
+larger remount residue in Context Help, Agent Profile Picker, Catalog Picker and the activity drawer.
 Explicit bounded retention now closes every root-Portal member of that family; Context Help's last
 pre-retention stable-portal 100-cycle samples were non-monotonic and ended at +2.39 MiB PSS/100. The
 historical heading is retained because source and test documentation link to its anchor.
@@ -300,7 +300,7 @@ layers, cumulative layer registrations and native-frame-control state
 The old row-proportional primitive slope therefore does not reproduce on 0.5.7. The +0.77 figure is
 still positive growth, not a reduction, and it was insufficient to classify production consumers.
 Fresh-process production cases found the following 300-cycle PSS slopes: Context Help +19.54,
-Profile Picker +12.71, Catalog Picker +14.26 and the 64-agent drawer +19.15 MiB/100. Retaining the
+Agent Profile Picker +12.71, Catalog Picker +14.26 and the 64-agent drawer +19.15 MiB/100. Retaining the
 same component trees changed those values to +0.72, -0.23, -1.49 and +0.13 MiB/100 respectively.
 Activity Detail with 200 Markdown sections (-16.92), Worktree Exit (+0.44), elicitation (+2.25),
 HintToast (-4.25) and Splash (+1.63) did not reproduce the high remount slope.
@@ -319,7 +319,7 @@ Context tree measured a non-monotonic +2.39 MiB PSS/100; retained and retained-r
 ended at -2.85 and -1.59. No opportunistic GC was shipped.
 
 The final 100-cycle native-render matrix after that policy change measured retained Context Help at
--2.04 MiB PSS/100 with zero new registrations, retained Profile Picker at -1.65, Catalog Picker at
+-2.04 MiB PSS/100 with zero new registrations, retained Agent Profile Picker at -1.65, Catalog Picker at
 -1.53, the retained drawer at -1.46, retained Activity Detail at -28.55, the retained worktree prompt
 at -4.12, and the retained empty Workflows page at +1.17. Their remount comparators remained visibly
 worse for Profile (+11.42), Catalog (+8.01), drawer (+25.13), and empty Workflows (+2.81) and created
@@ -355,7 +355,7 @@ decrease or zero slope. The Context Help component, F1 action and their active s
 subsequently removed on 2026-08-25; these values remain historical attribution evidence.
 
 Production: `OverlayRegion`, `TranscriptRegion`, `PlanOverlay`, `DiffViewer`, `InputDock`,
-`AutocompletePopup`, `StableWindowedList`, `Help`, `ProfilePicker`, `CatalogPicker`, `ListPicker`,
+`AutocompletePopup`, `StableWindowedList`, `Help`, `AgentProfilePicker`, `CatalogPicker`, `ListPicker`,
 `LevelHost` and `createFieldEditor`. Tests: `overlay-region-render.test.tsx`,
 `app-shell-render.test.tsx`, `field-editor-pick-render.test.tsx`, `input-dock-submit.test.tsx`,
 `help-render.test.tsx`, `plan-overlay-render.test.tsx`, and `overlay-host.test.ts`.
@@ -1601,7 +1601,7 @@ These samples are not mutually comparable; they establish which stage remains ex
 cross-machine absolute baseline.
 
 The repository-owned multiplicative waits were separately reproduced and corrected. Repeated plugin
-parsing/hashing had made the same nine-plugin Environment take about 32.9 seconds; pinned projections
+parsing/hashing had made the same nine-plugin Extension Profile take about 32.9 seconds; pinned projections
 plus canonical per-file descriptor-bounded revalidation at admission and lazy skill reads reduced
 the observed combined resolution to about 330 ms. Two unanswered MCP OAuth flows had each waited
 about 302 seconds; background authorization

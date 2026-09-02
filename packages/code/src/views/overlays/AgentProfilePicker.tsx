@@ -50,7 +50,7 @@ const DEFAULT_SCOPE_CHOICES: readonly DefaultScopeChoice[] = [
  * A {@link ListPicker} of agent profiles, showing which one is currently
  * active, its model, whether it can lead sub-agents, and its grant badges.
  */
-export function ProfilePicker(props: {
+export function AgentProfilePicker(props: {
   interaction: Interaction;
   list: () => AgentProfileView[];
   active: () => string;
@@ -93,7 +93,7 @@ export function ProfilePicker(props: {
         <ListPicker<AgentProfileView>
           keymap={props.interaction.keymap}
           active={props.enabled}
-          title="Select agent"
+          title="Select Agent Profile"
           items={props.list}
           initialIndex={Math.max(
             0,

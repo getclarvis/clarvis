@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import type {
-  EnvironmentCompositionInput,
-  EnvironmentCompositionPreview,
-  EnvironmentDefinition,
-  EnvironmentInventory,
-  EnvironmentRef,
-  EnvironmentService,
-  ResolvedEnvironment,
+  ExtensionProfileCompositionInput,
+  ExtensionProfileCompositionPreview,
+  ExtensionProfileDefinition,
+  ExtensionProfileInventory,
+  ExtensionProfileRef,
+  ExtensionProfileService,
+  ResolvedExtensionProfile,
 } from "@clarvis/protocol";
 import type { MarketplaceListing, MarketplaceSource } from "../../src/adapters/marketplace.ts";
 import type { PluginView } from "../../src/adapters/plugins.ts";
@@ -17,7 +17,7 @@ import { createViewHost } from "../../src/views/config/view-host.tsx";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { openRender } from "../helpers/tracked-render.ts";
 
-const EMPTY_DEFINITION: EnvironmentDefinition = {
+const EMPTY_DEFINITION: ExtensionProfileDefinition = {
   schema_version: 1,
   description: "My exact extension set",
   plugins: [],
@@ -85,7 +85,7 @@ function context7Inventory(source: "agents" | "clarvis" = "agents") {
   };
 }
 
-function builtin(): ResolvedEnvironment {
+function builtin(): ResolvedExtensionProfile {
   return {
     id: "builtin:default",
     ref: { scope: "builtin", name: "default" },
@@ -108,9 +108,9 @@ function builtin(): ResolvedEnvironment {
 
 function resolveDraft(
   ref: { scope: "global" | "workspace"; name: string },
-  definition: EnvironmentDefinition,
-  inventory: EnvironmentInventory,
-): ResolvedEnvironment {
+  definition: ExtensionProfileDefinition,
+  inventory: ExtensionProfileInventory,
+): ResolvedExtensionProfile {
   const plugins = definition.plugins.map((selected) => {
     const installed = inventory.plugins.find(
       (candidate) =>
@@ -173,13 +173,13 @@ function resolveDraft(
 
 function mount(
   options: {
-    inventory?: EnvironmentInventory;
+    inventory?: ExtensionProfileInventory;
     listings?: MarketplaceListing[];
-    initialEnvironment?: EnvironmentRef;
+    initialExtensionProfile?: ExtensionProfileRef;
     loadError?: string;
     runActive?: boolean;
     cliSelection?: boolean;
-    definition?: EnvironmentDefinition;
+    definition?: ExtensionProfileDefinition;
     installGate?: Promise<void>;
     previewGate?: Promise<void>;
     applyGate?: Promise<void>;
@@ -193,8 +193,8 @@ function mount(
   const opened: string[] = [];
   const notifications: string[] = [];
   const installed: string[] = [];
-  const previews: EnvironmentCompositionInput[] = [];
-  const applied: EnvironmentCompositionInput[] = [];
+  const previews: ExtensionProfileCompositionInput[] = [];
+  const applied: ExtensionProfileCompositionInput[] = [];
   const { host } = createViewHost({
     interaction: { keymap: harness.keymap } as unknown as Interaction,
     close: () => closed.push("closed"),
@@ -205,7 +205,7 @@ function mount(
   let current = options.cliSelection
     ? { ...builtin(), selection_origin: "cli" as const }
     : builtin();
-  let inventory: EnvironmentInventory = options.inventory ?? {
+  let inventory: ExtensionProfileInventory = options.inventory ?? {
     plugins: [context7Inventory()],
     standalone_skills: [
       {
@@ -216,8 +216,8 @@ function mount(
       },
     ],
   };
-  let lastPreview: EnvironmentCompositionPreview | undefined;
-  const service: EnvironmentService = {
+  let lastPreview: ExtensionProfileCompositionPreview | undefined;
+  const service: ExtensionProfileService = {
     list: async () => [
       { ref: builtin().ref, immutable: true },
       {
@@ -241,7 +241,7 @@ function mount(
       previews.push(input);
       await options.previewGate;
       const resolved = resolveDraft(input.ref, input.definition, inventory);
-      const authored: ResolvedEnvironment = options.previewIssue
+      const authored: ResolvedExtensionProfile = options.previewIssue
         ? {
             ...resolved,
             status: "degraded",
@@ -309,7 +309,7 @@ function mount(
     },
   };
   const deps: ExtensionsHubDeps = {
-    environments: service,
+    extensionProfiles: service,
     definitions: () => [
       { ref: builtin().ref, immutable: true },
       {
@@ -339,9 +339,9 @@ function mount(
     runActive: () => options.runActive === true,
     notify: (message) => notifications.push(message),
     openChild: (command) => opened.push(command),
-    ...(options.initialEnvironment === undefined
+    ...(options.initialExtensionProfile === undefined
       ? {}
-      : { initialEnvironment: options.initialEnvironment }),
+      : { initialExtensionProfile: options.initialExtensionProfile }),
   };
   return {
     host,
@@ -366,7 +366,7 @@ async function settle(
   }
 }
 
-test("guides scope, Environment, exact extensions, capabilities and activation", async () => {
+test("guides scope, Extension Profile, exact extensions, capabilities and activation", async () => {
   const applyGate = operationGate();
   const mounted = mount({ applyGate: applyGate.wait });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
@@ -455,8 +455,8 @@ test("guides scope, Environment, exact extensions, capabilities and activation",
   rendered.renderer.destroy();
 });
 
-test("Escape goes back and confirms before discarding an edited Environment draft", async () => {
-  const mounted = mount({ initialEnvironment: { scope: "global", name: "mine" } });
+test("Escape goes back and confirms before discarding an edited Extension Profile draft", async () => {
+  const mounted = mount({ initialExtensionProfile: { scope: "global", name: "mine" } });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
     width: 100,
     height: 25,
@@ -469,7 +469,7 @@ test("Escape goes back and confirms before discarding an edited Environment draf
   expect(rendered.captureCharFrame()).toContain("1 selected");
   mounted.press("escape");
   await settle(rendered, () => rendered.captureCharFrame().includes("[y] discard"));
-  expect(mounted.host.pendingConfirm()?.message).toContain("Unsaved Environment changes");
+  expect(mounted.host.pendingConfirm()?.message).toContain("Unsaved Extension Profile changes");
   expect(mounted.host.pendingConfirm()?.confirmLabel).toBe("discard");
   expect(mounted.host.pendingConfirm()?.cancelLabel).toBe("keep editing");
   expect(rendered.captureCharFrame()).toContain("[y] discard");
@@ -489,7 +489,7 @@ test("Escape goes back and confirms before discarding an edited Environment draf
 });
 
 test("Escape leaves an unchanged existing draft without a discard prompt", async () => {
-  const mounted = mount({ initialEnvironment: { scope: "global", name: "mine" } });
+  const mounted = mount({ initialExtensionProfile: { scope: "global", name: "mine" } });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
     width: 100,
     height: 25,
@@ -513,7 +513,7 @@ test("pins apply progress beside a long delta and lets Escape leave while apply 
       mcp_servers: [`extension-${index}:server`],
     };
   });
-  const definition: EnvironmentDefinition = {
+  const definition: ExtensionProfileDefinition = {
     schema_version: 1,
     plugins: plugins.map((plugin) => plugin.ref),
     skills: [],
@@ -521,7 +521,7 @@ test("pins apply progress beside a long delta and lets Escape leave while apply 
   const mounted = mount({
     inventory: { plugins, standalone_skills: [] },
     definition,
-    initialEnvironment: { scope: "global", name: "mine" },
+    initialExtensionProfile: { scope: "global", name: "mine" },
     applyGate: applyGate.wait,
   });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
@@ -558,7 +558,7 @@ test("pins apply progress beside a long delta and lets Escape leave while apply 
 test("Escape returns from a pending capability preview without waiting for it", async () => {
   const previewGate = operationGate();
   const mounted = mount({
-    initialEnvironment: { scope: "global", name: "mine" },
+    initialExtensionProfile: { scope: "global", name: "mine" },
     previewGate: previewGate.wait,
   });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
@@ -593,7 +593,7 @@ test("shows workspace approval, degraded issues and reconnect recovery in the gu
       plugins: [{ scope: "global", source: "agents", name: "context7" }],
       skills: [],
     },
-    initialEnvironment: { scope: "global", name: "mine" },
+    initialExtensionProfile: { scope: "global", name: "mine" },
     requiresWorkspaceTrust: true,
     previewIssue: true,
     reconnectResult: { ok: false, message: "backend reconnect pending" },
@@ -620,7 +620,7 @@ test("shows workspace approval, degraded issues and reconnect recovery in the gu
   expect(frame).toContain("Global installed plugins already carry installation");
 
   mounted.press("return");
-  await settle(rendered, () => rendered.captureCharFrame().includes("Environment saved"));
+  await settle(rendered, () => rendered.captureCharFrame().includes("Extension Profile saved"));
   frame = rendered.captureCharFrame();
   expect(frame).toContain("1 issue requires attention");
   expect(frame).toContain("backend reconnect pending");
@@ -631,7 +631,7 @@ test("installs into the chosen convention but waits for Step 5 to activate", asy
   const installGate = operationGate();
   const mounted = mount({
     inventory: { plugins: [], standalone_skills: [] },
-    initialEnvironment: { scope: "global", name: "mine" },
+    initialExtensionProfile: { scope: "global", name: "mine" },
     installGate: installGate.wait,
   });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
@@ -671,7 +671,7 @@ test("Escape leaves a pending install immediately and the checkout finishes with
   const installGate = operationGate();
   const mounted = mount({
     inventory: { plugins: [], standalone_skills: [] },
-    initialEnvironment: { scope: "global", name: "mine" },
+    initialExtensionProfile: { scope: "global", name: "mine" },
     installGate: installGate.wait,
   });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
@@ -704,7 +704,7 @@ test("same-name plugin origins remain exact and replacing one is explicit", asyn
       standalone_skills: [],
     },
     listings: [],
-    initialEnvironment: { scope: "global", name: "mine" },
+    initialExtensionProfile: { scope: "global", name: "mine" },
   });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
     width: 140,
@@ -737,7 +737,7 @@ test("missing selected origins stay visible and removable from the exact draft",
       plugins: [{ scope: "global", source: "agents", name: "gone" }],
       skills: [{ scope: "user", source: "clarvis", name: "gone-skill" }],
     },
-    initialEnvironment: { scope: "global", name: "mine" },
+    initialExtensionProfile: { scope: "global", name: "mine" },
   });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
     width: 110,
@@ -769,7 +769,7 @@ test("a 196-item Step 3 catalog remains searchable and navigable in retained slo
   const mounted = mount({
     inventory: { plugins: [], standalone_skills: [] },
     listings,
-    initialEnvironment: { scope: "global", name: "mine" },
+    initialExtensionProfile: { scope: "global", name: "mine" },
   });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
     width: 80,
@@ -791,9 +791,9 @@ test("a 196-item Step 3 catalog remains searchable and navigable in retained slo
   rendered.renderer.destroy();
 });
 
-test("active runs and --env keep the final reviewed mutation read-only", async () => {
+test("active runs and --extension-profile keep the final reviewed mutation read-only", async () => {
   const mounted = mount({
-    initialEnvironment: { scope: "global", name: "mine" },
+    initialExtensionProfile: { scope: "global", name: "mine" },
     runActive: true,
     cliSelection: true,
   });
@@ -808,7 +808,7 @@ test("active runs and --env keep the final reviewed mutation read-only", async (
   await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("Finish the active run before applying");
-  expect(frame).toContain("Restart without --env");
+  expect(frame).toContain("Restart without --extension-profile");
   mounted.press("return");
   await rendered.renderOnce();
   expect(mounted.applied).toEqual([]);
@@ -816,7 +816,7 @@ test("active runs and --env keep the final reviewed mutation read-only", async (
 });
 
 test("compact setup keeps load errors persistent instead of flashing them in the footer", async () => {
-  const mounted = mount({ loadError: "ENOENT: failed to read Environment inventory" });
+  const mounted = mount({ loadError: "ENOENT: failed to read Extension Profile inventory" });
   const rendered = await openRender((() => ExtensionsHub(mounted.host, mounted.deps)) as never, {
     width: 60,
     height: 20,
@@ -824,7 +824,7 @@ test("compact setup keeps load errors persistent instead of flashing them in the
   for (let index = 0; index < 5; index += 1) await rendered.renderOnce();
   const frame = rendered.captureCharFrame();
   expect(frame).toContain("Build one exact extension snapshot");
-  expect(frame).toContain("ENOENT: failed to read Environment inventory");
+  expect(frame).toContain("ENOENT: failed to read Extension Profile inventory");
   expect(frame).toContain("r to retry");
   mounted.press("return");
   await rendered.renderOnce();

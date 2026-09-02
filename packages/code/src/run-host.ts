@@ -70,7 +70,7 @@ export interface RunHostDeps {
   sessionStore: SessionStore;
   history: PromptHistory;
   client: Pick<KernelRunClient, "startRun" | "steer" | "compact" | "getRun" | "files"> &
-    Partial<Pick<KernelRunClient, "context" | "currentEnvironment">>;
+    Partial<Pick<KernelRunClient, "context" | "currentExtensionProfile">>;
   elicit: Pick<ElicitSlot, "cancelPending">;
   owner: string;
   project: string;
@@ -396,7 +396,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     project,
     workspace: workspaceId,
     priceFor,
-    ...(client.currentEnvironment === undefined ? {} : { environment: client.currentEnvironment }),
+    ...(client.currentExtensionProfile === undefined
+      ? {}
+      : { extensionProfile: client.currentExtensionProfile }),
   };
 
   /**
@@ -766,7 +768,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     }
     if (!session) {
       loadEpoch += 1;
-      session = createSession(boundSessionDeps, { profile });
+      session = createSession(boundSessionDeps, { agentProfile: profile });
     }
     const sess = session;
     const executionId = "exec_" + crypto.randomUUID();
@@ -916,7 +918,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     const profile = deps.activeProfile();
     if (!session) {
       loadEpoch += 1;
-      session = createSession(boundSessionDeps, { profile: profile || undefined });
+      session = createSession(boundSessionDeps, { agentProfile: profile || undefined });
     }
     const sess = session;
     const executionId = "exec_" + crypto.randomUUID();
@@ -973,7 +975,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     deps.setActiveProfile(profile);
     loadEpoch += 1;
     sessionTask = { id: ref.id, provider_key: ref.provider_key, mode: "work" };
-    session = createSession(boundSessionDeps, { profile });
+    session = createSession(boundSessionDeps, { agentProfile: profile });
     const sess = session;
     const executionId = "exec_" + crypto.randomUUID();
     const message =
@@ -1027,7 +1029,9 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     }
     if (!session) {
       loadEpoch += 1;
-      session = createSession(boundSessionDeps, { profile: deps.activeProfile() || undefined });
+      session = createSession(boundSessionDeps, {
+        agentProfile: deps.activeProfile() || undefined,
+      });
     }
     const sess = session;
     const finish = store.beginLocalBash(cmd);
@@ -1380,21 +1384,22 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     session = createSession(boundSessionDeps, {
       meta,
       messages: resumed.messages,
-      profile: meta.profile,
+      agentProfile: meta.agentProfile,
       historyComplete: resumed.degraded.length === 0,
     });
     history.seed(seeds);
-    if (meta.profile) deps.setActiveProfile(meta.profile);
-    const previousEnvironment = meta.lastEnvironment ?? meta.turns.at(-1)?.environment;
-    const currentEnvironment = client.currentEnvironment?.();
-    const environmentChanged =
-      previousEnvironment !== undefined &&
-      currentEnvironment !== undefined &&
-      (previousEnvironment.id !== currentEnvironment.id ||
-        previousEnvironment.fingerprint !== currentEnvironment.fingerprint);
-    if (environmentChanged) {
+    if (meta.agentProfile) deps.setActiveProfile(meta.agentProfile);
+    const previousExtensionProfile =
+      meta.lastExtensionProfile ?? meta.turns.at(-1)?.extensionProfile;
+    const currentExtensionProfile = client.currentExtensionProfile?.();
+    const extensionProfileChanged =
+      previousExtensionProfile !== undefined &&
+      currentExtensionProfile !== undefined &&
+      (previousExtensionProfile.id !== currentExtensionProfile.id ||
+        previousExtensionProfile.fingerprint !== currentExtensionProfile.fingerprint);
+    if (extensionProfileChanged) {
       store.appendNotice(
-        `Environment changed since the newest persisted turn: ${previousEnvironment.id} (${fingerprintPrefix(previousEnvironment.fingerprint)}) -> ${currentEnvironment.id} (${fingerprintPrefix(currentEnvironment.fingerprint)}).`,
+        `Extension Profile changed since the newest persisted turn: ${previousExtensionProfile.id} (${fingerprintPrefix(previousExtensionProfile.fingerprint)}) -> ${currentExtensionProfile.id} (${fingerprintPrefix(currentExtensionProfile.fingerprint)}).`,
         "warn",
       );
     }
@@ -1403,8 +1408,8 @@ export function createRunHost(deps: RunHostDeps): RunHost {
       ...(foldedTurnCount
         ? ([" ", { mark: "separator" }, ` ${foldedTurnCount} folded`] satisfies StatusLine)
         : []),
-      ...(environmentChanged
-        ? ([" ", { mark: "separator" }, " Environment changed"] satisfies StatusLine)
+      ...(extensionProfileChanged
+        ? ([" ", { mark: "separator" }, " Extension Profile changed"] satisfies StatusLine)
         : []),
       ...(resumed.degraded.length
         ? ([
@@ -1491,7 +1496,7 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     resumeSessionById,
     exportNodeBatches,
     sessionMeta: () => session?.meta() ?? null,
-    setSessionProfile: (name) => session?.setProfile(name),
+    setSessionProfile: (name) => session?.setAgentProfile(name),
     flushSession: () => session?.flush(),
     registerDraftRestore: (fn) => {
       draftRestore = fn;

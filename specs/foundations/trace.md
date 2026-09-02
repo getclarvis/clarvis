@@ -370,7 +370,7 @@ records pid+host (`:160`) so a peer can ask whether the writer is alive (`:51-60
 `host_metadata`, when supplied, passes through the same `sanitizeDeep` boundary and is recovered
 without interpretation (`packages/trace/src/journal.ts:162`,
 `packages/trace/src/journal-recovery.ts:109`, `:418`). The file kernel uses it for extension
-Environment identity; that shape is owned by [`hosts/environments.md`](../hosts/environments.md).
+Extension Profile identity; that shape is owned by [`hosts/extension-profiles.md`](../hosts/extension-profiles.md).
 
 Every subsequent line is one `JSON.stringify(event)` of a **mapped** `TraceEvent` (`:171`) — the same
 object `mapEntry` produced, already rebased, capped and sanitized. A `null` mapping is skipped

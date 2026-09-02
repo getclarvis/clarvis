@@ -9,7 +9,7 @@ import type { JsonSchema, Pagination, Page, Timestamp } from "./common.ts";
 import type { PlanRef, PlanRetention, PlanStatus, PlanTaskDto } from "./plans.ts";
 import type { MemoryIngestDetail } from "./memory.ts";
 import type { ActiveTaskBindingDto, ActiveTaskRequestDto } from "./tasks.ts";
-import type { EnvironmentRunRef } from "./environments.ts";
+import type { ExtensionProfileRunRef } from "./extension-profiles.ts";
 
 /** Speaker role on a message. */
 export type Role = "user" | "assistant";
@@ -246,8 +246,8 @@ export interface RunDetail extends RunSummary {
   plan_ref?: PlanRef;
   /** Task identity recovered from the task capability's minimal persisted run state. */
   active_task?: ActiveTaskBindingDto;
-  /** Extension Environment snapshot under which this run started. */
-  environment?: EnvironmentRunRef;
+  /** Extension Profile snapshot under which this run started. */
+  extension_profile?: ExtensionProfileRunRef;
   /**
    * Present only when this run was rebuilt from a damaged crash journal, saying
    * the record below is incomplete.

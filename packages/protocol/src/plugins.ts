@@ -87,7 +87,7 @@ export interface PluginView {
   source: PluginSource;
   /** Absolute install directory (display + "open" affordance). */
   dir: string;
-  /** Active in the kernel's pinned resolved Environment. */
+  /** Active in the kernel's pinned resolved Extension Profile. */
   enabled: boolean;
   version?: string;
   description?: string;
@@ -102,7 +102,7 @@ export interface PluginView {
    *
    * Display data only. A plugin cannot widen what it is allowed to do by
    * describing itself well: trust stays with the install, the enable list and
-   * the process-pinned Environment and workspace trust boundary.
+   * the process-pinned Extension Profile and workspace trust boundary.
    */
   display_name?: string;
   /** A one-line summary the manifest offers for the plugin list; display data only. */

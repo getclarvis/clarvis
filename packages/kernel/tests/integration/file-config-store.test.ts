@@ -26,10 +26,10 @@ import {
   type ConfigStore,
 } from "../../src/config/config-store.ts";
 import { acquireLocalLeaseSync, globalPaths, type LocalLeaseSync } from "@clarvis/paths";
-import type { EnvironmentPluginRef } from "@clarvis/protocol";
+import type { ExtensionProfilePluginRef } from "@clarvis/protocol";
 import { recordingLogger, type RecordingLogger } from "../helpers/logger.ts";
 
-const pluginRef = (name: string): EnvironmentPluginRef => ({
+const pluginRef = (name: string): ExtensionProfilePluginRef => ({
   scope: "global",
   source: "clarvis",
   name,
@@ -198,12 +198,12 @@ describe("FileConfigStore — parse errors and dir conventions", () => {
       body: "Plugin worker.",
       description: "worker",
     };
-    const requests: Array<{ enabled: readonly EnvironmentPluginRef[]; name: string }> = [];
+    const requests: Array<{ enabled: readonly ExtensionProfilePluginRef[]; name: string }> = [];
     const store = createFileConfigStore({
       globalDir,
       plugins: {
         settingsScopes: () => [],
-        readAgent: (enabled: readonly EnvironmentPluginRef[], name: string) => {
+        readAgent: (enabled: readonly ExtensionProfilePluginRef[], name: string) => {
           requests.push({ enabled, name });
           return pluginAgent;
         },

@@ -204,13 +204,13 @@ Pinned verbatim by `packages/skills/tests/unit/preset.test.ts:8-19`, which asser
 `clarvisSkillRoots({ home: "/home/u", cwd: "/tmp", workspace: "/work" })`.
 
 That preset is the complete input for `builtin:default`. A custom
-[Extension Environment](../hosts/environments.md) still derives candidates from these same four
+[Extension Profile](../hosts/extension-profiles.md) still derives candidates from these same four
 locations, but passes only selected roots with exact `include` name lists through the host-owned
 `skillRoots` seam; roots with no selected skill are omitted. The skills package remains unaware of
-Environment definitions and applies the same root order and collision rules to whatever exact set it
-receives. Production: `packages/kernel/src/environments/environment-manager.ts` (`skillRoots`) and
+Extension Profile definitions and applies the same root order and collision rules to whatever exact set it
+receives. Production: `packages/kernel/src/extension-profiles/extension-profile-manager.ts` (`skillRoots`) and
 `packages/loop/src/runtime/build-run-deps.ts` (`exactRoots`). Test:
-`packages/kernel/tests/integration/environment-manager.test.ts` ("selects only exact standalone
+`packages/kernel/tests/integration/extension-profile-manager.test.ts` ("selects only exact standalone
 skills and passes exact include filters to @clarvis/skills")
 and `packages/skills/tests/integration/discovery.test.ts` ("admits only exact manifest names from a
 root allowlist").

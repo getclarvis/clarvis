@@ -68,7 +68,7 @@ whether a late callback still owns the surface it wants to write to
 | `submitTurn` | `(content: MessageContent, display?: string) => Promise<void>` | `:166` |
 | `submitPromptTurn` | `(messages, display?, skill?: {name, task?, plansMode?}) => void` | `:167`–`:171` |
 | `submitSkillRun` | `(name, task, agent) => Promise<void>` | `:173` |
-| `workOnTask` | `(ref: TaskRefDto, profile: string) => Promise<void>` | `:175` |
+| `workOnTask` | `(ref: TaskRefDto, profile: string) => Promise<void>`; `profile` is an Agent Profile id | `:175` |
 | `runBangCommand` | `(cmd: string) => boolean` — whether the command was accepted | `:176` |
 | `clearSession` | `(opts?: { flush?: boolean }) => void` | `:177` |
 | `loadSessionMeta` | `(meta: SessionMeta) => Promise<void>` | `:178` |
@@ -92,7 +92,7 @@ Module-private: `EXPORT_BATCH_NODE_LIMIT = 128` (`:214`) and `EXPORT_INCOMPLETE_
 | `activity` | `ActivityStore` | yes | `:69` |
 | `sessionStore` | `SessionStore` | yes | `:70` |
 | `history` | `PromptHistory` | yes | `:71` |
-| `client` | `Pick<KernelRunClient, "startRun"\|"steer"\|"compact"\|"getRun"\|"files"> & Partial<Pick<KernelRunClient, "context"\|"currentEnvironment">>` | yes | `packages/code/src/run-host.ts:72-73` |
+| `client` | `Pick<KernelRunClient, "startRun"\|"steer"\|"compact"\|"getRun"\|"files"> & Partial<Pick<KernelRunClient, "context"\|"currentExtensionProfile">>` | yes | `packages/code/src/run-host.ts:72-73` |
 | `elicit` | `Pick<ElicitSlot, "cancelPending">` | yes | `:74` |
 | `owner` / `project` / `workspaceId` / `workspace` | `string` | yes | `:75-78` |
 | `priceFor` | `(model) => CatalogCost \| undefined` | yes | `:79` |
@@ -133,8 +133,8 @@ optional `prepareReconnect`, and `callbacks` (`:126-133`).
 | `getRun(executionId)` | `Promise<RunDetail \| null>` | `:95`, impl `:428-435` |
 | `deleteRun(executionId)` | `Promise<boolean>` | `:96`, impl `:437-445` |
 | `plans` | current-plan `read` only; no retained-plan administration | `packages/code/src/adapters/kernel-run-client.ts` (`KernelRunClient.plans`, `plans`) |
-| `workflows` `skills` `config` `secrets` `models` `providerAuth` `files` `sessions` `plugins` `environments` `tasks` `storage` | thin per-method pass-throughs to `requireKernel()` | `packages/code/src/adapters/kernel-run-client.ts` (`createKernelRunClient`) |
-| `currentEnvironment()` | the process-pinned `{id, fingerprint}` captured during `connect()` and refreshed after idle trust recomposition | `packages/code/src/adapters/kernel-run-client.ts` (`connect`, `mutateTrust`, `currentEnvironment`) |
+| `workflows` `skills` `config` `secrets` `models` `providerAuth` `files` `sessions` `plugins` `extensionProfiles` `tasks` `storage` | thin per-method pass-throughs to `requireKernel()` | `packages/code/src/adapters/kernel-run-client.ts` (`createKernelRunClient`) |
+| `currentExtensionProfile()` | the process-pinned `{id, fingerprint}` captured during `connect()` and refreshed after idle trust recomposition | `packages/code/src/adapters/kernel-run-client.ts` (`connect`, `mutateTrust`, `currentExtensionProfile`) |
 
 `KernelRunClientCallbacks` (`:60-65`): `onEvent(event, source, executionId)`, optional
 `onProgress(progress, executionId)`, `onMemoryIngest(notice)`, `onElicit(params) => Promise<ElicitResult>`.
@@ -228,16 +228,16 @@ Declared at `packages/code/src/adapters/session-store.ts:69-87`.
 | `createdAt` / `updatedAt` | `number` (epoch ms) | |
 | `profile` | `string?` | agent name |
 | `turns` | `TurnRef[]` | |
-| `lastEnvironment` | `EnvironmentRunRef?` | newest turn's extension snapshot, retained by catalog-only projections |
+| `lastExtensionProfile` | `ExtensionProfileRunRef?` | newest turn's extension snapshot, retained by catalog-only projections |
 | `turnCount` | `number?` | present *only* on a catalog-only summary (`packages/code/src/adapters/session-store.ts:84`, `:503-520`) |
 | `totals` | `SessionTotals` `{input, output, cached?, costUsd?}`; absent `cached` means an incomplete split, numeric zero means measured zero | `packages/code/src/adapters/session-store.ts` (`SessionTotals`) |
 | `pending` | `Message[]?` | unflushed observations (`:86`) |
 
 `TurnRef` is the required discriminated union `ConversationTurnRef | TranscriptTurnRef`. Both variants
 carry
-`{ kind, userPreview, executionId?, environment?: {id, fingerprint}, status, startedAt?, endedAt?, error? }`;
+`{ kind, userPreview, executionId?, extensionProfile?: {id, fingerprint}, status, startedAt?, endedAt?, error? }`;
 `kind: "conversation"` participates in provider continuation, while `kind: "transcript"` remains a
-canonical display/export turn without becoming continuation context. `environment` identifies the
+canonical display/export turn without becoming continuation context. `extensionProfile` identifies the
 resolved extension snapshot pinned when the turn began and `error` is `{code, message}` present only
 on a failed turn. Production: `packages/code/src/adapters/session-store.ts` (`TurnRefBase`,
 `ConversationTurnRef`, `TranscriptTurnRef`, `TurnRef`).
@@ -261,11 +261,11 @@ and malformed persisted-error cases) and `packages/code/tests/component/session.
 turn's reason is masked and bounded before it is recorded").
 
 `sessionSummaryToMeta` maps a `SessionSummary` to a `SessionMeta` with `turns: []`,
-`turnCount: s.turn_count`, and `lastEnvironment: s.last_environment` when present;
+`turnCount: s.turn_count`, and `lastExtensionProfile: s.last_extension_profile` when present;
 `sessionTurnCount` returns `turnCount ?? turns.length`. Production:
 `packages/code/src/adapters/session-store.ts` (`sessionSummaryToMeta`, `sessionTurnCount`). Test:
 `packages/code/tests/component/session-store.test.ts` ("session wire adapters preserve the active
-Environment identity").
+Extension Profile identity").
 
 ### 3.3 Prompt-history file
 
@@ -323,10 +323,10 @@ emits a record with empty `counts`/`rates` — pinned by
    (`store.appendUserMessage`) (`:771-773`).
 8. If the effective plans mode is `"review"` (`skill?.plansMode ?? deps.plansMode?.()`), append a
    plan-approval notice to the transcript (`:774-781`).
-9. `sess.beginTurn(msg, executionId)` stamps the process-pinned Environment identity on the new turn,
-   mirrors it to `SessionMeta.lastEnvironment`, and returns the **continuation base** — the previous
+9. `sess.beginTurn(msg, executionId)` stamps the process-pinned Extension Profile identity on the new turn,
+   mirrors it to `SessionMeta.lastExtensionProfile`, and returns the **continuation base** — the previous
    turn's execution id. Production: `packages/code/src/adapters/session.ts` (`beginTurn`). Test:
-   `packages/code/tests/component/session.test.ts` ("beginTurn stamps the selected Environment and
+   `packages/code/tests/component/session.test.ts` ("beginTurn stamps the selected Extension Profile and
    reconcile adopts the persisted run snapshot").
 10. `rememberResidentTurn` records the turn and folds the oldest when over the limit (`:783`).
 11. Collect `promptCacheKey = sess.meta()?.id`, `guardMode`, `judgePayload(guardMode)`, and `memory`
@@ -393,7 +393,7 @@ Unlike `submitTurn`, an active run makes `submitSkillRun` **refuse outright** ra
 pinned by `packages/code/tests/component/run-host.test.ts:1788-1799` ("submitSkillRun: refuses to start
 while a run is already active").
 
-1. `profile = deps.activeProfile()` (`:915`); if there is no session yet, create one with
+1. `profile = deps.activeProfile()` (`:915`); this is the active Agent Profile, and if there is no session yet, create one with
    `{ profile: profile || undefined }` (`:916-920`) — note the `|| undefined`, not the bare
    `{profile}` `submitTurn` uses (`:766-769`), so an empty active profile is stored as absent rather than
    as `""`.
@@ -618,15 +618,15 @@ installing their own session state.
    canonical redacted preview. Production: `packages/code/src/run-host.ts` (`loadSessionMeta`). Test:
    `packages/code/tests/component/run-host.test.ts` ("resume seeds prompt history from the rehydrated
    user content, not userPreview").
-6. Compare `meta.lastEnvironment ?? meta.turns.at(-1)?.environment` with
-   `client.currentEnvironment()`. A different id or fingerprint appends a warning naming both
-   snapshots; it does not block the resume or rewrite the historical turn. `currentEnvironment()`
+6. Compare `meta.lastExtensionProfile ?? meta.turns.at(-1)?.extensionProfile` with
+   `client.currentExtensionProfile()`. A different id or fingerprint appends a warning naming both
+   snapshots; it does not block the resume or rewrite the historical turn. `currentExtensionProfile()`
    is refreshed after every successful trust approval/revocation, so this comparison cannot retain
    the pre-transition fingerprint until reconnect.
-7. Status: `"resumed N turns"` plus ` · N folded`, ` · Environment changed`, and
+7. Status: `"resumed N turns"` plus ` · N folded`, ` · Extension Profile changed`, and
    ` · N degraded` segments when applicable. Production: `packages/code/src/run-host.ts`
    (`loadSessionMeta`). Test: `packages/code/tests/component/run-host.test.ts`
-   ("loadSessionMeta warns when the active Environment differs from the persisted turn").
+   ("loadSessionMeta warns when the active Extension Profile differs from the persisted turn").
 
 `recoveryNotice` (`:245-256`) names both counts: `"partial record — this turn was rebuilt from a damaged
 journal after a crash: N journal lines lost, M tool results synthesized. The run happened; this record
@@ -681,8 +681,8 @@ counts toward `collapsed`, never `degraded` (`:735-741`) —
 | `beginTranscriptTurn(display, execId)` | creates a running `kind: "transcript"` turn without mutating model history or continuation | `packages/code/src/adapters/session.ts` (`beginTranscriptTurn`) |
 | `endTurn(envelope)` | settles the matching conversation turn, appends the assistant reply, and folds usage into totals once | `packages/code/src/adapters/session.ts` (`endTurn`, `finishTurn`) |
 | `endTranscriptTurn(envelope)` | settles the matching transcript turn and totals without appending its result to model history | `packages/code/src/adapters/session.ts` (`endTranscriptTurn`, `finishTurn`) |
-| `reconcile(stored)` | re-maps status, adopts the persisted run's Environment identity when present, and adds usage if the id was not already counted | `packages/code/src/adapters/session.ts` (`reconcile`) |
-| `setProfile(name)` | no-ops when `!meta \|\| meta.profile === name`; otherwise updates `meta.profile`/`meta.updatedAt` and saves | `:251-256` |
+| `reconcile(stored)` | re-maps status, adopts the persisted run's Extension Profile identity when present, and adds usage if the id was not already counted | `packages/code/src/adapters/session.ts` (`reconcile`) |
+| `setAgentProfile(name)` | no-ops when `!meta \|\| meta.agentProfile === name`; otherwise updates `meta.agentProfile`/`meta.updatedAt` and saves | `:251-256` |
 | `appendObservation(content, role="assistant")` | pushes into `history` **and** `pending`, mirrors `pending` into `meta` and saves | `:258-270` |
 | `takePending()` | drains `pending` and deletes `meta.pending` | `:272-279` |
 | `flush()` | persists `meta` if present; a no-op with no session yet | `:282-284` |
@@ -1171,8 +1171,8 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/unit/active-agent.test.ts:12` and `:58` (a headless-only fleet resolves to
     `""`).
 
-47. **The active agent resolves session profile → runnable configured default → automatic fallback,
-    and re-resolves whenever the profile list stops containing the current name.**
+47. **The active agent resolves the session's Agent Profile → runnable configured default → automatic
+    fallback, and re-resolves whenever the Agent Profile list stops containing the current name.**
     `packages/code/src/adapters/active-agent.ts:87`–`:107`. Pinned:
     `packages/code/tests/unit/active-agent.test.ts:67`, `:107`.
 
@@ -1252,17 +1252,17 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/component/run-host.test.ts` ("compactCurrentRun queues on a live run and
     compacts the latest settled context").
 
-60. **Session continuity never disguises an Environment change.** Every new turn records the
-    process-pinned Environment id and fingerprint; a resume under a different snapshot keeps the
+60. **Session continuity never disguises an Extension Profile change.** Every new turn records the
+    process-pinned Extension Profile id and fingerprint; a resume under a different snapshot keeps the
     historical data intact, continues normally, and presents an explicit warning in both transcript
     and status. An idle trust mutation refreshes that process identity from the recomposed kernel
     before returning. Production: `packages/code/src/adapters/session.ts` (`beginTurn`, `reconcile`),
     `packages/code/src/run-host.ts` (`loadSessionMeta`), and
     `packages/code/src/adapters/kernel-run-client.ts` (`mutateTrust`). Test:
-    `packages/code/tests/component/session.test.ts` ("beginTurn stamps the selected Environment and
+    `packages/code/tests/component/session.test.ts` ("beginTurn stamps the selected Extension Profile and
     reconcile adopts the persisted run snapshot") and
     `packages/code/tests/component/run-host.test.ts` ("loadSessionMeta warns when the active
-    Environment differs from the persisted turn"), plus
+    Extension Profile differs from the persisted turn"), plus
     `packages/code/tests/component/kernel-run-client.test.ts` (trust transitions refresh the
     process-pinned identity).
 
@@ -1308,7 +1308,7 @@ The following are derived directly from this document's own source and its tests
 | a resumed run was rebuilt from a damaged journal | `recovery` passed beside the events (`packages/code/src/adapters/session.ts:662-665`, `:711-720`), notice at `packages/code/src/run-host.ts:1356-1368` | the events **are** shown, with a `"warn"` partial-record notice above them |
 | resumed history exceeds 16 M chars or 10 k messages | `SessionResumeLimitError` (`packages/code/src/adapters/session.ts:485-499`, `:602-620`) | the whole resume rejects; **nothing renders** (`packages/code/tests/component/session.test.ts:949-979`) |
 | a resume is superseded by `clearSession`/another load | `loadEpoch` guards at `packages/code/src/run-host.ts:1312`, `:1343`, `:1374`, `:1377` | the stale resume writes nothing; status stays `"idle"` (`packages/code/tests/component/run-host.test.ts:2189-2227`) |
-| resumed session's newest Environment differs from the connected kernel | `packages/code/src/run-host.ts` (`loadSessionMeta`) | resume succeeds without rewriting history; a warning names the previous/current ids and fingerprint prefixes, and status includes `Environment changed` |
+| resumed session's newest Extension Profile differs from the connected kernel | `packages/code/src/run-host.ts` (`loadSessionMeta`) | resume succeeds without rewriting history; a warning names the previous/current ids and fingerprint prefixes, and status includes `Extension Profile changed` |
 | an export's `getRun` throws or returns `null` | `packages/code/src/run-host.ts:1157-1163`, `:1186-1189`, `:1273-1282` | replaced by an `EXPORT INCOMPLETE`/`folded — …` node; the export completes |
 | prompt-history file missing or unreadable | `catch` returning `{entries: [], compact: false}` (`packages/code/src/adapters/file-prompt-history.ts:37`) | history starts empty |
 | a corrupt prompt-history JSON line | skipped (`packages/code/src/adapters/file-prompt-history.ts:55`) | remaining usable history survives |

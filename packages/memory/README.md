@@ -119,7 +119,7 @@ stop with the pyramid open — a touched leaf must ship with each ancestor
 Already-indexed run IDs are skipped. Runs without tool calls are still examined:
 user instructions and final answers may contain durable knowledge.
 `CreateMemoryFactoryOptions.executeRun` lets the host wrap every physical pass in its own lifecycle
-admission. The file kernel uses that seam for the same immutable Environment lease as foreground
+admission. The file kernel uses that seam for the same immutable Extension Profile lease as foreground
 runs, including durable retries that begin after the original run handle has closed; an embedder
 that omits it retains the direct loop executor.
 

@@ -31,7 +31,7 @@ Construction, configuration, runs, and transport are specified in the four kerne
 [`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade). The
 kernel also owns host-side composition described by
 [`plugins.md`](../../specs/hosts/plugins.md),
-[`environments.md`](../../specs/hosts/environments.md),
+[`extension-profiles.md`](../../specs/hosts/extension-profiles.md),
 [`model-catalog.md`](../../specs/hosts/model-catalog.md), and
 [`sessions.md`](../../specs/hosts/sessions.md), plus the kernel halves of capability specs named in
 their package READMEs.
@@ -100,7 +100,7 @@ Configuration is read from the workspace `.clarvis` directory and the global
 Clarvis directory. The kernel owns validation and persistence; clients use the
 services defined by `@clarvis/protocol`.
 
-Before composing extensions, the file kernel resolves one process-pinned Environment. The immutable
+Before composing extensions, the file kernel resolves one process-pinned Extension Profile. The immutable
 `builtin:default` activates the exact plugin references in `enabledPlugins` and applies four-root
 standalone-skill discovery; a custom definition is a complete qualified allow-list and never
 inherits that builtin activation list. Plugin identity is always `{ scope, source, name }`, where
@@ -110,9 +110,9 @@ definitions are shareable authored files, selections stay machine-local, and sel
 changes require reconnect. Global plugins live in operator-owned inventories and need no additional
 workspace approval after installation. Every `scope: "workspace"` plugin checkout enters one
 workspace-wide trust fingerprint whether selected yet or not; approving that fingerprint once
-covers all of them. In a mixed Environment, global plugins remain active while an unapproved
+covers all of them. In a mixed Extension Profile, global plugins remain active while an unapproved
 workspace-owned sibling stays withheld.
-The first catalog read materializes an absent global `environments/` directory with the private
+The first catalog read materializes an absent global `extension-profiles/` directory with the private
 directory mode; it treats an absent workspace catalog as empty without creating repository content.
 Preview tokens resolve the target through normal workspace-over-global precedence and bind both
 selection documents; definition and selection mutations serialize through local leases. The pinned
@@ -135,7 +135,7 @@ metadata and bodies are materialized then, and resource paths are restricted to 
 allow-list. Monitoring is armed for every identity file, including the selected sidecar, before a
 post-capture digest comparison. A mismatch flips the same in-memory availability latch, withholds the
 affected skill, and emits `onSkillDrift` for an informational host UI instead of failing dependency
-construction or delaying a run. `EnvironmentManager.observeSkillCatalog` then polls those paths
+construction or delaying a run. `ExtensionProfileManager.observeSkillCatalog` then polls those paths
 asynchronously; later drift has the same non-blocking withdrawal behavior. Builtin and custom
 standalone roots carry exact `include` lists for only the skills captured in that snapshot. If any
 packaged skill in a plugin cannot be captured within its bounds, that plugin's entire skill-root
@@ -148,11 +148,11 @@ Workspace-trust transitions recompose the extension snapshot and atomically repl
 skill catalog only while no run is active. Approval refreshes the trust surface through the production
 file-kernel adapter before consent is recorded. Selected plugin update/uninstall still leaves the old
 parsed process snapshot in use until reconnect.
-Every run records the resolved Environment id and fingerprint. An MCP namespace whose winning
+Every run records the resolved Extension Profile id and fingerprint. An MCP namespace whose winning
 declaration still comes from an active plugin is attached to every run and marked `auto_tools`: its
 discovered tools become available to every effective agent for that run even when the persisted
-agent profile names none. This is part of atomic plugin activation, not a profile mutation. A global
-or workspace declaration that replaces the same namespace remains profile-selected and never
+Agent Profile names none. This is part of atomic plugin activation, not an Agent Profile mutation. A global
+or workspace declaration that replaces the same namespace remains explicitly selected by the Agent Profile and never
 inherits the plugin's automatic grant.
 
 Multi-owner hosts must continue to pass owner-aware stores explicitly. The
@@ -237,14 +237,14 @@ sessions lazily, multiplexes calls, and closes every child with the kernel lifec
 outside the Clarvis process and may be written in any language; see
 [`specs/capabilities/provider-executables.md`](../../specs/capabilities/provider-executables.md).
 
-Packaged capability services are authorized by installation, Environment selection and provider
+Packaged capability services are authorized by installation, Extension Profile selection and provider
 selection. A selected plugin is one atomic extension unit: its agents, skills, MCP servers, hook
 declarations and capability executables become eligible together. Installing from Code's focused
 Marketplace is the explicit consent action, so a globally installed plugin needs no additional
-workspace approval when a workspace Environment selects it. Workspace trust remains a separate
+workspace approval when a workspace Extension Profile selects it. Workspace trust remains a separate
 exact-snapshot gate for the complete inventory of executable plugin content inherited from
 `scope: "workspace"` checkouts. One workspace approval covers that whole inventory rather than each
-plugin or Environment separately.
+plugin or Extension Profile separately.
 
 `PluginService.installSource` admits three marketplace fetch forms. Git sources may select a
 confined subdirectory and one validated ref or full SHA; local directories are copied into managed
@@ -313,7 +313,7 @@ publishes that skill's own `dir` as its `executionRoot`. Skill-resource fingerpr
 `hashBoundedFile` to stream raw bytes into SHA-256 without decoding or retaining the complete file,
 capped by `MAX_SKILL_RESOURCE_FILE_BYTES` at 8 MiB per resource and
 `MAX_SKILL_RESOURCE_SNAPSHOT_BYTES` at 32 MiB aggregate. The aggregate is per plugin for packaged
-skills (`PLUGIN_SKILL_RESOURCE_LIMITS`) and per skill for standalone Environment inventory
+skills (`PLUGIN_SKILL_RESOURCE_LIMITS`) and per skill for standalone Extension Profile inventory
 (`standaloneCatalog`).
 
 Plugins may also package a per-skill Plans mode. The kernel applies it only when the skill originates
@@ -366,7 +366,7 @@ already-finished spinner.
 The kernel owns command-approval policy through `createGuardResolver` and
 `createShellGuard`. It also provides first-class services for configuration,
 plugins, secrets, models, provider authentication, files, memory, plans, workflows, skills,
-sessions, tasks, storage, environments and runs — the fifteen `KernelClient` services. These are control-plane APIs rather
+sessions, tasks, storage, Extension Profiles and runs — the fifteen `KernelClient` services. These are control-plane APIs rather
 than model-callable MCP tools.
 
 A run's effective mode is the per-run `guard_mode` param, else the `guard.mode`
@@ -514,7 +514,7 @@ restores no plan block.
 Plan documents are deliberately not in the trace at all: the record's `plan_ref`
 names the file, and clients read it back through `PlansService`.
 
-The internal transport uses clean-break wire contract 2. Hello negotiates the exact version and is
+The internal transport uses clean-break wire contract 3. Hello negotiates the exact version and is
 mandatory before every read, control or mutation even for in-process/default-owner connections;
 request envelopes reject unknown fields, stdio frames are capped at 8 MiB, and the serialized writer
 has bounded count/bytes plus a 30-second stall timeout. `run.result` settles execution independently
@@ -574,7 +574,7 @@ A settled run no longer remains leased for the memory indexer's multi-minute ret
 event stream waits five idle seconds for the usual immediate terminal notice, renews only within a
 15-second absolute window, and hard-caps every override at one minute. The durable memory job keeps
 retrying after the stream closes; only the transient client projection is released.
-Each physical indexer pass reacquires the same Environment run lease before calling the loop, so a
+Each physical indexer pass reacquires the same Extension Profile run lease before calling the loop, so a
 durable retry cannot consume host skills or extension bytes after the foreground lease has closed.
 
 File-backed agent operations validate agent names at the service boundary.

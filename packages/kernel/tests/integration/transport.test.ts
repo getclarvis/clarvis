@@ -454,7 +454,7 @@ describe("kernel loopback transport", () => {
       const { kernel } = makeRemote();
       const transport = createLoopbackTransport(createKernelServer(kernel));
       await expect(
-        transport.request(WIRE_METHODS.hello, { wire_version: 2, ...identity }),
+        transport.request(WIRE_METHODS.hello, { wire_version: 3, ...identity }),
       ).rejects.toMatchObject({ code: "invalid_request" });
       await transport.close();
       await kernel.close();
@@ -574,7 +574,7 @@ describe("kernel loopback transport", () => {
         },
       );
 
-      await connection.handle(WIRE_METHODS.hello, { wire_version: 2 });
+      await connection.handle(WIRE_METHODS.hello, { wire_version: 3 });
       await connection.handle(WIRE_METHODS.runsStart, {
         params: { messages: [{ role: "user", content: "finish" }], agent: "solo" },
       });
@@ -669,7 +669,7 @@ describe("kernel loopback transport", () => {
       },
       () => {},
     );
-    await connection.handle(WIRE_METHODS.hello, { wire_version: 2 });
+    await connection.handle(WIRE_METHODS.hello, { wire_version: 3 });
     await connection.handle(WIRE_METHODS.runsStart, { params: { messages: [] } });
     await sendStarted.promise;
 
@@ -716,7 +716,7 @@ describe("kernel loopback transport", () => {
       () => {},
     );
 
-    const hello = connection.handle(WIRE_METHODS.hello, { wire_version: 2 });
+    const hello = connection.handle(WIRE_METHODS.hello, { wire_version: 3 });
     await Promise.resolve();
     connection.close();
     resolveContext(context);
@@ -767,7 +767,7 @@ describe("kernel loopback transport", () => {
       () => {},
     );
 
-    await connection.handle(WIRE_METHODS.hello, { wire_version: 2 });
+    await connection.handle(WIRE_METHODS.hello, { wire_version: 3 });
     await connection.handle(WIRE_METHODS.runsStart, { params: { messages: [] } });
     await connection.handle(WIRE_METHODS.runsCompact, {
       execution_id: handle.execution_id,
@@ -825,7 +825,7 @@ describe("kernel loopback transport", () => {
       () => disconnected.resolve(),
     );
 
-    await connection.handle(WIRE_METHODS.hello, { wire_version: 2 });
+    await connection.handle(WIRE_METHODS.hello, { wire_version: 3 });
     await connection.handle(WIRE_METHODS.runsStart, { params: { messages: [] } });
     await disconnected.promise;
     await expect(connection.handle(WIRE_METHODS.listAgents, {})).rejects.toMatchObject({

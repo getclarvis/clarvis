@@ -8,7 +8,7 @@ import type {
   MemoryService,
   ModelCatalog,
   PluginService,
-  ResolvedEnvironment,
+  ResolvedExtensionProfile,
   RunDetail,
   WorkflowsService,
 } from "@clarvis/protocol";
@@ -434,7 +434,7 @@ test("the complete composer adopts the draft typed during startup", async () => 
   t.renderer.destroy();
 });
 
-const CHANGED_WORKSPACE_ENVIRONMENT: ResolvedEnvironment = {
+const CHANGED_WORKSPACE_ENVIRONMENT: ResolvedExtensionProfile = {
   id: "workspace:project",
   ref: { scope: "workspace", name: "project" },
   immutable: false,
@@ -478,9 +478,9 @@ test("a changed executable workspace opens approval after app hydration without 
     defaultProps({
       settingsKnobs,
       backend: baseBackend({
-        environments: {
+        extensionProfiles: {
           current: async () => CHANGED_WORKSPACE_ENVIRONMENT,
-        } as AppBackend["environments"],
+        } as AppBackend["extensionProfiles"],
       }),
     }),
   );
@@ -903,11 +903,11 @@ test("no safe automatic entry agent keeps the agent picker modal until a choice 
     list: () => [{ name: "runner", grants: [], canSpawn: [] }],
   });
   const t = await mountApp(defaultProps({ agents }));
-  const out = await captureUntil(t, "Select agent");
+  const out = await captureUntil(t, "Select Agent Profile");
   expect(out).toContain("runner");
   press(t, "escape");
   await t.renderOnce();
-  const reopened = await captureUntil(t, "Select agent");
+  const reopened = await captureUntil(t, "Select Agent Profile");
   expect(reopened).toContain("runner");
   t.renderer.destroy();
 });
@@ -1281,7 +1281,7 @@ test("a workspace switch blocks picker mouse actions", async () => {
   const t = await mountApp(defaultProps({ agents, switching }));
   await captureUntil(t, "New task");
   press(t, "tab", { shift: true });
-  await captureUntil(t, "Select agent");
+  await captureUntil(t, "Select Agent Profile");
 
   setSwitching(true);
   await t.renderOnce();
@@ -1293,7 +1293,7 @@ test("a workspace switch blocks picker mouse actions", async () => {
   await t.mockMouse.click(x, y);
   await t.renderOnce();
   expect(activated).toEqual([]);
-  expect(t.captureCharFrame()).toContain("Select agent");
+  expect(t.captureCharFrame()).toContain("Select Agent Profile");
 
   setSwitching(false);
   await t.renderOnce();
@@ -1327,8 +1327,8 @@ test("agent picker overlay opens on /agent and closes on escape", async () => {
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  const out = await captureUntil(t, "Select agent");
-  expect(out).toContain("Select agent");
+  const out = await captureUntil(t, "Select Agent Profile");
+  expect(out).toContain("Select Agent Profile");
   press(t, "escape");
   const back = await captureUntil(t, "New task");
   expect(back).toContain("New task");
@@ -2740,10 +2740,10 @@ test("a pending elicitation dismisses a clean overlay so the question becomes vi
   press(t, "escape");
   await t.renderOnce();
   t.mockInput.pressEnter();
-  await captureUntil(t, "Select agent");
+  await captureUntil(t, "Select Agent Profile");
   setElicit({ message: "allow this command?", kind: "guard_confirm" });
   const out = await captureUntil(t, "allow this command?");
-  expect(out).not.toContain("Select agent");
+  expect(out).not.toContain("Select Agent Profile");
   t.renderer.destroy();
 });
 

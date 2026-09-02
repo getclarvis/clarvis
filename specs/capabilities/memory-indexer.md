@@ -1055,10 +1055,10 @@ clean state.
 
 **MIX-38.** Every index pass uses the host executor when `CreateMemoryFactoryOptions.executeRun` is
 supplied, including a durable retry after the originating foreground handle has closed. The Clarvis
-file host wraps that executor in the same Environment admission lease as a foreground run, so a hot
+file host wraps that executor in the same Extension Profile admission lease as a foreground run, so a hot
 continuation cannot consume selected skill/plugin bytes without snapshot validation. Production:
 `createMemoryFactory` in `packages/memory/src/factory.ts`, `indexRun` in
-`packages/memory/src/indexer/run.ts`, and `executeEnvironmentRun`/`withRunLease` in
+`packages/memory/src/indexer/run.ts`, and `executeExtensionProfileRun`/`withRunLease` in
 `packages/kernel/src`. Test: `packages/memory/tests/component/factory.test.ts` (`routes every
 indexer pass through the host-owned run executor`) and
 `packages/kernel/tests/unit/run-lease.test.ts`.

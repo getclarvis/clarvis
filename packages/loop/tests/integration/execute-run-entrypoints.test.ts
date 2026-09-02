@@ -280,7 +280,7 @@ describe("buildExecuteRunDeps", () => {
     }
   });
 
-  it("treats an exact empty skill-root set as an intentional empty Environment", async () => {
+  it("treats an exact empty skill-root set as an intentional empty Extension Profile", async () => {
     const logger = createLogger("silent");
     const warnSpy = vi.spyOn(logger, "warn");
     const built = await buildExecuteRunDeps({
@@ -311,7 +311,7 @@ describe("buildExecuteRunDeps", () => {
       logger: createLogger("silent"),
       workspaceRoot: dir,
       skillRoots: () => {
-        if (drifted) throw new Error("Environment contribution drifted");
+        if (drifted) throw new Error("Extension Profile contribution drifted");
         return [{ path: dir, include: ["guide"] }];
       },
     });

@@ -42,7 +42,7 @@ process files drops the whole plugin contribution
 
 Installation and activation are separate. The installed inventory retains global and workspace
 copies and both filesystem conventions even when their names match. The resolved
-[Extension Environment](environments.md) supplies the exact qualified `{ scope, source, name }`
+[Extension Profile](extension-profiles.md) supplies the exact qualified `{ scope, source, name }`
 installations that may contribute; `source` is `agents` for `.agents/plugins` and `clarvis` for
 `.clarvis/plugins`. `builtin:default` reads the same exact object shape from `enabledPlugins`. No
 name-only reader, source fallback, or workspace-over-global substitution exists. A protocol plugin
@@ -151,7 +151,7 @@ imports `marketplaceSchema` (`packages/code/src/adapters/marketplace.ts:10`).
 | `scope` | `Scope` | `"global"` or `"workspace"` |
 | `source` | `PluginSource` | `"agents"` or `"clarvis"`, the owning filesystem convention |
 | `dir` | `string` | absolute install directory |
-| `enabled` | `boolean` | this exact scope/source/name installation is active in the process-pinned Environment |
+| `enabled` | `boolean` | this exact scope/source/name installation is active in the process-pinned Extension Profile |
 | `version?` | `string` | manifest `version` |
 | `description?` | `string` | manifest `description` |
 | `author?` | `PluginAuthor` | manifest publisher identity (`name`, optional `email`/`url`) |
@@ -227,7 +227,7 @@ all").
 Both are `WORKSPACE_RISK_FIELDS` entries (`packages/kernel/src/config/workspace-trust.ts:41-42`), so
 an unapproved workspace's `settings.json` contributes neither.
 
-`enabledPlugins` is the activation input only for `builtin:default`; custom Environment files are
+`enabledPlugins` is the activation input only for `builtin:default`; custom Extension Profile files are
 the complete allow-list and are not a settings overlay. Strings and partial plugin references are
 invalid. `marketplaces` continues to affect discovery only.
 
@@ -448,10 +448,10 @@ repository replacement and removal failures` and the bounded-record cases in
 Plugin hooks have no independent persisted approval document. A selected plugin contributes its
 normalized hook definitions as part of the same atomic extension unit as its agents, skills, MCP
 servers, and capability executables. The manifest and companion bytes, including hooks, participate
-in the Environment content digest; a change therefore produces a different snapshot fingerprint
+in the Extension Profile content digest; a change therefore produces a different snapshot fingerprint
 rather than mutating eligibility under an unchanged identity (`contributionSnapshot` and
 `settingsScopes` in `packages/kernel/src/plugins/plugin-contributions.ts`; snapshot consumption in
-`packages/kernel/src/environments/environment-manager.ts`).
+`packages/kernel/src/extension-profiles/extension-profile-manager.ts`).
 
 ### 3.6 `marketplace.json`
 
@@ -821,7 +821,7 @@ cases in `packages/kernel/tests/integration/plugin-service.test.ts`.
 | 7 | snapshot every referenced package-local process file | `executables` | `:365-368` |
 
 `dirFor` selects the root named by the qualified reference exactly
-(`packages/kernel/src/plugins/plugin-contributions.ts`). An Environment asking for
+(`packages/kernel/src/plugins/plugin-contributions.ts`). An Extension Profile asking for
 `global/agents/browser` therefore cannot execute `global/clarvis/browser` or either workspace
 installation. The same rule applies to `builtin:default`; there is no name-only selection path.
 
@@ -833,7 +833,7 @@ package-executable admission bounds are pinned in
 `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
 `loadables()` de-duplicates repeated qualified references. Definition validation rejects a custom
-Environment that would activate two same-named installations because downstream agent/MCP/skill
+Extension Profile that would activate two same-named installations because downstream agent/MCP/skill
 namespaces remain plugin-name based.
 
 #### 4.8.1 Per-contribution behaviour
@@ -897,7 +897,7 @@ file framing, manifest limits, sidecar metadata, pinned projections, and fresh d
 1. Read global and workspace scopes; strip `WORKSPACE_RISK_FIELDS` from workspace if it is not
    trusted (`:560-569`).
 2. Merge **operator scopes alone** to obtain exact `enabledPlugins` references.
-3. Ask the Environment manager for the process-pinned qualified plugin selection; an alternate host
+3. Ask the Extension Profile manager for the process-pinned qualified plugin selection; an alternate host
    without that collaborator keeps those same exact references.
 4. Ask plugin contributions for `settingsScopes(enabledPlugins)`, then merge
    `[...pluginScopes, ...operatorScopes]` — plugin scopes **first**.
@@ -989,7 +989,7 @@ an independently verified guarantee.
 in, and restores the backup if that fails (`packages/kernel/src/adapters/filesystem/plugin-repository.ts:302-327`).
 
 `uninstall` (`packages/kernel/src/plugins/plugin-service.ts:657-664`) removes the global directory or throws `not_found`.
-For an exact plugin selected by the process Environment, update/replacement and uninstall enter a
+For an exact plugin selected by the process Extension Profile, update/replacement and uninstall enter a
 kernel-owned exclusion boundary: an active run returns `conflict`, and run start cannot race the
 filesystem mutation. A successful mutation marks the kernel snapshot stale and later run starts
 return `unavailable` until reconnect. Unselected exact installations retain ordinary independent
@@ -1009,7 +1009,7 @@ for the byte-identical `@clarvis/code` copy, at `packages/code/tests/integration
 
 `viewFor` in `packages/kernel/src/plugins/plugin-service.ts`. `list()` maps every record from all
 four inventories and therefore retains every same-named installation. `enabled` is an exact
-`{ scope, source, name }` membership test against the pinned Environment. Notes are
+`{ scope, source, name }` membership test against the pinned Extension Profile. Notes are
 `[...manifestNotes, ...skillNotes]`.
 The view preserves the original manifest publisher and discovery fields (`author`, `homepage`,
 `repository`, `license`, `keywords`) and the complete bounded presentation bucket. The installed
@@ -1330,10 +1330,10 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/src/plugins/plugin-contributions.ts`. Pinned:
     `packages/kernel/tests/integration/plugin-contributions.test.ts` (selected hook composition).
 
-36. **Changing hook or companion bytes changes the Environment fingerprint.**
+36. **Changing hook or companion bytes changes the Extension Profile fingerprint.**
     `contributionSnapshot` in `packages/kernel/src/plugins/plugin-contributions.ts` hashes the raw
-    and resolved manifest surface, and the Environment identity consumes that digest. Pinned:
-    `packages/kernel/tests/integration/environment-manager.test.ts`
+    and resolved manifest surface, and the Extension Profile identity consumes that digest. Pinned:
+    `packages/kernel/tests/integration/extension-profile-manager.test.ts`
     (root MCP and plugin-content digest drift cases).
 
 37. **A hook that arrives from an external file is normalized under the same plugin snapshot as an
@@ -1373,7 +1373,7 @@ All of the following are derived directly from this document's own source and te
     the sparse-file tests: `packages/loop/tests/integration/plugin-agents.test.ts:36-45`, `packages/kernel/tests/integration/plugin-manifest.test.ts:154-159`.
 
 44. **A plugin contributes only when its exact scoped installation belongs to the process-pinned
-    Environment, without making filesystem size a run-admission cost.** Every
+    Extension Profile, without making filesystem size a run-admission cost.** Every
     `PluginContributions` method takes the resolved selection; `pin` captures its exact loadables and
     digest, and ordinary captured projections reject selection changes. Skill roots are projected
     into `snapshotSkills`, which materializes bodies and fixes the resource allow-list before a run;
@@ -1387,12 +1387,12 @@ All of the following are derived directly from this document's own source and te
     rejects a run. A plugin whose skill surface cannot be captured initially still withholds that
     whole surface. Production: `PluginContributions.pin`, `pinnedSkillRoots`,
     `observeRuntimeFiles`, `verifyPinnedSkillCatalog`, and `runtimeAvailable` in
-    `packages/kernel/src/plugins/plugin-contributions.ts`; `EnvironmentManager.observeSkillCatalog`
-    and `EnvironmentManager.verifySkillCatalog` in
-    `packages/kernel/src/environments/environment-manager.ts`; `acquireEnvironmentRunLease` and
+    `packages/kernel/src/plugins/plugin-contributions.ts`; `ExtensionProfileManager.observeSkillCatalog`
+    and `ExtensionProfileManager.verifySkillCatalog` in
+    `packages/kernel/src/extension-profiles/extension-profile-manager.ts`; `acquireExtensionProfileRunLease` and
     `pluginSkillRoots` in `packages/kernel/src/file-kernel.ts`; and `snapshotSkills` in
     `packages/loop/src/runtime/build-run-deps.ts`. Test:
-    `packages/kernel/tests/integration/{environment-manager,plugin-contributions,file-kernel}.test.ts`,
+    `packages/kernel/tests/integration/{extension-profile-manager,plugin-contributions,file-kernel}.test.ts`,
     `packages/kernel/tests/unit/run-lease.test.ts`, and
     `packages/loop/tests/integration/execute-run-entrypoints.test.ts`.
 
@@ -1407,7 +1407,7 @@ All of the following are derived directly from this document's own source and te
     `packages/kernel/src/plugins/plugin-executable-snapshot.ts` and `contributionSnapshot` in
     `packages/kernel/src/plugins/plugin-contributions.ts`. Test: the process-file fingerprint and
     drift cases in
-    `packages/kernel/tests/integration/environment-manager.test.ts` and
+    `packages/kernel/tests/integration/extension-profile-manager.test.ts` and
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
 44b. **Packaged-skill identity is unambiguous and runtime admission is atomic.** Skill-manifest
@@ -1425,12 +1425,12 @@ All of the following are derived directly from this document's own source and te
     sidecar, post-watch verification, invalid-sibling, aggregate-bound, and lazy drift cases in
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
 
-45. **A plugin cannot enable another plugin.** Custom Environments are complete external
+45. **A plugin cannot enable another plugin.** Custom Extension Profiles are complete external
     allow-lists; `builtin:default` derives exact `enabledPlugins` refs from operator scopes alone before
     any plugin settings fragment is merged. Production:
     `packages/kernel/src/config/file-config-store.ts:673-688` and
-    `packages/kernel/src/environments/environment-manager.ts` (`resolved`). Test:
-    `packages/kernel/tests/integration/environment-manager.test.ts`.
+    `packages/kernel/src/extension-profiles/extension-profile-manager.ts` (`resolved`). Test:
+    `packages/kernel/tests/integration/extension-profile-manager.test.ts`.
 
 46. **Plugin settings scopes are merged *before* operator scopes, so an operator always wins.**
     `packages/kernel/src/config/file-config-store.ts:669-672`; within `hooks`, `hooksSettingsSpec.merge` re-orders operator-first
@@ -1444,13 +1444,13 @@ All of the following are derived directly from this document's own source and te
 48. **Installed inventory preserves all four same-name identities; substitution never occurs.**
     `listInstalledPlugins` returns every global/workspace and agents/clarvis record; exact
     contribution lookup honors the supplied scope/source/name, and a second selected installation
-    with the same runtime name invalidates Environment resolution. Production:
+    with the same runtime name invalidates Extension Profile resolution. Production:
     `packages/kernel/src/adapters/filesystem/plugin-repository.ts`,
     `packages/kernel/src/plugins/plugin-contributions.ts` (`dirFor`), and
-    `packages/kernel/src/environments/environment-manager.ts` (`resolved`). Test:
+    `packages/kernel/src/extension-profiles/extension-profile-manager.ts` (`resolved`). Test:
     `packages/kernel/tests/integration/plugin-service.test.ts`,
     `packages/kernel/tests/integration/plugin-contributions.test.ts`, and the same-name case in
-    `packages/kernel/tests/integration/environment-manager.test.ts`.
+    `packages/kernel/tests/integration/extension-profile-manager.test.ts`.
 
 49. **A plugin's MCP servers are namespaced `<plugin>:<server>` by one host-owned function.**
     `effectivePluginMcpName` (`packages/kernel/src/plugins/plugin-contributions.ts:137-140`), used by `settingsScopes` (`:677-692`),
@@ -1853,7 +1853,7 @@ graphs, not one "plugin subsystem".** `createFileKernel` builds `pluginContribut
 (`packages/kernel/src/file-kernel.ts:359-375`) and hands it to `createFileConfigStore`; `createInProcessKernel` — called
 later, from inside `createFileKernel` — independently builds `createPluginService`
 (`packages/kernel/src/kernel.ts:808-844`) with an `enabledPlugins` closure over the pinned
-`SettingsSnapshot.active_plugins`. Both therefore receive the same resolved Environment identities,
+`SettingsSnapshot.active_plugins`. Both therefore receive the same resolved Extension Profile identities,
 but neither construction holds a reference to the other; each is passed the same global/home/
 workspace roots independently at its composition site.
 

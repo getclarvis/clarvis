@@ -99,7 +99,7 @@ line and the README synopsis all derive from this table" (`packages/code/src/cli
 | `--refresh-models` | — | — | yes | `refresh the models.dev catalog and exit` | `packages/code/src/cli-args.ts:105` |
 | `--update` | — | — | yes | `install the newest eligible Clarvis release and exit` | `packages/code/src/cli-args.ts` (`FLAGS`) |
 | `--ascii` | — | — | no | `render glyphs as plain ascii` | `packages/code/src/cli-args.ts:106` |
-| `--env` | — | `<environment>` (next token) | no | `select an Environment for this process (scope:name or name)` | `packages/code/src/cli-args.ts:110-113` |
+| `--extension-profile` | — | `<profile>` (next token) | no | `select an Extension Profile for this process (scope:name or name)` | `packages/code/src/cli-args.ts:110-114` |
 | `--worktree` | — | optional next token or `=name` | no | `open a dedicated Git worktree; omit name to generate one` | `packages/code/src/cli-args.ts:107-116` |
 | `--debug` | — | `[=<error\|warn\|info\|debug>]` (inline, optional) | no | `write bounded application diagnostics; --debug=<level>` | `packages/code/src/cli-args.ts` (`FLAGS`) |
 
@@ -111,8 +111,8 @@ permits the bare flag (`packages/code/src/cli-args.ts:65-83`).
 
 ```ts
 export type WorktreeRequest = true | string;
-interface EnvironmentMode { environmentSelector?: string }
-interface WorkspaceMode extends EnvironmentMode { worktree?: WorktreeRequest }
+interface ExtensionProfileMode { extensionProfileSelector?: string }
+interface WorkspaceMode extends ExtensionProfileMode { worktree?: WorktreeRequest }
 
 export type Mode =
   | ({ kind: "run"; ascii: boolean; debug: DebugFlag } & WorkspaceMode)
@@ -121,7 +121,7 @@ export type Mode =
   | ({ kind: "print"; prompt: string; agent?: string; format: PrintFormat; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "list"; debug: DebugFlag } & WorkspaceMode)
   | ({ kind: "delete"; id: SessionId; debug: DebugFlag } & WorkspaceMode)
-  | ({ kind: "refresh-models"; debug: DebugFlag } & EnvironmentMode)
+  | ({ kind: "refresh-models"; debug: DebugFlag } & ExtensionProfileMode)
   | { kind: "update" }
   | { kind: "help" }
   | { kind: "version" }
@@ -129,11 +129,11 @@ export type Mode =
 ```
 
 `worktree` reaches run, resume, continue, print, list and delete, but not the repository-independent
-refresh/update/help/version/error modes. `environmentSelector` reaches every mode that constructs a
-kernel, including refresh, but not update/help/version/error. It is the process-local `--env`
-selector with highest Environment precedence; it changes no persisted selection. Qualified
+refresh/update/help/version/error modes. `extensionProfileSelector` reaches every mode that constructs a
+kernel, including refresh, but not update/help/version/error. It is the process-local `--extension-profile`
+selector with highest Extension Profile precedence; it changes no persisted selection. Qualified
 `scope:name` and bare-name resolution are owned by
-[Extension Environments](environments.md). `ascii` reaches only the three interactive variants;
+[Extension Profiles](extension-profiles.md). `ascii` reaches only the three interactive variants;
 `update`/`help`/`version`/`usage-error` carry no `debug`
 member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard keys on
 (`packages/code/src/cli-args.ts:156`).
@@ -426,10 +426,10 @@ launcher only performs it" (`packages/code/src/cli-entry.ts:5-8`; the allowlist 
 7. At most one `mode: true` flag; two or more →
    `` `${modes[0]} cannot be combined with ${rest.join(", ")}` `` (`:239-241`).
 8. `--agent`/`--format` outside `--print` → `<flag> applies only with -p/--print` (`:244-247`).
-9. `--update` rejects `--ascii`, `--worktree`, `--env`, or `--debug`; it never constructs a kernel.
+9. `--update` rejects `--ascii`, `--worktree`, `--extension-profile`, or `--debug`; it never constructs a kernel.
 10. `--debug=<x>` with an unrecognised `x` → `--debug must be one of error, warn, info, debug, got: x`
    (`:250-253`). A **bare** `--debug` stores `""` and is exempt from that check (`:252`).
-11. Fold `--worktree` and `--env` into the shared mode fragments, then switch on the mode flag.
+11. Fold `--worktree` and `--extension-profile` into the shared mode fragments, then switch on the mode flag.
     `--print` additionally rejects a whitespace-only prompt
     (`:261`) and a `--format` that is neither `text` nor `md` (`:262-264`); `format` defaults to
     `"text"` (`:262`). No mode flag → `{ kind: "run", ascii, debug }` (`:279`).
@@ -443,7 +443,7 @@ where `--format` in the same position would be a usage error. No test in
 `packages/code/tests/unit/cli-args.test.ts` exercises `--ascii` combined with a headless mode flag; see
 §8.
 
-`environmentSelector` is retained on run, resume, continue, print, list, delete, and refresh-models.
+`extensionProfileSelector` is retained on run, resume, continue, print, list, delete, and refresh-models.
 Tests in `packages/code/tests/unit/cli-args.test.ts` pin the missing-value error, qualified/bare values,
 propagation to those modes, and the `--update` incompatibility.
 
@@ -487,9 +487,9 @@ to drain.
 | `resume` / `continue` / `run` | `runInteractive(mode)` paints `StartupComposer`, then dynamically calls `runInteractiveMode` | imported after startup input paint |
 | `print` / `refresh-models` / `list` / `delete` | dynamic `runHeadlessMode(mode)` | imported on demand |
 
-Interactive worktree bootstrap, diagnostics and Environment selection are continued by
+Interactive worktree bootstrap, diagnostics and Extension Profile selection are continued by
 `runInteractiveMode`; headless equivalents are continued by `runHeadlessMode`. Both retain
-`mode.environmentSelector`, apply worktree selection before constructing a kernel, and use the final
+`mode.extensionProfileSelector`, apply worktree selection before constructing a kernel, and use the final
 canonical workspace (`packages/code/src/runtime.tsx`, `runInteractiveMode`, `runHeadlessMode`).
 
 ### 4.5 The headless modes
@@ -505,7 +505,7 @@ has any use for" (`packages/code/src/runtime.tsx`, `bootSilentSessionStore`).
 1. Dynamically loads the file-kernel factory, then builds `ClarvisDirs` from
    `globalPaths()`/`workspacePaths(workspace)`/`workspaceStatePaths(workspace)`.
 2. Creates a `CodeConfigStore` inside a `createRoot` to get `keySources()`.
-3. `createFileKernel({ workspaceRoot, globalDir, keySources, memory: true, environmentSelector,
+3. `createFileKernel({ workspaceRoot, globalDir, keySources, memory: true, extensionProfileSelector,
    logger, openMcpAuthorizationUrl: openPublicUrl })`.
    `--print` is headless only in its output
    and elicitation policy: a remote MCP OAuth challenge may still open the system browser, but the
@@ -579,9 +579,9 @@ the handoff in `packages/code/src/index.tsx` and `packages/code/src/runtime.tsx`
 bootstrap teardown ownership through mount), plus
 `packages/code/tests/unit/renderer-bootstrap-lifecycle.test.ts`.
 
-The manager created at step 6 receives `environmentSelector`, and its reconnect path retains that
-launch override. While one is active, persisted Environment selection mutations return a conflict
-because they could not change the process-selected Environment.
+The manager created at step 6 receives `extensionProfileSelector`, and its reconnect path retains that
+launch override. While one is active, persisted Extension Profile selection mutations return a conflict
+because they could not change the process-selected Extension Profile.
 
 Two orderings the code annotates explicitly:
 
@@ -868,7 +868,7 @@ shadows the four registration methods so everything it registers lands there (`p
 
 The render tree returned by `App` is, top to bottom: `KeymapProvider` →
 `HeaderRows` → a one-row top rule → the region box holding `OverlayRegion` with `TranscriptRegion` as
-its fallback → the floating pickers/readers (`ProfilePicker`, lazy `SafetyPresetPicker`,
+its fallback → the floating pickers/readers (`AgentProfilePicker`, lazy `SafetyPresetPicker`,
 `ActivityDetail`, `WorktreeExitPrompt`) as
 **siblings
 after** the region → `HintToast` → the bottom box (`LeadActivityLine`, `InputDock`, `Footer`) → the
@@ -1336,9 +1336,9 @@ Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts` (paint-
 order) and `packages/kernel/tests/integration/owner-isolation.test.ts` (idempotent release and later
 owner startup).
 
-**INV-CB-42.** One `--env` value reaches every kernel created by the invocation and remains the
+**INV-CB-42.** One `--extension-profile` value reaches every kernel created by the invocation and remains the
 highest-precedence selector across backend reconnects; it never writes persisted selection state.
-Production: `Mode.environmentSelector` in `packages/code/src/cli-args.ts`, capture and constructor
+Production: `Mode.extensionProfileSelector` in `packages/code/src/cli-args.ts`, capture and constructor
 plumbing in `packages/code/src/runtime.tsx` and `packages/code/src/startup-foundation.ts`, and
 `packages/code/src/adapters/workspace-client-manager.ts`. Test:
 `packages/code/tests/unit/cli-args.test.ts` and
@@ -1411,7 +1411,7 @@ Pinned: `packages/code/tests/integration/worktree-bootstrap.test.ts` and
 |---|---|---|---|
 | No `dist/index.js` and no `CLARVIS_CODE_SOURCE` | full remedy text on stderr | exit 1 | `packages/code/src/cli.ts:43-46`, `packages/code/src/cli-entry.ts:40-49` |
 | Unknown flag / missing value / mode conflict / bad `--print` prompt or format | `usage-error` mode in the lightweight entry; the complete runtime is not imported | stderr `<message>\n<usage>`, exit 1 | `packages/code/src/cli.ts`, `packages/code/src/index.tsx` (`main`) |
-| `--env` names an invalid or missing Environment | kernel creation/current resolution fails closed or exposes the invalid snapshot; no builtin fallback is substituted | invocation fails or the interactive diagnostics view shows the exact issue | [Extension Environments](environments.md#6-failure-modes-and-degradation) |
+| `--extension-profile` names an invalid or missing Extension Profile | kernel creation/current resolution fails closed or exposes the invalid snapshot; no builtin fallback is substituted | invocation fails or the interactive diagnostics view shows the exact issue | [Extension Profiles](extension-profiles.md#6-failure-modes-and-degradation) |
 | stdout or stdin is not a TTY in an interactive mode | guidance naming every headless mode | exit 2 | `packages/code/src/adapters/renderer-bootstrap.ts` (`assertInteractiveTTY`) |
 | `--resume <id>` names no session | `session not found: <id> — run clarvis --list` | exit 1 | `packages/code/src/runtime.tsx` (`assertSessionExists`) |
 | `--continue` with no session in this workspace | `no session to continue in this workspace — run clarvis --list` | exit 1 | `packages/code/src/runtime.tsx` (`assertSessionExists`) |

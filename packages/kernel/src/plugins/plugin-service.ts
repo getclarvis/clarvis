@@ -298,7 +298,7 @@ export interface PluginServiceOptions {
   home?: string;
   /** Optional workspace root owning both workspace plugin inventories. */
   workspaceRoot?: string;
-  /** Returns exact plugin installations active in the resolved Environment. */
+  /** Returns exact plugin installations active in the resolved Extension Profile. */
   enabledPlugins: () => readonly PluginRef[];
   /** Kernel-owned exclusion boundary for a selected plugin's filesystem mutation. */
   withSelectedMutation?<T>(ref: PluginRef, mutation: () => Promise<T>): Promise<T>;
@@ -423,7 +423,7 @@ export function createPluginService(opts: PluginServiceOptions): PluginService {
     return `${ref.scope}\0${ref.source}\0${ref.name}`;
   }
 
-  /** Exact active plugin membership from the pinned Environment snapshot. */
+  /** Exact active plugin membership from the pinned Extension Profile snapshot. */
   function enabledKeys(): ReadonlySet<string> {
     return new Set(opts.enabledPlugins().map(pluginRefId));
   }

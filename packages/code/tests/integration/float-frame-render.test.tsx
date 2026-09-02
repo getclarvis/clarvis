@@ -3,7 +3,7 @@ import { useTerminalDimensions } from "@opentui/solid";
 import { openRender } from "../helpers/tracked-render.ts";
 import { FloatFrame } from "../../src/views/overlays/FloatFrame.tsx";
 import { HintToast } from "../../src/views/Footer.tsx";
-import { ProfilePicker } from "../../src/views/overlays/ProfilePicker.tsx";
+import { AgentProfilePicker } from "../../src/views/overlays/AgentProfilePicker.tsx";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import type { AgentProfileView } from "../../src/adapters/agents.ts";
 
@@ -195,7 +195,7 @@ test("the agent picker renders its rows inside the floating panel", async () => 
   ] as unknown as AgentProfileView[];
   const rows = await frame(() => (
     <box width={100} height={24}>
-      <ProfilePicker
+      <AgentProfilePicker
         interaction={stubInteraction}
         list={() => list}
         active={() => "coder"}
@@ -206,7 +206,7 @@ test("the agent picker renders its rows inside the floating panel", async () => 
       />
     </box>
   ));
-  expect(rows.some((r) => r.includes("Select agent"))).toBe(true);
+  expect(rows.some((r) => r.includes("Select Agent Profile"))).toBe(true);
   expect(rows.some((r) => r.includes("coder"))).toBe(true);
   expect(rows.some((r) => r.includes("explorer"))).toBe(true);
   expect(rows.some((r) => r.includes("╭"))).toBe(true);

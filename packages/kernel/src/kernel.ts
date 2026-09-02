@@ -25,9 +25,9 @@ import type {
   SecretService,
   SkillsService,
   StorageService,
-  EnvironmentService,
-  EnvironmentPluginRef,
-  ResolvedEnvironment,
+  ExtensionProfileService,
+  ExtensionProfilePluginRef,
+  ResolvedExtensionProfile,
   TasksService,
   SandboxInspection,
   WorkspaceService,
@@ -135,8 +135,8 @@ export interface InProcessKernel extends KernelClient, OwnerScopedKernel {
   readonly files: WorkspaceService;
   /** Installed/enabled plugins. */
   readonly plugins: PluginService;
-  /** Resolved extension Environment and its management control plane. */
-  readonly environments: EnvironmentService;
+  /** Resolved Extension Profile and its management control plane. */
+  readonly extensionProfiles: ExtensionProfileService;
   /** Operator-owned generated-state inventory and disposable cleanup. */
   readonly storage: StorageService;
   /** Default owner's external task control plane. */
@@ -233,10 +233,10 @@ export interface CreateKernelOptions {
   globalConfigDir?: string;
   /** Home directory owning the shared `.agents/plugins` inventory; injectable for isolated hosts. */
   home?: string;
-  /** Host-owned Environment control plane; defaults to immutable builtin:default. */
-  environmentService?: EnvironmentService;
-  /** Exact active plugin refs from the host's pinned Environment snapshot. */
-  activePlugins?: () => readonly EnvironmentPluginRef[];
+  /** Host-owned Extension Profile control plane; defaults to immutable builtin:default. */
+  extensionProfileService?: ExtensionProfileService;
+  /** Exact active plugin refs from the host's pinned Extension Profile snapshot. */
+  activePlugins?: () => readonly ExtensionProfilePluginRef[];
   /** Teardown hook invoked by {@link InProcessKernel.close}. */
   dispose?: () => Promise<void>;
   /** Provides sandbox inspection to the config service; when omitted it is unavailable. */
@@ -268,9 +268,9 @@ export const DEFAULT_KERNEL_CAPABILITIES: KernelCapabilities = {
   tasks: false,
 };
 
-/** Minimal Environment service for embedders that do not use the file-backed host. */
-function createBuiltinEnvironmentService(): EnvironmentService {
-  const current: ResolvedEnvironment = {
+/** Minimal Extension Profile service for embedders that do not use the file-backed host. */
+function createBuiltinExtensionProfileService(): ExtensionProfileService {
+  const current: ResolvedExtensionProfile = {
     id: "builtin:default",
     ref: { scope: "builtin", name: "default" },
     immutable: true,
@@ -289,7 +289,10 @@ function createBuiltinEnvironmentService(): EnvironmentService {
     },
   };
   const unavailable = (): never => {
-    throw kernelError("unavailable", "Environment definitions require the file-backed kernel");
+    throw kernelError(
+      "unavailable",
+      "Extension Profile definitions require the file-backed kernel",
+    );
   };
   return {
     list: async () => [{ ref: current.ref, immutable: true }],
@@ -816,7 +819,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
         if (snapshot.active_plugins !== undefined) return [...snapshot.active_plugins];
         const merged = snapshot.merged as Record<string, unknown>;
         return Array.isArray(merged.enabledPlugins)
-          ? (merged.enabledPlugins as EnvironmentPluginRef[])
+          ? (merged.enabledPlugins as ExtensionProfilePluginRef[])
           : [];
       }),
     withSelectedMutation: async (_ref, mutation) => {
@@ -843,7 +846,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     logger,
   });
   const storage = createStorageService(globalDir);
-  const environments = opts.environmentService ?? createBuiltinEnvironmentService();
+  const extensionProfiles = opts.extensionProfileService ?? createBuiltinExtensionProfileService();
   /**
    * What this kernel actually advertises over the handshake.
    *
@@ -876,7 +879,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     providerAuth,
     files,
     plugins,
-    environments,
+    extensionProfiles,
     storage,
   };
   const scopePolicy = createKernelScopePolicy(ownershipMode);
@@ -898,7 +901,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
     providerAuth,
     files,
     plugins,
-    environments,
+    extensionProfiles,
     storage,
     tasks: scoped.tasks,
     forOwner,

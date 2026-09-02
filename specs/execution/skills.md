@@ -147,7 +147,7 @@ skill names are" — a manifest field that failed validation would fail the whol
 drop the plugin's skills along with it, so a bad value is instead "reported at resolution time
 and skipped" (the `foreign_root`/`not_found`/etc. gates of §4.13).
 
-### 2.6 Environment gate
+### 2.6 Extension Profile gate
 
 | Variable | Parser | Default | Source |
 | --- | --- | --- | --- |
@@ -316,7 +316,7 @@ and does not become a readable resource (`SkillContent` in `packages/skills/src/
 sidecar path internally so the public disclosure can identify it without exposing its contents.
 Test: `createAgentSkills public facade` in `packages/skills/tests/integration/api.test.ts` and the
 post-watch sidecar verification case in
-`packages/kernel/tests/integration/environment-manager.test.ts`.
+`packages/kernel/tests/integration/extension-profile-manager.test.ts`.
 
 `SkillRootInput.executionRoot` is a host approval flag, not the path ultimately disclosed. When it
 is present, `buildResolvedSkill` records that discovered skill's own `dir` as
@@ -534,7 +534,7 @@ Pinned: the three resource outcomes at
 `enumerateResources` is also exported from `@clarvis/skills`. This lets a host that must fingerprint
 the admitted resource surface use the same symlink, depth, entry and resource-count policy as the
 registry instead of implementing a divergent second walk. The function still owns no host or
-Environment semantics.
+Extension Profile semantics.
 
 Snapshot consumers pair that walk with exported `hashBoundedFile`. It opens the canonical path once,
 applies `fstat` to that descriptor, streams raw bytes through a fixed 64 KiB buffer, rejects a file
@@ -544,8 +544,8 @@ sum those exact byte counts and reject their captured skill surface after 32 MiB
 content; the per-file and aggregate budgets are deliberately distinct. Production:
 `hashBoundedFile` in `packages/skills/src/bounded-read.ts`, `skillSurface` inside
 `createPluginContributions` in `packages/kernel/src/plugins/plugin-contributions.ts`, and the
-`loadDigest` callback inside `createEnvironmentManager` in
-`packages/kernel/src/environments/environment-manager.ts`. Test:
+`loadDigest` callback inside `createExtensionProfileManager` in
+`packages/kernel/src/extension-profiles/extension-profile-manager.ts`. Test:
 `packages/skills/tests/unit/bounded-read.test.ts` (`hashes bounded raw bytes without decoding binary
 content`) and `packages/kernel/tests/integration/plugin-contributions.test.ts` (`streams large binary
 and text resources into the exact skill snapshot` and the per-file resource bound).
@@ -1008,8 +1008,8 @@ to this document.
     nothing and an absent list preserves full discovery** (INV-320). Production:
     `normalizeInclude` in `packages/skills/src/config.ts` and `scanRoot` in
     `packages/skills/src/registry.ts`. Test: `packages/skills/tests/unit/config.test.ts:43` and
-    `packages/skills/tests/integration/discovery.test.ts:88`. Environment qualification and root
-    selection remain kernel policy, specified in [`hosts/environments.md`](../hosts/environments.md).
+    `packages/skills/tests/integration/discovery.test.ts:88`. Extension Profile qualification and root
+    selection remain kernel policy, specified in [`hosts/extension-profiles.md`](../hosts/extension-profiles.md).
 52. **Agent Plugins v1 roots enforce the complete portable Agent Skills frontmatter subset without
     changing native-reader tolerance.** Production: `assertRootValidation` and
     `buildResolvedSkill` in `packages/skills/src/registry.ts`; raw authored values are preserved by
@@ -1076,7 +1076,7 @@ line that names the whole pass's outcome.
 | rescan throws (dynamic roots) | `skills.discovery_failed` (`scope: "rescan"`), last good scan served; if there was none, an empty provider whose resource methods throw `"skills are unavailable"` | `:227-244` |
 | root provider throws | last good scan (or empty provider) remains active; `skills.roots_unavailable` debug | `dynamicSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
 | a process-pinned skill is marked unavailable by its host | omitted from listings/body loads; resource reads fail as unavailable; no rescan or run rejection | `snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
-| a capture-window digest check marks one process-pinned skill unavailable | the same informational withdrawal applies; unrelated skills remain available and dependency construction succeeds | `verifySkillCatalog` in `packages/kernel/src/environments/environment-manager.ts` and `snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
+| a capture-window digest check marks one process-pinned skill unavailable | the same informational withdrawal applies; unrelated skills remain available and dependency construction succeeds | `verifySkillCatalog` in `packages/kernel/src/extension-profiles/extension-profile-manager.ts` and `snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
 | an idle trust-catalog replacement cannot be captured | exact catalog becomes unavailable and `skills.snapshot_recomposition_failed` is logged; no stale trust catalog remains and no run-admission scan occurs | `snapshotSkills` in `packages/loop/src/runtime/build-run-deps.ts` |
 | `bootstraps()` throws | `bootstrap_skills_unavailable` warn, run degrades to the plain catalog | `packages/skills/src/capability.ts:153`–`:156` |
 | plugin panel cannot read a plugin's skills | `skillNamesOf` returns `{ names: [], notes: [] }` on any throw; per-skill rejection notes are capped and summarized | `packages/kernel/src/plugins/plugin-service.ts:243`–`:265` |
@@ -1126,7 +1126,7 @@ alone.
 | `@clarvis/loop` | `import type { AgentSkills, SkillRootInput }`, `import type { SkillsProvider }` (`packages/loop/src/runtime/build-run-deps.ts:2`, `:35`); `export type` re-exports (`packages/loop/src/lib.ts:19`–`:20`); `export type { PluginBootstrapSkill }` (`packages/loop/src/runtime/capabilities/skills-settings.ts:50`) | **type-only** — erased |
 | `@clarvis/loop` | `import("@clarvis/skills")` and `import("@clarvis/skills/capability")` inside `buildExecuteRunDeps` (`:448`, `:541`) | **dynamic** value import, deliberately |
 | `@clarvis/kernel` | `createAgentSkills` for the plugin panel's skill listing (`packages/kernel/src/plugins/plugin-service.ts:12`) | static value |
-| `@clarvis/kernel` | `MAX_SKILL_ROOTS`, `enumerateResources`, `hashBoundedFile`, and the public per-file/aggregate resource limits to bound and fingerprint plugin and Environment skill surfaces (`packages/kernel/src/plugins/plugin-contributions.ts`, `packages/kernel/src/environments/environment-manager.ts`) | static value |
+| `@clarvis/kernel` | `MAX_SKILL_ROOTS`, `enumerateResources`, `hashBoundedFile`, and the public per-file/aggregate resource limits to bound and fingerprint plugin and Extension Profile skill surfaces (`packages/kernel/src/plugins/plugin-contributions.ts`, `packages/kernel/src/extension-profiles/extension-profile-manager.ts`) | static value |
 | `@clarvis/kernel` | `SkillsProvider` type via `@clarvis/loop` (`packages/kernel/src/skills/skills-service.ts:1`) | type-only |
 | `@clarvis/code` | reaches skills only through `KernelClient.skills` (`packages/code/src/adapters/kernel-run-client.ts:456-459`, `packages/code/src/adapters/kernel-capabilities-client.ts:30`) | protocol only |
 

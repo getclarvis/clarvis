@@ -53,8 +53,8 @@ describe("executeRun (shared engine)", () => {
   it("captures opaque host metadata once and persists it with the run", async () => {
     const traceStore = makeTestTraceStore();
     let reads = 0;
-    const environment = {
-      environment: {
+    const extensionProfileMetadata = {
+      extension_profile: {
         id: "global:research",
         fingerprint: `sha256:${"a".repeat(64)}`,
       },
@@ -66,13 +66,15 @@ describe("executeRun (shared engine)", () => {
         traceStore,
         hostMetadata: () => {
           reads += 1;
-          return environment;
+          return extensionProfileMetadata;
         },
       }),
     });
 
     expect(reads).toBe(1);
-    expect(traceStore.getById("o", outcome.executionId)?.host_metadata).toEqual(environment);
+    expect(traceStore.getById("o", outcome.executionId)?.host_metadata).toEqual(
+      extensionProfileMetadata,
+    );
   });
 
   it("throws ConflictError when a caller execution_id already exists for the owner", async () => {

@@ -4,18 +4,18 @@ import type { ScrollBoxRenderable } from "@opentui/core";
 import { useTerminalDimensions } from "@opentui/solid";
 import { AGENTS_DIR, AGENTS_PLUGINS_DIR, CLARVIS_DIR } from "@clarvis/paths";
 import type {
-  EnvironmentCompositionInput,
-  EnvironmentCompositionPreview,
-  EnvironmentDefinition,
-  EnvironmentDefinitionView,
-  EnvironmentInventory,
-  EnvironmentPluginRef,
-  EnvironmentRef,
-  EnvironmentSelectionScope,
-  EnvironmentService,
-  EnvironmentSkillRef,
-  ResolvedEnvironment,
-  ResolvedEnvironmentPlugin,
+  ExtensionProfileCompositionInput,
+  ExtensionProfileCompositionPreview,
+  ExtensionProfileDefinition,
+  ExtensionProfileDefinitionView,
+  ExtensionProfileInventory,
+  ExtensionProfilePluginRef,
+  ExtensionProfileRef,
+  ExtensionProfileSelectionScope,
+  ExtensionProfileService,
+  ExtensionProfileSkillRef,
+  ResolvedExtensionProfile,
+  ResolvedExtensionProfilePlugin,
 } from "@clarvis/protocol";
 import type { MarketplaceListing, MarketplaceSource } from "../../adapters/marketplace.ts";
 import type { PluginView } from "../../adapters/plugins.ts";
@@ -43,11 +43,11 @@ import {
 type SetupStep = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 interface ExtensionSetupDraft {
-  selectionScope: EnvironmentSelectionScope;
+  selectionScope: ExtensionProfileSelectionScope;
   ref: { scope: "global" | "workspace"; name: string };
-  definition: EnvironmentDefinition;
+  definition: ExtensionProfileDefinition;
   expectedRevision: string | null;
-  savedDefinition?: EnvironmentDefinition;
+  savedDefinition?: ExtensionProfileDefinition;
 }
 
 interface SetupCompletion {
@@ -55,16 +55,16 @@ interface SetupCompletion {
 }
 
 type ExtensionChoice =
-  | { kind: "plugin"; plugin: ResolvedEnvironmentPlugin }
-  | { kind: "skill"; skill: EnvironmentInventory["standalone_skills"][number] }
+  | { kind: "plugin"; plugin: ResolvedExtensionProfilePlugin }
+  | { kind: "skill"; skill: ExtensionProfileInventory["standalone_skills"][number] }
   | { kind: "listing"; listing: MarketplaceListing };
 
 /** Data and effects needed by the guided Extensions setup. */
 export interface ExtensionsHubDeps {
-  environments: EnvironmentService;
-  definitions: () => readonly EnvironmentDefinitionView[];
-  inventory: () => EnvironmentInventory | undefined;
-  current: () => ResolvedEnvironment | undefined;
+  extensionProfiles: ExtensionProfileService;
+  definitions: () => readonly ExtensionProfileDefinitionView[];
+  inventory: () => ExtensionProfileInventory | undefined;
+  current: () => ResolvedExtensionProfile | undefined;
   listings: () => readonly MarketplaceListing[];
   sources: () => readonly MarketplaceSource[];
   loading: () => boolean;
@@ -75,33 +75,36 @@ export interface ExtensionsHubDeps {
   runActive: () => boolean;
   notify: (message: string, tone?: "success" | "warn" | "error") => void;
   openChild: (cmd: string) => void;
-  initialEnvironment?: EnvironmentRef;
-  initialPlugin?: EnvironmentPluginRef;
+  initialExtensionProfile?: ExtensionProfileRef;
+  initialPlugin?: ExtensionProfilePluginRef;
 }
 
 const NAME_RE = /^(?!\.{1,2}$)[A-Za-z0-9._-]{1,128}$/;
 
-function environmentId(ref: EnvironmentRef): string {
+function extensionProfileId(ref: ExtensionProfileRef): string {
   return `${ref.scope}:${ref.name}`;
 }
 
-function pluginId(ref: EnvironmentPluginRef): string {
+function pluginId(ref: ExtensionProfilePluginRef): string {
   return `${ref.scope}/${ref.source}/${ref.name}`;
 }
 
-function skillId(ref: EnvironmentSkillRef): string {
+function skillId(ref: ExtensionProfileSkillRef): string {
   return `${ref.scope}/${ref.source}/${ref.name}`;
 }
 
-function samePlugin(left: EnvironmentPluginRef, right: EnvironmentPluginRef): boolean {
+function samePlugin(left: ExtensionProfilePluginRef, right: ExtensionProfilePluginRef): boolean {
   return left.scope === right.scope && left.source === right.source && left.name === right.name;
 }
 
-function sameSkill(left: EnvironmentSkillRef, right: EnvironmentSkillRef): boolean {
+function sameSkill(left: ExtensionProfileSkillRef, right: ExtensionProfileSkillRef): boolean {
   return left.scope === right.scope && left.source === right.source && left.name === right.name;
 }
 
-function sameDefinition(left: EnvironmentDefinition, right: EnvironmentDefinition): boolean {
+function sameDefinition(
+  left: ExtensionProfileDefinition,
+  right: ExtensionProfileDefinition,
+): boolean {
   return (
     left.schema_version === right.schema_version &&
     left.description === right.description &&
@@ -112,18 +115,22 @@ function sameDefinition(left: EnvironmentDefinition, right: EnvironmentDefinitio
   );
 }
 
-function summary(environment: ResolvedEnvironment): string {
+function summary(extensionProfile: ResolvedExtensionProfile): string {
   const skills =
-    environment.counts.standalone_skills_active + environment.counts.plugin_skills_active;
-  return `${environment.counts.plugins_active} plugins ${glyph("separator")} ${skills} skills ${glyph("separator")} ${environment.counts.mcp_servers_active} MCP`;
+    extensionProfile.counts.standalone_skills_active + extensionProfile.counts.plugin_skills_active;
+  return `${extensionProfile.counts.plugins_active} plugins ${glyph("separator")} ${skills} skills ${glyph("separator")} ${extensionProfile.counts.mcp_servers_active} MCP`;
 }
 
-function selectedDefinition(environment: ResolvedEnvironment): EnvironmentDefinition {
+function selectedDefinition(
+  extensionProfile: ResolvedExtensionProfile,
+): ExtensionProfileDefinition {
   return {
     schema_version: 1,
-    description: `Clone of ${environment.id}`,
-    plugins: environment.plugins.filter((plugin) => plugin.active).map((plugin) => plugin.ref),
-    skills: environment.standalone_skills.filter((skill) => skill.active).map((skill) => skill.ref),
+    description: `Clone of ${extensionProfile.id}`,
+    plugins: extensionProfile.plugins.filter((plugin) => plugin.active).map((plugin) => plugin.ref),
+    skills: extensionProfile.standalone_skills
+      .filter((skill) => skill.active)
+      .map((skill) => skill.ref),
   };
 }
 
@@ -138,7 +145,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   const [step, setStep] = createSignal<SetupStep>(0);
   const [picker, setPicker] = createSignal<CatalogPickerSpec | null>(null);
   const [draft, setDraft] = createSignal<ExtensionSetupDraft>();
-  const [preview, setPreview] = createSignal<EnvironmentCompositionPreview>();
+  const [preview, setPreview] = createSignal<ExtensionProfileCompositionPreview>();
   const [busy, setBusy] = createSignal<string>();
   const [busyStartedAt, setBusyStartedAt] = createSignal<number>();
   const [busyEscapeMode, setBusyEscapeMode] = createSignal<"level" | "close">("level");
@@ -185,7 +192,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   const title = (): string => {
     if (step() === 0) return "Extensions";
     if (step() === 6) return "Extensions ready";
-    const label = ["", "Scope", "Environment", "Plugins and skills", "Capabilities", "Apply"][
+    const label = ["", "Scope", "Extension Profile", "Plugins and skills", "Capabilities", "Apply"][
       step()
     ];
     return `Extensions setup ${glyph("separator")} Step ${step()} of 5 ${glyph("separator")} ${label}`;
@@ -201,8 +208,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   };
 
   const draftFor = (
-    view: EnvironmentDefinitionView,
-    selectionScope: EnvironmentSelectionScope,
+    view: ExtensionProfileDefinitionView,
+    selectionScope: ExtensionProfileSelectionScope,
   ): ExtensionSetupDraft | undefined => {
     if (
       view.ref.scope === "builtin" ||
@@ -221,12 +228,12 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   };
 
   const setExistingDraft = (
-    view: EnvironmentDefinitionView,
-    selectionScope: EnvironmentSelectionScope,
+    view: ExtensionProfileDefinitionView,
+    selectionScope: ExtensionProfileSelectionScope,
   ): void => {
     const next = draftFor(view, selectionScope);
     if (next === undefined) {
-      deps.notify(view.error ?? `${environmentId(view.ref)} is not editable`, "warn");
+      deps.notify(view.error ?? `${extensionProfileId(view.ref)} is not editable`, "warn");
       return;
     }
     replaceDraft(next);
@@ -236,16 +243,16 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
 
   const beginNamedDraft = (
     scope: "global" | "workspace",
-    selectionScope: EnvironmentSelectionScope,
-    basis: EnvironmentDefinition,
+    selectionScope: ExtensionProfileSelectionScope,
+    basis: ExtensionProfileDefinition,
   ): void => {
     setPicker(null);
     setStep(2);
-    editor.start(`Step 2 of 5 ${glyph("separator")} ${scope} Environment name`, "", (raw) => {
+    editor.start(`Step 2 of 5 ${glyph("separator")} ${scope} Extension Profile name`, "", (raw) => {
       const name = raw.trim();
       if (!NAME_RE.test(name)) {
         deps.notify("use 1-128 letters, numbers, dots, underscores or hyphens", "warn");
-        openEnvironmentPicker(selectionScope);
+        openExtensionProfilePicker(selectionScope);
         return;
       }
       if (
@@ -254,7 +261,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
           .some((definition) => definition.ref.scope === scope && definition.ref.name === name)
       ) {
         deps.notify(`${scope}:${name} already exists`, "warn");
-        openEnvironmentPicker(selectionScope);
+        openExtensionProfilePicker(selectionScope);
         return;
       }
       replaceDraft({
@@ -268,7 +275,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     });
   };
 
-  const environmentRows = (selectionScope: EnvironmentSelectionScope): CatalogRow[] => {
+  const extensionProfileRows = (selectionScope: ExtensionProfileSelectionScope): CatalogRow[] => {
     const current = deps.current();
     const definitions = deps
       .definitions()
@@ -279,12 +286,12 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
       )
       .map((view) => ({
         id: `existing:${view.ref.scope}:${view.ref.name}`,
-        label: environmentId(view.ref),
-        haystack: `${environmentId(view.ref)} ${view.definition?.description ?? ""}`,
+        label: extensionProfileId(view.ref),
+        haystack: `${extensionProfileId(view.ref)} ${view.definition?.description ?? ""}`,
         detail: view.error
           ? `unavailable ${glyph("separator")} ${view.error}`
           : `${view.definition?.plugins.length ?? 0} plugins ${glyph("separator")} ${view.definition?.skills.length ?? 0} skills`,
-        added: current?.id === environmentId(view.ref),
+        added: current?.id === extensionProfileId(view.ref),
       }));
     const targetScopes: ("global" | "workspace")[] =
       selectionScope === "global" ? ["global"] : ["workspace", "global"];
@@ -309,8 +316,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     });
     const emptyRows = targetScopes.map((scope) => ({
       id: `empty:${scope}`,
-      label: `New ${scope} Environment`,
-      haystack: `new empty ${scope} Environment`,
+      label: `New ${scope} Extension Profile`,
+      haystack: `new empty ${scope} Extension Profile`,
       detail:
         scope === "workspace"
           ? "starts empty · shareable project definition; selection stays local"
@@ -337,16 +344,16 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
           detail: "used only where no workspace-local selection overrides it",
         },
       ],
-      onPick: (id) => openEnvironmentPicker(id as EnvironmentSelectionScope),
+      onPick: (id) => openExtensionProfilePicker(id as ExtensionProfileSelectionScope),
       onClose: resetSetup,
     });
   }
 
-  function openEnvironmentPicker(selectionScope: EnvironmentSelectionScope): void {
+  function openExtensionProfilePicker(selectionScope: ExtensionProfileSelectionScope): void {
     setStep(2);
     setPicker({
-      title: `Extensions setup ${glyph("separator")} Step 2 of 5 ${glyph("separator")} Environment`,
-      rows: () => environmentRows(selectionScope),
+      title: `Extensions setup ${glyph("separator")} Step 2 of 5 ${glyph("separator")} Extension Profile`,
+      rows: () => extensionProfileRows(selectionScope),
       onPick: (choice) => {
         if (choice.startsWith("existing:")) {
           const [, scope, ...nameParts] = choice.split(":");
@@ -485,7 +492,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     ];
   };
 
-  const stagePlugin = (ref: EnvironmentPluginRef): void => {
+  const stagePlugin = (ref: ExtensionProfilePluginRef): void => {
     const setup = draft();
     if (setup === undefined) return;
     const selected = setup.definition.plugins.find((plugin) => samePlugin(plugin, ref));
@@ -512,7 +519,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     }
   };
 
-  const stageSkill = (ref: EnvironmentSkillRef): void => {
+  const stageSkill = (ref: ExtensionProfileSkillRef): void => {
     const setup = draft();
     if (setup === undefined) return;
     const selected = setup.definition.skills.find((skill) => sameSkill(skill, ref));
@@ -659,12 +666,12 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     return !sameDefinition(setup.definition, setup.savedDefinition);
   };
 
-  const discardDraftAndGoBack = (selectionScope: EnvironmentSelectionScope): void => {
+  const discardDraftAndGoBack = (selectionScope: ExtensionProfileSelectionScope): void => {
     setPicker(null);
     replaceDraft(undefined);
     setPreview(undefined);
     setFailure(undefined);
-    openEnvironmentPicker(selectionScope);
+    openExtensionProfilePicker(selectionScope);
   };
 
   function backFromExtensions(): void {
@@ -678,9 +685,9 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     detachObserved("extensions_setup_discard_confirm", () =>
       host
         .confirm({
-          message: `Unsaved Environment changes ${glyph("emDash")} discard them?`,
+          message: `Unsaved Extension Profile changes ${glyph("emDash")} discard them?`,
           danger: true,
-          detail: [environmentId(setup.ref)],
+          detail: [extensionProfileId(setup.ref)],
           confirmLabel: "discard",
           cancelLabel: "keep editing",
         })
@@ -700,7 +707,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     setFailure(undefined);
     setStep(4);
     beginBusy("Resolving exact capabilities");
-    const input: EnvironmentCompositionInput = {
+    const input: ExtensionProfileCompositionInput = {
       ref: setup.ref,
       definition: setup.definition,
       expected_revision: setup.expectedRevision,
@@ -709,7 +716,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     detachObserved(
       "extensions_setup_preview",
       async () => {
-        const result = await deps.environments.previewComposition(input);
+        const result = await deps.extensionProfiles.previewComposition(input);
         if (disposed) return;
         if (ownerGeneration === draftGeneration) setPreview(result);
         finishBusy();
@@ -737,7 +744,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     applyDetached = false;
     beginBusy("Applying reviewed snapshot", "close");
     setFailure(undefined);
-    const input: EnvironmentCompositionInput = {
+    const input: ExtensionProfileCompositionInput = {
       ref: setup.ref,
       definition: setup.definition,
       expected_revision: setup.expectedRevision,
@@ -746,13 +753,13 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     detachObserved(
       "extensions_setup_apply",
       async () => {
-        await deps.environments.applyComposition(input, {
+        await deps.extensionProfiles.applyComposition(input, {
           preview_token: reviewed.token,
           ...(reviewed.requires_workspace_trust ? { approve_workspace: true } : {}),
         });
         if (!disposed && !applyDetached) setBusy("Reconnecting the kernel");
         const reconnect = await deps.reconnect();
-        if (!disposed && !applyDetached) setBusy("Refreshing the resolved Environment");
+        if (!disposed && !applyDetached) setBusy("Refreshing the resolved Extension Profile");
         await deps.refresh(true);
         if (!disposed) {
           if (!applyDetached) {
@@ -763,8 +770,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         }
         deps.notify(
           reconnect.ok
-            ? `${environmentId(setup.ref)} is active for future runs`
-            : `${environmentId(setup.ref)} was saved; reconnect with /reconnect (${reconnect.message})`,
+            ? `${extensionProfileId(setup.ref)} is active for future runs`
+            : `${extensionProfileId(setup.ref)} was saved; reconnect with /reconnect (${reconnect.message})`,
           reconnect.ok ? "success" : "warn",
         );
       },
@@ -796,7 +803,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
   });
 
   createEffect(() => {
-    const initial = deps.initialEnvironment;
+    const initial = deps.initialExtensionProfile;
     deps.definitions();
     deps.inventory();
     if (consumedInitial || initial === undefined || deps.loading()) return;
@@ -811,8 +818,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         (candidate) => candidate.ref.scope === initial.scope && candidate.ref.name === initial.name,
       );
     const current = deps.current();
-    const selectionScope: EnvironmentSelectionScope =
-      current?.id === environmentId(initial) && current.selection_origin === "global"
+    const selectionScope: ExtensionProfileSelectionScope =
+      current?.id === extensionProfileId(initial) && current.selection_origin === "global"
         ? "global"
         : "workspace";
     if (view === undefined || draftFor(view, selectionScope) === undefined) {
@@ -869,7 +876,11 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
             hintPriority: 100,
             essential: true,
           },
-          { key: "e", label: "Environments", run: () => deps.openChild("environments.open") },
+          {
+            key: "e",
+            label: "Extension Profiles",
+            run: () => deps.openChild("extension-profiles.open"),
+          },
           {
             key: "m",
             label: "Plugins and Marketplace",
@@ -890,8 +901,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         verbs: [
           {
             key: "return",
-            label: "choose Environment",
-            run: () => openEnvironmentPicker(draft()?.selectionScope ?? "workspace"),
+            label: "choose Extension Profile",
+            run: () => openExtensionProfilePicker(draft()?.selectionScope ?? "workspace"),
           },
         ],
         escape: { label: "back to scope", run: openScopePicker },
@@ -961,8 +972,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
           },
           {
             key: "e",
-            label: "inspect Environment",
-            run: () => deps.openChild("environments.open"),
+            label: "inspect Extension Profile",
+            run: () => deps.openChild("extension-profiles.open"),
           },
         ],
         escape: { label: "close", run: () => host.close() },
@@ -1016,7 +1027,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
             </text>
           </Show>
           <text fg={tokens.muted} paddingTop={1}>
-            Step 1 scope {glyph("arrowRight")} 2 Environment {glyph("arrowRight")} 3 extensions
+            Step 1 scope {glyph("arrowRight")} 2 Extension Profile {glyph("arrowRight")} 3
+            extensions
           </text>
           <text fg={tokens.muted}>
             4 capabilities {glyph("arrowRight")} 5 exact delta and apply
@@ -1025,8 +1037,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
             Enter {glyph("arrowRight")} begin guided setup
           </text>
           <text fg={tokens.muted}>
-            e {glyph("arrowRight")} Environments m {glyph("arrowRight")} Plugins and Marketplace c{" "}
-            {glyph("arrowRight")} MCP
+            e {glyph("arrowRight")} Extension Profiles m {glyph("arrowRight")} Plugins and
+            Marketplace c {glyph("arrowRight")} MCP
           </text>
           <Show when={brokenSources > 0}>
             <text
@@ -1052,7 +1064,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         </text>
         <Show when={draft()}>
           <text fg={tokens.muted} paddingTop={1}>
-            {`${environmentId(draft()!.ref)} ${glyph("separator")} ${draft()!.definition.plugins.length} plugins ${glyph("separator")} ${draft()!.definition.skills.length} standalone skills`}
+            {`${extensionProfileId(draft()!.ref)} ${glyph("separator")} ${draft()!.definition.plugins.length} plugins ${glyph("separator")} ${draft()!.definition.skills.length} standalone skills`}
           </text>
         </Show>
       </box>
@@ -1096,15 +1108,15 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         </box>
       );
     }
-    const environment = reviewed.authored;
-    const plugins = environment.plugins;
+    const extensionProfile = reviewed.authored;
+    const plugins = extensionProfile.plugins;
     const agents = plugins.flatMap((plugin) =>
       plugin.agents.map((agent) => `${plugin.ref.name}:${agent}`),
     );
     const pluginSkills = plugins.flatMap((plugin) =>
       plugin.skills.map((skill) => `${plugin.ref.name}:/${skill}`),
     );
-    const standalone = environment.standalone_skills.map((skill) => skillId(skill.ref));
+    const standalone = extensionProfile.standalone_skills.map((skill) => skillId(skill.ref));
     const mcp = plugins.flatMap((plugin) => plugin.mcp_servers);
     const hooks = plugins
       .filter((plugin) => plugin.hooks.total > 0)
@@ -1125,10 +1137,10 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         >
           <box flexDirection="column">
             <text fg={tokens.accent} wrapMode="word">
-              <b>{environment.id}</b>
+              <b>{extensionProfile.id}</b>
             </text>
-            <text fg={environment.status === "ready" ? tokens.add : tokens.warn}>
-              {`${tone(environment.status === "ready" ? "ok" : "warn").glyph} ${environment.status} ${glyph("separator")} ${summary(environment)}`}
+            <text fg={extensionProfile.status === "ready" ? tokens.add : tokens.warn}>
+              {`${tone(extensionProfile.status === "ready" ? "ok" : "warn").glyph} ${extensionProfile.status} ${glyph("separator")} ${summary(extensionProfile)}`}
             </text>
             <Show when={mcp.length + hooks.length + executables.length > 0}>
               <text fg={tokens.warn} wrapMode="word" paddingTop={1}>
@@ -1145,9 +1157,9 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
             {valueSection("MCP servers", mcp, tokens.warn)}
             {valueSection("Hooks", hooks, tokens.warn)}
             {valueSection("Capability executables", executables, tokens.warn)}
-            <Show when={environment.issues.length > 0}>
-              <SectionHeader label={`Issues (${environment.issues.length})`} />
-              <For each={environment.issues}>
+            <Show when={extensionProfile.issues.length > 0}>
+              <SectionHeader label={`Issues (${extensionProfile.issues.length})`} />
+              <For each={extensionProfile.issues}>
                 {(issue) => (
                   <text fg={tokens.del} wrapMode="word">{`${issue.code}: ${issue.message}`}</text>
                 )}
@@ -1178,7 +1190,8 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
         </Show>
         <Show when={selectionReadOnly()}>
           <text fg={tokens.warn} flexShrink={0} wrapMode="word">
-            Restart without --env before changing a persisted Environment selection.
+            Restart without --extension-profile before changing a persisted Extension Profile
+            selection.
           </text>
         </Show>
         <scrollbox
@@ -1233,7 +1246,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
     return (
       <box flexDirection="column" flexGrow={1} justifyContent="center" alignItems="center">
         <text fg={result?.reconnect.ok ? tokens.add : tokens.warn}>
-          {`${tone(result?.reconnect.ok ? "ok" : "warn").glyph} ${result?.reconnect.ok ? "Extensions ready" : "Environment saved"}`}
+          {`${tone(result?.reconnect.ok ? "ok" : "warn").glyph} ${result?.reconnect.ok ? "Extensions ready" : "Extension Profile saved"}`}
         </text>
         <Show when={current}>
           <text fg={tokens.accent} paddingTop={1}>
@@ -1253,7 +1266,7 @@ export function ExtensionsHub(host: ViewHost, deps: ExtensionsHubDeps): JSX.Elem
           </text>
         </Show>
         <text fg={tokens.accent2} paddingTop={1}>
-          Enter {glyph("arrowRight")} configure another Environment
+          Enter {glyph("arrowRight")} configure another Extension Profile
         </text>
       </box>
     );

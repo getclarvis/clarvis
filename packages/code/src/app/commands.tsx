@@ -42,14 +42,14 @@ import {
 import type { LivePrompt, PromptMessage } from "../adapters/mcp-capabilities.ts";
 import type {
   PlansMode,
-  EnvironmentDefinition,
-  EnvironmentRef,
-  EnvironmentService,
+  ExtensionProfileDefinition,
+  ExtensionProfileRef,
+  ExtensionProfileService,
   PluginRef,
   ModelCatalogService,
   PluginService,
   ProviderAuthService,
-  ResolvedEnvironment,
+  ResolvedExtensionProfile,
   RunDetail,
   SandboxInspection,
   SkillsService,
@@ -117,7 +117,7 @@ export interface AppCommandDeps {
   agents: ActiveAgentStore;
   agentFiles: AgentsStore;
   plugins: PluginService;
-  environments: EnvironmentService;
+  extensionProfiles: ExtensionProfileService;
   skills: SkillsService;
   /** Overrides product-owned marketplace sources for an embedding or isolated test host. */
   marketplaceDefaultUrls?: readonly string[];
@@ -169,11 +169,11 @@ export interface AppCommandWiring {
   dispose(): void;
 }
 
-function environmentSelectsPlugin(
-  environment: Awaited<ReturnType<EnvironmentService["current"]>>,
+function extensionProfileSelectsPlugin(
+  extensionProfile: Awaited<ReturnType<ExtensionProfileService["current"]>>,
   ref: PluginRef,
 ): boolean {
-  return environment.plugins.some(
+  return extensionProfile.plugins.some(
     (plugin) =>
       plugin.ref.scope === ref.scope &&
       plugin.ref.source === ref.source &&
@@ -183,32 +183,32 @@ function environmentSelectsPlugin(
 
 /** Explain why a selected plugin's files cannot change beneath an active run snapshot. */
 export async function selectedPluginLifecycleBlock(
-  environments: Pick<EnvironmentService, "current">,
+  extensionProfiles: Pick<ExtensionProfileService, "current">,
   runActive: () => boolean,
   ref: PluginRef,
 ): Promise<string | undefined> {
   if (!runActive()) return undefined;
-  const environment = await environments.current();
-  return environmentSelectsPlugin(environment, ref)
-    ? `finish the active run before changing ${ref.scope}/${ref.source}/${ref.name} in ${environment.id}`
+  const extensionProfile = await extensionProfiles.current();
+  return extensionProfileSelectsPlugin(extensionProfile, ref)
+    ? `finish the active run before changing ${ref.scope}/${ref.source}/${ref.name} in ${extensionProfile.id}`
     : undefined;
 }
 
 /** Recompose the kernel only when a lifecycle mutation touched a selected exact plugin ref. */
 export async function recomposeSelectedPlugin(
-  environments: Pick<EnvironmentService, "current">,
+  extensionProfiles: Pick<ExtensionProfileService, "current">,
   reconnectBackend: AppCommandDeps["reconnectBackend"],
   reloadPlugins: () => Promise<void>,
   ref: PluginRef,
 ): Promise<string | undefined> {
-  const before = await environments.current();
-  if (!environmentSelectsPlugin(before, ref)) return undefined;
+  const before = await extensionProfiles.current();
+  if (!extensionProfileSelectsPlugin(before, ref)) return undefined;
   const reconnect = await reconnectBackend();
   if (!reconnect.ok) {
     return `selected by ${before.id}; takes effect after /reconnect (${reconnect.message})`;
   }
   await reloadPlugins();
-  const after = await environments.current();
+  const after = await extensionProfiles.current();
   return `recomposed ${after.id} ${glyph("emDash")} ${after.status}`;
 }
 
@@ -341,7 +341,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     run: () => effects.openAgentPicker(),
   });
 
-  let extensionSetupInitialEnvironment: EnvironmentRef | undefined;
+  let extensionSetupInitialProfile: ExtensionProfileRef | undefined;
   let extensionSetupInitialPlugin: PluginRef | undefined;
 
   const openWorkspaceTrustPrompt = (): void => {
@@ -440,7 +440,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
    * Approve or revoke this repository's executable configuration.
    *
    * @remarks
-   * The recovery path for a workspace whose Environment, `hooks`, `mcpServers`,
+   * The recovery path for a workspace whose Extension Profile, `hooks`, `mcpServers`,
    * `enabledPlugins`, `marketplaces` or `.clarvis/agents/*.md` are being
    * withheld. Without it the only way back is hand-editing
    * `~/.clarvis/workspace-trust.json`, which is not a product.
@@ -466,7 +466,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         void deps.settings.setWorkspaceTrust(false).then(
           () => {
             notify(
-              "workspace approval revoked; its Environment, hooks, servers and agents are withheld again",
+              "workspace approval revoked; its Extension Profile, hooks, servers and agents are withheld again",
             );
             recheck();
           },
@@ -715,13 +715,13 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   const pluginsStore = createPluginsStore(deps.plugins);
   const recomposePlugin = (ref: PluginRef) =>
     recomposeSelectedPlugin(
-      deps.environments,
+      deps.extensionProfiles,
       deps.reconnectBackend,
       () => pluginsStore.reload(),
       ref,
     );
   const selectedLifecycleBlock = (ref: PluginRef) =>
-    selectedPluginLifecycleBlock(deps.environments, deps.runActive, ref);
+    selectedPluginLifecycleBlock(deps.extensionProfiles, deps.runActive, ref);
 
   const refOf = (plugin: {
     scope: "global" | "workspace";
@@ -737,15 +737,15 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     left.scope === right.scope && left.source === right.source && left.name === right.name;
 
   const persistPluginMembership = async (
-    environment: ResolvedEnvironment,
+    extensionProfile: ResolvedExtensionProfile,
     ref: PluginRef,
     include: boolean,
   ): Promise<void> => {
-    if (environment.ref.scope === "builtin") {
+    if (extensionProfile.ref.scope === "builtin") {
       const current = deps.settings.read("global")?.enabledPlugins ?? [];
       if (!include && !current.some((candidate) => samePluginRef(candidate, ref))) {
         throw new Error(
-          `${ref.scope}/${ref.source}/${ref.name} is selected outside global settings; configure a custom Environment before removing it`,
+          `${ref.scope}/${ref.source}/${ref.name} is selected outside global settings; configure a custom Extension Profile before removing it`,
         );
       }
       const enabledPlugins = include
@@ -754,56 +754,65 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       await deps.settings.write("global", { enabledPlugins });
       return;
     }
-    if (environment.definition === undefined || environment.definition_revision === undefined) {
-      throw new Error(`Environment ${environment.id} has no editable definition`);
+    if (
+      extensionProfile.definition === undefined ||
+      extensionProfile.definition_revision === undefined
+    ) {
+      throw new Error(`Extension Profile ${extensionProfile.id} has no editable definition`);
     }
-    const authoredRef = environment.ref as { scope: "global" | "workspace"; name: string };
+    const authoredRef = extensionProfile.ref as { scope: "global" | "workspace"; name: string };
     const plugins = include
-      ? [...environment.definition.plugins.filter((candidate) => candidate.name !== ref.name), ref]
-      : environment.definition.plugins.filter((candidate) => !samePluginRef(candidate, ref));
-    const definition: EnvironmentDefinition = { ...environment.definition, plugins };
-    if (environment.selection_origin === "cli") {
-      if (include && environment.ref.scope === "workspace") {
+      ? [
+          ...extensionProfile.definition.plugins.filter((candidate) => candidate.name !== ref.name),
+          ref,
+        ]
+      : extensionProfile.definition.plugins.filter((candidate) => !samePluginRef(candidate, ref));
+    const definition: ExtensionProfileDefinition = { ...extensionProfile.definition, plugins };
+    if (extensionProfile.selection_origin === "cli") {
+      if (include && extensionProfile.ref.scope === "workspace") {
         throw new Error(
-          `restart without --env before installing into workspace Environment ${environment.id}`,
+          `restart without --extension-profile before installing into workspace Extension Profile ${extensionProfile.id}`,
         );
       }
-      await deps.environments.update({
+      await deps.extensionProfiles.update({
         ref: authoredRef,
         definition,
-        expected_revision: environment.definition_revision,
+        expected_revision: extensionProfile.definition_revision,
       });
       return;
     }
-    const selectionScope = environment.selection_origin === "global" ? "global" : "workspace";
+    const selectionScope = extensionProfile.selection_origin === "global" ? "global" : "workspace";
     const input = {
       ref: authoredRef,
       definition,
-      expected_revision: environment.definition_revision,
+      expected_revision: extensionProfile.definition_revision,
       selection_scope: selectionScope,
     } as const;
-    const preview = await deps.environments.previewComposition(input);
-    await deps.environments.applyComposition(input, {
+    const preview = await deps.extensionProfiles.previewComposition(input);
+    await deps.extensionProfiles.applyComposition(input, {
       preview_token: preview.token,
       ...(preview.requires_workspace_trust ? { approve_workspace: true } : {}),
     });
   };
 
-  const marketplaceInstallPreflight = async (): Promise<ResolvedEnvironment> => {
+  const marketplaceInstallPreflight = async (): Promise<ResolvedExtensionProfile> => {
     if (deps.runActive()) throw new Error("finish the active run before installing a plugin");
-    const environment = await deps.environments.current();
+    const extensionProfile = await deps.extensionProfiles.current();
     if (
-      environment.ref.scope !== "builtin" &&
-      (environment.definition === undefined || environment.definition_revision === undefined)
+      extensionProfile.ref.scope !== "builtin" &&
+      (extensionProfile.definition === undefined ||
+        extensionProfile.definition_revision === undefined)
     ) {
-      throw new Error(`Environment ${environment.id} cannot be edited for plugin activation`);
-    }
-    if (environment.selection_origin === "cli" && environment.ref.scope === "workspace") {
       throw new Error(
-        `restart without --env before installing into workspace Environment ${environment.id}`,
+        `Extension Profile ${extensionProfile.id} cannot be edited for plugin activation`,
       );
     }
-    return environment;
+    if (extensionProfile.selection_origin === "cli" && extensionProfile.ref.scope === "workspace") {
+      throw new Error(
+        `restart without --extension-profile before installing into workspace Extension Profile ${extensionProfile.id}`,
+      );
+    }
+    return extensionProfile;
   };
 
   const installAndActivatePlugin = async (
@@ -811,12 +820,12 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     source: "agents" | "clarvis",
     subdir?: string,
   ): Promise<string> => {
-    const environment = await marketplaceInstallPreflight();
+    const extensionProfile = await marketplaceInstallPreflight();
     const installed = await pluginsStore.install(url, subdir, source);
     const ref = refOf(installed);
     let membershipAccepted = false;
     try {
-      await persistPluginMembership(environment, ref, true);
+      await persistPluginMembership(extensionProfile, ref, true);
       membershipAccepted = true;
       const reconnect = await deps.reconnectBackend();
       if (!reconnect.ok) {
@@ -825,7 +834,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       }
       await pluginsStore.reload();
       const active = pluginsStore.list().find((plugin) => samePluginRef(refOf(plugin), ref));
-      const current = await deps.environments.current();
+      const current = await deps.extensionProfiles.current();
       return active?.enabled
         ? `installed and activated ${ref.scope}/${ref.source}/${ref.name} in ${current.id}`
         : `installed ${ref.scope}/${ref.source}/${ref.name}; ${current.id} is degraded and did not activate it`;
@@ -841,12 +850,12 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     listing: MarketplaceListing,
     source: "agents" | "clarvis",
   ): Promise<string> => {
-    const environment = await marketplaceInstallPreflight();
+    const extensionProfile = await marketplaceInstallPreflight();
     const installed = await pluginsStore.installSource(marketplaceInstallSource(listing), source);
     const ref = refOf(installed);
     let membershipAccepted = false;
     try {
-      await persistPluginMembership(environment, ref, true);
+      await persistPluginMembership(extensionProfile, ref, true);
       membershipAccepted = true;
       const reconnect = await deps.reconnectBackend();
       if (!reconnect.ok) {
@@ -855,7 +864,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
       }
       await pluginsStore.reload();
       const active = pluginsStore.list().find((plugin) => samePluginRef(refOf(plugin), ref));
-      const current = await deps.environments.current();
+      const current = await deps.extensionProfiles.current();
       return active?.enabled
         ? `installed and activated ${ref.scope}/${ref.source}/${ref.name} in ${current.id}`
         : `installed ${ref.scope}/${ref.source}/${ref.name}; ${current.id} is degraded and did not activate it`;
@@ -880,9 +889,9 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     const ref = refOf(plugin);
     const blocked = await selectedLifecycleBlock(ref);
     if (blocked !== undefined) throw new Error(blocked);
-    const environment = await deps.environments.current();
-    if (environmentSelectsPlugin(environment, ref)) {
-      await persistPluginMembership(environment, ref, false);
+    const extensionProfile = await deps.extensionProfiles.current();
+    if (extensionProfileSelectsPlugin(extensionProfile, ref)) {
+      await persistPluginMembership(extensionProfile, ref, false);
       const reconnect = await deps.reconnectBackend();
       if (!reconnect.ok) {
         return `deactivated ${plugin.scope}/${plugin.source}/${plugin.name}; reconnect before uninstalling (${reconnect.message})`;
@@ -893,25 +902,25 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   };
 
   commands.registerView({
-    name: "environments.open",
-    title: "Environment",
+    name: "extension-profiles.open",
+    title: "Extension Profile",
     desc: "Select and diagnose the active extension set",
     slash: false,
     surface: "internal",
     group: "navigate",
     parent: "extensions",
     view: lazyView(async () => {
-      const { EnvironmentBrowser } = await import("../views/cold-surfaces.ts");
+      const { ExtensionProfileBrowser } = await import("../views/cold-surfaces.ts");
       return (host) =>
-        EnvironmentBrowser(host, {
-          environments: deps.environments,
+        ExtensionProfileBrowser(host, {
+          extensionProfiles: deps.extensionProfiles,
           reconnect: deps.reconnectBackend,
           runActive: deps.runActive,
           notify,
           configure: (ref) => {
-            extensionSetupInitialEnvironment = ref;
+            extensionSetupInitialProfile = ref;
             extensionSetupInitialPlugin = undefined;
-            openWithReturn("extensions.open", "environments.open", host.scope());
+            openWithReturn("extensions.open", "extension-profiles.open", host.scope());
           },
         });
     }),
@@ -931,7 +940,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         WorkspaceTrustPrompt(host, {
           state: () => deps.settings.workspaceTrust(),
           fields: () => deps.settings.withheldWorkspaceFields(),
-          environment: () => deps.environments.current(),
+          extensionProfile: () => deps.extensionProfiles.current(),
           approve: async () => {
             if (deps.runActive()) {
               throw new Error("finish the active run before approving a changed workspace");
@@ -944,7 +953,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
             detachObserved(
               "workspace_trust_review",
               async () => {
-                extensionSetupInitialEnvironment = (await deps.environments.current()).ref;
+                extensionSetupInitialProfile = (await deps.extensionProfiles.current()).ref;
                 extensionSetupInitialPlugin = undefined;
                 host.close();
                 const factory = commands.viewFactory("extensions.open");
@@ -1000,7 +1009,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         const store = pluginsStore;
         const [stamp, bump] = createSignal(0);
         const [loading, setLoading] = createSignal(false);
-        const [environment, setEnvironment] = createSignal<string>();
+        const [extensionProfile, setExtensionProfile] = createSignal<string>();
         const installedNames = createMemo(() => store.list().map((p) => p.name));
         const market = createMarketplaceAdapter({
           urls: () => deps.settings.effective().marketplaces ?? [],
@@ -1014,8 +1023,8 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           detachObserved(
             "marketplace_load",
             () =>
-              Promise.all([store.reload(), market.load(), deps.environments.current()])
-                .then(([, , current]) => setEnvironment(current.id))
+              Promise.all([store.reload(), market.load(), deps.extensionProfiles.current()])
+                .then(([, , current]) => setExtensionProfile(current.id))
                 .finally(() => {
                   setLoading(false);
                   bump(stamp() + 1);
@@ -1034,15 +1043,15 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
             return market.sources();
           },
           plugins: store.list,
-          environment,
+          extensionProfile,
           loading,
           install: (listing) => installListingAndActivate(listing, "agents"),
           installUrl: (url, source) => installAndActivatePlugin(url, source),
           configure: (plugin) =>
             detachObserved(
-              "marketplace_environment_configure",
+              "marketplace_extension_profile_configure",
               async () => {
-                extensionSetupInitialEnvironment = (await deps.environments.current()).ref;
+                extensionSetupInitialProfile = (await deps.extensionProfiles.current()).ref;
                 extensionSetupInitialPlugin = refOf(plugin);
                 openWithReturn("extensions.open", "marketplace.open", host.scope());
               },
@@ -1621,19 +1630,19 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
     view: lazyView(async () => {
       const { ExtensionsHub } = await import("../views/cold-surfaces.ts");
       return (host) => {
-        const initialEnvironment = extensionSetupInitialEnvironment;
+        const initialExtensionProfile = extensionSetupInitialProfile;
         const initialPlugin = extensionSetupInitialPlugin;
-        extensionSetupInitialEnvironment = undefined;
+        extensionSetupInitialProfile = undefined;
         extensionSetupInitialPlugin = undefined;
         const [stamp, setStamp] = createSignal(0);
         const [loading, setLoading] = createSignal(false);
         const [loadError, setLoadError] = createSignal<string>();
         const [definitions, setDefinitions] = createSignal<
-          Awaited<ReturnType<EnvironmentService["list"]>>
+          Awaited<ReturnType<ExtensionProfileService["list"]>>
         >([]);
         const [inventory, setInventory] =
-          createSignal<Awaited<ReturnType<EnvironmentService["inventory"]>>>();
-        const [environment, setEnvironment] = createSignal<ResolvedEnvironment>();
+          createSignal<Awaited<ReturnType<ExtensionProfileService["inventory"]>>>();
+        const [extensionProfile, setExtensionProfile] = createSignal<ResolvedExtensionProfile>();
         const installedNames = createMemo(() => pluginsStore.list().map((plugin) => plugin.name));
         const market = createMarketplaceAdapter({
           urls: () => deps.settings.effective().marketplaces ?? [],
@@ -1657,17 +1666,17 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
             await pluginsStore.reload();
             const nextInventory =
               refreshInventory || !inventoryLoaded
-                ? deps.environments.inventory()
+                ? deps.extensionProfiles.inventory()
                 : Promise.resolve(undefined);
-            const [nextDefinitions, nextEnvironment, refreshedInventory] = await Promise.all([
-              deps.environments.list(),
-              deps.environments.current(),
+            const [nextDefinitions, nextExtensionProfile, refreshedInventory] = await Promise.all([
+              deps.extensionProfiles.list(),
+              deps.extensionProfiles.current(),
               nextInventory,
               market.load(),
             ]);
             if (disposed) return;
             setDefinitions(nextDefinitions);
-            setEnvironment(nextEnvironment);
+            setExtensionProfile(nextExtensionProfile);
             if (refreshedInventory !== undefined) {
               setInventory(refreshedInventory);
               inventoryLoaded = true;
@@ -1716,10 +1725,10 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
         };
 
         return ExtensionsHub(host, {
-          environments: deps.environments,
+          extensionProfiles: deps.extensionProfiles,
           definitions,
           inventory,
-          current: environment,
+          current: extensionProfile,
           listings,
           sources,
           loading,
@@ -1734,7 +1743,7 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
           runActive: deps.runActive,
           notify,
           openChild: (cmd) => openWithReturn(cmd, "extensions.open", preferredScope()),
-          ...(initialEnvironment === undefined ? {} : { initialEnvironment }),
+          ...(initialExtensionProfile === undefined ? {} : { initialExtensionProfile }),
           ...(initialPlugin === undefined ? {} : { initialPlugin }),
         });
       };

@@ -1,14 +1,14 @@
 import { expect, test } from "bun:test";
 import { openRender } from "../helpers/tracked-render.ts";
 import { rgbToHex } from "@opentui/core";
-import { ProfilePicker } from "../../src/views/overlays/ProfilePicker.tsx";
+import { AgentProfilePicker } from "../../src/views/overlays/AgentProfilePicker.tsx";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import type { AgentProfileView } from "../../src/adapters/agents.ts";
 import { overlayBg, selectionBg } from "../../src/theme/surfaces.ts";
 import { createFakeKeymap } from "../helpers/fake-keymap.ts";
 import { createSignal } from "solid-js";
 import type { Scope } from "@clarvis/protocol";
-import type { AgentDefaults } from "../../src/views/overlays/ProfilePicker.tsx";
+import type { AgentDefaults } from "../../src/views/overlays/AgentProfilePicker.tsx";
 
 function fakeInteraction(): { interaction: Interaction; press: (key: string) => void } {
   const { keymap, press } = createFakeKeymap();
@@ -44,7 +44,7 @@ async function mount(active = "coder") {
   const [defaults, setDefaults] = createSignal<AgentDefaults>({ global: "explorer" });
   const t = await openRender(
     (() => (
-      <ProfilePicker
+      <AgentProfilePicker
         interaction={interaction}
         list={() => PROFILES}
         active={() => active}
@@ -75,7 +75,7 @@ async function mount(active = "coder") {
 test("rows show name, model, Lead and grant columns; the band spans the selected row", async () => {
   const { t } = await mount("coder");
   const frame = t.captureCharFrame();
-  expect(frame).toContain("Select agent");
+  expect(frame).toContain("Select Agent Profile");
   expect(frame).toContain("explorer");
   expect(frame).toContain("openrouter/gpt");
   expect(frame).toContain("explorer · default");

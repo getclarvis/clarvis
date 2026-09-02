@@ -80,8 +80,8 @@ g.pluginDataRoot; //            …/state/plugin-data (persistent runtime data)
 g.subscriptionsFile; //         …/subscriptions.json (renewable subscription credentials)
 g.mcpOAuthFile; //              …/state/mcp-oauth.json (remote MCP registrations and tokens)
 g.tracesDir; //                 …/state/traces
-g.environmentsDir; //           …/environments (operator-authored definitions)
-g.environmentSelectionFile; //  …/state/environment.json (operator-wide default)
+g.extensionProfilesDir; //           …/extension-profiles (operator-authored definitions)
+g.extensionProfileSelectionFile; //  …/state/extension-profile.json (operator-wide default)
 ```
 
 Two environment variables override the roots: `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`.
@@ -94,7 +94,7 @@ removed rather than deprecated.
 
 `<ws>/.clarvis` holds what a human authors or reads plus one explicitly ignored Git-owned checkout
 root. `settings.json`, `agents/`, `skills/`,
-`plugins/`, `environments/`, `workflows/` and `guard-judge.md` are the workspace's own configuration and belong in its
+`plugins/`, `extension-profiles/`, `workflows/` and `guard-judge.md` are the workspace's own configuration and belong in its
 history; `plans/` and `memory/` are generated Markdown the user is expected to open mid-run.
 `worktrees/` contains operator-requested linked checkouts anchored in the primary worktree and is
 always excluded by `.clarvis/.gitignore` before Git creates a checkout.
@@ -104,11 +104,11 @@ history, the UI's `code.json`, bounded opt-in diagnostics, per-run temporary roo
 wiki's `.history`/`.journal`/`.state`/`.lock`, and the plan lockfiles. The segment is
 `ownerSegment(ownerFromWorkspace(root))`, the same composition `state/traces` and `state/sessions`
 already use, so one workspace's generated data all lands under one name.
-The workspace's active Environment selection is also local machinery under that `local/` tree, so
-switching Environments never dirties the repository.
+The workspace's active Extension Profile selection is also local machinery under that `local/`
+tree, so switching Extension Profiles never dirties the repository.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
-`keys.json`, `subscriptions.json`, plugins, reusable Environment definitions and their trust records, `guard-judge.md`, `auth.json` — and nests only what a
+`keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust records, `guard-judge.md`, `auth.json` — and nests only what a
 user never edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above),
 `cache/`, `exports/`. A `config/` layer was tried and removed: it made the global tree disagree with
 the workspace one, where `settings.json` and `agents/` have always sat at the root. This physical
@@ -124,7 +124,7 @@ installed checkout: global instances use `<global>/state/plugin-data/<source>/<n
 workspace instances use that workspace's machine-local `plugin-data/<source>/<name>/` state tree.
 
 Definition and selection ownership is specified in
-[`hosts/environments.md`](../../specs/hosts/environments.md): authored definitions live in the
+[`hosts/extension-profiles.md`](../../specs/hosts/extension-profiles.md): authored definitions live in the
 global/workspace roots, while global and per-workspace choices live in generated state.
 
 **The separation is enforced by the type, not by convention.** `WorkspacePaths` has no key naming

@@ -36,7 +36,9 @@ function summary(value: Session): SessionSummary {
     updated_at: value.updated_at,
     turn_count: value.turns.length,
     ...(last === undefined ? {} : { last_status: last.status }),
-    ...(last?.environment === undefined ? {} : { last_environment: last.environment }),
+    ...(last?.extension_profile === undefined
+      ? {}
+      : { last_extension_profile: last.extension_profile }),
     totals: value.totals,
   };
 }
@@ -78,23 +80,30 @@ describe("SessionService (file-backed)", () => {
     expect(await svc.get("stale")).toBeNull();
   });
 
-  it("projects the newest Environment identity into the bounded summary", async () => {
+  it("projects the newest Extension Profile identity into the bounded summary", async () => {
     const svc = createSessionService({
       dir,
       owner: "owner-a",
       projectId: "prj_test",
       workspaceId: "ws_test",
     });
-    const environment = {
+    const extensionProfile = {
       id: "workspace:research",
       fingerprint: `sha256:${"a".repeat(64)}`,
     };
     await svc.save({
-      ...session("environment", 100),
-      turns: [{ kind: "conversation", user_preview: "hi", status: "done", environment }],
+      ...session("extension-profile", 100),
+      turns: [
+        {
+          kind: "conversation",
+          user_preview: "hi",
+          status: "done",
+          extension_profile: extensionProfile,
+        },
+      ],
     });
 
-    expect((await svc.listPage()).items[0]?.last_environment).toEqual(environment);
+    expect((await svc.listPage()).items[0]?.last_extension_profile).toEqual(extensionProfile);
   });
 
   it("indexes only execution ids from valid full session records across owners", async () => {

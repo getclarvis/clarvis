@@ -5,6 +5,15 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Extension activation is now named Extension Profile across the CLI, protocol, persisted state,
+  paths, diagnostics, and terminal UI; the existing execution identity is named Agent Profile on
+  ambiguous session and picker surfaces.
+- This prerelease rename is a clean break: Clarvis reads `extension-profiles/`,
+  `extension-profile.json`, and the `--extension-profile` flag, without compatibility aliases or
+  readers for the former Environment names; the internal wire contract is now version 3.
+
 ## [0.0.3-beta] - 2026-09-01
 
 ### Added

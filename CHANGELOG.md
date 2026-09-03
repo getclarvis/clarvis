@@ -5,14 +5,30 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+## [0.0.4-beta] - 2026-09-02
+
 ### Changed
 
+- Workflow sequences now pause at every authored or repeated round boundary so Admiral can inspect
+  the persisted checkpoint and explicitly continue or stop; cumulative leader limits keep the
+  complete sequence bounded.
 - Extension activation is now named Extension Profile across the CLI, protocol, persisted state,
   paths, diagnostics, and terminal UI; the existing execution identity is named Agent Profile on
   ambiguous session and picker surfaces.
 - This prerelease rename is a clean break: Clarvis reads `extension-profiles/`,
   `extension-profile.json`, and the `--extension-profile` flag, without compatibility aliases or
   readers for the former Environment names; the internal wire contract is now version 3.
+- Run admission reuses one immutable Extension Profile snapshot instead of rescanning every skill
+  root synchronously, while exact selected content is still revalidated before execution.
+
+### Fixed
+
+- Steering is acknowledged only after the loop drains the message; if a run settles first, Clarvis
+  restores the draft and keeps a visible `Steer not delivered` receipt.
+- First-run provider and model pickers return to setup with one Escape, and portable terminals use
+  Ctrl+J as the reliable multiline chord without advertising an indistinguishable Shift+Enter.
+- Missing `--resume` and `--continue` sessions now fail before OpenTUI enters raw or alternate-screen
+  mode, leaving the calling terminal intact.
 
 ## [0.0.3-beta] - 2026-09-01
 

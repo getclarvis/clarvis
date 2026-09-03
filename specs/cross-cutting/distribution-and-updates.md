@@ -70,7 +70,7 @@ supplied by those packages remain in their copied package directories. Productio
 {
   "schema": 1,
   "repository": "getclarvis/clarvis-releases",
-  "version": "0.0.3-beta",
+  "version": "0.0.4-beta",
   "target": "linux-x64",
   "files": [{ "path": "runtime/bun", "size": 80761952, "sha256": "..." }]
 }
@@ -91,7 +91,7 @@ A managed installation is:
 ├── current
 ├── update.lock
 └── versions/
-    ├── v0.0.3-beta/clarvis-payload...
+    ├── v0.0.4-beta/clarvis-payload...
     └── v<newer>/clarvis-payload...
 ```
 

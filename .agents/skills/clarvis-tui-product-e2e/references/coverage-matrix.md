@@ -160,24 +160,24 @@ routes.
 
 ## Extensions, trust, sandbox, and executable behavior
 
-| ID        | Scenario                            | Minimum proof                                                                                                                                |
-| --------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `EXT-01`  | Extensions guided flow              | Scope, profile, inventory search, multi-select, contribution review, preview, apply, reconnect and final state                               |
-| `EXT-02`  | Cancel/discard/leave during work    | Draft discard confirmation and background completion ownership are predictable; Escape stays responsive                                      |
-| `EXT-03`  | Marketplace collections             | Built-in/configured sources, search, large list windowing, add source, load failure and retry are correct                                    |
-| `EXT-04`  | Plugin lifecycle                    | Install, identity validation, activate, update eligibility, uninstall and exact-ref selection are atomic and honest                          |
-| `EXT-05`  | Extension Profiles                  | Create/customize/select/clear/delete, process-pinned read-only mode, conflicts and resolution errors are correct                             |
-| `EXT-06`  | Skills and resources                | Four-root inventory, qualified identity, task/agent routing, invalid or inactive roots and bounded reads are correct                         |
-| `EXT-07`  | Hooks and executables               | Contribution review, workspace approval, command execution, failure and diagnostic redaction preserve trust boundaries                       |
-| `EXT-08`  | Workspace trust                     | Executable configuration is withheld until approval, recomposes after change, and revocation takes effect safely                             |
-| `EXT-09`  | Drift after admission               | Manifest, sidecar, skill/resource or executable changes fail closed and require the documented refresh boundary                              |
-| `SAFE-01` | Safety presets                      | All current presets, danger confirmation, next-run semantics and effective policy preservation are correct                                   |
-| `SAFE-02` | Guard modes and policy              | Off/on/auto, allow/deny precedence, ask, judge result, fallback and durable transcript annotation are correct                                |
-| `SAFE-03` | Native sandbox                      | Available/unavailable/degraded backends, containment refusal, diagnostics and host fallback match the active OS                              |
-| `SAFE-04` | Secret and path boundaries          | Keys, subscriptions, logs, storage, export, attachments, marketplace and tool output reveal no protected material or escape path             |
-| `SAFE-05` | Host temporary interoperability     | Cross-tool host-temp access, read-only overlap and non-owning cleanup are proved on the active OS                                            |
-| `SAFE-06` | Absolute executable classification  | A platform/runtime absolute head is occurrence-local, keeps cross-platform policy identity, and never admits identical outside operands      |
-| `SAFE-07` | Sandboxed DNS and package bootstrap | On macOS `network: host` resolves a registry hostname and downloads plus executes a real package bootstrap; `network: none` still refuses it |
+| ID        | Scenario                            | Minimum proof                                                                                                                           |
+| --------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `EXT-01`  | Extensions guided flow              | Scope, profile, inventory search, multi-select, contribution review, preview, apply, reconnect and final state                          |
+| `EXT-02`  | Cancel/discard/leave during work    | Draft discard confirmation and background completion ownership are predictable; Escape stays responsive                                 |
+| `EXT-03`  | Marketplace collections             | Built-in/configured sources, search, large list windowing, add source, load failure and retry are correct                               |
+| `EXT-04`  | Plugin lifecycle                    | Install, identity validation, activate, update eligibility, uninstall and exact-ref selection are atomic and honest                     |
+| `EXT-05`  | Extension Profiles                  | Create/customize/select/clear/delete, process-pinned read-only mode, conflicts and resolution errors are correct                        |
+| `EXT-06`  | Skills and resources                | Four-root inventory, qualified identity, task/agent routing, invalid or inactive roots and bounded reads are correct                    |
+| `EXT-07`  | Hooks and executables               | Contribution review, workspace approval, command execution, failure and diagnostic redaction preserve trust boundaries                  |
+| `EXT-08`  | Workspace trust                     | Executable configuration is withheld until approval, recomposes after change, and revocation takes effect safely                        |
+| `EXT-09`  | Drift after admission               | Manifest, sidecar, skill/resource or executable changes fail closed and require the documented refresh boundary                         |
+| `SAFE-01` | Safety presets                      | All current presets, danger confirmation, next-run semantics and effective policy preservation are correct                              |
+| `SAFE-02` | Guard modes and policy              | Off/on/auto, allow/deny precedence, ask, judge result, fallback and durable transcript annotation are correct                           |
+| `SAFE-03` | Native sandbox                      | Available/unavailable/degraded backends, containment refusal, diagnostics and host fallback match the active OS                         |
+| `SAFE-04` | Secret and path boundaries          | Keys, subscriptions, logs, storage, export, attachments, marketplace and tool output reveal no protected material or escape path        |
+| `SAFE-05` | Host temporary interoperability     | Cross-tool host-temp access, read-only overlap and non-owning cleanup are proved on the active OS                                       |
+| `SAFE-06` | Absolute executable classification  | A platform/runtime absolute head is occurrence-local, keeps cross-platform policy identity, and never admits identical outside operands |
+| `SAFE-07` | Sandboxed DNS and package bootstrap | macOS DNS, real package execution, Apple Silicon Homebrew shims and denied-network behavior are proved                                  |
 
 For `SAFE-05`, create a path through a host-native temporary API in `shell`, then reuse its absolute
 path through a later native coding tool without a guard denial. Repeat with a read-only workspace
@@ -196,8 +196,9 @@ heads match extensionless policy entries.
 For `SAFE-07`, do not use a raw IP or only a loopback socket: those miss the macOS resolver path.
 Resolve a registry hostname from the current built artifact and perform a bounded package bootstrap
 that both downloads and executes its fetched entrypoint; a metadata-only request is insufficient.
-Repeat under `network: none` and require a network failure. Record external registry availability
-separately from the sandbox verdict.
+When `/opt/homebrew/bin/npm` exists, require that logical shim rather than bypassing it with its
+resolved Cellar target. Repeat under `network: none` and require a network failure. Record external
+registry availability separately from the sandbox verdict.
 
 ## Operations, resilience, performance, and native canaries
 

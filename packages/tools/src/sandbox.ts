@@ -443,14 +443,15 @@ function validateReadOnlyPath(path: string, workspaceRoot: string): void {
 
 /**
  * Compute the `PATH` for a sandboxed process: keep only host `PATH` entries that
- * live under a system root (`/usr`, `/bin`, `/sbin`) or one of the
- * `runtimePaths`, ensure the standard system executable directories remain
- * available even when the host `PATH` was reduced, and prepend each runtime
- * root's `bin`. Entries are deduplicated while preserving order.
+ * live under a platform system root or one of the `runtimePaths`, ensure the
+ * standard system executable directories remain available even when the host
+ * `PATH` was reduced, and prepend each runtime root's `bin`. Darwin's system
+ * roots include the Apple Silicon Homebrew prefix. Entries are deduplicated
+ * while preserving order.
  */
 function sandboxPath(runtimePaths: readonly string[]): string {
   const roots = runtimePaths.map((path) => resolve(path));
-  const systemRoots = ["/usr", "/bin", "/sbin"];
+  const systemRoots = systemExecutableRoots();
   const entries = (process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin")
     .split(delimiter)
     .filter((entry) => {
@@ -458,7 +459,9 @@ function sandboxPath(runtimePaths: readonly string[]): string {
       const normalized = resolve(entry);
       return [...systemRoots, ...roots].some((root) => isWithin(normalized, root));
     });
-  for (const path of ["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]) {
+  const standardPaths = ["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+  if (process.platform === "darwin") standardPaths.unshift("/opt/homebrew/bin");
+  for (const path of standardPaths) {
     if (existsSync(path) && !entries.includes(path)) entries.push(path);
   }
   for (const root of roots) {
@@ -490,7 +493,7 @@ function minimalEnv(
     TMPDIR: temporaryRoot,
     TEMP: temporaryRoot,
     TMP: temporaryRoot,
-    ...(process.platform === "win32" ? {} : { npm_config_script_shell: "/bin/sh" }),
+    npm_config_script_shell: "/bin/sh",
   };
   for (const name of ["LANG", "TZ", "TERM", "NO_COLOR", ...passEnv]) {
     if (process.env[name] !== undefined) env[name] = process.env[name];
@@ -606,6 +609,7 @@ const SEATBELT_SYSTEM_READ_FILTERS = [
   '(subpath "/Library/Preferences")',
   '(subpath "/Library/Developer")',
   '(subpath "/Applications/Xcode.app")',
+  '(subpath "/opt/homebrew")',
   '(literal "/etc")',
   '(subpath "/etc")',
   '(subpath "/private/etc")',

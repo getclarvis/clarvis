@@ -56,21 +56,20 @@ describe("sandboxCommand", () => {
     },
   );
 
-  it("discovers the environment temp plus /tmp on POSIX and only the environment temp on Windows", () => {
+  it("discovers temporary roots that exist on the active host", () => {
     const environmentTemporaryRoot = mkdtempSync(join(tmpdir(), "clarvis-system-tmp-"));
     try {
-      expect(systemTemporaryRoots("darwin", environmentTemporaryRoot)).toEqual([
-        environmentTemporaryRoot,
-        "/tmp",
-      ]);
-      expect(systemTemporaryRoots("linux", environmentTemporaryRoot)).toEqual([
-        environmentTemporaryRoot,
-        "/tmp",
-      ]);
+      const expected =
+        process.platform === "win32"
+          ? [environmentTemporaryRoot]
+          : [...new Set([environmentTemporaryRoot, "/tmp"])];
+      expect(systemTemporaryRoots(process.platform, environmentTemporaryRoot)).toEqual(expected);
       expect(systemTemporaryRoots("win32", environmentTemporaryRoot)).toEqual([
         environmentTemporaryRoot,
       ]);
-      expect(systemTemporaryRoots("darwin", "/")).toEqual(["/tmp"]);
+      if (process.platform !== "win32") {
+        expect(systemTemporaryRoots(process.platform, "/")).toEqual(["/tmp"]);
+      }
     } finally {
       rmSync(environmentTemporaryRoot, { recursive: true, force: true });
     }
@@ -520,6 +519,7 @@ describe("sandboxCommand", () => {
     expect(profile).toContain('(subpath "/private/var/db")');
     expect(profile).toContain('(subpath "/var/select")');
     expect(profile).toContain('(subpath "/private/var/select")');
+    expect(profile).toContain('(subpath "/opt/homebrew")');
     expect(profile).toContain("(deny network*)");
     expect(profile).not.toContain('(literal "/var/run/mDNSResponder")');
     expect(profile).not.toContain('(literal "/private/var/run/mDNSResponder")');
@@ -974,7 +974,10 @@ it.skipIf(process.platform !== "darwin" || process.env.CLARVIS_NATIVE_SANDBOX_CA
       if (node?.available !== true || node.logicalPath === undefined) {
         throw new Error(node?.error ?? "the Node.js toolchain is unavailable");
       }
-      const npm = join(dirname(node.logicalPath), process.platform === "win32" ? "npm.cmd" : "npm");
+      const appleSiliconHomebrewNpm = "/opt/homebrew/bin/npm";
+      const npm = existsSync(appleSiliconHomebrewNpm)
+        ? appleSiliconHomebrewNpm
+        : join(dirname(node.logicalPath), "npm");
       const preflightArgs = [
         "view",
         "create-vite",

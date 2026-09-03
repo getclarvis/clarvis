@@ -53,4 +53,16 @@ describe("systemExecutableRoots", () => {
     expect(roots).toHaveLength(3);
     expect(roots.every((r) => /^[A-Za-z]:\\/.test(r))).toBe(true);
   });
+
+  it("admits the native Apple Silicon Homebrew prefix only on macOS", () => {
+    expect(systemExecutableRoots("darwin")).toContain("/opt/homebrew");
+    expect(systemExecutableRoots("linux")).not.toContain("/opt/homebrew");
+  });
+
+  it("keeps a Darwin Cellar executable identified as Homebrew inside the system prefix", () => {
+    const executable = "/opt/homebrew/Cellar/node/24.7.0/bin/node";
+    const roots = systemExecutableRoots("darwin");
+    expect(managerOf(executable, path.posix, roots)).toBe("homebrew");
+    expect(installationRoot(executable, path.posix, roots)).toBeUndefined();
+  });
 });

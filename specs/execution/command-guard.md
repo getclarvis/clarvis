@@ -1108,8 +1108,9 @@ broken.
     never to the path string globally: the same path used as a later operand stays outside. Its
     basename replaces only the policy-facing `normalized` head, and Windows removes `.exe`, `.com`,
     `.bat`, or `.cmd`, so `/usr/bin/git push` still matches `git push` and an absolute `curl.exe`
-    still matches an extensionless `curl` deny. `/etc/passwd` remains an outside-workspace operand
-    and `/opt/untrusted/bin/tool` remains denied. Production:
+    still matches an extensionless `curl` deny. Darwin includes the Apple Silicon Homebrew prefix
+    `/opt/homebrew` among its platform roots. `/etc/passwd` remains an outside-workspace operand and
+    `/opt/untrusted/bin/tool` remains denied. Production:
     `packages/tools/src/guard/context.ts` (`commandPathOccurrences`, `externalExecutableHeads`,
     `normalizeExternalExecutables`), `packages/tools/src/guard/dialects/powershell.ts`
     (`canonicalCommand`), and `packages/tools/src/lib/system-executables.ts`

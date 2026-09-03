@@ -191,9 +191,9 @@ subtraction applies after cross-scope union, not independently per scope.
 
 A sandboxed command does not inherit `process.env`. `minimalEnv` creates:
 
-- `PATH` from existing system entries below `/usr`, `/bin`, or `/sbin`, the standard system
+- `PATH` from existing entries below the platform system executable roots, the standard system
   executable directories even when the host supplied a reduced `PATH`, plus each admitted runtime's
-  `bin` directory;
+  `bin` directory; Darwin includes the Apple Silicon Homebrew prefix `/opt/homebrew`;
 - `HOME=/home/clarvis` for Bubblewrap;
 - `HOME` equal to the canonical primary run temporary root on Seatbelt, or the canonical workspace
   when a standalone caller supplies no temporary root;
@@ -248,9 +248,9 @@ An available macOS command executes:
 `seatbeltPolicy` starts from normal non-file host behavior, restricts process information and signals
 to the same sandbox, denies all file reads/tests/executable maps/writes, and then admits:
 
-- read access to the system runtime roots needed by macOS command-line processes, including both
-  authored and canonical `/etc` plus the narrow authored/canonical `var/select` and `var/db`
-  toolchain-selector aliases;
+- read access to the system runtime roots needed by macOS command-line processes, including the
+  Apple Silicon Homebrew prefix `/opt/homebrew`, both authored and canonical `/etc`, plus the narrow
+  authored/canonical `var/select` and `var/db` toolchain-selector aliases;
 - when networking is allowed, read/test access to only the authored and canonical
   `mDNSResponder` socket paths used by the macOS DNS resolver;
 - read access to the canonical workspace, linked Git metadata, every configured temporary root, and
@@ -281,6 +281,11 @@ installer despite an installed Git. The real-host canary resolves both selectors
 only after both safe preflights succeed, so the same regression cannot open the graphical installer
 during local tests.
 
+The Apple Silicon Homebrew prefix `/opt/homebrew` is also a static read/test/executable-map root.
+This lets a logical command such as `/opt/homebrew/bin/npm` resolve its shim and canonical Cellar
+target inside the same read-only system prefix. The prefix is absent from every Seatbelt write rule,
+so this interoperability does not make the Homebrew prefix broadly mutable from the sandbox.
+
 Host networking on macOS also depends on a filesystem object: libc's resolver reaches
 `/var/run/mDNSResponder`, whose canonical spelling is `/private/var/run/mDNSResponder`. Seatbelt's
 default file deny otherwise leaves raw-IP connections working while hostname resolution fails. The
@@ -294,7 +299,9 @@ PATH prepends `node_modules/.bin` at every ancestor of the package directory. A 
 intentionally hides can therefore make that name lookup return `EPERM` before it reaches the
 admitted system shell. The minimal POSIX sandbox environment fixes the equivalent default as
 `npm_config_script_shell=/bin/sh`; this changes no command semantics, adds no host read permission,
-and lets npm reach the already admitted executable directly.
+and lets npm reach the already admitted executable directly. On Apple Silicon runners, the filtered
+`PATH` and static read policy also retain `/opt/homebrew/bin`, so npm's logical Homebrew shim is not
+blocked before its canonical Cellar target can execute.
 
 Production: `packages/tools/src/sandbox.ts` (`SEATBELT_SYSTEM_READ_FILTERS`, `seatbeltPolicy`,
 `sandboxCommand`). Tests: `packages/tools/tests/integration/sandbox.test.ts` (`compiles a parameterized
@@ -319,8 +326,11 @@ discovered entrypoint. Version metadata therefore remains absent. This is a safe
 just an optimization: operating-system shims can display installers or otherwise mutate observable
 host state when launched, even with a nominally read-only argument such as `--version`.
 
-System executables do not need a runtime mount. Custom/versioned roots become read-only runtime roots
-and contribute their `bin` directories to the sandbox `PATH`. Windows discovery remains useful for
+System executables do not need a runtime mount. Darwin treats `/opt/homebrew` as a system executable
+prefix, so Apple Silicon Homebrew shims and their canonical Cellar targets survive the filtered
+`PATH` and read policy; discovery still reports the manager as Homebrew because that classification
+precedes the system-root fallback. Custom/versioned roots become read-only runtime roots and
+contribute their `bin` directories to the sandbox `PATH`. Windows discovery remains useful for
 inspection tests, but Windows has no executable sandbox backend.
 
 Recognized install layouts cover mise/asdf, nvm, pyenv, rustup, SDKMAN, Volta, and Homebrew Cellar
@@ -329,10 +339,11 @@ command in each catalog entry is the path-resolution anchor. Discovery returns a
 for a requested catalog id whose command is absent rather than making configuration parsing depend
 on what is installed; unknown ids are ignored by the fixed catalog lookup.
 
-Production: `packages/tools/src/sandbox.ts` (`TOOLCHAIN_COMMANDS`, `systemExecutableRoots`,
-`installationRoot`, `managerOf`, `discoverToolchains`) and
+Production: `packages/tools/src/sandbox.ts` (`TOOLCHAIN_COMMANDS`, `installationRoot`, `managerOf`,
+`discoverToolchains`), `packages/tools/src/lib/system-executables.ts` (`systemExecutableRoots`), and
 `packages/loop/src/runtime/capabilities/sandbox-host-policy.ts` (`discoverSandboxToolchains`). Tests:
-`packages/tools/tests/integration/sandbox.test.ts` (toolchain catalog, install/path cases) and
+`packages/tools/tests/integration/sandbox.test.ts` (toolchain catalog, install/path cases),
+`packages/tools/tests/unit/fs-portability.test.ts` (platform system roots and install layouts), and
 `packages/loop/tests/integration/sandbox-host-policy.test.ts`.
 
 ## 4. Behavior
@@ -583,11 +594,15 @@ profile admits neither and retains its global network deny.
 
 **INV-S15 — A downloaded npm package can execute without widening hidden host reads.** Native POSIX
 environments select `/bin/sh` as npm's script shell, avoiding a bare-name lookup through denied
-ancestor `node_modules/.bin` candidates. The macOS canary preflights registry availability outside
-the sandbox, then requires the sandbox to download, execute, and materialize a real create-vite
-template; a second clean-cache invocation under `network: "none"` must fail.
+ancestor `node_modules/.bin` candidates. Seatbelt admits the Apple Silicon Homebrew prefix for
+read/test/executable mapping and retains its `bin` directory in the filtered `PATH`, but never grants
+that prefix a write rule. The macOS canary preflights registry availability outside the sandbox,
+then requires the sandbox to download, execute, and materialize a real create-vite template; a
+second clean-cache invocation under `network: "none"` must fail.
 
-- Production: `packages/tools/src/sandbox.ts` (`minimalEnv`).
+- Production: `packages/tools/src/sandbox.ts` (`sandboxPath`, `minimalEnv`,
+  `SEATBELT_SYSTEM_READ_FILTERS`) and
+  `packages/tools/src/lib/system-executables.ts` (`systemExecutableRoots`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`downloads and executes a package
   bootstrap inside Seatbelt`).
 
@@ -599,6 +614,7 @@ template; a second clean-cache invocation under `network: "none"` must fail.
 | macOS where `sandbox-exec` cannot apply the profile | Backend `seatbelt`, mode `unavailable`; required runs fail closed |
 | macOS system alias denied while Apple Git is installed | Policy regression: the real Git canary fails; Clarvis must not report or trigger the developer-tools fallback |
 | macOS `network: "host"` omits the resolver socket | Raw-IP connections may work while DNS/package registry access fails; the profile test and real hostname canary fail |
+| macOS omits `/opt/homebrew` from system reads or the filtered `PATH` | Apple Silicon Homebrew commands fail with `Operation not permitted` before their canonical Cellar target can execute; the real package-bootstrap canary fails |
 | POSIX npm resolves its script shell as bare `sh` | Download/extraction can succeed, then npm exits with `spawn EPERM` while probing hidden ancestor bins; the minimal environment selects `/bin/sh` |
 | Unsupported platform | Backend `unsupported`, mode `unavailable`; no probe process |
 | Fresh `/proc` blocked but host `/proc` bind works | Available `bubblewrap` / `host-proc`, `degraded: true`, explicit reason |

@@ -1,5 +1,8 @@
-/** System-owned executable roots on POSIX hosts. */
+/** System-owned executable roots shared by POSIX hosts. */
 const POSIX_SYSTEM_EXECUTABLE_ROOTS = ["/usr", "/bin", "/sbin", "/usr/local"];
+
+/** Apple Silicon Homebrew is a standard system-wide developer prefix on macOS. */
+const DARWIN_SYSTEM_EXECUTABLE_ROOTS = [...POSIX_SYSTEM_EXECUTABLE_ROOTS, "/opt/homebrew"];
 
 const WINDOWS_EXECUTABLE_SUFFIX = /\.(?:exe|com|bat|cmd)$/i;
 
@@ -20,11 +23,13 @@ export function stripWindowsExecutableSuffix(name: string): string {
  * @param platform - Host platform; injectable so Windows roots are testable
  *   from a POSIX host.
  * @returns The system executable roots for that platform.
- * @remarks Windows keeps its standard program roots because tools such as
- *   `dotnet.exe` live directly below them rather than beneath a POSIX-style
- *   `<root>/bin` directory.
+ * @remarks Darwin also includes the Apple Silicon Homebrew prefix. Windows
+ *   keeps its standard program roots because tools such as `dotnet.exe` live
+ *   directly below them rather than beneath a POSIX-style `<root>/bin`
+ *   directory.
  */
 export function systemExecutableRoots(platform: NodeJS.Platform = process.platform): string[] {
+  if (platform === "darwin") return DARWIN_SYSTEM_EXECUTABLE_ROOTS;
   if (platform !== "win32") return POSIX_SYSTEM_EXECUTABLE_ROOTS;
   return [
     process.env.SystemRoot ?? "C:\\Windows",

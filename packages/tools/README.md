@@ -117,7 +117,9 @@ canonical `mDNSResponder` socket paths required by the macOS resolver. `network:
 neither and still denies every network operation. Native POSIX sandboxes set npm's script shell to
 the absolute `/bin/sh`: npm otherwise searches a bare `sh` through synthetic ancestor
 `node_modules/.bin` entries, where a deliberately hidden host path can turn package execution into
-`spawn EPERM` even after download and extraction succeeded.
+`spawn EPERM` even after download and extraction succeeded. On macOS, the read-only system runtime
+and filtered `PATH` also include `/opt/homebrew`, so Apple Silicon Homebrew command shims remain
+executable while the prefix itself receives no sandbox write rule.
 
 `host_vcs` is the narrow fallback for an operation the sandbox cannot perform because it lacks a
 host environment variable, credential channel, runtime, or service. The historical name remains for
@@ -172,9 +174,10 @@ an explicitly admitted sandbox runtime root is classified as the executable, not
 data operand. Its exact argv remains available for review, while allow/deny matching uses the same
 basename identity as the PATH spelling (`/usr/bin/git push` is still `git push` to policy). Windows
 also removes `.exe`, `.com`, `.bat`, and `.cmd` from that policy identity, matching its extensionless
-PATH spelling. The exception belongs to that command-head occurrence only: if the same absolute path
-appears later as an operand, that occurrence remains outside the workspace boundary, as do an
-absolute argument such as `/etc/passwd` and an executable outside the host-approved roots.
+PATH spelling. Darwin's roots include `/opt/homebrew` for Apple Silicon Homebrew commands. The
+exception belongs to that command-head occurrence only: if the same absolute path appears later as
+an operand, that occurrence remains outside the workspace boundary, as do an absolute argument such
+as `/etc/passwd` and an executable outside the host-approved roots.
 
 ```ts
 const readOnly = createAgentTools({

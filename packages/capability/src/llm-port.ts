@@ -168,6 +168,8 @@ export interface RetryInfo {
   delayMs: number;
   /** The classified failure that triggered the retry. */
   kind: FailureKind;
+  /** The bounded provider failure message that triggered the retry. */
+  message: string;
   /** HTTP status, when the failure carried one. */
   status?: number;
   /** The server-advised delay, when one was parsed from the response. */
@@ -248,7 +250,13 @@ export interface LLMCallParams {
    * event which ends the blind window, since everything else about the call
    * arrives only after the whole model call returns.
    */
-  onToolInputDelta?: (delta: { call_id: string; tool_name: string; chars: number }) => void;
+  onToolInputDelta?: (delta: {
+    call_id: string;
+    tool_name: string;
+    chars: number;
+    /** Present only on the final cumulative report for this argument stream. */
+    complete?: true;
+  }) => void;
 }
 
 /**

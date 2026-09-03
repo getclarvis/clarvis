@@ -36,6 +36,12 @@ MCP itself. What remains of the last two is engine _policy_ — when to record a
 when to call — while the transports live in `@clarvis/trace` and
 `@clarvis/mcp-client`.
 
+That trace policy records the first `tool_input_delta` announcement for each provider attempt, then
+emits only live cumulative progress and the explicit argument-stream completion. A retry clears the
+attempt-local announcement set, so even a provider that reuses a `call_id` leaves one new durable
+breadcrumb. `model_call_retry` also retains the bounded provider failure message. This is bounded
+observability: no argument content and no per-delta journal growth.
+
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > is not published independently.
 
@@ -218,6 +224,13 @@ also ships one, but it is not on this list: the engine does not load it at all.
 Run teardown removes each registered temporary root and then prunes its now-empty execution and
 `runs/` containers. The global paths sweeper separately reclaims stale empty containers left by a
 crash, so a normal run does not accumulate directory-only scratch state.
+
+The doom-loop guard counts only genuine tool execution failures. A command or path refused by
+policy/human review is still returned and traced as a tool error, but it is a `denied` dispatch — it
+breaks the active execution-failure streak instead of advancing it. Results are folded in the order
+the model declared its calls. Crossing a threshold inside a multi-call dispatch therefore remains
+provisional until the loop checks the guard after the batch: a later successful call resets the
+streak, while an observed trip remains latched until explicit guard escalation resets it.
 
 Stagnation is a consecutive streak, not a run-wide frequency count. The same tool call must return
 the same successful result repeatedly with nothing different in between; another call, a changed

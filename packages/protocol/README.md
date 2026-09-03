@@ -39,23 +39,23 @@ implements an in-process client, a loopback client and stdio transport.
 `KernelClient` carries the connected `project`/`workspace` identity and groups fifteen asynchronous
 services:
 
-| Service        | Responsibility                                                                         |
-| -------------- | -------------------------------------------------------------------------------------- |
-| `runs`         | Start, stream, steer, compact live or settled context, inspect and delete runs.        |
-| `config`       | Settings, agent documents and context documents.                                       |
-| `extensionProfiles` | Exact inventory, definition, composition preview and selection of active extensions. |
-| `plugins`      | Installed plugins, atomic contributions, capability services and lifecycle operations. |
-| `secrets`      | Server-side provider secret names and writes.                                          |
-| `models`       | Model metadata and pricing catalog.                                                    |
-| `providerAuth` | Token-free local subscription status, device login and disconnect control.             |
-| `files`        | Read-only workspace file and image access.                                             |
-| `memory`       | Owner-facing execution-memory review and curation.                                     |
-| `plans`        | History from the workspace's selected plan provider.                                   |
-| `workflows`    | Agentic workflows: a manager run fanning out leaders.                                  |
-| `skills`       | Skill listing and prompt rendering.                                                    |
-| `sessions`     | Workspace-scoped conversation/session records.                                         |
-| `tasks`        | Provider-neutral external task discovery, mutation and transition previews.            |
-| `storage`      | Metadata-only local inventory and confirmed cleanup of disposable artifacts.           |
+| Service             | Responsibility                                                                         |
+| ------------------- | -------------------------------------------------------------------------------------- |
+| `runs`              | Start, stream, steer, compact live or settled context, inspect and delete runs.        |
+| `config`            | Settings, agent documents and context documents.                                       |
+| `extensionProfiles` | Exact inventory, definition, composition preview and selection of active extensions.   |
+| `plugins`           | Installed plugins, atomic contributions, capability services and lifecycle operations. |
+| `secrets`           | Server-side provider secret names and writes.                                          |
+| `models`            | Model metadata and pricing catalog.                                                    |
+| `providerAuth`      | Token-free local subscription status, device login and disconnect control.             |
+| `files`             | Read-only workspace file and image access.                                             |
+| `memory`            | Owner-facing execution-memory review and curation.                                     |
+| `plans`             | History from the workspace's selected plan provider.                                   |
+| `workflows`         | Agentic workflows: a manager run fanning out leaders.                                  |
+| `skills`            | Skill listing and prompt rendering.                                                    |
+| `sessions`          | Workspace-scoped conversation/session records.                                         |
+| `tasks`             | Provider-neutral external task discovery, mutation and transition previews.            |
+| `storage`           | Metadata-only local inventory and confirmed cleanup of disposable artifacts.           |
 
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
@@ -90,6 +90,12 @@ configuration, plans, memory and credentials outside the deletion vocabulary.
 `iteration_completed.response_phase` optionally projects the provider-declared assistant lifecycle
 phase (`commentary` or `final_answer`). The response text remains authoritative; clients must not
 invent prose when the field is absent.
+
+`tool_input_delta` is cumulative, not one event per provider fragment. Its optional
+`complete: true` closes only the argument-composition phase; `tool_call_started` still owns actual
+execution start and terminal `tool_call` still owns the tool outcome. A client must not infer that a
+prior call ended merely because another tool input starts, because providers may compose calls in
+parallel.
 
 `SessionTotals.cached` is likewise optional by meaning, not merely by transport compatibility: a
 number, including zero, is a complete measured cache-read total; absence means at least one

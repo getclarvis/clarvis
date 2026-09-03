@@ -22,9 +22,41 @@ class StreamingLLM implements LLMProvider {
 
   async call(params: LLMCallParams): Promise<LLMCallResult> {
     params.onStreamDelta?.({ channel: "text", text: this.text, reset: true });
-    params.onToolInputDelta?.({ call_id: "call-1", tool_name: "shell", chars: 7 });
+    params.onToolInputDelta?.({ call_id: "call-1", tool_name: "shell", chars: 0 });
+    params.onToolInputDelta?.({
+      call_id: "call-1",
+      tool_name: "shell",
+      chars: 7,
+      complete: true,
+    });
     return {
       text: this.text,
+      usage: { input_tokens: 10, output_tokens: 5, cached_tokens: 0, cache_write_tokens: 0 },
+    };
+  }
+}
+
+/** A provider facade that exposes two physical-attempt lifecycles through one logical call. */
+class RetryingToolInputLLM implements LLMProvider {
+  async call(params: LLMCallParams): Promise<LLMCallResult> {
+    params.onToolInputDelta?.({ call_id: "reused", tool_name: "write_file", chars: 0 });
+    params.onToolInputDelta?.({ call_id: "reused", tool_name: "write_file", chars: 8 });
+    params.onRetry?.({
+      attempt: 1,
+      maxRetries: 3,
+      delayMs: 0,
+      kind: "transient",
+      message: "tool argument stream became inactive",
+    });
+    params.onToolInputDelta?.({ call_id: "reused", tool_name: "write_file", chars: 0 });
+    params.onToolInputDelta?.({
+      call_id: "reused",
+      tool_name: "write_file",
+      chars: 12,
+      complete: true,
+    });
+    return {
+      text: "done",
       usage: { input_tokens: 10, output_tokens: 5, cached_tokens: 0, cache_write_tokens: 0 },
     };
   }
@@ -100,12 +132,41 @@ describe("streaming delta attribution", () => {
     const trace = createTrace(0, (entry) => streamed.push(entry));
     await runAgent(makeInput(new StreamingLLM("done"), trace, "worker"));
 
-    expect(streamed.find((entry) => entry.kind === "tool_input_delta")?.detail).toMatchObject({
+    expect(
+      streamed.filter((entry) => entry.kind === "tool_input_delta").at(-1)?.detail,
+    ).toMatchObject({
       agent: "subagent",
       subagent_instance_id: "worker",
       call_id: "call-1",
       tool_name: "shell",
       chars: 7,
+      complete: true,
+    });
+  });
+
+  it("persists one announcement per call while keeping cumulative progress live-only", async () => {
+    const observed: Array<{ entry: TraceEntry; durable: boolean }> = [];
+    const trace = createTrace(0, (entry, durable) => observed.push({ entry, durable }));
+    await runAgent(makeInput(new StreamingLLM("done"), trace));
+
+    const toolInput = observed.filter(({ entry }) => entry.kind === "tool_input_delta");
+    expect(toolInput).toHaveLength(2);
+    expect(toolInput.map(({ durable }) => durable)).toEqual([true, false]);
+    expect(trace.entries().filter((entry) => entry.kind === "tool_input_delta")).toHaveLength(1);
+  });
+
+  it("records a fresh announcement after retry even when the provider reuses the call id", async () => {
+    const observed: Array<{ entry: TraceEntry; durable: boolean }> = [];
+    const trace = createTrace(0, (entry, durable) => observed.push({ entry, durable }));
+    await runAgent(makeInput(new RetryingToolInputLLM(), trace));
+
+    const toolInput = observed.filter(({ entry }) => entry.kind === "tool_input_delta");
+    expect(toolInput.map(({ durable }) => durable)).toEqual([true, false, true, false]);
+    expect(trace.entries().filter((entry) => entry.kind === "tool_input_delta")).toHaveLength(2);
+    expect(
+      trace.entries().find((entry) => entry.kind === "model_call_retry")?.detail,
+    ).toMatchObject({
+      message: "tool argument stream became inactive",
     });
   });
 });

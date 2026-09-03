@@ -254,6 +254,22 @@ describe("remote run codec", () => {
     expect(decodeRunEvent(event)).toEqual(event);
   });
 
+  it("preserves explicit tool-input completion and rejects wider lifecycle shapes", () => {
+    const event = {
+      type: "tool_input_delta",
+      at: 14,
+      agent: "lead",
+      call_id: "call-write",
+      tool: "write_file",
+      chars: 48_147,
+      complete: true,
+    } as const;
+
+    expect(decodeRunEvent(event)).toEqual(event);
+    expect(decodeRunEvent({ ...event, complete: false })).toBeNull();
+    expect(decodeRunEvent({ ...event, done: true })).toBeNull();
+  });
+
   it("preserves compaction lifecycle and fallback attribution", () => {
     const started = {
       type: "compaction_started",

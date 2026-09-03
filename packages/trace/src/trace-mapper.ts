@@ -201,6 +201,7 @@ function mapEntryRaw(
         chars: d.chars,
       };
       if (d.subagent_instance_id !== undefined) event.subagent_instance_id = d.subagent_instance_id;
+      if (d.complete === true) event.complete = true;
       return event;
     }
     case "subagent_iteration_started": {
@@ -455,6 +456,7 @@ function mapEntryRaw(
         occurred_at: abs(entry.at),
         model: d.model,
         kind: d.kind,
+        message: d.message,
         attempt: d.attempt,
         max_retries: d.max_retries,
         delay_ms: d.delay_ms,

@@ -76,7 +76,7 @@ only importers are this package's own suites, which use it as the single handle 
 |---|---|---|---|
 | `GuardTrip` | interface | `{code:"tool_failure_loop"\|"stagnation_detected", message}` | `packages/loop/src/runtime/guards/convergence-guards.ts:9-12` |
 | `GuardWarning` | interface | `{code: GuardTrip["code"], message}` | `packages/loop/src/runtime/guards/convergence-guards.ts:18-21` |
-| `ConvergenceGuards` | interface | `record(sig, resultText, isError)`, `takeSoft()`, `tripped()`, `reset()` | `packages/loop/src/runtime/guards/convergence-guards.ts:27-48` |
+| `ConvergenceGuards` | interface | `record(sig, resultText, outcome)`, `takeSoft()`, `tripped()`, `reset()`; `outcome` distinguishes success, execution failure and pre-execution denial | `ConvergenceGuards` / `ToolConvergenceOutcome` in `packages/loop/src/runtime/guards/convergence-guards.ts` |
 | `createConvergenceGuards(opts?)` | factory | fans `record` out to a doom-loop guard and a stagnation guard | `packages/loop/src/runtime/guards/convergence-guards.ts:61-92` |
 | `createDoomLoopGuard(opts?)` | factory | `DoomLoopGuardOptions` = `{identicalThreshold?, errorThreshold?, identicalSoft?, errorSoft?}` | `packages/loop/src/runtime/guards/doom-loop-guard.ts:24-70` |
 | `createStagnationGuard(opts?)` | factory | `StagnationGuardOptions` = `{threshold?, soft?}` | `packages/loop/src/runtime/guards/stagnation-guard.ts:4-77` |
@@ -333,7 +333,16 @@ Within one iteration of `runAgentLoop`, after a model call and tool dispatch, th
 1. Fast-accept a `submit_result` if the finalize gate already takes it (`packages/loop/src/runtime/loop/loop.ts:1066-1067`).
 2. Dispatch tool calls (`runDispatch`), which is where `guards.record(...)` is fed per call (delegated
    to [loop-tool-dispatch-and-results](tool-dispatch.md); call sites `packages/loop/src/runtime/tools/mcp-dispatch.ts:229`
-   and `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:95,146`).
+   and `executeAgentToolCall` in `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts`).
+   A command/path review with `guard.outcome === "denied"` is an observable tool error but not an
+   execution failure: it clears the doom-loop streak and resets successful-result stagnation because
+   the handler never ran. A hard crossing remains provisional while the rest of the same dispatch is
+   folded in model-declared order; a later success clears it. The first `tripped()` observation after
+   dispatch latches a still-standing crossing until explicit reset. Production: `createConvergenceGuards`,
+   `createDoomLoopGuard`, and `executeAgentToolCall`. Tests:
+   `packages/loop/tests/integration/command-guard-wiring.test.ts` (four policy plus two human denials),
+   `packages/loop/tests/integration/doom-loop-lead.test.ts` (six genuine failures followed by one
+   success in the same batch), and `packages/loop/tests/unit/doom-loop-guard.test.ts`.
 3. `d.guards.takeSoft()` — any pending soft warnings from either guard are joined into **one**
    `[runtime: …]` note (both replace the same note kind, so a second warning does not erase the first —
    comment, `packages/loop/src/runtime/loop/loop.ts:1074-1079`) and each is separately traced as `convergence_warning`

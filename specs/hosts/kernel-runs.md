@@ -254,13 +254,15 @@ Complete table, transcribed from `:57-93`:
 | `events_dropped` | **kernel_derived** | live_only | **managed_run** | false | false |
 | `mcp_degraded` | engine_trace | persisted | engine | false | false |
 
-Read as a live-versus-rehydration matrix: fifteen types are `live_only` and therefore absent from a
-restored run journal — the three deltas, three workflow state/metadata/progress events, five plan
-events, `compaction_started`, `memory_ingest`, `capability_event`, and `events_dropped`. The latest
-workflow sequence state remains separately durable in the workflow store. This is consistent with the
-rehydration path, which reads only `s.trace.events` (`packages/kernel/src/runs/map-result.ts:193`), and with the integration
-assertion that a stored run has no `tool_output_delta` but does have the closing `tool_call`
-(`packages/kernel/tests/integration/run-service.smoke.test.ts:135-137`).
+Read as a client live-versus-rehydration matrix: fifteen types are `live_only` and therefore absent
+from restored `RunDetail.events` — the three deltas, three workflow state/metadata/progress events,
+five plan events, `compaction_started`, `memory_ingest`, `capability_event`, and `events_dropped`.
+The latest workflow sequence state remains separately durable in the workflow store. The engine may
+still record one first `tool_input_delta` announcement per provider attempt in its raw trace as a
+bounded diagnostic breadcrumb; `rehydrateEvents` maps stored entries and then filters them through
+this policy, so that breadcrumb cannot revive a stale composing tool in a restored client. This is
+consistent with the integration assertion that a stored run has no client `tool_output_delta` but
+does have the closing `tool_call` (`packages/kernel/tests/integration/run-service.smoke.test.ts`).
 
 ### 3.4 The `events_dropped` notice
 
@@ -314,7 +316,11 @@ ignored.
 `total_input_tokens`/`total_output_tokens`/`total_cached_tokens` (`:154-161`), `plan_ref` from
 `capability_state` (delegated; `packages/kernel/src/runs/plan-ref.ts:62`), `active_task` likewise (`packages/kernel/src/runs/task-binding.ts:6`),
 `extension_profile` validated from opaque `host_metadata.extension_profile`, `recovery` forwarded verbatim when
-present, `messages` via `engineMessagesToProto`, and `events` via `rehydrateEvents`.
+present, `messages` via `engineMessagesToProto`, and `events` via `rehydrateEvents`. That last step
+maps only recognized events and retains only entries whose mapped protocol type is `persisted` in
+`RUN_EVENT_POLICY`; its debug summary reports total, mapped and dropped counts. The filter is needed
+even though ordinary deltas are signals because the loop deliberately records the first tool-input
+announcement for post-mortem diagnosis.
 
 `extensionProfileFromHostMetadata` accepts only a qualified Extension Profile id and a lowercase SHA-256
 fingerprint, then projects exactly those two strings (`packages/kernel/src/runs/map-result.ts:25-41`).
@@ -979,6 +985,11 @@ Test: `packages/kernel/tests/unit/event-policy.test.ts`,
 contract`). Durable checkpoint ownership remains with `WorkflowRecord.sequence`, specified in
 [workflows-service.md](../capabilities/workflows-service.md).
 
+**INV-R46.** Rehydration never exposes a protocol event whose `RUN_EVENT_POLICY` durability is
+`live_only`, even when the engine intentionally retained a bounded raw trace breadcrumb of that
+type. Production: `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts` and
+`RUN_EVENT_POLICY`. Test: `packages/kernel/tests/unit/observability.test.ts` (`runs.rehydrated`).
+
 ## 6. Failure modes and degradation
 
 | Condition | Handler | Outcome |
@@ -1002,7 +1013,7 @@ contract`). Durable checkpoint ownership remains with `WorkflowRecord.sequence`,
 | engine event with no protocol projection | `packages/kernel/src/runs/map-events.ts:400,594,677` | dropped; sampled `runs.event.unmapped` debug line |
 | capability event with no `wire` projection | `packages/kernel/src/runs/map-events.ts:347-349` | dropped; `reason: "no_wire_projection"` |
 | capability detail too large, cyclic, or with throwing accessors | `packages/kernel/src/runs/map-events.ts:192-216` | bounded and truncated, never thrown; unserializable becomes the literal `"[unserializable capability event]"` (`:208`) |
-| rehydration loses events | `packages/kernel/src/runs/map-result.ts:196-205` | the run is returned with fewer events plus a `runs.rehydrated` line carrying the delta |
+| rehydration maps an unknown entry or encounters a mapped live-only breadcrumb | `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts` | the entry is omitted from `RunDetail.events`; `runs.rehydrated` reports total/mapped/dropped counts |
 | plan or task slot in `capability_state` malformed | `packages/kernel/src/runs/plan-ref.ts:66`, `packages/kernel/src/runs/task-binding.ts:10` (delegated) | field omitted from `RunDetail`, no throw; pinned at `packages/kernel/tests/unit/map-result.test.ts:52-66` and `:92-123` |
 | Extension Profile slot in `host_metadata` malformed | `extensionProfileFromHostMetadata` in `packages/kernel/src/runs/map-result.ts` | `extension_profile` omitted from `RunDetail`; other run data still hydrates |
 

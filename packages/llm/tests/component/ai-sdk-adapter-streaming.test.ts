@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, beforeEach, vi } from "../helpers/bun-
 import { streamText as realStreamText } from "ai";
 import { AiSdkAdapter } from "@clarvis/llm/adapter";
 import { ProviderError, type LLMCallParams } from "@clarvis/capability";
+import { bridgeModelCallTimeout } from "../../src/model-call-timeout-bridge.ts";
 
 const mockStream = vi.fn();
 const mockGenerate = vi.fn();
@@ -195,7 +196,12 @@ describe("AiSdkAdapter — streaming path", () => {
     );
 
     const deltas: Delta[] = [];
-    const toolInput: Array<{ call_id: string; tool_name: string; chars: number }> = [];
+    const toolInput: Array<{
+      call_id: string;
+      tool_name: string;
+      chars: number;
+      complete?: true;
+    }> = [];
     const res = await adapter().call(
       params({
         onStreamDelta: (d) => deltas.push(d),
@@ -214,7 +220,7 @@ describe("AiSdkAdapter — streaming path", () => {
     expect(res.finishReason).toBe("tool-calls");
     expect(toolInput).toEqual([
       { call_id: "c1", tool_name: "write_file", chars: 0 },
-      { call_id: "c1", tool_name: "write_file", chars: 3 },
+      { call_id: "c1", tool_name: "write_file", chars: 3, complete: true },
     ]);
 
     const joined = (ch: Delta["channel"]): string =>
@@ -292,6 +298,75 @@ describe("AiSdkAdapter — streaming path", () => {
     });
   });
 
+  it("lets an active stream outlive the timeout while every inter-part gap stays below it", async () => {
+    vi.useFakeTimers({ now: 1_000 });
+    mockStream.mockImplementation(
+      (callbacks: { onEnd?: (event: unknown) => unknown; abortSignal?: AbortSignal }) => {
+        async function* parts(): AsyncGenerator<Part> {
+          yield { type: "tool-input-start", id: "c1", toolName: "write_file" };
+          await new Promise<void>((resolve) => setTimeout(resolve, 20));
+          yield { type: "tool-input-delta", id: "c1", delta: "still streaming" };
+          await new Promise<void>((resolve) => setTimeout(resolve, 20));
+          yield { type: "tool-input-end", id: "c1" };
+          await callbacks.onEnd?.({
+            text: "",
+            toolCalls: [],
+            usage: { inputTokens: 1, outputTokens: 1, inputTokenDetails: {} },
+            finishReason: "tool-calls",
+          });
+        }
+        return { stream: parts() } as never;
+      },
+    );
+
+    const pending = adapter().call(
+      params({ timeoutMs: 25, onStreamDelta: () => {}, onToolInputDelta: () => {} }),
+    );
+    await vi.runAllTimersAsync();
+
+    await expect(pending).resolves.toMatchObject({
+      finishReason: "tool-calls",
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+  });
+
+  it("lets admission cleanup disarm a pending stream inactivity timer", async () => {
+    vi.useFakeTimers({ now: 1_000 });
+    let releaseStream: () => void = () => {};
+    let receivedSignal: AbortSignal | undefined;
+    mockStream.mockImplementation(
+      (callbacks: { onEnd?: (event: unknown) => unknown; abortSignal?: AbortSignal }) => {
+        receivedSignal = callbacks.abortSignal;
+        async function* parts(): AsyncGenerator<Part> {
+          await new Promise<void>((resolve) => {
+            releaseStream = resolve;
+          });
+          yield { type: "text-start", id: "answer" };
+          await callbacks.onEnd?.({
+            text: "done",
+            toolCalls: [],
+            usage: { inputTokens: 1, outputTokens: 1, inputTokenDetails: {} },
+            finishReason: "stop",
+          });
+        }
+        return { stream: parts() } as never;
+      },
+    );
+    const bridged = bridgeModelCallTimeout(params({ timeoutMs: 25, onStreamDelta: () => {} }));
+
+    const pending = adapter().call(bridged.params);
+    expect(receivedSignal).toBeDefined();
+    bridged.bridge.cleanup();
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(receivedSignal?.aborted).toBe(false);
+    releaseStream();
+    await expect(pending).resolves.toMatchObject({
+      text: "done",
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+  });
+
   it("uses a non-cumulative partial output and never reads aggregate getters", async () => {
     mockStream.mockImplementation(
       (callbacks) =>
@@ -331,5 +406,29 @@ describe("AiSdkAdapter — streaming path", () => {
     await expect(adapter().call(params({ onStreamDelta: () => {} }))).rejects.toMatchObject({
       streamStarted: true,
     });
+  });
+
+  it("marks the admission timeout bridge after tool-input output starts", async () => {
+    mockStream.mockImplementation(
+      (callbacks) =>
+        fakeStream(
+          {
+            parts: [
+              { type: "tool-input-start", id: "c", toolName: "write_file" },
+              { type: "tool-input-end", id: "c" },
+            ],
+            finishReason: "tool-calls",
+          },
+          callbacks,
+        ) as never,
+    );
+    const bridged = bridgeModelCallTimeout(
+      params({ onStreamDelta: () => {}, onToolInputDelta: () => {} }),
+    );
+
+    await adapter().call(bridged.params);
+
+    expect(bridged.bridge.markTimedOut(25)).toMatchObject({ streamStarted: true });
+    bridged.bridge.cleanup();
   });
 });

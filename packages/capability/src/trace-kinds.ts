@@ -179,7 +179,8 @@ export interface ToolOutputDeltaDetail {
  * A tool call the model is still *composing*: the provider has named the tool
  * and is streaming its argument payload, but the call does not exist yet.
  * Joined to the eventual {@link ToolCallStartedDetail} by the same `call_id`.
- * Carried on the live-only channel (`trace.signal`) — never persisted.
+ * The first announcement for each provider attempt is recorded durably; later
+ * cumulative progress and completion reports use the live-only channel.
  *
  * @remarks This is the only signal that exists during argument generation, and
  * on a real run that is most of the wall clock: measured over one session's 34
@@ -203,6 +204,8 @@ export interface ToolInputDeltaDetail {
   call_id: string;
   tool_name: string;
   chars: number;
+  /** Present only after the provider closed this argument stream. */
+  complete?: true;
 }
 
 /**
@@ -505,6 +508,7 @@ export interface ModelCallRetryDetail extends ProviderErrorDetails {
   subagent_instance_id?: string;
   iteration: number;
   model: string;
+  message: string;
   attempt: number;
   max_retries: number;
   delay_ms: number;

@@ -108,6 +108,14 @@ describe("runs.rehydrated", () => {
       trace: {
         events: [
           { type: "run_started", occurred_at: 1 },
+          {
+            type: "tool_input_delta",
+            agent: "lead",
+            occurred_at: 2,
+            call_id: "call-1",
+            tool_name: "write_file",
+            chars: 0,
+          },
           { type: "totally_unknown", occurred_at: 2 },
         ],
       },
@@ -116,9 +124,9 @@ describe("runs.rehydrated", () => {
     expect(detail.events).toHaveLength(1);
     expect(logger.events("runs.rehydrated")[0]).toMatchObject({
       execution_id: "run-9",
-      events_total: 2,
+      events_total: 3,
       events_mapped: 1,
-      events_dropped: 1,
+      events_dropped: 2,
     });
   });
 });

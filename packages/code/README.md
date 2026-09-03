@@ -917,6 +917,12 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   64 terminal summaries of 512 characters; complete child task and result detail remains in that
   child's explicitly selected isolated transcript and in the persisted run.
 - Tool-call, diff, reasoning, plan and budget views.
+- A tool appears as soon as its name is known. While the provider composes a large argument payload,
+  its one mutable row shows a throttled cumulative character count; `tool_input_end` changes that
+  row to `arguments ready` without claiming the filesystem or command action ran. A distinct
+  `tool_call_started` begins execution, and only terminal `tool_call` marks its outcome. Starting a
+  second tool does not close the first because parallel composition is valid. Retry removes the
+  abandoned attempt's composing row before showing the retry state.
 - Transcript blocks use the full available content width while the inspector is closed and the full
   remaining pane width beside an explicitly opened split; the old 110-column reading cap no longer
   applies.

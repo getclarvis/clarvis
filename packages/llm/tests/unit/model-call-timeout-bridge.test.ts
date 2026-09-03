@@ -29,12 +29,14 @@ describe("bridgeModelCallTimeout", () => {
 
   it("mints the timeout error once and resolves the promise with it", async () => {
     const { bridge } = bridgeModelCallTimeout(params());
+    bridge.markStreamStarted();
 
     const first = bridge.markTimedOut(1_500);
     const second = bridge.markTimedOut(9_999);
 
     expect(second).toBe(first);
     expect(first.message).toContain("1500ms");
+    expect(first).toMatchObject({ name: "ModelCallInactivityError", streamStarted: true });
     await expect(bridge.timeout).resolves.toBe(first);
   });
 

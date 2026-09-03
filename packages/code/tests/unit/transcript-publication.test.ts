@@ -233,6 +233,22 @@ describe("transcript publication", () => {
     expect(Object.isFrozen(snapshot)).toBe(true);
   });
 
+  test("publication strips live tool-input composition state", () => {
+    const snapshot = snapshotTranscriptNode({
+      key: "exec::write",
+      kind: "tool_call",
+      status: "pending",
+      text: "",
+      toolName: "write_file",
+      inputChars: 48_147,
+      inputComplete: true,
+    });
+
+    expect(snapshot.kind).toBe("tool_call");
+    expect(Object.prototype.hasOwnProperty.call(snapshot, "inputChars")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(snapshot, "inputComplete")).toBe(false);
+  });
+
   test("committed history remains an identity-preserving prefix after every later event", () => {
     const { store, scheduler, sink } = fixture();
     const events: RunEvent[] = [
@@ -435,7 +451,13 @@ describe("transcript publication", () => {
     expect(publishedA?.kind === "tool_call" ? publishedA.result : undefined).toBe("original-a");
     expect(publishedA?.kind === "tool_call" ? publishedA.dehydrated : true).toBeUndefined();
     if (publishedA?.kind !== "tool_call") throw new Error("published tool missing");
-    for (const field of ["liveOutput", "inputChars", "dehydrated", "hydrationNotice"] as const)
+    for (const field of [
+      "liveOutput",
+      "inputChars",
+      "inputComplete",
+      "dehydrated",
+      "hydrationNotice",
+    ] as const)
       expect(Object.prototype.hasOwnProperty.call(publishedA, field)).toBe(false);
   });
 

@@ -187,6 +187,14 @@ mode never uses "would never be used." Both are pinned at
 `packages/loop/tests/unit/request-profile-validation.test.ts:48-49` ("compaction watermarks",
 "compaction prompt mode").
 
+`call_timeout_ms` is the profile's per-physical-model-call inactivity window when the provider is
+streaming: every received provider part resets it, so an actively growing tool argument may outlive
+the value in total. Generation has no observable progress and remains absolutely bounded. The
+schema owns validation and ceiling enforcement; the runtime timeout and retry contract is owned by
+[LLM](../foundations/llm.md). Production: `agentProfileSchema`, `enforcePerProfileRules`, and
+`AiSdkAdapter.call`. Test: `packages/loop/tests/unit/request-profile-validation.test.ts` and
+`packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts`.
+
 `modelField` keeps the provider token restricted to settings-safe lowercase characters, then allows
 provider-native `/`, `.`, and `:` characters in the model-id half. This admits tagged local-server
 ids such as `local/qwen2.5-coder:7b` without weakening the provider-name boundary. Tests:

@@ -507,12 +507,13 @@ client construction, not per message, which is why `ResolvedProviderConfig` ride
 number[]` (Anthropic-only prompt-cache breakpoint indices; the adapter keeps at most the two newest
 usable ones and falls back to the last non-system message when absent, `:199-209`), `maxRetries?`/
 `maxRetryAfterMs?`, `onRetry?: (info: RetryInfo) => void` (fired *after* the backoff delay is computed,
-so `delayMs` is never invented, `:213-219`), `onStreamDelta?` (a live streaming sink; `reset: true`
+so `delayMs` is never invented, and carrying the classified failure `message` that scheduled it), `onStreamDelta?` (a live streaming sink; `reset: true`
 marks the first slice of a retried call, `:221-227`), and `onToolInputDelta?` (a separate, `call_id`-keyed
 sink for in-progress tool-call arguments — kept separate from `onStreamDelta` because the two signals
 cannot share one batcher: a stream delta is an unkeyed slice, this is keyed and can interleave across
-concurrent calls; `chars: 0` announces a call exists, `:229-245`). `RetryInfo` (`:157-170`) is
-`attempt`, `maxRetries`, `delayMs`, `kind: FailureKind`, optional `status`/`retryAfterMs`.
+concurrent calls; `chars: 0` announces a call exists and the final cumulative report carries
+`complete: true`). `RetryInfo` is `attempt`, `maxRetries`, `delayMs`, `kind: FailureKind`, `message`,
+and optional `status`/`retryAfterMs`.
 
 `LLMProvider` (`:254-256`) is the single-method port — `call(params) => Promise<LLMCallResult>` — every
 backend implements and every decorator (`withTransportRetry`, `withCallLogging`,

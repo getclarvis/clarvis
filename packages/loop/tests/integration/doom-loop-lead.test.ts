@@ -53,4 +53,57 @@ describe("Lead doom-loop guard", () => {
     expect((res as { error?: { code?: string } }).error?.code).toBe("tool_failure_loop");
     expect(llm.calls.length).toBeLessThanOrEqual(4);
   });
+
+  it("lets a later successful call in the same batch reset six genuine failures", async () => {
+    const mcp = mockMCPFactory({
+      db: {
+        tools: [
+          {
+            name: "query",
+            inputSchema: { type: "object", properties: { q: { type: "string" } } },
+            call: (args) => {
+              if ((args as { q?: string }).q === "ok") return "recovered";
+              throw new Error("table missing");
+            },
+          },
+        ],
+      },
+    });
+    const llm = new MockLLM({
+      script: [
+        {
+          toolCalls: [
+            ...Array.from({ length: 6 }, (_, index) => ({
+              id: `fail-${index}`,
+              name: "db.query",
+              arguments: { q: `fail-${index}` },
+            })),
+            { id: "ok", name: "db.query", arguments: { q: "ok" } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    harness = await makeHarness({ llm, mcpFactory: mcp });
+
+    const res = await harness.run({
+      messages: [{ role: "user", content: "query the db" }],
+      servers: [{ name: "db", transport: "stdio", command: "x" }],
+      entry: "lead",
+      profiles: [
+        {
+          name: "lead",
+          model: "anthropic/claude-opus-4-5",
+          tools: ["db.query"],
+          iteration_limit: 50,
+          can_spawn: ["subagent"],
+        },
+        { name: "subagent", model: "anthropic/claude-haiku-4-5", tools: [], iteration_limit: 5 },
+      ],
+      budget: { on_exceed: "stop", total_token_limit: 400_000, timeout_ms: 30000 },
+    });
+
+    expect(res.status).toBe("completed");
+    expect(llm.calls).toHaveLength(2);
+  });
 });

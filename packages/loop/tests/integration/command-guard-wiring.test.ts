@@ -207,6 +207,51 @@ describe("tools guard wiring", () => {
     expect(bash!.error).toContain("bash requires confirmation");
   });
 
+  it("policy and human denials do not accumulate as execution failures", async () => {
+    const root = workspace();
+    const mixedDenial: Guard = (ctx: GuardContext): GuardDecision =>
+      String(ctx.args.command).startsWith("human-")
+        ? { verdict: "ask", reason: "human review", mode: "on" }
+        : { verdict: "deny", reason: "policy review", mode: "auto" };
+    const denyElicit = async (_req: ElicitRequest) => ({
+      allowed: false,
+      answerer: "human" as const,
+    });
+    const llm = new MockLLM({
+      script: [
+        {
+          toolCalls: [
+            { id: "h1", name: "shell", arguments: { command: "human-one" } },
+            { id: "h2", name: "shell", arguments: { command: "human-two" } },
+            { id: "p1", name: "shell", arguments: { command: "policy-one" } },
+            { id: "p2", name: "shell", arguments: { command: "policy-two" } },
+            { id: "p3", name: "shell", arguments: { command: "policy-three" } },
+            { id: "p4", name: "shell", arguments: { command: "policy-four" } },
+          ],
+        },
+        { text: "done" },
+      ],
+    });
+    harness = await makeHarness({
+      llm,
+      mcpFactory: mockMCPFactory({}),
+      workspaceRoot: root,
+      agentTools: { guard: mixedDenial, guardElicit: denyElicit },
+      env: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+    });
+
+    const res = await harness.run(body(["run_commands"]));
+
+    expect(res.status).toBe("completed");
+    const calls = (await toolEvents(harness, res.execution_id)).filter(
+      (event) => event.mcp_name === "shell",
+    );
+    expect(calls).toHaveLength(6);
+    expect(calls.every((event) => event.guard?.outcome === "denied")).toBe(true);
+    expect(calls.filter((event) => event.guard?.answerer === "human")).toHaveLength(2);
+    expect(calls.filter((event) => event.guard?.answerer === "policy")).toHaveLength(4);
+  });
+
   it("without a guard, tools work as before (regression)", async () => {
     const root = workspace();
     const llm = new MockLLM({

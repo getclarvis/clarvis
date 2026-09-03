@@ -2,6 +2,7 @@ import type { Logger } from "@clarvis/capability";
 import type { LLMCallParams, LLMCallResult, LLMProvider, LLMUsage } from "@clarvis/capability";
 import { ProviderError } from "@clarvis/capability";
 import { unref } from "@clarvis/capability";
+import { ModelCallInactivityError } from "./model-call-timeout-bridge.ts";
 
 /** Sums two token tallies field by field, without mutating either. */
 function addUsage(a: LLMUsage, b: LLMUsage): LLMUsage {
@@ -173,12 +174,15 @@ export function withTransportRetry(inner: LLMProvider, opts: TransportRetryOptio
           /**
            * Once a delta has reached the consumer the prompt has been billed in
            * full, and a retry re-sends and re-bills all of it — at a large
-           * context, the dominant cost of the turn. The truncated turn that
-           * results is handled by the loop as an ordinary model-call error.
+           * context, the dominant cost of the turn. A model-call inactivity
+           * timeout is the deliberate exception: that attempt has stopped
+           * making progress, so retry is its recovery path. Other truncated
+           * turns remain ordinary model-call errors.
            */
           const streamedToConsumer =
             err.streamStarted &&
-            (params.onStreamDelta !== undefined || params.onToolInputDelta !== undefined);
+            (params.onStreamDelta !== undefined || params.onToolInputDelta !== undefined) &&
+            !(err instanceof ModelCallInactivityError);
           if (streamedToConsumer) {
             gaveUp(err, "stream_started");
             err.accumulatedUsage = lost;
@@ -202,6 +206,7 @@ export function withTransportRetry(inner: LLMProvider, opts: TransportRetryOptio
             maxRetries,
             delayMs: delay,
             kind: err.kind,
+            message: err.message,
             ...(err.status !== undefined ? { status: err.status } : {}),
             ...(err.retryAfterMs !== undefined ? { retryAfterMs: err.retryAfterMs } : {}),
           });
@@ -213,6 +218,7 @@ export function withTransportRetry(inner: LLMProvider, opts: TransportRetryOptio
               attempt,
               max_retries: maxRetries,
               delay_ms: delay,
+              error: err.message,
               status: err.status,
             },
             "llm.call transient failure — retrying",

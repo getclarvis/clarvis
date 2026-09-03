@@ -34,6 +34,12 @@ this package; nothing here may depend on the engine.
 the engine passes the handle straight through, exactly as `LiveContext` satisfies
 `ContextPort`.
 
+For a provider-composed tool call, the engine records one durable `tool_input_delta` announcement
+per attempt and sends later cumulative character counts plus `complete: true` through `signal` only.
+The announcement makes an interrupted run diagnosable while keeping the journal constant-size with
+respect to argument length. A durable `model_call_retry` retains its bounded failure message; neither
+event retains argument contents.
+
 Free text is bounded as it enters the recording handle and bounded again in the mapper for legacy
 or direct entries that bypassed it. In particular, `delegation_created.task` shares
 `@clarvis/capability`'s 32,768-Unicode-character `delegate_task` ceiling, so one brief cannot be

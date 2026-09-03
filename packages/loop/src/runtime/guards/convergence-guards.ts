@@ -20,14 +20,23 @@ export interface GuardWarning {
   message: string;
 }
 
+/** A tool's convergence disposition: `false` for success, `true` for an
+ * execution failure, or `"denied"` when policy/human review refused it before
+ * execution. */
+export type ToolConvergenceOutcome = boolean | "denied";
+
 /**
  * The combined convergence guard: fold each tool result in, then ask whether any
  * guard wants to warn the model or has decided the loop is unproductive.
  */
 export interface ConvergenceGuards {
-  /** Feed one tool result: its call `signature`, the `resultText`, and whether
-   * it was an error. */
-  record(signature: string, resultText: string, isError: boolean): void;
+  /** Feed one tool result in model-declared call order.
+   *
+   * @remarks A `"denied"` outcome breaks the active failure/repetition streak
+   * without becoming a successful result: the tool did not execute, so it is
+   * neither an execution failure nor evidence of repeated successful work.
+   */
+  record(signature: string, resultText: string, outcome: ToolConvergenceOutcome): void;
   /**
    * Pending soft-tier warnings from either guard, each yielded once.
    *
@@ -67,7 +76,13 @@ export function createConvergenceGuards(
     ...(opts.stagnationSoftThreshold !== undefined ? { soft: opts.stagnationSoftThreshold } : {}),
   });
   return {
-    record(signature: string, resultText: string, isError: boolean): void {
+    record(signature: string, resultText: string, outcome: ToolConvergenceOutcome): void {
+      if (outcome === "denied") {
+        doom.record(signature, false);
+        stag.record(signature, hashResult(resultText), true);
+        return;
+      }
+      const isError = outcome;
       doom.record(signature, isError);
       stag.record(signature, hashResult(resultText), isError);
     },

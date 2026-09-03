@@ -120,6 +120,12 @@ a successful subscription-backed `LLMCallResult` may identify its billing author
 `billing_source: "subscription"`. The complete host contract is
 [`subscription-providers.md`](../../specs/hosts/subscription-providers.md).
 
+`LLMCallParams.onToolInputDelta` is a bounded cumulative progress seam rather than a raw provider
+delta stream: it reports the tool identity and argument character count, then repeats the final
+count with `complete: true` when the provider closes that argument stream. `RetryInfo.message`
+carries the bounded classified failure that scheduled a retry, so a durable retry trace can explain
+an otherwise opaque wait without retaining model or tool payloads.
+
 `parseTaskTitle` and `TASK_TITLE_MAX` likewise give every child producer one human-label contract:
 one non-empty line, normalized horizontal whitespace, and at most 60 Unicode code points. A consumer
 must reject an invalid model-authored title instead of deriving one from the full task or clipping it;

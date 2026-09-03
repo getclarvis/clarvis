@@ -18,6 +18,7 @@ import type {
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import { engineMessagesToProto } from "./map-message.ts";
 import { engineEventToProto } from "./map-events.ts";
+import { RUN_EVENT_POLICY } from "./event-policy.ts";
 import { planRefFromCapabilityState } from "./plan-ref.ts";
 import { taskBindingFromCapabilityState } from "./task-binding.ts";
 import type { KernelException } from "../core/errors.ts";
@@ -192,7 +193,10 @@ export function storedToDetail(s: StoredExecution, logger: Logger = NOOP_LOGGER)
 function rehydrateEvents(s: StoredExecution, logger: Logger): RunEvent[] {
   const mapped = s.trace.events
     .map((event) => engineEventToProto(event, logger))
-    .filter((e): e is NonNullable<typeof e> => e !== null);
+    .filter(
+      (event): event is NonNullable<typeof event> =>
+        event !== null && RUN_EVENT_POLICY[event.type].durability === "persisted",
+    );
   logger.debug(
     {
       event: "runs.rehydrated",

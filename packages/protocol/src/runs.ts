@@ -420,6 +420,8 @@ export type RunEvent =
       call_id: string;
       tool: string;
       chars: number;
+      /** Present only after the provider closed this argument stream. */
+      complete?: true;
     })
   | (Attributed & { type: "reasoning"; iteration: number; text: string })
   | (Attributed & {

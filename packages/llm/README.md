@@ -95,13 +95,22 @@ host no longer controls. The adapter's own per-call/default timeout reports thro
 admission boundary: even when a transport ignores its timeout signal, the permit is quarantined
 rather than remaining silently active and filling the queue behind it.
 
+For a streaming call, that per-call timeout is an **inactivity** window. Every provider part resets
+the window, so a large `write_file` argument may take longer than the configured timeout in total as
+long as deltas continue arriving. The hot path updates one timestamp; one timer checks it and re-arms
+at most once per timeout window, so progress does not allocate a timer or log record per delta.
+Non-streaming generation still has no observable progress and therefore keeps the timeout as an
+absolute call bound.
+
 `TransportRetryOptions` is an attempt cap plus a backoff —
 `maxRetries`, `baseDelayMs`, `maxDelayMs`, and optionally `maxRetryAfterMs` (the ceiling applied to
 a server's `Retry-After`) and a `logger`. Only errors the classifier calls `transient` are retried.
 Once a live delta has reached `onStreamDelta` or `onToolInputDelta`, retry stops to avoid replaying
-and rebilling the whole prompt. A provider stream used only to assemble an internal aggregate has no
-consumer-visible partial turn, so a transient failure may still retry before its caller sees a
-result; compaction summaries rely on this distinction.
+and rebilling the whole prompt. `ModelCallInactivityError` is the deliberate exception: after the
+configured interval with no new stream activity, the stopped attempt remains retryable even when
+earlier progress was visible. A provider stream used only to assemble an internal aggregate has no
+consumer-visible partial turn, so a transient failure may also retry before its caller sees a result;
+compaction summaries rely on this distinction.
 
 ChatGPT subscription requests always use the adapter's streaming path, even for internal callers
 such as the command judge that do not consume live deltas. The pinned Codex Responses transport
@@ -136,7 +145,7 @@ is allocated at the call site before any backend sees its level.
 | `info`  | `llm.admission.state`                    | the physical-call gate changed state — **transitions only**          |
 | `warn`  | `llm.admission.stuck`                    | a cancelled transport would not settle and the gate is quarantined   |
 | `debug` | `llm.call.start` / `.done`               | one physical attempt, with its usage split                           |
-| `warn`  | `llm.call.pending` / `.slow` / `.failed` | that attempt taking too long, or failing                             |
+| `warn`  | `llm.call.pending` / `.slow` / `.failed` | that attempt taking too long, its latest stream progress, or failing |
 
 Three properties are load-bearing rather than tidy:
 
@@ -149,6 +158,8 @@ Three properties are load-bearing rather than tidy:
 - **The per-delta path gets no log line at all.** `llm.stream.first_token` fires from the
   `!outputObserved` arm only, which costs the one boolean test that used to be an unconditional
   store; per-chunk telemetry belongs to the `streamMetrics` counter sink behind `CLARVIS_STREAM_DEBUG`.
+  The 20-second `llm.call.pending` sampler reports `stream_started` and `last_progress_ms` instead of
+  claiming a call with recent deltas never responded.
 
 `admissionStateLogger(logger)` is the handler a host wires to
 `ModelCallAdmissionOptions.onStateChange`; `@clarvis/loop`'s `createHostModelCallAdmission` does it.

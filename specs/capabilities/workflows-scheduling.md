@@ -153,7 +153,7 @@ states other than `awaiting_manager` are non-progressing refusals that spawn not
 |---|---|---|
 | `max_concurrency` | int, positive, `.max(WORKFLOWS_MAX_CONCURRENCY)` = 20 | 4 (`WORKFLOWS_DEFAULTS.max_concurrency`) |
 | `max_total_leaders` | int, positive, `.max(WORKFLOWS_MAX_TOTAL_LEADERS)` = 255 | 32; cumulative across every workflow tool call in one manager run |
-| `budget_tokens` | int, positive, **nullable** (`null` = unbounded) | 640 000 000 (`WORKFLOWS_DEFAULTS.budget_tokens`): four 160-million-token shares at the default concurrency, intentionally larger in aggregate than the manager's primary session budget |
+| `budget_tokens` | int, positive, **nullable** (`null` = unbounded) | 640 000 000 (`WORKFLOWS_DEFAULTS.budget_tokens`): four times the manager's 160-million-token primary run budget |
 
 There is **no per-run request param**: `workflowsSettingsSpec` declares no `requestParams`, and its
 TSDoc states the capability is constructed by the host's workflow service, never by the loop from a
@@ -318,22 +318,24 @@ falling back to the literal `"[unserializable result]"` if that throws (`package
    manager run. It therefore admits at most one active round sequence, independent of how many tool
    calls the model issues.
 5. `forAgent(scope)` computes `manager = scope.entry && scope.grants.includes(WORKFLOW_GRANT)`
-   (`createWorkflowsCapability`). It always returns a contribution object; `attach` returns
-   `{ outputBudget: ctx.ledger }` alone for a non-manager and
-   `{ tools, handlers, gates, advertised: true }` for the manager. The manager therefore remains on the
-   primary session budget while its children use the workflow ledger.
+   (`createWorkflowsCapability`). It always returns a contribution object; `attach` returns a lazy
+   per-call fair-share `outputBudget` for a non-manager and
+   `{ tools, handlers, gates, advertised: true }` for the manager. The manager therefore remains on
+   its primary run budget while an in-process child's provider call reserves from that execution's
+   workflow ledger only when the call starts.
 6. `reportInactive` splits the refusal by reason: a **sub-agent** (`!scope.entry`) is a `debug`
    note; an **entry** agent without the grant is a `warn`.
 
 | (scope) | tools | outputBudget | log |
 |---|---|---|---|
-| entry + `workflow` grant | all contributed tools + the coordinator finish gate | none (primary session budget) | none |
-| entry, no grant | none | `ctx.ledger` | `warn reason=no_grant` (`reportInactive`) |
-| non-entry (sub-agent) | none | `ctx.ledger` | `debug reason=not_entry` (`reportInactive`) |
+| entry + `workflow` grant | all contributed tools + the coordinator finish gate | none (primary run budget) | none |
+| entry, no grant | none | lazy fair share of `ctx.ledger` | `warn reason=no_grant` (`reportInactive`) |
+| non-entry (sub-agent) | none | lazy fair share of `ctx.ledger` | `debug reason=not_entry` (`reportInactive`) |
 | run with no registry | capability is `null` | — | `warn reason=no_registry` (`createWorkflowsCapability`) |
 
 Pinned in `packages/workflows/tests/component/capability.test.ts`
-(`keeps the manager on its session budget while carrying the leader budget to descendants` and
+(`keeps the manager on its run budget while capping concurrent descendant calls`,
+`does not reserve descendant headroom until its first model call`, and
 `forRun returns null without one: there is no synchronous run_leader to fall back to`) and in the
 capability-inactive cases of
 `packages/workflows/tests/component/observability.test.ts`.
@@ -686,8 +688,10 @@ carrying none of the `dedupe_by` fields is ignored.
 the loaded catalogue → if `explain`, return `explainWorkflow(workflow)` and run nothing →
 `toRoundCall` compile → **fail closed** when there is no `elicit` or no `clock` → a
 `workflow_review` elicitation whose decision enum is ordered `["cancel", "run"]`, whose accepted
-decision must be `"run"`, and whose `onNoResponse` maps to `"cancel"` → `startRounds` with the shared
-coordinator → an answer carrying the first-round plan plus the document's synthesis instruction.
+decision must be `"run"`, and whose timeout is the manager run's effective `elicit_wait_ms` →
+`startRounds` with the shared coordinator → an answer carrying the first-round plan plus the
+document's synthesis instruction. Every settled review logs `workflow.review_resolved` with its
+decision and `waited_ms`; a timeout additionally logs `capability.elicit_no_response`.
 The TUI also leaves this choice unselected initially; neither schema order nor an untouched Enter
 can approve it. Production: `buildRunWorkflowHandler`; tests:
 `packages/workflows/tests/component/run-workflow.test.ts` and
@@ -718,6 +722,13 @@ told what was wrong and keeps its turn.
 
 ### 4.11 The ledger (`createWorkflowLedger` in `packages/workflows/src/ledger.ts`)
 
+`runManagerWorkflow` constructs a new primary run and a new auxiliary `WorkflowLedger` inside every
+execution. Reusing the same `WorkflowsService` for later turns therefore never carries spent tokens
+forward as a session budget. Production: `runManagerWorkflow` in
+`packages/kernel/src/workflows/workflows-service.ts`. Test:
+`packages/kernel/tests/integration/workflows-service.test.ts` (`creates a fresh auxiliary token
+ledger for every manager execution`).
+
 Three counters: `spent`, `reserved`, and `total`. `remaining() = total === null ? Infinity : max(0,
 total - spent - reserved)`.
 
@@ -726,10 +737,11 @@ total - spent - reserved)`.
 - `reserveOutput(n)` (the `OutputTokenBudget` port) grants `min(n, remaining())`, and `settle(used)`
   converts `min(amount, used)` into spend exactly once (`directReservation` inside
   `createWorkflowLedger`).
-- `reserve(maxConcurrent)` — the leader-level claim — takes
+- `reserve(maxConcurrent)` — a top-level leader claim — takes
   `min(headroom, max(1, ceil(headroom / max(1,maxConcurrent))))` (`packages/workflows/src/ledger.ts`,
-  `createWorkflowLedger`). The manager has an independent primary-session budget and consumes no
-  share. Each leader reservation is itself a nested
+  `createWorkflowLedger`). The manager has an independent primary-run budget and consumes no share.
+  Leaders create it after semaphore admission, with `maxConcurrent` equal to configured leader
+  concurrency plus the manager run's `CLARVIS_MAX_PARALLEL_SUBAGENTS`. Each reservation is itself a nested
   budget: `reserveOutput` inside it draws down `amount - childSpent - childReserved`,
   `reconcile(usage)` charges any gap the model calls did not settle, and `release()` returns the
   *unused* part `amount - childSpent`. A `released` reservation refuses further inner claims and
@@ -737,14 +749,25 @@ total - spent - reserved)`.
 - Unbounded (`total === null`): `reserve` returns a zero-cost placeholder whose `remaining()` is
   `Infinity` but which still accumulates `childSpent` and folds it into `spent`
   (the unbounded `reserve` branch in `createWorkflowLedger`).
+- `createFairShareOutputBudget(parent, maxConcurrent)` caps each provider call to
+  `ceil(parent.remaining() / maxConcurrent)` while reserving atomically from `parent`. Manager
+  descendants use `max_concurrency + CLARVIS_MAX_PARALLEL_SUBAGENTS` over the tree ledger. Every
+  agent in an isolated leader run uses `1 + CLARVIS_MAX_PARALLEL_SUBAGENTS` over that leader's held
+  reservation, covering the root and its possible concurrent descendants.
 
-The point of `reserve` over a bare `remaining()` check is that concurrent leaders would otherwise all
-read the same pre-spend snapshot. Reservation occurs synchronously after FIFO semaphore admission and
-before model dispatch, so the admitted set remains atomic while queued leaders preserve headroom for
-later use. This is pinned arithmetically by `packages/workflows/tests/unit/ledger.test.ts` (`many
-concurrent reservations under a tight budget can never collectively exceed it`) and end-to-end by
-`packages/workflows/tests/component/run-leader.test.ts` (`several admitted run_leader calls under a
-tight budget cannot collectively overrun it`).
+The point of `reserve` over a bare `remaining()` check is that concurrent agents would otherwise all
+read the same pre-spend snapshot. A leader reserves synchronously after FIFO semaphore admission and
+before model dispatch. An in-process manager child reserves lazily for each model call, with unused
+headroom returned by that call's ordinary settlement. The admitted set remains atomic, merely
+attaching or checking a child holds nothing, and a model with no explicit output cap cannot reserve
+the entire raw ledger ahead of its siblings. The leader reservation is partitioned again so its
+entry call cannot starve its own subagents. This is pinned arithmetically by
+`packages/workflows/tests/unit/ledger.test.ts` (`many concurrent reservations under a tight budget can
+never collectively exceed it`), at the capability seam by
+`packages/workflows/tests/component/capability.test.ts` (concurrent descendant call shares and lazy
+reservation), and end-to-end for leaders by `packages/workflows/tests/component/run-leader.test.ts`
+(`partitions one leader reservation across its root and concurrent subagent calls`; `several
+admitted run_leader calls under a tight budget cannot collectively overrun it`).
 
 ### 4.12 Cumulative leader admission (`createWorkflowLeaderCount`)
 
@@ -830,10 +853,18 @@ child settles `stopped`, not `failed` — is in `buildRunLeaderHandler` and `run
 `an item cancelled while queued for a concurrency slot is settled, not left hanging`.
 
 **INV-W6.** Only an **entry** agent carrying the `workflow` grant is contributed the spawn tools;
-that manager gets no workflow `outputBudget`, while every other agent in its primary run gets the
-workflow-child ledger and no tools. Production: `createWorkflowsCapability` in
-`packages/workflows/src/capability.ts`. Test: `packages/workflows/tests/component/capability.test.ts`
-(`keeps the manager on its session budget while carrying the leader budget to descendants`).
+that manager gets no workflow `outputBudget`, while every other agent in its primary run gets no
+tools and a lazy per-call fair share of the workflow-child ledger. Attaching or pre-checking a child
+reserves nothing; each model call is capped against the combined maximum of leader and manager-child
+consumers, so one capless child cannot transiently exhaust the tree before a concurrent sibling
+starts. A leader's budget-only capability applies a second fair-share boundary across its root and
+subagents. Production: `createFairShareOutputBudget`, `createDescendantOutputBudget`,
+`createLeaderOutputBudgetCapability`, and `createWorkflowsCapability` in
+`packages/workflows/src/{ledger,capability,run-leader}.ts`. Test:
+`packages/workflows/tests/component/capability.test.ts` (`keeps the manager on its run budget while
+capping concurrent descendant calls`; `does not reserve descendant headroom until its first model
+call`) and `packages/workflows/tests/component/run-leader.test.ts` (`partitions one leader
+reservation across its root and concurrent subagent calls`).
 
 **INV-W7.** Every operation that can register a leader has `ToolEffect: "spawn_run"`, including
 `workflow_decide`; only read-only `workflow_status` is `control`. Production:
@@ -1068,7 +1099,7 @@ owns at most one active round sequence`).
 | a leader answers prose where a schema was expected | `mergeResults` degrades to an array/scalar; `workflow.round_folded` reports `result_shape` and `non_object_replicas` so the degradation is visible | `mergeResults` / `reportRoundFolded`; observability component case |
 | a replica died | counted in the accept denominator as `(unavailable)` | `packages/workflows/src/rounds.ts:156-160` |
 | `run_workflow` with no elicit channel or no clock | fails closed, suggesting `explain: true` | `buildRunWorkflowHandler` |
-| `run_workflow` review declined or unanswered | "was not started", no leader spawned | `buildRunWorkflowHandler` |
+| `run_workflow` review declined, dismissed, invalid, or timed out | distinct tool result plus `workflow.review_resolved`; timeout also emits `capability.elicit_no_response`; no leader spawned | `buildRunWorkflowHandler` |
 | host wired no logger | `NOOP_LOGGER`, and `withBoundLogger` returns the deps object **by identity** so `executeRun` sees exactly what the host supplied | `packages/workflows/src/log.ts:29-31`, `:50-57`; test `packages/workflows/tests/component/observability.test.ts:781-793` |
 | a `cause` that is neither `Error` nor string | dropped rather than coerced to `[object Object]` | `packages/workflows/src/log.ts:70-73`, `:90-93` |
 

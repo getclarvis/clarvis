@@ -650,10 +650,6 @@ export function App(props: AppProps): JSX.Element {
       warnIfAutoDegrades(mode);
     },
     focusNext: () => {
-      if (layout.drawerOpen() || secondaryMode() === "split") {
-        ts.cycleSubagent();
-        return;
-      }
       ts.clearFocus();
       inputEl?.focus();
     },

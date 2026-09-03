@@ -108,6 +108,7 @@ interface TranscriptProjectionProps {
 /** Keeps one bounded transcript projection physically mounted while another surface is active. */
 function TranscriptProjection(props: TranscriptProjectionProps): JSX.Element {
   const [handoffKeys, setHandoffKeys] = createSignal<ReadonlySet<string>>(new Set());
+  const [tailEntries, setTailEntries] = createSignal(0);
   const transcript: CommittedHistoryState = {
     semanticNodes: props.semanticNodes,
     expandAll: props.region.transcript.expandAll,
@@ -163,7 +164,8 @@ function TranscriptProjection(props: TranscriptProjectionProps): JSX.Element {
         onHandle={props.onHistoryHandle}
         measurementRecovery={props.region.historyMeasurementRecovery}
         handoffKeys={handoffKeys}
-        tail={(visibleCommittedKeys) => (
+        tailEntries={tailEntries}
+        tail={(visibleCommittedKeys, followingTail, isOwnerVisible) => (
           <LiveTranscriptTail
             store={props.region.store}
             activity={props.region.activity}
@@ -173,7 +175,10 @@ function TranscriptProjection(props: TranscriptProjectionProps): JSX.Element {
             resolveElicit={props.region.run.resolveElicit}
             selectedSubagent={() => props.projectionId}
             visibleCommittedKeys={visibleCommittedKeys}
+            followingTail={followingTail}
+            isOwnerVisible={isOwnerVisible}
             onHandoffKeysChange={setHandoffKeys}
+            onFrontierCountChange={setTailEntries}
             splitOpen={props.splitOpen}
             notify={props.region.notify}
             openPlan={props.region.openPlan}

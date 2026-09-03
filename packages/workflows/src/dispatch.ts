@@ -780,7 +780,7 @@ async function runOne(
 
     const exhausted = `'${unit.key}' was not run: the token budget was exhausted`;
     if (budget.exhausted) return skip("budget_exhausted", exhausted);
-    reservation = deps.ctx.ledger.reserve(deps.ctx.maxConcurrency);
+    reservation = deps.ctx.ledger.reserve(deps.ctx.maxConcurrency + deps.ctx.maxParallelSubagents);
     if (reservation === null) {
       budget.exhausted = true;
       deps.ctx.onBudgetExhausted?.();

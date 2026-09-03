@@ -110,9 +110,16 @@ export interface WorkflowCtx {
   ledger: WorkflowLedger;
   /** Cumulative, manager-lifetime admission shared by every leader tool. */
   leaderCount: WorkflowLeaderCount;
-  /** The run's concurrency cap (the same limit `semaphore` enforces), passed to
-   * {@link WorkflowLedger.reserve} so a budget reservation is sized fairly. */
+  /** The leader concurrency cap enforced by `semaphore`; budget admission adds
+   * {@link WorkflowCtx.maxParallelSubagents} because those consumers can overlap. */
   maxConcurrency: number;
+  /** The engine's per-run `delegate_task` concurrency cap. Budget admission
+   * combines this with {@link WorkflowCtx.maxConcurrency}, because manager
+   * descendants and isolated leaders can consume the auxiliary ledger at the
+   * same time. */
+  maxParallelSubagents: number;
+  /** Effective per-question human wait bound for this manager run. */
+  elicitWaitMs: number;
   assemble: LeaderRequestAssembler;
   managerRunId: string;
   signal: AbortSignal;

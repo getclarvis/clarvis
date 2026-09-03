@@ -2,7 +2,7 @@
  * The `workflows` capability — the manager's half of the workflow topology.
  *
  * It contributes the leader ledger to non-manager agents in the primary run,
- * while the manager remains on that run's independent session budget. Only an
+ * while the manager remains on that run's independent primary budget. Only an
  * entry agent carrying the `workflow` grant receives the workflow tools and their
  * handlers. Leader runs receive a separate budget-only capability, so the
  * topology stays fixed at Manager → Leaders → Sub-agents without a depth counter.
@@ -24,13 +24,14 @@ import type {
   ComputeRegion,
   HandlerVerdict,
   Logger,
+  OutputTokenBudget,
   RunCapability,
   ToolHandler,
 } from "@clarvis/capability";
 import { bind, parseTaskTitle, TASK_TITLE_MAX } from "@clarvis/capability";
 import { AGENT_REGISTRY_PORT, registerBackgroundChild } from "@clarvis/supervision";
 import { reportSettled } from "./dispatch.ts";
-import type { WorkflowReservation } from "./ledger.ts";
+import { createFairShareOutputBudget, type WorkflowReservation } from "./ledger.ts";
 import { faultFields, outputTokensOf, withBoundLogger, workflowLogger } from "./log.ts";
 import { describeLeaderResult } from "./result-text.ts";
 import { isBoundedWorkflowString, WORKFLOW_LIMITS } from "./limits.ts";
@@ -68,6 +69,23 @@ export const WORKFLOW_GRANT_DECLARATION = {
   name: WORKFLOW_GRANT,
   entryCanSpawn: true,
 } as const;
+
+/**
+ * Give one in-process descendant a per-call fair share of the current workflow
+ * ledger.
+ *
+ * @remarks The manager may delegate several ordinary sub-agents in one model
+ * response. Giving each of them the raw shared ledger lets the first provider
+ * call reserve every remaining token when its model has no explicit output cap;
+ * later siblings then fail their pre-loop budget check at zero iterations. The
+ * same fair-share admission already used by isolated leaders belongs at this
+ * boundary too. It stays lazy because headroom is reserved only by
+ * `reserveOutput`, and unused headroom returns as soon as that provider call
+ * settles.
+ */
+function createDescendantOutputBudget(ctx: WorkflowCtx): OutputTokenBudget {
+  return createFairShareOutputBudget(ctx.ledger, ctx.maxConcurrency + ctx.maxParallelSubagents);
+}
 
 /**
  * Build the `workflows` {@link Capability} bound to one workflow's {@link WorkflowCtx}.
@@ -125,7 +143,9 @@ export function createWorkflowsCapability(ctx: WorkflowCtx): Capability {
         const clock = scope.clock;
         return {
           attach(bc: AgentBuildContext): AgentLoopContribution {
-            if (!manager) return { outputBudget: ctx.ledger };
+            if (!manager) {
+              return { outputBudget: createDescendantOutputBudget(ctx) };
+            }
             return {
               tools: capabilityTools,
               handlers: [
@@ -314,7 +334,7 @@ function buildRunLeaderHandler(
         try {
           await ctx.semaphore.acquire(leaderCtx.signal);
           acquired = true;
-          reservation = ctx.ledger.reserve(ctx.maxConcurrency);
+          reservation = ctx.ledger.reserve(ctx.maxConcurrency + ctx.maxParallelSubagents);
           if (reservation === null) {
             ctx.onBudgetExhausted?.();
             leaderLogger.warn(

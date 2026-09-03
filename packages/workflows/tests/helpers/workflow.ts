@@ -47,6 +47,8 @@ export function makeCtx(overrides: Partial<WorkflowCtx> = {}): WorkflowCtx {
     ledger: createWorkflowLedger(null),
     leaderCount: createWorkflowLeaderCount(32),
     maxConcurrency: 4,
+    maxParallelSubagents: 4,
+    elicitWaitMs: 1_800_000,
     assemble: () => ({}) as RunRequest,
     managerRunId: "manager-1",
     signal: new AbortController().signal,

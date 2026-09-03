@@ -581,6 +581,13 @@ completion does not refund capacity. The workflow capability's per-run coordinat
 first authored round, exposes the checkpoint tools to Admiral, and requires a revision-matched
 decision before each later authored round or repeat pass.
 
+Primary and auxiliary token ledgers are likewise constructed anew inside every manager execution,
+not accumulated across session turns. Auxiliary claims account for both the configured leader
+concurrency and the engine's concurrent `delegate_task` capacity. Ordinary manager children cap each
+model call at that fair share; leaders claim their subtree only after semaphore admission, and their
+root/subagent model calls partition it again. A model with no explicit output cap therefore cannot
+let one call reserve the entire workflow budget before its siblings start.
+
 A settled run no longer remains leased for the memory indexer's multi-minute retry schedule. Its
 event stream waits five idle seconds for the usual immediate terminal notice, renews only within a
 15-second absolute window, and hard-caps every override at one minute. The durable memory job keeps

@@ -112,6 +112,9 @@ export interface CommittedHistoryHandle {
     readonly geometryMeasurementOwners: number;
     readonly geometryMeasurementOwnerPeak: number;
     readonly geometryMeasurementOwnerLimit: number;
+    readonly laterEntries: number;
+    readonly tailEntries: number;
+    readonly newerEntries: number;
   };
 }
 
@@ -127,7 +130,14 @@ export interface CommittedHistoryProps {
   onHandle?: (handle: CommittedHistoryHandle | undefined) => void;
   measurementRecovery?: TranscriptMeasurementRecoveryPolicy;
   handoffKeys?: Accessor<ReadonlySet<string>>;
-  tail?: (visibleCommittedKeys: Accessor<ReadonlySet<string>>) => JSX.Element;
+  /** Mutable frontier artifacts included in the off-tail newer-entry overlay. */
+  tailEntries?: Accessor<number>;
+  /** Chronological final flow owner; it remains mounted while native sticky scrolling is paused. */
+  tail?: (
+    visibleCommittedKeys: Accessor<ReadonlySet<string>>,
+    followingTail: Accessor<boolean>,
+    isOwnerVisible: (owner: Renderable) => boolean,
+  ) => JSX.Element;
 }
 
 function sectionFolded(
@@ -639,6 +649,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
         (candidate !== null && candidate.index >= physical().end ? 1 : 0),
     );
   });
+  const newerEntries = createMemo(() => Math.max(0, laterEntries() + (props.tailEntries?.() ?? 0)));
   const flowTailRow = (): number =>
     (earlierEntries() > 0 ? 1 : 0) +
     physical().beforeRows +
@@ -653,7 +664,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     const element = scrollbox();
     return controller.sync({
       batchIds: semanticBatches().map((batch) => batch.id),
-      columns: element?.content.width ?? 1,
+      columns: Math.max(1, (element?.content.width ?? 1) - TRANSCRIPT_HISTORY_HORIZONTAL_PADDING),
       glyphMode: asciiMode() ? "ascii" : "unicode",
       viewportRows: element?.viewport.height ?? 1,
       foldRevisionOf,
@@ -792,22 +803,22 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
       return accepted ? "preparing" : "start";
     }
     if (rows > 0 && target > lastStart) {
-      if (element.scrollTop !== lastStart) element.scrollTo({ x: 0, y: lastStart });
       const accepted = controller.requestLater();
-      if (accepted) requestRender();
-      else {
-        controller.setFollowingTail(true);
-        element.stickyScroll = true;
+      if (accepted) {
+        if (element.scrollTop !== lastStart) element.scrollTo({ x: 0, y: lastStart });
+        requestRender();
+      } else {
+        returnToTail();
       }
       return accepted ? "preparing" : "end";
     }
 
     const nextTop = Math.max(activeStart, Math.min(lastStart, target));
-    element.scrollTo({ x: 0, y: nextTop });
     if (rows > 0 && nextTop >= lastStart && snapshot.end >= snapshot.batchIds.length) {
-      controller.setFollowingTail(true);
-      element.stickyScroll = true;
+      returnToTail();
+      return "scrolled";
     }
+    element.scrollTo({ x: 0, y: nextTop });
     renderer.requestRender();
     return "scrolled";
   };
@@ -885,6 +896,9 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
       geometryMeasurementOwners,
       geometryMeasurementOwnerPeak,
       geometryMeasurementOwnerLimit: TRANSCRIPT_GEOMETRY_MEASUREMENT_OWNER_LIMIT,
+      laterEntries: laterEntries(),
+      tailEntries: props.tailEntries?.() ?? 0,
+      newerEntries: newerEntries(),
     }),
   };
 
@@ -962,6 +976,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
         active={() => false}
         interactive={() => false}
         measurementOnly
+        presentationColumns={() => physical().columns}
         ownerTop={() => physical().scrollTop + physical().viewportRows + 1}
         candidateRows={() => undefined}
         measurementToken={() =>
@@ -984,6 +999,13 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     overrideOf: (key) => props.transcript.overrideOf(key),
     publications: semanticBatches,
     toggleAt: (key) => props.transcript.toggleAt(key),
+  };
+  const isOwnerVisible = (owner: Renderable): boolean => {
+    const element = scrollbox();
+    if (element === undefined || owner.isDestroyed) return false;
+    const viewportStart = element.viewport.screenY;
+    const viewportEnd = viewportStart + element.viewport.height;
+    return owner.screenY < viewportEnd && owner.screenY + owner.height > viewportStart;
   };
 
   return (
@@ -1024,11 +1046,8 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
             active={() => activeIds().has(batch.id)}
             interactive={() => active() && activeIds().has(batch.id)}
             presentationColumns={() => {
-              if (presentationLock() === null) return undefined;
-              const columns = controller.marker(batch.id)?.columns;
-              return columns === undefined
-                ? undefined
-                : Math.max(1, columns - TRANSCRIPT_HISTORY_HORIZONTAL_PADDING);
+              if (presentationLock() === null) return physical().columns;
+              return controller.marker(batch.id)?.columns ?? physical().displayColumns;
             }}
             ownerTop={() =>
               activeIds().has(batch.id)
@@ -1069,12 +1088,10 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
       <Show when={physical().afterRows > 0}>
         <box id="history-spacer-after" height={physical().afterRows} flexShrink={0} />
       </Show>
-      <Show when={physical().followingTail}>
-        <CommittedHistoryBlockPresentationContext.Provider value={tailBlockPresentation}>
-          {props.tail?.(visibleCommittedKeys)}
-        </CommittedHistoryBlockPresentationContext.Provider>
-      </Show>
-      <Show when={laterEntries() > 0 && !physical().followingTail}>
+      <CommittedHistoryBlockPresentationContext.Provider value={tailBlockPresentation}>
+        {props.tail?.(visibleCommittedKeys, () => physical().followingTail, isOwnerVisible)}
+      </CommittedHistoryBlockPresentationContext.Provider>
+      <Show when={newerEntries() > 0 && !physical().followingTail}>
         <box
           id="history-newer-indicator"
           position="absolute"
@@ -1087,7 +1104,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
           backgroundColor={tokens.bgElev}
         >
           <text fg={tokens.accent2} wrapMode="none" truncate selectable={false}>
-            {`${glyph("caretDown")} ${laterEntries()} newer entr${laterEntries() === 1 ? "y" : "ies"}`}
+            {`${glyph("caretDown")} ${newerEntries()} newer entr${newerEntries() === 1 ? "y" : "ies"}`}
           </text>
         </box>
       </Show>

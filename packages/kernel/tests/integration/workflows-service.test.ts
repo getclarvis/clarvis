@@ -23,6 +23,8 @@ import { MockLLM, type MockLLMRoute, type MockLLMScriptStep } from "@clarvis/loo
 import { createAgentToolsCapability } from "@clarvis/loop/capabilities/tools";
 import { createFileMemory } from "@clarvis/memory";
 import { createMemoryCapability, type MemoryFactory } from "@clarvis/memory/capability";
+import { memorySettingsSpec } from "@clarvis/memory/settings";
+import { plansSettingsSpec } from "@clarvis/plan/settings";
 import { tasksSettingsSpec } from "@clarvis/tasks/settings";
 import { createAskUserCapability, type ExecuteRunDeps } from "@clarvis/loop";
 import { managerLiveChildrenFloor } from "@clarvis/workflows";
@@ -916,6 +918,73 @@ describe("WorkflowsService", () => {
     expect(detail.leader_count).toBe(1);
 
     await kernel.close();
+  });
+
+  it("creates a fresh auxiliary token ledger for every manager execution", async () => {
+    const ws = mkdtempSync(join(tmpdir(), "clarvis-wf-per-run-budget-"));
+    const globalConfigDir = mkdtempSync(join(tmpdir(), "clarvis-wf-per-run-budget-global-"));
+    const storeDir = mkdtempSync(join(tmpdir(), "clarvis-wf-per-run-budget-store-"));
+    const managerCycle: MockLLMScriptStep[] = [
+      {
+        toolCalls: [
+          { name: "run_leader", arguments: { title: "Spend run budget", prompt: "spend it" } },
+        ],
+        usage: { output_tokens: 1 },
+      },
+      { toolCalls: [{ name: "await_agents", arguments: {} }], usage: { output_tokens: 1 } },
+      { text: "manager synthesis", usage: { output_tokens: 1 } },
+    ];
+    const deps = buildDeps(
+      ws,
+      [],
+      [
+        { name: "manager", when: IS_MANAGER, script: [...managerCycle, ...managerCycle] },
+        {
+          name: "leader",
+          when: (params) => !IS_MANAGER(params),
+          script: [
+            { text: "first leader", usage: { output_tokens: 1 } },
+            { text: "second leader", usage: { output_tokens: 1 } },
+          ],
+        },
+      ],
+    );
+    const runDeps = {
+      ...deps,
+      capabilityRegistry: createCapabilityRegistry({
+        specs: [memorySettingsSpec, plansSettingsSpec],
+      }),
+    };
+    const backing = createWorkflowStore({ dir: storeDir, owner: "kernel-test" });
+    const workflows = createWorkflowsService({
+      deps: runDeps,
+      owner: "kernel-test",
+      workspace: ws,
+      globalConfigDir,
+      assembleRunRequest: createSettingsRunAssembler(seededConfig()),
+      store: backing,
+      readSettings: () => ({ max_concurrency: 1, max_total_leaders: 4, budget_tokens: 1 }),
+      resolveLeaderDefault: () => "leader",
+    });
+
+    for (const prompt of ["first manager run", "second manager run"]) {
+      const handle = workflows.runManagerWorkflow({
+        messages: [{ role: "user", content: prompt }],
+        agent: "manager",
+      });
+      const drain = (async () => {
+        for await (const event of handle.events) void event;
+      })();
+      expect((await handle.done).status).toBe("completed");
+      await drain;
+      const detail = await workflows.get(handle.execution_id);
+      const persisted = backing.get(handle.execution_id);
+      expect(persisted?.output_tokens).toBe(1);
+      expect(detail.nodes.filter((node) => node.kind === "leader")).toHaveLength(1);
+      expect(detail.nodes.find((node) => node.kind === "leader")?.status).toBe("completed");
+    }
+
+    await deps.connections.closeAll();
   });
 
   it("emits and persists every Admiral-controlled round checkpoint", async () => {

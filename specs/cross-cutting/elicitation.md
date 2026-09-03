@@ -617,7 +617,11 @@ role and answer channel all permit it").
 
 **ELI-08.** A workflow preflight has no implicit affirmative path. The TUI begins with no selected
 decision; the wire schema places `cancel` before `run`; only an explicitly submitted `run` starts the
-first round, while decline, cancel, timeout and an absent channel spawn no leader.
+first round, while decline, cancel, timeout and an absent channel spawn no leader. The model-facing
+tool result keeps explicit decline, dismissal, invalid accepted content and no-response timeout
+distinct. The call passes the manager run's effective `elicit_wait_ms`; every outcome logs
+`workflow.review_resolved` with `waited_ms`, and a genuine timeout additionally emits
+`capability.elicit_no_response` through the workflow logger.
 Production: `packages/code/src/views/ElicitBlock.tsx` (`initialValues` call) and
 `buildRunWorkflowHandler` in `packages/workflows/src/run-workflow.ts`.
 Test: `packages/code/tests/integration/elicit-block-render.test.tsx` (`a workflow_review is an
@@ -639,7 +643,7 @@ unavailable and timed-out preflights start nothing).
 | An unknown or already-answered `respond(id, ...)` | `pending.get(id) === undefined` short-circuit (`packages/kernel/src/runs/elicit-bridge.ts:80`, and server's `packages/server/src/mcp/elicitation.ts:274-276`) | no-op / `{accepted:false, note:"no pending question with that id"}` |
 | Server elicitation controller is `dispose()`d with questions outstanding | `dispose()` (`packages/server/src/mcp/elicitation.ts:284-287`) | every pending question is force-auto-declined; `disposed` latches so any later `attach`-delivered question is auto-declined too (`:217-219`) |
 | Server's `relay` posture: `sendRequest` throws (client refuses, disconnects, or answer fails schema validation) | `catch` around `sendRequest` (`packages/server/src/mcp/elicitation.ts:251-253`) | falls back to `autoDecline(request.id)` — a relay failure degrades to a decline, not a stuck run |
-| Workflow review is untouched, declined, cancelled, times out, or has no interactive channel | `ElicitBlock` leaves the choice blank; `buildRunWorkflowHandler` accepts only explicit `decision === "run"` | workflow is not started; zero leaders registered |
+| Workflow review is untouched, declined, cancelled, times out, or has no interactive channel | `ElicitBlock` leaves the choice blank; `buildRunWorkflowHandler` accepts only explicit `decision === "run"`, passes the effective run wait bound, and maps every other resolution separately | workflow is not started; zero leaders registered; the tool result distinguishes decline, dismissal, invalid content and no-response timeout; settled waits log `workflow.review_resolved`, and timeout also logs `capability.elicit_no_response` |
 | `code`'s own `onElicit` callback throws | `reportElicitFailure` (`packages/code/src/adapters/kernel-run-client.ts:291-294`) | logs `elicit.handler.failed` (warn) and still answers `{action:"cancel"}` |
 | `code` invoked headlessly (`--prompt`, no interactive UI) | `handle.onElicit` registered in `packages/code/src/runtime.tsx` (`runPrintMode`) | every question is logged to stderr and auto-declined via `handle.respond({id, action:"decline"})` |
 | Elicitation disabled or no `elicit` supplied at all (`shape.userInputEnabled === false`) | `buildElicitRelay`'s `relayEnabled` guard (`packages/loop/src/runtime/elicit-relay.ts:71-77`) | `relay` is `undefined`; `serializedElicit` falls back to the raw (possibly `undefined`) `elicit` — callers that need one and find it absent are a capability-construction concern outside this document |

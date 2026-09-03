@@ -56,8 +56,9 @@ describe("workflows capability", () => {
     expect(await capability.forRun(RUN_CTX)).not.toBeNull();
   });
 
-  test("keeps the manager on its session budget while carrying the leader budget to descendants", async () => {
-    const ctx = makeCtx();
+  test("keeps the manager on its run budget while capping concurrent descendant calls", async () => {
+    const ledger = createWorkflowLedger(100);
+    const ctx = makeCtx({ ledger, maxConcurrency: 1, maxParallelSubagents: 1 });
     const run = await createWorkflowsCapability(ctx).forRun(RUN_CTX);
     expect(run).not.toBeNull();
     const manager = run!.forAgent(scope({ grants: [WORKFLOW_GRANT] }))!.attach(recordingBc().bc);
@@ -67,8 +68,30 @@ describe("workflows capability", () => {
     expect(manager.outputBudget).toBeUndefined();
     expect(ungranted.tools).toBeUndefined();
     expect(child.tools).toBeUndefined();
-    expect(ungranted.outputBudget).toBe(ctx.ledger);
-    expect(child.outputBudget).toBe(ctx.ledger);
+    expect(ungranted.outputBudget).not.toBe(ctx.ledger);
+    expect(child.outputBudget).not.toBe(ctx.ledger);
+
+    const firstCall = ungranted.outputBudget!.reserveOutput(100)!;
+    expect(firstCall.amount).toBe(50);
+    expect(ledger.remaining()).toBe(50);
+    const concurrentCall = child.outputBudget!.reserveOutput(100)!;
+    expect(concurrentCall.amount).toBe(25);
+    expect(ledger.remaining()).toBe(25);
+
+    firstCall.settle(3);
+    concurrentCall.settle(4);
+    expect(ledger.spent()).toBe(7);
+    expect(ledger.remaining()).toBe(93);
+  });
+
+  test("does not reserve descendant headroom until its first model call", async () => {
+    const ledger = createWorkflowLedger(100);
+    const run = await createWorkflowsCapability(makeCtx({ ledger })).forRun(RUN_CTX);
+    const child = run!.forAgent(scope({ entry: false }))!.attach(recordingBc().bc);
+
+    expect(child.outputBudget!.remaining()).toBe(100);
+    expect(ledger.remaining()).toBe(100);
+    expect(ledger.remaining()).toBe(100);
   });
 
   test("contributes every advertised spawn tool, each with its own handler", async () => {

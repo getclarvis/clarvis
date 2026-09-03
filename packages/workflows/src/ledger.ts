@@ -1,10 +1,41 @@
 /**
- * The leader-wide token budget for a workflow. The loop does not aggregate usage
- * across separate leader `executeRun`s, so this ledger is the single source of
- * truth for how much the auxiliary fan-out has spent and may still spend. The
- * manager remains on its primary run budget.
+ * The auxiliary token budget for a workflow. The loop does not aggregate usage
+ * across the manager's in-process children and separate leader `executeRun`s,
+ * so this ledger is the single source of truth for how much that fan-out has
+ * spent and may still spend. The manager remains on its primary run budget.
  */
 import type { OutputTokenBudget, OutputTokenReservation, Usage } from "@clarvis/capability";
+
+/**
+ * Cap each model-call reservation to a fair share of its parent's live headroom.
+ *
+ * @param parent - the shared ledger or leader reservation being partitioned.
+ * @param maxConcurrent - the maximum number of model calls that can compete at
+ *   this boundary.
+ * @returns an adapter that reserves atomically from `parent` and returns unused
+ *   output headroom as soon as that model call settles.
+ * @remarks This is deliberately per call rather than per agent lifetime. An
+ *   agent can therefore reuse headroom released by a sibling on its next model
+ *   call, while a capless provider request can never reserve the entire parent
+ *   ahead of concurrent siblings.
+ */
+export function createFairShareOutputBudget(
+  parent: OutputTokenBudget,
+  maxConcurrent: number,
+): OutputTokenBudget {
+  const concurrency = Math.max(1, Math.floor(maxConcurrent));
+  return {
+    remaining: () => parent.remaining(),
+    reserveOutput(requested): OutputTokenReservation | null {
+      const available = parent.remaining();
+      if (available < 1) return null;
+      const share = Number.isFinite(available)
+        ? Math.max(1, Math.ceil(available / concurrency))
+        : requested;
+      return parent.reserveOutput(Math.min(requested, share));
+    },
+  };
+}
 
 /**
  * A live claim against a {@link WorkflowLedger}'s headroom, held for the
@@ -50,9 +81,10 @@ export interface WorkflowLedger extends OutputTokenBudget {
   /** The ceiling, or `null` when the tree is unbounded. */
   readonly total: number | null;
   /**
-   * Reserve a fair share of the current headroom for one semaphore-admitted leader.
+   * Reserve a fair share of current headroom for one top-level auxiliary subtree.
    *
-   * @param maxConcurrent - the run's leader-concurrency cap; the reservation is
+   * @param maxConcurrent - the maximum concurrent top-level auxiliary consumers;
+   *   the reservation is
    *   sized to `remaining() / maxConcurrent` (at least 1 token, capped at
    *   whatever headroom remains). The manager has an independent primary-run
    *   budget and therefore takes no share from this ledger.

@@ -174,9 +174,10 @@ No production path constructs `rows` from source lines, character length, node k
 averages or a renderable estimate. Marker order plus row sums derive local `startRow`/`endRow`; an
 absolute terminal coordinate is not persisted because scrolling translates the content.
 
-A layout epoch includes the actual content width and glyph regime. `CommittedHistory` permanently
-reserves the ScrollBox's one-column vertical-bar gutter; overflow changes only the bar's opacity and
-cannot change content width. A terminal-width/sidebar/ASCII change starts a new epoch and drops the
+A layout epoch includes the inner transcript width after its left padding and table gutter, plus the
+glyph regime. `CommittedHistory` permanently reserves the ScrollBox's one-column vertical-bar
+gutter; overflow changes only the bar's opacity and cannot change that width. A
+terminal-width/sidebar/ASCII change starts a new epoch and drops the
 old marker index. Terminal-height-only changes retain markers and change the row window. A
 fold/expand change invalidates only the affected batch through `foldRevision`. Theme colour changes
 do not invalidate geometry.
@@ -349,16 +350,19 @@ isolated transcript; spawn-order navigation remains a Sidebar concern.
 
 ### 4.3 Syntax settlement and physical measurement
 
-A newly admitted batch mounts as the one hidden measurement candidate at the current content width.
-It is outside ordinary flow and parked one row beyond the ScrollBox's clipped viewport, so neither
-the owner nor a descendant enters OpenTUI's hit grid. Candidate admission temporarily suspends
-`viewportCulling`: OpenTUI explicitly skips render hooks for culled children, while syntax settlement
-depends on those hooks even when the candidate is outside the viewport or part of a tall batch
-extends beyond it. `SyntaxPublicationBoundary` waits for every native syntax descendant and then
-confirms equal physical dimensions across two completed frames. The accepted marker removes the
-candidate and re-enables culling in the same physical publication cycle. A handoff prepaint may use
-the live tail's chronological row for its confirming frame, but every `BlockView` action remains
-disabled and the owner consumes residual pointer bubbling until physical admission makes it active.
+A newly admitted batch mounts as the one hidden measurement candidate at the current inner
+transcript width: ScrollBox content width minus the same left padding and table gutter applied to
+resident owners. The absolute candidate is explicitly constrained to that width, rather than using
+an absolute `100%` whose containing block includes the gutters. It is outside ordinary flow and
+parked one row beyond the ScrollBox's clipped viewport, so neither the owner nor a descendant enters
+OpenTUI's hit grid. Candidate admission temporarily suspends `viewportCulling`: OpenTUI explicitly
+skips render hooks for culled children, while syntax settlement depends on those hooks even when the
+candidate is outside the viewport or part of a tall batch extends beyond it.
+`SyntaxPublicationBoundary` waits for every native syntax descendant and then confirms equal
+physical dimensions across two completed frames. The accepted marker removes the candidate and
+re-enables culling in the same physical publication cycle. A handoff prepaint may use the live tail's
+chronological row for its confirming frame, but every `BlockView` action remains disabled and the
+owner consumes residual pointer bubbling until physical admission makes it active.
 
 Every awaited frame is self-scheduled. OpenTUI's one-shot `CliRenderer` releases its
 `updateScheduled` latch in the async continuation after emitting `frame`; a promise resumed by that
@@ -420,7 +424,7 @@ earlier unknown boundary?     one passive row above history; no estimated height
 exact before spacer?          sum of painted physical markers
 resident relative owners      one direct child per active marker, in chronological flow
 exact after spacer?           sum of painted physical markers
-mutable transcript tail?      content-height final child in chronological flow
+mutable transcript tail       content-height final child in chronological flow
 ```
 
 An unmeasured newer range is never inserted as a row below the active history. If the user has
@@ -496,6 +500,13 @@ committed batch is measured and appended and the ScrollBox remains at bottom. Wh
 older history, newer batches may accumulate semantically without pulling the anchor; downward scroll
 loads them in order and restores tail-following at the newest edge.
 
+Leaving the tail never removes its final flow owner. OpenTUI's sticky-bottom implementation records
+manual scroll intent and already pauses edge-following until the reader returns; preserving the
+content geometry is what lets that native state retain `scrollTop`. Removing the tail after upward
+input is forbidden because the resulting `scrollHeight` contraction can clamp the viewport to a
+much older row. The newer-entry overlay counts unmeasured committed batches plus current mutable
+frontier artifacts. Repeated deltas mutate one artifact and do not increase that count.
+
 The first upward wheel/trackpad intent changes the runway direction and begins adjacent earlier
 admission whenever less than `2V` is prepared, rather than waiting for the prepared start to become
 visible. After an admitted owner's exact height is known, the controller prepends it and applies the equal positive
@@ -540,6 +551,18 @@ When one frontier artifact in the active projection commits, `LiveTranscriptTail
 handoff snapshot until the measured committed owner is visible at the same flow offset; the swap
 cannot create an empty frame, duplicate row or vertical jump. Later mutable content in that same
 projection remains after the handoff throughout the swap.
+
+The same handoff remains bounded while the reader is away. A just-committed frontier owner that
+intersects the viewport stays painted, because replacing visible content with blank geometry would
+break the reader anchor. An owner fully below the viewport is disposed and its last native height is
+transferred to one aggregate handoff spacer keyed only by retained publication metadata. Admission
+of the corresponding physical publication removes that contribution; returning directly to the
+tail discards obsolete off-tail geometry. New terminal publications that never had a live owner add
+no estimated rows. The aggregate spacer occupies the earliest released owner's chronological
+boundary, after every earlier retained live owner; parallel tools completing out of order therefore
+cannot prepend later geometry ahead of an earlier visible frontier. Thus a long off-tail run may grow
+semantic publications and one numeric spacer, but cannot retain one native tool/Markdown/syntax tree
+per completed call.
 
 The tail always ends with `transcript-reading-runway`: three physical rows normally and one row only
 at terminal height ≤28. Its height depends solely on the height band, never on streaming or activity,
@@ -748,14 +771,19 @@ default coalesced mode. Production: `AssistantMarkdown`, `StableMarkdown`. Tests
 2-second lease and one fresh syntax retry. A never-published candidate then keeps the same semantic
 `BlockView`/Markdown/diff/code renderer while disabling and bypassing only unfinished highlighting;
 an already painted owner retains its exact tree, waits for public syntax completion and commits only
-after two equal positive physical observations. A parser that remains pending may delay that new
+after two equal positive physical observations. Absolute candidates, resident owners and the
+controller use the same gutter-adjusted inner width, so a tall expansion cannot leave a stable
+measurement permanently rejected by its epoch. A parser that remains pending may delay that new
 marker, but it cannot remount or replace the visible owner. Neither path may replace visible content
 with a warning or omit a tool argument body. The chosen `rich` or `plain-semantic` policy persists by
 batch id across physical eviction/remount and is purged with the corresponding publication.
-Production: `PhysicalPublicationOwner`, `SyntaxPublicationBoundary`, `freezeUnsettledSyntax`,
-`StableMarkdown`, `StableDiff`. Tests: `transcript-publication-render.test.tsx` (painted
+Production: `PhysicalPublicationOwner`, `CommittedHistory`, `SyntaxPublicationBoundary`,
+`freezeUnsettledSyntax`, `StableMarkdown`, `StableDiff`. Tests:
+`transcript-publication-render.test.tsx` (painted
 `write_memory` handoff across more than two forced lease intervals and a resize, short-lease semantic
-recovery, zero unmeasured newer entries and bounded frame listeners).
+recovery, zero unmeasured newer entries and bounded frame listeners; "expanding a tall committed tool
+cannot strand physical measurement or newer batches": a 120-row expansion remeasures at the shared
+inner width and admits a later terminal tool).
 
 **INV-TP19.** Physical observation reaches a fixed point at exact directional-runway edges: a batch
 trimmed to an exact spacer is not immediately prefetched again without scroll, reversed intent or
@@ -776,27 +804,40 @@ revision value, so an inactive `number -> undefined -> number` cycle re-arms mea
 re-arm).
 
 **INV-TP21.** Frozen history, handoff artifacts and the mutable frontier for the active projection
-form one chronological ScrollBox flow. A Lead frontier artifact's final visible row before semantic
-commitment equals its first visible row as a committed owner; a following Lead response/tool remains
-below it in both frames. Child tools, reasoning and answers cannot enter this main flow; only the two
-typed, append-only delegation lifecycle markers may add chronological Lead rows. Provider composing,
-started, output and terminal tool plumbing for supervision/delegation/workflow orchestration cannot
-enter it either. There is no fixed-height live **transcript panel** or idle status row inside history;
-the fixed reading runway and composer-adjacent Lead activity line remain outside semantic
-publication. Production: `CommittedHistory`, `LiveTranscriptTail`, `TranscriptRegion`,
-`LeadActivityLine`. Test:
+form one chronological ScrollBox flow. The tail remains the final flow child after upward input so
+OpenTUI can preserve manual-scroll geometry. A Lead frontier artifact's final visible row before
+semantic commitment equals its first visible row as a committed owner; a following Lead
+response/tool remains below it in both frames. A committed handoff intersecting the viewport retains
+its painted owner; one fully below it transfers its measured height to one aggregate spacer and
+releases the heavy subtree until physical admission. That spacer stays at the released suffix's
+actual chronological position, never before an earlier retained live owner. Child tools, reasoning and answers cannot enter
+this main flow; only the two typed, append-only delegation lifecycle markers may add chronological
+Lead rows. Provider composing, started, output and terminal tool plumbing for
+supervision/delegation/workflow orchestration cannot enter it either. There is no fixed-height live
+**transcript panel** or idle status row inside history; the fixed reading runway and
+composer-adjacent Lead activity line remain outside semantic publication. Production:
+`CommittedHistory`, `LiveTranscriptTail`, `TranscriptRegion`, `LeadActivityLine`. Test:
 `packages/code/tests/integration/transcript-publication-render.test.tsx` ("production
 TranscriptRegion keeps committed memory, diff, and write syntax owners stable": the tail is a direct
 history child, child content remains absent from the main capture, lifecycle markers append without
-moving earlier owners, and later Lead output preserves the chronological flow).
+moving earlier owners, and later Lead output preserves the chronological flow; "scrolling above a
+live tail preserves the reader while terminal updates stay physically bounded": native wheel
+departure, terminal handoff, 64 offscreen tool completions, stable reader row and bounded owners;
+"an out-of-order offscreen handoff keeps its spacer after every earlier live owner": a later tool
+completion cannot move or precede the earlier frontier owner).
 
 **INV-TP22.** While explicit tail-following is active, append-only publication drains to
 `laterUnknown === 0` without consulting a pre-layout bottom sample. Upward input disables following;
-downward input loads newer ranges in order and re-enables it only at the newest edge. A newer-range
-count, when present, is a non-interactive top overlay and never a row below history. Production:
-`PhysicalTranscriptWindowController`, `CommittedHistory`. Tests:
-`transcript-physical-window.test.ts` and `transcript-window-render.test.tsx` (multi-append tail,
-reader anchor and return-to-tail cases).
+downward input loads newer ranges in order and re-enables it only at the real content bottom after
+the newest frozen owner and mounted live tail. A newer-range
+count, when present, is a non-interactive top overlay and never a row below history. It includes both
+unmeasured committed batches and mutable frontier artifacts; repeated deltas for one artifact do not
+increase it. Production: `PhysicalTranscriptWindowController`, `CommittedHistory`,
+`LiveTranscriptTail`. Tests: `transcript-physical-window.test.ts`,
+`transcript-window-render.test.tsx` (multi-append tail, reader anchor, explicit return-to-tail and
+keyboard downward-navigation-to-live-tail cases), and
+`transcript-publication-render.test.tsx` (off-tail live-frontier indicator and bounded terminal
+handoff soak).
 
 **INV-TP23.** Release-ready TUI validation includes raster captures from the distributable in a real
 PTY for: empty first paint; first Lead streaming response; terminal Lead tool; the Lead transcript

@@ -135,6 +135,38 @@ describe("runLeader", () => {
     expect(contribution.outputBudget).toBeDefined();
   });
 
+  test("partitions one leader reservation across its root and concurrent subagent calls", async () => {
+    const ledger = createWorkflowLedger(100);
+    const runDeps = workflowRunDeps(async (args) => {
+      const budgetRun = await args.capabilities![0]!.forRun({} as never);
+      const root = budgetRun!.forAgent(scope({ grants: [] }))!.attach(recordingBc().bc);
+      const child = budgetRun!
+        .forAgent(scope({ entry: false, grants: [] }))!
+        .attach(recordingBc().bc);
+
+      const rootCall = root.outputBudget!.reserveOutput(100)!;
+      expect(rootCall.amount).toBe(25);
+      const childCall = child.outputBudget!.reserveOutput(100)!;
+      expect(childCall.amount).toBe(13);
+      rootCall.settle(3);
+      childCall.settle(4);
+      return completed("done", 7);
+    });
+    const ctx = makeCtx({
+      runDeps,
+      ledger,
+      maxConcurrency: 1,
+      maxParallelSubagents: 1,
+      assemble: leaderAssembler,
+    });
+
+    const result = await runLeader({ title: "leader", prompt: "hello" }, ctx, "leader-fixed");
+
+    expect(result.status).toBe("completed");
+    expect(ledger.spent()).toBe(7);
+    expect(ledger.remaining()).toBe(93);
+  });
+
   test("maps an error response to an error result and still folds usage", async () => {
     const runDeps = workflowRunDeps(() =>
       Promise.resolve({
@@ -464,7 +496,7 @@ describe("manager fan-out via the run_leader handler", () => {
     const handler = run!.forAgent(scope())!.attach(recordingBc().bc).handlers![0]!;
 
     const verdicts = await Promise.all(
-      Array.from({ length: 8 }, (_, i) =>
+      Array.from({ length: 10 }, (_, i) =>
         handler.handle(runLeaderCall({ title: "leader", prompt: `p${i}` }), 0),
       ),
     );
@@ -477,7 +509,7 @@ describe("manager fan-out via the run_leader handler", () => {
     expect(statuses).toContain("completed");
     expect(statuses).toContain("failed");
     expect(runDeps.calls.length).toBeGreaterThan(0);
-    expect(runDeps.calls.length).toBeLessThan(8);
+    expect(runDeps.calls.length).toBeLessThan(10);
     expect(ledger.spent()).toBe(10);
     expect(ledger.remaining()).toBe(0);
   });

@@ -114,7 +114,10 @@ test("an eligible verified archive is staged, smoked and activated last", async 
       files: [{ path: "placeholder", size: 0, sha256: "a".repeat(64) }],
     }),
   );
-  await writeFile(join(buildRoot, "runtime", "bun"), "#!/bin/sh\nprintf 'clarvis 0.0.2-beta\\n'\n");
+  await writeFile(
+    join(buildRoot, "runtime", "clarvis"),
+    "#!/bin/sh\nprintf 'clarvis 0.0.2-beta\\n'\n",
+  );
   await writeFile(join(buildRoot, "packages", "code", "src", "cli.ts"), "");
   const manifest = {
     schema: 1,

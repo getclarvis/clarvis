@@ -313,7 +313,7 @@ try {
   & tar.exe -xzf $Archive -C $Extracted
   if ($LASTEXITCODE -ne 0) { Fail "tar failed to extract the Clarvis archive" }
   $Payload = Join-Path $Extracted "clarvis"
-  $Runtime = Join-Path $Payload "runtime\bun.exe"
+  $Runtime = Join-Path $Payload "runtime\clarvis.exe"
   $Entry = Join-Path $Payload "packages\code\src\cli.ts"
   $Manifest = Join-Path $Payload "release.json"
   if (!(Test-Path $Runtime -PathType Leaf) -or !(Test-Path $Entry -PathType Leaf) -or !(Test-Path $Manifest -PathType Leaf)) {
@@ -400,7 +400,7 @@ if not "!CLARVIS_CURRENT:~0,1!"=="v" goto clarvis_invalid_release
 if "!CLARVIS_CURRENT!"=="v" goto clarvis_invalid_release
 for /f "delims=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-" %%A in ("!CLARVIS_CURRENT!") do goto clarvis_invalid_release
 endlocal
-"%CLARVIS_INSTALL_ROOT%\versions\%CLARVIS_CURRENT%\runtime\bun.exe" "%CLARVIS_INSTALL_ROOT%\versions\%CLARVIS_CURRENT%\packages\code\src\cli.ts" %*
+"%CLARVIS_INSTALL_ROOT%\versions\%CLARVIS_CURRENT%\runtime\clarvis.exe" "%CLARVIS_INSTALL_ROOT%\versions\%CLARVIS_CURRENT%\packages\code\src\cli.ts" %*
 exit /b %ERRORLEVEL%
 :clarvis_invalid_release
 >&2 echo clarvis: invalid managed release

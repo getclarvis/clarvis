@@ -4,6 +4,7 @@ import {
   compareProductVersions,
   parseProductVersion,
   releaseAssetName,
+  releaseRuntimeExecutableName,
   releaseTarget,
   selectUpdateRelease,
   type ReleaseAsset,
@@ -62,6 +63,9 @@ test("native target and archive names are strict and portable", () => {
   expect(releaseAssetName("0.0.1-beta", "windows-x64")).toBe(
     "clarvis-v0.0.1-beta-windows-x64.tar.gz",
   );
+  expect(releaseRuntimeExecutableName("linux")).toBe("clarvis");
+  expect(releaseRuntimeExecutableName("darwin")).toBe("clarvis");
+  expect(releaseRuntimeExecutableName("win32")).toBe("clarvis.exe");
 });
 
 test("beta installs select the highest beta, rc, or stable promotion", () => {

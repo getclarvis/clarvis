@@ -13,7 +13,7 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
-import type { ReleaseTarget } from "../update-contract.ts";
+import { releaseRuntimeExecutableName, type ReleaseTarget } from "../update-contract.ts";
 import { parseReleaseManifest, verifyReleaseTree } from "./release-manifest.ts";
 
 const MAX_MANIFEST_BYTES = 1024 * 1024;
@@ -105,7 +105,7 @@ export async function extractReleaseArchive(archivePath: string, stage: string):
 }
 
 function runtimePath(root: string): string {
-  return join(root, "runtime", process.platform === "win32" ? "bun.exe" : "bun");
+  return join(root, "runtime", releaseRuntimeExecutableName());
 }
 
 function launcherPath(root: string): string {

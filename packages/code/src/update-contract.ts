@@ -12,6 +12,11 @@ export const MAX_RELEASE_ASSET_BYTES = 512 * 1024 * 1024;
 export type ReleaseTarget =
   "linux-x64" | "linux-arm64" | "darwin-x64" | "darwin-arm64" | "windows-x64" | "windows-arm64";
 
+/** Name the bundled runtime after the product so operating-system process viewers identify Clarvis. */
+export function releaseRuntimeExecutableName(platform: NodeJS.Platform = process.platform): string {
+  return platform === "win32" ? "clarvis.exe" : "clarvis";
+}
+
 /** A validated GitHub release asset carrying a server-computed SHA-256 digest. */
 export interface ReleaseAsset {
   name: string;

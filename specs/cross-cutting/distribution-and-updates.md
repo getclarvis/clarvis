@@ -56,8 +56,9 @@ Test: `tooling/tests/unit/release-readiness.test.ts` (scoped App contract).
 
 Every archive has exactly one top-level `clarvis/` directory. Its payload contains the root product
 manifest and MIT license, static `THIRD_PARTY_NOTICES.md`, Bun, models.dev, and Vercel AI SDK license
-texts beneath `third-party/`, generated `THIRD_PARTY_NOTICES.txt`, `runtime/bun` or
-`runtime/bun.exe`, Code's small TypeScript launcher/update graph, the map-free split
+texts beneath `third-party/`, generated `THIRD_PARTY_NOTICES.txt`, `runtime/clarvis` or
+`runtime/clarvis.exe`, a legacy `runtime/bun` or `runtime/bun.exe` compatibility entry, Code's small
+TypeScript launcher/update graph, the map-free split
 `packages/code/dist`, and the target-native runtime dependency closure beneath `node_modules`. The
 generated notice routes to the static inventory and lists the exact target closure; license files
 supplied by those packages remain in their copied package directories. Production:
@@ -72,7 +73,7 @@ supplied by those packages remain in their copied package directories. Productio
   "repository": "getclarvis/clarvis-releases",
   "version": "0.0.4-beta",
   "target": "linux-x64",
-  "files": [{ "path": "runtime/bun", "size": 80761952, "sha256": "..." }]
+  "files": [{ "path": "runtime/clarvis", "size": 80761952, "sha256": "..." }]
 }
 ```
 
@@ -99,7 +100,7 @@ A managed installation is:
 `v<version>` line. `update.lock` normally exists only while one installer, updater, or uninstaller
 owns the mutation lease; a file left by a crashed owner requires the reported manual recovery. The
 stable launcher reads `current` on every invocation, exports `CLARVIS_INSTALL_ROOT`, and executes
-that version's included runtime and `cli.ts`. Production:
+that version's product-named runtime and `cli.ts`. Production:
 `install.sh`, `install.ps1`, and `packages/code/src/update/installation.ts`.
 
 ## 4. Behavior
@@ -257,9 +258,11 @@ allowlist, archive, checksum, and upload checks. Production: `.github/workflows/
 `tooling/tests/unit/{release-assets,release-readiness}.test.ts`; the remote draft transition is
 verifiable only in an authorized release run.
 
-**DIST-9.** Every portable archive carries the static Bun runtime, models.dev snapshot, and Vercel AI
-SDK notices; their license files; Bun source/relinking information; the generated target dependency
-inventory; and the license files retained inside copied packages. The assembled release also exposes
+**DIST-9.** Every portable archive carries the static Bun runtime under the platform-native Clarvis
+executable name (`runtime/clarvis` or `runtime/clarvis.exe`), models.dev snapshot, and Vercel AI SDK
+notices; their license files; Bun source/relinking information; the generated target dependency
+inventory; an older launcher's `runtime/bun` or `runtime/bun.exe` compatibility entry; and the license
+files retained inside copied packages. The assembled release also exposes
 the Vercel AI SDK license as a standalone asset. Production:
 `packages/code/tooling/release/package.ts` (`copySource`, `copyDependencies`),
 `.github/workflows/release.yml` (`publish` assembly), `tooling/checks/release-readiness.ts`
@@ -314,6 +317,17 @@ pinned to a complete commit SHA, and asks for `Contents: write` on only `clarvis
 Production: `.github/workflows/release.yml` (`release-token` step) and
 `tooling/checks/release-readiness.ts` (`releaseReadinessFailures`). Test:
 `tooling/tests/unit/release-readiness.test.ts` (missing scope and token-bypass cases).
+
+**DIST-16.** The portable installer, updater, release smoke, and stable launcher select the
+Clarvis-named copy of the Bun runtime. Consequently the executable identity observed by the host
+process table is `clarvis` (or `clarvis.exe`) while the bundled runtime's Bun provenance and license
+remain explicit. Developer-checkout commands intentionally retain the identity of the Bun executable
+they invoke. A compatibility entry remains for an older launcher, but current product surfaces never
+select it. Production: `packages/code/src/update-contract.ts`
+(`releaseRuntimeExecutableName`), `packages/code/tooling/release/package.ts` (`copyRuntime`),
+`packages/code/src/update/installation.ts` (`runtimePath`), `install.sh`, and `install.ps1`. Test:
+`packages/code/tests/unit/update-contract.test.ts`, `packages/code/tooling/release/smoke.ts`, and
+`packages/code/tooling/release/installer-smoke.ts`.
 
 ## 6. Failure modes and degradation
 

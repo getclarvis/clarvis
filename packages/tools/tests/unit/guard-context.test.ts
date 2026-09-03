@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import path from "node:path";
 import { buildGuardContext } from "../../src/guard/context.ts";
+import { powershellDialect } from "../../src/guard/dialects/powershell.ts";
 import { makeConfig } from "../helpers/fixtures.ts";
 import type { ServerConfig } from "../../src/config.ts";
 
@@ -61,6 +62,21 @@ describe("buildGuardContext — command tools", () => {
     },
   );
 
+  it("does not let a command-head exemption cover the same path used later as an operand", () => {
+    const executable =
+      process.platform === "win32"
+        ? path.win32.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.exe")
+        : "/usr/local/bin/echo";
+    const ctx = buildGuardContext(
+      "shell",
+      { command: `${executable} ok; echo hacked > ${executable}` },
+      config,
+    );
+    expect(
+      ctx.paths.filter((fact) => fact.raw === executable).map((fact) => fact.withinWorkspace),
+    ).toEqual([true, false]);
+  });
+
   it.skipIf(process.platform === "win32")(
     "admits an absolute command head beneath an explicitly configured runtime root",
     () => {
@@ -88,6 +104,22 @@ describe("buildGuardContext — command tools", () => {
       expect(ctx.shell?.segments[0]?.normalized).toBe("git push origin main");
     },
   );
+
+  it("drops a Windows executable suffix from an absolute command's policy identity", () => {
+    const executable =
+      process.platform === "win32"
+        ? path.win32.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "curl.EXE")
+        : "/usr/bin/curl.EXE";
+    const ctx = buildGuardContext(
+      "shell",
+      { command: `${executable} --version` },
+      config,
+      powershellDialect,
+    );
+    expect(ctx.shell?.segments[0]?.argv[0]).toBe(executable);
+    expect(ctx.shell?.segments[0]?.normalized).toBe("curl --version");
+    expect(within(ctx, executable)).toBe(true);
+  });
 
   it("expands ~/ with shell semantics so it escapes the workspace", () => {
     const ctx = buildGuardContext("shell", { command: "cat ~/.ssh/id_rsa" }, config);

@@ -170,9 +170,11 @@ scratch remains writable.
 For `shell` and `monitor_start`, an absolute command head below a platform system executable root or
 an explicitly admitted sandbox runtime root is classified as the executable, not as an external
 data operand. Its exact argv remains available for review, while allow/deny matching uses the same
-basename identity as the PATH spelling (`/usr/bin/git push` is still `git push` to policy). Only that
-command-head path is admitted; an absolute argument such as `/etc/passwd`, and an executable outside
-the host-approved roots, remain outside the workspace boundary.
+basename identity as the PATH spelling (`/usr/bin/git push` is still `git push` to policy). Windows
+also removes `.exe`, `.com`, `.bat`, and `.cmd` from that policy identity, matching its extensionless
+PATH spelling. The exception belongs to that command-head occurrence only: if the same absolute path
+appears later as an operand, that occurrence remains outside the workspace boundary, as do an
+absolute argument such as `/etc/passwd` and an executable outside the host-approved roots.
 
 ```ts
 const readOnly = createAgentTools({

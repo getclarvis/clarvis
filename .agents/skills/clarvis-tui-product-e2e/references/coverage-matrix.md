@@ -176,7 +176,7 @@ routes.
 | `SAFE-03` | Native sandbox                      | Available/unavailable/degraded backends, containment refusal, diagnostics and host fallback match the active OS                              |
 | `SAFE-04` | Secret and path boundaries          | Keys, subscriptions, logs, storage, export, attachments, marketplace and tool output reveal no protected material or escape path             |
 | `SAFE-05` | Host temporary interoperability     | Cross-tool host-temp access, read-only overlap and non-owning cleanup are proved on the active OS                                            |
-| `SAFE-06` | Absolute executable classification  | A platform/runtime absolute command head reaches review/execution, keeps basename policy identity, and never admits outside operands         |
+| `SAFE-06` | Absolute executable classification  | A platform/runtime absolute head is occurrence-local, keeps cross-platform policy identity, and never admits identical outside operands      |
 | `SAFE-07` | Sandboxed DNS and package bootstrap | On macOS `network: host` resolves a registry hostname and downloads plus executes a real package bootstrap; `network: none` still refuses it |
 
 For `SAFE-05`, create a path through a host-native temporary API in `shell`, then reuse its absolute
@@ -189,7 +189,9 @@ For `SAFE-06`, compare the PATH and absolute spellings of the same system comman
 must not receive an `outside_workspace` policy denial, and a denied command must remain denied under
 the absolute spelling. Add an absolute data operand outside the workspace in the same command and
 prove that operand is still refused. An executable outside the platform/runtime roots must also stay
-refused.
+refused. Repeat the exact executable path later as a redirection or ordinary operand and require the
+operand occurrence to remain outside. On Windows, prove `.exe`, `.com`, `.bat`, and `.cmd` command
+heads match extensionless policy entries.
 
 For `SAFE-07`, do not use a raw IP or only a loopback socket: those miss the macOS resolver path.
 Resolve a registry hostname from the current built artifact and perform a bounded package bootstrap

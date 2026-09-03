@@ -411,7 +411,7 @@ additions:
 | `read_file` | `[config.stateRoot, ...config.temporaryRoots]`; guard analysis also admits an exact verified state spill | `packages/tools/src/tools/read-file.ts`, `packages/tools/src/guard/context.ts` |
 | `read_files` | `[config.stateRoot, ...config.temporaryRoots]`; guard analysis also admits exact verified state spills | `packages/tools/src/tools/read-files.ts`, `packages/tools/src/guard/context.ts` |
 | every other native file tool | `config.temporaryRoots` | see the `resolvePath(` call in each `packages/tools/src/tools/*.ts` |
-| `shell`, `monitor_start` guard analysis | `config.temporaryRoots` plus exact host-selected `config.skillExecutionRoots`; an absolute command head may use only a platform system executable root or configured sandbox runtime root, without admitting its operands; only when a sandbox is configured, each exact verified state spill is also admitted and mounted read-only | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/tools/src/lib/state-artifacts.ts` |
+| `shell`, `monitor_start` guard analysis | `config.temporaryRoots` plus exact host-selected `config.skillExecutionRoots`; an absolute command head may use only a platform system executable root or configured sandbox runtime root, and that exception is occurrence-local so an identical operand remains outside; only when a sandbox is configured, each exact verified state spill is also admitted and mounted read-only | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/tools/src/lib/state-artifacts.ts` |
 
 The state-root widening remains reachable from exactly two call sites, both read-only. Temporary
 roots are different: the loop creates one owner-only scratch directory per run and places it first,
@@ -757,9 +757,11 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
    `/tmp`. State machinery therefore remains read-only, while host-native temp output is usable by
    later calls. System parents are access-only and selected skill roots are denied to native mutation.
    Command analysis additionally recognizes only an absolute segment head below a platform system
-   executable root or configured sandbox runtime root as the executable; sibling arguments do not
-   inherit that exception, and the policy-facing command name is reduced to its basename so a deny
-   entry cannot be bypassed with an absolute spelling.
+   executable root or configured sandbox runtime root as the executable. The exception is attached
+   to that occurrence rather than its raw path string, so an identical later operand remains outside.
+   The policy-facing command name is reduced to its basename and Windows `PATHEXT` suffixes are
+   removed, so neither an absolute spelling nor `.exe`/`.com`/`.bat`/`.cmd` bypasses an extensionless
+   deny entry.
    Production: `packages/tools/src/tools/read-file.ts`, `read-files.ts`, every other `resolvePath(`
    call site, `packages/tools/src/lib/files.ts`, `packages/tools/src/guard/context.ts`,
    `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`),

@@ -1,12 +1,12 @@
 import type { RuntimeConfig } from "../config.ts";
-import { basename, isAbsolute } from "node:path";
+import { isAbsolute, posix, win32 } from "node:path";
 import { analyzeShell } from "./analyze-shell.ts";
 import type { ShellDialect } from "./dialect.ts";
 import { currentDialect } from "./dialects/index.ts";
 import { resolveCandidate, patchPaths } from "./paths.ts";
 import type { ShellFacts, GuardContext, PathFact } from "./types.ts";
 import { readableStateArtifactPath } from "../lib/state-artifacts.ts";
-import { systemExecutableRoots } from "../lib/system-executables.ts";
+import { stripWindowsExecutableSuffix, systemExecutableRoots } from "../lib/system-executables.ts";
 
 const COMMAND_TOOLS = new Set(["shell", "monitor_start"]);
 const PATH_ARG_TOOLS = new Set([
@@ -45,29 +45,69 @@ function resolveReadOnlyPath(
 }
 
 /**
- * Find absolute command heads that are executable through the sandbox's
- * platform/runtime roots rather than filesystem operands chosen by the model.
+ * One path occurrence in one analyzed command segment.
  *
- * @remarks The first resolution deliberately excludes those roots. An absolute
- * workspace script remains an ordinary workspace path; only a command head
- * outside the workspace that the host already exposes as executable receives
- * this classification.
+ * @remarks `commandHead` is occurrence-local. The same raw path can therefore
+ * be an admitted executable in one segment and an external operand in another.
  */
-function externalExecutablePaths(shell: ShellFacts, config: RuntimeConfig): ReadonlySet<string> {
+interface CommandPathOccurrence {
+  raw: string;
+  segmentIndex: number;
+  commandHead: boolean;
+}
+
+/** Rebuild the analyzer's path facts without discarding duplicate occurrences. */
+function commandPathOccurrences(shell: ShellFacts, dialect: ShellDialect): CommandPathOccurrence[] {
+  const occurrences: CommandPathOccurrence[] = [];
+  shell.segments.forEach((segment, segmentIndex) => {
+    let headClaimed = false;
+    for (const token of dialect.tokenize(segment.command)) {
+      const candidate = dialect.pathCandidate(token);
+      if (candidate.kind !== "path" && candidate.kind !== "prefix") continue;
+      const commandHead =
+        !headClaimed && candidate.kind === "path" && candidate.value === segment.argv[0];
+      if (commandHead) headClaimed = true;
+      occurrences.push({ raw: candidate.value, segmentIndex, commandHead });
+    }
+  });
+  return occurrences;
+}
+
+/**
+ * Find the absolute command head in each segment that the sandbox exposes
+ * through a platform/runtime root.
+ *
+ * @remarks The map is keyed by segment, never by raw path. An identical path in
+ * an operand position receives no exemption. The first resolution deliberately
+ * excludes executable roots, so an absolute workspace script remains an
+ * ordinary workspace path.
+ */
+function externalExecutableHeads(
+  shell: ShellFacts,
+  config: RuntimeConfig,
+): ReadonlyMap<number, string> {
   const executableRoots = [...systemExecutableRoots(), ...(config.sandbox?.runtimePaths ?? [])];
-  const paths = new Set<string>();
-  for (const segment of shell.segments) {
+  const heads = new Map<number, string>();
+  shell.segments.forEach((segment, segmentIndex) => {
     const executable = segment.argv[0];
-    if (executable === undefined || !isAbsolute(executable)) continue;
+    if (executable === undefined || !isAbsolute(executable)) return;
     const workspace = resolveCandidate(executable, config.workspaceRoot, { shell: true });
-    if (workspace.withinWorkspace) continue;
+    if (workspace.withinWorkspace) return;
     const admitted = resolveCandidate(executable, config.workspaceRoot, {
       shell: true,
       alsoAllow: executableRoots,
     });
-    if (admitted.withinWorkspace) paths.add(executable);
+    if (admitted.withinWorkspace) heads.set(segmentIndex, executable);
+  });
+  return heads;
+}
+
+/** The command name used by allow/deny policy for one absolute executable. */
+function executablePolicyName(executable: string, dialect: ShellDialect): string {
+  if (dialect.flavor === "powershell") {
+    return stripWindowsExecutableSuffix(win32.basename(executable));
   }
-  return paths;
+  return posix.basename(executable);
 }
 
 /**
@@ -76,17 +116,18 @@ function externalExecutablePaths(shell: ShellFacts, config: RuntimeConfig): Read
  */
 function normalizeExternalExecutables(
   shell: ShellFacts,
-  executables: ReadonlySet<string>,
+  executables: ReadonlyMap<number, string>,
+  dialect: ShellDialect,
 ): ShellFacts {
   if (executables.size === 0) return shell;
   return {
     ...shell,
-    segments: shell.segments.map((segment) => {
+    segments: shell.segments.map((segment, segmentIndex) => {
       const executable = segment.argv[0];
-      if (executable === undefined || !executables.has(executable)) return segment;
+      if (executable === undefined || executables.get(segmentIndex) !== executable) return segment;
       return {
         ...segment,
-        normalized: [basename(executable), ...segment.argv.slice(1)].join(" "),
+        normalized: [executablePolicyName(executable, dialect), ...segment.argv.slice(1)].join(" "),
       };
     }),
   };
@@ -142,16 +183,19 @@ export function buildGuardContext(
     const commandRoots = [...config.temporaryRoots, ...config.skillExecutionRoots];
     if (typeof args.command === "string") {
       shell = analyzeShell(args.command, dialect);
-      const executables = externalExecutablePaths(shell, config);
-      shell = normalizeExternalExecutables(shell, executables);
-      for (const p of shell.paths) {
+      const occurrences = commandPathOccurrences(shell, dialect);
+      const executables = externalExecutableHeads(shell, config);
+      shell = normalizeExternalExecutables(shell, executables, dialect);
+      for (const occurrence of occurrences) {
+        const p = occurrence.raw;
         const resolved = resolveCandidate(p, root, { shell: true }).resolved;
         const artifact = readableStateArtifactPath(resolved, config.stateRoot);
         const readableRoots =
           artifact === undefined || config.sandbox === undefined
             ? commandRoots
             : [...commandRoots, artifact];
-        const alsoAllow = executables.has(p) ? [...readableRoots, p] : readableRoots;
+        const executable = occurrence.commandHead && executables.get(occurrence.segmentIndex) === p;
+        const alsoAllow = executable ? [...readableRoots, p] : readableRoots;
         paths.push(resolveCandidate(p, root, { shell: true, alsoAllow }));
       }
     }

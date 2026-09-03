@@ -1,6 +1,18 @@
 /** System-owned executable roots on POSIX hosts. */
 const POSIX_SYSTEM_EXECUTABLE_ROOTS = ["/usr", "/bin", "/sbin", "/usr/local"];
 
+const WINDOWS_EXECUTABLE_SUFFIX = /\.(?:exe|com|bat|cmd)$/i;
+
+/**
+ * Remove the executable suffixes Windows resolves through `PATHEXT`.
+ *
+ * @param name - A command name, without changing any directory portion.
+ * @returns The policy identity shared by suffixed and extensionless spellings.
+ */
+export function stripWindowsExecutableSuffix(name: string): string {
+  return name.replace(WINDOWS_EXECUTABLE_SUFFIX, "");
+}
+
 /**
  * The prefixes below which an executable belongs to the platform rather than to
  * a version manager.

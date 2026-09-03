@@ -126,7 +126,7 @@ Configuration fields (`packages/tools/src/config.ts`):
 | --- | --- | --- |
 | `confineToWorkspace: boolean` | `true` | `:77-78`, defaulted `:353` |
 | `stateRoot: string` | `workspaceStatePaths(workspaceRoot).root` | `:80-89`, `:503` |
-| `temporaryRoots: readonly string[]` | `[]`; each entry must already be a directory | `RuntimeConfig`, `createRuntimeConfig` |
+| `temporaryRoots: readonly string[]` | `[]`; each entry must already be a directory; first root supplies the command temp environment | `RuntimeConfig`, `resolveConfig` |
 | `readOnly: boolean` | `false` | `:74-75`, `:352` |
 | `secretEnvNames?: readonly string[]` | absent | `:123-134`, `:511` |
 
@@ -411,16 +411,18 @@ additions:
 | `read_file` | `[config.stateRoot, ...config.temporaryRoots]`; guard analysis also admits an exact verified state spill | `packages/tools/src/tools/read-file.ts`, `packages/tools/src/guard/context.ts` |
 | `read_files` | `[config.stateRoot, ...config.temporaryRoots]`; guard analysis also admits exact verified state spills | `packages/tools/src/tools/read-files.ts`, `packages/tools/src/guard/context.ts` |
 | every other native file tool | `config.temporaryRoots` | see the `resolvePath(` call in each `packages/tools/src/tools/*.ts` |
-| `shell`, `monitor_start` guard analysis | `config.temporaryRoots` plus exact host-selected `config.skillExecutionRoots`; only when a sandbox is configured, each exact verified state spill is also admitted and mounted read-only | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/state-artifacts.ts` |
+| `shell`, `monitor_start` guard analysis | `config.temporaryRoots` plus exact host-selected `config.skillExecutionRoots`; an absolute command head may use only a platform system executable root (including `/opt/homebrew` on Darwin) or configured sandbox runtime root, and that exception is occurrence-local so an identical operand remains outside; only when a sandbox is configured, each exact verified state spill is also admitted and mounted read-only | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/tools/src/lib/state-artifacts.ts` |
 
 The state-root widening remains reachable from exactly two call sites, both read-only. Temporary
-roots are different: the loop creates one owner-only scratch directory per run, passes that exact
-root to guard analysis, native confinement, post-open validation, and the shell environment, and
-removes it after the run is persisted. An explicit absolute `mktemp -d` template may add exactly the
-new directory it created after a before/after snapshot proves the match, lstat rejects symlinks, and
-uid ownership matches; the loop observes that registration for the same cleanup. It never admits
-generic `/tmp` or a pre-existing match. Production:
-`WorkspaceStatePaths.runTempDir`, `createToolsCapability`, `RuntimeConfig.temporaryRoots`,
+roots are different: the loop creates one owner-only scratch directory per run and places it first,
+then appends `systemTemporaryRoots()` — the existing environment temp plus `/tmp` on POSIX, or only
+the environment temp on Windows. Guard analysis, native confinement, post-open validation and native
+sandboxes admit the complete list, while the shell environment continues to name the owner-only
+first root. An explicit absolute `mktemp -d` template may add exactly the new directory it created
+after a before/after snapshot proves the match, lstat rejects symlinks, and uid ownership matches.
+Lifecycle ownership remains separate: the loop removes only its run root and those exact registered
+directories, never a system parent or unrelated pre-existing child. Production:
+`WorkspaceStatePaths.runTempDir`, `createAgentToolsRunCapability`, `systemTemporaryRoots`, `RuntimeConfig.temporaryRoots`,
 `RuntimeConfig.registerTemporaryRoot`, `snapshotExplicitTemporaryDirectories`,
 `createdTemporaryDirectories`, `buildGuardContext`, and `readFileOptions`. Tests:
 `packages/loop/tests/integration/command-guard-wiring.test.ts`,
@@ -748,15 +750,26 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 4. **Case folding is Windows-only.** `forCompare` folds only when `caseInsensitive`, whose default is
    `process.platform === "win32"`. Production `packages/tools/src/lib/paths.ts:89-105`, `:163`; pinned
    `packages/tools/tests/integration/paths.test.ts:78-99`.
-5. **Only the two read tools widen confinement to the state root; every native file tool may use only
-   the exact configured run temporary roots, and command tools may additionally address exact
-   host-approved skill execution roots.** State machinery therefore remains read-only, while scratch
-   created through `$TMPDIR` or a verified explicit `mktemp -d` template is usable by later native
-   calls and unrelated `/tmp` remains refused. Selected skill roots are denied to native mutation.
+5. **Only the two read tools widen confinement to the state root; every native file tool may use the
+   complete configured temporary-root policy, and command tools may additionally address exact
+   host-approved skill execution roots.** In the standalone library that policy defaults empty; the
+   product loop supplies owner-only run scratch followed by the host environment temp and POSIX
+   `/tmp`. State machinery therefore remains read-only, while host-native temp output is usable by
+   later calls. System parents are access-only and selected skill roots are denied to native mutation.
+   Command analysis additionally recognizes only an absolute segment head below a platform system
+   executable root or configured sandbox runtime root as the executable. The exception is attached
+   to that occurrence rather than its raw path string, so an identical later operand remains outside.
+   The policy-facing command name is reduced to its basename and Windows `PATHEXT` suffixes are
+   removed, so neither an absolute spelling nor `.exe`/`.com`/`.bat`/`.cmd` bypasses an extensionless
+   deny entry.
    Production: `packages/tools/src/tools/read-file.ts`, `read-files.ts`, every other `resolvePath(`
-   call site, `packages/tools/src/lib/files.ts`, `packages/tools/src/guard/context.ts`, and
+   call site, `packages/tools/src/lib/files.ts`, `packages/tools/src/guard/context.ts`,
+   `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`),
+   `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`,
+   `ownedTemporaryRoots`), `packages/tools/src/lib/system-executables.ts`, and
    `packages/tools/src/core.ts`. Pinned by
-   `packages/tools/tests/integration/api.test.ts` and `guard-dispatch.test.ts`.
+   `packages/tools/tests/integration/api.test.ts`, `guard-dispatch.test.ts`, and
+   `packages/loop/tests/integration/command-guard-wiring.test.ts`.
 6. **A model-facing refusal never names the bypass.** No runtime string under `packages/tools/src`
    matches the remediation shape. Production `packages/tools/src/lib/paths.ts:141-157,186-192`; pinned
    `packages/tools/tests/architecture/no-bypass-hints.test.ts:81`, with the guard's own sensitivity

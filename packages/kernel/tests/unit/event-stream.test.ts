@@ -38,7 +38,7 @@ function toolDelta(chunk: string, callId = "c1") {
   };
 }
 
-function inputDelta(chars: number, callId = "c1") {
+function inputDelta(chars: number, callId = "c1", streamChars = chars) {
   return {
     type: "tool_input_delta" as const,
     at: 1,
@@ -46,6 +46,7 @@ function inputDelta(chars: number, callId = "c1") {
     call_id: callId,
     tool: "write_file",
     chars,
+    stream_chars: streamChars,
   };
 }
 
@@ -243,8 +244,13 @@ describe("event-stream — coalescing", () => {
 
     const items = await drain(s.iterable);
     expect(items).toHaveLength(2);
-    expect(items[0]).toMatchObject({ call_id: "c1", chars: 3072, tool: "write_file" });
-    expect(items[1]).toMatchObject({ call_id: "c2", chars: 12 });
+    expect(items[0]).toMatchObject({
+      call_id: "c1",
+      chars: 3072,
+      stream_chars: 3072,
+      tool: "write_file",
+    });
+    expect(items[1]).toMatchObject({ call_id: "c2", chars: 12, stream_chars: 12 });
   });
 
   it("absorbs a 5k-delta storm through a stalled consumer with zero characters lost", async () => {

@@ -77,6 +77,8 @@ export interface TranscriptToolNode extends TranscriptNodeBase {
    * seconds on a large edit — and used to have nothing on screen at all.
    */
   inputChars?: number;
+  /** Provider-stream characters observed when input progress last updated. */
+  inputStreamChars?: number;
   /** Set after the provider closes the argument stream, before execution starts. */
   inputComplete?: true;
   /**

@@ -91,8 +91,10 @@ configuration, plans, memory and credentials outside the deletion vocabulary.
 phase (`commentary` or `final_answer`). The response text remains authoritative; clients must not
 invent prose when the field is absent.
 
-`tool_input_delta` is cumulative, not one event per provider fragment. Its optional
-`complete: true` closes only the argument-composition phase; `tool_call_started` still owns actual
+`tool_input_delta` is cumulative, not one event per provider fragment. `chars` is call-scoped
+argument progress; optional `stream_chars` is the distinct physical provider-stream character
+total and may advance while arguments remain unavailable. Its optional `complete: true` closes only
+the argument-composition phase; `tool_call_started` still owns actual
 execution start and terminal `tool_call` still owns the tool outcome. A client must not infer that a
 prior call ended merely because another tool input starts, because providers may compose calls in
 parallel.

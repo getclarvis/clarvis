@@ -1,11 +1,14 @@
-import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from "node:fs";
-import { homedir } from "node:os";
+import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import nodePath, { delimiter, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { spawnSync, type SpawnOptions, type SpawnSyncReturns } from "node:child_process";
 import { ToolError } from "./errors.ts";
 import { executableOnPath } from "@clarvis/paths";
 import { resolveShell, shellArgs, type ShellSpec } from "./shell.ts";
 import { NOOP_TOOLS_LOGGER, type ToolsLogger } from "./lib/log.ts";
+import { systemExecutableRoots } from "./lib/system-executables.ts";
+
+export { systemExecutableRoots } from "./lib/system-executables.ts";
 
 /**
  * Configuration for running a command inside the host's native sandbox.
@@ -385,6 +388,40 @@ export function forbiddenSandboxRoots(): string[] {
 }
 
 /**
+ * Discover the host temporary roots that workspace-confined coding tools may
+ * use for compatibility with native CLIs.
+ *
+ * @param platform - Host platform; injectable for cross-platform tests.
+ * @param environmentTemporaryRoot - The host's resolved temporary directory;
+ *   defaults to {@link tmpdir}.
+ * @returns Existing, non-forbidden roots in precedence order. POSIX hosts add
+ *   `/tmp` beside the environment-selected root, matching common CLI sandbox
+ *   policy; Windows uses only its environment-selected root.
+ * @remarks These paths are access policy, not lifecycle ownership. A caller
+ *   must never infer that returning a root authorizes deleting it.
+ */
+export function systemTemporaryRoots(
+  platform: NodeJS.Platform = process.platform,
+  environmentTemporaryRoot: string = tmpdir(),
+): string[] {
+  const forbidden = new Set(forbiddenSandboxRoots());
+  const roots: string[] = [];
+  for (const candidate of platform === "win32"
+    ? [environmentTemporaryRoot]
+    : [environmentTemporaryRoot, "/tmp"]) {
+    const resolved = resolve(candidate);
+    if (forbidden.has(resolved) || forbidden.has(canonicalOrSelf(resolved))) continue;
+    try {
+      if (!statSync(resolved).isDirectory() || roots.includes(resolved)) continue;
+    } catch {
+      continue;
+    }
+    roots.push(resolved);
+  }
+  return roots;
+}
+
+/**
  * Reject a caller-supplied read-only mount that is dangerously broad (`/`,
  * `/home`, the user's home parent, or the user's home) or that would shadow the
  * workspace by containing it.
@@ -406,14 +443,15 @@ function validateReadOnlyPath(path: string, workspaceRoot: string): void {
 
 /**
  * Compute the `PATH` for a sandboxed process: keep only host `PATH` entries that
- * live under a system root (`/usr`, `/bin`, `/sbin`) or one of the
- * `runtimePaths`, ensure the standard system executable directories remain
- * available even when the host `PATH` was reduced, and prepend each runtime
- * root's `bin`. Entries are deduplicated while preserving order.
+ * live under a platform system root or one of the `runtimePaths`, ensure the
+ * standard system executable directories remain available even when the host
+ * `PATH` was reduced, and prepend each runtime root's `bin`. Darwin's system
+ * roots include the Apple Silicon Homebrew prefix. Entries are deduplicated
+ * while preserving order.
  */
 function sandboxPath(runtimePaths: readonly string[]): string {
   const roots = runtimePaths.map((path) => resolve(path));
-  const systemRoots = ["/usr", "/bin", "/sbin"];
+  const systemRoots = systemExecutableRoots();
   const entries = (process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin")
     .split(delimiter)
     .filter((entry) => {
@@ -421,7 +459,9 @@ function sandboxPath(runtimePaths: readonly string[]): string {
       const normalized = resolve(entry);
       return [...systemRoots, ...roots].some((root) => isWithin(normalized, root));
     });
-  for (const path of ["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]) {
+  const standardPaths = ["/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+  if (process.platform === "darwin") standardPaths.unshift("/opt/homebrew/bin");
+  for (const path of standardPaths) {
     if (existsSync(path) && !entries.includes(path)) entries.push(path);
   }
   for (const root of roots) {
@@ -433,9 +473,13 @@ function sandboxPath(runtimePaths: readonly string[]): string {
 
 /**
  * Build the minimal environment for a sandboxed process: a fixed `HOME`,
- * `TMPDIR`, and a scrubbed `PATH` from {@link sandboxPath}, plus a small
- * allowlist (`LANG`, `TZ`, `TERM`, `NO_COLOR`, all `LC_*`, and any `passEnv`
- * names) carried over from the host when present.
+ * `TMPDIR`, a scrubbed `PATH` from {@link sandboxPath}, and an absolute POSIX
+ * npm script shell, plus a small allowlist (`LANG`, `TZ`, `TERM`, `NO_COLOR`,
+ * all `LC_*`, and any `passEnv` names) carried over from the host when present.
+ *
+ * @remarks npm otherwise resolves bare `sh` through synthetic ancestor
+ * `node_modules/.bin` entries. A deliberately hidden Seatbelt path can make
+ * that lookup return `EPERM` before the admitted system shell is reached.
  */
 function minimalEnv(
   passEnv: readonly string[] = [],
@@ -449,6 +493,7 @@ function minimalEnv(
     TMPDIR: temporaryRoot,
     TEMP: temporaryRoot,
     TMP: temporaryRoot,
+    npm_config_script_shell: "/bin/sh",
   };
   for (const name of ["LANG", "TZ", "TERM", "NO_COLOR", ...passEnv]) {
     if (process.env[name] !== undefined) env[name] = process.env[name];
@@ -472,10 +517,7 @@ export interface SandboxCommandArgs {
   command: string;
   /** The working directory; also the `--chdir` target inside the sandbox. */
   cwd: string;
-  /**
-   * The workspace, bound writable (or read-only) as the sandbox's one writable
-   * tree.
-   */
+  /** The workspace, bound writable or read-only according to the sandbox policy. */
   workspaceRoot: string;
   /** Git metadata roots discovered and pinned when the toolset was constructed. */
   gitMetadataPaths?: readonly string[] | undefined;
@@ -502,8 +544,11 @@ export interface SandboxCommandArgs {
    * that legitimately reads the environment.
    */
   secretEnvNames?: readonly string[] | undefined;
-  /** Run-owned scratch root mounted writable and exposed through TMPDIR/TEMP/TMP. */
-  temporaryRoot?: string | undefined;
+  /**
+   * Writable temporary roots. The first is exposed through TMPDIR/TEMP/TMP;
+   * remaining entries are compatibility roots for host-native temporary paths.
+   */
+  temporaryRoots?: readonly string[] | undefined;
   /**
    * Native capability probe; defaults to {@link probeSandbox} and is injectable
    * for tests.
@@ -564,6 +609,7 @@ const SEATBELT_SYSTEM_READ_FILTERS = [
   '(subpath "/Library/Preferences")',
   '(subpath "/Library/Developer")',
   '(subpath "/Applications/Xcode.app")',
+  '(subpath "/opt/homebrew")',
   '(literal "/etc")',
   '(subpath "/etc")',
   '(subpath "/private/etc")',
@@ -576,6 +622,13 @@ const SEATBELT_SYSTEM_READ_FILTERS = [
   '(literal "/dev/zero")',
   '(literal "/dev/random")',
   '(literal "/dev/urandom")',
+] as const;
+
+const SEATBELT_SYSTEM_METADATA_FILTERS = ['(literal "/opt")'] as const;
+
+const SEATBELT_HOST_NETWORK_READ_FILTERS = [
+  '(literal "/var/run/mDNSResponder")',
+  '(literal "/private/var/run/mDNSResponder")',
 ] as const;
 
 interface SeatbeltPolicy {
@@ -598,7 +651,7 @@ function seatbeltPolicy(args: {
   sandbox: SandboxConfig;
   workspaceRoot: string;
   gitMetadataPaths: readonly string[];
-  temporaryRoot?: string | undefined;
+  temporaryRoots: readonly string[];
   readOnlyPaths: readonly string[];
 }): SeatbeltPolicy {
   const definitions: string[] = [];
@@ -614,7 +667,11 @@ function seatbeltPolicy(args: {
   const dynamicFilter = (path: string): string => `(subpath (param "${keyFor(path)}"))`;
   const workspacePaths = pathVariants(args.workspaceRoot);
   const gitMetadataPaths = args.gitMetadataPaths.flatMap(pathVariants);
-  const temporaryPaths = args.temporaryRoot === undefined ? [] : pathVariants(args.temporaryRoot);
+  const [primaryTemporaryRoot, ...compatibleTemporaryRoots] = args.temporaryRoots;
+  const primaryTemporaryPaths =
+    primaryTemporaryRoot === undefined ? [] : pathVariants(primaryTemporaryRoot);
+  const compatibleTemporaryPaths = compatibleTemporaryRoots.flatMap(pathVariants);
+  const temporaryPaths = [...primaryTemporaryPaths, ...compatibleTemporaryPaths];
   const readOnlyPaths = args.readOnlyPaths.flatMap(pathVariants);
   const readablePaths = [
     ...workspacePaths,
@@ -623,12 +680,28 @@ function seatbeltPolicy(args: {
     ...readOnlyPaths,
   ];
   const readable = [...new Set(readablePaths.filter((path) => existsSync(path)))];
-  const writable = [
+  const workspaceProtectedPaths =
+    args.sandbox.filesystem === "workspace-read-only"
+      ? [...workspacePaths, ...gitMetadataPaths]
+      : [];
+  const writableFilters = [
     ...(args.sandbox.filesystem === "workspace-read-only"
       ? []
-      : [...workspacePaths, ...gitMetadataPaths]),
-    ...temporaryPaths,
-  ].filter((path) => existsSync(path));
+      : [...workspacePaths, ...gitMetadataPaths]
+          .filter((path) => existsSync(path))
+          .map(dynamicFilter)),
+    ...primaryTemporaryPaths.filter((path) => existsSync(path)).map(dynamicFilter),
+    ...compatibleTemporaryPaths
+      .filter((path) => existsSync(path))
+      .map((path) => {
+        const exclusions = workspaceProtectedPaths.map(
+          (protectedPath) => `(require-not ${dynamicFilter(protectedPath)})`,
+        );
+        return exclusions.length === 0
+          ? dynamicFilter(path)
+          : `(require-all ${dynamicFilter(path)} ${exclusions.join(" ")})`;
+      }),
+  ];
   const profile = [
     "(version 1)",
     "(allow default)",
@@ -639,14 +712,16 @@ function seatbeltPolicy(args: {
     "(deny file-read* file-test-existence file-map-executable file-write*)",
     `(allow file-read* file-test-existence file-map-executable ${[
       ...SEATBELT_SYSTEM_READ_FILTERS,
+      ...(args.sandbox.network === "none" ? [] : SEATBELT_HOST_NETWORK_READ_FILTERS),
       ...readable.map(dynamicFilter),
     ].join(" ")})`,
-    `(allow file-read-metadata file-test-existence ${readable
-      .map((path) => `(path-ancestors (param "${keyFor(path)}"))`)
-      .join(" ")})`,
-    ...(writable.length === 0
+    `(allow file-read-metadata file-test-existence ${[
+      ...SEATBELT_SYSTEM_METADATA_FILTERS,
+      ...readable.map((path) => `(path-ancestors (param "${keyFor(path)}"))`),
+    ].join(" ")})`,
+    ...(writableFilters.length === 0
       ? []
-      : [`(allow file-write* ${[...new Set(writable)].map(dynamicFilter).join(" ")})`]),
+      : [`(allow file-write* ${[...new Set(writableFilters)].join(" ")})`]),
     '(allow file-write-data file-ioctl (literal "/dev/null") (literal "/dev/zero"))',
     ...(readOnlyPaths.length === 0
       ? []
@@ -654,6 +729,26 @@ function seatbeltPolicy(args: {
     ...(args.sandbox.network === "none" ? ["(deny network*)"] : []),
   ].join("\n");
   return { profile, definitions };
+}
+
+interface BubblewrapMount {
+  path: string;
+  mode: "--bind" | "--ro-bind";
+  precedence: number;
+}
+
+/**
+ * Append bind mounts from broadest to narrowest so a nested path's more
+ * specific policy wins. Equal paths order writable compatibility roots before
+ * the workspace, run scratch, and final read-only declarations.
+ */
+function appendBubblewrapMounts(args: string[], mounts: readonly BubblewrapMount[]): void {
+  const depth = (path: string): number => resolve(path).split(sep).filter(Boolean).length;
+  for (const mount of [...mounts]
+    .filter(({ path }) => existsSync(path))
+    .sort((a, b) => depth(a.path) - depth(b.path) || a.precedence - b.precedence)) {
+    args.push(mount.mode, mount.path, mount.path);
+  }
 }
 
 /**
@@ -682,16 +777,23 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
     gitMetadataPaths = [],
     sandbox,
     secretEnvNames,
-    temporaryRoot,
+    temporaryRoots = [],
     probe = probeSandbox,
     shell = resolveShell,
     logger = NOOP_TOOLS_LOGGER,
   } = args_;
+  const resolvedTemporaryRoots = [...new Set(temporaryRoots.map((path) => resolve(path)))];
+  const primaryTemporaryRoot = resolvedTemporaryRoots[0];
   const host = shell();
   const bare = (): SandboxedCommand => {
     const env = withoutSecrets(process.env, secretEnvNames);
-    const commandEnv = temporaryRoot
-      ? { ...env, TMPDIR: temporaryRoot, TEMP: temporaryRoot, TMP: temporaryRoot }
+    const commandEnv = primaryTemporaryRoot
+      ? {
+          ...env,
+          TMPDIR: primaryTemporaryRoot,
+          TEMP: primaryTemporaryRoot,
+          TMP: primaryTemporaryRoot,
+        }
       : env;
     return {
       file: host.file,
@@ -716,16 +818,15 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
   const root = resolve(workspaceRoot);
   const readOnlyPaths = validatedReadOnlyPaths(sandbox, root);
   if (support.backend === "seatbelt") {
-    const scratch = temporaryRoot === undefined ? undefined : resolve(temporaryRoot);
     const gitPaths = gitMetadataPaths.map((path) => resolve(path));
     const policy = seatbeltPolicy({
       sandbox,
       workspaceRoot: root,
       gitMetadataPaths: gitPaths,
-      temporaryRoot: scratch,
+      temporaryRoots: resolvedTemporaryRoots,
       readOnlyPaths,
     });
-    const home = canonicalOrSelf(scratch ?? root);
+    const home = canonicalOrSelf(primaryTemporaryRoot ?? root);
     return {
       file: SEATBELT_EXECUTABLE,
       args: [...policy.definitions, "-p", policy.profile, host.file, ...shellArgs(host, command)],
@@ -734,7 +835,7 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
         env: minimalEnv(
           sandbox.passEnv,
           sandbox.runtimePaths,
-          canonicalOrSelf(scratch ?? root),
+          canonicalOrSelf(primaryTemporaryRoot ?? root),
           home,
         ),
       },
@@ -768,15 +869,26 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
   for (const path of ["/usr", "/bin", "/sbin", "/lib", "/lib64", "/etc"]) {
     mountSystemPath(args, path);
   }
-  args.push(sandbox.filesystem === "workspace-read-only" ? "--ro-bind" : "--bind", root, root);
-  for (const path of gitMetadataPaths) {
-    args.push(sandbox.filesystem === "workspace-read-only" ? "--ro-bind" : "--bind", path, path);
-  }
-  if (temporaryRoot !== undefined) {
-    const scratch = resolve(temporaryRoot);
-    if (existsSync(scratch)) args.push("--bind", scratch, scratch);
-  }
-  for (const path of readOnlyPaths) args.push("--ro-bind", path, path);
+  appendBubblewrapMounts(args, [
+    ...resolvedTemporaryRoots.map((path, index) => ({
+      path,
+      mode: "--bind" as const,
+      precedence: index === 0 ? 2 : 0,
+    })),
+    {
+      path: root,
+      mode:
+        sandbox.filesystem === "workspace-read-only" ? ("--ro-bind" as const) : ("--bind" as const),
+      precedence: 1,
+    },
+    ...gitMetadataPaths.map((path) => ({
+      path,
+      mode:
+        sandbox.filesystem === "workspace-read-only" ? ("--ro-bind" as const) : ("--bind" as const),
+      precedence: 1,
+    })),
+    ...readOnlyPaths.map((path) => ({ path, mode: "--ro-bind" as const, precedence: 3 })),
+  ]);
   if (sandbox.network === "none") args.push("--unshare-net");
   else args.push(...resolverMounts());
   args.push("--chdir", cwd, "--", host.file, ...shellArgs(host, command));
@@ -785,36 +897,10 @@ export function sandboxCommand(args_: SandboxCommandArgs): SandboxedCommand {
     args,
     options: {
       cwd,
-      env: minimalEnv(sandbox.passEnv, sandbox.runtimePaths, temporaryRoot),
+      env: minimalEnv(sandbox.passEnv, sandbox.runtimePaths, primaryTemporaryRoot),
     },
     sandboxed: true,
   };
-}
-
-const POSIX_SYSTEM_EXECUTABLE_ROOTS = ["/usr", "/bin", "/sbin", "/usr/local"];
-
-/**
- * The prefixes below which an executable belongs to the platform rather than to
- * a version manager.
- *
- * @param platform - host platform; injectable so the Windows roots are testable
- *   from a POSIX host.
- * @returns the system roots for that platform.
- * @remarks
- * On Windows this is not cosmetic. The `<root>/bin/<command>` layout that
- * {@link installationRoot}'s fallback assumes does not hold there -
- * `dotnet.exe` lives directly in `C:\Program Files\dotnet\`, so the
- * grandparent fallback would report `C:\Program Files` as an install root.
- * Classifying these as system roots returns nothing at all instead, which is
- * honest.
- */
-export function systemExecutableRoots(platform: NodeJS.Platform = process.platform): string[] {
-  if (platform !== "win32") return POSIX_SYSTEM_EXECUTABLE_ROOTS;
-  return [
-    process.env.SystemRoot ?? "C:\\Windows",
-    process.env.ProgramFiles ?? "C:\\Program Files",
-    process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)",
-  ];
 }
 
 /** The subset of `node:path` these helpers need, so `path.win32` can stand in

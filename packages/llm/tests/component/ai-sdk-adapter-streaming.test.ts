@@ -200,6 +200,7 @@ describe("AiSdkAdapter — streaming path", () => {
       call_id: string;
       tool_name: string;
       chars: number;
+      stream_chars?: number;
       complete?: true;
     }> = [];
     const res = await adapter().call(
@@ -219,8 +220,14 @@ describe("AiSdkAdapter — streaming path", () => {
     });
     expect(res.finishReason).toBe("tool-calls");
     expect(toolInput).toEqual([
-      { call_id: "c1", tool_name: "write_file", chars: 0 },
-      { call_id: "c1", tool_name: "write_file", chars: 3, complete: true },
+      { call_id: "c1", tool_name: "write_file", chars: 0, stream_chars: 16 },
+      {
+        call_id: "c1",
+        tool_name: "write_file",
+        chars: 3,
+        stream_chars: 19,
+        complete: true,
+      },
     ]);
 
     const joined = (ch: Delta["channel"]): string =>
@@ -327,6 +334,55 @@ describe("AiSdkAdapter — streaming path", () => {
     await expect(pending).resolves.toMatchObject({
       finishReason: "tool-calls",
       usage: { input_tokens: 1, output_tokens: 1 },
+    });
+  });
+
+  it("treats non-argument SDK parts as activity after a tool was announced", async () => {
+    vi.useFakeTimers({ now: 1_000 });
+    mockStream.mockImplementation(
+      (callbacks: { onEnd?: (event: unknown) => unknown; abortSignal?: AbortSignal }) => {
+        async function* parts(): AsyncGenerator<Part> {
+          yield { type: "tool-input-start", id: "c1", toolName: "write_file" };
+          await new Promise<void>((resolve) => setTimeout(resolve, 20));
+          yield { type: "reasoning-delta", id: "r1", text: "still thinking" };
+          await new Promise<void>((resolve) => setTimeout(resolve, 20));
+          yield { type: "text-start", id: "t1" };
+          await new Promise<void>((resolve) => setTimeout(resolve, 20));
+          yield { type: "tool-input-end", id: "c1" };
+          await callbacks.onEnd?.({
+            text: "",
+            toolCalls: [],
+            usage: { inputTokens: 1, outputTokens: 1, inputTokenDetails: {} },
+            finishReason: "tool-calls",
+          });
+        }
+        return { stream: parts() } as never;
+      },
+    );
+
+    const toolInput: Array<{
+      call_id: string;
+      tool_name: string;
+      chars: number;
+      stream_chars?: number;
+      complete?: true;
+    }> = [];
+    const pending = adapter().call(
+      params({
+        timeoutMs: 25,
+        onStreamDelta: () => {},
+        onToolInputDelta: (delta) => toolInput.push(delta),
+      }),
+    );
+    await vi.runAllTimersAsync();
+
+    await expect(pending).resolves.toMatchObject({ finishReason: "tool-calls" });
+    expect(toolInput.at(-1)).toEqual({
+      call_id: "c1",
+      tool_name: "write_file",
+      chars: 0,
+      stream_chars: 14,
+      complete: true,
     });
   });
 

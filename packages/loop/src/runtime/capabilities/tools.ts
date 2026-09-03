@@ -31,6 +31,7 @@ import {
   agentToolCaps,
   agentToolsActive,
   createAgentToolset,
+  systemTemporaryRoots,
   type AgentToolset,
   type Guard,
   type Elicit as GuardElicit,
@@ -172,7 +173,8 @@ function createAgentToolsRunCapability(
   removeEmptyRunDirs: () => void,
 ): RunCapability {
   const elicitWaitMs = ctx.request.elicit_wait_ms ?? ctx.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS;
-  const temporaryRoots = new Set([temporaryRoot]);
+  const ownedTemporaryRoots = new Set([temporaryRoot]);
+  const accessibleTemporaryRoots = [...new Set([temporaryRoot, ...systemTemporaryRoots()])];
   return {
     name: AGENT_TOOLS_CAPABILITY_NAME,
     systemSection(id) {
@@ -180,13 +182,12 @@ function createAgentToolsRunCapability(
       if (!caps.canRead) return undefined;
       return (
         "## Temporary work\n\n" +
-        "`TMPDIR` names scratch space owned by this run. Use `mktemp -d` without an absolute " +
-        "template when cloning or generating temporary data; shell commands and native coding " +
-        "tools can both access that directory."
+        "`TMPDIR` names scratch space owned by this run. Shell commands and native coding tools " +
+        "can also reuse paths created by host-native temporary-file APIs."
       );
     },
     onRunEnd() {
-      for (const root of temporaryRoots) {
+      for (const root of ownedTemporaryRoots) {
         try {
           rmSync(root, { recursive: true, force: true });
         } catch (error) {
@@ -214,9 +215,9 @@ function createAgentToolsRunCapability(
         canMutate: caps.canMutate,
         canExec: caps.canExec,
         confineToWorkspace: ctx.env.CLARVIS_AGENT_TOOLS_CONFINE,
-        temporaryRoots: [temporaryRoot],
+        temporaryRoots: accessibleTemporaryRoots,
         skillExecutionRoots,
-        onTemporaryRootRegistered: (root) => temporaryRoots.add(root),
+        onTemporaryRootRegistered: (root) => ownedTemporaryRoots.add(root),
         ...(ctx.logger !== undefined ? { logger: ctx.logger } : {}),
         ...(secretEnvNames.length > 0 ? { secretEnvNames } : {}),
         ...(resolution?.guard !== undefined ? { guard: resolution.guard } : {}),

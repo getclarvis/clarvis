@@ -483,6 +483,7 @@ export function engineEventToProto(ev: TraceEvent, logger: Logger = NOOP_LOGGER)
         call_id: ev.call_id,
         tool: ev.tool_name,
         chars: ev.chars,
+        ...(ev.stream_chars !== undefined ? { stream_chars: ev.stream_chars } : {}),
         ...(ev.complete === true ? { complete: true } : {}),
       };
     case "tool_call":

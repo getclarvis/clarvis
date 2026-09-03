@@ -1,4 +1,5 @@
 import type { PathCandidate, ShellDialect, Token } from "../dialect.ts";
+import { stripWindowsExecutableSuffix } from "../../lib/system-executables.ts";
 
 /**
  * Automatic variables common enough in idiomatic PowerShell that flagging them
@@ -169,14 +170,15 @@ const ALIASES = new Map<string, string>(
 /**
  * The canonical cmdlet name for a command word, case-insensitively.
  *
- * @remarks A word that is not a known alias or cmdlet is returned unchanged,
- *   case included. Windows resolves executable names case-insensitively too, but
- *   rewriting the case of arbitrary external commands would assert more than
- *   this table knows - so an allow or deny entry naming an external tool still
- *   has to match the spelling the model writes.
+ * @remarks A bare executable loses a suffix Windows resolves through `PATHEXT`,
+ *   so `curl.exe` and `curl` share one policy identity. Otherwise a word that
+ *   is not a known alias or cmdlet is returned unchanged, case included.
+ *   Rewriting the case of arbitrary external commands would assert more than
+ *   this table knows.
  */
 function canonicalCommand(word: string): string {
-  return ALIASES.get(word.toLowerCase()) ?? word;
+  const command = /[\\/]/.test(word) ? word : stripWindowsExecutableSuffix(word);
+  return ALIASES.get(command.toLowerCase()) ?? command;
 }
 
 /**

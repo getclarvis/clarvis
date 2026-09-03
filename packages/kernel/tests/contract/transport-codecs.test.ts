@@ -262,6 +262,7 @@ describe("remote run codec", () => {
       call_id: "call-write",
       tool: "write_file",
       chars: 48_147,
+      stream_chars: 49_000,
       complete: true,
     } as const;
 

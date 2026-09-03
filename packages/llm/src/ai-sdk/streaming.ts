@@ -133,7 +133,8 @@ export const TOOL_INPUT_REPORT_MS = 250;
  * @param sink - the host's tool-input observer.
  * @param maxMs - minimum gap between two reports *for the same call*.
  * @returns handles for the three provider events that bound a tool call's
- *   argument stream.
+ *   argument stream plus the other textual stream activity that can continue
+ *   while a call is open.
  *
  * @remarks Keyed by `call_id` because a single completion may compose several
  * tool calls and their deltas interleave; a shared buffer of the kind
@@ -153,14 +154,32 @@ export function makeToolInputReporter(
   start: (callId: string, toolName: string) => void;
   delta: (callId: string, text: string) => void;
   end: (callId: string) => void;
+  observe: (text: string) => void;
 } {
   const open = new Map<string, { toolName: string; chars: number; reportedAt: number }>();
   const metrics = streamMetrics();
+  let streamChars = 0;
+  const report = (
+    callId: string,
+    state: { toolName: string; chars: number; reportedAt: number },
+    now: number,
+    complete = false,
+  ): void => {
+    if (!complete && now - state.reportedAt < maxMs) return;
+    state.reportedAt = now;
+    sink({
+      call_id: callId,
+      tool_name: state.toolName,
+      chars: state.chars,
+      stream_chars: streamChars,
+      ...(complete ? { complete: true } : {}),
+    });
+  };
   return {
     start: (callId, toolName): void => {
       open.set(callId, { toolName, chars: 0, reportedAt: Date.now() });
       metrics.count("tool_input_start");
-      sink({ call_id: callId, tool_name: toolName, chars: 0 });
+      sink({ call_id: callId, tool_name: toolName, chars: 0, stream_chars: streamChars });
     },
     delta: (callId, text): void => {
       const state = open.get(callId);
@@ -168,17 +187,22 @@ export function makeToolInputReporter(
       metrics.count("tool_input_delta");
       metrics.count("tool_input_chars", text.length);
       state.chars += text.length;
+      streamChars += text.length;
       const now = Date.now();
-      if (now - state.reportedAt < maxMs) return;
-      state.reportedAt = now;
-      sink({ call_id: callId, tool_name: state.toolName, chars: state.chars });
+      report(callId, state, now);
     },
     end: (callId): void => {
       const state = open.get(callId);
       if (state === undefined) return;
       open.delete(callId);
       metrics.count("tool_input_end");
-      sink({ call_id: callId, tool_name: state.toolName, chars: state.chars, complete: true });
+      report(callId, state, Date.now(), true);
+    },
+    observe: (text): void => {
+      if (text.length === 0) return;
+      streamChars += text.length;
+      const now = Date.now();
+      for (const [callId, state] of open) report(callId, state, now);
     },
   };
 }

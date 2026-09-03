@@ -204,6 +204,8 @@ export interface ToolInputDeltaDetail {
   call_id: string;
   tool_name: string;
   chars: number;
+  /** Cumulative provider-stream characters observed by this physical attempt. */
+  stream_chars?: number;
   /** Present only after the provider closed this argument stream. */
   complete?: true;
 }

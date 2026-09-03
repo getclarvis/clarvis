@@ -201,6 +201,7 @@ function mapEntryRaw(
         chars: d.chars,
       };
       if (d.subagent_instance_id !== undefined) event.subagent_instance_id = d.subagent_instance_id;
+      if (d.stream_chars !== undefined) event.stream_chars = d.stream_chars;
       if (d.complete === true) event.complete = true;
       return event;
     }

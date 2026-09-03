@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import path from "node:path";
 import { buildGuardContext } from "../../src/guard/context.ts";
+import { powershellDialect } from "../../src/guard/dialects/powershell.ts";
 import { makeConfig } from "../helpers/fixtures.ts";
 import type { ServerConfig } from "../../src/config.ts";
 
@@ -32,6 +33,92 @@ describe("buildGuardContext — command tools", () => {
 
     const esc = buildGuardContext("shell", { command: "cat /etc/passwd" }, config);
     expect(within(esc, "/etc/passwd")).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "classifies an absolute system command head as executable without admitting its operands",
+    () => {
+      const ctx = buildGuardContext(
+        "shell",
+        { command: "/usr/bin/mktemp -d && /usr/bin/cat /etc/passwd" },
+        config,
+      );
+      expect(ctx.shell?.segments.map((segment) => segment.normalized)).toEqual([
+        "mktemp -d",
+        "cat /etc/passwd",
+      ]);
+      expect(within(ctx, "/usr/bin/mktemp")).toBe(true);
+      expect(within(ctx, "/usr/bin/cat")).toBe(true);
+      expect(within(ctx, "/etc/passwd")).toBe(false);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "keeps an absolute command outside system and configured runtime roots denied",
+    () => {
+      const ctx = buildGuardContext("shell", { command: "/opt/untrusted/bin/mktemp -d" }, config);
+      expect(ctx.shell?.segments[0]?.normalized).toBe("/opt/untrusted/bin/mktemp -d");
+      expect(within(ctx, "/opt/untrusted/bin/mktemp")).toBe(false);
+    },
+  );
+
+  it("does not let a command-head exemption cover the same path used later as an operand", () => {
+    const executable =
+      process.platform === "win32"
+        ? path.win32.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.exe")
+        : "/usr/local/bin/echo";
+    const ctx = buildGuardContext(
+      "shell",
+      { command: `${executable} ok; echo hacked > ${executable}` },
+      config,
+    );
+    expect(
+      ctx.paths.filter((fact) => fact.raw === executable).map((fact) => fact.withinWorkspace),
+    ).toEqual([true, false]);
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "admits an absolute command head beneath an explicitly configured runtime root",
+    () => {
+      const runtimeRoot = "/opt/clarvis-runtime";
+      const ctx = buildGuardContext(
+        "shell",
+        { command: `${runtimeRoot}/bin/runtime-tool --version` },
+        makeConfig(root, {
+          sandbox: {
+            type: "native",
+            runtimePaths: [runtimeRoot],
+          },
+        }),
+      );
+      expect(within(ctx, `${runtimeRoot}/bin/runtime-tool`)).toBe(true);
+      expect(ctx.shell?.segments[0]?.normalized).toBe("runtime-tool --version");
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "matches an absolute system spelling to the same policy identity as a PATH command",
+    () => {
+      const ctx = buildGuardContext("shell", { command: "/usr/bin/git push origin main" }, config);
+      expect(ctx.shell?.segments[0]?.argv[0]).toBe("/usr/bin/git");
+      expect(ctx.shell?.segments[0]?.normalized).toBe("git push origin main");
+    },
+  );
+
+  it("drops a Windows executable suffix from an absolute command's policy identity", () => {
+    const executable =
+      process.platform === "win32"
+        ? path.win32.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "curl.EXE")
+        : "/usr/bin/curl.EXE";
+    const ctx = buildGuardContext(
+      "shell",
+      { command: `${executable} --version` },
+      config,
+      powershellDialect,
+    );
+    expect(ctx.shell?.segments[0]?.argv[0]).toBe(executable);
+    expect(ctx.shell?.segments[0]?.normalized).toBe("curl --version");
+    expect(within(ctx, executable)).toBe(true);
   });
 
   it("expands ~/ with shell semantics so it escapes the workspace", () => {

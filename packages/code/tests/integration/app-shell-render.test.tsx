@@ -33,6 +33,7 @@ import type { RunEvent } from "@clarvis/protocol";
 import { applyRunEvents, runEvent } from "../helpers/run-events.ts";
 import { captureUntil } from "../helpers/render-support.ts";
 import { keyboardEnvironmentId } from "../../src/keys/keyboard-profile.ts";
+import { productVersion } from "../../src/cli-args.ts";
 import { createModelsCatalog } from "../../src/adapters/models-catalog.ts";
 import type { WorkflowActivity } from "../../src/adapters/workflow-projection.ts";
 
@@ -536,6 +537,7 @@ test("skill drift is a transient warning while the conversation remains untouche
 test("default wide layout: header, derived navigation and input dock are live", async () => {
   const t = await mountApp(defaultProps({}));
   const out = await captureUntil(t, "coder");
+  expect(out.split("\n")[0]?.trimEnd()).toEndWith(`v${productVersion()}`);
   expect(out).toContain("New task");
   // Advertised at idle because Ctrl+C owns both run cancellation and quitting.
   expect(out).toContain("[^c] cancel / quit");
@@ -1160,6 +1162,58 @@ test("Lead thinking and working reuse one fixed line immediately above the compo
   expect(settledLine).not.toContain("thinking");
   expect(t.renderer.root.findDescendantById("lead-activity-line")).toBe(line);
   expect(line!.y).toBe(fixedY);
+  t.renderer.destroy();
+});
+
+test("live tool-input progress redraws before the provider closes the arguments", async () => {
+  const store = createTranscriptStore();
+  const sink = store.openRun("exec_tool_input_progress");
+  applyRunEvents(
+    sink,
+    [
+      ev({ type: "run_started", at: 1 }),
+      ev({ type: "iteration_started", agent: "lead", iteration: 1, at: 2, model: "m" }),
+    ],
+    "live",
+  );
+  const t = await mountApp(defaultProps({ active: () => true, store }));
+
+  applyRunEvents(
+    sink,
+    [
+      ev({
+        type: "tool_input_delta",
+        at: 3,
+        agent: "lead",
+        call_id: "write-1",
+        tool: "write_file",
+        chars: 0,
+        stream_chars: 173,
+      }),
+    ],
+    "live",
+  );
+  const waiting = await captureUntil(t, "waiting for arguments… · stream 173 chars");
+  expect(waiting).toContain("Steer this run");
+
+  applyRunEvents(
+    sink,
+    [
+      ev({
+        type: "tool_input_delta",
+        at: 4,
+        agent: "lead",
+        call_id: "write-1",
+        tool: "write_file",
+        chars: 173,
+        stream_chars: 346,
+      }),
+    ],
+    "live",
+  );
+  const progress = await captureUntil(t, "receiving arguments… 173 chars · stream 346 chars");
+  expect(progress).toContain("Steer this run");
+  expect(progress).not.toContain("arguments ready");
   t.renderer.destroy();
 });
 
@@ -2179,6 +2233,38 @@ test("normal submit and steer return an old reader to the Lead tail while backgr
   t.mockInput.pressEnter();
   expect(await captureUntil(t, "STEER RETURN TARGET")).toContain("STEER RETURN TARGET");
   expect(submissions).toEqual(["normal explicit submit", "explicit steer"]);
+  t.renderer.destroy();
+});
+
+test("an elicitation returns an old reader to the live tail before hiding the composer", async () => {
+  const store = createTranscriptStore();
+  const activity = createActivityStore();
+  const sink = store.openRun("exec_elicit_tail");
+  const activitySink = activity.openRun();
+  const initial: RunEvent[] = [ev({ type: "run_started", at: 1 })];
+  for (let iteration = 1; iteration <= 40; iteration += 1)
+    initial.push(...leadTurn(iteration, `ELICIT HISTORY ${iteration}`, iteration * 3));
+  applyRunEvents(sink, initial, "live");
+  applyRunEvents(activitySink, initial, "live");
+  const [elicit, setElicit] = createSignal<ElicitRequestParams | null>(null);
+  const t = await mountApp(defaultProps({ store, activity, active: () => true, elicit }), {
+    width: 120,
+    height: 30,
+  });
+
+  await captureUntil(t, "ELICIT HISTORY 40");
+  await moveReaderAwayFromTail(t);
+  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeDefined();
+
+  setElicit({ message: "allow the pending write?", kind: "guard_confirm" });
+  const question = await captureUntil(t, "allow the pending write?");
+  expect(question).toContain("Command approval");
+  expect(question).not.toContain("Steer this run");
+  expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeUndefined();
+
+  setElicit(null);
+  await captureUntil(t, "Steer this run");
+  expect(await captureUntil(t, "ELICIT HISTORY 40")).toContain("Steer this run");
   t.renderer.destroy();
 });
 

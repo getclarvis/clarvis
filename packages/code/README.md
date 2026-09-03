@@ -222,7 +222,8 @@ does not parse or does not validate, Clarvis runs the shipped agent unchanged an
 which file was refused and why.
 
 Every interactive cold boot first paints a parser-free, focused `StartupComposer` in one lightweight
-Solid root. Its header and shared `BrandBanner` preserve the final screen's visual structure while the
+Solid root. Its header keeps the root-owned `v<version>` visible at the right edge, and its shared
+`BrandBanner` preserves the final screen's visual structure while the
 application chunk and workspace foundation load concurrently. At 60 columns by 16 rows or larger,
 the first paint shows the same complete eight-row Clarvis banner as an empty, untouched run; a
 narrower or shorter frame uses the shared one-line wordmark, and an extremely short frame retains
@@ -698,8 +699,9 @@ After an idle workspace-trust approval or revocation recomposes the kernel Exten
 client refreshes its cached `{id, fingerprint}` immediately; the next turn and resume comparison
 therefore use the post-transition snapshot without requiring a reconnect.
 
-The header carries the selected branch. `--continue`, `--resume`, `--list` and `--delete` operate
-only on this process's selected workspace.
+The header carries the selected branch and keeps the root-manifest product version in a fixed
+right-aligned zone. `--continue`, `--resume`, `--list` and `--delete` operate only on this process's
+selected workspace.
 
 Session persistence is optimistic in the UI and serialized per session in the
 background. Shutdown waits for pending writes, and persistence failures are
@@ -918,8 +920,12 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   child's explicitly selected isolated transcript and in the persisted run.
 - Tool-call, diff, reasoning, plan and budget views.
 - A tool appears as soon as its name is known. While the provider composes a large argument payload,
-  its one mutable row shows a throttled cumulative character count; `tool_input_end` changes that
-  row to `arguments ready` without claiming the filesystem or command action ran. A distinct
+  its one mutable row says `waiting for arguments` until the first argument byte arrives, then shows
+  a throttled cumulative character count. A separate `stream N chars` total shows text, reasoning,
+  and tool-input progress for the physical provider attempt, so continuing SDK activity remains
+  visible even when argument bytes are unavailable; neither counter retains a history.
+  `tool_input_end` changes that row to `arguments ready` without claiming the filesystem or command
+  action ran. A distinct
   `tool_call_started` begins execution, and only terminal `tool_call` marks its outcome. Starting a
   second tool does not close the first because parallel composition is valid. Retry removes the
   abandoned attempt's composing row before showing the retry state.
@@ -929,6 +935,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - Session browsing and continuation.
 - Command guards and approval flows.
 - User elicitation during a run.
+  If a confirmation arrives while the reader is browsing older history, Clarvis explicitly returns
+  that physical reader to the live tail before replacing the composer with the question; resolving
+  or cancelling the question re-clamps the changed tail geometry before the composer returns.
 - `/compact [request]` to compact the context used by the next model call, whether a run is active
   or the latest session turn is already settled.
 - Skill slash commands and prompt injection.

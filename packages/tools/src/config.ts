@@ -88,7 +88,7 @@ export interface RuntimeConfig {
    */
   stateRoot: string;
 
-  /** Run-owned scratch roots admitted in addition to the workspace. */
+  /** Ordered writable temporary roots admitted in addition to the workspace; first is primary. */
   temporaryRoots: readonly string[];
 
   /** Host-selected skill directories admitted only to command execution. */
@@ -243,7 +243,7 @@ export interface AgentToolsOptions {
 
   /** Confine tool paths to the workspace. Defaults to true. */
   confineToWorkspace?: boolean;
-  /** Existing run-owned scratch roots available to every tool in this toolset. */
+  /** Existing writable temporary roots available to every tool; first supplies the command env. */
   temporaryRoots?: readonly string[];
   /** Host-selected skill directories required by enabled skills. */
   skillExecutionRoots?: readonly string[];

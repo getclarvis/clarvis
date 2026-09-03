@@ -69,6 +69,18 @@ const textDelta = {
   reset: false,
 } satisfies RunEvent;
 
+const toolInputDelta = {
+  type: "tool_input_delta",
+  at: 2,
+  agent: "lead",
+  call_id: "call-write",
+  tool: "write_file",
+  chars: 0,
+  stream_chars: 173,
+} satisfies RunEvent;
+
+void toolInputDelta;
+
 const repairPlan = {
   scope: "workspace",
   revision: "sha256",

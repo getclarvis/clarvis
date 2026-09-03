@@ -324,6 +324,12 @@ describe("powershellDialect.normalize — alias canonicalization", () => {
     expect(normalized("where git")).toEqual(["where git"]);
   });
 
+  it("normalizes PATHEXT suffixes on bare executable command names", () => {
+    for (const suffix of ["EXE", "com", "BaT", "CmD"]) {
+      expect(normalized(`tool.${suffix} arg`)).toEqual(["tool arg"]);
+    }
+  });
+
   it("still extracts the paths a command touches", () => {
     // Asserting the extracted strings, never `PathFact.withinWorkspace`: on a
     // POSIX host `node:path` does not treat `\` as a separator, so a confinement

@@ -161,6 +161,7 @@ const RUN_EVENT_SCHEMAS = {
       call_id: text,
       tool: text,
       chars: finite,
+      stream_chars: finite.optional(),
       complete: z.literal(true).optional(),
     })
     .strict(),

@@ -20,6 +20,8 @@ import {
   Splash,
 } from "../../src/views/Splash.tsx";
 
+const TEST_VERSION = "0.0.4-beta";
+
 async function frame(width: number, height = 24): Promise<string> {
   const t = await openRender(
     () => (
@@ -91,10 +93,13 @@ test("the boot frame drops decorative identity before it competes with the compa
 
 test("the startup composer paints honest readiness markers and queues an early task", async () => {
   const state = createStartupComposerState();
-  const t = await openRender(() => <StartupComposer state={state} acceptsInput />, {
-    width: 72,
-    height: 16,
-  });
+  const t = await openRender(
+    () => <StartupComposer state={state} acceptsInput version={TEST_VERSION} />,
+    {
+      width: 72,
+      height: 16,
+    },
+  );
   await t.renderOnce();
   const first = t.captureCharFrame();
   expect(first).toContain(BOOT_SHELL_MARKER);
@@ -103,6 +108,7 @@ test("the startup composer paints honest readiness markers and queues an early t
   expect(first).not.toContain(APP_PAINT_MARKER);
   expect(first).not.toContain(APP_READY_MARKER);
   expect(first).toContain("Type now; Enter queues the task");
+  expect(first.split("\n")[0]?.trimEnd()).toEndWith(`v${TEST_VERSION}`);
 
   await t.mockInput.typeText("inspect plugin startup");
   t.mockInput.pressEnter();
@@ -117,7 +123,9 @@ test("the startup composer paints honest readiness markers and queues an early t
 
 test("the startup composer shares the responsive Clarvis splash on first paint", async () => {
   const complete = await openRender(
-    () => <StartupComposer state={createStartupComposerState()} acceptsInput />,
+    () => (
+      <StartupComposer state={createStartupComposerState()} acceptsInput version={TEST_VERSION} />
+    ),
     { width: 60, height: 16 },
   );
   await complete.renderOnce();
@@ -125,7 +133,9 @@ test("the startup composer shares the responsive Clarvis splash on first paint",
   complete.renderer.destroy();
 
   const short = await openRender(
-    () => <StartupComposer state={createStartupComposerState()} acceptsInput />,
+    () => (
+      <StartupComposer state={createStartupComposerState()} acceptsInput version={TEST_VERSION} />
+    ),
     { width: 60, height: 15 },
   );
   await short.renderOnce();
@@ -135,7 +145,9 @@ test("the startup composer shares the responsive Clarvis splash on first paint",
   short.renderer.destroy();
 
   const narrow = await openRender(
-    () => <StartupComposer state={createStartupComposerState()} acceptsInput />,
+    () => (
+      <StartupComposer state={createStartupComposerState()} acceptsInput version={TEST_VERSION} />
+    ),
     { width: 59, height: 16 },
   );
   await narrow.renderOnce();
@@ -147,10 +159,13 @@ test("the startup composer shares the responsive Clarvis splash on first paint",
 
 test("the startup composer preserves an unsent draft and keeps resume locked", async () => {
   const draftState = createStartupComposerState();
-  const draft = await openRender(() => <StartupComposer state={draftState} acceptsInput />, {
-    width: 60,
-    height: 12,
-  });
+  const draft = await openRender(
+    () => <StartupComposer state={draftState} acceptsInput version={TEST_VERSION} />,
+    {
+      width: 60,
+      height: 12,
+    },
+  );
   await draft.renderOnce();
   await draft.mockInput.typeText("keep this draft");
   await draft.renderOnce();
@@ -158,7 +173,13 @@ test("the startup composer preserves an unsent draft and keeps resume locked", a
   draft.renderer.destroy();
 
   const resume = await openRender(
-    () => <StartupComposer state={createStartupComposerState()} acceptsInput={false} />,
+    () => (
+      <StartupComposer
+        state={createStartupComposerState()}
+        acceptsInput={false}
+        version={TEST_VERSION}
+      />
+    ),
     { width: 60, height: 12 },
   );
   await resume.renderOnce();

@@ -143,16 +143,20 @@ const LIVE_TAIL_LINES = 5;
  *
  * @param chars - cumulative argument size received from the provider.
  * @param complete - whether the provider has closed the argument stream.
- * @returns an action-oriented progress label with a compact character count.
+ * @param streamChars - cumulative characters observed across the provider stream.
+ * @returns an action-oriented state, adding a compact count once argument bytes arrive.
  *
  * @remarks It replaces the argument signature rather than sitting beside it,
  * because during this window there are no arguments to render — the node was
- * created from the tool's *name* alone, which is all the provider has sent.
+ * created from the tool's *name* alone, which is all the provider has sent. A
+ * zero count therefore says it is waiting rather than claiming byte progress.
  */
-export function composingLabel(chars: number, complete = false): string {
-  return complete
-    ? `arguments ready ${glyph("separator")} ${fmtCount(chars)} chars`
-    : `receiving arguments${glyph("ellipsis")} ${fmtCount(chars)} chars`;
+export function composingLabel(chars: number, complete = false, streamChars?: number): string {
+  const stream =
+    streamChars === undefined ? "" : ` ${glyph("separator")} stream ${fmtCount(streamChars)} chars`;
+  if (complete) return `arguments ready ${glyph("separator")} ${fmtCount(chars)} chars${stream}`;
+  if (chars === 0) return `waiting for arguments${glyph("ellipsis")}${stream}`;
+  return `receiving arguments${glyph("ellipsis")} ${fmtCount(chars)} chars${stream}`;
 }
 
 function liveTailLines(node: TranscriptToolNode): string[] {
@@ -289,12 +293,18 @@ function ToolLine(props: {
   const tail = createMemo<string[]>(() => liveTailLines(props.node));
   /**
    * The stable composing stand-in, or `""` once the call's real arguments exist.
-   * It deliberately avoids exposing provider byte-count mechanics to the user.
+   * Argument characters stay distinct from the broader streamed-character
+   * heartbeat so the user can see that the provider is alive without claiming
+   * that reasoning or prose has already become tool input.
    */
   const composing = createMemo<string>(() =>
     props.node.inputChars === undefined
       ? ""
-      : composingLabel(props.node.inputChars, props.node.inputComplete === true),
+      : composingLabel(
+          props.node.inputChars,
+          props.node.inputComplete === true,
+          props.node.inputStreamChars,
+        ),
   );
   const guardLabel = createMemo<string>(() => guardReviewLabel(props.node));
   return (
@@ -683,6 +693,12 @@ export function BlockView(props: {
   const composingChars = createMemo<number>(() =>
     quietMembers().reduce((total, member) => total + (member.inputChars ?? 0), 0),
   );
+  const composingStreamChars = createMemo<number | undefined>(() => {
+    const values = quietMembers().flatMap((member) =>
+      member.inputStreamChars === undefined ? [] : [member.inputStreamChars],
+    );
+    return values.length === 0 ? undefined : Math.max(...values);
+  });
   const composingComplete = createMemo<boolean>(() =>
     quietMembers()
       .filter((member) => member.inputChars !== undefined)
@@ -804,7 +820,11 @@ export function BlockView(props: {
                               </span>
                               <Show when={composingMembers() > 0}>
                                 <span style={{ fg: tokens.muted }}>
-                                  {` ${glyph("separator")} ${composingLabel(composingChars(), composingComplete())}`}
+                                  {` ${glyph("separator")} ${composingLabel(
+                                    composingChars(),
+                                    composingComplete(),
+                                    composingStreamChars(),
+                                  )}`}
                                 </span>
                               </Show>
                               <Show when={failures() > 0}>

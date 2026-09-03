@@ -6,6 +6,7 @@
 export { FILE_MUTATING_TOOL_NAMES } from "./names.ts";
 export { agentToolCaps, agentToolsActive } from "./grants.ts";
 export { createAgentToolset, type AgentToolset, type AgentToolsetOptions } from "./toolset.ts";
+export { systemTemporaryRoots } from "@clarvis/tools";
 export type {
   Guard,
   Elicit,

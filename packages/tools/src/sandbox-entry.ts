@@ -7,6 +7,7 @@ export {
   probeSeatbelt,
   probeSandbox,
   sandboxCommand,
+  systemTemporaryRoots,
   discoverLinkedGitMetadataPaths,
   discoverToolchains,
   forbiddenSandboxRoots,

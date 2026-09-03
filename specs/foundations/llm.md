@@ -333,7 +333,7 @@ calls even without a delta consumer"`).
 |---|---|
 | `text-delta` | first-output report `"text"`; `batcher.push("text", …)` |
 | `reasoning-delta` | first-output report `"reasoning"`; `batcher.push("reasoning", …)` |
-| `tool-input-start` / `-delta` / `-end` | first-output report `"tool_input"`; forwarded to `makeToolInputReporter`; `-end` emits the final cumulative count with `complete: true` |
+| `tool-input-start` / `-delta` / `-end` | first-output report `"tool_input"`; forwarded to `makeToolInputReporter`; `-end` emits final cumulative argument and provider-stream counts with `complete: true` |
 | `finish-step` | `partialUsage = part.usage` |
 | `finish` | `partialUsage = part.totalUsage` |
 | `tool-call` / `file` / `source` | first-output report with that channel name |
@@ -375,8 +375,10 @@ calls even without a delta consumer"`).
 | `dispose()` | — | `disarm()` only (`:108`) |
 
 Tool arguments use the separate `makeToolInputReporter` cumulative throttle. `start` publishes the
-tool identity with `chars: 0`; `delta` counts every fragment but forwards at most once per call per
-`TOOL_INPUT_REPORT_MS = 250`; `end` always forwards the final count with `complete: true`. Calls are
+tool identity with `chars: 0`; `delta` counts every argument fragment while `observe` adds text and
+reasoning characters to the distinct physical-attempt `stream_chars` total. Reports forward at most
+once per call per `TOOL_INPUT_REPORT_MS = 250`; `end` always forwards the final counts with
+`complete: true`. Calls are
 keyed by `call_id`, so interleaved parallel argument streams neither merge nor imply one another has
 finished. Production: `makeToolInputReporter`. Test:
 `packages/llm/tests/unit/delta-batcher.test.ts` and
@@ -388,9 +390,10 @@ starts emitting tool-call arguments" (`packages/llm/src/ai-sdk/streaming.ts:33-3
 docblock at `:21-44`).
 
 `makeToolInputReporter` (`:149`) is a **throttle**, not a batcher: `TOOL_INPUT_REPORT_MS = 250`
-(`:127`), `chars` is cumulative, `start` reports immediately with `chars: 0` (`:161`), `delta` skips
-a report inside the window (`:167-168`), `end` always reports and deletes the entry (`:172-177`), and
-a `delta` for an unknown `call_id` is ignored rather than inferred (`:165`).
+(`:127`), argument `chars` and attempt-wide `stream_chars` are cumulative, `start` reports
+immediately with `chars: 0`, `delta` and `observe` skip a report inside the window, `end` always
+reports and deletes the entry, and a `delta` for an unknown `call_id` is ignored rather than
+inferred.
 
 ### 4.5 Prompt-cache breakpoint placement
 

@@ -302,6 +302,12 @@ every provider surfaces cancellation differently. A workspace with no indexer
 model reports its due jobs `blocked` — no attempt consumed, no lease taken — so
 the learning is recovered whole the day a model is configured.
 
+That durable job policy is the indexer's only provider-recovery loop. Both isolated and continuation
+entry profiles set `retry.max_retries: 0`, so one transient provider failure returns to the queue,
+where the job applies its phase-aware attempt budget and exponential backoff. Foreground agents keep
+their configured transport retries; the override is scoped to background memory passes and prevents
+the job retry budget from multiplying an inner transport retry budget.
+
 ## Search, history and health
 
 - **Ranked query** — `queryMemory` / the `query_memories` tool score whole

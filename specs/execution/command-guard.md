@@ -385,7 +385,7 @@ tool family, and an unrecognized tool yields no paths and no shell facts (`:114`
 | Family | Members | Extraction | Line |
 | --- | --- | --- | --- |
 | guarded host fallback | `host_vcs` | render `program` plus each string argv member with display-safe quoting into `args.command`, analyze that display command, and resolve `args.cwd` with plain fs semantics | `packages/tools/src/guard/context.ts` |
-| command tools | `shell`, `monitor_start` | `analyzeShell(args.command)`, each reported path resolved with **shell semantics** (tilde expansion) against workspace, scratch and exact host-selected skill roots; when a sandbox is configured, an existing verified spill is admitted as that exact read-only-mounted file; unsandboxed commands do not receive the spill exception; `args.cwd` is added with plain fs semantics against the same workspace/scratch/skill roots | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/state-artifacts.ts` |
+| command tools | `shell`, `monitor_start` | `analyzeShell(args.command)`, each path occurrence resolved with **shell semantics** (tilde expansion) against workspace, every configured temporary root (product run scratch plus system compatibility roots), and exact host-selected skill roots; an absolute command head beneath a platform system executable root or configured runtime root is admitted only for that segment occurrence and normalized to its basename for allow/deny matching, with Windows `PATHEXT` suffixes removed; duplicate absolute operands remain outside even when their string equals an admitted head; when a sandbox is configured, an existing verified spill is admitted as that exact read-only-mounted file; unsandboxed commands do not receive the spill exception; `args.cwd` is added with plain fs semantics against the same roots | `packages/tools/src/guard/context.ts` (`commandPathOccurrences`, `externalExecutableHeads`, `normalizeExternalExecutables`), `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/loop/src/runtime/capabilities/tools.ts` |
 | patch | `apply_patch` | `patchPaths(args.patch)` — raw unified `---`/`+++` plus model-envelope Update/Add/Delete/Move headers, `/dev/null` dropped, `a/`/`b/` prefixes stripped, deduped first-seen | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
 | src/dest | `move`, `copy` | `args.source`, `args.destination` | `:23`, `:66`-`:68` |
 | list | `read_files` | every string in `args.paths` | `:69`-`:74` |
@@ -1091,6 +1091,35 @@ broken.
     `packages/loop/src/runtime/build-run-deps.ts`. Test:
     `packages/tools/tests/integration/api.test.ts` and
     `packages/skills/tests/integration/api.test.ts`.
+
+58. **A literal path below the host environment temp or POSIX `/tmp` is inside the product's command
+    boundary before any tool executes.** `createAgentToolsRunCapability` appends
+    `systemTemporaryRoots()` to the run scratch, and `buildGuardContext` evaluates shell paths and
+    `cwd` against the complete `RuntimeConfig.temporaryRoots`. This is pre-authorization, not a
+    path learned from prior output. Production: `packages/loop/src/runtime/capabilities/tools.ts`
+    (`accessibleTemporaryRoots`) and `packages/tools/src/guard/context.ts` (`commandRoots`). Test:
+    `packages/loop/tests/integration/command-guard-wiring.test.ts` (`preauthorizes the host temp
+    across shell and native tools without owning its parent`).
+
+59. **An absolute executable spelling is not mistaken for an external data operand, and cannot
+    bypass command policy.** For `shell`/`monitor_start`, only the first argv item of a segment is a
+    candidate; it must resolve outside the workspace but beneath a platform system executable root
+    or the configured sandbox runtime roots. The exception is attached to that lexical occurrence,
+    never to the path string globally: the same path used as a later operand stays outside. Its
+    basename replaces only the policy-facing `normalized` head, and Windows removes `.exe`, `.com`,
+    `.bat`, or `.cmd`, so `/usr/bin/git push` still matches `git push` and an absolute `curl.exe`
+    still matches an extensionless `curl` deny. Darwin includes the Apple Silicon Homebrew prefix
+    `/opt/homebrew` among its platform roots. `/etc/passwd` remains an outside-workspace operand and
+    `/opt/untrusted/bin/tool` remains denied. Production:
+    `packages/tools/src/guard/context.ts` (`commandPathOccurrences`, `externalExecutableHeads`,
+    `normalizeExternalExecutables`), `packages/tools/src/guard/dialects/powershell.ts`
+    (`canonicalCommand`), and `packages/tools/src/lib/system-executables.ts`
+    (`systemExecutableRoots`, `stripWindowsExecutableSuffix`). Test:
+    `packages/tools/tests/unit/guard-context.test.ts` (`does not let a command-head exemption cover
+    the same path used later as an operand`, `drops a Windows executable suffix from an absolute
+    command's policy identity`) and `packages/kernel/tests/integration/guard-dialects.test.ts`
+    (`keeps an absolute executable exemption local to its command-head occurrence`, `matches an
+    absolute Windows executable suffix against an extensionless deny entry`).
 
 ---
 

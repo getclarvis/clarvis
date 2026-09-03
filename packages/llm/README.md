@@ -102,6 +102,12 @@ at most once per timeout window, so progress does not allocate a timer or log re
 Non-streaming generation still has no observable progress and therefore keeps the timeout as an
 absolute call bound.
 
+The tool-input reporter keeps argument progress and provider-stream liveness distinct. Its `chars`
+field counts only that call's argument fragments; `stream_chars` cumulatively counts text,
+reasoning, and tool-input characters observed in the physical attempt. A provider can therefore
+show continuing stream activity after naming a tool even when it has not exposed incremental
+argument bytes. Both values reuse the same per-call 250 ms throttle and retain no growing history.
+
 `TransportRetryOptions` is an attempt cap plus a backoff —
 `maxRetries`, `baseDelayMs`, `maxDelayMs`, and optionally `maxRetryAfterMs` (the ceiling applied to
 a server's `Retry-After`) and a `logger`. Only errors the classifier calls `transient` are retried.

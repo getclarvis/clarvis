@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { createAgentTools, currentShellFlavor } from "../../src/index.ts";
+import { createAgentTools, currentShellFlavor, systemTemporaryRoots } from "../../src/index.ts";
 import { makeWorkspace, cleanup, write, resultText, posixShell } from "../helpers/fixtures.ts";
 import { expectedToolNames } from "../helpers/tool-surface.ts";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync } from "node:fs";
@@ -66,6 +66,37 @@ describe("createAgentTools (library API)", () => {
       cleanup(temporaryRoot);
     }
   });
+
+  it.skipIf(!posixShell)(
+    "reuses a bare mktemp result from the host temp root in a later native tool",
+    async () => {
+      const runTemporaryRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-run-owned-")));
+      let created: string | undefined;
+      try {
+        const t = createAgentTools({
+          workspaceRoot: root,
+          temporaryRoots: [runTemporaryRoot, ...systemTemporaryRoots()],
+          probeRipgrep: () => false,
+        });
+        const made = await t.callTool("shell", {
+          command:
+            `made=$(TMPDIR='${tmpdir()}' mktemp -d) && ` +
+            'printf alpha > "$made/a.txt" && printf %s "$made"',
+        });
+        expect(made.isError).toBe(false);
+        created = JSON.parse(resultText(made.content)).stdout as string;
+        expect(realpathSync(created).startsWith(realpathSync(tmpdir()))).toBe(true);
+        expect(realpathSync(created).startsWith(runTemporaryRoot)).toBe(false);
+
+        const searched = await t.callTool("grep", { path: created, pattern: "alpha" });
+        expect(searched.isError).toBe(false);
+        expect(resultText(searched.content)).toContain("a.txt");
+      } finally {
+        if (created !== undefined) cleanup(created);
+        cleanup(runTemporaryRoot);
+      }
+    },
+  );
 
   it("admits a selected package only as a command working directory", async () => {
     const packageRoot = realpathSync(mkdtempSync(join(tmpdir(), "clarvis-skill-package-")));

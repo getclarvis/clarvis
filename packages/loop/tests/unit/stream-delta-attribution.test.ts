@@ -22,11 +22,17 @@ class StreamingLLM implements LLMProvider {
 
   async call(params: LLMCallParams): Promise<LLMCallResult> {
     params.onStreamDelta?.({ channel: "text", text: this.text, reset: true });
-    params.onToolInputDelta?.({ call_id: "call-1", tool_name: "shell", chars: 0 });
+    params.onToolInputDelta?.({
+      call_id: "call-1",
+      tool_name: "shell",
+      chars: 0,
+      stream_chars: 13,
+    });
     params.onToolInputDelta?.({
       call_id: "call-1",
       tool_name: "shell",
       chars: 7,
+      stream_chars: 20,
       complete: true,
     });
     return {
@@ -140,6 +146,7 @@ describe("streaming delta attribution", () => {
       call_id: "call-1",
       tool_name: "shell",
       chars: 7,
+      stream_chars: 20,
       complete: true,
     });
   });

@@ -254,6 +254,15 @@ export interface LLMCallParams {
     call_id: string;
     tool_name: string;
     chars: number;
+    /**
+     * Cumulative text, reasoning, and tool-input characters observed in this
+     * physical provider stream when this report was emitted.
+     *
+     * @remarks This is stream liveness, not argument progress. It may advance
+     *   while `chars` remains zero when a provider emits other channels after
+     *   announcing a tool but before exposing its argument bytes.
+     */
+    stream_chars?: number;
     /** Present only on the final cumulative report for this argument stream. */
     complete?: true;
   }) => void;

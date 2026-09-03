@@ -37,10 +37,11 @@ when to call — while the transports live in `@clarvis/trace` and
 `@clarvis/mcp-client`.
 
 That trace policy records the first `tool_input_delta` announcement for each provider attempt, then
-emits only live cumulative progress and the explicit argument-stream completion. A retry clears the
-attempt-local announcement set, so even a provider that reuses a `call_id` leaves one new durable
-breadcrumb. `model_call_retry` also retains the bounded provider failure message. This is bounded
-observability: no argument content and no per-delta journal growth.
+emits only live cumulative progress and the explicit argument-stream completion. Each report keeps
+call-scoped argument `chars` separate from the physical attempt's optional `stream_chars` liveness
+total. A retry clears the attempt-local announcement set, so even a provider that reuses a `call_id`
+leaves one new durable breadcrumb. `model_call_retry` also retains the bounded provider failure
+message. This is bounded observability: no argument content and no per-delta journal growth.
 
 > Private, unversioned workspace. The root manifest owns the Clarvis product version; this package
 > is not published independently.
@@ -148,10 +149,11 @@ Built-ins cover:
 - coding tools and command guards;
 - `host_vcs` as an exec-gated host-boundary command: `edit_workspace` alone never advertises or
   dispatches it, while `run_commands` still subjects every invocation to command review;
-- one owner-only temporary root per run, advertised as `TMPDIR`, `TEMP`, and `TMP` to shell commands
-  and admitted by that run's native tools; a verified directory created through an explicit absolute
-  POSIX `mktemp -d` template joins the same run-owned set, and every member is removed after the run
-  record is persisted;
+- one owner-only temporary root per run, advertised as `TMPDIR`, `TEMP`, and `TMP`, plus the host's
+  existing system temporary roots pre-authorized across command and native tools. The system roots
+  are compatibility access only and are never removed by Clarvis. A verified directory created
+  through an explicit absolute POSIX `mktemp -d` template joins the run-owned set, whose members are
+  removed after the run record is persisted;
 - skills, including package-scoped helper execution for roots the host explicitly approves: the
   loop passes only each selected skill's own directory to command tools, never executes a helper on
   selection, and relies on `@clarvis/tools` to protect it from native mutations and mount it
@@ -221,9 +223,11 @@ their feature packages instead, each behind that package's `./capability` entry;
 `@clarvis/loop` no longer exports a subpath for any of them. `@clarvis/memory`
 also ships one, but it is not on this list: the engine does not load it at all.
 
-Run teardown removes each registered temporary root and then prunes its now-empty execution and
-`runs/` containers. The global paths sweeper separately reclaims stale empty containers left by a
-crash, so a normal run does not accumulate directory-only scratch state.
+Run teardown removes the Clarvis-created run root and each exact temporary directory registered as
+created by that run, then prunes its now-empty execution and `runs/` containers. Pre-authorized
+system temporary roots are not owned or traversed by teardown. The global paths sweeper separately
+reclaims stale empty Clarvis containers left by a crash, so a normal run does not accumulate
+directory-only scratch state.
 
 The doom-loop guard counts only genuine tool execution failures. A command or path refused by
 policy/human review is still returned and traced as a tool error, but it is a `denied` dispatch — it

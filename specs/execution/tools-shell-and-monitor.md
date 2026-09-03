@@ -103,7 +103,7 @@ Not exported from any entrypoint (internal to `tools/monitor.ts`/`lib/monitor.ts
 | `monitorReadyTimeoutMs` | `DEFAULT_MONITOR_READY_TIMEOUT_MS` | `30000` | `:50`, `:158` |
 | `maxMonitors` | `DEFAULT_MAX_MONITORS` | `32` | `:53`, `:160` |
 | `stateRoot` | — | (derived) | `:80-89`, resolved at `:503` |
-| `temporaryRoots` | — | `[]` | `:91-92`, resolved at `:354-365` |
+| `temporaryRoots` | — | `[]` | ordered writable temp policy; the first root supplies the command environment, remaining roots are compatibility paths; resolved by `resolveConfig` |
 | `skillExecutionRoots` | — | `[]` | host-selected, canonical package directories; validated by `resolveConfig` |
 | `gitMetadataPaths` | — | discovered once from a validated linked worktree | `:97-98`, resolved at `:336` |
 | `registerTemporaryRoot` | — | closure over the live `temporaryRoots` list | `:100-101`, built at `:405-417` |
@@ -213,21 +213,22 @@ is needed.
    `MAX_TIMER_DELAY_MS = 2_147_483_647` is `setTimeout`'s int32 ceiling (`:39`).
 2. `statDirectory` confirms `cwd` exists and is a directory before ever spawning (`:196`).
 3. `runCommand` builds the sandbox-resolved spec (`sandboxCommand`, delegated — see §7), spawns with
-   `stdio: ["ignore", "pipe", "pipe"]` and `detached: ownProcessGroup()` (`:241-268`).
-   When the host supplied a run-owned temporary root, the child receives it as `TMPDIR`, `TEMP`, and
-   `TMP`. POSIX callers use an explicit run-rooted template such as
-   `mktemp -d "$TMPDIR/clarvis.XXXXXX"`, because macOS `/usr/bin/mktemp` may ignore a reassigned
-   `TMPDIR` when no template is supplied; PowerShell callers create relative to `$env:TEMP`.
-   Scratch created through either form may be read or mutated by subsequent native tools in the
-   same run. Production:
-   `RuntimeConfig.temporaryRoots`, `createShell`, and `sandboxCommand`. Test:
-   `packages/tools/tests/integration/api.test.ts` exercises the host shell's native form, searches
-   the shell-created scratch with native `grep`, and keeps the generic system temp root refused.
+   `stdio: ["ignore", "pipe", "pipe"]` and `detached: ownProcessGroup()` (`runCommand`). The first
+   configured temporary root becomes `TMPDIR`, `TEMP`, and `TMP`; every configured root is admitted
+   by command analysis, native file tools, Bubblewrap and Seatbelt. The product loop supplies its
+   owner-only run scratch first, then `systemTemporaryRoots()` so host-native CLIs that select the
+   environment temp or `/tmp` can return paths that remain usable in later calls. The standalone
+   library keeps the `[]` default and widens only when its host opts in. Production:
+   `RuntimeConfig.temporaryRoots`, `systemTemporaryRoots`, `createShell`, and `sandboxCommand`. Tests:
+   `packages/tools/tests/integration/api.test.ts` exercises both run scratch and a bare host-temp
+   `mktemp` result, while `packages/loop/tests/integration/command-guard-wiring.test.ts` proves the
+   product pre-authorization crosses shell and native tools without transferring parent ownership.
    A POSIX command that instead spells an absolute `mktemp -d /tmp/name-XXXXXX` template is handled
    after execution by `snapshotExplicitTemporaryDirectories` / `createdTemporaryDirectories`: only
    a matching directory absent before the call, not a symlink, and owned by the current uid is
-   registered. The same API test proves the following native `grep` succeeds while `/tmp` itself is
-   still refused.
+   registered. A standalone caller that did not opt into `systemTemporaryRoots()` still refuses the
+   parent; the product loop's compatible parent remains access-only and is never registered for
+   cleanup.
    For linked worktrees, the spawn request also carries the canonical Git metadata paths that
    `resolveConfig` pinned at toolset creation; how those paths are mounted is owned by the sandbox
    spec. Production: `packages/tools/src/config.ts:336`,
@@ -299,8 +300,8 @@ oversized batch", "swallows a throwing emit").
 3. Mint an id, resolve the shell once (`shell()`, threaded into both the wrapper and
    `sandboxCommand` so they can never disagree — `:251-271`), wrap the command with
    `exitCaptureWrapper(command, host.flavor)` (`:256`).
-   The same request carries `config.gitMetadataPaths` and the first run-owned temporary root, exactly
-   as the blocking `shell` path does (`packages/tools/src/tools/monitor.ts:261-271`).
+   The same request carries `config.gitMetadataPaths` and the complete ordered temporary-root list,
+   exactly as the blocking `shell` path does (`monitor_start`).
    It also carries the same selected skill roots and therefore has the same sandboxed-read-only versus
    unsandboxed-host-process distinction as `shell`.
 4. Open the log file for append (`openSync(lp, "a")`), spawn with
@@ -609,6 +610,17 @@ side has silently failed.
     identity permits. Production: `packages/tools/src/guard/context.ts`, `config.ts`, `tools/shell.ts`,
     and `tools/monitor.ts`. Tests: `packages/tools/tests/integration/api.test.ts` and `config.test.ts`.
 
+23. **A host-native temporary path remains usable across tool calls without making its parent
+    run-owned.** The loop puts `systemTemporaryRoots()` after the run scratch in `temporaryRoots`;
+    shell and monitor pass the complete list to `sandboxCommand`, while teardown tracks a separate
+    owned set. Production: `packages/tools/src/tools/shell.ts`, `tools/monitor.ts`,
+    `sandbox.ts` (`systemTemporaryRoots`, `sandboxCommand`), and
+    `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`,
+    `ownedTemporaryRoots`). Tests: `packages/tools/tests/integration/api.test.ts` (`reuses a bare
+    mktemp result from the host temp root in a later native tool`) and
+    `packages/loop/tests/integration/command-guard-wiring.test.ts` (`preauthorizes the host temp
+    across shell and native tools without owning its parent`).
+
 ## 6. Failure modes and degradation
 
 | Failure | Where handled | Result |
@@ -652,9 +664,10 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   by `packages/paths/tests/architecture/invariant.test.ts`, outside this document's scope).
 - `../sandbox.ts` (`sandboxCommand`) — both `packages/tools/src/tools/shell.ts:18` and
   `packages/tools/src/tools/monitor.ts:24` import it to build the actual spawn spec (file/args/env,
-  possibly native-sandbox-wrapped). Both pass the pinned `gitMetadataPaths` and first `temporaryRoot`;
-  the former makes linked-worktree Git metadata available without re-reading a mutable `.git`
-  pointer, while the latter supplies run-owned scratch. Sandboxed execution
+  possibly native-sandbox-wrapped). Both pass the pinned `gitMetadataPaths` and complete
+  `temporaryRoots`; the former makes linked-worktree Git metadata available without re-reading a
+  mutable `.git` pointer, while the latter supplies primary run scratch plus compatible system
+  roots. Sandboxed execution
   itself is **out of this document's scope** (see the [sandbox-and-toolchains](sandbox.md) document); this
   subsystem only threads a resolved `ShellSpec` into it so the wrapper and the executor can never
   disagree on shell flavor (`packages/tools/src/tools/monitor.ts:255-271`).

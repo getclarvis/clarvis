@@ -39,7 +39,7 @@ either name today gets the same `not_found` refusal as a typo
 | `.` | `packages/tools/src/index.ts` | the library facade: `createAgentTools`, `dispatch`, `listTools`, config, registry, errors, content — and, re-exported alongside them, the same shell, guard, process-kill and warn-sink bindings the `./shell`/`./guard` subpaths expose (see below) |
 | `./guard` | `packages/tools/src/guard/index.ts` | the command-approval analysis surface (owned by the sibling [command-guard-and-approval](command-guard.md) document) |
 | `./shell` | `packages/tools/src/shell-entry.ts` | shell resolution primitives (`resolveShell`, `shellArgs`, `encodePowerShellCommand`, `exitCaptureWrapper`, `currentShellFlavor`, plus `killTree`/`ownProcessGroup` and the `ShellSpec`/`ShellDeps`/`ShellFlavor`/`KillDeps`/`TaskkillRunner` types) re-exported for `@clarvis/hooks` and `@clarvis/kernel` without pulling in the rest of the tool API |
-| `./sandbox` | `packages/tools/src/sandbox-entry.ts` | sandbox configuration types (owned by the sibling [sandbox-and-toolchains](sandbox.md) document) |
+| `./sandbox` | `packages/tools/src/sandbox-entry.ts` | sandbox configuration, host temporary-root discovery, probes and policy construction (owned by the sibling [sandbox-and-toolchains](sandbox.md) document) |
 | `./monitor` | `packages/tools/src/monitor-entry.ts` | `sweepMonitors` housekeeping for kernel boot without the complete registry/dispatcher graph |
 | `./package.json` | `package.json` itself | boilerplate self-reference (no `bun`/`types`/`import` condition); not a source entry and out of scope below |
 
@@ -104,6 +104,7 @@ consumer outside this package's own workspace-linked build.
 | `ToolError`, `serializeError`, `fsError` | class/fn | `packages/tools/src/errors.ts:34,65,99` | the package's error type and its two renderers |
 | `ErrorCode` | type | `packages/tools/src/errors.ts:8` | the closed union of 18 stable codes |
 | `SandboxConfig` | type | `packages/tools/src/index.ts:66` | re-exported from `./sandbox.ts` |
+| `systemTemporaryRoots(platform?, environmentTemporaryRoot?)` | function | `packages/tools/src/index.ts` | returns the existing environment-selected temp root plus `/tmp` on POSIX, or only the environment root on Windows; forbidden roots are omitted |
 | `resolveShell`, `shellArgs`, `encodePowerShellCommand`, `exitCaptureWrapper`, `currentShellFlavor` | fn | `packages/tools/src/index.ts:67`-`73` | shell resolution primitives, the same ones `./shell` exposes |
 | `ShellSpec`, `ShellDeps`, `ShellFlavor` | type | `packages/tools/src/index.ts:74` | types for the shell primitives above |
 | `executableOnPath`, `resolveCommand` | fn | `packages/tools/src/index.ts:75` | re-exported from `@clarvis/paths` |
@@ -180,8 +181,8 @@ else `tools`.
 The full field list, defaults and overrides are given in §3. The fields most relevant to dispatch
 itself: `guard?: Guard`, `elicit?: Elicit` (consulted by `applyGuard`, `packages/tools/src/core.ts:156`), `readOnly:
 boolean` (selects the surface), `confineToWorkspace: boolean`, `stateRoot: string`, and
-`temporaryRoots: readonly string[]` (path-confinement
-policy consumed by individual tools, not by `core.ts` itself), `maxOutputBytes` and `maxToolMetaBytes`
+`temporaryRoots: readonly string[]` (ordered temporary path policy consumed by individual tools, not
+by `core.ts` itself; the first root is the command environment's `TMPDIR`), `maxOutputBytes` and `maxToolMetaBytes`
 (consumed by `dispatch`'s own bounding step).
 `skillExecutionRoots: readonly string[]` is the separately bounded, canonical set of selected skill
 package directories admitted only to command execution. `dispatch` consumes it before the guard via
@@ -334,11 +335,12 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
    (`packages/tools/src/config.ts:339`-`349`).
 5. Run the ripgrep probe (`runProbe`, swallowing a throw to `false`) and resolve `readOnly` /
    `confineToWorkspace` (`resolveConfig` in `packages/tools/src/config.ts`).
-6. Validate scratch roots, then canonicalize and de-duplicate at most 512 `skillExecutionRoots`.
-   Missing/non-directory entries, the filesystem root, the workspace itself, and any ancestor of the
-   workspace fail startup. Both sides of the containment comparison use their filesystem-canonical
-   identity, so authored platform aliases cannot bypass the broad-root refusal (`resolveConfig`;
-   pinned by `packages/tools/tests/integration/config.test.ts`).
+6. Validate each ordered temporary root as an existing directory, then canonicalize and de-duplicate
+   at most 512 `skillExecutionRoots`. Missing or non-directory entries fail startup in either list.
+   For skill roots, the filesystem root, the workspace itself, and any ancestor of the workspace also
+   fail startup. Both sides of that containment comparison use their filesystem-canonical identity,
+   so authored platform aliases cannot bypass the broad-root refusal (`resolveConfig`; pinned by
+   `packages/tools/tests/integration/config.test.ts`).
 7. Emit one `debug` log, `event: "tools.config_resolved"`, including only the count
    `skill_execution_roots`, never their paths.
 8. Merge those roots into native-sandbox `readOnlyPaths`, then build the `RuntimeConfig`, validating
@@ -419,6 +421,7 @@ no validation, guard or bounding logic runs here.
 | INV-043 | Neither the full nor the read-only tool surface advertises `outline` or `check_syntax`. | `packages/tools/src/tools/registry.ts:42`-`67` (absent from `toolDescriptors`) | `packages/tools/tests/component/tool-surface.test.ts:43` |
 | INV-044 | Dispatching a removed tool name (`outline`, `check_syntax`) fails with the exact same `{error: "not_found", message: "Unknown tool: <name>"}` shape as dispatching a name that never existed (`does_not_exist`). | `packages/tools/src/core.ts:233`-`236` (`getTool` miss path, uniform for any unrecognized name) | `packages/tools/tests/component/tool-surface.test.ts:52` |
 | INV-045 | The refusal for dispatching `outline` never leaks why the tool was removed or hints at a runtime the model could try to install: it contains none of `tree`, `sitter`, `unavailable`, `disabled`, `install`, `degraded` (case-insensitive). | `packages/tools/src/core.ts:235` (`Unknown tool: ${name}` is the entire message — no code path appends anything else for a `not_found`) | `packages/tools/tests/component/tool-surface.test.ts:64` |
+| INV-046 | Host temporary roots are explicit access policy, not ownership: `systemTemporaryRoots` discovers the environment temp plus `/tmp` on POSIX (environment temp only on Windows), the product loop appends them after its run-owned root, and teardown removes only the run root plus exact dynamically registered directories. | `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`); `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`, `ownedTemporaryRoots`) | `packages/tools/tests/integration/api.test.ts` (`reuses a bare mktemp result from the host temp root in a later native tool`); `packages/loop/tests/integration/command-guard-wiring.test.ts` (`preauthorizes the host temp across shell and native tools without owning its parent`) |
 
 INV-038's own scan exempts exactly three files from the forbidden-vocabulary check via an
 `ASSERT_ABSENCE` set — this file itself, `tests/component/tool-surface.test.ts`, and

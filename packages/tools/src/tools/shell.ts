@@ -243,7 +243,7 @@ function runCommand(
         cwd,
         workspaceRoot: config.workspaceRoot,
         gitMetadataPaths: config.gitMetadataPaths,
-        temporaryRoot: config.temporaryRoots[0],
+        temporaryRoots: config.temporaryRoots,
         sandbox: sandboxWithReadableStateArtifacts(command, config),
         secretEnvNames: config.secretEnvNames,
         logger: config.logger,

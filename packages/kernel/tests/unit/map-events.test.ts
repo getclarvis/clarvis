@@ -67,6 +67,7 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
         occurred_at: 7,
         tool_name: "write_file",
         chars: 2048,
+        stream_chars: 2304,
       }),
     ).toEqual({
       type: "tool_input_delta",
@@ -75,6 +76,7 @@ describe("engineEventToProto (TraceEvent → engine-independent RunEvent project
       call_id: "c9",
       tool: "write_file",
       chars: 2048,
+      stream_chars: 2304,
     });
   });
 

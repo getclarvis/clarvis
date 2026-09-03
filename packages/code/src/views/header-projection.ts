@@ -9,6 +9,7 @@ import { connectionLabel, type ConnectionState } from "../adapters/connection-st
 /** One shell snapshot. Legacy configuration fields remain input so App owns one derivation point. */
 export interface HeaderInput {
   width: number;
+  version: string;
   floor: boolean;
   agentName: string;
   model: string;
@@ -26,7 +27,7 @@ export interface HeaderInput {
 }
 
 export type HeaderFieldKey =
-  "workspace" | "identity" | "model" | "safety" | "memory" | "urgent" | "exception";
+  "workspace" | "identity" | "model" | "safety" | "memory" | "urgent" | "exception" | "version";
 
 export interface HeaderField {
   key: HeaderFieldKey;
@@ -43,6 +44,7 @@ export interface HeaderPlan {
   status: HeaderField[];
   urgent?: HeaderField;
   exception?: HeaderField;
+  version: HeaderField;
 }
 
 function separator(): string {
@@ -59,6 +61,8 @@ const BRAND_COLS = 10;
 const WORKSPACE_FLOOR = 14;
 /** Columns held back for the active agent name when it is on the row at all. */
 const IDENTITY_FLOOR = 10;
+/** One blank column plus the root-owned product version anchored at the right edge. */
+const VERSION_GUTTER = 1;
 
 function urgentField(input: HeaderInput): HeaderField | undefined {
   if (input.connection.phase !== "ready") {
@@ -161,17 +165,22 @@ function statusChips(input: HeaderInput, room: number): HeaderField[] {
 /**
  * Projects identity, the run's governing configuration, and actionable host state.
  *
- * @remarks The row is two groups, not a list: who you are and how the next run
- * is configured read as one separator-joined run of text on the left, and what
- * is happening or wrong sits against the right edge. The flexible gap between
- * them is the boundary, which is why the first field after it carries no
- * separator of its own — a `·` stranded after several columns of whitespace
- * separates nothing. Everything inside a group does carry one, so the model no
- * longer butts against the agent name across a gap. Run lifecycle belongs to
- * the footer, transcript and inspector rather than this stable identity row.
+ * @remarks Who you are and how the next run is configured form one
+ * separator-joined group on the left. Actionable host state follows the
+ * flexible gap, and the root-owned product version anchors the final zone.
+ * The first field after the gap carries no separator of its own — a `·`
+ * stranded after several columns of whitespace separates nothing. Run
+ * lifecycle belongs to the footer, transcript and inspector rather than this
+ * stable identity row.
  */
 export function projectHeader(input: HeaderInput): HeaderPlan {
   const sep = separator();
+  const version: HeaderField = {
+    key: "version",
+    text: `v${input.version}`,
+    color: tokens.muted,
+    elastic: false,
+  };
   const workspaceName =
     input.workspaceLabel ?? (basename(input.workspace) || input.workspace || "workspace");
   const workspaceText = input.branch ? `${workspaceName} (${input.branch})` : workspaceName;
@@ -186,6 +195,8 @@ export function projectHeader(input: HeaderInput): HeaderPlan {
   const room =
     input.width -
     BRAND_COLS -
+    VERSION_GUTTER -
+    cols(version.text) -
     WORKSPACE_FLOOR -
     (input.floor ? 0 : IDENTITY_FLOOR) -
     (urgent ? cols(urgent.text) + cols(sep) : 0) -
@@ -217,5 +228,6 @@ export function projectHeader(input: HeaderInput): HeaderPlan {
     status,
     urgent: state.find((field) => field.key === "urgent"),
     exception: state.find((field) => field.key === "exception"),
+    version,
   };
 }

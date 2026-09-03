@@ -291,7 +291,8 @@ Each scope is independently truncated to `MEMORY_POLICY_MAX_CHARS` (4000), passe
   providers: [...args.providers],
   profiles: [{ name: "memory-indexer", model: modelRef,
                base_prompt: INDEXER_SYSTEM (+ "\n\n" + policy),
-               tools: [], iteration_limit: 12 }],
+               tools: [], iteration_limit: 12,
+               retry: { max_retries: 0 } }],
   entry: "memory-indexer",
   budget: { on_exceed: "stop", total_token_limit: 200_000 } }
 ```
@@ -313,7 +314,9 @@ rendered at budgets.digest_tokens * 4 chars>` plus an optional
   messages: [{ role: "user", content: INDEXER_CONTINUATION_INSTRUCTION (+ policy) }],
   servers: [...(request.servers ?? [])],
   providers: [...args.providers],          // live settings, NOT the trace
-  profiles: request.profiles.map(p => p.name === entry ? { ...p, iteration_limit: 12 } : p),
+  profiles: request.profiles.map(p => p.name === entry
+    ? { ...p, iteration_limit: 12, retry: { ...p.retry, max_retries: 0 } }
+    : p),
   entry: request.entry,
   budget: { on_exceed: "stop", total_token_limit: continuationTokenLimit(subject) } }
 ```
@@ -738,8 +741,9 @@ Production: `packages/memory/src/indexer/request.ts:391`.
 Test: `packages/memory/tests/component/continuation-sanitized-trace.test.ts:72`, `:79`, `:90`.
 
 **MIX-05.** A continuation carries `entry`, `profiles` (including grants and tools) and
-`prompt_cache_key` from the indexed run, and changes only `iteration_limit` on the entry profile and
-`budget` — neither of which is on the wire.
+`prompt_cache_key` from the indexed run. On the entry profile it changes only `iteration_limit` and
+`retry.max_retries`; it also replaces the run `budget`. None of those values changes the provider's
+prompt-prefix bytes.
 Production: `packages/memory/src/indexer/request.ts:386-397`.
 Test: `packages/memory/tests/unit/indexer-continuation.test.ts:123`, `:138`;
 `packages/memory/tests/integration/continuation-elicitation.test.ts:100`.
@@ -796,6 +800,19 @@ Production: `packages/memory/src/jobs.ts:99-105`.
 Test: `packages/memory/tests/unit/jobs-policy.test.ts:41`, `:46`, `:53`, `:65`; end-to-end at
 `packages/memory/tests/component/drain.test.ts:234` (5 attempts on transport) and `:259` (2 on an
 open pyramid).
+
+**MIX-39.** Both indexer request shapes set the entry profile's `retry.max_retries` to zero while
+preserving any carried `max_retry_after_ms`. The durable job state machine remains the sole recovery
+loop across failed passes, so a provider outage is not multiplied by a nested per-call transport
+retry loop. This override is scoped to indexer entry profiles; foreground profiles retain their own
+configured/default transport policy.
+Production: `packages/memory/src/indexer/request.ts` (`buildIndexerRequest`,
+`buildIndexerContinuationRequest`).
+Test: `packages/memory/tests/unit/indexer-continuation.test.ts` (`bounding provider attempts inside a
+durable job attempt`). The loop's application of `profile.retry.max_retries` to each provider call is
+pinned by `packages/loop/tests/unit/request-profile-validation.test.ts` and
+`packages/llm/tests/unit/retry-llm-provider.test.ts` (`does not retry a transient failure when
+maxRetries is 0`).
 
 **INV-113.** `boundRunSnapshot` redacts secret-shaped values before the snapshot is ever stored —
 redaction is the first operation, ahead of measurement.
@@ -1073,7 +1090,7 @@ indexer pass through the host-owned run executor`) and
 | Lease reclaimed mid-pass | `packages/memory/src/drain.ts:526`, `:507` | `blocked`, reason `lease_lost` | "whatever this pass wrote stands, and the claimant decides the rest" (`packages/memory/src/drain.ts:102`) |
 | Tree frozen awaiting recovery | `packages/memory/src/drain.ts:530`; probed at `packages/memory/src/indexer/run.ts:168` | `blocked`, reason `recovery` | claim released, whole pass stops (`packages/memory/src/drain.ts:535`) |
 | Host aborted the drain | `packages/memory/src/drain.ts:537` | `blocked`, reason `shutdown` | claim released, attempt refunded (`packages/memory/src/drain.ts:539`) |
-| `executeRun` throws | `packages/memory/src/indexer/run.ts:201` | `generate`; terminal iff `ValidationError` | full retry budget unless terminal |
+| `executeRun` throws | `packages/memory/src/indexer/run.ts:201` | `generate`; terminal iff `ValidationError` | full durable job retry budget unless terminal; the indexer profile does not nest transport retries inside the pass |
 | Run answered `status: "error"` | `packages/memory/src/indexer/run.ts:210` | `generate`; terminal iff `no_progress` | as above |
 | Run ended non-`completed` (cancelled, `budget_exhausted`, `soft_limit_declined`) | `packages/memory/src/indexer/run.ts:224` | `validate` | 2-attempt budget; the subject is **not** marked indexed (`packages/memory/src/indexer/run.ts:219-223`) |
 | Pyramid still open at run end | `packages/memory/src/indexer/run.ts:228` | `validate` | 2-attempt budget |

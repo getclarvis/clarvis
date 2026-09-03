@@ -4,6 +4,7 @@ import {
   DiffRenderable,
   getTreeSitterClient,
   MarkdownRenderable,
+  MouseEvent,
   type Renderable,
   type ScrollBoxRenderable,
 } from "@opentui/core";
@@ -282,6 +283,25 @@ function historyRows(root: Renderable, frame: string): string {
     .split("\n")
     .slice(history.y, history.y + history.height)
     .join("\n");
+}
+
+function wheel(scrollbox: ScrollBoxRenderable, direction: "up" | "down", delta: number): void {
+  scrollbox.processMouseEvent(
+    new MouseEvent(scrollbox, {
+      type: "scroll",
+      button: 0,
+      x: scrollbox.x + 2,
+      y: scrollbox.y + 2,
+      modifiers: { shift: false, alt: false, ctrl: false },
+      scroll: { direction, delta },
+    }),
+  );
+}
+
+function matchingRow(frame: string, pattern: RegExp): { text: string; row: number } | undefined {
+  for (const [row, text] of frame.split("\n").entries())
+    if (pattern.test(text)) return { text: text.trim(), row };
+  return undefined;
 }
 
 test("production TranscriptRegion keeps committed memory, diff, and write syntax owners stable", async () => {
@@ -1118,6 +1138,340 @@ test("a delayed physical handoff renders one frozen snapshot while replay and la
     expect(finalFrame.indexOf("HANDOFF_ORIGINAL.md")).toBeLessThan(
       finalFrame.indexOf("LEAD AFTER DELAYED HANDOFF"),
     );
+  } finally {
+    rendered.renderer.destroy();
+  }
+});
+
+test("scrolling above a live tail preserves the reader while terminal updates stay physically bounded", async () => {
+  const scheduler = new ManualPublicationScheduler();
+  const store = createTranscriptStore({
+    publicationScheduler: scheduler,
+    publicationToolGroupLatencyMs: 80,
+  });
+  for (let index = 0; index < 60; index += 1) store.appendUserMessage(`SCROLL BACKLOG ${index}`);
+  const sink = store.openRun("scroll-tail");
+  applyEvent(sink, runStarted(), "live");
+  applyEvent(
+    sink,
+    { type: "iteration_started", at: 20, agent: "lead", iteration: 1, model: "openai/gpt-5" },
+    "live",
+  );
+  const longResponse = `${Array.from(
+    { length: 72 },
+    (_, index) => `streaming response row ${index}`,
+  ).join("\n\n")}\n\nLIVE TAIL END`;
+  applyEvent(
+    sink,
+    {
+      type: "text_delta",
+      at: 21,
+      agent: "lead",
+      iteration: 1,
+      channel: "text",
+      text: longResponse,
+      reset: true,
+    },
+    "live",
+  );
+  applyEvent(
+    sink,
+    {
+      type: "tool_call_started",
+      at: 22,
+      agent: "lead",
+      call_id: "visible-tool",
+      server: "builtin",
+      tool: "shell",
+      arguments: { command: "printf VISIBLE_TOOL_RESULT" },
+    },
+    "live",
+  );
+
+  const activity = createMutable({
+    subagents: [],
+    plan: null,
+    usage: null,
+    context: null,
+  }) as unknown as ActivityStore;
+  const transcript = createTranscriptState({
+    nodes: () => store.committedNodes(),
+    preserveOrder: true,
+    subagents: () => [],
+    notify: () => {},
+    defaultFolded: (key) => store.defaultFolded(key),
+  });
+  let scrollbox: ScrollBoxRenderable | undefined;
+  let history: CommittedHistoryHandle | undefined;
+  const rendered = await openRender(
+    () => (
+      <TranscriptRegion
+        store={store}
+        transcript={transcript}
+        activity={activity}
+        interaction={
+          {
+            keymap: createFakeKeymap().keymap,
+            pushOverlayContext: () => {},
+            popOverlayContext: () => {},
+            syncContext: () => {},
+          } as unknown as Interaction
+        }
+        run={{ elicit: () => null, resolveElicit: () => {}, workflowActivity: () => null }}
+        layout={{
+          mode: () => "wide",
+          sidebarVisible: () => false,
+          sidebarWidth: () => 28,
+          drawerOpen: () => false,
+          contentInset: () => 0,
+          width: () => 100,
+          height: () => 30,
+        }}
+        contextWindow={() => 1_024_000}
+        agent={() => "coder"}
+        model={() => "openai/gpt-5"}
+        notify={() => {}}
+        openPlan={() => {}}
+        onScrollbox={(value) => (scrollbox = value)}
+        onHistoryHandle={(value) => (history = value)}
+        historyMeasurementRecovery={{ leaseMs: 1, retries: 0 }}
+      />
+    ),
+    { width: 100, height: 30 },
+  );
+
+  try {
+    await rendered.waitForFrame((frame) => frame.includes("LIVE TAIL END"), { maxPasses: 200 });
+    expect(scrollbox).toBeDefined();
+    expect(history).toBeDefined();
+    const followedHeight = scrollbox!.scrollHeight;
+
+    wheel(scrollbox!, "up", 2);
+    await rendered.renderOnce();
+    const visibleTool = store.nodes.find(
+      (node) => node.kind === "tool_call" && node.toolName === "shell",
+    );
+    if (visibleTool === undefined)
+      throw new Error(`visible tool was not projected:\n${rendered.captureCharFrame()}`);
+    const visibleToolOwner = byId(
+      rendered.renderer.root,
+      `live-transcript-owner:${visibleTool.key}`,
+    );
+    applyEvent(
+      sink,
+      {
+        type: "tool_call",
+        at: 23,
+        agent: "lead",
+        call_id: "visible-tool",
+        server: "builtin",
+        tool: "shell",
+        arguments: { command: "printf VISIBLE_TOOL_RESULT" },
+        ok: true,
+        result: "VISIBLE_TOOL_RESULT",
+      },
+      "live",
+    );
+    scheduler.flush();
+    expect(byId(rendered.renderer.root, `live-transcript-owner:${visibleTool.key}`)).toBe(
+      visibleToolOwner,
+    );
+    await rendered.renderOnce();
+
+    let anchor: { text: string; row: number } | undefined;
+    for (let pass = 0; pass < 200 && anchor === undefined; pass += 1) {
+      wheel(scrollbox!, "up", 12);
+      await rendered.renderOnce();
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      const frame = rendered.captureCharFrame();
+      const tailBelowViewport = !frame.includes("streaming response row");
+      if (tailBelowViewport && history!.snapshot().candidate === null)
+        anchor = matchingRow(frame, /SCROLL BACKLOG \d+/);
+    }
+    if (anchor === undefined)
+      throw new Error(`reader did not reach committed history:\n${rendered.captureCharFrame()}`);
+    await waitForPhysicalFixedPoint(rendered, history!);
+    anchor = matchingRow(rendered.captureCharFrame(), /SCROLL BACKLOG \d+/);
+    if (anchor === undefined)
+      throw new Error(
+        `reader anchor disappeared after physical settlement:\n${rendered.captureCharFrame()}`,
+      );
+    expect(history!.snapshot().followingTail).toBe(false);
+    expect(byId(rendered.renderer.root, "live-transcript-tail")).toBeDefined();
+    expect(scrollbox!.scrollHeight).toBeGreaterThanOrEqual(followedHeight);
+    expect(history!.diagnostics()).toMatchObject({ tailEntries: 1 });
+    expect(history!.diagnostics().newerEntries).toBeGreaterThanOrEqual(1);
+    expect(rendered.renderer.root.findDescendantById("history-newer-indicator")).toBeDefined();
+    applyEvent(
+      sink,
+      {
+        type: "iteration_completed",
+        at: 22,
+        agent: "lead",
+        iteration: 1,
+        model: "openai/gpt-5",
+        response: longResponse,
+        response_phase: "commentary",
+        input_tokens: 10,
+        output_tokens: 1_000,
+      },
+      "live",
+    );
+    scheduler.flush();
+    for (let pass = 0; pass < 3; pass += 1) await rendered.renderOnce();
+
+    expect(byId(rendered.renderer.root, "live-transcript-handoff-spacer").height).toBeGreaterThan(
+      1,
+    );
+    expect(matchingRow(rendered.captureCharFrame(), /SCROLL BACKLOG \d+/)).toEqual(anchor);
+    expect(rendered.renderer.root.findDescendantById("history-newer-indicator")).toBeDefined();
+
+    const physicalOwnersBefore = descendants(rendered.renderer.root, (node): node is Renderable =>
+      node.id.startsWith("history:publication:"),
+    ).length;
+    for (let index = 0; index < 64; index += 1) {
+      applyEvent(
+        sink,
+        toolCall(`settled-${index}`, "read_file", { path: `bounded-${index}.ts` }, "ok"),
+        "live",
+      );
+      scheduler.flush();
+      await rendered.renderOnce();
+    }
+    const liveOwners = descendants(rendered.renderer.root, (node): node is Renderable =>
+      node.id.startsWith("live-transcript-owner:"),
+    );
+    const physicalOwnersAfter = descendants(rendered.renderer.root, (node): node is Renderable =>
+      node.id.startsWith("history:publication:"),
+    ).length;
+    expect(liveOwners).toHaveLength(0);
+    expect(physicalOwnersAfter).toBeLessThanOrEqual(physicalOwnersBefore + 1);
+    expect(matchingRow(rendered.captureCharFrame(), /SCROLL BACKLOG \d+/)).toEqual(anchor);
+
+    applyEvent(
+      sink,
+      { type: "iteration_started", at: 300, agent: "lead", iteration: 2, model: "openai/gpt-5" },
+      "live",
+    );
+    applyEvent(
+      sink,
+      {
+        type: "text_delta",
+        at: 301,
+        agent: "lead",
+        iteration: 2,
+        channel: "text",
+        text: "FOLLOWUP LIVE RESPONSE",
+        reset: true,
+      },
+      "live",
+    );
+    await rendered.renderOnce();
+    history!.returnToTail();
+    await rendered.waitForFrame((frame) => frame.includes("FOLLOWUP LIVE RESPONSE"), {
+      maxPasses: 500,
+    });
+    expect(history!.snapshot().followingTail).toBe(true);
+    expect(
+      rendered.renderer.root.findDescendantById("live-transcript-handoff-spacer"),
+    ).toBeUndefined();
+  } finally {
+    rendered.renderer.destroy();
+  }
+});
+
+test("expanding a tall committed tool cannot strand physical measurement or newer batches", async () => {
+  const store = createTranscriptStore();
+  const finish = store.beginLocalBash("emit a tall result");
+  finish({
+    exitCode: 0,
+    stdout: Array.from({ length: 120 }, (_, index) => `EXPANDED TOOL ROW ${index + 1}`).join("\n"),
+    stderr: "",
+    signal: null,
+    timedOut: false,
+    cancelled: false,
+    stdoutTruncated: false,
+    stderrTruncated: false,
+  });
+  const activity = createMutable({
+    subagents: [],
+    plan: null,
+    usage: null,
+    context: null,
+  }) as unknown as ActivityStore;
+  const transcript = createTranscriptState({
+    nodes: () => store.committedNodes(),
+    preserveOrder: true,
+    subagents: () => [],
+    notify: () => {},
+    defaultFolded: (key) => store.defaultFolded(key),
+  });
+  let scrollbox: ScrollBoxRenderable | undefined;
+  let history: CommittedHistoryHandle | undefined;
+  const rendered = await openRender(
+    () => (
+      <TranscriptRegion
+        store={store}
+        transcript={transcript}
+        activity={activity}
+        interaction={
+          {
+            keymap: createFakeKeymap().keymap,
+            pushOverlayContext: () => {},
+            popOverlayContext: () => {},
+            syncContext: () => {},
+          } as unknown as Interaction
+        }
+        run={{ elicit: () => null, resolveElicit: () => {}, workflowActivity: () => null }}
+        layout={{
+          mode: () => "wide",
+          sidebarVisible: () => false,
+          sidebarWidth: () => 28,
+          drawerOpen: () => false,
+          contentInset: () => 0,
+          width: () => 100,
+          height: () => 30,
+        }}
+        contextWindow={() => 1_024_000}
+        agent={() => "coder"}
+        model={() => "openai/gpt-5"}
+        notify={() => {}}
+        openPlan={() => {}}
+        onScrollbox={(value) => (scrollbox = value)}
+        onHistoryHandle={(value) => (history = value)}
+        historyMeasurementRecovery={{ leaseMs: 5, retries: 0 }}
+      />
+    ),
+    { width: 100, height: 30 },
+  );
+
+  try {
+    expect(scrollbox).toBeDefined();
+    expect(history).toBeDefined();
+    await waitForPhysicalFixedPoint(rendered, history!);
+    const tool = store.nodes.find((node) => node.kind === "tool_call");
+    if (tool === undefined) throw new Error("local shell tool was not projected");
+    transcript.toggleAt(tool.key);
+    await waitForPhysicalFixedPoint(rendered, history!);
+    expect(history!.marker(history!.snapshot().activeBatchIds[0]!)?.rows).toBeGreaterThan(100);
+
+    const finishLater = store.beginLocalBash("emit a later result");
+    finishLater({
+      exitCode: 0,
+      stdout: "LATER TOOL RESULT",
+      stderr: "",
+      signal: null,
+      timedOut: false,
+      cancelled: false,
+      stdoutTruncated: false,
+      stderrTruncated: false,
+    });
+    history!.returnToTail();
+    await waitForPhysicalFixedPoint(rendered, history!);
+    await rendered.waitForFrame((frame) => frame.includes("local:shell(emit a later result)"), {
+      maxPasses: 200,
+    });
+    expect(history!.snapshot()).toMatchObject({ followingTail: true, laterUnknown: 0 });
   } finally {
     rendered.renderer.destroy();
   }

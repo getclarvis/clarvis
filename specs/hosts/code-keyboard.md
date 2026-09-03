@@ -304,6 +304,17 @@ Modified arrows (`ctrl+up`/`ctrl+down`) are portable — "plain xterm", not gate
 `alt+…` candidates carry `minimumProfile:"enhanced"` because Alt is the modifier terminals
 actually intercept (`packages/code/src/keys/interaction.ts:93-104`; pinned `packages/code/tests/integration/interaction.test.ts:221-226`).
 
+`focus.next` is navigation only. A focused screen may reserve Tab for its own ordered controls; at
+shell level `App.focusNext` clears the transcript's logical block cursor and focuses the composer,
+regardless of whether the activity Sidebar is closed, split or in a drawer. It never activates a
+control and never changes Lead/child transcript selection. Return remains the activation/submission
+key for the component that owns focus, and Shift+Tab remains the explicit agent-picker route.
+Production: `packages/code/src/keys/interaction.ts` (`focus.next`) and
+`packages/code/src/views/App.tsx` (`focusNext`). Test:
+`packages/code/tests/integration/app-shell-render.test.tsx` ("Tab returns block focus to the
+composer with a sidebar open and never selects an agent" and "the split sidebar owns one compact
+textual agent roster, including after expand all").
+
 The transcript scroll commands dispatch row intent through `App.scrollTranscript`, which delegates
 to `CommittedHistory.scrollBy` whenever committed history is mounted. That handle clamps page input
 to the currently prepared physical interval and coalesces one adjacent measurement; it does not let

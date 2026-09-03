@@ -1173,9 +1173,10 @@ preserves agent waiting/running/done/failed counts and workflow leader count wit
 transcript height, and composes them after canonical Context/Session state rather than replacing it.
 Plan never contributes to that strip. Clicking it is the explicit intent that opens a split at
 eligible widths or a drawer otherwise; `/activity` remains the keyboard-accessible route for every
-section after Escape. Tab cycles agent selection in split or drawer mode, and clicking any sidebar
-agent, including a settled summary row, selects only that agent's isolated transcript. It does not
-open `ActivityDetail`. While both
+section after Escape. Plain Tab never changes Lead/child selection: at shell level it clears
+transcript block focus and returns to the composer, while a focused screen may own Tab for its local
+focus order. Shift+Tab opens the agent picker. Clicking any sidebar agent, including a settled
+summary row, selects only that agent's isolated transcript; it does not open `ActivityDetail`. While both
 secondary surfaces are closed, the selection is represented by a single `Viewing A<n> <title>`
 context row. Opening either secondary surface removes that row, so the same identity is never
 presented in two adjacent regions.

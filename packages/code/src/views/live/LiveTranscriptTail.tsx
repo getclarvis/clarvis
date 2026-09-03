@@ -1,3 +1,4 @@
+import type { Renderable } from "@opentui/core";
 import {
   For,
   Show,
@@ -5,6 +6,7 @@ import {
   createEffect,
   createMemo,
   createSignal,
+  onCleanup,
   untrack,
   useContext,
   type Accessor,
@@ -34,7 +36,10 @@ export interface LiveTranscriptTailProps {
   resolveElicit: (result: ElicitResult) => void;
   selectedSubagent: Accessor<string | null>;
   visibleCommittedKeys: Accessor<ReadonlySet<string>>;
+  followingTail: Accessor<boolean>;
+  isOwnerVisible: (owner: Renderable) => boolean;
   onHandoffKeysChange?: (keys: ReadonlySet<string>) => void;
+  onFrontierCountChange?: (count: number) => void;
   splitOpen: Accessor<boolean>;
   notify: (message: string) => void;
   openPlan: () => void;
@@ -55,6 +60,10 @@ interface PresentedTranscriptNode {
   readonly key: string;
   readonly node: Accessor<TranscriptNode>;
   readonly publication: Accessor<TranscriptPublicationBatch | undefined>;
+  attach(owner: Renderable): void;
+  measure(): void;
+  measuredRows(): number;
+  visible(isOwnerVisible: (owner: Renderable) => boolean): boolean;
   updateMutable(node: TranscriptNode): void;
   publish(value: PublishedTranscriptNode): void;
 }
@@ -65,10 +74,22 @@ function createPresentedNode(
 ): PresentedTranscriptNode {
   const [node, setNode] = createSignal(initialNode);
   const [publication, setPublication] = createSignal(initialPublication);
+  let owner: Renderable | undefined;
+  let ownerRows = 0;
   return Object.freeze({
     key: initialNode.key,
     node,
     publication,
+    attach: (value: Renderable): void => {
+      owner = value;
+      ownerRows = Math.max(ownerRows, value.height);
+    },
+    measure: (): void => {
+      ownerRows = Math.max(ownerRows, owner?.height ?? 0);
+    },
+    measuredRows: (): number => ownerRows,
+    visible: (isOwnerVisible: (owner: Renderable) => boolean): boolean =>
+      owner !== undefined && isOwnerVisible(owner),
     updateMutable: (nextNode: TranscriptNode): void => {
       if (publication() === undefined) setNode(nextNode);
     },
@@ -94,6 +115,9 @@ function samePresentedNodes(
  * @remarks A frontier artifact that seals remains here as its frozen publication
  * snapshot until the measured committed owner is resident. The handoff prevents
  * an empty frame while keeping physical publication out of the semantic store.
+ * The tail stays in ScrollBox flow after manual upward scroll. Offscreen sealed
+ * owners release their render trees into one measured spacer, so native sticky
+ * state keeps its geometry without accumulating one syntax subtree per tool.
  */
 export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element {
   const historyPresentation = useContext(CommittedHistoryBlockPresentationContext);
@@ -134,20 +158,38 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
   const [presentedNodes, setPresentedNodes] = createSignal<readonly PresentedTranscriptNode[]>(
     Object.freeze(liveGrouped().ordered.map((node) => createPresentedNode(node))),
   );
+  const [releasedRows, setReleasedRows] = createSignal<ReadonlyMap<string, number>>(new Map());
 
   createEffect(() => {
     const current = liveGrouped().ordered;
     const currentByKey = new Map(current.map((node) => [node.key, node] as const));
     const visible = props.visibleCommittedKeys();
     const committed = committedByKey();
+    const committedPublicationIds = new Set(
+      [...committed.values()].map(({ publication }) => publication.id),
+    );
+    const visiblePublicationIds = new Set(
+      [...committed]
+        .filter(([key]) => visible.has(key))
+        .map(([, { publication }]) => publication.id),
+    );
     const next: PresentedTranscriptNode[] = [];
     const retained = new Set<string>();
+    const released = new Map<string, number>();
     for (const previous of untrack(presentedNodes)) {
       const published = committed.get(previous.key);
       if (published !== undefined) {
         previous.publish(published);
         if (!visible.has(previous.key)) {
-          next.push(previous);
+          if (props.followingTail() || previous.visible(props.isOwnerVisible)) next.push(previous);
+          else {
+            const rows = previous.measuredRows();
+            if (rows > 0)
+              released.set(
+                published.publication.id,
+                (released.get(published.publication.id) ?? 0) + rows,
+              );
+          }
           retained.add(previous.key);
         }
         continue;
@@ -163,7 +205,7 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
       if (retained.has(node.key)) continue;
       const published = committed.get(node.key);
       if (published !== undefined) {
-        if (!visible.has(node.key))
+        if (!visible.has(node.key) && props.followingTail())
           next.push(createPresentedNode(published.node, published.publication));
         continue;
       }
@@ -171,6 +213,19 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
     }
     const frozen = Object.freeze(next);
     if (!samePresentedNodes(untrack(presentedNodes), frozen)) setPresentedNodes(frozen);
+    const previousReleased = untrack(releasedRows);
+    const nextReleased = new Map<string, number>();
+    if (!props.followingTail()) {
+      for (const [publicationId, rows] of previousReleased)
+        if (committedPublicationIds.has(publicationId) && !visiblePublicationIds.has(publicationId))
+          nextReleased.set(publicationId, rows);
+      for (const [publicationId, rows] of released)
+        nextReleased.set(publicationId, (nextReleased.get(publicationId) ?? 0) + rows);
+    }
+    const sameReleased =
+      previousReleased.size === nextReleased.size &&
+      [...nextReleased].every(([key, rows]) => previousReleased.get(key) === rows);
+    if (!sameReleased) setReleasedRows(nextReleased);
   });
   const handoffKeys = createMemo(() => {
     const visible = props.visibleCommittedKeys();
@@ -181,6 +236,14 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
     );
   });
   createEffect(() => props.onHandoffKeysChange?.(handoffKeys()));
+  createEffect(() => props.onFrontierCountChange?.(frontier().length));
+  const releasedRowCount = createMemo(() =>
+    [...releasedRows().values()].reduce((total, rows) => total + rows, 0),
+  );
+  onCleanup(() => {
+    props.onHandoffKeysChange?.(new Set());
+    props.onFrontierCountChange?.(0);
+  });
 
   return (
     <box
@@ -191,6 +254,9 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
       minHeight={0}
       flexShrink={0}
     >
+      <Show when={releasedRowCount() > 0}>
+        <box id="live-transcript-handoff-spacer" height={releasedRowCount()} flexShrink={0} />
+      </Show>
       <For each={presentedNodes()}>
         {(presented) => {
           const publication = presented.publication;
@@ -198,6 +264,8 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
           return (
             <box
               id={`live-transcript-owner:${presented.key}`}
+              ref={(owner: Renderable) => presented.attach(owner)}
+              onSizeChange={() => presented.measure()}
               flexDirection="column"
               width="100%"
               minWidth={0}

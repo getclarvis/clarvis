@@ -777,8 +777,11 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   available section, while `/activity plan`, `/activity workflow` and `/activity agents` select one
   explicitly even after Escape made its automatic reveal sticky. The footer keeps a pointer target
   only when agent or workflow activity contributes its bounded strip; clicking that strip reopens
-  the responsive surface. Plan never contributes footer text. Tab cycles agent selection, and
-  clicking an agent selects only that agent's transcript. Workflow progress never contributes a row
+  the responsive surface. Plan never contributes footer text. Plain Tab follows the active
+  screen's focus order and, at shell level, returns transcript block focus to the composer without
+  changing Lead/child selection; Return activates or submits the currently focused component.
+  Shift+Tab opens the agent picker, and clicking an agent selects only that agent's transcript.
+  Workflow progress never contributes a row
   to the Lead transcript. Workflow leaders use run-local `L<n>` handles and sub-agents use the
   separate `A<spawn order + 1>` namespace; both derive from the current projection and retain no
   native-id allocation ledger across runs.
@@ -820,13 +823,23 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   inactive `number -> undefined -> number` candidate cycle. The chosen `rich` or `plain-semantic`
   policy persists by batch id across physical eviction/remount and is purged when that publication
   leaves the store. The one-column vertical scrollbar gutter is always reserved and only its opacity
-  changes, so adding a measured runway owner cannot create a width/epoch
-  feedback loop. Unknown earlier history uses one passive boundary above the content and is never
+  changes, so adding a measured runway owner cannot create a width/epoch feedback loop. The
+  controller, resident owners and absolute measurement candidates all use the same inner transcript
+  width after the left padding and table gutter; expanding a tall tool therefore cannot strand a
+  remeasurement on an outer-width marker that its owner can never reproduce. Unknown earlier
+  history uses one passive boundary above the content and is never
   assigned an estimated height; ordinary upward scroll or trackpad input admits it serially without
   a click. The exact anchor correction is queued before changed children publish and is consumed by
   the ScrollBox update plus its public content-size callback, so even a delta larger than the old
-  scroll range is complete before the first new frame. Frozen owners and the content-height mutable tail are one chronological ScrollBox flow
-  for the current projection: Lead-only in the main view, or child-only after explicit selection.
+  scroll range is complete before the first new frame. Frozen owners and the content-height mutable
+  tail are one chronological ScrollBox flow for the current projection: Lead-only in the main view,
+  or child-only after explicit selection. The tail remains that final flow child after upward scroll;
+  OpenTUI's sticky-bottom state pauses natively while the reader is away, so removing the tail would
+  shrink `scrollHeight` and clamp the reader backward. A frontier owner that commits while still
+  intersecting the viewport remains painted until its physical batch takes ownership. A committed
+  owner already below the viewport is disposed and contributes only its measured rows to one
+  aggregate handoff spacer. Repeated offscreen tool completion therefore cannot accumulate native
+  tool, Markdown or syntax owners.
   Clarvis keeps the Lead projection mounted plus at most one selected-child projection; each owns a
   separate ScrollBox, physical-history controller, markers and scroll position. Selecting another
   child disposes the previously retained child, while returning to Lead reveals its exact reader
@@ -836,9 +849,11 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   Its final child is a fixed three-row physical reading runway, reduced to one row only in the compact
   height band, so new content never starts against the composer and streaming cannot grow or shrink
   that gap. The `thinking`/`working`/`ready` activity row is a sibling immediately above the composer,
-  outside the ScrollBox; there is no second transcript scroll area. While the reader is away from the tail, a non-interactive newer-entry count may
-  overlay the top of the viewport; downward scroll admits those entries and returns naturally to
-  tail-following. The event, replay, ordering, physical-anchor and retention rules are in
+  outside the ScrollBox; there is no second transcript scroll area. While the reader is away from
+  the tail, a non-interactive newer-entry count includes both unmeasured committed batches and the
+  current mutable frontier; repeated deltas for the same frontier artifact do not grow that count.
+  Downward scroll admits those entries and returns naturally to tail-following. The event, replay,
+  ordering, physical-anchor and retention rules are in
   [`code-transcript-stability.md`](../../specs/hosts/code-transcript-stability.md). Oversized tails
   still fall back to plain text with an explicit formatting-simplified notice instead of starting
   unbounded highlighting.

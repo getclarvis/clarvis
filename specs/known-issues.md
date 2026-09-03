@@ -1063,6 +1063,45 @@ The quoted `later batch` wording below is retained only as the exact historical 
 superseded bottom boundary is not current UI: newer work is now admitted by downward native scroll,
 with a non-interactive count overlaid at the top only while the reader is away from the tail.
 
+**A follow-on scroll regression was resolved on 2026-09-03 under OpenTUI 0.5.9.** An upward wheel
+intent changed `followingTail` to false and the Solid `<Show>` around `LiveTranscriptTail` removed
+the complete final flow child. A large expanded tool or streaming response could therefore subtract
+dozens of rows from `scrollHeight`; OpenTUI correctly clamped the now-invalid `scrollTop`, which
+looked like the transcript had rolled back. Later tool settlement and model deltas continued in the
+store but remained below an unmounted tail, so the visible frame appeared frozen. This was not a
+store rollback or dropped SDK delta.
+
+The same reproduction also exposed a distinct stalled-candidate path. A hidden absolute owner was
+first measured against the ScrollBox's outer content width, while the resident owner was laid out
+inside the left padding and table gutter. Expanding a 120-row tool then produced a stable 96-column
+owner against a 99-column controller epoch. Both observations were correctly rejected, but the
+already-painted-owner recovery kept retrying that impossible width and blocked every newer batch.
+The controller and both owner forms now share the inner transcript width, so expanded remeasurement
+settles without a resize or parser downgrade.
+
+The corrected composition leaves the tail in chronological flow and lets OpenTUI's own manual-scroll
+state pause sticky-bottom behavior. A live owner that commits while intersecting the viewport stays
+painted through physical handoff. One already below the viewport releases its tool/Markdown/syntax
+tree and transfers its measured rows to one aggregate spacer until its batch is admitted. The
+newer-entry overlay also includes the mutable frontier without increasing for repeated deltas on the
+same artifact. The regression drives native wheel input, a 72-paragraph streaming response,
+terminal publication and 64 offscreen tool completions; the reader row remains exact and native
+owner count stays bounded (`packages/code/tests/integration/transcript-publication-render.test.tsx`,
+"scrolling above a live tail preserves the reader while terminal updates stay physically bounded").
+The companion test "expanding a tall committed tool cannot strand physical measurement or newer
+batches" fixes the 99/96-column mismatch and proves that a later terminal publication is admitted.
+
+A controlled same-renderer soak on 2026-09-03, under Bun 1.4.0 and OpenTUI 0.5.9 at 100x30,
+extended that regression to 30 batches of 64 offscreen terminal tools: 1,920 calls in 35.99 seconds.
+Each post-batch sample forced three synchronous collections. The live tree remained exactly 258
+renderables and 25 physical publication owners in every batch. RSS rose from 263,802,880 to
+389,718,016 bytes across the complete warm-up and soak, with native allocator steps at 256 and 1,024
+tools; over the final 640 tools after the largest step it rose by 17.92 MiB, or 2.80 MiB/100. The
+post-GC JavaScript heap rose by 1.50 MiB/100 over that same retained-semantic interval, while external
+memory was effectively flat. The checked-in 64-call case remains the deterministic gate; this
+instrumented extension measured the same code without retaining diagnostic sampling in the test.
+It proves bounded physical ownership in one renderer, not the separate real-model multi-run soak.
+
 The first real-model run exposed one further OpenTUI interaction before closure: the final outcome
 and long answer stayed behind a `1 later batch` boundary until a one-column resize created a new
 layout epoch. The semantic terminal batch was intact. OpenTUI 0.5.9 documents that viewport culling

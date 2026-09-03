@@ -2436,7 +2436,7 @@ test("transcript navigation: ctrl+down focuses a block, ctrl+o toggles it, escap
   t.renderer.destroy();
 });
 
-test("Tab returns the transcript's logical block focus to the composer", async () => {
+test("Tab returns block focus to the composer with a sidebar open and never selects an agent", async () => {
   const stream: RunEvent[] = [
     ev({ type: "run_started", at: 1 }),
     ev({
@@ -2450,14 +2450,42 @@ test("Tab returns the transcript's logical block focus to the composer", async (
       result: "1\tconst a = 1",
       ok: true,
     }),
-    ev({ type: "run_ended", status: "completed", at: 3, reason: "completed" }),
+    ev({
+      type: "plan_created",
+      at: 3,
+      id: "tab-plan",
+      path: ".clarvis/plans/tab.md",
+      title: "Tab navigation plan",
+      status: "active",
+      retention: "keep",
+      revision: 1,
+      spec_revision: 1,
+      tasks: [{ id: "t1", title: "Keep focus predictable", status: "in_progress" }],
+    }),
+    ev({ type: "run_ended", status: "completed", at: 4, reason: "completed" }),
   ];
-  const t = await mountApp(defaultProps({ seedStream: stream }));
-  await captureUntil(t, "New task");
+  const submissions: unknown[] = [];
+  const t = await mountApp(
+    defaultProps({ seedStream: stream, submit: (value) => submissions.push(value) }),
+    {
+      width: 120,
+      height: 34,
+    },
+  );
+  const open = await captureUntil(t, "Tab navigation plan");
+  expect(open).toContain("│ Plan");
   press(t, "down", { ctrl: true });
   press(t, "o", { ctrl: true });
   await t.renderOnce();
   press(t, "tab");
+  await t.renderOnce();
+  expect(t.captureCharFrame()).not.toContain("no sub-agents to focus");
+
+  await t.mockInput.typeText("submit from composer after Tab");
+  t.mockInput.pressEnter();
+  await t.renderOnce();
+  expect(submissions).toEqual(["submit from composer after Tab"]);
+
   press(t, "o", { ctrl: true });
   await t.renderOnce();
   // Ctrl+O now targets the transcript as a whole; it must not re-toggle the
@@ -2541,7 +2569,9 @@ test("the split sidebar owns one compact textual agent roster, including after e
 
   press(t, "tab");
   await t.renderOnce();
-  expect(t.captureCharFrame().replace(/\s+/g, " ")).toContain("> A1 Scout");
+  const afterTab = t.captureCharFrame().replace(/\s+/g, " ");
+  expect(afterTab).toContain("> Lead transcript");
+  expect(afterTab).not.toContain("> A1 Scout");
 
   press(t, "o", { ctrl: true });
   await t.renderOnce();

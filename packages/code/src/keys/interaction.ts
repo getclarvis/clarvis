@@ -60,7 +60,7 @@ export interface InteractionEffects {
   /** Open the canonical safety-preset picker. */
   openSafetyPresetPicker(): void;
   cycleGuardMode(): void;
-  /** Return to the shell composer, or advance focus inside the active shell window. */
+  /** Move to the next focus target without activating it or changing transcript selection. */
   focusNext(): void;
   toggleExpandAll(): void;
   openDiff(): void;
@@ -588,7 +588,7 @@ export function createInteraction(
         ]),
     command("focus.next", () => effects.focusNext(), {
       title: "Next focus target",
-      desc: "Return to the composer, or advance focus inside the current window",
+      desc: "Move focus without activating content or changing transcript selection",
       category: "navigation",
     }),
     command("transcript.toggleCollapse", () => effects.toggleExpandAll(), {

@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import {
   RELEASE_REPOSITORY,
   releaseAssetName,
+  releaseRuntimeExecutableName,
   releaseTarget,
   type ReleaseTarget,
 } from "../../src/update-contract.ts";
@@ -145,10 +146,23 @@ async function copySource(payload: string): Promise<void> {
 }
 
 async function copyRuntime(payload: string): Promise<void> {
-  const runtime = join(payload, "runtime", process.platform === "win32" ? "bun.exe" : "bun");
-  await mkdir(dirname(runtime), { recursive: true });
+  const runtimeDirectory = join(payload, "runtime");
+  const runtime = join(runtimeDirectory, releaseRuntimeExecutableName());
+  const legacyRuntime = join(runtimeDirectory, process.platform === "win32" ? "bun.exe" : "bun");
+  await mkdir(runtimeDirectory, { recursive: true });
   await copyFile(process.execPath, runtime);
-  if (process.platform !== "win32") await chmod(runtime, 0o755);
+  if (process.platform === "win32") {
+    await copyFile(process.execPath, legacyRuntime);
+    return;
+  }
+  await chmod(runtime, 0o755);
+  await writeFile(
+    legacyRuntime,
+    ["#!/bin/sh", "set -eu", "runtime_dir=${0%/*}", 'exec "$runtime_dir/clarvis" "$@"', ""].join(
+      "\n",
+    ),
+  );
+  await chmod(legacyRuntime, 0o755);
 }
 
 async function copyDependencies(

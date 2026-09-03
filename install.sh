@@ -332,7 +332,7 @@ mkdir -p "$temporary/extract"
 LC_ALL=C tar -xzf "$archive" -C "$temporary/extract"
 payload="$temporary/extract/clarvis"
 [ -d "$payload" ] || fail "archive does not contain the clarvis payload"
-runtime="$payload/runtime/bun"
+runtime="$payload/runtime/clarvis"
 entry="$payload/packages/code/src/cli.ts"
 [ -f "$runtime" ] && [ -f "$entry" ] && [ -f "$payload/release.json" ] || fail "archive payload is incomplete"
 chmod 755 "$runtime"
@@ -387,7 +387,7 @@ launcher_temporary=$(mktemp "$bin_dir/.clarvis.XXXXXX")
     'tag=$(sed -n "1p" "$CLARVIS_INSTALL_ROOT/current")' \
     'printf "%s\n" "$tag" | grep -Eq "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\\.[0-9A-Za-z-]+)*)?$" || { echo "clarvis: invalid managed release" >&2; exit 1; }' \
     'root="$CLARVIS_INSTALL_ROOT/versions/$tag"' \
-    'exec "$root/runtime/bun" "$root/packages/code/src/cli.ts" "$@"'
+    'exec "$root/runtime/clarvis" "$root/packages/code/src/cli.ts" "$@"'
 } >"$launcher_temporary"
 chmod 755 "$launcher_temporary"
 mv -f "$launcher_temporary" "$launcher"

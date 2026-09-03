@@ -388,6 +388,15 @@ async function main(): Promise<void> {
       const output = await capture([launcher, "--version"], environment);
       if (output !== `clarvis ${product.version}\n`) throw new Error("POSIX launcher drifted");
     }
+    const installedLauncher = await readFile(unmanagedLauncher, "utf8");
+    const expectedRuntime =
+      process.platform === "win32" ? "runtime\\clarvis.exe" : "runtime/clarvis";
+    if (
+      !installedLauncher.includes(expectedRuntime) ||
+      /runtime[\\/]bun(?:\.exe)?/.test(installedLauncher)
+    ) {
+      throw new Error("installed launcher did not select the Clarvis-named runtime");
+    }
     const current = await readFile(currentPath, "utf8");
     if (current !== `v${product.version}\n`)
       throw new Error("installer did not activate the release");

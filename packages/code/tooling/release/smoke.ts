@@ -2,10 +2,14 @@
 /** Verify the native portable archive, fast paths, and real-PTY complete-app boot. */
 import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { releaseAssetName, releaseTarget } from "../../src/update-contract.ts";
+import {
+  releaseAssetName,
+  releaseRuntimeExecutableName,
+  releaseTarget,
+} from "../../src/update-contract.ts";
 import {
   containsInlineSourceMap,
   isReleaseSourceMapPath,
@@ -111,9 +115,33 @@ async function main(): Promise<void> {
       "Copyright 2023 Vercel, Inc.",
       "Apache License, Version 2.0",
     ]);
-    const runtime = join(versionRoot, "runtime", process.platform === "win32" ? "bun.exe" : "bun");
+    const runtimeName = releaseRuntimeExecutableName();
+    const runtime = join(versionRoot, "runtime", runtimeName);
+    const legacyRuntime = join(
+      versionRoot,
+      "runtime",
+      process.platform === "win32" ? "bun.exe" : "bun",
+    );
     if (process.platform !== "win32") await chmod(runtime, 0o755);
     const entry = join(versionRoot, "packages", "code", "src", "cli.ts");
+    const identity = await commandOutput([runtime, "-e", "process.stdout.write(process.execPath)"]);
+    if (
+      identity.code !== 0 ||
+      identity.stderr !== "" ||
+      basename(identity.stdout) !== runtimeName
+    ) {
+      throw new Error("portable runtime did not retain the Clarvis executable identity");
+    }
+    if (process.platform === "linux") {
+      const comm = await commandOutput([
+        runtime,
+        "-e",
+        'process.stdout.write((await Bun.file("/proc/self/comm").text()).trim())',
+      ]);
+      if (comm.code !== 0 || comm.stderr !== "" || comm.stdout !== "clarvis") {
+        throw new Error("portable runtime was not exposed as clarvis by the Linux process table");
+      }
+    }
     for (const [flag, expected] of [
       ["--version", `clarvis ${product.version}\n`],
       ["--help", "--update"],
@@ -122,6 +150,14 @@ async function main(): Promise<void> {
       if (result.code !== 0 || result.stderr !== "" || !result.stdout.includes(expected)) {
         throw new Error(`portable ${flag} smoke failed with exit ${String(result.code)}`);
       }
+    }
+    const legacy = await commandOutput([legacyRuntime, entry, "--version"]);
+    if (
+      legacy.code !== 0 ||
+      legacy.stderr !== "" ||
+      legacy.stdout !== `clarvis ${product.version}\n`
+    ) {
+      throw new Error("portable runtime lost compatibility with an older launcher");
     }
     if (process.platform === "win32") {
       process.stdout.write(

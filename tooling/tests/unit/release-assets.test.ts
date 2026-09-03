@@ -24,7 +24,7 @@ async function writeArchive(
   const name = `clarvis-v${version}-${target}.tar.gz`;
   try {
     await mkdir(join(payload, "runtime"), { recursive: true });
-    await writeFile(join(payload, "runtime", "bun"), "runtime");
+    await writeFile(join(payload, "runtime", "clarvis"), "runtime");
     if (sourceMap === "file") await writeFile(join(payload, "runtime", "debug.MAP"), "map");
     if (sourceMap === "inline") {
       await writeFile(

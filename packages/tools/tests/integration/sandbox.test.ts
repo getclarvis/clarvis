@@ -520,6 +520,9 @@ describe("sandboxCommand", () => {
     expect(profile).toContain('(subpath "/var/select")');
     expect(profile).toContain('(subpath "/private/var/select")');
     expect(profile).toContain('(subpath "/opt/homebrew")');
+    expect(profile).toContain('(allow file-read-metadata file-test-existence (literal "/opt")');
+    const systemReadRule = profile.split("\n").find((line) => line.startsWith("(allow file-read*"));
+    expect(systemReadRule).not.toContain('(literal "/opt")');
     expect(profile).toContain("(deny network*)");
     expect(profile).not.toContain('(literal "/var/run/mDNSResponder")');
     expect(profile).not.toContain('(literal "/private/var/run/mDNSResponder")');

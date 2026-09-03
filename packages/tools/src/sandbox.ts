@@ -624,6 +624,8 @@ const SEATBELT_SYSTEM_READ_FILTERS = [
   '(literal "/dev/urandom")',
 ] as const;
 
+const SEATBELT_SYSTEM_METADATA_FILTERS = ['(literal "/opt")'] as const;
+
 const SEATBELT_HOST_NETWORK_READ_FILTERS = [
   '(literal "/var/run/mDNSResponder")',
   '(literal "/private/var/run/mDNSResponder")',
@@ -713,9 +715,10 @@ function seatbeltPolicy(args: {
       ...(args.sandbox.network === "none" ? [] : SEATBELT_HOST_NETWORK_READ_FILTERS),
       ...readable.map(dynamicFilter),
     ].join(" ")})`,
-    `(allow file-read-metadata file-test-existence ${readable
-      .map((path) => `(path-ancestors (param "${keyFor(path)}"))`)
-      .join(" ")})`,
+    `(allow file-read-metadata file-test-existence ${[
+      ...SEATBELT_SYSTEM_METADATA_FILTERS,
+      ...readable.map((path) => `(path-ancestors (param "${keyFor(path)}"))`),
+    ].join(" ")})`,
     ...(writableFilters.length === 0
       ? []
       : [`(allow file-write* ${[...new Set(writableFilters)].join(" ")})`]),

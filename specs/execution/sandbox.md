@@ -249,8 +249,9 @@ An available macOS command executes:
 to the same sandbox, denies all file reads/tests/executable maps/writes, and then admits:
 
 - read access to the system runtime roots needed by macOS command-line processes, including the
-  Apple Silicon Homebrew prefix `/opt/homebrew`, both authored and canonical `/etc`, plus the narrow
-  authored/canonical `var/select` and `var/db` toolchain-selector aliases;
+  exact `/opt` traversal anchor and Apple Silicon Homebrew prefix `/opt/homebrew`, both authored and
+  canonical `/etc`, plus the narrow authored/canonical `var/select` and `var/db`
+  toolchain-selector aliases;
 - when networking is allowed, read/test access to only the authored and canonical
   `mDNSResponder` socket paths used by the macOS DNS resolver;
 - read access to the canonical workspace, linked Git metadata, every configured temporary root, and
@@ -281,10 +282,11 @@ installer despite an installed Git. The real-host canary resolves both selectors
 only after both safe preflights succeed, so the same regression cannot open the graphical installer
 during local tests.
 
-The Apple Silicon Homebrew prefix `/opt/homebrew` is also a static read/test/executable-map root.
-This lets a logical command such as `/opt/homebrew/bin/npm` resolve its shim and canonical Cellar
-target inside the same read-only system prefix. The prefix is absent from every Seatbelt write rule,
-so this interoperability does not make the Homebrew prefix broadly mutable from the sandbox.
+The Apple Silicon Homebrew prefix `/opt/homebrew` is also a static read/test/executable-map root, with
+the exact literal `/opt` admitted only as its traversal-metadata anchor. This lets a logical command
+such as `/opt/homebrew/bin/npm` resolve its shim and canonical Cellar target inside the same read-only
+system prefix. Neither `/opt` nor the Homebrew prefix receives a broad Seatbelt write rule, so this
+interoperability does not make either tree broadly mutable from the sandbox.
 
 Host networking on macOS also depends on a filesystem object: libc's resolver reaches
 `/var/run/mDNSResponder`, whose canonical spelling is `/private/var/run/mDNSResponder`. Seatbelt's
@@ -595,13 +597,14 @@ profile admits neither and retains its global network deny.
 **INV-S15 — A downloaded npm package can execute without widening hidden host reads.** Native POSIX
 environments select `/bin/sh` as npm's script shell, avoiding a bare-name lookup through denied
 ancestor `node_modules/.bin` candidates. Seatbelt admits the Apple Silicon Homebrew prefix for
-read/test/executable mapping and retains its `bin` directory in the filtered `PATH`, but never grants
-that prefix a write rule. The macOS canary preflights registry availability outside the sandbox,
-then requires the sandbox to download, execute, and materialize a real create-vite template; a
-second clean-cache invocation under `network: "none"` must fail.
+read/test/executable mapping, admits only literal `/opt` as the prefix's traversal anchor, and retains
+the `bin` directory in the filtered `PATH`, but never grants either path a broad write rule. The
+macOS canary preflights registry availability outside the sandbox, then requires the sandbox to
+download, execute, and materialize a real create-vite template; a second clean-cache invocation
+under `network: "none"` must fail.
 
 - Production: `packages/tools/src/sandbox.ts` (`sandboxPath`, `minimalEnv`,
-  `SEATBELT_SYSTEM_READ_FILTERS`) and
+  `SEATBELT_SYSTEM_READ_FILTERS`, `SEATBELT_SYSTEM_METADATA_FILTERS`) and
   `packages/tools/src/lib/system-executables.ts` (`systemExecutableRoots`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`downloads and executes a package
   bootstrap inside Seatbelt`).

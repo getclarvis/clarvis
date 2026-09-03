@@ -9,7 +9,7 @@ Produce a release-readiness verdict without publishing anything.
 
 ## Establish scope and identity
 
-1. Read `AGENTS.md`, `README.md`, `RELEASING.md`, `docs/oss-launch-checklist.md`, `specs/known-issues.md`, `specs/cross-cutting/build-and-ci.md`, `specs/cross-cutting/distribution-and-updates.md`, and `specs/cross-cutting/test-architecture.md`.
+1. Read `AGENTS.md`, `README.md`, `RELEASING.md`, `SECURITY.md`, `THIRD_PARTY_NOTICES.md`, `specs/known-issues.md`, `specs/cross-cutting/build-and-ci.md`, `specs/cross-cutting/distribution-and-updates.md`, and `specs/cross-cutting/test-architecture.md`.
 2. Inspect `git status --short`, the root manifest version, installers, release workflows, and current diff.
 3. Verify `git config --local --get core.hooksPath` is `.githooks`; use `bun run hooks:install` only if it is not.
 4. Treat the requested release tag and product version as owner decisions. Never choose or change them implicitly.
@@ -31,14 +31,13 @@ A workflow label is not a completed native canary. A synthetic provider test is 
 
 ## Run the repository gates
 
-Use Bun from the repository root. Do not run `bun run check:pre-commit` as a handoff ritual.
+Use Bun from the Clarvis source repository root. Do not run `bun run check:pre-commit` as a handoff ritual.
 
 For a comprehensive preflight, run:
 
 ```bash
 bun run check:bun-version
 bun run build
-bun run docs:build
 bun run typecheck
 bun run lint
 bun run format:check
@@ -48,6 +47,14 @@ bun run check:specs
 bun run check:graph
 bun run check:harness
 bun run check:release
+```
+
+Public site sources belong to the separate `getclarvis/docs` repository. When that repository is in
+scope, run these commands from its root instead of inventing a docs build in the source monorepo:
+
+```bash
+bun run format:check
+bun run docs:build
 ```
 
 When the owner has supplied the exact tag, also run:

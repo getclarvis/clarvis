@@ -8,7 +8,7 @@ Clarvis is a local-first coding agent that brings models, tools, plans, memory, 
 workflows into one terminal interface. Start it inside a project, choose a model, and work with the
 repository in front of you.
 
-> **Beta:** `0.0.3-beta` is a prerelease. Interfaces and pre-release state formats may change, and
+> **Beta:** `0.0.4-beta` is a prerelease. Interfaces and pre-release state formats may change, and
 > the portable artifacts are not yet code-signed or notarized. Clarvis can read and change files and
 > run commands; review approval prompts and use source control.
 
@@ -36,13 +36,13 @@ need Bun, Node.js, a compiler, a package manager, administrator access, or a sou
 Linux (glibc) and macOS:
 
 ```bash
-curl -fsSL https://github.com/getclarvis/clarvis-releases/releases/download/v0.0.3-beta/install.sh | sh
+curl -fsSL https://github.com/getclarvis/clarvis-releases/releases/download/v0.0.4-beta/install.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-irm https://github.com/getclarvis/clarvis-releases/releases/download/v0.0.3-beta/install.ps1 | iex
+irm https://github.com/getclarvis/clarvis-releases/releases/download/v0.0.4-beta/install.ps1 | iex
 ```
 
 Prefer to inspect an installer before running it? The [installation guide](https://clarvis.dev/installation)

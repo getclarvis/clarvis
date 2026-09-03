@@ -48,7 +48,7 @@ Use an up-to-date checkout and the exact Bun version pinned by `mise.toml`:
 
 ```bash
 bun install --frozen-lockfile
-RELEASE_TAG=v0.0.3-beta bun run check:release
+RELEASE_TAG=v0.0.4-beta bun run check:release
 bun run build
 bun run typecheck
 bun run lint
@@ -71,7 +71,7 @@ the six workflow artifacts and confirm:
 - no source map, secret, private fixture, or developer path is present in any archive.
 
 After assembling those six archives, their sidecars, and the standalone release files in one
-directory, run `bun run tooling/checks/release-assets.ts <directory> v0.0.3-beta`. This is the same
+directory, run `bun run tooling/checks/release-assets.ts <directory> v0.0.4-beta`. This is the same
 map-free allowlist gate that the tag workflow runs before it obtains a publication credential.
 
 ## Publish

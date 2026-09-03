@@ -11,7 +11,7 @@ body:
     attributes:
       label: Clarvis version
       description: Paste the output of clarvis --version.
-      placeholder: clarvis 0.0.3-beta
+      placeholder: clarvis 0.0.4-beta
     validations:
       required: true
   - type: dropdown

@@ -196,7 +196,13 @@ describe("makeDeltaBatcher", () => {
 });
 
 describe("makeToolInputReporter", () => {
-  type Report = { call_id: string; tool_name: string; chars: number; complete?: true };
+  type Report = {
+    call_id: string;
+    tool_name: string;
+    chars: number;
+    stream_chars?: number;
+    complete?: true;
+  };
   const collect = (
     maxMs = 0,
   ): { reports: Report[]; r: ReturnType<typeof makeToolInputReporter> } => {
@@ -209,7 +215,9 @@ describe("makeToolInputReporter", () => {
     // call arrives only after the whole model call has returned.
     const { reports, r } = collect();
     r.start("call-1", "write_file");
-    expect(reports).toEqual([{ call_id: "call-1", tool_name: "write_file", chars: 0 }]);
+    expect(reports).toEqual([
+      { call_id: "call-1", tool_name: "write_file", chars: 0, stream_chars: 0 },
+    ]);
   });
 
   it("reports a cumulative size, not a per-slice one", () => {
@@ -218,6 +226,30 @@ describe("makeToolInputReporter", () => {
     r.delta("call-1", "aaaa");
     r.delta("call-1", "bb");
     expect(reports.map((d) => d.chars)).toEqual([0, 4, 6]);
+    expect(reports.map((d) => d.stream_chars)).toEqual([0, 4, 6]);
+  });
+
+  it("reports other provider characters while argument bytes remain unavailable", () => {
+    const { reports, r } = collect(250);
+    r.observe("reasoning before the call");
+    r.start("call-1", "write_file");
+    vi.advanceTimersByTime(1_000);
+    r.observe("provider progress");
+
+    expect(reports).toEqual([
+      {
+        call_id: "call-1",
+        tool_name: "write_file",
+        chars: 0,
+        stream_chars: 25,
+      },
+      {
+        call_id: "call-1",
+        tool_name: "write_file",
+        chars: 0,
+        stream_chars: 42,
+      },
+    ]);
   });
 
   it("keeps concurrent calls apart until each explicit end", () => {
@@ -229,10 +261,16 @@ describe("makeToolInputReporter", () => {
     r.end("call-2");
     r.delta("call-1", "!");
     expect(reports.slice(2)).toEqual([
-      { call_id: "call-1", tool_name: "write_file", chars: 5 },
-      { call_id: "call-2", tool_name: "read_file", chars: 2 },
-      { call_id: "call-2", tool_name: "read_file", chars: 2, complete: true },
-      { call_id: "call-1", tool_name: "write_file", chars: 6 },
+      { call_id: "call-1", tool_name: "write_file", chars: 5, stream_chars: 5 },
+      { call_id: "call-2", tool_name: "read_file", chars: 2, stream_chars: 7 },
+      {
+        call_id: "call-2",
+        tool_name: "read_file",
+        chars: 2,
+        stream_chars: 7,
+        complete: true,
+      },
+      { call_id: "call-1", tool_name: "write_file", chars: 6, stream_chars: 8 },
     ]);
   });
 
@@ -249,6 +287,7 @@ describe("makeToolInputReporter", () => {
       call_id: "call-1",
       tool_name: "write_file",
       chars: 500,
+      stream_chars: 500,
       complete: true,
     });
   });

@@ -208,6 +208,9 @@ export interface IndexerRequestArgs {
  *   deliberately absent: it is lead-only (valid only for a profile with a
  *   non-empty `can_spawn`), and the finalize gate's nudge still forces a tool on
  *   the next iteration because `CLARVIS_DEFAULT_FORCE_TOOL_ON_NUDGE` defaults on.
+ *   Transport retries are disabled on this profile because the durable index
+ *   job already owns retry, backoff and give-up; nesting both policies would
+ *   multiply one provider outage into repeated calls inside every job attempt.
  */
 export function buildIndexerRequest(args: IndexerRequestArgs): RunRequest {
   return {
@@ -222,6 +225,7 @@ export function buildIndexerRequest(args: IndexerRequestArgs): RunRequest {
         base_prompt: withPolicy(INDEXER_SYSTEM, args.policy),
         tools: [],
         iteration_limit: INDEXER_ITERATION_LIMIT,
+        retry: { max_retries: 0 },
       },
     ],
     entry: MEMORY_INDEXER_AGENT,
@@ -363,10 +367,12 @@ export interface ContinuationRequestArgs {
  *   `profiles`, the same `entry`, the same `providers`, the same (empty)
  *   `servers` — because the cache hit is the length of the longest
  *   byte-identical prefix and all of it sits ahead of the appended message. The
- *   two fields that do change are invisible on the wire: `iteration_limit`,
- *   lowered to the pass's own bound so a continued coder profile cannot spend
- *   its much larger budget here, and `budget`, which stops the pass rather than
- *   asking anyone. Cached tokens are already discounted by the engine's ledger
+ *   Profile-local fields that do change are invisible on the provider wire:
+ *   `iteration_limit` is lowered to the pass's own bound so a continued coder
+ *   profile cannot spend its much larger budget here, and `retry.max_retries`
+ *   is set to zero because the durable job owns recovery across passes. The
+ *   request `budget` stops the pass rather than asking anyone. Cached tokens are
+ *   already discounted by the engine's ledger
  *   (`max(0, input - cached) + output`), so a large continued transcript does
  *   not consume the pass's allowance merely by being re-sent each iteration.
  *
@@ -390,7 +396,13 @@ export function buildIndexerContinuationRequest(args: ContinuationRequestArgs): 
     servers: [...(request.servers ?? [])],
     providers: [...args.providers],
     profiles: request.profiles.map((p) =>
-      p.name === request.entry ? { ...p, iteration_limit: INDEXER_ITERATION_LIMIT } : p,
+      p.name === request.entry
+        ? {
+            ...p,
+            iteration_limit: INDEXER_ITERATION_LIMIT,
+            retry: { ...p.retry, max_retries: 0 },
+          }
+        : p,
     ),
     entry: request.entry,
     budget: { on_exceed: "stop", total_token_limit: continuationTokenLimit(subject) },

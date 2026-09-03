@@ -10,7 +10,7 @@ export interface HeaderRowsProps {
 }
 
 /**
- * Renders the app header's workspace, active identity, run configuration and host-state zones.
+ * Renders the app header's workspace, active identity, run configuration, host state and version.
  */
 export function HeaderRows(props: HeaderRowsProps): JSX.Element {
   return (
@@ -53,15 +53,30 @@ export function HeaderRows(props: HeaderRowsProps): JSX.Element {
         </Index>
         <box flexGrow={1} minWidth={0} />
         <Show when={props.plan().exception}>
-          <text fg={props.plan().exception!.color} flexShrink={0} wrapMode="none">
+          <text
+            fg={props.plan().exception!.color}
+            flexShrink={1}
+            minWidth={0}
+            truncate
+            wrapMode="none"
+          >
             {props.plan().exception!.text}
           </text>
         </Show>
         <Show when={props.plan().urgent}>
-          <text fg={props.plan().urgent!.color} flexShrink={0} wrapMode="none">
+          <text
+            fg={props.plan().urgent!.color}
+            flexShrink={1}
+            minWidth={0}
+            truncate
+            wrapMode="none"
+          >
             {props.plan().urgent!.text}
           </text>
         </Show>
+        <text fg={props.plan().version.color} flexShrink={0} paddingLeft={1} wrapMode="none">
+          {props.plan().version.text}
+        </text>
       </box>
     </box>
   );

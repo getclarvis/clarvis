@@ -36,6 +36,8 @@ the engine passes the handle straight through, exactly as `LiveContext` satisfie
 
 For a provider-composed tool call, the engine records one durable `tool_input_delta` announcement
 per attempt and sends later cumulative character counts plus `complete: true` through `signal` only.
+The record may carry both call-scoped argument `chars` and the provider attempt's separate
+`stream_chars` liveness total; neither carries content.
 The announcement makes an interrupted run diagnosable while keeping the journal constant-size with
 respect to argument length. A durable `model_call_retry` retains its bounded failure message; neither
 event retains argument contents.

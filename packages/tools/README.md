@@ -112,7 +112,12 @@ authored/canonical `var/select` and `var/db` trees let Apple's installed Git shi
 incorrectly request Command Line Tools even when they are installed. The opt-in real-host canary
 first resolves both selectors inside the generated profile and only then executes
 `/usr/bin/git --version`; a selector regression therefore fails before Apple's Git shim can request
-the graphical installer.
+the graphical installer. With `network: "host"`, Seatbelt also admits only the authored and
+canonical `mDNSResponder` socket paths required by the macOS resolver. `network: "none"` admits
+neither and still denies every network operation. Native POSIX sandboxes set npm's script shell to
+the absolute `/bin/sh`: npm otherwise searches a bare `sh` through synthetic ancestor
+`node_modules/.bin` entries, where a deliberately hidden host path can turn package execution into
+`spawn EPERM` even after download and extraction succeeded.
 
 `host_vcs` is the narrow fallback for an operation the sandbox cannot perform because it lacks a
 host environment variable, credential channel, runtime, or service. The historical name remains for
@@ -144,18 +149,30 @@ still reviews them, but this option is not a filesystem-immutability boundary an
 modify files its operating-system identity may write. Nothing here executes a helper merely because
 its skill was selected.
 
-A host may additionally pass existing `temporaryRoots`. These are narrow,
-host-owned scratch roots, not a general filesystem escape: every native tool
-and guarded path analysis admits exactly those roots, while unrelated `/tmp`
-paths remain refused. `shell` and `monitor_start` expose the first root as
-`TMPDIR`, `TEMP`, and `TMP`. POSIX commands should root their template explicitly
-(`mktemp -d "$TMPDIR/clarvis.XXXXXX"`), because macOS `/usr/bin/mktemp` may ignore a
-reassigned `TMPDIR` when no template is supplied; PowerShell commands create beneath
-`$env:TEMP`. Either form produces work that a later `grep`, `read_file`, or mutation
-can access. For compatibility with POSIX agents
-that spell an absolute `mktemp -d /tmp/name-XXXXXX` template, `shell` snapshots
-that exact template and adopts only a new, non-symlink directory owned by the
-current user; it does not admit the parent temp directory or a pre-existing match.
+A host may additionally pass existing `temporaryRoots`. Every native tool,
+guarded path analysis, and native sandbox admits every listed root; `shell` and
+`monitor_start` expose the first one as `TMPDIR`, `TEMP`, and `TMP`. The standalone
+library defaults to no temporary roots. The Clarvis loop instead supplies its
+owner-only run scratch first, followed by `systemTemporaryRoots()`: the existing
+environment-selected temp directory plus `/tmp` on POSIX, or the environment-selected
+temp directory on Windows. This matches host-native CLIs that ignore or replace
+`TMPDIR`, so a path they return remains usable by a later shell or native coding tool.
+
+System temporary roots are access policy, never lifecycle ownership. The loop
+removes only its run scratch and exact directories registered as newly created by
+the run; it never removes the system roots or unrelated content below them. For an
+explicit POSIX `mktemp -d /tmp/name-XXXXXX` template, `shell` still snapshots that
+template and registers only a new, non-symlink directory owned by the current user.
+When a read-only workspace lives below a system temporary root, Bubblewrap mount
+ordering and Seatbelt exclusions keep the workspace read-only while the exact run
+scratch remains writable.
+
+For `shell` and `monitor_start`, an absolute command head below a platform system executable root or
+an explicitly admitted sandbox runtime root is classified as the executable, not as an external
+data operand. Its exact argv remains available for review, while allow/deny matching uses the same
+basename identity as the PATH spelling (`/usr/bin/git push` is still `git push` to policy). Only that
+command-head path is admitted; an absolute argument such as `/etc/passwd`, and an executable outside
+the host-approved roots, remain outside the workspace boundary.
 
 ```ts
 const readOnly = createAgentTools({
@@ -190,13 +207,13 @@ message for that shape, so a helpful-looking hint cannot come back by accident.
 
 ## Entry points
 
-| Entry                    | Contents                                                                         |
-| ------------------------ | -------------------------------------------------------------------------------- |
-| `@clarvis/tools`         | `createAgentTools`, `listTools`, `dispatch`, and the re-exported `which` helpers |
-| `@clarvis/tools/guard`   | the guard types and shell-analysis helpers, without the rest of the tool API     |
-| `@clarvis/tools/shell`   | `resolveShell`, `shellArgs`, `killTree`, `ownProcessGroup`                       |
-| `@clarvis/tools/sandbox` | Native Bubblewrap/Seatbelt probing, policy construction, and path-policy helpers |
-| `@clarvis/tools/monitor` | `sweepMonitors` housekeeping without loading the complete tool registry          |
+| Entry                    | Contents                                                                                                        |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `@clarvis/tools`         | `createAgentTools`, `listTools`, `dispatch`, and the re-exported `which` helpers                                |
+| `@clarvis/tools/guard`   | the guard types and shell-analysis helpers, without the rest of the tool API                                    |
+| `@clarvis/tools/shell`   | `resolveShell`, `shellArgs`, `killTree`, `ownProcessGroup`                                                      |
+| `@clarvis/tools/sandbox` | Native Bubblewrap/Seatbelt probing, policy construction, host temporary-root discovery, and path-policy helpers |
+| `@clarvis/tools/monitor` | `sweepMonitors` housekeeping without loading the complete tool registry                                         |
 
 `./shell` exists for `@clarvis/hooks`, which spawns operator-declared commands and
 must behave exactly like a `shell` tool command on the same host, without pulling

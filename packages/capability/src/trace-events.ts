@@ -121,6 +121,7 @@ export type BuiltinTraceEvent =
       occurred_at: number;
       tool_name: string;
       chars: number;
+      stream_chars?: number;
       complete?: true;
     }
   | {

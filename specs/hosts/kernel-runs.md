@@ -620,8 +620,8 @@ class matches, and only when `sameAgent` holds (`agent` **and** `subagent_id` eq
 | `tool_output_delta` | same `call_id` | append; keeps `previous.at` (`:232-242`, `:132-135`) |
 | `tool_input_delta` | same `call_id` | **replace**: `{ ...next, at: prev.at }` (`:243-251`) |
 
-The replacement rule for `tool_input_delta` is explained in the docstring — "its `chars` is the
-cumulative size of the argument payload rather than a slice of it" (`:220-221`) — and in the test:
+The replacement rule for `tool_input_delta` is explained in the docstring — its argument `chars`
+and optional provider `stream_chars` are cumulative rather than slices — and in the test:
 "Concatenating the way the two content deltas do would report a 3 KB call as 6 KB"
 (`packages/kernel/tests/unit/event-stream.test.ts:230-232`).
 
@@ -640,7 +640,8 @@ overwrite a coalesced event's backing state directly by assignment rather than o
 
 `sizeOfCoalescedRunEvent` (`:172-191`) keeps byte accounting O(1): append kinds add
 `appendedJsonStringBytes(incoming.text|chunk)` (JSON-encoded length minus the two quotes, `:26-31`),
-`tool_input_delta` swaps only the `at` field's encoded size, and anything else falls back to a full
+`tool_input_delta` swaps only the `at` field's encoded size because every other field, including
+both cumulative counters, comes from the replacing event; anything else falls back to a full
 `sizeOfRunEvent`. `sizeOfRunEvent` returns `Number.MAX_SAFE_INTEGER` when `JSON.stringify` throws
 (`:16-24`), with the reason in place: "A contributed detail that cannot cross the wire must never
 make a local consumer's buffer unbounded. Treat it as oversized and fail closed" (`:20-22`); pinned
@@ -715,7 +716,7 @@ Each entry: the rule, the production anchor, the test anchor (or "unpinned").
 non-`false` `coalesce` class.
 Production: `RUN_EVENT_POLICY`. Test: `packages/kernel/tests/unit/event-policy.test.ts`, whose comment
 gives the justification: "the two content deltas are superseded by an authoritative terminal event,
-and `tool_input_delta` carries a cumulative count, so the next one restates it in full" (`:11-13`).
+and `tool_input_delta` carries cumulative counts, so the next one restates them in full" (`:11-13`).
 
 **INV-R2 (owns INV-229).** `run_started` is `durability: "persisted"`; `plan_created` comes only from
 `capability_channel`, is `live_only`, and maps via the `capability` mapper; `events_dropped` is

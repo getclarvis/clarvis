@@ -104,8 +104,9 @@ capability executables, and plugin skill roots are composed. Standalone skill se
 resolved `SkillRootInput` entries with exact `include` lists. The loop receives those roots and the
 opaque `{ id, fingerprint }` run metadata; it does not import Extension Profile policy.
 
-The tools capability receives the selected workspace, sandbox policy, guard resolver, run-owned
-temporary roots, and secret environment names. The kernel guard makes `host_vcs` an ordinary ask:
+The tools capability receives the selected workspace, sandbox policy, guard resolver, and secret
+environment names. It creates the run-owned scratch and appends host system temporary access inside
+the optional tools capability. The kernel guard makes `host_vcs` an ordinary ask:
 mode `on` uses the human channel, while a configured mode `auto` judge may answer it.
 
 Workflow leaders are separate auxiliary runs. `auxiliaryWorkflowRunDeps` removes the memory

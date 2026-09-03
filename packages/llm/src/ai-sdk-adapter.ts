@@ -584,9 +584,11 @@ export class AiSdkAdapter implements LLMProvider {
         } else if (part.type === "text-delta") {
           retainTextPart(part.id, part.text, part.providerMetadata);
           if (!outputObserved) firstOutput("text");
+          toolInput?.observe(part.text);
           batcher.push("text", part.text);
         } else if (part.type === "reasoning-delta") {
           if (!outputObserved) firstOutput("reasoning");
+          toolInput?.observe(part.text);
           batcher.push("reasoning", part.text);
         } else if (part.type === "tool-input-start") {
           if (!outputObserved) firstOutput("tool_input");

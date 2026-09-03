@@ -5,6 +5,7 @@ import { tokens } from "../../src/theme/tokens.ts";
 function baseInput(overrides: Partial<HeaderInput> = {}): HeaderInput {
   return {
     width: 140,
+    version: "0.0.4-beta",
     floor: false,
     agentName: "coder",
     model: "openrouter/x-ai/grok-4.5",
@@ -26,6 +27,7 @@ test("header owns workspace identity rather than the full path", () => {
   expect(plan.workspace.text).toContain("demo");
   expect(plan.workspace.text).not.toContain("/work/acme");
   expect(plan.identity?.text).toContain("coder");
+  expect(plan.version.text).toBe("v0.0.4-beta");
 });
 
 test("the header states the model, safety profile and memory the next run will use", () => {
@@ -75,13 +77,14 @@ test("the status zone sheds wording before it sheds facts", () => {
   expect(at(200).join(" ")).toContain("x-ai/grok-4.5");
   expect(at(84).join(" ")).not.toContain("x-ai/");
   expect(at(84).join(" ")).toContain("grok-4.5");
+  expect(at(84).join(" ")).toContain("mem on");
   const tight = at(72).join(" ");
-  expect(tight).toContain("mem on");
-  expect(tight).not.toContain("Memory:");
+  expect(tight).toContain("isolated");
+  expect(tight).not.toContain("mem on");
   const narrow = at(60).join(" ");
-  expect(narrow).toContain("isolated");
-  expect(narrow).not.toContain("mem on");
-  expect(at(48)).toEqual(["grok-4.5"]);
+  expect(narrow).toContain("grok-4.5");
+  expect(narrow).not.toContain("isolated");
+  expect(at(48)).toEqual([]);
   expect(at(30)).toEqual([]);
 });
 

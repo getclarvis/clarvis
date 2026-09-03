@@ -14,7 +14,7 @@ from that bit rather than maintained separately (`packages/tools/src/tools/regis
 The problem the subsystem solves is bounded, confined observation. Every answer a tool returns is
 bounded in bytes, in files touched, in directory entries retained, and — for the in-process regex
 scanner — in regular-expression CPU time. When confinement is enabled, every path is proven to stay
-under the workspace or an explicitly admitted run-owned temporary root; `read_file` and `read_files`
+under the workspace or an explicitly configured temporary root; `read_file` and `read_files`
 also admit the machine-local state root so the model can read a spill it was handed
 (`packages/tools/src/lib/paths.ts:53-62`, `packages/tools/src/config.ts:89-101`). Content reads routed
 through `readRawFile` re-establish that proof against the *open descriptor* rather than trusting only
@@ -107,7 +107,7 @@ Resolution and validation belong to tools-contract-and-dispatch; the fields cons
 | `ripgrepAvailable` | probed by `rg --version` (`packages/tools/src/config.ts:187-194`) | grep engine choice (`packages/tools/src/lib/rg.ts:164`) |
 | `confineToWorkspace` | `true` (`packages/tools/src/config.ts:353`) | path confinement **and** grep engine choice |
 | `stateRoot` | `workspaceStatePaths(workspaceRoot).root` (`packages/tools/src/config.ts:503`) | extra read root, passed by `read_file`/`read_files` only |
-| `temporaryRoots` | `[]` (`packages/tools/src/config.ts:354`) | extra confined roots admitted by all nine tools; the list may grow after a verified shell-created `mktemp -d` (`:405-417`) |
+| `temporaryRoots` | `[]` (`resolveConfig`) | extra confined roots admitted by all nine tools; the product loop pre-seeds run scratch plus host system temp roots, and the list may grow after a verified shell-created `mktemp -d` |
 | `readOnly` | `false` (`packages/tools/src/config.ts:352`) | selects the nine-tool surface (`packages/tools/src/core.ts:233`) |
 
 ## 3. Data and formats
@@ -284,10 +284,13 @@ Every read tool passes `config.temporaryRoots` to `resolvePath`; `read_file` and
 (`packages/tools/src/tools/read-file.ts:67-71`, `packages/tools/src/tools/read-files.ts:106-110`).
 Content readers also feed the same temporary roots into the descriptor-time policy through
 `readFileOptions`; the two spill readers again add `stateRoot`
-(`packages/tools/src/lib/files.ts:47-62`, `packages/tools/src/tools/read-file.ts:82`,
-`packages/tools/src/tools/read-files.ts:118`). This admits only the exact configured roots, not their
-parent temporary directory (`packages/tools/tests/integration/api.test.ts`, "lets native tools read
-scratch created by shell inside the run-owned temporary root").
+(`packages/tools/src/lib/files.ts`, `packages/tools/src/tools/read-file.ts`,
+`packages/tools/src/tools/read-files.ts`). This admits only the configured roots. A standalone caller
+that supplies one exact run root still refuses its parent; the product loop deliberately also
+configures the environment-selected system temp and POSIX `/tmp`, allowing host-native temp output
+without learning a path from an earlier result (`packages/tools/tests/integration/api.test.ts`,
+"lets native tools read scratch created by shell inside the run-owned temporary root" and "reuses a
+bare mktemp result from the host temp root in a later native tool").
 
 ### 4.2 `readRawFile` — the descriptor-bound read
 
@@ -566,7 +569,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-22** | The binary heuristic scans only the first and last 8000 bytes, so a NUL buried in the middle of a larger file is **not** detected. | `packages/tools/src/lib/binary.ts:2`, `:15-24` | `packages/tools/tests/unit/binary.test.ts:24-28` (asserts the miss explicitly) |
 | **RS-23** | A confined `readRawFile` proves the opened descriptor is the same filesystem object the canonical path names (`dev` + `ino`); a mismatch is `path_escape`, not a silent redirect. | `packages/tools/src/lib/files.ts:121-153`, `:226-278` | **unpinned** in `@clarvis/tools` |
 | **RS-24** | `readRawFile` reads at most `maxBytes + 1` bytes from one handle and detects growth after the initial stat. | `packages/tools/src/lib/files.ts:164-178`, `:244-257` | `packages/tools/tests/integration/bounded-read.test.ts:36-49` |
-| **RS-25** | Only `read_file` and `read_files` admit `config.stateRoot`; every read tool separately admits the exact `temporaryRoots`, and nothing receives the state root merely because temporary scratch is enabled. | `packages/tools/src/tools/read-file.ts:67-71`, `packages/tools/src/tools/read-files.ts:106-110` vs. the `config.temporaryRoots` argument in the other seven handlers | `packages/tools/tests/unit/read-confinement-allowance.test.ts` pins the state-root half; `packages/tools/tests/integration/api.test.ts`, "lets native tools read scratch created by shell inside the run-owned temporary root", pins one configured temporary root while refusing the generic system temp root |
+| **RS-25** | Only `read_file` and `read_files` admit `config.stateRoot`; every read tool separately admits the complete configured `temporaryRoots`, and nothing receives the state root merely because temporary access is enabled. | `packages/tools/src/tools/read-file.ts`, `packages/tools/src/tools/read-files.ts` vs. the `config.temporaryRoots` argument in the other seven handlers | `packages/tools/tests/unit/read-confinement-allowance.test.ts` pins the state-root half; `packages/tools/tests/integration/api.test.ts` pins exact scratch and opt-in system-temp configurations |
 | **RS-26** | The `path_escape` refusal never tells the model how to lift the boundary; it states the boundary is fixed before the run. | `packages/tools/src/lib/paths.ts:160-166` | `packages/tools/tests/architecture/no-bypass-hints.test.ts:76-84` (and `:86-90`, which proves the detector recognises the old wording) |
 | **RS-27** | Confinement folds case on Windows only, compares canonicalised forms on both sides, and requires a `root + sep` prefix so a sibling whose name merely starts with the root's is refused. | `packages/tools/src/lib/paths.ts:137-149` | `packages/tools/tests/integration/paths.test.ts:78-99` |
 | **RS-28** | A path that cannot be canonicalised *because a skipped segment is a symlink* is refused, not admitted — otherwise a `0o311` link out of the workspace would be writable. | `packages/tools/src/lib/paths.ts:254` | `packages/tools/tests/integration/paths.test.ts:155-166` |
@@ -589,7 +592,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-45** | `blockSpan` extends a matched span to swallow the following line's newline when `oldString` itself ends in `\n` — except when the matched block is the text's final line, where there is no following newline to swallow. | `packages/tools/src/lib/match-cascade.ts:89-101` | `packages/tools/tests/unit/match-cascade.test.ts:66-74` ("extends the span to include the trailing newline"), `:76-82` ("does not over-extend when old ends in newline but the block is the final line") |
 | **RS-46** | `scanLineBlocks` treats a sparse-array hole in either the haystack window or the needle as an empty string (`eq(hay[i+j] ?? "", need[j] ?? "")`), rather than skipping it or throwing. | `packages/tools/src/lib/match-cascade.ts:61` | `packages/tools/tests/unit/match-cascade.test.ts:29-34` ("treats a hole in the haystack window as an empty line"), `:36-39` ("treats a hole in the needle as an empty line") |
 | **RS-47 (INV-302)** | Both grep engines apply `maxFileBytes` identically **and in both directions**: a file over the ceiling is skipped in a directory search (a small sibling still matches), and naming that same oversized file directly yields `(no matches)` on both paths rather than an error. | `packages/tools/src/lib/rg.ts:203` (`--max-filesize`); `:147-161` (the single-file `readRawFile` bound, whose failure resolves to an empty result rather than a throw) | `packages/tools/tests/contract/grep-parity.test.ts:179-203` |
-| **RS-48** | A run-owned temporary root is a narrow additional confinement root for native observation: a file created there by `shell` is searchable by `grep`, while the parent host temp directory remains `path_escape`. A verified explicit `mktemp -d /tmp/name-XXXXXX` result is added to the same live list for later calls. | `packages/tools/src/config.ts:354-417`; all nine handlers' `resolvePath` calls; `packages/tools/src/lib/files.ts:47-62` | `packages/tools/tests/integration/api.test.ts`, "lets native tools read scratch created by shell inside the run-owned temporary root" and "adopts an explicit mktemp directory created by this shell call"; `packages/tools/tests/integration/guard-dispatch.test.ts`, "treats the configured run temporary root as confined without widening generic /tmp" |
+| **RS-48** | Temporary observation follows configuration, not tool history: a standalone exact run root leaves its parent as `path_escape`, while the product loop pre-authorizes host system temp parents so a bare native `mktemp` result is immediately searchable. A verified explicit `mktemp -d /tmp/name-XXXXXX` result is still registered exactly for ownership/cleanup. | `packages/tools/src/config.ts`; `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`); `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`, `ownedTemporaryRoots`); all nine handlers' `resolvePath` calls; `packages/tools/src/lib/files.ts` | `packages/tools/tests/integration/api.test.ts`, "lets native tools read scratch created by shell inside the run-owned temporary root", "reuses a bare mktemp result from the host temp root in a later native tool", and "adopts an explicit mktemp directory created by this shell call"; `packages/tools/tests/integration/guard-dispatch.test.ts`, "treats the configured run temporary root as confined without widening generic /tmp"; `packages/loop/tests/integration/command-guard-wiring.test.ts`, "preauthorizes the host temp across shell and native tools without owning its parent" |
 
 ## 6. Failure modes and degradation
 

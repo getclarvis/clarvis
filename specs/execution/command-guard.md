@@ -385,7 +385,7 @@ tool family, and an unrecognized tool yields no paths and no shell facts (`:114`
 | Family | Members | Extraction | Line |
 | --- | --- | --- | --- |
 | guarded host fallback | `host_vcs` | render `program` plus each string argv member with display-safe quoting into `args.command`, analyze that display command, and resolve `args.cwd` with plain fs semantics | `packages/tools/src/guard/context.ts` |
-| command tools | `shell`, `monitor_start` | `analyzeShell(args.command)`, each reported path resolved with **shell semantics** (tilde expansion) against workspace, scratch and exact host-selected skill roots; when a sandbox is configured, an existing verified spill is admitted as that exact read-only-mounted file; unsandboxed commands do not receive the spill exception; `args.cwd` is added with plain fs semantics against the same workspace/scratch/skill roots | `packages/tools/src/guard/context.ts`, `packages/tools/src/lib/state-artifacts.ts` |
+| command tools | `shell`, `monitor_start` | `analyzeShell(args.command)`, each reported path resolved with **shell semantics** (tilde expansion) against workspace, every configured temporary root (product run scratch plus system compatibility roots), and exact host-selected skill roots; an absolute command head beneath a platform system executable root or configured runtime root is admitted as that executable and normalized to its basename for allow/deny matching, without admitting absolute operands; when a sandbox is configured, an existing verified spill is admitted as that exact read-only-mounted file; unsandboxed commands do not receive the spill exception; `args.cwd` is added with plain fs semantics against the same roots | `packages/tools/src/guard/context.ts` (`externalExecutablePaths`, `normalizeExternalExecutables`), `packages/tools/src/lib/state-artifacts.ts`, `packages/tools/src/lib/system-executables.ts`, `packages/loop/src/runtime/capabilities/tools.ts` |
 | patch | `apply_patch` | `patchPaths(args.patch)` — raw unified `---`/`+++` plus model-envelope Update/Add/Delete/Move headers, `/dev/null` dropped, `a/`/`b/` prefixes stripped, deduped first-seen | `packages/tools/src/guard/context.ts`, `packages/tools/src/guard/paths.ts` |
 | src/dest | `move`, `copy` | `args.source`, `args.destination` | `:23`, `:66`-`:68` |
 | list | `read_files` | every string in `args.paths` | `:69`-`:74` |
@@ -1091,6 +1091,28 @@ broken.
     `packages/loop/src/runtime/build-run-deps.ts`. Test:
     `packages/tools/tests/integration/api.test.ts` and
     `packages/skills/tests/integration/api.test.ts`.
+
+58. **A literal path below the host environment temp or POSIX `/tmp` is inside the product's command
+    boundary before any tool executes.** `createAgentToolsRunCapability` appends
+    `systemTemporaryRoots()` to the run scratch, and `buildGuardContext` evaluates shell paths and
+    `cwd` against the complete `RuntimeConfig.temporaryRoots`. This is pre-authorization, not a
+    path learned from prior output. Production: `packages/loop/src/runtime/capabilities/tools.ts`
+    (`accessibleTemporaryRoots`) and `packages/tools/src/guard/context.ts` (`commandRoots`). Test:
+    `packages/loop/tests/integration/command-guard-wiring.test.ts` (`preauthorizes the host temp
+    across shell and native tools without owning its parent`).
+
+59. **An absolute executable spelling is not mistaken for an external data operand, and cannot
+    bypass command policy.** For `shell`/`monitor_start`, only the first argv item of a segment is a
+    candidate; it must resolve outside the workspace but beneath a platform system executable root
+    or the configured sandbox runtime roots. That exact path is admitted and its basename replaces
+    only the policy-facing `normalized` head, so `/usr/bin/git push` still matches `git push` while
+    `/etc/passwd` remains an outside-workspace operand and `/opt/untrusted/bin/tool` remains denied.
+    Production: `packages/tools/src/guard/context.ts` (`externalExecutablePaths`,
+    `normalizeExternalExecutables`) and `packages/tools/src/lib/system-executables.ts`
+    (`systemExecutableRoots`). Test: `packages/tools/tests/unit/guard-context.test.ts` (`classifies
+    an absolute system command head as executable without admitting its operands`, `keeps an
+    absolute command outside system and configured runtime roots denied`, and `matches an absolute
+    system spelling to the same policy identity as a PATH command`).
 
 ---
 

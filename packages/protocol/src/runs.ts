@@ -420,6 +420,8 @@ export type RunEvent =
       call_id: string;
       tool: string;
       chars: number;
+      /** Cumulative characters observed across the physical provider stream. */
+      stream_chars?: number;
       /** Present only after the provider closed this argument stream. */
       complete?: true;
     })

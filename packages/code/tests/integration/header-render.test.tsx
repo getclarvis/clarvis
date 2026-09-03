@@ -7,6 +7,7 @@ import { projectHeader, type HeaderInput } from "../../src/views/header-projecti
 function baseInput(over: Partial<HeaderInput> = {}): HeaderInput {
   return {
     width: 140,
+    version: "0.0.4-beta",
     floor: false,
     agentName: "coder",
     model: "openrouter/x-ai/grok-4.5",
@@ -46,6 +47,7 @@ test("header is one line carrying identity and the run's governing configuration
   expect(rows[0]).toContain("grok-4.5");
   expect(rows[0]).toContain("Safety: isolated");
   expect(rows[0]).toContain("Memory: on");
+  expect(rows[0]?.trimEnd()).toEndWith("v0.0.4-beta");
   expect(rows[0]).not.toContain("plans:");
   expect(rows[1]).toContain("----------");
   expect(rows[2]).toContain("BODY");
@@ -108,6 +110,7 @@ test("the audited width matrix keeps one bounded identity row", async () => {
       }),
     );
     expect(rows[0]).toContain("Clarvis");
+    expect(rows[0]?.trimEnd()).toEndWith("v0.0.4-beta");
     expect(rows[0]!.length).toBeLessThanOrEqual(width);
     expect(rows.filter((row) => row.includes("Clarvis"))).toHaveLength(1);
     if (width < 100) expect(rows[0]).not.toContain("Sandbox unavailable");

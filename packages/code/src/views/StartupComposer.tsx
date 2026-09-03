@@ -87,6 +87,7 @@ export function createStartupComposerState(): StartupComposerState {
 export function StartupComposer(props: {
   state: StartupComposerState;
   acceptsInput: boolean;
+  version: string;
 }): JSX.Element {
   const dims = useTerminalDimensions();
   let input: InputRenderable | undefined;
@@ -124,6 +125,10 @@ export function StartupComposer(props: {
           </text>
           <text fg={tokens.muted} flexShrink={1} minWidth={0} wrapMode="none" truncate>
             {` ${glyph("separator")} code ${glyph("separator")} starting`}
+          </text>
+          <box flexGrow={1} minWidth={0} />
+          <text fg={tokens.muted} flexShrink={0} paddingLeft={1} wrapMode="none">
+            {`v${props.version}`}
           </text>
         </box>
         <Show when={dims().height >= 8}>

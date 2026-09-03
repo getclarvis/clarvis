@@ -140,8 +140,9 @@ event, and `engineEventToProto` projects it to `iteration_completed`. Production
 | `agent_steered` | `AgentSteeredDetail` | `:602` |
 | `agent_finish_nudge` | `AgentFinishNudgeDetail` | `:614` |
 
-`ToolInputDeltaDetail` carries a cumulative `chars` count and optional `complete: true`; the latter
-means only that the provider closed the argument stream. `ModelCallRetryDetail.message` carries the
+`ToolInputDeltaDetail` carries cumulative call-scoped argument `chars`, optional attempt-wide
+`stream_chars` liveness, and optional `complete: true`; the latter means only that the provider
+closed the argument stream. `ModelCallRetryDetail.message` carries the
 bounded failure that scheduled the retry. Neither shape retains argument contents. Production:
 `ToolInputDeltaDetail` and `ModelCallRetryDetail`. Tests:
 `packages/loop/tests/unit/stream-delta-attribution.test.ts` and
@@ -424,7 +425,7 @@ feed the supervision registry with the *raw* entry, then map **once** and share 
 the journal and the host's `onEvent` (`:148-177`). `journal` is taken only when `durable` is true
 (`:162`). Text, reasoning, tool-output and later tool-input progress stay off disk. The engine records
 only the first tool-input announcement per `call_id` in each physical provider attempt, then signals
-later cumulative counts and `complete: true`; its retry callback clears the attempt-local identity
+later cumulative argument and provider-stream counts and `complete: true`; its retry callback clears the attempt-local identity
 set. This retains one diagnostic breadcrumb per attempted tool call rather than one row per provider
 delta. Production: `announcedToolCalls` and `onToolInputDelta` in
 `packages/loop/src/runtime/loop/loop.ts`. Test:
@@ -489,7 +490,8 @@ Mechanics inside the builtin branches:
 - Optional fields are attached only when defined (`:157-159` and throughout), so an absent value
   never becomes explicit `undefined` (`:88-89`). Pinned across
   `packages/trace/tests/unit/trace-mapper-kinds.test.ts:23`, `:129`, `:161`.
-- `tool_input_delta.complete` is projected only when true, and `model_call_retry.message` is capped
+- `tool_input_delta.stream_chars` is projected only when present, `complete` only when true, and
+  `model_call_retry.message` is capped
   before mapping and retained on the persisted event. Production: `capKinded` and `mapEntryRaw`.
   Test: `packages/trace/tests/unit/trace-mapper-kinds.test.ts`.
 - `budget_check.tokens_remaining` is attached only when `Number.isFinite` (`:257`); pinned at
@@ -1126,8 +1128,9 @@ material. Production: `JournalHeader.host_metadata`, `journalToRecord`,
 
 **T-51.** Provider tool-argument observability is bounded independently of argument size: one first
 `tool_input_delta` announcement is durable per `call_id` per physical attempt; later cumulative
-progress and the explicit completion are live signals. A retry clears the announcement set. The
-durable row contains identity and a count, never arguments. Production: `announcedToolCalls`,
+argument and provider-stream progress plus the explicit completion are live signals. A retry clears
+the announcement set. The durable row contains identity and counts, never content. Production:
+`announcedToolCalls`,
 `buildModelCall.onRetry`, and `withStreaming.onToolInputDelta` in
 `packages/loop/src/runtime/loop/loop.ts`. Test:
 `packages/loop/tests/unit/stream-delta-attribution.test.ts`.

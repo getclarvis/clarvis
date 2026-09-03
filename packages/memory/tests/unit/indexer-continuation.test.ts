@@ -12,6 +12,7 @@ import { describe, expect, it } from "bun:test";
 import type { StoredExecution } from "@clarvis/loop";
 import {
   buildIndexerContinuationRequest,
+  buildIndexerRequest,
   continuationBlocker,
   INDEXER_CONTINUATION_INSTRUCTION,
   INDEXER_ITERATION_LIMIT,
@@ -135,7 +136,7 @@ describe("assembling the continuation request", () => {
     expect(entry.tools).toEqual(["shell"]);
   });
 
-  it("lowers only the entry profile's iteration limit, which is not on the wire", () => {
+  it("bounds the entry profile and leaves helper retry policy unchanged", () => {
     const request = buildIndexerContinuationRequest({
       executionId: "run_pass",
       subject: subject(),
@@ -144,7 +145,9 @@ describe("assembling the continuation request", () => {
     expect(request.profiles.find((p) => p.name === "coder")!.iteration_limit).toBe(
       INDEXER_ITERATION_LIMIT,
     );
+    expect(request.profiles.find((p) => p.name === "coder")!.retry).toEqual({ max_retries: 0 });
     expect(request.profiles.find((p) => p.name === "helper")!.iteration_limit).toBe(40);
+    expect(request.profiles.find((p) => p.name === "helper")!.retry).toBeUndefined();
   });
 
   it("derives a stable Memory-only branch from the indexed run's prompt cache key", () => {
@@ -177,6 +180,41 @@ describe("assembling the continuation request", () => {
     }).prompt_cache_key!;
     expect(key).toHaveLength(512);
     expect(key.endsWith("_memory")).toBe(true);
+  });
+});
+
+describe("bounding provider attempts inside a durable job attempt", () => {
+  it("disables transport retries on the isolated indexer profile", () => {
+    const request = buildIndexerRequest({
+      executionId: "run_pass",
+      task: "index this run",
+      modelRef: MODEL,
+      providers: LIVE_PROVIDERS,
+    });
+    expect(request.profiles[0]!.retry).toEqual({ max_retries: 0 });
+  });
+
+  it("overrides a continued entry profile without changing its other retry ceiling", () => {
+    const carried = withRequest({
+      profiles: [
+        {
+          name: "coder",
+          model: MODEL,
+          tools: ["shell"],
+          iteration_limit: 200,
+          retry: { max_retries: 3, max_retry_after_ms: 9_000 },
+        },
+      ],
+    });
+    const request = buildIndexerContinuationRequest({
+      executionId: "run_pass",
+      subject: carried,
+      providers: LIVE_PROVIDERS,
+    });
+    expect(request.profiles[0]!.retry).toEqual({
+      max_retries: 0,
+      max_retry_after_ms: 9_000,
+    });
   });
 });
 

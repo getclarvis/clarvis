@@ -5,6 +5,7 @@ import {
   helpText,
   parseMode,
   resolveDebugRequest,
+  productVersion,
   usageText,
   versionText,
   type Mode,
@@ -52,7 +53,13 @@ async function runInteractive(mode: InteractiveMode): Promise<void> {
     <Show
       when={view()}
       keyed
-      fallback={<StartupComposer state={startupInput} acceptsInput={mode.kind === "run"} />}
+      fallback={
+        <StartupComposer
+          state={startupInput}
+          acceptsInput={mode.kind === "run"}
+          version={productVersion()}
+        />
+      }
     >
       {(View: () => JSX.Element) => <View />}
     </Show>
@@ -101,7 +108,6 @@ async function main(): Promise<void> {
       process.stdout.write(versionText() + "\n");
       return void process.exit(0);
     case "update": {
-      const { productVersion } = await import("./cli-args.ts");
       const { runUpdateCommand } = await import("./update/index.ts");
       return void process.exit(await runUpdateCommand({ currentVersion: productVersion() }));
     }

@@ -506,8 +506,9 @@ Both land as protocol `RunEvent`s: the engine trace, mapped by
 `engineEventToProto`, and the capability channel, mapped by
 `capabilityEventToProto`.
 
-`engineEventToProto` preserves the cumulative `tool_input_delta.chars` and optional
-`complete: true`. The latter ends argument composition only; it does not synthesize
+`engineEventToProto` preserves cumulative argument `tool_input_delta.chars`, the optional distinct
+provider-liveness total `stream_chars`, and optional `complete: true`. The latter ends argument
+composition only; it does not synthesize
 `tool_call_started` or a terminal result. Initial announcements may be durable for diagnosis while
 later progress remains governed by the run-event stream's live-only policy.
 

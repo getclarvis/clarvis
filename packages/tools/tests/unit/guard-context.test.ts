@@ -34,6 +34,61 @@ describe("buildGuardContext — command tools", () => {
     expect(within(esc, "/etc/passwd")).toBe(false);
   });
 
+  it.skipIf(process.platform === "win32")(
+    "classifies an absolute system command head as executable without admitting its operands",
+    () => {
+      const ctx = buildGuardContext(
+        "shell",
+        { command: "/usr/bin/mktemp -d && /usr/bin/cat /etc/passwd" },
+        config,
+      );
+      expect(ctx.shell?.segments.map((segment) => segment.normalized)).toEqual([
+        "mktemp -d",
+        "cat /etc/passwd",
+      ]);
+      expect(within(ctx, "/usr/bin/mktemp")).toBe(true);
+      expect(within(ctx, "/usr/bin/cat")).toBe(true);
+      expect(within(ctx, "/etc/passwd")).toBe(false);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "keeps an absolute command outside system and configured runtime roots denied",
+    () => {
+      const ctx = buildGuardContext("shell", { command: "/opt/untrusted/bin/mktemp -d" }, config);
+      expect(ctx.shell?.segments[0]?.normalized).toBe("/opt/untrusted/bin/mktemp -d");
+      expect(within(ctx, "/opt/untrusted/bin/mktemp")).toBe(false);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "admits an absolute command head beneath an explicitly configured runtime root",
+    () => {
+      const runtimeRoot = "/opt/clarvis-runtime";
+      const ctx = buildGuardContext(
+        "shell",
+        { command: `${runtimeRoot}/bin/runtime-tool --version` },
+        makeConfig(root, {
+          sandbox: {
+            type: "native",
+            runtimePaths: [runtimeRoot],
+          },
+        }),
+      );
+      expect(within(ctx, `${runtimeRoot}/bin/runtime-tool`)).toBe(true);
+      expect(ctx.shell?.segments[0]?.normalized).toBe("runtime-tool --version");
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "matches an absolute system spelling to the same policy identity as a PATH command",
+    () => {
+      const ctx = buildGuardContext("shell", { command: "/usr/bin/git push origin main" }, config);
+      expect(ctx.shell?.segments[0]?.argv[0]).toBe("/usr/bin/git");
+      expect(ctx.shell?.segments[0]?.normalized).toBe("git push origin main");
+    },
+  );
+
   it("expands ~/ with shell semantics so it escapes the workspace", () => {
     const ctx = buildGuardContext("shell", { command: "cat ~/.ssh/id_rsa" }, config);
     expect(within(ctx, "~/.ssh/id_rsa")).toBe(false);

@@ -351,8 +351,9 @@ The complete discriminator list: `run_started`, `run_ended`, `iteration_started`
 `mcp_degraded` (`RUN_EVENT_SCHEMAS`). *Which* events exist and why belongs to
 **kernel-run-service-and-events**.
 
-The strict `tool_input_delta` schema admits cumulative `chars` plus only the literal optional
-`complete: true`. That flag closes argument composition; it does not stand in for
+The strict `tool_input_delta` schema admits cumulative argument `chars`, optional cumulative
+provider `stream_chars`, plus only the literal optional `complete: true`. The counts remain
+distinct, and that flag closes argument composition; it does not stand in for
 `tool_call_started` or terminal `tool_call`, and another call beginning says nothing about the first
 because their streams may interleave. Production: `RUN_EVENT_SCHEMAS.tool_input_delta`. Test:
 `packages/kernel/tests/contract/transport-codecs.test.ts`.
@@ -780,7 +781,8 @@ Production: `RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-code
 (`satisfies Record<RunEvent["type"], z.ZodType>`). Compile-time
 only — it constrains the **keys**, not the payload shape (see §8).
 
-**INV-T3b.** `tool_input_delta.complete`, when present, is exactly `true`; extra lifecycle fields are
+**INV-T3b.** `tool_input_delta.stream_chars`, when present, is finite;
+`tool_input_delta.complete`, when present, is exactly `true`; extra lifecycle fields are
 rejected by the strict codec. Production: `RUN_EVENT_SCHEMAS.tool_input_delta`. Test:
 `packages/kernel/tests/contract/transport-codecs.test.ts`.
 

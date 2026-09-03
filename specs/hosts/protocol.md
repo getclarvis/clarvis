@@ -408,7 +408,7 @@ in `packages/protocol/src/runs.ts` and `commandGuardReview` in
 `packages/kernel/src/transport/run-event-codec.ts`. Test: `"preserves the
 terminal shell auto-guard verdict"` in
 `packages/kernel/tests/contract/transport-codecs.test.ts`.
-| `tool_input_delta` | `call_id`, `tool`, `chars`, `complete?: true` | `packages/protocol/src/runs.ts` (`RunEvent`) |
+| `tool_input_delta` | `call_id`, `tool`, `chars`, `stream_chars?`, `complete?: true` | `packages/protocol/src/runs.ts` (`RunEvent`) |
 | `reasoning` | `iteration`, `text` | `packages/protocol/src/runs.ts:424` |
 | `text_delta` | `iteration`, `channel: "text" \| "reasoning"`, `text`, `reset` | `packages/protocol/src/runs.ts:425-434` |
 | `model_error` | `iteration`, `kind`, `message` | `packages/protocol/src/runs.ts:435` |
@@ -459,8 +459,10 @@ other value is persisted. This agrees with the protocol comments that call delta
 `elicitation_resolved` is explicitly the opposite: its `RunEvent` doc comment says it is persisted
 for resume reconstruction and not shown live.
 
-`tool_input_delta.chars` is cumulative for one `call_id`; it is not one wire event per provider
-fragment. `complete: true` means the provider closed that call's argument stream, not that the tool
+`tool_input_delta.chars` is cumulative for one `call_id`; optional `stream_chars` is cumulative
+across text, reasoning, and tool-input characters in the physical provider attempt. The latter is
+liveness evidence, not argument progress, and may advance while `chars` remains zero. This is not
+one wire event per provider fragment. `complete: true` means the provider closed that call's argument stream, not that the tool
 started or finished. Those transitions remain `tool_call_started` and terminal `tool_call`.
 Another call's first input event cannot close an earlier one because providers may compose tool calls
 in parallel. Production: `RunEvent` in `packages/protocol/src/runs.ts`. Test:

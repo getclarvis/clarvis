@@ -190,7 +190,7 @@ member at all, which is what `resolveDebugRequest`'s `!("debug" in mode)` guard 
 | | `Splash` | `({ agent, model, width, rightInset? }) => JSX.Element` | `Splash` |
 | `src/views/PageFrame.tsx` | `PageFrame` | `({ title, subtitle?, interaction, children }) => JSX.Element` | 16-21 |
 | `src/views/HeaderRows.tsx` | `HeaderRowsProps` / `HeaderRows` | `{ plan: Accessor<HeaderPlan> }` | 8, 15 |
-| `src/views/StartupComposer.tsx` | `StartupComposerSnapshot`, `StartupComposerState`, `createStartupComposerState`, `StartupComposer` | one-shot draft/submission bridge and focused pre-runtime input | named exports |
+| `src/views/StartupComposer.tsx` | `StartupComposerSnapshot`, `StartupComposerState`, `createStartupComposerState`, `StartupComposer` | one-shot draft/submission bridge and focused pre-runtime input; `StartupComposer` also receives the root-owned product `version` | named exports |
 | `src/boot-shell.ts` | `BootShell` | renderer/root handoff from the lightweight entry to the runtime | named interface |
 | `src/runtime.tsx` | `runInteractiveMode`, `runHeadlessMode` | continue interactive or headless dispatch after the lightweight entry | named exports |
 
@@ -236,6 +236,15 @@ do not implement runtime worktree switching:
 `../../../package.json`, the monorepo's sole version authority
 (`packages/code/src/cli-args.ts`, `versionText`). Pinned by
 `packages/code/tests/unit/cli-args.test.ts` (`version reports the product`).
+The interactive entry passes `productVersion()` into `StartupComposer`, and the complete `App`
+passes the same value into `projectHeader`; both headers render it as `v<version>` in their final
+right-aligned zone. Production: `packages/code/src/index.tsx` (`runInteractive`),
+`packages/code/src/views/App.tsx` (`headerPlan`),
+`packages/code/src/views/StartupComposer.tsx` (`StartupComposer`) and
+`packages/code/src/views/header-projection.ts` (`projectHeader`). Tests:
+`packages/code/tests/integration/splash-render.test.tsx`,
+`packages/code/tests/integration/header-render.test.tsx` and
+`packages/code/tests/integration/app-shell-render.test.tsx`.
 
 ### 3.2 `--help` output
 
@@ -568,7 +577,9 @@ inactive while the kernel resolves their bounded inventory; after `<App>` mounts
 command wiring opens the workspace approval modal automatically for `unapproved` or `changed`.
 Its centre uses the shared `BrandBanner`: the complete eight-row splash appears when 60×16 fits and
 the standard compact wordmark appears below either threshold. The startup-only connection status
-does not invent the not-yet-resolved agent/model line or advertise complete-app shortcuts.
+does not invent the not-yet-resolved agent/model line or advertise complete-app shortcuts. Its
+header already anchors the root-owned `v<version>` at the right edge, so the product identity does
+not move when the complete application replaces it.
 Replacing the root cannot lose an unsent draft or an accepted task: the latter either starts on a
 runnable Agent Profile or returns as exact composer text. Resume/continue render the same
 bounded frame with input disabled. Production: `createStartupComposerState` and `StartupComposer` in
@@ -956,60 +967,62 @@ saving the staged controller choice. Production:
 `packages/code/src/views/config/ProvidersPanel.tsx` (first-model `onClose`). Test:
 `packages/code/tests/integration/providers-key-render.test.tsx` (first-run Escape for both pickers).
 
-`HeaderRows` (`packages/code/src/views/HeaderRows.tsx:15-68`) renders exactly one `height={1}` row: brand wordmark,
-workspace chip, optional identity chip, an `Index` over status chips, a `flexGrow` spacer, then
-optional exception and urgent chips. It is a pure projection of `HeaderPlan`, computed by
-`projectHeader` (`packages/code/src/views/header-projection.ts:173-221`).
+`HeaderRows` (`packages/code/src/views/HeaderRows.tsx`, `HeaderRows`) renders exactly one
+`height={1}` row: brand wordmark, workspace chip, optional identity chip, an `Index` over status
+chips, a `flexGrow` spacer, optional exception and urgent chips, then the non-shrinking product
+version after one gutter column. It is a pure projection of `HeaderPlan`, computed by
+`projectHeader` (`packages/code/src/views/header-projection.ts`, `projectHeader`).
 
 #### 4.13.1 `projectHeader`: priority-zoned chips and their elision ladder
 
-`HeaderInput` (`packages/code/src/views/header-projection.ts:9-26`) is the one shell snapshot the row is derived
-from — `width`, `floor`, `agentName`, `model`, `safetyPreset`, `guardMode`, `sandboxUnavailable?`,
+`HeaderInput` (`packages/code/src/views/header-projection.ts`, `HeaderInput`) is the one shell snapshot the row is derived
+from — `width`, `version`, `floor`, `agentName`, `model`, `safetyPreset`, `guardMode`, `sandboxUnavailable?`,
 `memoryConfigured`, `memory`, `plans`, `connection`, `doctorDirty`, `workspace`, `workspaceLabel?`,
 `branch?` — and its own TSDoc records why so many fields survive unused by the current row: "Legacy
-configuration fields remain input so App owns one derivation point" (`:9`). `HeaderFieldKey` is the
-closed union `"workspace" | "identity" | "model" | "safety" | "memory" | "urgent" | "exception"`
-(`:28-29`); a `HeaderField` is `{ key, text, color, elastic }` (`:31-36`); `HeaderPlan` is
-`{ regime: "one-line", workspace, identity?, status: HeaderField[], urgent?, exception? }`
-(`:39-46`).
+configuration fields remain input so App owns one derivation point". `HeaderFieldKey` is the closed
+union of workspace, identity, model, safety, memory, urgent, exception and `version`; a
+`HeaderField` is `{ key, text, color, elastic }`; `HeaderPlan` makes its `version` field mandatory
+beside the existing left/status/host-state zones (same module, named types).
 
-The row's own TSDoc states its layout model directly: "The row is two groups, not a list: who you are
-and how the next run is configured read as one separator-joined run of text on the left, and what is
-happening or wrong sits against the right edge. The flexible gap between them is the boundary, which
-is why the first field after it carries no separator of its own — a `·` stranded after several columns
-of whitespace separates nothing. Everything inside a group does carry one, so the model no longer butts
-against the agent name across a gap." (`:159-171`).
+The projection's TSDoc states its three-zone layout directly: identity and next-run configuration
+form one separator-joined group on the left, actionable host state follows the flexible gap, and the
+root-owned product version anchors the final zone. The first field after the gap carries no
+separator of its own because a `·` stranded after whitespace separates nothing
+(`packages/code/src/views/header-projection.ts`, `projectHeader`).
 
-**Reserved columns.** `BRAND_COLS = 10` is "the painted brand zone: the row's left padding plus
-`◆ Clarvis`" (`:55-56`); `WORKSPACE_FLOOR = 14` is "held back so the workspace name never truncates
-away entirely" (`:57-58`); `IDENTITY_FLOOR = 10` is held back "for the active agent name when it is on
-the row at all" (`:59-60`), and is skipped entirely in `floor` mode. `cols()` measures with
-`Bun.stringWidth` (`:51-53`); `separator()` is two spaces, `glyph("separator")`, two spaces (`:48-50`).
+**Reserved columns.** `BRAND_COLS = 10` is the painted left padding plus `◆ Clarvis`;
+`WORKSPACE_FLOOR = 14` keeps the workspace from disappearing; `IDENTITY_FLOOR = 10` is skipped in
+`floor` mode; and `VERSION_GUTTER = 1` plus `Bun.stringWidth(version.text)` is always held back for
+the final `v<version>` field. `cols()` measures with `Bun.stringWidth`, while `separator()` is two
+spaces, `glyph("separator")`, two spaces (`packages/code/src/views/header-projection.ts`, named
+constants, `cols` and `separator`).
 
-**Left-of-gap zones — computed unconditionally.** `workspace` (`:175-176`) resolves to
+**Left-of-gap zones — computed unconditionally.** `workspace` in `projectHeader` resolves to
 `input.workspaceLabel ?? basename(input.workspace) || input.workspace || "workspace"`, appending
-`" (branch)"` when `input.branch` is set (`:177`), and is always `elastic: true` and coloured
-`tokens.fg` (`:203-208`). `identity` (`:209-216`) is `input.agentName` in `tokens.muted`, `elastic:
-true`, and is entirely omitted when `input.floor` is set.
+`" (branch)"` when `input.branch` is set, and is always `elastic: true` and coloured `tokens.fg`.
+`identity` is `input.agentName` in `tokens.muted`, `elastic: true`, and is entirely omitted when
+`input.floor` is set (`packages/code/src/views/header-projection.ts`, `projectHeader`).
 
-**Right-of-gap zones — computed first, because they bound the room left for status chips.**
-`urgentField` (`:63-73`) fires whenever `input.connection.phase !== "ready"`: a warning glyph plus
+**Right-of-gap zones — computed first, because they bound the room left for status chips.** The
+version field is always `v${input.version}` in `tokens.muted`, never elastic. `urgentField` fires
+whenever `input.connection.phase !== "ready"`: a warning glyph plus
 `connectionLabel(input.connection, input.width < 72)` in `tokens.warn`, never elastic. `exceptionField`
-(`:75-98`) is a strict priority chain evaluated only when `exceptionAllowed` (`input.width >= 100`,
-`:179`): `sandboxUnavailable` ("Sandbox unavailable") outranks a `free` safety preset ("Safety: free"),
+is a strict priority chain evaluated only when `exceptionAllowed` (`input.width >= 100`):
+`sandboxUnavailable` ("Sandbox unavailable") outranks a `free` safety preset ("Safety: free"),
 which is itself only checked when the caller passes `includeSafety: true`, which outranks
 `doctorDirty` ("Doctor needs attention") — all three render in `tokens.warn`. Both are computed before
-`room` so their reserved width (`cols(urgent.text) + cols(sep)` and, for `exception`, the wider of the
-`includeSafety: true`/`false` renderings plus a separator, `:180-185`) is subtracted first
-(`:186-192`); the wider-of-two-renderings probe exists because whether `exception` will end up
-absorbing the safety warning is not known until after `statusChips` has run.
+`room` so their reserved width is subtracted first; the wider-of-two-renderings probe exists because
+whether `exception` will end up absorbing the safety warning is not known until after `statusChips`
+has run (`packages/code/src/views/header-projection.ts`, `urgentField`, `exceptionField`,
+`projectHeader`).
 
-**`statusChips` — the elision ladder** (`:117-159`). `modelNames` (`:101-106`) reduces `input.model`
+**`statusChips` — the elision ladder.** `modelNames` reduces `input.model`
 through `parseModelRef` to its `modelId`, then to the substring after the last `/` as the `short` form.
-`memoryLabel` (`:109-111`) maps `memory === "off"` to `"off"` and anything else — including `"inert"` —
+`memoryLabel` maps `memory === "off"` to `"off"` and anything else — including `"inert"` —
 to `"on"`, because ("Memory as the rest of the product states it — `inert` is still configured, so it
-reads `on`", `:108`). Five candidate chip sets are tried widest-first, and the first whose summed width
-(chip text plus one separator each) fits `room` wins (`:121-146`):
+reads `on`"). Five candidate chip sets are tried widest-first, and the first whose summed width
+(chip text plus one separator each) fits `room` wins (`packages/code/src/views/header-projection.ts`,
+`statusChips`, `modelNames`, `memoryLabel`):
 
 | Rung | Chips |
 |---|---|
@@ -1019,21 +1032,21 @@ reads `on`", `:108`). Five candidate chip sets are tried widest-first, and the f
 | 4 | `model.short`, `{preset}` |
 | 5 | `model.short` |
 
-If none fits, `statusChips` returns `[]` (`:147`). The model chip is always `tokens.fg`; the safety
+If none fits, `statusChips` returns `[]`. The model chip is always `tokens.fg`; the safety
 chip is `tokens.warn` when `preset === "free"`, else `tokens.muted`; the memory chip is always
-`tokens.muted` (`:151-157`).
+`tokens.muted` (same named functions).
 
-**Assembly.** `room` (`:186-192`) is `width − BRAND_COLS − WORKSPACE_FLOOR − (floor ? 0 : IDENTITY_FLOOR)
-− (urgent reserved) − (exception reserved)`. `exception` is only actually computed, past the
+**Assembly.** `room` in `projectHeader` is `width − BRAND_COLS − WORKSPACE_FLOOR −
+(floor ? 0 : IDENTITY_FLOOR) − VERSION_GUTTER − version width − (urgent reserved) −
+(exception reserved)`. `exception` is only actually computed, past the
 `exceptionAllowed` gate, with `includeSafety` set to whether the chosen chip rung already carries a
-`"safety"` key (`:194-196`) — so a visible "Safety: free" chip suppresses the redundant "Safety: free"
+`"safety"` key — so a visible "Safety: free" chip suppresses the redundant "Safety: free"
 exception, and `free` is "stated once" as its own test names it. Every status chip and every
-right-of-gap field except the first in its group is prefixed with a fresh `separator()`; the first
-field after the flexible gap (whichever of `exception`/`urgent` is present and first) carries none
-(`:197-200`), which is the mechanical form of the TSDoc rule quoted above.
-`packages/code/tests/unit/header-projection.test.ts` pins every rung of the ladder (lines 74-84),
-the two-groups separator rule (lines 34-61), the sandbox-outranks-doctor and free-stated-once
-priorities (lines 92-107), and the floor-mode identity drop (line 109); the render side is pinned by
+host-state field except the first in its group is prefixed with a fresh `separator()`; the first
+field after the flexible gap carries none, and the separate final version zone uses its fixed gutter
+instead. `packages/code/tests/unit/header-projection.test.ts` pins every rung of the ladder,
+the grouped separator rule, the sandbox-outranks-doctor and free-stated-once priorities, the
+floor-mode identity drop and the version field; the render side is pinned by
 `packages/code/tests/integration/header-render.test.tsx`.
 
 ### 4.14 Three `runtime.tsx` behaviors §2.5 names but does not narrate
@@ -1413,6 +1426,18 @@ Production: `ensureWorktreeIgnore` and `bootstrapWorktree` in
 `packages/code/src/bootstrap/worktree.ts`; `ensureWorkspaceDir` in `packages/paths/src/ensure.ts`.
 Pinned: `packages/code/tests/integration/worktree-bootstrap.test.ts` and
 `packages/paths/tests/integration/ensure.test.ts`.
+
+**INV-CB-48.** The lightweight startup composer and the complete application header render the same
+root-manifest product version as `v<version>` in a fixed right-aligned zone. Header projection
+reserves that version and its one-column gutter before admitting status chips, so narrow-width
+elision removes optional run configuration rather than the product identity. Production:
+`packages/code/src/index.tsx` (`runInteractive`),
+`packages/code/src/views/StartupComposer.tsx` (`StartupComposer`),
+`packages/code/src/views/App.tsx` (`headerPlan`),
+`packages/code/src/views/header-projection.ts` (`projectHeader`) and
+`packages/code/src/views/HeaderRows.tsx` (`HeaderRows`). Tests:
+`packages/code/tests/unit/header-projection.test.ts` and
+`packages/code/tests/integration/{splash-render,header-render,app-shell-render}.test.tsx`.
 
 ## 6. Failure modes and degradation
 

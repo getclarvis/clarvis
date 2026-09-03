@@ -1226,6 +1226,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
               n.args = asArgs(event.arguments);
               n.status = "running";
               n.inputChars = undefined;
+              n.inputStreamChars = undefined;
               n.inputComplete = undefined;
             });
           }
@@ -1336,6 +1337,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             patchKind(index, "tool_call", (n) => {
               if (n.status !== "running") return;
               n.inputChars = event.chars;
+              n.inputStreamChars = event.stream_chars;
               if (event.complete === true) {
                 n.inputComplete = true;
                 n.status = "pending";
@@ -1630,6 +1632,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             n.status = event.error ? "error" : "ok";
             n.liveOutput = undefined;
             n.inputChars = undefined;
+            n.inputStreamChars = undefined;
             n.inputComplete = undefined;
             if (n.startedAt && typeof event.at === "number" && event.at >= n.startedAt)
               n.elapsedMs = event.at - n.startedAt;

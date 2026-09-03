@@ -1,10 +1,12 @@
 import type { RuntimeConfig } from "../config.ts";
+import { basename, isAbsolute } from "node:path";
 import { analyzeShell } from "./analyze-shell.ts";
 import type { ShellDialect } from "./dialect.ts";
 import { currentDialect } from "./dialects/index.ts";
 import { resolveCandidate, patchPaths } from "./paths.ts";
 import type { ShellFacts, GuardContext, PathFact } from "./types.ts";
 import { readableStateArtifactPath } from "../lib/state-artifacts.ts";
+import { systemExecutableRoots } from "../lib/system-executables.ts";
 
 const COMMAND_TOOLS = new Set(["shell", "monitor_start"]);
 const PATH_ARG_TOOLS = new Set([
@@ -40,6 +42,54 @@ function resolveReadOnlyPath(
   const alsoAllow =
     artifact === undefined ? config.temporaryRoots : [...config.temporaryRoots, artifact];
   return resolveCandidate(raw, root, { shell, alsoAllow });
+}
+
+/**
+ * Find absolute command heads that are executable through the sandbox's
+ * platform/runtime roots rather than filesystem operands chosen by the model.
+ *
+ * @remarks The first resolution deliberately excludes those roots. An absolute
+ * workspace script remains an ordinary workspace path; only a command head
+ * outside the workspace that the host already exposes as executable receives
+ * this classification.
+ */
+function externalExecutablePaths(shell: ShellFacts, config: RuntimeConfig): ReadonlySet<string> {
+  const executableRoots = [...systemExecutableRoots(), ...(config.sandbox?.runtimePaths ?? [])];
+  const paths = new Set<string>();
+  for (const segment of shell.segments) {
+    const executable = segment.argv[0];
+    if (executable === undefined || !isAbsolute(executable)) continue;
+    const workspace = resolveCandidate(executable, config.workspaceRoot, { shell: true });
+    if (workspace.withinWorkspace) continue;
+    const admitted = resolveCandidate(executable, config.workspaceRoot, {
+      shell: true,
+      alsoAllow: executableRoots,
+    });
+    if (admitted.withinWorkspace) paths.add(executable);
+  }
+  return paths;
+}
+
+/**
+ * Preserve exact argv for review while matching allow/deny entries against the
+ * executable's command name, just as a PATH-resolved spelling would.
+ */
+function normalizeExternalExecutables(
+  shell: ShellFacts,
+  executables: ReadonlySet<string>,
+): ShellFacts {
+  if (executables.size === 0) return shell;
+  return {
+    ...shell,
+    segments: shell.segments.map((segment) => {
+      const executable = segment.argv[0];
+      if (executable === undefined || !executables.has(executable)) return segment;
+      return {
+        ...segment,
+        normalized: [basename(executable), ...segment.argv.slice(1)].join(" "),
+      };
+    }),
+  };
 }
 
 /**
@@ -92,13 +142,16 @@ export function buildGuardContext(
     const commandRoots = [...config.temporaryRoots, ...config.skillExecutionRoots];
     if (typeof args.command === "string") {
       shell = analyzeShell(args.command, dialect);
+      const executables = externalExecutablePaths(shell, config);
+      shell = normalizeExternalExecutables(shell, executables);
       for (const p of shell.paths) {
         const resolved = resolveCandidate(p, root, { shell: true }).resolved;
         const artifact = readableStateArtifactPath(resolved, config.stateRoot);
-        const alsoAllow =
+        const readableRoots =
           artifact === undefined || config.sandbox === undefined
             ? commandRoots
             : [...commandRoots, artifact];
+        const alsoAllow = executables.has(p) ? [...readableRoots, p] : readableRoots;
         paths.push(resolveCandidate(p, root, { shell: true, alsoAllow }));
       }
     }

@@ -163,7 +163,7 @@ never create composing, started, or terminal nodes").
 | `MEASURE_MAX_COLS` | `110` | `:54` |
 | `capitalize(s)` | `string` | `:74` |
 | `taskTone(status)` | `ToneStyle` | `:79` |
-| `composingLabel(chars, complete?)` | cumulative `"receiving arguments… N chars"` or final `"arguments ready · N chars"` | `packages/code/src/views/blocks.tsx` |
+| `composingLabel(chars, complete?, streamChars?)` | zero-byte `"waiting for arguments…"`, cumulative `"receiving arguments… N chars"`, or final `"arguments ready · N chars"`, with a separate optional provider-stream count | `packages/code/src/views/blocks.tsx` |
 | `railColor(node)` | `string` | `:163` |
 | `agentGlyph(status)` | `string` | `:239` |
 | `BlockView(props)` | the one transcript block component | `:563` |
@@ -736,7 +736,7 @@ composer-adjacent activity line or the two typed delegation lifecycle markers.
 | `hiddenLines()` | `hiddenBodyLines(...)` only when collapsed, not errored, and there is no diff chip | `:270` |
 | `hasBody()` | `showBody && status !== "running"` | `:274` |
 | `tail()` | last 5 lines of `liveOutput`, only while running | `:282`, `:139` |
-| `composing()` | `composingLabel(inputChars, inputComplete === true)` when `inputChars !== undefined`, else `""` | `packages/code/src/views/blocks.tsx` (`ToolLine`) |
+| `composing()` | `composingLabel(inputChars, inputComplete === true, inputStreamChars)` when `inputChars !== undefined`, else `""` | `packages/code/src/views/blocks.tsx` (`ToolLine`) |
 
 The header renders as one truncated, non-wrapping row (`:297`–`:348`); its TSDoc states this is so a
 collapsed call is always exactly one row whatever the terminal width (`:250`–`:255`). Its parts, in
@@ -766,7 +766,8 @@ carries `warn` — an errored member stays hidden, pinned at
 
 The group **head** row (`packages/code/src/views/blocks.tsx`, `BlockView`) shows the aggregate status
 glyph, the display label, `×N`, one cumulative composing count while any quiet member still has
-open arguments (or `arguments ready` when all composing members have closed), and `N failed` when
+open arguments (or `arguments ready` when all composing members have closed), the maximum available
+attempt-wide stream count rather than a duplicated sum, and `N failed` when
 any member errored. It lists up to `MAX_GROUP_SIGNATURES = 6` member signatures with a `moreChip`
 for the rest. Denied guard members are selected before ordinary members, preserving their original
 relative order, and remaining slots then take ordinary members in order. A grouped shell signature
@@ -1517,8 +1518,11 @@ by every mutation and explicit diff branch in `packages/code/src/views/tools/reg
 before it reaches OpenTUI").
 
 **INV-T30.** A tool node with `inputChars` set renders the composing stand-in **instead of** a
-signature, never both. The same row exposes a compact cumulative character count; explicit input end
-changes it to `arguments ready` without claiming the tool ran. Production: `composingLabel` and
+signature, never both. At zero argument bytes it says `waiting for arguments` rather than claiming
+argument progress; optional `inputStreamChars` exposes a separately labelled cumulative provider
+stream count that may advance while arguments stay at zero. After the first argument byte the same
+row exposes both counts without conflating them. Explicit
+input end changes it to `arguments ready` without claiming the tool ran. Production: `composingLabel` and
 `ToolLine` in `packages/code/src/views/blocks.tsx`. Tests:
 `packages/code/tests/unit/composing-label.test.ts` and
 `packages/code/tests/integration/tool-destripe-render.test.tsx`.
@@ -1778,6 +1782,8 @@ Markdown never gives rows back when parsing conceals syntax").
 **INV-T58.** Tool-input progress is cumulative and call-id scoped. Only an explicit
 `tool_input_delta.complete: true` moves a composing node to pending `arguments ready`; another
 call's start cannot close it because provider tool calls may be composed in parallel.
+The optional `stream_chars` value is physical-attempt liveness and remains separately labelled from
+the call's argument count.
 `tool_call_started` clears composition state and begins actual execution, while `model_retry`
 removes every composing placeholder from the failed attempt before rendering retry status.
 Production: `openRun` in `packages/code/src/adapters/store.ts`. Test:

@@ -117,11 +117,12 @@ owns.
 | `createAgentToolsetWithAdapter` | `(opts, adapter: AgentToolsAdapter) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts:165` |
 | `AgentToolset` | `{ defs: NamespacedTool[]; names: Set<string>; dispatch(name, args, signal?, onOutput?) => Promise<AgentToolResult> }` | `packages/loop/src/runtime/tools/builtin/toolset.ts:62-72` |
 | `AgentToolResult` | `{ isError; text; images?; diff?; guard? }`; `guard` is the final review metadata returned by a guarded shell-family call | `packages/loop/src/runtime/tools/builtin/toolset.ts:44-56` |
-| `AgentToolsetOptions` | `{ workspaceRoot; canMutate; canExec; confineToWorkspace?; temporaryRoots?; skillExecutionRoots?; onTemporaryRootRegistered?; guard?; elicit?; sandbox?; secretEnvNames?; logger? }` — the entire configuration surface connecting the coding toolset to run scratch/approved skill roots, command review, elicitation and sandboxing | `packages/loop/src/runtime/tools/builtin/toolset.ts:22-43` |
+| `AgentToolsetOptions` | `{ workspaceRoot; canMutate; canExec; confineToWorkspace?; temporaryRoots?; skillExecutionRoots?; onTemporaryRootRegistered?; guard?; elicit?; sandbox?; secretEnvNames?; logger? }` — the entire configuration surface connecting the coding toolset to ordered temporary access/approved skill roots, command review, elicitation and sandboxing | `packages/loop/src/runtime/tools/builtin/toolset.ts` (`AgentToolsetOptions`) |
 | `AgentToolsAdapter` | `{ resolve(opts: AgentToolsetOptions): { defs: NamespacedTool[]; dispatch: AgentToolset["dispatch"] } }` — the injectable test seam `createAgentToolsetWithAdapter` takes in place of the real `@clarvis/tools` calls; its own doc comment calls it a "package-private seam" | `packages/loop/src/runtime/tools/builtin/toolset.ts:73-82` |
 
 `builtin/index.ts` is the barrel: it re-exports `FILE_MUTATING_TOOL_NAMES`, `agentToolCaps`,
-`agentToolsActive`, `createAgentToolset`, the `AgentToolset`/`AgentToolsetOptions` types, and the whole
+`agentToolsActive`, `createAgentToolset`, `systemTemporaryRoots`, the
+`AgentToolset`/`AgentToolsetOptions` types, and the whole
 `@clarvis/tools/guard` analyzer surface (`Guard`, `Elicit`, `analyzeShell`, dialects, etc. —
 `packages/loop/src/runtime/tools/builtin/index.ts:6-30`); the guard/analyzer surface itself belongs to [command-guard-and-approval](../execution/command-guard.md).
 `AgentToolsAdapter` is **not** re-exported through the barrel — `packages/loop/tests/unit/toolset.test.ts:4-9` imports it

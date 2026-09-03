@@ -108,6 +108,7 @@ import { WorktreeExitPrompt } from "./overlays/WorktreeExitPrompt.tsx";
 import { detachObserved } from "../core/tasks.ts";
 import { activeDiagnosticLogger } from "../core/diagnostic-events.ts";
 import { SurfaceBoundary, SurfacePortal } from "../ui/patterns/surface-lifecycle.tsx";
+import { productVersion } from "../cli-args.ts";
 
 const SafetyPresetPicker = lazy(async () => {
   const module = await import("./overlays/SafetyPresetPicker.tsx");
@@ -1001,6 +1002,7 @@ export function App(props: AppProps): JSX.Element {
   const headerPlan = createMemo(() =>
     projectHeader({
       width: dims().w - 1,
+      version: productVersion(),
       floor: layoutMode() === "floor",
       agentName: agentName(),
       model: resolvedModel(),
@@ -1271,11 +1273,29 @@ export function App(props: AppProps): JSX.Element {
     interaction.setModalContext(props.run.elicit() != null || switching ? "elicitation" : "none");
   });
 
+  const revealHistoryTail = (): void => {
+    queueMicrotask(() => {
+      const revealAfterLayout = (): void => {
+        scrollEl?.scrollBy({ x: 0, y: 1_000_000 });
+        if (!props.shell.renderer.isDestroyed) props.shell.renderer.requestRender();
+      };
+      if (historyHandle === undefined) {
+        revealAfterLayout();
+        return;
+      }
+      props.shell.renderer.once("frame", revealAfterLayout);
+      historyHandle.returnToTail();
+    });
+  };
+
   createEffect(
     on(
       () => props.run.elicit(),
-      (req) => {
-        if (req == null) return;
+      (req, previous) => {
+        if (req == null) {
+          if (previous != null) revealHistoryTail();
+          return;
+        }
         dock?.closeEditor();
         closeTransientOverlay();
         overlays.dismissTopUnlessDirty({
@@ -1284,7 +1304,7 @@ export function App(props: AppProps): JSX.Element {
             glyph("emDash") +
             " save changes or leave this view to reply",
         });
-        queueMicrotask(() => scrollEl?.scrollBy({ x: 0, y: 1_000_000 }));
+        revealHistoryTail();
       },
     ),
   );

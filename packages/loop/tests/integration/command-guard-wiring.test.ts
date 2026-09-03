@@ -62,6 +62,62 @@ function body(grants?: string[]): unknown {
 }
 
 describe("tools guard wiring", () => {
+  it.skipIf(process.platform === "win32")(
+    "preauthorizes the host temp across shell and native tools without owning its parent",
+    async () => {
+      const root = workspace();
+      const compatibleTemporaryRoot = workspace();
+      const target = join(compatibleTemporaryRoot, "generated.txt");
+      const guardedCalls: GuardContext[] = [];
+      const denyOutsideWorkspace: Guard = (ctx: GuardContext): GuardDecision => {
+        guardedCalls.push(ctx);
+        if (ctx.paths.some((path) => !path.withinWorkspace)) {
+          return { verdict: "deny", reason: "path escapes the admitted workspace" };
+        }
+        return { verdict: "allow" };
+      };
+      const llm = new MockLLM({
+        script: [
+          {
+            toolCalls: [
+              {
+                id: "c1",
+                name: "shell",
+                arguments: { command: `printf alpha > '${target}'` },
+              },
+            ],
+          },
+          {
+            toolCalls: [{ id: "c2", name: "read_file", arguments: { path: target } }],
+          },
+          { text: "done" },
+        ],
+      });
+      harness = await makeHarness({
+        llm,
+        mcpFactory: mockMCPFactory({}),
+        workspaceRoot: root,
+        agentTools: { guard: denyOutsideWorkspace },
+        env: { CLARVIS_AGENT_TOOLS_MAX_GRANT: "exec" },
+      });
+      const res = await harness.run(body(["run_commands"]));
+
+      expect(res.status).toBe("completed");
+      const calls = await toolEvents(harness, res.execution_id);
+      expect(calls.find((event) => event.mcp_name === "shell")?.error).toBeNull();
+      expect(calls.find((event) => event.mcp_name === "read_file")?.error).toBeNull();
+      const guardedToolCalls = guardedCalls.filter(
+        (ctx) => ctx.tool === "shell" || ctx.tool === "read_file",
+      );
+      expect(guardedToolCalls).toHaveLength(2);
+      expect(guardedToolCalls.every((ctx) => ctx.paths.every((path) => path.withinWorkspace))).toBe(
+        true,
+      );
+      expect(existsSync(target)).toBe(true);
+      expect(existsSync(compatibleTemporaryRoot)).toBe(true);
+    },
+  );
+
   it("shares one run-owned temporary root between shell and native tools, then removes it", async () => {
     const root = workspace();
     const executionId = "exec_run_owned_tmp";

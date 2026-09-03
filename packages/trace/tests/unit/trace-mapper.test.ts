@@ -436,6 +436,7 @@ describe("trace-mapper — in-flight started edges", () => {
           call_id: "call_abc",
           tool_name: "write_file",
           chars: 4096,
+          stream_chars: 4352,
         },
       },
     ];
@@ -448,6 +449,7 @@ describe("trace-mapper — in-flight started edges", () => {
       occurred_at: ANCHOR + 11,
       tool_name: "write_file",
       chars: 4096,
+      stream_chars: 4352,
     });
   });
 

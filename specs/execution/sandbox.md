@@ -17,8 +17,9 @@ backend for the kernel host:
 
 The non-degraded modes on both supported hosts promise the same **observable Clarvis policy**: an
 otherwise hidden host filesystem, an explicitly writable or read-only workspace, explicit read-only
-toolchain paths, a run-owned writable temporary root, no signaling or inspection of host processes,
-optional host networking, and an environment rebuilt from a small allowlist. They do not promise
+toolchain paths, a run-owned writable temporary root plus pre-authorized host system temporary
+roots, no signaling or inspection of host processes, optional host networking, and an environment
+rebuilt from a small allowlist. They do not promise
 identical kernel primitives. Bubblewrap adds mount, user, pid, ipc, and uts namespaces plus capability
 dropping; Seatbelt enforces the same file/network/process boundary with an SBPL profile but does not
 manufacture Linux namespaces. Bubblewrap's explicitly reported `host-proc` mode is the exception: it
@@ -60,17 +61,19 @@ The published subpath is `packages/tools/src/sandbox-entry.ts`.
 | `probeSandbox(deps?)` | Platform dispatcher and production probe |
 | `probeBubblewrap(deps?)` / `probeSeatbelt(deps?)` | Backend probes, also exported for host diagnostics and tests |
 | `sandboxCommand(args)` | Builds a bare, Bubblewrap, or Seatbelt spawn specification without executing it |
+| `systemTemporaryRoots(platform?, environmentTemporaryRoot?)` | Discovers existing host temp roots: environment-selected plus `/tmp` on POSIX, environment-selected only on Windows; never conveys lifecycle ownership |
 | `discoverLinkedGitMetadataPaths(workspaceRoot)` | Pins a valid linked worktree's common Git metadata root |
 | `discoverToolchains(include?)` | Resolves requested toolchain executables, install roots, and managers without executing them |
 | `forbiddenSandboxRoots()` | Shared broad-root denylist used by tools and loop host policy |
 
 Production: `packages/tools/src/sandbox.ts` (`NativeSandbox`, `SandboxProbe`, `probeSandbox`,
-`sandboxCommand`, `discoverLinkedGitMetadataPaths`, `discoverToolchains`) and
+`sandboxCommand`, `systemTemporaryRoots`, `discoverLinkedGitMetadataPaths`, `discoverToolchains`) and
 `packages/tools/src/sandbox-entry.ts`.
 
-`packages/tools/src/index.ts` re-exports only `SandboxConfig` from the package root. Hosts that need
-probes or discovery use the `./sandbox` subpath so importing the ordinary tools entry does not broaden
-the eager runtime surface.
+`packages/tools/src/index.ts` re-exports `SandboxConfig` and the lightweight
+`systemTemporaryRoots` discovery helper from the package root. Hosts that need backend probes,
+toolchains, or command construction use the `./sandbox` subpath; the loop's optional built-in tools
+adapter already loads the root and therefore does not add anything to the eager loop entry.
 
 `@clarvis/protocol` also names its settings DTO `SandboxConfig`; that type carries snake-case settings
 and toolchain fields for the wire/UI boundary. It is deliberately distinct from the tools-layer
@@ -192,10 +195,14 @@ A sandboxed command does not inherit `process.env`. `minimalEnv` creates:
   executable directories even when the host supplied a reduced `PATH`, plus each admitted runtime's
   `bin` directory;
 - `HOME=/home/clarvis` for Bubblewrap;
-- `HOME` equal to the canonical run temporary root on Seatbelt, or the canonical workspace when a
-  standalone caller supplies no temporary root;
-- `TMPDIR`, `TEMP`, and `TMP` equal to the run temporary root (Bubblewrap retains `/tmp` only when no
-  explicit root exists);
+- `HOME` equal to the canonical primary run temporary root on Seatbelt, or the canonical workspace
+  when a standalone caller supplies no temporary root;
+- `TMPDIR`, `TEMP`, and `TMP` equal to the first configured temporary root (Bubblewrap retains
+  `/tmp` only when no explicit root exists); remaining configured roots are writable compatibility
+  paths but do not replace those environment values;
+- on POSIX, `npm_config_script_shell=/bin/sh`, so npm executes lifecycle/package bins through an
+  admitted absolute shell instead of resolving bare `sh` through synthetic ancestor
+  `node_modules/.bin` entries;
 - present `LANG`, `TZ`, `TERM`, `NO_COLOR`, every `LC_*`, and explicitly named `passEnv` values.
 
 The unsandboxed path copies the host environment only after subtracting `secretEnvNames`. An
@@ -213,10 +220,14 @@ An available Bubblewrap command uses `bwrap` with:
 
 1. `--die-with-parent`, a new session, user/pid/ipc/uts namespaces, and `--cap-drop ALL`;
 2. a fresh `/proc`, or a read-only host `/proc` in `host-proc` mode;
-3. `/dev`, an isolated `/tmp`, and required system trees mounted read-only;
-4. the workspace and pinned linked-Git metadata bound according to `filesystem`;
-5. the run temporary root bound writable;
-6. validated extra/runtime roots bound read-only after the workspace so a nested read-only root wins;
+3. `/dev`, an initial isolated `/tmp`, and required system trees mounted read-only;
+4. every configured writable temporary root, including the host environment temp and POSIX `/tmp`
+   when the product loop supplied them;
+5. the workspace and pinned linked-Git metadata bound according to `filesystem`, plus the primary
+   run scratch writable;
+6. all dynamic mounts sorted broadest-to-narrowest, with equal-path precedence
+   compatibility-temp → workspace → run scratch → declared read-only, so a workspace below `/tmp`
+   remains read-only while a narrower run scratch can remain writable;
 7. `--unshare-net` for `network: "none"`, otherwise any external resolver target needed by a
    symlinked `/etc/resolv.conf`;
 8. `--chdir <cwd> -- <shell> <shell-args>`.
@@ -240,11 +251,15 @@ to the same sandbox, denies all file reads/tests/executable maps/writes, and the
 - read access to the system runtime roots needed by macOS command-line processes, including both
   authored and canonical `/etc` plus the narrow authored/canonical `var/select` and `var/db`
   toolchain-selector aliases;
-- read access to the canonical workspace, linked Git metadata, run temporary root, and declared
-  read-only/runtime roots;
+- when networking is allowed, read/test access to only the authored and canonical
+  `mDNSResponder` socket paths used by the macOS DNS resolver;
+- read access to the canonical workspace, linked Git metadata, every configured temporary root, and
+  declared read-only/runtime roots;
 - traversal metadata for ancestors of those dynamic roots;
 - writes to the workspace/Git metadata only in `workspace-write` mode;
-- writes to the run temporary root in both filesystem modes;
+- writes to the primary run temporary root in both filesystem modes;
+- writes to compatible system temporary roots, with `require-not` exclusions for a read-only
+  workspace and linked Git metadata so a workspace nested below the system temp does not reopen;
 - `/dev/null` and `/dev/zero` data/ioctl access;
 - no network operation when `network: "none"`.
 
@@ -265,6 +280,21 @@ existence checks, `xcode-select` reports a false missing-toolchain condition and
 installer despite an installed Git. The real-host canary resolves both selectors first and calls Git
 only after both safe preflights succeed, so the same regression cannot open the graphical installer
 during local tests.
+
+Host networking on macOS also depends on a filesystem object: libc's resolver reaches
+`/var/run/mDNSResponder`, whose canonical spelling is `/private/var/run/mDNSResponder`. Seatbelt's
+default file deny otherwise leaves raw-IP connections working while hostname resolution fails. The
+profile adds those two exact literals only for `network: "host"`; it does not admit the containing
+`/private/var/run` tree, and `network: "none"` receives neither literal in addition to its
+`(deny network*)` rule.
+
+Downloading is only the first half of a package bootstrap. npm executes a downloaded package with a
+shell and, when left at its boolean POSIX default, converts that shell to bare `sh`. Its run-script
+PATH prepends `node_modules/.bin` at every ancestor of the package directory. A host path Seatbelt
+intentionally hides can therefore make that name lookup return `EPERM` before it reaches the
+admitted system shell. The minimal POSIX sandbox environment fixes the equivalent default as
+`npm_config_script_shell=/bin/sh`; this changes no command semantics, adds no host read permission,
+and lets npm reach the already admitted executable directly.
 
 Production: `packages/tools/src/sandbox.ts` (`SEATBELT_SYSTEM_READ_FILTERS`, `seatbeltPolicy`,
 `sandboxCommand`). Tests: `packages/tools/tests/integration/sandbox.test.ts` (`compiles a parameterized
@@ -364,8 +394,14 @@ Linked-worktree Git metadata is discovered once while tool configuration is buil
 the immutable accepted common root is later exposed with the workspace's read/write posture. A model
 cannot retarget `.git` after configuration to gain another host mount.
 
+`systemTemporaryRoots` is the deliberate host-path exception used by the product loop. It resolves
+the host environment temp and, on POSIX, `/tmp`; missing/non-directory roots and any root whose
+authored or canonical identity is in `forbiddenSandboxRoots()` are omitted. The returned parents are
+access policy only. `createAgentToolsRunCapability` keeps a different `ownedTemporaryRoots` set for
+teardown, so discovery cannot authorize recursive cleanup of a system directory.
+
 Production: `packages/tools/src/sandbox.ts` (`forbiddenSandboxRoots`, `validateReadOnlyPath`,
-`discoverLinkedGitMetadataPaths`) and
+`discoverLinkedGitMetadataPaths`, `systemTemporaryRoots`) and
 `packages/loop/src/runtime/capabilities/sandbox-host-policy.ts` (`resolveSandboxPath`,
 `resolveSandboxHostPolicy`). Tests: `packages/tools/tests/integration/sandbox.test.ts` (broad,
 relative, containing, nested, and linked-Git cases) and
@@ -429,8 +465,9 @@ logged.
   required but unavailable`) and `packages/tools/tests/unit/observability.test.ts`.
 
 **INV-S3 — Non-degraded backends enforce the same configured host boundary.** Both allow the declared
-workspace posture and scratch root, deny undeclared host paths plus host-process signaling and
-inspection, honor read-only roots and `network: "none"`, and expose only the minimal environment.
+workspace posture, primary scratch and compatible temporary roots, deny every other undeclared host
+path plus host-process signaling and inspection, honor read-only roots and `network: "none"`, and
+expose only the minimal environment.
 Bubblewrap `host-proc` is the named process-visibility exception and is never reported as full mode.
 
 - Production: `packages/tools/src/sandbox.ts` (`sandboxCommand`, `seatbeltPolicy`, `minimalEnv`).
@@ -518,6 +555,42 @@ therefore cannot trigger platform installers, tool initialization, or user-contr
   `packages/kernel/tests/integration/sandbox-policy.test.ts` (`does not execute a discovered
   toolchain while building host inspection`).
 
+**INV-S13 — System temporary compatibility does not weaken workspace-read-only or lifecycle
+ownership.** Bubblewrap orders broad system-temp mounts before a nested workspace and narrower run
+scratch; Seatbelt excludes the workspace/Git roots from compatible-temp write filters while allowing
+the primary scratch separately. The loop never adds the system parents to its owned cleanup set.
+
+- Production: `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`, `seatbeltPolicy`,
+  `appendBubblewrapMounts`, `sandboxCommand`) and
+  `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`,
+  `ownedTemporaryRoots`).
+- Test: `packages/tools/tests/integration/sandbox.test.ts` (`keeps a temp-contained read-only
+  workspace closed while nested run scratch stays writable`, `exposes host-native temp roots without
+  reopening a temp-contained read-only workspace`) and
+  `packages/loop/tests/integration/command-guard-wiring.test.ts` (`preauthorizes the host temp across
+  shell and native tools without owning its parent`).
+
+**INV-S14 — Seatbelt host networking includes DNS without widening the runtime tree.** The host
+network profile admits the authored and canonical `mDNSResponder` socket literals; the denied-network
+profile admits neither and retains its global network deny.
+
+- Production: `packages/tools/src/sandbox.ts` (`SEATBELT_HOST_NETWORK_READ_FILTERS`,
+  `seatbeltPolicy`).
+- Test: `packages/tools/tests/integration/sandbox.test.ts` (`compiles a parameterized Seatbelt
+  profile with matching filesystem and network policy`, `downloads and executes a package bootstrap
+  inside Seatbelt`) and the macOS current-artifact TUI network canary required by the product E2E
+  matrix.
+
+**INV-S15 — A downloaded npm package can execute without widening hidden host reads.** Native POSIX
+environments select `/bin/sh` as npm's script shell, avoiding a bare-name lookup through denied
+ancestor `node_modules/.bin` candidates. The macOS canary preflights registry availability outside
+the sandbox, then requires the sandbox to download, execute, and materialize a real create-vite
+template; a second clean-cache invocation under `network: "none"` must fail.
+
+- Production: `packages/tools/src/sandbox.ts` (`minimalEnv`).
+- Test: `packages/tools/tests/integration/sandbox.test.ts` (`downloads and executes a package
+  bootstrap inside Seatbelt`).
+
 ## 6. Failure modes and degradation
 
 | Condition | Result |
@@ -525,6 +598,8 @@ therefore cannot trigger platform installers, tool initialization, or user-contr
 | Linux without usable Bubblewrap | Backend `bubblewrap`, mode `unavailable`, reason from probe |
 | macOS where `sandbox-exec` cannot apply the profile | Backend `seatbelt`, mode `unavailable`; required runs fail closed |
 | macOS system alias denied while Apple Git is installed | Policy regression: the real Git canary fails; Clarvis must not report or trigger the developer-tools fallback |
+| macOS `network: "host"` omits the resolver socket | Raw-IP connections may work while DNS/package registry access fails; the profile test and real hostname canary fail |
+| POSIX npm resolves its script shell as bare `sh` | Download/extraction can succeed, then npm exits with `spawn EPERM` while probing hidden ancestor bins; the minimal environment selects `/bin/sh` |
 | Unsupported platform | Backend `unsupported`, mode `unavailable`; no probe process |
 | Fresh `/proc` blocked but host `/proc` bind works | Available `bubblewrap` / `host-proc`, `degraded: true`, explicit reason |
 | Optional backend unavailable | Warn `tools.sandbox_unavailable`; run scrubbed bare command |
@@ -546,15 +621,18 @@ semantics remain owned by [tools-shell-and-monitor.md](tools-shell-and-monitor.m
 
 - `@clarvis/tools/sandbox` imports only `@clarvis/paths` for executable resolution plus Node/Bun host
   primitives; it does not import loop, kernel, protocol, or code.
-- `@clarvis/loop/capabilities/tools` imports the optional `@clarvis/tools/sandbox` subpath. The eager
-  loop entry stays free of tools runtime values.
+- `@clarvis/loop/capabilities/tools` reaches `systemTemporaryRoots` through its optional built-in
+  `@clarvis/tools` adapter; sandbox host-policy resolution separately imports the narrow
+  `@clarvis/tools/sandbox` subpath. The eager loop entry stays free of tools runtime values.
 - `@clarvis/kernel` imports the loop host policy and tools sandbox subpath, then projects only protocol
   DTOs.
 - `@clarvis/code` consumes `ConfigService`/protocol DTOs and never imports loop or tools sandbox
   implementation.
 
 Production: the import blocks in `packages/tools/src/sandbox.ts`,
-`packages/loop/src/capabilities-tools.ts`, `packages/kernel/src/sandbox/policy.ts`, and the code
+`packages/loop/src/runtime/capabilities/tools.ts`,
+`packages/loop/src/runtime/capabilities/sandbox-host-policy.ts`,
+`packages/kernel/src/sandbox/policy.ts`, and the code
 configuration views. The exact package edges remain generated in
 [`../package-coupling-analysis.md`](../package-coupling-analysis.md).
 
@@ -566,15 +644,17 @@ host-wide unprivileged-user-namespace restriction, proves a minimal Bubblewrap l
 enables `CLARVIS_NATIVE_SANDBOX_CANARY=1` for the full coverage suite. The macOS job runs the complete
 `@clarvis/tools` suite plus the kernel sandbox-policy integration with the same variable before its
 keyboard-policy tests. The tools canary proves on each real runner that workspace writes, read-only
-workspace, writable scratch, undeclared-path denial, process isolation, host network, denied
-network, and installed Apple Git resolution match the contract. The kernel canary additionally discovers a fixture toolchain whose
+workspace, writable scratch, compatible host-temp access, undeclared-path denial, process isolation,
+host network, denied network, and installed Apple Git resolution match the contract. The kernel canary additionally discovers a fixture toolchain whose
 entrypoint exits non-zero if launched, and requires the real backend probe while inspection still
 reports that path available without executing it. Ordinary tests pin probe branches, generated policy,
 and passive discovery.
 
 Production: `.github/workflows/ci.yml` (`jobs.linux`, `jobs.sandbox-macos`). Test:
 `packages/tools/tests/integration/sandbox.test.ts` (`enforces the native sandbox against real host
-resources`, `runs the installed Apple Git without triggering the developer-tools fallback`) and
+resources`, `exposes host-native temp roots without reopening a temp-contained read-only workspace`,
+`runs the installed Apple Git without triggering the developer-tools fallback`, `downloads and
+executes a package bootstrap inside Seatbelt`) and
 `packages/kernel/tests/integration/sandbox-policy.test.ts` (`inspects a discovered
 toolchain without executing it through the real native backend`). CI ownership and platform scope are
 specified in

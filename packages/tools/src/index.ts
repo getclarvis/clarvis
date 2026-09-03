@@ -64,6 +64,7 @@ export {
 } from "./config.ts";
 export type { RuntimeConfig, AgentToolsOptions } from "./config.ts";
 export type { SandboxConfig } from "./sandbox.ts";
+export { systemTemporaryRoots } from "./sandbox.ts";
 export {
   resolveShell,
   shellArgs,

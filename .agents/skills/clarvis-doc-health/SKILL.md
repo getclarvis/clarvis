@@ -72,6 +72,33 @@ If edits are authorized:
 
 If the request is review-only, make no edits. Return findings with file, claim, conflicting evidence, severity, and recommended disposition.
 
+## Keep the TUI product E2E inventory synchronized
+
+When this audit is used for `sync-doc`, treat the Clarvis TUI product E2E skill as a derived,
+maintained artifact. If current source, tests, or corrected documentation add, remove, rename, split,
+or materially change a user-visible TUI command, CLI entry, settings panel, key or pointer route,
+journey, integration, state, limit, failure, recovery path, or performance boundary:
+
+1. Update `.agents/skills/clarvis-tui-product-e2e/references/coverage-matrix.md` in the same change.
+2. Update `.agents/skills/clarvis-tui-product-e2e/SKILL.md` when execution, isolation, evidence,
+   severity, or completion semantics change.
+3. Update its `references/report-template.md` only when the recorded evidence or verdict schema
+   changes.
+4. Derive the update from the live command registry, settings metadata, CLI argument table, concrete
+   views, implementation and tests; do not copy a documentation list without source verification.
+5. If the skill changed, run its static inventory check and skill-creator format validator:
+
+   ```bash
+   bun .agents/skills/clarvis-tui-product-e2e/scripts/check-live-inventory.ts
+   ```
+
+These steps maintain the test instructions only. `sync-doc` does not build or launch Clarvis, open a
+PTY, execute E2E scenarios, or depend on their pass/fail results. Run the product E2E only through a
+separate request or invocation of `$clarvis-tui-product-e2e`.
+
+A documentation-only wording change that does not alter a user-visible surface needs no matrix edit,
+but still requires an explicit review of this synchronization rule.
+
 ## Validate
 
 Run checks proportional to the affected surface from the repository root:

@@ -951,6 +951,7 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
                 call_id: string;
                 tool_name: string;
                 chars: number;
+                stream_chars?: number;
                 complete?: true;
               }): void => {
                 const detail = {
@@ -959,6 +960,7 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
                   call_id: delta.call_id,
                   tool_name: delta.tool_name,
                   chars: delta.chars,
+                  ...(delta.stream_chars !== undefined ? { stream_chars: delta.stream_chars } : {}),
                   ...(delta.complete === true ? { complete: true as const } : {}),
                 };
                 if (announcedToolCalls.has(delta.call_id)) {

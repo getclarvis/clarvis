@@ -484,6 +484,15 @@ and the visible `request` signal atomically (`:27-32`). `cancelPending()` resolv
 as `CANCEL_RESULT` — used e.g. when the run itself ends while a question is still open
 (the `runManaged` `finally` block in `createRunHost`).
 
+The TUI shell treats a newly visible request as explicit navigation to the live transcript tail.
+`App` calls the active physical-history handle's `returnToTail()` before hiding the composer, then
+re-clamps the ScrollBox after both the question's mount and its later removal. A confirmation cannot
+therefore be stranded in an unmounted live tail while the screen remains anchored to older history.
+Production: `packages/code/src/views/App.tsx` (`revealHistoryTail`, elicitation effect). Test:
+`packages/code/tests/integration/app-shell-render.test.tsx` ("an elicitation returns an old reader to
+the live tail before hiding the composer"). The physical-history contract is owned by
+[hosts/code-transcript-stability.md](../hosts/code-transcript-stability.md) (INV-TP34).
+
 `kernel-run-client.ts`'s `wireElicit` (`packages/code/src/adapters/kernel-run-client.ts:296-319`) is the piece that turns a protocol
 `ElicitationRequest` into the `ElicitRequestParams` the slot/block consume, and turns the UI's
 `ElicitResult` back into an `ElicitationResponse` sent via `handle.respond`. If the host's own

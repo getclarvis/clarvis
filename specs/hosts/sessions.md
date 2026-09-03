@@ -574,7 +574,11 @@ currently-selected plan provider differs from `plan_ref.provider_key`.
 The engine trace (read on rehydration, mapped by `engineEventToProto`,
 `packages/kernel/src/runs/map-events.ts:389`) and the loop's capability channel (live-only, mapped
 by `capabilityEventToProto`, `packages/kernel/src/runs/map-events.ts:335`) are two distinct sources a client receives events
-from; **rehydration reads only the persisted trace**, per the doc remark on `engineEventToProto`
+from; **rehydration reads only the persisted trace and then applies `RUN_EVENT_POLICY`
+durability**, per `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts`. This second filter
+matters because the loop may retain one first `tool_input_delta` announcement per provider attempt
+as a bounded raw diagnostic breadcrumb; it must not return to the TUI as an eternally composing tool
+after restart. The doc remark on `engineEventToProto`
 ("any event a rehydrated session must show has to be mapped here, since rehydration reads only the
 persisted trace", `packages/kernel/src/runs/map-events.ts:378-379`). Concretely, in this repository's `code` client:
 
@@ -869,6 +873,12 @@ continuation base.
     behavior directly; it is asserted only by the production doc comments cited. (A dedicated test
     for `store.ts`'s `endReconcile` plan-retention logic may exist under a differently-named test
     file outside this document's scope — see §8.)
+
+17a. **A raw diagnostic tool-input announcement never becomes a rehydrated session event.** The
+    kernel filters every mapped stored event against `RUN_EVENT_POLICY`, whose `tool_input_delta`
+    entry is `live_only`; this prevents an interrupted argument stream from recreating a stale
+    composing row. Production: `rehydrateEvents` in `packages/kernel/src/runs/map-result.ts`. Test:
+    `packages/kernel/tests/unit/observability.test.ts` (`runs.rehydrated`).
 
 18. **A failed turn's `{ code, message }` survives the code adapter, transport, and disk round trip,
     while malformed persisted error values are ignored; the producer masks and bounds the message

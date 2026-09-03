@@ -74,6 +74,46 @@ describe("withCallLogging — pending watchdog", () => {
     expect(warn.mock.calls.length).toBe(warnsBefore);
   });
 
+  it("reports recent streaming progress instead of claiming the provider never responded", async () => {
+    vi.useFakeTimers({ now: 1_000 });
+    const { logger, warn } = fakeLogger();
+    let callParams: LLMCallParams | undefined;
+    let resolveInner: (r: LLMCallResult) => void = () => {};
+    const wrapped = withCallLogging(
+      {
+        call: (received) => {
+          callParams = received;
+          return new Promise<LLMCallResult>((resolve) => (resolveInner = resolve));
+        },
+      },
+      logger,
+    );
+
+    const pending = wrapped.call(
+      freshParams({ onStreamDelta: () => {}, onToolInputDelta: () => {} }),
+    );
+    await vi.advanceTimersByTimeAsync(19_500);
+    callParams!.onStreamDelta?.({ channel: "text", text: "working", reset: false });
+    callParams!.onToolInputDelta?.({
+      call_id: "call-1",
+      tool_name: "write_file",
+      chars: 48_147,
+    });
+    await vi.advanceTimersByTimeAsync(500);
+
+    const record = recordFor(warn, "llm.call.pending");
+    expect(record).toMatchObject({ stream_started: true, last_progress_ms: 500 });
+    const call = warn.mock.calls.find(
+      (entry) => (entry[0] as { event?: string }).event === "llm.call.pending",
+    );
+    expect(call?.[1]).toContain("still streaming");
+
+    resolveInner({
+      usage: { input_tokens: 1, output_tokens: 1, cached_tokens: 0, cache_write_tokens: 0 },
+    });
+    await pending;
+  });
+
   it("reports the failure and re-throws when the inner call rejects", async () => {
     const { logger, warn } = fakeLogger();
     const boom = new Error("provider exploded");

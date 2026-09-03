@@ -224,6 +224,7 @@ export function snapshotTranscriptNode(
     delete base.error;
     delete base.liveOutput;
     delete base.inputChars;
+    delete base.inputComplete;
     delete base.dehydrated;
     delete base.hydrationNotice;
     return deepFreeze({

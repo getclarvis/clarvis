@@ -424,7 +424,11 @@ function clampOutputBudget(
 function buildModelCall(
   core: LoopCore,
   d: LoopDerived,
-  retryCtx: { iteration: number; traceIdFields: { subagent_instance_id?: string } },
+  retryCtx: {
+    iteration: number;
+    traceIdFields: { subagent_instance_id?: string };
+    onRetry?: () => void;
+  },
 ): LLMCallParams {
   const { target, runtime, clock } = core;
   const supportsToolCalling = target.capabilities?.has("tool_calling") ?? true;
@@ -457,6 +461,7 @@ function buildModelCall(
     ...(target.maxRetries !== undefined ? { maxRetries: target.maxRetries } : {}),
     ...(target.maxRetryAfterMs !== undefined ? { maxRetryAfterMs: target.maxRetryAfterMs } : {}),
     onRetry: (info): void => {
+      retryCtx.onRetry?.();
       clock?.poke();
       runtime.trace.record("model_call_retry", {
         agent: core.agent,
@@ -464,6 +469,7 @@ function buildModelCall(
         iteration: retryCtx.iteration,
         model: target.model,
         kind: info.kind,
+        message: info.message,
         attempt: info.attempt,
         max_retries: info.maxRetries,
         delay_ms: info.delayMs,
@@ -920,6 +926,8 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
 
       await d.drainSteer?.(iteration);
 
+      const announcedToolCalls = new Set<string>();
+
       const withStreaming = (call: LLMCallParams): LLMCallParams =>
         target.stream === false
           ? call
@@ -943,16 +951,29 @@ export async function runAgentLoop(core: LoopCore, d: LoopDerived): Promise<Agen
                 call_id: string;
                 tool_name: string;
                 chars: number;
-              }): void =>
-                trace.signal("tool_input_delta", {
+                complete?: true;
+              }): void => {
+                const detail = {
                   agent: core.agent,
                   ...traceIdFields,
                   call_id: delta.call_id,
                   tool_name: delta.tool_name,
                   chars: delta.chars,
-                }),
+                  ...(delta.complete === true ? { complete: true as const } : {}),
+                };
+                if (announcedToolCalls.has(delta.call_id)) {
+                  trace.signal("tool_input_delta", detail);
+                } else {
+                  announcedToolCalls.add(delta.call_id);
+                  trace.record("tool_input_delta", detail);
+                }
+              },
             };
-      const retryCtx = { iteration, traceIdFields };
+      const retryCtx = {
+        iteration,
+        traceIdFields,
+        onRetry: (): void => announcedToolCalls.clear(),
+      };
       const baseCall = buildModelCall(core, d, retryCtx);
       const streamingCall = withStreaming(baseCall);
       const forcedChoice = d.takeForcedChoice?.();

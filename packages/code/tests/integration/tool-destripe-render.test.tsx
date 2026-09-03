@@ -128,8 +128,8 @@ test("a composing call keeps its progress label separate from the tool name", as
     inputChars: 0,
   };
   const rows = await frame(() => <BlockView node={composing} />);
-  expect(rows[1]).toContain("transition_plan_task starting…");
-  expect(rows[1]).not.toContain("taskstarting");
+  expect(rows[1]).toContain("transition_plan_task receiving arguments… 0 chars");
+  expect(rows[1]).not.toContain("taskreceiving");
 });
 
 test("an expanded body renders only its curated result under the header", async () => {

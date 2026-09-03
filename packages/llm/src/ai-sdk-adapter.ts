@@ -20,7 +20,6 @@ import type {
   ResolvedProviderConfig,
 } from "@clarvis/capability";
 import { levelEnabled, NOOP_LOGGER, ProviderError } from "@clarvis/capability";
-import { classifyProviderError } from "./classify-provider-error.ts";
 import { toModelMessages } from "./to-model-messages.ts";
 import { openAICompatibleSettings, resolveConfiguredHeaders } from "./openai-compatible-request.ts";
 import { makeDeltaBatcher, makeToolInputReporter } from "./ai-sdk/streaming.ts";
@@ -33,9 +32,11 @@ import {
   DEFAULT_PROVIDER_MAX_SSE_EVENT_BYTES,
 } from "./ai-sdk/bounded-fetch.ts";
 import {
+  ModelCallInactivityError,
   modelCallTimeoutBridgeOf,
   type ModelCallTimeoutBridge,
 } from "./model-call-timeout-bridge.ts";
+import { streamMetrics } from "./stream-metrics.ts";
 
 /**
  * Test and host seams for {@link AiSdkAdapter}: override how API keys are looked
@@ -104,32 +105,57 @@ function hostOf(baseUrl: string | undefined): string | undefined {
 }
 
 /**
- * Derives the effective abort signal for a call, layering a per-call timeout over
- * the caller's parent signal.
+ * Derives the effective abort signal for a call, layering a per-call inactivity
+ * timeout over the caller's parent signal.
  *
  * @returns `signal` (the parent when no positive timeout is set, else the two
  *   `AbortSignal.any`-combined), `timedOut()` reporting whether the timeout —
- *   rather than the parent — fired, and `cleanup()` to clear the timer.
+ *   rather than the parent — fired, `markActivity()` to reset the idle window,
+ *   and `cleanup()` to clear the timer.
+ * @remarks Activity only updates one timestamp. The single armed timer checks
+ *   that timestamp and re-arms itself at most once per timeout window, so a
+ *   high-rate provider stream does not allocate one timer per delta.
  */
 function timeoutAbort(
   timeoutMs: number | undefined,
   parent: AbortSignal | undefined,
   bridge: ModelCallTimeoutBridge | undefined,
-): { signal: AbortSignal | undefined; timedOut: () => boolean; cleanup: () => void } {
+): {
+  signal: AbortSignal | undefined;
+  timedOut: () => boolean;
+  markActivity: () => void;
+  cleanup: () => void;
+} {
   if (!timeoutMs || timeoutMs <= 0) {
-    return { signal: parent, timedOut: () => false, cleanup: () => {} };
+    return {
+      signal: parent,
+      timedOut: () => false,
+      markActivity: () => {},
+      cleanup: () => {},
+    };
   }
   const ctrl = new AbortController();
   let did = false;
-  const timer = setTimeout(() => {
+  let lastActivityAt = Date.now();
+  let timer: ReturnType<typeof setTimeout>;
+  const expire = (): void => {
+    const remaining = timeoutMs - (Date.now() - lastActivityAt);
+    if (remaining > 0) {
+      timer = setTimeout(expire, remaining);
+      return;
+    }
     did = true;
     ctrl.abort(bridge?.markTimedOut(timeoutMs));
-  }, timeoutMs);
+  };
+  timer = setTimeout(expire, timeoutMs);
   const unregisterCleanup = bridge?.registerCleanup(() => clearTimeout(timer));
   const signal = parent ? AbortSignal.any([parent, ctrl.signal]) : ctrl.signal;
   return {
     signal,
     timedOut: () => did,
+    markActivity: () => {
+      if (!did) lastActivityAt = Date.now();
+    },
     cleanup: () => {
       clearTimeout(timer);
       unregisterCleanup?.();
@@ -418,7 +444,7 @@ export class AiSdkAdapter implements LLMProvider {
    * @returns the normalized result once the stream is fully drained (or the
    *   generation resolves).
    * @throws {@link ProviderError} for a missing `providerConfig`, a per-call
-   *   timeout (kind from {@link classifyProviderError}), a surfaced stream error,
+   *   timeout ({@link ModelCallInactivityError}), a surfaced stream error,
    *   or any transport/API failure normalized via {@link toProviderError}.
    * @remarks Streaming aggregate promises are pre-attached with swallowing
    *   `catch`es so a stream error surfaces through the loop rather than as an
@@ -440,7 +466,7 @@ export class AiSdkAdapter implements LLMProvider {
       params.promptCacheKey,
     );
     const timeoutMs = params.timeoutMs ?? this.defaultTimeoutMs;
-    const { signal, timedOut, cleanup } = timeoutAbort(
+    const { signal, timedOut, markActivity, cleanup } = timeoutAbort(
       timeoutMs,
       params.signal,
       modelCallTimeoutBridgeOf(params),
@@ -515,6 +541,7 @@ export class AiSdkAdapter implements LLMProvider {
        */
       const firstOutput = (channel: string): void => {
         outputObserved = true;
+        modelCallTimeoutBridgeOf(params)?.markStreamStarted();
         this.logger.debug(
           {
             event: "llm.stream.first_token",
@@ -530,12 +557,17 @@ export class AiSdkAdapter implements LLMProvider {
         ...callArgs,
         output: nonRetainingTextOutput,
         onError: ({ error }) => {
+          markActivity();
           streamError ??= error;
         },
         onStepEnd: (step) => {
+          markActivity();
+          streamMetrics().count("sdk_step_end");
           partialUsage = step.usage;
         },
         onEnd: (event) => {
+          markActivity();
+          streamMetrics().count("sdk_on_end");
           aggregate = event;
           partialUsage = event.usage;
         },
@@ -546,6 +578,7 @@ export class AiSdkAdapter implements LLMProvider {
         ? makeToolInputReporter(params.onToolInputDelta)
         : undefined;
       for await (const part of result.stream) {
+        markActivity();
         if (part.type === "text-start" || part.type === "text-end") {
           retainTextPart(part.id, "", part.providerMetadata);
         } else if (part.type === "text-delta") {
@@ -565,13 +598,20 @@ export class AiSdkAdapter implements LLMProvider {
           if (!outputObserved) firstOutput("tool_input");
           toolInput?.end(part.id);
         } else if (part.type === "finish-step") {
+          streamMetrics().count("provider_finish_step");
           partialUsage = part.usage;
         } else if (part.type === "finish") {
+          streamMetrics().count("provider_finish");
           partialUsage = part.totalUsage;
         } else if (part.type === "tool-call" || part.type === "file" || part.type === "source") {
+          streamMetrics().count(`provider_${part.type}`);
           if (!outputObserved) firstOutput(part.type === "tool-call" ? "tool_call" : part.type);
-        } else if (part.type === "error") streamError ??= part.error;
+        } else if (part.type === "error") {
+          streamMetrics().count("provider_error");
+          streamError ??= part.error;
+        }
       }
+      streamMetrics().count("stream_drained");
       batcher.flush();
 
       if (streamError !== undefined) {
@@ -580,19 +620,17 @@ export class AiSdkAdapter implements LLMProvider {
           ...(partialUsage !== undefined ? { partialUsage: normalizeUsage(partialUsage) } : {}),
         };
         /**
-         * The timeout has to be recognised *here*. Wrapping unconditionally
-         * would produce a `ProviderError`, which the outer catch rethrows
-         * verbatim — so the `timedOut()` branch below would never see a
-         * timed-out stream, and the abort's own message matches no network
-         * signal, classifying a retryable timeout as a permanent `client`
-         * fault.
+         * Recognise the timeout before generic provider mapping so it keeps the
+         * explicit inactivity subtype and the attempt evidence accumulated by
+         * this stream. The outer catch repeats this for async throws that bypass
+         * the structured stream-error part.
          */
-        if (timedOut()) {
-          const c = classifyProviderError({ timedOut: true });
-          throw new ProviderError(`Model call exceeded the per-call timeout of ${timeoutMs}ms.`, {
-            kind: c.kind,
-            ...attemptCost,
-          });
+        if (timeoutMs !== undefined && timedOut()) {
+          throw new ModelCallInactivityError(
+            timeoutMs,
+            attemptCost.streamStarted,
+            attemptCost.partialUsage,
+          );
         }
         throw toProviderError(streamError, attemptCost, this.logger);
       }
@@ -644,18 +682,18 @@ export class AiSdkAdapter implements LLMProvider {
         ? { ...withRetainedText, billing_source: "subscription" }
         : withRetainedText;
     } catch (err) {
-      if (err instanceof ProviderError) throw err;
       const attemptCost = {
         streamStarted: outputObserved || batcher?.emitted() === true,
         ...(partialUsage !== undefined ? { partialUsage: normalizeUsage(partialUsage) } : {}),
       };
-      if (timedOut()) {
-        const c = classifyProviderError({ timedOut: true });
-        throw new ProviderError(`Model call exceeded the per-call timeout of ${timeoutMs}ms.`, {
-          kind: c.kind,
-          ...attemptCost,
-        });
+      if (timeoutMs !== undefined && timedOut()) {
+        throw new ModelCallInactivityError(
+          timeoutMs,
+          attemptCost.streamStarted,
+          attemptCost.partialUsage,
+        );
       }
+      if (err instanceof ProviderError) throw err;
       throw toProviderError(err, attemptCost, this.logger);
     } finally {
       batcher?.dispose();

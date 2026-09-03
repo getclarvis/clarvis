@@ -323,6 +323,11 @@ function capKinded(e: KindedDetail): unknown {
       const message = truncate(d.message, RESULT_MAX);
       return message === d.message ? d : { ...d, message };
     }
+    case "model_call_retry": {
+      const d = e.detail;
+      const message = truncate(d.message, RESULT_MAX);
+      return message === d.message ? d : { ...d, message };
+    }
     case "model_reasoning": {
       const d = e.detail;
       const text = truncate(d.text, RESULT_MAX);

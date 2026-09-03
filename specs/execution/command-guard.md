@@ -1142,6 +1142,15 @@ rules use `answerer: "policy"`; an unavailable review channel uses
 `packages/tools/tests/integration/guard-dispatch.test.ts`, and
 `packages/loop/tests/integration/command-guard-wiring.test.ts`.
 
+That structured distinction also controls convergence. A policy, judge, session, unavailable-channel
+or human refusal is a pre-execution `denied` outcome, not a failing tool execution: the transcript and
+trace retain the error, while the loop breaks the active execution-failure and successful-result
+repetition streaks. This prevents review decisions from exhausting `tool_failure_loop`; actual handler,
+schema, unknown-tool, and MCP errors still count. Production: `executeAgentToolCall` and
+`createConvergenceGuards` in `@clarvis/loop`. Test:
+`packages/loop/tests/integration/command-guard-wiring.test.ts` (`policy and human denials do not
+accumulate as execution failures`).
+
 ---
 
 ## 7. Coupling

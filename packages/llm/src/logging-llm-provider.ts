@@ -88,6 +88,32 @@ export function withCallLogging(inner: LLMProvider, logger: Logger): LLMProvider
       };
       let inputChars: number | undefined;
       const chars = (): number => (inputChars ??= approxInputChars(params.messages));
+      let streamStartedAt: number | undefined;
+      let lastProgressAt: number | undefined;
+      const markProgress = (): void => {
+        const now = Date.now();
+        streamStartedAt ??= now;
+        lastProgressAt = now;
+      };
+      const observedParams: LLMCallParams = {
+        ...params,
+        ...(params.onStreamDelta !== undefined
+          ? {
+              onStreamDelta: (delta): void => {
+                markProgress();
+                params.onStreamDelta?.(delta);
+              },
+            }
+          : {}),
+        ...(params.onToolInputDelta !== undefined
+          ? {
+              onToolInputDelta: (delta): void => {
+                markProgress();
+                params.onToolInputDelta?.(delta);
+              },
+            }
+          : {}),
+      };
 
       const startedAt = Date.now();
       if (wantsDebug) {
@@ -99,21 +125,27 @@ export function withCallLogging(inner: LLMProvider, logger: Logger): LLMProvider
 
       const pending = wantsWarn
         ? setInterval(() => {
+            const now = Date.now();
+            const streamStarted = streamStartedAt !== undefined;
             logger.warn(
               {
                 event: "llm.call.pending",
                 ...meta,
                 input_chars: chars(),
-                elapsed_ms: Date.now() - startedAt,
+                elapsed_ms: now - startedAt,
+                stream_started: streamStarted,
+                ...(lastProgressAt !== undefined ? { last_progress_ms: now - lastProgressAt } : {}),
               },
-              "the provider has not responded yet; the run stays blocked until it does",
+              streamStarted
+                ? "the provider is still streaming; the run is waiting for the final result"
+                : "the provider has not responded yet; the run stays blocked until it does",
             );
           }, PENDING_WARN_INTERVAL_MS)
         : undefined;
       pending?.unref?.();
 
       try {
-        const result = await inner.call(params);
+        const result = await inner.call(observedParams);
         const duration_ms = Date.now() - startedAt;
         const slow = duration_ms >= SLOW_CALL_WARN_MS;
         if (slow ? wantsWarn : wantsDebug) {

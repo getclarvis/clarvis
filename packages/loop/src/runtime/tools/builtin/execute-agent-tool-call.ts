@@ -144,7 +144,11 @@ export async function executeAgentToolCall(
   });
 
   if (!signal?.aborted) {
-    guards.record(`${call.name}:${safeStringify(call.arguments)}`, text, errText !== null);
+    guards.record(
+      `${call.name}:${safeStringify(call.arguments)}`,
+      text,
+      guard?.outcome === "denied" ? "denied" : errText !== null,
+    );
   }
 
   return { resultText: text, errText, productive, ...(images ? { images } : {}) };

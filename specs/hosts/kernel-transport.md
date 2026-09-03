@@ -351,6 +351,12 @@ The complete discriminator list: `run_started`, `run_ended`, `iteration_started`
 `mcp_degraded` (`RUN_EVENT_SCHEMAS`). *Which* events exist and why belongs to
 **kernel-run-service-and-events**.
 
+The strict `tool_input_delta` schema admits cumulative `chars` plus only the literal optional
+`complete: true`. That flag closes argument composition; it does not stand in for
+`tool_call_started` or terminal `tool_call`, and another call beginning says nothing about the first
+because their streams may interleave. Production: `RUN_EVENT_SCHEMAS.tool_input_delta`. Test:
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
+
 ## 4. Behavior
 
 ### 4.1 Connect and handshake (`connectKernelClient`)
@@ -773,6 +779,10 @@ Production: `packages/kernel/src/transport/stdio.ts:49-61` (`satisfies Record<Ke
 Production: `RUN_EVENT_SCHEMAS` in `packages/kernel/src/transport/run-event-codec.ts`
 (`satisfies Record<RunEvent["type"], z.ZodType>`). Compile-time
 only — it constrains the **keys**, not the payload shape (see §8).
+
+**INV-T3b.** `tool_input_delta.complete`, when present, is exactly `true`; extra lifecycle fields are
+rejected by the strict codec. Production: `RUN_EVENT_SCHEMAS.tool_input_delta`. Test:
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 **INV-T3a.** The workflow checkpoint event is strict on both keys and values: its status is one of
 the six protocol states; revision, pass and count fields are non-negative integers; the lifetime

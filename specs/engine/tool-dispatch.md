@@ -350,6 +350,18 @@ fabricated-empty arguments, the model being told what actually arrived, the trac
 arrived preview, and the distinct-signature rule above) — a 304-line file dedicated to this behavior,
 covering `executeAgentToolCall` (`:64-191`) and `executeMcpToolCall` (`:193-304`).
 
+For a schema-valid built-in call, convergence classification uses the structured review rather than
+the serialized error text alone: `guard.outcome === "denied"` records the `"denied"` disposition;
+otherwise `errText !== null` records a genuine execution failure and `null` records success. A denial
+therefore remains visible as an error result/trace event but breaks, rather than increments, the
+execution-failure streak. The doom guard does not make a threshold irrevocable until `runAgentLoop`
+observes it after the whole dispatch, so a later success in the model-declared call order can reset a
+crossing reached earlier in the same batch. Production: `executeAgentToolCall`,
+`createConvergenceGuards`, and `createDoomLoopGuard`. Tests:
+`packages/loop/tests/integration/command-guard-wiring.test.ts`,
+`packages/loop/tests/integration/doom-loop-lead.test.ts`, and
+`packages/loop/tests/unit/doom-loop-guard.test.ts`.
+
 ### 4.5 Building the two dispatch handlers and their ordering (context in `runtime/loop/run-agent.ts`)
 
 `buildMcpHandler` (`packages/loop/src/runtime/loop/mcp-handler.ts:24-63`) wraps `executeMcpToolCall` as a `ToolHandler` whose

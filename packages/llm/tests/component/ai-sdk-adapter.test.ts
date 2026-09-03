@@ -256,6 +256,17 @@ describe("AiSdkAdapter — timeout, signals and error seam", () => {
     });
   });
 
+  it("keeps a zero timeout disabled when the provider fails", async () => {
+    mockGenerate.mockRejectedValueOnce(new Error("transport failed"));
+
+    const failure = (await adapter()
+      .call(params({ timeoutMs: 0 }))
+      .catch((error: unknown) => error)) as ProviderError;
+    expect(failure).toBeInstanceOf(ProviderError);
+    expect(failure.message).not.toContain("per-call timeout");
+    expect(lastArgs().abortSignal).toBeUndefined();
+  });
+
   it("lets admission observe the adapter's default timeout and release a cooperative permit", async () => {
     vi.useFakeTimers({ now: 1_000 });
     mockGenerate.mockImplementation((async (args: { abortSignal?: AbortSignal }) => {

@@ -164,6 +164,6 @@ test("a generic composing batch has one compact progress row and no empty signat
   const out = await frame(nodes, false);
   expect(out).toContain("read_file");
   expect(out).toContain("x2");
-  expect(out).toContain("starting…");
+  expect(out).toContain("receiving arguments… 360 chars");
   expect(out).not.toContain("()\n");
 });

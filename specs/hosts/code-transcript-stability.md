@@ -146,8 +146,8 @@ Semantic members never change. A batch is semantically sealed as soon as it is a
 measurement is not a store transition and cannot delay later semantic batches. The compatibility
 fields remain until their consumers are removed, but no production path uses them as a physical
 readiness signal. Tool snapshots contain the bounded result of
-`projectTranscriptToolDisplay`, not raw arguments/results. `liveOutput`, `inputChars`, `dehydrated`
-and `hydrationNotice` are absent rather than present with `undefined`. Sub-agent terminal artifacts
+`projectTranscriptToolDisplay`, not raw arguments/results. `liveOutput`, `inputChars`,
+`inputComplete`, `dehydrated` and `hydrationNotice` are absent rather than present with `undefined`. Sub-agent terminal artifacts
 are reserved before mutable hydration retention can discard them.
 
 ### 3.3 Physical markers and layout epochs
@@ -265,9 +265,9 @@ The full-screen implementation follows the supported components instead:
 | `text_delta`                                                                                                               | patch assistant frontier candidate                                                                                         | never directly                                                                                                                   |
 | `reasoning`                                                                                                                | patch settled iteration reasoning candidate                                                                                | with `iteration_completed`                                                                                                       |
 | `iteration_completed`                                                                                                      | replace streamed text with authoritative `response`                                                                        | commentary now; final/unphased answer follows §4.2                                                                               |
-| `model_retry`                                                                                                              | retry status/countdown in the frontier                                                                                     | never                                                                                                                            |
+| `model_retry`                                                                                                              | remove composing placeholders from the failed attempt, then show retry status/countdown in the frontier                  | never                                                                                                                            |
 | `model_error`                                                                                                              | terminal iteration error candidate                                                                                         | with iteration or final sweep                                                                                                    |
-| `tool_input_delta`, `tool_call_started`, `tool_output_delta` for an admitted ordinary tool                                 | one mutable tool candidate/tail                                                                                            | never directly                                                                                                                   |
+| `tool_input_delta`, `tool_call_started`, `tool_output_delta` for an admitted ordinary tool                                 | one mutable tool candidate/tail; cumulative input stays composing until explicit `complete: true`, then pending until actual start | never directly                                                                                                                   |
 | `tool_call` for an admitted ordinary tool                                                                                  | reserve bounded terminal snapshot immediately                                                                              | after group closure                                                                                                              |
 | any composing/started/output/terminal tool event for a Lead-owned supervision or workflow-orchestration identity           | suppress before frontier creation/staging                                                                                  | none; no transient or terminal Lead row                                                                                          |
 | `delegation_created`                                                                                                       | register child semantics and Sidebar/footer state; the first delegation may open/reveal Agents once for this execution     | append one friendly frozen Lead-owned `spawned` marker                                                                           |
@@ -936,6 +936,14 @@ delimiters remain hidden. Production: `StableMarkdown` (`liveHeightFloor`) and `
 (`geometryEpoch`). Test:
 `packages/code/tests/integration/transcript-scrollbox-render.test.tsx` ("bottom-following streaming
 Markdown never gives rows back when parsing conceals syntax").
+
+**INV-TP33.** Tool-argument progress remains a single mutable frontier node and never enters a
+publication batch. Frozen tool snapshots strip both `inputChars` and `inputComplete`; retry removes
+the failed attempt's placeholder. Production: `snapshotTranscriptNode` and `TRANSCRIPT_EVENT_POLICY`
+in `packages/code/src/adapters/transcript-publication.ts`, plus `openRun` in
+`packages/code/src/adapters/store.ts`. Tests:
+`packages/code/tests/unit/transcript-publication.test.ts` and
+`packages/code/tests/unit/streaming-delta.test.ts`.
 
 ## 6. Failure modes and degradation
 

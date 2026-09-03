@@ -121,6 +121,7 @@ export type BuiltinTraceEvent =
       occurred_at: number;
       tool_name: string;
       chars: number;
+      complete?: true;
     }
   | {
       type: "subagent_iteration_started";
@@ -269,11 +270,11 @@ export type BuiltinTraceEvent =
       occurred_at: number;
       model: string;
       kind: FailureKind;
+      message: string;
       status?: number;
       retry_after_ms?: number;
       /** Whether the failed attempts' tokens could be read and charged. */
       usage_attributed?: boolean;
-      message: string;
     }
   | {
       /**
@@ -315,6 +316,7 @@ export type BuiltinTraceEvent =
       occurred_at: number;
       model: string;
       kind: FailureKind;
+      message: string;
       status?: number;
       retry_after_ms?: number;
       attempt: number;

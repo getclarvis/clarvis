@@ -389,7 +389,7 @@ test("an unattributable subagent delta is dropped rather than spliced into anoth
   expect(asst[0]!.text).toBe("lead words");
 });
 
-const inputDelta = (callId: string, tool: string, chars: number): RunEvent =>
+const inputDelta = (callId: string, tool: string, chars: number, complete = false): RunEvent =>
   ev({
     type: "tool_input_delta",
     agent: "lead",
@@ -397,6 +397,7 @@ const inputDelta = (callId: string, tool: string, chars: number): RunEvent =>
     at: 4,
     tool: tool,
     chars,
+    ...(complete ? { complete: true } : {}),
   });
 
 const callStarted = (callId: string, tool: string, args: Record<string, unknown>): RunEvent =>
@@ -478,6 +479,29 @@ test("the composing node tracks the growing payload without duplicating itself",
   expect(store.nodes.filter((n) => n.kind === "tool_call")[0]).toMatchObject({ inputChars: 4096 });
 });
 
+test("tool-input end marks arguments ready until the real tool call starts", () => {
+  const { store, apply } = driver();
+  apply(inputDelta("c1", "write_file", 4096));
+  apply(inputDelta("c1", "write_file", 8192, true));
+
+  let node = store.nodes.find((n) => n.kind === "tool_call")!;
+  expect(node).toMatchObject({ status: "pending", inputChars: 8192, inputComplete: true });
+
+  apply(inputDelta("c2", "read_file", 0));
+  node = store.nodes
+    .filter((n) => n.kind === "tool_call")
+    .find((n) => n.toolName === "write_file")!;
+  expect(node).toMatchObject({ status: "pending", inputChars: 8192, inputComplete: true });
+
+  apply(callStarted("c1", "write_file", { path: "src/App.tsx" }));
+  node = store.nodes
+    .filter((n) => n.kind === "tool_call")
+    .find((n) => n.toolName === "write_file")!;
+  expect(node).toMatchObject({ status: "running", args: { path: "src/App.tsx" } });
+  expect(node.inputChars).toBeUndefined();
+  expect(node.inputComplete).toBeUndefined();
+});
+
 test("the real call reconciles onto the placeholder instead of leaving it empty", () => {
   // `upsert` only runs its factory when the node is absent, so without an
   // explicit patch the placeholder's empty args would survive the real call.
@@ -535,6 +559,29 @@ test("a placeholder the trace never confirms does not outlive the model call", (
 
   apply(leadIterationStarted(2));
   expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(0);
+});
+
+test("a retry drops composing placeholders from the failed provider attempt", () => {
+  const { store, apply } = driver();
+  apply(inputDelta("c1", "write_file", 48_147));
+
+  apply(
+    ev({
+      type: "model_retry",
+      agent: "lead",
+      iteration: 1,
+      at: 180_000,
+      kind: "transient",
+      attempt: 1,
+      max_retries: 3,
+      delay_ms: 1_000,
+    }),
+  );
+
+  expect(store.nodes.filter((n) => n.kind === "tool_call")).toHaveLength(0);
+  expect(store.nodes).toContainEqual(
+    expect.objectContaining({ kind: "annotation", text: expect.stringContaining("retrying") }),
+  );
 });
 
 test("Lead-owned orchestration tools never create composing, started, or terminal nodes", () => {

@@ -163,7 +163,7 @@ never create composing, started, or terminal nodes").
 | `MEASURE_MAX_COLS` | `110` | `:54` |
 | `capitalize(s)` | `string` | `:74` |
 | `taskTone(status)` | `ToneStyle` | `:79` |
-| `composingLabel(_chars)` | always `"starting" + ellipsis` | `:151` |
+| `composingLabel(chars, complete?)` | cumulative `"receiving arguments… N chars"` or final `"arguments ready · N chars"` | `packages/code/src/views/blocks.tsx` |
 | `railColor(node)` | `string` | `:163` |
 | `agentGlyph(status)` | `string` | `:239` |
 | `BlockView(props)` | the one transcript block component | `:563` |
@@ -245,7 +245,7 @@ elapsedMs? }` (`packages/code/src/core/transcript/types.ts:18`).
 | `kind` | Extra fields | Line |
 |---|---|---|
 | `user` / `assistant` / `reasoning` / `thinking` | `text`, `assistantPhase?`, `sourceExecutionId?`, `sourceTextFingerprint?`, `textTruncated?`, `proseReleased?`, `textEpoch?` | `packages/code/src/core/transcript/types.ts` |
-| `tool_call` | `text`, `mcpName?`, `toolName?`, `args?`, `result?`, `diff?`, `error?`, `warn?`, `guard?`, `liveOutput?`, `inputChars?`, `dehydrated?`, `hydrationNotice?`, `signature?`, `mutation?` | `packages/code/src/core/transcript/types.ts` |
+| `tool_call` | `text`, `mcpName?`, `toolName?`, `args?`, `result?`, `diff?`, `error?`, `warn?`, `guard?`, `liveOutput?`, `inputChars?`, `inputComplete?`, `dehydrated?`, `hydrationNotice?`, `signature?`, `mutation?` | `packages/code/src/core/transcript/types.ts` |
 | `run` | `text`, `reason?`, `toolCalls?`, `inputTokens?`, `outputTokens?` | `packages/code/src/core/transcript/types.ts:103` |
 | `subagent` | `text`, `title?`, `reason?`, `toolCalls?`, `inputTokens?`, `outputTokens?` | `packages/code/src/core/transcript/types.ts:113` |
 | `plan` | `text`, `planTitle?`, `planStatus?`, `planReview?`, `planRemoved?`, `planDiscarded?`, `tasks?`, `revision?` | `packages/code/src/core/transcript/types.ts:124` |
@@ -736,7 +736,7 @@ composer-adjacent activity line or the two typed delegation lifecycle markers.
 | `hiddenLines()` | `hiddenBodyLines(...)` only when collapsed, not errored, and there is no diff chip | `:270` |
 | `hasBody()` | `showBody && status !== "running"` | `:274` |
 | `tail()` | last 5 lines of `liveOutput`, only while running | `:282`, `:139` |
-| `composing()` | `composingLabel(inputChars)` when `inputChars !== undefined`, else `""` | `:287` |
+| `composing()` | `composingLabel(inputChars, inputComplete === true)` when `inputChars !== undefined`, else `""` | `packages/code/src/views/blocks.tsx` (`ToolLine`) |
 
 The header renders as one truncated, non-wrapping row (`:297`–`:348`); its TSDoc states this is so a
 collapsed call is always exactly one row whatever the terminal width (`:250`–`:255`). Its parts, in
@@ -765,7 +765,8 @@ carries `warn` — an errored member stays hidden, pinned at
 `packages/code/tests/integration/tool-groups-render.test.tsx:78` (`expect(out).not.toContain("boom")`).
 
 The group **head** row (`packages/code/src/views/blocks.tsx`, `BlockView`) shows the aggregate status
-glyph, the display label, `×N`, a single `starting…` when any quiet member is still composing, and `N failed` when
+glyph, the display label, `×N`, one cumulative composing count while any quiet member still has
+open arguments (or `arguments ready` when all composing members have closed), and `N failed` when
 any member errored. It lists up to `MAX_GROUP_SIGNATURES = 6` member signatures with a `moreChip`
 for the rest. Denied guard members are selected before ordinary members, preserving their original
 relative order, and remaining slots then take ordinary members in order. A grouped shell signature
@@ -1516,11 +1517,11 @@ by every mutation and explicit diff branch in `packages/code/src/views/tools/reg
 before it reaches OpenTUI").
 
 **INV-T30.** A tool node with `inputChars` set renders the composing stand-in **instead of** a
-signature, never both, and the stand-in is a constant string that exposes no byte count. Production
-`packages/code/src/views/blocks.tsx:151`, `:310`–`:324`. Tests
-`packages/code/tests/unit/composing-label.test.ts:4` and `:11`;
-`packages/code/tests/integration/tool-destripe-render.test.tsx:96` also pins the separating space
-(`"transition_plan_task starting…"`, not `"taskstarting"`).
+signature, never both. The same row exposes a compact cumulative character count; explicit input end
+changes it to `arguments ready` without claiming the tool ran. Production: `composingLabel` and
+`ToolLine` in `packages/code/src/views/blocks.tsx`. Tests:
+`packages/code/tests/unit/composing-label.test.ts` and
+`packages/code/tests/integration/tool-destripe-render.test.tsx`.
 
 **INV-T31.** A running tool's live tail shows at most the last 5 lines, truncates rather than wraps,
 and disappears the instant the call closes. Production
@@ -1773,6 +1774,15 @@ bold and its delimiter characters remain hidden. Production:
 `packages/code/src/views/blocks.tsx` (`AssistantMarkdown`, `geometryEpoch`). Test:
 `packages/code/tests/integration/transcript-scrollbox-render.test.tsx` ("bottom-following streaming
 Markdown never gives rows back when parsing conceals syntax").
+
+**INV-T58.** Tool-input progress is cumulative and call-id scoped. Only an explicit
+`tool_input_delta.complete: true` moves a composing node to pending `arguments ready`; another
+call's start cannot close it because provider tool calls may be composed in parallel.
+`tool_call_started` clears composition state and begins actual execution, while `model_retry`
+removes every composing placeholder from the failed attempt before rendering retry status.
+Production: `openRun` in `packages/code/src/adapters/store.ts`. Test:
+`packages/code/tests/unit/streaming-delta.test.ts` (`tool-input end marks arguments ready until the
+real tool call starts` and `a retry drops composing placeholders from the failed provider attempt`).
 
 ---
 

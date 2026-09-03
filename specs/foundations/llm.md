@@ -292,10 +292,13 @@ the resolver's value into the `Authorization` header.
    `debug`, memoized on `` `${provider}` + U+0000 + `${modelId}` `` in `describedModels` (`:199-201`). It runs
    *after* the factory, so a rejected configuration produces no line at all
    (`packages/llm/tests/component/ai-sdk-adapter-observability.test.ts:151-165`).
-4. **Layer the timeout** — `timeoutAbort(timeoutMs ?? defaultTimeoutMs, params.signal, bridge)`
-   (`:371-376`, `:93-117`). With no positive timeout it returns the parent signal unchanged
-   (`:98-100`); otherwise it combines the two with `AbortSignal.any` (`:108`) and aborts with the
-   bridge's `ProviderError` as the abort reason (`:105`).
+4. **Layer the timeout** — `timeoutAbort(timeoutMs ?? defaultTimeoutMs, params.signal, bridge)`.
+   With no positive timeout it returns the parent signal unchanged; otherwise it combines the two
+   with `AbortSignal.any`. Streaming parts call `markActivity()`, which updates one timestamp; the
+   single timer checks that timestamp and re-arms at most once per timeout window. The configured
+   value is therefore an inactivity window for streaming and an absolute bound for generation,
+   where no progress signal exists. On expiry the controller aborts with the bridge's
+   `ModelCallInactivityError`.
 5. **Decide image stripping** — `stripImages = !(params.capabilities?.has("vision") ?? true)`
    (`:378`).
 6. **Convert** — `toModelMessages(params.messages, { stripImages })` (`:384`), then
@@ -320,27 +323,30 @@ calls even without a delta consumer"`).
   `{ partial: text.length }` (`:401-406`). `packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts:228-250`
   calls that function directly and asserts it answers `{ partial: 29 }` for a 29-character prefix,
   under the title "uses a non-cumulative partial output and never reads aggregate getters".
-- `streamText` is given `onError` (records the first error, `:435-437`), `onStepEnd` and `onEnd`
-  (both keep `partialUsage`; `onEnd` also captures the aggregate) (`:438-444`).
+- `streamText` is given `onError` (records the first error), `onStepEnd` and `onEnd` (both keep
+  `partialUsage`; `onEnd` also captures the aggregate). Each callback and each yielded stream part
+  calls `markActivity()`, resetting the inactivity window without allocating a timer or log record
+  per part.
 - The part loop (`:451-474`) maps each part type:
 
 | Part type | Effect |
 |---|---|
 | `text-delta` | first-output report `"text"`; `batcher.push("text", …)` |
 | `reasoning-delta` | first-output report `"reasoning"`; `batcher.push("reasoning", …)` |
-| `tool-input-start` / `-delta` / `-end` | first-output report `"tool_input"`; forwarded to `makeToolInputReporter` |
+| `tool-input-start` / `-delta` / `-end` | first-output report `"tool_input"`; forwarded to `makeToolInputReporter`; `-end` emits the final cumulative count with `complete: true` |
 | `finish-step` | `partialUsage = part.usage` |
 | `finish` | `partialUsage = part.totalUsage` |
 | `tool-call` / `file` / `source` | first-output report with that channel name |
 | `error` | `streamError ??= part.error` |
 
-  `firstOutput` (`:419-431`) emits `llm.stream.first_token` at `debug` exactly once, carrying
-  `ttft_ms` and the channel. Its TSDoc states the constraint directly: "A `logger.debug` per delta
-  is forbidden outright: this loop runs thousands of times per call" (`:413-414`).
-- After `batcher.flush()` (`:475`), a `streamError` is turned into an error. **The timeout is
-  recognised here, before the generic mapping** (`:490-496`); the comment at `:482-489` says why:
-  "Wrapping unconditionally would produce a `ProviderError`, which the outer catch rethrows
-  verbatim — so the `timedOut()` branch below would never see a timed-out stream".
+  `firstOutput` emits `llm.stream.first_token` at `debug` exactly once, carrying `ttft_ms` and the
+  channel, and marks the admission timeout bridge as stream-started. Its TSDoc states the constraint
+  directly: a `logger.debug` per delta is forbidden because this loop runs thousands of times per
+  call.
+- After `batcher.flush()`, a `streamError` is turned into an error. **The timeout is recognised here,
+  before generic mapping**, so it retains the explicit inactivity subtype and the stream's available
+  attempt evidence. The outer catch performs the same recognition for async throws that bypass a
+  structured stream-error part.
 - No error but `aggregate === undefined` → `llm.stream.no_aggregate` at `warn` and a `ProviderError`
   of kind `"transient"` (`:500-517`). Pinned by
   `packages/llm/tests/component/ai-sdk-adapter-observability.test.ts:414-438`.
@@ -367,6 +373,14 @@ calls even without a delta consumer"`).
 | `flush()` | `sinkError` set | rethrow it (wrapping a non-`Error` in `new Error(…, { cause })`) (`:68-72`) |
 | `flush()` | first batch of a channel | `reset: true` (`:74-75`) |
 | `dispose()` | — | `disarm()` only (`:108`) |
+
+Tool arguments use the separate `makeToolInputReporter` cumulative throttle. `start` publishes the
+tool identity with `chars: 0`; `delta` counts every fragment but forwards at most once per call per
+`TOOL_INPUT_REPORT_MS = 250`; `end` always forwards the final count with `complete: true`. Calls are
+keyed by `call_id`, so interleaved parallel argument streams neither merge nor imply one another has
+finished. Production: `makeToolInputReporter`. Test:
+`packages/llm/tests/unit/delta-batcher.test.ts` and
+`packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts`.
 
 The idle timer's TSDoc names the failure it closes: without it, "the tail of the last sentence sat
 in `buf` until the whole stream drained", because "the provider stops sending text the moment it
@@ -562,7 +576,8 @@ promotes `err.partialUsage` onto `err.accumulatedUsage` (`:107-114`). Otherwise,
 | success | return `withLost(result)` — attaches `retriedUsage` only when something was lost (`:149-151`, `:154-155`) |
 | any `ProviderError` | `chargeLost(err)` accumulates `partialUsage` (`:164`, `:145-148`) |
 | not transient, or `attempt >= maxRetries`, or signal already aborted | `gaveUp(…)`, attach `accumulatedUsage`, rethrow (`:165-172`) |
-| `err.streamStarted` and a live delta consumer is present | `gaveUp(err, "stream_started")`, rethrow — no retry (`packages/llm/src/retry-llm-provider.ts`, `streamedToConsumer`) |
+| `err.streamStarted` and a live delta consumer is present | `gaveUp(err, "stream_started")`, rethrow — no retry, except for `ModelCallInactivityError` |
+| `ModelCallInactivityError` | remains retryable after earlier visible progress; inactivity is the recovery boundary |
 | `err.streamStarted` with no `onStreamDelta`/`onToolInputDelta` consumer | retry remains eligible; no partial turn escaped the aggregate call |
 | `err.retryAfterMs > maxRetryAfterMs` | `gaveUp(err, "retry_after_too_long")`, rethrow (`:184-188`) |
 | otherwise | `attempt += 1`, compute delay, fire `params.onRetry`, `warn`, sleep (`:189-217`) |
@@ -580,11 +595,14 @@ holds at maximum jitter.
 `cancellableSleep` (`:70-85`) `unref`s its timer so a pending backoff never keeps the process alive
 (`:82`).
 
-The stream-started policy is consumer-relative. A text/reasoning or tool-input callback means a
-partial turn escaped and the prompt must not be replayed; an internal streaming transport used only
-to assemble an aggregate result may retry because its caller observed nothing. This is pinned by
-`packages/llm/tests/unit/retry-llm-provider.test.ts` under "POLICY: no retry after a consumer
-observed the stream", including text, tool-input, and consumerless internal-stream cases.
+The stream-started policy is consumer-relative. A text/reasoning or tool-input callback ordinarily
+means a partial turn escaped and the prompt must not be replayed; an internal streaming transport
+used only to assemble an aggregate result may retry because its caller observed nothing. The one
+product exception is `ModelCallInactivityError`: once the provider has produced no new part for the
+complete timeout window, retry remains the recovery path even if earlier tool-input progress was
+visible. This is pinned by `packages/llm/tests/unit/retry-llm-provider.test.ts` under "POLICY: no
+retry after a consumer observed the stream", including text, tool-input, consumerless internal-stream
+and explicit inactivity-timeout cases.
 
 A call's own `maxRetries`/`maxRetryAfterMs` on `params` take precedence over the decorator's
 configured `opts` values: `maxRetries = params.maxRetries ?? opts.maxRetries` and
@@ -603,7 +621,7 @@ physical model attempt, and `@clarvis/code` runs its kernel at `silent`" (`:21-2
 | Moment | Record | Level | Line |
 |---|---|---|---|
 | start | `llm.call.start` | debug | `:93-98` |
-| every 20 s in flight | `llm.call.pending` | warn | `:100-113` |
+| every 20 s in flight | `llm.call.pending` | warn | includes `stream_started` and, after progress, `last_progress_ms`; no per-delta log |
 | return, `< 30 s` | `llm.call.done` | debug | `:119-136` |
 | return, `>= 30 s` | `llm.call.slow` | warn | `:118-134` |
 | throw | `llm.call.failed`, then rethrow unchanged | warn | `:138-151` |
@@ -659,13 +677,14 @@ Constructor validation is strict: `maxActive` must be a **positive** integer (`:
 
 ### 4.14 The timeout bridge
 
-`bridgeModelCallTimeout` (`packages/llm/src/model-call-timeout-bridge.ts:23`) returns params carrying the bridge
-under `MODEL_CALL_TIMEOUT_BRIDGE` (`:3`, `:67-71`) plus the bridge itself. `markTimedOut` mints the
-`ProviderError` exactly once and resolves the promise with it (`:45-53`); `registerCleanup` returns
-an unregister closure and is a no-op after `cleanup()` (`:54-58`); `cleanup()` is idempotent and each
+`bridgeModelCallTimeout` returns params carrying the bridge under `MODEL_CALL_TIMEOUT_BRIDGE` plus
+the bridge itself. `markStreamStarted` remembers whether provider output preceded an idle expiry.
+`markTimedOut` mints one `ModelCallInactivityError`, including that stream-start fact, and resolves
+the promise with it; the adapter's timeout branches enrich the cooperative failure with any
+available partial usage before it crosses retry. `registerCleanup` returns an unregister closure and
+is a no-op after `cleanup()`; `cleanup()` is idempotent and each
 cleanup's throw is swallowed — "Timer cleanup is housekeeping. It must never replace a provider
-result" (`:35-41`, `:59-64`). `modelCallTimeoutBridgeOf` (`:75`) is what the adapter reads at
-`packages/llm/src/ai-sdk-adapter.ts:384`; it returns `undefined` when admission never wrapped the call
+result". `modelCallTimeoutBridgeOf` is what the adapter reads; it returns `undefined` when admission never wrapped the call
 (`packages/llm/tests/unit/model-call-timeout-bridge.test.ts:26-29`).
 
 This is what lets the admission gate release a permit on a *cooperative* timeout rather than
@@ -779,12 +798,12 @@ is the sole retry authority.
 Production: `packages/llm/src/ai-sdk-adapter.ts:400`.
 Test: **unpinned** — no test asserts `callArgs.maxRetries === 0`.
 
-**LLM-10.** A per-call timeout is classified as `transient`, never as a permanent `client` fault,
-on both the streaming and the non-streaming paths.
-Production: `packages/llm/src/ai-sdk-adapter.ts:499-505` (streaming, deliberately ahead of the
-generic mapping) and `:525-531` (outer catch).
+**LLM-10.** A per-call timeout is a `ModelCallInactivityError` classified as `transient`, never as a
+permanent `client` fault. On a streaming path the deadline resets on every provider part; generation
+has no progress signal and remains absolutely bounded.
+Production: `timeoutAbort` and both timeout branches in `AiSdkAdapter.call`.
 Test: `packages/llm/tests/component/ai-sdk-adapter.test.ts:241-257` (generate) and
-`packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts:205-227` (stream).
+`packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts` (silent timeout and active stream).
 
 **LLM-11.** A stream that ends with no aggregate is a **transient** failure, reported at `warn` with
 `stream_started` and `partial_output_tokens`.
@@ -792,18 +811,20 @@ Production: `packages/llm/src/ai-sdk-adapter.ts:509-526`.
 Test: `packages/llm/tests/component/ai-sdk-adapter-observability.test.ts:414-438`, `:439-450`.
 
 **LLM-12.** `streamStarted` is true if any output was observed **or** the batcher emitted anything —
-a `tool-input-start` before any prose counts.
-Production: `packages/llm/src/ai-sdk-adapter.ts:488`, `:510`, `:531`; `emitted()` at
-`packages/llm/src/ai-sdk/streaming.ts:108`.
-Test: `packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts:251-267`.
+a `tool-input-start` before any prose counts — and the timeout bridge receives the same fact.
+Production: `firstOutput` and timeout attempt-cost construction in `AiSdkAdapter.call`; `emitted()`
+in `makeDeltaBatcher`.
+Test: `packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts` (tool-input error and timeout bridge).
 
 **LLM-13.** A transient failure whose stream reached `onStreamDelta` or `onToolInputDelta` is **not**
-retried. A consumerless internal stream may retry even when the provider observed output, because no
-partial turn escaped to the caller.
+retried, except for `ModelCallInactivityError`: a full timeout window with no new part deliberately
+remains retryable. A consumerless internal stream may retry even when the provider observed output,
+because no partial turn escaped to the caller.
 Production: `packages/llm/src/retry-llm-provider.ts` (`streamedToConsumer`).
 Test: `packages/llm/tests/unit/retry-llm-provider.test.ts` ("refuses to retry a transient failure that
 already emitted output", "retries an internal stream that no consumer observed", and "does not retry
-after a tool-input consumer observed the stream").
+after a tool-input consumer observed the stream", plus "retries an explicit inactivity timeout after
+tool-input progress stopped").
 Test: `packages/llm/tests/unit/retry-llm-provider.test.ts:450-463` and `:464-474`.
 
 **LLM-14.** Every failed `ProviderError` attempt's `partialUsage` is accumulated and surfaced —
@@ -1074,7 +1095,7 @@ Test: unpinned within this package.
 | recognized `subscription_*` failure | sanitized `ProviderError`; kind `auth`, `quota`, or `client` by code | `packages/llm/src/ai-sdk/errors.ts:219-257` | no under current mapping |
 | `openai-compatible` with no `baseUrl` | `ProviderError` kind `client` | `packages/llm/src/openai-compatible-request.ts:224-226` | no |
 | header `${VAR}` unset | `ProviderError` kind `client` | `packages/llm/src/openai-compatible-request.ts:260-263` | no |
-| per-call timeout | `ProviderError` kind from `classifyProviderError({timedOut:true})` → `transient` | `packages/llm/src/ai-sdk-adapter.ts:501`, `:536`; bridge at `packages/llm/src/model-call-timeout-bridge.ts:47-50` | yes |
+| per-call timeout | `ModelCallInactivityError` → `transient`, with stream-start/available partial usage | `timeoutAbort`, `ModelCallInactivityError`, timeout branches in `AiSdkAdapter.call` | yes, including after earlier visible progress |
 | stream ended with no aggregate | `ProviderError` kind `transient` | `packages/llm/src/ai-sdk-adapter.ts:521-525` | yes |
 | response/SSE bound breached | `ProviderResponseLimitError`, flattened to `ProviderError` kind `client` | `packages/llm/src/ai-sdk/bounded-fetch.ts:10`; `packages/llm/src/ai-sdk/errors.ts:220-222` | no |
 | any HTTP/API failure | `ProviderError` with classified kind | `packages/llm/src/ai-sdk/errors.ts:223-239` | depends |
@@ -1117,7 +1138,7 @@ immediately.
 | `llm.stream.first_token` | debug | `packages/llm/src/ai-sdk-adapter.ts:432` |
 | `llm.stream.no_aggregate` | warn | `packages/llm/src/ai-sdk-adapter.ts:515` |
 | `llm.call.start` | debug | `packages/llm/src/logging-llm-provider.ts:95` |
-| `llm.call.pending` | warn | `packages/llm/src/logging-llm-provider.ts:104` |
+| `llm.call.pending` | warn | `withCallLogging`; carries `stream_started` and optional `last_progress_ms` |
 | `llm.call.done` / `llm.call.slow` | debug / warn | `packages/llm/src/logging-llm-provider.ts:121`; carries `finish_reason: result.finishReason` (`:132`, `undefined` when the result has none — pinned by `packages/llm/tests/unit/logging-llm-provider.test.ts:117-155`) |
 | `llm.call.failed` | warn | `packages/llm/src/logging-llm-provider.ts:142` |
 | `llm.retry.scheduled` | warn | `packages/llm/src/retry-llm-provider.ts:207` |
@@ -1210,13 +1231,13 @@ takes one value import, `contentToText`, at `:3`).
    (`packages/llm/src/ai-sdk-adapter.ts:155`–`:159`). The interface itself was undocumented and now
    carries a member comment each (`:58`–`:71`).
 
-4. **The bridge-minted timeout error carries no attempt cost.**
-   `packages/llm/src/model-call-timeout-bridge.ts:47-50` constructs a `ProviderError` with only `{ kind: "transient" }`.
-   If the SDK rejects with that object as the abort reason, `packages/llm/src/ai-sdk-adapter.ts:529` rethrows it
-   verbatim, so `streamStarted` and `partialUsage` are absent — whereas the adapter's own timeout
-   branches (`:490-496`, `:525-531`) attach both. Whether that asymmetry is intended, and whether the
-   verbatim-rethrow path is actually reachable in practice, is not determinable from the source; no
-   test exercises it.
+4. ~~**The bridge-minted timeout error carries no attempt cost.**~~ **Resolved for observable
+   evidence.** `markStreamStarted` now puts the stream-start fact on the bridge's
+   `ModelCallInactivityError`, and the adapter handles every timed-out catch before the generic
+   `ProviderError` passthrough so available `partialUsage` is retained. Usage remains absent when the
+   provider emitted no usage frame before cancellation; that is unknown evidence, not a synthesized
+   zero. Tests: `packages/llm/tests/unit/model-call-timeout-bridge.test.ts` and
+   `packages/llm/tests/component/ai-sdk-adapter-streaming.test.ts`.
 
 6. **The `bestEffort`/`detachObserved` neighbours of `suppressSecondaryRejection`
    (`packages/capability/src/tasks.ts:49`, `:58`) accept an `options.logger`, but

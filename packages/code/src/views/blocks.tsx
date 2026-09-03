@@ -36,7 +36,7 @@ import { aggregateStatus, failureCount, type ToolGroupInfo } from "./tool-groups
 import type { SectionHeader } from "./subagent-sections.ts";
 import type { BlockOverride } from "./block-focus.ts";
 import { formatElapsed, spinnerChar, thinkingDots, tickNow } from "./spinner.ts";
-import { moreChip } from "./truncate.ts";
+import { fmtCount, moreChip } from "./truncate.ts";
 import { activityPreview, type ActivityDetail } from "./activity-detail.ts";
 import { StableMarkdown } from "../ui/patterns/stable-syntax.tsx";
 
@@ -141,15 +141,18 @@ const LIVE_TAIL_LINES = 5;
 /**
  * The stand-in shown while the model is still writing a tool call's arguments.
  *
- * @param _chars - cumulative argument size; deliberately not exposed to users.
- * @returns a stable action-oriented progress label.
+ * @param chars - cumulative argument size received from the provider.
+ * @param complete - whether the provider has closed the argument stream.
+ * @returns an action-oriented progress label with a compact character count.
  *
  * @remarks It replaces the argument signature rather than sitting beside it,
  * because during this window there are no arguments to render — the node was
  * created from the tool's *name* alone, which is all the provider has sent.
  */
-export function composingLabel(_chars: number): string {
-  return "starting" + glyph("ellipsis");
+export function composingLabel(chars: number, complete = false): string {
+  return complete
+    ? `arguments ready ${glyph("separator")} ${fmtCount(chars)} chars`
+    : `receiving arguments${glyph("ellipsis")} ${fmtCount(chars)} chars`;
 }
 
 function liveTailLines(node: TranscriptToolNode): string[] {
@@ -289,7 +292,9 @@ function ToolLine(props: {
    * It deliberately avoids exposing provider byte-count mechanics to the user.
    */
   const composing = createMemo<string>(() =>
-    props.node.inputChars === undefined ? "" : composingLabel(props.node.inputChars),
+    props.node.inputChars === undefined
+      ? ""
+      : composingLabel(props.node.inputChars, props.node.inputComplete === true),
   );
   const guardLabel = createMemo<string>(() => guardReviewLabel(props.node));
   return (
@@ -675,6 +680,14 @@ export function BlockView(props: {
   const composingMembers = createMemo<number>(
     () => quietMembers().filter((member) => member.inputChars !== undefined).length,
   );
+  const composingChars = createMemo<number>(() =>
+    quietMembers().reduce((total, member) => total + (member.inputChars ?? 0), 0),
+  );
+  const composingComplete = createMemo<boolean>(() =>
+    quietMembers()
+      .filter((member) => member.inputChars !== undefined)
+      .every((member) => member.inputComplete === true),
+  );
   const isSubagent = (): boolean => props.node.subagentOrder !== undefined;
   return (
     <Show when={!hidden()}>
@@ -791,7 +804,7 @@ export function BlockView(props: {
                               </span>
                               <Show when={composingMembers() > 0}>
                                 <span style={{ fg: tokens.muted }}>
-                                  {` ${glyph("separator")} ${composingLabel(0)}`}
+                                  {` ${glyph("separator")} ${composingLabel(composingChars(), composingComplete())}`}
                                 </span>
                               </Show>
                               <Show when={failures() > 0}>

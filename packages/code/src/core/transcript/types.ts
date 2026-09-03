@@ -77,6 +77,8 @@ export interface TranscriptToolNode extends TranscriptNodeBase {
    * seconds on a large edit — and used to have nothing on screen at all.
    */
   inputChars?: number;
+  /** Set after the provider closes the argument stream, before execution starts. */
+  inputComplete?: true;
   /**
    * Set once this node's `args`/`result`/`diff` have been dropped to bound the
    * transcript's memory, and refilled on demand when the block is expanded.

@@ -196,7 +196,7 @@ describe("makeDeltaBatcher", () => {
 });
 
 describe("makeToolInputReporter", () => {
-  type Report = { call_id: string; tool_name: string; chars: number };
+  type Report = { call_id: string; tool_name: string; chars: number; complete?: true };
   const collect = (
     maxMs = 0,
   ): { reports: Report[]; r: ReturnType<typeof makeToolInputReporter> } => {
@@ -220,15 +220,19 @@ describe("makeToolInputReporter", () => {
     expect(reports.map((d) => d.chars)).toEqual([0, 4, 6]);
   });
 
-  it("keeps concurrent calls apart", () => {
+  it("keeps concurrent calls apart until each explicit end", () => {
     const { reports, r } = collect();
     r.start("call-1", "write_file");
     r.start("call-2", "read_file");
     r.delta("call-1", "12345");
     r.delta("call-2", "xy");
+    r.end("call-2");
+    r.delta("call-1", "!");
     expect(reports.slice(2)).toEqual([
       { call_id: "call-1", tool_name: "write_file", chars: 5 },
       { call_id: "call-2", tool_name: "read_file", chars: 2 },
+      { call_id: "call-2", tool_name: "read_file", chars: 2, complete: true },
+      { call_id: "call-1", tool_name: "write_file", chars: 6 },
     ]);
   });
 
@@ -241,7 +245,12 @@ describe("makeToolInputReporter", () => {
     expect(reports).toHaveLength(1);
     r.end("call-1");
     expect(reports).toHaveLength(2);
-    expect(reports[1]).toEqual({ call_id: "call-1", tool_name: "write_file", chars: 500 });
+    expect(reports[1]).toEqual({
+      call_id: "call-1",
+      tool_name: "write_file",
+      chars: 500,
+      complete: true,
+    });
   });
 
   it("defaults to a rate a person can read, not the rate prose streams at", () => {

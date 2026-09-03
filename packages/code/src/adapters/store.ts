@@ -1224,7 +1224,9 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
               n.mcpName = event.server;
               n.toolName = event.tool;
               n.args = asArgs(event.arguments);
+              n.status = "running";
               n.inputChars = undefined;
+              n.inputComplete = undefined;
             });
           }
         } else if (span.kind === "subagent" && event.type === "delegation_created") {
@@ -1334,6 +1336,10 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             patchKind(index, "tool_call", (n) => {
               if (n.status !== "running") return;
               n.inputChars = event.chars;
+              if (event.complete === true) {
+                n.inputComplete = true;
+                n.status = "pending";
+              }
             });
           }
         } else if (span.kind === "iteration" && event.type === "model_error") {
@@ -1347,6 +1353,8 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             Object.assign(n, attrOf(event.subagent_id));
           });
         } else if (span.kind === "iteration" && event.type === "model_retry") {
+          const order = attrOf(event.subagent_id).subagentOrder;
+          dropComposing((candidate) => candidate === order);
           const index = upsert(ns(`${span.span_id}#retry`), () => ({
             kind: "annotation",
             status: "running",
@@ -1622,6 +1630,7 @@ export function createTranscriptStore(deps: TranscriptStoreDeps = {}): Transcrip
             n.status = event.error ? "error" : "ok";
             n.liveOutput = undefined;
             n.inputChars = undefined;
+            n.inputComplete = undefined;
             if (n.startedAt && typeof event.at === "number" && event.at >= n.startedAt)
               n.elapsedMs = event.at - n.startedAt;
             n.warn = bashFailed;

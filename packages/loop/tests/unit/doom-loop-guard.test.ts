@@ -31,6 +31,15 @@ describe("createDoomLoopGuard", () => {
     expect(g.tripped()).toBe(false);
   });
 
+  it("a later success in the same dispatch rescues an unobserved threshold crossing", () => {
+    const g = createDoomLoopGuard({ identicalThreshold: 100, errorThreshold: 2 });
+    g.record("read:/a", true);
+    g.record("read:/b", true);
+    g.record("read:/ok", false);
+    expect(g.tripped()).toBe(false);
+    expect(g.takeSoft()).toBeNull();
+  });
+
   it("never trips on repeated SUCCESSFUL identical calls", () => {
     const g = createDoomLoopGuard();
     for (let i = 0; i < 10; i += 1) g.record("read:/same", false);

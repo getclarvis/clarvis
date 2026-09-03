@@ -155,14 +155,18 @@ export function makeToolInputReporter(
   end: (callId: string) => void;
 } {
   const open = new Map<string, { toolName: string; chars: number; reportedAt: number }>();
+  const metrics = streamMetrics();
   return {
     start: (callId, toolName): void => {
       open.set(callId, { toolName, chars: 0, reportedAt: Date.now() });
+      metrics.count("tool_input_start");
       sink({ call_id: callId, tool_name: toolName, chars: 0 });
     },
     delta: (callId, text): void => {
       const state = open.get(callId);
       if (state === undefined) return;
+      metrics.count("tool_input_delta");
+      metrics.count("tool_input_chars", text.length);
       state.chars += text.length;
       const now = Date.now();
       if (now - state.reportedAt < maxMs) return;
@@ -173,7 +177,8 @@ export function makeToolInputReporter(
       const state = open.get(callId);
       if (state === undefined) return;
       open.delete(callId);
-      sink({ call_id: callId, tool_name: state.toolName, chars: state.chars });
+      metrics.count("tool_input_end");
+      sink({ call_id: callId, tool_name: state.toolName, chars: state.chars, complete: true });
     },
   };
 }

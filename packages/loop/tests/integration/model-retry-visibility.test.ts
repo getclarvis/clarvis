@@ -56,6 +56,7 @@ describe("provider retries are visible in the trace", () => {
     expect(first.max_retries).toBe(3);
     expect(first.status).toBe(529);
     expect(first.kind).toBe("transient");
+    expect(first.message).toBe("overloaded");
     expect(first.model).toBe("claude-sonnet-4-5");
     expect(first.delay_ms).toBeGreaterThan(0);
   });
@@ -71,6 +72,7 @@ describe("provider retries are visible in the trace", () => {
     const retries = (detail?.trace.events ?? []).filter((e) => e.type === "model_call_retry");
 
     expect(retries).toHaveLength(1);
+    expect(retries[0]).toMatchObject({ message: "overloaded" });
   });
 
   it("carries a server-advised Retry-After through to the recorded delay", async () => {

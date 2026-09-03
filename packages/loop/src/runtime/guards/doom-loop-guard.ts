@@ -42,7 +42,11 @@ export interface DoomLoopGuard {
    *   clears the streak re-arms it.
    */
   takeSoft(): string | null;
-  /** Whether a threshold has been crossed (latches once tripped). */
+  /** Whether a threshold has been crossed.
+   *
+   * @remarks Reading `true` latches the trip. Before that observation, a later
+   * success in the same dispatch batch may still reset the consecutive streak.
+   */
   tripped(): boolean;
   /** The explanation for the trip, or empty string before it trips. */
   reason(): string;
@@ -64,8 +68,9 @@ export interface DoomLoopGuard {
  * @returns the guard.
  * @remarks Trips when the identical call fails `identicalThreshold` times in a
  *   row, or when any calls fail `errorThreshold` times consecutively. A
- *   non-error result clears both counters; once tripped, further records are
- *   ignored.
+ *   non-error result clears both counters. The trip becomes irrevocable only
+ *   when the caller observes it, which happens after the whole dispatch batch;
+ *   this preserves model-declared call order when a later call succeeds.
  */
 export function createDoomLoopGuard(opts: DoomLoopGuardOptions = {}): DoomLoopGuard {
   const identicalThreshold = opts.identicalThreshold ?? DOOM_IDENTICAL_FAILURE_THRESHOLD;
@@ -77,6 +82,7 @@ export function createDoomLoopGuard(opts: DoomLoopGuardOptions = {}): DoomLoopGu
   let repeatedFailures = 0;
   let consecutiveFailures = 0;
   let tripped = false;
+  let tripObserved = false;
   let reasonText = "";
   let pendingSoft: string | null = null;
   let identicalWarned = false;
@@ -101,14 +107,17 @@ export function createDoomLoopGuard(opts: DoomLoopGuardOptions = {}): DoomLoopGu
 
   return {
     record(signature: string, isError: boolean): void {
-      if (tripped) return;
-      if (isError) {
-        consecutiveFailures += 1;
-        repeatedFailures = signature === lastSig ? repeatedFailures + 1 : 1;
-        lastSig = signature;
-      } else {
+      if (tripObserved) return;
+      if (!isError) {
+        tripped = false;
+        reasonText = "";
         clearCounters();
+        return;
       }
+      if (tripped) return;
+      consecutiveFailures += 1;
+      repeatedFailures = signature === lastSig ? repeatedFailures + 1 : 1;
+      lastSig = signature;
       if (repeatedFailures >= identicalThreshold) {
         tripped = true;
         reasonText =
@@ -143,6 +152,7 @@ export function createDoomLoopGuard(opts: DoomLoopGuardOptions = {}): DoomLoopGu
       return out;
     },
     tripped(): boolean {
+      if (tripped) tripObserved = true;
       return tripped;
     },
     reason(): string {
@@ -150,6 +160,7 @@ export function createDoomLoopGuard(opts: DoomLoopGuardOptions = {}): DoomLoopGu
     },
     reset(): void {
       tripped = false;
+      tripObserved = false;
       reasonText = "";
       pendingSoft = null;
       clearCounters();

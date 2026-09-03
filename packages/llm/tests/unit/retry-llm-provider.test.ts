@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "../helpers/bun-test.ts";
 import { withTransportRetry, backoffDelayMs } from "../../src/index.ts";
+import { ModelCallInactivityError } from "../../src/model-call-timeout-bridge.ts";
 import {
   ProviderError,
   type LLMCallParams,
@@ -321,6 +322,7 @@ describe("withTransportRetry — the RetryInfo payload", () => {
     for (const info of seen) {
       expect(info.maxRetries).toBe(3);
       expect(info.kind).toBe("transient");
+      expect(info.message).toBe("overloaded");
       expect(info.status).toBe(503);
       expect(info.delayMs).toBe(0);
       expect(info.retryAfterMs).toBeUndefined();
@@ -438,7 +440,9 @@ describe("withTransportRetry — accounting for failed attempts", () => {
 });
 
 /**
- * POLICY: a call is not retried once the stream has emitted a delta to a consumer.
+ * POLICY: ordinary provider failures are not retried once the stream has emitted
+ * a delta to a consumer. The model-call inactivity timeout is the deliberate
+ * exception: its job is to recover an attempt that stopped making progress.
  *
  * The prompt has already been billed in full at that point, and a retry
  * re-sends and re-bills all of it — at a large context, the dominant cost of
@@ -482,6 +486,17 @@ describe("withTransportRetry — POLICY: no retry after a consumer observed the 
 
     await expect(wrapped.call({ ...params(), onToolInputDelta: () => {} })).rejects.toBe(failed);
     expect(inner.calls).toBe(1);
+  });
+
+  it("retries an explicit inactivity timeout after tool-input progress stopped", async () => {
+    const timedOut = new ModelCallInactivityError(180_000, true);
+    const inner = scripted([timedOut, ok]);
+    const wrapped = withTransportRetry(inner, fastOpts);
+
+    await expect(wrapped.call({ ...params(), onToolInputDelta: () => {} })).resolves.toMatchObject({
+      text: "ok",
+    });
+    expect(inner.calls).toBe(2);
   });
 
   it("still retries a transient failure that emitted nothing", async () => {

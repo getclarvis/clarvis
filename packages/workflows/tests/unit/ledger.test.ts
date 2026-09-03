@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Usage } from "@clarvis/capability";
-import { createWorkflowLedger } from "../../src/ledger.ts";
+import { createFairShareOutputBudget, createWorkflowLedger } from "../../src/ledger.ts";
 
 function usage(outputByAgent: number[]): Usage {
   return {
@@ -82,6 +82,35 @@ describe("WorkflowLedger", () => {
       released.settle(4);
       expect(ledger.spent()).toBe(3);
       expect(ledger.reserveOutput(Number.POSITIVE_INFINITY)).toBeNull();
+    });
+  });
+
+  describe("createFairShareOutputBudget", () => {
+    test("caps concurrent calls and returns each call's unused share at settlement", () => {
+      const ledger = createWorkflowLedger(100);
+      const budget = createFairShareOutputBudget(ledger, 4);
+      const first = budget.reserveOutput(100)!;
+      expect(first.amount).toBe(25);
+      const second = budget.reserveOutput(3)!;
+      expect(second.amount).toBe(3);
+      expect(ledger.remaining()).toBe(72);
+
+      first.settle(5);
+      second.release();
+      expect(ledger.spent()).toBe(5);
+      expect(budget.remaining()).toBe(95);
+    });
+
+    test("preserves unbounded parents and refuses an exhausted parent", () => {
+      const unbounded = createWorkflowLedger(null);
+      const open = createFairShareOutputBudget(unbounded, 4).reserveOutput(7)!;
+      expect(open.amount).toBe(7);
+      open.settle(2);
+      expect(unbounded.spent()).toBe(2);
+
+      const exhausted = createWorkflowLedger(1);
+      exhausted.add(usage([1]));
+      expect(createFairShareOutputBudget(exhausted, 0).reserveOutput(1)).toBeNull();
     });
   });
 

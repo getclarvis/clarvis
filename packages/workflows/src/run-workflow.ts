@@ -25,6 +25,7 @@ import { elicitWithClockPause } from "@clarvis/capability";
 import type { WorkflowDefinition } from "./artifact.ts";
 import type { DispatchDeps } from "./dispatch.ts";
 import { isBoundedWorkflowString, WORKFLOW_LIMITS } from "./limits.ts";
+import { workflowLogger } from "./log.ts";
 import {
   startRounds,
   type RoundCall,
@@ -35,6 +36,8 @@ import type { WorkflowCtx } from "./types.ts";
 
 /** The `run_workflow` wire/tool name. */
 export const RUN_WORKFLOW_TOOL_NAME = "run_workflow";
+
+type WorkflowReviewDecision = "run" | "declined" | "dismissed" | "no_response" | "invalid_response";
 
 const RUN_WORKFLOW_DESCRIPTION =
   "Run one of the available workflows by name. A workflow is an authored, versioned " +
@@ -265,6 +268,7 @@ export function buildRunWorkflowHandler(
           false,
         );
       }
+      const reviewStartedAt = Date.now();
       const decision = await elicitWithClockPause(
         clock,
         signal ?? ctx.signal,
@@ -287,16 +291,31 @@ export function buildRunWorkflowHandler(
                 required: ["decision"],
               },
             },
-            { signal: signal ?? ctx.signal },
+            { signal: signal ?? ctx.signal, timeoutMs: ctx.elicitWaitMs },
           ),
         {
-          onResult: (raw) =>
-            raw.action === "accept" && raw.content?.decision === "run" ? "run" : "cancel",
-          onNoResponse: () => "cancel",
+          onResult: (raw): WorkflowReviewDecision => {
+            if (raw.action === "decline") return "declined";
+            if (raw.action === "cancel") return "dismissed";
+            if (raw.content?.decision === "run") return "run";
+            if (raw.content?.decision === "cancel") return "declined";
+            return "invalid_response";
+          },
+          onNoResponse: (): WorkflowReviewDecision => "no_response",
         },
+        { logger: workflowLogger(ctx) },
+      );
+      workflowLogger(ctx).info(
+        {
+          event: "workflow.review_resolved",
+          workflow: workflow.name,
+          decision,
+          waited_ms: Date.now() - reviewStartedAt,
+        },
+        "the workflow preflight settled; its explicit outcome is also returned to the manager",
       );
       if (decision !== "run") {
-        return verdict(`workflow '${workflow.name}' was not started.`, false);
+        return verdict(describeReviewRefusal(workflow.name, decision), false);
       }
       const started = startRounds(deps, compiled.call, coordinator);
       if ("error" in started) return verdict(started.error, false);
@@ -310,6 +329,23 @@ export function buildRunWorkflowHandler(
       );
     },
   };
+}
+
+/** Describe why a reviewed workflow did not start without collapsing distinct operator outcomes. */
+function describeReviewRefusal(
+  workflowName: string,
+  decision: Exclude<WorkflowReviewDecision, "run">,
+): string {
+  switch (decision) {
+    case "declined":
+      return `workflow '${workflowName}' was not started because its approval review was declined.`;
+    case "dismissed":
+      return `workflow '${workflowName}' was not started because its approval review was dismissed.`;
+    case "no_response":
+      return `workflow '${workflowName}' was not started because its approval review timed out without a response.`;
+    case "invalid_response":
+      return `workflow '${workflowName}' was not started because its approval review returned an invalid response.`;
+  }
 }
 
 /** An immediate textual verdict prefixed as a `run_workflow` result. */

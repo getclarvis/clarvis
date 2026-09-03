@@ -139,6 +139,7 @@ export interface KernelWorkflowsService extends WorkflowsService {
 interface RunRequestBody {
   profiles?: Array<{ grants?: string[] }>;
   execution_id?: string;
+  elicit_wait_ms?: number;
   [key: string]: unknown;
 }
 
@@ -473,6 +474,23 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
             output_tokens: acc.output,
           });
         };
+        const managerBody = assembleRunRequest({
+          execution_id: managerRunId,
+          messages: params.messages,
+          ...(params.agent !== undefined ? { agent: params.agent } : {}),
+          ...(params.guard_mode !== undefined ? { guard_mode: params.guard_mode } : {}),
+          ...(params.guard_judge !== undefined ? { guard_judge: params.guard_judge } : {}),
+          ...(params.memory !== undefined ? { memory: params.memory } : {}),
+          ...(params.task !== undefined ? { task: params.task } : {}),
+          ...(params.plans !== undefined ? { plans: params.plans } : {}),
+          ...(params.output_schema !== undefined ? { output_schema: params.output_schema } : {}),
+          ...(params.prompt_cache_key !== undefined
+            ? { prompt_cache_key: params.prompt_cache_key }
+            : {}),
+          ...(params.prompt_cache_ttl !== undefined
+            ? { prompt_cache_ttl: params.prompt_cache_ttl }
+            : {}),
+        }) as RunRequestBody;
         const workflowContext: WorkflowCtx = {
           deps: workflowDeps,
           runDeps: WORKFLOW_RUN_DEPS,
@@ -481,6 +499,9 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           ledger,
           leaderCount,
           maxConcurrency,
+          maxParallelSubagents: workflowDeps.env.CLARVIS_MAX_PARALLEL_SUBAGENTS,
+          elicitWaitMs:
+            managerBody.elicit_wait_ms ?? workflowDeps.env.CLARVIS_DEFAULT_ELICIT_WAIT_MS,
           assemble: assembleLeader,
           managerRunId,
           signal: context.signal,
@@ -515,23 +536,6 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           workflowDefs: readWorkflowDefs(),
         };
         const workflowsCap = createWorkflowsCapability(workflowContext);
-        const managerBody = assembleRunRequest({
-          execution_id: managerRunId,
-          messages: params.messages,
-          ...(params.agent !== undefined ? { agent: params.agent } : {}),
-          ...(params.guard_mode !== undefined ? { guard_mode: params.guard_mode } : {}),
-          ...(params.guard_judge !== undefined ? { guard_judge: params.guard_judge } : {}),
-          ...(params.memory !== undefined ? { memory: params.memory } : {}),
-          ...(params.task !== undefined ? { task: params.task } : {}),
-          ...(params.plans !== undefined ? { plans: params.plans } : {}),
-          ...(params.output_schema !== undefined ? { output_schema: params.output_schema } : {}),
-          ...(params.prompt_cache_key !== undefined
-            ? { prompt_cache_key: params.prompt_cache_key }
-            : {}),
-          ...(params.prompt_cache_ttl !== undefined
-            ? { prompt_cache_ttl: params.prompt_cache_ttl }
-            : {}),
-        }) as RunRequestBody;
         raiseLiveChildrenCeiling(managerBody, maxConcurrency);
         const titleTask = generateWorkflowTitle({
           request: managerBody as unknown as RunRequest,

@@ -58,6 +58,7 @@ interface PublishedTranscriptNode {
 
 interface PresentedTranscriptNode {
   readonly key: string;
+  readonly order: number;
   readonly node: Accessor<TranscriptNode>;
   readonly publication: Accessor<TranscriptPublicationBatch | undefined>;
   attach(owner: Renderable): void;
@@ -70,6 +71,7 @@ interface PresentedTranscriptNode {
 
 function createPresentedNode(
   initialNode: TranscriptNode,
+  order: number,
   initialPublication?: TranscriptPublicationBatch,
 ): PresentedTranscriptNode {
   const [node, setNode] = createSignal(initialNode);
@@ -78,6 +80,7 @@ function createPresentedNode(
   let ownerRows = 0;
   return Object.freeze({
     key: initialNode.key,
+    order,
     node,
     publication,
     attach: (value: Renderable): void => {
@@ -101,6 +104,13 @@ function createPresentedNode(
     },
   });
 }
+
+interface ReleasedTranscriptRows {
+  readonly rows: number;
+  readonly order: number;
+}
+
+const RELEASED_HANDOFF_SPACER = Symbol("released-handoff-spacer");
 
 function samePresentedNodes(
   left: readonly PresentedTranscriptNode[],
@@ -146,6 +156,11 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
   );
   const liveGrouped = createMemo(() => computeGroupedNodes(frontier(), subagentStatus()));
   const liveToolGroups = createMemo(() => computeToolGroups(liveGrouped().ordered));
+  let nextPresentationOrder = 0;
+  const present = (
+    node: TranscriptNode,
+    publication?: TranscriptPublicationBatch,
+  ): PresentedTranscriptNode => createPresentedNode(node, nextPresentationOrder++, publication);
   const committedByKey = createMemo(() => {
     const nodes = new Map<string, PublishedTranscriptNode>();
     const publications = historyPresentation?.publications() ?? props.store.publicationBatches;
@@ -156,9 +171,11 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
     return nodes;
   });
   const [presentedNodes, setPresentedNodes] = createSignal<readonly PresentedTranscriptNode[]>(
-    Object.freeze(liveGrouped().ordered.map((node) => createPresentedNode(node))),
+    Object.freeze(liveGrouped().ordered.map((node) => present(node))),
   );
-  const [releasedRows, setReleasedRows] = createSignal<ReadonlyMap<string, number>>(new Map());
+  const [releasedRows, setReleasedRows] = createSignal<ReadonlyMap<string, ReleasedTranscriptRows>>(
+    new Map(),
+  );
 
   createEffect(() => {
     const current = liveGrouped().ordered;
@@ -175,7 +192,7 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
     );
     const next: PresentedTranscriptNode[] = [];
     const retained = new Set<string>();
-    const released = new Map<string, number>();
+    const released = new Map<string, ReleasedTranscriptRows>();
     for (const previous of untrack(presentedNodes)) {
       const published = committed.get(previous.key);
       if (published !== undefined) {
@@ -184,11 +201,13 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
           if (props.followingTail() || previous.visible(props.isOwnerVisible)) next.push(previous);
           else {
             const rows = previous.measuredRows();
-            if (rows > 0)
-              released.set(
-                published.publication.id,
-                (released.get(published.publication.id) ?? 0) + rows,
-              );
+            if (rows > 0) {
+              const prior = released.get(published.publication.id);
+              released.set(published.publication.id, {
+                rows: (prior?.rows ?? 0) + rows,
+                order: Math.min(prior?.order ?? previous.order, previous.order),
+              });
+            }
           }
           retained.add(previous.key);
         }
@@ -206,25 +225,33 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
       const published = committed.get(node.key);
       if (published !== undefined) {
         if (!visible.has(node.key) && props.followingTail())
-          next.push(createPresentedNode(published.node, published.publication));
+          next.push(present(published.node, published.publication));
         continue;
       }
-      next.push(createPresentedNode(node));
+      next.push(present(node));
     }
     const frozen = Object.freeze(next);
     if (!samePresentedNodes(untrack(presentedNodes), frozen)) setPresentedNodes(frozen);
     const previousReleased = untrack(releasedRows);
-    const nextReleased = new Map<string, number>();
+    const nextReleased = new Map<string, ReleasedTranscriptRows>();
     if (!props.followingTail()) {
-      for (const [publicationId, rows] of previousReleased)
+      for (const [publicationId, releasedBlock] of previousReleased)
         if (committedPublicationIds.has(publicationId) && !visiblePublicationIds.has(publicationId))
-          nextReleased.set(publicationId, rows);
-      for (const [publicationId, rows] of released)
-        nextReleased.set(publicationId, (nextReleased.get(publicationId) ?? 0) + rows);
+          nextReleased.set(publicationId, releasedBlock);
+      for (const [publicationId, releasedBlock] of released) {
+        const prior = nextReleased.get(publicationId);
+        nextReleased.set(publicationId, {
+          rows: (prior?.rows ?? 0) + releasedBlock.rows,
+          order: Math.min(prior?.order ?? releasedBlock.order, releasedBlock.order),
+        });
+      }
     }
     const sameReleased =
       previousReleased.size === nextReleased.size &&
-      [...nextReleased].every(([key, rows]) => previousReleased.get(key) === rows);
+      [...nextReleased].every(([key, block]) => {
+        const previous = previousReleased.get(key);
+        return previous?.rows === block.rows && previous.order === block.order;
+      });
     if (!sameReleased) setReleasedRows(nextReleased);
   });
   const handoffKeys = createMemo(() => {
@@ -238,8 +265,29 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
   createEffect(() => props.onHandoffKeysChange?.(handoffKeys()));
   createEffect(() => props.onFrontierCountChange?.(frontier().length));
   const releasedRowCount = createMemo(() =>
-    [...releasedRows().values()].reduce((total, rows) => total + rows, 0),
+    [...releasedRows().values()].reduce((total, block) => total + block.rows, 0),
   );
+  /**
+   * Keep the aggregate spacer at the earliest released owner's chronological
+   * boundary. Owners before that boundary retain both identity and flow offset
+   * when a later, fully offscreen publication completes out of order.
+   */
+  const presentedFlow = createMemo<
+    readonly (PresentedTranscriptNode | typeof RELEASED_HANDOFF_SPACER)[]
+  >(() => {
+    if (releasedRowCount() < 1) return presentedNodes();
+    const earliestReleasedOrder = Math.min(
+      ...[...releasedRows().values()].map((block) => block.order),
+    );
+    const nodes = presentedNodes();
+    const insertion = nodes.findIndex((node) => node.order > earliestReleasedOrder);
+    const index = insertion < 0 ? nodes.length : insertion;
+    return Object.freeze([
+      ...nodes.slice(0, index),
+      RELEASED_HANDOFF_SPACER,
+      ...nodes.slice(index),
+    ]);
+  });
   onCleanup(() => {
     props.onHandoffKeysChange?.(new Set());
     props.onFrontierCountChange?.(0);
@@ -254,11 +302,13 @@ export function LiveTranscriptTail(props: LiveTranscriptTailProps): JSX.Element 
       minHeight={0}
       flexShrink={0}
     >
-      <Show when={releasedRowCount() > 0}>
-        <box id="live-transcript-handoff-spacer" height={releasedRowCount()} flexShrink={0} />
-      </Show>
-      <For each={presentedNodes()}>
-        {(presented) => {
+      <For each={presentedFlow()}>
+        {(item) => {
+          if (item === RELEASED_HANDOFF_SPACER)
+            return (
+              <box id="live-transcript-handoff-spacer" height={releasedRowCount()} flexShrink={0} />
+            );
+          const presented = item;
           const publication = presented.publication;
           const published = (): boolean => publication() !== undefined;
           return (

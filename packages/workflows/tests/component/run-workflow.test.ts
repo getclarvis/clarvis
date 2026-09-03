@@ -14,8 +14,9 @@ import type { WorkflowDefinition } from "../../src/artifact.ts";
 import { createWorkflowsCapability } from "../../src/capability.ts";
 import { WORKFLOW_LIMITS } from "../../src/limits.ts";
 import { RUN_WORKFLOW_TOOL_NAME } from "../../src/run-workflow.ts";
-import type { LeaderSpec, WorkflowRunDeps } from "../../src/types.ts";
+import type { LeaderSpec, WorkflowCtx, WorkflowRunDeps } from "../../src/types.ts";
 import { WORKFLOW_DEFINITIONS } from "../helpers/definitions.ts";
+import { recordingLogger, type RecordingLogger } from "../helpers/recording-logger.ts";
 import {
   makeCtx,
   promptFrom,
@@ -99,16 +100,20 @@ async function harness(
   defs = WORKFLOWS,
   maxLiveChildren = 16,
   execute?: (prompt: string) => Promise<ExecuteRunOutcome>,
-  approval: "run" | "cancel" | "none" | "timeout" = "cancel",
+  approval: "run" | "cancel" | "decline" | "dismiss" | "invalid" | "none" | "timeout" = "cancel",
 ): Promise<{
   handle: (args: Record<string, unknown>) => Promise<{ text: string; progress: boolean }>;
   briefs: string[];
   toolNames: string[];
   run: ReturnType<typeof runCtx>;
   reviews: ElicitParams[];
+  reviewTimeouts: Array<number | undefined>;
+  log: RecordingLogger;
 }> {
   const briefs: string[] = [];
+  const log = recordingLogger("debug");
   const ctx = makeCtx({
+    deps: { logger: log.logger } as WorkflowCtx["deps"],
     workflowDefs: defs,
     ...(execute !== undefined ? { runDeps: promptRunDeps(execute) } : {}),
     assemble: (spec: LeaderSpec) => {
@@ -119,6 +124,7 @@ async function harness(
   const run = runCtx(maxLiveChildren);
   const capability = await createWorkflowsCapability(ctx).forRun(run.runCtx);
   const reviews: ElicitParams[] = [];
+  const reviewTimeouts: Array<number | undefined> = [];
   const contribution = capability!
     .forAgent(
       scope({
@@ -126,9 +132,15 @@ async function harness(
         ...(approval === "none"
           ? {}
           : {
-              elicit: async (params) => {
+              elicit: async (params, opts) => {
                 reviews.push(params);
+                reviewTimeouts.push(opts.timeoutMs);
                 if (approval === "timeout") throw new ElicitTimeoutError();
+                if (approval === "decline") return { action: "decline" as const };
+                if (approval === "dismiss") return { action: "cancel" as const };
+                if (approval === "invalid") {
+                  return { action: "accept" as const, content: { decision: "later" } };
+                }
                 return {
                   action: "accept" as const,
                   content: { decision: approval },
@@ -150,6 +162,8 @@ async function harness(
     toolNames: contribution.tools!.map((t) => t.wireName),
     run,
     reviews,
+    reviewTimeouts,
+    log,
   };
 }
 
@@ -303,6 +317,7 @@ describe("run_workflow — running one", () => {
     expect(h.reviews).toHaveLength(1);
     expect(h.reviews[0]?.kind).toBe("workflow_review");
     expect(h.reviews[0]?.message).toContain("No leader has been launched yet");
+    expect(h.reviewTimeouts).toEqual([1_800_000]);
     expect(verdict.text).toContain("discover (discovery, once)");
     // The document's Markdown body is the synthesis brief handed back at the end.
     expect(verdict.text).toContain("Report the findings that survived verification");
@@ -314,7 +329,19 @@ describe("run_workflow — running one", () => {
     const h = await harness(WORKFLOWS, 16, undefined, "cancel");
     const verdict = await h.handle({ name: "audit", args: { subject: "the parser" } });
     expect(verdict.progress).toBe(false);
-    expect(verdict.text).toContain("was not started");
+    expect(verdict.text).toContain("approval review was declined");
+    expect(h.briefs).toEqual([]);
+  });
+
+  test.each([
+    ["declines the request", "decline", "approval review was declined"],
+    ["dismisses the request", "dismiss", "approval review was dismissed"],
+    ["returns malformed content", "invalid", "approval review returned an invalid response"],
+  ] as const)("preserves the reason when the human %s", async (_label, approval, expected) => {
+    const h = await harness(WORKFLOWS, 16, undefined, approval);
+    const verdict = await h.handle({ name: "audit", args: { subject: "the parser" } });
+    expect(verdict.progress).toBe(false);
+    expect(verdict.text).toContain(expected);
     expect(h.briefs).toEqual([]);
   });
 
@@ -331,8 +358,14 @@ describe("run_workflow — running one", () => {
     const h = await harness(WORKFLOWS, 16, undefined, "timeout");
     const verdict = await h.handle({ name: "audit", args: { subject: "the parser" } });
     expect(verdict.progress).toBe(false);
-    expect(verdict.text).toContain("was not started");
+    expect(verdict.text).toContain("approval review timed out without a response");
     expect(h.briefs).toEqual([]);
     expect(h.reviews).toHaveLength(1);
+    expect(h.log.one("capability.elicit_no_response").fields.waited_ms).toBeNumber();
+    expect(h.log.one("workflow.review_resolved").fields).toMatchObject({
+      workflow: "audit",
+      decision: "no_response",
+      waited_ms: expect.any(Number),
+    });
   });
 });

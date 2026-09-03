@@ -121,10 +121,13 @@ barrel only by their unit tests (`packages/loop/tests/unit/doom-loop-guard.test.
 | `OutputTokenReservation` | interface | `{amount, settle(used), release()}` | `packages/capability/src/output-budget.ts:11-18` |
 | `OutputTokenBudget` | interface | `{remaining(), reserveOutput(requested): OutputTokenReservation \| null}` | `packages/capability/src/output-budget.ts:28-33` |
 
-No factory lives in this file — it is vocabulary only. The one production implementation reachable
-from an ordinary (non-workflow) run's capability contribution is `WorkflowLedger`
-(`packages/workflows/src/ledger.ts:42-63`, owned by [workflows-scheduling-and-spawn](../capabilities/workflows-scheduling.md)); an ordinary run
-that never carries the workflow grant contributes no `outputBudget` at all (§4.4, §7).
+No factory lives in this file — it is vocabulary only. The production implementations reachable
+through a workflow run are `WorkflowReservation` for isolated leaders and the lazy fair-share
+`OutputTokenBudget` built by `createFairShareOutputBudget` for manager descendants and every agent
+inside a leader run; both delegate to `WorkflowLedger` or one of its reservations
+(`packages/workflows/src/{ledger,capability,run-leader}.ts`, owned by
+[workflows-scheduling-and-spawn](../capabilities/workflows-scheduling.md)). A run without the
+workflows capability contributes no `outputBudget` at all (§4.4, §7).
 
 `packages/loop/src/runtime/loop/output-budget.ts` (not literally under `runtime/budget/`, but the file
 this document's scope description names explicitly as owning "the reserve/release rule keyed on
@@ -787,11 +790,13 @@ Numbered, declarative, falsifiable. All are derived directly from this document'
   `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:145-147`) and feed it into `guards.record` — a coupling this document does
   not control but whose shape (name + stringified args) determines what the doom-loop/stagnation guards
   perceive as "the same call".
-- `packages/workflows/src/ledger.ts`'s `WorkflowLedger` (owned by [workflows-scheduling-and-spawn](../capabilities/workflows-scheduling.md)) is
-  the **only** production implementation of `OutputTokenBudget` reachable through an ordinary run's
-  capability contributions (`packages/workflows/src/run-leader.ts:24-31`,
-  `packages/workflows/src/capability.ts:108`). Nothing in `@clarvis/loop` or `@clarvis/capability`
-  constructs one for a non-workflow run — a plain lead-and-subagents run never has `folded.outputBudget`
+- `packages/workflows/src/ledger.ts`'s `WorkflowLedger`, `WorkflowReservation`, and
+  `createFairShareOutputBudget` adapter (owned by
+  [workflows-scheduling-and-spawn](../capabilities/workflows-scheduling.md)), are the **only**
+  production implementations of `OutputTokenBudget` reachable through run capability contributions
+  (`packages/workflows/src/run-leader.ts`, `packages/workflows/src/capability.ts`). Nothing in
+  `@clarvis/loop` or `@clarvis/capability` constructs one for a non-workflow run — a plain
+  lead-and-subagents run never has `folded.outputBudget`
   set, so `withOutputTokenBudget` is never engaged and the reserve/release rule of §4.4/INV-28 is dormant
   code outside a workflow. This is a real, structural coupling: this document's central mechanism has
   exactly one caller, and that caller is owned by a different document.

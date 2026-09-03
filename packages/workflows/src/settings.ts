@@ -90,9 +90,10 @@ export const WORKFLOWS_DEFAULTS = {
 
 /** The `workflows:` settings block: `max_concurrency` (the leader-wide live
  * cap), `max_total_leaders` (the cumulative registration cap), and
- * `budget_tokens` (an optional output-token ceiling summed across leader runs;
- * `null` means unbounded). Manager designation is not a field here — it is the
- * `workflow` grant on the entry agent profile. */
+ * `budget_tokens` (an optional output-token ceiling summed across the manager's
+ * in-process children, leaders, and leader children; `null` means unbounded).
+ * Manager designation is not a field here — it is the `workflow` grant on the
+ * entry agent profile. */
 const workflowsConfigSchema = z
   .object({
     max_concurrency: z

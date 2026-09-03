@@ -838,8 +838,9 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   shrink `scrollHeight` and clamp the reader backward. A frontier owner that commits while still
   intersecting the viewport remains painted until its physical batch takes ownership. A committed
   owner already below the viewport is disposed and contributes only its measured rows to one
-  aggregate handoff spacer. Repeated offscreen tool completion therefore cannot accumulate native
-  tool, Markdown or syntax owners.
+  aggregate handoff spacer at the released suffix's chronological boundary. An earlier live owner
+  therefore keeps its flow offset even when a later tool completes first. Repeated offscreen tool
+  completion cannot accumulate native tool, Markdown or syntax owners.
   Clarvis keeps the Lead projection mounted plus at most one selected-child projection; each owns a
   separate ScrollBox, physical-history controller, markers and scroll position. Selecting another
   child disposes the previously retained child, while returning to Lead reveals its exact reader
@@ -852,7 +853,8 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   outside the ScrollBox; there is no second transcript scroll area. While the reader is away from
   the tail, a non-interactive newer-entry count includes both unmeasured committed batches and the
   current mutable frontier; repeated deltas for the same frontier artifact do not grow that count.
-  Downward scroll admits those entries and returns naturally to tail-following. The event, replay,
+  Downward wheel, Page Down and `Alt+Down` admit those entries and return to the real content bottom,
+  including the mounted live tail, before re-enabling tail-following. The event, replay,
   ordering, physical-anchor and retention rules are in
   [`code-transcript-stability.md`](../../specs/hosts/code-transcript-stability.md). Oversized tails
   still fall back to plain text with an explicit formatting-simplified notice instead of starting

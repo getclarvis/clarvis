@@ -189,14 +189,48 @@ inside that TSDoc.
 
 ---
 
+## Workflow approval failure is persisted as only "was not started"
+
+**Resolved on 2026-09-03.** Two `demo_01` manager runs persisted only `workflow 'audit' was not
+started` and `workflow 'implement' was not started` after long waits. That historical context cannot
+distinguish an explicit decline, a dismissed UI, malformed accepted content, or a real timeout, so
+it is not evidence that the configured 30-minute wait elapsed. `run_workflow` now passes the manager
+run's effective `elicit_wait_ms`, returns a distinct message for every non-start outcome, logs every
+settled preflight as `workflow.review_resolved` with `decision` and `waited_ms`, and retains the shared
+`capability.elicit_no_response` diagnostic for a genuine timeout. Production:
+`buildRunWorkflowHandler` in `packages/workflows/src/run-workflow.ts` and the effective wait assembled
+by `runManagerWorkflow` in `packages/kernel/src/workflows/workflows-service.ts`. Test:
+`packages/workflows/tests/component/run-workflow.test.ts` (`starts the first round, interpolates the
+declared args, and carries the synthesis`; refusal-reason cases; `fails closed when the workflow
+approval wait times out`).
+
+---
+
 ## One in-flight model call reserves the whole workflow tree budget, so a concurrent leader spawn is refused
 
 **Resolved on 2026-08-27.** The manager/Admiral no longer contributes the workflow ledger as its
-`outputBudget`; it remains on the primary session budget. The dedicated workflow-child ledger now
-defaults to 640,000,000 output tokens (four primary-session-sized shares at default concurrency) and
-divides headroom across `max_concurrency` with no extra manager share. The provider adapter still
+`outputBudget`; it remains on the primary run budget. The dedicated workflow-child ledger now
+defaults to 640,000,000 output tokens (four times the primary-run default) and
+divides headroom across concurrent auxiliary consumers with no extra manager share. The provider adapter still
 safely reserves every retry attempt, but a manager call can
 no longer make workflow-child headroom transiently read as zero.
+
+**Follow-up resolved on 2026-09-03.** The raw workflow ledger was still contributed to ordinary
+in-process children of the manager. For a provider model without an explicit output cap, the first
+child's first call reserved every remaining token; siblings then failed their pre-loop budget check
+with zero iterations. If that call's stream outcome was unknown at cancellation, conservative
+settlement could persist the complete 640,000,000-token reservation as apparent spend. Each child
+now receives a lazy per-call fair-share wrapper: attachment and pre-loop reads reserve nothing, and
+unused headroom returns when that provider call settles. The divisor covers both possible leaders
+and direct manager subagents. A leader's held subtree is partitioned again across its entry agent and
+possible subagents. Production: `createFairShareOutputBudget`, `createDescendantOutputBudget`, and
+`createLeaderOutputBudgetCapability` in `packages/workflows/src`. Tests:
+`packages/workflows/tests/component/capability.test.ts` (`keeps the manager on its run budget while
+capping concurrent descendant calls`; `does not reserve descendant headroom until its first model
+call`) and `packages/workflows/tests/component/run-leader.test.ts` (`partitions one leader
+reservation across its root and concurrent subagent calls`). `runManagerWorkflow` still constructs
+the primary and auxiliary ledgers inside each execution; neither budget is accumulated across
+session turns.
 
 A genuine child-ledger refusal remains sticky for a batch, but now also marks the aggregate workflow
 failed. A manager completion therefore cannot persist a successful workflow over skipped or failed
@@ -1090,6 +1124,18 @@ owner count stays bounded (`packages/code/tests/integration/transcript-publicati
 "scrolling above a live tail preserves the reader while terminal updates stay physically bounded").
 The companion test "expanding a tall committed tool cannot strand physical measurement or newer
 batches" fixes the 99/96-column mismatch and proves that a later terminal publication is admitted.
+
+The review then found two edge paths in that same repair. The aggregate handoff spacer was always
+inserted before every retained live owner, so a later offscreen tool completing before an earlier
+visible frontier could move the earlier owner backward. The spacer now occupies the earliest
+released owner's actual chronological boundary. Separately, keyboard Page Down/`Alt+Down` computed
+its last position from frozen `activeRows` only; with the live tail permanently mounted, it could
+re-enable following before reaching the real content bottom and strand repeated keypresses above the
+frontier. Downward keyboard navigation now routes its terminal edge through `returnToTail()`. The
+regressions are pinned by `packages/code/tests/integration/transcript-publication-render.test.tsx`
+(`an out-of-order offscreen handoff keeps its spacer after every earlier live owner`) and
+`packages/code/tests/integration/transcript-window-render.test.tsx` (`keyboard downward navigation
+reaches the mounted live tail after the newest frozen batch`).
 
 A controlled same-renderer soak on 2026-09-03, under Bun 1.4.0 and OpenTUI 0.5.9 at 100x30,
 extended that regression to 30 batches of 64 offscreen terminal tools: 1,920 calls in 35.99 seconds.

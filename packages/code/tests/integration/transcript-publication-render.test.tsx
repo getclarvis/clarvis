@@ -1143,6 +1143,184 @@ test("a delayed physical handoff renders one frozen snapshot while replay and la
   }
 });
 
+test("an out-of-order offscreen handoff keeps its spacer after every earlier live owner", async () => {
+  const scheduler = new ManualPublicationScheduler();
+  const store = createTranscriptStore({ publicationScheduler: scheduler });
+  for (let index = 0; index < 30; index += 1) store.appendUserMessage(`HANDOFF BACKLOG ${index}`);
+  const sink = store.openRun("out-of-order-handoff");
+  applyEvent(sink, runStarted(), "live");
+  applyEvent(
+    sink,
+    { type: "iteration_started", at: 20, agent: "lead", iteration: 1, model: "openai/gpt-5" },
+    "live",
+  );
+  applyEvent(
+    sink,
+    {
+      type: "text_delta",
+      at: 21,
+      agent: "lead",
+      iteration: 1,
+      channel: "text",
+      text: Array.from(
+        { length: 90 },
+        (_, index) => `EARLIER FRONTIER ROW ${String(index).padStart(2, "0")}`,
+      ).join("\n\n"),
+      reset: true,
+    },
+    "live",
+  );
+  applyEvent(
+    sink,
+    {
+      type: "tool_call_started",
+      at: 22,
+      agent: "lead",
+      call_id: "later-tool",
+      server: "builtin",
+      tool: "shell",
+      arguments: { command: "printf LATER_OFFSCREEN_TOOL" },
+    },
+    "live",
+  );
+
+  const activity = createMutable({
+    subagents: [],
+    plan: null,
+    usage: null,
+    context: null,
+  }) as unknown as ActivityStore;
+  const transcript = createTranscriptState({
+    nodes: () => store.committedNodes(),
+    preserveOrder: true,
+    subagents: () => [],
+    notify: () => {},
+    defaultFolded: (key) => store.defaultFolded(key),
+  });
+  let scrollbox: ScrollBoxRenderable | undefined;
+  let history: CommittedHistoryHandle | undefined;
+  const rendered = await openRender(
+    () => (
+      <TranscriptRegion
+        store={store}
+        transcript={transcript}
+        activity={activity}
+        interaction={
+          {
+            keymap: createFakeKeymap().keymap,
+            pushOverlayContext: () => {},
+            popOverlayContext: () => {},
+            syncContext: () => {},
+          } as unknown as Interaction
+        }
+        run={{ elicit: () => null, resolveElicit: () => {}, workflowActivity: () => null }}
+        layout={{
+          mode: () => "wide",
+          sidebarVisible: () => false,
+          sidebarWidth: () => 28,
+          drawerOpen: () => false,
+          contentInset: () => 0,
+          width: () => 100,
+          height: () => 30,
+        }}
+        contextWindow={() => 1_024_000}
+        agent={() => "coder"}
+        model={() => "openai/gpt-5"}
+        notify={() => {}}
+        openPlan={() => {}}
+        onScrollbox={(value) => (scrollbox = value)}
+        onHistoryHandle={(value) => (history = value)}
+        historyMeasurementRecovery={{ leaseMs: 1, retries: 0 }}
+      />
+    ),
+    { width: 100, height: 30 },
+  );
+
+  try {
+    await rendered.waitForFrame((frame) => frame.includes("LATER_OFFSCREEN_TOOL"), {
+      maxPasses: 200,
+    });
+    expect(scrollbox).toBeDefined();
+    expect(history).toBeDefined();
+    const earlier = store.frontierNodes().find((node) => node.kind === "assistant");
+    const later = store
+      .frontierNodes()
+      .find((node) => node.kind === "tool_call" && node.toolName === "shell");
+    if (earlier === undefined || later === undefined)
+      throw new Error("live owners were not staged");
+    const earlierOwnerId = `live-transcript-owner:${earlier.key}`;
+    const laterOwnerId = `live-transcript-owner:${later.key}`;
+    for (let pass = 0; pass < 100; pass += 1) {
+      wheel(scrollbox!, "up", 4);
+      await rendered.renderOnce();
+      const earlierCandidate = byId(rendered.renderer.root, earlierOwnerId);
+      const laterCandidate = byId(rendered.renderer.root, laterOwnerId);
+      const viewportStart = scrollbox!.viewport.screenY;
+      const viewportEnd = viewportStart + scrollbox!.viewport.height;
+      const earlierVisible =
+        earlierCandidate.screenY < viewportEnd &&
+        earlierCandidate.screenY + earlierCandidate.height > viewportStart;
+      if (earlierVisible && laterCandidate.screenY >= viewportEnd) break;
+    }
+    const before = rendered.captureCharFrame();
+    expect(before).toContain("EARLIER FRONTIER ROW");
+    expect(before).not.toContain("LATER_OFFSCREEN_TOOL");
+    expect(history!.snapshot().followingTail).toBe(false);
+
+    const earlierOwner = byId(rendered.renderer.root, earlierOwnerId);
+    const laterOwner = byId(rendered.renderer.root, laterOwnerId);
+    expect(laterOwner.screenY).toBeGreaterThanOrEqual(
+      scrollbox!.viewport.screenY + scrollbox!.viewport.height,
+    );
+    const earlierScreenY = earlierOwner.screenY;
+    const beforeGeometry = {
+      ownerY: earlierOwner.y,
+      ownerHeight: earlierOwner.height,
+      scrollTop: scrollbox!.scrollTop,
+      scrollHeight: scrollbox!.scrollHeight,
+      laterHeight: laterOwner.height,
+    };
+
+    applyEvent(
+      sink,
+      {
+        type: "tool_call",
+        at: 23,
+        agent: "lead",
+        call_id: "later-tool",
+        server: "builtin",
+        tool: "shell",
+        arguments: { command: "printf LATER_OFFSCREEN_TOOL" },
+        ok: true,
+        result: "LATER_OFFSCREEN_TOOL",
+      },
+      "live",
+    );
+    scheduler.flush();
+    for (let pass = 0; pass < 100; pass += 1) {
+      await rendered.renderOnce();
+      if (rendered.renderer.root.findDescendantById("live-transcript-handoff-spacer") !== undefined)
+        break;
+    }
+
+    expect(rendered.renderer.root.findDescendantById(laterOwnerId)).toBeUndefined();
+    expect(byId(rendered.renderer.root, earlierOwnerId)).toBe(earlierOwner);
+    if (earlierOwner.screenY !== earlierScreenY)
+      throw new Error(
+        `earlier owner moved: ${JSON.stringify({ earlierScreenY, now: earlierOwner.screenY, beforeGeometry, afterGeometry: { ownerY: earlierOwner.y, ownerHeight: earlierOwner.height, scrollTop: scrollbox!.scrollTop, scrollHeight: scrollbox!.scrollHeight, spacerHeight: byId(rendered.renderer.root, "live-transcript-handoff-spacer").height } })}`,
+      );
+    const tailChildren = byId(rendered.renderer.root, "live-transcript-tail").getChildren();
+    const earlierIndex = tailChildren.findIndex((child) => child.id === earlierOwnerId);
+    const spacerIndex = tailChildren.findIndex(
+      (child) => child.id === "live-transcript-handoff-spacer",
+    );
+    expect(earlierIndex).toBeGreaterThanOrEqual(0);
+    expect(spacerIndex).toBeGreaterThan(earlierIndex);
+  } finally {
+    rendered.renderer.destroy();
+  }
+});
+
 test("scrolling above a live tail preserves the reader while terminal updates stay physically bounded", async () => {
   const scheduler = new ManualPublicationScheduler();
   const store = createTranscriptStore({

@@ -203,7 +203,10 @@ the workflow detail vocabulary.
   queue holds no token headroom, so serial batches can reuse the unused share returned by each
   predecessor. The admitted set still reserves before any model call, keeping concurrent dispatch
   atomic against the leader budget. The manager/Admiral is deliberately absent from that ledger and
-  remains on the primary session budget.
+  remains on the primary run budget. An ordinary in-process child of the manager receives a lazy,
+  per-call fair-share adapter rather than the raw tree ledger; a
+  capless provider call in one child therefore cannot make concurrently spawned siblings fail
+  before their first iteration.
 - **Every batched tool holds a baton across wave boundaries inside one authorized dispatch**
   (`src/dispatch.ts`, the one implementation both `run_work_items` and `run_round` run on). The loop's finish gate accepts a lone
   `submit_result` whenever `registry.liveCount() === 0`, so a driver that lets its live-child count
@@ -254,16 +257,18 @@ the workflow detail vocabulary.
 The `workflows:` block is pure fan-out tuning — `max_concurrency` (default `4`, maximum `20`, the
 leader-wide cap on concurrently running leaders), `max_total_leaders` (default `32`, maximum `255`,
 the cumulative registration cap for one manager), and `budget_tokens` (default `640000000`, with explicit
-`null` as the opt-out, an output-token ceiling summed across auxiliary leader runs). At the default
-concurrency this is four 160-million-token child shares, deliberately larger in aggregate than the
-manager's independent 160-million-token primary session budget. That ceiling
+`null` as the opt-out, an output-token ceiling summed across all auxiliary workflow agents). Its
+640-million-token default is four times the manager's independent 160-million-token primary run
+budget. That ceiling
 covers the manager's in-process child agents plus every leader and leader sub-agent, including their
-compaction, vision and billable retry attempts. Only the manager/Admiral uses the independent primary
-session budget. Each leader model call takes a real
-reservation after semaphore admission and before model dispatch, then reconciles actual provider
-usage after settlement. Leader admission reserves a fair share of current headroom across
-`max_concurrency`, so concurrent leaders cannot pass the same stale budget check while queued leaders
-consume no provisional headroom.
+compaction, vision and billable retry attempts. Only the manager/Admiral uses the independent
+primary run budget. `runManagerWorkflow` constructs both budgets anew for every execution; neither
+one is a session-lifetime accumulator. Every top-level auxiliary claim divides current headroom
+across the maximum simultaneous leaders plus manager subagents. A leader holds that claim only after
+semaphore admission, then each model call inside its isolated run divides the leader's headroom
+across the root plus its possible subagents. Manager-child calls use the same per-call adapter
+directly over the tree ledger. Unused call headroom returns at settlement, so a capless call cannot
+reserve the complete tree and later calls can reuse what siblings did not spend.
 
 Workflow leaders are auxiliary runs: the kernel forces `memory: "off"` and removes the memory
 capability from their execution deps. The primary manager remains the workflow's single
@@ -313,6 +318,12 @@ descriptor and bypass a TUI host's silencing.
 | debug        | `workflow.round_folded`                                   | the folded result's shape, and how many replicas missed it                    |
 | debug/warn   | `workflow.schedule_derived` / `workflow.schedule_refused` | the waves, the unscoped writers, or the graph that cannot run                 |
 | debug/warn   | `workflow.elicit_queued` / `workflow.elicit_skipped`      | the tree-wide prompt queue, and a prompt abandoned with its agent             |
+| info         | `workflow.review_resolved`                               | the workflow preflight outcome and human wait duration                        |
+
+A workflow preflight uses the manager run's effective `elicit_wait_ms` and a timeout also emits the
+shared `capability.elicit_no_response` event. Its tool result distinguishes an explicit decline, a
+dismissed review, an invalid answer and a genuine no-response timeout, so persisted context does not
+collapse all four into “was not started”.
 
 Correlation is bound coarsest-first with `bind()`: the kernel binds `component` and `workflow_id`
 (`= managerRunId`, since `record.id === record.root_run_id === managerRunId`), `beginDispatch` binds

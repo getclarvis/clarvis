@@ -684,6 +684,37 @@ describe("the physical transcript window", () => {
     }
   });
 
+  test("keyboard downward navigation reaches the mounted live tail after the newest frozen batch", async () => {
+    const { rendered, scrollbox, history } = await renderFixture(transcript(30, 1));
+    try {
+      expect(history.revealKey("user:0")).toBeTrue();
+      await waitForResident(rendered, history, "fixture:0", "ask 0");
+      await waitForRevealFixedPoint(rendered, history);
+      expect(history.snapshot().followingTail).toBeFalse();
+
+      for (let pass = 0; pass < 2_000; pass += 1) {
+        history.scrollBy(12);
+        await rendered.renderOnce();
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        const snapshot = history.snapshot();
+        if (snapshot.followingTail && snapshot.laterUnknown === 0 && snapshot.candidate === null)
+          break;
+      }
+
+      expect(history.snapshot()).toMatchObject({
+        followingTail: true,
+        laterUnknown: 0,
+        candidate: null,
+      });
+      expect(scrollbox.scrollTop).toBeCloseTo(
+        Math.max(0, scrollbox.scrollHeight - scrollbox.viewport.height),
+      );
+      expect(rendered.renderer.root.findDescendantById("live-transcript-tail")).toBeDefined();
+    } finally {
+      rendered.renderer.destroy();
+    }
+  });
+
   test("rapid page and wheel navigation keep the prepared page visible until admission", async () => {
     const { rendered, scrollbox, history } = await renderFixture(transcript(80, 2));
     try {

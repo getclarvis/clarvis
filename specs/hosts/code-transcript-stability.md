@@ -558,8 +558,11 @@ break the reader anchor. An owner fully below the viewport is disposed and its l
 transferred to one aggregate handoff spacer keyed only by retained publication metadata. Admission
 of the corresponding physical publication removes that contribution; returning directly to the
 tail discards obsolete off-tail geometry. New terminal publications that never had a live owner add
-no estimated rows. Therefore a long off-tail run may grow semantic publications and one numeric
-spacer, but cannot retain one native tool/Markdown/syntax tree per completed call.
+no estimated rows. The aggregate spacer occupies the earliest released owner's chronological
+boundary, after every earlier retained live owner; parallel tools completing out of order therefore
+cannot prepend later geometry ahead of an earlier visible frontier. Thus a long off-tail run may grow
+semantic publications and one numeric spacer, but cannot retain one native tool/Markdown/syntax tree
+per completed call.
 
 The tail always ends with `transcript-reading-runway`: three physical rows normally and one row only
 at terminal height ≤28. Its height depends solely on the height band, never on streaming or activity,
@@ -806,7 +809,8 @@ OpenTUI can preserve manual-scroll geometry. A Lead frontier artifact's final vi
 semantic commitment equals its first visible row as a committed owner; a following Lead
 response/tool remains below it in both frames. A committed handoff intersecting the viewport retains
 its painted owner; one fully below it transfers its measured height to one aggregate spacer and
-releases the heavy subtree until physical admission. Child tools, reasoning and answers cannot enter
+releases the heavy subtree until physical admission. That spacer stays at the released suffix's
+actual chronological position, never before an earlier retained live owner. Child tools, reasoning and answers cannot enter
 this main flow; only the two typed, append-only delegation lifecycle markers may add chronological
 Lead rows. Provider composing, started, output and terminal tool plumbing for
 supervision/delegation/workflow orchestration cannot enter it either. There is no fixed-height live
@@ -818,16 +822,20 @@ TranscriptRegion keeps committed memory, diff, and write syntax owners stable": 
 history child, child content remains absent from the main capture, lifecycle markers append without
 moving earlier owners, and later Lead output preserves the chronological flow; "scrolling above a
 live tail preserves the reader while terminal updates stay physically bounded": native wheel
-departure, terminal handoff, 64 offscreen tool completions, stable reader row and bounded owners).
+departure, terminal handoff, 64 offscreen tool completions, stable reader row and bounded owners;
+"an out-of-order offscreen handoff keeps its spacer after every earlier live owner": a later tool
+completion cannot move or precede the earlier frontier owner).
 
 **INV-TP22.** While explicit tail-following is active, append-only publication drains to
 `laterUnknown === 0` without consulting a pre-layout bottom sample. Upward input disables following;
-downward input loads newer ranges in order and re-enables it only at the newest edge. A newer-range
+downward input loads newer ranges in order and re-enables it only at the real content bottom after
+the newest frozen owner and mounted live tail. A newer-range
 count, when present, is a non-interactive top overlay and never a row below history. It includes both
 unmeasured committed batches and mutable frontier artifacts; repeated deltas for one artifact do not
 increase it. Production: `PhysicalTranscriptWindowController`, `CommittedHistory`,
 `LiveTranscriptTail`. Tests: `transcript-physical-window.test.ts`,
-`transcript-window-render.test.tsx` (multi-append tail, reader anchor and return-to-tail cases), and
+`transcript-window-render.test.tsx` (multi-append tail, reader anchor, explicit return-to-tail and
+keyboard downward-navigation-to-live-tail cases), and
 `transcript-publication-render.test.tsx` (off-tail live-frontier indicator and bounded terminal
 handoff soak).
 

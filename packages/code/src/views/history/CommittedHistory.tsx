@@ -803,22 +803,22 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
       return accepted ? "preparing" : "start";
     }
     if (rows > 0 && target > lastStart) {
-      if (element.scrollTop !== lastStart) element.scrollTo({ x: 0, y: lastStart });
       const accepted = controller.requestLater();
-      if (accepted) requestRender();
-      else {
-        controller.setFollowingTail(true);
-        element.stickyScroll = true;
+      if (accepted) {
+        if (element.scrollTop !== lastStart) element.scrollTo({ x: 0, y: lastStart });
+        requestRender();
+      } else {
+        returnToTail();
       }
       return accepted ? "preparing" : "end";
     }
 
     const nextTop = Math.max(activeStart, Math.min(lastStart, target));
-    element.scrollTo({ x: 0, y: nextTop });
     if (rows > 0 && nextTop >= lastStart && snapshot.end >= snapshot.batchIds.length) {
-      controller.setFollowingTail(true);
-      element.stickyScroll = true;
+      returnToTail();
+      return "scrolled";
     }
+    element.scrollTo({ x: 0, y: nextTop });
     renderer.requestRender();
     return "scrolled";
   };

@@ -12,7 +12,7 @@ import type {
   Usage,
 } from "@clarvis/capability";
 import { levelEnabled } from "@clarvis/capability";
-import type { WorkflowReservation } from "./ledger.ts";
+import { createFairShareOutputBudget, type WorkflowReservation } from "./ledger.ts";
 import { faultFields, workflowLogger } from "./log.ts";
 import type { LeaderResult, LeaderSpec, WorkflowCtx } from "./types.ts";
 
@@ -21,14 +21,19 @@ import type { LeaderResult, LeaderSpec, WorkflowCtx } from "./types.ts";
 const EMPTY_USAGE: Usage = { iterations_used: 0, elapsed_ms: 0, by_agent: [] };
 
 /** A tool-free capability that carries only the leader subtree's budget. */
-function createLeaderOutputBudgetCapability(outputBudget: OutputTokenBudget): Capability {
+function createLeaderOutputBudgetCapability(
+  outputBudget: OutputTokenBudget,
+  maxParallelSubagents: number,
+): Capability {
   const name = "workflows.output-budget";
   return {
     name,
     forRun: () => ({
       name,
       forAgent: () => ({
-        attach: () => ({ outputBudget }),
+        attach: () => ({
+          outputBudget: createFairShareOutputBudget(outputBudget, 1 + maxParallelSubagents),
+        }),
       }),
     }),
   };
@@ -56,7 +61,8 @@ export async function runLeader(
   heldReservation?: WorkflowReservation,
 ): Promise<LeaderResult> {
   const logger = workflowLogger(ctx);
-  const reservation = heldReservation ?? ctx.ledger.reserve(ctx.maxConcurrency);
+  const reservation =
+    heldReservation ?? ctx.ledger.reserve(ctx.maxConcurrency + ctx.maxParallelSubagents);
   if (reservation === null) {
     ctx.onBudgetExhausted?.();
     return {
@@ -96,7 +102,7 @@ export async function runLeader(
       owner: ctx.owner,
       deps: ctx.deps,
       externalSignal: ctx.signal,
-      capabilities: [createLeaderOutputBudgetCapability(reservation)],
+      capabilities: [createLeaderOutputBudgetCapability(reservation, ctx.maxParallelSubagents)],
       ...(elicit !== undefined ? { elicit } : {}),
       ...(steer !== undefined ? { steer } : {}),
       ...(onEvent !== undefined ? { onEvent } : {}),

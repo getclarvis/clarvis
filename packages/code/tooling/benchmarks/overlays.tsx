@@ -645,6 +645,7 @@ const cases: SoakCase[] = [
   {
     name: "catalog-picker-retained-100-rows",
     portal: true,
+    warmupCycles: 220,
     render: (open) => (
       <SurfaceBoundary active={open} retention="retain-one">
         {(lifecycle) => (
@@ -662,6 +663,7 @@ const cases: SoakCase[] = [
   },
   {
     name: "elicit-guard-confirm",
+    warmupCycles: 400,
     render: (open) => (
       <Show when={open()}>
         <ElicitBlock interaction={fakeInteraction} request={guardRequest} onResolve={() => {}} />

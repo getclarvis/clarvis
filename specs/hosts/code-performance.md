@@ -323,6 +323,17 @@ The existing render tests prove layout and cleanup-visible behavior, not post-GC
 controlled renderer soak in [`../known-issues.md`](../known-issues.md#every-floatframe-overlay-leaks-native-memory-per-rendered-row)
 is the authority for the leak rate.
 
+The high-cardinality retained Catalog Picker discards 220 finite traversal cycles before its
+100-cycle measurement. The remounted elicitation control discards 400 because each distinct request
+creates and disposes one legitimate key layer and OpenTUI/native allocator arenas continue warming
+after the global ten-cycle default. These are per-case warm-ups, not weaker gates: both still run in
+fresh processes at 120x32 and 80x24, keep the 5 MiB RSS/PSS-per-100 ceiling, and require renderable,
+lifecycle-pass and live-key-layer balance. On 2026-09-02 the Catalog Picker measured 2.12 and
+1.39 MiB RSS/100; two repeated elicitation matrices measured 2.00–2.79 and 3.20–3.59 MiB RSS/100,
+respectively. Production and test ownership:
+`packages/code/tooling/benchmarks/overlays.tsx` (`SoakCase.warmupCycles`,
+`catalog-picker-retained-100-rows`, `elicit-guard-confirm`, `runParent`).
+
 The floating family is larger than the two historically measured entry points:
 
 | Surface                               | Mount path                                                                  | Variable allocation risk                                                                                               | Current evidence                                                       |

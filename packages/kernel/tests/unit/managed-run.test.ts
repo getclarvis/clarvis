@@ -168,8 +168,8 @@ describe("createManagedRunWithRuntime", () => {
       clock,
     );
 
-    await handle.steer("focus on auth");
-    await handle.steer({
+    const firstSteer = handle.steer("focus on auth");
+    const secondSteer = handle.steer({
       role: "user",
       content: [{ type: "text", text: "and logs" }],
     });
@@ -177,16 +177,19 @@ describe("createManagedRunWithRuntime", () => {
       { content: "focus on auth" },
       { content: [{ type: "text", text: "and logs" }] },
     ]);
+    await Promise.all([firstSteer, secondSteer]);
     await handle.compact();
     await handle.compact("keep auth context");
     expect(context.compaction.drain()).toEqual([{}, { request: "keep auth context" }]);
 
     await handle.cancel();
     expect(context.signal.aborted).toBe(true);
+    const undeliveredSteer = handle.steer("too late to drain");
     finish.resolve(completed("run-control"));
     await handle.done;
 
-    await handle.steer("too late");
+    await expect(undeliveredSteer).rejects.toMatchObject({ code: "not_found" });
+    await expect(handle.steer("too late")).rejects.toMatchObject({ code: "not_found" });
     expect(context.steer.drain()).toEqual([]);
     await expect(handle.compact("too late")).rejects.toMatchObject({ code: "not_found" });
   });

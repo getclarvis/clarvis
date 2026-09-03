@@ -9,6 +9,7 @@ import { InputDock, type SlashOutcome } from "../../src/views/InputDock.tsx";
 import type { Interaction } from "../../src/keys/interaction.ts";
 import type { Platform } from "../../src/adapters/platform.ts";
 import { registerWhenField } from "../../src/keys/when-dsl.ts";
+import { commandKeyLabel } from "../../src/keys/keyspec.ts";
 import { createPromptHistory } from "../../src/core/prompt-history.ts";
 import {
   MAX_COMPOSER_IMAGE_BYTES,
@@ -41,6 +42,8 @@ function Host(props: {
   platform?: Platform;
   targetLabel?: () => string;
   submissionBlocked?: () => string | null;
+  keyboardProfile?: "portable" | "enhanced";
+  onInteraction?: (interaction: Interaction) => void;
 }): JSX.Element {
   const renderer = useRenderer();
   const keymap = createDefaultOpenTuiKeymap(renderer);
@@ -50,7 +53,9 @@ function Host(props: {
     renderer,
     pushOverlayContext: () => {},
     popOverlayContext: () => {},
+    keyboardEnvironment: () => ({ profile: props.keyboardProfile ?? "enhanced" }),
   } as unknown as Interaction;
+  props.onInteraction?.(interaction);
   return (
     <InputDock
       interaction={interaction}
@@ -85,10 +90,12 @@ async function mount(
   platform?: Platform,
   targetLabel?: () => string,
   submissionBlocked?: () => string | null,
+  keyboardProfile?: "portable" | "enhanced",
 ) {
   const log: Log = { submitted: [], slash: [], bash: [], notified: [] };
   let el: TextareaRenderable | undefined;
   let dock: DockHandle | undefined;
+  let interaction: Interaction | undefined;
   const t = await openRender(
     (() => (
       <Host
@@ -98,8 +105,10 @@ async function mount(
         platform={platform}
         targetLabel={targetLabel}
         submissionBlocked={submissionBlocked}
+        keyboardProfile={keyboardProfile}
         onReady={(e) => (el = e)}
         onDock={(value) => (dock = value)}
+        onInteraction={(value) => (interaction = value)}
       />
     )) as never,
     { width: 100, height: 16 },
@@ -158,6 +167,7 @@ async function mount(
     log,
     el: () => el!,
     dock: () => dock!,
+    interaction: () => interaction!,
     attach,
     attachBytes,
     attachFromClipboard,
@@ -203,6 +213,18 @@ test("Shift+Enter and Ctrl+J insert newlines without submitting the draft", asyn
   expect(h.el().plainText).toBe("first\n\n");
   expect(h.log.submitted).toEqual([]);
   expect(h.log.slash).toEqual([]);
+  h.t.renderer.destroy();
+});
+
+test("the portable keyboard profile advertises only Ctrl+J for a newline", async () => {
+  const h = await mount("handled", undefined, undefined, undefined, undefined, "portable");
+  h.el().setText("first");
+  h.el().gotoBufferEnd();
+
+  expect(commandKeyLabel(h.interaction().keymap, "prompt.newline")).toBe("^j");
+  h.pressKey("j", { ctrl: true });
+  await h.t.renderOnce();
+  expect(h.el().plainText).toBe("first\n");
   h.t.renderer.destroy();
 });
 

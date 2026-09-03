@@ -436,9 +436,6 @@ async function runApp(
     diagnosticEvent("app.boot.begin", { mode: mode.kind, workspace }, "info");
   }
 
-  if (mode.kind === "resume" || mode.kind === "continue")
-    await diagnosticAsync("session.preflight", () => assertSessionExists(mode));
-
   const dev = !!process.env.CLARVIS_CODE_DEV;
   const asciiFlag = mode.ascii;
   const platform = createPlatform(renderer, { dev });
@@ -1422,7 +1419,38 @@ export async function runInteractiveMode(
   mode: InteractiveMode,
   bootShell: BootShell,
   preparedWorkspaceManager?: Promise<WorkspaceClientManager>,
+  preparedMode?: PreparedInteractiveMode,
 ): Promise<void> {
+  extensionProfileSelector = mode.extensionProfileSelector;
+  let selectedWorktree = preparedMode?.selectedWorktree;
+  if (preparedMode === undefined && mode.worktree !== undefined) {
+    const { bootstrapWorktree } = await import("./bootstrap/worktree.ts");
+    selectedWorktree = await bootstrapWorktree(workspace, mode.worktree);
+    workspace = selectedWorktree.workspaceRoot;
+    process.env.CLARVIS_WORKSPACE_ROOT = workspace;
+  }
+  if (preparedMode === undefined && (mode.kind === "resume" || mode.kind === "continue"))
+    await diagnosticAsync("session.preflight", () => assertSessionExists(mode));
+  const debug = resolveDebugRequest(mode, process.env);
+  await runApp(mode, debug, bootShell, selectedWorktree, preparedWorkspaceManager);
+}
+
+/** State resolved before a resume/continue invocation is allowed to take the terminal. */
+export interface PreparedInteractiveMode {
+  selectedWorktree?: WorktreeBootstrapResult;
+}
+
+/**
+ * Resolve worktree and session identity before creating the OpenTUI renderer.
+ *
+ * @remarks A missing session exits from {@link assertSessionExists}; returning
+ * means the interactive entrypoint may safely take raw mode and alternate
+ * screen without showing a transient startup frame for a command that cannot
+ * run.
+ */
+export async function prepareInteractiveMode(
+  mode: Extract<InteractiveMode, { kind: "resume" | "continue" }>,
+): Promise<PreparedInteractiveMode> {
   extensionProfileSelector = mode.extensionProfileSelector;
   let selectedWorktree: WorktreeBootstrapResult | undefined;
   if (mode.worktree !== undefined) {
@@ -1431,8 +1459,8 @@ export async function runInteractiveMode(
     workspace = selectedWorktree.workspaceRoot;
     process.env.CLARVIS_WORKSPACE_ROOT = workspace;
   }
-  const debug = resolveDebugRequest(mode, process.env);
-  await runApp(mode, debug, bootShell, selectedWorktree, preparedWorkspaceManager);
+  await assertSessionExists(mode);
+  return selectedWorktree === undefined ? {} : { selectedWorktree };
 }
 
 /** Continue a non-interactive invocation after the lightweight CLI argument fast path. */

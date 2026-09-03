@@ -815,6 +815,48 @@ test("first-run setup guides provider and model selection, saves the key, and se
   t.renderer.destroy();
 });
 
+test("first-run Escape closes provider and model pickers back to setup without saving", async () => {
+  const catalog = createModelsCatalog(protoCatalogFull("alpha"));
+  const providerStage = mount(undefined, "none", { catalog });
+  const providerView = await openRender(
+    (() =>
+      ProvidersPanel(providerStage.host, {
+        ...providerStage.deps,
+        bootstrap: true,
+        onBootstrapComplete: () => {},
+      })) as never,
+    { width: 100, height: 34 },
+  );
+
+  await captureUntil(providerView, "Step 1 of 2");
+  providerStage.press("escape");
+  await providerView.renderOnce();
+  expect(providerStage.closed).toEqual([1]);
+  expect(providerStage.writes).toEqual([]);
+  providerView.renderer.destroy();
+
+  const modelStage = mount(undefined, "none", { catalog });
+  const modelView = await openRender(
+    (() =>
+      ProvidersPanel(modelStage.host, {
+        ...modelStage.deps,
+        bootstrap: true,
+        onBootstrapComplete: () => {},
+      })) as never,
+    { width: 100, height: 34 },
+  );
+
+  await captureUntil(modelView, "Step 1 of 2");
+  pressDowns(modelStage.press, 2);
+  modelStage.press("return");
+  await captureUntil(modelView, "Step 2 of 2");
+  modelStage.press("escape");
+  await modelView.renderOnce();
+  expect(modelStage.closed).toEqual([1]);
+  expect(modelStage.writes).toEqual([]);
+  modelView.renderer.destroy();
+});
+
 test("first-run ChatGPT subscription login clears its code and guides entitled model selection", async () => {
   const { host, deps, press, writes, closed } = mount(undefined, "none");
   let finishWait!: () => void;

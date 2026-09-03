@@ -18,14 +18,29 @@ import {
 } from "./adapters/renderer-bootstrap.ts";
 import { installTerminalGuard } from "./adapters/terminal-guard.ts";
 import type { BootShell } from "./boot-shell.ts";
+import type {
+  PreparedInteractiveMode,
+  prepareInteractiveMode,
+  runInteractiveMode,
+} from "./runtime.tsx";
 
 type InteractiveMode = Extract<Mode, { kind: "run" | "resume" | "continue" }>;
+type InteractiveRuntime = {
+  prepareInteractiveMode: typeof prepareInteractiveMode;
+  runInteractiveMode: typeof runInteractiveMode;
+};
 
 async function runInteractive(mode: InteractiveMode): Promise<void> {
   assertInteractiveTTY();
+  applyAsciiMode(mode.ascii);
+  let runtime: InteractiveRuntime | undefined;
+  let preparedMode: PreparedInteractiveMode | undefined;
+  if (mode.kind === "resume" || mode.kind === "continue") {
+    runtime = await import("./runtime.tsx");
+    preparedMode = await runtime.prepareInteractiveMode(mode);
+  }
   if (process.env.SSH_TTY || process.env.SSH_CONNECTION)
     process.env.OPENTUI_FORCE_EXPLICIT_WIDTH ??= "true";
-  applyAsciiMode(mode.ascii);
   const dev = !!process.env.CLARVIS_CODE_DEV;
   const renderer = await createCliRenderer(buildRendererConfig({ dev }));
   const rendererLifecycle = installBootRendererLifecycle(renderer);
@@ -64,8 +79,8 @@ async function runInteractive(mode: InteractiveMode): Promise<void> {
         ? import("./startup-foundation.ts").then((module) => module.prepareStartupFoundation(mode))
         : undefined;
     preparedFoundation?.catch(() => undefined);
-    const runtime = await import("./runtime.tsx");
-    await runtime.runInteractiveMode(mode, shell, preparedFoundation);
+    runtime ??= await import("./runtime.tsx");
+    await runtime.runInteractiveMode(mode, shell, preparedFoundation, preparedMode);
   } catch (error) {
     rendererLifecycle.destroy();
     releaseTerminal();

@@ -838,7 +838,7 @@ describe("transcript publication", () => {
     sink.beginReconcile();
     sink.endReconcile();
     sink.complete();
-    sink.queueSteer?.("late steer")?.();
+    sink.queueSteer?.("late steer")?.discard();
     scheduler.flush();
 
     expect([...store.nodes]).toEqual(nodes);

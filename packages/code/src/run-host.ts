@@ -747,20 +747,20 @@ export function createRunHost(deps: RunHostDeps): RunHost {
     if (!runActive() && settlement !== undefined) await settlement.promise;
     if (runActive() && currentHandle) {
       const execId = currentHandle.executionId;
-      const discardQueuedNotice =
+      const queuedReceipt =
         currentSink?.executionId === execId
           ? currentSink.transcript.queueSteer?.(draftText)
           : undefined;
       try {
         const res = await client.steer({ executionId: execId, message: msg, profile });
-        if (res.status !== "steered") discardQueuedNotice?.();
+        if (res.status !== "steered") queuedReceipt?.discard();
         setStatus(
           res.status === "steered"
             ? ["steering queued ", { mark: "arrowRight" }]
             : [`steer: ${res.status}`],
         );
       } catch {
-        discardQueuedNotice?.();
+        queuedReceipt?.fail();
         setStatus(["steer failed ", { mark: "emDash" }, " message restored to the input"]);
         draftRestore?.(draftText, typeof content === "string" ? undefined : content);
       }

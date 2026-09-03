@@ -944,12 +944,14 @@ settled turn's persisted continuation; an empty session reports that there is no
     `packages/code/src/views/config/CatalogPicker.tsx` (`firstRunIntroRows`). Test:
     `packages/code/tests/integration/catalog-picker-render.test.tsx` (`first-run branding stays with
 the picker only while the complete splash fits`).
-46. **The composer separates send from newline across all declared Enter chords.** Unmodified Return
-    and numpad Enter submit; Ctrl+J and Shift+Return insert a newline and leave the draft unsent.
+46. **The composer separates send from newline across the chords its keyboard profile can prove.**
+    Unmodified Return and numpad Enter submit; Ctrl+J inserts a newline on every profile, and an
+    Enhanced profile additionally registers Shift+Return. Portable never advertises a shifted chord
+    after a legacy transport may have collapsed it to ordinary Return.
     Production: `packages/code/src/keys/keyspec.ts` (`PROMPT_EDITING_KEYS`) and
     `packages/code/src/views/InputDock.tsx` (`promptHandlers`). Test:
-    `packages/code/tests/integration/input-dock-submit.test.tsx` ("Shift+Enter and Ctrl+J insert
-    newlines without submitting the draft").
+    `packages/code/tests/integration/input-dock-submit.test.tsx` (Enhanced Shift+Enter and Ctrl+J,
+    plus portable Ctrl+J-only registration).
 47. **Inline composer height follows visual soft wraps, not only explicit newline characters.** It
     uses the renderer's visual-line projection, caps at `maxInlineRows()` and wraps unbroken tokens
     by character, while the expanded status continues to report logical lines. Production:

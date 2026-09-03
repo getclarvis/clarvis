@@ -417,22 +417,30 @@ export function InputDock(props: {
         run: () => promptHandlers[r.command]!(),
       }),
     );
-    const overrides: Binding[] = promptRows.flatMap((r) =>
-      r.keys.map((key): Binding => ({ key, cmd: r.command })),
-    );
     const visible = (): boolean => props.visible?.() ?? true;
     const visibleMatcher = reactiveMatcherFromSignal(visible);
     const offCommands = props.interaction.keymap.registerLayer({
       enabled: visibleMatcher,
       commands: promptCommands,
     });
-    const offInput = registerManagedTextareaLayer(props.interaction.keymap, props.renderer, {
-      enabled: visibleMatcher,
-      priority: LAYER.INPUT,
-      bindings: createTextareaBindings(overrides),
+    let offInput: (() => void) | undefined;
+    createEffect(() => {
+      const enhanced = props.interaction.keyboardEnvironment?.().profile === "enhanced";
+      const overrides: Binding[] = promptRows.flatMap((row) =>
+        [...row.keys, ...(enhanced ? (row.enhancedKeys ?? []) : [])].map((key): Binding => ({
+          key,
+          cmd: row.command,
+        })),
+      );
+      offInput?.();
+      offInput = registerManagedTextareaLayer(props.interaction.keymap, props.renderer, {
+        enabled: visibleMatcher,
+        priority: LAYER.INPUT,
+        bindings: createTextareaBindings(overrides),
+      });
     });
     onCleanup(() => {
-      offInput();
+      offInput?.();
       offCommands();
     });
 

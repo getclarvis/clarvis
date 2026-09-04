@@ -9,7 +9,7 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
 - A release tag is exactly `v<version>`, annotated, and signed by the authorized releaser.
 - The release workflow builds glibc-based Linux, macOS, and Windows archives for x64 and arm64 on
   native runners.
-- A tag-triggered workflow in private `getclarvis/clarvis` uploads a complete draft to public
+- A tag-triggered workflow in `getclarvis/clarvis` uploads a complete draft to public
   `getclarvis/clarvis-releases` and activates it in its final step. There is no human pause after the
   tagged workflow starts.
 - The source repository's `GITHUB_TOKEN` remains read-only. Cross-repository publication uses the

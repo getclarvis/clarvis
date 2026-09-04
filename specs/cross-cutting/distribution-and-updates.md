@@ -30,7 +30,7 @@ The user-facing surfaces are:
 - six `clarvis-v<version>-<target>.tar.gz` release assets plus `SHA256SUMS`, both installers,
   Clarvis's license, and standalone third-party notices/license texts;
 - root scripts `release:package`, `release:smoke`, `release:install-smoke`, and `check:release`;
-- a tag-triggered workflow that publishes from private `getclarvis/clarvis` to public binary-only
+- a tag-triggered workflow that publishes from `getclarvis/clarvis` to public binary-only
   `getclarvis/clarvis-releases`, plus a non-publishing `workflow_dispatch` build path.
 
 Production: `packages/code/src/cli-args.ts` (`FLAGS`, `Mode`), root and Code `package.json`
@@ -193,7 +193,7 @@ case-insensitive `.map` suffix or inline `sourceMappingURL=data:` payload before
 credential exists. Only then does the workflow mint a one-hour GitHub App installation token scoped
 to `getclarvis/clarvis-releases`, create a draft
 there, upload the allowlisted assets explicitly, and remove the draft flag in the final step. The
-private source repository's ordinary `GITHUB_TOKEN` remains read-only and cannot mutate the public
+source repository's ordinary `GITHUB_TOKEN` remains read-only and cannot mutate the public
 distribution repository. Manual dispatch builds downloadable workflow artifacts but cannot publish
 because the publish job requires both a tag ref and the `push` event. Production:
 `.github/workflows/release.yml` and `tooling/checks/release-assets.ts`. Test:
@@ -311,7 +311,7 @@ external and enter the portable archive through the target-native runtime closur
 `packages/code/tests/architecture/artifact-contract.test.ts` (POSIX and Windows build-root cases) and
 `packages/code/tooling/release/smoke.ts` (packaged runtime execution).
 
-**DIST-15.** The private source workflow cannot publish with its repository-scoped `GITHUB_TOKEN`.
+**DIST-15.** The source workflow cannot publish with its repository-scoped `GITHUB_TOKEN`.
 It mints a short-lived installation token only after the final asset gate, from a GitHub-owned action
 pinned to a complete commit SHA, and asks for `Contents: write` on only `clarvis-releases`.
 Production: `.github/workflows/release.yml` (`release-token` step) and

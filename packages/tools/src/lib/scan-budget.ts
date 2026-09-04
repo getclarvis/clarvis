@@ -22,12 +22,13 @@
  * measures it, and the place to spend the check is between applications.
  *
  * Only regex time is charged: never a `stat`, never a read, never the directory
- * walk. A slow disk, a cold cache or a loaded CI runner therefore cannot exhaust
- * a budget, which is what keeps the guard from turning a legitimate scan into a
- * reported-incomplete one. A plain pattern applied to 200,000 lines charges
- * 5-7 ms in total — not zero, because `Date.now()`'s one-millisecond
- * granularity rounds a share of the individual charges up, so the accounting
- * tracks the run's real elapsed cost rather than undercounting it.
+ * walk. A slow disk, a cold cache or unrelated work between applications
+ * therefore cannot exhaust a budget. Scheduler time spent while an application
+ * is in flight is still part of that application's elapsed cost. A plain
+ * pattern applied to 200,000 lines charges 5-7 ms in total — not zero, because
+ * `Date.now()`'s one-millisecond granularity rounds a share of the individual
+ * charges up, so the accounting tracks the run's real elapsed cost rather than
+ * undercounting it.
  *
  * The residual is the budget plus one in-flight application, because a check can
  * only happen between applications. On a JavaScriptCore host that residual is
@@ -55,15 +56,17 @@ export interface ScanBudget {
  * @param budgetMs - the allowance in milliseconds; the product default is
  *   `DEFAULT_REGEX_SCAN_BUDGET_MS`, resolved onto
  *   `RuntimeConfig.regexScanBudgetMs`.
+ * @param now - wall clock used for accounting; injectable for deterministic
+ *   tests, and `Date.now` in production.
  * @returns a fresh budget with nothing charged against it yet.
  */
-export function createScanBudget(budgetMs: number): ScanBudget {
+export function createScanBudget(budgetMs: number, now: () => number = Date.now): ScanBudget {
   let spent = 0;
   return {
     charge<T>(run: () => T): T {
-      const started = Date.now();
+      const started = now();
       const value = run();
-      spent += Date.now() - started;
+      spent += now() - started;
       return value;
     },
     exhausted(): boolean {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { analyzeShell } from "../../src/guard/analyze-shell.ts";
+import { analyzeShell, WINDOWS_DEFAULT_ALLOWED_COMMANDS } from "../../src/guard/index.ts";
 import { currentDialect, dialectFor } from "../../src/guard/dialects/index.ts";
 import { powershellDialect } from "../../src/guard/dialects/powershell.ts";
 import { posixDialect } from "../../src/guard/dialects/posix.ts";
@@ -339,5 +339,64 @@ describe("powershellDialect.normalize — alias canonicalization", () => {
       "C:\\Users\\me\\.ssh\\id_rsa",
     ]);
     expect(paths("Remove-Item .\\build -Recurse")).toEqual([".\\build"]);
+  });
+});
+
+describe("WINDOWS_DEFAULT_ALLOWED_COMMANDS", () => {
+  it("fits the settings bound and contains no duplicate policy entries", () => {
+    expect(WINDOWS_DEFAULT_ALLOWED_COMMANDS.length).toBeLessThanOrEqual(256);
+    expect(new Set(WINDOWS_DEFAULT_ALLOWED_COMMANDS).size).toBe(
+      WINDOWS_DEFAULT_ALLOWED_COMMANDS.length,
+    );
+  });
+
+  it("is entirely decidable and matches the canonical text that is seeded", () => {
+    for (const entry of WINDOWS_DEFAULT_ALLOWED_COMMANDS) {
+      const facts = analyzeShell(entry, powershellDialect);
+      expect({ entry, undecidable: facts.undecidable }).toEqual({ entry, undecidable: false });
+      expect({ entry, normalized: facts.segments.map((segment) => segment.normalized) }).toEqual({
+        entry,
+        normalized: [entry],
+      });
+    }
+  });
+
+  it("covers conventional validation commands across common ecosystems", () => {
+    for (const command of [
+      "bun test",
+      "deno check",
+      "py -m pytest",
+      "cargo clippy",
+      "go vet",
+      "mvn verify",
+      "dotnet test",
+      "cmake --build",
+      "rspec",
+      "composer test",
+      "swift test",
+      "mix test",
+      "dart analyze",
+      "zig build",
+      "cabal test",
+      "shellcheck",
+    ]) {
+      expect(WINDOWS_DEFAULT_ALLOWED_COMMANDS).toContain(command);
+    }
+  });
+
+  it("does not grant generic runners, install, publish or deploy commands", () => {
+    for (const forbidden of [
+      "node",
+      "python",
+      "pwsh",
+      "cmd",
+      "npx",
+      "bunx",
+      "npm install",
+      "cargo publish",
+      "dotnet publish",
+    ]) {
+      expect(WINDOWS_DEFAULT_ALLOWED_COMMANDS).not.toContain(forbidden);
+    }
   });
 });

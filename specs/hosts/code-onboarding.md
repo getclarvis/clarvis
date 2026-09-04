@@ -210,6 +210,16 @@ guard (`packages/code/src/onboarding/seed-default-allowlist.ts:59-61`) — so a 
 configured, but a workspace-only `guard.mode` is never carried into the global write
 (`packages/code/tests/unit/seed-default-allowlist.test.ts:113-126`).
 
+The platform-selected lists cover conventional inspection, build, test, lint and type-check
+commands across common language ecosystems while leaving generic interpreters/task runners and
+explicit install, publish, deploy and migration commands reviewable. They are intentionally
+first-seed-only: an existing list, including `[]`, remains operator-owned and is never expanded by a
+later Clarvis version. Production: `POSIX_DEFAULT_ALLOWED_COMMANDS` and
+`WINDOWS_DEFAULT_ALLOWED_COMMANDS` in `packages/tools/src/guard/dialects/`. Test:
+`packages/tools/tests/unit/posix-dialect.test.ts`,
+`packages/tools/tests/unit/powershell-dialect.test.ts`, and
+`packages/code/tests/unit/seed-default-allowlist.test.ts`.
+
 ### 3.2 Workflow-free onboarding
 
 Onboarding does not install or write workflow documents. `prepareSetup` seeds only settings-backed

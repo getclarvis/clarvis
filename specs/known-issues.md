@@ -2029,8 +2029,8 @@ pinnable here is the drive-letter shape, and the reason is structural rather tha
 test at `packages/tools/src/lib/paths.ts:174` uses `path.sep`, a host constant, so on a POSIX host the comparison builds
 `c:\proj/` and would pass or fail for the wrong reason. The test says so at
 `packages/tools/tests/integration/paths.test.ts:64`–`:68`, and
-`packages/tools/tests/unit/powershell-dialect.test.ts:312`–`:315` says the same about
-`PathFact.withinWorkspace`.
+`packages/tools/tests/unit/powershell-dialect.test.ts` ("still extracts the paths a command
+touches") says the same about `PathFact.withinWorkspace`.
 
 Threading a path flavour through `canonicalizeAllowingMissing`
 (`packages/tools/src/lib/paths.ts:274`) and `resolvePath` (`:53`) to make this testable was considered

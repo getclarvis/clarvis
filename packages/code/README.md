@@ -473,6 +473,17 @@ Before a shell command runs, the guard rules on it. Its mode lives in
 - **`on`** (default) — an `ask` verdict becomes a confirmation prompt for you.
 - **`auto`** — an LLM answers each `ask` instead of interrupting you.
 
+On first setup, Clarvis writes a visible, editable starter `allowed_commands`
+list into global settings. It covers conventional inspection, build, test, lint
+and type-check commands across the common JavaScript/TypeScript, Python, Rust,
+Go, JVM, .NET, native, Ruby/PHP and additional language ecosystems. Generic
+interpreters and task runners plus install, publish, deploy and migration
+commands remain reviewable. Existing lists — including an intentionally empty
+one — are never expanded or replaced. For a low-interruption posture with host
+containment, use the `reviewed` preset; an allowlist is approval policy and does
+not make repository-controlled build or test code safe to run directly on the
+host.
+
 After a guarded shell call settles, its transcript header states the durable
 verdict and answerer, for example `auto-guard approved · judge` or
 `auto-guard denied · judge`. The same annotation is included in Markdown export
@@ -497,9 +508,8 @@ normalized command; an entry with `*` is an anchored glob. Turning the guard off
 is a persisted choice — write `"mode": "off"` rather than deleting the block, or
 it comes back on the next boot.
 
-**`auto` needs a prompt, and that prompt is `guard-judge.md`.** Without one, a
-run in `auto` behaves exactly like `on`, which is why setting the mode alone can
-look like nothing happened. `code` resolves it from two places:
+**`auto` needs a usable model and a complete prompt.** `code` resolves the prompt
+from two optional files and otherwise supplies its built-in policy:
 
 | file                           | scope                |
 | ------------------------------ | -------------------- |

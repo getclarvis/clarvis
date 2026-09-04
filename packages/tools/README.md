@@ -244,6 +244,16 @@ When the host's guard includes its effective mode, `DispatchResult.guard` also
 records the final allowed/denied outcome and whether policy, the judge, the user,
 the session allowlist, or an unavailable review channel answered it.
 
+The exported POSIX and PowerShell starter allowlists cover routine inspection,
+build, test, lint and type-check commands across JavaScript/TypeScript, Python,
+Rust, Go, JVM, .NET, C/C++, Ruby, PHP, Swift, Elixir/Erlang, Dart, Zig, Haskell,
+Clojure, Lua, Perl and shell projects. They deliberately omit package installs,
+publishing, deploys, migrations, generic interpreters and unconstrained task
+runners, so those calls still require review. Every seeded entry is asserted to
+be decidable and canonical in its host dialect. These lists express approval
+policy, not containment: builds and tests may run repository-controlled code, so
+hosts that require isolation must also enable the native sandbox.
+
 ## Process groups
 
 **Never pass `detached: true` unconditionally to `spawn`.** On POSIX it makes the

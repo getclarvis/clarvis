@@ -283,7 +283,10 @@ async function main(): Promise<void> {
       args: ["--debug"],
       home: managedHome,
       workspace: managedWorkspace,
-      markers: [{ name: "ready", text: APP_READY_MARKER }],
+      markers: [
+        { name: "ready", text: APP_READY_MARKER },
+        { name: "update-header", text: `↑ v${product.version}` },
+      ],
       afterMarkersReady: async () => {
         const available = await readDiagnosticDetails<UpdateAvailableDetails>(
           managedHome,
@@ -299,7 +302,8 @@ async function main(): Promise<void> {
     if (
       update.outcome !== "ready" ||
       update.marks.ready === undefined ||
-      update.elapsed < update.marks.ready ||
+      update.marks["update-header"] === undefined ||
+      update.marks["update-header"] < update.marks.ready ||
       !updateFrame.includes(`↑ v${product.version}`)
     ) {
       throw new Error(

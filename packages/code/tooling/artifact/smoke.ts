@@ -71,6 +71,10 @@ interface UpdateCheckSkippedDetails {
   reason?: unknown;
 }
 
+interface UpdateAvailableDetails {
+  available_version?: unknown;
+}
+
 /** Every `code-debug-*.jsonl` written anywhere beneath `root`. */
 function diagnosticLogsUnder(root: string): string[] {
   const found: string[] = [];
@@ -279,10 +283,14 @@ async function main(): Promise<void> {
       args: ["--debug"],
       home: managedHome,
       workspace: managedWorkspace,
-      markers: [
-        { name: "ready", text: APP_READY_MARKER },
-        { name: "update", text: `Clarvis v${availableVersion} is available` },
-      ],
+      markers: [{ name: "ready", text: APP_READY_MARKER }],
+      afterMarkersReady: async () => {
+        const available = await readDiagnosticDetails<UpdateAvailableDetails>(
+          managedHome,
+          "update.available",
+        );
+        return available?.available_version === availableVersion;
+      },
       timeoutMs: TIMEOUT_MS,
       pollMs: 100,
       extraEnv: { CLARVIS_INSTALL_ROOT: installRoot },
@@ -291,8 +299,7 @@ async function main(): Promise<void> {
     if (
       update.outcome !== "ready" ||
       update.marks.ready === undefined ||
-      update.marks.update === undefined ||
-      update.marks.update < update.marks.ready ||
+      update.elapsed < update.marks.ready ||
       !updateFrame.includes(`↑ v${product.version}`)
     ) {
       throw new Error(
@@ -300,7 +307,7 @@ async function main(): Promise<void> {
           `marks=${JSON.stringify(update.marks)}\n${updateFrame.slice(-4000)}\n${update.stderr.slice(-1000)}`,
       );
     }
-    updateNoticeMs = update.marks.update;
+    updateNoticeMs = update.elapsed;
   } finally {
     await rm(managedHome, { recursive: true, force: true });
     await rm(managedWorkspace, { recursive: true, force: true });
@@ -312,7 +319,7 @@ async function main(): Promise<void> {
       `(startup shell paint: ${String(shellPainted.elapsed_ms)}ms, ` +
       `complete app paint: ${String(painted.elapsed_ms)}ms, ` +
       `deferred_catalog=${String(painted.deferred_catalog)}, ` +
-      `managed update notice: ${updateNoticeMs.toFixed(0)}ms)\n`,
+      `managed update state: ${updateNoticeMs.toFixed(0)}ms)\n`,
   );
 }
 

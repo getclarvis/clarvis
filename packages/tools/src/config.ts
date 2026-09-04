@@ -63,8 +63,9 @@ export interface RuntimeConfig {
    * catastrophically backtracking user pattern, which would otherwise freeze
    * the single-threaded host for as long as the scope takes to walk; see that
    * module for the measurements and for why a pattern-length cap does not
-   * substitute. Never charged for disk or directory-walk time, so machine load
-   * cannot trip it.
+   * substitute. Never charged for disk or directory-walk time; scheduler time
+   * spent while a regex application is in flight remains part of that
+   * application's elapsed cost.
    */
   regexScanBudgetMs: number;
 

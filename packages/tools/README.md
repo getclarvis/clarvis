@@ -114,12 +114,16 @@ first resolves both selectors inside the generated profile and only then execute
 `/usr/bin/git --version`; a selector regression therefore fails before Apple's Git shim can request
 the graphical installer. With `network: "host"`, Seatbelt also admits only the authored and
 canonical `mDNSResponder` socket paths required by the macOS resolver. `network: "none"` admits
-neither and still denies every network operation. Native POSIX sandboxes set npm's script shell to
-the absolute `/bin/sh`: npm otherwise searches a bare `sh` through synthetic ancestor
-`node_modules/.bin` entries, where a deliberately hidden host path can turn package execution into
-`spawn EPERM` even after download and extraction succeeded. On macOS, the read-only system runtime
-and filtered `PATH` also include `/opt/homebrew`, so Apple Silicon Homebrew command shims remain
-executable while the prefix itself receives no sandbox write rule.
+neither and still denies every network operation. The real-host canary tests host/denied networking
+against a local listener, independently of public DNS or registry availability. Native POSIX
+sandboxes set npm's script shell to the absolute `/bin/sh`: npm otherwise searches a bare `sh`
+through synthetic ancestor `node_modules/.bin` entries, where a deliberately hidden host path can
+turn package execution into `spawn EPERM` even after download and extraction succeeded. On macOS,
+the read-only system runtime and filtered `PATH` also include `/opt/homebrew`, so Apple Silicon
+Homebrew command shims remain executable while the prefix itself receives no sandbox write rule. A
+separate canary packs a local fixture outside Seatbelt, then requires npm to install and execute it
+offline inside a denied-network profile; this isolates package execution from public-registry
+latency while preserving the real npm/Homebrew/runtime path.
 
 `host_vcs` is the narrow fallback for an operation the sandbox cannot perform because it lacks a
 host environment variable, credential channel, runtime, or service. The historical name remains for
@@ -282,8 +286,10 @@ single-threaded host for hours with nothing able to interrupt it (an
 
 `regexScanBudgetMs` (default 5000, `REGEX_SCAN_BUDGET_MS`, min 1) caps how much
 _regular-expression_ time one call may spend. Disk reads and the directory walk
-are never charged, so machine load cannot exhaust it — a plain pattern over
-200,000 lines charges 5-7 ms against it. On exhaustion:
+are never charged; unrelated delay between regex applications does not consume
+the budget, while scheduler time during an in-flight application is part of its
+elapsed cost. A plain pattern over 200,000 lines normally charges 5-7 ms against
+it. On exhaustion:
 
 - `grep` returns what it found plus an explicit "search incomplete" warning
   naming the pattern as the cause.

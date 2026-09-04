@@ -2,11 +2,14 @@ import { describe, expect, it } from "bun:test";
 import { createScanBudget } from "../../src/lib/scan-budget.ts";
 import { DEFAULT_REGEX_SCAN_BUDGET_MS } from "../../src/config.ts";
 
-function burn(ms: number): void {
-  const end = Date.now() + ms;
-  while (Date.now() < end) {
-    /* spin */
-  }
+function controlledClock(): { now: () => number; advance: (ms: number) => void } {
+  let current = 0;
+  return {
+    now: () => current,
+    advance: (ms) => {
+      current += ms;
+    },
+  };
 }
 
 describe("createScanBudget", () => {
@@ -21,48 +24,45 @@ describe("createScanBudget", () => {
     expect(createScanBudget(1).exhausted()).toBe(false);
   });
 
-  // Half of what keeps the guard from being flaky: time spent outside `charge`
-  // — the stat, the read, the directory walk, and whatever else the machine was
-  // busy with — is never billed, so a slow disk or a loaded CI runner cannot
-  // turn a legitimate scan into a reported-incomplete one.
   it("charges only the work handed to it, not the time around it", () => {
-    const budget = createScanBudget(5);
-    burn(50);
+    const clock = controlledClock();
+    const budget = createScanBudget(5, clock.now);
+    clock.advance(50);
     expect(budget.exhausted()).toBe(false);
     budget.charge(() => undefined);
-    burn(50);
+    clock.advance(50);
     expect(budget.exhausted()).toBe(false);
   });
 
-  // The other half: a legitimate pattern applied once per line over a large
-  // tree charges a few milliseconds in total (measured 5-7ms for 200,000
-  // applications on Bun 1.3.11), so the 5s default leaves ~1000x of headroom.
-  // Note the accounting is not free of Date.now()'s 1ms granularity — a run of
-  // cheap charges does bill a handful of milliseconds, which is why the
-  // assertion is against the real default and not against a 1ms budget.
-  it("leaves a legitimate 200,000-line scan far inside the default budget", () => {
-    const budget = createScanBudget(DEFAULT_REGEX_SCAN_BUDGET_MS);
+  it("keeps 200,000 inexpensive charges far inside the default budget", () => {
+    const clock = controlledClock();
+    const budget = createScanBudget(DEFAULT_REGEX_SCAN_BUDGET_MS, clock.now);
     const re = /needle/;
     for (let i = 0; i < 200_000; i++) {
-      budget.charge(() => re.test("haystack line without the word"));
+      budget.charge(() => {
+        if (i % 40_000 === 0) clock.advance(1);
+        return re.test("haystack line without the word");
+      });
     }
     expect(budget.exhausted()).toBe(false);
   });
 
   it("exhausts once a single charged call outspends the budget", () => {
-    const budget = createScanBudget(5);
+    const clock = controlledClock();
+    const budget = createScanBudget(5, clock.now);
     expect(budget.exhausted()).toBe(false);
-    budget.charge(() => burn(20));
+    budget.charge(() => clock.advance(20));
     expect(budget.exhausted()).toBe(true);
   });
 
   it("accumulates across calls rather than measuring each one alone", () => {
-    const budget = createScanBudget(30);
-    budget.charge(() => burn(12));
+    const clock = controlledClock();
+    const budget = createScanBudget(30, clock.now);
+    budget.charge(() => clock.advance(12));
     expect(budget.exhausted()).toBe(false);
-    budget.charge(() => burn(12));
+    budget.charge(() => clock.advance(12));
     expect(budget.exhausted()).toBe(false);
-    budget.charge(() => burn(12));
+    budget.charge(() => clock.advance(12));
     expect(budget.exhausted()).toBe(true);
   });
 });

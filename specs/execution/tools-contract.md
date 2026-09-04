@@ -241,10 +241,11 @@ Confirmed by `packages/tools/tests/integration/config.test.ts:20` (documented de
 | `regexScanBudgetMs` | `DEFAULT_REGEX_SCAN_BUDGET_MS` | `5000` | `1` | `packages/tools/src/config.ts:171,495` |
 
 Unlike the size limits above it, `regexScanBudgetMs` is not a plain byte ceiling: its TSDoc
-(`packages/tools/src/config.ts:55`-`69`) states it is charged only by `grep`'s in-process fallback and by `replace`
+(`packages/tools/src/config.ts`, `RuntimeConfig.regexScanBudgetMs`) states it is charged only by `grep`'s in-process fallback and by `replace`
 (which has no ripgrep path in any deployment), through `createScanBudget`; it bounds a catastrophically
 backtracking user pattern, and it is never charged for disk or directory-walk time, so machine load
-cannot trip it. Its default's own TSDoc (`packages/tools/src/config.ts:161`-`170`) reasons about the value in worst-case
+between applications cannot trip it; scheduler time during a charged application remains part of
+its elapsed cost. Its default's own TSDoc (`packages/tools/src/config.ts`, `DEFAULT_REGEX_SCAN_BUDGET_MS`) reasons about the value in worst-case
 terms: roughly seven seconds worst case (the budget plus one in-flight application) against the hours
 an unbounded scan would cost, while leaving roughly a thousandfold margin over the time a legitimate
 scan actually spends (a plain pattern over 200,000 lines charges 5-7 ms).

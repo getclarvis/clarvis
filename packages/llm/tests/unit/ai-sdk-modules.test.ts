@@ -115,6 +115,23 @@ describe("request options", () => {
     });
   });
 
+  it("keeps native OpenAI on provider-managed caching even when generic settings say explicit", () => {
+    for (const kind of ["openai", "openai-codex"] as const) {
+      const request = buildRequest(
+        params({
+          providerConfig: { kind, promptCache: "explicit" },
+          cacheBreakpoints: [1],
+          promptCacheKey: "session-1",
+        }),
+        messages,
+      );
+      expect(request.system).toBe("system");
+      expect(request.messages).toEqual([{ role: "user", content: "hello" }]);
+      expect(request.providerOptions?.openai?.promptCacheKey).toBe("session-1");
+      expect(JSON.stringify(request)).not.toContain("promptCacheBreakpoint");
+    }
+  });
+
   it("joins system messages and omits system when none exists", () => {
     const joined = buildRequest(params(), [
       { role: "system", content: "a" },
@@ -185,6 +202,17 @@ describe("request options", () => {
         reasoningEffort: "low",
         promptCacheKey: "run-1",
       },
+    });
+
+    const grok = buildRequest(
+      params({
+        providerConfig: { kind: "xai-grok" },
+        promptCacheKey: "run-1",
+      }),
+      [{ role: "user", content: "hello" }],
+    );
+    expect(grok.providerOptions).toEqual({
+      openai: { store: false, forceReasoning: true, promptCacheKey: "run-1" },
     });
 
     const anthropic = buildRequest(

@@ -128,6 +128,15 @@ Responses assistant text metadata is retained on both aggregate and streaming pa
 replays the original text parts, item ids and phases instead of flattening them to a bare string;
 this is required for manual `store: false` continuation and does not rewrite an older prompt prefix.
 
+Prompt-cache markers remain provider-scoped. Anthropic uses `cache_control`; an explicitly enabled
+OpenAI-compatible endpoint keeps its existing sentinel-to-`cache_control` transform. Native OpenAI
+and ChatGPT subscription Responses remain on provider-managed caching and receive only the supported
+stable `prompt_cache_key`; Clarvis never emits an inline `prompt_cache_breakpoint` for those kinds.
+Models are not selected by a hard-coded name: models.dev cache pricing can identify that caching
+exists, while provider kind decides whether a marker protocol is safe. Grok's Responses transport gets the run's stable
+`prompt_cache_key`; its subscription authority separately sends the same stable conversation
+identity as `x-grok-conv-id`, matching Grok's implicit append-only cache contract.
+
 ## What it tells an operator
 
 Every record carries a stable `event` field; the prose is free to change. Where a logger is

@@ -162,7 +162,11 @@ The loop resolves subscription authorization only through the host seam passed t
 Resolution occurs inside the SDK fetch callback immediately before I/O; tokens never enter
 `ResolvedProviderConfig`, `LLMCallParams`, request decorators, or traces. Both schemes use a Responses
 factory, streaming and tools. Subscription requests send `store: false`; ChatGPT omits the output cap
-its backend rejects, while Grok retains its catalog-supported cap. Provider-issued reasoning parts
+its backend rejects and sends the session-stable `prompt_cache_key` without an inline cache
+breakpoint, while Grok retains its catalog-supported cap. Grok also sends the session-stable
+conversation identity both as the Responses body `prompt_cache_key` and, after one-way hashing by the
+credential-owning transport, as `x-grok-conv-id`; it receives no OpenAI explicit-cache breakpoint.
+Provider-issued reasoning parts
 remain on assistant history for a tool round trip. Entitled catalog effort levels are retained in
 the configured model entry by `addModelFromCatalog`; `supportedReasoningEfforts` prefers that saved
 metadata, and `buildCallTuning` sends the selected effort through the OpenAI Responses provider

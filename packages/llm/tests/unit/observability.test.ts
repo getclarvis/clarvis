@@ -433,6 +433,29 @@ describe("the request diagnostics buildRequestOptions returns", () => {
     });
   });
 
+  it("reports native OpenAI as provider-managed even when generic settings say explicit", () => {
+    const { diagnostics } = buildRequestOptions(
+      params({
+        providerConfig: { kind: "openai-codex", promptCache: "explicit" },
+        cacheBreakpoints: [1, 3],
+        promptCacheKey: "k",
+      }),
+      conversation,
+    );
+
+    expect(diagnostics.cache).toMatchObject({
+      kind: "openai-codex",
+      mode: "explicit",
+      marked: "none",
+      requested_breakpoints: 2,
+      applied_breakpoints: 0,
+      walked_back: false,
+      system_marked: false,
+      cache_key_sent: true,
+      session_pinned: false,
+    });
+  });
+
   it("reports no kind or mode at all when the call has no resolved provider", () => {
     const { diagnostics } = buildRequestOptions(params({ promptCacheKey: "k" }), conversation);
     expect(diagnostics.cache).toEqual({

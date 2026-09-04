@@ -380,12 +380,13 @@ describe("native provider SDK sentinels", () => {
 
     const result = await subject.call(
       call(
-        { kind: "openai-codex" },
+        { kind: "openai-codex", promptCache: "explicit" },
         {
-          model: "gpt-codex",
+          model: "future-responses-model",
           maxOutputTokens: 4096,
           reasoningEffort: "high",
           promptCacheKey: "conversation-1",
+          cacheBreakpoints: [1],
         },
       ),
     );
@@ -396,6 +397,9 @@ describe("native provider SDK sentinels", () => {
     expect(calls[0]!.body.store).toBe(false);
     expect(calls[0]!.body.max_output_tokens).toBeUndefined();
     expect(calls[0]!.body.reasoning).toMatchObject({ effort: "high" });
+    expect(calls[0]!.body.prompt_cache_key).toBe("conversation-1");
+    expect(calls[0]!.body.prompt_cache_options).toBeUndefined();
+    expect(JSON.stringify(calls[0]!.body.input)).not.toContain("prompt_cache_breakpoint");
     expect(result?.billing_source).toBe("subscription");
 
     await subject.call(
@@ -452,8 +456,13 @@ describe("native provider SDK sentinels", () => {
     await subject
       .call(
         call(
-          { kind: "xai-grok" },
-          { model: "grok-code", maxOutputTokens: 8192, promptCacheKey: "conversation-2" },
+          { kind: "xai-grok", promptCache: "explicit" },
+          {
+            model: "grok-code",
+            maxOutputTokens: 8192,
+            promptCacheKey: "conversation-2",
+            cacheBreakpoints: [1],
+          },
         ),
       )
       .catch(() => undefined);
@@ -462,10 +471,12 @@ describe("native provider SDK sentinels", () => {
     expect(calls[0]!.headers.authorization).toBe("Bearer grok-subscription-token");
     expect(calls[0]!.body.store).toBe(false);
     expect(calls[0]!.body.max_output_tokens).toBe(8192);
+    expect(calls[0]!.body.prompt_cache_key).toBe("conversation-2");
+    expect(JSON.stringify(calls[0]!.body.input)).not.toContain("prompt_cache_breakpoint");
     expect(contexts).toEqual([{ conversationKey: "conversation-2" }]);
   });
 
-  it("serializes OpenAI Responses reasoning, cache key and configured header", async () => {
+  it("serializes OpenAI Responses reasoning and cache key without unsupported inline markers", async () => {
     const calls = stubFetch();
     await adapter({ resolveRegistryKey: () => "secret" })
       .call(
@@ -474,8 +485,14 @@ describe("native provider SDK sentinels", () => {
             kind: "openai",
             apiKeyEnv: "OPENAI_KEY",
             headers: { "X-Provider": "openai" },
+            promptCache: "explicit",
           },
-          { model: "gpt-5.4", reasoningSummary: "auto", promptCacheKey: "run-1" },
+          {
+            model: "gpt-5.6",
+            reasoningSummary: "auto",
+            promptCacheKey: "run-1",
+            cacheBreakpoints: [1],
+          },
         ),
       )
       .catch(() => undefined);
@@ -484,6 +501,8 @@ describe("native provider SDK sentinels", () => {
     expect(calls[0]!.headers["x-provider"]).toBe("openai");
     expect(calls[0]!.body.reasoning).toEqual({ summary: "auto" });
     expect(calls[0]!.body.prompt_cache_key).toBe("run-1");
+    expect(calls[0]!.body.prompt_cache_options).toBeUndefined();
+    expect(JSON.stringify(calls[0]!.body.input)).not.toContain("prompt_cache_breakpoint");
   });
 
   it("serializes retained native OpenAI reasoning state on a continuation", async () => {

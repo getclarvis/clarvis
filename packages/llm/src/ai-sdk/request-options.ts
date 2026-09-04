@@ -133,12 +133,13 @@ export interface RequestDiagnostics {
  *   floor is applied here *and*, window-aware, by the loop's
  *   `clampOutputBudget` before the call ever reaches this function, so a
  *   near-full context window degrades the budget rather than exceeding it.
- *   Both OpenAI families forward a `prompt_cache_key`: native OpenAI as the
- *   camelCase `promptCacheKey` provider option, which `@ai-sdk/openai`
- *   serializes onto the Responses body, and openai-compatible as a snake_case
- *   passthrough alongside its usage request. Anthropic and Google have no
- *   equivalent knob — they key their caches on the prompt prefix — so the field
- *   is deliberately not forwarded there.
+ *   Native OpenAI, ChatGPT subscription, and Grok subscription forward a
+ *   `prompt_cache_key` through the camelCase `promptCacheKey` provider option,
+ *   which `@ai-sdk/openai` serializes onto the Responses body.
+ *   OpenAI-compatible sends the snake_case field directly alongside its usage
+ *   request. Anthropic and Google have no equivalent knob — they key their
+ *   caches on the prompt prefix — so the field is deliberately not forwarded
+ *   there.
  *
  *   openai-compatible additionally sends the same value as `session_id`, and
  *   {@link buildRequestOptions} sends it again as an `x-session-id` header.
@@ -217,7 +218,10 @@ function buildCallTuning(params: LLMCallParams): {
     };
   }
 
-  if ((kind === "openai" || kind === "openai-codex") && params.promptCacheKey !== undefined) {
+  if (
+    (kind === "openai" || kind === "openai-codex" || kind === "xai-grok") &&
+    params.promptCacheKey !== undefined
+  ) {
     opts.openai = { ...opts.openai, promptCacheKey: params.promptCacheKey };
   }
 
@@ -567,7 +571,6 @@ export function buildRequestOptions(
   const markAnthropic = kind === "anthropic" && mode !== "off";
   const markCompatible =
     kind === "openai-compatible" && mode === "explicit" && params.cacheBreakpoints !== undefined;
-
   const anthropicMarked = markAnthropic
     ? withCacheBreakpoints(modelMessages, params.cacheBreakpoints, params.promptCacheTtl)
     : undefined;
@@ -607,7 +610,10 @@ export function buildRequestOptions(
     system_marked: systemMarked,
     cache_key_sent:
       params.promptCacheKey !== undefined &&
-      (kind === "openai" || kind === "openai-codex" || kind === "openai-compatible"),
+      (kind === "openai" ||
+        kind === "openai-codex" ||
+        kind === "xai-grok" ||
+        kind === "openai-compatible"),
     session_pinned: sessionHeaders !== undefined,
     ...(params.promptCacheTtl !== undefined ? { ttl: params.promptCacheTtl } : {}),
   };

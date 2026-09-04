@@ -499,11 +499,15 @@ export function cacheModeOf(
  *   of information is not evidence of absence, and the adapter already treats an
  *   absent mode conservatively.
  *
- *   **It never returns `"explicit"` for kind `openai-compatible`; it settles for
- *   `"implicit"`.** The catalog describes a *model*, while honouring
- *   `cache_control` is a property of the *endpoint*, and those two coincide only
- *   where the SDK talks to the vendor's own API. `openai-compatible` means an
- *   arbitrary `base_url`, and the ones people configure are overwhelmingly
+ *   **It returns `"explicit"` only for Anthropic.** The catalog describes a
+ *   model's cache *pricing*, while accepting an inline cache marker is a
+ *   property of the endpoint protocol. A positive `cache_write` price therefore
+ *   proves neither OpenAI `prompt_cache_breakpoint` nor compatible
+ *   `cache_control` support. Native OpenAI, ChatGPT subscription, Google, xAI
+ *   and catalog-derived OpenAI-compatible modes all settle for `"implicit"`;
+ *   those transports use provider-managed caching and stable affinity keys where
+ *   available. `openai-compatible` in particular means an arbitrary `base_url`,
+ *   and the ones people configure are overwhelmingly
  *   routers: 642 of the 680 catalog models whose pricing reads `"explicit"` sit
  *   behind one, led by pioneer, amazon-bedrock, openrouter, crossmodel, zenmux,
  *   vercel and kilo — against 30 on `anthropic` and 8 on `openai`, which does
@@ -529,9 +533,12 @@ export function cacheModeOf(
  *   the catalog rather than to decide anything — start lying about what the
  *   catalog says.
  *
- *   This removes the silent default, not the escape hatch: an author who writes
- *   `"explicit"` on an openai-compatible provider still gets markers, because
- *   nothing here ever overwrites a value that is already set.
+ *   This removes the silent default, not the compatible-provider escape hatch:
+ *   an author who writes `"explicit"` on an openai-compatible provider still
+ *   gets markers, because nothing here ever overwrites a value that is already
+ *   set. Native OpenAI kinds intentionally ignore that generic setting because
+ *   their supported public cache control is `prompt_cache_key`, not an inline
+ *   content marker.
  */
 export function derivePromptCacheMode(
   cost: { cache_read?: number; cache_write?: number } | undefined,
@@ -539,7 +546,7 @@ export function derivePromptCacheMode(
 ): "explicit" | "implicit" | undefined {
   const mode = cacheModeOf(cost);
   if (mode === "unknown") return undefined;
-  return mode === "explicit" && kind === "openai-compatible" ? "implicit" : mode;
+  return mode === "explicit" && kind === "anthropic" ? "explicit" : "implicit";
 }
 
 const MODELS_DEV_URL = "https://models.dev/api.json";

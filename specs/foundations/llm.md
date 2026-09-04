@@ -174,7 +174,9 @@ Additional per-kind fields:
 - `openai-compatible` always gets `usage: { include: true }` (`:202-210`, the field itself at
   `:205`), and when `promptCacheKey` is set, both `prompt_cache_key` **and** `session_id` carrying
   the same value (`:206-208`).
-- `openai` gets `promptCacheKey` (camelCase) when a key is set (`:212-214`).
+- `openai`, `openai-codex`, and `xai-grok` get `promptCacheKey` (camelCase, serialized by the
+  Responses adapter as `prompt_cache_key`) when a key is set. Grok still receives no OpenAI cache
+  breakpoint.
 - Anthropic non-`off` effort also computes `thinkingFloor = reasoningOutputFloor(kind, effort)`
   (`:195`) and the effective cap becomes `Math.max(configured, thinkingFloor)` (`:216-219`). The
   floor table is `packages/capability/src/reasoning-budget.ts:14-22` plus a fixed
@@ -204,9 +206,9 @@ cache record's fields and how each is derived (`packages/llm/src/ai-sdk/request-
 | `marked` | `"anthropic"` \| `"compatible"` \| `"none"` |
 | `requested_breakpoints` | `params.cacheBreakpoints?.length ?? 0` |
 | `applied_breakpoints` | count actually marked |
-| `walked_back` | openai-compatible only; a requested index that moved to an earlier message |
+| `walked_back` | compatible; a requested index that moved to an earlier markable message |
 | `system_marked` | a system block exists **and** this kind marks |
-| `cache_key_sent` | `promptCacheKey` set **and** kind is `openai`, `openai-codex`, or `openai-compatible` |
+| `cache_key_sent` | `promptCacheKey` set **and** kind is `openai`, `openai-codex`, `xai-grok`, or `openai-compatible` |
 | `session_pinned` | the `x-session-id` header was emitted (openai-compatible + key) |
 | `ttl?` | `params.promptCacheTtl` |
 
@@ -397,7 +399,7 @@ inferred.
 
 ### 4.5 Prompt-cache breakpoint placement
 
-Two mutually exclusive paths, chosen at `packages/llm/src/ai-sdk/request-options.ts:559-561`:
+Two mutually exclusive marker paths are chosen by `buildRequestOptions`:
 
 - `markAnthropic = kind === "anthropic" && promptCache !== "off"` (`:549`) — so absent `promptCache` still
   marks.
@@ -443,6 +445,15 @@ body is returned by identity (`touched` guard, `:117`, `:156`) — pinned by
 
 The two transforms compose as `applyCacheControlMarkers(applyBodyExtras(args, extras))`
 (`packages/llm/src/openai-compatible-request.ts:235`) — body extras first, markers second.
+
+**Native OpenAI Responses** — `openai` and `openai-codex` never enter either marker transform.
+Their provider-managed cache receives the run-stable `promptCacheKey`, serialized as
+`prompt_cache_key`, and the original message shapes remain untouched even when a generic model
+setting says `promptCache === "explicit"`. models.dev publishes cache pricing, not an endpoint-level
+inline-marker capability, and the ChatGPT subscription transport rejects
+`prompt_cache_breakpoint`. Pinned by `packages/llm/tests/unit/ai-sdk-modules.test.ts`,
+`packages/llm/tests/unit/observability.test.ts`, and the real wire assertions in
+`packages/llm/tests/integration/provider-request-shape.test.ts`.
 
 ### 4.6 `applyBodyExtras`
 
@@ -916,19 +927,20 @@ Test: `packages/llm/tests/integration/provider-request-shape.test.ts:163-189` (a
 are strings, neither carries `cache_control`, and the markers landed at indices `[0, 1]`);
 `packages/llm/tests/unit/ai-sdk-modules.test.ts:620-637`.
 
-**LLM-26.** At most two message-level cache breakpoints per request, on both the Anthropic and the
-openai-compatible path; a system-role index is discarded rather than consuming a slot; two requested
-indices that walk back never collapse onto one message.
-Production: `MAX_MESSAGE_CACHE_BREAKPOINTS = 2` (`packages/llm/src/ai-sdk/request-options.ts:253`),
-`cacheBreakpointTargets` (`:256-268`), the `targets.has(j)` skip in `markable` (`:412`).
-Test: `packages/llm/tests/unit/ai-sdk-modules.test.ts:236-258`;
-`packages/llm/tests/unit/observability.test.ts:360-380`.
+**LLM-26.** At most two message-level cache breakpoints per request on the Anthropic and
+openai-compatible paths; a system-role index is discarded rather than consuming a slot; two
+requested indices that walk back never claim the same message.
+Production: `MAX_MESSAGE_CACHE_BREAKPOINTS`, `cacheBreakpointTargets`, and
+`withOpenAICompatibleCacheMarkers` in
+`packages/llm/src/ai-sdk/request-options.ts`.
+Test: `packages/llm/tests/unit/ai-sdk-modules.test.ts` and
+`packages/llm/tests/unit/observability.test.ts`.
 
 **LLM-27.** `undefined` `cacheBreakpoints` marks nothing on openai-compatible, but rolls a single
-breakpoint onto the newest usable message on Anthropic.
-Production: `packages/llm/src/ai-sdk/request-options.ts:417` versus `:271-274`.
-Test: `packages/llm/tests/unit/ai-sdk-modules.test.ts:277` (`request("explicit")` with no
-breakpoints contains no sentinel) and `:257` (Anthropic's rolling default).
+breakpoint onto the newest usable message on Anthropic. Native OpenAI never uses these indices.
+Production: `withOpenAICompatibleCacheMarkers` and `cacheBreakpointTargets` in
+`packages/llm/src/ai-sdk/request-options.ts`.
+Test: `packages/llm/tests/unit/ai-sdk-modules.test.ts`.
 
 **LLM-28.** `FORBIDDEN_PROVIDER_BODY_KEYS` are dropped from the operator's `body` escape hatch even
 with no settings schema in the path, and a `null` value **deletes** the key rather than sending
@@ -1082,6 +1094,24 @@ Test: the coverage script itself, run by `bun run test:coverage`.
 **LLM-52.** Every package test script carries `--timeout 60000`.
 Production: `packages/llm/package.json:36-41`.
 Test: unpinned within this package.
+
+**LLM-53.** Native `openai` and `openai-codex` requests remain provider-managed regardless of the
+generic `promptCache` value: `promptCacheKey` is forwarded, messages and system content are not
+decorated, and neither `prompt_cache_breakpoint` nor `prompt_cache_options` is emitted.
+Production: `buildCallTuning` and `buildRequestOptions` in
+`packages/llm/src/ai-sdk/request-options.ts`.
+Test: `packages/llm/tests/unit/ai-sdk-modules.test.ts` and
+`packages/llm/tests/integration/provider-request-shape.test.ts`.
+
+**LLM-54.** A Grok subscription Responses call forwards the stable `promptCacheKey` as
+`prompt_cache_key` but never receives `prompt_cache_breakpoint`; its separate subscription transport
+uses the same conversation identity for `x-grok-conv-id`.
+Production: `buildCallTuning` in `packages/llm/src/ai-sdk/request-options.ts` and
+`createXaiGrokAdapter.apply` in `packages/kernel/src/subscriptions/xai-grok.ts`.
+Test: “uses Grok's subscription Responses path and retains its supported output cap” in
+`packages/llm/tests/integration/provider-request-shape.test.ts` and “pins Grok subscription transport
+and derives its required headers after assembly” in
+`packages/kernel/tests/unit/subscription-adapters.test.ts`.
 
 ---
 

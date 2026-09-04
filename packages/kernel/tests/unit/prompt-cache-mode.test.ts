@@ -90,10 +90,12 @@ describe("derivePromptCacheMode: what a configured model should store", () => {
     return catalog.provider(providerId)?.models.find((m) => m.modelId === modelId)?.cost;
   }
 
-  it("derives explicit for the vendor's own SDK", () => {
+  it("derives explicit only for the provider whose protocol accepts inline markers", () => {
     expect(derivePromptCacheMode(costOf("anthropic", "claude-sonnet-4-5"), "anthropic")).toBe(
       "explicit",
     );
+    expect(derivePromptCacheMode(costOf("openai", "gpt-5.6-sol"), "openai-codex")).toBe("implicit");
+    expect(derivePromptCacheMode(costOf("xai", "grok-build-0.1"), "xai-grok")).toBe("implicit");
   });
 
   it("settles for implicit rather than sending markers into a router", () => {
@@ -125,11 +127,11 @@ describe("derivePromptCacheMode: what a configured model should store", () => {
     }
   });
 
-  it("caps explicit on openai-compatible ONLY", () => {
+  it("caps catalog-derived explicit mode on every non-Anthropic transport", () => {
     const priced = { input: 3, output: 15, cache_read: 0.3, cache_write: 3.75 };
-    expect(derivePromptCacheMode(priced, "openai-compatible")).toBe("implicit");
-    for (const kind of PROVIDER_KINDS.filter((k) => k !== "openai-compatible")) {
-      expect(derivePromptCacheMode(priced, kind)).toBe("explicit");
+    expect(derivePromptCacheMode(priced, "anthropic")).toBe("explicit");
+    for (const kind of PROVIDER_KINDS.filter((k) => k !== "anthropic")) {
+      expect(derivePromptCacheMode(priced, kind)).toBe("implicit");
     }
   });
 });

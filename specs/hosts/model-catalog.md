@@ -372,16 +372,25 @@ Two specific comparisons are called out as load-bearing in the source doc-commen
 - `!== undefined`, never truthiness — because some models publish `cache_read: 0` (free reads,
   falsy but present), which a `&&`-style check would silently treat as absent.
 
+The current models.dev schema publishes these prices but no field for a provider's cache protocol,
+breakpoint shape, marker limit, or TTL. Clarvis therefore does not synthesize an inline marker from
+a model id. `cacheModeOf` classifies the price shape, then `derivePromptCacheMode` combines it with
+the configured provider `kind`; only an endpoint family whose marker protocol is part of Clarvis's
+owned contract may become catalog-derived explicit.
+
 ### 4.8 `derivePromptCacheMode` (`packages/kernel/src/models/model-catalog.ts:527-534`)
 
 ```
 derivePromptCacheMode(cost, kind):
   mode = cacheModeOf(cost)
   if mode === "unknown" → undefined
-  if mode === "explicit" && kind === "openai-compatible" → "implicit"   (the one downgrade)
-  else → mode
+  if mode === "explicit" && kind === "anthropic" → "explicit"
+  else → "implicit"
 ```
-This is called **once, at model-configuration time** in the TUI's providers controller
+The provider-kind gate is deliberately independent of model names: native OpenAI, ChatGPT, Google,
+Grok and catalog-derived OpenAI-compatible models stay provider-managed implicit even when
+`cache_write > 0`. An explicitly authored OpenAI-compatible provider remains an operator escape
+hatch because this derivation is called **once, at model-configuration time** in the TUI's providers controller
 (`packages/code/src/features/providers/controller.ts:339`, inside `addModelFromCatalog`), not per
 run — and the kernel deliberately exports no per-request equivalent at all: a dedicated test,
 `packages/kernel/tests/unit/prompt-cache-mode.test.ts:137-152` (describe `nothing on the run path
@@ -398,6 +407,21 @@ manually through `undefined → explicit → implicit → off → undefined`
 never overwrites an already-set value (doc-comment `packages/kernel/src/models/model-catalog.ts:523-525`). What the stored
 `prompt_cache` mode actually does to a request on the wire is delegated to
 [cross-cutting/prompt-cache.md](../cross-cutting/prompt-cache.md).
+
+Authenticated ChatGPT and Grok catalogs deliberately carry entitlement and model-shape metadata
+rather than models.dev pricing. `cachePolicyModel` therefore resolves an exact model-id match from
+the owning public catalog family when, and only when, the configured endpoint is the matching
+subscription kind: native `openai` for `openai-codex`, or the `xai` provider for `xai-grok`.
+`addModelFromCatalog` uses that cost only when the entitled hit has none, so future models follow the
+catalog without a model-name list. The same fallback is not available to arbitrary
+`openai-compatible`, Google, or Anthropic endpoints. Existing persisted `prompt_cache` values still
+win.
+
+Production: `packages/code/src/features/providers/controller.ts` (`cachePolicyModel`,
+`addModelFromCatalog`, `catalogModelFor`).
+Test: `packages/code/tests/unit/providers-controller.test.ts` (tests “derives ChatGPT cache policy
+from models.dev without naming models”, “derives Grok cache policy from the xAI catalog without
+naming models”, and “never borrows OpenAI cache policy for other provider kinds”).
 
 ### 4.9 `reasoningOutputFloor` (`packages/capability/src/reasoning-budget.ts:41-47`)
 
@@ -626,7 +650,9 @@ Production: `packages/kernel/src/models/model-catalog.ts:527-534`.
 Test: `packages/kernel/tests/unit/prompt-cache-mode.test.ts:77-115` (describe block
 `derivePromptCacheMode: what a configured model should store`), including `:111-115` ("caps explicit
 on openai-compatible ONLY", asserting `implicit` for openai-compatible and `explicit` for every other
-kind on the same priced cost) and `:100-105` (`derivePromptCacheMode(undefined, "anthropic")` and
+kind on the same priced cost), the bundled `openai/gpt-5.6-sol` price deriving `"explicit"` for
+`openai-codex`, the bundled `xai/grok-build-0.1` read price deriving `"implicit"` for `xai-grok`,
+and `:100-105` (`derivePromptCacheMode(undefined, "anthropic")` and
 `derivePromptCacheMode({}, "openai-compatible")` both `toBeUndefined()`).
 
 **INV-MC-3.** For the run's entry agent, `merged.default_model` (and `default_reasoning_effort`)

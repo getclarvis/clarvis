@@ -316,6 +316,35 @@ export function createProvidersController(deps: ProvidersControllerDeps): Provid
   }
 
   /**
+   * Find cache pricing published for the endpoint family that actually serves a model.
+   *
+   * @remarks Entitled ChatGPT catalogs intentionally contain authorization and
+   *   model-shape metadata, not public token pricing. ChatGPT therefore uses an
+   *   exact model-id match from the native OpenAI catalog family, while Grok uses
+   *   the exact model-id match from models.dev's `xai` provider. Matching only a
+   *   known subscription transport to its owning public provider keeps this
+   *   capability-driven: no model name is embedded here, and an arbitrary
+   *   OpenAI-compatible endpoint is never treated as OpenAI or xAI.
+   */
+  function cachePolicyModel(provider: ProviderConfig, modelId: string): CatalogModel | undefined {
+    const exact = deps.catalog
+      ?.provider(provider.name)
+      ?.models.find((model) => model.modelId === modelId);
+    if (exact?.cost !== undefined) return exact;
+    if (provider.kind === "openai-codex") {
+      return deps.catalog
+        ?.providers()
+        .filter((candidate) => candidate.kind === "openai")
+        .flatMap((candidate) => candidate.models)
+        .find((model) => model.modelId === modelId);
+    }
+    if (provider.kind === "xai-grok") {
+      return deps.catalog?.provider("xai")?.models.find((model) => model.modelId === modelId);
+    }
+    return exact;
+  }
+
+  /**
    * Adds a model to a provider, seeded from its catalog entry.
    *
    * @remarks Provider-published `reasoning_efforts` are copied **here**, where
@@ -353,7 +382,7 @@ export function createProvidersController(deps: ProvidersControllerDeps): Provid
         if (hit?.capabilities?.length) entry.capabilities = hit.capabilities;
         if (hit?.reasoning_efforts !== undefined)
           entry.reasoning_efforts = [...hit.reasoning_efforts];
-        const cache = derivePromptCacheMode(hit?.cost, x.kind);
+        const cache = derivePromptCacheMode(hit?.cost ?? cachePolicyModel(x, id)?.cost, x.kind);
         if (cache !== undefined) entry.prompt_cache = cache;
         models[id] = entry;
         return { ...x, models };
@@ -497,8 +526,8 @@ export function createProvidersController(deps: ProvidersControllerDeps): Provid
    * @remarks A setter of its own rather than a widening of `setModelField`,
    * whose `value` is number-typed — the same reason `setModelCapabilities` is
    * separate. Deleting on `undefined` is what makes "(auto)" expressible at all:
-   * an absent key is how the kernel is told to derive the mode from the catalog,
-   * and it is a different state from every value the field can hold.
+   * the setup UI may suggest the current catalog-derived mode again, while run
+   * assembly keeps the field absent instead of consulting a mutable catalog.
    */
   function setModelPromptCache(
     providerIndex: number,
@@ -526,7 +555,7 @@ export function createProvidersController(deps: ProvidersControllerDeps): Provid
   }
 
   function catalogModelFor(provider: ProviderConfig, modelId: string): CatalogModel | undefined {
-    return deps.catalog?.provider(provider.name)?.models.find((m) => m.modelId === modelId);
+    return cachePolicyModel(provider, modelId);
   }
 
   const resolveSet = (): ProviderConfig[] => {

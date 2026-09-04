@@ -115,6 +115,168 @@ describe("request options", () => {
     });
   });
 
+  it("marks explicit native OpenAI boundaries without sending request-level cache options", () => {
+    const richMessages: ModelMessage[] = [
+      messages[0]!,
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "hello",
+            providerOptions: {
+              openai: { existing: "kept" },
+              custom: { existing: "also-kept" },
+            },
+          },
+        ],
+      },
+    ];
+    const request = buildRequest(
+      params({
+        providerConfig: { kind: "openai", apiKeyEnv: "KEY", promptCache: "explicit" },
+        cacheBreakpoints: [1],
+        promptCacheKey: "session-1",
+      }),
+      richMessages,
+    );
+    const marker = { openai: { promptCacheBreakpoint: { mode: "explicit" } } };
+    expect(request.system).toEqual([
+      { role: "system", content: "system", providerOptions: marker },
+    ]);
+    expect(request.messages[0]).toEqual({
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: "hello",
+          providerOptions: {
+            openai: { existing: "kept", promptCacheBreakpoint: { mode: "explicit" } },
+            custom: { existing: "also-kept" },
+          },
+        },
+      ],
+    });
+    expect(request.providerOptions).toEqual({ openai: { promptCacheKey: "session-1" } });
+    expect(JSON.stringify(request)).not.toContain("promptCacheOptions");
+  });
+
+  it("marks OpenAI tool-result content and leaves every non-OpenAI kind untouched", () => {
+    const transcript: ModelMessage[] = [
+      { role: "user", content: "read it" },
+      {
+        role: "assistant",
+        content: [{ type: "tool-call", toolCallId: "c1", toolName: "read", input: {} }],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "c1",
+            toolName: "read",
+            output: { type: "text", value: "contents" },
+          },
+        ],
+      },
+    ];
+    const explicit = (kind: "openai" | "openai-codex" | "xai-grok" | "google") =>
+      buildRequest(
+        params({ providerConfig: { kind, promptCache: "explicit" }, cacheBreakpoints: [2] }),
+        transcript,
+      );
+
+    for (const kind of ["openai", "openai-codex"] as const) {
+      const request = explicit(kind);
+      expect(JSON.stringify(request.messages[2])).toContain("promptCacheBreakpoint");
+    }
+    for (const kind of ["xai-grok", "google"] as const) {
+      expect(JSON.stringify(explicit(kind))).not.toContain("promptCacheBreakpoint");
+    }
+
+    const advanced = buildRequest(
+      params({
+        providerConfig: { kind: "openai", promptCache: "explicit" },
+        cacheBreakpoints: [0],
+      }),
+      transcript,
+    );
+    expect(JSON.stringify(advanced.messages[2])).toContain('"type":"content"');
+    expect(JSON.stringify(advanced.messages[2])).not.toContain("promptCacheBreakpoint");
+  });
+
+  it("marks the final eligible OpenAI block and walks back from an unsupported tool output", () => {
+    const userParts = buildRequest(
+      params({
+        providerConfig: { kind: "openai", promptCache: "explicit" },
+        cacheBreakpoints: [0],
+      }),
+      [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "context" },
+            { type: "file", data: "ZmlsZQ==", mediaType: "text/plain" },
+          ],
+        },
+      ],
+    );
+    expect(JSON.stringify(userParts.messages[0])).toContain('"type":"file"');
+    expect(JSON.stringify(userParts.messages[0])).toContain("promptCacheBreakpoint");
+
+    const toolParts = buildRequest(
+      params({
+        providerConfig: { kind: "openai", promptCache: "explicit" },
+        cacheBreakpoints: [1],
+      }),
+      [
+        { role: "user", content: "read it" },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "c1",
+              toolName: "read",
+              output: {
+                type: "content",
+                value: [
+                  { type: "text", text: "context" },
+                  { type: "file", data: "ZmlsZQ==", mediaType: "text/plain" },
+                ],
+              },
+            },
+          ],
+        } as ModelMessage,
+      ],
+    );
+    expect(JSON.stringify(toolParts.messages[1])).toContain('"type":"file"');
+    expect(JSON.stringify(toolParts.messages[1])).toContain("promptCacheBreakpoint");
+
+    const walkedBack = buildRequest(
+      params({
+        providerConfig: { kind: "openai", promptCache: "explicit" },
+        cacheBreakpoints: [1],
+      }),
+      [
+        { role: "user", content: "fallback" },
+        {
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: "c2",
+              toolName: "read",
+              output: { type: "content", value: [{ type: "unsupported" }] },
+            },
+          ],
+        } as unknown as ModelMessage,
+      ],
+    );
+    expect(JSON.stringify(walkedBack.messages[0])).toContain("promptCacheBreakpoint");
+    expect(JSON.stringify(walkedBack.messages[1])).not.toContain("promptCacheBreakpoint");
+  });
+
   it("joins system messages and omits system when none exists", () => {
     const joined = buildRequest(params(), [
       { role: "system", content: "a" },
@@ -185,6 +347,17 @@ describe("request options", () => {
         reasoningEffort: "low",
         promptCacheKey: "run-1",
       },
+    });
+
+    const grok = buildRequest(
+      params({
+        providerConfig: { kind: "xai-grok" },
+        promptCacheKey: "run-1",
+      }),
+      [{ role: "user", content: "hello" }],
+    );
+    expect(grok.providerOptions).toEqual({
+      openai: { store: false, forceReasoning: true, promptCacheKey: "run-1" },
     });
 
     const anthropic = buildRequest(

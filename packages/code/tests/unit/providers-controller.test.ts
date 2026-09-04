@@ -647,6 +647,91 @@ test("addModelFromCatalog fills model and effort metadata from a hit, or default
   dispose();
 });
 
+test("addModelFromCatalog derives ChatGPT cache policy from models.dev without naming models", () => {
+  const provider: ProviderConfig = { name: "chatgpt", kind: "openai-codex" };
+  const catalog = fakeCatalog([
+    catalogProvider({
+      id: "openai",
+      kind: "openai",
+      models: [
+        catalogModel("future-model", {
+          cost: { input: 4, output: 24, cache_read: 0.4, cache_write: 5 },
+        }),
+      ],
+    }),
+  ]);
+  const { ctrl, dispose } = setup(provider, { catalog });
+  ctrl.load();
+
+  ctrl.addModelFromCatalog(
+    0,
+    "future-model",
+    catalogModel("future-model", { context_window_tokens: 300000 }),
+  );
+
+  expect(ctrl.providers()[0]!.models?.["future-model"]).toEqual({
+    context_window_tokens: 300000,
+    prompt_cache: "explicit",
+  });
+  expect(ctrl.catalogModelFor(provider, "future-model")?.cost?.cache_write).toBe(5);
+  dispose();
+});
+
+test("addModelFromCatalog derives Grok cache policy from the xAI catalog without naming models", () => {
+  const provider: ProviderConfig = { name: "grok", kind: "xai-grok" };
+  const catalog = fakeCatalog([
+    catalogProvider({
+      id: "xai",
+      kind: "openai-compatible",
+      models: [
+        catalogModel("future-grok", {
+          cost: { input: 3, output: 15, cache_read: 0.75 },
+        }),
+      ],
+    }),
+  ]);
+  const { ctrl, dispose } = setup(provider, { catalog });
+  ctrl.load();
+
+  ctrl.addModelFromCatalog(
+    0,
+    "future-grok",
+    catalogModel("future-grok", { context_window_tokens: 2000000 }),
+  );
+
+  expect(ctrl.providers()[0]!.models?.["future-grok"]).toEqual({
+    context_window_tokens: 2000000,
+    prompt_cache: "implicit",
+  });
+  expect(ctrl.catalogModelFor(provider, "future-grok")?.cost?.cache_read).toBe(0.75);
+  dispose();
+});
+
+test("addModelFromCatalog never borrows OpenAI cache policy for other provider kinds", () => {
+  const provider: ProviderConfig = { name: "router", kind: "openai-compatible" };
+  const catalog = fakeCatalog([
+    catalogProvider({
+      id: "openai",
+      kind: "openai",
+      models: [
+        catalogModel("shared-id", {
+          cost: { input: 4, output: 24, cache_read: 0.4, cache_write: 5 },
+        }),
+      ],
+    }),
+  ]);
+  const { ctrl, dispose } = setup(provider, { catalog });
+  ctrl.load();
+
+  ctrl.addModelFromCatalog(0, "shared-id", catalogModel("shared-id"));
+
+  expect(ctrl.providers()[0]!.models?.["shared-id"]).toEqual({
+    context_window_tokens: ctrl.defaultWindow,
+  });
+  expect(ctrl.catalogModelFor(provider, "shared-id")).toBeUndefined();
+  dispose();
+});
+
 test("addBlankModel adds a default-window model with no metadata", () => {
   const provider: ProviderConfig = { name: "acme", kind: "openai-compatible" };
   const { ctrl, dispose } = setup(provider);
@@ -848,12 +933,11 @@ test("setModelMap creates the model entry it is given, with the default window",
   dispose();
 });
 
-test("catalogModelFor looks the model up under the provider's own name, never across providers", () => {
+test("catalogModelFor keeps arbitrary endpoints on their own catalog identity", () => {
   // `fillModelFromCatalog` deliberately falls back across providers, which is
-  // right for offering to fill a context window. The kernel's
-  // `withPromptCacheModes` does not: it matches the configured provider's name
-  // only. Anything the panel derives from `fill` and presents as what the run
-  // will do can therefore state the opposite of what it does.
+  // right for offering to fill a context window. Cache policy does not: an
+  // arbitrary gateway must not inherit Anthropic's wire protocol merely because
+  // it exposes the same model id.
   const anthropic = catalogProvider({
     id: "anthropic",
     kind: "anthropic",

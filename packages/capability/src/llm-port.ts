@@ -132,17 +132,20 @@ export type ToolChoice = "auto" | "required" | { type: "function"; function: { n
  *
  *   `promptCache` resolves as follows, and absent is deliberately not `off`:
  *
- *   | value        | `anthropic`            | `openai-compatible`        |
- *   | ------------ | ---------------------- | -------------------------- |
- *   | `"explicit"` | cache breakpoints      | `cache_control` blocks     |
- *   | `"implicit"` | cache breakpoints      | nothing — informational    |
- *   | `"off"`      | no breakpoints         | nothing                    |
- *   | absent       | cache breakpoints      | nothing                    |
+ *   | value        | `anthropic`       | `openai` / `openai-codex`       | `openai-compatible`     |
+ *   | ------------ | ----------------- | -------------------------------- | ----------------------- |
+ *   | `"explicit"` | cache breakpoints | `prompt_cache_breakpoint` blocks | `cache_control` blocks  |
+ *   | `"implicit"` | cache breakpoints | provider-managed only            | provider-managed only   |
+ *   | `"off"`      | no breakpoints    | no Clarvis markers               | no Clarvis markers      |
+ *   | absent       | cache breakpoints | provider-managed only            | provider-managed only   |
  *
  *   So the explicit marker on an OpenAI-compatible endpoint is reachable only
  *   when something positively claimed the model wants one; nothing inherits it
  *   by default. The `anthropic` column is unchanged from before this field
- *   existed except that `"off"` can now switch it off.
+ *   existed except that `"off"` can now switch it off. `xai-grok` is not a
+ *   breakpoint column: its Responses transport uses the stable
+ *   `promptCacheKey` for implicit prefix-cache routing and never receives an
+ *   OpenAI `prompt_cache_breakpoint`.
  */
 export interface ResolvedProviderConfig {
   kind: "openai-compatible" | "openai" | "anthropic" | "google" | "openai-codex" | "xai-grok";
@@ -207,10 +210,12 @@ export interface LLMCallParams {
    * Indices into {@link LLMCallParams.messages}, oldest first, at which to place
    * a provider prompt-cache breakpoint.
    *
-   * @remarks Only providers with explicit breakpoints (Anthropic) read this; the
-   *   adapter keeps at most the two newest usable indices, ignores any that are
-   *   out of range or name a system message, and falls back to the last
-   *   non-system message when the field is absent. Supplied by
+   * @remarks Providers with explicit breakpoint protocols (Anthropic, native
+   *   OpenAI Responses and explicitly opted-in OpenAI-compatible endpoints)
+   *   read this. The adapter keeps at most the two newest usable indices,
+   *   ignores any that are out of range or name a system message, and uses a
+   *   provider-specific fallback when a chosen message cannot carry a marker.
+   *   Supplied by
    *   `@clarvis/loop`'s `LiveContext.cacheBreakpoints`
    *   (`runtime/context/context-compaction.ts`).
    */

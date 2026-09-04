@@ -233,8 +233,9 @@ per-model `headers`/`body` overrides; `ProviderConfig` (`:270-278`) carries the
 provider-wide `kind`/`base_url`/`api_key_env`/`headers`/`body`/`models`, with the doc-comment
 restricting `body` from carrying a key that is the cached prefix (`messages`, `tools`) or that
 contradicts the resolved call (`model`, `stream`, `tool_choice`, `stream_options`) (`:254-268`). The
-four-row `promptCache` resolution table (which value maps to which behavior on `anthropic` versus
-`openai-compatible`) lives on `ResolvedProviderConfig` in `llm-port.ts`, not here — see §3.7.
+four-row `promptCache` resolution table (which value maps to provider-native behavior on Anthropic,
+native OpenAI Responses, and OpenAI-compatible endpoints) lives on `ResolvedProviderConfig` in
+`llm-port.ts`, not here — see §3.7.
 
 **Budget and grants.** `BudgetMode` (`:280-295`) is `stop | escalate`; `BudgetConfig` (`:297-315`) is
 `on_exceed` plus optional `total_token_limit`/`timeout_ms`/`max_escalations`. `BuiltinGrant`
@@ -490,12 +491,12 @@ cost, "making the hard token cap least accurate precisely when a run is burning 
 `ResolvedProviderConfig` (`:145-152`) is `kind`, `baseUrl?`, `apiKeyEnv?`, `headers?`, `body?`,
 `promptCache?: PromptCacheMode`. Its doc-comment's table — absence is deliberately not `off`:
 
-| `promptCache` value | `anthropic` | `openai-compatible` |
-|---|---|---|
-| `"explicit"` | cache breakpoints | `cache_control` blocks |
-| `"implicit"` | cache breakpoints | nothing — informational |
-| `"off"` | no breakpoints | nothing |
-| absent | cache breakpoints | nothing |
+| `promptCache` value | `anthropic` | `openai` / `openai-codex` | `openai-compatible` |
+|---|---|---|---|
+| `"explicit"` | cache breakpoints | `prompt_cache_breakpoint` blocks | `cache_control` blocks |
+| `"implicit"` | cache breakpoints | provider-managed only | provider-managed only |
+| `"off"` | no breakpoints | no Clarvis markers | no Clarvis markers |
+| absent | cache breakpoints | provider-managed only | provider-managed only |
 
 (`packages/capability/src/llm-port.ts:128-141`). `headers` values are raw `${VAR}` templates, never resolved — resolved at
 client construction, not per message, which is why `ResolvedProviderConfig` rides beside
@@ -504,8 +505,8 @@ client construction, not per message, which is why `ResolvedProviderConfig` ride
 `LLMCallParams` (`:183-247`) is the full call input: `model`, `messages`, `tools`, `provider`, optional
 `providerConfig`/`capabilities`/`signal`/`toolChoice`/`timeoutMs`/`maxOutputTokens`/
 `reasoningSummary`/`reasoningEffort`/`promptCacheKey`/`promptCacheTtl`, `cacheBreakpoints?: readonly
-number[]` (Anthropic-only prompt-cache breakpoint indices; the adapter keeps at most the two newest
-usable ones and falls back to the last non-system message when absent, `:199-209`), `maxRetries?`/
+number[]` (provider-neutral prompt-cache breakpoint indices; explicit provider adapters keep at most
+the two newest usable ones and use provider-specific fallback rules, `:199-209`), `maxRetries?`/
 `maxRetryAfterMs?`, `onRetry?: (info: RetryInfo) => void` (fired *after* the backoff delay is computed,
 so `delayMs` is never invented, and carrying the classified failure `message` that scheduled it), `onStreamDelta?` (a live streaming sink; `reset: true`
 marks the first slice of a retried call, `:221-227`), and `onToolInputDelta?` (a separate, `call_id`-keyed

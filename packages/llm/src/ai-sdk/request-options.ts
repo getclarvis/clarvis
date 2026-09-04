@@ -36,6 +36,19 @@ function anthropicCacheControl(ttl: PromptCacheTtl | undefined): {
   };
 }
 
+/** Merge OpenAI's native cache boundary without dropping existing block metadata. */
+function openAICacheBreakpoint(existing?: Record<string, Record<string, JSONValue>>): Record<
+  string,
+  Record<string, JSONValue>
+> & {
+  openai: { promptCacheBreakpoint: { mode: "explicit" } };
+} {
+  return {
+    ...existing,
+    openai: { ...existing?.openai, promptCacheBreakpoint: { mode: "explicit" } },
+  };
+}
+
 /**
  * The AI SDK's standardized, cross-provider reasoning-effort call setting — a
  * top-level `generateText`/`streamText` option (a sibling of `providerOptions`,
@@ -87,7 +100,7 @@ export interface RequestTuningDiagnostics {
 export interface RequestCacheDiagnostics {
   kind?: string;
   mode?: string;
-  marked: "anthropic" | "compatible" | "none";
+  marked: "anthropic" | "compatible" | "openai" | "none";
   requested_breakpoints: number;
   applied_breakpoints: number;
   walked_back: boolean;
@@ -133,12 +146,13 @@ export interface RequestDiagnostics {
  *   floor is applied here *and*, window-aware, by the loop's
  *   `clampOutputBudget` before the call ever reaches this function, so a
  *   near-full context window degrades the budget rather than exceeding it.
- *   Both OpenAI families forward a `prompt_cache_key`: native OpenAI as the
- *   camelCase `promptCacheKey` provider option, which `@ai-sdk/openai`
- *   serializes onto the Responses body, and openai-compatible as a snake_case
- *   passthrough alongside its usage request. Anthropic and Google have no
- *   equivalent knob — they key their caches on the prompt prefix — so the field
- *   is deliberately not forwarded there.
+ *   Native OpenAI, ChatGPT subscription, and Grok subscription forward a
+ *   `prompt_cache_key` through the camelCase `promptCacheKey` provider option,
+ *   which `@ai-sdk/openai` serializes onto the Responses body.
+ *   OpenAI-compatible sends the snake_case field directly alongside its usage
+ *   request. Anthropic and Google have no equivalent knob — they key their
+ *   caches on the prompt prefix — so the field is deliberately not forwarded
+ *   there.
  *
  *   openai-compatible additionally sends the same value as `session_id`, and
  *   {@link buildRequestOptions} sends it again as an `x-session-id` header.
@@ -217,7 +231,10 @@ function buildCallTuning(params: LLMCallParams): {
     };
   }
 
-  if ((kind === "openai" || kind === "openai-codex") && params.promptCacheKey !== undefined) {
+  if (
+    (kind === "openai" || kind === "openai-codex" || kind === "xai-grok") &&
+    params.promptCacheKey !== undefined
+  ) {
     opts.openai = { ...opts.openai, promptCacheKey: params.promptCacheKey };
   }
 
@@ -486,6 +503,167 @@ function markMessage(m: ModelMessage, marker: Record<string, unknown>): ModelMes
 }
 
 /**
+ * Attach an OpenAI breakpoint to the last content block the Responses adapter
+ * actually serializes with provider options.
+ *
+ * @param message - one already-converted AI SDK message.
+ * @returns a cloned marked message, or `undefined` when the SDK exposes no
+ *   breakpoint-bearing content block for this message shape.
+ * @remarks User text/image/file parts are native marker sites. Tool results are
+ *   normalized by {@link normalizeOpenAIToolMessage} before this function runs,
+ *   so their `input_text` block can carry the marker. Assistant output parts are
+ *   not marked because the installed Responses adapter does not read cache
+ *   options from them; callers walk back instead of claiming a breakpoint that
+ *   would be silently dropped.
+ */
+function markOpenAIMessage(message: ModelMessage): ModelMessage | undefined {
+  if (message.role === "user") {
+    if (typeof message.content === "string") {
+      return {
+        ...message,
+        content: [
+          { type: "text", text: message.content, providerOptions: openAICacheBreakpoint() },
+        ],
+      };
+    }
+    const content = message.content as Array<{
+      type: string;
+      providerOptions?: Record<string, Record<string, JSONValue>>;
+    }>;
+    const target = content.reduce(
+      (found, part, index) =>
+        part.type === "text" || part.type === "image" || part.type === "file" ? index : found,
+      -1,
+    );
+    if (target < 0) return undefined;
+    return {
+      ...message,
+      content: content.map((part, i) =>
+        i === target
+          ? { ...part, providerOptions: openAICacheBreakpoint(part.providerOptions) }
+          : part,
+      ),
+    } as unknown as ModelMessage;
+  }
+  if (message.role !== "tool" || !Array.isArray(message.content)) return undefined;
+
+  const content = message.content as Array<{
+    type: string;
+    output?: {
+      type: string;
+      value?: unknown;
+    };
+  }>;
+  for (let i = content.length - 1; i >= 0; i -= 1) {
+    const part = content[i]!;
+    if (part.type !== "tool-result" || part.output === undefined) continue;
+    if (part.output.type !== "content" || !Array.isArray(part.output.value)) continue;
+    const output = part.output.value as Array<{
+      type: string;
+      providerOptions?: Record<string, Record<string, JSONValue>>;
+    }>;
+    let target = -1;
+    for (let j = output.length - 1; j >= 0; j -= 1) {
+      if (output[j]!.type === "text" || output[j]!.type === "file") {
+        target = j;
+        break;
+      }
+    }
+    if (target < 0) continue;
+    const next = [...content];
+    next[i] = {
+      ...part,
+      output: {
+        ...part.output,
+        value: output.map((item, j) =>
+          j === target
+            ? { ...item, providerOptions: openAICacheBreakpoint(item.providerOptions) }
+            : item,
+        ),
+      },
+    };
+    return { ...message, content: next } as unknown as ModelMessage;
+  }
+  return undefined;
+}
+
+/**
+ * Keep every plain tool output on one stable Responses content-block shape.
+ *
+ * @remarks A breakpoint can only live on a content block. Promoting only the
+ *   currently marked output would make an older durable output alternate
+ *   between a string and a block array as the two-breakpoint window advances.
+ *   Normalizing all tool outputs for this provider-specific explicit path keeps
+ *   their serialized structure append-stable; implicit and other-provider
+ *   requests never enter this function.
+ */
+function normalizeOpenAIToolMessage(message: ModelMessage): ModelMessage {
+  if (message.role !== "tool" || !Array.isArray(message.content)) return message;
+  let changed = false;
+  const content = (
+    message.content as Array<{
+      type: string;
+      output?: { type: string; value?: unknown };
+    }>
+  ).map((part) => {
+    if (
+      part.type !== "tool-result" ||
+      part.output === undefined ||
+      (part.output.type !== "text" && part.output.type !== "error-text")
+    )
+      return part;
+    changed = true;
+    return {
+      ...part,
+      output: {
+        type: "content",
+        value: [
+          {
+            type: "text",
+            text: typeof part.output.value === "string" ? part.output.value : "",
+          },
+        ],
+      },
+    };
+  });
+  return changed ? ({ ...message, content } as unknown as ModelMessage) : message;
+}
+
+/**
+ * Mark up to two caller-selected OpenAI Responses boundaries without changing
+ * any other provider's message shape.
+ */
+function withOpenAICacheBreakpoints(
+  messages: ModelMessage[],
+  requested: readonly number[] | undefined,
+): { messages: ModelMessage[]; applied: number; walkedBack: boolean } {
+  if (requested === undefined || requested.length === 0)
+    return { messages, applied: 0, walkedBack: false };
+  const normalized = messages.map(normalizeOpenAIToolMessage);
+  const marked = new Map<number, ModelMessage>();
+  let walkedBack = false;
+  for (const requestedIndex of [...cacheBreakpointTargets(messages, requested)].reverse()) {
+    let at = -1;
+    for (let i = requestedIndex; i >= 0; i -= 1) {
+      if (marked.has(i) || normalized[i]!.role === "system") continue;
+      const candidate = markOpenAIMessage(normalized[i]!);
+      if (candidate !== undefined) {
+        at = i;
+        marked.set(i, candidate);
+        break;
+      }
+    }
+    if (at !== requestedIndex) walkedBack = true;
+  }
+  if (marked.size === 0) return { messages: normalized, applied: 0, walkedBack };
+  return {
+    messages: normalized.map((message, index) => marked.get(index) ?? message),
+    applied: marked.size,
+    walkedBack,
+  };
+}
+
+/**
  * Separates system messages from the rest, joining all system content with blank
  * lines into a single `system` string (omitted when there are no system
  * messages) — the shape the AI SDK expects for a top-level system prompt.
@@ -567,6 +745,10 @@ export function buildRequestOptions(
   const markAnthropic = kind === "anthropic" && mode !== "off";
   const markCompatible =
     kind === "openai-compatible" && mode === "explicit" && params.cacheBreakpoints !== undefined;
+  const markOpenAI =
+    (kind === "openai" || kind === "openai-codex") &&
+    mode === "explicit" &&
+    params.cacheBreakpoints !== undefined;
 
   const anthropicMarked = markAnthropic
     ? withCacheBreakpoints(modelMessages, params.cacheBreakpoints, params.promptCacheTtl)
@@ -575,10 +757,18 @@ export function buildRequestOptions(
     anthropicMarked === undefined && markCompatible
       ? withOpenAICompatibleCacheMarkers(modelMessages, params.cacheBreakpoints)
       : undefined;
+  const openAIMarked =
+    anthropicMarked === undefined && compatibleMarked === undefined && markOpenAI
+      ? withOpenAICacheBreakpoints(modelMessages, params.cacheBreakpoints)
+      : undefined;
   const split = splitSystemMessages(
-    anthropicMarked?.messages ?? compatibleMarked?.messages ?? modelMessages,
+    anthropicMarked?.messages ??
+      compatibleMarked?.messages ??
+      openAIMarked?.messages ??
+      modelMessages,
   );
-  const systemMarked = split.system !== undefined && (markAnthropic || markCompatible);
+  const systemMarked =
+    split.system !== undefined && (markAnthropic || markCompatible || markOpenAI);
   const system: string | SystemModelMessage[] | undefined =
     split.system === undefined
       ? undefined
@@ -592,7 +782,9 @@ export function buildRequestOptions(
           ]
         : markCompatible
           ? [{ role: "system", content: split.system, providerOptions: cacheMarkerOptions() }]
-          : split.system;
+          : markOpenAI
+            ? [{ role: "system", content: split.system, providerOptions: openAICacheBreakpoint() }]
+            : split.system;
   const sessionHeaders =
     kind === "openai-compatible" && params.promptCacheKey !== undefined
       ? { "x-session-id": params.promptCacheKey }
@@ -600,14 +792,25 @@ export function buildRequestOptions(
   const cache: RequestCacheDiagnostics = {
     ...(kind !== undefined ? { kind } : {}),
     ...(mode !== undefined ? { mode } : {}),
-    marked: anthropicMarked !== undefined ? "anthropic" : markCompatible ? "compatible" : "none",
+    marked:
+      anthropicMarked !== undefined
+        ? "anthropic"
+        : markCompatible
+          ? "compatible"
+          : markOpenAI
+            ? "openai"
+            : "none",
     requested_breakpoints: params.cacheBreakpoints?.length ?? 0,
-    applied_breakpoints: anthropicMarked?.applied ?? compatibleMarked?.applied ?? 0,
-    walked_back: compatibleMarked?.walkedBack ?? false,
+    applied_breakpoints:
+      anthropicMarked?.applied ?? compatibleMarked?.applied ?? openAIMarked?.applied ?? 0,
+    walked_back: compatibleMarked?.walkedBack ?? openAIMarked?.walkedBack ?? false,
     system_marked: systemMarked,
     cache_key_sent:
       params.promptCacheKey !== undefined &&
-      (kind === "openai" || kind === "openai-codex" || kind === "openai-compatible"),
+      (kind === "openai" ||
+        kind === "openai-codex" ||
+        kind === "xai-grok" ||
+        kind === "openai-compatible"),
     session_pinned: sessionHeaders !== undefined,
     ...(params.promptCacheTtl !== undefined ? { ttl: params.promptCacheTtl } : {}),
   };

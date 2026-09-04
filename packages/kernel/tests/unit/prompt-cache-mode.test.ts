@@ -94,6 +94,8 @@ describe("derivePromptCacheMode: what a configured model should store", () => {
     expect(derivePromptCacheMode(costOf("anthropic", "claude-sonnet-4-5"), "anthropic")).toBe(
       "explicit",
     );
+    expect(derivePromptCacheMode(costOf("openai", "gpt-5.6-sol"), "openai-codex")).toBe("explicit");
+    expect(derivePromptCacheMode(costOf("xai", "grok-build-0.1"), "xai-grok")).toBe("implicit");
   });
 
   it("settles for implicit rather than sending markers into a router", () => {

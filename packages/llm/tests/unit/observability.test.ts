@@ -433,6 +433,29 @@ describe("the request diagnostics buildRequestOptions returns", () => {
     });
   });
 
+  it("reports provider-native OpenAI breakpoints separately from compatible markers", () => {
+    const { diagnostics } = buildRequestOptions(
+      params({
+        providerConfig: { kind: "openai-codex", promptCache: "explicit" },
+        cacheBreakpoints: [1, 3],
+        promptCacheKey: "k",
+      }),
+      conversation,
+    );
+
+    expect(diagnostics.cache).toMatchObject({
+      kind: "openai-codex",
+      mode: "explicit",
+      marked: "openai",
+      requested_breakpoints: 2,
+      applied_breakpoints: 2,
+      walked_back: false,
+      system_marked: true,
+      cache_key_sent: true,
+      session_pinned: false,
+    });
+  });
+
   it("reports no kind or mode at all when the call has no resolved provider", () => {
     const { diagnostics } = buildRequestOptions(params({ promptCacheKey: "k" }), conversation);
     expect(diagnostics.cache).toEqual({

@@ -294,6 +294,11 @@ For an older configured subscription model without that metadata, `/effort` load
 entitled catalog on demand instead of borrowing a same-named model from the public catalog. While
 that request is pending the panel says it is loading; it reports unpublished effort levels only
 after the request settles without metadata.
+When an entitled subscription model is added, its authenticated catalog supplies entitlement and
+model shape while the local models.dev snapshot supplies cache pricing for the exact same model
+under the owning public provider: native OpenAI for ChatGPT and `xai` for Grok. That price shape
+derives the persisted `prompt_cache` mode without naming a model in code. No equivalent
+cross-provider lookup runs for an arbitrary OpenAI-compatible endpoint.
 Browser opening remains an explicit user action; copy/manual opening always remains available. Copy
 and browser actions animate in place while their platform adapters are pending, then leave visible
 `✓ Copied to clipboard` or `✓ Browser opened` confirmations in the device-login picker before

@@ -167,6 +167,13 @@ describe("analyzeBash — empty input", () => {
  * — worse — fire for a command the operator never meant to approve.
  */
 describe("POSIX_DEFAULT_ALLOWED_COMMANDS", () => {
+  it("fits the settings bound and contains no duplicate policy entries", () => {
+    expect(POSIX_DEFAULT_ALLOWED_COMMANDS.length).toBeLessThanOrEqual(256);
+    expect(new Set(POSIX_DEFAULT_ALLOWED_COMMANDS).size).toBe(
+      POSIX_DEFAULT_ALLOWED_COMMANDS.length,
+    );
+  });
+
   it("is entirely decidable: every entry analyzes statically", () => {
     for (const entry of POSIX_DEFAULT_ALLOWED_COMMANDS) {
       const facts = analyzeBash(entry);
@@ -188,10 +195,48 @@ describe("POSIX_DEFAULT_ALLOWED_COMMANDS", () => {
     }
   });
 
+  it("covers conventional validation commands across common ecosystems", () => {
+    for (const command of [
+      "bun test",
+      "deno check",
+      "python -m pytest",
+      "cargo clippy",
+      "go vet",
+      "mvn verify",
+      "dotnet test",
+      "cmake --build",
+      "rspec",
+      "composer test",
+      "swift test",
+      "mix test",
+      "dart analyze",
+      "zig build",
+      "cabal test",
+      "shellcheck",
+    ]) {
+      expect(POSIX_DEFAULT_ALLOWED_COMMANDS).toContain(command);
+    }
+  });
+
   it("omits the commands that execute arbitrary code behind a safe-looking name", () => {
     // Each of these was a candidate and was cut on purpose; see the constant's
     // TSDoc. A regression that re-adds one should fail loudly here.
-    for (const forbidden of ["make", "find", "awk", "sed -n", "sed", "xargs", "env"]) {
+    for (const forbidden of [
+      "make",
+      "find",
+      "awk",
+      "sed -n",
+      "sed",
+      "xargs",
+      "env",
+      "node",
+      "python",
+      "npx",
+      "bunx",
+      "npm install",
+      "cargo publish",
+      "dotnet publish",
+    ]) {
       expect(POSIX_DEFAULT_ALLOWED_COMMANDS).not.toContain(forbidden);
     }
   });

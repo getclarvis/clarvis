@@ -67,12 +67,12 @@ subsystem.
 | `ShellDialect` | iface | `packages/tools/src/guard/dialect.ts:48` | `{ flavor; split; tokenize; decidable; normalize; pathCandidate }` |
 | `analyzeShell` | fn | `packages/tools/src/guard/analyze-shell.ts:39` | `(command: string, dialect = currentDialect()) => ShellFacts` |
 | `buildGuardContext` | fn | `packages/tools/src/guard/context.ts:66` | `(tool, args, config, dialect = currentDialect()) => GuardContext` |
-| `posixDialect` | const | `packages/tools/src/guard/dialects/posix.ts:463` | the POSIX front end |
-| `powershellDialect` | const | `packages/tools/src/guard/dialects/powershell.ts:748` | the PowerShell front end |
+| `posixDialect` | const | `packages/tools/src/guard/dialects/posix.ts` (`posixDialect`) | the POSIX front end |
+| `powershellDialect` | const | `packages/tools/src/guard/dialects/powershell.ts` (`powershellDialect`) | the PowerShell front end |
 | `dialectFor` | fn | `packages/tools/src/guard/dialects/index.ts:12` | `(flavor: ShellFlavor) => ShellDialect` |
 | `currentDialect` | fn | `packages/tools/src/guard/dialects/index.ts:29` | `(platform?) => ShellDialect` |
-| `POSIX_DEFAULT_ALLOWED_COMMANDS` | const | `packages/tools/src/guard/dialects/posix.ts:72` | 35 entries |
-| `WINDOWS_DEFAULT_ALLOWED_COMMANDS` | const | `packages/tools/src/guard/dialects/powershell.ts:94` | 20 entries |
+| `POSIX_DEFAULT_ALLOWED_COMMANDS` | const | `packages/tools/src/guard/dialects/posix.ts` | 154 entries |
+| `WINDOWS_DEFAULT_ALLOWED_COMMANDS` | const | `packages/tools/src/guard/dialects/powershell.ts` | 137 entries |
 | `withinWorkspace` | fn | `packages/tools/src/guard/helpers.ts:14` | `(ctx) => boolean` |
 | `touchesOutside` | fn | `packages/tools/src/guard/helpers.ts:29` | `(ctx) => boolean` |
 
@@ -186,7 +186,8 @@ Nothing persists `ShellFacts`; it lives for one dispatch. Its shape, from the dr
 
 `normalized` is `argv.join(" ")` (`packages/tools/src/guard/analyze-shell.ts:56`) — the env-stripped, wrapper-stripped
 command. The `normalized`/`envAssignments` split is pinned by
-`packages/tools/tests/unit/posix-dialect.test.ts:79`-`:85`.
+`packages/tools/tests/unit/posix-dialect.test.ts` ("records the stripped env assignments so
+approvals can key on them").
 
 ### 3.2 `guard` settings block, as written
 
@@ -198,10 +199,15 @@ Seeded by `code` into the **global** scope on first use
 { "guard": { "type": "shell", "allowed_commands": ["git status", "git diff", "…"] } }
 ```
 
-The 35 POSIX entries are at `packages/tools/src/guard/dialects/posix.ts:72`-`:108`; the 20
-PowerShell entries at `packages/tools/src/guard/dialects/powershell.ts:94`-`:115`. Windows entries
-are written in the **canonical cmdlet spelling** because the analyzer rewrites aliases before
-matching (`packages/tools/src/guard/dialects/powershell.ts:84`-`:86`).
+The 154 POSIX entries and 137 PowerShell entries live beside their dialects in
+`packages/tools/src/guard/dialects/{posix,powershell}.ts`. They cover conventional inspection,
+build, test, lint and type-check commands across the common language ecosystems without granting
+generic interpreters/task runners or explicit install, publish, deploy and migration commands.
+Windows entries use the **canonical cmdlet spelling** because the analyzer rewrites aliases before
+matching. Every entry is test-pinned as decidable and identical to the normalized text the guard
+actually matches (`packages/tools/tests/unit/{posix,powershell}-dialect.test.ts`). These are approval
+defaults rather than an isolation boundary: builds and tests may execute repository-controlled code,
+so process containment remains the native sandbox's job.
 
 ### 3.3 Allow/deny entry syntax
 
@@ -432,21 +438,21 @@ The driver carrying no dialect syntax is itself pinned with a deliberately ignor
 The same function selects the executor's shell (`packages/tools/src/tools/shell.ts:131`,
 `packages/tools/src/shell.ts:1`), which is what makes "analyze one dialect, run another"
 unrepresentable rather than merely discouraged (`packages/tools/src/guard/dialects/index.ts:24`-`:27`,
-`packages/tools/src/lib/platform.ts:21`-`:23`). Pinned at
-`packages/tools/tests/unit/powershell-dialect.test.ts:14`-`:23`.
+`packages/tools/src/lib/platform.ts:21`-`:23`). Pinned by the "dialect selection" suite in
+`packages/tools/tests/unit/powershell-dialect.test.ts`.
 
 #### POSIX (`packages/tools/src/guard/dialects/posix.ts`)
 
-| Concern | Rule | Line |
+| Concern | Rule | Owner |
 | --- | --- | --- |
-| split | `&&`, `\|\|`, `;`, `\|`, `&`, newline at depth 0; never inside quotes/backticks/parens; a redirect `&` (`&>` or after `>`) does not split | `:279`-`:365`, `:262`-`:264` |
-| balanced | no open single/double quote, backtick, or paren | `:363` |
-| tokenize | quote-aware; backtick spans and `$( )`/`<( )`/`>( )` consumed and dropped; `glob` set only for unquoted `*?[]{}` | `:194`-`:255`, `:111` |
-| decidable | after `scrubExpansions` (single-quoted spans removed, double-quoted kept) no pattern in `UNDECIDABLE_PATTERNS` matches, and quotes balanced | `:454`-`:457`, `:156`-`:181` |
-| undecidable patterns | `$(`, `` ` ``, `${`/`$NAME`, and the command words `eval`, `exec`, `source`, `env`, `xargs`, `base64`, `sh -c`, `bash -c`, `<(`, `>(` | `:29`-`:43` |
-| command-word boundary | `(?:^\|[\s(){};&\|])(?:\S*/)?NAME(?:\s\|$)` — punctuation, not only whitespace | `:23`-`:26` |
-| normalize | strip leading `NAME=value` assignments (recorded), then `timeout\|time\|nice\|nohup\|stdbuf` with their options and `timeout`'s duration, repeatedly | `:381`-`:408`, `:116`-`:118` |
-| pathCandidate | strip `[0-9&]*(>>?\|<)` redirect prefix; `~user` → opaque; glob with `..` → opaque; glob → literal directory prefix; else the `looksLikePath` heuristic | `:424`-`:439`, `:126`-`:147` |
+| split | `&&`, `\|\|`, `;`, `\|`, `&`, newline at depth 0; never inside quotes/backticks/parens; a redirect `&` (`&>` or after `>`) does not split | `splitByOperators` |
+| balanced | no open single/double quote, backtick, or paren | `splitByOperators` |
+| tokenize | quote-aware; backtick spans and `$( )`/`<( )`/`>( )` consumed and dropped; `glob` set only for unquoted `*?[]{}` | `tokenize` |
+| decidable | after `scrubExpansions` (single-quoted spans removed, double-quoted kept) no pattern in `UNDECIDABLE_PATTERNS` matches, and quotes balanced | `posixDialect.decidable`, `scrubExpansions` |
+| undecidable patterns | `$(`, `` ` ``, `${`/`$NAME`, and the command words `eval`, `exec`, `source`, `env`, `xargs`, `base64`, `sh -c`, `bash -c`, `<(`, `>(` | `UNDECIDABLE_PATTERNS` |
+| command-word boundary | `(?:^\|[\s(){};&\|])(?:\S*/)?NAME(?:\s\|$)` — punctuation, not only whitespace | `COMMAND_BOUNDARY`, `commandWord` |
+| normalize | strip leading `NAME=value` assignments (recorded), then `timeout\|time\|nice\|nohup\|stdbuf` with their options and `timeout`'s duration, repeatedly | `stripEnvAndWrappers`, `SAFE_WRAPPERS` |
+| pathCandidate | strip `[0-9&]*(>>?\|<)` redirect prefix; `~user` → opaque; glob with `..` → opaque; glob → literal directory prefix; else the `looksLikePath` heuristic | `pathCandidate`, `looksLikePath` |
 
 The POSIX null device is the one special path-shaped token discarded by `pathCandidate`: after a
 redirection prefix is stripped (or when it is a spaced redirect target), `/dev/null` contributes no
@@ -476,47 +482,50 @@ read-only. Production: `buildGuardContext` in `packages/tools/src/guard/context.
 The boundary regex has a documented failure it exists to prevent: a bare `\benv\b` matched the
 `env` inside `.env`, "which was merely noisy while undecidable meant `ask`, and becomes a wrong
 refusal now that an unanalyzable command with a deny list configured is denied"
-(`packages/tools/src/guard/dialects/posix.ts:11`-`:14`). Both halves are pinned: filenames that merely contain a command name stay
-decidable (`packages/tools/tests/unit/posix-dialect.test.ts:203`-`:218`), and the command itself —
-including inside a subshell, where `(` is the preceding character — stays undecidable
-(`:220`-`:243`).
+(`commandWord` in `packages/tools/src/guard/dialects/posix.ts`). Both halves are pinned by the
+`analyzeBash — command names are matched in command position only` suite: filenames that merely
+contain a command name stay decidable, while the command itself — including inside a subshell,
+where `(` is the preceding character — stays undecidable
+(`packages/tools/tests/unit/posix-dialect.test.ts`).
 
-`looksLikePath` (`packages/tools/src/guard/dialects/posix.ts:133`-`:145`) is the fallback rule that decides whether a bare token
+`looksLikePath` (`packages/tools/src/guard/dialects/posix.ts`) is the fallback rule that decides whether a bare token
 becomes a `PathFact` at all, gating every downstream path check (outside-workspace,
 credential-file): `false` for an empty token, one starting with `-`, or one containing
-`PATH_METACHARS` (`packages/tools/src/guard/dialects/posix.ts:110`); otherwise `true` for a token containing `/`, one starting with
+`PATH_METACHARS` (same file); otherwise `true` for a token containing `/`, one starting with
 `~` or `.`, or one shaped like a bare `name.ext`; `false` for everything else.
 
-Four omissions from the default allow list are stated in the constant's own docs: `make` ("arbitrary
-execution wearing a build command's name"), `find` and `awk` ("execute code the analyzer cannot
-see"), and `sed -n` ("only looks read-only … The protection was accidental")
-(`packages/tools/src/guard/dialects/posix.ts:60`-`:70`), and re-added regressions fail at
-`packages/tools/tests/unit/posix-dialect.test.ts:186`-`:192`.
+The default-list exclusions are stated in the constant's own docs: `make` runs an unconstrained
+project recipe; `find` and `awk` can execute code the analyzer cannot see; `sed -n` only appears
+read-only because scripts may still write; and generic interpreters/runners plus install, publish
+and deploy commands intentionally retain review. Re-added regressions fail in
+`packages/tools/tests/unit/posix-dialect.test.ts` ("omits the commands that execute arbitrary code
+behind a safe-looking name").
 
 #### PowerShell (`packages/tools/src/guard/dialects/powershell.ts`)
 
-| Concern | Rule | Line |
+| Concern | Rule | Owner |
 | --- | --- | --- |
-| split | `;`, newline, `\|`, `\|\|`, `&&` at paren/brace depth 0; never inside quotes, here-strings, `( )` or `{ }`; `&` is **never** a separator; a trailing backtick continues the line; `#` line comments and `<# #>` blocks are dropped | `:336`-`:514` |
-| `#` comment start | only when preceded by start-of-input or whitespace — otherwise `file#1.txt` would yield a phantom segment (`git status # note; rm -rf x`) | `:303`-`:316` |
-| tokenize | backtick = **escape**, not substitution; `''` and `""` escape a quote inside their span; `$( )`, `@( )`, `${ }` and here-strings consumed | `:530`-`:650` |
-| decidable | balanced, no call/dot-source operator in command position, no `UNDECIDABLE_PATTERNS` match, and no `$var` outside the inert set | `:242`-`:251` |
-| inert variables | `$_`, `$null`, `$true`, `$false`, `$args`, `$psitem` — every other `$name` makes the segment undecidable | `:9`, `:247`-`:249` |
-| undecidable patterns | 30 case-insensitive entries incl. `Invoke-Expression`/`iex`, `New-Object`, `[scriptblock]`, `powershell`/`pwsh`, `cmd`/`wsl`/`bash`/`sh`/`zsh`, `.ps1`, `Start-Process`, `Invoke-WebRequest`, `DownloadString`, `FromBase64String`, `Set/New-Alias`, `function `, `--%`, `<#` | `:24`-`:55` |
-| normalize | canonicalize **`argv[0]` only** through the alias table, case-insensitively; no env assignments to strip | `:735`-`:738`, `:119`-`:162` |
-| pathCandidate | strip `(\d\|\*)?>>?(&\d)?`; `~x` (not `~/`, `~\`) → opaque; provider-qualified (`Env:`, `HKLM:`) and drive-relative (`C:`, `C:foo`) → opaque; glob with `..` → opaque; glob → prefix (stopping at a drive root); else `looksLikePath` incl. `C:\`, `\\server\share` | `:689`-`:707`, `:656`-`:675` |
+| split | `;`, newline, `\|`, `\|\|`, `&&` at paren/brace depth 0; never inside quotes, here-strings, `( )` or `{ }`; `&` is **never** a separator; a trailing backtick continues the line; `#` line comments and `<# #>` blocks are dropped | `split` |
+| `#` comment start | only when preceded by start-of-input or whitespace — otherwise `file#1.txt` would yield a phantom segment (`git status # note; rm -rf x`) | `startsComment` |
+| tokenize | backtick = **escape**, not substitution; `''` and `""` escape a quote inside their span; `$( )`, `@( )`, `${ }` and here-strings consumed | `tokenize` |
+| decidable | balanced, no call/dot-source operator in command position, no `UNDECIDABLE_PATTERNS` match, and no `$var` outside the inert set | `decidable`, `scrubExpansions` |
+| inert variables | `$_`, `$null`, `$true`, `$false`, `$args`, `$psitem` — every other `$name` makes the segment undecidable | `INERT_VARIABLES`, `decidable` |
+| undecidable patterns | 30 case-insensitive entries incl. `Invoke-Expression`/`iex`, `New-Object`, `[scriptblock]`, `powershell`/`pwsh`, `cmd`/`wsl`/`bash`/`sh`/`zsh`, `.ps1`, `Start-Process`, `Invoke-WebRequest`, `DownloadString`, `FromBase64String`, `Set/New-Alias`, `function `, `--%`, `<#` | `UNDECIDABLE_PATTERNS` |
+| normalize | canonicalize **`argv[0]` only** through the alias table, case-insensitively; no env assignments to strip | `powershellDialect.normalize`, `canonicalCommand`, `ALIASES` |
+| pathCandidate | strip `(\d\|\*)?>>?(&\d)?`; `~x` (not `~/`, `~\`) → opaque; provider-qualified (`Env:`, `HKLM:`) and drive-relative (`C:`, `C:foo`) → opaque; glob with `..` → opaque; glob → prefix (stopping at a drive root); else `looksLikePath` incl. `C:\`, `\\server\share` | `pathCandidate`, `looksLikePath` |
 
 The backtick asymmetry is the design's stated load-bearing point — "A single grammar covering both
 shells is unsound, because the same characters carry opposite meanings"
 (`packages/tools/src/guard/dialect.ts:41`-`:47`) — and is pinned side by side against the POSIX
-tokenizer at `packages/tools/tests/unit/powershell-dialect.test.ts:117`-`:126`. Aliases are
-canonicalized so a deny entry written either way bites
-(`packages/tools/tests/unit/powershell-dialect.test.ts:281`-`:296`); the deliberately *un*-aliased
-`curl`/`wget`/`where`/`sort` are pinned at `:303`-`:309` with the stated reason that they are
-version-dependent (`packages/tools/src/guard/dialects/powershell.ts:128`-`:132`).
+tokenizer by "treats the backtick as an escape, not as substitution" in
+`packages/tools/tests/unit/powershell-dialect.test.ts`. Aliases are canonicalized so a deny entry
+written either way bites (same file, "gives an alias and its cmdlet the same spelling for the lists
+to match"); the deliberately *un*-aliased `curl`/`wget`/`where`/`sort` are pinned by "does not
+canonicalize names that are version-dependent aliases", with the stated reason that they are
+version-dependent (`ALIASES` in `packages/tools/src/guard/dialects/powershell.ts`).
 
-PowerShell's `looksLikePath` (`packages/tools/src/guard/dialects/powershell.ts:684`-`:693`) is the same fallback rule, over the same
-`PATH_METACHARS` idea (`packages/tools/src/guard/dialects/powershell.ts:281`): `false` for an empty token, one starting with `-`, or
+PowerShell's `looksLikePath` (`packages/tools/src/guard/dialects/powershell.ts`) is the same fallback rule, over the same
+`PATH_METACHARS` idea (same file): `false` for an empty token, one starting with `-`, or
 one matching the dialect's own metacharacter set; `true` for a drive-absolute (`C:\`) or UNC
 (`\\server\share`) token, one containing `\` or `/`, one starting with `~` or `.`, or a bare
 `name.ext` shape; `false` otherwise. It is reached only after the provider-qualified/drive-relative
@@ -789,8 +798,8 @@ broken.
 6. **The analyzer dialect and the executor shell derive from one `currentShellFlavor` call.**
    `packages/tools/src/guard/dialects/index.ts:30`, `packages/tools/src/shell.ts:53` and
    `packages/tools/src/tools/shell.ts:131`, all three reading `packages/tools/src/lib/platform.ts:28`.
-   Pinned: `packages/tools/tests/unit/powershell-dialect.test.ts:14`-`:23` pins the
-   platform→dialect mapping, and
+   Pinned: the "dialect selection" suite in
+   `packages/tools/tests/unit/powershell-dialect.test.ts` pins the platform→dialect mapping, and
    `packages/tools/tests/architecture/one-shell-flavor.test.ts:97`-`:105` pins the executor half —
    for each of `win32`, `linux`, `darwin` and `freebsd` it asserts that
    `currentDialect(platform).flavor` and `resolveShell({platform, …}).flavor` both equal
@@ -799,44 +808,49 @@ broken.
    turn a platform into a shell flavor at all.
 
 7. **Every env-assignment prefix stripped from a segment is recorded, never discarded.**
-   `packages/tools/src/guard/dialects/posix.ts:394`-`:420`; consumed by the session allow-list key
+   `stripEnvAndWrappers` in `packages/tools/src/guard/dialects/posix.ts`; consumed by the session allow-list key
    at `packages/kernel/src/guard/guard-elicit.ts:58`-`:64`. Pinned:
-   `packages/tools/tests/unit/posix-dialect.test.ts:79`-`:85` and
+   `packages/tools/tests/unit/posix-dialect.test.ts` ("records the stripped env assignments so
+   approvals can key on them") and
    `packages/kernel/tests/unit/guard.test.ts:316`-`:329`.
 
 8. **A POSIX command name in `UNDECIDABLE_PATTERNS` is matched only in command position** — start
    of segment or after shell punctuation, optionally with a directory prefix — so `cat .env` stays
    decidable while `(sh -c "rm -rf /")` does not.
-   `packages/tools/src/guard/dialects/posix.ts:23`-`:27`. Pinned:
-   `packages/tools/tests/unit/posix-dialect.test.ts:203`-`:243`.
+   `COMMAND_BOUNDARY` and `commandWord` in `packages/tools/src/guard/dialects/posix.ts`. Pinned:
+   `packages/tools/tests/unit/posix-dialect.test.ts` ("analyzeBash — command names are matched in
+   command position only").
 
 9. **Every alphabetic PowerShell undecidable pattern is case-insensitive; the punctuation-only
    entries carry no `/i` since case does not apply to them.**
-   `packages/tools/src/guard/dialects/powershell.ts:42`-`:73` — 5 of the 30 entries (`$(`, `@(`,
-   `${`, `--%`, `<#`, at `:25`-`:27`, `:53`-`:54`) are pure punctuation and carry no `/i`; the
+   `UNDECIDABLE_PATTERNS` in `packages/tools/src/guard/dialects/powershell.ts` — 5 of the 30 entries
+   (`$(`, `@(`, `${`, `--%`, `<#`) are pure punctuation and carry no `/i`; the
    remaining 25 do. Pinned for the highest-value case:
-   `packages/tools/tests/unit/powershell-dialect.test.ts:233` (`invoke-expression $payload`).
+   `packages/tools/tests/unit/powershell-dialect.test.ts` (the `invoke-expression $payload` case).
 
 10. **PowerShell `normalize` rewrites `argv[0]` only.**
-    `packages/tools/src/guard/dialects/powershell.ts:753`-`:756`. Pinned:
-    `packages/tools/tests/unit/powershell-dialect.test.ts:293`-`:296`.
+    `powershellDialect.normalize` in `packages/tools/src/guard/dialects/powershell.ts`. Pinned:
+    `packages/tools/tests/unit/powershell-dialect.test.ts` ("rewrites only the command word, never
+    the arguments").
 
 11. **PowerShell `&` is never a statement separator.**
-    `packages/tools/src/guard/dialects/powershell.ts:499`-`:516` (no `&` arm). Pinned:
-    `packages/tools/tests/unit/powershell-dialect.test.ts:41`-`:47`.
+    `split` in `packages/tools/src/guard/dialects/powershell.ts` (no `&` arm). Pinned:
+    `packages/tools/tests/unit/powershell-dialect.test.ts` ("never treats & as a separator").
 
 12. **A PowerShell `#` opens a comment only at a token boundary**, so a trailing `# … ; rm -rf x`
     cannot produce a phantom segment an operator would see in the approval prompt.
-    `packages/tools/src/guard/dialects/powershell.ts:330`-`:334`. Pinned:
-    `packages/tools/tests/unit/powershell-dialect.test.ts:77`-`:84`.
+    `startsComment` in `packages/tools/src/guard/dialects/powershell.ts`. Pinned:
+    `packages/tools/tests/unit/powershell-dialect.test.ts` ("drops a line comment rather than
+    yielding a phantom segment from it").
 
 13. **A provider-qualified or drive-relative PowerShell token is `opaque`, never `none`.** Stated as
     a pre-empted failure mode, not an accident being fixed: reporting `none` "would let them
     contribute no `PathFact` while still looking analyzed, so a future allow-list entry would clear
     `Get-Content Env:\SECRET` on a command nothing had confined"
-    (`packages/tools/src/guard/dialects/powershell.ts:695`-`:705`).
-    `packages/tools/src/guard/dialects/powershell.ts:716`-`:719`. Pinned:
-    `packages/tools/tests/unit/powershell-dialect.test.ts:160`-`:171`.
+    (`pathCandidate`'s TSDoc in `packages/tools/src/guard/dialects/powershell.ts`). Production:
+    `pathCandidate` in the same file. Pinned:
+    `packages/tools/tests/unit/powershell-dialect.test.ts` ("reports a provider-qualified name as
+    opaque, not as no path at all" and "reports a drive-relative reference as opaque").
 
 14. **`PathFact.withinWorkspace` is derived by re-resolving in confining mode and catching the
     throw**, never by string comparison. `packages/tools/src/guard/paths.ts:53`-`:58`. Pinned
@@ -1121,6 +1135,17 @@ broken.
     (`keeps an absolute executable exemption local to its command-head occurrence`, `matches an
     absolute Windows executable suffix against an extensionless deny entry`).
 
+60. **Every seeded default command is statically decidable and already written in the canonical
+    form its host dialect matches.** The lists cover representative validation commands across
+    JavaScript/TypeScript, Python, Rust, Go, JVM, .NET, C/C++, Ruby, PHP, Swift, Elixir/Erlang,
+    Dart, Zig, Haskell, Clojure, Lua, Perl and shell projects, while generic interpreters/runners
+    and explicit install, publish and deploy commands remain absent. Production:
+    `POSIX_DEFAULT_ALLOWED_COMMANDS` and `WINDOWS_DEFAULT_ALLOWED_COMMANDS` in
+    `packages/tools/src/guard/dialects/`. Test:
+    `packages/tools/tests/unit/posix-dialect.test.ts` and
+    `packages/tools/tests/unit/powershell-dialect.test.ts` (settings-bound/uniqueness assertions,
+    complete decidability/canonicality loops, ecosystem samples and exclusion matrices).
+
 ---
 
 ## 6. Failure modes and degradation
@@ -1255,15 +1280,14 @@ separately postures guard confirmations per principal
   (`packages/loop/src/runtime/capabilities/tools-settings.ts:181`), so nothing real can produce that state — but the merger itself has no
   guard-specific refusal, and the source does not settle whether that is deliberate defence-in-depth
   absence or an oversight.
-- **No test asserts the executor and the analyzer actually share a flavor.** Invariant 6's second
-  half is stated in prose in three places (`packages/tools/src/lib/platform.ts:5`-`:10`,
-  `packages/tools/src/guard/dialects/index.ts:24`-`:27`,
-  `packages/loop/src/runtime/subagents/build-subagent-input.ts:12`) but nothing fails if
-  `tools/shell.ts` were changed to read `process.platform` directly.
+- ~~**No test asserts the executor and the analyzer actually share a flavor.**~~ Resolved: invariant
+  6's `packages/tools/tests/architecture/one-shell-flavor.test.ts` scan rejects a second
+  platform-to-flavor derivation and checks the analyzer/executor answer together.
 - **Windows behaviour is unverified here.** The PowerShell dialect's own tests avoid asserting
   `PathFact.withinWorkspace` because "on a POSIX host `node:path` does not treat `\` as a separator,
   so a confinement assertion here would pass for the wrong reason. That belongs to the Windows job"
-  (`packages/tools/tests/unit/powershell-dialect.test.ts:312`-`:315`). Whether that job currently
+  (`packages/tools/tests/unit/powershell-dialect.test.ts`, "still extracts the paths a command
+  touches"). Whether that job currently
   runs is outside this document's scope.
 - ~~**Rationale is largely absent for the pattern tables.**~~ **Each now states its membership
   rule at the source**, which is what was missing — not a defence of each individual entry but the
@@ -1273,7 +1297,7 @@ separately postures guard confirmations per principal
     string as code, a way to hand the command to another interpreter, or a way to run something out
     of band; the aliases sit beside their cmdlets because to PowerShell an alias *is* the command,
     so matching only the long form is no defence rather than a partial one
-    (`packages/tools/src/guard/dialects/powershell.ts:11`–`:41`).
+    (`UNDECIDABLE_PATTERNS`' TSDoc in `packages/tools/src/guard/dialects/powershell.ts`).
   - The **11 credential-file regexes** do not try to enumerate every secret-bearing file, which is
     impossible. They name the conventional locations whose *name alone* is sufficient evidence, in
     three families — the ambient project secret, private key material, and the credential stores
@@ -1283,15 +1307,17 @@ separately postures guard confirmations per principal
     runs? These five change only scheduling, buffering or a deadline. `sudo`, `env` and `xargs` look
     like wrappers and are excluded, because each changes the privileges, environment or arguments the
     real command ends up with — looking past one would let a deny list be walked around by prefixing
-    it (`packages/tools/src/guard/dialects/posix.ts:119`–`:131`).
+    it (`SAFE_WRAPPERS`' TSDoc in `packages/tools/src/guard/dialects/posix.ts`).
   - The **1 MiB judge-prompt cap** exists because over-size is treated as *absent*, not truncated:
     cutting an operator's security policy in half would judge commands against half a rule set, while
     falling back to the built-in prompt judges them against a complete one. It sits far above any
     policy a person writes — the default is under 2 KB — so reaching it means the wrong file
     (`packages/code/src/adapters/guard-judge-prompt.ts:36`–`:48`).
 
-  The POSIX allow list was already the exception: its four omissions carry an explicit,
-  test-enforced rationale (`packages/tools/src/guard/dialects/posix.ts:60`-`:70`).
+  Both starter allow lists carry an explicit, test-enforced inclusion/exclusion rationale. Their
+  dialect suites assert every entry is statically decidable and canonical, sample the supported
+  ecosystem breadth, and keep generic runners plus install/publish commands out
+  (`packages/tools/tests/unit/{posix,powershell}-dialect.test.ts`).
 - **`escalate` has exactly one producer and one value.** Only rule 2b sets it
   (`packages/kernel/src/guard/shell-guard.ts:269`) and the type admits only `"human"`
   (`packages/tools/src/guard/types.ts:28`). **Resolved 2026-08-22 by derivation**: it is one value

@@ -43,21 +43,28 @@ const UNDECIDABLE_PATTERNS: RegExp[] = [
 ];
 
 /**
- * A starter allow list for a POSIX host: the read-only and build commands of an
- * ordinary development loop.
+ * A starter allow list for a POSIX host: conventional inspection, build, test,
+ * lint and type-check commands across common development ecosystems.
  *
  * @remarks
  * This is a seed, not a policy: it is written into the user's settings once so
  * they can see and edit it, rather than compiled into the guard where it would
- * be an invisible default nobody could audit. Nothing here mutates the
- * workspace, and every entry still passes through the deny list, the undecidable
- * check and the confinement check first — a match only spares the approval
- * prompt.
+ * be an invisible default nobody could audit. Every entry still passes through
+ * the deny list, the undecidable check and the confinement check first — a
+ * match only spares the approval prompt.
  *
- * Entries name a subcommand, never a bare binary, because the guard matches a
- * space-boundary prefix: `git` would allow `git push --force`.
+ * Multi-operation CLIs name a subcommand rather than the bare binary, because
+ * the guard matches a space-boundary prefix: `git` would allow `git push
+ * --force`.
  *
- * Four omissions are deliberate, and each was a candidate:
+ * The list does not grant package installation, publication, deployment,
+ * migrations, source-writing formatter modes, generic interpreters, or generic
+ * task runners. Those operations retain human/model review. Build and test
+ * commands can still execute repository-controlled code and write build output;
+ * this allow list is approval policy, not process isolation. Pair it with the
+ * native sandbox when host containment is required.
+ *
+ * These omissions are deliberate, and each was a candidate:
  * - `make` runs whatever the `Makefile` says, which is arbitrary execution
  *   wearing a build command's name.
  * - `find` and `awk` execute code the analyzer cannot see (`find -exec`,
@@ -74,8 +81,14 @@ export const POSIX_DEFAULT_ALLOWED_COMMANDS: readonly string[] = [
   "git diff",
   "git log",
   "git show",
-  "git branch",
+  "git branch --list",
+  "git branch --show-current",
   "git remote -v",
+  "git rev-parse",
+  "git ls-files",
+  "git ls-tree",
+  "git describe",
+  "git grep",
   "ls",
   "cat",
   "head",
@@ -93,18 +106,131 @@ export const POSIX_DEFAULT_ALLOWED_COMMANDS: readonly string[] = [
   "sort",
   "uniq",
   "cut",
+  "basename",
+  "dirname",
+  "realpath",
+  "diff",
+  "cmp",
+  "du",
+  "jq",
   "bun test",
   "bun run build",
   "bun run lint",
   "bun run typecheck",
+  "bun run check",
+  "bun run format:check",
   "npm test",
+  "npm run test",
   "npm run build",
+  "npm run lint",
+  "npm run typecheck",
+  "npm run check",
+  "npm run format:check",
+  "pnpm test",
+  "pnpm run test",
+  "pnpm run build",
+  "pnpm run lint",
+  "pnpm run typecheck",
+  "pnpm run check",
+  "pnpm run format:check",
+  "yarn test",
+  "yarn build",
+  "yarn lint",
+  "yarn typecheck",
+  "yarn check",
+  "yarn format:check",
+  "deno test",
+  "deno check",
+  "deno lint",
+  "deno fmt --check",
+  "python -m pytest",
+  "python3 -m pytest",
+  "python -m unittest",
+  "python3 -m unittest",
+  "pytest",
+  "ruff check",
+  "ruff format --check",
+  "mypy",
+  "pyright",
+  "pylint",
+  "tox",
+  "nox",
+  "uv run pytest",
+  "uv run ruff check",
+  "uv run mypy",
+  "uv run pyright",
+  "poetry run pytest",
+  "poetry run ruff check",
+  "poetry run mypy",
   "cargo build",
   "cargo test",
+  "cargo check",
+  "cargo clippy",
+  "cargo fmt --check",
+  "cargo doc",
   "go build",
   "go test",
+  "go vet",
+  "gofmt -d",
+  "staticcheck",
+  "golangci-lint run",
+  "mvn test",
+  "mvn verify",
+  "mvn package",
+  "./mvnw test",
+  "./mvnw verify",
+  "./mvnw package",
+  "gradle build",
+  "gradle test",
+  "gradle check",
+  "./gradlew build",
+  "./gradlew test",
+  "./gradlew check",
+  "sbt compile",
+  "sbt test",
   "dotnet build",
   "dotnet test",
+  "dotnet format --verify-no-changes",
+  "cmake --build",
+  "ctest",
+  "meson compile",
+  "meson test",
+  "rspec",
+  "rubocop",
+  "rake test",
+  "ruby -c",
+  "composer test",
+  "phpunit",
+  "./vendor/bin/phpunit",
+  "./vendor/bin/phpstan analyse",
+  "./vendor/bin/psalm",
+  "swift build",
+  "swift test",
+  "swift package describe",
+  "mix compile",
+  "mix test",
+  "mix format --check-formatted",
+  "mix credo",
+  "rebar3 compile",
+  "rebar3 eunit",
+  "rebar3 ct",
+  "dart analyze",
+  "dart test",
+  "flutter analyze",
+  "flutter test",
+  "zig build",
+  "zig test",
+  "cabal build",
+  "cabal test",
+  "stack build",
+  "stack test",
+  "clojure -M:test",
+  "lein test",
+  "busted",
+  "luacheck",
+  "prove",
+  "shellcheck",
+  "shfmt -d",
 ];
 
 const PATH_METACHARS = /[$,*?[\](){}|<>!;=&`]/;

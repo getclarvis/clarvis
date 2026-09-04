@@ -113,7 +113,7 @@ jobs:
           prerelease=()
           if [[ "${GITHUB_REF_NAME#v}" == *-* ]]; then prerelease+=(--prerelease); fi
           notes="$RUNNER_TEMP/clarvis-release-notes.md"
-          printf 'Portable Clarvis release built from private source commit `%s`.\n\nVerify downloads with `SHA256SUMS`. These beta binaries are not yet code-signed or notarized.\n' \
+          printf 'Portable Clarvis release built from source commit `%s`.\n\nVerify downloads with `SHA256SUMS`. These beta binaries are not yet code-signed or notarized.\n' \
             "$GITHUB_SHA" > "$notes"
           gh release create "$GITHUB_REF_NAME" \
             build/release/clarvis-*.tar.gz \

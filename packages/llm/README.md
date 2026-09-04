@@ -129,14 +129,11 @@ replays the original text parts, item ids and phases instead of flattening them 
 this is required for manual `store: false` continuation and does not rewrite an older prompt prefix.
 
 Prompt-cache markers remain provider-scoped. Anthropic uses `cache_control`; an explicitly enabled
-OpenAI-compatible endpoint keeps its existing sentinel-to-`cache_control` transform; native OpenAI
-and ChatGPT subscription Responses use `prompt_cache_breakpoint` on the stable system head and at
-up to two loop-selected content boundaries. Native OpenAI stays in the provider's default implicit
-mode, which also honors those explicit boundaries, so Clarvis does not send the GPT-5.6-only
-`prompt_cache_options` field to an older model or to the ChatGPT subscription transport. Models are
-not selected by a hard-coded name: the configured model's `prompt_cache` mode is the opt-in, normally
-derived once from models.dev cache pricing during model setup. Google, Grok, implicit/off modes, and an
-unconfigured model receive no new marker. Grok's Responses transport instead gets the run's stable
+OpenAI-compatible endpoint keeps its existing sentinel-to-`cache_control` transform. Native OpenAI
+and ChatGPT subscription Responses remain on provider-managed caching and receive only the supported
+stable `prompt_cache_key`; Clarvis never emits an inline `prompt_cache_breakpoint` for those kinds.
+Models are not selected by a hard-coded name: models.dev cache pricing can identify that caching
+exists, while provider kind decides whether a marker protocol is safe. Grok's Responses transport gets the run's stable
 `prompt_cache_key`; its subscription authority separately sends the same stable conversation
 identity as `x-grok-conv-id`, matching Grok's implicit append-only cache contract.
 

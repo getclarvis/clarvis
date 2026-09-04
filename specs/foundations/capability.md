@@ -493,7 +493,7 @@ cost, "making the hard token cap least accurate precisely when a run is burning 
 
 | `promptCache` value | `anthropic` | `openai` / `openai-codex` | `openai-compatible` |
 |---|---|---|---|
-| `"explicit"` | cache breakpoints | `prompt_cache_breakpoint` blocks | `cache_control` blocks |
+| `"explicit"` | cache breakpoints | provider-managed only | `cache_control` blocks |
 | `"implicit"` | cache breakpoints | provider-managed only | provider-managed only |
 | `"off"` | no breakpoints | no Clarvis markers | no Clarvis markers |
 | absent | cache breakpoints | provider-managed only | provider-managed only |

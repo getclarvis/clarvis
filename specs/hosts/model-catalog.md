@@ -373,10 +373,10 @@ Two specific comparisons are called out as load-bearing in the source doc-commen
   falsy but present), which a `&&`-style check would silently treat as absent.
 
 The current models.dev schema publishes these prices but no field for a provider's cache protocol,
-breakpoint shape, marker limit, or TTL. Clarvis therefore does not synthesize
-`prompt_cache_breakpoint` from a model id. `cache_write > 0` supplies the existing model-level
-`"explicit"` opt-in, and `derivePromptCacheMode` combines it with the configured provider `kind`;
-the LLM adapter, not the catalog, owns the kind-specific wire representation.
+breakpoint shape, marker limit, or TTL. Clarvis therefore does not synthesize an inline marker from
+a model id. `cacheModeOf` classifies the price shape, then `derivePromptCacheMode` combines it with
+the configured provider `kind`; only an endpoint family whose marker protocol is part of Clarvis's
+owned contract may become catalog-derived explicit.
 
 ### 4.8 `derivePromptCacheMode` (`packages/kernel/src/models/model-catalog.ts:527-534`)
 
@@ -384,10 +384,13 @@ the LLM adapter, not the catalog, owns the kind-specific wire representation.
 derivePromptCacheMode(cost, kind):
   mode = cacheModeOf(cost)
   if mode === "unknown" → undefined
-  if mode === "explicit" && kind === "openai-compatible" → "implicit"   (the one downgrade)
-  else → mode
+  if mode === "explicit" && kind === "anthropic" → "explicit"
+  else → "implicit"
 ```
-This is called **once, at model-configuration time** in the TUI's providers controller
+The provider-kind gate is deliberately independent of model names: native OpenAI, ChatGPT, Google,
+Grok and catalog-derived OpenAI-compatible models stay provider-managed implicit even when
+`cache_write > 0`. An explicitly authored OpenAI-compatible provider remains an operator escape
+hatch because this derivation is called **once, at model-configuration time** in the TUI's providers controller
 (`packages/code/src/features/providers/controller.ts:339`, inside `addModelFromCatalog`), not per
 run — and the kernel deliberately exports no per-request equivalent at all: a dedicated test,
 `packages/kernel/tests/unit/prompt-cache-mode.test.ts:137-152` (describe `nothing on the run path

@@ -122,8 +122,8 @@ a successful subscription-backed `LLMCallResult` may identify its billing author
 
 Prompt-cache controls are likewise provider-scoped at this port. `cacheBreakpoints` names stable
 transcript boundaries without prescribing a wire format: Anthropic maps them to `cache_control`,
-native OpenAI Responses may map an explicitly enabled model to `prompt_cache_breakpoint`, and Grok
-uses only the stable `promptCacheKey` for its implicit append-only cache. An arbitrary compatible
+native OpenAI Responses remain provider-managed behind a stable `promptCacheKey`, and Grok uses the
+same key plus its subscription routing header for its implicit append-only cache. An arbitrary compatible
 endpoint never inherits another provider's marker protocol from a shared model id.
 
 `LLMCallParams.onToolInputDelta` is a bounded cumulative progress seam rather than a raw provider

@@ -671,7 +671,7 @@ test("addModelFromCatalog derives ChatGPT cache policy from models.dev without n
 
   expect(ctrl.providers()[0]!.models?.["future-model"]).toEqual({
     context_window_tokens: 300000,
-    prompt_cache: "explicit",
+    prompt_cache: "implicit",
   });
   expect(ctrl.catalogModelFor(provider, "future-model")?.cost?.cache_write).toBe(5);
   dispose();

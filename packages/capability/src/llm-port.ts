@@ -132,20 +132,21 @@ export type ToolChoice = "auto" | "required" | { type: "function"; function: { n
  *
  *   `promptCache` resolves as follows, and absent is deliberately not `off`:
  *
- *   | value        | `anthropic`       | `openai` / `openai-codex`       | `openai-compatible`     |
- *   | ------------ | ----------------- | -------------------------------- | ----------------------- |
- *   | `"explicit"` | cache breakpoints | `prompt_cache_breakpoint` blocks | `cache_control` blocks  |
- *   | `"implicit"` | cache breakpoints | provider-managed only            | provider-managed only   |
- *   | `"off"`      | no breakpoints    | no Clarvis markers               | no Clarvis markers      |
- *   | absent       | cache breakpoints | provider-managed only            | provider-managed only   |
+ *   | value        | `anthropic`       | `openai` / `openai-codex` | `openai-compatible`     |
+ *   | ------------ | ----------------- | --------------------------- | ----------------------- |
+ *   | `"explicit"` | cache breakpoints | provider-managed only       | `cache_control` blocks  |
+ *   | `"implicit"` | cache breakpoints | provider-managed only       | provider-managed only   |
+ *   | `"off"`      | no breakpoints    | provider-managed only       | no Clarvis markers      |
+ *   | absent       | cache breakpoints | provider-managed only       | provider-managed only   |
  *
  *   So the explicit marker on an OpenAI-compatible endpoint is reachable only
  *   when something positively claimed the model wants one; nothing inherits it
  *   by default. The `anthropic` column is unchanged from before this field
- *   existed except that `"off"` can now switch it off. `xai-grok` is not a
- *   breakpoint column: its Responses transport uses the stable
- *   `promptCacheKey` for implicit prefix-cache routing and never receives an
- *   OpenAI `prompt_cache_breakpoint`.
+ *   existed except that `"off"` can now switch it off. Native OpenAI and
+ *   `openai-codex` use only the supported `promptCacheKey`; the generic mode
+ *   cannot opt them into an endpoint-specific inline field. `xai-grok` is also
+ *   not a breakpoint column: its Responses transport uses the stable
+ *   `promptCacheKey` for implicit prefix-cache routing.
  */
 export interface ResolvedProviderConfig {
   kind: "openai-compatible" | "openai" | "anthropic" | "google" | "openai-codex" | "xai-grok";
@@ -210,9 +211,9 @@ export interface LLMCallParams {
    * Indices into {@link LLMCallParams.messages}, oldest first, at which to place
    * a provider prompt-cache breakpoint.
    *
-   * @remarks Providers with explicit breakpoint protocols (Anthropic, native
-   *   OpenAI Responses and explicitly opted-in OpenAI-compatible endpoints)
-   *   read this. The adapter keeps at most the two newest usable indices,
+   * @remarks Providers with explicit breakpoint protocols (Anthropic and
+   *   explicitly opted-in OpenAI-compatible endpoints) read this. The adapter
+   *   keeps at most the two newest usable indices,
    *   ignores any that are out of range or name a system message, and uses a
    *   provider-specific fallback when a chosen message cannot carry a marker.
    *   Supplied by

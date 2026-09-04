@@ -433,7 +433,7 @@ describe("the request diagnostics buildRequestOptions returns", () => {
     });
   });
 
-  it("reports provider-native OpenAI breakpoints separately from compatible markers", () => {
+  it("reports native OpenAI as provider-managed even when generic settings say explicit", () => {
     const { diagnostics } = buildRequestOptions(
       params({
         providerConfig: { kind: "openai-codex", promptCache: "explicit" },
@@ -446,11 +446,11 @@ describe("the request diagnostics buildRequestOptions returns", () => {
     expect(diagnostics.cache).toMatchObject({
       kind: "openai-codex",
       mode: "explicit",
-      marked: "openai",
+      marked: "none",
       requested_breakpoints: 2,
-      applied_breakpoints: 2,
+      applied_breakpoints: 0,
       walked_back: false,
-      system_marked: true,
+      system_marked: false,
       cache_key_sent: true,
       session_pinned: false,
     });

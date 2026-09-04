@@ -297,7 +297,10 @@ after the request settles without metadata.
 When an entitled subscription model is added, its authenticated catalog supplies entitlement and
 model shape while the local models.dev snapshot supplies cache pricing for the exact same model
 under the owning public provider: native OpenAI for ChatGPT and `xai` for Grok. That price shape
-derives the persisted `prompt_cache` mode without naming a model in code. No equivalent
+derives the persisted `prompt_cache` mode without naming a model in code. Cache-write pricing does
+not prove that an endpoint accepts inline markers: only Anthropic is catalog-derived as explicit;
+ChatGPT, native OpenAI, Grok, Google and compatible endpoints default to provider-managed implicit
+caching. No equivalent
 cross-provider lookup runs for an arbitrary OpenAI-compatible endpoint.
 Browser opening remains an explicit user action; copy/manual opening always remains available. Copy
 and browser actions animate in place while their platform adapters are pending, then leave visible

@@ -399,7 +399,7 @@ describe("native provider SDK sentinels", () => {
     expect(calls[0]!.body.reasoning).toMatchObject({ effort: "high" });
     expect(calls[0]!.body.prompt_cache_key).toBe("conversation-1");
     expect(calls[0]!.body.prompt_cache_options).toBeUndefined();
-    expect(JSON.stringify(calls[0]!.body.input)).toContain("prompt_cache_breakpoint");
+    expect(JSON.stringify(calls[0]!.body.input)).not.toContain("prompt_cache_breakpoint");
     expect(result?.billing_source).toBe("subscription");
 
     await subject.call(
@@ -476,7 +476,7 @@ describe("native provider SDK sentinels", () => {
     expect(contexts).toEqual([{ conversationKey: "conversation-2" }]);
   });
 
-  it("serializes OpenAI Responses reasoning, cache key, explicit breakpoints and configured header", async () => {
+  it("serializes OpenAI Responses reasoning and cache key without unsupported inline markers", async () => {
     const calls = stubFetch();
     await adapter({ resolveRegistryKey: () => "secret" })
       .call(
@@ -502,58 +502,7 @@ describe("native provider SDK sentinels", () => {
     expect(calls[0]!.body.reasoning).toEqual({ summary: "auto" });
     expect(calls[0]!.body.prompt_cache_key).toBe("run-1");
     expect(calls[0]!.body.prompt_cache_options).toBeUndefined();
-    expect(JSON.stringify(calls[0]!.body.input)).toContain("prompt_cache_breakpoint");
-  });
-
-  it("does not serialize OpenAI breakpoints in implicit mode", async () => {
-    const calls = stubFetch();
-    await adapter({ resolveRegistryKey: () => "secret" })
-      .call(
-        call(
-          { kind: "openai", apiKeyEnv: "OPENAI_KEY", promptCache: "implicit" },
-          { model: "gpt-5.4", promptCacheKey: "run-1", cacheBreakpoints: [1] },
-        ),
-      )
-      .catch(() => undefined);
-
     expect(JSON.stringify(calls[0]!.body.input)).not.toContain("prompt_cache_breakpoint");
-  });
-
-  it("serializes a native OpenAI breakpoint at the end of a tool exchange", async () => {
-    const calls = stubFetch();
-    await adapter({ resolveRegistryKey: () => "secret" })
-      .call(
-        call(
-          { kind: "openai", apiKeyEnv: "OPENAI_KEY", promptCache: "explicit" },
-          {
-            model: "future-responses-model",
-            tools: [readTool],
-            messages: [
-              { role: "system", content: "system" },
-              { role: "user", content: "read it" },
-              {
-                role: "assistant",
-                content: "",
-                tool_calls: [{ id: "c1", name: "fs_read", arguments: { path: "/x" } }],
-              },
-              { role: "tool", tool_call_id: "c1", content: "file contents" },
-            ],
-            cacheBreakpoints: [3],
-          },
-        ),
-      )
-      .catch(() => undefined);
-
-    const output = (calls[0]!.body.input as Array<Record<string, unknown>>).find(
-      (item) => item.type === "function_call_output",
-    );
-    expect(output?.output).toEqual([
-      {
-        type: "input_text",
-        text: "file contents",
-        prompt_cache_breakpoint: { mode: "explicit" },
-      },
-    ]);
   });
 
   it("serializes retained native OpenAI reasoning state on a continuation", async () => {

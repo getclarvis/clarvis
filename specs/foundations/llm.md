@@ -203,10 +203,10 @@ cache record's fields and how each is derived (`packages/llm/src/ai-sdk/request-
 | Field | Derivation |
 |---|---|
 | `kind?`, `mode?` | `providerConfig.kind` / `.promptCache`, omitted when absent |
-| `marked` | `"anthropic"` \| `"compatible"` \| `"openai"` \| `"none"` |
+| `marked` | `"anthropic"` \| `"compatible"` \| `"none"` |
 | `requested_breakpoints` | `params.cacheBreakpoints?.length ?? 0` |
 | `applied_breakpoints` | count actually marked |
-| `walked_back` | compatible/native OpenAI; a requested index that moved to an earlier markable message |
+| `walked_back` | compatible; a requested index that moved to an earlier markable message |
 | `system_marked` | a system block exists **and** this kind marks |
 | `cache_key_sent` | `promptCacheKey` set **and** kind is `openai`, `openai-codex`, `xai-grok`, or `openai-compatible` |
 | `session_pinned` | the `x-session-id` header was emitted (openai-compatible + key) |
@@ -399,12 +399,11 @@ inferred.
 
 ### 4.5 Prompt-cache breakpoint placement
 
-Three mutually exclusive paths are chosen by `buildRequestOptions`:
+Two mutually exclusive marker paths are chosen by `buildRequestOptions`:
 
 - `markAnthropic = kind === "anthropic" && promptCache !== "off"` (`:549`) — so absent `promptCache` still
   marks.
 - `markCompatible = kind === "openai-compatible" && promptCache === "explicit" && cacheBreakpoints !== undefined`.
-- `markOpenAI = (kind === "openai" || kind === "openai-codex") && promptCache === "explicit" && cacheBreakpoints !== undefined`.
 
 **Anthropic** — `withCacheBreakpoints` (`:283`) over `cacheBreakpointTargets` (`:256`):
 `undefined` requested rolls a single breakpoint onto the newest usable message (`:261-264`);
@@ -447,20 +446,12 @@ body is returned by identity (`touched` guard, `:117`, `:156`) — pinned by
 The two transforms compose as `applyCacheControlMarkers(applyBodyExtras(args, extras))`
 (`packages/llm/src/openai-compatible-request.ts:235`) — body extras first, markers second.
 
-**Native OpenAI Responses** — `withOpenAICacheBreakpoints` consumes the same two indices but uses
-`providerOptions.openai.promptCacheBreakpoint = { mode: "explicit" }`, which the installed
-`@ai-sdk/openai` adapter serializes as `prompt_cache_breakpoint` on a content block. User
-text/image/file blocks and tool-result text/file blocks are markable. Assistant output is not a
-marker site in that adapter, so selection walks back rather than claiming a marker that would be
-dropped. Before selection, `normalizeOpenAIToolMessage` promotes every plain tool output in this
-provider-specific path to the equivalent content-block form; old durable tool results therefore do
-not alternate between string and array shapes as the rolling two-breakpoint window advances.
-
-The request deliberately omits `promptCacheOptions`. OpenAI's default implicit mode honors explicit
-content breakpoints too, so this avoids sending a GPT-5.6-only top-level option to older OpenAI models
-or the ChatGPT subscription endpoint. The resolved model's `promptCache === "explicit"` is the
-capability gate; there is no model-name check. Pinned by
-`packages/llm/tests/unit/ai-sdk-modules.test.ts`,
+**Native OpenAI Responses** — `openai` and `openai-codex` never enter either marker transform.
+Their provider-managed cache receives the run-stable `promptCacheKey`, serialized as
+`prompt_cache_key`, and the original message shapes remain untouched even when a generic model
+setting says `promptCache === "explicit"`. models.dev publishes cache pricing, not an endpoint-level
+inline-marker capability, and the ChatGPT subscription transport rejects
+`prompt_cache_breakpoint`. Pinned by `packages/llm/tests/unit/ai-sdk-modules.test.ts`,
 `packages/llm/tests/unit/observability.test.ts`, and the real wire assertions in
 `packages/llm/tests/integration/provider-request-shape.test.ts`.
 
@@ -936,19 +927,19 @@ Test: `packages/llm/tests/integration/provider-request-shape.test.ts:163-189` (a
 are strings, neither carries `cache_control`, and the markers landed at indices `[0, 1]`);
 `packages/llm/tests/unit/ai-sdk-modules.test.ts:620-637`.
 
-**LLM-26.** At most two message-level cache breakpoints per request on the Anthropic,
-openai-compatible and native OpenAI paths; a system-role index is discarded rather than consuming a
-slot; two requested indices that walk back never claim the same message.
-Production: `MAX_MESSAGE_CACHE_BREAKPOINTS`, `cacheBreakpointTargets`,
-`withOpenAICacheBreakpoints`, and `withOpenAICompatibleCacheMarkers` in
+**LLM-26.** At most two message-level cache breakpoints per request on the Anthropic and
+openai-compatible paths; a system-role index is discarded rather than consuming a slot; two
+requested indices that walk back never claim the same message.
+Production: `MAX_MESSAGE_CACHE_BREAKPOINTS`, `cacheBreakpointTargets`, and
+`withOpenAICompatibleCacheMarkers` in
 `packages/llm/src/ai-sdk/request-options.ts`.
 Test: `packages/llm/tests/unit/ai-sdk-modules.test.ts` and
 `packages/llm/tests/unit/observability.test.ts`.
 
-**LLM-27.** `undefined` `cacheBreakpoints` marks nothing on openai-compatible or native OpenAI, but
-rolls a single breakpoint onto the newest usable message on Anthropic.
-Production: `withOpenAICompatibleCacheMarkers`, `withOpenAICacheBreakpoints`, and
-`cacheBreakpointTargets` in `packages/llm/src/ai-sdk/request-options.ts`.
+**LLM-27.** `undefined` `cacheBreakpoints` marks nothing on openai-compatible, but rolls a single
+breakpoint onto the newest usable message on Anthropic. Native OpenAI never uses these indices.
+Production: `withOpenAICompatibleCacheMarkers` and `cacheBreakpointTargets` in
+`packages/llm/src/ai-sdk/request-options.ts`.
 Test: `packages/llm/tests/unit/ai-sdk-modules.test.ts`.
 
 **LLM-28.** `FORBIDDEN_PROVIDER_BODY_KEYS` are dropped from the operator's `body` escape hatch even
@@ -1104,12 +1095,11 @@ Test: the coverage script itself, run by `bun run test:coverage`.
 Production: `packages/llm/package.json:36-41`.
 Test: unpinned within this package.
 
-**LLM-53.** `prompt_cache_breakpoint` is emitted only for resolved native OpenAI kinds whose model
-mode is explicitly `"explicit"` and whose call carries breakpoint indices. It never leaks to
-Anthropic, Google, Grok, openai-compatible, implicit/off, or absent-mode requests; no
-`prompt_cache_options` field is emitted.
-Production: `buildRequestOptions`, `openAICacheBreakpoint`, and
-`withOpenAICacheBreakpoints` in `packages/llm/src/ai-sdk/request-options.ts`.
+**LLM-53.** Native `openai` and `openai-codex` requests remain provider-managed regardless of the
+generic `promptCache` value: `promptCacheKey` is forwarded, messages and system content are not
+decorated, and neither `prompt_cache_breakpoint` nor `prompt_cache_options` is emitted.
+Production: `buildCallTuning` and `buildRequestOptions` in
+`packages/llm/src/ai-sdk/request-options.ts`.
 Test: `packages/llm/tests/unit/ai-sdk-modules.test.ts` and
 `packages/llm/tests/integration/provider-request-shape.test.ts`.
 

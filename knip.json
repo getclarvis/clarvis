@@ -6,7 +6,11 @@
   },
   "workspaces": {
     ".": {
-      "entry": ["tooling/checks/**/*.ts", "tooling/test-runtime/**/*.ts"],
+      "entry": [
+        "tooling/checks/**/*.ts",
+        "tooling/release/**/*.ts",
+        "tooling/test-runtime/**/*.ts"
+      ],
       "project": ["*.js", "tooling/**/*.{ts,js}"]
     },
     "packages/code": {

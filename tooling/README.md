@@ -7,6 +7,7 @@ artifact builders and performance benchmarks in `packages/code/tooling/`.
 | Directory             | Ownership                                                                     |
 | --------------------- | ----------------------------------------------------------------------------- |
 | `checks/`             | Executable repository policy and consistency checks                           |
+| `release/`            | Non-publishing release preparation                                            |
 | `lib/`                | Importable implementation shared by checks and their tests                    |
 | `test-runtime/`       | Process setup loaded by Bun before repository tests                           |
 | `tests/unit/`         | Focused checker and library behavior                                          |
@@ -29,3 +30,9 @@ role table and diagram committed in
 Bun 1.4 GitHub-runner canary records at least 30 successful `@clarvis/code` coverage runs with none
 of the historical signal exits. Its evidence and retirement condition live in
 [`../specs/known-issues.md`](../specs/known-issues.md#bun-dies-by-signal-in-the-clarviscode-suite).
+
+`release/prepare.ts` promotes the curated `CHANGELOG.md` `Unreleased` entry and updates the three
+release identity authorities: root `package.json`, `install.sh`, and `install.ps1`. It validates
+SemVer ordering and the existing cross-file identity before writing, and never commits, tags, or
+publishes. Public documentation resolves the newest complete distribution release independently, so
+it is not part of this source mutation.

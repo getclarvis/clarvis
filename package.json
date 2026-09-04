@@ -1,6 +1,6 @@
 {
   "name": "clarvis",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Clarvis monorepo — loop engine, tools, skills, MCP server and the terminal UI.",
   "license": "MIT",
@@ -84,6 +84,7 @@
     "release:package": "bun --filter @clarvis/code release:package",
     "release:smoke": "bun --filter @clarvis/code release:smoke",
     "release:install-smoke": "bun --filter @clarvis/code release:install-smoke",
+    "release:prepare": "bun run tooling/release/prepare.ts",
     "bench:code": "bun --filter @clarvis/code bench",
     "bench:code-overlays": "bun --filter @clarvis/code bench:overlays",
     "check:harness": "bun run tooling/checks/test-harness.ts",

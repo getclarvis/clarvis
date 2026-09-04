@@ -58,7 +58,7 @@ refresh, revocation, entitled catalogs, and token-opaque physical request author
 owner explicitly enables both public-client references for the local product; that is a Clarvis
 product decision, not provider endorsement. Synthetic registrations exercise transport behavior in
 tests. Provider `user-agent` identity uses the root-owned Clarvis product version. ChatGPT and Grok
-separately send adapter-owned compatibility revisions (`0.144.0` and `1.0.6`, respectively) in the
+separately send adapter-owned compatibility revisions (`0.153.2` and `1.0.6`, respectively) in the
 catalog version fields their services gate; those values are not the Clarvis product version. The
 remote transport always uses the unavailable implementation.
 

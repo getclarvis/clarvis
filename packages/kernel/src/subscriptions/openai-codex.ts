@@ -25,10 +25,10 @@ const PRODUCT_USER_AGENT = `clarvis/${VERSION}`;
  *
  * @remarks This is intentionally independent from the Clarvis product version. The ChatGPT model
  *   catalog compares `client_version` against each model's minimum Codex client revision; sending
- *   Clarvis `0.0.1-beta` therefore yields an empty successful catalog. Revision `0.144.0` is the
- *   first revision that exposes the current `gpt-5.6-*` family to eligible accounts.
+ *   Clarvis `0.0.1-beta` therefore yields an empty successful catalog. Revision `0.153.2` is the
+ *   explicitly reviewed compatibility revision for the Clarvis 0.1.0 release.
  */
-const OPENAI_CODEX_CLIENT_VERSION = "0.144.0";
+const OPENAI_CODEX_CLIENT_VERSION = "0.153.2";
 
 export interface OpenAICodexAdapterOptions {
   fetch?: typeof globalThis.fetch;

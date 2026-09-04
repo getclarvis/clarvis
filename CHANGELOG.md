@@ -1,9 +1,48 @@
 # Changelog
 
 All notable user-facing changes to Clarvis are recorded here. The project follows
-[Semantic Versioning](https://semver.org/) for release identifiers while it is in prerelease.
+[Semantic Versioning](https://semver.org/); releases before 1.0 may make breaking changes.
 
 ## [Unreleased]
+
+## [0.1.0] - 2026-09-03
+
+### Changed
+
+- Portable archives now run a product-named `clarvis` executable, so process viewers attribute CPU
+  and memory use to Clarvis; the former `bun` runtime path remains only as a launcher compatibility
+  entry.
+- Streaming model-call timeouts now measure inactivity across text, reasoning, and tool-input
+  progress instead of treating an actively growing tool argument as a stalled call.
+- The workflow token ceiling now covers every auxiliary workflow agent, including manager children
+  and leader sub-agents, through per-call fair-share reservations that return unused headroom.
+- ChatGPT subscription catalog discovery now sends Codex compatibility revision `0.153.2`, matching
+  the reviewed latest stable `@openai/codex` release while keeping Clarvis's own version separate.
+- First-run POSIX and PowerShell command policies now allow conventional inspection, build, test,
+  lint, and type-check commands across common language ecosystems. Existing allowlists remain
+  unchanged, while generic runners, installs, publishing, deployments, and migrations still require
+  review.
+
+### Fixed
+
+- Live tool input shows bounded cumulative progress, and a retry keeps the classified failure that
+  scheduled it without retaining prompt or argument contents.
+- Command-review denials no longer accumulate as failed executions, while genuine tool failures do;
+  a later success in the same model-declared batch clears a provisional convergence crossing.
+- Native sandboxes admit the host's compatible temporary roots and recognized system executables;
+  Apple-silicon Homebrew tools work inside Seatbelt without granting write access to Homebrew.
+- Transcript streaming remains in one chronological scroll flow, keeps an older reader's exact
+  anchor, returns explicit new submissions to the Lead tail, and avoids stale overscroll while an
+  elicitation replaces the composer.
+- Workflow review results distinguish a decline, dismissal, invalid answer, and timeout, and one
+  capless model call can no longer reserve the complete auxiliary workflow budget.
+- Direct iTerm sessions preserve Portuguese accents, dead keys, and ordinary Option text input;
+  `Ctrl+S` remains the portable safety shortcut and `Option+S` requires Meta/Esc+ delivery.
+
+### Security
+
+- Absolute system-executable allowances are occurrence-local, so the same path used later as a data
+  operand cannot inherit the command-head exemption or bypass command policy.
 
 ## [0.0.4-beta] - 2026-09-02
 

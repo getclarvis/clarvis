@@ -82,6 +82,7 @@ function fakeCode(): CodeConfigStore {
   const [map, setMap] = createSignal<Record<string, KeySource>>({});
   return {
     guardModeDefault: () => undefined,
+    updateCheckEnabled: () => true,
     asciiEnabled: () => false,
     keyboardConfig: () => ({ version: 1, environments: {} }),
     keySources: map,
@@ -104,6 +105,7 @@ function fakeCode(): CodeConfigStore {
     clearAgentDefault: () => {},
     writeAscii: () => {},
     writeKeyboardEnvironment: () => {},
+    writeUpdateCheckEnabled: () => {},
     hasWorkspace: () => false,
   };
 }

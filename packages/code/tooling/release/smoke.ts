@@ -4,6 +4,7 @@ import { chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { globalPaths } from "@clarvis/paths";
 
 import {
   releaseAssetName,
@@ -80,6 +81,13 @@ async function main(): Promise<void> {
   const home = await makeCleanHome();
   const workspace = join(temporary, "workspace");
   try {
+    const smokePaths = globalPaths(undefined, { home });
+    await mkdir(smokePaths.state, { recursive: true });
+    await writeFile(
+      smokePaths.codeConfigFile,
+      JSON.stringify({ updateCheck: { enabled: false } }, null, 2) + "\n",
+      { mode: 0o600 },
+    );
     const archive = new Bun.Archive(await Bun.file(archivePath).bytes());
     const extracted = join(temporary, "extracted");
     await archive.extract(extracted);

@@ -15,6 +15,7 @@ export { MemoryConfigPanel } from "./config/MemoryConfigPanel.tsx";
 export { SandboxConfigPanel } from "./config/SandboxConfigPanel.tsx";
 export { ThemeView } from "./config/ThemeView.tsx";
 export { KeyboardView } from "./config/KeyboardView.tsx";
+export { UpdatesPanel } from "./config/UpdatesPanel.tsx";
 export { SettingsHub } from "./config/SettingsHub.tsx";
 export { DoctorView } from "./config/DoctorView.tsx";
 export { ProvidersPanel } from "./config/ProvidersPanel.tsx";

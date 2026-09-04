@@ -186,7 +186,8 @@ the built artifact for every other mode (`packages/code/src/cli.ts`, `main`). In
    the active Agent Profile is runnable; otherwise the exact accepted submission or unsent draft becomes
    `App.initialDraft`;
 6. mounts the complete application, emits `app.boot.painted`, releases after-paint work and only then
-   starts Markdown parser warm-up; restored session content awaits the warm-up.
+   starts Markdown parser warm-up and the optional managed-install release check; restored session
+   content awaits the warm-up, while the release check is never awaited by boot or a run.
 
 Production: `packages/code/src/index.tsx` (`runInteractive`),
 `packages/code/src/startup-foundation.ts` (`prepareStartupFoundation`),
@@ -619,6 +620,17 @@ seconds (`packages/code/src/views/App.tsx`, `ledgerEnabled`).
     Workspace-plugin inventory hashing and its automatic trust modal are full-runtime work after the
     startup composer has painted. Repository plugins remain inactive until that resolution completes;
     neither trust computation nor the modal is an admission dependency for first paint.
+
+23. **PERF-23: automatic release discovery is post-paint, bounded and physically cancellable.**
+    Only an enabled managed portable interactive TUI schedules it, through `AppShell.afterPaint`.
+    The checker runs once per process, uses a 24-hour global cache and a five-second request timeout,
+    and platform shutdown aborts the underlying fetch. Fast paths, headless modes, source and
+    unmanaged installs never request the release index; failures do not paint UI or block other
+    work. Production: `packages/code/src/runtime.tsx` (`update_check`),
+    `packages/code/src/update/check.ts`, and
+    `packages/code/src/update/github-releases.ts` (`fetchReleaseIndex`). Test:
+    `packages/code/tests/architecture/{architecture-boundary,cli-fast-path}.test.ts` and
+    `packages/code/tests/unit/update-check.test.ts`.
 
 The near-250 ms and below-500 ms functional startup targets are review criteria on a comparable
 named host, not cross-platform invariants. No invariant currently sets an absolute complete-app or

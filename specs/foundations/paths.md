@@ -121,38 +121,39 @@ chose it — is the first thing every other path in this package is derived from
 
 ### 2.4 Global paths (`packages/paths/src/global.ts`)
 
-`globalPaths(root?, opts?)` (`packages/paths/src/global.ts:109`) returns a `GlobalPaths` record
+`globalPaths(root?, opts?)` (`packages/paths/src/global.ts:111`) returns a `GlobalPaths` record
 (`packages/paths/src/global.ts:21`) rooted at `<global>`:
 
 | Field | Path | Line |
 |---|---|---|
-| `root` | `<global>` | `packages/paths/src/global.ts:115` |
-| `state` | `<global>/state` | `packages/paths/src/global.ts:111,116` |
-| `cache` | `<global>/cache` | `packages/paths/src/global.ts:112,117` |
+| `root` | `<global>` | `packages/paths/src/global.ts:117` |
+| `state` | `<global>/state` | `packages/paths/src/global.ts:113,118` |
+| `cache` | `<global>/cache` | `packages/paths/src/global.ts:114,119` |
 | `pluginDataRoot` | `<global>/state/plugin-data` | `GlobalPaths.pluginDataRoot`, `globalPaths` |
-| `settingsFile` | `<global>/settings.json` | `packages/paths/src/global.ts:119` |
-| `agentsDir` | `<global>/agents` | `packages/paths/src/global.ts:113,120` |
-| `keysFile` | `<global>/keys.json` | `packages/paths/src/global.ts:121` |
-| `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts:122` |
-| `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts:123` |
-| `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts:124` |
-| `extensionProfilesDir` | `<global>/extension-profiles` | `packages/paths/src/global.ts:125` |
-| `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts:126` |
-| `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts:127` |
-| `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts:128` |
-| `guardJudgeFile` | `<global>/guard-judge.md` | `packages/paths/src/global.ts:129` |
-| `memoryPolicyFile` | `<global>/memory-policy.md` | `packages/paths/src/global.ts:130` |
-| `authFile` | `<global>/auth.json` | `packages/paths/src/global.ts:131` |
-| `authKeyFile` | `<global>/auth-key.json` | `packages/paths/src/global.ts:132` |
-| `sessionsDir` | `<global>/state/sessions` | `packages/paths/src/global.ts:133` |
-| `tracesDir` | `<global>/state/traces` | `packages/paths/src/global.ts:134` |
-| `workflowRecordsDir` | `<global>/state/workflows` | `packages/paths/src/global.ts:135` |
-| `extensionProfileSelectionFile` | `<global>/state/extension-profile.json` | `packages/paths/src/global.ts:136` |
-| `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts:137` |
-| `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts:138` |
-| `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts:139` |
-| `exportsDirForOwner(owner)` | `<global>/exports/<ownerSegment(owner)>` | `packages/paths/src/global.ts:140` |
-| `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/global.ts:141` |
+| `settingsFile` | `<global>/settings.json` | `packages/paths/src/global.ts:121` |
+| `agentsDir` | `<global>/agents` | `packages/paths/src/global.ts:115,122` |
+| `keysFile` | `<global>/keys.json` | `packages/paths/src/global.ts:123` |
+| `subscriptionsFile` | `<global>/subscriptions.json` | `packages/paths/src/global.ts:124` |
+| `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts:125` |
+| `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts:126` |
+| `extensionProfilesDir` | `<global>/extension-profiles` | `packages/paths/src/global.ts:127` |
+| `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts:128` |
+| `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts:129` |
+| `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts:130` |
+| `guardJudgeFile` | `<global>/guard-judge.md` | `packages/paths/src/global.ts:131` |
+| `memoryPolicyFile` | `<global>/memory-policy.md` | `packages/paths/src/global.ts:132` |
+| `authFile` | `<global>/auth.json` | `packages/paths/src/global.ts:133` |
+| `authKeyFile` | `<global>/auth-key.json` | `packages/paths/src/global.ts:134` |
+| `sessionsDir` | `<global>/state/sessions` | `packages/paths/src/global.ts:135` |
+| `tracesDir` | `<global>/state/traces` | `packages/paths/src/global.ts:136` |
+| `workflowRecordsDir` | `<global>/state/workflows` | `packages/paths/src/global.ts:137` |
+| `extensionProfileSelectionFile` | `<global>/state/extension-profile.json` | `packages/paths/src/global.ts:138` |
+| `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts:139` |
+| `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts:140` |
+| `updateCheckCacheFile` | `<global>/cache/update-check.json` | `packages/paths/src/global.ts:141` |
+| `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts:142` |
+| `exportsDirForOwner(owner)` | `<global>/exports/<ownerSegment(owner)>` | `packages/paths/src/global.ts:143` |
+| `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/global.ts:144` |
 
 The module doc explains the placement: "Operator-owned configuration sits at the root, not under
 a `config/` subdirectory" — burying it "made the global tree disagree with the workspace one"
@@ -398,7 +399,7 @@ operator-authored files at the root (`settings.json`, `agents/`, `keys.json`, `p
 `workspace-trust.json`, `skills/`, `workflows/`, `guard-judge.md`,
 `memory-policy.md`, `auth.json`, `auth-key.json`), and generated state under `state/`
 (`sessions/`, `traces/`, `workflows/` [records], `extension-profile.json`, `code.json`, private remote-MCP OAuth credentials)
-and `cache/` (`models-dev.json`)
+and `cache/` (`models-dev.json`, `update-check.json`)
 — see the table in §2.4.
 
 ### 3.3 Per-workspace machine state tree
@@ -874,7 +875,7 @@ says so, and names the phase").
 
 **PATHS-F.** Remote MCP registrations and tokens are machine state, not operator-authored settings:
 `globalPaths(root).mcpOAuthFile` is always `<global>/state/mcp-oauth.json`. Production:
-`packages/paths/src/global.ts:21-39,109-123`. Test:
+`packages/paths/src/global.ts:21-39,111-125`. Test:
 `packages/paths/tests/component/paths.test.ts:68`.
 
 ## 6. Failure modes and degradation

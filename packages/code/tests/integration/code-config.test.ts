@@ -204,6 +204,28 @@ test("keyboard profiles persist globally by opaque environment id and preserve U
   });
 });
 
+test("automatic version checks default on, ignore workspace config and write only globally", () => {
+  createRoot((dispose) => {
+    const dirs = tmpDirs();
+    seed(dirs.global.codeConfigFile, { theme: { preset: "mono" } });
+    seed(dirs.state.codeConfigFile, { updateCheck: { enabled: false } });
+    const code = createCodeConfigStore(dirs);
+
+    expect(code.updateCheckEnabled()).toBe(true);
+    code.writeUpdateCheckEnabled(false);
+    expect(code.updateCheckEnabled()).toBe(false);
+    expect(readCfg(dirs.global.codeConfigFile)).toEqual({
+      theme: { preset: "mono" },
+      updateCheck: { enabled: false },
+    });
+    expect(readCfg(dirs.state.codeConfigFile)).toEqual({ updateCheck: { enabled: false } });
+
+    seed(dirs.state.codeConfigFile, { updateCheck: { enabled: true } });
+    expect(createCodeConfigStore(dirs).updateCheckEnabled()).toBe(false);
+    dispose();
+  });
+});
+
 test("writeAgentDefault is clobber-safe against an independent on-disk edit", () => {
   createRoot((dispose) => {
     const dirs = tmpDirs();

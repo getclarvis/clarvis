@@ -116,3 +116,13 @@ test("the audited width matrix keeps one bounded identity row", async () => {
     if (width < 100) expect(rows[0]).not.toContain("Sandbox unavailable");
   }
 });
+
+test("the update marker remains bounded across the audited width matrix", async () => {
+  for (const width of [24, 36, 48, 71, 72, 99, 100, 119, 120, 124, 160, 200]) {
+    const rows = await frame(baseInput({ width, updateAvailable: true }));
+    expect(rows[0]).toContain("Clarvis");
+    expect(rows[0]?.trimEnd()).toEndWith("↑ v0.0.4-beta");
+    expect(Bun.stringWidth(rows[0]!)).toBeLessThanOrEqual(width);
+    expect(rows.filter((row) => row.includes("Clarvis"))).toHaveLength(1);
+  }
+});

@@ -105,8 +105,18 @@ credentials, sessions, and workspace data remain untouched.
 release index from `getclarvis/clarvis-releases`, selects only a newer version allowed by the current
 channel, requires GitHub's `sha256:` asset digest and exact target-specific URL, verifies the
 internal manifest, smokes the staged runtime, preserves the previous version, and activates the
-candidate last. It performs no automatic update check at ordinary startup and refuses source or
-`bun link` installations.
+candidate last. The interactive TUI of a managed portable installation also performs a read-only
+release check after `app.boot.painted`, at most once per process and once per 24-hour global cache.
+It uses GitHub `ETag` revalidation, times out after five seconds, and only reports a release that the
+same channel/target/asset policy accepts. The check never acquires `update.lock`, downloads an asset,
+or changes `current`; failures are silent in the UI, while an available release produces one hint and
+a persistent arrow beside the installed version. **Settings > Updates** writes the global-only,
+default-on preference in Code's generated `state/code.json`; workspace `code.json` cannot override
+it. Source, `bun link`, unmanaged, unsupported, fast-path, and headless invocations make no automatic
+release request. The public request sends GitHub the caller's network metadata and
+`User-Agent: clarvis/<installed-version>`; it sends no Clarvis credentials. `clarvis --update`
+ignores the passive-check preference/cache and always repeats the authenticated release query and
+artifact verification.
 
 The current directory is the workspace Clarvis operates on. To run against
 another project, start the binary from that directory or use the installed

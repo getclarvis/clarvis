@@ -21,7 +21,13 @@ import {
 } from "./views/transcript-markdown.ts";
 import { formatSessionRow } from "./views/session-row.ts";
 import { createWorkspaceFiles } from "./adapters/workspace-files.ts";
-import { resolveDebugRequest, type DebugRequest, type Mode, type PrintFormat } from "./cli-args.ts";
+import {
+  productVersion,
+  resolveDebugRequest,
+  type DebugRequest,
+  type Mode,
+  type PrintFormat,
+} from "./cli-args.ts";
 import { createPrintStream, drainPrintEvents, resolveResumeMeta } from "./cli-mode.ts";
 import {
   removeWorktreeCheckout,
@@ -1192,6 +1198,10 @@ async function runApp(
 
   const afterPaintTasks: Array<() => void> = [];
   let appPainted = false;
+  const [availableUpdate, setAvailableUpdate] = createSignal<{
+    version: string;
+    tagName: string;
+  } | null>(null);
   const shell: AppShell = {
     renderer,
     platform,
@@ -1208,6 +1218,7 @@ async function runApp(
     get files() {
       return workspaceFiles;
     },
+    availableUpdate,
     afterPaint: (task) => {
       if (appPainted) queueMicrotask(task);
       else afterPaintTasks.push(task);
@@ -1224,6 +1235,58 @@ async function runApp(
       : {}),
     quit: () => void platform.shutdown("user-quit"),
   };
+  shell.afterPaint?.(() => {
+    if (!code.updateCheckEnabled()) {
+      diagnosticEvent("update.check.skipped", { reason: "disabled" }, "debug");
+      return;
+    }
+    const controller = new AbortController();
+    let closed = false;
+    const removeShutdown = platform.onShutdown((reason) => {
+      closed = true;
+      controller.abort(new Error(`shutdown: ${reason}`));
+      diagnosticEvent("update.check.aborted", { reason }, "debug");
+    });
+    diagnosticEvent("update.check.started", { current_version: productVersion() }, "debug");
+    detachObserved(
+      "update_check",
+      async () => {
+        try {
+          const { checkForUpdate } = await import("./update/check.ts");
+          const result = await checkForUpdate({
+            currentVersion: productVersion(),
+            signal: controller.signal,
+          });
+          if (closed) return;
+          if (result.kind === "available") {
+            setAvailableUpdate({ version: result.version, tagName: result.tagName });
+            diagnosticEvent(
+              "update.available",
+              {
+                current_version: productVersion(),
+                available_version: result.version,
+                source: result.source,
+              },
+              "info",
+            );
+          } else if (result.kind === "failed") {
+            diagnosticEvent("update.check.failed", { reason: result.reason }, "warn");
+          } else {
+            diagnosticEvent(
+              result.kind === "skipped" ? "update.check.skipped" : "update.check.completed",
+              result.kind === "skipped"
+                ? { reason: result.reason }
+                : { current_version: productVersion(), source: result.source },
+              "debug",
+            );
+          }
+        } finally {
+          removeShutdown();
+        }
+      },
+      (error) => diagnosticEvent("update.check.failed", { reason: errorText(error) }, "warn"),
+    );
+  });
   const runControls: AppRunControls = {
     status: runStatus,
     submit: (c) => detachObserved("submit_turn", () => runHost.submitTurn(c)),

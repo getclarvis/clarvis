@@ -4,7 +4,11 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { downloadReleaseAsset, fetchReleaseRecords } from "../../src/update/github-releases.ts";
+import {
+  downloadReleaseAsset,
+  fetchReleaseIndex,
+  fetchReleaseRecords,
+} from "../../src/update/github-releases.ts";
 
 function jsonResponse(value: unknown): Response {
   return new Response(JSON.stringify(value), {
@@ -53,6 +57,36 @@ test("oversized or malformed release indexes fail closed", async () => {
   await expect(
     fetchReleaseRecords(() => Promise.resolve(jsonResponse({ releases: [] })), "clarvis/test"),
   ).rejects.toThrow("shape");
+});
+
+test("conditional release requests carry a bounded ETag and accept 304", async () => {
+  let headers = new Headers();
+  let signal: AbortSignal | null | undefined;
+  const result = await fetchReleaseIndex(
+    (_input, init) => {
+      headers = new Headers(init?.headers);
+      signal = init?.signal;
+      return Promise.resolve(new Response(null, { status: 304 }));
+    },
+    "clarvis/test",
+    { etag: 'W/"release-index"', timeoutMs: 50 },
+  );
+  expect(result).toEqual({ kind: "not-modified" });
+  expect(headers.get("if-none-match")).toBe('W/"release-index"');
+  expect(signal).toBeInstanceOf(AbortSignal);
+});
+
+test("release index returns only bounded response ETags", async () => {
+  const accepted = await fetchReleaseIndex(
+    () => Promise.resolve(new Response("[]", { headers: { etag: '"release-index"' } })),
+    "clarvis/test",
+  );
+  expect(accepted).toEqual({ kind: "records", records: [], etag: '"release-index"' });
+  const rejected = await fetchReleaseIndex(
+    () => Promise.resolve(new Response("[]", { headers: { etag: "x".repeat(257) } })),
+    "clarvis/test",
+  );
+  expect(rejected).toEqual({ kind: "records", records: [] });
 });
 
 test("asset download verifies exact bytes, size and SHA-256", async () => {

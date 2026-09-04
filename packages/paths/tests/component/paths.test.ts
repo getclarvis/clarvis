@@ -71,6 +71,7 @@ describe("globalPaths", () => {
     expect(p.codeConfigFile).toBe(join(p.state, "code.json"));
     expect(p.extensionProfileSelectionFile).toBe(join(p.state, "extension-profile.json"));
     expect(p.modelsCacheFile).toBe(join(p.cache, "models-dev.json"));
+    expect(p.updateCheckCacheFile).toBe(join(p.cache, "update-check.json"));
   });
 
   test("agentFile appends the markdown extension", () => {

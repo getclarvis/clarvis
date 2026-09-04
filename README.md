@@ -116,9 +116,12 @@ clarvis --update                         # update a managed portable installatio
 clarvis --help                           # complete CLI reference
 ```
 
-Self-update is explicit; ordinary startup performs no update check. A prerelease follows newer
-prereleases and the later stable promotion, while a stable installation ignores prereleases.
-Source checkouts and `bun link` installations deliberately refuse self-update.
+Self-update remains explicit. After the interactive application has painted, a managed portable
+installation checks at most once per day for an eligible release and shows an in-app notice without
+downloading or installing it. Disable that global check under **Settings > Updates**. Headless
+commands, source checkouts, `bun link`, and unmanaged installations make no automatic release
+request. A prerelease follows newer prereleases and the later stable promotion, while a stable
+installation ignores prereleases; `clarvis --update` always performs a fresh verified update.
 
 See the [public user guide](https://clarvis.dev/guide/daily-use) for sessions, headless mode,
 worktrees, configuration, extensions, data locations, and diagnostics. See

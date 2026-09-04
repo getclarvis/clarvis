@@ -130,7 +130,7 @@ interface HubMenuItem { id: string; label: string; desc: string; cmd: string }  
 function HubMenu(host, deps: { title; items; openChild(cmd: string): void })      // packages/code/src/views/config/hub-menu.tsx:24
 ```
 
-`SettingsHub.ITEMS` (`packages/code/src/views/config/SettingsHub.tsx:7`) — nine entries, in order:
+`SettingsHub.ITEMS` (`packages/code/src/views/config/SettingsHub.tsx:7`) — ten entries, in order:
 
 | id | label | cmd |
 |---|---|---|
@@ -142,7 +142,13 @@ function HubMenu(host, deps: { title; items; openChild(cmd: string): void })    
 | `sandbox` | Sandbox | `sandbox.config` |
 | `theme` | Theme | `theme.open` |
 | `keyboard` | Keyboard | `keyboard.open` |
+| `updates` | Updates | `updates.open` |
 | `controls` | Run controls | `controls.open` |
+
+`UpdatesPanel` is a lazy Settings child over Code's own `code.json`, not kernel settings. Its single
+toggle reads `CodeConfigStore.updateCheckEnabled`, which defaults on and consults only the global
+document, and writes through the scope-free `writeUpdateCheckEnabled` global writer. A workspace
+`code.json` value cannot enable or disable the check.
 
 `ExtensionsHub` is a five-step guided setup rather than a `HubMenu`. `/extensions` is its only slash
 route; internal Extension Profiles, Plugins, and MCP children open from the intro and return through the

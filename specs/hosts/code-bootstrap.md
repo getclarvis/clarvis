@@ -567,7 +567,7 @@ terminal result."
 | 5 | load the foundation without reading models.dev, then list Agent Profiles, resolve the branch and bind the run host | `runApp`, `loadFoundation` |
 | 6 | take the startup snapshot exactly once; an Enter submission starts immediately through `runHost.submitTurn` before full-app mount only when the active Agent Profile is runnable | `StartupComposerState.take`; `resolveStartupComposerHandoff`; `startup_submit` in `runApp` |
 | 7 | replace the startup root with `<App>`; an unsent draft or a submission that had no runnable Agent Profile becomes exact `initialDraft`; release bootstrap key/exit ownership only after mount; emit mounted/painted diagnostics | `BootShell.mount`; `AppProps.initialDraft`; `releaseBootRendererLifecycle` |
-| 8 | after `app.boot.painted`, release memory recovery and Markdown warm-up; resume/continue restore saved content after parser warm-up | `runApp` |
+| 8 | after `app.boot.painted`, release memory recovery, Markdown warm-up, and the optional managed-install release check; resume/continue restore saved content after parser warm-up | `runApp` |
 
 `StartupComposer` is not a decorative progress placeholder. In `run` mode it owns a real focused
 OpenTUI input, records content outside Solid/renderable ownership, and accepts Enter once. Its
@@ -611,6 +611,14 @@ Two orderings the code annotates explicitly:
   Production: `packages/code/src/runtime.tsx` (`app.boot.painted`, `startMemoryRecovery`) and
   `packages/code/src/adapters/workspace-client-manager.ts` (`startMemoryRecovery`). Test:
   `packages/code/tests/architecture/architecture-boundary.test.ts` (paint-before-recovery order).
+- The automatic version check is another after-paint task, but only for a managed portable
+  installation whose global Code preference remains enabled. It dynamically imports the read-only
+  checker, uses a 24-hour disposable cache, and is aborted by platform shutdown; its failure never
+  blocks or paints an error. Production: `packages/code/src/runtime.tsx` (`AppShell.afterPaint`,
+  `update_check`) and `packages/code/src/update/check.ts`. Test:
+  `packages/code/tests/architecture/architecture-boundary.test.ts` (post-paint gate),
+  `packages/code/tests/unit/update-check.test.ts`, and
+  `packages/code/tests/integration/app-shell-render.test.tsx`.
 - Application command composition performs no sandbox host inspection. The null probe is a passing
   deferred readiness state; Doctor recheck and Settings > Sandbox are the explicit inspection
   routes. Production: `packages/code/src/app/commands.tsx` (`refreshSandboxInspection`,
@@ -1103,13 +1111,16 @@ are type-only and erased by `verbatimModuleSyntax`).
 Pinned: `packages/code/tests/architecture/cli-fast-path.test.ts`
 (`root product manifest` case).
 
-**INV-CB-3a.** `--update` reaches the updater only through a dynamic import before bundle/source
-entry resolution, so ordinary startup and `--version` do not load the update graph or perform a
-release request. Production: `packages/code/src/cli.ts` and `packages/code/src/index.tsx` (`update`
-branches). Pinned: `packages/code/tests/architecture/cli-fast-path.test.ts` (dynamic updater import)
-and `packages/code/tests/unit/update-command.test.ts` (unmanaged invocation fetches nothing). The
-archive and activation contract belongs to
-[distribution and updates](../cross-cutting/distribution-and-updates.md).
+**INV-CB-3a.** `--update` reaches the mutating updater only through a dynamic import before
+bundle/source entry resolution. `--help`, `--version`, every headless mode, source, `bun link`, and
+unmanaged installs do not perform the automatic request. A managed interactive TUI may dynamically
+import the separate read-only checker only from `AppShell.afterPaint`; disabling the global Code
+preference prevents that import. Production: `packages/code/src/cli.ts` and
+`packages/code/src/index.tsx` (`update` branches), `packages/code/src/runtime.tsx` (`update_check`),
+and `packages/code/src/update/check.ts`. Pinned:
+`packages/code/tests/architecture/{cli-fast-path,architecture-boundary}.test.ts` and
+`packages/code/tests/unit/{update-check,update-command}.test.ts`. The discovery, archive, and
+activation contract belongs to [distribution and updates](../cross-cutting/distribution-and-updates.md).
 
 **INV-CB-4.** The static-import walker used by INV-CB-1..3 distinguishes value, type-only and dynamic
 forms.

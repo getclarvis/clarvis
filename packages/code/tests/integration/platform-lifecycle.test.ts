@@ -13,6 +13,7 @@ const stash = {
   DISPLAY: process.env.DISPLAY,
   WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY,
   NO_COLOR: process.env.NO_COLOR,
+  TERM_PROGRAM: process.env.TERM_PROGRAM,
   platform: process.platform,
 };
 
@@ -22,6 +23,7 @@ beforeEach(() => {
   delete process.env.WAYLAND_DISPLAY;
   delete process.env.DISPLAY;
   delete process.env.NO_COLOR;
+  delete process.env.TERM_PROGRAM;
   Object.defineProperty(process, "platform", { value: "linux", configurable: true });
 });
 
@@ -32,6 +34,7 @@ afterEach(() => {
     "DISPLAY",
     "WAYLAND_DISPLAY",
     "NO_COLOR",
+    "TERM_PROGRAM",
   ] as const) {
     if (stash[k] === undefined) delete process.env[k];
     else process.env[k] = stash[k]!;
@@ -129,38 +132,21 @@ test("buildRendererConfig: default opts keep openConsoleOnError off", async () =
   expect(cfg.consoleMode).toBe("disabled");
   expect(cfg.screenMode).toBe("alternate-screen");
   expect(cfg.exitOnCtrlC).toBe(false);
+  expect(cfg.useKittyKeyboard).toEqual({});
+  expect(cfg.prependInputHandlers).toBeUndefined();
   expect(cfg.useMouse).toBe(true);
   expect(cfg.targetFps).toBe(30);
   expect(cfg.maxFps).toBe(60);
 });
 
-test("buildRendererConfig: direct macOS iTerm requests unambiguous Option key reports", async () => {
+test("buildRendererConfig: direct macOS iTerm preserves native text composition", async () => {
   const { buildRendererConfig } = await import("../../src/adapters/platform.ts");
-  const cfg = buildRendererConfig({
-    runtimePlatform: "darwin",
-    processEnv: { TERM_PROGRAM: "iTerm.app", TERM_PROGRAM_VERSION: "3.6.11" },
-  });
+  Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+  process.env.TERM_PROGRAM = "iTerm.app";
+  const cfg = buildRendererConfig();
 
-  expect(cfg.useKittyKeyboard).toEqual({ allKeysAsEscapes: true, reportText: true });
-  expect(cfg.prependInputHandlers).toHaveLength(1);
-  const consume = cfg.prependInputHandlers![0]!;
-  expect(consume("\u001b[3u")).toBe(true);
-  expect(consume("\u001b[5u")).toBe(true);
-  expect(consume("\u001b[13u")).toBe(false);
-  expect(consume("\u001b[115;3;223u")).toBe(false);
-});
-
-test("buildRendererConfig: multiplexed and remote iTerm paths retain conservative reporting", async () => {
-  const { buildRendererConfig } = await import("../../src/adapters/platform.ts");
-  for (const processEnv of [
-    { TERM_PROGRAM: "iTerm.app", TMUX: "/tmp/tmux" },
-    { TERM_PROGRAM: "iTerm.app", SSH_TTY: "/dev/ttys001" },
-    { TERM_PROGRAM: "iTerm.app", SSH_CONNECTION: "client server" },
-  ]) {
-    const cfg = buildRendererConfig({ runtimePlatform: "darwin", processEnv });
-    expect(cfg.useKittyKeyboard).toEqual({});
-    expect(cfg.prependInputHandlers).toBeUndefined();
-  }
+  expect(cfg.useKittyKeyboard).toEqual({});
+  expect(cfg.prependInputHandlers).toBeUndefined();
 });
 
 test("buildRendererConfig: dev:true turns openConsoleOnError on", async () => {

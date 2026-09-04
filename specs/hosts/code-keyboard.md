@@ -920,12 +920,12 @@ pinned at `packages/code/tests/integration/app-shell-render.test.tsx:729-752`, `
 `:2070-2104`, `:2298-2326`, and `:2762-2783`.
 
 **INV-D13.** `Ctrl+S` is the portable binding for the internal `safety.picker` action, `Alt+S` is its
-enhanced-path accelerator, and both are inactive while another overlay is open. A direct iTerm
-session on macOS requests Kitty all-key plus associated-text reporting, preserving the physical
-Option+S identity even when Option normally produces `ß`; iTerm's standalone modifier-state packets
-are consumed before key dispatch. Other terminal paths must still deliver Option as Meta/Esc+ for
-the enhanced binding. A legacy literal `ß` remains composer text, while `Ctrl+S` keeps the picker
-reachable without terminal configuration. No global physical sidebar binding exists; `/activity`
+enhanced-path accelerator, and both are inactive while another overlay is open. The renderer keeps
+Kitty keyboard reporting in its conservative mode and never requests all-key escape reports, so
+terminal-native dead-key and IME text composition remains intact. Every terminal path, including a
+direct iTerm session on macOS, must deliver Option as Meta/Esc+ for the enhanced binding. A literal
+`ß` remains composer text, while `Ctrl+S` keeps the picker reachable without terminal configuration.
+No global physical sidebar binding exists; `/activity`
 and `/activity [plan|workflow|agents]` are contextual slash actions. The first live Plan, first
 workflow leader and first visible sub-agent each own an independent automatic
 reveal once per execution for Plan, Parallel work and Agents. Closing the surface is sticky for
@@ -936,6 +936,7 @@ whose split or drawer presentation is determined by the viewport; Plan never con
 text.
 
 Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`, `DEFAULT_WHEN`),
+`packages/code/src/adapters/renderer-bootstrap.ts` (`buildRendererConfig`),
 `packages/code/src/views/config/KeyboardView.tsx` (`PROBES`, `KeyboardDiagnostic`),
 `packages/code/src/app/commands.tsx` (`safety.picker`), and
 `packages/code/src/app/layout.ts` (`createLayoutController`) and
@@ -944,6 +945,8 @@ Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES
 and `compactActivityStrip`). Tests:
 `packages/code/tests/integration/interaction.test.ts`,
 `packages/code/tests/integration/app-shell-render.test.tsx`,
+`packages/code/tests/integration/platform-lifecycle.test.ts`,
+`packages/code/tests/integration/input-dock-submit.test.tsx` (typed Portuguese accents),
 `packages/code/tests/integration/keyboard-view-render.test.tsx`, and
 `packages/code/tests/unit/layout.test.ts`.
 

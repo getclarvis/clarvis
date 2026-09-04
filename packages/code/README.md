@@ -368,13 +368,12 @@ footer segment. Slash commands and configuration hubs remain the searchable rout
 and actions.
 
 `Ctrl+S` opens the canonical safety-preset picker on every Keyboard Profile; `Alt+S` remains an
-enhanced-path accelerator. In a direct iTerm session on macOS, Clarvis requests Kitty's all-key and
-associated-text reports so Option+S remains identifiable even when the profile leaves Option in its
-normal text-producing mode. iTerm's standalone modifier-state packets are consumed before OpenTUI
-can misread their numeric payload as control text. Other terminal paths still need to deliver Option
-as Meta/Esc+ for the enhanced accelerator; a literal `ß` from a legacy path remains ordinary text,
-while `Ctrl+S` keeps the picker reachable. The picker is loaded on first use, retained after that
-first mount, and reuses the same preset application policy as Run controls. There is no global
+enhanced-path accelerator. Clarvis keeps the terminal's native text path instead of requesting
+all-key escape reports, so macOS dead-key and IME composition remain intact. Every terminal path,
+including direct iTerm sessions, must deliver Option as Meta/Esc+ for the enhanced accelerator; a
+literal `ß` remains ordinary text, while `Ctrl+S` keeps the picker reachable. The picker is loaded
+on first use, retained after that first mount, and reuses the same preset application policy as Run
+controls. There is no global
 physical sidebar-toggle binding; `/activity [plan|workflow|agents]` is the contextual reopen command.
 The first live Plan, first workflow state/leader and first typed delegation each own an independent,
 once-per-execution automatic reveal intent for the responsive Plan, Parallel work and Agents

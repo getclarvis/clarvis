@@ -8,9 +8,10 @@
 
 This subsystem is the repository's *self-enforcement layer*: the rules about how tests are
 organised, how a test process is isolated from the developer's machine, and what a commit must
-survive before it is allowed to land. It is implemented as nine executable TypeScript checks under
-`tooling/checks/`, five shared libraries under `tooling/lib/`, twelve classified test files under
-`tooling/tests/` (ten unit and two architecture), and a Bun preload
+survive before it is allowed to land. It is implemented as ten executable TypeScript checks under
+`tooling/checks/`, six shared libraries under `tooling/lib/`, fourteen classified test files under
+`tooling/tests/` (twelve unit and two architecture), one non-publishing release command under
+`tooling/release/`, and a Bun preload
 (`tooling/test-runtime/clarvis-home-preload.ts`), the root and
 per-package `bunfig.toml` files, the npm-script chain in the root `package.json`, and a one-line
 git hook at `.githooks/pre-commit` that does nothing but `exec bun run check:pre-commit`
@@ -54,6 +55,7 @@ The whole thing runs sequentially, fail-fast, from one npm script: `check:pre-co
 | `test` | `test:tooling` followed by 18 package tests chained with `&&`, in dependency order | `package.json` (`scripts.test`) |
 | `hooks:install` | `git config core.hooksPath .githooks` | `package.json` (`scripts.hooks:install`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
+| `release:prepare` | `bun run tooling/release/prepare.ts <version>` | `package.json` (`scripts.release:prepare`) |
 
 Note that `check:pre-commit` spells out `lint:eslint && lint:intent && knip` rather than calling
 `lint`; the effect is identical (`package.json`, `scripts.lint` and `scripts.check:pre-commit`).
@@ -94,6 +96,8 @@ architecture · component · contract · e2e · integration · unit
 | `analyzePackageGraph(root)` | `→ report` | `tooling/lib/package-graph.ts`, `analyzePackageGraph` |
 | `renderMarkdown(report)` | `→ string` (English role/dependency table and Mermaid graph) | `tooling/lib/package-graph.ts`, `renderMarkdown` |
 | `checkDocument(report, document)` | `→ string[]` | `tooling/lib/package-graph.ts`, `checkDocument` |
+| `compareReleaseVersions(left, right)` | exact SemVer ordering | `tooling/lib/release-prepare.ts` |
+| `prepareReleaseSources(sources, version, date)` | validated in-memory release mutation | `tooling/lib/release-prepare.ts` |
 
 The checker logic is safely importable from a test in both cases, but the two scripts get there by
 different mechanisms. `coverage.ts` self-invokes only when it *is* `process.argv[1]`
@@ -1077,7 +1081,7 @@ inventory and parses every TypeScript file's module specifiers.
 | `packages/*/src` | yes | yes | yes | yes (both rules) | yes | yes | yes |
 | `packages/*/tests` | yes | yes | yes | mock-module + level rule | yes | yes | yes |
 | `packages/code/tooling` | yes | yes | yes | mock-module only | yes | yes | yes |
-| repo `tooling/checks`, `lib`, `test-runtime` | yes | yes | yes | mock-module only | no | yes | yes |
+| repo `tooling/checks`, `lib`, `release`, `test-runtime` | yes | yes | yes | mock-module only | no | yes | yes |
 | repo `tooling/tests` | yes | yes | yes | mock-module only | no | yes | yes |
 | repo `tooling/ci` | no¹ | no¹ | no¹ | no¹ | no | no¹ | no¹ |
 

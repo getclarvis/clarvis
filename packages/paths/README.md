@@ -366,7 +366,7 @@ identity input.
 
 This is a pre-release persistence-format migration. Existing default-owner and
 per-workspace state directories keep their bytes on disk, but the new version
-does not address them through the old lossy slug. Clarvis remains pre-1.0 at `0.1.0`;
+does not address them through the old lossy slug. Clarvis remains pre-1.0;
 there is no legacy fallback that could reintroduce the collision.
 
 The two encoders used to live in `@clarvis/loop`, while the loop was their only caller. They moved when

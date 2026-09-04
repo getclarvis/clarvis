@@ -5,6 +5,20 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-04
+
+### Added
+
+- Managed interactive installations now check for a newer complete public release after first paint,
+  cache that result for 24 hours, and surface an available update without delaying or disrupting
+  offline startup.
+
+### Fixed
+
+- Prompt caching now preserves a stable provider-specific prefix across turns, keeps OpenAI and
+  ChatGPT subscription caching provider-managed, applies explicit breakpoints only to providers that
+  declare them, and reports breakpoint drift without exposing prompt content.
+
 ## [0.1.0] - 2026-09-03
 
 ### Changed

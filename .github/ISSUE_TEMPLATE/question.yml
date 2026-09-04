@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: Clarvis version
-      placeholder: clarvis 0.1.0
+      placeholder: Paste the complete output
     validations:
       required: true
   - type: input

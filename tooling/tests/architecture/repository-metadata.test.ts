@@ -10,14 +10,13 @@ function fencedBlocks(source: string, language: string): string[] {
   return [...source.matchAll(fence)].map((match) => match[1].trim());
 }
 
-test("keeps the README install commands aligned with the product version", () => {
-  const manifest = JSON.parse(read("package.json")) as { version: string };
+test("keeps the README install commands on stable latest-release redirects", () => {
   const readme = read("README.md");
   expect(fencedBlocks(readme, "bash")[0]).toBe(
-    `curl -fsSL https://github.com/getclarvis/clarvis-releases/releases/download/v${manifest.version}/install.sh | sh`,
+    "curl -fsSL https://github.com/getclarvis/clarvis-releases/releases/latest/download/install.sh | sh",
   );
   expect(fencedBlocks(readme, "powershell")[0]).toBe(
-    `irm https://github.com/getclarvis/clarvis-releases/releases/download/v${manifest.version}/install.ps1 | iex`,
+    "irm https://github.com/getclarvis/clarvis-releases/releases/latest/download/install.ps1 | iex",
   );
 });
 

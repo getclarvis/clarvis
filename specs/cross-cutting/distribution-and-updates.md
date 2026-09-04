@@ -30,11 +30,13 @@ The user-facing surfaces are:
 - six `clarvis-v<version>-<target>.tar.gz` release assets plus `SHA256SUMS`, both installers,
   Clarvis's license, and standalone third-party notices/license texts;
 - root scripts `release:package`, `release:smoke`, `release:install-smoke`, and `check:release`;
+- root script `release:prepare`, which promotes the curated changelog entry and updates the product
+  version plus both installer defaults without committing or publishing;
 - a tag-triggered workflow that publishes from `getclarvis/clarvis` to public binary-only
   `getclarvis/clarvis-releases`, plus a non-publishing `workflow_dispatch` build path.
 
 Production: `packages/code/src/cli-args.ts` (`FLAGS`, `Mode`), root and Code `package.json`
-scripts, `packages/code/src/update-contract.ts` (`ReleaseTarget`, `releaseAssetName`), and
+scripts, `tooling/release/prepare.ts`, `packages/code/src/update-contract.ts` (`ReleaseTarget`, `releaseAssetName`), and
 `.github/workflows/release.yml`. Test: `packages/code/tests/unit/cli-args.test.ts`,
 `packages/code/tests/unit/update-contract.test.ts`, and
 `tooling/tests/unit/release-readiness.test.ts`.
@@ -364,6 +366,18 @@ select it. Production: `packages/code/src/update-contract.ts`
 `packages/code/src/update/installation.ts` (`runtimePath`), `install.sh`, and `install.ps1`. Test:
 `packages/code/tests/unit/update-contract.test.ts`, `packages/code/tooling/release/smoke.ts`, and
 `packages/code/tooling/release/installer-smoke.ts`.
+
+**DIST-17.** Release preparation accepts only an exact SemVer newer than the current product,
+requires a non-empty curated `Unreleased` changelog entry, and updates the root version, both
+installer defaults, and the changelog together only after every input passes validation. The command
+does not mutate Git state or any remote system. Current-version prose and public-site content are not
+additional release authorities: stable source install links use GitHub's `latest` redirect, while
+the separately owned documentation build resolves the newest complete published release.
+Production: `tooling/lib/release-prepare.ts` (`prepareReleaseSources`),
+`tooling/release/prepare.ts` (`prepareRelease`), root `README.md`, and `RELEASING.md`. Test:
+`tooling/tests/unit/release-prepare.test.ts` and
+`tooling/tests/architecture/repository-metadata.test.ts` (stable README redirects and separate
+public-site ownership).
 
 ## 6. Failure modes and degradation
 

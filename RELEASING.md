@@ -26,8 +26,10 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
 ## Prepare
 
 1. Confirm the release version, intended audience, known limitations, and rollback owner.
-2. Ensure the working tree is clean and the release commit is already present on the intended
-   `getclarvis/clarvis` branch.
+2. From a branch without unrelated changes, record user-facing changes under `Unreleased` in
+   [CHANGELOG.md](CHANGELOG.md), then run
+   `bun run release:prepare <version>`. This promotes that entry and updates the root product version
+   and both installer defaults as one validated operation. It does not commit, tag, or publish.
 3. Review [CHANGELOG.md](CHANGELOG.md), [SECURITY.md](SECURITY.md), and the open questions in
    [`specs/cross-cutting/distribution-and-updates.md`](specs/cross-cutting/distribution-and-updates.md).
 4. Verify the root version, installer defaults, source identity, and public distribution identity
@@ -36,9 +38,10 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
 5. Review [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), the exact Bun license/relink notice, the
    models.dev and Vercel AI SDK licenses, and the generated dependency closure. Treat
    third-party-license review as a release gate, not a post-release task.
-6. Replace the changelog's unpublished entry with the final version/date and review the exact source
-   commit that the distribution release notes will disclose.
-7. Confirm the source `main` and `v*` rulesets are active, GitHub Actions requires full-SHA action
+6. Commit and merge the reviewed release preparation through the normal protected-branch workflow,
+   then use a clean checkout of that exact source commit for the final preflight.
+7. Review the exact source commit that the distribution release notes will disclose.
+8. Confirm the source `main` and `v*` rulesets are active, GitHub Actions requires full-SHA action
    pins, the scoped App variable/secret are present, and `clarvis-releases` reports immutable releases
    as enabled. Treat a missing policy as a release blocker.
 
@@ -48,7 +51,7 @@ Use an up-to-date checkout and the exact Bun version pinned by `mise.toml`:
 
 ```bash
 bun install --frozen-lockfile
-RELEASE_TAG=v0.1.0 bun run check:release
+RELEASE_TAG="v$(bun -e 'process.stdout.write(require("./package.json").version)')" bun run check:release
 bun run build
 bun run typecheck
 bun run lint
@@ -71,8 +74,14 @@ the six workflow artifacts and confirm:
 - no source map, secret, private fixture, or developer path is present in any archive.
 
 After assembling those six archives, their sidecars, and the standalone release files in one
-directory, run `bun run tooling/checks/release-assets.ts <directory> v0.1.0`. This is the same
+directory, derive the tag from the root product version and run
+`bun run tooling/checks/release-assets.ts <directory> "$RELEASE_TAG"`. This is the same
 map-free allowlist gate that the tag workflow runs before it obtains a publication credential.
+
+The public documentation repository resolves the newest complete published release during its
+build and rebuilds on a schedule. A patch release therefore requires no documentation version bump;
+after publication, verify that its next successful deployment materialized the new version and
+immutable installer URLs.
 
 ## Publish
 

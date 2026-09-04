@@ -292,17 +292,17 @@ modify").
    honoring `.gitignore` up to `maxTraversalEntries`, throwing `too_large` on truncation
    (`:84-90`); neither file nor directory → empty scope.
 4. Per file, charged against a `regexScanBudgetMs` `ScanBudget` (`createScanBudget`,
-   `packages/tools/src/lib/scan-budget.ts:60-73`, satisfying the `ScanBudget` interface declared at
-   `:38-50`): read (binary/oversized/unreadable files are silently skipped by `readTextBuffer`
+   `packages/tools/src/lib/scan-budget.ts`, satisfying the `ScanBudget` interface declared in the
+   same module): read (binary/oversized/unreadable files are silently skipped by `readTextBuffer`
    returning falsy, `:214-215`), `match`, then `replace`; a file whose content is unchanged is dropped
    (`:220`). Exhausting the budget mid-scope throws `timeout` before the next file is read, naming the
    pattern and how many files were scanned (`:205-212`) — the doc remark explains why: `replace` has no
    ripgrep path in any deployment, so a catastrophically backtracking pattern is applied once per file
    in-process (`packages/tools/src/tools/replace.ts:111-119`, `packages/tools/src/lib/scan-budget.ts:1-33`). The budget's own TSDoc is explicit that it
    charges *only* the wall-clock time spent inside a `charge()`-wrapped regex application — never a
-   `stat`, a read or the directory walk — so a slow disk, a cold cache or a loaded CI runner cannot
-   exhaust it, and a `timeout` therefore always reports regex pathology, never I/O slowness
-   (`packages/tools/src/lib/scan-budget.ts:24-27`).
+   `stat`, a read, the directory walk, or delay between applications. Scheduler time during an
+   in-flight application is charged, so a `timeout` reports elapsed charged work rather than I/O or
+   traversal time (`packages/tools/src/lib/scan-budget.ts`, `createScanBudget`).
 5. Accumulate the re-encoded bytes of every changed file; exceeding `maxMutationBytes` throws
    `too_large` before anything is written (`:224-230`).
 6. No changed file → `"(no matches)"` (`:236`).

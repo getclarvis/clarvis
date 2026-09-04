@@ -699,7 +699,10 @@ Each entry: **rule** — production anchor — test anchor.
     already-read document; its docstring: "a second read would reintroduce a TOCTOU window inside the
     settings lease", `:797-799`). Pinned: `packages/kernel/tests/integration/file-config-store.test.ts:400-419`, `:421-442`, `:478-500`, `:502-516`,
     `:533-562` (stale-but-dead holder reclaimed), `:565-594` (stale-but-live holder not reclaimed, throws
-    `/locked by another process/`), `:597-621` (release cannot unlink an ABA successor).
+    `/locked by another process/`), `:597-621` (release cannot unlink an ABA successor), and
+    `packages/kernel/tests/integration/settings-concurrent-writes.test.ts` (`keeps every writer's
+    top-level settings block, with no block ever going missing`; a barrier guarantees a real initial
+    revision conflict before the bounded concurrent write loop).
 
 28. **Configuration reads are byte-bounded, and the bound is enforced twice: once before the body is
     read, and once after.** `readBoundedBytes` `fstat`s the descriptor before allocating and throws

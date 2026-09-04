@@ -585,29 +585,30 @@ the primary scratch separately. The loop never adds the system parents to its ow
 
 **INV-S14 — Seatbelt host networking includes DNS without widening the runtime tree.** The host
 network profile admits the authored and canonical `mDNSResponder` socket literals; the denied-network
-profile admits neither and retains its global network deny.
+profile admits neither and retains its global network deny. The real-host canary proves host and
+denied networking against a local listener, so the gate does not depend on a public endpoint.
 
 - Production: `packages/tools/src/sandbox.ts` (`SEATBELT_HOST_NETWORK_READ_FILTERS`,
   `seatbeltPolicy`).
 - Test: `packages/tools/tests/integration/sandbox.test.ts` (`compiles a parameterized Seatbelt
-  profile with matching filesystem and network policy`, `downloads and executes a package bootstrap
-  inside Seatbelt`) and the macOS current-artifact TUI network canary required by the product E2E
+  profile with matching filesystem and network policy`, `enforces the native sandbox against real
+  host resources`) and the macOS current-artifact TUI network canary required by the product E2E
   matrix.
 
-**INV-S15 — A downloaded npm package can execute without widening hidden host reads.** Native POSIX
+**INV-S15 — An npm package can execute without widening hidden host reads.** Native POSIX
 environments select `/bin/sh` as npm's script shell, avoiding a bare-name lookup through denied
 ancestor `node_modules/.bin` candidates. Seatbelt admits the Apple Silicon Homebrew prefix for
 read/test/executable mapping, admits only literal `/opt` as the prefix's traversal anchor, and retains
 the `bin` directory in the filtered `PATH`, but never grants either path a broad write rule. The
-macOS canary preflights registry availability outside the sandbox, then requires the sandbox to
-download, execute, and materialize a real create-vite template; a second clean-cache invocation
-under `network: "none"` must fail.
+macOS canary packs a local package fixture outside the sandbox, then requires npm to install,
+execute, and materialize its output inside Seatbelt with `network: "none"`. Network enforcement is
+proved independently by INV-S14, so public-registry latency cannot fail this package-execution gate.
 
 - Production: `packages/tools/src/sandbox.ts` (`sandboxPath`, `minimalEnv`,
   `SEATBELT_SYSTEM_READ_FILTERS`, `SEATBELT_SYSTEM_METADATA_FILTERS`) and
   `packages/tools/src/lib/system-executables.ts` (`systemExecutableRoots`).
-- Test: `packages/tools/tests/integration/sandbox.test.ts` (`downloads and executes a package
-  bootstrap inside Seatbelt`).
+- Test: `packages/tools/tests/integration/sandbox.test.ts` (`installs and executes a packed package
+  bootstrap inside Seatbelt without network`).
 
 ## 6. Failure modes and degradation
 
@@ -616,8 +617,8 @@ under `network: "none"` must fail.
 | Linux without usable Bubblewrap | Backend `bubblewrap`, mode `unavailable`, reason from probe |
 | macOS where `sandbox-exec` cannot apply the profile | Backend `seatbelt`, mode `unavailable`; required runs fail closed |
 | macOS system alias denied while Apple Git is installed | Policy regression: the real Git canary fails; Clarvis must not report or trigger the developer-tools fallback |
-| macOS `network: "host"` omits the resolver socket | Raw-IP connections may work while DNS/package registry access fails; the profile test and real hostname canary fail |
-| macOS omits `/opt/homebrew` from system reads or the filtered `PATH` | Apple Silicon Homebrew commands fail with `Operation not permitted` before their canonical Cellar target can execute; the real package-bootstrap canary fails |
+| macOS `network: "host"` omits the resolver socket | Raw-IP connections may work while DNS fails; the generated-profile test fails, and the product E2E matrix separately requires a current-artifact hostname canary |
+| macOS omits `/opt/homebrew` from system reads or the filtered `PATH` | Apple Silicon Homebrew commands fail with `Operation not permitted` before their canonical Cellar target can execute; the packed-package canary fails |
 | POSIX npm resolves its script shell as bare `sh` | Download/extraction can succeed, then npm exits with `spawn EPERM` while probing hidden ancestor bins; the minimal environment selects `/bin/sh` |
 | Unsupported platform | Backend `unsupported`, mode `unavailable`; no probe process |
 | Fresh `/proc` blocked but host `/proc` bind works | Available `bubblewrap` / `host-proc`, `degraded: true`, explicit reason |
@@ -672,8 +673,8 @@ and passive discovery.
 Production: `.github/workflows/ci.yml` (`jobs.linux`, `jobs.sandbox-macos`). Test:
 `packages/tools/tests/integration/sandbox.test.ts` (`enforces the native sandbox against real host
 resources`, `exposes host-native temp roots without reopening a temp-contained read-only workspace`,
-`runs the installed Apple Git without triggering the developer-tools fallback`, `downloads and
-executes a package bootstrap inside Seatbelt`) and
+`runs the installed Apple Git without triggering the developer-tools fallback`, `installs and
+executes a packed package bootstrap inside Seatbelt without network`) and
 `packages/kernel/tests/integration/sandbox-policy.test.ts` (`inspects a discovered
 toolchain without executing it through the real native backend`). CI ownership and platform scope are
 specified in

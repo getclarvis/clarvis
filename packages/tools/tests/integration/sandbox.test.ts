@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -965,11 +966,10 @@ it.skipIf(process.platform !== "darwin" || process.env.CLARVIS_NATIVE_SANDBOX_CA
 );
 
 it.skipIf(process.platform !== "darwin" || process.env.CLARVIS_NATIVE_SANDBOX_CANARY !== "1")(
-  "downloads and executes a package bootstrap inside Seatbelt",
+  "installs and executes a packed package bootstrap inside Seatbelt without network",
   () => {
     const workspace = mkdtempSync(join(tmpdir(), "clarvis-seatbelt-npm-"));
     const scratch = mkdtempSync(join(tmpdir(), "clarvis-seatbelt-npm-scratch-"));
-    const deniedScratch = mkdtempSync(join(tmpdir(), "clarvis-seatbelt-npm-denied-"));
     try {
       const backend = probeSandbox();
       if (backend.mode === "unavailable") throw new Error(backend.reason);
@@ -981,34 +981,61 @@ it.skipIf(process.platform !== "darwin" || process.env.CLARVIS_NATIVE_SANDBOX_CA
       const npm = existsSync(appleSiliconHomebrewNpm)
         ? appleSiliconHomebrewNpm
         : join(dirname(node.logicalPath), "npm");
-      const preflightArgs = [
-        "view",
-        "create-vite",
-        "version",
-        "--registry=https://registry.npmjs.org/",
-        "--fetch-retries=0",
-        "--fetch-timeout=20000",
-        "--loglevel=error",
-      ];
-      const host = spawnSync(npm, preflightArgs, {
-        cwd: workspace,
-        encoding: "utf8",
-        timeout: 30_000,
-        env: { ...process.env, npm_config_cache: join(scratch, "host-cache") },
-      });
-      expect(host.status, `host registry preflight failed: ${host.stderr}`).toBe(0);
+      const fixture = join(scratch, "fixture");
+      mkdirSync(fixture);
+      writeFileSync(
+        join(fixture, "package.json"),
+        `${JSON.stringify({
+          name: "clarvis-sandbox-bootstrap-fixture",
+          version: "1.0.0",
+          bin: { "clarvis-sandbox-bootstrap": "bin.mjs" },
+          files: ["bin.mjs"],
+        })}\n`,
+      );
+      const fixtureBin = join(fixture, "bin.mjs");
+      writeFileSync(
+        fixtureBin,
+        [
+          "#!/usr/bin/env node",
+          'import { mkdirSync, writeFileSync } from "node:fs";',
+          'import { resolve } from "node:path";',
+          "const [target] = process.argv.slice(2);",
+          'if (target === undefined) throw new Error("target directory is required");',
+          "const output = resolve(process.cwd(), target);",
+          "mkdirSync(output, { recursive: true });",
+          "writeFileSync(`${output}/package.json`, `${JSON.stringify({ name: target })}\\n`);",
+          "",
+        ].join("\n"),
+      );
+      chmodSync(fixtureBin, 0o755);
+      const packed = spawnSync(
+        npm,
+        ["pack", fixture, "--pack-destination", scratch, "--json", "--ignore-scripts"],
+        {
+          cwd: workspace,
+          encoding: "utf8",
+          timeout: 30_000,
+          env: { ...process.env, npm_config_cache: join(scratch, "host-cache") },
+        },
+      );
+      expect(packed.status, `host npm pack failed: ${packed.error?.message ?? packed.stderr}`).toBe(
+        0,
+      );
+      const [artifact] = JSON.parse(packed.stdout) as Array<{ filename: string }>;
+      if (artifact === undefined) throw new Error("host npm pack returned no artifact");
+      const { filename } = artifact;
+      const tarball = join(scratch, filename);
 
       const npmArgs = [
         "exec",
         "--yes",
-        "--fetch-retries=0",
-        "--fetch-timeout=20000",
+        "--offline",
+        `--cache=${join(scratch, "sandbox-cache")}`,
+        `--package=${tarball}`,
         "--loglevel=error",
         "--",
-        "create-vite",
+        "clarvis-sandbox-bootstrap",
         "generated",
-        "--template",
-        "vanilla",
       ];
 
       const spec = sandboxCommand({
@@ -1020,7 +1047,7 @@ it.skipIf(process.platform !== "darwin" || process.env.CLARVIS_NATIVE_SANDBOX_CA
           type: "native",
           availability: "required",
           filesystem: "workspace-write",
-          network: "host",
+          network: "none",
           ...(node.root === undefined ? {} : { runtimePaths: [node.root] }),
         },
         probe: () => backend,
@@ -1030,36 +1057,16 @@ it.skipIf(process.platform !== "darwin" || process.env.CLARVIS_NATIVE_SANDBOX_CA
         encoding: "utf8",
         timeout: 30_000,
       });
-      expect(result.status, `Seatbelt npm fetch failed: ${result.stderr}`).toBe(0);
+      expect(
+        result.status,
+        `Seatbelt npm exec failed: ${result.error?.message ?? result.stderr}`,
+      ).toBe(0);
       expect(
         JSON.parse(readFileSync(join(workspace, "generated", "package.json"), "utf8")),
       ).toMatchObject({ name: "generated" });
-
-      const denied = sandboxCommand({
-        command: [npm, ...preflightArgs].join(" "),
-        cwd: workspace,
-        workspaceRoot: workspace,
-        temporaryRoots: [deniedScratch, ...systemTemporaryRoots()],
-        sandbox: {
-          type: "native",
-          availability: "required",
-          filesystem: "workspace-write",
-          network: "none",
-          ...(node.root === undefined ? {} : { runtimePaths: [node.root] }),
-        },
-        probe: () => backend,
-      });
-      const deniedResult = spawnSync(denied.file, denied.args, {
-        ...denied.options,
-        encoding: "utf8",
-        timeout: 10_000,
-      });
-      expect(deniedResult.error).toBeUndefined();
-      expect(deniedResult.status).not.toBe(0);
     } finally {
       rmSync(workspace, { recursive: true, force: true });
       rmSync(scratch, { recursive: true, force: true });
-      rmSync(deniedScratch, { recursive: true, force: true });
     }
   },
 );

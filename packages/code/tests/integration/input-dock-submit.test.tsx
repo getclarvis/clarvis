@@ -243,6 +243,18 @@ test("a soft-wrapped logical line grows the inline composer and keeps its prefix
   h.t.renderer.destroy();
 });
 
+test("typed Portuguese accents remain intact in the composer", async () => {
+  const h = await mount();
+  const draft = "ação você pôde avó avô útil";
+
+  await h.t.mockInput.typeText(draft);
+  await h.t.renderOnce();
+
+  expect(h.el().plainText).toBe(draft);
+  expect(h.t.captureCharFrame()).toContain(draft);
+  h.t.renderer.destroy();
+});
+
 test("the empty prompt renders each contextual label only once", async () => {
   const newTask = await mount();
   const newTaskFrame = newTask.t.captureCharFrame();

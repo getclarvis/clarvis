@@ -1,14 +1,9 @@
 import { constants } from "node:os";
 import type { CliRenderer, CliRendererConfig, KeyEvent } from "@opentui/core";
-import { diagnosticCount } from "../core/diagnostic-events.ts";
 
 /** Options that affect the renderer before the application runtime is loaded. */
 export interface RendererBootstrapOptions {
   dev?: boolean;
-  /** @internal Injectable runtime seam for renderer-policy tests. */
-  runtimePlatform?: NodeJS.Platform;
-  /** @internal Injectable environment seam for renderer-policy tests. */
-  processEnv?: NodeJS.ProcessEnv;
 }
 
 /** Catchable signals OpenTUI owns by default when a host does not replace them. */
@@ -139,36 +134,13 @@ export function assertInteractiveTTY(io?: {
   }
 }
 
-const ITERM_MODIFIER_STATE_REPORT = /^\[[1-8](?::[123])?u$/;
-
-function consumeItermModifierStateReport(sequence: string): boolean {
-  const consumed =
-    sequence.charCodeAt(0) === 0x1b && ITERM_MODIFIER_STATE_REPORT.test(sequence.slice(1));
-  if (consumed) diagnosticCount("keyboard.event.iterm-modifier-state", { outcome: "discarded" });
-  return consumed;
-}
-
-function useFullItermKeyboardReporting(opts: RendererBootstrapOptions): boolean {
-  const runtimePlatform = opts.runtimePlatform ?? process.platform;
-  const env = opts.processEnv ?? process.env;
-  return (
-    runtimePlatform === "darwin" &&
-    env.TERM_PROGRAM === "iTerm.app" &&
-    env.TMUX === undefined &&
-    env.SSH_TTY === undefined &&
-    env.SSH_CONNECTION === undefined
-  );
-}
-
 /** Return the fixed OpenTUI renderer policy used by the lightweight boot shell. */
 export function buildRendererConfig(opts: RendererBootstrapOptions = {}): CliRendererConfig {
-  const fullItermKeyboard = useFullItermKeyboardReporting(opts);
   return {
     screenMode: "alternate-screen",
     exitOnCtrlC: false,
     exitSignals: [],
-    useKittyKeyboard: fullItermKeyboard ? { allKeysAsEscapes: true, reportText: true } : {},
-    ...(fullItermKeyboard ? { prependInputHandlers: [consumeItermModifierStateReport] } : {}),
+    useKittyKeyboard: {},
     useMouse: true,
     autoFocus: true,
     clearOnShutdown: true,

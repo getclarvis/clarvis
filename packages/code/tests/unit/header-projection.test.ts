@@ -30,6 +30,12 @@ test("header owns workspace identity rather than the full path", () => {
   expect(plan.version.text).toBe("v0.0.4-beta");
 });
 
+test("an eligible update adds a persistent compact marker without replacing the installed version", () => {
+  const plan = projectHeader(baseInput({ updateAvailable: true }));
+  expect(plan.version.text).toBe("↑ v0.0.4-beta");
+  expect(plan.version.color).toBe(tokens.accent);
+});
+
 test("the header states the model, safety profile and memory the next run will use", () => {
   const status = projectHeader(baseInput()).status;
   expect(status.map((chip) => chip.key)).toEqual(["model", "safety", "memory"]);

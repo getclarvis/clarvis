@@ -10,6 +10,7 @@ import { connectionLabel, type ConnectionState } from "../adapters/connection-st
 export interface HeaderInput {
   width: number;
   version: string;
+  updateAvailable?: boolean;
   floor: boolean;
   agentName: string;
   model: string;
@@ -177,8 +178,8 @@ export function projectHeader(input: HeaderInput): HeaderPlan {
   const sep = separator();
   const version: HeaderField = {
     key: "version",
-    text: `v${input.version}`,
-    color: tokens.muted,
+    text: input.updateAvailable ? `${glyph("arrowUp")} v${input.version}` : `v${input.version}`,
+    color: input.updateAvailable ? tokens.accent : tokens.muted,
     elastic: false,
   };
   const workspaceName =

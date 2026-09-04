@@ -25,6 +25,8 @@ export interface CodeConfig {
   theme?: ThemeConfig;
   agent?: { default?: string };
   guard?: { mode?: string };
+  /** Global-only automatic version-check preference; workspace values are ignored. */
+  updateCheck?: { enabled?: boolean };
   keySources?: Record<string, KeySource>;
   ui?: CodeUiConfig;
 }
@@ -40,6 +42,8 @@ export interface CodeConfigStore {
   effectiveTheme: Accessor<ThemeConfig>;
   agentDefault: Accessor<string | undefined>;
   guardModeDefault: Accessor<GuardMode | undefined>;
+  /** Whether Code may check for a newer version; global-only and default-on. */
+  updateCheckEnabled: Accessor<boolean>;
   asciiEnabled: Accessor<boolean>;
   /** Global-only keyboard preferences for the current terminal path. */
   keyboardConfig: Accessor<KeyboardConfig>;
@@ -52,6 +56,8 @@ export interface CodeConfigStore {
     environmentId: string,
     config: KeyboardEnvironmentConfig | undefined,
   ): void;
+  /** Writes the global automatic version-check preference. */
+  writeUpdateCheckEnabled(enabled: boolean): void;
   writeTheme(scope: Scope, theme: ThemeConfig): void;
   writeAgentDefault(scope: Scope, name: string): void;
   clearAgentDefault(scope: Scope): void;
@@ -204,6 +210,7 @@ export function createCodeConfigStore(dirs: ClarvisDirs): CodeConfigStore {
       const d = workspace().guard?.mode ?? global().guard?.mode;
       return d === "off" || d === "on" || d === "auto" ? d : undefined;
     },
+    updateCheckEnabled: () => global().updateCheck?.enabled !== false,
     asciiEnabled: () => (workspace().ui?.ascii ?? global().ui?.ascii) === true,
     keyboardConfig: () => normalizeKeyboardConfig(global().ui?.keyboard),
     keySources: effectiveKeySources,
@@ -231,6 +238,11 @@ export function createCodeConfigStore(dirs: ClarvisDirs): CodeConfigStore {
         };
       });
     },
+    writeUpdateCheckEnabled: (enabled) =>
+      persist("global", (cur) => ({
+        ...cur,
+        updateCheck: { ...(cur.updateCheck ?? {}), enabled },
+      })),
     writeTheme: (scope, theme) => persist(scope, (cur) => ({ ...cur, theme })),
     writeAgentDefault: (scope, name) =>
       persist(scope, (cur) => ({ ...cur, agent: { ...(cur.agent ?? {}), default: name } })),

@@ -332,6 +332,7 @@ function defaultProps(overrides: {
   workflowActivity?: AppProps["run"]["workflowActivity"];
   mcpStartupNotice?: AppProps["run"]["mcpStartupNotice"];
   extensionProfileDriftNotice?: AppProps["run"]["extensionProfileDriftNotice"];
+  availableUpdate?: AppProps["shell"]["availableUpdate"];
 }) {
   return (renderer: ReturnType<typeof useRenderer>): AppProps => {
     const store = overrides.store ?? createTranscriptStore();
@@ -355,6 +356,9 @@ function defaultProps(overrides: {
         debugSession: fakeDebugSession(),
         workspace: "/home/user/project",
         files: () => ["README.md", "src/index.ts"],
+        ...(overrides.availableUpdate === undefined
+          ? {}
+          : { availableUpdate: overrides.availableUpdate }),
         ...(overrides.worktree ? { worktree: overrides.worktree } : {}),
         quit: () => {
           quitCalls.push(1);
@@ -530,6 +534,21 @@ test("skill drift is a transient warning while the conversation remains untouche
   const pluginFrame = await captureUntil(t, "changed executable files");
   expect(pluginFrame).toContain("handbook");
   expect(store.nodes.some((node) => node.text.includes("handbook"))).toBe(false);
+
+  t.renderer.destroy();
+});
+
+test("an eligible update appears once outside the transcript and remains marked in the header", async () => {
+  const store = createTranscriptStore();
+  const [availableUpdate, setAvailableUpdate] =
+    createSignal<ReturnType<NonNullable<AppProps["shell"]["availableUpdate"]>>>(null);
+  const t = await mountApp(defaultProps({ store, availableUpdate }));
+
+  setAvailableUpdate({ version: "0.1.1", tagName: "v0.1.1" });
+  const frame = await captureUntil(t, "Clarvis v0.1.1 is available");
+  expect(frame.split("\n")[0]).toContain(`↑ v${productVersion()}`);
+  expect(frame).toContain("exit and run clarvis --update");
+  expect(store.nodes.some((node) => node.text.includes("0.1.1"))).toBe(false);
 
   t.renderer.destroy();
 });

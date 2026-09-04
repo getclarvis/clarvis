@@ -11,9 +11,22 @@ import {
 const MAX_RELEASE_INDEX_BYTES = 2 * 1024 * 1024;
 const API_TIMEOUT_MS = 20_000;
 const DOWNLOAD_TIMEOUT_MS = 180_000;
+const MAX_ETAG_CHARS = 256;
 
 /** Minimal Fetch surface required by the release client. */
 export type ReleaseFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+/** Conditional, cancellable options for one bounded release-index request. */
+export interface ReleaseIndexOptions {
+  apiUrl?: string;
+  etag?: string;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+}
+
+/** A decoded release index or a successful conditional-cache response. */
+export type ReleaseIndexResult =
+  { kind: "records"; records: ReleaseRecord[]; etag?: string } | { kind: "not-modified" };
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -91,21 +104,33 @@ function decodeRelease(value: unknown): ReleaseRecord | undefined {
   };
 }
 
-/** Read the bounded public GitHub release index without following API redirects. */
-export async function fetchReleaseRecords(
+function acceptedEtag(value: string | null | undefined): string | undefined {
+  if (value === undefined || value === null || value.length > MAX_ETAG_CHARS) return undefined;
+  return /^[\x21-\x7e]+$/.test(value) ? value : undefined;
+}
+
+/** Read or conditionally revalidate the bounded public GitHub release index. */
+export async function fetchReleaseIndex(
   fetcher: ReleaseFetch,
   userAgent: string,
-  apiUrl = RELEASES_API_URL,
-): Promise<ReleaseRecord[]> {
-  const response = await fetcher(apiUrl, {
+  options: ReleaseIndexOptions = {},
+): Promise<ReleaseIndexResult> {
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? API_TIMEOUT_MS);
+  const signal =
+    options.signal === undefined ? timeout : AbortSignal.any([options.signal, timeout]);
+  const headers: Record<string, string> = {
+    accept: "application/vnd.github+json",
+    "x-github-api-version": "2022-11-28",
+    "user-agent": userAgent,
+  };
+  const etag = acceptedEtag(options.etag);
+  if (etag !== undefined) headers["if-none-match"] = etag;
+  const response = await fetcher(options.apiUrl ?? RELEASES_API_URL, {
     redirect: "error",
-    signal: AbortSignal.timeout(API_TIMEOUT_MS),
-    headers: {
-      accept: "application/vnd.github+json",
-      "x-github-api-version": "2022-11-28",
-      "user-agent": userAgent,
-    },
+    signal,
+    headers,
   });
+  if (response.status === 304) return { kind: "not-modified" };
   if (!response.ok) throw new Error(`release index failed with HTTP ${String(response.status)}`);
   let value: unknown;
   try {
@@ -119,10 +144,29 @@ export async function fetchReleaseRecords(
     );
   }
   if (!Array.isArray(value) || value.length > 30) throw new Error("release index shape is invalid");
-  return value.flatMap((release) => {
+  const records = value.flatMap((release) => {
     const decoded = decodeRelease(release);
     return decoded === undefined ? [] : [decoded];
   });
+  const responseEtag = acceptedEtag(response.headers.get("etag"));
+  return {
+    kind: "records",
+    records,
+    ...(responseEtag === undefined ? {} : { etag: responseEtag }),
+  };
+}
+
+/** Read the bounded public GitHub release index without following API redirects. */
+export async function fetchReleaseRecords(
+  fetcher: ReleaseFetch,
+  userAgent: string,
+  apiUrl = RELEASES_API_URL,
+): Promise<ReleaseRecord[]> {
+  const result = await fetchReleaseIndex(fetcher, userAgent, { apiUrl });
+  if (result.kind === "not-modified") {
+    throw new Error("release index returned not modified without a conditional request");
+  }
+  return result.records;
 }
 
 function allowedDownloadUrl(value: string): boolean {

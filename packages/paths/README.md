@@ -82,6 +82,7 @@ g.mcpOAuthFile; //              …/state/mcp-oauth.json (remote MCP registratio
 g.tracesDir; //                 …/state/traces
 g.extensionProfilesDir; //           …/extension-profiles (operator-authored definitions)
 g.extensionProfileSelectionFile; //  …/state/extension-profile.json (operator-wide default)
+g.updateCheckCacheFile; //             …/cache/update-check.json (discardable version-check result)
 ```
 
 Two environment variables override the roots: `CLARVIS_HOME` and `CLARVIS_WORKSPACE_ROOT`.
@@ -110,7 +111,7 @@ tree, so switching Extension Profiles never dirties the repository.
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
 `keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust records, `guard-judge.md`, `auth.json` — and nests only what a
 user never edits: `state/` (sessions, traces, remote MCP OAuth credentials, workflow records, the per-workspace machinery above),
-`cache/`, `exports/`. A `config/` layer was tried and removed: it made the global tree disagree with
+`cache/` (including the models.dev snapshot and automatic version-check result), `exports/`. A `config/` layer was tried and removed: it made the global tree disagree with
 the workspace one, where `settings.json` and `agents/` have always sat at the root. This physical
 layout stays stable; operator inventory classifies it logically rather than moving files into a new
 hierarchy.

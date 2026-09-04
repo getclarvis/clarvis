@@ -1151,9 +1151,22 @@ export function registerAppCommands(deps: AppCommandDeps): AppCommandWiring {
   });
 
   commands.registerView({
+    name: "updates.open",
+    title: "Updates",
+    desc: "Configure automatic version checks",
+    surface: "internal",
+    group: "navigate",
+    parent: "settings",
+    view: lazyView(async () => {
+      const { UpdatesPanel } = await import("../views/cold-surfaces.ts");
+      return (host) => UpdatesPanel(host, { code: deps.code, notify });
+    }),
+  });
+
+  commands.registerView({
     name: "settings.open",
     title: "Settings",
-    desc: "Providers, agents, defaults, memory, sandbox, theme and run controls",
+    desc: "Providers, agents, defaults, memory, sandbox, theme, updates and run controls",
     slash: "/settings",
     surface: "slash",
     group: "navigate",

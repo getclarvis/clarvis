@@ -177,6 +177,35 @@ advance to a higher prerelease or stable version and never downgrades. Productio
 (`selectUpdateRelease`). Test: `packages/code/tests/unit/github-releases.test.ts` and
 `packages/code/tests/unit/update-contract.test.ts`.
 
+The interactive TUI separately performs a passive release check. It is default-on only for an
+authenticated managed portable installation, starts from the post-`app.boot.painted` queue, runs at
+most once per process, and uses a schema-versioned global cache with a 24-hour TTL. An expired cache
+is conditionally revalidated with a bounded GitHub `ETag`; the request has a five-second timeout and
+is physically aborted on platform shutdown. Source, `bun link`, unmanaged, unsupported, fast-path,
+and headless invocations issue no automatic release request. Cache absence, corruption, HTTP failure,
+offline operation, timeout, and abort produce no user-visible error. A selected release produces a
+transient hint and persistent header marker, but the checker never acquires `update.lock`, downloads,
+stages, or activates anything. Production: `packages/code/src/update/check.ts`
+(`createUpdateChecker`, `checkForUpdate`), `packages/code/src/update/github-releases.ts`
+(`fetchReleaseIndex`), and `packages/code/src/runtime.tsx` (`update_check`). Test:
+`packages/code/tests/unit/update-check.test.ts`,
+`packages/code/tests/architecture/architecture-boundary.test.ts`, and
+`packages/code/tests/integration/app-shell-render.test.tsx`.
+
+The passive request uses the public `getclarvis/clarvis-releases` API and sends no Clarvis
+credential. As with any direct HTTPS request, GitHub receives ordinary network/HTTP metadata;
+Clarvis additionally identifies the installed product version as `User-Agent: clarvis/<version>`.
+The operator can disable the request globally in **Settings > Updates**. The preference belongs to
+Code's generated global `state/code.json`; workspace state cannot override it. The cache belongs to
+`<global>/cache/update-check.json`, is untrusted derived data, and is never an authority for a
+mutating update. Production: `packages/code/src/adapters/code-config.ts`
+(`updateCheckEnabled`, `writeUpdateCheckEnabled`),
+`packages/code/src/views/config/UpdatesPanel.tsx`, and
+`packages/paths/src/global.ts` (`updateCheckCacheFile`). Test:
+`packages/code/tests/integration/code-config.test.ts`,
+`packages/code/tests/integration/updates-panel-render.test.tsx`, and
+`packages/paths/tests/component/paths.test.ts`.
+
 The updater downloads into a unique same-filesystem staging directory, streams the asset through
 the declared size and SHA-256 bounds, extracts through `Bun.Archive`, verifies every manifest file,
 and executes the candidate's included Bun with `--version`. It renames a new version beside the old
@@ -225,11 +254,18 @@ size, state, and SHA-256; an ambiguous or partial match is ineligible. Productio
 `packages/code/src/update-contract.ts` (`eligibleAsset`, `selectUpdateRelease`). Test:
 `packages/code/tests/unit/update-contract.test.ts`.
 
-**DIST-4.** Ordinary startup performs no release request. Only the explicit `update` mode imports the
-updater, and source or unmanaged invocations fail before fetching. Production:
-`packages/code/src/cli.ts`, `packages/code/src/index.tsx`, and
-`packages/code/src/update/index.ts`. Test: `packages/code/tests/architecture/cli-fast-path.test.ts`
-and `packages/code/tests/unit/update-command.test.ts`.
+**DIST-4.** No release request delays first paint or runs from a fast-path/headless, source,
+`bun link`, unmanaged, or unsupported invocation. Only an interactive managed portable installation
+may dynamically import the passive checker after `app.boot.painted`; its global default-on preference
+can disable the import before I/O. The checker is read-only, cache-throttled, cancellable, and silent
+on failure. The explicit `update` mode remains a separate dynamic import, ignores the passive cache
+and preference, and authenticates the install plus mutation lock before fetching. Production:
+`packages/code/src/cli.ts`, `packages/code/src/index.tsx`, `packages/code/src/runtime.tsx`
+(`AppShell.afterPaint`, `update_check`), `packages/code/src/update/check.ts`, and
+`packages/code/src/update/index.ts`. Test:
+`packages/code/tests/architecture/{cli-fast-path,architecture-boundary}.test.ts`,
+`packages/code/tests/unit/{update-check,update-command}.test.ts`, and
+`packages/code/tests/integration/code-config.test.ts`.
 
 **DIST-5.** Activation is last and retains the previous version. Production:
 `packages/code/src/update/installation.ts` (`activateStagedRelease`, `durableCurrent`). Test:

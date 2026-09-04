@@ -22,7 +22,7 @@
  *   bundled binary in the field — survived bundling too, and it carries the
  *   boot's elapsed time, which the screen does not.
  */
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,6 +35,7 @@ import {
   assertLazySurfaceArtifact,
 } from "./contract.ts";
 import { APP_READY_MARKER } from "./markers.ts";
+import { RELEASE_REPOSITORY, releaseTarget } from "../../src/update-contract.ts";
 
 const packageRoot = fileURLToPath(new URL("../..", import.meta.url));
 const artifact = join(packageRoot, "dist/index.js");
@@ -64,6 +65,14 @@ interface BootShellPaintedDetails {
 interface MarkdownPreloadDetails {
   markdown?: unknown;
   markdownInline?: unknown;
+}
+
+interface UpdateCheckSkippedDetails {
+  reason?: unknown;
+}
+
+interface UpdateAvailableDetails {
+  available_version?: unknown;
 }
 
 /** Every `code-debug-*.jsonl` written anywhere beneath `root`. */
@@ -187,6 +196,10 @@ async function main(): Promise<void> {
     home,
     "catalog.load.started",
   );
+  const updateCheck = await readDiagnosticDetails<UpdateCheckSkippedDetails>(
+    home,
+    "update.check.skipped",
+  );
   await rm(home, { recursive: true, force: true });
   await rm(workspace, { recursive: true, force: true });
   if (painted === null) {
@@ -215,12 +228,102 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+  if (updateCheck?.reason !== "unmanaged") {
+    process.stderr.write(
+      `smoke FAILED: unmanaged artifact did not skip the automatic release request ` +
+        `(reason=${String(updateCheck?.reason)})\n`,
+    );
+    process.exit(1);
+  }
+
+  const target = releaseTarget();
+  if (target === undefined) throw new Error("native platform is not a release target");
+  const product = JSON.parse(
+    await readFile(join(packageRoot, "..", "..", "package.json"), "utf8"),
+  ) as { version: string };
+  const match = /^(\d+)\.(\d+)\.(\d+)(-.+)?$/.exec(product.version);
+  if (match === null) throw new Error("root product version is not canonical SemVer");
+  const availableVersion =
+    match[4] === undefined
+      ? `${match[1]}.${match[2]}.${String(Number(match[3]) + 1)}`
+      : `${match[1]}.${match[2]}.${match[3]}`;
+  const managedHome = await makeCleanHome();
+  const managedWorkspace = await mkdtemp(join(tmpdir(), "clarvis-update-smoke-ws-"));
+  const installRoot = join(managedWorkspace, "..", `clarvis-update-smoke-install-${process.pid}`);
+  const versionRoot = join(installRoot, "versions", `v${product.version}`);
+  const managedPaths = globalPaths(undefined, { home: managedHome });
+  let updateNoticeMs: number;
+  try {
+    await mkdir(versionRoot, { recursive: true });
+    await mkdir(managedPaths.cache, { recursive: true });
+    await writeFile(join(installRoot, "current"), `v${product.version}\n`);
+    await writeFile(
+      join(versionRoot, "release.json"),
+      JSON.stringify({
+        schema: 1,
+        repository: RELEASE_REPOSITORY,
+        version: product.version,
+        target,
+        files: [{ path: "placeholder", size: 0, sha256: "a".repeat(64) }],
+      }),
+    );
+    await writeFile(
+      managedPaths.updateCheckCacheFile,
+      JSON.stringify({
+        schema: 1,
+        repository: RELEASE_REPOSITORY,
+        checked_at: Date.now(),
+        current_version: product.version,
+        target,
+        available: { version: availableVersion, tag_name: `v${availableVersion}` },
+      }),
+    );
+    const update = await bootAndObserve({
+      entry: artifact,
+      args: ["--debug"],
+      home: managedHome,
+      workspace: managedWorkspace,
+      markers: [
+        { name: "ready", text: APP_READY_MARKER },
+        { name: "update-header", text: `↑ v${product.version}` },
+      ],
+      afterMarkersReady: async () => {
+        const available = await readDiagnosticDetails<UpdateAvailableDetails>(
+          managedHome,
+          "update.available",
+        );
+        return available?.available_version === availableVersion;
+      },
+      timeoutMs: TIMEOUT_MS,
+      pollMs: 100,
+      extraEnv: { CLARVIS_INSTALL_ROOT: installRoot },
+    });
+    const updateFrame = readable(update.screen);
+    if (
+      update.outcome !== "ready" ||
+      update.marks.ready === undefined ||
+      update.marks["update-header"] === undefined ||
+      update.marks["update-header"] < update.marks.ready ||
+      !updateFrame.includes(`↑ v${product.version}`)
+    ) {
+      throw new Error(
+        `managed update notice smoke ${update.outcome}\n` +
+          `marks=${JSON.stringify(update.marks)}\n${updateFrame.slice(-4000)}\n${update.stderr.slice(-1000)}`,
+      );
+    }
+    updateNoticeMs = update.elapsed;
+  } finally {
+    await rm(managedHome, { recursive: true, force: true });
+    await rm(managedWorkspace, { recursive: true, force: true });
+    await rm(installRoot, { recursive: true, force: true });
+  }
 
   process.stdout.write(
     `smoke ok - artifact and required diagnostics settled in ${result.elapsed.toFixed(0)}ms ` +
       `(startup shell paint: ${String(shellPainted.elapsed_ms)}ms, ` +
       `complete app paint: ${String(painted.elapsed_ms)}ms, ` +
-      `deferred_catalog=${String(painted.deferred_catalog)})\n`,
+      `deferred_catalog=${String(painted.deferred_catalog)}, ` +
+      `managed update state: ${updateNoticeMs.toFixed(0)}ms)\n`,
   );
 }
 

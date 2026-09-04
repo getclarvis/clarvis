@@ -144,6 +144,7 @@ function fakeCode(): CodeConfigStore {
     effectiveTheme: () => ({}),
     agentDefault: () => undefined,
     guardModeDefault: () => undefined,
+    updateCheckEnabled: () => true,
     asciiEnabled: () => false,
     keyboardConfig: () => ({ version: 1, environments: {} }),
     keySources: () => ({}),
@@ -152,6 +153,7 @@ function fakeCode(): CodeConfigStore {
     write: () => {},
     writeAscii: () => {},
     writeKeyboardEnvironment: () => {},
+    writeUpdateCheckEnabled: () => {},
     writeTheme: () => {},
     writeAgentDefault: () => {},
     clearAgentDefault: () => {},
@@ -938,6 +940,8 @@ test("/settings <child> deep-links to that editor with a mounted parent route", 
   expect(opened.at(-1)?.parent).toBe("settings.open");
   expect(commands.route("settings.open", "controls")).toBe(true);
   expect(calls).toContain("view:controls.open");
+  expect(commands.route("settings.open", "updates")).toBe(true);
+  expect(calls).toContain("view:updates.open");
   expect(commands.route("settings.open", "")).toBe(false);
   expect(commands.route("settings.open", "bogus")).toBe(false);
   dispose();
@@ -981,6 +985,7 @@ const DISPOSITION: [string, { surface: string; group: string; parent?: string }]
   ["memory.config", { surface: "internal", group: "navigate", parent: "settings" }],
   ["sandbox.config", { surface: "internal", group: "navigate", parent: "settings" }],
   ["theme.open", { surface: "internal", group: "navigate", parent: "settings" }],
+  ["updates.open", { surface: "internal", group: "navigate", parent: "settings" }],
   ["backend.reconnect", { surface: "slash", group: "actions", parent: "inspect" }],
   ["doctor.open", { surface: "slash", group: "navigate", parent: "inspect" }],
   ["mcp.browse", { surface: "internal", group: "navigate", parent: "extensions" }],
@@ -1260,6 +1265,7 @@ const FACTORY_SMOKES = [
   "memory.config",
   "sandbox.config",
   "theme.open",
+  "updates.open",
   "settings.open",
   "doctor.open",
   "setup.providers",

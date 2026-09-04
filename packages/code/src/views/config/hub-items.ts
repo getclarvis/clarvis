@@ -39,6 +39,12 @@ export const SETTINGS_ITEMS = [
     cmd: "keyboard.open",
   },
   {
+    id: "updates",
+    label: "Updates",
+    desc: "Automatic version checks",
+    cmd: "updates.open",
+  },
+  {
     id: "controls",
     label: "Run controls",
     desc: "Safety, sandbox, guard, memory and plan retention for the next run",

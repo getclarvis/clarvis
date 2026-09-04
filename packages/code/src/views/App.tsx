@@ -171,6 +171,8 @@ export interface AppShell {
   workspaceLabel?: string;
   branch?: string;
   files: () => string[];
+  /** Newer eligible release found by the passive, post-paint version check. */
+  availableUpdate?: Accessor<{ version: string; tagName: string } | null>;
   /** Queue non-visual startup work until the first usable application frame is idle. */
   afterPaint?(task: () => void): void;
   worktree?: {
@@ -360,6 +362,16 @@ export function App(props: AppProps): JSX.Element {
         : `Plugin '${notice.name}' changed executable files; its runtime contributions were ` +
             "withheld until reconnect",
       "warn",
+    );
+  });
+  let shownUpdateVersion: string | undefined;
+  createEffect(() => {
+    const update = props.shell.availableUpdate?.();
+    if (update === undefined || update === null || update.version === shownUpdateVersion) return;
+    shownUpdateVersion = update.version;
+    notify(
+      `Clarvis v${update.version} is available ${glyph("emDash")} exit and run clarvis --update`,
+      "info",
     );
   });
   const memoryPressure = createMemoryPressureController({
@@ -999,6 +1011,7 @@ export function App(props: AppProps): JSX.Element {
     projectHeader({
       width: dims().w - 1,
       version: productVersion(),
+      updateAvailable: Boolean(props.shell.availableUpdate?.()),
       floor: layoutMode() === "floor",
       agentName: agentName(),
       model: resolvedModel(),

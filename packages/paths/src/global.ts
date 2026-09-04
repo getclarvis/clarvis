@@ -81,6 +81,8 @@ export interface GlobalPaths {
   codeConfigFile: string;
   /** Cached model catalogue snapshot. */
   modelsCacheFile: string;
+  /** Cached result of the automatic release-version check. */
+  updateCheckCacheFile: string;
   /** Agent-context candidates for this scope, absolute, in search order. */
   contextCandidates: readonly string[];
   /**
@@ -136,6 +138,7 @@ export function globalPaths(root?: string, opts?: RootOptions): GlobalPaths {
     extensionProfileSelectionFile: join(state, "extension-profile.json"),
     codeConfigFile: join(state, "code.json"),
     modelsCacheFile: join(cache, "models-dev.json"),
+    updateCheckCacheFile: join(cache, "update-check.json"),
     contextCandidates: CONTEXT_FILENAMES.map((name) => join(base, name)),
     exportsDirForOwner: (owner: string) => join(base, "exports", ownerSegment(owner)),
     agentFile: (name: string) => join(agentsDir, `${name}.md`),

@@ -1024,8 +1024,8 @@ The mitigation is deliberately layered:
   (`packages/kernel/src/runs/managed-run.ts:66`);
 - the TUI keeps a bounded viewport, hydrates large details on demand
   (`packages/code/src/adapters/store.ts:365`), disables the production renderer console overlay
-  (`packages/code/src/adapters/renderer-bootstrap.ts:163-179`), and exposes a last-resort RSS fuse whose default
-  threshold is 2 GiB (`DEFAULT_TUI_RSS_LIMIT_BYTES`,
+  (`packages/code/src/adapters/renderer-bootstrap.ts`, `buildRendererConfig`), and exposes a
+  last-resort RSS fuse whose default threshold is 2 GiB (`DEFAULT_TUI_RSS_LIMIT_BYTES`,
   `packages/code/src/adapters/memory-pressure.ts`);
 - interactive `--debug` writes bounded, redacted JSONL with lifecycle, memory, command, view and
   refresh counters; repeated counters use first-eight-and-powers-of-two sampling

@@ -885,7 +885,11 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
   ordering, physical-anchor and retention rules are in
   [`code-transcript-stability.md`](../../specs/hosts/code-transcript-stability.md). Oversized tails
   still fall back to plain text with an explicit formatting-simplified notice instead of starting
-  unbounded highlighting.
+  unbounded highlighting. Process-owned plain output is projected through one terminal-safe text
+  boundary before it reaches OpenTUI: cursor/device escapes are removed, carriage-return and
+  backspace updates become stable text, C1 `ST` closes terminal control strings without consuming
+  following output, and a running tool's last lines start in the same column as its settled result
+  card.
 - The semantic transcript itself retains only the latest 20 complete turns, both while a session is
   live and after resume. Retention evicts complete sealed publication batches with the matching
   semantic prefix, replaces the previous folded-prefix publication with one frozen notice, and
@@ -980,8 +984,13 @@ and never imports `@clarvis/tasks` or a Jira/Trello SDK.
 - Command guards and approval flows.
 - User elicitation during a run.
   If a confirmation arrives while the reader is browsing older history, Clarvis explicitly returns
-  that physical reader to the live tail before replacing the composer with the question; resolving
-  or cancelling the question re-clamps the changed tail geometry before the composer returns.
+  that physical reader to the live tail before replacing the composer with the question. The
+  composer remains painted but keyboard-inert until the question owns a visible transcript row, so
+  there is no intermediate frame containing neither interaction surface. A dirty configuration
+  page pauses that transition without polling renderer frames; closing the page restarts it from the
+  retained request. Each physical tail request waits for the virtual tail to become resident, clamps
+  once, and releases native scrollbar and selection scrolling. Resolving or cancelling the question
+  requests the changed tail geometry again before the composer returns.
 - `/compact [request]` to compact the context used by the next model call, whether a run is active
   or the latest session turn is already settled.
 - Skill slash commands and prompt injection.

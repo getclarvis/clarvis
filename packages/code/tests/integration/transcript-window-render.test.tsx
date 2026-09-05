@@ -684,6 +684,27 @@ describe("the physical transcript window", () => {
     }
   });
 
+  test("native scrollbar movement is free after an explicit tail clamp settles", async () => {
+    const { rendered, scrollbox, history } = await renderFixture(transcript(30, 1));
+    try {
+      history.returnToTail();
+      for (let pass = 0; pass < 3; pass += 1) await rendered.renderOnce();
+
+      const maxScrollTop = Math.max(0, scrollbox.scrollHeight - scrollbox.viewport.height);
+      const manualTop = Math.max(0, maxScrollTop - scrollbox.viewport.height);
+      expect(manualTop).toBeLessThan(maxScrollTop);
+      scrollbox.stickyScroll = false;
+      scrollbox.scrollTo({ x: 0, y: manualTop });
+      await rendered.renderOnce();
+      await rendered.renderOnce();
+
+      expect(scrollbox.scrollTop).toBe(manualTop);
+      expect(history.snapshot().followingTail).toBeFalse();
+    } finally {
+      rendered.renderer.destroy();
+    }
+  });
+
   test("keyboard downward navigation reaches the mounted live tail after the newest frozen batch", async () => {
     const { rendered, scrollbox, history } = await renderFixture(transcript(30, 1));
     try {

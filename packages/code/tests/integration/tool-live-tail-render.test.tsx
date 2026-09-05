@@ -54,3 +54,31 @@ test("the tail never renders once the call has closed", async () => {
   expect(out).not.toContain("stale-tail-line");
   expect(out).toContain("shell");
 });
+
+test("Prisma cursor controls stay inert and live output keeps its settled text column", async () => {
+  const prisma =
+    "Running generate...\n\u001b[2K\u001b[1A\u001b[2K\u001b[GGenerated Prisma Client\nready\n";
+  const live = await frame(bashNode({ liveOutput: prisma }));
+  const settled = await frame(
+    bashNode({
+      status: "ok",
+      collapsed: false,
+      liveOutput: undefined,
+      result: JSON.stringify({ exit_code: 0, stdout: prisma, stderr: "" }),
+    }),
+  );
+  for (const output of [live, settled]) {
+    expect(output).toContain("Generated Prisma Client");
+    expect(output).not.toContain("[2K");
+    expect(output).not.toContain("[1A");
+    expect(output).not.toContain("[G");
+    expect(output).not.toContain("\u001b");
+  }
+  const liveColumn = live.split("\n").find((line) => line.includes("Generated Prisma Client"))!;
+  const settledColumn = settled
+    .split("\n")
+    .find((line) => line.includes("Generated Prisma Client"))!;
+  expect(liveColumn.indexOf("Generated Prisma Client")).toBe(
+    settledColumn.indexOf("Generated Prisma Client"),
+  );
+});

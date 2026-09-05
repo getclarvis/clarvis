@@ -20,7 +20,8 @@ describe("compileResultContract", () => {
     expect(c.tool.wireName).toBe("submit_result");
     expect(c.tool.inputSchema).toBe(SCHEMA);
     const desc = (c.tool.description ?? "").toLowerCase();
-    expect(desc).toContain("finalize");
+    expect(desc).toContain("an accepted submission ends the run");
+    expect(desc).toContain("a rejected submission is not completion");
     expect(desc).not.toMatch(/extract|plaintiff|cpf|legal|persona/);
   });
 

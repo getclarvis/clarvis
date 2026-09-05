@@ -450,16 +450,19 @@ The two shipped leaders, `marshall` and `admiral`, each declare a 200-iteration 
 the `coder`, `explorer`, and `planner` children remain capped at 30 iterations. The explicit lead
 value matches the product default instead of shadowing it with the former 50-iteration profile cap.
 
-For multi-step or tool-heavy work, the shipped `marshall` prompt requires a short visible update
-before the first tool and after meaningful findings or roughly a minute of uninterrupted tool work.
-The update and the next tool call stay in the same turn; the rule neither exposes hidden reasoning
-nor turns every routine call into narration.
+The builtin bodies define roles and the minimum harness handoff contract, not a generic engineering
+handbook. All five condition instructions on the tools actually exposed, distinguish a delegated
+brief from caller conversation, acknowledge the shared workspace, and select `submit_result` only
+when present. Marshall covers independent versus tracked delegation, background handles, review of
+returned work and live-child finalization. Admiral adds the workflow spawn ladder, revision-matched
+checkpoints, batch-local conflict protection and partial writes after failure. Leaves state their
+limitations and return blockers instead of assuming missing authority or context. Detailed argument
+and recovery instructions stay beside their tools; see
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
 
-Spawning is independent of planning. Marshall uses `spawn_subagent`, which has no `task_id`, for
-bounded independent work including parallel read-only fan-out. It uses `delegate_task` only for an
-existing plan task and copies that task's exact required id so the plan can track the return.
-Admiral may use the same child-spawn tools for a narrow lookup, while its prompt continues to prefer
-workflows and `run_leader` for substantive or reusable orchestration.
+`builtin-agents.test.ts` applies the engine's text estimate (one token per four
+characters) and caps the complete five-body payload at 1150 estimated tokens, with per-profile caps.
+This is a regression budget, not a claim about any provider's exact tokenizer.
 
 `BUILTIN_AGENTS` is ordered, and `compareAgentDisplayOrder` is the single owner of that order:
 the shipped fleet first, in the product's order, then every other name ascending. It ranks by

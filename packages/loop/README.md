@@ -56,6 +56,13 @@ Changes may also implicate the cross-cutting contracts for
 [`prompt caching`](../../specs/cross-cutting/prompt-cache.md), and
 [`elicitation`](../../specs/cross-cutting/elicitation.md).
 
+Model-facing contracts are collected in
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md). Spawn guidance requires
+self-contained briefs; supervision distinguishes handles, first-child wakeups and completed work.
+`submit_result` ends a run only when both validation and runtime gates accept it. Compaction retains
+authorization and unfinished work without treating transcript content as new instructions; bounded
+MCP instruction sections explicitly mark truncation.
+
 ## Core flow
 
 ```ts

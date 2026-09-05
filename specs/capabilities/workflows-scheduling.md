@@ -40,6 +40,16 @@ for sub-agents; neither a leader nor those sub-agents can spawn another workflow
 
 ## 2. Surface
 
+Tool guidance makes scheduling scope explicit: file/dependency declarations coordinate one batch,
+not unrelated leaders or the manager's own edits. A mutating item with no declared files runs alone
+within that batch; its appended brief does not invent a nonexistent file list or global isolation.
+Leader briefs are self-contained, child spawning is conditional on profile permissions, and output
+schemas are completion contracts rather than guaranteed results after failure. Production:
+`buildRunLeaderTool`, `buildRunWorkItemsTool`, `workItemBrief`, `buildRunRoundTool` and
+`buildRunWorkflowTool` under `packages/workflows/src/`. Test:
+`packages/workflows/tests/unit/work-items.test.ts`, `run-round.test.ts` and `run-workflow.test.ts`
+in that unit directory. See [`model-instructions.md`](../cross-cutting/model-instructions.md).
+
 ### 2.1 Package entrypoints
 
 | Subpath | File | Notes |
@@ -85,8 +95,8 @@ Internal but load-bearing: `beginDispatch`, `describeQueued`, and `reportSettled
 All carry `mcpName: ""` and `wireName === toolName === fullName` (their respective `build*Tool`
 functions).
 
-**`run_leader`** (`packages/workflows/src/tool.ts:47`) — `additionalProperties: false`, `required: ["title","prompt"]`
-(`packages/workflows/src/tool.ts:94-96`).
+**`run_leader`** — `additionalProperties: false`, `required: ["title","prompt"]`
+(`buildRunLeaderTool` in `packages/workflows/src/tool.ts`).
 
 | Property | Type | Bound | Line |
 |---|---|---|---|

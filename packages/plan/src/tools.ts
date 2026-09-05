@@ -75,11 +75,9 @@ export const planToolDefinitions = [
   {
     name: CREATE_PLAN_TOOL_NAME,
     description:
-      "Create a plan for the work in front of you. Only one plan may be open at a time, so this " +
-      "fails while the current plan still has open tasks — to change that plan use revise_plan, " +
-      "and to record a task's progress use transition_plan_task. Once every task is closed the " +
-      "plan is finished: call this again for the next piece of work rather than rewriting the " +
-      "finished one, which is a completed record and can no longer be revised.",
+      "Create the active plan. Only one may have open tasks: use revise_plan to change it and " +
+      "transition_plan_task to record progress. Once all tasks close, create a new plan for new " +
+      "work; completed plans cannot be revised.",
     inputSchema: {
       type: "object",
       required: ["title", "objective", "tasks", "validation"],
@@ -112,7 +110,8 @@ export const planToolDefinitions = [
   },
   {
     name: READ_PLAN_TOOL_NAME,
-    description: "Read the active plan or a historical plan by stable id.",
+    description:
+      "Read the active plan (omit id) or a historical plan by stable id, including its current revision and digests.",
     inputSchema: {
       type: "object",
       properties: { id: { type: "string", maxLength: MAX_PLAN_LOCATOR_CHARS } },
@@ -136,10 +135,10 @@ export const planToolDefinitions = [
   {
     name: REVISE_PLAN_TOOL_NAME,
     description:
-      "Apply structural plan revisions with compare-and-swap. Pass every edit you want in one " +
-      "call: `operations` is applied in order, all-or-nothing, and costs one revision. Do not " +
-      "split them across calls in the same turn — each call invalidates the compare-and-swap " +
-      "triple, so the second would be rejected as a conflict.",
+      "Revise the active plan with one ordered, atomic operations batch. Copy revision, digest " +
+      "and spec_digest from current plan state into expected_*; never guess. Each mutation " +
+      "invalidates that triple: do not parallelize plan mutations. On conflict, read_plan and " +
+      "reassess the edits before retrying. Structural changes require renewed approval in review mode.",
     inputSchema: {
       type: "object",
       required: ["expected_revision", "expected_digest", "expected_spec_digest", "operations"],
@@ -247,11 +246,10 @@ export const planToolDefinitions = [
   {
     name: TRANSITION_PLAN_TASK_TOOL_NAME,
     description:
-      "Transition plan tasks and record their outcomes, with compare-and-swap. Pass every task " +
-      "you are moving in one call: `transitions` is applied in order, all-or-nothing, and costs " +
-      "one revision. Do not split them across calls in the same turn — each call invalidates the " +
-      "compare-and-swap triple, so the second would be rejected as a conflict. `done` requires " +
-      "`result`, `failed` requires `error`, `abandoned` requires `reason`.",
+      "Record task outcomes in one ordered, atomic transitions batch. Copy current revision, " +
+      "digest and spec_digest into expected_*; do not parallelize plan mutations. On conflict, " +
+      "read_plan before retrying. Only done (requires result) and abandoned (requires reason) " +
+      "close tasks; returned and failed (requires error) remain open. Review delegated work before done.",
     inputSchema: {
       type: "object",
       required: ["expected_revision", "expected_digest", "expected_spec_digest", "transitions"],

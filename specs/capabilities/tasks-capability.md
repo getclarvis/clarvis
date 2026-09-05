@@ -115,6 +115,15 @@ everything else `mutate` (`packages/tasks/src/toolset.ts:132-137`), pinned at
 `artifacts` or `no_evidence_reason` must be present, message `"provide evidence, an artifact, or
 no_evidence_reason"` (`packages/tasks/src/toolset.ts:88-94`).
 
+Because JSON Schema conversion does not express that refinement, the model-facing tool and field
+descriptions repeat the requirement explicitly. Provider ids are distinguished from plan task ids;
+`allow_without_artifacts` is a request for human approval after a definitive publication failure,
+not a conflict or uncertain-outcome bypass. Production: `taskToolInputSchemas` and `TASK_TOOLS` in
+`packages/tasks/src/toolset.ts`, and the `submit_task_for_review` handler in `packages/tasks/src/capability.ts`.
+Test: `packages/tasks/tests/unit/tool-guidance.test.ts` and the review paths in
+`packages/tasks/tests/component/capability.test.ts`. See
+[`model-instructions.md`](../cross-cutting/model-instructions.md).
+
 The seven grants (`packages/tasks/src/toolset.ts:11-19`): `tasks.read`, `tasks.create`, `tasks.assign`,
 `tasks.comment`, `tasks.progress`, `tasks.review`, `tasks.complete`.
 

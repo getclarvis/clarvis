@@ -38,6 +38,7 @@ describe("MCP initialize instructions", () => {
     const rendered = renderMcpInstructions([opened("large", "🧭".repeat(40_000))]);
     expect(Array.from(rendered ?? "")).toHaveLength(MAX_MCP_INSTRUCTIONS_SECTION_CHARS);
     expect(rendered?.endsWith("\ud83e")).toBe(false);
+    expect(rendered).toEndWith("[MCP instructions truncated; remaining guidance omitted.]");
   });
 
   it("contributes nothing when no connected server supplied instructions", () => {

@@ -1,6 +1,6 @@
 # The Clarvis spec corpus
 
-Sixty-eight documents specifying what the Clarvis monorepo does, plus a register of what has been
+Sixty-nine documents specifying what the Clarvis monorepo does, plus a register of what has been
 measured, ruled out, or tried and reverted.
 
 The findings register that used to sit beside them — `gaps.md`, the cross-cutting list of what the
@@ -14,7 +14,7 @@ rather than deleted, so the reasoning outlives the finding.
 
 ## What this is
 
-These sixty-eight documents are the specification of the Clarvis monorepo: what each subsystem is for, what
+These sixty-nine documents are the specification of the Clarvis monorepo: what each subsystem is for, what
 it publishes, how it behaves, and the rules that must hold. They are the contract; the code under
 `packages/` is what realizes it. One document covers one subsystem, and each names production and
 test evidence either in an opening ownership block or beside the claims it supports, so the boundary
@@ -68,7 +68,7 @@ find packages/<pkg>/tests -type f -name '*.test.ts*' | wc -l
 
 Every document opens with an H1 naming its subject and carries implementation evidence near the
 claim it supports. Most use an opening ownership blockquote; the shorter domain contracts instead
-put `Production:` / `Test:` evidence directly in their sections. Sixty-four documents have eight
+put `Production:` / `Test:` evidence directly in their sections. Sixty-five documents have eight
 numbered top-level sections, three have nine, and [`storage.md`](hosts/storage.md) uses six
 unnumbered sections. The recurring section roles are:
 
@@ -193,6 +193,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`package-architecture.md`](cross-cutting/package-architecture.md) | Package roles, dependency directions, the single product-version model, package-versus-subpath criteria, and the application/Protocol/Kernel boundary | root manifest, workspace manifests, graph tooling, all workspaces |
 | [`grants.md`](cross-cutting/grants.md) | The one string vocabulary a profile asks with, how capabilities contribute grants at boot, and how a profile's model/tools/grants resolve into the tools an agent actually sees | `loop`, `capability`, `kernel`, and the grant-contributing capability packages |
 | [`prompt-cache.md`](cross-cutting/prompt-cache.md) | What a provider's prefix cache charges for, the append-only rule that keeps it, the measured cost of breaking it, and the session-affinity and breakpoint mechanics | `loop`, `llm` |
+| [`model-instructions.md`](cross-cutting/model-instructions.md) | Owned prompt/tool inventory, compact role and harness handoffs, local schema guidance, recovery semantics and structural payload budgets | `kernel`, `loop`, `tools`, `plan`, `workflows`, `tasks`, `server`, instruction-contributing packages |
 | [`elicitation.md`](cross-cutting/elicitation.md) | Every way a run asks a human — `ask_user`, guard prompts, budget escalation, MCP elicitation — through one port, one per-run FIFO, one tree-wide mux and each host's own surface | `loop`, `kernel`, `server`, `code`, `workflows` |
 | [`security.md`](cross-cutting/security.md) | Path confinement, the single redaction module and its two rule sets, environment filtering for subprocesses, workspace trust, and what is explicitly *not* a sandbox | `tools`, `kernel`, `capability`, `hooks` |
 | [`observability.md`](cross-cutting/observability.md) | The one `Logger` port and its single backend, the event-name vocabulary, environment-only verbosity, the cost model at hot call sites, and the audit channel | `capability`, `kernel` (repo-wide) |

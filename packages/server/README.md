@@ -203,9 +203,15 @@ Worktrees are a Code launch-time choice, not a kernel capability or MCP surface.
 **Pass `resetTimeoutOnProgress: true` and a `progressToken`**, or a `timeout` at least as long as the
 run. The SDK's default request timeout is 60 s and a blocking `clarvis_run` will outlive it. The
 server emits a progress heartbeat every 10 s so the reset actually fires.
+These are client transport options/metadata, not `clarvis_run` tool arguments.
 
 **Pass a stable `execution_id`.** Retries are then safe: a duplicate is rejected rather than starting
 a second run. This matters because a restart drops in-flight runs (see _Scaling_).
+
+Control acknowledgements are not work results: a successful `clarvis_steer` acknowledges the
+instruction but does not confirm the requested work completed. Tool guidance keeps this distinction,
+session scope and elicitation posture explicit; see
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
 
 Long context compaction is visible as an `info` progress notification when it starts. Its terminal
 event reports whether the context was summarized or mechanically evicted, including the fallback

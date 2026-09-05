@@ -31,6 +31,15 @@ never touches the feature package directly.
 
 ## 2. Surface
 
+Model guidance follows [`model-instructions.md`](../cross-cutting/model-instructions.md).
+`buildSubmitResultTool` explains that an accepted submission ends the run; a rejected submission
+requires the returned validation/gate recovery before retrying. Connected MCP guidance retains
+server attribution and appends an explicit truncation marker within its 32,768-code-point cap.
+Production: `packages/loop/src/runtime/tools/submit-result-tool.ts` and
+`renderMcpInstructions` in `packages/loop/src/runtime/mcp-instructions.ts`. Test:
+`packages/loop/tests/unit/submit-result-tool.test.ts`, `result-contract.test.ts` and
+`mcp-instructions.test.ts` in the same test directory.
+
 ### 2.1 Wire-name constants (`wire-names.ts`)
 
 | Symbol | Line | Value / shape |

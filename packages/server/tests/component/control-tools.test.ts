@@ -49,7 +49,11 @@ describe("control tools", () => {
         arguments: { execution_id: "run-1", message: "actually, do the other thing" },
       }),
     );
-    expect(ack).toMatchObject({ execution_id: "run-1", accepted: true });
+    expect(ack).toMatchObject({
+      execution_id: "run-1",
+      accepted: true,
+      note: "steering acknowledged by the run; requested work is not yet confirmed complete",
+    });
     expect(host.steers).toEqual(["actually, do the other thing"]);
 
     release();

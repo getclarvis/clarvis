@@ -16,6 +16,7 @@ import {
   type Capability,
   type ExecutionRecord,
   type ExecutionStatus,
+  type NamespacedTool,
 } from "@clarvis/capability";
 import { createConnectionManager, defaultMCPClientFactory } from "@clarvis/mcp-client";
 import { createMemoryTraceStore } from "@clarvis/trace/testing";
@@ -1485,10 +1486,10 @@ Say what was found.
 
     const warnings: unknown[] = [];
     const deps = buildDeps(ws, [{ text: "All done." }]);
-    const offeredTools: string[] = [];
+    const offeredTools: NamespacedTool[] = [];
     const call = deps.llm.call.bind(deps.llm);
     deps.llm.call = async (params) => {
-      offeredTools.push(JSON.stringify(params.tools ?? []));
+      offeredTools.push(...(params.tools ?? []));
       return call(params);
     };
     const workflows = createWorkflowsService({
@@ -1520,7 +1521,10 @@ Say what was found.
     // must not make every other one undiscoverable.
     expect(result.status).toBe("completed");
     expect(warnings.filter((w) => JSON.stringify(w).includes("audit"))).toHaveLength(1);
-    expect(offeredTools.some((tools) => tools.includes("audit: Map a subject"))).toBe(true);
+    const runWorkflow = offeredTools.find((tool) => tool.wireName === "run_workflow");
+    expect(runWorkflow).toBeDefined();
+    const names = runWorkflow!.inputSchema.properties as Record<string, { enum?: string[] }>;
+    expect(names.name?.enum).toContain("audit");
   });
 });
 

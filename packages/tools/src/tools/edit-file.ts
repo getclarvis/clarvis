@@ -238,13 +238,9 @@ export function applyEdit(
 export const editFile: ToolDef = {
   name: "edit_file",
   description:
-    "Replace one exact occurrence of `old_string` with `new_string` in a file. `old_string` is " +
-    "matched LITERALLY (not a regex), exactly as read_file shows the text — including whitespace, " +
-    "indentation, and line breaks — but WITHOUT read_file's line-number/tab prefixes. The match " +
-    "MUST be unique: if it appears more than once the call fails (`ambiguous_match`) unless " +
-    "`replace_all` is set; if not found it fails (`no_match`). On failure, re-read the region and " +
-    "copy more surrounding lines verbatim, or set replace_all. For several edits to ONE file use " +
-    "multi_edit; to change MANY files use apply_patch.",
+    "Replace literal text in one file. Prefer an exact, unique match; a whitespace-tolerant " +
+    "fallback is reported for inspection. On no_match, re-read; on ambiguous_match, add context. " +
+    "Use replace_all only when every occurrence should change. Batch same-file edits with multi_edit.",
   inputSchema: {
     type: "object",
     properties: {

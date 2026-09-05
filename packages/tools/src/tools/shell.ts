@@ -140,17 +140,11 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
       (powershell
         ? "Run a PowerShell command and return stdout, stderr, and exit code. "
         : "Run a shell command (sh -c) and return stdout, stderr, and exit code. ") +
-      "The command runs to completion and BLOCKS until it exits, so a long-lived process (a dev " +
-      "server, file watcher, `bun run dev`, `bun start`) MUST be started with monitor_start " +
-      "instead, and then verified separately (sleep + curl the port, or read the log). A server " +
-      "left in the foreground will block until the timeout and waste the call. " +
-      "Output is byte-bounded from the tail, so an oversized result loses its head, not its " +
-      "middle, and the full text is spilled to a file the truncation marker names — pipe through " +
-      "grep/head/tail when you only need part of a large output rather than dumping it whole." +
+      "Blocks until exit; use monitor_start for servers and watchers. Output is byte-bounded: " +
+      "each oversized stream loses its head and spills full output to the named file. Prefer focused output." +
       (powershell
-        ? " This host runs PowerShell, not sh: use `Remove-Item -Recurse -Force`, `$null`, " +
-          "`Get-ChildItem` and `-and`/`-or`, not `rm -rf`, `/dev/null`, `ls` or `&&`. A pure " +
-          "cmdlet reports only exit code 0 or 1; native executables report their real code."
+        ? " Use PowerShell syntax, not sh or cmd.exe; Windows PowerShell 5.1 has no `&&`. " +
+          "Cmdlets report exit code 0 or 1; native executables retain their own code."
         : ""),
     bounded: true,
     inputSchema: {
@@ -159,21 +153,16 @@ export function createShell(dependencies: ShellDependencies = {}): ToolDef {
         command: {
           type: "string",
           description: powershell
-            ? "PowerShell command. stdin is closed (no interactive prompts). Background a " +
-              "long-lived process with monitor_start rather than a trailing `&`, which " +
-              "PowerShell 5.1 does not accept."
-            : "Shell command, run via the system shell (sh -c). stdin is closed (no interactive " +
-              "prompts). A long-lived process MUST be backgrounded with output redirected (e.g. " +
-              "cmd > /tmp/out.log 2>&1 &) or it blocks until timeout.",
+            ? "PowerShell command with closed stdin; no interactive prompts. Use monitor_start, not `&`, for background work."
+            : "Command run via sh -c with closed stdin; no interactive prompts. Use monitor_start, not `&`, for background work.",
         },
         cwd: { type: "string", description: "Working directory. Default: workspace root." },
         timeout_ms: {
           type: "integer",
           minimum: 0,
           description:
-            "Max run time in ms. Defaults to 120000 and may be raised up to the configured " +
-            "600000 ceiling for a long build/test/install. On timeout the process " +
-            "group is killed and a timeout error is returned.",
+            "Run-time limit in ms, clamped to the configured ceiling. Configuration defaults: " +
+            "120000, ceiling 600000. Timeout kills the process tree and returns an error.",
         },
       },
       required: ["command"],

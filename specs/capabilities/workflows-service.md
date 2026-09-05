@@ -177,6 +177,17 @@ selected items × replicas × repeat passes.
 
 ### 3.2 Result schemas (JSON Schema, `draft`-agnostic loose objects)
 
+Built-in verdict briefs provide `Finding id: {{item.id}}` so a fresh verifier can supply the exact
+schema-required `finding_id`. They respect read-only tools, distinguish static inspection from
+unrun checks and choose `inconclusive` when evidence is insufficient. Built-in synthesis distinguishes
+accepted refutations from rejected thresholds: not refuted is not confirmed. Failed or stopped
+implementation can leave partial writes; synthesis must inspect the workspace rather than assume
+rollback. Production: `BUILTIN_WORKFLOWS` under `packages/workflows/src/builtin-workflows/` and
+`VERDICT_SCHEMA` in `packages/workflows/src/schemas.ts`. Test:
+`packages/workflows/tests/unit/builtin-workflows.test.ts` interpolates every built-in round and
+checks those handoffs plus the 11,000-character serialized definition ceiling. Shared instruction
+ownership is in [`model-instructions.md`](../cross-cutting/model-instructions.md).
+
 All three (`DISCOVERY_SCHEMA`, `FINDINGS_SCHEMA`, `VERDICT_SCHEMA`) are plain objects with
 `type: "object"`, `additionalProperties: false`, and — by direct inspection of `schemas.ts`, not by
 any generic test — a `required` array covering every declared property. The only generic test in the
@@ -1075,11 +1086,10 @@ is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLe
   call site that diverts a `runs.start` call away from the ordinary `executeRun` path into
   `runManagerWorkflow`. This is a type-level optional dependency (`RunServiceConfig.isManagerRun?`),
   so a host that never wires it (e.g. a test double) simply never routes anything as a workflow.
-- `packages/kernel/src/config.ts`/`packages/kernel/src/index.ts` re-export `WORKFLOW_RESULT_SCHEMAS`
-  etc. from `@clarvis/workflows`'s `./schemas` entry to a shipped `admiral` agent template
-  (`body` in `packages/kernel/src/config/builtin-agents/admiral.ts`); a component test
-  (`packages/kernel/tests/component/builtin-agents.test.ts:116-125`) fails if the two drift apart —
-  this is the forcing mechanism keeping the prompt's inlined schemas in sync with the code's.
+- `packages/kernel/src/config.ts` re-exports `WORKFLOW_RESULT_SCHEMAS` and the three named schemas
+  from `@clarvis/workflows`. The shipped Admiral body does not inline them; `schemaFor` in
+  `packages/workflows/src/run-round.ts` selects the authoritative object for each non-`free` round,
+  pinned by `packages/workflows/tests/unit/schemas.test.ts`.
 - `packages/code`'s `src/adapters/workflow-projection.ts` (§2, §4.11) consumes the protocol
   `WorkflowSummary`/`WorkflowDetail`/`WorkflowNode` shapes and the `workflow_run_*`/`run_ended` wire
   events this document's `observe()` reducer persists, and is described here in full — it is the client's

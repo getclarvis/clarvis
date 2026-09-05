@@ -7,6 +7,14 @@
 
 ## 1. Purpose
 
+Model guidance distinguishes blocking shell execution from persistent monitors; it never prescribes
+`&` as a way to background the blocking tool. Shell syntax is platform-specific, readiness does not
+imply process success, and configured timeouts are described as defaults rather than immutable
+limits. Production: `createShell` in `packages/tools/src/tools/shell.ts` and monitor descriptors in
+`packages/tools/src/tools/monitor.ts`. Test: `packages/tools/tests/component/tool-surface.test.ts`,
+`packages/tools/tests/integration/shell.test.ts` and `monitor.test.ts` in that integration directory.
+Instruction ownership is in [`model-instructions.md`](../cross-cutting/model-instructions.md).
+
 This subsystem is `@clarvis/tools`' execution layer: the two model-facing ways to run an arbitrary
 shell command (`shell`, which blocks to completion, and the `monitor_*` family, which backgrounds a
 long-lived one), plus everything those two need underneath — resolving which shell binary and syntax
@@ -206,7 +214,7 @@ is needed.
 
 ## 4. Behavior
 
-### `shell` — one call, blocking (`createShell`/`runCommand`, `packages/tools/src/tools/shell.ts:118-440`)
+### `shell` — one call, blocking (`createShell`/`runCommand` in `packages/tools/src/tools/shell.ts`)
 
 1. Resolve `cwd` (confined via `resolvePath`) and clamp `timeout_ms` to
    `min(requested, config.shellTimeoutMaxMs, MAX_TIMER_DELAY_MS)` (`:181-194`), where
@@ -363,7 +371,7 @@ Idempotent by construction: an already-gone or unknown-but-present-file monitor 
 already force-kills (`taskkill /T /F`), so the grace period becomes latency rather than a second real
 signal (`packages/tools/src/tools/monitor.ts:439-442`).
 
-### `monitor_list` (`packages/tools/src/tools/monitor.ts:490-514`)
+### `monitor_list` (`monitorList` in `packages/tools/src/tools/monitor.ts`)
 
 Enumerates every sidecar, recomputes `running` per entry via `monitorRunning` (never trusts a stale
 cached flag), and sorts `started_at` descending (`:488`).

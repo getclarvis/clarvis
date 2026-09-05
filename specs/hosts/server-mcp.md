@@ -556,7 +556,7 @@ pending, and only clear once both are drained.
 
 | Tool | Steps |
 |---|---|
-| `handleSteerTool` (`:11-29`) | `runs.require(execution_id)` (throws `not_found` if absent) → `handle.steer(message)` → `toolResult({accepted: true, note: "delivered..."})`; any throw → `errorResultFrom` |
+| `handleSteerTool` | `runs.require(execution_id)` (throws `not_found` if absent) → await `handle.steer(message)` → acknowledgement that the instruction was acknowledged, not that its requested work completed; any throw → `errorResultFrom` |
 | `handleCancelTool` (`:37-53`) | `runs.require` → `live.cancelledBy ??= "client"` → `handle.cancel()` → ack with note "cancelling; the pending clarvis_run call will return the partial result" |
 | `handleRespondTool` (`:62-86`) | `runs.require` → `live.elicit.respond({id, action, content?})` → ack mirroring `outcome.accepted`/`outcome.note` |
 

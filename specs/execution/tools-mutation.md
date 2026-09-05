@@ -61,6 +61,18 @@ at a time, by `packages/tools/tests/integration/write-file.test.ts:122-126`, `pa
 `packages/tools/tests/integration/move.test.ts:154-159`, `packages/tools/tests/integration/multi-edit.test.ts:83-92`, `packages/tools/tests/integration/copy.test.ts:160-165`, `packages/tools/tests/integration/mkdir.test.ts:71-75` and
 `packages/tools/tests/integration/remove.test.ts:80-85` (each titled "ignores out-of-schema extra fields").
 
+Model-facing mutation guidance keeps the actionable constraints next to their inputs. `edit_file`
+prefers an exact unique literal, distinguishes `no_match` from `ambiguous_match` recovery, and
+acknowledges the reported fuzzy fallback. `replace.glob` is required only when `path` is omitted,
+not for every directory path. `apply_patch` includes actual newlines in its copyable model-envelope
+example; the example itself is executed in the integration suite. Production: `editFile` in
+`packages/tools/src/tools/edit-file.ts`, `replace` in `packages/tools/src/tools/replace.ts` and
+`applyPatchTool` in `packages/tools/src/tools/apply-patch.ts`. Test:
+`packages/tools/tests/integration/edit-file.test.ts`,
+`packages/tools/tests/integration/replace.test.ts` and
+`packages/tools/tests/integration/apply-patch.test.ts`. Shared instruction ownership is in
+[`model-instructions.md`](../cross-cutting/model-instructions.md).
+
 ### 2.3 `packages/tools/src/lib/atomic.ts` exports
 
 Not part of any package `exports` subpath — the file is internal to `@clarvis/tools`'s own `src/`
@@ -138,7 +150,7 @@ from `@clarvis/paths` — the shared predicates are not actually exercised by th
 
 `write_file`, `edit_file`/`multi_edit` and `replace` (non-dry-run) attach a unified diff string under
 `result.meta.diff` when one is produced (`packages/tools/src/tools/write-file.ts:105-109`, `packages/tools/src/tools/edit-file.ts:58-59`,
-`packages/tools/src/tools/replace.ts:262-266`); `unifiedDiff(rel, before, after, maxDiffInputBytes)` is owned by
+`replace.handler` in `packages/tools/src/tools/replace.ts`); `unifiedDiff(rel, before, after, maxDiffInputBytes)` is owned by
 [tools-read-and-search](tools-read-and-search.md). `write_file` omits the diff — not fails the write — for a binary or oversized
 prior file (`packages/tools/src/tools/write-file.ts:84-92`, pinned by `packages/tools/tests/integration/write-file.test.ts:44-56,58-71`).
 
@@ -247,7 +259,7 @@ A `null` slot instead throws an uncaught `TypeError` (`spec.old_string` on `null
 wrapped as a `ToolError` (pinned by `packages/tools/tests/integration/multi-edit.test.ts:136-139`, "surfaces a TypeError when an edit
 entry is malformed") — it propagates as the generic non-`ToolError` case in Section 6's failure table.
 
-### 4.3 `apply_patch` (`packages/tools/src/tools/apply-patch.ts:316-392`, core in `packages/tools/src/tools/apply-patch.ts:413-587`)
+### 4.3 `apply_patch` (`applyPatchTool` and `applyParsed` in `packages/tools/src/tools/apply-patch.ts`)
 
 1. Detect `*** Begin Patch` after tolerating leading whitespace and parse it with `parseModelPatch`;
    otherwise use
@@ -269,7 +281,7 @@ entry is malformed") — it propagates as the generic non-`ToolError` case in Se
      mismatch → `patch_failed` the same way. A model-envelope delete explicitly deletes the whole
      named file; a unified delete must still produce an empty result. Create requires the target not
      already exist. Otherwise a `modify` op carries the re-encoded content.
-5. `applyOpsAtomic(ops)` — all files change or none do (`:579-584`); a non-`ToolError` failure here is
+5. `applyOpsAtomic(ops)` in `applyParsed` — all files change or none do; a non-`ToolError` failure here is
    wrapped as `io_error` (`:581-584`).
 6. Return a summary line per change, tagged `A`/`M`/`D`/`R` with `(+adds -dels)` counts
    (`countChanges`, `:76-101`).
@@ -283,7 +295,7 @@ execution falls through past the whole `if (isRename)` construct to the modify b
 `packages/tools/tests/integration/apply-patch.test.ts:314-322`, "treats a rename whose paths resolve to the same file as a plain
 modify").
 
-### 4.4 `replace` (`packages/tools/src/tools/replace.ts:173-267`)
+### 4.4 `replace` (`replace.handler` in `packages/tools/src/tools/replace.ts`)
 
 1. Require `path` or `glob` → else `invalid_input` (`:180-182`).
 2. Compile the pattern as a global `RegExp` (`buildRegex`, `:33-42`); reject a pattern that matches
@@ -436,7 +448,7 @@ lock-ordering deadlock between them.
 
 8. **`apply_patch` never partially applies a multi-file patch**: a hunk failing anywhere in the batch
    changes nothing, in any file.
-   Production: `packages/tools/src/tools/apply-patch.ts:579-584` (single `applyOpsAtomic` call for the
+   Production: `applyParsed` in `packages/tools/src/tools/apply-patch.ts` (single `applyOpsAtomic` call for the
    whole batch).
    Test: `packages/tools/tests/integration/apply-patch.test.ts:141-162` (model envelope) and
    `:358-370` (raw unified diff).

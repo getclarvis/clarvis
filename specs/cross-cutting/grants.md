@@ -102,17 +102,17 @@ above the loop's own schema default of `"edit"` (`packages/capability/src/env.ts
 
 ### 2.5 Built-in agent profiles' grant/spawn arrays
 
-| Agent | `grants` | `can_spawn` | `default_spawn` | File:line |
+| Agent | `grants` | `can_spawn` | `default_spawn` | Production |
 |---|---|---|---|---|
 | `marshall` (default entry) | `edit_workspace, read_workspace, ask_user, run_commands, use_skills` | `coder, explorer, planner` | `coder` | `packages/kernel/src/config/builtin-agents/marshall.ts` |
-| `admiral` | `workflow, read_workspace, edit_workspace, run_commands, ask_user, use_skills` | `coder, explorer, planner, marshall` | `coder` | `packages/kernel/src/config/builtin-agents/admiral.ts:16-25` |
-| `coder` | `edit_workspace, run_commands, use_skills` | *(absent)* | *(absent)* | `packages/kernel/src/config/builtin-agents/coder.ts:16` |
-| `explorer` | `read_workspace, use_skills` | *(absent)* | *(absent)* | `packages/kernel/src/config/builtin-agents/explorer.ts:16` |
-| `planner` | `read_workspace, use_skills` | *(absent)* | *(absent)* | `packages/kernel/src/config/builtin-agents/planner.ts:16` |
+| `admiral` | `workflow, read_workspace, edit_workspace, run_commands, ask_user, use_skills` | `coder, explorer, planner, marshall` | `coder` | `ADMIRAL.frontmatter` in `packages/kernel/src/config/builtin-agents/admiral.ts` |
+| `coder` | `edit_workspace, run_commands, use_skills` | *(absent)* | *(absent)* | `CODER.frontmatter` in `packages/kernel/src/config/builtin-agents/coder.ts` |
+| `explorer` | `read_workspace, use_skills` | *(absent)* | *(absent)* | `EXPLORER.frontmatter` in `packages/kernel/src/config/builtin-agents/explorer.ts` |
+| `planner` | `read_workspace, use_skills` | *(absent)* | *(absent)* | `PLANNER.frontmatter` in `packages/kernel/src/config/builtin-agents/planner.ts` |
 
 None of the three sub-agent profiles declares `can_spawn`
-(`packages/kernel/src/config/builtin-agents/coder.ts:16`,
-`packages/kernel/src/config/builtin-agents/explorer.ts:16`, `packages/kernel/src/config/builtin-agents/planner.ts:16` — no `can_spawn` key present at all), which is
+(`CODER.frontmatter`, `EXPLORER.frontmatter`, and `PLANNER.frontmatter` under
+`packages/kernel/src/config/builtin-agents/` — no `can_spawn` key is present), which is
 the data-level instance of "spawned children never inherit spawn" (§4.3).
 `admiral.can_spawn` includes `"marshall"` as a `delegate_task` sub-agent target
 (§4.4), which is a separate mechanism from workflow leader selection (§4.6) —
@@ -121,9 +121,8 @@ the two must not be conflated.
 A shipped agent's `can_spawn`/`default_spawn` pair is not free-form data: every
 name in a shipped agent's `can_spawn` must itself be a shipped agent name, and
 a present `default_spawn` must be a member of that same `can_spawn` and must
-never equal the agent's own name
-(`packages/kernel/tests/component/builtin-agents.test.ts:61-71`, `test("every
-profile a shipped agent may spawn is itself shipped", …)`).
+never equal the agent's own name (`packages/kernel/tests/component/builtin-agents.test.ts`,
+`test("every profile a shipped agent may spawn is itself shipped", …)`).
 
 ## 3. Data and formats
 
@@ -338,8 +337,8 @@ without also granting supervision visibility, or vice versa.
    canSpawn.includes(p.name)).map(p ⇒ [p.name, registry.get(p.name)]))`
    (`packages/loop/src/runtime/run-shape.ts:79-83`). Since no shipped
    sub-agent profile declares its own `can_spawn`
-   (`packages/kernel/src/config/builtin-agents/coder.ts:16`, `packages/kernel/src/config/builtin-agents/explorer.ts:16`,
-   `packages/kernel/src/config/builtin-agents/planner.ts:16`), and since delegation targets are drawn only from this
+   (`CODER.frontmatter`, `EXPLORER.frontmatter`, and `PLANNER.frontmatter` under
+   `packages/kernel/src/config/builtin-agents/`), and since delegation targets are drawn only from this
    registry, tree depth is structurally bounded at 2 for the shipped fleet.
 2. `validateDelegateTaskArgs` resolves `profile`: an explicit `obj.profile`
    must be a key of `profiles` (the spawnable registry) or the call is
@@ -390,7 +389,7 @@ The internal `forRun`/`forAgent` derivation below goes one level deeper than
 ### 4.6 `workflow`, `run_leader` and the boundary with `can_spawn`
 
 `admiral`'s `can_spawn` array (`coder, explorer, planner, marshall`,
-`packages/kernel/src/config/builtin-agents/admiral.ts:24`) governs its
+`ADMIRAL.frontmatter` in `packages/kernel/src/config/builtin-agents/admiral.ts`) governs its
 `delegate_task` sub-agent targets exactly as in §4.4 — it is unrelated to which
 profiles `run_leader`/`run_work_items`/`run_round` may launch as a leader.
 Those tools enumerate `LeaderProfileInfo[]` supplied by the kernel's
@@ -402,9 +401,8 @@ independently sourced; the workflow tool surface itself is
 `@clarvis/workflows`' own item.
 
 A leader run's request is not simply built from the launching manager's own
-profile: `admiral`'s own agent-body prompt states as a topology fact that "the
-`workflow` grant is stripped from every leader, so it has no `run_leader`
-tool" (`packages/kernel/src/config/builtin-agents/admiral.ts:72`), and the
+profile: `ADMIRAL.body` states the effective topology fact that a leader "cannot start leaders"
+(`packages/kernel/src/config/builtin-agents/admiral.ts`), and the
 kernel's workflow service carries this out mechanically —
 `stripWorkflowGrant(body)` filters `"workflow"` out of every profile's
 `grants` array on the assembled leader request, called immediately after

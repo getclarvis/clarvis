@@ -40,10 +40,9 @@ export const RUN_WORKFLOW_TOOL_NAME = "run_workflow";
 type WorkflowReviewDecision = "run" | "declined" | "dismissed" | "no_response" | "invalid_response";
 
 const RUN_WORKFLOW_DESCRIPTION =
-  "Run one of the available workflows by name. A workflow is an authored, versioned " +
-  "round sequence — the shapes the product has already worked out for auditing, implementing and " +
-  "researching — so you do not have to compose the rounds yourself. Pass explain: true first to " +
-  "see the rounds, the resolved selectors and what the fan-out will cost, without running anything.";
+  "Run an installed round sequence by name. explain:true previews its structure and leader-count " +
+  "formula without starting work; data-dependent fan-out is not known yet. Otherwise, human " +
+  "preflight is required before the first round starts. Later rounds require workflow_decide.";
 
 /**
  * Build the `run_workflow` tool.
@@ -56,7 +55,6 @@ export function buildRunWorkflowTool(
   workflows: readonly WorkflowDefinition[],
 ): NamespacedTool | null {
   if (workflows.length === 0) return null;
-  const args = [...new Set(workflows.flatMap((w) => w.args))];
   return {
     fullName: RUN_WORKFLOW_TOOL_NAME,
     wireName: RUN_WORKFLOW_TOOL_NAME,
@@ -75,16 +73,16 @@ export function buildRunWorkflowTool(
           enum: workflows.map((w) => w.name),
           description:
             "The workflow to run. Available — " +
-            workflows.map((w) => `${w.name}: ${w.description}`).join("; "),
+            workflows
+              .map((w) => `${w.name} (args: ${w.args.join(", ") || "none"}): ${w.description}`)
+              .join("; "),
         },
         args: {
           type: "object",
           maxProperties: WORKFLOW_LIMITS.args,
           propertyNames: { maxLength: WORKFLOW_LIMITS.identifierChars },
           description:
-            args.length === 0
-              ? "OPTIONAL — values the workflow's briefs reference."
-              : `OPTIONAL — values the briefs reference. Declared across these workflows: ${args.join(", ")}.`,
+            "Values for every argument declared by the selected workflow in the name catalog.",
         },
         explain: {
           type: "boolean",

@@ -1075,11 +1075,10 @@ is signalled through `WorkflowCtx.onBudgetExhausted` by `runLeader`, `buildRunLe
   call site that diverts a `runs.start` call away from the ordinary `executeRun` path into
   `runManagerWorkflow`. This is a type-level optional dependency (`RunServiceConfig.isManagerRun?`),
   so a host that never wires it (e.g. a test double) simply never routes anything as a workflow.
-- `packages/kernel/src/config.ts`/`packages/kernel/src/index.ts` re-export `WORKFLOW_RESULT_SCHEMAS`
-  etc. from `@clarvis/workflows`'s `./schemas` entry to a shipped `admiral` agent template
-  (`body` in `packages/kernel/src/config/builtin-agents/admiral.ts`); a component test
-  (`packages/kernel/tests/component/builtin-agents.test.ts:116-125`) fails if the two drift apart —
-  this is the forcing mechanism keeping the prompt's inlined schemas in sync with the code's.
+- `packages/kernel/src/config.ts` re-exports `WORKFLOW_RESULT_SCHEMAS` and the three named schemas
+  from `@clarvis/workflows`. The shipped Admiral body does not inline them; `schemaFor` in
+  `packages/workflows/src/run-round.ts` selects the authoritative object for each non-`free` round,
+  pinned by `packages/workflows/tests/unit/schemas.test.ts`.
 - `packages/code`'s `src/adapters/workflow-projection.ts` (§2, §4.11) consumes the protocol
   `WorkflowSummary`/`WorkflowDetail`/`WorkflowNode` shapes and the `workflow_run_*`/`run_ended` wire
   events this document's `observe()` reducer persists, and is described here in full — it is the client's

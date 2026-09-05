@@ -233,20 +233,24 @@ by `packages/kernel/tests/integration/workspace-trust.test.ts:54-72` (covers eve
 
 | Name | `grants` | `can_spawn` | `default_spawn` | `iteration_limit` | other |
 | --- | --- | --- | --- | --- | --- |
-| `marshall` | `edit_workspace, read_workspace, ask_user, run_commands, use_skills` (`packages/kernel/src/config/builtin-agents/marshall.ts`) | `coder, explorer, planner` | `coder` | 200 | — |
-| `admiral` | `workflow, read_workspace, edit_workspace, run_commands, ask_user, use_skills` (`packages/kernel/src/config/builtin-agents/admiral.ts:16-23`) | `coder, explorer, planner, marshall` (`:24`) | `coder` (`:25`) | 200 (`:26`) | `reasoning_effort: "high"` (`:27`) |
-| `coder` | `edit_workspace, run_commands, use_skills` (`packages/kernel/src/config/builtin-agents/coder.ts:16`) | — | — | 30 (`:17`) | — |
-| `explorer` | `read_workspace, use_skills` (`packages/kernel/src/config/builtin-agents/explorer.ts:16`) | — | — | 30 (`:17`) | — |
-| `planner` | `read_workspace, use_skills` (`packages/kernel/src/config/builtin-agents/planner.ts:16`) | — | — | 30 (`:17`) | — |
+| `marshall` | `edit_workspace, read_workspace, ask_user, run_commands, use_skills` (`MARSHALL.frontmatter` in `packages/kernel/src/config/builtin-agents/marshall.ts`) | `coder, explorer, planner` | `coder` | 200 | — |
+| `admiral` | `workflow, read_workspace, edit_workspace, run_commands, ask_user, use_skills` (`ADMIRAL.frontmatter` in `packages/kernel/src/config/builtin-agents/admiral.ts`) | `coder, explorer, planner, marshall` | `coder` | 200 | `reasoning_effort: "high"` |
+| `coder` | `edit_workspace, run_commands, use_skills` (`CODER.frontmatter` in `packages/kernel/src/config/builtin-agents/coder.ts`) | — | — | 30 | — |
+| `explorer` | `read_workspace, use_skills` (`EXPLORER.frontmatter` in `packages/kernel/src/config/builtin-agents/explorer.ts`) | — | — | 30 | — |
+| `planner` | `read_workspace, use_skills` (`PLANNER.frontmatter` in `packages/kernel/src/config/builtin-agents/planner.ts`) | — | — | 30 | — |
 
-None declares `model` — pinned at `packages/kernel/tests/component/builtin-agents.test.ts:73` ("declares
+None declares `model` — pinned by `packages/kernel/tests/component/builtin-agents.test.ts` ("declares
 no model, so the fleet inherits the workspace's default"). Every one carries a string `description`
-(`:52`) and a non-empty body (`:49`).
+and a non-empty body ("carries a non-empty prompt and a valid frontmatter for every one").
 
 The two leaders' explicit 200-iteration values are pinned by
 `packages/kernel/tests/component/builtin-agents.test.ts` ("uses the full lead-session soft iteration
 allowance"); the three child profiles stay at 30 so increasing a primary lead session does not
 silently enlarge every delegated run.
+
+The bodies are deliberately limited to role, effective harness surface and runtime constraints. The
+same component test estimates their cost as `ceil(characters / 4)`, caps each profile, and caps all
+five together at 800 estimated tokens; this is a stable regression proxy, not provider tokenization.
 
 ## 4. Behavior
 
@@ -447,7 +451,8 @@ lenient `{}`), and frontmatter that fails `agentFrontmatterSchema`. The reason s
 `BUILTIN_RANK` — the index of the name in `BUILTIN_AGENT_NAMES` (`:19`) — falling back to
 `Number.MAX_SAFE_INTEGER` and then `localeCompare`. So `["zulu","planner","alpha","marshall","coder"]`
 sorts to `["marshall","coder","planner","alpha","zulu"]`
-(`packages/kernel/tests/component/builtin-agents.test.ts:77`). `ConfigService.listAgents` applies it
+(`packages/kernel/tests/component/builtin-agents.test.ts`, "sorts ahead of a user's own agents").
+`ConfigService.listAgents` applies it
 (`packages/kernel/src/config/config-service.ts:476`).
 
 `resolveAgentsByName` (`packages/kernel/src/config/agent-resolution.ts:56`) collapses duplicates by `scopeRank`: workspace 3 >
@@ -610,28 +615,38 @@ Each entry: **rule** — production anchor — test anchor.
 
 12. **`BUILTIN_AGENT_NAMES` is derived from `BUILTIN_AGENTS`, never restated.**
     `packages/kernel/src/config/builtin-agents/index.ts:39`. Pinned (membership and order):
-    `packages/kernel/tests/component/builtin-agents.test.ts:42`, which also pins
+    `packages/kernel/tests/component/builtin-agents.test.ts` ("is the five profiles, in the product's order"), which also pins
     `DEFAULT_ENTRY_AGENT === "marshall"`.
 
 13. **Every `can_spawn` and `default_spawn` inside the fleet names a shipped agent, and
-    `default_spawn` is in `can_spawn` and is not the agent itself.** The frontmatter data at
-    `packages/kernel/src/config/builtin-agents/marshall.ts:24-25` / `packages/kernel/src/config/builtin-agents/admiral.ts:24-25`. Pinned:
-    `packages/kernel/tests/component/builtin-agents.test.ts:61` — its docstring states the failure it prevents: "A `can_spawn` naming
+    `default_spawn` is in `can_spawn` and is not the agent itself.** Production:
+    `MARSHALL.frontmatter` and `ADMIRAL.frontmatter` in
+    `packages/kernel/src/config/builtin-agents/`. Pinned:
+    `packages/kernel/tests/component/builtin-agents.test.ts` ("every profile a shipped agent may
+    spawn is itself shipped") — its docstring states the failure it prevents: "A `can_spawn` naming
     an agent nothing defines is skipped by the run assembler, silently."
 
-14. **A shipped agent declares no `model`.** `packages/kernel/src/config/builtin-agents/marshall.ts:13-27` and the four siblings carry no
-    `model` key. Pinned: `packages/kernel/tests/component/builtin-agents.test.ts:73`.
+14. **A shipped agent declares no `model`.** The five `frontmatter` objects under
+    `packages/kernel/src/config/builtin-agents/` carry no `model` key. Pinned:
+    `packages/kernel/tests/component/builtin-agents.test.ts` ("declares no model, so the fleet
+    inherits the workspace's default").
 
-15. **`admiral` is the only shipped profile carrying the `workflow` grant.** `packages/kernel/src/config/builtin-agents/admiral.ts:17`. Pinned:
-    `packages/kernel/tests/component/builtin-agents.test.ts:97`, whose title states the mechanism: "the only thing that routes a run
+15. **`admiral` is the only shipped profile carrying the `workflow` grant.** Production:
+    `ADMIRAL.frontmatter` in `packages/kernel/src/config/builtin-agents/admiral.ts`. Pinned:
+    `packages/kernel/tests/component/builtin-agents.test.ts` ("carries the workflow grant"), whose title states the mechanism: "the only thing that routes a run
     as a workflow"; the reader is `packages/kernel/src/application/workflow-policy.ts:65`.
 
-16. **`admiral`'s prompt embeds the product's own workflow result schemas.** `admiral.ts` body JSON
-    fences. Pinned: `packages/kernel/tests/component/builtin-agents.test.ts:118`, which parses every ```` ```json ```` block from the
-    body, strips `description` fields, and compares against `WORKFLOW_RESULT_SCHEMAS`.
+16. **The shipped prompt payload stays role- and harness-sized.** `MARSHALL.body`, `ADMIRAL.body`,
+    `CODER.body`, `EXPLORER.body`, and `PLANNER.body` under
+    `packages/kernel/src/config/builtin-agents/` contain the role and effective harness boundary
+    without embedded workflow schemas or generic work instructions. Pinned by
+    `packages/kernel/tests/component/builtin-agents.test.ts` ("keeps the complete builtin prompt
+    payload within its token budget"), which uses the engine's text-only
+    one-token-per-four-characters estimate, individual caps, and an 800-token fleet cap.
 
 17. **`builtinAgentRecord` hands out a defensive copy of the frontmatter.**
-    `packages/kernel/src/config/agent-overlay.ts:27` spreads before returning. Partially pinned: `packages/kernel/tests/component/builtin-agents.test.ts:88`
+    `packages/kernel/src/config/agent-overlay.ts:27` spreads before returning. Partially pinned:
+    `packages/kernel/tests/component/builtin-agents.test.ts` ("hands out a defensive copy")
     asserts `readBuiltinAgent("coder")` returns the *same* object twice (i.e. the source is shared) —
     the copy itself is **unpinned**.
 
@@ -778,23 +793,26 @@ Each entry: **rule** — production anchor — test anchor.
     grants/can_spawn/budget from frontmatter onto the summary"), `:233-242` ("omits grants/can_spawn/budget
     when the frontmatter declares none").
 
-40. **The shipped leads distinguish independent spawning from tracked delegation.** Marshall uses
-    `spawn_subagent`, which has no `task_id`, for independent work and uses `delegate_task` only with
-    an exact existing task id. Admiral may use the same tools for a narrow lookup but is directed to
-    prefer workflows and `run_leader` for substantive or reusable fan-out. Production:
+40. **The shipped leads expose the child harness without prescribing a generic work method.**
+    Marshall names `spawn_subagent` for independent work, `delegate_task` for an existing plan task
+    with its exact id, the three leaf roles, background supervision and the shared workspace. Admiral
+    names both child tools as manager-local capabilities. Both state that harness use must add clear
+    value rather than serving trivial, sequential, overlapping or performative work. Production:
     `packages/kernel/src/config/builtin-agents/marshall.ts` and
     `packages/kernel/src/config/builtin-agents/admiral.ts` (`body`). Test:
     `packages/kernel/tests/component/builtin-agents.test.ts` (`uses separate tools` and
-    `may spawn a narrow Sub-agent`).
+    `exposes manager-local children alongside the workflow harness`).
 
-41. **The shipped Admiral owns continuation across workflow round boundaries.** Its prompt requires
-    `workflow_status` followed by a revision-matched `workflow_decide` after each authored round,
-    treats repeat passes as proposals rather than runtime commands, and directs a generic workflow
-    demonstration to the smallest one-round smoke shape instead of inferring `research` or `audit`.
-    It also treats `max_total_leaders` as a lifetime guardrail, never a target to refill through a
-    different spawn tool. Production: `packages/kernel/src/config/builtin-agents/admiral.ts`
-    (`body`). Test: `packages/kernel/tests/component/builtin-agents.test.ts` (`owns every next-round
-    decision and keeps generic demonstrations one-round`).
+41. **The shipped Admiral exposes the workflow harness rather than duplicating its tool schemas.**
+    Its body names the four spawn levels (`run_leader`, `run_work_items`, `run_round`,
+    `run_workflow`), the `workflow_status` / revision-matched `workflow_decide` checkpoint pair, the
+    fixed manager → leader → Sub-agent topology, supervision tools, shared workspace and tree-wide
+    limits. Tool descriptions remain authoritative for argument schemas and detailed mechanics.
+    Production: `ADMIRAL.body` in `packages/kernel/src/config/builtin-agents/admiral.ts` plus
+    `buildRunLeaderTool`, `buildRunWorkItemsTool`, `buildRunRoundTool`, `buildRunWorkflowTool`,
+    `buildWorkflowStatusTool`, and `buildWorkflowDecideTool` under `packages/workflows/src`. Test:
+    `packages/kernel/tests/component/builtin-agents.test.ts` (`names the installed-workflow and
+    human-preflight capability`; `names the round checkpoint and supervision capabilities`).
 
 42. **Extension Profile plugin selection is exact and feeds every plugin contribution consumer from one
     resolved list.** `snapshot().active_plugins`, plugin settings fragments, plugin agents, and the

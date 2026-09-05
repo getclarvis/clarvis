@@ -2320,17 +2320,14 @@ not nudge.
 
 Adding a per-iteration nudge was rejected because `PENDING_TASKS_NOTE` opens with "Do NOT finalize
 yet" and asks for "a short result", so a model that is mid-implementation either ignores it or
-complies by **inventing a verification result** — into what this repository calls the auditable
-record, and against the agents' own honesty rules. Both quoted strings are still in the note
+complies by **inventing a verification result** in the auditable record. Both quoted strings are
+still in the note
 (`packages/plan/src/capability/messages.ts:162`, the two phrases at `:164` and `:165`).
 
-The honesty rules have been renamed since this was written: there is no `<honesty_policy>` section in
-the shipped fleet any more — the string "honesty" does not appear anywhere under `packages/` — and
-the prohibition now lives in the `<report>` and `<never>` blocks. "Never claim a path, symbol, output
-or result you did not observe" is `packages/kernel/src/config/builtin-agents/coder.ts:149`, and
-"Report an edit that did not happen, or a test or build that did not run" is `coder.ts:169` and
-`packages/kernel/src/config/builtin-agents/marshall.ts:308` (its `<never>` block opens at `:304`).
-The argument is unchanged; only the tag the old text cited is gone.
+The shipped profiles no longer carry a generic honesty policy: their bodies are deliberately limited
+to role and harness surface (`packages/kernel/src/config/builtin-agents/`). The rejection does not
+depend on prompt wording. A runtime nudge that requests a result before completion creates the same
+bad choice for any profile.
 
 If it is ever added it must read _close the task or state why you cannot_, never _mark it done_, and
 must not fire while the agent is still producing file writes.

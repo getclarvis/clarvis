@@ -450,16 +450,17 @@ The two shipped leaders, `marshall` and `admiral`, each declare a 200-iteration 
 the `coder`, `explorer`, and `planner` children remain capped at 30 iterations. The explicit lead
 value matches the product default instead of shadowing it with the former 50-iteration profile cap.
 
-For multi-step or tool-heavy work, the shipped `marshall` prompt requires a short visible update
-before the first tool and after meaningful findings or roughly a minute of uninterrupted tool work.
-The update and the next tool call stay in the same turn; the rule neither exposes hidden reasoning
-nor turns every routine call into narration.
+The builtin bodies define roles and expose runtime-specific harness capabilities; they deliberately
+do not teach a generic engineering, safety, communication, or reporting workflow. Marshall names
+independent `spawn_subagent`,
+tracked `delegate_task`, the three leaf profiles, background supervision, shared-workspace context,
+and the rule that delegation must add clear value. Admiral names the workflow spawn ladder,
+round-control tools, manager-local children, supervision, topology, and tree-wide limits. Each leaf
+names only its function, tools and missing caller context.
 
-Spawning is independent of planning. Marshall uses `spawn_subagent`, which has no `task_id`, for
-bounded independent work including parallel read-only fan-out. It uses `delegate_task` only for an
-existing plan task and copies that task's exact required id so the plan can track the return.
-Admiral may use the same child-spawn tools for a narrow lookup, while its prompt continues to prefer
-workflows and `run_leader` for substantive or reusable orchestration.
+`builtin-agents.test.ts` applies the engine's text estimate (one token per four
+characters) and caps the complete five-body payload at 800 estimated tokens, with per-profile caps.
+This is a regression budget, not a claim about any provider's exact tokenizer.
 
 `BUILTIN_AGENTS` is ordered, and `compareAgentDisplayOrder` is the single owner of that order:
 the shipped fleet first, in the product's order, then every other name ascending. It ranks by

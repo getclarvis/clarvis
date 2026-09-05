@@ -4,6 +4,7 @@ import { createSignal } from "solid-js";
 import { useRenderer } from "@opentui/solid";
 import { openRender } from "../helpers/tracked-render.ts";
 import { KeyEvent } from "@opentui/core";
+import { TestRecorder } from "@opentui/core/testing";
 import type {
   MemoryService,
   ModelCatalog,
@@ -2274,16 +2275,66 @@ test("an elicitation returns an old reader to the live tail before hiding the co
   await captureUntil(t, "ELICIT HISTORY 40");
   await moveReaderAwayFromTail(t);
   expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeDefined();
+  const readerFrame = t.captureCharFrame();
+  const readerRows = readerFrame.split("\n");
+  const readerAnchorRow = readerRows.findIndex((row) => row.includes("ELICIT HISTORY"));
+  const readerAnchor = readerRows[readerAnchorRow]?.trim();
+  expect(readerAnchorRow).toBeGreaterThan(0);
+  expect(readerAnchor).toBeDefined();
 
-  setElicit({ message: "allow the pending write?", kind: "guard_confirm" });
-  const question = await captureUntil(t, "allow the pending write?");
+  const recorder = new TestRecorder(t.renderer);
+  recorder.rec();
+  setElicit({
+    message: "allow the pending write?",
+    kind: "guard_confirm",
+    detail: {
+      command: `bun run ${"long-command-segment ".repeat(8)}`,
+      cwd: "/home/user/project",
+      reason: "The command changes generated client files after a long running response.",
+      warning: "Review the complete command before allowing it.",
+    },
+  });
+  let question = await captureUntil(t, "The command changes generated client files");
+  for (let pass = 0; pass < 20 && question.includes("Steer this run"); pass += 1) {
+    await t.renderOnce();
+    question = t.captureCharFrame();
+  }
+  recorder.stop();
   expect(question).toContain("Command approval");
   expect(question).not.toContain("Steer this run");
   expect(t.renderer.root.findDescendantById("history-newer-indicator")).toBeUndefined();
+  expect(recorder.recordedFrames.length).toBeGreaterThan(0);
+  const bridgeRows = recorder.recordedFrames[0]!.frame.split("\n");
+  expect(bridgeRows.findIndex((row) => row.trim() === readerAnchor)).toBe(readerAnchorRow);
+  for (const recorded of recorder.recordedFrames) {
+    const frame = recorded.frame;
+    const retainedSurface =
+      frame.includes("Steer this run") ||
+      frame.includes("Command approval") ||
+      frame.includes("The command changes generated client files");
+    if (!retainedSurface)
+      throw new Error(
+        `elicitation transition lost both surfaces at frame ${recorded.frameNumber}:\n${frame}`,
+      );
+  }
 
+  recorder.rec();
   setElicit(null);
   await captureUntil(t, "Steer this run");
-  expect(await captureUntil(t, "ELICIT HISTORY 40")).toContain("Steer this run");
+  const restored = await captureUntil(t, "ELICIT HISTORY 40");
+  recorder.stop();
+  expect(restored).toContain("Steer this run");
+  for (const recorded of recorder.recordedFrames) {
+    const frame = recorded.frame;
+    const retainedSurface =
+      frame.includes("Command approval") ||
+      frame.includes("The command changes generated client files") ||
+      frame.includes("Steer this run");
+    if (!retainedSurface)
+      throw new Error(
+        `elicitation resolution lost both surfaces at frame ${recorded.frameNumber}:\n${frame}`,
+      );
+  }
   t.renderer.destroy();
 });
 
@@ -2908,6 +2959,12 @@ test("a pending elicitation does not discard an in-progress config edit", async 
   expect(kept).toContain("Unsaved");
   expect(kept).toContain("contrast checker");
   expect(kept).not.toContain("allow this command?");
+
+  const coveredRecorder = new TestRecorder(t.renderer);
+  coveredRecorder.rec();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  coveredRecorder.stop();
+  expect(coveredRecorder.recordedFrames).toHaveLength(0);
 
   press(t, "escape");
   await captureUntil(t, "Discard unsaved changes?");

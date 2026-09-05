@@ -307,6 +307,7 @@ export function ElicitBlock(props: {
 
   return (
     <box
+      id="active-elicitation"
       flexDirection="column"
       flexShrink={0}
       width="100%"

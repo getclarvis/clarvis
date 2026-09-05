@@ -561,6 +561,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
   let lastCommit: TranscriptMeasurementCommit | null = null;
   let geometryMeasurementOwners = 0;
   let geometryMeasurementOwnerPeak = 0;
+  let tailClampRequested = false;
 
   const semanticKeys = createMemo(
     () => new Set(props.transcript.semanticNodes().map((node) => node.key)),
@@ -685,7 +686,11 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     pendingRevealPlaced = false;
     if (batchId !== null) controller.releaseEnsuredBatch(batchId);
   };
+  const requestTailClamp = (): void => {
+    tailClampRequested = true;
+  };
   const returnToTail = (): boolean => {
+    requestTailClamp();
     clearPendingReveal();
     scrollbox()?.clearPhysicalScrollDelta();
     const changed = controller.returnToTail();
@@ -736,12 +741,39 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     synchronizeScrollbar(element);
     let changed = synchronize();
     revealPending();
+    const beforeObservation = controller.snapshot();
+    const nativeManualMovement =
+      beforeObservation.followingTail &&
+      beforeObservation.candidate === null &&
+      beforeObservation.end >= beforeObservation.batchIds.length &&
+      !element.stickyScroll &&
+      element.scrollTop !== beforeObservation.scrollTop;
+    if (nativeManualMovement) {
+      tailClampRequested = false;
+      changed = controller.setFollowingTail(false) || changed;
+    }
     changed =
       controller.observe({
         scrollTop: element.scrollTop,
         scrollHeight: element.scrollHeight,
         viewportRows: element.viewport.height,
       }) || changed;
+    const observedTail = controller.snapshot();
+    const tailReady =
+      observedTail.candidate === null && observedTail.end >= observedTail.batchIds.length;
+    if (tailClampRequested && tailReady) {
+      if (!observedTail.followingTail) {
+        changed = controller.setFollowingTail(true) || changed;
+      }
+      const maxScrollTop = Math.max(0, element.scrollHeight - element.viewport.height);
+      if (element.scrollTop !== maxScrollTop) {
+        element.stickyScroll = false;
+        element.scrollTo({ x: 0, y: maxScrollTop });
+        element.stickyScroll = true;
+        renderer.requestRender();
+      } else element.stickyScroll = true;
+      tailClampRequested = false;
+    }
     const lock = presentationLock();
     const observed = controller.snapshot();
     if (lock !== null && !observed.geometryTransition && observed.layoutEpoch > lock.layoutEpoch)
@@ -781,7 +813,10 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     const element = scrollbox();
     const rows = Math.trunc(requestedRows);
     if (element === undefined || rows === 0) return "scrolled";
-    if (rows < 0) controller.setFollowingTail(false);
+    if (rows < 0) {
+      tailClampRequested = false;
+      controller.setFollowingTail(false);
+    }
     const snapshot = controller.snapshot();
     const firstId = snapshot.activeBatchIds[0];
     const activeStart = firstId === undefined ? undefined : controller.rowOf(firstId);
@@ -827,6 +862,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
     const element = scrollbox();
     if (element === undefined || !active()) return;
     if (direction === "up") {
+      tailClampRequested = false;
       controller.setFollowingTail(false);
       element.stickyScroll = false;
       controller.prefetchEarlier();
@@ -849,6 +885,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
 
   const handle: CommittedHistoryHandle = {
     requestEarlier: () => {
+      tailClampRequested = false;
       const element = scrollbox();
       if (element !== undefined) element.stickyScroll = false;
       const accepted = controller.requestEarlier();
@@ -879,6 +916,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
       pendingRevealBatchId = batch.id;
       pendingRevealPlaced = false;
       const element = scrollbox();
+      tailClampRequested = false;
       controller.setFollowingTail(false);
       if (element !== undefined) element.stickyScroll = false;
       const accepted = controller.ensureBatch(batch.id);
@@ -904,6 +942,7 @@ export function CommittedHistory(props: CommittedHistoryProps): JSX.Element {
 
   createEffect(() => {
     if (!active()) {
+      tailClampRequested = false;
       if (controller.cancelMeasurement()) requestRender();
       return;
     }

@@ -139,16 +139,16 @@ Backing hard bounds (not exported): `MAX_PROMPT_HISTORY_ENTRIES = 1_000` (`:52`)
 
 ### `adapters/local-shell.ts` — the `!` seam
 
-| Export                              | Signature                                                                                               | File:line  |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------- |
-| `LocalBashResult`                   | `{exitCode, stdout, stderr, signal, timedOut, cancelled, stdoutTruncated, stderrTruncated, durationMs}` | `:11-21`   |
-| `LocalBashOptions`                  | `{cwd, timeoutMs?, maxBytes?, signal?, env?}`                                                           | `:24-30`   |
-| `stripAnsi(s)`                      | `string`                                                                                                | `:37-39`   |
-| `runLocalBash(command, opts)`       | `Promise<LocalBashResult>`                                                                              | `:101-189` |
-| `formatBashObservation(command, r)` | `string` (tagged text block)                                                                            | `:198-210` |
+| Export                              | Signature                                                                                               | Source                                                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `LocalBashResult`                   | `{exitCode, stdout, stderr, signal, timedOut, cancelled, stdoutTruncated, stderrTruncated, durationMs}` | `packages/code/src/adapters/local-shell.ts` (`LocalBashResult`)                        |
+| `LocalBashOptions`                  | `{cwd, timeoutMs?, maxBytes?, signal?, env?}`                                                           | `packages/code/src/adapters/local-shell.ts` (`LocalBashOptions`)                       |
+| `stripAnsi(s)`                      | `string`                                                                                                | `packages/code/src/core/terminal-text.ts` (`stripAnsi`), re-exported by `local-shell.ts` |
+| `runLocalBash(command, opts)`       | `Promise<LocalBashResult>`                                                                              | `packages/code/src/adapters/local-shell.ts` (`runLocalBash`)                           |
+| `formatBashObservation(command, r)` | `string` (tagged text block)                                                                            | `packages/code/src/adapters/local-shell.ts` (`formatBashObservation`)                  |
 
 Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL_GRACE_MS = 1_500`,
-`EXIT_DRAIN_MS = 1_000` (`:5-8`).
+`EXIT_DRAIN_MS = 1_000` (`packages/code/src/adapters/local-shell.ts`).
 
 ### Overlay components (`views/overlays/*`, `views/input/{AutocompletePopup,CommandGroupHeader}.tsx`)
 
@@ -342,7 +342,7 @@ higher").
 
 ### Bash observation block
 
-`formatBashObservation(command, result)` (`packages/code/src/adapters/local-shell.ts:198-210`) renders (example from
+`formatBashObservation(command, result)` (`packages/code/src/adapters/local-shell.ts`) renders (example from
 `packages/code/tests/integration/local-shell.test.ts:172-204`):
 
 ```
@@ -352,18 +352,17 @@ clean
 </bash-output>
 ```
 
-- the attribute is `exit-code="N"` when the process exited, or `signal="SIGNAME"` when it did not
-  (`:199-200`);
-- `<bash-stderr>…</bash-stderr>` appears only when stderr is non-empty (`:205-206`);
+- the attribute is `exit-code="N"` when the process exited, or `signal="SIGNAME"` when it did not;
+- `<bash-stderr>…</bash-stderr>` appears only when stderr is non-empty;
 - a truncated stream gets a trailing `\n[output truncated]` line inside its own tag (`tagBody`,
-  `:191-195`);
+  in `local-shell.ts`);
 - `<bash-timed-out />` / `<bash-cancelled />` self-closing markers are appended when applicable
-  (`:207-208`).
+  (`formatBashObservation`).
 
 ### `shell.local.exit` diagnostic
 
 Every `runLocalBash` call emits exactly one `diagnosticEvent("shell.local.exit", {...})`
-(`packages/code/src/adapters/local-shell.ts:157-163`) with **exactly** the fields `exit_code`, `duration_ms`,
+(`packages/code/src/adapters/local-shell.ts`, `runLocalBash`) with **exactly** the fields `exit_code`, `duration_ms`,
 `killed`, `signal`, `spawn_failed` — pinned by `packages/code/tests/integration/local-shell.test.ts:36-44`
 (`Object.keys(record.details).sort()` equals that list). The command text is never a field.
 
@@ -662,27 +661,28 @@ gates in `PlanOverlay`).
 ### The local `!` shell path (`adapters/local-shell.ts:runLocalBash`)
 
 1. Resolve the host shell via `resolveShell()` (from `@clarvis/kernel/local`), but force the POSIX
-   executable to `bash` specifically rather than the kernel-tool default `sh` (`:106-107`).
+   executable to `bash` specifically rather than the kernel-tool default `sh` (`runLocalBash`).
 2. Spawn with `stdio: ["ignore", "pipe", "pipe"]` (stdin closed, so an interactive command like `cat`
-   exits immediately, `:112`) and `detached: ownProcessGroup()` so the whole process tree can be
+   exits immediately) and `detached: ownProcessGroup()` so the whole process tree can be
    killed as a group.
 3. Accumulate stdout/stderr through a `collector(maxBytes)` that truncates once and then no-ops for
-   the rest of the stream, so `truncated()` stays true for the remainder (`:52-71`).
+   the rest of the stream, so `truncated()` stays true for the remainder (`collector`).
 4. A `timeoutMs` timer or an aborted `signal` both call `startKill()`: SIGTERM immediately, SIGKILL
-   after `KILL_GRACE_MS` if the process group hasn't exited (`:133-136`).
+   after `KILL_GRACE_MS` if the process group hasn't exited (`runLocalBash`).
 5. On `exit`, wait `EXIT_DRAIN_MS` before destroying the streams and settling — so a grandchild that
    inherited the pipes and outlives the direct child (e.g. `sleep 5 &`) does not wedge the call
-   waiting on a pipe that never closes (`:180-186`, pinned by `packages/code/tests/integration/local-shell.test.ts:119-130`).
-6. `settle()` strips ANSI from both streams, emits exactly one `shell.local.exit` diagnostic, and
-   resolves the `LocalBashResult`.
+   waiting on a pipe that never closes (`runLocalBash`, pinned by `packages/code/tests/integration/local-shell.test.ts:119-130`).
+6. `settle()` projects both streams through `terminalPlainText`; OSC/DCS-family strings terminate on
+   BEL, `ESC \\` or C1 `ST`, so printable output following any standard terminator is retained. It
+   emits exactly one `shell.local.exit` diagnostic and resolves the `LocalBashResult`.
 
 This function is called from `run-host.ts`'s `runBangCommand` ([hosts/code-run-host.md](code-run-host.md) document,
 `packages/code/src/run-host.ts:1021-1063`), which is itself the implementation behind `InputDock`'s `onBashCommand` prop
 (wired at `packages/code/src/runtime.tsx` (`runControls.bang`) and
 `packages/code/src/views/App.tsx` as `props.run.bang`). **No `KernelClient`
 call, no `GuardContext`, and no shell-command analysis happen anywhere on this path** — the command
-guard that gates an agent's own `shell` tool calls is entirely bypassed, by design (comment at
-`packages/code/src/adapters/local-shell.ts:76-84`), because the command is one the user typed and submitted
+guard that gates an agent's own `shell` tool calls is entirely bypassed, by design (`runLocalBash` in
+`packages/code/src/adapters/local-shell.ts`), because the command is one the user typed and submitted
 themselves.
 
 ## 5. Invariants
@@ -752,19 +752,19 @@ settled turn's persisted continuation; an empty session reports that there is no
     the ring from working.** `packages/code/src/core/prompt-history.ts:83-92` (`report`, `reported` latch). Pinned:
     `packages/code/tests/integration/input-editor.test.ts:169-182`.
 16. **`!` always runs through `bash` specifically on POSIX**, even though the kernel's own tools
-    resolve to bare `sh`. `packages/code/src/adapters/local-shell.ts:106-107`. Pinned (skipped on win32):
+    resolve to bare `sh`. `packages/code/src/adapters/local-shell.ts` (`runLocalBash`). Pinned (skipped on win32):
     `packages/code/tests/integration/local-shell.test.ts:80-88`.
 17. **A `shell.local.exit` diagnostic never carries the command text**, only
-    `{exit_code, duration_ms, killed, signal, spawn_failed}`. `packages/code/src/adapters/local-shell.ts:157-163`.
+    `{exit_code, duration_ms, killed, signal, spawn_failed}`. `packages/code/src/adapters/local-shell.ts` (`runLocalBash`).
     Pinned: `packages/code/tests/integration/local-shell.test.ts:16-45` (exact key set, and the secret token in the
     command argv is absent from the serialized record).
 18. **Output truncation is exact at the byte cap**, not off-by-one in either direction: exactly
-    `maxBytes` is untruncated, `maxBytes+1` is. `packages/code/src/adapters/local-shell.ts:57-64` (`collector`). Pinned:
+    `maxBytes` is untruncated, `maxBytes+1` is. `packages/code/src/adapters/local-shell.ts` (`collector`). Pinned:
     `packages/code/tests/integration/local-shell.test.ts:107-117` (explicitly a regression comment: "C8 regression:
     output of exactly maxBytes was flagged truncated by the >= cap check").
 19. **A timeout or abort kills the whole process group**, not only the direct child, and a
-    grandchild that outlives the child does not wedge the call. `packages/code/src/adapters/local-shell.ts:125-136,
-180-186`. Pinned: `packages/code/tests/integration/local-shell.test.ts:119-139`.
+    grandchild that outlives the child does not wedge the call. `packages/code/src/adapters/local-shell.ts`
+    (`runLocalBash`). Pinned: `packages/code/tests/integration/local-shell.test.ts:119-139`.
 20. **`ListPicker` mounts only the windowed slice of items, never the whole list.**
     `packages/code/src/views/overlays/ListPicker.tsx` (`win`, via `windowRows`). Pinned:
     `packages/code/tests/integration/list-picker-render.test.tsx:216-236` (120 items, far fewer than 30 rendered).
@@ -811,7 +811,7 @@ settled turn's persisted continuation; an empty session reports that there is no
     concatenation of two fields (neither field alone) is `null`. `packages/code/src/core/fuzzy.ts:132-145`. Pinned:
     `packages/code/tests/unit/fuzzy-positions.test.ts:42-49`.
 29. **A local `!` command never reaches the command guard or a `KernelClient` call.**
-    `packages/code/src/adapters/local-shell.ts:76-84` (design statement in the source comment; the function's own body
+    `packages/code/src/adapters/local-shell.ts` (`runLocalBash`; the function's own body
     contains no such call). **Unpinned by an automated test** — this is an absence-of-a-call
     property, not directly assertable from the outside; verified here only from the function
     and its call sites.
@@ -986,7 +986,7 @@ the picker only while the complete splash fits`).
   (`packages/code/src/run-host.ts:730-763`).
 - **`runLocalBash`'s own spawn failure (`proc.on("error", ...)`) still resolves, never rejects**: it
   records `spawnError`, settles with `exitCode: null` and `stderr` falling back to the spawn error's
-  message (`packages/code/src/adapters/local-shell.ts:176-179,164-175`). Pinned:
+  message (`packages/code/src/adapters/local-shell.ts`, `runLocalBash`). Pinned:
   `packages/code/tests/integration/local-shell.test.ts:57-71` (a nonexistent `cwd` "settles as a failure and
   records why", with `spawn_failed: true` in the diagnostic).
 - **Prompt history persistence degradation never blocks the ring.** A failed `append`/`compact`
@@ -1020,7 +1020,7 @@ the picker only while the complete splash fits`).
   `ListPicker`, `Help`, `PlanOverlay` all register key layers through
   this vocabulary; this document does not re-derive keybinding semantics.
 - `@clarvis/kernel/local` (`resolveShell`, `shellArgs`, `killTree`, `ownProcessGroup`) —
-  `packages/code/src/adapters/local-shell.ts:2` reuses the exact shell-dialect resolver the kernel's own tools use, so
+  `packages/code/src/adapters/local-shell.ts` reuses the exact shell-dialect resolver the kernel's own tools use, so
   `!` never diverges in _which_ shell binary/flavor runs, only in forcing `bash` over bare `sh`.
 - `@clarvis/protocol` — `MessageContent`, `PlanDocumentDto`/`PlansService`, `Scope` — the wire types
   `InputDock` composes and `PlanOverlay`/`AgentProfilePicker`
@@ -1066,7 +1066,7 @@ nothing beyond `@clarvis/protocol` types and are themselves leaves within `packa
   have honored, is a design property stated by reading the code, not proven by a test that submits
   both simultaneously.
 - **The absence of a `KernelClient`/guard call on the `!` path (Invariant 30)** is documented in a
-  source comment (`packages/code/src/adapters/local-shell.ts:76-84`). ~~No test can assert "no call was
+  source comment on `runLocalBash` in `packages/code/src/adapters/local-shell.ts`. ~~No test can assert "no call was
   made" as directly as it can assert a positive behavior; this is inherently an
   absence-property.~~ **Pinned 2026-08-22** by
   `packages/code/tests/architecture/local-bash-bypasses-the-kernel.test.ts`, which asserts the absence

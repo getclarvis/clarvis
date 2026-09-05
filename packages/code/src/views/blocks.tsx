@@ -4,6 +4,7 @@ import { tokens } from "../theme/tokens.ts";
 import { borderChars, glyph } from "../theme/glyphs.ts";
 import { tone, type ToneStyle } from "../theme/tone.ts";
 import { focusBg, userBandBg } from "../theme/surfaces.ts";
+import { terminalPlainText } from "../core/terminal-text.ts";
 import type {
   NodeStatus,
   TranscriptAnnotationNode,
@@ -161,7 +162,7 @@ export function composingLabel(chars: number, complete = false, streamChars?: nu
 
 function liveTailLines(node: TranscriptToolNode): string[] {
   if (node.status !== "running" || !node.liveOutput) return [];
-  const lines = node.liveOutput.split("\n");
+  const lines = terminalPlainText(node.liveOutput).split("\n");
   if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
   return lines.slice(-LIVE_TAIL_LINES);
 }
@@ -378,7 +379,7 @@ function ToolLine(props: {
         </text>
       </box>
       <Show when={tail().length > 0}>
-        <box flexDirection="column" paddingLeft={props.indent ? 5 : 3} overflow="hidden">
+        <box flexDirection="column" paddingLeft={props.indent ? 6 : 4} overflow="hidden">
           <For each={tail()}>
             {(line) => (
               <text fg={tokens.muted} wrapMode="none" truncate>

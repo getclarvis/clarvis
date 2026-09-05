@@ -988,14 +988,28 @@ in `packages/code/src/adapters/transcript-publication.ts`, plus `openRun` in
 
 **INV-TP34.** A pending elicitation cannot be hidden below an older physical-history reader. When
 the request becomes live, `App` explicitly asks the active `CommittedHistoryHandle` to return to its
-tail before the composer is hidden, then re-clamps the ScrollBox after the question has entered
-layout. When the request clears, it re-clamps once more after the card leaves layout, so the restored
-composer does not expose a blank or stale overscroll frame. Ordinary background events still retain
-an older reader anchor; this forced navigation belongs only to the user interaction that has blocked
-the run. Production: `packages/code/src/views/App.tsx` (`revealHistoryTail`, elicitation effect) and
-`packages/code/src/views/history/CommittedHistory.tsx` (`CommittedHistoryHandle.returnToTail`). Test:
+tail before the composer is hidden. The old composer stays painted but keyboard-inert until the
+`active-elicitation` block owns a visible transcript row; `App` then requests the tail again before
+hiding that bridge.
+If a dirty full-page editor covers the transcript, `App` pauses the transition and restarts it only
+when overlay state changes rather than polling renderer frames. `CommittedHistory` retains an
+explicit clamp until the virtual tail is physically resident, applies that clamp once, then releases
+the latch so scrollbar dragging and selection autoscroll can leave the tail. `App` issues the next
+bounded request after each elicitation geometry transition instead of treating the first
+`scrollHeight` as final. When the request clears, the composer returns and a new clamp absorbs the
+card's removal, so no frame loses both interaction surfaces or exposes blank/stale overscroll.
+Ordinary background events still retain an older reader anchor; this forced navigation belongs only
+to the user interaction that has blocked the run. Production: `packages/code/src/views/App.tsx`
+(`elicitComposerHidden`, `revealHistoryTail`, elicitation effect),
+`packages/code/src/views/ElicitBlock.tsx` (`active-elicitation`) and
+`packages/code/src/views/history/CommittedHistory.tsx` (`tailClampRequested`,
+`CommittedHistoryHandle.returnToTail`). Test:
 `packages/code/tests/integration/app-shell-render.test.tsx` ("an elicitation returns an old reader to
-the live tail before hiding the composer").
+the live tail before hiding the composer" and "a pending elicitation does not discard an in-progress
+config edit"), which records the transition, proves a covered dirty view stays idle, and requires
+each transition frame to contain either the bridge composer or the pending question; plus
+`packages/code/tests/integration/transcript-window-render.test.tsx` ("native scrollbar movement is
+free after an explicit tail clamp settles").
 
 ## 6. Failure modes and degradation
 

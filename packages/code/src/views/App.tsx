@@ -476,6 +476,9 @@ export function App(props: AppProps): JSX.Element {
   const [editorExpanded, setEditorExpanded] = createSignal(false);
   const [inputPopupOpen, setInputPopupOpen] = createSignal(false);
   const [draftNonEmpty, setDraftNonEmpty] = createSignal(false);
+  const [elicitComposerHidden, setElicitComposerHidden] = createSignal(false);
+  let elicitTransitionRevision = 0;
+  let elicitTransitionStartedRevision = 0;
   type TransientOverlay = "none" | "activityDetail" | "worktreeExit";
   const [transientOverlay, setTransientOverlay] = createSignal<TransientOverlay>("none");
   const [activityDetail, setActivityDetail] = createSignal<ActivityDetailValue | null>(null);
@@ -1282,38 +1285,96 @@ export function App(props: AppProps): JSX.Element {
     interaction.setModalContext(props.run.elicit() != null || switching ? "elicitation" : "none");
   });
 
-  const revealHistoryTail = (): void => {
-    queueMicrotask(() => {
-      const revealAfterLayout = (): void => {
-        scrollEl?.scrollBy({ x: 0, y: 1_000_000 });
-        if (!props.shell.renderer.isDestroyed) props.shell.renderer.requestRender();
-      };
-      if (historyHandle === undefined) {
-        revealAfterLayout();
+  const revealHistoryTail = (afterLayout?: () => void): void => {
+    if (historyHandle !== undefined) {
+      const handle = historyHandle;
+      handle.returnToTail();
+      props.shell.renderer.once("frame", () => {
+        if (props.shell.renderer.isDestroyed) return;
+        handle.returnToTail();
+        afterLayout?.();
+      });
+      return;
+    }
+    const element = scrollEl;
+    if (element === undefined) return;
+    const clamp = (): void => {
+      element.stickyScroll = false;
+      element.scrollTo({ x: 0, y: Math.max(0, element.scrollHeight - element.viewport.height) });
+      element.stickyScroll = true;
+    };
+    clamp();
+    props.shell.renderer.once("frame", () => {
+      if (props.shell.renderer.isDestroyed) return;
+      clamp();
+      afterLayout?.();
+    });
+    if (!props.shell.renderer.isDestroyed) props.shell.renderer.requestRender();
+  };
+
+  const elicitationIsVisible = (): boolean => {
+    const element = scrollEl;
+    const elicitation = element?.content.findDescendantById("active-elicitation");
+    if (element === undefined || elicitation === undefined || elicitation.isDestroyed) return false;
+    const viewportStart = element.viewport.screenY;
+    const viewportEnd = viewportStart + element.viewport.height;
+    return (
+      elicitation.screenY < viewportEnd && elicitation.screenY + elicitation.height > viewportStart
+    );
+  };
+
+  const beginElicitTransition = (req: ElicitRequestParams, revision: number): void => {
+    if (elicitTransitionStartedRevision === revision) return;
+    elicitTransitionStartedRevision = revision;
+    const finishTransition = (): void => {
+      if (revision !== elicitTransitionRevision || props.run.elicit() !== req) return;
+      if (overlays.overlay() !== "none" || transientOverlay() !== "none") {
+        if (elicitTransitionStartedRevision === revision) elicitTransitionStartedRevision = 0;
         return;
       }
-      props.shell.renderer.once("frame", revealAfterLayout);
-      historyHandle.returnToTail();
-    });
+      if (!elicitationIsVisible()) {
+        revealHistoryTail(finishTransition);
+        return;
+      }
+      setElicitComposerHidden(true);
+      if (!props.shell.renderer.isDestroyed) props.shell.renderer.requestRender();
+    };
+    revealHistoryTail(finishTransition);
   };
 
   createEffect(
     on(
-      () => props.run.elicit(),
-      (req, previous) => {
-        if (req == null) {
-          if (previous != null) revealHistoryTail();
+      () => [props.run.elicit(), overlays.overlay(), transientOverlay()] as const,
+      ([req, overlay, transient], previous) => {
+        const previousRequest = previous?.[0] ?? null;
+        if (req !== previousRequest) {
+          elicitTransitionRevision += 1;
+          elicitTransitionStartedRevision = 0;
+          setElicitComposerHidden(false);
+          if (req == null) {
+            if (previousRequest != null) revealHistoryTail();
+            return;
+          }
+          dock?.closeEditor();
+          closeTransientOverlay();
+          overlays.dismissTopUnlessDirty({
+            reason:
+              "the agent is waiting for an answer " +
+              glyph("emDash") +
+              " save changes or leave this view to reply",
+          });
+        }
+        if (req == null) return;
+        if (
+          overlay !== "none" ||
+          transient !== "none" ||
+          overlays.overlay() !== "none" ||
+          transientOverlay() !== "none"
+        ) {
+          elicitTransitionStartedRevision = 0;
           return;
         }
-        dock?.closeEditor();
-        closeTransientOverlay();
-        overlays.dismissTopUnlessDirty({
-          reason:
-            "the agent is waiting for an answer " +
-            glyph("emDash") +
-            " save changes or leave this view to reply",
-        });
-        revealHistoryTail();
+        beginElicitTransition(req, elicitTransitionRevision);
       },
     ),
   );
@@ -1530,7 +1591,7 @@ export function App(props: AppProps): JSX.Element {
             history={props.session.history}
             providers={providerList()}
             visible={() =>
-              overlays.overlay() === "none" && !props.run.elicit() && !props.run.switching?.()
+              overlays.overlay() === "none" && !elicitComposerHidden() && !props.run.switching?.()
             }
             runActive={() => props.run.active()}
             submissionBlocked={pressureBlockedReason}

@@ -1589,7 +1589,7 @@ both a leader and the manager root. Production: the `run_ended` and terminal wor
 cancelled manager root`).
 
 **INV-T41.** This document's slice of `src/core/**` (`core/transcript/**`, `core/marks.ts`,
-`core/run-status.ts`, `core/attention.ts`, `core/format-elapsed.ts`) complies with the whole-package
+`core/run-status.ts`, `core/attention.ts`, `core/format-elapsed.ts`, `core/terminal-text.ts`) complies with the whole-package
 `src/core/**` import boundary (INV-243) — full statement owned by
 [hosts/code-bootstrap.md](code-bootstrap.md) §5. Production example:
 `packages/code/src/core/transcript/presenters.ts:1` imports `../marks.ts` only.
@@ -1790,6 +1790,23 @@ removes every composing placeholder from the failed attempt before rendering ret
 Production: `openRun` in `packages/code/src/adapters/store.ts`. Test:
 `packages/code/tests/unit/streaming-delta.test.ts` (`tool-input end marks arguments ready until the
 real tool call starts` and `a retry drops composing placeholders from the failed provider attempt`).
+
+**INV-T59.** Untrusted process output cannot carry terminal cursor, device or line-editing controls
+into an OpenTUI text renderable. `terminalPlainText` removes CSI and string-control families, drops
+remaining C0/C1 controls except newline and tab, recognizes C1 `ST` as a string terminator without
+consuming the printable suffix, projects bare carriage return as replacement of the current line,
+and applies backspace within that line. Running tool tails and settled plain result
+cards use this same projection, and their text begins at the same physical column; the trace and raw
+tool-result ownership stay outside this presentation boundary. Local `!bash` capture also applies
+the projection before constructing its observation. Production:
+`packages/code/src/core/terminal-text.ts` (`stripAnsi`, `terminalPlainText`),
+`packages/code/src/views/blocks.tsx` (`liveTailLines`, live-tail inset),
+`packages/code/src/views/tools/registry.tsx` (`ClampedText`) and
+`packages/code/src/adapters/local-shell.ts` (`runLocalBash`). Tests:
+`packages/code/tests/unit/terminal-text.test.ts`,
+`packages/code/tests/integration/local-shell.test.ts` ("strips ANSI escapes from captured output")
+and `packages/code/tests/integration/tool-live-tail-render.test.tsx` ("Prisma cursor controls stay
+inert and live output keeps its settled text column").
 
 ---
 

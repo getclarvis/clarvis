@@ -623,12 +623,10 @@ overrun.
 
 ## `code`'s `!bash` fix for Windows is unverified
 
-`runLocalBash` (`packages/code/src/adapters/local-shell.ts:101`) carried the same unconditional
+`runLocalBash` (`packages/code/src/adapters/local-shell.ts`) carried the same unconditional
 `detached: true` as the tools' `shell` and was silently broken on Windows in the same way; it now
-uses `ownProcessGroup()` (`packages/code/src/adapters/local-shell.ts:111`, reached through
-`@clarvis/kernel/local` at line 2). The module has not been touched since this was filed —
-`git diff` against the commit that deleted the old spec corpus reports no change to it — so both the
-fix and the gap are exactly as recorded.
+uses `ownProcessGroup()` from `@clarvis/kernel/local`. Later terminal-text hardening changed only the
+captured output projection; the process-control path and its platform gap remain exactly as recorded.
 
 The change is POSIX-identical by construction: `ownProcessGroup` is `platform !== "win32"`
 (`packages/tools/src/lib/process.ts:46`), so on POSIX the spawn is byte-for-byte the `detached: true`
@@ -659,7 +657,7 @@ Nothing pins that `runLocalBash` calls it, and no assertion about `!bash` behavi
 Windows host.
 
 A concrete candidate for "some other reason" is visible in the module itself: the Windows path is not
-the POSIX path with one flag flipped. `packages/code/src/adapters/local-shell.ts:107` branches the
+the POSIX path with one flag flipped. `runLocalBash` branches the
 executable — `bash` on POSIX, `shell.file` otherwise — so on Windows the whole `resolveShell` /
 `shellArgs` PowerShell route, base64 `-EncodedCommand` payload included, is Windows-only code that no
 test reaches. The suite's one win32 guard is scoped to shell *syntax* and not to any of that:
@@ -1124,6 +1122,27 @@ owner count stays bounded (`packages/code/tests/integration/transcript-publicati
 "scrolling above a live tail preserves the reader while terminal updates stay physically bounded").
 The companion test "expanding a tall committed tool cannot strand physical measurement or newer
 batches" fixes the 99/96-column mismatch and proves that a later terminal publication is admitted.
+
+**Two presentation follow-ons were resolved on 2026-09-04 under OpenTUI 0.5.9.** Elicitation used a
+one-frame `scrollBy` after replacing the composer. With a long physical history, the virtual tail or
+question could change `scrollHeight` after that one clamp, leaving a frame with neither the old
+composer nor the blocking controls; a manual scroll recomputed the correct maximum. The shell live
+tail also passed Prisma/npm cursor-control sequences directly into `<text>` and began one column to
+the left of its settled result card, so cursor updates polluted/truncated rows and settlement looked
+like a partial recovery. Elicitation now retains an inert composer bridge until the question owns a
+visible transcript row and keeps an explicit tail clamp while the controller follows the tail. Process output now
+passes through the shared terminal-safe plain-text projection in both live and settled renderers,
+and both phases share the same text column. The regressions are pinned by the frame-recording
+elicitation case in `app-shell-render.test.tsx`, the exact Prisma control stream in
+`tool-live-tail-render.test.tsx`, and `terminal-text.test.ts`.
+
+A follow-up review found that the first clamp remained latched after the transition and could capture
+native scrollbar dragging or selection autoscroll. It also found that retrying visibility while a
+dirty full-page editor covered the transcript formed an unbounded renderer loop, and that C1 `ST`
+did not terminate OSC/DCS-family strings. The clamp now waits for a resident physical tail, applies
+once and releases; dirty overlays pause the transition until their state changes; and the terminal
+projection retains printable text after C1 `ST`. The direct regressions live in
+`transcript-window-render.test.tsx`, `app-shell-render.test.tsx`, and `terminal-text.test.ts`.
 
 The review then found two edge paths in that same repair. The aggregate handoff spacer was always
 inserted before every retained live owner, so a later offscreen tool completing before an earlier

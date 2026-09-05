@@ -19,6 +19,13 @@ host sandbox boundary are specified in
 [`execution/command-guard.md`](../../specs/execution/command-guard.md) and
 [`execution/sandbox.md`](../../specs/execution/sandbox.md).
 
+The compact model-facing surface follows
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md): local argument rules and
+recovery details live beside each tool. Shell commands block; persistent work uses `monitor_start`.
+Descriptions retain truncation direction and continuation guidance, distinguish grep's regex engines,
+and provide an executable multiline `apply_patch` example. The complete 24-tool descriptor JSON has
+a 21,000-character regression ceiling; that is not a provider token count.
+
 ## What it provides
 
 - File operations: read, batch read, image read, write, edit, multi-edit, patch,

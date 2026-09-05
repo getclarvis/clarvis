@@ -12,13 +12,13 @@ import { compareAgentDisplayOrder } from "../../src/config/agent-resolution.ts";
 const ADMIRAL = readBuiltinAgent("admiral")!;
 const MARSHALL = readBuiltinAgent("marshall")!;
 const PROMPT_TOKEN_BUDGETS = {
-  marshall: 220,
-  admiral: 300,
-  coder: 130,
-  explorer: 120,
-  planner: 130,
+  marshall: 280,
+  admiral: 410,
+  coder: 160,
+  explorer: 160,
+  planner: 180,
 } as const;
-const FLEET_PROMPT_TOKEN_BUDGET = 800;
+const FLEET_PROMPT_TOKEN_BUDGET = 1150;
 
 /** Match the engine's text-only estimate: one token per four characters. */
 function estimatedTokens(text: string): number {
@@ -50,6 +50,17 @@ describe("the agent fleet Clarvis ships", () => {
       );
     }
     expect(total).toBeLessThanOrEqual(FLEET_PROMPT_TOKEN_BUDGET);
+  });
+
+  test("retains the harness handoff contract in every profile", () => {
+    for (const agent of BUILTIN_AGENTS) {
+      const prompt = agent.body.replace(/\s+/g, " ");
+      expect(prompt).toContain("Use only tools exposed in this run");
+      expect(prompt).toMatch(/not (?:your|the Lead's) conversation/);
+      expect(prompt).toContain("share the workspace");
+      expect(prompt).toContain("`submit_result` when exposed");
+      expect(prompt).toContain("otherwise return final text");
+    }
   });
 
   /**
@@ -113,7 +124,7 @@ describe("the shipped admiral agent", () => {
     expect(prompt).toContain("`spawn_subagent`");
     expect(prompt).toContain("`delegate_task`");
     expect(prompt).toContain("manager-local children");
-    expect(prompt).toContain("genuinely independent work");
+    expect(prompt).toContain("delegate only when it adds value");
   });
 
   test("names the installed-workflow and human-preflight capability", () => {
@@ -126,7 +137,9 @@ describe("the shipped admiral agent", () => {
     expect(prompt).toContain("`workflow_status`");
     expect(prompt).toContain("`workflow_decide`");
     expect(prompt).toContain("pauses at each round boundary");
-    expect(prompt).toContain("finalization is blocked while a child is live");
+    expect(prompt).toContain("Finalization is blocked while a child is live");
+    expect(prompt).toContain("A paused sequence is not a completed workflow");
+    expect(prompt).toContain("partial edits");
   });
 });
 
@@ -141,22 +154,22 @@ describe("the shipped marshall agent", () => {
     expect(prompt).toContain("`spawn_subagent` for independent work");
     expect(prompt).toContain("`delegate_task` for an existing plan task");
     expect(prompt).toContain("exact `task_id`");
-    expect(prompt).toContain(
-      "not for trivial, sequential, overlapping, or performative delegation",
-    );
+    expect(prompt).toContain("when planning is enabled");
+    expect(prompt).toContain("A background handle is not a result");
+    expect(prompt).toContain("Review returned work before closing a plan task");
   });
 });
 
 describe("the shipped Sub-agent leaves", () => {
-  test("state their role and the harness boundary without teaching a workflow", () => {
+  test("state their role, limitations and blocker handoff", () => {
     for (const name of ["coder", "explorer", "planner"] as const) {
       const agent = readBuiltinAgent(name)!;
       const prompt = agent.body.replace(/\s+/g, " ");
       expect(agent.frontmatter.can_spawn).toBeUndefined();
       expect(prompt).toContain(`You are \`${name}\``);
-      expect(prompt).toContain("The harness gives you");
+      expect(prompt).toContain("When delegated");
       expect(prompt).toContain("You are a leaf");
-      expect(prompt).toContain("It does not give you the caller's conversation");
+      expect(prompt).toContain("blocker");
     }
   });
 });

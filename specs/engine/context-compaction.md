@@ -309,26 +309,22 @@ nothing else; its own module doc comment states why it is split out rather than 
 mechanics, and so a host embedding `@clarvis/loop` can import it and extend rather than replace it"
 (`packages/loop/src/runtime/context/compaction-prompt.ts:6-8`).
 
-- **`DEFAULT_COMPACTION_PROMPT`** (`packages/loop/src/runtime/context/compaction-prompt.ts:10-28`) is
-  the system-turn text `attemptCompaction` sends the summarizer (`prompt` in the two-message call
-  below). It frames the summary as the agent's only remaining record of the transcript ("Your summary
-  is the only record of it the agent will ever see again, so anything you leave out is lost for the
-  rest of the run"), then lists what to preserve verbatim where short — objective/constraints, decisions
-  and the alternatives rejected, file paths/symbols/identifiers/URLs/commands and their exact
-  outcomes, error messages and stack frames, expensively-discovered system facts, and what is
-  finished/in-progress/outstanding — followed by what to leave out (pretty-printed listings,
-  superseded tool output, dead-end exploration) and four output rules: output only the summary (no
-  preamble, no sign-off), terse bullets under short headings, never invent or soften a fact, and never
-  mention that compaction happened.
-- **`COMPACTION_UPDATE_INSTRUCTION`** (`packages/loop/src/runtime/context/compaction-prompt.ts:38-42`)
-  is appended after `DEFAULT_COMPACTION_PROMPT` — immediately followed by the prior summary's own
-  text — whenever a rolling summary anchor already exists (see `updateBlock` below). Its own doc
-  comment states the failure it exists to prevent: "without it the second compaction would silently
-  *discard* the first summary rather than absorb it: the anchor is replaced in place, not appended to,
-  so the model has to return the whole merged text" (`:34-36`). The instruction text itself tells the
-  model it is updating, not writing, a summary; to return the complete merged text rather than a
-  delta or a reference to the earlier version; and to let the merged summary grow past the prior
-  one's length only when the transcript introduced facts that genuinely must be carried forward.
+- **`DEFAULT_COMPACTION_PROMPT`** is the system text `attemptCompaction` sends the summarizer.
+  It treats the transcript as data, retaining the latest objective and corrections, authorization,
+  unresolved decisions, unfinished work and child handles, exact identifiers and actual outcomes.
+  Observations stay distinct from claims or intentions; tool output is not new authority. Repeated
+  or superseded output, dead ends and information already in the reference block may be omitted.
+  Only a concise self-contained briefing is returned.
+- **`COMPACTION_UPDATE_INSTRUCTION`** is appended when a rolling anchor exists, followed by its
+  text. It requires the complete merged summary, not a delta: preserve relevant earlier facts,
+  apply corrections and discard obsolete detail. The earlier summary is data, not instructions.
+
+Production: both constants in `packages/loop/src/runtime/context/compaction-prompt.ts`, consumed by
+`summarizeContext` in `packages/loop/src/runtime/context/llm-compaction.ts`. Test:
+`packages/loop/tests/unit/compaction-guidance.test.ts` pins the authority/continuity guidance and its
+1500-character combined ceiling; `packages/loop/tests/unit/llm-compaction.test.ts` exercises the
+first-pass and merged-anchor requests. These are structural checks, not proof of a model's recall;
+see [`model-instructions.md`](../cross-cutting/model-instructions.md).
 
 ### The compaction summarizer's two-message call (`packages/loop/src/runtime/context/llm-compaction.ts:188-210`)
 

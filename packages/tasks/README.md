@@ -17,6 +17,11 @@ specified in [`tasks-domain.md`](../../specs/capabilities/tasks-domain.md). Run 
 settings, gates, and kernel composition are specified in
 [`tasks-capability.md`](../../specs/capabilities/tasks-capability.md).
 
+Tool descriptions distinguish provider task ids from plan task ids and expose the cross-field review
+requirement: evidence, an artifact, or `no_evidence_reason`. `allow_without_artifacts` requests human
+approval after a definitive publication failure; it cannot bypass a conflict or uncertain outcome.
+See [`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
+
 Public entries:
 
 - `@clarvis/tasks` — domain/provider contracts, schemas, errors, MCP adapter and provider key;

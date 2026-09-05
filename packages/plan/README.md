@@ -18,6 +18,12 @@ retention are specified in [`plan-capability.md`](../../specs/capabilities/plan-
 External providers are governed by
 [`provider-executables.md`](../../specs/capabilities/provider-executables.md).
 
+Model guidance names tools conditionally and takes mutation revisions from the current plan state,
+not guesses. Review restrictions do not grant otherwise unavailable tools. A delegated task's return
+is not closure: the lead must inspect its outcome before recording `done` or genuine `abandoned`.
+The finalization note does not ask for invented evidence or early completion; see
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
+
 ## Entry points
 
 | Entry                      | Contents                                                                    |

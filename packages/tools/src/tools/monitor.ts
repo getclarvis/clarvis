@@ -178,13 +178,9 @@ export function createMonitorStart(
   return {
     name: "monitor_start",
     description:
-      "Start a long-lived command in the BACKGROUND and return a monitor id immediately — unlike " +
-      "shell, which blocks until the command exits. Use it for a dev server, file watcher, `tail -f`, " +
-      "or anything that keeps producing output over time. Read incremental output with monitor_poll " +
-      "and stop it with monitor_stop. If `ready_when` (a regex) is given, blocks until the output " +
-      "matches it (or `ready_timeout_ms` elapses) before returning. Do NOT background inside the " +
-      "command (no trailing `&`) — the monitor backgrounds it for you, and a trailing `&` makes the " +
-      "id track the wrong process.",
+      "Start a server, watcher or other long-lived command in the background. Returns a monitor id; " +
+      "with ready_when, waits for readiness or its timeout first. Use monitor_poll for incremental " +
+      "output and monitor_stop to stop it. Do not background the command yourself (no trailing `&`).",
     bounded: true,
     inputSchema: {
       type: "object",
@@ -192,22 +188,21 @@ export function createMonitorStart(
         command: {
           type: "string",
           description:
-            "Shell command run via `sh -c`, in the background. stdin is closed. Its stdout and " +
-            "stderr are combined into one log you read with monitor_poll.",
+            "Command in the host shell (sh on POSIX, PowerShell on Windows), with closed stdin. " +
+            "stdout and stderr share one monitor_poll log.",
         },
         cwd: { type: "string", description: "Working directory. Default: workspace root." },
         ready_when: {
           type: "string",
           description:
-            "Optional regex. When set, monitor_start blocks until the combined output matches it " +
-            '(e.g. "listening on"), then returns with ready:true. Times out per ready_timeout_ms. ' +
-            "Matched against the first MAX_OUTPUT_BYTES of output.",
+            'Readiness regex, e.g. "listening on", tested against a bounded prefix of the combined log. ' +
+            "Inspect ready in the result; starting a process alone does not establish readiness.",
         },
         ready_timeout_ms: {
           type: "integer",
           minimum: 0,
           description:
-            "Max time to wait for ready_when, in ms. Default: MONITOR_READY_TIMEOUT_MS (30000). " +
+            "Readiness wait in ms. Configuration default: 30000. " +
             "Ignored unless ready_when is set.",
         },
       },

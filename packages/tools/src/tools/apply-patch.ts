@@ -316,25 +316,19 @@ function firstFailingHunk(source: string, p: ParsedPatch): number | undefined {
 export const applyPatchTool: ToolDef = {
   name: "apply_patch",
   description:
-    "Apply either a Codex-style patch (`*** Begin Patch`, then `*** Update File:` / `*** Add " +
-    "File:` / `*** Delete File:` blocks, ending `*** End Patch`) or a unified diff across one or " +
-    "more files in a single atomic call. The Codex-style form is recommended. Modify, create, " +
-    "delete, and rename/move operations are supported. Unified diffs create via " +
-    "`--- /dev/null`, delete via `+++ /dev/null`, rename/move when the old and new paths differ). " +
-    "Hunks are located by their context lines with a small line-offset tolerance; a hunk whose " +
-    "context does not match fails (`patch_failed`, naming the file and hunk) and NOTHING is " +
-    "written. Use for changes spanning MANY files; for several edits to a single file use " +
-    "multi_edit.",
+    "Atomically create, update, delete or move one or more files with a Codex-style patch " +
+    "(preferred) or unified diff. If any hunk fails, nothing is written; re-read the named " +
+    "file and correct its context before retrying.",
   inputSchema: {
     type: "object",
     properties: {
       patch: {
         type: "string",
         description:
-          "Prefer this format: `*** Begin Patch\\n*** Update File: path\\n@@\\n-old\\n+new\\n" +
-          "*** End Patch`. Add blocks prefix every content line with +; delete blocks contain no " +
+          "Use real newlines, without Markdown fences:\n*** Begin Patch\n*** Update File: path\n@@\n-old\n+new\n" +
+          "*** End Patch\nAdd blocks prefix every content line with +; delete blocks contain no " +
           "hunks; `*** Move to: new-path` may follow an Update header. A raw unified diff with " +
-          "--- / +++ headers is also accepted. Do not wrap the patch in Markdown fences.",
+          "--- / +++ headers is also accepted.",
       },
     },
     required: ["patch"],

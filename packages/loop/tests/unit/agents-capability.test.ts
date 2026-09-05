@@ -79,6 +79,13 @@ describe("agents capability — activation", () => {
     ]);
   });
 
+  it("distinguishes a wait wake from completion or cancellation", () => {
+    const { contribution } = attach();
+    const wait = contribution.tools!.find((tool) => tool.wireName === AWAIT_AGENTS_TOOL)!;
+    expect(wait.description).toContain("inspect woke_on and still_running");
+    expect(wait.description).toContain("Timeout leaves children running");
+  });
+
   it("does not attach to a spawned sub-agent — that is what scopes a parent to its own children", () => {
     const registry = createAgentRegistry({ limits: LIMITS });
     const capability = createAgentsRunCapability(registry, 50, 2);

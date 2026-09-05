@@ -71,14 +71,9 @@ export const WORKFLOW_STATUS_TOOL_NAME = "workflow_status";
 export const WORKFLOW_DECIDE_TOOL_NAME = "workflow_decide";
 
 const RUN_ROUND_DESCRIPTION =
-  "Run a sequence of declared rounds. Each round says what it consumes — 'once', " +
-  "'each(<round>.<field>)' or 'all(<round>.<field>)' — and the runtime works out the fan-out and " +
-  "the waiting: 'each' starts one leader per item, 'all' hands the whole set to one leader. Later " +
-  "rounds read earlier rounds' structured results by name, so routing decisions (which findings " +
-  "need verification, which gaps remain) are made by the leader that had the context, not " +
-  "re-derived by you. Only the first round starts: after every round the sequence pauses at a " +
-  "checkpoint until the Admiral calls workflow_decide. Returns immediately; collect the leaders " +
-  "with await_agents or agent_poll.";
+  "Start the first round of a declared sequence and return immediately. Collect leaders with " +
+  "await_agents or agent_poll. Internal waves run automatically; later rounds and repeat passes " +
+  "require workflow_status then revision-matched workflow_decide. Only one sequence may be active.";
 
 /** Build the read-only checkpoint inspection tool. */
 export function buildWorkflowStatusTool(): NamespacedTool {
@@ -240,7 +235,8 @@ export function buildRunRoundTool(profiles?: readonly LeaderProfileInfo[]): Name
       maxLength: WORKFLOW_LIMITS.pathChars,
       description:
         "OPTIONAL — how to fold the replicas: 'all(<field>, <value>)', 'any(…)', 'majority(…)' " +
-        "or 'threshold(<field>, <value>, <count>)'. A replica that failed counts against the rule.",
+        "or 'threshold(<field>, <value>, <count>)'. Failed replicas count against the rule. " +
+        "accepted means the predicate matched, not that the claim is true; rejected is its complement.",
     },
     when: {
       type: "string",
@@ -258,7 +254,7 @@ export function buildRunRoundTool(profiles?: readonly LeaderProfileInfo[]): Name
       maxLength: WORKFLOW_LIMITS.identifierChars,
       enum: profiles.map((p) => p.name),
       description:
-        "OPTIONAL — the profile this round's leaders run as. Available profiles — " +
+        "Profile for this round; omit for the default. Available profiles: " +
         profiles.map((p) => `${p.name}: ${p.description ?? "(no description)"}`).join("; "),
     };
   }
@@ -289,8 +285,8 @@ export function buildRunRoundTool(profiles?: readonly LeaderProfileInfo[]): Name
           additionalProperties: false,
           required: ["rounds", "dedupe_by", "max_rounds"],
           description:
-            "OPTIONAL — re-run these rounds until they stop producing anything new. Deduplication " +
-            "is against everything seen so far, not against what survived verification.",
+            "Propose repeat passes, each requiring workflow_decide. Deduplication uses everything " +
+            "seen, not just findings that survived verification.",
           properties: {
             rounds: {
               type: "array",

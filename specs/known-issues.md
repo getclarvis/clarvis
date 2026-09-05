@@ -2337,16 +2337,17 @@ The plans capability does contribute a `beforeIteration` hook
 land. It only resets the per-iteration flags and republishes the plan as canonical context. It does
 not nudge.
 
-Adding a per-iteration nudge was rejected because `PENDING_TASKS_NOTE` opens with "Do NOT finalize
-yet" and asks for "a short result", so a model that is mid-implementation either ignores it or
-complies by **inventing a verification result** in the auditable record. Both quoted strings are
-still in the note
-(`packages/plan/src/capability/messages.ts:162`, the two phrases at `:164` and `:165`).
+Adding a per-iteration nudge was rejected because the then-current `PENDING_TASKS_NOTE` asked for
+"a short result" before the work was necessarily ready, inviting an invented verification result in
+the auditable record. The note now explicitly distinguishes delegation from closure and requires an
+observed outcome before `done`, or a real reason for `abandoned`; it forbids invented results and
+repeated-finalization bypasses. Production: `PENDING_TASKS_NOTE` in
+`packages/plan/src/capability/messages.ts`. Test:
+`packages/plan/tests/unit/plan-messages.test.ts`.
 
-The shipped profiles no longer carry a generic honesty policy: their bodies are deliberately limited
-to role and harness surface (`packages/kernel/src/config/builtin-agents/`). The rejection does not
-depend on prompt wording. A runtime nudge that requests a result before completion creates the same
-bad choice for any profile.
+This wording repair does not add a mid-run gate. The shipped profiles carry short harness handoff
+rules (`packages/kernel/src/config/builtin-agents/`), not a mechanism that proves work completed.
+A runtime nudge that requests a result before completion creates the same bad choice for any profile.
 
 If it is ever added it must read _close the task or state why you cannot_, never _mark it done_, and
 must not fire while the agent is still producing file writes.

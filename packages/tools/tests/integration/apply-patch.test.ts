@@ -30,10 +30,18 @@ describe("apply_patch", () => {
   afterEach(() => cleanup(root));
 
   describe("model-friendly patch envelope", () => {
-    it("advertises the recommended envelope directly in the model-facing contract", () => {
-      expect(applyPatchTool.description).toContain("*** Begin Patch");
-      expect(JSON.stringify(applyPatchTool.inputSchema)).toContain("*** Update File: path");
-      expect(JSON.stringify(applyPatchTool.inputSchema)).toContain("Do not wrap");
+    it("executes the literal example advertised to the model without repairing its newlines", async () => {
+      const properties = applyPatchTool.inputSchema.properties as {
+        patch: { description: string };
+      };
+      const example = properties.patch.description.match(
+        /\*\*\* Begin Patch\n[\s\S]*?\*\*\* End Patch/,
+      )?.[0];
+      expect(example).toBeDefined();
+      write(root, "path", "old\n");
+      const result = await callTool("apply_patch", { patch: example! }, config);
+      expect(result.isError).toBe(false);
+      expect(read(root, "path")).toBe("new\n");
     });
 
     it("accepts update, add, delete, and move blocks atomically", async () => {

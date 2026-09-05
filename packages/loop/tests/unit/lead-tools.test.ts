@@ -45,7 +45,22 @@ describe("child-spawn tool schemas", () => {
     ]) {
       expect(props(tool).background).toMatchObject({ type: "boolean" });
       expect(required(tool)).not.toContain("background");
+      expect(props(tool).background).toMatchObject({
+        description: expect.stringContaining("falls back to waiting inline"),
+      });
+      expect((props(tool).task as { description: string }).description).toContain(
+        "Self-contained brief",
+      );
     }
+  });
+
+  it("explains context isolation without promising workspace or token isolation", () => {
+    expect(spawnSubagentTool.description).toContain("not your conversation");
+    expect(spawnSubagentTool.description).toContain("shares the workspace and run token budget");
+    expect(spawnSubagentTool.description).toContain("handle when backgrounded");
+    expect(props(buildSpawnSubagentTool(undefined, true)).image_refs).toMatchObject({
+      description: expect.stringContaining("image grant and a vision-capable model"),
+    });
   });
 
   it("publishes the canonical task-text ceiling in every schema", () => {

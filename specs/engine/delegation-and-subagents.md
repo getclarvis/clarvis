@@ -52,6 +52,17 @@ grant some capability declared `entryCanSpawn: true` for gets the five `agent_*`
 
 ## 2. Surface
 
+The compact descriptor contract requires self-contained briefs, distinguishes isolated conversation
+from a shared workspace/token budget, and states the background-to-inline fallback when supervision
+is absent. Child ids can be taken directly from spawn results; listing first is not required.
+`await_agents` reports the first wake and still-running children, not that every child finished;
+timeout does not cancel them. Finalization guidance preserves useful live work and warns that
+cancellation does not undo writes. Production: `buildSpawnSubagentTool`/`buildDelegateTaskTool` in
+`packages/loop/src/runtime/subagents/lead-tools.ts`, `buildTools`/`liveChildrenNote` in
+`packages/loop/src/runtime/capabilities/agents.ts`. Test:
+`packages/loop/tests/unit/lead-tools.test.ts` and `agents-capability.test.ts` in the same directory.
+See [`model-instructions.md`](../cross-cutting/model-instructions.md).
+
 ### 2.1 Exported symbols
 
 This subsystem has no barrel: `runtime/subagents/index.ts` was deleted on 2026-08-22 (see §8 item 7)

@@ -59,8 +59,12 @@ export const runInputShape = {
   prompt: z.string().min(1).max(1_000_000).optional(),
   messages: z.array(messageSchema).min(1).max(200).optional(),
   agent: z.string().min(1).max(128).optional(),
-  execution_id: EXEC_ID.optional(),
-  continue_from: EXEC_ID.optional(),
+  execution_id: EXEC_ID.optional().describe(
+    "Stable id for this execution; duplicate ids are refused, not replayed.",
+  ),
+  continue_from: EXEC_ID.optional().describe(
+    "Prior execution to continue; this starts a new execution, not a retry of that id.",
+  ),
   memory: z.enum(["on", "off"]).optional(),
   plans: z.enum(["off", "on", "review"]).optional(),
   skill: z
@@ -126,10 +130,9 @@ export const respondInputShape = {
 /**
  * Acknowledgement shape for the control tools.
  *
- * @remarks For `steer`/`cancel`, `accepted` means *delivered to a live run* —
- * the kernel's steer and cancel are fire-and-forget and never acknowledge that
- * the engine applied them. `respond` is exact, because the facade owns the
- * pending-elicitation map.
+ * @remarks For `steer`/`cancel`, `accepted` means the live handle acknowledged
+ * the control request, not that the requested work completed. `respond` means
+ * the facade accepted the answer against its pending-elicitation map.
  */
 export const ackOutputShape = {
   execution_id: z.string(),
@@ -140,17 +143,16 @@ export const ackOutputShape = {
 /** Descriptions the model reads when choosing a tool. */
 export const TOOL_DESCRIPTIONS = {
   run:
-    "Start a Clarvis agent run and block until it finishes, streaming progress. " +
-    "Supply exactly one of `prompt` or `messages`. The call IS the run: pass a " +
-    "`progressToken` and `resetTimeoutOnProgress`, or a timeout at least as long as " +
-    "the run, or your client will time out before it ends. Pass a stable " +
-    "`execution_id` to make a retry safe. Steer, cancel or answer questions with the " +
-    "other clarvis_* tools on this same session while this call is pending.",
+    "Start a run and block until it finishes, streaming progress. Supply exactly one of prompt " +
+    "or messages. Use a stable execution_id to prevent duplicate starts. Control the pending run " +
+    "with clarvis_steer/cancel/respond on the same session. The client transport needs a suitable " +
+    "timeout or progressToken plus resetTimeoutOnProgress; these are not tool arguments.",
   steer:
-    "Inject a message into a run that is still in flight on this session. " +
-    "Acknowledgement means delivered, not yet applied.",
+    "Deliver a message to a live run on this session and await its steering acknowledgement. " +
+    "Acknowledgement does not mean the requested work is complete.",
   cancel: "Cancel a run in flight on this session. Its partial result is still returned.",
   respond:
-    "Answer a question a run asked. Only meaningful when the run was started with " +
-    '`elicitations: "await"`; otherwise questions are declined automatically.',
+    "Answer a pending question by its exact id and requested content schema. Requires tool " +
+    'elicitation posture (requested with elicitations:"await"); other postures relay through ' +
+    "native MCP elicitation or auto-decline. An accepted answer does not complete the run.",
 } as const;

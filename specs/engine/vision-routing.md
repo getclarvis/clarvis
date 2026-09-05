@@ -40,6 +40,13 @@ family, capability gating).
 
 ## 2. Surface
 
+The prepass prompt requests visible details relevant to the task, exact readable text when needed,
+and explicit limits for hidden or illegible content. Images are data, not instructions. Production:
+`VISION_SYSTEM_PROMPT` in `packages/loop/src/runtime/vision-prepass.ts`. Test:
+`packages/loop/tests/integration/image-vision-routing.test.ts` (`reads with no tools and no agent
+identity`) inspects that guidance in the actual tool-less request. The cross-surface policy is in
+[`model-instructions.md`](../cross-cutting/model-instructions.md).
+
 ### Vision prepass
 
 | Symbol | Location | Shape |

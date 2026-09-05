@@ -162,6 +162,14 @@ verified equal to the production registry by
 three sibling `tools-*` documents; this document covers only that the table exists, is single-owned, and
 is what `dispatch`/`listTools` consume.
 
+The model-facing descriptions follow the cross-surface
+[`instruction contract`](../cross-cutting/model-instructions.md): routing, local input constraints,
+results and recovery, without an embedded generic engineering handbook. The complete serialized
+`ToolInfo[]` has a 21,000-character regression ceiling, with headroom for Windows shell wording.
+Production: `toolDescriptors` and the individual descriptors under `packages/tools/src/tools/`.
+Test: `packages/tools/tests/component/tool-surface.test.ts` (`keeps the complete advertised coding
+surface within its character budget`). This measures text size, not provider tokens or accuracy.
+
 ### `ToolInfo` (model-visible descriptor) — `packages/tools/src/core.ts:117`
 
 ```ts

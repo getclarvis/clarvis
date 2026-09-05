@@ -250,7 +250,9 @@ silently enlarge every delegated run.
 
 The bodies are deliberately limited to role, effective harness surface and runtime constraints. The
 same component test estimates their cost as `ceil(characters / 4)`, caps each profile, and caps all
-five together at 800 estimated tokens; this is a stable regression proxy, not provider tokenization.
+five together at 1150 estimated tokens; this is a stable regression proxy, not provider tokenization.
+The cross-surface ownership and minimum handoff rules are in
+[`model-instructions.md`](../cross-cutting/model-instructions.md).
 
 ## 4. Behavior
 
@@ -642,7 +644,11 @@ Each entry: **rule** — production anchor — test anchor.
     without embedded workflow schemas or generic work instructions. Pinned by
     `packages/kernel/tests/component/builtin-agents.test.ts` ("keeps the complete builtin prompt
     payload within its token budget"), which uses the engine's text-only
-    one-token-per-four-characters estimate, individual caps, and an 800-token fleet cap.
+    one-token-per-four-characters estimate, individual caps, and a 1150-token fleet cap. Every profile
+    states exposed-tool limits, delegated context isolation, the shared workspace and conditional
+    `submit_result` completion; leaves also return blockers. Production: the five `body` values
+    above. Test: the same suite, `retains the harness handoff contract in every profile` and
+    `state their role, limitations and blocker handoff`.
 
 17. **`builtinAgentRecord` hands out a defensive copy of the frontmatter.**
     `packages/kernel/src/config/agent-overlay.ts:27` spreads before returning. Partially pinned:
@@ -796,8 +802,9 @@ Each entry: **rule** — production anchor — test anchor.
 40. **The shipped leads expose the child harness without prescribing a generic work method.**
     Marshall names `spawn_subagent` for independent work, `delegate_task` for an existing plan task
     with its exact id, the three leaf roles, background supervision and the shared workspace. Admiral
-    names both child tools as manager-local capabilities. Both state that harness use must add clear
-    value rather than serving trivial, sequential, overlapping or performative work. Production:
+    names both child tools as manager-local capabilities. Both condition tool use on availability,
+    require delegation to add value, distinguish handles from results, and retain the live-child
+    finalization gate. Production:
     `packages/kernel/src/config/builtin-agents/marshall.ts` and
     `packages/kernel/src/config/builtin-agents/admiral.ts` (`body`). Test:
     `packages/kernel/tests/component/builtin-agents.test.ts` (`uses separate tools` and
@@ -807,7 +814,9 @@ Each entry: **rule** — production anchor — test anchor.
     Its body names the four spawn levels (`run_leader`, `run_work_items`, `run_round`,
     `run_workflow`), the `workflow_status` / revision-matched `workflow_decide` checkpoint pair, the
     fixed manager → leader → Sub-agent topology, supervision tools, shared workspace and tree-wide
-    limits. Tool descriptions remain authoritative for argument schemas and detailed mechanics.
+    limits. A paused sequence is not complete, batch conflict protection is local to that batch, and
+    failed or stopped work may leave partial edits. Tool descriptions explain argument schemas and
+    detailed mechanics; runtime validation and gates still enforce them.
     Production: `ADMIRAL.body` in `packages/kernel/src/config/builtin-agents/admiral.ts` plus
     `buildRunLeaderTool`, `buildRunWorkItemsTool`, `buildRunRoundTool`, `buildRunWorkflowTool`,
     `buildWorkflowStatusTool`, and `buildWorkflowDecideTool` under `packages/workflows/src`. Test:

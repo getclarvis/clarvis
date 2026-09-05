@@ -25,7 +25,7 @@ function buildProfileProperty(profiles: SubagentProfileRegistry): Record<string,
     type: "string",
     enum: names,
     description:
-      "OPTIONAL — select a specialized Sub-agent profile by name. Each profile has its own model, base prompt (identity), and tool scope; pick the one whose specialty fits the sub-task. Omit to use the default profile. Available profiles — " +
+      "Choose a profile for its role and tools; omit for the default. Available profiles: " +
       catalogue,
   };
 }
@@ -44,7 +44,10 @@ export const spawnSubagentTool: NamespacedTool = {
   mcpName: "",
   toolName: SPAWN_SUBAGENT_TOOL_NAME,
   description:
-    "Spawn an independent Sub-agent with a focused sub-task. This tool has no task_id and does not require a tracked work item. The Sub-agent has its own iteration budget and returns a text result or an error. Use parallel calls for independent sub-tasks. Sub-agents cannot spawn further sub-agents.",
+    "Spawn a leaf for independent work, without a tracked task_id. It receives your brief, not " +
+    "your conversation, and shares the workspace and run token budget. Keep concurrent scopes " +
+    "independent. Returns its result or error inline, or a handle when backgrounded; inspect " +
+    "the outcome before treating the work as complete.",
   inputSchema: {
     type: "object",
     properties: {
@@ -52,14 +55,15 @@ export const spawnSubagentTool: NamespacedTool = {
         type: "string",
         minLength: 1,
         maxLength: TASK_TITLE_MAX,
-        description:
-          "Short label for this Sub-agent (a few words) shown to the operator on the sub-agent panel; `task` carries the full instruction.",
+        description: "Short single-line label for the operator; put full instructions in task.",
       },
       task: {
         type: "string",
         minLength: 1,
         maxLength: DELEGATE_TASK_MAX_CHARS,
-        description: `The focused sub-task description for the Sub-agent. Be specific about what success looks like and what strategy to use. Keep the complete brief within ${String(DELEGATE_TASK_MAX_CHARS)} characters.`,
+        description:
+          "Self-contained brief: goal, needed context, file scope, constraints and expected result. " +
+          "The child cannot ask you follow-up questions.",
       },
     },
     required: ["title", "task"],
@@ -78,10 +82,8 @@ function buildBackgroundProperty(): Record<string, unknown> {
   return {
     type: "boolean",
     description:
-      "OPTIONAL — run this Sub-agent in the background. The call returns a handle immediately " +
-      "instead of the result, so you keep working (and stay reachable) while it runs; follow it " +
-      "with await_agents / agent_poll. Use it for slow or wide fan-out; leave it off for a quick " +
-      "sub-task whose answer you need right now.",
+      "Default false: wait for the result. True: return a handle and collect with await_agents " +
+      "or agent_poll; without background supervision, falls back to waiting inline.",
   };
 }
 
@@ -96,7 +98,8 @@ function buildImageRefsProperty(): Record<string, unknown> {
     items: { type: "integer", minimum: 0 },
     uniqueItems: true,
     description:
-      "OPTIONAL — indices of the turn's images (see the numbered `[image #k …]` markers in the conversation) to hand to this Sub-agent. Only a profile whose model declares the 'vision' capability may receive them.",
+      "Turn-image indices from the [image #k] markers. The receiving profile needs the image " +
+      "grant and a vision-capable model.",
   };
 }
 

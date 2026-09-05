@@ -450,16 +450,18 @@ The two shipped leaders, `marshall` and `admiral`, each declare a 200-iteration 
 the `coder`, `explorer`, and `planner` children remain capped at 30 iterations. The explicit lead
 value matches the product default instead of shadowing it with the former 50-iteration profile cap.
 
-The builtin bodies define roles and expose runtime-specific harness capabilities; they deliberately
-do not teach a generic engineering, safety, communication, or reporting workflow. Marshall names
-independent `spawn_subagent`,
-tracked `delegate_task`, the three leaf profiles, background supervision, shared-workspace context,
-and the rule that delegation must add clear value. Admiral names the workflow spawn ladder,
-round-control tools, manager-local children, supervision, topology, and tree-wide limits. Each leaf
-names only its function, tools and missing caller context.
+The builtin bodies define roles and the minimum harness handoff contract, not a generic engineering
+handbook. All five condition instructions on the tools actually exposed, distinguish a delegated
+brief from caller conversation, acknowledge the shared workspace, and select `submit_result` only
+when present. Marshall covers independent versus tracked delegation, background handles, review of
+returned work and live-child finalization. Admiral adds the workflow spawn ladder, revision-matched
+checkpoints, batch-local conflict protection and partial writes after failure. Leaves state their
+limitations and return blockers instead of assuming missing authority or context. Detailed argument
+and recovery instructions stay beside their tools; see
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md).
 
 `builtin-agents.test.ts` applies the engine's text estimate (one token per four
-characters) and caps the complete five-body payload at 800 estimated tokens, with per-profile caps.
+characters) and caps the complete five-body payload at 1150 estimated tokens, with per-profile caps.
 This is a regression budget, not a claim about any provider's exact tokenizer.
 
 `BUILTIN_AGENTS` is ordered, and `compareAgentDisplayOrder` is the single owner of that order:

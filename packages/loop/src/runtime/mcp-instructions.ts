@@ -4,7 +4,10 @@ import type { OpenedConnection } from "@clarvis/mcp-client";
 export const MAX_MCP_INSTRUCTIONS_SECTION_CHARS = 32_768;
 
 function withinCharacterBudget(value: string, maximum: number): string {
-  return Array.from(value).slice(0, maximum).join("");
+  const points = Array.from(value);
+  if (points.length <= maximum) return value;
+  const marker = "\n[MCP instructions truncated; remaining guidance omitted.]";
+  return points.slice(0, maximum - marker.length).join("") + marker;
 }
 
 /** Build the bounded system section contributed by connected MCP servers. */

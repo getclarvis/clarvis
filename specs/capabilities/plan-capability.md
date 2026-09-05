@@ -54,6 +54,16 @@ not to this document.
 
 ## 2. Surface
 
+The model-facing contract names optional tools conditionally, without hardcoding a second catalog
+of read tools. A review gate never grants tools that another boundary withholds. Mutation guidance
+uses the current revision/digests, serializes dependent writes and requests a re-read after conflict.
+Delegation and a returned child result do not close a task: inspect the outcome before recording
+`done` or a genuine `abandoned`. `PENDING_TASKS_NOTE` refuses invented completion and warns against
+repeated-finalization bypasses; it remains a finalize-only note, not a mid-run completion request.
+Production: `packages/plan/src/tools.ts` and `packages/plan/src/capability/messages.ts`. Test:
+`packages/plan/tests/unit/plan-messages.test.ts` and the plan orchestration component suites.
+See [`model-instructions.md`](../cross-cutting/model-instructions.md).
+
 ### 2.1 Package entrypoints
 
 | Export path | File | Purpose |

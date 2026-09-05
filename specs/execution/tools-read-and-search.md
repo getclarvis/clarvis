@@ -208,7 +208,7 @@ b.txt-3-after
 (`packages/tools/tests/integration/grep.test.ts:262-272`)
 
 Footers, mutually exclusive, in the order `composeResult` tests them
-(`packages/tools/src/tools/grep.ts:336-382`):
+(`packages/tools/src/tools/grep.ts`, symbol `composeResult`):
 
 | Condition | Footer |
 | --- | --- |
@@ -323,7 +323,7 @@ which is re-thrown (`packages/tools/src/lib/textfile.ts:62-75`).
 
 ### 4.3 `read_file`
 
-`packages/tools/src/tools/read-file.ts:65-121`, in order:
+`readFile.handler` in `packages/tools/src/tools/read-file.ts`, in order:
 
 1. resolve + `readTextFile` (`:67`, `:78`).
 2. empty content → `(empty file)` (`:86`).
@@ -783,11 +783,11 @@ The direction is one-way and structural: `@clarvis/tools` imports nothing from `
    would have refused every construct graded divergent, which would have turned `[[]` — a search that
    works today and returns the right answer — into an error. And the residual is stated rather than
    hidden: this is a **sampled** diff, so a construct the table does not list is *unclassified*,
-   never portable by default. What did change is one string —
-   `grep`'s `pattern` description (`packages/tools/src/tools/grep.ts:68-81`) previously told the model
-   to "use syntax shared by JavaScript and ripgrep/Rust" without ever saying where the sharing stops,
-   which is advice a model cannot act on. It now names the three classes and the portable spelling
-   for each.
+   never portable by default. `grep`'s `pattern` description in `packages/tools/src/tools/grep.ts`
+   now gives a compact operating subset: escaped literals, explicit ranges and simple groups;
+   avoid lookaround, backreferences, inline flags and engine-specific escapes/classes. It names the
+   engine-selection boundary and warns that Unicode, shorthand classes and case folding can differ.
+   Detailed construct-by-construct evidence stays in the contract suite, not every model request.
 
 6. **`MAX_TREE_DEPTH = 20` is unexercised.** No test requests a depth above 4
    (`packages/tools/tests/integration/tree.test.ts`), so the clamp at

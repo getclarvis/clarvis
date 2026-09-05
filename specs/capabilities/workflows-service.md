@@ -177,6 +177,17 @@ selected items × replicas × repeat passes.
 
 ### 3.2 Result schemas (JSON Schema, `draft`-agnostic loose objects)
 
+Built-in verdict briefs provide `Finding id: {{item.id}}` so a fresh verifier can supply the exact
+schema-required `finding_id`. They respect read-only tools, distinguish static inspection from
+unrun checks and choose `inconclusive` when evidence is insufficient. Built-in synthesis distinguishes
+accepted refutations from rejected thresholds: not refuted is not confirmed. Failed or stopped
+implementation can leave partial writes; synthesis must inspect the workspace rather than assume
+rollback. Production: `BUILTIN_WORKFLOWS` under `packages/workflows/src/builtin-workflows/` and
+`VERDICT_SCHEMA` in `packages/workflows/src/schemas.ts`. Test:
+`packages/workflows/tests/unit/builtin-workflows.test.ts` interpolates every built-in round and
+checks those handoffs plus the 11,000-character serialized definition ceiling. Shared instruction
+ownership is in [`model-instructions.md`](../cross-cutting/model-instructions.md).
+
 All three (`DISCOVERY_SCHEMA`, `FINDINGS_SCHEMA`, `VERDICT_SCHEMA`) are plain objects with
 `type: "object"`, `additionalProperties: false`, and — by direct inspection of `schemas.ts`, not by
 any generic test — a `required` array covering every declared property. The only generic test in the

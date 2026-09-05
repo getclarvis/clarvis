@@ -23,6 +23,14 @@ Manager-to-leader execution, waves, rounds, limits, and the shared ledger are sp
 result schemas, persistence, tree projection, and routing are specified in
 [`workflows-service.md`](../../specs/capabilities/workflows-service.md).
 
+The compact prompt contract is in
+[`model-instructions.md`](../../specs/cross-cutting/model-instructions.md). Built-in verification
+briefs carry the exact finding id, respect read-only tools and allow `inconclusive`. Their acceptance
+predicate counts **refutations**: a rejected refutation threshold means not refuted, not confirmed.
+Synthesis retains uncertainty and inspects partial writes after failed or stopped implementation.
+Scheduling protects declared file conflicts within a batch, not against unrelated concurrent work.
+The three built-in definitions have an 11,000-character serialized regression ceiling.
+
 ## Entry points
 
 | Entry                         | Contents                                                                                                                                                                                                                                             |
@@ -318,7 +326,7 @@ descriptor and bypass a TUI host's silencing.
 | debug        | `workflow.round_folded`                                   | the folded result's shape, and how many replicas missed it                    |
 | debug/warn   | `workflow.schedule_derived` / `workflow.schedule_refused` | the waves, the unscoped writers, or the graph that cannot run                 |
 | debug/warn   | `workflow.elicit_queued` / `workflow.elicit_skipped`      | the tree-wide prompt queue, and a prompt abandoned with its agent             |
-| info         | `workflow.review_resolved`                               | the workflow preflight outcome and human wait duration                        |
+| info         | `workflow.review_resolved`                                | the workflow preflight outcome and human wait duration                        |
 
 A workflow preflight uses the manager run's effective `elicit_wait_ms` and a timeout also emits the
 shared `capability.elicit_no_response` event. Its tool result distinguishes an explicit decline, a

@@ -58,7 +58,13 @@ Search risky absolutes as leads, not automatic defects:
 rg -n -i 'always|never|all platforms|fully supported|production.ready|guarantee|secure|sandbox|subscription|beta' README.md docs packages specs --glob '*.md' --glob '*.vue'
 ```
 
-Recompute counts from the repository. Do not copy an old count or adjust citations by a blind line-number offset. Prefer production and test symbols in specs; when a range is necessary, verify it against the current file.
+Recompute a count only when the count itself is necessary to the contract. Do not retain inventory
+counts merely as freshness markers, and do not record source line counts or LOC inventories in
+specs. Behavioral line limits and coverage ratios remain valid when they are part of the contract.
+Cite stable repository files and name production or test symbols in prose; never encode source line
+numbers or ranges in documentation references.
+Keep specifications timeless: move dates and change chronology to `CHANGELOG.md`, and use semantic
+placeholders for date-shaped data examples.
 
 ## Correct coherently
 
@@ -105,12 +111,15 @@ Run checks proportional to the affected surface from the repository root:
 
 ```bash
 bun run check:specs
-bun test tooling/tests/architecture/public-docs.test.ts --timeout 60000
-bun run docs:build
+bun test tooling/tests/unit/spec-hygiene.test.ts tooling/tests/architecture/repository-metadata.test.ts --timeout 60000
+bun run check:graph
 bun run format:check
 ```
 
-Also run targeted tests for changed source or contracts. Run `bun run check:graph` for package or dependency facts. For a broad correction, finish with the relevant full typecheck, lint, and test gates from `AGENTS.md`. Do not run `bun run check:pre-commit` as a ritual.
+The public product site belongs to the separate `getclarvis/docs` repository, so this monorepo has no
+`docs:build` gate. Also run targeted tests for changed source or contracts. For a broad correction,
+finish with the relevant full typecheck, lint, and test gates from `AGENTS.md`. Do not run
+`bun run check:pre-commit` as a ritual.
 
 Review `git diff --check`, `git diff --cached --check`, and both staged and unstaged final diffs. Report:
 

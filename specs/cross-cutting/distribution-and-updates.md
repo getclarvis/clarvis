@@ -435,7 +435,7 @@ cross-repository App token. Production: `.github/workflows/release.yml`;
 ## 6. Failure modes and degradation
 
 | Failure | Result |
-|---|---|
+| --- | --- |
 | Unsupported OS/architecture | installer or updater exits without changing `current` |
 | Missing downloader, tar, or SHA-256 utility | POSIX installer names the missing prerequisite |
 | Checksum, size, URL, redirect, manifest, or candidate smoke mismatch | candidate is refused and staging is removed |

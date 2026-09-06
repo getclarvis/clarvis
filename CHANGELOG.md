@@ -5,6 +5,30 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Isolation is now independent from command review in the TUI: Host, native Sandbox, and lazy Docker
+  placement can be combined with Off, Approval, or automatic LLM review.
+- Docker isolation uses an immutable minimal runtime image, host-owned model/skill/Plan/Memory
+  bridges, persistent workspace-scoped `mise` tool caches, and bounded loopback service exposure.
+- Advanced global runtime recipes can build a reusable operator-customized Docker image on first use
+  without exposing the recipe as a guest tool or modifying the canonical release image.
+
+### Changed
+
+- Container runs mount the selected workspace directly; linked Git worktrees remain ordinary
+  operator-managed checkouts, while non-Git directories can use the same isolation mode.
+- Runtime startup is demand-driven. An operational Docker startup failure falls back to required
+  native sandboxing by default and reports the effective placement; integrity and policy failures
+  still fail closed.
+
+### Security
+
+- Container guests do not receive Memory mutation tools or host credential/skill paths. Existing
+  Clarvis workspace control paths are mounted read-only, while the selected project remains
+  intentionally writable and default outbound networking can reach host/LAN peers and transmit
+  readable workspace data.
+
 ## [0.1.1] - 2026-09-04
 
 ### Added

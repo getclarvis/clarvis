@@ -1,16 +1,14 @@
 # Proposal: Isolated agent runtime with OCI engine backends
 
 **Status:** Superseded design record; not the current runtime contract
-**Date:** 2026-09-04
 **Target repository:** `getclarvis/clarvis`; repository links resolve from this document
 **Source baseline:** `5c999dd4c5ca`
 **Preferred first engine:** Docker through a selected Linux Docker context; Podman remains a
 conforming explicit adapter
-**Validation scheduling:** On 2026-09-05 the current-source Docker canary passed through Colima,
-including a mise-installed Node runtime, public npm install and host-loopback service preview; the
-owner deferred live Podman and complete TUI proofs. The model bridge in that canary was synthetic.
-Prepared environments and synthetic fixtures do not count as substitutes for the remaining live
-surfaces.
+**Validation status:** The current-source Docker canary passes through Colima, including a
+mise-installed Node runtime, public npm install and host-loopback service preview. Live Podman and
+complete TUI proofs remain deferred. The model bridge in that canary was synthetic; prepared
+environments and synthetic fixtures do not substitute for the remaining live surfaces.
 **Proposed owners:** `@clarvis/kernel`, `@clarvis/protocol`, `@clarvis/code`, `@clarvis/paths`,
 `@clarvis/tools`, with focused integration changes in provider and capability composition
 
@@ -20,7 +18,7 @@ surfaces.
 > production/test evidence live in
 > [`specs/hosts/isolated-agent-runtime.md`](../hosts/isolated-agent-runtime.md).
 
-### Superseding architecture decision (2026-09-06)
+### Superseding architecture decision
 
 The container is a disposable **agent execution worker**, not a second Clarvis host. It contains
 the agent loop and subagents, the local tools needed for execution, and a direct writable bind of
@@ -74,12 +72,12 @@ remote hosting are later extensions.
 
 ### 1.1 Two independent concepts
 
-| Concept           | Selection                                                    | Responsibility                                     |
+| Concept | Selection | Responsibility |
 | ----------------- | ------------------------------------------------------------ | -------------------------------------------------- |
-| Runtime backend   | Native or container; remote reserved for future design       | Where agent execution and execution-local tools run |
-| Command sandbox   | Existing native sandbox policy, when applicable              | Additional restrictions on individual subprocesses |
-| Container engine  | Podman first; another adapter only after conformance testing | Creates, inspects, stops, and removes containers   |
-| Extension Profile | Existing contract                                            | Which plugins and skills are active                |
+| Runtime backend | Native or container; remote reserved for future design | Where agent execution and execution-local tools run |
+| Command sandbox | Existing native sandbox policy, when applicable | Additional restrictions on individual subprocesses |
+| Container engine | Podman first; another adapter only after conformance testing | Creates, inspects, stops, and removes containers |
+| Extension Profile | Existing contract | Which plugins and skills are active |
 
 A runtime selection is not an Extension Profile. A Podman backend does not become another branch
 inside `sandboxCommand`: wrapping only shell commands would leave the kernel and other execution
@@ -108,13 +106,13 @@ Podman is a suitable first adapter because its Linux CLI supports daemonless ope
 containers as an ordinary user. The proposal uses the CLI directly and does not require Podman
 Desktop or a general engine API listener. [Podman overview](https://docs.podman.io/en/latest/markdown/podman.1.html).
 
-| Option                           | Operational implications                                                  | Proposal decision                                         |
+| Option | Operational implications | Proposal decision |
 | -------------------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Rootless Podman on Linux         | Local CLI, user namespaces, no required persistent central daemon         | First reference implementation                            |
-| Rootless Docker Engine on Linux  | Client plus a per-user daemon in a user namespace                         | Conforming alternative after the reference adapter        |
-| Podman Machine on macOS          | Host CLI communicates with a Linux VM; engine state and images live there | macOS candidate, gated separately                         |
-| Docker Engine through Colima     | Docker client communicates with an engine in a Colima Linux VM            | macOS candidate, gated by the same conformance suite      |
-| Docker Desktop                   | Includes a VM and desktop integration                                     | Optional user-provided engine, not a product prerequisite |
+| Rootless Podman on Linux | Local CLI, user namespaces, no required persistent central daemon | First reference implementation |
+| Rootless Docker Engine on Linux | Client plus a per-user daemon in a user namespace | Conforming alternative after the reference adapter |
+| Podman Machine on macOS | Host CLI communicates with a Linux VM; engine state and images live there | macOS candidate, gated separately |
+| Docker Engine through Colima | Docker client communicates with an engine in a Colima Linux VM | macOS candidate, gated by the same conformance suite |
+| Docker Desktop | Includes a VM and desktop integration | Optional user-provided engine, not a product prerequisite |
 
 Podman requires a VM on macOS and Windows. A rootless machine-management command does not by itself
 prove that the selected engine connection is rootless; inspection must verify the connection's
@@ -148,17 +146,17 @@ A reviewed Containerfile and local image build are sufficient for the first impl
 
 These are current-source anchors, not evidence that the proposed container behavior exists.
 
-| Existing behavior                             | Production                                                                                                                                                                                                                                           | Existing test or contract                                                                                                                                  |
+| Existing behavior | Production | Existing test or contract |
 | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Transport-neutral UI services                 | `KernelClient` in [protocol client](../../packages/protocol/src/client.ts)                                                                                                                                                                           | [protocol README](../../packages/protocol/README.md), [public contract fixture](../../packages/protocol/tests/contract/public-contract.fixture.ts)         |
-| Versioned requests, events, and stdio framing | `connectKernelClient` in [client](../../packages/kernel/src/transport/client.ts), `createStdioTransport` in [stdio](../../packages/kernel/src/transport/stdio.ts), and `CLARVIS_WIRE_VERSION` in [wire](../../packages/kernel/src/transport/wire.ts) | [transport spec](../hosts/kernel-transport.md), [codec tests](../../packages/kernel/tests/contract/transport-codecs.test.ts)                               |
-| File-backed kernel over stdio                 | `serveFileKernelOverStdio` in [serve.ts](../../packages/kernel/src/serve.ts)                                                                                                                                                                         | [serve tests](../../packages/kernel/tests/integration/serve.test.ts), [stdio integration](../../packages/kernel/tests/integration/stdio-transport.test.ts) |
-| TUI still creates a kernel in process         | `WorkspaceClientManager.create` in [workspace client manager](../../packages/code/src/adapters/workspace-client-manager.ts)                                                                                                                          | [Code bootstrap](../hosts/code-bootstrap.md), [kernel composition](../hosts/kernel-composition.md)                                                         |
-| Only shell and monitor use the native wrapper | `sandboxCommand` in [sandbox.ts](../../packages/tools/src/sandbox.ts)                                                                                                                                                                                | [sandbox spec](../execution/sandbox.md), [sandbox tests](../../packages/tools/tests/integration/sandbox.test.ts)                                           |
-| Remote subscription login is unavailable      | `createKernelServer` substitutes `createUnavailableProviderAuthService` in [server.ts](../../packages/kernel/src/transport/server.ts)                                                                                                                | [subscription contract](../hosts/subscription-providers.md)                                                                                                |
-| Workspace identity depends on canonical paths | `discoverGitWorkspace` in [git-workspace.ts](../../packages/kernel/src/git-workspace.ts)                                                                                                                                                             | [kernel composition](../hosts/kernel-composition.md)                                                                                                       |
-| User-entered shell executes locally           | `runLocalBash` in [local-shell.ts](../../packages/code/src/adapters/local-shell.ts)                                                                                                                                                                  | [Code README](../../packages/code/README.md)                                                                                                               |
-| Guard-reviewed direct execution exists        | `hostVcs` in [host-vcs.ts](../../packages/tools/src/tools/host-vcs.ts)                                                                                                                                                                               | [command guard](../execution/command-guard.md), [tools README](../../packages/tools/README.md)                                                             |
+| Transport-neutral UI services | `KernelClient` in [protocol client](../../packages/protocol/src/client.ts) | [protocol README](../../packages/protocol/README.md), [public contract fixture](../../packages/protocol/tests/contract/public-contract.fixture.ts) |
+| Versioned requests, events, and stdio framing | `connectKernelClient` in [client](../../packages/kernel/src/transport/client.ts), `createStdioTransport` in [stdio](../../packages/kernel/src/transport/stdio.ts), and `CLARVIS_WIRE_VERSION` in [wire](../../packages/kernel/src/transport/wire.ts) | [transport spec](../hosts/kernel-transport.md), [codec tests](../../packages/kernel/tests/contract/transport-codecs.test.ts) |
+| File-backed kernel over stdio | `serveFileKernelOverStdio` in [serve.ts](../../packages/kernel/src/serve.ts) | [serve tests](../../packages/kernel/tests/integration/serve.test.ts), [stdio integration](../../packages/kernel/tests/integration/stdio-transport.test.ts) |
+| TUI still creates a kernel in process | `WorkspaceClientManager.create` in [workspace client manager](../../packages/code/src/adapters/workspace-client-manager.ts) | [Code bootstrap](../hosts/code-bootstrap.md), [kernel composition](../hosts/kernel-composition.md) |
+| Only shell and monitor use the native wrapper | `sandboxCommand` in [sandbox.ts](../../packages/tools/src/sandbox.ts) | [sandbox spec](../execution/sandbox.md), [sandbox tests](../../packages/tools/tests/integration/sandbox.test.ts) |
+| Remote subscription login is unavailable | `createKernelServer` substitutes `createUnavailableProviderAuthService` in [server.ts](../../packages/kernel/src/transport/server.ts) | [subscription contract](../hosts/subscription-providers.md) |
+| Workspace identity depends on canonical paths | `discoverGitWorkspace` in [git-workspace.ts](../../packages/kernel/src/git-workspace.ts) | [kernel composition](../hosts/kernel-composition.md) |
+| User-entered shell executes locally | `runLocalBash` in [local-shell.ts](../../packages/code/src/adapters/local-shell.ts) | [Code README](../../packages/code/README.md) |
+| Guard-reviewed direct execution exists | `hostVcs` in [host-vcs.ts](../../packages/tools/src/tools/host-vcs.ts) | [command guard](../execution/command-guard.md), [tools README](../../packages/tools/README.md) |
 
 The stdio integration currently uses byte streams within the test process. It is not a real TUI,
 child-process, engine, or VM canary. Shipping a container backend requires all those additional
@@ -193,15 +191,15 @@ not required. Reliable orphan termination has its own external enforcement requi
 
 ### 4.1 Component ownership
 
-| Owner                         | Proposed responsibility                                                                                      |
+| Owner | Proposed responsibility |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `protocol`                    | Public host-facing runtime status and `KernelClient` DTOs; no engine or private guest protocol implementation |
-| `kernel`                      | Host control plane, execution session port, engine adapter, brokers, durable state, workspace copy/apply and lifecycle policy |
-| `code`                        | Runtime selection/status, launch and change review, reconnect/reset UX, and host-specific adapters            |
-| `paths`                       | Host Clarvis state plus runtime registry, temporary-copy, baseline and journal path construction              |
-| `tools`                       | Execution-local tools in the guest and host-capability adapters with explicit ownership                       |
-| `loop` and subagents          | Execute in the guest from host-supplied inputs and report events/checkpoints; no engine-name branches          |
-| Capability packages          | Keep canonical stores and coordination on the host; expose bounded tool methods to the guest                  |
+| `protocol` | Public host-facing runtime status and `KernelClient` DTOs; no engine or private guest protocol implementation |
+| `kernel` | Host control plane, execution session port, engine adapter, brokers, durable state, workspace copy/apply and lifecycle policy |
+| `code` | Runtime selection/status, launch and change review, reconnect/reset UX, and host-specific adapters |
+| `paths` | Host Clarvis state plus runtime registry, temporary-copy, baseline and journal path construction |
+| `tools` | Execution-local tools in the guest and host-capability adapters with explicit ownership |
+| `loop` and subagents | Execute in the guest from host-supplied inputs and report events/checkpoints; no engine-name branches |
+| Capability packages | Keep canonical stores and coordination on the host; expose bounded tool methods to the guest |
 
 Start with a bounded kernel runtime subpath if it satisfies the existing package rules. Do not add
 a workspace solely because this proposal names a new abstraction. A later package extraction must
@@ -477,11 +475,11 @@ workspace IDs do not. Bind every broker request, volume, and client connection t
 
 Keep three lifetimes separate:
 
-| Content                                                        | Placement and lifetime                                                              |
+| Content | Placement and lifetime |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | Config, credentials, grants, sessions, traces, memory, plans, tasks, workflows and runtime records | Existing host-owned Clarvis paths and stores; never guest-mounted or guest-writable |
-| Baseline, temporary workspace copy, change journal and pending change set | Host runtime storage; survives container replacement until explicit retention       |
-| Package caches, installed tools, scratch, processes and writable image layer | Guest-local and disposable; reuse is an optimization only                            |
+| Baseline, temporary workspace copy, change journal and pending change set | Host runtime storage; survives container replacement until explicit retention |
+| Package caches, installed tools, scratch, processes and writable image layer | Guest-local and disposable; reuse is an optimization only |
 
 With the default path vocabulary, `~/.clarvis/state/sessions`, `~/.clarvis/state/traces` and
 workflow/runtime machinery remain on the host. Memory and plan documents and machinery retain their
@@ -587,11 +585,11 @@ registry publication and release infrastructure require a separate product decis
 Separate guest tool networking from host-brokered model access. The `none` guest network policy can
 still permit an explicitly granted model service over stdio.
 
-| Proposed network mode | Contract                                                                                                           |
+| Proposed network mode | Contract |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `none`                | Guest tools have no external network path                                                                          |
-| `internet`            | Public outbound traffic; deny host, VM services, private/LAN, link-local/metadata, and ungranted peer destinations |
-| `outbound`            | Ordinary routable outbound access, which may reach host/LAN services; explicit broader grant                       |
+| `none` | Guest tools have no external network path |
+| `internet` | Public outbound traffic; deny host, VM services, private/LAN, link-local/metadata, and ungranted peer destinations |
+| `outbound` | Ordinary routable outbound access, which may reach host/LAN services; explicit broader grant |
 
 `internet` remains the stricter proposed public-only profile. It requires policy outside the mutable
 guest. Default NAT, a rootless networking helper, and removal of a hostname alias do not establish
@@ -687,25 +685,25 @@ The source contract and deterministic coverage are implemented in
 required live acceptance matrix. A source or synthetic test proves its bounded contract, but does
 not replace an engine, PTY, platform, network or process-loss canary named in this table.
 
-| ID    | Invariant                                       | Required test                                                                                                                             |
+| ID | Invariant | Required test |
 | ----- | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| IR-01 | No silent native fallback                       | Missing engine, failed VM, image mismatch, unsupported policy, and handshake mismatch execute no host agent work                          |
-| IR-02 | External authority is host-owned                | A guest forges approvals, edits config, reuses expired grants, and changes runtime IDs; all requests are denied                           |
-| IR-03 | No ambient credential/engine exposure           | Guest scripts inspect env, mounts, processes, files, and sockets; host canary secrets and engine control remain unavailable               |
-| IR-04 | Whole agent execution graph resides in the guest | Loop, subagent, file/shell/Git, hook, local MCP and execution-local capability each demonstrate guest-only markers                         |
-| IR-05 | Guest receives only the temporary copy          | Real checkout, siblings, home, host temp, state, devices and sockets remain absent; exercise links, nested mounts and path replacement     |
-| IR-06 | Identity survives path translation              | Two copies both mounted at `/workspace` retain separate host histories, state and grants across recreation                               |
-| IR-07 | Network modes mean what they say                | Real public success plus host/LAN/metadata/peer denial, IPv4/IPv6 and DNS cases; unsupported enforcement refuses launch                   |
-| IR-08 | Resource limits and cleanup are external        | Controlled memory/process/output/storage stress and killed TUI/supervisor; no host exhaustion or surviving expired runtime                |
-| IR-09 | Host state survives guest loss                  | Kill the guest after checkpoints and at terminal settlement; host sessions, traces, plans, memory, tasks, workflows and copy reconstruct it |
-| IR-10 | Stream failures cannot authorize or replay      | Malformed/oversized frames, saturation, early EOF, late results, cancellation and reconnect retain existing ordering and denial semantics |
-| IR-11 | Host checkout is never a guest mount             | Inspect effective engine mounts and VM shares; no launch path can select the real checkout or host Clarvis state                           |
-| IR-12 | Change application preserves user edits         | Dirty/untracked baseline, control-path exclusion, concurrent host edit, binaries, deletes, executable bits, symlink escape and interrupted apply |
-| IR-13 | UI placement and lifecycle are truthful         | Real PTY startup, host `!` labeling, grant dialog, provider login, cancellation, crash, reset, and resume                                 |
-| IR-14 | Images and caches cannot cross authority scopes | Pinned artifact handshake, rejected ungranted mounts, no automatic image promotion or mutable cross-workspace executable cache            |
-| IR-15 | Public services remain host-owned               | Guest cannot open host paths/stores; memory, plan, task and workflow access succeeds only through exact declared capability methods        |
-| IR-16 | Terminal state requires host durability         | Drop the guest before/during/after terminal checkpoint; TUI never observes completion before synced host persistence                       |
-| IR-17 | Every modifying run asks before host apply       | Detect writes independently of guest reports; exactly one all-change elicitation, none for unchanged runs, accept/decline/cancel, resume and stale-host conflict |
+| IR-01 | No silent native fallback | Missing engine, failed VM, image mismatch, unsupported policy, and handshake mismatch execute no host agent work |
+| IR-02 | External authority is host-owned | A guest forges approvals, edits config, reuses expired grants, and changes runtime IDs; all requests are denied |
+| IR-03 | No ambient credential/engine exposure | Guest scripts inspect env, mounts, processes, files, and sockets; host canary secrets and engine control remain unavailable |
+| IR-04 | Whole agent execution graph resides in the guest | Loop, subagent, file/shell/Git, hook, local MCP and execution-local capability each demonstrate guest-only markers |
+| IR-05 | Guest receives only the temporary copy | Real checkout, siblings, home, host temp, state, devices and sockets remain absent; exercise links, nested mounts and path replacement |
+| IR-06 | Identity survives path translation | Two copies both mounted at `/workspace` retain separate host histories, state and grants across recreation |
+| IR-07 | Network modes mean what they say | Real public success plus host/LAN/metadata/peer denial, IPv4/IPv6 and DNS cases; unsupported enforcement refuses launch |
+| IR-08 | Resource limits and cleanup are external | Controlled memory/process/output/storage stress and killed TUI/supervisor; no host exhaustion or surviving expired runtime |
+| IR-09 | Host state survives guest loss | Kill the guest after checkpoints and at terminal settlement; host sessions, traces, plans, memory, tasks, workflows and copy reconstruct it |
+| IR-10 | Stream failures cannot authorize or replay | Malformed/oversized frames, saturation, early EOF, late results, cancellation and reconnect retain existing ordering and denial semantics |
+| IR-11 | Host checkout is never a guest mount | Inspect effective engine mounts and VM shares; no launch path can select the real checkout or host Clarvis state |
+| IR-12 | Change application preserves user edits | Dirty/untracked baseline, control-path exclusion, concurrent host edit, binaries, deletes, executable bits, symlink escape and interrupted apply |
+| IR-13 | UI placement and lifecycle are truthful | Real PTY startup, host `!` labeling, grant dialog, provider login, cancellation, crash, reset, and resume |
+| IR-14 | Images and caches cannot cross authority scopes | Pinned artifact handshake, rejected ungranted mounts, no automatic image promotion or mutable cross-workspace executable cache |
+| IR-15 | Public services remain host-owned | Guest cannot open host paths/stores; memory, plan, task and workflow access succeeds only through exact declared capability methods |
+| IR-16 | Terminal state requires host durability | Drop the guest before/during/after terminal checkpoint; TUI never observes completion before synced host persistence |
+| IR-17 | Every modifying run asks before host apply | Detect writes independently of guest reports; exactly one all-change elicitation, none for unchanged runs, accept/decline/cancel, resume and stale-host conflict |
 
 Use unit/contract tests for pure launch policy, codec, identity, and state-machine behavior. Use
 integration tests for actual engine effects. Use synthetic credentials and controlled fixture

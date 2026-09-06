@@ -452,7 +452,7 @@ Docker/Colima canary).
 
 ## 8. Current evidence and explicit limits
 
-On 2026-09-06 the gated current-working-tree Docker canary passed 27 assertions in 4.86 seconds on
+The gated current-working-tree Docker canary passed 27 assertions in 4.86 seconds on
 this macOS host through Docker Engine 29.2.1 and the `colima` context. It used the local Linux/amd64
 protocol-revision-4 image
 `sha256:44f1d3cc338160fddc18222b9758d57a7488d2a9ec15b783ed36b07c8693a3c3`, measured at

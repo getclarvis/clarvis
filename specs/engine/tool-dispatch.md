@@ -2,7 +2,7 @@
 
 > Implemented at `packages/loop/src/runtime/tools/**`,
 > `packages/loop/src/runtime/open-tool-pool.ts`, `packages/loop/src/runtime/loop/mcp-handler.ts`,
-> and their tests. Every claim below is anchored to a file and line. Open questions are collected in
+> and their tests. Every claim below is anchored to a file and a named symbol or test. Open questions are collected in
 > the final section.
 
 ## 1. Purpose
@@ -42,73 +42,73 @@ Production: `packages/loop/src/runtime/tools/submit-result-tool.ts` and
 
 ### 2.1 Wire-name constants (`wire-names.ts`)
 
-| Symbol | Line | Value / shape |
-|---|---|---|
-| `DELEGATE_TASK_TOOL_NAME` | `packages/loop/src/runtime/tools/wire-names.ts:2` | `"delegate_task"` |
-| `SUBMIT_RESULT_TOOL_NAME` | `packages/loop/src/runtime/tools/wire-names.ts:4` | `"submit_result"` |
-| `ASK_USER_TOOL_NAME` | `packages/loop/src/runtime/tools/wire-names.ts:6` | `"ask_user"` |
-| `AGENT_LIST_TOOL` / `AGENT_POLL_TOOL` / `AGENT_STOP_TOOL` / `AGENT_STEER_TOOL` / `AWAIT_AGENTS_TOOL` | `packages/loop/src/runtime/tools/wire-names.ts:8-16` | `"agent_list"`, `"agent_poll"`, `"agent_stop"`, `"agent_steer"`, `"await_agents"` |
-| `AGENT_SUPERVISION_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts:25-31` | the five names above, in that order |
-| `BUILTIN_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts:42-46` | `[delegate_task, submit_result, ask_user]` |
-| `AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts:53-80` | 24 coding-tool wire names (`read_file` … `tree`), including guarded host fallback `host_vcs` |
-| `VISION_AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts:89` | `["read_image"]` |
-| `READ_ONLY_AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts:98-108` | 9 read-only coding tool names |
-| `RESERVED_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts:119-122` | `[...BUILTIN_WIRE_NAMES, ...AGENT_TOOL_WIRE_NAMES]` |
-| `CONTROL_PLANE_TOOL_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts:141-148` | `run`, `steer`, `get_run`, `list_runs`, `delete_run`, `list_profiles` — a separate, control-plane surface, not run-time tool names |
+| Symbol | File | Value / shape |
+| --- | --- | --- |
+| `DELEGATE_TASK_TOOL_NAME` | `packages/loop/src/runtime/tools/wire-names.ts` | `"delegate_task"` |
+| `SUBMIT_RESULT_TOOL_NAME` | `packages/loop/src/runtime/tools/wire-names.ts` | `"submit_result"` |
+| `ASK_USER_TOOL_NAME` | `packages/loop/src/runtime/tools/wire-names.ts` | `"ask_user"` |
+| `AGENT_LIST_TOOL` / `AGENT_POLL_TOOL` / `AGENT_STOP_TOOL` / `AGENT_STEER_TOOL` / `AWAIT_AGENTS_TOOL` | `packages/loop/src/runtime/tools/wire-names.ts` | `"agent_list"`, `"agent_poll"`, `"agent_stop"`, `"agent_steer"`, `"await_agents"` |
+| `AGENT_SUPERVISION_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | the five names above, in that order |
+| `BUILTIN_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `[delegate_task, submit_result, ask_user]` |
+| `AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | 24 coding-tool wire names (`read_file` … `tree`), including guarded host fallback `host_vcs` |
+| `VISION_AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `["read_image"]` |
+| `READ_ONLY_AGENT_TOOL_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | 9 read-only coding tool names |
+| `RESERVED_WIRE_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `[...BUILTIN_WIRE_NAMES, ...AGENT_TOOL_WIRE_NAMES]` |
+| `CONTROL_PLANE_TOOL_NAMES` | `packages/loop/src/runtime/tools/wire-names.ts` | `run`, `steer`, `get_run`, `list_runs`, `delete_run`, `list_profiles` — a separate, control-plane surface, not run-time tool names |
 
 ### 2.2 Registry construction (`mcp-registry.ts`)
 
-| Symbol | Signature | Line |
-|---|---|---|
-| `buildRegistry` | `(entries: RegistryEntry[], capabilityReserved: readonly string[]) => NamespacedRegistry` | `packages/loop/src/runtime/tools/mcp-registry.ts:33-37` |
-| `poolToolNames`, `selectTools`, `type RegistryEntry` | re-exported from `@clarvis/mcp-client` | `packages/loop/src/runtime/tools/mcp-registry.ts:11` |
+| Symbol | Signature | File |
+| --- | --- | --- |
+| `buildRegistry` | `(entries: RegistryEntry[], capabilityReserved: readonly string[]) => NamespacedRegistry` | `packages/loop/src/runtime/tools/mcp-registry.ts` |
+| `poolToolNames`, `selectTools`, `type RegistryEntry` | re-exported from `@clarvis/mcp-client` | `packages/loop/src/runtime/tools/mcp-registry.ts` |
 
 `capabilityReserved` has **no default** — every call site must supply it explicitly, even `[]`
-(`packages/loop/src/runtime/tools/mcp-registry.ts:25-31`).
+(`packages/loop/src/runtime/tools/mcp-registry.ts`).
 
 ### 2.3 Dispatch (`mcp-dispatch.ts`, `loop/mcp-handler.ts`, `builtin/execute-agent-tool-call.ts`)
 
-| Symbol | Signature | Line |
-|---|---|---|
-| `executeMcpToolCall` | `(args: McpDispatchArgs) => Promise<McpCallResult>` | `packages/loop/src/runtime/tools/mcp-dispatch.ts:136` |
-| `McpDispatchArgs` | `{ call, registry, availableWireNames, argValidator, guards, trace, agent, subagentInstanceId?, iteration, signal? }` | `packages/loop/src/runtime/tools/mcp-dispatch.ts:88-99` |
-| `McpCallResult` | `{ resultText: string; errText: string \| null; productive: boolean; images?: ToolResultImage[] }` | `packages/loop/src/runtime/tools/mcp-dispatch.ts:28-33` |
-| `buildMcpHandler` | `(deps: { base, registry, argValidator, guards, progress, availableWireNames? }) => ToolHandler` | `packages/loop/src/runtime/loop/mcp-handler.ts:24-31` |
-| `executeAgentToolCall` | `(args: AgentToolDispatchArgs) => Promise<AgentToolCallResult>` | `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:65` |
-| `AgentToolDispatchArgs` | `{ call, toolset, guards, trace, agent, subagentInstanceId?, iteration, signal? }` | `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:27-36` |
+| Symbol | Signature | File |
+| --- | --- | --- |
+| `executeMcpToolCall` | `(args: McpDispatchArgs) => Promise<McpCallResult>` | `packages/loop/src/runtime/tools/mcp-dispatch.ts` |
+| `McpDispatchArgs` | `{ call, registry, availableWireNames, argValidator, guards, trace, agent, subagentInstanceId?, iteration, signal? }` | `packages/loop/src/runtime/tools/mcp-dispatch.ts` |
+| `McpCallResult` | `{ resultText: string; errText: string \| null; productive: boolean; images?: ToolResultImage[] }` | `packages/loop/src/runtime/tools/mcp-dispatch.ts` |
+| `buildMcpHandler` | `(deps: { base, registry, argValidator, guards, progress, availableWireNames? }) => ToolHandler` | `packages/loop/src/runtime/loop/mcp-handler.ts` |
+| `executeAgentToolCall` | `(args: AgentToolDispatchArgs) => Promise<AgentToolCallResult>` | `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts` |
+| `AgentToolDispatchArgs` | `{ call, toolset, guards, trace, agent, subagentInstanceId?, iteration, signal? }` | `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts` |
 
 `ToolHandler` may additionally expose `canonicalName(call)`. The model-facing wire name remains the
 call's `name`; the optional canonical identity exists only for lifecycle consumers that must retain a
-dotted MCP namespace after wire-name projection (`packages/capability/src/loop-contract.ts:94-104`).
+dotted MCP namespace after wire-name projection (`packages/capability/src/loop-contract.ts`).
 
 ### 2.4 Argument validation (`tool-arg-validator.ts`)
 
-| Symbol | Signature | Line |
-|---|---|---|
-| `ToolArgValidator` | `{ validate(this: void, schema, args, tool?): string \| null }` | `packages/loop/src/runtime/tools/tool-arg-validator.ts:10-27` |
-| `createToolArgValidator` | `(logger?: Logger) => ToolArgValidator` | `packages/loop/src/runtime/tools/tool-arg-validator.ts:101` |
+| Symbol | Signature | File |
+| --- | --- | --- |
+| `ToolArgValidator` | `{ validate(this: void, schema, args, tool?): string \| null }` | `packages/loop/src/runtime/tools/tool-arg-validator.ts` |
+| `createToolArgValidator` | `(logger?: Logger) => ToolArgValidator` | `packages/loop/src/runtime/tools/tool-arg-validator.ts` |
 
 ### 2.5 Tool-effect classification (`tool-effect.ts`)
 
-| Symbol | Signature | Line |
-|---|---|---|
-| `createToolEffectPort` | `(declared?: Readonly<Record<string, ToolEffect>>) => ToolEffectPort` | `packages/loop/src/runtime/tools/tool-effect.ts:57` |
+| Symbol | Signature | File |
+| --- | --- | --- |
+| `createToolEffectPort` | `(declared?: Readonly<Record<string, ToolEffect>>) => ToolEffectPort` | `packages/loop/src/runtime/tools/tool-effect.ts` |
 
 `ToolEffect` itself (`"read" \| "mutate" \| "control" \| "spawn_run" \| "unknown"`) is owned by
-`@clarvis/capability` (`packages/capability/src/tool-effect.ts:31`) — see
+`@clarvis/capability` (`packages/capability/src/tool-effect.ts`) — see
 [loop-capability-composition](capability-composition.md) and [capability-contract-and-vocabulary](../foundations/capability.md).
 
 ### 2.6 The result contract (`result-contract.ts`, `submit-result-tool.ts`)
 
-| Symbol | Signature | Line |
-|---|---|---|
-| `compileResultContract` | `(outputSchema: unknown) => ResultContract` | `packages/loop/src/runtime/tools/result-contract.ts:114` |
-| `ResultContract` | `{ tool: NamespacedTool; validate(args): ResultValidation }` | `packages/loop/src/runtime/tools/result-contract.ts:22-25` |
-| `ResultValidation` | `{ ok: boolean; value?: unknown; error?: string }` | `packages/loop/src/runtime/tools/result-contract.ts:11-15` |
-| `OUTPUT_SCHEMA_LIMITS` | frozen `{ nodes: 20_000; depth: 64; containerEntries: 4_096; keyChars: 1_024; stringChars: 1_048_576; singleStringChars: 262_144 }` | `packages/loop/src/runtime/tools/result-contract.ts:28-35` |
-| `buildSubmitResultTool` | `(outputSchema: Record<string, unknown>) => NamespacedTool` | `packages/loop/src/runtime/tools/submit-result-tool.ts:14` |
+| Symbol | Signature | File |
+| --- | --- | --- |
+| `compileResultContract` | `(outputSchema: unknown) => ResultContract` | `packages/loop/src/runtime/tools/result-contract.ts` |
+| `ResultContract` | `{ tool: NamespacedTool; validate(args): ResultValidation }` | `packages/loop/src/runtime/tools/result-contract.ts` |
+| `ResultValidation` | `{ ok: boolean; value?: unknown; error?: string }` | `packages/loop/src/runtime/tools/result-contract.ts` |
+| `OUTPUT_SCHEMA_LIMITS` | frozen `{ nodes: 20_000; depth: 64; containerEntries: 4_096; keyChars: 1_024; stringChars: 1_048_576; singleStringChars: 262_144 }` | `packages/loop/src/runtime/tools/result-contract.ts` |
+| `buildSubmitResultTool` | `(outputSchema: Record<string, unknown>) => NamespacedTool` | `packages/loop/src/runtime/tools/submit-result-tool.ts` |
 
-The `submit_result` tool descriptor (`packages/loop/src/runtime/tools/submit-result-tool.ts:15-26`): `wireName`/`toolName`/`fullName`
+The `submit_result` tool descriptor (`packages/loop/src/runtime/tools/submit-result-tool.ts`): `wireName`/`toolName`/`fullName`
 = `"submit_result"`, `mcpName: ""`, `inputSchema` = the caller's `output_schema` **by reference**, and
 a fixed description that names only "finalize" — never the caller's field names.
 
@@ -120,39 +120,39 @@ are catalogued to [grants-and-tool-exposure](../cross-cutting/grants.md), not th
 §2.4 is their full treatment. The table below covers only the toolset-construction symbols this document
 owns.
 
-| Symbol | Signature | Line |
-|---|---|---|
-| `createAgentToolset` | `(opts: AgentToolsetOptions) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts:201` |
-| `createAgentToolsetWithAdapter` | `(opts, adapter: AgentToolsAdapter) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts:165` |
-| `AgentToolset` | `{ defs: NamespacedTool[]; names: Set<string>; dispatch(name, args, signal?, onOutput?) => Promise<AgentToolResult> }` | `packages/loop/src/runtime/tools/builtin/toolset.ts:62-72` |
-| `AgentToolResult` | `{ isError; text; images?; diff?; guard? }`; `guard` is the final review metadata returned by a guarded shell-family call | `packages/loop/src/runtime/tools/builtin/toolset.ts:44-56` |
+| Symbol | Signature | File |
+| --- | --- | --- |
+| `createAgentToolset` | `(opts: AgentToolsetOptions) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
+| `createAgentToolsetWithAdapter` | `(opts, adapter: AgentToolsAdapter) => AgentToolset` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
+| `AgentToolset` | `{ defs: NamespacedTool[]; names: Set<string>; dispatch(name, args, signal?, onOutput?) => Promise<AgentToolResult> }` | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
+| `AgentToolResult` | `{ isError; text; images?; diff?; guard? }`; `guard` is the final review metadata returned by a guarded shell-family call | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 | `AgentToolsetOptions` | `{ workspaceRoot; canMutate; canExec; confineToWorkspace?; temporaryRoots?; skillExecutionRoots?; onTemporaryRootRegistered?; guard?; elicit?; sandbox?; secretEnvNames?; logger? }` — the entire configuration surface connecting the coding toolset to ordered temporary access/approved skill roots, command review, elicitation and sandboxing | `packages/loop/src/runtime/tools/builtin/toolset.ts` (`AgentToolsetOptions`) |
-| `AgentToolsAdapter` | `{ resolve(opts: AgentToolsetOptions): { defs: NamespacedTool[]; dispatch: AgentToolset["dispatch"] } }` — the injectable test seam `createAgentToolsetWithAdapter` takes in place of the real `@clarvis/tools` calls; its own doc comment calls it a "package-private seam" | `packages/loop/src/runtime/tools/builtin/toolset.ts:73-82` |
+| `AgentToolsAdapter` | `{ resolve(opts: AgentToolsetOptions): { defs: NamespacedTool[]; dispatch: AgentToolset["dispatch"] } }` — the injectable test seam `createAgentToolsetWithAdapter` takes in place of the real `@clarvis/tools` calls; its own doc comment calls it a "package-private seam" | `packages/loop/src/runtime/tools/builtin/toolset.ts` |
 
 `builtin/index.ts` is the barrel: it re-exports `FILE_MUTATING_TOOL_NAMES`, `agentToolCaps`,
 `agentToolsActive`, `createAgentToolset`, `systemTemporaryRoots`, the
 `AgentToolset`/`AgentToolsetOptions` types, and the whole
 `@clarvis/tools/guard` analyzer surface (`Guard`, `Elicit`, `analyzeShell`, dialects, etc. —
-`packages/loop/src/runtime/tools/builtin/index.ts:6-30`); the guard/analyzer surface itself belongs to [command-guard-and-approval](../execution/command-guard.md).
-`AgentToolsAdapter` is **not** re-exported through the barrel — `packages/loop/tests/unit/toolset.test.ts:4-9` imports it
+`packages/loop/src/runtime/tools/builtin/index.ts`); the guard/analyzer surface itself belongs to [command-guard-and-approval](../execution/command-guard.md).
+`AgentToolsAdapter` is **not** re-exported through the barrel — `packages/loop/tests/unit/toolset.test.ts` imports it
 directly from `../../src/runtime/tools/builtin/toolset.ts`, consistent with the doc comment above
 calling it package-private.
 
 ### 2.8 `open-tool-pool.ts`
 
-| Symbol | Signature | Line |
-|---|---|---|
-| `openToolPool` | `(input: { request, connections, owner, signal?, relay, emptyUsage, logger? }) => Promise<OpenToolPoolResult>` | `packages/loop/src/runtime/open-tool-pool.ts:54-66` |
-| `OpenToolPoolResult` | `{ ok: true; opened: Lease[]; degraded: DegradedServer[] } \| { ok: false; response: RunResponse }` | `packages/loop/src/runtime/open-tool-pool.ts:29-30` |
-| `DegradedServer` | `{ name: string; transport: ToolTransport; reason: string }` | `packages/loop/src/runtime/open-tool-pool.ts:18-22` |
+| Symbol | Signature | File |
+| --- | --- | --- |
+| `openToolPool` | `(input: { request, connections, owner, signal?, relay, emptyUsage, logger? }) => Promise<OpenToolPoolResult>` | `packages/loop/src/runtime/open-tool-pool.ts` |
+| `OpenToolPoolResult` | `{ ok: true; opened: Lease[]; degraded: DegradedServer[] } \| { ok: false; response: RunResponse }` | `packages/loop/src/runtime/open-tool-pool.ts` |
+| `DegradedServer` | `{ name: string; transport: ToolTransport; reason: string }` | `packages/loop/src/runtime/open-tool-pool.ts` |
 
 ### 2.9 The barrel (`runtime/tools/index.ts`)
 
 `runtime/tools/index.ts` re-exports `ask-user-call.js`, `ask-user-tool.js`, `mcp-dispatch.js`,
 `result-contract.js`, `submit-result-tool.js`, `tool-arg-validator.js`, `wire-names.js` and
-`builtin/names.js` (`:6-13`). It is the actual import path several unit tests use rather than
-importing each module directly — `packages/loop/tests/unit/result-contract.test.ts:2,4` and `packages/loop/tests/unit/mcp-dispatch.test.ts:5` both
-import from `"../../src/runtime/tools/index.ts"`. Its own doc comment (`:2-5`) describes the
+`builtin/names.js`. It is the actual import path several unit tests use rather than
+importing each module directly — `packages/loop/tests/unit/result-contract.test.ts` and `packages/loop/tests/unit/mcp-dispatch.test.ts` both
+import from `"../../src/runtime/tools/index.ts"`. Its own doc comment describes the
 directory as also serving a built-in `load_skill` tool alongside `ask_user`/`submit_result`, but no
 `load_skill` module exists anywhere under `runtime/tools/` — that tool belongs to `@clarvis/skills`,
 so the comment is stale for this directory.
@@ -164,7 +164,7 @@ so the comment is stale for this directory.
 A registry entry carries `fullName` (`"<mcpName>.<toolName>"`), `wireName` (the model-facing name),
 `mcpName`, `toolName`, `description`, `inputSchema`, optional `kind` (`resource_list`/
 `resource_read`). Built-in tools reuse the same shape with `mcpName: ""` and
-`wireName === fullName === toolName` (`packages/loop/src/runtime/tools/submit-result-tool.ts:15-19`, `packages/loop/src/runtime/tools/builtin/toolset.ts:85-93`).
+`wireName === fullName === toolName` (`packages/loop/src/runtime/tools/submit-result-tool.ts`, `packages/loop/src/runtime/tools/builtin/toolset.ts`).
 
 ### 3.2 Wire-name sanitization (delegated mechanism, `@clarvis/mcp-client`)
 
@@ -196,53 +196,53 @@ OUTPUT_SCHEMA_LIMITS = {
   singleStringChars: 262_144,
 }
 ```
-(`packages/loop/src/runtime/tools/result-contract.ts:28-35`). These are walked **before** Ajv ever sees the schema
-(`outputSchemaBudgetIssue`, `packages/loop/src/runtime/tools/result-contract.ts:43-101`) via an explicit worklist stack (not
+(`packages/loop/src/runtime/tools/result-contract.ts`). These are walked **before** Ajv ever sees the schema
+(`outputSchemaBudgetIssue`, `packages/loop/src/runtime/tools/result-contract.ts`) via an explicit worklist stack (not
 recursion), a `WeakSet` cycle guard, and `Object.getOwnPropertyDescriptors` (never a plain property
 read, so a getter that throws is caught as "must not contain accessors" rather than invoked —
-`packages/loop/src/runtime/tools/result-contract.ts:93-96`).
+`packages/loop/src/runtime/tools/result-contract.ts`).
 
 ### 3.4 Argument-schema fail-open surface (`tool-arg-validator.ts`)
 
-`isEmptySchema(schema)` (`:77-87`) treats a schema as unconstrained — and skips compiling or running
-Ajv on it entirely — only when it has no `properties`/`required`/`items` **and** none of a 33-entry
-`CONSTRAINING_KEYWORDS` list (`:36-70`: `oneOf`, `anyOf`, `allOf`, `not`, `if`/`then`/`else`, `enum`,
+`isEmptySchema(schema)` treats a schema as unconstrained — and skips compiling or running
+Ajv on it entirely — only when it has no `properties`/`required`/`items` **and** none of the
+`CONSTRAINING_KEYWORDS`: `oneOf`, `anyOf`, `allOf`, `not`, `if`/`then`/`else`, `enum`,
 `const`, `$ref`, `patternProperties`, `propertyNames`, `additionalProperties`,
 `unevaluatedProperties`, `dependentRequired`, `dependentSchemas`, `dependencies`, `minProperties`,
 `maxProperties`, `contains`, `prefixItems`, `minItems`, `maxItems`, `uniqueItems`, `minimum`,
 `maximum`, `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`,
 `format`). A schema whose only content is `additionalProperties: false` therefore still counts as
 constraining — `additionalProperties` is on the keyword list — and is validated rather than skipped
-(pinned by `packages/loop/tests/unit/tool-arg-validator.test.ts:86-95`, `"enforces additionalProperties:false even with empty
+(pinned by `packages/loop/tests/unit/tool-arg-validator.test.ts`, `"enforces additionalProperties:false even with empty
 properties"`). This is a **fifth** fail-open path, distinct from the four in §3.5: an empty schema is
 accepted with **no** `tool.args_validation_failed_open` log line at all, unlike every other fail-open
 branch, which always emits one.
 
-### 3.5 Argument-validation fail-open reasons (`FailOpenReason`, `packages/loop/src/runtime/tools/tool-arg-validator.ts:30`)
+### 3.5 Argument-validation fail-open reasons (`FailOpenReason`, `packages/loop/src/runtime/tools/tool-arg-validator.ts`)
 
 | Reason | Trigger | Log shape | Test |
-|---|---|---|---|
-| `"compile_error"` | `ajv.compile(schema)` throws | `{event:"tool.args_validation_failed_open", tool?, reason:"compile_error", cause}` | `packages/loop/tests/unit/tool-arg-validator.test.ts:104-118` |
-| `"async"` | the compiled function is `$async` | same shape, `reason:"async"` | `packages/loop/tests/unit/tool-arg-validator.test.ts:120-134` |
-| `"non_boolean"` | the compiled validator's return is neither `true` nor `false` | same shape, `reason:"non_boolean"` (`:174`) | not asserted by a named-reason test in this document's scope — mechanism only, at `packages/loop/src/runtime/tools/tool-arg-validator.ts:174` |
-| `"validator_threw"` | `validate()` itself throws | same shape, `reason:"validator_threw"`, `cause` | `packages/loop/tests/unit/tool-arg-validator.test.ts:152-163` (`"returns null when reading the schema throws"`) |
+| --- | --- | --- | --- |
+| `"compile_error"` | `ajv.compile(schema)` throws | `{event:"tool.args_validation_failed_open", tool?, reason:"compile_error", cause}` | `packages/loop/tests/unit/tool-arg-validator.test.ts` |
+| `"async"` | the compiled function is `$async` | same shape, `reason:"async"` | `packages/loop/tests/unit/tool-arg-validator.test.ts` |
+| `"non_boolean"` | the compiled validator's return is neither `true` nor `false` | same shape, `reason:"non_boolean"` | not asserted by a named-reason test in this document's scope — mechanism only, at `packages/loop/src/runtime/tools/tool-arg-validator.ts` |
+| `"validator_threw"` | `validate()` itself throws | same shape, `reason:"validator_threw"`, `cause` | `packages/loop/tests/unit/tool-arg-validator.test.ts` (`"returns null when reading the schema throws"`) |
 
 Every reason is reported at most once per schema object: `reported` is a `WeakSet` keyed by the same
-schema reference as the compiled-function `WeakMap` cache (`:103`, `:107-113`, `:129-130`); `cause` is
+schema reference as the compiled-function `WeakMap` cache; `cause` is
 rendered through `errorText` (§7), not `JSON.stringify`, so a circular or `BigInt`-bearing cause never
-throws inside the reporter itself (`:117-121`).
+throws inside the reporter itself.
 
 ### 3.6 Rejection message shapes
 
 | Situation | Message shape | Cite |
-|---|---|---|
-| Unknown MCP wire name | `` Unknown tool '<name>'. Available tools: <comma list> `` | `packages/loop/src/runtime/tools/mcp-dispatch.ts:162` |
-| Malformed (truncated) arguments | `malformedArgumentsMessage(name, {ok:false, preview, reason:"unparsable"})` — "arrived truncated or malformed…", includes the raw `preview` | `packages/loop/src/runtime/tools/mcp-dispatch.ts:165-169`, `packages/capability/src/tool-arguments.ts:87-102` |
-| Argument-schema violation | `` InputValidationError: <ajv.errorsText(...)> `` | `packages/loop/src/runtime/tools/tool-arg-validator.ts:175` |
-| `submit_result` schema violation | `` submit_result rejected: <ajv.errorsText(...)> `` | `packages/loop/src/runtime/tools/result-contract.ts:169` |
-| Bad `output_schema` at compile time | `ValidationError("invalid_output_schema", "…")`, four distinct message templates (non-object, malformed, `$async`, non-object top-level `type`) | `packages/loop/src/runtime/tools/result-contract.ts:116-158` |
-| Non-`Error` thrown during compile | coalesced via `String(err)` into the same `ValidationError` | `packages/loop/src/runtime/tools/result-contract.ts:131-137` |
-| Final MCP-handler wrapping (outermost text delivered to the model) | success: `` Tool '<name>' result: <resultText> ``; failure: `` Tool '<name>' result (error): <errText> `` — wraps every `errText`/`resultText` shape above one layer out | `packages/loop/src/runtime/loop/mcp-handler.ts:52-55` |
+| --- | --- | --- |
+| Unknown MCP wire name | `` Unknown tool '<name>'. Available tools: <comma list> `` | `packages/loop/src/runtime/tools/mcp-dispatch.ts` |
+| Malformed (truncated) arguments | `malformedArgumentsMessage(name, {ok:false, preview, reason:"unparsable"})` — "arrived truncated or malformed…", includes the raw `preview` | `packages/loop/src/runtime/tools/mcp-dispatch.ts`, `packages/capability/src/tool-arguments.ts` |
+| Argument-schema violation | `` InputValidationError: <ajv.errorsText(...)> `` | `packages/loop/src/runtime/tools/tool-arg-validator.ts` |
+| `submit_result` schema violation | `` submit_result rejected: <ajv.errorsText(...)> `` | `packages/loop/src/runtime/tools/result-contract.ts` |
+| Bad `output_schema` at compile time | `ValidationError("invalid_output_schema", "…")`, four distinct message templates (non-object, malformed, `$async`, non-object top-level `type`) | `packages/loop/src/runtime/tools/result-contract.ts` |
+| Non-`Error` thrown during compile | coalesced via `String(err)` into the same `ValidationError` | `packages/loop/src/runtime/tools/result-contract.ts` |
+| Final MCP-handler wrapping (outermost text delivered to the model) | success: `` Tool '<name>' result: <resultText> ``; failure: `` Tool '<name>' result (error): <errText> `` — wraps every `errText`/`resultText` shape above one layer out | `packages/loop/src/runtime/loop/mcp-handler.ts` |
 
 ## 4. Behavior
 
@@ -250,21 +250,21 @@ throws inside the reporter itself (`:117-121`).
 
 1. `openToolPool` (§4.2) acquires MCP `Lease`s in parallel.
 2. `selectTools(opened, wireNamesForThisAgent)` (`@clarvis/mcp-client`, re-exported
-   `packages/loop/src/runtime/tools/mcp-registry.ts:11`) narrows the pool to the tool full-names one profile actually lists, dropping
+   `packages/loop/src/runtime/tools/mcp-registry.ts`) narrows the pool to the tool full-names one profile actually lists, dropping
    any connection left with zero tools.
-3. `buildRegistry(entries, capabilityReserved)` (`packages/loop/src/runtime/tools/mcp-registry.ts:33-37`) calls
+3. `buildRegistry(entries, capabilityReserved)` (`packages/loop/src/runtime/tools/mcp-registry.ts`) calls
    `@clarvis/mcp-client`'s `buildRegistry` with reserved names =
    `[...RESERVED_WIRE_NAMES, ...capabilityReserved]`. There are (at least) three call sites in
    `@clarvis/loop`'s source: the entry agent's own registry
-   (`packages/loop/src/runtime/orchestrator.ts:601`), a lead's lazily-built subagent registry
-   (`packages/loop/src/runtime/entry-inputs.ts:305-311`, closed over inside
+   (`packages/loop/src/runtime/orchestrator.ts`), a lead's lazily-built subagent registry
+   (`packages/loop/src/runtime/entry-inputs.ts`, closed over inside
    `buildSubagentRegistry`), and delegation's per-call registry
-   (`packages/loop/src/runtime/subagents/delegate-task.ts:423-426`). `capabilityReserved` in the last
-   two comes from `deps.capabilityReserved ?? []` (`packages/loop/src/runtime/entry-inputs.ts:310`, inside the closure's own
-   `deps`, not the outer `p`) and `ctx.capabilityReserved ?? []` (`packages/loop/src/runtime/subagents/delegate-task.ts:425`)
+   (`packages/loop/src/runtime/subagents/delegate-task.ts`). `capabilityReserved` in the last
+   two comes from `deps.capabilityReserved ?? []` (`packages/loop/src/runtime/entry-inputs.ts`, inside the closure's own
+   `deps`, not the outer `p`) and `ctx.capabilityReserved ?? []` (`packages/loop/src/runtime/subagents/delegate-task.ts`)
    respectively, i.e. it is threaded from the same
    `CapabilityToolMetadata` the entry agent used — collection of that metadata
-   (`collectCapabilityToolMetadata`, `packages/loop/src/runtime/capability-tool-metadata.ts:23-33`) is
+   (`collectCapabilityToolMetadata`, `packages/loop/src/runtime/capability-tool-metadata.ts`) is
    owned by [loop-capability-composition](capability-composition.md).
 4. Inside `@clarvis/mcp-client`'s `makeRegistry` (`packages/mcp-client/src/registry.ts`), the first
    pass reserves every safe, case-insensitively unique, non-host-reserved provider-local name. The
@@ -278,11 +278,11 @@ throws inside the reporter itself (`:117-121`).
 1. `Promise.allSettled` acquires a `Lease` per declared server with
    `authorizationWait: "background"`, so an opened browser flow can never hold run admission
    (`openToolPool` in `packages/loop/src/runtime/open-tool-pool.ts`).
-2. Successes/failures are partitioned (`:87-97`).
+2. Successes/failures are partitioned.
 3. **If the caller's signal is already aborted**, every acquired lease is released
    (`Promise.allSettled(successes.map(o => o.release()))`) and the function returns
    `{ ok:false, response:{status:"cancelled", result:"", usage: emptyUsage()} }` — *before* any
-   further validation (`:99-102`). This is unconditional: it runs even when every server actually
+   further validation. This is unconditional: it runs even when every server actually
    connected.
 4. **If every server failed for a terminal reason** and at least one was declared, the run fails with either
    `mcp_connection_failed` (carrying `mcp_name`/`transport` from the thrown
@@ -291,74 +291,73 @@ throws inside the reporter itself (`:117-121`).
    from this terminal-failure predicate. A mixed pending/deferred plus terminal failure set therefore
    continues with an empty MCP pool; one terminal error cannot mask an inactive background server.
 5. Otherwise, every failed/pending server is logged once as `mcp.connect.failed` and folded into
-   `DegradedServer[]` (`:140-151`) — the run is **not** failed merely because *some* servers failed.
-   The caller (`packages/loop/src/runtime/orchestrator.ts:471-472`, out of this document's scope) turns a non-empty `degraded`
+   `DegradedServer[]` — the run is **not** failed merely because *some* servers failed.
+   The caller (`packages/loop/src/runtime/orchestrator.ts`, out of this document's scope) turns a non-empty `degraded`
    into a persisted trace record of kind `"mcp_degraded"` carrying `{ servers: poolResult.degraded }`,
    so a degraded startup is not only an in-memory return value but a wire-visible event a client or a
    rehydrated session actually sees; asserted end-to-end by
-   `packages/loop/tests/integration/open-tool-pool.test.ts:191-222`, which checks the event's shape via
+   `packages/loop/tests/integration/open-tool-pool.test.ts`, which checks the event's shape via
    `onEvent` and its persistence via `harness.getRun(...).trace.events`.
 6. `poolToolNames(successes)` lists every surviving tool's dotted full name; `belongsToFailed(tool)`
    excludes from validation any profile tool reference whose namespace prefix matches a failed
-   server (`:154-166`), so a profile naming a tool on a server that degraded is not itself an error.
-7. `findInvalidToolRef` (`packages/loop/src/runtime/subagents/subagent-profiles.ts:253-264`) checks
+   server, so a profile naming a tool on a server that degraded is not itself an error.
+7. `findInvalidToolRef` (`packages/loop/src/runtime/subagents/subagent-profiles.ts`) checks
    every remaining profile tool reference against the surviving pool names; a miss releases every
-   lease and returns `invalid_profile` naming the offending profile and tool (`:130-147`).
-8. On success, `{ ok:true, opened: successes, degraded }` is returned (`:149`).
+   lease and returns `invalid_profile` naming the offending profile and tool.
+8. On success, `{ ok:true, opened: successes, degraded }` is returned.
 
-### 4.3 Dispatching one MCP tool call (`executeMcpToolCall`, `packages/loop/src/runtime/tools/mcp-dispatch.ts:136-233`)
+### 4.3 Dispatching one MCP tool call (`executeMcpToolCall`, `packages/loop/src/runtime/tools/mcp-dispatch.ts`)
 
 1. `registry.resolve(call.name)` looks the wire name up.
 2. **Unknown name** → `errText`/`resultText` = `` Unknown tool '<name>'. Available tools: … ``;
-   `productive` stays `false` (never set `true`) (`:151-153`).
+   `productive` stays `false` (never set `true`).
 3. **Malformed arguments** (`call.malformedArguments !== undefined`) → rejected with
-   `malformedArgumentsMessage`, again non-productive (`:154-160`).
+   `malformedArgumentsMessage`, again non-productive.
 4. Otherwise, `argValidator.validate(resolved.inputSchema, call.arguments, call.name)` runs; a
-   non-null result is the error text, `productive: false` (`:162-166`). **No `tool_call_started`
+   non-null result is the error text, `productive: false`. **No `tool_call_started`
    record fires for this branch** — the record is nested inside the `else` of the
-   `validationError !== null` check (`:163-176`), so a validation failure gets no start event, exactly
+   `validationError !== null` check, so a validation failure gets no start event, exactly
    like the unknown-name and malformed-arguments branches above it; only a call that clears
    validation and actually dispatches gets one.
-5. On a clean call, a `tool_call_started` trace record fires (`:168-176`), then:
+5. On a clean call, a `tool_call_started` trace record fires, then:
    - `kind === "resource_list"` and the connection has `listResources` → `conn.listResources(signal)`.
    - `kind === "resource_read"` and the connection has `readResource` → `conn.readResource(String(uri), signal)`, `uri` read off `call.arguments.uri`.
    - otherwise → `conn.callTool(resolved.toolName, call.arguments, signal)`.
-   (`:177-186`)
-6. On `result.ok`, `extractMcpResult` (`:52-70`) splits any `content` array's image blocks out of the
+
+6. On `result.ok`, `extractMcpResult` splits any `content` array's image blocks out of the
    serialized text, replacing each with a `"[image delivered as an image block]"` placeholder so the
    base64 is not duplicated; `productive: true`.
 7. On failure, `errText = result.error?.message ?? "tool execution failed"`; `productive =
-   result.error?.code !== "mcp_unavailable"` (`:196`) — an `mcp_unavailable` failure sets
+   result.error?.code !== "mcp_unavailable"` — an `mcp_unavailable` failure sets
    `productive: false`, the opposite of every other error code (which leaves `productive: true`),
    and that `false` is what excuses a repeatedly-unreachable server from the convergence guard's
-   unproductive-looping penalty (doc comment at `:15-16`).
+   unproductive-looping penalty (doc comment).
 8. A terminal `tool_call` trace record always fires, carrying both `arguments` (what ran) and, if the
    call was hook-rewritten, `arguments_original` (what the model asked for) via
-   `originalArgumentsPatch` (`:100-103`, `:201-213`).
+   `originalArgumentsPatch`.
 9. Unless the signal is aborted, `guards.record(sig, resultText, errText !== null)` feeds the
    convergence guard, where `sig` is built from the **malformed preview** (`` `${call.name}:malformed:${call.malformedArguments}` ``) when arguments were
-   malformed, or from `` `${call.name}:${safeStringify(call.arguments)}` `` otherwise (`:214-220`).
+   malformed, or from `` `${call.name}:${safeStringify(call.arguments)}` `` otherwise.
    Using the raw preview rather than the arguments normalized to `{}` is deliberate: two calls to the
    same tool truncated differently by the provider must produce two different signatures, or the
    convergence guard would read every malformed call to that tool as the same repeated call and end
    the run for looping faster than the bug it is reporting. Pinned for both dispatchers by
    `packages/loop/tests/unit/malformed-tool-arguments.test.ts` — `"keeps two differently-truncated
-   payloads distinct to the convergence guard"` (`:126-145` for `executeAgentToolCall`, `:276-290` for
+   payloads distinct to the convergence guard"` ( for `executeAgentToolCall` for
    `executeMcpToolCall`).
 
-### 4.4 Dispatching one built-in coding-tool call (`executeAgentToolCall`, `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:65-150`)
+### 4.4 Dispatching one built-in coding-tool call (`executeAgentToolCall`, `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts`)
 
 Mirrors §4.3's shape without a registry resolve step (the toolset's `dispatch` already gates on
-`names.has(name)` — see §4.6): malformed arguments short-circuit to a traced, non-productive error
-(`:76-98`); otherwise a `tool_call_started` record fires, `toolset.dispatch` runs with an `onOutput`
-callback relayed as `tool_output_delta` trace **signals** (`:112-126`), and the terminal `tool_call`
-record carries any returned `diff` and final command-review `guard` metadata (`:130-144`). The convergence-guard signature always uses
+`names.has(name)` — see §4.6): malformed arguments short-circuit to a traced, non-productive error; otherwise a `tool_call_started` record fires, `toolset.dispatch` runs with an `onOutput`
+callback relayed as `tool_output_delta` trace **signals**, and the terminal `tool_call`
+record carries any returned `diff` and final command-review `guard` metadata. The convergence-guard signature always uses
 `safeStringify(call.arguments)` here — there is no malformed-preview branch for the signal, because
 malformed arguments already returned above. `packages/loop/tests/unit/malformed-tool-arguments.test.ts`
-is the primary test for both dispatchers' malformed-argument path (refusal instead of dispatching on
+is the primary test for both dispatchers' malformed-argument path: refusal instead of dispatching on
 fabricated-empty arguments, the model being told what actually arrived, the trace persisting the
-arrived preview, and the distinct-signature rule above) — a 304-line file dedicated to this behavior,
-covering `executeAgentToolCall` (`:64-191`) and `executeMcpToolCall` (`:193-304`).
+arrived preview, and the distinct-signature rule above across `executeAgentToolCall` and
+`executeMcpToolCall`.
 
 For a schema-valid built-in call, convergence classification uses the structured review rather than
 the serialized error text alone: `guard.outcome === "denied"` records the `"denied"` disposition;
@@ -374,27 +373,27 @@ crossing reached earlier in the same batch. Production: `executeAgentToolCall`,
 
 ### 4.5 Building the two dispatch handlers and their ordering (context in `runtime/loop/run-agent.ts`)
 
-`buildMcpHandler` (`packages/loop/src/runtime/loop/mcp-handler.ts:24-63`) wraps `executeMcpToolCall` as a `ToolHandler` whose
-`matches` is unconditionally `true` (`:35`) — it is the catch-all. Two of its behaviors are named in
+`buildMcpHandler` (`packages/loop/src/runtime/loop/mcp-handler.ts`) wraps `executeMcpToolCall` as a `ToolHandler` whose
+`matches` is unconditionally `true` — it is the catch-all. Two of its behaviors are named in
 §2.3's signature table but only spelled out here: it wraps `executeMcpToolCall`'s
 `resultText`/`errText` into the model-facing text shown in §3.6's final row — `` Tool '<name>' result:
-<resultText> `` on success, `` Tool '<name>' result (error): <errText> `` on failure (`:51-54`) — and
+<resultText> `` on success, `` Tool '<name>' result (error): <errText> `` on failure — and
 `deps.progress` is the persona's own policy function mapping `{errText, productive}` to the
-`HandlerVerdict.progress` boolean (`:29`, `:58`); `deps.availableWireNames` defaults to
-`deps.registry.tools.map(t => t.wireName)` when the caller omits it (`:33`). Its `canonicalName`
-resolves the call through the same registry and returns `fullName` (`:36`). The loop keeps the wire
+`HandlerVerdict.progress` boolean; `deps.availableWireNames` defaults to
+`deps.registry.tools.map(t => t.wireName)` when the caller omits it. Its `canonicalName`
+resolves the call through the same registry and returns `fullName`. The loop keeps the wire
 name as `tool`, adds a distinct `toolFullName` only when resolution succeeds and differs, and treats a
-throwing optional resolver as absent (`packages/loop/src/runtime/loop/loop.ts:494-508`). Both the
-before- and after-tool hook payloads use that same identity (`:549-566`, `:595-617`). The coding-tool equivalent,
-`buildAgentToolsHandler` (`packages/loop/src/runtime/capabilities/tools.ts:220-248`, owned by
+throwing optional resolver as absent (`packages/loop/src/runtime/loop/loop.ts`). Both the
+before- and after-tool hook payloads use that same identity. The coding-tool equivalent,
+`buildAgentToolsHandler` (`packages/loop/src/runtime/capabilities/tools.ts`, owned by
 [loop-capability-composition](capability-composition.md)), instead matches only `toolset.names.has(call.name)`. The run's
 handler list is assembled as:
 
 ```
 handlers = [...folded.handlers, ...(contract ? [submitHandler] : []), mcpHandler]
 ```
-(`packages/loop/src/runtime/loop/run-agent.ts:415-419`), and `selectHandler` picks the **first**
-handler whose `matches` returns true (`packages/loop/src/runtime/loop/loop-contract.ts:82-89`,
+(`packages/loop/src/runtime/loop/run-agent.ts`), and `selectHandler` picks the **first**
+handler whose `matches` returns true (`packages/loop/src/runtime/loop/loop-contract.ts`,
 "earlier handlers win"). Consequences of that order:
 - `folded.handlers` (capability-contributed, includes the coding-tools handler) always gets first
   refusal, so a capability can shadow a wire name the run also has an MCP tool for.
@@ -405,36 +404,33 @@ handler whose `matches` returns true (`packages/loop/src/runtime/loop/loop-contr
 
 ### 4.6 `AgentToolset` construction and gating (`builtin/toolset.ts`)
 
-`createAgentToolsetWithAdapter(opts, adapter)` (`:161-183`) calls `adapter.resolve(opts)` to get the
+`createAgentToolsetWithAdapter(opts, adapter)` calls `adapter.resolve(opts)` to get the
 raw tool defs + dispatch, then:
-- drops every `EXEC_TOOL_NAMES` def when `opts.canExec` is false (`:166-168`);
-- builds `names` as the `Set` of the (possibly filtered) defs' wire names (`:169`);
+- drops every `EXEC_TOOL_NAMES` def when `opts.canExec` is false;
+- builds `names` as the `Set` of the (possibly filtered) defs' wire names;
 - wraps `dispatch` so a call whose name is not in `names` never reaches the adapter at all — it
-  resolves immediately to `{ isError: true, text: "Tool '<name>' is not available to this agent." }`
-  (`:177-183`);
-- otherwise races the adapter's own dispatch promise against the abort `signal` via `raceAbort`
-  (`:101-119`), resolving to `abortedResult()` (`"Tool call aborted (run cancelled)."`) the instant the
+  resolves immediately to `{ isError: true, text: "Tool '<name>' is not available to this agent." }`;
+- otherwise races the adapter's own dispatch promise against the abort `signal` via `raceAbort`, resolving to `abortedResult()` (`"Tool call aborted (run cancelled)."`) the instant the
   signal fires, always removing its own abort listener afterward.
 
-`createAgentToolset` (`:201-203`) is the only barrel-exported factory and always binds
-`REAL_AGENT_TOOLS_ADAPTER` (`:121-160`), which calls `@clarvis/tools`' `resolveConfig`/`listTools`/
+`createAgentToolset` is the only barrel-exported factory and always binds
+`REAL_AGENT_TOOLS_ADAPTER`, which calls `@clarvis/tools`' `resolveConfig`/`listTools`/
 `dispatch`/`contentText`, translating a coding-tool result's image content parts into
 `ToolResultImage[]`, its `meta.diff` into the flat `diff` field, and its final `GuardReview` into the
 flat `guard` field. `temporaryRoots` and `onTemporaryRootRegistered` are forwarded into
 `resolveConfig`, so roots admitted during a run become available to the already-resolved toolset and
-are reported back to its owner (`packages/loop/src/runtime/tools/builtin/toolset.ts:129-135`).
+are reported back to its owner (`packages/loop/src/runtime/tools/builtin/toolset.ts`).
 
 This whole policy layer (gate, exec filtering, abort race, listener cleanup) is directly pinned by
 `packages/loop/tests/unit/toolset.test.ts` against a fake `AgentToolsAdapter`, independent of the real
 `@clarvis/tools` adapter: the complete options object reaches the adapter unchanged
-(`packages/loop/tests/unit/toolset.test.ts:71-88`); `canExec:false` removes every exec-tool def and name
-(`:90-95`); a name outside `names` (`"shell"` filtered out, or `"unknown"`) is refused
-*without the adapter's dispatch ever being called* (`:97-106`, `adapter.calls` stays empty); call
-inputs/output-chunks/the adapter's result all pass through unchanged (`:108-133`); an already-aborted
-signal short-circuits to the cancelled result without invoking the adapter at all (`:135-143`); an
+(`packages/loop/tests/unit/toolset.test.ts`); `canExec:false` removes every exec-tool def and name; a name outside `names` (`"shell"` filtered out, or `"unknown"`) is refused
+*without the adapter's dispatch ever being called* (`adapter.calls` stays empty); call
+inputs/output-chunks/the adapter's result all pass through unchanged; an already-aborted
+signal short-circuits to the cancelled result without invoking the adapter at all; an
 abort firing mid-flight wins the race and removes its `abort` listener (checked via
-`node:events`' `getEventListeners`, `:145-161`); and a normal (non-aborted) dispatch also leaves no
-listener behind (`:163-170`).
+`node:events`' `getEventListeners`); and a normal (non-aborted) dispatch also leaves no
+listener behind.
 
 This section's `EXEC_TOOL_NAMES`/`canExec` filtering consumes `agentToolCaps`/`GrantCeiling`'s output
 without re-deriving it: that function, `agentToolsActive`, and the rest of the `grants.ts`/`names.ts`
@@ -443,35 +439,34 @@ their full treatment.
 
 ### 4.7 Compiling and validating the `submit_result` contract (`result-contract.ts`)
 
-1. `compileResultContract(outputSchema)` first rejects non-object/array/null schemas outright
-   (`:115-120`).
+1. `compileResultContract(outputSchema)` first rejects non-object/array/null schemas outright.
 2. `outputSchemaBudgetIssue` walks the schema iteratively (an explicit stack, not recursion) counting
    nodes, string characters, container sizes and depth, and bails the first ceiling crossed, a cycle,
-   or a non-enumerable/accessor-backed property (`:43-101`); any budget violation is thrown as a plain
-   `Error` and immediately re-wrapped as `ValidationError("invalid_output_schema", …)` (`:125-137`).
+   or a non-enumerable/accessor-backed property; any budget violation is thrown as a plain
+   `Error` and immediately re-wrapped as `ValidationError("invalid_output_schema", …)`.
 3. `createStrictAjv().compile(outputSchema)` (strict-schema Ajv) actually compiles it; any thrown
    error (including a non-`Error` value, coalesced via `String(err)`) becomes the same
-   `ValidationError` code (`:129-137`).
-4. `$async` on the compiled function is rejected the same way (`:140-145`).
+   `ValidationError` code.
+4. `$async` on the compiled function is rejected the same way.
 5. The schema's top-level `type` must be absent, `"object"`, or an array containing `"object"`
-   (`describesObject`, `:147-151`) — otherwise rejected, because `submit_result`'s arguments are
+   (`describesObject`) — otherwise rejected, because `submit_result`'s arguments are
    always a JSON object regardless of what the caller's schema claims to describe.
 6. `buildSubmitResultTool(outputSchema)` builds the `NamespacedTool`, exposing the caller's schema
-   **by reference** (`tool.inputSchema === outputSchema`, no copy — `:160`, pinned by
-   `packages/loop/tests/unit/result-contract.test.ts:21`).
+   **by reference** (`tool.inputSchema === outputSchema`, no copy — pinned by
+   `packages/loop/tests/unit/result-contract.test.ts`).
 7. The returned `validate(args)` runs the compiled function; on success it returns
-   `{ok:true, value: args}` **verbatim** (no coercion — `:166`); on failure,
-   `{ok:false, error: "submit_result rejected: " + ajv.errorsText(...)}` (`:167-170`).
+   `{ok:true, value: args}` **verbatim** (no coercion —); on failure,
+   `{ok:false, error: "submit_result rejected: " + ajv.errorsText(...)}`.
 
-`compileResultContract` is invoked exactly once per run, in `packages/loop/src/runtime/execute-run.ts:315-316`, only when
+`compileResultContract` is invoked exactly once per run, in `packages/loop/src/runtime/execute-run.ts`, only when
 `parsed.output_schema !== undefined` — a throw here propagates as a pre-execution `ValidationError`
 (the surrounding function's own doc says "@throws ValidationError if the body is invalid",
-`packages/loop/src/runtime/execute-run.ts:257-258`), never as a run response. The compiled `contract`
-then feeds `runtime/loop/run-agent.ts`'s `submitHandler` (`:381-413`) and its `fastAcceptSubmit`
-finalize-gate fast path (`:565-580`) — both outside this document's scope (owned by the loop's finalize/
+`packages/loop/src/runtime/execute-run.ts`), never as a run response. The compiled `contract`
+then feeds `runtime/loop/run-agent.ts`'s `submitHandler` and its `fastAcceptSubmit`
+finalize-gate fast path — both outside this document's scope (owned by the loop's finalize/
 gate machinery) but both call `contract.validate` exactly as described above.
 
-### 4.8 Tool-effect classification (`createToolEffectPort`, `packages/loop/src/runtime/tools/tool-effect.ts:57-67`)
+### 4.8 Tool-effect classification (`createToolEffectPort`, `packages/loop/src/runtime/tools/tool-effect.ts`)
 
 Given `declared` (the union of every registered capability's `toolEffects`, keyed by wire name), the
 returned port's `effect(wireName)` checks, **in this fixed order**:
@@ -479,131 +474,131 @@ returned port's `effect(wireName)` checks, **in this fixed order**:
    `AGENT_SUPERVISION_WIRE_NAMES`) → `"control"`.
 2. `READ` set (`READ_ONLY_AGENT_TOOL_WIRE_NAMES`) → `"read"`.
 3. `CODING` set (`AGENT_TOOL_WIRE_NAMES`) → `"mutate"` — this covers `shell`, `host_vcs` and every monitor tool,
-   deliberately, because they "observe and mutate through one entry point" (`:24-27`, `:46-48`).
-4. otherwise, `declared[wireName] ?? "unknown"` (`:65`).
+   deliberately, because they "observe and mutate through one entry point".
+4. otherwise, `declared[wireName] ?? "unknown"`.
 
 The engine's own three sets are consulted **before** anything a capability declared, so no capability
-can reclassify `shell` as `read` (`:49-56`, pinned by `packages/loop/tests/unit/tool-effect.test.ts:78-82`).
+can reclassify `shell` as `read` (pinned by `packages/loop/tests/unit/tool-effect.test.ts`).
 
 ## 5. Invariants
 
 | # | Rule | Production | Test |
-|---|---|---|---|
-| INV-050 | A `submit_result` call whose arguments satisfy the caller's `output_schema` produces a completed run whose `result` validates against that schema and whose full response validates against the run envelope schema. | `packages/loop/src/runtime/tools/result-contract.ts:114-172`, `packages/loop/src/runtime/loop/run-agent.ts:381-410` | `packages/loop/tests/contract/structured-output-envelope.contract.test.ts:23` |
-| INV-051 | `compileResultContract`'s `submit_result` tool exposes the schema *by reference* (`tool.inputSchema === SCHEMA`); its description mentions "finalize" and never the caller's field names. | `packages/loop/src/runtime/tools/result-contract.ts:160`, `packages/loop/src/runtime/tools/submit-result-tool.ts:20-24` | `packages/loop/tests/unit/result-contract.test.ts:17-25` |
-| INV-052 | `validate()` returns conforming arguments verbatim (no coercion) and accepts an explicit `null` for a nullable field. | `packages/loop/src/runtime/tools/result-contract.ts:164-166` | `packages/loop/tests/unit/result-contract.test.ts:27-36` |
-| INV-053 | A missing required field or wrong-typed field is rejected with a message naming both "submit_result rejected" and the offending field. | `packages/loop/src/runtime/tools/result-contract.ts:169` | `packages/loop/tests/unit/result-contract.test.ts:38-49` |
-| INV-054 | `compileResultContract` throws `ValidationError("invalid_output_schema")` for: a well-formed-but-invalid schema; `$async: true`; any non-object schema value; any well-formed schema describing a non-object top-level value. Conversely, `describesObject` (§4.7 step 5) accepts a schema with no top-level `type` at all, a `type: ["object","null"]` union, and a type-less `oneOf` combinator — none of these are rejected. | `packages/loop/src/runtime/tools/result-contract.ts:115-158` | `packages/loop/tests/unit/result-contract.test.ts:51-107` (rejections), `:109-117` (`"accepts an object schema, a nullable-object union, and a type-less combinator schema"`, the positive counterpart) |
-| INV-055 | An `output_schema` exceeding `OUTPUT_SCHEMA_LIMITS` (containers, depth, single-string length) is rejected before Ajv compiles it, as is a cyclic graph or an accessor-backed property. | `packages/loop/src/runtime/tools/result-contract.ts:43-101` | `packages/loop/tests/unit/result-contract.test.ts:119-149` |
-| INV-056 | A non-`Error` thrown during schema compilation is coalesced via `String(err)` into a `ValidationError`, not propagated raw. | `packages/loop/src/runtime/tools/result-contract.ts:131-137` | `packages/loop/tests/unit/result-contract.test.ts:152-173` |
-| INV-057 | `RESERVED_WIRE_NAMES` is *derived from* (not hand-copied alongside) `BUILTIN_WIRE_NAMES` concatenated with `AGENT_TOOL_WIRE_NAMES` — the two lists must literally be the same array. | `packages/loop/src/runtime/tools/wire-names.ts:119-122` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:32-34` |
+| --- | --- | --- | --- |
+| INV-050 | A `submit_result` call whose arguments satisfy the caller's `output_schema` produces a completed run whose `result` validates against that schema and whose full response validates against the run envelope schema. | `packages/loop/src/runtime/tools/result-contract.ts`, `packages/loop/src/runtime/loop/run-agent.ts` | `packages/loop/tests/contract/structured-output-envelope.contract.test.ts` |
+| INV-051 | `compileResultContract`'s `submit_result` tool exposes the schema *by reference* (`tool.inputSchema === SCHEMA`); its description mentions "finalize" and never the caller's field names. | `packages/loop/src/runtime/tools/result-contract.ts`, `packages/loop/src/runtime/tools/submit-result-tool.ts` | `packages/loop/tests/unit/result-contract.test.ts` |
+| INV-052 | `validate()` returns conforming arguments verbatim (no coercion) and accepts an explicit `null` for a nullable field. | `packages/loop/src/runtime/tools/result-contract.ts` | `packages/loop/tests/unit/result-contract.test.ts` |
+| INV-053 | A missing required field or wrong-typed field is rejected with a message naming both "submit_result rejected" and the offending field. | `packages/loop/src/runtime/tools/result-contract.ts` | `packages/loop/tests/unit/result-contract.test.ts` |
+| INV-054 | `compileResultContract` throws `ValidationError("invalid_output_schema")` for: a well-formed-but-invalid schema; `$async: true`; any non-object schema value; any well-formed schema describing a non-object top-level value. Conversely, `describesObject` (§4.7 step 5) accepts a schema with no top-level `type` at all, a `type: ["object","null"]` union, and a type-less `oneOf` combinator — none of these are rejected. | `packages/loop/src/runtime/tools/result-contract.ts` | `packages/loop/tests/unit/result-contract.test.ts` (rejections) (`"accepts an object schema, a nullable-object union, and a type-less combinator schema"`, the positive counterpart) |
+| INV-055 | An `output_schema` exceeding `OUTPUT_SCHEMA_LIMITS` (containers, depth, single-string length) is rejected before Ajv compiles it, as is a cyclic graph or an accessor-backed property. | `packages/loop/src/runtime/tools/result-contract.ts` | `packages/loop/tests/unit/result-contract.test.ts` |
+| INV-056 | A non-`Error` thrown during schema compilation is coalesced via `String(err)` into a `ValidationError`, not propagated raw. | `packages/loop/src/runtime/tools/result-contract.ts` | `packages/loop/tests/unit/result-contract.test.ts` |
+| INV-057 | `RESERVED_WIRE_NAMES` is *derived from* (not hand-copied alongside) `BUILTIN_WIRE_NAMES` concatenated with `AGENT_TOOL_WIRE_NAMES` — the two lists must literally be the same array. | `packages/loop/src/runtime/tools/wire-names.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` |
 | INV-058 | A wire-safe, case-insensitively unique, non-host-reserved MCP local name is preserved exactly. Eligible locals are reserved before fallbacks, making their ownership independent of entry order. Duplicate/case-colliding, invalid, or reserved locals use a sanitized namespaced fallback; a built-in name such as `submit_result`, `ask_user`, `read_file`, or `delegate_task` is never taken, and dotted `mcp.tool` remains canonical and resolvable. | `buildRegistry` in `packages/loop/src/runtime/tools/mcp-registry.ts`; `makeRegistry` and `toWireToolName` in `packages/mcp-client/src/registry.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` (`"an MCP extension tool named … never takes the built-in's name"`); `packages/mcp-client/tests/unit/registry.test.ts` (`"preserves a unique provider-safe local name for skill/tool compatibility"`, `"falls back to namespaced names when local names collide across servers"`, and `"reserves a unique local name before allocating colliding namespaced fallbacks"`) |
-| INV-059 | A capability's tool metadata (`reservedWireNames`, `toolEffects`) is collected from **every registered capability**, including one whose `forRun()` returns `null` for this run — declaration is independent of activation. | `packages/loop/src/runtime/capability-tool-metadata.ts:23-33` (owned by [loop-capability-composition](capability-composition.md)) | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:74-81` |
-| INV-060 | An MCP tool colliding with a *capability's* reserved name is blocked the same way, once passed through `buildRegistry`; without passing it, the engine alone provides no such protection. | `packages/loop/src/runtime/tools/mcp-registry.ts:33-37` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:84-94`, `:103-114` |
-| INV-061 | A tool-effect classifier built from declared `toolEffects` answers the declared effect for a declared name and `"unknown"` for any undeclared name. | `packages/loop/src/runtime/tools/tool-effect.ts:57-67` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts:95-100` |
-| INV-062 | Every call site of `buildRegistry` in `@clarvis/loop`'s source passes exactly two arguments, never omitting the second (which would silently let an MCP server shadow a reserved name). At least three such call sites exist. | `packages/loop/src/runtime/orchestrator.ts:601`, `packages/loop/src/runtime/entry-inputs.ts:305-311`, `packages/loop/src/runtime/subagents/delegate-task.ts:423-426` | `packages/loop/tests/architecture/mcp-registry-call-sites.test.ts:57-81` — walks every `.ts` file under `src/`, regex-scans for `buildRegistry(` call sites (excluding the definition itself), asserts there are `>= 3` (`:57-59`), and asserts each passes exactly two top-level, balanced-bracket-parsed arguments (`:61-81`) |
-| INV-063 | `openToolPool`, given a signal already aborted before it acquires a lease, still releases the lease it acquired and returns a `cancelled` response rather than leaking it. | `packages/loop/src/runtime/open-tool-pool.ts:99-102` | `packages/loop/tests/unit/open-tool-pool-policy.test.ts:16-53` |
+| INV-059 | A capability's tool metadata (`reservedWireNames`, `toolEffects`) is collected from **every registered capability**, including one whose `forRun()` returns `null` for this run — declaration is independent of activation. | `packages/loop/src/runtime/capability-tool-metadata.ts` (owned by [loop-capability-composition](capability-composition.md)) | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` |
+| INV-060 | An MCP tool colliding with a *capability's* reserved name is blocked the same way, once passed through `buildRegistry`; without passing it, the engine alone provides no such protection. | `packages/loop/src/runtime/tools/mcp-registry.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` |
+| INV-061 | A tool-effect classifier built from declared `toolEffects` answers the declared effect for a declared name and `"unknown"` for any undeclared name. | `packages/loop/src/runtime/tools/tool-effect.ts` | `packages/loop/tests/unit/mcp-registry-reservation.test.ts` |
+| INV-062 | Every call site of `buildRegistry` in `@clarvis/loop`'s source passes exactly two arguments, never omitting the second (which would silently let an MCP server shadow a reserved name). At least three such call sites exist. | `packages/loop/src/runtime/orchestrator.ts`, `packages/loop/src/runtime/entry-inputs.ts`, `packages/loop/src/runtime/subagents/delegate-task.ts` | `packages/loop/tests/architecture/mcp-registry-call-sites.test.ts` — walks every `.ts` file under `src/`, regex-scans for `buildRegistry(` call sites (excluding the definition itself), asserts there are `>= 3`, and asserts each passes exactly two top-level, balanced-bracket-parsed arguments |
+| INV-063 | `openToolPool`, given a signal already aborted before it acquires a lease, still releases the lease it acquired and returns a `cancelled` response rather than leaking it. | `packages/loop/src/runtime/open-tool-pool.ts` | `packages/loop/tests/unit/open-tool-pool-policy.test.ts` |
 | INV-064 | Every run requests background MCP authorization/admission. If any failed server is pending browser OAuth or deferred behind a saturated connection/handshake bound, an otherwise empty pool returns success plus `mcp_degraded`; mixed terminal failures cannot mask that nonterminal state. | `openToolPool` in `packages/loop/src/runtime/open-tool-pool.ts` | `packages/loop/tests/integration/open-tool-pool.test.ts` (all-pending, mixed pending/terminal, busy-admission, and consecutive-run cases) |
-| INV-065 | `AGENT_TOOL_WIRE_NAMES` stays exactly in sync (as a set) with `AGENT_TOOL_NAMES`, the list `@clarvis/tools` actually registers. | `packages/loop/src/runtime/tools/wire-names.ts:53-77`, `packages/loop/src/runtime/tools/builtin/names.ts:4` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:12-16` |
-| INV-066 | `READ_ONLY_AGENT_TOOL_WIRE_NAMES` matches `READ_ONLY_TOOL_NAMES` exactly, and `READ_ONLY_TOOL_NAMES ∪ EDIT_TOOL_NAMES` equals `AGENT_TOOL_NAMES` with no overlap. | `packages/loop/src/runtime/tools/wire-names.ts:98-108`, `packages/loop/src/runtime/tools/builtin/names.ts:14-21` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:18-29` |
-| INV-067 | `shell` and `monitor_start` are never classified as read-only. | `packages/loop/src/runtime/tools/builtin/names.ts:16-47` (via `readOnlyTools` from `@clarvis/tools`) | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts:30-33`, also `packages/loop/tests/unit/tool-effect.test.ts:35-44` |
-| INV-TD-01 | A handler's canonical identity is additive: lifecycle hooks retain the model-facing wire name as `tool` and receive a different resolved identity only as `toolFullName`, consistently before and after dispatch. | `packages/capability/src/loop-contract.ts:94-104`, `packages/loop/src/runtime/loop/loop.ts:494-508`, `:549-617` | `packages/loop/tests/unit/tool-hooks.test.ts:171-214` |
+| INV-065 | `AGENT_TOOL_WIRE_NAMES` stays exactly in sync (as a set) with `AGENT_TOOL_NAMES`, the list `@clarvis/tools` actually registers. | `packages/loop/src/runtime/tools/wire-names.ts`, `packages/loop/src/runtime/tools/builtin/names.ts` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts` |
+| INV-066 | `READ_ONLY_AGENT_TOOL_WIRE_NAMES` matches `READ_ONLY_TOOL_NAMES` exactly, and `READ_ONLY_TOOL_NAMES ∪ EDIT_TOOL_NAMES` equals `AGENT_TOOL_NAMES` with no overlap. | `packages/loop/src/runtime/tools/wire-names.ts`, `packages/loop/src/runtime/tools/builtin/names.ts` | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts` |
+| INV-067 | `shell` and `monitor_start` are never classified as read-only. | `packages/loop/src/runtime/tools/builtin/names.ts` (via `readOnlyTools` from `@clarvis/tools`) | `packages/loop/tests/architecture/agent-tool-wire-names.test.ts`, also `packages/loop/tests/unit/tool-effect.test.ts` |
+| INV-TD-01 | A handler's canonical identity is additive: lifecycle hooks retain the model-facing wire name as `tool` and receive a different resolved identity only as `toolFullName`, consistently before and after dispatch. | `packages/capability/src/loop-contract.ts`, `packages/loop/src/runtime/loop/loop.ts` | `packages/loop/tests/unit/tool-hooks.test.ts` |
 
 Additional invariants derived directly from the code, carrying no INV number of their own:
 
 - **A malformed-arguments call is never dispatched to the connection/toolset.** Both dispatchers
   short-circuit to a rejection before any `conn.callTool`/`toolset.dispatch` call when
-  `call.malformedArguments !== undefined` (`packages/loop/src/runtime/tools/mcp-dispatch.ts:164-170`,
-  `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:76-98`). Test: `packages/loop/tests/unit/malformed-tool-arguments.test.ts`
-  (304 lines dedicated to this behavior for both dispatchers, `:64-191` and `:193-304`) —
+  `call.malformedArguments !== undefined` (`packages/loop/src/runtime/tools/mcp-dispatch.ts`,
+  `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts`). Test:
+  `packages/loop/tests/unit/malformed-tool-arguments.test.ts` covers both dispatchers —
   refusal instead of fabricated-empty-args dispatch, the model being told what actually arrived, the
   trace persisting the arrived preview, and the guard-signature-distinctness rule in §4.3 step 9.
 - **Two malformed calls truncated differently by the provider get two different convergence-guard
   signatures.** The signature is built from the raw `malformedArguments` preview, not from the
-  arguments normalized to `{}` (`packages/loop/src/runtime/tools/mcp-dispatch.ts:225-228`, `execute-agent-tool-call.ts`'s equivalent
+  arguments normalized to `{}` (`packages/loop/src/runtime/tools/mcp-dispatch.ts`, `execute-agent-tool-call.ts`'s equivalent
   branch), so a provider that repeatedly truncates the same call's JSON differently each time does
   not collide with a legitimate call to the same tool. Test:
-  `packages/loop/tests/unit/malformed-tool-arguments.test.ts:126-145` (coding-tool dispatcher) and `:276-290` (MCP dispatcher),
+  `packages/loop/tests/unit/malformed-tool-arguments.test.ts` (coding-tool dispatcher) (MCP dispatcher),
   both titled `"keeps two differently-truncated payloads distinct to the convergence guard"`.
 - **`mcp_unavailable` is the one MCP error code excluded from `productive`.** `productive =
-  result.error?.code !== "mcp_unavailable"` (`packages/loop/src/runtime/tools/mcp-dispatch.ts:196`). Test:
-  `packages/loop/tests/unit/mcp-dispatch.test.ts:109-120` (`mcp_unavailable` → non-productive) and `:122-133` (any other code →
+  result.error?.code !== "mcp_unavailable"` (`packages/loop/src/runtime/tools/mcp-dispatch.ts`). Test:
+  `packages/loop/tests/unit/mcp-dispatch.test.ts` (`mcp_unavailable` → non-productive) (any other code →
   productive, with a default message when none is supplied). The rule: `productive` marks a call
   that *did something*, so an unknown tool, a rejected argument schema and a transport-level
   `mcp_unavailable` are alike in that no tool ran; `mcp_unavailable` is the only *code* singled out
   because every other code comes back from a server that did receive the call.
 
   **But nothing in the engine reads the field.** Both progress predicates the engine builds decide on
-  `errText === null` alone (`packages/loop/src/runtime/subagents/build-lead-input.ts:61`,
-  `packages/loop/src/runtime/subagents/build-subagent-input.ts:160`), and their unit tests pin that
-  they ignore it — `packages/loop/tests/unit/build-subagent-input.test.ts:26` asserts
+  `errText === null` alone (`packages/loop/src/runtime/subagents/build-lead-input.ts`,
+  `packages/loop/src/runtime/subagents/build-subagent-input.ts`), and their unit tests pin that
+  they ignore it — `packages/loop/tests/unit/build-subagent-input.test.ts` asserts
   `{errText: null, productive: false}` is progress. So the `mcp_unavailable` special case has no
   effect on a shipped run; the field is computed and reported for a host that wants a finer signal
-  than success-or-failure. The prior remark at `mcp-dispatch.ts:15` claimed the opposite behavioural
+  than success-or-failure. The prior remark at `mcp-dispatch.ts` claimed the opposite behavioural
   consequence and has been corrected.
 - **The argument validator never throws.** Every branch of `createToolArgValidator().validate` is
   wrapped so a compile error, a `$async` schema, a non-boolean validator return, or an exception
   during validation all resolve to `null` (accepted) rather than propagating
-  (`packages/loop/src/runtime/tools/tool-arg-validator.ts:144-179`). Test: `packages/loop/tests/unit/tool-arg-validator.test.ts:45-74`, `:145-164`.
+  (`packages/loop/src/runtime/tools/tool-arg-validator.ts`). Test: `packages/loop/tests/unit/tool-arg-validator.test.ts`.
   This is the mirror of INV-054/055 (which make the **output** schema fail hard); the **input**-side
-  validator is fail-open by explicit design (doc comment at `packages/loop/src/runtime/tools/tool-arg-validator.ts:96-99`).
+  validator is fail-open by explicit design (doc comment at `packages/loop/src/runtime/tools/tool-arg-validator.ts`).
 - **A fail-open is reported at most once per schema object.** `reported` is a `WeakSet` keyed by the
-  same schema reference as the compile cache (`packages/loop/src/runtime/tools/tool-arg-validator.ts:107-113`, `:129-130`). Test:
-  `packages/loop/tests/unit/tool-arg-validator.test.ts:104-118` (`warn` called exactly once across two `validate` calls).
+  same schema reference as the compile cache (`packages/loop/src/runtime/tools/tool-arg-validator.ts`). Test:
+  `packages/loop/tests/unit/tool-arg-validator.test.ts` (`warn` called exactly once across two `validate` calls).
 - **A coding-tool call outside the agent's ceiling never reaches the adapter.**
   `createAgentToolsetWithAdapter`'s wrapped `dispatch` returns the "not available" error before
-  calling the resolved adapter's `dispatch` at all (`packages/loop/src/runtime/tools/builtin/toolset.ts:177-184`). Test:
-  `packages/loop/tests/unit/toolset.test.ts:97-106` (`adapter.calls` stays empty for a filtered-out or unknown name).
+  calling the resolved adapter's `dispatch` at all (`packages/loop/src/runtime/tools/builtin/toolset.ts`). Test:
+  `packages/loop/tests/unit/toolset.test.ts` (`adapter.calls` stays empty for a filtered-out or unknown name).
 - **An abort during a coding-tool dispatch always removes its listener**, whether it fired
-  (`raceAbort`'s `.finally`, `packages/loop/src/runtime/tools/builtin/toolset.ts:118`) or the call finished normally first. Test:
-  `packages/loop/tests/unit/toolset.test.ts:145-170` (both the abort-wins and the normal-completion case assert
+  (`raceAbort`'s `.finally`, `packages/loop/src/runtime/tools/builtin/toolset.ts`) or the call finished normally first. Test:
+  `packages/loop/tests/unit/toolset.test.ts` (both the abort-wins and the normal-completion case assert
   `getEventListeners(signal, "abort")` is empty afterward).
 - **No `tool_call_started` record fires for a call that fails argument validation.** The record sits
-  inside the `else` of `argValidator.validate(...) !== null` (`packages/loop/src/runtime/tools/mcp-dispatch.ts:173-186`), so a schema
+  inside the `else` of `argValidator.validate(...) !== null` (`packages/loop/src/runtime/tools/mcp-dispatch.ts`), so a schema
   violation gets no start event, exactly like the unknown-name and malformed-arguments rejections
   ahead of it — only a call that clears validation and actually dispatches gets one. The terminal
   `tool_call` record still always fires (§4.3 step 8).
 - **A profile's tool reference to a tool on a server that merely failed to connect is exempt from
   `invalid_profile`, not treated as a bad reference.** `belongsToFailed` filters such references out
-  of what `findInvalidToolRef` checks (`packages/loop/src/runtime/open-tool-pool.ts:154-166`) before it runs, so the run
+  of what `findInvalidToolRef` checks (`packages/loop/src/runtime/open-tool-pool.ts`) before it runs, so the run
   proceeds on the surviving pool rather than failing outright. Test:
-  `packages/loop/tests/integration/open-tool-pool.test.ts:224-245`.
+  `packages/loop/tests/integration/open-tool-pool.test.ts`.
 - **`collectCapabilityToolMetadata`'s `toolEffects` merge is last-registration-wins with no conflict
   error.** It is a plain `Object.assign(toolEffects, capability.toolEffects ?? {})` inside the fold
-  loop (`packages/loop/src/runtime/capability-tool-metadata.ts:30`), so two capabilities both declaring an effect for the same
+  loop (`packages/loop/src/runtime/capability-tool-metadata.ts`), so two capabilities both declaring an effect for the same
   wire name silently let the later-registered one win — the doc comment calls this out as intentional
   ("retain registration-order, last-wins behavior to match the former inline composition in the
-  orchestrator", `:20-21`) but the code enforces no uniqueness check.
+  orchestrator") but the code enforces no uniqueness check.
 
 ## 6. Failure modes and degradation
 
 | Situation | Handler | Outcome |
-|---|---|---|
-| Unknown MCP wire name | `executeMcpToolCall` (`packages/loop/src/runtime/tools/mcp-dispatch.ts:161-163`) | non-productive tool error, model told the available list |
-| MCP arguments truncated/unparsable | `executeMcpToolCall` (`:154-160`) | non-productive, `malformedArgumentsMessage` |
-| MCP arguments fail schema | `executeMcpToolCall` via `argValidator` (`:162-166`) | non-productive, `InputValidationError: …` |
-| MCP tool call itself errors, code `mcp_unavailable` | `executeMcpToolCall` (`:193-197`) | non-productive (excused from convergence-guard penalty) |
-| MCP tool call errors, any other code | `executeMcpToolCall` (`:193-197`) | productive (a real tool failure, still counted) |
-| Coding-tool call not in the agent's `names` set | `createAgentToolsetWithAdapter`'s wrapped `dispatch` (`packages/loop/src/runtime/tools/builtin/toolset.ts:177-184`) | immediate error result, tool never reached |
-| Abort signal fires mid coding-tool call | `raceAbort` (`packages/loop/src/runtime/tools/builtin/toolset.ts:101-119`) | `abortedResult()`, adapter promise abandoned (listener always removed) |
-| Coding-tool malformed arguments | `executeAgentToolCall` (`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:76-98`) | traced + guarded as non-productive, `malformedArgumentsMessage` |
-| Argument schema itself uncompilable/`$async`/throws | `createToolArgValidator` (`packages/loop/src/runtime/tools/tool-arg-validator.ts:156-178`) | call accepted unchecked (`null`), one `tool.args_validation_failed_open` log line |
-| `output_schema` malformed / oversized / cyclic / non-object | `compileResultContract` (`packages/loop/src/runtime/tools/result-contract.ts:115-158`) | `ValidationError("invalid_output_schema")` thrown pre-execution, run never starts |
-| `submit_result` arguments fail the (valid) `output_schema` | `ResultContract.validate` (`packages/loop/src/runtime/tools/result-contract.ts:164-170`) | `{ok:false, error:"submit_result rejected: …"}`, surfaced to the model as a re-callable rejection (not terminal) |
-| MCP server fails to connect at startup | `openToolPool` (`packages/loop/src/runtime/open-tool-pool.ts:140-151`) | logged `mcp.connect.failed`, folded into `degraded`, run proceeds without it, and `packages/loop/src/runtime/orchestrator.ts:471-472` persists it as an `mcp_degraded` trace record (`packages/loop/tests/integration/open-tool-pool.test.ts:191-222`) |
+| --- | --- | --- |
+| Unknown MCP wire name | `executeMcpToolCall` (`packages/loop/src/runtime/tools/mcp-dispatch.ts`) | non-productive tool error, model told the available list |
+| MCP arguments truncated/unparsable | `executeMcpToolCall` | non-productive, `malformedArgumentsMessage` |
+| MCP arguments fail schema | `executeMcpToolCall` via `argValidator` | non-productive, `InputValidationError: …` |
+| MCP tool call itself errors, code `mcp_unavailable` | `executeMcpToolCall` | non-productive (excused from convergence-guard penalty) |
+| MCP tool call errors, any other code | `executeMcpToolCall` | productive (a real tool failure, still counted) |
+| Coding-tool call not in the agent's `names` set | `createAgentToolsetWithAdapter`'s wrapped `dispatch` (`packages/loop/src/runtime/tools/builtin/toolset.ts`) | immediate error result, tool never reached |
+| Abort signal fires mid coding-tool call | `raceAbort` (`packages/loop/src/runtime/tools/builtin/toolset.ts`) | `abortedResult()`, adapter promise abandoned (listener always removed) |
+| Coding-tool malformed arguments | `executeAgentToolCall` (`packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts`) | traced + guarded as non-productive, `malformedArgumentsMessage` |
+| Argument schema itself uncompilable/`$async`/throws | `createToolArgValidator` (`packages/loop/src/runtime/tools/tool-arg-validator.ts`) | call accepted unchecked (`null`), one `tool.args_validation_failed_open` log line |
+| `output_schema` malformed / oversized / cyclic / non-object | `compileResultContract` (`packages/loop/src/runtime/tools/result-contract.ts`) | `ValidationError("invalid_output_schema")` thrown pre-execution, run never starts |
+| `submit_result` arguments fail the (valid) `output_schema` | `ResultContract.validate` (`packages/loop/src/runtime/tools/result-contract.ts`) | `{ok:false, error:"submit_result rejected: …"}`, surfaced to the model as a re-callable rejection (not terminal) |
+| MCP server fails to connect at startup | `openToolPool` (`packages/loop/src/runtime/open-tool-pool.ts`) | logged `mcp.connect.failed`, folded into `degraded`, run proceeds without it, and `packages/loop/src/runtime/orchestrator.ts` persists it as an `mcp_degraded` trace record (`packages/loop/tests/integration/open-tool-pool.test.ts`) |
 | Every declared MCP server fails for a non-OAuth reason | `openToolPool` | run fails hard: `mcp_connection_failed` (typed) or `provider_error` (generic) |
 | Every declared MCP is awaiting browser OAuth | `openToolPool` | all are recorded in `mcp_degraded`; run proceeds with no MCP tools and does not await human input |
 | Background MCP connection or handshake admission is saturated | `openToolPool` + connection manager | deferred server is recorded in `mcp_degraded`; run proceeds without waiting for a connect timeout, including while an earlier run's OAuth retains capacity |
 | Pending/deferred MCP sits beside a terminal failure | `openToolPool` | all are degraded; the terminal failure does not hard-fail the otherwise runnable empty pool |
-| Profile references a tool absent from the surviving pool, not for a failed-server reason | `openToolPool` + `findInvalidToolRef` (`:160-177`) | every acquired lease released, `invalid_profile` error naming the profile and tool (`packages/loop/tests/integration/open-tool-pool.test.ts:12-32`) |
-| Profile references a tool belonging to a server that merely failed to connect | `openToolPool`'s `belongsToFailed` filter (`:154-166`) | the reference is exempt from `invalid_profile`; run proceeds on the surviving pool (`packages/loop/tests/integration/open-tool-pool.test.ts:69-90`) |
-| Caller's signal already aborted when `openToolPool` runs | `openToolPool` (`:99-102`) | every acquired lease released, `cancelled` response, no further validation attempted |
+| Profile references a tool absent from the surviving pool, not for a failed-server reason | `openToolPool` + `findInvalidToolRef` | every acquired lease released, `invalid_profile` error naming the profile and tool (`packages/loop/tests/integration/open-tool-pool.test.ts`) |
+| Profile references a tool belonging to a server that merely failed to connect | `openToolPool`'s `belongsToFailed` filter | the reference is exempt from `invalid_profile`; run proceeds on the surviving pool (`packages/loop/tests/integration/open-tool-pool.test.ts`) |
+| Caller's signal already aborted when `openToolPool` runs | `openToolPool` | every acquired lease released, `cancelled` response, no further validation attempted |
 
 ## 7. Coupling
 
 - **Depends on `@clarvis/mcp-client`** for `buildRegistry` (the real implementation),
   `poolToolNames`, `selectTools`, `toWireToolName`, `ConnectionManager`, `Lease`,
-  `MCPConnectionFailedError`, `ElicitationRelay` (`packages/loop/src/runtime/tools/mcp-registry.ts:3-8`, `packages/loop/src/runtime/open-tool-pool.ts:1-7`). This
+  `MCPConnectionFailedError`, `ElicitationRelay` (`packages/loop/src/runtime/tools/mcp-registry.ts`, `packages/loop/src/runtime/open-tool-pool.ts`). This
   is a runtime, static-import edge; the mcp-client package itself is documented in the sibling
   [mcp-client](../foundations/mcp-client.md) document, whose delegation note says it hands the "when to call"/"reserved-name seeding"
   half to this document.
@@ -611,16 +606,15 @@ Additional invariants derived directly from the code, carrying no INV number of 
   `ToolEffectPort`, `LLMToolCall`, `TracePort`, `AgentRole`, `ToolResultImage`,
   `malformedArgumentsMessage`, `ValidationError`, `sanitizeErrorMessage`, `Logger`, `RunRequest`,
   `RunResponse`, `Usage`, `HandlerBase`, `HandlerVerdict`, `ToolHandler` (throughout; e.g.
-  `packages/loop/src/runtime/tools/mcp-dispatch.ts:2-7`, `packages/loop/src/runtime/tools/result-contract.ts:2-3`, `packages/loop/src/runtime/open-tool-pool.ts:1-13`,
-  `packages/loop/src/runtime/loop/mcp-handler.ts:1-6`).
+  `packages/loop/src/runtime/tools/mcp-dispatch.ts`, `packages/loop/src/runtime/tools/result-contract.ts`, `packages/loop/src/runtime/open-tool-pool.ts`,
+  `packages/loop/src/runtime/loop/mcp-handler.ts`).
 - **Depends on `@clarvis/tools` (optional)** only from `runtime/tools/builtin/{names,toolset}.ts` —
-  `tools`, `readOnlyTools`, `dispatch`, `contentText`, `listTools`, `resolveConfig` (`packages/loop/src/runtime/tools/builtin/names.ts:1`,
-  `packages/loop/src/runtime/tools/builtin/toolset.ts:1-11`). This is what makes `builtin/**` conditionally loadable: everything else in this
+  `tools`, `readOnlyTools`, `dispatch`, `contentText`, `listTools`, `resolveConfig` (`packages/loop/src/runtime/tools/builtin/names.ts`,
+  `packages/loop/src/runtime/tools/builtin/toolset.ts`). This is what makes `builtin/**` conditionally loadable: everything else in this
   document's scope (`wire-names.ts`, `mcp-registry.ts`, `mcp-dispatch.ts`, `result-contract.ts`,
   `submit-result-tool.ts`, `tool-arg-validator.ts`, `tool-effect.ts`) imports neither `@clarvis/tools`
   nor `@clarvis/mcp-client`'s heavier surfaces without going through the dep-free wire-name mirror —
-  `wire-names.ts`'s own doc comments state this is deliberate (`packages/loop/src/runtime/tools/wire-names.ts:33-41`, `:79-88`,
-  `:91-97`).
+  `wire-names.ts`'s own doc comments state this is deliberate (`packages/loop/src/runtime/tools/wire-names.ts`).
 - **`ajv`/`ajv-formats` use a lazy fallback**, not module-scope value imports, via `load()` in
   `packages/loop/src/validation/ajv.ts` — both `tool-arg-validator.ts` and `result-contract.ts`
   reach Ajv only through `createAjv()`/`createStrictAjv()`, so nothing in this document's static
@@ -628,64 +622,62 @@ Additional invariants derived directly from the code, carrying no INV number of 
   isolated worker is the explicit exception: its standalone composition root statically bundles
   and installs those two modules before guest execution.
 - **Consumed by `runtime/loop/run-agent.ts`** (loop core, out of this document's scope): builds
-  `argValidator` (`createToolArgValidator`, `packages/loop/src/runtime/loop/run-agent.ts:161`), builds `mcpHandler`
-  (`buildMcpHandler`, `:330-337`), builds `submitHandler` around `contract.validate`
-  (`:381-413`), and assembles the handler chain in the fixed order described in §4.5
-  (`:415-419`).
+  `argValidator` (`createToolArgValidator`, `packages/loop/src/runtime/loop/run-agent.ts`), builds `mcpHandler`
+  (`buildMcpHandler`), builds `submitHandler` around `contract.validate`, and assembles the handler chain in the fixed order described in §4.5.
 - **Consumed by `runtime/execute-run.ts`** (out of scope): calls `compileResultContract` exactly once
-  per run, gated on `parsed.output_schema !== undefined` (`packages/loop/src/runtime/execute-run.ts:315-316`).
+  per run, gated on `parsed.output_schema !== undefined` (`packages/loop/src/runtime/execute-run.ts`).
 - **Consumed by `runtime/orchestrator.ts`** (out of scope): registers the tool-effect port
-  (`services.provide(TOOL_EFFECT_PORT, createToolEffectPort(...))`, `packages/loop/src/runtime/orchestrator.ts:345`) and is one
-  of the three `buildRegistry` call sites (`:601`).
+  (`services.provide(TOOL_EFFECT_PORT, createToolEffectPort(...))`, `packages/loop/src/runtime/orchestrator.ts`) and is one
+  of the three `buildRegistry` call sites.
 - **Consumed by `runtime/capabilities/tools.ts`** (owned by [loop-capability-composition](capability-composition.md)): builds
   `AgentToolset` via `createAgentToolset` and wraps `executeAgentToolCall` as
-  `buildAgentToolsHandler`, the coding-toolset's own `ToolHandler` (`packages/loop/src/runtime/capabilities/tools.ts:220-248`) — this is a
+  `buildAgentToolsHandler`, the coding-toolset's own `ToolHandler` (`packages/loop/src/runtime/capabilities/tools.ts`) — this is a
   runtime edge in the opposite direction from `builtin/**`'s own imports (the capability imports
   `builtin/**`, not the reverse).
-- **`error-text.js`'s `errorText`** is imported by `packages/loop/src/runtime/tools/tool-arg-validator.ts:3` to render a fail-open
+- **`error-text.js`'s `errorText`** is imported by `packages/loop/src/runtime/tools/tool-arg-validator.ts` to render a fail-open
   `cause` safely — `String(err)`/`.message` rather than `JSON.stringify`, which throws on a circular
   structure or a `BigInt` and answers `undefined` for a symbol or a function (own doc comment at
-  `packages/loop/src/runtime/tools/tool-arg-validator.ts:117-121`). The function itself
-  (`packages/loop/src/error-text.ts:9`) is a two-branch coercion — `e instanceof Error ? e.message :
+  `packages/loop/src/runtime/tools/tool-arg-validator.ts`). The function itself
+  (`packages/loop/src/error-text.ts`) is a two-branch coercion — `e instanceof Error ? e.message :
   String(e)` — with no module dependency of its own; it is this package's original, re-exported
-  outward as `errorText` from `./host` (`packages/loop/src/host.ts:71`), which
-  `packages/kernel/src/policy.ts:49,51` re-exports in turn from `@clarvis/loop/host`. Three modules
+  outward as `errorText` from `./host` (`packages/loop/src/host.ts`), which
+  `packages/kernel/src/policy.ts` re-exports in turn from `@clarvis/loop/host`. Three modules
   down that chain, `packages/code/src/adapters/errors.ts` keeps a deliberate, independent copy of the
-  same two-line body rather than importing it — its own doc comment states the copy is "kept
+  same implementation rather than importing it — its own doc comment states the copy is "kept
   identical and pinned by `tests/unit/errors.test.ts`" because the re-export path would otherwise
-  drag "roughly 250 files and several hundred zod schema constructions onto the pre-paint module
-  graph, to obtain a two-line function" — but that trade-off is `code`'s own concern, not this document's.
-- **`../support/stringify.ts`'s `safeStringify`** is imported by both `packages/loop/src/runtime/tools/mcp-dispatch.ts:8` and
-  `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts:6`, and is what every convergence-guard signature in §4.3/§4.4
-  is built from. Its own definition (`packages/loop/src/runtime/support/stringify.ts:9-16`) passes a
+  drag the host graph and its schema construction onto the pre-paint path merely to obtain this
+  helper — but that trade-off is `code`'s own concern, not this document's.
+- **`../support/stringify.ts`'s `safeStringify`** is imported by both `packages/loop/src/runtime/tools/mcp-dispatch.ts` and
+  `packages/loop/src/runtime/tools/builtin/execute-agent-tool-call.ts`, and is what every convergence-guard signature in §4.3/§4.4
+  is built from. Its own definition (`packages/loop/src/runtime/support/stringify.ts`) passes a
   string through unchanged and otherwise falls back through two layers: `JSON.stringify(value) ??
   String(value)` (the `??` catches a bare `undefined`, which `JSON.stringify` answers as the
   `undefined` value rather than a string), and a `catch` around the whole `JSON.stringify` call falls
   back to `String(value)` again for a value `JSON.stringify` throws on outright (a circular
   reference or a `BigInt`) — so the function never throws regardless of what a tool call's
   `arguments` or a dispatched result happens to contain. A third call site outside this document's own
-  scope, `packages/loop/src/runtime/tools/ask-user-tool.ts:160` (`extractAnswer`, owned by
+  scope, `packages/loop/src/runtime/tools/ask-user-tool.ts` (`extractAnswer`, owned by
   [elicitation-and-user-interaction](../cross-cutting/elicitation.md)), reaches the same function for
   the same reason: serializing an elicitation answer that turned out not to be a plain string.
-- **`CONTROL_PLANE_TOOL_NAMES` is re-exported outward** through `packages/loop/src/host.ts:68` →
-  `packages/kernel/src/policy.ts:47`, consumed by
-  `packages/code/src/adapters/mcp-capabilities.ts:74` — this document only owns the constant's
+- **`CONTROL_PLANE_TOOL_NAMES` is re-exported outward** through `packages/loop/src/host.ts` →
+  `packages/kernel/src/policy.ts`, consumed by
+  `packages/code/src/adapters/mcp-capabilities.ts` — this document only owns the constant's
   declaration, not its downstream consumers.
 
 ## 8. Open questions
 
 - **Why `mcp_unavailable` specifically, and no other code, is excluded from `productive`** is stated
-  as a design rationale in the doc comment (`packages/loop/src/runtime/tools/mcp-dispatch.ts:15-16`: "so retrying an unreachable
+  as a design rationale in the doc comment (`packages/loop/src/runtime/tools/mcp-dispatch.ts`: "so retrying an unreachable
   server is not treated as unproductive looping"), but whether any *other* MCP error code might
   deserve the same treatment is not something the code decides one way or the other — only this one
   string is special-cased.
 
 - (Resolved during reconciliation, kept for the record: both the call-site count/arity of INV-062 and
-  the "vision-delegate" registry named in `packages/loop/src/runtime/tools/mcp-registry.ts:27-28`'s doc comment are settled by
+  the "vision-delegate" registry named in `packages/loop/src/runtime/tools/mcp-registry.ts`'s doc comment are settled by
   `packages/loop/tests/architecture/mcp-registry-call-sites.test.ts`, initially missed because it sits
   outside this document's stated scope. Its own doc comment states plainly "there was a fourth: the
   vision delegate's. The vision pre-pass is a single model call with no tools now, so it builds no
-  registry at all" (`:26-28`), which is why only three call sites exist today; and its two `it` blocks
+  registry at all", which is why only three call sites exist today; and its two `it` blocks
   are exactly the dedicated architecture-walk test the two removed bullets above said was missing —
   see the updated INV-062 citation in §5.)
 - **Whether a profile's `tools` field can name a built-in coding-tool wire name (not just an MCP dotted

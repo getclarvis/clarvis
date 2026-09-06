@@ -65,6 +65,12 @@ Record the branch, full commit, worktree status, Bun and OpenTUI versions, OS an
 terminal identity and dimensions, color mode, and exact launch command. Never invoke an installed
 `clarvis` release and attribute it to the checkout.
 
+For container scenarios, also record the configured and effective placement, engine/context and
+version, immutable image ID, network policy, selected workspace or worktree identity, and container
+generation. Prove those values from diagnostics and engine inspection rather than from the header
+label alone. Use only test-owned recipe and runtime identities; never mount an engine socket or copy
+the operator's host credentials into the guest.
+
 Use two artifact rounds:
 
 1. **Current source:** from a disposable workspace, launch the checkout's
@@ -76,6 +82,9 @@ Use a fresh temporary `CLARVIS_HOME` and disposable Git workspace per independen
 Never copy the user's normal keys or subscription files by default. Keep fixture credentials fake,
 scrub secrets from commands and reports, and restrict destructive scenarios to test-owned paths.
 Record retained directories; otherwise remove test-owned state and stop every PTY and child process.
+Container cleanup additionally verifies that the disposable generation is gone and reports any
+intentionally retained Docker mise cache volume; never delete an operator-owned cache or unrelated
+container as test cleanup.
 
 ## Build a deterministic integration harness
 
@@ -92,6 +101,10 @@ produce:
   conflicting identities, large catalogs, and executable-file drift;
 - seeded sessions, plans, memory, workflows, delegated agents, worktrees, settings revisions, and
   corrupt, truncated, oversized, or concurrently edited state.
+- a host-model fixture reachable through the private container bridge, admitted Skill resources,
+  host-backed Plan and read-only Memory capabilities, steer/cancel/follow-up traffic, a bounded guest
+  service for loopback preview, and classified startup, integrity, recipe, handshake and teardown
+  failures.
 
 Use unique visible tokens for every scenario. When the repository lacks a durable fixture for an
 important user route, record the gap; add a reusable test harness only when implementation is within

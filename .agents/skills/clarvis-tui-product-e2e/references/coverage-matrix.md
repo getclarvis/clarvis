@@ -105,7 +105,8 @@ states, Escape/back, persistence, status feedback, and scope where applicable.
 | `SET-06` | Sandbox          |
 | `SET-07` | Theme            |
 | `SET-08` | Keyboard         |
-| `SET-09` | Run controls     |
+| `SET-09` | Updates          |
+| `SET-10` | Run controls     |
 
 For every panel, verify global and workspace scopes, effective-value labeling, scope switching,
 revision conflicts, failed saves, stale responses, reset/inheritance behavior, and deep-link return
@@ -178,6 +179,11 @@ routes.
 | `SAFE-05` | Host temporary interoperability     | Cross-tool host-temp access, read-only overlap and non-owning cleanup are proved on the active OS                                       |
 | `SAFE-06` | Absolute executable classification  | A platform/runtime absolute head is occurrence-local, keeps cross-platform policy identity, and never admits identical outside operands |
 | `SAFE-07` | Sandboxed DNS and package bootstrap | macOS DNS, real package execution, Apple Silicon Homebrew shims and denied-network behavior are proved                                  |
+| `SAFE-08` | Isolation and review selectors      | Header chips, Run Controls, Ctrl+S/Ctrl+G, Alt/Option accelerators and Ctrl+E keep placement, command review and editor expansion independent |
+| `SAFE-09` | Docker lazy execution               | Native boot performs no engine work; the first Docker run launches once, mounts the selected Git/non-Git workspace directly, supports outbound package bootstrap and exposes a guest service only through loopback preview |
+| `SAFE-10` | Container host bridges              | Admitted Skills/resources and Plan operations work through the host; Memory is read-only to the guest and post-run indexing stays host-side; credentials, host paths, engine socket and workspace control writes remain unavailable |
+| `SAFE-11` | Container recovery and lifecycle    | Active steer and cancel work, a follow-up reuses the healthy channel, operational startup failure reports required-Sandbox fallback, integrity/policy/recipe/handshake failures stay closed, and orderly close removes only the disposable container while the Docker mise cache persists |
+| `SAFE-12` | Operator runtime recipe             | A global advanced recipe builds only on first cold use, concurrent callers share its inspected image, later sessions reuse the cache identity, edits take effect at the next cold generation, and the guest cannot invoke or mutate the recipe |
 
 For `SAFE-05`, create a path through a host-native temporary API in `shell`, then reuse its absolute
 path through a later native coding tool without a guard denial. Repeat with a read-only workspace

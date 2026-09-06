@@ -40,13 +40,18 @@ documentation disposition is complete.
 - Before coding, name the owning package README and specs.
 - During the same iteration, update every affected spec and package README when code changes behavior,
   public API, configuration, wire or persisted data, failure handling, ownership, dependencies, or an
-  invariant. Update source and test citations by symbol, never by a blind line-number offset.
+  invariant. Cite the stable repository file and name the owning symbol or test in prose; never encode
+  source line numbers or ranges in documentation references.
 - If the implementation changes without changing a documented contract, re-read the owning README and
   specs anyway. In the handoff, explicitly report `Docs reviewed; no change needed` and why.
 - Never leave a knowingly stale spec or README for a later iteration, TODO, follow-up, or reviewer.
 - New behavior needs an owning spec. New or changed invariants need both `Production:` and `Test:`
   citations in that spec. If the behavior crosses package boundaries, update every affected package
   README and the coupling section of the owning specs.
+- Keep specs timeless: change dates and chronology belong in `CHANGELOG.md`, not under `specs/`.
+  Date-shaped data examples use semantic placeholders such as `YYYY-MM-DD`.
+- Do not record source line counts or LOC inventories in specs. Behavioral line limits and coverage
+  ratios remain valid when they are part of the contract.
 - If a package is added, removed, renamed, or changes dependency edges, update the root package table,
   the package README set, `specs/README.md`, and the generated coupling report. Run
   `bun run check:graph` rather than editing generated graph facts by hand.

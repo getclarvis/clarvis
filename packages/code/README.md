@@ -24,7 +24,7 @@ boundaries, and derive Code's exact workspace-package allowlist from the central
 The TUI contract is divided across the focused `code-*` specs in the
 [`hosts` map](../../specs/README.md#hosts--the-kernel-the-terminal-ui-and-the-http-facade): bootstrap,
 performance, run hosting, transcript projection, input/overlays, domain hubs, settings panels,
-keyboard policy, theme, and onboarding. The performance contract and dated measurement review live
+keyboard policy, theme, and onboarding. The performance contract and measurement review live
 in [`code-performance.md`](../../specs/hosts/code-performance.md). Image entry and the vision pre-pass are specified in
 [`engine/vision-routing.md`](../../specs/engine/vision-routing.md).
 Transcript snapshot rendering remains in
@@ -1127,7 +1127,7 @@ cleanup; combine `--clear --empty-workspace` to clean and immediately start a fr
 
 This package is outside the monorepo's `tsc -b` reference graph — Bun executes the TypeScript and
 TSX source directly and nothing is emitted for consumers — but it **does** have a package build:
-`bun --filter @clarvis/code build` (`tooling/artifact/build.ts`) produces the distributable bundle. From the
+`bun --filter @clarvis/code build` (`packages/code/tooling/artifact/build.ts`) produces the distributable bundle. From the
 repository root, `bun run build` runs the TypeScript library graph and then this bundle; use
 `bun run build:code` when only the TUI changed.
 
@@ -1144,7 +1144,7 @@ the build pays that once. Consequences worth knowing:
 - **After editing `src/`, the global command keeps running the old bundle.** Use
   `bun run start` / `bun run dev` for the inner loop, rebuild with `bun run build` or
   `bun run build:code`, or set `CLARVIS_CODE_SOURCE=1` to force the sources.
-- **The bundle is package-local, not standalone by itself.** `tooling/artifact/build.ts` keeps
+- **The bundle is package-local, not standalone by itself.** `packages/code/tooling/artifact/build.ts` keeps
   `@opentui/core`, its platform-native packages, and `pino` external, so renderer and logging workers
   remain relative to their owning package instead of embedding the build host's `node_modules` path.
   The build rejects generated JavaScript containing the checkout root. Checkout setup provides the

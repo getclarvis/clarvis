@@ -42,10 +42,13 @@ neither import, network request nor engine probe. The factory then composes one 
 retained generation, engine backend and placement adapter. Each run receives a random opaque model
 lease, exact models from its immutable profile snapshot, host-side provider execution, a bounded
 elicitation grant, a loopback-only preview grant when a selected profile carries `run_commands`, and
-an optional prior trace record for continuation. When present, the canonical host `PlanFactory` and
-the admitted host skills snapshot are projected through exact Plans and read-only Skills grants;
-neither store paths nor host skill paths are sent to the guest. Model and capability leases are
-revoked when that run settles.
+an optional prior trace record for continuation. When present, the canonical host `PlanFactory`,
+admitted host skills snapshot, active plugin bootstrap declarations and `MemoryFactory` are
+projected through exact per-run grants. Plans stay host-owned; Skills disclose only admitted
+content; Memory discloses a bounded seed and the four canonical read operations while provider
+state and every mutating memory operation stay on the host. Neither store paths nor host skill paths
+are sent to the guest. Model and capability leases and the immutable per-run projection are revoked
+when that run settles.
 
 Production: `WorkspaceClientManager.create` in
 `packages/code/src/adapters/workspace-client-manager.ts`; `createLocalPodmanRuntime` and
@@ -55,7 +58,8 @@ Production: `WorkspaceClientManager.create` in
 
 Test: `packages/code/tests/architecture/architecture-boundary.test.ts`;
 `packages/code/tests/unit/runtime-image.test.ts`; and
-`packages/kernel/tests/integration/local-podman-runtime.test.ts`.
+`packages/kernel/tests/integration/local-podman-runtime.test.ts` (host Memory and plugin-bootstrap
+projection).
 
 ## 2. Immutable admission
 
@@ -75,8 +79,10 @@ container; the retained workspace copy remains host-owned and recoverable.
 
 `createLazyRuntimeCoordinator` owns placement across runs. It coalesces concurrent first launches,
 reuses one ready generation only while both configuration and Extension Profile revisions remain
-unchanged, retires an idle superseded generation and
-closes every retained host on kernel shutdown. For Docker only, an operational pre-execution failure
+unchanged and its attached engine process/private channel remains open, retires an idle superseded
+or dead generation, lazily creates a fresh generation for the next run, and closes every retained
+host on kernel shutdown. A run that observed a dead generation still returns its own failure and is
+never replayed. For Docker only, an operational pre-execution failure
 (`engine_missing`, `engine_stopped`, unsupported host, or another startup failure) activates and
 latches the configured default required native Sandbox fallback, publishes one explanation, and
 uses it for later runs until retry or configuration change. Image-integrity, launch-policy,
@@ -92,7 +98,7 @@ Production: `RuntimeLaunchSpec` and `RuntimeLaunchError` in
 
 Test: `packages/kernel/tests/unit/runtime-launch-policy.test.ts`;
 `packages/kernel/tests/unit/runtime-supervisor.test.ts`;
-`packages/kernel/tests/unit/lazy-runtime.test.ts`;
+`packages/kernel/tests/unit/lazy-runtime.test.ts` (including dead-generation replacement);
 `packages/kernel/tests/integration/sandbox-policy.test.ts`.
 
 ## 3. Host-prepared workspace copy and change detection
@@ -181,9 +187,14 @@ Test: `packages/paths/tests/component/workspace-state.test.ts` (`workspaceStateP
 
 `createExecutionPeer` owns a separate attached-stdio protocol with closed directional vocabularies.
 Every request, result and cancellation is generation-bound and, where applicable, run- and
-call-bound. Unknown methods, malformed or oversized frames, saturation, mismatched or late results,
-and transport loss close the channel without replay. `serveExecutionWorker` gives guest execution
-only the narrow model, capability, event and checkpoint bridge.
+call-bound. Unknown methods, malformed or oversized frames, saturation, mismatched results and
+transport loss close the channel without replay. A request cancelled through its own transport
+signal leaves a bounded identity tombstone, so its one matching late terminal result is consumed
+without poisoning the reusable channel; any unmatched or identity-mismatched late result still
+closes it. An active run is cancelled through the separate `runtime.cancel` operation after
+`runtime.start` is sent, while the host keeps that start request pending until the guest settles.
+`serveExecutionWorker` gives guest execution only the narrow model, capability, event and checkpoint
+bridge.
 
 `createGuestLoopExecutor` is the headless guest payload. It builds the real loop and local tool
 surface against `/workspace`, gives it only a declared scratch environment, replaces model traffic
@@ -210,9 +221,22 @@ At generation admission the host projects name, description, scope, safe provena
 dependency names only, replaces every manifest location with `/runtime/skills/<name>`, and withholds
 dependency URLs and host filesystem metadata. `runtime.skills` then discloses only bodies and
 bounded text resources for names present in that admitted catalog, rejecting traversal, unknown
-names and additional fields. The current bridge does not mount an approved skill execution root or
-inject plugin bootstrap-skill bodies; those surfaces remain unavailable in container placement
-rather than gaining ambient host filesystem access.
+names and additional fields. Active plugins' bootstrap declarations are resolved against that same
+admitted provider snapshot and only their bounded bodies are added to the guest prompt; inactive or
+foreign-root declarations are not projected, and no skill root is mounted or serialized. A body
+request may carry the harmless optional offset `0`, including the common `SKILL.md` body alias, but
+a non-zero cursor still requires a real bundled resource.
+
+Memory uses the exact `runtime.memory` companion bridge. The host resolves the selected provider,
+keeps its configuration, credentials, store and policy private, and serializes only a
+provider-opaque digest, seed bound and the fixed `list_memories`, `query_memories`, `read_memory` and
+`grep_memories` vocabulary. The guest builds only those canonical tools. `write_memory`,
+`edit_memory` and `delete_memory` are absent from its tool definitions and prompt, and the host
+grant rejects a forged mutation even when the selected provider is writable. After the guest sends
+the completed trace record to the host, its lifecycle callback asks the host to execute the
+canonical post-run enqueue. The resulting dedicated indexing pass remains on the file host's direct
+Loop executor rather than re-entering the container coordinator, so the guest never receives
+memory-store or mutation authority.
 
 Production and development have intentionally different artifact acquisition paths. The production
 `Containerfile.runtime` accepts only a canonical
@@ -254,8 +278,12 @@ Production: `createExecutionPeer` in `packages/kernel/src/runtime/execution-rpc.
 `createRuntimePreviewCapability` in `packages/kernel/src/runtime/preview-capability.ts`;
 `createHostPlansGrant` and `createGuestPlanFactory` in
 `packages/kernel/src/runtime/plan-bridge.ts`; `createRuntimeSkillCatalog`,
-`createHostSkillsGrant` and `createGuestSkillsCapability` in
+`createRuntimeSkillBootstraps`, `createHostSkillsGrant` and `createGuestSkillsCapability` in
 `packages/kernel/src/runtime/skills-bridge.ts`;
+`createHostMemoryBridge`, `validRuntimeMemoryDescriptor` and `createGuestMemoryCapability` in
+`packages/kernel/src/runtime/memory-bridge.ts`; `prepareMemoryRuntime` in
+`packages/memory/src/capability.ts`; `executeExtensionProfileRun` and the `MemoryFactory`
+construction in `packages/kernel/src/file-kernel.ts`;
 `installBundledAjvModules` in
 `packages/loop/src/validation/ajv.ts`; `tooling/runtime/guest-entry.ts`; both root runtime
 Containerfiles; `runtimeImageBuildPlan` in `tooling/runtime/build-image.ts`;
@@ -270,6 +298,9 @@ Test: `packages/kernel/tests/contract/runtime-execution-rpc.test.ts`;
 `packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts`;
 `packages/kernel/tests/unit/runtime-plan-bridge.test.ts`;
 `packages/kernel/tests/unit/runtime-skills-bridge.test.ts`;
+`packages/kernel/tests/unit/runtime-memory-bridge.test.ts` (including forged-mutation refusal);
+`packages/memory/tests/component/factory.test.ts` (`routes every indexer pass through the host-owned
+run executor`);
 `packages/loop/tests/architecture/eager-validator-boundary.test.ts`;
 `tooling/tests/architecture/runtime-containerfiles.test.ts`;
 `tooling/tests/unit/runtime-image-build.test.ts`;
@@ -281,9 +312,11 @@ Test: `packages/kernel/tests/contract/runtime-execution-rpc.test.ts`;
 
 The host persists bounded monotonic checkpoints per generation and run. The guest can report a
 non-terminal reconstruction checkpoint only after its complete execution record has crossed into
-the host trace store. After the guest result returns, the isolated run adapter, not the guest,
-writes the next terminal checkpoint only after session, trace, capability and workspace
-participants complete their durable commit, including the host-owned workspace review outcome.
+the host trace store. When Memory is active, its guest lifecycle callback can request the canonical
+host `onRunEnd` only after that durable trace is readable by the host bridge; enqueueing and indexing
+stay on the host. After the guest result returns, the isolated run adapter, not the guest, writes the
+next terminal checkpoint only after session, trace, capability and workspace participants complete
+their durable commit, including the host-owned workspace review outcome.
 
 Production: `appendRuntimeCheckpoint`, `loadRuntimeCheckpoint` and `settleRuntimeTerminal` in
 `packages/kernel/src/runtime/runtime-checkpoints.ts`; `createIsolatedRunExecutor` in
@@ -291,7 +324,7 @@ Production: `appendRuntimeCheckpoint`, `loadRuntimeCheckpoint` and `settleRuntim
 
 Test: `packages/kernel/tests/integration/runtime-checkpoints.test.ts`;
 `packages/kernel/tests/integration/isolated-run-executor.test.ts`;
-`packages/kernel/tests/integration/runtime-guest-loop.test.ts`.
+`packages/kernel/tests/integration/runtime-guest-loop.test.ts` (trace-before-memory-finish ordering).
 
 ## 7. Private Git and container engines
 
@@ -374,12 +407,50 @@ before submission, opened Review with `Ctrl+G`, expanded and collapsed the Task 
 container to return the independently checkable sum `129481`. Normal exit returned zero and
 `docker ps -a` found no container with that generation's exact name.
 
-Together these canaries prove the current-source macOS/Colima Docker journey, lazy launch,
+The first protocol-revision-3 direct runtime canary then rebuilt the development image as
+`sha256:a4ad5fa40456477373503e6d96de401bd75232065632b2618b1dcdbf3dd699de` at
+137,484,564 bytes and ran it through the same Docker 29.2.1 `colima` context. The real guest received
+an active plugin's resolved bootstrap body and loaded a second host-admitted skill through
+`load_skill` with the provider-compatible `<name>/SKILL.md` plus `offset: 0` shape; neither host skill
+root appeared in the model request. It also received the host Memory seed, invoked `read_memory`,
+and observed the returned document. The model request contained all four canonical read tools and
+none of `write_memory`, `edit_memory` or `delete_memory`; successful finalization emitted the
+read-only provider's host-owned `provider-read-only` ingest result after the trace was durable.
+
+That same canary installed `is-number@7.0.0` under Node 24.20.0 through mise and npm over the default
+`outbound` network, started a guest service on 9090, exposed it through a loopback-only host preview,
+and fetched the installed dependency's manifest through that preview. It then cancelled another run
+after its host model call had started: the run settled as `cancelled`, the runtime reported its
+channel still open, and a subsequent run on the same generation completed as
+`docker-runtime-recovered`. The test passed with 22 assertions in 10.03 seconds, and the post-test
+Docker inventory contained no `clarvis-runtime-*` container.
+
+A fresh protocol-revision-3 TUI canary used current-source `clarvis-develop`, the configured
+`chatgpt/gpt-5.6-terra` subscription and a disposable workspace in a 120-by-32 real PTY. Its first
+ready frame showed `Isolation: Docker`, `Review: Off` and `Memory: on`, while the Docker inventory
+remained empty. After submission, the runtime lazily created
+`clarvis-runtime-66df1e90-f912-4b56-991c-919393978bc3` from the exact protocol-3 image above. Host
+inspection found `Privileged=false`, a read-only root, every capability dropped,
+`no-new-privileges`, bridge networking, the configured 4 GiB/256-process limits, one writable
+`/workspace` bind, and only the two opaque Clarvis runtime identities plus image mise defaults in
+its environment.
+
+The first subscription call was cancelled while visibly `thinking`; it settled as `Canceled` after
+9 seconds and returned the same TUI to `ready`. A follow-up in that session asked for the product of
+913 and 137, returned the independently checkable `125081`, and settled as `Completed` after 2
+seconds without `execution channel closed`. The same container generation stayed running across the
+boundary. Normal two-step Ctrl+C exit returned status zero; Docker then contained no
+`clarvis-runtime-*` container. The test session and its two traces were deleted, and its disposable
+workspace was removed. Captured TUI frames were labelled `initial-ready`, `cancel-active` and
+`recovered` and were inspected as rendered images as well as cell snapshots.
+
+Together these canaries prove the then-current-source macOS/Colima Docker journey, lazy launch,
 subscription model broker, interactive Approval guard, mise tool execution, outbound connectivity,
-loopback preview and normal container cleanup. They do not prove workspace-change settlement through
-the UI, crash-orphan
-cleanup, native Linux or Linux/arm64 execution, Docker Desktop, Podman, Windows, another engine
-version, plugin bootstrap-skill injection, or execution of bundled skill helpers.
+loopback preview, normal container cleanup, host-projected plugin bootstrap and skill bodies,
+read-only Memory bridging, and cancellation recovery without losing the execution channel. They do
+not prove workspace-change settlement through the UI, crash-orphan cleanup, native Linux or
+Linux/arm64 execution, Docker Desktop, Podman, Windows, another engine version, or execution of
+bundled skill helpers.
 
 Live Podman remains unavailable because its freshly created AppleHV machine failed before the engine
 booted. `internet` is refused because internet-only egress enforcement is not implemented; only

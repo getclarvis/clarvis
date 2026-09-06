@@ -199,6 +199,7 @@ export function createExecutionPeer(options: {
       readonly detach: () => void;
     }
   >();
+  const cancelled = new Map<number, ExecutionIdentity>();
   const controllers = new Map<
     number,
     { readonly identity: ExecutionIdentity; readonly value: AbortController }
@@ -212,6 +213,7 @@ export function createExecutionPeer(options: {
       request.reject(executionError("unavailable", reason.message));
     }
     pending.clear();
+    cancelled.clear();
     for (const controller of controllers.values()) controller.value.abort(reason);
     controllers.clear();
     options.input.destroy();
@@ -281,7 +283,16 @@ export function createExecutionPeer(options: {
     }
     if (frame.type === "result") {
       const request = pending.get(frame.id);
-      if (request === undefined || !sameIdentity(request, frame)) {
+      if (request === undefined) {
+        const tombstone = cancelled.get(frame.id);
+        if (tombstone !== undefined && sameIdentity(tombstone, frame)) {
+          cancelled.delete(frame.id);
+          return;
+        }
+        close(new Error("unexpected execution result"));
+        return;
+      }
+      if (!sameIdentity(request, frame)) {
         close(new Error("unexpected execution result"));
         return;
       }
@@ -428,6 +439,12 @@ export function createExecutionPeer(options: {
           if (current === undefined) return;
           pending.delete(id);
           current.detach();
+          if (cancelled.size >= MAX_EXECUTION_QUEUE_FRAMES) {
+            close(new Error("execution cancellation bound exceeded"));
+            reject(executionError("cancelled", "execution request cancelled"));
+            return;
+          }
+          cancelled.set(id, identity);
           void send({ type: "cancel", id, ...identity }).catch(close);
           reject(executionError("cancelled", "execution request cancelled"));
         };

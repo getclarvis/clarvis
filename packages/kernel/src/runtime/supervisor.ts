@@ -38,6 +38,9 @@ export function createRuntimeSupervisor(backend: RuntimeBackend): RuntimeSupervi
       active = started;
       return {
         info: started.info,
+        get closed() {
+          return active === undefined || started.closed;
+        },
         startRun: (runId, envelope, signal) => started.startRun(runId, envelope, signal),
         steer: (runId, input, signal) => started.steer(runId, input, signal),
         cancel: (runId) => started.cancel(runId),

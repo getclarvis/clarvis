@@ -129,6 +129,7 @@ describe("createFileKernel", () => {
           expect(input.settings.backend).toBe("podman");
           if (input.settings.backend !== "podman") throw new Error("expected Podman settings");
           return {
+            closed: false,
             executeRun: async () => {
               throw new Error("not exercised");
             },

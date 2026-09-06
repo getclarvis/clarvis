@@ -1059,18 +1059,36 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     local runtime fixture or subscription store is therefore not sent to the engine during an image
     build. An operational Docker failure before guest execution may fall back only to an available,
     required native Sandbox; integrity, policy and handshake failures remain closed, and no run is
-    replayed after guest execution begins. Production: `.dockerignore`; `createArgs` in
+    replayed after guest execution begins. Skills cross the private channel only as a host-path-free
+    catalog, admitted bodies/resources, and active plugins' already-resolved bootstrap bodies; no
+    root is serialized or mounted. Memory crosses only as a provider-opaque seed and the four
+    canonical read tools. Mutating memory tools are absent from the guest descriptor, definitions
+    and prompt, and the host rejects a forged mutation even when its provider is writable.
+    Cancellation keeps `runtime.start` pending until the guest settles; a matching late result for
+    another locally cancelled RPC is consumed through a bounded identity tombstone, while a dead
+    process/channel retires the generation before the next run. Production: `.dockerignore`; `createArgs` in
     `packages/kernel/src/runtime/docker-backend.ts` and
     `packages/kernel/src/runtime/podman-backend.ts`; `createRuntimeAuthorityRouter` in
     `packages/kernel/src/runtime/local-podman-runtime.ts`; `createRuntimePortPreview` and
     `createContainerRuntimePortPreview` in `packages/kernel/src/runtime/port-preview.ts`;
     `runtimeSettingsSchema` in `packages/kernel/src/runtime/settings.ts`;
     `createLazyRuntimeCoordinator` in `packages/kernel/src/runtime/lazy-runtime.ts`;
+    `createExecutionPeer` in `packages/kernel/src/runtime/execution-rpc.ts`;
+    `createIsolatedRunExecutor` in `packages/kernel/src/runtime/isolated-run-executor.ts`;
+    `createRuntimeSkillCatalog` and `createRuntimeSkillBootstraps` in
+    `packages/kernel/src/runtime/skills-bridge.ts`; `createHostMemoryBridge`,
+    `validRuntimeMemoryDescriptor` and `createGuestMemoryCapability` in
+    `packages/kernel/src/runtime/memory-bridge.ts`;
     `effectiveSandboxSettings` in `packages/kernel/src/sandbox/policy.ts`; `Containerfile.runtime`.
     Test: `Docker runtime backend` and `Podman runtime backend` in
     `packages/kernel/tests/unit/`; `runtime port preview` in
     `packages/kernel/tests/integration/runtime-port-preview.test.ts`; the gated
     `local-docker-runtime.e2e.test.ts` canary; `packages/kernel/tests/unit/lazy-runtime.test.ts`;
+    `packages/kernel/tests/contract/runtime-execution-rpc.test.ts`;
+    `packages/kernel/tests/integration/isolated-run-executor.test.ts`;
+    `packages/kernel/tests/unit/runtime-skills-bridge.test.ts`;
+    `packages/kernel/tests/unit/runtime-memory-bridge.test.ts`;
+    `packages/kernel/tests/integration/runtime-guest-loop.test.ts`;
     `packages/kernel/tests/integration/sandbox-policy.test.ts`;
     `packages/server/tests/architecture/docker-context.test.ts`
     (`allowlists the repository-root build context and re-excludes credentials`).

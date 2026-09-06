@@ -20,6 +20,14 @@ export interface RuntimeAuthorityRouter {
   ): () => void;
 }
 
+type RuntimeRunAuthority = Omit<
+  RuntimeHostBridgeOptions,
+  "workspaceRoot" | "generation" | "runId" | "appendEvent" | "roots"
+> & {
+  /** Releases host-only per-run snapshots after every success or failure. */
+  readonly dispose?: () => void | Promise<void>;
+};
+
 /** Create a router that refuses every request not bound to a currently active run. */
 export function createRuntimeAuthorityRouter(generation: string): RuntimeAuthorityRouter {
   const runs = new Map<
@@ -79,10 +87,7 @@ export function createIsolatedRunExecutor(options: {
   readonly authority: (
     args: RunExecutorArgs,
     runId: string,
-  ) => Omit<
-    RuntimeHostBridgeOptions,
-    "workspaceRoot" | "generation" | "runId" | "appendEvent" | "roots"
-  >;
+  ) => RuntimeRunAuthority | Promise<RuntimeRunAuthority>;
   readonly pollIntervalMs?: number;
   /** Adds host-sanitized immutable snapshots such as the opaque model lease id. */
   readonly guestEnvelope?: (
@@ -100,6 +105,7 @@ export function createIsolatedRunExecutor(options: {
 }): RunExecutor {
   const pollIntervalMs = Math.max(5, Math.min(250, options.pollIntervalMs ?? 25));
   return async (args) => {
+    args.externalSignal?.throwIfAborted();
     const raw = args.rawBody as { execution_id?: unknown };
     if (typeof raw?.execution_id !== "string") {
       throw Object.assign(new Error("isolated run requires a host execution id"), {
@@ -107,7 +113,13 @@ export function createIsolatedRunExecutor(options: {
       });
     }
     const runId = raw.execution_id;
-    const authority = options.authority(args, runId);
+    const authority = await options.authority(args, runId);
+    if (args.externalSignal?.aborted === true) {
+      authority.model.revoke();
+      authority.capabilities.revoke();
+      await authority.dispose?.();
+      args.externalSignal.throwIfAborted();
+    }
     const release = options.router.bind(
       runId,
       createRuntimeHostHandlers({
@@ -162,14 +174,19 @@ export function createIsolatedRunExecutor(options: {
     const abort = (): void => {
       void options.session.cancel(runId).catch(() => undefined);
     };
-    args.externalSignal?.addEventListener("abort", abort, { once: true });
-    const pumpTask = pump();
+    let pumpTask = Promise.resolve();
+    let listeningForAbort = false;
     try {
-      const result = await options.session.startRun(
-        runId,
-        { rawBody: args.rawBody, owner: args.owner, ...options.guestEnvelope?.(args, runId) },
-        args.externalSignal,
-      );
+      const startTask = options.session.startRun(runId, {
+        rawBody: args.rawBody,
+        owner: args.owner,
+        ...options.guestEnvelope?.(args, runId),
+      });
+      args.externalSignal?.addEventListener("abort", abort, { once: true });
+      listeningForAbort = args.externalSignal !== undefined;
+      if (args.externalSignal?.aborted === true) abort();
+      pumpTask = pump();
+      const result = await startTask;
       if (!isOutcome(result) || result.executionId !== runId) {
         throw Object.assign(new Error("guest returned an invalid execution result"), {
           code: "unavailable",
@@ -202,11 +219,12 @@ export function createIsolatedRunExecutor(options: {
       return result;
     } finally {
       finished = true;
-      args.externalSignal?.removeEventListener("abort", abort);
+      if (listeningForAbort) args.externalSignal?.removeEventListener("abort", abort);
       await pumpTask;
       release();
       authority.model.revoke();
       authority.capabilities.revoke();
+      await authority.dispose?.();
     }
   };
 }

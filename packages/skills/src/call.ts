@@ -151,7 +151,7 @@ export function handleLoadSkillCall(args: {
     trimmedResource !== undefined && !isSkillBodyResource(name, trimmedResource)
       ? trimmedResource
       : undefined;
-  if (rawOffset !== undefined && resource === undefined) {
+  if (rawOffset !== undefined && rawOffset !== 0 && resource === undefined) {
     return fail("offset requires a bundled resource path.");
   }
   envelope.start();

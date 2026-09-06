@@ -20,9 +20,14 @@ import { RUNTIME_PREVIEW_METHOD, RUNTIME_PREVIEW_REVISION } from "./preview-capa
 import { createHostPlansGrant, RUNTIME_PLANS_METHOD } from "./plan-bridge.ts";
 import {
   createHostSkillsGrant,
+  createRuntimeSkillBootstraps,
   createRuntimeSkillCatalog,
   RUNTIME_SKILLS_METHOD,
+  type RuntimeSkillBootstrapEntry,
+  type RuntimeSkillCatalogEntry,
 } from "./skills-bridge.ts";
+import { createHostMemoryBridge, RUNTIME_MEMORY_METHOD } from "./memory-bridge.ts";
+import type { MemoryRuntimeDescriptor } from "@clarvis/memory/capability";
 import type { PodmanControl } from "./podman-backend.ts";
 import { launchIsolatedRuntime } from "./runtime-controller.ts";
 import { settleRuntimeWorkspace } from "./workspace-settlement.ts";
@@ -223,8 +228,6 @@ export async function createLocalContainerRuntime(
   router: RuntimeAuthorityRouter,
   options: LocalContainerRuntimeOptions = {},
 ): Promise<RuntimeHost> {
-  const runtimeSkillCatalog =
-    input.skillsProvider === undefined ? [] : createRuntimeSkillCatalog(input.skillsProvider);
   const controller = await launchIsolatedRuntime({
     ...input,
     capabilityMethods: [
@@ -232,11 +235,18 @@ export async function createLocalContainerRuntime(
       RUNTIME_PREVIEW_METHOD,
       ...(input.planFactory === undefined ? [] : [RUNTIME_PLANS_METHOD]),
       ...(input.skillsProvider === undefined ? [] : [RUNTIME_SKILLS_METHOD]),
+      ...(input.memoryFactory === undefined ? [] : [RUNTIME_MEMORY_METHOD]),
     ],
     backend,
     ...(options.roots === undefined ? {} : { roots: options.roots }),
   });
-  const leases = new Map<string, string>();
+  interface RunSnapshot {
+    readonly leaseId: string;
+    readonly skillCatalog?: readonly RuntimeSkillCatalogEntry[];
+    readonly skillBootstraps?: readonly RuntimeSkillBootstrapEntry[];
+    readonly memory?: MemoryRuntimeDescriptor;
+  }
+  const snapshots = new Map<string, RunSnapshot>();
   const executeRun = createIsolatedRunExecutor({
     generation: input.generation,
     workspaceRoot: input.workspaceRoot,
@@ -244,16 +254,23 @@ export async function createLocalContainerRuntime(
     router,
     ...(options.roots === undefined ? {} : { roots: options.roots }),
     guestEnvelope: (args, runId) => {
-      const leaseId = leases.get(runId);
-      if (leaseId === undefined) throw new Error("runtime model lease was not prepared");
+      const snapshot = snapshots.get(runId);
+      if (snapshot === undefined) throw new Error("runtime run snapshot was not prepared");
       const raw = args.rawBody as { continue_from?: unknown };
       return {
-        modelLeaseId: leaseId,
+        modelLeaseId: snapshot.leaseId,
         hostCapabilities: [
           ...(input.planFactory === undefined ? [] : ["plans"]),
-          ...(input.skillsProvider === undefined ? [] : ["skills"]),
+          ...(snapshot.skillCatalog === undefined ? [] : ["skills"]),
+          ...(snapshot.memory === undefined ? [] : ["memory"]),
         ],
-        ...(input.skillsProvider === undefined ? {} : { skillCatalog: runtimeSkillCatalog }),
+        ...(snapshot.skillCatalog === undefined
+          ? {}
+          : {
+              skillCatalog: snapshot.skillCatalog,
+              skillBootstraps: snapshot.skillBootstraps ?? [],
+            }),
+        ...(snapshot.memory === undefined ? {} : { memory: snapshot.memory }),
         guardSettings: (() => {
           const settings = input.loadGuardSettings?.() ?? {};
           return {
@@ -266,10 +283,41 @@ export async function createLocalContainerRuntime(
           : {}),
       };
     },
-    authority: (args, runId) => {
+    authority: async (args, runId) => {
       const leaseId = randomUUID();
-      leases.set(runId, leaseId);
       const model = hostModelBroker(input, args, runId, leaseId);
+      const skillCatalog =
+        input.skillsProvider === undefined
+          ? undefined
+          : createRuntimeSkillCatalog(input.skillsProvider);
+      const skillBootstraps =
+        input.skillsProvider === undefined
+          ? undefined
+          : createRuntimeSkillBootstraps(
+              input.skillsProvider,
+              input.skillBootstraps,
+              input.deps.logger,
+            );
+      const memory =
+        input.memoryFactory === undefined
+          ? undefined
+          : await createHostMemoryBridge({
+              factory: input.memoryFactory,
+              rawBody: args.rawBody,
+              owner: args.owner,
+              runId,
+              deps: args.deps,
+              ...(args.externalSignal === undefined ? {} : { signal: args.externalSignal }),
+              ...(args.onCapabilityEvent === undefined
+                ? {}
+                : { onCapabilityEvent: args.onCapabilityEvent }),
+            });
+      snapshots.set(runId, {
+        leaseId,
+        ...(skillCatalog === undefined ? {} : { skillCatalog }),
+        ...(skillBootstraps === undefined ? {} : { skillBootstraps }),
+        ...(memory === undefined ? {} : { memory: memory.descriptor }),
+      });
       const capabilities = createCapabilityBroker({
         generation: input.generation,
         runId,
@@ -309,7 +357,8 @@ export async function createLocalContainerRuntime(
             : [createHostPlansGrant(input.planFactory, args.owner)]),
           ...(input.skillsProvider === undefined
             ? []
-            : [createHostSkillsGrant(input.skillsProvider, runtimeSkillCatalog)]),
+            : [createHostSkillsGrant(input.skillsProvider, skillCatalog ?? [])]),
+          ...(memory === undefined ? [] : [memory.grant]),
         ],
         maxArgumentsBytes: 256 * 1024,
         maxResultBytes: 256 * 1024,
@@ -330,6 +379,9 @@ export async function createLocalContainerRuntime(
           { name: "capabilities", async commit() {} },
           { name: "workspace", async commit() {} },
         ],
+        dispose() {
+          snapshots.delete(runId);
+        },
       };
     },
     consumeGuestEvent: (args, runId, value) =>
@@ -347,8 +399,11 @@ export async function createLocalContainerRuntime(
   return {
     executeRun,
     info: controller.info,
+    get closed() {
+      return controller.session.closed;
+    },
     async close() {
-      leases.clear();
+      snapshots.clear();
       await controller.close();
     },
   };

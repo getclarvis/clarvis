@@ -339,7 +339,7 @@ iterations=2` yields a limit above 264_503 (`packages/memory/tests/unit/indexer-
 ### 4.1 Enqueue (synchronous, on the response path)
 
 1. The memory capability's `onRunEnd` **subscribes first**, then enqueues
-   (`packages/memory/src/capability.ts:338-339`) — subscribing after risks missing a settlement the
+   (`createMemoryRunCapability` in `packages/memory/src/capability.ts`) — subscribing after risks missing a settlement the
    worker drains immediately (`packages/memory/src/job-broker.ts:45`).
 2. `enqueueFinishedRun` emits `phase: "started"` (`packages/memory/src/ingest.ts:139`), captures git state best-effort
    (`packages/memory/src/ingest.ts:141`, `packages/memory/src/workspace-state.ts:37`), maps the record to a `RunSnapshot`
@@ -347,11 +347,29 @@ iterations=2` yields a limit above 264_503 (`packages/memory/tests/unit/indexer-
    `memory.run.enqueued` and emits `phase: "queued"` (`packages/memory/src/ingest.ts:152-156`).
 3. `Memory.enqueue` bounds and redacts the snapshot, then writes it inside `store.exclusive`
    with `provider_key` defaulting to `"wiki:local"` (`packages/memory/src/memory.ts:51-70`).
-4. `factory.poke(owner)` is called and **not** awaited (`packages/memory/src/capability.ts:350`).
+4. `factory.poke(owner)` is called and **not** awaited (`createMemoryRunCapability`).
 
 `enqueueFinishedRun` never rejects: any failure is caught, logged as
 `memory.run.enqueue_failed`, and reported as `phase: "failed"` (`packages/memory/src/ingest.ts:157-171`), and the
 `onNotice` listener's own throws are swallowed (`packages/memory/src/ingest.ts:132-138`).
+
+For an isolated foreground run, the guest owns neither this queue nor its store. It first sends the
+completed `ExecutionRecord` through `host.event`; the host trace store persists it; only then does
+the guest Memory lifecycle call `runtime.memory { operation: "finish" }`. The host bridge re-reads
+that exact owner/run record and executes `PreparedMemoryRuntime.finish`, which is the same canonical
+`onRunEnd` described above. A missing durable trace refuses the finish rather than trusting a guest
+record or moving enqueueing into the container. Production: `guestTraceStore` and
+`createGuestMemoryCapability` in `packages/kernel/src/runtime/{guest-loop-executor,memory-bridge}.ts`;
+`createHostMemoryBridge` in `packages/kernel/src/runtime/memory-bridge.ts`; `prepareMemoryRuntime` in
+`packages/memory/src/capability.ts`. The file host supplies `executeExtensionProfileRun` directly to
+`createMemoryFactory`; that executor imports and calls the Loop under the Extension Profile lease
+without passing through `runtimeCoordinator`, so the later dedicated indexing run remains on the
+host and may use its mutating Memory capability. Production: `executeExtensionProfileRun` and the
+`createMemoryFactory` call in `packages/kernel/src/file-kernel.ts`. Test:
+`packages/kernel/tests/integration/runtime-guest-loop.test.ts` (trace persists before finish) and
+`packages/kernel/tests/unit/runtime-memory-bridge.test.ts` (host post-run handling), plus
+`packages/memory/tests/component/factory.test.ts` (`routes every indexer pass through the host-owned
+run executor`).
 
 ### 4.2 `boundRunSnapshot` ordering
 
@@ -1012,6 +1030,20 @@ Production: `packages/kernel/src/runs/memory-ingest-phase.ts:36`, `:39`, `:42`, 
 `packages/kernel/src/runs/managed-run.ts:178-192`.
 Test: `packages/kernel/tests/unit/memory-ingest-phase.test.ts:41`.
 
+**Isolated ingest boundary.** An isolated guest can request post-run Memory handling only after its exact
+owner-bound trace is durable on the host. The guest receives no queue or store authority, and its
+Memory provider contains only the four read tools; the canonical host `onRunEnd` performs the
+enqueue, and the dedicated indexing pass runs through the file host's direct Loop executor rather
+than the container coordinator. Production: `createHostMemoryBridge` and `createGuestMemoryCapability` in
+`packages/kernel/src/runtime/memory-bridge.ts`; `guestTraceStore` in
+`packages/kernel/src/runtime/guest-loop-executor.ts`; `prepareMemoryRuntime` in
+`packages/memory/src/capability.ts`; `executeExtensionProfileRun` in
+`packages/kernel/src/file-kernel.ts`. Test:
+`packages/kernel/tests/integration/runtime-guest-loop.test.ts` and
+`packages/kernel/tests/unit/runtime-memory-bridge.test.ts`, plus
+`packages/memory/tests/component/factory.test.ts` (`routes every indexer pass through the host-owned
+run executor`).
+
 ### Broker, factory and health
 
 **MIX-28.** A `retry_wait` settlement does not unsubscribe; exactly one terminal outcome
@@ -1145,9 +1177,10 @@ Log events this subsystem emits, with level: `memory.job.blocked` (info, `packag
 | `@clarvis/kernel` (`file-kernel`) | constructs the factory, supplies `runDeps`/`passRunDeps`/`loadPolicy`/`storeFor`/`serverPort`/`pluginPort`/`executablePort` | `packages/kernel/src/file-kernel.ts:914-937` |
 | `@clarvis/kernel` (`kernel.ts`) | registers `memoryFactory.stop()` on the kernel lifecycle | `packages/kernel/src/kernel.ts:355` |
 | `@clarvis/kernel` (`memory-service`) | exposes `health`/`jobs`/`retryJob` over the protocol | `packages/kernel/src/memory/memory-service.ts:107,132,151` |
+| `@clarvis/kernel` (`runtime/memory-bridge`) | keeps the provider, trace lookup and canonical `onRunEnd` on the host while an isolated guest gets only seed/read calls plus a finish notification | `createHostMemoryBridge`/`createGuestMemoryCapability` in `packages/kernel/src/runtime/memory-bridge.ts` |
 | `@clarvis/kernel` (`managed-run`, `run-service`, `workflows-service`) | uses `ingestPendingAfter` / `DEFAULT_INGEST_CLOSE_GRACE_MS` to decide whether a run's stream may close | `packages/kernel/src/runs/managed-run.ts:207`, `packages/kernel/src/runs/run-service.ts:90`, `packages/kernel/src/workflows/workflows-service.ts:171` |
 | `@clarvis/code` | reads `memory_ingest` phases through the kernel's policy export | `packages/kernel/src/policy.ts:11`, adapted at `packages/code/src/adapters/event-span.ts:1,8-10` and consumed at `packages/code/src/run-host.ts:10,462` |
-| memory's own run capability | calls `enqueueFinishedRun`, `factory.subscribeToRun`, `factory.poke` in `onRunEnd` | `packages/memory/src/capability.ts:330-350` (`onRunEnd`) |
+| memory's own run capability | calls `enqueueFinishedRun`, `factory.subscribeToRun`, `factory.poke` in `onRunEnd` | `createMemoryRunCapability` in `packages/memory/src/capability.ts` |
 
 ### 7.3 What the host, not this package, must compose
 

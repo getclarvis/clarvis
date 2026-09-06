@@ -1,4 +1,4 @@
-# The memory capability: seven tools, write policy, settings and control plane
+# The memory capability: native tools, isolated read-only projection, policy and control plane
 
 > Implemented at
 > `packages/memory/src/{capability,tools,toolset, tool-contract,handler,policy,settings,config,schemas,seed,review,types,index}.ts`
@@ -9,16 +9,20 @@
 
 This subsystem is the seam between the memory wiki (the document store, delegated to
 [capabilities/memory-store.md](memory-store.md)) and an engine run: it is what makes a workspace's markdown wiki show up to a
-model as an `<memory>` context block plus seven callable tools, and what stops a run — or the
+model as an `<memory>` context block plus seven callable tools in a native entry run, or exactly the
+four read operations in an isolated guest, and what stops a run — or the
 autonomous indexer that shares the same tool surface — from granting itself the owner's authority
 over a document.
 
-`createMemoryCapability` (`packages/memory/src/capability.ts:106`) builds a `Capability` the host
+`createMemoryCapability` in `packages/memory/src/capability.ts` builds a `Capability` the host
 folds into a run's `deps.capabilities`. Per run it decides whether memory is active at all
-(`forRun`, packages/memory/src/capability.ts:115), and when it is, assembles three things every agent scope in the run
+(`createMemoryCapability.forRun`), and when it is, assembles three things every agent scope in the run
 sees: a seed block carrying the compiled `PROFILE.md`, a `## Memory` system-prompt section whose
 wording differs for the entry agent versus every subagent, and a toolset — read tools for
-everyone, write tools for the entry agent only. `tools.ts` is where the seven tool bodies actually
+everyone, write tools for a write-enabled native entry agent only. `prepareMemoryRuntime` binds the
+same provider to a provider-opaque host lease whose serializable descriptor contains only the four
+read names; the kernel uses that separate surface for an isolated guest. `tools.ts` is where the
+seven native tool bodies actually
 live, host-agnostic (`MemoryToolDef`), so the same module backs both an in-run agent and a
 kernel-exposed control plane. `policy.ts` is the one rule table that keeps a model-facing write
 from ever granting itself what only a human owner may grant: pinning a document or marking it
@@ -106,26 +110,41 @@ Returns a `ToolHandler` whose `matches` is `toolset.names.has(call.name)` (packa
 `args.path` is a `string` — the payload is `{ tool: call.name, path }` (packages/memory/src/handler.ts:55-58). This is
 how the background indexer learns what it changed without re-deriving it from tool results.
 Within this document's own scope, `createMemoryRunCapability` never supplies `onMutation` when it
-builds either handler (packages/memory/src/capability.ts:280, 283) — the field is declared here but unexercised by this
+builds either handler — the field is declared here but unexercised by this
 document's own wiring; see §8.
 
-### 2.4 `createMemoryCapability` (`packages/memory/src/capability.ts:106`)
+### 2.4 `createMemoryCapability` (`packages/memory/src/capability.ts`)
 
 ```
 createMemoryCapability(factory?: MemoryFactory, opts?: MemoryCapabilityOptions): Capability
 interface MemoryCapabilityOptions { enqueueOnRunEnd?: boolean }  // default true
 ```
-The returned `Capability` (packages/memory/src/capability.ts:110-153):
+The returned `Capability` (`createMemoryCapability`):
 
 | Field | Value |
 |---|---|
 | `name` | `MEMORY_CAPABILITY_NAME` = `"memory"` |
 | `seedMarker` | `SEED_OPEN_TAG` = `"<memory>"` |
-| `reservedWireNames` | the 7 tool names (`MEMORY_TOOL_WIRE_NAMES`, packages/memory/src/capability.ts:70-73) |
-| `toolEffects` | `list_memories/query_memories/read_memory/grep_memories → "read"`, `write_memory/edit_memory/delete_memory → "mutate"` (packages/memory/src/capability.ts:74-77) |
+| `reservedWireNames` | the 7 tool names (`MEMORY_TOOL_WIRE_NAMES`) |
+| `toolEffects` | `list_memories/query_memories/read_memory/grep_memories → "read"`, `write_memory/edit_memory/delete_memory → "mutate"` (`MEMORY_TOOL_EFFECTS`) |
 | `forRun(ctx)` | see §4 |
 
-### 2.5 Settings surface (`settings.ts`, `schemas.ts`)
+### 2.5 `prepareMemoryRuntime` — isolated host lease
+
+`prepareMemoryRuntime(factory, ctx, opts?)` returns `PreparedMemoryRuntime | null` under exactly the
+same activation and provider-resolution gates as `createMemoryCapability.forRun`. Its serializable
+`MemoryRuntimeDescriptor` is the closed shape `{ providerDigest, seedMaxChars, readTools }`; the
+read vocabulary is the selected provider's canonical `MEMORY_READ_TOOL_NAMES` surface. The lease
+keeps four operations on the host: `seed(task?)`, schema-aware `accepts(name,args)`, read-only
+`invoke(name,args,signal?)`, and `finish(record)` over the canonical `onRunEnd`. It exposes no
+provider/store object, provider key, credentials, path or mutating tool.
+
+Production: `MemoryRuntimeDescriptor`, `PreparedMemoryRuntime`, `prepareMemoryRunInternal` and
+`prepareMemoryRuntime` in `packages/memory/src/capability.ts`. Test:
+`packages/memory/tests/component/capability.test.ts` (`prepares a provider-opaque runtime lease with
+canonical calls and host run-end`).
+
+### 2.6 Settings surface (`settings.ts`, `schemas.ts`)
 
 | Export | Value / shape | Location |
 |---|---|---|
@@ -185,7 +204,7 @@ Path schemas gating `write_memory`/`edit_memory`/`delete_memory` (packages/memor
 - `memoryWritablePathSchema`: `relPath` that is `PROFILE.md`, OR ≥2 segments ending `/TOPIC.md`, OR
   a valid leaf path.
 
-### 2.6 Kernel-facing control plane (`packages/kernel/src/memory/*`)
+### 2.7 Kernel-facing control plane (`packages/kernel/src/memory/*`)
 
 `createMemoryService(cfg: { factory: MemoryFactory | undefined; owner: string })` →
 `MemoryService` (`packages/kernel/src/memory/memory-service.ts:68`), implementing the protocol
@@ -263,11 +282,12 @@ tools (list_memories / read_memory / grep_memories) to drill into a topic.
 <PROFILE.md body, trimmed>
 </memory>
 ```
-(preamble text at packages/memory/src/seed.ts:36-39; wrapping at packages/memory/src/capability.ts:212-223 via `provider.seed(...)` then
+(preamble text at packages/memory/src/seed.ts:36-39; wrapping in `createMemoryRunCapability` via the
+prepared `seed(...)` then
 `wrapMemorySeed`). `capability.ts`'s `systemSection` appends an HTML-comment identity line
-`\n\n<!-- memory-provider:<providerDigest> -->` (packages/memory/src/capability.ts:263), where `providerDigest` is
+`\n\n<!-- memory-provider:<providerDigest> -->`, where `providerDigest` is
 either the 64-hex-char suffix of a `kind:digest`-shaped `providerKey`, or a fresh SHA-256 of the
-whole key (packages/memory/src/capability.ts:207-209).
+whole key (`providerDigest` in `packages/memory/src/capability.ts`).
 
 `buildSeed(args: BuildSeedArgs)` (`packages/memory/src/seed.ts:41-73`) is what actually produces the raw content the
 wiki provider hands to `wrapMemorySeed` above: it reads `PROFILE.md` via `args.store.readBounded`
@@ -332,58 +352,67 @@ absent `description` — holds. `reviewDigest` is not itself re-exported from `s
 
 ## 4. Behavior
 
-### 4.1 `forRun(ctx)` — per-run activation (`packages/memory/src/capability.ts:115-151`)
+### 4.1 `forRun(ctx)` and `prepareMemoryRuntime` — shared per-run activation
 
 1. If `ctx.requestParam("memory") === "off"` → return `null` (no seed, no tools, no ingest); this is
    the **request-level** override read through `RunCapabilityContext.requestParam`, since `memory`
    is a param `memorySettingsSpec` registers, not a field of the engine's own request type
-   (packages/memory/src/capability.ts:90-93, 116).
-2. Resolve `memory = factory?.forOwnerControlPlane(ctx.owner)` (packages/memory/src/capability.ts:117) — **not**
+   (`createMemoryCapability` and `prepareMemoryRunInternal` in
+   `packages/memory/src/capability.ts`).
+2. Resolve `memory = factory?.forOwnerControlPlane(ctx.owner)` — **not**
    `forOwner`, so a workspace with no indexer model still keeps its seed, tools and enqueue; only
    *learning* (the background worker) requires `forOwner`'s stricter gate
-   (packages/memory/src/capability.ts:95-104, mirrored in the kernel's own `mem()` at packages/kernel/src/memory/memory-service.ts:77-83).
+   (`MemoryFactory` and `prepareMemoryRunInternal`, mirrored in the kernel's own `mem()` at
+   `packages/kernel/src/memory/memory-service.ts`).
 3. If `factory.providerFor` exists (a provider-aware factory): await it. `undefined` → `null`.
    `!resolved.ok` → log `memory_provider_unavailable` and return `null` — "the run continues with
    no memory at all — it is never silently served from a different store than the one declared"
-   (packages/memory/src/capability.ts:119-129, quoting the log message). Otherwise build the run capability over
+   (`prepareMemoryRunInternal`, quoting the log message). Otherwise build the run capability over
    `resolved.provider`/`resolved.key`/`resolved.seedMaxChars`.
 4. Else (no `providerFor`, plain `MemoryFactory`): if `memory === undefined` → `null`; otherwise
    build over `wikiMemoryProvider(memory)` with key `"wiki:local"` and `SEED_MAX_CHARS`
-   (packages/memory/src/capability.ts:141-150).
+   (`prepareMemoryRunInternal`).
 
-### 4.2 `createMemoryRunCapability` — assembling the per-run surface (packages/memory/src/capability.ts:180-354)
+`createMemoryCapability.forRun` returns that preparation's native `capability` member.
+`prepareMemoryRuntime` returns the same preparation as the isolated host lease described in §2.5,
+so the two placements cannot silently choose different providers, seed limits or post-run behavior.
+Production: `prepareMemoryRunInternal`, `createMemoryCapability` and `prepareMemoryRuntime` in
+`packages/memory/src/capability.ts`. Test: `packages/memory/tests/component/capability.test.ts`.
+
+### 4.2 `createMemoryRunCapability` — assembling the native per-run surface
 
 - Builds two `MemoryToolset`s: `readToolset` over `provider.readTools` (call limit
-  `ctx.env.CLARVIS_MEMORY_TOOL_CALL_LIMIT`, default `12`, packages/memory/src/capability.ts:199-202,
+  `ctx.env.CLARVIS_MEMORY_TOOL_CALL_LIMIT`, default `12`, in `createMemoryRunCapability`,
   `packages/capability/src/env.ts:125`) and `writeToolset` over `provider.writeTools ?? []` with an
   **unbounded** call limit `WRITE_CALL_LIMIT = Number.MAX_SAFE_INTEGER` — "writes are not
-  rate-limited — the agent should record freely" (packages/memory/src/capability.ts:176-178, 205).
-- Each provider tool is passed through `canonical()` (packages/memory/src/capability.ts:189-198), which — when the tool
+  rate-limited — the agent should record freely" (`WRITE_CALL_LIMIT` and
+  `createMemoryRunCapability`).
+- Each provider tool is passed through `canonical()` in `createMemoryRunCapability`, which — when the tool
   name matches a `MEMORY_TOOL_CONTRACTS` entry — overwrites the provider's own `description` and
   `parameters` with the canonical contract's, regardless of what the provider itself declared.
-- `seedBlock()` (packages/memory/src/capability.ts:212-223): calls `provider.seed(firstUserText(...))`, wraps a
+- `seedBlock()`: calls the shared prepared `seed(firstUserText(...))`, wraps a
   non-null result with `wrapMemorySeed`, and on any thrown error logs `memory_seed_failed` and
   returns `undefined` — the run continues with no memory block rather than failing.
-- `systemSection(id)` (packages/memory/src/capability.ts:255-274): always emits the `## Memory` navigation paragraph
-  plus the provider-identity comment; **only when `id.entry`** does it append the write-policy
+- `systemSection(id)`: always emits the `## Memory` navigation paragraph plus the
+  provider-identity comment; **only when `id.entry` and the provider actually has `writeTools`**
+  does it append the write-policy
   paragraph ("Do NOT call write_memory, edit_memory or delete_memory on your own initiative. […]
   write only when the user asks you to remember, record or correct something…").
-- `forAgent(scope)` (packages/memory/src/capability.ts:275-288): always attaches the read toolset's tools + handler;
-  **only when `scope.entry`** also attaches the write toolset's tools + handler. A subagent
-  therefore gets exactly the 4 read tools; the entry agent gets all 7
+- `forAgent(scope)`: always attaches the read toolset's tools + handler; **only when `scope.entry`**
+  also attaches the provider's write toolset + handler. A subagent therefore gets exactly the four
+  reads; an entry agent gets all seven only for a write-enabled provider
   (pinned by `packages/memory/tests/architecture/capability-flag-surface.test.ts:85-91`).
-- `onRunEnd` is present **iff** `opts.enqueueOnRunEnd !== false` **and** `memory !== undefined`
-  (packages/memory/src/capability.ts:289-352):
+- `onRunEnd` is present **iff** `opts.enqueueOnRunEnd !== false` **and** `memory !== undefined`:
   - If `provider.writeTools === undefined` (a read-only provider): `onRunEnd` emits a single
     `MEMORY_INGEST_EVENT` notice `{ phase: "done", skipped: true, note: "provider-read-only" }` and
-    resolves — no enqueue is attempted (packages/memory/src/capability.ts:291-306).
+    resolves — no enqueue is attempted.
   - Otherwise: subscribes to the run's eventual settlement via
     `factory.subscribeToRun(ctx.owner, record.id, emitNotice)` **before** calling
     `enqueueFinishedRun` (ordering is explicit in the doc comment: the durable worker can drain a
     job on its own timer, so subscribing after the enqueue risks missing an already-settled
-    result — packages/memory/src/capability.ts:308-321), awaits the enqueue write, unsubscribes immediately if the
-    enqueue itself reports `phase: "failed"` (packages/memory/src/capability.ts:345-348), and finally calls
-    `factory.poke(ctx.owner)` **without awaiting it** (packages/memory/src/capability.ts:350) — draining costs an
+    result — the ordering is documented by `createMemoryRunCapability`), awaits the enqueue write,
+    unsubscribes immediately if the enqueue itself reports `phase: "failed"`, and finally calls
+    `factory.poke(ctx.owner)` **without awaiting it** — draining costs an
     inference call and happens off the response path.
 
 ### 4.3 Read-tool dispatch (`packages/memory/src/tools.ts:214-310`)
@@ -463,8 +492,8 @@ engine/capability coupling.
 
 **INV-091.** Setting `enqueueOnRunEnd: false` changes **only** whether `onRunEnd` is present on the
 built `RunCapability` — `seedMarker`, `seedBlock`, both agents' system sections, and both agents'
-tool lists are byte-identical to the `true` case. Production: `packages/memory/src/capability.ts:
-289-352` (the conditional spread that adds/omits `onRunEnd` alone). Test:
+tool lists are byte-identical to the `true` case. Production: `createMemoryRunCapability` in
+`packages/memory/src/capability.ts` (the conditional spread that adds/omits `onRunEnd` alone). Test:
 `packages/memory/tests/architecture/capability-flag-surface.test.ts:78-83` (`wireSurfaceOf`
 equality) and `:94-103` (`Object.hasOwn(...,"onRunEnd")` differs and only that).
 
@@ -553,19 +582,22 @@ never raised by automation. Production:
 existing value is not; a lowering `next` never matches). Test: `packages/memory/tests/unit/write-policy.test.ts:118-133`.
 
 **INV-107.** The entry agent's system section explicitly tells it not to call `write_memory` on its
-own initiative, and never contains the phrase "as you go". Production:
-`packages/memory/src/capability.ts:267-271` (the entry-only paragraph). Test:
+own initiative when the provider offers writes, and never contains the phrase "as you go".
+Production: `createMemoryRunCapability.systemSection` in
+`packages/memory/src/capability.ts` (the write-enabled entry-only paragraph). Test:
 `packages/memory/tests/architecture/write-policy.test.ts:60-65`.
 
 **INV-108.** The system section names exactly the two legitimate authorisations for a memory write
 — "the user asking" (rendered as "when the user asks") and the "dedicated pass" — and still tells
-every agent scope how to read the wiki (`query_memories`). Production: `packages/memory/src/capability.ts:255-274`.
+every agent scope how to read the wiki (`query_memories`). Production:
+`createMemoryRunCapability.systemSection` in `packages/memory/src/capability.ts`.
 Test: `packages/memory/tests/architecture/write-policy.test.ts:66-76`.
 
 **INV-109.** The system section for a subagent scope never mentions any write tool
 (`write_memory`/`edit_memory`/`delete_memory`), and the `<memory>` seed block likewise never
 mentions one for any scope, pointing only at navigation tools. Production:
-`packages/memory/src/capability.ts:255-264` (subagent branch returns before the write paragraph); `packages/memory/src/seed.ts:36-39`
+`createMemoryRunCapability.systemSection` in `packages/memory/src/capability.ts` (the subagent branch
+returns before the write paragraph); `packages/memory/src/seed.ts:36-39`
 (`PREAMBLE` names only `list_memories`/`read_memory`/`grep_memories`). Test:
 `packages/memory/tests/architecture/write-policy.test.ts:78-81` (subagent system-section half), `:84-89` (seed-block half).
 
@@ -576,6 +608,19 @@ all having to agree, or the pass "quietly stops recording anything, with every s
 statement of the instruction's own content owned by
 [capabilities/memory-indexer.md](memory-indexer.md) §5. Test (this document's half of the three-way
 check): `packages/memory/tests/architecture/write-policy.test.ts:92-103`.
+
+**Runtime read-only boundary.** `prepareMemoryRuntime` serializes only a provider digest, seed bound
+and the four canonical read names; its `accepts`/`invoke` map is built exclusively from
+`provider.readTools`. The kernel independently rejects descriptors with extra fields or a changed
+vocabulary, constructs no guest write tools, and rejects a forged mutation before provider
+execution even when `provider.writeTools` exists. Production: `prepareMemoryRunInternal` in
+`packages/memory/src/capability.ts`; `validRuntimeMemoryDescriptor`, `createHostMemoryBridge` and
+`createGuestMemoryCapability` in `packages/kernel/src/runtime/memory-bridge.ts`. Test:
+`packages/memory/tests/component/capability.test.ts` (`prepares a provider-opaque runtime lease with
+canonical calls and host run-end`); `packages/kernel/tests/unit/runtime-memory-bridge.test.ts`
+(`rejects forged mutations even when the host provider supports writes`); and
+`packages/kernel/tests/integration/runtime-guest-loop.test.ts` (guest model request has no
+`write_memory`).
 
 ### Further invariants derived directly from the code (not in the owned INV range but load-bearing
 here)
@@ -592,14 +637,16 @@ Test: `packages/memory/tests/component/toolset-handler.test.ts:102-116`.
 
 **C.** The read-tool call budget is finite (`CLARVIS_MEMORY_TOOL_CALL_LIMIT`, default 12) while the
 write-tool budget is effectively unlimited (`Number.MAX_SAFE_INTEGER`). Production:
-`packages/memory/src/capability.ts:178, 199-206`; default at `packages/capability/src/env.ts:125`. Unpinned by a
+`WRITE_CALL_LIMIT` and `createMemoryRunCapability` in `packages/memory/src/capability.ts`; default at
+`packages/capability/src/env.ts:125`. Unpinned by a
 component test specific to this pairing (the budget-exhaustion test in
 `packages/memory/tests/component/toolset-handler.test.ts:86-100` exercises the mechanism generically, not this specific
 read/write asymmetry) — **unpinned**.
 
 **D.** `canonical()` overwrites a provider's own `description`/`parameters` with the canonical
 `MEMORY_TOOL_CONTRACTS` entry whenever the tool's name matches one, independent of
-`assertProviderVocabulary`'s separate construction-time check. Production: `packages/memory/src/capability.ts:189-198`.
+`assertProviderVocabulary`'s separate construction-time check. Production: `canonical` inside
+`createMemoryRunCapability` in `packages/memory/src/capability.ts`.
 Unpinned by any test in scope — no test in `tests/architecture` or `tests/component`
 constructs a provider whose tool descriptors differ from canonical and asserts the override
 — **unpinned**.
@@ -608,11 +655,14 @@ constructs a provider whose tool descriptors differ from canonical and asserts t
 
 | Condition | Behavior | Cite |
 |---|---|---|
-| `ctx.requestParam("memory") === "off"` | `forRun` returns `null`: no seed, no tools, no ingest for this run | packages/memory/src/capability.ts:116 |
-| `factory` absent, or `factory.forOwnerControlPlane` resolves nothing | `forRun` returns `null` | packages/memory/src/capability.ts:117, 141 |
-| `factory.providerFor` resolves `undefined` | `forRun` returns `null` | packages/memory/src/capability.ts:120-121 |
-| `factory.providerFor` resolves `{ ok: false, failure }` | logs `memory_provider_unavailable` (with `cause`/`provider` fields) and returns `null` — never silently falls back to a different store | packages/memory/src/capability.ts:122-129 |
-| `provider.seed(...)` throws | `seedBlock()` logs `memory_seed_failed` and returns `undefined` — run proceeds with no memory block | packages/memory/src/capability.ts:216-222 |
+| `ctx.requestParam("memory") === "off"` | Native `forRun` and isolated `prepareMemoryRuntime` return `null`: no seed, no tools, no ingest for this run | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
+| `factory` absent, or `factory.forOwnerControlPlane` resolves nothing | Native `forRun` and isolated preparation return `null` | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
+| `factory.providerFor` resolves `undefined` | Native `forRun` and isolated preparation return `null` | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
+| `factory.providerFor` resolves `{ ok: false, failure }` | logs `memory_provider_unavailable` (with `cause`/`provider` fields) and returns `null` — never silently falls back to a different store | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
+| `provider.seed(...)` throws | logs `memory_seed_failed`; native `seedBlock()` is absent and the isolated seed result is `null`, so the run proceeds without a memory block | `prepareMemoryRunInternal` in packages/memory/src/capability.ts |
+| Isolated guest descriptor carries an extra field, changed read vocabulary, invalid digest or excessive seed bound | Guest refuses the descriptor before constructing Memory | `validRuntimeMemoryDescriptor` in packages/kernel/src/runtime/memory-bridge.ts |
+| Isolated guest or forged frame names `write_memory`, `edit_memory` or `delete_memory` | No guest definition exists; the host grant also rejects it as `invalid_request` without executing the provider | `createGuestMemoryCapability` and `createHostMemoryBridge` in packages/kernel/src/runtime/memory-bridge.ts |
+| Isolated `finish` arrives before its exact owner/run trace is durable, or arrives twice | Refused as `unavailable` or `conflict`; no guest-side enqueue fallback | `createHostMemoryBridge` in packages/kernel/src/runtime/memory-bridge.ts |
 | A write/edit/delete tool's argument schema rejects | `fail("Invalid arguments: <path>: <message>")`, first zod issue only | packages/memory/src/tools.ts:98-104 |
 | A tool body throws | `fail("Tool failed: <message>")` | packages/memory/src/tools.ts:105-109 |
 | `grep_memories` regex too complex (backreference, lookaround, a quantifier applied to a group, or a pattern carrying more than three of `* + ? { \|`) | Not honoured — falls back to a keyword search rather than failing | packages/memory/src/tool-contract.ts:59-63 |
@@ -638,16 +688,17 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
 
 **Depends on** (runtime, static imports):
 - `./seed.ts`, `./memory-contract.ts` (type), `./wiki-provider.ts` — the fallback provider when a
-  factory has no `providerFor` (packages/memory/src/capability.ts:9-11).
+  factory has no `providerFor` (`prepareMemoryRunInternal` in
+  `packages/memory/src/capability.ts`).
 - `@clarvis/capability` — `Capability`/`RunCapability`/`RunCapabilityContext`/`ToolEffect` types and
-  `handlerBaseOf` value (packages/memory/src/capability.ts:13-21); `sanitizeText` (packages/memory/src/tools.ts:16, packages/memory/src/seed.ts:9); `openCallEnvelope`/
+  `handlerBaseOf` value (`packages/memory/src/capability.ts`); `sanitizeText` (packages/memory/src/tools.ts:16, packages/memory/src/seed.ts:9); `openCallEnvelope`/
   `HandlerBase`/`HandlerVerdict`/`ToolHandler` (packages/memory/src/handler.ts:1-6); `NamespacedTool` type (packages/memory/src/toolset.ts:10);
   `capabilityExecutableDeclarationSchema` (packages/memory/src/schemas.ts:6). This is a **hard, non-optional** dependency
   of `@clarvis/memory` (a leaf package `@clarvis/loop` itself depends on).
 - `./ingest.ts` (`enqueueFinishedRun`, `MemoryIngestNotice` type), `./factory.ts` (`MemoryFactory`
   type), `./run-snapshot.ts` (`firstUserText`), `./handler.ts`, `./settings.ts`, `./toolset.ts`,
   `./provider.ts`, `./tool-contract.ts` — all sibling modules of the same package
-  (packages/memory/src/capability.ts:22-37), most of them owned by the sibling document [capabilities/memory-indexer.md](memory-indexer.md) (`ingest.js`,
+  (`packages/memory/src/capability.ts`), most of them owned by the sibling document [capabilities/memory-indexer.md](memory-indexer.md) (`ingest.js`,
   `run-snapshot.js`, `factory.js`) or [capabilities/memory-store.md](memory-store.md) (nothing directly here, but transitively via
   `Memory`).
 - `./indexer/pyramid.ts` (`isMutatingTool`, `Mutation` type) — owned by [capabilities/memory-indexer.md](memory-indexer.md);
@@ -667,6 +718,13 @@ durable index job queue is out of scope here (delegated to [capabilities/memory-
   engine's eager configuration path may reach it" and because this module is "the only place that
   knows both" the memory package's structural port and the kernel's MCP connection pool
   (packages/kernel/src/memory/memory-server-port.ts:1-8 doc comment).
+- `packages/kernel/src/runtime/memory-bridge.ts` imports the host-facing
+  `prepareMemoryRuntime`/`MemoryRuntimeDescriptor` surface. It retains the concrete provider and
+  post-run enqueue on the host while projecting only a closed read-only descriptor and exact
+  `runtime.memory` grant to `createGuestMemoryCapability`. Production:
+  `createHostMemoryBridge`, `validRuntimeMemoryDescriptor` and `createGuestMemoryCapability`.
+  Test: `packages/kernel/tests/unit/runtime-memory-bridge.test.ts` and
+  `packages/kernel/tests/integration/runtime-guest-loop.test.ts`.
 
 **Forces the direction:**
 - `packages/memory/tests/architecture/settings-ownership.test.ts:70-89` fails the build if `settings.ts` ever value-imports
@@ -697,12 +755,13 @@ defines.
 
 - **`MemoryToolsHandlerDeps.onMutation` is declared but never supplied within this document's own
   scope.** `createMemoryRunCapability`'s `forAgent` builds both the read and write handlers with a
-  bare `{ base, toolset }` (packages/memory/src/capability.ts:280, 283) — neither passes `onMutation`. Whether some
+  bare `{ base, toolset }` in `createMemoryRunCapability` — neither passes `onMutation`. Whether some
   other caller of `buildMemoryToolsHandler` supplies it (the per-run indexer, owned by the sibling
   [capabilities/memory-indexer.md](memory-indexer.md) document, is the plausible candidate given the mechanism reaches into
   `./indexer/pyramid.ts`) is outside this document's scope.
 - **Read/write call-budget asymmetry is unpinned.** `CLARVIS_MEMORY_TOOL_CALL_LIMIT` (default 12)
-  bounds read tools while write tools carry `Number.MAX_SAFE_INTEGER` (packages/memory/src/capability.ts:178, 199-206),
+  bounds read tools while write tools carry `Number.MAX_SAFE_INTEGER`
+  (`WRITE_CALL_LIMIT` and `createMemoryRunCapability` in `packages/memory/src/capability.ts`),
   but no test in `packages/memory/tests` exercises this specific pairing end-to-end (the generic
   budget-exhaustion mechanism is tested at `packages/memory/tests/component/toolset-handler.test.ts:86-100`, but always against a
   single synthetic toolset, not the read/write split as wired by `createMemoryRunCapability`). See
@@ -738,6 +797,6 @@ defines.
 - **The exact wording threshold for INV-108's "user asking" phrase** is matched by the test as the
   substring `"when the user asks"` (packages/memory/tests/architecture/write-policy.test.ts:69), which appears in the production text
   as `"write only when the user asks you to remember, record or correct something"`
-  (packages/memory/src/capability.ts:269-270) — the test does not pin the fuller sentence, only the substring, so a
+  (`createMemoryRunCapability.systemSection`) — the test does not pin the fuller sentence, only the substring, so a
   future edit narrowing to a different phrasing containing that substring would still pass; whether
   that is an intentional looseness or an oversight is not stated in the code.

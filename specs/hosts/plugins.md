@@ -875,6 +875,18 @@ file framing, manifest limits, sidecar metadata, pinned projections, and fresh d
 - **`skillBootstraps`** (`:668-675`) does **not** check that the roots exist; the interface docstring
   says a plugin with no skills root contributes no skills either, so the name cannot resolve and the
   loop reports the miss (`:84-90`).
+
+For container placement, `createFileKernel` passes the active selection's `skillBootstraps` thunk
+beside the same admitted `SkillsProvider` snapshot used by the run. `createRuntimeSkillBootstraps`
+resolves those references through the canonical `resolveBootstrapSkills` gate, then serializes only
+`plugin`, `skill` and bounded `body`. It never serializes or mounts the declaring roots, and an
+inactive, unavailable or foreign-root skill cannot become a guest bootstrap. Production:
+`pluginSkillBootstraps` in `packages/kernel/src/file-kernel.ts`;
+`createRuntimeSkillBootstraps` in `packages/kernel/src/runtime/skills-bridge.ts`; and
+`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-podman-runtime.ts`. Test:
+`packages/kernel/tests/unit/runtime-skills-bridge.test.ts` (`projects active plugin bootstraps as
+bodies without disclosing their host roots`) and
+`packages/kernel/tests/integration/local-podman-runtime.test.ts`.
 - **`settingsScopes`** builds `pluginSettingsFragment(manifest)`, replaces `mcpServers` with the
   `<plugin>:<server>`-namespaced map, and carries every normalized hook definition of that selected
   plugin. No second mutable approval projection filters the snapshot.
@@ -1424,6 +1436,14 @@ All of the following are derived directly from this document's own source and te
     `packages/skills/tests/unit/bounded-read.test.ts` and the canonical framing, manifest limit,
     sidecar, post-watch verification, invalid-sibling, aggregate-bound, and lazy drift cases in
     `packages/kernel/tests/integration/plugin-contributions.test.ts`.
+
+44c. **An isolated guest receives only active plugin bootstrap bodies resolved against the same
+    admitted skill snapshot; it never receives plugin or skill roots.** Production:
+    `pluginSkillBootstraps` in `packages/kernel/src/file-kernel.ts` and
+    `createRuntimeSkillBootstraps`/`createGuestSkillsCapability` in
+    `packages/kernel/src/runtime/skills-bridge.ts`. Test:
+    `packages/kernel/tests/unit/runtime-skills-bridge.test.ts` and
+    `packages/kernel/tests/integration/local-podman-runtime.test.ts`.
 
 45. **A plugin cannot enable another plugin.** Custom Extension Profiles are complete external
     allow-lists; `builtin:default` derives exact `enabledPlugins` refs from operator scopes alone before

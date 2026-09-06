@@ -94,6 +94,7 @@ describe("lazy runtime coordinator", () => {
         creates += 1;
         await gate;
         const host: RuntimeHost = {
+          closed: false,
           info: info("generation-1"),
           executeRun: async () => {
             runs += 1;
@@ -127,6 +128,7 @@ describe("lazy runtime coordinator", () => {
       factory: async () => {
         creates += 1;
         return {
+          closed: false,
           info: info(`generation-${String(creates)}`),
           executeRun: async () => outcome,
           close: async () => {
@@ -201,6 +203,7 @@ describe("lazy runtime coordinator", () => {
     let nativeRuns = 0;
     const c = coordinator({
       factory: async () => ({
+        closed: false,
         info: info("generation-1"),
         executeRun: async () => {
           throw new Error("guest disconnected after an effect");
@@ -214,6 +217,107 @@ describe("lazy runtime coordinator", () => {
     });
     await expect(c.value.executeRun(args)).rejects.toThrow("guest disconnected after an effect");
     expect(nativeRuns).toBe(0);
+    await c.value.close();
+  });
+
+  it("retires a closed generation and launches a fresh one for the next run", async () => {
+    let creates = 0;
+    let closes = 0;
+    let nativeRuns = 0;
+    const c = coordinator({
+      factory: async () => {
+        creates += 1;
+        if (creates === 1) {
+          let dead = false;
+          return {
+            get closed() {
+              return dead;
+            },
+            info: info("generation-dead"),
+            executeRun: async () => {
+              dead = true;
+              throw new Error("execution channel closed");
+            },
+            close: async () => {
+              closes += 1;
+            },
+          };
+        }
+        return {
+          closed: false,
+          info: info("generation-recovered"),
+          executeRun: async () => outcome,
+          close: async () => {
+            closes += 1;
+          },
+        };
+      },
+      native: async () => {
+        nativeRuns += 1;
+        return outcome;
+      },
+    });
+
+    await expect(c.value.executeRun(args)).rejects.toThrow("execution channel closed");
+    expect(c.value.current()).toMatchObject({ kind: "container", lifecycle: "cold" });
+    await expect(c.value.executeRun(args)).resolves.toBe(outcome);
+    expect({ creates, closes, nativeRuns }).toEqual({ creates: 2, closes: 1, nativeRuns: 0 });
+    expect(c.value.current()).toMatchObject({
+      kind: "container",
+      generation: "generation-recovered",
+      lifecycle: "ready",
+    });
+    await c.value.close();
+    expect(closes).toBe(2);
+  });
+
+  it("does not let a retiring generation overwrite a ready replacement status", async () => {
+    let creates = 0;
+    let firstStarted!: () => void;
+    const started = new Promise<void>((resolve) => (firstStarted = resolve));
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => (releaseFirst = resolve));
+    const c = coordinator({
+      factory: async () => {
+        creates += 1;
+        if (creates === 1) {
+          let dead = false;
+          return {
+            get closed() {
+              return dead;
+            },
+            info: info("generation-retiring"),
+            executeRun: async () => {
+              dead = true;
+              firstStarted();
+              await firstGate;
+              throw new Error("old channel closed");
+            },
+            close: async () => undefined,
+          };
+        }
+        return {
+          closed: false,
+          info: info("generation-ready"),
+          executeRun: async () => outcome,
+          close: async () => undefined,
+        };
+      },
+    });
+
+    const first = c.value.executeRun(args);
+    await started;
+    await expect(c.value.executeRun(args)).resolves.toBe(outcome);
+    expect(c.value.current()).toMatchObject({
+      lifecycle: "ready",
+      generation: "generation-ready",
+    });
+    releaseFirst();
+    await expect(first).rejects.toThrow("old channel closed");
+    expect(c.value.current()).toMatchObject({
+      lifecycle: "ready",
+      generation: "generation-ready",
+    });
     await c.value.close();
   });
 
@@ -243,6 +347,7 @@ describe("lazy runtime coordinator", () => {
         creates += 1;
         if (creates === 1) throw new RuntimeLaunchError("engine_stopped", "stopped");
         return {
+          closed: false,
           info: info("generation-2"),
           executeRun: async () => outcome,
           close: async () => {},

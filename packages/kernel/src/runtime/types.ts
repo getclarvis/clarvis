@@ -89,6 +89,8 @@ export interface RuntimePortPreview {
 /** Started execution session owned by the host. */
 export interface RuntimeSession {
   readonly info: RuntimeInfo;
+  /** True once the private channel or attached engine process cannot accept another request. */
+  readonly closed: boolean;
   startRun(runId: string, envelope: unknown, signal?: AbortSignal): Promise<unknown>;
   steer(runId: string, input: unknown, signal?: AbortSignal): Promise<void>;
   cancel(runId: string): Promise<void>;

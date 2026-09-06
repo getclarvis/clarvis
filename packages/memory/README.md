@@ -430,6 +430,15 @@ surfaces and are not duplicated here.
 - `write_memory` / `edit_memory` / `delete_memory` — maintain it (each mutation
   triggers a reindex).
 
+Native runs retain that seven-tool surface. An isolated container run is deliberately narrower:
+`prepareMemoryRuntime` resolves the canonical provider on the host and projects only the four read
+operations, a provider-opaque digest and the bounded seed. Provider configuration, credentials,
+store paths and all three mutating tools stay out of the guest. The host grant validates the
+canonical read schema again, so a forged `write_memory`, `edit_memory` or `delete_memory` request is
+rejected even when the host provider is writable. Once the guest's completed trace is persisted on
+the host, the guest lifecycle bridge asks the host to run the same canonical `onRunEnd` path; durable
+enqueueing and later indexing therefore remain host work rather than guest memory authority.
+
 The read-only `file` provider accepts at most 64 declared paths, 1 MiB per
 document and 8 MiB across one call by default. Oversized inputs are not loaded
 and the answer explicitly says it is incomplete. Durable file-backed job scans
@@ -437,8 +446,9 @@ visit at most 10,000 directory entries, read at most 1 MiB from a job record and
 retain a top page of at most 200 jobs; counts, next-due lookup and claims fold
 over the scan without collecting the queue.
 
-The agent may write memory directly during a run; the same tools back an owner's
-kernel/MCP editing surface.
+A write-enabled native entry agent may write memory directly during a run; an isolated guest may
+not. The same host tools back an owner's kernel/MCP editing surface and the host-owned dedicated
+indexing pass.
 
 `pinned:` and `authority: confirmed` are the owner's alone, and the rule binds
 every non-owner caller — the model's tools exactly as much as the autonomous
@@ -465,8 +475,9 @@ cannot be interrupted once it has started.
 - `@clarvis/memory/testing` — an in-memory store, its conformance suite, and a
   clock whose time only moves when a test moves it.
 - `@clarvis/memory/capability` — the loop adapter: `createMemoryCapability`, the
-  per-owner `MemoryFactory`, the post-run index enqueue, the
-  `ExecutionRecord` → `RunSnapshot` adapter and the memory toolset.
+  per-owner `MemoryFactory`, canonical memory tool contracts, the read-only isolated-runtime lease
+  from `prepareMemoryRuntime`, the post-run index enqueue, the `ExecutionRecord` → `RunSnapshot`
+  adapter and the memory toolset.
 
 `@clarvis/memory/settings` carries the `memory:` block and the per-run `memory` param, plus
 the capability's name and its ingest event kind. A host registers the spec —

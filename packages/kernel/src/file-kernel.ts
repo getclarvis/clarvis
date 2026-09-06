@@ -954,6 +954,8 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     deps,
     planFactory: planning.planFactory,
     ...(built.skills === undefined ? {} : { skillsProvider: built.skills }),
+    ...(built.skills === undefined ? {} : { skillBootstraps: pluginSkillBootstraps }),
+    ...(memoryFactory === undefined ? {} : { memoryFactory }),
     loadGuardSettings,
     guardAudit: auditLogger,
     logger: componentLogger("runtime"),

@@ -44,6 +44,7 @@ describe("isolated runtime controller", () => {
           lifecycle: "ready",
         };
         return {
+          closed: false,
           info,
           async startRun() {},
           async steer() {},
@@ -151,6 +152,7 @@ describe("isolated runtime controller", () => {
         inspect: async () => ({ available: true, engineVersion: "5", rootless: true }),
         async start(spec) {
           return {
+            closed: false,
             info: {
               kind: "container",
               generation: spec.generation,

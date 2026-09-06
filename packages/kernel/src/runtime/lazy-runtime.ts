@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import type { ExecuteRunDeps } from "@clarvis/loop";
+import type { PluginBootstrapSkill } from "@clarvis/loop/host";
+import type { MemoryFactory } from "@clarvis/memory/capability";
 import type { PlanFactory } from "@clarvis/plan";
 import type { SkillsProvider } from "@clarvis/skills/capability";
 import type { ProjectRef, RuntimeStatus, WorkspaceRef } from "@clarvis/protocol";
@@ -25,6 +27,10 @@ export interface RuntimeHostInput {
   readonly planFactory?: PlanFactory;
   /** Immutable host-admitted skill view disclosed through a read-only runtime bridge. */
   readonly skillsProvider?: SkillsProvider;
+  /** Active plugins' bootstrap declarations, resolved against the admitted skill snapshot. */
+  readonly skillBootstraps?: () => readonly PluginBootstrapSkill[];
+  /** Canonical host memory factory; stores, providers and policy never enter the guest. */
+  readonly memoryFactory?: MemoryFactory;
   /** Fresh host policy snapshot serialized into each guest run. */
   readonly loadGuardSettings?: () => GuardSettings;
   /** Dedicated host audit sink for validated guard records returned by the guest. */
@@ -35,6 +41,8 @@ export interface RuntimeHostInput {
 export interface RuntimeHost {
   readonly executeRun: RunExecutor;
   readonly info: RuntimeInfo;
+  /** True once the private channel or its engine process can no longer accept a run. */
+  readonly closed: boolean;
   close(): Promise<void>;
 }
 
@@ -59,6 +67,7 @@ interface RuntimeSlot {
   readonly key: string;
   readonly host: RuntimeHost;
   active: number;
+  retire: boolean;
   closing?: Promise<void>;
 }
 
@@ -143,6 +152,8 @@ export function createLazyRuntimeCoordinator(options: {
   readonly deps: ExecuteRunDeps;
   readonly planFactory?: PlanFactory;
   readonly skillsProvider?: SkillsProvider;
+  readonly skillBootstraps?: () => readonly PluginBootstrapSkill[];
+  readonly memoryFactory?: MemoryFactory;
   readonly loadGuardSettings?: () => GuardSettings;
   readonly guardAudit?: Logger;
   readonly assertFallbackSandbox?: () => Promise<void>;
@@ -173,7 +184,9 @@ export function createLazyRuntimeCoordinator(options: {
 
   const closeSlot = async (slot: RuntimeSlot): Promise<void> => {
     if (slot.closing !== undefined) return slot.closing;
-    slot.closing = slot.host.close().finally(() => slots.delete(slot.key));
+    slot.closing = slot.host.close().finally(() => {
+      if (slots.get(slot.key) === slot) slots.delete(slot.key);
+    });
     return slot.closing;
   };
 
@@ -208,12 +221,16 @@ export function createLazyRuntimeCoordinator(options: {
       deps: options.deps,
       ...(options.planFactory === undefined ? {} : { planFactory: options.planFactory }),
       ...(options.skillsProvider === undefined ? {} : { skillsProvider: options.skillsProvider }),
+      ...(options.skillBootstraps === undefined
+        ? {}
+        : { skillBootstraps: options.skillBootstraps }),
+      ...(options.memoryFactory === undefined ? {} : { memoryFactory: options.memoryFactory }),
       ...(options.loadGuardSettings === undefined
         ? {}
         : { loadGuardSettings: options.loadGuardSettings }),
       ...(options.guardAudit === undefined ? {} : { guardAudit: options.guardAudit }),
     });
-    const slot: RuntimeSlot = { key: selectionKey(selection), host, active: 0 };
+    const slot: RuntimeSlot = { key: selectionKey(selection), host, active: 0, retire: false };
     slots.set(slot.key, slot);
     publish(readyStatus(host.info));
     return slot;
@@ -225,7 +242,19 @@ export function createLazyRuntimeCoordinator(options: {
   ): Promise<RuntimeSlot> => {
     const key = selectionKey(selection);
     const existing = slots.get(key);
-    if (existing !== undefined) return existing;
+    if (existing !== undefined && !existing.host.closed && !existing.retire) return existing;
+    if (existing !== undefined) {
+      existing.retire = true;
+      if (slots.get(key) === existing) slots.delete(key);
+      if (existing.active === 0) {
+        await closeSlot(existing).catch((error: unknown) => {
+          logger.warn(
+            { event: "runtime.stale_generation_cleanup_failed", cause: failureDetail(error) },
+            "a closed isolated runtime generation could not be cleaned up before replacement",
+          );
+        });
+      }
+    }
     const pending = launches.get(key);
     if (pending !== undefined) return pending;
     const next = launch(selected, selection).finally(() => launches.delete(key));
@@ -317,12 +346,29 @@ export function createLazyRuntimeCoordinator(options: {
         return await slot.host.executeRun(args);
       } finally {
         slot.active -= 1;
+        if (slot.host.closed) {
+          slot.retire = true;
+          if (slots.get(slot.key) === slot) slots.delete(slot.key);
+          const latest = options.selection();
+          if (
+            slots.get(slot.key) === undefined &&
+            selectionKey(latest) === slot.key &&
+            latest.settings.backend !== "native"
+          ) {
+            publish(containerStatus(latest.settings, "cold"));
+          }
+        }
         const latest = options.selection();
         if (
           slot.active === 0 &&
-          (latest.settings.backend === "native" || selectionKey(latest) !== slot.key)
+          (slot.retire || latest.settings.backend === "native" || selectionKey(latest) !== slot.key)
         ) {
-          await closeSlot(slot);
+          await closeSlot(slot).catch((error: unknown) => {
+            logger.warn(
+              { event: "runtime.generation_cleanup_failed", cause: failureDetail(error) },
+              "an isolated runtime generation could not be cleaned up after retirement",
+            );
+          });
         }
       }
     },

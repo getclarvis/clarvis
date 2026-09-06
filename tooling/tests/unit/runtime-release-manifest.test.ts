@@ -65,7 +65,7 @@ describe("runtime release manifest", () => {
       parseRuntimeReleaseManifest(JSON.stringify({ ...manifest, unexpected: true })),
     ).toThrow("unexpected field set");
     expect(() =>
-      parseRuntimeReleaseManifest(JSON.stringify({ ...manifest, protocol_revision: "3" })),
+      parseRuntimeReleaseManifest(JSON.stringify({ ...manifest, protocol_revision: "999" })),
     ).toThrow("identity does not match");
     expect(() =>
       parseRuntimeReleaseManifest(JSON.stringify({ ...manifest, build_image: "oven/bun:latest" })),

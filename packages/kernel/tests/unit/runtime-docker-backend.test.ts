@@ -46,6 +46,7 @@ function fixture(
   const kills: NodeJS.Signals[] = [];
   let guest: ReturnType<typeof createExecutionPeer> | undefined;
   let attachedStderr: PassThrough | undefined;
+  let resolveExit: ((code: number | null) => void) | undefined;
   const control: DockerControl = {
     async run(args) {
       calls.push([...args]);
@@ -106,6 +107,9 @@ function fixture(
       const guestToHost = new PassThrough();
       const stderr = new PassThrough();
       attachedStderr = stderr;
+      const exited = new Promise<number | null>((resolve) => {
+        resolveExit = resolve;
+      });
       guest = createExecutionPeer({
         role: "guest",
         generation: spec.generation,
@@ -130,7 +134,7 @@ function fixture(
         stdin: hostToGuest,
         stdout: guestToHost,
         stderr,
-        exited: new Promise(() => undefined),
+        exited,
         kill: (signal) => {
           kills.push(signal);
           guest?.close();
@@ -143,6 +147,7 @@ function fixture(
     calls,
     kills,
     stderr: (value: string) => attachedStderr?.write(value),
+    exit: (code: number | null = 0) => resolveExit?.(code),
     close: () => guest?.close(),
   };
 }
@@ -191,7 +196,7 @@ describe("Docker runtime backend", () => {
     const imageBackend = createDockerRuntimeBackend({ control: wrongImage.control });
     await imageBackend.inspect();
     await expect(imageBackend.start(spec)).rejects.toMatchObject({ code: "handshake_mismatch" });
-    const wrongProtocol = fixture({ protocolRevision: "3" });
+    const wrongProtocol = fixture({ protocolRevision: "999" });
     const protocolBackend = createDockerRuntimeBackend({ control: wrongProtocol.control });
     await protocolBackend.inspect();
     await expect(protocolBackend.start(spec)).rejects.toMatchObject({ code: "handshake_mismatch" });
@@ -271,6 +276,22 @@ describe("Docker runtime backend", () => {
     });
     fake.stderr("too much output");
     expect(fake.kills).toContain("SIGKILL");
+    await session.stop();
+    fake.close();
+  });
+
+  it("marks the session closed when the attached Docker process exits", async () => {
+    const fake = fixture();
+    const backend = createDockerRuntimeBackend({ control: fake.control });
+    await backend.inspect();
+    const session = await backend.start(spec);
+    expect(session.closed).toBe(false);
+    fake.exit(0);
+    await Bun.sleep(0);
+    expect(session.closed).toBe(true);
+    await expect(session.startRun("after-exit", {})).rejects.toMatchObject({
+      code: "unavailable",
+    });
     await session.stop();
     fake.close();
   });

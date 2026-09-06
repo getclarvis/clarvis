@@ -82,7 +82,10 @@ advanced overrides. Podman retains the fully explicit contract. Container prepar
 when a run first needs it, coalesces concurrent starts and reuses the ready generation. An operational
 Docker startup failure latches a native Sandbox fallback for later runs and reports that transition
 once; image-integrity, policy and handshake failures remain fail-closed, and a started run is never
-replayed through another placement. Omitting `network` selects ordinary Docker bridge or Podman slirp
+replayed through another placement. Cancelling an active run asks the guest to settle that same
+`runtime.start` request instead of cancelling its transport frame; if the attached process or private
+channel nevertheless dies, that generation is retired and the next run lazily starts a fresh one.
+Omitting `network` selects ordinary Docker bridge or Podman slirp
 routing that can reach public, host and LAN destinations and can therefore transmit readable
 workspace data. `none` remains the explicit offline mode; `internet` is refused until public-only
 egress can actually be enforced. The headless
@@ -93,7 +96,15 @@ the private channel and are identity-rebound before the host logger accepts them
 adapter owns the later durable terminal barrier. Plans remain in the canonical owner-scoped host
 store behind the exact `runtime.plans` method. The guest receives a host-path-free skill catalog and
 can disclose only an admitted skill body or bounded text resource through the read-only
-`runtime.skills` method; neither host skill roots nor arbitrary host paths enter its catalog.
+`runtime.skills` method; active plugins' already-admitted bootstrap bodies are projected with that
+same run snapshot, while neither host skill roots nor arbitrary host paths enter the guest. Memory
+providers and stores also stay on the host: the guest receives the seed plus exactly the four
+canonical read tools through `runtime.memory`. It never receives `write_memory`, `edit_memory` or
+`delete_memory`, and the host broker rejects a forged mutation even when the selected provider is
+writable. After the completed trace is durable on the host, the guest's lifecycle callback asks the
+host to execute the canonical post-run enqueue there. The resulting dedicated indexing pass uses
+the file host's direct Loop executor, not the container coordinator, so Memory mutation remains a
+host-only operation throughout.
 
 The production `Containerfile.runtime` never copies this checkout, installs workspace packages, or
 compiles source. It copies the standalone worker and its license inventory from the canonical

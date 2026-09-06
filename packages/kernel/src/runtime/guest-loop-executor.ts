@@ -18,7 +18,14 @@ import { createRuntimePreviewCapability } from "./preview-capability.ts";
 import { createGuestPlanFactory } from "./plan-bridge.ts";
 import { createPlansCapability } from "@clarvis/plan/capability";
 import { plansSettingsSpec } from "@clarvis/plan/settings";
-import { createGuestSkillsCapability, type RuntimeSkillCatalogEntry } from "./skills-bridge.ts";
+import { memorySettingsSpec } from "@clarvis/memory/settings";
+import {
+  createGuestSkillsCapability,
+  type RuntimeSkillBootstrapEntry,
+  type RuntimeSkillCatalogEntry,
+} from "./skills-bridge.ts";
+import { createGuestMemoryCapability, validRuntimeMemoryDescriptor } from "./memory-bridge.ts";
+import type { MemoryRuntimeDescriptor } from "@clarvis/memory/capability";
 
 interface GuestRunEnvelope {
   readonly rawBody: unknown;
@@ -28,6 +35,8 @@ interface GuestRunEnvelope {
   readonly guardSettings?: Omit<GuardSettings, "providers">;
   readonly hostCapabilities?: readonly string[];
   readonly skillCatalog?: readonly RuntimeSkillCatalogEntry[];
+  readonly skillBootstraps?: readonly RuntimeSkillBootstrapEntry[];
+  readonly memory?: MemoryRuntimeDescriptor;
 }
 
 function guestTraceStore(
@@ -68,12 +77,19 @@ function guestTraceStore(
 }
 
 function validEnvelope(value: unknown): value is GuestRunEnvelope {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    typeof (value as GuestRunEnvelope).owner !== "string" ||
+    typeof (value as GuestRunEnvelope).modelLeaseId !== "string" ||
+    !Object.prototype.hasOwnProperty.call(value, "rawBody")
+  ) {
+    return false;
+  }
+  const envelope = value as GuestRunEnvelope;
   return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as GuestRunEnvelope).owner === "string" &&
-    typeof (value as GuestRunEnvelope).modelLeaseId === "string" &&
-    Object.prototype.hasOwnProperty.call(value, "rawBody")
+    (envelope.memory === undefined || validRuntimeMemoryDescriptor(envelope.memory)) &&
+    (envelope.memory === undefined || envelope.hostCapabilities?.includes("memory") === true)
   );
 }
 
@@ -182,8 +198,16 @@ export function createGuestLoopExecutor(
           })
         : undefined;
       const skills = envelope.hostCapabilities?.includes("skills")
-        ? createGuestSkillsCapability(envelope.skillCatalog ?? [], bridge)
+        ? createGuestSkillsCapability(
+            envelope.skillCatalog ?? [],
+            bridge,
+            envelope.skillBootstraps ?? [],
+          )
         : undefined;
+      const memory = createGuestMemoryCapability(
+        envelope.hostCapabilities?.includes("memory") === true ? envelope.memory : undefined,
+        bridge,
+      );
       const built = await buildExecuteRunDeps({
         env,
         environment: {
@@ -205,9 +229,11 @@ export function createGuestLoopExecutor(
           createRuntimePreviewCapability(bridge),
           ...(plans === undefined ? [] : [plans]),
           ...(skills === undefined ? [] : [skills]),
+          memory,
         ],
       });
       if (plans !== undefined) built.deps.capabilityRegistry?.register(plansSettingsSpec);
+      built.deps.capabilityRegistry?.register(memorySettingsSpec);
       built.deps.llm = guestModelProvider(runId, envelope.modelLeaseId, bridge);
       built.deps.traceStore = guestTraceStore(envelope.owner, envelope.priorExecution, bridge);
       let sequence = 0;

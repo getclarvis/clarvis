@@ -247,6 +247,19 @@ describe("handleLoadSkillCall", () => {
     expect(res.text).toContain("offset requires a bundled resource path");
   });
 
+  it("treats offset zero on the primary body as a harmless provider serialization", () => {
+    const res = handleLoadSkillCall({
+      call: call({ arguments: { name: "alpha", resource: "alpha/SKILL.md", offset: 0 } }),
+      skills: fakeSkills(),
+      trace: makeTrace(),
+      agent: "subagent",
+      iteration: 1,
+      validateArgs,
+    });
+    expect(res.error).toBe(false);
+    expect(res.text).toContain("ALPHA BODY");
+  });
+
   it("rejects a resource offset past the end", () => {
     const res = handleLoadSkillCall({
       call: call({ arguments: { name: "alpha", resource: "notes.md", offset: 4 } }),

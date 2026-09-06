@@ -269,8 +269,22 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
         };
         const previews = createContainerRuntimePortPreview(options.control, name);
         let stopped = false;
+        let exited = false;
+        void attached.exited.then(
+          (code) => {
+            exited = true;
+            if (!stopped) peer.close(new Error(`Docker runtime process exited (${String(code)})`));
+          },
+          () => {
+            exited = true;
+            if (!stopped) peer.close(new Error("Docker runtime process exit was unavailable"));
+          },
+        );
         return {
           info,
+          get closed() {
+            return stopped || exited || peer.closed;
+          },
           startRun: (runId, envelope, signal) =>
             peer.request("runtime.start", { generation: spec.generation, runId }, envelope, {
               ...(signal === undefined ? {} : { signal }),

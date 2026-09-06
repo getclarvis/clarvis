@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { MEMORY_READ_TOOL_NAMES, MEMORY_WRITE_TOOL_NAMES } from "@clarvis/memory/capability";
 import {
   createGuestLoopExecutor,
   type GuestExecutionBridge,
@@ -304,6 +305,126 @@ describe("runtime guest loop", () => {
         arguments: { operation: "load", name: "container-review" },
       },
     ]);
+  });
+
+  it("projects host memory into the prompt, proxies tools, and finalizes after host persistence", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-guest-memory-"));
+    directories.push(root);
+    const workspaceRoot = join(root, "workspace");
+    await mkdir(workspaceRoot);
+    const capabilityCalls: unknown[] = [];
+    const modelBodies: unknown[] = [];
+    let tracePersisted = false;
+    let modelCall = 0;
+    const bridge: GuestExecutionBridge = {
+      async model(_callId, request) {
+        modelCall += 1;
+        modelBodies.push(request.body);
+        return {
+          events: [
+            {
+              type: "result",
+              result:
+                modelCall === 1
+                  ? {
+                      toolCalls: [
+                        {
+                          id: "read-memory-1",
+                          name: "read_memory",
+                          arguments: { paths: ["PROFILE.md"] },
+                        },
+                      ],
+                      usage: {
+                        input_tokens: 1,
+                        output_tokens: 1,
+                        cached_tokens: 0,
+                        cache_write_tokens: 0,
+                      },
+                    }
+                  : {
+                      text: "memory loaded",
+                      usage: {
+                        input_tokens: 1,
+                        output_tokens: 1,
+                        cached_tokens: 0,
+                        cache_write_tokens: 0,
+                      },
+                    },
+            },
+          ],
+          outputBytes: 128,
+        };
+      },
+      async capability(_callId, request) {
+        capabilityCalls.push(request);
+        const args = request.arguments as { operation?: unknown };
+        if (args.operation === "seed") return { kind: "seed", value: "HOST_MEMORY_SEED" };
+        if (args.operation === "call") {
+          return { kind: "result", text: "HOST_MEMORY_DOCUMENT", isError: false };
+        }
+        if (args.operation === "finish") {
+          expect(tracePersisted).toBe(true);
+          return { kind: "finished" };
+        }
+        throw new Error("unexpected memory operation");
+      },
+      async event(event) {
+        if (
+          typeof event === "object" &&
+          event !== null &&
+          (event as { channel?: unknown }).channel === "trace_record"
+        ) {
+          tracePersisted = true;
+        }
+      },
+      async checkpoint() {},
+    };
+
+    await expect(
+      createGuestLoopExecutor({ workspaceRoot, scratchRoot: join(root, "scratch") }).execute(
+        "exec_guest_memory",
+        {
+          owner: "owner",
+          modelLeaseId: "lease",
+          hostCapabilities: ["memory"],
+          memory: {
+            providerDigest: "a".repeat(64),
+            seedMaxChars: 6_000,
+            readTools: ["list_memories", "read_memory", "grep_memories", "query_memories"],
+          },
+          rawBody: {
+            execution_id: "exec_guest_memory",
+            messages: [{ role: "user", content: "use memory" }],
+            servers: [],
+            profiles: [{ name: "solo", model: "anthropic/x", tools: [], iteration_limit: 3 }],
+            entry: "solo",
+            providers: [{ name: "anthropic", kind: "anthropic" }],
+            memory: "on",
+            budget: { on_exceed: "stop", total_token_limit: 1_000 },
+          },
+        },
+        bridge,
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      executionId: "exec_guest_memory",
+      response: { status: "completed", result: "memory loaded" },
+    });
+    expect(JSON.stringify(modelBodies[0])).toContain("HOST_MEMORY_SEED");
+    expect(JSON.stringify(modelBodies[0])).toContain("## Memory");
+    expect(JSON.stringify(modelBodies[0])).toContain("read_memory");
+    expect(JSON.stringify(modelBodies[0])).not.toContain("write_memory");
+    const guestToolNames = (modelBodies[0] as { tools: Array<{ wireName: string }> }).tools.map(
+      (tool) => tool.wireName,
+    );
+    for (const name of MEMORY_READ_TOOL_NAMES) expect(guestToolNames).toContain(name);
+    for (const name of MEMORY_WRITE_TOOL_NAMES) expect(guestToolNames).not.toContain(name);
+    expect(JSON.stringify(modelBodies[1])).toContain("HOST_MEMORY_DOCUMENT");
+    expect(
+      capabilityCalls.map(
+        (request) => (request as { arguments: { operation: string } }).arguments.operation,
+      ),
+    ).toEqual(["seed", "call", "finish"]);
   });
 
   it("routes ask_user through the exact host capability and refuses a missing model result", async () => {

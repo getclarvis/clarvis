@@ -120,7 +120,10 @@ complete regular file of at most 8 MiB, but returns one UTF-8 page of at most 25
 characters; its continuation cursor is a byte offset and never splits a UTF-8 sequence or surrogate
 pair. `load_skill` validates every chunk returned by a provider and fails closed on a mismatched,
 unbounded, non-progressing or inexact cursor. A legacy provider without chunk support can serve only
-offset zero and never reinterprets the byte cursor as a character index.
+offset zero and never reinterprets the byte cursor as a character index. Because some model
+providers serialize an omitted optional integer as `0`, an offset of zero is also harmless when the
+call names the skill body (including a `SKILL.md` body alias); every non-zero offset still requires a
+real bundled resource.
 
 `hashBoundedFile` streams raw bytes through a fixed buffer, without decoding or retaining the whole
 file, and refuses a resource larger than the caller's bound. Kernel skill snapshots apply the public

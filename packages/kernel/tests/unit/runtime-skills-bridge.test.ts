@@ -17,6 +17,7 @@ import type { GuestExecutionBridge } from "../../src/runtime/execution-worker.ts
 import {
   createGuestSkillsCapability,
   createHostSkillsGrant,
+  createRuntimeSkillBootstraps,
   createRuntimeSkillCatalog,
   RUNTIME_SKILLS_METHOD,
   RUNTIME_SKILLS_REVISION,
@@ -184,6 +185,20 @@ describe("runtime skills bridge", () => {
     });
   });
 
+  it("projects active plugin bootstraps as bodies without disclosing their host roots", () => {
+    const bootstraps = createRuntimeSkillBootstraps(provider(), () => [
+      { plugin: "review-tools", skill: info.name, roots: [hostRoot] },
+    ]);
+    expect(bootstraps).toEqual([
+      {
+        plugin: "review-tools",
+        skill: info.name,
+        body: "Inspect the proposed change.",
+      },
+    ]);
+    expect(JSON.stringify(bootstraps)).not.toContain(hostRoot);
+  });
+
   it("rejects unknown skills, traversal and undeclared fields before provider access", () => {
     const grant = createHostSkillsGrant(provider(), createRuntimeSkillCatalog(provider()));
     expect(grant.validateArguments({ operation: "load", name: "missing" })).toBe(false);
@@ -290,6 +305,7 @@ describe("runtime skills bridge", () => {
     const capability = createGuestSkillsCapability(
       catalog,
       bridge(() => Promise.reject(new Error("unused"))),
+      [{ plugin: "review-tools", skill: info.name, body: "Mandatory review bootstrap." }],
     );
     expect(await capability.forRun(runContext(false))).toBeNull();
     const unavailable = await capability.forRun(runContext(true));
@@ -306,7 +322,7 @@ describe("runtime skills bridge", () => {
     expect(run?.systemSection?.({ agent: "subagent", entry: true, grants: [] })).toBeUndefined();
     expect(
       run?.systemSection?.({ agent: "subagent", entry: true, grants: ["use_skills"] }),
-    ).toContain("container-review");
+    ).toContain("Mandatory review bootstrap.");
     expect(run?.forAgent({ agent: "subagent", entry: true, grants: [] })).toBeNull();
   });
 
@@ -364,7 +380,7 @@ describe("runtime skills bridge", () => {
       {
         id: "alias",
         name: LOAD_SKILL_TOOL_NAME,
-        arguments: { name: info.name, resource: `${info.name}/SKILL.md` },
+        arguments: { name: info.name, resource: `${info.name}/SKILL.md`, offset: 0 },
       },
       3,
     );

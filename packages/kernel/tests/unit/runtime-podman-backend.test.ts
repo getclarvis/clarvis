@@ -41,6 +41,7 @@ function fakeControl(
 ) {
   const calls: readonly string[][] & string[][] = [];
   let guest: ReturnType<typeof createExecutionPeer> | undefined;
+  let resolveExit: ((code: number | null) => void) | undefined;
   const control: PodmanControl = {
     async run(args) {
       calls.push([...args]);
@@ -97,6 +98,9 @@ function fakeControl(
       const hostToGuest = new PassThrough();
       const guestToHost = new PassThrough();
       const stderr = new PassThrough();
+      const exited = new Promise<number | null>((resolve) => {
+        resolveExit = resolve;
+      });
       guest = createExecutionPeer({
         role: "guest",
         generation: spec.generation,
@@ -118,12 +122,17 @@ function fakeControl(
         stdin: hostToGuest,
         stdout: guestToHost,
         stderr,
-        exited: new Promise(() => undefined),
+        exited,
         kill: () => guest?.close(),
       };
     },
   };
-  return { control, calls, close: () => guest?.close() };
+  return {
+    control,
+    calls,
+    exit: (code: number | null = 0) => resolveExit?.(code),
+    close: () => guest?.close(),
+  };
 }
 
 describe("Podman runtime backend", () => {
@@ -163,11 +172,27 @@ describe("Podman runtime backend", () => {
   });
 
   it("refuses an image built for another private runtime protocol", async () => {
-    const fake = fakeControl({ protocolRevision: "3" });
+    const fake = fakeControl({ protocolRevision: "999" });
     const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
     await backend.inspect();
     await expect(backend.start(spec)).rejects.toMatchObject({ code: "handshake_mismatch" });
     expect(fake.calls.map((args) => args[0])).toEqual(["info", "image"]);
+  });
+
+  it("marks the session closed when the attached Podman process exits", async () => {
+    const fake = fakeControl();
+    const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+    await backend.inspect();
+    const session = await backend.start(spec);
+    expect(session.closed).toBe(false);
+    fake.exit(137);
+    await Bun.sleep(0);
+    expect(session.closed).toBe(true);
+    await expect(session.startRun("after-exit", {})).rejects.toMatchObject({
+      code: "unavailable",
+    });
+    await session.stop();
+    fake.close();
   });
 
   it("refuses a mutable or mismatched image before creating a container", async () => {

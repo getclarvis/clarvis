@@ -80,6 +80,7 @@ describe("isolated run executor", () => {
       lifecycle: "ready",
     };
     const session: RuntimeSession = {
+      closed: false,
       info,
       async startRun(runId) {
         await router.handlers["host.event"]!({
@@ -248,6 +249,7 @@ describe("isolated run executor", () => {
       roots,
       router: invalidRouter,
       session: {
+        closed: false,
         info,
         startRun: async () => null,
         steer: async () => undefined,
@@ -272,6 +274,7 @@ describe("isolated run executor", () => {
       roots,
       router: noCheckpointRouter,
       session: {
+        closed: false,
         info,
         startRun: async (runId) => ({ executionId: runId, response: { status: "done" } }),
         steer: async () => undefined,
@@ -286,9 +289,47 @@ describe("isolated run executor", () => {
       noCheckpoint({ ...args, rawBody: { execution_id: "no-checkpoint" } }),
     ).rejects.toMatchObject({ code: "unavailable" });
 
+    const boundaryController = new AbortController();
+    const boundaryOrder: string[] = [];
+    const boundaryRouter = createRuntimeAuthorityRouter(generation);
+    const boundary = createIsolatedRunExecutor({
+      generation,
+      workspaceRoot: join(root, "workspace"),
+      roots,
+      router: boundaryRouter,
+      session: {
+        closed: false,
+        info,
+        async startRun() {
+          boundaryOrder.push("start");
+          boundaryController.abort();
+          return null;
+        },
+        steer: async () => undefined,
+        cancel: async () => {
+          boundaryOrder.push("cancel");
+        },
+        exposePort: async () => Promise.reject(new Error("not exercised")),
+        stop: async () => undefined,
+      },
+      authority: (_value, runId) => authority(runId),
+      settleWorkspace: async () => undefined,
+    });
+    await expect(
+      boundary({
+        ...args,
+        rawBody: { execution_id: "boundary-abort" },
+        externalSignal: boundaryController.signal,
+      }),
+    ).rejects.toMatchObject({ code: "unavailable" });
+    expect(boundaryOrder).toEqual(["start", "cancel"]);
+
     let releaseStart!: () => void;
     const startGate = new Promise<void>((resolve) => (releaseStart = resolve));
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => (markStarted = resolve));
     let cancelled = false;
+    let startSignal: AbortSignal | undefined;
     const abortRouter = createRuntimeAuthorityRouter(generation);
     const aborting = createIsolatedRunExecutor({
       generation,
@@ -296,8 +337,11 @@ describe("isolated run executor", () => {
       roots,
       router: abortRouter,
       session: {
+        closed: false,
         info,
-        async startRun() {
+        async startRun(_runId, _envelope, signal) {
+          startSignal = signal;
+          markStarted();
           await startGate;
           return null;
         },
@@ -317,9 +361,11 @@ describe("isolated run executor", () => {
       rawBody: { execution_id: "aborted" },
       externalSignal: controller.signal,
     });
+    await started;
     controller.abort();
     await Bun.sleep(0);
     expect(cancelled).toBe(true);
+    expect(startSignal).toBeUndefined();
     releaseStart();
     await expect(abortedRun).rejects.toMatchObject({ code: "unavailable" });
 
@@ -339,6 +385,7 @@ describe("isolated run executor", () => {
         roots,
         router,
         session: {
+          closed: false,
           info,
           async startRun(runId) {
             await router.handlers["host.event"]!({

@@ -98,19 +98,23 @@ describe("private runtime execution RPC", () => {
   it("cancels the exact correlated request", async () => {
     const io = pair();
     let handlerAborted = false;
+    let calls = 0;
     const host = createExecutionPeer({
       role: "host",
       generation: "generation-1",
       input: io.hostInput,
       output: io.hostOutput,
       handlers: {
-        "host.model": ({ signal }) =>
-          new Promise((_resolve, reject) => {
+        "host.model": ({ signal }) => {
+          calls += 1;
+          if (calls === 2) return Promise.resolve({ recovered: true });
+          return new Promise((_resolve, reject) => {
             signal.addEventListener("abort", () => {
               handlerAborted = true;
               reject(Object.assign(new Error("cancelled"), { code: "cancelled" }));
             });
-          }),
+          });
+        },
       },
     });
     const guest = createExecutionPeer({
@@ -132,6 +136,15 @@ describe("private runtime execution RPC", () => {
     await expect(request).rejects.toMatchObject({ code: "cancelled" });
     await Bun.sleep(0);
     expect(handlerAborted).toBe(true);
+    await expect(
+      guest.request(
+        "host.model",
+        { generation: "generation-1", runId: "run-2", callId: "call-2" },
+        {},
+      ),
+    ).resolves.toEqual({ recovered: true });
+    expect(guest.closed).toBe(false);
+    expect(host.closed).toBe(false);
     host.close();
     guest.close();
   });

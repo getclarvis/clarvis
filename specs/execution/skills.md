@@ -122,11 +122,14 @@ Capability metadata is derived from the tool descriptor rather than spelled twic
   required: ["name"] }
 ```
 
-`offset` is valid only with `resource`, is measured in bytes, and callers copy it from the preceding
-page rather than deriving it from decoded text. Production: `loadSkillTool` in
+`offset` above zero is valid only with a real bundled `resource`, is measured in bytes, and callers
+copy it from the preceding page rather than deriving it from decoded text. A literal zero is also
+accepted on a body load, including a `SKILL.md` body alias, because some model providers serialize
+an omitted optional integer as `0`; it has no paging effect. Production: `loadSkillTool` in
 `packages/skills/src/tool.ts` and `handleLoadSkillCall` in `packages/skills/src/call.ts`. Test:
 `packages/skills/tests/unit/tool.test.ts` (schema) and `packages/skills/tests/unit/call.test.ts`
-(`offset requires a bundled resource path`).
+(`offset requires a bundled resource path` and `treats offset zero on the primary body as a
+harmless provider serialization`).
 
 ### 2.5 Settings / plugin-manifest key (owned by the engine, not this package)
 
@@ -655,7 +658,8 @@ empty the trailing instruction goes with it and only the bootstrap heads remain
 2. `resource` is trimmed; a value meaning "the skill's own body" — `""`, `.`, `./`, `/`, `SKILL.md`,
    `./SKILL.md`, or any path ending `<name>/SKILL.md` after backslash normalization — is dropped and
    the call becomes a body load (`:39`–`:44`, `:146`–`:153`; pinned at
-   `packages/skills/tests/unit/call.test.ts:190`).
+   `packages/skills/tests/unit/call.test.ts:190`). An accompanying `offset: 0` remains a body load;
+   any non-zero offset on that branch fails before `envelope.start()`.
 3. `envelope.start()` records `tool_call_started` (`:157`).
 4. **Resource branch**: the skill's existence is checked against `listSkills()` *before* any read.
    A provider with `readResourceChunk` receives the requested byte offset and at most 50 000 output
@@ -792,6 +796,20 @@ The one `SkillsProvider` the host builds is threaded three ways by `createInProc
 `KernelCapabilities.skills` from whether a provider was actually wired —
 `skills: opts.skillsProvider !== undefined` (`packages/kernel/src/kernel.ts:874`) — rather than
 leaving it at `DEFAULT_KERNEL_CAPABILITIES.skills`'s static `false` (`:250`–`:256`).
+
+Container placement reuses that same host-admitted provider snapshot rather than mounting any host
+skill root. `createRuntimeSkillCatalog` projects only safe catalog fields;
+`createHostSkillsGrant` serves admitted bodies and bounded resources through `runtime.skills`; and
+`createRuntimeSkillBootstraps` resolves only the active plugins' declarations through
+`resolveBootstrapSkills`, then serializes `{ plugin, skill, body }` without roots. The guest
+`createGuestSkillsCapability` renders those bootstrap bodies before the sanitized catalog and
+proxies `load_skill`; it accepts the same harmless body `offset: 0` but still requires a resource
+for every non-zero offset. Production: `packages/kernel/src/runtime/skills-bridge.ts` and
+`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-podman-runtime.ts`. Test:
+`packages/kernel/tests/unit/runtime-skills-bridge.test.ts` (path-free catalog, active bootstrap,
+offset-zero body and refusal cases) and
+`packages/kernel/tests/integration/local-podman-runtime.test.ts` (bootstrap reaches the guest
+prompt without a mount).
 
 ---
 
@@ -1016,6 +1034,16 @@ to this document.
     `parseSkillFrontmatterWithDefaults` and `parseSkillWithDefaults` in
     `packages/skills/src/parse.ts`. Test: `packages/skills/tests/integration/discovery.test.ts`
     ("applies Agent Skills identity validation only to roots that request it").
+53. **Container placement discloses skill content, never host roots, and resolves bootstrap bodies
+    only from active plugin declarations against the admitted provider snapshot.** A primary-body
+    call tolerates only `offset: 0`; every positive cursor still requires a real bundled resource.
+    Production: `createRuntimeSkillCatalog`, `createRuntimeSkillBootstraps`,
+    `createHostSkillsGrant` and `createGuestSkillsCapability` in
+    `packages/kernel/src/runtime/skills-bridge.ts`; native tolerance in `handleLoadSkillCall` at
+    `packages/skills/src/call.ts`. Test:
+    `packages/kernel/tests/unit/runtime-skills-bridge.test.ts` and
+    `packages/skills/tests/unit/call.test.ts` (`treats offset zero on the primary body as a harmless
+    provider serialization`).
 
 ---
 

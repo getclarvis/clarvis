@@ -48,6 +48,7 @@ function info(overrides: Partial<RuntimeInfo> = {}): RuntimeInfo {
 }
 
 const sessionMethods = {
+  closed: false,
   async startRun() {},
   async steer() {},
   async cancel() {},

@@ -9,6 +9,7 @@ import {
   type RunCapability,
   type ToolEffect,
   type ToolHandler,
+  type Logger,
 } from "@clarvis/capability";
 import type { SkillInfo, SkillResource } from "@clarvis/skills";
 import {
@@ -16,6 +17,8 @@ import {
   SKILL_RESOURCE_MAX_CHARS,
   loadSkillTool,
   renderSkillsSection,
+  resolveBootstrapSkills,
+  type PluginBootstrapSkill,
   type SkillsProvider,
 } from "@clarvis/skills/capability";
 import type { HostCapabilityGrant } from "./authority-brokers.ts";
@@ -33,6 +36,13 @@ export interface RuntimeSkillCatalogEntry {
   readonly source: string;
   readonly catalogSuppressed?: boolean;
   readonly dependencies?: SkillInfo["dependencies"];
+}
+
+/** Plugin bootstrap body already admitted by the host without its source roots. */
+export interface RuntimeSkillBootstrapEntry {
+  readonly plugin: string;
+  readonly skill: string;
+  readonly body: string;
 }
 
 interface SkillBridgeRequest {
@@ -117,6 +127,29 @@ export function createRuntimeSkillCatalog(provider: SkillsProvider): RuntimeSkil
           })),
         }),
   }));
+}
+
+/** Resolve only active plugins' bootstrap skills and remove every host-only root from the result. */
+export function createRuntimeSkillBootstraps(
+  provider: SkillsProvider,
+  load: (() => readonly PluginBootstrapSkill[]) | undefined,
+  logger?: Logger,
+): RuntimeSkillBootstrapEntry[] {
+  let refs: readonly PluginBootstrapSkill[];
+  try {
+    refs = load?.() ?? [];
+  } catch (error) {
+    logger?.warn(
+      { cause: error instanceof Error ? error.message : String(error) },
+      "bootstrap_skills_unavailable: could not read the plugins' declared bootstrap skills",
+    );
+    return [];
+  }
+  return resolveBootstrapSkills({
+    refs,
+    loadSkill: (name) => provider.loadSkill(name),
+    ...(logger === undefined ? {} : { logger }),
+  }).map(({ plugin, skill, body }) => ({ plugin, skill, body }));
 }
 
 /** Bind one run to read-only disclosure of the exact skill catalog admitted by its host. */
@@ -290,6 +323,7 @@ const SKILL_TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = {
 export function createGuestSkillsCapability(
   catalog: readonly RuntimeSkillCatalogEntry[],
   bridge: GuestExecutionBridge,
+  bootstraps: readonly RuntimeSkillBootstrapEntry[] = [],
 ): Capability {
   const listed = catalog.map(skillInfo);
   const names = new Set(listed.map((skill) => skill.name));
@@ -318,7 +352,7 @@ export function createGuestSkillsCapability(
         systemSection(identity): string | undefined {
           const selected = catalogFor(identity.grants);
           if (selected === undefined) return undefined;
-          const section = renderSkillsSection([...selected]);
+          const section = renderSkillsSection([...selected], bootstraps);
           return section.length > 0 ? section : undefined;
         },
         forAgent(scope): AgentCapability | null {
@@ -367,7 +401,11 @@ export function createGuestSkillsCapability(
                     resource !== undefined && !skillBodyResource(args.name, resource)
                       ? resource
                       : undefined;
-                  if (args.offset !== undefined && readResource === undefined) {
+                  if (
+                    args.offset !== undefined &&
+                    args.offset !== 0 &&
+                    readResource === undefined
+                  ) {
                     return {
                       kind: "result",
                       text: envelope.fail("offset requires a bundled resource path."),

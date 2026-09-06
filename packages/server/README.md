@@ -385,3 +385,9 @@ bun --filter @clarvis/server test:architecture
 bun --filter @clarvis/server typecheck
 bun --filter @clarvis/server start -- --workspace /path/to/ws
 ```
+
+The server image and isolated-runtime carrier both build from the repository root. The root
+`.dockerignore` starts from a deny-all rule and re-includes only manifests, package source, the
+isolated guest entry, and required license files. Credential stores, environment files, SSH/private
+keys, generated output, and arbitrary root directories therefore never enter the engine build
+context, even when a developer has placed them under an otherwise included package directory.

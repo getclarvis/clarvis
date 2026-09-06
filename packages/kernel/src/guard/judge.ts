@@ -180,7 +180,7 @@ export function createJudgeElicit(
   }
   const ref = parseModelRef(modelToken);
   const resolution = resolveProvider(ref.provider, deps.providers, ref.modelId);
-  if (!resolution.ok) {
+  if (resolution.ok === false) {
     deps.logger?.warn(
       { model: modelToken },
       `guard_judge: ${resolution.message} — degrading to mode 'on'`,

@@ -82,7 +82,7 @@ see **command-guard-and-approval**. This document covers only how the guard's ye
 
 | Symbol | Location | Shape |
 |---|---|---|
-| `ElicitBridge` | `packages/kernel/src/runs/elicit-bridge.ts:8` | `{ elicit: Elicit; onElicit(handler); respond(res) }` |
+| `ElicitBridge` | `packages/kernel/src/runs/elicit-bridge.ts` | engine `elicit`, reserved host `hostElicit`, `onElicit(handler)` and `respond(res)` |
 | `createElicitBridge(executionId)` | `packages/kernel/src/runs/elicit-bridge.ts:33` | one bridge per run, ids namespaced `<executionId>:elicit:<n>` |
 
 ### 2.5 Protocol wire shapes (`@clarvis/protocol`)
@@ -90,6 +90,7 @@ see **command-guard-and-approval**. This document covers only how the guard's ye
 | Symbol | Location | Shape |
 |---|---|---|
 | `ElicitationCommandDetail` | `ElicitationCommandDetail` in `packages/protocol/src/runs.ts` | `{ command, cwd, reason, warning? }` |
+| `WorkspaceMergeElicitationDetail` | `WorkspaceMergeElicitationDetail` in `packages/protocol/src/runs.ts` | exact host-held change-set identity, revisions and exhaustive changed entries |
 | `ElicitationRequest` | `ElicitationRequest` in `packages/protocol/src/runs.ts` | `{ id, execution_id, kind, prompt, schema?, detail? }` |
 | `ElicitationResponse` | `ElicitationResponse` in `packages/protocol/src/runs.ts` | `{ id, action: "accept"\|"decline"\|"cancel", content? }` |
 | `RunHandle.respond(response)` | `RunHandle.respond` in `packages/protocol/src/runs.ts` | answers a pending elicitation |
@@ -142,6 +143,7 @@ concern of **kernel-transport-and-wire**; this document stops at the DTO shapes 
 |---|---|---|
 | `ElicitRequestParams` | `packages/code/src/adapters/elicit-types.ts:19` | `{ message, kind?, detail?, requestedSchema?, mode?, url? }` — a local mirror of the protocol type, kept dependency-free of the SDK |
 | `ElicitCommandDetail` | `packages/code/src/adapters/elicit-types.ts:43` | `{ command, cwd, reason, warning? }` |
+| `WorkspaceMergeDetail` | `packages/code/src/adapters/elicit-types.ts` | local mirror of the complete isolated-workspace review |
 | `ElicitResult` | `packages/code/src/adapters/elicit-types.ts:57` | `{ action, content? }` |
 | `ElicitSlot` | `packages/code/src/adapters/elicit-slot.ts:9` | `{ request, ask(params), resolve(result), cancelPending() }` — single-slot queue |
 | `parseElicitForm(params)` | `packages/code/src/adapters/elicitation.ts:121` | derives a renderable `ElicitForm` from the wire params |
@@ -237,17 +239,17 @@ JSON-Schema `enum` array (each value used as both `value` and `label`) or a `one
 (`{value:"true",label:"yes"}`/`{value:"false",label:"no"}`) so it renders as a choice like any other
 (`:75-81`).
 
-Three decision-relabeling tables — `GUARD_DECISION_LABELS`, `PLAN_DECISION_LABELS`,
-`WORKFLOW_DECISION_LABELS` — and the `DECISION_LABELS` dispatch keyed by `params.kind`
+Four decision-relabeling tables — `GUARD_DECISION_LABELS`, `PLAN_DECISION_LABELS`,
+`WORKFLOW_DECISION_LABELS`, `WORKSPACE_MERGE_DECISION_LABELS` — and the `DECISION_LABELS` dispatch keyed by `params.kind`
 (`packages/code/src/adapters/elicitation.ts:85-107,136-139`) rewrite a field's option `label`s from the raw wire values
 (`"allow_session"`) into user-facing wording (`"allow for this session"`) whenever `kind` is
-`"guard_confirm"`, `"plan_review"` or `"workflow_review"`; `option.value` (what is actually sent back)
-is untouched.
+`"guard_confirm"`, `"plan_review"`, `"workflow_review"` or `"workspace_merge"`; `option.value` (what
+is actually sent back) is untouched.
 
 `initialValues(fields, choiceInitialSelection)` (`:150-175`) seeds each field's starting string value.
 Its `ChoiceInitialSelection` parameter defaults to `"first"` (a `select`/`boolean` field with no
 `default` starts on its first option), but a caller may pass `"none"` to leave every choice field blank
-instead. `ElicitBlock` passes `"none"` for both `plan_review` and `workflow_review`; an untouched
+instead. `ElicitBlock` passes `"none"` for `plan_review`, `workflow_review`, and `workspace_merge`; an untouched
 confirmation therefore reports the required field as missing instead of accepting whichever enum
 member happens to be first. As a second fail-safe, `buildRunWorkflowHandler` authors the workflow
 decision enum as `["cancel", "run"]` and treats every non-`run`/no-response outcome as cancellation.

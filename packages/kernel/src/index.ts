@@ -5,8 +5,142 @@ export type { ComponentLoggers } from "./component-loggers.ts";
 export type { InProcessKernel, OwnerScopedKernel, CreateKernelOptions } from "./kernel.ts";
 export type { ConnectionEvent, ConnectionEventSink } from "./connection-health.ts";
 
+export { assertRuntimeLaunchSpec } from "./runtime/launch-policy.ts";
+export { RUNTIME_PROTOCOL_LABEL, RUNTIME_PROTOCOL_REVISION } from "./runtime/protocol-revision.ts";
+export { createRuntimeSupervisor } from "./runtime/supervisor.ts";
+export type { RuntimeSupervisor } from "./runtime/supervisor.ts";
+export {
+  RuntimeLaunchError,
+  type RuntimeAvailability,
+  type RuntimeBackend,
+  type RuntimeInfo,
+  type RuntimeKind,
+  type RuntimeLaunchSpec,
+  type RuntimeLifecycleState,
+  type RuntimeLimits,
+  type RuntimeNetworkMode,
+  type RuntimePortPreview,
+  type RuntimePreviewProtocol,
+  type RuntimeSession,
+  type RuntimeUnavailableReason,
+} from "./runtime/types.ts";
+export {
+  captureRuntimeWorkspace,
+  diffRuntimeWorkspace,
+  isWorkspaceManifest,
+  scanRuntimeWorkspace,
+  WorkspaceCopyError,
+  DEFAULT_WORKSPACE_SCAN_LIMITS,
+  type WorkspaceChangeSet,
+  type WorkspaceManifest,
+  type WorkspaceManifestEntry,
+  type WorkspaceScanLimits,
+} from "./runtime/workspace-copy.ts";
+export {
+  loadRuntimeWorkspace,
+  commitRuntimeBaseline,
+  prepareRuntimeWorkspace,
+  setRuntimeState,
+  RuntimeStoreError,
+  type PreparedRuntimeWorkspace,
+  type PrepareRuntimeWorkspaceOptions,
+  type RuntimeRecord,
+} from "./runtime/runtime-store.ts";
+export {
+  applyRuntimeWorkspaceReview,
+  recoverRuntimeWorkspaceApply,
+  reviewRuntimeWorkspace,
+  WorkspaceApplyError,
+  type RuntimeWorkspaceReview,
+  type WorkspaceApplyControl,
+} from "./runtime/workspace-apply.ts";
+export {
+  settleRuntimeWorkspace,
+  type HostWorkspaceMergeElicit,
+  type RuntimeWorkspaceSettlement,
+} from "./runtime/workspace-settlement.ts";
+export {
+  createExecutionPeer,
+  decodeExecutionFrame,
+  GUEST_EXECUTION_METHODS,
+  HOST_EXECUTION_METHODS,
+  MAX_EXECUTION_FRAME_BYTES,
+  MAX_EXECUTION_QUEUE_BYTES,
+  MAX_EXECUTION_QUEUE_FRAMES,
+  type ExecutionIdentity,
+  type ExecutionMethod,
+  type ExecutionPeer,
+  type ExecutionPeerRole,
+  type ExecutionRequest,
+  type ExecutionRequestHandler,
+  type GuestExecutionMethod,
+  type HostExecutionMethod,
+} from "./runtime/execution-rpc.ts";
+export {
+  createCapabilityBroker,
+  createModelBroker,
+  type BrokerIdentity,
+  type CapabilityBroker,
+  type GuestCapabilityRequest,
+  type GuestModelRequest,
+  type HostCapabilityGrant,
+  type HostModelExecutor,
+  type HostModelResult,
+  type ModelBroker,
+  type ModelBrokerLease,
+} from "./runtime/authority-brokers.ts";
+export {
+  createPodmanRuntimeBackend,
+  type PodmanAttachedProcess,
+  type PodmanBackendOptions,
+  type PodmanCommandResult,
+  type PodmanControl,
+} from "./runtime/podman-backend.ts";
+export {
+  createDockerRuntimeBackend,
+  type DockerAttachedProcess,
+  type DockerBackendOptions,
+  type DockerCommandResult,
+  type DockerControl,
+} from "./runtime/docker-backend.ts";
+export {
+  appendRuntimeCheckpoint,
+  loadRuntimeCheckpoint,
+  settleRuntimeTerminal,
+  RuntimeCheckpointError,
+  type RuntimeCheckpoint,
+  type RuntimeCheckpointInput,
+  type RuntimeSettlementParticipant,
+} from "./runtime/runtime-checkpoints.ts";
+export { createPrivateRuntimeGit, RuntimeGitError } from "./runtime/private-git.ts";
+export {
+  serveExecutionWorker,
+  type GuestExecutionBridge,
+  type GuestRunExecutor,
+} from "./runtime/execution-worker.ts";
+export {
+  createRuntimeHostHandlers,
+  type RuntimeHostBridgeOptions,
+} from "./runtime/host-execution-bridge.ts";
+export {
+  runtimeSettingsSchema,
+  runtimeSettingsSpec,
+  type RuntimeSettingsBlock,
+  type RuntimeSettingsInput,
+} from "./runtime/settings.ts";
+export {
+  createIsolatedRunExecutor,
+  createRuntimeAuthorityRouter,
+  type RuntimeAuthorityRouter,
+} from "./runtime/isolated-run-executor.ts";
+export {
+  launchIsolatedRuntime,
+  type IsolatedRuntimeController,
+} from "./runtime/runtime-controller.ts";
+export { createGuestLoopExecutor } from "./runtime/guest-loop-executor.ts";
+
 export { createRunService } from "./runs/run-service.ts";
-export type { RunServiceConfig, RunRequestAssembler } from "./runs/run-service.ts";
+export type { RunExecutor, RunServiceConfig, RunRequestAssembler } from "./runs/run-service.ts";
 export { createMemoryService } from "./memory/memory-service.ts";
 export type { MemoryServiceConfig } from "./memory/memory-service.ts";
 export { createPlansService } from "./plans/plans-service.ts";

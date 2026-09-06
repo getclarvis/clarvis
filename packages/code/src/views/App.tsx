@@ -34,10 +34,10 @@ import type { ModelsCatalog } from "../adapters/models-catalog.ts";
 import type { ClarvisDirs } from "../adapters/agents.ts";
 import type { KeysAdapter } from "../adapters/provider-secrets.ts";
 import type { CodeConfigStore } from "../adapters/code-config.ts";
-import { guardAutoResolves, type GuardMode, type GuardModeStore } from "../adapters/guard-mode.ts";
+import type { GuardModeStore } from "../adapters/guard-mode.ts";
 import type { MemoryModeStore } from "../adapters/memory-mode.ts";
 import type { WorkflowActivity } from "../adapters/workflow-projection.ts";
-import { deriveRunControls } from "../adapters/execution-safety.ts";
+import { deriveRunControls, type IsolationMode } from "../adapters/execution-safety.ts";
 import type { ThemePreview } from "../theme/theme.ts";
 import { readEnvView } from "../adapters/agent-files.ts";
 import { registerCodeCommands } from "../app/command-composition.ts";
@@ -52,6 +52,7 @@ import type {
   ProviderAuthService,
   SkillsService,
   RunDetail,
+  RuntimeStatus,
   StorageService,
   WorkflowsService,
 } from "@clarvis/protocol";
@@ -110,9 +111,14 @@ import { activeDiagnosticLogger } from "../core/diagnostic-events.ts";
 import { SurfaceBoundary, SurfacePortal } from "../ui/patterns/surface-lifecycle.tsx";
 import { productVersion } from "../cli-args.ts";
 
-const SafetyPresetPicker = lazy(async () => {
-  const module = await import("./overlays/SafetyPresetPicker.tsx");
-  return { default: module.SafetyPresetPicker };
+const IsolationPicker = lazy(async () => {
+  const module = await import("./overlays/IsolationPicker.tsx");
+  return { default: module.IsolationPicker };
+});
+
+const ReviewPicker = lazy(async () => {
+  const module = await import("./overlays/ReviewPicker.tsx");
+  return { default: module.ReviewPicker };
 });
 
 /** Minimal painted alpha that lets OpenTUI hit-test the pointer blocker without hiding the UI. */
@@ -220,6 +226,8 @@ export interface AppRunControls {
     name: string;
     source?: string;
   } | null>;
+  /** Latest one-shot Docker-to-Sandbox fallback explanation from the host. */
+  runtimePlacementNotice?: Accessor<{ sequence: number; message: string } | null>;
   bang: (cmd: string) => boolean;
   localBusy: () => boolean;
   /** True while context compaction is awaiting hooks or a summary model call. */
@@ -283,6 +291,10 @@ export interface AppBackend {
   skills: SkillsService;
   tasks: TasksController;
   storage: StorageService;
+  /** Host-reported execution placement and effective container policy. */
+  runtime?: () => RuntimeStatus | undefined;
+  /** Clear a session-latched Docker fallback; the next run starts it lazily again. */
+  retryRuntime: () => void;
   reconnect: () => Promise<{ ok: boolean; message: string }>;
 }
 
@@ -363,6 +375,14 @@ export function App(props: AppProps): JSX.Element {
             "withheld until reconnect",
       "warn",
     );
+  });
+  let shownRuntimePlacementNotice = 0;
+  createEffect(() => {
+    const notice = props.run.runtimePlacementNotice?.();
+    if (notice === undefined || notice === null || notice.sequence === shownRuntimePlacementNotice)
+      return;
+    shownRuntimePlacementNotice = notice.sequence;
+    notify(notice.message, "warn");
   });
   let shownUpdateVersion: string | undefined;
   createEffect(() => {
@@ -624,16 +644,6 @@ export function App(props: AppProps): JSX.Element {
    */
   const refuseAtFloor = (): boolean => layoutMode() === "floor";
 
-  const warnIfAutoDegrades = (mode: GuardMode): void => {
-    if (mode !== "auto") return;
-    if (!guardAutoResolves(props.fleet.settings)) {
-      notify(
-        `guard 'auto' needs a usable default_model for the LLM judge ${glyph("emDash")} it will fall back to asking you (on)`,
-        "warn",
-      );
-    }
-  };
-
   const effects: InteractionEffects = {
     interactionBlocked: () => props.run.switching?.() ?? false,
     cancelRun: () => props.run.cancel(),
@@ -655,14 +665,11 @@ export function App(props: AppProps): JSX.Element {
     openAgentPicker: (onClose) => {
       if (overlays.openPicker("agentPicker", onClose)) notify("");
     },
-    openSafetyPresetPicker: () => {
-      if (overlays.openPicker("safetyPicker")) notify("");
+    openIsolationPicker: () => {
+      if (overlays.openPicker("isolationPicker")) notify("");
     },
-    cycleGuardMode: () => {
-      if (overlays.overlay() !== "none") return;
-      const mode = props.fleet.guard.cycle();
-      notify(`guard: ${mode} (this session)`);
-      warnIfAutoDegrades(mode);
+    openReviewPicker: () => {
+      if (overlays.openPicker("reviewPicker")) notify("");
     },
     focusNext: () => {
       ts.clearFocus();
@@ -933,6 +940,7 @@ export function App(props: AppProps): JSX.Element {
     refreshAgentProfiles: props.fleet.refreshAgentProfiles,
     keys: props.fleet.keys,
     reconnectBackend: props.backend.reconnect,
+    retryRuntime: props.backend.retryRuntime,
     env,
     preview: props.fleet.preview,
     platform: props.shell.platform,
@@ -1010,6 +1018,12 @@ export function App(props: AppProps): JSX.Element {
     );
   const agentName = (): string =>
     props.fleet.agents.view()?.name ?? (props.fleet.agents.active() || "no agent");
+  const effectiveIsolation = (): IsolationMode => {
+    const runtime = props.backend.runtime?.();
+    if (runtime?.kind === "native" && runtime.lifecycle === "fallback") return "sandbox";
+    if (runtime?.kind === "container") return runtime.engine;
+    return runControls().isolation;
+  };
   const headerPlan = createMemo(() =>
     projectHeader({
       width: dims().w - 1,
@@ -1018,10 +1032,12 @@ export function App(props: AppProps): JSX.Element {
       floor: layoutMode() === "floor",
       agentName: agentName(),
       model: resolvedModel(),
-      safetyPreset: runControls().preset,
-      guardMode: runControls().guardMode,
+      isolation: effectiveIsolation(),
+      review: runControls().guardMode,
       sandboxUnavailable:
-        runControls().sandboxEnabled && appWiring.sandboxInspection()?.backend.available === false,
+        effectiveIsolation() === "sandbox" &&
+        props.backend.runtime?.()?.lifecycle !== "fallback" &&
+        appWiring.sandboxInspection()?.backend.available === false,
       memoryConfigured: props.fleet.memoryMode.configured(),
       memory: runControls().memory,
       plans: runControls().plans,
@@ -1499,13 +1515,33 @@ export function App(props: AppProps): JSX.Element {
           )}
         </SurfaceBoundary>
         <SurfaceBoundary
-          active={() => overlays.overlay() === "safetyPicker"}
+          active={() => overlays.overlay() === "isolationPicker"}
           retention="retain-one"
           placement="portal"
         >
           {(lifecycle) => (
-            <Suspense fallback={<text>Loading safety presets{glyph("ellipsis")}</text>}>
-              <SafetyPresetPicker
+            <Suspense fallback={<text>Loading isolation{glyph("ellipsis")}</text>}>
+              <IsolationPicker
+                interaction={interaction}
+                settings={props.fleet.settings}
+                runActive={props.run.active}
+                active={lifecycle.active}
+                retryRuntime={props.backend.retryRuntime}
+                notify={notify}
+                onClose={() => overlays.dismissTop()}
+                onApplied={() => overlays.dismissTop()}
+              />
+            </Suspense>
+          )}
+        </SurfaceBoundary>
+        <SurfaceBoundary
+          active={() => overlays.overlay() === "reviewPicker"}
+          retention="retain-one"
+          placement="portal"
+        >
+          {(lifecycle) => (
+            <Suspense fallback={<text>Loading command review{glyph("ellipsis")}</text>}>
+              <ReviewPicker
                 interaction={interaction}
                 settings={props.fleet.settings}
                 guard={props.fleet.guard}

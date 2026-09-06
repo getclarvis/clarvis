@@ -101,6 +101,13 @@ describe("wire handshake", () => {
       { ...HELLO, wire_version: 1 },
       { ...HELLO, unexpected: true },
       { ...HELLO, workspace: { ...HELLO.workspace, kind: "unknown" } },
+      {
+        ...HELLO,
+        capabilities: {
+          ...HELLO.capabilities,
+          runtime: { kind: "container", engine: "podman", generation: "forged" },
+        },
+      },
     ]) {
       const transport = new FakeTransport();
       transport.helloResult = helloResult;
@@ -108,6 +115,37 @@ describe("wire handshake", () => {
         "invalid or unsupported Clarvis wire contract",
       );
       expect(transport.closeCount).toBe(1);
+    }
+  });
+
+  it("preserves a complete effective runtime status", async () => {
+    for (const engine of ["podman", "docker"] as const) {
+      const transport = new FakeTransport();
+      transport.helloResult = {
+        ...HELLO,
+        capabilities: {
+          ...HELLO.capabilities,
+          runtime: {
+            kind: "container",
+            generation: "generation-1",
+            engine,
+            engine_version: "5.4.0",
+            host_platform: "linux",
+            guest_platform: "linux",
+            image_digest: `sha256:${"a".repeat(64)}`,
+            runtime_protocol_revision: "1",
+            network: "none",
+            lifecycle: "ready",
+          },
+        },
+      };
+      const client = await connectKernelClient(transport);
+      expect(client.capabilities.runtime).toMatchObject({
+        kind: "container",
+        engine,
+        guest_platform: "linux",
+      });
+      await client.close();
     }
   });
 
@@ -540,6 +578,53 @@ describe("remote run codec", () => {
       warning: "undecidable",
     });
     expect(transport.closeCount).toBe(0);
+    await client.close();
+  });
+
+  it("delivers a bounded typed workspace_merge detail", async () => {
+    const transport = new FakeTransport();
+    const client = await connectKernelClient(transport);
+    const handle = await client.runs.start({ execution_id: "exec-merge-ok", messages: [] });
+    let seen: unknown;
+    handle.onElicit((request) => {
+      seen = request;
+    });
+    transport.emit("run.elicitation", {
+      request: {
+        id: "exec-merge-ok:elicit:0",
+        execution_id: "exec-merge-ok",
+        kind: "workspace_merge",
+        prompt: "Merge all?",
+        detail: {
+          change_set_id: "change",
+          baseline_revision: "before",
+          content_digest: "after",
+          changes: [
+            { path: "src/a.ts", action: "modify", type: "file", mode: 0o644, size: 2, digest: "d" },
+          ],
+        },
+      },
+    });
+
+    expect(seen).toMatchObject({ kind: "workspace_merge", detail: { change_set_id: "change" } });
+    expect(transport.closeCount).toBe(0);
+    await client.close();
+  });
+
+  it("closes on a workspace_merge without its exact typed detail", async () => {
+    const transport = new FakeTransport();
+    const client = await connectKernelClient(transport);
+    await client.runs.start({ execution_id: "exec-merge-bad", messages: [] });
+    transport.emit("run.elicitation", {
+      request: {
+        id: "exec-merge-bad:elicit:0",
+        execution_id: "exec-merge-bad",
+        kind: "workspace_merge",
+        prompt: "Merge all?",
+        detail: { command: "true", cwd: "/", reason: "forged shape" },
+      },
+    });
+    expect(transport.closeCount).toBe(1);
     await client.close();
   });
 

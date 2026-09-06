@@ -18,7 +18,8 @@ import type { Interaction } from "../../src/keys/interaction.ts";
 import { ActivityDetail } from "../../src/views/overlays/ActivityDetail.tsx";
 import { WorktreeExitPrompt } from "../../src/views/overlays/WorktreeExitPrompt.tsx";
 import { AgentProfilePicker } from "../../src/views/overlays/AgentProfilePicker.tsx";
-import { SafetyPresetPicker } from "../../src/views/overlays/SafetyPresetPicker.tsx";
+import { IsolationPicker } from "../../src/views/overlays/IsolationPicker.tsx";
+import { ReviewPicker } from "../../src/views/overlays/ReviewPicker.tsx";
 import { CatalogPicker } from "../../src/views/config/CatalogPicker.tsx";
 import { ElicitBlock } from "../../src/views/ElicitBlock.tsx";
 import { HintToast } from "../../src/views/Footer.tsx";
@@ -607,12 +608,32 @@ const cases: SoakCase[] = [
     ),
   },
   {
-    name: "safety-preset-picker-retained",
+    name: "isolation-picker-retained",
     portal: true,
     render: (open) => (
       <SurfaceBoundary active={open} retention="retain-one">
         {(lifecycle) => (
-          <SafetyPresetPicker
+          <IsolationPicker
+            interaction={fakeInteraction}
+            settings={safetySettings}
+            runActive={() => false}
+            active={lifecycle.active}
+            retryRuntime={() => {}}
+            notify={() => {}}
+            onClose={() => {}}
+            onApplied={() => {}}
+          />
+        )}
+      </SurfaceBoundary>
+    ),
+  },
+  {
+    name: "review-picker-retained",
+    portal: true,
+    render: (open) => (
+      <SurfaceBoundary active={open} retention="retain-one">
+        {(lifecycle) => (
+          <ReviewPicker
             interaction={fakeInteraction}
             settings={safetySettings}
             guard={safetyGuard}
@@ -829,7 +850,8 @@ const PRODUCTION_CASES = new Set([
   "activity-detail-200-markdown-sections",
   "worktree-exit-prompt",
   "agent-profile-picker-retained-30-agents",
-  "safety-preset-picker-retained",
+  "isolation-picker-retained",
+  "review-picker-retained",
   "catalog-picker-retained-100-rows",
   "elicit-guard-confirm",
   "sidebar-drawer-retained-64-agents",

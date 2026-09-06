@@ -57,9 +57,10 @@ export interface InteractionEffects {
    *   screen first uses it to put the user back there.
    */
   openAgentPicker(onClose?: () => void): void;
-  /** Open the canonical safety-preset picker. */
-  openSafetyPresetPicker(): void;
-  cycleGuardMode(): void;
+  /** Open the isolation picker without changing command review. */
+  openIsolationPicker(): void;
+  /** Open the command-review picker without changing isolation. */
+  openReviewPicker(): void;
   /** Move to the next focus target without activating it or changing transcript selection. */
   focusNext(): void;
   toggleExpandAll(): void;
@@ -103,14 +104,15 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
   "app.suspend": [{ key: "ctrl+z" }],
   "focus.next": [{ key: "tab" }],
   "agent.picker": [{ key: "shift+tab" }],
-  "safety.picker": [
+  "isolation.picker": [
     { key: "alt+s", minimumProfile: "enhanced", requires: ["meta"] },
     { key: "ctrl+s" },
   ],
-  "controls.open": [
-    { key: "alt+r", minimumProfile: "enhanced", requires: ["meta"] },
+  "review.picker": [
     { key: "alt+g", minimumProfile: "enhanced", requires: ["meta"] },
+    { key: "ctrl+g" },
   ],
+  "controls.open": [{ key: "alt+r", minimumProfile: "enhanced", requires: ["meta"] }],
   "plan.open": [
     { key: "ctrl+p" },
     { key: "alt+p", minimumProfile: "enhanced", requires: ["meta"] },
@@ -130,7 +132,8 @@ export const DEFAULT_BINDING_CANDIDATES: Readonly<Record<string, readonly Bindin
 export const DEFAULT_WHEN: Record<string, string> = {
   "focus.next": "overlay==none",
   "agent.picker": "overlay==none",
-  "safety.picker": "overlay==none",
+  "isolation.picker": "overlay==none",
+  "review.picker": "overlay==none",
   "controls.open": "overlay==none",
   "plan.open": "overlay in (none, plan)",
   "transcript.scrollPageUp": "overlay==none",

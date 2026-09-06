@@ -30,10 +30,10 @@ names mapped to `src/*.ts` (`packages/kernel/tsconfig.json:11-34`). A machine-ch
 references and the root solution file from drifting apart.
 
 The executable Bun contract has the same single-owner shape. `mise.toml` carries the exact runtime,
-and `tooling/checks/bun-version.ts` projects it across CI, release packaging, the crash canary, Docker, all manifests,
-`@types/bun`, the resolved lockfile entry and an attributable version/revision line in every remote
-job. The checker is part of `lint:intent`, so a partial runtime upgrade cannot reach the pre-commit
-test phase.
+and `tooling/checks/bun-version.ts` projects it across CI, release packaging, the crash canary, both
+Docker build surfaces, all manifests, `@types/bun`, the resolved lockfile entry and an attributable
+version/revision line in every remote job. The checker is part of `lint:intent`, so a partial runtime
+upgrade cannot reach the pre-commit test phase.
 
 The second is that the distributable TUI is a **bundle with runtime-shaped invariants that no unit
 test can observe**, because the unit suite imports `src/` by path
@@ -78,6 +78,8 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `build:<pkg>` × 18 | `bun --filter @clarvis/<pkg> build` | `package.json` (`scripts.build:<pkg>`) |
 | `link` | `bun --filter @clarvis/code link` | `package.json` (`scripts.link`) |
 | `smoke` | `bun --filter @clarvis/code smoke` | `package.json` (`scripts.smoke`) |
+| `runtime:build` | build a final isolated-runtime image from the canonical released carrier digest; Docker by default | `package.json` (`scripts.runtime:build`) |
+| `runtime:build:dev` | build a current-source carrier, then the same final isolated-runtime image | `package.json` (`scripts.runtime:build:dev`) |
 | `release:package` / `release:smoke` / `release:install-smoke` | native portable archive, artifact smoke, and installer smoke | `package.json` (`scripts.release:*`) |
 | `check:release` | root/installers/repository identity; tag identity when `RELEASE_TAG` is supplied | `package.json` (`scripts.check:release`) |
 | `bench:code` | `bun --filter @clarvis/code bench` | `package.json` (`scripts.bench:code`) |
@@ -85,9 +87,10 @@ never called. Code splitting is therefore a memory invariant, not a deployment p
 | `check:bun-version` | `bun run tooling/checks/bun-version.ts` | `package.json` (`scripts.check:bun-version`) |
 | `check:bun-sources` | `bun run tooling/checks/bun-sources.ts` | `package.json` (`scripts.check:bun-sources`) |
 
-Root tooling currently comprises nine executable TypeScript checks under `tooling/checks/`, five
-shared libraries under `tooling/lib/`, and twelve classified test files under `tooling/tests/` (ten unit
-and two architecture).
+Root tooling currently comprises ten executable TypeScript checks under `tooling/checks/`, six
+shared libraries under `tooling/lib/`, three isolated-runtime build/manifest entries under
+`tooling/runtime/`, and seventeen classified test files under `tooling/tests/` (fourteen unit and
+three architecture).
 
 `check:specs` scans tracked and unignored Markdown and source files for dangerous characters,
 documentation links and explicit repository-path line citations. A citation to an existing target
@@ -102,7 +105,7 @@ Production: `tooling/checks/spec-hygiene.ts` (`invalidCitations`, `failedCitatio
 `mise.toml:1-2` pins the toolchain to `bun = "1.4.0"` exactly.
 
 Root `devDependencies` hold the entire toolchain — `@eslint/js`, `@types/bun` (pinned `1.4.0`),
-`@types/node`, `eslint`, `globals`, `knip`, `prettier`, `typescript ^6.0.3`, and `typescript-eslint`
+`@types/node`, `@types/picomatch`, `eslint`, `globals`, `knip`, `prettier`, `typescript ^6.0.3`, and `typescript-eslint`
 (`package.json`, `devDependencies`). No package re-declares them. `allowScripts` permits post-install
 scripts for `esbuild@0.28.1` only (`package.json`, `allowScripts`).
 
@@ -386,8 +389,51 @@ product default while keeping the deployment policy explicit (`:51-52`); and
 `CLARVIS_DEFAULT_ON_EXCEED=stop` — "Headless: never park a run on an elicitation nobody will answer"
 (`:54`).
 
-`.dockerignore` excludes `**/node_modules`, `**/dist`, `**/coverage`, `**/*.tsbuildinfo`,
-`**/.clarvis`, `**/keys.json`, `.git`, `.github`, `docs` (`.dockerignore:1-9`).
+`.dockerignore` starts with `**` and re-includes only the root build manifests, package tree,
+isolated-runtime guest entry and required license files. Its final rules re-exclude generated
+outputs and credential shapes (`.clarvis`, `keys.json`, `subscriptions.json`, environment and
+package-manager credential files, SSH material, PEMs and private keys), including when one appears
+under an otherwise included directory. Arbitrary root directories such as `build/`, `.git/`,
+`.github/` and `docs/` stay excluded without needing an ever-growing blacklist.
+
+### 3.3a The isolated-runtime carrier boundary
+
+The isolated runtime has two Containerfiles with deliberately different jobs:
+
+| Surface | Input | Output |
+| --- | --- | --- |
+| `Containerfile.runtime` | canonical `ghcr.io/getclarvis/clarvis-runtime-artifact@sha256:<digest>`, digest-pinned Debian slim base, and checksum-pinned mise release | runnable guest image with the released executable, licenses, Git/CA and mise bootstrap |
+| `Containerfile.runtime-development` | root manifests, frozen lockfile, repository source, and a digest-pinned Bun build image | scratch OCI carrier containing only `/clarvis-runtime` and `/licenses` |
+
+The production surface contains no `COPY packages`, `bun install`, or `bun build`. It is therefore a
+consumer of a released internal artifact, not a source build disguised as a deployment image. The
+development surface copies all eighteen workspace manifests before the install so that manifest and
+lock changes invalidate the dependency layer while ordinary source edits do not. It compiles
+`tooling/runtime/guest-entry.ts`, whose static package imports make the Bun standalone dependency
+closure explicit; the worker itself remains `packages/kernel/src/runtime/guest-main.ts`.
+
+The runnable final stage intentionally contains no Node/npm, Python, Rust, compiler, curl or archive
+utility. A throwaway stage selects the mise 2026.8.2 Linux archive for native amd64/arm64, verifies
+the source-owned SHA-256, and passes only `/out/mise` plus its MIT license forward. Git and CA
+certificates are the only apt-installed final packages. The engine mounts `/mise` as executable
+ephemeral scratch; language runtimes installed there are runtime state, not image or source-build
+inputs. The image suppresses mise's self-update notice because the reviewed image build, rather than
+an individual guest session, owns that pinned bootstrap version.
+
+`tooling/runtime/build-image.ts` owns CLI construction. Release mode accepts only the canonical
+carrier repository at an immutable digest. Development mode builds a command-owned local carrier and
+then invokes the exact production Containerfile with `io.clarvis.runtime.development=true`.
+Artifact-only mode exists for the tag workflow. Docker is the default and Podman must be selected
+explicitly. Bun and Debian references are immutable; mise's version and both architecture checksums
+are source constants forwarded as build arguments. Both carrier and final image label the root
+product version, full source revision, protocol revision, source URL and MIT license, while the final
+image additionally labels its mise version.
+
+Production: both root runtime Containerfiles; `runtimeImageBuildPlan` and image constants in
+`tooling/runtime/build-image.ts`; `tooling/runtime/guest-entry.ts`; `RUNTIME_PROTOCOL_REVISION` in
+`packages/kernel/src/runtime/protocol-revision.ts`.
+Test: `tooling/tests/architecture/runtime-containerfiles.test.ts`,
+`tooling/tests/unit/runtime-image-build.test.ts`, and `tooling/tests/unit/bun-version.test.ts`.
 
 ### 3.4 Git attributes
 
@@ -729,10 +775,14 @@ Test: `packages/server/tests/architecture/docker-context.test.ts:14-18` — it r
 `workspaces` array and asserts `COPY <workspace>/package.json` appears for each, so adding a workspace
 without a Dockerfile line fails here.
 
-**BUILD-2 (INV-239, second half).** The repository-root `.dockerignore` excludes `node_modules`,
-`.clarvis` and `keys.json` from the build context.
-Production: `.dockerignore:1`, `:5`, `:6`.
-Test: `packages/server/tests/architecture/docker-context.test.ts:20-25`.
+**BUILD-2 (INV-239, second half).** The repository-root `.dockerignore` denies the whole context,
+re-includes only reviewed build inputs, then re-excludes generated output and credential-shaped
+files even below an included directory. A local `build/` fixture, subscription store, `.env`, SSH
+material or private key therefore cannot be sent to the engine merely because a Dockerfile does not
+copy it.
+Production: `.dockerignore`.
+Test: `packages/server/tests/architecture/docker-context.test.ts` (`allowlists the repository-root
+build context and re-excludes credentials`).
 
 **BUILD-3 (INV-258).** The `code` artifact loads the chunk containing `AiSdkAdapter` only through a
 generated dynamic import; an artifact with zero JS chunks, the adapter class in the entry, no
@@ -1029,6 +1079,20 @@ the owner. Production: root `package.json` (`scripts`, `devDependencies`), `.git
 `tooling/tests/architecture/repository-metadata.test.ts` (`keeps public-site ownership outside this
 monorepo`).
 
+**BUILD-38.** A production isolated-runtime image can acquire Clarvis code only from the canonical
+released carrier at an immutable digest. Repository source compilation is confined to
+`Containerfile.runtime-development`; that development carrier must use the same exact Bun version as
+`mise.toml` through a digest-pinned build image, and both paths must advertise the kernel-owned
+private protocol revision. The final image uses a digest-pinned Debian slim base and may acquire mise
+only from the exact versioned amd64/arm64 archives after matching their source-owned SHA-256 values;
+curl, archive utilities, language runtimes and compilers remain outside the final stage. Production:
+both root runtime Containerfiles;
+`runtimeImageBuildArgs`, `runtimeArtifactBuildArgs`, and `runtimeImageBuildPlan` in
+`tooling/runtime/build-image.ts`; `RUNTIME_PROTOCOL_REVISION` in
+`packages/kernel/src/runtime/protocol-revision.ts`. Test:
+`tooling/tests/architecture/runtime-containerfiles.test.ts`,
+`tooling/tests/unit/runtime-image-build.test.ts`, and `tooling/tests/unit/bun-version.test.ts`.
+
 ## 6. Failure modes and degradation
 
 | Situation | Handling | Citation |
@@ -1051,6 +1115,9 @@ monorepo`).
 | A missing entry in `specs/package-coupling-analysis.md` | `checkDocument` reports `"document is missing package row X"`; `process.exitCode = 1` | `tooling/lib/package-graph.ts:615-618`, `tooling/checks/package-graph.ts:23-28` |
 | Root version is invalid, a workspace or lock entry declares `version`, a workspace is not private, or an unapproved module imports the root manifest | `check:graph` reports the exact manifest, lock path, or source-policy violation | `tooling/lib/package-architecture.ts` (product-version policy helpers) |
 | A Bun version surface drifts | `check:bun-version` reports every offending file and observed value, then sets exit 1 | `tooling/checks/bun-version.ts:174-185` |
+| Runtime production input is mutable or from another repository | `runtimeImageBuildArgs` throws before invoking Docker/Podman | `tooling/runtime/build-image.ts` (`assertReleasedArtifact`) |
+| Runtime mise archive has the wrong architecture or bytes | the download stage rejects unsupported `dpkg` architecture or `sha256sum -c -` fails before the binary crosses into the final stage | `Containerfile.runtime` (`mise` stage) |
+| Runtime build exits nonzero or produces no exact local image ID | the helper preserves the engine exit or throws; it never reports a usable runtime identity | `tooling/runtime/build-image.ts` (`run`) |
 | Model catalog file exceeds 8 MiB, or the user cache is corrupt | `readCatalogFile` throws `"model catalog exceeds byte limit"`; a bad cache is silently ignored and the bundled snapshot returned | `packages/kernel/src/models/model-catalog.ts:172`, `:221-222` |
 | Neither models-dev.json candidate exists | `bundlePath()` returns the source-tree path anyway "so the ensuing read reports the location a developer expects" | `packages/kernel/src/models/model-catalog.ts:190-200` |
 | `code`'s temp-home cleanup races a live child | `rmSync` failure swallowed; comment: "a live child may still hold a handle; the OS reaps the temp dir" | `tooling/test-runtime/clarvis-home-preload.ts:30-32` |
@@ -1072,7 +1139,8 @@ sets it (`package.json`, `scripts.hooks:install`, is the only writer).
 | `typescript` ^6 | root devDependency; imported as a **library** by four repository-tooling modules (`tooling/lib/source-policy.ts`, `tooling/lib/package-graph.ts`, `tooling/checks/import-extensions.ts`, `tooling/tests/architecture/stream-metrics-drift.test.ts`) and five package architecture tests (three under `packages/code/tests/architecture/`, two under `packages/loop/tests/architecture/`) | static value import |
 | `@opentui/solid/bun-plugin` | `packages/code/tooling/artifact/build.ts:39` — the build cannot produce the artifact without it | static value import |
 | `@clarvis/paths` | `packages/code/tooling/artifact/pty.ts:16` and `packages/code/tooling/artifact/smoke.ts:33` use `globalPaths` so the fixture layout cannot drift from the vocabulary; `tooling/test-runtime/clarvis-home-preload.ts:5` uses `HOME_ENV` | static value import |
-| `docker` | only the `linux` CI job's step 10 (`.github/workflows/ci.yml:76`) | external process |
+| `docker` | Linux CI server-image build, default local isolated-runtime builder, live canary, and tag-only GHCR release jobs | external process |
+| `podman` | explicit alternative accepted by the isolated-runtime build helper; never selected implicitly | external process |
 | `script(1)` or `tmux` | `packages/code/tooling/artifact/pty.ts:118`, `:181` | external process |
 
 **What depends on this subsystem.**

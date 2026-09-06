@@ -1,7 +1,7 @@
 # The input dock, autocomplete and overlays
 
 > Implemented at
-> `packages/code/src/{views/InputDock.tsx, views/input/**, views/overlays/**, app/commands.tsx, features/run/safety-presets.ts, core/{prompt-history,fuzzy,attachments}.ts, adapters/local-shell.ts}`.
+> `packages/code/src/{views/InputDock.tsx, views/input/**, views/overlays/**, app/commands.tsx, features/run/{isolation,review}.ts, core/{prompt-history,fuzzy,attachments}.ts, adapters/local-shell.ts}`.
 > Every claim below is anchored to a file and line. Open questions are collected in the final
 > section.
 
@@ -168,7 +168,8 @@ Defaults: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_CAPTURE_BYTES = 64 * 1024`, `KILL
 | `ListPicker<T>(props)`                               | Generic filterable/scrollable/windowed picker inside a `FloatFrame`; an optional fixed `intro` declares its responsive `introRows` cost                                 | `packages/code/src/views/overlays/ListPicker.tsx` (`ListPicker`)                                                                                                      |
 | `ListPickerVerb<T>`                                  | shared `PanelVerbName` or one-off `{key,label,run,when?}`                                                                                                               | `:33-35`                                                                                                                                                              |
 | `AgentProfilePicker(props)`                               | `ListPicker` of Agent Profiles + a nested default-scope `ListPicker`                                                                                                    | `packages/code/src/views/overlays/AgentProfilePicker.tsx:53-186`                                                                                                           |
-| `SafetyPresetPicker(props)`                          | Lazy retained `ListPicker` over the six canonical execution postures, with armed confirmation for direct-host choices                                                   | `packages/code/src/views/overlays/SafetyPresetPicker.tsx` (`SafetyPresetPicker`)                                                                                      |
+| `IsolationPicker(props)`                             | Lazy retained `ListPicker` over Host, native Sandbox and lazy Docker, with armed confirmation before direct-host execution                                              | `packages/code/src/views/overlays/IsolationPicker.tsx` (`IsolationPicker`)                                                                                            |
+| `ReviewPicker(props)`                                | Lazy retained `ListPicker` over Off, Approval and Auto command review without changing isolation                                                                        | `packages/code/src/views/overlays/ReviewPicker.tsx` (`ReviewPicker`)                                                                                                  |
 | `Help(props)`                                        | Full-page live-projected key/action/destination reference with stable indexed rows                                                                                      | `packages/code/src/views/overlays/Help.tsx` (`Help`)                                                                                                                  |
 | `DiffViewer(props)`                                  | Full-screen page rendering one transcript tool node's diff via the tool registry; an optional active accessor gates retained key layers                                 | `packages/code/src/views/overlays/DiffViewer.tsx` (`DiffViewer`)                                                                                                      |
 | `PlanOverlay(props)`                                 | Full-screen current/latest-plan task/document viewer; an optional active accessor gates retained key layers and refreshes on reopen                                     | `packages/code/src/views/overlays/PlanOverlay.tsx` (`PlanOverlay`)                                                                                                    |
@@ -435,10 +436,11 @@ Up/Down only recall prompt history when the cursor is already on the buffer's fi
 (`atTop()`/`atBottom()`, `:216-224`); otherwise they move the cursor within a multi-line draft, so
 history recall and in-draft navigation share the same two keys without either shadowing the other.
 
-Ctrl+G toggles a separate **expanded Task editor** state (`:404-432`): the key layer swaps from
-`LAYER.INPUT` to `LAYER.OVERLAY` for the duration (so the editor's own Escape binding takes
-priority while it is open), and the draft text is untouched by the toggle — `onDock`
-exposes `expanded`/`closeEditor` explicitly so a caller can query or close it (`:65-70,327-335`).
+Ctrl+E toggles a separate **expanded Task editor** state (`registerEditorToggle`): the collapsed
+binding sits one priority above the managed textarea's Emacs-style Ctrl+E mapping, then swaps to
+`LAYER.OVERLAY` for the duration so the editor's own Escape binding takes priority while it is open.
+The draft text is untouched by the toggle — `onDock` exposes `expanded`/`closeEditor` explicitly so
+a caller can query or close it. Ctrl+G is not an editor command; the shell reserves it for Review.
 While expanded, Escape closes an open autocomplete popup first; only a second Escape (with no popup
 open) collapses the editor (`dismissAutocomplete`/the `escape` binding at `:429-437`). Pinned:
 `packages/code/tests/integration/input-dock-submit.test.tsx:169-262` ("inline composition is height-bounded and
@@ -599,17 +601,19 @@ name, matching Settings > Agents (`packages/code/src/adapters/active-agent.ts:85
 `packages/code/tests/unit/active-agent.test.ts` (`"agent list uses the same canonical presentation
 order as the Agents window"`).
 
-### `SafetyPresetPicker` (`views/overlays/SafetyPresetPicker.tsx`)
+### `IsolationPicker` and `ReviewPicker`
 
-The picker presents `SAFETY_PRESET_CHOICES` through the shared `ListPicker`, marks the currently
-derived posture, previews the sandbox boundary and judge behavior, and applies through the same
-`applySafetyPreset` function used by Run Controls. `free` and `judged` arm `useArmedConfirm` before
-writing because both remove the native sandbox; a second Enter accepts the pending choice and Escape keeps
-the current settings. `App` owns the overlay as a lazy `retain-one` portal boundary, so the component
-module does not enter first boot and its native tree is reused after first open. Production:
-`packages/code/src/features/run/safety-presets.ts`,
-`packages/code/src/views/overlays/SafetyPresetPicker.tsx`, and
-`packages/code/src/views/App.tsx` (`SafetyPresetPicker`, the `safetyPicker` boundary).
+The two quick pickers reuse `ListPicker` but never combine their state. `IsolationPicker` marks the
+effective Host/Sandbox/Docker boundary, persists the global choice through `applyIsolation`, and
+arms `useArmedConfirm` before Host removes containment. Its Docker choice writes only
+`runtime.backend`, strengthens the native Sandbox fallback and asks the existing coordinator to
+retry on the next run; it does not start Docker from the picker. `ReviewPicker` marks
+Off/Approval/Auto, writes through `applyReviewMode` at the current scope, preserves command policy
+and leaves Isolation untouched. Both are lazy `retain-one` portal boundaries, so neither module
+enters first boot and each native tree is reused after first open. Production:
+`packages/code/src/features/run/isolation.ts`, `packages/code/src/features/run/review.ts`,
+`packages/code/src/views/overlays/IsolationPicker.tsx`,
+`packages/code/src/views/overlays/ReviewPicker.tsx`, and `packages/code/src/views/App.tsx`.
 
 ### `Help` (`views/overlays/Help.tsx`)
 
@@ -925,18 +929,20 @@ settled turn's persisted continuation; an empty session reports that there is no
     duplicate their renderer resize listeners. Production:
     `packages/code/src/views/overlays/FloatFrame.tsx` (`FloatFrame`, `onSurfaceActivate`). Test:
     `packages/code/tests/integration/float-frame-render.test.tsx` (single navigation subtree and
-    listener cleanup) and `packages/code/tooling/benchmarks/overlays.tsx` (retained Profile, Safety
-    and Catalog picker cases).
-44. **The safety-preset picker is one lazy retained overlay over the shared preset contract.** It
-    mounts only after `safety.picker` opens it, reuses `ListPicker`, cannot own keys while inactive,
-    and cannot implement a settings merge that differs from Run Controls. Production:
-    `packages/code/src/views/App.tsx` (`SafetyPresetPicker`, the `safetyPicker` boundary),
-    `packages/code/src/views/overlays/SafetyPresetPicker.tsx`, and
-    `packages/code/src/features/run/safety-presets.ts` (`applySafetyPreset`). Tests:
+    listener cleanup) and `packages/code/tooling/benchmarks/overlays.tsx` (retained Profile,
+    Isolation, Review and Catalog picker cases).
+44. **Isolation and Review are independent lazy retained overlays over the same write contracts as
+    Run Controls.** They mount only after `isolation.picker` or `review.picker` opens them, reuse
+    `ListPicker`, cannot own keys while inactive, and cannot implement settings merges that differ
+    from Run Controls. Production: `packages/code/src/views/App.tsx`,
+    `packages/code/src/views/overlays/IsolationPicker.tsx`,
+    `packages/code/src/views/overlays/ReviewPicker.tsx`,
+    `packages/code/src/features/run/isolation.ts` (`applyIsolation`), and
+    `packages/code/src/features/run/review.ts` (`applyReviewMode`). Tests:
     `packages/code/tests/integration/app-shell-render.test.tsx`,
-    `packages/code/tests/integration/safety-preset-picker-render.test.tsx`,
-    `packages/code/tests/integration/interaction.test.ts`, and
-    `packages/code/tests/unit/safety-presets.test.ts`.
+    `packages/code/tests/integration/isolation-review-picker-render.test.tsx`,
+    `packages/code/tests/integration/run-controls-render.test.tsx`, and
+    `packages/code/tests/integration/interaction.test.ts`.
 45. **A fixed picker intro pays for its rows before list windowing.** A responsive intro reports zero
     rows while hidden; when visible, its full row count is subtracted before filter, preview and list
     space are allocated, so fixed branding cannot paint over the catalog or footer. Production:

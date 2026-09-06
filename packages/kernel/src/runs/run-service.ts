@@ -1,4 +1,9 @@
-import type { ExecuteRunDeps } from "@clarvis/loop";
+import type {
+  ElicitRawResult,
+  ExecuteRunArgs,
+  ExecuteRunDeps,
+  ExecuteRunOutcome,
+} from "@clarvis/loop";
 import { generateExecutionId } from "@clarvis/trace";
 import type {
   Page,
@@ -20,11 +25,21 @@ import { createManagedRun } from "./managed-run.ts";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
 import { normalizeRunPagination } from "./pagination.ts";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import type { HostElicitationParams } from "./elicit-bridge.ts";
 
 /**
  * Builds the engine run request body from protocol start params (after `execution_id` is assigned).
  */
 export type RunRequestAssembler = (params: StartRunParams & { execution_id: string }) => unknown;
+
+/** Placement-neutral execution port; native remains the lazy default. */
+export type RunExecutorArgs = ExecuteRunArgs & {
+  readonly hostElicit?: (
+    params: HostElicitationParams,
+    opts?: { signal?: AbortSignal },
+  ) => Promise<ElicitRawResult>;
+};
+export type RunExecutor = (args: RunExecutorArgs) => Promise<ExecuteRunOutcome>;
 
 /** Configuration for {@link createRunService}. */
 export interface RunServiceConfig {
@@ -64,6 +79,8 @@ export interface RunServiceConfig {
   lifecycle?: KernelLifecycle;
   /** Where an event with no protocol projection is reported. */
   logger?: Logger;
+  /** Executes the loop natively or through an explicitly configured isolated runtime. */
+  executeRun?: RunExecutor;
 }
 
 /**
@@ -111,7 +128,9 @@ export function createRunService(cfg: RunServiceConfig): RunService {
       lifecycle: cfg.lifecycle,
       async execute(context): Promise<RunResult> {
         const rawBody = assembleRunRequest({ ...params, execution_id: executionId });
-        const { executeRun } = await import("@clarvis/loop");
+        const executeRun =
+          cfg.executeRun ??
+          (async (args: ExecuteRunArgs) => (await import("@clarvis/loop")).executeRun(args));
         const outcome = await executeRun({
           rawBody,
           owner,
@@ -128,6 +147,7 @@ export function createRunService(cfg: RunServiceConfig): RunService {
           compaction: context.compaction,
           externalSignal: context.signal,
           elicit: context.elicit,
+          hostElicit: context.hostElicit,
         });
         return engineResultToProto(outcome.executionId, outcome.response);
       },

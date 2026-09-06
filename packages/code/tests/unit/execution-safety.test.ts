@@ -1,12 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import {
+  deriveIsolation,
   deriveRunControls,
   memoryDescription,
   memoryState,
   modelResolves,
   planRetentionDescription,
   safetyDescription,
-  settingsForPreset,
 } from "../../src/adapters/execution-safety.ts";
 import type { SettingsFile } from "../../src/adapters/settings.ts";
 
@@ -25,44 +25,23 @@ const onDisk = (settings: Record<string, unknown>): SettingsFile => settings as 
 const OPENAI = { name: "openai", kind: "openai" } as const;
 
 describe("execution safety", () => {
-  it.each([
-    ["free", {}, "off"],
-    ["judged", {}, "auto"],
-    ["approval", {}, "on"],
-    ["isolated", { sandbox: { type: "native", enabled: true, availability: "required" } }, "off"],
-    ["reviewed", { sandbox: { type: "native", enabled: true, availability: "required" } }, "auto"],
-    ["protected", { sandbox: { type: "native", enabled: true, availability: "required" } }, "on"],
-  ] as const)("derives %s", (preset, settings, guard) => {
-    expect(deriveRunControls(settings, guard, "off").preset).toBe(preset);
-  });
-
-  it("derives custom for a restricted sandbox", () => {
+  it("derives isolation independently from command review", () => {
+    expect(deriveIsolation({})).toBe("host");
+    expect(deriveIsolation({ sandbox: { type: "native", enabled: true } })).toBe("sandbox");
+    expect(deriveIsolation(onDisk({ runtime: { backend: "docker" } }))).toBe("docker");
     expect(
-      deriveRunControls(
-        {
-          sandbox: {
-            type: "native",
-            enabled: true,
-            filesystem: "workspace-read-only",
-            network: "none",
+      deriveIsolation(
+        onDisk({
+          runtime: {
+            backend: "podman",
+            executable: "podman",
+            image: "clarvis-runtime@sha256:" + "a".repeat(64),
+            image_digest: "sha256:" + "a".repeat(64),
           },
-        },
-        "off",
-        "off",
-      ).preset,
-    ).toBe("custom");
-  });
-
-  it("maps every preset to explicit guard and sandbox settings", () => {
-    expect(settingsForPreset("free").sandbox?.enabled).toBe(false);
-    expect(settingsForPreset("judged")).toMatchObject({
-      guard: { mode: "auto" },
-      sandbox: { enabled: false },
-    });
-    expect(settingsForPreset("approval").guard?.mode).toBe("on");
-    expect(settingsForPreset("isolated").sandbox?.enabled).toBe(true);
-    expect(settingsForPreset("reviewed").guard?.mode).toBe("auto");
-    expect(settingsForPreset("protected").guard?.mode).toBe("on");
+        }),
+      ),
+    ).toBe("podman");
+    expect(deriveRunControls({}, "auto", "off").isolation).toBe("host");
   });
 
   it("explains the effective behavior", () => {

@@ -174,7 +174,7 @@ independent once-per-run sidebar reveals").
 | `OverlayKind` | `"none" \| "agentPicker" \| "diff" \| "plan" \| (string & {})` | `packages/code/src/keys/interaction.ts:40` |
 | `InteractionEffects` | callbacks (`cancelRun`, `dismissTopOverlay`, `scrollTranscript`, …) the built-in commands dispatch into | `packages/code/src/keys/interaction.ts:43-75` |
 | `Interaction` | the handle: `keymap`, `renderer`, `pushOverlayContext`/`popOverlayContext`, `setModalContext`, `keyboardEnvironment`, `keyboardEnvironmentId`, `configureKeyboard`, `dispose` | `packages/code/src/keys/interaction.ts:78-89` |
-| `DEFAULT_BINDING_CANDIDATES` | 15 commands → candidate lists | `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`) |
+| `DEFAULT_BINDING_CANDIDATES` | 16 commands → candidate lists | `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`) |
 | `DEFAULT_WHEN` | 11 commands → `"overlay==none"`; `plan.open` → `"overlay in (none, plan)"` | `packages/code/src/keys/interaction.ts` (`DEFAULT_WHEN`) |
 | `buildVitalBindings(defaults, defaultWhen)` | expands a command→key(s) table into bindings, stamping `modal:"none"` unless in `MODAL_LIVE_COMMANDS` | `packages/code/src/keys/interaction.ts:191-207` |
 | `resolvedVitalBindings(platformName, environment, overrides?)` | resolves every vital command's key(s) for one environment; drops `app.suspend` on `win32` | `packages/code/src/keys/interaction.ts:234-251` |
@@ -248,7 +248,7 @@ always calls `persist("global", ...)` (`packages/code/src/adapters/code-config.t
       "profile": "portable" | "enhanced" | "manual",
       "clientPlatform": "macos" | "windows" | "linux",
       "verdicts": { "ctrl": "supported", "meta": "unsupported", "baseLayout": "supported" },
-      "bindings": { "safety.picker": ["ctrl+b"] }
+      "bindings": { "isolation.picker": ["ctrl+b"] }
     }
   }
 }
@@ -279,7 +279,7 @@ verdicts. Pinned: `packages/code/tests/unit/keyboard-profile.test.ts:81-92` (a p
 
 ### 3.3 `DEFAULT_BINDING_CANDIDATES` — the full vital-command table
 
-15 commands, each with 1-2 candidates (`packages/code/src/keys/interaction.ts`,
+16 commands, each with 1-2 candidates (`packages/code/src/keys/interaction.ts`,
 `DEFAULT_BINDING_CANDIDATES`):
 
 | Command | Candidates | `when` |
@@ -289,8 +289,9 @@ verdicts. Pinned: `packages/code/tests/unit/keyboard-profile.test.ts:81-92` (a p
 | `app.suspend` | `ctrl+z` | (none) |
 | `focus.next` | `tab` | `overlay==none` |
 | `agent.picker` | `shift+tab` | `overlay==none` |
-| `controls.open` | `alt+r` (enhanced, requires `meta`), `alt+g` (enhanced, requires `meta`) | `overlay==none` |
-| `safety.picker` | `alt+s` (enhanced, requires `meta`), `ctrl+s` | `overlay==none` |
+| `isolation.picker` | `alt+s` (enhanced, requires `meta`), `ctrl+s` | `overlay==none` |
+| `review.picker` | `alt+g` (enhanced, requires `meta`), `ctrl+g` | `overlay==none` |
+| `controls.open` | `alt+r` (enhanced, requires `meta`) | `overlay==none` |
 | `plan.open` | `ctrl+p`, `alt+p` (enhanced, requires `meta`) | `overlay in (none, plan)` |
 | `transcript.toggleCollapse` | `ctrl+o` | `overlay==none` |
 | `transcript.focusPrev` | `ctrl+up` | `overlay==none` |
@@ -336,9 +337,10 @@ For an `enhanced` environment with all modifiers `"supported"` (no manual overri
 {
   "run.cancel": "ctrl+c",
   "app.escape": "escape",
-  "controls.open": ["alt+r", "alt+g"],
-  "plan.open": ["alt+p", "ctrl+p"],
-  "safety.picker": ["alt+s", "ctrl+s"]
+  "isolation.picker": ["alt+s", "ctrl+s"],
+  "review.picker": ["alt+g", "ctrl+g"],
+  "controls.open": "alt+r",
+  "plan.open": ["alt+p", "ctrl+p"]
 }
 ```
 
@@ -360,8 +362,8 @@ resolved key collapses to a bare string; two or more become an array
 { issues: KeyboardBindingIssue[] }
 ```
 
-Never both. Example refusal: editing `safety.picker` to bind `escape` while `app.escape`
-owns that protected default — `{command:"safety.picker", key:"escape", message:"binding shadows app.escape", shadows:"app.escape"}`
+Never both. Example refusal: editing `isolation.picker` to bind `escape` while `app.escape`
+owns that protected default — `{command:"isolation.picker", key:"escape", message:"binding shadows app.escape", shadows:"app.escape"}`
 (pinned by `packages/code/tests/unit/keyboard-profile.test.ts`, "the edited command's own issues still block the write"). The same shadow rule holds for an
 alias spelling of a protected action's key (`escape`/`esc`/`Esc`/`ESC` all refused against
 `app.escape`), though that test only asserts the message contains `"shadows app.escape"`,
@@ -919,12 +921,14 @@ Tests: `packages/code/tests/integration/interaction.test.ts:484-531`, `:865-881`
 pinned at `packages/code/tests/integration/app-shell-render.test.tsx:729-752`, `:1649-1665`,
 `:2070-2104`, `:2298-2326`, and `:2762-2783`.
 
-**INV-D13.** `Ctrl+S` is the portable binding for the internal `safety.picker` action, `Alt+S` is its
-enhanced-path accelerator, and both are inactive while another overlay is open. The renderer keeps
-Kitty keyboard reporting in its conservative mode and never requests all-key escape reports, so
-terminal-native dead-key and IME text composition remains intact. Every terminal path, including a
-direct iTerm session on macOS, must deliver Option as Meta/Esc+ for the enhanced binding. A literal
-`ß` remains composer text, while `Ctrl+S` keeps the picker reachable without terminal configuration.
+**INV-D13.** `Ctrl+S` and `Ctrl+G` are the portable bindings for the internal `isolation.picker` and
+`review.picker` actions; `Alt+S` and `Alt+G` are their enhanced-path accelerators. All four are
+inactive while another overlay is open. On a macOS client the enhanced bindings are presented as
+Option and require the terminal to deliver Option as Meta/Esc+; the Ctrl routes require no terminal
+configuration. `Ctrl+E` belongs only to expanding or collapsing the Task editor, so `Ctrl+G` never
+changes editor state. The renderer keeps Kitty keyboard reporting in its conservative mode and
+never requests all-key escape reports, so terminal-native dead-key and IME text composition remains
+intact. A literal `ß` remains composer text.
 No global physical sidebar binding exists; `/activity`
 and `/activity [plan|workflow|agents]` are contextual slash actions. The first live Plan, first
 workflow leader and first visible sub-agent each own an independent automatic
@@ -938,8 +942,9 @@ text.
 Production: `packages/code/src/keys/interaction.ts` (`DEFAULT_BINDING_CANDIDATES`, `DEFAULT_WHEN`),
 `packages/code/src/adapters/renderer-bootstrap.ts` (`buildRendererConfig`),
 `packages/code/src/views/config/KeyboardView.tsx` (`PROBES`, `KeyboardDiagnostic`),
-`packages/code/src/app/commands.tsx` (`safety.picker`), and
-`packages/code/src/app/layout.ts` (`createLayoutController`) and
+`packages/code/src/app/commands.tsx` (`isolation.picker`, `review.picker`),
+`packages/code/src/views/InputDock.tsx` (`prompt.editor.open`, `prompt.editor.close`),
+`packages/code/src/app/layout.ts` (`createLayoutController`), and
 `packages/code/src/views/App.tsx` (`requestAutomaticSidebar`, `visiblePlanContext`,
 `visibleSubagentContext`, `closeActivitySidebar`, `openActivitySidebar`, the `activity.open` command
 and `compactActivityStrip`). Tests:

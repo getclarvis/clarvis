@@ -1,5 +1,9 @@
 import type { Elicit, ElicitRawResult } from "@clarvis/loop";
-import type { ElicitationRequest, ElicitationResponse } from "@clarvis/protocol";
+import type {
+  ElicitationRequest,
+  ElicitationResponse,
+  WorkspaceMergeElicitationDetail,
+} from "@clarvis/protocol";
 import type { GuardElicitParams } from "../guard/guard-elicit.ts";
 
 /**
@@ -10,10 +14,23 @@ export interface ElicitBridge {
    * {@link ElicitationRequest} and resolves once the client responds or the
    * request is cancelled. */
   readonly elicit: Elicit;
+  /** Host-only authority for the reserved workspace merge interaction. */
+  readonly hostElicit: (
+    params: HostElicitationParams,
+    opts?: { signal?: AbortSignal },
+  ) => Promise<ElicitRawResult>;
   /** Registers a handler invoked when the engine requests user input. */
   onElicit(handler: (req: ElicitationRequest) => void): void;
   /** Completes a pending elicit with the client's response. */
   respond(res: ElicitationResponse): void;
+}
+
+/** Parameters only trusted host runtime settlement may construct. */
+export interface HostElicitationParams {
+  readonly kind: "workspace_merge";
+  readonly prompt: string;
+  readonly schema: Record<string, unknown>;
+  readonly detail: WorkspaceMergeElicitationDetail;
 }
 
 /**
@@ -46,21 +63,20 @@ export function createElicitBridge(executionId: string): ElicitBridge {
     }
   };
 
-  const elicit: Elicit = (params, opts) =>
+  const enqueue = (
+    request: Omit<ElicitationRequest, "id" | "execution_id">,
+    signal?: AbortSignal,
+  ): Promise<ElicitRawResult> =>
     new Promise<ElicitRawResult>((resolve) => {
       const id = `${executionId}:elicit:${seq++}`;
-      const { detail } = params as GuardElicitParams;
       const req: ElicitationRequest = {
         id,
         execution_id: executionId,
-        kind: params.kind ?? "ask_user",
-        prompt: params.message,
-        schema: params.requestedSchema as unknown as Record<string, unknown>,
-        ...(detail !== undefined ? { detail } : {}),
+        ...request,
       };
       pending.set(id, { request: req, resolve });
       for (const h of handlers) deliver(h, req);
-      opts.signal?.addEventListener("abort", () => {
+      signal?.addEventListener("abort", () => {
         const item = pending.get(id);
         if (item !== undefined) {
           pending.delete(id);
@@ -69,8 +85,33 @@ export function createElicitBridge(executionId: string): ElicitBridge {
       });
     });
 
+  const elicit: Elicit = (params, opts) => {
+    if (params.kind === "workspace_merge") return Promise.resolve({ action: "cancel" });
+    const { detail } = params as GuardElicitParams;
+    return enqueue(
+      {
+        kind: params.kind ?? "ask_user",
+        prompt: params.message,
+        schema: params.requestedSchema as unknown as Record<string, unknown>,
+        ...(detail !== undefined ? { detail } : {}),
+      },
+      opts.signal,
+    );
+  };
+
   return {
     elicit,
+    hostElicit(params, opts) {
+      return enqueue(
+        {
+          kind: params.kind,
+          prompt: params.prompt,
+          schema: params.schema,
+          detail: params.detail,
+        },
+        opts?.signal,
+      );
+    },
     onElicit(handler): void {
       handlers.push(handler);
       for (const item of pending.values()) deliver(handler, item.request);

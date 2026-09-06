@@ -787,7 +787,7 @@ recovery screen with no further keypress — pinned by
 - `@clarvis/kernel/local` — `POSIX_DEFAULT_ALLOWED_COMMANDS`/`WINDOWS_DEFAULT_ALLOWED_COMMANDS`
   (`packages/code/src/onboarding/seed-default-allowlist.ts:1-4`), `resolveShell`/`shellArgs` (Windows clipboard script construction,
   `packages/code/src/adapters/platform.ts:4`), `killTree`/`ownProcessGroup` (`packages/code/src/adapters/clipboard-process.ts:2`).
-- `../adapters/execution-safety.ts` (`deriveSafetyPreset`, `memoryState`, `modelResolves`,
+- `../adapters/execution-safety.ts` (`deriveIsolation`, `memoryState`, `modelResolves`,
   `planRetentionLabel`, `plansState`) and `../adapters/agent-files.ts` (`agentReadiness`) — doctor's gate
   logic reads these projections but does not own their semantics (`packages/code/src/onboarding/doctor.ts:6-13`) — delegated to
   sibling documents (memory/plan capability semantics; agent readiness/grants).

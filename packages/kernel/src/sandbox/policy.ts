@@ -78,6 +78,28 @@ function discoverySignature(
 }
 
 /**
+ * Materialize the fail-safe native policy used when managed Docker cannot start.
+ *
+ * @remarks A manually disabled or optional sandbox must not turn the documented
+ * Docker fallback into direct host execution. Custom filesystem, network,
+ * environment and toolchain tuning is retained; only enablement and availability
+ * are strengthened.
+ */
+function effectiveSandboxSettings(snapshot: SettingsSnapshot): SandboxSettings | undefined {
+  const configured = snapshot.merged.sandbox;
+  const runtime = snapshot.merged.runtime;
+  if (runtime?.backend !== "docker" || runtime.fallback !== "sandbox") return configured;
+  return {
+    type: "native",
+    ...(configured ?? {}),
+    enabled: true,
+    availability: "required",
+    filesystem: configured?.filesystem ?? "workspace-write",
+    network: configured?.network ?? "host",
+  };
+}
+
+/**
  * Resolves the effective sandbox policy for a workspace: the settings a run is
  * launched under, and a richer inspection used by diagnostics/UI.
  */
@@ -142,7 +164,7 @@ export function createSandboxPolicyResolver(
     paths: ReturnType<typeof configuredPaths>;
   } => {
     const snapshot = store.readSettings();
-    const settings = snapshot.merged.sandbox;
+    const settings = effectiveSandboxSettings(snapshot);
     const discovered = selectedToolchains(settings, refresh);
     const runtimePaths = [
       ...new Set(discovered.flatMap((item) => (item.available && item.root ? [item.root] : []))),

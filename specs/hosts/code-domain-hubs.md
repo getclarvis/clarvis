@@ -562,31 +562,31 @@ computation," not something specific to memory or an accidental one-off.
 
 ### 4.8 Run controls
 
-Four rows, fixed order: Safety preset (0), Command review (1), Memory for this session (2),
+Four rows, fixed order: Isolation (0), Command review (1), Memory for this session (2),
 Completed plans (3). `[b] sandbox details` is offered only on row 0, and the host wires it to
 `openWithReturn("sandbox.config", "controls.open", host.scope())`. Production:
 `packages/code/src/views/config/RunControlsPanel.tsx` (`spec`, `body`) and
 `packages/code/src/app/commands.tsx` (`controls.open`).
 
-`host.bindScope({ mode: "retarget" })` is declared with an in-source note that "Every write here goes
-to `host.scope()`, so the toggle retargets rather than reloads"
-(`packages/code/src/views/config/RunControlsPanel.tsx`, `host.bindScope`).
+`host.bindScope({ mode: "retarget" })` retargets Review and completed-plan retention. Isolation is a
+host-global placement choice and always writes global settings; memory remains session-only
+(`packages/code/src/views/config/RunControlsPanel.tsx`, `host.bindScope`,
+`applyIsolationChoice`).
 
 | Row | Choices | Write |
 |---|---|---|
-| Safety preset | `free`, `judged`, `approval`, `isolated`, `reviewed`, `protected`, `custom` | shared `applySafetyPreset` |
-| Command review | `off`, `on`, `auto` (`:53`) | `applyGuard` (`:211`) |
+| Isolation | `Host`, `Sandbox`, `Docker`; an advanced Podman selection remains visible but is not offered by the simple picker | shared `applyIsolation`, global |
+| Command review | `Off`, `Approval`, `Auto` | shared `applyReviewMode`, selected scope |
 | Memory | `on`, `off` (`:63`) | `applyMemory` — **session store only** (`:233`) |
 | Completed plans | `keep` / `discard` labelled "Keep plans" / "Delete after success" | `applyPlanRetention` |
 
-Run Controls and the `Alt+S` quick picker consume the same product vocabulary and write path from
-`features/run/safety-presets.ts`. `safetyPresetConfirmation` requires a danger confirmation before
-`free` or `judged`, because both run directly on the host, and warns when any named preset will reset
-custom `pass_env`, availability, filesystem, or network tuning. `applySafetyPreset` carries the
-effective `sandbox.toolchains` across the reset, then writes the selected scope and synchronizes the
-session guard store. Before writing, its scoped policy merge preserves local allow/deny lists and,
-for a workspace without local lists, carries the global policy forward so the last-wins guard block
-does not shadow it. The `custom` row is descriptive and cannot be selected.
+Run Controls and the `Ctrl+S`/`Alt+S` quick picker share `applyIsolation`. Host requires an explicit
+danger confirmation; Sandbox enables a required native boundary; Docker writes the minimal global
+runtime choice, keeps a required native fallback, and remains cold until the first run. Run Controls
+and the `Ctrl+G`/`Alt+G` quick picker separately share `applyReviewMode`. It preserves local
+allow/deny lists and, for a workspace without local lists, carries the global policy forward so the
+last-wins guard block does not shadow it. Auto without a resolvable judge degrades to persisted
+Approval. Neither path changes the other axis.
 
 `applyGuard` (`:211`) degrades `auto` to `on` when `guardAutoResolves(settings)` is false, writes the
 degraded value and says why (`:219`). It uses the same `guardPolicyForWrite` preservation path.
@@ -859,12 +859,12 @@ specific to these files.
     Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyMemory`).
     Pinned: `packages/code/tests/integration/run-controls-render.test.tsx:187`.
 
-46. **A direct guard-mode write and a named safety preset both preserve the effective allow/deny
-    policy; a workspace with no local lists carries forward the global lists.** Production:
-    `packages/code/src/features/run/safety-presets.ts` (`applySafetyPreset`, `scopedGuardPolicy`) for
-    presets and `packages/code/src/views/config/RunControlsPanel.tsx` (`guardPolicyForWrite`,
-    `applyGuard`) for direct guard writes. Pinned: `packages/code/tests/unit/safety-presets.test.ts`
-    and `packages/code/tests/integration/run-controls-render.test.tsx`.
+46. **A Review write preserves the effective allow/deny policy; a workspace with no local lists
+    carries forward the global lists, and Isolation remains untouched.** Production:
+    `packages/code/src/features/run/review.ts` (`applyReviewMode`, `scopedGuardPolicy`) and
+    `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`). Pinned:
+    `packages/code/tests/integration/run-controls-render.test.tsx` and
+    `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
 
 47. **`auto` without a resolvable judge model persists `on`, not a misleading `auto`.**
     Production: `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`).
@@ -883,17 +883,17 @@ specific to these files.
     `packages/code/tests/integration/run-controls-render.test.tsx` (global/provider and workspace
     preservation cases).
 
-50. **Every safety-preset selector shares one six-choice vocabulary and one application path; a
-    preset that discards custom sandbox tuning asks first and carries `toolchains` across. `judged`
-    means sandbox off plus guard auto, with an explicit direct-host confirmation and user fallback
-    when the judge cannot resolve.** Production:
-    `packages/code/src/features/run/safety-presets.ts` (`SAFETY_PRESET_CHOICES`,
-    `safetyPresetConfirmation`, `applySafetyPreset`),
-    `packages/code/src/views/config/RunControlsPanel.tsx`, and
-    `packages/code/src/views/overlays/SafetyPresetPicker.tsx`. Pinned:
-    `packages/code/tests/unit/safety-presets.test.ts`,
-    `packages/code/tests/integration/run-controls-render.test.tsx`, and
-    `packages/code/tests/integration/safety-preset-picker-render.test.tsx`.
+50. **Isolation and Review have separate three-choice vocabularies and shared application paths
+    across Run Controls and their quick pickers. Host confirmation cannot change Review; Review
+    cannot change runtime or Sandbox. Docker persists only the minimal global runtime selector and
+    requests no engine work before the next run.** Production:
+    `packages/code/src/features/run/isolation.ts` (`ISOLATION_CHOICES`, `isolationConfirmation`,
+    `applyIsolation`), `packages/code/src/features/run/review.ts` (`REVIEW_CHOICES`,
+    `applyReviewMode`), `packages/code/src/views/config/RunControlsPanel.tsx`,
+    `packages/code/src/views/overlays/IsolationPicker.tsx`, and
+    `packages/code/src/views/overlays/ReviewPicker.tsx`. Pinned:
+    `packages/code/tests/integration/run-controls-render.test.tsx` and
+    `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
 
 51. **A settled run's outcome label is classified only from the segment before the first separator.**
     Production: `packages/code/src/features/run/status-presenter.ts:59`, with the in-source account of
@@ -1010,8 +1010,8 @@ Every hub registers its keys through `registerLevel(host.interaction.keymap, spe
 - Sandbox semantics, `SandboxConfigPanel`, `probeSandbox` → [execution/sandbox.md](../execution/sandbox.md).
 - `CapabilityProvidersPanel` → [capabilities/provider-executables.md](../capabilities/provider-executables.md).
 - `DoctorView`, `KeyboardView` → their own documents.
-- `execution-safety.ts` (`deriveRunControls`, `memoryState`, `deriveSafetyPreset`,
-  `settingsForPreset`, `planRetentionDescription`, `safetyDescription`, `memoryDescription`),
+- `execution-safety.ts` (`deriveRunControls`, `deriveIsolation`, `memoryState`,
+  `planRetentionDescription`, `safetyDescription`, `memoryDescription`),
   `guard-mode.ts`, `session-store.ts`, `workflow-projection.ts`, `settings.ts` →
   [hosts/code-run-host.md](code-run-host.md) / [hosts/code-settings-panels.md](code-settings-panels.md).
 - The domain semantics behind each hub — the tasks provider contract, workflow

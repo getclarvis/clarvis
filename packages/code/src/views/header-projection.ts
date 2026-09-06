@@ -3,10 +3,10 @@ import { parseModelRef } from "../adapters/model-policy.ts";
 import { tokens } from "../theme/tokens.ts";
 import { glyph } from "../theme/glyphs.ts";
 import type { GuardMode } from "../adapters/guard-mode.ts";
-import type { MemoryState, PlansState, SafetyPreset } from "../adapters/execution-safety.ts";
+import type { IsolationMode, MemoryState, PlansState } from "../adapters/execution-safety.ts";
 import { connectionLabel, type ConnectionState } from "../adapters/connection-state.ts";
 
-/** One shell snapshot. Legacy configuration fields remain input so App owns one derivation point. */
+/** One shell snapshot; App owns the sole derivation point for every header status. */
 export interface HeaderInput {
   width: number;
   version: string;
@@ -14,8 +14,8 @@ export interface HeaderInput {
   floor: boolean;
   agentName: string;
   model: string;
-  safetyPreset: SafetyPreset;
-  guardMode: GuardMode;
+  isolation: IsolationMode;
+  review: GuardMode;
   sandboxUnavailable?: boolean;
   memoryConfigured: boolean;
   memory: MemoryState;
@@ -28,7 +28,15 @@ export interface HeaderInput {
 }
 
 export type HeaderFieldKey =
-  "workspace" | "identity" | "model" | "safety" | "memory" | "urgent" | "exception" | "version";
+  | "workspace"
+  | "identity"
+  | "model"
+  | "isolation"
+  | "review"
+  | "memory"
+  | "urgent"
+  | "exception"
+  | "version";
 
 export interface HeaderField {
   key: HeaderFieldKey;
@@ -77,7 +85,7 @@ function urgentField(input: HeaderInput): HeaderField | undefined {
   return undefined;
 }
 
-function exceptionField(input: HeaderInput, includeSafety: boolean): HeaderField | undefined {
+function exceptionField(input: HeaderInput, includeIsolation: boolean): HeaderField | undefined {
   if (input.sandboxUnavailable)
     return {
       key: "exception",
@@ -85,10 +93,10 @@ function exceptionField(input: HeaderInput, includeSafety: boolean): HeaderField
       color: tokens.warn,
       elastic: false,
     };
-  if (includeSafety && input.safetyPreset === "free")
+  if (includeIsolation && input.isolation === "host")
     return {
       key: "exception",
-      text: `${glyph("warning")} Safety: free`,
+      text: `${glyph("warning")} Isolation: Host`,
       color: tokens.warn,
       elastic: false,
     };
@@ -115,33 +123,46 @@ function memoryLabel(memory: MemoryState): string {
   return memory === "off" ? "off" : "on";
 }
 
+function isolationLabel(isolation: IsolationMode): string {
+  return isolation[0]!.toUpperCase() + isolation.slice(1);
+}
+
+function reviewLabel(review: GuardMode): string {
+  return review === "on" ? "Approval" : review[0]!.toUpperCase() + review.slice(1);
+}
+
 /**
- * The configuration a run depends on — which model, which safety profile, memory on or off —
+ * The configuration a run depends on — model, isolation, review and memory —
  * at the richest wording that still fits `room` columns.
  */
 function statusChips(input: HeaderInput, room: number): HeaderField[] {
   const model = modelNames(input.model);
-  const preset = input.safetyPreset;
+  const isolation = isolationLabel(input.isolation);
+  const review = reviewLabel(input.review);
   const memory = memoryLabel(input.memory);
   const ladder: Array<Array<[HeaderFieldKey, string]>> = [
     [
       ["model", model.full],
-      ["safety", `Safety: ${preset}`],
+      ["isolation", `Isolation: ${isolation}`],
+      ["review", `Review: ${review}`],
       ["memory", `Memory: ${memory}`],
     ],
     [
       ["model", model.short],
-      ["safety", `Safety: ${preset}`],
+      ["isolation", `Isolation: ${isolation}`],
+      ["review", `Review: ${review}`],
       ["memory", `Memory: ${memory}`],
     ],
     [
       ["model", model.short],
-      ["safety", preset],
+      ["isolation", `Iso ${isolation}`],
+      ["review", review],
       ["memory", `mem ${memory}`],
     ],
     [
       ["model", model.short],
-      ["safety", preset],
+      ["isolation", isolation],
+      ["review", review],
     ],
     [["model", model.short]],
   ];
@@ -156,7 +177,8 @@ function statusChips(input: HeaderInput, room: number): HeaderField[] {
     color:
       key === "model"
         ? tokens.fg
-        : key === "safety" && preset === "free"
+        : (key === "isolation" && input.isolation === "host") ||
+            (key === "review" && input.review === "off")
           ? tokens.warn
           : tokens.muted,
     elastic: false,
@@ -204,7 +226,7 @@ export function projectHeader(input: HeaderInput): HeaderPlan {
     (widest > 0 ? widest + cols(sep) : 0);
   const chips = statusChips(input, room);
   const exception = exceptionAllowed
-    ? exceptionField(input, !chips.some((chip) => chip.key === "safety"))
+    ? exceptionField(input, !chips.some((chip) => chip.key === "isolation"))
     : undefined;
   const status = chips.map((chip) => ({ ...chip, text: sep + chip.text }));
   const state = [...(exception ? [exception] : []), ...(urgent ? [urgent] : [])].map(

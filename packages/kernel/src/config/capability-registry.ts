@@ -4,6 +4,7 @@ import { memorySettingsSpec, type MemorySettingsBlock } from "@clarvis/memory/se
 import { plansSettingsSpec, type PlansSettingsBlock } from "@clarvis/plan/settings";
 import { workflowsSettingsSpec, type WorkflowsSettingsBlock } from "@clarvis/workflows";
 import { tasksSettingsSpec, type TasksSettingsBlock } from "@clarvis/tasks/settings";
+import { runtimeSettingsSpec, type RuntimeSettingsBlock } from "../runtime/settings.ts";
 
 /**
  * The capabilities this kernel hosts that declare their own `settings.json`
@@ -22,6 +23,7 @@ kernelCapabilityRegistry.register(memorySettingsSpec);
 kernelCapabilityRegistry.register(plansSettingsSpec);
 kernelCapabilityRegistry.register(workflowsSettingsSpec);
 kernelCapabilityRegistry.register(tasksSettingsSpec);
+kernelCapabilityRegistry.register(runtimeSettingsSpec);
 
 /**
  * The schema every `settings.json` this kernel reads or writes is validated
@@ -46,4 +48,5 @@ export type KernelSettingsFile = LoopSettingsFile & {
   plans?: PlansSettingsBlock;
   workflows?: WorkflowsSettingsBlock;
   tasks?: TasksSettingsBlock;
+  runtime?: RuntimeSettingsBlock;
 };

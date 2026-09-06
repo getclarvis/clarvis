@@ -621,10 +621,12 @@ Additional invariants derived directly from the code, carrying no INV number of 
   nor `@clarvis/mcp-client`'s heavier surfaces without going through the dep-free wire-name mirror —
   `wire-names.ts`'s own doc comments state this is deliberate (`packages/loop/src/runtime/tools/wire-names.ts:33-41`, `:79-88`,
   `:91-97`).
-- **`ajv`/`ajv-formats` are lazy-loaded**, not imported at module scope, via
-  `packages/loop/src/validation/ajv.ts:38-47` — both `tool-arg-validator.ts` and `result-contract.ts`
-  reach Ajv only through `createAjv()`/`createStrictAjv()`, so nothing in this document's static import
-  graph forces Ajv's cost onto a host that never validates a tool call.
+- **`ajv`/`ajv-formats` use a lazy fallback**, not module-scope value imports, via `load()` in
+  `packages/loop/src/validation/ajv.ts` — both `tool-arg-validator.ts` and `result-contract.ts`
+  reach Ajv only through `createAjv()`/`createStrictAjv()`, so nothing in this document's static
+  import graph forces Ajv's cost onto an ordinary host that never validates a tool call. The
+  isolated worker is the explicit exception: its standalone composition root statically bundles
+  and installs those two modules before guest execution.
 - **Consumed by `runtime/loop/run-agent.ts`** (loop core, out of this document's scope): builds
   `argValidator` (`createToolArgValidator`, `packages/loop/src/runtime/loop/run-agent.ts:161`), builds `mcpHandler`
   (`buildMcpHandler`, `:330-337`), builds `submitHandler` around `contract.validate`

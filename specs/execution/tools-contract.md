@@ -93,8 +93,8 @@ consumer outside this package's own workspace-linked build.
 | --- | --- | --- | --- |
 | `AgentTools` | interface | `packages/tools/src/index.ts:11` | `{ config: RuntimeConfig; listTools(): ToolInfo[]; callTool(name, args?): Promise<DispatchResult> }` |
 | `createAgentTools(options)` | function | `packages/tools/src/index.ts:36` | resolves `options` via `resolveConfig`, returns an `AgentTools` bound to that config |
-| `dispatch(name, args, config, signal?, hooks?)` | function | `packages/tools/src/core.ts:226` | invokes one tool by name |
-| `listTools(config)` | function | `packages/tools/src/core.ts:136` | lists the effective `ToolInfo[]` for a config |
+| `dispatch(name, args, config, signal?, hooks?)` | function | `packages/tools/src/core.ts:214` | invokes one tool by name |
+| `listTools(config)` | function | `packages/tools/src/core.ts:124` | lists the effective `ToolInfo[]` for a config |
 | `resolveConfig(options)` | function | `packages/tools/src/config.ts:331` | builds a validated `RuntimeConfig` |
 | `StartupError` | class | `packages/tools/src/config.ts:180` | thrown by `resolveConfig` on invalid startup options |
 | thirteen `DEFAULT_*` limit constants | const | `packages/tools/src/config.ts:138`-`171` | see §3 |
@@ -170,7 +170,7 @@ Production: `toolDescriptors` and the individual descriptors under `packages/too
 Test: `packages/tools/tests/component/tool-surface.test.ts` (`keeps the complete advertised coding
 surface within its character budget`). This measures text size, not provider tokens or accuracy.
 
-### `ToolInfo` (model-visible descriptor) — `packages/tools/src/core.ts:117`
+### `ToolInfo` (model-visible descriptor) — `packages/tools/src/core.ts:107`
 
 ```ts
 interface ToolInfo {
@@ -180,14 +180,14 @@ interface ToolInfo {
 }
 ```
 
-`listTools(config)` (`packages/tools/src/core.ts:136`-`:142`) maps `selectSurface(config.readOnly)` to this shape, dropping the
+`listTools(config)` (`packages/tools/src/core.ts:124`-`:130`) maps `selectSurface(config.readOnly)` to this shape, dropping the
 handler. `selectSurface(readOnly)` (`packages/tools/src/tools/registry.ts:90`) returns `readOnlyTools` when `readOnly` is true,
 else `tools`.
 
 ### `RuntimeConfig` — `packages/tools/src/config.ts:15`-`130`
 
 The full field list, defaults and overrides are given in §3. The fields most relevant to dispatch
-itself: `guard?: Guard`, `elicit?: Elicit` (consulted by `applyGuard`, `packages/tools/src/core.ts:156`), `readOnly:
+itself: `guard?: Guard`, `elicit?: Elicit` (consulted by `applyGuard`, `packages/tools/src/core.ts:144`), `readOnly:
 boolean` (selects the surface), `confineToWorkspace: boolean`, `stateRoot: string`, and
 `temporaryRoots: readonly string[]` (ordered temporary path policy consumed by individual tools, not
 by `core.ts` itself; the first root is the command environment's `TMPDIR`), `maxOutputBytes` and `maxToolMetaBytes`
@@ -205,7 +205,7 @@ config, before the agent can mutate `.git`; sandbox execution consumes the pinne
 re-reading mutable worktree pointers (`packages/tools/src/config.ts:97-101,331-337,502-507`). The
 discovery and mount validation belong to [sandbox-and-toolchains](sandbox.md).
 
-### `DispatchResult` — `packages/tools/src/core.ts:60`
+### `DispatchResult` — `packages/tools/src/core.ts:48`
 
 ```ts
 interface DispatchResult {
@@ -323,7 +323,7 @@ All four branches attach `{ path }` to `fields`. Pinned by
 
 `ToolResult` (`packages/tools/src/tools/content.ts:24`) is `{ content: string | ContentPart[]; meta?: Record<string,
 unknown> }`. A `ToolDef.handler` may return a bare string or this envelope
-(`packages/tools/src/tools/types.ts:52`-`60`); `normalizeOutput` (`packages/tools/src/core.ts:69`) wraps a bare string as `{ content }`
+(`packages/tools/src/tools/types.ts:52`-`60`); `normalizeOutput` (`packages/tools/src/core.ts:59`) wraps a bare string as `{ content }`
 before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/tools/src/tools/content.ts:2`-`17`); `contentText`
 (`packages/tools/src/tools/content.ts:57`) flattens an array to its concatenated text, dropping image parts to `""`.
 
@@ -355,18 +355,18 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
 8. Merge those roots into native-sandbox `readOnlyPaths`, then build the `RuntimeConfig`, validating
    every remaining limit and deriving `stateRoot` from `@clarvis/paths` (`resolveConfig`).
 
-### `dispatch` (`packages/tools/src/core.ts:226`-`266`), in call order
+### `dispatch` (`packages/tools/src/core.ts:214`-`255`), in call order
 
-1. **Lookup.** `getTool(name, selectSurface(config.readOnly))` (`packages/tools/src/core.ts:233`). A miss — an unknown
+1. **Lookup.** `getTool(name, selectSurface(config.readOnly))` (`packages/tools/src/core.ts:221`). A miss — an unknown
    name, or a write tool name against a read-only surface (`getTool` only searches the surface it is
    given, `packages/tools/src/tools/registry.ts:102`) — returns `errorResult(new ToolError("not_found", "Unknown tool:
-   <name>"))` (`packages/tools/src/core.ts:234`-`236`).
+   <name>"))` (`packages/tools/src/core.ts:222`-`224`).
 2. **Validate.** `structuredClone(args)` (so the caller's object is never mutated,
-   `packages/tools/src/core.ts:239`), then run the tool's pre-compiled Ajv validator (`validators`, a `Map<name,
-   ValidateFunction>` built once at module load over every entry in `tools`, `packages/tools/src/core.ts:50`-`53`) with
-   `{ allErrors: true, useDefaults: true, coerceTypes: true }` (`packages/tools/src/core.ts:49`). On failure, return
+   `packages/tools/src/core.ts:227`), then run the tool's pre-compiled Ajv validator (`validators`, a `Map<name,
+   ValidateFunction>` built once at module load over every entry in `tools`, `packages/tools/src/core.ts:38`-`41`) with
+   `{ allErrors: true, useDefaults: true, coerceTypes: true }` (`packages/tools/src/core.ts:37`). On failure, return
    `invalid_input` with `ajv.errorsText(...)` joined by `"; "`, or the literal string `"invalid
-   arguments"` if that text is empty (`packages/tools/src/core.ts:238`-`243`).
+   arguments"` if that text is empty (`packages/tools/src/core.ts:226`-`231`).
 3. **Protect selected skill packages.** For native mutation tools, `protectSkillPackages` extracts
    every source and destination through the same guard-context parser and refuses a target below any
    `skillExecutionRoot` with `path_escape`. Recursive `replace` also refuses an ancestor scope that
@@ -379,41 +379,41 @@ before dispatch proceeds. `ContentPart` is `TextPart | ImagePart` (`packages/too
 5. **Execute.** Call `tool.handler(filled, config, signal, hooks)`, `normalizeOutput` its return
    value, split `content` into parts if it was a bare string, and return
    `{ isError: false, content: boundParts(...), ...(meta && { meta: boundMeta(...) }) }`
-   (`packages/tools/src/core.ts:254`-`262`). A thrown error (from the handler, or a bug anywhere in step 5) is caught and
-   rendered via `errorResult` (`packages/tools/src/core.ts:263`-`266`) — nothing above this dispatcher ever throws.
+   (`packages/tools/src/core.ts:242`-`250`). A thrown error (from the handler, or a bug anywhere in step 5) is caught and
+   rendered via `errorResult` (`packages/tools/src/core.ts:251`-`254`) — nothing above this dispatcher ever throws.
 
-### `applyGuard` (`packages/tools/src/core.ts:156`-`205`)
+### `applyGuard` (`packages/tools/src/core.ts:144`-`193`)
 
 | Input state | Outcome |
 | --- | --- |
 | `config.guard` unset | empty gate (proceed), except `host_vcs`, which denies because host execution always requires review |
-| guard throws | caught, `errorResult(err)` — `packages/tools/src/core.ts:202`-`204` |
+| guard throws | caught, `errorResult(err)` — `packages/tools/src/core.ts:190`-`192` |
 | `decision.verdict === "allow"` | proceed; when mode is known, review is `allowed/policy` |
-| `decision.verdict === "deny"` | `errorResult(new ToolError("denied", reason))` — `packages/tools/src/core.ts:175`-`180` |
-| `decision.verdict === "ask"`, no `config.elicit` | `errorResult(... "denied" ...)` — `packages/tools/src/core.ts:181`-`185` |
+| `decision.verdict === "deny"` | `errorResult(new ToolError("denied", reason))` — `packages/tools/src/core.ts:164`-`168` |
+| `decision.verdict === "ask"`, no `config.elicit` | `errorResult(... "denied" ...)` — `packages/tools/src/core.ts:169`-`173` |
 | `verdict === "ask"`, `elicit` allows | proceed and retain the rich answerer's allowed review |
-| `verdict === "ask"`, `elicit` resolves `false` | `errorResult(... "denied" ...)` — `packages/tools/src/core.ts:193`-`201` |
+| `verdict === "ask"`, `elicit` resolves `false` | `errorResult(... "denied" ...)` — `packages/tools/src/core.ts:181`-`189` |
 
 `reason` defaults to the literal `"blocked by guard"` when `decision.reason` is absent
-(`packages/tools/src/core.ts:175`). The `GuardContext` passed to `config.guard` is built by `buildGuardContext(name,
-args, config)` (`packages/tools/src/core.ts:167`), which is owned by the sibling [command-guard-and-approval](command-guard.md) document;
+(`packages/tools/src/core.ts:163`). The `GuardContext` passed to `config.guard` is built by `buildGuardContext(name,
+args, config)` (`packages/tools/src/core.ts:155`), which is owned by the sibling [command-guard-and-approval](command-guard.md) document;
 `core.ts` only calls it and interprets the three-way `Verdict` (`"allow" | "deny" | "ask"`) it
 produces.
 
 ### Output bounding
 
-- `boundParts` (`packages/tools/src/core.ts:77`-`84`): a no-op when `tool.bounded` is true; otherwise every `TextPart`'s
+- `boundParts` (`packages/tools/src/core.ts:67`-`74`): a no-op when `tool.bounded` is true; otherwise every `TextPart`'s
   text is passed through `bound(text, config.maxOutputBytes)` (from `lib/output.ts`, a sibling
   concern — see `packages/tools/tests/component/core.test.ts:94`-`107` for the bounded/unbounded
   distinction observed end-to-end).
-- `boundMeta` (`packages/tools/src/core.ts:86`-`111`): a no-op if the JSON-encoded `meta` already fits
+- `boundMeta` (`packages/tools/src/core.ts:76`-`101`): a no-op if the JSON-encoded `meta` already fits
   `config.maxToolMetaBytes`. Otherwise it returns `{ truncated: true, truncation_reason: "tool
   metadata exceeded <N> bytes" }`, and if `meta.diff` is a string it binary-searches (`low`/`high`
   over `diff.length`) for the longest prefix of `diff` (plus a `"\n[diff truncated to metadata
   budget]"` suffix) whose encoding still fits the budget alongside the `base` fields
-  (`packages/tools/src/core.ts:96`-`109`).
+  (`packages/tools/src/core.ts:86`-`100`).
 
-### `listTools` (`packages/tools/src/core.ts:134`-`140`)
+### `listTools` (`packages/tools/src/core.ts:124`-`130`)
 
 `selectSurface(config.readOnly).map(t => ({ name, description, inputSchema }))` — a pure projection;
 no validation, guard or bounding logic runs here.
@@ -428,8 +428,8 @@ no validation, guard or bounding logic runs here.
 | INV-040 | `web-tree-sitter` (a distinct npm specifier `@clarvis/code` legitimately depends on for OpenTUI syntax highlighting) is not a substring of, nor contains, the forbidden `@vscode/tree-sitter-wasm`, and `@clarvis/code`'s manifest and the lockfile still declare/install it. | `packages/code/package.json` (asserted by the cited test rather than cited directly) | `packages/tools/tests/architecture/no-tree-sitter.test.ts:178` (substring check), `:183`-`185` (calibration: the word-level `/tree[-_ ]?sitter/i` matcher *does* fire on `web-tree-sitter`, which is why the substring carve-out above is necessary at all rather than redundant), `:185` (still declared/installed) |
 | INV-042 | The advertised tool surface is exactly 24 coding tools, 9 of them read-only, and the same set (in the same order) is advertised on every config. | `packages/tools/src/tools/registry.ts:42`-`81` (`toolDescriptors`, `tools`, `readOnlyTools`) | `packages/tools/tests/component/tool-surface.test.ts:32` |
 | INV-043 | Neither the full nor the read-only tool surface advertises `outline` or `check_syntax`. | `packages/tools/src/tools/registry.ts:42`-`67` (absent from `toolDescriptors`) | `packages/tools/tests/component/tool-surface.test.ts:43` |
-| INV-044 | Dispatching a removed tool name (`outline`, `check_syntax`) fails with the exact same `{error: "not_found", message: "Unknown tool: <name>"}` shape as dispatching a name that never existed (`does_not_exist`). | `packages/tools/src/core.ts:233`-`236` (`getTool` miss path, uniform for any unrecognized name) | `packages/tools/tests/component/tool-surface.test.ts:52` |
-| INV-045 | The refusal for dispatching `outline` never leaks why the tool was removed or hints at a runtime the model could try to install: it contains none of `tree`, `sitter`, `unavailable`, `disabled`, `install`, `degraded` (case-insensitive). | `packages/tools/src/core.ts:235` (`Unknown tool: ${name}` is the entire message — no code path appends anything else for a `not_found`) | `packages/tools/tests/component/tool-surface.test.ts:64` |
+| INV-044 | Dispatching a removed tool name (`outline`, `check_syntax`) fails with the exact same `{error: "not_found", message: "Unknown tool: <name>"}` shape as dispatching a name that never existed (`does_not_exist`). | `packages/tools/src/core.ts:221`-`224` (`getTool` miss path, uniform for any unrecognized name) | `packages/tools/tests/component/tool-surface.test.ts:52` |
+| INV-045 | The refusal for dispatching `outline` never leaks why the tool was removed or hints at a runtime the model could try to install: it contains none of `tree`, `sitter`, `unavailable`, `disabled`, `install`, `degraded` (case-insensitive). | `packages/tools/src/core.ts:223` (`Unknown tool: ${name}` is the entire message — no code path appends anything else for a `not_found`) | `packages/tools/tests/component/tool-surface.test.ts:64` |
 | INV-046 | Host temporary roots are explicit access policy, not ownership: `systemTemporaryRoots` discovers the environment temp plus `/tmp` on POSIX (environment temp only on Windows), the product loop appends them after its run-owned root, and teardown removes only the run root plus exact dynamically registered directories. | `packages/tools/src/sandbox.ts` (`systemTemporaryRoots`); `packages/loop/src/runtime/capabilities/tools.ts` (`accessibleTemporaryRoots`, `ownedTemporaryRoots`) | `packages/tools/tests/integration/api.test.ts` (`reuses a bare mktemp result from the host temp root in a later native tool`); `packages/loop/tests/integration/command-guard-wiring.test.ts` (`preauthorizes the host temp across shell and native tools without owning its parent`) |
 
 INV-038's own scan exempts exactly three files from the forbidden-vocabulary check via an
@@ -444,7 +444,7 @@ Three further invariants this document's scope directly evidences, but that the 
 number:
 
 - **Arguments are never mutated in place.** `dispatch` validates a `structuredClone` of `args`, never
-  the caller's object (`packages/tools/src/core.ts:239`, documented at `packages/tools/src/core.ts:211`-`224`). Unpinned by a dedicated test
+  the caller's object (`packages/tools/src/core.ts:227`, documented at `packages/tools/src/core.ts:195`-`212`). Unpinned by a dedicated test
   in this document's scope — `tests/component/core.test.ts` exercises validation outcomes but does not
   assert on the original `args` object's identity/contents after a coercing call.
 - **A descriptor carries exactly two fields.** `toolDescriptors` entries are `{ tool, readOnly }` and
@@ -483,10 +483,10 @@ number:
 
 | Failure | Handling | Cite |
 | --- | --- | --- |
-| Unknown tool name (never existed, or removed, or write-tool-on-read-only-surface) | `not_found`, message `Unknown tool: <name>` | `packages/tools/src/core.ts:233`-`236` |
-| Schema validation failure (missing required field, wrong type not coercible) | `invalid_input`, message from `ajv.errorsText` or the fallback `"invalid arguments"` | `packages/tools/src/core.ts:238`-`243` |
-| Guard denies, or `ask` with no/failing elicit | `denied`, message the guard's `reason` or `"blocked by guard"` | `packages/tools/src/core.ts:175`-`201` |
-| Guard or elicit callback throws | caught, rendered via `errorResult`/`serializeError` — never propagates | `packages/tools/src/core.ts:202`-`204` |
+| Unknown tool name (never existed, or removed, or write-tool-on-read-only-surface) | `not_found`, message `Unknown tool: <name>` | `packages/tools/src/core.ts:221`-`224` |
+| Schema validation failure (missing required field, wrong type not coercible) | `invalid_input`, message from `ajv.errorsText` or the fallback `"invalid arguments"` | `packages/tools/src/core.ts:226`-`231` |
+| Guard denies, or `ask` with no/failing elicit | `denied`, message the guard's `reason` or `"blocked by guard"` | `packages/tools/src/core.ts:163`-`189` |
+| Guard or elicit callback throws | caught, rendered via `errorResult`/`serializeError` — never propagates | `packages/tools/src/core.ts:190`-`192` |
 | Handler throws a `ToolError` | serialized with its own `code`/`message`/`fields` | `packages/tools/src/errors.ts:66`-`68` |
 | Handler throws anything else (a bug) | collapsed to `{error: "internal", message: "internal error"}`; the real detail (stack or `String(err)`) goes only to the warn sink, event `tools.internal_error`, level `error` | `packages/tools/src/errors.ts:69`-`75` |
 | Unrecognized Node `ErrnoException` code (not `ENOENT`/`EISDIR`/`ENOTDIR`) | mapped to `io_error`; the raw errno is logged at `debug` (`tools.fs_error_unmapped`) since "an unusual errno is an ordinary outcome" | `packages/tools/src/errors.ts:105`-`115` |
@@ -495,11 +495,11 @@ number:
 | `resolveConfig` receives more than 512 skill roots, or a skill root is missing, not a directory, a filesystem root, or contains the workspace | throws `StartupError`; no partial execution surface is returned | `resolveConfig` in `packages/tools/src/config.ts`, pinned by `packages/tools/tests/integration/config.test.ts` |
 | A native mutation targets a selected skill package, or recursive `replace` scopes over one | `path_escape` before guard or handler; no mutation runs | `protectSkillPackages` in `packages/tools/src/core.ts`, pinned by `packages/tools/tests/integration/api.test.ts` |
 | `resolveConfig`'s ripgrep probe throws | swallowed; `ripgrepAvailable` is set `false`, not propagated as a startup failure | `packages/tools/src/config.ts:196`-`202`, pinned by `packages/tools/tests/integration/config.test.ts:182`-`191` |
-| Tool result's serialized `meta` exceeds `maxToolMetaBytes` | truncated to `{truncated: true, truncation_reason: ...}` plus, for a `diff` field, the longest prefix that still fits | `packages/tools/src/core.ts:86`-`111` |
-| Non-`bounded` tool's text output exceeds `maxOutputBytes` | clamped by `bound()` (sibling concern in `lib/output.ts`), never dropped or errored | `packages/tools/src/core.ts:77`-`84` |
+| Tool result's serialized `meta` exceeds `maxToolMetaBytes` | truncated to `{truncated: true, truncation_reason: ...}` plus, for a `diff` field, the longest prefix that still fits | `packages/tools/src/core.ts:76`-`101` |
+| Non-`bounded` tool's text output exceeds `maxOutputBytes` | clamped by `bound()` (sibling concern in `lib/output.ts`), never dropped or errored | `packages/tools/src/core.ts:67`-`74` |
 
 Nothing in `dispatch` throws to its caller: every one of the above resolves to a `DispatchResult`
-with `isError: true` and a JSON-string error in `content` (documented at `packages/tools/src/core.ts:217`-`224`).
+with `isError: true` and a JSON-string error in `content` (documented at `packages/tools/src/core.ts:195`-`212`).
 
 ## 7. Coupling
 
@@ -508,8 +508,9 @@ with `isError: true` and a JSON-string error in `content` (documented at `packag
 - `@clarvis/paths`: `resolveCommand` (used by `probeRipgrep`, `packages/tools/src/config.ts:189`) and
   `workspaceStatePaths` (used to derive `stateRoot`, `packages/tools/src/config.ts:7,503`). A hard, direct dependency —
   `packages/tools/src/config.ts:7` imports it by name; there is no fallback path.
-- `ajv` (via `createRequire`, `packages/tools/src/core.ts:1,47`): loaded once at module scope to build the shared
-  validator map over every entry in `tools` (`packages/tools/src/core.ts:50`-`53`) — this is why adding a 25th tool to
+- `ajv` (a static value import in `packages/tools/src/core.ts`): loaded once at module scope to build
+  the shared validator map over every entry in `tools` (the module-level `validators`
+  construction) — this is why adding a 25th tool to
   the registry automatically gets a compiled validator with no further wiring. This map is built over
   the *full* surface (`tools`) regardless of `readOnly`, so a read-only-configured run still has a
   compiled validator sitting in the module-level `Map` for every write tool it will never expose —
@@ -519,7 +520,7 @@ with `isError: true` and a JSON-string error in `content` (documented at `packag
   statements binding the 24 tool implementations — one line imports four monitor
   bindings at once — `packages/tools/src/tools/registry.ts:1`-`21`): `registry.ts` is the one file that imports every tool
   implementation; nothing else in the package needs to.
-- `./guard/context.ts` (`buildGuardContext`) and `./guard/types.ts` (`ElicitRequest`): `packages/tools/src/core.ts:8-9`
+- `./guard/context.ts` (`buildGuardContext`) and `./guard/types.ts` (`ElicitRequest`): `packages/tools/src/core.ts:7-8`
   imports them to build the `GuardContext` passed to `config.guard`, but does not implement guard
   policy itself — that is the sibling [command-guard-and-approval](command-guard.md) document's domain, reached here only
   through the `Guard`/`Elicit` function types on `RuntimeConfig` (`packages/tools/src/config.ts:5`, `115`, `118`).
@@ -533,7 +534,7 @@ with `isError: true` and a JSON-string error in `content` (documented at `packag
   header comment (`:16`-`20`) calls out as untypeable: `Function.length` and structural assignability
   would both silently accept a re-added second (capability) parameter, so only the text scan in
   `no-tree-sitter.test.ts` would catch its return.
-- `dispatch`'s exact refusal string for an unknown tool (`Unknown tool: ${name}`, `packages/tools/src/core.ts:235`) is
+- `dispatch`'s exact refusal string for an unknown tool (`Unknown tool: ${name}`, `packages/tools/src/core.ts:223`) is
   pinned byte-for-byte by `packages/tools/tests/component/tool-surface.test.ts:57`-`60`'s `toEqual`, which is what makes INV-044 (a
   removed tool refused identically to a typo) a property of the code rather than an accident of
   phrasing.
@@ -555,20 +556,20 @@ conventions; that consumer side is outside this document's scope.
   `workspaceRoot`) or simply unneeded so far — no test in this document's scope exercises overriding
   it.
 - **Whether `structuredClone(args)` before validation is itself covered by a dedicated test.** The
-  behavior is documented in `packages/tools/src/core.ts:211`-`224` and is consistent with every dispatch test observed,
+  behavior is documented in `packages/tools/src/core.ts:195`-`212` and is consistent with every dispatch test observed,
   but no test in `tests/component/core.test.ts` specifically asserts the caller's original `args`
   object is left unmutated after a call that triggers Ajv's `useDefaults`/`coerceTypes` defaulting —
   this is an unpinned invariant (noted in §5).
 - ~~The exact behavior of `boundMeta`'s binary search when `meta` has a `diff` field but the `base`
   object alone already exceeds `maxToolMetaBytes`~~ **Resolved: `base` always fits.** The loop
-  (`packages/tools/src/core.ts:99`-`109`) initializes `best = base` and only updates it on a fitting
+  (`packages/tools/src/core.ts:89`-`100`) initializes `best = base` and only updates it on a fitting
   candidate, so the fallback return value is `base` whenever no candidate fits — but every call site
   that can reach `boundMeta` passes a `maxBytes` that is bound below by `MIN_OUTPUT_BYTES = 1024`
   (`packages/tools/src/config.ts:172`), enforced not by convention but by `requireMin` throwing a `StartupError`
   at config construction if `maxToolMetaBytes < 1024` (`packages/tools/src/config.ts:218-223`, applied at `:482`-`486`); the sole
-  production call site is `packages/tools/src/core.ts:260`, `boundMeta(meta, config.maxToolMetaBytes)`, so no dispatch can
+  production call site is `packages/tools/src/core.ts:248`, `boundMeta(meta, config.maxToolMetaBytes)`, so no dispatch can
   ever pass a smaller bound. `base`'s own JSON encoding — `{"truncated":true,"truncation_reason":"tool
-  metadata exceeded <N> bytes"}` (`packages/tools/src/core.ts:90`-`93`) — is a small, fixed-shape object whose only
+  metadata exceeded <N> bytes"}` (`packages/tools/src/core.ts:79`-`82`) — is a small, fixed-shape object whose only
   variable part is `String(maxBytes)`; even for the largest value the field could plausibly carry
   (`Number.MAX_SAFE_INTEGER`, 16 digits) the whole encoded object is under 100 bytes, an order of
   magnitude below the 1024-byte floor. So `best = base` can never itself exceed `maxBytes`: the

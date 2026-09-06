@@ -152,7 +152,7 @@ optional `prepareReconnect`, and `callbacks` (`:126-133`).
 | `adapters/connection-state.ts` | `ConnectionState`, `ConnectionStore`, `createConnectionState`, `connectionLabel`, `connectionProbe` | `:10`, `:16`, `:22`, `:30`, `:42` |
 | `adapters/stream-metrics.ts` | `StreamMetrics`, `createStreamMetrics`, `streamMetrics` | `:30`, `:50`, `:102` |
 | `adapters/memory-pressure.ts` | `MIB`, `DEFAULT_TUI_RSS_LIMIT_BYTES`, `MEMORY_PRESSURE_SAMPLE_MS`, `MEMORY_PRESSURE_ABORT_GRACE_MS`, `MEMORY_PRESSURE_RECOVERY_TIMEOUT_MS`, `MemoryPressurePhase`, `ProcessMemorySample`, `MemoryPressureSnapshot`, `MemoryRecoveryResult`, `MemoryPressureDeps`, `MemoryPressureController`, `memoryPressureAllowsSlash`, `tuiRssLimitBytes`, `createMemoryPressureController` | `:3`–`:12`, `:14`, `:17`, `:24`, `:32`, `:41`, `:59`, `:72`, `:77`, `:106` |
-| `adapters/execution-safety.ts` | `SafetyPreset`, `CanonicalSafetyPreset`, `RunControlsState`, `MemoryState`, `PlanMode`, `PlanRetention`, `PlansState`, `planRetentionLabel`, `plansState`, `modelResolves`, `memoryState`, `deriveSafetyPreset`, `deriveRunControls`, `safetyDescription`, `memoryDescription`, `planRetentionDescription`, `settingsForPreset` | symbols of the same names |
+| `adapters/execution-safety.ts` | `IsolationMode`, `RunControlsState`, `MemoryState`, `PlanMode`, `PlanRetention`, `PlansState`, `planRetentionLabel`, `plansState`, `modelResolves`, `memoryState`, `deriveIsolation`, `deriveRunControls`, `safetyDescription`, `memoryDescription`, `planRetentionDescription` | symbols of the same names |
 | `adapters/file-prompt-history.ts` | `createFilePromptHistory(limit = 200, file = workspaceStatePaths().promptHistoryFile, options)` | `:84` |
 | `adapters/workspace-client-manager.ts` | `ManagedWorkspaceClient`, `WorkspaceClientOptions`, `WorkspaceClientManager` | symbols of the same names |
 | `adapters/kernel-errors.ts` | `hasKernelErrorCode(error, code): error is {code}` — the narrowing every kernel-error branch in this scope goes through | `packages/code/src/adapters/kernel-errors.ts:4-14` |
@@ -864,12 +864,15 @@ generation 1, evict, then create generation 2
 
 Pure functions of `RunControlsState`, no state of their own.
 
-`safetyDescription` (`:162`) branches first on `sandboxEnabled`: when on, it appends up to three lines
-— whether the native sandbox is required or a host fallback is possible (further split by `guardMode` when
-required: `"off"` reads as fully autonomous, `"auto"` as the model escalating what it judges risky,
-anything else as risky actions asking first), then a filesystem line (`workspace-read-only` vs.
-read-write) and a network line (`none` vs. host access) (`:163`–`:181`); when sandboxing is off, one
-line branches only on `guardMode === "off"` (`:182`–`:187`).
+`deriveIsolation` gives an explicit Docker or Podman runtime precedence over the native Sandbox
+block; without a container runtime it returns Sandbox when that block is enabled and Host otherwise.
+`deriveRunControls` then projects Review, Memory and Plans independently from that isolation choice.
+
+`safetyDescription` branches first on container isolation. Docker and Podman describe the copied
+Linux workspace plus either disabled networking or outbound access with explicit service exposure.
+Native Sandbox describes required versus optional confinement, filesystem and network policy; Host
+describes direct execution. Review changes the consequence text inside either native placement but
+never changes which placement was selected.
 
 `memoryDescription` (`:195`) is a three-way switch on `state.memory`: `"on"` reads before/after, "no
 extraction model resolves" for `"inert"`, otherwise disabled-for-this-session (`:196`–`:200`).
@@ -881,19 +884,14 @@ retain the plan. Planning mode is intentionally absent from this presentation he
 TUI changes review policy through `/plan`, not Run Controls. Pinned by
 `packages/code/tests/unit/execution-safety.test.ts` (plan-retention consequence case).
 
-`settingsForPreset(preset)` is the declared inverse of `deriveSafetyPreset`: it maps each of
-the six canonical presets to an explicit `{guard, sandbox}` settings patch — `sandbox.enabled` true
-for `"isolated"`/`"reviewed"`/`"protected"`; `guard.mode` `"auto"` for `"judged"`/`"reviewed"`, `"on"` for
-`"approval"`/`"protected"`, else `"off"`. The round-trip is pinned by
-`packages/code/tests/unit/execution-safety.test.ts`
-("maps every preset to explicit guard and sandbox settings" — e.g. `settingsForPreset("free")
-.sandbox?.enabled === false`, `settingsForPreset("approval").guard?.mode === "on"`).
-Before any selector writes that patch, `applySafetyPreset` carries the current scope's allow/deny
-lists, or the global lists into a workspace with no local policy. Selecting `reviewed` or `judged`
-therefore changes judge/sandbox posture without turning every safe command into an unlisted ask.
-Production: `packages/code/src/features/run/safety-presets.ts` (`applySafetyPreset`) and
-`packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`). Tests:
-`packages/code/tests/unit/safety-presets.test.ts` and
+`applyIsolation` maps Host/Sandbox/Docker to an explicit global `{runtime, sandbox}` patch. Docker
+persists only `{backend:"docker"}`, keeps the native Sandbox enabled and required for operational
+fallback, and leaves guard policy untouched. `applyReviewMode` separately maps Off/Approval/Auto to
+the selected scope's guard mode, carrying that scope's allow/deny lists or the global lists into a
+workspace with no local policy; it writes no runtime or Sandbox field. Production:
+`packages/code/src/features/run/isolation.ts`, `packages/code/src/features/run/review.ts`, and
+`packages/code/src/views/config/RunControlsPanel.tsx`. Tests:
+`packages/code/tests/integration/isolation-review-picker-render.test.tsx` and
 `packages/code/tests/integration/run-controls-render.test.tsx`.
 
 ### 4.21 Memory-pressure state machine (`packages/code/src/adapters/memory-pressure.ts:193`)
@@ -1199,9 +1197,12 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/unit/execution-safety.test.ts` ("is on only when the extraction model
     reaches a declared provider" and inert-state cases).
 
-50. **A safety preset is reported only on an exact canonical match; anything else is `"custom"`.**
-    `packages/code/src/adapters/execution-safety.ts:129`–`:134`. Pinned:
-    `packages/code/tests/unit/execution-safety.test.ts:38`.
+50. **Isolation is derived independently from Review.** A Docker or Podman runtime wins over native
+    Sandbox state; otherwise an enabled native Sandbox is `sandbox` and absence/disablement is
+    `host`. Guard mode cannot change that result. Production:
+    `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`, `deriveRunControls`). Pinned:
+    `packages/code/tests/unit/execution-safety.test.ts` ("derives isolation independently from
+    command review").
 
 51. **`@clarvis/code`'s adapters never import from `ui/` or `views/`** (INV-244) — full statement
     owned by [hosts/code-bootstrap.md](code-bootstrap.md) §5. This is why
@@ -1237,10 +1238,10 @@ The following are derived directly from this document's own source and its tests
     `packages/code/tests/component/session-store.test.ts:78`, which always supplies one — the throw
     itself is unpinned.
 
-56. **`settingsForPreset` is the declared inverse of `deriveSafetyPreset` over the six canonical
-    presets, including direct-host `judged` as `{sandbox.enabled:false, guard.mode:"auto"}`.**
-    Production: `packages/code/src/adapters/execution-safety.ts` (`settingsForPreset`,
-    `deriveSafetyPreset`). Pinned: `packages/code/tests/unit/execution-safety.test.ts`.
+56. **Isolation and command review are independently derived: an explicit Docker or Podman runtime
+    wins over the native Sandbox block, while `guardMode` remains an orthogonal field.** Production:
+    `packages/code/src/adapters/execution-safety.ts` (`deriveIsolation`, `deriveRunControls`). Pinned:
+    `packages/code/tests/unit/execution-safety.test.ts`.
 
 57. **An elicitation's structured `detail` reaches the UI only when the kernel sent one, and the
     kernel is always answered, even when no handler is registered or the handler throws.**
@@ -1356,7 +1357,7 @@ The following are derived directly from this document's own source and its tests
 |---|---|---|
 | `packages/code/src/runtime.tsx` | `createRunHost` and the entire dependency wiring | `runApp` |
 | `packages/code/src/runtime.tsx` | one `createKernelRunClient` for the pinned workspace, with `prepareReconnect` bound to `workspaceManager.invalidate` | `createWorkspaceRunClient` |
-| `packages/code/src/runtime.tsx` and `packages/code/src/startup-foundation.ts` | `WorkspaceClientManager.create`; ordinary run may prepare it while the complete runtime chunk loads | `bootSilentSessionStore`, `runApp`, `prepareStartupFoundation` |
+| `packages/code/src/runtime.tsx` and `packages/code/src/startup-foundation.ts` | `WorkspaceClientManager.create`; every complete headless and interactive kernel receives a lazy local runtime-factory closure, while no engine import, image resolution or container preparation occurs until the first selected container run | `bootSilentSessionStore`, `runPrintMode`, `runRefreshMode`, `runApp`, `prepareStartupFoundation` |
 | `packages/code/src/runtime.tsx` | `createSessionStore`, `createTranscriptStore`, `createActivityStore`, `createConnectionState`, `createFilePromptHistory`, `createActiveAgentStore` | `runApp` |
 | `packages/code/src/views/App.tsx` | `createMemoryPressureController` + `tuiRssLimitBytes`, wired to `run.active` / `run.cancel` / `run.forceStop` / `backend.reconnect` | `:99-104`, `:338-345` |
 | `packages/code/src/runtime.tsx` | `runHost.teardownRuns()` supplied as the fuse's `forceStop` | `runControls.forceStop` |

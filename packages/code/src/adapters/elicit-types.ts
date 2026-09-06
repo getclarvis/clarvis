@@ -22,12 +22,18 @@ export interface ElicitRequestParams {
    * command approval for `guard_confirm`, a plan-approval gate for
    * `plan_review`, or a neutral question for `ask_user`. Mirrors the protocol
    * `ElicitationRequest.kind`. */
-  kind?: "ask_user" | "guard_confirm" | "plan_review" | "workflow_review" | (string & {});
+  kind?:
+    | "ask_user"
+    | "guard_confirm"
+    | "plan_review"
+    | "workflow_review"
+    | "workspace_merge"
+    | (string & {});
   /** Structured command context on a `guard_confirm` — when present the UI
    * renders it (highlighted command + cwd) instead of the plain `message`,
    * which stays the human-readable fallback. Mirrors the protocol
    * `ElicitationCommandDetail`. */
-  detail?: ElicitCommandDetail;
+  detail?: ElicitCommandDetail | WorkspaceMergeDetail;
   /** Form variant: a JSON-schema object describing the requested fields. */
   requestedSchema?: {
     type?: string;
@@ -49,6 +55,21 @@ export interface ElicitCommandDetail {
   reason: string;
   /** Analyzer caveat (e.g. undecidable expansions) rendered as a warning. */
   warning?: string;
+}
+
+export interface WorkspaceMergeDetail {
+  change_set_id: string;
+  baseline_revision: string;
+  content_digest: string;
+  changes: Array<{
+    path: string;
+    action: "add" | "modify" | "delete";
+    type: "file" | "symlink";
+    mode: number;
+    size?: number;
+    digest?: string;
+    target?: string;
+  }>;
 }
 
 type ElicitAction = "accept" | "decline" | "cancel";

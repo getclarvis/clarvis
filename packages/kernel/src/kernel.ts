@@ -35,7 +35,11 @@ import type {
 } from "@clarvis/protocol";
 import type { PlanFactory } from "@clarvis/plan";
 import type { EventStreamOptions } from "./core/event-stream.ts";
-import { createRunService, type RunRequestAssembler } from "./runs/run-service.ts";
+import {
+  createRunService,
+  type RunExecutor,
+  type RunRequestAssembler,
+} from "./runs/run-service.ts";
 import { createMemoryService } from "./memory/memory-service.ts";
 import { createPlansService } from "./plans/plans-service.ts";
 import { createSkillsService } from "./skills/skills-service.ts";
@@ -258,6 +262,8 @@ export interface CreateKernelOptions {
   tasksEnabled?: boolean;
   /** Host lease acquired for each live run in this workspace. */
   acquireRunLease?: () => () => void;
+  /** Placement-neutral loop executor shared by ordinary and workflow runs. */
+  executeRun?: RunExecutor;
 }
 
 /** Capability defaults shared by direct and transport-backed local kernels. */
@@ -266,6 +272,12 @@ export const DEFAULT_KERNEL_CAPABILITIES: KernelCapabilities = {
   skills: false,
   agent_tools: true,
   tasks: false,
+  runtime: {
+    kind: "native",
+    host_platform: process.platform,
+    isolation: "host",
+    lifecycle: "ready",
+  },
 };
 
 /** Minimal Extension Profile service for embedders that do not use the file-backed host. */
@@ -488,6 +500,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       resolveLeaderDefault: (managerAgent) => workflowPolicy.resolveLeaderDefault(managerAgent),
       eventBuffer,
       lifecycle,
+      ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
     });
     const baseRuns = createRunService({
       deps: runDeps,
@@ -498,6 +511,7 @@ export function createInProcessKernel(opts: CreateKernelOptions): InProcessKerne
       runManagerWorkflow: (params) => workflows.runManagerWorkflow(params),
       lifecycle,
       logger: runLogger,
+      ...(opts.executeRun === undefined ? {} : { executeRun: opts.executeRun }),
     });
     const runs =
       opts.acquireRunLease === undefined

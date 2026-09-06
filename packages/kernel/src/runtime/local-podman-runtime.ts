@@ -1,0 +1,355 @@
+import { randomUUID } from "node:crypto";
+import { NOOP_LOGGER } from "@clarvis/capability";
+import type { ElicitParams, ElicitRawResult, ExecuteRunArgs, LLMCallParams } from "@clarvis/loop";
+import type { RuntimeHost, RuntimeHostInput } from "./lazy-runtime.ts";
+import type { ResolvedContainerRuntimeSettings } from "./settings.ts";
+import { createNodePodmanControl } from "../adapters/process/node-podman-control.ts";
+import {
+  createCapabilityBroker,
+  createModelBroker,
+  type ModelBroker,
+} from "./authority-brokers.ts";
+import {
+  createIsolatedRunExecutor,
+  createRuntimeAuthorityRouter,
+  type RuntimeAuthorityRouter,
+} from "./isolated-run-executor.ts";
+import { createPodmanRuntimeBackend } from "./podman-backend.ts";
+import { forwardGuestGuardAudit } from "./guard-audit-bridge.ts";
+import { RUNTIME_PREVIEW_METHOD, RUNTIME_PREVIEW_REVISION } from "./preview-capability.ts";
+import { createHostPlansGrant, RUNTIME_PLANS_METHOD } from "./plan-bridge.ts";
+import {
+  createHostSkillsGrant,
+  createRuntimeSkillCatalog,
+  RUNTIME_SKILLS_METHOD,
+} from "./skills-bridge.ts";
+import type { PodmanControl } from "./podman-backend.ts";
+import { launchIsolatedRuntime } from "./runtime-controller.ts";
+import { settleRuntimeWorkspace } from "./workspace-settlement.ts";
+import type { RootOptions } from "@clarvis/paths";
+import type { RuntimeBackend } from "./types.ts";
+
+type LocalRuntimeInput = RuntimeHostInput;
+type ResolvedLocalRuntimeInput = Omit<LocalRuntimeInput, "settings"> & {
+  readonly settings: ResolvedContainerRuntimeSettings;
+};
+
+/** Deterministic host-effect seams for the local composition contract tests. */
+export interface LocalPodmanRuntimeOptions {
+  readonly control?: PodmanControl;
+  readonly roots?: RootOptions;
+}
+
+/** Engine-neutral options used by local Docker and Podman compositions. */
+export interface LocalContainerRuntimeOptions {
+  readonly roots?: RootOptions;
+}
+
+function modelPairs(rawBody: unknown): Set<string> {
+  const raw = rawBody as { profiles?: Array<{ model?: unknown }> };
+  const pairs = new Set<string>();
+  for (const profile of raw.profiles ?? []) {
+    if (typeof profile.model !== "string") continue;
+    const slash = profile.model.indexOf("/");
+    if (slash > 0 && slash < profile.model.length - 1) {
+      pairs.add(`${profile.model.slice(0, slash)}\0${profile.model.slice(slash + 1)}`);
+    }
+  }
+  return pairs;
+}
+
+function providerConfig(rawBody: unknown, provider: string): unknown {
+  const raw = rawBody as { providers?: Array<{ name?: unknown }> };
+  return raw.providers?.find((candidate) => candidate.name === provider);
+}
+
+function modelDestination(rawBody: unknown, provider: string): URL {
+  const config = providerConfig(rawBody, provider) as
+    { kind?: unknown; base_url?: unknown } | undefined;
+  if (config?.kind === "openai-compatible" && typeof config.base_url === "string") {
+    return new URL(config.base_url);
+  }
+  const origins: Readonly<Record<string, string>> = {
+    openai: "https://api.openai.com/v1",
+    anthropic: "https://api.anthropic.com",
+    google: "https://generativelanguage.googleapis.com",
+    "openai-codex": "https://chatgpt.com/backend-api/codex",
+    "xai-grok": "https://cli-chat-proxy.grok.com/v1",
+  };
+  const destination = typeof config?.kind === "string" ? origins[config.kind] : undefined;
+  if (destination === undefined) {
+    throw Object.assign(new Error("provider destination is not fixed by the run snapshot"), {
+      code: "unauthorized",
+    });
+  }
+  return new URL(destination);
+}
+
+function hostModelBroker(
+  input: LocalRuntimeInput,
+  args: ExecuteRunArgs,
+  runId: string,
+  leaseId: string,
+): ModelBroker {
+  const admitted = modelPairs(args.rawBody);
+  const brokers = new Map<string, ModelBroker>();
+  const brokerFor = (provider: string, model: string): ModelBroker => {
+    const key = `${provider}\0${model}`;
+    if (!admitted.has(key))
+      throw Object.assign(new Error("model is outside the run snapshot"), { code: "unauthorized" });
+    const existing = brokers.get(key);
+    if (existing !== undefined) return existing;
+    const broker = createModelBroker(
+      {
+        id: leaseId,
+        generation: input.generation,
+        runId,
+        provider,
+        model,
+        destination: modelDestination(args.rawBody, provider),
+        expiresAt: Date.now() + 24 * 60 * 60 * 1_000,
+        maxConcurrent: Math.max(1, Math.floor(input.settings.limits.cpu_count)),
+        maxInputBytes: input.settings.limits.output_bytes,
+        maxOutputBytes: input.settings.limits.output_bytes,
+      },
+      async function* (request, authority) {
+        const body = request.body as LLMCallParams;
+        const deltas: unknown[] = [];
+        const result = await args.deps.llm.call({
+          ...body,
+          provider: request.provider,
+          model: request.model,
+          providerConfig: providerConfig(
+            args.rawBody,
+            request.provider,
+          ) as LLMCallParams["providerConfig"],
+          signal: authority.signal,
+          onStreamDelta: (delta) => deltas.push({ type: "stream", ...delta }),
+        });
+        for (const delta of deltas) yield delta;
+        yield { type: "result", result };
+      },
+    );
+    brokers.set(key, broker);
+    return broker;
+  };
+  return {
+    execute(identity, request, signal) {
+      return brokerFor(request.provider, request.model).execute(identity, request, signal);
+    },
+    revoke() {
+      for (const broker of brokers.values()) broker.revoke();
+      brokers.clear();
+    },
+  };
+}
+
+function validElicitArguments(value: unknown): value is {
+  params: ElicitParams;
+  timeoutMs?: number;
+} {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as { params?: unknown; timeoutMs?: unknown };
+  return (
+    typeof record.params === "object" &&
+    record.params !== null &&
+    (record.timeoutMs === undefined ||
+      (Number.isSafeInteger(record.timeoutMs) && (record.timeoutMs as number) > 0))
+  );
+}
+
+function validPreviewArguments(value: unknown): value is {
+  port: number;
+  protocol?: "http" | "https" | "tcp";
+} {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const input = value as { port?: unknown; protocol?: unknown };
+  const keys = Object.keys(value);
+  return (
+    keys.every((key) => key === "port" || key === "protocol") &&
+    Number.isSafeInteger(input.port) &&
+    (input.port as number) >= 1 &&
+    (input.port as number) <= 65_535 &&
+    (input.protocol === undefined ||
+      input.protocol === "http" ||
+      input.protocol === "https" ||
+      input.protocol === "tcp")
+  );
+}
+
+function runAllowsCommandExecution(rawBody: unknown): boolean {
+  const body = rawBody as { profiles?: Array<{ grants?: unknown }> };
+  return (
+    Array.isArray(body.profiles) &&
+    body.profiles.some(
+      (profile) => Array.isArray(profile.grants) && profile.grants.includes("run_commands"),
+    )
+  );
+}
+
+/** Compose the concrete local Podman backend only after the host selected it. */
+export async function createLocalPodmanRuntime(
+  input: LocalRuntimeInput,
+  options: LocalPodmanRuntimeOptions = {},
+): Promise<RuntimeHost> {
+  if (input.settings.backend !== "podman") {
+    throw new Error("Podman runtime composition requires backend: podman");
+  }
+  const router = createRuntimeAuthorityRouter(input.generation);
+  const environment = Object.fromEntries(
+    ["HOME", "PATH", "XDG_RUNTIME_DIR"].flatMap((name) => {
+      const value = process.env[name];
+      return value === undefined ? [] : [[name, value]];
+    }),
+  );
+  const backend = createPodmanRuntimeBackend({
+    control:
+      options.control ??
+      createNodePodmanControl({
+        executable: input.settings.executable,
+        connection: input.settings.connection,
+        environment,
+      }),
+    handlers: router.handlers,
+  });
+  const resolvedInput: ResolvedLocalRuntimeInput = { ...input, settings: input.settings };
+  return createLocalContainerRuntime(resolvedInput, backend, router, options);
+}
+
+/** Compose shared host authority and settlement around one selected container engine. */
+export async function createLocalContainerRuntime(
+  input: ResolvedLocalRuntimeInput,
+  backend: RuntimeBackend,
+  router: RuntimeAuthorityRouter,
+  options: LocalContainerRuntimeOptions = {},
+): Promise<RuntimeHost> {
+  const runtimeSkillCatalog =
+    input.skillsProvider === undefined ? [] : createRuntimeSkillCatalog(input.skillsProvider);
+  const controller = await launchIsolatedRuntime({
+    ...input,
+    capabilityMethods: [
+      "runtime.elicit",
+      RUNTIME_PREVIEW_METHOD,
+      ...(input.planFactory === undefined ? [] : [RUNTIME_PLANS_METHOD]),
+      ...(input.skillsProvider === undefined ? [] : [RUNTIME_SKILLS_METHOD]),
+    ],
+    backend,
+    ...(options.roots === undefined ? {} : { roots: options.roots }),
+  });
+  const leases = new Map<string, string>();
+  const executeRun = createIsolatedRunExecutor({
+    generation: input.generation,
+    workspaceRoot: input.workspaceRoot,
+    session: controller.session,
+    router,
+    ...(options.roots === undefined ? {} : { roots: options.roots }),
+    guestEnvelope: (args, runId) => {
+      const leaseId = leases.get(runId);
+      if (leaseId === undefined) throw new Error("runtime model lease was not prepared");
+      const raw = args.rawBody as { continue_from?: unknown };
+      return {
+        modelLeaseId: leaseId,
+        hostCapabilities: [
+          ...(input.planFactory === undefined ? [] : ["plans"]),
+          ...(input.skillsProvider === undefined ? [] : ["skills"]),
+        ],
+        ...(input.skillsProvider === undefined ? {} : { skillCatalog: runtimeSkillCatalog }),
+        guardSettings: (() => {
+          const settings = input.loadGuardSettings?.() ?? {};
+          return {
+            ...(settings.guard === undefined ? {} : { guard: settings.guard }),
+            ...(settings.defaultModel === undefined ? {} : { defaultModel: settings.defaultModel }),
+          };
+        })(),
+        ...(typeof raw.continue_from === "string"
+          ? { priorExecution: args.deps.traceStore.getById(args.owner, raw.continue_from) }
+          : {}),
+      };
+    },
+    authority: (args, runId) => {
+      const leaseId = randomUUID();
+      leases.set(runId, leaseId);
+      const model = hostModelBroker(input, args, runId, leaseId);
+      const capabilities = createCapabilityBroker({
+        generation: input.generation,
+        runId,
+        grants: [
+          {
+            method: "runtime.elicit",
+            revision: "v1",
+            idempotent: false,
+            validateArguments: validElicitArguments,
+            async invoke(value, signal): Promise<ElicitRawResult> {
+              if (!validElicitArguments(value) || args.elicit === undefined) {
+                return { action: "cancel" };
+              }
+              return args.elicit(value.params, { signal, timeoutMs: value.timeoutMs });
+            },
+          },
+          ...(runAllowsCommandExecution(args.rawBody)
+            ? [
+                {
+                  method: RUNTIME_PREVIEW_METHOD,
+                  revision: RUNTIME_PREVIEW_REVISION,
+                  idempotent: true,
+                  validateArguments: validPreviewArguments,
+                  async invoke(value: unknown, signal: AbortSignal) {
+                    if (!validPreviewArguments(value)) {
+                      throw Object.assign(new Error("runtime preview arguments are invalid"), {
+                        code: "invalid_request",
+                      });
+                    }
+                    return controller.session.exposePort(value.port, value.protocol, signal);
+                  },
+                },
+              ]
+            : []),
+          ...(input.planFactory === undefined
+            ? []
+            : [createHostPlansGrant(input.planFactory, args.owner)]),
+          ...(input.skillsProvider === undefined
+            ? []
+            : [createHostSkillsGrant(input.skillsProvider, runtimeSkillCatalog)]),
+        ],
+        maxArgumentsBytes: 256 * 1024,
+        maxResultBytes: 256 * 1024,
+      });
+      return {
+        model,
+        capabilities,
+        terminalParticipants: () => [
+          { name: "session", async commit() {} },
+          {
+            name: "trace",
+            async commit() {
+              if (!args.deps.traceStore.existsForOwner(args.owner, runId)) {
+                throw new Error("runtime trace is not durable on the host");
+              }
+            },
+          },
+          { name: "capabilities", async commit() {} },
+          { name: "workspace", async commit() {} },
+        ],
+      };
+    },
+    consumeGuestEvent: (args, runId, value) =>
+      forwardGuestGuardAudit(value, input.guardAudit ?? NOOP_LOGGER, runId, args.owner),
+    async settleWorkspace(args) {
+      if (args.hostElicit === undefined) {
+        throw new Error("isolated workspace settlement requires the host elicitation channel");
+      }
+      await settleRuntimeWorkspace(input.workspaceRoot, input.generation, args.hostElicit, {
+        signal: args.externalSignal,
+        ...(options.roots === undefined ? {} : { roots: options.roots }),
+      });
+    },
+  });
+  return {
+    executeRun,
+    info: controller.info,
+    async close() {
+      leases.clear();
+      await controller.close();
+    },
+  };
+}

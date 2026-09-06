@@ -15,7 +15,7 @@ policy:
   (`packages/tools/src/guard/analyze-shell.ts:39`, `packages/tools/src/guard/context.ts:66`). It
   ships **no policy**: `RuntimeConfig.guard` and `RuntimeConfig.elicit` are host-supplied ports
   (`packages/tools/src/config.ts:115`-`:119`), and `applyGuard`
-  (`packages/tools/src/core.ts:156`-`:205`) is the only place a tool dispatch consults them.
+  (`packages/tools/src/core.ts:144`-`:193`) is the only place a tool dispatch consults them.
 - **`packages/kernel/src/guard/**` — the policy.** `createShellGuard`
   (`packages/kernel/src/guard/shell-guard.ts:244`) is a fixed-precedence rule cascade over deny
   host-command escalation, lists, undecidability, workspace containment, credential-file patterns
@@ -110,7 +110,7 @@ only by `packages/kernel/src/runs/settings-assembler.ts:13`.
 | --- | --- | --- |
 | `GuardResolution` | `:50`-`:53` | `{ guard?: Guard; elicit?: GuardElicit }` |
 | `GuardResolver` | `:60`-`:62` | `(ctx: RunCapabilityContext) => Promise<GuardResolution\|undefined> \| GuardResolution \| undefined` |
-| `AgentToolsCapabilityOptions.resolveGuard` | `:82`-`:86` | optional; omitting it passes no policy guard (`:79`-`:81`), while core still hard-denies `host_vcs` (`packages/tools/src/core.ts:161`-`:164`) |
+| `AgentToolsCapabilityOptions.resolveGuard` | `:82`-`:86` | optional; omitting it passes no policy guard (`:79`-`:81`), while core still hard-denies `host_vcs` (`packages/tools/src/core.ts:149`-`:153`) |
 | `withGuardElicitWaitBound` | `:103`-`:115` | `(elicit, waitMs, signal) => GuardElicit` |
 | `AGENT_TOOLS_CAPABILITY_NAME` | `:46` | `"tools"` |
 
@@ -156,9 +156,9 @@ capability vocabulary declares `GuardMode` at `packages/capability/src/api.ts:52
 | `loadGuardJudgePrompt` | `packages/code/src/adapters/guard-judge-prompt.ts:81` | workspace → global → builtin |
 
 The mode reaches a run through `judgePayloadFor` (`packages/code/src/runtime.tsx`) and
-`toStartParams` (`packages/code/src/adapters/kernel-run-client.ts:137`-`:172`). The command
-`guard.cycle` is registered at `packages/code/src/app/commands.tsx:481`-`:488` and runs
-`cycleGuardMode` (`packages/code/src/views/App.tsx:619`-`:623`).
+`toStartParams` (`packages/code/src/adapters/kernel-run-client.ts`). The `review.picker` command
+opens the independent Off/Approval/Auto selector; its portable route is `Ctrl+G` and its enhanced
+route is `Alt+G` (`packages/code/src/app/commands.tsx`, `packages/code/src/keys/interaction.ts`).
 
 ---
 
@@ -353,33 +353,33 @@ containment. Production: `packages/code/src/adapters/guard-judge-prompt.ts`
 
 ### 4.1 Where the guard is consulted
 
-`dispatch` (`packages/tools/src/core.ts:226`-`:266`) runs, in order:
+`dispatch` (`packages/tools/src/core.ts:214`-`:255`) runs, in order:
 
-1. tool lookup → `not_found` (`packages/tools/src/core.ts:233`-`:236`);
+1. tool lookup → `not_found` (`packages/tools/src/core.ts:221`-`:224`);
 2. `structuredClone` + AJV validation of the arguments → `invalid_input`
-   (`packages/tools/src/core.ts:238`-`:243`);
-3. the skill-package mutation boundary (`packages/tools/src/core.ts:245`-`:249`);
-4. **`applyGuard(name, filled, config)`** (`packages/tools/src/core.ts:251`-`:252`);
-5. the handler (`packages/tools/src/core.ts:254`-`:265`).
+   (`packages/tools/src/core.ts:226`-`:231`);
+3. the skill-package mutation boundary (`packages/tools/src/core.ts:233`-`:237`);
+4. **`applyGuard(name, filled, config)`** (`packages/tools/src/core.ts:239`-`:240`);
+5. the handler (`packages/tools/src/core.ts:242`-`:254`).
 
 So the guard sees **defaulted, schema-valid arguments**, never the raw ones, and the handler is
 never entered when the gate returns a result.
 
-`applyGuard` itself (`packages/tools/src/core.ts:156`-`:205`):
+`applyGuard` itself (`packages/tools/src/core.ts:144`-`:193`):
 
 | Condition | Result | Line |
 | --- | --- | --- |
-| `config.guard` absent | proceed with `{}`, except `host_vcs`, which is denied because it requires command review | `:161`-`:164` |
-| `verdict === "allow"` | proceed, carrying review metadata when the policy named a mode | `:169`-`:174` |
-| `verdict === "deny"` | `ToolError("denied", reason)` plus review metadata | `:175`-`:180` |
-| `verdict === "ask"`, no `config.elicit` | `ToolError("denied", reason)` with answerer `unavailable` | `:181`-`:185` |
-| `verdict === "ask"`, elicit approves | proceed, carrying the answerer in review metadata | `:193`-`:197` |
-| `verdict === "ask"`, elicit declines | `ToolError("denied", "command review did not approve: ...")` | `:193`-`:201` |
-| guard or elicit **throws** | `errorResult(err)` — fail closed | `:202`-`:204` |
+| `config.guard` absent | proceed with `{}`, except `host_vcs`, which is denied because it requires command review | `:149`-`:153` |
+| `verdict === "allow"` | proceed, carrying review metadata when the policy named a mode | `:157`-`:162` |
+| `verdict === "deny"` | `ToolError("denied", reason)` plus review metadata | `:163`-`:168` |
+| `verdict === "ask"`, no `config.elicit` | `ToolError("denied", reason)` with answerer `unavailable` | `:169`-`:173` |
+| `verdict === "ask"`, elicit approves | proceed, carrying the answerer in review metadata | `:181`-`:185` |
+| `verdict === "ask"`, elicit declines | `ToolError("denied", "command review did not approve: ...")` | `:181`-`:189` |
+| guard or elicit **throws** | `errorResult(err)` — fail closed | `:190`-`:192` |
 
-`reason` defaults to the literal `"blocked by guard"` (`packages/tools/src/core.ts:175`). The `ElicitRequest` handed
+`reason` defaults to the literal `"blocked by guard"` (`packages/tools/src/core.ts:163`). The `ElicitRequest` handed
 on carries `tool`, `args`, `reason`, `ctx.shell` and `escalate` when the decision set it
-(`packages/tools/src/core.ts:186`-`:192`). All of these are pinned in
+(`packages/tools/src/core.ts:174`-`:180`). All of these are pinned in
 `packages/tools/tests/integration/guard-dispatch.test.ts` by the allow, deny, no-elicit, and
 "resolves an ask through the elicit handler" cases.
 
@@ -732,19 +732,19 @@ itself because guard mode is resolved from host settings it never sees"
   derived default (`packages/code/src/adapters/guard-mode.ts:44`-`:49`,
   `packages/code/src/adapters/code-config.ts:203`-`:206`). `cycle()` walks `off → on → auto → off`
   (`packages/code/src/adapters/guard-mode.ts:8`, `:51`-`:54`; pinned at `packages/code/tests/unit/guard-mode.test.ts:54`).
-- **`Alt`-cycled** through the `guard.cycle` action (`packages/code/src/app/commands.tsx:481`-`:488`),
-  which notifies `guard: <mode> (this session)` and warns when `auto` will degrade
-  (`packages/code/src/views/App.tsx:619`-`:623`, `:585`-`:592`).
+- **Quick Review picker** writes the block to `settings.json` through the same controller as Run
+  Controls. It is reached by `Ctrl+G` everywhere and by `Alt+G` on an enhanced keyboard path; neither
+  route changes Isolation (`packages/code/src/views/overlays/ReviewPicker.tsx`,
+  `packages/code/src/features/run/review.ts`).
 - **Run Controls** writes the block to `settings.json` and *pre-degrades*: choosing `auto` without a
   usable `default_model` persists `"on"` and says so
   (`packages/code/src/views/config/RunControlsPanel.tsx`, `applyGuard`). Its source column reads
   `"session"` whenever the session mode differs from the persisted one
-  (`packages/code/src/views/config/RunControlsPanel.tsx`, `guardSource`). Both direct guard-mode changes
-  and named safety presets preserve the effective `allowed_commands`/`denied_commands` through
-  `guardPolicyForWrite`; a workspace write carries forward a global policy when the workspace has no
-  list of its own (`packages/code/src/views/config/RunControlsPanel.tsx`). Pinned by
-  `packages/code/tests/integration/run-controls-render.test.tsx` (guard-mode merge, reviewed preset,
-  and workspace-inherits-global cases).
+  (`packages/code/src/views/config/RunControlsPanel.tsx`, `guardSource`). `applyReviewMode` preserves
+  the effective `allowed_commands`/`denied_commands`; a workspace write carries forward a global
+  policy when the workspace has no list of its own. Pinned by
+  `packages/code/tests/integration/run-controls-render.test.tsx` and
+  `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
 - **Judge prompt** resolution is workspace `guard-judge.md` → global → built-in, with a blank or
   unreadable file treated as absent (`packages/code/src/adapters/guard-judge-prompt.ts:81`-`:87`,
   `:39`-`:61`) and a >1 MiB file rejected without reading its body (`:37`, `:45`); pinned at
@@ -758,12 +758,13 @@ itself because guard mode is resolved from host settings it never sees"
   `code`, the judge therefore always falls back to `settings.defaultModel`/`CLARVIS_DEFAULT_MODEL`
   (§4.6) and `on_unsure`'s omitted-field behavior (§2.5, invariant 43); the wider fields are wired
   end-to-end but dead on this client's path.
-- **Safety presets** classify the sandbox/guard pair: `free`, `approval`, `isolated`, `reviewed`,
-  `protected`, else `custom` (`packages/code/src/adapters/execution-safety.ts:121`-`:134`), with the
-  canonical write-back at `:222`-`:239`. The guard-mode half of that mapping:
-  `free`/`approval` → `off`/`on` with the sandbox disabled; `isolated`/`reviewed`/`protected` →
-  `off`/`auto`/`on` with the sandbox enabled (`packages/code/src/adapters/execution-safety.ts:129`-`:133`, `:218`-`:219`). The
-  sandbox half belongs to [sandbox-and-toolchains](sandbox.md).
+- **Isolation is separate.** Host/Sandbox/Docker selection writes no guard field, and a Review write
+  writes no runtime or Sandbox field. The header and Run Controls therefore report both axes rather
+  than naming a combined posture (`packages/code/src/features/run/isolation.ts`,
+  `packages/code/src/features/run/review.ts`,
+  `packages/code/src/adapters/execution-safety.ts`). The containment half belongs to
+  [sandbox-and-toolchains](sandbox.md) and
+  [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
 
 ---
 
@@ -861,17 +862,17 @@ broken.
     Pinned: `packages/tools/tests/unit/guard-context.test.ts:26`-`:29` and `:48`-`:50`.
 
 16. **The guard runs after argument validation and before the handler.**
-    `packages/tools/src/core.ts:238`-`:255`. Pinned: the handler's side effect is absent in
+    `packages/tools/src/core.ts:226`-`:243`. Pinned: the handler's side effect is absent in
     `packages/tools/tests/integration/guard-dispatch.test.ts`, "denies the call and never runs the
     handler".
 
 17. **An `ask` with no elicit channel is a denial, not an allow.**
-    `packages/tools/src/core.ts:181`-`:185`. Pinned in
+    `packages/tools/src/core.ts:169`-`:173`. Pinned in
     `packages/tools/tests/integration/guard-dispatch.test.ts`, "denies an ask when no elicit handler
     is configured".
 
 18. **A throw anywhere in the guard or the elicit fails closed.**
-    `packages/tools/src/core.ts:202`-`:204`. Pinned in
+    `packages/tools/src/core.ts:190`-`:192`. Pinned in
     `packages/tools/tests/integration/guard-dispatch.test.ts`, "fails closed when the guard throws".
 
 19. **The rule cascade's order is fixed: deny list → undecidable → guarded host-command review →
@@ -1091,12 +1092,13 @@ broken.
     resolution is that there is nothing left to distinguish — the two spellings are one behavior
     wearing the same words everywhere they surface.
 
-56. **Changing command-review mode or applying a named safety preset never erases the effective
-    allow/deny policy.** A workspace with no local list copies the global list into its written guard
-    block so the capability's last-wins scope merge cannot shadow it. Production:
-    `packages/code/src/views/config/RunControlsPanel.tsx` (`guardPolicyForWrite`, `applyPreset`,
-    `applyGuard`). Test: `packages/code/tests/integration/run-controls-render.test.tsx` (direct-mode,
-    reviewed-global, and reviewed-workspace policy-retention cases).
+56. **Changing command Review never erases the effective allow/deny policy or changes Isolation.**
+    A workspace with no local list copies the global list into its written guard block so the
+    capability's last-wins scope merge cannot shadow it. Production:
+    `packages/code/src/features/run/review.ts` (`scopedGuardPolicy`, `applyReviewMode`) and
+    `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`). Test:
+    `packages/code/tests/integration/run-controls-render.test.tsx` and
+    `packages/code/tests/integration/isolation-review-picker-render.test.tsx`.
 
 57. **A selected skill's execution approval widens command analysis only to that skill directory.**
     The guard sees shell paths and `cwd` beneath exact `skillExecutionRoots`; native mutation remains
@@ -1146,14 +1148,28 @@ broken.
     `packages/tools/tests/unit/powershell-dialect.test.ts` (settings-bound/uniqueness assertions,
     complete decidability/canonicality loops, ecosystem samples and exclusion matrices).
 
+61. **Container placement preserves command-guard decisions without trusting guest audit
+    identity.** The host sends only the guard/default-model settings needed to reconstruct
+    `createGuardResolver`; provider secrets remain behind the model broker. The guest caps its
+    built-in tool surface at `exec` and serializes only the closed guard-audit vocabulary. The host
+    rejects malformed audit events and overwrites guest-claimed `run_id`/`owner` with the
+    authenticated route before writing. The OCI policy is the guest containment boundary; no missing
+    nested native sandbox is treated as a guard bypass. Production: `guestGuardSettings` and
+    `createGuestLoopExecutor` in `packages/kernel/src/runtime/guest-loop-executor.ts`;
+    `forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`;
+    `createRuntimeAuthorityRouter` in `packages/kernel/src/runtime/local-podman-runtime.ts`. Test:
+    `runtime guard audit bridge` in
+    `packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts`; `runtime guest loop` in
+    `packages/kernel/tests/integration/runtime-guest-loop.test.ts`.
+
 ---
 
 ## 6. Failure modes and degradation
 
 | Failure | Handling | Cite |
 | --- | --- | --- |
-| Guard function throws | `applyGuard` catches and returns an error result; the handler never runs | `packages/tools/src/core.ts:202`-`:204` |
-| Elicit throws inside the tools layer | same catch | `packages/tools/src/core.ts:202`-`:204` |
+| Guard function throws | `applyGuard` catches and returns an error result; the handler never runs | `packages/tools/src/core.ts:190`-`:192` |
+| Elicit throws inside the tools layer | same catch | `packages/tools/src/core.ts:190`-`:192` |
 | Elicit throws inside the loop wrapper | `mapRejection: () => false` — denies | `packages/loop/src/runtime/capabilities/tools.ts:114` |
 | Elicit exceeds `elicit_wait_ms` | `onTimeout: () => false` — denies | `packages/loop/src/runtime/capabilities/tools.ts:112` |
 | Run cancelled mid-prompt | `onAbort: () => false` at the loop layer; `signal` also passed into the elicitation itself | `packages/loop/src/runtime/capabilities/tools.ts:110`-`:114`; `packages/kernel/src/guard/guard-elicit.ts:167` |
@@ -1167,15 +1183,16 @@ broken.
 | Analyzer cannot parse the command | `undecidable` → rule 2a/2b (deny with a deny list, human-escalated ask without) | `packages/kernel/src/guard/shell-guard.ts:258`-`:273` |
 | A tool family the context builder does not know | no paths, no shell facts → rule 6 `non_bash` `allow` | `packages/tools/src/guard/context.ts:114`-`:118`, `packages/kernel/src/guard/shell-guard.ts:297`-`:299` |
 | `CLARVIS_AGENT_TOOLS_ENABLED` unset | no toolset at all, so no guard is even constructed | `packages/loop/src/runtime/capabilities/tools.ts:130`-`:131` |
-| Host supplies no `resolveGuard` | ordinary calls receive no policy guard; `host_vcs` remains hard-denied by core | `packages/loop/src/runtime/capabilities/tools.ts:79`-`:83`, `:132`; `packages/tools/src/core.ts:161`-`:164` |
+| Host supplies no `resolveGuard` | ordinary calls receive no policy guard; `host_vcs` remains hard-denied by core | `packages/loop/src/runtime/capabilities/tools.ts:79`-`:83`, `:132`; `packages/tools/src/core.ts:149`-`:153` |
 | Host supplies no audit logger | `NOOP_LOGGER`; rulings still happen, nothing is recorded | `packages/kernel/src/guard/resolver.ts:227`; test `packages/kernel/tests/unit/guard-audit.test.ts:318`-`:324` |
+| Guest sends a malformed or open-ended guard-audit event | the host throws `invalid_request`; no record is written with guest-controlled fields | `forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`; `runtime guard audit bridge` in `packages/kernel/tests/unit/runtime-guard-audit-bridge.test.ts` |
 | `guard-judge.md` unreadable / blank / >1 MiB | silently treated as absent, next scope wins | `packages/code/src/adapters/guard-judge-prompt.ts:56`, `:64`, `:66` |
 | `auto` chosen in Run Controls without a usable model | persisted as `"on"` with a notification | `packages/code/src/views/config/RunControlsPanel.tsx` (`applyGuard`) |
 
 An unappealable static `deny` carries the guard's reason. When an `ask` reaches a reviewer but is not
 approved — whether declined, cancelled, timed out or denied by the model — the tool error instead
 prefixes that reason with `"command review did not approve"`, making the attempted review visible
-without claiming why it returned false (`packages/tools/src/core.ts:175`-`:203`). Both reach the
+without claiming why it returned false (`packages/tools/src/core.ts:163`-`:192`). Both reach the
 transcript as the tool call's `error`
 (`packages/loop/tests/integration/command-guard-wiring.test.ts:83`). Note that the guard's reason strings
 are tool results, so they fall under the tools package's "no bypass hints" scan
@@ -1213,14 +1230,14 @@ accumulate as execution failures`).
 
 | From | To | What forces it |
 | --- | --- | --- |
-| `packages/tools/src/core.ts:156-168` | `buildGuardContext` | `applyGuard` must build a context before calling the host's guard |
+| `packages/tools/src/core.ts:144-156` | `buildGuardContext` | `applyGuard` must build a context before calling the host's guard |
 | `packages/tools/src/guard/context.ts:2`, `:4` | `analyzeShell`, `currentDialect` | command tools need facts and a dialect |
 | `packages/tools/src/guard/dialects/index.ts:1` | `lib/platform.ts` | dialect selection derives from the same flavor the executor uses |
 | `packages/kernel/src/guard/shell-guard.ts:2`-`:9` | `@clarvis/tools/guard` (`withinWorkspace`, `touchesOutside` + types) | the policy reasons over the analyzer's facts |
 | `packages/kernel/src/guard/shell-guard.ts:10` → `packages/kernel/src/guard/glob.ts:10` | `@clarvis/capability`'s `globToRegExp` | one shared glob dialect with `@clarvis/hooks` |
 | `packages/kernel/src/guard/resolver.ts:11` | `@clarvis/loop/host`'s `defaultGuardMode` + `GuardConfig` | the settings shape is the engine's, not the kernel's |
 | `packages/kernel/src/guard/judge.ts:11` | `@clarvis/capability`'s `parseModelRef`, `resolveProvider` | judge model resolution reuses the shared provider registry |
-| `packages/kernel/src/file-kernel.ts:709-713` | `createGuardResolver` | the only production construction site |
+| `packages/kernel/src/file-kernel.ts` and `packages/kernel/src/runtime/guest-loop-executor.ts` | `createGuardResolver` | native and isolated guest construction sites; the latter receives stripped host settings and returns validated audit events |
 | `packages/loop/src/runtime/capabilities/tools.ts:127-133` | `opts.resolveGuard` | the engine's single call into host guard policy |
 | `packages/loop/src/runtime/tools/builtin/index.ts:21`-`:29` | `@clarvis/tools/guard` values | re-export barrel under the tools capability subpath |
 | `packages/code/src/onboarding/seed-default-allowlist.ts:1`-`:4` | `@clarvis/kernel/local`'s two default lists | the seed is the analyzer's own list, not a copy |
@@ -1251,7 +1268,7 @@ accumulate as execution failures`).
 ### Who depends on this
 
 `@clarvis/tools`' `dispatch` (every tool call), `@clarvis/kernel`'s run assembler (for the cache
-TTL), `@clarvis/code`'s Run Controls / header / safety presets, and `@clarvis/server`, which
+TTL), `@clarvis/code`'s Run Controls / header / Review picker, and `@clarvis/server`, which
 deliberately does **not** expose `guard_mode` (`packages/server/src/mcp/tools.ts:50`-`:56`) and
 separately postures guard confirmations per principal
 (`packages/server/src/mcp/elicitation.ts:223`) — both delegated to [server-mcp-facade](../hosts/server-mcp.md) and
@@ -1332,5 +1349,6 @@ separately postures guard confirmations per principal
   `auto_decline` posture ([elicitation-and-user-interaction](../cross-cutting/elicitation.md)); how `ElicitBlock` renders a
   `guard_confirm` (`packages/code/src/views/ElicitBlock.tsx:61`, [code-transcript-and-tool-rendering](../hosts/code-transcript.md));
   the seeding of `allowed_commands` on first boot ([code-onboarding-doctor-and-platform](../hosts/code-onboarding.md)); the
-  sandbox half of the safety presets ([sandbox-and-toolchains](sandbox.md)); and the prompt-cache economics
+  independent Isolation control ([sandbox-and-toolchains](sandbox.md) and
+  [isolated-agent-runtime](../hosts/isolated-agent-runtime.md)); and the prompt-cache economics
   behind the `1h` TTL ([prompt-cache-and-prefix-stability](../cross-cutting/prompt-cache.md)).

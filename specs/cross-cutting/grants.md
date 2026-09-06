@@ -279,7 +279,7 @@ For each agent (entry or spawned), `createAgentToolsRunCapability.forAgent(scope
    - `resolveConfig({ readOnly: !canMutate, … })` — `@clarvis/tools` itself
      restricts to `readOnlyTools` whenever `canMutate` is false
      (`packages/loop/src/runtime/tools/builtin/toolset.ts:121-141`,
-     `packages/tools/src/core.ts:134-141`, `packages/tools/src/tools/registry.ts:83-92`).
+     `packages/tools/src/core.ts:124-130`, `packages/tools/src/tools/registry.ts:83-92`).
    - Then, independently, `createAgentToolsetWithAdapter` filters out every
      `EXEC_TOOL_NAMES` member whenever `canExec` is false, even from an
      otherwise-full (`canMutate: true`) definition list

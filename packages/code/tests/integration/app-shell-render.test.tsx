@@ -630,7 +630,7 @@ test("a completed Plan never contributes a task counter to the compact footer", 
   t.renderer.destroy();
 });
 
-test("the full task editor keeps the action footer on a stable row", async () => {
+test("Ctrl+E expands the full task editor and keeps the action footer on a stable row", async () => {
   const t = await mountApp(defaultProps({}), { width: 140, height: 45 });
   const collapsed = t.captureCharFrame();
   expect(collapsed).toContain("expand editor");
@@ -638,7 +638,7 @@ test("the full task editor keeps the action footer on a stable row", async () =>
     .split("\n")
     .findIndex((line) => line.includes("[↵] send / steer"));
 
-  t.mockInput.pressKey("g", { ctrl: true });
+  t.mockInput.pressKey("e", { ctrl: true });
   const expanded = await captureUntil(t, "collapse editor");
   const expandedFooter = expanded
     .split("\n")
@@ -1411,29 +1411,45 @@ test("agent picker overlay opens on /agent and closes on escape", async () => {
   t.renderer.destroy();
 });
 
-test("Ctrl+S opens the safety-preset picker and Escape returns to the composer", async () => {
+test("Ctrl+S opens the isolation picker and Escape returns to the composer", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
 
   press(t, "s", { ctrl: true });
-  const picker = await captureUntil(t, "Select safety preset");
+  const picker = await captureUntil(t, "Select isolation");
 
-  expect(picker).toContain("judged");
-  expect(picker).toContain("LLM judge reviews risk");
+  expect(picker).toContain("Sandbox");
+  expect(picker).toContain("Docker");
   press(t, "escape");
   const back = await captureUntil(t, "New task");
-  expect(back).not.toContain("Select safety preset");
+  expect(back).not.toContain("Select isolation");
   t.renderer.destroy();
 });
 
-test("a literal sharp s remains composer text instead of opening the safety picker", async () => {
+test("Ctrl+G opens command review without expanding the editor", async () => {
+  const t = await mountApp(defaultProps({}));
+  await captureUntil(t, "New task");
+
+  press(t, "g", { ctrl: true });
+  const picker = await captureUntil(t, "Select command review");
+
+  expect(picker).toContain("Approval");
+  expect(picker).toContain("Auto");
+  expect(picker).not.toContain("Task editor");
+  press(t, "escape");
+  const back = await captureUntil(t, "New task");
+  expect(back).not.toContain("Select command review");
+  t.renderer.destroy();
+});
+
+test("a literal sharp s remains composer text instead of opening the isolation picker", async () => {
   const t = await mountApp(defaultProps({}));
   await captureUntil(t, "New task");
 
   await t.mockInput.typeText("ß");
   const out = await captureUntil(t, "ß");
 
-  expect(out).not.toContain("Select safety preset");
+  expect(out).not.toContain("Select isolation");
   t.renderer.destroy();
 });
 

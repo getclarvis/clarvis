@@ -59,8 +59,8 @@ independently pins that `shell` and `monitor_start` specifically are never class
 ("they observe and mutate through one entry point").
 
 `shell`'s and every `monitor_*` tool's `inputSchema` is a plain JSON Schema object compiled once by
-Ajv (`packages/tools/src/core.ts:49-53`); `dispatch` validates, defaults and coerces caller arguments
-against it before the handler runs (`packages/tools/src/core.ts:238-255`).
+Ajv (`packages/tools/src/core.ts:37-41`); `dispatch` validates, defaults and coerces caller arguments
+against it before the handler runs (`packages/tools/src/core.ts:226-243`).
 
 ### Exported functions and types (reachable from `.`, `./shell`, or both)
 
@@ -604,7 +604,7 @@ side has silently failed.
 21. **The dispatcher never re-clamps a `bounded: true` tool's text output to `maxOutputBytes`** — all
     five tools in this subsystem set `bounded: true`, so their own internal bounding (via `bound`,
     `boundOrSpill`, or a `CaptureSink`) is the only truncation that ever applies to them.
-    Production: `packages/tools/src/core.ts:79-85` (`boundParts` returns `parts` unchanged when
+    Production: `packages/tools/src/core.ts:67-74` (`boundParts` returns `parts` unchanged when
     `bounded` is truthy); tool declarations at `packages/tools/src/tools/shell.ts:150`,
     `packages/tools/src/tools/monitor.ts:187`, `:350`, `:453`, `:495`.
     Test: unpinned by a dedicated bounded-vs-unbounded comparison test in this document's scope; the truncation
@@ -680,12 +680,12 @@ Every one of `shell`'s and `monitor_start`'s process-kill paths (`timeout`, `abo
   subsystem only threads a resolved `ShellSpec` into it so the wrapper and the executor can never
   disagree on shell flavor (`packages/tools/src/tools/monitor.ts:255-271`).
 - `../guard/context.ts` (`buildGuardContext`) is used by `core.ts`'s `applyGuard`
-  (`packages/tools/src/core.ts:156-192`), not by `shell.ts`/`monitor.ts` directly — whether a `shell`
+  (`packages/tools/src/core.ts:144-180`), not by `shell.ts`/`monitor.ts` directly — whether a `shell`
   or `monitor_start` call is allowed at all is decided upstream of the handler, by the
   [command-guard-and-approval](command-guard.md) document's machinery. `RuntimeConfig.guard`/`.elicit`
   (`packages/tools/src/config.ts:115-119`) are the seam; this document's handlers never reference them.
 - `../core.ts`'s `dispatch`/`boundParts` — the dispatcher (not the handler) is what makes `bounded:
-  true` mean "do not re-clamp" (`packages/tools/src/core.ts:79-85`); this document's tools only declare
+  true` mean "do not re-clamp" (`packages/tools/src/core.ts:67-74`); this document's tools only declare
   the flag.
 
 **What depends on this subsystem:**

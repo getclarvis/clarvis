@@ -221,6 +221,13 @@ record (`packages/paths/src/workspace-state.ts:36`) rooted at `<global>/state/wo
 | `codeConfigFile` | `<root>/local/code.json` | `packages/paths/src/workspace-state.ts:197` |
 | `extensionProfileSelectionFile` | `<root>/local/extension-profile.json` | `packages/paths/src/workspace-state.ts:198` |
 | `runTempDir(executionId)` | `<root>/local/runs/<ownerSegment(executionId)>/tmp` | `WorkspaceStatePaths.runTempDir`, `workspaceStatePaths` |
+| `runtimesDir` | `<root>/runtimes` | `WorkspaceStatePaths.runtimesDir`, `workspaceStatePaths` |
+| `runtimeRegistryFile` | `<root>/runtimes/registry.json` | `WorkspaceStatePaths.runtimeRegistryFile`, `workspaceStatePaths` |
+| `runtimeWorkspaceDir(runtimeId)` | `<root>/runtimes/<ownerSegment(runtimeId)>/workspace` | `WorkspaceStatePaths.runtimeWorkspaceDir`, `workspaceStatePaths` |
+| `runtimeBaselineFile(runtimeId)` | `<runtime>/baseline.json` | `WorkspaceStatePaths.runtimeBaselineFile`, `workspaceStatePaths` |
+| `runtimeJournalFile(runtimeId)` | `<runtime>/journal.jsonl` | `WorkspaceStatePaths.runtimeJournalFile`, `workspaceStatePaths` |
+| `runtimeRecordFile(runtimeId)` | `<runtime>/runtime.json` | `WorkspaceStatePaths.runtimeRecordFile`, `workspaceStatePaths` |
+| `runtimeTransactionDir(runtimeId, changeSetId)` | `<runtime>/transactions/<ownerSegment(changeSetId)>` | `WorkspaceStatePaths.runtimeTransactionDir`, `workspaceStatePaths` |
 | `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts:202` |
 | `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts:203` |
 | `monitorSidecar(id)` | `<localDir>/monitor-<id>.json` | `packages/paths/src/workspace-state.ts:204-205` |

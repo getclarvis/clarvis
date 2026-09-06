@@ -1,6 +1,11 @@
 /** File-backed kernel bootstrap and stdio hosting. */
 export { createFileKernel } from "./file-kernel.ts";
-export type { CreateFileKernelOptions, ExtensionProfileDriftNotice } from "./file-kernel.ts";
+export type {
+  CreateFileKernelOptions,
+  ExtensionProfileDriftNotice,
+  FileKernelRuntimeFactory,
+  RuntimePlacementNotice,
+} from "./file-kernel.ts";
 export type { ExtensionProfileSkillDriftNotice } from "./extension-profiles/extension-profile-manager.ts";
 export { createOwnerScopedFileStores } from "./owner-scoped-file-stores.ts";
 export type {

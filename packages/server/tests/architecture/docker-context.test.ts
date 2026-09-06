@@ -17,11 +17,31 @@ describe("server image build context", () => {
     }
   });
 
-  it("keeps Docker exclusions at the repository-root build context", () => {
+  it("allowlists the repository-root build context and re-excludes credentials", () => {
     const ignore = readFileSync(`${root}/.dockerignore`, "utf8");
-    expect(ignore).toContain("**/node_modules");
-    expect(ignore).toContain("**/.clarvis");
-    expect(ignore).toContain("**/keys.json");
+    expect(ignore.split(/\r?\n/u)[0]).toBe("**");
+    for (const included of [
+      "!package.json",
+      "!bun.lock",
+      "!packages/**",
+      "!tooling/runtime/guest-entry.ts",
+      "!third-party/bun/LICENSE.md",
+    ]) {
+      expect(ignore).toContain(included);
+    }
+    for (const excluded of [
+      "**/node_modules",
+      "**/.clarvis",
+      "**/keys.json",
+      "**/subscriptions.json",
+      "**/.env",
+      "**/.npmrc",
+      "**/.ssh",
+      "**/*.pem",
+      "**/*.key",
+    ]) {
+      expect(ignore).toContain(excluded);
+    }
   });
 
   it("builds the library graph without bundling the unrelated terminal client", () => {

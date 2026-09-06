@@ -66,6 +66,95 @@ remote transport always uses the unavailable implementation.
 identities directly from Git and owns that canonical workspace until close. There is no project-level
 kernel cache, worktree registry, switching transaction, or occupancy lease.
 
+The package also exposes the host-side isolated runtime. `RuntimeLaunchSpec`
+binds immutable identity, image, revision, method and limit authority; `assertRuntimeLaunchSpec` and
+`createRuntimeSupervisor` reject invalid, unavailable or mismatched guests without replaying work on
+the host. The private execution RPC and worker, model/capability brokers, checkpoints,
+private Git metadata and the Podman/Docker policy adapters remain below the host kernel rather than
+becoming a second public `KernelClient`. The concrete engine CLI ports are exported only from
+`@clarvis/kernel/local`, keeping process control off the native eager path. The contract is in the
+owning [`isolated-agent-runtime` spec](../../specs/hosts/isolated-agent-runtime.md).
+The strict `runtime` settings block is global-only: a workspace declaration remains withheld even
+after workspace trust approval. Native startup performs no runtime-factory work. Docker accepts the
+simple `{ "backend": "docker" }` selection and fills product-owned limits, `outbound` network and
+required-Sandbox fallback defaults; executable, context, digest, network, limits and fallback remain
+advanced overrides. Podman retains the fully explicit contract. Container preparation starts only
+when a run first needs it, coalesces concurrent starts and reuses the ready generation. An operational
+Docker startup failure latches a native Sandbox fallback for later runs and reports that transition
+once; image-integrity, policy and handshake failures remain fail-closed, and a started run is never
+replayed through another placement. Omitting `network` selects ordinary Docker bridge or Podman slirp
+routing that can reach public, host and LAN destinations and can therefore transmit readable
+workspace data. `none` remains the explicit offline mode; `internet` is refused until public-only
+egress can actually be enforced. The headless
+guest entry builds the real loop against `/workspace`, proxies model calls and the completed trace
+record to host authority, and may report only a non-terminal reconstruction checkpoint. It applies
+the same command guard to guest shell calls with an `exec` ceiling; closed guard-audit events cross
+the private channel and are identity-rebound before the host logger accepts them. The host placement
+adapter owns the later durable terminal barrier. Plans remain in the canonical owner-scoped host
+store behind the exact `runtime.plans` method. The guest receives a host-path-free skill catalog and
+can disclose only an admitted skill body or bounded text resource through the read-only
+`runtime.skills` method; neither host skill roots nor arbitrary host paths enter its catalog.
+
+The production `Containerfile.runtime` never copies this checkout, installs workspace packages, or
+compiles source. It copies the standalone worker and its license inventory from the canonical
+`ghcr.io/getclarvis/clarvis-runtime-artifact@sha256:<digest>` carrier, then adds the guest toolchain
+on a separately digest-pinned Debian slim base. The final image contains Git, CA certificates and
+the checksum-verified `mise` 2026.8.2 binary, but no preinstalled Node, npm, Python, Rust or compiler.
+Agents with `run_commands` are told to use `mise x <tool>@<version> -- <command>` for missing
+toolchains. Downloads and installs live in the engine-mounted executable `/mise` tmpfs, never in the
+image or retained workspace, and disappear with the runtime. This supplies mise-supported developer
+tools; it is not an unrestricted `apt`/`dnf` path and cannot mutate the read-only base image. A
+release builds that source carrier once with `Containerfile.runtime-development`, publishes both
+carrier and runnable multi-platform image, and records their immutable identities in
+`runtime-release.json`. Both images carry the product version, source revision, private runtime
+protocol revision and MIT license labels. The Docker and Podman backends require that protocol label
+and repeat the same revision in the private bootstrap handshake.
+
+Development deliberately uses the other path and then the same final Containerfile:
+
+```bash
+bun run runtime:build:dev -- clarvis-runtime:development
+```
+
+That command builds a local source carrier from the frozen root lockfile and marks the final image
+as development. To compose a final image from a released carrier, use:
+
+```bash
+bun run runtime:build -- \
+  ghcr.io/getclarvis/clarvis-runtime-artifact@sha256:<digest> \
+  clarvis-runtime:local
+```
+
+Docker is the default builder; `--engine podman` selects the compatible Podman CLI explicitly.
+By default Docker resolves `docker` from `PATH` and uses `DOCKER_CONTEXT` or the active Docker
+context; `executable` and `connection` override those choices. Its backend requires a Linux engine,
+uses the resulting local image ID as `runtime.image_digest`, makes the image root read-only,
+bounds the non-executable `/tmp` and executable ephemeral `/mise` scratch mounts, and admits only the
+retained workspace bind. It deliberately uses a private bridge rather than host networking. An
+agent with `run_commands` can ask `expose_port` to publish an already-listening guest TCP port: the
+host binds only `127.0.0.1`, prefers the same port with an ephemeral fallback, relays through a fixed
+engine `exec` argv, caps mappings/connections, and closes them with the runtime. The guest never gets
+the engine socket or chooses a host address, host port, executable or engine arguments. An installed
+release resolves its same-version `runtime-release.json` only on the first Docker run and may pull
+only the digest-pinned GHCR reference it names. Source development selects the local
+`clarvis-runtime:development` tag and never pulls it; no runtime path promotes or publishes an image.
+Normal runtime close stops and force-removes only that generation's disposable engine container
+after closing its preview listeners. The separately retained workspace copy and review/apply state
+stay on the host for recovery and explicit settlement.
+The retained-copy primitive captures eligible dirty and untracked bytes through an independently
+hashed staging copy, excludes host control inventories, rejects unsafe links/special files and
+bounded overflows, and derives accumulated changes from a fresh host scan rather than guest claims.
+It feeds the reviewed apply path and runnable backend.
+Preparation is serialized through the per-workspace runtime registry, publishes baseline and
+generation records durably before registry admission, and can reconstruct a prepared generation
+only after bounded schema, identity, digest and retained-copy verification.
+The change-application primitive binds one complete review digest, revalidates host and retained
+trees, journals before each mutation, rolls back on failure and resumes an interrupted rollback or
+settlement. It remains an internal host authority boundary.
+The reserved `workspace_merge` elicitation can be raised only through the host side of a managed
+run's bridge. Settlement emits it once for a non-empty review, applies only `accept`, and retains
+guest bytes for both `decline` and `cancel`; engine-originated attempts to use that kind are refused.
+
 As part of that bootstrap, the kernel constructs one provider-aware planning runtime. The plans
 capability and owner-scoped `PlansService` resolve through the exact same `PlanFactory`. Markdown is
 the default and uses `planStoreFor`; operator settings may instead select a direct language-neutral

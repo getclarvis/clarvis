@@ -25,7 +25,7 @@ import {
   type PlanStore,
 } from "@clarvis/plan";
 import { createPlanningRuntime } from "./plans/planning-runtime.ts";
-import type { ExtensionProfilePluginRef, RunEvent } from "@clarvis/protocol";
+import type { ExtensionProfilePluginRef, RunEvent, RuntimeStatus } from "@clarvis/protocol";
 import {
   buildExecuteRunDeps,
   hooksEffective,
@@ -99,6 +99,17 @@ import {
   type ExtensionProfileSkillDriftNotice,
 } from "./extension-profiles/extension-profile-manager.ts";
 import { withRunLease } from "./runs/run-lease.ts";
+import type { RunExecutor } from "./runs/run-service.ts";
+import { settingsDocumentRevision } from "./config/config-store.ts";
+import { runtimeSettingsSchema } from "./runtime/settings.ts";
+import {
+  createLazyRuntimeCoordinator,
+  type FileKernelRuntimeFactory,
+  type RuntimePlacementNotice,
+} from "./runtime/lazy-runtime.ts";
+import { RuntimeLaunchError } from "./runtime/types.ts";
+
+export type { FileKernelRuntimeFactory, RuntimePlacementNotice } from "./runtime/lazy-runtime.ts";
 
 /**
  * Options for {@link createFileKernel}: workspace root plus optional env, logging, paths, and key resolution.
@@ -175,6 +186,12 @@ export interface CreateFileKernelOptions {
   };
   /** Reports an extension contribution withdrawn by asynchronous drift monitoring. */
   onExtensionProfileDrift?: (notice: ExtensionProfileDriftNotice) => void;
+  /** Explicit host-selected execution placement; absence is lazy native execution. */
+  executeRun?: RunExecutor;
+  /** Constructs container execution only when trusted effective settings select an engine. */
+  runtimeFactory?: FileKernelRuntimeFactory;
+  /** Receives lazy placement changes and an optional user-facing fallback notice. */
+  onRuntimePlacement?: (notice: RuntimePlacementNotice) => void;
 }
 
 /** Informational drift projected to hosts without changing run availability. */
@@ -200,6 +217,10 @@ export interface FileKernel extends InProcessKernel {
     /** Drop every approval, so the workspace's hooks stop running again. */
     revoke(): void;
   };
+  /** Effective execution placement for this kernel instance. */
+  readonly runtime: RuntimeStatus;
+  /** Clear a session-latched Docker fallback so the next run retries lazy startup. */
+  retryRuntime(): void;
 }
 
 /**
@@ -905,6 +926,51 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
   });
 
   let kernel: InProcessKernel;
+  const runtimeSelection = () => {
+    const configured = runtimeSettingsSchema.parse(
+      configStore.readSettings().merged.runtime ?? { backend: "native" },
+    );
+    return {
+      settings: configured,
+      configurationRevision: settingsDocumentRevision(JSON.stringify(configured)),
+      extensionRevision: extensionProfileManager.runRef().fingerprint,
+    };
+  };
+  const nativeIsolation = (): "host" | "sandbox" => {
+    const sandbox = configStore.readSettings().merged.sandbox;
+    return sandbox !== undefined && sandbox.enabled !== false ? "sandbox" : "host";
+  };
+  const nativeExecuteRun: RunExecutor =
+    opts.executeRun ?? (async (args) => (await import("@clarvis/loop")).executeRun(args));
+  const runtimeCoordinator = createLazyRuntimeCoordinator({
+    selection: runtimeSelection,
+    nativeIsolation,
+    nativeExecuteRun,
+    ...(opts.runtimeFactory === undefined ? {} : { runtimeFactory: opts.runtimeFactory }),
+    ownerId: kernelDefaultOwner,
+    project: gitWorkspace.project,
+    workspace: gitWorkspace.workspace,
+    workspaceRoot: opts.workspaceRoot,
+    deps,
+    planFactory: planning.planFactory,
+    ...(built.skills === undefined ? {} : { skillsProvider: built.skills }),
+    loadGuardSettings,
+    guardAudit: auditLogger,
+    logger: componentLogger("runtime"),
+    assertFallbackSandbox: async () => {
+      const inspection = await sandboxPolicy.inspect({ refresh: true });
+      if (!inspection.backend.available) {
+        throw new RuntimeLaunchError(
+          "operational_failure",
+          `Docker failed and the required native sandbox is unavailable (${inspection.backend.reason})`,
+        );
+      }
+    },
+    onPlacement: (notice) => {
+      if (kernel !== undefined) kernel.capabilities.runtime = notice.status;
+      opts.onRuntimePlacement?.(notice);
+    },
+  });
   try {
     kernel = createInProcessKernel({
       deps,
@@ -947,9 +1013,14 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
       taskProviderFactory,
       tasksEnabled,
       acquireRunLease: acquireExtensionProfileRunLease,
+      executeRun: runtimeCoordinator.executeRun,
+      capabilities: {
+        runtime: runtimeCoordinator.current(),
+      },
       dispose: async (): Promise<void> => {
         cleanup.stop();
         await housekeeping.stop();
+        await runtimeCoordinator.close();
         extensionProfileManager.close();
         pluginContributions.close();
         try {
@@ -969,6 +1040,7 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     extensionProfileManager.close();
     pluginContributions.close();
     await Promise.allSettled([
+      runtimeCoordinator.close(),
       capabilityExecutables.close(),
       subscriptionManager?.close() ?? Promise.resolve(),
       built.dispose(),
@@ -985,5 +1057,10 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     },
     "the kernel is ready and now serves requests",
   );
-  return Object.assign(kernel, { workspaceHooks });
+  return Object.defineProperties(
+    Object.assign(kernel, { workspaceHooks, retryRuntime: () => runtimeCoordinator.retry() }),
+    {
+      runtime: { enumerable: true, get: () => runtimeCoordinator.current() },
+    },
+  ) as FileKernel;
 }

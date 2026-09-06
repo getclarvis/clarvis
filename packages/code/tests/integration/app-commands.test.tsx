@@ -173,8 +173,8 @@ function baseDeps(
     ui,
     effects: {
       openAgentPicker: () => calls.push("agent-picker"),
-      openSafetyPresetPicker: () => calls.push("safety-picker"),
-      cycleGuardMode: () => calls.push("guard-cycle"),
+      openIsolationPicker: () => calls.push("isolation-picker"),
+      openReviewPicker: () => calls.push("review-picker"),
       openDiff: () => calls.push("diff"),
       openPlan: () => calls.push("plan"),
       quit: () => calls.push("quit"),
@@ -871,7 +871,8 @@ test("every top-level command carries a canonical /token (no bare-title rows)", 
   const expected: Record<string, string[]> = {
     "app.quit": ["/quit"],
     "agent.picker": ["/agent"],
-    "safety.picker": [],
+    "isolation.picker": [],
+    "review.picker": [],
     "transcript.diff": ["/diff"],
     "plan.toggleReview": ["/plan"],
     "catalog.refresh": ["/refresh"],
@@ -907,9 +908,9 @@ test("non-aliased hub children and folded toggles stay off the slash surface", (
       name.includes("plugin") || name === "mcp.browse" ? "extensions" : "settings",
     ]);
   }
-  // Session memory is configured through Run controls; there is no global
-  // quick-toggle command that can silently change execution semantics.
-  expect(byName.get("guard.cycle")!.surface).toBe("internal");
+  // Review opens an explicit picker; the old blind guard-cycle action is gone.
+  expect(byName.get("review.picker")!.surface).toBe("internal");
+  expect(byName.get("guard.cycle")).toBeUndefined();
   expect(byName.get("memory.cycle")).toBeUndefined();
   dispose();
 });
@@ -963,8 +964,8 @@ test("settings children prefer workspace scope when workspace settings exist", (
 
 const DISPOSITION: [string, { surface: string; group: string; parent?: string }][] = [
   ["agent.picker", { surface: "slash", group: "navigate" }],
-  ["safety.picker", { surface: "internal", group: "navigate" }],
-  ["guard.cycle", { surface: "internal", group: "actions" }],
+  ["isolation.picker", { surface: "internal", group: "navigate" }],
+  ["review.picker", { surface: "internal", group: "navigate" }],
   ["sessions.open", { surface: "slash", group: "navigate", parent: "sessions" }],
   ["workflows.open", { surface: "slash", group: "navigate" }],
   ["settings.open", { surface: "slash", group: "navigate" }],
@@ -1011,8 +1012,8 @@ test("thin action commands dispatch through their injected application effects",
   const { commands, calls, dispose } = harness();
   const contract = [
     ["agent.picker", "agent-picker"],
-    ["safety.picker", "safety-picker"],
-    ["guard.cycle", "guard-cycle"],
+    ["isolation.picker", "isolation-picker"],
+    ["review.picker", "review-picker"],
     ["transcript.diff", "diff"],
     ["plan.open", "plan"],
     ["app.quit", "quit"],

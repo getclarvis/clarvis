@@ -107,6 +107,15 @@ wiki's `.history`/`.journal`/`.state`/`.lock`, and the plan lockfiles. The segme
 already use, so one workspace's generated data all lands under one name.
 The workspace's active Extension Profile selection is also local machinery under that `local/`
 tree, so switching Extension Profiles never dirties the repository.
+The sibling `runtimes/` tree owns each isolated runtime generation's retained workspace copy,
+baseline, journal, per-run checkpoints and lifecycle record. Runtime and run IDs pass through
+`ownerSegment`; none of these paths
+can resolve into the source checkout, and replacing a guest does not remove the retained copy.
+Each accepted change-set stages backups and replacements beneath its encoded
+`runtimeTransactionDir`; the durable generation journal decides whether recovery rolls back an
+incomplete apply or finishes baseline settlement.
+`GIT_DIR`, `CLARVIS_DIR` and `AGENTS_DIR` are the canonical root-entry names used when the kernel
+excludes repository metadata and host control inventories from a prepared runtime copy.
 
 `~/.clarvis` keeps the **operator's own files at the root** — `settings.json`, `agents/`,
 `keys.json`, `subscriptions.json`, plugins, reusable Extension Profile definitions and their trust records, `guard-judge.md`, `auth.json` — and nests only what a

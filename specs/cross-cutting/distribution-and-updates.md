@@ -10,8 +10,11 @@ Clarvis is distributed as a product, not as eighteen independently versioned wor
 The portable-release path turns the map-free split Code artifact into a target-native archive that
 needs no user-installed Bun, Node.js, compiler, or package manager. The same contract owns initial
 installation, explicit uninstall and self-update, release assembly, and the point at which a fully
-uploaded draft becomes visible. Production: root `package.json` (`version`, private workspaces),
-`packages/code/tooling/release/package.ts` (`main`), and `.github/workflows/release.yml`.
+uploaded draft becomes visible. A tagged product release also owns the private isolated-worker
+distribution: immutable multi-platform OCI carrier/final images plus the manifest binding their
+digests to that release. Production: root `package.json` (`version`, private workspaces),
+`packages/code/tooling/release/package.ts` (`main`), `tooling/runtime/release-manifest.ts`, and
+`.github/workflows/release.yml`.
 
 This document does not make the package-local `bun run setup` path portable; that remains the
 developer-checkout path described by [Code bootstrap](../hosts/code-bootstrap.md). It does not define
@@ -28,12 +31,15 @@ The user-facing surfaces are:
 - `install.ps1` for `windows-{x64,arm64}`, with `-Uninstall` and `-Help` modes;
 - `clarvis --update`, a complete CLI mode answered before the application graph loads;
 - six `clarvis-v<version>-<target>.tar.gz` release assets plus `SHA256SUMS`, both installers,
-  Clarvis's license, and standalone third-party notices/license texts;
+  Clarvis's license, standalone third-party notices/license texts, and `runtime-release.json`;
+- two attested Linux OCI indexes in GHCR: the standalone artifact carrier and runnable isolated
+  runtime, each covering `linux/amd64` and `linux/arm64`;
 - root scripts `release:package`, `release:smoke`, `release:install-smoke`, and `check:release`;
 - root script `release:prepare`, which promotes the curated changelog entry and updates the product
   version plus both installer defaults without committing or publishing;
 - a tag-triggered workflow that publishes from `getclarvis/clarvis` to public binary-only
-  `getclarvis/clarvis-releases`, plus a non-publishing `workflow_dispatch` build path.
+  `getclarvis/clarvis-releases` and publishes the runtime images in the source repository's GHCR,
+  plus a non-publishing `workflow_dispatch` portable-build path.
 
 Production: `packages/code/src/cli-args.ts` (`FLAGS`, `Mode`), root and Code `package.json`
 scripts, `tooling/release/prepare.ts`, `packages/code/src/update-contract.ts` (`ReleaseTarget`, `releaseAssetName`), and
@@ -85,6 +91,31 @@ paths, backslashes, control characters, case-insensitive `.map` suffixes, duplic
 and more than 4,096 entries are refused. Production:
 `packages/code/src/update/release-manifest.ts` (`parseReleaseManifest`, `manifestFiles`,
 `verifyReleaseTree`). Test: `packages/code/tests/unit/release-manifest.test.ts`.
+
+The separate `runtime-release.json` is schema 1 and contains exactly the following fields:
+
+```json
+{
+  "schema": 1,
+  "repository": "getclarvis/clarvis",
+  "version": "0.1.0",
+  "source_revision": "<40 lowercase Git hex>",
+  "protocol_revision": "1",
+  "platforms": ["linux/amd64", "linux/arm64"],
+  "artifact_image": "ghcr.io/getclarvis/clarvis-runtime-artifact@sha256:<digest>",
+  "runtime_image": "ghcr.io/getclarvis/clarvis-runtime@sha256:<digest>",
+  "build_image": "oven/bun:1.4.0-debian@sha256:<digest>",
+  "base_image": "debian:bookworm-slim@sha256:<digest>"
+}
+```
+
+Extra fields, a reordered/substituted platform set, mutable/foreign image identity, protocol/base
+drift, malformed source revision, or a version different from the portable release are refused. The
+manifest is a release-to-runtime identity map; it is not an instruction to build from monorepo
+packages at install time. Production: `RuntimeReleaseManifest`, `createRuntimeReleaseManifest`, and
+`parseRuntimeReleaseManifest` in `tooling/runtime/release-manifest.ts`. Test:
+`tooling/tests/unit/runtime-release-manifest.test.ts` and
+`tooling/tests/unit/release-assets.test.ts`.
 
 A managed installation is:
 
@@ -216,20 +247,29 @@ user state unchanged. Production: `packages/code/src/update/index.ts` and
 `packages/code/src/update/installation.ts`. Test:
 `packages/code/tests/unit/update-command.test.ts` (verified activation and preserved predecessor).
 
-The release workflow builds and smokes all six target archives independently. A tag build downloads
-the complete set, verifies every sidecar, assembles `SHA256SUMS`, and runs a separate final release
-set checker. That checker accepts only the six exact archives, their six sidecars, `SHA256SUMS`, the
-two installers, and the required notices/licenses; it extracts every archive and rejects any
-case-insensitive `.map` suffix or inline `sourceMappingURL=data:` payload before a publication
-credential exists. Only then does the workflow mint a one-hour GitHub App installation token scoped
-to `getclarvis/clarvis-releases`, create a draft
-there, upload the allowlisted assets explicitly, and remove the draft flag in the final step. The
-source repository's ordinary `GITHUB_TOKEN` remains read-only and cannot mutate the public
-distribution repository. Manual dispatch builds downloadable workflow artifacts but cannot publish
-because the publish job requires both a tag ref and the `push` event. Production:
-`.github/workflows/release.yml` and `tooling/checks/release-assets.ts`. Test:
-`tooling/tests/unit/{release-assets,release-readiness}.test.ts`. Release publication still requires a
-separately authorized source tag and push; nothing in the local build or installer creates one.
+The release workflow builds and smokes all six target archives independently. In parallel, and only
+for a pushed tag, native Linux jobs verify the tag identity before registry authentication, build
+and push one carrier/final pair per architecture, and a dependent job creates the two immutable
+multi-platform indexes. That job records both resolved digests in `runtime-release.json`, emits
+GitHub artifact attestations for both OCI subjects, and uploads the manifest as workflow evidence.
+
+The final publish job depends on both the six portable packages and the runtime manifest. It
+downloads the complete set, verifies every archive sidecar, assembles `SHA256SUMS`, and runs a
+separate final release-set checker. That checker accepts only the six exact archives, their six
+sidecars, `SHA256SUMS`, `runtime-release.json`, the two installers, and the required
+notices/licenses; it parses the runtime manifest against the portable product version, extracts every
+archive, and rejects any case-insensitive `.map` suffix or inline `sourceMappingURL=data:` payload
+before a cross-repository publication credential exists. Only then does the workflow mint a
+one-hour GitHub App installation token scoped to `getclarvis/clarvis-releases`, create a draft there,
+upload the allowlisted assets explicitly, and remove the draft flag in the final step. The source
+repository's ordinary `GITHUB_TOKEN` is write-enabled only inside the two GHCR jobs and cannot mutate
+the public distribution repository. Manual dispatch builds downloadable portable workflow artifacts
+but cannot publish an image or release because all publication jobs require both a tag ref and the
+`push` event. Production: `.github/workflows/release.yml`,
+`tooling/runtime/release-manifest.ts`, and `tooling/checks/release-assets.ts`. Test:
+`tooling/tests/unit/{runtime-release-manifest,release-assets,release-readiness}.test.ts`. Release
+publication still requires a separately authorized source tag and push; nothing in the local build
+or installer creates one.
 
 ## 5. Invariants
 
@@ -379,6 +419,19 @@ Production: `tooling/lib/release-prepare.ts` (`prepareReleaseSources`),
 `tooling/tests/architecture/repository-metadata.test.ts` (stable README redirects and separate
 public-site ownership).
 
+**DIST-18.** A pushed release tag cannot publish portable binaries without also producing an exact
+runtime identity manifest, and no runtime image can be published from manual dispatch. Runtime jobs
+verify `v<root version>` before their first registry push; the carrier and final OCI indexes each
+cover exactly `linux/amd64` and `linux/arm64`, are addressed by digest, and receive registry-backed
+provenance attestations. The portable publication job depends on the runtime job and its final asset
+allowlist parses `runtime-release.json` against the same product version before minting the
+cross-repository App token. Production: `.github/workflows/release.yml`;
+`createRuntimeReleaseManifest` and `parseRuntimeReleaseManifest` in
+`tooling/runtime/release-manifest.ts`; `releaseAssetSetFailures` in
+`tooling/checks/release-assets.ts`; `releaseReadinessFailures` in
+`tooling/checks/release-readiness.ts`. Test:
+`tooling/tests/unit/{runtime-release-manifest,release-assets,release-readiness}.test.ts`.
+
 ## 6. Failure modes and degradation
 
 | Failure | Result |
@@ -398,8 +451,10 @@ public-site ownership).
 | macOS Gatekeeper or Windows SmartScreen | unsigned beta may require explicit user approval; no bypass is automated |
 | Missing third-party notice or license marker | native release smoke fails before publication |
 | Build-host checkout path in generated JavaScript | artifact build fails before packaging |
+| Runtime tag differs from the root product version | runtime image job fails before GHCR login or push |
+| Missing, malformed, mutable, foreign, or version-mismatched `runtime-release.json` | final release allowlist fails before the publication token exists |
+| Manual workflow dispatch | portable artifacts only; runtime-image, runtime-manifest, and release publication jobs are skipped |
 | Missing or invalid release App variable, secret, installation, or repository permission | token minting fails after all local asset checks and before a draft or public mutation exists |
-| Workflow dispatch without a tag | packages only; no release creation or remote mutation |
 
 Production: the root installers, `packages/code/src/update/**`, and
 `packages/code/tooling/release/{package,smoke,installer-smoke}.ts`. Test: the release tooling smokes
@@ -411,9 +466,13 @@ The portable path depends on the root product manifest, Clarvis license and thir
 the Code launcher and artifact,
 the exact Bun runtime running the packaging job, OpenTUI's target-native package names, the public
 `getclarvis/clarvis-releases` metadata, the narrowly installed publisher App, and the operating
-system's archive/launcher conventions. It does not depend on a
-Clarvis user configuration, provider credential, package registry at install time, or any remote
-kernel. Production: `packages/code/tooling/release/package.ts`, `install.sh`, and `install.ps1`.
+system's archive/launcher conventions. Runtime publication additionally depends on GitHub Container
+Registry, Docker/Buildx, the two digest-pinned base images, and GitHub's OIDC-backed attestation
+service. Portable install and update do not depend on the runtime registry: `runtime-release.json`
+is metadata for the separately configured isolated worker, not part of TUI activation. Neither path
+depends on Clarvis user configuration, provider credentials, or a remote kernel. Production:
+`packages/code/tooling/release/package.ts`, `tooling/runtime/**`, `.github/workflows/release.yml`,
+`install.sh`, and `install.ps1`.
 
 Build structure, pinned Bun, CI checks, and the package-local bundle remain owned by
 [Build and CI](build-and-ci.md). CLI parsing and fast-path application boot remain owned by
@@ -442,3 +501,6 @@ version ownership remains in [Package architecture](package-architecture.md).
    license in every archive. A release owner still needs to review the exact runtime and dependency
    artifacts and their redistribution obligations before publication; the presence of notices is
    not a substitute for legal review.
+6. The runtime workflow and manifest are locally checked but have not yet run in an authorized tag
+   publication. Registry permissions, multi-platform index digests, and remote attestation discovery
+   therefore remain release canaries rather than proven external state.

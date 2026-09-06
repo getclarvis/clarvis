@@ -103,6 +103,31 @@ test("parseElicitForm: the command detail rides the form; a blank command falls 
   expect(parseElicitForm(askUserEnum).detail).toBeUndefined();
 });
 
+test("parseElicitForm: workspace merge keeps every typed change and requires explicit selection", () => {
+  const form = parseElicitForm({
+    message: "Merge all?",
+    kind: "workspace_merge",
+    detail: {
+      change_set_id: "change",
+      baseline_revision: "before",
+      content_digest: "after",
+      changes: [
+        { path: "src/a.ts", action: "modify", type: "file", mode: 0o644, size: 2, digest: "d" },
+      ],
+    },
+    requestedSchema: {
+      type: "object",
+      properties: { decision: { type: "string", enum: ["merge"] } },
+      required: ["decision"],
+    },
+  });
+  expect(form.workspaceMerge).toMatchObject({
+    change_set_id: "change",
+    changes: [{ path: "src/a.ts" }],
+  });
+  expect(form.fields[0]!.options).toEqual([{ value: "merge", label: "merge all changes" }]);
+});
+
 test("parseElicitForm: url mode carries the url and no fields", () => {
   const url = parseElicitForm({
     mode: "url",

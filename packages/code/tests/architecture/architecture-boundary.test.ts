@@ -69,6 +69,16 @@ function relativeLayer(edge: ImportEdge): string | undefined {
 }
 
 describe("code's internal architecture", () => {
+  it("routes every complete kernel boot through the runtime-aware workspace manager", () => {
+    const runtime = readFileSync(join(SRC, "runtime.tsx"), "utf8");
+    const manager = readFileSync(join(SRC, "adapters", "workspace-client-manager.ts"), "utf8");
+    expect(runtime).not.toContain("loadFileKernelFactory");
+    expect(runtime).not.toContain("createFileKernel(");
+    expect(manager).toContain("runtimeFactory:");
+    expect(manager).toContain("local.createLocalDockerRuntime(input, {");
+    expect(manager).toContain("local.createLocalPodmanRuntime(input)");
+  });
+
   it("releases durable memory recovery only after the usable application paint", () => {
     const source = readFileSync(join(SRC, "runtime.tsx"), "utf8");
     const painted = source.indexOf('"app.boot.painted"');

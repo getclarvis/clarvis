@@ -60,7 +60,7 @@ All 19 source files, each opened directly:
 | `tasks.ts` | 223 | `TasksService`, all `Task*Dto` shapes, `ActiveTaskRequestDto`/`ActiveTaskBindingDto` |
 | `storage.ts` | 62 | `StorageService`, bounded inventory DTOs and cleanup request/result shapes |
 | `transport.ts` | 68 | `KernelTransport`, `KernelRequestOptions`, `KernelAbortSignal` |
-| `client.ts` | 94 | `KernelClient`, `KernelCapabilities`, `ConnectOptions` |
+| `client.ts` | 120 | `KernelClient`, `KernelCapabilities`, `RuntimeStatus`, `ConnectOptions` |
 
 (`packages/protocol/src/index.ts` — one `export type *` line per module above.)
 
@@ -70,33 +70,41 @@ Defined in `packages/protocol/src/client.ts`. Aggregates 4 readonly fields, 15 n
 
 | Member | Type | Line |
 |---|---|---|
-| `capabilities` | `KernelCapabilities` | `packages/protocol/src/client.ts:54` |
-| `principal` | `Principal \| undefined` | `packages/protocol/src/client.ts:56` |
-| `project` | `ProjectRef` | `packages/protocol/src/client.ts:58` |
-| `workspace` | `WorkspaceRef` | `packages/protocol/src/client.ts:60` |
-| `runs` | `RunService` | `packages/protocol/src/client.ts:63` |
-| `config` | `ConfigService` | `packages/protocol/src/client.ts:65` |
-| `plugins` | `PluginService` | `packages/protocol/src/client.ts:69` |
-| `extensionProfiles` | `ExtensionProfileService` | `packages/protocol/src/client.ts:68` |
-| `secrets` | `SecretService` | `packages/protocol/src/client.ts:70` |
-| `models` | `ModelCatalogService` | `packages/protocol/src/client.ts:72` |
-| `providerAuth` | `ProviderAuthService` | `packages/protocol/src/client.ts:74` |
-| `files` | `WorkspaceService` | `packages/protocol/src/client.ts:76` |
-| `memory` | `MemoryService` | `packages/protocol/src/client.ts:78` |
-| `plans` | `PlansService` | `packages/protocol/src/client.ts:80` |
-| `workflows` | `WorkflowsService` | `packages/protocol/src/client.ts:82` |
-| `skills` | `SkillsService` | `packages/protocol/src/client.ts:84` |
-| `sessions` | `SessionService` | `packages/protocol/src/client.ts:86` |
-| `tasks` | `TasksService` | `packages/protocol/src/client.ts:88` |
-| `storage` | `StorageService` | `packages/protocol/src/client.ts:90` |
-| `close(): Promise<void>` | method | `packages/protocol/src/client.ts:93` |
+| `capabilities` | `KernelCapabilities` | `KernelClient.capabilities` |
+| `principal` | `Principal \| undefined` | `KernelClient.principal` |
+| `project` | `ProjectRef` | `KernelClient.project` |
+| `workspace` | `WorkspaceRef` | `KernelClient.workspace` |
+| `runs` | `RunService` | `KernelClient.runs` |
+| `config` | `ConfigService` | `KernelClient.config` |
+| `plugins` | `PluginService` | `KernelClient.plugins` |
+| `extensionProfiles` | `ExtensionProfileService` | `KernelClient.extensionProfiles` |
+| `secrets` | `SecretService` | `KernelClient.secrets` |
+| `models` | `ModelCatalogService` | `KernelClient.models` |
+| `providerAuth` | `ProviderAuthService` | `KernelClient.providerAuth` |
+| `files` | `WorkspaceService` | `KernelClient.files` |
+| `memory` | `MemoryService` | `KernelClient.memory` |
+| `plans` | `PlansService` | `KernelClient.plans` |
+| `workflows` | `WorkflowsService` | `KernelClient.workflows` |
+| `skills` | `SkillsService` | `KernelClient.skills` |
+| `sessions` | `SessionService` | `KernelClient.sessions` |
+| `tasks` | `TasksService` | `KernelClient.tasks` |
+| `storage` | `StorageService` | `KernelClient.storage` |
+| `close(): Promise<void>` | method | `KernelClient.close` |
 
-`KernelCapabilities` (`packages/protocol/src/client.ts:26-37`): `memory`, `skills`, `agent_tools`,
-`tasks` — four booleans and nothing else. Protocol-version negotiation is not part of that
-capability object; the concrete wire owns its separate `CLARVIS_WIRE_VERSION` handshake
-(`packages/kernel/src/transport/wire.ts`).
+`KernelCapabilities` has the four booleans `memory`, `skills`, `agent_tools`, and `tasks`, plus the
+optional host-reported `runtime`. Native placement carries only `kind` and `host_platform`.
+Container placement additionally reports generation, selected Docker/Podman engine and version,
+host/guest platform, local immutable image digest, private runtime protocol revision, effective
+network grant and lifecycle. This is an informational projection, not a client-controlled launch
+input. The private runtime revision is distinct from the concrete transport's
+`CLARVIS_WIRE_VERSION` handshake (`packages/kernel/src/transport/wire.ts`).
 
-`ConnectOptions` (`packages/protocol/src/client.ts:40-47`): `workspace?: WorkspaceRef | string`, `auth?: string`,
+Production: `KernelCapabilities` and `RuntimeStatus` in `packages/protocol/src/client.ts`;
+`createFileKernel` in `packages/kernel/src/file-kernel.ts`. Test:
+`packages/kernel/tests/contract/transport-codecs.test.ts` and
+`packages/code/tests/unit/header-projection.test.ts`.
+
+`ConnectOptions`: `workspace?: WorkspaceRef | string`, `auth?: string`,
 `clientInfo?: { name: string; version?: string }`. Nothing in `client.ts` defines a `connect()`
 function — `ConnectOptions` is a shape a transport-specific connector elsewhere accepts; the type
 alone lives here.
@@ -573,25 +581,30 @@ serializing a definition, settings, or secrets (`packages/protocol/src/extension
 | Type | Shape | Declaration |
 |---|---|---|
 | `ElicitationCommandDetail` | `{ command: string; cwd: string; reason: string; warning? }` | `ElicitationCommandDetail` |
-| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; detail?: ElicitationCommandDetail }` | `ElicitationRequest` |
+| `WorkspaceMergeElicitationDetail` | `{ change_set_id; baseline_revision; content_digest; changes[] }` | `WorkspaceMergeElicitationDetail` |
+| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; detail?: ElicitationCommandDetail \| WorkspaceMergeElicitationDetail }` | `ElicitationRequest` |
 | `ElicitationResponse` | `{ id; action: "accept" \| "decline" \| "cancel"; content? }` | `ElicitationResponse` |
 
-`ElicitationRequest.kind` is a 4-member union — `"ask_user"` (a free question), `"guard_confirm"` (a
+`ElicitationRequest.kind` includes `"ask_user"` (a free question), `"guard_confirm"` (a
 command awaiting approval), `"plan_review"` (a proposed plan awaiting approval), `"workflow_review"`
-(an installed workflow preflight) — plus a deliberately open `(string & {})` escape, "so a kernel may
+(an installed workflow preflight), and `"workspace_merge"` (one host-owned complete isolated-copy
+review) — plus a deliberately open `(string & {})` escape, "so a kernel may
 add kinds without a protocol bump" (`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`).
 This is structurally the same open/closed pattern already noted for `capability_event` in §5
 invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 `ElicitationCommandDetail` exists so a client "render[s] this directly
 (e.g. as highlighted code) and never parse[s] `prompt`, which stays the human-readable fallback"
 (`ElicitationCommandDetail` in `packages/protocol/src/runs.ts`).
+`WorkspaceMergeElicitationDetail` supplies the same parse-nothing rule for isolated changes: clients
+read its opaque revisions and exhaustive typed change list rather than interpreting prompt prose.
 
 ### 3.10 `ConfigService` data shapes I: settings and sandbox (`config.ts`)
 
 | Type | Shape | Line |
 |---|---|---|
 | `WorkspaceTrustVerdict` | `{ state: "inert" \| "unapproved" \| "trusted" \| "changed"; fingerprint?; approved? }` | `packages/protocol/src/config.ts:11-15` |
-| `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `packages/protocol/src/config.ts:23-36` |
+| `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; runtime?: RuntimeConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `SettingsData` in `packages/protocol/src/config.ts` |
+| `RuntimeConfig` | native, or `{ backend: "podman" \| "docker"; image_digest; network?; limits; executable; connection }` | `RuntimeConfig` in `packages/protocol/src/config.ts` |
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts:39-48` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts:57-62` |
 | `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts:65-70` |
@@ -599,6 +612,18 @@ invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 | `SandboxConfig` | `{ type: "native"; enabled?; availability?: "required" \| "optional"; filesystem?; network?; pass_env?; toolchains?: { mode?: "auto" \| "manual"; include?; exclude?; extra_paths?; excluded_paths? } }` | `packages/protocol/src/config.ts` (`SandboxConfig`) |
 | `SandboxToolchainScope` | `"system" \| "auto" \| "global" \| "workspace"` | `packages/protocol/src/config.ts:110` |
 | `SandboxInspection` | `{ backend: { type: "bubblewrap" \| "seatbelt" \| "unsupported"; available; mode: "fresh-proc" \| "host-proc" \| "seatbelt" \| "unavailable"; degraded; reason? }; toolchains: SandboxToolchainStatus[]; extra_paths: SandboxPathStatus[]; effective_path: string[] }` | `packages/protocol/src/config.ts` (`SandboxInspection`) |
+
+`RuntimeConfig` is the host-operator input, not a run grant. Omitting a container `network` selects
+the kernel's ordinary routable `outbound` default; this may reach host and LAN peers as well as the
+public internet. `RuntimeStatus.network` in `client.ts` is required for container placement because
+it reports the effective value after the kernel has resolved defaults. Neither type calls
+`outbound` internet-only, and the protocol exposes no host-port or engine-argument mutation method.
+
+Production: `RuntimeConfig` and `SettingsData` in `packages/protocol/src/config.ts`;
+`RuntimeStatus` in `packages/protocol/src/client.ts`; `runtimeSettingsSchema` in
+`packages/kernel/src/runtime/settings.ts`. Test: `runtime settings` in
+`packages/kernel/tests/unit/runtime-settings.test.ts`; `runtime status` coverage in
+`packages/kernel/tests/contract/transport-codecs.test.ts`.
 
 `SandboxInspection.backend` identifies what the host actually probed: Bubblewrap uses `fresh-proc`
 or degraded `host-proc`, Seatbelt uses `seatbelt`, and an unavailable selected/unsupported backend

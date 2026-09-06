@@ -48,11 +48,11 @@ part reaches a model belongs to **vision-prepass-and-image-routing**.
 | `tree` | no | — | `path` (`"."`), `depth` (0 → 4), `respect_gitignore` (`true`) | `packages/tools/src/tools/tree.ts:193` |
 
 `bounded: true` tells the dispatcher not to re-clamp the handler's text
-(`packages/tools/src/tools/types.ts:43`, applied at `packages/tools/src/core.ts:79-85`). The other six
+(`packages/tools/src/tools/types.ts:43`, applied at `packages/tools/src/core.ts:67-74`). The other six
 are re-clamped to `config.maxOutputBytes` on the way out.
 
 Schema defaults are materialised by Ajv with `useDefaults: true` before the handler runs
-(`packages/tools/src/core.ts:49`), which is why each handler reads e.g. `args.respect_gitignore` as a
+(`packages/tools/src/core.ts:37`), which is why each handler reads e.g. `args.respect_gitignore` as a
 plain `boolean` (`packages/tools/src/tools/glob.ts:67`).
 
 ### 2.2 The supporting library (package-internal)
@@ -108,7 +108,7 @@ Resolution and validation belong to tools-contract-and-dispatch; the fields cons
 | `confineToWorkspace` | `true` (`packages/tools/src/config.ts:353`) | path confinement **and** grep engine choice |
 | `stateRoot` | `workspaceStatePaths(workspaceRoot).root` (`packages/tools/src/config.ts:503`) | extra read root, passed by `read_file`/`read_files` only |
 | `temporaryRoots` | `[]` (`resolveConfig`) | extra confined roots admitted by all nine tools; the product loop pre-seeds run scratch plus host system temp roots, and the list may grow after a verified shell-created `mktemp -d` |
-| `readOnly` | `false` (`packages/tools/src/config.ts:352`) | selects the nine-tool surface (`packages/tools/src/core.ts:233`) |
+| `readOnly` | `false` (`packages/tools/src/config.ts:352`) | selects the nine-tool surface (`packages/tools/src/core.ts:221`) |
 
 ## 3. Data and formats
 
@@ -548,9 +548,9 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 | **RS-1 (INV-300)** | For the same request, the ripgrep engine and the in-process engine return the **same tool output** — across all three output modes, glob forms, regex metacharacters, `ignore_case`, symmetric and asymmetric context, multiline (dot-all, `^`/`$` anchors, coalescing, pagination), `maxFileBytes` skipping, and hidden/`.git`/nested/parent `.gitignore` handling. | `packages/tools/src/lib/rg.ts:174-181` | `packages/tools/tests/contract/grep-parity.test.ts:44-223` |
 | **RS-2** (the precondition INV-300 depends on) | A **confined directory** grep never spawns ripgrep, however available `rg` is. (Consequence: the parity suite can only compare the two engines with `confineToWorkspace: false`.) | `packages/tools/src/lib/rg.ts:164` | ~~indirectly — every parity case builds `withRg()` as `{ ripgrepAvailable: true, confineToWorkspace: false }` (`packages/tools/tests/contract/grep-parity.test.ts:40`); no test asserts the refusal directly (**partially unpinned**)~~ **pinned 2026-08-22**: `packages/tools/tests/unit/observability.test.ts` asserts the chosen engine on the `tools.grep_path` diagnostic across all four combinations of `ripgrepAvailable` × `confineToWorkspace`, plus the single-confined-file case where ripgrep *is* used |
 | **RS-3** | The read-only tool surface is exactly nine tools, derived from the single `readOnly` bit in `toolDescriptors` — never a second list. | `packages/tools/src/tools/registry.ts:42-81` | `packages/tools/tests/component/tool-surface.test.ts:33`; `packages/tools/tests/component/read-only.test.ts:32-44` |
-| **RS-4** | A tool hidden by the read-only surface and a name that never existed fail identically (`not_found`), so the surface leaks no information about what was withheld. | `packages/tools/src/core.ts:233-236` | `packages/tools/tests/component/read-only.test.ts:46-57` |
+| **RS-4** | A tool hidden by the read-only surface and a name that never existed fail identically (`not_found`), so the surface leaks no information about what was withheld. | `packages/tools/src/core.ts:221-224` | `packages/tools/tests/component/read-only.test.ts:46-57` |
 | **RS-5** | A read-only session leaves the workspace byte-identical. | the nine handlers perform no write syscall | `packages/tools/tests/component/read-only.test.ts:76-86` |
-| **RS-6** | The four text read/search tools behave identically under a full and a read-only config. | `packages/tools/src/core.ts:233` (surface only gates *presence*) | `packages/tools/tests/component/read-only.test.ts:59-74` |
+| **RS-6** | The four text read/search tools behave identically under a full and a read-only config. | `packages/tools/src/core.ts:221` (surface only gates *presence*) | `packages/tools/tests/component/read-only.test.ts:59-74` |
 | **RS-7** | "No results" is a **success**, not an error: `(no matches)` for `grep`/`glob`, `(empty directory)` for `list_dir`, `(no entries)` for `tree`, `(empty file)` for `read_file`, `(no differences)` for `diff`. | `packages/tools/src/tools/grep.ts:238`, `packages/tools/src/tools/glob.ts:98`, `packages/tools/src/tools/list-dir.ts:93`, `packages/tools/src/tools/tree.ts:247`, `packages/tools/src/tools/read-file.ts:86`, `packages/tools/src/tools/diff.ts:66` | `packages/tools/tests/integration/grep.test.ts:62-66`, `packages/tools/tests/integration/glob.test.ts:68-73`, `packages/tools/tests/integration/list-dir.test.ts:51-56`, `packages/tools/tests/integration/tree.test.ts:65-70`, `packages/tools/tests/integration/read-file.test.ts:200-209`, `packages/tools/tests/integration/diff.test.ts:34-39` |
 | **RS-8** | A truncated *scan* always reports incompleteness even when the page is non-empty, and it is never combined with the pagination footer. | `packages/tools/src/tools/grep.ts:351-365` | `packages/tools/tests/integration/grep.test.ts:122-129` (asserts the `offset` hint is absent) |
 | **RS-9** | An exhausted regex budget, a capped directory walk and a hit output cap produce **three different** warnings; the budget warning names the pattern and never says "output cap", and the walk warning says narrowing the pattern will not help. | `packages/tools/src/tools/grep.ts:352-362` | `packages/tools/tests/integration/rg.test.ts:160-166`, `packages/tools/tests/integration/grep.test.ts:181-199` |
@@ -601,7 +601,7 @@ Numbering: **RS-n** are derived here; **INV-041** and **INV-300 – INV-302** ar
 All are members of the package's closed `ErrorCode` union
 (`packages/tools/src/errors.ts:8-26`) and are serialised in-band as
 `{"error":"<code>","message":"…", …fields}` by the dispatcher
-(`packages/tools/src/errors.ts:67`, `packages/tools/src/core.ts:75-77`) — a read tool never throws
+(`packages/tools/src/errors.ts:67`, `packages/tools/src/core.ts:63-65`) — a read tool never throws
 out of `dispatch`.
 
 | Code | Raised by | Cause |
@@ -661,7 +661,7 @@ error"}` with the real stack going to the warn sink (`packages/tools/src/errors.
 | `maxOutputBytes` | in-process grep accumulation | `truncated`, scan stops before the next file (`packages/tools/src/lib/rg.ts:436`) |
 | `maxOutputBytes × 8` | ripgrep raw JSON stream | child `SIGKILL`ed, `truncated` (`packages/tools/src/lib/rg.ts:233-242`, `:296-308`) |
 | `maxOutputBytes` | grep page rendering | head-truncated by `bound`, "page exceeded … and was cut" footer |
-| `maxOutputBytes` | any non-`bounded` tool's text parts | head-truncated by the dispatcher (`packages/tools/src/core.ts:79-85`) |
+| `maxOutputBytes` | any non-`bounded` tool's text parts | head-truncated by the dispatcher (`packages/tools/src/core.ts:67-74`) |
 | `maxTraversalEntries` | `list_dir`, `glob`, `tree`, grep's file walk | truncation footer / `truncated` flag; grep additionally sets `walkCapped` and says so in its own words |
 | `maxDiffInputBytes` | `diff` | `too_large` |
 | `regexScanBudgetMs` | in-process grep | `truncated` + `budgetExhausted`, pattern-specific warning |
@@ -684,16 +684,18 @@ at `packages/tools/src/tools/types.ts:58` and none of them declare it). `listFil
 | `@clarvis/paths` → `INTERNAL_IGNORE_PATTERNS` | runtime, static | `packages/tools/src/lib/ignore.ts:6`, `:129` — the built-in ignore seed is not spelled here |
 | `@clarvis/paths` → `resolveCommand` | runtime, static | `packages/tools/src/lib/rg.ts:11`, `:226`, `:277` — `rg` is resolved against `PATH` once and memoised (`packages/paths/src/which.ts:100-111`) |
 | `@clarvis/paths` → `workspaceStatePaths` | runtime, static | `packages/tools/src/config.ts:7`, `:503` — supplies `stateRoot` |
-| `ignore` (npm) | runtime, `createRequire` | `packages/tools/src/lib/ignore.ts:9` |
-| `picomatch` (npm) | runtime, `createRequire` | `packages/tools/src/lib/files.ts:14`, `:328` |
+| `ignore` (npm) | runtime, static | `makeIgnore` in `packages/tools/src/lib/ignore.ts` |
+| `picomatch` (npm) | runtime, static | `picomatch` in `packages/tools/src/lib/files.ts` |
 | `diff` (npm) | runtime, static | `packages/tools/src/tools/diff.ts:1`; `packages/tools/src/lib/unified-diff.ts:1`; `packages/tools/src/lib/text.ts:1` |
-| `ajv` (npm) | runtime, `createRequire` | `packages/tools/src/core.ts:47` — schema defaulting/coercion happens before any handler runs |
+| `ajv` (npm) | runtime, static | module-level `Ajv` validator in `packages/tools/src/core.ts` — schema defaulting/coercion happens before any handler runs |
 | `rg` binary | runtime, `spawn`/`Bun.spawn` | `packages/tools/src/lib/rg.ts:226`, `:277`; probed at `packages/tools/src/config.ts:187-193` |
 | Bun's `Bun.spawn` | runtime, **hard Bun coupling** | `packages/tools/src/lib/rg.ts:277` — the single-file snapshot path uses Bun's native subprocess API because "Bun's Node-compatible `child_process` currently closes a piped stdin before queued writes reach the child" (`packages/tools/src/lib/rg.ts:265-267`) |
 
 The package's manifest declares exactly `@clarvis/paths`, `ajv`, `diff`, `ignore`, `picomatch`
 (`packages/tools/package.json` dependencies) — there is no source-code parser, and
-`packages/tools/tests/architecture/no-tree-sitter.test.ts` fails if one reappears.
+`packages/tools/tests/architecture/no-tree-sitter.test.ts` fails if one reappears. The root
+toolchain carries `@types/picomatch` because upstream exposes a CommonJS runtime without bundled
+declarations; this affects TypeScript checking, not the package's runtime closure.
 
 ### 7.2 Inbound (what depends on this subsystem)
 

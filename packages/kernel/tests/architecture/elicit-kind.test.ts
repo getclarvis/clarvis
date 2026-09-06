@@ -45,10 +45,22 @@ describe("the plan-review elicit kind has one value across every package", () =>
   test.each(UNIONS.map((u) => [u.file, u.symbol] as const))(
     "%s keeps it in its elicit kind union",
     async (file, symbol) => {
-      const line = (await readFile(join(repoRoot, file), "utf8"))
-        .split("\n")
-        .find((text) => text.trimStart().startsWith(symbol) && text.includes("guard_confirm"));
-      expect(line).toContain(`"${PLAN_REVIEW_ELICIT_KIND}"`);
+      const lines = (await readFile(join(repoRoot, file), "utf8")).split("\n");
+      const start = lines.findIndex(
+        (text, index) =>
+          text.trimStart().startsWith(symbol) &&
+          lines
+            .slice(index, index + 12)
+            .join("\n")
+            .includes('"guard_confirm"'),
+      );
+      expect(start).toBeGreaterThanOrEqual(0);
+      const declaration = lines
+        .slice(start, start + 12)
+        .join("\n")
+        .split(";")[0];
+      expect(declaration).toContain('"guard_confirm"');
+      expect(declaration).toContain(`"${PLAN_REVIEW_ELICIT_KIND}"`);
     },
   );
 });

@@ -1,5 +1,10 @@
 import { PLAN_REVIEW_ELICIT_KIND } from "./elicit-types.ts";
-import type { ElicitCommandDetail, ElicitRequestParams, ElicitResult } from "./elicit-types.ts";
+import type {
+  ElicitCommandDetail,
+  ElicitRequestParams,
+  ElicitResult,
+  WorkspaceMergeDetail,
+} from "./elicit-types.ts";
 
 /** A single elicitation field's answer, coerced to the type its `kind` implies. */
 export type ElicitContentValue = string | number | boolean | string[];
@@ -30,6 +35,8 @@ export interface ElicitForm {
   /** Structured guard command context; when present the view renders it
    * instead of `message`. */
   detail?: ElicitCommandDetail;
+  /** Complete host-scanned isolated-workspace review. */
+  workspaceMerge?: WorkspaceMergeDetail;
 }
 
 type PrimitiveSchema = {
@@ -101,10 +108,15 @@ const WORKFLOW_DECISION_LABELS: Record<string, string> = {
   cancel: "do not run",
 };
 
+const WORKSPACE_MERGE_DECISION_LABELS: Record<string, string> = {
+  merge: "merge all changes",
+};
+
 const DECISION_LABELS: Record<string, Record<string, string>> = {
   guard_confirm: GUARD_DECISION_LABELS,
   [PLAN_REVIEW_ELICIT_KIND]: PLAN_DECISION_LABELS,
   workflow_review: WORKFLOW_DECISION_LABELS,
+  workspace_merge: WORKSPACE_MERGE_DECISION_LABELS,
 };
 
 /**
@@ -140,10 +152,20 @@ export function parseElicitForm(params: ElicitRequestParams): ElicitForm {
       for (const option of field.options) option.label = labels[option.value] ?? option.label;
   }
   const detail =
-    params.detail !== undefined && params.detail.command.trim().length > 0
+    params.detail !== undefined &&
+    "command" in params.detail &&
+    params.detail.command.trim().length > 0
       ? params.detail
       : undefined;
-  return { mode: "form", message, fields, ...(detail !== undefined ? { detail } : {}) };
+  const workspaceMerge =
+    params.detail !== undefined && "change_set_id" in params.detail ? params.detail : undefined;
+  return {
+    mode: "form",
+    message,
+    fields,
+    ...(detail !== undefined ? { detail } : {}),
+    ...(workspaceMerge !== undefined ? { workspaceMerge } : {}),
+  };
 }
 
 /** How an un-defaulted choice field starts. */

@@ -572,10 +572,13 @@ falls back to `basePrompt` only when the body is empty/whitespace-only.
 
 ### 4.11 Ajv construction and its two consumers
 
-`build(opts)` (`packages/loop/src/validation/ajv.ts:56-61`) is the one place that actually
-instantiates an Ajv instance and registers `ajv-formats`; both public factories call it.
-`createAjv()` (`:70-72`, `{ strict: false, allErrors: true }`) and `createStrictAjv()` (`:81-83`,
-the same plus `strictSchema: true`) differ by exactly that one option, but serve two different
+`build(opts)` in `packages/loop/src/validation/ajv.ts` is the one place that actually instantiates
+an Ajv instance and registers `ajv-formats`; both public factories call it. `load()` normally
+resolves those CommonJS modules only on first use. The isolated worker's standalone composition
+instead calls `installBundledAjvModules` from `tooling/runtime/guest-entry.ts` before starting the
+worker, so Bun can close the modules into one executable without changing the native host's lazy
+path. `createAjv()` (`{ strict: false, allErrors: true }`) and `createStrictAjv()` (the same plus
+`strictSchema: true`) differ by exactly that one option, but serve two different
 purposes at two unrelated call sites: `createAjv` is the **only** call in
 `packages/loop/src/runtime/tools/tool-arg-validator.ts:102`, validating a tool call's arguments against that tool's
 own declared schema (fail-open by design, per that module's own doc comment); `createStrictAjv` is
@@ -624,13 +627,16 @@ Production: `packages/loop/src/validation/request/identity-rules.ts:5-83`. Test:
 `packages/loop/tests/unit/request-identity-rules.test.ts:11`, `:18`, `:37`, `:43`.
 
 **INV-073.** `src/validation/ajv.ts` calls `require("ajv")`/`require("ajv-formats")` only from inside
-a function body (`load()`), deferred past module evaluation, never at the top level — so a host that
-merely reaches this module (e.g. the terminal UI, through delegation, on its boot path) does not pay
-the cost of loading a validator and compiling its format vocabulary unless a validator is actually
-built.
-Production: `packages/loop/src/validation/ajv.ts:38-47`. Test:
-`packages/loop/tests/architecture/eager-validator-boundary.test.ts:39` (walks the TypeScript AST and
-asserts every `require(...)` call is nested inside a function).
+the `load()` function, deferred past module evaluation, never at the top level — so an ordinary host
+that merely reaches this module (e.g. the terminal UI, through delegation, on its boot path) does
+not pay the cost unless a validator is actually built. The only eager alternative is explicit
+composition: the standalone guest entry statically imports both modules, installs them with
+`installBundledAjvModules`, and only then calls `startGuestMain`.
+Production: `load` and `installBundledAjvModules` in
+`packages/loop/src/validation/ajv.ts`; `tooling/runtime/guest-entry.ts`. Test:
+`packages/loop/tests/architecture/eager-validator-boundary.test.ts` (walks the TypeScript AST and
+asserts every fallback `require(...)` call is nested inside a function) and
+`tooling/tests/architecture/runtime-containerfiles.test.ts` (pins the standalone composition).
 
 **INV-RS-01.** The built-in request schema and the hand-authored `RunRequest` type both carry the
 same optional prompt-expansion context, while the kernel adds it only for a successfully resolved,
@@ -768,7 +774,8 @@ schema at settings-read time, a third, uncoded shape the two-way framing above d
   why the drift-lock types (`_runRequestDriftLock` etc.) are meaningful at all. Per-capability content
   behind these consts is owned by other documents (hooks-execution, grants-and-tool-exposure,
   `@clarvis/supervision`'s `agentsSettingsSpec`).
-- `ajv` / `ajv-formats` — loaded dynamically, never at module top level (INV-073).
+- `ajv` / `ajv-formats` — lazy fallback resolution for ordinary hosts; statically supplied only by
+  the standalone isolated-worker composition root (INV-073).
 
 **Depended on by** (all runtime, via the package's export map — never a raw `src/` path from outside
 the package):

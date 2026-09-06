@@ -136,6 +136,34 @@ describe("compileResultContract", () => {
     }
   });
 
+  it("rejects aggregate nodes, object fields, field names and string text over their bounds", () => {
+    const tooManyNodes = {
+      type: "object",
+      allOf: Array.from({ length: OUTPUT_SCHEMA_LIMITS.nodes + 1 }, () => null),
+    };
+    const tooManyFields = Object.fromEntries(
+      Array.from({ length: OUTPUT_SCHEMA_LIMITS.containerEntries + 1 }, (_, index) => [
+        `field_${String(index)}`,
+        null,
+      ]),
+    );
+    const longKey = "k".repeat(OUTPUT_SCHEMA_LIMITS.keyChars + 1);
+    const aggregateStrings = Object.fromEntries(
+      Array.from({ length: 5 }, (_, index) => [
+        `field_${String(index)}`,
+        "x".repeat(Math.floor(OUTPUT_SCHEMA_LIMITS.stringChars / 5) + 1),
+      ]),
+    );
+    for (const schema of [
+      tooManyNodes,
+      { type: "object", properties: tooManyFields },
+      { type: "object", properties: { [longKey]: null } },
+      { type: "object", properties: aggregateStrings },
+    ]) {
+      expect(() => compileResultContract(schema)).toThrow(ValidationError);
+    }
+  });
+
   it("rejects cyclic and accessor-backed schemas without recursively materializing them", () => {
     const cyclic: Record<string, unknown> = { type: "object" };
     cyclic["properties"] = cyclic;

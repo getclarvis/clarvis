@@ -9,5 +9,5 @@
     "noImplicitOverride": false,
     "useUnknownInCatchVariables": false
   },
-  "include": ["checks", "lib", "release", "test-runtime", "tests"]
+  "include": ["checks", "lib", "release", "runtime", "test-runtime", "tests"]
 }

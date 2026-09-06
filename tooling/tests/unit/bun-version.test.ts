@@ -58,8 +58,21 @@ jobs:
         with:
           bun-version: ${VERSION}
       - run: bun --version && bun --revision
+  runtime-image:
+    steps:
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${VERSION}
+      - run: bun --version && bun --revision
+  runtime-manifest:
+    steps:
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: ${VERSION}
+      - run: bun --version && bun --revision
 `,
   docker: `FROM oven/bun:${VERSION}-slim AS deps\nFROM oven/bun:${VERSION}-slim AS runtime\n`,
+  runtimeDevelopmentContainerfile: `ARG BUILD_IMAGE=oven/bun:${VERSION}-debian@sha256:${"a".repeat(64)}\n`,
   rootManifest: JSON.stringify({
     engines: { bun: `>=${VERSION}` },
     workspaces: ["packages/example"],
@@ -104,7 +117,7 @@ describe("bunVersionFailures", () => {
     snapshot.canary = snapshot.canary.replace("      - run: bun --version && bun --revision\n", "");
     const failures = bunVersionFailures(snapshot).join("\n");
     expect(failures).toContain("expected three Bun version/revision evidence steps, found 2");
-    expect(failures).toContain("expected two Bun version/revision evidence steps, found 1");
+    expect(failures).toContain("expected four Bun version/revision evidence steps, found 3");
     expect(failures).toContain("expected one Bun version/revision evidence step, found 0");
   });
 
@@ -118,6 +131,18 @@ describe("bunVersionFailures", () => {
     const snapshot = validSnapshot();
     snapshot.docker = snapshot.docker.replace(VERSION, "1.3.14");
     expect(bunVersionFailures(snapshot).join("\n")).toContain("packages/server/Dockerfile");
+  });
+
+  test("requires the source-built runtime carrier to pin the same Bun version by digest", () => {
+    const snapshot = validSnapshot();
+    snapshot.runtimeDevelopmentContainerfile = snapshot.runtimeDevelopmentContainerfile.replace(
+      VERSION,
+      "1.3.14",
+    );
+    expect(bunVersionFailures(snapshot).join("\n")).toContain("Containerfile.runtime-development");
+
+    snapshot.runtimeDevelopmentContainerfile = `ARG BUILD_IMAGE=oven/bun:${VERSION}-debian\n`;
+    expect(bunVersionFailures(snapshot).join("\n")).toContain("expected one digest-pinned");
   });
 
   test("names root and workspace engine drift", () => {

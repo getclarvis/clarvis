@@ -8,6 +8,7 @@ artifact builders and performance benchmarks in `packages/code/tooling/`.
 | --------------------- | ----------------------------------------------------------------------------- |
 | `checks/`             | Executable repository policy and consistency checks                           |
 | `release/`            | Non-publishing release preparation                                            |
+| `runtime/`            | Immutable isolated-runtime image planning and release identity manifests      |
 | `lib/`                | Importable implementation shared by checks and their tests                    |
 | `test-runtime/`       | Process setup loaded by Bun before repository tests                           |
 | `tests/unit/`         | Focused checker and library behavior                                          |
@@ -36,3 +37,20 @@ release identity authorities: root `package.json`, `install.sh`, and `install.ps
 SemVer ordering and the existing cross-file identity before writing, and never commits, tags, or
 publishes. Public documentation resolves the newest complete distribution release independently, so
 it is not part of this source mutation.
+
+`runtime/build-image.ts` makes Docker the default OCI CLI and accepts Podman only through the
+explicit `--engine podman` adapter. Production composition accepts only the canonical runtime
+artifact repository at an immutable digest; it never sends repository source into
+`Containerfile.runtime`. `--development` first builds a source carrier from the frozen lockfile and
+then sends that carrier through the exact same final Containerfile. `--artifact-only` is the
+tag-release input. The helper also owns the immutable Debian slim reference plus the exact mise
+version and per-architecture release checksums. The final stage copies only the verified mise binary
+and its license; curl and archive tooling exist only in the download stage, while language runtimes
+and compilers remain on-demand guest installs. Every successful mode prints the exact local image
+ID.
+
+`runtime/release-manifest.ts` owns the strict schema-1 mapping from one root product version and
+source commit to the two released OCI digests, the private guest protocol revision, the supported
+Linux platforms, and the digest-pinned build/base images. It writes no registry state itself; the
+tag-only release workflow owns publication and includes the resulting `runtime-release.json` in the
+verified release asset set.

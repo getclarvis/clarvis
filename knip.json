@@ -9,6 +9,7 @@
       "entry": [
         "tooling/checks/**/*.ts",
         "tooling/release/**/*.ts",
+        "tooling/runtime/**/*.ts",
         "tooling/test-runtime/**/*.ts"
       ],
       "project": ["*.js", "tooling/**/*.{ts,js}"]

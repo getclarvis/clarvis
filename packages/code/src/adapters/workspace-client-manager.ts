@@ -2,9 +2,11 @@ import type {
   createFileKernel as CreateFileKernel,
   CreateFileKernelOptions,
   ExtensionProfileDriftNotice,
+  RuntimePlacementNotice,
 } from "@clarvis/kernel/bootstrap";
 import { ownerFromWorkspace } from "@clarvis/paths";
-import type { KernelClient, WorkspaceRef } from "@clarvis/protocol";
+import type { KernelClient, RuntimeStatus, WorkspaceRef } from "@clarvis/protocol";
+import { productVersion } from "../cli-args.ts";
 
 type FileKernelFactory = typeof CreateFileKernel;
 type ManagedFileKernel = Awaited<ReturnType<FileKernelFactory>>;
@@ -14,7 +16,12 @@ interface ExtensionProfileDriftChannel {
   listeners: Set<(notice: ExtensionProfileDriftNotice) => void>;
 }
 
-export async function loadFileKernelFactory(): Promise<FileKernelFactory> {
+interface RuntimePlacementChannel {
+  latest?: { status: RuntimeStatus; message?: string };
+  listeners: Set<(notice: { status: RuntimeStatus; message?: string }) => void>;
+}
+
+async function loadFileKernelFactory(): Promise<FileKernelFactory> {
   const loaded = await import("@clarvis/kernel/bootstrap");
   return loaded.createFileKernel;
 }
@@ -45,28 +52,53 @@ export class WorkspaceClientManager {
     readonly defaultOwner: string,
     private readonly createKernel: FileKernelFactory,
     private readonly extensionProfileDrift: ExtensionProfileDriftChannel,
+    private readonly runtimePlacement: RuntimePlacementChannel,
   ) {}
 
   static async create(options: WorkspaceClientOptions): Promise<WorkspaceClientManager> {
     const createFileKernel = await loadFileKernelFactory();
     const defaultOwner = options.defaultOwner ?? ownerFromWorkspace(options.workspaceRoot);
     const extensionProfileDrift: ExtensionProfileDriftChannel = { listeners: new Set() };
+    const runtimePlacement: RuntimePlacementChannel = { listeners: new Set() };
     const originalExtensionProfileDrift = options.onExtensionProfileDrift;
+    const originalRuntimePlacement = options.onRuntimePlacement;
     const resolved = {
       ...options,
+      runtimeFactory:
+        options.runtimeFactory ??
+        ({
+          create: async (input) => {
+            const local = await import("@clarvis/kernel/local");
+            if (input.settings.backend !== "docker") return local.createLocalPodmanRuntime(input);
+            return local.createLocalDockerRuntime(input, {
+              resolveImage: async () => {
+                const { resolveClarvisRuntimeImage } = await import("./runtime-image.ts");
+                return resolveClarvisRuntimeImage({ currentVersion: productVersion() });
+              },
+            });
+          },
+        } satisfies NonNullable<WorkspaceClientOptions["runtimeFactory"]>),
       defaultOwner,
       onExtensionProfileDrift: (notice: ExtensionProfileDriftNotice): void => {
         extensionProfileDrift.latest = notice;
         originalExtensionProfileDrift?.(notice);
         for (const listener of extensionProfileDrift.listeners) listener(notice);
       },
+      onRuntimePlacement: (notice: RuntimePlacementNotice): void => {
+        runtimePlacement.latest = notice;
+        originalRuntimePlacement?.(notice);
+        for (const listener of runtimePlacement.listeners) listener(notice);
+      },
     };
+    const kernel = await createFileKernel(resolved);
+    runtimePlacement.latest = { status: kernel.runtime };
     return new WorkspaceClientManager(
-      await createFileKernel(resolved),
+      kernel,
       resolved,
       defaultOwner,
       createFileKernel,
       extensionProfileDrift,
+      runtimePlacement,
     );
   }
 
@@ -103,11 +135,30 @@ export class WorkspaceClientManager {
     return () => this.extensionProfileDrift.listeners.delete(listener);
   }
 
+  /** Subscribe to lazy runtime placement transitions, replaying current placement. */
+  subscribeRuntimePlacement(
+    listener: (notice: { status: RuntimeStatus; message?: string }) => void,
+  ): () => void {
+    if (this.closed) return () => {};
+    this.runtimePlacement.listeners.add(listener);
+    if (this.runtimePlacement.latest !== undefined) listener(this.runtimePlacement.latest);
+    return () => this.runtimePlacement.listeners.delete(listener);
+  }
+
+  /** Retry a Docker placement after the coordinator latched a sandbox fallback. */
+  retryRuntime(): void {
+    if (this.closed) return;
+    this.kernel.retryRuntime();
+  }
+
   /** Rebuild the same workspace kernel during an explicit backend reconnect. */
   async invalidate(workspaceId: string): Promise<void> {
     if (workspaceId !== this.current.id) throw new Error("this process is pinned to one workspace");
     await this.kernel.close();
     this.kernel = await this.createKernel(this.options);
+    const notice = { status: this.kernel.runtime };
+    this.runtimePlacement.latest = notice;
+    for (const listener of this.runtimePlacement.listeners) listener(notice);
     if (this.memoryRecoveryStarted) this.kernel.startMemoryRecovery();
   }
 
@@ -116,5 +167,6 @@ export class WorkspaceClientManager {
     this.closed = true;
     await this.kernel.close();
     this.extensionProfileDrift.listeners.clear();
+    this.runtimePlacement.listeners.clear();
   }
 }

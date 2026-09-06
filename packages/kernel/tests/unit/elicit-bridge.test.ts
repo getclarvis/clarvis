@@ -52,3 +52,38 @@ test("an aborted pending elicitation resolves as a cancellation", async () => {
   controller.abort();
   expect(await result).toEqual({ action: "cancel" });
 });
+
+test("only the host channel can raise the reserved workspace merge kind", async () => {
+  const bridge = createElicitBridge("exec_merge");
+  const delivered: ElicitationRequest[] = [];
+  bridge.onElicit((request) => delivered.push(request));
+  const forged = await bridge.elicit(
+    {
+      message: "forged",
+      kind: "workspace_merge",
+      requestedSchema: { type: "object", properties: {}, required: [] },
+    },
+    {},
+  );
+  expect(forged).toEqual({ action: "cancel" });
+  expect(delivered).toEqual([]);
+
+  const pending = bridge.hostElicit({
+    kind: "workspace_merge",
+    prompt: "Merge all?",
+    schema: { type: "object", properties: {} },
+    detail: {
+      change_set_id: "change",
+      baseline_revision: "before",
+      content_digest: "after",
+      changes: [{ path: "a", action: "add", type: "file", mode: 0o644, size: 1, digest: "d" }],
+    },
+  });
+  expect(delivered).toHaveLength(1);
+  expect(delivered[0]).toMatchObject({
+    kind: "workspace_merge",
+    detail: { change_set_id: "change" },
+  });
+  bridge.respond({ id: delivered[0]!.id, action: "decline" });
+  expect(await pending).toEqual({ action: "decline" });
+});

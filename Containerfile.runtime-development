@@ -1,0 +1,59 @@
+# syntax=docker/dockerfile:1
+
+ARG BUILD_IMAGE=oven/bun:1.4.0-debian@sha256:5bb0f9be3a1a36a03e27c9a9dd894a3b1ad26657155c7df4dda771e17bf872ef
+
+FROM ${BUILD_IMAGE} AS build
+
+WORKDIR /src
+COPY package.json bun.lock bunfig.toml ./
+COPY packages/capability/package.json  packages/capability/
+COPY packages/supervision/package.json packages/supervision/
+COPY packages/llm/package.json         packages/llm/
+COPY packages/paths/package.json       packages/paths/
+COPY packages/trace/package.json       packages/trace/
+COPY packages/mcp-client/package.json  packages/mcp-client/
+COPY packages/tools/package.json       packages/tools/
+COPY packages/hooks/package.json       packages/hooks/
+COPY packages/skills/package.json      packages/skills/
+COPY packages/memory/package.json      packages/memory/
+COPY packages/plan/package.json        packages/plan/
+COPY packages/tasks/package.json       packages/tasks/
+COPY packages/protocol/package.json    packages/protocol/
+COPY packages/loop/package.json        packages/loop/
+COPY packages/workflows/package.json   packages/workflows/
+COPY packages/kernel/package.json      packages/kernel/
+COPY packages/server/package.json      packages/server/
+COPY packages/code/package.json        packages/code/
+RUN bun install --frozen-lockfile
+
+COPY tsconfig.json tsconfig.base.json ./
+COPY packages ./packages
+COPY tooling/runtime/guest-entry.ts ./tooling/runtime/guest-entry.ts
+RUN bun build tooling/runtime/guest-entry.ts --compile --outfile /out/clarvis-runtime
+RUN mkdir -p /out/npm-licenses \
+    && find node_modules -type f \
+      \( -iname LICENSE -o -iname 'LICENSE.*' -o -iname LICENCE -o -iname 'LICENCE.*' \
+         -o -iname COPYING -o -iname 'COPYING.*' -o -iname NOTICE -o -iname 'NOTICE.*' \) \
+      -exec cp --parents '{}' /out/npm-licenses/ \;
+
+FROM scratch
+
+ARG RUNTIME_VERSION
+ARG SOURCE_REVISION
+
+LABEL org.opencontainers.image.title="Clarvis isolated runtime artifact" \
+      org.opencontainers.image.description="Standalone guest executable consumed by the Clarvis runtime image" \
+      org.opencontainers.image.source="https://github.com/getclarvis/clarvis" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${RUNTIME_VERSION}" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      io.clarvis.runtime.artifact="true" \
+      io.clarvis.runtime.protocol="2"
+
+COPY --from=build --chmod=0555 /out/clarvis-runtime /clarvis-runtime
+COPY LICENSE /licenses/LICENSE
+COPY THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
+COPY third-party/bun/LICENSE.md /licenses/BUN-LICENSE.md
+COPY third-party/models.dev/LICENSE /licenses/MODELS-DEV-LICENSE
+COPY third-party/vercel-ai-sdk/LICENSE /licenses/VERCEL-AI-SDK-LICENSE
+COPY --from=build /out/npm-licenses/node_modules /licenses/npm

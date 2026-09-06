@@ -507,20 +507,22 @@ canonical workspace (`packages/code/src/runtime.tsx`, `runInteractiveMode`, `run
 **`bootSilentSessionStore()`** (`packages/code/src/runtime.tsx`) is the shared prelude for `--list`, the
 resume/continue preflight and `--delete`: it creates a `WorkspaceClientManager` over `workspace` +
 `globalRoot()`, with `logger: activeDiagnosticLogger() ?? createLogger("silent")`, opens a client and
-loads the owner's session store. Its TSDoc records that `runPrintMode` boots its **own** kernel
-instead "it needs `keySources` and `memory: true`, neither of which a silent listing/delete command
-has any use for" (`packages/code/src/runtime.tsx`, `bootSilentSessionStore`).
+loads the owner's session store. Its TSDoc records that `runPrintMode` creates its **own manager**
+instead because it needs `keySources` and `memory: true`, neither of which a silent listing/delete
+command has any use for. All complete kernel paths still acquire their kernel through
+`WorkspaceClientManager`, which owns lazy Docker/Podman factory composition
+(`packages/code/src/runtime.tsx`, `bootSilentSessionStore`, `runPrintMode`, `runRefreshMode`).
 
 **`runPrintMode`** (`packages/code/src/runtime.tsx`, `runPrintMode`):
-1. Dynamically loads the file-kernel factory, then builds `ClarvisDirs` from
+1. Builds `ClarvisDirs` from
    `globalPaths()`/`workspacePaths(workspace)`/`workspaceStatePaths(workspace)`.
 2. Creates a `CodeConfigStore` inside a `createRoot` to get `keySources()`.
-3. `createFileKernel({ workspaceRoot, globalDir, keySources, memory: true, extensionProfileSelector,
-   logger, openMcpAuthorizationUrl: openPublicUrl })`.
+3. Creates and opens `WorkspaceClientManager({ workspaceRoot, globalDir, keySources, memory: true,
+   extensionProfileSelector, logger, openMcpAuthorizationUrl: openPublicUrl })`.
    `--print` is headless only in its output
    and elicitation policy: a remote MCP OAuth challenge may still open the system browser, but the
    current run degrades that server and never waits for the human callback.
-4. If `--agent` was not given, resolves one: `kernel.listAgents()` + `loadAgentFiles` + settings +
+4. If `--agent` was not given, resolves one: `kernel.config.listAgents()` + `loadAgentFiles` + settings +
    `readEnvView()`, filters to runnable candidates via `agentReadiness`, prefers `code.agentDefault()`
    when it is present and runnable, else `automaticAgentFallback` (`:264-302`). Failure writes
    `no interactive entry agent configured — pass --agent or set a default` and exits 1 (`:303-309`).
@@ -533,7 +535,7 @@ has any use for" (`packages/code/src/runtime.tsx`, `bootSilentSessionStore`).
    (`:339-349`).
 8. `drainPrintEvents(handle.events, { onEvent, onNotice })` (`:350-353`).
 9. `await handle.done` → `await transcriptDone` → `finish()` → dispose store → `await drained` →
-   `kernel.close()` (`:354-359`).
+   release the opened client → close the manager.
 10. Non-`completed` status: stderr `run ${status}: ${reason}` and exit 1; else exit 0 (`:360-365`).
 11. Any throw: `print failed: <text>`, close the kernel swallowing errors, exit 1 (`:366-370`).
 
@@ -629,8 +631,7 @@ Two orderings the code annotates explicitly:
 you can only ask for before the failure you want it for is no channel"
 (`packages/code/src/runtime.tsx`, `runApp`).
 
-Both code-host kernel paths supply the same browser opener: `runPrintMode` passes it directly and
-the interactive path passes it through `WorkspaceClientManager.create`
+Both code-host kernel paths supply the same browser opener through `WorkspaceClientManager.create`
 (`packages/code/src/runtime.tsx`, `runPrintMode`, `runApp`; `packages/code/src/startup-foundation.ts`,
 `prepareStartupFoundation`). `openPublicUrl` accepts only HTTP(S), uses an
 argv-based platform launcher, and returns `false` on parse, protocol, spawn or exit failure
@@ -888,8 +889,8 @@ shadows the four registration methods so everything it registers lands there (`p
 
 The render tree returned by `App` is, top to bottom: `KeymapProvider` →
 `HeaderRows` → a one-row top rule → the region box holding `OverlayRegion` with `TranscriptRegion` as
-its fallback → the floating pickers/readers (`AgentProfilePicker`, lazy `SafetyPresetPicker`,
-`ActivityDetail`, `WorktreeExitPrompt`) as
+its fallback → the floating pickers/readers (`AgentProfilePicker`, lazy `IsolationPicker`, lazy
+`ReviewPicker`, `ActivityDetail`, `WorktreeExitPrompt`) as
 **siblings
 after** the region → `HintToast` → the bottom box (`LeadActivityLine`, `InputDock`, `Footer`) → the
 floor panel. `MemoryPressureBanner`, elicitation and the fixed reading runway remain final children
@@ -984,11 +985,11 @@ version after one gutter column. It is a pure projection of `HeaderPlan`, comput
 #### 4.13.1 `projectHeader`: priority-zoned chips and their elision ladder
 
 `HeaderInput` (`packages/code/src/views/header-projection.ts`, `HeaderInput`) is the one shell snapshot the row is derived
-from — `width`, `version`, `floor`, `agentName`, `model`, `safetyPreset`, `guardMode`, `sandboxUnavailable?`,
+from — `width`, `version`, `floor`, `agentName`, `model`, `isolation`, `review`, `sandboxUnavailable?`,
 `memoryConfigured`, `memory`, `plans`, `connection`, `doctorDirty`, `workspace`, `workspaceLabel?`,
-`branch?` — and its own TSDoc records why so many fields survive unused by the current row: "Legacy
-configuration fields remain input so App owns one derivation point". `HeaderFieldKey` is the closed
-union of workspace, identity, model, safety, memory, urgent, exception and `version`; a
+`branch?` — and its own TSDoc assigns App the sole derivation point for every header status.
+`HeaderFieldKey` is the closed union of workspace, identity, model, isolation, review, memory,
+urgent, exception and `version`; a
 `HeaderField` is `{ key, text, color, elastic }`; `HeaderPlan` makes its `version` field mandatory
 beside the existing left/status/host-state zones (same module, named types).
 
@@ -1016,11 +1017,11 @@ version field is always `v${input.version}` in `tokens.muted`, never elastic. `u
 whenever `input.connection.phase !== "ready"`: a warning glyph plus
 `connectionLabel(input.connection, input.width < 72)` in `tokens.warn`, never elastic. `exceptionField`
 is a strict priority chain evaluated only when `exceptionAllowed` (`input.width >= 100`):
-`sandboxUnavailable` ("Sandbox unavailable") outranks a `free` safety preset ("Safety: free"),
-which is itself only checked when the caller passes `includeSafety: true`, which outranks
-`doctorDirty` ("Doctor needs attention") — all three render in `tokens.warn`. Both are computed before
-`room` so their reserved width is subtracted first; the wider-of-two-renderings probe exists because
-whether `exception` will end up absorbing the safety warning is not known until after `statusChips`
+`sandboxUnavailable` ("Sandbox unavailable") outranks Host isolation ("Isolation: Host"), which is
+itself only checked when the caller passes `includeIsolation: true`, which outranks `doctorDirty`
+("Doctor needs attention") — all three render in `tokens.warn`. Both are computed before `room` so
+their reserved width is subtracted first; the wider-of-two-renderings probe exists because whether
+`exception` will end up absorbing the Host-isolation warning is not known until after `statusChips`
 has run (`packages/code/src/views/header-projection.ts`, `urgentField`, `exceptionField`,
 `projectHeader`).
 
@@ -1034,26 +1035,26 @@ reads `on`"). Five candidate chip sets are tried widest-first, and the first who
 
 | Rung | Chips |
 |---|---|
-| 1 | `model.full`, `Safety: {preset}`, `Memory: {memory}` |
-| 2 | `model.short`, `Safety: {preset}`, `Memory: {memory}` |
-| 3 | `model.short`, `{preset}`, `mem {memory}` |
-| 4 | `model.short`, `{preset}` |
+| 1 | `model.full`, `Isolation: {isolation}`, `Review: {review}`, `Memory: {memory}` |
+| 2 | `model.short`, `Isolation: {isolation}`, `Review: {review}`, `Memory: {memory}` |
+| 3 | `model.short`, `Iso {isolation}`, `{review}`, `mem {memory}` |
+| 4 | `model.short`, `{isolation}`, `{review}` |
 | 5 | `model.short` |
 
-If none fits, `statusChips` returns `[]`. The model chip is always `tokens.fg`; the safety
-chip is `tokens.warn` when `preset === "free"`, else `tokens.muted`; the memory chip is always
-`tokens.muted` (same named functions).
+If none fits, `statusChips` returns `[]`. The model chip is always `tokens.fg`; Isolation is
+`tokens.warn` for Host, Review is `tokens.warn` for Off, and other status chips are `tokens.muted`
+(same named functions).
 
 **Assembly.** `room` in `projectHeader` is `width − BRAND_COLS − WORKSPACE_FLOOR −
 (floor ? 0 : IDENTITY_FLOOR) − VERSION_GUTTER − version width − (urgent reserved) −
 (exception reserved)`. `exception` is only actually computed, past the
-`exceptionAllowed` gate, with `includeSafety` set to whether the chosen chip rung already carries a
-`"safety"` key — so a visible "Safety: free" chip suppresses the redundant "Safety: free"
-exception, and `free` is "stated once" as its own test names it. Every status chip and every
+`exceptionAllowed` gate, with `includeIsolation` set to whether the chosen chip rung already carries
+an `"isolation"` key — so a visible Host chip suppresses the redundant `"Isolation: Host"`
+exception. Every status chip and every
 host-state field except the first in its group is prefixed with a fresh `separator()`; the first
 field after the flexible gap carries none, and the separate final version zone uses its fixed gutter
 instead. `packages/code/tests/unit/header-projection.test.ts` pins every rung of the ladder,
-the grouped separator rule, the sandbox-outranks-doctor and free-stated-once priorities, the
+the grouped separator rule, the Sandbox-outranks-doctor and Host-stated-once priorities, the
 floor-mode identity drop and the version field; the render side is pinned by
 `packages/code/tests/integration/header-render.test.tsx`.
 
@@ -1450,6 +1451,14 @@ elision removes optional run configuration rather than the product identity. Pro
 `packages/code/tests/unit/header-projection.test.ts` and
 `packages/code/tests/integration/{splash-render,header-render,app-shell-render}.test.tsx`.
 
+**INV-CB-49.** Every complete Code kernel boot goes through `WorkspaceClientManager`, so interactive,
+`--print`, session-only and model-refresh modes all receive the selected local Docker/Podman runtime
+factory. No direct `createFileKernel` call remains in `runtime.tsx`. Production:
+`packages/code/src/runtime.tsx` (`bootSilentSessionStore`, `runPrintMode`, `runRefreshMode`, `runApp`)
+and `packages/code/src/adapters/workspace-client-manager.ts` (`WorkspaceClientManager.create`).
+Pinned: `packages/code/tests/architecture/architecture-boundary.test.ts` ("routes every complete
+kernel boot through the runtime-aware workspace manager").
+
 ## 6. Failure modes and degradation
 
 | Situation | Handling | Exit / effect | Cite |
@@ -1466,7 +1475,7 @@ elision removes optional run configuration rather than the product identity. Pro
 | `--update` is unmanaged, unsupported, concurrent, untrusted, or fails staging | one bounded `clarvis update failed: <reason>` line; active version unchanged | exit 1 | `packages/code/src/update/index.ts`, [distribution failure modes](../cross-cutting/distribution-and-updates.md#6-failure-modes-and-degradation) |
 | `--print` with no resolvable entry agent | `no interactive entry agent configured — pass --agent or set a default` | exit 1 | `packages/code/src/runtime.tsx` (`runPrintMode`) |
 | `--print` run does not complete | `run <status>: <error.message ?? ended_reason ?? status>` | exit 1 | `packages/code/src/runtime.tsx` (`runPrintMode`) |
-| `--print` throws anywhere | `print failed: <text>`; kernel close errors swallowed | exit 1 | `packages/code/src/runtime.tsx` (`runPrintMode`) |
+| `--print` throws anywhere | `print failed: <text>`; opened-client release and manager-close errors swallowed | exit 1 | `packages/code/src/runtime.tsx` (`runPrintMode`) |
 | `--print` receives an elicitation | auto-declined, one stderr line per request | run continues | `packages/code/src/runtime.tsx` (`runPrintMode`) |
 | `--print` event stream throws mid-iteration | swallowed; `drained` still resolves | the run's `done` still settles | `packages/code/src/cli-mode.ts:98-100` |
 | Tree-sitter Markdown warm-up fails | `markdown.preload.failed` at `warn`; the already-usable shell continues unhighlighted | degrade | `packages/code/src/runtime.tsx` (`markdownPreload`) |

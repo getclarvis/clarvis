@@ -1046,6 +1046,35 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/code/tests/integration/marketplace.test.ts`, and
     `packages/kernel/tests/integration/plugin-service.test.ts`.
 
+60. **An isolated guest receives execution material, not host authority.** Its only writable host
+    bind is the retained workspace copy; model/subscription credentials, the engine socket, host
+    environment, SSH agent and canonical Clarvis state remain absent. The omitted network default is
+    truthfully the broader ordinary `outbound` route, so readable guest data may be exfiltrated and
+    host/LAN services may be reached; `none` is the explicit offline policy and unenforced
+    public-only `internet` is refused. Mise-installed toolchains execute only from disposable
+    `/mise` scratch. A preview request supplies only a guest port and display scheme: the host owns a
+    bounded `127.0.0.1` listener and fixed engine argv, and closes it before container shutdown.
+    The repository-root Docker context is independently deny-all with only reviewed source/build
+    inputs re-included, and credential-shaped files are excluded again after those inclusions; a
+    local runtime fixture or subscription store is therefore not sent to the engine during an image
+    build. An operational Docker failure before guest execution may fall back only to an available,
+    required native Sandbox; integrity, policy and handshake failures remain closed, and no run is
+    replayed after guest execution begins. Production: `.dockerignore`; `createArgs` in
+    `packages/kernel/src/runtime/docker-backend.ts` and
+    `packages/kernel/src/runtime/podman-backend.ts`; `createRuntimeAuthorityRouter` in
+    `packages/kernel/src/runtime/local-podman-runtime.ts`; `createRuntimePortPreview` and
+    `createContainerRuntimePortPreview` in `packages/kernel/src/runtime/port-preview.ts`;
+    `runtimeSettingsSchema` in `packages/kernel/src/runtime/settings.ts`;
+    `createLazyRuntimeCoordinator` in `packages/kernel/src/runtime/lazy-runtime.ts`;
+    `effectiveSandboxSettings` in `packages/kernel/src/sandbox/policy.ts`; `Containerfile.runtime`.
+    Test: `Docker runtime backend` and `Podman runtime backend` in
+    `packages/kernel/tests/unit/`; `runtime port preview` in
+    `packages/kernel/tests/integration/runtime-port-preview.test.ts`; the gated
+    `local-docker-runtime.e2e.test.ts` canary; `packages/kernel/tests/unit/lazy-runtime.test.ts`;
+    `packages/kernel/tests/integration/sandbox-policy.test.ts`;
+    `packages/server/tests/architecture/docker-context.test.ts`
+    (`allowlists the repository-root build context and re-excludes credentials`).
+
 ## 6. Failure modes and degradation
 
 | Condition | Handler | Outcome |
@@ -1055,6 +1084,10 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 | Path swapped between check and open | `packages/tools/src/lib/files.ts:137-144` | `path_escape`, `"Path changed while it was being opened"` |
 | `realpath`/`stat` failure during that check | `packages/tools/src/lib/files.ts:125-127` | mapped through `fsError` |
 | Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
+| Container `internet` policy requested without public-only enforcement | Docker and Podman adapters reject launch as `unsupported_policy`; neither silently substitutes ordinary outbound access | `network`/`networkArgs` in `packages/kernel/src/runtime/{docker,podman}-backend.ts`; adapter unit tests |
+| Operational Docker startup failure with configured fallback | Required native Sandbox is probed and latched for the session; if unavailable, the run fails closed and never executes bare | `createLazyRuntimeCoordinator`; lazy-runtime and sandbox-policy tests |
+| Runtime image integrity, effective-policy or guest-handshake failure | No fallback; the launch fails closed | `createLazyRuntimeCoordinator`; lazy-runtime tests |
+| Guest preview asks for an invalid/unlistening port or exhausts its mapping/relay bound | schema/probe/broker rejects the request; no public bind or arbitrary engine command is created | `createRuntimePreviewCapability` in `packages/kernel/src/runtime/preview-capability.ts`; `createRuntimePortPreview` in `packages/kernel/src/runtime/port-preview.ts`; preview integration tests |
 | Unsafe or unsupported borrowed `userConfig` reference | `resolveBorrowedUserConfig` in `packages/kernel/src/plugins/plugin-manifest.ts` | only the affected MCP is withheld; safe sibling contributions survive |
 | Write target is a symlink | `packages/tools/src/lib/atomic.ts:111-115` | `ToolError("invalid_input")`, `"Refusing to write through a symlink"` |
 | Atomic write fails after creating a parent | `packages/tools/src/lib/atomic.ts:143-146` | the created directory is removed best-effort, then rethrow |

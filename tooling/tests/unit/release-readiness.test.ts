@@ -35,8 +35,28 @@ function valid() {
     vercelAiSdkLicense: "Copyright 2023 Vercel, Inc.\nApache License, Version 2.0",
     releaseWorkflow: `env:
   RELEASE_REPOSITORY: getclarvis/clarvis-releases
+  RUNTIME_ARTIFACT_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime-artifact
+  RUNTIME_IMAGE_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime
 cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE
 if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+  runtime-image:
+  runtime-manifest:
+needs: [package, runtime-manifest]
+RELEASE_TAG: \${{ github.ref_name }}
+bun run tooling/runtime/release-manifest.ts
+docker login ghcr.io
+docker push "$artifact_tag"
+uses: actions/attest@${PIN}
+subject-name: \${{ env.RUNTIME_ARTIFACT_REPOSITORY }}
+subject-name: \${{ env.RUNTIME_IMAGE_REPOSITORY }}
+artifact-metadata: write
+packages: write
+packages: write
+push-to-registry: true
+push-to-registry: true
+build/release/runtime-release.json
 bun run tooling/checks/release-assets.ts build/release "$GITHUB_REF_NAME"
 uses: actions/create-github-app-token@${PIN}
 client-id: \${{ vars.CLARVIS_RELEASE_APP_CLIENT_ID }}
@@ -72,6 +92,7 @@ test("rejects an incomplete Vercel AI SDK license release set", () => {
     "third-party notices must identify the Vercel AI SDK",
     "Vercel AI SDK license must contain its Apache-2.0 grant",
     "release workflow must publish the Vercel AI SDK license",
+    "release workflow must publish and attest the immutable runtime manifest only on tag pushes",
     "release publish job must reject manual workflow dispatches",
     "release workflow must target getclarvis/clarvis-releases",
     "release workflow is missing scoped GitHub App setting: uses: actions/create-github-app-token@",
@@ -91,6 +112,7 @@ test("rejects a publish job that a manual dispatch on a tag could reach", () => 
   input.releaseWorkflow =
     "cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE\nif: startsWith(github.ref, 'refs/tags/')";
   expect(releaseReadinessFailures(input)).toEqual([
+    "release workflow must publish and attest the immutable runtime manifest only on tag pushes",
     "release publish job must reject manual workflow dispatches",
     "release workflow must target getclarvis/clarvis-releases",
     "release workflow is missing scoped GitHub App setting: uses: actions/create-github-app-token@",
@@ -114,6 +136,25 @@ test("rejects publication that bypasses the scoped cross-repository app token", 
   expect(releaseReadinessFailures(input)).toEqual([
     "release publication must authenticate with the scoped GitHub App token",
   ]);
+});
+
+test("rejects a runtime release path without provenance or the manifest publication barrier", () => {
+  const input = withReleaseRepositories(valid());
+  input.releaseWorkflow = input.releaseWorkflow
+    .replace("uses: actions/attest@", "uses: actions/example@")
+    .replace("needs: [package, runtime-manifest]", "needs: package");
+  expect(releaseReadinessFailures(input)).toContain(
+    "release workflow must publish and attest the immutable runtime manifest only on tag pushes",
+  );
+});
+
+test("rejects a runtime identity gate that occurs after the first registry mutation", () => {
+  const input = withReleaseRepositories(valid());
+  const gate = "RELEASE_TAG: ${{ github.ref_name }}\n";
+  input.releaseWorkflow = input.releaseWorkflow.replace(gate, "") + gate;
+  expect(releaseReadinessFailures(input)).toContain(
+    "release workflow must publish and attest the immutable runtime manifest only on tag pushes",
+  );
 });
 
 test("rejects minting the publication token before the final map-free gate", () => {

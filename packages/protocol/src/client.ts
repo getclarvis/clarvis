@@ -33,7 +33,40 @@ export interface KernelCapabilities {
   agent_tools: boolean;
   /** Whether this host wires the external Tasks capability/control plane. */
   tasks: boolean;
+  /** Effective execution placement selected by the host. */
+  runtime?: RuntimeStatus;
 }
+
+/** Truthful host-reported runtime placement and effective container policy. */
+export type RuntimeStatus =
+  | {
+      kind: "native";
+      host_platform: string;
+      isolation: "host" | "sandbox";
+      lifecycle: "ready" | "fallback";
+      fallback_from?: "docker" | "podman";
+    }
+  | {
+      kind: "container";
+      engine: "podman" | "docker";
+      host_platform: string;
+      guest_platform: "linux";
+      network: "none" | "internet" | "outbound";
+      generation?: string;
+      engine_version?: string;
+      image_digest?: string;
+      runtime_protocol_revision?: string;
+      lifecycle:
+        | "cold"
+        | "inspecting"
+        | "preparing"
+        | "starting"
+        | "ready"
+        | "stopping"
+        | "stopped"
+        | "disconnected"
+        | "failed";
+    };
 
 /** Options passed when connecting a {@link KernelClient}. */
 export interface ConnectOptions {

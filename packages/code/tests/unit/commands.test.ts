@@ -452,7 +452,7 @@ test("one binding renders identically in the popup hint, Help groups and the foo
   const off = commands.registerAction({
     name: "controls.open",
     title: "Run controls",
-    desc: "Safety presets",
+    desc: "Isolation controls",
     surface: "internal",
     group: "navigate",
     run: () => {},
@@ -466,7 +466,7 @@ test("one binding renders identically in the popup hint, Help groups and the foo
   const helpRow = commands
     .keyCommandGroups()
     .flatMap((g) => g.rows)
-    .find((r) => r.desc === "Safety presets");
+    .find((r) => r.desc === "Isolation controls");
   const footer = commandKeyLabel(keymap, "controls.open");
 
   expect(popup).toBe("alt+r");

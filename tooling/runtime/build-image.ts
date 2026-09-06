@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const RUNTIME_PROTOCOL_REVISION = "3";
+export const RUNTIME_PROTOCOL_REVISION = "4";
 export const RUNTIME_ARTIFACT_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime-artifact";
 export const RUNTIME_IMAGE_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime";
 export const RUNTIME_BUILD_IMAGE =

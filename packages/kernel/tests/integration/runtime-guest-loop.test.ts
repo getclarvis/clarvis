@@ -202,11 +202,24 @@ describe("runtime guest loop", () => {
     await mkdir(workspaceRoot);
     const capabilityCalls: unknown[] = [];
     const modelBodies: unknown[] = [];
+    const guestEvents: unknown[] = [];
+    let markFirstModelStarted!: () => void;
+    const firstModelStarted = new Promise<void>((resolve) => {
+      markFirstModelStarted = resolve;
+    });
+    let releaseFirstModel!: () => void;
+    const firstModelGate = new Promise<void>((resolve) => {
+      releaseFirstModel = resolve;
+    });
     let modelCall = 0;
     const bridge: GuestExecutionBridge = {
       async model(_callId, request) {
         modelCall += 1;
         modelBodies.push(request.body);
+        if (modelCall === 1) {
+          markFirstModelStarted();
+          await firstModelGate;
+        }
         return {
           events: [
             {
@@ -216,9 +229,12 @@ describe("runtime guest loop", () => {
                   ? {
                       toolCalls: [
                         {
-                          id: "load-skill-1",
+                          id: "invalid-load-skill",
                           name: "load_skill",
-                          arguments: { name: "container-review" },
+                          arguments: {
+                            name: "container-review",
+                            resource: "/dev/null? no resource omitted actually.",
+                          },
                         },
                       ],
                       usage: {
@@ -228,15 +244,31 @@ describe("runtime guest loop", () => {
                         cache_write_tokens: 0,
                       },
                     }
-                  : {
-                      text: "skill loaded",
-                      usage: {
-                        input_tokens: 1,
-                        output_tokens: 1,
-                        cached_tokens: 0,
-                        cache_write_tokens: 0,
+                  : modelCall === 2
+                    ? {
+                        toolCalls: [
+                          {
+                            id: "load-skill-1",
+                            name: "load_skill",
+                            arguments: { name: "container-review" },
+                          },
+                        ],
+                        usage: {
+                          input_tokens: 1,
+                          output_tokens: 1,
+                          cached_tokens: 0,
+                          cache_write_tokens: 0,
+                        },
+                      }
+                    : {
+                        text: "skill loaded",
+                        usage: {
+                          input_tokens: 1,
+                          output_tokens: 1,
+                          cached_tokens: 0,
+                          cache_write_tokens: 0,
+                        },
                       },
-                    },
             },
           ],
           outputBytes: 128,
@@ -253,51 +285,112 @@ describe("runtime guest loop", () => {
           resources: [],
         };
       },
-      async event() {},
+      async event(event) {
+        guestEvents.push(event);
+      },
       async checkpoint() {},
     };
 
-    await expect(
-      createGuestLoopExecutor({ workspaceRoot, scratchRoot: join(root, "scratch") }).execute(
-        "exec_guest_skills",
-        {
-          owner: "owner",
-          modelLeaseId: "lease",
-          hostCapabilities: ["skills"],
-          skillCatalog: [
+    const executor = createGuestLoopExecutor({
+      workspaceRoot,
+      scratchRoot: join(root, "scratch"),
+    });
+    const run = executor.execute(
+      "exec_guest_skills",
+      {
+        owner: "owner",
+        modelLeaseId: "lease",
+        hostCapabilities: ["skills"],
+        skillCatalog: [
+          {
+            name: "container-review",
+            description: "Review a container change",
+            scope: "user",
+            source: "runtime",
+          },
+        ],
+        rawBody: {
+          execution_id: "exec_guest_skills",
+          messages: [{ role: "user", content: "review it" }],
+          servers: [],
+          profiles: [
             {
-              name: "container-review",
-              description: "Review a container change",
-              scope: "user",
-              source: "runtime",
+              name: "solo",
+              model: "anthropic/x",
+              tools: [],
+              grants: ["use_skills"],
+              iteration_limit: 4,
             },
           ],
-          rawBody: {
-            execution_id: "exec_guest_skills",
-            messages: [{ role: "user", content: "review it" }],
-            servers: [],
-            profiles: [
-              {
-                name: "solo",
-                model: "anthropic/x",
-                tools: [],
-                grants: ["use_skills"],
-                iteration_limit: 3,
-              },
-            ],
-            entry: "solo",
-            providers: [{ name: "anthropic", kind: "anthropic" }],
-            budget: { on_exceed: "stop", total_token_limit: 1_000 },
-          },
+          entry: "solo",
+          providers: [{ name: "anthropic", kind: "anthropic" }],
+          budget: { on_exceed: "stop", total_token_limit: 1_000 },
         },
-        bridge,
+      },
+      bridge,
+      new AbortController().signal,
+    );
+    await firstModelStarted;
+    await expect(
+      executor.steer!(
+        "exec_guest_skills",
+        {
+          kind: "steer",
+          message: { content: "Also verify the strict contract." },
+          unexpected: true,
+        },
         new AbortController().signal,
       ),
-    ).resolves.toMatchObject({
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      executor.steer!(
+        "exec_guest_skills",
+        { kind: "compact", request: {} },
+        new AbortController().signal,
+      ),
+    ).resolves.toBeUndefined();
+    const steer = executor.steer!(
+      "exec_guest_skills",
+      { kind: "steer", message: { content: "Also verify the strict contract." } },
+      new AbortController().signal,
+    );
+    const stillQueued = Promise.resolve("queued");
+    await expect(Promise.race([steer.then(() => "drained"), stillQueued])).resolves.toBe("queued");
+    releaseFirstModel();
+    await expect(steer).resolves.toBeUndefined();
+    await expect(run).resolves.toMatchObject({
       executionId: "exec_guest_skills",
       response: { status: "completed", result: "skill loaded" },
     });
+    await expect(
+      executor.steer!(
+        "exec_guest_skills",
+        { kind: "steer", message: { content: "late" } },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
     expect(JSON.stringify(modelBodies[0])).toContain("/runtime/skills/container-review/SKILL.md");
+    expect(JSON.stringify(modelBodies[1])).toContain("Also verify the strict contract.");
+    expect(JSON.stringify(modelBodies[1])).toContain("InputValidationError");
+    expect(JSON.stringify(guestEvents)).toContain("compaction_started");
+    const firstTools = (
+      modelBodies[0] as { tools: Array<{ wireName: string; inputSchema: unknown }> }
+    ).tools;
+    expect(firstTools.map((tool) => tool.wireName)).toContain("read_skill_resource");
+    expect(firstTools.find((tool) => tool.wireName === "load_skill")?.inputSchema).toMatchObject({
+      additionalProperties: false,
+      required: ["name"],
+      properties: { name: expect.anything() },
+    });
+    expect(
+      Object.keys(
+        (
+          firstTools.find((tool) => tool.wireName === "load_skill")?.inputSchema as {
+            properties: Record<string, unknown>;
+          }
+        ).properties,
+      ),
+    ).toEqual(["name"]);
     expect(capabilityCalls).toEqual([
       {
         method: "runtime.skills",

@@ -14,8 +14,10 @@ import {
 import type { SkillInfo, SkillResource } from "@clarvis/skills";
 import {
   LOAD_SKILL_TOOL_NAME,
+  READ_SKILL_RESOURCE_TOOL_NAME,
   SKILL_RESOURCE_MAX_CHARS,
   loadSkillTool,
+  readSkillResourceTool,
   renderSkillsSection,
   resolveBootstrapSkills,
   type PluginBootstrapSkill,
@@ -45,12 +47,14 @@ export interface RuntimeSkillBootstrapEntry {
   readonly body: string;
 }
 
-interface SkillBridgeRequest {
-  readonly operation: "load" | "resource";
-  readonly name: string;
-  readonly resource?: string;
-  readonly offset?: number;
-}
+type SkillBridgeRequest =
+  | { readonly operation: "load"; readonly name: string }
+  | {
+      readonly operation: "resource";
+      readonly name: string;
+      readonly resource: string;
+      readonly offset: number;
+    };
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -58,19 +62,28 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function only(value: Record<string, unknown>, keys: readonly string[]): boolean {
+function exactly(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const admitted = new Set(keys);
-  return Object.keys(value).every((key) => admitted.has(key));
+  const present = Object.keys(value);
+  return present.length === keys.length && present.every((key) => admitted.has(key));
+}
+
+function hasControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
 }
 
 function safeResource(value: unknown): value is string {
   if (typeof value !== "string" || value.length < 1 || value.length > 4_096) return false;
-  const normalized = value.replaceAll("\\", "/");
   return (
-    !normalized.startsWith("/") &&
-    normalized
-      .split("/")
-      .every((segment) => segment.length > 0 && segment !== "." && segment !== "..")
+    !value.startsWith("/") &&
+    !/^[A-Za-z]:/u.test(value) &&
+    !value.includes("\\") &&
+    !hasControlCharacter(value) &&
+    value.split("/").every((segment) => segment.length > 0 && segment !== "." && segment !== "..")
   );
 }
 
@@ -79,24 +92,19 @@ function validSkillRequest(
   names: ReadonlySet<string>,
 ): value is SkillBridgeRequest {
   const request = record(value);
-  if (
-    request === undefined ||
-    !only(request, ["operation", "name", "resource", "offset"]) ||
-    typeof request.name !== "string" ||
-    !names.has(request.name)
-  ) {
+  if (request === undefined || typeof request.name !== "string" || !names.has(request.name)) {
     return false;
   }
   if (request.operation === "load") {
-    return request.resource === undefined && request.offset === undefined;
+    return exactly(request, ["operation", "name"]);
   }
   return (
     request.operation === "resource" &&
+    exactly(request, ["operation", "name", "resource", "offset"]) &&
     safeResource(request.resource) &&
-    (request.offset === undefined ||
-      (Number.isSafeInteger(request.offset) &&
-        (request.offset as number) >= 0 &&
-        (request.offset as number) <= 8 * 1024 * 1024))
+    Number.isSafeInteger(request.offset) &&
+    (request.offset as number) >= 0 &&
+    (request.offset as number) <= 8 * 1024 * 1024
   );
 }
 
@@ -183,10 +191,10 @@ export function createHostSkillsGrant(
           ),
         };
       }
-      const offset = value.offset ?? 0;
+      const offset = value.offset;
       const chunk = provider.readResourceChunk?.(
         value.name,
-        value.resource!,
+        value.resource,
         offset,
         SKILL_RESOURCE_MAX_CHARS,
       );
@@ -203,7 +211,7 @@ export function createHostSkillsGrant(
           code: "invalid_request",
         });
       }
-      const text = provider.readResource(value.name, value.resource!);
+      const text = provider.readResource(value.name, value.resource);
       const sliced = text.slice(0, SKILL_RESOURCE_MAX_CHARS);
       return {
         kind: "resource",
@@ -266,7 +274,8 @@ function bodyResult(value: unknown): string | undefined {
   const resourceList =
     resources.length === 0
       ? ""
-      : `\n\nBundled resources (call load_skill again with resource=<path> to read one):\n${resources
+      : `\n\nBundled resources (call ${READ_SKILL_RESOURCE_TOOL_NAME} with name, the exact ` +
+        `resource path, and offset=0):\n${resources
           .map((resource) => `- ${resource.rel} (${resource.kind})`)
           .join("\n")}`;
   return (
@@ -300,23 +309,16 @@ function resourceResult(value: unknown, requestedOffset: number): string | undef
   const continuation =
     nextOffset === undefined
       ? ""
-      : `\n\n[resource continues; call load_skill with the same name and resource and offset=${String(
-          nextOffset,
-        )}]`;
+      : `\n\n[resource continues; call ${READ_SKILL_RESOURCE_TOOL_NAME} with the same name and ` +
+        `resource and offset=${String(nextOffset)}]`;
   return `Resource '${result.resource}' of skill '${result.name}' (bytes ${String(
     offset,
   )}-${String(nextOffset ?? totalBytes)} of ${String(totalBytes)}):\n\n${chunk.text}${continuation}`;
 }
 
-function skillBodyResource(name: string, resource: string): boolean {
-  const normalized = resource.replaceAll("\\", "/");
-  if (["", ".", "./", "/", "SKILL.md", "./SKILL.md"].includes(normalized)) return true;
-  const segments = normalized.split("/").filter((segment) => segment !== "" && segment !== ".");
-  return segments.at(-1) === "SKILL.md" && segments.at(-2) === name;
-}
-
 const SKILL_TOOL_EFFECTS: Readonly<Record<string, ToolEffect>> = {
   [LOAD_SKILL_TOOL_NAME]: "control",
+  [READ_SKILL_RESOURCE_TOOL_NAME]: "control",
 };
 
 /** Create the guest capability over a sanitized catalog and read-only host disclosure method. */
@@ -330,7 +332,7 @@ export function createGuestSkillsCapability(
   return {
     name: "skills",
     grants: [{ name: "use_skills" }],
-    reservedWireNames: [LOAD_SKILL_TOOL_NAME],
+    reservedWireNames: [LOAD_SKILL_TOOL_NAME, READ_SKILL_RESOURCE_TOOL_NAME],
     toolEffects: SKILL_TOOL_EFFECTS,
     forRun(ctx): RunCapability | null {
       if (!ctx.env.CLARVIS_SKILLS_ENABLED) return null;
@@ -361,18 +363,21 @@ export function createGuestSkillsCapability(
             attach(build) {
               const base = handlerBaseOf(build);
               const handler: ToolHandler = {
-                matches: (call) => call.name === LOAD_SKILL_TOOL_NAME,
+                matches: (call) =>
+                  call.name === LOAD_SKILL_TOOL_NAME || call.name === READ_SKILL_RESOURCE_TOOL_NAME,
                 async handle(call, iteration): Promise<HandlerVerdict> {
+                  const readsResource = call.name === READ_SKILL_RESOURCE_TOOL_NAME;
+                  const tool = readsResource ? readSkillResourceTool : loadSkillTool;
                   const envelope = openCallEnvelope({
                     call,
-                    name: LOAD_SKILL_TOOL_NAME,
+                    name: tool.wireName,
                     trace: base.trace,
                     agent: base.agent,
                     ...(base.subagentInstanceId === undefined
                       ? {}
                       : { subagentInstanceId: base.subagentInstanceId }),
                     iteration,
-                    schema: loadSkillTool.inputSchema,
+                    schema: tool.inputSchema,
                     ...(base.validateArgs === undefined ? {} : { validate: base.validateArgs }),
                   });
                   if (envelope.invalid !== null) {
@@ -384,8 +389,8 @@ export function createGuestSkillsCapability(
                   }
                   const args = call.arguments as {
                     name: string;
-                    resource?: string;
-                    offset?: number;
+                    resource: string;
+                    offset: number;
                   };
                   if (!names.has(args.name)) {
                     return {
@@ -396,22 +401,6 @@ export function createGuestSkillsCapability(
                       progress: false,
                     };
                   }
-                  const resource = args.resource?.trim();
-                  const readResource =
-                    resource !== undefined && !skillBodyResource(args.name, resource)
-                      ? resource
-                      : undefined;
-                  if (
-                    args.offset !== undefined &&
-                    args.offset !== 0 &&
-                    readResource === undefined
-                  ) {
-                    return {
-                      kind: "result",
-                      text: envelope.fail("offset requires a bundled resource path."),
-                      progress: false,
-                    };
-                  }
                   envelope.start();
                   try {
                     const value = await bridge.capability(
@@ -419,22 +408,20 @@ export function createGuestSkillsCapability(
                       {
                         method: RUNTIME_SKILLS_METHOD,
                         revision: RUNTIME_SKILLS_REVISION,
-                        arguments:
-                          readResource === undefined
-                            ? { operation: "load", name: args.name }
-                            : {
-                                operation: "resource",
-                                name: args.name,
-                                resource: readResource,
-                                ...(args.offset === undefined ? {} : { offset: args.offset }),
-                              },
+                        arguments: readsResource
+                          ? {
+                              operation: "resource",
+                              name: args.name,
+                              resource: args.resource,
+                              offset: args.offset,
+                            }
+                          : { operation: "load", name: args.name },
                       },
                       scope.signal,
                     );
-                    const text =
-                      readResource === undefined
-                        ? bodyResult(value)
-                        : resourceResult(value, args.offset ?? 0);
+                    const text = readsResource
+                      ? resourceResult(value, args.offset)
+                      : bodyResult(value);
                     if (text === undefined) {
                       return {
                         kind: "result",
@@ -447,13 +434,21 @@ export function createGuestSkillsCapability(
                     const reason = error instanceof Error ? error.message : String(error);
                     return {
                       kind: "result",
-                      text: envelope.fail(`could not load skill '${args.name}': ${reason}`),
+                      text: envelope.fail(
+                        readsResource
+                          ? `could not read resource '${args.resource}' of skill '${args.name}': ${reason}`
+                          : `could not load skill '${args.name}': ${reason}`,
+                      ),
                       progress: false,
                     };
                   }
                 },
               };
-              return { tools: [loadSkillTool], handlers: [handler], advertised: false };
+              return {
+                tools: [loadSkillTool, readSkillResourceTool],
+                handlers: [handler],
+                advertised: false,
+              };
             },
           };
         },

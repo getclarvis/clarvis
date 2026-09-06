@@ -89,11 +89,11 @@ a resource while enforcing that it stays inside the selected skill directory.
 
 ## Entry points
 
-| Entry                        | Contents                                                                                                       |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `@clarvis/skills`            | discovery/loading, bounded resource enumeration, and snapshot file/resource limits                             |
-| `@clarvis/skills/catalog`    | `renderSkillCatalog`: catalog metadata → a compact Markdown block for a prompt                                 |
-| `@clarvis/skills/capability` | the loop adapter: `createSkillsCapability`, the `load_skill` tool and its handler, plugin bootstrap resolution |
+| Entry                        | Contents                                                                                                         |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `@clarvis/skills`            | discovery/loading, bounded resource enumeration, and snapshot file/resource limits                               |
+| `@clarvis/skills/catalog`    | `renderSkillCatalog`: catalog metadata → a compact Markdown block for a prompt                                   |
+| `@clarvis/skills/capability` | the loop adapter: `createSkillsCapability`, strict body/resource tools and handlers, plugin bootstrap resolution |
 
 ```ts
 import { renderSkillCatalog } from "@clarvis/skills/catalog";
@@ -118,12 +118,13 @@ The root also exports `enumerateResources`, `readBoundedBytes`, `readBoundedText
 whole-resource read remains capped at 256 KiB and 50 000 decoded characters. A chunked read admits a
 complete regular file of at most 8 MiB, but returns one UTF-8 page of at most 256 KiB and 50 000
 characters; its continuation cursor is a byte offset and never splits a UTF-8 sequence or surrogate
-pair. `load_skill` validates every chunk returned by a provider and fails closed on a mismatched,
-unbounded, non-progressing or inexact cursor. A legacy provider without chunk support can serve only
-offset zero and never reinterprets the byte cursor as a character index. Because some model
-providers serialize an omitted optional integer as `0`, an offset of zero is also harmless when the
-call names the skill body (including a `SKILL.md` body alias); every non-zero offset still requires a
-real bundled resource.
+pair. `load_skill` has the closed shape `{ name }` and only loads the body. Bundled files use the
+separate `read_skill_resource` shape `{ name, resource, offset }`; every field is required, the first
+page uses byte offset zero, and a provider-portable relative path pattern with no regex lookaround
+rejects absolute paths, traversal, drive-qualified paths, backslashes, control characters and empty
+segments. The resource reader validates every chunk returned by a provider and fails closed on a
+mismatched, unbounded, non-progressing or inexact cursor. A legacy provider without chunk support
+can serve only offset zero and never reinterprets the byte cursor as a character index.
 
 `hashBoundedFile` streams raw bytes through a fixed buffer, without decoding or retaining the whole
 file, and refuses a resource larger than the caller's bound. Kernel skill snapshots apply the public
@@ -137,10 +138,10 @@ manifest, selected sidecar when present, and enumerated resources. A host can ar
 monitoring for that exact set before comparing the captured catalog with its pinned digest; the
 sidecar remains unavailable through the resource API.
 
-`LOAD_SKILL_TOOL_NAME` is owned only here. `createSkillsCapability` derives its
-`reservedWireNames` and `toolEffects` from the canonical `loadSkillTool`
-descriptor, so the engine learns the name without loading this optional package
-on its eager path.
+`LOAD_SKILL_TOOL_NAME` and `READ_SKILL_RESOURCE_TOOL_NAME` are owned only here.
+`createSkillsCapability` derives its `reservedWireNames` and `toolEffects` from the two canonical
+descriptors, so the engine learns neither name by duplicating it on the optional package's eager
+path.
 
 ## Parsing behavior
 
@@ -241,9 +242,9 @@ operator greps. Both are set on `AgentSkillsOptions` and carried on the resolved
 `SkillConfig`, which is itself a `SkillDiagnostics` — that is the single struct
 the `scan.ts` helpers take.
 
-Nothing here is traced. Only `load_skill` produces a trace entry; discovery,
-merging, shadowing and sidecar parsing are machinery acting on the state of a
-directory, which fails the trace test on attribution and on volume alike.
+Nothing here is traced. Only the model-facing `load_skill` and `read_skill_resource` calls produce
+trace entries; discovery, merging, shadowing and sidecar parsing are machinery acting on the state
+of a directory, which fails the trace test on attribution and on volume alike.
 
 | Level   | `event`                       | Fields                                                      |
 | ------- | ----------------------------- | ----------------------------------------------------------- |

@@ -85,6 +85,11 @@ once; image-integrity, policy and handshake failures remain fail-closed, and a s
 replayed through another placement. Cancelling an active run asks the guest to settle that same
 `runtime.start` request instead of cancelling its transport frame; if the attached process or private
 channel nevertheless dies, that generation is retired and the next run lazily starts a fresh one.
+Mid-run steering crosses the private `runtime.steer` operation into a guest-owned run queue and is
+acknowledged only after the real loop drains it, matching native `RunHandle.steer`. Explicit
+compaction uses the same RPC method with a different exact discriminant but enters its own queue, so
+its optional request never becomes transcript content. Unknown fields, malformed message content and
+late run IDs are rejected at the guest boundary.
 Omitting `network` selects ordinary Docker bridge or Podman slirp
 routing that can reach public, host and LAN destinations and can therefore transmit readable
 workspace data. `none` remains the explicit offline mode; `internet` is refused until public-only
@@ -96,8 +101,10 @@ the private channel and are identity-rebound before the host logger accepts them
 adapter owns the later durable terminal barrier. Plans remain in the canonical owner-scoped host
 store behind the exact `runtime.plans` method. The guest receives a host-path-free skill catalog and
 can disclose only an admitted skill body or bounded text resource through the read-only
-`runtime.skills` method; active plugins' already-admitted bootstrap bodies are projected with that
-same run snapshot, while neither host skill roots nor arbitrary host paths enter the guest. Memory
+`runtime.skills` method. The model-facing body operation accepts only a skill name, while a separate
+strict resource operation requires its relative path and byte offset; active plugins'
+already-admitted bootstrap bodies are projected with that same run snapshot, while neither host
+skill roots nor arbitrary host paths enter the guest. Memory
 providers and stores also stay on the host: the guest receives the seed plus exactly the four
 canonical read tools through `runtime.memory`. It never receives `write_memory`, `edit_memory` or
 `delete_memory`, and the host broker rejects a forged mutation even when the selected provider is

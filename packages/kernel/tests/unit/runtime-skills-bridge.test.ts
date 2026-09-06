@@ -10,6 +10,7 @@ import {
 import type { SkillContent, SkillInfo } from "@clarvis/skills";
 import {
   LOAD_SKILL_TOOL_NAME,
+  READ_SKILL_RESOURCE_TOOL_NAME,
   SKILL_RESOURCE_MAX_CHARS,
   type SkillsProvider,
 } from "@clarvis/skills/capability";
@@ -176,6 +177,7 @@ describe("runtime skills bridge", () => {
           operation: "resource",
           name: "container-review",
           resource: "references/checklist.md",
+          offset: 0,
         },
         new AbortController().signal,
       ),
@@ -207,6 +209,7 @@ describe("runtime skills bridge", () => {
         operation: "resource",
         name: "container-review",
         resource: "../secret",
+        offset: 0,
       }),
     ).toBe(false);
     expect(
@@ -242,6 +245,7 @@ describe("runtime skills bridge", () => {
           operation: "resource",
           name: info.name,
           resource: "references/checklist.md",
+          offset: 0,
         },
         new AbortController().signal,
       ),
@@ -288,8 +292,11 @@ describe("runtime skills bridge", () => {
       [],
       { operation: "resource", name: info.name, resource: "" },
       { operation: "resource", name: info.name, resource: "/absolute" },
+      { operation: "resource", name: info.name, resource: "C:/absolute", offset: 0 },
+      { operation: "resource", name: info.name, resource: "references/file" },
       { operation: "resource", name: info.name, resource: "references//file" },
       { operation: "resource", name: info.name, resource: "references/./file" },
+      { operation: "resource", name: info.name, resource: "references\\file", offset: 0 },
       { operation: "resource", name: info.name, resource: "references/file", offset: -1 },
       { operation: "resource", name: info.name, resource: "references/file", offset: 9_000_000 },
       { operation: "resource", name: info.name, resource: "references/file", offset: 1.5 },
@@ -365,7 +372,10 @@ describe("runtime skills bridge", () => {
     const contribution = agent?.attach(built.context);
     const handler = contribution?.handlers?.[0];
     if (handler === undefined) throw new Error("expected load_skill handler");
-    expect(contribution?.tools?.map((tool) => tool.wireName)).toEqual([LOAD_SKILL_TOOL_NAME]);
+    expect(contribution?.tools?.map((tool) => tool.wireName)).toEqual([
+      LOAD_SKILL_TOOL_NAME,
+      READ_SKILL_RESOURCE_TOOL_NAME,
+    ]);
     expect(contribution?.advertised).toBe(false);
     expect(handler.matches({ id: "other", name: "other", arguments: {} })).toBe(false);
 
@@ -376,23 +386,13 @@ describe("runtime skills bridge", () => {
     expect(body).toMatchObject({ kind: "result", progress: true });
     expect(body.kind === "result" ? body.text : "").toContain("Bundled resources");
 
-    const alias = await handler.handle(
-      {
-        id: "alias",
-        name: LOAD_SKILL_TOOL_NAME,
-        arguments: { name: info.name, resource: `${info.name}/SKILL.md`, offset: 0 },
-      },
-      3,
-    );
-    expect(alias).toMatchObject({ kind: "result", progress: true });
-
     const resource = await handler.handle(
       {
         id: "resource",
-        name: LOAD_SKILL_TOOL_NAME,
-        arguments: { name: info.name, resource: " references/checklist.md ", offset: 0 },
+        name: READ_SKILL_RESOURCE_TOOL_NAME,
+        arguments: { name: info.name, resource: "references/checklist.md", offset: 0 },
       },
-      4,
+      3,
     );
     expect(resource).toMatchObject({ kind: "result", progress: true });
     expect(resource.kind === "result" ? resource.text : "").toContain("resource continues");
@@ -459,8 +459,8 @@ describe("runtime skills bridge", () => {
       handler?.handle(
         {
           id: "offset",
-          name: LOAD_SKILL_TOOL_NAME,
-          arguments: { name: info.name, resource: "SKILL.md", offset: 1 },
+          name: READ_SKILL_RESOURCE_TOOL_NAME,
+          arguments: { name: info.name, resource: "SKILL.md" },
         },
         1,
       ),

@@ -98,10 +98,13 @@ is a contract" (`packages/skills/src/lib/log.ts:34`–`:36`).
 | `createSkillsCapability(provider?, options?)` | `=> Capability` | `packages/skills/src/capability.ts:86` |
 | `SkillsCapabilityOptions.bootstraps` | `() => readonly PluginBootstrapSkill[]` | `packages/skills/src/capability.ts:72` |
 | `LOAD_SKILL_TOOL_NAME` | `"load_skill"` | `packages/skills/src/tool.ts:15` |
+| `READ_SKILL_RESOURCE_TOOL_NAME` | `"read_skill_resource"` | `packages/skills/src/tool.ts` |
 | `SKILL_RESOURCE_MAX_CHARS` | `50_000` | `packages/skills/src/tool.ts:18` |
 | `loadSkillTool` | `NamespacedTool` (see schema below) | `packages/skills/src/tool.ts:41` |
+| `readSkillResourceTool` | `NamespacedTool` (see schema below) | `packages/skills/src/tool.ts` |
 | `renderSkillsSection(catalog, bootstraps?)` | `=> string` | `packages/skills/src/tool.ts:122` |
 | `handleLoadSkillCall(args)` | `=> LoadSkillCallResult` (synchronous) | `packages/skills/src/call.ts:105` |
+| `handleReadSkillResourceCall(args)` | `=> LoadSkillCallResult` (synchronous) | `packages/skills/src/call.ts` |
 | `SkillsProvider` | `{ listSkills; loadSkill; readResource; readResourceChunk? }` | `packages/skills/src/tool.ts` |
 | `resolveBootstrapSkills(args)` | `=> ResolvedBootstrapSkill[]` | `packages/skills/src/bootstrap.ts:104` |
 | `BOOTSTRAP_SKILL_MAX_CHARS` | `20_000` | `packages/skills/src/bootstrap.ts:19` |
@@ -112,24 +115,37 @@ Capability metadata is derived from the tool descriptor rather than spelled twic
 (`packages/skills/src/capability.ts:58`–`:62`, asserted at
 `packages/skills/tests/component/capability.test.ts:99`).
 
-### 2.4 `load_skill` input schema
+### 2.4 Skill-tool input schemas
 
 ```
-{ type: "object", additionalProperties: false,
-  properties: { name: { type: "string", minLength: 1 },
-                resource: { type: "string", minLength: 1 },
-                offset: { type: "integer", minimum: 0, maximum: 8388608 } },
-  required: ["name"] }
+load_skill:
+  { type: "object", additionalProperties: false,
+    properties: { name: { type: "string", minLength: 1 } },
+    required: ["name"] }
+
+read_skill_resource:
+  { type: "object", additionalProperties: false,
+    properties: { name: { type: "string", minLength: 1 },
+                  resource: { type: "string", minLength: 1, maxLength: 4096,
+                              pattern: <safe relative POSIX path> },
+                  offset: { type: "integer", minimum: 0, maximum: 8388608 } },
+    required: ["name", "resource", "offset"] }
 ```
 
-`offset` above zero is valid only with a real bundled `resource`, is measured in bytes, and callers
-copy it from the preceding page rather than deriving it from decoded text. A literal zero is also
-accepted on a body load, including a `SKILL.md` body alias, because some model providers serialize
-an omitted optional integer as `0`; it has no paging effect. Production: `loadSkillTool` in
-`packages/skills/src/tool.ts` and `handleLoadSkillCall` in `packages/skills/src/call.ts`. Test:
-`packages/skills/tests/unit/tool.test.ts` (schema) and `packages/skills/tests/unit/call.test.ts`
-(`offset requires a bundled resource path` and `treats offset zero on the primary body as a
-harmless provider serialization`).
+The operations are separate so each provider-facing schema is structurally closed and every
+declared property is required. `load_skill` cannot receive `resource`, `offset`, aliases or
+sentinels; a call such as `{name, resource: "/dev/null? no resource omitted actually."}` is rejected
+as an additional property before a provider or host bridge is touched. `read_skill_resource`
+requires the exact listed relative path and an explicit byte offset: zero for the first page, then
+the preceding result's cursor. Its schema rejects POSIX-absolute and drive-qualified paths,
+backslashes, traversal, empty segments and control characters through a provider-portable pattern
+that uses no regex lookaround; provider confinement remains the authoritative filesystem check.
+Production:
+`loadSkillTool` and `readSkillResourceTool` in `packages/skills/src/tool.ts`, with
+`handleLoadSkillCall` and `handleReadSkillResourceCall` in `packages/skills/src/call.ts`. Test:
+`packages/skills/tests/unit/tool.test.ts`, `packages/skills/tests/unit/call.test.ts` ("rejects every
+resource-shaped argument on the name-only load operation"), and
+`packages/skills/tests/integration/call-resource.test.ts`.
 
 ### 2.5 Settings / plugin-manifest key (owned by the engine, not this package)
 
@@ -622,7 +638,7 @@ placeholder description (`packages/skills/tests/integration/sidecar.test.ts:313`
 | `systemSection(id)` | catalog empty after dependency filtering | `undefined` | `:125-131` |
 | `systemSection(id)` | catalog non-empty but every entry suppressed **and** no bootstraps | `undefined` (rendered section is `""`) | `:179`, `packages/skills/src/tool.ts:128` |
 | `forAgent(scope)` | same grant + non-empty-catalog test | `null` or an `AgentCapability` | `:181-192` |
-| `attach(bc)` | — | one tool (`load_skill`), one handler, `advertised: false` | `:184-189` |
+| `attach(bc)` | — | two strict tools (`load_skill`, `read_skill_resource`), one handler, `advertised: false` | `createSkillsRunCapability` |
 
 The dependency-filtered catalog is scanned **once per run** and memoized (`:114-131`), and the bootstraps are resolved at
 most once behind an explicit boolean flag rather than `??=`, so "no valid bootstrap" does not
@@ -635,8 +651,9 @@ scans, zero loads, zero warnings).
 
 `renderSkillsSection` emits, in order: each bootstrap body wrapped as
 `# Plugin instructions … <plugin_instructions>…</plugin_instructions>`
-(`packages/skills/src/tool.ts:93`–`:101`), then the catalog block, then the call-`load_skill`
-instruction (`:122`–`:137`). The catalog block is `# Available skills` plus one
+(`renderBootstrapSection` in `packages/skills/src/tool.ts`), then the catalog block, then the
+instructions for `load_skill` and `read_skill_resource` (`renderSkillsSection`). The catalog block is
+`# Available skills` plus one
 `- **name** — description (path: /absolute/SKILL.md)` line per non-suppressed skill, sorted by name,
 and never exceeds 8,000 characters. On overflow it first drops every description while retaining
 name and exact manifest path, then omits a deterministic tail with a bounded notice. It is the empty
@@ -644,41 +661,30 @@ string when nothing is listable (`renderSkillCatalog` in
 `packages/skills/src/catalog/index.ts`). Test: `packages/skills/tests/component/catalog.test.ts`.
 When the catalog renders
 empty the trailing instruction goes with it and only the bootstrap heads remain
-(`packages/skills/src/tool.ts:128`; pinned at
-`packages/skills/tests/integration/sidecar.test.ts:149`).
+(`renderSkillsSection` in `packages/skills/src/tool.ts`; pinned by "still renders bootstrap bodies
+when the catalog is empty" in `packages/skills/tests/integration/sidecar.test.ts`).
 
-### 4.12 `load_skill` dispatch
+### 4.12 Skill-tool dispatch
 
-`handleLoadSkillCall` (`packages/skills/src/call.ts:105`):
+Both operations first use `openCallEnvelope` with their own declared schema and the host-injected
+validator. An invalid call is reported as a failed `tool_call`; it never records
+`tool_call_started`, reads a provider or crosses the container bridge.
 
-1. `openCallEnvelope` validates the arguments against `loadSkillTool.inputSchema` with the
-   host-injected validator; an invalid call is reported as a failed `tool_call` and no
-   `tool_call_started` is recorded (`:121`–`:136`; pinned at
-   `packages/skills/tests/unit/call.test.ts:33`).
-2. `resource` is trimmed; a value meaning "the skill's own body" — `""`, `.`, `./`, `/`, `SKILL.md`,
-   `./SKILL.md`, or any path ending `<name>/SKILL.md` after backslash normalization — is dropped and
-   the call becomes a body load (`:39`–`:44`, `:146`–`:153`; pinned at
-   `packages/skills/tests/unit/call.test.ts:190`). An accompanying `offset: 0` remains a body load;
-   any non-zero offset on that branch fails before `envelope.start()`.
-3. `envelope.start()` records `tool_call_started` (`:157`).
-4. **Resource branch**: the skill's existence is checked against `listSkills()` *before* any read.
-   A provider with `readResourceChunk` receives the requested byte offset and at most 50 000 output
-   characters. `validateResourceChunk` rejects a mismatched offset, a total over 8 MiB, too much
-   text, a non-progressing or out-of-range continuation, or a continuation that does not exactly
-   equal the UTF-8 byte length returned. A provider without chunk support is retained for embedder
-   compatibility only: it may serve offset zero through `readResource`, with an explicit truncation
-   marker when needed, and every offset above zero is refused rather than treated as a character
-   index. Throws and invalid chunks become `could not read resource ...` failures. The resource
-   branch never calls `loadSkill`. Production: `validateResourceChunk` and `handleLoadSkillCall` in
-   `packages/skills/src/call.ts`. Test: `packages/skills/tests/unit/call.test.ts` (`refuses an
-   unbounded or non-progressing chunk returned by an embedder` and `does not reinterpret a byte
-   cursor through a legacy whole-text provider`) plus
-   `packages/skills/tests/integration/call-resource.test.ts` (page continuation and body-loader
-   isolation).
-5. **Body branch**: `loadSkill(name)`; a throw becomes `could not load skill '<name>'`, `undefined`
-   becomes `unknown skill '<name>'. Available skills: …` (`:210-218`). An empty body renders
-   `(this skill has an empty body)` (`:221`).
-6. The body result always identifies `Skill directory: <dir>` as the base for bundled relative
+1. **Body operation:** `handleLoadSkillCall` accepts only `{name}`, starts the trace call, and invokes
+   `loadSkill(name)`. A throw becomes `could not load skill '<name>'`; `undefined` becomes `unknown
+   skill '<name>'. Available skills: …`; an empty body renders `(this skill has an empty body)`.
+2. **Resource operation:** `handleReadSkillResourceCall` accepts exactly `{name, resource, offset}`
+   and checks the skill against `listSkills()` before reading. A provider with
+   `readResourceChunk` receives the explicit byte offset and at most 50 000 output characters.
+   `validateResourceChunk` rejects a mismatched offset, a total over 8 MiB, too much text, a
+   non-progressing or out-of-range continuation, or a cursor that does not exactly equal the UTF-8
+   byte length returned. A provider without chunk support may serve offset zero through
+   `readResource`; every positive offset is refused rather than reinterpreted as a character index.
+   This operation never calls `loadSkill`. Production: `handleReadSkillResourceCall` and
+   `validateResourceChunk` in `packages/skills/src/call.ts`. Test:
+   `packages/skills/tests/unit/call.test.ts` and
+   `packages/skills/tests/integration/call-resource.test.ts`.
+3. The body result always identifies `Skill directory: <dir>` as the base for bundled relative
    paths. It adds `Package execution root: <executionRoot>` and guarded-shell/native-sandbox guidance
    only when the host-approved field exists, then renders the body and resource listing. Production:
    `handleLoadSkillCall` in `packages/skills/src/call.ts`. Test:
@@ -686,7 +692,7 @@ empty the trailing instruction goes with it and only the bootstrap heads remain
    execution root`).
 
 The capability wrapper turns the result into `{ kind: "result", text, progress: !error }`
-(`packages/skills/src/capability.ts:217`).
+(`buildSkillsHandler` in `packages/skills/src/capability.ts`).
 
 ### 4.13 Plugin bootstrap resolution
 
@@ -803,11 +809,14 @@ skill root. `createRuntimeSkillCatalog` projects only safe catalog fields;
 `createRuntimeSkillBootstraps` resolves only the active plugins' declarations through
 `resolveBootstrapSkills`, then serializes `{ plugin, skill, body }` without roots. The guest
 `createGuestSkillsCapability` renders those bootstrap bodies before the sanitized catalog and
-proxies `load_skill`; it accepts the same harmless body `offset: 0` but still requires a resource
-for every non-zero offset. Production: `packages/kernel/src/runtime/skills-bridge.ts` and
-`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-podman-runtime.ts`. Test:
-`packages/kernel/tests/unit/runtime-skills-bridge.test.ts` (path-free catalog, active bootstrap,
-offset-zero body and refusal cases) and
+proxies the same two closed operations. The host bridge accepts exactly `{operation: "load", name}`
+or `{operation: "resource", name, resource, offset}`; it rejects missing or additional fields before
+provider access, and a body call can never be reinterpreted from a path alias. Production:
+`createHostSkillsGrant` and `createGuestSkillsCapability` in
+`packages/kernel/src/runtime/skills-bridge.ts`, and `createLocalContainerRuntime` in
+`packages/kernel/src/runtime/local-podman-runtime.ts`. Test:
+`packages/kernel/tests/unit/runtime-skills-bridge.test.ts` (path-free catalog, active bootstrap and
+exact request refusal) and
 `packages/kernel/tests/integration/local-podman-runtime.test.ts` (bootstrap reaches the guest
 prompt without a mount).
 
@@ -942,39 +951,43 @@ to this document.
     `packages/skills/src/capability.ts:96`, `packages/loop/src/runtime/build-run-deps.ts:593-606`.
     Pinned: `packages/skills/tests/component/capability.test.ts:95`,
     `packages/loop/tests/integration/skills-grant-gating.test.ts:105`, `:161`.
-28. **Neither the catalog section nor the `load_skill` tool reaches an agent without the
+28. **Neither the catalog section nor either skill tool reaches an agent without the
     `use_skills` grant, and an ungranted agent triggers no scan at all.**
-    `packages/skills/src/capability.ts:128`–`:132`, `:181`. Pinned:
-    `packages/skills/tests/component/capability.test.ts:139`,
-    `packages/loop/tests/integration/skills-grant-gating.test.ts:85`.
-29. **An empty catalog yields neither the section nor the tool**, even with the grant.
-    `packages/skills/src/capability.ts:131`, `:182`. Pinned:
-    `packages/skills/tests/component/capability.test.ts:177`,
-    `packages/loop/tests/integration/skills-grant-gating.test.ts:133`.
+    Production: `createSkillsRunCapability` in `packages/skills/src/capability.ts`. Test:
+    `packages/skills/tests/component/capability.test.ts` and
+    `packages/loop/tests/integration/skills-grant-gating.test.ts`.
+29. **An empty catalog yields neither the section nor the skill tools**, even with the grant.
+    Production: `catalogFor` and `createSkillsRunCapability` in
+    `packages/skills/src/capability.ts`. Test: "suppresses both prompt section and tool when the
+    catalog is empty" in `packages/skills/tests/component/capability.test.ts` and the empty-catalog
+    case in `packages/loop/tests/integration/skills-grant-gating.test.ts`.
 30. **The catalog is scanned once per run and the same listing serves the entry agent and every
-    spawned sub-agent.** `packages/skills/src/capability.ts:125-131`. Pinned:
-    `packages/skills/tests/component/capability.test.ts:114` (`second === first`, one `bootstraps()`
+    spawned sub-agent.** Production: `listOnce` in `packages/skills/src/capability.ts`. Test:
+    `packages/skills/tests/component/capability.test.ts` (`second === first`, one `bootstraps()`
     call).
-31. **`load_skill` is contributed unadvertised**, i.e. `advertised: false` on the contribution.
-    `packages/skills/src/capability.ts:188`. Pinned:
-    `packages/skills/tests/component/capability.test.ts:239`.
-32. **`load_skill` validates against its own declared schema and refuses to run when the host wires
-    no validator.** `packages/skills/src/call.ts:121-136`. Pinned:
-    `packages/skills/tests/unit/call.test.ts:12`, `:350`.
-33. **A `resource` argument that actually names the skill's own manifest or a directory sentinel is
-    treated as a body load, and no resource read is attempted.**
-    `packages/skills/src/call.ts:39-44`, `:149-153`. Pinned:
-    `packages/skills/tests/unit/call.test.ts:190` (nine spellings, zero reads).
+31. **Both skill tools are contributed unadvertised**, i.e. `advertised: false` on their shared
+    contribution. Production: `createSkillsRunCapability` in
+    `packages/skills/src/capability.ts`. Test: "wires the unadvertised strict skill handlers" in
+    `packages/skills/tests/component/capability.test.ts`.
+32. **Each skill operation validates against its own declared closed schema and refuses to run when
+    the host wires no validator.** Production: `handleLoadSkillCall` and
+    `handleReadSkillResourceCall` in `packages/skills/src/call.ts`. Test:
+    `packages/skills/tests/unit/call.test.ts` and `packages/skills/tests/unit/tool.test.ts`.
+33. **`load_skill` accepts only `{name}`; every `resource`, `offset`, alias, sentinel or unknown
+    field is rejected before body/provider access.** Production: `loadSkillTool` and
+    `handleLoadSkillCall`. Test: "rejects every resource-shaped argument on the name-only load
+    operation" in `packages/skills/tests/unit/call.test.ts`.
 34. **A resource request for an unknown skill is rejected before any read.**
-    `packages/skills/src/call.ts:159-162`. Pinned: `packages/skills/tests/unit/call.test.ts:95`.
-35. **`load_skill`'s resource branch never calls `loadSkill`** — it is a materially separate
-    code path from the body branch, not a variant of it, and reads a resource "without loading
-    or retaining the skill body." `packages/skills/src/call.ts:159-208` (only the body branch at
-    `:210-218` calls `loadSkill`). Pinned:
-    `packages/skills/tests/integration/call-resource.test.ts:37`–`:49`.
-36. **A `load_skill` failure is a non-progressing tool result, never a throw.**
-    `packages/skills/src/capability.ts:217`, `packages/skills/src/call.ts:133`. Pinned:
-    `packages/skills/tests/component/capability.test.ts:256`.
+    Production: `handleReadSkillResourceCall` in `packages/skills/src/call.ts`. Test: "rejects a
+    resource lookup before reading when the skill is unknown" in
+    `packages/skills/tests/unit/call.test.ts`.
+35. **`read_skill_resource` never calls `loadSkill`** — resource disclosure is a separate tool and
+    code path, not a body-load variant. Production: `handleReadSkillResourceCall` in
+    `packages/skills/src/call.ts`. Test: "reads a resource without loading or retaining the skill
+    body" in `packages/skills/tests/integration/call-resource.test.ts`.
+36. **A skill-tool failure is a non-progressing result, never a throw.** Production:
+    `buildSkillsHandler` in `packages/skills/src/capability.ts`. Test: "maps a handler failure to a
+    non-progressing result" in `packages/skills/tests/component/capability.test.ts`.
 37. **A bootstrap is admitted only when the resolved skill's `root` matches one of the declaring
     plugin's own declared roots.** `packages/skills/src/bootstrap.ts:131`. Pinned:
     `packages/skills/tests/unit/bootstrap.test.ts:65`, `:183`, `:192`.
@@ -1035,15 +1048,16 @@ to this document.
     `packages/skills/src/parse.ts`. Test: `packages/skills/tests/integration/discovery.test.ts`
     ("applies Agent Skills identity validation only to roots that request it").
 53. **Container placement discloses skill content, never host roots, and resolves bootstrap bodies
-    only from active plugin declarations against the admitted provider snapshot.** A primary-body
-    call tolerates only `offset: 0`; every positive cursor still requires a real bundled resource.
+    only from active plugin declarations against the admitted provider snapshot.** The guest and
+    host both enforce the exact body/resource operation split; neither accepts body aliases or
+    operation-specific extra fields.
     Production: `createRuntimeSkillCatalog`, `createRuntimeSkillBootstraps`,
     `createHostSkillsGrant` and `createGuestSkillsCapability` in
-    `packages/kernel/src/runtime/skills-bridge.ts`; native tolerance in `handleLoadSkillCall` at
-    `packages/skills/src/call.ts`. Test:
+    `packages/kernel/src/runtime/skills-bridge.ts`; `loadSkillTool` and `readSkillResourceTool` in
+    `packages/skills/src/tool.ts`. Test:
     `packages/kernel/tests/unit/runtime-skills-bridge.test.ts` and
-    `packages/skills/tests/unit/call.test.ts` (`treats offset zero on the primary body as a harmless
-    provider serialization`).
+    `packages/kernel/tests/integration/runtime-guest-loop.test.ts` (the invalid `/dev/null`-style
+    body payload never crosses to host capability authority).
 
 ---
 
@@ -1079,8 +1093,8 @@ with the original errno in the message (`packages/skills/src/errors.ts:48`–`:5
 | body over the char cap | `get()` throws `invalid_skill` at disclosure time, catalog entry survives (`packages/skills/tests/integration/bounds.test.ts:138`) | same |
 | oversized resource | `readResource` throws with `fields.dimension` = `bytes`/`characters` (`packages/skills/src/bounded-read.ts:102`–`:106`, `:333`–`:336`) | same |
 | chunked resource exceeds 8 MiB, cursor is not a UTF-8 byte boundary, or file changes while read | `readResourceChunk` throws `invalid_input`; no partial page is returned (`readBoundedTextChunk` in `packages/skills/src/bounded-read.ts`) | same |
-| chunk provider reports an invalid size/offset/continuation | `load_skill` returns a failed tool result (`validateResourceChunk` in `packages/skills/src/call.ts`) | same |
-| legacy provider receives `offset > 0` | `load_skill` refuses continuation; it never slices decoded text using the byte cursor (`handleLoadSkillCall` in `packages/skills/src/call.ts`) | same |
+| chunk provider reports an invalid size/offset/continuation | `read_skill_resource` returns a failed tool result (`validateResourceChunk` in `packages/skills/src/call.ts`) | same |
+| legacy provider receives `offset > 0` | `read_skill_resource` refuses continuation; it never slices decoded text using the byte cursor (`handleReadSkillResourceCall` in `packages/skills/src/call.ts`) | same |
 | descriptor fails to close | `skill.handle_close_failed` debug, read result unaffected (`packages/skills/src/lib/log.ts:80`) | same |
 | `realpath` fails during containment | falls back to lexical compare and warns `skill.path_unresolved` at **warn** level, because a lexical check cannot see through a symlink (`packages/skills/src/paths.ts:63`) | same |
 
@@ -1169,9 +1183,9 @@ never boot an engine.
 
 ### 7.3 Name ownership
 
-`LOAD_SKILL_TOOL_NAME` is owned only by this package; the capability derives its reservation and
-`control` effect from `loadSkillTool` so the engine needs neither the name nor a mirror
-(`packages/skills/src/tool.ts:11`–`:15`, `packages/skills/src/capability.ts:58`–`:62`). The engine
+`LOAD_SKILL_TOOL_NAME` and `READ_SKILL_RESOURCE_TOOL_NAME` are owned only by this package; the
+capability derives both reservations and `control` effects from `SKILLS_TOOLS` so the engine needs
+neither name nor a mirror (`packages/skills/src/tool.ts`, `packages/skills/src/capability.ts`). The engine
 does keep a duplicate of the capability *name* it cannot statically import, pinned against drift
 by `packages/loop/tests/architecture/builtin-capability-names.test.ts:18` and owned by
 [engine/capability-composition.md](../engine/capability-composition.md).

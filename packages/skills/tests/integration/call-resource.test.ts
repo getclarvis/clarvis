@@ -1,12 +1,14 @@
 import { describe, expect, it } from "bun:test";
-import { handleLoadSkillCall, SKILL_RESOURCE_MAX_CHARS } from "@clarvis/skills/capability";
+import { handleReadSkillResourceCall, SKILL_RESOURCE_MAX_CHARS } from "@clarvis/skills/capability";
 import { makeTrace } from "../helpers/capability-fakes.ts";
-import { call, fakeSkills, validateArgs } from "../helpers/call-fixtures.ts";
+import { fakeSkills, resourceCall, validateArgs } from "../helpers/call-fixtures.ts";
 
-describe("handleLoadSkillCall", () => {
+describe("handleReadSkillResourceCall", () => {
   it("degrades to a tool error when the resolved resource cannot be read", () => {
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "alpha", resource: "scripts/run.sh" } }),
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({
+        arguments: { name: "alpha", resource: "scripts/run.sh", offset: 0 },
+      }),
       skills: fakeSkills({
         readResource: () => {
           throw new Error("resource disappeared");
@@ -22,8 +24,10 @@ describe("handleLoadSkillCall", () => {
   });
 
   it("returns the resource contents supplied by the provider", () => {
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "alpha", resource: "references/note.md" } }),
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({
+        arguments: { name: "alpha", resource: "references/note.md", offset: 0 },
+      }),
       skills: fakeSkills({ readResource: () => "REFERENCE CONTENT" }),
       trace: makeTrace(),
       agent: "subagent",
@@ -36,8 +40,10 @@ describe("handleLoadSkillCall", () => {
   });
 
   it("reads a resource without loading or retaining the skill body", () => {
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "alpha", resource: "references/note.md" } }),
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({
+        arguments: { name: "alpha", resource: "references/note.md", offset: 0 },
+      }),
       skills: fakeSkills({
         loadSkill: () => {
           throw new Error("body must stay undisclosed");
@@ -54,8 +60,8 @@ describe("handleLoadSkillCall", () => {
   });
 
   it("returns a continuation offset for an oversized resource", () => {
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "alpha", resource: "big.txt" } }),
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({ arguments: { name: "alpha", resource: "big.txt", offset: 0 } }),
       skills: fakeSkills({
         readResourceChunk: (_name, _resource, offset) => ({
           text: "x".repeat(100),
@@ -75,8 +81,8 @@ describe("handleLoadSkillCall", () => {
   });
 
   it("continues a large resource from the requested byte offset", () => {
-    const res = handleLoadSkillCall({
-      call: call({ arguments: { name: "alpha", resource: "big.txt", offset: 50 } }),
+    const res = handleReadSkillResourceCall({
+      call: resourceCall({ arguments: { name: "alpha", resource: "big.txt", offset: 50 } }),
       skills: fakeSkills({
         readResourceChunk: (_name, _resource, offset) => ({
           text: "SECOND",

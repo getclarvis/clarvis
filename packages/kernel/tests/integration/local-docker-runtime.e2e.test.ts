@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { expect, test } from "bun:test";
-import { loadEnv, type ExecutionRecord, type LLMProvider } from "@clarvis/capability";
+import {
+  loadEnv,
+  type ExecutionRecord,
+  type LLMProvider,
+  type SteerMessage,
+} from "@clarvis/capability";
 import type { ExecuteRunDeps } from "@clarvis/loop";
 import type { Memory } from "@clarvis/memory";
 import {
@@ -62,8 +67,16 @@ function traceStore(): TraceStore {
   };
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("timed out waiting for Docker runtime evidence");
+    await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, 10));
+  }
+}
+
 test.skipIf(!enabled)(
-  "bridges host reads, installs through mise, previews a service, and survives cancellation",
+  "bridges host reads and steer, installs through mise, previews, and survives cancellation",
   async () => {
     const docker = Bun.which("docker");
     if (docker === null || imageDigest === undefined || context === undefined) {
@@ -156,6 +169,14 @@ test.skipIf(!enabled)(
       subscribeToRun: () => () => undefined,
     };
     let workloadModelCall = 0;
+    let markWorkloadModelStarted!: () => void;
+    const workloadModelStarted = new Promise<void>((resolveStarted) => {
+      markWorkloadModelStarted = resolveStarted;
+    });
+    let releaseWorkloadModel!: () => void;
+    const workloadModelGate = new Promise<void>((resolveModel) => {
+      releaseWorkloadModel = resolveModel;
+    });
     let markCancelModelStarted: (() => void) | undefined;
     const cancelModelStarted = new Promise<void>((resolveStarted) => {
       markCancelModelStarted = resolveStarted;
@@ -183,22 +204,24 @@ test.skipIf(!enabled)(
         }
         workloadModelCall += 1;
         if (workloadModelCall === 1) {
+          markWorkloadModelStarted();
           expect(transcript).toContain("DOCKER_RUNTIME_BOOTSTRAP");
           expect(transcript).toContain("DOCKER_RUNTIME_MEMORY_SEED");
           expect(transcript).not.toContain(skillRoot);
           const toolNames = params.tools.map((tool) => tool.wireName);
           for (const name of MEMORY_READ_TOOL_NAMES) expect(toolNames).toContain(name);
           for (const name of MEMORY_WRITE_TOOL_NAMES) expect(toolNames).not.toContain(name);
+          expect(toolNames).toContain("read_skill_resource");
+          const loadSchema = params.tools.find((tool) => tool.wireName === "load_skill")
+            ?.inputSchema as { properties?: Record<string, unknown> } | undefined;
+          expect(Object.keys(loadSchema?.properties ?? {})).toEqual(["name"]);
+          await workloadModelGate;
           return {
             toolCalls: [
               {
                 id: "load-runtime-skill",
                 name: "load_skill",
-                arguments: {
-                  name: methodSkill.name,
-                  resource: `${methodSkill.name}/SKILL.md`,
-                  offset: 0,
-                },
+                arguments: { name: methodSkill.name },
               },
               {
                 id: "read-runtime-memory",
@@ -210,6 +233,7 @@ test.skipIf(!enabled)(
           };
         }
         if (workloadModelCall === 2) {
+          expect(transcript).toContain("DOCKER_RUNTIME_STEER");
           expect(transcript).toContain("DOCKER_RUNTIME_SKILL_BODY");
           expect(transcript).toContain("DOCKER_RUNTIME_MEMORY_DOCUMENT");
           return {
@@ -323,7 +347,8 @@ test.skipIf(!enabled)(
         lifecycle: "ready",
       });
       const capabilityEvents: unknown[] = [];
-      const outcome = await runtime.executeRun({
+      const pendingSteers: SteerMessage[] = [];
+      const outcomeTask = runtime.executeRun({
         owner: "owner",
         deps,
         hostElicit: async () => {
@@ -349,7 +374,13 @@ test.skipIf(!enabled)(
           budget: { on_exceed: "stop", total_token_limit: 1_000 },
         },
         onCapabilityEvent: (event) => capabilityEvents.push(event),
+        steer: { drain: () => pendingSteers.splice(0) },
       });
+      await workloadModelStarted;
+      pendingSteers.push({ content: "DOCKER_RUNTIME_STEER" });
+      await waitFor(() => pendingSteers.length === 0);
+      releaseWorkloadModel();
+      const outcome = await outcomeTask;
       expect(outcome).toMatchObject({
         executionId: "exec_docker_e2e",
         response: { status: "completed", result: "docker-network-preview-ok" },
@@ -442,6 +473,7 @@ test.skipIf(!enabled)(
       }
       throw error;
     } finally {
+      releaseWorkloadModel();
       await runtime?.close().catch(() => undefined);
       await control.run(["rm", "--force", `clarvis-runtime-${generation}`]).catch(() => undefined);
       await rm(root, { recursive: true, force: true });

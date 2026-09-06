@@ -205,6 +205,16 @@ source-internal Ajv composition seam, and starts `guest-main` without a TUI or p
 transport. Ordinary Loop hosts keep the existing lazy `createRequire` fallback, so merely reaching
 validation on the native TUI boot path still does not load Ajv.
 
+The worker also routes the closed `runtime.steer` control operation to the active guest executor.
+The payload is exactly either `{kind: "steer", message}` or `{kind: "compact", request}`: unknown
+fields, malformed message content and inactive run IDs are refused. `createGuestLoopExecutor`
+registers the two run-scoped queues before its first asynchronous preparation step, passes them to
+the real `executeRun`, and closes them when that run settles. Steering retains native delivery
+semantics—the RPC resolves only after the loop drains the message—while compaction is acknowledged
+on enqueue and remains a separate control source rather than transcript content. Protocol revision
+4 makes this required behavior part of image admission; a revision-3 guest that lacks the executor
+control implementation cannot be mistaken for a compatible image.
+
 Guest command execution retains the host-selected guard contract without exposing host policy
 authority. The host strips provider secrets before sending the bounded guard settings; the guest
 reconstructs `createGuardResolver`, caps built-in tools at `exec`, and emits only the closed
@@ -224,8 +234,11 @@ bounded text resources for names present in that admitted catalog, rejecting tra
 names and additional fields. Active plugins' bootstrap declarations are resolved against that same
 admitted provider snapshot and only their bounded bodies are added to the guest prompt; inactive or
 foreign-root declarations are not projected, and no skill root is mounted or serialized. A body
-request may carry the harmless optional offset `0`, including the common `SKILL.md` body alias, but
-a non-zero cursor still requires a real bundled resource.
+request is exactly `{operation: "load", name}`. A resource request is the separate exact
+`{operation: "resource", name, resource, offset}` shape with an explicit byte cursor and a safe
+relative path. The model-facing contracts mirror that separation as `load_skill({name})` and
+`read_skill_resource({name, resource, offset})`; aliases, omitted fields and additional fields are
+rejected before host provider access.
 
 Memory uses the exact `runtime.memory` companion bridge. The host resolves the selected provider,
 keeps its configuration, credentials, store and policy private, and serializes only a
@@ -273,7 +286,8 @@ Production: `createExecutionPeer` in `packages/kernel/src/runtime/execution-rpc.
 `serveExecutionWorker` in `packages/kernel/src/runtime/execution-worker.ts`; brokers in
 `packages/kernel/src/runtime/authority-brokers.ts`; `createRuntimeHostHandlers` in
 `packages/kernel/src/runtime/host-execution-bridge.ts`; `createGuestLoopExecutor` in
-`packages/kernel/src/runtime/guest-loop-executor.ts`; `createGuestGuardAuditLogger` and
+`packages/kernel/src/runtime/guest-loop-executor.ts`; `RUNTIME_PROTOCOL_REVISION` in
+`packages/kernel/src/runtime/protocol-revision.ts`; `createGuestGuardAuditLogger` and
 `forwardGuestGuardAudit` in `packages/kernel/src/runtime/guard-audit-bridge.ts`;
 `createRuntimePreviewCapability` in `packages/kernel/src/runtime/preview-capability.ts`;
 `createHostPlansGrant` and `createGuestPlanFactory` in
@@ -411,8 +425,8 @@ The first protocol-revision-3 direct runtime canary then rebuilt the development
 `sha256:a4ad5fa40456477373503e6d96de401bd75232065632b2618b1dcdbf3dd699de` at
 137,484,564 bytes and ran it through the same Docker 29.2.1 `colima` context. The real guest received
 an active plugin's resolved bootstrap body and loaded a second host-admitted skill through
-`load_skill` with the provider-compatible `<name>/SKILL.md` plus `offset: 0` shape; neither host skill
-root appeared in the model request. It also received the host Memory seed, invoked `read_memory`,
+`load_skill` with the then-admitted overloaded `<name>/SKILL.md` plus `offset: 0` shape; neither host
+skill root appeared in the model request. It also received the host Memory seed, invoked `read_memory`,
 and observed the returned document. The model request contained all four canonical read tools and
 none of `write_memory`, `edit_memory` or `delete_memory`; successful finalization emitted the
 read-only provider's host-owned `provider-read-only` ingest result after the trace was durable.
@@ -444,13 +458,41 @@ boundary. Normal two-step Ctrl+C exit returned status zero; Docker then containe
 workspace was removed. Captured TUI frames were labelled `initial-ready`, `cancel-active` and
 `recovered` and were inspected as rendered images as well as cell snapshots.
 
+The protocol-revision-4 direct runtime canary rebuilt the development image as
+`sha256:6110cc11af1f7fdb6078233544bdf26405babefc7d167de8eafd6641bbe54a6e` at
+137,485,495 bytes and admitted it through Docker Engine 29.2.1 on the same `colima` context. While
+the first model call remained active, the host queued `DOCKER_RUNTIME_STEER`; the guest drained and
+acknowledged it, and the next model request contained that exact text. The same run exposed only the
+name-only `load_skill` schema plus the distinct `read_skill_resource` tool, loaded a host-admitted
+skill, read host-owned Memory without any mutation tool, installed `is-number@7.0.0` through mise
+and npm, and served its manifest through a loopback preview. Cancellation again left the private
+channel reusable for a completed follow-up. The canary passed 25 assertions in 10.29 seconds and its
+post-test Docker inventory contained no `clarvis-runtime-*` container.
+
+The matching current-source TUI canary then ran `clarvis-develop` in a 120-by-32 real PTY against
+the configured `chatgpt/gpt-5.6-terra` subscription. The ready frame showed `Isolation: Docker`
+before any engine container existed. Its first run exposed a provider-accepted strict schema,
+called `load_skill` with exactly `{name: "opentui"}`, and returned the body's `OpenTUI Skill`
+heading. During a later 30-second guest shell call, a second user message appeared first as
+`Steer queued`, then `Steer delivered`; the durable trace recorded `user_steering` at iteration 2
+and the same execution completed as `STEER_CONFIRMED_V4` after 36 seconds. Docker inspection kept
+the one container `clarvis-runtime-f1fdfb7b-8667-4e81-9967-44fc0fa5043e` on the final image digest
+throughout.
+
+That TUI session then cancelled another run, returned to `ready`, and completed the independently
+checkable follow-up `321 * 654` as `209934` in 3 seconds without `run cannot be steered` or
+`execution channel closed`; Docker still reported the same container generation. Normal two-step
+Ctrl+C exit returned zero and removed that exact container. The two disposable Clarvis sessions and
+their eight traces were deleted, as were their empty temporary workspaces. The retained PTY frames
+were rendered and inspected at the delivered-steer and recovered-after-cancel states.
+
 Together these canaries prove the then-current-source macOS/Colima Docker journey, lazy launch,
-subscription model broker, interactive Approval guard, mise tool execution, outbound connectivity,
-loopback preview, normal container cleanup, host-projected plugin bootstrap and skill bodies,
-read-only Memory bridging, and cancellation recovery without losing the execution channel. They do
-not prove workspace-change settlement through the UI, crash-orphan cleanup, native Linux or
-Linux/arm64 execution, Docker Desktop, Podman, Windows, another engine version, or execution of
-bundled skill helpers.
+subscription model broker, interactive Approval guard, strict skill schemas, mid-run steering, mise
+tool execution, outbound connectivity, loopback preview, normal container cleanup, host-projected
+plugin bootstrap and skill bodies, read-only Memory bridging, and cancellation recovery without
+losing the execution channel. They do not prove workspace-change settlement through the UI,
+crash-orphan cleanup, native Linux or Linux/arm64 execution, Docker Desktop, Podman, Windows,
+another engine version, or execution of bundled skill helpers.
 
 Live Podman remains unavailable because its freshly created AppleHV machine failed before the engine
 booted. `internet` is refused because internet-only egress enforcement is not implemented; only

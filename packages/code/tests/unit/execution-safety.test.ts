@@ -112,6 +112,18 @@ describe("execution safety", () => {
       "Failed, cancelled or interrupted runs keep their plan.",
     ]);
   });
+
+  it("describes container isolation without promising a hidden copy or merge", () => {
+    expect(
+      safetyDescription(
+        deriveRunControls(onDisk({ runtime: { backend: "docker" } }), "off", "off"),
+      ),
+    ).toEqual([
+      "Agent tools run inside a Linux Docker container.",
+      "The selected workspace is mounted directly; changes appear on the host immediately.",
+      "Outbound network access is enabled; guest services can be exposed to the host.",
+    ]);
+  });
 });
 
 describe("memoryState — the one on/inert/off rule every surface shares", () => {

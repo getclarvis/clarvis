@@ -25,41 +25,6 @@ export {
   type RuntimeUnavailableReason,
 } from "./runtime/types.ts";
 export {
-  captureRuntimeWorkspace,
-  diffRuntimeWorkspace,
-  isWorkspaceManifest,
-  scanRuntimeWorkspace,
-  WorkspaceCopyError,
-  DEFAULT_WORKSPACE_SCAN_LIMITS,
-  type WorkspaceChangeSet,
-  type WorkspaceManifest,
-  type WorkspaceManifestEntry,
-  type WorkspaceScanLimits,
-} from "./runtime/workspace-copy.ts";
-export {
-  loadRuntimeWorkspace,
-  commitRuntimeBaseline,
-  prepareRuntimeWorkspace,
-  setRuntimeState,
-  RuntimeStoreError,
-  type PreparedRuntimeWorkspace,
-  type PrepareRuntimeWorkspaceOptions,
-  type RuntimeRecord,
-} from "./runtime/runtime-store.ts";
-export {
-  applyRuntimeWorkspaceReview,
-  recoverRuntimeWorkspaceApply,
-  reviewRuntimeWorkspace,
-  WorkspaceApplyError,
-  type RuntimeWorkspaceReview,
-  type WorkspaceApplyControl,
-} from "./runtime/workspace-apply.ts";
-export {
-  settleRuntimeWorkspace,
-  type HostWorkspaceMergeElicit,
-  type RuntimeWorkspaceSettlement,
-} from "./runtime/workspace-settlement.ts";
-export {
   createExecutionPeer,
   decodeExecutionFrame,
   GUEST_EXECUTION_METHODS,
@@ -102,6 +67,7 @@ export {
   type DockerBackendOptions,
   type DockerCommandResult,
   type DockerControl,
+  type DockerRunOptions,
 } from "./runtime/docker-backend.ts";
 export {
   appendRuntimeCheckpoint,
@@ -112,7 +78,6 @@ export {
   type RuntimeCheckpointInput,
   type RuntimeSettlementParticipant,
 } from "./runtime/runtime-checkpoints.ts";
-export { createPrivateRuntimeGit, RuntimeGitError } from "./runtime/private-git.ts";
 export {
   serveExecutionWorker,
   type GuestExecutionBridge,

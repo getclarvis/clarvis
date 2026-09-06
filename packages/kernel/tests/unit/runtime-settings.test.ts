@@ -18,6 +18,61 @@ describe("runtime settings", () => {
     });
   });
 
+  it("accepts only the closed operator-owned Docker recipe contract", () => {
+    expect(
+      runtimeSettingsSchema.parse({
+        backend: "docker",
+        recipe: { name: "java-25", script: "/Users/alice/.clarvis/runtime-recipes/java-25.sh" },
+      }),
+    ).toMatchObject({
+      recipe: {
+        name: "java-25",
+        script: "/Users/alice/.clarvis/runtime-recipes/java-25.sh",
+        network: "outbound",
+      },
+    });
+    expect(() =>
+      runtimeSettingsSchema.parse({
+        backend: "docker",
+        recipe: {
+          name: "java-25",
+          script: "/Users/alice/.clarvis/runtime-recipes/java-25.sh",
+          dockerfile: "/tmp/Containerfile",
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      runtimeSettingsSchema.parse({
+        backend: "docker",
+        recipe: {
+          name: "Java 25",
+          script: "/Users/alice/.clarvis/runtime-recipes/java-25.sh",
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      runtimeSettingsSchema.parse({
+        backend: "docker",
+        recipe: { name: "java-25", script: "recipes/java-25.sh" },
+      }),
+    ).toThrow();
+    expect(() =>
+      runtimeSettingsSchema.parse({
+        backend: "docker",
+        recipe: { name: "java-25", script: "/tmp/java-25.sh\0hidden" },
+      }),
+    ).toThrow();
+    expect(() =>
+      runtimeSettingsSchema.parse({
+        backend: "podman",
+        recipe: {
+          name: "java-25",
+          script: "/Users/alice/.clarvis/runtime-recipes/java-25.sh",
+        },
+      }),
+    ).toThrow();
+  });
+
   it("keeps advanced Docker overrides and requires Podman's full host contract", () => {
     const value = {
       backend: "podman" as const,

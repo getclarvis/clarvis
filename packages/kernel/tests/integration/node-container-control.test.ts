@@ -128,6 +128,9 @@ describe("Node container engine controls", () => {
       maxOutputBytes: 1,
     });
     await expect(docker.run(["overflow"])).rejects.toThrow("Docker output exceeded");
+    await expect(
+      docker.run(["overflow"], undefined, { maxOutputBytes: 4_096 }),
+    ).resolves.toMatchObject({ exitCode: 0, stdout: "x".repeat(2_048) });
 
     const podman = createNodePodmanControl({
       executable,

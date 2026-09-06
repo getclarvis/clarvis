@@ -1,9 +1,14 @@
-import { isAbsolute, relative, resolve } from "node:path";
+import { isAbsolute, parse, relative, resolve, sep } from "node:path";
 
 import { RuntimeLaunchError, type RuntimeLaunchSpec } from "./types.ts";
 
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
 const METHOD = /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/;
+
+function contains(parent: string, candidate: string): boolean {
+  const path = relative(parent, candidate);
+  return path === "" || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
+}
 
 /** Validate the complete host-resolved launch authority before engine creation. */
 export function assertRuntimeLaunchSpec(spec: RuntimeLaunchSpec): void {
@@ -16,22 +21,51 @@ export function assertRuntimeLaunchSpec(spec: RuntimeLaunchSpec): void {
       "runtime image must use an immutable digest",
     );
   }
-  const source = resolve(spec.sourceWorkspaceRoot);
-  const retained = resolve(spec.retainedWorkspaceRoot);
-  if (!isAbsolute(spec.sourceWorkspaceRoot) || !isAbsolute(spec.retainedWorkspaceRoot)) {
-    throw new RuntimeLaunchError("invalid_launch_spec", "runtime workspace paths must be absolute");
+  const workspace = resolve(spec.workspaceRoot);
+  if (!isAbsolute(spec.workspaceRoot)) {
+    throw new RuntimeLaunchError("invalid_launch_spec", "runtime workspace path must be absolute");
   }
-  const retainedFromSource = relative(source, retained);
-  const sourceFromRetained = relative(retained, source);
+  const readOnlyPaths = spec.readOnlyWorkspacePaths.map((source) => ({
+    source,
+    resolved: resolve(source),
+  }));
   if (
-    retained === source ||
-    (!retainedFromSource.startsWith("..") && retainedFromSource !== "") ||
-    (!sourceFromRetained.startsWith("..") && sourceFromRetained !== "")
+    readOnlyPaths.some(({ source, resolved }) => {
+      const fromWorkspace = relative(workspace, resolved);
+      return (
+        !isAbsolute(source) ||
+        fromWorkspace === "" ||
+        fromWorkspace === ".." ||
+        fromWorkspace.startsWith(`..${sep}`) ||
+        isAbsolute(fromWorkspace)
+      );
+    })
   ) {
     throw new RuntimeLaunchError(
       "invalid_launch_spec",
-      "retained runtime workspace must not contain or be contained by the source checkout",
+      "read-only runtime paths must be absolute strict descendants of the workspace",
     );
+  }
+  if (new Set(readOnlyPaths.map(({ resolved }) => resolved)).size !== readOnlyPaths.length) {
+    throw new RuntimeLaunchError("invalid_launch_spec", "read-only runtime paths must be unique");
+  }
+  if (spec.gitCommonDir !== undefined) {
+    if (
+      !isAbsolute(spec.gitCommonDir) ||
+      resolve(spec.gitCommonDir) === parse(spec.gitCommonDir).root
+    ) {
+      throw new RuntimeLaunchError(
+        "invalid_launch_spec",
+        "runtime Git common directory must be an absolute non-root path",
+      );
+    }
+    const common = resolve(spec.gitCommonDir);
+    if (contains(common, workspace) || contains(workspace, common)) {
+      throw new RuntimeLaunchError(
+        "invalid_launch_spec",
+        "runtime Git common directory must be disjoint from the selected workspace",
+      );
+    }
   }
   const limits = Object.values(spec.limits);
   if (limits.some((value) => !Number.isSafeInteger(value) || value <= 0)) {

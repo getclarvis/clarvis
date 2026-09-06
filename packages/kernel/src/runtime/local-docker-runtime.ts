@@ -10,6 +10,7 @@ import {
   type LocalContainerRuntimeOptions,
 } from "./local-podman-runtime.ts";
 import type { ResolvedContainerRuntimeSettings } from "./settings.ts";
+import { resolveDockerRuntimeRecipe } from "./runtime-recipe.ts";
 import { RuntimeLaunchError } from "./types.ts";
 
 type LocalRuntimeInput = RuntimeHostInput;
@@ -27,6 +28,8 @@ export interface LocalDockerRuntimeOptions extends LocalContainerRuntimeOptions 
   readonly resolveImage?: () => Promise<RuntimeImageSelection>;
   /** Injectable context-discovery runner for deterministic tests. */
   readonly processRunner?: ProcessRunner;
+  /** Reports an uncached operator recipe before waiting for or performing its first build. */
+  readonly onRecipePreparation?: (name: string) => void;
 }
 
 const LOCAL_IMAGE = /^[a-z0-9][a-z0-9._/-]*(?::[a-z0-9._-]+)?$/u;
@@ -173,11 +176,23 @@ export async function createLocalDockerRuntime(
       context: connection,
       environment,
     });
-  const imageDigest = await resolveImageDigest(
+  const baseImageDigest = await resolveImageDigest(
     input.settings.image_digest,
     control,
     options.resolveImage,
   );
+  const imageDigest =
+    input.settings.recipe === undefined
+      ? baseImageDigest
+      : await resolveDockerRuntimeRecipe({
+          baseImageDigest,
+          recipe: input.settings.recipe,
+          control,
+          ...(options.roots === undefined ? {} : { roots: options.roots }),
+          ...(options.onRecipePreparation === undefined
+            ? {}
+            : { onPreparation: options.onRecipePreparation }),
+        });
   const resolvedSettings: ResolvedContainerRuntimeSettings = {
     ...input.settings,
     image_digest: imageDigest,

@@ -26,6 +26,8 @@ function mount(
     guardMode?: "off" | "on" | "auto";
     /** The current per-client memory override; defaults to "on". */
     memoryMode?: "on" | "off";
+    /** Optional container runtime used to exercise its effective descriptions. */
+    runtime?: { backend: "docker" };
     sandboxInspection?: { available: boolean; degraded: boolean; reason?: string } | Error;
   } = {},
 ) {
@@ -40,6 +42,7 @@ function mount(
     memory: { enabled: true },
     default_model: "openrouter/glm-5.2",
     providers: opts.resolvable === false ? [] : [{ name: "openrouter", kind: "openai-compatible" }],
+    ...(opts.runtime === undefined ? {} : { runtime: opts.runtime }),
     ...(opts.sandboxInspection === undefined
       ? {}
       : { sandbox: { type: "native", enabled: true, availability: "optional" } }),
@@ -196,6 +199,29 @@ test("the isolation row opens sandbox details and persists minimal lazy Docker",
   expect(guardSetModeCalls).toEqual([]);
   expect(runtimeRetries).toEqual([true]);
   expect(notes).toEqual(["isolation: docker (global)"]);
+  t.renderer.destroy();
+});
+
+test("the Docker consequences remain complete in a narrow Run controls viewport", async () => {
+  const { host, deps } = mount({ runtime: { backend: "docker" } });
+  const t = await openRender((() => RunControlsPanel(host, deps)) as never, {
+    width: 72,
+    height: 40,
+  });
+  await t.renderOnce();
+
+  const frame = t.captureCharFrame();
+  const prose = frame.replaceAll(/\s+/gu, " ");
+  expect(prose).toContain(
+    "The selected workspace is mounted directly; changes appear on the host immediately.",
+  );
+  expect(prose).toContain(
+    "Outbound network access is enabled; guest services can be exposed to the host.",
+  );
+  expect(prose).toContain(
+    "Docker stays cold until the first run; an operational startup failure requires Sandbox.",
+  );
+  expect(frame.split("\n").every((line) => line.length <= 72)).toBe(true);
   t.renderer.destroy();
 });
 

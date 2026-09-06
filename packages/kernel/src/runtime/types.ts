@@ -49,8 +49,12 @@ export interface RuntimeLaunchSpec {
   readonly ownerId: string;
   readonly project: ProjectRef;
   readonly workspace: WorkspaceRef;
-  readonly sourceWorkspaceRoot: string;
-  readonly retainedWorkspaceRoot: string;
+  /** Canonical host workspace mounted read-write at `/workspace`. */
+  readonly workspaceRoot: string;
+  /** Existing host-control paths overlaid read-only at their workspace-relative guest paths. */
+  readonly readOnlyWorkspacePaths: readonly string[];
+  /** Linked-worktree Git metadata mounted at the same absolute path so `.git` remains valid. */
+  readonly gitCommonDir?: string;
   readonly imageDigest: string;
   readonly configurationRevision: string;
   readonly extensionRevision: string;
@@ -110,7 +114,12 @@ export interface RuntimeBackend {
 
 /** Stable typed launch failure suitable for UI error mapping. */
 export class RuntimeLaunchError extends Error {
-  readonly code: RuntimeUnavailableReason | "invalid_launch_spec" | "handshake_mismatch";
+  readonly code:
+    | RuntimeUnavailableReason
+    | "invalid_launch_spec"
+    | "handshake_mismatch"
+    | "runtime_recipe_invalid"
+    | "runtime_recipe_failed";
 
   constructor(code: RuntimeLaunchError["code"], message: string, options?: ErrorOptions) {
     super(message, options);

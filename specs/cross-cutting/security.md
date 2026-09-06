@@ -1046,32 +1046,62 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/code/tests/integration/marketplace.test.ts`, and
     `packages/kernel/tests/integration/plugin-service.test.ts`.
 
-60. **An isolated guest receives execution material, not host authority.** Its only writable host
-    bind is the retained workspace copy; model/subscription credentials, the engine socket, host
-    environment, SSH agent and canonical Clarvis state remain absent. The omitted network default is
+60. **An isolated guest receives execution material, not host authority.** The workspace already
+    selected by the host is mounted read-write at `/workspace`, so project changes are immediate
+    host changes rather than an isolated copy or atomic apply transaction. A linked worktree also
+    receives its discovered Git common directory read-write at the same absolute guest path; this
+    intentionally exposes that repository's shared objects, refs and worktree metadata. Existing
+    workspace Clarvis/`.agents` control paths are nested read-only binds, and active Plans/Memory
+    roots are prepared before launch so later host writes remain visible without becoming guest
+    writes. Every reserved path is walked from the workspace root before engine invocation;
+    symbolic-link ancestors, intermediate non-directories and special-file leaves fail closed, so
+    a nested bind cannot be redirected outside the selected workspace. Model/subscription
+    credentials, the engine socket, host environment, SSH agent, global Clarvis state and
+    host-global extension roots remain absent. This contains guest authority over the rest of the
+    host but does not protect writable project files from the guest; an operator who wants a
+    separate checkout starts Clarvis in an ordinary Git worktree. The omitted network default is
     truthfully the broader ordinary `outbound` route, so readable guest data may be exfiltrated and
     host/LAN services may be reached; `none` is the explicit offline policy and unenforced
-    public-only `internet` is refused. Mise-installed toolchains execute only from disposable
-    `/mise` scratch. A preview request supplies only a guest port and display scheme: the host owns a
+    public-only `internet` is refused. Mise-installed toolchains execute only from `/mise`: Podman
+    supplies disposable scratch, while Docker supplies a labelled local volume derived from owner,
+    project, workspace and exact image. The guest can mutate that cache and later guests in the same
+    workspace/image can observe it, but the Clarvis host process does not mount or execute its
+    contents and other workspace identities cannot select it.
+    A preview request supplies only a guest port and display scheme: the host owns a
     bounded `127.0.0.1` listener and fixed engine argv, and closes it before container shutdown.
     The repository-root Docker context is independently deny-all with only reviewed source/build
     inputs re-included, and credential-shaped files are excluded again after those inclusions; a
     local runtime fixture or subscription store is therefore not sent to the engine during an image
-    build. An operational Docker failure before guest execution may fall back only to an available,
-    required native Sandbox; integrity, policy and handshake failures remain closed, and no run is
-    replayed after guest execution begins. Skills cross the private channel only as a host-path-free
-    catalog, admitted bodies/resources, and active plugins' already-resolved bootstrap bodies; no
-    root is serialized or mounted. Memory crosses only as a provider-opaque seed and the four
+    build. A separately configured runtime recipe is global operator authority: the host accepts
+    only a bounded stable non-symlink, single-linked script whose opened inode resolves inside the
+    global operator-owned recipe directory, gives Docker only that captured file plus fixed
+    build-control files, blanks proxy build arguments, and binds exact base/script/builder/schema
+    labels to the derived image. The script itself is intentionally sent to the selected Docker
+    engine and runs as root with its selected build network; no model or guest operation can author,
+    invoke or publish it. The recipe is not a secret channel: Clarvis supplies no build-secret
+    input, and credentials embedded in its bytes, commands, files or output may persist at the
+    selected engine. Recipe validation/build/identity failures never fall back to an
+    environment without the requested dependencies. An operational Docker failure before guest
+    execution may fall back only to an available, required native Sandbox; integrity, policy and
+    handshake failures remain closed, and no run is replayed after guest execution begins. Skills
+    cross the private channel only as a host-path-free catalog, admitted bodies/resources, and active
+    plugins' already-resolved bootstrap bodies; no root is serialized or mounted. Memory crosses
+    only as a provider-opaque seed and the four
     canonical read tools. Mutating memory tools are absent from the guest descriptor, definitions
     and prompt, and the host rejects a forged mutation even when its provider is writable.
     Cancellation keeps `runtime.start` pending until the guest settles; a matching late result for
     another locally cancelled RPC is consumed through a bounded identity tombstone, while a dead
-    process/channel retires the generation before the next run. Production: `.dockerignore`; `createArgs` in
-    `packages/kernel/src/runtime/docker-backend.ts` and
+    process/channel retires the generation before the next run. Production: `.dockerignore`;
+    `discoverGitWorkspace` in `packages/kernel/src/git-workspace.ts`; `readOnlyWorkspacePaths` in
+    `packages/kernel/src/runtime/local-podman-runtime.ts`;
+    `prepareRuntimeCapabilityRoot` in
+    `packages/kernel/src/runtime/runtime-workspace-control.ts`;
+    `createArgs` in `packages/kernel/src/runtime/docker-backend.ts` and
     `packages/kernel/src/runtime/podman-backend.ts`; `createRuntimeAuthorityRouter` in
     `packages/kernel/src/runtime/local-podman-runtime.ts`; `createRuntimePortPreview` and
     `createContainerRuntimePortPreview` in `packages/kernel/src/runtime/port-preview.ts`;
     `runtimeSettingsSchema` in `packages/kernel/src/runtime/settings.ts`;
+    `resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`;
     `createLazyRuntimeCoordinator` in `packages/kernel/src/runtime/lazy-runtime.ts`;
     `createExecutionPeer` in `packages/kernel/src/runtime/execution-rpc.ts`;
     `createIsolatedRunExecutor` in `packages/kernel/src/runtime/isolated-run-executor.ts`;
@@ -1083,7 +1113,10 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     Test: `Docker runtime backend` and `Podman runtime backend` in
     `packages/kernel/tests/unit/`; `runtime port preview` in
     `packages/kernel/tests/integration/runtime-port-preview.test.ts`; the gated
-    `local-docker-runtime.e2e.test.ts` canary; `packages/kernel/tests/unit/lazy-runtime.test.ts`;
+    `runtime-recipe.e2e.test.ts` canary;
+    `local-docker-runtime.e2e.test.ts` canary;
+    `packages/kernel/tests/integration/local-podman-runtime.test.ts`;
+    `packages/kernel/tests/unit/lazy-runtime.test.ts`;
     `packages/kernel/tests/contract/runtime-execution-rpc.test.ts`;
     `packages/kernel/tests/integration/isolated-run-executor.test.ts`;
     `packages/kernel/tests/unit/runtime-skills-bridge.test.ts`;
@@ -1102,9 +1135,11 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
 | Path swapped between check and open | `packages/tools/src/lib/files.ts:137-144` | `path_escape`, `"Path changed while it was being opened"` |
 | `realpath`/`stat` failure during that check | `packages/tools/src/lib/files.ts:125-127` | mapped through `fsError` |
 | Native mutation below a selected skill execution root | `protectSkillPackages` in `packages/tools/src/core.ts` | `path_escape` before guard/handler; no mutation runs |
+| Container reserved path has a symlink ancestor, intermediate non-directory or special-file leaf | `inspectReservedWorkspacePath` in `packages/kernel/src/runtime/local-podman-runtime.ts` | `RuntimeLaunchError("unsupported_policy")` before any engine call |
 | Container `internet` policy requested without public-only enforcement | Docker and Podman adapters reject launch as `unsupported_policy`; neither silently substitutes ordinary outbound access | `network`/`networkArgs` in `packages/kernel/src/runtime/{docker,podman}-backend.ts`; adapter unit tests |
 | Operational Docker startup failure with configured fallback | Required native Sandbox is probed and latched for the session; if unavailable, the run fails closed and never executes bare | `createLazyRuntimeCoordinator`; lazy-runtime and sandbox-policy tests |
 | Runtime image integrity, effective-policy or guest-handshake failure | No fallback; the launch fails closed | `createLazyRuntimeCoordinator`; lazy-runtime tests |
+| Runtime recipe path/content, build, base or derived-image identity failure | No fallback and no uncustomized launch; the host reports the bounded sanitized recipe error | `resolveDockerRuntimeRecipe`; runtime-recipe and lazy-runtime tests |
 | Guest preview asks for an invalid/unlistening port or exhausts its mapping/relay bound | schema/probe/broker rejects the request; no public bind or arbitrary engine command is created | `createRuntimePreviewCapability` in `packages/kernel/src/runtime/preview-capability.ts`; `createRuntimePortPreview` in `packages/kernel/src/runtime/port-preview.ts`; preview integration tests |
 | Unsafe or unsupported borrowed `userConfig` reference | `resolveBorrowedUserConfig` in `packages/kernel/src/plugins/plugin-manifest.ts` | only the affected MCP is withheld; safe sibling contributions survive |
 | Write target is a symlink | `packages/tools/src/lib/atomic.ts:111-115` | `ToolError("invalid_input")`, `"Refusing to write through a symlink"` |

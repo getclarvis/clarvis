@@ -439,11 +439,6 @@ A `workflow_review` prompt begins with the safe `cancel` enum value and no prese
 The user must deliberately select and confirm `run`; Enter on an untouched prompt cannot launch a
 workflow by enum order.
 
-A `workspace_merge` prompt is host-owned and lists every reviewed addition, modification and
-deletion from an isolated runtime. Its only accepting choice, `merge all changes`, starts
-unselected; decline is labelled `keep pending`, while cancel cancels the run. The UI consumes the
-typed change detail and never parses approval authority from prompt prose.
-
 When a current plan is available, `Ctrl+P` is the portable route to its full detail and `Alt+P`
 remains an enhanced alternative. Retained completed, failed and canceled plans stay reachable as
 the latest plan; a removed plan advertises neither shortcut. A directly opened detail returns to
@@ -1211,13 +1206,59 @@ choice begins as `Docker`, changes to the reported container engine after its la
 and reads `Sandbox` if an operational Docker startup failure activates the required native fallback.
 `WorkspaceClientManager` supplies the selected local Podman or Docker composition through a dynamic
 `@clarvis/kernel/local` import; native startup neither loads those adapters nor probes an engine.
+Container isolation mounts the workspace already selected by Code directly at `/workspace`, so
+changes appear on the host immediately and there is no Clarvis-owned copy/apply prompt. Starting
+Code inside a linked worktree uses that worktree as the separate checkout; Code does not create a
+second copy, commit, merge or remove it. A primary checkout or non-Git directory is edited directly.
+Run Controls states this direct-mount consequence explicitly.
 The simple Docker selection persists only `{ "backend": "docker" }`; advanced settings may override
-the executable, Docker context (`connection`), digest, network, fallback and resource ceilings.
+the executable, Docker context (`connection`), digest, network, fallback, resource ceilings and an
+operator-owned image recipe. Recipe scripts live under global `runtime-recipes/` and are referenced
+by an absolute path from global `settings.json`; the TUI has no script editor and the guest has no
+mutation tool for either. For example:
+
+```json
+{
+  "runtime": {
+    "backend": "docker",
+    "recipe": {
+      "name": "team-tools",
+      "script": "/Users/alice/.clarvis/runtime-recipes/team-tools.sh",
+      "network": "outbound"
+    }
+  }
+}
+```
+
+For example, that operator-owned script can contain:
+
+```sh
+apt-get update
+apt-get install -y --no-install-recommends jq shellcheck
+```
+
+The absolute script is captured and run as POSIX `sh -eu` only when the first Docker run needs an
+unseen derived image. Its content, the fixed builder policy and the exact base image form a local
+cache identity, so later Clarvis processes reuse the inspected derived image instead of rebuilding
+it. A ready generation does not watch the script; an edit is captured on the next cold Docker
+generation. Recipe failure is visible and fail-closed; Clarvis does not silently use the
+uncustomized image or Sandbox fallback.
+
+The recipe is not a secret-delivery channel: its captured bytes are sent to the selected Docker
+engine, and secrets written into commands, installed files or build output may persist outside
+Clarvis. Authenticated builds need a future explicit host-owned secret contract.
+
+An uncached recipe publishes `Preparing Docker runtime recipe '<name>' for first use…` through the
+existing transient runtime-placement notice while Isolation remains in `starting`.
 Omitting `network` selects the broader ordinary `outbound` route, not internet-only filtering.
+
 Inside an isolated run, agents with `run_commands` are told that `mise` installs missing toolchains
-ephemerally and receive `expose_port`. That tool returns the actual host-only `127.0.0.1` URL chosen
-by the kernel, so the UI need not infer Docker/Colima forwarding or claim the guest port is directly
-reachable.
+outside the workspace and receive `expose_port`. Docker preserves those installations in a labelled
+local volume scoped to that workspace and exact image, including across TUI sessions; Podman still
+uses ephemeral `/mise`. The Docker volume is engine-owned cache rather than host-visible project
+state and is not bounded by `storage_bytes`. `expose_port` returns the actual host-only `127.0.0.1`
+URL chosen by the kernel, so the UI need not infer Docker/Colima forwarding or claim the guest port
+is directly reachable.
 
 `bun run bench:code-overlays` runs the renderer lifecycle soak. Every named case and default
 120x32/80x24 size gets a fresh process, warm-up, forced-GC batch samples and RSS/PSS/private-dirty plus live renderable, renderer

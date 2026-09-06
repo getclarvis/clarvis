@@ -17,7 +17,7 @@ export const CLARVIS_DIR = ".clarvis";
  */
 export const AGENTS_DIR = ".agents";
 
-/** Git metadata entry excluded from host-prepared runtime workspace copies. */
+/** Git metadata entry used when classifying a workspace or linked worktree. */
 export const GIT_DIR = ".git";
 
 /**

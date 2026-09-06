@@ -65,7 +65,7 @@ describe("runtime host execution bridge", () => {
         events.push(event);
       },
       terminalParticipants: () =>
-        (["session", "trace", "capabilities", "workspace"] as const).map((name) => ({
+        (["session", "trace", "capabilities"] as const).map((name) => ({
           name,
           async commit() {},
         })),

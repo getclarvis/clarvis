@@ -1093,6 +1093,13 @@ both root runtime Containerfiles;
 `tooling/tests/architecture/runtime-containerfiles.test.ts`,
 `tooling/tests/unit/runtime-image-build.test.ts`, and `tooling/tests/unit/bun-version.test.ts`.
 
+An operator Docker recipe is intentionally downstream of this release pipeline. It starts from the
+already resolved local immutable runtime image, creates only a local labelled derived image, and has
+no publish, registry, release-manifest or running-container commit path. Production:
+`resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`. Test:
+`packages/kernel/tests/unit/runtime-recipe.test.ts` and the explicitly gated
+`packages/kernel/tests/integration/runtime-recipe.e2e.test.ts`.
+
 ## 6. Failure modes and degradation
 
 | Situation | Handling | Citation |

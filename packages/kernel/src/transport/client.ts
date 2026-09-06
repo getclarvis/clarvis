@@ -276,27 +276,6 @@ export async function connectKernelClient(
     typeof value.cwd === "string" &&
     typeof value.reason === "string" &&
     (value.warning === undefined || typeof value.warning === "string");
-  const isWorkspaceChangeDetail = (value: unknown): boolean =>
-    isRecord(value) &&
-    hasOnly(value, ["path", "action", "type", "mode", "size", "digest", "target"]) &&
-    typeof value.path === "string" &&
-    ["add", "modify", "delete"].includes(String(value.action)) &&
-    (value.type === "file" || value.type === "symlink") &&
-    typeof value.mode === "number" &&
-    Number.isSafeInteger(value.mode) &&
-    (value.size === undefined ||
-      (typeof value.size === "number" && Number.isSafeInteger(value.size))) &&
-    (value.digest === undefined || typeof value.digest === "string") &&
-    (value.target === undefined || typeof value.target === "string");
-  const isWorkspaceMergeDetail = (value: unknown): boolean =>
-    isRecord(value) &&
-    hasOnly(value, ["change_set_id", "baseline_revision", "content_digest", "changes"]) &&
-    typeof value.change_set_id === "string" &&
-    typeof value.baseline_revision === "string" &&
-    typeof value.content_digest === "string" &&
-    Array.isArray(value.changes) &&
-    value.changes.length <= 100_000 &&
-    value.changes.every(isWorkspaceChangeDetail);
   observe(N.runElicitation, (params) => {
     if (
       !isRecord(params) ||
@@ -306,11 +285,8 @@ export async function connectKernelClient(
       typeof params.request.execution_id !== "string" ||
       typeof params.request.kind !== "string" ||
       typeof params.request.prompt !== "string" ||
-      (params.request.detail !== undefined &&
-        !isCommandDetail(params.request.detail) &&
-        !isWorkspaceMergeDetail(params.request.detail)) ||
-      (params.request.kind === "guard_confirm" && !isCommandDetail(params.request.detail)) ||
-      (params.request.kind === "workspace_merge" && !isWorkspaceMergeDetail(params.request.detail))
+      (params.request.detail !== undefined && !isCommandDetail(params.request.detail)) ||
+      (params.request.kind === "guard_confirm" && !isCommandDetail(params.request.detail))
     ) {
       protocolViolation("invalid run.elicitation notification");
       return;

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import type { ExecuteRunOutcome } from "@clarvis/loop";
-import { createLazyRuntimeCoordinator, type RuntimeHost } from "../../src/runtime/lazy-runtime.ts";
+import {
+  createLazyRuntimeCoordinator,
+  type RuntimeHost,
+  type RuntimeHostInput,
+} from "../../src/runtime/lazy-runtime.ts";
 import { runtimeSettingsSchema, type RuntimeSettingsBlock } from "../../src/runtime/settings.ts";
 import { RuntimeLaunchError, type RuntimeInfo } from "../../src/runtime/types.ts";
 import type { RunExecutor } from "../../src/runs/run-service.ts";
@@ -44,10 +48,11 @@ function info(generation: string): RuntimeInfo {
 
 function coordinator(options: {
   settings?: RuntimeSettingsBlock;
-  factory?: () => Promise<RuntimeHost>;
+  factory?: (input: RuntimeHostInput) => Promise<RuntimeHost>;
   native?: RunExecutor;
   notices?: Array<{ status: { lifecycle: string }; message?: string }>;
   assertFallbackSandbox?: () => Promise<void>;
+  gitCommonDir?: string;
 }) {
   let settings = options.settings ?? docker();
   let extensionRevision = "extension-1";
@@ -71,6 +76,7 @@ function coordinator(options: {
       project,
       workspace,
       workspaceRoot: "/workspace",
+      ...(options.gitCommonDir === undefined ? {} : { gitCommonDir: options.gitCommonDir }),
       deps: {} as never,
       ...(options.assertFallbackSandbox === undefined
         ? {}
@@ -81,6 +87,25 @@ function coordinator(options: {
 }
 
 describe("lazy runtime coordinator", () => {
+  it("forwards linked-worktree Git metadata only when the host discovered it", async () => {
+    let commonDir: string | undefined;
+    const c = coordinator({
+      gitCommonDir: "/repository/.git",
+      factory: async (input) => {
+        commonDir = input.gitCommonDir;
+        return {
+          closed: false,
+          info: info("generation-worktree"),
+          executeRun: async () => outcome,
+          close: async () => undefined,
+        };
+      },
+    });
+    await c.value.executeRun(args);
+    expect(commonDir).toBe("/repository/.git");
+    await c.value.close();
+  });
+
   it("does no Docker work at boot, coalesces first launch and reuses the generation", async () => {
     let creates = 0;
     let runs = 0;
@@ -181,9 +206,14 @@ describe("lazy runtime coordinator", () => {
     });
   });
 
-  it("fails closed on image or handshake integrity errors", async () => {
+  it("fails closed on image, recipe or handshake integrity errors", async () => {
     let nativeRuns = 0;
-    for (const code of ["invalid_launch_spec", "handshake_mismatch"] as const) {
+    for (const code of [
+      "invalid_launch_spec",
+      "runtime_recipe_invalid",
+      "runtime_recipe_failed",
+      "handshake_mismatch",
+    ] as const) {
       const c = coordinator({
         factory: async () => {
           throw new RuntimeLaunchError(code, "identity mismatch");

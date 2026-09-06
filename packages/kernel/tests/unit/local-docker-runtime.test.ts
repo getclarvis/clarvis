@@ -182,7 +182,7 @@ describe("local Docker runtime composition", () => {
     }
   });
 
-  it("pins a resolved image id before entering runtime workspace preparation", async () => {
+  it("pins a resolved image id before inspecting the selected backend", async () => {
     const calls: string[][] = [];
     await expect(
       createLocalDockerRuntime(input(), {
@@ -197,7 +197,10 @@ describe("local Docker runtime composition", () => {
         resolveImage: () =>
           Promise.resolve({ reference: "clarvis-runtime:development", pull: false }),
       }),
-    ).rejects.toMatchObject({ code: "invalid_root" });
-    expect(calls).toEqual([["image", "inspect", "clarvis-runtime:development"]]);
+    ).rejects.toThrow("docker info returned invalid JSON");
+    expect(calls).toEqual([
+      ["image", "inspect", "clarvis-runtime:development"],
+      ["info", "--format", "{{json .}}"],
+    ]);
   });
 });

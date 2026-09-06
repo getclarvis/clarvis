@@ -137,8 +137,8 @@ export function createRuntimePreviewCapability(bridge: GuestExecutionBridge): Ca
             "## Isolated runtime\n\n" +
             "The image intentionally carries no language toolchains. `mise` is available on PATH; " +
             "use `mise x <tool>@<version> -- <command>` to install and run a missing runtime " +
-            "without modifying the read-only image. Those installs are private to this runtime " +
-            "and disappear when it stops.\n\n" +
+            "without modifying the read-only image. Those installs stay outside the workspace; " +
+            "the host may reuse its private cache only for this workspace and image.\n\n" +
             "### Service previews\n\n" +
             "When you start a TCP service that the user needs to open, run it with " +
             "`monitor_start`, wait until it is ready, then call `expose_port`. The returned " +

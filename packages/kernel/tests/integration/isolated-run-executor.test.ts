@@ -130,9 +130,6 @@ describe("isolated run executor", () => {
       session,
       router,
       pollIntervalMs: 5,
-      settleWorkspace: async () => {
-        calls.push("workspace_review");
-      },
       authority: () => ({
         model: createModelBroker(
           {
@@ -157,7 +154,7 @@ describe("isolated run executor", () => {
           maxResultBytes: 128,
         }),
         terminalParticipants: () =>
-          (["session", "trace", "capabilities", "workspace"] as const).map((name) => ({
+          (["session", "trace", "capabilities"] as const).map((name) => ({
             name,
             async commit() {
               calls.push(name);
@@ -190,7 +187,7 @@ describe("isolated run executor", () => {
     expect(events).toEqual([{ type: "run_started" }]);
     expect(persisted).toEqual([{ id: "run-1", owner_key_name: "owner" }]);
     expect(capabilityEvents).toEqual([{ type: "capability_event" }]);
-    expect(calls).toEqual(["workspace_review", "session", "trace", "capabilities", "workspace"]);
+    expect(calls).toEqual(["session", "trace", "capabilities"]);
   });
 
   it("refuses malformed results, missing checkpoints, and forged guest events", async () => {
@@ -258,7 +255,6 @@ describe("isolated run executor", () => {
         stop: async () => undefined,
       },
       authority: (_value, runId) => authority(runId),
-      settleWorkspace: async () => undefined,
     });
     await expect(invalid({ ...args, rawBody: {} })).rejects.toMatchObject({
       code: "invalid_request",
@@ -283,7 +279,6 @@ describe("isolated run executor", () => {
         stop: async () => undefined,
       },
       authority: (_value, runId) => authority(runId),
-      settleWorkspace: async () => undefined,
     });
     await expect(
       noCheckpoint({ ...args, rawBody: { execution_id: "no-checkpoint" } }),
@@ -313,7 +308,6 @@ describe("isolated run executor", () => {
         stop: async () => undefined,
       },
       authority: (_value, runId) => authority(runId),
-      settleWorkspace: async () => undefined,
     });
     await expect(
       boundary({
@@ -353,7 +347,6 @@ describe("isolated run executor", () => {
         stop: async () => undefined,
       },
       authority: (_value, runId) => authority(runId),
-      settleWorkspace: async () => undefined,
     });
     const controller = new AbortController();
     const abortedRun = aborting({
@@ -402,7 +395,6 @@ describe("isolated run executor", () => {
           stop: async () => undefined,
         },
         authority: (_value, runId) => authority(runId),
-        settleWorkspace: async () => undefined,
       });
       await expect(
         executor({ ...args, rawBody: { execution_id: `event-${eventIndex++}` } }),

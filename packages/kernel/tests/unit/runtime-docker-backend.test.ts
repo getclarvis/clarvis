@@ -14,9 +14,15 @@ const spec: RuntimeLaunchSpec = {
   generation: "docker-1",
   ownerId: "owner",
   project: { id: "project" },
-  workspace: { id: "workspace", projectId: "project", label: "main", kind: "primary" },
-  sourceWorkspaceRoot: "/source",
-  retainedWorkspaceRoot: "/state/workspace",
+  workspace: {
+    id: "workspace",
+    projectId: "project",
+    label: "feature",
+    kind: "external_worktree",
+  },
+  workspaceRoot: "/work/tree",
+  readOnlyWorkspacePaths: ["/work/tree/.clarvis/memory", "/work/tree/.agents/skills"],
+  gitCommonDir: "/repo/.git",
   imageDigest: digest,
   configurationRevision: "config",
   extensionRevision: "extensions",
@@ -40,13 +46,21 @@ function fixture(
     protocolRevision?: string;
     guestGeneration?: string;
     guestProtocolRevision?: string;
+    miseCacheLabel?: string;
+    miseCacheDriver?: string;
+    miseCacheMissing?: boolean;
+    rmFailures?: number;
   } = {},
+  runtimeSpec: RuntimeLaunchSpec = spec,
 ) {
   const calls: string[][] = [];
   const kills: NodeJS.Signals[] = [];
   let guest: ReturnType<typeof createExecutionPeer> | undefined;
   let attachedStderr: PassThrough | undefined;
   let resolveExit: ((code: number | null) => void) | undefined;
+  let miseCacheName = "";
+  let volumeInspections = 0;
+  let rmAttempts = 0;
   const control: DockerControl = {
     async run(args) {
       calls.push([...args]);
@@ -66,7 +80,7 @@ function fixture(
           stdout: JSON.stringify(
             (() => {
               const inspected = {
-                Id: overrides.image ?? digest,
+                Id: overrides.image ?? runtimeSpec.imageDigest,
                 Config: {
                   Labels: {
                     "io.clarvis.runtime.protocol":
@@ -79,6 +93,37 @@ function fixture(
           ),
           stderr: "",
         };
+      if (args[0] === "volume" && args[1] === "inspect") {
+        volumeInspections += 1;
+        if (overrides.miseCacheMissing === true && volumeInspections === 1) {
+          return { exitCode: 1, stdout: "", stderr: "missing" };
+        }
+        const name = args[2] ?? "";
+        const identity = `sha256:${name.slice("clarvis-mise-v1-".length)}`;
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify([
+            {
+              Name: name,
+              Driver: overrides.miseCacheDriver ?? "local",
+              Scope: "local",
+              Labels: {
+                "io.clarvis.runtime.mise-cache": "true",
+                "io.clarvis.runtime.mise-cache.schema": "1",
+                "io.clarvis.runtime.mise-cache.identity": overrides.miseCacheLabel ?? identity,
+              },
+            },
+          ]),
+          stderr: "",
+        };
+      }
+      if (args[0] === "create") {
+        const cacheMount = args.find((value) => value.includes("target=/mise"));
+        miseCacheName = cacheMount?.match(/source=([^,]+)/u)?.[1] ?? "";
+      }
+      if (args[0] === "rm" && rmAttempts++ < (overrides.rmFailures ?? 0)) {
+        return { exitCode: 1, stdout: "", stderr: "busy" };
+      }
       if (args[0] === "container")
         return {
           exitCode: 0,
@@ -90,11 +135,40 @@ function fixture(
                 NetworkMode: overrides.network ?? "none",
                 SecurityOpt: ["no-new-privileges=true"],
                 CapDrop: ["ALL"],
-                PidsLimit: 32,
-                Memory: 64 * 1024 * 1024,
+                PidsLimit: runtimeSpec.limits.processCount,
+                Memory: runtimeSpec.limits.memoryBytes,
               },
-              Config: { Labels: { "io.clarvis.generation": spec.generation } },
-              Mounts: [{ Source: spec.retainedWorkspaceRoot, Destination: "/workspace", RW: true }],
+              Config: { Labels: { "io.clarvis.generation": runtimeSpec.generation } },
+              Mounts: [
+                {
+                  Type: "bind",
+                  Source: runtimeSpec.workspaceRoot,
+                  Destination: "/workspace",
+                  RW: true,
+                },
+                ...runtimeSpec.readOnlyWorkspacePaths.map((path) => ({
+                  Type: "bind",
+                  Source: path,
+                  Destination: path.replace(runtimeSpec.workspaceRoot, "/workspace"),
+                  RW: false,
+                })),
+                ...(runtimeSpec.gitCommonDir === undefined
+                  ? []
+                  : [
+                      {
+                        Type: "bind",
+                        Source: runtimeSpec.gitCommonDir,
+                        Destination: runtimeSpec.gitCommonDir,
+                        RW: true,
+                      },
+                    ]),
+                {
+                  Type: "volume",
+                  Name: miseCacheName,
+                  Destination: "/mise",
+                  RW: true,
+                },
+              ],
             },
           ]),
           stderr: "",
@@ -112,13 +186,13 @@ function fixture(
       });
       guest = createExecutionPeer({
         role: "guest",
-        generation: spec.generation,
+        generation: runtimeSpec.generation,
         input: hostToGuest,
         output: guestToHost,
         handlers: {
           "runtime.bootstrap": async () => ({
-            generation: overrides.guestGeneration ?? spec.generation,
-            imageDigest: digest,
+            generation: overrides.guestGeneration ?? runtimeSpec.generation,
+            imageDigest: runtimeSpec.imageDigest,
             runtimeProtocolRevision:
               overrides.guestProtocolRevision ??
               overrides.protocolRevision ??
@@ -168,18 +242,22 @@ describe("Docker runtime backend", () => {
       network: "none",
       runtimeProtocolRevision: RUNTIME_PROTOCOL_REVISION,
     });
-    expect(fake.calls[2]).toContain("--read-only");
-    expect(fake.calls[2]).toContain("no-new-privileges=true");
-    expect(fake.calls[2].find((value) => value.startsWith("/tmp:"))).toContain(
+    const create = fake.calls.find((call) => call[0] === "create")!;
+    expect(create).toContain("--read-only");
+    expect(create).toContain("no-new-privileges=true");
+    expect(create.find((value) => value.startsWith("/tmp:"))).toContain(
       `size=${spec.limits.storageBytes}`,
     );
-    expect(fake.calls[2].find((value) => value.startsWith("/mise:"))).toBe(
-      `/mise:rw,nosuid,nodev,exec,size=${spec.limits.storageBytes}`,
+    expect(create.find((value) => value.startsWith("/mise:"))).toBeUndefined();
+    expect(create).toContainEqual(
+      expect.stringMatching(/^type=volume,source=clarvis-mise-v1-[a-f0-9]{64},target=\/mise$/u),
     );
-    const mountIndex = fake.calls[2].indexOf("--mount");
-    expect(fake.calls[2][mountIndex + 1]).toBe(
-      `type=bind,source=${spec.retainedWorkspaceRoot},target=/workspace`,
+    const workspaceMount = create.find((value) => value.includes("target=/workspace"));
+    expect(workspaceMount).toBe(`type=bind,source=${spec.workspaceRoot},target=/workspace`);
+    expect(create).toContain(
+      "type=bind,source=/work/tree/.clarvis/memory,target=/workspace/.clarvis/memory,readonly",
     );
+    expect(create).toContain("type=bind,source=/repo/.git,target=/repo/.git");
     const signal = new AbortController().signal;
     await expect(session.startRun("run", {}, signal)).resolves.toEqual({ runId: "run" });
     await expect(session.steer("run", { text: "continue" }, signal)).resolves.toBeUndefined();
@@ -188,6 +266,7 @@ describe("Docker runtime backend", () => {
     await session.stop();
     expect(fake.calls.at(-2)?.slice(0, 3)).toEqual(["stop", "--time", "5"]);
     expect(fake.calls.at(-1)?.slice(0, 2)).toEqual(["rm", "--force"]);
+    expect(fake.calls.some((call) => call[0] === "volume" && call[1] === "rm")).toBe(false);
     fake.close();
   });
 
@@ -204,6 +283,14 @@ describe("Docker runtime backend", () => {
     const policyBackend = createDockerRuntimeBackend({ control: privileged.control });
     await policyBackend.inspect();
     await expect(policyBackend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+    for (const invalidCache of [
+      fixture({ miseCacheLabel: `sha256:${"e".repeat(64)}` }),
+      fixture({ miseCacheDriver: "remote" }),
+    ]) {
+      const cacheBackend = createDockerRuntimeBackend({ control: invalidCache.control });
+      await cacheBackend.inspect();
+      await expect(cacheBackend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+    }
     const internet = fixture();
     const internetBackend = createDockerRuntimeBackend({ control: internet.control });
     await internetBackend.inspect();
@@ -280,6 +367,57 @@ describe("Docker runtime backend", () => {
     fake.close();
   });
 
+  it("creates a missing labelled mise cache volume before container admission", async () => {
+    const fake = fixture({ miseCacheMissing: true });
+    const backend = createDockerRuntimeBackend({ control: fake.control });
+    await backend.inspect();
+    const session = await backend.start(spec);
+    const createVolume = fake.calls.find((call) => call[0] === "volume" && call[1] === "create");
+    expect(createVolume).toContain("io.clarvis.runtime.mise-cache=true");
+    expect(createVolume).toContain("io.clarvis.runtime.mise-cache.schema=1");
+    expect(createVolume).toContainEqual(
+      expect.stringMatching(/^io\.clarvis\.runtime\.mise-cache\.identity=sha256:[a-f0-9]{64}$/u),
+    );
+    await session.stop();
+    fake.close();
+  });
+
+  it("separates the mise cache by owner, project, workspace and exact image", async () => {
+    const variants: RuntimeLaunchSpec[] = [
+      spec,
+      { ...spec, generation: "docker-owner", ownerId: "other-owner" },
+      {
+        ...spec,
+        generation: "docker-project",
+        project: { id: "other-project" },
+        workspace: { ...spec.workspace, projectId: "other-project" },
+      },
+      {
+        ...spec,
+        generation: "docker-workspace",
+        workspace: { ...spec.workspace, id: "other-workspace" },
+      },
+      {
+        ...spec,
+        generation: "docker-image",
+        imageDigest: `sha256:${"e".repeat(64)}`,
+      },
+    ];
+    const names: string[] = [];
+    for (const variant of variants) {
+      const fake = fixture({}, variant);
+      const backend = createDockerRuntimeBackend({ control: fake.control });
+      await backend.inspect();
+      const session = await backend.start(variant);
+      const cacheInspect = fake.calls.find((call) => call[0] === "volume" && call[1] === "inspect");
+      names.push(cacheInspect?.[2] ?? "");
+      await session.stop();
+      fake.close();
+    }
+    expect(names.every((name) => /^clarvis-mise-v1-[a-f0-9]{64}$/u.test(name))).toBe(true);
+    expect(new Set(names).size).toBe(variants.length);
+  });
+
   it("marks the session closed when the attached Docker process exits", async () => {
     const fake = fixture();
     const backend = createDockerRuntimeBackend({ control: fake.control });
@@ -293,6 +431,19 @@ describe("Docker runtime backend", () => {
       code: "unavailable",
     });
     await session.stop();
+    fake.close();
+  });
+
+  it("retries container removal without repeating guest shutdown", async () => {
+    const fake = fixture({ rmFailures: 1 });
+    const backend = createDockerRuntimeBackend({ control: fake.control });
+    await backend.inspect();
+    const session = await backend.start(spec);
+    await expect(session.stop()).rejects.toThrow("docker rm failed");
+    expect(session.closed).toBe(true);
+    await expect(session.stop()).resolves.toBeUndefined();
+    expect(fake.calls.filter((call) => call[0] === "stop")).toHaveLength(1);
+    expect(fake.calls.filter((call) => call[0] === "rm")).toHaveLength(2);
     fake.close();
   });
 

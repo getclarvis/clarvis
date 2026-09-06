@@ -1,4 +1,5 @@
 import type { Readable, Writable } from "node:stream";
+import { posix, relative, sep } from "node:path";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 
 import {
@@ -91,6 +92,23 @@ function networkArgs(spec: RuntimeLaunchSpec): readonly string[] {
     "internet-only egress enforcement is unavailable for the Podman adapter",
   );
 }
+function guestWorkspacePath(spec: RuntimeLaunchSpec, hostPath: string): string {
+  return posix.join("/workspace", relative(spec.workspaceRoot, hostPath).split(sep).join("/"));
+}
+
+function bindMountArgs(spec: RuntimeLaunchSpec): readonly string[] {
+  return [
+    "--mount",
+    `type=bind,source=${spec.workspaceRoot},target=/workspace,rw=true`,
+    ...spec.readOnlyWorkspacePaths.flatMap((path) => [
+      "--mount",
+      `type=bind,source=${path},target=${guestWorkspacePath(spec, path)},ro=true`,
+    ]),
+    ...(spec.gitCommonDir === undefined
+      ? []
+      : ["--mount", `type=bind,source=${spec.gitCommonDir},target=${spec.gitCommonDir},rw=true`]),
+  ];
+}
 
 function createArgs(spec: RuntimeLaunchSpec, name: string): readonly string[] {
   return [
@@ -117,8 +135,7 @@ function createArgs(spec: RuntimeLaunchSpec, name: string): readonly string[] {
     ...networkArgs(spec),
     "--tmpfs",
     `/mise:rw,nosuid,nodev,exec,size=${String(spec.limits.storageBytes)}`,
-    "--mount",
-    `type=bind,source=${spec.retainedWorkspaceRoot},target=/workspace,rw=true`,
+    ...bindMountArgs(spec),
     "--workdir",
     "/workspace",
     "--env",
@@ -135,15 +152,32 @@ function validEffectiveInspect(value: unknown, spec: RuntimeLaunchSpec): boolean
   const config = asRecord(root?.Config);
   const mounts = Array.isArray(root?.Mounts) ? root.Mounts : [];
   const labels = asRecord(config?.Labels);
+  const expectedBinds = [
+    { source: spec.workspaceRoot, destination: "/workspace", writable: true },
+    ...spec.readOnlyWorkspacePaths.map((path) => ({
+      source: path,
+      destination: guestWorkspacePath(spec, path),
+      writable: false,
+    })),
+    ...(spec.gitCommonDir === undefined
+      ? []
+      : [{ source: spec.gitCommonDir, destination: spec.gitCommonDir, writable: true }]),
+  ];
   return (
     hostConfig?.Privileged === false &&
     String(hostConfig?.NetworkMode).toLowerCase() ===
       (spec.network === "none" ? "none" : "slirp4netns") &&
     labels?.["io.clarvis.generation"] === spec.generation &&
-    mounts.length === 1 &&
-    asRecord(mounts[0])?.Source === spec.retainedWorkspaceRoot &&
-    asRecord(mounts[0])?.Destination === "/workspace" &&
-    asRecord(mounts[0])?.RW === true
+    mounts.length === expectedBinds.length &&
+    expectedBinds.every((expected) => {
+      const matches = mounts.filter((item) => asRecord(item)?.Destination === expected.destination);
+      return (
+        matches.length === 1 &&
+        asRecord(matches[0])?.Type === "bind" &&
+        asRecord(matches[0])?.Source === expected.source &&
+        asRecord(matches[0])?.RW === expected.writable
+      );
+    })
   );
 }
 
@@ -289,6 +323,7 @@ export function createPodmanRuntimeBackend(options: PodmanBackendOptions): Runti
         };
         const previews = createContainerRuntimePortPreview(options.control, name);
         let stopped = false;
+        let removed = false;
         let exited = false;
         void attached.exited.then(
           (code) => {
@@ -319,14 +354,17 @@ export function createPodmanRuntimeBackend(options: PodmanBackendOptions): Runti
           },
           exposePort: (guestPort, protocol, signal) => previews.expose(guestPort, protocol, signal),
           async stop() {
-            if (stopped) return;
-            stopped = true;
-            await previews.close();
-            peer.close();
-            await options.control
-              .run(["stop", "--time", String(stopSeconds), name])
-              .catch(() => undefined);
+            if (removed) return;
+            if (!stopped) {
+              stopped = true;
+              await previews.close();
+              peer.close();
+              await options.control
+                .run(["stop", "--time", String(stopSeconds), name])
+                .catch(() => undefined);
+            }
             await successful(options.control, ["rm", "--force", name], "podman rm");
+            removed = true;
           },
         };
       } catch (error) {

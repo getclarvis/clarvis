@@ -581,53 +581,6 @@ describe("remote run codec", () => {
     await client.close();
   });
 
-  it("delivers a bounded typed workspace_merge detail", async () => {
-    const transport = new FakeTransport();
-    const client = await connectKernelClient(transport);
-    const handle = await client.runs.start({ execution_id: "exec-merge-ok", messages: [] });
-    let seen: unknown;
-    handle.onElicit((request) => {
-      seen = request;
-    });
-    transport.emit("run.elicitation", {
-      request: {
-        id: "exec-merge-ok:elicit:0",
-        execution_id: "exec-merge-ok",
-        kind: "workspace_merge",
-        prompt: "Merge all?",
-        detail: {
-          change_set_id: "change",
-          baseline_revision: "before",
-          content_digest: "after",
-          changes: [
-            { path: "src/a.ts", action: "modify", type: "file", mode: 0o644, size: 2, digest: "d" },
-          ],
-        },
-      },
-    });
-
-    expect(seen).toMatchObject({ kind: "workspace_merge", detail: { change_set_id: "change" } });
-    expect(transport.closeCount).toBe(0);
-    await client.close();
-  });
-
-  it("closes on a workspace_merge without its exact typed detail", async () => {
-    const transport = new FakeTransport();
-    const client = await connectKernelClient(transport);
-    await client.runs.start({ execution_id: "exec-merge-bad", messages: [] });
-    transport.emit("run.elicitation", {
-      request: {
-        id: "exec-merge-bad:elicit:0",
-        execution_id: "exec-merge-bad",
-        kind: "workspace_merge",
-        prompt: "Merge all?",
-        detail: { command: "true", cwd: "/", reason: "forged shape" },
-      },
-    });
-    expect(transport.closeCount).toBe(1);
-    await client.close();
-  });
-
   it.each([
     ["not a record", "rm -rf /"],
     ["a missing command", { cwd: "/ws", reason: "destructive" }],

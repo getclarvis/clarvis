@@ -137,6 +137,7 @@ chose it — is the first thing every other path in this package is derived from
 | `mcpOAuthFile` | `<global>/state/mcp-oauth.json` | `packages/paths/src/global.ts:125` |
 | `pluginsDir` | `<global>/plugins` | `packages/paths/src/global.ts:126` |
 | `extensionProfilesDir` | `<global>/extension-profiles` | `packages/paths/src/global.ts:127` |
+| `runtimeRecipesDir` | `<global>/runtime-recipes` | `GlobalPaths.runtimeRecipesDir`, `globalPaths` |
 | `workspaceTrustFile` | `<global>/workspace-trust.json` | `packages/paths/src/global.ts:128` |
 | `skillsDir` | `<global>/skills` | `packages/paths/src/global.ts:129` |
 | `workflowsDir` | `<global>/workflows` | `packages/paths/src/global.ts:130` |
@@ -151,6 +152,8 @@ chose it — is the first thing every other path in this package is derived from
 | `codeConfigFile` | `<global>/state/code.json` | `packages/paths/src/global.ts:139` |
 | `modelsCacheFile` | `<global>/cache/models-dev.json` | `packages/paths/src/global.ts:140` |
 | `updateCheckCacheFile` | `<global>/cache/update-check.json` | `packages/paths/src/global.ts:141` |
+| `runtimeRecipeStateDir` | `<global>/state/runtime-recipes` | `GlobalPaths.runtimeRecipeStateDir`, `globalPaths` |
+| `runtimeRecipeLeaseFile(identity)` | `<global>/state/runtime-recipes/<ownerSegment(identity)>.lock` | `GlobalPaths.runtimeRecipeLeaseFile`, `globalPaths` |
 | `contextCandidates` | `<global>/{CLARVIS.md,AGENTS.md}` | `packages/paths/src/global.ts:142` |
 | `exportsDirForOwner(owner)` | `<global>/exports/<ownerSegment(owner)>` | `packages/paths/src/global.ts:143` |
 | `agentFile(name)` | `<agentsDir>/<name>.md` | `packages/paths/src/global.ts:144` |
@@ -160,6 +163,17 @@ a `config/` subdirectory" — burying it "made the global tree disagree with the
 (`packages/paths/src/global.ts:10-15`). What is nested under `state`/`cache` is what a user never edits: `state` is
 "generated and recoverable but costly to lose", `cache` "may be deleted at any moment without
 consequence" (`packages/paths/src/global.ts:17-19`).
+
+`runtimeRecipesDir` is the operator-authored root for Docker customization scripts. Keeping it
+outside workspace roots prevents an isolated agent from turning a later cold launch into an
+operator-authorized build. `runtimeRecipeLeaseFile` is host-only coordination for one
+content-addressed Docker image build. It lives under generated state rather than cache so an
+operator cache cleanup cannot delete a live cross-process lease; the acquired file itself is
+removed on release. The identity is encoded by the same `ownerSegment` boundary as every other
+untrusted dynamic path component. Production: `GlobalPaths.runtimeRecipesDir`,
+`GlobalPaths.runtimeRecipeStateDir`, `GlobalPaths.runtimeRecipeLeaseFile`, and `globalPaths` in
+`packages/paths/src/global.ts`. Test: `globalPaths > names the generated state and the cache` in
+`packages/paths/tests/component/paths.test.ts`.
 
 ### 2.5 Workspace paths (`packages/paths/src/workspace.ts`)
 
@@ -222,12 +236,9 @@ record (`packages/paths/src/workspace-state.ts:36`) rooted at `<global>/state/wo
 | `extensionProfileSelectionFile` | `<root>/local/extension-profile.json` | `packages/paths/src/workspace-state.ts:198` |
 | `runTempDir(executionId)` | `<root>/local/runs/<ownerSegment(executionId)>/tmp` | `WorkspaceStatePaths.runTempDir`, `workspaceStatePaths` |
 | `runtimesDir` | `<root>/runtimes` | `WorkspaceStatePaths.runtimesDir`, `workspaceStatePaths` |
-| `runtimeRegistryFile` | `<root>/runtimes/registry.json` | `WorkspaceStatePaths.runtimeRegistryFile`, `workspaceStatePaths` |
-| `runtimeWorkspaceDir(runtimeId)` | `<root>/runtimes/<ownerSegment(runtimeId)>/workspace` | `WorkspaceStatePaths.runtimeWorkspaceDir`, `workspaceStatePaths` |
-| `runtimeBaselineFile(runtimeId)` | `<runtime>/baseline.json` | `WorkspaceStatePaths.runtimeBaselineFile`, `workspaceStatePaths` |
-| `runtimeJournalFile(runtimeId)` | `<runtime>/journal.jsonl` | `WorkspaceStatePaths.runtimeJournalFile`, `workspaceStatePaths` |
-| `runtimeRecordFile(runtimeId)` | `<runtime>/runtime.json` | `WorkspaceStatePaths.runtimeRecordFile`, `workspaceStatePaths` |
-| `runtimeTransactionDir(runtimeId, changeSetId)` | `<runtime>/transactions/<ownerSegment(changeSetId)>` | `WorkspaceStatePaths.runtimeTransactionDir`, `workspaceStatePaths` |
+| `runtimeDir(runtimeId)` | `<root>/runtimes/<ownerSegment(runtimeId)>` | `WorkspaceStatePaths.runtimeDir`, `workspaceStatePaths` |
+| `runtimeCheckpointsDir(runtimeId)` | `<runtime>/checkpoints` | `WorkspaceStatePaths.runtimeCheckpointsDir`, `workspaceStatePaths` |
+| `runtimeCheckpointFile(runtimeId, executionId)` | `<runtime>/checkpoints/<ownerSegment(executionId)>.json` | `WorkspaceStatePaths.runtimeCheckpointFile`, `workspaceStatePaths` |
 | `memoryMachineryRootForOwner(owner)` | `<root>/owners/<seg>/memory` | `packages/paths/src/workspace-state.ts:202` |
 | `plansLockDirForOwner(owner)` | `<root>/owners/<seg>/plans` | `packages/paths/src/workspace-state.ts:203` |
 | `monitorSidecar(id)` | `<localDir>/monitor-<id>.json` | `packages/paths/src/workspace-state.ts:204-205` |

@@ -76,6 +76,7 @@ describe("code's internal architecture", () => {
     expect(runtime).not.toContain("createFileKernel(");
     expect(manager).toContain("runtimeFactory:");
     expect(manager).toContain("local.createLocalDockerRuntime(input, {");
+    expect(manager).toContain("onRecipePreparation:");
     expect(manager).toContain("local.createLocalPodmanRuntime(input)");
   });
 

@@ -60,11 +60,6 @@ services:
 All DTOs are protocol-owned projections. Engine-internal trace, memory and
 configuration types do not cross this boundary.
 
-Run elicitations include a closed `workspace_merge` detail for isolated-runtime settlement. It
-binds an opaque change-set id and baseline/content digests to the exhaustive typed path list; a UI
-must render that structure rather than parse the prompt. The existing `accept`, `decline` and
-`cancel` response actions remain the disposition vocabulary.
-
 `ExtensionProfileService` is the control plane for deterministic activation of already-installed
 extensions. Custom definitions are complete allow-lists of exact `{ scope, source, name }` plugin
 installations and standalone skills; `builtin:default` is immutable builtin activation behavior.
@@ -229,6 +224,8 @@ digest and private protocol revision appear once known. It is informational only
 and the private guest protocol remain host/kernel contracts. `SettingsData.runtime` accepts a simple
 Docker `{ "backend": "docker" }` input plus advanced overrides, while Podman remains fully explicit.
 Omitted Docker fields receive host-owned defaults; an omitted network selects ordinary routable
-`outbound` access. `RuntimeStatus.network` is never omitted for a container because it reports the
-effective policy; `outbound` may reach host/LAN peers and must not be presented as public-only
-internet access.
+`outbound` access. The optional Docker `recipe` DTO carries only a safe name, an absolute script path
+under the global operator recipe directory and optional `none`/`outbound` build networking; it is
+operator configuration, not a guest grant or an image-build protocol operation. `RuntimeStatus.network`
+is never omitted for a container because it reports the effective policy; `outbound` may reach
+host/LAN peers and must not be presented as public-only internet access.

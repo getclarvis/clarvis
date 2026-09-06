@@ -4,21 +4,23 @@
 
 Clarvis owns a fail-closed isolated execution backend beneath the host kernel. Runtime selection is
 a host composition decision rather than a public `KernelClient` service: native startup does not
-inspect an engine, while a configured Podman or Docker backend prepares a retained workspace, admits
-effective engine policy, negotiates a private worker channel, and keeps durable and authenticated
-authority on the host.
+inspect an engine, while a configured Podman or Docker backend mounts the workspace already selected
+by the host, admits effective engine policy, negotiates a private worker channel, and keeps durable
+and authenticated authority on the host.
 
-The complete accepted target contract and staged acceptance matrix remain in
-[the implementation proposal](../proposals/isolated-agent-runtime.md). This document records only
-behavior already implemented in source.
+[The original implementation proposal](../proposals/isolated-agent-runtime.md) is retained only as a
+superseded design record. This document is the current contract and records only behavior
+implemented in source.
 
 Runtime configuration is a strict kernel-owned settings block. Native is the default. Docker accepts
 the simple `{ "backend": "docker" }` choice; the kernel defaults it to 2 CPUs, 4 GiB memory, 256
 processes, 16 MiB output, 4 GiB storage, ordinary `outbound` networking and required-Sandbox
 fallback. Executable, Docker context, image digest, network, limits and fallback remain advanced
-overrides. Podman retains the explicit immutable digest, executable, connection and complete-limit
-contract. `outbound` may reach host/LAN peers and transmit readable workspace content; it does not
-mean public-only internet. The workspace scope can display a requested `runtime` block but can never
+overrides. Docker additionally accepts a global operator recipe with a safe name, an absolute script
+path under global `runtime-recipes/` and `none`/`outbound` build network; Podman retains the explicit
+immutable digest, executable, connection and complete-limit contract. `outbound` may reach host/LAN
+peers and transmit readable workspace content; it does not mean public-only internet. The workspace
+scope can display a requested `runtime` block but can never
 contribute it to the effective merge, including after workspace approval. `createFileKernel` reads
 the current global selection at run admission, performs no engine work on native or application
 startup, and injects the same placement-neutral lazy executor into ordinary and workflow-owned runs.
@@ -38,8 +40,11 @@ Every complete Code kernel path, including `--print` and `--refresh-models`, ent
 workspace manager, which supplies the concrete local factory lazily. Only the first container run
 imports the selected engine process adapter and, for Docker, resolves either the local development
 tag or that exact installed version's digest-pinned release image; application startup performs
-neither import, network request nor engine probe. The factory then composes one authority router,
-retained generation, engine backend and placement adapter. Each run receives a random opaque model
+neither import, network request nor engine probe. When configured, a Docker recipe is also captured,
+resolved and built on this lazy path before the runtime generation is launched. An uncached
+identity emits one path-free first-use preparation message through the existing runtime-placement
+notice while lifecycle remains `starting`. The factory then composes one authority router, runtime
+generation, engine backend and placement adapter. Each run receives a random opaque model
 lease, exact models from its immutable profile snapshot, host-side provider execution, a bounded
 elicitation grant, a loopback-only preview grant when a selected profile carries `run_commands`, and
 an optional prior trace record for continuation. When present, the canonical host `PlanFactory`,
@@ -54,40 +59,49 @@ Production: `WorkspaceClientManager.create` in
 `packages/code/src/adapters/workspace-client-manager.ts`; `createLocalPodmanRuntime` and
 `createLocalContainerRuntime` in `packages/kernel/src/runtime/local-podman-runtime.ts`;
 `createLocalDockerRuntime` in `packages/kernel/src/runtime/local-docker-runtime.ts`;
+`resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`;
 `resolveClarvisRuntimeImage` in `packages/code/src/adapters/runtime-image.ts`.
 
 Test: `packages/code/tests/architecture/architecture-boundary.test.ts`;
-`packages/code/tests/unit/runtime-image.test.ts`; and
+`packages/code/tests/unit/runtime-image.test.ts`;
+`packages/kernel/tests/unit/runtime-recipe.test.ts`;
+`packages/kernel/tests/integration/runtime-recipe.e2e.test.ts` (explicitly gated live Docker/Colima
+canary); and
 `packages/kernel/tests/integration/local-podman-runtime.test.ts` (host Memory and plugin-bootstrap
 projection).
 
 ## 2. Immutable admission
 
-`RuntimeLaunchSpec` binds the runtime generation, owner, project and workspace identities, source
-and retained workspace locations, immutable image digest, configuration and Extension Profile
-revisions, network authority, resource limits, and the closed set of callable host capability
-methods. `assertRuntimeLaunchSpec` rejects incomplete identity, mutable image tags, non-positive or
-non-integral limits, duplicate or open-ended methods, relative paths, and any retained copy that
-contains or is contained by the source checkout.
+`RuntimeLaunchSpec` binds the runtime generation, owner, project and workspace identities, the
+canonical workspace root, existing workspace-relative read-only overlays, optional linked-worktree
+Git common directory, immutable image digest, configuration and Extension Profile revisions,
+network authority, resource limits, and the closed set of callable host capability methods.
+`assertRuntimeLaunchSpec` rejects incomplete identity, mutable image tags, non-positive or
+non-integral limits, duplicate or open-ended methods, relative workspace/overlay paths, overlays
+that are not strict descendants of the selected workspace, duplicate overlays, and Git metadata
+that is relative, a filesystem root, or overlaps the workspace.
 
 `createRuntimeSupervisor` inspects the configured backend before starting it. An unavailable engine
 produces a typed launch error and calls no start path at that layer. It admits one generation at a
 time and verifies the returned generation and image identity. A mismatch stops the new session
 before returning a `handshake_mismatch`. The returned stop operation is idempotent. A normal Docker
 or Podman close first stops and then force-removes only that generation's disposable engine
-container; the retained workspace copy remains host-owned and recoverable.
+container. If removal fails, a later close retries removal without replaying guest shutdown. The
+selected workspace and any Docker `/mise` cache remain outside the disposable container.
 
 `createLazyRuntimeCoordinator` owns placement across runs. It coalesces concurrent first launches,
 reuses one ready generation only while both configuration and Extension Profile revisions remain
 unchanged and its attached engine process/private channel remains open, retires an idle superseded
-or dead generation, lazily creates a fresh generation for the next run, and closes every retained
+or dead generation, lazily creates a fresh generation for the next run, and closes every runtime
 host on kernel shutdown. A run that observed a dead generation still returns its own failure and is
 never replayed. For Docker only, an operational pre-execution failure
 (`engine_missing`, `engine_stopped`, unsupported host, or another startup failure) activates and
 latches the configured default required native Sandbox fallback, publishes one explanation, and
 uses it for later runs until retry or configuration change. Image-integrity, launch-policy,
-effective-policy and handshake mismatches never fall back. An error after `executeRun` starts is
-returned as that run's failure and is never replayed through native execution.
+recipe-validation/build, effective-policy and handshake mismatches never fall back. Running without
+the operator's requested recipe is not an operationally equivalent degraded placement. An error
+after `executeRun` starts is returned as that run's failure and is never replayed through native
+execution.
 
 Production: `RuntimeLaunchSpec` and `RuntimeLaunchError` in
 `packages/kernel/src/runtime/types.ts`; `assertRuntimeLaunchSpec` in
@@ -101,87 +115,85 @@ Test: `packages/kernel/tests/unit/runtime-launch-policy.test.ts`;
 `packages/kernel/tests/unit/lazy-runtime.test.ts` (including dead-generation replacement);
 `packages/kernel/tests/integration/sandbox-policy.test.ts`.
 
-## 3. Host-prepared workspace copy and change detection
+## 3. Direct selected workspace
 
-`captureRuntimeWorkspace` walks the user's actual working tree rather than reconstructing a clean
-Git revision, so eligible dirty tracked and untracked files become the runtime baseline. It excludes
-Git metadata plus the canonical Clarvis and shared-agent control directories, rejects special files,
-hardlinks, nested devices, unresolved or escaping symlinks and configured size/count overflow, and
-copies through a fresh staging directory. Regular files are byte-copied rather than hardlinked,
-executable modes and confined relative symlinks are preserved, and a second scan must reproduce the
-baseline digest before the staging directory becomes the retained copy.
+The kernel discovers and canonicalizes the workspace before runtime selection. A non-Git directory
+and a primary Git checkout are mounted directly and read-write at guest `/workspace`. A linked Git
+worktree is already the operator's separate checkout, so Clarvis mounts that same worktree rather
+than making a second copy. It additionally mounts the discovered Git common directory read-write at
+the same absolute path inside the guest so the worktree's existing `.git` pointer remains valid.
+That mount exposes the repository's shared objects, refs and worktree metadata to the guest; choosing
+the worktree is therefore also the operator's decision to grant that repository metadata.
 
-`scanRuntimeWorkspace` deterministically hashes path, type, mode and content or symlink target under
-the same bounds. `diffRuntimeWorkspace` compares a host-held baseline to a fresh scan and reports the
-complete accumulated additions, modifications and deletions without accepting a guest report.
+Guest workspace writes are immediately visible on the host. Clarvis does not pause the container,
+stage a baseline, raise a workspace-merge elicitation, apply a transaction, commit, merge, or remove
+a worktree. The operator uses ordinary Git status/review/commit/merge and worktree lifecycle during
+or after the Clarvis session. When stronger source separation is wanted, the operator starts Clarvis
+inside a worktree; requiring Git would deny container isolation to non-Git directories, so it is not
+a runtime prerequisite.
 
-Production: `captureRuntimeWorkspace`, `scanRuntimeWorkspace` and `diffRuntimeWorkspace` in
-`packages/kernel/src/runtime/workspace-copy.ts`.
+The host keeps Clarvis control data authoritative with nested read-only binds for reserved paths
+that exist when the generation launches. When Plans or Memory bridging is active, the host prepares
+its canonical workspace root before launch so later host writes remain visible through an already
+read-only guest mount. Existing workspace settings, agents, skills, workflows, plugins, Extension
+Profiles, guard and memory policy, shared `.agents` skills/plugins, and applicable plan/memory roots
+are likewise overlaid read-only. A symlink in a reserved path or any workspace-relative ancestor,
+an intermediate non-directory, or a special-file leaf refuses admission before the engine is
+called. Host-global skill/plugin paths and provider/store paths are never mounted; their admitted
+content crosses only the purpose-specific bridges in section 5.
 
-Test: `packages/kernel/tests/integration/runtime-workspace-copy.test.ts`.
+This is deliberately weaker source isolation than an unmounted copy: the guest can change any
+unprotected path in the selected workspace and can transmit readable workspace data when outbound
+networking is enabled. It is still a separate process/filesystem/credential boundary: the image
+root is read-only, host credentials and engine socket are absent, host capabilities are brokered,
+and only the selected workspace, declared read-only overlays, optional Git metadata and `/mise`
+storage are admitted. `storage_bytes` does not limit writes through the host workspace bind.
 
-`prepareRuntimeWorkspace` serializes creation through a crash-recoverable local registry lease,
-captures the copy, durably writes its baseline and generation record, and publishes the generation
-in the per-workspace registry only after those files exist. A failed publication removes only the
-new generation. `loadRuntimeWorkspace` bounds and validates the persisted JSON, rebinds every
-identity and path to the requested canonical workspace, verifies the manifest's canonical digest,
-and rescans a prepared copy before reconstructing it. Two source workspaces therefore remain
-separate even when their guests will both call the mount `/workspace`.
+Production: `discoverGitWorkspace` in `packages/kernel/src/git-workspace.ts`;
+`createFileKernel` in `packages/kernel/src/file-kernel.ts`; `readOnlyWorkspacePaths` and
+`createLocalContainerRuntime` in `packages/kernel/src/runtime/local-podman-runtime.ts`;
+`prepareRuntimeCapabilityRoot` in
+`packages/kernel/src/runtime/runtime-workspace-control.ts`; `createArgs` and effective mount
+inspection in `packages/kernel/src/runtime/docker-backend.ts` and
+`packages/kernel/src/runtime/podman-backend.ts`; `safetyDescription` in
+`packages/code/src/adapters/execution-safety.ts`; `RunControlsPanel` in
+`packages/code/src/views/config/RunControlsPanel.tsx`.
 
-Production: `prepareRuntimeWorkspace` and `loadRuntimeWorkspace` in
-`packages/kernel/src/runtime/runtime-store.ts`; `isWorkspaceManifest` in
-`packages/kernel/src/runtime/workspace-copy.ts`.
+Test: `packages/kernel/tests/integration/git-workspace.test.ts`;
+`packages/kernel/tests/unit/lazy-runtime.test.ts`;
+`packages/kernel/tests/integration/local-podman-runtime.test.ts`;
+`packages/kernel/tests/unit/runtime-docker-backend.test.ts`;
+`packages/kernel/tests/unit/runtime-podman-backend.test.ts`;
+`packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts` (explicitly gated live
+Docker/Colima canary); `packages/code/tests/unit/execution-safety.test.ts`;
+`packages/code/tests/integration/run-controls-render.test.tsx`.
 
-Test: `packages/kernel/tests/integration/runtime-store.test.ts`.
+## 4. Host state and container lifetime
 
-`reviewRuntimeWorkspace` produces one opaque digest identity over the complete accumulated delta.
-`applyRuntimeWorkspaceReview` re-scans both the host checkout and retained copy, refuses a changed
-host baseline or stale guest review, independently verifies the staged backup and replacement bytes,
-then records each next operation durably before touching the checkout. Additions, modifications,
-deletions, executable modes and symlinks apply as one recoverable transaction. A synchronous failure
-rolls every touched path back; an interrupted process is recovered from the same journal. Once all
-source operations are durable, a distinct `settling` phase makes baseline/record advancement
-idempotent: recovery completes that advancement instead of undoing already accepted changes.
+Every canonical workspace has a `runtimes/` subtree in its machine-state root, but it contains only
+host-accepted per-run checkpoints beneath an encoded generation directory. Runtime workspace copies,
+registries, baselines, apply journals, transaction staging and lifecycle records do not exist. The
+selected workspace or worktree remains where the operator put it and is never removed as runtime
+cleanup.
 
-Production: `reviewRuntimeWorkspace`, `applyRuntimeWorkspaceReview` and
-`recoverRuntimeWorkspaceApply` in `packages/kernel/src/runtime/workspace-apply.ts`;
-`commitRuntimeBaseline` in `packages/kernel/src/runtime/runtime-store.ts`.
-
-Test: `packages/kernel/tests/integration/runtime-workspace-apply.test.ts`.
-
-`settleRuntimeWorkspace` is the only implemented authority that composes review with apply. An
-unchanged run raises nothing. Every modifying run raises exactly one host-only `workspace_merge`
-elicitation carrying the opaque change-set identity, baseline/content digests and every changed path
-with action, type, mode and content metadata. `accept` applies the same revalidated review;
-`decline` and `cancel` write nothing and retain the copy. The engine-facing elicitation callback
-refuses the reserved kind, so a guest cannot forge the authoritative interaction.
-
-The TUI transports and renders the typed detail, lists every reviewed path, and presents one
-required `merge` choice with no initial selection. It separately labels decline as keeping changes
-pending and cancel as cancelling the run. Enter on an untouched review cannot accept it.
-
-Production: `settleRuntimeWorkspace` in
-`packages/kernel/src/runtime/workspace-settlement.ts`; `ElicitBridge.hostElicit` in
-`packages/kernel/src/runs/elicit-bridge.ts`; `WorkspaceMergeElicitationDetail` in
-`packages/protocol/src/runs.ts`; `parseElicitForm` and `ElicitBlock` in `packages/code/src`.
-
-Test: `packages/kernel/tests/unit/elicit-bridge.test.ts`;
-`packages/kernel/tests/contract/transport-codecs.test.ts`;
-`packages/kernel/tests/integration/runtime-workspace-apply.test.ts`;
-`packages/code/tests/unit/elicitation.test.ts`;
-`packages/code/tests/integration/elicit-block-render.test.tsx`.
-
-## 4. Retained host paths
-
-Every canonical workspace has a `runtimes/` subtree in its existing machine-state root. It contains
-a registry plus one encoded generation directory. A generation owns its temporary workspace copy,
-baseline manifest, append-only journal and lifecycle record. The builders encode runtime IDs and
-place every result outside the source checkout; no consumer spells these paths independently.
+One container generation is reused for compatible runs in the same live kernel. On orderly kernel
+or TUI close, Clarvis closes preview listeners, stops that exact generation and force-removes its
+container. A failed removal remains retryable. A host crash can still leave an engine container;
+external orphan reconciliation is not implemented. Docker's separately labelled `/mise` volume is
+intentionally retained across container and Clarvis-session replacement for the same owner,
+project, workspace and image identity; Podman's `/mise` remains generation-local.
 
 Production: `WorkspaceStatePaths` and `workspaceStatePaths` in
-`packages/paths/src/workspace-state.ts`.
+`packages/paths/src/workspace-state.ts`; `launchIsolatedRuntime` in
+`packages/kernel/src/runtime/runtime-controller.ts`; `createRuntimeSupervisor` in
+`packages/kernel/src/runtime/supervisor.ts`; `stop` in
+`packages/kernel/src/runtime/docker-backend.ts` and
+`packages/kernel/src/runtime/podman-backend.ts`.
 
-Test: `packages/paths/tests/component/workspace-state.test.ts` (`workspaceStatePaths`).
+Test: `packages/paths/tests/component/workspace-state.test.ts` (`workspaceStatePaths`);
+`packages/kernel/tests/integration/runtime-controller.test.ts`;
+`packages/kernel/tests/unit/runtime-docker-backend.test.ts`;
+`packages/kernel/tests/unit/runtime-podman-backend.test.ts`.
 
 ## 5. Private execution and authority
 
@@ -260,15 +272,50 @@ the checksum-verified mise 2026.8.2 binary and mise's license. Node, npm, Python
 curl and archive utilities are absent from that final stage. The source-owned mise version and
 Linux amd64/arm64 SHA-256 values select one verified upstream archive in a throwaway download stage.
 Agents with `run_commands` receive a prompt explaining `mise x <tool>@<version> -- <command>`;
-installed toolchains live in the executable `/mise` tmpfs, outside both the read-only image and the
-retained workspace, and expire with the runtime. This is a developer-tool bootstrap, not a general
-system-package manager: the guest cannot mutate the read-only Debian root through `apt` or `dnf`.
+installed toolchains stay outside both the read-only root and selected workspace. Docker supplies
+`/mise` from its host-created local cache volume; Podman keeps the bounded executable tmpfs. This is
+a developer-tool bootstrap, not a general guest system-package manager: the guest cannot mutate the
+read-only Debian root through `apt` or `dnf`.
 `Containerfile.runtime-development` is the sole source-building carrier: it copies every workspace
 manifest before `bun install --frozen-lockfile`, then compiles `tooling/runtime/guest-entry.ts` to one
 standalone executable. The normal development command builds that local carrier and feeds it through
 the exact production Containerfile. Docker is the default CLI; Podman is an explicit compatible
 selector. Every mode returns the local immutable image ID, and runtime launch still occurs only from
 the separately configured local image ID.
+
+Docker recipe customization is a separate host runtime operation, not part of either release-image
+pipeline. `runtime.recipe` has the strict shape `{name, script, network?}` and is global-only with the
+rest of runtime placement. `name` is a bounded safe label, `script` must be an absolute path that
+resolves inside the global operator-owned `runtime-recipes/` directory, and build networking
+defaults to `outbound`; `internet` and arbitrary Dockerfile/engine args are not accepted. At the
+first cold Docker launch, `resolveDockerRuntimeRecipe` opens the final path without following a
+symlink, verifies its single-linked opened inode still resolves inside that directory, and captures
+a stable non-empty regular UTF-8 file no larger than 1 MiB. It hashes the captured descriptor bytes,
+then combines that digest with recipe schema/name/network, the fixed builder-policy digest and the
+inspected immutable base image ID. Changing any input selects another derived-image tag. A ready
+generation does not watch the operator script; edits are
+captured when the next cold Docker generation resolves its image.
+
+The host acquires a heartbeat-backed cross-process lease from the global runtime-recipe state tree,
+then rechecks the cache so two Clarvis processes do not both perform the normal first build. Its
+generated private context contains only `.dockerignore`, a fixed `Containerfile`, and the captured
+`recipe.sh`; it contains no workspace, settings, credentials or arbitrary Dockerfile. Proxy build
+arguments are explicitly blank. A fixed BuildKit bind mount runs the bytes with `/bin/sh -eu`, then
+removes package-manager caches in that same layer, so the recipe file itself is not copied into an
+image layer. The operator script runs as root with its configured build network and can therefore
+install system or mise content deliberately; this authority belongs to the operator who edited the
+global setting, never to the model or guest. The recipe is not a secret channel: Clarvis exposes no
+build-secret input, and credentials embedded in its bytes, commands, installed files or output may
+persist at the selected engine.
+
+The derived image inherits the minimal base and adds only layers produced by that script. Exact OCI
+labels bind the recipe schema, safe name, script digest, builder digest, cache key and base ID; the
+resolver rejects a pre-existing mismatched tag and re-inspects the completed image before returning
+its local `sha256` ID. Matching images are reused across application sessions. Recipe capture, base
+identity, build, label or retention failures use `runtime_recipe_invalid`, `runtime_recipe_failed` or
+`handshake_mismatch` and remain fail-closed; they never substitute the uncustomized base or native
+Sandbox. No recipe path publishes, pushes, commits a running guest container or changes the
+canonical released runtime image.
 
 Tag publication builds native `linux/amd64` and `linux/arm64` carrier/final pairs, pushes immutable
 per-platform identities, creates two multi-platform GHCR indexes, and emits the strict
@@ -301,6 +348,7 @@ construction in `packages/kernel/src/file-kernel.ts`;
 `installBundledAjvModules` in
 `packages/loop/src/validation/ajv.ts`; `tooling/runtime/guest-entry.ts`; both root runtime
 Containerfiles; `runtimeImageBuildPlan` in `tooling/runtime/build-image.ts`;
+`resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`;
 `createRuntimeReleaseManifest` in `tooling/runtime/release-manifest.ts`;
 `.github/workflows/release.yml`.
 
@@ -316,6 +364,8 @@ Test: `packages/kernel/tests/contract/runtime-execution-rpc.test.ts`;
 `packages/memory/tests/component/factory.test.ts` (`routes every indexer pass through the host-owned
 run executor`);
 `packages/loop/tests/architecture/eager-validator-boundary.test.ts`;
+`packages/kernel/tests/unit/runtime-recipe.test.ts`;
+`packages/kernel/tests/integration/runtime-recipe.e2e.test.ts` (explicitly gated);
 `tooling/tests/architecture/runtime-containerfiles.test.ts`;
 `tooling/tests/unit/runtime-image-build.test.ts`;
 `tooling/tests/unit/runtime-release-manifest.test.ts`;
@@ -329,8 +379,9 @@ non-terminal reconstruction checkpoint only after its complete execution record 
 the host trace store. When Memory is active, its guest lifecycle callback can request the canonical
 host `onRunEnd` only after that durable trace is readable by the host bridge; enqueueing and indexing
 stay on the host. After the guest result returns, the isolated run adapter, not the guest, writes the
-next terminal checkpoint only after session, trace, capability and workspace participants complete
-their durable commit, including the host-owned workspace review outcome.
+next terminal checkpoint only after session, trace and capability participants complete their
+durable commit. Workspace writes are already live through the direct bind and are not a staged
+terminal participant or an implied atomic transaction.
 
 Production: `appendRuntimeCheckpoint`, `loadRuntimeCheckpoint` and `settleRuntimeTerminal` in
 `packages/kernel/src/runtime/runtime-checkpoints.ts`; `createIsolatedRunExecutor` in
@@ -340,26 +391,36 @@ Test: `packages/kernel/tests/integration/runtime-checkpoints.test.ts`;
 `packages/kernel/tests/integration/isolated-run-executor.test.ts`;
 `packages/kernel/tests/integration/runtime-guest-loop.test.ts` (trace-before-memory-finish ordering).
 
-## 7. Private Git and container engines
+## 7. Workspace and container engines
 
-Git workspaces receive private objects through a temporary portable bundle, an index matching the
-captured HEAD, no alternates or remotes, and disabled local credential helpers and hooks. The
-Podman backend verifies rootless mode and the engine-resolved image digest, creates then inspects
-effective policy before attach, mounts only the retained copy, drops capabilities, applies
-no-new-privileges, selects `none` or slirp `outbound`, mounts an executable bounded `/mise` tmpfs,
-and applies configured resource limits before verifying the guest generation/image handshake. Its
-concrete CLI port requires an absolute executable, explicit connection/environment, argv execution
-and output/time bounds and is exported only from `@clarvis/kernel/local`.
+Both backends receive the same host-admitted mount specification: one read-write selected workspace
+at `/workspace`, zero or more workspace-relative read-only overlays, and the optional read-write Git
+common directory for a linked worktree. They create the container first, inspect the effective
+mount sources, destinations, types and write modes, and refuse attach if the engine widened or
+changed that set.
+
+The Podman backend additionally verifies rootless mode and the engine-resolved image digest, drops
+capabilities, applies `no-new-privileges`, selects `none` or slirp `outbound`, mounts an executable
+bounded `/mise` tmpfs, and applies configured resource limits before verifying the guest
+generation/image handshake. Its concrete CLI port requires an absolute executable, explicit
+connection/environment, argv execution and output/time bounds and is exported only from
+`@clarvis/kernel/local`.
 
 The Docker backend accepts only a Linux engine. It resolves the configured `sha256` image ID before
 creation, selects `none` or the explicit `bridge` outbound network, makes the image root filesystem
-read-only, mounts only the retained workspace, provides bounded non-executable `/tmp` and executable
-ephemeral `/mise` scratch, drops every capability, applies `no-new-privileges` and verifies the
-effective memory/process policy before attach. Docker Desktop and Colima are therefore host
-implementations of the same Docker contract; neither gains access to model credentials, which remain
-behind the host model lease. On normal shutdown each backend attempts a graceful stop and then
-requires force-removal of the exact generated container name; removal failure leaves the runtime
-record in `cleanup_pending` rather than reporting successful cleanup.
+read-only, provides bounded non-executable `/tmp`, drops every capability, applies
+`no-new-privileges` and verifies the effective memory/process policy before attach. In addition to
+the admitted binds, it mounts one Docker `local` volume at `/mise`. The host derives that volume's
+opaque name from schema, owner, project, workspace and exact image ID; it creates and re-inspects
+exact identity labels before container admission. A different workspace or image cannot reuse it.
+Docker Desktop and Colima are host implementations of the same Docker contract; neither gains
+access to model credentials, which remain behind the host model lease. The guest may mutate the
+volume, but the Clarvis host process never mounts or executes its contents; persistence carries the
+same-workspace guest tool cache across Clarvis sessions. Docker's local volume driver supplies no
+portable hard byte quota, so `storage_bytes` bounds `/tmp` and does not claim to bound `/mise` or the
+selected workspace bind. On normal shutdown each backend attempts a graceful stop and then requires
+force-removal of the exact generated container name without `--volumes`; removal failure is returned
+and a later close retries that removal.
 
 Neither backend uses host networking or publishes a container port. `createRuntimePortPreview`
 accepts only a numeric guest port and display scheme, probes the already-running guest through the
@@ -371,18 +432,19 @@ guest cannot select a host address/port, executable or engine arguments and rece
 socket. `http`, `https` and `tcp` affect only the returned URL scheme; the broker does not terminate
 TLS.
 
-Production: `createPrivateRuntimeGit` in `packages/kernel/src/runtime/private-git.ts`;
-`createPodmanRuntimeBackend` in `packages/kernel/src/runtime/podman-backend.ts`;
+Production: `createPodmanRuntimeBackend` in `packages/kernel/src/runtime/podman-backend.ts`;
 `createNodePodmanControl` in `packages/kernel/src/adapters/process/node-podman-control.ts`;
 `createDockerRuntimeBackend` in `packages/kernel/src/runtime/docker-backend.ts`;
+`resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`;
 `createNodeDockerControl` in `packages/kernel/src/adapters/process/node-docker-control.ts`;
 `createRuntimePortPreview` and `createContainerRuntimePortPreview` in
 `packages/kernel/src/runtime/port-preview.ts`; `runPreviewRelayCommand` in
 `packages/kernel/src/runtime/preview-relay.ts`.
 
-Test: `packages/kernel/tests/integration/runtime-private-git.test.ts`;
-`packages/kernel/tests/unit/runtime-podman-backend.test.ts`;
+Test: `packages/kernel/tests/unit/runtime-podman-backend.test.ts`;
 `packages/kernel/tests/unit/runtime-docker-backend.test.ts`;
+`packages/kernel/tests/unit/runtime-recipe.test.ts`;
+`packages/kernel/tests/integration/runtime-recipe.e2e.test.ts`;
 `packages/kernel/tests/integration/runtime-port-preview.test.ts`;
 `packages/kernel/tests/integration/runtime-preview-relay.test.ts`;
 `packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts` (explicitly gated live
@@ -390,113 +452,54 @@ Docker/Colima canary).
 
 ## 8. Current evidence and explicit limits
 
-The gated full current-source TUI canary passed on this macOS host through Docker Engine 29.2.1 and
-its `colima` context. It built the standalone worker, constructed the final image from the local
-carrier, and measured local image ID
-`sha256:9914c57477f53889d8032c24552253cd1d292305d2eeee16421ba055695f7065` at
-137,470,980 bytes. Opening the TUI produced no engine container. The first submission lazily created
-one generation from that exact ID with protocol revision 2, a read-only root, `Privileged=false`,
-`no-new-privileges`, every capability dropped, bridge networking, 4 GiB memory, 256 processes and
-exactly one writable bind: the retained host copy at guest `/workspace`. Its environment contained
-only image defaults plus the opaque runtime generation and image digest; no host model credential
-crossed the boundary.
+On 2026-09-06 the gated current-working-tree Docker canary passed 27 assertions in 4.86 seconds on
+this macOS host through Docker Engine 29.2.1 and the `colima` context. It used the local Linux/amd64
+protocol-revision-4 image
+`sha256:44f1d3cc338160fddc18222b9758d57a7488d2a9ec15b783ed36b07c8693a3c3`, measured at
+137,485,647 bytes and carrying mise 2026.8.2. The image's source-revision label matched
+`ad5ff4bee1197a33639f731d1304bfb4feb50b7c`; the host behavior under test came from the current
+working tree.
 
-The real guest then called the host's already-authenticated `chatgpt/gpt-5.6-terra` subscription and
-returned the independently checkable sum `121011` in the TUI. A second prompt made that model call
-guest `shell` with `mise x node@22 -- node --version`; `Review: Approval` paused at the command
-decision, one explicit `allow once` admitted it, and the transcript returned `v22.23.2`. Direct
-container canaries also reached GitHub over the default `outbound` network and returned npm 10.9.8
-from the same ephemeral mise installation. A third model turn used `monitor_start`, then
-`expose_port(9090, http)`. Clarvis returned `http://127.0.0.1:9090/`; a host request received
-`PORT_9090_E2E_OK`, and `lsof` showed only `127.0.0.1:9090` listening. `Ctrl+G` opened the independent
-Review picker and `Ctrl+E` expanded the Task editor in the same real PTY. Graceful TUI exit returned
-zero, closed the loopback listener and removed that generation's container; the retained workspace
-remained outside it.
+The canary initialized a real Git repository and linked worktree, passed the discovered Git common
+directory to the runtime, and used that selected worktree as guest `/workspace`. The guest loaded
+one host-admitted skill, received one plugin bootstrap and the host Memory seed, read a Memory
+document through the host bridge, and saw every canonical Memory read tool but no Memory mutation
+tool. Its shell attempt to overwrite `.clarvis/memory/PROFILE.md` failed, while writing
+`guest-created.txt` succeeded and the host read that exact content before runtime close. The same
+shell ran `git status` through the linked-worktree metadata and installed `is-number@7.0.0` with
+Node 24.20.0 through mise/npm over the default `outbound` network.
 
-After the final API-hygiene-only edit, the development pipeline rebuilt the worker and final image as
-`sha256:9c9db126e730dfb22f8cdb6904efc45d4bd9eb557b4a3bdb103a641447c6e71e`, still 137,470,980
-bytes with protocol revision 2. A bounded final-source TUI canary again observed no Clarvis container
-before submission, opened Review with `Ctrl+G`, expanded and collapsed the Task editor with
-`Ctrl+E`, and used the selected `chatgpt/gpt-5.6-terra` subscription through the newly created
-container to return the independently checkable sum `129481`. Normal exit returned zero and
-`docker ps -a` found no container with that generation's exact name.
+While the first synthetic host-model call was active, the host queued a steer; the guest drained it
+and the following model request contained the exact steered text. The run then started a guest HTTP
+service on 9090, exposed it through Clarvis's loopback-only preview broker, and the host fetched the
+installed dependency's manifest from the returned URL. A later model call was cancelled after it
+started; that run settled as `cancelled`, the same runtime channel remained open, and a follow-up
+completed as `docker-runtime-recovered`. Test cleanup left no container from the new generation.
 
-The first protocol-revision-3 direct runtime canary then rebuilt the development image as
-`sha256:a4ad5fa40456477373503e6d96de401bd75232065632b2618b1dcdbf3dd699de` at
-137,484,564 bytes and ran it through the same Docker 29.2.1 `colima` context. The real guest received
-an active plugin's resolved bootstrap body and loaded a second host-admitted skill through
-`load_skill` with the then-admitted overloaded `<name>/SKILL.md` plus `offset: 0` shape; neither host
-skill root appeared in the model request. It also received the host Memory seed, invoked `read_memory`,
-and observed the returned document. The model request contained all four canonical read tools and
-none of `write_memory`, `edit_memory` or `delete_memory`; successful finalization emitted the
-read-only provider's host-owned `provider-read-only` ingest result after the trace was durable.
+The engine-neutral composition test runs the real guest loop over an injected Podman control. It
+proves that active Plans and Memory roots are prepared before launch and mounted read-only beside
+workspace `.agents/skills`; the guest still receives skill and Memory content through host
+authority. A second case supplies a symlinked `.clarvis` ancestor and proves admission returns
+`unsupported_policy` before any engine call. Backend contract tests cover the exact dynamic bind
+set, linked-worktree Git mount, effective read/write inspection, and retryable removal after a stop
+or remove failure.
 
-That same canary installed `is-number@7.0.0` under Node 24.20.0 through mise and npm over the default
-`outbound` network, started a guest service on 9090, exposed it through a loopback-only host preview,
-and fetched the installed dependency's manifest through that preview. It then cancelled another run
-after its host model call had started: the run settled as `cancelled`, the runtime reported its
-channel still open, and a subsequent run on the same generation completed as
-`docker-runtime-recovered`. The test passed with 22 assertions in 10.03 seconds, and the post-test
-Docker inventory contained no `clarvis-runtime-*` container.
+The current-source `clarvis-develop` TUI was also exercised in a real PTY. At 120 by 32 cells its
+header projected Docker isolation, Off review and Memory on as separate state, the portable
+`Ctrl+S` route opened the Isolation picker with Docker selected, and that picker stated both lazy
+first-run launch and Sandbox fallback. Run controls stated that the selected workspace is mounted
+directly, host changes are immediate, outbound access is enabled, and guest services can be exposed
+to the host. At 72 by 40 cells those consequences wrapped by word and remained complete rather than
+being clipped. The final standalone rebuild completed in 2.287 seconds; its smoke passed with shell
+paint at 213 ms, complete app paint at 754 ms, and all required diagnostics settled at 917 ms.
 
-A fresh protocol-revision-3 TUI canary used current-source `clarvis-develop`, the configured
-`chatgpt/gpt-5.6-terra` subscription and a disposable workspace in a 120-by-32 real PTY. Its first
-ready frame showed `Isolation: Docker`, `Review: Off` and `Memory: on`, while the Docker inventory
-remained empty. After submission, the runtime lazily created
-`clarvis-runtime-66df1e90-f912-4b56-991c-919393978bc3` from the exact protocol-3 image above. Host
-inspection found `Privileged=false`, a read-only root, every capability dropped,
-`no-new-privileges`, bridge networking, the configured 4 GiB/256-process limits, one writable
-`/workspace` bind, and only the two opaque Clarvis runtime identities plus image mise defaults in
-its environment.
-
-The first subscription call was cancelled while visibly `thinking`; it settled as `Canceled` after
-9 seconds and returned the same TUI to `ready`. A follow-up in that session asked for the product of
-913 and 137, returned the independently checkable `125081`, and settled as `Completed` after 2
-seconds without `execution channel closed`. The same container generation stayed running across the
-boundary. Normal two-step Ctrl+C exit returned status zero; Docker then contained no
-`clarvis-runtime-*` container. The test session and its two traces were deleted, and its disposable
-workspace was removed. Captured TUI frames were labelled `initial-ready`, `cancel-active` and
-`recovered` and were inspected as rendered images as well as cell snapshots.
-
-The protocol-revision-4 direct runtime canary rebuilt the development image as
-`sha256:6110cc11af1f7fdb6078233544bdf26405babefc7d167de8eafd6641bbe54a6e` at
-137,485,495 bytes and admitted it through Docker Engine 29.2.1 on the same `colima` context. While
-the first model call remained active, the host queued `DOCKER_RUNTIME_STEER`; the guest drained and
-acknowledged it, and the next model request contained that exact text. The same run exposed only the
-name-only `load_skill` schema plus the distinct `read_skill_resource` tool, loaded a host-admitted
-skill, read host-owned Memory without any mutation tool, installed `is-number@7.0.0` through mise
-and npm, and served its manifest through a loopback preview. Cancellation again left the private
-channel reusable for a completed follow-up. The canary passed 25 assertions in 10.29 seconds and its
-post-test Docker inventory contained no `clarvis-runtime-*` container.
-
-The matching current-source TUI canary then ran `clarvis-develop` in a 120-by-32 real PTY against
-the configured `chatgpt/gpt-5.6-terra` subscription. The ready frame showed `Isolation: Docker`
-before any engine container existed. Its first run exposed a provider-accepted strict schema,
-called `load_skill` with exactly `{name: "opentui"}`, and returned the body's `OpenTUI Skill`
-heading. During a later 30-second guest shell call, a second user message appeared first as
-`Steer queued`, then `Steer delivered`; the durable trace recorded `user_steering` at iteration 2
-and the same execution completed as `STEER_CONFIRMED_V4` after 36 seconds. Docker inspection kept
-the one container `clarvis-runtime-f1fdfb7b-8667-4e81-9967-44fc0fa5043e` on the final image digest
-throughout.
-
-That TUI session then cancelled another run, returned to `ready`, and completed the independently
-checkable follow-up `321 * 654` as `209934` in 3 seconds without `run cannot be steered` or
-`execution channel closed`; Docker still reported the same container generation. Normal two-step
-Ctrl+C exit returned zero and removed that exact container. The two disposable Clarvis sessions and
-their eight traces were deleted, as were their empty temporary workspaces. The retained PTY frames
-were rendered and inspected at the delivered-steer and recovered-after-cancel states.
-
-Together these canaries prove the then-current-source macOS/Colima Docker journey, lazy launch,
-subscription model broker, interactive Approval guard, strict skill schemas, mid-run steering, mise
-tool execution, outbound connectivity, loopback preview, normal container cleanup, host-projected
-plugin bootstrap and skill bodies, read-only Memory bridging, and cancellation recovery without
-losing the execution channel. They do not prove workspace-change settlement through the UI,
-crash-orphan cleanup, native Linux or Linux/arm64 execution, Docker Desktop, Podman, Windows,
-another engine version, or execution of bundled skill helpers.
-
-Live Podman remains unavailable because its freshly created AppleHV machine failed before the engine
-booted. `internet` is refused because internet-only egress enforcement is not implemented; only
-`none` and the explicitly broader `outbound` can be admitted. External orphan cleanup after
-simultaneous host failure, macOS Podman Machine share qualification, Windows support, released GHCR
-publication, remote attestation verification, and measured resource/performance claims remain
-unavailable rather than silently weakened.
+This evidence uses a synthetic host LLM for the current direct-workspace runtime canary; it does not
+re-prove the same path with the operator's subscription. It covers Docker through one Colima
+Linux/amd64 environment, not Docker Desktop, native Linux, Linux/arm64, Windows or live Podman. The
+post-test engine inventory still contained an older exited protocol-3 Clarvis container, which
+demonstrates the documented limit: external reconciliation after an abrupt host failure is not
+implemented. Docker's persistent `/mise` volume and the selected workspace bind have no portable
+hard `storage_bytes` quota. The read-write Git common mount grants repository-wide metadata, and
+an outbound guest can transmit readable workspace content or reach host/LAN services. Public-only
+`internet` enforcement remains unavailable and is refused; only `none` and the broader
+`outbound` policy are admitted.

@@ -100,8 +100,6 @@ export function createIsolatedRunExecutor(options: {
     runId: string,
     value: unknown,
   ) => boolean | Promise<boolean>;
-  /** Performs host-only retained-workspace review before terminal durability. */
-  readonly settleWorkspace: (args: RunExecutorArgs, runId: string) => Promise<void>;
 }): RunExecutor {
   const pollIntervalMs = Math.max(5, Math.min(250, options.pollIntervalMs ?? 25));
   return async (args) => {
@@ -203,7 +201,6 @@ export function createIsolatedRunExecutor(options: {
           code: "unavailable",
         });
       }
-      await options.settleWorkspace(args, runId);
       await settleRuntimeTerminal({
         workspaceRoot: options.workspaceRoot,
         checkpoint: {

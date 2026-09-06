@@ -1,3 +1,4 @@
+import { isAbsolute } from "node:path";
 import type { CapabilitySettingsSpec } from "@clarvis/capability";
 import { z } from "zod";
 
@@ -28,6 +29,18 @@ const defaultedLimits = limits
     ...value,
   }));
 
+const runtimeRecipe = z
+  .object({
+    name: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/u),
+    script: z
+      .string()
+      .min(1)
+      .max(4_096)
+      .refine((value) => isAbsolute(value) && !value.includes("\0")),
+    network: z.enum(["none", "outbound"]).default("outbound"),
+  })
+  .strict();
+
 /** Strict host-owned runtime selection persisted in settings.json. */
 export const runtimeSettingsSchema = z.discriminatedUnion("backend", [
   z.object({ backend: z.literal("native") }).strict(),
@@ -43,6 +56,7 @@ export const runtimeSettingsSchema = z.discriminatedUnion("backend", [
       executable: z.string().min(1).optional(),
       connection: z.string().min(1).optional(),
       fallback: z.enum(["sandbox", "fail"]).default("sandbox"),
+      recipe: runtimeRecipe.optional(),
     })
     .strict(),
   z

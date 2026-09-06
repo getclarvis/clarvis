@@ -5,7 +5,7 @@ import type {
   RuntimePlacementNotice,
 } from "@clarvis/kernel/bootstrap";
 import { ownerFromWorkspace } from "@clarvis/paths";
-import type { KernelClient, RuntimeStatus, WorkspaceRef } from "@clarvis/protocol";
+import type { KernelClient, WorkspaceRef } from "@clarvis/protocol";
 import { productVersion } from "../cli-args.ts";
 
 type FileKernelFactory = typeof CreateFileKernel;
@@ -17,8 +17,8 @@ interface ExtensionProfileDriftChannel {
 }
 
 interface RuntimePlacementChannel {
-  latest?: { status: RuntimeStatus; message?: string };
-  listeners: Set<(notice: { status: RuntimeStatus; message?: string }) => void>;
+  latest?: RuntimePlacementNotice;
+  listeners: Set<(notice: RuntimePlacementNotice) => void>;
 }
 
 async function loadFileKernelFactory(): Promise<FileKernelFactory> {
@@ -62,6 +62,11 @@ export class WorkspaceClientManager {
     const runtimePlacement: RuntimePlacementChannel = { listeners: new Set() };
     const originalExtensionProfileDrift = options.onExtensionProfileDrift;
     const originalRuntimePlacement = options.onRuntimePlacement;
+    const publishRuntimePlacement = (notice: RuntimePlacementNotice): void => {
+      runtimePlacement.latest = notice;
+      originalRuntimePlacement?.(notice);
+      for (const listener of runtimePlacement.listeners) listener(notice);
+    };
     const resolved = {
       ...options,
       runtimeFactory:
@@ -71,6 +76,14 @@ export class WorkspaceClientManager {
             const local = await import("@clarvis/kernel/local");
             if (input.settings.backend !== "docker") return local.createLocalPodmanRuntime(input);
             return local.createLocalDockerRuntime(input, {
+              onRecipePreparation: (name) => {
+                const status = runtimePlacement.latest?.status;
+                if (status === undefined) return;
+                publishRuntimePlacement({
+                  status,
+                  message: `Preparing Docker runtime recipe '${name}' for first use…`,
+                });
+              },
               resolveImage: async () => {
                 const { resolveClarvisRuntimeImage } = await import("./runtime-image.ts");
                 return resolveClarvisRuntimeImage({ currentVersion: productVersion() });
@@ -84,11 +97,7 @@ export class WorkspaceClientManager {
         originalExtensionProfileDrift?.(notice);
         for (const listener of extensionProfileDrift.listeners) listener(notice);
       },
-      onRuntimePlacement: (notice: RuntimePlacementNotice): void => {
-        runtimePlacement.latest = notice;
-        originalRuntimePlacement?.(notice);
-        for (const listener of runtimePlacement.listeners) listener(notice);
-      },
+      onRuntimePlacement: publishRuntimePlacement,
     };
     const kernel = await createFileKernel(resolved);
     runtimePlacement.latest = { status: kernel.runtime };
@@ -136,9 +145,7 @@ export class WorkspaceClientManager {
   }
 
   /** Subscribe to lazy runtime placement transitions, replaying current placement. */
-  subscribeRuntimePlacement(
-    listener: (notice: { status: RuntimeStatus; message?: string }) => void,
-  ): () => void {
+  subscribeRuntimePlacement(listener: (notice: RuntimePlacementNotice) => void): () => void {
     if (this.closed) return () => {};
     this.runtimePlacement.listeners.add(listener);
     if (this.runtimePlacement.latest !== undefined) listener(this.runtimePlacement.latest);

@@ -74,17 +74,11 @@ describe("workspaceStatePaths", () => {
       p.extensionProfileSelectionFile,
       p.runsDir,
       p.runtimesDir,
-      p.runtimeRegistryFile,
       p.runDir("run/with separators"),
       p.runTempDir("run/with separators"),
       p.runtimeDir("runtime/with separators"),
-      p.runtimeWorkspaceDir("runtime/with separators"),
-      p.runtimeBaselineFile("runtime/with separators"),
-      p.runtimeJournalFile("runtime/with separators"),
       p.runtimeCheckpointsDir("runtime/with separators"),
       p.runtimeCheckpointFile("runtime/with separators", "run/with separators"),
-      p.runtimeRecordFile("runtime/with separators"),
-      p.runtimeTransactionDir("runtime/with separators", "change/with separators"),
       p.monitorSidecar("m"),
       p.monitorLog("m"),
       p.monitorExit("m"),
@@ -118,23 +112,15 @@ describe("workspaceStatePaths", () => {
     expect(p.extensionProfileSelectionFile).toBe(join(p.localDir, "extension-profile.json"));
     expect(p.runsDir).toBe(join(p.localDir, "runs"));
     expect(p.runtimesDir).toBe(join(p.root, "runtimes"));
-    expect(p.runtimeRegistryFile).toBe(join(p.runtimesDir, "registry.json"));
     expect(p.runDir("run/with separators")).toBe(
       join(p.runsDir, ownerSegment("run/with separators")),
     );
     expect(p.runTempDir("run/with separators")).toBe(join(p.runDir("run/with separators"), "tmp"));
     const runtime = p.runtimeDir("runtime/with separators");
     expect(runtime).toBe(join(p.runtimesDir, ownerSegment("runtime/with separators")));
-    expect(p.runtimeWorkspaceDir("runtime/with separators")).toBe(join(runtime, "workspace"));
-    expect(p.runtimeBaselineFile("runtime/with separators")).toBe(join(runtime, "baseline.json"));
-    expect(p.runtimeJournalFile("runtime/with separators")).toBe(join(runtime, "journal.jsonl"));
     expect(p.runtimeCheckpointsDir("runtime/with separators")).toBe(join(runtime, "checkpoints"));
     expect(p.runtimeCheckpointFile("runtime/with separators", "run/with separators")).toBe(
       join(runtime, "checkpoints", `${ownerSegment("run/with separators")}.json`),
-    );
-    expect(p.runtimeRecordFile("runtime/with separators")).toBe(join(runtime, "runtime.json"));
-    expect(p.runtimeTransactionDir("runtime/with separators", "change/with separators")).toBe(
-      join(runtime, "transactions", ownerSegment("change/with separators")),
     );
   });
 

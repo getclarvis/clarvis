@@ -1,10 +1,11 @@
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it } from "bun:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadEnv, type ExecutionRecord, type LLMProvider } from "@clarvis/capability";
 import { HOME_ENV } from "@clarvis/paths";
+import { createConnectionManager, defaultMCPClientFactory } from "@clarvis/mcp-client";
 import type { Memory } from "@clarvis/memory";
 import {
   MEMORY_READ_TOOL_NAMES,
@@ -16,6 +17,8 @@ import {
 import type { SkillContent, SkillInfo } from "@clarvis/skills";
 import type { TraceStore } from "@clarvis/trace";
 import type { ExecuteRunDeps } from "@clarvis/loop";
+import { createPlanStore, type PlanFactory } from "@clarvis/plan";
+import { createInMemoryPlanRepository } from "@clarvis/plan/testing";
 import {
   createGuestLoopExecutor,
   RUNTIME_PROTOCOL_REVISION,
@@ -24,6 +27,12 @@ import {
   type PodmanControl,
 } from "../../src/index.ts";
 import { createLocalPodmanRuntime } from "../../src/local.ts";
+import {
+  inspectReservedWorkspacePath,
+  modelDestination,
+  validElicitArguments,
+  validPreviewArguments,
+} from "../../src/runtime/local-podman-runtime.ts";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -62,15 +71,160 @@ function traceStore(): TraceStore {
 }
 
 describe("local Podman runtime composition", () => {
+  it("keeps reserved paths and host capability envelopes closed", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clarvis-local-runtime-policy-"));
+    directories.push(root);
+    const workspaceRoot = join(root, "workspace");
+    await mkdir(workspaceRoot);
+
+    await expect(inspectReservedWorkspacePath(workspaceRoot, workspaceRoot)).rejects.toMatchObject({
+      code: "unsupported_policy",
+      message: expect.stringContaining("outside the selected workspace"),
+    });
+    await expect(
+      inspectReservedWorkspacePath(join(workspaceRoot, "invalid\0path"), workspaceRoot),
+    ).rejects.toMatchObject({
+      code: "unsupported_policy",
+      message: expect.stringContaining("could not inspect"),
+    });
+    await writeFile(join(workspaceRoot, ".agents"), "not a directory");
+    await expect(
+      inspectReservedWorkspacePath(join(workspaceRoot, ".agents", "skills"), workspaceRoot),
+    ).rejects.toMatchObject({
+      code: "unsupported_policy",
+      message: expect.stringContaining("regular file or directory"),
+    });
+
+    expect(validElicitArguments({ params: {} })).toBe(true);
+    expect(validElicitArguments({ params: {}, timeoutMs: 1 })).toBe(true);
+    expect(validElicitArguments({ params: {}, unexpected: true })).toBe(false);
+    expect(validElicitArguments({ params: null })).toBe(false);
+    expect(validElicitArguments([])).toBe(false);
+    expect(validPreviewArguments({ port: 9090 })).toBe(true);
+    expect(validPreviewArguments({ port: 9090, protocol: "http" })).toBe(true);
+    expect(validPreviewArguments({ port: 0 })).toBe(false);
+    expect(validPreviewArguments({ port: 65_536 })).toBe(false);
+    expect(validPreviewArguments({ port: 9090, protocol: "udp" })).toBe(false);
+    expect(validPreviewArguments({ port: 9090, host: "0.0.0.0" })).toBe(false);
+    expect(validPreviewArguments(null)).toBe(false);
+
+    expect(
+      modelDestination(
+        {
+          providers: [
+            {
+              name: "custom",
+              kind: "openai-compatible",
+              base_url: "https://models.example.test/v1",
+            },
+          ],
+        },
+        "custom",
+      ).href,
+    ).toBe("https://models.example.test/v1");
+    expect(
+      modelDestination({ providers: [{ name: "openai", kind: "openai" }] }, "openai").href,
+    ).toBe("https://api.openai.com/v1");
+    expect(() =>
+      modelDestination({ providers: [{ name: "unknown", kind: "unknown" }] }, "unknown"),
+    ).toThrow("destination is not fixed");
+  });
+
+  it("rejects a symbolic-link ancestor before giving it to the engine", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clarvis-local-runtime-link-"));
+    directories.push(root);
+    const workspaceRoot = join(root, "workspace");
+    const externalClarvisRoot = join(root, "external-clarvis");
+    await mkdir(workspaceRoot);
+    await mkdir(externalClarvisRoot);
+    await symlink(
+      externalClarvisRoot,
+      join(workspaceRoot, ".clarvis"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    let engineCalls = 0;
+    const control: PodmanControl = {
+      async run() {
+        engineCalls += 1;
+        throw new Error("the engine must not be reached");
+      },
+      attach() {
+        throw new Error("the engine must not be reached");
+      },
+    };
+    const env = loadEnv({});
+    const llm: LLMProvider = {
+      async call() {
+        throw new Error("the model must not be reached");
+      },
+    };
+    const deps: ExecuteRunDeps = {
+      env,
+      llm,
+      connections: createConnectionManager({
+        workspace: workspaceRoot,
+        factory: defaultMCPClientFactory,
+        connectTimeoutMs: env.CLARVIS_MCP_CONNECT_TIMEOUT_MS,
+        callTimeoutMs: env.CLARVIS_MCP_TOOL_CALL_TIMEOUT_MS,
+      }),
+      traceStore: traceStore(),
+      workspaceRoot,
+    };
+
+    await expect(
+      createLocalPodmanRuntime(
+        {
+          generation: "generation-linked-control-root",
+          ownerId: "owner",
+          project: { id: "project" },
+          workspace: { id: "workspace", projectId: "project", label: "main", kind: "primary" },
+          workspaceRoot,
+          configurationRevision: "config",
+          extensionRevision: "extensions",
+          deps,
+          settings: {
+            backend: "podman",
+            image_digest: `sha256:${"d".repeat(64)}`,
+            network: "none",
+            executable: "/usr/bin/podman",
+            connection: "local",
+            limits: {
+              cpu_count: 1,
+              memory_bytes: 64 * 1024 * 1024,
+              process_count: 32,
+              output_bytes: 1024 * 1024,
+              storage_bytes: 128 * 1024 * 1024,
+            },
+          },
+        },
+        { control },
+      ),
+    ).rejects.toMatchObject({
+      code: "unsupported_policy",
+      message: expect.stringContaining("must not traverse symbolic links"),
+    });
+    expect(engineCalls).toBe(0);
+  });
+
   it("runs the real guest loop and settles host trace/checkpoint state", async () => {
     const root = await mkdtemp(join(tmpdir(), "clarvis-local-runtime-"));
     directories.push(root);
     const workspaceRoot = join(root, "workspace");
     await mkdir(workspaceRoot);
     await writeFile(join(workspaceRoot, "README.md"), "fixture\n");
+    const plansRoot = join(workspaceRoot, ".clarvis", "plans");
+    const memoryRoot = join(workspaceRoot, ".clarvis", "memory");
+    const sharedSkillsRoot = join(workspaceRoot, ".agents", "skills");
+    await mkdir(sharedSkillsRoot, { recursive: true });
     const digest = `sha256:${"d".repeat(64)}`;
     const generation = "generation-local-1";
-    let retainedRoot = "";
+    let mountedRoot = "";
+    let effectiveMounts: Array<{
+      Type: "bind";
+      Source: string;
+      Destination: string;
+      RW: boolean;
+    }> = [];
     let guest: ReturnType<typeof serveExecutionWorker> | undefined;
     const control: PodmanControl = {
       async run(args) {
@@ -99,8 +253,23 @@ describe("local Podman runtime composition", () => {
           };
         }
         if (args[0] === "create") {
-          const mount = args[args.indexOf("--mount") + 1]!;
-          retainedRoot = mount.match(/source=([^,]+)/u)?.[1] ?? "";
+          effectiveMounts = args.flatMap((value, index) => {
+            if (value !== "--mount") return [];
+            const mount = args[index + 1] ?? "";
+            const source = mount.match(/source=([^,]+)/u)?.[1];
+            const destination = mount.match(/target=([^,]+)/u)?.[1];
+            if (source === undefined || destination === undefined) return [];
+            return [
+              {
+                Type: "bind" as const,
+                Source: source,
+                Destination: destination,
+                RW: !mount.includes("ro=true"),
+              },
+            ];
+          });
+          mountedRoot =
+            effectiveMounts.find((mount) => mount.Destination === "/workspace")?.Source ?? "";
           return { exitCode: 0, stdout: "container-id", stderr: "" };
         }
         if (args[0] === "container") {
@@ -110,7 +279,7 @@ describe("local Podman runtime composition", () => {
               {
                 HostConfig: { Privileged: false, NetworkMode: "none" },
                 Config: { Labels: { "io.clarvis.generation": generation } },
-                Mounts: [{ Source: retainedRoot, Destination: "/workspace", RW: true }],
+                Mounts: effectiveMounts,
               },
             ]),
             stderr: "",
@@ -129,7 +298,7 @@ describe("local Podman runtime composition", () => {
           input: hostToGuest,
           output: guestToHost,
           executor: createGuestLoopExecutor({
-            workspaceRoot: retainedRoot,
+            workspaceRoot: mountedRoot,
             scratchRoot: join(root, "guest-scratch"),
           }),
         });
@@ -195,6 +364,14 @@ describe("local Podman runtime composition", () => {
       async stop() {},
       subscribeToRun: () => () => undefined,
     };
+    const planStore = createPlanStore({ repository: createInMemoryPlanRepository() });
+    const planFactory: PlanFactory = {
+      storeFor: async () => ({
+        key: "memory:local-runtime-fixture",
+        providerKind: "memory",
+        store: planStore,
+      }),
+    };
     const store = traceStore();
     const deps = { env: loadEnv({}), llm, traceStore: store } as ExecuteRunDeps;
     const runtime = await createLocalPodmanRuntime(
@@ -217,6 +394,7 @@ describe("local Podman runtime composition", () => {
         skillBootstraps: () => [
           { plugin: "runtime-tools", skill: skillInfo.name, roots: [skillRoot] },
         ],
+        planFactory,
         memoryFactory,
         settings: {
           backend: "podman",
@@ -235,15 +413,32 @@ describe("local Podman runtime composition", () => {
       },
       { control, roots: { env: { [HOME_ENV]: join(root, "home") } } },
     );
+    expect(runtime.closed).toBe(false);
+    expect(mountedRoot).toBe(workspaceRoot);
+    expect(effectiveMounts).toContainEqual({
+      Type: "bind",
+      Source: plansRoot,
+      Destination: "/workspace/.clarvis/plans",
+      RW: false,
+    });
+    expect(effectiveMounts).toContainEqual({
+      Type: "bind",
+      Source: memoryRoot,
+      Destination: "/workspace/.clarvis/memory",
+      RW: false,
+    });
+    expect(effectiveMounts).toContainEqual({
+      Type: "bind",
+      Source: sharedSkillsRoot,
+      Destination: "/workspace/.agents/skills",
+      RW: false,
+    });
 
     try {
       const capabilityEvents: unknown[] = [];
       const outcome = await runtime.executeRun({
         owner: "owner",
         deps,
-        hostElicit: async () => {
-          throw new Error("unchanged workspace must not elicit");
-        },
         rawBody: {
           execution_id: "exec_local_1",
           messages: [{ role: "user", content: "hi" }],
@@ -283,9 +478,6 @@ describe("local Podman runtime composition", () => {
         runtime.executeRun({
           owner: "owner",
           deps,
-          hostElicit: async () => {
-            throw new Error("unchanged workspace must not elicit");
-          },
           rawBody: {
             execution_id: "exec_local_custom",
             messages: [{ role: "user", content: "hi" }],
@@ -313,6 +505,7 @@ describe("local Podman runtime composition", () => {
       ).resolves.toMatchObject({ executionId: "exec_local_custom" });
     } finally {
       await runtime.close();
+      expect(runtime.closed).toBe(true);
     }
   });
 });

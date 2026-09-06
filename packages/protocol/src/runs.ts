@@ -680,25 +680,6 @@ export interface ElicitationCommandDetail {
   warning?: string;
 }
 
-/** One host-scanned entry in an isolated workspace merge review. */
-export interface WorkspaceMergeChangeDetail {
-  path: string;
-  action: "add" | "modify" | "delete";
-  type: "file" | "symlink";
-  mode: number;
-  size?: number;
-  digest?: string;
-  target?: string;
-}
-
-/** Typed authority bound to a host-owned isolated workspace change set. */
-export interface WorkspaceMergeElicitationDetail {
-  change_set_id: string;
-  baseline_revision: string;
-  content_digest: string;
-  changes: WorkspaceMergeChangeDetail[];
-}
-
 /** Server → client question raised during a run. */
 export interface ElicitationRequest {
   id: string;
@@ -706,18 +687,11 @@ export interface ElicitationRequest {
   /**
    * Why the run is asking: `ask_user` (a free question), `guard_confirm` (a
    * command awaiting approval), `plan_review` (a proposed plan awaiting
-   * approval), `workflow_review` (an installed workflow preflight), or
-   * `workspace_merge` (all validated changes from an isolated runtime).
+   * approval), or `workflow_review` (an installed workflow preflight).
    * Open-ended (`string & {}`) so a kernel may add kinds without a
    * protocol bump.
    */
-  kind:
-    | "ask_user"
-    | "guard_confirm"
-    | "plan_review"
-    | "workflow_review"
-    | "workspace_merge"
-    | (string & {});
+  kind: "ask_user" | "guard_confirm" | "plan_review" | "workflow_review" | (string & {});
   prompt: string;
   schema?: JsonSchema;
   /**
@@ -725,7 +699,7 @@ export interface ElicitationRequest {
    * directly (e.g. as highlighted code) and never parse `prompt`, which stays
    * the human-readable fallback.
    */
-  detail?: ElicitationCommandDetail | WorkspaceMergeElicitationDetail;
+  detail?: ElicitationCommandDetail;
 }
 
 /** Client answer to a pending {@link ElicitationRequest}. */

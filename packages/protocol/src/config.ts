@@ -50,6 +50,8 @@ export type RuntimeConfig =
       connection?: string;
       /** Operational launch failures use the required native sandbox by default. */
       fallback?: "sandbox" | "fail";
+      /** Optional operator-owned, content-addressed first-use image customization. */
+      recipe?: RuntimeRecipeConfig;
     }
   | {
       backend: "podman";
@@ -67,6 +69,16 @@ export interface RuntimeLimitsConfig {
   process_count: number;
   output_bytes: number;
   storage_bytes: number;
+}
+
+/** Operator-owned Docker image customization captured and run only by the host. */
+export interface RuntimeRecipeConfig {
+  /** Stable, filesystem-safe label used only for operator diagnostics. */
+  name: string;
+  /** Absolute host path under the operator's global runtime recipe directory. */
+  script: string;
+  /** Network available only while building the derived image. */
+  network?: "none" | "outbound";
 }
 
 /** One configured LLM / completion provider. */

@@ -14,9 +14,15 @@ const spec: RuntimeLaunchSpec = {
   generation: "runtime-1",
   ownerId: "owner-1",
   project: { id: "project-1" },
-  workspace: { id: "workspace-1", projectId: "project-1", label: "primary", kind: "primary" },
-  sourceWorkspaceRoot: "/work/source",
-  retainedWorkspaceRoot: "/state/runtime/workspace",
+  workspace: {
+    id: "workspace-1",
+    projectId: "project-1",
+    label: "feature",
+    kind: "external_worktree",
+  },
+  workspaceRoot: "/work/tree",
+  readOnlyWorkspacePaths: ["/work/tree/.clarvis/memory"],
+  gitCommonDir: "/repo/.git",
   imageDigest: digest,
   configurationRevision: "config-1",
   extensionRevision: "extensions-1",
@@ -37,11 +43,13 @@ function fakeControl(
     readonly imageDigest?: string;
     readonly handshakeDigest?: string;
     readonly protocolRevision?: string;
+    readonly rmFailures?: number;
   } = {},
 ) {
   const calls: readonly string[][] & string[][] = [];
   let guest: ReturnType<typeof createExecutionPeer> | undefined;
   let resolveExit: ((code: number | null) => void) | undefined;
+  let rmAttempts = 0;
   const control: PodmanControl = {
     async run(args) {
       calls.push([...args]);
@@ -81,8 +89,21 @@ function fakeControl(
               Config: { Labels: { "io.clarvis.generation": spec.generation } },
               Mounts: [
                 {
-                  Source: spec.retainedWorkspaceRoot,
+                  Type: "bind",
+                  Source: spec.workspaceRoot,
                   Destination: "/workspace",
+                  RW: true,
+                },
+                {
+                  Type: "bind",
+                  Source: spec.readOnlyWorkspacePaths[0],
+                  Destination: "/workspace/.clarvis/memory",
+                  RW: false,
+                },
+                {
+                  Type: "bind",
+                  Source: spec.gitCommonDir,
+                  Destination: spec.gitCommonDir,
                   RW: true,
                 },
               ],
@@ -90,6 +111,9 @@ function fakeControl(
           ]),
           stderr: "",
         };
+      }
+      if (args[0] === "rm" && rmAttempts++ < (overrides.rmFailures ?? 0)) {
+        return { exitCode: 1, stdout: "", stderr: "busy" };
       }
       return { exitCode: 0, stdout: "", stderr: "" };
     },
@@ -156,8 +180,12 @@ describe("Podman runtime backend", () => {
     expect(fake.calls[2]).toContain("no-new-privileges");
     expect(fake.calls[2]).toContain(`/mise:rw,nosuid,nodev,exec,size=${spec.limits.storageBytes}`);
     expect(fake.calls[2]).toContain(
-      `type=bind,source=${spec.retainedWorkspaceRoot},target=/workspace,rw=true`,
+      `type=bind,source=${spec.workspaceRoot},target=/workspace,rw=true`,
     );
+    expect(fake.calls[2]).toContain(
+      "type=bind,source=/work/tree/.clarvis/memory,target=/workspace/.clarvis/memory,ro=true",
+    );
+    expect(fake.calls[2]).toContain("type=bind,source=/repo/.git,target=/repo/.git,rw=true");
     await expect(session.startRun("run-1", {})).resolves.toEqual({
       runId: "run-1",
       status: "done",
@@ -192,6 +220,19 @@ describe("Podman runtime backend", () => {
       code: "unavailable",
     });
     await session.stop();
+    fake.close();
+  });
+
+  it("retries container removal without repeating guest shutdown", async () => {
+    const fake = fakeControl({ rmFailures: 1 });
+    const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+    await backend.inspect();
+    const session = await backend.start(spec);
+    await expect(session.stop()).rejects.toThrow("podman rm failed");
+    expect(session.closed).toBe(true);
+    await expect(session.stop()).resolves.toBeUndefined();
+    expect(fake.calls.filter((call) => call[0] === "stop")).toHaveLength(1);
+    expect(fake.calls.filter((call) => call[0] === "rm")).toHaveLength(2);
     fake.close();
   });
 
@@ -357,7 +398,19 @@ describe("Podman runtime backend", () => {
                 HostConfig: { Privileged: false, NetworkMode: "slirp4netns" },
                 Config: { Labels: { "io.clarvis.generation": spec.generation } },
                 Mounts: [
-                  { Source: spec.retainedWorkspaceRoot, Destination: "/workspace", RW: true },
+                  { Type: "bind", Source: spec.workspaceRoot, Destination: "/workspace", RW: true },
+                  {
+                    Type: "bind",
+                    Source: spec.readOnlyWorkspacePaths[0],
+                    Destination: "/workspace/.clarvis/memory",
+                    RW: false,
+                  },
+                  {
+                    Type: "bind",
+                    Source: spec.gitCommonDir,
+                    Destination: spec.gitCommonDir,
+                    RW: true,
+                  },
                 ],
               },
             ]),

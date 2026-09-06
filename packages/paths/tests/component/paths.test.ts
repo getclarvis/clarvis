@@ -52,6 +52,7 @@ describe("globalPaths", () => {
     expect(p.subscriptionsFile).toBe(join(GLOBAL, "subscriptions.json"));
     expect(p.pluginsDir).toBe(join(GLOBAL, "plugins"));
     expect(p.extensionProfilesDir).toBe(join(GLOBAL, "extension-profiles"));
+    expect(p.runtimeRecipesDir).toBe(join(GLOBAL, "runtime-recipes"));
     expect(p.workspaceTrustFile).toBe(join(GLOBAL, "workspace-trust.json"));
     expect(p.skillsDir).toBe(join(GLOBAL, "skills"));
     expect(p.guardJudgeFile).toBe(join(GLOBAL, "guard-judge.md"));
@@ -72,6 +73,10 @@ describe("globalPaths", () => {
     expect(p.extensionProfileSelectionFile).toBe(join(p.state, "extension-profile.json"));
     expect(p.modelsCacheFile).toBe(join(p.cache, "models-dev.json"));
     expect(p.updateCheckCacheFile).toBe(join(p.cache, "update-check.json"));
+    expect(p.runtimeRecipeStateDir).toBe(join(p.state, "runtime-recipes"));
+    expect(p.runtimeRecipeLeaseFile("sha256:recipe")).toBe(
+      join(p.runtimeRecipeStateDir, ownerSegment("sha256:recipe") + ".lock"),
+    );
   });
 
   test("agentFile appends the markdown extension", () => {

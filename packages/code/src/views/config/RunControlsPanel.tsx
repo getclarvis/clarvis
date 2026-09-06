@@ -304,7 +304,7 @@ export function RunControlsPanel(
 
   function body(): JSX.Element {
     return (
-      <box flexDirection="column">
+      <box flexDirection="column" width="100%" minWidth={0}>
         <StatusRow
           label="mutation"
           text={`Isolation saves globally ${glyph("separator")} review/plans save to ${host.scope()} ${glyph("separator")} memory stays in this session`}
@@ -323,9 +323,15 @@ export function RunControlsPanel(
         />
         <Show when={sel() === 0}>
           <For each={safetyDescription(state())}>
-            {(line) => <text fg={tokens.muted}>{glyph("bullet") + " " + line}</text>}
+            {(line) => (
+              <text fg={tokens.muted} wrapMode="word">
+                {glyph("bullet") + " " + line}
+              </text>
+            )}
           </For>
-          <text fg={sandboxLine().fg}>{sandboxLine().text}</text>
+          <text fg={sandboxLine().fg} wrapMode="word">
+            {sandboxLine().text}
+          </text>
         </Show>
         <SettingRow
           setting={{

@@ -581,22 +581,18 @@ serializing a definition, settings, or secrets (`packages/protocol/src/extension
 | Type | Shape | Declaration |
 |---|---|---|
 | `ElicitationCommandDetail` | `{ command: string; cwd: string; reason: string; warning? }` | `ElicitationCommandDetail` |
-| `WorkspaceMergeElicitationDetail` | `{ change_set_id; baseline_revision; content_digest; changes[] }` | `WorkspaceMergeElicitationDetail` |
-| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; detail?: ElicitationCommandDetail \| WorkspaceMergeElicitationDetail }` | `ElicitationRequest` |
+| `ElicitationRequest` | `{ id; execution_id; kind; prompt; schema?: JsonSchema; detail?: ElicitationCommandDetail }` | `ElicitationRequest` |
 | `ElicitationResponse` | `{ id; action: "accept" \| "decline" \| "cancel"; content? }` | `ElicitationResponse` |
 
 `ElicitationRequest.kind` includes `"ask_user"` (a free question), `"guard_confirm"` (a
 command awaiting approval), `"plan_review"` (a proposed plan awaiting approval), `"workflow_review"`
-(an installed workflow preflight), and `"workspace_merge"` (one host-owned complete isolated-copy
-review) — plus a deliberately open `(string & {})` escape, "so a kernel may
+(an installed workflow preflight) — plus a deliberately open `(string & {})` escape, "so a kernel may
 add kinds without a protocol bump" (`ElicitationRequest.kind` in `packages/protocol/src/runs.ts`).
 This is structurally the same open/closed pattern already noted for `capability_event` in §5
 invariant 4, applied to elicitation instead of to the `RunEvent` union itself.
 `ElicitationCommandDetail` exists so a client "render[s] this directly
 (e.g. as highlighted code) and never parse[s] `prompt`, which stays the human-readable fallback"
 (`ElicitationCommandDetail` in `packages/protocol/src/runs.ts`).
-`WorkspaceMergeElicitationDetail` supplies the same parse-nothing rule for isolated changes: clients
-read its opaque revisions and exhaustive typed change list rather than interpreting prompt prose.
 
 ### 3.10 `ConfigService` data shapes I: settings and sandbox (`config.ts`)
 
@@ -604,7 +600,7 @@ read its opaque revisions and exhaustive typed change list rather than interpret
 |---|---|---|
 | `WorkspaceTrustVerdict` | `{ state: "inert" \| "unapproved" \| "trusted" \| "changed"; fingerprint?; approved? }` | `packages/protocol/src/config.ts:11-15` |
 | `SettingsData` | `{ default_model?; providers?: ProviderConfig[]; mcp_servers?: Record<string, McpServerConfig>; guard?: GuardConfig; sandbox?: SandboxConfig; runtime?: RuntimeConfig; memory?: MemoryConfig; budget?; [block: string]: unknown }` | `SettingsData` in `packages/protocol/src/config.ts` |
-| `RuntimeConfig` | native, or `{ backend: "podman" \| "docker"; image_digest; network?; limits; executable; connection }` | `RuntimeConfig` in `packages/protocol/src/config.ts` |
+| `RuntimeConfig` | native, strict explicit Podman, or simple/advanced Docker including optional `recipe` | `RuntimeConfig`, `RuntimeRecipeConfig` in `packages/protocol/src/config.ts` |
 | `ProviderConfig` | `{ name; kind?; base_url?; api_key_env?; [k]: unknown }` | `packages/protocol/src/config.ts:39-48` |
 | `McpServerConfig` | `{ command?; args?; url?; [k]: unknown }` | `packages/protocol/src/config.ts:57-62` |
 | `GuardConfig` | `{ mode?: "off" \| "on" \| "auto"; allowed_commands?; denied_commands?; [k]: unknown }` | `packages/protocol/src/config.ts:65-70` |
@@ -618,6 +614,10 @@ the kernel's ordinary routable `outbound` default; this may reach host and LAN p
 public internet. `RuntimeStatus.network` in `client.ts` is required for container placement because
 it reports the effective value after the kernel has resolved defaults. Neither type calls
 `outbound` internet-only, and the protocol exposes no host-port or engine-argument mutation method.
+Docker's optional `RuntimeRecipeConfig` contains only `{name, script, network?}`: a safe diagnostic
+name, an absolute path under the global operator recipe directory and `none`/`outbound` build
+networking. It is persisted operator input;
+the protocol exposes no operation that executes, edits, publishes or delegates a recipe to a guest.
 
 Production: `RuntimeConfig` and `SettingsData` in `packages/protocol/src/config.ts`;
 `RuntimeStatus` in `packages/protocol/src/client.ts`; `runtimeSettingsSchema` in

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { posix, relative, sep } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
 import {
@@ -28,8 +30,19 @@ export interface DockerAttachedProcess {
   readonly exited: Promise<number | null>;
   kill(signal: NodeJS.Signals): void;
 }
+/** Per-command bounds for an exceptional long-running Docker control operation. */
+export interface DockerRunOptions {
+  /** Hard wall-clock ceiling, clamped by the concrete adapter. */
+  readonly timeoutMs?: number;
+  /** Capture ceiling for each output stream, clamped by the concrete adapter. */
+  readonly maxOutputBytes?: number;
+}
 export interface DockerControl {
-  run(args: readonly string[], signal?: AbortSignal): Promise<DockerCommandResult>;
+  run(
+    args: readonly string[],
+    signal?: AbortSignal,
+    options?: DockerRunOptions,
+  ): Promise<DockerCommandResult>;
   attach(args: readonly string[]): DockerAttachedProcess;
 }
 export interface DockerBackendOptions {
@@ -57,6 +70,24 @@ function parse(text: string, label: string): unknown {
 function nameFor(generation: string): string {
   return `clarvis-runtime-${generation.toLowerCase().replace(/[^a-z0-9_.-]/gu, "-")}`;
 }
+interface MiseCacheIdentity {
+  readonly digest: string;
+  readonly name: string;
+}
+function miseCacheIdentity(spec: RuntimeLaunchSpec): MiseCacheIdentity {
+  const digest = `sha256:${createHash("sha256")
+    .update(
+      JSON.stringify({
+        schema: 1,
+        ownerId: spec.ownerId,
+        projectId: spec.project.id,
+        workspaceId: spec.workspace.id,
+        imageDigest: spec.imageDigest,
+      }),
+    )
+    .digest("hex")}`;
+  return { digest, name: `clarvis-mise-v1-${digest.slice("sha256:".length)}` };
+}
 function network(spec: RuntimeLaunchSpec): string {
   if (spec.network === "none") return "none";
   if (spec.network === "outbound") return "bridge";
@@ -65,7 +96,27 @@ function network(spec: RuntimeLaunchSpec): string {
     "internet-only egress enforcement is unavailable for the Docker adapter",
   );
 }
-function createArgs(spec: RuntimeLaunchSpec, name: string): readonly string[] {
+function guestWorkspacePath(spec: RuntimeLaunchSpec, hostPath: string): string {
+  return posix.join("/workspace", relative(spec.workspaceRoot, hostPath).split(sep).join("/"));
+}
+function bindMountArgs(spec: RuntimeLaunchSpec): readonly string[] {
+  return [
+    "--mount",
+    `type=bind,source=${spec.workspaceRoot},target=/workspace`,
+    ...spec.readOnlyWorkspacePaths.flatMap((path) => [
+      "--mount",
+      `type=bind,source=${path},target=${guestWorkspacePath(spec, path)},readonly`,
+    ]),
+    ...(spec.gitCommonDir === undefined
+      ? []
+      : ["--mount", `type=bind,source=${spec.gitCommonDir},target=${spec.gitCommonDir}`]),
+  ];
+}
+function createArgs(
+  spec: RuntimeLaunchSpec,
+  name: string,
+  cache: MiseCacheIdentity,
+): readonly string[] {
   return [
     "create",
     "--name",
@@ -90,10 +141,9 @@ function createArgs(spec: RuntimeLaunchSpec, name: string): readonly string[] {
     network(spec),
     "--tmpfs",
     `/tmp:rw,nosuid,nodev,noexec,size=${String(spec.limits.storageBytes)}`,
-    "--tmpfs",
-    `/mise:rw,nosuid,nodev,exec,size=${String(spec.limits.storageBytes)}`,
     "--mount",
-    `type=bind,source=${spec.retainedWorkspaceRoot},target=/workspace`,
+    `type=volume,source=${cache.name},target=/mise`,
+    ...bindMountArgs(spec),
     "--workdir",
     "/workspace",
     "--env",
@@ -103,7 +153,7 @@ function createArgs(spec: RuntimeLaunchSpec, name: string): readonly string[] {
     spec.imageDigest,
   ];
 }
-function validInspect(value: unknown, spec: RuntimeLaunchSpec): boolean {
+function validInspect(value: unknown, spec: RuntimeLaunchSpec, cache: MiseCacheIdentity): boolean {
   const root = record(Array.isArray(value) ? value[0] : value);
   const host = record(root?.HostConfig);
   const config = record(root?.Config);
@@ -113,7 +163,18 @@ function validInspect(value: unknown, spec: RuntimeLaunchSpec): boolean {
   const drops = Array.isArray(host?.CapDrop)
     ? host.CapDrop.map((v) => String(v).toLowerCase())
     : [];
-  const workspaceMounts = mounts.filter((item) => record(item)?.Destination === "/workspace");
+  const expectedBinds = [
+    { source: spec.workspaceRoot, destination: "/workspace", writable: true },
+    ...spec.readOnlyWorkspacePaths.map((path) => ({
+      source: path,
+      destination: guestWorkspacePath(spec, path),
+      writable: false,
+    })),
+    ...(spec.gitCommonDir === undefined
+      ? []
+      : [{ source: spec.gitCommonDir, destination: spec.gitCommonDir, writable: true }]),
+  ];
+  const miseMounts = mounts.filter((item) => record(item)?.Destination === "/mise");
   return (
     host?.Privileged === false &&
     host?.ReadonlyRootfs === true &&
@@ -123,9 +184,20 @@ function validInspect(value: unknown, spec: RuntimeLaunchSpec): boolean {
     drops.includes("all") &&
     host?.PidsLimit === spec.limits.processCount &&
     host?.Memory === spec.limits.memoryBytes &&
-    workspaceMounts.length === 1 &&
-    record(workspaceMounts[0])?.Source === spec.retainedWorkspaceRoot &&
-    record(workspaceMounts[0])?.RW === true
+    mounts.length === expectedBinds.length + 1 &&
+    expectedBinds.every((expected) => {
+      const matches = mounts.filter((item) => record(item)?.Destination === expected.destination);
+      return (
+        matches.length === 1 &&
+        record(matches[0])?.Type === "bind" &&
+        record(matches[0])?.Source === expected.source &&
+        record(matches[0])?.RW === expected.writable
+      );
+    }) &&
+    miseMounts.length === 1 &&
+    record(miseMounts[0])?.Type === "volume" &&
+    record(miseMounts[0])?.Name === cache.name &&
+    record(miseMounts[0])?.RW === true
   );
 }
 async function successful(
@@ -136,6 +208,51 @@ async function successful(
   const result = await control.run(args);
   if (result.exitCode !== 0) throw new RuntimeLaunchError("operational_failure", `${label} failed`);
   return result;
+}
+
+function validMiseCache(value: unknown, cache: MiseCacheIdentity): boolean {
+  const root = record(Array.isArray(value) ? value[0] : value);
+  const labels = record(root?.Labels);
+  return (
+    root?.Name === cache.name &&
+    root?.Driver === "local" &&
+    root?.Scope === "local" &&
+    labels?.["io.clarvis.runtime.mise-cache"] === "true" &&
+    labels?.["io.clarvis.runtime.mise-cache.schema"] === "1" &&
+    labels?.["io.clarvis.runtime.mise-cache.identity"] === cache.digest
+  );
+}
+
+async function prepareMiseCache(control: DockerControl, cache: MiseCacheIdentity): Promise<void> {
+  let inspected = await control.run(["volume", "inspect", cache.name]);
+  if (inspected.exitCode !== 0) {
+    await successful(
+      control,
+      [
+        "volume",
+        "create",
+        "--label",
+        "io.clarvis.runtime.mise-cache=true",
+        "--label",
+        "io.clarvis.runtime.mise-cache.schema=1",
+        "--label",
+        `io.clarvis.runtime.mise-cache.identity=${cache.digest}`,
+        cache.name,
+      ],
+      "docker mise cache volume create",
+    );
+    inspected = await successful(
+      control,
+      ["volume", "inspect", cache.name],
+      "docker mise cache volume inspect",
+    );
+  }
+  if (!validMiseCache(parse(inspected.stdout, "docker mise cache volume inspect"), cache)) {
+    throw new RuntimeLaunchError(
+      "unsupported_policy",
+      "Docker mise cache volume did not match the host-owned workspace identity",
+    );
+  }
 }
 
 /** Create the strict Docker reference backend, suitable for Docker Desktop or Colima. */
@@ -181,6 +298,7 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
           "Docker must be inspected before start",
         );
       const name = nameFor(spec.generation);
+      const cache = miseCacheIdentity(spec);
       let created = false;
       let attached: DockerAttachedProcess | undefined;
       try {
@@ -204,14 +322,15 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
             "handshake_mismatch",
             "Docker resolved image identity or runtime protocol did not match admission",
           );
-        await successful(options.control, createArgs(spec, name), "docker create");
+        await prepareMiseCache(options.control, cache);
+        await successful(options.control, createArgs(spec, name, cache), "docker create");
         created = true;
         const effective = await successful(
           options.control,
           ["container", "inspect", name],
           "docker container inspect",
         );
-        if (!validInspect(parse(effective.stdout, "docker container inspect"), spec))
+        if (!validInspect(parse(effective.stdout, "docker container inspect"), spec, cache))
           throw new RuntimeLaunchError(
             "unsupported_policy",
             "Docker effective configuration did not match the admitted isolation policy",
@@ -269,6 +388,7 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
         };
         const previews = createContainerRuntimePortPreview(options.control, name);
         let stopped = false;
+        let removed = false;
         let exited = false;
         void attached.exited.then(
           (code) => {
@@ -299,14 +419,17 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
           },
           exposePort: (guestPort, protocol, signal) => previews.expose(guestPort, protocol, signal),
           async stop() {
-            if (stopped) return;
-            stopped = true;
-            await previews.close();
-            peer.close();
-            await options.control
-              .run(["stop", "--time", String(stopSeconds), name])
-              .catch(() => undefined);
+            if (removed) return;
+            if (!stopped) {
+              stopped = true;
+              await previews.close();
+              peer.close();
+              await options.control
+                .run(["stop", "--time", String(stopSeconds), name])
+                .catch(() => undefined);
+            }
             await successful(options.control, ["rm", "--force", name], "docker rm");
+            removed = true;
           },
         };
       } catch (error) {

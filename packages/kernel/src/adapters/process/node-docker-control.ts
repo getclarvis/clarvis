@@ -4,6 +4,7 @@ import type {
   DockerAttachedProcess,
   DockerCommandResult,
   DockerControl,
+  DockerRunOptions,
 } from "../../runtime/docker-backend.ts";
 
 /** Explicit Docker CLI configuration; ambient context and host routing are not inherited. */
@@ -26,7 +27,7 @@ export function createNodeDockerControl(options: NodeDockerControlOptions): Dock
     Math.min(16 * 1024 * 1024, options.maxOutputBytes ?? 1024 * 1024),
   );
   return {
-    run(args, signal): Promise<DockerCommandResult> {
+    run(args, signal, runOptions: DockerRunOptions = {}): Promise<DockerCommandResult> {
       return new Promise((resolve, reject) => {
         if (signal?.aborted === true) {
           reject(signal.reason instanceof Error ? signal.reason : new Error("Docker cancelled"));
@@ -39,6 +40,14 @@ export function createNodeDockerControl(options: NodeDockerControlOptions): Dock
         let stdout = "";
         let stderr = "";
         let settled = false;
+        const commandTimeoutMs = Math.max(
+          1_000,
+          Math.min(30 * 60 * 1_000, runOptions.timeoutMs ?? timeoutMs),
+        );
+        const commandMaxOutputBytes = Math.max(
+          1_024,
+          Math.min(16 * 1024 * 1024, runOptions.maxOutputBytes ?? maxOutputBytes),
+        );
         const finish = (outcome: DockerCommandResult | Error): void => {
           if (settled) return;
           settled = true;
@@ -53,7 +62,7 @@ export function createNodeDockerControl(options: NodeDockerControlOptions): Dock
         };
         const append = (current: string, chunk: Buffer): string => {
           const next = current + chunk.toString("utf8");
-          if (Buffer.byteLength(next, "utf8") > maxOutputBytes) {
+          if (Buffer.byteLength(next, "utf8") > commandMaxOutputBytes) {
             child.kill("SIGKILL");
             finish(new Error("Docker output exceeded the configured bound"));
           }
@@ -67,7 +76,7 @@ export function createNodeDockerControl(options: NodeDockerControlOptions): Dock
         const timer = setTimeout(() => {
           child.kill("SIGKILL");
           finish(new Error("Docker command timed out"));
-        }, timeoutMs);
+        }, commandTimeoutMs);
         timer.unref?.();
       });
     },

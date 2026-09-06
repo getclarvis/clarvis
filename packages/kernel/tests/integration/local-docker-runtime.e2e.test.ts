@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { expect, test } from "bun:test";
 import {
   loadEnv,
@@ -31,6 +33,7 @@ import { createLocalDockerRuntime } from "../../src/runtime/local-docker-runtime
 
 const imageDigest = process.env.CLARVIS_DOCKER_RUNTIME_IMAGE_DIGEST;
 const context = process.env.CLARVIS_DOCKER_RUNTIME_CONTEXT;
+const execFileAsync = promisify(execFile);
 const enabled =
   process.env.CLARVIS_DOCKER_RUNTIME_CANARY === "1" &&
   /^sha256:[a-f0-9]{64}$/u.test(imageDigest ?? "") &&
@@ -85,9 +88,24 @@ test.skipIf(!enabled)(
     const buildRoot = resolve(import.meta.dir, "../../../../build/runtime-e2e");
     await mkdir(buildRoot, { recursive: true });
     const root = await mkdtemp(join(buildRoot, "docker-"));
+    const repositoryRoot = join(root, "repository");
     const workspaceRoot = join(root, "workspace");
-    await mkdir(workspaceRoot);
-    await writeFile(join(workspaceRoot, "README.md"), "docker runtime e2e\n");
+    await mkdir(repositoryRoot);
+    await execFileAsync("git", ["init", "--initial-branch", "main"], { cwd: repositoryRoot });
+    await execFileAsync("git", ["config", "user.name", "Clarvis E2E"], { cwd: repositoryRoot });
+    await execFileAsync("git", ["config", "user.email", "e2e@clarvis.invalid"], {
+      cwd: repositoryRoot,
+    });
+    await writeFile(join(repositoryRoot, "README.md"), "docker runtime e2e\n");
+    await execFileAsync("git", ["add", "README.md"], { cwd: repositoryRoot });
+    await execFileAsync("git", ["commit", "-m", "fixture"], { cwd: repositoryRoot });
+    await execFileAsync("git", ["worktree", "add", "-b", "docker-e2e", workspaceRoot], {
+      cwd: repositoryRoot,
+    });
+    const gitCommonDir = await realpath(join(repositoryRoot, ".git"));
+    const memoryRoot = join(workspaceRoot, ".clarvis", "memory");
+    await mkdir(memoryRoot, { recursive: true });
+    await writeFile(join(memoryRoot, "PROFILE.md"), "HOST_MEMORY\n");
     const generation = `docker-e2e-${randomUUID()}`;
     const nodeControl = createNodeDockerControl({
       executable: docker,
@@ -243,7 +261,7 @@ test.skipIf(!enabled)(
                 name: "shell",
                 arguments: {
                   command:
-                    'mise x node@24.20.0 -- sh -c \'mkdir -p "$TMPDIR/npm-e2e" && cd "$TMPDIR/npm-e2e" && npm init -y >/dev/null && npm install --ignore-scripts --no-audit --no-fund is-number@7.0.0\'',
+                    'sh -c \'if printf poisoned > /workspace/.clarvis/memory/PROFILE.md 2>/tmp/memory-write-error; then exit 1; fi; printf "guest write\\n" > /workspace/guest-created.txt; git -C /workspace status --short >/tmp/git-status; mise x node@24.20.0 -- sh -c "mkdir -p \\"$TMPDIR/npm-e2e\\" && cd \\"$TMPDIR/npm-e2e\\" && npm init -y >/dev/null && npm install --ignore-scripts --no-audit --no-fund is-number@7.0.0"\'',
                   timeout_ms: 120_000,
                 },
               },
@@ -318,8 +336,14 @@ test.skipIf(!enabled)(
           generation,
           ownerId: "owner",
           project: { id: "project" },
-          workspace: { id: "workspace", projectId: "project", label: "main", kind: "primary" },
+          workspace: {
+            id: "workspace",
+            projectId: "project",
+            label: "docker-e2e",
+            kind: "external_worktree",
+          },
           workspaceRoot,
+          gitCommonDir,
           configurationRevision: "config",
           extensionRevision: "extensions",
           deps,
@@ -351,9 +375,6 @@ test.skipIf(!enabled)(
       const outcomeTask = runtime.executeRun({
         owner: "owner",
         deps,
-        hostElicit: async () => {
-          throw new Error("unchanged workspace must not elicit");
-        },
         rawBody: {
           execution_id: "exec_docker_e2e",
           messages: [{ role: "user", content: "install a package and preview a service" }],
@@ -389,6 +410,10 @@ test.skipIf(!enabled)(
         url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/$/u),
         dependency: "^7.0.0",
       });
+      expect(await readFile(join(workspaceRoot, "guest-created.txt"), "utf8")).toBe(
+        "guest write\n",
+      );
+      expect(await readFile(join(memoryRoot, "PROFILE.md"), "utf8")).toBe("HOST_MEMORY\n");
       expect(store.existsForOwner("owner", "exec_docker_e2e")).toBe(true);
       expect(capabilityEvents).toContainEqual({
         capability: "memory",
@@ -406,9 +431,6 @@ test.skipIf(!enabled)(
         owner: "owner",
         deps,
         externalSignal: cancel.signal,
-        hostElicit: async () => {
-          throw new Error("unchanged workspace must not elicit");
-        },
         rawBody: {
           execution_id: "exec_docker_cancel",
           messages: [{ role: "user", content: "DOCKER_CANCEL_E2E" }],
@@ -440,9 +462,6 @@ test.skipIf(!enabled)(
         runtime.executeRun({
           owner: "owner",
           deps,
-          hostElicit: async () => {
-            throw new Error("unchanged workspace must not elicit");
-          },
           rawBody: {
             execution_id: "exec_docker_recover",
             messages: [{ role: "user", content: "DOCKER_RECOVER_E2E" }],

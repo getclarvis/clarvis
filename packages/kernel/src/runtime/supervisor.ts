@@ -36,6 +36,7 @@ export function createRuntimeSupervisor(backend: RuntimeBackend): RuntimeSupervi
         );
       }
       active = started;
+      let stopping: Promise<void> | undefined;
       return {
         info: started.info,
         get closed() {
@@ -48,8 +49,16 @@ export function createRuntimeSupervisor(backend: RuntimeBackend): RuntimeSupervi
           started.exposePort(guestPort, protocol, signal),
         async stop() {
           if (active === undefined) return;
-          active = undefined;
-          await started.stop();
+          if (stopping !== undefined) return stopping;
+          stopping = started
+            .stop()
+            .then(() => {
+              active = undefined;
+            })
+            .finally(() => {
+              stopping = undefined;
+            });
+          return stopping;
         },
       };
     },

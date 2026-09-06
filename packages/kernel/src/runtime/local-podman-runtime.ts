@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import type { Stats } from "node:fs";
+import { lstat } from "node:fs/promises";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { NOOP_LOGGER } from "@clarvis/capability";
 import type { ElicitParams, ElicitRawResult, ExecuteRunArgs, LLMCallParams } from "@clarvis/loop";
 import type { RuntimeHost, RuntimeHostInput } from "./lazy-runtime.ts";
@@ -30,9 +33,14 @@ import { createHostMemoryBridge, RUNTIME_MEMORY_METHOD } from "./memory-bridge.t
 import type { MemoryRuntimeDescriptor } from "@clarvis/memory/capability";
 import type { PodmanControl } from "./podman-backend.ts";
 import { launchIsolatedRuntime } from "./runtime-controller.ts";
-import { settleRuntimeWorkspace } from "./workspace-settlement.ts";
-import type { RootOptions } from "@clarvis/paths";
-import type { RuntimeBackend } from "./types.ts";
+import {
+  agentsPluginsDir,
+  agentsSkillsDirs,
+  workspacePaths,
+  type RootOptions,
+} from "@clarvis/paths";
+import { RuntimeLaunchError, type RuntimeBackend } from "./types.ts";
+import { prepareRuntimeCapabilityRoot } from "./runtime-workspace-control.ts";
 
 type LocalRuntimeInput = RuntimeHostInput;
 type ResolvedLocalRuntimeInput = Omit<LocalRuntimeInput, "settings"> & {
@@ -48,6 +56,106 @@ export interface LocalPodmanRuntimeOptions {
 /** Engine-neutral options used by local Docker and Podman compositions. */
 export interface LocalContainerRuntimeOptions {
   readonly roots?: RootOptions;
+}
+
+/** Inspect one nested control path without following any workspace-relative symlink. */
+export async function inspectReservedWorkspacePath(
+  candidate: string,
+  workspaceRoot: string,
+): Promise<Stats | undefined> {
+  const fromRoot = relative(workspaceRoot, candidate);
+  if (
+    fromRoot === "" ||
+    fromRoot === ".." ||
+    fromRoot.startsWith(`..${sep}`) ||
+    isAbsolute(fromRoot)
+  ) {
+    throw new RuntimeLaunchError(
+      "unsupported_policy",
+      `reserved workspace path '${candidate}' is outside the selected workspace`,
+    );
+  }
+  const segments = fromRoot.split(sep);
+  let current = workspaceRoot;
+  let result: Stats | undefined;
+  for (const [index, segment] of segments.entries()) {
+    current = join(current, segment);
+    try {
+      result = await lstat(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+      throw new RuntimeLaunchError(
+        "unsupported_policy",
+        `runtime could not inspect reserved workspace path '${candidate}'`,
+        { cause: error },
+      );
+    }
+    if (result.isSymbolicLink()) {
+      throw new RuntimeLaunchError(
+        "unsupported_policy",
+        `reserved workspace path '${candidate}' must not traverse symbolic links`,
+      );
+    }
+    const final = index === segments.length - 1;
+    if ((!final && !result.isDirectory()) || (final && !result.isDirectory() && !result.isFile())) {
+      throw new RuntimeLaunchError(
+        "unsupported_policy",
+        `reserved workspace path '${candidate}' must be a regular file or directory`,
+      );
+    }
+  }
+  return result;
+}
+
+async function readOnlyWorkspacePaths(
+  input: ResolvedLocalRuntimeInput,
+): Promise<readonly string[]> {
+  const paths = workspacePaths(input.workspaceRoot);
+  const clarvisRoot = await inspectReservedWorkspacePath(paths.clarvisDir, paths.root);
+  if (clarvisRoot !== undefined && !clarvisRoot.isDirectory()) {
+    throw new RuntimeLaunchError(
+      "unsupported_policy",
+      `reserved workspace path '${paths.clarvisDir}' must be a directory`,
+    );
+  }
+  for (const capabilityRoot of [
+    ...(input.planFactory === undefined ? [] : [paths.plansRoot]),
+    ...(input.memoryFactory === undefined ? [] : [paths.memoryRoot]),
+  ]) {
+    try {
+      prepareRuntimeCapabilityRoot(capabilityRoot, paths.root);
+    } catch (cause) {
+      throw new RuntimeLaunchError(
+        "unsupported_policy",
+        `runtime could not prepare host-controlled workspace path '${capabilityRoot}'`,
+        { cause },
+      );
+    }
+  }
+  const sharedSkills = agentsSkillsDirs({ cwd: paths.root, env: {} }).workspace;
+  const candidates = [
+    paths.settingsFile,
+    paths.agentsDir,
+    paths.skillsDir,
+    paths.workflowsDir,
+    paths.pluginsDir,
+    paths.extensionProfilesDir,
+    paths.guardJudgeFile,
+    paths.memoryPolicyFile,
+    paths.plansRoot,
+    paths.memoryRoot,
+    paths.plansRootForOwner(input.ownerId),
+    paths.memoryRootForOwner(input.ownerId),
+    sharedSkills,
+    agentsPluginsDir(paths.root),
+  ];
+  const existing: string[] = [];
+  for (const candidate of candidates) {
+    const info = await inspectReservedWorkspacePath(candidate, paths.root);
+    if (info === undefined) continue;
+    existing.push(candidate);
+  }
+  return [...new Set(existing)];
 }
 
 function modelPairs(rawBody: unknown): Set<string> {
@@ -68,7 +176,8 @@ function providerConfig(rawBody: unknown, provider: string): unknown {
   return raw.providers?.find((candidate) => candidate.name === provider);
 }
 
-function modelDestination(rawBody: unknown, provider: string): URL {
+/** Resolve a model lease to the exact destination admitted by its provider snapshot. */
+export function modelDestination(rawBody: unknown, provider: string): URL {
   const config = providerConfig(rawBody, provider) as
     { kind?: unknown; base_url?: unknown } | undefined;
   if (config?.kind === "openai-compatible" && typeof config.base_url === "string") {
@@ -149,13 +258,16 @@ function hostModelBroker(
   };
 }
 
-function validElicitArguments(value: unknown): value is {
+/** Validate the closed host-elicitation capability envelope. */
+export function validElicitArguments(value: unknown): value is {
   params: ElicitParams;
   timeoutMs?: number;
 } {
-  if (typeof value !== "object" || value === null) return false;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const record = value as { params?: unknown; timeoutMs?: unknown };
+  const keys = Object.keys(value);
   return (
+    keys.every((key) => key === "params" || key === "timeoutMs") &&
     typeof record.params === "object" &&
     record.params !== null &&
     (record.timeoutMs === undefined ||
@@ -163,7 +275,8 @@ function validElicitArguments(value: unknown): value is {
   );
 }
 
-function validPreviewArguments(value: unknown): value is {
+/** Validate the closed guest-port preview capability envelope. */
+export function validPreviewArguments(value: unknown): value is {
   port: number;
   protocol?: "http" | "https" | "tcp";
 } {
@@ -221,15 +334,17 @@ export async function createLocalPodmanRuntime(
   return createLocalContainerRuntime(resolvedInput, backend, router, options);
 }
 
-/** Compose shared host authority and settlement around one selected container engine. */
+/** Compose shared host authority and lifecycle around one selected container engine. */
 export async function createLocalContainerRuntime(
   input: ResolvedLocalRuntimeInput,
   backend: RuntimeBackend,
   router: RuntimeAuthorityRouter,
   options: LocalContainerRuntimeOptions = {},
 ): Promise<RuntimeHost> {
+  const protectedPaths = await readOnlyWorkspacePaths(input);
   const controller = await launchIsolatedRuntime({
     ...input,
+    readOnlyWorkspacePaths: protectedPaths,
     capabilityMethods: [
       "runtime.elicit",
       RUNTIME_PREVIEW_METHOD,
@@ -238,7 +353,6 @@ export async function createLocalContainerRuntime(
       ...(input.memoryFactory === undefined ? [] : [RUNTIME_MEMORY_METHOD]),
     ],
     backend,
-    ...(options.roots === undefined ? {} : { roots: options.roots }),
   });
   interface RunSnapshot {
     readonly leaseId: string;
@@ -377,7 +491,6 @@ export async function createLocalContainerRuntime(
             },
           },
           { name: "capabilities", async commit() {} },
-          { name: "workspace", async commit() {} },
         ],
         dispose() {
           snapshots.delete(runId);
@@ -386,15 +499,6 @@ export async function createLocalContainerRuntime(
     },
     consumeGuestEvent: (args, runId, value) =>
       forwardGuestGuardAudit(value, input.guardAudit ?? NOOP_LOGGER, runId, args.owner),
-    async settleWorkspace(args) {
-      if (args.hostElicit === undefined) {
-        throw new Error("isolated workspace settlement requires the host elicitation channel");
-      }
-      await settleRuntimeWorkspace(input.workspaceRoot, input.generation, args.hostElicit, {
-        signal: args.externalSignal,
-        ...(options.roots === undefined ? {} : { roots: options.roots }),
-      });
-    },
   });
   return {
     executeRun,

@@ -868,8 +868,10 @@ Pure functions of `RunControlsState`, no state of their own.
 block; without a container runtime it returns Sandbox when that block is enabled and Host otherwise.
 `deriveRunControls` then projects Review, Memory and Plans independently from that isolation choice.
 
-`safetyDescription` branches first on container isolation. Docker and Podman describe the copied
-Linux workspace plus either disabled networking or outbound access with explicit service exposure.
+`safetyDescription` branches first on container isolation. Docker and Podman describe the directly
+mounted selected workspace plus either disabled networking or outbound access with explicit service
+exposure. It states that guest changes appear on the host immediately rather than promising a hidden
+copy or apply phase.
 Native Sandbox describes required versus optional confinement, filesystem and network policy; Host
 describes direct execution. Review changes the consequence text inside either native placement but
 never changes which placement was selected.
@@ -893,6 +895,29 @@ workspace with no local policy; it writes no runtime or Sandbox field. Productio
 `packages/code/src/views/config/RunControlsPanel.tsx`. Tests:
 `packages/code/tests/integration/isolation-review-picker-render.test.tsx` and
 `packages/code/tests/integration/run-controls-render.test.tsx`.
+
+The simple picker deliberately has no runtime-recipe editor. An operator may add a script under the
+global `runtime-recipes/` directory and reference it from the strict advanced Docker `recipe` block
+in global `settings.json`; `WorkspaceClientManager` keeps image resolution on the same lazy
+first-run factory, and the kernel owns script capture, build, caching and fail-closed errors. Neither
+the renderer nor a guest receives the script bytes or an operation to
+mutate that configuration. Production: `WorkspaceClientManager.create` in
+`packages/code/src/adapters/workspace-client-manager.ts`, `runtimeSettingsSchema` in
+`packages/kernel/src/runtime/settings.ts`, and `resolveDockerRuntimeRecipe` in
+`packages/kernel/src/runtime/runtime-recipe.ts`. Test:
+`packages/kernel/tests/unit/runtime-settings.test.ts`,
+`packages/kernel/tests/unit/runtime-recipe.test.ts`, and the gated
+`packages/kernel/tests/integration/runtime-recipe.e2e.test.ts`.
+
+Code supplies the workspace it already owns to the lazy container runtime. In a linked Git worktree,
+that worktree is the separate checkout and Clarvis does not create a second copy, pause for apply,
+commit, merge or remove it. A primary checkout or non-Git directory is mounted directly as well.
+Production: `WorkspaceClientManager.create` in
+`packages/code/src/adapters/workspace-client-manager.ts`; `discoverGitWorkspace` and the runtime
+composition in `packages/kernel/src/file-kernel.ts`; `safetyDescription` in
+`packages/code/src/adapters/execution-safety.ts`. Test:
+`packages/code/tests/unit/execution-safety.test.ts` and
+`packages/kernel/tests/integration/git-workspace.test.ts`.
 
 ### 4.21 Memory-pressure state machine (`packages/code/src/adapters/memory-pressure.ts:193`)
 

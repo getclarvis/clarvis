@@ -1,6 +1,6 @@
 # Proposal: Isolated agent runtime with OCI engine backends
 
-**Status:** Implemented in source; Docker/Colima mise, npm and preview E2E passed; TUI and live Podman deferred
+**Status:** Superseded design record; not the current runtime contract
 **Date:** 2026-09-04
 **Target repository:** `getclarvis/clarvis`; repository links resolve from this document
 **Source baseline:** `5c999dd4c5ca`
@@ -14,34 +14,36 @@ surfaces.
 **Proposed owners:** `@clarvis/kernel`, `@clarvis/protocol`, `@clarvis/code`, `@clarvis/paths`,
 `@clarvis/tools`, with focused integration changes in provider and capability composition
 
-> This proposal is retained as the architecture record. The implemented contract and exact
+> This proposal is retained only to explain the discarded copy/review/apply design. Every statement
+> below that describes a temporary workspace copy, private Git metadata, `workspace_merge`, staged
+> apply, or retained runtime checkout is historical and is not implemented. The current contract and
 > production/test evidence live in
-> [`specs/hosts/isolated-agent-runtime.md`](../hosts/isolated-agent-runtime.md). Its evidence section
-> separates the proven Docker/Colima path from deferred TUI, Podman, platform, egress,
-> registry-publication and orphan-cleanup claims.
+> [`specs/hosts/isolated-agent-runtime.md`](../hosts/isolated-agent-runtime.md).
 
-### Accepted architecture decision (2026-09-05)
+### Superseding architecture decision (2026-09-06)
 
 The container is a disposable **agent execution worker**, not a second Clarvis host. It contains
-the agent loop and subagents, a writable temporary copy of the selected workspace, and the local
-tools needed to work in that copy. Everything else remains authoritative on the host.
+the agent loop and subagents, the local tools needed for execution, and a direct writable bind of
+the workspace Clarvis already selected. Everything else remains authoritative on the host.
 
 In particular, the host owns the TUI and public `KernelClient`, configuration, approvals,
 credentials, provider traffic, sessions, traces, memory, plans, tasks, workflows, runtime records,
-the source checkout, and change application. The guest can use host-owned capabilities only through
-a closed, generation-bound execution RPC. It never receives `~/.clarvis`, a host state directory,
-the real checkout, provider credentials, or policy documents.
+and capability mutation. The guest can use host-owned capabilities only through a closed,
+generation-bound execution RPC. It never receives `~/.clarvis`, a host state directory, provider
+credentials, or the engine socket. Workspace control paths are overlaid read-only while the rest of
+the selected workspace is writable.
 
-The temporary workspace is prepared and retained by the host outside the container's writable
-layer. A replacement container may mount the same retained copy or a host-reconstructed equivalent,
-while every other guest-local mutation may disappear. At run settlement the host durably commits
-the session, trace, workflow/task state and the latest accepted checkpoint before reporting the run
-as complete. Worktree changes remain pending until the host reviews and applies, keeps, or discards
-them.
+If Clarvis starts inside a linked Git worktree, that worktree is already the separate copy: Clarvis
+mounts it and the required shared Git metadata, but does not create another copy or own commit,
+merge, apply, or worktree removal. Primary checkouts and non-Git folders are mounted directly too.
+Guest changes are visible on the host immediately. At run settlement the host durably commits the
+session, trace, capability state and latest accepted checkpoint; workspace writes are not a staged
+terminal participant.
 
-The earlier live-checkout, writable guest-state, full guest file-kernel, and composite
-`KernelClient` experiment was rolled back on 2026-09-05. The retained implementation follows the
-host-authoritative worker contract above and is specified operationally in the owning host spec.
+The copy/review/apply implementation described in the remainder of this file was removed because it
+conflicted with host Memory writes during a pending elicitation and duplicated Git's worktree model.
+The host-authoritative worker and direct-mount contract is specified operationally in the owning
+host spec linked above.
 
 ## 1. Product contract
 
@@ -720,7 +722,7 @@ current artifact and the boot smoke when boot behavior changes. Measure input re
 readiness, first streamed response, warm launch, cold image/VM launch, dependency I/O, and total
 host-plus-VM memory separately. Native startup must not pay container discovery/import costs.
 
-## 11. Implemented sequence and decisions still requiring evidence
+## 11. Historical implementation sequence and decisions that required evidence
 
 1. **Process boundary:** the public `KernelClient` and canonical stores remain on the host; the
    implementation adds only the narrow execution session and bridge. It does not create a guest

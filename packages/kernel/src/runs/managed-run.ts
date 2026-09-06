@@ -1,4 +1,4 @@
-import type { CompactionSource, Elicit, ElicitRawResult, SteerSource } from "@clarvis/loop";
+import type { CompactionSource, Elicit, SteerSource } from "@clarvis/loop";
 import { suppressSecondaryRejection } from "@clarvis/capability";
 import type { RunEvent, RunHandle, RunResult } from "@clarvis/protocol";
 import type { KernelLifecycle } from "../application/lifecycle.ts";
@@ -12,7 +12,7 @@ import {
   sizeOfCoalescedRunEvent,
   sizeOfRunEvent,
 } from "./coalesce-events.ts";
-import { createElicitBridge, type HostElicitationParams } from "./elicit-bridge.ts";
+import { createElicitBridge } from "./elicit-bridge.ts";
 import {
   DEFAULT_INGEST_CLOSE_GRACE_MS,
   DEFAULT_INGEST_CLOSE_MAX_WAIT_MS,
@@ -32,11 +32,6 @@ export interface ManagedRunContext {
   readonly signal: AbortSignal;
   /** Engine-facing elicitation function bridged to the protocol handle. */
   readonly elicit: Elicit;
-  /** Reserved host-owned elicitation channel; unavailable to engine/tool input. */
-  readonly hostElicit: (
-    params: HostElicitationParams,
-    opts?: { signal?: AbortSignal },
-  ) => Promise<ElicitRawResult>;
   /** Engine-facing source of queued steering messages. */
   readonly steer: SteerSource;
   /** Engine-facing source of explicit entry-agent compaction requests. */
@@ -285,7 +280,6 @@ export function createManagedRunWithRuntime(
     executionId: spec.executionId,
     signal: abort.signal,
     elicit: bridge.elicit,
-    hostElicit: bridge.hostElicit,
     steer,
     compaction,
     emit: emitRelay.emit,

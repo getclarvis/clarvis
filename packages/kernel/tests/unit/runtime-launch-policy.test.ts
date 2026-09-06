@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { dirname, join, parse, resolve } from "node:path";
 
 import {
   assertRuntimeLaunchSpec,
@@ -7,6 +8,8 @@ import {
 } from "../../src/index.ts";
 
 const digest = `sha256:${"a".repeat(64)}`;
+const workspaceRoot = resolve("runtime-test-workspace");
+const gitCommonDir = resolve("runtime-test-git");
 
 function launchSpec(overrides: Partial<RuntimeLaunchSpec> = {}): RuntimeLaunchSpec {
   return {
@@ -19,8 +22,9 @@ function launchSpec(overrides: Partial<RuntimeLaunchSpec> = {}): RuntimeLaunchSp
       label: "primary",
       kind: "primary",
     },
-    sourceWorkspaceRoot: "/work/source",
-    retainedWorkspaceRoot: "/state/runtime/workspace",
+    workspaceRoot,
+    readOnlyWorkspacePaths: [join(workspaceRoot, ".clarvis", "memory")],
+    gitCommonDir,
     imageDigest: digest,
     configurationRevision: "config-1",
     extensionRevision: "extensions-1",
@@ -38,18 +42,33 @@ function launchSpec(overrides: Partial<RuntimeLaunchSpec> = {}): RuntimeLaunchSp
 }
 
 describe("assertRuntimeLaunchSpec", () => {
-  test("accepts a separate retained workspace and immutable bounded authority", () => {
+  test("accepts a direct workspace mount with bounded overlays and linked Git metadata", () => {
     expect(() => assertRuntimeLaunchSpec(launchSpec())).not.toThrow();
   });
 
   test.each([
-    ["same", "/work/source"],
-    ["inside", "/work/source/copy"],
-    ["parent", "/work"],
-  ])("rejects a %s source/copy relationship", (_name, retainedWorkspaceRoot) => {
-    expect(() => assertRuntimeLaunchSpec(launchSpec({ retainedWorkspaceRoot }))).toThrow(
+    ["same", workspaceRoot],
+    ["outside", resolve("runtime-test-other", "memory")],
+    ["parent", dirname(workspaceRoot)],
+    ["relative", join("relative", "memory")],
+  ])("rejects a %s read-only workspace path", (_name, path) => {
+    expect(() => assertRuntimeLaunchSpec(launchSpec({ readOnlyWorkspacePaths: [path] }))).toThrow(
       RuntimeLaunchError,
     );
+  });
+
+  test("rejects duplicate overlays and Git metadata that overlaps the workspace", () => {
+    const protectedPath = join(workspaceRoot, ".clarvis", "memory");
+    for (const spec of [
+      launchSpec({ readOnlyWorkspacePaths: [protectedPath, protectedPath] }),
+      launchSpec({ gitCommonDir: workspaceRoot }),
+      launchSpec({ gitCommonDir: join(workspaceRoot, ".git") }),
+      launchSpec({ gitCommonDir: dirname(workspaceRoot) }),
+      launchSpec({ gitCommonDir: parse(workspaceRoot).root }),
+      launchSpec({ gitCommonDir: join("relative", ".git") }),
+    ]) {
+      expect(() => assertRuntimeLaunchSpec(spec)).toThrow(RuntimeLaunchError);
+    }
   });
 
   test("rejects mutable image tags, invalid limits, duplicate and open-ended methods", () => {
@@ -60,7 +79,7 @@ describe("assertRuntimeLaunchSpec", () => {
       launchSpec({ capabilityMethods: ["filesystem"] }),
       launchSpec({ capabilityMethods: ["kernel.*"] }),
       launchSpec({ generation: "" }),
-      launchSpec({ sourceWorkspaceRoot: "relative/source" }),
+      launchSpec({ workspaceRoot: join("relative", "source") }),
     ]) {
       expect(() => assertRuntimeLaunchSpec(spec)).toThrow(RuntimeLaunchError);
     }

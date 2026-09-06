@@ -81,14 +81,14 @@ describe("runtime checkpoint durability", () => {
         terminal: true,
         state: { result: "done" },
       },
-      participants: (["session", "trace", "capabilities", "workspace"] as const).map((name) => ({
+      participants: (["session", "trace", "capabilities"] as const).map((name) => ({
         name,
         async commit() {
           order.push(name);
         },
       })),
     });
-    expect(order).toEqual(["session", "trace", "capabilities", "workspace"]);
+    expect(order).toEqual(["session", "trace", "capabilities"]);
     expect(terminal.terminal).toBe(true);
     await expect(
       appendRuntimeCheckpoint(
@@ -112,7 +112,7 @@ describe("runtime checkpoint durability", () => {
           terminal: true,
           state: {},
         },
-        participants: (["session", "trace", "capabilities", "workspace"] as const).map((name) => ({
+        participants: (["session", "trace", "capabilities"] as const).map((name) => ({
           name,
           async commit() {
             if (name === "trace") throw new Error("fsync failed");

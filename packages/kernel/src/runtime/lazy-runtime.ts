@@ -20,6 +20,8 @@ export interface RuntimeHostInput {
   readonly project: ProjectRef;
   readonly workspace: WorkspaceRef;
   readonly workspaceRoot: string;
+  /** External common Git directory needed only by a linked worktree. */
+  readonly gitCommonDir?: string;
   readonly configurationRevision: string;
   readonly extensionRevision: string;
   readonly deps: ExecuteRunDeps;
@@ -149,6 +151,7 @@ export function createLazyRuntimeCoordinator(options: {
   readonly project: ProjectRef;
   readonly workspace: WorkspaceRef;
   readonly workspaceRoot: string;
+  readonly gitCommonDir?: string;
   readonly deps: ExecuteRunDeps;
   readonly planFactory?: PlanFactory;
   readonly skillsProvider?: SkillsProvider;
@@ -216,6 +219,7 @@ export function createLazyRuntimeCoordinator(options: {
       project: options.project,
       workspace: options.workspace,
       workspaceRoot: options.workspaceRoot,
+      ...(options.gitCommonDir === undefined ? {} : { gitCommonDir: options.gitCommonDir }),
       configurationRevision: selection.configurationRevision,
       extensionRevision: selection.extensionRevision,
       deps: options.deps,

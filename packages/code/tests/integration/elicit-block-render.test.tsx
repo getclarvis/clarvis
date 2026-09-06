@@ -230,36 +230,6 @@ test("a structured guard surfaces the analyzer's undecidable-expansions warning"
   expect(out).toContain("Warning: this command contains undecidable expansions.");
 });
 
-test("a workspace merge shows every reviewed path and cannot default to acceptance", async () => {
-  const request: ElicitRequestParams = {
-    message: "Merge all reviewed changes?",
-    kind: "workspace_merge",
-    detail: {
-      change_set_id: "sha256:change",
-      baseline_revision: "sha256:before",
-      content_digest: "sha256:after",
-      changes: [
-        { path: "src/a.ts", action: "modify", type: "file", mode: 0o644, size: 2, digest: "d" },
-        { path: "old.ts", action: "delete", type: "file", mode: 0o644, size: 1, digest: "e" },
-      ],
-    },
-    requestedSchema: {
-      type: "object",
-      properties: { decision: { type: "string", enum: ["merge"] } },
-      required: ["decision"],
-    },
-  };
-  const out = await frame(() => (
-    <ElicitBlock interaction={stubInteraction} request={request} onResolve={() => {}} />
-  ));
-  expect(out).toContain("Workspace merge approval required");
-  expect(out).toContain("2 reviewed workspace changes");
-  expect(out).toContain("src/a.ts");
-  expect(out).toContain("old.ts");
-  expect(out).toContain("merge all changes");
-  expect(out).toMatch(/\( \)\s+\[1\]\s+merge all changes/);
-});
-
 test("allow_session carries an explicit scope label and never takes the default focus", async () => {
   const out = await frame(() => (
     <ElicitBlock interaction={stubInteraction} request={GUARD_SESSION} onResolve={() => {}} />

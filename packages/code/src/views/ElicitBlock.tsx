@@ -6,7 +6,6 @@ import type {
   ElicitCommandDetail,
   ElicitRequestParams,
   ElicitResult,
-  WorkspaceMergeDetail,
 } from "../adapters/elicit-types.ts";
 import type { PlanActivity } from "../adapters/plan-projection.ts";
 import { tokens } from "../theme/tokens.ts";
@@ -64,13 +63,8 @@ export function ElicitBlock(props: {
   const isGuard = props.request.kind === "guard_confirm";
   const isPlanReview = props.request.kind === PLAN_REVIEW_ELICIT_KIND;
   const isWorkflowReview = props.request.kind === "workflow_review";
-  const isWorkspaceMerge = props.request.kind === "workspace_merge";
   const accent = (): string =>
-    isGuard
-      ? tokens.warn
-      : isPlanReview || isWorkflowReview || isWorkspaceMerge
-        ? tokens.accent2
-        : tokens.accent;
+    isGuard ? tokens.warn : isPlanReview || isWorkflowReview ? tokens.accent2 : tokens.accent;
 
   /** `title` + `revision N · M tasks · retention: keep`, or null when the plan
    * projection has not arrived. */
@@ -103,10 +97,7 @@ export function ElicitBlock(props: {
 
   // A plan or workflow gate authorizes work. Unlike an ordinary choice question,
   // it must not silently choose a verdict from enum order: select first, then confirm.
-  const init = initialValues(
-    fields,
-    isPlanReview || isWorkflowReview || isWorkspaceMerge ? "none" : "first",
-  );
+  const init = initialValues(fields, isPlanReview || isWorkflowReview ? "none" : "first");
   const [values, setValues] = createSignal<Record<string, string>>(init);
   const [active, setActive] = createSignal(0);
   const inputs: Record<string, InputRenderable> = {};
@@ -238,18 +229,15 @@ export function ElicitBlock(props: {
               ? "Confirm plan decision"
               : isWorkflowReview
                 ? "Confirm workflow decision"
-                : isWorkspaceMerge
-                  ? "Confirm workspace merge decision"
-                  : "Send answer",
+                : "Send answer",
           description: isGuard
             ? "Confirm the selected decision for this exact command"
-            : isPlanReview || isWorkflowReview || isWorkspaceMerge
+            : isPlanReview || isWorkflowReview
               ? "Confirm the selected decision"
               : "Send the current answer",
           category: "primary",
           surfaces: form.mode === "url" ? ["internal"] : ["footer"],
-          footerLabel:
-            isGuard || isPlanReview || isWorkflowReview || isWorkspaceMerge ? "confirm" : "send",
+          footerLabel: isGuard || isPlanReview || isWorkflowReview ? "confirm" : "send",
           hintPriority: 100,
           hintGroup: "primary",
           essential: true,
@@ -276,31 +264,22 @@ export function ElicitBlock(props: {
             ? "Deny command"
             : isWorkflowReview
               ? "Do not run workflow"
-              : isWorkspaceMerge
-                ? "Keep changes pending"
-                : "Decline request",
+              : "Decline request",
           description: isGuard ? "Deny this exact command" : "Decline without cancelling the run",
           category: "mutation",
           surfaces: ["footer"],
-          footerLabel: isGuard
-            ? "deny"
-            : isWorkflowReview
-              ? "do not run"
-              : isWorkspaceMerge
-                ? "keep pending"
-                : "decline",
+          footerLabel: isGuard ? "deny" : isWorkflowReview ? "do not run" : "decline",
           hintPriority: 80,
           hintGroup: "mutation",
           run: () => props.onResolve(DECLINE_RESULT),
         }),
         uiCommand({
           id: "elicit.cancel",
-          title: isPlanReview || isWorkspaceMerge ? "Cancel run" : "Cancel request",
-          description:
-            isPlanReview || isWorkspaceMerge ? "Cancel the active run" : "Cancel this interaction",
+          title: isPlanReview ? "Cancel run" : "Cancel request",
+          description: isPlanReview ? "Cancel the active run" : "Cancel this interaction",
           category: "escape",
           surfaces: ["footer"],
-          footerLabel: isPlanReview || isWorkspaceMerge ? "cancel run" : "cancel",
+          footerLabel: isPlanReview ? "cancel run" : "cancel",
           hintPriority: 90,
           hintGroup: "escape",
           essential: true,
@@ -348,9 +327,7 @@ export function ElicitBlock(props: {
             ? "Plan approval required"
             : isWorkflowReview
               ? "Workflow approval required"
-              : isWorkspaceMerge
-                ? "Workspace merge approval required"
-                : "Agent asks"}
+              : "Agent asks"}
       </text>
       <Show when={planSummary()} keyed>
         {(summary: { title: string; meta: string }) => (
@@ -384,24 +361,6 @@ export function ElicitBlock(props: {
           )}
         </Show>
       </box>
-      <Show when={form.workspaceMerge} keyed>
-        {(merge: WorkspaceMergeDetail) => (
-          <box paddingTop={1} flexDirection="column" flexShrink={0}>
-            <text
-              fg={tokens.fg}
-            >{`${merge.changes.length} reviewed workspace change${merge.changes.length === 1 ? "" : "s"}`}</text>
-            <For each={merge.changes}>
-              {(change) => (
-                <text fg={tokens.muted} wrapMode="word">
-                  {`${change.action.padEnd(6)} ${change.path}${change.type === "symlink" ? ` -> ${change.target ?? ""}` : ""}`}
-                </text>
-              )}
-            </For>
-            <text fg={tokens.muted}>{`change set ${merge.change_set_id}`}</text>
-          </box>
-        )}
-      </Show>
-
       <Show when={form.mode === "url"}>
         <box paddingTop={1} flexShrink={0}>
           <text fg={tokens.muted}>{"Open this URL to continue:"}</text>

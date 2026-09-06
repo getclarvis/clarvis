@@ -149,7 +149,7 @@ export async function appendRuntimeCheckpoint(
 
 /** One host-owned durability participant required before terminal acknowledgement. */
 export interface RuntimeSettlementParticipant {
-  readonly name: "session" | "trace" | "capabilities" | "workspace";
+  readonly name: "session" | "trace" | "capabilities";
   commit(): Promise<void>;
 }
 
@@ -162,7 +162,7 @@ export async function settleRuntimeTerminal(options: {
   readonly now?: () => number;
 }): Promise<RuntimeCheckpoint> {
   const names = new Set(options.participants.map((participant) => participant.name));
-  for (const required of ["session", "trace", "capabilities", "workspace"] as const) {
+  for (const required of ["session", "trace", "capabilities"] as const) {
     if (!names.has(required)) {
       throw new RuntimeCheckpointError(
         "checkpoint_conflict",

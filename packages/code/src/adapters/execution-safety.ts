@@ -144,7 +144,9 @@ export function safetyDescription(state: RunControlsState): string[] {
     lines.push(
       `Agent tools run inside a Linux ${state.isolation === "docker" ? "Docker" : "Podman"} container.`,
     );
-    lines.push("The workspace is copied into the container and settled back after the run.");
+    lines.push(
+      "The selected workspace is mounted directly; changes appear on the host immediately.",
+    );
     lines.push(
       state.network === "none"
         ? "Container network access is disabled."

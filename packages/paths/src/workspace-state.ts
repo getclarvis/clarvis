@@ -57,30 +57,18 @@ export interface WorkspaceStatePaths {
   extensionProfileSelectionFile: string;
   /** Parent directory containing every run-owned scratch directory. */
   runsDir: string;
-  /** Host-owned isolated-runtime state that survives guest replacement. */
+  /** Host-owned isolated-runtime checkpoints that survive guest replacement. */
   runtimesDir: string;
-  /** Registry of runtime generations belonging to this canonical workspace. */
-  runtimeRegistryFile: string;
   /** One run's scratch container, removed after its final temporary root. */
   runDir(executionId: string): string;
   /** Run-owned scratch root shared by shell and native coding tools. */
   runTempDir(executionId: string): string;
-  /** Resolve one generation's host-owned retained state root. */
+  /** Resolve one generation's host-owned checkpoint root. */
   runtimeDir(runtimeId: string): string;
-  /** Resolve the temporary workspace copy mounted into one runtime generation. */
-  runtimeWorkspaceDir(runtimeId: string): string;
-  /** Resolve the private baseline manifest for one runtime generation. */
-  runtimeBaselineFile(runtimeId: string): string;
-  /** Resolve the append-only change journal for one runtime generation. */
-  runtimeJournalFile(runtimeId: string): string;
   /** Resolve the directory containing host-accepted run checkpoints. */
   runtimeCheckpointsDir(runtimeId: string): string;
   /** Resolve one run's latest durable checkpoint. */
   runtimeCheckpointFile(runtimeId: string, executionId: string): string;
-  /** Resolve the lifecycle record for one runtime generation. */
-  runtimeRecordFile(runtimeId: string): string;
-  /** Resolve the private staging/backup directory for one reviewed apply transaction. */
-  runtimeTransactionDir(runtimeId: string, changeSetId: string): string;
   /**
    * Resolve an owner's memory machinery root.
    *
@@ -220,19 +208,12 @@ export function workspaceStatePaths(root?: string, opts?: RootOptions): Workspac
     extensionProfileSelectionFile: join(localDir, "extension-profile.json"),
     runsDir,
     runtimesDir,
-    runtimeRegistryFile: join(runtimesDir, "registry.json"),
     runDir,
     runTempDir: (executionId: string) => join(runDir(executionId), "tmp"),
     runtimeDir,
-    runtimeWorkspaceDir: (runtimeId: string) => join(runtimeDir(runtimeId), "workspace"),
-    runtimeBaselineFile: (runtimeId: string) => join(runtimeDir(runtimeId), "baseline.json"),
-    runtimeJournalFile: (runtimeId: string) => join(runtimeDir(runtimeId), "journal.jsonl"),
     runtimeCheckpointsDir: (runtimeId: string) => join(runtimeDir(runtimeId), "checkpoints"),
     runtimeCheckpointFile: (runtimeId: string, executionId: string) =>
       join(runtimeDir(runtimeId), "checkpoints", `${ownerSegment(executionId)}.json`),
-    runtimeRecordFile: (runtimeId: string) => join(runtimeDir(runtimeId), "runtime.json"),
-    runtimeTransactionDir: (runtimeId: string, changeSetId: string) =>
-      join(runtimeDir(runtimeId), "transactions", ownerSegment(changeSetId)),
     memoryMachineryRootForOwner: (owner: string) => join(ownerBase(owner), "memory"),
     plansLockDirForOwner: (owner: string) => join(ownerBase(owner), "plans"),
     monitorSidecar: (id: string) =>

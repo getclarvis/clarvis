@@ -950,7 +950,10 @@ export async function createFileKernel(opts: CreateFileKernelOptions): Promise<F
     ownerId: kernelDefaultOwner,
     project: gitWorkspace.project,
     workspace: gitWorkspace.workspace,
-    workspaceRoot: opts.workspaceRoot,
+    workspaceRoot: gitWorkspace.worktreeRoot,
+    ...(gitWorkspace.workspace.kind === "external_worktree" && gitWorkspace.commonDir !== undefined
+      ? { gitCommonDir: gitWorkspace.commonDir }
+      : {}),
     deps,
     planFactory: planning.planFactory,
     ...(built.skills === undefined ? {} : { skillsProvider: built.skills }),

@@ -574,7 +574,6 @@ export function createWorkflowsService(cfg: WorkflowsServiceConfig): KernelWorkf
           compaction: context.compaction,
           externalSignal: context.signal,
           elicit: mux.manager,
-          hostElicit: context.hostElicit,
         };
         const runTask = runDeps.executeRun(managerArgs);
         const [run] = await Promise.allSettled([runTask, titleTask]);

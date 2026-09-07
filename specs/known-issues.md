@@ -2342,3 +2342,19 @@ If it is ever added it must read _close the task or state why you cannot_, never
 must not fire while the agent is still producing file writes.
 
 ---
+
+## Hosted Podman runner compatibility
+
+The candidate runtime workflow on Ubuntu 24.04 reached real container execution: the ARM64 Docker
+canaries passed, but Podman rejected the required volume mount with `subpath: invalid mount option`.
+GitHub restored distribution-provided Podman 4.9 on that runner; its
+[runner announcement](https://github.com/actions/runner-images/issues/14642) recommends Ubuntu 26.04
+with Podman 5.7 for workflows requiring Podman 5.x. Container qualification therefore selects native
+Ubuntu 26.04 amd64/arm64 runners. It preserves the existing mount policy and uses the same pinned
+Debian image inputs. The independent AMD64 attempt received HTTP 500 from GHCR during a carrier
+push; that registry failure is separate from engine compatibility.
+
+Evidence: [candidate workflow run](https://github.com/getclarvis/clarvis/actions/runs/34135887115).
+The owning contract remains [isolated agent runtime](hosts/isolated-agent-runtime.md). Availability
+and runner image versions are external evidence; workflow source alone does not prove an engine
+canary passed. Do not infer native Windows/macOS container qualification from these Linux runners.

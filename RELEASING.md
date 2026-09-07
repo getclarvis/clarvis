@@ -54,7 +54,9 @@ do not establish GitHub App permissions or successful public publication.
 
 Candidate images live in `ghcr.io/getclarvis/clarvis-runtime-candidate-artifact` and
 `ghcr.io/getclarvis/clarvis-runtime-candidate`, linked to the source repository. The signed RC tag
-starts native amd64 and arm64 builds. Each runnable image must pass the existing real-engine Docker
+starts native amd64 and arm64 builds on Ubuntu 26.04 runners with Podman 5.7. The image itself
+still uses the pinned Debian base. Ubuntu 24.04's Podman 4.9 cannot implement the required volume
+subpath contract; engine tests must not weaken that contract to accommodate an older runner. Each runnable image must pass the existing real-engine Docker
 and rootless Podman canaries before its digest is included in a candidate index. These canaries use
 a deterministic model provider; they do not establish a live subscription result. The source
 prerelease attaches `runtime-candidate.json`, which is deliberately separate from the stable manifest.

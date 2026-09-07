@@ -24,6 +24,9 @@ test("distribution workflows separate candidate and stable publication and gate 
   expect(candidateSource).not.toContain("docker/setup-buildx-action");
   expect(stableSource).not.toContain("docker/setup-buildx-action");
   expect(candidateSource).toContain("run: docker buildx version");
+  expect(candidateSource).toContain("runner: ubuntu-26.04-arm");
+  expect(candidateSource).toContain("runner: ubuntu-26.04\n");
+  expect(candidateSource).not.toContain("apt-get install -y podman");
   expect(stableSource).toContain("run: docker buildx version");
   expect(stable.jobs.package.needs).toBe("identity");
   expect(stable.jobs["runtime-image"].needs).toBe("identity");

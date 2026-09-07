@@ -23,9 +23,9 @@ jobs:
       matrix:
         include:
           - architecture: amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - architecture: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     permissions:
@@ -43,8 +43,8 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run check:release
       - run: bun run build
-      - name: install Podman
-        run: sudo apt-get update && sudo apt-get install -y podman
+      - name: verify native container engines
+        run: docker version && podman version
       - name: authenticate source-owned candidate registry
         env:
           GHCR_TOKEN: ${{ github.token }}

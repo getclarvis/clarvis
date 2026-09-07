@@ -271,7 +271,7 @@ and [RELEASING.md](../../RELEASING.md). Ordinary branch pushes do not publish. `
 source tags for release-branch commits, then creates a final tag after a merged release PR has green
 CI on its exact merge SHA. `.github/workflows/release.yml` excludes RC pushes, admits only stable version tags for
 publication, and verifies anonymous image access. `.github/workflows/candidate.yml` qualifies both
-container engines on native Linux amd64/arm64 before publishing candidate images and a source
+container engines on native Ubuntu 26.04 amd64/arm64 runners with volume-subpath-capable Podman before publishing candidate images and a source
 prerelease. Both workflows use Clarvis Release Publisher credentials but request installation tokens scoped
 to their own target repository.
 Production: `tooling/release/gitflow.ts` (`main`) and `tooling/lib/gitflow-release.ts`

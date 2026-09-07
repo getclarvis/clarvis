@@ -1184,9 +1184,10 @@ startup composer, complete header and complete input-ready frame, n≥7 with min
 It refuses to report on a busy machine and stamps the power state, because CPU
 frequency scaling moved one unchanged measurement from 2.05 s to 0.60 s and three
 conclusions had to be withdrawn over it.
-The repository's [Clarvis performance validation
-skill](../../.agents/skills/clarvis-performance-validation/SKILL.md) owns the future clean-versus-
-marketplace A/B, real-PTY run, ignored-OAuth, skill/MCP/subagent, hashing-drift and cleanup checklist.
+The repository's [Clarvis TUI validation
+skill](../../.agents/skills/clarvis-tui-validation/SKILL.md) selects focused, full-audit, or performance
+work. Its performance mode scopes startup, extension comparisons, real-run latency, OAuth, drift,
+and retention checks to the investigation and reuses valid artifact evidence across modes.
 
 An MCP that cannot connect while a run opens its tool pool remains represented by the persisted
 `mcp_degraded` diagnostic event, but Code does not publish that event into conversation history. The

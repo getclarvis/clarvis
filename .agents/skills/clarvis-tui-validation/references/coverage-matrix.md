@@ -1,8 +1,10 @@
 # Clarvis TUI product coverage matrix
 
-This is the minimum baseline for a full-product audit. Reconcile it with current source and tests
-before each run. Add newly discovered surfaces immediately; delete or rename entries that no longer
-exist. Record one verdict per scenario ID, even when several share a fixture.
+This is the minimum baseline for [full-audit mode](full-audit.md), not a checklist to load for every
+focused regression. Reconcile changed surfaces with current source and tests. Add newly discovered
+surfaces and remove obsolete entries. Record one verdict and proof method per scenario ID, even
+when several share a fixture. A row with only partial proof remains partial; an inventory count or
+passing lower-level suite does not establish execution of its E2E requirements.
 
 ## Inventory and provenance
 
@@ -171,7 +173,7 @@ routes.
 | `EXT-06`  | Skills and resources                | Four-root inventory, qualified identity, task/agent routing, invalid or inactive roots and bounded reads are correct                    |
 | `EXT-07`  | Hooks and executables               | Contribution review, workspace approval, command execution, failure and diagnostic redaction preserve trust boundaries                  |
 | `EXT-08`  | Workspace trust                     | Executable configuration is withheld until approval, recomposes after change, and revocation takes effect safely                        |
-| `EXT-09`  | Drift after admission               | Manifest, sidecar, skill/resource or executable changes fail closed and require the documented refresh boundary                         |
+| `EXT-09`  | Drift after admission               | After the documented asynchronous drift notice, affected skills or executable contributions are withdrawn, unaffected work remains usable, and reconnect captures changed bytes |
 | `SAFE-01` | Safety presets                      | All current presets, danger confirmation, next-run semantics and effective policy preservation are correct                              |
 | `SAFE-02` | Guard modes and policy              | Off/on/auto, allow/deny precedence, ask, judge result, fallback and durable transcript annotation are correct                           |
 | `SAFE-03` | Native sandbox                      | Available/unavailable/degraded backends, containment refusal, diagnostics and host fallback match the active OS                         |

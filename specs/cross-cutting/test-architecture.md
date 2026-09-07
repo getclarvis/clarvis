@@ -67,6 +67,18 @@ placeholders are excluded. Production: `tooling/checks/spec-hygiene.ts` and
 `resolveRepositoryFileReference`, `extractCalendarDates`, `extractSourceSizeReferences`). Test:
 `tooling/tests/unit/spec-hygiene.test.ts` (`stable source references`, `timeless specifications`).
 
+Repository validation skills share scope and evidence reuse through
+[`AGENTS.md`](../../AGENTS.md#repository-skills-and-evidence-reuse). The TUI skill selects focused,
+performance, or full-audit work from one entrypoint; documentation synchronization maintains its
+inventory without executing E2E. The standalone static inventory check compares registered slash
+commands and Settings panel labels with matrix rows, requires dynamic-command scenarios, and
+rejects duplicate IDs regardless of Markdown cell padding. Prose mentions do not count as rows.
+Its result proves inventory consistency only, never execution of a product scenario.
+Production: [the checker](../../.agents/skills/clarvis-tui-validation/scripts/check-live-inventory.ts)
+and `tooling/lib/tui-inventory.ts` (`inspectTuiInventory`). Test:
+`tooling/tests/unit/tui-inventory.test.ts` (`static TUI inventory`) covers padding-independent counts,
+duplicate rejection, missing/stale registrations, dynamic rows, and command argument normalization.
+
 ### 2.2 The six test levels
 
 `TEST_LEVELS` is a `Set` of exactly six names (`tooling/lib/source-policy.ts`):

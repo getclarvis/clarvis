@@ -1737,7 +1737,7 @@ Bun artifact strategies. They do not prove every remaining 675 ms is irreducibly
 work must keep measuring runtime chunk topology and must not reintroduce eager plugin walks. The
 product mitigation is load-bearing: a task submitted in the startup composer begins when the run
 host is ready, before complete-app mount. The revalidation procedure lives in
-`.agents/skills/clarvis-performance-validation/SKILL.md`.
+[the TUI skill's performance mode](../.agents/skills/clarvis-tui-validation/references/performance.md).
 
 ---
 

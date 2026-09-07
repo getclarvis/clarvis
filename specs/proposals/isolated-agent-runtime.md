@@ -714,8 +714,8 @@ Acceptance reports name source revision, image digest, Bun/engine/OCI runtime ve
 guest OS/architecture, VM provider where applicable, and effective policy. Linux canaries cannot
 prove macOS bind-mount behavior. A test skipped because a machine is absent remains unverified.
 
-Real TUI work follows [TUI E2E validation](../../.agents/skills/clarvis-tui-e2e-validation/SKILL.md)
-and [performance validation](../../.agents/skills/clarvis-performance-validation/SKILL.md), with a
+Real TUI work follows [TUI validation](../../.agents/skills/clarvis-tui-validation/SKILL.md), selecting
+its focused or performance mode as applicable, with a
 current artifact and the boot smoke when boot behavior changes. Measure input readiness, kernel
 readiness, first streamed response, warm launch, cold image/VM launch, dependency I/O, and total
 host-plus-VM memory separately. Native startup must not pay container discovery/import costs.

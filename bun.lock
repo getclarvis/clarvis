@@ -60,6 +60,7 @@
       "dependencies": {
         "@clarvis/capability": "workspace:*",
         "@clarvis/loop": "workspace:*",
+        "@clarvis/mcp-client": "workspace:*",
         "@clarvis/memory": "workspace:*",
         "@clarvis/paths": "workspace:*",
         "@clarvis/plan": "workspace:*",
@@ -71,9 +72,6 @@
         "@clarvis/workflows": "workspace:*",
         "yaml": "^2.9.0",
         "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@clarvis/mcp-client": "workspace:*",
       },
     },
     "packages/llm": {

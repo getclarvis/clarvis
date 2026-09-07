@@ -14,6 +14,7 @@ export {
   type RuntimeAvailability,
   type RuntimeBackend,
   type RuntimeInfo,
+  type RuntimeHookMcpCall,
   type RuntimeKind,
   type RuntimeLaunchSpec,
   type RuntimeLifecycleState,

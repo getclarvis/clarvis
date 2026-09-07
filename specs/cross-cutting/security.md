@@ -1091,11 +1091,43 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     process/channel retires the generation before the next run. Control-pump rejection cannot skip
     model/capability revocation or snapshot disposal. Failed runtime cleanup remains owned and is
     retried by a later close rather than silently reported as success. Configured hook commands and
-    MCP hooks remain admitted host callbacks; guest event contexts cannot select commands or policy.
+    HTTP/SSE MCP hooks remain admitted host callbacks; guest event contexts cannot select commands or policy.
+    A `stdio` MCP hook returns through the closed `runtime.hook_mcp` operation to its active guest
+    run, using only that run's enabled server snapshot and guest-owned connection manager. It never
+    retries on the host; hook failure remains fail-open without changing placement. Production:
+    `createHostHooksBridge` in
+    [`packages/kernel/src/runtime/hooks-bridge.ts`](../../packages/kernel/src/runtime/hooks-bridge.ts)
+    and `createGuestHookMcpCaller` in
+    [`packages/kernel/src/runtime/hook-mcp.ts`](../../packages/kernel/src/runtime/hook-mcp.ts).
+    Test: transport separation in
+    [`packages/kernel/tests/integration/runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
+    and the opt-in host-file boundary checks in
+    [`packages/kernel/tests/integration/runtime-mcp-hooks.e2e.test.ts`](../../packages/kernel/tests/integration/runtime-mcp-hooks.e2e.test.ts).
     Tasks keeps its canonical guest capability over a strict host provider port with identity/write
     gates. Workflow children use host-assembled requests and one shared guest budget; unprojectable
     host capabilities refuse placement. Model leases admit exact profile, vision and effective judge
     pairs, with bounded, correlated progress frames and a separate terminal result.
+    The host resolves provider/model overrides from its captured registry and reconstructs model
+    capabilities, ignoring guest-supplied configuration. Per-call retry limits cross unchanged;
+    bounded FIFO admission uses host model policy rather than container CPU allocation. Typed
+    provider errors carry only sanitized bounded messages and closed recovery/usage fields, never
+    stacks, causes, headers or response bodies. Ordinary HTTP/SSE MCP operations also remain on
+    host-owned authenticated connections: `runtime.mcp` accepts only snapshot server names or
+    run-owned leases and catalog-admitted operations, never endpoints, credentials or stdio
+    commands. Environment-backed bearer/header values and saved OAuth are not copied into the
+    guest. Authored declaration templates still cross as run configuration; do not embed literal
+    credentials there. Remote effects remain possible with container network `none`. Elicitation
+    returns to the live guest relay, and run disposal aborts acquisitions and releases leases.
+    Production: `hostModelBroker` in
+    [`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts),
+    `encodeRuntimeProviderError` in
+    [`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts), and
+    `createHostRemoteMcpBridge` in
+    [`remote-mcp.ts`](../../packages/kernel/src/runtime/remote-mcp.ts).
+    Test: authenticated HTTP/SSE and real SDK model cases in
+    [`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
+    and closed snapshot/lease/catalog checks in
+    [`runtime-remote-mcp.test.ts`](../../packages/kernel/tests/unit/runtime-remote-mcp.test.ts).
     Production: `createHostHooksBridge` in `packages/kernel/src/runtime/hooks-bridge.ts`;
     `createHostTasksGrant` in `packages/kernel/src/runtime/tasks-bridge.ts`;
     `createHostWorkflowBridge` in `packages/kernel/src/runtime/workflows-bridge.ts`;

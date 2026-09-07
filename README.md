@@ -245,7 +245,7 @@ units and are not published independently.
 | [`@clarvis/plan`](packages/plan)               | product capability  | `packages/plan`        | Provider-neutral plans and review gates.                     |
 | [`@clarvis/tasks`](packages/tasks)             | product capability  | `packages/tasks`       | External task-management adapters and tools.                 |
 | [`@clarvis/workflows`](packages/workflows)     | product capability  | `packages/workflows`   | Multi-agent workflow scheduling and records.                 |
-| [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | In-process implementation and composition root.              |
+| [`@clarvis/kernel`](packages/kernel)           | host implementation | `packages/kernel`      | Composition root and isolated-runtime model/MCP authority.   |
 | [`@clarvis/code`](packages/code)               | application         | `packages/code`        | The terminal UI distributed as `clarvis`.                    |
 | [`@clarvis/server`](packages/server)           | application         | `packages/server`      | Authenticated MCP-over-HTTP facade, currently source-only.   |
 

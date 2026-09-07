@@ -7,7 +7,7 @@ the same services behind a remote transport later.
 `@clarvis/code` uses this package as its backend, and it is the only backend.
 
 Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clarvis/loop` (the engine),
-`@clarvis/capability`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
+`@clarvis/capability`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
 Clients remain independent of the engine through six deliberately bounded public entrypoints. Each
@@ -120,16 +120,36 @@ host to execute the canonical post-run enqueue there. The resulting dedicated in
 the file host's direct Loop executor, not the container coordinator, so Memory mutation remains a
 host-only operation throughout.
 
-Container composition also preserves configured lifecycle hooks, Tasks and Workflows. Hook commands
-and MCP hooks execute on the host through admitted callbacks; the guest cannot supply a command or
-replace policy. Tasks uses its canonical guest capability and strict request schema over a host-owned
-provider port, retaining binding, write gates and provider errors. Admiral scheduling and its shared
+Container composition also preserves configured lifecycle hooks, Tasks and Workflows. Hook selection,
+ordering and command hooks remain on the host through admitted callbacks; the guest cannot supply a
+command or replace policy. A hook targeting a `stdio` MCP server calls back into the active container
+through `runtime.hook_mcp`, using that run's guest-owned connection and environment, including before
+the ordinary tool pool opens. There is no host execution fallback when that call fails. HTTP/SSE
+MCP hooks retain their host connections and remote effects. Tasks uses its canonical guest capability
+and strict request schema over a host-owned provider port, retaining binding, write gates and provider
+errors. Admiral scheduling and its shared
 leader/subagent budget stay together in the guest, while the host assembles each leader request and
 admits execution to the same generation. An unknown host capability that cannot be projected refuses
 container placement instead of silently disappearing. Model leases include exact profile, vision and
 resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 5 and a rebuilt compatible worker image.
+require runtime protocol revision 7 and a rebuilt compatible worker image.
+
+Ordinary HTTP/SSE MCP tools and resources also use host-owned connections through the closed
+`runtime.mcp` grant. The host pins enabled server declarations and the owner; the guest supplies
+only a server name or a run-owned lease and a catalog-admitted operation. Environment-backed headers,
+bearer tokens and the OAuth coordinator/store remain on the host. Typed pending/deferred connection
+failures retain native run behavior, and remote elicitation returns through `runtime.mcp_elicit` to
+the live guest's serialized input port. Run teardown releases the leases. Stdio remains guest-local,
+and HTTP/SSE still has remote effects even with container network `none`.
+
+Before each admitted provider/model pair reaches the adapter, the host uses the shared
+`resolveProvider` on its captured registry, including model overrides, and reconstructs the model's
+capability set. Image removal remains adapter serialization-only. Model envelopes preserve per-call
+retry and Retry-After limits, including zero retries, while typed provider failures preserve recovery
+and failed-attempt usage without transmitting stacks, causes, headers or response bodies. The broker
+uses bounded FIFO admission configured by the host model concurrency/queue settings, not container
+CPU allocation; the host provider admission policy still owns physical requests.
 
 The selected canonical workspace is mounted read-write at guest `/workspace`; guest changes are
 therefore visible on the host immediately. Clarvis does not create a second workspace copy or own an

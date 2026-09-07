@@ -120,16 +120,20 @@ host to execute the canonical post-run enqueue there. The resulting dedicated in
 the file host's direct Loop executor, not the container coordinator, so Memory mutation remains a
 host-only operation throughout.
 
-Container composition also preserves configured lifecycle hooks, Tasks and Workflows. Hook commands
-and MCP hooks execute on the host through admitted callbacks; the guest cannot supply a command or
-replace policy. Tasks uses its canonical guest capability and strict request schema over a host-owned
-provider port, retaining binding, write gates and provider errors. Admiral scheduling and its shared
+Container composition also preserves configured lifecycle hooks, Tasks and Workflows. Hook selection,
+ordering and command hooks remain on the host through admitted callbacks; the guest cannot supply a
+command or replace policy. A hook targeting a `stdio` MCP server calls back into the active container
+through `runtime.hook_mcp`, using that run's guest-owned connection and environment, including before
+the ordinary tool pool opens. There is no host execution fallback when that call fails. HTTP/SSE
+MCP hooks retain their host connections and remote effects. Tasks uses its canonical guest capability
+and strict request schema over a host-owned provider port, retaining binding, write gates and provider
+errors. Admiral scheduling and its shared
 leader/subagent budget stay together in the guest, while the host assembles each leader request and
 admits execution to the same generation. An unknown host capability that cannot be projected refuses
 container placement instead of silently disappearing. Model leases include exact profile, vision and
 resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 5 and a rebuilt compatible worker image.
+require runtime protocol revision 6 and a rebuilt compatible worker image.
 
 The selected canonical workspace is mounted read-write at guest `/workspace`; guest changes are
 therefore visible on the host immediately. Clarvis does not create a second workspace copy or own an

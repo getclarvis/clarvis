@@ -481,7 +481,9 @@ export async function createLocalContainerRuntime(
         ];
       });
       const leaseId = randomUUID();
-      const hooks = await createHostHooksBridge(args, runId);
+      const hooks = await createHostHooksBridge(args, runId, (call, signal) =>
+        controller.session.callHookMcp(runId, call, signal),
+      );
       const loadedGuardSettings = input.loadGuardSettings?.() ?? {};
       const guardSettings: GuardSettings = structuredClone({
         ...(loadedGuardSettings.guard === undefined ? {} : { guard: loadedGuardSettings.guard }),

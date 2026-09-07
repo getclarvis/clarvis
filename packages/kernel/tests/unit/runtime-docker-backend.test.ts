@@ -212,6 +212,7 @@ function fixture(
               RUNTIME_PROTOCOL_REVISION,
           }),
           "runtime.start": async ({ runId }) => ({ runId }),
+          "runtime.hook_mcp": async ({ runId, payload }) => ({ runId, call: payload }),
           "runtime.steer": async () => undefined,
           "runtime.cancel": async () => undefined,
           "runtime.shutdown": async () => undefined,
@@ -326,6 +327,8 @@ describe("Docker runtime backend", () => {
     expect(create).toContain("type=bind,source=/repo/.git,target=/repo/.git");
     const signal = new AbortController().signal;
     await expect(session.startRun("run", {}, signal)).resolves.toEqual({ runId: "run" });
+    const call = { server: "review", tool: "inspect", input: { mode: "solo" } };
+    await expect(session.callHookMcp("run", call, signal)).resolves.toEqual({ runId: "run", call });
     await expect(session.steer("run", { text: "continue" }, signal)).resolves.toBeUndefined();
     await expect(session.cancel("run")).resolves.toBeUndefined();
     await session.stop();

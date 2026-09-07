@@ -182,6 +182,7 @@ function fakeControl(
             runtimeProtocolRevision: overrides.protocolRevision ?? RUNTIME_PROTOCOL_REVISION,
           }),
           "runtime.start": async ({ runId }) => ({ runId, status: "done" }),
+          "runtime.hook_mcp": async ({ runId, payload }) => ({ runId, call: payload }),
           "runtime.steer": async () => undefined,
           "runtime.cancel": async () => undefined,
           "runtime.shutdown": async () => undefined,
@@ -313,6 +314,8 @@ describe("Podman runtime backend", () => {
       runId: "run-1",
       status: "done",
     });
+    const call = { server: "review", tool: "inspect", input: { mode: "solo" } };
+    await expect(session.callHookMcp("run-1", call)).resolves.toEqual({ runId: "run-1", call });
     await session.steer("run-1", { message: "next" });
     await session.cancel("run-1");
     await session.stop();

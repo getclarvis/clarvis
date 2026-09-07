@@ -73,6 +73,8 @@ RC identity, emits the separate candidate manifest with the `source-v1` installa
 publishes only source prereleases. `packages/code/tooling/candidate-install.ts` consumes that contract
 for explicit development installs, verifying the source snapshot and pulling its candidate image.
 `ci/qualify-runtime.sh` runs the existing Docker or rootless Podman integration canaries against the
-actual built image. `.github/workflows/candidate.yml` requires both engines on both Linux architectures
+actual built image, including stdio MCP hooks that write to the guest's mounted workspace but cannot
+access synthetic host files outside it. That hook canary also covers early lifecycle calls and gate
+argument rewriting. `.github/workflows/candidate.yml` requires both engines on both Linux architectures
 before attaching that identity to a source prerelease. The official workflow accepts only stable
 tags and verifies anonymous image pulls before public release activation.

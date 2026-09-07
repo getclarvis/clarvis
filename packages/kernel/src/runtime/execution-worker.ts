@@ -34,6 +34,8 @@ export interface GuestRunExecutor {
     signal: AbortSignal,
   ): Promise<unknown>;
   steer?(runId: string, input: unknown, signal: AbortSignal): Promise<void>;
+  /** Execute a bounded hook call using only a live run's guest MCP configuration. */
+  callHookMcp?(runId: string, input: unknown, signal: AbortSignal): Promise<unknown>;
 }
 
 /** Serve the disposable worker over attached stdin/stdout without exposing a public kernel. */
@@ -114,6 +116,19 @@ export function serveExecutionWorker(options: {
           throw Object.assign(new Error("run cannot be steered"), { code: "not_found" });
         }
         await options.executor.steer(runId, payload, signal);
+      },
+      "runtime.hook_mcp": async ({ runId, payload, signal }) => {
+        const run = runId === undefined ? undefined : runs.get(runId);
+        if (
+          runId === undefined ||
+          run === undefined ||
+          options.executor.callHookMcp === undefined
+        ) {
+          throw Object.assign(new Error("run MCP hooks are unavailable"), { code: "not_found" });
+        }
+        const combined = AbortSignal.any([run.signal, signal]);
+        combined.throwIfAborted();
+        return options.executor.callHookMcp(runId, payload, combined);
       },
       "runtime.cancel": async ({ runId }) => {
         if (runId === undefined)

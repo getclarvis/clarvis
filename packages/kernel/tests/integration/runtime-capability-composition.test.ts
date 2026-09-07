@@ -124,6 +124,8 @@ async function fixture(
         },
         startRun: (runId, payload, signal) =>
           host.request("runtime.start", { generation, runId }, payload, { signal }),
+        callHookMcp: (runId, payload, signal) =>
+          host.request("runtime.hook_mcp", { generation, runId }, payload, { signal }),
         steer: async (runId, payload, signal) => {
           await host.request("runtime.steer", { generation, runId }, payload, { signal });
         },
@@ -176,35 +178,30 @@ async function fixture(
 }
 
 describe("runtime capability composition", () => {
-  it("keeps MCP hooks owner-scoped and releases their host lease after success or failure", async () => {
+  it("routes stdio hooks only to the guest and never falls back to a host connection", async () => {
     const f = await fixture({
       call: async () => {
         throw new Error("unexpected model request");
       },
     });
+    const request = body("stdio-hooks");
+    request.servers = [{ name: "review", transport: "stdio", command: "guest-only-command" }];
     const signal = new AbortController().signal;
-    const request = body("mcp-hooks");
-    const server = {
-      name: "review",
-      transport: "stdio" as const,
-      command: "host-only-command",
-      args: [],
-    };
-    request.servers = [server];
-    let acquisitions = 0;
-    let releases = 0;
+    let hostAcquisitions = 0;
+    let guestCalls = 0;
     let fail = false;
     const hook: Capability = {
       name: "hooks",
       forRun(context) {
-        const port = context.services.get(MCP_HOOK_TOOL_PORT)!;
         return {
           name: "hooks",
           forAgent: () => null,
           lifecycle: [
             {
-              async onRunStart(input) {
-                await port.call("review", "inspect", { mode: input.mode }, signal);
+              async onRunStart() {
+                await context.services
+                  .get(MCP_HOOK_TOOL_PORT)!
+                  .call("review", "inspect", { mode: "solo" }, signal);
               },
             },
           ],
@@ -216,32 +213,22 @@ describe("runtime capability composition", () => {
       capabilities: [hook],
       connections: {
         closeAll: async () => undefined,
-        async acquire(options: Parameters<typeof f.deps.connections.acquire>[0]) {
-          acquisitions++;
-          expect(options).toEqual({ server, owner: "owner", poolSharing: "owner", signal });
-          return {
-            tools: [],
-            conn: {
-              name: "review",
-              status: "connected" as const,
-              transport: "stdio" as const,
-              close: async () => undefined,
-              async callTool(tool: string, input: unknown, callSignal?: AbortSignal) {
-                expect([tool, input, callSignal]).toEqual(["inspect", { mode: "solo" }, signal]);
-                if (fail) throw new Error("hook provider failed");
-                return { ok: true, data: { accepted: true } };
-              },
-            },
-            release: async () => {
-              releases++;
-            },
-          };
+        async acquire(): Promise<never> {
+          hostAcquisitions++;
+          throw new Error("stdio hook must not acquire a host connection");
         },
       },
     };
     const bridge = await createHostHooksBridge(
       { rawBody: request, owner: "owner", deps },
-      "mcp-hooks",
+      "stdio-hooks",
+      async (call, callSignal) => {
+        guestCalls++;
+        expect(call).toEqual({ server: "review", tool: "inspect", input: { mode: "solo" } });
+        expect(callSignal).toBe(signal);
+        if (fail) throw new Error("guest hook unavailable");
+        return { accepted: true };
+      },
     );
     const invocation = {
       operation: "invoke",
@@ -249,22 +236,118 @@ describe("runtime capability composition", () => {
       method: "onRunStart",
       context: { mode: "solo", entry: "solo" },
     };
-    expect(bridge!.grant.validateArguments(invocation)).toBe(true);
     await bridge!.grant.invoke(invocation, signal);
-    expect(releases).toBe(1);
     fail = true;
-    await expect(bridge!.grant.invoke(invocation, signal)).rejects.toThrow("hook provider failed");
-    expect(releases).toBe(2);
-    const inactive = await createHostHooksBridge(
-      { rawBody: { ...request, servers: [] }, owner: "owner", deps },
-      "inactive-hooks",
+    await expect(bridge!.grant.invoke(invocation, signal)).rejects.toThrow(
+      "guest hook unavailable",
     );
-    await expect(inactive!.grant.invoke(invocation, signal)).rejects.toThrow(
+    request.servers[0]!.enabled = false;
+    await expect(bridge!.grant.invoke(invocation, signal)).rejects.toThrow(
       "hook MCP server is not active",
     );
-    expect(acquisitions).toBe(2);
-    expect(releases).toBe(2);
+    expect(guestCalls).toBe(2);
+    expect(hostAcquisitions).toBe(0);
   });
+
+  it.each(["http", "sse"] as const)(
+    "keeps %s MCP hooks owner-scoped on the host and releases their lease",
+    async (transport) => {
+      const f = await fixture({
+        call: async () => {
+          throw new Error("unexpected model request");
+        },
+      });
+      const signal = new AbortController().signal;
+      const request = body("mcp-hooks");
+      const server = {
+        name: "review",
+        transport,
+        url: "https://hooks.invalid/mcp",
+      };
+      request.servers = [server];
+      let acquisitions = 0;
+      let releases = 0;
+      let fail = false;
+      const hook: Capability = {
+        name: "hooks",
+        forRun(context) {
+          const port = context.services.get(MCP_HOOK_TOOL_PORT)!;
+          return {
+            name: "hooks",
+            forAgent: () => null,
+            lifecycle: [
+              {
+                async onRunStart(input) {
+                  await port.call("review", "inspect", { mode: input.mode }, signal);
+                },
+              },
+            ],
+          };
+        },
+      };
+      const deps = {
+        ...f.deps,
+        capabilities: [hook],
+        connections: {
+          closeAll: async () => undefined,
+          async acquire(options: Parameters<typeof f.deps.connections.acquire>[0]) {
+            acquisitions++;
+            expect(options).toEqual({ server, owner: "owner", poolSharing: "owner", signal });
+            return {
+              tools: [],
+              conn: {
+                name: "review",
+                status: "connected" as const,
+                transport,
+                close: async () => undefined,
+                async callTool(tool: string, input: unknown, callSignal?: AbortSignal) {
+                  expect([tool, input, callSignal]).toEqual(["inspect", { mode: "solo" }, signal]);
+                  if (fail) throw new Error("hook provider failed");
+                  return { ok: true, data: { accepted: true } };
+                },
+              },
+              release: async () => {
+                releases++;
+              },
+            };
+          },
+        },
+      };
+      const bridge = await createHostHooksBridge(
+        { rawBody: request, owner: "owner", deps },
+        "mcp-hooks",
+        async () => {
+          throw new Error("remote hooks must stay on the host");
+        },
+      );
+      const invocation = {
+        operation: "invoke",
+        index: 0,
+        method: "onRunStart",
+        context: { mode: "solo", entry: "solo" },
+      };
+      expect(bridge!.grant.validateArguments(invocation)).toBe(true);
+      await bridge!.grant.invoke(invocation, signal);
+      expect(releases).toBe(1);
+      fail = true;
+      await expect(bridge!.grant.invoke(invocation, signal)).rejects.toThrow(
+        "hook provider failed",
+      );
+      expect(releases).toBe(2);
+      const inactive = await createHostHooksBridge(
+        { rawBody: { ...request, servers: [] }, owner: "owner", deps },
+        "inactive-hooks",
+        async () => {
+          throw new Error("inactive hook must not reach guest");
+        },
+      );
+      await expect(inactive!.grant.invoke(invocation, signal)).rejects.toThrow(
+        "hook MCP server is not active",
+      );
+      expect(acquisitions).toBe(2);
+      expect(releases).toBe(2);
+    },
+  );
 
   it("refuses duplicate, unprepared and over-authorized leaders and validates guest workflow progress", async () => {
     const f = await fixture({

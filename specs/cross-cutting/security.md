@@ -1091,7 +1091,18 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     process/channel retires the generation before the next run. Control-pump rejection cannot skip
     model/capability revocation or snapshot disposal. Failed runtime cleanup remains owned and is
     retried by a later close rather than silently reported as success. Configured hook commands and
-    MCP hooks remain admitted host callbacks; guest event contexts cannot select commands or policy.
+    HTTP/SSE MCP hooks remain admitted host callbacks; guest event contexts cannot select commands or policy.
+    A `stdio` MCP hook returns through the closed `runtime.hook_mcp` operation to its active guest
+    run, using only that run's enabled server snapshot and guest-owned connection manager. It never
+    retries on the host; hook failure remains fail-open without changing placement. Production:
+    `createHostHooksBridge` in
+    [`packages/kernel/src/runtime/hooks-bridge.ts`](../../packages/kernel/src/runtime/hooks-bridge.ts)
+    and `createGuestHookMcpCaller` in
+    [`packages/kernel/src/runtime/hook-mcp.ts`](../../packages/kernel/src/runtime/hook-mcp.ts).
+    Test: transport separation in
+    [`packages/kernel/tests/integration/runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
+    and the opt-in host-file boundary checks in
+    [`packages/kernel/tests/integration/runtime-mcp-hooks.e2e.test.ts`](../../packages/kernel/tests/integration/runtime-mcp-hooks.e2e.test.ts).
     Tasks keeps its canonical guest capability over a strict host provider port with identity/write
     gates. Workflow children use host-assembled requests and one shared guest budget; unprojectable
     host capabilities refuse placement. Model leases admit exact profile, vision and effective judge

@@ -406,6 +406,10 @@ export function createPodmanRuntimeBackend(options: PodmanBackendOptions): Runti
             peer.request("runtime.start", { generation: spec.generation, runId }, envelope, {
               ...(signal === undefined ? {} : { signal }),
             }),
+          callHookMcp: (runId, call, signal) =>
+            peer.request("runtime.hook_mcp", { generation: spec.generation, runId }, call, {
+              ...(signal === undefined ? {} : { signal }),
+            }),
           async steer(runId, input, signal) {
             await peer.request("runtime.steer", { generation: spec.generation, runId }, input, {
               ...(signal === undefined ? {} : { signal }),

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import {
   launchIsolatedRuntime,
+  RUNTIME_PROTOCOL_REVISION,
   type RuntimeBackend,
   type RuntimeInfo,
   type RuntimeLaunchSpec,
@@ -50,7 +51,7 @@ function info(spec: RuntimeLaunchSpec): RuntimeInfo {
     hostPlatform: "linux",
     guestPlatform: "linux",
     imageDigest: spec.imageDigest,
-    runtimeProtocolRevision: "5",
+    runtimeProtocolRevision: RUNTIME_PROTOCOL_REVISION,
     network: spec.network,
     limits: spec.limits,
     lifecycle: "ready",
@@ -71,6 +72,7 @@ describe("isolated runtime controller", () => {
           closed: false,
           info: info(spec),
           async startRun() {},
+          async callHookMcp() {},
           async steer() {},
           async cancel() {},
           async exposePort() {
@@ -115,6 +117,7 @@ describe("isolated runtime controller", () => {
             closed: false,
             info: info(spec),
             async startRun() {},
+            async callHookMcp() {},
             async steer() {},
             async cancel() {},
             async exposePort() {

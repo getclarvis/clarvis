@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
+import { ValidationError } from "@clarvis/capability";
 import { MEMORY_READ_TOOL_NAMES, MEMORY_WRITE_TOOL_NAMES } from "@clarvis/memory/capability";
 import {
   createGuestLoopExecutor,
@@ -19,6 +20,56 @@ afterEach(async () => {
 });
 
 describe("runtime guest loop", () => {
+  it.each([{ servers: {} }, { servers: [null] }])(
+    "retains request validation and closes MCP hooks for malformed servers %j",
+    async ({ servers }) => {
+      const root = await mkdtemp(join(tmpdir(), "clarvis-runtime-invalid-mcp-"));
+      directories.push(root);
+      const executor = createGuestLoopExecutor({
+        workspaceRoot: root,
+        scratchRoot: join(root, "scratch"),
+      });
+      const bridge: GuestExecutionBridge = {
+        model: async () => {
+          throw new Error("invalid requests must not call the model");
+        },
+        capability: async () => {
+          throw new Error("invalid requests must not invoke hooks");
+        },
+        event: async () => undefined,
+        checkpoint: async () => undefined,
+      };
+      const signal = new AbortController().signal;
+      await expect(
+        executor.execute(
+          "invalid-mcp",
+          {
+            owner: "owner",
+            modelLeaseId: "lease",
+            rawBody: {
+              execution_id: "invalid-mcp",
+              servers,
+              messages: [{ role: "user", content: "hi" }],
+              providers: [{ name: "test", kind: "anthropic" }],
+              profiles: [{ name: "solo", model: "test/model", tools: [], iteration_limit: 3 }],
+              entry: "solo",
+              budget: { on_exceed: "stop", total_token_limit: 1_000 },
+            },
+          },
+          bridge,
+          signal,
+        ),
+      ).rejects.toBeInstanceOf(ValidationError);
+      await expect(
+        executor.callHookMcp!(
+          "invalid-mcp",
+          { server: "review", tool: "inspect", input: {} },
+          signal,
+        ),
+      ).rejects.toMatchObject({ code: "not_found" });
+    },
+  );
+
   it("starts the image entrypoint only with both immutable identities", () => {
     const input = new PassThrough();
     const output = new PassThrough();

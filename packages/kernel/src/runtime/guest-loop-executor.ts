@@ -40,6 +40,7 @@ import { createGuestMemoryCapability, validRuntimeMemoryDescriptor } from "./mem
 import type { MemoryRuntimeDescriptor } from "@clarvis/memory/capability";
 import { createCompactionQueue, type CompactionQueue } from "../runs/compaction-queue.ts";
 import { createSteerQueue, type SteerQueue } from "../runs/steer-queue.ts";
+import { createGuestHookMcpCaller } from "./hook-mcp.ts";
 
 interface GuestRunEnvelope {
   readonly rawBody: unknown;
@@ -60,6 +61,8 @@ interface GuestRunEnvelope {
 interface GuestRunControl {
   readonly steer: SteerQueue;
   readonly compaction: CompactionQueue;
+  readonly hookCalls: AbortController;
+  callHookMcp?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
 }
 
 type GuestControlInput =
@@ -290,6 +293,7 @@ export function createGuestLoopExecutor(
       const control: GuestRunControl = {
         steer: createSteerQueue(),
         compaction: createCompactionQueue(),
+        hookCalls: new AbortController(),
       };
       controls.set(runId, control);
       try {
@@ -390,6 +394,13 @@ export function createGuestLoopExecutor(
         ];
         let sequence = 0;
         try {
+          const servers = record(envelope.rawBody)?.servers;
+          control.callHookMcp = createGuestHookMcpCaller({
+            servers: Array.isArray(servers) ? servers : [],
+            owner: envelope.owner,
+            connections: built.deps.connections,
+            signal: AbortSignal.any([signal, control.hookCalls.signal]),
+          });
           const outcome = await executeRun({
             rawBody: envelope.rawBody,
             owner: envelope.owner,
@@ -426,6 +437,7 @@ export function createGuestLoopExecutor(
           await bridge.checkpoint({ sequence, terminal: false, state: { outcome } });
           return outcome;
         } finally {
+          control.hookCalls.abort(new Error("guest run MCP hooks closed"));
           try {
             await eventTail;
           } finally {
@@ -433,10 +445,18 @@ export function createGuestLoopExecutor(
           }
         }
       } finally {
+        control.hookCalls.abort(new Error("guest run MCP hooks closed"));
         control.steer.close();
         control.compaction.close();
         if (controls.get(runId) === control) controls.delete(runId);
       }
+    },
+    async callHookMcp(runId, input, signal) {
+      const control = controls.get(runId);
+      if (control?.callHookMcp === undefined) {
+        throw guestControlError("not_found", "run MCP hooks are unavailable");
+      }
+      return control.callHookMcp(input, signal);
     },
     async steer(runId, input, _signal) {
       const control = controls.get(runId);

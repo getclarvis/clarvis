@@ -243,8 +243,8 @@ semantics—the RPC resolves only after the loop drains the message—while comp
 on enqueue and remains a separate control source rather than transcript content. The host queue's
 `take` transfers messages without acknowledging them; delivery settles only after the guest RPC
 confirms a real drain. A late refusal settles steering as undelivered without replacing an otherwise
-successful run result. Protocol revision 5 also requires incremental host model events; older worker
-images fail admission and must be rebuilt.
+successful run result. Protocol revision 6 requires guest MCP hook execution as well as incremental
+host model events; older worker images fail admission and must be rebuilt.
 
 Model progress frames are exclusive to `host.model`, monotonically sequenced, correlated to the
 pending call and bounded by the existing frame/queue/byte limits. `streamHostModelCall` drains text
@@ -257,8 +257,43 @@ authority.
 Container placement preserves admitted capability composition rather than replacing it with a
 smaller guest registry. Configured hook lifecycle callbacks activate on the host and cross
 `runtime.hooks` only by admitted index, method and strict event context. Host commands, plugin
-environment filtering and MCP credentials remain host-owned; the guest cannot supply a command.
+environment filtering and HTTP/SSE MCP hook connections remain host-owned; the guest cannot supply
+a command.
 Native hook ordering, denial, rewriting and downstream tool/guard validation remain effective.
+
+A `stdio` MCP hook returns from that host policy callback through `runtime.hook_mcp` to the active
+guest run. Its payload is exactly `{server, tool, input}`: it cannot supply a process command,
+environment, directory, endpoint or owner. The generation/run identity is bound by the private
+channel, and inactive runs are refused. `createGuestHookMcpCaller` captures only enabled `stdio`
+declarations from that run's server snapshot, uses its guest connection manager with owner-scoped
+sharing and releases the lease on success, failure or cancellation. This caller is available before
+`executeRun` begins, so `session_start` and `run_start` do not depend on the ordinary tool pool being
+open. It uses the same guest environment and filesystem boundary as ordinary MCP tools; dependencies
+and paths must be valid inside the container. Call and run cancellation abort acquisition/execution,
+and guest teardown aborts outstanding hook calls before disposing the connection manager. Neither a
+failed acquisition nor a failed tool call falls back to host execution. Hook errors retain the native
+fail-open contract; this does not authorize a host retry. HTTP/SSE hooks retain host connections and
+remote effects. The policy callback still awaits each gate result, preserving mixed command/MCP
+ordering and argument rewrites without recursively entering model tool dispatch.
+
+Production: `createGuestHookMcpCaller` in
+[`packages/kernel/src/runtime/hook-mcp.ts`](../../packages/kernel/src/runtime/hook-mcp.ts),
+`callHookMcp` in
+[`packages/kernel/src/runtime/guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts),
+and `serveExecutionWorker` in
+[`packages/kernel/src/runtime/execution-worker.ts`](../../packages/kernel/src/runtime/execution-worker.ts).
+Test: lease, payload and cancellation cases in
+[`packages/kernel/tests/unit/runtime-hook-mcp.test.ts`](../../packages/kernel/tests/unit/runtime-hook-mcp.test.ts),
+nested RPC and active-run identity cases in
+[`packages/kernel/tests/integration/runtime-execution-worker.test.ts`](../../packages/kernel/tests/integration/runtime-execution-worker.test.ts),
+host/guest transport selection in
+[`packages/kernel/tests/integration/runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
+and the opt-in real Docker/Podman boundary canary in
+[`packages/kernel/tests/integration/runtime-mcp-hooks.e2e.test.ts`](../../packages/kernel/tests/integration/runtime-mcp-hooks.e2e.test.ts).
+That canary verifies early and terminal hooks, gate rewrites, writable mounted workspace output and
+inaccessible synthetic host files outside the mount; `tooling/ci/qualify-runtime.sh` runs it for both
+engines against the built image. Passing deterministic tests alone does not establish that evidence.
+
 Tasks registers its canonical capability and `task` schema in the guest over `runtime.tasks`.
 The host pins provider and run identity, binding/continuation mode, write settings and grants,
 validates canonical provider inputs, and preserves typed provider failures and retry metadata.

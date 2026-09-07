@@ -6,6 +6,7 @@ export const HOST_EXECUTION_METHODS = [
   "runtime.bootstrap",
   "runtime.start",
   "runtime.steer",
+  "runtime.hook_mcp",
   "runtime.cancel",
   "runtime.shutdown",
 ] as const;

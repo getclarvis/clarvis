@@ -50,6 +50,7 @@ function info(overrides: Partial<RuntimeInfo> = {}): RuntimeInfo {
 const sessionMethods = {
   closed: false,
   async startRun() {},
+  async callHookMcp() {},
   async steer() {},
   async cancel() {},
   async exposePort(guestPort: number, protocol: "http" | "https" | "tcp" = "http") {

@@ -63,6 +63,7 @@ describe("isolated run executor", () => {
             });
             return { executionId: runId, response: { status: "completed" } };
           },
+          async callHookMcp() {},
           async steer() {
             received.resolve();
             await deliver.promise;
@@ -233,6 +234,7 @@ describe("isolated run executor", () => {
         });
         return { executionId: runId, response: { status: "done" } };
       },
+      async callHookMcp() {},
       async steer() {},
       async cancel() {},
       async exposePort() {
@@ -366,6 +368,7 @@ describe("isolated run executor", () => {
         closed: false,
         info,
         startRun: async () => null,
+        callHookMcp: async () => undefined,
         steer: async () => undefined,
         cancel: async () => undefined,
         exposePort: async () => Promise.reject(new Error("not exercised")),
@@ -390,6 +393,7 @@ describe("isolated run executor", () => {
         closed: false,
         info,
         startRun: async (runId) => ({ executionId: runId, response: { status: "done" } }),
+        callHookMcp: async () => undefined,
         steer: async () => undefined,
         cancel: async () => undefined,
         exposePort: async () => Promise.reject(new Error("not exercised")),
@@ -417,6 +421,7 @@ describe("isolated run executor", () => {
           boundaryController.abort();
           return null;
         },
+        callHookMcp: async () => undefined,
         steer: async () => undefined,
         cancel: async () => {
           boundaryOrder.push("cancel");
@@ -456,6 +461,7 @@ describe("isolated run executor", () => {
           await startGate;
           return null;
         },
+        callHookMcp: async () => undefined,
         steer: async () => undefined,
         cancel: async () => {
           cancelled = true;
@@ -506,6 +512,7 @@ describe("isolated run executor", () => {
               signal,
             });
           },
+          callHookMcp: async () => undefined,
           steer: async () => undefined,
           cancel: async () => undefined,
           exposePort: async () => Promise.reject(new Error("not exercised")),

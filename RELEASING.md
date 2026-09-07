@@ -26,13 +26,14 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
   then mints the short-lived GitHub App token.
 - A manual workflow dispatch builds downloadable portable artifacts but cannot publish a runtime
   image or release.
-- Active source-repository rulesets protect `main` and release tags. Published releases in the
+- Active source-repository rulesets protect `main`, `develop`, and release tags. Published releases in the
   distribution repository are immutable: fixes use a new version; never move or reuse a release tag.
 
 ## Prepare
 
 1. Confirm the release version, intended audience, known limitations, and rollback owner.
-2. From a branch without unrelated changes, record user-facing changes under `Unreleased` in
+2. Prepare from qualified `develop`, using `release/<version>` when stabilization must continue
+   separately from new development. From a branch without unrelated changes, record user-facing changes under `Unreleased` in
    [CHANGELOG.md](CHANGELOG.md), then run
    `bun run release:prepare <version>`. This promotes that entry and updates the root product version
    and both installer defaults as one validated operation. It does not commit, tag, or publish.
@@ -45,12 +46,21 @@ does not authorize a tag, push, GitHub Release, or any other publication action.
    models.dev and Vercel AI SDK licenses, the portable dependency closure, and the licenses copied
    into the isolated-runtime carrier. Treat third-party-license review as a release gate, not a
    post-release task.
-6. Commit and merge the reviewed release preparation through the normal protected-branch workflow,
-   then use a clean checkout of that exact source commit for the final preflight.
+6. Commit and merge the reviewed release preparation into `main` through the normal protected-branch
+   workflow, using a merge commit rather than squash or rebase. Then use a clean checkout of that
+   exact `main` source commit for the final preflight. Synchronize release changes back into
+   `develop` with a merge PR so version metadata and fixes remain shared. Never promote unrelated
+   next-version work merely to synchronize a release.
 7. Review the exact source commit that the distribution release notes will disclose.
-8. Confirm the source `main` and `v*` rulesets are active, GitHub Actions requires full-SHA action
+8. Confirm the source `main`, `develop`, and `v*` rulesets are active, GitHub Actions requires full-SHA action
    pins, the scoped App variable/secret are present, and `clarvis-releases` reports immutable releases
    as enabled. Treat a missing policy as a release blocker.
+
+Hotfix preparation starts at the affected published tag, targets `main`, and propagates the fix into
+`develop` and any active release branch. If `main` already includes unreleased changes, settle the
+intended patch-release lineage before merging or tagging; do not accidentally include those changes
+in the patch. A push or merge to either permanent branch runs CI but does not trigger publication.
+The tag workflow remains the publication boundary described above.
 
 ## Validate without publishing
 

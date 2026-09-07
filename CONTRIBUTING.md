@@ -60,9 +60,36 @@ git config --local --get core.hooksPath
 
 It must print `.githooks`.
 
+## Branch workflow
+
+The default branch, `develop`, integrates completed work for the next release. `main` holds approved
+release source; published versions are identified by immutable signed tags, not by the current tip
+of either branch. Both branches require pull requests, passing CI, an up-to-date base, and resolved
+review conversations. Direct pushes, force pushes, and deletion are blocked without bypass actors.
+The single-maintainer workflow does not require another person's approving review.
+
+Start each ordinary task from an updated `develop` in a short-lived branch:
+
+```bash
+git fetch origin
+git switch develop
+git pull --ff-only
+git switch -c feat/short-description
+```
+
+For an existing clone without a local `develop`, first use `git switch --track origin/develop`.
+Use `fix/`, `refactor/`, `docs/`, or `chore/` for the corresponding task, and open its PR against
+`develop`. Squash merging is suitable for one bounded task; a merge commit is also allowed.
+
+Promotions into `main` and synchronization back into `develop` use merge commits to retain shared
+ancestry. Do not squash or rebase those PRs. A temporary `release/<version>` branch may stabilize a
+version while `develop` advances. Hotfixes start at the affected published tag and must also reach
+`develop` and any active release branch. Follow [RELEASING.md](RELEASING.md) for version preparation,
+qualification, and explicitly authorized publication. Merging a PR alone never publishes a release.
+
 ## Make a focused change
 
-1. Start from a current branch and check `git status --short` before editing.
+1. Start a task branch from current `develop` and check `git status --short` before editing.
 2. Keep the change bounded. Do not reformat or repair unrelated code in the same pull request.
 3. Add or update tests at the appropriate level: unit, component, contract, integration,
    architecture, or end-to-end.

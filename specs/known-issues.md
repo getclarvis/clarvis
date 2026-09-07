@@ -856,7 +856,7 @@ death and a retry wants only the ones it is entitled to swallow.
 
 ### Where the mitigation stands today
 
-**Checked.** CI now runs on pushes to `main`, pull requests, and manual dispatch. The
+**Checked.** CI runs on pushes to `main` and `develop`, pull requests, and manual dispatch. The
 wrapper remains wired into the Linux test step, so the restored workflow exercises it without a
 separate migration. Bun 1.4.0 is installed locally and carries the upstream fix; there is still no
 post-restoration GitHub-runner sample recorded here. The

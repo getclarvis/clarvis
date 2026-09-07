@@ -66,6 +66,31 @@ documentation disposition is complete.
 Pure typo or formatting edits do not require inventing a contract change, but they still must not make
 the README, spec, implementation, and tests disagree.
 
+## Branch workflow
+
+`develop` is the default integration branch; `main` holds approved release source. Start ordinary
+work in a short-lived `feat/`, `fix/`, `refactor/`, `docs/`, or `chore/` branch from current
+`develop`, and target its pull request at `develop`. Keep both permanent branches green; neither
+accepts direct pushes, force pushes, or deletion. Both require the Linux, Windows, and macOS CI
+contexts, an up-to-date base, and resolved review conversations, with no ruleset bypass actors.
+
+Use a merge commit when promoting a release into `main` or synchronizing permanent branches.
+Squash is available for bounded task PRs into `develop`; never squash a promotion or back-merge.
+Rebase merging and required linear history are disabled so these synchronization merges retain
+their ancestry. External approving reviews are not required for the single-maintainer workflow;
+this does not replace the owner's review of the change.
+
+Create `release/<version>` from `develop` when stabilization must run alongside further development.
+Otherwise promote the qualified `develop` through a PR to `main`. Hotfixes start from the affected
+published tag; integrate them into `main` and propagate the fix to `develop` and any active release
+branch. If `main` already contains unreleased work, do not publish that work accidentally as a
+hotfix: resolve the intended release lineage explicitly.
+
+Version preparation, tagging, and publication follow [RELEASING.md](RELEASING.md). A merge does not
+publish a release; an authorized signed `v<version>` tag identifies the exact approved source.
+See [CONTRIBUTING.md](CONTRIBUTING.md#branch-workflow) for the contributor sequence. Branch and PR
+operations remain subject to the publication authorization below.
+
 ## Publication authorization
 
 Do not publish without the project owner's explicit authorization. A request for a publication

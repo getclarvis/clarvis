@@ -253,9 +253,19 @@ because it cost every Bun process started from that directory ~250 ms.
 
 ### 2.7 CI workflow inputs
 
-`ci.yml` triggers on pushes to `main`, pull requests, and manual dispatch, with read-only contents
+`ci.yml` triggers on pushes to `main` and `develop`, pull requests, and manual dispatch, with read-only contents
 permission and `concurrency: ci-${{ github.ref }}, cancel-in-progress: true`
-(`.github/workflows/ci.yml`). Every checkout and setup action is pinned to a commit SHA and checkout
+(`.github/workflows/ci.yml`). `develop` is the default integration branch; `main` is the approved
+release-source branch. Their GitHub rulesets target each branch by name, require pull requests,
+up-to-date branches, resolved conversations, and the three existing CI contexts, and block deletion
+and force pushes without bypass actors. Neither requires linear history. `main` accepts merge
+commits only; `develop` also accepts squash for task PRs. Promotions and back-merges preserve
+ancestry with merge commits. Ruleset settings are external GitHub configuration and require live
+inspection; passing local checks alone does not prove enforcement. The operating sequence lives in
+[CONTRIBUTING.md](../../CONTRIBUTING.md#branch-workflow), [AGENTS.md](../../AGENTS.md#branch-workflow),
+and [RELEASING.md](../../RELEASING.md). Branch pushes never replace the explicit release-tag trigger.
+
+Every checkout and setup action is pinned to a commit SHA and checkout
 does not retain credentials. The on-demand canary has the same least-privilege posture: explicit
 `contents: read`, SHA-pinned checkout and setup-bun actions, and
 `persist-credentials: false` (`.github/workflows/segfault-canary.yml`, `permissions.contents` and
@@ -590,13 +600,13 @@ the complete `@clarvis/tools` suite plus the kernel sandbox-policy integration w
 `CLARVIS_NATIVE_SANDBOX_CANARY=1`. It then runs the same three keyboard test files as Windows. The
 real-host canaries verify Seatbelt file/network/process enforcement and a discovered toolchain's
 kernel inspection path; this is not inferred from generated profile text. The job publishes the
-stable `keyboard policy (macos)` status context required by the `Protect main` repository ruleset;
+stable `keyboard policy (macos)` status context required by both permanent-branch repository rulesets;
 adding macOS canaries must not rename that external contract. Production: `.github/workflows/ci.yml`
 (`jobs.sandbox-macos`).
 
 All three jobs record `bun --version` and `bun --revision` immediately after setup, so a future run
 remains attributable to the executable it actually used. CI was restored for the new public
-repository on push to `main` and pull request; the earlier account-specific billing incident remains
+repository on push to `main` and `develop` and pull request; the earlier account-specific billing incident remains
 historical evidence in [Known issues](../known-issues.md), not current workflow behavior.
 
 ### 4.5 The crash-signal retry (`tooling/ci/retry-code-coverage.sh`)
@@ -1191,7 +1201,7 @@ groups, `killTree` and monitor capture belong to **tools-shell-monitor-and-proce
    dependency pulls esbuild in is derivable from the files in this document's scope.
 
 3. ~~**CI is disabled and the Windows/macOS legs are therefore unexercised.**~~ **Resolved in the
-   first public-beta preparation:** `.github/workflows/ci.yml` now triggers on push to `main`, pull
+   first public-beta preparation:** `.github/workflows/ci.yml` triggers on push to `main` and `develop`, pull
    request, and manual dispatch with read-only permissions and SHA-pinned actions. This configuration
    does not itself claim a green platform run; observed release-platform evidence belongs to
    [distribution and updates](distribution-and-updates.md#8-open-questions).

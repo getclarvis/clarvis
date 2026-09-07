@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { workflowSecurityFailures } from "../../checks/release-readiness.ts";
 
 interface Workflow {
@@ -48,13 +50,50 @@ test("RC tags cannot trigger distribution and tag creation is limited to release
     "${{ secrets.CLARVIS_RELEASE_APP_PRIVATE_KEY }}",
   );
   expect(steps[publish].run).toContain("tooling/release/tag-signing-key.pub");
-  expect(steps[publish].run).toContain(
-    'test "$(ssh-keygen -y -f "$key_dir/key")" = "$expected_key"',
-  );
+  expect(steps[publish].run).toContain('test "$actual_key" = "$expected_key"');
   expect(workflowSecurityFailures([{ path: "gitflow-release.yml", source }])).toEqual([]);
   for (const step of steps.filter((entry) => entry.shell === "bash")) {
     const result = Bun.spawnSync(["bash", "-n"], { stdin: Buffer.from(step.run), stderr: "pipe" });
     expect(result.stderr.toString()).toBe("");
     expect(result.exitCode).toBe(0);
+  }
+});
+
+test("the runner validates SSH key material independently of its comment", () => {
+  const directory = mkdtempSync(join(tmpdir(), "clarvis-signing-check-"));
+  try {
+    const key = join(directory, "key");
+    const generated = Bun.spawnSync([
+      "ssh-keygen",
+      "-q",
+      "-t",
+      "ed25519",
+      "-N",
+      "",
+      "-C",
+      "Release Bot signing key",
+      "-f",
+      key,
+    ]);
+    expect(generated.exitCode).toBe(0);
+    mkdirSync(join(directory, "tooling/release"), { recursive: true });
+    const publicKey = readFileSync(`${key}.pub`, "utf8");
+    const publicPath = join(directory, "tooling/release/tag-signing-key.pub");
+    writeFileSync(publicPath, publicKey);
+    const workflow = Bun.YAML.parse(source) as Workflow;
+    const script = workflow.jobs.tag.steps
+      .find((step) => step.name === "create and push the signed immutable tag")
+      .run.split("git config --local user.name")[0];
+    const run = () =>
+      Bun.spawnSync(["bash", "-c", script], {
+        cwd: directory,
+        env: { ...process.env, TAG_SIGNING_KEY: readFileSync(key, "utf8") },
+        stderr: "pipe",
+      });
+    expect(run().exitCode).toBe(0);
+    writeFileSync(publicPath, "ssh-ed25519 mismatched-key different comment\n");
+    expect(run().exitCode).not.toBe(0);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });

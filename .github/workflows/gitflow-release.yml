@@ -83,7 +83,8 @@ jobs:
           printf '%s\n' "$TAG_SIGNING_KEY" > "$key_dir/key"
           chmod 600 "$key_dir/key"
           expected_key="$(awk '{print $1 " " $2}' tooling/release/tag-signing-key.pub)"
-          test "$(ssh-keygen -y -f "$key_dir/key")" = "$expected_key"
+          actual_key="$(ssh-keygen -y -f "$key_dir/key" | awk '{print $1 " " $2}')"
+          test "$actual_key" = "$expected_key"
           printf 'clarvis-release-bot %s\n' "$expected_key" > "$key_dir/allowed_signers"
           git config --local user.name 'Clarvis Release Bot'
           git config --local user.email 'release-bot@clarvis.dev'

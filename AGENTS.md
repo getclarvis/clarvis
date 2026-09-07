@@ -29,6 +29,11 @@ separate [`getclarvis/docs`](https://github.com/getclarvis/docs) repository. Do 
 site tree, VitePress dependency, or Pages workflow to this monorepo. When a product change affects
 the public guides, record the external documentation disposition in the handoff.
 
+Proposals are local working documents, not versioned specifications. Keep them under
+`specs/proposals/`, which Git ignores; do not stage, force-add, or publish them in commits or pull
+requests. Preserve local proposal files when removing them from version control. Durable contracts
+belong in the owning tracked spec, and tracked documentation must not link to local proposal files.
+
 If these disagree, stop and resolve the disagreement in the same iteration. The specs are the stated
 contract; the code is the current implementation. Neither silently overrides the other.
 
@@ -198,11 +203,11 @@ unless it genuinely ran to completion.
 Choose the skill that owns the requested outcome. Additional modes share the same work record;
 they do not restart discovery, builds, or verification.
 
-| Outcome | Skill |
-| --- | --- |
-| Documentation audit or synchronization | [clarvis-doc-health](.agents/skills/clarvis-doc-health/SKILL.md) |
+| Outcome                                                                 | Skill                                                                    |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Documentation audit or synchronization                                  | [clarvis-doc-health](.agents/skills/clarvis-doc-health/SKILL.md)         |
 | Focused TUI journey, complete product E2E, or performance investigation | [clarvis-tui-validation](.agents/skills/clarvis-tui-validation/SKILL.md) |
-| Release readiness and distributable qualification | [clarvis-release-health](.agents/skills/clarvis-release-health/SKILL.md) |
+| Release readiness and distributable qualification                       | [clarvis-release-health](.agents/skills/clarvis-release-health/SKILL.md) |
 
 - Keep one record of scope, authorization, source and artifact identities, fixtures, commands,
   outcomes, and evidence paths. Reuse already-read contracts while their contents remain current.

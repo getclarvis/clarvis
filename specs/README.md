@@ -20,6 +20,10 @@ the rules that must hold. They are the contract; the code under
 test evidence either in an opening ownership block or beside the claims it supports, so the boundary
 travels with the document rather than in a separate plan.
 
+Proposals under `specs/proposals/` are ignored local working documents, not part of the versioned
+corpus. Do not commit them or link to them from tracked documentation. Promote durable contracts
+into the owning spec without making the local proposal a repository dependency.
+
 The corpus's one hard rule is that **every non-trivial statement carries checkable source or test
 evidence.** Cite a stable repository file and name the relevant symbol, test, or section in prose.
 Never encode a source line number or range: unrelated edits make that locator stale without changing

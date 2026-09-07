@@ -8,9 +8,7 @@ inspect an engine, while a configured Podman or Docker backend mounts the worksp
 by the host, admits effective engine policy, negotiates a private worker channel, and keeps durable
 and authenticated authority on the host.
 
-[The original implementation proposal](../proposals/isolated-agent-runtime.md) is retained only as a
-superseded design record. This document is the current contract and records only behavior
-implemented in source.
+This document is the current contract and records only behavior implemented in source.
 
 Runtime configuration is a strict kernel-owned settings block. Native is the default. Docker accepts
 the simple `{ "backend": "docker" }` choice; the kernel defaults it to 2 CPUs, 4 GiB memory, 256

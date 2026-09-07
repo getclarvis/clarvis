@@ -413,8 +413,8 @@ closure explicit; the worker itself remains `packages/kernel/src/runtime/guest-m
 The runnable final stage intentionally contains no Node/npm, Python, Rust, compiler, curl or archive
 utility. A throwaway stage selects the mise 2026.8.2 Linux archive for native amd64/arm64, verifies
 the source-owned SHA-256, and passes only `/out/mise` plus its MIT license forward. Git and CA
-certificates are the only apt-installed final packages. The engine mounts `/mise` as executable
-ephemeral scratch; language runtimes installed there are runtime state, not image or source-build
+certificates are the only apt-installed final packages. The engine mounts `/mise` as an executable
+workspace/image-scoped cache; language runtimes installed there are runtime state, not image or source-build
 inputs. The image suppresses mise's self-update notice because the reviewed image build, rather than
 an individual guest session, owns that pinned bootstrap version.
 
@@ -422,7 +422,10 @@ an individual guest session, owns that pinned bootstrap version.
 carrier repository at an immutable digest. Development mode builds a command-owned local carrier and
 then invokes the exact production Containerfile with `io.clarvis.runtime.development=true`.
 Artifact-only mode exists for the tag workflow. Docker is the default and Podman must be selected
-explicitly. Bun and Debian references are immutable; mise's version and both architecture checksums
+explicitly. Bun and Debian references use explicit Docker Hub registry paths to avoid interactive
+short-name resolution. `runtimeLocalImageId` accepts only full lowercase hexadecimal local IDs,
+with or without `sha256:`, and emits canonical prefixed identities; it rejects short IDs and tags.
+Bun and Debian references are immutable; mise's version and both architecture checksums
 are source constants forwarded as build arguments. Both carrier and final image label the root
 product version, full source revision, protocol revision, source URL and MIT license, while the final
 image additionally labels its mise version.

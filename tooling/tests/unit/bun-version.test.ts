@@ -72,7 +72,7 @@ jobs:
       - run: bun --version && bun --revision
 `,
   docker: `FROM oven/bun:${VERSION}-slim AS deps\nFROM oven/bun:${VERSION}-slim AS runtime\n`,
-  runtimeDevelopmentContainerfile: `ARG BUILD_IMAGE=oven/bun:${VERSION}-debian@sha256:${"a".repeat(64)}\n`,
+  runtimeDevelopmentContainerfile: `ARG BUILD_IMAGE=docker.io/oven/bun:${VERSION}-debian@sha256:${"a".repeat(64)}\n`,
   rootManifest: JSON.stringify({
     engines: { bun: `>=${VERSION}` },
     workspaces: ["packages/example"],
@@ -141,7 +141,7 @@ describe("bunVersionFailures", () => {
     );
     expect(bunVersionFailures(snapshot).join("\n")).toContain("Containerfile.runtime-development");
 
-    snapshot.runtimeDevelopmentContainerfile = `ARG BUILD_IMAGE=oven/bun:${VERSION}-debian\n`;
+    snapshot.runtimeDevelopmentContainerfile = `ARG BUILD_IMAGE=docker.io/oven/bun:${VERSION}-debian\n`;
     expect(bunVersionFailures(snapshot).join("\n")).toContain("expected one digest-pinned");
   });
 

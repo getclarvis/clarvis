@@ -97,7 +97,7 @@ control pump fails. Explicit
 compaction uses the same RPC method with a different exact discriminant but enters its own queue, so
 its optional request never becomes transcript content. Unknown fields, malformed message content and
 late run IDs are rejected at the guest boundary.
-Omitting `network` selects ordinary Docker bridge or Podman slirp
+Omitting `network` selects ordinary Docker or Podman bridge
 routing that can reach public, host and LAN destinations and can therefore transmit readable
 workspace data. `none` remains the explicit offline mode; `internet` is refused until public-only
 egress can actually be enforced. The headless
@@ -155,10 +155,13 @@ compiles source. It copies the standalone worker and its license inventory from 
 on a separately digest-pinned Debian slim base. The final image contains Git, CA certificates and
 the checksum-verified `mise` 2026.8.2 binary, but no preinstalled Node, npm, Python, Rust or compiler.
 Agents with `run_commands` are told to use `mise x <tool>@<version> -- <command>` for missing
-toolchains. Downloads and installs never enter the selected workspace or mutable image root. Docker
-mounts `/mise` from a labelled local volume scoped to owner, project, workspace and exact image;
-normal container removal preserves it for later Clarvis sessions using that same identity. Podman
-continues to use an executable bounded `/mise` tmpfs. This supplies mise-supported developer tools;
+toolchains. Downloads and installs never enter the selected workspace or mutable image root. Both
+engines mount `/mise` from a labelled local volume scoped to owner, project, workspace, effective
+user and exact image; normal container removal preserves it for later Clarvis sessions using that
+same identity. Podman runs as its rootless operator-mapped root, keeps the base read-only and bounds
+non-executable `/tmp` without requiring XFS storage quotas. It relabels only admitted workspace,
+read-only overlay and linked-worktree Git binds for shared SELinux container access; SELinux stays
+enabled, and those labels persist on the selected host files. This supplies mise-supported developer tools;
 it is not an unrestricted guest `apt`/`dnf` path and cannot mutate the read-only base image. A
 release builds that source carrier once with `Containerfile.runtime-development`, publishes both
 carrier and runnable multi-platform image, and records their immutable identities in
@@ -182,6 +185,18 @@ bun run runtime:build -- \
 ```
 
 Docker is the default builder; `--engine podman` selects the compatible Podman CLI explicitly.
+The shared live canary in `tests/integration/local-docker-runtime.e2e.test.ts` also accepts
+`CLARVIS_PODMAN_RUNTIME_CANARY=1`, `CLARVIS_PODMAN_RUNTIME_CONNECTION=local`, and
+`CLARVIS_PODMAN_RUNTIME_IMAGE_DIGEST=sha256:<local-image-id>`. Run it from the repository root with
+`bun test --cwd packages/kernel tests/integration/local-docker-runtime.e2e.test.ts --timeout 60000`.
+Also run `tests/integration/runtime-podman-isolation.e2e.test.ts` with the same environment to verify
+effective cgroup/security policy, rootless file ownership, offline mode, cache reuse and workspace
+partitioning across fresh containers. The shared run canary selects the actual Podman control and
+runtime composition; the Docker recipe and rootful DAC canaries remain separate. The Podman engine must be accessible outside any host
+sandbox that blocks its rootless runtime directory. Admission failures are failures, not skipped
+coverage of guest execution. The build helper and Podman adapter canonicalize complete unprefixed
+local image IDs to `sha256:` without accepting short IDs or mutable tags.
+
 By default Docker resolves `docker` from `PATH` and uses `DOCKER_CONTEXT` or the active Docker
 context; `executable` and `connection` override those choices. Its backend requires a Linux engine,
 uses the resulting local image ID as `runtime.image_digest`, makes the image root read-only,

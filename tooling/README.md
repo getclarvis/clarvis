@@ -47,7 +47,9 @@ tag-release input. The helper also owns the immutable Debian slim reference plus
 version and per-architecture release checksums. The final stage copies only the verified mise binary
 and its license; curl and archive tooling exist only in the download stage, while language runtimes
 and compilers remain on-demand guest installs. Every successful mode prints the exact local image
-ID.
+ID. Podman and Docker local IDs are normalized to `sha256:` only when the full lowercase
+SHA-256 is present. Base references name their registry explicitly, so unattended Podman builds
+never require short-name selection.
 
 `runtime/release-manifest.ts` owns the strict schema-1 mapping from one root product version and
 source commit to the two released OCI digests, the private guest protocol revision, the supported

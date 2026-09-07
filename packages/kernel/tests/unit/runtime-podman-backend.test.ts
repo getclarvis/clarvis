@@ -9,6 +9,8 @@ import {
   type RuntimeLaunchSpec,
 } from "../../src/index.ts";
 
+import { miseCacheIdentity } from "../../src/runtime/container-mise-cache.ts";
+
 const digest = `sha256:${"b".repeat(64)}`;
 const spec: RuntimeLaunchSpec = {
   generation: "runtime-1",
@@ -44,9 +46,11 @@ function fakeControl(
     readonly handshakeDigest?: string;
     readonly protocolRevision?: string;
     readonly rmFailures?: number;
+    readonly effective?: (value: Record<string, unknown>) => void;
   } = {},
 ) {
   const calls: readonly string[][] & string[][] = [];
+  const cache = miseCacheIdentity(spec, "0:0");
   let guest: ReturnType<typeof createExecutionPeer> | undefined;
   let resolveExit: ((code: number | null) => void) | undefined;
   let rmAttempts = 0;
@@ -81,34 +85,74 @@ function fakeControl(
           stderr: "",
         };
       }
-      if (args[0] === "container") {
+      if (args[0] === "volume") {
         return {
           exitCode: 0,
           stdout: JSON.stringify([
             {
-              HostConfig: { Privileged: overrides.privileged ?? false, NetworkMode: "none" },
-              Config: { Labels: { "io.clarvis.generation": spec.generation } },
-              Mounts: [
-                {
-                  Type: "bind",
-                  Source: spec.workspaceRoot,
-                  Destination: "/workspace",
-                  RW: true,
-                },
-                {
-                  Type: "bind",
-                  Source: spec.readOnlyWorkspacePaths[0],
-                  Destination: "/workspace/.clarvis/memory",
-                  RW: false,
-                },
-                {
-                  Type: "bind",
-                  Source: spec.gitCommonDir,
-                  Destination: spec.gitCommonDir,
-                  RW: true,
-                },
-              ],
+              Name: cache.name,
+              Driver: "local",
+              Labels: {
+                "io.clarvis.runtime.mise-cache": "true",
+                "io.clarvis.runtime.mise-cache.schema": "2",
+                "io.clarvis.runtime.mise-cache.identity": cache.digest,
+              },
             },
+          ]),
+          stderr: "",
+        };
+      }
+      if (args[0] === "container") {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify([
+            (() => {
+              const value = {
+                EffectiveCaps: null,
+                BoundingCaps: null,
+                HostConfig: {
+                  Privileged: overrides.privileged ?? false,
+                  NetworkMode: "none",
+                  UsernsMode: "",
+                  ReadonlyRootfs: true,
+                  Memory: spec.limits.memoryBytes,
+                  PidsLimit: spec.limits.processCount,
+                  NanoCpus: spec.limits.cpuCount * 1_000_000_000,
+                  SecurityOpt: ["no-new-privileges"],
+                  Tmpfs: { "/tmp": `rw,nosuid,nodev,noexec,size=${spec.limits.storageBytes}` },
+                },
+                Config: { User: "0:0", Labels: { "io.clarvis.generation": spec.generation } },
+                Mounts: [
+                  {
+                    Type: "volume",
+                    Name: cache.name,
+                    Destination: "/mise",
+                    RW: true,
+                    SubPath: "data",
+                  },
+                  {
+                    Type: "bind",
+                    Source: spec.workspaceRoot,
+                    Destination: "/workspace",
+                    RW: true,
+                  },
+                  {
+                    Type: "bind",
+                    Source: spec.readOnlyWorkspacePaths[0],
+                    Destination: "/workspace/.clarvis/memory",
+                    RW: false,
+                  },
+                  {
+                    Type: "bind",
+                    Source: spec.gitCommonDir,
+                    Destination: spec.gitCommonDir,
+                    RW: true,
+                  },
+                ],
+              };
+              overrides.effective?.(value);
+              return value;
+            })(),
           ]),
           stderr: "",
         };
@@ -161,6 +205,79 @@ function fakeControl(
 }
 
 describe("Podman runtime backend", () => {
+  it.each([
+    ["ReadonlyRootfs", false],
+    ["Memory", spec.limits.memoryBytes * 2],
+    ["PidsLimit", 0],
+    ["NanoCpus", 0],
+    ["NetworkMode", "host"],
+    ["UsernsMode", "keep-id"],
+    ["SecurityOpt", []],
+    ["Tmpfs", { "/tmp": "rw,exec,size=99999999" }],
+    [
+      "Tmpfs",
+      { "/tmp": `rw,nosuid,nodev,noexec,size=${spec.limits.storageBytes}`, "/extra": "rw" },
+    ],
+  ])("refuses effective HostConfig.%s drift before attachment", async (field, value) => {
+    const fake = fakeControl({
+      effective: (inspection) => {
+        (inspection.HostConfig as Record<string, unknown>)[field as string] = value;
+      },
+    });
+    const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+    await backend.inspect();
+    await expect(backend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+    expect(fake.calls.some((args) => args[0] === "start")).toBe(false);
+    expect(fake.calls.at(-1)?.slice(0, 2)).toEqual(["rm", "--force"]);
+  });
+
+  it.each(["EffectiveCaps", "BoundingCaps"])("rejects widened or missing %s", async (field) => {
+    for (const value of [["CAP_SYS_ADMIN"], undefined]) {
+      const fake = fakeControl({
+        effective: (inspection) => {
+          inspection[field] = value;
+        },
+      });
+      const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+      await backend.inspect();
+      await expect(backend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+      expect(fake.calls.some((args) => args[0] === "start")).toBe(false);
+    }
+  });
+
+  it("rejects a widened cache mount that would expose its initialization marker", async () => {
+    const fake = fakeControl({
+      effective: (inspection) => {
+        const mounts = inspection.Mounts as Array<Record<string, unknown>>;
+        mounts[0]!.SubPath = "";
+      },
+    });
+    const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+    await backend.inspect();
+    await expect(backend.start(spec)).rejects.toMatchObject({ code: "unsupported_policy" });
+    expect(fake.calls.some((args) => args[0] === "start")).toBe(false);
+  });
+
+  it("accepts the full unprefixed local image ID returned by Podman", async () => {
+    const fake = fakeControl({ imageDigest: digest.slice("sha256:".length) });
+    const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+    await backend.inspect();
+    const session = await backend.start(spec);
+    expect(session.info.imageDigest).toBe(digest);
+    await session.stop();
+    fake.close();
+  });
+
+  it.each(["b".repeat(12), "B".repeat(64), `sha512:${"b".repeat(64)}`, "latest"])(
+    "refuses noncanonical image identity %s",
+    async (imageDigest) => {
+      const fake = fakeControl({ imageDigest });
+      const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
+      await backend.inspect();
+      await expect(backend.start(spec)).rejects.toMatchObject({ code: "handshake_mismatch" });
+      expect(fake.calls.map((args) => args[0])).toEqual(["info", "image"]);
+    },
+  );
   it("admits the local image ID even when its manifest digest differs, then negotiates a session", async () => {
     const fake = fakeControl();
     const backend = createPodmanRuntimeBackend({ control: fake.control, hostPlatform: "linux" });
@@ -173,20 +290,25 @@ describe("Podman runtime backend", () => {
     expect(fake.calls.map((args) => args[0])).toEqual([
       "info",
       "image",
+      "volume",
+      "run",
       "create",
       "container",
       "start",
     ]);
-    expect(fake.calls[2]).toContain("ALL");
-    expect(fake.calls[2]).toContain("no-new-privileges");
-    expect(fake.calls[2]).toContain(`/mise:rw,nosuid,nodev,exec,size=${spec.limits.storageBytes}`);
-    expect(fake.calls[2]).toContain(
-      `type=bind,source=${spec.workspaceRoot},target=/workspace,rw=true`,
+    expect(fake.calls.find((args) => args[0] === "create")).toContain("ALL");
+    expect(fake.calls.find((args) => args[0] === "create")).toContain("no-new-privileges");
+    expect(fake.calls.find((args) => args[0] === "create")).toContain("--read-only");
+    expect(fake.calls.find((args) => args[0] === "create")).not.toContain("--storage-opt");
+    expect(fake.calls.find((args) => args[0] === "create")).toContain(
+      `type=bind,source=${spec.workspaceRoot},target=/workspace,rw=true,relabel=shared`,
     );
-    expect(fake.calls[2]).toContain(
-      "type=bind,source=/work/tree/.clarvis/memory,target=/workspace/.clarvis/memory,ro=true",
+    expect(fake.calls.find((args) => args[0] === "create")).toContain(
+      "type=bind,source=/work/tree/.clarvis/memory,target=/workspace/.clarvis/memory,ro=true,relabel=shared",
     );
-    expect(fake.calls[2]).toContain("type=bind,source=/repo/.git,target=/repo/.git,rw=true");
+    expect(fake.calls.find((args) => args[0] === "create")).toContain(
+      "type=bind,source=/repo/.git,target=/repo/.git,rw=true,relabel=shared",
+    );
     await expect(session.startRun("run-1", {})).resolves.toEqual({
       runId: "run-1",
       status: "done",
@@ -393,31 +515,12 @@ describe("Podman runtime backend", () => {
     const control: PodmanControl = {
       async run(args, signal) {
         if (args[0] === "container") {
-          return {
-            exitCode: 0,
-            stdout: JSON.stringify([
-              {
-                HostConfig: { Privileged: false, NetworkMode: "slirp4netns" },
-                Config: { Labels: { "io.clarvis.generation": spec.generation } },
-                Mounts: [
-                  { Type: "bind", Source: spec.workspaceRoot, Destination: "/workspace", RW: true },
-                  {
-                    Type: "bind",
-                    Source: spec.readOnlyWorkspacePaths[0],
-                    Destination: "/workspace/.clarvis/memory",
-                    RW: false,
-                  },
-                  {
-                    Type: "bind",
-                    Source: spec.gitCommonDir,
-                    Destination: spec.gitCommonDir,
-                    RW: true,
-                  },
-                ],
-              },
-            ]),
-            stderr: "",
-          };
+          const result = await fake.control.run(args, signal);
+          const inspected = JSON.parse(result.stdout) as Array<{
+            HostConfig: { NetworkMode: string };
+          }>;
+          inspected[0]!.HostConfig.NetworkMode = "bridge";
+          return { ...result, stdout: JSON.stringify(inspected) };
         }
         return fake.control.run(args, signal);
       },

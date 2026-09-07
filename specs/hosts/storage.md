@@ -29,14 +29,15 @@ Stable logical categories are `traces`, `sessions`, `workflow_records`, `project
 `memory`, `plans`, `diagnostics`, `run_scratch`, `workspace_state`, and `cache`. A row
 contains no pathname and no persisted content.
 
-Docker's content-addressed recipe images/base aliases and persistent `/mise` cache are engine-owned
+Docker's content-addressed recipe images/base aliases and both engines' persistent `/mise` caches are engine-owned
 objects rather than paths under the Clarvis global root. They are therefore deliberately absent from
 this filesystem inventory and from `StorageService.cleanup`; the service must not imply it measured
 or removed engine storage. The isolated-runtime contract owns their labels, opaque identities and
 lifecycle.
-Production: `prepareMiseCache` in `packages/kernel/src/runtime/docker-backend.ts`; inspection roots
+Production: `prepareMiseCache` in `packages/kernel/src/runtime/container-mise-cache.ts`; inspection roots
 in `packages/kernel/src/storage/storage-service.ts`. Test:
-`packages/kernel/tests/unit/runtime-docker-backend.test.ts` and
+`packages/kernel/tests/unit/runtime-docker-backend.test.ts`,
+`packages/kernel/tests/integration/runtime-podman-isolation.e2e.test.ts` and
 `packages/kernel/tests/integration/storage-service.test.ts`.
 
 Git worktree checkout roots are outside this inventory and cleanup service. Code selects or creates

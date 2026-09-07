@@ -4,9 +4,9 @@ export const RUNTIME_PROTOCOL_REVISION = "5";
 export const RUNTIME_ARTIFACT_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime-artifact";
 export const RUNTIME_IMAGE_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime";
 export const RUNTIME_BUILD_IMAGE =
-  "oven/bun:1.4.0-debian@sha256:5bb0f9be3a1a36a03e27c9a9dd894a3b1ad26657155c7df4dda771e17bf872ef";
+  "docker.io/oven/bun:1.4.0-debian@sha256:5bb0f9be3a1a36a03e27c9a9dd894a3b1ad26657155c7df4dda771e17bf872ef";
 export const RUNTIME_BASE_IMAGE =
-  "debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171";
+  "docker.io/library/debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171";
 export const RUNTIME_MISE_VERSION = "2026.8.2";
 export const RUNTIME_MISE_SHA256_AMD64 =
   "62899928f45a7d8e623f30663f490b0dbc90c4e1fc8935863b87c56626cf5950";
@@ -234,11 +234,17 @@ async function run(): Promise<void> {
     [plan.engine, "image", "inspect", "--format", "{{.Id}}", plan.outputImage],
     { stdin: "ignore", stdout: "pipe", stderr: "inherit" },
   );
-  const digest = (await new Response(inspect.stdout).text()).trim();
-  if ((await inspect.exited) !== 0 || !/^sha256:[a-f0-9]{64}$/u.test(digest)) {
+  const digest = runtimeLocalImageId((await new Response(inspect.stdout).text()).trim());
+  if ((await inspect.exited) !== 0 || digest === undefined) {
     throw new Error("runtime image build produced no immutable local image ID");
   }
   process.stdout.write(`${plan.outputImage}@${digest}\n`);
+}
+
+/** Canonicalize only complete OCI local image IDs, never tags or manifest references. */
+export function runtimeLocalImageId(value: string): string | undefined {
+  if (/^sha256:[a-f0-9]{64}$/u.test(value)) return value;
+  return /^[a-f0-9]{64}$/u.test(value) ? `sha256:${value}` : undefined;
 }
 
 if (import.meta.main) await run();

@@ -1,4 +1,9 @@
-import { createHash } from "node:crypto";
+import {
+  miseCacheIdentity,
+  prepareMiseCache,
+  prepareCacheOwnership,
+  type MiseCacheIdentity,
+} from "./container-mise-cache.ts";
 import { posix, relative, sep } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
@@ -71,25 +76,6 @@ function parse(text: string, label: string): unknown {
 }
 function nameFor(generation: string): string {
   return `clarvis-runtime-${generation.toLowerCase().replace(/[^a-z0-9_.-]/gu, "-")}`;
-}
-interface MiseCacheIdentity {
-  readonly digest: string;
-  readonly name: string;
-}
-function miseCacheIdentity(spec: RuntimeLaunchSpec, user: string): MiseCacheIdentity {
-  const digest = `sha256:${createHash("sha256")
-    .update(
-      JSON.stringify({
-        schema: 2,
-        user,
-        ownerId: spec.ownerId,
-        projectId: spec.project.id,
-        workspaceId: spec.workspace.id,
-        imageDigest: spec.imageDigest,
-      }),
-    )
-    .digest("hex")}`;
-  return { digest, name: `clarvis-mise-v2-${digest.slice("sha256:".length)}` };
 }
 function network(spec: RuntimeLaunchSpec): string {
   if (spec.network === "none") return "none";
@@ -225,111 +211,6 @@ async function successful(
   const result = await control.run(args);
   if (result.exitCode !== 0) throw new RuntimeLaunchError("operational_failure", `${label} failed`);
   return result;
-}
-
-function validMiseCache(value: unknown, cache: MiseCacheIdentity): boolean {
-  const root = record(Array.isArray(value) ? value[0] : value);
-  const labels = record(root?.Labels);
-  return (
-    root?.Name === cache.name &&
-    root?.Driver === "local" &&
-    root?.Scope === "local" &&
-    labels?.["io.clarvis.runtime.mise-cache"] === "true" &&
-    labels?.["io.clarvis.runtime.mise-cache.schema"] === "2" &&
-    labels?.["io.clarvis.runtime.mise-cache.identity"] === cache.digest
-  );
-}
-
-async function prepareMiseCache(control: DockerControl, cache: MiseCacheIdentity): Promise<void> {
-  let inspected = await control.run(["volume", "inspect", cache.name]);
-  if (inspected.exitCode !== 0) {
-    await successful(
-      control,
-      [
-        "volume",
-        "create",
-        "--label",
-        "io.clarvis.runtime.mise-cache=true",
-        "--label",
-        "io.clarvis.runtime.mise-cache.schema=2",
-        "--label",
-        `io.clarvis.runtime.mise-cache.identity=${cache.digest}`,
-        cache.name,
-      ],
-      "docker mise cache volume create",
-    );
-    inspected = await successful(
-      control,
-      ["volume", "inspect", cache.name],
-      "docker mise cache volume inspect",
-    );
-  }
-  if (!validMiseCache(parse(inspected.stdout, "docker mise cache volume inspect"), cache)) {
-    throw new RuntimeLaunchError(
-      "unsupported_policy",
-      "Docker mise cache volume did not match the host-owned workspace identity",
-    );
-  }
-}
-
-/** Initialize only a private volume subdirectory from the immutable image; never mount a workspace. */
-async function prepareCacheOwnership(
-  control: DockerControl,
-  spec: RuntimeLaunchSpec,
-  cache: MiseCacheIdentity,
-  user: string,
-): Promise<void> {
-  const name = `${nameFor(spec.generation)}-cache-init`;
-  const script = [
-    "if [ ! -e /cache/ready ]; then",
-    "  test ! -L /cache/data",
-    "  mkdir -p /cache/data",
-    "  if [ -d /mise ]; then cp -a /mise/. /cache/data/; fi",
-    '  chown -hR -- "$1" /cache/data',
-    "  : > /cache/ready",
-    "fi",
-    "test ! -L /cache/data && test -d /cache/data",
-    'test "$(stat -c %u:%g /cache/data)" = "$1"',
-  ].join("\n");
-  try {
-    await successful(
-      control,
-      [
-        "run",
-        "--rm",
-        "--name",
-        name,
-        "--network",
-        "none",
-        "--read-only",
-        "--user",
-        "0:0",
-        "--cap-drop",
-        "ALL",
-        "--cap-add",
-        "CHOWN",
-        "--security-opt",
-        "no-new-privileges=true",
-        "--pids-limit",
-        "32",
-        "--memory",
-        "67108864",
-        "--mount",
-        `type=volume,source=${cache.name},target=/cache,volume-nocopy`,
-        "--entrypoint",
-        "/bin/sh",
-        spec.imageDigest,
-        "-euc",
-        script,
-        "clarvis-cache-init",
-        user,
-      ],
-      "docker mise cache ownership initialization",
-    );
-  } catch (error) {
-    await control.run(["rm", "--force", name]).catch(() => undefined);
-    throw error;
-  }
 }
 
 /** Create the strict Docker reference backend, suitable for Docker Desktop or Colima. */

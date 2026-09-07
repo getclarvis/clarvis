@@ -185,9 +185,10 @@ cleanup.
 One container generation is reused for compatible runs in the same live kernel. On orderly kernel
 or TUI close, Clarvis closes preview listeners, stops that exact generation and force-removes its
 container. A failed removal remains retryable. A host crash can still leave an engine container;
-external orphan reconciliation is not implemented. Docker's separately labelled `/mise` volume is
-intentionally retained across container and Clarvis-session replacement for the same owner,
-project, workspace, image and effective user identity; Podman's `/mise` remains generation-local.
+external orphan reconciliation is not implemented. Both engines retain their separately labelled
+`/mise` volume across container and Clarvis-session replacement for the same owner, project,
+workspace, image and effective user identity. `miseCacheIdentity` and the bounded initializer in
+`packages/kernel/src/runtime/container-mise-cache.ts` own this shared policy.
 
 Production: `WorkspaceStatePaths` and `workspaceStatePaths` in
 `packages/paths/src/workspace-state.ts`; `launchIsolatedRuntime` in
@@ -321,8 +322,8 @@ the checksum-verified mise 2026.8.2 binary and mise's license. Node, npm, Python
 curl and archive utilities are absent from that final stage. The source-owned mise version and
 Linux amd64/arm64 SHA-256 values select one verified upstream archive in a throwaway download stage.
 Agents with `run_commands` receive a prompt explaining `mise x <tool>@<version> -- <command>`;
-installed toolchains stay outside both the read-only root and selected workspace. Docker supplies
-`/mise` from its host-created local cache volume; Podman keeps the bounded executable tmpfs. This is
+installed toolchains stay outside both the read-only root and selected workspace. Both engines supply
+`/mise` from their host-created local cache volume. This is
 a developer-tool bootstrap, not a general guest system-package manager: the guest cannot mutate the
 read-only Debian root through `apt` or `dnf`.
 `Containerfile.runtime-development` is the sole source-building carrier: it copies every workspace
@@ -448,13 +449,27 @@ common directory for a linked worktree. They create the container first, inspect
 mount sources, destinations, types and write modes, and refuse attach if the engine widened or
 changed that set.
 
-The Podman backend additionally verifies rootless mode and the engine-resolved local image `Id`
-(not its distinct manifest `Digest`), drops
-capabilities, applies `no-new-privileges`, selects `none` or slirp `outbound`, mounts an executable
-bounded `/mise` tmpfs, and applies configured resource limits before verifying the guest
-generation/image handshake. Its concrete CLI port requires an absolute executable, explicit
-connection/environment, argv execution and output/time bounds and is exported only from
-`@clarvis/kernel/local`.
+The Podman backend verifies rootless mode and the engine-resolved local image `Id` (not its distinct
+manifest `Digest`). It canonicalizes a complete lowercase hexadecimal ID to `sha256:` and rejects
+short, malformed or mismatched identities. It runs as operator-mapped `0:0`, explicitly pins Podman's
+rootless user namespace (`--userns=host` within rootless Podman, not host root), drops all capabilities,
+applies `no-new-privileges`, selects `none` or private bridge `outbound`, and makes the base
+filesystem read-only with a bounded non-executable `/tmp`. Automatic extra read-write tmpfs mounts
+are disabled; no driver-specific `overlay.size` quota is requested. Before attach,
+`validEffectiveInspect` checks the user and user namespace, rootfs mode, empty effective/bounding capabilities,
+no-new-privileges, CPU/memory/process limits, exact scratch mount and admitted bind/volume set.
+Podman serializes empty capability sets as null or empty arrays; missing fields are refused.
+Its concrete CLI port requires an absolute executable, explicit connection/environment, argv
+execution and output/time bounds and is exported only from `@clarvis/kernel/local`.
+
+Podman requests shared SELinux relabeling only on the admitted workspace, read-only overlays and
+optional Git common directory. This changes labels recursively on those selected host files and
+keeps SELinux enforcement active; it never relabels global extension or credential roots. The
+rootless operator must own the selected writable workspace files. The engine-private cache uses the
+same schema-2 identity and initializer as Docker: initialization uses a full-volume `nocopy` mount,
+and the guest receives only `subpath=data`. The initializer consumes first-use copying before guest
+attachment. The engine-reported `SubPath` must match admission, and the live isolation canary
+verifies that the initialization marker cannot be observed through `/mise`.
 
 The Docker backend accepts only a Linux engine. It resolves the configured `sha256` image ID before
 creation, selects `none` or the explicit `bridge` outbound network, makes the image root filesystem
@@ -494,6 +509,8 @@ TLS.
 Production: `createPodmanRuntimeBackend` in `packages/kernel/src/runtime/podman-backend.ts`;
 `createNodePodmanControl` in `packages/kernel/src/adapters/process/node-podman-control.ts`;
 `createDockerRuntimeBackend` in `packages/kernel/src/runtime/docker-backend.ts`;
+`miseCacheIdentity`, `prepareMiseCache` and `prepareCacheOwnership` in
+`packages/kernel/src/runtime/container-mise-cache.ts`;
 `resolveDockerRuntimeRecipe` in `packages/kernel/src/runtime/runtime-recipe.ts`;
 `createNodeDockerControl` in `packages/kernel/src/adapters/process/node-docker-control.ts`;
 `createRuntimePortPreview` and `createContainerRuntimePortPreview` in
@@ -509,9 +526,18 @@ and persistent-cache canary, exercised through a Linux engine rather than macOS 
 `packages/kernel/tests/integration/runtime-port-preview.test.ts`;
 `packages/kernel/tests/integration/runtime-preview-relay.test.ts`;
 `packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts` (explicitly gated live
-Docker/Colima canary).
+Docker/Colima or Podman canary);
+`packages/kernel/tests/integration/runtime-podman-isolation.e2e.test.ts` (rootless identity, effective
+security and cgroups, offline networking, scratch disposal and persistent cache partitioning).
 
 ## 8. Current evidence and explicit limits
+
+The shared `local-docker-runtime.e2e.test.ts` canary selects `createLocalPodmanRuntime` and
+`createNodePodmanControl` when `CLARVIS_PODMAN_RUNTIME_CANARY=1`, using the explicit
+`CLARVIS_PODMAN_RUNTIME_CONNECTION` and `CLARVIS_PODMAN_RUNTIME_IMAGE_DIGEST` inputs. The existing
+Docker inputs remain the default. Both selections exercise the same assertions with a synthetic
+host LLM. Podman also has a live isolation/cache canary; recipes and the rootful DAC canary remain
+Docker-specific.
 
 The opt-in Docker/Colima canaries exercise a real Linux engine and worker with a synthetic host LLM:
 linked Git worktrees, host skill/plugin/Memory reads, denial of Memory mutations, immediate workspace
@@ -529,9 +555,10 @@ synthetic canary is not proof of a live subscription, and a PTY subscription run
 every provider or platform. Exact artifact identities, commands and completed validation results
 belong in the change's evidence/handoff, rather than a stale image digest in this contract.
 
-Local qualification covers Docker through Colima on Linux/amd64. It does not qualify Docker Desktop,
-native Linux hosts, Linux/arm64, Windows or live Podman. External reconciliation after an abrupt host
-failure is not implemented. Docker's persistent `/mise` volume and the selected workspace bind have no portable
+Local qualification covers Docker through Colima and rootless Podman on native Linux/amd64 with
+SELinux enforcing and Btrfs-backed storage. It does not qualify Docker Desktop, native rootful
+Docker, Linux/arm64, Windows or Podman machine on macOS. External reconciliation after an abrupt host
+failure is not implemented. Both engines' persistent `/mise` volumes and the selected workspace bind have no portable
 hard `storage_bytes` quota. The read-write Git common mount grants repository-wide metadata, and
 an outbound guest can transmit readable workspace content or reach host/LAN services. Public-only
 `internet` enforcement remains unavailable and is refused; only `none` and the broader

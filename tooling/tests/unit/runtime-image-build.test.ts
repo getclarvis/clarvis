@@ -10,6 +10,7 @@ import {
   runtimeArtifactBuildArgs,
   runtimeImageBuildArgs,
   runtimeImageBuildPlan,
+  runtimeLocalImageId,
 } from "../../runtime/build-image.ts";
 
 const metadata = {
@@ -19,6 +20,20 @@ const metadata = {
 const artifact = `${RUNTIME_ARTIFACT_REPOSITORY}@sha256:${"b".repeat(64)}`;
 
 describe("runtime image build command", () => {
+  it("canonicalizes full Docker and Podman local image IDs and rejects ambiguous identities", () => {
+    const hex = "a".repeat(64);
+    expect(runtimeLocalImageId(hex)).toBe(`sha256:${hex}`);
+    expect(runtimeLocalImageId(`sha256:${hex}`)).toBe(`sha256:${hex}`);
+    for (const invalid of [
+      "latest",
+      hex.slice(0, 12),
+      "A".repeat(64),
+      `sha512:${hex}`,
+      `${hex}\n`,
+    ]) {
+      expect(runtimeLocalImageId(invalid)).toBeUndefined();
+    }
+  });
   it("builds the runnable image only from the canonical immutable artifact", () => {
     expect(runtimeImageBuildArgs(artifact, "clarvis-runtime:local", metadata)).toEqual([
       "build",

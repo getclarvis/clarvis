@@ -1051,11 +1051,15 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     separate checkout starts Clarvis in an ordinary Git worktree. The omitted network default is
     truthfully the broader ordinary `outbound` route, so readable guest data may be exfiltrated and
     host/LAN services may be reached; `none` is the explicit offline policy and unenforced
-    public-only `internet` is refused. Mise-installed toolchains execute only from `/mise`: Podman
-    supplies disposable scratch, while Docker supplies a labelled local volume derived from owner,
+    public-only `internet` is refused. Mise-installed toolchains execute only from `/mise`: both
+    engines supply a labelled local volume derived from owner,
     project, workspace, effective UID/GID and exact image. Rootful Docker selects the operator's
     numeric identity rather than root without DAC capabilities; rootless Docker uses its
-    operator-mapped root and rootful user namespace remapping is refused. A fixed networkless
+    operator-mapped root and rootful user namespace remapping is refused. Podman requires rootless
+    mode, uses operator-mapped `0:0`, and inspects effective capabilities, user, read-only root,
+    no-new-privileges, cgroups and the bounded non-executable scratch before attach. Its admitted
+    binds request shared SELinux relabeling without disabling host SELinux enforcement; relabeling
+    persists on the selected host trees. A fixed networkless
     initializer receives only the cache, seeds image content with `CHOWN`, and keeps its marker
     outside the guest's mounted `data` subdirectory. The guest can mutate that cache and later guests in the same
     workspace/image can observe it, but the Clarvis host process does not mount or execute its
@@ -1102,7 +1106,8 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `prepareRuntimeCapabilityRoot` in
     `packages/kernel/src/runtime/runtime-workspace-control.ts`;
     `createArgs` in `packages/kernel/src/runtime/docker-backend.ts` and
-    `packages/kernel/src/runtime/podman-backend.ts`; `createRuntimeAuthorityRouter` in
+    `packages/kernel/src/runtime/podman-backend.ts`; `prepareMiseCache` and `prepareCacheOwnership` in
+    `packages/kernel/src/runtime/container-mise-cache.ts`; `createRuntimeAuthorityRouter` in
     `packages/kernel/src/runtime/local-podman-runtime.ts`; `createRuntimePortPreview` and
     `createContainerRuntimePortPreview` in `packages/kernel/src/runtime/port-preview.ts`;
     `runtimeSettingsSchema` in `packages/kernel/src/runtime/settings.ts`;
@@ -1120,6 +1125,7 @@ TOCTOU family between validation and rename, so the limitation in invariant 10 r
     `packages/kernel/tests/integration/runtime-port-preview.test.ts`; the gated
     `runtime-recipe.e2e.test.ts` canary;
     `local-docker-runtime.e2e.test.ts` canary;
+    `packages/kernel/tests/integration/runtime-podman-isolation.e2e.test.ts`;
     `packages/kernel/tests/integration/local-podman-runtime.test.ts`;
     `packages/kernel/tests/unit/lazy-runtime.test.ts`;
     `packages/kernel/tests/contract/runtime-execution-rpc.test.ts`;

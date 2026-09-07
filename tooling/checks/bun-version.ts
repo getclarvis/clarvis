@@ -135,7 +135,7 @@ export function bunVersionFailures(snapshot) {
 
   const runtimeBuildPins = [
     ...snapshot.runtimeDevelopmentContainerfile.matchAll(
-      /^ARG\s+BUILD_IMAGE=oven\/bun:([^\s@]+)@(sha256:[a-f0-9]{64})\s*$/gm,
+      /^ARG\s+BUILD_IMAGE=docker\.io\/oven\/bun:([^\s@]+)@(sha256:[a-f0-9]{64})\s*$/gm,
     ),
   ];
   if (runtimeBuildPins.length !== 1) {

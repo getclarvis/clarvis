@@ -28,7 +28,7 @@ test("production runtime image consumes only a released carrier", () => {
   expect(production).not.toContain("COPY packages");
   expect(production).not.toContain("bun install");
   expect(production).not.toContain("bun build");
-  expect(RUNTIME_BASE_IMAGE).toStartWith("debian:bookworm-slim@sha256:");
+  expect(RUNTIME_BASE_IMAGE).toStartWith("docker.io/library/debian:bookworm-slim@sha256:");
   expect(production).toContain("git ca-certificates");
   const miseStage = production.indexOf("FROM ${BASE_IMAGE}");
   const finalStage = production.indexOf("FROM ${BASE_IMAGE}", miseStage + 1);

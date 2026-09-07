@@ -28,14 +28,22 @@ import {
   runtimeSettingsSchema,
   type DockerControl,
 } from "../../src/index.ts";
-import { createNodeDockerControl } from "../../src/local.ts";
+import { createNodeDockerControl, createNodePodmanControl } from "../../src/local.ts";
 import { createLocalDockerRuntime } from "../../src/runtime/local-docker-runtime.ts";
+import { createLocalPodmanRuntime } from "../../src/runtime/local-podman-runtime.ts";
 
-const imageDigest = process.env.CLARVIS_DOCKER_RUNTIME_IMAGE_DIGEST;
-const context = process.env.CLARVIS_DOCKER_RUNTIME_CONTEXT;
+const engine = process.env.CLARVIS_PODMAN_RUNTIME_CANARY === "1" ? "podman" : "docker";
+const imageDigest =
+  engine === "podman"
+    ? process.env.CLARVIS_PODMAN_RUNTIME_IMAGE_DIGEST
+    : process.env.CLARVIS_DOCKER_RUNTIME_IMAGE_DIGEST;
+const context =
+  engine === "podman"
+    ? process.env.CLARVIS_PODMAN_RUNTIME_CONNECTION
+    : process.env.CLARVIS_DOCKER_RUNTIME_CONTEXT;
 const execFileAsync = promisify(execFile);
 const enabled =
-  process.env.CLARVIS_DOCKER_RUNTIME_CANARY === "1" &&
+  (engine === "podman" || process.env.CLARVIS_DOCKER_RUNTIME_CANARY === "1") &&
   /^sha256:[a-f0-9]{64}$/u.test(imageDigest ?? "") &&
   typeof context === "string" &&
   context.length > 0;
@@ -81,9 +89,9 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 test.skipIf(!enabled)(
   "bridges host reads and steer, installs through mise, previews, and survives cancellation",
   async () => {
-    const docker = Bun.which("docker");
-    if (docker === null || imageDigest === undefined || context === undefined) {
-      throw new Error("Docker canary inputs disappeared after admission");
+    const executable = Bun.which(engine);
+    if (executable === null || imageDigest === undefined || context === undefined) {
+      throw new Error(`${engine} canary inputs disappeared after admission`);
     }
     const buildRoot = resolve(import.meta.dir, "../../../../build/runtime-e2e");
     await mkdir(buildRoot, { recursive: true });
@@ -106,21 +114,34 @@ test.skipIf(!enabled)(
     const memoryRoot = join(workspaceRoot, ".clarvis", "memory");
     await mkdir(memoryRoot, { recursive: true });
     await writeFile(join(memoryRoot, "PROFILE.md"), "HOST_MEMORY\n");
-    const generation = `docker-e2e-${randomUUID()}`;
-    const nodeControl = createNodeDockerControl({
-      executable: docker,
+    const generation = `${engine}-e2e-${randomUUID()}`;
+    const controlOptions = {
+      executable,
       context,
       environment: Object.fromEntries(
-        ["HOME", "PATH"].flatMap((name) => {
+        ["HOME", "PATH", "XDG_RUNTIME_DIR"].flatMap((name) => {
           const value = process.env[name];
           return value === undefined ? [] : [[name, value]];
         }),
       ),
       timeoutMs: 120_000,
-    });
+    };
+    const nodeControl =
+      engine === "podman"
+        ? createNodePodmanControl({ ...controlOptions, connection: context })
+        : createNodeDockerControl(controlOptions);
     let guestStderr = "";
+    const caches = new Set<string>();
     const control: DockerControl = {
-      run: (args, signal) => nodeControl.run(args, signal),
+      async run(args, signal) {
+        const result = await nodeControl.run(args, signal);
+        if (result.exitCode === 0 && args[0] === "volume" && args[1] === "create")
+          caches.add(args.at(-1)!);
+        if (result.exitCode !== 0 && !(args[0] === "volume" && args[1] === "inspect")) {
+          guestStderr = `${args[0]}: ${result.stderr}`.slice(-16_384);
+        }
+        return result;
+      },
       attach(args) {
         const attached = nodeControl.attach(args);
         attached.stderr.on("data", (chunk: Buffer | string) => {
@@ -261,7 +282,7 @@ test.skipIf(!enabled)(
                 name: "shell",
                 arguments: {
                   command:
-                    'sh -c \'if printf poisoned > /workspace/.clarvis/memory/PROFILE.md 2>/tmp/memory-write-error; then exit 1; fi; printf "guest write\\n" > /workspace/guest-created.txt; git -C /workspace status --short >/tmp/git-status; mise x node@24.20.0 -- sh -c "mkdir -p \\"$TMPDIR/npm-e2e\\" && cd \\"$TMPDIR/npm-e2e\\" && npm init -y >/dev/null && npm install --ignore-scripts --no-audit --no-fund is-number@7.0.0"\'',
+                    'sh -euc \'if printf poisoned > /workspace/.clarvis/memory/PROFILE.md 2>/tmp/memory-write-error; then exit 1; fi; printf "guest write\\n" > /workspace/guest-created.txt; git -C /workspace status --short >/tmp/git-status; mise x node@24.20.0 -- sh -c "mkdir -p \\"$TMPDIR/npm-e2e\\" && cd \\"$TMPDIR/npm-e2e\\" && npm init -y >/dev/null && npm install --ignore-scripts --no-audit --no-fund is-number@7.0.0"\'',
                   timeout_ms: 120_000,
                 },
               },
@@ -270,6 +291,9 @@ test.skipIf(!enabled)(
           };
         }
         if (workloadModelCall === 3) {
+          expect(await readFile(join(workspaceRoot, "guest-created.txt"), "utf8")).toBe(
+            "guest write\n",
+          );
           return {
             toolCalls: [
               {
@@ -318,9 +342,9 @@ test.skipIf(!enabled)(
     let runtime: Awaited<ReturnType<typeof createLocalDockerRuntime>> | undefined;
     try {
       const settings = runtimeSettingsSchema.parse({
-        backend: "docker",
+        backend: engine,
         image_digest: imageDigest,
-        executable: docker,
+        executable,
         connection: context,
         limits: {
           cpu_count: 1,
@@ -330,11 +354,11 @@ test.skipIf(!enabled)(
           storage_bytes: 512 * 1024 * 1024,
         },
       });
-      if (settings.backend !== "docker") throw new Error("Docker settings lost their backend");
-      runtime = await createLocalDockerRuntime(
+      if (settings.backend === "native") throw new Error("Canary settings lost their backend");
+      runtime = await (engine === "podman" ? createLocalPodmanRuntime : createLocalDockerRuntime)(
         {
           generation,
-          ownerId: "owner",
+          ownerId: generation,
           project: { id: "project" },
           workspace: {
             id: "workspace",
@@ -363,7 +387,7 @@ test.skipIf(!enabled)(
         { control, roots: { env: { [HOME_ENV]: join(root, "home") } } },
       );
       expect(runtime.info).toMatchObject({
-        engine: "docker",
+        engine,
         imageDigest,
         guestPlatform: "linux",
         runtimeProtocolRevision: RUNTIME_PROTOCOL_REVISION,
@@ -488,13 +512,17 @@ test.skipIf(!enabled)(
       expect(runtime.closed).toBe(false);
     } catch (error) {
       if (guestStderr.length > 0) {
-        throw new Error(`Docker guest stderr:\n${guestStderr.trimEnd()}`, { cause: error });
+        throw new Error(`${engine} guest stderr:\n${guestStderr.trimEnd()}`, { cause: error });
       }
       throw error;
     } finally {
       releaseWorkloadModel();
       await runtime?.close().catch(() => undefined);
       await control.run(["rm", "--force", `clarvis-runtime-${generation}`]).catch(() => undefined);
+      for (const cache of caches) {
+        const removed = await control.run(["volume", "rm", cache]);
+        expect(removed.exitCode).toBe(0);
+      }
       await rm(root, { recursive: true, force: true });
     }
   },

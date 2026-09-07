@@ -220,14 +220,38 @@ describe("local Podman runtime composition", () => {
     const generation = "generation-local-1";
     let mountedRoot = "";
     let effectiveMounts: Array<{
-      Type: "bind";
+      Type: "bind" | "volume";
+      Name?: string;
+      SubPath?: string;
       Source: string;
       Destination: string;
       RW: boolean;
     }> = [];
+    let cacheVolume: { Name: string; Driver: string; Labels: Record<string, string> } | undefined;
     let guest: ReturnType<typeof serveExecutionWorker> | undefined;
     const control: PodmanControl = {
       async run(args) {
+        if (args[0] === "volume") {
+          if (args[1] === "create") {
+            cacheVolume = {
+              Name: args.at(-1)!,
+              Driver: "local",
+              Labels: Object.fromEntries(
+                args.flatMap((arg, index) => {
+                  if (arg !== "--label") return [];
+                  const label = args[index + 1]!;
+                  const split = label.indexOf("=");
+                  return [[label.slice(0, split), label.slice(split + 1)]];
+                }),
+              ),
+            };
+          }
+          return {
+            exitCode: cacheVolume === undefined ? 1 : 0,
+            stdout: JSON.stringify([cacheVolume]),
+            stderr: "",
+          };
+        }
         if (args[0] === "info") {
           return {
             exitCode: 0,
@@ -262,7 +286,8 @@ describe("local Podman runtime composition", () => {
             if (source === undefined || destination === undefined) return [];
             return [
               {
-                Type: "bind" as const,
+                Type: mount.startsWith("type=volume") ? ("volume" as const) : ("bind" as const),
+                ...(mount.startsWith("type=volume") ? { Name: source, SubPath: "data" } : {}),
                 Source: source,
                 Destination: destination,
                 RW: !mount.includes("ro=true"),
@@ -278,8 +303,20 @@ describe("local Podman runtime composition", () => {
             exitCode: 0,
             stdout: JSON.stringify([
               {
-                HostConfig: { Privileged: false, NetworkMode: "none" },
-                Config: { Labels: { "io.clarvis.generation": generation } },
+                EffectiveCaps: null,
+                BoundingCaps: null,
+                HostConfig: {
+                  Privileged: false,
+                  NetworkMode: "none",
+                  UsernsMode: "",
+                  ReadonlyRootfs: true,
+                  Memory: 64 * 1024 * 1024,
+                  PidsLimit: 32,
+                  NanoCpus: 1_000_000_000,
+                  SecurityOpt: ["no-new-privileges"],
+                  Tmpfs: { "/tmp": `rw,nosuid,nodev,noexec,size=${128 * 1024 * 1024}` },
+                },
+                Config: { User: "0:0", Labels: { "io.clarvis.generation": generation } },
                 Mounts: effectiveMounts,
               },
             ]),

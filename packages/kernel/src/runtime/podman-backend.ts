@@ -17,6 +17,12 @@ import {
 } from "./types.ts";
 import { RUNTIME_PROTOCOL_LABEL, RUNTIME_PROTOCOL_REVISION } from "./protocol-revision.ts";
 import { createContainerRuntimePortPreview } from "./port-preview.ts";
+import {
+  miseCacheIdentity,
+  prepareMiseCache,
+  prepareCacheOwnership,
+  type MiseCacheIdentity,
+} from "./container-mise-cache.ts";
 
 /** Captured, bounded result of one Podman control-plane invocation. */
 export interface PodmanCommandResult {
@@ -86,7 +92,7 @@ function containerName(generation: string): string {
 
 function networkArgs(spec: RuntimeLaunchSpec): readonly string[] {
   if (spec.network === "none") return ["--network", "none"];
-  if (spec.network === "outbound") return ["--network", "slirp4netns"];
+  if (spec.network === "outbound") return ["--network", "bridge"];
   throw new RuntimeLaunchError(
     "unsupported_policy",
     "internet-only egress enforcement is unavailable for the Podman adapter",
@@ -99,18 +105,25 @@ function guestWorkspacePath(spec: RuntimeLaunchSpec, hostPath: string): string {
 function bindMountArgs(spec: RuntimeLaunchSpec): readonly string[] {
   return [
     "--mount",
-    `type=bind,source=${spec.workspaceRoot},target=/workspace,rw=true`,
+    `type=bind,source=${spec.workspaceRoot},target=/workspace,rw=true,relabel=shared`,
     ...spec.readOnlyWorkspacePaths.flatMap((path) => [
       "--mount",
-      `type=bind,source=${path},target=${guestWorkspacePath(spec, path)},ro=true`,
+      `type=bind,source=${path},target=${guestWorkspacePath(spec, path)},ro=true,relabel=shared`,
     ]),
     ...(spec.gitCommonDir === undefined
       ? []
-      : ["--mount", `type=bind,source=${spec.gitCommonDir},target=${spec.gitCommonDir},rw=true`]),
+      : [
+          "--mount",
+          `type=bind,source=${spec.gitCommonDir},target=${spec.gitCommonDir},rw=true,relabel=shared`,
+        ]),
   ];
 }
 
-function createArgs(spec: RuntimeLaunchSpec, name: string): readonly string[] {
+function createArgs(
+  spec: RuntimeLaunchSpec,
+  name: string,
+  cache: MiseCacheIdentity,
+): readonly string[] {
   return [
     "create",
     "--name",
@@ -120,6 +133,11 @@ function createArgs(spec: RuntimeLaunchSpec, name: string): readonly string[] {
     "--label",
     `io.clarvis.generation=${spec.generation}`,
     "--interactive",
+    "--user",
+    "0:0",
+    "--userns=host",
+    "--read-only",
+    "--read-only-tmpfs=false",
     "--cap-drop",
     "ALL",
     "--security-opt",
@@ -130,11 +148,11 @@ function createArgs(spec: RuntimeLaunchSpec, name: string): readonly string[] {
     String(spec.limits.memoryBytes),
     "--cpus",
     String(spec.limits.cpuCount),
-    "--storage-opt",
-    `size=${String(spec.limits.storageBytes)}`,
     ...networkArgs(spec),
     "--tmpfs",
-    `/mise:rw,nosuid,nodev,exec,size=${String(spec.limits.storageBytes)}`,
+    `/tmp:rw,nosuid,nodev,noexec,size=${String(spec.limits.storageBytes)}`,
+    "--mount",
+    `type=volume,source=${cache.name},target=/mise,subpath=data`,
     ...bindMountArgs(spec),
     "--workdir",
     "/workspace",
@@ -146,12 +164,19 @@ function createArgs(spec: RuntimeLaunchSpec, name: string): readonly string[] {
   ];
 }
 
-function validEffectiveInspect(value: unknown, spec: RuntimeLaunchSpec): boolean {
+function validEffectiveInspect(
+  value: unknown,
+  spec: RuntimeLaunchSpec,
+  cache: MiseCacheIdentity,
+): boolean {
   const root = Array.isArray(value) ? asRecord(value[0]) : asRecord(value);
   const hostConfig = asRecord(root?.HostConfig);
   const config = asRecord(root?.Config);
   const mounts = Array.isArray(root?.Mounts) ? root.Mounts : [];
   const labels = asRecord(config?.Labels);
+  const security = Array.isArray(hostConfig?.SecurityOpt) ? hostConfig.SecurityOpt : [];
+  const tmpfs = asRecord(hostConfig?.Tmpfs);
+  const scratch = typeof tmpfs?.["/tmp"] === "string" ? tmpfs["/tmp"].split(",") : [];
   const expectedBinds = [
     { source: spec.workspaceRoot, destination: "/workspace", writable: true },
     ...spec.readOnlyWorkspacePaths.map((path) => ({
@@ -164,11 +189,37 @@ function validEffectiveInspect(value: unknown, spec: RuntimeLaunchSpec): boolean
       : [{ source: spec.gitCommonDir, destination: spec.gitCommonDir, writable: true }]),
   ];
   return (
+    config?.User === "0:0" &&
+    (hostConfig?.UsernsMode === "" || hostConfig?.UsernsMode === "host") &&
     hostConfig?.Privileged === false &&
+    hostConfig?.ReadonlyRootfs === true &&
+    hostConfig.PidsLimit === spec.limits.processCount &&
+    hostConfig.Memory === spec.limits.memoryBytes &&
+    hostConfig.NanoCpus === spec.limits.cpuCount * 1_000_000_000 &&
+    security.some((value) => value === "no-new-privileges" || value === "no-new-privileges=true") &&
+    (root?.EffectiveCaps === null ||
+      (Array.isArray(root?.EffectiveCaps) && root.EffectiveCaps.length === 0)) &&
+    (root?.BoundingCaps === null ||
+      (Array.isArray(root?.BoundingCaps) && root.BoundingCaps.length === 0)) &&
+    Object.keys(tmpfs ?? {}).length === 1 &&
+    ["rw", "nosuid", "nodev", "noexec", `size=${spec.limits.storageBytes}`].every((option) =>
+      scratch.includes(option),
+    ) &&
+    !scratch.some((option) => ["ro", "suid", "dev", "exec"].includes(option)) &&
     String(hostConfig?.NetworkMode).toLowerCase() ===
-      (spec.network === "none" ? "none" : "slirp4netns") &&
+      (spec.network === "none" ? "none" : "bridge") &&
     labels?.["io.clarvis.generation"] === spec.generation &&
-    mounts.length === expectedBinds.length &&
+    mounts.length === expectedBinds.length + 1 &&
+    mounts.some((mount) => {
+      const item = asRecord(mount);
+      return (
+        item?.Destination === "/mise" &&
+        item.Type === "volume" &&
+        item.Name === cache.name &&
+        item.RW === true &&
+        item.SubPath === "data"
+      );
+    }) &&
     expectedBinds.every((expected) => {
       const matches = mounts.filter((item) => asRecord(item)?.Destination === expected.destination);
       return (
@@ -185,7 +236,11 @@ function validImageInspect(value: unknown, imageDigest: string): boolean {
   const root = Array.isArray(value) ? asRecord(value[0]) : asRecord(value);
   const config = asRecord(root?.Config);
   const labels = asRecord(config?.Labels);
-  return root?.Id === imageDigest && labels?.[RUNTIME_PROTOCOL_LABEL] === RUNTIME_PROTOCOL_REVISION;
+  const id = root?.Id;
+  const canonicalId = typeof id === "string" && /^[a-f0-9]{64}$/u.test(id) ? `sha256:${id}` : id;
+  return (
+    canonicalId === imageDigest && labels?.[RUNTIME_PROTOCOL_LABEL] === RUNTIME_PROTOCOL_REVISION
+  );
 }
 
 async function successful(
@@ -241,6 +296,7 @@ export function createPodmanRuntimeBackend(options: PodmanBackendOptions): Runti
         );
       }
       const name = containerName(spec.generation);
+      const cache = miseCacheIdentity(spec, "0:0");
       let created = false;
       let attached: PodmanAttachedProcess | undefined;
       try {
@@ -255,14 +311,22 @@ export function createPodmanRuntimeBackend(options: PodmanBackendOptions): Runti
             "Podman resolved image identity did not match the admitted digest",
           );
         }
-        await successful(options.control, createArgs(spec, name), "podman create");
+        await prepareMiseCache(options.control, cache, "podman");
+        await prepareCacheOwnership(options.control, spec, cache, "0:0", "podman");
+        await successful(options.control, createArgs(spec, name, cache), "podman create");
         created = true;
         const effective = await successful(
           options.control,
           ["container", "inspect", name],
           "podman container inspect",
         );
-        if (!validEffectiveInspect(parseJson(effective.stdout, "podman container inspect"), spec)) {
+        if (
+          !validEffectiveInspect(
+            parseJson(effective.stdout, "podman container inspect"),
+            spec,
+            cache,
+          )
+        ) {
           throw new RuntimeLaunchError(
             "unsupported_policy",
             "Podman effective configuration did not match the admitted isolation policy",

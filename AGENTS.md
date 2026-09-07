@@ -83,8 +83,7 @@ Rebase merging and required linear history are disabled so these synchronization
 their ancestry. External approving reviews are not required for the single-maintainer workflow;
 this does not replace the owner's review of the change.
 
-Prepare the final root version on `release/<major.minor.patch>` before its first push. Each new
-commit pushed to that branch receives the next signed `v<version>-rc.<number>` source-candidate tag.
+Prepare the final root version on `release/<major.minor.patch>` before its first push. Open a PR from that branch to `main`; only its open PR head receives the next signed `v<version>-rc.<number>` source-candidate tag.
 Candidates publish qualified runtime images and a source-repository prerelease; they do not publish stable installers. Promote through a merge PR from that branch to `main`; after
 CI passes on the exact merge commit, automation signs and pushes `v<version>`, which publishes the
 real release. Direct `develop` promotions do not trigger this automation. Hotfix work starts from
@@ -129,8 +128,8 @@ Before starting an authorized publication workflow, state once what will be publ
 repository and branch, and the intended outcome. The authorization ends when that outcome is reached
 or when the scope or destination changes materially.
 
-Under the configured Gitflow automation, an explicitly requested push of a prepared `release/*`
-branch includes its candidate tag; an explicitly requested release promotion merge into `main`
+Under the configured Gitflow automation, explicitly opening a prepared `release/*` PR into `main`, or pushing to
+that branch while its PR is open, includes its candidate tag; an explicitly requested release promotion merge into `main`
 includes the final tag and public release. State these effects before either action. Ordinary task
 branch pushes and merges do not authorize releases.
 

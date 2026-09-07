@@ -17,6 +17,14 @@ test("distribution workflows separate candidate and stable publication and gate 
   const stable = Bun.YAML.parse(stableSource) as Workflow;
   expect(candidate.on.push.tags).toEqual(["v*-rc.*"]);
   expect(candidate.jobs.publish.needs).toBe("images");
+  expect(candidate.jobs.install.needs).toBe("publish");
+  const install = candidate.jobs.install.steps.find(
+    (step) => step.name === "install public candidate and exercise its installed runtime",
+  );
+  expect(install.run).toContain('./dev-install.sh --candidate "$GITHUB_REF_NAME"');
+  expect(install.run).toContain('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"');
+  expect(install.run).toContain("resolveClarvisRuntimeImage");
+  expect(install.run).toContain('bash tooling/ci/qualify-runtime.sh "$image_ref" docker');
   expect(candidateSource).toContain('bash tooling/ci/qualify-runtime.sh "$image_tag" docker');
   expect(candidateSource).toContain('bash tooling/ci/qualify-runtime.sh "$image_tag" podman');
   expect(candidateSource).not.toContain("getclarvis/clarvis-releases");

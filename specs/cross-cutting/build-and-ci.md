@@ -268,12 +268,23 @@ ancestry with merge commits. Ruleset settings are external GitHub configuration 
 inspection; passing local checks alone does not prove enforcement. The operating sequence lives in
 [CONTRIBUTING.md](../../CONTRIBUTING.md#branch-workflow), [AGENTS.md](../../AGENTS.md#branch-workflow),
 and [RELEASING.md](../../RELEASING.md). Ordinary branch pushes do not publish. `.github/workflows/gitflow-release.yml` creates signed RC
-source tags for release-branch commits, then creates a final tag after a merged release PR has green
-CI on its exact merge SHA. `.github/workflows/release.yml` excludes RC pushes, admits only stable version tags for
+source tags only for open same-repository `release/*` PRs targeting `main`, then creates a final tag after a merged release PR has green
+CI on its exact merge SHA. Candidate events are `opened`, `reopened`, `synchronize`, and `edited`;
+plain pushes and closed unmerged PRs cannot create tags. Checkout uses the PR head SHA, not the
+synthetic merge SHA. Before acquiring Publisher credentials, the workflow verifies that the live PR
+is still open at that head and still targets `main`. Retries reuse the same candidate tag.
+Production: `.github/workflows/gitflow-release.yml` (candidate PR guard).
+Test: `tooling/tests/unit/gitflow-workflow.test.ts` (PR triggers and credential ordering).
+`.github/workflows/release.yml` excludes RC pushes, admits only stable version tags for
 publication, and verifies anonymous image access. `.github/workflows/candidate.yml` qualifies both
 container engines on native Ubuntu 26.04 amd64/arm64 runners with volume-subpath-capable Podman before publishing candidate images and a source
 prerelease. Both workflows use Clarvis Release Publisher credentials but request installation tokens scoped
 to their own target repository.
+After the source prerelease exists, `.github/workflows/candidate.yml` runs `dev-install.sh --candidate`
+on both native Linux architectures and qualifies the installed source with its resolved Docker
+image. A published prerelease with failed install jobs is not a qualified candidate.
+Production: `.github/workflows/candidate.yml` (`install` job). Test:
+`tooling/tests/unit/distribution-workflows.test.ts` (post-publication install contract).
 Production: `tooling/release/gitflow.ts` (`main`) and `tooling/lib/gitflow-release.ts`
 (`planGitflowRelease`, `candidateTag`). Test: `tooling/tests/unit/gitflow-release.test.ts` and
 `tooling/tests/unit/gitflow-release-git.test.ts`. External App installation, signing secrets, and tag

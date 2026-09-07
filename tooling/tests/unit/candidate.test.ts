@@ -17,6 +17,9 @@ test("candidates cannot publish a stable identity or consume official carrier na
   expect(() =>
     candidateIdentity("v0.2.0-rc.1", "0.2.0", sha, "getclarvis/clarvis-releases"),
   ).toThrow();
+  expect(candidateIdentity("v0.2.0-rc.1", "0.2.0", sha, "getclarvis/clarvis").installation).toBe(
+    "source-v1",
+  );
   const artifact = `${RUNTIME_CANDIDATE_ARTIFACT_REPOSITORY}@sha256:${"b".repeat(64)}`;
   const image = `${RUNTIME_CANDIDATE_IMAGE_REPOSITORY}:v0.2.0-rc.1`;
   const metadata = { version: "0.2.0", sourceRevision: sha };

@@ -46,15 +46,27 @@ test("signed candidate sequence and final merge tag survive retries without rewr
     writeFileSync(join(checkout, "package.json"), '{"version":"0.2.0"}\n');
     git("commit", "-am", "prepare release");
     const first = git("rev-parse", "HEAD");
-    const event = { repository, ref: "refs/heads/release/0.2.0", after: first, created: true };
-    invoke("push", event);
+    const event = {
+      repository,
+      action: "opened",
+      pull_request: {
+        state: "open",
+        base: { ref: "main" },
+        head: { ref: "release/0.2.0", sha: first, repo: repository },
+      },
+    };
+    invoke("pull_request", event);
     expect(git("rev-parse", "v0.2.0-rc.1^{commit}")).toBe(first);
-    expect(invoke("push", event)).toContain("already exists");
+    expect(invoke("pull_request", event)).toContain("already exists");
     writeFileSync(join(checkout, "fix.txt"), "stabilization\n");
     git("add", ".");
     git("commit", "-m", "stabilize");
     const head = git("rev-parse", "HEAD");
-    invoke("push", { ...event, after: head, created: false });
+    invoke("pull_request", {
+      ...event,
+      action: "synchronize",
+      pull_request: { ...event.pull_request, head: { ...event.pull_request.head, sha: head } },
+    });
     expect(git("rev-parse", "v0.2.0-rc.2^{commit}")).toBe(head);
     git("switch", "main");
     git("merge", "--no-ff", "release/0.2.0", "-m", "release promotion");

@@ -57,7 +57,7 @@ For a reusable source command from this checkout, run the root development insta
 clarvis-develop
 ```
 
-`clarvis-develop` always loads the current TypeScript sources, preserves the caller's current
+`clarvis-develop` loads the selected TypeScript sources, preserves the caller's current
 directory as the Clarvis workspace, and remains separate from an installed release's `clarvis`
 command. `--empty-workspace` starts it in a newly allocated directory under
 `/tmp/clarvis-development-temp/`; `--clear` removes global state and those managed workspaces, and
@@ -69,6 +69,29 @@ To install the optimized command globally from this checkout:
 bun --filter @clarvis/code setup
 clarvis
 ```
+
+To test a published source candidate and its Docker image, use:
+
+```bash
+./dev-install.sh --candidate                 # newest published RC among the latest 100 releases
+./dev-install.sh --candidate v0.2.0-rc.4      # exact RC, once published with source-v1 support
+clarvis-develop
+```
+
+This requires Git, the candidate's pinned Bun version, and a running Docker engine. The installer
+verifies the source prerelease and its `runtime-candidate.json`, checks out the exact tag commit
+under `${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`, installs frozen dependencies, pulls
+the image by digest, and checks the CLI version before replacing the managed launcher. Select the
+Docker runtime in Clarvis to use that image. The launcher pins the RC and source revision; runtime
+resolution validates the matching image manifest and protocol. The ordinary `./dev-install.sh`
+continues to select the working checkout and locally built development image. Candidate installation
+does not install Docker, alter the working checkout, or replace the stable `clarvis` command.
+Update a candidate by rerunning `--candidate`; `clarvis --update` remains a portable-release command.
+Published candidates are tested by the candidate workflow on native Linux AMD64 and ARM64: the
+real installer, launcher version, exact source revision, image resolver, and Docker runtime canaries
+must pass. An existing prerelease alone does not prove the post-publication install jobs succeeded.
+Previous candidate checkouts and downloaded images are retained; `--uninstall` removes only the
+launcher. Older image-only RCs without the `source-v1` installation marker are refused.
 
 For end users, the public installers in the repository root download portable artifacts from the
 binary-only [`getclarvis/clarvis-releases`](https://github.com/getclarvis/clarvis-releases)

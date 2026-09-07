@@ -9,6 +9,7 @@ export interface GitflowReleaseEvent {
   after?: string;
   action?: string;
   pull_request?: {
+    state?: string;
     merged?: boolean;
     base?: { ref?: string };
     head?: { ref?: string; sha?: string; repo?: { full_name?: string } };
@@ -23,7 +24,7 @@ export interface GitflowReleasePlan {
   sha: string;
 }
 
-/** Selects only release-branch pushes or same-repository release merges into main. */
+/** Selects open release PR heads or same-repository release merges into main. */
 export function planGitflowRelease(
   eventName: string,
   event: GitflowReleaseEvent,
@@ -31,25 +32,26 @@ export function planGitflowRelease(
   if (event.repository?.full_name !== "getclarvis/clarvis") {
     throw new Error("unexpected source repository");
   }
-  let branch: string;
   let sha: string;
   let kind: GitflowReleasePlan["kind"];
-  if (eventName === "push") {
-    if (event.deleted || !event.ref?.startsWith("refs/heads/release/")) return null;
-    branch = event.ref.slice("refs/heads/".length);
-    sha = event.after;
-    kind = "candidate";
-  } else if (eventName === "pull_request") {
-    const pr = event.pull_request;
-    if (event.action !== "closed" || !pr?.merged || pr.base?.ref !== "main") return null;
-    if (!pr.head?.ref?.startsWith("release/")) return null;
-    if (pr.head.repo?.full_name !== event.repository.full_name) {
-      throw new Error("release promotion must originate in the source repository");
-    }
-    branch = pr.head.ref;
-    sha = pr.merge_commit_sha;
+  if (eventName !== "pull_request") return null;
+  const pr = event.pull_request;
+  if (pr?.base?.ref !== "main" || !pr.head?.ref?.startsWith("release/")) return null;
+  if (pr.head.repo?.full_name !== event.repository.full_name) {
+    throw new Error("release PR must originate in the source repository");
+  }
+  if (event.action === "closed" && pr.merged) {
     kind = "final";
+    sha = pr.merge_commit_sha;
+  } else if (
+    ["opened", "reopened", "synchronize", "edited"].includes(event.action) &&
+    pr.state === "open" &&
+    !pr.merged
+  ) {
+    kind = "candidate";
+    sha = pr.head.sha;
   } else return null;
+  const branch = pr.head.ref;
   const version = branch.slice("release/".length);
   if (!VERSION.test(version)) throw new Error("release branch must be release/<major.minor.patch>");
   if (!SHA.test(sha)) throw new Error("release event has no exact source commit");

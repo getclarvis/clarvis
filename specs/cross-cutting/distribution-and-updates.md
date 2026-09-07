@@ -306,6 +306,17 @@ Production: `.github/workflows/release.yml` (`identity` and `publish` jobs),
 Test: `tooling/tests/unit/candidate.test.ts`, `tooling/tests/unit/distribution-workflows.test.ts`;
 registry visibility and access require live verification.
 
+The candidate workflow runs a post-publication installation matrix on native Linux AMD64 and
+ARM64. It invokes the real development installer against the public tag, checks the installed
+launcher and source SHA, resolves the image with the installed Code adapter, and runs Docker
+canaries from that checkout. Publication is required to exercise the actual download path; an
+installer failure leaves the prerelease published but the overall workflow failed. Candidate
+qualification requires both installation jobs as well as the preceding engine jobs to pass.
+Production: `.github/workflows/candidate.yml` (`install` job) and
+`tooling/ci/qualify-runtime.sh`. Test: `tooling/tests/unit/distribution-workflows.test.ts`
+(install dependency, public installer, exact SHA and installed image resolver assertions). Live
+workflow output establishes actual installation success; static workflow tests do not.
+
 ## 5. Invariants
 
 **DIST-1.** Root `package.json` is the sole product-version authority. Both installer defaults must

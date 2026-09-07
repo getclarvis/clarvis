@@ -74,5 +74,8 @@ publishes only source prereleases. `packages/code/tooling/candidate-install.ts` 
 for explicit development installs, verifying the source snapshot and pulling its candidate image.
 `ci/qualify-runtime.sh` runs the existing Docker or rootless Podman integration canaries against the
 actual built image. `.github/workflows/candidate.yml` requires both engines on both Linux architectures
-before attaching that identity to a source prerelease. The official workflow accepts only stable
+before attaching that identity to a source prerelease.
+After publication, the same workflow tests `dev-install.sh --candidate` against the public RC on
+both architectures, then exercises the installed checkout with its resolved Docker image.
+ The official workflow accepts only stable
 tags and verifies anonymous image pulls before public release activation.

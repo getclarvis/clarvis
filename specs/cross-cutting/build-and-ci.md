@@ -280,6 +280,11 @@ publication, and verifies anonymous image access. `.github/workflows/candidate.y
 container engines on native Ubuntu 26.04 amd64/arm64 runners with volume-subpath-capable Podman before publishing candidate images and a source
 prerelease. Both workflows use Clarvis Release Publisher credentials but request installation tokens scoped
 to their own target repository.
+After the source prerelease exists, `.github/workflows/candidate.yml` runs `dev-install.sh --candidate`
+on both native Linux architectures and qualifies the installed source with its resolved Docker
+image. A published prerelease with failed install jobs is not a qualified candidate.
+Production: `.github/workflows/candidate.yml` (`install` job). Test:
+`tooling/tests/unit/distribution-workflows.test.ts` (post-publication install contract).
 Production: `tooling/release/gitflow.ts` (`main`) and `tooling/lib/gitflow-release.ts`
 (`planGitflowRelease`, `candidateTag`). Test: `tooling/tests/unit/gitflow-release.test.ts` and
 `tooling/tests/unit/gitflow-release-git.test.ts`. External App installation, signing secrets, and tag

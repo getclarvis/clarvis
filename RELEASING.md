@@ -65,7 +65,14 @@ for the newest published RC among the latest 100 source releases, or supply an e
 installs an isolated source checkout using the candidate's pinned Bun and pulls its Docker image
 before replacing `clarvis-develop`; Git and Docker must already be available. The existing image-only
 RCs cannot be installed this way. The stable portable installer and updater remain separate.
-Candidate source/image matching is enforced again on Docker runtime initialization. Previous
+Candidate source/image matching is enforced again on Docker runtime initialization.
+After source prerelease publication, the candidate workflow installs that exact public RC with
+`dev-install.sh --candidate` on native AMD64 and ARM64 runners, verifies the installed launcher and
+source SHA, resolves the image through the installed Code adapter, and runs the Docker runtime
+canaries from the installed checkout. Treat the candidate as qualified only after these install jobs
+also pass; a failed install job leaves a published prerelease available for diagnosis. This does not
+authorize stable publication.
+ Previous
 candidate checkouts and images are retained; reinstall selects a newer candidate explicitly.
 The root version remains the prepared final version; the RC tag and candidate channel identify
 these non-stable images. No stable installer is published from an RC.

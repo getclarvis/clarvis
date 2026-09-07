@@ -87,6 +87,9 @@ resolution validates the matching image manifest and protocol. The ordinary `./d
 continues to select the working checkout and locally built development image. Candidate installation
 does not install Docker, alter the working checkout, or replace the stable `clarvis` command.
 Update a candidate by rerunning `--candidate`; `clarvis --update` remains a portable-release command.
+Published candidates are tested by the candidate workflow on native Linux AMD64 and ARM64: the
+real installer, launcher version, exact source revision, image resolver, and Docker runtime canaries
+must pass. An existing prerelease alone does not prove the post-publication install jobs succeeded.
 Previous candidate checkouts and downloaded images are retained; `--uninstall` removes only the
 launcher. Older image-only RCs without the `source-v1` installation marker are refused.
 

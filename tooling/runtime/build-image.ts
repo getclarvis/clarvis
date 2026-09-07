@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 
 export const RUNTIME_PROTOCOL_REVISION = "5";
 export const RUNTIME_ARTIFACT_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime-artifact";
+export const RUNTIME_CANDIDATE_ARTIFACT_REPOSITORY =
+  "ghcr.io/getclarvis/clarvis-runtime-candidate-artifact";
+export const RUNTIME_CANDIDATE_IMAGE_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime-candidate";
 export const RUNTIME_IMAGE_REPOSITORY = "ghcr.io/getclarvis/clarvis-runtime";
 export const RUNTIME_BUILD_IMAGE =
   "docker.io/oven/bun:1.4.0-debian@sha256:5bb0f9be3a1a36a03e27c9a9dd894a3b1ad26657155c7df4dda771e17bf872ef";
@@ -45,11 +48,12 @@ function assertLocalImage(image: string): void {
   }
 }
 
-function assertReleasedArtifact(image: string): void {
-  if (!PINNED_IMAGE.test(image) || !image.startsWith(`${RUNTIME_ARTIFACT_REPOSITORY}@sha256:`)) {
-    throw new Error(
-      `runtime artifact must be ${RUNTIME_ARTIFACT_REPOSITORY}@sha256:<64 lowercase hex>`,
-    );
+function assertReleasedArtifact(image: string, candidate = false): void {
+  const repository = candidate
+    ? RUNTIME_CANDIDATE_ARTIFACT_REPOSITORY
+    : RUNTIME_ARTIFACT_REPOSITORY;
+  if (!PINNED_IMAGE.test(image) || !image.startsWith(`${repository}@sha256:`)) {
+    throw new Error(`runtime artifact must be ${repository}@sha256:<64 lowercase hex>`);
   }
 }
 
@@ -132,12 +136,15 @@ export function runtimeImageBuildPlan(
   args: readonly string[],
   metadata: RuntimeImageMetadata,
 ): RuntimeImageBuildPlan {
+  let candidate = false;
   let engine: "docker" | "podman" = "docker";
   let mode: RuntimeImageBuildPlan["mode"] = "release";
   const positional: string[] = [];
   for (let index = 0; index < args.length; index += 1) {
     const value = args[index];
-    if (value === "--engine") {
+    if (value === "--candidate") {
+      candidate = true;
+    } else if (value === "--engine") {
       const selected = args[index + 1];
       if (selected !== "docker" && selected !== "podman") {
         throw new Error("runtime engine must be docker or podman");
@@ -156,6 +163,8 @@ export function runtimeImageBuildPlan(
     }
   }
 
+  if (candidate && mode !== "release")
+    throw new Error("candidate mode requires an immutable carrier");
   if (mode === "release") {
     const [artifactImage, outputImage] = positional;
     if (artifactImage === undefined || outputImage === undefined || positional.length !== 2) {
@@ -163,11 +172,15 @@ export function runtimeImageBuildPlan(
         "usage: bun run runtime:build -- [--engine docker|podman] <runtime-artifact@sha256:digest> <local-name:tag>",
       );
     }
+    assertReleasedArtifact(artifactImage, candidate);
+    if (candidate && !outputImage.startsWith(`${RUNTIME_CANDIDATE_IMAGE_REPOSITORY}:`)) {
+      throw new Error("candidate output must use the candidate image repository");
+    }
     return {
       engine,
       mode,
       outputImage,
-      commands: [runtimeImageBuildArgs(artifactImage, outputImage, metadata)],
+      commands: [finalImageBuildArgs(artifactImage, outputImage, metadata, false)],
     };
   }
 

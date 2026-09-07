@@ -68,7 +68,10 @@ the README, spec, implementation, and tests disagree.
 
 ## Branch workflow
 
-`develop` is the default integration branch; `main` holds approved release source. Start ordinary
+`develop` is the default integration branch for the next release. Outside an explicitly authorized
+release in progress, `main` must point to the exact source commit of the latest published release
+tag. Ordinary code, documentation, and CI changes go through `develop`, never directly into `main`.
+Start ordinary
 work in a short-lived `feat/`, `fix/`, `refactor/`, `docs/`, or `chore/` branch from current
 `develop`, and target its pull request at `develop`. Keep both permanent branches green; neither
 accepts direct pushes, force pushes, or deletion. Both require the Linux, Windows, and macOS CI
@@ -80,14 +83,22 @@ Rebase merging and required linear history are disabled so these synchronization
 their ancestry. External approving reviews are not required for the single-maintainer workflow;
 this does not replace the owner's review of the change.
 
-Create `release/<version>` from `develop` when stabilization must run alongside further development.
-Otherwise promote the qualified `develop` through a PR to `main`. Hotfixes start from the affected
-published tag; integrate them into `main` and propagate the fix to `develop` and any active release
-branch. If `main` already contains unreleased work, do not publish that work accidentally as a
-hotfix: resolve the intended release lineage explicitly.
+Prepare the final root version on `release/<major.minor.patch>` before its first push. Each new
+commit pushed to that branch receives the next signed `v<version>-rc.<number>` source-candidate tag.
+Candidates publish qualified runtime images and a source-repository prerelease; they do not publish stable installers. Promote through a merge PR from that branch to `main`; after
+CI passes on the exact merge commit, automation signs and pushes `v<version>`, which publishes the
+real release. Direct `develop` promotions do not trigger this automation. Hotfix work starts from
+the latest published tag; stage its qualified patch on `release/<patch-version>` for the same
+promotion flow and propagate it to `develop` and any active release branch. If `main` already
+contains unreleased work, do not publish that work accidentally as a hotfix: resolve the intended release lineage explicitly.
+
+Before starting, inspect the worktree, current branch, upstream, and PR base. Preserve existing
+work; do not reset or switch a dirty worktree merely to follow the branch convention. A task branch
+must publish to its own remote branch, not to `develop` through an inherited upstream.
 
 Version preparation, tagging, and publication follow [RELEASING.md](RELEASING.md). A merge does not
-publish a release; an authorized signed `v<version>` tag identifies the exact approved source.
+publish immediately: a release-branch merge starts the automated CI, tag, and publication sequence.
+An authorized signed `v<version>` tag identifies the exact approved source.
 See [CONTRIBUTING.md](CONTRIBUTING.md#branch-workflow) for the contributor sequence. Branch and PR
 operations remain subject to the publication authorization below.
 
@@ -117,6 +128,11 @@ remembered template or a generic PR body.
 Before starting an authorized publication workflow, state once what will be published, the target
 repository and branch, and the intended outcome. The authorization ends when that outcome is reached
 or when the scope or destination changes materially.
+
+Under the configured Gitflow automation, an explicitly requested push of a prepared `release/*`
+branch includes its candidate tag; an explicitly requested release promotion merge into `main`
+includes the final tag and public release. State these effects before either action. Ordinary task
+branch pushes and merges do not authorize releases.
 
 Separate explicit authorization is still required to force-push or otherwise rewrite remote
 history, delete branches, tags, releases, or data, publish a tag or release, bypass a required check,

@@ -373,7 +373,14 @@ per-platform identities, creates two multi-platform GHCR indexes, and emits the 
 set, carrier/final digests, and build/base image digests. The release workflow verifies the tag
 against the root product version before its first registry push, attests both OCI subjects, and makes
 the portable release publication depend on that manifest. Manual workflow dispatch builds no
-runtime image and cannot publish one.
+runtime image and cannot publish one. The separate candidate workflow builds the same production
+Containerfile from an explicitly admitted candidate carrier. Candidate carrier/output namespaces
+cannot be used by the default release build mode or the stable manifest parser. Both architectures
+run the Docker and rootless Podman integration canaries before candidate index publication.
+Production: `tooling/runtime/build-image.ts` (`runtimeImageBuildPlan`),
+`.github/workflows/candidate.yml`, `tooling/ci/qualify-runtime.sh`. Test:
+`tooling/tests/unit/candidate.test.ts`, `tooling/tests/unit/distribution-workflows.test.ts`, and
+`packages/kernel/tests/integration/local-docker-runtime.e2e.test.ts`.
 
 Model leases keep destinations and credentials host-side and enforce provider/model, expiry,
 concurrency and byte allowances. Capability grants enforce exact method, revision, argument schema,

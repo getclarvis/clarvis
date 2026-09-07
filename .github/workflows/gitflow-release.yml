@@ -1,0 +1,94 @@
+name: gitflow release tags
+
+on:
+  push:
+    branches: ["release/*"]
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitflow-release-tags
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    if: >-
+      (github.event_name == 'push' && !github.event.deleted) ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged &&
+      startsWith(github.event.pull_request.head.ref, 'release/') &&
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - name: validate release event and source identity
+        id: plan
+        run: bun run tooling/release/gitflow.ts plan
+      - run: bun install --frozen-lockfile
+      - run: bun run check:release
+      - name: wait for successful CI on the exact main merge commit
+        if: steps.plan.outputs.kind == 'final'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.plan.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 120); do
+            checks="$(gh api --paginate "repos/$GITHUB_REPOSITORY/commits/$RELEASE_SHA/check-runs?per_page=100" --jq '.check_runs[] | select(.app.slug == "github-actions") | [.name, .status, .conclusion] | @tsv')"
+            ready=true
+            for context in 'linux' 'tools, paths, plan, memory, keyboard policy (windows)' 'keyboard policy (macos)'; do
+              if ! printf '%s\n' "$checks" | awk -F '\t' -v name="$context" '$1 == name && $2 == "completed" && $3 == "success" { found=1 } END { exit !found }'; then
+                ready=false
+              fi
+            done
+            if "$ready"; then exit 0; fi
+            sleep 15
+          done
+          echo 'Required CI did not pass for the exact release commit.' >&2
+          exit 1
+      - name: mint source-only tag publisher token
+        id: source-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.CLARVIS_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CLARVIS_RELEASE_APP_PRIVATE_KEY }}
+          owner: getclarvis
+          repositories: clarvis
+          permission-contents: write
+      - name: create and push the signed immutable tag
+        env:
+          GH_TOKEN: ${{ steps.source-token.outputs.token }}
+          TAG_SIGNING_KEY: ${{ secrets.CLARVIS_TAG_SIGNING_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TAG_SIGNING_KEY"
+          key_dir="$(mktemp -d)"
+          trap 'rm -rf "$key_dir"' EXIT
+          printf '%s\n' "$TAG_SIGNING_KEY" > "$key_dir/key"
+          chmod 600 "$key_dir/key"
+          expected_key="$(awk '{print $1 " " $2}' tooling/release/tag-signing-key.pub)"
+          test "$(ssh-keygen -y -f "$key_dir/key")" = "$expected_key"
+          printf 'clarvis-release-bot %s\n' "$expected_key" > "$key_dir/allowed_signers"
+          git config --local user.name 'Clarvis Release Bot'
+          git config --local user.email 'release-bot@clarvis.dev'
+          git config --local gpg.format ssh
+          git config --local user.signingkey "$key_dir/key"
+          git config --local gpg.ssh.allowedSignersFile "$key_dir/allowed_signers"
+          gh auth setup-git
+          bun run tooling/release/gitflow.ts publish

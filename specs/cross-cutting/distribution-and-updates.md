@@ -248,7 +248,7 @@ user state unchanged. Production: `packages/code/src/update/index.ts` and
 `packages/code/tests/unit/update-command.test.ts` (verified activation and preserved predecessor).
 
 The release workflow builds and smokes all six target archives independently. In parallel, and only
-for a pushed tag, native Linux jobs verify the tag identity before registry authentication, build
+for a pushed non-RC tag, native Linux jobs verify the tag identity before registry authentication, build
 and push one carrier/final pair per architecture, and a dependent job creates the two immutable
 multi-platform indexes. That job records both resolved digests in `runtime-release.json`, emits
 GitHub artifact attestations for both OCI subjects, and uploads the manifest as workflow evidence.
@@ -268,8 +268,33 @@ but cannot publish an image or release because all publication jobs require both
 `push` event. Production: `.github/workflows/release.yml`,
 `tooling/runtime/release-manifest.ts`, and `tooling/checks/release-assets.ts`. Test:
 `tooling/tests/unit/{runtime-release-manifest,release-assets,release-readiness}.test.ts`. Release
-publication still requires a separately authorized source tag and push; nothing in the local build
-or installer creates one.
+publication follows the authorized release promotion: the Gitflow workflow creates the signed final
+tag after CI passes on the exact main merge commit. Local builds and installers never create tags.
+
+Gitflow source candidates use `v<version>-rc.<number>` while the root retains the prepared final
+version. They label source snapshots and qualified candidate images; `release.yml` excludes those
+tag pushes. `candidate.yml` publishes the candidate channel only. Each new release-branch commit allocates the next candidate number, and a retry reuses
+an existing candidate for the same SHA. A final promotion requires a same-repository release PR,
+a two-parent merge with the release head as second parent, a candidate on that head, and remote main
+still at the merge SHA. Existing tags must peel to the same commit and verify with the configured
+signer; conflicting tags stop the run. Production: `tooling/lib/gitflow-release.ts`
+(`planGitflowRelease`, `candidateTag`, `validateGitflowVersion`), `tooling/release/gitflow.ts` (`main`),
+and `.github/workflows/gitflow-release.yml`. Test: `tooling/tests/unit/gitflow-release.test.ts`
+and `tooling/tests/unit/gitflow-release-git.test.ts`. The source App must be authorized to create
+protected tags; signing keys and external permissions are operator configuration, not established by
+these local tests.
+
+The distribution repository accepts new stable releases only. Candidate runtime images use separate
+GHCR package names associated with the source repository and are recorded in `runtime-candidate.json`
+on source prereleases. Official packages are connected to the distribution repository, publicly
+pullable, and grant the source workflow write access. GitHub package visibility and association are
+external configuration that must be checked after initial package creation. Stable activation is
+blocked until both recorded image digests can be pulled without registry credentials. No automatic
+retention deletes published official images or attestations.
+Production: `.github/workflows/release.yml` (`identity` and `publish` jobs),
+`.github/workflows/candidate.yml`, `tooling/release/candidate.ts` (`candidateIdentity`, `main`).
+Test: `tooling/tests/unit/candidate.test.ts`, `tooling/tests/unit/distribution-workflows.test.ts`;
+registry visibility and access require live verification.
 
 ## 5. Invariants
 

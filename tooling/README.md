@@ -51,6 +51,11 @@ ID. Podman and Docker local IDs are normalized to `sha256:` only when the full l
 SHA-256 is present. Base references name their registry explicitly, so unattended Podman builds
 never require short-name selection.
 
+Both Containerfiles and the build helper carry private protocol revision 7, matching the kernel
+worker. It includes host-owned remote MCP and elicitation plus typed provider failures and per-call
+model policy. Older images are refused at admission and must be rebuilt; changing an active runtime
+image remains an operator choice.
+
 `runtime/release-manifest.ts` owns the strict schema-1 mapping from one root product version and
 source commit to the two released OCI digests, the private guest protocol revision, the supported
 Linux platforms, and the digest-pinned build/base images. It writes no registry state itself; the

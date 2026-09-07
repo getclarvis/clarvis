@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Stats } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
-import { NOOP_LOGGER, type RunRequest } from "@clarvis/capability";
+import { NOOP_LOGGER, resolveProvider, type RunRequest } from "@clarvis/capability";
 import type { ElicitParams, ElicitRawResult, ExecuteRunArgs, LLMCallParams } from "@clarvis/loop";
 import type { RuntimeHost, RuntimeHostInput } from "./lazy-runtime.ts";
 import type { ResolvedContainerRuntimeSettings } from "./settings.ts";
@@ -43,6 +43,7 @@ import { RuntimeLaunchError, type RuntimeBackend } from "./types.ts";
 import { prepareRuntimeCapabilityRoot } from "./runtime-workspace-control.ts";
 import { resolveGuardMode, type GuardSettings } from "../guard/resolver.ts";
 import { streamHostModelCall } from "./model-stream.ts";
+import { createHostRemoteMcpBridge, RUNTIME_MCP_METHOD } from "./remote-mcp.ts";
 import { createHostTasksGrant, RUNTIME_TASKS_METHOD } from "./tasks-bridge.ts";
 import {
   createHostHooksBridge,
@@ -236,6 +237,7 @@ function hostModelBroker(
   guardSettings: GuardSettings,
 ): ModelBroker {
   const admitted = runtimeModelPairs(args.rawBody, guardSettings);
+  const providers = structuredClone((args.rawBody as RunRequest).providers);
   const brokers = new Map<string, ModelBroker>();
   let revoked = false;
   const brokerFor = (provider: string, model: string): ModelBroker => {
@@ -244,6 +246,12 @@ function hostModelBroker(
       throw Object.assign(new Error("model is outside the run snapshot"), { code: "unauthorized" });
     const existing = brokers.get(key);
     if (existing !== undefined) return existing;
+    const resolution = resolveProvider(provider, providers, model);
+    if (!resolution.ok) {
+      throw Object.assign(new Error(resolution.message), { code: resolution.code });
+    }
+    const modelCapabilities = providers?.find((entry) => entry.name === provider)?.models?.[model]
+      ?.capabilities;
     const broker = createModelBroker(
       {
         id: leaseId,
@@ -251,9 +259,10 @@ function hostModelBroker(
         runId,
         provider,
         model,
-        destination: modelDestination(args.rawBody, provider),
+        destination: modelDestination({ providers }, provider),
         expiresAt: Date.now() + 24 * 60 * 60 * 1_000,
-        maxConcurrent: Math.max(1, Math.floor(input.settings.limits.cpu_count)),
+        maxConcurrent: args.deps.env.CLARVIS_MAX_CONCURRENT_MODEL_CALLS,
+        maxQueued: args.deps.env.CLARVIS_MAX_QUEUED_MODEL_CALLS,
         maxInputBytes: input.settings.limits.output_bytes,
         maxOutputBytes: input.settings.limits.output_bytes,
       },
@@ -265,10 +274,8 @@ function hostModelBroker(
             ...body,
             provider: request.provider,
             model: request.model,
-            providerConfig: providerConfig(
-              args.rawBody,
-              request.provider,
-            ) as LLMCallParams["providerConfig"],
+            providerConfig: resolution.config,
+            capabilities: modelCapabilities === undefined ? undefined : new Set(modelCapabilities),
             signal: authority.signal,
           },
           input.settings.limits.output_bytes,
@@ -379,6 +386,7 @@ export async function createLocalContainerRuntime(
     readOnlyWorkspacePaths: protectedPaths,
     capabilityMethods: [
       "runtime.elicit",
+      RUNTIME_MCP_METHOD,
       RUNTIME_HOOKS_METHOD,
       RUNTIME_WORKFLOWS_METHOD,
       RUNTIME_PREVIEW_METHOD,
@@ -518,10 +526,18 @@ export async function createLocalContainerRuntime(
                 ? {}
                 : { onCapabilityEvent: args.onCapabilityEvent }),
             });
+      const remoteMcp = createHostRemoteMcpBridge({
+        servers: (args.rawBody as RunRequest).servers ?? [],
+        owner: args.owner,
+        connections: args.deps.connections,
+        maxLeases: args.deps.env.CLARVIS_MCP_MAX_CONNECTIONS,
+        elicit: (input, signal) => controller.session.elicitMcp(runId, input, signal),
+      });
       const capabilities = createCapabilityBroker({
         generation: input.generation,
         runId,
         grants: [
+          remoteMcp.grant,
           {
             method: "runtime.elicit",
             revision: "v1",
@@ -607,8 +623,9 @@ export async function createLocalContainerRuntime(
           },
           { name: "capabilities", async commit() {} },
         ],
-        dispose() {
+        async dispose() {
           snapshots.delete(runId);
+          await remoteMcp.dispose();
         },
       };
     },

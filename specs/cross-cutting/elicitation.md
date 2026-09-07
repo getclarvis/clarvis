@@ -659,6 +659,20 @@ unavailable and timed-out preflights start nothing).
 
 ## 7. Coupling
 
+For container runs, authenticated remote MCP connections remain on the host. Their relay crosses
+the closed `runtime.mcp_elicit` operation to the matching live guest lease and then uses the same
+engine serializer and compute-clock pause before reaching the host input port. Run or lease
+cancellation cannot deliver a question into a later run. Production: `createHostRemoteMcpBridge`
+and `createGuestMcpConnections` in
+[`remote-mcp.ts`](../../packages/kernel/src/runtime/remote-mcp.ts), and `serveExecutionWorker` in
+[`execution-worker.ts`](../../packages/kernel/src/runtime/execution-worker.ts).
+Test: remote guest-relay integration in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts),
+and live-run routing/cancellation in
+[`runtime-execution-worker.test.ts`](../../packages/kernel/tests/integration/runtime-execution-worker.test.ts).
+The private protocol and lifetime contract belongs to
+[isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
+
 **Depends on** (runtime edges, forced by import):
 
 - `@clarvis/capability`'s `elicit.ts` is a pure-type-plus-one-function leaf; it depends only on

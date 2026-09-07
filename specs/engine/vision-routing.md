@@ -40,6 +40,16 @@ family, capability gating).
 
 ## 2. Surface
 
+Container placement preserves the same capability gate: the host reconstructs each admitted model's
+declared capability set, including an empty set, before adapter serialization. The original image
+parts remain in the guest's retained context; only the wire representation strips images for a
+non-visual model, including after a `vision_model` prepass. Production: `hostModelBroker` in
+[`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts).
+Test: the real OpenAI-compatible SDK vision-prepass case in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts)
+asserts images on the vision request, none on the text request, and an unchanged source message
+prefix. The private seam belongs to [isolated-agent-runtime](../hosts/isolated-agent-runtime.md).
+
 The prepass prompt requests visible details relevant to the task, exact readable text when needed,
 and explicit limits for hidden or illegible content. Images are data, not instructions. Production:
 `VISION_SYSTEM_PROMPT` in `packages/loop/src/runtime/vision-prepass.ts`. Test:

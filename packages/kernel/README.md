@@ -7,7 +7,7 @@ the same services behind a remote transport later.
 `@clarvis/code` uses this package as its backend, and it is the only backend.
 
 Workspace dependencies: `@clarvis/protocol` (the contract it implements), `@clarvis/loop` (the engine),
-`@clarvis/capability`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
+`@clarvis/capability`, `@clarvis/mcp-client`, `@clarvis/memory`, `@clarvis/paths`, `@clarvis/plan`, `@clarvis/skills`,
 `@clarvis/tools`, `@clarvis/trace`, `@clarvis/tasks` and `@clarvis/workflows`. It injects
 host-owned capabilities into runs, so the engine never imports those product layers.
 Clients remain independent of the engine through six deliberately bounded public entrypoints. Each
@@ -133,7 +133,23 @@ admits execution to the same generation. An unknown host capability that cannot 
 container placement instead of silently disappearing. Model leases include exact profile, vision and
 resolved automatic-judge models. Text and reasoning deltas cross the bounded protocol incrementally,
 including partial output before a provider failure; the terminal result is separate. These bridges
-require runtime protocol revision 6 and a rebuilt compatible worker image.
+require runtime protocol revision 7 and a rebuilt compatible worker image.
+
+Ordinary HTTP/SSE MCP tools and resources also use host-owned connections through the closed
+`runtime.mcp` grant. The host pins enabled server declarations and the owner; the guest supplies
+only a server name or a run-owned lease and a catalog-admitted operation. Environment-backed headers,
+bearer tokens and the OAuth coordinator/store remain on the host. Typed pending/deferred connection
+failures retain native run behavior, and remote elicitation returns through `runtime.mcp_elicit` to
+the live guest's serialized input port. Run teardown releases the leases. Stdio remains guest-local,
+and HTTP/SSE still has remote effects even with container network `none`.
+
+Before each admitted provider/model pair reaches the adapter, the host uses the shared
+`resolveProvider` on its captured registry, including model overrides, and reconstructs the model's
+capability set. Image removal remains adapter serialization-only. Model envelopes preserve per-call
+retry and Retry-After limits, including zero retries, while typed provider failures preserve recovery
+and failed-attempt usage without transmitting stacks, causes, headers or response bodies. The broker
+uses bounded FIFO admission configured by the host model concurrency/queue settings, not container
+CPU allocation; the host provider admission policy still owns physical requests.
 
 The selected canonical workspace is mounted read-write at guest `/workspace`; guest changes are
 therefore visible on the host immediately. Clarvis does not create a second workspace copy or own an

@@ -1,5 +1,10 @@
 import type { Readable, Writable } from "node:stream";
-import { NOOP_LOGGER, type Logger } from "@clarvis/capability";
+import { NOOP_LOGGER, ProviderError, type Logger } from "@clarvis/capability";
+import {
+  encodeRuntimeProviderError,
+  decodeRuntimeProviderError,
+  runtimeProviderErrorSchema,
+} from "./provider-error.ts";
 
 /** Closed host-to-guest execution vocabulary. */
 export const HOST_EXECUTION_METHODS = [
@@ -7,6 +12,7 @@ export const HOST_EXECUTION_METHODS = [
   "runtime.start",
   "runtime.steer",
   "runtime.hook_mcp",
+  "runtime.mcp_elicit",
   "runtime.cancel",
   "runtime.shutdown",
 ] as const;
@@ -72,7 +78,11 @@ interface ResultFrame extends ExecutionIdentity {
   readonly type: "result";
   readonly id: number;
   readonly result?: unknown;
-  readonly error?: { readonly code: string; readonly message: string };
+  readonly error?: {
+    readonly code: string;
+    readonly message: string;
+    readonly provider?: ReturnType<typeof encodeRuntimeProviderError>["provider"];
+  };
 }
 
 interface CancelFrame extends ExecutionIdentity {
@@ -173,11 +183,14 @@ export function decodeExecutionFrame(value: unknown): ExecutionFrame | null {
   if (
     hasError &&
     (!isRecord(value.error) ||
-      !only(value.error, ["code", "message"]) ||
+      !only(value.error, ["code", "message", "provider"]) ||
       typeof value.error.code !== "string" ||
       !IDENTIFIER.test(value.error.code) ||
       typeof value.error.message !== "string" ||
-      value.error.message.length > 16_384)
+      value.error.message.length > 16_384 ||
+      (value.error.provider !== undefined &&
+        (value.error.code !== "provider_error" ||
+          !runtimeProviderErrorSchema.safeParse(value.error.provider).success)))
   ) {
     return null;
   }
@@ -340,7 +353,13 @@ export function createExecutionPeer(options: {
       pending.delete(frame.id);
       request.detach();
       if (frame.error !== undefined)
-        request.reject(executionError(frame.error.code, frame.error.message));
+        request.reject(
+          options.role === "guest" &&
+            request.method === "host.model" &&
+            frame.error.provider !== undefined
+            ? decodeRuntimeProviderError(frame.error.message, frame.error.provider)
+            : executionError(frame.error.code, frame.error.message),
+        );
       else request.resolve(frame.result);
       return;
     }
@@ -413,16 +432,21 @@ export function createExecutionPeer(options: {
             generation: frame.generation,
             ...(frame.runId === undefined ? {} : { runId: frame.runId }),
             ...(frame.callId === undefined ? {} : { callId: frame.callId }),
-            error: {
-              code:
-                typeof (error as { code?: unknown })?.code === "string"
-                  ? String((error as { code: string }).code).slice(0, 256)
-                  : "internal",
-              message:
-                error instanceof Error
-                  ? error.message.slice(0, 16_384)
-                  : "execution request failed",
-            },
+            error:
+              options.role === "host" &&
+              frame.method === "host.model" &&
+              error instanceof ProviderError
+                ? encodeRuntimeProviderError(error)
+                : {
+                    code:
+                      typeof (error as { code?: unknown })?.code === "string"
+                        ? String((error as { code: string }).code).slice(0, 256)
+                        : "internal",
+                    message:
+                      error instanceof Error
+                        ? error.message.slice(0, 16_384)
+                        : "execution request failed",
+                  },
           }),
       )
       .catch(close)

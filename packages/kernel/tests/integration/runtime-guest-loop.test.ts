@@ -67,6 +67,9 @@ describe("runtime guest loop", () => {
           signal,
         ),
       ).rejects.toMatchObject({ code: "not_found" });
+      await expect(executor.elicitMcp!("invalid-mcp", {}, signal)).rejects.toMatchObject({
+        code: "not_found",
+      });
     },
   );
 

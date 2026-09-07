@@ -64,6 +64,7 @@ describe("isolated run executor", () => {
             return { executionId: runId, response: { status: "completed" } };
           },
           async callHookMcp() {},
+          async elicitMcp() {},
           async steer() {
             received.resolve();
             await deliver.promise;
@@ -235,6 +236,7 @@ describe("isolated run executor", () => {
         return { executionId: runId, response: { status: "done" } };
       },
       async callHookMcp() {},
+      async elicitMcp() {},
       async steer() {},
       async cancel() {},
       async exposePort() {
@@ -369,6 +371,7 @@ describe("isolated run executor", () => {
         info,
         startRun: async () => null,
         callHookMcp: async () => undefined,
+        elicitMcp: async () => undefined,
         steer: async () => undefined,
         cancel: async () => undefined,
         exposePort: async () => Promise.reject(new Error("not exercised")),
@@ -394,6 +397,7 @@ describe("isolated run executor", () => {
         info,
         startRun: async (runId) => ({ executionId: runId, response: { status: "done" } }),
         callHookMcp: async () => undefined,
+        elicitMcp: async () => undefined,
         steer: async () => undefined,
         cancel: async () => undefined,
         exposePort: async () => Promise.reject(new Error("not exercised")),
@@ -422,6 +426,7 @@ describe("isolated run executor", () => {
           return null;
         },
         callHookMcp: async () => undefined,
+        elicitMcp: async () => undefined,
         steer: async () => undefined,
         cancel: async () => {
           boundaryOrder.push("cancel");
@@ -462,6 +467,7 @@ describe("isolated run executor", () => {
           return null;
         },
         callHookMcp: async () => undefined,
+        elicitMcp: async () => undefined,
         steer: async () => undefined,
         cancel: async () => {
           cancelled = true;
@@ -513,6 +519,7 @@ describe("isolated run executor", () => {
             });
           },
           callHookMcp: async () => undefined,
+          elicitMcp: async () => undefined,
           steer: async () => undefined,
           cancel: async () => undefined,
           exposePort: async () => Promise.reject(new Error("not exercised")),

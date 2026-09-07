@@ -395,6 +395,10 @@ export function createDockerRuntimeBackend(options: DockerBackendOptions): Runti
             peer.request("runtime.hook_mcp", { generation: spec.generation, runId }, call, {
               ...(signal === undefined ? {} : { signal }),
             }),
+          elicitMcp: (runId, input, signal) =>
+            peer.request("runtime.mcp_elicit", { generation: spec.generation, runId }, input, {
+              ...(signal === undefined ? {} : { signal }),
+            }),
           async steer(runId, input, signal) {
             await peer.request("runtime.steer", { generation: spec.generation, runId }, input, {
               ...(signal === undefined ? {} : { signal }),

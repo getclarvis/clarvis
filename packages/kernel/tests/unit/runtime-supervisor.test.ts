@@ -51,6 +51,7 @@ const sessionMethods = {
   closed: false,
   async startRun() {},
   async callHookMcp() {},
+  async elicitMcp() {},
   async steer() {},
   async cancel() {},
   async exposePort(guestPort: number, protocol: "http" | "https" | "tcp" = "http") {
@@ -122,6 +123,9 @@ describe("createRuntimeSupervisor", () => {
     };
     const supervisor = createRuntimeSupervisor(backend);
     const session = await supervisor.launch(spec);
+    await expect(
+      session.elicitMcp("run", {}, new AbortController().signal),
+    ).resolves.toBeUndefined();
     await expect(supervisor.launch(spec)).rejects.toBeInstanceOf(RuntimeLaunchError);
     await expect(session.exposePort(9090)).resolves.toMatchObject({
       guestPort: 9090,

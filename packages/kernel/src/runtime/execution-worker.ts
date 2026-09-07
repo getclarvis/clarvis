@@ -36,6 +36,8 @@ export interface GuestRunExecutor {
   steer?(runId: string, input: unknown, signal: AbortSignal): Promise<void>;
   /** Execute a bounded hook call using only a live run's guest MCP configuration. */
   callHookMcp?(runId: string, input: unknown, signal: AbortSignal): Promise<unknown>;
+  /** Deliver remote elicitation without moving its authenticated connection into the guest. */
+  elicitMcp?(runId: string, input: unknown, signal: AbortSignal): Promise<unknown>;
 }
 
 /** Serve the disposable worker over attached stdin/stdout without exposing a public kernel. */
@@ -129,6 +131,17 @@ export function serveExecutionWorker(options: {
         const combined = AbortSignal.any([run.signal, signal]);
         combined.throwIfAborted();
         return options.executor.callHookMcp(runId, payload, combined);
+      },
+      "runtime.mcp_elicit": async ({ runId, payload, signal }) => {
+        const run = runId === undefined ? undefined : runs.get(runId);
+        if (runId === undefined || run === undefined || options.executor.elicitMcp === undefined) {
+          throw Object.assign(new Error("run MCP elicitation is unavailable"), {
+            code: "not_found",
+          });
+        }
+        const combined = AbortSignal.any([run.signal, signal]);
+        combined.throwIfAborted();
+        return options.executor.elicitMcp(runId, payload, combined);
       },
       "runtime.cancel": async ({ runId }) => {
         if (runId === undefined)

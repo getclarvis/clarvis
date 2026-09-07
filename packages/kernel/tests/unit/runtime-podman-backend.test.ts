@@ -183,6 +183,7 @@ function fakeControl(
           }),
           "runtime.start": async ({ runId }) => ({ runId, status: "done" }),
           "runtime.hook_mcp": async ({ runId, payload }) => ({ runId, call: payload }),
+          "runtime.mcp_elicit": async ({ runId, payload }) => ({ runId, call: payload }),
           "runtime.steer": async () => undefined,
           "runtime.cancel": async () => undefined,
           "runtime.shutdown": async () => undefined,
@@ -316,6 +317,7 @@ describe("Podman runtime backend", () => {
     });
     const call = { server: "review", tool: "inspect", input: { mode: "solo" } };
     await expect(session.callHookMcp("run-1", call)).resolves.toEqual({ runId: "run-1", call });
+    await expect(session.elicitMcp("run-1", call)).resolves.toEqual({ runId: "run-1", call });
     await session.steer("run-1", { message: "next" });
     await session.cancel("run-1");
     await session.stop();

@@ -213,6 +213,7 @@ function fixture(
           }),
           "runtime.start": async ({ runId }) => ({ runId }),
           "runtime.hook_mcp": async ({ runId, payload }) => ({ runId, call: payload }),
+          "runtime.mcp_elicit": async ({ runId, payload }) => ({ runId, call: payload }),
           "runtime.steer": async () => undefined,
           "runtime.cancel": async () => undefined,
           "runtime.shutdown": async () => undefined,
@@ -329,6 +330,7 @@ describe("Docker runtime backend", () => {
     await expect(session.startRun("run", {}, signal)).resolves.toEqual({ runId: "run" });
     const call = { server: "review", tool: "inspect", input: { mode: "solo" } };
     await expect(session.callHookMcp("run", call, signal)).resolves.toEqual({ runId: "run", call });
+    await expect(session.elicitMcp("run", call, signal)).resolves.toEqual({ runId: "run", call });
     await expect(session.steer("run", { text: "continue" }, signal)).resolves.toBeUndefined();
     await expect(session.cancel("run")).resolves.toBeUndefined();
     await session.stop();

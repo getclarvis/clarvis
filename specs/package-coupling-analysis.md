@@ -23,17 +23,17 @@ The table and Mermaid source belong to the generator and must stay exactly as em
 
 <!-- prettier-ignore-start -->
 <!-- package-graph:start -->
-Packages: 18; internal edges: 47; optional edges: 3.
+Packages: 18; internal edges: 48; optional edges: 3.
 
 | Package | Role | Direct internal dependencies | Internal consumers |
 | --- | --- | --- | ---: |
 | `capability` | foundation | — | 13 |
 | `code` | application | `kernel`, `paths`, `protocol` | 0 |
 | `hooks` | execution-service | `capability`, `tools` | 1 |
-| `kernel` | host-implementation | `capability`, `loop`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tasks`, `tools`, `trace`, `workflows` | 2 |
+| `kernel` | host-implementation | `capability`, `loop`, `mcp-client`, `memory`, `paths`, `plan`, `protocol`, `skills`, `tasks`, `tools`, `trace`, `workflows` | 2 |
 | `llm` | execution-service | `capability` | 1 |
 | `loop` | engine | `capability`, `hooks` (optional), `llm`, `mcp-client`, `paths`, `skills` (optional), `supervision`, `tools` (optional), `trace` | 3 |
-| `mcp-client` | execution-service | `capability`, `paths` | 1 |
+| `mcp-client` | execution-service | `capability`, `paths` | 2 |
 | `memory` | product-capability | `capability`, `loop`, `paths` | 1 |
 | `paths` | foundation | — | 10 |
 | `plan` | product-capability | `capability`, `paths` | 1 |
@@ -91,6 +91,7 @@ flowchart LR
   hooks --> tools
   kernel --> capability
   kernel --> loop
+  kernel --> mcp_client
   kernel --> memory
   kernel --> paths
   kernel --> plan

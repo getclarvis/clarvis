@@ -81,7 +81,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | [`supervision.md`](foundations/supervision.md) | The run-scoped child registry two independent spawners share: agent ids, activity buffers, the trace→activity projection, the steer queue and the effective limits | `supervision`, `capability` |
 | [`trace.md`](foundations/trace.md) | The split between trace *vocabulary* (which events exist) and trace *implementation* (recording handle, JSON store, crash journal, recovery, retention sweeper) | `trace`, `capability` |
 | [`llm.md`](foundations/llm.md) | The provider layer: the AI-SDK adapter behind the `LLMProvider` port, the decorator stack (cache/logging/retry/admission), the error classifier, bounded transport and the two-entry lazy split | `llm`, `capability` |
-| [`mcp-client.md`](foundations/mcp-client.md) | How Clarvis *speaks* MCP: three transports, the self-healing session with reconnect and circuit breaker, the refcounted pool, and the namespaced tool registry | `mcp-client`, `capability` |
+| [`mcp-client.md`](foundations/mcp-client.md) | How Clarvis *speaks* MCP: three transports, the self-healing session with reconnect and circuit breaker, the refcounted pool, and the namespaced tool registry | `mcp-client`, `capability`, `kernel` |
 
 ### `execution/` — what an agent can actually do to a machine
 
@@ -131,7 +131,7 @@ document trustworthy. If you know the answer, the entry is where it belongs.
 | --- | --- | --- |
 | [`protocol.md`](hosts/protocol.md) | The transport-agnostic contract: wire DTOs plus the `KernelClient` service interfaces, a pure leaf with no dependency of any kind | `protocol` |
 | [`kernel-composition.md`](hosts/kernel-composition.md) | The three stacked construction entry points — in-process composition, file backing, and the project host fanning one Git project out into ref-counted workspace kernels — plus owner scoping | `kernel` |
-| [`isolated-agent-runtime.md`](hosts/isolated-agent-runtime.md) | Host-owned admission, direct selected-workspace mounts, private execution, immutable OCI distribution, and Docker/Podman adapters for disposable agent workers | `kernel`, `protocol`, `code`, `paths`, `loop`, `tools`, `tooling/` |
+| [`isolated-agent-runtime.md`](hosts/isolated-agent-runtime.md) | Host-owned admission and model/remote-MCP brokers, direct selected-workspace mounts, private execution, immutable OCI distribution, and Docker/Podman adapters for disposable agent workers | `kernel`, `protocol`, `code`, `paths`, `loop`, `mcp-client`, `tools`, `tooling/` |
 | [`kernel-config.md`](hosts/kernel-config.md) | The synchronous config store under the async config service, `kernelSettingsSchema` validation, the shipped agent fleet as TypeScript data, and field-by-field overlays | `kernel`, `protocol` |
 | [`kernel-runs.md`](hosts/kernel-runs.md) | Admission and execution identity, request assembly from settings plus agent records, the run-scoped handle with its queues, and the two mappers that project events into the protocol union | `kernel`, `protocol` |
 | [`kernel-transport.md`](hosts/kernel-transport.md) | The JSON-RPC-shaped wire with Clarvis's own vocabulary: one operations table both halves are built from, stdio framing, the loopback seam and inbound run-event re-validation | `kernel`, `protocol` |

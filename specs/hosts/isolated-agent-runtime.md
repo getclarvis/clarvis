@@ -243,8 +243,9 @@ semantics—the RPC resolves only after the loop drains the message—while comp
 on enqueue and remains a separate control source rather than transcript content. The host queue's
 `take` transfers messages without acknowledging them; delivery settles only after the guest RPC
 confirms a real drain. A late refusal settles steering as undelivered without replacing an otherwise
-successful run result. Protocol revision 6 requires guest MCP hook execution as well as incremental
-host model events; older worker images fail admission and must be rebuilt.
+successful run result. Protocol revision 7 requires guest MCP hook execution, host-owned remote MCP
+with reverse elicitation, and typed provider failures as well as incremental host model events;
+older worker images fail admission and must be rebuilt.
 
 Model progress frames are exclusive to `host.model`, monotonically sequenced, correlated to the
 pending call and bounded by the existing frame/queue/byte limits. `streamHostModelCall` drains text
@@ -253,6 +254,74 @@ output is delivered before a provider error, and cancellation does not wait fore
 that ignores abort. Only exact provider/model pairs are admitted, including `vision_model` and the
 effective automatic judge's explicit or default model; auxiliary models do not broaden provider
 authority.
+
+For each admitted pair, `hostModelBroker` resolves the captured host registry through the shared
+`resolveProvider(provider, registry, model)` before calling the adapter. This preserves `apiKeyEnv`,
+`baseUrl`, shallow provider/model header and body overrides, and model prompt-cache settings. It
+reconstructs `capabilities` from that model's captured entry, including an explicit empty set; the
+guest cannot substitute provider configuration or claim vision support. Unsupported images are
+stripped only by adapter serialization, without rewriting the loop's retained message prefix.
+`modelBody` forwards `maxRetries` and `maxRetryAfterMs` unchanged when present, including zero
+retries, so profile policy and output-token reservations remain effective.
+
+Only host `ProviderError`s answering `host.model` carry the closed provider-error variant. It
+contains the finite failure kind, optional bounded HTTP status and Retry-After delay, stream-start
+flag, and optional nonnegative safe-integer partial/accumulated usage counters. The message is
+sanitized and bounded; stacks, causes, headers and response bodies are excluded. Only the guest's
+pending model call reconstructs `ProviderError`, preserving context-overflow and forced-choice
+recovery and failed-attempt accounting. No guest-originated error gains that host authority.
+
+Model requests use bounded FIFO admission with the host's
+`CLARVIS_MAX_CONCURRENT_MODEL_CALLS` and `CLARVIS_MAX_QUEUED_MODEL_CALLS`; container CPU allocation
+is not a model concurrency threshold. Queue overflow is explicit, queued cancellation does not
+execute, expiry is checked after admission, and revocation aborts both waiting and active calls.
+The existing host model-admission decorator still governs physical provider requests.
+
+Production: `hostModelBroker` in
+[`local-podman-runtime.ts`](../../packages/kernel/src/runtime/local-podman-runtime.ts), `modelBody`
+in [`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts),
+`encodeRuntimeProviderError` and `decodeRuntimeProviderError` in
+[`provider-error.ts`](../../packages/kernel/src/runtime/provider-error.ts), `createExecutionPeer`
+in [`execution-rpc.ts`](../../packages/kernel/src/runtime/execution-rpc.ts), and `createModelBroker`
+in [`authority-brokers.ts`](../../packages/kernel/src/runtime/authority-brokers.ts).
+Test: typed failure round-trips and malformed variants in
+[`runtime-execution-rpc.test.ts`](../../packages/kernel/tests/contract/runtime-execution-rpc.test.ts),
+queued drain/cancel/revoke/expiry in
+[`runtime-authority-brokers.test.ts`](../../packages/kernel/tests/unit/runtime-authority-brokers.test.ts),
+and real SDK endpoint/authentication/vision/retry plus guest overflow/usage and two-CPU concurrency
+cases in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
+
+Ordinary HTTP/SSE MCP acquisition and tool/resource operations use `runtime.mcp` revision `v1`
+through a host-owned connection manager. The closed request names only an enabled server from the
+captured run snapshot or a run-owned lease UUID. It cannot supply a URL, credential, owner or stdio
+command. Acquired leases use owner-scoped sharing and a bounded live-lease allowance; tools and
+resource operations must exist in the discovered catalog. Descriptors, instructions and results
+cross the channel, but resolved environment-backed headers, bearer tokens and saved OAuth stay
+with the host's authorization coordinator/store. Authored declaration templates are still part of
+the run request, so this is not a mechanism for hiding literal secrets authored in that request.
+HTTP/SSE remote effects remain possible with container network `none`.
+
+Acquisition preserves typed authorization-pending, background-admission-deferred and connection-failed
+outcomes, keeping native optional/required server behavior. `runtime.mcp_elicit` sends a remote
+question back to the matching live guest lease and its existing serialized elicitation relay,
+including compute-clock pauses and cancellation. A closed lease cannot elicit or execute another
+operation. Run disposal aborts acquisitions and releases leases, including late successful
+acquisitions after cancellation. Stdio acquisition uses the guest's local manager without a host
+fallback. This introduces a production `kernel` → `mcp-client` dependency for the shared connection
+and error contracts, not a reverse dependency or a second transport implementation.
+
+Production: `createHostRemoteMcpBridge` and `createGuestMcpConnections` in
+[`remote-mcp.ts`](../../packages/kernel/src/runtime/remote-mcp.ts), `elicitMcp` in
+[`guest-loop-executor.ts`](../../packages/kernel/src/runtime/guest-loop-executor.ts), and
+`serveExecutionWorker` in
+[`execution-worker.ts`](../../packages/kernel/src/runtime/execution-worker.ts).
+Test: snapshot/owner/catalog checks, typed failures and late lease cleanup in
+[`runtime-remote-mcp.test.ts`](../../packages/kernel/tests/unit/runtime-remote-mcp.test.ts),
+live-run elicitation and cancellation in
+[`runtime-execution-worker.test.ts`](../../packages/kernel/tests/integration/runtime-execution-worker.test.ts),
+and HTTP/SSE bearer, environment header, saved OAuth and guest-relay cases in
+[`runtime-capability-composition.test.ts`](../../packages/kernel/tests/integration/runtime-capability-composition.test.ts).
 
 Container placement preserves admitted capability composition rather than replacing it with a
 smaller guest registry. Configured hook lifecycle callbacks activate on the host and cross

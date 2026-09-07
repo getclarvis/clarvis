@@ -4,6 +4,73 @@ import { createCapabilityBroker, createModelBroker } from "../../src/runtime/aut
 const identity = { generation: "generation-1", runId: "run-1", callId: "call-1" };
 
 describe("runtime authority brokers", () => {
+  it.each(["drain", "cancel", "revoke", "expire"])(
+    "bounds FIFO model waiting and handles %s",
+    async (mode) => {
+      const gate = Promise.withResolvers<void>();
+      const entered = Promise.withResolvers<void>();
+      const calls: string[] = [];
+      let now = 1;
+      const broker = createModelBroker(
+        {
+          id: "lease",
+          generation: "generation-1",
+          runId: "run-1",
+          provider: "test",
+          model: "model",
+          destination: new URL("https://example.test"),
+          expiresAt: 100,
+          maxConcurrent: 1,
+          maxQueued: 1,
+          maxInputBytes: 128,
+          maxOutputBytes: 128,
+        },
+        async function* (request) {
+          calls.push(request.requestId);
+          entered.resolve();
+          await gate.promise;
+          yield null;
+        },
+        () => now,
+      );
+      const request = {
+        leaseId: "lease",
+        provider: "test",
+        model: "model",
+        requestId: "one",
+        body: {},
+      };
+      const first = broker.execute(identity, request);
+      void first.catch(() => undefined);
+      await entered.promise;
+      const controller = new AbortController();
+      const second = broker.execute(
+        { ...identity, callId: "two" },
+        { ...request, requestId: "two" },
+        controller.signal,
+      );
+      void second.catch(() => undefined);
+      await expect(broker.execute({ ...identity, callId: "three" }, request)).rejects.toMatchObject(
+        { code: "resource_exhausted" },
+      );
+      expect(calls).toEqual(["one"]);
+      if (mode === "cancel") controller.abort(new Error("queued cancellation"));
+      if (mode === "revoke") broker.revoke();
+      if (mode === "expire") now = 101;
+      gate.resolve();
+      if (mode === "drain" || mode === "cancel") await first;
+      else await expect(first).rejects.toBeInstanceOf(Error);
+      if (mode === "drain") {
+        await second;
+        expect(calls).toEqual(["one", "two"]);
+      } else {
+        await expect(second).rejects.toBeInstanceOf(Error);
+        expect(calls).toEqual(["one"]);
+      }
+      broker.revoke();
+    },
+  );
+
   it("keeps destination and credentials behind a bounded model lease", async () => {
     let observedDestination = "";
     const broker = createModelBroker(

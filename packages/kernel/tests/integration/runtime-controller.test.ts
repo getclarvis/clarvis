@@ -73,6 +73,7 @@ describe("isolated runtime controller", () => {
           info: info(spec),
           async startRun() {},
           async callHookMcp() {},
+          async elicitMcp() {},
           async steer() {},
           async cancel() {},
           async exposePort() {
@@ -118,6 +119,7 @@ describe("isolated runtime controller", () => {
             info: info(spec),
             async startRun() {},
             async callHookMcp() {},
+            async elicitMcp() {},
             async steer() {},
             async cancel() {},
             async exposePort() {

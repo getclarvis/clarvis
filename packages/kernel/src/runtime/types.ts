@@ -105,6 +105,8 @@ export interface RuntimeSession {
   startRun(runId: string, envelope: unknown, signal?: AbortSignal): Promise<unknown>;
   /** Execute a hook through the active run's guest-owned stdio MCP connection. */
   callHookMcp(runId: string, call: RuntimeHookMcpCall, signal?: AbortSignal): Promise<unknown>;
+  /** Deliver a host remote server's elicitation to its active guest-owned relay. */
+  elicitMcp(runId: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
   steer(runId: string, input: unknown, signal?: AbortSignal): Promise<void>;
   cancel(runId: string): Promise<void>;
   exposePort(

@@ -218,6 +218,11 @@ from any project to test the current checkout without building or downloading a 
 all managed temporary workspaces and exits; workspace-local `.clarvis` data outside that temporary
 root is not removed. Combine both flags to clear first and then open a newly allocated workspace.
 
+To install a published source RC together with its Docker image, use `./dev-install.sh --candidate`
+or `./dev-install.sh --candidate <rc-tag>`. This selects an isolated checkout and requires Git,
+the RC's pinned Bun version, and Docker. See the
+[Code candidate installation guide](packages/code/README.md) for prerequisites and lifecycle.
+
 ## Packages
 
 Clarvis is one product made from 18 private, unversioned workspace packages. They are implementation

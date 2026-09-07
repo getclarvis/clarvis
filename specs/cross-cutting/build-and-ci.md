@@ -253,9 +253,39 @@ because it cost every Bun process started from that directory ~250 ms.
 
 ### 2.7 CI workflow inputs
 
-`ci.yml` triggers on pushes to `main`, pull requests, and manual dispatch, with read-only contents
+`ci.yml` triggers on pushes to `main` and `develop`, pull requests, and manual dispatch, with read-only contents
 permission and `concurrency: ci-${{ github.ref }}, cancel-in-progress: true`
-(`.github/workflows/ci.yml`). Every checkout and setup action is pinned to a commit SHA and checkout
+(`.github/workflows/ci.yml`). `develop` is the default integration branch; `main` is the approved
+release-source branch. Outside an explicitly authorized release in progress, its tip must equal
+the source commit of the latest published release tag. Promotion, final checks, tagging, and
+asynchronous publication form a serialized transition; a failed publication leaves that transition
+incomplete, not permission to rewrite history. This is an operator workflow requirement, not an
+automated equality check in CI. Their GitHub rulesets target each branch by name, require pull requests,
+up-to-date branches, resolved conversations, and the three existing CI contexts, and block deletion
+and force pushes without bypass actors. Neither requires linear history. `main` accepts merge
+commits only; `develop` also accepts squash for task PRs. Promotions and back-merges preserve
+ancestry with merge commits. Ruleset settings are external GitHub configuration and require live
+inspection; passing local checks alone does not prove enforcement. The operating sequence lives in
+[CONTRIBUTING.md](../../CONTRIBUTING.md#branch-workflow), [AGENTS.md](../../AGENTS.md#branch-workflow),
+and [RELEASING.md](../../RELEASING.md). Ordinary branch pushes do not publish. `.github/workflows/gitflow-release.yml` creates signed RC
+source tags only for open same-repository `release/*` PRs targeting `main`, then creates a final tag after a merged release PR has green
+CI on its exact merge SHA. Candidate events are `opened`, `reopened`, `synchronize`, and `edited`;
+plain pushes and closed unmerged PRs cannot create tags. Checkout uses the PR head SHA, not the
+synthetic merge SHA. Before acquiring Publisher credentials, the workflow verifies that the live PR
+is still open at that head and still targets `main`. Retries reuse the same candidate tag.
+Production: `.github/workflows/gitflow-release.yml` (candidate PR guard).
+Test: `tooling/tests/unit/gitflow-workflow.test.ts` (PR triggers and credential ordering).
+`.github/workflows/release.yml` excludes RC pushes, admits only stable version tags for
+publication, and verifies anonymous image access. `.github/workflows/candidate.yml` qualifies both
+container engines on native Ubuntu 26.04 amd64/arm64 runners with volume-subpath-capable Podman before publishing candidate images and a source
+prerelease. Both workflows use Clarvis Release Publisher credentials but request installation tokens scoped
+to their own target repository.
+Production: `tooling/release/gitflow.ts` (`main`) and `tooling/lib/gitflow-release.ts`
+(`planGitflowRelease`, `candidateTag`). Test: `tooling/tests/unit/gitflow-release.test.ts` and
+`tooling/tests/unit/gitflow-release-git.test.ts`. External App installation, signing secrets, and tag
+creation permissions require live validation; local Git tests do not prove GitHub enforcement.
+
+Every checkout and setup action is pinned to a commit SHA and checkout
 does not retain credentials. The on-demand canary has the same least-privilege posture: explicit
 `contents: read`, SHA-pinned checkout and setup-bun actions, and
 `persist-credentials: false` (`.github/workflows/segfault-canary.yml`, `permissions.contents` and
@@ -590,13 +620,13 @@ the complete `@clarvis/tools` suite plus the kernel sandbox-policy integration w
 `CLARVIS_NATIVE_SANDBOX_CANARY=1`. It then runs the same three keyboard test files as Windows. The
 real-host canaries verify Seatbelt file/network/process enforcement and a discovered toolchain's
 kernel inspection path; this is not inferred from generated profile text. The job publishes the
-stable `keyboard policy (macos)` status context required by the `Protect main` repository ruleset;
+stable `keyboard policy (macos)` status context required by both permanent-branch repository rulesets;
 adding macOS canaries must not rename that external contract. Production: `.github/workflows/ci.yml`
 (`jobs.sandbox-macos`).
 
 All three jobs record `bun --version` and `bun --revision` immediately after setup, so a future run
 remains attributable to the executable it actually used. CI was restored for the new public
-repository on push to `main` and pull request; the earlier account-specific billing incident remains
+repository on push to `main` and `develop` and pull request; the earlier account-specific billing incident remains
 historical evidence in [Known issues](../known-issues.md), not current workflow behavior.
 
 ### 4.5 The crash-signal retry (`tooling/ci/retry-code-coverage.sh`)
@@ -1191,7 +1221,7 @@ groups, `killTree` and monitor capture belong to **tools-shell-monitor-and-proce
    dependency pulls esbuild in is derivable from the files in this document's scope.
 
 3. ~~**CI is disabled and the Windows/macOS legs are therefore unexercised.**~~ **Resolved in the
-   first public-beta preparation:** `.github/workflows/ci.yml` now triggers on push to `main`, pull
+   first public-beta preparation:** `.github/workflows/ci.yml` triggers on push to `main` and `develop`, pull
    request, and manual dispatch with read-only permissions and SHA-pinned actions. This configuration
    does not itself claim a green platform run; observed release-platform evidence belongs to
    [distribution and updates](distribution-and-updates.md#8-open-questions).

@@ -52,7 +52,7 @@ download Bun or mutate shell profiles; ordinary root/package builds retain detac
 `packages/code/tooling/setup.ts` (build and link phases)).
 
 The distinct POSIX development entry starts at root `dev-install.sh`, which checks that Bun is
-available and delegates to `packages/code/tooling/development-install.ts`. That typed installer
+available and delegates to `packages/code/tooling/development-install.ts`. In its default local mode, that typed installer
 requires the exact `mise.toml` version, performs the frozen dependency install, configures the local
 Git hook, and atomically creates a marked `clarvis-develop` regular file without replacing an
 unmanaged destination. The launcher embeds the absolute checkout and Bun paths, does not change the
@@ -63,6 +63,27 @@ updates only the marked launcher and `--uninstall` removes only that file. Produ
 (`installDevelopmentLauncher`, `developmentLauncherSource`, `uninstallDevelopmentLauncher`). Test:
 `packages/code/tests/unit/development-install.test.ts` (delegation, caller-workspace preservation,
 source selection, ownership refusal, update, and uninstall cases).
+
+The explicit `--candidate [tag]` mode installs a published source prerelease into a separate unique
+checkout below `${XDG_DATA_HOME:-$HOME/.local/share}/clarvis-candidates/`. Without a tag it chooses
+the numerically highest RC among the latest 100 source releases that are non-draft prereleases and
+have `runtime-candidate.json`. The manifest must declare `installation: "source-v1"`; older image-only
+RCs are not installable through this path. Exact tags must satisfy the same publication filter.
+The installer checks the fetched tag's commit against `source_revision`, root version and pinned Bun,
+installs frozen dependencies, pulls and inspects the digest-pinned candidate Docker image, and smokes
+`--version` before atomically switching the marked launcher. Failure removes only the new checkout
+and preserves the previous launcher; downloaded registry layers can remain. Successful older
+checkouts are retained. Candidate mode cannot combine with installer clearing or maintenance modes.
+The candidate launcher exports `CLARVIS_RUNTIME_CANDIDATE` and `CLARVIS_RUNTIME_CANDIDATE_REVISION`;
+local launchers unset both to avoid inheriting a candidate selection. Updates require another explicit
+candidate installation, and uninstall still removes only the launcher. Git, the exact Bun runtime,
+and a working Docker engine are prerequisites; candidate installation does not install the engine.
+Production: `packages/code/tooling/candidate-install.ts` (`installCandidate`, `candidateJson`,
+`selectCandidateRelease`), `packages/code/tooling/development-install.ts`
+(`parseDevelopmentInstallArgs`, `developmentLauncherSource`).
+Test: `packages/code/tests/unit/candidate-install.test.ts` (publication selection, bounded downloads,
+source/image identity and failure-safe activation), `packages/code/tests/unit/development-install.test.ts`
+(launcher ownership and caller workspace).
 
 The development-only `--empty-workspace` operation allocates a new empty
 `/tmp/clarvis-development-temp/workspace-*` directory on every invocation and changes into it before

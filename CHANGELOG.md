@@ -5,6 +5,8 @@ All notable user-facing changes to Clarvis are recorded here. The project follow
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-07
+
 ### Added
 
 - Isolation is now independent from command review in the TUI: Host, native Sandbox, and lazy Docker

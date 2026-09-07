@@ -66,6 +66,41 @@ documentation disposition is complete.
 Pure typo or formatting edits do not require inventing a contract change, but they still must not make
 the README, spec, implementation, and tests disagree.
 
+## Branch workflow
+
+`develop` is the default integration branch for the next release. Outside an explicitly authorized
+release in progress, `main` must point to the exact source commit of the latest published release
+tag. Ordinary code, documentation, and CI changes go through `develop`, never directly into `main`.
+Start ordinary
+work in a short-lived `feat/`, `fix/`, `refactor/`, `docs/`, or `chore/` branch from current
+`develop`, and target its pull request at `develop`. Keep both permanent branches green; neither
+accepts direct pushes, force pushes, or deletion. Both require the Linux, Windows, and macOS CI
+contexts, an up-to-date base, and resolved review conversations, with no ruleset bypass actors.
+
+Use a merge commit when promoting a release into `main` or synchronizing permanent branches.
+Squash is available for bounded task PRs into `develop`; never squash a promotion or back-merge.
+Rebase merging and required linear history are disabled so these synchronization merges retain
+their ancestry. External approving reviews are not required for the single-maintainer workflow;
+this does not replace the owner's review of the change.
+
+Prepare the final root version on `release/<major.minor.patch>` before its first push. Open a PR from that branch to `main`; only its open PR head receives the next signed `v<version>-rc.<number>` source-candidate tag.
+Candidates publish qualified runtime images and a source-repository prerelease; they do not publish stable installers. Promote through a merge PR from that branch to `main`; after
+CI passes on the exact merge commit, automation signs and pushes `v<version>`, which publishes the
+real release. Direct `develop` promotions do not trigger this automation. Hotfix work starts from
+the latest published tag; stage its qualified patch on `release/<patch-version>` for the same
+promotion flow and propagate it to `develop` and any active release branch. If `main` already
+contains unreleased work, do not publish that work accidentally as a hotfix: resolve the intended release lineage explicitly.
+
+Before starting, inspect the worktree, current branch, upstream, and PR base. Preserve existing
+work; do not reset or switch a dirty worktree merely to follow the branch convention. A task branch
+must publish to its own remote branch, not to `develop` through an inherited upstream.
+
+Version preparation, tagging, and publication follow [RELEASING.md](RELEASING.md). A merge does not
+publish immediately: a release-branch merge starts the automated CI, tag, and publication sequence.
+An authorized signed `v<version>` tag identifies the exact approved source.
+See [CONTRIBUTING.md](CONTRIBUTING.md#branch-workflow) for the contributor sequence. Branch and PR
+operations remain subject to the publication authorization below.
+
 ## Publication authorization
 
 Do not publish without the project owner's explicit authorization. A request for a publication
@@ -92,6 +127,11 @@ remembered template or a generic PR body.
 Before starting an authorized publication workflow, state once what will be published, the target
 repository and branch, and the intended outcome. The authorization ends when that outcome is reached
 or when the scope or destination changes materially.
+
+Under the configured Gitflow automation, explicitly opening a prepared `release/*` PR into `main`, or pushing to
+that branch while its PR is open, includes its candidate tag; an explicitly requested release promotion merge into `main`
+includes the final tag and public release. State these effects before either action. Ordinary task
+branch pushes and merges do not authorize releases.
 
 Separate explicit authorization is still required to force-push or otherwise rewrite remote
 history, delete branches, tags, releases, or data, publish a tag or release, bypass a required check,

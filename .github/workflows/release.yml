@@ -2,7 +2,7 @@ name: release
 
 on:
   push:
-    tags: ["v*"]
+    tags: ["v*", "!v*-rc.*"]
   workflow_dispatch:
 
 permissions:
@@ -13,8 +13,26 @@ env:
   RUNTIME_ARTIFACT_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime-artifact
   RUNTIME_IMAGE_REPOSITORY: ghcr.io/getclarvis/clarvis-runtime
 
+concurrency:
+  group: stable-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  identity:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: admit only stable tags for public distribution
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+
   package:
+    needs: identity
     name: package ${{ matrix.target }}
     strategy:
       fail-fast: false
@@ -62,6 +80,7 @@ jobs:
           retention-days: 7
 
   runtime-image:
+    needs: identity
     name: runtime image ${{ matrix.target }}
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     strategy:
@@ -70,10 +89,10 @@ jobs:
         include:
           - target: linux-x64
             architecture: amd64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - target: linux-arm64
             architecture: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     permissions:
@@ -93,6 +112,9 @@ jobs:
         run: bun run check:release
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+      - run: bun run build
+      - name: verify native container engines
+        run: docker version && podman version
       - name: log in to the source repository container registry
         shell: bash
         env:
@@ -102,8 +124,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          artifact_tag="$RUNTIME_ARTIFACT_REPOSITORY:$GITHUB_REF_NAME-${{ matrix.architecture }}"
-          runtime_tag="$RUNTIME_IMAGE_REPOSITORY:$GITHUB_REF_NAME-${{ matrix.architecture }}"
+          artifact_tag="$RUNTIME_ARTIFACT_REPOSITORY:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.architecture }}"
+          runtime_tag="$RUNTIME_IMAGE_REPOSITORY:build-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-${{ matrix.architecture }}"
 
           bun run runtime:build -- --artifact-only "$artifact_tag"
           docker push "$artifact_tag"
@@ -111,6 +133,9 @@ jobs:
           [[ "$artifact_ref" == "$RUNTIME_ARTIFACT_REPOSITORY@sha256:"* ]]
 
           bun run runtime:build -- "$artifact_ref" "$runtime_tag"
+          bash tooling/ci/qualify-runtime.sh "$runtime_tag" docker
+          docker save "$runtime_tag" | podman load
+          bash tooling/ci/qualify-runtime.sh "$runtime_tag" podman
           docker push "$runtime_tag"
           runtime_ref="$(docker image inspect --format '{{index .RepoDigests 0}}' "$runtime_tag")"
           [[ "$runtime_ref" == "$RUNTIME_IMAGE_REPOSITORY@sha256:"* ]]
@@ -147,7 +172,8 @@ jobs:
       - name: record Bun runtime
         run: bun --version && bun --revision
       - run: bun install --frozen-lockfile
-      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: verify runner-provided Buildx
+        run: docker buildx version
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: runtime-image-*
@@ -170,6 +196,12 @@ jobs:
 
           artifact_tag="$RUNTIME_ARTIFACT_REPOSITORY:$GITHUB_REF_NAME"
           runtime_tag="$RUNTIME_IMAGE_REPOSITORY:$GITHUB_REF_NAME"
+          for repository in "$RUNTIME_ARTIFACT_REPOSITORY" "$RUNTIME_IMAGE_REPOSITORY"; do
+            if docker buildx imagetools inspect "$repository:$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              echo 'Official version index already exists; refusing overwrite.' >&2
+              exit 1
+            fi
+          done
           docker buildx imagetools create \
             --tag "$artifact_tag" --tag "$RUNTIME_ARTIFACT_REPOSITORY:$GITHUB_SHA" \
             "${artifact_refs[@]}"
@@ -248,6 +280,16 @@ jobs:
           cp third-party/vercel-ai-sdk/LICENSE build/release/VERCEL-AI-SDK-LICENSE
       - name: reject source maps and any non-allowlisted release asset
         run: bun run tooling/checks/release-assets.ts build/release "$GITHUB_REF_NAME"
+      - name: verify public runtime image availability
+        shell: bash
+        run: |
+          set -euo pipefail
+          anonymous_config="$(mktemp -d)"
+          trap 'rm -rf "$anonymous_config"' EXIT
+          runtime_ref="$(bun -e 'process.stdout.write(JSON.parse(await Bun.file("build/release/runtime-release.json").text()).runtime_image)')"
+          artifact_ref="$(bun -e 'process.stdout.write(JSON.parse(await Bun.file("build/release/runtime-release.json").text()).artifact_image)')"
+          docker --config "$anonymous_config" pull "$runtime_ref"
+          docker --config "$anonymous_config" pull "$artifact_ref"
       - name: mint a token scoped to the public distribution repository
         id: release-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3

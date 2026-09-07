@@ -1,3 +1,8 @@
+import {
+  candidateVersion,
+  parseRuntimeCandidate,
+  CANDIDATE_REPOSITORY,
+} from "./runtime-candidate.ts";
 import type { RuntimeImageSelection } from "@clarvis/kernel/local";
 import { RUNTIME_PROTOCOL_REVISION } from "@clarvis/kernel";
 
@@ -108,7 +113,8 @@ function runtimeImageFromManifest(source: string, version: string): string {
  * this exact product release's immutable OCI reference.
  *
  * @remarks The call is intentionally made by the lazy runtime factory, never
- * during TUI boot. Development never pulls: `clarvis-develop` consumes the
+ * during TUI boot. Explicit candidate installations fetch their same-tag candidate manifest
+ * and verify source revision and protocol before pulling. Local source development never pulls: `clarvis-develop` consumes the
  * locally built `clarvis-runtime:development` tag. Installed releases fetch
  * only their same-version bounded sidecar and pull the digest-pinned image it
  * names.
@@ -119,15 +125,30 @@ export async function resolveClarvisRuntimeImage(options: {
   readonly fetcher?: typeof fetch;
 }): Promise<RuntimeImageSelection> {
   const environment = options.environment ?? process.env;
-  if (environment.CLARVIS_CODE_SOURCE === "1") {
+  const candidate = environment.CLARVIS_RUNTIME_CANDIDATE;
+  if (candidate === undefined && environment.CLARVIS_CODE_SOURCE === "1") {
     return { reference: DEVELOPMENT_IMAGE, pull: false };
   }
   if (!VERSION.test(options.currentVersion)) {
     throw integrityError("Clarvis product version cannot select a runtime release");
   }
+  if (candidate !== undefined) {
+    try {
+      if (
+        candidateVersion(candidate) !== options.currentVersion ||
+        !REVISION.test(environment.CLARVIS_RUNTIME_CANDIDATE_REVISION ?? "")
+      ) {
+        throw new Error("candidate source identity differs from the installed version");
+      }
+    } catch (cause) {
+      throw integrityError("invalid installed candidate identity", cause);
+    }
+  }
   const url =
-    `https://github.com/${RUNTIME_RELEASE_REPOSITORY}/releases/download/` +
-    `v${options.currentVersion}/${RUNTIME_RELEASE_ASSET}`;
+    candidate !== undefined
+      ? `https://github.com/${CANDIDATE_REPOSITORY}/releases/download/${candidate}/runtime-candidate.json`
+      : `https://github.com/${RUNTIME_RELEASE_REPOSITORY}/releases/download/` +
+        `v${options.currentVersion}/${RUNTIME_RELEASE_ASSET}`;
   const response = await (options.fetcher ?? globalThis.fetch)(url, {
     redirect: "follow",
     signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
@@ -142,8 +163,23 @@ export async function resolveClarvisRuntimeImage(options: {
   if (!trustedDownloadUrl(response.url || url)) {
     throw integrityError("runtime release manifest redirected outside GitHub");
   }
+  const source = await boundedText(response);
+  if (candidate !== undefined) {
+    try {
+      const manifest = parseRuntimeCandidate(JSON.parse(source), candidate);
+      if (
+        manifest.protocol_revision !== RUNTIME_PROTOCOL_REVISION ||
+        manifest.source_revision !== environment.CLARVIS_RUNTIME_CANDIDATE_REVISION
+      ) {
+        throw new Error("candidate runtime does not match installed source or protocol");
+      }
+      return { reference: manifest.runtime_image, pull: true };
+    } catch (cause) {
+      throw integrityError("candidate runtime identity is invalid", cause);
+    }
+  }
   return {
-    reference: runtimeImageFromManifest(await boundedText(response), options.currentVersion),
+    reference: runtimeImageFromManifest(source, options.currentVersion),
     pull: true,
   };
 }

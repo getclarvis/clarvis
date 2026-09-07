@@ -273,7 +273,7 @@ tag after CI passes on the exact main merge commit. Local builds and installers 
 
 Gitflow source candidates use `v<version>-rc.<number>` while the root retains the prepared final
 version. They label source snapshots and qualified candidate images; `release.yml` excludes those
-tag pushes. `candidate.yml` publishes the candidate channel only. Each new release-branch commit allocates the next candidate number, and a retry reuses
+tag pushes. `candidate.yml` publishes the candidate channel only. Each new head of an open same-repository `release/*` PR into `main` allocates the next candidate number, and a retry reuses
 an existing candidate for the same SHA. A final promotion requires a same-repository release PR,
 a two-parent merge with the release head as second parent, a candidate on that head, and remote main
 still at the merge SHA. Existing tags must peel to the same commit and verify with the configured
@@ -286,7 +286,17 @@ these local tests.
 
 The distribution repository accepts new stable releases only. Candidate runtime images use separate
 GHCR package names associated with the source repository and are recorded in `runtime-candidate.json`
-on source prereleases. Official packages are connected to the distribution repository, publicly
+on source prereleases. Installable candidates add `installation: "source-v1"` to that schema-1
+manifest. `dev-install.sh --candidate [tag]` installs the published source snapshot with the
+candidate's pinned Bun version and pulls its Docker image before activation; candidates do not
+carry portable stable installers. The shared reader requires the exact manifest key set, RC tag,
+base product version, source repository and revision, Linux platform pair, protocol revision, and
+candidate-only immutable image references. Existing image-only candidates are refused rather than
+silently treated as installable. Production: `packages/code/src/adapters/runtime-candidate.ts`
+(`parseRuntimeCandidate`), `packages/code/tooling/candidate-install.ts` (`installCandidate`), and
+`tooling/release/candidate.ts` (`candidateIdentity`). Test:
+`packages/code/tests/unit/candidate-install.test.ts` and
+`packages/code/tests/unit/runtime-image.test.ts`. Official packages are connected to the distribution repository, publicly
 pullable, and grant the source workflow write access. GitHub package visibility and association are
 external configuration that must be checked after initial package creation. Stable activation is
 blocked until both recorded image digests can be pulled without registry credentials. No automatic

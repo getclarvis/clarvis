@@ -19,6 +19,7 @@ export function candidateIdentity(tag: string, version: string, sha: string, rep
   return {
     schema: 1,
     channel: "candidate",
+    installation: "source-v1",
     tag,
     version,
     source_revision: sha,
@@ -62,7 +63,7 @@ export function main(): void {
   const notes = "build/candidate/notes.md";
   writeFileSync(
     notes,
-    `Candidate runtime built from source commit \`${identity.source_revision}\`.\n\nDocker and rootless Podman canaries passed on linux/amd64 and linux/arm64. See runtime-candidate.json for immutable image digests. This is not a stable Clarvis release and contains no stable installers.\n`,
+    `Candidate runtime built from source commit \`${identity.source_revision}\`.\n\nDocker and rootless Podman canaries passed on linux/amd64 and linux/arm64. See runtime-candidate.json for immutable image digests. Install this source candidate with \`./dev-install.sh --candidate ${identity.tag}\` using the pinned Bun version and Docker. The installer checks out this exact commit and pulls its digest-pinned image. This is not a stable Clarvis release and contains no stable installers.\n`,
   );
   const result = Bun.spawnSync(
     [

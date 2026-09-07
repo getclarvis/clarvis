@@ -9,10 +9,12 @@ const sha = "a".repeat(40);
 const repository = { full_name: "getclarvis/clarvis" };
 const push = {
   repository,
-  created: true,
-  deleted: false,
-  ref: "refs/heads/release/0.2.0",
-  after: sha,
+  action: "opened",
+  pull_request: {
+    state: "open",
+    base: { ref: "main" },
+    head: { ref: "release/0.2.0", sha, repo: repository },
+  },
 };
 const merge = {
   repository,
@@ -27,7 +29,7 @@ const merge = {
 
 describe("Gitflow release identity", () => {
   test("plans a source candidate and a final tag on the exact merge SHA", () => {
-    expect(planGitflowRelease("push", push)).toEqual({
+    expect(planGitflowRelease("pull_request", push)).toEqual({
       kind: "candidate",
       version: "0.2.0",
       tag: "v0.2.0-rc.1",
@@ -39,7 +41,16 @@ describe("Gitflow release identity", () => {
       tag: "v0.2.0",
       sha,
     });
-    expect(planGitflowRelease("push", { ...push, created: false })?.kind).toBe("candidate");
+    for (const action of ["reopened", "synchronize", "edited"]) {
+      expect(planGitflowRelease("pull_request", { ...push, action })?.kind).toBe("candidate");
+    }
+    expect(planGitflowRelease("push", push)).toBeNull();
+    expect(
+      planGitflowRelease("pull_request", {
+        ...push,
+        pull_request: { ...push.pull_request, state: "closed" },
+      }),
+    ).toBeNull();
   });
   test("ignores unrelated pushes, deletions, closed unmerged PRs, and other bases", () => {
     expect(planGitflowRelease("push", { ...push, ref: "refs/heads/develop" })).toBeNull();
@@ -73,13 +84,53 @@ describe("Gitflow release identity", () => {
     ).toThrow();
     for (const version of ["v0.2.0", "0.2.0-rc.1", "01.2.0", "0.2.0/other", "$(id)"]) {
       expect(() =>
-        planGitflowRelease("push", { ...push, ref: `refs/heads/release/${version}` }),
+        planGitflowRelease("pull_request", {
+          ...push,
+          pull_request: {
+            ...push.pull_request,
+            head: { ...push.pull_request.head, ref: `release/${version}` },
+          },
+        }),
       ).toThrow();
     }
-    expect(() => planGitflowRelease("push", { ...push, after: "bad" })).toThrow();
+    expect(() =>
+      planGitflowRelease("pull_request", {
+        ...push,
+        pull_request: { ...push.pull_request, head: { ...push.pull_request.head, sha: "bad" } },
+      }),
+    ).toThrow();
+  });
+  test("open PR candidates use the head and reject unrelated PR activity", () => {
+    expect(
+      planGitflowRelease("pull_request", {
+        ...push,
+        pull_request: { ...push.pull_request, merge_commit_sha: "b".repeat(40) },
+      })?.sha,
+    ).toBe(sha);
+    for (const action of ["closed", "labeled", "assigned"]) {
+      expect(planGitflowRelease("pull_request", { ...push, action })).toBeNull();
+    }
+    expect(
+      planGitflowRelease("pull_request", {
+        ...push,
+        pull_request: { ...push.pull_request, base: { ref: "develop" } },
+      }),
+    ).toBeNull();
+    expect(() =>
+      planGitflowRelease("pull_request", {
+        ...push,
+        pull_request: {
+          ...push.pull_request,
+          head: {
+            ...push.pull_request.head,
+            repo: { full_name: "fork/clarvis" },
+          },
+        },
+      }),
+    ).toThrow("source repository");
   });
   test("requires prepared source version and increments candidates without moving old tags", () => {
-    const plan = planGitflowRelease("push", push);
+    const plan = planGitflowRelease("pull_request", push);
     expect(() => validateGitflowVersion(plan, "0.1.1")).toThrow();
     expect(() => validateGitflowVersion(plan, "0.2.0")).not.toThrow();
     const tags = [

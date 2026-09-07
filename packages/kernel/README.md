@@ -217,8 +217,10 @@ ephemeral fallback, relays through a fixed
 engine `exec` argv, caps mappings/connections, and closes them with the runtime. The guest never gets
 the engine socket or chooses a host address, host port, executable or engine arguments. An installed
 release resolves its same-version `runtime-release.json` only on the first Docker run and may pull
-only the digest-pinned GHCR reference it names. Source development selects the local
-`clarvis-runtime:development` tag and never pulls it; no runtime path promotes or publishes an image.
+only the digest-pinned GHCR reference it names. Local source development selects the local
+`clarvis-runtime:development` tag and never pulls it. An explicit candidate source installation
+supplies its same-tag candidate image through the Code resolver, pinned to its source revision and
+protocol, and Docker pulls that digest; no runtime path promotes or publishes an image.
 When `runtime.recipe` is present, the same lazy resolver first pins that base image ID, captures at
 most 1 MiB from the absolute non-symlink, single-linked script inside the operator-owned global
 `runtime-recipes/` directory, verifies a stable regular UTF-8 file, and derives a cache key from

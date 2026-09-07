@@ -88,7 +88,7 @@ Use `fix/`, `refactor/`, `docs/`, or `chore/` for the corresponding task, and op
 
 Promotions into `main` and synchronization back into `develop` use merge commits to retain shared
 ancestry. Do not squash or rebase those PRs. A `release/<major.minor.patch>` branch stabilizes each version while `develop` advances.
-Prepare and commit its final product version before the first push. Every new pushed commit gets
+Prepare and commit its final product version before the first push. Open its PR into `main` to start candidates. Every new commit while that PR is open gets
 the next signed source-candidate tag (`v0.2.0-rc.1`, `v0.2.0-rc.2`, and so on); retries reuse the
 same commit tag. Candidates publish qualified runtime images and a source-repository prerelease; they do not publish stable installers. Use `hotfix/<version>` from the latest published tag for an urgent
 patch, target `main`, and include only the patch and its release preparation. Hotfixes must also reach

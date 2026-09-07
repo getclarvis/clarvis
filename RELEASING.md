@@ -60,6 +60,13 @@ subpath contract; engine tests must not weaken that contract to accommodate an o
 and rootless Podman canaries before its digest is included in a candidate index. These canaries use
 a deterministic model provider; they do not establish a live subscription result. The source
 prerelease attaches `runtime-candidate.json`, which is deliberately separate from the stable manifest.
+New installable candidates declare `installation: "source-v1"`. Use `./dev-install.sh --candidate`
+for the newest published RC among the latest 100 source releases, or supply an exact RC tag. This
+installs an isolated source checkout using the candidate's pinned Bun and pulls its Docker image
+before replacing `clarvis-develop`; Git and Docker must already be available. The existing image-only
+RCs cannot be installed this way. The stable portable installer and updater remain separate.
+Candidate source/image matching is enforced again on Docker runtime initialization. Previous
+candidate checkouts and images are retained; reinstall selects a newer candidate explicitly.
 The root version remains the prepared final version; the RC tag and candidate channel identify
 these non-stable images. No stable installer is published from an RC.
 
@@ -107,13 +114,16 @@ reset `main`, move a tag, or disable protections without separate explicit autho
    and both installer defaults as one validated operation. It does not commit, tag, or publish.
    Commit this preparation before the first branch push. The root version is the final version
    (for example `0.2.0`); RC tags label source snapshots and do not change the product version.
-   An authorized push creates `v0.2.0-rc.1`; each different pushed commit receives the next RC number.
+   Push the branch, then open its PR into `main` to create `v0.2.0-rc.1`.
+   Branch pushes alone create no candidate. Each different head commit while the PR is open
+   receives the next RC number. Reopening or retargeting a PR into `main` also evaluates its head;
+   closing without merge stops new candidate tagging. Existing tags remain intact.
    Repeating a run for the same commit reuses its tag. `release.yml` excludes `v*-rc.*` pushes, so
    candidates cannot publish stable installers or official runtime images. The separate
    `candidate.yml` workflow publishes only candidate packages and a prerelease in `clarvis`. Wait for each candidate run before
    pushing another revision: GitHub concurrency serializes tag writes but can replace pending runs
    during rapid pushes. A replaced run creates no candidate; its newer revision is the candidate.
-   A branch push after its final tag exists fails and requires a new release version.
+   Candidate tagging after its final tag exists fails and requires a new release version.
    Wait for a candidate tag on the final
    branch head before merging; existing tags are never overwritten.
 3. Review [CHANGELOG.md](CHANGELOG.md), [SECURITY.md](SECURITY.md), and the open questions in

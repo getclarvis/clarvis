@@ -37,7 +37,7 @@ Test: `packages/kernel/tests/unit/runtime-settings.test.ts`;
 Every complete Code kernel path, including `--print` and `--refresh-models`, enters through the
 workspace manager, which supplies the concrete local factory lazily. Only the first container run
 imports the selected engine process adapter and, for Docker, resolves either the local development
-tag or that exact installed version's digest-pinned release image; application startup performs
+tag, the explicitly installed candidate's image, or that exact installed version's digest-pinned release image; application startup performs
 neither import, network request nor engine probe. When configured, a Docker recipe is also captured,
 resolved and built on this lazy path before the runtime generation is launched. An uncached
 identity emits one path-free first-use preparation message through the existing runtime-placement
@@ -54,6 +54,16 @@ state and every mutating memory operation stay on the host. Neither store paths 
 are sent to the guest. Model and capability leases and the immutable per-run projection are revoked
 when that run settles, even if a control-delivery pump rejects. Revocation cannot be undone by a late
 model call recreating its lease.
+
+An explicit candidate source launcher supplies the exact RC tag and source revision. Code fetches
+only that tag's bounded `runtime-candidate.json` from the source repository and accepts the
+`source-v1` contract only when product version, source revision, protocol and candidate image namespace
+match. Candidate identity failures carry `runtime_image_integrity`, preventing silent sandbox fallback.
+The installer pulls the candidate image before launcher activation; runtime initialization resolves
+and pulls the immutable reference through the existing Docker control. Podman configuration remains
+explicit. Production: `packages/code/src/adapters/runtime-candidate.ts` (`parseRuntimeCandidate`)
+and `packages/code/src/adapters/runtime-image.ts` (`resolveClarvisRuntimeImage`).
+Test: `packages/code/tests/unit/runtime-image.test.ts` (same-RC selection and identity drift).
 
 Production: `WorkspaceClientManager.create` in
 `packages/code/src/adapters/workspace-client-manager.ts`; `createLocalPodmanRuntime` and

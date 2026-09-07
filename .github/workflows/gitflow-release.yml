@@ -1,11 +1,9 @@
 name: gitflow release tags
 
 on:
-  push:
-    branches: ["release/*"]
   pull_request:
     branches: [main]
-    types: [closed]
+    types: [opened, reopened, synchronize, edited, closed]
 
 permissions:
   contents: read
@@ -17,19 +15,19 @@ concurrency:
 jobs:
   tag:
     if: >-
-      (github.event_name == 'push' && !github.event.deleted) ||
-      (github.event_name == 'pull_request' && github.event.pull_request.merged &&
       startsWith(github.event.pull_request.head.ref, 'release/') &&
-      github.event.pull_request.head.repo.full_name == github.repository)
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.pull_request.state == 'open' || github.event.pull_request.merged)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: read
       checks: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          ref: ${{ github.event.pull_request.merged && github.event.pull_request.merge_commit_sha || github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -61,6 +59,19 @@ jobs:
           done
           echo 'Required CI did not pass for the exact release commit.' >&2
           exit 1
+      - name: verify candidate PR is still open at the exact head
+        if: steps.plan.outputs.kind == 'candidate'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RELEASE_SHA: ${{ steps.plan.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > "$RUNNER_TEMP/release-pr.json"
+          jq -e --arg sha "$RELEASE_SHA" --arg repo "$GITHUB_REPOSITORY" \
+            '.state == "open" and .base.ref == "main" and .head.sha == $sha and .head.repo.full_name == $repo' \
+            "$RUNNER_TEMP/release-pr.json"
       - name: mint source-only tag publisher token
         id: source-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3

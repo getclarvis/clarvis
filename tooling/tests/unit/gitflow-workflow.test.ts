@@ -21,12 +21,15 @@ interface Workflow {
 const source = readFileSync(".github/workflows/gitflow-release.yml", "utf8");
 const publication = readFileSync(".github/workflows/release.yml", "utf8");
 
-test("RC tags cannot trigger distribution and tag creation is limited to release pushes and merged PRs", () => {
+test("RC tags cannot trigger distribution and tag creation is limited to open release PRs and merged PRs", () => {
   const tags = (Bun.YAML.parse(publication) as Workflow).on.push.tags;
   expect(tags).toEqual(["v*", "!v*-rc.*"]);
   const workflow = Bun.YAML.parse(source) as Workflow;
-  expect(workflow.on.push.branches).toEqual(["release/*"]);
-  expect(workflow.on.pull_request).toEqual({ branches: ["main"], types: ["closed"] });
+  expect(workflow.on.push).toBeUndefined();
+  expect(workflow.on.pull_request).toEqual({
+    branches: ["main"],
+    types: ["opened", "reopened", "synchronize", "edited", "closed"],
+  });
   expect(workflow.jobs.tag.if).toContain("github.event.pull_request.merged");
   expect(workflow.jobs.tag.if).toContain(
     "github.event.pull_request.head.repo.full_name == github.repository",
@@ -41,6 +44,15 @@ test("RC tags cannot trigger distribution and tag creation is limited to release
   const publish = steps.findIndex(
     (step) => step.name === "create and push the signed immutable tag",
   );
+  const guard = steps.findIndex(
+    (step) => step.name === "verify candidate PR is still open at the exact head",
+  );
+  expect(guard).toBeGreaterThan(ci);
+  expect(credentials).toBeGreaterThan(guard);
+  expect(steps[guard].run).toContain('.state == "open"');
+  expect(steps[guard].run).toContain('.base.ref == "main"');
+  expect(steps[guard].run).toContain(".head.sha == $sha");
+  expect(steps[0].with.ref).toContain("github.event.pull_request.head.sha");
   expect(ci).toBeGreaterThan(-1);
   expect(credentials).toBeGreaterThan(ci);
   expect(publish).toBeGreaterThan(credentials);
